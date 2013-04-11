@@ -88,7 +88,7 @@
 
 
 #include <netdb.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <stdio.h>
 #include <string.h>
 #include "port_after.h"

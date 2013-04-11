@@ -183,6 +183,8 @@ link path=lib/$(ARCH64)/librcm.so target=librcm.so.1
 file path=lib/$(ARCH64)/librcm.so.1
 link path=lib/$(ARCH64)/libresolv.so target=libresolv.so.2
 file path=lib/$(ARCH64)/libresolv.so.2
+link path=lib/$(ARCH64)/libresolv_sys.so target=libresolv_sys.so.2
+file path=lib/$(ARCH64)/libresolv_sys.so.2
 link path=lib/$(ARCH64)/librestart.so target=librestart.so.1
 file path=lib/$(ARCH64)/librestart.so.1
 link path=lib/$(ARCH64)/librpcsvc.so target=librpcsvc.so.1
@@ -340,6 +342,8 @@ file path=lib/librcm.so.1
 link path=lib/libresolv.so target=libresolv.so.2
 file path=lib/libresolv.so.1
 file path=lib/libresolv.so.2
+link path=lib/libresolv_sys.so target=libresolv_sys.so.2
+file path=lib/libresolv_sys.so.2
 file path=lib/librestart.so.1
 link path=lib/librpcsvc.so target=librpcsvc.so.1
 file path=lib/librpcsvc.so.1

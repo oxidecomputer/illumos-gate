@@ -33,7 +33,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <netdb.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <res_update.h>
 #include <stdio.h>
 #include <stdlib.h>

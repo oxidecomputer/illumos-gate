@@ -28,7 +28,7 @@
 #include <isc/assertions.h>
 #include <isc/dst.h>
 #include <errno.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <string.h>
 #include <ctype.h>
 

@@ -526,6 +526,7 @@ file path=usr/include/regex.h
 file path=usr/include/regexp.h
 file path=usr/include/regexpr.h
 file path=usr/include/resolv.h
+file path=usr/include/resolv_sys.h
 file path=usr/include/rje.h
 file path=usr/include/rp_plugin.h
 dir  path=usr/include/rpc

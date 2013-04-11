@@ -41,7 +41,7 @@
 #include <string.h>
 
 #include <isc/list.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 
 #include "port_after.h"
 #include "res_private.h"

@@ -41,7 +41,7 @@
 #include <thread.h>
 #include <arpa/inet.h>
 #include <arpa/nameser.h>
-#include <resolv.h>
+#include <resolv_sys.h>
 #include <syslog.h>
 #include <nsswitch.h>
 #include <nss_common.h>

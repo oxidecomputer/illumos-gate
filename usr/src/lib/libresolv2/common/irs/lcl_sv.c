@@ -54,7 +54,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/nameser.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 
 #ifdef IRS_LCL_SV_DB
 #include <db.h>

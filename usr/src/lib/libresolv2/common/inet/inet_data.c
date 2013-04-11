@@ -32,7 +32,7 @@ static char rcsid[] = "$Id: inet_data.c,v 1.4 2005/04/27 04:56:19 sra Exp $";
 
 #include <ctype.h>
 #include <netdb.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

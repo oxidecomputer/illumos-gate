@@ -23,7 +23,7 @@
 
 #include <netinet/in.h>
 #include <arpa/nameser.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 
 #include <errno.h>
 #include <stdlib.h>

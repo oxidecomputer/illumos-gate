@@ -21,6 +21,11 @@
 
 #include "port_after.h"
 
+#ifdef RESOLV_SYS
+#pragma redefine_extname __ns_get16 __sys_ns_get16
+#pragma redefine_extname __ns_get32 __sys_ns_get32
+#endif
+
 /* Public. */
 
 u_int

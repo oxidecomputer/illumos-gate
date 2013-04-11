@@ -34,7 +34,7 @@
 #undef T_NULL			/* Silence re-definition warning of T_NULL. */
 #endif
 #include <arpa/nameser.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 
 #include <isc/memcluster.h>
 #include <irs.h>

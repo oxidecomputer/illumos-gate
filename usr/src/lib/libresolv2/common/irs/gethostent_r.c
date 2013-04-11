@@ -28,6 +28,11 @@
 #include <sys/param.h>
 #include <port_after.h>
 
+#ifdef RESOLV_SYS
+#pragma redefine extname res_gethostbyname sys_res_gethostbyname
+#pragma redefine extname res_gethostbyaddr sys_res_gethostbyaddr
+#endif
+
 #ifdef HOST_R_RETURN
 
 static HOST_R_RETURN

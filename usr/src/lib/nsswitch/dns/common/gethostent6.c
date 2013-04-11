@@ -48,8 +48,6 @@
  */
 
 
-#pragma weak	res_endhostent
-
 extern struct hostent *_gethostbyname(int *, const char *);
 extern struct hostent *_nss_dns_gethostbyname2(int *, const char *);
 

@@ -3123,6 +3123,8 @@ usr/src/lib/libresolv2/include/make_os_version
 usr/src/lib/libresolv2/include/os_version.h
 usr/src/lib/libresolv2/include/port_ipv6.h
 usr/src/lib/libresolv2/include/probe_ipv6
+usr/src/lib/libresolv2_sys/amd64/libresolv_sys.so.2
+usr/src/lib/libresolv2_sys/i386/libresolv_sys.so.2
 usr/src/lib/librpcsvc/common/bootparam_prot_xdr.c
 usr/src/lib/librpcsvc/common/mount_xdr.c
 usr/src/lib/librpcsvc/common/nlm_prot.c

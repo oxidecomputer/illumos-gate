@@ -1,0 +1,51 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2025 Oxide Computer Company
+#
+
+#
+# MAPFILE HEADER START
+#
+# WARNING:  STOP NOW.  DO NOT MODIFY THIS FILE.
+# Object versioning must comply with the rules detailed in
+#
+#	usr/src/lib/README.mapfiles
+#
+# You should not be making modifications here until you've read the most current
+# copy of that file. If you need help, contact a gatekeeper for guidance.
+#
+# MAPFILE HEADER END
+#
+
+$mapfile_version 2
+
+SYMBOL_VERSION SUNWprivate {
+    global:
+	sys_dn_expand;
+	sys_res_nsearch;
+	sys_res_ninit;
+	sys_res_ndestroy;
+	sys_res_gethostbyaddr;
+	sys_res_gethostbyname;
+	sys_res_gethostbyname2;
+	sys_res_sethostent;
+	sys_res_endhostent;
+	__sys_res_override_retry;
+	__sys_res_unset_no_hosts_fallback;
+	__sys_res_set_no_hosts_fallback;
+	__sys_h_errno;
+	__sys_ns_get16;
+	__sys_ns_get32;
+    local:
+	*;
+};

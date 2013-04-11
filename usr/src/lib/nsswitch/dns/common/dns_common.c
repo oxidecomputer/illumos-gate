@@ -37,15 +37,6 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 
-#pragma weak	dn_expand
-#pragma weak	res_ninit
-#pragma weak	res_ndestroy
-#pragma weak	res_nsearch
-#pragma weak	res_nclose
-#pragma weak	ns_get16
-#pragma weak	ns_get32
-#pragma weak	__ns_get16
-#pragma weak	__ns_get32
 
 #define	DNS_ALIASES	0
 #define	DNS_ADDRLIST	1

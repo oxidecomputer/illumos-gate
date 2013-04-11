@@ -22,15 +22,19 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright 2019, Joyent, Inc.
+# Copyright 2025 Oxide Computer Company
 
-LIBRARY= libresolv.a
+PARENT =	$(SRC)/lib/libresolv2
+
+LIBRARY= libresolv_sys.a
 VERS= .2
 
 # include object definitions
-include ../Makefile.obj
+include $(PARENT)/Makefile.obj
 
-CPPFLAGS +=	-DRESOLV_HEADER="<resolv.h>"
+LOCFLAGS +=	-I$(PARENT)/include
+CPPFLAGS +=	-DRESOLV_SYS -DRESOLV_HEADER="<resolv_sys.h>"
 
 .KEEP_STATE:
 
@@ -39,34 +43,34 @@ all:	$(LIBS)
 # include library targets
 include ../../Makefile.targ
 
-pics/%.o: ../common/bsd/%.c
+pics/%.o: $(PARENT)/common/bsd/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o: ../common/dst/%.c
+pics/%.o: $(PARENT)/common/dst/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o: ../common/inet/%.c
+pics/%.o: $(PARENT)/common/inet/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o: ../common/irs/%.c
+pics/%.o: $(PARENT)/common/irs/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o: ../common/isc/%.c
+pics/%.o: $(PARENT)/common/isc/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o: ../common/nameser/%.c
+pics/%.o: $(PARENT)/common/nameser/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o: ../common/resolv/%.c
+pics/%.o: $(PARENT)/common/resolv/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)
 
-pics/%.o: ../common/sunw/%.c
+pics/%.o: $(PARENT)/common/sunw/%.c
 	$(COMPILE.c) -o $@ $<
 	$(POST_PROCESS_O)

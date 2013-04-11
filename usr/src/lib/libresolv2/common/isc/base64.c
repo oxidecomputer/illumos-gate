@@ -57,7 +57,7 @@
 #include <arpa/nameser.h>
 
 #include <ctype.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

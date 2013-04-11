@@ -113,7 +113,7 @@
 #include <errno.h>
 #include <math.h>
 #include <netdb.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <resolv_mt.h>
 #include <stdio.h>
 #include <stdlib.h>

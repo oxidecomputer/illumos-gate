@@ -30,7 +30,7 @@
 
 #include <grp.h>
 #include <netdb.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <pwd.h>
 
 /*%

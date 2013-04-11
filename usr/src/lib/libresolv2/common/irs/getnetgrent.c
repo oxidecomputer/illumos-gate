@@ -27,7 +27,7 @@
 #include <arpa/nameser.h>
 
 #include <errno.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <stdio.h>
 
 #include <irs.h>

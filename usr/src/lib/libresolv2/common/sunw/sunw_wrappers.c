@@ -4,7 +4,7 @@
  */
 
 #include <port_before.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <arpa/inet.h>
 #include <port_after.h>
 

@@ -57,7 +57,7 @@
 #include <net/if.h>
 
 #include <netdb.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 #include <string.h>
 #include <stddef.h>
 

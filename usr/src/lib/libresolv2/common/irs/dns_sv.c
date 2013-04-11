@@ -32,7 +32,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/nameser.h>
-#include <resolv.h>
+#include RESOLV_HEADER
 
 #include <isc/memcluster.h>
 #include <irs.h>

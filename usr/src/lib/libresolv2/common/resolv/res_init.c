@@ -106,7 +106,7 @@
 #include "port_after.h"
 
 /* ensure that sockaddr_in6 and IN6ADDR_ANY_INIT are declared / defined */
-#include <resolv.h>
+#include RESOLV_HEADER
 
 /* ISC purposely put port_after.h before <resolv.h> to force in6 stuff
  * (above) so we explicitly include port_resolv.h here */

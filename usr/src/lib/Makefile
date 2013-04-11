@@ -196,6 +196,7 @@ SUBDIRS +=				\
 	libreparse	\
 	libresolv	\
 	libresolv2	\
+	libresolv2_sys	\
 	librestart	\
 	librpcsvc	\
 	librsm		\
@@ -668,6 +669,7 @@ libprtdiag:	libkstat libdevinfo
 libprtdiag_psr:	libprtdiag
 libraidcfg:	libdevinfo
 librcm:		libnvpair
+libresolv2_sys:	libresolv2
 librestart:	libuutil libscf libpool libproject libsecdb libsysevent
 libsasl:	libgss pkcs11
 libsaveargs:	libdisasm

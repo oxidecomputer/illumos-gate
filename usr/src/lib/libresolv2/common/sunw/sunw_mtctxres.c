@@ -13,6 +13,13 @@
 #include <irs.h>
 #include <port_after.h>
 
+#ifdef RESOLV_SYS
+#pragma redefine_extname __h_errno __sys_h_errno
+#define	__res_set_no_hosts_fallback __sys_res_set_no_hosts_fallback
+#define	__res_unset_no_hosts_fallback __sys_res_unset_no_hosts_fallback
+#define	__res_override_retry __sys_res_override_retry
+#endif
+
 /*
  * much of the original version of sunw_mtxtxres.c was incorporated into
  * ISC libbind as resolv/mtctxres.c. The following bits have not yet made

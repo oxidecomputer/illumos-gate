@@ -22,7 +22,11 @@ extern "C" {
  * res_* because they conflict with libnsl or libsocket
  */
 
+#ifdef RESOLV_SYS
+#define	endhostent sys_res_endhostent /* libnsl */
+#else
 #define	endhostent res_endhostent /* libnsl */
+#endif
 void endhostent __P((void));
 #define	endnetent res_endnetent  /* libsocket */
 void endnetent __P((void));
@@ -33,11 +37,23 @@ void freehostent __P((struct hostent *));
 #define	getaddrinfo res_getaddrinfo  /* libsocket */
 int getaddrinfo __P((const char *, const char *,
 				const struct addrinfo *, struct addrinfo **));
+#ifdef RESOLV_SYS
+#define	gethostbyaddr sys_res_gethostbyaddr /* libnsl */
+#else
 #define	gethostbyaddr res_gethostbyaddr /* libnsl */
+#endif
 struct hostent *gethostbyaddr __P((const char *, int, int));
+#ifdef RESOLV_SYS
+#define	gethostbyname sys_res_gethostbyname /* libnsl */
+#else
 #define	gethostbyname res_gethostbyname /* libnsl */
+#endif
 struct hostent *gethostbyname __P((const char *));
+#ifdef RESOLV_SYS
+#define	gethostbyname2 sys_res_gethostbyname2 /* lib/nsswitch/dns */
+#else
 #define	gethostbyname2 res_gethostbyname2 /* lib/nsswitch/dns */
+#endif
 struct hostent *gethostbyname2 __P((const char *, int));
 #define	gethostent res_gethostent  /* libnsl */
 struct hostent *gethostent __P((void));
@@ -52,7 +68,11 @@ struct netent *getnetbyaddr __P((unsigned long, int));
 struct netent *getnetbyname __P((const char *));
 #define	getnetent res_getnetent /* libsocket */
 struct netent *getnetent __P((void));
+#ifdef RESOLV_SYS
+#define	sethostent sys_res_sethostent /* libnsl */
+#else
 #define	sethostent res_sethostent /* libnsl */
+#endif
 void sethostent __P((int));
 #define	setnetent res_setnetent /* libsocket */
 void setnetent __P((int));

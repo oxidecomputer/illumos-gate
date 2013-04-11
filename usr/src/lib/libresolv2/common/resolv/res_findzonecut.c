@@ -39,7 +39,7 @@
 
 #include "port_after.h"
 
-#include <resolv.h>
+#include RESOLV_HEADER
 
 /* Data structures. */
 
