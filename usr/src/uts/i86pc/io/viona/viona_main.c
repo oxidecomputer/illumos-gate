@@ -268,6 +268,7 @@
 static void		*viona_state;
 static dev_info_t	*viona_dip;
 static id_space_t	*viona_minors;
+boolean_t viona_use_opte = B_FALSE;
 
 
 static int viona_info(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg,
@@ -724,7 +725,12 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 
 	(void) snprintf(cli_name, sizeof (cli_name), "%s-%d", VIONA_CLI_NAME,
 	    link->l_linkid);
-	err = mac_client_open(link->l_mh, &link->l_mch, cli_name, 0);
+
+	if (viona_use_opte)
+		err = opte_client_open(link->l_mh, &link->l_rcs, cli_name, 0);
+	else
+		err = mac_client_open(link->l_mh, &link->l_mch, cli_name, 0);
+
 	if (err != 0) {
 		goto bail;
 	}
@@ -751,7 +757,10 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 bail:
 	if (link != NULL) {
 		if (link->l_mch != NULL) {
-			mac_client_close(link->l_mch, 0);
+			if (viona_use_opte)
+				opte_client_close(link->l_rcs, 0);
+			else
+				mac_client_close(link->l_mch, 0);
 		}
 		if (link->l_mh != NULL) {
 			mac_close(link->l_mh);
@@ -812,10 +821,15 @@ viona_ioc_delete(viona_soft_state_t *ss, boolean_t on_close)
 	VERIFY0(viona_ring_reset(&link->l_vrings[VIONA_VQ_TX], B_FALSE));
 
 	mutex_enter(&ss->ss_lock);
-	if (link->l_mch != NULL) {
+	if (link->l_mch != NULL || (viona_use_opte && link->l_rcs != NULL)) {
 		/* Unhook the receive callbacks and close out the client */
 		viona_rx_clear(link);
-		mac_client_close(link->l_mch, 0);
+
+		if (viona_use_opte) {
+			opte_client_close(link->l_rcs, 0);
+			link->l_rcs = NULL;
+		} else
+			mac_client_close(link->l_mch, 0);
 	}
 	if (link->l_mh != NULL) {
 		mac_close(link->l_mh);

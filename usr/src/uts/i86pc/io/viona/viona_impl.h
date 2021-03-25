@@ -65,6 +65,7 @@ struct viona_desb;
 typedef struct viona_desb viona_desb_t;
 struct viona_net;
 typedef struct viona_neti viona_neti_t;
+typedef struct __opte_client_state opte_client_state_t;
 
 enum viona_ring_state {
 	VRS_RESET	= 0x0,	/* just allocated or reset */
@@ -157,6 +158,7 @@ struct viona_link {
 	mac_handle_t		l_mh;
 	mac_client_handle_t	l_mch;
 	mac_promisc_handle_t	l_mph;
+	opte_client_state_t	*l_rcs;
 
 	pollhead_t		l_pollhead;
 
@@ -318,5 +320,22 @@ void viona_neti_detach(void);
 viona_neti_t *viona_neti_lookup_by_zid(zoneid_t);
 void viona_neti_rele(viona_neti_t *);
 int viona_hook(viona_link_t *, viona_vring_t *, mblk_t **, boolean_t);
+
+/*
+ * RPZ These are the opte client APIs which viona will use instead of
+ * mac client APIs.
+ */
+int opte_client_open(mac_handle_t mh, opte_client_state_t **rcsp,
+    const char *name, uint16_t flags);
+void opte_client_close(opte_client_state_t *rcs, uint16_t flags);
+void opte_rx_barrier(opte_client_state_t *rcs);
+void opte_rx_set(opte_client_state_t *rcs, mac_rx_t rx_fn, void *arg);
+void opte_rx_clear(opte_client_state_t *rcs);
+int opte_promisc_add(opte_client_state_t *rcs, mac_client_promisc_type_t type,
+    mac_rx_t fn, void *arg, uint16_t flags);
+void opte_promisc_remove(opte_client_state_t *rcs);
+void opte_tx(opte_client_state_t *rcs, mblk_t *mp_chain, uintptr_t hint,
+    uint16_t flag, mblk_t **ret_mp);
+
 
 #endif	/* _VIONA_IMPL_H */

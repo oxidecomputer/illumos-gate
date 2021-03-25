@@ -55,6 +55,7 @@
 #define	MIN_BUF_SIZE		60
 #define	NEED_VLAN_PAD_SIZE	(MIN_BUF_SIZE - VLAN_TAGSZ)
 
+extern boolean_t viona_use_opte;
 static mblk_t *viona_vlan_pad_mp;
 
 void
@@ -106,7 +107,12 @@ viona_worker_rx(viona_vring_t *ring, viona_link_t *link)
 			 */
 			ring->vr_state_flags |= VRSF_RENEW;
 			mutex_exit(&ring->vr_lock);
-			mac_rx_barrier(link->l_mch);
+
+			if (viona_use_opte)
+				opte_rx_barrier(link->l_rcs);
+			else
+				mac_rx_barrier(link->l_mch);
+
 			mutex_enter(&ring->vr_lock);
 
 			if (!viona_ring_lease_renew(ring)) {
@@ -132,7 +138,12 @@ viona_worker_rx(viona_vring_t *ring, viona_link_t *link)
 	 * incoming packets are dropped at viona_rx_classified().
 	 */
 	mutex_exit(&ring->vr_lock);
-	mac_rx_barrier(link->l_mch);
+
+	if (viona_use_opte)
+		opte_rx_barrier(link->l_rcs);
+	else
+		mac_rx_barrier(link->l_mch);
+
 	mutex_enter(&ring->vr_lock);
 
 	viona_ring_enable_notify(ring);
@@ -703,12 +714,25 @@ viona_rx_set(viona_link_t *link)
 	viona_vring_t *ring = &link->l_vrings[VIONA_VQ_RX];
 	int err;
 
-	mac_rx_set(link->l_mch, viona_rx_classified, ring);
-	err = mac_promisc_add(link->l_mch, MAC_CLIENT_PROMISC_MULTI,
-	    viona_rx_mcast, ring, &link->l_mph,
-	    MAC_PROMISC_FLAGS_NO_TX_LOOP | MAC_PROMISC_FLAGS_VLAN_TAG_STRIP);
-	if (err != 0) {
-		mac_rx_clear(link->l_mch);
+	if (viona_use_opte) {
+		opte_rx_set(link->l_rcs, viona_rx_classified, ring);
+		err = opte_promisc_add(link->l_rcs, MAC_CLIENT_PROMISC_MULTI,
+		    viona_rx_mcast, ring, MAC_PROMISC_FLAGS_NO_TX_LOOP |
+		    MAC_PROMISC_FLAGS_VLAN_TAG_STRIP);
+
+		if (err != 0) {
+			opte_rx_clear(link->l_rcs);
+		}
+	} else {
+		mac_rx_set(link->l_mch, viona_rx_classified, ring);
+		err = mac_promisc_add(link->l_mch, MAC_CLIENT_PROMISC_MULTI,
+		    viona_rx_mcast, ring, &link->l_mph,
+		    MAC_PROMISC_FLAGS_NO_TX_LOOP |
+		    MAC_PROMISC_FLAGS_VLAN_TAG_STRIP);
+
+		if (err != 0) {
+			mac_rx_clear(link->l_mch);
+		}
 	}
 
 	return (err);
@@ -717,6 +741,11 @@ viona_rx_set(viona_link_t *link)
 void
 viona_rx_clear(viona_link_t *link)
 {
-	mac_promisc_remove(link->l_mph);
-	mac_rx_clear(link->l_mch);
+	if (viona_use_opte) {
+		opte_promisc_remove(link->l_rcs);
+		opte_rx_clear(link->l_rcs);
+	} else {
+		mac_promisc_remove(link->l_mph);
+		mac_rx_clear(link->l_mch);
+	}
 }
