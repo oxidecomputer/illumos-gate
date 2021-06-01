@@ -62,15 +62,33 @@ static int chdbg_devo_probe(dev_info_t *dip);
 static int chdbg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd);
 static int chdbg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd);
 
+static int chdbg_cb_open(dev_t *dev_p, int flag, int otyp, cred_t *cred_p);
+static int chdbg_cb_close(dev_t dev, int flag, int otyp, cred_t *cred_p);
+static int chdbg_cb_read(dev_t dev, struct uio *uio_p, cred_t *cred_p);
+static int chdbg_cb_write(dev_t dev, struct uio *uio_p, cred_t *cred_p);
+static int chdbg_cb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p);
+
+static int chdbg_srom_open(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int chdbg_srom_close(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int chdbg_srom_read(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int chdbg_srom_write(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int chdbg_srom_ioctl(chdbg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p);
+
+static int chdbg_spidev_open(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int chdbg_spidev_close(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int chdbg_spidev_read(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int chdbg_spidev_write(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int chdbg_spidev_ioctl(chdbg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p);
+
 struct cb_ops chdbg_cb_ops = {
-	.cb_open =		nodev,
-	.cb_close =		nodev,
+	.cb_open =		chdbg_cb_open,
+	.cb_close =		chdbg_cb_close,
 	.cb_strategy =		nodev,
 	.cb_print =		nodev,
 	.cb_dump =		nodev,
-	.cb_read =		nodev,
-	.cb_write =		nodev,
-	.cb_ioctl =		nodev,
+	.cb_read =		chdbg_cb_read,
+	.cb_write =		chdbg_cb_write,
+	.cb_ioctl =		chdbg_cb_ioctl,
 	.cb_devmap =		nodev,
 	.cb_mmap =		nodev,
 	.cb_segmap =		nodev,
@@ -227,6 +245,21 @@ chdbg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto done;
 	}
 
+	/*
+	 * Create minor nodes for SROM and SPIDEV
+	 */
+	rc = ddi_create_minor_node(dip, "srom", S_IFCHR, CHDBG_MINOR(instance, CHDBG_NODE_SROM), DDI_PSEUDO, 0);
+	if (rc != DDI_SUCCESS) {
+		dev_err(dip, CE_WARN, "failed to create SROM device node: %d", rc);
+		goto done;
+	}
+
+	rc = ddi_create_minor_node(dip, "spidev", S_IFCHR, CHDBG_MINOR(instance, CHDBG_NODE_SPIDEV), DDI_PSEUDO, 0);
+	if (rc != DDI_SUCCESS) {
+		dev_err(dip, CE_WARN, "failed to create SROM device node: %d", rc);
+		goto done;
+	}
+
 done:
 	if (rc != DDI_SUCCESS) {
 		(void) chdbg_devo_detach(dip, DDI_DETACH);
@@ -265,4 +298,140 @@ chdbg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	ddi_soft_state_free(chdbg_devstate_list, instance);
 
 	return (DDI_SUCCESS);
+}
+
+/* ARGSUSED */
+static int
+chdbg_cb_open(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
+{
+	minor_t minor = getminor(*dev_p);
+	int instance = CHDBG_MINOR_INSTANCE(minor);
+	chdbg_devstate_t *devstate_p = ddi_get_soft_state(chdbg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (CHDBG_MINOR_NODE(minor)) {
+		case CHDBG_NODE_SROM:
+			return chdbg_srom_open(devstate_p, flag, otyp, cred_p);
+		case CHDBG_NODE_SPIDEV:
+			return chdbg_spidev_open(devstate_p, flag, otyp, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+/* ARGSUSED */
+static int
+chdbg_cb_close(dev_t dev, int flag, int otyp, cred_t *cred_p)
+{
+	minor_t minor = getminor(dev);
+	int instance = CHDBG_MINOR_INSTANCE(minor);
+	chdbg_devstate_t *devstate_p = ddi_get_soft_state(chdbg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (CHDBG_MINOR_NODE(minor)) {
+		case CHDBG_NODE_SROM:
+			return chdbg_srom_close(devstate_p, flag, otyp, cred_p);
+		case CHDBG_NODE_SPIDEV:
+			return chdbg_spidev_close(devstate_p, flag, otyp, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+static int
+chdbg_cb_read(dev_t dev, struct uio *uio_p, cred_t *cred_p) {
+	minor_t minor = getminor(dev);
+	int instance = CHDBG_MINOR_INSTANCE(minor);
+	chdbg_devstate_t *devstate_p = ddi_get_soft_state(chdbg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (CHDBG_MINOR_NODE(minor)) {
+		case CHDBG_NODE_SROM:
+		       return chdbg_srom_read(devstate_p, uio_p, cred_p);
+		case CHDBG_NODE_SPIDEV:
+		       return chdbg_spidev_read(devstate_p, uio_p, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+static int
+chdbg_cb_write(dev_t dev, struct uio *uio_p, cred_t *cred_p) {
+	minor_t minor = getminor(dev);
+	int instance = CHDBG_MINOR_INSTANCE(minor);
+	chdbg_devstate_t *devstate_p = ddi_get_soft_state(chdbg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (CHDBG_MINOR_NODE(minor)) {
+		case CHDBG_NODE_SROM:
+		       return chdbg_srom_write(devstate_p, uio_p, cred_p);
+		case CHDBG_NODE_SPIDEV:
+		       return chdbg_spidev_write(devstate_p, uio_p, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+/* ARGSUSED */
+static int
+chdbg_cb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p)
+{
+	minor_t minor = getminor(dev);
+	int instance = CHDBG_MINOR_INSTANCE(minor);
+	chdbg_devstate_t *devstate_p = ddi_get_soft_state(chdbg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (CHDBG_MINOR_NODE(minor)) {
+		case CHDBG_NODE_SROM:
+			return chdbg_srom_ioctl(devstate_p, cmd, arg, mode, cred_p, rval_p);
+		case CHDBG_NODE_SPIDEV:
+			return chdbg_spidev_ioctl(devstate_p, cmd, arg, mode, cred_p, rval_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+static int chdbg_srom_open(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int chdbg_srom_close(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int chdbg_srom_read(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int chdbg_srom_write(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int chdbg_srom_ioctl(chdbg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
+	return (ENOTTY);
+}
+
+static int chdbg_spidev_open(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int chdbg_spidev_close(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int chdbg_spidev_read(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int chdbg_spidev_write(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int chdbg_spidev_ioctl(chdbg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
+	return (ENOTTY);
 }
