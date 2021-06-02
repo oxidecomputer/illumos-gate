@@ -22,6 +22,7 @@
 #include <sys/modctl.h>
 #include <sys/open.h>
 #include <sys/pci.h>
+#include <sys/pci_cap.h>
 #include <sys/stat.h>
 #include <sys/sunddi.h>
 #include <sys/types.h>
@@ -30,6 +31,26 @@
 #ifndef PCI_VENDOR_ID_CHELSIO
 # define PCI_VENDOR_ID_CHELSIO 0x1425
 #endif
+
+
+#define PCI_CAP_VPD_ADDRESS_OFFSET	2
+#define PCI_CAP_VPD_DATA_OFFSET		4
+
+#define PCI_CAP_VPD_ADDRESS(f, a)	((((f) & PCI_CAP_VPD_ADDRESS_FLAG_MASK) << PCI_CAP_VPD_ADDRESS_FLAG_SHIFT) \
+					 | (((a) & PCI_CAP_VPD_ADDRESS_ADDRESS_MASK) << PCI_CAP_VPD_ADDRESS_ADDRESS_SHIFT))
+
+#define PCI_CAP_VPD_ADDRESS_FLAG_BITS	1
+#define PCI_CAP_VPD_ADDRESS_FLAG_SHIFT	15
+#define PCI_CAP_VPD_ADDRESS_FLAG_MASK	((1U << PCI_CAP_VPD_ADDRESS_FLAG_BITS) - 1)
+#define PCI_CAP_VPD_ADDRESS_FLAG(x)	(((x) >> PCI_CAP_VPD_ADDRESS_FLAG_SHIFT) & PCI_CAP_VPD_ADDRESS_FLAG_MASK)
+
+#define PCI_CAP_VPD_ADDRESS_FLAG_READ	0
+#define PCI_CAP_VPD_ADDRESS_FLAG_WRITE	1
+
+#define PCI_CAP_VPD_ADDRESS_ADDRESS_BITS	15
+#define PCI_CAP_VPD_ADDRESS_ADDRESS_SHIFT	0
+#define PCI_CAP_VPD_ADDRESS_ADDRESS_MASK	((1U << PCI_CAP_VPD_ADDRESS_ADDRESS_BITS) - 1)
+#define PCI_CAP_VPD_ADDRESS_ADDRESS(x)		(((x) >> PCI_CAP_VPD_ADDRESS_ADDRESS_SHIFT) & PCI_CAP_VPD_ADDRESS_ADDRESS_MASK)
 
 #define CHDBG_MINOR_NODE_BITS		2
 #define CHDBG_MINOR_NODE_SHIFT		0
@@ -52,6 +73,8 @@ typedef struct chdbg_devstate {
 	dev_t			dev;
 
 	ddi_acc_handle_t	pci_config_handle;
+	uint16_t		vpd_base;
+	kmutex_t		vpd_lock;
 
 	ddi_acc_handle_t	pio_kernel_regs_handle;
 	void			*pio_kernel_regs;
@@ -221,6 +244,8 @@ chdbg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	ddi_set_driver_private(dip, (caddr_t)devstate_p);
 	devstate_p->dip = dip;
 
+	mutex_init(&devstate_p->vpd_lock, NULL, MUTEX_DRIVER, NULL);
+
 	/*
 	 * Enable access to the PCI config space.
 	 */
@@ -285,6 +310,8 @@ chdbg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 	ddi_prop_remove_all(dip);
 	ddi_remove_minor_node(dip, NULL);
+
+	mutex_destroy(&devstate_p->vpd_lock);
 
 	if (devstate_p->pio_kernel_regs_handle != NULL)
 		ddi_regs_map_free(&devstate_p->pio_kernel_regs_handle);
@@ -397,7 +424,30 @@ chdbg_cb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *
 }
 
 static int chdbg_srom_open(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
-	return (0);
+	int retval = 0;
+
+	/*
+	 * SROM access is via VPD capability.  Locate it now both to tell the
+	 * user early if there is a problem and to speed up read/write
+	 * accesses.
+	 */
+
+	mutex_enter(&devstate_p->vpd_lock);
+
+	if (devstate_p->vpd_base == 0) {
+		int rc = pci_lcap_locate(devstate_p->pci_config_handle, PCI_CAP_ID_VPD,
+				&devstate_p->vpd_base);
+		if (rc != DDI_SUCCESS) {
+			dev_err(devstate_p->dip, CE_WARN, "unable to locate VPD capability: %d", rc);
+			retval = ENXIO;
+			goto done;
+		}
+	}
+
+done:
+	mutex_exit(&devstate_p->vpd_lock);
+
+	return retval;
 }
 
 static int chdbg_srom_close(chdbg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
@@ -405,7 +455,62 @@ static int chdbg_srom_close(chdbg_devstate_t *devstate_p, int flag, int otype, c
 }
 
 static int chdbg_srom_read(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
-	return (ENOTSUP);
+	/* Return EOF for out-of-range offsets. */
+	if (uio_p->uio_offset > 0xffff)
+		return (0);
+
+	int retval = 0;
+
+	mutex_enter(&devstate_p->vpd_lock);
+
+	while (uio_p->uio_offset <= 0xffff && uio_p->uio_resid > 0) {
+		/* Per PCI 3.0 spec, VPD address must be DWORD aligned */
+		uint16_t vpd_dword = uio_p->uio_offset & 0xfffc;
+		uint16_t vpd_offset = uio_p->uio_offset - vpd_dword;
+
+		int rc = pci_cap_put(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_16,
+			       	PCI_CAP_ID_VPD, devstate_p->vpd_base,
+				PCI_CAP_VPD_ADDRESS_OFFSET, PCI_CAP_VPD_ADDRESS(PCI_CAP_VPD_ADDRESS_FLAG_READ, vpd_dword));
+		if (rc != DDI_SUCCESS) {
+			dev_err(devstate_p->dip, CE_WARN, "write to VPD address register failed: %d", rc);
+			retval = EIO;
+			goto done;
+		}
+
+
+		for(int ii = 0; ; ++ii) {
+			uint32_t vpd_addr = pci_cap_get(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_16,
+			       	PCI_CAP_ID_VPD, devstate_p->vpd_base,
+				PCI_CAP_VPD_ADDRESS_OFFSET);
+
+			if (vpd_addr == PCI_CAP_EINVAL32) {
+				dev_err(devstate_p->dip, CE_WARN, "read from VPD address register failed");
+				retval = EIO;
+				goto done;
+			} else if (ii == 100) {
+				dev_err(devstate_p->dip, CE_WARN, "VPD read timeout");
+				retval = EIO;
+				goto done;
+			} else if (PCI_CAP_VPD_ADDRESS_FLAG(vpd_addr) == 1)
+				break;
+		}
+
+		uint32_t vpd_data = pci_cap_get(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_32,
+			       	PCI_CAP_ID_VPD, devstate_p->vpd_base,
+				PCI_CAP_VPD_DATA_OFFSET);
+		dev_err(devstate_p->dip, CE_WARN, "%s: read VPD data: %08x", __FUNCTION__, vpd_data);
+
+		rc = uiomove((void*)&vpd_data + vpd_offset, sizeof(uint32_t) - vpd_offset, UIO_READ, uio_p);
+		if (rc != DDI_SUCCESS) {
+			retval = EIO;
+			goto done;
+		}
+	}
+
+done:
+	mutex_exit(&devstate_p->vpd_lock);
+
+	return retval;
 }
 
 static int chdbg_srom_write(chdbg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
