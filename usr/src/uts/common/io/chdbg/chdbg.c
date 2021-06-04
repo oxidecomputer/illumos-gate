@@ -20,9 +20,11 @@
 #include <sys/errno.h>
 #include <sys/mkdev.h>
 #include <sys/modctl.h>
+#include <sys/model.h>
 #include <sys/open.h>
 #include <sys/pci.h>
 #include <sys/pci_cap.h>
+#include <sys/spi.h>
 #include <sys/stat.h>
 #include <sys/sunddi.h>
 #include <sys/types.h>
@@ -121,6 +123,7 @@ typedef struct chdbg_devstate {
 
 	ddi_acc_handle_t	pio_kernel_regs_handle;
 	void			*pio_kernel_regs;
+	kmutex_t		sf_lock;
 } chdbg_devstate_t;
 
 static int chdbg_devo_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **result_p);
@@ -288,6 +291,7 @@ chdbg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	devstate_p->dip = dip;
 
 	mutex_init(&devstate_p->vpd_lock, NULL, MUTEX_DRIVER, NULL);
+	mutex_init(&devstate_p->sf_lock, NULL, MUTEX_DRIVER, NULL);
 
 	/*
 	 * Enable access to the PCI config space.
@@ -354,6 +358,7 @@ chdbg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	ddi_prop_remove_all(dip);
 	ddi_remove_minor_node(dip, NULL);
 
+	mutex_destroy(&devstate_p->sf_lock);
 	mutex_destroy(&devstate_p->vpd_lock);
 
 	if (devstate_p->pio_kernel_regs_handle != NULL)
@@ -581,5 +586,93 @@ static int chdbg_spidev_write(chdbg_devstate_t *devstate_p, struct uio *uio_p, c
 }
 
 static int chdbg_spidev_ioctl(chdbg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
-	return (ENOTTY);
+	STRUCT_DECL(spidev_transaction, xact);
+	STRUCT_DECL(spidev_transfer, xfer);
+
+	if (cmd != SPIDEV_TRANSACTION)
+		return (ENOTTY);
+
+	STRUCT_INIT(xact, mode);
+	STRUCT_INIT(xfer, mode);
+
+	if (copyin((void*)arg, STRUCT_BUF(xact), STRUCT_SIZE(xact)))
+		return (EFAULT);
+
+	int rc = 0;
+	mutex_enter(&devstate_p->sf_lock);
+
+	if (SF_OP_BUSY(ddi_get32(devstate_p->pio_kernel_regs_handle, devstate_p->pio_kernel_regs + SF_OP_ADDR))) {
+		rc = EBUSY;
+		goto done;
+	}
+
+	for (void *xfer_up = STRUCT_FGETP(xact, spidev_xfers);
+		 xfer_up < STRUCT_FGETP(xact, spidev_xfers) + STRUCT_FGET(xact, spidev_nxfers) * STRUCT_SIZE(xfer);
+		 xfer_up += STRUCT_SIZE(xfer)) {
+		
+		if (copyin(xfer_up, STRUCT_BUF(xfer), STRUCT_SIZE(xfer))) {
+			rc = EFAULT;
+			goto done;
+		}
+
+		for (int cur_byte = 0; cur_byte < STRUCT_FGET(xfer, len); cur_byte += 4) {
+			int bytes_to_transfer = min(STRUCT_FGET(xfer, len) - cur_byte, 4);
+			int sf_op_op = SF_OP_OP_READ;
+
+			/* Stage transmit word into transmit register */
+			if (STRUCT_FGETP(xfer, tx_buf) != NULL) {
+				sf_op_op = SF_OP_OP_WRITE;
+
+				uint32_t tx_data;
+				void *tx_buf_up = STRUCT_FGETP(xfer, tx_buf) + cur_byte;
+				if (copyin(tx_buf_up, &tx_data, bytes_to_transfer)) {
+					rc = EFAULT;
+					goto done;
+				}
+
+				ddi_put32(devstate_p->pio_kernel_regs_handle, devstate_p->pio_kernel_regs + SF_DATA_ADDR, tx_data);
+			}
+
+			/* Trigger transfer. If this is the last chunk of a transfer, change CS if requested. */
+			int conn = !((cur_byte + bytes_to_transfer) == STRUCT_FGET(xfer, len) && STRUCT_FGET(xfer, cs_change));
+			ddi_put32(devstate_p->pio_kernel_regs_handle, devstate_p->pio_kernel_regs + SF_OP_ADDR,
+				SF_OP(sf_op_op, bytes_to_transfer, conn, 1));
+
+			/* Poll until controller has finished the operation */
+			for (int ii = 0; ii < 10; ++ii) {
+				if (!SF_OP_BUSY(ddi_get32(devstate_p->pio_kernel_regs_handle, devstate_p->pio_kernel_regs + SF_OP_ADDR)))
+					break;
+
+				drv_usecwait(1);
+			}
+
+			/* Retrieve received word */
+			if (STRUCT_FGETP(xfer, rx_buf) != NULL) {
+				uint32_t rx_data = ddi_get32(devstate_p->pio_kernel_regs_handle, devstate_p->pio_kernel_regs + SF_DATA_ADDR);
+
+				void *rx_buf_up = STRUCT_FGETP(xfer, rx_buf) + cur_byte;
+				if (copyout(&rx_data, rx_buf_up, bytes_to_transfer)) {
+					rc = EFAULT;
+					goto done;
+				}
+			}
+		}
+
+		drv_usecwait(STRUCT_FGET(xfer, delay_usec));
+
+		/* Deassert CS as directed */
+		if (STRUCT_FGET(xfer, cs_change)) {
+			ddi_put32(devstate_p->pio_kernel_regs_handle, devstate_p->pio_kernel_regs + SF_OP_ADDR,
+				SF_OP(SF_OP_OP_READ, 0, 0, 1));
+			drv_usecwait(STRUCT_FGET(xfer, cs_change_delay_usec));
+		}
+	}
+
+	/* Unlock SF */
+	ddi_put32(devstate_p->pio_kernel_regs_handle, devstate_p->pio_kernel_regs + SF_OP_ADDR,
+		SF_OP(SF_OP_OP_READ, 1, 0, 0));
+
+done:
+	mutex_exit(&devstate_p->sf_lock);
+	return (rc);
 }
