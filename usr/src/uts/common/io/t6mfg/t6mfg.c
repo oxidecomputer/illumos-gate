@@ -98,6 +98,48 @@
 #define T6MFG_SROM_WRITE_POLL_INTERVAL_USEC		1000
 #define T6MFG_SROM_WRITE_POLL_ITERATIONS		20
 
+/* SPI Flash (SF) controller registers */
+#define SF_BASE		0x193f8
+
+#define SF_DATA_OFFSET		0x0
+#define SF_OP_OFFSET		0x4
+
+#define SF_DATA_ADDR        SF_BASE + SF_DATA_OFFSET
+#define SF_OP_ADDR          SF_BASE + SF_OP_OFFSET
+
+#define SF_OP(op, bytecnt, cont, lock)	((((op) & SF_OP_OP_MASK) << SF_OP_OP_SHIFT) \
+										 | ((((bytecnt) - 1) & SF_OP_BYTECNT_MASK) << SF_OP_BYTECNT_SHIFT) \
+										 | (((cont) & SF_OP_CONT_MASK) << SF_OP_CONT_SHIFT) \
+										 | (((lock) & SF_OP_LOCK_MASK) << SF_OP_LOCK_SHIFT))
+
+#define SF_OP_OP_BITS		1
+#define SF_OP_OP_SHIFT		0
+#define SF_OP_OP_MASK		((1U << SF_OP_OP_BITS) - 1)
+#define SF_OP_OP(x)		(((x) >> SF_OP_OP_SHIFT) & SF_OP_OP_MASK)
+
+#define SF_OP_OP_READ		0
+#define SF_OP_OP_WRITE		1
+
+#define SF_OP_BYTECNT_BITS	2
+#define SF_OP_BYTECNT_SHIFT	1
+#define SF_OP_BYTECNT_MASK	((1U << SF_OP_BYTECNT_BITS) - 1)
+#define SF_OP_BYTECNT(x)	((((x) - 1) >> SF_OP_BYTECNT_SHIFT) & SF_OP_BYTECNT_MASK)
+
+#define SF_OP_CONT_BITS		1
+#define SF_OP_CONT_SHIFT	3
+#define SF_OP_CONT_MASK		((1U << SF_OP_CONT_BITS) - 1)
+#define SF_OP_CONT(x)		(((x) >> SF_OP_CONT_SHIFT) & SF_OP_CONT_MASK)
+
+#define SF_OP_LOCK_BITS		1
+#define SF_OP_LOCK_SHIFT	4
+#define SF_OP_LOCK_MASK		((1U << SF_OP_LOCK_BITS) - 1)
+#define SF_OP_LOCK(x)		(((x) >> SF_OP_LOCK_SHIFT) & SF_OP_LOCK_MASK)
+
+#define SF_OP_BUSY_BITS		1
+#define SF_OP_BUSY_SHIFT	31
+#define SF_OP_BUSY_MASK		((1U << SF_OP_BUSY_BITS) - 1)
+#define SF_OP_BUSY(x)		(((x) >> SF_OP_BUSY_SHIFT) & SF_OP_BUSY_MASK)
+
 typedef struct t6mfg_devstate {
 	dev_info_t *		dip;
 	dev_t			dev;
