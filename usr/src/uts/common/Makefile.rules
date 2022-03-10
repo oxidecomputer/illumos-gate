@@ -1695,3 +1695,7 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/tpm/%.s
 $(OBJS_DIR)/bz2%.o:		$(COMMONBASE)/bzip2/%.c
 	$(COMPILE.c) -o $@ -I$(COMMONBASE)/bzip2 $<
 	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/t6mfg/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)

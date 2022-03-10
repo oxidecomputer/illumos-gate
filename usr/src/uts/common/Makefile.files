@@ -2311,3 +2311,8 @@ MLXCX_OBJS +=	mlxcx.o mlxcx_dma.o mlxcx_cmd.o mlxcx_intr.o mlxcx_gld.o \
 #
 ENA_OBJS +=	ena.o ena_admin.o ena_dma.o ena_gld.o ena_hw.o ena_intr.o \
 		ena_stats.o ena_tx.o ena_rx.o
+
+#
+# t6mfg(7D)
+#
+T6MFG_OBJS += t6mfg.o
