@@ -50,6 +50,11 @@
 typedef struct t6mfg_devstate {
 	dev_info_t *		dip;
 	dev_t			dev;
+
+	ddi_acc_handle_t	pci_config_handle;
+
+	ddi_acc_handle_t	pio_kernel_regs_handle;
+	void			*pio_kernel_regs;
 } t6mfg_devstate_t;
 
 static int t6mfg_devo_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **result_p);
@@ -198,6 +203,30 @@ t6mfg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	ddi_set_driver_private(dip, (caddr_t)devstate_p);
 	devstate_p->dip = dip;
 
+	/*
+	 * Enable access to the PCI config space.
+	 */
+	rc = pci_config_setup(dip, &devstate_p->pci_config_handle);
+	if (rc != DDI_SUCCESS) {
+		dev_err(dip, CE_WARN, "failed to enable PCI config space access: %d", rc);
+		goto done;
+	}
+
+	/*
+	 * Enable MMIO access.
+	 */
+	ddi_device_acc_attr_t da = {
+		.devacc_attr_version = DDI_DEVICE_ATTR_V0,
+		.devacc_attr_endian_flags = DDI_STRUCTURE_LE_ACC,
+		.devacc_attr_dataorder = DDI_UNORDERED_OK_ACC
+	};
+
+	rc = ddi_regs_map_setup(dip, 1, (caddr_t *)&devstate_p->pio_kernel_regs, 0, 0, &da, &devstate_p->pio_kernel_regs_handle);
+	if (rc != DDI_SUCCESS) {
+		dev_err(dip, CE_WARN, "failed to map device registers: %d", rc);
+		goto done;
+	}
+
 done:
 	if (rc != DDI_SUCCESS) {
 		(void) t6mfg_devo_detach(dip, DDI_DETACH);
@@ -223,6 +252,12 @@ t6mfg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 	ddi_prop_remove_all(dip);
 	ddi_remove_minor_node(dip, NULL);
+
+	if (devstate_p->pio_kernel_regs_handle != NULL)
+		ddi_regs_map_free(&devstate_p->pio_kernel_regs_handle);
+
+	if (devstate_p->pci_config_handle != NULL)
+		pci_config_teardown(&devstate_p->pci_config_handle);
 
 #ifdef DEBUG
 	bzero(devstate_p, sizeof (*devstate_p));
