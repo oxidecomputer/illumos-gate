@@ -22,14 +22,38 @@
 #include <sys/modctl.h>
 #include <sys/open.h>
 #include <sys/pci.h>
+#include <sys/pci_cap.h>
 #include <sys/stat.h>
 #include <sys/sunddi.h>
+#include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 
 #ifndef PCI_VENDOR_ID_CHELSIO
 # define PCI_VENDOR_ID_CHELSIO 0x1425
 #endif
+
+#define PCI_CAP_VPD_ADDRESS_OFFSET	2
+#define PCI_CAP_VPD_DATA_OFFSET		4
+
+#define PCI_CAP_VPD_ADDRESS(f, a)	((((f) & PCI_CAP_VPD_ADDRESS_FLAG_MASK) << PCI_CAP_VPD_ADDRESS_FLAG_SHIFT) \
+					 | (((a) & PCI_CAP_VPD_ADDRESS_ADDRESS_MASK) << PCI_CAP_VPD_ADDRESS_ADDRESS_SHIFT))
+
+#define PCI_CAP_VPD_ADDRESS_FLAG_BITS	1
+#define PCI_CAP_VPD_ADDRESS_FLAG_SHIFT	15
+#define PCI_CAP_VPD_ADDRESS_FLAG_MASK	((1U << PCI_CAP_VPD_ADDRESS_FLAG_BITS) - 1)
+#define PCI_CAP_VPD_ADDRESS_FLAG(x)	(((x) >> PCI_CAP_VPD_ADDRESS_FLAG_SHIFT) & PCI_CAP_VPD_ADDRESS_FLAG_MASK)
+
+#define PCI_CAP_VPD_ADDRESS_FLAG_READ	0
+#define PCI_CAP_VPD_ADDRESS_FLAG_WRITE	1
+
+#define PCI_CAP_VPD_ADDRESS_ADDRESS_BITS	15
+#define PCI_CAP_VPD_ADDRESS_ADDRESS_SHIFT	0
+#define PCI_CAP_VPD_ADDRESS_ADDRESS_MASK	((1U << PCI_CAP_VPD_ADDRESS_ADDRESS_BITS) - 1)
+#define PCI_CAP_VPD_ADDRESS_ADDRESS(x)		(((x) >> PCI_CAP_VPD_ADDRESS_ADDRESS_SHIFT) & PCI_CAP_VPD_ADDRESS_ADDRESS_MASK)
+
+#define PCI_CAP_VPD_POLL_INTERVAL_USEC	100
+#define PCI_CAP_VPD_POLL_ITERATIONS		100
 
 #define T6MFG_MINOR_NODE_BITS		2
 #define T6MFG_MINOR_NODE_SHIFT		0
@@ -47,11 +71,39 @@
 #define T6MFG_NODE_SROM			0
 #define T6MFG_NODE_SPIDEV		1
 
+/* 
+ * T6 SROM contains a 1kB initialization block before the VPD data. When using
+ * the VPD capability to access SROM, the provided address is offset by the
+ * hardware so that VPD address 0x0 points to SROM address 0x400 where the VPD
+ * data begins.  The hardware wraps the address space so the initialization block
+ * becomes the last 1kB of the VPD address space (e.g. VPD address 0x7C00 == SROM
+ * address 0x0).
+ */
+#define T6MFG_VPD_TO_SROM_OFFSET			0x400
+
+/*
+ * SROM is accessed via VPD which provides a 15-bit, byte-indexed address space
+ * that must be accessed with dword-alignment. T6 reserves the last dword of the
+ * SROM address space to access the SPI EEPROM status register.
+ */
+#define T6MFG_SROM_MAX_ADDRESS				0x7ffb
+#define T6MFG_SROM_STATUS_REGISTER_ADDRESS	0x7ffc
+
+#define T6MFG_SROM_STATUS_REGISTER_RDY_L_BITS	1
+#define T6MFG_SROM_STATUS_REGISTER_RDY_L_SHIFT	0
+#define T6MFG_SROM_STATUS_REGISTER_RDY_L_MASK	((1U << T6MFG_SROM_STATUS_REGISTER_RDY_L_BITS) - 1)
+#define T6MFG_SROM_STATUS_REGISTER_RDY_L(x)		(((x) >> T6MFG_SROM_STATUS_REGISTER_RDY_L_SHIFT) & T6MFG_SROM_STATUS_REGISTER_RDY_L_MASK)
+
+#define T6MFG_SROM_WRITE_POLL_INTERVAL_USEC		1000
+#define T6MFG_SROM_WRITE_POLL_ITERATIONS		20
+
 typedef struct t6mfg_devstate {
 	dev_info_t *		dip;
 	dev_t			dev;
 
 	ddi_acc_handle_t	pci_config_handle;
+	uint16_t		vpd_base;
+	kmutex_t		vpd_lock;
 
 	ddi_acc_handle_t	pio_kernel_regs_handle;
 	void			*pio_kernel_regs;
@@ -221,6 +273,8 @@ t6mfg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	ddi_set_driver_private(dip, (caddr_t)devstate_p);
 	devstate_p->dip = dip;
 
+	mutex_init(&devstate_p->vpd_lock, NULL, MUTEX_DRIVER, NULL);
+
 	/*
 	 * Enable access to the PCI config space.
 	 */
@@ -285,6 +339,8 @@ t6mfg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 	ddi_prop_remove_all(dip);
 	ddi_remove_minor_node(dip, NULL);
+
+	mutex_destroy(&devstate_p->vpd_lock);
 
 	if (devstate_p->pio_kernel_regs_handle != NULL)
 		ddi_regs_map_free(&devstate_p->pio_kernel_regs_handle);
@@ -396,8 +452,134 @@ t6mfg_cb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *
 	}
 }
 
+static int t6mfg_vpd_read(t6mfg_devstate_t *devstate_p, uint16_t vpd_address, uint32_t *data) {
+	int retval = DDI_SUCCESS;
+
+	/* Per PCI Local Bus 3.0 spec, VPD address must be DWORD aligned */
+	if (vpd_address & 0x0003)
+		return (DDI_EINVAL);
+
+	mutex_enter(&devstate_p->vpd_lock);
+
+	/* Trigger read */
+	int rc = pci_cap_put(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_16,
+			PCI_CAP_ID_VPD, devstate_p->vpd_base, PCI_CAP_VPD_ADDRESS_OFFSET,
+			PCI_CAP_VPD_ADDRESS(PCI_CAP_VPD_ADDRESS_FLAG_READ, vpd_address));
+	if (rc != DDI_SUCCESS) {
+		dev_err(devstate_p->dip, CE_WARN, "write to VPD address register failed: %d", rc);
+		retval = DDI_FAILURE;
+		goto done;
+	}
+
+	/* Poll until read is completed */
+	for(int ii = 0; ; ++ii) {
+		uint32_t vpd_reg_addr = pci_cap_get(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_16,
+			PCI_CAP_ID_VPD, devstate_p->vpd_base, PCI_CAP_VPD_ADDRESS_OFFSET);
+
+		if (vpd_reg_addr == PCI_CAP_EINVAL16) {
+			dev_err(devstate_p->dip, CE_WARN, "error reading VPD address register");
+			retval = DDI_FAILURE;
+			goto done;
+		} else if (PCI_CAP_VPD_ADDRESS_FLAG(vpd_reg_addr) != PCI_CAP_VPD_ADDRESS_FLAG_READ) {
+			break;
+		} else if (ii == PCI_CAP_VPD_POLL_ITERATIONS) {
+			dev_err(devstate_p->dip, CE_WARN, "VPD read timeout");
+			retval = DDI_FAILURE;
+			goto done;
+		} else {
+			drv_usecwait(PCI_CAP_VPD_POLL_INTERVAL_USEC);
+		}
+	}
+
+	*data = pci_cap_get(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_32,
+		PCI_CAP_ID_VPD, devstate_p->vpd_base, PCI_CAP_VPD_DATA_OFFSET);	
+
+done:
+	mutex_exit(&devstate_p->vpd_lock);
+
+	return retval;
+}
+
+static int t6mfg_vpd_write(t6mfg_devstate_t *devstate_p, uint16_t vpd_address, uint32_t data) {
+	int retval = DDI_SUCCESS;
+
+	/* Per PCI Local Bus 3.0 spec, VPD address must be DWORD aligned */
+	if (vpd_address & 0x0003)
+		return (DDI_EINVAL);
+
+	mutex_enter(&devstate_p->vpd_lock);
+
+	/* Stage dword to be written */
+	int rc = pci_cap_put(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_32,
+			PCI_CAP_ID_VPD, devstate_p->vpd_base, PCI_CAP_VPD_DATA_OFFSET,
+			data);
+	if (rc != DDI_SUCCESS) {
+		dev_err(devstate_p->dip, CE_WARN, "write to VPD data register failed: %d", rc);
+		retval = DDI_FAILURE;
+		goto done;
+	}
+
+	/* Trigger write */
+	rc = pci_cap_put(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_16,
+				PCI_CAP_ID_VPD, devstate_p->vpd_base, PCI_CAP_VPD_ADDRESS_OFFSET,
+				PCI_CAP_VPD_ADDRESS(PCI_CAP_VPD_ADDRESS_FLAG_WRITE, vpd_address));
+	if (rc != DDI_SUCCESS) {
+		dev_err(devstate_p->dip, CE_WARN, "write to VPD address register failed: %d", rc);
+		retval = DDI_FAILURE;
+		goto done;
+	}
+
+	/* Poll until write is complete */
+	for (int ii = 0; ; ++ii) {
+		uint32_t vpd_reg_addr = pci_cap_get(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_16,
+				PCI_CAP_ID_VPD, devstate_p->vpd_base, PCI_CAP_VPD_ADDRESS_OFFSET);
+
+		if (vpd_reg_addr == PCI_CAP_EINVAL16) {
+			dev_err(devstate_p->dip, CE_WARN, "error reading VPD address register");
+			retval = DDI_FAILURE;
+			goto done;
+		} else if (PCI_CAP_VPD_ADDRESS_FLAG(vpd_reg_addr) != PCI_CAP_VPD_ADDRESS_FLAG_WRITE) {
+			break;
+		} else if (ii == PCI_CAP_VPD_POLL_ITERATIONS) {
+			dev_err(devstate_p->dip, CE_WARN, "VPD write timeout");
+			retval = DDI_FAILURE;
+			goto done;
+		} else {
+			drv_usecwait(PCI_CAP_VPD_POLL_INTERVAL_USEC);
+		}
+	}
+
+done:
+	mutex_exit(&devstate_p->vpd_lock);
+
+	return retval;
+}
+
 static int t6mfg_srom_open(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
-	return (0);
+	int retval = 0;
+
+	/*
+	 * SROM access is via VPD capability.  Locate it now both to tell the
+	 * user early if there is a problem and to speed up read/write
+	 * accesses.
+	 */
+
+	mutex_enter(&devstate_p->vpd_lock);
+
+	if (devstate_p->vpd_base == 0) {
+		int rc = PCI_CAP_LOCATE(devstate_p->pci_config_handle, PCI_CAP_ID_VPD,
+				&devstate_p->vpd_base);
+		if (rc != DDI_SUCCESS) {
+			dev_err(devstate_p->dip, CE_WARN, "unable to locate VPD capability: %d", rc);
+			retval = ENXIO;
+			goto done;
+		}
+	}
+
+done:
+	mutex_exit(&devstate_p->vpd_lock);
+
+	return retval;
 }
 
 static int t6mfg_srom_close(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
@@ -405,11 +587,92 @@ static int t6mfg_srom_close(t6mfg_devstate_t *devstate_p, int flag, int otype, c
 }
 
 static int t6mfg_srom_read(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
-	return (ENOTSUP);
+	while (uio_p->uio_offset <= T6MFG_SROM_MAX_ADDRESS && uio_p->uio_resid > 0) {
+		uint16_t vpd_address = uio_p->uio_offset - T6MFG_VPD_TO_SROM_OFFSET;
+
+		/* Per PCI 3.0 spec, VPD accesses must be DWORD aligned */
+		uint16_t vpd_dword_address = vpd_address & 0xfffc;
+		uint16_t vpd_dword_byte_offset = vpd_address & 0x0003;
+
+		uint32_t vpd_dword_data;
+		int rc = t6mfg_vpd_read(devstate_p, vpd_dword_address, &vpd_dword_data);
+		if (rc != DDI_SUCCESS) {
+			dev_err(devstate_p->dip, CE_WARN, "SROM read via VPD failed: %d", rc);
+			return EIO;
+		}
+
+		rc = uiomove((void*)&vpd_dword_data + vpd_dword_byte_offset,
+				MIN(uio_p->uio_resid, sizeof(uint32_t) - vpd_dword_byte_offset),
+				UIO_READ, uio_p);
+		if (rc != DDI_SUCCESS) {
+			dev_err(devstate_p->dip, CE_WARN, "error copying SROM data to uio buffer: %d", rc);
+			return EIO;
+		}
+	}
+
+	return 0;
 }
 
 static int t6mfg_srom_write(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
-	return (ENOTSUP);
+	while (uio_p->uio_offset <= T6MFG_SROM_MAX_ADDRESS && uio_p->uio_resid > 0) {
+		uint16_t vpd_address = uio_p->uio_offset - T6MFG_VPD_TO_SROM_OFFSET;
+
+		/* Per PCI 3.0 spec, VPD accesses must be DWORD aligned */
+		uint16_t vpd_dword_address = vpd_address & 0xfffc;
+		uint16_t vpd_dword_byte_offset = vpd_address & 0x0003;
+
+		uint32_t vpd_dword_data;
+
+		/*
+		 * If destination is not dword aligned, read the existing full dword
+		 * to turn this into a read-modify-write.
+		 */
+		if (vpd_dword_byte_offset != 0 || uio_p->uio_resid < sizeof(uint32_t)) {
+			int rc = t6mfg_vpd_read(devstate_p, vpd_dword_address, &vpd_dword_data);
+			if (rc != DDI_SUCCESS) {
+				dev_err(devstate_p->dip, CE_WARN, "SROM read via VPD failed: %d", rc);
+				return EIO;
+			}
+		}
+
+		int rc = uiomove((void*)&vpd_dword_data + vpd_dword_byte_offset,
+				MIN(uio_p->uio_resid, sizeof(uint32_t) - vpd_dword_byte_offset),
+				UIO_WRITE, uio_p);
+		if (rc != DDI_SUCCESS) {
+			return EIO;
+		}
+
+		rc = t6mfg_vpd_write(devstate_p, vpd_dword_address, vpd_dword_data);
+		if (rc != DDI_SUCCESS) {
+			dev_err(devstate_p->dip, CE_WARN, "SROM write via VPD failed: %d", rc);
+			return EIO;
+		}
+
+		/*
+		 * VPD write only initiates the write to the SPI EEPROM.  Need to wait
+		 * for the write to complete which can be determined by polling the SROM
+		 * Status Register.
+		 */
+		for (int ii = 0; ; ++ii) {
+			uint32_t srom_status_reg;
+			rc = t6mfg_vpd_read(devstate_p, T6MFG_SROM_STATUS_REGISTER_ADDRESS - T6MFG_VPD_TO_SROM_OFFSET, &srom_status_reg);
+			if (rc != DDI_SUCCESS) {
+				dev_err(devstate_p->dip, CE_WARN, "failed to read SROM status register: %d", rc);
+				return EIO;
+			}
+
+			if (T6MFG_SROM_STATUS_REGISTER_RDY_L(srom_status_reg) == 0) {
+				break;
+			} else if (ii == T6MFG_SROM_WRITE_POLL_ITERATIONS) {
+				dev_err(devstate_p->dip, CE_WARN, "SROM write timeout");
+				return EIO;
+			} else {
+				drv_usecwait(T6MFG_SROM_WRITE_POLL_INTERVAL_USEC);
+			}
+		}
+	}
+
+	return 0;
 }
 
 static int t6mfg_srom_ioctl(t6mfg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
