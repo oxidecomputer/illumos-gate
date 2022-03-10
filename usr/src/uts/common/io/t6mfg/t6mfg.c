@@ -62,15 +62,33 @@ static int t6mfg_devo_probe(dev_info_t *dip);
 static int t6mfg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd);
 static int t6mfg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd);
 
+static int t6mfg_cb_open(dev_t *dev_p, int flag, int otyp, cred_t *cred_p);
+static int t6mfg_cb_close(dev_t dev, int flag, int otyp, cred_t *cred_p);
+static int t6mfg_cb_read(dev_t dev, struct uio *uio_p, cred_t *cred_p);
+static int t6mfg_cb_write(dev_t dev, struct uio *uio_p, cred_t *cred_p);
+static int t6mfg_cb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p);
+
+static int t6mfg_srom_open(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int t6mfg_srom_close(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int t6mfg_srom_read(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int t6mfg_srom_write(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int t6mfg_srom_ioctl(t6mfg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p);
+
+static int t6mfg_spidev_open(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int t6mfg_spidev_close(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p);
+static int t6mfg_spidev_read(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int t6mfg_spidev_write(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p);
+static int t6mfg_spidev_ioctl(t6mfg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p);
+
 struct cb_ops t6mfg_cb_ops = {
-	.cb_open =		nodev,
-	.cb_close =		nodev,
+	.cb_open =		t6mfg_cb_open,
+	.cb_close =		t6mfg_cb_close,
 	.cb_strategy =		nodev,
 	.cb_print =		nodev,
 	.cb_dump =		nodev,
-	.cb_read =		nodev,
-	.cb_write =		nodev,
-	.cb_ioctl =		nodev,
+	.cb_read =		t6mfg_cb_read,
+	.cb_write =		t6mfg_cb_write,
+	.cb_ioctl =		t6mfg_cb_ioctl,
 	.cb_devmap =		nodev,
 	.cb_mmap =		nodev,
 	.cb_segmap =		nodev,
@@ -227,6 +245,21 @@ t6mfg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto done;
 	}
 
+	/*
+	 * Create minor nodes for SROM and SPIDEV
+	 */
+	rc = ddi_create_minor_node(dip, "srom", S_IFCHR, T6MFG_MINOR(instance, T6MFG_NODE_SROM), DDI_PSEUDO, 0);
+	if (rc != DDI_SUCCESS) {
+		dev_err(dip, CE_WARN, "failed to create SROM device node: %d", rc);
+		goto done;
+	}
+
+	rc = ddi_create_minor_node(dip, "spidev", S_IFCHR, T6MFG_MINOR(instance, T6MFG_NODE_SPIDEV), DDI_PSEUDO, 0);
+	if (rc != DDI_SUCCESS) {
+		dev_err(dip, CE_WARN, "failed to create SROM device node: %d", rc);
+		goto done;
+	}
+
 done:
 	if (rc != DDI_SUCCESS) {
 		(void) t6mfg_devo_detach(dip, DDI_DETACH);
@@ -265,4 +298,140 @@ t6mfg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	ddi_soft_state_free(t6mfg_devstate_list, instance);
 
 	return (DDI_SUCCESS);
+}
+
+/* ARGSUSED */
+static int
+t6mfg_cb_open(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
+{
+	minor_t minor = getminor(*dev_p);
+	int instance = T6MFG_MINOR_INSTANCE(minor);
+	t6mfg_devstate_t *devstate_p = ddi_get_soft_state(t6mfg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (T6MFG_MINOR_NODE(minor)) {
+		case T6MFG_NODE_SROM:
+			return t6mfg_srom_open(devstate_p, flag, otyp, cred_p);
+		case T6MFG_NODE_SPIDEV:
+			return t6mfg_spidev_open(devstate_p, flag, otyp, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+/* ARGSUSED */
+static int
+t6mfg_cb_close(dev_t dev, int flag, int otyp, cred_t *cred_p)
+{
+	minor_t minor = getminor(dev);
+	int instance = T6MFG_MINOR_INSTANCE(minor);
+	t6mfg_devstate_t *devstate_p = ddi_get_soft_state(t6mfg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (T6MFG_MINOR_NODE(minor)) {
+		case T6MFG_NODE_SROM:
+			return t6mfg_srom_close(devstate_p, flag, otyp, cred_p);
+		case T6MFG_NODE_SPIDEV:
+			return t6mfg_spidev_close(devstate_p, flag, otyp, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+static int
+t6mfg_cb_read(dev_t dev, struct uio *uio_p, cred_t *cred_p) {
+	minor_t minor = getminor(dev);
+	int instance = T6MFG_MINOR_INSTANCE(minor);
+	t6mfg_devstate_t *devstate_p = ddi_get_soft_state(t6mfg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (T6MFG_MINOR_NODE(minor)) {
+		case T6MFG_NODE_SROM:
+		       return t6mfg_srom_read(devstate_p, uio_p, cred_p);
+		case T6MFG_NODE_SPIDEV:
+		       return t6mfg_spidev_read(devstate_p, uio_p, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+static int
+t6mfg_cb_write(dev_t dev, struct uio *uio_p, cred_t *cred_p) {
+	minor_t minor = getminor(dev);
+	int instance = T6MFG_MINOR_INSTANCE(minor);
+	t6mfg_devstate_t *devstate_p = ddi_get_soft_state(t6mfg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (T6MFG_MINOR_NODE(minor)) {
+		case T6MFG_NODE_SROM:
+		       return t6mfg_srom_write(devstate_p, uio_p, cred_p);
+		case T6MFG_NODE_SPIDEV:
+		       return t6mfg_spidev_write(devstate_p, uio_p, cred_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+/* ARGSUSED */
+static int
+t6mfg_cb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p)
+{
+	minor_t minor = getminor(dev);
+	int instance = T6MFG_MINOR_INSTANCE(minor);
+	t6mfg_devstate_t *devstate_p = ddi_get_soft_state(t6mfg_devstate_list, instance);
+	if (devstate_p == NULL)
+		return (ENXIO);
+
+	switch (T6MFG_MINOR_NODE(minor)) {
+		case T6MFG_NODE_SROM:
+			return t6mfg_srom_ioctl(devstate_p, cmd, arg, mode, cred_p, rval_p);
+		case T6MFG_NODE_SPIDEV:
+			return t6mfg_spidev_ioctl(devstate_p, cmd, arg, mode, cred_p, rval_p);
+		default:
+			return (ENXIO);
+	}
+}
+
+static int t6mfg_srom_open(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int t6mfg_srom_close(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int t6mfg_srom_read(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int t6mfg_srom_write(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int t6mfg_srom_ioctl(t6mfg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
+	return (ENOTTY);
+}
+
+static int t6mfg_spidev_open(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int t6mfg_spidev_close(t6mfg_devstate_t *devstate_p, int flag, int otype, cred_t *cred_p) {
+	return (0);
+}
+
+static int t6mfg_spidev_read(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int t6mfg_spidev_write(t6mfg_devstate_t *devstate_p, struct uio *uio_p, cred_t *cred_p) {
+	return (ENOTSUP);
+}
+
+static int t6mfg_spidev_ioctl(t6mfg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
+	return (ENOTTY);
 }
