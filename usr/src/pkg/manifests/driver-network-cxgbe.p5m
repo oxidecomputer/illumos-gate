@@ -26,6 +26,7 @@ dir  path=kernel/drv group=sys
 dir  path=kernel/drv/$(ARCH64) group=sys
 file path=kernel/drv/$(ARCH64)/cxgbe group=sys
 file path=kernel/drv/$(ARCH64)/t4nex group=sys
+file path=kernel/drv/$(ARCH64)/t6mfg group=sys
 dir  path=usr group=sys
 dir  path=usr/sbin
 file path=usr/sbin/cxgbetool mode=0555
@@ -136,5 +137,6 @@ driver name=t4nex perms="* 0666 root sys" clone_perms="t4nex 0666 root sys" \
     alias=pciex1425,6489 \
     alias=pciex1425,648a \
     alias=pciex1425,648b devlink=type=ddi_ctl:devctl;minor1=t4nex\tt4nex\M2
+driver name=t6mfg alias=pciex1425,b000
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL

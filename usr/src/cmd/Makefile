@@ -500,6 +500,7 @@ i386_SUBDIRS=		\
 	rdmsr		\
 	rsrvrctl	\
 	rtc		\
+	t6mfgtool	\
 	ucodeadm	\
 	xhci		\
 	xvm
