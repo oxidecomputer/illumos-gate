@@ -540,6 +540,7 @@ CHKHDRS=			\
 	sockfilter.h		\
 	sockio.h		\
 	soundcard.h		\
+	spi.h			\
 	squeue.h		\
 	squeue_impl.h		\
 	srn.h			\
