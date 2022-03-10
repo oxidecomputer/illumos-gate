@@ -20,10 +20,12 @@
 #include <sys/errno.h>
 #include <sys/mkdev.h>
 #include <sys/modctl.h>
+#include <sys/model.h>
 #include <sys/open.h>
 #include <sys/pci.h>
 #include <sys/pci_cap.h>
 #include <sys/sdt.h>
+#include <sys/spi.h>
 #include <sys/stat.h>
 #include <sys/sunddi.h>
 #include <sys/sysmacros.h>
@@ -150,6 +152,8 @@ typedef struct t6mfg_devstate {
 
 	ddi_acc_handle_t	pio_kernel_regs_handle;
 	void			*pio_kernel_regs;
+
+	kmutex_t		sf_lock;
 } t6mfg_devstate_t;
 
 static int t6mfg_devo_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **result_p);
@@ -317,6 +321,7 @@ t6mfg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	devstate_p->dip = dip;
 
 	mutex_init(&devstate_p->vpd_lock, NULL, MUTEX_DRIVER, NULL);
+	mutex_init(&devstate_p->sf_lock, NULL, MUTEX_DRIVER, NULL);
 
 	/*
 	 * Enable access to the PCI config space.
@@ -383,6 +388,7 @@ t6mfg_devo_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	ddi_prop_remove_all(dip);
 	ddi_remove_minor_node(dip, NULL);
 
+	mutex_destroy(&devstate_p->sf_lock);
 	mutex_destroy(&devstate_p->vpd_lock);
 
 	if (devstate_p->pio_kernel_regs_handle != NULL)
@@ -766,5 +772,105 @@ t6mfg_reg_write(t6mfg_devstate_t *devstate_p, uint32_t reg, uint32_t val)
 }
 
 static int t6mfg_spidev_ioctl(t6mfg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
-	return (ENOTTY);
+	STRUCT_DECL(spidev_transaction, xact);
+	STRUCT_DECL(spidev_transfer, xfer);
+
+	if (cmd != SPIDEV_TRANSACTION)
+		return (ENOTTY);
+
+	STRUCT_INIT(xact, mode);
+	STRUCT_INIT(xfer, mode);
+
+	if (copyin((void*)arg, STRUCT_BUF(xact), STRUCT_SIZE(xact)))
+		return (EFAULT);
+
+	int rc = 0;
+	mutex_enter(&devstate_p->sf_lock);
+
+	for (int ii = 0; ii < 10; ++ii) {
+		if (!SF_OP_BUSY(t6mfg_reg_read(devstate_p, SF_OP_ADDR)))
+			break;
+
+		drv_usecwait(1);
+	}
+
+	if (SF_OP_BUSY(t6mfg_reg_read(devstate_p, SF_OP_ADDR))) {
+		mutex_exit(&devstate_p->sf_lock);
+		return (EBUSY);
+	}
+
+	int nxfers = STRUCT_FGET(xact, spidev_nxfers);
+	for (int xfer_idx = 0; xfer_idx < nxfers; xfer_idx++) {
+		void *xfer_up = STRUCT_FGETP(xact, spidev_xfers) + xfer_idx * STRUCT_SIZE(xfer);
+
+		if (copyin(xfer_up, STRUCT_BUF(xfer), STRUCT_SIZE(xfer))) {
+			rc = EFAULT;
+			goto done;
+		}
+
+		// CS# is implicitly asserted at the start of each transfer.
+		// CS# is implicilty deasserted at the end of the last transfer
+		// in a transaction.
+		// CS# may be explicitly deasserted at the end of any transfer
+		// by setting deassert_cs_after to 1.
+		int deassert_cs_after_xfer = ((xfer_idx + 1) == nxfers) || STRUCT_FGET(xfer, deassert_cs);
+
+		for (int cur_byte = 0; cur_byte < STRUCT_FGET(xfer, len); cur_byte += 4) {
+			int bytes_to_transfer = min(STRUCT_FGET(xfer, len) - cur_byte, 4);
+			int sf_op_op = SF_OP_OP_READ;
+
+			/* Stage transmit word into transmit register */
+			if (STRUCT_FGETP(xfer, tx_buf) != NULL) {
+				sf_op_op = SF_OP_OP_WRITE;
+
+				uint32_t tx_data = 0;
+				const void *tx_buf_up = STRUCT_FGETP(xfer, tx_buf) + cur_byte;
+				if (copyin(tx_buf_up, &tx_data, bytes_to_transfer)) {
+					rc = EFAULT;
+					goto done;
+				}
+
+				t6mfg_reg_write(devstate_p, SF_DATA_ADDR,
+				    tx_data);
+			}
+
+			/* Trigger transfer. If this is the last chunk of a transfer and CS is to be deasserted, do so. */
+			int deassert_cs = ((cur_byte + bytes_to_transfer) == STRUCT_FGET(xfer, len)) ? deassert_cs_after_xfer : 0;
+			t6mfg_reg_write(devstate_p, SF_OP_ADDR, SF_OP(sf_op_op, bytes_to_transfer, !deassert_cs, 1));
+
+			/* Poll until controller has finished the operation */
+			for (int ii = 0; ii < 10; ++ii) {
+				if (!SF_OP_BUSY(t6mfg_reg_read(devstate_p, SF_OP_ADDR)))
+					break;
+
+				drv_usecwait(1);
+			}
+
+			if (SF_OP_BUSY(t6mfg_reg_read(devstate_p, SF_OP_ADDR))) {
+				rc = EIO;
+				goto done;
+			}
+
+			/* Retrieve received word */
+			if (STRUCT_FGETP(xfer, rx_buf) != NULL) {
+				uint32_t rx_data = t6mfg_reg_read(devstate_p, SF_DATA_ADDR);
+
+				void *rx_buf_up = STRUCT_FGETP(xfer, rx_buf) + cur_byte;
+				if (copyout(&rx_data, rx_buf_up, bytes_to_transfer)) {
+					rc = EFAULT;
+					goto done;
+				}
+			}
+		}
+
+		/* User-requested delay between transfers */
+		drv_usecwait(STRUCT_FGET(xfer, delay_usec));
+	}
+
+done:
+	/* Unlock SF */
+	t6mfg_reg_write(devstate_p, SF_OP_ADDR, SF_OP(SF_OP_OP_READ, 0, 0, 0));
+
+	mutex_exit(&devstate_p->sf_lock);
+	return (rc);
 }
