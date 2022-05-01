@@ -1431,6 +1431,7 @@ typedef struct milan_pcie_bridge {
 	zen_dxio_engine_t		*mpb_engine;
 	smu_hotplug_type_t		mpb_hp_type;
 	uint16_t			mpb_hp_slotno;
+	uint32_t			mpb_hp_smu_mask;
 } milan_pcie_bridge_t;
 
 /*
@@ -5657,10 +5658,102 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 		bridge->mpb_flags |= MILAN_PCIE_BRIDGE_F_HOTPLUG;
 		bridge->mpb_hp_type = map->shm_format;
 		bridge->mpb_hp_slotno = slot;
+		bridge->mpb_hp_smu_mask = entry[i].se_func.shf_mask;
 	}
 
 	return (cont);
 }
+
+/*
+ * Determine the set of feature bits that should be enabled. If this is Ethanol,
+ * use our hacky static versions for a moment.
+ */
+static uint32_t
+milan_hotplug_bridge_features(milan_fabric_t *fabric,
+    milan_pcie_bridge_t *bridge)
+{
+	uint32_t feats;
+
+	if (milan_board_type(fabric) == ETHANOL) {
+		if (bridge->mpb_hp_type == SMU_HP_ENTERPRISE_SSD) {
+			return (ethanolx_pcie_slot_cap_entssd);
+		} else {
+			return (ethanolx_pcie_slot_cap_express);
+		}
+	}
+
+	feats = PCIE_SLOTCAP_HP_SURPRISE | PCIE_SLOTCAP_HP_CAPABLE;
+
+	/*
+	 * The set of features we enable changes based on the type of hotplug
+	 * mode. While Enterprise SSD uses a static set of features, the various
+	 * ExpressModule modes have a mask register that is used to tell the SMU
+	 * that it doesn't support a given feature. As such, we check for these
+	 * masks to determine what to enable. Because these bits are used to
+	 * turn off features in the SMU, we check for the absence of it (e.g. ==
+	 * 0) to indicate that we should enable the feature.
+	 */
+	switch (bridge->mpb_hp_type) {
+	case SMU_HP_ENTERPRISE_SSD:
+		/*
+		 * For Enterprise SSD the set of features that are supported are
+		 * considered a constant and this doesn't really vary based on
+		 * the board. There is no power control, just surprise hotplug
+		 * capabilities. Apparently in this mode there is no SMU command
+		 * completion.
+		 */
+		return (feats | PCIE_SLOTCAP_NO_CMD_COMP_SUPP);
+	case SMU_HP_EXPRESS_MODULE_A:
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_EMILS) == 0 ||
+		    (bridge->mpb_hp_smu_mask & SMU_ENTA_EMIL) == 0) {
+			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_PWREN) == 0) {
+			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_ATTNLED) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_PWRLED) == 0) {
+			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
+		}
+		break;
+	case SMU_HP_EXPRESS_MODULE_B:
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_EMILS) == 0 ||
+		    (bridge->mpb_hp_smu_mask & SMU_ENTB_EMIL) == 0) {
+			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_PWREN) == 0) {
+			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_ATTNLED) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
+		}
+
+		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_PWRLED) == 0) {
+			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
+		}
+		break;
+	default:
+		return (0);
+	}
+
+	return (feats);
+}
+
 
 /*
  * At this point we need to go through and prep all hotplug-capable bridges.
@@ -5730,30 +5823,26 @@ milan_hotplug_bridge_init(milan_fabric_t *fabric, milan_soc_t *soc,
 	    MILAN_PCIE_PORT_R_SMN_PORT_CNTL, val);
 
 	/*
-	 * Go through and set up the slot capabilities. Some of what we set is
-	 * dependent on the hotplug mode and the platform. XXX This is
-	 * hardcoding Ethanol assumptions right now. The slot mask is what we
-	 * expect the board to need to tell us.
-	 *
-	 * Do not set the slot power stuff at this time. XXX figure out when we
-	 * should do this.
+	 * Go through and set up the slot capabilities register. In our case
+	 * we've already filtered out the non-hotplug capable bridges. To
+	 * determine the set of hotplug features that should be set here we
+	 * derive that from the acutal hoptlug entities. Because one is required
+	 * to give the SMU a list of functions to mask, the umasked bits tells
+	 * us what to enable as features here.
 	 */
 	slot_mask = PCIE_SLOTCAP_ATTN_BUTTON | PCIE_SLOTCAP_POWER_CONTROLLER |
 	    PCIE_SLOTCAP_MRL_SENSOR | PCIE_SLOTCAP_ATTN_INDICATOR |
 	    PCIE_SLOTCAP_PWR_INDICATOR | PCIE_SLOTCAP_HP_SURPRISE |
 	    PCIE_SLOTCAP_HP_CAPABLE | PCIE_SLOTCAP_EMI_LOCK_PRESENT |
 	    PCIE_SLOTCAP_NO_CMD_COMP_SUPP;
+
 	val = pci_getl_func(ioms->mio_pci_busno, bridge->mpb_device,
 	    bridge->mpb_func, MILAN_BRIDGE_R_PCI_SLOT_CAP);
 	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
 	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
 	val |= bridge->mpb_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	val &= ~slot_mask;
-	if (bridge->mpb_hp_type == SMU_HP_ENTERPRISE_SSD) {
-		val |= ethanolx_pcie_slot_cap_entssd;
-	} else {
-		val |= ethanolx_pcie_slot_cap_express;
-	}
+	val |= milan_hotplug_bridge_features(fabric, bridge);
 	pci_putl_func(ioms->mio_pci_busno, bridge->mpb_device,
 	    bridge->mpb_func, MILAN_BRIDGE_R_PCI_SLOT_CAP, val);
 
@@ -5842,14 +5931,6 @@ milan_hotplug_init(milan_fabric_t *fabric)
 {
 	milan_hotplug_t *hp = &fabric->mf_hotplug;
 	milan_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
-
-	/*
-	 * XXX For the interim, don't bother doing this on Gimlet as most folks
-	 * won't have it work.
-	 */
-	if (fabric->mf_nsocs == 1) {
-		return (B_TRUE);
-	}
 
 	/*
 	 * These represent the addresses that we need to program in the SMU.
