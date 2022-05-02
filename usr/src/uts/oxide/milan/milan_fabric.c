@@ -969,8 +969,16 @@ typedef enum milan_iommul1_type {
  */
 
 /*
+ * PCIERCCFG::PCIE_CAP. This is the core PCIe capability register offset. This
+ * is related to the PCIE_PCIECAP, but already adjusted for the fixed capability
+ * offset.
+ */
+#define	MILAN_BRIDGE_R_PCI_PCIE_CAP	0x5a
+
+/*
  * PCIERCCFG::SLOT_CAP. This is the PCIe capability's slot capability register.
- * This is the illumos PCIE_SLOTCAP.
+ * This is the illumos PCIE_SLOTCAP, but already adjusted for the capability
+ * offset.
  */
 #define	MILAN_BRIDGE_R_PCI_SLOT_CAP	0x6c
 
@@ -5479,6 +5487,23 @@ milan_fabric_init_bridges(milan_fabric_t *fabric, milan_soc_t *soc,
 	val = MILAN_PCIE_PORT_R_SET_TX_CNTL_TLP_FLUSH_DOWN_DIS(val, 0);
 	milan_bridge_port_write32(iodie, bridge, MILAN_PCIE_PORT_R_SMN_TX_CNTL,
 	    val);
+
+	/*
+	 * Software expects to see the PCIe slot implemented bit when a slot
+	 * actually exists. or us, this is basically anything that actually is
+	 * considered MAPPED. Set that now on the bridge.
+	 */
+#if 0
+	if ((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_MAPPED) != 0) {
+		uint16_t reg;
+
+		reg = pci_getl_func(ioms->mio_pci_busno, bridge->mpb_device,
+		    bridge->mpb_func, MILAN_BRIDGE_R_PCI_PCIE_CAP);
+		reg |= PCIE_PCIECAP_SLOT_IMPL;
+		pci_putl_func(ioms->mio_pci_busno, bridge->mpb_device,
+		    bridge->mpb_func, MILAN_BRIDGE_R_PCI_PCIE_CAP, reg);
+	}
+#endif
 
 	return (0);
 }
