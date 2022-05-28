@@ -1,0 +1,63 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2022 Oxide Computer Company
+#
+
+#
+# MAPFILE HEADER START
+#
+# WARNING:  STOP NOW.  DO NOT MODIFY THIS FILE.
+# Object versioning must comply with the rules detailed in
+#
+#	usr/src/lib/README.mapfiles
+#
+# You should not be making modifications here until you've read the most current
+# copy of that file. If you need help, contact a gatekeeper for guidance.
+#
+# MAPFILE HEADER END
+#
+
+$mapfile_version 2
+
+SYMBOL_VERSION ILLUMOSprivate {
+    global:
+	t6_mfg_discover;
+	t6_mfg_err;
+	t6_mfg_err2str;
+	t6_mfg_errmsg;
+	t6_mfg_flash_erase;
+	t6_mfg_flash_img_info;
+	t6_mfg_flash_read;
+	t6_mfg_flash_set_base;
+	t6_mfg_flash_set_file;
+	t6_mfg_flash_validate;
+	t6_mfg_flash_write;
+	t6_mfg_fini;
+	t6_mfg_init;
+	t6_mfg_set_dev;
+	t6_mfg_set_output;
+	t6_mfg_set_progress_cb;
+	t6_mfg_srom_read;
+	t6_mfg_srom_region_iter;
+	t6_mfg_srom_set_base;
+	t6_mfg_srom_set_file;
+	t6_mfg_srom_set_id;
+	t6_mfg_srom_set_pn;
+	t6_mfg_srom_set_sn;
+	t6_mfg_srom_set_mac;
+	t6_mfg_srom_validate;
+	t6_mfg_srom_write;
+	t6_mfg_syserr;
+    local:
+        *;
+};
