@@ -344,6 +344,9 @@ t6_mfg_err2str(t6_mfg_t *t6mfg, t6_mfg_err_t err)
 	}
 }
 
+static boolean_t t6_mfg_error(t6_mfg_t *, t6_mfg_err_t, int32_t, const char *,
+    ...) __PRINTFLIKE(4);
+
 static boolean_t
 t6_mfg_error(t6_mfg_t *t6mfg, t6_mfg_err_t err, int32_t sys, const char *fmt,
     ...)
@@ -1482,9 +1485,11 @@ t6_mfg_flash_read(t6_mfg_t *t6mfg, t6_mfg_source_t source,
 			    t6mfg->t6m_data_buf)) {
 				t6_mfg_progress(t6mfg, T6_MFG_PROG_ERROR, off,
 				    T6_SPI_LEN);
-				return (t6_mfg_error(t6mfg, T6_MFG_ERR_LIBISPI, 0,
-				    "failed to read from SPI device at offset %zu: "
-				    "%s (0x%x/%d)", off, ispi_errmsg(t6mfg->t6m_ispi),
+				return (t6_mfg_error(t6mfg, T6_MFG_ERR_LIBISPI,
+				    0, "failed to read from SPI device %d at "
+				    "offset %" PRIu64 ": %s (0x%x/%d)",
+				    t6mfg->t6m_inst, off,
+				    ispi_errmsg(t6mfg->t6m_ispi),
 				    ispi_err(t6mfg->t6m_ispi),
 				    ispi_syserr(t6mfg->t6m_ispi)));
 			}
@@ -1554,8 +1559,8 @@ t6_mfg_flash_spi_read(t6_mfg_t *t6mfg, size_t foff, size_t nbytes,
 
 	if (!ispi_read(t6mfg->t6m_ispi, foff, nbytes, t6mfg->t6m_data_buf)) {
 		return (t6_mfg_error(t6mfg, T6_MFG_ERR_LIBISPI, 0,
-		    "failed to read %zu bytes from SPI device %zu  at offset "
-		    "%zu: %s (0x%x/%d)", nbytes, foff,
+		    "failed to read %zu bytes from SPI device %d at offset "
+		    "%zu: %s (0x%x/%d)", nbytes, t6mfg->t6m_inst, foff,
 		    ispi_errmsg(t6mfg->t6m_ispi), ispi_err(t6mfg->t6m_ispi),
 		    ispi_syserr(t6mfg->t6m_ispi)));
 	}
@@ -1596,8 +1601,8 @@ t6_mfg_flash_spi_write(t6_mfg_t *t6mfg, size_t foff, size_t nbytes,
 
 	if (!ispi_write(t6mfg->t6m_ispi, foff, nbytes, t6mfg->t6m_data_buf)) {
 		return (t6_mfg_error(t6mfg, T6_MFG_ERR_LIBISPI, 0,
-		    "failed to write %zu bytes from SPI device %zu  at offset "
-		    "%zu: %s (0x%x/%d)", nbytes, foff,
+		    "failed to write %zu bytes from SPI device %d at offset "
+		    "%zu: %s (0x%x/%d)", nbytes, t6mfg->t6m_inst, foff,
 		    ispi_errmsg(t6mfg->t6m_ispi), ispi_err(t6mfg->t6m_ispi),
 		    ispi_syserr(t6mfg->t6m_ispi)));
 	}
