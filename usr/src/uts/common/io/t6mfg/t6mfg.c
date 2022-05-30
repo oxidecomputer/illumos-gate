@@ -338,7 +338,7 @@ t6mfg_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	ddi_device_acc_attr_t da = {
 		.devacc_attr_version = DDI_DEVICE_ATTR_V0,
 		.devacc_attr_endian_flags = DDI_STRUCTURE_LE_ACC,
-		.devacc_attr_dataorder = DDI_UNORDERED_OK_ACC
+		.devacc_attr_dataorder = DDI_STRICTORDER_ACC
 	};
 
 	rc = ddi_regs_map_setup(dip, 1, (caddr_t *)&devstate_p->pio_kernel_regs, 0, 0, &da, &devstate_p->pio_kernel_regs_handle);
