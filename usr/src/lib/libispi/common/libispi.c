@@ -93,6 +93,9 @@ ispi_errmsg(ispi_t *ispi)
 	return (ispi->ispi_errmsg);
 }
 
+static boolean_t ispi_error(ispi_t *, ispi_err_t, int32_t, const char *,
+    ...)  __PRINTFLIKE(4);
+
 static boolean_t
 ispi_error(ispi_t *ispi, ispi_err_t err, int32_t sys, const char *fmt, ...)
 {
@@ -186,7 +189,7 @@ ispi_set_size(ispi_t *ispi, uint64_t size)
 	if (size > SPI_MAX_LEN_3B) {
 		return (ispi_error(ispi, ISPI_ERR_SIZE_BEYOND_DEV_ADDR, 0,
 		    "device size 0x%" PRIx64 "is beyond 3-bye addressable "
-		    "range (0x%" PRIx64 ")", size, SPI_MAX_LEN_3B));
+		    "range (0x%lx)", size, SPI_MAX_LEN_3B));
 	}
 
 	ispi->ispi_chip_size = size;
@@ -450,10 +453,10 @@ ispi_write(ispi_t *ispi, uint64_t offset, uint64_t len, const uint8_t *buf)
 		if (ret != 0) {
 			int e = errno;
 			return (ispi_error(ispi, ISPI_ERR_SYSTEM_SPIDEV, e,
-			    "failed to perform Program (0x%x) operation at "
-			    "offset 0x%" PRIx64 ", length %u bytes: %s",
-			    SPI_CMD_WRITE_ENABLE, SPI_CMD_PROGRAM, offset,
-			    towrite, strerror(e)));
+			    "failed to perform Write Enable (0x%x) and Program "
+			    "Page (0x%x) operation at offset 0x%" PRIx64 ", "
+			    "length %u bytes: %s", SPI_CMD_WRITE_ENABLE,
+			    SPI_CMD_PROGRAM, offset, towrite, strerror(e)));
 		}
 
 		pret = ispi_status_poll(ispi, ISPI_TIME_PROGRAM);
@@ -464,8 +467,9 @@ ispi_write(ispi_t *ispi, uint64_t offset, uint64_t len, const uint8_t *buf)
 			return (B_FALSE);
 		case ISPI_POLL_TIMEOUT:
 			return (ispi_error(ispi, ISPI_ERR_IO_TIMED_OUT, 0,
-			    "timed out waiting for program operation to "
-			    "finish at offset 0x%" PRIx64 ", length: %u",
+			    "timed out waiting after %u ms for program page "
+			    "operation to finish at offset 0x%" PRIx64 ", "
+			    "length: %u",
 			    ispi->ispi_timeouts[ISPI_TIME_CHIP_ERASE], offset,
 			    towrite));
 		default:
