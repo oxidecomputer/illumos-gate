@@ -5493,7 +5493,6 @@ milan_fabric_init_bridges(milan_fabric_t *fabric, milan_soc_t *soc,
 	 * actually exists. or us, this is basically anything that actually is
 	 * considered MAPPED. Set that now on the bridge.
 	 */
-#if 0
 	if ((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_MAPPED) != 0) {
 		uint16_t reg;
 
@@ -5503,7 +5502,6 @@ milan_fabric_init_bridges(milan_fabric_t *fabric, milan_soc_t *soc,
 		pci_putl_func(ioms->mio_pci_busno, bridge->mpb_device,
 		    bridge->mpb_func, MILAN_BRIDGE_R_PCI_PCIE_CAP, reg);
 	}
-#endif
 
 	return (0);
 }
