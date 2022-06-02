@@ -1,12 +1,3 @@
-The BUGS file tracks bugs and needed improvements to this specific branch.  It
-is NOT the place to record bugs that exist upstream; file those at
-https://bugs.illumos.org/ instead.  This is a very simple tracking feature to
-work around the fact that GH issues assume an engineering model in which
-branches are much more closely bound to master than illumos project gates
-(which this is) are intended to be.  Since we can't use issues and we don't
-have a global bug tracking system, this gives us a place to note things so we
-don't forget them.
-
-When you find something specific that's broken, add it to BUGS under the next
-integer ID (prefix with OX to guarantee we don't conflict with upstreadm IDs).
-When you fix something, move it to the fixed list.  Simple as that.
+Please file all bugs specific to the stlouis branch in the
+oxidecomputer/stlouis repo as GH issues.  Bugs not specific to this branch
+should be filed upstream at https://bugs.illumos.org/.

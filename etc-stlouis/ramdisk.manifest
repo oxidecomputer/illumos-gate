@@ -918,6 +918,7 @@ f usr/lib/amd64/libsmbios.so.1 0755 root bin
 s usr/lib/amd64/libz.so.1=../../../lib/amd64/libz.so.1
 f usr/lib/amd64/libzfsbootenv.so.1 0755 root bin
 f usr/lib/amd64/libzfs_core.so.1 755 root bin
+d usr/lib/cfgadm 0755 root sys
 d usr/lib/devfsadm 0755 root sys
 s usr/lib/devfsadm/devfsadmd=../../sbin/devfsadm
 d usr/lib/devfsadm/linkmod 0755 root sys
@@ -994,6 +995,7 @@ f usr/lib/libdtrace.so.1 0755 root bin
 f usr/lib/libexacct.so.1 0755 root bin
 f usr/lib/libficl-sys.so.4.1.0 0755 root bin
 f usr/lib/libgss.so.1 0755 root bin
+f usr/lib/libhotplug.so.1 0755 root bin
 f usr/lib/libidmap.so.1 0755 root bin
 f usr/lib/libidspace.so.1 0755 root bin
 f usr/lib/libinstzones.so.1 0755 root bin
@@ -1106,7 +1108,7 @@ f usr/lib/security/pam_unix_session.so.1 0755 root bin
 s usr/lib/security/pam_unix_session.so=pam_unix_session.so.1
 d usr/lib/ssh 0755 root bin
 f usr/lib/ssh/sshd 0755 root bin
-s usr/lib/straddr=stdaddr.so.2
+s usr/lib/straddr=straddr.so.2
 f usr/lib/straddr.so.2 0755 root bin
 d usr/lib/sysevent 0755 root bin
 d usr/lib/sysevent/modules 0755 root bin

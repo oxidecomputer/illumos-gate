@@ -7,6 +7,7 @@ mount -F lofs /tmp/kernel/fs /kernel/fs
 mount -F lofs /tmp/kernel/misc /kernel/misc
 mount -F lofs /tmp/kernel/strmod /kernel/strmod
 mount -F lofs /tmp/usr/lib/devfsadm/linkmod /usr/lib/devfsadm/linkmod
+mount -F lofs /tmp/usr/lib/cfgadm /usr/lib/cfgadm
 mount -F lofs /tmp/usr/lib/security /usr/lib/security
 
 update_drv zfs
