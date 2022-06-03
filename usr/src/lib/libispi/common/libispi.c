@@ -438,7 +438,7 @@ ispi_write(ispi_t *ispi, uint64_t offset, uint64_t len, const uint8_t *buf)
 			.deassert_cs = 0,
 		}, {
 			.tx_buf = buf + nwrite,
-			.len = nwrite,
+			.len = towrite,
 			.delay_usec = 0,
 			.deassert_cs = 0,
 		} };
