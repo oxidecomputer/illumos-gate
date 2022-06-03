@@ -419,19 +419,21 @@ ispi_write(ispi_t *ispi, uint64_t offset, uint64_t len, const uint8_t *buf)
 	while (len > 0) {
 		int ret;
 		uint32_t towrite = ispi_io_length(offset, len);
+		const uint8_t wren_cmd = SPI_CMD_WRITE_ENABLE;
 		uint8_t writebuf[4];
 		ispi_poll_t pret;
-
-		if (!ispi_write_enable(ispi)) {
-			return (B_FALSE);
-		}
 
 		writebuf[0] = SPI_CMD_PROGRAM;
 		writebuf[1] = (uint8_t)((offset >> 16) & 0xff);
 		writebuf[2] = (uint8_t)((offset >> 8) & 0xff);
 		writebuf[3] = (uint8_t)(offset & 0xff);
 
-		spidev_transfer_t write_xfers[2] = { {
+		spidev_transfer_t write_xfers[3] = { {
+			.tx_buf = &wren_cmd,
+			.len = sizeof (wren_cmd),
+			.delay_usec = 0,
+			.deassert_cs = 1,
+		}, {
 			.tx_buf = writebuf,
 			.len = ARRAY_SIZE(writebuf),
 			.delay_usec = 0,
