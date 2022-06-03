@@ -262,8 +262,8 @@ ispi_status_poll(ispi_t *ispi, ispi_timeout_t to)
 			return (ISPI_POLL_TIMEOUT);
 		}
 
-		to.tv_sec = 1;
-		to.tv_nsec = 0;
+		to.tv_sec = 0;
+		to.tv_nsec = 1000000;
 		(void) nanosleep(&to, NULL);
 	}
 }
