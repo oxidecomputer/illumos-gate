@@ -23,6 +23,7 @@
 #include <sys/open.h>
 #include <sys/pci.h>
 #include <sys/pci_cap.h>
+#include <sys/sdt.h>
 #include <sys/stat.h>
 #include <sys/sunddi.h>
 #include <sys/sysmacros.h>
@@ -494,6 +495,9 @@ static int t6mfg_vpd_read(t6mfg_devstate_t *devstate_p, uint16_t vpd_address, ui
 	*data = pci_cap_get(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_32,
 		PCI_CAP_ID_VPD, devstate_p->vpd_base, PCI_CAP_VPD_DATA_OFFSET);	
 
+	DTRACE_PROBE3(t6mfg__vpd__read, t6mfg_devstate_t *, devstate_p,
+			uint16_t, vpd_address, uint32_t, *data);
+
 done:
 	mutex_exit(&devstate_p->vpd_lock);
 
@@ -508,6 +512,10 @@ static int t6mfg_vpd_write(t6mfg_devstate_t *devstate_p, uint16_t vpd_address, u
 		return (DDI_EINVAL);
 
 	mutex_enter(&devstate_p->vpd_lock);
+
+
+	DTRACE_PROBE3(t6mfg__vpd__read, t6mfg_devstate_t *, devstate_p,
+			uint16_t, vpd_address, uint32_t, data);
 
 	/* Stage dword to be written */
 	int rc = pci_cap_put(devstate_p->pci_config_handle, PCI_CAP_CFGSZ_32,
