@@ -1590,7 +1590,7 @@ t6_mfg_flash_spi_write(t6_mfg_t *t6mfg, size_t foff, size_t nbytes,
 	 * 'word-oriented' region as discussed in read. Here we byte swap before
 	 * we get out there.
 	 */
-	if (!reg->freg_bigend) {
+	if (reg->freg_bigend) {
 		t6_mfg_endian_swap(t6mfg->t6m_data_buf, nbytes);
 	}
 
