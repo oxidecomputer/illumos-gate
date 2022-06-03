@@ -418,7 +418,7 @@ ispi_write(ispi_t *ispi, uint64_t offset, uint64_t len, const uint8_t *buf)
 
 	while (len > 0) {
 		int ret;
-		uint8_t towrite = ispi_io_length(offset, len);
+		uint32_t towrite = ispi_io_length(offset, len);
 		uint8_t writebuf[4];
 		ispi_poll_t pret;
 
