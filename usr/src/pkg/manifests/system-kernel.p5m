@@ -184,7 +184,9 @@ file path=kernel/drv/$(ARCH64)/sysevent group=sys
 file path=kernel/drv/$(ARCH64)/sysmsg group=sys
 file path=kernel/drv/$(ARCH64)/tcp group=sys
 file path=kernel/drv/$(ARCH64)/tcp6 group=sys
+$(i386_ONLY)file path=kernel/drv/$(ARCH64)/tfport group=sys
 file path=kernel/drv/$(ARCH64)/tl group=sys
+$(i386_ONLY)file path=kernel/drv/$(ARCH64)/tofino group=sys
 $(i386_ONLY)file path=kernel/drv/$(ARCH64)/tzmon group=sys
 $(sparc_ONLY)file path=kernel/drv/$(ARCH64)/uata group=sys
 $(i386_ONLY)file path=kernel/drv/$(ARCH64)/ucode group=sys
@@ -266,6 +268,7 @@ file path=kernel/drv/sysevent.conf group=sys
 file path=kernel/drv/sysmsg.conf group=sys
 file path=kernel/drv/tcp.conf group=sys
 file path=kernel/drv/tcp6.conf group=sys
+$(i386_ONLY)file path=kernel/drv/tfport.conf group=sys
 file path=kernel/drv/tl.conf group=sys
 $(i386_ONLY)file path=kernel/drv/tzmon.conf group=sys
 $(sparc_ONLY)file path=kernel/drv/uata.conf group=sys \

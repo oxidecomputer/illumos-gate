@@ -601,6 +601,7 @@ CHKHDRS=			\
 	termio.h		\
 	termios.h		\
 	termiox.h		\
+	tfport.h		\
 	thread.h		\
 	ticlts.h		\
 	ticots.h		\
@@ -623,6 +624,8 @@ CHKHDRS=			\
 	tnf_probe.h		\
 	tnf_writer.h		\
 	todio.h			\
+	tofino.h		\
+	tofino_impl.h		\
 	tpicommon.h		\
 	ts.h			\
 	tspriocntl.h		\

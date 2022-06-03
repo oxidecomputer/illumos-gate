@@ -30,7 +30,7 @@ HDRS =		libdladm.h libdladm_impl.h libdllink.h libdlaggr.h	\
 		libdlwlan.h libdlwlan_impl.h libdlvnic.h libdlvlan.h	\
 		libdlmgmt.h libdlflow.h libdlflow_impl.h libdlstat.h	\
 		libdlether.h libdlsim.h libdlbridge.h libdliptun.h	\
-		libdlib.h libdloverlay.h
+		libdlib.h libdloverlay.h libdltfport.h
 
 HDRDIR =	common
 
@@ -47,7 +47,7 @@ MSGFILES =	common/libdladm.c common/linkprop.c common/secobj.c	\
 		common/libdlstat.c common/flowattr.c	\
 		common/libdlether.c common/libdlsim.c	\
 		common/libdlbridge.c common/libdliptun.c\
-		common/libdlib.c
+		common/libdltfport.c common/libdlib.c
 
 XGETFLAGS =     -a -x libdladm.xcl
 

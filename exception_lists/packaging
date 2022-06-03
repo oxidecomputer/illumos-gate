@@ -99,6 +99,7 @@ usr/include/libdliptun.h
 usr/include/libdlmgmt.h
 usr/include/libdlsim.h
 usr/include/libdlstat.h
+usr/include/libdltfport.h
 usr/include/libdlvnic.h
 usr/include/libdlwlan_impl.h
 usr/include/libdlwlan.h

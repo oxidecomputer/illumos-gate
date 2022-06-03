@@ -63,6 +63,7 @@
 #include <libdlether.h>
 #include <libdliptun.h>
 #include <libdlsim.h>
+#include <libdltfport.h>
 #include <libdlbridge.h>
 #include <libdloverlay.h>
 #include <libinetutil.h>
@@ -220,6 +221,7 @@ static cmdfunc_t do_up_vnic;
 static cmdfunc_t do_create_part, do_delete_part, do_show_part, do_show_ib;
 static cmdfunc_t do_up_part;
 static cmdfunc_t do_create_etherstub, do_delete_etherstub, do_show_etherstub;
+static cmdfunc_t do_create_tfport, do_delete_tfport, do_show_tfport;
 static cmdfunc_t do_create_simnet, do_modify_simnet;
 static cmdfunc_t do_delete_simnet, do_show_simnet, do_up_simnet;
 static cmdfunc_t do_show_usage;
@@ -383,6 +385,12 @@ static cmd_t	cmds[] = {
 	    "    delete-etherstub [-t] <link>"				},
 	{ "show-etherstub",	do_show_etherstub,
 	    "    show-etherstub   [-t] [<link>]\n"			},
+	{ "create-tfport",	do_create_tfport,
+	    "    create-tfport -p port-id <link>"			},
+	{ "delete-tfport",	do_delete_tfport,
+	    "    delete-tfport <link>"					},
+	{ "show-tfport",	do_show_tfport,
+	    "    show-tfport [-p] [-o <field>,..] [<link>]\n"		},
 	{ "create-simnet",	do_create_simnet,	NULL		},
 	{ "modify-simnet",	do_modify_simnet,	NULL		},
 	{ "delete-simnet",	do_delete_simnet,	NULL		},
@@ -566,6 +574,11 @@ static const struct option show_part_lopts[] = {
 static const struct option etherstub_lopts[] = {
 	{"temporary",	no_argument,		0, 't'	},
 	{"root-dir",	required_argument,	0, 'R'	},
+	{ NULL, 0, NULL, 0 }
+};
+
+static const struct option tfport_lopts[] = {
+	{"port-id",	required_argument,	0, 'p'	},
 	{ NULL, 0, NULL, 0 }
 };
 
@@ -1127,6 +1140,26 @@ static const ofmt_field_t simnet_fields[] = {
 	offsetof(simnet_fields_buf_t, simnet_macaddr), print_default_cb},
 { "OTHERLINK",		12,
 	offsetof(simnet_fields_buf_t, simnet_otherlink), print_default_cb},
+{ NULL,			0, 0, NULL}}
+;
+
+/*
+ * structures for 'dladm show-tfport'
+ */
+typedef struct tfport_fields_buf_s
+{
+	char tfport_name[DLPI_LINKNAME_MAX];
+	char tfport_macaddr[MAXMACADDRLEN];
+	char tfport_port[LINKID_STR_WIDTH];
+} tfport_fields_buf_t;
+
+static const ofmt_field_t tfport_fields[] = {
+{ "LINK",		12,
+	offsetof(tfport_fields_buf_t, tfport_name), print_default_cb},
+{ "MACADDRESS",		18,
+	offsetof(tfport_fields_buf_t, tfport_macaddr), print_default_cb},
+{ "PORT",		4,
+	offsetof(tfport_fields_buf_t, tfport_port), print_default_cb},
 { NULL,			0, 0, NULL}}
 ;
 
@@ -5432,6 +5465,197 @@ static void
 do_show_etherstub(int argc, char *argv[], const char *use)
 {
 	do_show_vnic_common(argc, argv, use, B_TRUE);
+}
+
+static void
+do_create_tfport(int argc, char *argv[], const char *use)
+{
+	int option;
+	int port = -1;
+	dladm_status_t status;
+	char name[MAXLINKNAMELEN];
+	uchar_t *mac_addr = NULL;
+	int mac_len = 0;
+
+	name[0] = '\0';
+	opterr = 0;
+	while ((option = getopt_long(argc, argv, "p:m:",
+	    tfport_lopts, NULL)) != -1) {
+		switch (option) {
+		case 'p':
+			if (port != -1)
+				die_optdup(option);
+			if (!str2int(optarg, &port))
+				die("invalid port-id: %s", optarg);
+			break;
+		case 'm':
+			if (mac_addr != NULL)
+				die_optdup(option);
+			mac_addr = _link_aton(optarg, &mac_len);
+			if (mac_addr == NULL || mac_len != ETHERADDRL)
+				die("invalid MAC address '%s'", optarg);
+			break;
+		default:
+			die_opterr(optopt, option, use);
+		}
+	}
+
+	if (optind != (argc - 1))
+		usage();
+
+	if (strlcpy(name, argv[optind], MAXLINKNAMELEN) >= MAXLINKNAMELEN)
+		die("link name too long '%s'", argv[optind]);
+
+	if (!dladm_valid_linkname(name))
+		die("invalid link name '%s'", argv[optind]);
+
+	status = dladm_tfport_create(handle, name, port, mac_addr, mac_len);
+	if (status != DLADM_STATUS_OK)
+		die_dlerr(status, "tfport creation failed");
+}
+
+
+static void
+do_delete_tfport(int argc, char *argv[], const char *use)
+{
+	datalink_id_t linkid;
+	dladm_status_t status;
+
+	if (argc != 2)
+		usage();
+
+	status = dladm_name2info(handle, argv[1], &linkid, NULL, NULL,
+	    NULL);
+	if (status != DLADM_STATUS_OK)
+		die("invalid link name '%s'", argv[1]);
+
+	status = dladm_tfport_delete(handle, linkid);
+	if (status != DLADM_STATUS_OK)
+		die_dlerr(status, "tfport deletion failed");
+}
+
+static dladm_status_t
+print_tfport(show_state_t *state, datalink_id_t linkid)
+{
+	dladm_tfport_attr_t	tlinfo;
+	uint32_t		flags;
+	dladm_status_t		status;
+	tfport_fields_buf_t	tlbuf;
+	char			mstr[ETHERADDRL * 3];
+
+	bzero(&tlbuf, sizeof (tlbuf));
+	if ((status = dladm_datalink_id2info(handle, linkid, &flags, NULL, NULL,
+	    tlbuf.tfport_name, sizeof (tlbuf.tfport_name)))
+	    != DLADM_STATUS_OK)
+		return (status);
+
+	if (!(state->ls_flags & flags))
+		return (DLADM_STATUS_NOTFOUND);
+
+	if ((status = dladm_tfport_info(handle, linkid, &tlinfo)) != DLADM_STATUS_OK) {
+		return (status);
+	}
+
+	if (tlinfo.tfa_mac_len > sizeof (tlbuf.tfport_macaddr))
+		return (DLADM_STATUS_BADVAL);
+
+	(void) strlcpy(tlbuf.tfport_macaddr,
+	    dladm_aggr_macaddr2str(tlinfo.tfa_mac_addr, mstr),
+	    sizeof (tlbuf.tfport_macaddr));
+	(void) snprintf(tlbuf.tfport_port, LINKID_STR_WIDTH, "%d", tlinfo.tfa_port_id);
+
+	ofmt_print(state->ls_ofmt, &tlbuf);
+	return (status);
+}
+
+/* ARGSUSED */
+static int
+show_tfport(dladm_handle_t dh, datalink_id_t linkid, void *arg)
+{
+	show_state_t		*state = arg;
+
+	state->ls_status = print_tfport(state, linkid);
+	return (DLADM_WALK_CONTINUE);
+}
+
+static void
+do_show_tfport(int argc, char *argv[], const char *use)
+{
+	int		option;
+	uint32_t	flags = DLADM_OPT_ACTIVE;
+	boolean_t	p_arg = B_FALSE;
+	datalink_id_t	linkid = DATALINK_ALL_LINKID;
+	show_state_t	state;
+	dladm_status_t	status;
+	boolean_t	o_arg = B_FALSE;
+	ofmt_handle_t	ofmt;
+	ofmt_status_t	oferr;
+	char		*all_fields = "link,macaddress,port";
+	char		*fields_str = all_fields;
+	uint_t		ofmtflags = 0;
+
+	bzero(&state, sizeof (state));
+
+	opterr = 0;
+	while ((option = getopt_long(argc, argv, ":po:",
+	    show_lopts, NULL)) != -1) {
+		switch (option) {
+		case 'p':
+			if (p_arg)
+				die_optdup(option);
+
+			p_arg = B_TRUE;
+			state.ls_parsable = p_arg;
+			break;
+		case 'o':
+			o_arg = B_TRUE;
+			fields_str = optarg;
+			break;
+		default:
+			die_opterr(optopt, option, use);
+			break;
+		}
+	}
+
+	if (p_arg && !o_arg)
+		die("-p requires -o");
+
+	if (strcasecmp(fields_str, "all") == 0) {
+		if (p_arg)
+			die("\"-o all\" is invalid with -p");
+		fields_str = all_fields;
+	}
+
+	/* get link name (optional last argument) */
+	if (optind == (argc-1)) {
+		if ((status = dladm_name2info(handle, argv[optind], &linkid,
+		    NULL, NULL, NULL)) != DLADM_STATUS_OK) {
+			die_dlerr(status, "link %s is not valid", argv[optind]);
+		}
+	} else if (optind != argc) {
+		usage();
+	}
+
+	state.ls_flags = flags;
+	state.ls_donefirst = B_FALSE;
+	if (state.ls_parsable)
+		ofmtflags |= OFMT_PARSABLE;
+	oferr = ofmt_open(fields_str, tfport_fields, ofmtflags, 0, &ofmt);
+	ofmt_check(oferr, state.ls_parsable, ofmt, die, warn);
+	state.ls_ofmt = ofmt;
+
+	if (linkid == DATALINK_ALL_LINKID) {
+		(void) dladm_walk_datalink_id(show_tfport, handle, &state,
+		    DATALINK_CLASS_TFPORT, DATALINK_ANY_MEDIATYPE, flags);
+	} else {
+		(void) show_tfport(handle, linkid, &state);
+		if (state.ls_status != DLADM_STATUS_OK) {
+			ofmt_close(ofmt);
+			die_dlerr(state.ls_status, "failed to show tfport %s",
+			    argv[optind]);
+		}
+	}
+	ofmt_close(ofmt);
 }
 
 /* ARGSUSED */

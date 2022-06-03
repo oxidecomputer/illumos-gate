@@ -2320,3 +2320,13 @@ ENA_OBJS +=	ena.o ena_admin.o ena_dma.o ena_gld.o ena_hw.o ena_intr.o \
 # t6mfg(7D)
 #
 T6MFG_OBJS += t6mfg.o
+
+#
+# tofino(7D)
+#
+TOFINO_OBJS +=	tofino.o tofino_pkt.o
+
+#
+# tfport(7D)
+#
+TFPORT_OBJS +=	tfport.o
