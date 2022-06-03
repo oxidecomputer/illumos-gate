@@ -246,7 +246,6 @@ ispi_status_poll(ispi_t *ispi, ispi_timeout_t to)
 			return (ISPI_POLL_ERROR);
 		}
 
-		printf("read status as 0x%02x\n", status);
 		/*
 		 * Right now we're using the Status Register rather than the
 		 * preferred Flag Status Register. This makes it hard to know
