@@ -126,7 +126,7 @@ milan_apob_init(uint64_t apob_pa)
 		bop_panic("failed to allocate %u bytes of VA for the APOB",
 		    milan_apob_size_cap);
 	}
-	bop_printf(NULL, "allocated %lx as va\n", base);
+	DBG_MSG("allocated %lx as va\n", base);
 
 	/*
 	 * With the allocation of VA done, map the first 4 KiB and verify that

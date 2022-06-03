@@ -1,0 +1,35 @@
+#! /sbin/sh
+
+addr=$1
+dl=$2
+
+if [ -z "$addr" ]; then
+	printf "Usage: %s <addr>/<netmask> [<datalink>]\n" "$0"
+	printf "Example: %s 192.168.92.60/24 igb0\n" "$0"
+	exit 1
+fi
+
+if [ -z "$dl" ]; then
+	dl="$(dladm show-link -p -o link 2>/dev/null | head -1)"
+	if [ -z "$dl" ]; then
+		printf "No datalinks found; check PCIe NIC presence\n"
+		exit 1
+	fi
+	printf "Datalink not specified; using %s\n" "$dl"
+fi
+
+if ! ifconfig "$dl" plumb "$addr" up; then
+	printf "ifconfig failed\n"
+	exit 1
+fi
+
+printf "Changing hostname to gimlet\n"
+hostname gimlet
+
+printf "%s gimlet\n" "${addr/\/*}" >> /etc/hosts
+svcadm restart system-log
+svcadm restart sysevent
+
+/root/start-sshd
+
+printf "Network services running; log out and back in, then set up phase2.\n"

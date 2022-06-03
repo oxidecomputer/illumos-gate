@@ -1,0 +1,11 @@
+#! /sbin/sh
+
+cfgadm -f -c disconnect pcie17
+
+printf "Toggle power to M2A now:\n"
+printf "  humility i2c -b mid -d 0x3a -r 0x3b -w 0x0e && sleep 2\n"
+printf "  humility i2c -b mid -d 0x3a -r 0x3b -w 0x0f\n"
+printf "Press <ENTER> to continue> "
+read
+
+cfgadm -f -c configure pcie17

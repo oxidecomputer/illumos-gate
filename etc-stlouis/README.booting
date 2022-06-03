@@ -1,11 +1,290 @@
+*** Precompliance Fieldwork Special Edition Notes ***
+
 You will need:
 
-- A supportable Gimlet, or an Ethanol-X (for now)
-- Milan, possibly; I believe this should also work on Rome but have not tried
-  it yet
-- illumos-gate stlouis a368956d97835cacf0266ab9ff2fe7b7944afa09 or later
-- nanobl-rs 0.4.1 or later
-- The tools in this directory
+- A Gimlet rev B, reworked to BE07 (with processor and DRAM)
+- The loader, kernel, and ramdisk images in wesolows/precompliance-software at
+  https://drive.google.com/drive/folders/1TPLa9Vp26485kZjLx4i_CMVwWvNo1wbb
+- An ST-Link connection to the SP, SP software, and matching humility
+- A connection to the SP3 side of the UART0 header
+- One of these collections of things:
+  * <A> At least one M.2 NVMe SSD and an Intel I210 or 82574 NIC, or
+  * <B> An Intel I210 or 82574 NIC
+  * <C> At least one M.2 NVMe SSD and an external laptop-driven programmer, or
+
+These notes assume you know how to connect up the ST-Link and UART.  There is
+nothing special required there.  You need to decide up front whether you are
+following path <A>, <B>, or <C> based on what hardware devices you have
+available to you from the list above.  These paths will be referenced
+throughout the setup instructions.  If you are following paths <A> or <C>, you
+will be given the option to persist phase2 software, saving time and steps if
+you need to reboot later.
+
+Prompts
+-------
+In the examples below, each prompt style indicates where the specified command
+is to be run:
+
+	$	laptop connected to the Gimlet
+	>	Gimlet bootloader
+	[0]>	Gimlet kmdb
+	#	Gimlet userland, logged in as root
+
+Steps
+-----
+
+If you have already performed steps 0-5 on this Gimlet, skip to step 6.
+
+0. Write down the manufacturer and serial number of each SSDs you wish to use
+prior to or during installation; they can usually be found on the label.  This
+will make it easier to identify the device you want to use once the system is
+running.
+
+1. If you are not following path <C>, skip to step 2.
+
+If you are following path <C> above, on your laptop, copy the 'phase2.tar'
+file onto the raw SSD device.  This will be similar to using the SSD like a
+tape drive and avoids any requirement to have ZFS tools on your laptop.
+
+If you need to install additional software and will not have Ethernet access
+to the Gimlet later on, you will need to find a way to get it onto this SSD at
+the same time.  The easiest way to do this is to append the files you need
+onto 'phase2.tar' prior to copying it onto the SSD.  You can do so assuming
+you have a working tar(1) on your laptop with something like:
+
+   $ tar uf phase2.tar some_file other_file whatever_you_need
+
+Assuming you are using a USB-to-NVMe converter and your laptop runs GNU/Linux,
+the SSD will be called something like
+/dev/disk/by-id/usb-_Micron_00A0750130082D21-0:0.  You may need to use sudo or
+some other privilege escalator to do this; the exact details are specific to
+your OS and installation.  On Arch GNU/Linux, I would do something like:
+
+   $ ls /dev/disk/by-id
+   (identify the correct device to use)
+   $ sudo dd if=phase2.tar of=/dev/disk/by-id/usb-_Micron_00A0750130082D21-0:0
+       bs=1024k
+
+Remove the SSD.
+
+2. If you are following path <B> and do not have an SSD, skip to step 3.
+Otherwise, install the SSD in your Gimlet.  You may use any socket into which
+the SSD fits.
+
+3. If you are following paths <A> or <B>, or you are following path <C> and
+also want gigabit copper networking, install your NIC in one of the sharkfin
+PCIe sockets (I recommend J).  Otherwise, skip to step 4.
+
+You will need to remove the outer top case panel and the inner top sharkfin
+retainer bracket from the Gimlet, and the back CEM mounting plate from the
+NIC.  Note that half-height CEM AICs are slightly too tall for the inner top
+sharkfin retainer bracket, so you may need to tilt the NIC slightly to
+reinstall the retainer bracket.  It is easiest to attach the Ethernet cable to
+the NIC while the machine is still open; route it out the front of the empty
+U.2 bay.  Make sure any sharkfins you are going to populate have their top
+retaining keys seated in the retainer bracket before reinstalling the outer
+top panel.
+
+4. Connect up your Gimlet and turn it on.
+
+5. Burn the special loader image (milan-quiet-3m-2dpc-0.4.5-128MiB.bin):
+
+   $ humility qspi -W milan-quiet-3m-2dpc-0.4.5-128MiB.bin
+
+6. Enter power state A0:
+
+   $ humility hiffy -c Sequencer.set_state -a state=A0
+
+7. The loader should identify itself as
+
+   Nano-Bootloader 0.4.5-128MiB
+
+If it does not, drop to A2 and go back to step 5 and burn the correct image.
+
+   $ humility hiffy -c Sequencer.set_state -a state=A2
+
+8. If you have any M.2 SSDs installed, work around the M.2 power control bug
+by forcing the controller on.  If both sockets are populated:
+
+   $ humility i2c -b mid -d 0x3a -r 0x3b -w 0x0f
+
+If only socket A is populated, write 0x0e; if only socket B is populated,
+write 0xd.
+
+9. Load the ramdisk in the usual fashion:
+
+   > 101000000::recv -m
+   (initiate an Xmodem-1K send of 'ramdisk.oxide.ufs' from your laptop)
+
+10. Load and boot the kernel in the usual fashion:
+
+   > 100000000::recv -m | ::load | ::call
+   (initiate an Xmodel-1K send of 'unix.oxide' from your laptop)
+
+11. Continue booting after reaching the initial kmdb prompt:
+
+   [0]> :c
+
+12. Upon reaching userland, log in as root.  There is no password.
+
+13. If you installed the NIC in step 3, start up networking now.  Otherwise,
+skip to step 14.
+
+DHCP is not supported; you will need to choose an IP address that matches the
+network in use on your laptop or other attached devices.  For example, if you
+have configured your laptop's NIC to use 192.168.171.1/24, you can put the
+Gimlet at 192.168.171.2/24 as follows:
+
+   # /root/start-network 192.168.171.2/24
+
+If you have installed multiple NICs or are in a state where the T6 is already
+in mission mode, you may need to specify the datalink you wish to use.  An
+I210 will be named igbN (where N is an integer index starting at 0) and an
+82574 e1000gN.  To see the available NICs, you can use:
+
+   # dladm show-link
+
+By default, start-network will use the first link in the list.  This is just a
+crappy shell script (as are most of the rest of the steps) so you can look at
+what it's doing by:
+
+   # cat /root/start-network
+
+If you need access to the Internet (or other networks) from the Gimlet, you
+can add static routes as required at this point; for example,
+
+   # route add default 192.168.171.1
+
+Make sure the Gimlet and your laptop (or other necessary hosts) can
+communicate:
+
+   # ping 192.168.171.1
+   $ ping 192.168.171.2
+
+You should also be able to reach the Gimlet using ssh:
+
+   $ ssh root@192.168.171.2
+
+14. If your Gimlet doesn't have any M.2 SSDs installed, skip to step 15.  If
+you do have one or more M.2 SSDs, it's time to get them working.  Start with:
+
+   # nvmeadm list
+
+Ideally, all SSDs in the machine will appear in this list; for example, with 2
+of each form factor installed, you might see:
+
+nvme3: model: Micron_7300_MTFDHBG1T9TDF, serial: 203130082CFB, FW rev: 95420260, NVMe v1.3
+  nvme3/00a0750130082cfb (c4t00A0750130082CFBd0): Size = 1831420 MB, Capacity = 1831420 MB, Used = 1831420 MB
+nvme0: model: Micron_7300_MTFDHBG1T9TDF, serial: 203130082D21, FW rev: 95420260, NVMe v1.3
+  nvme0/00a0750130082d21 (c1t00A0750130082D21d0): Size = 1831420 MB, Capacity = 1831420 MB, Used = 1831420 MB
+nvme1: model: WUS4C6432DSP3X3, serial: A079E06E, FW rev: R2210000, NVMe v1.3
+  nvme1/0014ee81000bc21a (c2t0014EE81000BC21Ad0): Size = 3052360 MB, Capacity = 3052360 MB, Used = 3052360 MB
+nvme2: model: WUS4C6432DSP3X3, serial: A079E264, FW rev: R2210000, NVMe v1.3
+  nvme2/0014ee81000bc37c (c3t0014EE81000BC37Cd0): Size = 3052360 MB, Capacity = 3052360 MB, Used = 3052360 MB
+
+More likely, you will see that the SSD in M.2 socket A is missing (assuming
+you have anything installed in it).  If so, you must work around stlouis#57 by
+running:
+
+   # /root/fix-m2a
+
+This program will instruct you to execute a pair of humility commands on your
+laptop that will cycle the power to M.2A.  When you have completed these
+commands, press <ENTER> to finish the workaround.  At this point, all
+installed SSDs should be visible via 'nvmeadm list'.  If not, you will need to
+stop and debug the problem.
+
+16. If you have previously chosen to persist phase2 data onto an installed
+SSD, skip to step 19.  Otherwise, if you are following paths <A> or <B>, skip
+to step 17.  If you are following path <C>, save your phase2 software into
+/tmp.  First you must identify the SSD on which you previously stored the
+software.  You can examine the SSDs' metadata using nvmeadm's 'list' and
+'info' subcommands:
+
+   # nvmeadm list
+   # nvmeadm identify nvme2
+
+When you have identified the correct device to use, note/copy its device path,
+which will be something like 'c1t00A0750130082D21d0'.  Then extract the phase2
+software you previously stored in step 1:
+
+   # cd /tmp
+   # tar xf /dev/dsk/c1t00A0750130082D21d0
+
+You should now see several directories in /tmp, among them 'usr'.  If not, or
+if this command fails, most likely you have chosen the wrong SSD.  Go back to
+the beginning of this step and find the correct one, then perform the
+extraction.
+
+17. If you are following paths <A> or <B>, it is time to transfer the phase2
+software onto the Gimlet over the network; be sure to substitute the IP
+address you configured in step 13:
+
+   $ scp phase2.tar root@192.168.171.2:/tmp
+
+Make sure the file is present:
+
+   # ls /tmp/phase2.tar
+
+Extract the contents:
+
+   # cd /tmp
+   # tar xf phase2.tar
+
+18. At this point, regardless of which path you are following, you should have
+phase2 software unpacked in /tmp and, if you installed a NIC, access to your
+Gimlet over Ethernet.  If you have an SSD installed (paths <A> or <C>), you
+have the option of persisting your phase2 software onto the SSD.  Doing this
+will allow you to skip steps 16, 17, and 18 on subsequent boots provided you
+leave that SSD installed.  If you don't have an SSD installed or don't want to
+persist phase2 software, skip to step 19.  Otherwise, start by creating a pool
+and filesystem on the SSD you wish to use (see step 16 for notes on
+identifying SSDs; if you are following path <C> you can overwrite the data on
+the SSD you used in previous steps, or use a different one):
+
+   # zpool create -f boot /dev/dsk/c1t00A0750130082D21d0
+   # zfs create boot/phase2
+
+Copy the phase2 data from /tmp:
+
+   # cp -rP /tmp /boot/phase2
+
+19. Finally, set up your environment to use phase2 software.  The
+/root/post-phase2 script takes an argument specifying the location of phase2
+software; if you chose to persist that software, it is located in /boot/phase2
+(or whatever location you chose in step 18); otherwise, it is located in /tmp:
+
+   # /root/post-phase2 /boot/phase2
+
+This will set up the runtime linker and root's PATH so that phase2 software
+can (usually) be found.  It will also use coreadm to save any cores that are
+dumped; please save any such cores and file bugs accordingly.  The script will
+instruct you to either log out and back in or to source /root/.profile to set
+up your PATH properly.  Once you have done so, you have access to all phase2
+software.  You can configure additional persistent data storage (such as
+creating a pool on U.2 SSDs), plumb up the T6 and/or Sidecar links, and
+whatever else you need to do.  If you need to load additional software, I
+recommend creating a filesystem and mounting it at /opt/local; by default,
+/opt/local/bin is in root's PATH and executables can be installed there.  You
+may need to use crle(8) if you need to install libraries in /opt/local/lib.
+In general, at this point the Gimlet behaves much like any other illumos
+system; consult the manual as needed.  Note that you cannot write to /usr, but
+you can use lofs(7fs) to mount over unused files and directories there.
+Changes made to the root filesystem (/, /etc, /root, ...) will not persist
+even if you set up persistent phase2 storage; the root filesystem is part of
+phase1.
+
+T6 Setup
+--------
+
+TBD
+
+Sidecar Setup
+-------------
+
+TBD
+
+*** Original Notes for illumos Engineers ***
 
 Steps:
 

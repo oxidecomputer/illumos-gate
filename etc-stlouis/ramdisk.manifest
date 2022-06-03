@@ -21,7 +21,9 @@ s dev/dtrace/provider/systrace=../../../devices/pseudo/systrace@0:systrace
 d dev/fd 0555 root root
 s dev/full=../devices/pseudo/mm@0:full
 s dev/icmp=../devices/pseudo/icmp@0:icmp
+s dev/icmp6=../devices/pseudo/icmp6@0:icmp6
 s dev/ip=../devices/pseudo/ip@0:ip
+s dev/ip6=../devices/pseudo/ip6@0:ip6
 s dev/ipmpstub=../devices/pseudo/dlpistub@0:ipmpstub
 s dev/kmdb=../devices/pseudo/kmdb@0:kmdb
 s dev/kmem=../devices/pseudo/mm@0:kmem
@@ -102,6 +104,7 @@ s dev/sysevent=../devices/pseudo/sysevent@0:sysevent
 s dev/sysmsg=../devices/pseudo/sysmsg@0:sysmsg
 s dev/systty=../devices/pseudo/cn@0:systty
 s dev/tcp=../devices/pseudo/tcp@0:tcp
+s dev/tcp6=../devices/pseudo/tcp6@0:tcp6
 s dev/ticlts=../devices/pseudo/tl@0:ticlts
 s dev/ticots=../devices/pseudo/tl@0:ticots
 s dev/ticotsord=../devices/pseudo/tl@0:ticotsord
@@ -156,8 +159,10 @@ s dev/ttyre=../devices/pseudo/ptsl@0:ttyre
 s dev/ttyrf=../devices/pseudo/ptsl@0:ttyrf
 s dev/ucode=../devices/pseudo/ucode@0:ucode
 s dev/udp=../devices/pseudo/udp@0:udp
+s dev/udp6=../devices/pseudo/udp6@0:udp6
 s dev/urandom=../devices/pseudo/random@0:urandom
 s dev/zero=../devices/pseudo/mm@0:zero
+s dev/zfs=../devices/pseudo/zfs@0:zfs
 d devices 0755 root sys
 d etc 0755 root sys
 s etc/.syslog_door=../var/run/syslog_door
@@ -318,7 +323,10 @@ f kernel/drv/amd64/e1000g 0755 root sys
 h kernel/drv/amd64/fasttrap=kernel/dtrace/amd64/fasttrap
 h kernel/drv/amd64/fbt=kernel/dtrace/amd64/fbt
 f kernel/drv/amd64/icmp 0755 root sys
+f kernel/drv/amd64/icmp6 0755 root sys
+f kernel/drv/amd64/igb 0755 root sys
 f kernel/drv/amd64/ip 0755 root sys
+f kernel/drv/amd64/ip6 0755 root sys
 f kernel/drv/amd64/ipnet 0755 root sys
 f kernel/drv/amd64/kmdb 0755 root sys
 h kernel/drv/amd64/lockstat=kernel/dtrace/amd64/lockstat
@@ -347,8 +355,11 @@ f kernel/drv/amd64/sysevent 0755 root sys
 f kernel/drv/amd64/sysmsg 0755 root sys
 h kernel/drv/amd64/systrace=kernel/dtrace/amd64/systrace
 f kernel/drv/amd64/tcp 0755 root sys
+f kernel/drv/amd64/tcp6 0755 root sys
 f kernel/drv/amd64/tl 0755 root sys
 f kernel/drv/amd64/udp 0755 root sys
+f kernel/drv/amd64/udp6 0755 root sys
+f kernel/drv/amd64/zfs 0755 root sys
 f kernel/drv/arp.conf 0644 root sys
 f kernel/drv/asy.conf 0644 root sys
 f kernel/drv/clone.conf 0644 root sys
@@ -364,7 +375,10 @@ f kernel/drv/e1000g.conf 0644 root sys
 f kernel/drv/fasttrap.conf 0644 root sys
 f kernel/drv/fbt.conf 0644 root sys
 f kernel/drv/icmp.conf 0644 root sys
+f kernel/drv/icmp6.conf 0644 root sys
+f kernel/drv/igb.conf 0644 root sys
 f kernel/drv/ip.conf 0644 root sys
+f kernel/drv/ip6.conf 0644 root sys
 f kernel/drv/ipnet.conf 0644 root sys
 f kernel/drv/kmdb.conf 0644 root sys
 f kernel/drv/lockstat.conf 0644 root sys
@@ -392,8 +406,11 @@ f kernel/drv/sysevent.conf 0644 root sys
 f kernel/drv/sysmsg.conf 0644 root sys
 f kernel/drv/systrace.conf 0644 root sys
 f kernel/drv/tcp.conf 0644 root sys
+f kernel/drv/tcp6.conf 0644 root sys
 f kernel/drv/tl.conf 0644 root sys
 f kernel/drv/udp.conf 0644 root sys
+f kernel/drv/udp6.conf 0644 root sys
+f kernel/drv/zfs.conf 0644 root sys
 d kernel/dtrace 0755 root sys
 d kernel/dtrace/amd64 0755 root sys
 f kernel/dtrace/amd64/dcpc 0755 root sys
@@ -409,6 +426,7 @@ f kernel/exec/amd64/elfexec 0755 root sys
 f kernel/exec/amd64/intpexec 0755 root sys
 d kernel/fs 0755 root sys
 d kernel/fs/amd64 0755 root sys
+f kernel/fs/amd64/bootfs 0755 root sys
 f kernel/fs/amd64/ctfs 0755 root sys
 f kernel/fs/amd64/dev 0755 root sys
 f kernel/fs/amd64/devfs 0755 root sys
@@ -422,6 +440,7 @@ f kernel/fs/amd64/sockfs 0755 root sys
 f kernel/fs/amd64/specfs 0755 root sys
 f kernel/fs/amd64/tmpfs 0755 root sys
 f kernel/fs/amd64/ufs 0755 root sys
+h kernel/fs/amd64/zfs=kernel/drv/amd64/zfs
 d kernel/kmdb 0755 root sys
 d kernel/kmdb/amd64 0755 root sys
 f kernel/kmdb/amd64/genunix 0555 root sys
@@ -432,6 +451,7 @@ d kernel/mac 0755 root sys
 d kernel/mac/amd64 0755 root sys
 f kernel/mac/amd64/mac_ether 0755 root sys
 f kernel/mac/amd64/mac_ipv4 0755 root sys
+f kernel/mac/amd64/mac_ipv6 0755 root sys
 d kernel/misc 0755 root sys
 d kernel/misc/amd64 0755 root sys
 f kernel/misc/amd64/busra 0755 root sys
@@ -440,9 +460,11 @@ f kernel/misc/amd64/cmlb 0755 root sys
 f kernel/misc/amd64/consconfig 0755 root sys
 f kernel/misc/amd64/ctf 0755 root sys
 f kernel/misc/amd64/dls 0755 root sys
+f kernel/misc/amd64/edonr 0755 root sys
 f kernel/misc/amd64/fssnap_if 0755 root sys
 f kernel/misc/amd64/gld 0755 root sys
 f kernel/misc/amd64/hook 0755 root sys
+f kernel/misc/amd64/idmap 0755 root sys
 f kernel/misc/amd64/iommulib 0755 root sys
 f kernel/misc/amd64/ipc 0755 root sys
 f kernel/misc/amd64/kcf 0755 root sys
@@ -457,7 +479,10 @@ f kernel/misc/amd64/pcihp 0755 root sys
 f kernel/misc/amd64/sata 0755 root sys
 f kernel/misc/amd64/scsi 0755 root sys
 f kernel/misc/amd64/sha1 0755 root sys
+f kernel/misc/amd64/sha2 0755 root sys
+f kernel/misc/amd64/skein 0755 root sys
 f kernel/misc/amd64/strplumb 0755 root sys
+f kernel/misc/amd64/tlimod 0755 root sys
 d kernel/pcbe 0755 root sys
 d kernel/pcbe/amd64 0755 root sys
 r kernel/pcbe/amd64/pcbe.AuthenticAMD=usr/kernel/pcbe/amd64/pcbe.AuthenticAMD 0755 root sys
@@ -480,6 +505,7 @@ f kernel/strmod/amd64/ip 0755 root sys
 f kernel/strmod/amd64/ldterm 0755 root sys
 f kernel/strmod/amd64/pipemod 0755 root sys
 f kernel/strmod/amd64/ptem 0755 root sys
+h kernel/strmod/amd64/rpcmod=kernel/sys/amd64/rpcmod
 h kernel/strmod/amd64/tcp=kernel/drv/amd64/tcp
 f kernel/strmod/amd64/ttcompat 0755 root sys
 h kernel/strmod/amd64/udp=kernel/drv/amd64/udp
@@ -491,6 +517,7 @@ f kernel/sys/amd64/msgsys 0755 root sys
 f kernel/sys/amd64/pipe 0755 root sys
 f kernel/sys/amd64/portfs 0755 root sys
 f kernel/sys/amd64/pset 0755 root sys
+f kernel/sys/amd64/rpcmod 0755 root sys
 f kernel/sys/amd64/semsys 0755 root sys
 f kernel/sys/amd64/shmsys 0755 root sys
 d lib 0755 root bin
@@ -498,16 +525,24 @@ s lib/32=.
 s lib/64=amd64
 d lib/amd64 0755 root bin
 f lib/amd64/ld.so.1 0755 root bin
+f lib/amd64/libadm.so.1 0755 root bin
 f lib/amd64/libavl.so.1 0755 root bin
 f lib/amd64/libc.so.1 0755 root bin
 f lib/amd64/libc_db.so.1 0755 root bin
+f lib/amd64/libcmdutils.so.1 0755 root bin
+f lib/amd64/libcryptoutil.so.1 0755 root bin
 f lib/amd64/libctf.so.1 0755 root bin
 f lib/amd64/libcurses.so.1 0755 root bin
 f lib/amd64/libcustr.so.1 0755 root bin
+f lib/amd64/libdevid.so.1 0755 root bin
 f lib/amd64/libdevinfo.so.1 0755 root bin
 f lib/amd64/libdwarf.so.1 0755 root bin
+f lib/amd64/libefi.so.1 0755 root bin
 f lib/amd64/libelf.so.1 0755 root bin
+f lib/amd64/libfakekernel.so.1 0755 root bin
+f lib/amd64/libfdisk.so.1 0755 root bin
 f lib/amd64/libgen.so.1 0755 root bin
+f lib/amd64/libkstat.so.1 0755 root bin
 f lib/amd64/libm.so.2 0755 root bin
 f lib/amd64/libmd.so.1 0755 root bin
 f lib/amd64/libmp.so.2 0755 root bin
@@ -522,13 +557,18 @@ f lib/amd64/libscf.so.1 0755 root bin
 f lib/amd64/libsec.so.1 0755 root bin
 f lib/amd64/libsecdb.so.1 0755 root bin
 f lib/amd64/libsocket.so.1 0755 root bin
+f lib/amd64/libsysevent.so.1 0755 root bin
 f lib/amd64/libtsnet.so.1 0755 root bin
+f lib/amd64/libtsol.so.2 0755 root bin
 f lib/amd64/libumem.so.1 0755 root bin
+f lib/amd64/libuuid.so.1 0755 root bin
 f lib/amd64/libuutil.so.1 0755 root bin
+f lib/amd64/libvarpd.so.1 0755 root bin
 f lib/amd64/libvmmapi.so.1 0755 root bin
 f lib/amd64/libxml2.so.2 0755 root bin
 s lib/amd64/libz.so=libz.so.1
 f lib/amd64/libz.so.1 0755 root bin
+f lib/amd64/libzutil.so.1 0755 root bin
 s lib/amd64/libzfs_core.so.1=../../usr/lib/amd64/libzfs_core.so.1
 f lib/amd64/nss_dns.so.1 0755 root bin
 f lib/amd64/nss_files.so.1 0755 root bin
@@ -727,7 +767,9 @@ d proc 0755 root root
 d root 0755 root root
 f root/.hushlogin 0600 root root
 f root/.profile 0600 root root
+f root/fix-m2a 0755 root root
 f root/post-phase2 0755 root root
+f root/start-network 0755 root root
 f root/start-sshd 0755 root root
 d sbin 0755 root sys
 f sbin/autopush 0555 root bin
@@ -759,8 +801,11 @@ s sbin/su=../usr/bin/su
 f sbin/sulogin 0555 root bin
 f sbin/umount 0555 root bin
 f sbin/uname 0555 root bin
+s sbin/zfs=../usr/sbin/zfs
 f sbin/zonename 0555 root bin
+s sbin/zpool=../usr/sbin/zpool
 d system 0755 root root
+d system/boot 0555 root root
 d system/contract 0555 root root
 d system/object 0555 root root
 d tmp 1777 root root
@@ -903,6 +948,7 @@ f usr/lib/amd64/libcmd.so.1 0755 root bin
 f usr/lib/amd64/libcpc.so.1 0755 root bin
 f usr/lib/amd64/libdemangle-sys.so.1 0755 root bin
 f usr/lib/amd64/libdisasm.so.1 0755 root bin
+f usr/lib/amd64/libdiskmgt.so.1 0755 root bin
 f usr/lib/amd64/libdll.so.1 0755 root bin
 f usr/lib/amd64/libdtrace.so.1 0755 root bin
 f usr/lib/amd64/libexacct.so.1 0755 root bin
@@ -910,6 +956,7 @@ f usr/lib/amd64/libidmap.so.1 0755 root bin
 f usr/lib/amd64/libkvm.so.1 0755 root bin
 f usr/lib/amd64/libpcidb.so.1 0755 root bin
 f usr/lib/amd64/libpctx.so.1 0755 root bin
+f usr/lib/amd64/libpkcs11.so.1 0755 root bin
 f usr/lib/amd64/libpool.so.1 0755 root bin
 f usr/lib/amd64/libproject.so.1 0755 root bin
 f usr/lib/amd64/libsaveargs.so.1 0755 root bin
@@ -917,8 +964,14 @@ f usr/lib/amd64/libshell.so.1 0755 root bin
 f usr/lib/amd64/libsmbios.so.1 0755 root bin
 s usr/lib/amd64/libz.so.1=../../../lib/amd64/libz.so.1
 f usr/lib/amd64/libzfsbootenv.so.1 0755 root bin
-f usr/lib/amd64/libzfs_core.so.1 755 root bin
+r usr/lib/amd64/libzfs.so.1=lib/amd64/libzfs.so.1 0755 root bin
+f usr/lib/amd64/libzfs_core.so.1 0755 root bin
+f usr/lib/amd64/libzpool.so.1 0755 root bin
 d usr/lib/cfgadm 0755 root sys
+s usr/lib/cfgadm/pci.so=pci.so.1
+f usr/lib/cfgadm/pci.so.1 0755 root sys
+s usr/lib/cfgadm/shp.so=shp.so.1
+f usr/lib/cfgadm/shp.so.1 0755 root sys
 d usr/lib/devfsadm 0755 root sys
 s usr/lib/devfsadm/devfsadmd=../../sbin/devfsadm
 d usr/lib/devfsadm/linkmod 0755 root sys
@@ -987,6 +1040,7 @@ f usr/lib/isaexec 0555 root bin
 f usr/lib/libast.so.1 0755 root bin
 f usr/lib/libbe.so.1 0755 root bin
 f usr/lib/libbrand.so.1 0755 root bin
+f usr/lib/libcfgadm.so.1 0755 root bin
 f usr/lib/libcmd.so.1 0755 root bin
 f usr/lib/libcpc.so.1 0755 root bin
 f usr/lib/libdisasm.so.1 0755 root bin
@@ -1022,8 +1076,10 @@ f usr/lib/libtecla.so.1 0755 root bin
 f usr/lib/libwrap.so.1 0755 root bin
 s usr/lib/libz.so.1=../../lib/libz.so.1
 f usr/lib/libzfsbootenv.so.1 0755 root bin
-f usr/lib/libzfs_core.so.1 755 root bin
+r usr/lib/libzfs.so.1=lib/libzfs.so.1 0755 root bin
+f usr/lib/libzfs_core.so.1 0755 root bin
 f usr/lib/libzonecfg.so.1 0755 root bin
+f usr/lib/libzpool.so.1 0755 root bin
 f usr/lib/lddstub 0555 root bin
 d usr/lib/mdb 0755 root sys
 d usr/lib/mdb/kvm 0755 root sys
@@ -1133,6 +1189,7 @@ f usr/sbin/add_drv 0555 root bin
 f usr/sbin/allocate 4555 root bin
 d usr/sbin/amd64 0755 root bin
 f usr/sbin/amd64/dtrace 0555 root bin
+f usr/sbin/cfgadm 0555 root bin
 f usr/sbin/cpustat 0555 root bin
 f usr/sbin/devfsadm 0755 root sys
 f usr/sbin/devinfo 0555 root bin
@@ -1160,6 +1217,8 @@ f usr/sbin/svcadm 0555 root bin
 f usr/sbin/svccfg 0555 root bin
 f usr/sbin/syslogd 0555 root sys
 f usr/sbin/update_drv 0555 root sys
+r usr/sbin/zfs=sbin/zfs 0555 root sys
+r usr/sbin/zpool=sbin/zpool 0555 root sys
 d usr/share 0755 root sys
 d usr/share/hwdata 0755 root sys
 f usr/share/hwdata/pci.ids 0444 root bin
@@ -1190,6 +1249,10 @@ f usr/share/lib/xml/dtd/service_bundle.dtd.1 0444 root sys
 f usr/share/lib/xml/dtd/topology.dtd.1 0444 root bin
 d var 0755 root sys
 d var/adm 0775 root sys
+d var/ld 0755 root root
+d var/ld/amd64 0755 root root
+s var/ld/32=.
+s var/ld/64=amd64
 d var/log 0755 root sys
 d var/run 0755 root sys
 d var/saf 0755 root bin

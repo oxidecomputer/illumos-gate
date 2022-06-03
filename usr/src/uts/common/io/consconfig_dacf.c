@@ -219,7 +219,7 @@ static cons_state_t	*consconfig_sp;
  * consconfig_errlevel:  debug verbosity; smaller numbers are more
  * verbose.
  */
-int consconfig_errlevel = DPRINT_L0;
+int consconfig_errlevel = DPRINT_L3;
 
 /*
  * Baud rate table

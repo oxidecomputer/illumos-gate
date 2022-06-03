@@ -1,14 +1,52 @@
 #! /sbin/sh
 
-chown -R root:sys /tmp/usr /tmp/sbin /tmp/lib
+p2root="$1"
 
-mount -F lofs /tmp/kernel/drv /kernel/drv
-mount -F lofs /tmp/kernel/fs /kernel/fs
-mount -F lofs /tmp/kernel/misc /kernel/misc
-mount -F lofs /tmp/kernel/strmod /kernel/strmod
-mount -F lofs /tmp/usr/lib/devfsadm/linkmod /usr/lib/devfsadm/linkmod
-mount -F lofs /tmp/usr/lib/cfgadm /usr/lib/cfgadm
-mount -F lofs /tmp/usr/lib/security /usr/lib/security
+if [ -z "$p2root" ]; then
+	printf "Phase2 root not set; assuming /tmp\n"
+	p2root=/tmp
+fi
 
-update_drv zfs
+if ! [ -d "$p2root/usr" ]; then
+	printf "%s not found; be sure to unpack phase2.tar first!\n" \
+	    "$p2root/usr"
+	exit 1
+fi
+
+export PATH="/usr/bin:/usr/sbin:/sbin:$p2root/bin:$p2root/usr/bin:$p2root/usr/sbin:$p2root/sbin:$p2root/usr/xpg6/bin:/opt/local/bin"
+echo "export PATH=\"/usr/bin:/usr/sbin:/sbin:$p2root/bin:$p2root/usr/bin:$p2root/usr/sbin:$p2root/sbin:$p2root/usr/xpg6/bin:/opt/local/bin\"" >> /root/.profile
+
+chown -R root:sys "$p2root/usr" "$p2root/sbin" "$p2root/lib"
+
+mount -F lofs "$p2root/kernel/drv" /kernel/drv
+mount -F lofs "$p2root/kernel/fs" /kernel/fs
+mount -F lofs "$p2root/kernel/misc" /kernel/misc
+mount -F lofs "$p2root/kernel/strmod" /kernel/strmod
+mount -F lofs "$p2root/usr/lib/devfsadm/linkmod" /usr/lib/devfsadm/linkmod
+mount -F lofs "$p2root/usr/lib/cfgadm" /usr/lib/cfgadm
+mount -F lofs "$p2root/usr/lib/security" /usr/lib/security
+
+#
+# The lofs mounts don't quite always work, so we set up ld.config too.
+#
+crle -u -l /lib -l /usr/lib -l "$p2root/lib" -l "$p2root/usr/lib"
+crle -u -s /lib/secure -s /usr/lib/secure -s "$p2root/lib/secure" \
+	-s "$p2root/usr/lib/secure"
+crle -64 -u -l /lib/64 -l /usr/lib/64 -l "$p2root/lib/64" \
+	-l "$p2root/usr/lib/64"
+crle -64 -u -s /lib/secure/64 -s /usr/lib/secure/64 -s "$p2root/lib/secure/64" \
+	-s "$p2root/usr/lib/secure/64"
+
 devfsadm
+
+svcadm restart coreadm
+svcadm restart system-log
+svcadm restart hotplug
+svcadm restart sysevent
+
+printf "Cores will be dumped into %s.\n" "$p2root/cores"
+mkdir -p "$p2root/cores"
+coreadm -g "$p2root/cores/core.%f.%p"
+
+printf "Log out and back in or source ~/.profile to pick up PATH changes.\n"
+exit 0

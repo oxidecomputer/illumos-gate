@@ -61,7 +61,7 @@ static const uint64_t ASSUMED_APOB_ADDR = 0x4000000UL;
 static const uint32_t ASSUMED_RESET_VECTOR = 0x7ffefff0U;
 static const char FAKE_BOARD_IDENT[] = "FAKE-IDENT";
 static const uint64_t RAMDISK_START_VAL = 0x101000000UL;
-static const uint64_t RAMDISK_END_VAL = 0x109000000UL;
+static const uint64_t RAMDISK_END_VAL = 0x106000000UL;
 
 static const bt_prop_t reset_vector_prop = {
 	.btp_next = NULL,

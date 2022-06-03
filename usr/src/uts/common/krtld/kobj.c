@@ -162,7 +162,7 @@ extern char stubs_end[];
  *	D_LOADING	- display information about each module as it
  *			  is loaded.
  */
-int kobj_debug = D_DEBUG | D_LOADING;
+int kobj_debug = 0;
 
 #define	KOBJ_MARK(s)	if (kobj_debug & D_DEBUG)	\
 	(_kobj_printf(ops, "%d", __LINE__), _kobj_printf(ops, ": %s\n", s))
