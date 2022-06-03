@@ -745,6 +745,26 @@ static int t6mfg_spidev_write(t6mfg_devstate_t *devstate_p, struct uio *uio_p, c
 	return (ENOTSUP);
 }
 
+static uint32_t
+t6mfg_reg_read(t6mfg_devstate_t *devstate_p, uint32_t reg)
+{
+	uint32_t val;
+	uintptr_t addr = (uintptr_t)devstate_p->pio_kernel_regs + reg;
+	val = ddi_get32(devstate_p->pio_kernel_regs_handle, (void *)addr);
+	DTRACE_PROBE3(t6mfg__reg__read, t6mfg_devstate_t *, devstate_p,
+	    uint32_t, reg, uint32_t, val);
+	return (val);
+}
+
+static void
+t6mfg_reg_write(t6mfg_devstate_t *devstate_p, uint32_t reg, uint32_t val)
+{
+	uintptr_t addr = (uintptr_t)devstate_p->pio_kernel_regs + reg;
+	DTRACE_PROBE3(t6mfg__reg__write, t6mfg_devstate_t *, devstate_p,
+	    uint32_t, reg, uint32_t, val);
+	ddi_put32(devstate_p->pio_kernel_regs_handle, (void *)addr, val);
+}
+
 static int t6mfg_spidev_ioctl(t6mfg_devstate_t *devstate_p, int cmd, intptr_t arg, int mode, cred_t *cred_p, int *rval_p) {
 	return (ENOTTY);
 }
