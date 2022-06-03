@@ -412,6 +412,7 @@ COMMON_SUBDIRS=		\
 	sysdef		\
 	syseventadm	\
 	syslogd		\
+	t6mfgadm	\
 	tabs		\
 	tail		\
 	tar		\
@@ -500,7 +501,6 @@ i386_SUBDIRS=		\
 	rdmsr		\
 	rsrvrctl	\
 	rtc		\
-	t6mfgtool	\
 	ucodeadm	\
 	xhci		\
 	xvm

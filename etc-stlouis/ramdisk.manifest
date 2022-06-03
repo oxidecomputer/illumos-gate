@@ -771,6 +771,9 @@ f root/fix-m2a 0755 root root
 f root/post-phase2 0755 root root
 f root/start-network 0755 root root
 f root/start-sshd 0755 root root
+d root/t6 0755 root root
+f root/t6/Oxide_t6_2x100Gbase_kr_nomemory_v2.bin 0644 root root
+f root/t6/t6fw-1.26.6.0.bin 0644 root root
 d sbin 0755 root sys
 f sbin/autopush 0555 root bin
 f sbin/devprop 0555 root bin

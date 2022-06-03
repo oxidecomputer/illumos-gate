@@ -154,6 +154,7 @@ SUBDIRS +=				\
 	libipp		\
 	libipsecutil	\
 	libiscsit	\
+	libispi		\
 	libjedec	\
 	libkmf		\
 	libkrb5		\
@@ -219,6 +220,7 @@ SUBDIRS +=				\
 	libstmfproxy	\
 	libsun_ima	\
 	libsysevent	\
+	libt6mfg	\
 	libtecla	\
 	libtermcap	\
 	libthread	\
@@ -418,6 +420,7 @@ HDRSUBDIRS=				\
 	libipp		\
 	libipsecutil	\
 	libiscsit	\
+	libispi		\
 	libkrb5		\
 	libkstat	\
 	libkvm		\
@@ -464,6 +467,7 @@ HDRSUBDIRS=				\
 	libstmfproxy	\
 	libsun_ima	\
 	libsysevent	\
+	libt6mfg	\
 	libtecla	\
 	libtermcap	\
 	libtnf		\
@@ -677,6 +681,7 @@ libstmf:	libscf
 libstmfproxy:	libstmf libpthread
 libsun_ima:	libdevinfo libsysevent
 libsysevent:	libsecdb
+libt6mfg:	libispi
 libtecla:	libcurses
 libtermcap:	libcurses
 libtnfctl:	../cmd/sgs/libelf
