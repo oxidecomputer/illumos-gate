@@ -39,7 +39,6 @@ crle -64 -u -s /lib/secure/64 -s /usr/lib/secure/64 -s "$p2root/lib/secure/64" \
 
 devfsadm
 
-svcadm restart coreadm
 svcadm restart system-log
 svcadm restart hotplug
 svcadm restart sysevent
