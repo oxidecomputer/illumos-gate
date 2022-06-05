@@ -33,16 +33,22 @@ is to be run:
 Steps
 -----
 
+WARNING: You must always start in power state A3 or lower due to
+hardware-gimlet#1701.  If you start in A2 after a previous boot, behaviour of
+PCIe devices may be unpredictable.  Sometimes this can be fixed with the
+sequence of steps performed by the "fix-m2a" and "fix-t6" scripts, with
+appropriate adjustments for the specific device's power and reset control.
+Sometimes not.  Since we don't really have Ignition control and it's unclear
+whether all host-visible rails really go to 0V in A3, ALWAYS START IN A4.
+This means removing the Gimlet from the bus bar or turning off the attached
+Meanwell supply, then waiting for all rails to bleed to 0V before proceeding.
+
 If you have already performed steps 0-5 on this Gimlet, skip to step 6.
 
 0. Write down the manufacturer and serial number of each SSDs you wish to use
 prior to or during installation; they can usually be found on the label.  This
 will make it easier to identify the device you want to use once the system is
 running.
-
-WARNING: You must always start in power state A3 or lower due to
-hardware-gimlet#1701.  If you start in A2 after a previous boot, behaviour of
-PCIe devices may be unpredictable.
 
 1. If you are not following path <C>, skip to step 2.
 
@@ -89,7 +95,7 @@ U.2 bay.  Make sure any sharkfins you are going to populate have their top
 retaining keys seated in the retainer bracket before reinstalling the outer
 top panel.
 
-4. Connect up your Gimlet and turn it on.
+4. Connect up your Gimlet and turn it on, entering power state A2.
 
 5. Burn the special loader image (milan-quiet-3m-2dpc-0.4.5-128MiB.bin):
 
@@ -103,17 +109,23 @@ top panel.
 
    Nano-Bootloader 0.4.5-128MiB
 
-If it does not, drop to A2 and go back to step 5 and burn the correct image.
+If it does not, drop to A4, go back to step 4, and burn the correct image.
 
    $ humility hiffy -c Sequencer.set_state -a state=A2
 
-8. If you have any M.2 SSDs installed, work around the M.2 power control bug
-by forcing the controller on.  If both sockets are populated:
+8. Skip to step 9.  Do not perform this step if starting from A4; it is not
+needed.  If you have no choice but to start from a previously-booted system in
+A2, this step is left here for reference as you may need to perform it.
+
+If you have any M.2 SSDs installed, you may need to work around an M.2 power
+control bug by forcing the controller on.  This should not be necessary if you
+have started from A4.  If both sockets are populated:
 
    $ humility i2c -b mid -d 0x3a -r 0x3b -w 0x0f
 
 If only socket A is populated, write 0x0e; if only socket B is populated,
-write 0xd.
+write 0xd.  If you have M.2 sockets populated and they appear to be empty,
+this may solve the problem for you.
 
 9. Load the ramdisk in the usual fashion:
 
@@ -136,6 +148,15 @@ setup below.  Otherwise, just continue:
 
 13. If you installed the NIC in step 3, start up networking now.  Otherwise,
 skip to step 14.
+
+First, if you are starting from A4, it is likely that your NIC is not yet
+powered up.  See the section below entitled "Setting Up PCIe Devices".
+Identify the slot in which you installed the NIC and verify that it is
+present.  If you did not start in A4, your NIC may be in the broken state and
+you will need to manually perform the disconnect/cycle/configure dance
+described in that section, which may or may not work.  Otherwise, your NIC may
+be in the off state.  In either case, you must get it into the working state
+before proceeding.
 
 DHCP is not supported; you will need to choose an IP address that matches the
 network in use on your laptop or other attached devices.  For example, if you
@@ -189,17 +210,20 @@ nvme1: model: WUS4C6432DSP3X3, serial: A079E06E, FW rev: R2210000, NVMe v1.3
 nvme2: model: WUS4C6432DSP3X3, serial: A079E264, FW rev: R2210000, NVMe v1.3
   nvme2/0014ee81000bc37c (c3t0014EE81000BC37Cd0): Size = 3052360 MB, Capacity = 3052360 MB, Used = 3052360 MB
 
-More likely, you will see that the SSD in M.2 socket A is missing (assuming
-you have anything installed in it).  If so, you must work around stlouis#57 by
-running:
+If you have started from A4, it is likely that you see no output.  If you did
+not, you may see a subset of the SSDs that are actually installed.  In either
+case, you need to get them into the working state before using them; see
+"Setting Up PCIe Devices" below to work around hardware-gimlet#1701 and
+stlouis#57.  If only M.2A is in the broken state, you can do
 
    # /root/fix-m2a
 
 This program will instruct you to execute a pair of humility commands on your
 laptop that will cycle the power to M.2A.  When you have completed these
-commands, press <ENTER> to finish the workaround.  At this point, all
-installed SSDs should be visible via 'nvmeadm list'.  If not, you will need to
-stop and debug the problem.
+commands, press <ENTER> to finish the workaround.  If other SSDs are missing,
+perform the appropriate steps manually as described in the PCIe device setup
+section.  With that complete, all installed SSDs should be visible via
+'nvmeadm list'.  If not, you will need to stop and debug the problem.
 
 16. If you have previously chosen to persist phase2 data onto an installed
 SSD, skip to step 19.  Otherwise, if you are following paths <A> or <B>, skip
@@ -281,6 +305,181 @@ Changes made to the root filesystem (/, /etc, /root, ...) will not persist
 even if you set up persistent phase2 storage; the root filesystem is part of
 phase1.
 
+If the next step for you is to set up the T6, move down to the section
+covering that procedure.
+
+Setting Up PCIe Devices
+-----------------------
+
+If you have started from A4 as recommended, it is likely that all of your PCIe
+devices will be powered down at boot (this is actually intended, though it
+doesn't quite work properly yet).  If you have not, some may be powered and
+working, some may be powered down, and some are probably in a broken,
+inconsistent state.  To inspect the state of your devices, utter:
+
+   # cfgadm -l
+
+While you can and should read the manual for this rather awful tool, there are
+from our perspective 4 states for each attachment point:
+
+   unknown + empty + unconfigured	This appers to be a reliable
+					indication that the slot is empty.
+
+   unknown + connected + unconfigured	This is a bad state; see below.
+					Typically this seems to happen if you
+					reboot without going through A4 and
+					indicates that the device has not been
+					properly reset and/or that the SMU
+					firmware's understanding of its state
+					does not match reality.  We'll refer
+					to this state as "broken" below.
+
+   unknown + disconnected + unconfigured
+   					This is the starting state for devices
+					that are powered off and is what you
+					should expect to see for all populated
+					slots when starting from A4.  We'll
+					refer to this state as "off" below.
+
+   devtype/hp + connected + configured	This is the working state; devices in
+   					this state should have drivers bound
+					to them (or able to bind to them).
+					We'll refer to this state as "working"
+					below.  In this state, NICs are
+					visible to dladm(8), SSDs are visible
+					to nvmeadm(8), and so on.
+
+Example output from cfgadm -l:
+
+   Ap_Id                     Type         Receptacle   Occupant     Condition
+   pcie0                     nvme/hp      connected    configured   ok
+   pcie1                     nvme/hp      connected    configured   ok
+   pcie2                     unknown      empty        unconfigured unknown
+   pcie3                     unknown      empty        unconfigured unknown
+   pcie4                     unknown      empty        unconfigured unknown
+   pcie5                     unknown      empty        unconfigured unknown
+   pcie6                     unknown      empty        unconfigured unknown
+   pcie7                     unknown      empty        unconfigured unknown
+   pcie8                     unknown      empty        unconfigured unknown
+   pcie9                     etherne/hp   connected    configured   ok
+   pcie16                    unknown      connected    unconfigured unknown
+   pcie17                    nvme/hp      connected    configured   ok
+   pcie18                    nvme/hp      connected    configured   ok
+   pcie19                    unknown      empty        unconfigured unknown
+
+The attachment points ("Ap_Id") for Gimlet rev B are as follows:
+
+   0-9		Sharkfin slots N0 (A) through N9 (J)
+   16 (0x10)	T6
+   17 (0x11)	M.2A
+   18 (0x12)	M.2B
+   19 (0x13)	Sidecar connector
+
+You should not see any attachment points of any type other than PCIe.
+
+In the example above, I have installed the gigabit NIC in slot J or N9 and it
+is in the working state (this may happen automatically if you have started up
+from A2, or it may happen after you have fixed up the state).  The T6 is in
+the broken state, there are 2 U.2 SSDs and both M.2 SSDs in the working state,
+and the rest of the U.2 slots and the Sidecar connector are unused.
+
+Devices in the off state can be powered up, enumerated, and (if a driver is
+present) attached into the device tree simply by uttering:
+
+   # cfgadm -c configure <Ap>
+
+where <Ap> is an Ap_Id such as pcie9 that corresponds to the slot you want to
+power up.  You should see console messages about attaching drivers, assuming
+there is something supported in the slot.
+
+Devices in the broken state require a more complicated dance to get working.
+Essentially, we must first get the device into the off state.  There are
+generally two steps to that, sometimes three depending upon how power control
+actually works for the specific device.  The first step is to tell the OS to
+disconnect the device:
+
+   # cfgadm -c disconnect <Ap>
+
+The second step is to remove power to the device or to at least reset it (if
+there is no reliable way to remove power).  The means of doing this varies;
+for sharkfin slots and M.2 sockets, one may command the MAX5970 controller to
+turn off the channel; e.g., to force off M.2A while leaving M.2B under HPIO
+control:
+
+   $ humility i2c -b mid -d 0x3a -r 0x3b -w 0x8
+
+For M.2 sockets, power is always controlled from device 0x3a on the mid bus,
+register 0x3b, and the values to set are as follows (OR the desired state of A
+and B together):
+
+			M.2A	M.2B
+	Force ON	0x3	0xc
+	Force OFF	0x0	0x0
+	HPIO control	0x2	0x8	(default)
+
+For U.2/sharkfin sockets, power is controlled by setting register 0x3b at
+address 0x38 on the front bus behind the following switches:
+
+	N0/A	1:1
+	N1/B	1:2
+	N2/C	1:3
+	N3/D	1:4
+	N4/E	2:1
+	N5/F	2:2
+	N6/G	2:3
+	N7/H	2:4
+	N8/I	3:1
+	N9/J	3:2
+
+These controllers should have their enable register set as follows:
+
+	Force ON	0xf
+	Force OFF	0x0
+	HPIO control	0xa	(default)
+
+The T6's power is controlled by the sequencer FPGA.  It appears to be
+sufficient to reset the T6 without cycling power; to do this, utter:
+
+   $ humility spi -p 2 -n 64 -w 0,0,0x27,0xc
+
+At this point the device should be in the off state, or close to it.  Next,
+take the device out of reset and/or enable its power controller.  While it
+should not be necessary to force the sharkfin or M.2 power controllers on, you
+may have to do so.  For the T6 it should be sufficient to take it out of reset
+by uttering:
+
+   $ humility spi -p 2 -n 64 -w 0,0,0x27,0
+
+If you need to force power to an SSD, do so at this time; otherwise, return
+the SSD to HPIO power control.  The process for resetting and/or controlling
+Tofino2 power is beyond the scope of this document.
+
+Once you have cycled the device, bring it to the working state by uttering:
+
+   # cfgadm -c configure <Ap>
+
+This process can be repeated for each device you wish to enable.  There are
+scripts that do most of this for you in /root/fix-m2a and /root/fix-t6 if you
+need to fix the M.2A and T6, respectively; they will prompt you to perform the
+appropriate cycling commands from your laptop or whatever machine is connected
+to the SP.
+
+If the device is still in a broken state or fails to configure, you will need
+to stop and debug the problem, making note of any other error messages you see
+such as:
+
+   Dec 31 22:46:30 gimlet pcicfg: Not enough PCI resources to configure: /pci@58,0/pci1022,1483@1,1
+   cfgadm: Hardware specific failure: configure failed
+   Dec 31 22:46:30 gimlet genunix: WARNING: (pcieb40): failed to probe the Connection pcie16
+
+There are a LOT of bugs here; while all the devices in S/N 15 have been seen
+to be in a working state at the same time after following these procedures, it
+is possible that a more heavily populated system will fail or that random
+behaviours will cause hangs, panics, or devices ending up in persistent broken
+states.  This is simply what lies in store for you here, several km beyond the
+end of the graded road.  Some bugs to refer to include hardware-gimlet#1701,
+stlouis#48, 49, 57, 58, and 59.
+
 T6 Setup
 --------
 
@@ -290,23 +489,29 @@ are in /root/t6.  After programming the T6 itself, we must switch it from
 manufacturing into mission mode, which at present seems to require rebooting.
 First you will likely need to give the hotplug engine the works, as with M2A:
 
-# /root/fix-t6
+   # /root/fix-t6
 
 This program, like fix-m2a, will instruct you to run some humility commands to
 cycle the T6.  Once this is done, you should have t6mfg attached, at which
 point you can program the SROM and flash.  It should be necessary to do this
 only the first time; on subsequent boots, this step can be skipped:
 
-# t6mfgadm srom write -d 0 -f /root/t6/Oxide_t6_2x100Gbase_kr_nomemory_v2.bin
-# t6mfgadm srom verify -d 0 -f /root/t6/Oxide_t6_2x100Gbase_kr_nomemory_v2.bin
-# t6mfgadm flash write -d 0 -F /root/t6/t6fw-1.26.6.0.bin
-# t6mfgadm flash verify -d 0 -F /root/t6/t6fw-1.26.6.0.bin
+   # t6mfgadm srom write -d 0 -f /root/t6/Oxide_t6_2x100Gbase_kr_nomemory_v2.bin
+   # t6mfgadm srom verify -d 0 -f /root/t6/Oxide_t6_2x100Gbase_kr_nomemory_v2.bin
+   # t6mfgadm flash write -d 0 -F /root/t6/t6fw-1.26.6.0.bin
+   # t6mfgadm flash verify -d 0 -F /root/t6/t6fw-1.26.6.0.bin
 
 At this point, you'd like to think you could just enter mission mode and have
 the t6mfg driver detach and the t4nex driver attach automatically.  Alas, we
-aren't there yet, and my attempts at coordinated hotplug always time out.  So
-the only known way to deal with this right now is to reboot.  To get the
-(programmed!) T6 into mission mode, when you reach the kmdb prompt, utter:
+aren't there yet.  You have two options: coordinated hotplug (which often
+seems to time out and fail) or reboot.  To try coordinated hotplug, utter
+
+   # cfgadm -f -c unconfigure pcie16
+   # cfgadm -f -c disconnect pcie16
+
+If these commands succeed, return to kmdb by sending a BREAK from your
+terminal emulator (picocom: Ctrl-\), then issue the below command; otherwise,
+you will need to reboot and then enter this command at the first kmdb prompt:
 
    [0]> 2d02574::wrsmn c40000
    [0]> :c
@@ -316,12 +521,23 @@ Then toggle CLD_RST_L:
    $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
    $ humility spi -p 2 -n 64 --write 0,0,0x27,0
 
-Continue booting:
+Continue booting or running:
 
    [0]> :c
 
-You may need to do the hotplug dance again too once you're up; if the T6
-drivers haven't attached and cfgadm -l shows pcie16 as unconfigured, do:
+If you are doing coordinated hotplug, try to put the T6 into the working
+state:
+
+   # cfgadm -c configure pcie16
+
+If this fails, you'll need to reboot and issue the above kmdb commands to put
+the T6 into mission mode.
+
+Once you're up, follow the general boot instructions to get yourself into
+phase2; the T6 drivers are not part of the phase1 software bundle and you will
+not be able to use the T6 until you have entered phase2.  Once in phase2, you
+may need to do the hotplug dance again too; if the T6 drivers haven't attached
+and cfgadm -l shows pcie16 as unconfigured, do:
 
    # /root/fix-t6
 
@@ -333,7 +549,8 @@ At this point, t4nex and cxgbe should be attached:
    cxgbe0      phys      1500   unknown  --         --
    cxgbe1      phys      1500   unknown  --         --
 
-You should now be able to plumb up the Ethernet links.
+You should now be able to plumb up the Ethernet links and/or do other useful
+things with dladm etc.
 
 Sidecar Setup
 -------------
