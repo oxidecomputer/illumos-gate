@@ -465,7 +465,7 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	case BF_PKT_INIT:
 		mutex_enter(&tf->tf_mutex);
 		if (tf->tf_pkt_state != NULL)
-			tfpkt_fini(tf);
+			(void) tfpkt_fini(tf);
 		rval = tfpkt_init(tf);
 		mutex_exit(&tf->tf_mutex);
 		return (rval);
@@ -592,8 +592,15 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	}
 
 	atomic_inc_32(&tf->tf_intr_cnt[intr_no]);
-	if (tf->tf_pkt_state != NULL)
-		ddi_intr_trigger_softint(tf->tf_pkt_state->tfp_softint, NULL);
+	if (tf->tf_pkt_state != NULL) {
+		int err = ddi_intr_trigger_softint(
+		    tf->tf_pkt_state->tfp_softint, NULL);
+		if (err != DDI_SUCCESS && err != DDI_EPENDING) {
+			dev_err(tf->tf_dip, CE_WARN,
+			    "ddi_intr_trigger_softint() failed (err = %d)",
+			    err);
+		}
+	}
 
 	return (DDI_INTR_CLAIMED);
 }
@@ -882,7 +889,7 @@ static void
 tofino_cleanup(tofino_t *tf)
 {
 	if (tf->tf_pkt_state != NULL)
-		tfpkt_fini(tf);
+		(void) tfpkt_fini(tf);
 
 	if ((tf->tf_attach & TOFINO_A_MINOR) != 0) {
 		minor_t m = (minor_t)ddi_get_instance(tf->tf_dip);

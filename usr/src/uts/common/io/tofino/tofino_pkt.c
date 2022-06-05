@@ -138,7 +138,7 @@ fail0:
 static void
 tfpkt_dma_free(tfpkt_dma_t *dmap)
 {
-	ddi_dma_unbind_handle(dmap->tpd_handle);
+	VERIFY(ddi_dma_unbind_handle(dmap->tpd_handle) == DDI_SUCCESS);
 	ddi_dma_mem_free(&dmap->tpd_acchdl);
 	ddi_dma_free_handle(&dmap->tpd_handle);
 }
@@ -422,7 +422,7 @@ tfpkt_alloc_dr(tfpkt_t *tfp, tfpkt_dr_t *drp, tfpkt_dr_type_t dr_type,
 		return (-1);
 	}
 
-	snprintf(drp->tfdrp_name, DR_NAME_LEN, "%s_%d", prefix, dr_id);
+	(void) snprintf(drp->tfdrp_name, DR_NAME_LEN, "%s_%d", prefix, dr_id);
 	mutex_init(&drp->tfdrp_mutex, NULL, MUTEX_DRIVER, NULL);
 	drp->tfdrp_reg_base = reg_base;
 	drp->tfdrp_type = dr_type;
@@ -1036,7 +1036,7 @@ tfpkt_dr_pull(dev_info_t *dip, tfpkt_dr_t *drp, uint64_t *desc)
 	for (int i = 0; i < (drp->tfdrp_desc_size >> 3); i++)
 		desc[i] = slot[i];
 
-	tfpkt_dr_advance_head(drp);
+	(void) tfpkt_dr_advance_head(drp);
 	tfpkt_dr_write(dip, drp, TBUS_DR_OFF_HEAD_PTR, drp->tfdrp_head);
 	mutex_exit(&drp->tfdrp_mutex);
 
@@ -1066,7 +1066,7 @@ tfpkt_dr_push(dev_info_t *dip, tfpkt_dr_t *drp, uint64_t *desc)
 	for (int i = 0; i < (drp->tfdrp_desc_size >> 3); i++)
 		slot[i] = desc[i];
 
-	tfpkt_dr_advance_tail(drp);
+	(void) tfpkt_dr_advance_tail(drp);
 	tail = DR_PTR_GET_BODY(drp->tfdrp_tail);
 	*drp->tfdrp_tail_ptr = tail;
 	tfpkt_dr_write(dip, drp, TBUS_DR_OFF_TAIL_PTR, drp->tfdrp_tail);
@@ -1298,7 +1298,8 @@ tpkt_intr(caddr_t arg1, caddr_t arg2)
 		for (int i = 0; i < TF_PKT_RX_CNT; i++) {
 			if (tfpkt_rx_poll(tfp, i) > 0) {
 				processed++;
-				tfpkt_push_free_bufs(tfp->tfp_dip, tfp, i);
+				(void) tfpkt_push_free_bufs(tfp->tfp_dip,
+				    tfp, i);
 			}
 		}
 
@@ -1352,7 +1353,11 @@ tfpkt_init(tofino_t *tf)
 
 	if (err != 0) {
 		if (sh != 0) {
-			ddi_intr_remove_softint(sh);
+			if (ddi_intr_remove_softint(sh) != DDI_SUCCESS) {
+				dev_err(tf_dip, CE_WARN,
+				    "ddi_intr_remove_softint() failed on "
+				    "tfpkt_init() failure path");
+			}
 		}
 		tfpkt_free_drs(tfp);
 		tfpkt_free_bufs(tfp);
@@ -1375,11 +1380,19 @@ tfpkt_init(tofino_t *tf)
 int
 tfpkt_fini(tofino_t *tf)
 {
+	int err = 0;
 	tfpkt_t *tfp;
 
 	if ((tfp = tf->tf_pkt_state) != NULL) {
 		mutex_enter(&tfp->tfp_mutex);
-		ddi_intr_remove_softint(tfp->tfp_softint);
+		err = ddi_intr_remove_softint(tfp->tfp_softint);
+		if (err != DDI_SUCCESS) {
+			mutex_exit(&tfp->tfp_mutex);
+			dev_err(tf->tf_dip, CE_WARN,
+			    "ddi_intr_remove_softint() failed during "
+			    "tfpkt_fini() (err = %d)", err);
+			return (err);
+		}
 		tfpkt_free_bufs(tfp);
 		mutex_exit(&tfp->tfp_mutex);
 		mutex_destroy(&tfp->tfp_mutex);

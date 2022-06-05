@@ -161,7 +161,7 @@ tfport_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		if (dld_ioc_register(TFPORT_IOC, tfport_ioc_list,
 		    DLDIOCCNT(tfport_ioc_list)) != 0) {
 			dev_err(dip, CE_WARN, "failed to register ioctls");
-			tofino_pkt_unregister(instance, cookie);
+			(void) tofino_pkt_unregister(instance, cookie);
 			return (DDI_FAILURE);
 		}
 
@@ -187,6 +187,7 @@ static int
 tfport_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 {
 	tfport_t *tfp;
+	int err = 0;
 
 	dev_err(dip, CE_NOTE,"%s", __func__);
 	switch (cmd) {
@@ -197,7 +198,15 @@ tfport_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			return (DDI_FAILURE);
 
 		dld_ioc_unregister(TFPORT_IOC);
-		tofino_pkt_unregister(tfp->tfp_instance, tfp->tfp_pkt_cookie);
+		err = tofino_pkt_unregister(tfp->tfp_instance,
+		    tfp->tfp_pkt_cookie);
+		if (err != 0) {
+			dev_err(dip, CE_WARN, "tfport_detach: "
+			    "tofino_pkt_unregister() failed with errno = %d",
+			    err);
+			return (DDI_FAILURE);
+		}
+
 		return (DDI_SUCCESS);
 
 	case DDI_SUSPEND:
