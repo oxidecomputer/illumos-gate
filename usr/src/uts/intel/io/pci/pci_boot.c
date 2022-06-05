@@ -1031,10 +1031,10 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	 *
 	 * For the alignment, refer to the I/O comment above.
 	 */
-	mem_size = (subbus - secbus + 1) * PPB_MEM_ALIGNMENT;
+	mem_size = (subbus - secbus + 1) * PPB_MEM_ALIGNMENT * 16;
 	if (mem_size < pci_bus_res[secbus].mem_size) {
 		mem_size = pci_bus_res[secbus].mem_size;
-		mem_size = P2ROUNDUP(mem_size, PPB_MEM_ALIGNMENT);
+		mem_size = P2ROUNDUP(mem_size, PPB_MEM_ALIGNMENT) * 16;
 	}
 	mem_align = mem_size;
 	P2LE(mem_align);
@@ -1191,12 +1191,12 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	mem_base = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_MEM_BASE);
 	mem_base = (mem_base & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT;
 	mem_limit = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_MEM_LIMIT);
-	mem_limit = ((mem_limit & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT)
-	    | 0xfffff;
+	mem_limit = ((mem_limit & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) +
+	    0xffffff;
 
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_PF_LIMIT_LOW);
-	pmem_limit = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) |
-	    0xfffff;
+	pmem_limit = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) +
+	    0xffffff;
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_PF_BASE_LOW);
 	pmem_base = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT);
 
@@ -3137,8 +3137,8 @@ add_ppb_props(dev_info_t *dip, uchar_t bus, uchar_t dev, uchar_t func,
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_MEM_BASE);
 	mem_range[0] = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT);
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_MEM_LIMIT);
-	mem_range[1] = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) |
-	    0xfffff;
+	mem_range[1] = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) +
+	    0xffffff;
 	if (mem_range[0] != 0 && mem_range[0] < mem_range[1]) {
 		memlist_insert(&pci_bus_res[secbus].mem_avail,
 		    mem_range[0], mem_range[1] - mem_range[0] + 1);
@@ -3155,8 +3155,8 @@ add_ppb_props(dev_info_t *dip, uchar_t bus, uchar_t dev, uchar_t func,
 
 	/* prefetchable memory range */
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_PF_LIMIT_LOW);
-	pmem_range[1] = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) |
-	    0xfffff;
+	pmem_range[1] = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) +
+	    0xffffff;
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_PF_BASE_LOW);
 	pmem_range[0] = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT);
 	if ((val & PCI_BCNF_ADDR_MASK) == PCI_BCNF_PF_MEM_64BIT) {
