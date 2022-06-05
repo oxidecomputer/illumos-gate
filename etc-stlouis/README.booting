@@ -276,7 +276,7 @@ the SSD you used in previous steps, or use a different one):
 
 Copy the phase2 data from /tmp:
 
-   # cp -rP /tmp /boot/phase2
+   # cp -rP /tmp/* /boot/phase2
 
 19. Finally, set up your environment to use phase2 software.  The
 /root/post-phase2 script takes an argument specifying the location of phase2
