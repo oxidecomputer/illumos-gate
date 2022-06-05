@@ -40,6 +40,10 @@ prior to or during installation; they can usually be found on the label.  This
 will make it easier to identify the device you want to use once the system is
 running.
 
+WARNING: You must always start in power state A3 or lower due to
+hardware-gimlet#1701.  If you start in A2 after a previous boot, behaviour of
+PCIe devices may be unpredictable.
+
 1. If you are not following path <C>, skip to step 2.
 
 If you are following path <C> above, on your laptop, copy the 'phase2.tar'
@@ -121,7 +125,10 @@ write 0xd.
    > 100000000::recv -m | ::load | ::call
    (initiate an Xmodel-1K send of 'unix.oxide' from your laptop)
 
-11. Continue booting after reaching the initial kmdb prompt:
+11. Continue booting after reaching the initial kmdb prompt.  IMPORTANT: If
+you have already programmed your T6 and would like it to work, this is a good
+opportunity to toggle the GPIO to enable mission mode; see the section on T6
+setup below.  Otherwise, just continue:
 
    [0]> :c
 
@@ -301,7 +308,8 @@ aren't there yet, and my attempts at coordinated hotplug always time out.  So
 the only known way to deal with this right now is to reboot.  To get the
 (programmed!) T6 into mission mode, when you reach the kmdb prompt, utter:
 
-   [0]> 02D02574::wrsmn 0xc40000
+   [0]> 2d02574::wrsmn c40000
+   [0]> :c
 
 Then toggle CLD_RST_L:
 
@@ -312,7 +320,8 @@ Continue booting:
 
    [0]> :c
 
-You may need to do the hotplug dance again too once you're up:
+You may need to do the hotplug dance again too once you're up; if the T6
+drivers haven't attached and cfgadm -l shows pcie16 as unconfigured, do:
 
    # /root/fix-t6
 
@@ -330,10 +339,11 @@ Sidecar Setup
 -------------
 
 You're going to be on your own here.  The tofino(7d) and tfport(7d) drivers
-are included in the phase2 bundle, and the necessary dladm etc. changes for
-tfport are in phase1/phase2 binaries.  You may need to do something similar to
-the M2A/T6 fixup (disconnect, cycle device power/PERST, configure) in order to
-make it work.
+are included in the phase2 bundle, along with the necessary userland changes
+to make use of tfport(7d).  You may need to do something similar to the M2A/T6
+fixup (cfgadm -c disconnect, cycle device power/PERST, cfgadm -c configure) in
+order to make it work if the SMU firmware is confused and/or PERST is not
+working properly.
 
 *** Original Notes for illumos Engineers ***
 
