@@ -97,9 +97,9 @@ top panel.
 
 4. Connect up your Gimlet and turn it on, entering power state A2.
 
-5. Burn the special loader image (milan-quiet-3m-2dpc-0.4.5-128MiB.bin):
+5. Burn the special loader image (milan-quiet-3m-2dpc-0.4.5-128MiB-lgmmio.bin):
 
-   $ humility qspi -W milan-quiet-3m-2dpc-0.4.5-128MiB.bin
+   $ humility qspi -W milan-quiet-3m-2dpc-0.4.5-128MiB-lgmmio.bin
 
 6. Enter power state A0:
 
@@ -110,8 +110,6 @@ top panel.
    Nano-Bootloader 0.4.5-128MiB
 
 If it does not, drop to A4, go back to step 4, and burn the correct image.
-
-   $ humility hiffy -c Sequencer.set_state -a state=A2
 
 8. Skip to step 9.  Do not perform this step if starting from A4; it is not
 needed.  If you have no choice but to start from a previously-booted system in
