@@ -1031,10 +1031,10 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	 *
 	 * For the alignment, refer to the I/O comment above.
 	 */
-	mem_size = (subbus - secbus + 1) * PPB_MEM_ALIGNMENT * 16;
+	mem_size = (subbus - secbus + 1) * PPB_MEM_ALIGNMENT * 32;
 	if (mem_size < pci_bus_res[secbus].mem_size) {
 		mem_size = pci_bus_res[secbus].mem_size;
-		mem_size = P2ROUNDUP(mem_size, PPB_MEM_ALIGNMENT) * 16;
+		mem_size = P2ROUNDUP(mem_size, PPB_MEM_ALIGNMENT) * 32;
 	}
 	mem_align = mem_size;
 	P2LE(mem_align);
@@ -1192,11 +1192,11 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	mem_base = (mem_base & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT;
 	mem_limit = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_MEM_LIMIT);
 	mem_limit = ((mem_limit & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) +
-	    0xffffff;
+	    0x1ffffff;
 
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_PF_LIMIT_LOW);
 	pmem_limit = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT) +
-	    0xffffff;
+	    0x1ffffff;
 	val = (uint_t)pci_getw(bus, dev, func, PCI_BCNF_PF_BASE_LOW);
 	pmem_base = ((val & PCI_BCNF_MEM_MASK) << PCI_BCNF_MEM_SHIFT);
 

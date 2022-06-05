@@ -277,12 +277,63 @@ phase1.
 T6 Setup
 --------
 
-TBD
+To get the T6 into mission mode (i.e., working), we must program the SROM and
+flash.  The t6mfgadm command is used to do both, and the necessary data files
+are in /root/t6.  After programming the T6 itself, we must switch it from
+manufacturing into mission mode, which at present seems to require rebooting.
+First you will likely need to give the hotplug engine the works, as with M2A:
+
+# /root/fix-t6
+
+This program, like fix-m2a, will instruct you to run some humility commands to
+cycle the T6.  Once this is done, you should have t6mfg attached, at which
+point you can program the SROM and flash.  It should be necessary to do this
+only the first time; on subsequent boots, this step can be skipped:
+
+# t6mfgadm srom write -d 0 -f /root/t6/Oxide_t6_2x100Gbase_kr_nomemory_v2.bin
+# t6mfgadm srom verify -d 0 -f /root/t6/Oxide_t6_2x100Gbase_kr_nomemory_v2.bin
+# t6mfgadm flash write -d 0 -F /root/t6/t6fw-1.26.6.0.bin
+# t6mfgadm flash verify -d 0 -F /root/t6/t6fw-1.26.6.0.bin
+
+At this point, you'd like to think you could just enter mission mode and have
+the t6mfg driver detach and the t4nex driver attach automatically.  Alas, we
+aren't there yet, and my attempts at coordinated hotplug always time out.  So
+the only known way to deal with this right now is to reboot.  To get the
+(programmed!) T6 into mission mode, when you reach the kmdb prompt, utter:
+
+   [0]> 02D02574::wrsmn 0xc40000
+
+Then toggle CLD_RST_L:
+
+   $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
+   $ humility spi -p 2 -n 64 --write 0,0,0x27,0
+
+Continue booting:
+
+   [0]> :c
+
+You may need to do the hotplug dance again too once you're up:
+
+   # /root/fix-t6
+
+At this point, t4nex and cxgbe should be attached:
+
+   # dladm show-link
+   LINK        CLASS     MTU    STATE    BRIDGE     OVER
+   e1000g0     phys      1500   up       --         --
+   cxgbe0      phys      1500   unknown  --         --
+   cxgbe1      phys      1500   unknown  --         --
+
+You should now be able to plumb up the Ethernet links.
 
 Sidecar Setup
 -------------
 
-TBD
+You're going to be on your own here.  The tofino(7d) and tfport(7d) drivers
+are included in the phase2 bundle, and the necessary dladm etc. changes for
+tfport are in phase1/phase2 binaries.  You may need to do something similar to
+the M2A/T6 fixup (disconnect, cycle device power/PERST, configure) in order to
+make it work.
 
 *** Original Notes for illumos Engineers ***
 

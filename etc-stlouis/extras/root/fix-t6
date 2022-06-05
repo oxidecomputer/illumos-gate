@@ -1,0 +1,11 @@
+#! /sbin/sh
+
+cfgadm -f -c disconnect pcie16
+
+printf "Toggle CLD_RST_L and PERST now:\n"
+printf "  humility spi -p 2 -n 64 --write 0,0,0x27,0xc && sleep 2\n"
+printf "  humility spi -p 2 -n 64 --write 0,0,0x27,0\n"
+printf "Press <ENTER> to continue> "
+read
+
+cfgadm -f -c configure pcie16

@@ -46,7 +46,7 @@ svcadm restart sysevent
 
 printf "Cores will be dumped into %s.\n" "$p2root/cores"
 mkdir -p "$p2root/cores"
-coreadm -g "$p2root/cores/core.%f.%p"
+coreadm -g "$p2root/cores/core.%f.%p" -e global
 
 printf "Log out and back in or source ~/.profile to pick up PATH changes.\n"
 exit 0

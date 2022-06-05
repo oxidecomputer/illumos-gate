@@ -507,6 +507,7 @@ f kernel/strmod/amd64/pipemod 0755 root sys
 f kernel/strmod/amd64/ptem 0755 root sys
 h kernel/strmod/amd64/rpcmod=kernel/sys/amd64/rpcmod
 h kernel/strmod/amd64/tcp=kernel/drv/amd64/tcp
+f kernel/strmod/amd64/timod 0755 root sys
 f kernel/strmod/amd64/ttcompat 0755 root sys
 h kernel/strmod/amd64/udp=kernel/drv/amd64/udp
 d kernel/sys 0755 root sys
@@ -768,6 +769,7 @@ d root 0755 root root
 f root/.hushlogin 0600 root root
 f root/.profile 0600 root root
 f root/fix-m2a 0755 root root
+f root/fix-t6 0755 root root
 f root/post-phase2 0755 root root
 f root/start-network 0755 root root
 f root/start-sshd 0755 root root
@@ -918,6 +920,7 @@ f usr/bin/stty 0555 root bin
 f usr/bin/su 4555 root sys
 f usr/bin/svcprop 0555 root bin
 f usr/bin/svcs 0555 root bin
+f usr/bin/t6mfgadm 0555 root bin
 f usr/bin/tar 0555 root bin
 f usr/bin/tput 0555 root bin
 h usr/bin/truss=usr/lib/isaexec
@@ -1057,6 +1060,7 @@ f usr/lib/libidmap.so.1 0755 root bin
 f usr/lib/libidspace.so.1 0755 root bin
 f usr/lib/libinstzones.so.1 0755 root bin
 f usr/lib/libipmi.so.1 0755 root bin
+f usr/lib/libispi.so.1 0755 root bin
 f usr/lib/libkrb5.so.1 0755 root bin
 f usr/lib/libpcidb.so.1 0755 root bin
 f usr/lib/libpkcs11.so.1 0755 root bin
@@ -1075,6 +1079,7 @@ s usr/lib/libssp.so.0=libssp.so.0.0.0
 f usr/lib/libssp.so.0.0.0 0755 root bin
 f usr/lib/libsum.so.1 0755 root bin
 f usr/lib/libsunw_crypto.so.1.0.0 0755 root bin
+f usr/lib/libt6mfg.so.1 0755 root bin
 f usr/lib/libtecla.so.1 0755 root bin
 f usr/lib/libwrap.so.1 0755 root bin
 s usr/lib/libz.so.1=../../lib/libz.so.1
