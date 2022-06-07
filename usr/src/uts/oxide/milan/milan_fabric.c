@@ -5232,7 +5232,7 @@ milan_mmio_allocate(milan_fabric_t *fabric, milan_soc_t *soc,
 	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 	mrm->mrm_cur++;
-
+#if 0 /* XXX 64-bit is toxic to PCIe allocators */
 	/*
 	 * Now onto the 64-bit register, which is thankfully uniform for all
 	 * IOMS entries.
@@ -5249,6 +5249,7 @@ milan_mmio_allocate(milan_fabric_t *fabric, milan_soc_t *soc,
 	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 	mrm->mrm_cur++;
+#endif
 
 	return (0);
 }

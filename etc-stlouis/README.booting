@@ -105,6 +105,12 @@ top panel.
 
    $ humility hiffy -c Sequencer.set_state -a state=A0
 
+Make sure the T6 is in reset:
+
+   $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
+
+See the section on T6 setup for more details.
+
 7. The loader should identify itself as
 
    Nano-Bootloader 0.4.5-128MiB
@@ -481,11 +487,37 @@ stlouis#48, 49, 57, 58, and 59.
 T6 Setup
 --------
 
+First things first: to work around multiple nasty software bugs, whether
+booting the T6 in manufacturing mode or mission mode, keep it in reset until
+you have reached userland and set up phase2.  To do this, prior to booting,
+make sure the sequencer's register 0x27 is set to 0xc:
+
+   $ humility spi -p 2 -n 64 --write 1,0,0 --read --discard 3
+   humility: attached via ST-Link V3
+   humility: SPI master is spi2_driver
+                \/  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+   0x00000000 | 01 de 00 00 00 43 8e ff 63 ec 00 00 00 0f 06 03 | .....C..c.......
+   0x00000010 | 05 0c 05 01 00 0f 00 ff 00 00 03 00 ff ff ff 00 | ................
+   0x00000020 | 0f ff 00 00 36 00 00 0c 00 00 00 00 00 00 00 ff | ....6...........
+   0x00000030 | ff ff ff ff ff ff ff ff ff ff ff ff ff          | .............
+
+If not, put it in reset by writing that value:
+
+   $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
+
+This can be done while you are at the first kmdb prompt or before that, but
+after entering A0.
+
 To get the T6 into mission mode (i.e., working), we must program the SROM and
 flash.  The t6mfgadm command is used to do both, and the necessary data files
-are in /root/t6.  After programming the T6 itself, we must switch it from
-manufacturing into mission mode, which at present seems to require rebooting.
-First you will likely need to give the hotplug engine the works, as with M2A:
+are in /root/t6.  After booting and setting up phase2, release the T6 from
+reset and configure it:
+
+   $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
+   # cfgadm -c configure pcie16
+
+If the device is in the broken state (see Setting Up PCIe Devices above), you
+may need to do something like:
 
    # /root/fix-t6
 
@@ -509,33 +541,30 @@ seems to time out and fail) or reboot.  To try coordinated hotplug, utter
 
 If these commands succeed, return to kmdb by sending a BREAK from your
 terminal emulator (picocom: Ctrl-\), then issue the below command; otherwise,
-you will need to reboot and then enter this command at the first kmdb prompt:
+you will need to reboot, put the T6 back into reset, and then set mission mode
+via host processor GPIO at the first kmdb prompt:
 
+   $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
    [0]> 2d02574::wrsmn c40000
    [0]> :c
 
-Then toggle CLD_RST_L:
+If you're trying coordinated hotplug, go ahead and release the T6; if you've
+rebooted, go through the phase2 setup process again first, then release the
+T6:
 
-   $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
    $ humility spi -p 2 -n 64 --write 0,0,0x27,0
 
-Continue booting or running:
-
-   [0]> :c
-
-If you are doing coordinated hotplug, try to put the T6 into the working
-state:
+Now try to put the T6 into the working state:
 
    # cfgadm -c configure pcie16
 
-If this fails, you'll need to reboot and issue the above kmdb commands to put
-the T6 into mission mode.
+If this fails, you'll need to reboot and try again; remember to leave the T6
+in reset until you've booted and set up phase2!
 
-Once you're up, follow the general boot instructions to get yourself into
-phase2; the T6 drivers are not part of the phase1 software bundle and you will
-not be able to use the T6 until you have entered phase2.  Once in phase2, you
-may need to do the hotplug dance again too; if the T6 drivers haven't attached
-and cfgadm -l shows pcie16 as unconfigured, do:
+The T6 drivers are not part of the phase1 software bundle and you will not be
+able to use the T6 until you have entered phase2.  Once in phase2, you may
+need to do the hotplug dance again too; if the T6 drivers haven't attached and
+cfgadm -l shows pcie16 as unconfigured, do:
 
    # /root/fix-t6
 
@@ -548,7 +577,9 @@ At this point, t4nex and cxgbe should be attached:
    cxgbe1      phys      1500   unknown  --         --
 
 You should now be able to plumb up the Ethernet links and/or do other useful
-things with dladm etc.
+things with dladm etc.  More likely you will hit the devastating stlouis#61
+and your Gimlet will hang hard here.  You have come to the end of explored
+territory.
 
 Sidecar Setup
 -------------
