@@ -43,6 +43,11 @@ whether all host-visible rails really go to 0V in A3, ALWAYS START IN A4.
 This means removing the Gimlet from the bus bar or turning off the attached
 Meanwell supply, then waiting for all rails to bleed to 0V before proceeding.
 
+NOTE: To work around stlouis#61, consider using the "strapless" OS.  If you
+want to do this, you must use the strapless variant of both the kernel and
+ramdisk; the phase2 bits should be interchangeable.  To avoid stlouis#59 (and
+possibly stlouis#49), consider disabling MP boot.  See steps below.
+
 If you have already performed steps 0-5 on this Gimlet, skip to step 6.
 
 0. Write down the manufacturer and serial number of each SSDs you wish to use
@@ -144,7 +149,18 @@ this may solve the problem for you.
 11. Continue booting after reaching the initial kmdb prompt.  IMPORTANT: If
 you have already programmed your T6 and would like it to work, this is a good
 opportunity to toggle the GPIO to enable mission mode; see the section on T6
-setup below.  Otherwise, just continue:
+setup below.  Other things you may wish to do here include setting up NMI and
+disabling multiprocessor mode:
+
+   // NMI setup
+   [0]> 13e10128::wrsmn 1
+   [0]> 13e201d0::wrsmn c
+   [0]> nmi_action/W 3
+
+   // Disable MP boot
+   [0]> use_mp/W 0
+
+Otherwise, just continue:
 
    [0]> :c
 
