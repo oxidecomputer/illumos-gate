@@ -40,6 +40,8 @@ This OS build contains numerous workarounds relative to the stlouis branch:
   * To work around stlouis#59 and possibly #49, disable MP; see instructions
   * To work around PCIe resource exhaustion, childless bridge MMIO allocation
     has been increased to 32 MiB each and the MMIO hole moved to 0x8000_0000
+  * A workaround for stlouis#63 is included to allow 64-bit prefetchable
+    memory allocations, required by Tofino.
 
 Some of these workarounds require manual steps that are documented in the
 detailed instructions below.
@@ -173,7 +175,7 @@ this may solve the problem for you.
 you have already programmed your T6 and would like it to work, this is a good
 opportunity to toggle the GPIO to enable mission mode; see the section on T6
 setup below.  Other things you may wish to do here include setting up NMI and
-disabling multiprocessor mode:
+disabling multiprocessor mode (also likely necessary to make the T6 work):
 
    // NMI setup
    [0]> 13e10128::wrsmn 1
@@ -545,7 +547,7 @@ flash.  The t6mfgadm command is used to do both, and the necessary data files
 are in /root/t6.  After booting and setting up phase2, release the T6 from
 reset and configure it:
 
-   $ humility spi -p 2 -n 64 --write 0,0,0x27,0xc
+   $ humility spi -p 2 -n 64 --write 0,0,0x27,0
    # cfgadm -c configure pcie16
 
 If the device is in the broken state (see Setting Up PCIe Devices above), you
