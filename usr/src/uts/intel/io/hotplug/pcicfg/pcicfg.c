@@ -2054,12 +2054,16 @@ pcicfg_device_assign(dev_info_t *dip)
 		if ((reg[i].pci_size_low != 0)|| (reg[i].pci_size_hi != 0)) {
 
 			offset = PCI_REG_REG_G(reg[i].pci_phys_hi);
-			request.ra_len = reg[i].pci_size_low;
+			request.ra_len = reg[i].pci_size_low; /* XXX 64 */
 
 			switch (PCI_REG_ADDR_G(reg[i].pci_phys_hi)) {
 			case PCI_REG_ADDR_G(PCI_ADDR_MEM64):
 				if (reg[i].pci_phys_hi & PCI_REG_PF_M) {
 					mem_type = NDI_RA_TYPE_PCI_PREFETCH_MEM;
+					/* XXX must have 64 */
+					request.ra_flags &=
+					    ~NDI_RA_ALLOC_BOUNDED;
+					request.ra_boundlen = 0;
 				} else {
 					mem_type = NDI_RA_TYPE_MEM;
 				}
@@ -2085,12 +2089,15 @@ pcicfg_device_assign(dev_info_t *dip)
 				reg[i].pci_phys_hi |= PCI_REG_REL_M;
 				reg[i].pci_phys_low = PCICFG_LOADDR(answer);
 				reg[i].pci_phys_mid = PCICFG_HIADDR(answer);
+
 				/*
 				 * currently support 32b address space
 				 * assignments only.
 				 */
-				reg[i].pci_phys_hi ^=
-				    PCI_ADDR_MEM64 ^ PCI_ADDR_MEM32;
+				if (reg[i].pci_phys_mid == 0) {
+					reg[i].pci_phys_hi ^=
+					    PCI_ADDR_MEM64 ^ PCI_ADDR_MEM32;
+				}
 
 				offset += 8;
 				break;

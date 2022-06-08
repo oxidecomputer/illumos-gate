@@ -4890,7 +4890,6 @@ milan_dxio_state_machine(milan_fabric_t *fabric, milan_soc_t *soc,
 				}
 				cmn_err(CE_WARN, "XXX skipping a ton of mapped "
 				    "stuff");
-#if 0
 				/*
 				 * Now that we have the mapping done, we set up
 				 * the straps for PCIe.
@@ -4900,7 +4899,6 @@ milan_dxio_state_machine(milan_fabric_t *fabric, milan_soc_t *soc,
 
 				cmn_err(CE_NOTE, "Finished writing PCIe "
 				    "straps.");
-#endif
 				break;
 			case MILAN_DXIO_SM_CONFIGURED:
 				cmn_err(CE_WARN, "XXX skipping a ton of "
