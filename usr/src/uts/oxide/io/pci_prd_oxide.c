@@ -41,6 +41,7 @@ pci_prd_find_resource(uint32_t bus, pci_prd_rsrc_t rsrc)
 	case PCI_PRD_R_IO:
 	case PCI_PRD_R_MMIO:
 	case PCI_PRD_R_BUS:
+	case PCI_PRD_R_PREFETCH:
 		/*
 		 * XXX The traditional memlists that the kernel builds via
 		 * memlist_new.c use both the forward and rear links in the
@@ -59,11 +60,6 @@ pci_prd_find_resource(uint32_t bus, pci_prd_rsrc_t rsrc)
 			}
 		}
 		return (ret);
-	/*
-	 * At this time, we do not assign not set up any of our memory to be
-	 * considered prefetchable.
-	 */
-	case PCI_PRD_R_PREFETCH:
 	default:
 		return (NULL);
 	}

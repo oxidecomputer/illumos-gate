@@ -18,6 +18,7 @@ s dev/dtrace/provider/lockstat=../../../devices/pseudo/lockstat@0:lockstat
 s dev/dtrace/provider/profile=../../../devices/pseudo/profile@0:profile
 s dev/dtrace/provider/sdt=../../../devices/pseudo/sdt@0:sdt
 s dev/dtrace/provider/systrace=../../../devices/pseudo/systrace@0:systrace
+s dev/dump=../devices/pseudo/dump@0:dump
 d dev/fd 0555 root root
 s dev/full=../devices/pseudo/mm@0:full
 s dev/icmp=../devices/pseudo/icmp@0:icmp
@@ -189,6 +190,7 @@ f etc/dladm/flowprop.conf 0644 dladm netadm
 f etc/dladm/secobj.conf 0660 dladm netadm
 f etc/driver_aliases 0644 root sys
 f etc/driver_classes 0644 root sys
+f etc/dumpadm.conf 0644 root other
 d etc/fs 0755 root sys
 d etc/fs/dev 0755 root sys
 f etc/fs/dev/mount 0555 root bin
@@ -678,6 +680,7 @@ f lib/svc/manifest/system/coreadm.xml 0444 root sys
 d lib/svc/manifest/system/device 0755 root sys
 f lib/svc/manifest/system/device/allocate.xml 0444 root sys
 f lib/svc/manifest/system/device/devices-local.xml 0444 root sys
+f lib/svc/manifest/system/dumpadm.xml 0444 root sys
 f lib/svc/manifest/system/early-manifest-import.xml 0444 root sys
 d lib/svc/manifest/system/filesystem 0755 root sys
 f lib/svc/manifest/system/filesystem/local-fs.xml 0444 root sys
@@ -717,6 +720,7 @@ f lib/svc/method/net-routing-setup 0555 root bin
 f lib/svc/method/net-svc 0555 root bin
 f lib/svc/method/svc-allocate 0555 root bin
 f lib/svc/method/svc-dlmgmtd 0555 root bin
+f lib/svc/method/svc-dumpadm 0555 root sys
 f lib/svc/method/svc-hostid 0555 root bin
 f lib/svc/method/svc-hotplug 0555 root bin
 f lib/svc/method/svc-intrd 0555 root sys
@@ -932,11 +936,13 @@ s usr/ccs/bin/m4=../../bin/m4
 d usr/kernel 0755 root sys
 d usr/kernel/drv 0755 root sys
 d usr/kernel/drv/amd64 0755 root sys
+f usr/kernel/drv/amd64/dump 0755 root sys
 f usr/kernel/drv/amd64/kstat 0755 root sys
 f usr/kernel/drv/amd64/ksyms 0755 root sys
 f usr/kernel/drv/amd64/ptm 0755 root sys
 f usr/kernel/drv/amd64/pts 0755 root sys
 f usr/kernel/drv/amd64/zcons 0755 root sys
+f usr/kernel/drv/dump.conf 0644 root sys
 f usr/kernel/drv/kstat.conf 0644 root sys
 f usr/kernel/drv/ksyms.conf 0644 root sys
 f usr/kernel/drv/ptm.conf 0644 root sys

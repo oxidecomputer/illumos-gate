@@ -1517,6 +1517,8 @@ typedef struct ioms_memlists {
 	struct memlist		*im_io_used;
 	struct memlist		*im_mmio_avail;
 	struct memlist		*im_mmio_used;
+	struct memlist		*im_pmem_avail;
+	struct memlist		*im_pmem_used;
 	struct memlist		*im_bus_avail;
 	struct memlist		*im_bus_used;
 } ioms_memlists_t;
@@ -5197,7 +5199,10 @@ typedef struct milan_route_mmio {
 
 /*
  * We allocate two rules per device. The first is a 32-bit rule. The second is
- * then its corresponding 64-bit.
+ * then its corresponding 64-bit.  32-bit memory is always treated as
+ * non-prefetchable due to the dearth of it.  64-bit memory is only treated as
+ * prefetchable because we can't practically do anything else with it due to
+ * the limitations of PCI-PCI bridges (64-bit memory has to be prefetch).
  */
 static int
 milan_mmio_allocate(milan_fabric_t *fabric, milan_soc_t *soc,
@@ -5234,7 +5239,7 @@ milan_mmio_allocate(milan_fabric_t *fabric, milan_soc_t *soc,
 	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 	mrm->mrm_cur++;
-#if 0 /* XXX 64-bit is toxic to PCIe allocators */
+
 	/*
 	 * Now onto the 64-bit register, which is thankfully uniform for all
 	 * IOMS entries.
@@ -5247,11 +5252,10 @@ milan_mmio_allocate(milan_fabric_t *fabric, milan_soc_t *soc,
 
 	ret = xmemlist_add_span(&imp->im_pool, mrm->mrm_bases[mrm->mrm_cur],
 	    mrm->mrm_limits[mrm->mrm_cur] - mrm->mrm_bases[mrm->mrm_cur] + 1,
-	    &imp->im_mmio_avail, 0);
+	    &imp->im_pmem_avail, 0);
 	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 	mrm->mrm_cur++;
-#endif
 
 	return (0);
 }
@@ -5388,6 +5392,10 @@ milan_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
 	case PCI_PRD_R_MMIO:
 		avail = &imp->im_mmio_avail;
 		used = &imp->im_mmio_used;
+		break;
+	case PCI_PRD_R_PREFETCH:
+		avail = &imp->im_pmem_avail;
+		used = &imp->im_pmem_used;
 		break;
 	case PCI_PRD_R_BUS:
 		avail = &imp->im_bus_avail;
