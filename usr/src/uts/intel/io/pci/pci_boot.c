@@ -1353,10 +1353,9 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 		    bus, dev, func, mem_base, mem_limit);
 
 		/*
-		 * XXX No BIOS, so always program PF except for the T6 because
-		 * who knows maybe this is part of the problem there.
+		 * XXX No BIOS, so always program PF.
 		 */
-		if (secbus == 0x85 && !(cmd_reg & PCI_COMM_MAE)) {
+		if (0 && !(cmd_reg & PCI_COMM_MAE)) {
 			/*
 			 * If the MEM access bit is initially disabled by BIOS,
 			 * we disable the PMEM window manually by setting PMEM
@@ -1399,7 +1398,7 @@ cmd_enable:
 
 	if (pci_bus_res[secbus].io_avail)
 		cmd_reg |= PCI_COMM_IO | PCI_COMM_ME;
-	if (pci_bus_res[secbus].mem_avail)
+	if (pci_bus_res[secbus].mem_avail || pci_bus_res[secbus].pmem_avail)
 		cmd_reg |= PCI_COMM_MAE | PCI_COMM_ME;
 	pci_putw(bus, dev, func, PCI_CONF_COMM, cmd_reg);
 }

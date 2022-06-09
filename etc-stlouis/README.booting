@@ -42,6 +42,8 @@ This OS build contains numerous workarounds relative to the stlouis branch:
     has been increased to 32 MiB each and the MMIO hole moved to 0x8000_0000
   * A workaround for stlouis#63 is included to allow 64-bit prefetchable
     memory allocations, required by Tofino.
+  * An additional workaround for stlouis#65 is included to make the workaround
+    for #63 actually work.
 
 Some of these workarounds require manual steps that are documented in the
 detailed instructions below.
