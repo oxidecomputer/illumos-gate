@@ -1330,7 +1330,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 			    pmem_align, PB_PMEM);
 			if (addr) {
 				pmem_base = addr;
-				pmem_limit = addr + mem_size - 1;
+				pmem_limit = addr + pmem_size - 1;
 				pci_bus_res[secbus].mem_reprogram = B_TRUE;
 			}
 		}
