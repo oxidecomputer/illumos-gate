@@ -1325,6 +1325,7 @@ file path=usr/include/sys/sema_impl.h
 file path=usr/include/sys/semaphore.h
 file path=usr/include/sys/sendfile.h
 file path=usr/include/sys/ser_sync.h
+file path=usr/include/sys/serdev.h
 file path=usr/include/sys/serializer.h
 file path=usr/include/sys/session.h
 file path=usr/include/sys/sha1.h

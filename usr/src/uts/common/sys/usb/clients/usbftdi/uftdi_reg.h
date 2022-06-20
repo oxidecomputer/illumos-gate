@@ -50,14 +50,16 @@ extern "C" {
 #endif
 
 /* Vendor Request Interface */
-#define	FTDI_SIO_RESET 		0 /* Reset the port */
-#define	FTDI_SIO_MODEM_CTRL 	1 /* Set the modem control register */
-#define	FTDI_SIO_SET_FLOW_CTRL	2 /* Set flow control register */
-#define	FTDI_SIO_SET_BAUD_RATE	3 /* Set baud rate */
-#define	FTDI_SIO_SET_DATA	4 /* Set the data characteristics of the port */
-#define	FTDI_SIO_GET_STATUS	5 /* Retrieve current value of status reg */
-#define	FTDI_SIO_SET_EVENT_CHAR	6 /* Set the event character */
-#define	FTDI_SIO_SET_ERROR_CHAR	7 /* Set the error character */
+#define	FTDI_SIO_RESET 		0	/* Reset the port */
+#define	FTDI_SIO_MODEM_CTRL 	1	/* Set the modem control register */
+#define	FTDI_SIO_SET_FLOW_CTRL	2	/* Set flow control register */
+#define	FTDI_SIO_SET_BAUD_RATE	3	/* Set baud rate */
+#define	FTDI_SIO_SET_DATA	4	/* Set port data characteristics */
+#define	FTDI_SIO_GET_STATUS	5	/* Read modem status register value */
+#define	FTDI_SIO_SET_EVENT_CHAR	6	/* Set the event character */
+#define	FTDI_SIO_SET_ERROR_CHAR	7	/* Set the error character */
+#define	FTDI_SIO_SET_TIMER	9	/* Set the latency timer */
+#define FTDI_SIO_GET_TIMER	0x0a	/* Get the latency timer */
 
 /* Port Identifier Table */
 #define	FTDI_PIT_DEFAULT 	0 /* SIOA */
@@ -345,60 +347,71 @@ enum {
  * data, the device generates a message consisting of these two status bytes
  * every 40 ms.
  *
- * Byte 0: Modem Status
+ * Byte 0: Modem Status (MSR)
  *   NOTE: 4 upper bits have same layout as the MSR register in a 16550
  *
  * Offset	Description
+ *
  * B0..3	Port
  * B4		Clear to Send (CTS)
  * B5		Data Set Ready (DSR)
  * B6		Ring Indicator (RI)
  * B7		Receive Line Signal Detect (RLSD)
  *
- * Byte 1: Line Status
+ * Byte 1: Line Status (LSR)
  *   NOTE: same layout as the LSR register in a 16550
  *
  * Offset	Description
- * B0	Data Ready (DR)
- * B1	Overrun Error (OE)
- * B2	Parity Error (PE)
- * B3	Framing Error (FE)
- * B4	Break Interrupt (BI)
- * B5	Transmitter Holding Register (THRE)
- * B6	Transmitter Empty (TEMT)
- * B7	Error in RCVR FIFO
+ *
+ * B0		Data Ready (DR)
+ * B1		Overrun Error (OE)
+ * B2		Parity Error (PE)
+ * B3		Framing Error (FE)
+ * B4		Break Interrupt (BI)
+ * B5		Transmitter Holding Register (THRE)
+ * B6		Transmitter Empty (TEMT)
+ * B7		Error in RCVR FIFO
  *
  *
  * OUT Endpoint
  *
  * This device reserves the first bytes of data on this endpoint contain the
  * length and port identifier of the message. For the FTDI USB Serial converter
- * the port identifier is always 1.
+ * the port identifier is always 1 (SIOA).
  *
  * Byte 0: Port & length
  *
  * Offset	Description
+ *
  * B0..1	Port
  * B2..7	Length of message - (not including Byte 0)
  *
  */
-#define	FTDI_PORT_MASK 0x0f
-#define	FTDI_MSR_MASK 0xf0
-#define	FTDI_GET_MSR(p) (((p)[0]) & FTDI_MSR_MASK)
-#define	FTDI_GET_LSR(p) ((p)[1])
-#define	FTDI_LSR_MASK		(~0x60)	/* interesting rx bits */
+#define	FTDI_PORT_MASK		0x0f
+#define	FTDI_MSR_MASK		0xf0
+
+/*
+ * Mask for just the receive-side error bits in the LSR:
+ */
+#define	FTDI_LSR_RX_ERR		(FTDI_LSR_STATUS_OE | \
+				FTDI_LSR_STATUS_PE | \
+				FTDI_LSR_STATUS_FE | \
+				FTDI_LSR_STATUS_BI | \
+				FTDI_LSR_STATUS_RFE)
 
 #define	FTDI_MSR_STATUS_CTS	0x10
 #define	FTDI_MSR_STATUS_DSR	0x20
 #define	FTDI_MSR_STATUS_RI	0x40
 #define	FTDI_MSR_STATUS_RLSD	0x80	/* aka Carrier Detect */
 
-#define	FTDI_LSR_STATUS_OE	0x02	/* overrun */
-#define	FTDI_LSR_STATUS_PE	0x04	/* parity */
-#define	FTDI_LSR_STATUS_FE	0x08	/* framing */
-#define	FTDI_LSR_STATUS_BI	0x10	/* break */
+#define	FTDI_LSR_STATUS_DR	0x01	/* data ready */
+#define	FTDI_LSR_STATUS_OE	0x02	/* overrun error */
+#define	FTDI_LSR_STATUS_PE	0x04	/* parity error */
+#define	FTDI_LSR_STATUS_FE	0x08	/* framing error */
+#define	FTDI_LSR_STATUS_BI	0x10	/* break interrupt */
 #define	FTDI_LSR_STATUS_THRE	0x20	/* tx hold register is now empty */
 #define	FTDI_LSR_STATUS_TEMT	0x40	/* tx shift register is now empty */
+#define	FTDI_LSR_STATUS_RFE	0x80	/* receiver FIFO error */
 
 #define	FTDI_OUT_TAG(len, port) (((len) << 2) | (port))
 
