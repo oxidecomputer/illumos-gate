@@ -522,6 +522,7 @@ CHKHDRS=			\
 	semaphore.h		\
 	sendfile.h		\
 	sensors.h		\
+	serdev.h		\
 	ser_sync.h		\
 	session.h		\
 	sha1.h			\

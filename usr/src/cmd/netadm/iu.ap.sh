@@ -39,6 +39,7 @@ case "$MACH" in
 	dwu	-1	0	ldterm ttcompat
 	xencons	0	0	ldterm ttcompat
 	ptsl	0	47	ldterm ttcompat
+	serdev	-1	0	ldterm ttcompat
 	usbsacm -1	0	ldterm ttcompat
 	usbser_edge	-1	0	ldterm ttcompat
 	usbsprl	-1	0	ldterm ttcompat

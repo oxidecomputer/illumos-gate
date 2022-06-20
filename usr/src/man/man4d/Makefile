@@ -122,6 +122,7 @@ _MANFILES=	aac.4d		\
 		sd.4d		\
 		sdp.4d		\
 		sdt.4d		\
+		serdev.4d	\
 		ses.4d		\
 		sfe.4d		\
 		sgen.4d		\
