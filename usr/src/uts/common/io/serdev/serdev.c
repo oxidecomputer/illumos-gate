@@ -1949,8 +1949,6 @@ hangup:
 		}
 	}
 
-	return (0);
-
 park:
 	mutex_enter(&srd->srd_mutex);
 	serdev_flow_in_stop(srd, SERDEV_STOP_RX_STREAMS);
