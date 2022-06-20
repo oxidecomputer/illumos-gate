@@ -38,7 +38,7 @@ UTSBASE	= ../..
 MODULE		= usbftdi
 OBJECTS		= $(USBFTDI_OBJS:%=$(OBJS_DIR)/%)
 ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
-CONF_SRCDIR	= $(UTSBASE)/common/io/usb/clients/usbser/usbftdi
+CONF_SRCDIR	= $(UTSBASE)/common/io/usb/clients/usbftdi
 
 #
 #	Include common rules.

@@ -61,6 +61,47 @@ static struct termios default_termios = {
 static int termioval(char **, uint_t *, char *);
 
 void
+ttycommon_init(tty_common_t *tc)
+{
+	tc->t_iflag = 0;
+	tc->t_iocpending = NULL;
+	tc->t_size.ws_row = 0;
+	tc->t_size.ws_col = 0;
+	tc->t_size.ws_xpixel = 0;
+	tc->t_size.ws_ypixel = 0;
+	tc->t_startc = CSTART;
+	tc->t_stopc = CSTOP;
+}
+
+speed_t
+ttycommon_ospeed(tty_common_t *tc)
+{
+	if (tc->t_cflag & CBAUDEXT) {
+		return ((tc->t_cflag & CBAUD) + CBAUD + 1);
+	} else {
+		return (tc->t_cflag & CBAUD);
+	}
+}
+
+uint_t
+ttycommon_char_size(tty_common_t *tc)
+{
+	uint_t csize = tc->t_cflag & CSIZE;
+
+	switch (csize) {
+	case CS5:
+		return (5);
+	case CS6:
+		return (6);
+	case CS7:
+		return (7);
+	case CS8:
+	default:
+		return (8);
+	}
+}
+
+void
 ttycommon_close(tty_common_t *tc)
 {
 	mutex_enter(&tc->t_excl);
@@ -80,8 +121,9 @@ ttycommon_close(tty_common_t *tc)
 		 * must have timed out or been aborted.
 		 */
 		freemsg(mp);
-	} else
+	} else {
 		mutex_exit(&tc->t_excl);
+	}
 }
 
 /*
@@ -405,11 +447,6 @@ ttycommon_ioctl(tty_common_t *tc, queue_t *q, mblk_t *mp, int *errorp)
 	return (0);
 
 allocfailure:
-
-	mutex_enter(&tc->t_excl);
-	tmp = tc->t_iocpending;
-	tc->t_iocpending = mp;	/* hold this ioctl */
-	mutex_exit(&tc->t_excl);
 	/*
 	 * We needed to allocate something to handle this "ioctl", but
 	 * couldn't; save this "ioctl" and arrange to get called back when
@@ -417,9 +454,42 @@ allocfailure:
 	 * If there's already one being saved, throw it out, since it
 	 * must have timed out.
 	 */
-	if (tmp != NULL)
-		freemsg(tmp);
+	ttycommon_iocpending_set(tc, mp);
 	return (ioctlrespsize);
+}
+
+mblk_t *
+ttycommon_iocpending_take(tty_common_t *tc)
+{
+	mutex_enter(&tc->t_excl);
+	mblk_t *iocpending = tc->t_iocpending;
+	tc->t_iocpending = NULL;
+	mutex_exit(&tc->t_excl);
+
+	return (iocpending);
+}
+
+void
+ttycommon_iocpending_discard(tty_common_t *tc)
+{
+	mblk_t *mp;
+
+	if ((mp = ttycommon_iocpending_take(tc)) != NULL) {
+		freemsg(mp);
+	}
+}
+
+void
+ttycommon_iocpending_set(tty_common_t *tc, mblk_t *mp)
+{
+	mutex_enter(&tc->t_excl);
+	mblk_t *oldpending = tc->t_iocpending;
+	tc->t_iocpending = mp;
+	mutex_exit(&tc->t_excl);
+
+	if (oldpending != NULL) {
+		freemsg(oldpending);
+	}
 }
 
 #define	NFIELDS	22	/* 18 control characters + 4 sets of modes */
