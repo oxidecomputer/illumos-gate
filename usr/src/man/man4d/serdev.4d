@@ -1,0 +1,38 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\" Copyright 2022 Oxide Computer Company
+.
+.Dd "June 20, 2022"
+.Dt SERDEV 4D
+.Os
+.Sh NAME
+.Nm serdev
+.Nd generic serial device driver
+.Sh DESCRIPTION
+The
+.Nm
+module provides a framework for building drivers for devices with one or more
+serial communication ports.
+The framework provides an implementation of the interface that all serial port
+devices must expose, such as the
+.Xr termio 4I
+ioctls.
+.Sh INTERFACE STABILITY
+.Sy Uncommitted .
+.Sh FILES
+.Bl -tag -compact -width Pa
+.It Pa /dev/term/[012...]
+Dial-in serial lines.
+.It Pa /dev/cua/[012...]
+Dial-out serial lines.
+.El
+.Sh SEE ALSO
+.Xr termio 4I
