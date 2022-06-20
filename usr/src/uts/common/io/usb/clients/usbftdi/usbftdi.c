@@ -1172,7 +1172,7 @@ uftdi_serdev_rx(void *arg)
 	mutex_exit(&uf->uf_mutex);
 }
 
-static int
+static void
 uftdi_serdev_tx(void *arg, mblk_t *mp)
 {
 	uftdi_if_t *ui = arg;
@@ -1194,8 +1194,6 @@ uftdi_serdev_tx(void *arg, mblk_t *mp)
 	 */
 	uftdi_tx_start(uf, ui);
 	mutex_exit(&uf->uf_mutex);
-
-	return (0);
 }
 
 static int
@@ -1594,7 +1592,7 @@ uftdi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 			 */
 			mutex_enter(&uf->uf_mutex);
 			uf->uf_flags |= UFTDI_FL_DETACHING;
-			uftdi_usb_change_start(uf, false);
+			(void) uftdi_usb_change_start(uf, false);
 			mutex_exit(&uf->uf_mutex);
 
 			goto bail;
@@ -1633,7 +1631,7 @@ uftdi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	 * over.
 	 */
 	uf->uf_flags |= UFTDI_FL_DETACHING;
-	uftdi_usb_change_start(uf, false);
+	(void) uftdi_usb_change_start(uf, false);
 	mutex_exit(&uf->uf_mutex);
 
 	for (uint_t i = 0; i < uf->uf_nif; i++) {

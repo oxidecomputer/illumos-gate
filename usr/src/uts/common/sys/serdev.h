@@ -52,7 +52,7 @@ typedef struct serdev_ops {
 	int			(*srdo_open)(void *);
 	int			(*srdo_close)(void *);
 	void			(*srdo_rx)(void *);
-	int			(*srdo_tx)(void *, mblk_t *);
+	void			(*srdo_tx)(void *, mblk_t *);
 	int			(*srdo_flush_rx)(void *);
 	int			(*srdo_flush_tx)(void *);
 	int			(*srdo_drain)(void *, hrtime_t);
