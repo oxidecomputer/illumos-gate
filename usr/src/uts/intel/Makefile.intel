@@ -627,6 +627,7 @@ MISC_KMODS	+= rsmops
 MISC_KMODS	+= sata
 MISC_KMODS	+= scsi
 MISC_KMODS	+= sda
+MISC_KMODS	+= serdev
 MISC_KMODS	+= sol_ofs
 MISC_KMODS	+= strategy
 MISC_KMODS	+= strplumb

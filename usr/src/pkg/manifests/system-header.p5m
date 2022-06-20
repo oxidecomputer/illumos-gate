@@ -1344,6 +1344,7 @@ file path=usr/include/sys/sendfile.h
 $(sparc_ONLY)file path=usr/include/sys/ser_async.h
 file path=usr/include/sys/ser_sync.h
 $(sparc_ONLY)file path=usr/include/sys/ser_zscc.h
+file path=usr/include/sys/serdev.h
 file path=usr/include/sys/serializer.h
 file path=usr/include/sys/session.h
 file path=usr/include/sys/sha1.h

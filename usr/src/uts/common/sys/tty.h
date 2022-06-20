@@ -53,9 +53,15 @@ typedef struct tty_common {
 #define	TS_SOFTCAR	0x00000002	/* force carrier on */
 
 #ifdef	_KERNEL
+extern void	ttycommon_init(tty_common_t *);
 extern void	ttycommon_close(tty_common_t *);
+extern speed_t	ttycommon_ospeed(tty_common_t *);
+extern uint_t	ttycommon_char_size(tty_common_t *);
 extern void	ttycommon_qfull(tty_common_t *, queue_t *);
 extern size_t	ttycommon_ioctl(tty_common_t *, queue_t *, mblk_t *, int *);
+extern mblk_t	*ttycommon_iocpending_take(tty_common_t *);
+extern void	ttycommon_iocpending_discard(tty_common_t *);
+extern void	ttycommon_iocpending_set(tty_common_t *, mblk_t *);
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus
