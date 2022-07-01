@@ -411,6 +411,7 @@ COMMON_SUBDIRS=		\
 	sysdef		\
 	syseventadm	\
 	syslogd		\
+	t6mfgadm	\
 	tabs		\
 	tail		\
 	tar		\
