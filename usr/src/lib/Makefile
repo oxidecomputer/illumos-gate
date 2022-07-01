@@ -681,7 +681,7 @@ libstmf:	libscf
 libstmfproxy:	libstmf libpthread
 libsun_ima:	libdevinfo libsysevent
 libsysevent:	libsecdb
-libt6mfg:	libispi
+libt6mfg:	libdevinfo libispi
 libtecla:	libcurses
 libtermcap:	libcurses
 libtnfctl:	../cmd/sgs/libelf
