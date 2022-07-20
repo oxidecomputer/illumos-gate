@@ -117,6 +117,7 @@ static void usage(FILE *fp)
 	fprintf(fp,
 	    "\tdevlog                              show device log\n"
 	    "\tloadfw <FW image>                   Flash the FW image\n"
+		"\treg <address>[=<val>]               read/write register\n"
 	    "\tcudbg <option> [<args>]             Chelsio Unified Debugger\n");
 	exit(fp == stderr ? 1 : 0);
 }
@@ -628,6 +629,58 @@ get_cudbg(int argc, char *argv[], int start_arg, const char *iff_name)
 	put_entity_list(dbg_entity_list);
 }
 
+static uint32_t read_reg(const char *iff_name, uint32_t addr)
+{
+	struct t4_reg32_cmd op = {
+		.reg = addr
+	};
+
+	if (doit(iff_name, T4_IOCTL_GET32, &op) == 0)
+		return op.value;
+
+	err(1, "register read");
+}
+
+static void write_reg(const char *iff_name, uint32_t addr, uint32_t val)
+{
+	struct t4_reg32_cmd op = {
+		.reg = addr,
+		.value = val
+	};
+
+	if (doit(iff_name, T4_IOCTL_PUT32, &op) < 0) {
+		err(1, "register write");
+	}
+}
+
+static int register_io(int argc, char *argv[], int start_arg,
+		       const char *iff_name)
+{
+	char *p;
+	uint32_t addr, val = 0, write = 0;
+
+	if (argc != start_arg + 1) return -1;
+
+	addr = strtoul(argv[start_arg], &p, 0);
+	if (p == argv[start_arg]) return -1;
+	if (*p == '=' && p[1]) {
+		val = strtoul(p + 1, &p, 0);
+		write = 1;
+	}
+	if (*p) {
+		warnx("bad parameter \"%s\"", argv[start_arg]);
+		return -1;
+	}
+
+	if (write)
+		write_reg(iff_name, addr, val);
+	else {
+		val = read_reg(iff_name, addr);
+		printf("%#x [%u]\n", val, val);
+	}
+	return 0;
+}
+
 static void
 run_cmd(int argc, char *argv[], const char *iff_name)
 {
@@ -635,6 +688,8 @@ run_cmd(int argc, char *argv[], const char *iff_name)
 		get_devlog(argc, argv, 3, iff_name);
 	else if (strcmp(argv[2], "loadfw") == 0)
 		load_fw(argc, argv, 3, iff_name);
+	else if (!strcmp(argv[2], "reg"))
+		(void)register_io(argc, argv, 3, iff_name);
 	else if (strcmp(argv[2], "cudbg") == 0)
 		get_cudbg(argc, argv, 3, iff_name);
 	else
