@@ -225,7 +225,14 @@ serdev_flow_in_start(serdev_t *srd, serdev_stop_rx_t why)
 	 * Restart the read queue:
 	 */
 	srd->srd_flags &= ~SERDEV_FL_RX_STOPPED;
-	if (srd->srd_tty.t_readq != NULL) {
+	if (why != SERDEV_STOP_RX_STREAMS && srd->srd_tty.t_readq != NULL) {
+		/*
+		 * Only trigger the read queue service routine if there is
+		 * still a read queue, and if we are not being called from
+		 * inside its service routine.  Enabling the queue from inside
+		 * the service routine could lead to it being scheduled over
+		 * and over forever.
+		 */
 		qenable(srd->srd_tty.t_readq);
 	}
 }
