@@ -25,6 +25,7 @@ mount -F lofs "$p2root/kernel/strmod" /kernel/strmod
 mount -F lofs "$p2root/usr/lib/devfsadm/linkmod" /usr/lib/devfsadm/linkmod
 mount -F lofs "$p2root/usr/lib/cfgadm" /usr/lib/cfgadm
 mount -F lofs "$p2root/usr/lib/security" /usr/lib/security
+mount -F lofs "$p2root/usr/lib/fm" /usr/lib/fm
 
 #
 # The lofs mounts don't quite always work, so we set up ld.config too.
@@ -42,6 +43,10 @@ devfsadm
 svcadm restart system-log
 svcadm restart hotplug
 svcadm restart sysevent
+
+# Start FMD manually (the SMF service brings in too many dependencies).
+mkdir -p /var/fm/fmd
+/usr/lib/fm/fmd/fmd
 
 printf "Cores will be dumped into %s.\n" "$p2root/cores"
 mkdir -p "$p2root/cores"

@@ -133,7 +133,7 @@ something like:
 	$ cd $ROOT; tar cf phase2.tar kernel/drv kernel/fs kernel/misc \
 	  usr/lib/devfsadm usr/bin usr/lib/lib* usr/lib/amd64/lib* usr/sbin \
 	  kernel/strmod sbin/zpool sbin/zfs usr/xpg6/bin usr/lib/cfgadm \
-	  lib/lib* lib/amd64/lib* lib/64 usr/lib/64 usr/lib/security
+	  lib/lib* lib/amd64/lib* lib/64 usr/lib/64 usr/lib/security usr/lib/fm
 	$ scp phase2.tar root@gimlet:/tmp
 	gimlet:~# cd /tmp && tar xpf phase2.tar
 	gimlet:~# /root/post-phase2

@@ -41,6 +41,7 @@ mkdir -p "${outdir}"
 	usr/lib/amd64/lib* \
 	usr/lib/cfgadm \
 	usr/lib/devfsadm \
+	usr/lib/fm \
 	usr/lib/lib* \
 	usr/lib/security \
 	usr/sbin \
