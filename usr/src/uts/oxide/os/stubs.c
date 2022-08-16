@@ -33,14 +33,17 @@
  */
 
 /*
- * Used by openprom(7d) only.
+ * Used by openprom(4d) only.
  */
 char saved_cmdline[1] = "";
 
 /*
- * Used by pci_boot.c, which is really i86pc-specific.
+ * Used by pci_boot.c, which is really i86pc-specific.  Setting pseudo_isa
+ * causes pci_boot to refrain from creating a device node for any PCI-ISA
+ * bridges it encounters, which is desirable as we do not support ISA.
  */
 int apic_nvidia_io_max = 0;
+int pseudo_isa = 1;
 
 void
 read_bootenvrc(void)

@@ -182,9 +182,11 @@ $(i386_ONLY)file path=platform/oxide/kernel/dacf/$(ARCH64)/consconfig_dacf \
     group=sys mode=0755
 $(i386_ONLY)dir path=platform/oxide/kernel/drv group=sys
 $(i386_ONLY)dir path=platform/oxide/kernel/drv/$(ARCH64) group=sys
-$(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/isa group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/dwu group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/fch group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/npe group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/rootnex group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/dwu.conf group=sys
 $(i386_ONLY)dir path=platform/oxide/kernel/mach group=sys
 $(i386_ONLY)dir path=platform/oxide/kernel/mach/$(ARCH64) group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/mach/$(ARCH64)/apix group=sys \
@@ -210,7 +212,11 @@ $(i386_ONLY)driver name=amd_iommu perms="* 0644 root sys" \
 $(i386_ONLY)driver name=balloon perms="* 0444 root sys"
 $(i386_ONLY)driver name=cpudrv alias=cpu
 $(i386_ONLY)driver name=domcaps perms="* 0444 root sys"
+$(i386_ONLY)driver name=dwu perms="* 0666 root sys" perms="*,cu 0600 uucp uucp"
 $(i386_ONLY)driver name=evtchn perms="* 0666 root sys"
+$(i386_ONLY)driver name=fch \
+    alias=huashan \
+    alias=songshan
 $(i386_ONLY)driver name=isa class=sysbus alias=pciclass,060100
 $(i386_ONLY)driver name=npe alias=pciex_root_complex
 $(i386_ONLY)driver name=pci class=pci

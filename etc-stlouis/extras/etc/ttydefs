@@ -31,7 +31,7 @@
 
 auto:hupcl:sane hupcl:A:9600
 
-console:115200 hupcl opost onlcr:115200::console
+console:3000000 hupcl opost onlcr:3000000::console
 
 contty:9600 hupcl opost onlcr:9600 sane::contty1
 contty1:1200 hupcl opost onlcr:1200 sane::contty2

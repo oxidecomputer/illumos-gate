@@ -88,8 +88,6 @@ size_t dma_max_copybuf_size = 0x101000;		/* 1M + 4K */
 
 uint64_t ramdisk_start, ramdisk_end;
 
-int pseudo_isa = 1;
-
 /*
  * Forward declarations
  */
@@ -213,15 +211,6 @@ configure(void)
 	 * AKA Intel IOMMU.
 	 */
 	immu_init();
-
-	/*
-	 * attach the isa nexus to get ACPI resource usage
-	 * isa is "kind of" a pseudo node
-	 */
-	if (pseudo_isa)
-		(void) i_ddi_attach_pseudo_node("isa");
-	else
-		(void) i_ddi_attach_hw_nodes("isa");
 }
 
 /*
@@ -2083,7 +2072,7 @@ pci_peekpoke_check(dev_info_t *dip, dev_info_t *rdip,
 void
 impl_setup_ddi(void)
 {
-	dev_info_t *xdip, *isa_dip;
+	dev_info_t *xdip;
 	rd_existing_t rd_mem_prop;
 	int err;
 
@@ -2103,17 +2092,6 @@ impl_setup_ddi(void)
 	    sizeof (rd_mem_prop));
 	err = ndi_devi_bind_driver(xdip, 0);
 	ASSERT(err == 0);
-
-	/* isa node */
-	if (pseudo_isa) {
-		ndi_devi_alloc_sleep(ddi_root_node(), "isa",
-		    (pnode_t)DEVI_SID_NODEID, &isa_dip);
-		(void) ndi_prop_update_string(DDI_DEV_T_NONE, isa_dip,
-		    "device_type", "isa");
-		(void) ndi_prop_update_string(DDI_DEV_T_NONE, isa_dip,
-		    "bus-type", "isa");
-		(void) ndi_devi_bind_driver(isa_dip, 0);
-	}
 
 	/*
 	 * Read in the properties from the boot.
@@ -2201,15 +2179,26 @@ impl_bus_initialprobe(void)
 {
 	struct bus_probe *probe;
 
-	/* XXXBOOT load modules to install bus probes, tihs may want deletion */
+	/*
+	 * XXX It seems like this really ought to be done by a parent's
+	 * (probably either an IOMS or an IO die) bus_config op, but it doesn't
+	 * have one on this or any other platform and everything it seems like
+	 * it ought to do is instead done by a collection of hacks.  This needs
+	 * to be revisited, not only here but for everyone: we really should be
+	 * able to have configure() simply call ndi_devi_online(rootnex) or
+	 * similar and put all these "bus probes" into the platform-specific
+	 * parent nexus drivers instead.  Does this exist to solve some chicken
+	 * and egg problem?  Is it historical?  Note that even sun4u's rootnex
+	 * doesn't have a bus_config op, so it can't just be about not having a
+	 * full devinfo tree at this point.
+	 */
+	if (modload("drv", "fch") < 0) {
+		panic("failed to load drv/fch");
+	}
+
 	if (modload("misc", "pci_autoconfig") < 0) {
 		panic("failed to load misc/pci_autoconfig");
 	}
-
-
-	/* XXXBOOT needed for the console for now, will be deleted. */
-	if (modload("drv", "isa") < 0)
-		panic("failed to load drv/isa");
 
 	probe = bus_probes;
 	while (probe) {

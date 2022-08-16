@@ -715,24 +715,9 @@ rootnex_ctl_reportdev(dev_info_t *dev)
 			    " and ");
 		len = strlen(buf);
 
-		switch (rp->regspec_bustype) {
-
-		case BTEISA:
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "%s 0x%x", DEVI_EISA_NEXNAME, rp->regspec_addr);
-			break;
-
-		case BTISA:
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "%s 0x%x", DEVI_ISA_NEXNAME, rp->regspec_addr);
-			break;
-
-		default:
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "space %x offset %x",
-			    rp->regspec_bustype, rp->regspec_addr);
-			break;
-		}
+		f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
+		    "space %x offset %x",
+		    rp->regspec_bustype, rp->regspec_addr);
 		len = strlen(buf);
 	}
 	for (i = 0, n = sparc_pd_getnintr(dev); i < n; i++) {

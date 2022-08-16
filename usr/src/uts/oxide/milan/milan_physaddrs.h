@@ -159,6 +159,12 @@ extern "C" {
 #define	MILAN_PHYSADDR_MMIO32_END	0x100000000UL
 
 /*
+ * The FCH also has a compatibility range for legacy I/O ports.
+ */
+#define	MILAN_IOPORT_COMPAT_BASE	0U
+#define	MILAN_IOPORT_COMPAT_SIZE	0x1000U
+
+/*
  * This 12 GiB range below 1 TiB can't be accessed as DRAM and is not supposed
  * to be used for MMIO in general, although it may be used for the 64 MiB flash
  * aperture from the SPI controller.  The exact reason for this hole is not well

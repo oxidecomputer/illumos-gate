@@ -231,12 +231,12 @@ MACH_NOT_YET_KMODS	= $(AUTOCONF_OBJS)
 #	DRV_KMODS_64 are built only 64-bit
 #
 DRV_KMODS	+= rootnex
-DRV_KMODS	+= isa
 DRV_KMODS	+= apix
 DRV_KMODS	+= cpc
 DRV_KMODS	+= npe
 DRV_KMODS	+= vmm
-
+DRV_KMODS	+= fch
+DRV_KMODS	+= dwu
 DRV_KMODS	+= cpudrv
 
 

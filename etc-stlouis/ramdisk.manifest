@@ -308,7 +308,6 @@ f kernel/dacf/amd64/net_dacf 0755 root sys
 d kernel/drv 0755 root sys
 d kernel/drv/amd64 0755 root sys
 f kernel/drv/amd64/arp 0755 root sys
-f kernel/drv/amd64/asy 0755 root sys
 f kernel/drv/amd64/blkdev 0755 root sys
 f kernel/drv/amd64/clone 0755 root sys
 f kernel/drv/amd64/cn 0755 root sys
@@ -362,7 +361,6 @@ f kernel/drv/amd64/udp 0755 root sys
 f kernel/drv/amd64/udp6 0755 root sys
 f kernel/drv/amd64/zfs 0755 root sys
 f kernel/drv/arp.conf 0644 root sys
-f kernel/drv/asy.conf 0644 root sys
 f kernel/drv/clone.conf 0644 root sys
 f kernel/drv/cn.conf 0644 root sys
 f kernel/drv/cpuid.conf 0644 root sys
@@ -756,10 +754,12 @@ f platform/oxide/kernel/dacf/amd64/consconfig_dacf 0755 root sys
 d platform/oxide/kernel/drv 0755 root sys
 d platform/oxide/kernel/drv/amd64 0755 root sys
 f platform/oxide/kernel/drv/amd64/cpc 0755 root sys
-f platform/oxide/kernel/drv/amd64/isa 0755 root sys
+f platform/oxide/kernel/drv/amd64/dwu 0755 root sys
+f platform/oxide/kernel/drv/amd64/fch 0755 root sys
 f platform/oxide/kernel/drv/amd64/npe 0755 root sys
 f platform/oxide/kernel/drv/amd64/rootnex 0755 root sys
 f platform/oxide/kernel/drv/cpc.conf 0644 root sys
+f platform/oxide/kernel/drv/dwu.conf 0755 root sys
 d platform/oxide/kernel/kmdb 0755 root sys
 d platform/oxide/kernel/kmdb/amd64 0755 root sys
 f platform/oxide/kernel/kmdb/amd64/apix 0555 root sys

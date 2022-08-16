@@ -112,8 +112,6 @@ static void apix_intx_set_mask(int irqno);
 static void apix_intx_clear_mask(int irqno);
 static int apix_intx_get_shared(int irqno);
 static void apix_intx_set_shared(int irqno, int delta);
-static apix_vector_t *apix_intx_xlate_vector(dev_info_t *, int,
-    struct intrspec *);
 static int apix_intx_alloc_vector(dev_info_t *, int, struct intrspec *);
 
 extern int apic_clkinit(int);
@@ -127,50 +125,38 @@ extern int irm_enable;
  *	Local static data
  */
 static struct	psm_ops apix_ops = {
-	apix_probe,
-
-	apix_init,
-	apix_picinit,
-	apix_intr_enter,
-	apix_intr_exit,
-	apix_setspl,
-	apix_addspl,
-	apix_delspl,
-	apix_disable_intr,
-	apix_enable_intr,
-	NULL,			/* psm_softlvl_to_irq */
-	NULL,			/* psm_set_softintr */
-
-	apic_set_idlecpu,
-	apic_unset_idlecpu,
-
-	apic_clkinit,
-	apix_get_clkvect,
-	NULL,			/* psm_hrtimeinit */
-	apic_gethrtime,
-
-	apic_get_next_processorid,
-	apic_cpu_start,
-	apix_post_cpu_start,
-	apic_shutdown,
-	apix_get_ipivect,
-	apic_send_ipi,
-
-	NULL,			/* psm_translate_irq */
-	NULL,			/* psm_notify_error */
-	NULL,			/* psm_notify_func */
-	apic_timer_reprogram,
-	apic_timer_enable,
-	apic_timer_disable,
-	apix_post_cyclic_setup,
-	apic_preshutdown,
-	apix_intr_ops,		/* Advanced DDI Interrupt framework */
-	apic_state,		/* save, restore apic state for S3 */
-	apic_cpu_ops,		/* CPU control interface. */
-
-	apic_get_pir_ipivect,
-	apic_send_pir_ipi,
-	apic_cmci_setup
+	.psm_probe = apix_probe,
+	.psm_softinit = apix_init,
+	.psm_picinit = apix_picinit,
+	.psm_intr_enter = apix_intr_enter,
+	.psm_intr_exit = apix_intr_exit,
+	.psm_setspl = apix_setspl,
+	.psm_addspl = apix_addspl,
+	.psm_delspl = apix_delspl,
+	.psm_disable_intr = apix_disable_intr,
+	.psm_enable_intr = apix_enable_intr,
+	.psm_set_idlecpu = apic_set_idlecpu,
+	.psm_unset_idlecpu = apic_unset_idlecpu,
+	.psm_clkinit = apic_clkinit,
+	.psm_get_clockirq = apix_get_clkvect,
+	.psm_gethrtime = apic_gethrtime,
+	.psm_get_next_processorid = apic_get_next_processorid,
+	.psm_cpu_start = apic_cpu_start,
+	.psm_post_cpu_start = apix_post_cpu_start,
+	.psm_shutdown = apic_shutdown,
+	.psm_get_ipivect = apix_get_ipivect,
+	.psm_send_ipi = apic_send_ipi,
+	.psm_timer_reprogram = apic_timer_reprogram,
+	.psm_timer_enable = apic_timer_enable,
+	.psm_timer_disable = apic_timer_disable,
+	.psm_post_cyclic_setup = apix_post_cyclic_setup,
+	.psm_preshutdown = apic_preshutdown,
+	.psm_intr_ops = apix_intr_ops,
+	.psm_state = apic_state,
+	.psm_cpu_ops = apic_cpu_ops,
+	.psm_get_pir_ipivect = apic_get_pir_ipivect,
+	.psm_send_pir_ipi = apic_send_pir_ipi,
+	.psm_cmci_setup = apic_cmci_setup
 };
 
 struct psm_ops *psmops = &apix_ops;
@@ -366,12 +352,7 @@ apix_init()
 		apix_irminfo.apix_per_cpu_vectors = APIX_NAVINTR -
 		    APIX_SW_RESERVED_VECTORS;
 
-		/* Number of vectors (pre) allocated (SCI and HPET) */
 		apix_irminfo.apix_vectors_allocated = 0;
-		if (apic_hpet_vect != -1)
-			apix_irminfo.apix_vectors_allocated++;
-		if (apic_sci_vect != -1)
-			apix_irminfo.apix_vectors_allocated++;
 	}
 }
 
@@ -811,7 +792,7 @@ apix_disable_intr(processorid_t cpun)
 	if (apic_cpus[cpun].aci_status & APIC_CPU_SUSPEND) {
 		for (i = APIX_AVINTR_MIN; i <= APIX_AVINTR_MAX; i++) {
 			vecp = apixp->x_vectbl[i];
-			if (!IS_VECT_ENABLED(vecp))
+			if (!IS_VEC_ENABLED(vecp))
 				continue;
 
 			apix_disable_vector(vecp);
@@ -822,10 +803,10 @@ apix_disable_intr(processorid_t cpun)
 
 	for (i = APIX_AVINTR_MIN; i <= APIX_AVINTR_MAX; i++) {
 		vecp = apixp->x_vectbl[i];
-		if (!IS_VECT_ENABLED(vecp))
+		if (!IS_VEC_ENABLED(vecp))
 			continue;
 
-		if (vecp->v_flags & APIX_VECT_USER_BOUND) {
+		if (vecp->v_flags & APIX_VEC_F_USER_BOUND) {
 			hardbound++;
 			continue;
 		}
@@ -882,7 +863,7 @@ apix_enable_intr(processorid_t cpun)
 	if (apic_cpus[cpun].aci_status & APIC_CPU_SUSPEND) {
 		for (i = APIX_AVINTR_MIN; i <= APIX_AVINTR_MAX; i++) {
 			vecp = xv_vector(cpun, i);
-			if (!IS_VECT_ENABLED(vecp))
+			if (!IS_VEC_ENABLED(vecp))
 				continue;
 
 			apix_enable_vector(vecp);
@@ -897,7 +878,7 @@ apix_enable_intr(processorid_t cpun)
 
 		for (i = APIX_AVINTR_MIN; i <= APIX_AVINTR_MAX; i++) {
 			vecp = xv_vector(n, i);
-			if (!IS_VECT_ENABLED(vecp) ||
+			if (!IS_VEC_ENABLED(vecp) ||
 			    vecp->v_bound_cpuid != cpun)
 				continue;
 
@@ -1138,6 +1119,23 @@ apix_intr_ops(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp,
 		/*
 		 * Vectors are allocated by ALLOC and freed by FREE.
 		 * XLATE finds and returns APIX_VIRTVEC_VECTOR(cpu, vector).
+		 *
+		 * It's necessary for us to understand how to interpret the
+		 * contents of the handle.  When ih_type is MSI or MSIX, the
+		 * interrrupt must have been allocated previously and has
+		 * meaning only in the context of the devinfo node we've been
+		 * given; in these cases, we use ih_inum to identify the
+		 * specific interrupt by its index in the dev map.  All PCI
+		 * devices are required to use MSI or MSIX exclusively.
+		 *
+		 * Non-PCI interrupts may get us here with an ih_type of FIXED,
+		 * in which case we require that ih_private point to an
+		 * ihdl_plat_t.  This data structure in turn points at a struct
+		 * intrspec whose intrspec_vec member contains not the vector
+		 * nor an IRQ number (which are private to us) but rather the
+		 * interrupt source identifier.  On i86pc, there is code here
+		 * that allows resolving IRQ numbers to vectors even if the
+		 * interrupt isn't present in the dev map. XXX
 		 */
 		*result = APIX_INVALID_VECT;
 		vecp = apix_get_dev_map(dip, hdlp->ih_inum, hdlp->ih_type);
@@ -1146,22 +1144,7 @@ apix_intr_ops(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp,
 			    vecp->v_vector);
 			break;
 		}
-
-		/*
-		 * No vector to device mapping exists. If this is FIXED type
-		 * then check if this IRQ is already mapped for another device
-		 * then return the vector number for it (i.e. shared IRQ case).
-		 * Otherwise, return PSM_FAILURE.
-		 */
-		if (hdlp->ih_type == DDI_INTR_TYPE_FIXED) {
-			vecp = apix_intx_xlate_vector(dip, hdlp->ih_inum,
-			    ispec);
-			*result = (vecp == NULL) ? APIX_INVALID_VECT :
-			    APIX_VIRTVECTOR(vecp->v_cpuid, vecp->v_vector);
-		}
-		if (*result == APIX_INVALID_VECT)
-			return (PSM_FAILURE);
-		break;
+		return (PSM_FAILURE);
 	case PSM_INTR_OP_GET_PENDING:
 		vecp = apix_get_dev_map(dip, hdlp->ih_inum, hdlp->ih_type);
 		if (vecp == NULL)
@@ -1229,7 +1212,7 @@ apix_intr_ops(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp,
 		lock_set(&apix_lock);
 
 		vecp = apix_get_req_vector(hdlp, hdlp->ih_flags);
-		if (!IS_VECT_ENABLED(vecp)) {
+		if (!IS_VEC_ENABLED(vecp)) {
 			DDI_INTR_IMPLDBG((CE_WARN,
 			    "[grp]_set_cpu: invalid vector 0x%x\n",
 			    hdlp->ih_vector));
@@ -1418,7 +1401,7 @@ apix_get_pending(apix_vector_t *vecp)
 }
 
 static apix_vector_t *
-apix_get_req_vector(ddi_intr_handle_impl_t *hdlp, ushort_t flags)
+apix_get_req_vector(ddi_intr_handle_impl_t *hdlp, uint16_t flags)
 {
 	apix_vector_t *vecp;
 	processorid_t cpuid;
@@ -1456,7 +1439,7 @@ apix_get_intr_info(ddi_intr_handle_impl_t *hdlp,
 	int i;
 
 	vecp = apix_get_req_vector(hdlp, intr_params_p->avgi_req_flags);
-	if (IS_VECT_FREE(vecp)) {
+	if (IS_VEC_FREE(vecp)) {
 		intr_params_p->avgi_num_devs = 0;
 		intr_params_p->avgi_cpu_id = 0;
 		intr_params_p->avgi_req_flags = 0;
@@ -1565,7 +1548,7 @@ apix_set_cpu(apix_vector_t *vecp, int new_cpu, int *result)
 	/*
 	 * Mask MSI-X. It's unmasked when MSI-X gets enabled.
 	 */
-	if (vecp->v_type == APIX_TYPE_MSIX && IS_VECT_ENABLED(vecp)) {
+	if (vecp->v_type == APIX_TYPE_MSIX && IS_VEC_ENABLED(vecp)) {
 		if ((dip = APIX_GET_DIP(vecp)) == NULL)
 			return (NULL);
 		inum = vecp->v_devp->dv_inum;
@@ -2265,7 +2248,7 @@ apix_intx_xlate_irq(dev_info_t *dip, int inum, struct intrspec *ispec)
 	int dev_len;
 	char dev_type[16];
 
-	if (dip == NULL || !apic_irq_translate)
+	if (dip == NULL)
 		goto nonpci;
 
 	/*
@@ -2282,13 +2265,6 @@ apix_intx_xlate_irq(dev_info_t *dip, int inum, struct intrspec *ispec)
 			    "PCI/-X/e driver %s", ddi_driver_name(dip));
 			return (-1);
 		}
-		/* XXX replace me for huashan */
-		if (strcmp(dev_type, "isa") != 0) {
-			cmn_err(CE_WARN, "interrupt translation request from "
-			    "unsupported device type %s: bug in %s(7d)",
-			    dev_type, ddi_driver_name(dip));
-			return (-1);
-		}
 	}
 
 nonpci:
@@ -2297,7 +2273,6 @@ nonpci:
 	/* XXX huashan, do we need the defconf path at all? */
 	intr_flag.intr_po = INTR_PO_ACTIVE_HIGH;
 	intr_flag.intr_el = INTR_EL_EDGE;
-	intr_flag.bustype = BUS_ISA;
 	newirq = apix_intx_setup(dip, inum, irqno, ispec, &intr_flag);
 	if (newirq != -1)
 		goto done;
@@ -2331,27 +2306,6 @@ apix_intx_alloc_vector(dev_info_t *dip, int inum, struct intrspec *ispec)
 	    vecp->v_cpuid, vecp->v_vector));
 
 	return (1);
-}
-
-/*
- * Return the vector number if the translated IRQ for this device
- * has a vector mapping setup. If no IRQ setup exists or no vector is
- * allocated to it then return 0.
- */
-static apix_vector_t *
-apix_intx_xlate_vector(dev_info_t *dip, int inum, struct intrspec *ispec)
-{
-	int irqno;
-	apix_vector_t *vecp;
-
-	/* get the IRQ number */
-	if ((irqno = apix_intx_xlate_irq(dip, inum, ispec)) == -1)
-		return (NULL);
-
-	/* get the vector number if a vector is allocated to this irqno */
-	vecp = apix_intx_get_vector(irqno);
-
-	return (vecp);
 }
 
 /*

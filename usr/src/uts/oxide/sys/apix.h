@@ -29,6 +29,7 @@
 
 #include <sys/note.h>
 #include <sys/avintr.h>
+#include <sys/systm.h>
 #include <sys/traptrace.h>
 #include <sys/apic.h>
 #include <sys/apic_common.h>
@@ -50,30 +51,32 @@ extern	"C" {
 #define	APIX_NIRQ		256	/* maximum number of IRQs */
 #define	APIX_INVALID_VECT	0	/* invalid vector */
 
-/* vector type */
-#define	APIX_TYPE_FIXED	DDI_INTR_TYPE_FIXED	/* 1 */
-#define	APIX_TYPE_MSI		DDI_INTR_TYPE_MSI	/* 2 */
-#define	APIX_TYPE_MSIX	DDI_INTR_TYPE_MSIX	/* 4 */
-#define	APIX_TYPE_IPI		8
+typedef enum apix_intr_type {
+	APIX_TYPE_NONE,
+	APIX_TYPE_FIXED = DDI_INTR_TYPE_FIXED,
+	APIX_TYPE_MSI = DDI_INTR_TYPE_MSI,
+	APIX_TYPE_MSIX = DDI_INTR_TYPE_MSIX,
+	APIX_TYPE_IPI = 8
+} apix_intr_type_t;
 
-/* vector states */
-enum {
+typedef enum apix_vec_state {
 	APIX_STATE_FREED = 0,
 	APIX_STATE_OBSOLETED,	/* 1 */
 	APIX_STATE_ALLOCED,	/* 2 */
 	APIX_STATE_ENABLED,	/* 3 */
 	APIX_STATE_DISABLED	/* 4 */
-};
-#define	IS_VECT_FREE(p)		\
+} apix_vec_state_t;
+#define	IS_VEC_FREE(p)		\
 	(((p) == NULL) || ((p)->v_state == APIX_STATE_FREED))
-#define	IS_VECT_OBSOL(p)	\
+#define	IS_VEC_OBSOL(p)	\
 	(((p) != NULL) && ((p)->v_state == APIX_STATE_OBSOLETED))
-#define	IS_VECT_ENABLED(p)	\
+#define	IS_VEC_ENABLED(p)	\
 	(((p) != NULL) && ((p)->v_state == APIX_STATE_ENABLED))
 
-/* flags */
-#define	APIX_VECT_USER_BOUND	0x1
-#define	APIX_VECT_MASKABLE	0x2
+typedef enum apix_vec_flag {
+	APIX_VEC_F_USER_BOUND = (1 << 0),
+	APIX_VEC_F_MASKABLE = (1 << 1)
+} apix_vec_flag_t;
 
 /*
  * Number of interrupt vectors reserved by software on each LOCAL APIC:
@@ -103,13 +106,13 @@ enum {
 
 struct apix_dev_vector;
 typedef struct apix_vector {
-	ushort_t		v_state;
-	ushort_t		v_type;	/* interrupt type */
+	apix_vec_state_t	v_state;
+	apix_intr_type_t	v_type;
 	processorid_t		v_cpuid;	/* current target cpu */
-	uchar_t			v_vector;	/* vector */
-	uchar_t			v_share;	/* intrs at this vector */
+	uint8_t			v_vector;	/* per-cpu vector number */
+	uint8_t			v_share;	/* srcs mapped to this vector */
 	int			v_inum;	/* irq for fixed, inum for msi/x */
-	uint_t			v_flags;
+	apix_vec_flag_t		v_flags;
 	processorid_t		v_bound_cpuid;	/* binding cpu */
 	uint_t			v_busy;	/* How frequently did clock */
 					/* find us in this */
@@ -150,14 +153,12 @@ typedef struct apix_impl {
 	((apixp)->x_intr_pending >> (LOCK_LEVEL + 1)))
 
 /*
- * We need a way to find allocated vector for a device. One option
- * is to maintain a mapping table in pcplusmp. Another option would
- * be to record vector or irq with interrupt handler hdlp->ih_vector or
- * hdlp->ih_irq.
- * Second option requires interface changes, such as, a new interface
- * for  noticing vector changes caused by interrupt re-targeting.
- * Currently we choose the first option cause it doesn't require
- * new interfaces.
+ * We need a way to find allocated vector for a device. One option is to
+ * maintain a mapping table. Another option would be to record vector or irq
+ * with interrupt handler hdlp->ih_vector or hdlp->ih_irq.  Second option
+ * requires interface changes, such as, a new interface for noticing vector
+ * changes caused by interrupt re-targeting.  Currently we choose the first
+ * option cause it doesn't require new interfaces.
  */
 typedef struct apix_dev_vector {
 	dev_info_t		*dv_dip;
@@ -212,24 +213,33 @@ extern apic_irq_t *apic_irq_table[APIC_MAX_VECTOR+1];
 #define	UNREFERENCED_3PARAMETER(_p, _q, _r)	_NOTE(ARGUNUSED(_p, _q, _r))
 
 /*
+ * This architecture does not have ACPI nor does it support the concept of
+ * interrupt bus types, so instead of having a single intr_flags that matches
+ * the old MPS definition, we have an enum for each of polarity and trigger
+ * mode, and we keep them as small as possible since they're really only a
+ * single bit each.  These are not flags: each describes a choose-exactly-one
+ * value.
+ */
+typedef enum intr_polarity {
+	IP_HIGH,
+	IP_LOW
+} intr_polarity_t;
+
+typedef enum intr_trigger_mode {
+	ITM_EDGE,
+	ITM_LEVEL
+} intr_trigger_mode_t;
+
+/*
  * From mp_platform_common.c
  */
 extern int apic_intr_policy;
-extern iflag_t apic_sci_flags;
-extern int apic_hpet_vect;
-extern iflag_t apic_hpet_flags;
 extern int	apic_redist_cpu_skip;
-extern int	apic_num_imbalance;
-extern int	apic_num_rebind;
-
-extern int	apic_irq_translate;
 
 extern int apic_max_reps_clear_pending;
 
 extern int apic_probe_common(char *modname);
 extern uchar_t irq_to_ioapic_index(int irq);
-extern int apic_find_bus_id(int bustype);
-extern struct apic_io_intr *apic_find_io_intr_w_busid(int irqno, int busid);
 extern void apic_record_rdt_entry(apic_irq_t *irqptr, int irq);
 
 /*
@@ -253,7 +263,7 @@ typedef struct apix_rebind_info {
 extern struct apix_rebind_info apix_rebindinfo;
 
 #define	APIX_SET_REBIND_INFO(_ovp, _nvp)\
-	if (((_ovp)->v_flags & APIX_VECT_MASKABLE) == 0) {\
+	if (((_ovp)->v_flags & APIX_VEC_F_MASKABLE) == 0) {\
 		apix_rebindinfo.i_pri = (_ovp)->v_pri;\
 		apix_rebindinfo.i_old_cpuid = (_ovp)->v_cpuid;\
 		apix_rebindinfo.i_old_av = (_ovp)->v_autovect;\

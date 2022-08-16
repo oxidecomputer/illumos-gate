@@ -91,9 +91,11 @@ extern "C" {
 typedef struct ioms_memlists {
 	kmutex_t		im_lock;
 	struct memlist_pool	im_pool;
-	struct memlist		*im_io_avail;
+	struct memlist		*im_io_avail_pci;
+	struct memlist		*im_io_avail_gen;
 	struct memlist		*im_io_used;
-	struct memlist		*im_mmio_avail;
+	struct memlist		*im_mmio_avail_pci;
+	struct memlist		*im_mmio_avail_gen;
 	struct memlist		*im_mmio_used;
 	struct memlist		*im_pmem_avail;
 	struct memlist		*im_pmem_used;
@@ -126,6 +128,7 @@ struct milan_iodie {
 	uint8_t			mi_nccds;
 	uint8_t			mi_smu_fw[3];
 	uint32_t		mi_dxio_fw[2];
+	milan_iodie_flag_t	mi_flags;
 	milan_dxio_sm_state_t	mi_state;
 	milan_dxio_config_t	mi_dxio_conf;
 	milan_ioms_t		mi_ioms[MILAN_IOMS_PER_IODIE];

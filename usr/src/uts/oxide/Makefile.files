@@ -76,25 +76,25 @@ CORE_OBJS +=			\
 	kdi_asm.o		\
 	lgrpplat.o		\
 	locore.o		\
+	machdep.o		\
 	mach_kdi.o		\
 	mach_sysconfig.o	\
-	machdep.o		\
 	md_clear.o		\
+	memlist_new.o		\
+	memnode.o		\
+	memscrub.o		\
 	mem_config.o		\
 	mem_config_stubs.o	\
 	mem_config_arch.o	\
-	memlist_new.o		\
-	memnode.o		\
 	microcode.o		\
 	mlsetup.o		\
 	mmio_subr.o		\
+	mpcore.o		\
 	mp_call.o		\
 	mp_implfuncs.o		\
 	mp_machdep.o		\
 	mp_rmp.o		\
 	mp_startup.o		\
-	memscrub.o		\
-	mpcore.o		\
 	notes.o			\
 	pci_cfgacc.o		\
 	pcie_cfgspace.o		\
@@ -136,13 +136,11 @@ SPECIAL_OBJS +=			\
 	syscall_asm_amd64.o	\
 	kpti_trampolines.o
 
-ISANEXUS_OBJS += isa.o
 PCIE_MISC_OBJS += pcie_x86.o
 PCI_E_NEXUS_OBJS += npe.o npe_misc.o
 PCI_E_NEXUS_OBJS += pci_common.o pci_kstats.o pci_tools.o
 APIX_OBJS += apix.o apic_regops.o psm_common.o apix_intr.o apix_utils.o \
-		apix_irm.o mp_platform_common.o apic_common.o \
-		apic_timer.o apix_regops.o
+		apix_irm.o apic_common.o apic_timer.o apix_regops.o
 
 
 CPUDRV_OBJS	+= \
@@ -154,6 +152,10 @@ DR_OBJS	+= dr.o dr_cpu.o dr_err.o dr_io.o dr_mem_acpi.o dr_quiesce.o dr_util.o
 ROOTNEX_OBJS += rootnex.o
 
 PCI_PRD_OBJS += pci_prd_oxide.o
+
+FCH_OBJS += fch.o ixbar.o
+
+DWU_OBJS += dwu.o
 
 #
 #	Build up defines and paths.

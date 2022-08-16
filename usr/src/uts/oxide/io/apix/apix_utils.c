@@ -173,7 +173,7 @@ apix_get_avail_vector_oncpu(uint32_t cpuid, int start, int end)
 	for (i = start; i <= end; i++) {
 		if (APIC_CHECK_RESERVE_VECTORS(i))
 			continue;
-		if (IS_VECT_FREE(apixp->x_vectbl[i]))
+		if (IS_VEC_FREE(apixp->x_vectbl[i]))
 			return (i);
 	}
 
@@ -203,7 +203,7 @@ apix_alloc_vector_oncpu(uint32_t cpuid, dev_info_t *dip, int inum, int type)
 	vecp = apix_init_vector(tocpu, vector);
 	vecp->v_type = (ushort_t)type;
 	vecp->v_inum = inum;
-	vecp->v_flags = (cpuid & IRQ_USER_BOUND) ? APIX_VECT_USER_BOUND : 0;
+	vecp->v_flags = (cpuid & IRQ_USER_BOUND) ? APIX_VEC_F_USER_BOUND : 0;
 
 	if (dip != NULL)
 		apix_set_dev_map(vecp, dip, inum);
@@ -238,7 +238,7 @@ apix_alloc_nvectors_oncpu(uint32_t cpuid, dev_info_t *dip, int inum,
 
 	/* It has to be contiguous */
 	for (i = APIX_AVINTR_MIN; i <= APIX_AVINTR_MAX; i++) {
-		if (!IS_VECT_FREE(xv_vector(tocpu, i)))
+		if (!IS_VEC_FREE(xv_vector(tocpu, i)))
 			continue;
 
 		/*
@@ -249,7 +249,7 @@ apix_alloc_nvectors_oncpu(uint32_t cpuid, dev_info_t *dip, int inum,
 			i = (i + msibits) & ~msibits;
 
 		for (navail = 0, start = i; i <= APIX_AVINTR_MAX; i++) {
-			if (!IS_VECT_FREE(xv_vector(tocpu, i)))
+			if (!IS_VEC_FREE(xv_vector(tocpu, i)))
 				break;
 			if (APIC_CHECK_RESERVE_VECTORS(i))
 				break;
@@ -261,7 +261,7 @@ apix_alloc_nvectors_oncpu(uint32_t cpuid, dev_info_t *dip, int inum,
 	return (NULL);
 
 done:
-	flags = (cpuid & IRQ_USER_BOUND) ? APIX_VECT_USER_BOUND : 0;
+	flags = (cpuid & IRQ_USER_BOUND) ? APIX_VEC_F_USER_BOUND : 0;
 
 	for (i = 0; i < count; i++) {
 		if ((vecp = apix_init_vector(tocpu, start + i)) == NULL)
@@ -345,7 +345,7 @@ apix_pci_msi_enable_vector(apix_vector_t *vecp, dev_info_t *dip, int type,
 		msi_ctrl |= ((highbit(count) - 1) << PCI_MSI_MME_SHIFT);
 		pci_config_put16(handle, cap_ptr + PCI_MSI_CTRL, msi_ctrl);
 
-		if ((vecp->v_flags & APIX_VECT_MASKABLE) == 0)
+		if ((vecp->v_flags & APIX_VEC_F_MASKABLE) == 0)
 			APIX_WRITE_MSI_DATA(handle, cap_ptr, msi_ctrl,
 			    APIX_RESV_VECTOR);
 
@@ -429,7 +429,7 @@ apix_enable_vector(apix_vector_t *vecp)
 	ASSERT(tocpu < apic_nproc);
 
 	cpu_infop = &apic_cpus[tocpu];
-	if (vecp->v_flags & APIX_VECT_USER_BOUND)
+	if (vecp->v_flags & APIX_VEC_F_USER_BOUND)
 		cpu_infop->aci_bound++;
 	else
 		cpu_infop->aci_temp_bound++;
@@ -695,7 +695,7 @@ apix_init_vector(processorid_t cpuid, uchar_t vector)
 	apix_impl_t *apixp = apixs[cpuid];
 	apix_vector_t *vecp = apixp->x_vectbl[vector];
 
-	ASSERT(IS_VECT_FREE(vecp));
+	ASSERT(IS_VEC_FREE(vecp));
 
 	if (vecp == NULL) {
 		vecp = kmem_zalloc(sizeof (apix_vector_t), KM_NOSLEEP);
@@ -715,7 +715,7 @@ apix_init_vector(processorid_t cpuid, uchar_t vector)
 static void
 apix_cleanup_vector(apix_vector_t *vecp)
 {
-	ASSERT(vecp->v_share == 0);
+	ASSERT0(vecp->v_share);
 	vecp->v_bound_cpuid = IRQ_UNINIT;
 	vecp->v_state = APIX_STATE_FREED;
 	vecp->v_type = 0;
@@ -802,6 +802,7 @@ apix_insert_av(apix_vector_t *vecp, void *intr_id, avfunc f, caddr_t arg1,
 	if (vecp->v_type == APIX_TYPE_FIXED && apic_level_intr[vecp->v_inum])
 		mem->av_flags |= AV_PENTRY_LEVEL;
 
+	VERIFY3U(vecp->v_share, <, UINT8_MAX);
 	vecp->v_share++;
 	vecp->v_pri = (ipl > vecp->v_pri) ? ipl : vecp->v_pri;
 
@@ -813,7 +814,7 @@ apix_insert_av(apix_vector_t *vecp, void *intr_id, avfunc f, caddr_t arg1,
 	}
 
 	if (DDI_INTR_IS_MSI_OR_MSIX(vecp->v_type)) {	/* MSI/X */
-		ASSERT(vecp->v_share == 1);	/* No sharing for MSI/X */
+		ASSERT3U(vecp->v_share, ==, 1);	/* No sharing for MSI/X */
 
 		INIT_AUTOVEC(vecp->v_autovect, intr_id, f, arg1, arg2, ticksp,
 		    ipl, dip);
@@ -907,6 +908,7 @@ apix_remove_av(apix_vector_t *vecp, struct autovec *target)
 		hi_pri = (p->av_prilevel > hi_pri) ? p->av_prilevel : hi_pri;
 	}
 
+	VERIFY3U(vecp->v_share, >, 0);
 	vecp->v_share--;
 	vecp->v_pri = hi_pri;
 
@@ -1612,14 +1614,14 @@ apix_alloc_intx(dev_info_t *dip, int inum, int irqno)
 			return (NULL);
 		}
 		vecp->v_inum = irqno;
-		vecp->v_flags |= APIX_VECT_MASKABLE;
+		vecp->v_flags |= APIX_VEC_F_MASKABLE;
 
 		apix_intx_set_vector(irqno, vecp->v_cpuid, vecp->v_vector);
 
 		APIX_LEAVE_CPU_LOCK(cpuid);
 	} else {
 		vecp = xv_vector(irqp->airq_cpu, irqp->airq_vector);
-		ASSERT(!IS_VECT_FREE(vecp));
+		ASSERT(!IS_VEC_FREE(vecp));
 
 		if (dip != NULL)
 			apix_set_dev_map(vecp, dip, inum);
@@ -1627,7 +1629,7 @@ apix_alloc_intx(dev_info_t *dip, int inum, int irqno)
 
 	if ((dip != NULL) &&
 	    (apic_intr_policy == INTR_ROUND_ROBIN_WITH_AFFINITY) &&
-	    ((vecp->v_flags & APIX_VECT_USER_BOUND) == 0))
+	    ((vecp->v_flags & APIX_VEC_F_USER_BOUND) == 0))
 		apix_set_dev_binding(dip, vecp->v_cpuid);
 
 	apix_dprint_vector(vecp, dip, 1);
@@ -1678,7 +1680,7 @@ apix_alloc_msi(dev_info_t *dip, int inum, int count, int behavior)
 	}
 	for (i = 0; vecp && i < rcount; i++)
 		xv_vector(vecp->v_cpuid, vecp->v_vector + i)->v_flags |=
-		    (msi_ctrl & PCI_MSI_PVM_MASK) ? APIX_VECT_MASKABLE : 0;
+		    (msi_ctrl & PCI_MSI_PVM_MASK) ? APIX_VEC_F_MASKABLE : 0;
 	APIX_LEAVE_CPU_LOCK(cpuid);
 	if (vecp == NULL) {
 		APIC_VERBOSE(INTR, (CE_CONT,
@@ -1689,7 +1691,7 @@ apix_alloc_msi(dev_info_t *dip, int inum, int count, int behavior)
 
 	/* major to cpu binding */
 	if ((apic_intr_policy == INTR_ROUND_ROBIN_WITH_AFFINITY) &&
-	    ((vecp->v_flags & APIX_VECT_USER_BOUND) == 0))
+	    ((vecp->v_flags & APIX_VEC_F_USER_BOUND) == 0))
 		apix_set_dev_binding(dip, vecp->v_cpuid);
 
 	apix_dprint_vector(vecp, dip, rcount);
@@ -1719,13 +1721,13 @@ apix_alloc_msix(dev_info_t *dip, int inum, int count, int behavior)
 			    " cpu %d failed", (void *)dip, inum + i, bindcpu));
 			break;
 		}
-		vecp->v_flags |= APIX_VECT_MASKABLE;
+		vecp->v_flags |= APIX_VEC_F_MASKABLE;
 		APIX_LEAVE_CPU_LOCK(cpuid);
 
 		/* major to cpu mapping */
 		if ((i == 0) &&
 		    (apic_intr_policy == INTR_ROUND_ROBIN_WITH_AFFINITY) &&
-		    ((vecp->v_flags & APIX_VECT_USER_BOUND) == 0))
+		    ((vecp->v_flags & APIX_VEC_F_USER_BOUND) == 0))
 			apix_set_dev_binding(dip, vecp->v_cpuid);
 
 		apix_dprint_vector(vecp, dip, 1);
@@ -1770,7 +1772,7 @@ apix_free_vectors(dev_info_t *dip, int inum, int count, int type)
 		cpuid = vecp->v_cpuid;
 
 		DDI_INTR_IMPLDBG((CE_CONT, "apix_free_vectors: "
-		    "dip=0x%p inum=0x%x type=0x%x vector 0x%x (share %d)\n",
+		    "dip=0x%p inum=0x%x type=0x%x vector 0x%x (share %u)\n",
 		    (void *)dip, inum, type, vecp->v_vector, vecp->v_share));
 
 		/* tear down device interrupt to vector mapping */
@@ -1827,77 +1829,6 @@ apix_setup_io_intr(apix_vector_t *vecp)
 	return (apix_set_cpu(vecp, bindcpu, &ret));
 }
 
-/*
- * For interrupts which call add_avintr() before apic is initialized.
- * ioapix_setup_intr() will
- *   - allocate vector
- *   - copy over ISR
- */
-static void
-ioapix_setup_intr(int irqno, iflag_t *flagp)
-{
-	extern struct av_head autovect[];
-	apix_vector_t *vecp;
-	apic_irq_t *irqp;
-	uchar_t ioapicindex, ipin;
-	ulong_t iflag;
-	struct autovec *avp;
-
-	ioapicindex = irq_to_ioapic_index(irqno);
-	ASSERT(ioapicindex != 0xFF);
-	ipin = irqno - apic_io_vectbase[ioapicindex];
-
-	mutex_enter(&airq_mutex);
-	irqp = apic_irq_table[irqno];
-
-	/*
-	 * The irq table entry shouldn't exist unless the interrupts are shared.
-	 * In that case, make sure it matches what we would initialize it to.
-	 */
-	if (irqp != NULL) {
-		ASSERT(irqp->airq_kind == AIRQK_FIXED);
-		ASSERT(irqp->airq_intin_no == ipin &&
-		    irqp->airq_ioapicindex == ioapicindex);
-		vecp = xv_vector(irqp->airq_cpu, irqp->airq_vector);
-		ASSERT(!IS_VECT_FREE(vecp));
-		mutex_exit(&airq_mutex);
-	} else {
-		irqp = kmem_zalloc(sizeof (apic_irq_t), KM_SLEEP);
-
-		irqp->airq_cpu = IRQ_UNINIT;
-		irqp->airq_origirq = (uchar_t)irqno;
-		irqp->airq_kind = AIRQK_FIXED;
-		irqp->airq_ioapicindex = ioapicindex;
-		irqp->airq_intin_no = ipin;
-		irqp->airq_iflag = *flagp;
-		irqp->airq_share++;
-
-		apic_irq_table[irqno] = irqp;
-		mutex_exit(&airq_mutex);
-
-		vecp = apix_alloc_intx(NULL, 0, irqno);
-	}
-
-	/* copy over autovect */
-	for (avp = autovect[irqno].avh_link; avp; avp = avp->av_link)
-		apix_insert_av(vecp, avp->av_intr_id, avp->av_vector,
-		    avp->av_intarg1, avp->av_intarg2, avp->av_ticksp,
-		    avp->av_prilevel, avp->av_dip);
-
-	/* Program I/O APIC */
-	iflag = intr_clear();
-	lock_set(&apix_lock);
-
-	(void) apix_setup_io_intr(vecp);
-
-	lock_clear(&apix_lock);
-	intr_restore(iflag);
-
-	APIC_VERBOSE_IOAPIC((CE_CONT, "apix: setup ioapic, irqno %x "
-	    "(ioapic %x, ipin %x) is bound to cpu %x, vector %x\n",
-	    irqno, ioapicindex, ipin, irqp->airq_cpu, irqp->airq_vector));
-}
-
 void
 ioapix_init_intr(int mask_apic)
 {
@@ -1916,16 +1847,4 @@ ioapix_init_intr(int mask_apic)
 			ioapic_write(ioapicindex, APIC_RDT_CMD + 2 * i,
 			    AV_MASK);
 	}
-
-	/*
-	 * Hack alert: deal with ACPI SCI interrupt chicken/egg here
-	 */
-	if (apic_sci_vect > 0)
-		ioapix_setup_intr(apic_sci_vect, &apic_sci_flags);
-
-	/*
-	 * Hack alert: deal with ACPI HPET interrupt chicken/egg here.
-	 */
-	if (apic_hpet_vect > 0)
-		ioapix_setup_intr(apic_hpet_vect, &apic_hpet_flags);
 }

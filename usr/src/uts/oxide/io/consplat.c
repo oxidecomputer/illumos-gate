@@ -41,8 +41,6 @@
 #include <sys/promif.h>
 #include <sys/modctl.h>
 
-extern int pseudo_isa;
-
 int
 plat_use_polled_debug()
 {
@@ -88,33 +86,7 @@ plat_kbdpath(void)
 static char *
 plat_conspath(void)
 {
-	static char path[MAXPATHLEN];
-	char *bp;
-	major_t major;
-	dev_info_t *dip;
-
-	if ((major = ddi_name_to_major("asy")) == (major_t)-1)
-		return (NULL);
-
-	if ((dip = devnamesp[major].dn_head) == NULL)
-		return (NULL);
-
-	for (; dip != NULL; dip = ddi_get_next(dip)) {
-		if (i_ddi_attach_node_hierarchy(dip) != DDI_SUCCESS)
-			return (NULL);
-
-		if (DEVI(dip)->devi_minor->ddm_name[0] == 'a')
-			break;
-	}
-	if (dip == NULL)
-		return (NULL);
-
-	/* XXX This comes from i86pc and it's not safe there either. */
-	(void) ddi_pathname(dip, path);
-	bp = path + strlen(path);
-	(void) snprintf(bp, 3, ":%s", DEVI(dip)->devi_minor->ddm_name);
-
-	return (path);
+	return ("/huashan@0,0/dwu@0:0");
 }
 
 char *

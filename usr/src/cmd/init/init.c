@@ -419,7 +419,7 @@ static struct	pidlist {
 static struct termios	dflt_termios = {
 	.c_iflag = BRKINT|ICRNL|IXON|IMAXBEL,
 	.c_oflag = OPOST|ONLCR|TAB3,
-	.c_cflag = CS8|CREAD|B115200,
+	.c_cflag = CS8|CREAD|B3000000,
 	.c_lflag = ISIG|ICANON|ECHO|ECHOE|ECHOK|ECHOCTL|ECHOKE|IEXTEN,
 	.c_cc = { CINTR, CQUIT, CERASE, CKILL, CEOF, 0, 0, 0,
 	    CSTART, CSTOP, CSWTCH, CDSUSP, CRPRNT, CFLUSH, CWERASE, CLNEXT,
