@@ -29,6 +29,21 @@ extern "C" {
 
 #define	UFTDI_MAX_PORTS			4
 
+/*
+ * MINOR NUMBERS
+ *
+ * Give the least significant byte to ugen(4D) for minor numbering.  The
+ * remainder of the minor number will be used to determine our instance number.
+ */
+#define	UFTDI_MINOR_UGEN_BITS_MASK	(0xFF)
+#define	UFTDI_MINOR_INST_MASK		(~0xFF)
+#define	UFTDI_MINOR_TO_INST(mm)		((mm) >> 8)
+/*
+ * This is the count of minor numbers it is possible for ugen to track, and
+ * must match UFTDI_MINOR_UGEN_BITS_MASK:
+ */
+#define	UFTDI_MAX_MINORS		256
+
 typedef enum uftdi_state {
 	UFTDI_ST_ATTACHING = 0,
 	UFTDI_ST_CLOSED,
@@ -36,6 +51,13 @@ typedef enum uftdi_state {
 	UFTDI_ST_OPEN,
 	UFTDI_ST_CLOSING,
 } uftdi_state_t;
+
+typedef enum uftdi_ugen_state {
+	UFTDI_UGEN_ST_CLOSED = 0,
+	UFTDI_UGEN_ST_OPENING,
+	UFTDI_UGEN_ST_OPEN,
+	UFTDI_UGEN_ST_CLOSING,
+} uftdi_ugen_state_t;
 
 typedef enum uftdi_flags {
 	UFTDI_FL_USB_CONNECTED =	(1 << 0),
@@ -104,6 +126,10 @@ typedef struct uftdi {
 
 	uftdi_setup_t			uf_setup;
 	uftdi_flags_t			uf_flags;
+
+	uftdi_ugen_state_t		uf_ugen_state;
+	usb_ugen_hdl_t			uf_ugen;
+	bool				uf_ugen_minor_open[UFTDI_MAX_MINORS];
 
 	uint16_t			uf_device_version;
 	utfdi_device_type_t		uf_device_type;
