@@ -84,6 +84,8 @@ static devfsadm_create_t usb_cbt[] = {
 						ILEVEL_0, usb_process },
 	{ "usb", DDI_NT_UGEN, "usbprn", DRV_EXACT|TYPE_EXACT,
 						ILEVEL_0, usb_process },
+	{ "usb", DDI_NT_UGEN, "usbftdi", DRV_EXACT|TYPE_EXACT,
+						ILEVEL_0, usb_process },
 	{ "usb", DDI_NT_NEXUS, "hwahc", DRV_EXACT|TYPE_EXACT,
 						ILEVEL_0, usb_process },
 	{ "usb", DDI_NT_CCID_ATTACHMENT_POINT, "ccid", DRV_EXACT|TYPE_EXACT,

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  */
 
 #include <sys/conf.h>
@@ -26,6 +26,9 @@
 #define	USBDRV_MINOR_VER	0
 #include <sys/usb/usba.h>
 #include <sys/usb/usba/usbai_private.h>
+#include <sys/usb/clients/ugen/usb_ugen.h>
+#include <sys/usb/usba/usba_ugen.h>
+#include <sys/usb/usba/usba_ugend.h>
 
 #include <sys/usb/clients/usbftdi/uftdi_reg.h>
 
@@ -33,6 +36,7 @@
 
 static void uftdi_rx_start(uftdi_t *, uftdi_if_t *);
 static void uftdi_tx_start(uftdi_t *, uftdi_if_t *);
+static void uftdi_ugen_release(uftdi_t *);
 
 void *uftdi_state;
 
@@ -233,6 +237,10 @@ uftdi_open_pipes_one(uftdi_t *uf, uftdi_if_t *ui, size_t maxb)
 		return (USB_FAILURE);
 	}
 
+	/*
+	 * Install both pipes atomically, so that we don't end up in a state
+	 * where only one or the other is open.
+	 */
 	mutex_enter(&uf->uf_mutex);
 	uftdi_pipe_install(&ui->ui_pipe_in, pin, uftdi_buf_size(epin, maxb));
 	uftdi_pipe_install(&ui->ui_pipe_out, pout, uftdi_buf_size(epout, maxb));
@@ -283,6 +291,15 @@ uftdi_close_pipes(uftdi_t *uf)
 
 	for (uint_t i = 0; i < uf->uf_nif; i++) {
 		uftdi_if_t *ui = uf->uf_if[i];
+
+		if (ui->ui_pipe_in.up_state == UFTDI_PIPE_CLOSED) {
+			/*
+			 * The pipes for this interface are closed already.
+			 */
+			VERIFY3U(ui->ui_pipe_out.up_state, ==,
+			    UFTDI_PIPE_CLOSED);
+			continue;
+		}
 
 		usb_pipe_handle_t pin = uftdi_pipe_remove(&ui->ui_pipe_in);
 		usb_pipe_handle_t pout = uftdi_pipe_remove(&ui->ui_pipe_out);
@@ -1036,23 +1053,30 @@ uftdi_usb_reconnect(dev_info_t *dip)
 		goto done;
 	}
 
-	if (uftdi_open_pipes(uf) != USB_SUCCESS) {
-		goto done;
-	}
-
-	for (uint_t i = 0; i < uf->uf_nif; i++) {
-		uftdi_if_t *ui = uf->uf_if[i];
-
-		if (ui->ui_state != UFTDI_ST_OPEN) {
-			continue;
+	/*
+	 * If the device is in ugen(4D) mode, do not open pipes or reset the
+	 * device.
+	 */
+	if (uf->uf_ugen_state == UFTDI_UGEN_ST_CLOSED) {
+		if (uftdi_open_pipes(uf) != USB_SUCCESS) {
+			goto done;
 		}
 
-		/*
-		 * If we were already open for this interface, reset it and
-		 * program it with the last set of register values we used.
-		 */
-		(void) uftdi_reset(ui);
-		(void) uftdi_program(ui, &ui->ui_last_regs);
+		for (uint_t i = 0; i < uf->uf_nif; i++) {
+			uftdi_if_t *ui = uf->uf_if[i];
+
+			if (ui->ui_state != UFTDI_ST_OPEN) {
+				continue;
+			}
+
+			/*
+			 * If we were already open for this interface, reset it
+			 * and program it with the last set of register values
+			 * we used.
+			 */
+			(void) uftdi_reset(ui);
+			(void) uftdi_program(ui, &ui->ui_last_regs);
+		}
 	}
 
 	mutex_enter(&uf->uf_mutex);
@@ -1081,6 +1105,21 @@ uftdi_serdev_open(void *arg)
 		mutex_exit(&uf->uf_mutex);
 		return (EIO);
 	}
+
+	/*
+	 * If we are to use the device as a serial port from inside the kernel
+	 * we need to ensure there are no active ugen(4D) users.
+	 */
+	uftdi_ugen_release(uf);
+	if (uf->uf_ugen_state != UFTDI_UGEN_ST_CLOSED) {
+		/*
+		 * There are still active ugen(4D) opens, so refuse to open any
+		 * kernel serial port devices.
+		 */
+		mutex_exit(&uf->uf_mutex);
+		return (EBUSY);
+	}
+
 	ui->ui_state = UFTDI_ST_OPENING;
 	mutex_exit(&uf->uf_mutex);
 
@@ -1433,6 +1472,11 @@ uftdi_teardown(uftdi_t *uf)
 		uf->uf_setup &= ~UFTDI_SETUP_USB_ATTACH;
 	}
 
+	if (uf->uf_ugen != NULL) {
+		(void) usb_ugen_detach(uf->uf_ugen, DDI_DETACH);
+		usb_ugen_release_hdl(uf->uf_ugen);
+	}
+
 	VERIFY3U(uf->uf_flags, ==, UFTDI_FL_DETACHING);
 	VERIFY0(uf->uf_setup);
 
@@ -1599,6 +1643,34 @@ uftdi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		}
 	}
 
+	if (usb_owns_device(dip)) {
+		/*
+		 * In addition to direct kernel support for the serial device,
+		 * we expose ugen(4D) nodes.  This enables usermode processes
+		 * to take direct USB-level control of the device in order to
+		 * use alternative programming modes like MPSSE.
+		 */
+		usb_ugen_info_t ugen;
+		bzero(&ugen, sizeof (ugen));
+		ugen.usb_ugen_flags = 0;
+		ugen.usb_ugen_minor_node_ugen_bits_mask =
+		    UFTDI_MINOR_UGEN_BITS_MASK;
+		ugen.usb_ugen_minor_node_instance_mask =
+		    UFTDI_MINOR_INST_MASK;
+
+		int r;
+		if ((uf->uf_ugen = usb_ugen_get_hdl(dip, &ugen)) == NULL) {
+			dev_err(dip, CE_WARN, "!ugen handle failure");
+		} else if ((r = usb_ugen_attach(uf->uf_ugen, cmd)) !=
+		    USB_SUCCESS) {
+			dev_err(dip, CE_WARN, "!ugen attach failure (%d)", r);
+			usb_ugen_release_hdl(uf->uf_ugen);
+			uf->uf_ugen = NULL;
+		} else {
+			ddi_report_dev(dip);
+		}
+	}
+
 	return (0);
 
 bail:
@@ -1617,6 +1689,11 @@ uftdi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	uftdi_t *uf = ddi_get_soft_state(uftdi_state, ddi_get_instance(dip));
 
 	mutex_enter(&uf->uf_mutex);
+	if (uf->uf_ugen_state != UFTDI_UGEN_ST_CLOSED) {
+		mutex_exit(&uf->uf_mutex);
+		dev_err(dip, CE_WARN, "cannot detach while ugen is open");
+		return (DDI_FAILURE);
+	}
 	for (uint_t i = 0; i < uf->uf_nif; i++) {
 		if (uf->uf_if[i]->ui_state != UFTDI_ST_CLOSED) {
 			mutex_exit(&uf->uf_mutex);
@@ -1646,11 +1723,285 @@ uftdi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	return (0);
 }
 
+static void
+uftdi_ugen_release(uftdi_t *uf)
+{
+	VERIFY(MUTEX_HELD(&uf->uf_mutex));
+	if (uf->uf_ugen_state != UFTDI_UGEN_ST_OPEN) {
+		return;
+	}
+
+	/*
+	 * Sweep through all of the minor slots.  If none are active any
+	 * longer, we can disengage ugen mode and reopen our pipes.
+	 */
+	for (uint_t i = 0; i < UFTDI_MAX_MINORS; i++) {
+		if (uf->uf_ugen_minor_open[i]) {
+			/*
+			 * This ugen minor is still open.
+			 */
+			return;
+		}
+	}
+
+	/*
+	 * Take control of the USB state of the device so that we can try to
+	 * open all the pipes.
+	 */
+	uf->uf_ugen_state = UFTDI_UGEN_ST_CLOSING;
+	(void) uftdi_usb_change_start(uf, false);
+
+	if (!(uf->uf_flags & UFTDI_FL_USB_CONNECTED)) {
+		/*
+		 * If the device is not connected now, give up, but mark us
+		 * closed.  The pipes will be opened again when the device is
+		 * reconnected.
+		 */
+		uf->uf_ugen_state = UFTDI_UGEN_ST_CLOSED;
+		uftdi_usb_change_finish(uf);
+		return;
+	}
+
+	mutex_exit(&uf->uf_mutex);
+	int r = uftdi_open_pipes(uf);
+	mutex_enter(&uf->uf_mutex);
+
+	if (r != USB_SUCCESS) {
+		dev_err(uf->uf_dip, CE_WARN, "!failed to open pipes after "
+		    "releasing ugen (%d)", r);
+
+		/*
+		 * We failed to open at least some of the pipes we need for the
+		 * device to function.  Close all pipes again and then leave
+		 * the whole instance in ugen mode.  We'll try again the next
+		 * time someone tries to open a serial port.
+		 */
+		uftdi_close_pipes(uf);
+		uf->uf_ugen_state = UFTDI_UGEN_ST_OPEN;
+	} else {
+		uf->uf_ugen_state = UFTDI_UGEN_ST_CLOSED;
+	}
+
+	uftdi_usb_change_finish(uf);
+}
+
+static int
+uftdi_ugen_open(dev_t *dev, int flag, int sflag, cred_t *cr)
+{
+	int inst = UFTDI_MINOR_TO_INST(getminor(*dev));
+	uftdi_t *uf = ddi_get_soft_state(uftdi_state, inst);
+
+	if (uf == NULL) {
+		return (ENXIO);
+	}
+
+	mutex_enter(&uf->uf_mutex);
+again:
+	switch (uf->uf_ugen_state) {
+	case UFTDI_UGEN_ST_CLOSED:
+		/*
+		 * This is the first ugen(4D) open.  Check to make sure no
+		 * kernel serial devices are open:
+		 */
+		for (uint_t i = 0; i < uf->uf_nif; i++) {
+			if (uf->uf_if[i]->ui_state != UFTDI_ST_CLOSED) {
+				mutex_exit(&uf->uf_mutex);
+				return (EBUSY);
+			}
+		}
+
+		/*
+		 * Prevent any other opens from surprising us while we
+		 * potentially wait to begin closing pipes.
+		 */
+		uf->uf_ugen_state = UFTDI_UGEN_ST_OPENING;
+		(void) uftdi_usb_change_start(uf, false);
+
+		if (!(uf->uf_flags & UFTDI_FL_USB_CONNECTED)) {
+			/*
+			 * If the device is not connected now, give up.
+			 */
+			uf->uf_ugen_state = UFTDI_UGEN_ST_CLOSED;
+			uftdi_usb_change_finish(uf);
+			mutex_exit(&uf->uf_mutex);
+			return (EIO);
+		}
+
+		uftdi_close_pipes(uf);
+		uf->uf_ugen_state = UFTDI_UGEN_ST_OPEN;
+		uftdi_usb_change_finish(uf);
+		break;
+
+	case UFTDI_UGEN_ST_OPENING:
+	case UFTDI_UGEN_ST_CLOSING:
+		/*
+		 * Another open is already doing the work of transitioning to
+		 * or from ugen mode.  Wait for it to complete.
+		 */
+		while (uf->uf_ugen_state == UFTDI_UGEN_ST_OPENING ||
+		    uf->uf_ugen_state == UFTDI_UGEN_ST_CLOSING) {
+			cv_wait(&uf->uf_cv, &uf->uf_mutex);
+		}
+		if (uf->uf_ugen_state == UFTDI_UGEN_ST_OPEN) {
+			break;
+		} else if (uf->uf_ugen_state == UFTDI_UGEN_ST_CLOSED) {
+			/*
+			 * The other thread ostensibly gave up.  Try again
+			 * here.
+			 */
+			goto again;
+		}
+		mutex_exit(&uf->uf_mutex);
+		return (EBUSY);
+
+	case UFTDI_UGEN_ST_OPEN:
+		break;
+	}
+
+	/*
+	 * Pass the open request through to ugen(4D):
+	 */
+	mutex_exit(&uf->uf_mutex);
+	int r = usb_ugen_open(uf->uf_ugen, dev, flag, sflag, cr);
+	mutex_enter(&uf->uf_mutex);
+
+	if (r != 0) {
+		/*
+		 * If the open failed, try to disengage.  This might not be
+		 * possible if there have been other concurrent opens.
+		 */
+		uftdi_ugen_release(uf);
+		mutex_exit(&uf->uf_mutex);
+		return (r);
+	}
+
+	/*
+	 * Mark the minor as in use.  There could be multiple opens for the
+	 * same minor.  We'll only be told about closes once the minor is not
+	 * in use at all any more.
+	 */
+	uint_t idx = getminor(*dev) & UFTDI_MINOR_UGEN_BITS_MASK;
+	uf->uf_ugen_minor_open[idx] = true;
+
+	mutex_exit(&uf->uf_mutex);
+	return (0);
+}
+
+static int
+uftdi_ugen_getdev(dev_t dev, uftdi_t **uf, uint_t *idxp)
+{
+	uint_t inst = UFTDI_MINOR_TO_INST(getminor(dev));
+	uint_t idx = getminor(dev) & UFTDI_MINOR_UGEN_BITS_MASK;
+	*uf = ddi_get_soft_state(uftdi_state, inst);
+
+	if (*uf == NULL || idx >= UFTDI_MAX_MINORS) {
+		return (ENXIO);
+	}
+
+	/*
+	 * This minor should be one we have open already.
+	 */
+	VERIFY((*uf)->uf_ugen_minor_open[idx]);
+
+	if (idxp != NULL) {
+		*idxp = idx;
+	}
+
+	return (0);
+}
+
+static int
+uftdi_ugen_close(dev_t dev, int flag, int otype, cred_t *cr)
+{
+	uftdi_t *uf;
+	uint_t idx;
+	int r;
+	if ((r = uftdi_ugen_getdev(dev, &uf, &idx)) != 0) {
+		return (r);
+	}
+
+	if ((r = usb_ugen_close(uf->uf_ugen, dev, flag, otype, cr)) == 0) {
+		mutex_enter(&uf->uf_mutex);
+
+		VERIFY(uf->uf_ugen_minor_open[idx]);
+		uf->uf_ugen_minor_open[idx] = false;
+
+		uftdi_ugen_release(uf);
+		mutex_exit(&uf->uf_mutex);
+	}
+
+	return (r);
+}
+
+static int
+uftdi_ugen_read(dev_t dev, struct uio *uio, cred_t *cr)
+{
+	uftdi_t *uf;
+	int r;
+	if ((r = uftdi_ugen_getdev(dev, &uf, NULL)) != 0) {
+		return (r);
+	}
+
+	return (usb_ugen_read(uf->uf_ugen, dev, uio, cr));
+}
+
+static int
+uftdi_ugen_write(dev_t dev, struct uio *uio, cred_t *cr)
+{
+	uftdi_t *uf;
+	int r;
+	if ((r = uftdi_ugen_getdev(dev, &uf, NULL)) != 0) {
+		return (r);
+	}
+
+	return (usb_ugen_write(uf->uf_ugen, dev, uio, cr));
+}
+
+static int
+uftdi_ugen_poll(dev_t dev, short events, int anyyet, short *revents,
+    pollhead_t **ph)
+{
+	uftdi_t *uf;
+	int r;
+	if ((r = uftdi_ugen_getdev(dev, &uf, NULL)) != 0) {
+		return (r);
+	}
+
+	return (usb_ugen_poll(uf->uf_ugen, dev, events, anyyet, revents, ph));
+}
+
+static struct cb_ops uftdi_cb_ops = {
+	.cb_rev =		CB_REV,
+	.cb_flag =		D_MP,
+
+	/*
+	 * Our character device routines are here for the sole purpose of
+	 * providing ugen(4D) access to the underlying device.
+	 */
+	.cb_open =		uftdi_ugen_open,
+	.cb_close =		uftdi_ugen_close,
+	.cb_read =		uftdi_ugen_read,
+	.cb_write =		uftdi_ugen_write,
+	.cb_chpoll =		uftdi_ugen_poll,
+
+	.cb_strategy =		nodev,
+	.cb_print =		nodev,
+	.cb_dump =		nodev,
+	.cb_devmap =		nodev,
+	.cb_ioctl =		nodev,
+	.cb_mmap =		nodev,
+	.cb_segmap =		nodev,
+	.cb_prop_op =		ddi_prop_op,
+	.cb_aread =		nodev,
+	.cb_awrite =		nodev,
+};
+
 static struct dev_ops uftdi_dev_ops = {
 	.devo_rev =		DEVO_REV,
 
 	.devo_attach =		uftdi_attach,
 	.devo_detach =		uftdi_detach,
+	.devo_cb_ops =		&uftdi_cb_ops,
 
 	.devo_getinfo =		nodev,
 	.devo_identify =	nulldev,
