@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  */
 
 #include "serdev_impl.h"
@@ -625,9 +625,9 @@ serdev_dev_mode(dev_t dev)
 {
 	switch (getminor(dev) & SERDEV_MINOR_MODE_MASK) {
 	case SERDEV_MINOR_MODE_TTY:
-		return SERDEV_OM_TTY;
+		return (SERDEV_OM_TTY);
 	case SERDEV_MINOR_MODE_DIALOUT:
-		return SERDEV_OM_DIALOUT;
+		return (SERDEV_OM_DIALOUT);
 	default:
 		panic("unexpected dev");
 	}
@@ -1192,6 +1192,7 @@ again:
 		int r = srd->srd_ops.srdo_open(srd->srd_private);
 		mutex_enter(&srd->srd_mutex);
 		if (r != 0) {
+			serdev_open_release(srd);
 			serdev_open_teardown(srd);
 			mutex_exit(&srd->srd_mutex);
 			return (r);
@@ -1206,6 +1207,7 @@ again:
 			 * If we could not configure the device we need to close
 			 * it again.
 			 */
+			serdev_open_release(srd);
 			serdev_open_teardown(srd);
 			mutex_exit(&srd->srd_mutex);
 			return (r);
@@ -1841,7 +1843,8 @@ hangup:
 			if ((srd->srd_flags & SERDEV_FL_CARRIER_LOSS) ||
 			    !(srd->srd_flags & SERDEV_FL_CARRIER_DETECT)) {
 				if (putnextctl(q, M_HANGUP) == 1) {
-					srd->srd_flags &= ~SERDEV_FL_CARRIER_LOSS;
+					srd->srd_flags &=
+					    ~SERDEV_FL_CARRIER_LOSS;
 					srd->srd_flags &= ~SERDEV_FL_OFF_HOOK;
 					goto hangup;
 				} else {
