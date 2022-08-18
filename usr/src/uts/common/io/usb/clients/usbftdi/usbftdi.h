@@ -32,24 +32,17 @@ extern "C" {
 /*
  * MINOR NUMBERS
  *
- * Give the least significant byte to ugen(4D) for minor numbering.  The next
- * byte we will use to track cloned opens.  Next, permanently fix a bit with
- * the value 1 so that we can use the zero value to mean "slot not in use".
- * The remainder of the minor number will be used to determine our instance
- * number.
+ * Give the least significant byte to ugen(4D) for minor numbering.  The
+ * remainder of the minor number will be used to determine our instance number.
  */
 #define	UFTDI_MINOR_UGEN_BITS_MASK	(0xFF)
-#define	UFTDI_MINOR_CLONE_MASK		(0xFF00)
-#define	UFTDI_MINOR_INST_MASK		(~0x1FFFF)
-#define	UFTDI_MINOR_TO_CLONE(mm)	(((mm) & UFTDI_MINOR_CLONE_MASK) >> 8)
-#define	UFTDI_MINOR_TO_INST(mm)		((mm) >> 17)
-#define	UFTDI_MAKE_MINOR(inst, clone, ugen)				\
-	(((inst) << 17) |						\
-	(((clone) << 8) & UFTDI_MINOR_CLONE_MASK) |			\
-	((ugen) & UFTDI_MINOR_UGEN_BITS_MASK) |				\
-	0x10000)
-
-#define	UFTDI_MAX_CLONES		256
+#define	UFTDI_MINOR_INST_MASK		(~0xFF)
+#define	UFTDI_MINOR_TO_INST(mm)		((mm) >> 8)
+/*
+ * This is the count of minor numbers it is possible for ugen to track, and
+ * must match UFTDI_MINOR_UGEN_BITS_MASK:
+ */
+#define	UFTDI_MAX_MINORS		256
 
 typedef enum uftdi_state {
 	UFTDI_ST_ATTACHING = 0,
@@ -63,6 +56,7 @@ typedef enum uftdi_ugen_state {
 	UFTDI_UGEN_ST_CLOSED = 0,
 	UFTDI_UGEN_ST_OPENING,
 	UFTDI_UGEN_ST_OPEN,
+	UFTDI_UGEN_ST_CLOSING,
 } uftdi_ugen_state_t;
 
 typedef enum uftdi_flags {
@@ -134,8 +128,8 @@ typedef struct uftdi {
 	uftdi_flags_t			uf_flags;
 
 	uftdi_ugen_state_t		uf_ugen_state;
-	usb_ugen_hdl_impl_t		*uf_ugen;
-	minor_t				uf_ugen_minor[UFTDI_MAX_CLONES];
+	usb_ugen_hdl_t			uf_ugen;
+	bool				uf_ugen_minor_open[UFTDI_MAX_MINORS];
 
 	uint16_t			uf_device_version;
 	utfdi_device_type_t		uf_device_type;
