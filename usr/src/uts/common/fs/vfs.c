@@ -4566,12 +4566,13 @@ rootconf()
 	vfs_unrefvfssw(vsw);
 	rootdev = rootvfs->vfs_dev;
 
-	if (error)
-		cmn_err(CE_CONT, "Cannot mount root on %s fstype %s\n",
-		    rootfs.bo_name, fstyp);
-	else
+	if (error) {
+		cmn_err(CE_CONT, "Cannot mount root on %s fstype %s (%d)\n",
+		    rootfs.bo_name, fstyp, error);
+	} else {
 		cmn_err(CE_CONT, "?root on %s fstype %s\n",
 		    rootfs.bo_name, fstyp);
+	}
 	return (error);
 }
 

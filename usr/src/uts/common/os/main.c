@@ -82,6 +82,9 @@
 
 #include <c2/audit.h>
 #include <sys/bootprops.h>
+#include <sys/console.h>
+#include <sys/sunldi.h>
+#include <sys/ramdisk.h>
 
 /* well known processes */
 proc_t *proc_sched;		/* memory scheduler */
@@ -503,6 +506,161 @@ main(void)
 	 */
 	process_cache = kmem_cache_create("process_cache", sizeof (proc_t),
 	    0, NULL, NULL, NULL, NULL, NULL, 0);
+
+	/*
+	 * XXX OK, set the boot path to another device that does not exist.
+	 */
+	const char *bp = "/pseudo/ramdisk@1024:other";
+	printf("boot path set to: %s\n", bp);
+	setbootpath((char *)bp);
+
+	/*
+	 * XXX OK, let's try and make it exist!
+	 */
+	{
+		ldi_ident_t li = ldi_ident_from_anon();
+		ldi_handle_t lhctl;
+		int r;
+		int flag = FEXCL | FREAD | FWRITE;
+
+		if ((r = ldi_open_by_name("/devices/pseudo/ramdisk@1024:ctl",
+		    flag, kcred, &lhctl, li)) != 0) {
+			printf("control device open failure %d\n", r);
+			goto blah;
+		}
+
+		int rv;
+		struct rd_ioctl ri;
+		bzero(&ri, sizeof (ri));
+		(void) snprintf(ri.ri_name, sizeof (ri.ri_name), "other");
+		ri.ri_size = 600 * 1024 * 1024;
+
+		if ((r = ldi_ioctl(lhctl, RD_CREATE_DISK, (intptr_t)&ri,
+		    FWRITE | FKIOCTL, kcred, &rv)) != 0) {
+			printf("control device ioctl failure %d\n", r);
+			goto blah;
+		}
+		printf("ramdisk \"other\" created ok\n");
+
+		if ((r = ldi_close(lhctl, flag, kcred)) != 0) {
+			printf("control device close failure %d\n", r);
+			goto blah;
+		}
+
+		printf("control device closed ok\n");
+
+		flag = FREAD | FWRITE;
+		ldi_handle_t lha;
+		printf("open a...\n");
+		if ((r = ldi_open_by_name("/devices/ramdisk:a",
+		    flag, kcred, &lha, li)) != 0) {
+			printf("ramdisk a open failure %d\n", r);
+			goto blah;
+		}
+		ldi_handle_t lhother;
+		printf("open other...\n");
+		if ((r = ldi_open_by_name(
+		    "/devices/pseudo/ramdisk@1024:other",
+		    flag, kcred, &lhother, li)) != 0) {
+			printf("ramdisk other open failure %d\n", r);
+			goto blah;
+		}
+
+		/*
+		 * Copy things from one to here...
+		 */
+		char *buf = kmem_zalloc(512, KM_SLEEP);
+		printf("copying things...\n");
+		uint64_t pos = 0;
+		for (;;) {
+			iovec_t iov[1];
+			uio_t uio;
+
+			bzero(&uio, sizeof (uio));
+			bzero(iov, sizeof (iov));
+			iov[0].iov_base = buf;
+			iov[0].iov_len = 512;
+			uio.uio_iov = iov;
+			uio.uio_iovcnt = 1;
+			uio.uio_loffset = pos;
+			uio.uio_segflg = UIO_SYSSPACE;
+			uio.uio_resid = 512;
+
+			if ((r = ldi_read(lha, &uio, kcred)) != 0) {
+				if (r == EINVAL) {
+					printf(
+					    "copy hit EINVAL at pos %lu\n",
+					    pos);
+					break;
+				}
+				printf("read failure pos %lu: %d\n",
+				    pos, r);
+				goto copydone;
+			}
+
+			size_t copied = 512 - uio.uio_resid;
+			if (copied != 512) {
+				printf("short read at %lu, %lu bytes\n",
+				    pos, copied);
+			} else if (copied == 0) {
+				printf("EOF at pos %lu?\n", pos);
+				break;
+			}
+
+			bzero(&uio, sizeof (uio));
+			bzero(iov, sizeof (iov));
+			iov[0].iov_base = buf;
+			iov[0].iov_len = copied;
+			uio.uio_iov = iov;
+			uio.uio_iovcnt = 1;
+			uio.uio_loffset = pos;
+			uio.uio_segflg = UIO_SYSSPACE;
+			uio.uio_resid = copied;
+
+			if ((r = ldi_write(lhother, &uio, kcred)) != 0) {
+				printf("write failure pos %lu: %d\n",
+				    pos, r);
+				goto copydone;
+			}
+
+			if (uio.uio_resid != 0) {
+				printf("write resid at %lu was %ld, "
+				    "giving up?\n",
+				    pos, uio.uio_resid);
+				goto copydone;
+			}
+
+			pos += copied;
+		}
+
+copydone:
+		kmem_free(buf, 512);
+		printf("closing a\n");
+		if ((r = ldi_close(lha, flag, kcred)) != 0) {
+			printf("ramdisk a close failure %d\n", r);
+		}
+		printf("closing other\n");
+		if ((r = ldi_close(lhother, flag, kcred)) != 0) {
+			printf("ramdisk other close failure %d\n", r);
+		}
+	}
+
+	/*
+	 * XXX Hello!
+	 */
+blah:
+	printf("Hello!  Type \"please\" to boot: ");
+	for (;;) {
+		char please[128];
+
+		console_gets(please, sizeof (please));
+
+		if (strcmp(please, "please") == 0) {
+			break;
+		}
+
+		printf("Uh uh uh!  You didn't say the magic word: ");
+	}
 
 	vfs_mountroot();	/* Mount the root file system */
 	errorq_init();		/* after vfs_mountroot() so DDI root is ready */
