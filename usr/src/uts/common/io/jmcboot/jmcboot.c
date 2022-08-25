@@ -9,6 +9,8 @@
 #include <sys/mac_client.h>
 #include <sys/sunldi.h>
 #include <sys/ramdisk.h>
+#include <sys/ethernet.h>
+#include <sys/byteorder.h>
 
 /*
  * Linkage structures
@@ -76,7 +78,13 @@ typedef struct jmc_ether {
 	kmutex_t je_mutex;
 	kcondvar_t je_cv;
 	uint64_t je_npkts;
+	ether_addr_t je_macaddr;
 } jmc_ether_t;
+
+typedef struct jmc_ether_header {
+	uint32_t jeh_magic;
+	char jeh_message[128];
+} __packed jmc_ether_header_t;
 
 static void
 jmc_ether_rx(void *arg, mac_resource_handle_t mrh, mblk_t *m,
@@ -101,6 +109,35 @@ drop:
 		freemsg(m);
 		m = next;
 	}
+}
+
+static void
+jmc_announce(jmc_ether_t *je, mac_client_handle_t mch)
+{
+	mblk_t *m;
+
+	if ((m = allocb(1000, 0)) == NULL) {
+		printf("allocb failure\n");
+		return;
+	}
+
+	struct ether_header *ether = (void *)m->b_rptr;
+	m->b_wptr += sizeof (struct ether_header);
+
+	(void) memset(&ether->ether_dhost, 0xFF, ETHERADDRL);
+	(void) memcpy(&ether->ether_shost, je->je_macaddr, ETHERADDRL);
+	ether->ether_type = htons(0x1DE0);
+
+	jmc_ether_header_t jeh;
+	bzero(&jeh, sizeof (jeh));
+	jeh.jeh_magic = BE_32(0x1DE12345);
+	(void) snprintf(jeh.jeh_message, sizeof (jeh.jeh_message),
+	    "Greetings! We have seen %lu frames.", je->je_npkts);
+
+	(void) memcpy(m->b_wptr, &jeh, sizeof (jeh));
+	m->b_wptr += sizeof (jeh);
+
+	(void) mac_tx(mch, m, 0, MAC_DROP_ON_NO_DESC, NULL);
 }
 
 static void
@@ -156,10 +193,14 @@ jmc_ether(void)
 	/*
 	 * Lets find out our MAC address!
 	 */
-	uint8_t maca[ETHERADDRL];
-	mac_unicast_primary_get(mh, maca);
+	mac_unicast_primary_get(mh, je.je_macaddr);
 	printf("MAC address is %02X:%02X:%02X:%02X:%02X:%02X\n",
-	    maca[0], maca[1], maca[2], maca[3], maca[4], maca[5]);
+	    je.je_macaddr[0],
+	    je.je_macaddr[1],
+	    je.je_macaddr[2],
+	    je.je_macaddr[3],
+	    je.je_macaddr[4],
+	    je.je_macaddr[5]);
 
 	/*
 	 * Add unicast handle?
@@ -180,8 +221,19 @@ jmc_ether(void)
 	mac_rx_set(mch, jmc_ether_rx, &je);
 	mutex_enter(&je.je_mutex);
 	printf("listening for packets...\n");
+	hrtime_t last_bcast = 0;
 	uint64_t last_npkts = 0;
 	while (je.je_npkts < 100) {
+		if (last_bcast == 0 ||
+		    gethrtime() - last_bcast > 1000000000UL) {
+			/*
+			 * Send a broadcast frame at most once per second.
+			 */
+			printf("announce...\n");
+			jmc_announce(&je, mch);
+			last_bcast = gethrtime();
+		}
+
 		if (last_npkts != je.je_npkts) {
 			printf("npkts %lu -> %lu!\n", last_npkts, je.je_npkts);
 			last_npkts = je.je_npkts;
