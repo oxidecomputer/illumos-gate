@@ -1541,6 +1541,10 @@ $(OBJS_DIR)/%.o:		$(COMMONBASE)/idspace/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/jmcboot/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 #
 # krtld must refer to its own bzero/bcopy until the kernel is fully linked
 #

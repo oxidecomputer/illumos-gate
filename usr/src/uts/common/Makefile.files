@@ -2107,6 +2107,8 @@ VIOSCSI_OBJS = vioscsi.o
 # Virtio 9P transport driver
 VIO9P_OBJS = vio9p.o
 
+JMCBOOT_OBJS = jmcboot.o
+
 #
 #	kiconv modules
 #

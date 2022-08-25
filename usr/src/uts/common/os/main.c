@@ -508,6 +508,33 @@ main(void)
 	    0, NULL, NULL, NULL, NULL, NULL, 0);
 
 	/*
+	 * XXX OK, let's look for Ethernet!
+	 */
+	{
+		int r;
+		modctl_t *mcjmcboot = NULL;
+		int (*jmcboot)(void) = NULL;
+
+		if (modload("misc", "jmcboot") == -1) {
+			printf("could not load jmcboot\n");
+		} else if ((mcjmcboot = mod_hold_by_name("misc/jmcboot")) ==
+		    NULL) {
+			printf("could not hold module\n");
+		} else if ((jmcboot = (void *)modlookup_by_modctl(mcjmcboot,
+		    "jmcboot")) == NULL) {
+			printf("could not locate jmcboot()\n");
+		} else if ((r = jmcboot()) != 0) {
+			printf("jmcboot() failed %d\n", r);
+		} else {
+			printf("jmcboot() success!\n");
+		}
+
+		if (mcjmcboot != NULL) {
+			mod_release_mod(mcjmcboot);
+		}
+	}
+
+	/*
 	 * XXX OK, set the boot path to another device that does not exist.
 	 */
 	const char *bp = "/pseudo/ramdisk@1024:other";
