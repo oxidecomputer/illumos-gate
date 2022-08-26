@@ -47,6 +47,7 @@ CPPFLAGS += -I../../../../intel
 CPPFLAGS += -I$(SRC)/uts/oxide
 CPPFLAGS += -I$(SRC)/uts/oxide/milan
 CPPFLAGS += -I$(SRC)/uts/intel
+CPPFLAGS += -I$(SRC)/uts/common
 
 CERRWARN += -_gcc=-Wno-char-subscripts
 CERRWARN += -_gcc=-Wno-parentheses

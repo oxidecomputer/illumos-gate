@@ -45,6 +45,16 @@ $(i386_ONLY)dir path=platform/i86pc/kernel/sys group=sys
 $(i386_ONLY)dir path=platform/i86pc/kernel/sys/$(ARCH64) group=sys
 $(i386_ONLY)hardlink path=platform/i86pc/kernel/sys/$(ARCH64)/cpc \
     target=../../drv/$(ARCH64)/cpc
+$(i386_ONLY)dir path=platform/oxide group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel/drv group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel/drv/$(ARCH64) group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/cpc group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/cpc.conf group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel/sys group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel/sys/$(ARCH64) group=sys
+$(i386_ONLY)hardlink path=platform/oxide/kernel/sys/$(ARCH64)/cpc \
+    target=../../drv/$(ARCH64)/cpc
 driver name=cpc perms="shared 0666 root sys"
 $(i386_ONLY)legacy pkg=SUNWcpc.i arch=$(ARCH).i86pc \
     desc="Kernel support for CPU Performance Counters" \

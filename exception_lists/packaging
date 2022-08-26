@@ -807,3 +807,10 @@ opt/SUNWonld/
 #
 opt/os-tests/tests/cores/libdumper.so
 opt/os-tests/tests/cores/amd64/libdumper.so	i386
+
+#
+# oxide: while we're working things out, some software hits the proto area that
+# is not presently intended to be delivered:
+#
+platform/oxide/kernel/drv/amd64/cpudrv		i386
+platform/oxide/kernel/drv/amd64/pci		i386
