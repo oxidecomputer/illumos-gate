@@ -482,7 +482,7 @@ vmem_t		*device_arena;
 uintptr_t	toxic_addr = (uintptr_t)NULL;
 size_t		toxic_size = (256 + 1024) * 1024 * 1024;
 
-int prom_debug = 1;	/* XXXBOOT */
+int prom_debug = 0;	/* XXXBOOT */
 
 /*
  * This structure is used to keep track of the initial allocations

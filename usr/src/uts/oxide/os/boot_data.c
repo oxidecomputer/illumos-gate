@@ -168,8 +168,8 @@ static const bt_prop_t mfg_name_prop = {
 static const bt_prop_t bootargs_prop = {
 	.btp_next = &mfg_name_prop,
 	.btp_name = BTPROP_NAME_BOOTARGS,
-	.btp_vlen = sizeof ("-kdv"),
-	.btp_value = "-kdv",
+	.btp_vlen = sizeof ("-k"),
+	.btp_value = "-k",
 	.btp_typeflags = DDI_PROP_TYPE_STRING
 };
 
