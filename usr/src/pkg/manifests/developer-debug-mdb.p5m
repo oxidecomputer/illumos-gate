@@ -95,6 +95,15 @@ $(i386_ONLY)file path=platform/i86xpv/kernel/kmdb/$(ARCH64)/xpv_psm group=sys \
     mode=0555
 $(i386_ONLY)file path=platform/i86xpv/kernel/kmdb/$(ARCH64)/xpv_uppc group=sys \
     mode=0555
+$(i386_ONLY)dir path=platform/oxide group=sys variant.opensolaris.zone=global
+$(i386_ONLY)dir path=platform/oxide/kernel group=sys \
+    variant.opensolaris.zone=global
+$(i386_ONLY)dir path=platform/oxide/kernel/kmdb group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel/kmdb/$(ARCH64) group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/kmdb/$(ARCH64)/apix group=sys \
+    mode=0555
+$(i386_ONLY)file path=platform/oxide/kernel/kmdb/$(ARCH64)/unix group=sys \
+    mode=0555
 dir  path=usr group=sys
 dir  path=usr/bin
 dir  path=usr/bin/$(ARCH32)
@@ -214,6 +223,15 @@ $(i386_ONLY)file path=usr/platform/i86xpv/lib/mdb/kvm/$(ARCH64)/xpv.so \
 $(i386_ONLY)file path=usr/platform/i86xpv/lib/mdb/kvm/$(ARCH64)/xpv_psm.so \
     group=sys mode=0555
 $(i386_ONLY)file path=usr/platform/i86xpv/lib/mdb/kvm/$(ARCH64)/xpv_uppc.so \
+    group=sys mode=0555
+$(i386_ONLY)dir path=usr/platform/oxide group=sys
+$(i386_ONLY)dir path=usr/platform/oxide/lib
+$(i386_ONLY)dir path=usr/platform/oxide/lib/mdb group=sys
+$(i386_ONLY)dir path=usr/platform/oxide/lib/mdb/kvm group=sys
+$(i386_ONLY)dir path=usr/platform/oxide/lib/mdb/kvm/$(ARCH64) group=sys
+$(i386_ONLY)file path=usr/platform/oxide/lib/mdb/kvm/$(ARCH64)/apix.so \
+    group=sys mode=0555
+$(i386_ONLY)file path=usr/platform/oxide/lib/mdb/kvm/$(ARCH64)/unix.so \
     group=sys mode=0555
 dir  path=usr/share/man
 dir  path=usr/share/man/man1

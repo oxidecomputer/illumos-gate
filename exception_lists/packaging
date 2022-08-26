@@ -818,3 +818,9 @@ usr/lib/amd64/libispi.so	i386
 usr/lib/amd64/libt6mfg.so	i386
 usr/lib/libispi.so
 usr/lib/libt6mfg.so
+
+#
+# oxide: while we're working things out, some software hits the proto area that
+# is not presently intended to be delivered:
+#
+platform/oxide/kernel/drv/amd64/cpudrv		i386
