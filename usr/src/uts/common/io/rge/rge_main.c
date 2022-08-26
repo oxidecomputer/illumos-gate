@@ -1142,12 +1142,6 @@ rge_m_ioctl(void *arg, queue_t *wq, mblk_t *mp)
 		/* FALLTHRU */
 	case LB_SET_MODE:
 		break;
-
-	case ND_GET:
-		need_privilege = B_FALSE;
-		/* FALLTHRU */
-	case ND_SET:
-		break;
 	}
 
 	if (need_privilege) {
@@ -1185,11 +1179,6 @@ rge_m_ioctl(void *arg, queue_t *wq, mblk_t *mp)
 	case LB_GET_MODE:
 	case LB_SET_MODE:
 		status = rge_loop_ioctl(rgep, wq, mp, iocp);
-		break;
-
-	case ND_GET:
-	case ND_SET:
-		status = rge_nd_ioctl(rgep, wq, mp, iocp);
 		break;
 	}
 
@@ -1479,9 +1468,6 @@ rge_unattach(rge_t *rgep)
 	if (rgep->progress & PROGRESS_RESCHED)
 		(void) ddi_intr_remove_softint(rgep->resched_hdl);
 
-	if (rgep->progress & PROGRESS_NDD)
-		rge_nd_cleanup(rgep);
-
 	rge_free_bufs(rgep);
 
 	if (rgep->progress & PROGRESS_REGS)
@@ -1603,6 +1589,17 @@ rge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	rgep->devinfo = devinfo;
 
 	/*
+	 * XXX SIGH
+	 */
+	rgep->param_adv_autoneg = 1;
+	rgep->param_adv_1000fdx = 1;
+	rgep->param_adv_1000hdx = 1;
+	rgep->param_adv_100fdx = 1;
+	rgep->param_adv_100hdx = 1;
+	rgep->param_adv_10fdx = 1;
+	rgep->param_adv_10hdx = 1;
+
+	/*
 	 * Initialize more fields in RGE private data
 	 */
 	rgep->rge_mac_state = RGE_MAC_ATTACH;
@@ -1667,15 +1664,6 @@ rge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 		rge_problem(rgep, "DMA buffer allocation failed");
 		goto attach_fail;
 	}
-
-	/*
-	 * Register NDD-tweakable parameters
-	 */
-	if (rge_nd_init(rgep)) {
-		rge_problem(rgep, "rge_nd_init() failed");
-		goto attach_fail;
-	}
-	rgep->progress |= PROGRESS_NDD;
 
 	/*
 	 * Add the softint handlers:

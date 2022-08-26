@@ -754,12 +754,6 @@ extern uint32_t rge_debug;
 /* rge_main.c */
 void rge_restart(rge_t *rgep);
 
-/* rge_ndd.c */
-int rge_nd_init(rge_t *rgep);
-enum ioc_reply rge_nd_ioctl(rge_t *rgep, queue_t *wq, mblk_t *mp,
-	struct iocblk *iocp);
-void rge_nd_cleanup(rge_t *rgep);
-
 /* rge_rxtx.c */
 void rge_rx_recycle(caddr_t arg);
 void rge_receive(rge_t *rgep);

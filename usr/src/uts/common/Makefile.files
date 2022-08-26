@@ -1860,7 +1860,7 @@ NGE_OBJS += nge_main.o nge_atomic.o nge_chip.o nge_ndd.o nge_kstats.o \
 
 PCN_OBJS += pcn.o
 
-RGE_OBJS += rge_main.o rge_chip.o rge_ndd.o rge_kstats.o rge_log.o rge_rxtx.o
+RGE_OBJS += rge_main.o rge_chip.o rge_kstats.o rge_log.o rge_rxtx.o
 
 URTW_OBJS += urtw.o
 
