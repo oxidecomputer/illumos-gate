@@ -30,5 +30,5 @@ dir  path=kernel/drv/$(ARCH64) group=sys
 file path=kernel/drv/$(ARCH64)/serdev group=sys mode=0755
 dir  path=usr/share/man/man4d
 file path=usr/share/man/man4d/serdev.4d
-driver name=serdev perms="* 0666 root sys"
+driver name=serdev perms="* 0666 root sys" perms="*,cu 0600 uucp uucp"
 license lic_CDDL license=lic_CDDL
