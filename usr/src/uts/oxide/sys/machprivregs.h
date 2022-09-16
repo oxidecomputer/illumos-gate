@@ -67,6 +67,18 @@ extern "C" {
 #define	SYSRETL	sysretl
 #define	SWAPGS	swapgs
 
+/*
+ * As of GNU binutils 2.37, the assembler has split the 'sysexit' instruction
+ * into 'sysexitl' and 'sysexitq'. Using a plain 'sysexit' is interpreted as
+ * 'sysexitl' but comes with a warning about the assumption being made. Since
+ * all warnings are treated as errors in the kernel build, this results in a
+ * build failure. Unfortunately the desired 'sysexitl' cannot be used since
+ * older versions of the GNU assembler do not understand it.
+ * The following macro emits the correct byte sequence for 'sysexitl' on this
+ * platform.
+ */
+#define	SYSEXITL .byte 0x0f, 0x35
+
 #define	XPV_TRAP_POP	/* empty */
 #define	XPV_TRAP_PUSH	/* empty */
 #define	CLEAN_CS	/* empty */
