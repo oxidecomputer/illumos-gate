@@ -1105,6 +1105,10 @@ extern sysevent_t *spa_event_create(spa_t *spa, vdev_t *vd, nvlist_t *hist_nvl,
 extern void spa_event_post(sysevent_t *ev);
 extern void spa_event_discard(sysevent_t *ev);
 
+extern void spa_ramdisk_init(void);
+extern void spa_ramdisk_fini(void);
+extern const char *spa_ramdisk_path(void);
+
 #ifdef ZFS_DEBUG
 #define	dprintf_bp(bp, fmt, ...) do {				\
 	if (zfs_flags & ZFS_DEBUG_DPRINTF) {			\

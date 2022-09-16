@@ -131,6 +131,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/milan/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/boot_image/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 # ridiculous contortions ---
 ATOMIC_SUBDIR_32	= i386
 ATOMIC_SUBDIR_64	= amd64

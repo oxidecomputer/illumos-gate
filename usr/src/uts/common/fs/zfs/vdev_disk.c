@@ -301,6 +301,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	int otyp;
 	boolean_t validate_devid = B_FALSE;
 	uint64_t capacity = 0, blksz = 0, pbsize;
+	const char *rdpath = spa_ramdisk_path();
 
 	/*
 	 * We must have a pathname, and it must be absolute.
@@ -328,7 +329,8 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	/*
 	 * Allow bypassing the devid.
 	 */
-	if (vd->vdev_devid != NULL && vdev_disk_bypass_devid) {
+	if (vd->vdev_devid != NULL &&
+	    (vdev_disk_bypass_devid || rdpath != NULL)) {
 		vdev_dbgmsg(vd, "vdev_disk_open, devid %s bypassed",
 		    vd->vdev_devid);
 		spa_strfree(vd->vdev_devid);
@@ -363,6 +365,17 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	}
 
 	error = EINVAL;		/* presume failure */
+
+	if (rdpath != NULL) {
+		/*
+		 * We have been asked to open only a specific ramdisk device,
+		 * and to fail otherwise.
+		 */
+		error = ldi_open_by_name((char *)rdpath, spa_mode(spa), kcred,
+		    &dvd->vd_lh, zfs_li);
+		validate_devid = B_TRUE;
+		goto ramdisk_only;
+	}
 
 	if (vd->vdev_path != NULL) {
 		if (vd->vdev_wholedisk == -1ULL) {
@@ -501,6 +514,7 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		}
 	}
 
+ramdisk_only:
 	if (error != 0) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		vdev_dbgmsg(vd, "vdev_disk_open: failed to open [error=%d]",

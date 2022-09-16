@@ -1757,6 +1757,7 @@ zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
 	zfsvfs_t *zfsvfs = NULL;
 	znode_t *zp = NULL;
 	vnode_t *vp = NULL;
+	char *zfs_bootfs_name;
 	char *zfs_bootfs;
 	char *zfs_devid;
 	uint64_t zfs_bootpool;
@@ -1781,7 +1782,9 @@ zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
 		 */
 		clkset(-1);
 
-		if ((zfs_bootfs = spa_get_bootprop("zfs-bootfs")) == NULL) {
+		zfs_bootfs_name = spa_get_bootprop("zfs-bootfs-name");
+		if ((zfs_bootfs = spa_get_bootprop("zfs-bootfs")) == NULL &&
+		    zfs_bootfs_name == NULL) {
 			cmn_err(CE_NOTE, "spa_get_bootfs: can not get "
 			    "bootfs name");
 			return (SET_ERROR(EINVAL));
@@ -1805,6 +1808,13 @@ zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
 		 */
 		vdev_disk_preroot_init();
 
+		/*
+		 * If we are using the special ramdisk boot mode, we want to
+		 * ignore device paths from the pool configuration and use only
+		 * the specific path we were given in the boot properties.
+		 */
+		spa_ramdisk_init();
+
 		error = spa_import_rootpool(rootfs.bo_name, zfs_devid,
 		    zfs_bootpool, zfs_bootvdev);
 
@@ -1812,25 +1822,40 @@ zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
 
 		if (error != 0) {
 			spa_free_bootprop(zfs_bootfs);
+			spa_free_bootprop(zfs_bootfs_name);
 			vdev_disk_preroot_fini();
+			spa_ramdisk_fini();
 			cmn_err(CE_NOTE, "spa_import_rootpool: error %d",
 			    error);
 			return (error);
 		}
 
-		if (error = zfs_parse_bootfs(zfs_bootfs, rootfs.bo_name)) {
+		if (zfs_bootfs_name != NULL) {
+			/*
+			 * We have a dataset name already and do not need to
+			 * translate it.
+			 */
+			strncpy(rootfs.bo_name, zfs_bootfs_name,
+			    sizeof (rootfs.bo_name));
+		} else if (error = zfs_parse_bootfs(zfs_bootfs,
+		    rootfs.bo_name)) {
 			spa_free_bootprop(zfs_bootfs);
+			spa_free_bootprop(zfs_bootfs_name);
 			vdev_disk_preroot_fini();
+			spa_ramdisk_fini();
 			cmn_err(CE_NOTE, "zfs_parse_bootfs: error %d",
 			    error);
 			return (error);
 		}
 
 		spa_free_bootprop(zfs_bootfs);
+		spa_free_bootprop(zfs_bootfs_name);
 		vdev_disk_preroot_fini();
 
-		if (error = vfs_lock(vfsp))
+		if (error = vfs_lock(vfsp)) {
+			spa_ramdisk_fini();
 			return (error);
+		}
 
 		if (error = zfs_domount(vfsp, rootfs.bo_name)) {
 			cmn_err(CE_NOTE, "zfs_domount: error %d", error);
@@ -1857,6 +1882,7 @@ zfs_mountroot(vfs_t *vfsp, enum whymountroot why)
 		vfs_add((struct vnode *)0, vfsp,
 		    (vfsp->vfs_flag & VFS_RDONLY) ? MS_RDONLY : 0);
 out:
+		spa_ramdisk_fini();
 		vfs_unlock(vfsp);
 		return (error);
 	} else if (why == ROOT_REMOUNT) {

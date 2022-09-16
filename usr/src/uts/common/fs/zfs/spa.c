@@ -5478,6 +5478,20 @@ spa_import_rootpool(char *devpath, char *devid, uint64_t pool_guid,
 	char *pname;
 	int error;
 	const char *altdevpath = NULL;
+	const char *rdpath = NULL;
+
+	if ((rdpath = spa_ramdisk_path()) != NULL) {
+		/*
+		 * We expect to load the pool from a specific ramdisk device
+		 * only.  We don't care what the pool label says.
+		 */
+		config = spa_generate_rootconf(rdpath, NULL, &guid, 0);
+		if (config != NULL) {
+			goto configok;
+		}
+		cmn_err(CE_NOTE, "Cannot use ramdisk device '%s'", rdpath);
+		return (SET_ERROR(EIO));
+	}
 
 	/*
 	 * Read the label from the boot device and generate a configuration.
@@ -5520,6 +5534,7 @@ spa_import_rootpool(char *devpath, char *devid, uint64_t pool_guid,
 		return (SET_ERROR(EIO));
 	}
 
+configok:
 	VERIFY(nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
 	    &pname) == 0);
 	VERIFY(nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_TXG, &txg) == 0);
@@ -5592,6 +5607,12 @@ spa_import_rootpool(char *devpath, char *devid, uint64_t pool_guid,
 		error = SET_ERROR(EINVAL);
 		goto out;
 	}
+
+	/*
+	 * The root disk may have been expanded while the system was offline.
+	 * Kick off an async task to check for and handle expansion.
+	 */
+	spa_async_request(spa, SPA_ASYNC_AUTOEXPAND);
 
 	error = 0;
 out:

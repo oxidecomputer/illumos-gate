@@ -133,8 +133,16 @@ const bt_discovery_t bt_discovery_stub = {
 
 #endif	/* USE_DISCOVERY_STUB */
 
-static const bt_prop_t fstype_prop = {
+static const bt_prop_t boot_image_ops_prop = {
 	.btp_next = NULL,
+	.btp_name = BTPROP_NAME_BOOT_IMAGE_OPS,
+	.btp_vlen = sizeof ("misc/boot_image"),
+	.btp_value = "misc/boot_image",
+	.btp_typeflags = DDI_PROP_TYPE_STRING
+};
+
+static const bt_prop_t fstype_prop = {
+	.btp_next = &boot_image_ops_prop,
 	.btp_name = BTPROP_NAME_FSTYPE,
 	.btp_vlen = sizeof ("ufs"),
 	.btp_value = "ufs",

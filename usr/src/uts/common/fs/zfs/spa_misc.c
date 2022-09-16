@@ -244,6 +244,9 @@ static avl_tree_t spa_l2cache_avl;
 kmem_cache_t *spa_buffer_pool;
 int spa_mode_global;
 
+static kmutex_t spa_rd_lock;
+static char *spa_rd_path;
+
 #ifdef ZFS_DEBUG
 /*
  * Everything except dprintf, spa, and indirect_remap is on by default
@@ -2228,6 +2231,7 @@ spa_init(int mode)
 	mutex_init(&spa_namespace_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa_spare_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa_l2cache_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa_rd_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&spa_namespace_cv, NULL, CV_DEFAULT, NULL);
 
 	avl_create(&spa_namespace_avl, spa_name_compare, sizeof (spa_t),
@@ -2302,6 +2306,7 @@ spa_fini(void)
 	mutex_destroy(&spa_namespace_lock);
 	mutex_destroy(&spa_spare_lock);
 	mutex_destroy(&spa_l2cache_lock);
+	mutex_destroy(&spa_rd_lock);
 }
 
 /*
@@ -2597,4 +2602,44 @@ spa_suspend_async_destroy(spa_t *spa)
 		return (B_TRUE);
 
 	return (B_FALSE);
+}
+
+void
+spa_ramdisk_init(void)
+{
+#ifdef _KERNEL
+	char *path = spa_get_bootprop("zfs-ramdisk-path");
+
+	if (path != NULL) {
+		mutex_enter(&spa_rd_lock);
+		spa_free_bootprop(spa_rd_path);
+		spa_rd_path = path;
+		mutex_exit(&spa_rd_lock);
+	}
+#endif
+}
+
+void
+spa_ramdisk_fini(void)
+{
+#ifdef _KERNEL
+	mutex_enter(&spa_rd_lock);
+	spa_free_bootprop(spa_rd_path);
+	spa_rd_path = NULL;
+	mutex_exit(&spa_rd_lock);
+#endif
+}
+
+const char *
+spa_ramdisk_path(void)
+{
+	char *path = NULL;
+
+#ifdef _KERNEL
+	mutex_enter(&spa_rd_lock);
+	path = spa_rd_path;
+	mutex_exit(&spa_rd_lock);
+#endif
+
+	return (path);
 }

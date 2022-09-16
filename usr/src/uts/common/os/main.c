@@ -75,6 +75,7 @@
 #include <sys/brand.h>
 #include <sys/mmapobj.h>
 #include <sys/smt.h>
+#include <sys/boot_image_ops.h>
 
 #include <vm/as.h>
 #include <vm/seg_kmem.h>
@@ -377,6 +378,37 @@ start_init(void)
 	lwp_rtt();
 }
 
+static void
+boot_image_locate(void)
+{
+	char *value;
+	modctl_t *module = NULL;
+	boot_image_ops_t *bimo = NULL;
+
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_root_node(),
+	    DDI_PROP_DONTPASS, "boot-image-ops", &value) != DDI_SUCCESS ||
+	    value[0] == '\0') {
+		/*
+		 * No boot-image-ops module was specified.
+		 */
+		return;
+	}
+
+	if (modload(NULL, value) == -1 ||
+	    (module = mod_hold_by_name(value)) == NULL) {
+		panic("could not load boot-image-ops module \"%s\"", value);
+	}
+
+	if ((bimo = (void *)modlookup_by_modctl(module, "_boot_image_ops")) ==
+	    NULL || bimo->bimo_version != BOOT_IMAGE_OPS_VERSION) {
+		panic("module \"%s\" does not contain _boot_image_ops", value);
+	}
+
+	bimo->bimo_locate();
+
+	mod_release_mod(module);
+}
+
 void
 main(void)
 {
@@ -505,6 +537,8 @@ main(void)
 	 */
 	process_cache = kmem_cache_create("process_cache", sizeof (proc_t),
 	    0, NULL, NULL, NULL, NULL, NULL, 0);
+
+	boot_image_locate();
 
 	vfs_mountroot();	/* Mount the root file system */
 	errorq_init();		/* after vfs_mountroot() so DDI root is ready */

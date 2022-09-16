@@ -153,6 +153,8 @@ DR_OBJS	+= dr.o dr_cpu.o dr_err.o dr_io.o dr_mem_acpi.o dr_quiesce.o dr_util.o
 
 ROOTNEX_OBJS += rootnex.o
 
+BOOT_IMAGE_OBJS =	oxide_boot.o oxide_boot_disk.o oxide_boot_net.o
+
 PCI_PRD_OBJS += pci_prd_oxide.o
 
 #

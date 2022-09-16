@@ -155,6 +155,7 @@ typedef struct bt_discovery {
 #define	BTPROP_NAME_IMPL_ARCH		"impl-arch-name"
 #define	BTPROP_NAME_FSTYPE		"fstype"
 #define	BTPROP_NAME_RESET_VECTOR	"reset-vector"
+#define	BTPROP_NAME_BOOT_IMAGE_OPS	"boot-image-ops"
 
 #ifdef	USE_DISCOVERY_STUB
 extern const bt_discovery_t bt_discovery_stub;
