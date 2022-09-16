@@ -692,6 +692,7 @@ f lib/svc/manifest/system/hostid.xml 0444 root sys
 f lib/svc/manifest/system/hotplug.xml 0444 root sys
 f lib/svc/manifest/system/identity.xml 0444 root sys
 f lib/svc/manifest/system/manifest-import.xml 0444 root sys
+f lib/svc/manifest/system/mission-t6.xml 0444 root sys
 f lib/svc/manifest/system/sac.xml 0444 root sys
 d lib/svc/manifest/system/svc 0755 root sys
 f lib/svc/manifest/system/svc/global.xml 0444 root sys
@@ -710,6 +711,7 @@ f lib/svc/method/fs-usr 0555 root bin
 f lib/svc/method/identity-domain 0555 root bin
 f lib/svc/method/identity-node 0555 root bin
 f lib/svc/method/manifest-import 0555 root bin
+f lib/svc/method/mission-t6 0555 root bin
 f lib/svc/method/net-init 0555 root bin
 f lib/svc/method/net-install 0555 root bin
 f lib/svc/method/net-ipmgmt 0555 root bin

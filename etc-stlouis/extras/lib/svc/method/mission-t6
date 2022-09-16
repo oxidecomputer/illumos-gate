@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# Copyright (C) 2022 Oxide Computer Company
+#
+
+T6_PCIE_ATTACH_POINT="pcie16"
+GPIO_PLATFORM="zen"
+GPIO_CTLR_NUM=-1
+GPIO_CTLR="${GPIO_PLATFORM}_gpio${GPIO_CTLR_NUM}"
+GPIO_PIN="19"
+GPIO_PIN_NAME="${GPIO_CTLR}/${GPIO_PIN}"
+
+set -e
+
+. /lib/svc/share/smf_include.sh
+
+# XXX(cross): remove the /tmp relative path at some point.
+PATH=/tmp/usr/sbin:/usr/sbin:/usr/bin:/bin
+export PATH
+
+# We only set the T6 mode from the global zone.
+if smf_is_nonglobalzone; then
+	exit $SMF_EXIT_OK
+fi
+
+# We require an argument.
+if [ $# != 1 ]; then
+	echo 'ERROR: mission-t6 requires a command (start|stop|mfgmode)' >&2
+	exit $SMF_EXIT_ERR_FATAL
+fi
+
+case "$1" in
+start)
+	# Set into mission mode.
+	cfgadm -c disconnect "${T6_PCIE_ATTACH_POINT}"
+	gpioadm gpio attr set "${GPIO_PIN_NAME}" \
+	    "${GPIO_PLATFORM}:output=high" "${GPIO_PLATFORM}:pull=disabled"
+	sleep 1
+	cfgadm -c configure "${T6_PCIE_ATTACH_POINT}"
+	;;
+stop)
+	# Currently stopping is a nop.
+	;;
+mfgmode)
+	# Set into manufacturing mode.
+	cfgadm -c disconnect "${T6_PCIE_ATTACH_POINT}"
+	gpioadm gpio attr set "${GPIO_PIN_NAME}" \
+	    "${GPIO_PLATFORM}:output=low" "${GPIO_PLATFORM}:pull=disabled"
+	sleep 1
+	cfgadm -c configure "${T6_PCIE_ATTACH_POINT}"
+	;;
+*)
+	echo "ERROR: mission-t6: unsupported command '$1'" >&2
+	exit $SMF_EXIT_ERR_FATAL
+	;;
+esac
+
+exit $SMF_EXIT_OK
