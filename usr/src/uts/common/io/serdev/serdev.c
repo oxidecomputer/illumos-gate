@@ -1842,7 +1842,11 @@ hangup:
 			 */
 			if ((srd->srd_flags & SERDEV_FL_CARRIER_LOSS) ||
 			    !(srd->srd_flags & SERDEV_FL_CARRIER_DETECT)) {
-				if (putnextctl(q, M_HANGUP) == 1) {
+				mutex_exit(&srd->srd_mutex);
+				int r = putnextctl(q, M_HANGUP);
+				mutex_enter(&srd->srd_mutex);
+
+				if (r == 1) {
 					srd->srd_flags &=
 					    ~SERDEV_FL_CARRIER_LOSS;
 					srd->srd_flags &= ~SERDEV_FL_OFF_HOOK;
@@ -1861,7 +1865,11 @@ hangup:
 			 * Either this is a local line, or we have detected
 			 * carrier.
 			 */
-			if (putnextctl(q, M_UNHANGUP) == 1) {
+			mutex_exit(&srd->srd_mutex);
+			int r = putnextctl(q, M_UNHANGUP);
+			mutex_enter(&srd->srd_mutex);
+
+			if (r == 1) {
 				srd->srd_flags |= SERDEV_FL_OFF_HOOK;
 			} else {
 				/*
