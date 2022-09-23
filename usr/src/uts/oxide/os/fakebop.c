@@ -470,7 +470,7 @@ static desctbr_t bop_idt_info;
  * just generate a traceback and exit.
  */
 static void
-idt_init(void)
+early_idt_init(void)
 {
 	int t;
 
@@ -487,6 +487,19 @@ idt_init(void)
 	bop_idt_info.dtr_limit = (NIDT * sizeof (gate_desc_t)) - 1;
 	bop_idt_info.dtr_base = (uintptr_t)bop_idt;
 	wr_idtr(&bop_idt_info);
+}
+
+static void
+early_gdt_init(void)
+{
+	static user_desc_t gdt[NGDT];
+	desctbr_t gdtr;
+
+	init_boot_gdt(gdt);
+	gdtr.dtr_limit = sizeof(gdt) - 1;
+	gdtr.dtr_base = (uint64_t)gdt;
+	wr_gdtr(&gdtr);
+	load_segment_registers(B64CODE_SEL, 0, 0, 0);
 }
 
 static void
@@ -724,11 +737,12 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	}
 
 	/*
-	 * Install an IDT to catch early pagefaults (shouldn't have any).
-	 * Also needed for kmdb.
+	 * Install a GDT and an IDT to catch early pagefaults (shouldn't
+	 * have any).  Also needed for kmdb.
 	 */
-	DBG_MSG("Initializing temporary IDT: ");
-	idt_init();
+	DBG_MSG("Initializing temporary GDT and IDT: ");
+	early_gdt_init();
+	early_idt_init();
 	DBG_MSG("done\n");
 
 	if (find_bt_prop("prom_debug", 0) != NULL || kbm_debug) {
