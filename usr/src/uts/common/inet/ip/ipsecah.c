@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  * Copyright (c) 2012 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2017 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -64,6 +65,7 @@
 #include <inet/ipsecah.h>
 #include <inet/ipsec_impl.h>
 #include <inet/ipdrop.h>
+#include <inet/ddm.h>
 #include <sys/taskq.h>
 #include <sys/policy.h>
 #include <sys/strsun.h>
@@ -2242,6 +2244,7 @@ ah_fix_phdr_v6(ip6_t *ip6h, ip6_t *oip6h, boolean_t outbound,
 	uint8_t nexthdr;
 	uint8_t *prev_nexthdr;
 	ip6_hbh_t *hbhhdr;
+	ip6_ddm_t *ddmhdr;
 	ip6_dest_t *dsthdr = NULL;
 	ip6_rthdr0_t *rthdr;
 	int ehdrlen;
@@ -2298,6 +2301,17 @@ ah_fix_phdr_v6(ip6_t *ip6h, ip6_t *oip6h, boolean_t outbound,
 				return (0);
 			hbhhdr = (ip6_hbh_t *)pi_opt;
 			prev_nexthdr = (uint8_t *)&hbhhdr->ip6h_nxt;
+			break;
+		case IPPROTO_DDM:
+			ddmhdr = (ip6_ddm_t *)oi_opt;
+			nexthdr = ddmhdr->ddm_next_header;
+			ehdrlen = ddm_total_len(ddmhdr);
+			ret = ah_fix_tlv_options_v6(oi_opt, pi_opt, ehdrlen,
+			    IPPROTO_DDM, copy_always);
+			if (ret == -1)
+				return (0);
+			ddmhdr = (ip6_ddm_t *)pi_opt;
+			prev_nexthdr = (uint8_t *)&ddmhdr->ddm_next_header;
 			break;
 		case IPPROTO_ROUTING:
 			rthdr = (ip6_rthdr0_t *)oi_opt;
@@ -3601,6 +3615,7 @@ ah_auth_in_done(mblk_t *phdr_mp, ip_recv_attr_t *ira, ipsec_crypto_t *ic)
 		int hdrlen;
 		uint8_t *nexthdr;
 		ip6_hbh_t *hbhhdr;
+		ip6_ddm_t *ddmhdr;
 		ip6_dest_t *dsthdr;
 		ip6_rthdr0_t *rthdr;
 
@@ -3645,6 +3660,11 @@ ah_auth_in_done(mblk_t *phdr_mp, ip_recv_attr_t *ira, ipsec_crypto_t *ic)
 				dsthdr = (ip6_dest_t *)whereptr;
 				nexthdr = &dsthdr->ip6d_nxt;
 				hdrlen = 8 * (dsthdr->ip6d_len + 1);
+				break;
+			case IPPROTO_DDM:
+				ddmhdr = (ip6_ddm_t *)whereptr;
+				nexthdr = &ddmhdr->ddm_next_header;
+				hdrlen = ddm_total_len(ddmhdr);
 				break;
 			case IPPROTO_ROUTING:
 				rthdr = (ip6_rthdr0_t *)whereptr;

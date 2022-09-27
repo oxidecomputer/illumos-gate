@@ -23,6 +23,7 @@
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
  * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -151,6 +152,9 @@ static ipadm_prop_desc_t ipadm_ip_prop_table[] = {
 	    i_ipadm_set_ifprop_flags, i_ipadm_get_onoff,
 	    i_ipadm_get_ifprop_flags },
 
+	{ "ddm", NULL, IPADMPROP_CLASS_IF, MOD_PROTO_IPV6, 0,
+	    i_ipadm_set_ifprop_flags, i_ipadm_get_onoff,
+	    i_ipadm_get_ifprop_flags },
 
 	{ NULL, NULL, 0, 0, 0, NULL, NULL, NULL }
 };
@@ -606,7 +610,8 @@ i_ipadm_set_ifprop_flags(ipadm_handle_t iph, const void *arg,
 		    strcmp(pdp->ipd_name, "nud") == 0) {
 			pval = IPADM_ONSTR;
 		} else if (strcmp(pdp->ipd_name, "forwarding") == 0 ||
-		    strcmp(pdp->ipd_name, "standby") == 0) {
+		    strcmp(pdp->ipd_name, "standby") == 0 ||
+		    strcmp(pdp->ipd_name, "ddm") == 0) {
 			pval = IPADM_OFFSTR;
 		} else {
 			return (IPADM_PROP_UNKNOWN);
@@ -645,6 +650,11 @@ i_ipadm_set_ifprop_flags(ipadm_handle_t iph, const void *arg,
 			on_flags = IFF_STANDBY;
 		else
 			off_flags = IFF_STANDBY;
+	} else if (strcmp(pdp->ipd_name, "ddm") == 0) {
+		if (on)
+			on_flags = IFF_DDM;
+		else
+			off_flags = IFF_DDM;
 	}
 
 	if (on_flags || off_flags)  {
@@ -1013,7 +1023,8 @@ i_ipadm_get_ifprop_flags(ipadm_handle_t iph, const void *arg,
 		    strcmp(pdp->ipd_name, "nud") == 0) {
 			val = IPADM_ONSTR;
 		} else if (strcmp(pdp->ipd_name, "forwarding") == 0 ||
-		    strcmp(pdp->ipd_name, "standby") == 0) {
+		    strcmp(pdp->ipd_name, "standby") == 0 ||
+		    strcmp(pdp->ipd_name, "ddm") == 0) {
 			val = IPADM_OFFSTR;
 		} else {
 			return (IPADM_PROP_UNKNOWN);
@@ -1041,6 +1052,9 @@ i_ipadm_get_ifprop_flags(ipadm_handle_t iph, const void *arg,
 				val = IPADM_ONSTR;
 		} else if (strcmp(pdp->ipd_name, "standby") == 0) {
 			if (intf_flags & IFF_STANDBY)
+				val = IPADM_ONSTR;
+		} else if (strcmp(pdp->ipd_name, "ddm") == 0) {
+			if (intf_flags & IFF_DDM)
 				val = IPADM_ONSTR;
 		}
 		nbytes = snprintf(buf, *bufsize, "%s", val);

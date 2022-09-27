@@ -25,7 +25,7 @@
  * Copyright 2017 Nexenta Systems, Inc.
  * Copyright 2017 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019, Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_INET_IP_H
@@ -1275,6 +1275,7 @@ typedef struct irb {
 	uint_t		irb_ire_cnt;	/* Num of active IRE in this bucket */
 	int		irb_nire;	/* Num of ftable ire's that ref irb */
 	ip_stack_t	*irb_ipst;	/* Does not have a netstack_hold */
+	uint64_t	ddm_rnd;	/* Random ddm selector */
 } irb_t;
 
 /*
@@ -2712,6 +2713,13 @@ struct ire_s {
 	 * have ire_unbound set to true.
 	 */
 	boolean_t	ire_unbound;
+
+	/*
+	 * when this route is via an interface that has ddm emabled this value
+	 * will be updated with a delay value in microseconds when ddm acks are
+	 * received.
+	 */
+	uint32_t	ire_delay;
 };
 
 /* IPv4 compatibility macros */
@@ -2794,11 +2802,13 @@ struct ip_pkt_s {
 	uint_t		ipp_rthdrlen;
 	uint_t		ipp_dstoptslen;
 	uint_t		ipp_fraghdrlen;
+	uint_t		ipp_ddmhdrlen;
 	ip6_hbh_t	*ipp_hopopts;
 	ip6_dest_t	*ipp_rthdrdstopts;
 	ip6_rthdr_t	*ipp_rthdr;
 	ip6_dest_t	*ipp_dstopts;
 	ip6_frag_t	*ipp_fraghdr;
+	ip6_ddm_t	*ipp_ddmhdr;
 	uint8_t		ipp_tclass;		/* IPV6_TCLASS */
 	uint8_t		ipp_type_of_service;	/* IP_TOS */
 	uint_t		ipp_ipv4_options_len;	/* Len of IPv4 options */
@@ -2831,6 +2841,7 @@ extern void ip_pkt_source_route_reverse_v4(ip_pkt_t *);
 #define	IPPF_LABEL_V6		0x0400	/* ipp_label_v6 set */
 
 #define	IPPF_FRAGHDR		0x0800	/* Used for IPsec receive side */
+#define	IPPF_DDMHDR		0x1000	/* Used for delay driven multipath */
 
 /*
  * Data structure which is passed to conn_opt_get/set.

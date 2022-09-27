@@ -25,10 +25,11 @@
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	All Rights Reserved	*/
 
 /*
  * Copyright 2015, Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -950,11 +951,12 @@ IPv6_hdrlen(ip6_t *ip6h, int pkt_len, uint8_t *last_hdr_rtrn)
 	ip6_dest_t *desthdr;
 	ip6_rthdr_t *rthdr;
 	ip6_frag_t *fraghdr;
+	ip6_ddm_t *ddmhdr;
 	uint8_t	*endptr;
 
 	length = sizeof (ip6_t);
 
-	whereptr = ((uint8_t *)&ip6h[1]); 	/* point to next hdr */
+	whereptr = ((uint8_t *)&ip6h[1]); /* point to next hdr */
 	endptr = ((uint8_t *)ip6h) + pkt_len;
 
 	nexthdr = ip6h->ip6_nxt;
@@ -1000,6 +1002,15 @@ IPv6_hdrlen(ip6_t *ip6h, int pkt_len, uint8_t *last_hdr_rtrn)
 				return (length);
 			nexthdr = fraghdr->ip6f_nxt;
 			length += sizeof (struct ip6_frag);
+			break;
+
+		case IPPROTO_DDM:
+			/* LINTED */
+			ddmhdr = (ip6_ddm_t *)whereptr;
+			if ((uchar_t *)&ddmhdr[1] > endptr)
+				return (length);
+			nexthdr = ddmhdr->ddm_next_header;
+			length += sizeof (struct ip6_ddm);
 			break;
 
 		case IPPROTO_NONE:

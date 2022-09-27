@@ -21,6 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2023 Oxide Computer company
  */
 
 #ifndef	_INET_IP_RTS_H
@@ -75,7 +76,7 @@ extern	size_t	rts_data_msg_size(int, sa_family_t, uint_t);
 
 extern	void	rts_fill_msg_v6(int, int, const in6_addr_t *,
     const in6_addr_t *, const in6_addr_t *, const in6_addr_t *,
-    const in6_addr_t *, const in6_addr_t *, const in6_addr_t *,
+    const in6_addr_t *, const in6_addr_t *, const in6_addr_t *, uint32_t delay,
     const ill_t *, mblk_t *, const tsol_gc_t *);
 
 extern	size_t	rts_header_msg_size(int);

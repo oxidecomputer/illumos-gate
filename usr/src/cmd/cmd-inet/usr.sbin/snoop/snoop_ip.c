@@ -22,6 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2012 Milan Jurik. All rights reserved.
+ * Copyright 2023 Oxide Computer company
  */
 
 #include <stdio.h>
@@ -41,6 +42,7 @@
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
 #include <netinet/if_ether.h>
+#include <inet/ddm.h>
 #include <inet/ip.h>
 #include <inet/ip6.h>
 #include <arpa/inet.h>
@@ -68,6 +70,7 @@
 
 static void prt_routing_hdr(int, const struct ip6_rthdr *);
 static void prt_fragment_hdr(int, const struct ip6_frag *);
+static void prt_ddm_hdr(int flags, struct ip6_ddm *ddm);
 static void prt_hbh_options(int, const struct ip6_hbh *);
 static void prt_dest_options(int, const struct ip6_dest *);
 static void print_route(const uchar_t *);
@@ -409,7 +412,8 @@ interpret_ipv6(int flags, const ip6_t *ip6h, int fraglen)
 	 * was a fragment header.
 	 */
 	if (proto == IPPROTO_HOPOPTS || proto == IPPROTO_DSTOPTS ||
-	    proto == IPPROTO_ROUTING || proto == IPPROTO_FRAGMENT) {
+	    proto == IPPROTO_ROUTING || proto == IPPROTO_FRAGMENT ||
+	    proto == IPPROTO_DDM) {
 		extmask = print_ipv6_extensions(flags, &data, &proto, &iplen,
 		    &fraglen);
 		if ((extmask & SNOOP_FRAGMENT) != 0) {
@@ -500,6 +504,7 @@ print_ipv6_extensions(int flags, uint8_t **hdr, uint8_t *next, int *iplen,
 	struct ip6_dest *ipv6ext_dest;
 	struct ip6_rthdr *ipv6ext_rthdr;
 	struct ip6_frag *ipv6ext_frag;
+	struct ip6_ddm *ddm_header;
 	uint32_t exthdrlen;
 	uint8_t extmask = 0;
 
@@ -568,6 +573,15 @@ print_ipv6_extensions(int flags, uint8_t **hdr, uint8_t *next, int *iplen,
 				proto = IPPROTO_NONE;
 			else
 				proto = ipv6ext_frag->ip6f_nxt;
+			break;
+		case IPPROTO_DDM:
+			ddm_header = (struct ip6_ddm *)data_ptr;
+			exthdrlen = ddm_total_len(ddm_header);
+			if (*fraglen <= exthdrlen) {
+				return (extmask);
+			}
+			proto = ddm_header->ddm_next_header;
+			prt_ddm_hdr(flags, ddm_header);
 			break;
 		default:
 			is_extension_header = B_FALSE;
@@ -731,6 +745,7 @@ getproto(int p)
 	case IPPROTO_EON:	return ("EON");
 	case IPPROTO_RAW:	return ("RAW");
 	case IPPROTO_OSPF:	return ("OSPF");
+	case IPPROTO_DDM:	return ("DDM");
 	default:		return ("");
 	}
 }
@@ -828,6 +843,57 @@ prt_fragment_hdr(int flags, const struct ip6_frag *ipv6ext_frag)
 		    "More Fragments Flag = %s", morefrag ? "true" : "false");
 		(void) snprintf(get_line(0, 0), get_line_remain(),
 		    "Identification = %u", fragident);
+
+		show_space();
+	}
+}
+
+static void
+prt_ddm_hdr(int flags, struct ip6_ddm *ddm)
+{
+	int i;
+	ddm_element_t *dde;
+
+	if (flags & F_SUM) {
+		if (ddm_is_ack(ddm)) {
+			(void) snprintf(get_sum_line(), MAXLINE,
+			    "ddm-ack (%d)",
+			    ddm_element_count(ddm));
+		} else {
+			(void) snprintf(get_sum_line(), MAXLINE,
+			    "ddm (%d)",
+			    ddm_element_count(ddm));
+		}
+	} else {
+		show_header("ddm:  ", "Delay Driven Multipath", 0);
+		show_space();
+
+		(void) snprintf(get_line(0, 0), get_line_remain(),
+		    "Next header = %d (%s)",
+		    ddm->ddm_next_header,
+		    getproto(ddm->ddm_next_header));
+
+		(void) snprintf(get_line(0, 0), get_line_remain(),
+		    "Length = %d",
+		    ddm->ddm_length);
+
+		(void) snprintf(get_line(0, 0), get_line_remain(),
+		    "Version = %d",
+		    ddm->ddm_version);
+
+		(void) snprintf(get_line(0, 0), get_line_remain(),
+		    "Ack = %s",
+		    ddm_is_ack(ddm) ? "true": "false");
+
+
+		dde = (ddm_element_t *)&ddm[1];
+		for (i = 0; i < ddm_element_count(ddm); i++) {
+		(void) snprintf(get_line(0, 0), get_line_remain(),
+		    "[%d] = %d : %d",
+		    i,
+		    ddm_element_id(*dde),
+		    ddm_element_timestamp(*dde));
+		}
 
 		show_space();
 	}

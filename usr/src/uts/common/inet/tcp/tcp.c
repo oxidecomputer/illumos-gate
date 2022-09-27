@@ -25,7 +25,7 @@
  * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
  * Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2020 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -91,6 +91,7 @@
 #include <inet/udp_impl.h>
 #include <net/pfkeyv2.h>
 #include <inet/ipdrop.h>
+#include <inet/ddm.h>
 
 #include <inet/ipclassifier.h>
 #include <inet/ip_ire.h>
@@ -1706,6 +1707,8 @@ tcp_connect_ipv6(tcp_t *tcp, in6_addr_t *dstaddrp, in_port_t dstport,
 		connp->conn_ixa->ixa_flags &= ~IXAF_SCOPEID_SET;
 	}
 
+	ddm_xmit_ipp(connp, connp->conn_ixa);
+
 	connp->conn_flowinfo = flowinfo;
 	connp->conn_faddr_v6 = *dstaddrp;
 	connp->conn_fport = dstport;
@@ -2674,7 +2677,12 @@ tcp_create_common(cred_t *credp, boolean_t isv6, boolean_t issocket,
 		*errorp = ENOSR;
 		return (NULL);
 	}
-	ASSERT(connp->conn_ixa->ixa_protocol == connp->conn_proto);
+	ASSERT3S(connp->conn_ixa->ixa_protocol, ==, connp->conn_proto);
+	if (connp->conn_ixa->ixa_protocol != connp->conn_proto) {
+		DTRACE_PROBE2(protocol_mismatch,
+		    uint8_t, connp->conn_ixa->ixa_protocol,
+		    uint8_t, connp->conn_proto);
+	}
 
 	connp->conn_sqp = sqp;
 	connp->conn_initial_sqp = connp->conn_sqp;

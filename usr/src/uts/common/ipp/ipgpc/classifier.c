@@ -24,6 +24,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2023 Oxide Computer Company
+ */
+
 #include <sys/kmem.h>
 #include <sys/systm.h>
 #include <sys/socket.h>
@@ -35,6 +39,7 @@
 #include <inet/ip6.h>
 #include <net/if.h>
 #include <inet/ipp_common.h>
+#include <inet/ddm.h>
 
 /* Implementation file for classifier used in ipgpc module */
 
@@ -510,6 +515,7 @@ get_port_info(ipgpc_packet_t *packet, void *iph, int af, mblk_t *mp)
 		ip6_dest_t *desthdr;
 		ip6_rthdr_t *rthdr;
 		ip6_hbh_t *hbhhdr;
+		ip6_ddm_t *ddmhdr;
 
 		whereptr = ((uint8_t *)&ip6h[1]);
 		endptr = mp->b_wptr;
@@ -536,6 +542,13 @@ get_port_info(ipgpc_packet_t *packet, void *iph, int af, mblk_t *mp)
 				if ((uchar_t *)rthdr +  ehdrlen > endptr)
 					return;
 				nexthdrp = &rthdr->ip6r_nxt;
+				break;
+			case IPPROTO_DDM:
+				ddmhdr = (ip6_ddm_t *)whereptr;
+				ehdrlen = ddm_total_len(ddmhdr);
+				if ((uchar_t *)ddmhdr + ehdrlen > endptr)
+					return;
+				nexthdrp = &ddmhdr->ddm_next_header;
 				break;
 			case IPPROTO_FRAGMENT:
 				return;

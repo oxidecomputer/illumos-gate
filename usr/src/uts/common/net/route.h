@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2023 Oxide Computer company
  */
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -182,6 +183,7 @@ typedef struct rt_msghdr {
 #define	RTM_IFINFO	0xe	/* iface going up/down etc. */
 #define	RTM_CHGADDR	0xf	/* address added/changed (even while down) */
 #define	RTM_FREEADDR	0x10	/* address removed (even while down) */
+#define	RTM_GETALL	0x11	/* get all routes */
 
 #define	RTV_MTU		0x1	/* init or lock _mtu */
 #define	RTV_HOPCOUNT	0x2	/* init or lock _hopcount */
@@ -204,8 +206,9 @@ typedef struct rt_msghdr {
 #define	RTA_AUTHOR	0x40	/* sockaddr for author of redirect */
 #define	RTA_BRD		0x80	/* for NEWADDR, broadcast or p-p dest addr */
 #define	RTA_SRC		0x100	/* source sockaddr present */
+#define	RTA_DELAY	0x200	/* destination delay */
 
-#define	RTA_NUMBITS	9	/* Number of bits used in RTA_* */
+#define	RTA_NUMBITS	10	/* Number of bits used in RTA_* */
 
 /*
  * Index offsets for sockaddr_storage array for alternate internal encoding.
@@ -220,6 +223,7 @@ typedef struct rt_msghdr {
 #define	RTAX_AUTHOR	6
 #define	RTAX_BRD	7
 #define	RTAX_SRC	8
+#define	RTAX_DELAY	9
 #define	RTAX_MAX	RTA_NUMBITS	/* size of array to allocate */
 
 /*

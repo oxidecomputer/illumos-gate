@@ -24,6 +24,7 @@
  * Use is subject to license terms.
  * Copyright 2017 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -59,6 +60,7 @@
 #include <inet/arp.h>
 #include <inet/snmpcom.h>
 #include <inet/kstatcom.h>
+#include <inet/ddm.h>
 
 #include <netinet/igmp_var.h>
 #include <netinet/ip6.h>

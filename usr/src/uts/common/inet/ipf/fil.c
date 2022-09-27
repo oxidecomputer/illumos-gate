@@ -6,6 +6,8 @@
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  *
  * Copyright (c) 2014, Joyent, Inc.  All rights reserved.
+ *
+ * Copyright 2023 Oxide Computer Company
  */
 
 #if defined(KERNEL) || defined(_KERNEL)
@@ -340,6 +342,7 @@ static	INLINE void	frpr_ipv6hdr __P((fr_info_t *));
 static	INLINE void	frpr_short6 __P((fr_info_t *, int));
 static	INLINE int	frpr_hopopts6 __P((fr_info_t *));
 static	INLINE int	frpr_routing6 __P((fr_info_t *));
+static	INLINE int	frpr_ddm __P((fr_info_t *));
 static	INLINE int	frpr_dstopts6 __P((fr_info_t *));
 static	INLINE int	frpr_fragment6 __P((fr_info_t *));
 static	INLINE int	frpr_ipv6exthdr __P((fr_info_t *, int, int));
@@ -437,6 +440,10 @@ fr_info_t *fin;
 
 		case IPPROTO_ROUTING :
 			p = frpr_routing6(fin);
+			break;
+
+		case IPPROTO_DDM :
+			p = frpr_ddm(fin);
 			break;
 
 		case IPPROTO_AH :
@@ -602,6 +609,20 @@ fr_info_t *fin;
 	}
 
 	return hdr->ip6e_nxt;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Function:    frpr_ddm                                                    */
+/* Returns:     int    - value of the next header or IPPROTO_NONE if error  */
+/* Parameters:  fin(I) - pointer to packet information                      */
+/*                                                                          */
+/* IPv6 Only                                                                */
+/* This is function checks pending ddm  extension header                    */
+/* ------------------------------------------------------------------------ */
+static INLINE int frpr_ddm(fin)
+fr_info_t *fin;
+{
+	return frpr_ipv6exthdr(fin, 0, IPPROTO_DDM);
 }
 
 

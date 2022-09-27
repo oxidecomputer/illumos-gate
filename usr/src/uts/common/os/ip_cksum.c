@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  * Copyright 2021 Joyent, Inc.
  * Copyright 2022 Garrett D'Amore
+ * Copyright 2023 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -37,6 +38,7 @@
 #include <inet/sctp_crc32.h>
 #include <inet/ip.h>
 #include <inet/ip6.h>
+#include <inet/ddm.h>
 
 extern unsigned int ip_ocsum(ushort_t *, int, unsigned int);
 
@@ -453,6 +455,7 @@ ip_hdr_length_nexthdr_v6(mblk_t *mp, ip6_t *ip6h, uint16_t *hdr_length_ptr,
 	ip6_dest_t *desthdr;
 	ip6_rthdr_t *rthdr;
 	ip6_frag_t *fraghdr;
+	ip6_ddm_t *ddmhdr;
 
 	if (IPH_HDR_VERSION(ip6h) != IPV6_VERSION)
 		return (B_FALSE);
@@ -489,6 +492,13 @@ ip_hdr_length_nexthdr_v6(mblk_t *mp, ip6_t *ip6h, uint16_t *hdr_length_ptr,
 			if ((uchar_t *)&fraghdr[1] > endptr)
 				return (B_FALSE);
 			nexthdrp = &fraghdr->ip6f_nxt;
+			break;
+		case IPPROTO_DDM:
+			ddmhdr = (ip6_ddm_t *)whereptr;
+			ehdrlen = ddm_total_len(ddmhdr);
+			if ((uchar_t *)ddmhdr +  ehdrlen > endptr)
+				return (B_FALSE);
+			nexthdrp = &ddmhdr->ddm_next_header;
 			break;
 		case IPPROTO_NONE:
 			/* No next header means we're finished */

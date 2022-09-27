@@ -24,6 +24,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2023 Oxide Computer Company
+ */
+
 #include <sys/types.h>
 #include <sys/kmem.h>
 #include <sys/conf.h>
@@ -37,6 +41,7 @@
 #include <inet/common.h>
 #include <inet/ip.h>
 #include <inet/ip6.h>
+#include <inet/ddm.h>
 #include <sys/ddi.h>
 #include <sys/strsun.h>
 #include <sys/strsubr.h>
@@ -62,15 +67,15 @@
  */
 
 /* Used in computing the hash index */
-#define	FLOWACCT_ADDR_HASH(addr) 			\
-	((addr).s6_addr8[8] ^ (addr).s6_addr8[9] ^ 	\
-	(addr).s6_addr8[10] ^ (addr).s6_addr8[13] ^ 	\
+#define	FLOWACCT_ADDR_HASH(addr)			\
+	((addr).s6_addr8[8] ^ (addr).s6_addr8[9] ^	\
+	(addr).s6_addr8[10] ^ (addr).s6_addr8[13] ^	\
 	(addr).s6_addr8[14] ^ (addr).s6_addr8[15])
 
 #define	FLOWACCT_FLOW_HASH(f)				\
-	(((FLOWACCT_ADDR_HASH(f->saddr)) + 		\
-	(FLOWACCT_ADDR_HASH(f->daddr)) + 		\
-	(f->proto) + (f->sport) + (f->dport)) 		\
+	(((FLOWACCT_ADDR_HASH(f->saddr)) +		\
+	(FLOWACCT_ADDR_HASH(f->daddr)) +		\
+	(f->proto) + (f->sport) + (f->dport))		\
 	% FLOW_TBL_COUNT)
 
 /*
@@ -132,6 +137,7 @@ flowacct_port_info(header_t *header, void *iph, int af, mblk_t *mp)
 		ip6_dest_t *desthdr;
 		ip6_rthdr_t *rthdr;
 		ip6_hbh_t *hbhhdr;
+		ip6_ddm_t *ddmhdr;
 
 		whereptr = ((uint8_t *)&ip6h[1]);
 		endptr = mp->b_wptr;
@@ -158,6 +164,13 @@ flowacct_port_info(header_t *header, void *iph, int af, mblk_t *mp)
 				if ((uchar_t *)rthdr +  ehdrlen > endptr)
 					return;
 				nexthdrp = &rthdr->ip6r_nxt;
+				break;
+			case IPPROTO_DDM:
+				ddmhdr = (ip6_ddm_t *)whereptr;
+				ehdrlen = ddm_total_len(ddmhdr);
+				if ((uchar_t *)ddmhdr + ehdrlen > endptr)
+					return;
+				nexthdrp = &ddmhdr->ddm_next_header;
 				break;
 			case IPPROTO_FRAGMENT:
 				return;

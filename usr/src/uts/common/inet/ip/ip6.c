@@ -23,6 +23,7 @@
  * Copyright (c) 1990 Mentat Inc.
  * Copyright 2017 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2021 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -79,6 +80,7 @@
 #include <inet/tcp_impl.h>
 #include <inet/udp_impl.h>
 #include <inet/ipp_common.h>
+#include <inet/ddm.h>
 
 #include <inet/ip_multi.h>
 #include <inet/ip_if.h>
@@ -2601,6 +2603,7 @@ ip_find_hdr_v6(mblk_t *mp, ip6_t *ip6h, boolean_t label_separate, ip_pkt_t *ipp,
 	uint8_t *whereptr, *endptr;
 	ip6_dest_t *tmpdstopts;
 	ip6_rthdr_t *tmprthdr;
+	ip6_ddm_t *tmpddmhdr;
 	ip6_hbh_t *tmphopopts;
 	ip6_frag_t *tmpfraghdr;
 
@@ -2703,6 +2706,18 @@ ip_find_hdr_v6(mblk_t *mp, ip6_t *ip6h, boolean_t label_separate, ip_pkt_t *ipp,
 				ipp->ipp_dstopts = NULL;
 				ipp->ipp_rthdrdstoptslen = ipp->ipp_dstoptslen;
 				ipp->ipp_dstoptslen = 0;
+			}
+			break;
+		case IPPROTO_DDM:
+			tmpddmhdr = (ip6_ddm_t *)whereptr;
+			ehdrlen = ddm_total_len(tmpddmhdr);
+			if ((uchar_t *)tmpddmhdr + ehdrlen > endptr)
+				goto done;
+			nexthdr = tmpddmhdr->ddm_next_header;
+			if (!(ipp->ipp_fields & IPPF_DDMHDR)) {
+				ipp->ipp_fields |= IPPF_DDMHDR;
+				ipp->ipp_ddmhdr = tmpddmhdr;
+				ipp->ipp_ddmhdrlen = ehdrlen;
 			}
 			break;
 		case IPPROTO_FRAGMENT:
@@ -3045,6 +3060,7 @@ ipsec_needs_processing_v6(mblk_t *mp, uint8_t *nexthdr)
 	uint8_t *nexthdrp;
 	ip6_dest_t *desthdr;
 	ip6_rthdr_t *rthdr;
+	ip6_ddm_t *ddmhdr;
 	ip6_t	*ip6h;
 
 	/*
@@ -3104,6 +3120,13 @@ ipsec_needs_processing_v6(mblk_t *mp, uint8_t *nexthdr)
 			if ((uchar_t *)rthdr +  ehdrlen > endptr)
 				return (IPSEC_MEMORY_ERROR);
 			nexthdrp = &rthdr->ip6r_nxt;
+			break;
+		case IPPROTO_DDM:
+			ddmhdr = (ip6_ddm_t *)whereptr;
+			ehdrlen = ddm_total_len(ddmhdr);
+			if ((uchar_t *)ddmhdr + ehdrlen > endptr)
+				return (IPSEC_MEMORY_ERROR);
+			nexthdrp = &ddmhdr->ddm_next_header;
 			break;
 		case IPPROTO_FRAGMENT:
 			/* Wait for reassembly */
@@ -3312,6 +3335,17 @@ ip_input_fragment_v6(mblk_t *mp, ip6_t *ip6h,
 		prev_nexthdr_offset = (uint8_t *)&rthdr->ip6r_nxt
 		    - (uint8_t *)ip6h;
 		hdr_len = 8 * (rthdr->ip6r_len + 1);
+		ptr += hdr_len;
+	}
+	if (prev_nexthdr == IPPROTO_DDM) {
+		ip6_ddm_t	*ddmhdr;
+		uint_t		hdr_len;
+
+		ddmhdr = (ip6_ddm_t *)ptr;
+		prev_nexthdr = ddmhdr->ddm_next_header;
+		prev_nexthdr_offset = (uint8_t *)&ddmhdr->ddm_next_header
+		    - (uint8_t *)ip6h;
+		hdr_len = ddm_total_len(ddmhdr);
 		ptr += hdr_len;
 	}
 	if (prev_nexthdr != IPPROTO_FRAGMENT) {
@@ -4075,6 +4109,15 @@ ip_fragment_v6(mblk_t *mp, nce_t *nce, iaflags_t ixaflags, uint_t pkt_len,
 		hdr_len = 8 * (rthdr->ip6r_len + 1);
 		ptr += hdr_len;
 	}
+	if (nexthdr == IPPROTO_DDM) {
+		ip6_ddm_t	*ddh;
+		uint_t		hdr_len;
+
+		ddh = (ip6_ddm_t *)ptr;
+		hdr_len = ddm_total_len(ddh);
+		nexthdr = ddh->ddm_next_header;
+		ptr += hdr_len;
+	}
 	if (nexthdr != IPPROTO_FRAGMENT) {
 		BUMP_MIB(ill->ill_ip_mib, ipIfStatsOutFragFails);
 		ip_drop_output("FragFails: bad nexthdr", mp, ill);
@@ -4271,6 +4314,17 @@ ip_fraghdr_add_v6(mblk_t *mp, uint32_t ident, ip_xmit_attr_t *ixa)
 		hdr_len = 8 * (rthdr->ip6r_len + 1);
 		ptr += hdr_len;
 	}
+	if (nexthdr == IPPROTO_DDM) {
+		ip6_ddm_t	*ddh;
+		uint_t		hdr_len;
+
+		ddh = (ip6_ddm_t *)ptr;
+		hdr_len = ddm_total_len(ddh);
+		nexthdr = ddh->ddm_next_header;
+		prev_nexthdr_offset = (uint8_t *)&ddh->ddm_next_header
+		    - (uint8_t *)ip6h;
+		ptr += hdr_len;
+	}
 	unfragmentable_len = (uint_t)(ptr - (uint8_t *)ip6h);
 
 	/*
@@ -4448,6 +4502,10 @@ ip_total_hdrs_len_v6(const ip_pkt_t *ipp)
 		ASSERT(ipp->ipp_dstoptslen != 0);
 		len += ipp->ipp_dstoptslen;
 	}
+	if (ipp->ipp_fields & IPPF_DDMHDR) {
+		ASSERT(ipp->ipp_ddmhdrlen != 0);
+		len += ipp->ipp_ddmhdrlen;
+	}
 	return (len);
 }
 
@@ -4573,6 +4631,31 @@ ip_build_hdrs_v6(uchar_t *buf, uint_t buf_len, const ip_pkt_t *ipp,
 		cp += ipp->ipp_rthdrlen;
 	}
 	/*
+	 * DDM header next
+	 */
+	if (ipp->ipp_fields & IPPF_DDMHDR) {
+		ip6_ddm_t *ddm = (ip6_ddm_t *)cp;
+
+		*nxthdr_ptr = IPPROTO_DDM;
+		nxthdr_ptr = &ddm->ddm_next_header;
+
+		bcopy(ipp->ipp_ddmhdr, cp, ipp->ipp_ddmhdrlen);
+
+		/*
+		 * TODO(ry) the following should be in the template to begin
+		 * with.
+		 */
+		ddm->ddm_length = 7;
+		ddm->ddm_version = 1;
+		ddm->ddm_reserved = 0;
+
+		/* TODO(ry) this should come later right before phy egress */
+		ddm_element_t *dde = (ddm_element_t *)&ddm[1];
+		*dde = ddm_ts_now() << 8;
+
+		cp += ipp->ipp_ddmhdrlen;
+	}
+	/*
 	 * Do ultimate destination options
 	 */
 	if (ipp->ipp_fields & IPPF_DSTOPTS) {
@@ -4602,6 +4685,7 @@ ip_find_rthdr_v6(ip6_t *ip6h, uint8_t *endptr)
 {
 	ip6_dest_t	*desthdr;
 	ip6_frag_t	*fraghdr;
+	ip6_ddm_t	*ddmhdr;
 	uint_t		hdrlen;
 	uint8_t		nexthdr;
 	uint8_t		*ptr = (uint8_t *)&ip6h[1];
@@ -4633,6 +4717,12 @@ ip_find_rthdr_v6(ip6_t *ip6h, uint8_t *endptr)
 			desthdr = (ip6_dest_t *)ptr;
 			hdrlen = 8 * (desthdr->ip6d_len + 1);
 			nexthdr = desthdr->ip6d_nxt;
+			break;
+
+		case IPPROTO_DDM:
+			ddmhdr = (ip6_ddm_t *)ptr;
+			hdrlen = ddm_total_len(ddmhdr);
+			nexthdr = ddmhdr->ddm_next_header;
 			break;
 
 		case IPPROTO_ROUTING:
@@ -4844,6 +4934,7 @@ ipsec_ah_get_hdr_size_v6(mblk_t *mp, boolean_t till_ah)
 	ip6_hbh_t *hbhhdr;
 	ip6_dest_t *dsthdr;
 	ip6_rthdr_t *rthdr;
+	ip6_ddm_t *ddmhdr;
 	int ehdrlen;
 	int size;
 	ah_t *ah;
@@ -4870,6 +4961,11 @@ ipsec_ah_get_hdr_size_v6(mblk_t *mp, boolean_t till_ah)
 			rthdr = (ip6_rthdr_t *)whereptr;
 			nexthdr = rthdr->ip6r_nxt;
 			ehdrlen = 8 * (rthdr->ip6r_len + 1);
+			break;
+		case IPPROTO_DDM:
+			ddmhdr = (ip6_ddm_t *)whereptr;
+			nexthdr = ddmhdr->ddm_next_header;
+			ehdrlen = ddm_total_len(ddmhdr);
 			break;
 		default :
 			if (till_ah) {

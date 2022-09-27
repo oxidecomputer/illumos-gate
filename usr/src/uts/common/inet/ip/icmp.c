@@ -23,6 +23,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -76,6 +77,7 @@
 #include <inet/snmpcom.h>
 #include <inet/kstatcom.h>
 #include <inet/ipclassifier.h>
+#include <inet/ddm.h>
 
 #include <sys/tsol/label.h>
 #include <sys/tsol/tnet.h>
@@ -4114,6 +4116,10 @@ icmp_prepend_header_template(conn_t *connp, ip_xmit_attr_t *ixa, mblk_t *mp,
 			ptr = (uint16_t *)(mp->b_rptr + cksum_offset);
 			*ptr = htons(cksum);
 		}
+		if (ddm_set_element(connp, (uchar_t *)&ip6h[1], mp)) {
+			*errorp = ENOMEM;
+			return (NULL);
+		}
 	}
 
 	return (mp);
@@ -4427,6 +4433,7 @@ icmp_output_newdst(conn_t *connp, mblk_t *data_mp, sin_t *sin, sin6_t *sin6,
 	/* In case previous destination was multicast or multirt */
 	ip_attr_newdst(ixa);
 
+
 	/*
 	 * If laddr is unspecified then we look at sin6_src_id.
 	 * We will give precedence to a source address set with IPV6_PKTINFO
@@ -4550,6 +4557,12 @@ icmp_output_newdst(conn_t *connp, mblk_t *data_mp, sin_t *sin, sin6_t *sin6,
 	}
 
 	/*
+	 * This needs to be before icmp_build_hdr_template but after
+	 * ip_attr_connect to work.
+	 */
+	ddm_xmit_ipp(connp, ixa);
+
+	/*
 	 * We need to rebuild the headers if
 	 *  - we are labeling packets (could be different for different
 	 *    destinations)
@@ -4594,7 +4607,7 @@ icmp_output_newdst(conn_t *connp, mblk_t *data_mp, sin_t *sin, sin6_t *sin6,
 			goto ud_error;
 		}
 	} else if (connp->conn_xmit_ipp.ipp_fields &
-	    (IPPF_IPV4_OPTIONS|IPPF_RTHDR) ||
+	    (IPPF_IPV4_OPTIONS|IPPF_RTHDR|IPPF_DDMHDR) ||
 	    IN6_IS_ADDR_UNSPECIFIED(&connp->conn_v6lastdst)) {
 		/* Rebuild the header template */
 		error = icmp_build_hdr_template(connp, &v6src, &v6dst,

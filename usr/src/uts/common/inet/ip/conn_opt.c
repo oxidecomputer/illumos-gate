@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2023 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -62,6 +63,7 @@
 #include <inet/arp.h>
 #include <inet/snmpcom.h>
 #include <inet/kstatcom.h>
+#include <inet/ddm.h>
 
 #include <netinet/igmp_var.h>
 #include <netinet/ip6.h>
@@ -1694,6 +1696,10 @@ conn_opt_set_ipv6(conn_opt_arg_t *coa, t_scalar_t name, uint_t inlen,
 			return (EINVAL);
 		break;
 	}
+	case IPV6_DDM: {
+		/* TODO(ry): check things */
+		break;
+	}
 	case IPV6_PATHMTU:
 		/* Can't be set */
 		return (EINVAL);
@@ -1973,7 +1979,23 @@ conn_opt_set_ipv6(conn_opt_arg_t *coa, t_scalar_t name, uint_t inlen,
 		coa->coa_changed |= COA_HEADER_CHANGED;
 		coa->coa_changed |= COA_WROFF_CHANGED;
 		break;
-
+	case IPV6_DDM:
+		mutex_enter(&connp->conn_lock);
+		error = optcom_pkt_set(invalp, inlen,
+		    (uchar_t **)&ipp->ipp_ddmhdr, &ipp->ipp_ddmhdrlen);
+		if (error != 0) {
+			mutex_exit(&connp->conn_lock);
+			return (error);
+		}
+		if (ipp->ipp_ddmhdrlen == 0) {
+			ipp->ipp_fields &= ~IPPF_DDMHDR;
+		} else {
+			ipp->ipp_fields |= IPPF_DDMHDR;
+		}
+		mutex_exit(&connp->conn_lock);
+		coa->coa_changed |= COA_HEADER_CHANGED;
+		coa->coa_changed |= COA_WROFF_CHANGED;
+		break;
 	case IPV6_DONTFRAG:
 		if (onoff) {
 			ixa->ixa_flags |= IXAF_DONTFRAG;
@@ -2745,6 +2767,16 @@ conn_connect(conn_t *connp, iulp_t *uinfo, uint32_t flags)
 	    ILL_ZCOPY_USABLE(ixa->ixa_nce->nce_ill)) {
 		ixa->ixa_flags |= IXAF_ZCOPY_CAPAB;
 	}
+
+	/*
+	 * If this is IPv6, the underlying interface has ddm enabled and the
+	 * destination is off-link, set the ddm ipp field so we:
+	 *
+	 *   1. Calculate header lengths propertly in ip_total_hdrs_len_v6.
+	 *   2. Have the ddm header filled in from ip_build_hdrs_v6.
+	 *
+	 */
+	ddm_xmit_ipp(connp, ixa);
 	return (0);
 }
 

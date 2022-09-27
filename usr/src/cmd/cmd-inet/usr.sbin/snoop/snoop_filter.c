@@ -22,6 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2012 Milan Jurik. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <stdio.h>
@@ -287,6 +288,7 @@ ip_proto_of(uchar_t *ip)
 			case IPPROTO_ROUTING:
 			case IPPROTO_FRAGMENT:
 			case IPPROTO_DSTOPTS:
+			case IPPROTO_DDM:
 				ptr += (8 * (ptr[1] + 1));
 				nxt = *ptr;
 				break;
@@ -337,6 +339,7 @@ ip_hdr_len(uchar_t *ip)
 			case IPPROTO_ROUTING:
 			case IPPROTO_FRAGMENT:
 			case IPPROTO_DSTOPTS:
+			case IPPROTO_DDM:
 				hdr_len = (8 * (ptr[1] + 1));
 				len += hdr_len;
 				ptr += hdr_len;

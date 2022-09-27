@@ -24,6 +24,7 @@
  *
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -71,6 +72,7 @@
 #include <inet/arp.h>
 #include <inet/snmpcom.h>
 #include <inet/kstatcom.h>
+#include <inet/ddm.h>
 
 #include <netinet/igmp_var.h>
 #include <netinet/ip6.h>
@@ -1998,7 +2000,7 @@ ip_fanout_v6(mblk_t *mp, ip6_t *ip6h, ip_recv_attr_t *ira)
 	ipsec_stack_t	*ipss = ns->netstack_ipsec;
 	ill_t		*rill = ira->ira_rill;
 
-	ASSERT(ira->ira_pktlen == ntohs(ip6h->ip6_plen) + IPV6_HDR_LEN);
+	ASSERT3U(ira->ira_pktlen, ==, ntohs(ip6h->ip6_plen) + IPV6_HDR_LEN);
 
 	/*
 	 * We repeat this as we parse over destination options header and
@@ -2053,6 +2055,7 @@ repeat:
 	case IPPROTO_FRAGMENT:
 	case IPPROTO_DSTOPTS:
 	case IPPROTO_ROUTING:
+	case IPPROTO_DDM:
 		min_ulp_header_length = MIN_EHDR_LEN;
 		break;
 	default:
@@ -2082,7 +2085,6 @@ repeat:
 		ip_fanout_tx_v6(mp, ip6h, protocol, ip_hdr_length, ira);
 		iraflags = ira->ira_flags;
 	}
-
 
 	/* Verify ULP checksum. Handles TCP, UDP, and SCTP */
 	if (iraflags & IRAF_VERIFY_ULP_CKSUM) {
@@ -2631,6 +2633,44 @@ repeat:
 			ip_process_rthdr(mp, ip6h, rthdr, ira);
 			return;
 		}
+		ira->ira_ip_hdr_length += ehdrlen;
+		goto repeat;
+	}
+
+	case IPPROTO_DDM: {
+		uint_t ehdrlen;
+		ip6_ddm_t *ddmhdr;
+
+		ddmhdr = (ip6_ddm_t *)(rptr + ip_hdr_length);
+		ehdrlen = ddm_total_len(ddmhdr);
+
+		if (ira->ira_pktlen - ip_hdr_length < ehdrlen)
+			goto pkt_too_short;
+		if (mp->b_cont != NULL &&
+		    rptr + IPV6_HDR_LEN + ehdrlen > mp->b_wptr) {
+			ip6h = ip_pullup(mp, IPV6_HDR_LEN + ehdrlen, ira);
+			if (ip6h == NULL)
+				goto discard;
+			ddmhdr = (ip6_ddm_t *)(rptr + ip_hdr_length);
+		}
+
+		if (ddm_is_ack(ddmhdr)) {
+			ddm_element_t *dde = (ddm_element_t *)&ddmhdr[1];
+			ddm_update(
+			    ip6h,
+			    ira->ira_ill,
+			    ira->ira_rifindex,
+			    ddm_element_timestamp(*dde));
+			freemsg(mp);
+			return;
+		} else {
+			ddm_send_ack(ip6h, ddmhdr, ira);
+		}
+
+		/* XXX: ddm is currently breaking checksumming */
+		iraflags &= ~IRAF_VERIFY_ULP_CKSUM;
+
+		protocol = ira->ira_protocol = ddmhdr->ddm_next_header;
 		ira->ira_ip_hdr_length += ehdrlen;
 		goto repeat;
 	}

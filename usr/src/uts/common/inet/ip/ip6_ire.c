@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 1990 Mentat Inc.
+ * Copyright 2023 Oxide Computer company
  */
 
 /*
@@ -51,6 +52,7 @@
 #include <inet/ip_ire.h>
 #include <inet/ipclassifier.h>
 #include <inet/nd.h>
+#include <inet/ddm.h>
 #include <inet/tunables.h>
 #include <sys/kmem.h>
 #include <sys/zone.h>
@@ -938,6 +940,32 @@ ire_ftable_lookup_v6(const in6_addr_t *addr, const in6_addr_t *mask,
 	if (ire == NULL) {
 		rw_exit(&ipst->ips_ip6_ire_head_lock);
 		return (NULL);
+	}
+
+	/*
+	 * If there is more than one route in the bucket and the ill associated
+	 * with the ire has ddm enabled, used ddm logic to decide what route to
+	 * use.
+	 *
+	 * Also, don't mess with on-link IREs e.g. link-local routes this causes
+	 * strange things to happen for link local egress selection.
+	 *
+	 * TODO: perhaps we should check all the ills in the bucket to make sure
+	 * all are ddm enabled and only use ddm logic in that scenario. What
+	 * routing logic should be used if only some of the ills in a bucket
+	 * have ddm on? We cannot really have an ip stack-level attribute like
+	 * ip_stack`ips_ip_ecmp_behavior as it's fully expected that some v6
+	 * ills within an ip stack will have ddm enabled while others will not.
+	 *
+	 */
+	if (ire->ire_bucket->irb_ire_cnt > 1 &&
+	    (ire->ire_ill->ill_ipif->ipif_flags & IPIF_DDM) != 0 &&
+	    (ire->ire_type & IRE_ONLINK) == 0) {
+		/* TODO: make ddm selection algorithm configurable */
+		ire_t *chosen = ddm_select_prob(ire);
+		ire_refrele(ire);
+		ire = chosen;
+		goto done;
 	}
 
 	/*

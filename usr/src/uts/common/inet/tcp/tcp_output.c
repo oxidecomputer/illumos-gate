@@ -23,6 +23,7 @@
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2017 by Delphix. All rights reserved.
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /* This file contains all TCP output processing functions. */
@@ -52,6 +53,7 @@
 #include <inet/proto_set.h>
 #include <inet/ipsec_impl.h>
 #include <inet/ip_ndp.h>
+#include <inet/ddm.h>
 
 static mblk_t	*tcp_get_seg_mp(tcp_t *, uint32_t, int32_t *);
 static void	tcp_wput_cmdblk(queue_t *, mblk_t *);
@@ -1334,6 +1336,7 @@ tcp_output(void *arg, mblk_t *mp, void *arg2, ip_recv_attr_t *dummy)
 		ASSERT(connp->conn_ht_ulp_len == TCP_MIN_HEADER_LENGTH);
 	}
 
+
 	/* copy header into outgoing packet */
 	dst = (ipaddr_t *)rptr;
 	src = (ipaddr_t *)connp->conn_ht_iphc;
@@ -1759,6 +1762,8 @@ tcp_send_data(tcp_t *tcp, mblk_t *mp)
 	    &mp->b_rptr[connp->conn_ixa->ixa_ip_hdr_length]);
 
 	ASSERT(connp->conn_ixa->ixa_notify_cookie == connp->conn_tcp);
+	/* Fill in ddm. */
+	ddm_set_element(connp, mp->b_rptr + IPV6_HDR_LEN, mp);
 	(void) conn_ip_output(mp, connp->conn_ixa);
 }
 

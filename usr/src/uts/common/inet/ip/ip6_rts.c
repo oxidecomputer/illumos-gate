@@ -1,6 +1,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2023 Oxide Computer company
  */
 
 /*
@@ -80,14 +81,15 @@ void
 rts_fill_msg_v6(int type, int rtm_addrs, const in6_addr_t *dst,
     const in6_addr_t *mask, const in6_addr_t *gateway,
     const in6_addr_t *src_addr, const in6_addr_t *brd_addr,
-    const in6_addr_t *author, const in6_addr_t *ifaddr, const ill_t *ill,
-    mblk_t *mp, const tsol_gc_t *gc)
+    const in6_addr_t *author, const in6_addr_t *ifaddr, uint32_t delay,
+    const ill_t *ill, mblk_t *mp, const tsol_gc_t *gc)
 {
 	rt_msghdr_t	*rtm;
 	sin6_t		*sin6;
 	size_t		data_size, header_size;
 	uchar_t		*cp;
 	int		i;
+	uint32_t	*dly;
 
 	ASSERT(mp != NULL);
 	/*
@@ -150,6 +152,10 @@ rts_fill_msg_v6(int type, int rtm_addrs, const in6_addr_t *dst,
 			sin6->sin6_family = AF_INET6;
 			cp += sizeof (sin6_t);
 			break;
+		case RTA_DELAY:
+			dly = (uint32_t *)cp;
+			*dly = delay;
+			cp += sizeof (uint32_t);
 		}
 	}
 
@@ -207,7 +213,7 @@ ip_rts_change_v6(int type, const in6_addr_t *dst_addr,
 	if (mp == NULL)
 		return;
 	rts_fill_msg_v6(type, rtm_addrs, dst_addr, net_mask, gw_addr, source,
-	    &ipv6_all_zeros, &ipv6_all_zeros, author, NULL, mp, NULL);
+	    &ipv6_all_zeros, &ipv6_all_zeros, author, 0, NULL, mp, NULL);
 	rtm = (rt_msghdr_t *)mp->b_rptr;
 	rtm->rtm_flags = flags;
 	rtm->rtm_errno = error;

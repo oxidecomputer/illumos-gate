@@ -24,6 +24,10 @@
  */
 
 /*
+ * Copyright 2023 Oxide Computer Company
+ */
+
+/*
  * ip6.h - Common structures and definitions as defined by
  * advanced BSD API.
  */
@@ -100,6 +104,33 @@ struct ip6_rthdr0 {
 	uint32_t ip6r0_reserved;	/* reserved field */
 };
 typedef struct ip6_rthdr0	ip6_rthdr0_t;
+
+/* Delay driven multipath header */
+struct ip6_ddm {
+	/*
+	 * Identifies the type of header immediately following the ddm
+	 * extension header.
+	 */
+	uint8_t ddm_next_header;
+	/*
+	 * Length of extension header not including the first 8 octets (RFC
+	 * 6564).
+	 */
+	uint8_t ddm_length;
+	/*
+	 * DDM protocol version.
+	 */
+	uint8_t ddm_version;
+	/*
+	 * Reserved for future use except first bit, which indicates the packet
+	 * is a ddm acknowledgement when set to 1.
+	 */
+	uint8_t ddm_reserved;
+};
+typedef struct ip6_ddm ip6_ddm_t;
+#ifdef CTASSERT
+CTASSERT(sizeof (ip6_ddm_t) == 4);
+#endif
 
 /* Fragment header */
 struct ip6_frag {

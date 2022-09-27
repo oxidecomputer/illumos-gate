@@ -26,7 +26,7 @@
  * Copyright (c) 2016 by Delphix. All rights reserved.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2021 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -75,6 +75,7 @@
 #include <inet/snmpcom.h>
 #include <inet/optcom.h>
 #include <inet/kstatcom.h>
+#include <inet/ddm.h>
 
 #include <netinet/igmp_var.h>
 #include <netinet/ip6.h>
@@ -14979,6 +14980,21 @@ ip_pkt_copy(ip_pkt_t *src, ip_pkt_t *dst, int kmflag)
 		bcopy(src->ipp_rthdr, dst->ipp_rthdr,
 		    src->ipp_rthdrlen);
 		dst->ipp_rthdrlen = src->ipp_rthdrlen;
+	}
+	if (fields & IPPF_DDMHDR) {
+		dst->ipp_ddmhdr = kmem_alloc(src->ipp_ddmhdrlen, kmflag);
+		if (dst->ipp_ddmhdr == NULL) {
+			ip_pkt_free(dst);
+			return (ENOMEM);
+		}
+		dst->ipp_fields |= IPPF_DDMHDR;
+		bcopy(src->ipp_ddmhdr, dst->ipp_ddmhdr,
+		    src->ipp_ddmhdrlen);
+		dst->ipp_ddmhdrlen = src->ipp_rthdrlen;
+
+		/* TODO(ry) this should come later right before phy egress */
+		ddm_element_t *dde = (ddm_element_t *)&dst->ipp_ddmhdr[1];
+		*dde = ddm_ts_now() << 8;
 	}
 	if (fields & IPPF_IPV4_OPTIONS) {
 		dst->ipp_ipv4_options = kmem_alloc(src->ipp_ipv4_options_len,

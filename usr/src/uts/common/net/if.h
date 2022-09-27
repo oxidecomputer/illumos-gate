@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -171,6 +172,7 @@ struct ifnet {
 
 #define	IFF_NOLINKLOCAL	0x20000000000ll	/* No default linklocal */
 #define	IFF_L3PROTECT	0x40000000000ll	/* Layer-3 protection enforced */
+#define	IFF_DDM		0x80000000000ll	/* Delay Driven Multipath */
 
 /* flags that cannot be changed by userland on any interface */
 #define	IFF_CANTCHANGE \
@@ -181,7 +183,7 @@ struct ifnet {
 	IFF_VRRP | IFF_NOLINKLOCAL | IFF_L3PROTECT)
 
 /* flags that cannot be changed by userland on an IPMP interface */
-#define	IFF_IPMP_CANTCHANGE 	IFF_FAILED
+#define	IFF_IPMP_CANTCHANGE	IFF_FAILED
 
 /* flags that can never be set on an IPMP interface */
 #define	IFF_IPMP_INVALID	(IFF_STANDBY | IFF_INACTIVE | IFF_OFFLINE | \
@@ -612,10 +614,10 @@ typedef struct lifgroupinfo {
 	char		gi_m6ifname[LIFNAMSIZ];	/* v6 mcast interface name */
 	char		gi_bcifname[LIFNAMSIZ];	/* v4 bcast interface name */
 	boolean_t	gi_v4;			/* group is plumbed for v4 */
-	boolean_t	gi_v6; 			/* group is plumbed for v6 */
+	boolean_t	gi_v6;			/* group is plumbed for v6 */
 	uint_t		gi_nv4;			/* # of underlying v4 if's */
 	uint_t		gi_nv6;			/* # of underlying v6 if's */
-	uint_t		gi_mactype; 		/* DLPI mac type of group */
+	uint_t		gi_mactype;		/* DLPI mac type of group */
 } lifgroupinfo_t;
 
 /*
@@ -709,12 +711,12 @@ typedef struct ifa_msghdr {
  * all interfaces and indexes.
  */
 struct if_nameindex {
-	unsigned 	if_index;	/* positive interface index */
+	unsigned	if_index;	/* positive interface index */
 	char		*if_name;	/* if name, e.g. "en0" */
 };
 
 /* Interface index identification API definitions */
-extern	unsigned 		if_nametoindex(const char *);
+extern	unsigned		if_nametoindex(const char *);
 extern	char			*if_indextoname(unsigned, char *);
 extern	struct if_nameindex	*if_nameindex(void);
 extern	void			if_freenameindex(struct if_nameindex *);

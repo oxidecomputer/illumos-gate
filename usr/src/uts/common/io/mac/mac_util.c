@@ -52,6 +52,7 @@
 #include <inet/tcp.h>
 #include <inet/udp_impl.h>
 #include <inet/sctp_ip.h>
+#include <inet/ddm.h>
 
 /*
  * The next two functions are used for dropping packets or chains of
@@ -1595,6 +1596,7 @@ mac_ip_hdr_length_v6(ip6_t *ip6h, uint8_t *endptr, uint16_t *hdr_length,
 	ip6_dest_t *desthdr;
 	ip6_rthdr_t *rthdr;
 	ip6_frag_t *fraghdr;
+	ip6_ddm_t *ddmhdr;
 
 	if (((uchar_t *)ip6h + IPV6_HDR_LEN) > endptr)
 		return (B_FALSE);
@@ -1636,6 +1638,13 @@ mac_ip_hdr_length_v6(ip6_t *ip6h, uint8_t *endptr, uint16_t *hdr_length,
 			nexthdrp = &fraghdr->ip6f_nxt;
 			if (fragp != NULL)
 				*fragp = fraghdr;
+			break;
+		case IPPROTO_DDM:
+			ddmhdr = (ip6_ddm_t *)whereptr;
+			ehdrlen = ddm_total_len(ddmhdr);
+			if ((uchar_t *)ddmhdr + ehdrlen > endptr)
+				return (B_FALSE);
+			nexthdrp = &ddmhdr->ddm_next_header;
 			break;
 		case IPPROTO_NONE:
 			/* No next header means we're finished */

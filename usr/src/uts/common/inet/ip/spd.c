@@ -24,6 +24,7 @@
  * Copyright (c) 2012 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -2719,6 +2720,7 @@ ipsec_init_inbound_sel(ipsec_selector_t *sel, mblk_t *mp, ipha_t *ipha,
 		switch (nexthdr) {
 		case IPPROTO_HOPOPTS:
 		case IPPROTO_ROUTING:
+		case IPPROTO_DDM:
 		case IPPROTO_DSTOPTS:
 		case IPPROTO_FRAGMENT:
 			/*
@@ -2836,6 +2838,7 @@ ipsec_init_outbound_ports(ipsec_selector_t *sel, mblk_t *mp, ipha_t *ipha,
 		switch (nexthdr) {
 		case IPPROTO_HOPOPTS:
 		case IPPROTO_ROUTING:
+		case IPPROTO_DDM:
 		case IPPROTO_DSTOPTS:
 		case IPPROTO_FRAGMENT:
 			/*

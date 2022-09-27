@@ -24,6 +24,7 @@
  * Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2018, Joyent, Inc.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2023 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -80,6 +81,7 @@
 #include <inet/ipnet.h>
 #include <sys/vxlan.h>
 #include <inet/inet_hash.h>
+#include <inet/ddm.h>
 
 #include <sys/tsol/label.h>
 #include <sys/tsol/tnet.h>
@@ -3432,6 +3434,10 @@ udp_prepend_header_template(conn_t *connp, ip_xmit_attr_t *ixa, mblk_t *mp,
 			ip6h->ip6_vcf = IPV6_TCLASS_FLOW(ip6h->ip6_vcf,
 			    ipp->ipp_tclass);
 		}
+		if (ddm_set_element(connp, (uchar_t *)&ip6h[1], mp)) {
+			*errorp = ENOMEM;
+			return (NULL);
+		}
 	}
 
 	/* Insert all-0s SPI now. */
@@ -3981,6 +3987,13 @@ udp_output_newdst(conn_t *connp, mblk_t *data_mp, sin_t *sin, sin6_t *sin6,
 		error = EISCONN;
 		goto ud_error;
 	}
+
+	/*
+	 * This needs to be before udp_build_hdr_template but after
+	 * ip_attr_connect to work.
+	 */
+	ddm_xmit_ipp(connp, ixa);
+
 
 	/*
 	 * We need to rebuild the headers if

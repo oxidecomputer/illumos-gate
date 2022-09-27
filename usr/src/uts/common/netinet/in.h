@@ -5,6 +5,7 @@
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2015, Joyent, Inc.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2023 Oxide Computer Company
  */
 /*
  * Copyright (c) 1982, 1986 Regents of the University of California.
@@ -178,6 +179,7 @@ typedef	uint16_t	sa_family_t;
 #define	IPPROTO_SCTP		132		/* Stream Control */
 						/* Transmission Protocol */
 
+#define	IPPROTO_DDM		221		/* delay driven multipath */
 #define	IPPROTO_RAW		255		/* raw IP packet */
 #define	IPPROTO_MAX		256
 
@@ -1280,6 +1282,7 @@ typedef struct {
 #define	MCAST_JOIN_SOURCE_GROUP	0x2d	/* join group for specified source */
 #define	MCAST_LEAVE_SOURCE_GROUP 0x2e	/* leave source/group pair */
 
+
 /* 32Bit field for IPV6_SRC_PREFERENCES */
 #define	IPV6_PREFER_SRC_HOME		0x00000001
 #define	IPV6_PREFER_SRC_COA		0x00000002
@@ -1307,6 +1310,8 @@ typedef struct {
 #define	IPV6_BOUND_IF		0x41	/* bind to an ifindex */
 #define	IPV6_UNSPEC_SRC		0x42	/* source of packets set to */
 					/* unspecified (all zeros) */
+
+#define	IPV6_DDM	0x43
 
 /*
  * Miscellaneous IPv6 constants.
