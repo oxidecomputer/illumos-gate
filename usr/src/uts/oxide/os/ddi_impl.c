@@ -1704,47 +1704,18 @@ get_boot_properties(void)
 		/* copy string to memory above kernelbase */
 		copy_boot_str(name, property_name, 50);
 
-		/*
-		 * Skip vga properties; we ignore them entirely.
-		 */
-		if (strcmp(property_name, "display-edif-block") == 0 ||
-		    strcmp(property_name, "display-edif-id") == 0) {
-			continue;
-		}
-
 		length = BOP_GETPROPLEN(bootops, property_name);
 		if (length < 0)
 			continue;
-		if (length > MMU_PAGESIZE) {
+		if (length > MMU_PAGESIZE - 1) {
 			cmn_err(CE_NOTE,
-			    "boot property %s longer than 0x%x, ignored\n",
-			    property_name, MMU_PAGESIZE);
+			    "boot property %s longer than 0x%x, ignored",
+			    property_name, MMU_PAGESIZE - 1);
 			continue;
 		}
 		BOP_GETPROP(bootops, property_name, bop_staging_area);
+		((char *)bop_staging_area)[length] = '\0';
 		flags = do_bsys_getproptype(bootops, property_name);
-
-		/*
-		 * special properties:
-		 * si-machine, si-hw-provider
-		 *	goes to kernel data structures.
-		 */
-		if (strcmp(name, "si-machine") == 0) {
-			(void) strncpy(utsname.machine, bop_staging_area,
-			    SYS_NMLN);
-			utsname.machine[SYS_NMLN - 1] = '\0';
-			continue;
-		}
-		if (strcmp(name, "si-hw-provider") == 0) {
-			(void) strncpy(hw_provider, bop_staging_area, SYS_NMLN);
-			hw_provider[SYS_NMLN - 1] = '\0';
-			continue;
-		}
-		if (strcmp(name, "stdout") == 0) {
-			(void) ndi_prop_update_int(DDI_DEV_T_NONE, devi,
-			    property_name, *((int *)bop_staging_area));
-			continue;
-		}
 
 		/* Boolean property */
 		if (length == 0) {
