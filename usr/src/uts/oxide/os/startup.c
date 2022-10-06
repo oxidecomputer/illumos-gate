@@ -1298,7 +1298,6 @@ static void
 startup_modules(void)
 {
 	int serial_proplen;
-	char serial_prop[HW_HOSTID_LEN] = "FFFFFFFFFF";
 	static const char vendor_oxide[] = "Oxide Computer Company";
 	extern void prom_setup(void);
 	cmi_hdl_t hdl;
@@ -1365,18 +1364,40 @@ startup_modules(void)
 
 	(void) strcpy(hw_provider, vendor_oxide);
 
+	/* Start by setting an invalid hostid */
+	(void) snprintf(hw_serial, HW_HOSTID_LEN, "%u", HW_INVALID_HOSTID);
+
 	serial_proplen = BOP_GETPROPLEN(bootops, BTPROP_NAME_BOARD_IDENT);
 	if (serial_proplen <= 0) {
 		cmn_err(CE_WARN, "board identifier missing; hostid is invalid");
-	} else if (serial_proplen > HW_HOSTID_LEN) {
-		/* XXX translate this into a hostid if necessary */
-		cmn_err(CE_WARN,
-		    "board identifier too long; hostid is invalid");
 	} else {
+		/*
+		 * `hw_serial` is expected by various parts of the system to
+		 * by a string of up to 10 base-10 digits followed by a NUL.
+		 * We derive one from the board identifier starting from the
+		 * end (which has the most significant data) until we run out
+		 * of board identifier or have filled up hw_serial.
+		 */
+		char serial_prop[serial_proplen];
+		uint_t o;
+		int i;
+
 		bzero(serial_prop, sizeof (serial_prop));
 		BOP_GETPROP(bootops, BTPROP_NAME_BOARD_IDENT, serial_prop);
+
+		for (o = 0, i = serial_proplen - 1;
+		    i >= 0 && o < HW_HOSTID_LEN - 1; i--) {
+			/*
+			 * Note that the board identifier may or may not be
+			 * NUL terminated.
+			 */
+			if (serial_prop[i] >= '0' && serial_prop[i] <= '9')
+				hw_serial[o++] = serial_prop[i];
+			else if (serial_prop[i] != '\0')
+				hw_serial[o++] = '0' + (serial_prop[i] % 10);
+		}
+		hw_serial[o] = '\0';
 	}
-	bcopy(serial_prop, hw_serial, HW_HOSTID_LEN);
 
 	/*
 	 * Set up the CPU module subsystem for the boot cpu; this
