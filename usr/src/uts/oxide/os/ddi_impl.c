@@ -1680,7 +1680,6 @@ copy_boot_str(const char *boot_str, char *kern_str, int len)
 static void
 get_boot_properties(void)
 {
-	extern char hw_provider[];
 	dev_info_t *devi;
 	char *name;
 	int length, flags;
