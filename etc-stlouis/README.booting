@@ -1,3 +1,63 @@
+External Links
+--------------
+Lab machine guide:
+https://github.com/oxidecomputer/meta/blob/master/engineering/lab/gimlet.adoc
+
+Setting up and using a helios-dev build machine:
+https://github.com/oxidecomputer/stlouis/blob/main/dev.adoc
+
+Boot Methods
+------------
+
+There are currently three ways being regularly used to boot these bits on a
+Gimlet:
+
+- nanobl-rs loader + UFS ramdisk + optional phase2 via the network;
+- nanobl-rs loader + CPIO miniroot + ZFS root loaded via the network or from an
+  M.2 device;
+- Stage 1 (phbl loader + CPIO miniroot) flashed into SPI + ZFS root loaded from
+  an M.2 device (the intended boot path - see RFD241).
+
+This isn't an exhaustive list, other combinations are possible with a bit of
+juggling.
+
+The bulk of this file describes how to get going with (1), but (2) is
+becoming increasingly useful for development as it produces a booted machine
+that is effectively the same as (3) but elides the need to keep rewriting
+the SPI flash and is easier to iterate on.
+
+Boot Options
+------------
+
+The Service Processor maintains a set of boot options that the Host reads
+during boot. These options are stored as a single 64-bit value where the bits
+have the following meanings:
+
+  Bit	Mnemonic		Value	Note
+  ---	--------		-----	-----
+  0	STARTUP_RECOVERY	0x1	Not yet in use, pending stlouis#192
+  1	STARTUP_KBM		0x2	Set kbm_debug
+  2	STARTUP_BOOTRD		0x4	Set bootrd_debug
+  3*	STARTUP_PROM		0x8	Set prom_debug
+  4*	STARTUP_KMDB		0x10	Load KMDB
+  5	STARTUP_KMDB_BOOT	0x20	Load KMDB and enter at boot
+
+The options which have a * after their bit number are currently enabled by
+default when the SP's control-plane-agent task starts. The value can be queried
+and adjusted via hiffy:
+
+    % pfexec humility -t sn6 hiffy -c ControlPlaneAgent.get_startup_options
+    ControlPlaneAgent.get_startup_options() => HostStartupOptions { bits: 0x18 }
+
+To enable entering KMDB at boot, for example:
+
+    % pfexec humility -t sn6 hiffy -c ControlPlaneAgent.set_startup_options \
+        -a startup_options=0x38
+    ControlPlaneAgent.set_startup_options() => ()
+
+nanobl-rs loader + UFS ramdisk + optional phase2 via the network
+-----------------------------------------------------------------
+
 You will need:
 
 - A supportable Gimlet, or an Ethanol-X (for now), with Milan processor(s)
@@ -7,14 +67,6 @@ You will need:
   versions of this file for instructions on old loaders)
 - A built stlouis workspace
 - The tools in this directory
-
-External Links
---------------
-Lab machine guide:
-https://github.com/oxidecomputer/meta/blob/master/engineering/lab/gimlet.adoc
-
-Setting up and using a helios-dev build machine:
-https://github.com/oxidecomputer/stlouis/blob/main/dev.adoc
 
 Steps:
 
@@ -39,14 +91,24 @@ to use a fixed name you can do something like:
 
 	$ mv $(./mkrd.bash) /path/to/ramdisk.ufs
 
-3. Compress your ramdisk (optionally, you may also compress your kernel).
+3. The collection of available phase-1 system software in the ramdisk is very
+limited and heavily skewed toward debugging tools.  If you want a more
+functional (RFD 241 "phase-2") system, you will need to unpack additional
+software.  You can build a phase-2 software bundle by doing:
+
+	$ mv $(./mkphase2.bash) /path/to/phase2.tar
+
+This step is optional and requires either a NIC or some other way to get these
+bits onto the machine after booting into phase-1.
+
+4. Compress your ramdisk (optionally, you may also compress your kernel).
 Unfortunately, gzip is not appropriate; instead use
 https://github.com/oxidecomputer/pinprick or the python code in
 https://github.com/oxidecomputer/nanobl-rs/pull/89#issue-1301450517:
 
 	$ pinprick /path/to/ramdisk.ufs > /path/to/ramdisk.ufs.z
 
-4. Start your terminal emulator and attach it to the target machine's UART0.
+5. Start your terminal emulator and attach it to the target machine's UART0.
 The examples here assume you use picocom, but you can use whatever you like.
 
 	// For lab systems:
@@ -55,7 +117,7 @@ The examples here assume you use picocom, but you can use whatever you like.
 	$ picocom -s "sx -Xk" --flow h -b 3000000 --imap lfcrlf --omap \
 	crlf,delbs /dev/my/local/uart
 
-5. If you haven't done so already, build nanobl-rs and burn it to your test
+6. If you haven't done so already, build nanobl-rs and burn it to your test
 machine's boot flash.  See the instructions in that repo's README.  Put the
 test machine into A0:
 
@@ -68,11 +130,12 @@ Note that you need to be in A2 first to burn the flash.  If you are using
 Ethanol-X, see the manual for your workstation's IPMI client tools and the
 Ethanol-X BMC firmware.
 
-6. At this point you should have:
+7. At this point you should have:
 	- A box sitting at the throbber or > prompt in your terminal emulator
 	(see nanobl-rs repo for notes on configuring it)
 	- A copy of unix from $ROOT/platform/kernel/oxide/amd64/unix
 	- A copy of ramdisk.ufs or whatever you called it
+	- Optionally, a copy of phase2.tar or whatever you called it
 
 Note that we currently need unix in the ramdisk and outside it; this
 requirement can eventually be relaxed because we actually have the ELF image
@@ -81,20 +144,21 @@ That will save about 2 MiB in the image, but for now you need it twice, and
 the file in the ramdisk MUST MATCH the kernel you boot; otherwise krtld will
 complain and you will not get very far.
 
-7. If you are using a rev A Gimlet and want a NIC and/or SSD(s), you must now
+8. If you are using a rev A Gimlet and want a NIC and/or SSD(s), you must now
 power on any sharkfin power controllers you need, then release PERST# for each
 PCIe end device you wish to use.  Releasing PERST# requires hardware
 modification; ask if you don't know what to do.  These steps may be done in
-parallel with ramdisk loading (next step).
+parallel with ramdisk loading (next step).  This is not needed on rev B and
+later.
 
-8. Now issue the following sequence of loader commands.  First, instruct
+9. Now issue the following sequence of loader commands.  First, instruct
 nanobl-rs to receive the ramdisk:
 
 	> 110000000::recv -m | ::inflate 101000000
 
 nanobl-rs will block, silently waiting for data to arrive.  You should now use
 your terminal emulator's Xmodem send command to transfer the compressed
-ramdisk you build in step 3.  On picocom, this is C-a C-s.
+ramdisk you built in step 2.  On picocom, this is C-a C-s.
 
 This command places the ramdisk into memory at 1_0100_0000, which must match
 the address in oxide/os/boot_data.c.  Note that if you build a ramdisk larger
@@ -104,7 +168,7 @@ bytes on the loader command line.  See the help for ::recv's -m option and
 
 Next, instruct nanobl-rs to receive unix in the same manner, and to begin
 executing the kernel once the transfer completes.  If you compressed your
-kernel in step 3, utter:
+kernel in step 4, utter:
 
 	> 110000000::recv -m | ::inflate 100000000 | ::load | ::call
 
@@ -112,28 +176,22 @@ If you did not compress your kernel:
 
 	> 100000000::recv -m | ::load | ::call
 
-Again, as soon as nanobl-rs blocks, use Xmodel to send unix.z (or unix) to the
+Again, as soon as nanobl-rs blocks, use Xmodem to send unix.z (or unix) to the
 target machine (picocom: C-a C-s).
 
 The addresses used for unix in the above example are almost entirely
-arbitrary, but should work on any machine we have.  When the file receiption
+arbitrary, but should work on any machine we have.  When the file reception
 completes, ::load and ::call will interpret the kernel and an ELF object and
 transfer control to its entry point, booting the OS.
 
-9. If you wish to proceed to userland, utter ':c' when kmdb loads, ignoring
-any errors about failure to load kmods.  Otherwise, begin your debug session.
+10. Upon reaching userland, if you have a NIC you can plumb up your network by
+uttering '/root/start-network <IPv4 address>/<IPv4 CIDR>'.  This will also
+start sshd for remote access.  If you require access from an off-link network,
+add routes as appropriate at this time.
 
-10. Upon reaching userland, if you have a NIC you can plumb up your network
-links and routes, then utter '/root/start-sshd' to gain remote access.  The
-collection of available phase-1 system software is very limited and heavily
-skewed toward debugging tools.  If you want a more functional (RFD 241
-"phase-2") system, build yourself a tarball from your proto area by doing
-something like:
+11. If you want the additional phase-2 software you build in step 3, copy it
+onto the test machine now and run the included script to get it mounted:
 
-	$ cd $ROOT; tar cf phase2.tar kernel/drv kernel/fs kernel/misc \
-	  usr/lib/devfsadm usr/bin usr/lib/lib* usr/lib/amd64/lib* usr/sbin \
-	  kernel/strmod sbin/zpool sbin/zfs usr/xpg6/bin usr/lib/cfgadm \
-	  lib/lib* lib/amd64/lib* lib/64 usr/lib/64 usr/lib/security usr/lib/fm
 	$ scp phase2.tar root@gimlet:/tmp
 	gimlet:~# cd /tmp && tar xpf phase2.tar
 	gimlet:~# /root/post-phase2
@@ -143,17 +201,171 @@ forth will be on the PATH and libraries can generally be found.  You can of
 course add or change the contents to suit your needs; the above will be enough
 to give you working zpool and zfs commands so if you have storage you can now
 create or import a pool, making it convenient to persist data across reboots
-for debugging or V&V, store larger toolsets, etc.  All of this is definitely
-not complete or perfect and some things probably still won't work; you are at
-the end of the graded road so grab your illumos man pages and work it out for
-yourself.
+for debugging or V&V, store larger toolsets, etc.
 
-11. If you wish to re-enter kmdb, send a BREAK using your terminal emulator
-(picocom default: C-a C-|).  There is currently no way to reboot.  On Gimlet,
-use humility to cycle through A2.  On Eth-X, ipmitool or the web UI may be
-used.
+One thing you can do from here is partition the M.2 SSD in slot 17 and copy
+the contents of an IPS-style phase-2 image ("zfs.img") into the first
+partition.  This will allow you to boot using either of the alternate methods
+described in subsequent sections without needing an Ethernet boot server.
+Note that the phase-2 image you copy onto the SSD needs to match the CPIO
+archive you boot; see subsequent sections for more details if you wish to try
+either of these approaches to booting.
+
+11. If you wish to enter kmdb, send a BREAK using your terminal emulator
+(picocom default: C-a C-|).  NOTE: Sending BREAK via the USB FTDI driver on
+the illumos lab machines does not work and will do nothing.  The 'reboot'
+command should do what you'd expect; if not, use humility to cycle through A2
+on Gimlet.  On Eth-X, ipmitool or the web UI may be used to reboot.
+
+nanobl-rs loader + CPIO miniroot + ZFS root loaded via the network
+------------------------------------------------------------------
+
+You will need most of the same things as for the previous method, including a
+system which has been flashed with nanobl-rs and a machine in A0 sitting at
+nanobl-rs' throbber or > prompt in your terminal emulator.
+
+You will also need a CPIO miniroot archive and ZFS root image built with
+the helios-build tool - https://github.com/oxidecomputer/helios - see below.
+
+The following steps show how to build DEBUG pieces, as should generally be used
+during development:
+
+Steps:
+
+1. Check out the helios repository and follow the Getting Started guide
+   in that repository's README.md to build the tools and set up additional
+   workspaces.
+
+2. Build a stlouis workspace using helios-build.
+
+	./helios-build build-illumos -dq
+
+3. Build the installation image files:
+
+	./helios-build experiment-image -d
+
+  This will produce a set of output files under image/output:
+
+	cpio	- CPIO miniroot archive
+	cpio.z	- pinprick-compressed version of above
+	rom	- SPI flash image (not needed for this boot method)
+	unix.z	- pinprick-compressed kernel
+	zfs.img	- ZFS root image
+
+4. Start up a network bootserver on a lab machine which will serve the ZFS
+   root image.
+
+	./projects/bootserver/target/release/bootserver \
+	    e1000g0 image/output/zfs.img 18:c0:4d:11:22:33
+
+   In this example, e1000g0 is the name of the NIC on the lab machine and
+   18:c0:4d:11:22:33 is the MAC address of the NIC in the Gimlet which will
+   be used for booting. The NIC in the Gimlet is usually connected directly
+   via a sharkfin slot or via a U.2 slot in the front of the machine.
+
+5. Boot
+
+   Instruct nanobl-rs to receive the initial CPIO miniroot image:
+
+	> 110000000::recv -m | ::inflate 101000000
+
+   nanobl-rs will block, silently waiting for data to arrive.  You should now
+   use your terminal emulator's Xmodem send command to transfer the compressed
+   CPIO image from the earlier step, image/output/cpio.z.  On picocom, this is
+   C-a C-s.
+
+   Next, instruct nanobl-rs to receive unix in the same manner, and to begin
+   executing the kernel once the transfer completes.
+
+        > 110000000::recv -m | ::inflate 100000000 | ::load | ::call 101000000 4c00000
+
+   Again, as soon as nanobl-rs blocks, use Xmodem to send image/output/unix.z
+   to the target machine (picocom: C-a C-s).
+
+   ** Note the explicit arguments being provided to the kernel via ::call,
+   ** which is different to the previous boot method. This is a bit of a hack -
+   ** set to be removed in stlouis#223 - at present, the kernel uses the
+   ** presence of these arguments to cause the new misc/boot_image module to
+   ** be loaded and used during boot. The values being passed are the same that
+   ** the kernel assumes if no arguments are passed - see oxide/os/boot_data.c
+
+Once the kernel boots, you will see it try to find the ZFS image on an
+M.2 drive, and then falling back to network boot and loading the image from
+the bootserver that was started earlier. Here are some of the messages that
+you should expect to see:
+
+	in oxide_boot!
+	    cpio wants: c87d... (ZFS image hash)
+	TRYING: boot disk
+	found M.2 device @ /pci@0,0/pci1022,1483@1,3/pci1...
+	opening M.2 device
+	invalid disk header
+	closing M.2
+	TRYING: boot net
+	MAC address is 18:c0:4d:11:22:33
+	listening for packets...
+	hello...
+	    in image: c87d...
+	received offer from 34:17:eb:d4:93:a4  -- size 4294967296 data size 367001600
+	reached EOF at offset 367001600 after 4 seconds
+	all done!
+	checksum ok!
+
+At this point the system should complete booting and provide a login prompt.
+
+The oxide_boot module actually tries to boot from the first EFI partition on
+each M.2 disk in turn and then falls back to network boot if it does not find a
+matching phase2 image. See M.2 setup below; note that the image must still
+match the CPIO archive used in phase1.
+
+Stage 1 (phbl loader + CPIO miniroot) flashed into SPI + ZFS root...
+--------------------------------------------------------------------
+
+This boot method is very similar to the previous one except that the
+image/output/rom file is written to the SPI flash in place of the image
+containing nanobl-rs. This image includes the phbl boot loader and the
+CPIO miniroot image.
+
+	$ pfexec humility -t sn6 qspi -D image/output/rom
+
+No interaction is necessary for the system to boot, it will automatically
+start up and look for the ZFS ramdisk image on each M.2 disk in turn and then
+fall back to loading it from the network if it is not found or if the hash does
+not match the expected value. Note that the hash of the ZFS image must match
+the value embedded in the CPIO archive, which is part of the ROM, and so this
+method is not particularly suited for iterative work on stlouis.
+
+M.2 setup
+---------
+
+When developing on a Gimlet it is convenient to configure an M.2 device to hold
+a persistent ZFS pool, the system dump device, and some partitions for holding
+a phase2 image.
+
+The layout which is currently recommended is GPT with the following partitions:
+
+    Part      Tag    Flag     First Sector         Size         Last Sector
+      0        usr    wm                 6        4.00GB          1048581
+      1        usr    wm           1048582        4.00GB          2097157
+      2        usr    wm           2097158        4.00GB          3145733
+      3        usr    wm           3145734        4.00GB          4194309
+      4        usr    wm           4194310      500.00GB          135266309
+      5        usr    wm         135266310      500.00GB          266338309
+      6 unassigned    wm                 0           0               0
+      8   reserved    wm         468841553        8.00MB          468843600
+
+Many of the machines in the lab have a ZFS pool called 'data' on partition 5
+and use partition 4 for their dump device. A phase2 image can be written to
+partition 0 if required and the oxide_boot module will look for it there.
+With a 'data' pool in place, the site/postboot service in the ZFS root image
+will automatically import it and then run '/data/postboot/bin/postboot.sh'
+if it exists. This is useful in order to run tasks on every boot such as
+setting up the system dump device.
+
+* https://github.com/oxidecomputer/helios/blob/master/image/templates/files/gimlet-postboot.sh
 
 Next steps:
+-----------
 
 There are many, many things to do next, and the good news is that there is
 enough parallelism here for 8-10 engineers.  A few examples:
