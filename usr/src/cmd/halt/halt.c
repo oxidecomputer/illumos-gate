@@ -1249,8 +1249,10 @@ do_archives_update(int do_fast_reboot)
 	pid_t	pid;
 	char	*cmd_argv[MAXARGS];
 
+	if (access(BOOTADM_PROG, X_OK) != 0)
+		return;
 
-	cmd_argv[i++] = "/sbin/bootadm";
+	cmd_argv[i++] = BOOTADM_PROG;
 	cmd_argv[i++] = "-ea";
 	cmd_argv[i++] = "update_all";
 	if (do_fast_reboot)
@@ -1516,7 +1518,8 @@ main(int argc, char *argv[])
 
 #if defined(__x86)
 	/* set new default entry in the GRUB entry */
-	if (fbarg_entnum != BE_ENTRY_DEFAULT) {
+	if (fbarg_entnum != BE_ENTRY_DEFAULT &&
+	    access(BOOTADM_PROG, X_OK) == 0) {
 		char buf[32];
 		(void) snprintf(buf, sizeof (buf), "default=%u", fbarg_entnum);
 		(void) halt_exec(BOOTADM_PROG, "set-menu", buf, NULL);

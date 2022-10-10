@@ -935,6 +935,9 @@ update_boot_archive(int new_state)
 	if (getzoneid() != GLOBAL_ZONEID)
 		return;
 
+	if (access("/sbin/bootadm", X_OK) != 0)
+		return;
+
 	(void) system("/sbin/bootadm -ea update_all");
 }
 

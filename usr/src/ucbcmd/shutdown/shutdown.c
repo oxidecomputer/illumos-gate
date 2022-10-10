@@ -428,7 +428,8 @@ main(int argc, char **argv)
 					audit_shutdown_success();
 					sleep(5);
 				}
-				if (getzoneid() == GLOBAL_ZONEID) {
+				if (getzoneid() == GLOBAL_ZONEID &&
+				    access("/sbin/bootadm", X_OK) == 0) {
 					(void) system(
 					    "/sbin/bootadm -a update_all");
 				}

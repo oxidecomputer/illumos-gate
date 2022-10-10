@@ -40,13 +40,14 @@ if smf_is_nonglobalzone || smf_root_is_ramdisk; then
 	exit $SMF_EXIT_OK
 fi
 
-#
-# Now check the archive.
-#
-/sbin/bootadm update-archive -vnC 2> /dev/null
-if [ $? = 0 ]; then
-	exit $SMF_EXIT_OK
+if [ -x /sbin/bootadm ]; then
+	#
+	# Now check the archive.
+	#
+	/sbin/bootadm update-archive -vnC 2> /dev/null
+	if [ $? != 0 ]; then
+		touch $UPDATEFILE
+	fi
 fi
 
-touch $UPDATEFILE
 exit $SMF_EXIT_OK

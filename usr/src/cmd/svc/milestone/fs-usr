@@ -141,8 +141,8 @@ if [ "$mountp" -a -d /dev/fd ]; then
 	mountfs - /dev/fd - - - || exit $SMF_EXIT_ERR_FATAL
 fi
 
-if [ -f "${UPDATEFILE}" ]; then
-	/usr/sbin/bootadm update-archive
+if [ -x /sbin/bootadm -a -f "${UPDATEFILE}" ]; then
+	/sbin/bootadm update-archive
 	if [ $? != 0 ]; then
 		cecho ""
 		cecho "WARNING: Automatic update of the boot archive failed."

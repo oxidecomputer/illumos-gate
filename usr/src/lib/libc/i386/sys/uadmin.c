@@ -121,6 +121,9 @@ check_archive_update(void)
 	char *fmri = "svc:/system/boot-config:default";
 	uint8_t *ret_val = NULL;
 
+	if (access("/sbin/bootadm", X_OK) != 0)
+		return;
+
 	if (real_scf_simple_prop_get == NULL ||
 	    real_scf_simple_prop_next_boolean == NULL ||
 	    real_scf_simple_prop_free == NULL) {
@@ -246,6 +249,9 @@ uadmin(int cmd, int fcn, uintptr_t mdep)
 				if (off > 0)
 					break;
 			}
+
+			if (access("/sbin/bootadm", X_OK) != 0)
+				break;
 
 			/* are we rebooting to a GRUB menu entry? */
 			if (isdigit(bargs[0])) {

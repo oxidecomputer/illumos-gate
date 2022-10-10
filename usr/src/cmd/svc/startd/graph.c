@@ -3600,8 +3600,10 @@ do_uadmin(void)
 	 * down, we need to ensure, one more time, that the boot archive
 	 * really is up to date.
 	 */
-	if (getzoneid() == 0 && access("/usr/sbin/bootadm", X_OK) == 0)
-		fork_with_timeout("/usr/sbin/bootadm -ea update_all", 0, 3600);
+	if (getzoneid() == GLOBAL_ZONEID &&
+	    access("/sbin/bootadm", X_OK) == 0) {
+		fork_with_timeout("/sbin/bootadm -ea update_all", 0, 3600);
+	}
 
 	/*
 	 * Right now, fast reboot is supported only on i386.
