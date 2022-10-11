@@ -10,33 +10,64 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Co.
+ * Copyright 2022 Oxide Computer Co.
  */
 
 #ifndef _SYS_DW_APB_UART_H
 #define	_SYS_DW_APB_UART_H
 
+#include <sys/stdbool.h>
 #include <sys/types.h>
 #include <sys/uart.h>
+#include <sys/io/mmioreg.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef enum dw_apb_port {
-	DAP_0 = 0x1000000,
-	DAP_1 = 0x1000001,
-	DAP_2 = 0x1000002,
-	DAP_3 = 0x1000003
+	DAP_NONE	= 0,
+	DAP_0		= 0x1000000,
+	DAP_1		= 0x1000001,
+	DAP_2		= 0x1000002,
+	DAP_3		= 0x1000003
 } dw_apb_port_t;
 
-extern void *dw_apb_uart_init(const dw_apb_port_t, const uint32_t,
-    const async_databits_t, const async_parity_t, const async_stopbits_t);
-extern size_t dw_apb_uart_rx_nb(void *, uint8_t *, size_t);
-extern uint8_t dw_apb_uart_rx_one(void *);
-extern size_t dw_apb_uart_tx_nb(void *, const uint8_t *, size_t);
-extern void dw_apb_uart_tx(void *, const uint8_t *, size_t);
-extern boolean_t dw_apb_uart_dr(void *);
+typedef enum dw_apb_uart_flag {
+	DAUF_MAPPED	= 1 << 0,
+	DAUF_INITDONE	= 1 << 1,
+} dw_apb_uart_flag_t;
+
+typedef struct {
+	dw_apb_port_t		dau_port;
+	uint32_t		dau_baudrate;
+	async_databits_t	dau_databits;
+	async_parity_t		dau_parity;
+	async_stopbits_t	dau_stopbits;
+
+	mmio_reg_block_t	dau_reg_block;
+	mmio_reg_t		dau_reg_thr;
+	mmio_reg_t		dau_reg_rbr;
+	mmio_reg_t		dau_reg_lsr;
+	mmio_reg_t		dau_reg_usr;
+	mmio_reg_t		dau_reg_srr;
+
+	dw_apb_uart_flag_t	dau_flags;
+} dw_apb_uart_t;
+
+extern void dw_apb_uart_deinit(dw_apb_uart_t * const);
+extern int dw_apb_uart_init(dw_apb_uart_t * const, const dw_apb_port_t,
+    const uint32_t, const async_databits_t, const async_parity_t,
+    const async_stopbits_t);
+extern void dw_apb_uart_flush(const dw_apb_uart_t * const);
+extern size_t dw_apb_uart_rx_nb(const dw_apb_uart_t * const, uint8_t *, size_t);
+extern uint8_t dw_apb_uart_rx_one(const dw_apb_uart_t * const);
+extern size_t dw_apb_uart_tx_nb(const dw_apb_uart_t * const, const uint8_t *,
+    size_t);
+extern void dw_apb_uart_tx(const dw_apb_uart_t * const, const uint8_t *,
+    size_t);
+extern bool dw_apb_uart_readable(const dw_apb_uart_t * const);
+extern bool dw_apb_uart_writable(const dw_apb_uart_t * const);
 
 #ifdef __cplusplus
 }

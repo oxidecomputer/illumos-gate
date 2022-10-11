@@ -53,6 +53,41 @@ MAKE_MMIO_FCH_REG_FN(IOMUX, iomux, 1);
  * functions/signals that correspond to the values are different for each one.
  */
 
+#define	D_FCH_IOMUX_STD	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_IOMUX,	\
+	.srd_reg = 0x00,		\
+	.srd_nents = 0x99		\
+}
+
+#define	FCH_IOMUX_STD(r)		\
+	fch_iomux_smn_reg(D_FCH_IOMUX_STD, r)
+
+#define	FCH_IOMUX_STD_MMIO(b, r)	\
+	fch_iomux_mmio_reg(b, D_FCH_IOMUX_STD, r)
+
+/*
+ * This is a convenience macro for setting the function for a particular pin
+ * using MMIO.  It uses the function values defined below and will fail to
+ * compile if a definition for the requested function and pin does not exist.
+ */
+#define	FCH_IOMUX_PINMUX_SET_MMIO(b, r, f)		\
+	mmio_reg_write(FCH_IOMUX_STD_MMIO(b, r),	\
+	FCH_IOMUX_ ## r ## _ ## f)
+
+/*
+ * Pinmux function values.
+ */
+
+#define	FCH_IOMUX_135_UART0_CTS_L	0
+#define	FCH_IOMUX_136_UART0_RXD		0
+#define	FCH_IOMUX_137_UART0_RTS_L	0
+#define	FCH_IOMUX_138_UART0_TXD		0
+
+#define	FCH_IOMUX_140_UART1_CTS_L	0
+#define	FCH_IOMUX_141_UART1_RXD		0
+#define	FCH_IOMUX_142_UART1_RTS_L	0
+#define	FCH_IOMUX_143_UART1_TXD		0
+
 #endif	/* !_ASM */
 
 #ifdef __cplusplus

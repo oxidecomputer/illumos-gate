@@ -51,7 +51,7 @@
  * different functional units that would not normally be shared by a single
  * device instance.  Fortunately, most MMIO-accessible register blocks don't
  * look like that, and are reasonably conducive to this approach.
-
+ *
  * Although we want this to support either type of consumer, nothing here
  * provides any kind of locking, so the basic model is that a register might be
  * accessed by the kernel earlier in boot, then later by a device driver that
@@ -278,7 +278,8 @@ typedef struct mmio_reg_block_phys {
 
 typedef enum mmio_reg_block_flag {
 	MRBF_NONE = 0,
-	MRBF_DDI = 1
+	MRBF_DDI = 1,
+	MRBF_KBM = 2
 } mmio_reg_block_flag_t;
 
 /*

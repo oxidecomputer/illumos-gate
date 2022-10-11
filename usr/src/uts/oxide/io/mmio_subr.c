@@ -20,6 +20,12 @@
  *
  * This is not machdep code, though the implementation of device_arena_*() is,
  * and should eventually be moved to uts/intel once we're happy with it.
+ *
+ * mmio_reg_block_map() may be called very early in boot and will allocate VA
+ * space from the KBM earlyboot arena, and later in boot once the device arena
+ * is set up.  There is, however, a window during the change over from the
+ * earlyboot to the device arena where calling this function will result in a
+ * system panic as there is nowhere from which to allocate VA pages.
  */
 
 #include <sys/cmn_err.h>
@@ -32,7 +38,17 @@
 #include <sys/types.h>
 #include <sys/io/mmioreg.h>
 #include <vm/hat.h>
+#include <vm/hat_i86.h>
 #include <vm/seg_kmem.h>
+#include <vm/kboot_mmu.h>
+
+/*
+ * Since the mmio_reg_block_{map,unmap} functions are used early in boot,
+ * before genunix is loaded, we must use macro versions of these rather
+ * than the DDI functions.
+ */
+#define	btopr(x) ((((unsigned )(x) + PAGEOFFSET) / PAGESIZE))
+#define	ptob(x) (((pgcnt_t)(x)) << PAGESHIFT)
 
 mmio_reg_block_t
 mmio_reg_block_map(const smn_unit_t unit, const mmio_reg_block_phys_t phys)
@@ -45,15 +61,31 @@ mmio_reg_block_map(const smn_unit_t unit, const mmio_reg_block_phys_t phys)
 	const uintptr_t nlp = btopr(phys.mrbp_len + loff);
 	const uintptr_t nmp = mmu_btopr(phys.mrbp_len + moff);
 
-	const caddr_t va = device_arena_alloc(ptob(nlp), VM_SLEEP);
+	mmio_reg_block_flag_t flags = 0;
+	caddr_t va;
 
-	hat_devload(kas.a_hat, va, mmu_ptob(nmp), mmu_btop(phys.mrbp_base),
-	    PROT_READ | PROT_WRITE | HAT_STRICTORDER, HAT_LOAD_LOCK);
+	if (khat_running == 1) {
+		va = device_arena_alloc(ptob(nlp), VM_SLEEP);
+		hat_devload(kas.a_hat, va,
+		    mmu_ptob(nmp), mmu_btop(phys.mrbp_base),
+		    PROT_READ | PROT_WRITE | HAT_STRICTORDER, HAT_LOAD_LOCK);
+	} else {
+		paddr_t pa = phys.mrbp_base - moff;
+
+		va = (caddr_t)kbm_valloc(mmu_ptob(nmp), MMU_PAGESIZE);
+
+		for (uint64_t i = 0; i < nmp; i++) {
+			kbm_map((uintptr_t)va + i * MMU_PAGESIZE,
+			    pa + i * MMU_PAGESIZE, 0, PT_WRITABLE | PT_NOCACHE);
+		}
+		flags |= MRBF_KBM;
+	}
 
 	const mmio_reg_block_t block = {
 	    .mrb_unit = unit,
 	    .mrb_va = (const caddr_t)((const uintptr_t)va + loff),
-	    .mrb_phys = phys
+	    .mrb_phys = phys,
+	    .mrb_flags = flags
 	};
 
 	return (block);
@@ -73,9 +105,24 @@ mmio_reg_block_unmap(mmio_reg_block_t block)
 	const uintptr_t vlbase = (const uintptr_t)block.mrb_va & PAGEMASK;
 	const uintptr_t vmbase = (const uintptr_t)block.mrb_va & MMU_PAGEMASK;
 
-	hat_unload(kas.a_hat, (const caddr_t)vmbase,
-	    (const size_t)mmu_ptob(nmp), HAT_UNLOAD_UNLOCK);
-	device_arena_free((const caddr_t)vlbase, (const size_t)ptob(nlp));
+	if (block.mrb_flags & MRBF_KBM) {
+		/*
+		 * In the case that we are trying to do a KBM unmap after the
+		 * device arena is available, leave the pages mapped. At this
+		 * point KBM operations have been reconfigured to cause a
+		 * panic. The KBM mappings will be torn down automatically in
+		 * startup.c
+		 */
+		if (khat_running == 0) {
+			for (uint64_t i = 0; i < nmp; i++)
+				kbm_unmap(vmbase + i * MMU_PAGESIZE);
+		}
+	} else {
+		hat_unload(kas.a_hat, (const caddr_t)vmbase,
+		    (const size_t)mmu_ptob(nmp), HAT_UNLOAD_UNLOCK);
+		device_arena_free((const caddr_t)vlbase,
+		    (const size_t)ptob(nlp));
+	}
 }
 
 uint64_t

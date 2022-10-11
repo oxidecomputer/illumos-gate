@@ -46,6 +46,7 @@ sparc_CORE_OBJS +=
 
 COMMON_CORE_OBJS +=		\
 		beep.o		\
+		bitext.o	\
 		bitset.o	\
 		bp_map.o	\
 		brand.o		\
@@ -110,7 +111,6 @@ GENUNIX_OBJS +=	\
 		avl.o		\
 		bdev_dsort.o	\
 		bio.o		\
-		bitext.o	\
 		bitmap.o	\
 		blabel.o	\
 		bootbanner.o	\

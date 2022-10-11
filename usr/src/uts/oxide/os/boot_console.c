@@ -10,29 +10,26 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Co.
+ * Copyright 2022 Oxide Computer Co.
  */
 
 #include <sys/bootconf.h>
 #include <sys/bootsvcs.h>
 #include <sys/boot_console.h>
 #include <sys/boot_debug.h>
+#include <sys/stdbool.h>
 #include <sys/cmn_err.h>
 #include <sys/dw_apb_uart.h>
 #include <sys/uart.h>
 
-/*
- * Debugging note: If you wish to debug on the console using the loader's
- * identity mapping, set this to the UART regs base address.  This is
- * useful only very, very early -- while setting up the MMU.
- */
-static void *con_uart_regs;
+static dw_apb_uart_t con_uart;
 static struct boot_syscalls bsys;
+static bool con_uart_init;
 
 static int
 uart_getchar(void)
 {
-	return ((int)dw_apb_uart_rx_one(con_uart_regs));
+	return ((int)dw_apb_uart_rx_one(&con_uart));
 }
 
 static void
@@ -42,24 +39,25 @@ uart_putchar(int c)
 	uint8_t ch = (uint8_t)(c);
 
 	if (ch == '\n')
-		dw_apb_uart_tx(con_uart_regs, &CR, 1);
-	dw_apb_uart_tx(con_uart_regs, &ch, 1);
+		dw_apb_uart_tx(&con_uart, &CR, 1);
+	dw_apb_uart_tx(&con_uart, &ch, 1);
 }
 
 static int
 uart_ischar(void)
 {
-	return ((int)dw_apb_uart_dr(con_uart_regs));
+	return ((int)dw_apb_uart_readable(&con_uart));
 }
 
 struct boot_syscalls *
 boot_console_init(void)
 {
-	con_uart_regs = dw_apb_uart_init(DAP_0, 3000000,
-	    AD_8BITS, AP_NONE, AS_1BIT);
-
-	if (con_uart_regs == NULL)
+	if (dw_apb_uart_init(&con_uart, DAP_0, 3000000,
+	    AD_8BITS, AP_NONE, AS_1BIT) != 0) {
 		return (NULL);
+	}
+
+	con_uart_init = true;
 
 	bsys.bsvc_getchar = uart_getchar;
 	bsys.bsvc_putchar = uart_putchar;
@@ -74,7 +72,7 @@ vbop_printf(void *_bop, const char *fmt, va_list ap)
 	const char *cp;
 	static char buffer[512];
 
-	if (con_uart_regs == NULL)
+	if (!con_uart_init)
 		return;
 
 	(void) vsnprintf(buffer, sizeof (buffer), fmt, ap);
@@ -82,13 +80,12 @@ vbop_printf(void *_bop, const char *fmt, va_list ap)
 		uart_putchar(*cp);
 }
 
-/*PRINTFLIKE2*/
 void
 bop_printf(void *bop, const char *fmt, ...)
 {
 	va_list	ap;
 
-	if (con_uart_regs == NULL)
+	if (!con_uart_init)
 		return;
 
 	va_start(ap, fmt);
@@ -108,7 +105,7 @@ kbm_debug_printf(const char *file, int line, const char *fmt, ...)
 	boolean_t is_end = (fmt[fmtlen - 1] == '\n');
 	va_list ap;
 
-	if (!kbm_debug || con_uart_regs == NULL)
+	if (!kbm_debug || !con_uart_init)
 		return;
 
 	if (!continuation)
@@ -125,7 +122,6 @@ kbm_debug_printf(const char *file, int line, const char *fmt, ...)
  * Another panic() variant; this one can be used even earlier during boot than
  * prom_panic().
  */
-/*PRINTFLIKE1*/
 void
 bop_panic(const char *fmt, ...)
 {
