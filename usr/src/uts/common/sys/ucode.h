@@ -115,16 +115,17 @@ typedef struct ucode_header_amd {
 
 typedef struct ucode_file_amd {
 #ifndef __xpv
+	/*
+	 * The combined size of these fields adds up to 8KiB (8192 bytes).
+	 * If support is needed for larger update files, increase the size of
+	 * the uf_encr element.
+	 */
 	ucode_header_amd_t uf_header;
 	uint8_t uf_data[896];
 	uint8_t uf_resv[896];
 	uint8_t uf_code_present;
 	uint8_t uf_code[191];
-	/*
-	 * This value allows for microcode files to be up to 8192 bytes in size
-	 * before it needs to be increased.
-	 */
-	uint8_t uf_encr[0x1800];
+	uint8_t uf_encr[6144];
 #else
 	uint8_t *ucodep;
 	uint32_t usize;
