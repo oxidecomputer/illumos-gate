@@ -29,8 +29,13 @@ file path=kernel/drv/$(ARCH64)/cxgbe group=sys
 file path=kernel/drv/$(ARCH64)/t4nex group=sys
 file path=kernel/drv/$(ARCH64)/t6mfg group=sys
 dir  path=usr group=sys
+dir  path=usr/lib
+dir  path=usr/lib/$(ARCH64)
+file path=usr/lib/$(ARCH64)/libt6mfg.so.1
+file path=usr/lib/libt6mfg.so.1
 dir  path=usr/sbin
 file path=usr/sbin/cxgbetool mode=0555
+file path=usr/sbin/t6mfgadm mode=0555
 driver name=cxgbe perms="* 0666 root sys" clone_perms="cxgbe 0666 root sys"
 driver name=t4nex perms="* 0666 root sys" clone_perms="t4nex 0666 root sys" \
     alias=pciex1425,4400 \

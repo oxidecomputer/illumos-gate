@@ -807,3 +807,14 @@ opt/SUNWonld/
 #
 opt/os-tests/tests/cores/libdumper.so
 opt/os-tests/tests/cores/amd64/libdumper.so	i386
+
+#
+# T6 and SPI libraries are private
+#
+usr/include/sys/spi.h
+usr/include/libispi.h
+usr/include/libt6mfg.h
+usr/lib/amd64/libispi.so	i386
+usr/lib/amd64/libt6mfg.so	i386
+usr/lib/libispi.so
+usr/lib/libt6mfg.so
