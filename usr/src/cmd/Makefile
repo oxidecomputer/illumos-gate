@@ -460,6 +460,7 @@ COMMON_SUBDIRS=		\
 	wracct		\
 	write		\
 	xargs		\
+	xcaller		\
 	xstr		\
 	yes		\
 	ypcmd		\

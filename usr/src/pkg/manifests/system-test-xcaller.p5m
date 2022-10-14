@@ -1,0 +1,40 @@
+#
+# CDDL HEADER START
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2022 Oxide Computer Company
+#
+
+#
+# The default for payload-bearing actions in this package is to appear in the
+# global zone only.  See the include file for greater detail, as well as
+# information about overriding the defaults.
+#
+<include global_zone_only_component>
+set name=pkg.fmri value=pkg:/system/test/xcaller@$(PKGVERS)
+set name=pkg.summary value="Cross-call tester"
+set name=pkg.description value="Cross-call tester"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Development/System
+set name=variant.arch value=$(ARCH)
+dir  path=usr group=sys
+dir  path=usr/kernel/drv group=sys
+dir  path=usr/kernel/drv/$(ARCH64) group=sys
+file path=usr/kernel/drv/$(ARCH64)/xcaller
+file path=usr/kernel/drv/xcaller.conf
+dir  path=usr/sbin
+file path=usr/sbin/xcaller mode=0555
+driver name=xcaller
+license lic_CDDL license=lic_CDDL
