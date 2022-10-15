@@ -175,7 +175,7 @@ apic_local_mode(void)
 		return (APIC_IS_DISABLED);
 	case LAPIC_ENABLE_MASK:
 		return (LOCAL_APIC);
-	case X2APIC_ENABLE_MASK:
+	case (LAPIC_ENABLE_MASK | X2APIC_ENABLE_MASK):
 		return (LOCAL_X2APIC);
 	}
 
