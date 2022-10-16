@@ -1018,6 +1018,7 @@ s usr/lib/devfsadm/devfsadmd=../../sbin/devfsadm
 d usr/lib/devfsadm/linkmod 0755 root sys
 f usr/lib/devfsadm/linkmod/SUNW_cfg_link.so 0755 root sys
 f usr/lib/devfsadm/linkmod/SUNW_disk_link.so 0755 root sys
+f usr/lib/devfsadm/linkmod/SUNW_dpio_link.so 0755 root sys
 f usr/lib/devfsadm/linkmod/SUNW_dtrace_link.so 0755 root sys
 f usr/lib/devfsadm/linkmod/SUNW_lofi_link.so 0755 root sys
 f usr/lib/devfsadm/linkmod/SUNW_misc_link.so 0755 root sys

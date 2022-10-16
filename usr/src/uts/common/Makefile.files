@@ -2315,3 +2315,9 @@ ENA_OBJS +=	ena.o ena_admin.o ena_dma.o ena_gld.o ena_hw.o ena_intr.o \
 # t6mfg(4D)
 #
 T6MFG_OBJS += t6mfg.o
+
+#
+# GPIO Framwork and related drivers
+#
+KGPIO_OBJS +=		kgpio.o
+GPIO_SIM_OBJS +=	gpio_sim.o

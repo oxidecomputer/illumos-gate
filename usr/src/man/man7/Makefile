@@ -55,6 +55,7 @@ _MANFILES=	Intro.7			\
 		fnmatch.7		\
 		formats.7		\
 		fsattr.7		\
+		gpio.7			\
 		grub.7			\
 		gss_auth_rules.7	\
 		hal.7			\
@@ -177,6 +178,7 @@ MANLINKS=	ANSI.7		\
 		architecture.7	\
 		availability.7	\
 		compile.7	\
+		dpio.7		\
 		endian.7	\
 		intro.7		\
 		pthreads.7	\
@@ -197,6 +199,8 @@ stability.7	:= LINKSRC = attributes.7
 standard.7	:= LINKSRC = attributes.7
 
 endian.7	:= LINKSRC = byteorder.7
+
+dpio.7		:= LINKSRC = gpio.7
 
 RBAC.7		:= LINKSRC = rbac.7
 

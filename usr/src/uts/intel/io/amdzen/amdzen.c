@@ -190,7 +190,8 @@ static const amdzen_child_data_t amdzen_children[] = {
 	{ "smntemp", AMDZEN_C_SMNTEMP },
 	{ "usmn", AMDZEN_C_USMN },
 	{ "zen_udf", AMDZEN_C_ZEN_UDF },
-	{ "zen_umc", AMDZEN_C_ZEN_UMC }
+	{ "zen_umc", AMDZEN_C_ZEN_UMC },
+	{ "zen_gpio", AMDZEN_C_ZEN_GPIO }
 };
 
 static uint8_t

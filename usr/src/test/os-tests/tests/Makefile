@@ -26,6 +26,7 @@ SUBDIRS =       \
 		file-locking \
 		ksensor \
 		libtopo \
+		gpio \
 		pf_key \
 		poll \
 		portfs \

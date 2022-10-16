@@ -161,7 +161,8 @@ typedef enum {
 	AMDZEN_C_SMNTEMP = 1,
 	AMDZEN_C_USMN,
 	AMDZEN_C_ZEN_UDF,
-	AMDZEN_C_ZEN_UMC
+	AMDZEN_C_ZEN_UMC,
+	AMDZEN_C_ZEN_GPIO
 } amdzen_child_t;
 
 /*
