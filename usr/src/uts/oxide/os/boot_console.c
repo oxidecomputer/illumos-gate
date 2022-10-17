@@ -22,9 +22,43 @@
 #include <sys/dw_apb_uart.h>
 #include <sys/uart.h>
 
+/*
+ * Debugging note: If you wish to debug on the console using the loader's
+ * identity mapping, enable the following definition.  This is useful only
+ * very, very early -- while setting up the MMU.
+ */
+#undef	VVE_CONSOLE_DEBUG
+
+#ifdef VVE_CONSOLE_DEBUG
+#include <sys/io/fch/uart.h>
+static dw_apb_uart_t con_uart = {
+	.dau_reg_thr = {
+		.mr_va = (caddr_t)FCH_UART_PHYS_BASE + FCH_UART_REGOFF_THR,
+		.mr_size = 4,
+	},
+	.dau_reg_rbr = {
+		.mr_va = (caddr_t)FCH_UART_PHYS_BASE + FCH_UART_REGOFF_RBR,
+		.mr_size = 4,
+	},
+	.dau_reg_lsr = {
+		.mr_va = (caddr_t)FCH_UART_PHYS_BASE + FCH_UART_REGOFF_LSR,
+		.mr_size = 4,
+	},
+	.dau_reg_usr = {
+		.mr_va = (caddr_t)FCH_UART_PHYS_BASE + FCH_UART_REGOFF_USR,
+		.mr_size = 4,
+	},
+	.dau_reg_srr = {
+		.mr_va = (caddr_t)FCH_UART_PHYS_BASE + FCH_UART_REGOFF_SRR,
+		.mr_size = 4,
+	},
+};
+static bool con_uart_init = true;
+#else
 static dw_apb_uart_t con_uart;
-static struct boot_syscalls bsys;
 static bool con_uart_init;
+#endif
+static struct boot_syscalls bsys;
 
 static int
 uart_getchar(void)
