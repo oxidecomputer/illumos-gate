@@ -40,6 +40,8 @@
 #include <sys/mman.h>
 #include <sys/vm.h>
 
+#include <sys/kernel_ipcc.h>
+
 #include <sys/disp.h>
 #include <sys/class.h>
 
@@ -135,6 +137,7 @@
 
 extern void audit_enterprom(int);
 extern void audit_exitprom(int);
+extern void prom_poll_enter(void);
 
 /*
  * Occassionally the kernel knows better whether to power-off or reboot.
@@ -171,27 +174,82 @@ static const uint8_t clac_instr[3] = { 0x0f, 0x01, 0xca };
 static const uint8_t stac_instr[3] = { 0x0f, 0x01, 0xcb };
 
 /*
- * Machine dependent code to reboot.
+ * Stop the other CPUs by cross-calling them and forcing them to enter
+ * the provided function.
+ */
+static void
+stop_other_cpus(cpu_t *cp, xc_func_t func)
+{
+	processorid_t i;
+	cpuset_t xcset;
+
+	(void) splzs();
+
+	CPUSET_ALL_BUT(xcset, cp->cpu_id);
+	xc_priority(0, 0, 0, CPUSET2BV(xcset), func);
+
+	for (i = 0; i < NCPU; i++) {
+		if (i != cp->cpu_id && cpu[i] != NULL &&
+		    (cpu[i]->cpu_flags & CPU_EXISTS)) {
+			cpu[i]->cpu_flags |= CPU_QUIESCED;
+		}
+	}
+}
+
+static void __NORETURN
+cpu_hlt_loop(void)
+{
+	for (;;)
+		mach_cpu_idle();
+}
+
+void
+reset(void)
+{
+	kernel_ipcc_reboot();
+	cpu_hlt_loop();
+}
+
+static void
+poweroff(void)
+{
+	kernel_ipcc_poweroff();
+	cpu_hlt_loop();
+}
+
+static void
+mdboot_stop_other_cpus(void)
+{
+	stop_other_cpus(CPU, (xc_func_t)cpu_hlt_loop);
+}
+
+/*
+ * Machine dependent code to reboot/halt.
+ *
  * "mdep" is interpreted as a character pointer; if non-null, it is a pointer
  * to a string to be used as the argument string when rebooting.
  *
  * "invoke_cb" is a boolean. It is set to true when mdboot() can safely
  * invoke CB_CL_MDBOOT callbacks before shutting the system down, i.e. when
  * we are in a normal shutdown sequence (interrupts are not blocked, the
- * system is not panic'ing or being suspended).
+ * system is not panicking or being suspended).
+ *
+ * This function is called from kadmin() and from panicsys(). When called from
+ * panicsys(), the global 'panicstr' will be non-NULL and this can be used to
+ * differentiate between the two calling paths. When we are panicking, we don't
+ * need to stop the other CPUs or disable pre-emption here as it will already
+ * have been done.
  */
-/*ARGSUSED*/
 void
 mdboot(int cmd, int fcn, char *mdep, boolean_t invoke_cb)
 {
-	static int is_first_quiesce = 1;
-	static int is_first_reset = 1;
-	int reset_status = 0;
+	static boolean_t is_first_quiesce = B_TRUE;
+	static boolean_t is_first_reset = B_TRUE;
 
 	if (fcn == AD_FASTREBOOT)
 		fcn = AD_BOOT;
 
-	if (!panicstr) {
+	if (panicstr == NULL) {
 		kpreempt_disable();
 		affinity_set(CPU_CURRENT);
 	}
@@ -210,18 +268,12 @@ mdboot(int cmd, int fcn, char *mdep, boolean_t invoke_cb)
 	/*
 	 * Print the reboot message now, before pausing other cpus.
 	 * There is a race condition in the printing support that
-	 * can deadlock multiprocessor machines.
+	 * can deadlock multiprocessor machines. In particular, cprintf()
+	 * will use a cross call to post the log message if our priority is
+	 * too high.
 	 */
 	if (!(fcn == AD_HALT || fcn == AD_POWEROFF))
 		prom_printf("rebooting...\n");
-
-	if (IN_XPV_PANIC())
-		reset();
-
-	/*
-	 * We can't bring up the console from above lock level, so do it now
-	 */
-	pm_cfb_check_and_powerup();
 
 	/* make sure there are no more changes to the device tree */
 	devtree_freeze();
@@ -241,7 +293,7 @@ mdboot(int cmd, int fcn, char *mdep, boolean_t invoke_cb)
 	 * from here on out.
 	 */
 	(void) spl6();
-	if (!panicstr) {
+	if (panicstr == NULL) {
 		mutex_enter(&cpu_lock);
 		pause_cpus(NULL, NULL);
 		mutex_exit(&cpu_lock);
@@ -251,12 +303,14 @@ mdboot(int cmd, int fcn, char *mdep, boolean_t invoke_cb)
 	 * Try to quiesce devices.
 	 */
 	if (is_first_quiesce) {
+		int reset_status = 0;
+
 		/*
 		 * Clear is_first_quiesce before calling quiesce_devices()
 		 * so that if quiesce_devices() causes panics, it will not
 		 * be invoked again.
 		 */
-		is_first_quiesce = 0;
+		is_first_quiesce = B_FALSE;
 
 		quiesce_active = 1;
 		quiesce_devices(ddi_root_node(), &reset_status);
@@ -273,19 +327,28 @@ mdboot(int cmd, int fcn, char *mdep, boolean_t invoke_cb)
 		 * so that if reset_devices() causes panics, it will not
 		 * be invoked again.
 		 */
-		is_first_reset = 0;
+		is_first_reset = B_FALSE;
 		reset_leaves();
 	}
 
-	(void) spl8();
+	/*
+	 * quiescing can result in calls to cmn_err(), particularly in a DEBUG
+	 * kernel. If we stop the other CPUs earlier than here, that printing
+	 * can result in a deadlock.
+	 */
+	if (panicstr == NULL)
+		mdboot_stop_other_cpus();
+	prom_poll_enter();
 
+	(void) spl8();
 	(*psm_shutdownf)(cmd, fcn);
 
 	if (fcn == AD_HALT || fcn == AD_POWEROFF)
-		halt((char *)NULL);
+		poweroff();
 	else
-		prom_reboot("");
+		reset();
 
+	cpu_hlt_loop();
 	/*NOTREACHED*/
 }
 
@@ -301,17 +364,6 @@ mdpreboot(int cmd, int fcn, char *mdep)
 	}
 
 	(*psm_preshutdownf)(cmd, fcn);
-}
-
-static void
-stop_other_cpus(void)
-{
-	ulong_t s = clear_int_flag(); /* fast way to keep CPU from changing */
-	cpuset_t xcset;
-
-	CPUSET_ALL_BUT(xcset, CPU->cpu_id);
-	xc_priority(0, 0, 0, CPUSET2BV(xcset), mach_cpu_halt);
-	restore_int_flag(s);
 }
 
 /*
@@ -357,38 +409,27 @@ debug_enter(char *msg)
 		(*dtrace_debugger_fini)();
 }
 
-void
-reset(void)
-{
-	/*
-	 * XXX Fix me:
-	 *
-	 * We need to ask the SP to reset us here.  There are two ways that
-	 * can be done, depending on how far up we are (plus a third where we
-	 * can do nothing at all).  If we're still in earlyboot such that the
-	 * STREAMS subsystem and our associated UART drivers aren't loaded, we
-	 * must invoke the earlyboot SP code.  Otherwise we use the normal
-	 * path.  The last possibility is that we're so early that we haven't
-	 * yet found the SP, or we couldn't; in that case there is nothing we
-	 * can do but stop and scream.
-	 *
-	 * For now this uses i86pc-specific code living in usr/src/uts/intel
-	 * that doesn't work at all on this machine.
-	 */
-	pc_reset();
-	/*NOTREACHED*/
-}
-
 /*
- * Halt the machine and return to the monitor
+ * On other platforms this routine should halt the machine and return to the
+ * monitor, usually requesting a keypress before proceeding to reboot.
+ * For Oxide, it triggers a reboot straight away if KMDB is not present.
+ *
+ * XXX - This function used to call prom_exit_to_mon() but that prompts a
+ * non-existent user to press a key via prom_reboot_prompt(), which is in
+ * shared code. If that prompt function was moved into machdep, we could go
+ * back to calling prom_exit_to_mon() again. That will also help other reboot
+ * paths that call prom_panic().
  */
 void
 halt(char *s)
 {
-	stop_other_cpus();	/* send stop signal to other CPUs */
+	mdboot_stop_other_cpus();
 	if (s)
 		prom_printf("(%s) \n", s);
-	prom_exit_to_mon();
+	prom_poll_enter();
+	if (boothowto & RB_DEBUG)
+		kmdb_enter();
+	reset();
 	/*NOTREACHED*/
 }
 
@@ -764,29 +805,10 @@ panic_idle(void)
  * Stop the other CPUs by cross-calling them and forcing them to enter
  * the panic_idle() loop above.
  */
-/*ARGSUSED*/
 void
 panic_stopcpus(cpu_t *cp, kthread_t *t, int spl)
 {
-	processorid_t i;
-	cpuset_t xcset;
-
-	/*
-	 * In the case of a Xen panic, the hypervisor has already stopped
-	 * all of the CPUs.
-	 */
-	if (!IN_XPV_PANIC()) {
-		(void) splzs();
-
-		CPUSET_ALL_BUT(xcset, cp->cpu_id);
-		xc_priority(0, 0, 0, CPUSET2BV(xcset), (xc_func_t)panic_idle);
-	}
-
-	for (i = 0; i < NCPU; i++) {
-		if (i != cp->cpu_id && cpu[i] != NULL &&
-		    (cpu[i]->cpu_flags & CPU_EXISTS))
-			cpu[i]->cpu_flags |= CPU_QUIESCED;
-	}
+	stop_other_cpus(cp, (xc_func_t)panic_idle);
 }
 
 /*

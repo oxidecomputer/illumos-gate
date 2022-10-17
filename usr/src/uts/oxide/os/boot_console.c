@@ -18,6 +18,7 @@
 #include <sys/boot_console.h>
 #include <sys/boot_debug.h>
 #include <sys/stdbool.h>
+#include <sys/kernel_ipcc.h>
 #include <sys/cmn_err.h>
 #include <sys/dw_apb_uart.h>
 #include <sys/uart.h>
@@ -165,6 +166,7 @@ bop_panic(const char *fmt, ...)
 	vbop_printf(NULL, fmt, ap);
 	va_end(ap);
 
-	eb_printf("\nHalted.\n");
+	eb_printf("\nRebooting.\n");
+	kernel_ipcc_reboot();
 	eb_halt();
 }

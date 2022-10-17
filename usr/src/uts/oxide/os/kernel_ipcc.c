@@ -342,6 +342,7 @@ void
 kernel_ipcc_reboot(void)
 {
 	kernel_ipcc_ops.io_readintr = NULL;
+	kernel_ipcc_ops.io_log = NULL;
 	(void) ipcc_reboot(&kernel_ipcc_ops, &kernel_ipcc_data);
 }
 
@@ -349,6 +350,7 @@ void
 kernel_ipcc_poweroff(void)
 {
 	kernel_ipcc_ops.io_readintr = NULL;
+	kernel_ipcc_ops.io_log = NULL;
 	(void) ipcc_poweroff(&kernel_ipcc_ops, &kernel_ipcc_data);
 }
 

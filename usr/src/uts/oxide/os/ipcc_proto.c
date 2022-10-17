@@ -1213,6 +1213,18 @@ out:
 int
 ipcc_reboot(const ipcc_ops_t *ops, void *arg)
 {
+	/*
+	 * There is a wrinkle here. We can be called from a number of contexts
+	 * that want to effect a reboot. This includes being called as a result
+	 * of panic or from the kernel debugger - via kdi_reboot(). In some of
+	 * those contexts it is possible that an IPCC command is in already in
+	 * progress, or at least that locks are held that will prevent us from
+	 * issuing the reboot command. We're on our way down to reboot, no
+	 * other thread will run again, disable locking before proceeding. The
+	 * reboot request may still fail, but the SP should see the new message
+	 * arrive even if it is still working on another, and reset state.
+	 */
+	ipcc_multithreaded = false;
 	return (ipcc_command(ops, arg, IPCC_HSS_REBOOT, IPCC_SP_NONE, NULL, 0));
 }
 

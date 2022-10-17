@@ -821,29 +821,6 @@ cpu_wakeup_mwait(cpu_t *cp, int bound)
 
 void (*cpu_pause_handler)(volatile char *) = NULL;
 
-/*
- * "Enter monitor."  Called via cross-call from stop_other_cpus().
- */
-int
-mach_cpu_halt(xc_arg_t arg1, xc_arg_t arg2 __unused, xc_arg_t arg3 __unused)
-{
-	char *msg = (char *)arg1;
-
-	if (msg)
-		prom_printf("%s\n", msg);
-
-	/*
-	 * XXX Assess callers to see whether we can halt here instead; this
-	 * spinloop wastes a considerable amount of energy if allowed to run
-	 * for any length of time.
-	 */
-
-	/*CONSTANTCONDITION*/
-	while (1)
-		;
-	return (0);
-}
-
 void
 mach_cpu_idle(void)
 {
@@ -895,6 +872,7 @@ vcpu_on_pcpu(processorid_t cpu)
 {
 	return (VCPU_ON_PCPU);
 }
+
 static int
 mp_disable_intr(int cpun)
 {

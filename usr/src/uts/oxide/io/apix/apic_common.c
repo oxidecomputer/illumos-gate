@@ -95,7 +95,6 @@ hrtime_t apic_gethrtime(void);
 void	apic_send_ipi(int, int);
 void	apic_set_idlecpu(processorid_t);
 void	apic_unset_idlecpu(processorid_t);
-void	apic_shutdown(int, int);
 void	apic_preshutdown(int, int);
 processorid_t	apic_get_next_processorid(processorid_t);
 
@@ -213,9 +212,6 @@ apic_intrmap_ops_t *apic_vt_ops = &apic_nointrmap_ops;
 apic_cpus_info_t	*apic_cpus = NULL;
 cpuset_t	apic_cpumask;
 uint_t		apic_picinit_called;
-
-/* Flag to indicate that we need to shut down all processors */
-static uint_t	apic_shutdown_processors;
 
 /*
  *	Local Function Prototypes
@@ -731,10 +727,9 @@ ioapic_disable_redirection(void)
 			 * The assumption here is that this is safe, even for
 			 * systems with IOAPICs that suffer from the hardware
 			 * erratum because all devices have been quiesced before
-			 * this function is called from apic_shutdown()
-			 * (or equivalent). If that assumption turns out to be
-			 * false, this mask operation can induce the same
-			 * erratum result we're trying to avoid.
+			 * this function is called. If that assumption turns
+			 * out to be false, this mask operation can induce the
+			 * same erratum result we're trying to avoid.
 			 */
 			ioapic_write(ioapic_ix, APIC_RDT_CMD + 2 * intin_ix,
 			    AV_MASK);
@@ -1039,27 +1034,6 @@ apic_cmci_setup(processorid_t cpuid, boolean_t enable)
 		xc_call(0, 0, 0, CPUSET2BV(cpu_set),
 		    (xc_func_t)apic_cmci_disable);
 	}
-}
-
-static void
-apic_disable_local_apic(void)
-{
-	apic_reg_ops->apic_write_task_reg(APIC_MASK_ALL);
-	apic_reg_ops->apic_write(APIC_LOCAL_TIMER, AV_MASK);
-
-	/* local intr reg 0 */
-	apic_reg_ops->apic_write(APIC_INT_VECT0, AV_MASK);
-
-	/* disable NMI */
-	apic_reg_ops->apic_write(APIC_INT_VECT1, AV_MASK);
-
-	/* and error interrupt */
-	apic_reg_ops->apic_write(APIC_ERR_VECT, AV_MASK);
-
-	/* and perf counter intr */
-	apic_reg_ops->apic_write(APIC_PCINT_VECT, AV_MASK);
-
-	apic_reg_ops->apic_write(APIC_SPUR_INT_REG, APIC_SPUR_INTR);
 }
 
 /*ARGSUSED1*/
@@ -1372,11 +1346,6 @@ apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
 {
 	nmi_action_t action = nmi_action;
 	boolean_t is_smi;
-
-	if (apic_shutdown_processors) {
-		apic_disable_local_apic();
-		return (DDI_INTR_CLAIMED);
-	}
 
 	apic_error |= APIC_ERR_NMI;
 
@@ -1743,33 +1712,6 @@ apic_clkinit(int hertz)
 void
 apic_preshutdown(int cmd __unused, int fcn __unused)
 {
-}
-
-void
-apic_shutdown(int cmd __unused, int fcn __unused)
-{
-	ulong_t iflag;
-
-	/* Send NMI to all CPUs except self to do per processor shutdown */
-	iflag = intr_clear();
-#ifdef	DEBUG
-	APIC_AV_PENDING_SET();
-#else
-	if (apic_mode == LOCAL_APIC)
-		APIC_AV_PENDING_SET();
-#endif /* DEBUG */
-	apic_shutdown_processors = 1;
-	apic_reg_ops->apic_write(APIC_INT_CMD1,
-	    AV_NMI | AV_ASSERT | AV_SH_ALL_EXCSELF);
-
-	ioapic_disable_redirection();
-	apic_disable_local_apic();
-	intr_restore(iflag);
-
-	/*
-	 * XXX Either hook into the SP shutdown path here or delete this
-	 * entirely and override this PSM method.
-	 */
 }
 
 cyclic_id_t apic_cyclic_id;
