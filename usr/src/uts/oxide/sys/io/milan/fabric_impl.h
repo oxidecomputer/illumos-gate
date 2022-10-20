@@ -30,6 +30,7 @@
 #include <sys/io/milan/dxio_impl.h>
 #include <sys/io/milan/nbif_impl.h>
 #include <sys/io/milan/pcie_impl.h>
+#include <sys/io/milan/power_impl.h>
 #include <sys/amdzen/smn.h>
 
 #ifdef __cplusplus
@@ -166,6 +167,7 @@ struct milan_fabric {
 	uint64_t	mf_ecam_base;
 	uint64_t	mf_mmio64_base;
 	milan_hotplug_t	mf_hotplug;
+	milan_power_t	mf_power;
 	milan_soc_t	mf_socs[MILAN_FABRIC_MAX_SOCS];
 };
 
