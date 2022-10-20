@@ -4971,6 +4971,37 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	return (B_TRUE);
 }
 
+static boolean_t
+milan_ppt_init(milan_fabric_t *fabric)
+{
+	ddi_dma_attr_t attr;
+	milan_power_t *power = &fabric->mf_power;
+	milan_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
+	milan_smu_rpc_t rpc = { 0 };
+	pfn_t pfn;
+
+	milan_smu_dma_attr(&attr);
+	power->mpwr_alloc_len = MMU_PAGESIZE;
+	power->mpwr_ppt = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(power->mpwr_ppt, MMU_PAGESIZE);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)power->mpwr_ppt);
+	power->mpwr_pa = mmu_ptob((uint64_t)pfn);
+
+	if (!milan_smu_rpc_give_address(iodie, MSAK_GENERIC, power->mpwr_pa)) {
+		return (B_FALSE);
+	}
+
+	rpc.msr_req = MILAN_SMU_OP_TX_PP_TABLE;
+	milan_smu_rpc(iodie, &rpc);
+
+	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "SMU TX Power Performance Table Failed: SMU 0x%x",
+		    rpc.msr_resp);
+	}
+
+	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+}
+
 /*
  * This is the main place where we basically do everything that we need to do to
  * get the PCIe engine up and running.
@@ -5157,6 +5188,12 @@ milan_fabric_init(void)
 		cmn_err(CE_WARN, "Eh, just don't unplug anything. I'm sure it "
 		    "will be fine. Not like someone's going to come and steal "
 		    "your silmarils");
+	}
+
+	if (!milan_ppt_init(fabric)) {
+		cmn_err(CE_WARN, "PP Table initialization failed");
+	} else {
+		cmn_err(CE_WARN, "PP Table loaded fabric %p", fabric);
 	}
 
 	/*
