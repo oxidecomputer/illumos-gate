@@ -109,6 +109,7 @@ struct pci_bus_resource {
 	boolean_t mem_reprogram;	/* need mem reprog on this bus */
 	boolean_t subtractive;	/* subtractive PPB */
 	uint64_t mem_size;	/* existing children required MEM space size */
+	uint64_t pmem_size;	/* existing children required PMEM space size */
 	uint_t io_size;		/* existing children required I/O space size */
 };
 
