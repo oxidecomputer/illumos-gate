@@ -5002,6 +5002,47 @@ milan_ppt_init(milan_fabric_t *fabric)
 	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
 }
 
+static boolean_t
+milan_smu_features_init(milan_fabric_t *fabric)
+{
+	milan_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
+	milan_smu_rpc_t rpc = { 0 };
+	uint32_t features = MILAN_SMU_FEATURE_DATA_CALCULATION |
+	    MILAN_SMU_FEATURE_PPT |
+	    MILAN_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
+	    MILAN_SMU_FEATURE_THERMAL |
+	    MILAN_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
+	    MILAN_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
+	    MILAN_SMU_FEATURE_CSTATE_BOOST |
+	    MILAN_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
+	    MILAN_SMU_FEATURE_CORE_CLOCK_DPM |
+	    MILAN_SMU_FEATURE_FABRIC_CLOCK_DPM |
+	    MILAN_SMU_FEATURE_XGMI_DYNAMIC_LINK_WIDTH_MANAGEMENT |
+	    MILAN_SMU_FEATURE_DIGITAL_LDO |
+	    MILAN_SMU_FEATURE_SOCCLK_DEEP_SLEEP |
+	    MILAN_SMU_FEATURE_LCLK_DEEP_SLEEP |
+	    MILAN_SMU_FEATURE_SYSHUBCLK_DEEP_SLEEP |
+	    MILAN_SMU_FEATURE_CLOCK_GATING |
+	    MILAN_SMU_FEATURE_DYNAMIC_LDO_DROPOUT_LIMITER |
+	    MILAN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
+	    MILAN_SMU_FEATURE_AGE;
+
+	rpc.msr_req = MILAN_SMU_OP_ENABLE_FEATURE;
+	rpc.msr_arg0 = features;
+
+	milan_smu_rpc(iodie, &rpc);
+
+	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "SMU Enable Features RPC Failed: features: 0x%x, "
+		    "SMU 0x%x", features, rpc.msr_resp);
+	} else {
+		cmn_err(CE_WARN, "SMU features 0x%08x enabled!", features);
+	}
+
+	return rpc.msr_resp == MILAN_SMU_RPC_OK;
+}
+
 /*
  * This is the main place where we basically do everything that we need to do to
  * get the PCIe engine up and running.
@@ -5195,6 +5236,8 @@ milan_fabric_init(void)
 	} else {
 		cmn_err(CE_WARN, "PP Table loaded fabric %p", fabric);
 	}
+
+	milan_smu_features_init(fabric);
 
 	/*
 	 * XXX At some point, maybe not here, but before we really go too much
