@@ -141,6 +141,19 @@ MILAN_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
  */
 
 /*
+ * IOHC::NB_PCI_ARB.  Most of this register is occupied by PME functionality
+ * that we don't use; however, for no obvious reason it also contains the
+ * VGA_HOLE bit that controls how accesses to the legacy VGA address range at
+ * memory [0xA_0000, 0xC_0000) from downstream devices are handled.  NOTE: This
+ * register is in PCI space, not SMN!
+ */
+#define	IOHC_NB_PCI_ARB	0x84
+#define	IOHC_NB_PCI_ARB_GET_VGA_HOLE(r)		bitx32(r, 3, 3)
+#define	IOHC_NB_PCI_ARB_SET_VGA_HOLE(r, v)	bitset32(r, 3, 3, v)
+#define	IOHC_NB_PCI_ARB_VGA_HOLE_RAM	0
+#define	IOHC_NB_PCI_ARB_VGA_HOLE_MMIO	1
+
+/*
  * IOHC::NB_TOP_OF_DRAM_SLOT1. This indicates where the top of DRAM below (or
  * at) 4 GiB is. Note, bit 32 for getting to 4 GiB is actually in bit 0.
  * Otherwise it's all bits 31:23.  NOTE: This register is in PCI space, not SMN!

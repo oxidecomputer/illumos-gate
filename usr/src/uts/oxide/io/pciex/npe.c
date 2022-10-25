@@ -109,14 +109,12 @@ static int	npe_bus_post_event(dev_info_t *, dev_info_t *,
 static int	npe_fm_callback(dev_info_t *, ddi_fm_error_t *, const void *);
 
 /*
- * Disable URs and Received MA for all PCIe devices.  Until x86 SW is changed so
- * that random drivers do not do PIO accesses on devices that it does not own,
- * these error bits must be disabled.  SERR must also be disabled if URs have
- * been masked.
+ * These chicken switches can be set to disable various error events.  We don't
+ * want to mask any of them on this architecture but these can be used to do so.
  */
-uint32_t	npe_aer_uce_mask = PCIE_AER_UCE_UR;
+uint32_t	npe_aer_uce_mask = 0;
 uint32_t	npe_aer_ce_mask = 0;
-uint32_t	npe_aer_suce_mask = PCIE_AER_SUCE_RCVD_MA;
+uint32_t	npe_aer_suce_mask = 0;
 
 struct bus_ops npe_bus_ops = {
 	BUSO_REV,
@@ -1018,20 +1016,20 @@ npe_initchild(dev_info_t *child)
 	else
 		ddi_set_parent_data(child, NULL);
 
-	/* Disable certain errors on PCIe drivers for x86 platforms */
+	/* Optionally disable certain errors for debugging */
 	regs = pcie_get_aer_uce_mask() | npe_aer_uce_mask;
 	pcie_set_aer_uce_mask(regs);
+	/*
+	 * If URs are masked, mask SERRs as well, otherwise the system will
+	 * still be notified of URs
+	 */
+	if (regs & PCIE_AER_UCE_UR)
+		pcie_set_serr_mask(1);
+
 	regs = pcie_get_aer_ce_mask() | npe_aer_ce_mask;
 	pcie_set_aer_ce_mask(regs);
 	regs = pcie_get_aer_suce_mask() | npe_aer_suce_mask;
 	pcie_set_aer_suce_mask(regs);
-
-	/*
-	 * If URs are disabled, mask SERRs as well, otherwise the system will
-	 * still be notified of URs
-	 */
-	if (npe_aer_uce_mask & PCIE_AER_UCE_UR)
-		pcie_set_serr_mask(1);
 
 	if (pci_config_setup(child, &cfg_hdl) == DDI_SUCCESS) {
 		npe_ck804_fix_aer_ptr(cfg_hdl);

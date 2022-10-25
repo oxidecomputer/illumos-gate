@@ -2397,6 +2397,26 @@ milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
 }
 
 /*
+ * We want to disable VGA and send all downstream accesses to its address range
+ * to DRAM just as we do from the cores.  This requires clearing
+ * IOHC::NB_PCI_ARB[VGA_HOLE]; for reasons unknown, the default here is
+ * different from the other settings that typically default to VGA-off.  The
+ * rest of this register has nothing to do with decoding and we leave its
+ * contents alone.
+ */
+static int
+milan_fabric_disable_iohc_vga(milan_ioms_t *ioms, void *arg)
+{
+	uint32_t val;
+
+	val = pci_getl_func(ioms->mio_pci_busno, 0, 0, IOHC_NB_PCI_ARB);
+	val = IOHC_NB_PCI_ARB_SET_VGA_HOLE(val, IOHC_NB_PCI_ARB_VGA_HOLE_RAM);
+	pci_putl_func(ioms->mio_pci_busno, 0, 0, IOHC_NB_PCI_ARB, val);
+
+	return (0);
+}
+
+/*
  * Different parts of the IOMS need to be programmed such that they can figure
  * out if they have a corresponding FCH present on them. The FCH is only present
  * on IOMS 3. Therefore if we're on IOMS 3 we need to update various other bis
@@ -5002,12 +5022,15 @@ milan_fabric_init(void)
 	/*
 	 * While DRAM training seems to have programmed the initial memory
 	 * settings our boot CPU and the DF, it is not done on the various IOMS
-	 * instances. It is up to us to program that across them all.
-	 *
-	 * XXX We still need to go back and figure out how to assign MMIO to
-	 * IOMS instances and program the DF.
+	 * instances. It is up to us to program that across them all.  With MMIO
+	 * routed and the IOHC's understanding of TOM set up, we also want to
+	 * disable the VGA MMIO hole so that the entire low memory region goes
+	 * to DRAM for downstream requests just as it does from the cores.  We
+	 * don't use VGA and we don't use ASeg, so there's no reason to hide
+	 * this RAM from anyone.
 	 */
 	milan_fabric_walk_ioms(fabric, milan_fabric_init_tom, NULL);
+	milan_fabric_walk_ioms(fabric, milan_fabric_disable_iohc_vga, NULL);
 
 	/*
 	 * Let's set up PCIe. To lead off, let's make sure the system uses the
