@@ -2182,6 +2182,54 @@ milan_ccx_init_soc(milan_soc_t *soc)
 	}
 }
 
+static boolean_t
+milan_smu_features_init(milan_iodie_t *iodie)
+{
+	milan_smu_rpc_t rpc = { 0 };
+	milan_soc_t *soc = iodie->mi_soc;
+
+	/*
+	 * Not all combinations of SMU features will result in correct system
+	 * behavior, so we therefore err on the side of matching stock platform
+	 * enablement -- even where that means enabling features with unknown
+	 * functionality.
+	 */
+	uint32_t features = MILAN_SMU_FEATURE_DATA_CALCULATION |
+	    MILAN_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
+	    MILAN_SMU_FEATURE_THERMAL |
+	    MILAN_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
+	    MILAN_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
+	    MILAN_SMU_FEATURE_CSTATE_BOOST |
+	    MILAN_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
+	    MILAN_SMU_FEATURE_CORE_CLOCK_DPM |
+	    MILAN_SMU_FEATURE_FABRIC_CLOCK_DPM |
+	    MILAN_SMU_FEATURE_XGMI_DYNAMIC_LINK_WIDTH_MANAGEMENT |
+	    MILAN_SMU_FEATURE_DIGITAL_LDO |
+	    MILAN_SMU_FEATURE_SOCCLK_DEEP_SLEEP |
+	    MILAN_SMU_FEATURE_LCLK_DEEP_SLEEP |
+	    MILAN_SMU_FEATURE_SYSHUBCLK_DEEP_SLEEP |
+	    MILAN_SMU_FEATURE_CLOCK_GATING |
+	    MILAN_SMU_FEATURE_DYNAMIC_LDO_DROPOUT_LIMITER |
+	    MILAN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
+	    MILAN_SMU_FEATURE_AGE;
+
+	rpc.msr_req = MILAN_SMU_OP_ENABLE_FEATURE;
+	rpc.msr_arg0 = features;
+
+	milan_smu_rpc(iodie, &rpc);
+
+	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "Socket %u: SMU Enable Features RPC Failed: features: "
+		    "0x%x, SMU 0x%x", soc->ms_socno, features, rpc.msr_resp);
+	} else {
+		cmn_err(CE_NOTE, "Socket %u SMU features 0x%08x enabled",
+		    soc->ms_socno, features);
+	}
+
+	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+}
+
 /*
  * Right now we're running on the boot CPU. We know that a single socket has to
  * be populated. Our job is to go through and determine what the rest of the
@@ -2319,6 +2367,13 @@ milan_fabric_topo_init(void)
 		    sizeof (soc->ms_brandstr))) {
 			soc->ms_brandstr[0] = '\0';
 		}
+
+		/*
+		 * We want to enable SMU features now because it will enable
+		 * dynamic frequency scaling -- which in turn makes the rest
+		 * of the boot much, much faster.
+		 */
+		VERIFY(milan_smu_features_init(iodie));
 	}
 
 	if (nthreads > NCPU) {
