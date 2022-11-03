@@ -1,0 +1,66 @@
+#! /usr/bin/ksh
+#
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2023 Oxide Computer Company
+#
+
+set -e -o pipefail
+
+if (( $# != 1 )); then
+	echo "Usage: $0 unix" >&2
+	exit 1
+fi
+
+UNIX="$@"
+ALIGN=0x200000
+
+# Note that we create the temporary file in the current directory;
+# this is because we want to `mv` it into place after manipulating
+# it with `elfedit`.
+unset TMPDIR
+TMPUNIX=$(mktemp -p . unix.XXXXXXXXXXXX)
+
+# Ensure cleanup.
+trap "rm -f ${TMPUNIX}"  EXIT
+
+# We don't consider the kernel built until we have realigned the
+# loadable segments, so moving the binary image to a temporary
+# file is appropriate.
+mv ${UNIX} ${TMPUNIX}
+
+# Read in sizes of the loadable segments, in order, stashing them
+# in an array.  We read them into this array before manipulating
+# them to explicitly avoid possibly modifying a file that is being
+# read.
+typeset -a memsizes
+typeset -li memsize
+
+for memsize in $(elfedit -e 'phdr:p_memsz -o simple PT_LOAD' ${TMPUNIX})
+do
+	memsizes+=($memsize)
+done
+
+# For each segment, calculate the aligned memory size and update
+# the temporary image file.  Note that we don't use the "outfile"
+# functionality in elfedit, since we repeat the command for each
+# segment.
+for ((i=0; i < ${#memsizes[@]}; i++))
+do
+	((memsize = (memsizes[i] + ALIGN - 1) / ALIGN * ALIGN))
+	elfedit -e "phdr:p_memsz -phndx $i $memsize" $TMPUNIX
+done
+
+# If we get this far, we've successfully updated all loadable
+# segments; rename the temporary file back to unix.
+mv ${TMPUNIX} ${UNIX}
