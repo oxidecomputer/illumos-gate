@@ -4024,6 +4024,7 @@ milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
 		mri->mri_bases[mri->mri_cur] = mri->mri_next_base;
 		pci_base = mri->mri_bases[mri->mri_cur] +
 		    MILAN_SEC_IOMS_GEN_IO_SPACE;
+		mri->mri_next_base += mri->mri_per_ioms;
 
 		mri->mri_last_ioms = mri->mri_cur;
 	} else {
