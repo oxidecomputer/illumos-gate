@@ -105,6 +105,8 @@ file path=opt/os-tests/tests/gpio/gpio_attr.32 mode=0555
 file path=opt/os-tests/tests/gpio/gpio_attr.64 mode=0555
 file path=opt/os-tests/tests/gpio/gpio_fini mode=0555
 file path=opt/os-tests/tests/gpio/gpio_init mode=0555
+file path=opt/os-tests/tests/gpio/gpio_lookup.32 mode=0555
+file path=opt/os-tests/tests/gpio/gpio_lookup.64 mode=0555
 file path=opt/os-tests/tests/gpio/gpioadm_test mode=0555
 $(i386_ONLY)dir path=opt/os-tests/tests/i386
 $(i386_ONLY)file path=opt/os-tests/tests/i386/badseg mode=0555

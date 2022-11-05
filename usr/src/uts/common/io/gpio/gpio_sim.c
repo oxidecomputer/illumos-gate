@@ -163,6 +163,21 @@ gpio_sim_update_input(gpio_sim_pin_t *pin)
 }
 
 static int
+gpio_sim_op_name2id(void *arg, const char *name, uint32_t *idp)
+{
+	gpio_sim_t *gs = arg;
+
+	for (uint32_t i = 0; i < gs->gs_npins; i++) {
+		if (strcmp(name, gs->gs_pins[i].gsp_name) == 0) {
+			*idp = i;
+			return (0);
+		}
+	}
+
+	return (ENOENT);
+}
+
+static int
 gpio_sim_op_attr_get(void *arg, uint32_t gpio_id, nvlist_t *nvl)
 {
 	gpio_sim_pin_t *pin;
@@ -463,6 +478,7 @@ gpio_sim_op_attr_dpio_output(void *arg, uint32_t gpio_id,
 }
 
 static const kgpio_ops_t gpio_sim_ops = {
+	.kgo_name2id = gpio_sim_op_name2id,
 	.kgo_get = gpio_sim_op_attr_get,
 	.kgo_set = gpio_sim_op_attr_set,
 	.kgo_cap = gpio_sim_op_attr_cap,

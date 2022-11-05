@@ -1897,6 +1897,41 @@ kgpio_ioctl_dpio_info_search(intptr_t arg, int mode)
 }
 
 static int
+kgpio_ioctl_gpio_name2id(kgpio_t *kgpio, intptr_t arg, int mode)
+{
+	int ret;
+	kgpio_ioc_name2id_t id;
+	size_t len;
+
+	ASSERT(MUTEX_HELD(&kgpio->kgpio_mutex));
+
+	if ((mode & FREAD) == 0) {
+		return (EBADF);
+	}
+
+	if (ddi_copyin((void *)arg, &id, sizeof (id), mode & FKIOCTL) != 0) {
+		return (EFAULT);
+	}
+
+	len = strnlen(id.kin_name, sizeof (id.kin_name));
+	if (len == 0 || len == sizeof (id.kin_name)) {
+		return (EINVAL);
+	}
+
+	ret = kgpio->kgpio_ops->kgo_name2id(kgpio->kgpio_drv, id.kin_name,
+	    &id.kin_id);
+	if (ret != 0) {
+		return (ret);
+	}
+
+	if (ddi_copyout(&id, (void *)arg, sizeof (id), mode & FKIOCTL) != 0) {
+		return (EFAULT);
+	}
+
+	return (0);
+}
+
+static int
 kgpio_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
     int *rvalp)
 {
@@ -1933,6 +1968,9 @@ kgpio_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 			break;
 		case KGPIO_IOC_DPIO_DESTROY:
 			ret = kgpio_ioctl_dpio_destroy(kgpio, arg, mode);
+			break;
+		case KGPIO_IOC_GPIO_NAME2ID:
+			ret = kgpio_ioctl_gpio_name2id(kgpio, arg, mode);
 			break;
 		default:
 			ret = ENOTTY;

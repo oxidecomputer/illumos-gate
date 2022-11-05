@@ -90,7 +90,16 @@ typedef enum {
 	/*
 	 * Indicates that the name of the DPIO was invalid or does not exist.
 	 */
-	XPIO_ERR_BAD_DPIO_NAME
+	XPIO_ERR_BAD_DPIO_NAME,
+	/*
+	 * Indicates that the name of the GPIO was invalid.
+	 */
+	XPIO_ERR_BAD_GPIO_NAME,
+	/*
+	 * Indicates that an attempt to lookup something (e.g. a GPIO) did not
+	 * succeed.
+	 */
+	XPIO_ERR_NO_LOOKUP_MATCH
 } xpio_err_t;
 
 typedef enum {
@@ -144,6 +153,12 @@ extern void xpio_ctrl_info_free(xpio_ctrl_info_t *);
 extern uint32_t xpio_ctrl_info_ngpios(xpio_ctrl_info_t *);
 extern uint32_t xpio_ctrl_info_ndpios(xpio_ctrl_info_t *);
 extern const char *xpio_ctrl_info_devpath(xpio_ctrl_info_t *);
+
+/*
+ * Ways to translae between human known names to the provider's underlying IDs.
+ * This only searches the specified controller.
+ */
+extern bool xpio_gpio_lookup_id(xpio_ctrl_t *, const char *, uint32_t *);
 
 /*
  * Snapshot information about a GPIO, walk and understand its attributes. Once

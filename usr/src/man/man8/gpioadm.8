@@ -85,7 +85,15 @@ numeric ID
 .Po
 which has no relation to the hardware or datasheet's numbering of GPIOs,
 these are used by the kernel to identify GPIOs
-.Pc
+.Pc .
+All
+.Nm
+operations allow a GPIO to be named either by its human-readable name
+or its controller-specific ID.
+.Nm
+will always attempt to resolve a string as a GPIO's name first and will
+only attempt to parse it as a GPIO's ID if there is no GPIO with that
+name.
 .Pp
 GPIOs themselves contain a series of attributes which vary based on the
 controller.
@@ -333,8 +341,7 @@ The
 part of that is the name of the controller.
 The
 .Ar gpio
-part of the specification is currently restricted to the GPIO's numeric
-ID.
+part is either the name or ID of the GPIO.
 .Pp
 For each of a single GPIO's attributes, the name of the attribute, its
 current value, what permissions exist for its value, and then what
@@ -417,8 +424,7 @@ The
 part of that is the name of the controller.
 The
 .Ar gpio
-part of the specification is currently restricted to the GPIO's numeric
-ID.
+part is either the name or ID of the GPIO.
 .Pp
 All attributes that are specified are given to the hardware to apply at
 once which generally means that either all of them should be applied or

@@ -74,6 +74,7 @@ SYMBOL_VERSION ILLUMOSprivate {
 	xpio_gpio_id;
 	xpio_gpio_info_free;
 	xpio_gpio_info;
+	xpio_gpio_lookup_id;
 	xpio_gpio_update_free;
 	xpio_gpio_update_init;
 	xpio_gpio_update;

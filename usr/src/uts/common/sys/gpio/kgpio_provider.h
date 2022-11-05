@@ -38,6 +38,7 @@ extern "C" {
  */
 #ifdef _KERNEL
 
+typedef int (*kgpio_name2id_f)(void *, const char *, uint32_t *);
 typedef int (*kgpio_attr_get_f)(void *, uint32_t, nvlist_t *);
 typedef int (*kgpio_attr_set_f)(void *, uint32_t, nvlist_t *, nvlist_t *);
 typedef int (*kgpio_dpio_cap_f)(void *, uint32_t, dpio_caps_t *);
@@ -46,6 +47,7 @@ typedef int (*kgpio_dpio_output_get_f)(void *, uint32_t, dpio_output_t *);
 typedef int (*kgpio_dpio_output_set_f)(void *, uint32_t, dpio_output_t);
 
 typedef struct kgpio_ops {
+	kgpio_name2id_f		kgo_name2id;
 	kgpio_attr_get_f	kgo_get;
 	kgpio_attr_set_f	kgo_set;
 	kgpio_dpio_cap_f	kgo_cap;

@@ -98,7 +98,6 @@ void
 gpioadm_ctrl_gpio_init(const char *target, xpio_ctrl_t **ctrlp,
     xpio_gpio_info_t **gpiop)
 {
-	long long l;
 	char *eptr, *slash, *dup;
 	const char *ctrl_name, *gpio_name;
 	uint32_t gpio_num;
@@ -126,23 +125,35 @@ gpioadm_ctrl_gpio_init(const char *target, xpio_ctrl_t **ctrlp,
 	}
 
 	/*
-	 * Right now we only parse the GPIO based on its number. It'd be nice to
-	 * allow a user to specify a name and for us to map it for them. Though
-	 * this would require us to basically do a linear scan to map these (or
-	 * have a cache somewhere).
+	 * We always attempt to look up and translate the name to a GPIO ID
+	 * first. This way if a controller does something like just name the
+	 * pins 1, 2, 3, 4, etc. but has a weird relationship to the IDs, we're
+	 * more likely to get what the user intended (hopefully).
 	 */
-	errno = 0;
-	l = strtoll(gpio_name, &eptr, 0);
-	if (errno != 0 || *eptr != '\0') {
-		errx(EXIT_FAILURE, "failed to parse gpio number: %s",
-		    gpio_name);
-	}
+	if (!xpio_gpio_lookup_id(ctrl, gpio_name, &gpio_num)) {
+		long long l;
 
-	if (l < 0 || l > UINT32_MAX) {
-		errx(EXIT_FAILURE, "gpio number is outside of valid range: %s",
-		    gpio_name);
+		if (xpio_err(gpioadm.gpio_xpio) != XPIO_ERR_NO_LOOKUP_MATCH) {
+			gpioadm_fatal("failed to look up name %s on "
+			    "controller %s", ctrl_name, gpio_name);
+		}
+
+		/*
+		 * At this point, attempt to parse it as an intger.
+		 */
+		errno = 0;
+		l = strtoll(gpio_name, &eptr, 0);
+		if (errno != 0 || *eptr != '\0') {
+			errx(EXIT_FAILURE, "failed to parse gpio number: %s",
+			    gpio_name);
+		}
+
+		if (l < 0 || l > UINT32_MAX) {
+			errx(EXIT_FAILURE, "gpio number is outside of valid "
+			    "range: %s", gpio_name);
+		}
+		gpio_num = (uint32_t)l;
 	}
-	gpio_num = (uint32_t)l;
 
 	if (!xpio_gpio_info(ctrl, gpio_num, &gpio)) {
 		gpioadm_fatal("failed to get gpio %u on controller %s",

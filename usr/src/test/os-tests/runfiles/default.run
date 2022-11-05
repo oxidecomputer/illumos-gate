@@ -123,7 +123,7 @@ user = root
 post_user = root
 pre = gpio_init
 tests = [ 'dpio_test.32', 'dpio_test.64', 'gpio_attr.32', 'gpio_attr.64',
-    'gpioadm_test' ]
+    'gpio_lookup.32', 'gpio_lookup.64', 'gpioadm_test' ]
 post = gpio_fini
 
 #

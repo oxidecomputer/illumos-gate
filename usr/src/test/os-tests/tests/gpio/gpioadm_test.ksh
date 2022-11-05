@@ -282,6 +282,21 @@ check_output "attr-g0_0_filt.out" gpio attr get -o attr,value gpio_sim0/0 \
     name sim:pull sim:voltage
 check_output "attr-g0_0_filt-p.out" gpio attr get -p -o attr,value gpio_sim0/0 \
     name sim:pull sim:voltage
+#
+# Repeat the above with the actual GPIO name
+#
+check_output "attr-g0_0.out" gpio attr get gpio_sim0/1v8
+check_output "attr-g0_0-H.out" gpio attr get -H gpio_sim0/1v8
+check_output "attr-g0_0-o.out" gpio attr get -o attr,value,raw,possible \
+    gpio_sim0/1v8
+check_output "attr-g0_0-Ho.out" gpio attr get -H -o attr,value,raw,possible \
+    gpio_sim0/1v8
+check_output "attr-g0_0-p.out" gpio attr get -p -o attr,value,raw,possible \
+    gpio_sim0/1v8
+check_output "attr-g0_0_filt.out" gpio attr get -o attr,value gpio_sim0/1v8 \
+    name sim:pull sim:voltage
+check_output "attr-g0_0_filt-p.out" gpio attr get -p -o attr,value \
+    gpio_sim0/1v8 name sim:pull sim:voltage
 
 #
 # To test DPIOs listing we need to actually go through and create a few
@@ -290,7 +305,7 @@ check_output "attr-g0_0_filt-p.out" gpio attr get -p -o attr,value gpio_sim0/0 \
 #
 expect_success dpio define gpio_sim0/0 "$gt_dpio0"
 expect_success dpio define -r -w gpio_sim1/0 "$gt_dpio1"
-expect_success dpio define -r -K gpio_sim2/1 "$gt_dpio2"
+expect_success dpio define -r -K gpio_sim2/3v3 "$gt_dpio2"
 
 check_output "ctrl-list-dpio-p.out" controller list -p -o controller,ndpios \
     gpio_sim0 gpio_sim1 gpio_sim2
@@ -313,18 +328,19 @@ check_dpio_link "$gt_dpio2"
 
 expect_success dpio undefine gpio_sim0/0
 expect_success dpio undefine gpio_sim1/0
-expect_success dpio undefine gpio_sim2/1
+expect_success dpio undefine gpio_sim2/3v3
 
 #
 # Different gpio_sim gpios have different possible values and different
 # defaults. Make sure that we actually see different possible values for
 # the same attribute on different gpios and that it's not all the same.
+# Mix up the use of IDs and names.
 #
 check_attr_val gpio_sim1/1 name 3v3
 check_attr_val gpio_sim1/5 name open-drain
-check_attr_field gpio_sim1/1 sim:voltage 3.3V possible
+check_attr_field gpio_sim1/3v3 sim:voltage 3.3V possible
 check_attr_field gpio_sim1/2 sim:voltage 12.0V possible
-check_attr_field gpio_sim1/5 sim:voltage 1.8V possible
+check_attr_field gpio_sim1/open-drain sim:voltage 1.8V possible
 check_attr_field gpio_sim1/3 sim:pull disabled,23k-down,5k-up,40k-up possible
 check_attr_field gpio_sim1/0 sim:output disabled,low,high possible
 check_attr_field gpio_sim1/5 sim:output disabled,low possible
@@ -345,6 +361,21 @@ expect_success gpio attr set gpio_sim0/3 sim:output=low sim:pull=23k-down
 check_attr_val gpio_sim0/3 sim:output low
 check_attr_val gpio_sim0/3 sim:pull 23k-down
 check_attr_val gpio_sim0/3 sim:input low
+
+#
+# Repeat with the name instead of the ID.
+#
+check_attr_val gpio_sim0/54V sim:output low
+check_attr_val gpio_sim0/54V sim:pull 23k-down
+check_attr_val gpio_sim0/54V sim:input low
+expect_success gpio attr set gpio_sim0/54V sim:output=disabled sim:pull=40k-up
+check_attr_val gpio_sim0/54V sim:output disabled
+check_attr_val gpio_sim0/54V sim:pull 40k-up
+check_attr_val gpio_sim0/54V sim:input high
+expect_success gpio attr set gpio_sim0/54V sim:output=low sim:pull=23k-down
+check_attr_val gpio_sim0/54V sim:output low
+check_attr_val gpio_sim0/54V sim:pull 23k-down
+check_attr_val gpio_sim0/54V sim:input low
 
 if (( gt_exit == 0 )); then
 	printf "All tests passed successfully!\n"

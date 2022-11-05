@@ -124,6 +124,16 @@ typedef struct {
 } kgpio_dpio_destroy_t;
 
 /*
+ * Determines if a GPIO with the specified name is present on the given
+ * controller. If so, its ID is returned.
+ */
+#define	KGPIO_IOC_GPIO_NAME2ID	(KGPIO_IOC | 6)
+typedef struct {
+	char		kin_name[MAXPATHLEN];
+	uint32_t	kin_id;
+} kgpio_ioc_name2id_t;
+
+/*
  * Kernel-specific views for 32-bit.
  */
 #ifdef	_KERNEL

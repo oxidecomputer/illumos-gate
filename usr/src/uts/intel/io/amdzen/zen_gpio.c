@@ -112,6 +112,20 @@ zen_gpio_write_reg(zen_gpio_t *zg, const zen_gpio_pindata_t *pin, uint32_t val)
 	return (ret);
 }
 
+static int
+zen_gpio_op_name2id(void *arg, const char *name, uint32_t *idp)
+{
+	zen_gpio_t *zg = arg;
+
+	for (uint32_t i = 0; i < zg->zg_ngpios; i++) {
+		if (strcmp(name, zg->zg_pindata[i].zg_name) == 0) {
+			*idp = i;
+			return (0);
+		}
+	}
+	return (ENOENT);
+}
+
 /*
  * The driver is a synthesized value that we create based on the pin type.
  */
@@ -1027,6 +1041,7 @@ zen_gpio_op_attr_dpio_output(void *arg, uint32_t gpio_id,
 }
 
 static const kgpio_ops_t zen_gpio_ops = {
+	.kgo_name2id = zen_gpio_op_name2id,
 	.kgo_get = zen_gpio_op_attr_get,
 	.kgo_set = zen_gpio_op_attr_set,
 	.kgo_cap = zen_gpio_op_attr_cap,

@@ -97,6 +97,10 @@ xpio_err2str(xpio_t *xpio, xpio_err_t err)
 		return ("XPIO_ERR_BAD_DPIO_FEAT");
 	case XPIO_ERR_BAD_DPIO_NAME:
 		return ("XPIO_ERR_BAD_DPIO_NAME");
+	case XPIO_ERR_BAD_GPIO_NAME:
+		return ("XPIO_ERR_BAD_GPIO_NAME");
+	case XPIO_ERR_NO_LOOKUP_MATCH:
+		return ("XPIO_ERR_NO_LOOKUP_MATCH");
 	default:
 		return ("unknown error");
 	}
@@ -263,7 +267,7 @@ xpio_ctrl_info(xpio_ctrl_t *ctrl, xpio_ctrl_info_t **outp)
 	if (ioctl(ctrl->xc_fd, KGPIO_IOC_CTRL_INFO, &info) != 0) {
 		int e = errno;
 		return (xpio_error(xpio, XPIO_ERR_KGPIO, e, "failed to issue "
-		    "controller informaiton ioctl to %s: %s", ctrl->xc_name,
+		    "controller information ioctl to %s: %s", ctrl->xc_name,
 		    strerror(e)));
 	}
 
@@ -623,6 +627,51 @@ out:
 	free(update_buf);
 	free(err_buf);
 	return (ret);
+}
+
+bool
+xpio_gpio_lookup_id(xpio_ctrl_t *ctrl, const char *name, uint32_t *idp)
+{
+	xpio_t *xpio = ctrl->xc_xpio;
+	kgpio_ioc_name2id_t id;
+
+	if (name == NULL) {
+		return (xpio_error(xpio, XPIO_ERR_BAD_PTR, 0, "encountered "
+		    "invalid name pointer: %p", name));
+	}
+
+	if (idp == NULL) {
+		return (xpio_error(xpio, XPIO_ERR_BAD_PTR, 0, "encountered "
+		    "invalid id pointer: %p", idp));
+	}
+
+	(void) memset(&id, 0, sizeof (id));
+
+	if (strlcpy(id.kin_name, name, sizeof (id.kin_name)) >=
+	    sizeof (id.kin_name)) {
+		return (xpio_error(xpio, XPIO_ERR_BAD_GPIO_NAME, 0, "GPIO name "
+		    "'%s' is too long and invalid", name));
+	}
+
+	if (ioctl(ctrl->xc_fd, KGPIO_IOC_GPIO_NAME2ID, &id) != 0) {
+		int e = errno;
+		switch (e) {
+		case ENOENT:
+			return (xpio_error(xpio, XPIO_ERR_NO_LOOKUP_MATCH, 0,
+			    "GPIO name '%s' is unknown on controller %s",
+			    name, ctrl->xc_name));
+		case EINVAL:
+			return (xpio_error(xpio, XPIO_ERR_BAD_GPIO_NAME, 0,
+			    "GPIO name '%s' is invalid", name));
+		default:
+			return (xpio_error(xpio, XPIO_ERR_KGPIO, e,
+			    "failed to issue GPIO name to GPIO id ioctl to "
+			    "%s: %s", ctrl->xc_name, strerror(e)));
+		}
+	}
+
+	*idp = id.kin_id;
+	return (xpio_success(xpio));
 }
 
 bool

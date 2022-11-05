@@ -17,7 +17,8 @@ include $(SRC)/cmd/Makefile.cmd
 
 PROGS = \
 	dpio_test \
-	gpio_attr
+	gpio_attr \
+	gpio_lookup
 
 SCRIPTS = \
 	gpio_init \
