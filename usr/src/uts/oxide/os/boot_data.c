@@ -133,8 +133,22 @@ const bt_discovery_t bt_discovery_stub = {
 
 #endif	/* USE_DISCOVERY_STUB */
 
-static const bt_prop_t fstype_prop = {
+static const char *boot_image_enabled_value = "misc/boot_image";
+
+/*
+ * This one is not const, because we may modify its value in
+ * ramdisk_set_tunables() below.
+ */
+static bt_prop_t boot_image_ops_prop = {
 	.btp_next = NULL,
+	.btp_name = BTPROP_NAME_BOOT_IMAGE_OPS,
+	.btp_vlen = sizeof (""),
+	.btp_value = "",
+	.btp_typeflags = DDI_PROP_TYPE_STRING
+};
+
+static const bt_prop_t fstype_prop = {
+	.btp_next = &boot_image_ops_prop,
 	.btp_name = BTPROP_NAME_FSTYPE,
 	.btp_vlen = sizeof ("ufs"),
 	.btp_value = "ufs",
@@ -203,6 +217,13 @@ ramdisk_set_tunables(uint64_t ramdisk_start, uint64_t ramdisk_end)
 {
 	ramdisk_start_val = ramdisk_start;
 	ramdisk_end_val = ramdisk_end;
+
+	/*
+	 * If ramdisk parameters were provided by the loader, use the unified
+	 * boot strategy:
+	 */
+	boot_image_ops_prop.btp_value = boot_image_enabled_value;
+	boot_image_ops_prop.btp_vlen = strlen(boot_image_enabled_value) + 1;
 }
 
 #ifdef	__cplusplus

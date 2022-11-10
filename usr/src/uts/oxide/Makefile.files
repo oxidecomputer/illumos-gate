@@ -157,6 +157,8 @@ FCH_OBJS += fch.o ixbar.o
 
 DWU_OBJS += dwu.o
 
+BOOT_IMAGE_OBJS += oxide_boot.o oxide_boot_disk.o oxide_boot_net.o
+
 #
 #	Build up defines and paths.
 #
