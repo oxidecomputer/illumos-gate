@@ -24,6 +24,8 @@ user = root
 tests = [
 	'auto_destruct',
 	'cpuid_ioctl',
+	'datarw_constraints',
+	'default_capabs',
 	'drv_hold',
 	'fpu_getset',
 	'interface_version',
@@ -31,6 +33,7 @@ tests = [
 	'mem_devmem',
 	'mem_partial',
 	'mem_seg_map',
+	'pause_resume',
 	'self_destruct'
 	]
 
@@ -50,6 +53,7 @@ tests = [
 user = root
 tests = [
 	'cpuid',
+	'imul',
 	'rdmsr',
 	'wrmsr',
 	'triple_fault',

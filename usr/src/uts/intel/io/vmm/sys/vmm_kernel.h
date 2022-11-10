@@ -131,6 +131,10 @@ void vm_get_topology(struct vm *vm, uint16_t *sockets, uint16_t *cores,
 int vm_set_topology(struct vm *vm, uint16_t sockets, uint16_t cores,
     uint16_t threads, uint16_t maxcpus);
 
+int vm_pause_instance(struct vm *);
+int vm_resume_instance(struct vm *);
+bool vm_is_paused(struct vm *);
+
 /*
  * APIs that race against hardware.
  */
@@ -354,6 +358,7 @@ void vm_copyout(struct vm *vm, int vcpuid, const void *kaddr,
     struct vm_copyinfo *copyinfo, size_t len);
 
 int vcpu_trace_exceptions(struct vm *vm, int vcpuid);
+int vcpu_trap_wbinvd(struct vm *vm, int vcpuid);
 
 void vm_inject_ud(struct vm *vm, int vcpuid);
 void vm_inject_gp(struct vm *vm, int vcpuid);
