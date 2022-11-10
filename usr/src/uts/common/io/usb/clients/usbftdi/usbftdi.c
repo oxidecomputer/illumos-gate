@@ -1546,6 +1546,7 @@ uftdi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 			break;
 		case 0x700:
 			uf->uf_device_type = UFTDI_DEVICE_FT2232H;
+			uf->uf_nif = 2;
 			break;
 		default:
 			/*
