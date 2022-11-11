@@ -46,6 +46,7 @@
 #include <sys/boot_console.h>
 #include <sys/boot_data.h>
 #include <sys/boot_debug.h>
+#include <sys/kernel_ipcc.h>
 #include <sys/boot_physmem.h>
 #include <sys/varargs.h>
 #include <sys/param.h>
@@ -77,9 +78,15 @@
 
 /*
  * Comes from fs/ufsops.c.  For debugging the ramdisk/root fs operations.  Set
- * by the existence of the boot property of the same name.
+ * by a bit in the debug register received from the SP - see os/boot_data.c
  */
 extern int bootrd_debug;
+
+/*
+ * Comes from os/startup.c.  Set by a bit in the debug register received from
+ * the SP - see os/boot_data.c
+ */
+extern int prom_debug;
 
 /*
  * General early boot (pre-kobj, pre-prom_printf) debug flag.  Set by the
@@ -89,7 +96,6 @@ boolean_t kbm_debug = B_FALSE;
 
 static bootops_t bootop;
 static struct bsys_mem bm;
-static const bt_prop_t *bt_props;
 
 uint32_t reset_vector;
 
@@ -146,30 +152,12 @@ bop_no_more_mem(void)
 	bootops->bsys_free = no_more_free;
 }
 
-#define	FIND_BT_PROP_F_NO_FALLBACK	0x1U
-#define	FIND_BT_PROP_F_ONLY_FALLBACK	0x2U
-
 static const bt_prop_t *
-find_bt_prop(const char *name, uint32_t flags)
+find_bt_prop(const char *name)
 {
 	const bt_prop_t *btpp;
 
-	if ((flags & FIND_BT_PROP_F_ONLY_FALLBACK) != 0 &&
-	    (flags & FIND_BT_PROP_F_NO_FALLBACK) != 0) {
-		bop_panic("conflicting flags passed to find_bt_prop()");
-	}
-
-	if ((flags & FIND_BT_PROP_F_ONLY_FALLBACK) == 0) {
-		for (btpp = bt_props; btpp != NULL; btpp = btpp->btp_next) {
-			if (strcmp(name, btpp->btp_name) == 0)
-				return (btpp);
-		}
-	}
-
-	if (flags & FIND_BT_PROP_F_NO_FALLBACK)
-		return (NULL);
-
-	for (btpp = bt_fallback_props; btpp != NULL; btpp = btpp->btp_next) {
+	for (btpp = bt_props; btpp != NULL; btpp = btpp->btp_next) {
 		if (strcmp(name, btpp->btp_name) == 0)
 			return (btpp);
 	}
@@ -186,7 +174,7 @@ do_bsys_getproptype(bootops_t *bop, const char *name)
 {
 	const bt_prop_t *btpp;
 
-	if ((btpp = find_bt_prop(name, 0)) == NULL)
+	if ((btpp = find_bt_prop(name)) == NULL)
 		return (-1);
 
 	return (btpp->btp_typeflags & DDI_PROP_TYPE_MASK);
@@ -201,7 +189,7 @@ do_bsys_getproplen(bootops_t *bop, const char *name)
 {
 	const bt_prop_t *btpp;
 
-	if ((btpp = find_bt_prop(name, 0)) == NULL)
+	if ((btpp = find_bt_prop(name)) == NULL)
 		return (-1);
 
 	/*
@@ -226,7 +214,7 @@ do_bsys_getprop(bootops_t *bop, const char *name, void *value)
 {
 	const bt_prop_t *btpp;
 
-	if ((btpp = find_bt_prop(name, 0)) == NULL)
+	if ((btpp = find_bt_prop(name)) == NULL)
 		return (-1);
 
 	bcopy(btpp->btp_value, value, btpp->btp_vlen);
@@ -234,52 +222,34 @@ do_bsys_getprop(bootops_t *bop, const char *name, void *value)
 }
 
 /*
- * get the name of the next property in succession from the standalone
+ * get the name of the next property in succession.
+ * XXX constify this interface properly; it has few consumers.
  */
-/*ARGSUSED*/
 static char *
 do_bsys_nextprop(bootops_t *bop, char *name)
 {
 	const bt_prop_t *btpp;
 
 	/*
-	 * We want to return all the normal properties (from the SP) in order;
-	 * if we're given NULL we're being asked for the named of the first
-	 * one.  However, once those are exhausted, we want to return the
-	 * fallback properties iff they're not shadowed by a real property.
-	 *
-	 * In principle this should all be a merged map, which would be much
-	 * faster, but this whole path is run through only once and this is
-	 * still fairly simple: once we're given the name of a property that
-	 * exists only as a fallback, we return only fallbacks.
+	 * If we're given NULL we're being asked for the name of the first
+	 * property.
 	 */
 	if (name == NULL || strlen(name) == 0) {
-		if (bt_props != NULL) {
-			return ((char *)bt_props->btp_name);
-		}
-		return ((char *)bt_fallback_props->btp_name);
+		if (bt_props != NULL)
+			return (bt_props->btp_name);
+		return (NULL);
 	}
 
-	btpp = find_bt_prop(name, FIND_BT_PROP_F_NO_FALLBACK);
-	if (btpp != NULL) {
-		if (btpp->btp_next != NULL)
-			return ((char *)btpp->btp_next->btp_name);
-		btpp = bt_fallback_props;
-	} else {
-		btpp = find_bt_prop(name, FIND_BT_PROP_F_ONLY_FALLBACK);
-		if (btpp == NULL) {
-			bop_panic("unknown boot-time property name '%s' "
-			    "passed as previous property name", name);
-		}
-		btpp = btpp->btp_next;
+	btpp = find_bt_prop(name);
+	if (btpp == NULL) {
+		bop_panic("unknown boot-time property name '%s' "
+		    "passed as previous property name", name);
 	}
 
-	while (btpp != NULL &&
-	    find_bt_prop(btpp->btp_name, FIND_BT_PROP_F_NO_FALLBACK) != NULL)
-		btpp = btpp->btp_next;
+	if (btpp->btp_next != NULL)
+		return (btpp->btp_next->btp_name);
 
-	/* XXX constify this interface properly; it has few consumers */
-	return (btpp == NULL ? NULL : (char *)btpp->btp_name);
+	return (NULL);
 }
 
 static boolean_t
@@ -332,7 +302,7 @@ boot_prop_display(char *buffer)
 			}
 			break;
 		case DDI_PROP_TYPE_STRING:
-			eb_printf("%s", buffer);
+			eb_printf("%-.*s", len, buffer);
 			break;
 		case DDI_PROP_TYPE_INT64:
 			len = len / sizeof (int64_t);
@@ -496,7 +466,7 @@ early_gdt_init(void)
 	desctbr_t gdtr;
 
 	init_boot_gdt(gdt);
-	gdtr.dtr_limit = sizeof(gdt) - 1;
+	gdtr.dtr_limit = sizeof (gdt) - 1;
 	gdtr.dtr_base = (uint64_t)gdt;
 	wr_gdtr(&gdtr);
 	load_segment_registers(B64CODE_SEL, 0, 0, 0);
@@ -507,10 +477,12 @@ protect_ramdisk(void)
 {
 	uint64_t start, end;
 
-	if (do_bsys_getproplen(NULL, "ramdisk_start") == sizeof (uint64_t) &&
-	    do_bsys_getprop(NULL, "ramdisk_start", &start) == 0 &&
-	    do_bsys_getproplen(NULL, "ramdisk_end") == sizeof (uint64_t) &&
-	    do_bsys_getprop(NULL, "ramdisk_end", &end) == 0) {
+	if (do_bsys_getproplen(NULL, BTPROP_NAME_RAMDISK_START) ==
+	    sizeof (uint64_t) &&
+	    do_bsys_getprop(NULL, BTPROP_NAME_RAMDISK_START, &start) == 0 &&
+	    do_bsys_getproplen(NULL, BTPROP_NAME_RAMDISK_END) ==
+	    sizeof (uint64_t) &&
+	    do_bsys_getprop(NULL, BTPROP_NAME_RAMDISK_END, &end) == 0) {
 		start = P2ALIGN(start, MMU_PAGESIZE);
 		end = P2ROUNDUP(end, MMU_PAGESIZE);
 		eb_physmem_reserve_range(start, end - start, EBPR_NO_ALLOC);
@@ -520,7 +492,7 @@ protect_ramdisk(void)
 static void
 apob_init(void)
 {
-	const bt_prop_t *apob_prop = find_bt_prop(BTPROP_NAME_APOB_ADDRESS, 0);
+	const bt_prop_t *apob_prop = find_bt_prop(BTPROP_NAME_APOB_ADDRESS);
 
 	if (apob_prop == NULL) {
 		bop_panic("APOB address property %s is missing; don't "
@@ -639,63 +611,17 @@ apob_init(void)
 void
 _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 {
-	const bt_discovery_t *btdp;
 	extern void _kobj_boot();
 	extern int use_mp;
 	struct boot_syscalls *bsp;
 
-	uint64_t ramdisk_start = ramdisk_paddr;
-	uint64_t ramdisk_end = ramdisk_start + ramdisk_len;
-
-	/*
-	 * XXX(cross): the conditional is a hack for transition.
-	 * In steady-state, we'll call this unconditionally.
-	 */
-	if (ramdisk_start != 0) {
-		/*
-		 * Validate that the ramdisk lies completely
-		 * within the 48-bit physical address space.
-		 *
-		 * The check against the length accounts for
-		 * modular arithmetic in the cyclic subgroup.
-		 */
-		const uint64_t PHYS_LIMIT = (1ULL << 48) - 1;
-		if (ramdisk_start > PHYS_LIMIT ||
-		    ramdisk_end > PHYS_LIMIT ||
-		    ramdisk_len > PHYS_LIMIT ||
-		    ramdisk_start >= ramdisk_end) {
-			return;
-		}
-		ramdisk_set_tunables(ramdisk_start, ramdisk_end);
-	}
-
-	/*
-	 * XXX This works only on *non* Oxide hardware and should be deleted.
-	 */
-	outw(0x80, 0x1DE);
-
-#ifdef	USE_DISCOVERY_STUB
-	btdp = &bt_discovery_stub;
-#else
-	outw(0x80, 0xD15C);
-	return;
-#endif	/* USE_DISCOVERY_STUB */
-
 	kbm_init();
 	bsp = boot_console_init();
+	kernel_ipcc_init(IPCC_INIT_EARLYBOOT);
 	eb_physmem_init(&bm);
-
-	/*
-	 * XXXBOOT Wire in something analogous to the earlyboot console here
-	 * to enable fetching properties from the SP.
-	 */
-	bt_props = btdp->btd_prop_list;
-	kbm_debug = (find_bt_prop("kbm_debug", 0) != NULL);
-	bootrd_debug = (find_bt_prop("bootrd_debug", 0) != NULL);
+	eb_create_properties(ramdisk_paddr, ramdisk_len);
 
 	DBG_MSG("\n\n*** Entered illumos in _start()\n");
-	DBG(btdp);
-	DBG(btdp->btd_prop_list);
 
 	eb_set_tunables();
 
@@ -745,7 +671,7 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	early_idt_init();
 	DBG_MSG("done\n");
 
-	if (find_bt_prop("prom_debug", 0) != NULL || kbm_debug) {
+	if (prom_debug || kbm_debug) {
 		char *bufpage;
 
 		bufpage = do_bsys_alloc(NULL, NULL, MMU_PAGESIZE, MMU_PAGESIZE);

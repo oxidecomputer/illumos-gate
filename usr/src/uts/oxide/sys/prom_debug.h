@@ -20,10 +20,10 @@
 
 /*
  * These macros are used to emit coarse-grained early boot debugging
- * information when the user sets "prom_debug" in the boot environment.  They
- * should only be used for information that we cannot easily obtain through a
- * richer mechanism because the machine hangs or crashes before other debugging
- * tools are available.
+ * information when the 'prom_debug' variable is non-zero.  They should only be
+ * used for information that we cannot easily obtain through a richer mechanism
+ * because the machine hangs or crashes before other debugging tools are
+ * available.
  */
 
 #ifdef __cplusplus

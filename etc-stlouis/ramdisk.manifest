@@ -756,13 +756,16 @@ d platform/oxide/kernel/drv/amd64 0755 root sys
 f platform/oxide/kernel/drv/amd64/cpc 0755 root sys
 f platform/oxide/kernel/drv/amd64/dwu 0755 root sys
 f platform/oxide/kernel/drv/amd64/fch 0755 root sys
+f platform/oxide/kernel/drv/amd64/ipcc 0755 root sys
 f platform/oxide/kernel/drv/amd64/npe 0755 root sys
 f platform/oxide/kernel/drv/amd64/rootnex 0755 root sys
 f platform/oxide/kernel/drv/cpc.conf 0644 root sys
 f platform/oxide/kernel/drv/dwu.conf 0755 root sys
+f platform/oxide/kernel/drv/ipcc.conf 0755 root sys
 d platform/oxide/kernel/kmdb 0755 root sys
 d platform/oxide/kernel/kmdb/amd64 0755 root sys
 f platform/oxide/kernel/kmdb/amd64/apix 0555 root sys
+f platform/oxide/kernel/kmdb/amd64/ipcc 0555 root sys
 f platform/oxide/kernel/kmdb/amd64/unix 0555 root sys
 d platform/oxide/kernel/mach 0755 root sys
 d platform/oxide/kernel/mach/amd64 0755 root sys
@@ -1229,6 +1232,7 @@ d usr/platform/oxide/lib/mdb 0755 root sys
 d usr/platform/oxide/lib/mdb/kvm 0755 root sys
 d usr/platform/oxide/lib/mdb/kvm/amd64 0755 root sys
 f usr/platform/oxide/lib/mdb/kvm/amd64/apix.so 0555 root sys
+f usr/platform/oxide/lib/mdb/kvm/amd64/ipcc.so 0555 root sys
 f usr/platform/oxide/lib/mdb/kvm/amd64/unix.so 0555 root sys
 d usr/sbin 0755 root bin
 f usr/sbin/add_drv 0555 root bin

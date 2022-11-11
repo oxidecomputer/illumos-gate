@@ -68,6 +68,7 @@
 #include <sys/x86_archext.h>
 #include <sys/avl.h>
 #include <sys/font.h>
+#include <sys/boot_data.h>
 
 /*
  * DDI Boot Configuration
@@ -2080,9 +2081,9 @@ impl_setup_ddi(void)
 	    (pnode_t)DEVI_SID_NODEID, &xdip);
 
 	(void) BOP_GETPROP(bootops,
-	    "ramdisk_start", (void *)&ramdisk_start);
+	    BTPROP_NAME_RAMDISK_START, (void *)&ramdisk_start);
 	(void) BOP_GETPROP(bootops,
-	    "ramdisk_end", (void *)&ramdisk_end);
+	    BTPROP_NAME_RAMDISK_END, (void *)&ramdisk_end);
 
 	rd_mem_prop.phys = ramdisk_start;
 	rd_mem_prop.size = ramdisk_end - ramdisk_start + 1;

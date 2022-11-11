@@ -20,9 +20,12 @@
 #
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2022 Oxide Computer Company
 #
+
 SUBDIRS = \
 	apix \
+	ipcc \
 	unix
 
 include ../../Makefile.subdirs

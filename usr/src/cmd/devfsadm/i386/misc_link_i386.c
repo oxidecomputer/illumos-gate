@@ -98,7 +98,10 @@ static devfsadm_create_t misc_cbt[] = {
 	},
 	{ "pseudo", "ddi_pseudo", "vmm_drv_test",
 	    TYPE_EXACT | DRV_EXACT, ILEVEL_0, ln_minor_name,
-	}
+	},
+	{ "pseudo", "ddi_pseudo", "ipcc",
+	    TYPE_EXACT | DRV_EXACT, ILEVEL_0, ln_minor_name,
+	},
 };
 
 DEVFSADM_CREATE_INIT_V0(misc_cbt);
@@ -133,7 +136,10 @@ static devfsadm_remove_t misc_remove_cbt[] = {
 	},
 	{ "pseudo", "^ppt$", RM_ALWAYS | RM_PRE | RM_HOT,
 		ILEVEL_0, devfsadm_rm_all
-	}
+	},
+	{ "pseudo", "^ipcc$", RM_ALWAYS | RM_PRE | RM_HOT,
+		ILEVEL_0, devfsadm_rm_all
+	},
 };
 
 DEVFSADM_REMOVE_INIT_V0(misc_remove_cbt);

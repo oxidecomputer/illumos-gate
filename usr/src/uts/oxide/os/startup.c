@@ -133,6 +133,7 @@
 #include <sys/memlist_impl.h>
 #include <sys/smm.h>
 #include <sys/io/milan/fabric.h>
+#include <sys/kernel_ipcc.h>
 
 extern void mem_config_init(void);
 
@@ -482,7 +483,7 @@ vmem_t		*device_arena;
 uintptr_t	toxic_addr = (uintptr_t)NULL;
 size_t		toxic_size = (256 + 1024) * 1024 * 1024;
 
-int prom_debug = 1;	/* XXXBOOT */
+int prom_debug = 0;
 
 /*
  * This structure is used to keep track of the initial allocations
@@ -627,8 +628,8 @@ startup(void)
 
 	/*
 	 * Up until this point, we cannot use any time delay functions
-	 * (e.g. tenmicrosec()). Once the TSC is setup, we can. This is
-	 * purposely done after the VM system as been setup to allow
+	 * (e.g. tenmicrosec()). Once the TSC is set up, we can. This is
+	 * purposely done after the VM system has been set up to allow
 	 * calibration sources which might require mapping for access
 	 * (e.g. the HPET), but still early enough to allow the rest of
 	 * the startup code to make use of the TSC (via tenmicrosec() or
@@ -648,6 +649,8 @@ startup(void)
 	startup_modules();
 
 	startup_end();
+
+	kernel_ipcc_init(IPCC_INIT_DEVTREE);
 }
 
 static void
@@ -1702,6 +1705,8 @@ startup_vm(void)
 
 	cmn_err(CE_CONT, "?mem = %luK (0x%lx)\n",
 	    physinstalled << (MMU_PAGESHIFT - 10), ptob(physinstalled));
+
+	kernel_ipcc_init(IPCC_INIT_KVMAVAIL);
 
 	/*
 	 * disable automatic large pages for small memory systems or

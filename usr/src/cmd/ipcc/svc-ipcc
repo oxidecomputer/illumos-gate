@@ -1,0 +1,69 @@
+#!/bin/ksh
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source. A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+
+#
+# Copyright 2022 Oxide Computer Company
+#
+
+# XXX -	where does this eventually live? Ideally we would set up the DPIO from
+#	the kernel, in the ipcc module.
+#
+
+#
+# CONTROLLER      GPIO                ID
+# zen_gpio-1      AGPIO139            53
+#
+# Connected to the SP and used for SP-to-Host interrupt.
+GPIO="AGPIO139"
+IPCC_CONF="/platform/$(uname -m)/kernel/drv/ipcc.conf"
+
+. /lib/svc/share/smf_include.sh
+
+smf_is_globalzone || exit $SMF_EXIT_OK
+
+if [[ ! -r "$IPCC_CONF" ]]; then
+	echo "$IPCC_CONF not found."
+	exit $SMF_EXIT_ERR_CONFIG
+fi
+
+DPIO_NAME=$(grep sp-intr-path "$IPCC_CONF" | cut -d\" -f2)
+if [[ -z "$DPIO_NAME" ]]; then
+	echo "Could not extract the DPIO name from $IPCC_CONF"
+	exit $SMF_EXIT_ERR_CONFIG
+fi
+DPIO_NAME=${DPIO_NAME##*/}
+
+# On gimlet there is only ever one zen_gpio controller (which currently has
+# instance number -1). Search for any controller which has the GPIO we are
+# looking for. XXX - reconsider after stlouis#215 and once gpio is
+# reparented under fch.
+GPIO_PIN=$(gpioadm gpio list -1 -p -o controller,id "*/$GPIO")
+(( $? == 0 )) || exit $SMF_EXIT_ERR_FATAL
+CONTROLLER="${GPIO_PIN%:*}"
+ID="${GPIO_PIN#*:}"
+GPIO_PIN_NAME="$CONTROLLER/$ID"
+
+case "$1" in
+start)
+	/usr/sbin/gpioadm dpio define -K -r "$GPIO_PIN_NAME" "$DPIO_NAME" || \
+	    exit $SMF_EXIT_ERR_FATAL
+	;;
+stop)
+	# This service never undefines the DPIO as it is intended to persist
+	# after boot so that the ipcc kernel module can use it.
+	;;
+*)
+	echo "ERROR: $0: unsupported command '$1'" >&2
+	exit $SMF_EXIT_ERR_FATAL
+	;;
+esac
+
+exit $SMF_EXIT_OK

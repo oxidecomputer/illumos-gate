@@ -518,6 +518,13 @@ sparc_SUBDIRS=		\
 	virtinfo	\
 	vntsd
 
+# XXX Oxide
+# This 'ipcc' service is only applicable to the Oxide platform and the
+# initialisation it does could likely be moved to the ipcc kernel module.
+# The service could be delivered regardless and its state controlled by
+# a platform-specific profile (cf. cmd/prtdscp)
+i386_SUBDIRS +=		ipcc
+
 #
 # Commands that are messaged.  Note that 'lp' comes first
 # (see previous comment about 'lp'.)

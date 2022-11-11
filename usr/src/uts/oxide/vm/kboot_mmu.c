@@ -559,9 +559,11 @@ restart_new_va:
 void
 kbm_unmap(uintptr_t va)
 {
-	if (khat_running)
+	DBG_MSG("kbm_unmap(%lx)\n", va);
+
+	if (khat_running) {
 		panic("kbm_unmap() called too late");
-	else {
+	} else {
 		x86pte_t *ptep;
 		level_t	level = 0;
 		uint_t  probe_only = 1;

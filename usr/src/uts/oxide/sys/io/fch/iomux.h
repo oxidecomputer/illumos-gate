@@ -53,7 +53,7 @@ MAKE_MMIO_FCH_REG_FN(IOMUX, iomux, 1);
  * functions/signals that correspond to the values are different for each one.
  */
 
-#define	D_FCH_IOMUX_STD	(const smn_reg_def_t){	\
+#define	D_FCH_IOMUX_STD	(const smn_reg_def_t) {	\
 	.srd_unit = SMN_UNIT_FCH_IOMUX,	\
 	.srd_reg = 0x00,		\
 	.srd_nents = 0x99		\
@@ -82,11 +82,13 @@ MAKE_MMIO_FCH_REG_FN(IOMUX, iomux, 1);
 #define	FCH_IOMUX_136_UART0_RXD		0
 #define	FCH_IOMUX_137_UART0_RTS_L	0
 #define	FCH_IOMUX_138_UART0_TXD		0
+#define	FCH_IOMUX_139_GPIO139		1
 
 #define	FCH_IOMUX_140_UART1_CTS_L	0
 #define	FCH_IOMUX_141_UART1_RXD		0
 #define	FCH_IOMUX_142_UART1_RTS_L	0
 #define	FCH_IOMUX_143_UART1_TXD		0
+#define	FCH_IOMUX_144_GPIO144		1
 
 #endif	/* !_ASM */
 

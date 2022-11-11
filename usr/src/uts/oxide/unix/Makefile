@@ -23,6 +23,7 @@
 #
 # Copyright 2019 Joyent, Inc.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 Oxide Computer Company
 
 #
 #	Path to the base of the uts directory tree (usually /usr/src/uts).

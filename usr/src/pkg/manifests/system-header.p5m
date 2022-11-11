@@ -1630,6 +1630,7 @@ $(i386_ONLY)file path=usr/platform/oxide/include/sys/clock.h
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/cram.h
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/ddi_subrdefs.h
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/debug_info.h
+$(i386_ONLY)file path=usr/platform/oxide/include/sys/ipcc.h
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/mach_mmu.h
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/machclock.h
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/machcpuvar.h

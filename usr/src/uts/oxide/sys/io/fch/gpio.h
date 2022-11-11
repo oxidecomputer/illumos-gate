@@ -70,11 +70,33 @@ MAKE_MMIO_FCH_REG_FN(GPIO, gpio, 4);
 #define	FCH_GPIO_STD_SET_OUTPUT_VAL(r, v)	bitset32(r, 22, 22, v)
 #define	FCH_GPIO_STD_OUTPUT_VAL_DEASSERT	0
 #define	FCH_GPIO_STD_OUTPUT_VAL_ASSERT		1
+#define	FCH_GPIO_STD_GET_PD_EN(r)		bitx32(r, 21, 21)
+#define	FCH_GPIO_STD_SET_PD_EN(r, v)		bitset32(r, 21, 21, v)
+#define	FCH_GPIO_STD_GET_PU_EN(r)		bitx32(r, 20, 20)
+#define	FCH_GPIO_STD_SET_PU_EN(r, v)		bitset32(r, 20, 20, v)
+#define	FCH_GPIO_STD_GET_PU_STRENGTH(r)		bitx32(r, 19, 19)
+#define	FCH_GPIO_STD_SET_PU_STRENGTH(r, v)	bitset32(r, 19, 19, v)
+#define	FCH_GPIO_STD_PU_STRENGTH_4K		0
+#define	FCH_GPIO_STD_PU_STRENGTH_8K		1
 #define	FCH_GPIO_STD_GET_STRENGTH(r)		bitx32(r, 18, 17)
 #define	FCH_GPIO_STD_SET_STRENGTH(r, v)		bitset32(r, 18, 17, v)
-#define	FCH_GPIO_STD_STRENGTH_60OHM	1	/* 1.8 V only */
-#define	FCH_GPIO_STD_STRENGTH_40OHM	2
-#define	FCH_GPIO_STD_STRENGTH_80OHM	3
+#define	FCH_GPIO_STD_STRENGTH_60OHM		1	/* 1.8 V only */
+#define	FCH_GPIO_STD_STRENGTH_40OHM		2
+#define	FCH_GPIO_STD_STRENGTH_80OHM		3
+#define	FCH_GPIO_STD_GET_INPUT(r)		bitx32(r, 16, 16)
+#define	FCH_GPIO_STD_INPUT_VAL_LOW		0
+#define	FCH_GPIO_STD_INPUT_VAL_HIGH		1
+#define	FCH_GPIO_STD_GET_INT_EN(r)		bitx32(r, 11, 11)
+#define	FCH_GPIO_STD_SET_INT_EN(r, v)		bitset32(r, 11, 11, v)
+#define	FCH_GPIO_STD_GET_LEVEL(r)		bitx32(r, 10, 9)
+#define	FCH_GPIO_STD_SET_LEVEL(r, v)		bitset32(r, 10, 9, v)
+#define	FCH_GPIO_STD_LEVEL_ACT_HIGH		0
+#define	FCH_GPIO_STD_LEVEL_ACT_LOW		1
+#define	FCH_GPIO_STD_LEVEL_ACT_BOTH		2 /* TRIG_EDGE only */
+#define	FCH_GPIO_STD_GET_TRIG(r)		bitx32(r, 8, 8)
+#define	FCH_GPIO_STD_SET_TRIG(r, v)		bitset32(r, 8, 8, v)
+#define	FCH_GPIO_STD_TRIG_EDGE			0
+#define	FCH_GPIO_STD_TRIG_LEVEL			1
 
 #endif	/* !_ASM */
 

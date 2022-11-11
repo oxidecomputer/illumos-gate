@@ -70,10 +70,12 @@ CORE_OBJS +=			\
 	i86_mmu.o		\
 	instr_size.o		\
 	intr.o			\
+	ipcc_proto.o		\
 	kboot_mmu.o		\
 	kdi_idt.o		\
 	kdi_idthdl.o		\
 	kdi_asm.o		\
+	kernel_ipcc.o		\
 	lgrpplat.o		\
 	locore.o		\
 	machdep.o		\
@@ -158,6 +160,8 @@ FCH_OBJS += fch.o ixbar.o
 DWU_OBJS += dwu.o
 
 BOOT_IMAGE_OBJS += oxide_boot.o oxide_boot_disk.o oxide_boot_net.o
+
+IPCC_OBJS += ipcc.o ipcc_debug.o
 
 #
 #	Build up defines and paths.
