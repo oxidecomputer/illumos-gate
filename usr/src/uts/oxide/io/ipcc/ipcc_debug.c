@@ -101,6 +101,9 @@ ipcc_dbgmsg(void *arg __unused, ipcc_log_type_t type __unused,
 	(void) vsnprintf(idm->idm_msg, msgsize, fmt, adx);
 	va_end(adx);
 
+	if (msgsize >= 2 && idm->idm_msg[msgsize - 2] == '\n')
+		idm->idm_msg[msgsize - 2] = '\0';
+
 	DTRACE_PROBE1(ipcc__dbgmsg, char *, idm->idm_msg);
 
 	mutex_enter(&ipcc_dbgmsgs_lock);

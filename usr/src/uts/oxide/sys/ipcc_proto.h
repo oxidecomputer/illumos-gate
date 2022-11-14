@@ -21,6 +21,8 @@
  */
 
 #include <sys/stdbool.h>
+#include <sys/types.h>
+#include <sys/varargs.h>
 #include <sys/ipcc.h>
 
 #ifdef __cplusplus
@@ -76,6 +78,13 @@ typedef enum ipcc_sp_decode_failure {
 	IPCC_DECODEFAIL_DATALEN,
 } ipcc_sp_decode_failure_t;
 
+typedef enum ipcc_host_boot_failure {
+	IPCC_BOOTFAIL_GENERAL = 1,
+	IPCC_BOOTFAIL_NOPHASE2,
+	IPCC_BOOTFAIL_HEADER,
+	IPCC_BOOTFAIL_INTEGRITY,
+} ipcc_host_boot_failure_t;
+
 typedef enum ipcc_sp_status {
 	IPCC_STATUS_STARTED		= 1 << 0,
 	IPCC_STATUS_ALERT		= 1 << 1,
@@ -89,12 +98,16 @@ typedef enum ipcc_sp_startup {
 	IPCC_STARTUP_PROM		= 1 << 3, /* set prom_debug */
 	IPCC_STARTUP_KMDB		= 1 << 4, /* boot with -k */
 	IPCC_STARTUP_KMDB_BOOT		= 1 << 5, /* boot with -kd */
+	IPCC_STARTUP_BOOT_RAMDISK	= 1 << 6, /* no phase 2, use ramdisk */
+	IPCC_STARTUP_BOOT_NET		= 1 << 7, /* boot from network */
 } ipcc_sp_startup_t;
 
-#define	IPCC_IDENT_DATALEN	106
-#define	IPCC_BSU_DATALEN	1
-#define	IPCC_MAC_DATALEN	9
-#define	IPCC_STATUS_DATALEN	16
+#define	IPCC_IDENT_DATALEN		106
+#define	IPCC_BSU_DATALEN		1
+#define	IPCC_MAC_DATALEN		9
+#define	IPCC_STATUS_DATALEN		16
+#define	IPCC_BOOTFAIL_MAX_MSGSIZE	\
+	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
 
 typedef enum ipcc_log_type {
 	IPCC_LOG_DEBUG,
@@ -125,7 +138,8 @@ extern int ipcc_bsu(const ipcc_ops_t *, void *, uint8_t *);
 extern int ipcc_ident(const ipcc_ops_t *, void *, ipcc_ident_t *);
 extern int ipcc_macs(const ipcc_ops_t *, void *, ipcc_mac_t *);
 extern int ipcc_rot(const ipcc_ops_t *, void *, ipcc_rot_t *);
-extern int ipcc_bootfail(const ipcc_ops_t *, void *, uint8_t);
+extern int ipcc_bootfail(const ipcc_ops_t *, void *, ipcc_host_boot_failure_t,
+    const uint8_t *, size_t);
 extern int ipcc_status(const ipcc_ops_t *, void *, uint64_t *, uint64_t *);
 extern int ipcc_ackstart(const ipcc_ops_t *, void *);
 

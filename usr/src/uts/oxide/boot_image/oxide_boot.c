@@ -40,6 +40,8 @@
 #include <sys/sysmacros.h>
 #include <sys/crypto/api.h>
 #include <sys/kobj.h>
+#include <sys/boot_data.h>
+#include <sys/kernel_ipcc.h>
 #include <sys/boot_image_ops.h>
 
 #include "oxide_boot.h"
@@ -75,15 +77,14 @@ _info(struct modinfo *mi)
 	return (mod_info(&oxide_boot_modlinkage, mi));
 }
 
-static void
-oxide_dump_sum(const char *name, const uint8_t *sum)
+char *
+oxide_format_sum(char *buf, size_t buflen, const uint8_t *sum)
 {
-	printf("    %s: "
+	(void) snprintf(buf, buflen,
 	    "%02x%02x%02x%02x%02x%02x%02x%02x"
 	    "%02x%02x%02x%02x%02x%02x%02x%02x"
 	    "%02x%02x%02x%02x%02x%02x%02x%02x"
-	    "%02x%02x%02x%02x%02x%02x%02x%02x\n",
-	    name,
+	    "%02x%02x%02x%02x%02x%02x%02x%02x",
 	    sum[0], sum[1], sum[2], sum[3],
 	    sum[4], sum[5], sum[6], sum[7],
 	    sum[8], sum[9], sum[10], sum[11],
@@ -92,6 +93,16 @@ oxide_dump_sum(const char *name, const uint8_t *sum)
 	    sum[20], sum[21], sum[22], sum[23],
 	    sum[24], sum[25], sum[26], sum[27],
 	    sum[28], sum[29], sum[30], sum[31]);
+
+	return (buf);
+}
+
+static void
+oxide_dump_sum(const char *name, const uint8_t *sum)
+{
+	char buf[OXBOOT_CSUMBUF_SHA256];
+
+	printf("    %s: %s\n", name, oxide_format_sum(buf, sizeof (buf), sum));
 }
 
 bool
@@ -384,15 +395,37 @@ oxide_boot_fini(oxide_boot_t *oxb)
 	kmem_free(oxb, sizeof (*oxb));
 }
 
+static void __NORETURN
+oxide_boot_fail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
+{
+	va_list va;
+
+	va_start(va, fmt);
+	(void) vprintf(fmt, va);
+	va_end(va);
+
+	va_start(va, fmt);
+	(void) kernel_ipcc_bootfailv(reason, fmt, va);
+	va_end(va);
+
+	va_start(va, fmt);
+	vpanic(fmt, va);
+	/* vpanic() does not return */
+}
+
 static void
 oxide_boot_locate(void)
 {
+	int err;
+
 	printf("in oxide_boot!\n");
 
 	oxide_boot_t *oxb = kmem_zalloc(sizeof (*oxb), KM_SLEEP);
 	mutex_init(&oxb->oxb_mutex, NULL, MUTEX_DRIVER, NULL);
-	if (ldi_ident_from_mod(&oxide_boot_modlinkage, &oxb->oxb_li) != 0) {
-		panic("could not get LDI identity");
+	err = ldi_ident_from_mod(&oxide_boot_modlinkage, &oxb->oxb_li);
+	if (err != 0) {
+		oxide_boot_fail(IPCC_BOOTFAIL_GENERAL,
+		    "could not get LDI identity, error %d", err);
 	}
 
 	/*
@@ -403,7 +436,8 @@ oxide_boot_locate(void)
 	if ((fd = kobj_open("/boot_image_csum")) == -1 ||
 	    kobj_read(fd, (int8_t *)&oxb->oxb_csum_want,
 	    OXBOOT_CSUMLEN_SHA256, 0) != OXBOOT_CSUMLEN_SHA256) {
-		panic("could not read /boot_image_csum");
+		oxide_boot_fail(IPCC_BOOTFAIL_GENERAL,
+		    "could not read /boot_image_csum");
 	}
 	kobj_close(fd);
 	oxide_dump_sum("cpio wants", oxb->oxb_csum_want);
@@ -418,39 +452,60 @@ oxide_boot_locate(void)
 	    OXBOOT_CSUMLEN_SHA256);
 
 	/*
-	 * XXX We need to pick the source based on an interaction with the SP.
+	 * During early-boot communication with the SP, the desired phase 2
+	 * image source will have been set as a boot property. The value will
+	 * be one of:
 	 *
-	 * For now, we try these devices in order:
-	 *	- first M.2 device (slot 17)
-	 *	- second M.2 device (slot 18)
-	 *	- network boot
-	 *
-	 * Note that in the current model each image provider is responsible
-	 * for confirming that the boot image it has located matches the hash
-	 * we expect from the cpio archive.  A hash mismatch, e.g., because the
-	 * M.2 device is out of date, allows us to fall back to the next
-	 * source.
+	 *   - sp	Retrieve from the SP - XXX not yet implemented.
+	 *   - net	Network boot - this is used during development.
+	 *   - disk:NN	M.2 device in slot NN.
 	 */
-	if (oxide_boot_disk(oxb, 17)) {
-		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
-		    ddi_root_node(), "oxide-boot-source", "disk:17");
-	} else if (oxide_boot_disk(oxb, 18)) {
-		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
-		    ddi_root_node(), "oxide-boot-source", "disk:18");
-	} else if (oxide_boot_net(oxb)) {
-		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
-		    ddi_root_node(), "oxide-boot-source", "net");
-	} else {
-		panic("no source was able to locate a boot image");
+	bool success = false;
+	char *bootdev;
+
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_root_node(),
+	    DDI_PROP_DONTPASS, BTPROP_NAME_BOOT_SOURCE, &bootdev) !=
+	    DDI_SUCCESS) {
+		oxide_boot_fail(IPCC_BOOTFAIL_NOPHASE2,
+		    "No phase2 image source was specified");
 	}
+
+	if (strcmp(bootdev, "sp") == 0) {
+		/* XXX - success = oxide_boot_sp(oxb); */
+		oxide_boot_fail(IPCC_BOOTFAIL_NOPHASE2,
+		    "Phase2 retrieval from SP not yet implemented");
+	} else if (strcmp(bootdev, "net") == 0) {
+		success = oxide_boot_net(oxb);
+	} else if (strncmp(bootdev, "disk:", 5) == 0) {
+		u_longlong_t slot;
+
+		if (ddi_strtoull(bootdev + 5, NULL, 10, &slot) == 0 &&
+		    slot < UINT16_MAX) {
+			success = oxide_boot_disk(oxb, (int)slot);
+		}
+	}
+
+	if (!success) {
+		oxide_boot_fail(IPCC_BOOTFAIL_NOPHASE2,
+		    "Could not find a valid phase2 image on %s", bootdev);
+	}
+
+	ddi_prop_free(bootdev);
 
 	printf("ramdisk data size = %lu\n", oxb->oxb_ramdisk_data_size);
 	if (oxb->oxb_ramdisk_dataset == NULL) {
-		panic("missing dataset name");
+		oxide_boot_fail(IPCC_BOOTFAIL_HEADER,
+		    "no dataset name was specified");
 	}
 
 	if (!oxide_boot_ramdisk_check(oxb)) {
-		panic("boot image integrity failure");
+		char want[OXBOOT_CSUMBUF_SHA256];
+		char have[OXBOOT_CSUMBUF_SHA256];
+
+		oxide_boot_fail(IPCC_BOOTFAIL_INTEGRITY,
+		    "boot image integrity failure want %s got %s",
+		    oxide_format_sum(want, sizeof (want), oxb->oxb_csum_want),
+		    oxide_format_sum(have, sizeof (have), oxb->oxb_csum_have));
 	}
 
 	/*

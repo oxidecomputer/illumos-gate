@@ -751,7 +751,7 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
 	}
 	obuf[oi] = '\0';
 
-	ops->io_log(arg, IPCC_LOG_HEX, "%s: %s", tag, obuf);
+	ops->io_log(arg, IPCC_LOG_HEX, "%s: %s\n", tag, obuf);
 }
 
 #define	LOG(...) if (ops->io_log != NULL) \
@@ -841,11 +841,11 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 resend:
 
 	if (++attempt > IPCC_MAX_ATTEMPTS) {
-		LOG("Maximum attempts exceeded");
+		LOG("Maximum attempts exceeded\n");
 		return (ETIMEDOUT);
 	}
 
-	LOG("\n-----------> Sending IPCC command 0x%x, attempt %u/%u",
+	LOG("\n-----------> Sending IPCC command 0x%x, attempt %u/%u\n",
 	    cmd, attempt, IPCC_MAX_ATTEMPTS);
 
 	off = 0;
@@ -857,7 +857,7 @@ resend:
 		if (sizeof (ipcc_msg) - off < dataoutl)
 			return (ENOBUFS);
 		ipcc_encode_bytes(dataout, dataoutl, ipcc_msg, &off);
-		LOG("Additional data length: 0x%lx", dataoutl);
+		LOG("Additional data length: 0x%lx\n", dataoutl);
 		LOGHEX("DATA OUT", dataout, dataoutl);
 	}
 
@@ -907,7 +907,7 @@ reread:
 	}
 
 	if (err == ENOBUFS || end == NULL) {
-		LOG("Could not find frame terminator");
+		LOG("Could not find frame terminator\n");
 		goto resend;
 	}
 
@@ -915,7 +915,7 @@ reread:
 		return (err);
 
 	if (end == ipcc_pkt) {
-		LOG("Received empty frame");
+		LOG("Received empty frame\n");
 		goto reread;
 	}
 
@@ -923,17 +923,17 @@ reread:
 	LOGHEX(" COBS IN", ipcc_pkt, end - ipcc_pkt);
 	if (!ipcc_cobs_decode(ipcc_pkt, end - ipcc_pkt,
 	    ipcc_msg, sizeof (ipcc_msg), &pktl)) {
-		LOG("Error decoding COBS frame");
+		LOG("Error decoding COBS frame\n");
 		goto resend;
 	}
 	LOGHEX("      IN", ipcc_msg, pktl);
 	if (pktl < IPCC_MIN_MESSAGE_SIZE) {
-		LOG("Short message received - 0x%lx byte(s)", pktl);
+		LOG("Short message received - 0x%lx byte(s)\n", pktl);
 		goto resend;
 	}
 
 	rcvd_datal = pktl - IPCC_MIN_MESSAGE_SIZE;
-	LOG("Additional data length: 0x%lx", rcvd_datal);
+	LOG("Additional data length: 0x%lx\n", rcvd_datal);
 
 	/* Validate checksum */
 	off = pktl - 2;
@@ -942,7 +942,7 @@ reread:
 	    ipcc_msg, &off);
 
 	if (crc != rcvd_crc) {
-		LOG("Checksum mismatch got 0x%x calculated 0x%x",
+		LOG("Checksum mismatch got 0x%x calculated 0x%x\n",
 		    rcvd_crc, crc);
 		goto resend;
 	}
@@ -958,24 +958,25 @@ reread:
 	    ipcc_msg, &off);
 
 	if (rcvd_magic != IPCC_MAGIC) {
-		LOG("Invalid magic number in response, 0x%x", rcvd_magic);
+		LOG("Invalid magic number in response, 0x%x\n", rcvd_magic);
 		goto resend;
 	}
 	if (rcvd_version != IPCC_VERSION) {
-		LOG("Invalid version field in response, 0x%x", rcvd_version);
+		LOG("Invalid version field in response, 0x%x\n", rcvd_version);
 		goto resend;
 	}
 	if (!(rcvd_seq & IPCC_SEQ_REPLY)) {
-		LOG("Response not a reply (sequence 0x%016lx)", rcvd_seq);
+		LOG("Response not a reply (sequence 0x%016lx)\n", rcvd_seq);
 		goto resend;
 	}
 	if (rcvd_cmd == IPCC_SP_DECODEFAIL && rcvd_seq == 0xffffffffffffffff) {
-		LOG("Decode failed, sequence ignored.");
+		LOG("Decode failed, sequence ignored.\n");
 	} else {
 		rcvd_seq &= IPCC_SEQ_MASK;
 		if (rcvd_seq != ipcc_seq) {
 			LOG("Incorrect sequence in response "
-			    "(0x%lx) vs expected (0x%lx)", rcvd_seq, ipcc_seq);
+			    "(0x%lx) vs expected (0x%lx)\n",
+			    rcvd_seq, ipcc_seq);
 			/*
 			 * If we've received an old sequence number from the SP
 			 * in an otherwise valid packet, then we may be out of
@@ -988,26 +989,27 @@ reread:
 	}
 	if (rcvd_cmd == IPCC_SP_DECODEFAIL) {
 		if (rcvd_datal != 1) {
-			LOG("SP failed to decode packet (no reason sent)");
+			LOG("SP failed to decode packet (no reason sent)\n");
 		} else {
 			uint8_t dfreason;
 
 			ipcc_decode_bytes(&dfreason, sizeof (dfreason),
 			    ipcc_msg, &off);
 
-			LOG("SP failed to decode packet (reason 0x%x - %s)",
+			LOG("SP failed to decode packet (reason 0x%x - %s)\n",
 			    dfreason, ipcc_failure_str(dfreason));
 		}
 		goto resend;
 	}
 	if (rcvd_cmd != expected_rcmd) {
-		LOG("Incorrect reply cmd: got 0x%x, expected 0x%x",
+		LOG("Incorrect reply cmd: got 0x%x, expected 0x%x\n",
 		    rcvd_cmd, expected_rcmd);
 		goto resend;
 	}
 
 	if (datainl != NULL && *datainl > 0 && *datainl != rcvd_datal) {
-		LOG("Incorrect data length in reply - got 0x%lx expected 0x%lx",
+		LOG("Incorrect data length in reply - "
+		    "got 0x%lx expected 0x%lx\n",
 		    rcvd_datal, *datainl);
 		/*
 		 * Given all of the other checks have passed, and this looks
@@ -1022,7 +1024,7 @@ reread:
 
 		if (datain == NULL || datainl == NULL) {
 			LOG("No storage provided for incoming data - "
-			    "received 0x%lx byte(s)", rcvd_datal);
+			    "received 0x%lx byte(s)\n", rcvd_datal);
 			return (EINVAL);
 		}
 
@@ -1093,7 +1095,7 @@ ipcc_handle_alerts(const ipcc_ops_t *ops, void *arg)
 		 *	 an alert message to be delivered to sled agent in some
 		 *	 way.
 		 */
-		LOG("ALERT %u '%-.*s", action, (int)datal, data);
+		LOG("ALERT %u '%-.*s\n", action, (int)datal, data);
 		/*
 		 * For now, use cmn_err to display/log any alerts received.
 		 */
@@ -1117,13 +1119,13 @@ ipcc_process_status(const ipcc_ops_t *ops, void *arg)
 		if (err != 0)
 			break;
 
-		LOG("SP status register is %lx", status);
+		LOG("SP status register is %lx\n", status);
 
 		if (status == 0)
 			break;
 
 		if ((status & IPCC_STATUS_STARTED) != 0) {
-			LOG("SP task has (re)started");
+			LOG("SP task has (re)started\n");
 			err = ipcc_command_locked(ops, arg, IPCC_HSS_ACKSTART,
 			    IPCC_SP_ACK, NULL, 0, NULL, NULL);
 			if (err != 0)
@@ -1132,7 +1134,7 @@ ipcc_process_status(const ipcc_ops_t *ops, void *arg)
 		}
 
 		if ((status & IPCC_STATUS_ALERT) != 0) {
-			LOG("SP alerts available");
+			LOG("SP alerts available\n");
 			err = ipcc_handle_alerts(ops, arg);
 			if (err != 0)
 				break;
@@ -1156,7 +1158,7 @@ ipcc_sp_interrupt(const ipcc_ops_t *ops, void *arg)
 
 	IPCC_ASSERT_LOCK;
 
-	LOG("SP interrupt received");
+	LOG("SP interrupt received\n");
 
 	/*
 	 * The SP's interrupt has been asserted. Attempt to process the
@@ -1348,7 +1350,7 @@ ipcc_rot(const ipcc_ops_t *ops, void *arg, ipcc_rot_t *rot)
 		goto out;
 
 	if (datal > sizeof (rot->ir_data)) {
-		LOG("Too much data in RoT response - got 0x%lx bytes", datal);
+		LOG("Too much data in RoT response - got 0x%lx bytes\n", datal);
 		err = ENOMEM;
 		goto out;
 	}
@@ -1362,10 +1364,33 @@ out:
 }
 
 int
-ipcc_bootfail(const ipcc_ops_t *ops, void *arg, uint8_t reason)
+ipcc_bootfail(const ipcc_ops_t *ops, void *arg, ipcc_host_boot_failure_t type,
+    const uint8_t *msg, size_t len)
 {
-	return (ipcc_command(ops, arg, IPCC_HSS_BOOTFAIL, IPCC_SP_ACK,
-	    &reason, sizeof (reason)));
+	size_t datal;
+	uint8_t *data;
+	int err = 0;
+
+	datal = MIN(len, IPCC_BOOTFAIL_MAX_MSGSIZE);
+	datal += sizeof (uint8_t);
+
+	data = kmem_alloc(datal, KM_SLEEP);
+
+	*data = (uint8_t)type;
+	bcopy(msg, data + sizeof (uint8_t), len);
+
+	IPCC_LOCK;
+	if ((err = ipcc_do_open(ops, arg)) != 0)
+		goto out;
+
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_BOOTFAIL, IPCC_SP_ACK,
+	    data, datal, NULL, NULL);
+	ipcc_do_close(ops, arg);
+
+out:
+	IPCC_UNLOCK;
+	kmem_free(data, datal);
+	return (err);
 }
 
 int

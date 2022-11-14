@@ -32,6 +32,7 @@
 #include <sys/x86_archext.h>
 #include <sys/reboot.h>
 #include <sys/sysmacros.h>
+#include <sys/boot_image_ops.h>
 #include <sys/boot_physmem.h>
 #include <sys/boot_debug.h>
 #include <sys/kernel_ipcc.h>
@@ -262,10 +263,6 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	 */
 	bt_set_prop_str(BTPROP_NAME_BOOTARGS, "");
 
-	/* XXX not yet implemented - phase2 via IPCC */
-	if ((spstartup & IPCC_STARTUP_RECOVERY) != 0)
-		bt_set_prop_u8(BTPROP_NAME_BOOT_RECOVERY, 1);
-
 	if ((spstatus & IPCC_STATUS_STARTED) != 0)
 		kernel_ipcc_ackstart();
 
@@ -308,8 +305,6 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	}
 
 	bt_set_prop_str(BTPROP_NAME_MFG, board->bl_descr);
-	bt_set_prop_u8(BTPROP_NAME_BSU_SLOTA, board->bl_bsu_slota);
-	bt_set_prop_u8(BTPROP_NAME_BSU_SLOTB, board->bl_bsu_slotb);
 
 	/*
 	 * The APOB address and reset vector are stored in, or computed
@@ -355,20 +350,60 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 			    "Ramdisk parameter problem start=0x%lx end=0x%lx",
 			    ramdisk_start, ramdisk_end);
 		}
-
-		/*
-		 * This property is checked in boot_image_locate(), called from
-		 * main().
-		 */
-		bt_set_prop_str(BTPROP_NAME_BOOT_IMAGE_OPS, "misc/boot_image");
 	} else {
-		/* Default to the usual values used with nanobl-rs */
-		ramdisk_start = 0x101000000UL;
-		ramdisk_end = 0x105c00000UL;
+		bop_panic("Ramdisk parameters were not provided.");
 	}
 
 	bt_set_prop_u64(BTPROP_NAME_RAMDISK_START, ramdisk_start);
 	bt_set_prop_u64(BTPROP_NAME_RAMDISK_END, ramdisk_end);
+
+	/*
+	 * Set properties to configure how we will boot. This is controlled by
+	 * flags in the SP's startup options register, and by the boot storage
+	 * unit (BSU) communicated by the SP.
+	 */
+
+	if ((spstartup & IPCC_STARTUP_BOOT_RAMDISK) != 0) {
+		/*
+		 * This option selects booting using the provided ramdisk for
+		 * the root filesystem, without loading a phase 2 image.
+		 */
+		bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "ramdisk");
+	} else {
+		/*
+		 * In this block, we are heading for new style boot,
+		 * acquiring a phase 2 image from somewhere. Setting this
+		 * property causes main() to try and load the kernel module
+		 * set as the value, and use it to locate phase 2.
+		 */
+		bt_set_prop_str(BTPROP_NAME_BOOT_IMAGE_OPS, "misc/boot_image");
+
+		if ((spstartup & IPCC_STARTUP_RECOVERY) != 0) {
+			/*
+			 * The SP has requested phase2 recovery - load via
+			 * ipcc. XXX - not yet implemented.
+			 */
+			/* bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "sp"); */
+			bop_panic("SP boot not yet implemented");
+		} else if ((spstartup & IPCC_STARTUP_BOOT_NET) != 0) {
+			/*
+			 * The SP has requested network boot.
+			 */
+			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "net");
+		} else {
+			/*
+			 * No special options, request boot from the BSU
+			 * provided by the SP.
+			 */
+			char bootdev[sizeof ("disk:") + 10];
+
+			(void) snprintf(bootdev, sizeof (bootdev), "disk:%u",
+			    bsu == 'A' ? (uint32_t)board->bl_bsu_slota :
+			    (uint32_t)board->bl_bsu_slotb);
+
+			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, bootdev);
+		}
+	}
 }
 
 extern void

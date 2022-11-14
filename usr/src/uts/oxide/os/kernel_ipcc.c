@@ -176,7 +176,6 @@ eb_ipcc_log(void *arg __unused, ipcc_log_type_t type __maybe_unused,
 
 	va_start(ap, fmt);
 	eb_vprintf(fmt, ap);
-	eb_printf("\n");
 	va_end(ap);
 }
 
@@ -409,4 +408,46 @@ kernel_ipcc_ackstart(void)
 {
 	VERIFY3U(ipcc_init, <, IPCC_INIT_DEVTREE);
 	return (ipcc_ackstart(&kernel_ipcc_ops, &kernel_ipcc_data));
+}
+
+/*
+ * These interfaces are used a little later in boot but before the root
+ * filesystem is mounted.
+ */
+
+int
+kernel_ipcc_bootfailv(ipcc_host_boot_failure_t reason, const char *fmt,
+    va_list va)
+{
+	size_t bufsize;
+	va_list vas;
+	char *buf;
+	int ret;
+
+	va_copy(vas, va);
+	bufsize = vsnprintf(NULL, 0, fmt, vas);
+	va_end(vas);
+
+	bufsize = MIN(bufsize, IPCC_BOOTFAIL_MAX_MSGSIZE);
+	buf = kmem_alloc(bufsize, KM_SLEEP);
+	(void) vsnprintf(buf, bufsize, fmt, va);
+
+	ret = ipcc_bootfail(&kernel_ipcc_ops, &kernel_ipcc_data, reason,
+	    (uint8_t *)buf, bufsize);
+
+	kmem_free(buf, bufsize);
+	return (ret);
+}
+
+int
+kernel_ipcc_bootfail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
+{
+	va_list va;
+	int err;
+
+	va_start(va, fmt);
+	err = kernel_ipcc_bootfailv(reason, fmt, va);
+	va_end(va);
+
+	return (err);
 }

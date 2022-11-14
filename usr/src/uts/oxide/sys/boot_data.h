@@ -57,11 +57,8 @@ typedef struct bt_prop {
 #define	BTPROP_NAME_FSTYPE		"fstype"
 #define	BTPROP_NAME_WHOAMI		"whoami"
 #define	BTPROP_NAME_RESET_VECTOR	"reset-vector"
-#define	BTPROP_NAME_BOOT_IMAGE_OPS	"boot-image-ops"
-#define	BTPROP_NAME_BOOT_RECOVERY	"boot-recovery"
 #define	BTPROP_NAME_BSU			"boot-storage-unit"
-#define	BTPROP_NAME_BSU_SLOTA		"boot-storage-unit-a"
-#define	BTPROP_NAME_BSU_SLOTB		"boot-storage-unit-b"
+#define	BTPROP_NAME_BOOT_SOURCE		"boot-source"
 #define	BTPROP_NAME_RAMDISK_START	"ramdisk_start"
 #define	BTPROP_NAME_RAMDISK_END		"ramdisk_end"
 

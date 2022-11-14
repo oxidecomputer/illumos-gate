@@ -26,8 +26,8 @@ becoming increasingly useful for development as it produces a booted machine
 that is effectively the same as (3) but elides the need to keep rewriting
 the SPI flash and is easier to iterate on.
 
-Boot Options
-------------
+Startup Options
+---------------
 
 The Service Processor maintains a set of boot options that the Host reads
 during boot. These options are stored as a single 64-bit value where the bits
@@ -41,6 +41,8 @@ have the following meanings:
   3*	STARTUP_PROM		0x8	Set prom_debug
   4*	STARTUP_KMDB		0x10	Load KMDB
   5	STARTUP_KMDB_BOOT	0x20	Load KMDB and enter at boot
+  6	STARTUP_BOOT_RAMDISK	0x40	Use the provided ramdisk directly
+  7	STARTUP_BOOT_NET	0x80	Retrieve the phase 2 image via network
 
 The options which have a * after their bit number are currently enabled by
 default when the SP's control-plane-agent task starts. The value can be queried
@@ -151,7 +153,14 @@ modification; ask if you don't know what to do.  These steps may be done in
 parallel with ramdisk loading (next step).  This is not needed on rev B and
 later.
 
-9. Now issue the following sequence of loader commands.  First, instruct
+9. Configure the Host startup options to boot using the ramdisk directly, and
+so that it does not look for a phase 2 image. See "Startup Options" above.
+For example:
+
+    % pfexec humility -t sn6 hiffy -c ControlPlaneAgent.set_startup_options \
+        -a startup_options=0x58
+
+10. Now issue the following sequence of loader commands.  First, instruct
 nanobl-rs to receive the ramdisk:
 
 	> 110000000::recv -m | ::inflate 101000000
@@ -160,21 +169,27 @@ nanobl-rs will block, silently waiting for data to arrive.  You should now use
 your terminal emulator's Xmodem send command to transfer the compressed
 ramdisk you built in step 2.  On picocom, this is C-a C-s.
 
-This command places the ramdisk into memory at 1_0100_0000, which must match
-the address in oxide/os/boot_data.c.  Note that if you build a ramdisk larger
-than 128 MiB, you will also need to map memory manually or specify the size in
-bytes on the loader command line.  See the help for ::recv's -m option and
-::inflate.
+This command places the ramdisk into memory at 1_0100_0000.  Note that if you
+build a ramdisk larger than 128 MiB, you will also need to map memory manually
+or specify the size in bytes on the loader command line.  See the help for
+::recv's -m option and ::inflate.
+
+When this transfer completes, the address and size of the uncompressed image
+will be displayed, separated with a comma.  These values should be used as
+the parameters of the ::call command in the next step.
+
+	*** exit status: 0 ***
+	101000000,4c00000
 
 Next, instruct nanobl-rs to receive unix in the same manner, and to begin
 executing the kernel once the transfer completes.  If you compressed your
 kernel in step 4, utter:
 
-	> 110000000::recv -m | ::inflate 100000000 | ::load | ::call
+	> 110000000::recv -m | ::inflate 100000000 | ::load | ::call 101000000 4c00000
 
 If you did not compress your kernel:
 
-	> 100000000::recv -m | ::load | ::call
+	> 100000000::recv -m | ::load | ::call 101000000 4c00000
 
 Again, as soon as nanobl-rs blocks, use Xmodem to send unix.z (or unix) to the
 target machine (picocom: C-a C-s).
@@ -184,12 +199,12 @@ arbitrary, but should work on any machine we have.  When the file reception
 completes, ::load and ::call will interpret the kernel and an ELF object and
 transfer control to its entry point, booting the OS.
 
-10. Upon reaching userland, if you have a NIC you can plumb up your network by
+11. Upon reaching userland, if you have a NIC you can plumb up your network by
 uttering '/root/start-network <IPv4 address>/<IPv4 CIDR>'.  This will also
 start sshd for remote access.  If you require access from an off-link network,
 add routes as appropriate at this time.
 
-11. If you want the additional phase-2 software you build in step 3, copy it
+12. If you want the additional phase-2 software you build in step 3, copy it
 onto the test machine now and run the included script to get it mounted:
 
 	$ scp phase2.tar root@gimlet:/tmp
@@ -211,7 +226,7 @@ Note that the phase-2 image you copy onto the SSD needs to match the CPIO
 archive you boot; see subsequent sections for more details if you wish to try
 either of these approaches to booting.
 
-11. If you wish to enter kmdb, send a BREAK using your terminal emulator
+13. If you wish to enter kmdb, send a BREAK using your terminal emulator
 (picocom default: C-a C-|).  NOTE: Sending BREAK via the USB FTDI driver on
 the illumos lab machines does not work and will do nothing.  The 'reboot'
 command should do what you'd expect; if not, use humility to cycle through A2
@@ -263,7 +278,13 @@ Steps:
    be used for booting. The NIC in the Gimlet is usually connected directly
    via a sharkfin slot or via a U.2 slot in the front of the machine.
 
-5. Boot
+5. Configure the Host startup options to boot using the network.
+   See "Startup Options" above.
+
+    % pfexec humility -t sn6 hiffy -c ControlPlaneAgent.set_startup_options \
+        -a startup_options=0x98
+
+6. Boot
 
    Instruct nanobl-rs to receive the initial CPIO miniroot image:
 
@@ -274,20 +295,20 @@ Steps:
    CPIO image from the earlier step, image/output/cpio.z.  On picocom, this is
    C-a C-s.
 
+   When this transfer completes, the address and size of the uncompressed image
+   will be displayed, separated with a comma. These values should be used as
+   the parameters of the ::call command in the next step.
+
+	*** exit status: 0 ***
+	101000000,1f00000
+
    Next, instruct nanobl-rs to receive unix in the same manner, and to begin
    executing the kernel once the transfer completes.
 
-        > 110000000::recv -m | ::inflate 100000000 | ::load | ::call 101000000 4c00000
+        > 110000000::recv -m | ::inflate 100000000 | ::load | ::call 101000000 1f00000
 
    Again, as soon as nanobl-rs blocks, use Xmodem to send image/output/unix.z
    to the target machine (picocom: C-a C-s).
-
-   ** Note the explicit arguments being provided to the kernel via ::call,
-   ** which is different to the previous boot method. This is a bit of a hack -
-   ** set to be removed in stlouis#223 - at present, the kernel uses the
-   ** presence of these arguments to cause the new misc/boot_image module to
-   ** be loaded and used during boot. The values being passed are the same that
-   ** the kernel assumes if no arguments are passed - see oxide/os/boot_data.c
 
 Once the kernel boots, you will see it try to find the ZFS image on an
 M.2 drive, and then falling back to network boot and loading the image from
@@ -329,11 +350,12 @@ CPIO miniroot image.
 	$ pfexec humility -t sn6 qspi -D image/output/rom
 
 No interaction is necessary for the system to boot, it will automatically
-start up and look for the ZFS ramdisk image on each M.2 disk in turn and then
-fall back to loading it from the network if it is not found or if the hash does
-not match the expected value. Note that the hash of the ZFS image must match
-the value embedded in the CPIO archive, which is part of the ROM, and so this
-method is not particularly suited for iterative work on stlouis.
+start up and look for a phase 2 image on the M.2 disk that corresponds to the
+boot storage unit in use. If you wish to load from the network then the
+corresponding bit needs to be set in the SP's startup options - See "Startup
+Options" above. Note that the hash of the ZFS image must match the value
+embedded in the CPIO archive, which is part of the ROM, and so this method is
+not particularly suited for iterative work on stlouis.
 
 M.2 setup
 ---------

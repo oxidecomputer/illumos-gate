@@ -30,6 +30,13 @@ extern "C" {
 
 #define	BOOT_IMAGE_OPS_VERSION		_BOOT_IMAGE_OPS_VERSION(1)
 
+/*
+ * If a boot property with this name is defined, then the value is interpreted
+ * as a kernel module which implements boot_image_ops_t. The module is loaded
+ * and asked to locate an appropriate root file system.
+ */
+#define	BTPROP_NAME_BOOT_IMAGE_OPS	"boot-image-ops"
+
 typedef struct boot_image_ops {
 	uint32_t bimo_version;
 	void (*bimo_locate)(void);

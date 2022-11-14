@@ -17,6 +17,8 @@
 #define	_SYS_KERNEL_IPCC_H
 
 #include <sys/ipcc_proto.h>
+#include <sys/types.h>
+#include <sys/varargs.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,6 +39,9 @@ extern int kernel_ipcc_bsu(uint8_t *);
 extern int kernel_ipcc_ident(ipcc_ident_t *);
 extern int kernel_ipcc_status(uint64_t *, uint64_t *);
 extern int kernel_ipcc_ackstart(void);
+extern int kernel_ipcc_bootfailv(ipcc_host_boot_failure_t, const char *,
+    va_list);
+extern int kernel_ipcc_bootfail(ipcc_host_boot_failure_t, const char *, ...);
 
 #ifdef __cplusplus
 }

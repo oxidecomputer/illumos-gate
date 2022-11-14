@@ -32,6 +32,7 @@ extern "C" {
 
 #define	OXBOOT_DATASET_LEN	128
 #define	OXBOOT_CSUMLEN_SHA256	32
+#define	OXBOOT_CSUMBUF_SHA256	(OXBOOT_CSUMLEN_SHA256 * 2 + 1)
 
 typedef struct oxide_boot {
 	/*
@@ -51,6 +52,8 @@ typedef struct oxide_boot {
 	uint8_t		oxb_csum_want[OXBOOT_CSUMLEN_SHA256];	/* I */
 	uint8_t		oxb_csum_have[OXBOOT_CSUMLEN_SHA256];	/* M */
 } oxide_boot_t;
+
+extern char *oxide_format_sum(char *, size_t, const uint8_t *);
 
 extern bool oxide_boot_ramdisk_create(oxide_boot_t *, uint64_t);
 extern bool oxide_boot_ramdisk_write(oxide_boot_t *, iovec_t *, uint_t,

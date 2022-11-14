@@ -387,8 +387,8 @@ boot_image_locate(void)
 	boot_image_ops_t *bimo = NULL;
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_root_node(),
-	    DDI_PROP_DONTPASS, "boot-image-ops", &value) != DDI_SUCCESS ||
-	    value[0] == '\0') {
+	    DDI_PROP_DONTPASS, BTPROP_NAME_BOOT_IMAGE_OPS, &value) !=
+	    DDI_SUCCESS || value[0] == '\0') {
 		/*
 		 * No boot-image-ops module was specified.
 		 */
