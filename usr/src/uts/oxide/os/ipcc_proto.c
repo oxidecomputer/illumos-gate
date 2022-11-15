@@ -244,11 +244,11 @@
  * While callers could pass in buffers for this, allocated from whatever memory
  * is available to them depending on the boot phase, only one transaction can
  * be in progress at a time. Therefore this file defines two global static
- * buffers for this and protects them with the global 'ipcc_mutex' lock (after
- * the initial single-threaded phase). This same lock controls access to
- * the channel and callers will block waiting for it to become idle. There is
- * more about this in the block comment above the ipcc_command_locked()
- * function.
+ * buffers for this. To use the channel, a caller must use
+ * ipcc_channel_acquire() to gain exclusive access, and call the corresponding
+ * ipcc_channel_release() when finished, including being finished with any
+ * pointers into these global buffers. There is more about this in the block
+ * comment above the ipcc_command_locked() function.
  *
  * Ops Vector
  * ==========
@@ -283,12 +283,11 @@
  *	 io_log		Receive a log message.
  *
  * If not NULL, the first of these to be called for a given transaction is
- * 'io_open', and the last is 'io_close'. The global 'ipcc_mutex' lock is held
- * for the duration of the transaction, across all of the callbacks. The flow
- * for an IPCC transaction looks something like:
+ * 'io_open', and the last is 'io_close'. The flow for an IPCC transaction
+ * looks something like:
  *
  * -> entry point, ipcc_XXX(vector, arg, params...)
- *   -> mutex_enter(ipcc_mutex)
+ *   -> ipcc_channel_acquire()
  *     -> io_open()
  *       -> io_readintr()
  *       -> io_poll(POLLOUT)
@@ -296,7 +295,7 @@
  *       -> io_poll(POLLIN)
  *       -> io_read()
  *     -> io_close()
- *   -> mutex_exit(ipcc_mutex)
+ *   -> ipcc_channel_release()
  *
  * Retransmissions
  * ===============
@@ -426,14 +425,13 @@
 static uint64_t ipcc_seq;
 
 /*
- * Global message and packet buffers, protected by 'ipcc_mutex'.
+ * Global message and packet buffers.
  * For outbound messages, the message is constructed in ipcc_msg and then COBS
  * encoded into ipcc_pkt. For inbound messages the packet is received into
  * ipcc_pkt and then decoded into ipcc_msg.
  */
 static uint8_t ipcc_msg[IPCC_MAX_MESSAGE_SIZE];
 static uint8_t ipcc_pkt[IPCC_MAX_PACKET_SIZE];
-static kmutex_t ipcc_mutex;
 
 /*
  * As well as indicating that we should expect to be called from multiple
@@ -443,13 +441,10 @@ static kmutex_t ipcc_mutex;
  */
 static bool ipcc_multithreaded;
 
-#define	IPCC_LOCK if (ipcc_multithreaded) mutex_enter(&ipcc_mutex)
-#define	IPCC_UNLOCK if (ipcc_multithreaded) mutex_exit(&ipcc_mutex)
-#define	IPCC_ASSERT_LOCK do { \
-		if (ipcc_multithreaded) { \
-			ASSERT(MUTEX_HELD(&ipcc_mutex)); \
-		} \
-	} while (0)
+static kmutex_t ipcc_mutex;
+static kcondvar_t ipcc_cv;
+static bool ipcc_channel_active = false;
+static kthread_t *ipcc_channel_owner;
 
 static int ipcc_sp_interrupt(const ipcc_ops_t *, void *);
 
@@ -458,12 +453,74 @@ ipcc_begin_multithreaded(void)
 {
 	extern int ncpus;
 
-	/* The system must still be single-threaded when this is called. */
+	/*
+	 * The system must still be single-threaded when this is called.
+	 * XXX - this doesn't directly test that, is there something better?
+	 */
 	VERIFY3S(ncpus, ==, 1);
 	VERIFY(!ipcc_multithreaded);
+	VERIFY(!ipcc_channel_active);
 
 	mutex_init(&ipcc_mutex, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&ipcc_cv, NULL, CV_DRIVER, NULL);
 	ipcc_multithreaded = true;
+}
+
+bool
+ipcc_channel_held(void)
+{
+	return (ipcc_channel_active &&
+	    (!ipcc_multithreaded || ipcc_channel_owner == curthread));
+}
+
+void
+ipcc_release_channel(const ipcc_ops_t *ops, void *arg, bool doclose)
+{
+	if (!ipcc_multithreaded) {
+		VERIFY(ipcc_channel_held());
+		ipcc_channel_active = false;
+	} else {
+		mutex_enter(&ipcc_mutex);
+		VERIFY(ipcc_channel_held());
+		ipcc_channel_active = false;
+		ipcc_channel_owner = NULL;
+		cv_broadcast(&ipcc_cv);
+		mutex_exit(&ipcc_mutex);
+	}
+
+	if (doclose && ops->io_close != NULL)
+		ops->io_close(arg);
+}
+
+int
+ipcc_acquire_channel(const ipcc_ops_t *ops, void *arg)
+{
+	int ret = 0;
+
+	if (!ipcc_multithreaded) {
+		VERIFY(!ipcc_channel_held());
+		ipcc_channel_active = true;
+	} else {
+		mutex_enter(&ipcc_mutex);
+		while (ipcc_channel_active) {
+			if (cv_wait_sig(&ipcc_cv, &ipcc_mutex) == 0) {
+				mutex_exit(&ipcc_mutex);
+				return (EINTR);
+			}
+		}
+		VERIFY(!ipcc_channel_held());
+		ipcc_channel_active = true;
+		ipcc_channel_owner = curthread;
+		mutex_exit(&ipcc_mutex);
+	}
+
+	if (ops->io_open != NULL) {
+		ret = ops->io_open(arg);
+		if (ret != 0)
+			ipcc_release_channel(ops, arg, false);
+	}
+
+	return (ret);
 }
 
 static uint16_t
@@ -607,7 +664,7 @@ ipcc_msg_init(uint8_t *buf, size_t len, size_t *off, ipcc_hss_cmd_t cmd)
 	uint32_t ver = IPCC_VERSION;
 	uint32_t magic = IPCC_MAGIC;
 
-	IPCC_ASSERT_LOCK;
+	VERIFY(ipcc_channel_held());
 
 	if (len - *off < IPCC_MIN_PACKET_SIZE)
 		return (ENOBUFS);
@@ -762,7 +819,7 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
 /*
  * This is the main interface for sending a command to the SP via the IPCC.
  *
- * Callers must acquire the global 'ipcc_mutex' lock prior to calling this
+ * Callers must acquire exclusive access to the channel prior to calling this
  * function.
  *
  * The parameters are:
@@ -789,7 +846,7 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
  *			  length payload.
  *
  * On return, 'datain' will be pointing to a global buffer and so consumers
- * must continue to hold 'ipcc_mutex' until they have finished processing the
+ * must continue to hold the channel until they have finished processing the
  * returned data.
  *
  * This function can return:
@@ -815,7 +872,7 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
  *
  * ipcc_command() is a simpler wrapper around ipcc_command_locked() for the
  * case where no reply data is expected. It also takes care of acquiring and
- * releasing the global ipcc lock.
+ * releasing the channel.
  */
 static int
 ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
@@ -831,7 +888,7 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 	uint8_t attempt = 0;
 	int err = 0;
 
-	IPCC_ASSERT_LOCK;
+	VERIFY(ipcc_channel_held());
 
 	if (ops->io_readintr != NULL && ops->io_readintr(arg)) {
 		if (ipcc_sp_interrupt(ops, arg) != 0)
@@ -1156,7 +1213,7 @@ ipcc_sp_interrupt(const ipcc_ops_t *ops, void *arg)
 	ipcc_ops_t nops = { 0, };
 	int err = 0;
 
-	IPCC_ASSERT_LOCK;
+	VERIFY(ipcc_channel_held());
 
 	LOG("SP interrupt received\n");
 
@@ -1176,38 +1233,17 @@ ipcc_sp_interrupt(const ipcc_ops_t *ops, void *arg)
 }
 
 static int
-ipcc_do_open(const ipcc_ops_t *ops, void *arg)
-{
-	IPCC_ASSERT_LOCK;
-	if (ops->io_open != NULL)
-		return (ops->io_open(arg));
-	return (0);
-}
-
-static void
-ipcc_do_close(const ipcc_ops_t *ops, void *arg)
-{
-	IPCC_ASSERT_LOCK;
-	if (ops->io_close != NULL)
-		ops->io_close(arg);
-}
-
-static int
 ipcc_command(const ipcc_ops_t *ops, void *arg,
     ipcc_hss_cmd_t cmd, ipcc_sp_cmd_t expected_rcmd,
     uint8_t *dataout, size_t dataoutl)
 {
 	int err;
 
-	IPCC_LOCK;
-	if ((err = ipcc_do_open(ops, arg)) != 0)
-		goto out;
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
 	err = ipcc_command_locked(ops, arg, cmd, expected_rcmd,
 	    dataout, dataoutl, NULL, NULL);
-	ipcc_do_close(ops, arg);
-
-out:
-	IPCC_UNLOCK;
+	ipcc_release_channel(ops, arg, true);
 
 	return (err);
 }
@@ -1227,6 +1263,7 @@ ipcc_reboot(const ipcc_ops_t *ops, void *arg)
 	 * arrive even if it is still working on another, and reset state.
 	 */
 	ipcc_multithreaded = false;
+	ipcc_channel_active = false;
 	return (ipcc_command(ops, arg, IPCC_HSS_REBOOT, IPCC_SP_NONE, NULL, 0));
 }
 
@@ -1251,19 +1288,18 @@ ipcc_bsu(const ipcc_ops_t *ops, void *arg, uint8_t *bsu)
 	size_t datal = IPCC_BSU_DATALEN;
 	int err = 0;
 
-	IPCC_LOCK;
-	if ((err = ipcc_do_open(ops, arg)) != 0)
-		goto out;
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+
 	err = ipcc_command_locked(ops, arg, IPCC_HSS_BSU, IPCC_SP_BSU,
 	    NULL, 0, &data, &datal);
-	ipcc_do_close(ops, arg);
 	if (err != 0)
 		goto out;
 
 	*bsu = *data;
 
 out:
-	IPCC_UNLOCK;
+	ipcc_release_channel(ops, arg, true);
 	return (err);
 }
 
@@ -1275,12 +1311,11 @@ ipcc_ident(const ipcc_ops_t *ops, void *arg, ipcc_ident_t *ident)
 	size_t off;
 	int err = 0;
 
-	IPCC_LOCK;
-	if ((err = ipcc_do_open(ops, arg)) != 0)
-		goto out;
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+
 	err = ipcc_command_locked(ops, arg, IPCC_HSS_IDENT, IPCC_SP_IDENT,
 	    NULL, 0, &data, &datal);
-	ipcc_do_close(ops, arg);
 	if (err != 0)
 		goto out;
 
@@ -1298,7 +1333,7 @@ ipcc_ident(const ipcc_ops_t *ops, void *arg, ipcc_ident_t *ident)
 	ident->ii_serial[sizeof (ident->ii_serial) - 1] = '\0';
 
 out:
-	IPCC_UNLOCK;
+	ipcc_release_channel(ops, arg, true);
 	return (err);
 }
 
@@ -1310,12 +1345,11 @@ ipcc_macs(const ipcc_ops_t *ops, void *arg, ipcc_mac_t *mac)
 	size_t off;
 	int err = 0;
 
-	IPCC_LOCK;
-	if ((err = ipcc_do_open(ops, arg)) != 0)
-		goto out;
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+
 	err = ipcc_command_locked(ops, arg, IPCC_HSS_MACS, IPCC_SP_MACS,
 	    NULL, 0, &data, &datal);
-	ipcc_do_close(ops, arg);
 	if (err != 0)
 		goto out;
 
@@ -1329,7 +1363,7 @@ ipcc_macs(const ipcc_ops_t *ops, void *arg, ipcc_mac_t *mac)
 	    data, &off);
 
 out:
-	IPCC_UNLOCK;
+	ipcc_release_channel(ops, arg, true);
 	return (err);
 }
 
@@ -1340,12 +1374,11 @@ ipcc_rot(const ipcc_ops_t *ops, void *arg, ipcc_rot_t *rot)
 	uint8_t *data;
 	size_t datal = 0;
 
-	IPCC_LOCK;
-	if ((err = ipcc_do_open(ops, arg)) != 0)
-		goto out;
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+
 	err = ipcc_command_locked(ops, arg, IPCC_HSS_ROT, IPCC_SP_ROT,
 	    rot->ir_data, rot->ir_len, &data, &datal);
-	ipcc_do_close(ops, arg);
 	if (err != 0)
 		goto out;
 
@@ -1359,7 +1392,7 @@ ipcc_rot(const ipcc_ops_t *ops, void *arg, ipcc_rot_t *rot)
 	bcopy(data, rot->ir_data, datal);
 
 out:
-	IPCC_UNLOCK;
+	ipcc_release_channel(ops, arg, true);
 	return (err);
 }
 
@@ -1379,16 +1412,13 @@ ipcc_bootfail(const ipcc_ops_t *ops, void *arg, ipcc_host_boot_failure_t type,
 	*data = (uint8_t)type;
 	bcopy(msg, data + sizeof (uint8_t), len);
 
-	IPCC_LOCK;
-	if ((err = ipcc_do_open(ops, arg)) != 0)
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
 		goto out;
-
 	err = ipcc_command_locked(ops, arg, IPCC_HSS_BOOTFAIL, IPCC_SP_ACK,
 	    data, datal, NULL, NULL);
-	ipcc_do_close(ops, arg);
+	ipcc_release_channel(ops, arg, true);
 
 out:
-	IPCC_UNLOCK;
 	kmem_free(data, datal);
 	return (err);
 }
@@ -1401,12 +1431,11 @@ ipcc_status(const ipcc_ops_t *ops, void *arg, uint64_t *status, uint64_t *debug)
 	size_t off;
 	int err = 0;
 
-	IPCC_LOCK;
-	if ((err = ipcc_do_open(ops, arg)) != 0)
-		goto out;
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+
 	err = ipcc_command_locked(ops, arg, IPCC_HSS_STATUS, IPCC_SP_STATUS,
 	    NULL, 0, &data, &datal);
-	ipcc_do_close(ops, arg);
 	if (err != 0)
 		goto out;
 
@@ -1415,6 +1444,33 @@ ipcc_status(const ipcc_ops_t *ops, void *arg, uint64_t *status, uint64_t *debug)
 	ipcc_decode_bytes((uint8_t *)debug, sizeof (*debug), data, &off);
 
 out:
-	IPCC_UNLOCK;
+	ipcc_release_channel(ops, arg, true);
 	return (err);
+}
+
+/*
+ * Retrieving a phase 2 image from the SP involves transferring a number of
+ * data blocks over a period of time. Rather than copy data unecessarily,
+ * the boot module holds the channel throughout so that it can safely access
+ * data in the global static packet buffer.
+ * The start parameter indicates the byte offset of the image at which the SP
+ * should start the response block; the size of the response is variable up to
+ * MAX_MESSAGE_SIZE.
+ */
+int
+ipcc_imageblock(const ipcc_ops_t *ops, void *arg, uint8_t *hash,
+    uint64_t start, uint8_t **data, size_t *datal)
+{
+	uint8_t buf[sizeof (start) + IPCC_IMAGE_HASHLEN];
+	size_t off;
+
+	VERIFY(ipcc_channel_held());
+
+	off = 0;
+	ipcc_encode_bytes(hash, IPCC_IMAGE_HASHLEN, buf, &off);
+	ipcc_encode_bytes((uint8_t *)&start, sizeof (start), buf, &off);
+
+	*datal = 0;
+	return (ipcc_command_locked(ops, arg, IPCC_HSS_IMAGEBLOCK,
+	    IPCC_SP_IMAGEBLOCK, buf, off, data, datal));
 }

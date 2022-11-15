@@ -35,7 +35,7 @@ have the following meanings:
 
   Bit	Mnemonic		Value	Note
   ---	--------		-----	-----
-  0	STARTUP_RECOVERY	0x1	Not yet in use, pending stlouis#192
+  0	STARTUP_RECOVERY	0x1	Request the phase 2 image via the SP
   1	STARTUP_KBM		0x2	Set kbm_debug
   2	STARTUP_BOOTRD		0x4	Set bootrd_debug
   3*	STARTUP_PROM		0x8	Set prom_debug

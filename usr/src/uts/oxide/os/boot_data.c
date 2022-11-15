@@ -382,10 +382,9 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 		if ((spstartup & IPCC_STARTUP_RECOVERY) != 0) {
 			/*
 			 * The SP has requested phase2 recovery - load via
-			 * ipcc. XXX - not yet implemented.
+			 * ipcc.
 			 */
-			/* bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "sp"); */
-			bop_panic("SP boot not yet implemented");
+			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "sp");
 		} else if ((spstartup & IPCC_STARTUP_BOOT_NET) != 0) {
 			/*
 			 * The SP has requested network boot.

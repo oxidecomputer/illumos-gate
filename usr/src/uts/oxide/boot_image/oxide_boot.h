@@ -17,6 +17,8 @@
 #define	_OXIDE_BOOT_H
 
 #include <sys/stdbool.h>
+#include <sys/sunddi.h>
+#include <sys/sunldi.h>
 #include <sys/crypto/api.h>
 
 /*
@@ -33,6 +35,11 @@ extern "C" {
 #define	OXBOOT_DATASET_LEN	128
 #define	OXBOOT_CSUMLEN_SHA256	32
 #define	OXBOOT_CSUMBUF_SHA256	(OXBOOT_CSUMLEN_SHA256 * 2 + 1)
+/*
+ * Images should be less than 4GiB, because that would be too large!
+ * serves as another validity check on the header.
+ */
+#define	OXBOOT_MAX_IMAGE_SIZE		(4UL * 1024 * 1024 * 1024)
 
 typedef struct oxide_boot {
 	/*
@@ -66,6 +73,7 @@ extern bool oxide_boot_disk_read(ldi_handle_t, uint64_t, char *, size_t);
 
 extern bool oxide_boot_net(oxide_boot_t *);
 extern bool oxide_boot_disk(oxide_boot_t *, int);
+extern bool oxide_boot_sp(oxide_boot_t *);
 
 #ifdef __cplusplus
 }

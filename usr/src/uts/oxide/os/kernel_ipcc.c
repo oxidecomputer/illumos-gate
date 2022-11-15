@@ -45,6 +45,21 @@ static ipcc_ops_t kernel_ipcc_ops;
 static ipcc_init_t ipcc_init = IPCC_INIT_UNSET;
 
 /*
+ * This flag reduces the sleep time in eb_ipcc_poll() from 10ms down to 10us.
+ * This is used specifically to reduce latency in the long running phase 2
+ * image transfer. Requesting data from the SP always results in us entering
+ * the poll loop since the SP has to coordinate multiple tasks, lease buffers
+ * and retrieve the data over the management network.
+ * Testing of that particular mechanism end-to-end has shown that this change
+ * increases the transfer rate of 512 byte blocks from 40KiB/s to 128KiB/s and
+ * that using a smaller delay than 10us does not further improve throughput.
+ *
+ * This variable must only be read or modified if the ipcc channel lock is
+ * held.
+ */
+static bool ipcc_fastpoll;
+
+/*
  * Functions for using IPCC from the kernel, driving the UART directly using the
  * polling functions in dw_apb_uart.c
  */
@@ -109,7 +124,7 @@ static int
 eb_ipcc_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
     uint64_t timeout_ms)
 {
-	uint64_t elapsed = 0;
+	uint64_t elapsed = 0, uselapsed = 0;
 	ipcc_pollevent_t rev = 0;
 
 	for (;;) {
@@ -122,8 +137,14 @@ eb_ipcc_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
 		if (rev != 0)
 			break;
 
-		eb_ipcc_pause(10);
-		elapsed += 10;
+		if (ipcc_fastpoll) {
+			tenmicrosec();
+			if (++uselapsed % 100 == 0)
+				elapsed++;
+		} else {
+			eb_ipcc_pause(10);
+			elapsed += 10;
+		}
 		if (timeout_ms > 0 && elapsed >= timeout_ms)
 			return (ETIMEDOUT);
 	}
@@ -376,6 +397,26 @@ kernel_ipcc_poweroff(void)
 }
 
 /*
+ * Utility functions that call into ipcc_proto. These are used by long running
+ * multi-command operations such as the phase 2 image transfer that wish to
+ * take acquire the channel over the whole operation to reduce latency and to
+ * avoid having to copy data around unecessarily. Holding the channel allows
+ * them to access the returned data directly.
+ */
+
+int
+kernel_ipcc_acquire(void)
+{
+	return (ipcc_acquire_channel(&kernel_ipcc_ops, &kernel_ipcc_data));
+}
+
+void
+kernel_ipcc_release(void)
+{
+	ipcc_release_channel(&kernel_ipcc_ops, &kernel_ipcc_data, true);
+}
+
+/*
  * The following interfaces are intended only for use during early boot,
  * before the device tree is available. They drive the UART directly via
  * kernel_ipcc_ops. It is an error to call these functions too late, once
@@ -451,4 +492,37 @@ kernel_ipcc_bootfail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 	va_end(va);
 
 	return (err);
+}
+
+int
+kernel_ipcc_imageblock(uint8_t *hash, uint64_t offset, uint8_t **data,
+    size_t *datal)
+{
+	ipcc_ops_t nops = { 0 };
+	int ret;
+
+	/*
+	 * Callers of this function must have previously acquired exclusive
+	 * access to the IPCC by successfully calling kernel_ipcc_acquire().
+	 */
+	VERIFY(ipcc_channel_held());
+
+	/*
+	 * Enable fast polling. It is safe to modify this here as channel
+	 * access has been acquired.
+	 */
+	ipcc_fastpoll = true;
+
+	/*
+	 * Logging is disabled for these requests to avoid spamming the console
+	 * (and so that the progress meter is visible).
+	 */
+	nops = kernel_ipcc_ops;
+	nops.io_log = NULL;
+
+	ret = ipcc_imageblock(&nops, &kernel_ipcc_data, hash, offset,
+	    data, datal);
+	ipcc_fastpoll = false;
+
+	return (ret);
 }

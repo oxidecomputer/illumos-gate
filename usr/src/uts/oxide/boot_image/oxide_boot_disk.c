@@ -119,12 +119,6 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 #define	OXBOOT_DISK_MAGIC		0x1DEB0075
 
 /*
- * Images should be less than 4GiB, because that would be too large!  This
- * serves as another validity check on the header.
- */
-#define	OXBOOT_MAX_IMAGE_SIZE		(4UL * 1024 * 1024 * 1024)
-
-/*
  * This header occupies the first 4K block in the slice.  Changes to the header
  * contents require bumps to the version and coordination with other software
  * that produces or inspects images.

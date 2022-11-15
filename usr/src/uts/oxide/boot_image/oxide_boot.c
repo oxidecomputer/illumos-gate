@@ -456,7 +456,7 @@ oxide_boot_locate(void)
 	 * image source will have been set as a boot property. The value will
 	 * be one of:
 	 *
-	 *   - sp	Retrieve from the SP - XXX not yet implemented.
+	 *   - sp	Retrieve from the service processor.
 	 *   - net	Network boot - this is used during development.
 	 *   - disk:NN	M.2 device in slot NN.
 	 */
@@ -471,9 +471,7 @@ oxide_boot_locate(void)
 	}
 
 	if (strcmp(bootdev, "sp") == 0) {
-		/* XXX - success = oxide_boot_sp(oxb); */
-		oxide_boot_fail(IPCC_BOOTFAIL_NOPHASE2,
-		    "Phase2 retrieval from SP not yet implemented");
+		success = oxide_boot_sp(oxb);
 	} else if (strcmp(bootdev, "net") == 0) {
 		success = oxide_boot_net(oxb);
 	} else if (strncmp(bootdev, "disk:", 5) == 0) {

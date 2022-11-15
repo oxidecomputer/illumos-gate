@@ -83,6 +83,7 @@ typedef enum ipcc_host_boot_failure {
 	IPCC_BOOTFAIL_NOPHASE2,
 	IPCC_BOOTFAIL_HEADER,
 	IPCC_BOOTFAIL_INTEGRITY,
+	IPCC_BOOTFAIL_RAMDISK,
 } ipcc_host_boot_failure_t;
 
 typedef enum ipcc_sp_status {
@@ -109,6 +110,8 @@ typedef enum ipcc_sp_startup {
 #define	IPCC_STATUS_DATALEN		16
 #define	IPCC_BOOTFAIL_MAX_MSGSIZE	\
 	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
+/* Keep synchronised with the header definition in boot_image/oxide_boot_sp.c */
+#define	IPCC_IMAGE_HASHLEN		32
 
 typedef enum ipcc_log_type {
 	IPCC_LOG_DEBUG,
@@ -133,6 +136,9 @@ typedef struct ipcc_ops {
 } ipcc_ops_t;
 
 extern void ipcc_begin_multithreaded(void);
+extern bool ipcc_channel_held(void);
+extern int ipcc_acquire_channel(const ipcc_ops_t *, void *);
+extern void ipcc_release_channel(const ipcc_ops_t *, void *, bool);
 extern int ipcc_reboot(const ipcc_ops_t *, void *);
 extern int ipcc_poweroff(const ipcc_ops_t *, void *);
 extern int ipcc_bsu(const ipcc_ops_t *, void *, uint8_t *);
@@ -143,6 +149,8 @@ extern int ipcc_bootfail(const ipcc_ops_t *, void *, ipcc_host_boot_failure_t,
     const uint8_t *, size_t);
 extern int ipcc_status(const ipcc_ops_t *, void *, uint64_t *, uint64_t *);
 extern int ipcc_ackstart(const ipcc_ops_t *, void *);
+extern int ipcc_imageblock(const ipcc_ops_t *, void *, uint8_t *, uint64_t,
+    uint8_t **, size_t *);
 
 #ifdef __cplusplus
 }
