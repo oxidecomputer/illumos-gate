@@ -33,7 +33,7 @@
 #include <sys/x86_archext.h>
 #include <sys/cpuvar.h>
 #include <amdzen_client.h>
-#include <sys/amdzen/gpio.h>
+#include <sys/amdzen/fch/gpio.h>
 #include <sys/gpio/kgpio_provider.h>
 
 #include "amdzen_data.h"

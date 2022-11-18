@@ -13,8 +13,8 @@
  * Copyright 2022 Oxide Computer Co.
  */
 
-#ifndef _SYS_IO_MMIOREG_H
-#define	_SYS_IO_MMIOREG_H
+#ifndef _SYS_AMDZEN_MMIOREG_H
+#define	_SYS_AMDZEN_MMIOREG_H
 
 /*
  * Memory-mapped I/O (MMIO) register access infrastructure.  The purpose here is
@@ -433,4 +433,4 @@ extern void x_ddi_reg_put(const mmio_reg_t, const uint64_t);
 }
 #endif
 
-#endif /* _SYS_IO_MMIOREG_H */
+#endif /* _SYS_AMDZEN_MMIOREG_H */

@@ -43,8 +43,9 @@
 #include <sys/stdbool.h>
 #include <sys/types.h>
 #include <sys/uart.h>
-#include <sys/io/fch/iomux.h>
+#include <sys/amdzen/fch/iomux.h>
 #include <sys/io/fch/uart.h>
+#include <sys/io/milan/iomux.h>
 #include <vm/kboot_mmu.h>
 
 static int
@@ -138,15 +139,15 @@ dw_apb_uart_iomux_pinmux_set(void)
 
 	const mmio_reg_block_t block = fch_iomux_mmio_block();
 
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 135, UART0_CTS_L);
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 136, UART0_RXD);
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 137, UART0_RTS_L);
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 138, UART0_TXD);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 135, UART0_CTS_L);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 136, UART0_RXD);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 137, UART0_RTS_L);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 138, UART0_TXD);
 
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 140, UART1_CTS_L);
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 141, UART1_RXD);
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 142, UART1_RTS_L);
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 143, UART1_TXD);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 140, UART1_CTS_L);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 141, UART1_RXD);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 142, UART1_RTS_L);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 143, UART1_TXD);
 
 	mmio_reg_block_unmap(block);
 

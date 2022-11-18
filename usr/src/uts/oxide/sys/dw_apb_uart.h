@@ -19,7 +19,7 @@
 #include <sys/stdbool.h>
 #include <sys/types.h>
 #include <sys/uart.h>
-#include <sys/io/mmioreg.h>
+#include <sys/amdzen/mmioreg.h>
 
 #ifdef __cplusplus
 extern "C" {

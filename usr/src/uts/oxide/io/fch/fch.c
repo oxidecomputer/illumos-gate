@@ -655,17 +655,17 @@
 #include <sys/types.h>
 #include <sys/x86_archext.h>
 #include <sys/io/milan/fabric.h>
-#include <sys/io/fch.h>
-#include <sys/io/fch/gpio.h>
+#include <sys/amdzen/mmioreg.h>
+#include <sys/amdzen/fch.h>
+#include <sys/amdzen/fch/gpio.h>
+#include <sys/amdzen/fch/iomux.h>
 #include <sys/io/fch/i2c.h>
 #include <sys/io/fch/i3c.h>
-#include <sys/io/fch/iomux.h>
 #include <sys/io/fch/ixbar.h>
 #include <sys/io/fch/pmio.h>
-#include <sys/io/fch/rmtgpio.h>
 #include <sys/io/fch/smi.h>
 #include <sys/io/fch/uart.h>
-#include <sys/io/mmioreg.h>
+#include <sys/io/milan/iomux.h>
 #include <milan/milan_physaddrs.h>
 
 #include "fch_impl.h"

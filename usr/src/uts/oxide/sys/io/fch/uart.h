@@ -29,10 +29,10 @@
 #include <sys/bitext.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
-#include <sys/io/mmioreg.h>
+#include <sys/amdzen/mmioreg.h>
 #endif	/* !_ASM */
 
-#include <sys/io/fch.h>
+#include <sys/amdzen/fch.h>
 
 #ifdef __cplusplus
 extern "C" {

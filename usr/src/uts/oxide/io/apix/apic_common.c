@@ -78,9 +78,9 @@
 #include <sys/tsc.h>
 #include <sys/smm.h>
 #include <sys/amdzen/smn.h>
-#include <sys/io/fch.h>
+#include <sys/amdzen/fch.h>
 #include <sys/io/fch/pmio.h>
-#include <sys/io/mmioreg.h>
+#include <sys/amdzen/mmioreg.h>
 #include <sys/io/milan/iohc.h>
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>

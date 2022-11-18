@@ -29,7 +29,7 @@
 #include <sys/types.h>
 #endif	/* !_ASM */
 
-#include <sys/io/fch.h>
+#include <sys/amdzen/fch.h>
 
 #ifdef __cplusplus
 extern "C" {

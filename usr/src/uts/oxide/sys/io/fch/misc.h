@@ -30,11 +30,11 @@
 #include <sys/bitext.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
-#include <sys/io/mmioreg.h>
+#include <sys/amdzen/mmioreg.h>
 #include <sys/io/fch/i2c.h>
 #endif	/* !_ASM */
 
-#include <sys/io/fch.h>
+#include <sys/amdzen/fch.h>
 
 #ifdef __cplusplus
 extern "C" {

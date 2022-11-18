@@ -28,9 +28,10 @@
 #include <sys/systm.h>
 #include <sys/uart.h>
 #include <vm/kboot_mmu.h>
-#include <sys/io/fch/gpio.h>
-#include <sys/io/fch/iomux.h>
+#include <sys/amdzen/fch/gpio.h>
+#include <sys/amdzen/fch/iomux.h>
 #include <sys/io/fch/uart.h>
+#include <sys/io/milan/iomux.h>
 #include <sys/archsystm.h>
 #include <sys/cpu.h>
 
@@ -78,7 +79,7 @@ eb_ipcc_readintr(void *arg)
 	kernel_ipcc_data_t *data = arg;
 	const uint32_t gpio = mmio_reg_read(data->kid_gpio_reg);
 
-	return (FCH_GPIO_STD_GET_INPUT(gpio) == FCH_GPIO_STD_INPUT_VAL_LOW);
+	return (FCH_GPIO_GPIO_GET_INPUT(gpio) == FCH_GPIO_GPIO_INPUT_LOW);
 }
 
 static void
@@ -207,24 +208,24 @@ eb_ipcc_init(void)
 	 * configure the pinmux to make it active on the pad.
 	 */
 	data->kid_gpio_block = fch_gpio_mmio_block();
-	data->kid_gpio_reg = FCH_GPIO_STD_MMIO(data->kid_gpio_block,
+	data->kid_gpio_reg = FCH_GPIO_GPIO_MMIO(data->kid_gpio_block,
 	    SP_AGPIO);
 	uint32_t gpio = mmio_reg_read(data->kid_gpio_reg);
-	gpio = FCH_GPIO_STD_SET_OUTPUT_EN(gpio, 0);
-	gpio = FCH_GPIO_STD_SET_PD_EN(gpio, 0);
-	gpio = FCH_GPIO_STD_SET_PU_EN(gpio, 0);
-	gpio = FCH_GPIO_STD_SET_TRIG(gpio, FCH_GPIO_STD_TRIG_LEVEL);
-	gpio = FCH_GPIO_STD_SET_LEVEL(gpio, FCH_GPIO_STD_LEVEL_ACT_LOW);
-	gpio = FCH_GPIO_STD_SET_INT_EN(gpio, 0);
+	gpio = FCH_GPIO_GPIO_SET_OUT_EN(gpio, 0);
+	gpio = FCH_GPIO_GPIO_SET_PD_EN(gpio, 0);
+	gpio = FCH_GPIO_GPIO_SET_PU_EN(gpio, 0);
+	gpio = FCH_GPIO_GPIO_SET_TRIG(gpio, FCH_GPIO_GPIO_TRIG_LEVEL);
+	gpio = FCH_GPIO_GPIO_SET_LEVEL(gpio, FCH_GPIO_GPIO_LEVEL_ACT_LOW);
+	gpio = FCH_GPIO_GPIO_SET_INT_EN(gpio, 0);
 	mmio_reg_write(data->kid_gpio_reg, gpio);
 	gpio = mmio_reg_read(data->kid_gpio_reg);
 
 	eb_printf("Configured AGPIO%d: %x (input is %s)\n", SP_AGPIO, gpio,
-	    FCH_GPIO_STD_GET_INPUT(gpio) == FCH_GPIO_STD_INPUT_VAL_HIGH ?
+	    FCH_GPIO_GPIO_GET_INPUT(gpio) == FCH_GPIO_GPIO_INPUT_HIGH ?
 	    "high" : "low");
 
 	const mmio_reg_block_t block = fch_iomux_mmio_block();
-	FCH_IOMUX_PINMUX_SET_MMIO(block, 139, GPIO139);
+	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 139, GPIO139);
 	mmio_reg_block_unmap(block);
 }
 
@@ -283,7 +284,7 @@ mb_ipcc_init(void)
 	 */
 	mmio_reg_block_unmap(data->kid_gpio_block);
 	data->kid_gpio_block = fch_gpio_mmio_block();
-	data->kid_gpio_reg = FCH_GPIO_STD_MMIO(data->kid_gpio_block, SP_AGPIO);
+	data->kid_gpio_reg = FCH_GPIO_GPIO_MMIO(data->kid_gpio_block, SP_AGPIO);
 
 	/*
 	 * Switch to the cmn_err()-based logger.

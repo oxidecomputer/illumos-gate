@@ -13,8 +13,8 @@
  * Copyright 2022 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_FCH_H
-#define	_SYS_IO_FCH_H
+#ifndef _SYS_AMDZEN_FCH_H
+#define	_SYS_AMDZEN_FCH_H
 
 /*
  * These are utility routines, mostly for metaprogramming, used to provide
@@ -226,8 +226,8 @@ extern "C" {
 #ifndef	_ASM
 
 #include <sys/bitext.h>
-#include <sys/io/mmioreg.h>
 #include <sys/amdzen/smn.h>
+#include <sys/amdzen/mmioreg.h>
 
 /*
  * Block-lookup and register-lookup function-generating macros for run of the
@@ -320,4 +320,4 @@ MAKE_MMIO_FCH_REG_BLOCK_FN(_unit, _unitlc,				\
 }
 #endif
 
-#endif /* _SYS_IO_FCH_H */
+#endif /* _SYS_AMDZEN_FCH_H */

@@ -14,7 +14,7 @@
  */
 
 /*
- * Glue for register-driven MMIO accesses.  See sys/io/mmioreg.h.  These
+ * Glue for register-driven MMIO accesses.  See sys/amdzen/mmioreg.h.  These
  * routines are intended for kernel use and will blow assertions if used by DDI
  * consumers.
  *
@@ -36,7 +36,7 @@
 #include <sys/param.h>
 #include <sys/sunddi.h>
 #include <sys/types.h>
-#include <sys/io/mmioreg.h>
+#include <sys/amdzen/mmioreg.h>
 #include <vm/hat.h>
 #include <vm/hat_i86.h>
 #include <vm/seg_kmem.h>
@@ -47,7 +47,7 @@
  * before genunix is loaded, we must use macro versions of these rather
  * than the DDI functions.
  */
-#define	btopr(x) ((((unsigned )(x) + PAGEOFFSET) / PAGESIZE))
+#define	btopr(x) ((((uintptr_t)(x) + PAGEOFFSET) / PAGESIZE))
 #define	ptob(x) (((pgcnt_t)(x)) << PAGESHIFT)
 
 mmio_reg_block_t

@@ -112,13 +112,12 @@
 #include <sys/plat/pci_prd.h>
 #include <sys/apic.h>
 #include <sys/cpuvar.h>
-#include <sys/io/fch.h>
-#include <sys/io/fch/gpio.h>
+#include <sys/amdzen/fch.h>
+#include <sys/amdzen/fch/gpio.h>
+#include <sys/amdzen/fch/iomux.h>
 #include <sys/io/fch/i2c.h>
-#include <sys/io/fch/iomux.h>
 #include <sys/io/fch/misc.h>
 #include <sys/io/fch/pmio.h>
-#include <sys/io/fch/rmtgpio.h>
 #include <sys/io/fch/smi.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/fabric_impl.h>
@@ -3754,16 +3753,14 @@ milan_perst_deassert(milan_iodie_t *iodie, uint16_t gpio)
 	uint32_t val;
 
 	if (gpio < 256) {
-		reg = milan_iodie_reg(iodie, D_FCH_GPIO_STD, gpio);
+		reg = milan_iodie_reg(iodie, D_FCH_GPIO_GPIO, gpio);
 	} else {
-		reg = milan_iodie_reg(iodie, D_FCH_RMTGPIO_STD, gpio - 256);
+		reg = milan_iodie_reg(iodie, D_FCH_RMTGPIO_GPIO, gpio - 256);
 	}
 
-	val = FCH_GPIO_STD_SET_OUTPUT_EN(0, 1);
-	val = FCH_GPIO_STD_SET_OUTPUT_VAL(val,
-	    FCH_GPIO_STD_OUTPUT_VAL_ASSERT);
-	val = FCH_GPIO_STD_SET_STRENGTH(val,
-	    FCH_GPIO_STD_STRENGTH_40OHM);
+	val = FCH_GPIO_GPIO_SET_OUT_EN(0, 1);
+	val = FCH_GPIO_GPIO_SET_OUTPUT(val, FCH_GPIO_GPIO_OUTPUT_HIGH);
+	val = FCH_GPIO_GPIO_SET_DRVSTR(val, FCH_GPIO_GPIO_DRVSTR_3P3_40R);
 	milan_iodie_write(iodie, reg, val);
 }
 
