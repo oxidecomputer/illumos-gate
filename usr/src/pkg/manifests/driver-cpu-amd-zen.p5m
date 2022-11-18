@@ -27,6 +27,9 @@ file path=kernel/drv/$(ARCH64)/amdzen_stub group=sys
 file path=kernel/drv/$(ARCH64)/zen_gpio group=sys
 file path=kernel/drv/$(ARCH64)/zen_umc group=sys
 file path=kernel/drv/amdzen.conf group=sys
+dir  path=kernel/misc group=sys
+dir  path=kernel/misc/$(ARCH64) group=sys
+file path=kernel/misc/$(ARCH64)/zen_data group=sys mode=0755
 dir  path=usr/include/sys
 dir  path=usr/include/sys/gpio
 file path=usr/include/sys/gpio/zen_gpio.h mode=0644

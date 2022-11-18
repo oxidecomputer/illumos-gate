@@ -36,7 +36,7 @@
 #include <sys/amdzen/gpio.h>
 #include <sys/gpio/kgpio_provider.h>
 
-#include "zen_gpio_impl.h"
+#include "amdzen_data.h"
 
 typedef enum {
 	/*
@@ -1061,17 +1061,8 @@ zen_gpio_identify(zen_gpio_t *zg)
 	 */
 	zg->zg_dfno = 0;
 	zg->zg_family = chiprev_family(cpuid_getchiprev(CPU));
-	switch (zg->zg_family) {
-	case X86_PF_AMD_ROME:
-	case X86_PF_AMD_MILAN:
-		zg->zg_ngpios = zen_gpio_sp3_nents;
-		zg->zg_pindata = zen_gpio_sp3_data;
-		break;
-	case X86_PF_AMD_GENOA:
-		zg->zg_ngpios = zen_gpio_sp5_nents;
-		zg->zg_pindata = zen_gpio_sp5_data;
-		break;
-	default:
+	zg->zg_pindata = amdzen_data_pininfo(&zg->zg_ngpios);
+	if (zg->zg_pindata == NULL) {
 		dev_err(zg->zg_dip, CE_WARN, "!chiprev family 0x%x is not "
 		    "supported: missing gpio data table", zg->zg_family);
 		return (false);

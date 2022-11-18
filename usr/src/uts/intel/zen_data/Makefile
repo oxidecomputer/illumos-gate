@@ -15,16 +15,15 @@
 
 UTSBASE = ../..
 
-MODULE		= zen_gpio
-OBJECTS		= $(ZEN_GPIO_OBJS:%=$(OBJS_DIR)/%)
-ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
+MODULE		= zen_data
+OBJECTS		= $(ZEN_DATA_OBJS:%=$(OBJS_DIR)/%)
+ROOTMODULE	= $(ROOT_MISC_DIR)/$(MODULE)
 
 include $(UTSBASE)/intel/Makefile.intel
 
 ALL_TARGET	= $(BINARY)
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 CPPFLAGS	+= -I$(UTSBASE)/intel/io/amdzen
-LDFLAGS		+= -Ndrv/amdzen -Ndrv/kgpio -Nmisc/zen_data
 
 .KEEP_STATE:
 
