@@ -775,13 +775,8 @@ SCardBeginTransaction(SCARDHANDLE arg)
 		return (SCARD_E_INVALID_HANDLE);
 	}
 
-	/*
-	 * The semantics of pcsc are that this operation does not block, but
-	 * instead fails if we cannot grab it immediately.
-	 */
 	bzero(&txn, sizeof (uccid_cmd_txn_begin_t));
 	txn.uct_version = UCCID_CURRENT_VERSION;
-	txn.uct_flags = UCCID_TXN_DONT_BLOCK;
 
 	if (ioctl(card->pcc_fd, UCCID_CMD_TXN_BEGIN, &txn) != 0) {
 		VERIFY3S(errno, !=, EFAULT);
