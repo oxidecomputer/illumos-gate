@@ -428,7 +428,7 @@ apic_probe_raw(const char *modname)
 	    FCH_PMIO_DECODEEN_IOAPICCFG_LOW_LAT);
 	val = FCH_PMIO_DECODEEN_SET_IOAPICEN(val, 1);
 	mmio_reg_write(reg, val);
-	mmio_reg_block_unmap(fch_pmio);
+	mmio_reg_block_unmap(&fch_pmio);
 
 	apic_io_id[0] = 0xf0;
 	apic_physaddr[0] = MILAN_PHYSADDR_FCH_IOAPIC;

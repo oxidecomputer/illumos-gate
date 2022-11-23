@@ -32,18 +32,21 @@
 #include <sys/stdbool.h>
 #include <sys/x86_archext.h>
 #include <sys/cpuvar.h>
-#include <amdzen_client.h>
 #include <sys/amdzen/fch/gpio.h>
 #include <sys/gpio/kgpio_provider.h>
 
 #include "amdzen_data.h"
+#include "fch_props.h"
 
 typedef enum {
 	/*
-	 * Indicates that we should prefer to use SMN for accessing registers as
-	 * opposed to MMIO.
+	 * This is used to determine if we have the remote block or not. This
+	 * varies based on which processor family we're working with. Our parent
+	 * handles this for us and we don't attempt to encode this in the
+	 * driver. If there are no remote GPIOs, then the pin table should not
+	 * reference it.
 	 */
-	ZEN_GPIO_F_USE_SMN	= 1 << 0,
+	ZEN_GPIO_F_HAVE_REMOTE	= 1 << 0,
 	/*
 	 * Indicates that the platform has limited support for GPIOs that are
 	 * I2C based. In particular this generally means:
@@ -52,7 +55,13 @@ typedef enum {
 	 *  o There is no support for controlling the output in a push-pull way
 	 *    at all.
 	 */
-	ZEN_GPIO_F_I2C_NO_PP = 1 << 1
+	ZEN_GPIO_F_I2C_NO_PP	= 1 << 1,
+	/*
+	 * Indicates that this instance of the gpio driver in the FCH is the
+	 * primary one and not otherwise. The primary one has support for AGPIOs
+	 * and the others do not.
+	 */
+	ZEN_GPIO_F_PRIMARY	= 1 << 2
 } zen_gpio_flags_t;
 
 typedef struct zen_gpio {
@@ -62,54 +71,47 @@ typedef struct zen_gpio {
 	uint_t zg_dfno;
 	size_t zg_ngpios;
 	const zen_gpio_pindata_t *zg_pindata;
+	/*
+	 * These three register blocks correspond to FCH::GPIO,
+	 * FCH::RMTGPIO::GPIO, and all of the misc status and interrupt controls
+	 * in FCH::RMTGPIO.
+	 */
+	mmio_reg_block_t zg_rb_gpio;
+	mmio_reg_block_t zg_rb_rgpio;
+	mmio_reg_block_t zg_rb_rsts;
 } zen_gpio_t;
 
-static smn_reg_t
+static mmio_reg_t
 zen_gpio_pin_to_reg(zen_gpio_t *zg, const zen_gpio_pindata_t *pin)
 {
-	smn_reg_t reg;
-
 	if ((pin->zg_cap & ZEN_GPIO_C_REMOTE) != 0) {
 		uint32_t id = pin->zg_id;
 
+		ASSERT3U(zg->zg_flags & ZEN_GPIO_F_HAVE_REMOTE, !=, 0);
 		ASSERT3U(pin->zg_id, >=, 256);
 		id -= 256;
-		reg = FCH_RMTGPIO_GPIO_SMN(id);
+		return (FCH_RMTGPIO_GPIO_MMIO(zg->zg_rb_rgpio, id));
 	} else {
-		reg = FCH_GPIO_GPIO_SMN(pin->zg_id);
+		return (FCH_GPIO_GPIO_MMIO(zg->zg_rb_gpio, pin->zg_id));
 	}
-
-	return (reg);
 }
 
 static int
 zen_gpio_read_reg(zen_gpio_t *zg, const zen_gpio_pindata_t *pin, uint32_t *out)
 {
-	int ret;
+	const mmio_reg_t reg = zen_gpio_pin_to_reg(zg, pin);
 
-	if ((zg->zg_flags & ZEN_GPIO_F_USE_SMN) != 0) {
-		const smn_reg_t reg = zen_gpio_pin_to_reg(zg, pin);
-		ret = amdzen_c_smn_read(zg->zg_dfno, reg, out);
-	} else {
-		ret = ENOTSUP;
-	}
-
-	return (ret);
+	*out = (uint32_t)x_ddi_reg_get(reg);
+	return (0);
 }
 
 static int
 zen_gpio_write_reg(zen_gpio_t *zg, const zen_gpio_pindata_t *pin, uint32_t val)
 {
-	int ret;
+	const mmio_reg_t reg = zen_gpio_pin_to_reg(zg, pin);
 
-	if ((zg->zg_flags & ZEN_GPIO_F_USE_SMN) != 0) {
-		const smn_reg_t reg = zen_gpio_pin_to_reg(zg, pin);
-		ret = amdzen_c_smn_write(zg->zg_dfno, reg, val);
-	} else {
-		ret = ENOTSUP;
-	}
-
-	return (ret);
+	x_ddi_reg_put(reg, (uint64_t)val);
+	return (0);
 }
 
 static int
@@ -410,6 +412,7 @@ zen_gpio_nvl_attr_fill(zen_gpio_t *zg, const zen_gpio_pindata_t *pin,
 	uint32_t dbt_unit_pos[4] = { ZEN_GPIO_DEBOUNCE_UNIT_2RTC,
 	    ZEN_GPIO_DEBOUNCE_UNIT_8RTC, ZEN_GPIO_DEBOUNCE_UNIT_512RTC,
 	    ZEN_GPIO_DEBOUNCE_UNIT_2048RTC };
+	zen_gpio_cap_t cap = pin->zg_cap;
 
 	kgpio_nvl_attr_fill_str(nvl, meta, KGPIO_ATTR_NAME, pin->zg_name, 0,
 	    NULL, KGPIO_PROT_RO);
@@ -419,8 +422,16 @@ zen_gpio_nvl_attr_fill(zen_gpio_t *zg, const zen_gpio_pindata_t *pin,
 	    NULL, KGPIO_PROT_RO);
 	kgpio_nvl_attr_fill_u32(nvl, meta, ZEN_GPIO_ATTR_PAD_TYPE, pin->zg_pad,
 	    0, NULL, KGPIO_PROT_RO);
-	kgpio_nvl_attr_fill_u32(nvl, meta, ZEN_GPIO_ATTR_CAPS, pin->zg_cap, 0,
-	    NULL, KGPIO_PROT_RO);
+
+	/*
+	 * If we're not the primary FCH, we do not support interrupts and
+	 * therefore need to remove the AGPIO cap.
+	 */
+	if ((zg->zg_flags & ZEN_GPIO_F_PRIMARY) == 0) {
+		cap &= ~ZEN_GPIO_C_AGPIO;
+	}
+	kgpio_nvl_attr_fill_u32(nvl, meta, ZEN_GPIO_ATTR_CAPS, cap, 0, NULL,
+	    KGPIO_PROT_RO);
 
 	/*
 	 * Next, add information that depends on the type of pad.
@@ -1053,6 +1064,8 @@ static const kgpio_ops_t zen_gpio_ops = {
 static bool
 zen_gpio_identify(zen_gpio_t *zg)
 {
+	int ret;
+	char *role;
 
 	/*
 	 * For the moment we always assume that we're on df 0. This will change
@@ -1069,43 +1082,9 @@ zen_gpio_identify(zen_gpio_t *zg)
 	}
 
 	/*
-	 * As all currently supported systems support accessing GPIOs over the
-	 * SMN, we flag that here for everything. If support for other systems
-	 * is added, move the flag into the switch statement above.
-	 */
-	switch (zg->zg_family) {
-	case X86_PF_AMD_ROME:
-	case X86_PF_AMD_MILAN:
-	case X86_PF_AMD_GENOA:
-		zg->zg_flags |= ZEN_GPIO_F_USE_SMN;
-		break;
-	case X86_PF_AMD_NAPLES:
-	case X86_PF_HYGON_DHYANA:
-	case X86_PF_AMD_PINNACLE_RIDGE:
-	case X86_PF_AMD_RAVEN_RIDGE:
-	case X86_PF_AMD_PICASSO:
-	case X86_PF_AMD_DALI:
-	case X86_PF_AMD_RENOIR:
-	case X86_PF_AMD_MATISSE:
-	case X86_PF_AMD_VAN_GOGH:
-	case X86_PF_AMD_MENDOCINO:
-	case X86_PF_AMD_VERMEER:
-	case X86_PF_AMD_REMBRANDT:
-	case X86_PF_AMD_CEZANNE:
-	case X86_PF_AMD_RAPHAEL:
-		dev_err(zg->zg_dip, CE_WARN, "!chiprev family 0x%x is not "
-		    "supported: no MMIO gpio support", zg->zg_family);
-		return (false);
-	default:
-		dev_err(zg->zg_dip, CE_WARN, "!chiprev family 0x%x is not "
-		    "supported: missing SMN vs. MMIO info", zg->zg_family);
-		return (false);
-	}
-
-	/*
-	 * Next go through and identify if this family supports the weird I2C
-	 * mode where it's forced open-drain or not. These platforms also give
-	 * you the ability to control the pull-up strength.
+	 * Identify if this family supports the weird I2C mode where it's forced
+	 * open-drain or not. These platforms also give you the ability to
+	 * control the pull-up strength.
 	 */
 	switch (zg->zg_family) {
 	case X86_PF_AMD_NAPLES:
@@ -1134,12 +1113,94 @@ zen_gpio_identify(zen_gpio_t *zg)
 		return (false);
 	}
 
+	/*
+	 * Finally, the last thing we need to identify at this point is whether
+	 * or not we believe we're the primary instance. That in turn controls
+	 * the set of attributes we support as only the primary FCH has
+	 * interrupts. We explicitly want to pass this property request up the
+	 * tree as it is something that one of our parents has, not us.
+	 */
+	ret = ddi_prop_lookup_string(DDI_DEV_T_ANY, zg->zg_dip, 0,
+	    FCH_PROPNAME_FABRIC_ROLE, &role);
+	if (ret != DDI_PROP_SUCCESS) {
+		dev_err(zg->zg_dip, CE_WARN, "failed to get '%s' property: %d",
+		    FCH_PROPNAME_FABRIC_ROLE, ret);
+		return (false);
+	}
+
+	if (strcmp(role, FCH_FABRIC_ROLE_PRI) == 0) {
+		zg->zg_flags |= ZEN_GPIO_F_PRIMARY;
+	} else if (strcmp(role, FCH_FABRIC_ROLE_SEC) != 0) {
+		dev_err(zg->zg_dip, CE_WARN, "encountered unknown value for "
+		    "'%s' property: %s", FCH_PROPNAME_FABRIC_ROLE, role);
+		ddi_prop_free(role);
+		return (false);
+	}
+
+	ddi_prop_free(role);
+	return (true);
+}
+
+static bool
+zen_gpio_map_regs(zen_gpio_t *zg)
+{
+	int nregs, ret;
+	ddi_device_acc_attr_t attr;
+
+	if (ddi_dev_nregs(zg->zg_dip, &nregs) != DDI_SUCCESS) {
+		dev_err(zg->zg_dip, CE_WARN, "failed to get number of "
+		    "registers");
+		return (false);
+	}
+
+	if (nregs != 1 && nregs != 3) {
+		dev_err(zg->zg_dip, CE_WARN, "encountered surprising number of "
+		    "registers, expected 1 or 3, found %d\n", nregs);
+		return (false);
+	}
+
+	attr.devacc_attr_version = DDI_DEVICE_ATTR_V1;
+	attr.devacc_attr_endian_flags = DDI_NEVERSWAP_ACC;
+	attr.devacc_attr_dataorder = DDI_STRICTORDER_ACC;
+	attr.devacc_attr_access = DDI_DEFAULT_ACC;
+
+	ret = x_ddi_reg_block_setup(zg->zg_dip, 0, &attr, &zg->zg_rb_gpio);
+	if (ret != DDI_SUCCESS) {
+		dev_err(zg->zg_dip, CE_WARN, "failed to map main gpio block: "
+		    "%d", ret);
+		return (false);
+	}
+
+	if (nregs == 1) {
+		return (true);
+	}
+
+	zg->zg_flags |= ZEN_GPIO_F_HAVE_REMOTE;
+	ret = x_ddi_reg_block_setup(zg->zg_dip, 1, &attr, &zg->zg_rb_rgpio);
+	if (ret != DDI_SUCCESS) {
+		dev_err(zg->zg_dip, CE_WARN, "failed to map remote gpio block: "
+		    "%d", ret);
+		return (false);
+	}
+
+	ret = x_ddi_reg_block_setup(zg->zg_dip, 2, &attr, &zg->zg_rb_rsts);
+	if (ret != DDI_SUCCESS) {
+		dev_err(zg->zg_dip, CE_WARN, "failed to map remote status and "
+		    "interrupt block: %d", ret);
+		return (false);
+	}
+
 	return (true);
 }
 
 static void
 zen_gpio_cleanup(zen_gpio_t *zg)
 {
+	x_ddi_reg_block_free(&zg->zg_rb_gpio);
+	if ((zg->zg_flags & ZEN_GPIO_F_HAVE_REMOTE) != 0) {
+		x_ddi_reg_block_free(&zg->zg_rb_rgpio);
+		x_ddi_reg_block_free(&zg->zg_rb_rsts);
+	}
 	kmem_free(zg, sizeof (zen_gpio_t));
 }
 
@@ -1162,6 +1223,10 @@ zen_gpio_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	zg->zg_dip = dip;
 
 	if (!zen_gpio_identify(zg)) {
+		goto err;
+	}
+
+	if (!zen_gpio_map_regs(zg)) {
 		goto err;
 	}
 

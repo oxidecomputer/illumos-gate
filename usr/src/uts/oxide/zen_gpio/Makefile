@@ -17,14 +17,14 @@ UTSBASE = ../..
 
 MODULE		= zen_gpio
 OBJECTS		= $(ZEN_GPIO_OBJS:%=$(OBJS_DIR)/%)
-ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
+ROOTMODULE	= $(ROOT_PSM_DRV_DIR)/$(MODULE)
 
-include $(UTSBASE)/intel/Makefile.intel
+include $(UTSBASE)/oxide/Makefile.oxide
 
 ALL_TARGET	= $(BINARY)
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 CPPFLAGS	+= -I$(UTSBASE)/intel/io/amdzen
-LDFLAGS		+= -Ndrv/amdzen -Ndrv/kgpio -Nmisc/zen_data
+LDFLAGS		+= -Ndrv/kgpio -Nmisc/zen_data
 
 .KEEP_STATE:
 
@@ -38,4 +38,4 @@ clobber:	$(CLOBBER_DEPS)
 
 install:	$(INSTALL_DEPS)
 
-include $(UTSBASE)/intel/Makefile.targ
+include $(UTSBASE)/oxide/Makefile.targ

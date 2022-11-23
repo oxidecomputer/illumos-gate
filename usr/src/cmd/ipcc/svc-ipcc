@@ -19,7 +19,7 @@
 
 #
 # CONTROLLER      GPIO                ID
-# zen_gpio-1      AGPIO139            53
+# zen_gpio0       AGPIO139            53
 #
 # Connected to the SP and used for SP-to-Host interrupt.
 GPIO="AGPIO139"
@@ -42,7 +42,7 @@ fi
 DPIO_NAME=${DPIO_NAME##*/}
 
 # On gimlet there is only ever one zen_gpio controller (which currently has
-# instance number -1). Search for any controller which has the GPIO we are
+# instance number 0). Search for any controller which has the GPIO we are
 # looking for. XXX - reconsider after stlouis#215 and once gpio is
 # reparented under fch.
 GPIO_PIN=$(gpioadm gpio list -1 -p -o controller,id "*/$GPIO")

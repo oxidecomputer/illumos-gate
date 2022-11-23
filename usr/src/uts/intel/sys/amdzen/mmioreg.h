@@ -165,11 +165,11 @@
  *
  *    Non-DDI:
  *
- * mmio_reg_block_unmap(block);
+ * mmio_reg_block_unmap(&block);
  *
  *    DDI:
  *
- * x_ddi_reg_block_free(block);
+ * x_ddi_reg_block_free(&block);
  *
  * Note that while the non-DDI consumers must identify in advance the block of
  * registers they wish to map by invoking a block-specific function that may
@@ -276,17 +276,18 @@ typedef struct mmio_reg_block_phys {
 	size_t	mrbp_len;
 } mmio_reg_block_phys_t;
 
-typedef enum mmio_reg_block_flag {
+typedef enum mmio_reg_block_type {
 	MRBF_NONE = 0,
 	MRBF_DDI = 1,
-	MRBF_KBM = 2
-} mmio_reg_block_flag_t;
+	MRBF_KBM = 2,
+	MRBF_HAT = 3
+} mmio_reg_block_type_t;
 
 /*
  * After mapping in the block, mrbm_va will point to the base of the block; we
  * don't currently support mapping registers into user space directly, but it's
  * certainly possible.  If this mapping was created by our DDI extension,
- * MRBF_DDI will be set in mrb_flags, and mrb_acc will be a valid access handle.
+ * MRBF_DDI will be set in mrb_type, and mrb_acc will be a valid access handle.
  * Otherwise, mrb_phys will be filled in.  When MRBF_DDI is set, we also ignore
  * mrb_unit when instantiating register; otherwise, we will check that it
  * matches the definition's srd_unit value.  Additionally, when MRBF_DDI is set,
@@ -298,7 +299,7 @@ typedef enum mmio_reg_block_flag {
  */
 typedef struct mmio_reg_block {
 	smn_unit_t			mrb_unit;
-	mmio_reg_block_flag_t		mrb_flags;
+	mmio_reg_block_type_t		mrb_type;
 	caddr_t				mrb_va;
 	union {
 		ddi_acc_handle_t	mrb_acc;
@@ -323,7 +324,7 @@ extern mmio_reg_block_t mmio_reg_block_map(const smn_unit_t,
  * Tear down a mapping created by mmio_reg_block_map(); called by non-DDI
  * consumers only.
  */
-extern void mmio_reg_block_unmap(mmio_reg_block_t);
+extern void mmio_reg_block_unmap(mmio_reg_block_t *);
 
 /*
  * There's really only one practical difference between something accessible
@@ -389,7 +390,7 @@ _fn(const mmio_reg_block_t block, const mmio_reg_def_t def,		\
 									\
 	ddi_acc_handle_t hdl;						\
 									\
-	if ((block.mrb_flags & MRBF_DDI) == 0) {			\
+	if (block.mrb_type != MRBF_DDI) {			\
 		ASSERT3U(instoff, <, block.mrb_phys.mrbp_len);		\
 		ASSERT3U(block.mrb_phys.mrbp_len - instoff, >=, size);	\
 		ASSERT3S(block.mrb_unit, ==, def.srd_unit);		\
@@ -425,6 +426,7 @@ extern void mmio_reg_write(const mmio_reg_t reg, const uint64_t val);
  */
 extern int x_ddi_reg_block_setup(dev_info_t *, uint_t, ddi_device_acc_attr_t *,
     mmio_reg_block_t *);
+extern void x_ddi_reg_block_free(mmio_reg_block_t *);
 
 extern uint64_t x_ddi_reg_get(const mmio_reg_t);
 extern void x_ddi_reg_put(const mmio_reg_t, const uint64_t);

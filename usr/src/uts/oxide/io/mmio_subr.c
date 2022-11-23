@@ -61,7 +61,7 @@ mmio_reg_block_map(const smn_unit_t unit, const mmio_reg_block_phys_t phys)
 	const uintptr_t nlp = btopr(phys.mrbp_len + loff);
 	const uintptr_t nmp = mmu_btopr(phys.mrbp_len + moff);
 
-	mmio_reg_block_flag_t flags = 0;
+	mmio_reg_block_type_t type = MRBF_NONE;
 	caddr_t va;
 
 	if (khat_running == 1) {
@@ -69,6 +69,7 @@ mmio_reg_block_map(const smn_unit_t unit, const mmio_reg_block_phys_t phys)
 		hat_devload(kas.a_hat, va,
 		    mmu_ptob(nmp), mmu_btop(phys.mrbp_base),
 		    PROT_READ | PROT_WRITE | HAT_STRICTORDER, HAT_LOAD_LOCK);
+		type = MRBF_HAT;
 	} else {
 		paddr_t pa = phys.mrbp_base - moff;
 
@@ -78,34 +79,41 @@ mmio_reg_block_map(const smn_unit_t unit, const mmio_reg_block_phys_t phys)
 			kbm_map((uintptr_t)va + i * MMU_PAGESIZE,
 			    pa + i * MMU_PAGESIZE, 0, PT_WRITABLE | PT_NOCACHE);
 		}
-		flags |= MRBF_KBM;
+		type = MRBF_KBM;
 	}
 
 	const mmio_reg_block_t block = {
 	    .mrb_unit = unit,
 	    .mrb_va = (const caddr_t)((const uintptr_t)va + loff),
 	    .mrb_phys = phys,
-	    .mrb_flags = flags
+	    .mrb_type = type
 	};
 
 	return (block);
 }
 
-void
-mmio_reg_block_unmap(mmio_reg_block_t block)
+static void
+mmio_reg_block_reset(mmio_reg_block_t *rbp)
 {
-	ASSERT0(block.mrb_flags & MRBF_DDI);
+	bzero(rbp, sizeof (*rbp));
+	rbp->mrb_type = MRBF_NONE;
+	rbp->mrb_unit = SMN_UNIT_UNKNOWN;
+}
 
-	const uintptr_t loff = (const uintptr_t)block.mrb_va & PAGEOFFSET;
-	const uintptr_t moff = block.mrb_phys.mrbp_base & MMU_PAGEOFFSET;
+void
+mmio_reg_block_unmap(mmio_reg_block_t *block)
+{
+	const uintptr_t loff = (const uintptr_t)block->mrb_va & PAGEOFFSET;
+	const uintptr_t moff = block->mrb_phys.mrbp_base & MMU_PAGEOFFSET;
 
-	const uintptr_t nlp = btopr(block.mrb_phys.mrbp_len + loff);
-	const uintptr_t nmp = mmu_btopr(block.mrb_phys.mrbp_len + moff);
+	const uintptr_t nlp = btopr(block->mrb_phys.mrbp_len + loff);
+	const uintptr_t nmp = mmu_btopr(block->mrb_phys.mrbp_len + moff);
 
-	const uintptr_t vlbase = (const uintptr_t)block.mrb_va & PAGEMASK;
-	const uintptr_t vmbase = (const uintptr_t)block.mrb_va & MMU_PAGEMASK;
+	const uintptr_t vlbase = (const uintptr_t)block->mrb_va & PAGEMASK;
+	const uintptr_t vmbase = (const uintptr_t)block->mrb_va & MMU_PAGEMASK;
 
-	if (block.mrb_flags & MRBF_KBM) {
+	switch (block->mrb_type) {
+	case MRBF_KBM:
 		/*
 		 * In the case that we are trying to do a KBM unmap after the
 		 * device arena is available, leave the pages mapped. At this
@@ -117,12 +125,19 @@ mmio_reg_block_unmap(mmio_reg_block_t block)
 			for (uint64_t i = 0; i < nmp; i++)
 				kbm_unmap(vmbase + i * MMU_PAGESIZE);
 		}
-	} else {
+		break;
+	case MRBF_HAT:
 		hat_unload(kas.a_hat, (const caddr_t)vmbase,
 		    (const size_t)mmu_ptob(nmp), HAT_UNLOAD_UNLOCK);
 		device_arena_free((const caddr_t)vlbase,
 		    (const size_t)ptob(nlp));
+		break;
+	default:
+		panic("asked to unmap mmio block with bad type: 0x%x",
+		    block->mrb_type);
 	}
+
+	mmio_reg_block_reset(block);
 }
 
 uint64_t
@@ -176,15 +191,30 @@ x_ddi_reg_block_setup(dev_info_t *dip, uint_t regnum, ddi_device_acc_attr_t *ap,
 {
 	int res;
 
+	VERIFY3U(rbp->mrb_type, ==, MRBF_NONE);
+
 	res = ddi_regs_map_setup(dip, regnum, &rbp->mrb_va, 0, 0, ap,
 	    &rbp->mrb_acc);
 	if (res != DDI_SUCCESS)
 		return (res);
 
-	rbp->mrb_flags |= MRBF_DDI;
+	rbp->mrb_type = MRBF_DDI;
 	rbp->mrb_unit = SMN_UNIT_UNKNOWN;
 
 	return (DDI_SUCCESS);
+}
+
+void
+x_ddi_reg_block_free(mmio_reg_block_t *rbp)
+{
+	if (rbp->mrb_type != MRBF_NONE) {
+		VERIFY3U(rbp->mrb_type, ==, MRBF_DDI);
+		VERIFY3U(rbp->mrb_unit, ==, SMN_UNIT_UNKNOWN);
+
+		ddi_regs_map_free(&rbp->mrb_acc);
+	}
+
+	mmio_reg_block_reset(rbp);
 }
 
 uint64_t

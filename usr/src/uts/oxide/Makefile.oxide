@@ -239,7 +239,7 @@ DRV_KMODS	+= vmm
 DRV_KMODS	+= fch
 DRV_KMODS	+= dwu
 DRV_KMODS	+= cpudrv
-
+DRV_KMODS	+= zen_gpio
 
 #
 # Platform Power Modules

@@ -668,14 +668,12 @@
 #include <sys/io/milan/iomux.h>
 #include <milan/milan_physaddrs.h>
 
+#include "fch_props.h"
 #include "fch_impl.h"
 #include "ixbar.h"
 
 #define	FCH_PROPNAME_RANGES		"ranges"
 #define	FCH_PROPNAME_MODEL		"model"
-#define	FCH_PROPNAME_FABRIC_ROLE	"fabric-role"
-#define	FCH_FABRIC_ROLE_PRI		"primary"
-#define	FCH_FABRIC_ROLE_SEC		"secondary"
 #define	FCH_PROPNAME_REG		"reg"
 #define	FCH_PROPNAME_INTR		"interrupts"
 #define	FCH_PROPNAME_INTR_PRI		"interrupt-priorities"
@@ -1039,8 +1037,9 @@ static const fch_rangespec_t kczgp_regs[] = {
 	}
 };
 
+/* XXX for bootstrap */
 static const fch_child_def_t kczgp_def = {
-	.fcd_nodename = "kczgp",
+	.fcd_nodename = "zen_gpio",
 	.fcd_desc = "KERNCZ GPIO",
 	.fcd_unit_addr = 0,
 	.fcd_flags = FCF_PRIMARY | FCF_SECONDARY,

@@ -224,9 +224,9 @@ eb_ipcc_init(void)
 	    FCH_GPIO_GPIO_GET_INPUT(gpio) == FCH_GPIO_GPIO_INPUT_HIGH ?
 	    "high" : "low");
 
-	const mmio_reg_block_t block = fch_iomux_mmio_block();
+	mmio_reg_block_t block = fch_iomux_mmio_block();
 	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 139, GPIO139);
-	mmio_reg_block_unmap(block);
+	mmio_reg_block_unmap(&block);
 }
 
 static void
@@ -282,7 +282,7 @@ mb_ipcc_init(void)
 	/*
 	 * Similarly the GPIO MMIO block and register.
 	 */
-	mmio_reg_block_unmap(data->kid_gpio_block);
+	mmio_reg_block_unmap(&data->kid_gpio_block);
 	data->kid_gpio_block = fch_gpio_mmio_block();
 	data->kid_gpio_reg = FCH_GPIO_GPIO_MMIO(data->kid_gpio_block, SP_AGPIO);
 

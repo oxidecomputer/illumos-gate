@@ -137,7 +137,7 @@ dw_apb_uart_iomux_pinmux_set(void)
 	if (mapped)
 		return;
 
-	const mmio_reg_block_t block = fch_iomux_mmio_block();
+	mmio_reg_block_t block = fch_iomux_mmio_block();
 
 	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 135, UART0_CTS_L);
 	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 136, UART0_RXD);
@@ -149,7 +149,7 @@ dw_apb_uart_iomux_pinmux_set(void)
 	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 142, UART1_RTS_L);
 	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 143, UART1_TXD);
 
-	mmio_reg_block_unmap(block);
+	mmio_reg_block_unmap(&block);
 
 	mapped = true;
 }
@@ -181,7 +181,7 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 	dw_apb_uart_iomux_pinmux_set();
 
 	if ((uart->dau_flags & DAUF_MAPPED))
-		mmio_reg_block_unmap(uart->dau_reg_block);
+		mmio_reg_block_unmap(&uart->dau_reg_block);
 
 	/*
 	 * Assume Huashan for now; this will also work for Songshan.
