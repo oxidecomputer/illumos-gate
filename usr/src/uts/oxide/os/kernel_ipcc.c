@@ -336,21 +336,42 @@ kernel_ipcc_init(ipcc_init_t stage)
  * These functions always drive the UART directly via kernel_ipcc_ops. They
  * are called when the system is in a state where interrupts may not be
  * available or we may be single-threaded.
+ * This function configures things to give us the best chance of success in
+ * sending a final message.
  */
+static void
+kernel_ipcc_prepare_gasp(void)
+{
+	/*
+	 * We're sending a final message, don't look at or try to deal with any
+	 * asserted interrupt.
+	 */
+	kernel_ipcc_ops.io_readintr = NULL;
+	/*
+	 * We may be at a high SPL in which case logging can deadlock if we're
+	 * also single-threaded (as we are in at least the reboot and panic
+	 * cases).
+	 */
+	kernel_ipcc_ops.io_log = NULL;
+	/*
+	 * The UART may not be configured as we require. For example, if we are
+	 * multi-user then the `dwu` driver may have disabled RTS; reset
+	 * things.
+	 */
+	dw_apb_reset_mcr(&kernel_ipcc_data.kid_uart);
+}
 
 void
 kernel_ipcc_reboot(void)
 {
-	kernel_ipcc_ops.io_readintr = NULL;
-	kernel_ipcc_ops.io_log = NULL;
+	kernel_ipcc_prepare_gasp();
 	(void) ipcc_reboot(&kernel_ipcc_ops, &kernel_ipcc_data);
 }
 
 void
 kernel_ipcc_poweroff(void)
 {
-	kernel_ipcc_ops.io_readintr = NULL;
-	kernel_ipcc_ops.io_log = NULL;
+	kernel_ipcc_prepare_gasp();
 	(void) ipcc_poweroff(&kernel_ipcc_ops, &kernel_ipcc_data);
 }
 

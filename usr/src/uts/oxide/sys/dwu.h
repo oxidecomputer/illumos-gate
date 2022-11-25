@@ -116,6 +116,7 @@ extern "C" {
 #define	OUT1		0x04	/* Aux output - not used */
 #define	OUT2		0x08	/* turns intr to 386 on/off */
 #define	ASY_LOOP	0x10	/* loopback for diagnostics */
+#define	AFCE		0x20	/* Automatic flow control enable */
 
 /* Modem Status Register */
 #define	DCTS		0x01	/* Delta Clear To Send */

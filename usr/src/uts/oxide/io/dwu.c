@@ -710,6 +710,7 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 
 	/* establish default usage */
 	asy->asy_mcr |= RTS|DTR;		/* do use RTS/DTR after open */
+	asy->asy_mcr |= AFCE;			/* enable AFC */
 	asy->asy_lcr = STOP1|BITS8;		/* default to 1 stop 8 bits */
 	asy->asy_bidx = B3000000;		/* default to 3M  */
 	/*
@@ -721,10 +722,12 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 #ifdef DEBUG
 	asy->asy_msint_cnt = 0;			/* # of times in async_msint */
 #endif
-	mcr = 0;				/* don't enable until open */
+
+	/* Always use automatic flow control. */
+	mcr = AFCE | RTS;
 
 	DEBUGCONT1(ASY_DEBUG_MODEM,
-	    "dwu%dattach: clear ASY_IGNORE_CD, clear RTS & DTR\n", instance);
+	    "dwu%dattach: clear ASY_IGNORE_CD, clear DTR\n", instance);
 	asy->asy_flags &= ~ASY_IGNORE_CD;	/* wait for cd */
 
 	/*
@@ -1090,154 +1093,6 @@ asy_identify_chip(dev_info_t *devi, struct asycom *asy)
 	 */
 	asy_reset_fifo(asy, 0);
 	asy->asy_hwtype = hwtype;
-
-	/*
-	 * Check for Exar/Startech ST16C650, which will still look like a
-	 * 16550A until we enable its enhanced mode.
-	 */
-	if (asy->asy_hwtype == ASY16550A && asymaxchip >= ASY16650 &&
-	    asy_scr_test) {
-		/* Enable enhanced mode register access */
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-		    EFRACCESS);
-		/* zero scratch register (not scratch register if enhanced) */
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + SCR, 0);
-		/* Disable enhanced mode register access */
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-		    STOP1|BITS8);
-		/* read back scratch register */
-		ret = ddi_get32(asy->asy_iohandle, asy->asy_ioaddr + SCR);
-		if (ret == SCRTEST) {
-			/* looks like we have an ST16650 -- enable it */
-			ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-			    EFRACCESS);
-			ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + EFR,
-			    ENHENABLE);
-			ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-			    STOP1|BITS8);
-			asy->asy_hwtype = ASY16650;
-			asy->asy_fifo_buf = 32;
-			asy->asy_fifor |= 0x10; /* 24 byte txfifo trigger */
-			asy_reset_fifo(asy, 0);
-		}
-	}
-
-	/*
-	 * If we think we might have a FIFO larger than 16 characters,
-	 * measure FIFO size and check it against expected.
-	 */
-	if (asy_fifo_test > 0 &&
-	    !(asy->asy_flags2 & ASY2_NO_LOOPBACK) &&
-	    (asy->asy_fifo_buf > 16 ||
-	    (asy_fifo_test > 1 && asy->asy_use_fifo == FIFO_ON) ||
-	    ASY_DEBUG(ASY_DEBUG_CHIP))) {
-		int i;
-
-		/* Set baud rate to 57600 (fairly arbitrary choice) */
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-		    DLAB);
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + DAT,
-		    asyspdtab[B57600] & 0xff);
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + ICR,
-		    (asyspdtab[B57600] >> 8) & 0xff);
-		/* Set 8 bits, 1 stop bit */
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-		    STOP1|BITS8);
-		/* Set loopback mode */
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + MCR,
-		    DTR | RTS | ASY_LOOP | OUT1 | OUT2);
-
-		/* Overfill fifo */
-		for (i = 0; i < asy->asy_fifo_buf * 2; i++) {
-			ddi_put32(asy->asy_iohandle,
-			    asy->asy_ioaddr + DAT, i);
-		}
-		/*
-		 * Now there's an interesting question here about which
-		 * FIFO we're testing the size of, RX or TX. We just
-		 * filled the TX FIFO much faster than it can empty,
-		 * although it is possible one or two characters may
-		 * have gone from it to the TX shift register.
-		 * We wait for enough time for all the characters to
-		 * move into the RX FIFO and any excess characters to
-		 * have been lost, and then read all the RX FIFO. So
-		 * the answer we finally get will be the size which is
-		 * the MIN(RX FIFO,(TX FIFO + 1 or 2)). The critical
-		 * one is actually the TX FIFO, because if we overfill
-		 * it in normal operation, the excess characters are
-		 * lost with no warning.
-		 */
-		/*
-		 * Wait for characters to move into RX FIFO.
-		 * In theory, 200 * asy->asy_fifo_buf * 2 should be
-		 * enough. However, in practice it isn't always, so we
-		 * increase to 400 so some slow 16550A's finish, and we
-		 * increase to 3 so we spot more characters coming back
-		 * than we sent, in case that should ever happen.
-		 */
-		delay(drv_usectohz(400 * asy->asy_fifo_buf * 3));
-
-		/* Now see how many characters we can read back */
-		for (i = 0; i < asy->asy_fifo_buf * 3; i++) {
-			ret = ddi_get32(asy->asy_iohandle,
-			    asy->asy_ioaddr + LSR);
-			if (!(ret & RCA))
-				break;	/* FIFO emptied */
-			(void) ddi_get32(asy->asy_iohandle,
-			    asy->asy_ioaddr + DAT); /* lose another */
-		}
-
-		DEBUGCONT3(ASY_DEBUG_CHIP,
-		    "dwu%d FIFO size: expected=%d, measured=%d\n",
-		    asy->asy_unit, asy->asy_fifo_buf, i);
-
-		hwtype = asy->asy_hwtype;
-		if (i < asy->asy_fifo_buf) {
-			/*
-			 * FIFO is somewhat smaller than we anticipated.
-			 * If we have 16 characters usable, then this
-			 * UART will probably work well enough in
-			 * 16550A mode. If less than 16 characters,
-			 * then we'd better not use it at all.
-			 * UARTs with busted FIFOs do crop up.
-			 */
-			if (i >= 16 && asy->asy_fifo_buf >= 16) {
-				/* fall back to a 16550A */
-				hwtype = ASY16550A;
-				asy->asy_fifo_buf = 16;
-				asy->asy_fifor &= ~(FIFOEXTRA1 | FIFOEXTRA2);
-			} else {
-				/* fall back to no FIFO at all */
-				hwtype = ASY16550;
-				asy->asy_fifo_buf = 1;
-				asy->asy_use_fifo = FIFO_OFF;
-				asy->asy_fifor &=
-				    ~(FIFO_ON | FIFOEXTRA1 | FIFOEXTRA2);
-			}
-		}
-		/*
-		 * We will need to reprogram the FIFO if we changed
-		 * our mind about how to drive it above, and in any
-		 * case, it would be a good idea to flush any garbage
-		 * out incase the loopback test left anything behind.
-		 * Again as earlier above, we must call asy_reset_fifo()
-		 * before any possible downgrade of asy->asy_hwtype.
-		 */
-		if (asy->asy_hwtype >= ASY16650 && hwtype < ASY16650) {
-			/* Disable 16650 enhanced mode */
-			ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-			    EFRACCESS);
-			ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + EFR,
-			    0);
-			ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR,
-			    STOP1|BITS8);
-		}
-		asy_reset_fifo(asy, FIFOTXFLSH | FIFORXFLSH);
-		asy->asy_hwtype = hwtype;
-
-		/* Clear loopback mode and restore DTR/RTS */
-		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + MCR, mcr);
-	}
 
 	DEBUGNOTE3(ASY_DEBUG_CHIP, "dwu%d %s @ %p",
 	    asy->asy_unit, asy_hw_name(asy), (void *)asy->asy_ioaddr);
@@ -1629,9 +1484,9 @@ nodrain:
 			    asy->asy_mcr|OUT2);
 		} else {
 			DEBUGCONT1(ASY_DEBUG_MODEM,
-			    "dwu%dclose: Dropping DTR and RTS\n", instance);
+			    "dwu%dclose: Dropping DTR\n", instance);
 			ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + MCR,
-			    OUT2);
+			    (asy->asy_mcr & (AFCE|RTS)) | OUT2);
 		}
 		async->async_dtrtid =
 		    timeout((void (*)())async_dtr_free,
@@ -1893,7 +1748,7 @@ asy_program(struct asycom *asy, int mode)
 
 	if (baudrate == 0)
 		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + MCR,
-		    (asy->asy_mcr & RTS) | OUT2);
+		    (asy->asy_mcr & (AFCE|RTS)) | OUT2);
 	else
 		ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + MCR,
 		    asy->asy_mcr | OUT2);
@@ -4020,6 +3875,8 @@ asymctl(struct asycom *asy, int bits, int how)
 		return (asytodm(mcr_r, msr_r));
 	}
 
+	/* Keep AFC enabled. */
+	mcr_r |= (asy->asy_mcr & AFCE);
 	ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + MCR, mcr_r);
 
 	return (mcr_r);

@@ -192,6 +192,7 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 	uart->dau_reg_lsr = FCH_UART_LSR_MMIO(uart->dau_reg_block);
 	uart->dau_reg_usr = FCH_UART_USR_MMIO(uart->dau_reg_block);
 	uart->dau_reg_srr = FCH_UART_SRR_MMIO(uart->dau_reg_block);
+	uart->dau_reg_mcr = FCH_UART_MCR_MMIO(uart->dau_reg_block);
 
 	uart->dau_port = port;
 	uart->dau_flags |= DAUF_MAPPED;
@@ -201,7 +202,6 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 	    par != uart->dau_parity || sb != uart->dau_stopbits) {
 
 		const mmio_reg_t r_lcr = FCH_UART_LCR_MMIO(uart->dau_reg_block);
-		const mmio_reg_t r_mcr = FCH_UART_MCR_MMIO(uart->dau_reg_block);
 		const mmio_reg_t r_dlh = FCH_UART_DLH_MMIO(uart->dau_reg_block);
 		const mmio_reg_t r_dll = FCH_UART_DLL_MMIO(uart->dau_reg_block);
 		const mmio_reg_t r_fcr = FCH_UART_FCR_MMIO(uart->dau_reg_block);
@@ -233,6 +233,8 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 		mcr = FCH_UART_MCR_SET_RTS(mcr, 1);
 		mcr = FCH_UART_MCR_SET_OUT2(mcr, 1);
 		mcr = FCH_UART_MCR_SET_AFCE(mcr, 1);
+		/* Stash so it can be restored later via dw_apb_reset_mcr() */
+		uart->dau_mcr = mcr;
 
 		uint32_t srr = 0;
 		srr = FCH_UART_SRR_SET_XFR(srr, 1);
@@ -245,7 +247,7 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 		mmio_reg_write(r_dll, dll);
 		mmio_reg_write(r_lcr, lcr);
 		mmio_reg_write(r_fcr, fcr);
-		mmio_reg_write(r_mcr, mcr);
+		mmio_reg_write(uart->dau_reg_mcr, mcr);
 
 		uart->dau_flags |= DAUF_INITDONE;
 		uart->dau_baudrate = baud;
@@ -264,7 +266,6 @@ dw_apb_uart_readable(const dw_apb_uart_t * const uart)
 	/* Data Ready */
 	return (FCH_UART_LSR_GET_DR(lsr) != 0);
 }
-
 
 size_t
 dw_apb_uart_rx_nb(const dw_apb_uart_t * const uart, uint8_t *dbuf, size_t len)
@@ -333,4 +334,10 @@ dw_apb_uart_flush(const dw_apb_uart_t * const uart)
 	v = FCH_UART_SRR_SET_XFR(v, 1);
 	v = FCH_UART_SRR_SET_RFR(v, 1);
 	mmio_reg_write(uart->dau_reg_srr, v);
+}
+
+void
+dw_apb_reset_mcr(const dw_apb_uart_t * const uart)
+{
+	mmio_reg_write(uart->dau_reg_mcr, uart->dau_mcr);
 }

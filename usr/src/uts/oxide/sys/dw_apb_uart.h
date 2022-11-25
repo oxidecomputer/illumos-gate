@@ -44,6 +44,7 @@ typedef struct {
 	async_databits_t	dau_databits;
 	async_parity_t		dau_parity;
 	async_stopbits_t	dau_stopbits;
+	uint8_t			dau_mcr;
 
 	mmio_reg_block_t	dau_reg_block;
 	mmio_reg_t		dau_reg_thr;
@@ -51,6 +52,7 @@ typedef struct {
 	mmio_reg_t		dau_reg_lsr;
 	mmio_reg_t		dau_reg_usr;
 	mmio_reg_t		dau_reg_srr;
+	mmio_reg_t		dau_reg_mcr;
 
 	dw_apb_uart_flag_t	dau_flags;
 } dw_apb_uart_t;
@@ -68,6 +70,7 @@ extern void dw_apb_uart_tx(const dw_apb_uart_t * const, const uint8_t *,
     size_t);
 extern bool dw_apb_uart_readable(const dw_apb_uart_t * const);
 extern bool dw_apb_uart_writable(const dw_apb_uart_t * const);
+extern void dw_apb_reset_mcr(const dw_apb_uart_t * const);
 
 #ifdef __cplusplus
 }
