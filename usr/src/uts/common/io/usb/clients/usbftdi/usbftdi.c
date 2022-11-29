@@ -1435,6 +1435,19 @@ uftdi_teardown(uftdi_t *uf)
 	VERIFY(uf->uf_flags & UFTDI_FL_DETACHING);
 	VERIFY3P(uf->uf_usb_thread, ==, curthread);
 
+	if (uf->uf_setup & UFTDI_SETUP_MUTEX) {
+		mutex_enter(&uf->uf_mutex);
+		if (uf->uf_flags & UFTDI_FL_USB_CONNECTED) {
+			uftdi_close_pipes(uf);
+			uf->uf_flags &= ~UFTDI_FL_USB_CONNECTED;
+		}
+		mutex_exit(&uf->uf_mutex);
+
+		mutex_destroy(&uf->uf_mutex);
+		cv_destroy(&uf->uf_cv);
+		uf->uf_setup &= ~UFTDI_SETUP_MUTEX;
+	}
+
 	/*
 	 * Clean up each per-interface structure that we allocated:
 	 */
@@ -1450,19 +1463,6 @@ uftdi_teardown(uftdi_t *uf)
 
 		kmem_free(ui, sizeof (*ui));
 		uf->uf_if[i] = NULL;
-	}
-
-	if (uf->uf_setup & UFTDI_SETUP_MUTEX) {
-		mutex_enter(&uf->uf_mutex);
-		if (uf->uf_flags & UFTDI_FL_USB_CONNECTED) {
-			uftdi_close_pipes(uf);
-			uf->uf_flags &= ~UFTDI_FL_USB_CONNECTED;
-		}
-		mutex_exit(&uf->uf_mutex);
-
-		mutex_destroy(&uf->uf_mutex);
-		cv_destroy(&uf->uf_cv);
-		uf->uf_setup &= ~UFTDI_SETUP_MUTEX;
 	}
 
 	if (uf->uf_setup & UFTDI_SETUP_USB_ATTACH) {
