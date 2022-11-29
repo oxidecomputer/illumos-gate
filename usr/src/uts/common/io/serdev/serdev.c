@@ -1509,10 +1509,29 @@ ours:
 		return;
 
 	case TCSBRK:
+		if ((error = miocpullup(mp, sizeof (int))) != 0) {
+			miocnak(q, mp, 0, error);
+			return;
+		}
+
+		if (*(int *)mp->b_cont->b_rptr == 0) {
+			/*
+			 * XXX Initiate a timed break.
+			 */
+			miocnak(q, mp, 0, EIO);
+			return;
+		}
+
 		/*
-		 * XXX Initiate a timed break.
+		 * Otherwise, we just need to wait for outbound data flush to
+		 * occur.
 		 */
-		miocnak(q, mp, 0, EIO);
+		if ((error =
+		    srd->srd_ops.srdo_drain(srd->srd_private, -1)) != 0) {
+			miocnak(q, mp, 0, error);
+		} else {
+			miocack(q, mp, 0, 0);
+		}
 		return;
 
 	case TIOCMGET:
