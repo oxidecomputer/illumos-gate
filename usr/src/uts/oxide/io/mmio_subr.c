@@ -151,15 +151,15 @@ mmio_reg_write(const mmio_reg_t reg, const uint64_t val)
 
 	switch (reg.mr_size) {
 	case 1:
-		ASSERT0(val & (uint64_t)~UINT8_MAX);
+		ASSERT0(val & ~(uint64_t)UINT8_MAX);
 		*(volatile uint8_t *)reg.mr_va = (const uint8_t)val;
 		break;
 	case 2:
-		ASSERT0(val & (uint64_t)~UINT16_MAX);
+		ASSERT0(val & ~(uint64_t)UINT16_MAX);
 		*(volatile uint16_t *)reg.mr_va = (const uint16_t)val;
 		break;
 	case 4:
-		ASSERT0(val & (uint64_t)~UINT32_MAX);
+		ASSERT0(val & ~(uint64_t)UINT32_MAX);
 		*(volatile uint32_t *)reg.mr_va = (const uint32_t)val;
 		break;
 	case 8:
@@ -209,16 +209,16 @@ x_ddi_reg_put(const mmio_reg_t reg, uint64_t val)
 {
 	switch (reg.mr_size) {
 	case 1:
-		ASSERT0(val & (uint64_t)~UINT8_MAX);
+		ASSERT0(val & ~(uint64_t)UINT8_MAX);
 		ddi_put8(reg.mr_acc, (uint8_t *)reg.mr_va, (const uint8_t)val);
 		break;
 	case 2:
-		ASSERT0(val & (uint64_t)~UINT16_MAX);
+		ASSERT0(val & ~(uint64_t)UINT16_MAX);
 		ddi_put16(reg.mr_acc, (uint16_t *)reg.mr_va,
 		    (const uint16_t)val);
 		break;
 	case 4:
-		ASSERT0(val & (uint64_t)~UINT32_MAX);
+		ASSERT0(val & ~(uint64_t)UINT32_MAX);
 		ddi_put32(reg.mr_acc, (uint32_t *)reg.mr_va,
 		    (const uint32_t)val);
 		break;
