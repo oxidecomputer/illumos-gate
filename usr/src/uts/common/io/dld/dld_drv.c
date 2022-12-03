@@ -1589,7 +1589,8 @@ static dld_ioc_modentry_t dld_ioc_modtable[] = {
 	{IPTUN_IOC,	"iptun", 0, NULL, 0},
 	{IBPART_IOC,	"ibp", -1, NULL, 0},
 	{OVERLAY_IOC,	"overlay", 0, NULL, 0},
-	{XDE_IOC,	"xde", 0, NULL, 0},
+	{TFPORT_IOC,	"tfport", 0, NULL, 0},
+	{XDE_IOC,	"xde", 0, NULL, 0}
 };
 #define	DLDIOC_CNT	\
 	(sizeof (dld_ioc_modtable) / sizeof (dld_ioc_modentry_t))

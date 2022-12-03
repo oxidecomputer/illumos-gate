@@ -248,6 +248,10 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	dladm_bridge_set_nick;
 	dladm_bridge_get_privprop;
 
+	dladm_tfport_create;
+	dladm_tfport_delete;
+	dladm_tfport_info;
+
 	dladm_link_stat_query;
 	dladm_link_stat_diffchain;
 	dladm_link_stat_free;

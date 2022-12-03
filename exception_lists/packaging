@@ -99,6 +99,7 @@ usr/include/libdliptun.h
 usr/include/libdlmgmt.h
 usr/include/libdlsim.h
 usr/include/libdlstat.h
+usr/include/libdltfport.h
 usr/include/libdlvnic.h
 usr/include/libdlwlan_impl.h
 usr/include/libdlwlan.h
@@ -824,3 +825,9 @@ usr/lib/libt6mfg.so
 # is not presently intended to be delivered:
 #
 platform/oxide/kernel/drv/amd64/cpudrv		i386
+
+#
+# Tofino kernel headers to build some user-space tools
+#
+usr/include/sys/tfport.h
+usr/include/sys/tofino.h

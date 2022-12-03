@@ -62,6 +62,7 @@ extern "C" {
 #define	BRIDGE_IOC	0xB81D
 #define	IBPART_IOC	0x6171
 #define	OVERLAY_IOC	0x2005
+#define	TFPORT_IOC	0x1d1c
 #define	XDE_IOC		0xde00
 
 /* GLDv3 modules use these macros to generate unique ioctl commands */
@@ -73,6 +74,7 @@ extern "C" {
 #define	BRIDGEIOC(cmdid)	DLD_IOC_CMD(BRIDGE_IOC, (cmdid))
 #define	IBPARTIOC(cmdid)	DLD_IOC_CMD(IBPART_IOC, (cmdid))
 #define	OVERLAYIOC(cmdid)	DLD_IOC_CMD(OVERLAY_IOC, (cmdid))
+#define	TFPORTIOC(cmdid)	DLD_IOC_CMD(TFPORT_IOC, (cmdid))
 
 #ifdef _KERNEL
 

@@ -21,6 +21,7 @@
 #
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2018, Joyent, Inc.
+# Copyright 2022 Oxide Computer Company
 #
 
 LIBRARY = libdladm.a
@@ -29,7 +30,7 @@ OBJECTS = libdladm.o secobj.o linkprop.o libdllink.o libdlaggr.o \
 	libdlwlan.o libdlvnic.o libdlmgmt.o libdlvlan.o	libdlib.o\
 	flowattr.o flowprop.o propfuncs.o libdlflow.o libdlstat.o \
 	usage.o libdlether.o libdlsim.o libdlbridge.o libdliptun.o \
-	libdloverlay.o
+	libdloverlay.o libdltfport.o
 
 include ../../Makefile.lib
 

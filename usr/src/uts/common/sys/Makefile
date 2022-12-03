@@ -600,6 +600,7 @@ CHKHDRS=			\
 	termio.h		\
 	termios.h		\
 	termiox.h		\
+	tfport.h		\
 	thread.h		\
 	ticlts.h		\
 	ticots.h		\
@@ -618,6 +619,7 @@ CHKHDRS=			\
 	tiuser.h		\
 	tl.h			\
 	todio.h			\
+	tofino.h		\
 	tpicommon.h		\
 	ts.h			\
 	tspriocntl.h		\
