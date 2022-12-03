@@ -29,7 +29,7 @@
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2022 RackTop Systems, Inc.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 #
@@ -2321,3 +2321,8 @@ T6MFG_OBJS += t6mfg.o
 #
 KGPIO_OBJS +=		kgpio.o
 GPIO_SIM_OBJS +=	gpio_sim.o
+
+#
+# tfport(4D)
+#
+TFPORT_OBJS += tfport.o

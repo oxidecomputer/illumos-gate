@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2015, Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_DLS_MGMT_H
@@ -51,13 +51,14 @@ typedef enum {
 	DATALINK_CLASS_PART		= 0x100,
 	DATALINK_CLASS_OVERLAY		= 0x200,
 	DATALINK_CLASS_XDE		= 0x400,
+	DATALINK_CLASS_TFPORT		= 0x800
 } datalink_class_t;
 
 #define	DATALINK_CLASS_ALL	(DATALINK_CLASS_PHYS |	\
 	DATALINK_CLASS_VLAN | DATALINK_CLASS_AGGR | DATALINK_CLASS_VNIC | \
 	DATALINK_CLASS_ETHERSTUB | DATALINK_CLASS_SIMNET | \
 	DATALINK_CLASS_BRIDGE | DATALINK_CLASS_IPTUN | DATALINK_CLASS_PART | \
-	DATALINK_CLASS_OVERLAY | DATALINK_CLASS_XDE)
+	DATALINK_CLASS_OVERLAY | DATALINK_CLASS_XDE | DATALINK_CLASS_TFPORT)
 
 /*
  * A combination of flags and media.

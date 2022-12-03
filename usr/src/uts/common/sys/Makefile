@@ -29,7 +29,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2019 Peter Tribble.
 # Copyright 2015, Joyent, Inc. All rights reserved.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -600,6 +600,7 @@ CHKHDRS=			\
 	termio.h		\
 	termios.h		\
 	termiox.h		\
+	tfport.h		\
 	thread.h		\
 	ticlts.h		\
 	ticots.h		\
@@ -618,6 +619,7 @@ CHKHDRS=			\
 	tiuser.h		\
 	tl.h			\
 	todio.h			\
+	tofino.h		\
 	tpicommon.h		\
 	ts.h			\
 	tspriocntl.h		\
