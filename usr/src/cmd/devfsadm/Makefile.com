@@ -75,7 +75,8 @@ LINK_OBJS_CMN =			\
 	zut_link.o		\
 	sensor_link.o		\
 	dpio_link.o		\
-	tofino_link.o
+	tofino_link.o		\
+	tfpkt_link.o
 
 LINK_OBJS =	$(LINK_OBJS_CMN) \
 		$(LINK_OBJS_$(MACH))
