@@ -29,7 +29,16 @@ dir  path=kernel group=sys
 dir  path=kernel/drv group=sys
 dir  path=kernel/drv/$(ARCH64) group=sys
 file path=kernel/drv/$(ARCH64)/tfport group=sys
+file path=kernel/drv/$(ARCH64)/tofino group=sys
 file path=kernel/drv/tfport.conf group=sys
 dir  path=usr group=sys
+dir  path=usr/lib
+dir  path=usr/lib/devfsadm group=sys
+dir  path=usr/lib/devfsadm/linkmod group=sys
+file path=usr/lib/devfsadm/linkmod/SUNW_tofino_link.so group=sys
 driver name=tfport
+driver name=tofino perms="* 0600 root sys" \
+    alias=pciex1d1c,000 \
+    alias=pciex1d1c,100 \
+    alias=pciex1d1c,110
 license lic_CDDL license=lic_CDDL

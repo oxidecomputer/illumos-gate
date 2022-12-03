@@ -121,6 +121,7 @@ tofino_gen_t tofino_get_generation(tf_tbus_hdl_t);
 
 int tofino_tbus_read_reg(tf_tbus_hdl_t, size_t offset, uint32_t *val);
 int tofino_tbus_write_reg(tf_tbus_hdl_t, size_t offset, uint32_t val);
+int tofino_tbus_clear_reg(tf_tbus_hdl_t, size_t offset);
 
 int tofino_tbus_dma_alloc(tf_tbus_hdl_t, tf_tbus_dma_t *, size_t, int);
 void tofino_tbus_dma_free(tf_tbus_dma_t *);
