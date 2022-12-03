@@ -2947,7 +2947,8 @@ print_link_topology(show_state_t *state, datalink_id_t linkid,
 
 		if (dladm_tfport_info(handle, linkid, &tfinfo) !=
 		    DLADM_STATUS_OK) {
-			strlcpy(lbuf->link_over, "?", sizeof (lbuf->link_over));
+			(void) strlcpy(lbuf->link_over, "?",
+			    sizeof (lbuf->link_over));
 			break;
 		}
 		if (tfinfo.tfa_pkt_id != DATALINK_INVALID_LINKID) {

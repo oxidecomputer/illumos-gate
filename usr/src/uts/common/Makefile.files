@@ -2328,6 +2328,11 @@ GPIO_SIM_OBJS +=	gpio_sim.o
 TOFINO_OBJS += tofino.o tofino_tbus.o
 
 #
+# tfpkt(4D)
+#
+TFPKT_OBJS += tfpkt.o tfpkt_tofino.o
+
+#
 # tfport(4D)
 #
 TFPORT_OBJS += tfport.o
