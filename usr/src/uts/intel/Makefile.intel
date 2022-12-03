@@ -760,7 +760,7 @@ DRV_KMODS	+= vmm_vtd
 #
 #	Tofino related
 #
-DRV_KMODS	+= tfport
+DRV_KMODS	+= tofino tfport
 
 #
 # bhyve drv test interface

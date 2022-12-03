@@ -28,7 +28,17 @@ dir  path=kernel group=sys variant.opensolaris.zone=global
 dir  path=kernel/drv group=sys variant.opensolaris.zone=global
 dir  path=kernel/drv/$(ARCH64) group=sys variant.opensolaris.zone=global
 file path=kernel/drv/$(ARCH64)/tfport group=sys variant.opensolaris.zone=global
+file path=kernel/drv/$(ARCH64)/tofino group=sys variant.opensolaris.zone=global
 file path=kernel/drv/tfport.conf group=sys
 dir  path=usr group=sys
+dir  path=usr/lib
+dir  path=usr/lib/devfsadm group=sys
+dir  path=usr/lib/devfsadm/linkmod group=sys
+file path=usr/lib/devfsadm/linkmod/SUNW_tofino_link.so group=sys
 driver name=tfport perms="* 0600 root sys"
+driver name=tofino perms="* 0600 root sys" \
+    alias=pci1d1c,100 \
+    alias=pci1d1c,110 \
+    alias=pciex1d1c,100 \
+    alias=pciex1d1c,110
 license lic_CDDL license=lic_CDDL
