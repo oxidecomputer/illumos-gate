@@ -25,6 +25,7 @@
 /*
  * Copyright (c) 2011, Joyent, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -106,12 +107,111 @@
  * therein (see <sys/panic.h>).
  *
  * Each platform or architecture is required to implement the functions
+ * panic_enter_hw() for platform-specific tasks *before* panicstr is set,
  * panic_savetrap() to record trap-specific information to panicbuf,
  * panic_saveregs() to record a register set to panicbuf, panic_stopcpus()
  * to halt all CPUs but the panicking CPU, panic_quiesce_hw() to perform
  * miscellaneous platform-specific tasks *after* panicstr is set,
  * panic_showtrap() to print trap-specific information to the console,
  * and panic_dump_hw() to perform platform tasks prior to calling dumpsys().
+ *
+ * The following diagram summarises the flow along with indicating whether the
+ * called functions are in common, ISA or MACH code.
+ *
+ *     common                      ISA                            MACH
+ *     ------                     -----                          ------
+ *
+ *  +--------------+                                           .-------.
+ *  |  code calls  |                                          (  trap   )
+ *  |   panic()    |                                           `-------'
+ *  +--------------+                                               |
+ *     |                                                           v
+ *     |                                                       .-------.
+ *     |    +-------------------------------------------------(   die   )
+ *     |    |                                                  `-------'
+ *     v    v
+ *    .-------.                 .-------.
+ *   (  panic  )-------------->( vpanic  )
+ *    `-------'                 `-------'
+ *                                  |
+ *    .--------.                    |
+ *   ( panicsys )<------------------+
+ *    `--------'
+ *        |                                              .-------------------.
+ *        +-------------------------------------------->(   panic_enter_hw    )
+ *        |                                              `-------------------'
+ *        |                                              .-------------------.
+ *        +-------------------------------------------->(   panic_savetrap    )
+ *        |                                              `-------------------'
+ *        |                .-------------------.                   |
+ *        |               (   panic_saveregs    )<-----------------+
+ *        |                `-------------------'
+ *        |                                              .-------------------.
+ *        +-------------------------------------------->(   panic_stopcpus    )
+ *        |                                              `-------------------'
+ *        |                                              .-------------------.
+ *        +-------------------------------------------->(   panic_quiesce_hw  )
+ *        |                                              `-------------------'
+ *        |                                              .-------------------.
+ *        +-------------------------------------------->(   panic_showtrap    )
+ *        |                                              `-------------------'
+ *        |                .-------------------.
+ *        +-------------->(      traceregs      )
+ *        |                `-------------------'
+ *        |                          |
+ *        |                          v
+ *        |                .-------------------.
+ *        |               (      traceback      )
+ *        |                `-------------------'
+ *        |                          |                   .-------------------.
+ *        |                          +----------------->(   plat_traceback    )
+ *        |                                              `-------------------'
+ *        |                                              .-------------------.
+ *        +---[if dumping]----------------------------->(   panic_dump_hw     )
+ *        |                 |                            `-------------------'
+ *        |                 |
+ *        |   .-------.     |
+ *        |  ( dumpsys )<---+
+ *        |   `-------'
+ *        |                                              .-------------------.
+ *        +---[if debugger]---------------------------->(   debug_enter       )
+ *        |                                              `-------------------'
+ *        |                                                    .------.
+ *        +-------------------------------------------------->( mdboot )
+ *                                                             `------'
+ *
+ * Earlier in boot there are several mechanisms used for panicking. These are
+ * shown in the diagram below. A trap in early boot will end up in bop_trap(),
+ * otherwise these are all explicitly called when something fatal has occured,
+ * along with an accompanying message.
+ *
+ *                                                                 .---------.
+ *                                                                ( bop_trap  )
+ *                                                                 `---------'
+ *                                                  .---------------.   |
+ *                                                 ( bop_traceback   )<-+
+ *                                                  `---------------'   |
+ *    +--------------+        +--------------+     +--------------+     |
+ *    |  code calls  |        |  code calls  |     |  code calls  |     |
+ *    |    halt()    |        | prom_panic() |     | bop_panic()  |     |
+ *    +--------------+        +--------------+     +--------------+     |
+ *            |                       |                    |            |
+ *            v                       v                    v            v
+ *     .-------------.         .-------------.       .-----------------------.
+ *    (     halt      )       (  prom_panic   )     (       bop_panic         )
+ *     `-------------'         `-------------'       `-----------------------'
+ *            |                       |                          |
+ *            v                       v                          |
+ *   .-----------------.       .-------------.                   |
+ *  ( prom_exit_to_mon  )---->(  prom_reboot  )                  |
+ *   `-----------------'       `-------------'                   |
+ *                                    |                          |
+ *                                    |   +----------------------+
+ *                                    v   v
+ *                             .-------------.
+ *                            (     reset     )
+ *                             `-------------'
+ *
  *
  * A Note on Word Formation, courtesy of the Oxford Guide to English Usage:
  *

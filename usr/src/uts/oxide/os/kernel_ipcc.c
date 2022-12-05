@@ -60,6 +60,14 @@ static ipcc_init_t ipcc_init = IPCC_INIT_UNSET;
 static bool ipcc_fastpoll;
 
 /*
+ * A static buffer into which panic data are accumulated before being sent to
+ * the SP as a byte stream. This is static so that it is not necessary to
+ * perform allocations while panicking, and so that it exists regardless of
+ * which phase of boot the system is in when a panic occurs.
+ */
+static ipcc_panic_data_t ipcc_panic_buf;
+
+/*
  * Functions for using IPCC from the kernel, driving the UART directly using the
  * polling functions in dw_apb_uart.c
  */
@@ -396,6 +404,29 @@ kernel_ipcc_poweroff(void)
 	(void) ipcc_poweroff(&kernel_ipcc_ops, &kernel_ipcc_data);
 }
 
+void
+kernel_ipcc_panic(void)
+{
+	ipcc_panic_buf.ipd_version = IPCC_PANIC_VERSION;
+
+	/*
+	 * A panic message is not exactly a gasp, but we are single threaded
+	 * here and need to try and get the message to the SP before carrying
+	 * on with system dump, reboot, as configured. We don't check the
+	 * return code as we are going to carry on regardless.
+	 *
+	 * The SP is not expected to do anything in response to this message
+	 * beyond recording the data and optionally passing it on for
+	 * analysis/storage. In particular we do not expect the SP to initiate
+	 * a reboot as a result of receiving a panic message; the host may
+	 * still have work to do such as dumping to disk or entering kmdb for
+	 * an operator to do further investigation.
+	 */
+	kernel_ipcc_prepare_gasp();
+	(void) ipcc_panic(&kernel_ipcc_ops, &kernel_ipcc_data,
+	    (uint8_t *)&ipcc_panic_buf, sizeof (ipcc_panic_buf));
+}
+
 /*
  * Utility functions that call into ipcc_proto. These are used by long running
  * multi-command operations such as the phase 2 image transfer that wish to
@@ -525,4 +556,142 @@ kernel_ipcc_imageblock(uint8_t *hash, uint64_t offset, uint8_t **data,
 	ipcc_fastpoll = false;
 
 	return (ret);
+}
+
+/*
+ * System Panic Reporting
+ * ----------------------
+ *
+ * When a system panic occurs due to an explicit call to [v]panic() or due to a
+ * processor trap, the kernel calls a number of functions in common, ISA and
+ * MACH code. The diagram in common/os/panic.c shows this flow. The following
+ * functions, all within the Oxide-specific code, are used to build up the
+ * final panic information that is sent to the SP when kernel_ipcc_panic() is
+ * called:
+ *
+ *  - die()
+ *  - plat_traceback()
+ *
+ * Earlier in boot there are several mechanisms used for panicking, most of
+ * which are explicitly called when a fatal error occurs. These paths are
+ * also shown in a diagram in common/os/panic.c. The following functions within
+ * Oxide-specific code collect panic information ready for sending to the SP in
+ * early boot:
+ *
+ *  - bop_trap()
+ *  - bop_traceback()
+ *  - bop_panic()
+ *  - prom_panic()
+ *
+ * The following functions are used to populate parts of ipcc_panic_buf prior
+ * to calling kernel_ipcc_panic(), which sends the assembled message to the SP.
+ */
+
+void
+kipcc_panic_field(ipcc_panic_field_t type, uint64_t val)
+{
+	switch (type) {
+	case IPF_CAUSE:
+		/*
+		 * In the case of a nested panic, or an early boot trap that
+		 * ends up calling into bop_panic(), preserve the original
+		 * panic cause rather than overwriting it.
+		 */
+		if (ipcc_panic_buf.ipd_cause == 0)
+			ipcc_panic_buf.ipd_cause = val & 0xffff;
+		break;
+	case IPF_ERROR:
+		ipcc_panic_buf.ipd_error = val & 0xffff;
+		break;
+	case IPF_CPUID:
+		ipcc_panic_buf.ipd_cpuid = val & 0xffffffff;
+		break;
+	case IPF_THREAD:
+		ipcc_panic_buf.ipd_thread = val;
+		break;
+	case IPF_ADDR:
+		ipcc_panic_buf.ipd_addr = val;
+		break;
+	case IPF_PC:
+		ipcc_panic_buf.ipd_pc = val;
+		break;
+	case IPF_FP:
+		ipcc_panic_buf.ipd_fp = val;
+		break;
+	case IPF_RP:
+		ipcc_panic_buf.ipd_rp = val;
+		break;
+	}
+}
+
+void
+kipcc_panic_vmessage(const char *fmt, va_list ap)
+{
+	(void) vsnprintf(ipcc_panic_buf.ipd_message,
+	    sizeof (ipcc_panic_buf.ipd_message), fmt, ap);
+}
+
+void
+kipcc_panic_message(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	kipcc_panic_vmessage(fmt, ap);
+	va_end(ap);
+}
+
+void
+kipcc_panic_stack_item(uintptr_t addr, const char *sym, off_t off)
+{
+	ipcc_panic_stack_t *stack;
+
+	if (ipcc_panic_buf.ipd_stackidx >= IPCC_PANIC_STACKS)
+		return;
+
+	stack = &ipcc_panic_buf.ipd_stack[ipcc_panic_buf.ipd_stackidx++];
+
+	stack->ips_addr = addr;
+	if (sym != NULL) {
+		/*
+		 * The symbol does not have be NUL-terminated since it is being
+		 * written to a buffer with a fixed known size. The global
+		 * ipcc_panic_buf variable will have been initialised with
+		 * zeros so a shorter string will end up zero padded to the
+		 * size of the buffer. The most likely consumers of these data
+		 * are rust programs using hubpack, which works with fixed size
+		 * arrays rather than C-style strings.
+		 */
+		bcopy((char *)sym, stack->ips_symbol,
+		    MIN(IPCC_PANIC_SYMLEN, strlen(sym)));
+		stack->ips_offset = off;
+	}
+}
+
+void
+kipcc_panic_vdata(const char *fmt, va_list ap)
+{
+	size_t datalen, space;
+
+	space = sizeof (ipcc_panic_buf.ipd_data) - ipcc_panic_buf.ipd_dataidx;
+	if (space == 0)
+		return;
+
+	datalen = vsnprintf(ipcc_panic_buf.ipd_data +
+	    ipcc_panic_buf.ipd_dataidx, space, fmt, ap);
+
+	if (datalen <= space)
+		ipcc_panic_buf.ipd_dataidx += datalen;
+	else
+		ipcc_panic_buf.ipd_dataidx = sizeof (ipcc_panic_buf.ipd_data);
+}
+
+void
+kipcc_panic_data(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	kipcc_panic_vdata(fmt, ap);
+	va_end(ap);
 }

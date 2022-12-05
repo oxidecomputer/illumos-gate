@@ -361,15 +361,17 @@ bop_traceback(bop_frame_t *frame)
 		if (pc == 0)
 			break;
 
-		if (weakish_is_null(&mod_lock))
-			ksym = NULL;
-		else
+		ksym = NULL;
+		off = 0;
+		if (!weakish_is_null(&mod_lock))
 			ksym = kobj_getsymname(pc, &off);
 
 		if (ksym != NULL)
 			eb_printf("  %s+%lx", ksym, off);
 		else
 			eb_printf("  0x%lx", pc);
+
+		kipcc_panic_stack_item(pc, ksym, off);
 
 		frame = frame->old_frame;
 		if (frame == 0) {
@@ -408,11 +410,13 @@ bop_trap(ulong_t *tfp)
 	/*
 	 * adjust the tf for optional error_code by detecting the code selector
 	 */
-	if (tf->code_seg != B64CODE_SEL)
+	if (tf->code_seg != B64CODE_SEL) {
 		tf = (struct trapframe *)(tfp - 1);
-	else
+	} else {
 		eb_printf("error code           0x%lx\n",
 		    tf->error_code & 0xffffffff);
+		kipcc_panic_field(IPF_ERROR, tf->error_code & 0xffffffff);
+	}
 
 	eb_printf("instruction pointer  0x%lx\n", tf->inst_ptr);
 	eb_printf("code segment         0x%lx\n", tf->code_seg & 0xffff);
@@ -420,6 +424,10 @@ bop_trap(ulong_t *tfp)
 	eb_printf("return %%rsp          0x%lx\n", tf->stk_ptr);
 	eb_printf("return %%ss           0x%lx\n", tf->stk_seg & 0xffff);
 	eb_printf("%%cr2			0x%lx\n", getcr2());
+
+	kipcc_panic_field(IPF_CAUSE, IPCC_PANIC_EARLYBOOT_TRAP);
+	kipcc_panic_field(IPF_PC, tf->inst_ptr);
+	kipcc_panic_field(IPF_FP, tf->stk_ptr);
 
 	/* grab %[er]bp pushed by our code from the stack */
 	fakeframe.old_frame = (bop_frame_t *)*(tfp - 3);

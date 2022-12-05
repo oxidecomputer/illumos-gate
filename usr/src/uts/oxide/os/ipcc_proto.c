@@ -431,6 +431,14 @@
 #include <sys/ipcc.h>
 #include <sys/ipcc_proto.h>
 
+#ifndef _LITTLE_ENDIAN
+/*
+ * ipcc_{encode,decode}_bytes() rely on little-endian byte order (which is
+ * the ordering used for the hubpack protocol).
+ */
+#error ipcc needs porting for big-endian platforms
+#endif
+
 /* See "Retransmissions" above */
 #define	IPCC_MAX_ATTEMPTS	10
 
@@ -624,24 +632,16 @@ ipcc_cobs_decode(const uint8_t *ibuf, size_t inl, uint8_t *obuf, size_t outl,
 }
 
 static void
-ipcc_encode_bytes(const uint8_t *val, uint8_t cnt, uint8_t *buf, size_t *off)
+ipcc_encode_bytes(const uint8_t *val, size_t cnt, uint8_t *buf, size_t *off)
 {
-#ifdef _LITTLE_ENDIAN
 	bcopy(val, &buf[*off], cnt);
-#else
-#error ipcc needs porting for big-endian platforms
-#endif
 	*off += cnt;
 }
 
 static void
-ipcc_decode_bytes(uint8_t *val, uint8_t cnt, const uint8_t *buf, size_t *off)
+ipcc_decode_bytes(uint8_t *val, size_t cnt, const uint8_t *buf, size_t *off)
 {
-#ifdef _LITTLE_ENDIAN
 	bcopy(&buf[*off], val, cnt);
-#else
-#error ipcc needs porting for big-endian platforms
-#endif
 	*off += cnt;
 }
 
@@ -1283,6 +1283,23 @@ ipcc_poweroff(const ipcc_ops_t *ops, void *arg)
 {
 	return (ipcc_command(ops, arg, IPCC_HSS_POWEROFF, IPCC_SP_NONE,
 	    NULL, 0));
+}
+
+int
+ipcc_panic(const ipcc_ops_t *ops, void *arg, uint8_t *data, size_t datal)
+{
+	/*
+	 * Like reboot above, if we're panicking then it is possible that the
+	 * channel is already held. We are now the only thread that will call
+	 * in here, override any existing owner.
+	 * This command requires a response. Sending a panic message is not
+	 * immediately terminal, since we still have to perform a system dump
+	 * if configured to do so.
+	 */
+	ipcc_multithreaded = false;
+	ipcc_channel_active = false;
+	return (ipcc_command(ops, arg, IPCC_HSS_PANIC, IPCC_SP_ACK,
+	    data, datal));
 }
 
 int

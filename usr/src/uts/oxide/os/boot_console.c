@@ -13,6 +13,7 @@
  * Copyright 2022 Oxide Computer Co.
  */
 
+#include <sys/archsystm.h>
 #include <sys/bootconf.h>
 #include <sys/bootsvcs.h>
 #include <sys/boot_console.h>
@@ -165,8 +166,13 @@ bop_panic(const char *fmt, ...)
 	va_start(ap, fmt);
 	vbop_printf(NULL, fmt, ap);
 	va_end(ap);
+	va_start(ap, fmt);
+	kipcc_panic_vmessage(fmt, ap);
+	va_end(ap);
+
+	kipcc_panic_field(IPF_CAUSE, IPCC_PANIC_EARLYBOOT);
+	kernel_ipcc_panic();
 
 	eb_printf("\nRebooting.\n");
-	kernel_ipcc_reboot();
-	eb_halt();
+	reset();
 }

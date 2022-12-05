@@ -203,6 +203,40 @@ cpu_hlt_loop(void)
 		mach_cpu_idle();
 }
 
+/*
+ * All reboot and power off requests eventually end up in either reset() or
+ * poweroff() defined in this file, which call into IPCC to send a final
+ * message to the SP. The following diagram summarises the various paths that
+ * lead here.
+ *
+ *                   .-----------.
+ *                  (   uadmin    )
+ *                   `-----------'
+ *                         |
+ *                         v
+ *   .-----------.   .-----------.   .-----.   .---------.    .-----------.
+ *  (  panicsys   ) (   kadmin    ) ( halt  ) (prom_panic )  ( kdi_reboot  )
+ *   `-----------'   `-----------'   `-----'   `---------'    `-----------'
+ *         |               |            |           |    .-------.  |
+ *         +---------+     |            +---+  +----+   (bop_panic) |
+ *                   v     v                v  v         `-------'  |
+ *                .-----------.       .-----------.          |      |
+ *               (   mdboot    )     ( prom_reboot )         |      |
+ *                `-----------'       `-----------'          |      |
+ *                      |  |                |                |      |
+ *                      |  +------------+   |                |      |
+ *                      v               v   v                v      v
+ *                .-----------.    .-------------------------------------.
+ *               (  poweroff   )  (                 reset                 )
+ *                `-----------'    `-------------------------------------'
+ *                      |                             |
+ *                      +----+      +-----------------+
+ *                           |      |
+ *                           v      v
+ *                         .-----------.
+ *                        (    IPCC     )
+ *                         `-----------'
+ */
 void
 reset(void)
 {
@@ -417,9 +451,11 @@ debug_enter(char *msg)
 void
 halt(char *s)
 {
-	mdboot_stop_other_cpus();
-	if (s)
+	if (s != NULL) {
 		prom_printf("(%s) \n", s);
+		kernel_ipcc_bootfail(IPCC_BOOTFAIL_GENERAL, "%s", s);
+	}
+	mdboot_stop_other_cpus();
 	prom_exit_to_mon();
 	/*NOTREACHED*/
 }
@@ -845,6 +881,47 @@ panic_dump_hw(int spl)
 void *
 plat_traceback(void *fpreg)
 {
+	struct frame *fp = (struct frame *)fpreg;
+	uintptr_t pc;
+	uint_t i = 0;
+
+	kipcc_panic_field(IPF_CAUSE, IPCC_PANIC_CALL);
+
+	if (panicstr != NULL) {
+		va_list alist;
+
+		va_copy(alist, panicargs);
+		kipcc_panic_vmessage(panicstr, alist);
+		va_end(alist);
+	}
+
+	kipcc_panic_field(IPF_CPUID, panic_cpu.cpu_id);
+	kipcc_panic_field(IPF_THREAD, (uintptr_t)panic_thread);
+
+	if ((uintptr_t)fp < kernelbase)
+		goto out;
+
+	pc = fp->fr_savpc;
+	fp = (struct frame *)fp->fr_savfp;
+
+	kipcc_panic_field(IPF_PC, pc);
+	kipcc_panic_field(IPF_FP, (uintptr_t)fp);
+
+	while ((uintptr_t)fp >= kernelbase && i++ < IPCC_PANIC_STACKS) {
+		ulong_t off;
+		char *sym;
+
+		sym = kobj_getsymname(pc, &off);
+		kipcc_panic_stack_item(pc, sym, off);
+
+		pc = fp->fr_savpc;
+		fp = (struct frame *)fp->fr_savfp;
+	}
+
+out:
+	/* Send the panic message before returning to common code */
+	kernel_ipcc_panic();
+
 	return (fpreg);
 }
 

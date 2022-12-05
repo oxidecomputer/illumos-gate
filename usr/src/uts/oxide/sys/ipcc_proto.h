@@ -141,6 +141,7 @@ extern int ipcc_acquire_channel(const ipcc_ops_t *, void *);
 extern void ipcc_release_channel(const ipcc_ops_t *, void *, bool);
 extern int ipcc_reboot(const ipcc_ops_t *, void *);
 extern int ipcc_poweroff(const ipcc_ops_t *, void *);
+extern int ipcc_panic(const ipcc_ops_t *, void *, uint8_t *, size_t);
 extern int ipcc_bsu(const ipcc_ops_t *, void *, uint8_t *);
 extern int ipcc_ident(const ipcc_ops_t *, void *, ipcc_ident_t *);
 extern int ipcc_macs(const ipcc_ops_t *, void *, ipcc_mac_t *);
