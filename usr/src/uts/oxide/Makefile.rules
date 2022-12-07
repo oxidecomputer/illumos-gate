@@ -104,6 +104,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/os/cpupm/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/promif/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/vm/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)

@@ -102,6 +102,8 @@ CORE_OBJS +=			\
 	pcie_cfgspace.o		\
 	pmem.o			\
 	ppage.o			\
+	prom_panic.o		\
+	prom_reboot.o		\
 	pwrnow.o		\
 	smintr.o		\
 	smm.o			\

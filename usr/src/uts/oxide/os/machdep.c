@@ -413,12 +413,6 @@ debug_enter(char *msg)
  * On other platforms this routine should halt the machine and return to the
  * monitor, usually requesting a keypress before proceeding to reboot.
  * For Oxide, it triggers a reboot straight away if KMDB is not present.
- *
- * XXX - This function used to call prom_exit_to_mon() but that prompts a
- * non-existent user to press a key via prom_reboot_prompt(), which is in
- * shared code. If that prompt function was moved into machdep, we could go
- * back to calling prom_exit_to_mon() again. That will also help other reboot
- * paths that call prom_panic().
  */
 void
 halt(char *s)
@@ -426,10 +420,7 @@ halt(char *s)
 	mdboot_stop_other_cpus();
 	if (s)
 		prom_printf("(%s) \n", s);
-	prom_poll_enter();
-	if (boothowto & RB_DEBUG)
-		kmdb_enter();
-	reset();
+	prom_exit_to_mon();
 	/*NOTREACHED*/
 }
 
