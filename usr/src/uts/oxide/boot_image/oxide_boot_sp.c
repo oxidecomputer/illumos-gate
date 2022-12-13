@@ -48,16 +48,19 @@ CTASSERT(IPCC_IMAGE_HASHLEN == OXBOOT_CSUMLEN_SHA256);
  * of the real phase 2 hash which should be subsequently fetched and
  * installed).
  */
-#define	OXBOOT_SP_VERSION_1		1
-#define	OXBOOT_SP_VERSION		OXBOOT_SP_VERSION_1
+#define	OXBOOT_SP_VERSION		2
 
 #define	OXBOOT_SP_MAGIC			0x1DEB0075
 #define	OXBOOT_SP_HEADER_SIZE		0x1000
+
+#define	OBSH_FLAG_COMPRESSED		0x1
 
 typedef struct oxide_boot_sp_header {
 	uint32_t obsh_magic;
 	uint32_t obsh_version;
 
+	uint64_t obsh_flags;
+	uint64_t obsh_data_size;
 	uint64_t obsh_image_size;
 	uint64_t obsh_target_size;
 
@@ -87,23 +90,10 @@ oxide_boot_sp_fail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 	return (false);
 }
 
-static bool
-oxide_boot_sp_write_block(oxide_boot_t *oxb, uint8_t *block, size_t len,
-    size_t pos)
-{
-	iovec_t iov = {
-		.iov_base = (caddr_t)block,
-		.iov_len = len,
-	};
-	if (!oxide_boot_ramdisk_write(oxb, &iov, 1, pos))
-		return (false);
-	return (true);
-}
-
 bool
 oxide_boot_sp(oxide_boot_t *oxb)
 {
-	oxide_boot_sp_header_t obsh = { 0, };
+	oxide_boot_sp_header_t obsh = { 0 };
 	uint8_t *data;
 	size_t datal;
 	int err;
@@ -162,42 +152,29 @@ oxide_boot_sp(oxide_boot_t *oxb)
 		    oxide_format_sum(got, sizeof (got), obsh.obsh_sha256)));
 	}
 
-	printf("received offer from SP -- "
-	    "size 0x%lx data size 0x%lx dataset %s\n",
-	    obsh.obsh_target_size, obsh.obsh_image_size, obsh.obsh_dataset);
+	printf("received offer from SP -- \n");
+	printf("    v%u flags 0x%lx\n",
+	    obsh.obsh_version, obsh.obsh_flags);
+	printf("    data size 0x%lx image size 0x%lx target size 0x%lx\n",
+	    obsh.obsh_data_size, obsh.obsh_image_size, obsh.obsh_target_size);
+	printf("    dataset %s\n", obsh.obsh_dataset);
 
 	if (!oxide_boot_ramdisk_create(oxb, obsh.obsh_target_size)) {
 		return (oxide_boot_sp_fail(IPCC_BOOTFAIL_GENERAL,
 		    "could not configure ramdisk"));
 	}
 
-	uint64_t start = gethrtime();
-	size_t rem = obsh.obsh_image_size;
-	size_t ipos = OXBOOT_SP_HEADER_SIZE;
-	size_t opos = 0;
-	uint8_t loop = 0;
+	if ((obsh.obsh_flags & OBSH_FLAG_COMPRESSED) != 0) {
+		if (!oxide_boot_set_compressed(oxb)) {
+			return (oxide_boot_sp_fail(IPCC_BOOTFAIL_GENERAL,
+			    "could not initialise decompression"));
+		}
+	}
 
-	/*
-	 * The phase2 transfer protocol between the host and the SP consists
-	 * of the host issuing requests for a particular image, identified
-	 * by the hash, at a specified offset, and the SP will return as much
-	 * data as possible in response. The practical limit there is the
-	 * amount of data that will fit in the UDP packets used between MGS
-	 * and the SP, which means that the SP will typically return just
-	 * under 1000 bytes.
-	 * The simplest approach here would be to just write the received
-	 * data directly to the correct offset in the ramdisk. However,
-	 * although the ramdisk device accepts writes to arbitrary offsets, it
-	 * does not appear to put the data where one might expect if the
-	 * offsets are not aligned to DEV_BSIZE. This feels like a bug in
-	 * the ramdisk driver in that it should either deal with unaligned
-	 * writes properly or reject them; TBD.
-	 * To work around this for now, while keeping the transfer speed as
-	 * high as possible, data are accumulated and written to the ramdisk
-	 * in chunks aligned to DEV_BSIZE.
-	 */
-	uint8_t block[DEV_BSIZE];
-	size_t acc = 0;
+	uint64_t start = gethrtime();
+	size_t rem = obsh.obsh_data_size;
+	size_t ipos = OXBOOT_SP_HEADER_SIZE;
+	uint8_t loop = 0;
 
 	while (rem > 0) {
 		err = kernel_ipcc_imageblock(oxb->oxb_csum_want,
@@ -221,52 +198,24 @@ oxide_boot_sp(oxide_boot_t *oxb)
 		ipos += datal;
 		rem -= datal;
 
-		/* Write out any full blocks. */
-		while (datal + acc >= DEV_BSIZE) {
-			size_t n = DEV_BSIZE - acc;
-
-			bcopy(data, &block[acc], n);
-			datal -= n;
-			data += n;
-
-			if (!oxide_boot_sp_write_block(oxb, block, DEV_BSIZE,
-			    opos)) {
-				return (oxide_boot_sp_fail(
-				    IPCC_BOOTFAIL_RAMDISK,
-				    "failed ramdisk write at offset 0x%lx",
-				    opos));
-			}
-
-			opos += DEV_BSIZE;
-			acc = 0;
+		if (!oxide_boot_ramdisk_write_append(oxb, data, datal)) {
+			return (oxide_boot_sp_fail(IPCC_BOOTFAIL_RAMDISK,
+			    "failed ramdisk write at offset 0x%lx",
+			    oxb->oxb_opos));
 		}
-
-		/* Accumulate any remaining data to prepend to next block. */
-		acc = datal;
-		if (acc > 0)
-			bcopy(data, block, acc);
 
 		/* Report progress periodically. */
 		if (++loop == 0) {
 			uint64_t secs = (gethrtime() - start) / SEC2NSEC(1);
-			uint_t pct = 100UL * opos / obsh.obsh_image_size;
+			uint_t pct = 100UL * ipos / obsh.obsh_data_size;
 			uint64_t bw = 0;
 
 			if (secs > 0)
-				bw = (opos / secs) / 1024;
+				bw = (ipos / secs) / 1024;
 
 			printf("\r received %016lx / %016lx (%3u%%) "
 			    "%luKiB/s                \r",
-			    opos, obsh.obsh_image_size, pct, bw);
-		}
-	}
-
-	/* Write final block. */
-	if (acc > 0) {
-		if (!oxide_boot_sp_write_block(oxb, block, acc, opos)) {
-			return (oxide_boot_sp_fail(IPCC_BOOTFAIL_RAMDISK,
-			    "failed final ramdisk write at offset 0x%lx",
-			    opos));
+			    ipos, obsh.obsh_data_size, pct, bw);
 		}
 	}
 
@@ -279,9 +228,10 @@ oxide_boot_sp(oxide_boot_t *oxb)
 	 */
 	printf("transfer finished after %lu seconds, %luKiB/s"
 	    "                        \n",
-	    secs, secs > 0 ? (obsh.obsh_image_size / secs) / 1024 : 0);
+	    secs, secs > 0 ? (obsh.obsh_data_size / secs) / 1024 : 0);
 
-	if (!oxide_boot_ramdisk_set_len(oxb, obsh.obsh_image_size) ||
+	if (!oxide_boot_ramdisk_write_flush(oxb) ||
+	    !oxide_boot_ramdisk_set_len(oxb, obsh.obsh_image_size) ||
 	    !oxide_boot_ramdisk_set_dataset(oxb, obsh.obsh_dataset)) {
 		return (oxide_boot_sp_fail(IPCC_BOOTFAIL_RAMDISK,
 		    "could not set ramdisk metadata"));

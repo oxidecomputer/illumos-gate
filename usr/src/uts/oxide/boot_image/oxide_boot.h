@@ -20,6 +20,7 @@
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
 #include <sys/crypto/api.h>
+#include <sys/zmod.h>
 
 /*
  * Oxide Boot: mechanisms to obtain boot ramdisk image, from either local
@@ -58,18 +59,38 @@ typedef struct oxide_boot {
 
 	uint8_t		oxb_csum_want[OXBOOT_CSUMLEN_SHA256];	/* I */
 	uint8_t		oxb_csum_have[OXBOOT_CSUMLEN_SHA256];	/* M */
+
+	/*
+	 * Although the ramdisk device accepts writes to arbitrary offsets, it
+	 * does not appear to put the data where one might expect if the
+	 * offsets are not aligned to DEV_BSIZE. This appears to be a bug in
+	 * the ramdisk driver in that it should either deal with unaligned
+	 * writes properly or reject them; TBD. To work around this for now,
+	 * data (after inflation if a compressed image is being read) are
+	 * accumulated in oxb_block and written to the ramdisk in chunks
+	 * aligned to DEV_BSIZE.
+	 */
+	uint8_t		oxb_block[DEV_BSIZE];			/* M */
+	size_t		oxb_acc;				/* M */
+	size_t		oxb_opos;				/* M */
+
+	bool		oxb_compressed;				/* M */
+	zmod_stream_t	*oxb_zstream;				/* M */
 } oxide_boot_t;
 
 extern char *oxide_format_sum(char *, size_t, const uint8_t *);
 
 extern bool oxide_boot_ramdisk_create(oxide_boot_t *, uint64_t);
-extern bool oxide_boot_ramdisk_write(oxide_boot_t *, iovec_t *, uint_t,
-    uint64_t);
+extern bool oxide_boot_ramdisk_write_append(oxide_boot_t *, uint8_t *, size_t);
+extern bool oxide_boot_ramdisk_write_iov_offset(oxide_boot_t *, iovec_t *,
+    uint_t, uint64_t);
+extern bool oxide_boot_ramdisk_write_flush(oxide_boot_t *);
 extern bool oxide_boot_ramdisk_set_len(oxide_boot_t *, uint64_t);
 extern bool oxide_boot_ramdisk_set_csum(oxide_boot_t *, uint8_t *, size_t);
 extern bool oxide_boot_ramdisk_set_dataset(oxide_boot_t *, const char *);
+extern bool oxide_boot_set_compressed(oxide_boot_t *);
 
-extern bool oxide_boot_disk_read(ldi_handle_t, uint64_t, char *, size_t);
+extern bool oxide_boot_disk_read(ldi_handle_t, uint64_t, uint8_t *, size_t);
 
 extern bool oxide_boot_net(oxide_boot_t *);
 extern bool oxide_boot_disk(oxide_boot_t *, int);

@@ -92,7 +92,7 @@ COMMON_CORE_OBJS +=		\
 
 CORE_OBJS +=	$(COMMON_CORE_OBJS) $($(MACH)_CORE_OBJS)
 
-ZLIB_OBJS =	zutil.o zmod.o zmod_subr.o \
+ZLIB_OBJS =	zutil.o zmod.o zmod_stream.o zmod_subr.o \
 		adler32.o crc32.o deflate.o inffast.o \
 		inflate.o inftrees.o trees.o
 

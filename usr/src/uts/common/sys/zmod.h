@@ -27,6 +27,8 @@
 #ifndef	_ZMOD_H
 #define	_ZMOD_H
 
+#include <sys/stdbool.h>
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -58,6 +60,33 @@ extern int z_uncompress(void *, size_t *, const void *, size_t);
 extern int z_compress(void *, size_t *, const void *, size_t);
 extern int z_compress_level(void *, size_t *, const void *, size_t, int);
 extern const char *z_strerror(int);
+
+/*
+ * Stream decompression interface.
+ *
+ * As with the functions above, these functions return zlib error values, such
+ * as Z_OK (see contrib/zlib/zlib.h).
+ *
+ * To use this interface, callers should first call z_uncompress_stream_init()
+ * providing a pointer to a zmod_stream_t * which will be filled in on
+ * successful initialisation.
+ * Whenever additional data is available, pass it to the decompressor by
+ * calling z_uncompress_stream() with the initialised handle and providing a
+ * callback function. The callback function will be called zero or more times
+ * with uncompressed data from the stream. z_uncompress_stream() can be called
+ * multiple times to provide additional data and once it returns Z_STREAM_END,
+ * decompression of the stream is complete. Callers should call
+ * z_uncompress_stream_fini() when finished.
+ */
+
+/* opaque handle for stream decompression functions */
+struct zmod_stream;
+typedef struct zmod_stream zmod_stream_t;
+extern int z_uncompress_stream_init(zmod_stream_t **);
+extern void z_uncompress_stream_fini(zmod_stream_t *);
+typedef bool (*z_uncompress_dataf)(void *, uint8_t *, size_t);
+extern int z_uncompress_stream(zmod_stream_t *, uint8_t *, size_t,
+    z_uncompress_dataf, void *);
 
 #ifdef	__cplusplus
 }

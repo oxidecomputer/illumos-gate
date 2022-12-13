@@ -47,6 +47,11 @@ SYMBOL_SCOPE {
 		z_strerror;
 		z_uncompress;
 
+		# streaming interfaces
+		z_uncompress_stream_init;
+		z_uncompress_stream_fini;
+		z_uncompress_stream;
+
 		# private interfaces used by dboot
 		z_inflate;
 		z_inflateInit2_;

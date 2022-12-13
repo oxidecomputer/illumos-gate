@@ -113,8 +113,7 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 
 #define	OXBOOT_DISK_DATASET_SIZE	128
 
-#define	OXBOOT_DISK_VERSION_1		1
-#define	OXBOOT_DISK_VERSION		OXBOOT_DISK_VERSION_1
+#define	OXBOOT_DISK_VERSION		2
 
 #define	OXBOOT_DISK_MAGIC		0x1DEB0075
 
@@ -125,10 +124,15 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
  *
  * XXX We should eventually have a digest specifically for the header as well.
  */
+
+#define	ODH_FLAG_COMPRESSED		0x1
+
 typedef struct oxide_boot_disk_header {
 	uint32_t odh_magic;
 	uint32_t odh_version;
 
+	uint64_t odh_flags;
+	uint64_t odh_data_size;
 	uint64_t odh_image_size;
 	uint64_t odh_target_size;
 
@@ -143,7 +147,7 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 	bool ok = false;
 	int r;
 	ldi_handle_t lh = NULL;
-	char *buf = NULL;
+	uint8_t *buf = NULL;
 
 	oxide_boot_disk_find_m2_t ofm = { .ofm_want_slot = slot };
 
@@ -222,7 +226,14 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 		goto out;
 	}
 
-	size_t rem = odh.odh_image_size;
+	if ((odh.odh_flags & ODH_FLAG_COMPRESSED) != 0) {
+		if (!oxide_boot_set_compressed(oxb)) {
+			printf("could not initialise decompression");
+			goto out;
+		}
+	}
+
+	size_t rem = odh.odh_data_size;
 	size_t pos = 0;
 	for (;;) {
 		size_t sz = MIN(PAGESIZE, rem);
@@ -235,11 +246,8 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 			goto out;
 		}
 
-		iovec_t iov = {
-			.iov_base = buf,
-			.iov_len = sz,
-		};
-		if (!oxide_boot_ramdisk_write(oxb, &iov, 1, pos)) {
+
+		if (!oxide_boot_ramdisk_write_append(oxb, buf, sz)) {
 			printf("could not write to ramdisk\n");
 			goto out;
 		}
@@ -248,7 +256,8 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 		pos += sz;
 	}
 
-	if (!oxide_boot_ramdisk_set_len(oxb, odh.odh_image_size) ||
+	if (!oxide_boot_ramdisk_write_flush(oxb) ||
+	    !oxide_boot_ramdisk_set_len(oxb, odh.odh_image_size) ||
 	    !oxide_boot_ramdisk_set_dataset(oxb, odh.odh_dataset)) {
 		printf("could not set ramdisk metadata\n");
 		goto out;

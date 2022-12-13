@@ -163,10 +163,12 @@ bail:
 	return (ok);
 }
 
-bool
-oxide_boot_ramdisk_write(oxide_boot_t *oxb, iovec_t *iov, uint_t niov,
+static bool
+oxide_boot_write_iov(oxide_boot_t *oxb, iovec_t *iov, uint_t niov,
     uint64_t offset)
 {
+	ASSERT(MUTEX_HELD(&oxb->oxb_mutex));
+
 	size_t len = 0;
 	for (uint_t i = 0; i < niov; i++) {
 		if (iov[i].iov_len >= SIZE_MAX - len) {
@@ -184,10 +186,8 @@ oxide_boot_ramdisk_write(oxide_boot_t *oxb, iovec_t *iov, uint_t niov,
 	 * Record the extent of the written data so that we can confirm the
 	 * image was not larger than its stated size.
 	 */
-	mutex_enter(&oxb->oxb_mutex);
 	oxb->oxb_ramdisk_data_size =
 	    MAX(oxb->oxb_ramdisk_data_size, offset + len);
-	mutex_exit(&oxb->oxb_mutex);
 
 	/*
 	 * Write the data to the ramdisk.
@@ -215,6 +215,124 @@ oxide_boot_ramdisk_write(oxide_boot_t *oxb, iovec_t *iov, uint_t niov,
 	return (true);
 }
 
+
+static bool
+oxide_boot_write_block(oxide_boot_t *oxb, uint8_t *block, size_t len,
+    size_t offset)
+{
+	ASSERT(MUTEX_HELD(&oxb->oxb_mutex));
+
+	const uint_t niov = 1;
+	iovec_t iov = {
+		.iov_base = (caddr_t)block,
+		.iov_len = len,
+	};
+
+	return (oxide_boot_write_iov(oxb, &iov, niov, offset));
+}
+
+static bool
+oxide_boot_ramdisk_append_cb(void *arg, uint8_t *buf, size_t len)
+{
+	oxide_boot_t *oxb = arg;
+
+	ASSERT(MUTEX_HELD(&oxb->oxb_mutex));
+
+	/* Write out any full blocks. */
+	while (len + oxb->oxb_acc >= DEV_BSIZE) {
+		size_t n = DEV_BSIZE - oxb->oxb_acc;
+
+		bcopy(buf, &oxb->oxb_block[oxb->oxb_acc], n);
+
+		len -= n;
+		buf += n;
+
+		if (!oxide_boot_write_block(oxb, oxb->oxb_block, DEV_BSIZE,
+		    oxb->oxb_opos)) {
+			return (false);
+		}
+
+		oxb->oxb_opos += DEV_BSIZE;
+		oxb->oxb_acc = 0;
+	}
+
+	/*
+	 * Accumulate any remaining data so that it can be prepended to the
+	 * next block.
+	 */
+	if (len > 0) {
+		bcopy(buf, &oxb->oxb_block[oxb->oxb_acc], len);
+		oxb->oxb_acc += len;
+	}
+
+	return (true);
+}
+
+/*
+ * Write data to the ramdisk image at a specific offset. This is used for
+ * writing data which may be out of order, such as that received via the
+ * network boot protocol. It is not suitable for compressed streams as blocks
+ * expand to different sizes.
+ */
+bool
+oxide_boot_ramdisk_write_iov_offset(oxide_boot_t *oxb, iovec_t *iov, uint_t
+    niov, uint64_t offset)
+{
+	bool ret;
+
+	VERIFY(!oxb->oxb_compressed);
+
+	mutex_enter(&oxb->oxb_mutex);
+	ret = oxide_boot_write_iov(oxb, iov, niov, offset);
+	mutex_exit(&oxb->oxb_mutex);
+
+	return (ret);
+}
+
+/*
+ * This function appends data to the ramdisk image at the current offset. For
+ * an uncompressed image, the data are passed directly to
+ * oxide_boot_ramdisk_append_cb, otherwise the byte sequence is passed to the
+ * stream decompressor which will call the same function one or more times with
+ * uncompressed data to be written.
+ */
+bool
+oxide_boot_ramdisk_write_append(oxide_boot_t *oxb, uint8_t *buf, size_t len)
+{
+	size_t opos;
+
+	mutex_enter(&oxb->oxb_mutex);
+
+	opos = oxb->oxb_opos;
+
+	if (!oxb->oxb_compressed) {
+		bool ret = oxide_boot_ramdisk_append_cb(oxb, buf, len);
+		mutex_exit(&oxb->oxb_mutex);
+		return (ret);
+	}
+
+	int err = z_uncompress_stream(oxb->oxb_zstream, buf, len,
+	    oxide_boot_ramdisk_append_cb, oxb);
+
+	mutex_exit(&oxb->oxb_mutex);
+
+	switch (err) {
+	case Z_STREAM_END:
+		printf("end of compression stream\n");
+		/* FALLTHROUGH */
+	case Z_OK:
+		return (true);
+	case Z_BUF_ERROR:
+		printf("failed ramdisk write at offset 0x%lx\n", opos);
+		break;
+	default:
+		printf("failed decompression: %s\n", z_strerror(err));
+		break;
+	}
+
+	return (false);
+}
+
 bool
 oxide_boot_ramdisk_set_dataset(oxide_boot_t *oxb, const char *name)
 {
@@ -228,9 +346,27 @@ oxide_boot_ramdisk_set_dataset(oxide_boot_t *oxb, const char *name)
 }
 
 bool
+oxide_boot_ramdisk_write_flush(oxide_boot_t *oxb)
+{
+	bool ret = true;
+
+	mutex_enter(&oxb->oxb_mutex);
+	if (oxb->oxb_acc > 0) {
+		ret = oxide_boot_write_block(oxb, oxb->oxb_block, oxb->oxb_acc,
+		    oxb->oxb_opos);
+		oxb->oxb_opos += oxb->oxb_acc;
+		oxb->oxb_acc = 0;
+	}
+	mutex_exit(&oxb->oxb_mutex);
+
+	return (ret);
+}
+
+bool
 oxide_boot_ramdisk_set_len(oxide_boot_t *oxb, uint64_t len)
 {
 	mutex_enter(&oxb->oxb_mutex);
+
 	if (len < oxb->oxb_ramdisk_data_size) {
 		printf("image size %lu < written size %lu\n",
 		    len, oxb->oxb_ramdisk_data_size);
@@ -260,10 +396,27 @@ oxide_boot_ramdisk_set_csum(oxide_boot_t *oxb, uint8_t *csum, size_t len)
 }
 
 bool
-oxide_boot_disk_read(ldi_handle_t lh, uint64_t offset, char *buf, size_t len)
+oxide_boot_set_compressed(oxide_boot_t *oxb)
+{
+	bool ret;
+
+	mutex_enter(&oxb->oxb_mutex);
+	if (z_uncompress_stream_init(&oxb->oxb_zstream) != Z_OK) {
+		printf("Could not initialise stream decompressor\n");
+		ret = false;
+	} else {
+		oxb->oxb_compressed = true;
+		ret = true;
+	}
+	mutex_exit(&oxb->oxb_mutex);
+	return (ret);
+}
+
+bool
+oxide_boot_disk_read(ldi_handle_t lh, uint64_t offset, uint8_t *buf, size_t len)
 {
 	iovec_t iov = {
-		.iov_base = buf,
+		.iov_base = (int8_t *)buf,
 		.iov_len = len,
 	};
 	uio_t uio = {
@@ -311,7 +464,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 		printf("crypto_digest_init() failed %d\n", r);
 	}
 
-	char *buf = kmem_alloc(PAGESIZE, KM_SLEEP);
+	uint8_t *buf = kmem_alloc(PAGESIZE, KM_SLEEP);
 	size_t rem = oxb->oxb_ramdisk_data_size;
 	size_t pos = 0;
 	for (;;) {
@@ -329,7 +482,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 			.cd_format = CRYPTO_DATA_RAW,
 			.cd_length = sz,
 			.cd_raw = {
-				.iov_base = buf,
+				.iov_base = (int8_t *)buf,
 				.iov_len = sz,
 			},
 		};
@@ -418,9 +571,8 @@ oxide_boot_locate(void)
 {
 	int err;
 
-	printf("in oxide_boot!\n");
-
 	oxide_boot_t *oxb = kmem_zalloc(sizeof (*oxb), KM_SLEEP);
+	printf("in oxide_boot! oxb=%p\n", oxb);
 	mutex_init(&oxb->oxb_mutex, NULL, MUTEX_DRIVER, NULL);
 	err = ldi_ident_from_mod(&oxide_boot_modlinkage, &oxb->oxb_li);
 	if (err != 0) {
@@ -482,6 +634,11 @@ oxide_boot_locate(void)
 			success = oxide_boot_disk(oxb, (int)slot);
 		}
 	}
+
+	mutex_enter(&oxb->oxb_mutex);
+	if (oxb->oxb_compressed)
+		z_uncompress_stream_fini(oxb->oxb_zstream);
+	mutex_exit(&oxb->oxb_mutex);
 
 	if (!success) {
 		oxide_boot_fail(IPCC_BOOTFAIL_NOPHASE2,

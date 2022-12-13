@@ -727,7 +727,8 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 			}
 			VERIFY3U(total, ==, datasz);
 
-			if (!oxide_boot_ramdisk_write(oxb, iov, niov, offset)) {
+			if (!oxide_boot_ramdisk_write_iov_offset(oxb,
+			    iov, niov, offset)) {
 				panic("write failure pos %lu", offset);
 			}
 
@@ -799,7 +800,8 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 
 	case OXBOOT_NET_STATE_FINISHED:
 		oxide_boot_net_send_finished(oe, mch);
-		if (!oxide_boot_ramdisk_set_len(oxb, oe->oe_offset)) {
+		if (!oxide_boot_ramdisk_write_flush(oxb) ||
+		    !oxide_boot_ramdisk_set_len(oxb, oe->oe_offset)) {
 			panic("could not set final image length");
 		}
 		return (1);
