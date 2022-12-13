@@ -235,8 +235,6 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 		    err);
 	}
 
-	boothowto |= RB_VERBOSE;
-
 	/*
 	 * krtld will ignore RB_DEBUGENTER when not accompanied by RB_KMDB.
 	 * Setting IPCC_STARTUP_KMDB_BOOT will set both, regardless of the
@@ -246,6 +244,9 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 		boothowto |= RB_KMDB | RB_DEBUGENTER;
 	else if ((spstartup & IPCC_STARTUP_KMDB) != 0)
 		boothowto |= RB_KMDB;
+
+	if ((spstartup & IPCC_STARTUP_VERBOSE) != 0)
+		boothowto |= RB_VERBOSE;
 
 	if ((spstartup & IPCC_STARTUP_KBM) != 0)
 		kbm_debug = B_TRUE;

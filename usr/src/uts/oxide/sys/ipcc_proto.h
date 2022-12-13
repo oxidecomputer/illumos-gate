@@ -100,6 +100,7 @@ typedef enum ipcc_sp_startup {
 	IPCC_STARTUP_KMDB_BOOT		= 1 << 5, /* boot with -kd */
 	IPCC_STARTUP_BOOT_RAMDISK	= 1 << 6, /* no phase 2, use ramdisk */
 	IPCC_STARTUP_BOOT_NET		= 1 << 7, /* boot from network */
+	IPCC_STARTUP_VERBOSE		= 1 << 8, /* boot with -v */
 } ipcc_sp_startup_t;
 
 #define	IPCC_IDENT_DATALEN		106

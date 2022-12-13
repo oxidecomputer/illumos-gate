@@ -43,6 +43,7 @@ have the following meanings:
   5	STARTUP_KMDB_BOOT	0x20	Load KMDB and enter at boot
   6	STARTUP_BOOT_RAMDISK	0x40	Use the provided ramdisk directly
   7	STARTUP_BOOT_NET	0x80	Retrieve the phase 2 image via network
+  8*	STARTUP_VERBOSE		0x100	Enable verbose boot
 
 The options which have a * after their bit number are currently enabled by
 default when the SP's control-plane-agent task starts. The value can be queried
