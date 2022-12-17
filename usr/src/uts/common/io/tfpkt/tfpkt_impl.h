@@ -36,6 +36,7 @@ typedef struct tf_tbus tf_tbus_t;
 typedef enum tfpkt_runstate {
 	TFPKT_RUNSTATE_UNINITIALIZED,
 	TFPKT_RUNSTATE_STOPPED,
+	TFPKT_RUNSTATE_STOPPING,
 	TFPKT_RUNSTATE_RUNNING
 } tfpkt_runstate_t;
 

@@ -67,6 +67,20 @@ static mac_callbacks_t tfpkt_m_callbacks = {
 	.mc_ioctl =			tfpkt_m_ioctl,
 };
 
+static void
+tfpkt_stop()
+{
+	ASSERT(MUTEX_HELD(&tfpkt->tfp_mutex));
+	ASSERT(tfpkt->tfp_refcnt == 0);
+	ASSERT(tfpkt->tfp_runstate == TFPKT_RUNSTATE_STOPPING);
+
+	tfpkt->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
+	mutex_exit(&tfpkt->tfp_mutex);
+	tf_tbus_fini(tfpkt);
+	mutex_enter(&tfpkt->tfp_mutex);
+	tfpkt->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
+}
+
 static int
 tfpkt_hold()
 {
@@ -89,9 +103,12 @@ tfpkt_release()
 	ASSERT(tfpkt != NULL);
 
 	mutex_enter(&tfpkt->tfp_mutex);
-	ASSERT(tfpkt->tfp_runstate == TFPKT_RUNSTATE_RUNNING);
 	ASSERT(tfpkt->tfp_refcnt > 0);
 	tfpkt->tfp_refcnt--;
+	if (tfpkt->tfp_refcnt == 0 &&
+	    tfpkt->tfp_runstate == TFPKT_RUNSTATE_STOPPING) {
+		tfpkt_stop();
+	}
 	mutex_exit(&tfpkt->tfp_mutex);
 }
 
@@ -215,7 +232,7 @@ tfpkt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	switch (cmd) {
 	case DDI_DETACH:
 		tfp = (tfpkt_t *)ddi_get_driver_private(dip);
-		if (tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING)
+		if (tfp->tfp_runstate != TFPKT_RUNSTATE_UNINITIALIZED)
 			return (DDI_FAILURE);
 
 		ASSERT(tfp == tfpkt);
@@ -383,12 +400,14 @@ tfpkt_m_start(void *arg)
 	int rval = 0;
 
 	mutex_enter(&tfp->tfp_mutex);
-	if (tfp->tfp_runstate == TFPKT_RUNSTATE_UNINITIALIZED) {
+	if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPED ||
+	    tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPING) {
+		rval = EAGAIN;
+	} else {
+		ASSERT(tfp->tfp_runstate == TFPKT_RUNSTATE_UNINITIALIZED);
 		if ((rval = tf_tbus_init(tfp)) == 0)
-			tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
+			tfp->tfp_runstate = TFPKT_RUNSTATE_RUNNING;
 	}
-	if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPED)
-		tfp->tfp_runstate = TFPKT_RUNSTATE_RUNNING;
 	mutex_exit(&tfp->tfp_mutex);
 
 	return (rval);
@@ -400,10 +419,13 @@ tfpkt_m_stop(void *arg)
 	tfpkt_t *tfp = arg;
 
 	mutex_enter(&tfp->tfp_mutex);
+
 	ASSERT(tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING);
-	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
-	tf_tbus_fini(tfp);
-	tfp->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
+	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPING;
+	if (tfp->tfp_refcnt == 0) {
+		tfpkt_stop(tfp);
+	}
+
 	mutex_exit(&tfp->tfp_mutex);
 }
 
@@ -447,6 +469,8 @@ tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz)
 	if (tfpkt_hold(tfp) == 0) {
 		mac_rx(tfp->tfp_mh, NULL, mp);
 		tfpkt_release(tfp);
+	} else {
+		freeb(mp);
 	}
 
 done:
