@@ -51,6 +51,7 @@ typedef struct tfport_stats {
 typedef struct tfport_port {
 	list_node_t		tp_listnode;
 	tfport_t		*tp_tfport;
+	uint32_t		tp_refcnt;
 	uint32_t		tp_port;
 	datalink_id_t		tp_link_id;
 	datalink_id_t		tp_pkt_id;

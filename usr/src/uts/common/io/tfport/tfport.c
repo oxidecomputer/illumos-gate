@@ -136,20 +136,42 @@ tfport_random_mac(uint8_t mac[ETHERADDRL])
 }
 
 /*
- * Return the device associated with this port.  If no such device exists,
- * return the system device.
+ * Return the device associated with this link.  Because we do not take a
+ * reference on the port before returning it, the pointer is only valid until
+ * the tfp_mutex is released.
+ */
+static tfport_port_t *
+tfport_find_link(tfport_t *devp, datalink_id_t link)
+{
+	tfport_port_t *portp;
+
+	ASSERT(MUTEX_HELD(&devp->tfp_mutex));
+	portp = list_head(&devp->tfp_source->tps_ports);
+	while (portp != NULL && portp->tp_link_id != link) {
+		portp = list_next(&devp->tfp_source->tps_ports, portp);
+	}
+
+	return (portp);
+}
+
+/*
+ * Return the active device associated with this port.  If no such device exists,
+ * return the system device.  In either case, take a reference on the returned
+ * port.
  */
 static tfport_port_t *
 tfport_find_port(tfport_t *devp, int port)
 {
-	list_t *ports = &devp->tfp_source->tps_ports;
+	list_t *ports;
 	tfport_port_t *portp, *rval;
 
-	/* XXX: take a lock on devp and maintain a reference count on portp */
+	mutex_enter(&devp->tfp_mutex);
 	rval = NULL;
+	ports = &devp->tfp_source->tps_ports;
 	portp = list_head(ports);
 	while (portp != NULL) {
-		if (portp->tp_port == port || portp->tp_port == 0) {
+		if (portp->tp_run_state == TFPORT_RUNSTATE_RUNNING &&
+		    (portp->tp_port == port || portp->tp_port == 0)) {
 			rval = portp;
 			if (portp->tp_port == port)
 				break;
@@ -157,7 +179,32 @@ tfport_find_port(tfport_t *devp, int port)
 		portp = list_next(ports, portp);
 	}
 
+	if (rval != NULL) {
+		rval->tp_refcnt++;
+	}
+	mutex_exit(&devp->tfp_mutex);
+
 	return (rval);
+}
+
+/*
+ * Drop a reference on the port.  If the reference count goes to 0 and the port
+ * is in the STOPPING state, transition to STOPPED.
+ */
+static void
+tfport_rele_port(tfport_t *devp, tfport_port_t *portp)
+{
+	if (portp == NULL)
+		return;
+
+	mutex_enter(&devp->tfp_mutex);
+	ASSERT(portp->tp_refcnt > 0);
+	portp->tp_refcnt--;
+	if (portp->tp_refcnt == 0 &&
+	    portp->tp_run_state == TFPORT_RUNSTATE_STOPPING) {
+		portp->tp_run_state = TFPORT_RUNSTATE_STOPPED;
+	}
+	mutex_exit(&devp->tfp_mutex);
 }
 
 static int
@@ -297,10 +344,6 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 		goto done;
 	}
 
-	if (portp->tp_run_state != TFPORT_RUNSTATE_RUNNING) {
-		goto done;
-	}
-
 	/*
 	 * If the packet is going to a port device, we strip off the sidecar
 	 * header.
@@ -329,6 +372,7 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 	}
 
 	mac_rx(portp->tp_mh, NULL, mp);
+	tfport_rele_port(devp, portp);
 	return;
 
 done:
@@ -498,7 +542,7 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	uchar_t *mac_addr;
 	int err;
 
-	if (carg->tic_port_id > 1024) {
+	if (carg->tic_port_id > 2048) {
 		dev_err(devp->tfp_dip, CE_WARN, "invalid port-id");
 		return (EINVAL);
 	}
@@ -539,6 +583,7 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	}
 
 	mutex_init(&portp->tp_mutex, NULL, MUTEX_DRIVER, NULL);
+	portp->tp_refcnt = 0;
 	portp->tp_tfport = devp;
 	portp->tp_run_state = TFPORT_RUNSTATE_STOPPED;
 	portp->tp_port = carg->tic_port_id;
@@ -570,18 +615,6 @@ out:
 	return (err);
 }
 
-static tfport_port_t *
-tfport_find(tfport_t *devp, datalink_id_t link)
-{
-	tfport_port_t *portp = list_head(&devp->tfp_source->tps_ports);
-
-	while (portp != NULL && portp->tp_link_id != link) {
-		portp = list_next(&devp->tfp_source->tps_ports, portp);
-	}
-
-	return (portp);
-}
-
 static int
 tfport_ioc_delete(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 {
@@ -592,7 +625,7 @@ tfport_ioc_delete(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	int rval = 0;
 
 	mutex_enter(&devp->tfp_mutex);
-	portp = tfport_find(devp, link);
+	portp = tfport_find_link(devp, link);
 	if (portp == NULL) {
 		rval = ENOENT;
 	} else {
@@ -627,7 +660,7 @@ tfport_ioc_info(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	int rval = 0;
 
 	mutex_enter(&devp->tfp_mutex);
-	portp = tfport_find(devp, link);
+	portp = tfport_find_link(devp, link);
 	if (portp == NULL) {
 		rval = ENOENT;
 	} else {
@@ -810,8 +843,15 @@ static void
 tfport_m_stop(void *arg)
 {
 	tfport_port_t *portp = arg;
+	tfport_t *devp = portp->tp_tfport;
 
-	portp->tp_run_state = TFPORT_RUNSTATE_STOPPING;
+	mutex_enter(&devp->tfp_mutex);
+	if (portp->tp_refcnt == 0) {
+		portp->tp_run_state = TFPORT_RUNSTATE_STOPPED;
+	} else {
+		portp->tp_run_state = TFPORT_RUNSTATE_STOPPING;
+	}
+	mutex_exit(&devp->tfp_mutex);
 }
 
 static int
