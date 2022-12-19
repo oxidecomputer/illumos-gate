@@ -462,6 +462,7 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 {
 	const uint32_t imode = BF_INTR_MODE_MSI;
 	int minor = getminor(dev);
+	int resetting;
 	tofino_open_t *top;
 	tofino_t *tf;
 
@@ -488,11 +489,21 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		tf = ddi_get_driver_private(tofino_dip);
 		if (tf == NULL) {
 			return (ENXIO);
-		} else {
-			tofino_dlog(tf, "set tbus to ready");
-			tf->tf_tbus_ready = 1;
-			return (0);
 		}
+
+		if (ddi_copyin((void *)(uintptr_t)arg, &resetting,
+		    sizeof (resetting), mode) != 0) {
+			return (EFAULT);
+		}
+
+		mutex_enter(&tf->tf_mutex);
+		if (resetting) {
+			(void) tofino_tbus_state_update(tf, TF_TBUS_RESETTING);
+		} else {
+			(void) tofino_tbus_state_update(tf, TF_TBUS_RESET);
+		}
+		mutex_exit(&tf->tf_mutex);
+		return (0);
 
 	case BF_GET_PCI_DEVID:
 		tf = ddi_get_driver_private(tofino_dip);

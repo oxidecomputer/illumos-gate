@@ -277,33 +277,76 @@ tofino_tbus_unregister_softint(tf_tbus_hdl_t tf_hdl,
 	return (rval);
 }
 
-uint32_t
-tofino_read_reg(tf_tbus_hdl_t tf_hdl, size_t offset)
+static int
+tofino_tbus_reg_op(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t *val,
+    boolean_t rd)
 {
 	tofino_t *tf;
-	uint32_t rval;
+	int rval;
 
 	if ((tf = hdl2tf(tf_hdl)) == NULL) {
-		rval = (ENXIO);
+		rval = ENXIO;
 	} else {
-		rval = tf_read_reg(tf->tf_dip, offset);
+		if (tf->tf_tbus_state != TF_TBUS_READY) {
+			rval = EAGAIN;
+		} else if (rd) {
+			rval = 0;
+			*val = tf_read_reg(tf->tf_dip, offset);
+		} else {
+			rval = 0;
+			tf_write_reg(tf->tf_dip, offset, *val);
+		}
+
 		mutex_exit(&tf->tf_mutex);
 	}
 
 	return (rval);
 }
 
-void
-tofino_write_reg(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t val)
+int
+tofino_tbus_read_reg(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t *val)
 {
-	tofino_t *tf;
+	return (tofino_tbus_reg_op(tf_hdl, offset, val, true));
+}
 
-	if ((tf = hdl2tf(tf_hdl)) != NULL) {
-		tf_write_reg(tf->tf_dip, offset, val);
-		mutex_exit(&tf->tf_mutex);
+int
+tofino_tbus_write_reg(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t val)
+{
+	return (tofino_tbus_reg_op(tf_hdl, offset, &val, false));
+}
+
+const char *
+state_name(tf_tbus_state_t s)
+{
+	switch (s) {
+		case TF_TBUS_UNINITIALIZED: return ("Uninitialized");
+		case TF_TBUS_RESETTING: return ("Resetting");
+		case TF_TBUS_RESET: return ("Reset");
+		case TF_TBUS_READY: return ("Ready");
+		default: return ("Invalid");
 	}
 }
 
+int
+tofino_tbus_state_update(tofino_t *tf, tf_tbus_state_t new_state)
+{
+	ASSERT(MUTEX_HELD(&tf->tf_mutex));
+	if (new_state < TF_TBUS_UNINITIALIZED || new_state > TF_TBUS_READY)
+		return (EINVAL);
+
+	tofino_dlog(tf, "updating tbus state %s -> %s",
+	    state_name(tf->tf_tbus_state), state_name(new_state));
+	tf->tf_tbus_state = new_state;
+
+	if (tf->tf_tbus_client != NULL) {
+		ddi_softint_handle_t h = tf->tf_tbus_client->tbc_tbus_softint;
+		if (h != NULL) {
+			(void) ddi_intr_trigger_softint(h, NULL);
+		}
+	}
+
+	return (0);
+}
 
 /*
  * If we ever support multiple tofino ASICs in a single system, this interface
@@ -323,12 +366,13 @@ tofino_tbus_register(tf_tbus_hdl_t *tf_hdl)
 		return (ENXIO);
 	}
 	mutex_enter(&tf->tf_mutex);
-	if (!tf->tf_tbus_ready) {
+	if (tf->tf_tbus_state != TF_TBUS_RESET) {
 		rval = EAGAIN;
 	} else if (tf->tf_tbus_client != NULL) {
 		/* someone else is already handling the packets */
 		rval = EBUSY;
 	} else {
+		tofino_tbus_state_update(tf, TF_TBUS_READY);
 		tf->tf_tbus_client = kmem_zalloc(sizeof (tofino_tbus_client_t),
 		    KM_SLEEP);
 		*tf_hdl = (void *)tf->tf_tbus_client;
@@ -345,6 +389,9 @@ tofino_tbus_unregister(tf_tbus_hdl_t tf_hdl)
 
 	if ((tf = hdl2tf(tf_hdl)) == NULL)
 		return (ENXIO);
+
+	if (tf->tf_tbus_state == TF_TBUS_READY)
+		tofino_tbus_state_update(tf, TF_TBUS_RESET);
 
 	kmem_free(tf->tf_tbus_client, sizeof (tofino_tbus_client_t));
 	tf->tf_tbus_client = NULL;

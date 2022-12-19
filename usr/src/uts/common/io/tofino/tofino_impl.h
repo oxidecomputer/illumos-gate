@@ -50,6 +50,13 @@ typedef struct tofino_tbus_client {
 	ddi_softint_handle_t	tbc_tbus_softint;
 } tofino_tbus_client_t;
 
+typedef enum {
+	TF_TBUS_UNINITIALIZED,
+	TF_TBUS_RESETTING,
+	TF_TBUS_RESET,
+	TF_TBUS_READY,
+} tf_tbus_state_t;
+
 typedef struct tofino {
 	kmutex_t		tf_mutex;
 	int			tf_instance;
@@ -70,7 +77,7 @@ typedef struct tofino {
 	uint32_t		tf_intr_cnt[TOFINO_MAX_MSI_INTRS];
 	struct pollhead		tf_pollhead;
 
-	int			tf_tbus_ready;
+	tf_tbus_state_t		tf_tbus_state;
 	tf_tbus_hdl_t		tf_tbus_client;
 } tofino_t;
 
@@ -108,6 +115,7 @@ void tofino_dlog(tofino_t *tf, const char *fmt, ...);
 void tofino_err(tofino_t *tf, const char *fmt, ...);
 uint32_t tf_read_reg(dev_info_t *dip, size_t offset);
 void tf_write_reg(dev_info_t *dip, size_t offset, uint32_t val);
+int tofino_tbus_state_update(tofino_t *tf, tf_tbus_state_t new_state);
 
 #ifdef	__cplusplus
 }
