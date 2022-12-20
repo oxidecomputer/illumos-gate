@@ -123,7 +123,7 @@ tf_tbus_free_bufs(tf_tbus_t *tbp)
 	freed += tf_tbus_free_buf_list(&tbp->tbp_txbufs_pushed);
 
 	if (freed != tbp->tbp_bufs_capacity)
-		dev_err(tbp->tbp_dip, CE_WARN, "lost track of %d/%d buffers",
+		tf_tbus_err(tbp, "lost track of %d/%d buffers",
 		    tbp->tbp_bufs_capacity - freed, tbp->tbp_bufs_capacity);
 
 	kmem_free(tbp->tbp_bufs_mem,
@@ -242,7 +242,7 @@ tf_tbus_free_drs(tf_tbus_t *tbp)
  * different registers used to configure and manage the DR, but do not actually
  * update those registers here.
  */
-int
+static int
 tf_tbus_alloc_dr(tf_tbus_t *tbp, tf_tbus_dr_t *drp, tf_tbus_dr_type_t dr_type,
     int dr_id, size_t depth)
 {
@@ -470,7 +470,7 @@ tf_tbus_loaned_buf_by_va(tf_tbus_t *tbp, list_t *list, caddr_t va)
 }
 
 /*
- * Mark a tx buffer for loaning, and do the necessary accounting.
+ * Mark a tx buffer for loaning to the ASIC, and do the necessary accounting.
  */
 static void
 tf_tbus_tx_loan(tf_tbus_t *tbp, tf_tbus_buf_t *buf)
@@ -482,7 +482,7 @@ tf_tbus_tx_loan(tf_tbus_t *tbp, tf_tbus_buf_t *buf)
 }
 
 /*
- * Process the return of a tx buffer
+ * Process the return of a tx buffer from the ASIC.
  */
 static void
 tf_tbus_tx_return(tf_tbus_t *tbp, tf_tbus_buf_t *buf)
@@ -494,7 +494,8 @@ tf_tbus_tx_return(tf_tbus_t *tbp, tf_tbus_buf_t *buf)
 }
 
 /*
- * Mark an rx buffer for loaning, and do the necessary accounting.
+ * Mark an rx buffer for loaning to the mac framework, and do the necessary
+ * accounting.
  */
 static void
 tf_tbus_rx_loan(tf_tbus_t *tbp, tf_tbus_buf_t *buf)
@@ -506,7 +507,7 @@ tf_tbus_rx_loan(tf_tbus_t *tbp, tf_tbus_buf_t *buf)
 }
 
 /*
- * Process the return of an rx buffer
+ * Process the return of an rx buffer from the mac framework.
  */
 static void
 tf_tbus_rx_return(tf_tbus_t *tbp, tf_tbus_buf_t *buf)
@@ -578,24 +579,27 @@ tofino_tbus_tx_free(tf_tbus_t *tbp, void *addr)
 int
 tofino_tbus_tx(tf_tbus_t *tbp, void *addr, size_t sz)
 {
-	dev_info_t *dip = tbp->tbp_dip;
 	tf_tbus_buf_t *buf;
 	tf_tbus_dr_t *drp = &tbp->tbp_tx_drs[0];
 	tf_tbus_dr_tx_t tx_dr;
-	int rval;
-
-	if (sz > TFPORT_BUF_SIZE) {
-		dev_err(dip, CE_WARN, "packet too large");
-		return (-1);
-	}
+	int rval = 0;
 
 	mutex_enter(&tbp->tbp_mutex);
-	buf = tf_tbus_loaned_buf_by_va(tbp, &tbp->tbp_txbufs_loaned, addr);
-	mutex_exit(&tbp->tbp_mutex);
-	if (buf == NULL)  {
-		tf_tbus_err(tbp, "sending unknown buf %p", addr);
-		return (-1);
+	if (tbp->tbp_reset) {
+		rval = ENXIO;
+	} else if (sz > TFPORT_BUF_SIZE) {
+		rval = EINVAL;
+	} else {
+		buf = tf_tbus_loaned_buf_by_va(tbp, &tbp->tbp_txbufs_loaned,
+		    addr);
+		if (buf == NULL)  {
+			tf_tbus_err(tbp, "sending unknown buf %p", addr);
+			rval = EINVAL;
+		}
 	}
+	mutex_exit(&tbp->tbp_mutex);
+	if (rval != 0)
+		return (rval);
 
 	bzero(&tx_dr, sizeof (tx_dr));
 	tx_dr.tx_s = 1;
@@ -614,8 +618,10 @@ tofino_tbus_tx(tf_tbus_t *tbp, void *addr, size_t sz)
 	if (rval == 0) {
 		tf_tbus_tx_return(tbp, buf);
 		list_insert_tail(&tbp->tbp_txbufs_pushed, buf);
-	} else {
-		tbp->tbp_txfail_no_descriptors++;
+	} else  {
+		if (rval == ENOSPC) {
+			tbp->tbp_txfail_no_descriptors++;
+		}
 		tf_tbus_tx_loan(tbp, buf);
 	}
 	mutex_exit(&tbp->tbp_mutex);
@@ -698,17 +704,37 @@ tf_tbus_process_cmp(tf_tbus_t *tbp, tf_tbus_dr_t *drp, tf_tbus_dr_cmp_t *cmp_dr)
 	mutex_exit(&tbp->tbp_mutex);
 }
 
-static uint32_t
-tf_tbus_dr_read(tf_tbus_hdl_t hdl, tf_tbus_dr_t *drp, size_t offset)
+static int
+tf_tbus_reg_op(tf_tbus_t *tbp, size_t offset, uint32_t *val, bool rd)
 {
-	return (tofino_read_reg(hdl, drp->tfdrp_reg_base + offset));
+	int rval;
+
+	if (rd) {
+		rval = tofino_tbus_read_reg(tbp->tbp_tbus_hdl, offset, val);
+	} else {
+		rval = tofino_tbus_write_reg(tbp->tbp_tbus_hdl, offset, *val);
+	}
+
+	if (rval != 0) {
+		if (!tbp->tbp_reset)
+			tf_tbus_err(tbp, "tofino has been reset");
+		tbp->tbp_reset = true;
+	}
+
+	return (rval);
 }
 
-static void
-tf_tbus_dr_write(tf_tbus_hdl_t hdl, tf_tbus_dr_t *drp, size_t offset,
+static int
+tf_tbus_dr_read(tf_tbus_t *tbp, tf_tbus_dr_t *drp, size_t offset, uint32_t *val)
+{
+	return (tf_tbus_reg_op(tbp, drp->tfdrp_reg_base + offset, val, true));
+}
+
+static int
+tf_tbus_dr_write(tf_tbus_t *tbp, tf_tbus_dr_t *drp, size_t offset,
     uint32_t val)
 {
-	tofino_write_reg(hdl, drp->tfdrp_reg_base + offset, val);
+	return (tf_tbus_reg_op(tbp, drp->tfdrp_reg_base + offset, &val, false));
 }
 
 static int
@@ -745,10 +771,9 @@ tf_tbus_rx_poll(tf_tbus_t *tbp, int ring)
  * Program the ASIC with the location, range, and characteristics of this
  * descriptor ring.
  */
-static void
+static int
 tf_tbus_init_dr(tf_tbus_t *tbp, tf_tbus_dr_t *drp)
 {
-	tf_tbus_hdl_t hdl = tbp->tbp_tbus_hdl;
 	uint64_t phys;
 	uint32_t ctrl;
 
@@ -759,27 +784,30 @@ tf_tbus_init_dr(tf_tbus_t *tbp, tf_tbus_dr_t *drp)
 
 	/* disable DR */
 	ctrl = 0;
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_CTRL, ctrl);
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_CTRL, ctrl);
 
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_SIZE, drp->tfdrp_ring_size);
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_BASE_ADDR_LOW,
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_SIZE,
+	    drp->tfdrp_ring_size);
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_BASE_ADDR_LOW,
 	    (uint32_t)(phys & 0xFFFFFFFFULL));
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_BASE_ADDR_HIGH,
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_BASE_ADDR_HIGH,
 	    (uint32_t)(phys >> 32));
 
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_LIMIT_ADDR_LOW,
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_LIMIT_ADDR_LOW,
 	    (uint32_t)((phys + drp->tfdrp_ring_size) & 0xFFFFFFFFULL));
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_LIMIT_ADDR_HIGH,
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_LIMIT_ADDR_HIGH,
 	    (uint32_t)((phys + drp->tfdrp_ring_size) >> 32));
 
 	*drp->tfdrp_tail_ptr = 0;
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_HEAD_PTR, 0);
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_TAIL_PTR, 0);
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_HEAD_PTR, 0);
+	(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_TAIL_PTR, 0);
 
 	/* Tofino2 has two additional registers */
 	if (tbp->tbp_gen == TOFINO_G_TF2) {
-		tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_EMPTY_INT_TIME, 0);
-		tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_EMPTY_INT_CNT, 0);
+		(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_EMPTY_INT_TIME,
+		    0);
+		(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_EMPTY_INT_CNT,
+		    0);
 	}
 
 	switch (drp->tfdrp_type) {
@@ -788,7 +816,7 @@ tf_tbus_init_dr(tf_tbus_t *tbp, tf_tbus_dr_t *drp)
 			ctrl = TBUS_DR_CTRL_HEAD_PTR_MODE;
 			break;
 		case TF_PKT_DR_RX:
-			tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_DATA_TIMEOUT, 1);
+			(void) tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_DATA_TIMEOUT, 1);
 			/* fallthru */
 		case TF_PKT_DR_CMP:
 			ctrl = TBUS_DR_CTRL_TAIL_PTR_MODE;
@@ -797,7 +825,7 @@ tf_tbus_init_dr(tf_tbus_t *tbp, tf_tbus_dr_t *drp)
 
 	/* enable DR */
 	ctrl |= TBUS_DR_CTRL_ENABLE;
-	tf_tbus_dr_write(hdl, drp, TBUS_DR_OFF_CTRL, ctrl);
+	return (tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_CTRL, ctrl));
 }
 
 /*
@@ -806,42 +834,50 @@ tf_tbus_init_dr(tf_tbus_t *tbp, tf_tbus_dr_t *drp)
 static int
 tf_tbus_init_drs(tf_tbus_t *tbp)
 {
-	int i;
+	int i, rval;
 
-	for (i = 0; i < TF_PKT_FM_CNT; i++) {
-		tf_tbus_init_dr(tbp, &tbp->tbp_fm_drs[i]);
-	}
-	for (i = 0; i < TF_PKT_RX_CNT; i++) {
-		tf_tbus_init_dr(tbp, &tbp->tbp_rx_drs[i]);
-	}
-	for (i = 0; i < TF_PKT_TX_CNT; i++) {
-		tf_tbus_init_dr(tbp, &tbp->tbp_tx_drs[i]);
-	}
-	for (i = 0; i < TF_PKT_CMP_CNT; i++) {
-		tf_tbus_init_dr(tbp, &tbp->tbp_cmp_drs[i]);
-	}
+	rval = 0;
+	for (i = 0; (rval == 0) && (i < TF_PKT_FM_CNT); i++)
+		rval = tf_tbus_init_dr(tbp, &tbp->tbp_fm_drs[i]);
+	for (i = 0; (rval == 0) && (i < TF_PKT_RX_CNT); i++)
+		rval = tf_tbus_init_dr(tbp, &tbp->tbp_rx_drs[i]);
+	for (i = 0; (rval == 0) && (i < TF_PKT_TX_CNT); i++)
+		rval = tf_tbus_init_dr(tbp, &tbp->tbp_tx_drs[i]);
+	for (i = 0; (rval == 0) && (i < TF_PKT_CMP_CNT); i++)
+		rval = tf_tbus_init_dr(tbp, &tbp->tbp_cmp_drs[i]);
 
-	return (0);
+	return (rval);
 }
 
 /*
  * Refresh our in-core copy of the tail pointer from the DR's config register.
  */
-static void
+static int
 tf_tbus_dr_refresh_tail(tf_tbus_t *tbp, tf_tbus_dr_t *drp)
 {
-	drp->tfdrp_tail = tf_tbus_dr_read(tbp->tbp_tbus_hdl, drp,
-	    TBUS_DR_OFF_TAIL_PTR);
+	uint32_t tail;
+	int rval;
+
+	rval = tf_tbus_dr_read(tbp, drp, TBUS_DR_OFF_TAIL_PTR, &tail);
+	if (rval == 0)
+		drp->tfdrp_tail = tail;
+
+	return (rval);
 }
 
 /*
  * Refresh our in-core copy of the head pointer from the DR's config register.
  */
-static void
+static int
 tf_tbus_dr_refresh_head(tf_tbus_t *tbp, tf_tbus_dr_t *drp)
 {
-	drp->tfdrp_head = tf_tbus_dr_read(tbp->tbp_tbus_hdl, drp,
-	    TBUS_DR_OFF_HEAD_PTR);
+	uint32_t head;
+	int rval;
+
+	rval = tf_tbus_dr_read(tbp, drp, TBUS_DR_OFF_HEAD_PTR, &head);
+	if (rval == 0)
+		drp->tfdrp_head = head;
+	return (rval);
 }
 
 #define	DR_PTR_WRAP_BIT (1 << 20)
@@ -921,18 +957,24 @@ tf_tbus_dr_advance_head(tf_tbus_dr_t *drp)
 
 /*
  * Pull a single descriptor off the head of a ring.
- * Returns 0 if it successfully gets a descriptor, -1 if the ring is empty.
+ * Returns 0 if it successfully pushes a descriptor, ENOENT if the ring is
+ * empty, and ENXIO if we detect that the rings have been reset.
  */
 static int
 tf_tbus_dr_pull(tf_tbus_t *tbp, tf_tbus_dr_t *drp, uint64_t *desc)
 {
 	uint64_t *slot, head;
+	int rval;
 
 	mutex_enter(&drp->tfdrp_mutex);
-	tf_tbus_dr_refresh_tail(tbp, drp);
+	if (tbp->tbp_reset || tf_tbus_dr_refresh_tail(tbp, drp) != 0) {
+		mutex_exit(&drp->tfdrp_mutex);
+		return (ENXIO);
+	}
+
 	if (tf_tbus_dr_empty(drp)) {
 		mutex_exit(&drp->tfdrp_mutex);
-		return (-1);
+		return (ENOENT);
 	}
 
 	head = DR_PTR_GET_BODY(drp->tfdrp_head);
@@ -952,27 +994,33 @@ tf_tbus_dr_pull(tf_tbus_t *tbp, tf_tbus_dr_t *drp, uint64_t *desc)
 		desc[i] = slot[i];
 
 	(void) tf_tbus_dr_advance_head(drp);
-	tf_tbus_dr_write(tbp->tbp_tbus_hdl, drp, TBUS_DR_OFF_HEAD_PTR,
+	rval = tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_HEAD_PTR,
 	    drp->tfdrp_head);
 	mutex_exit(&drp->tfdrp_mutex);
 
-	return (0);
+	return (rval);
 }
 
 /*
- * Push a single descriptor onto the tail of a ring
- * Returns 0 if it successfully pushes a descriptor, -1 if the ring is full.
+ * Push a single descriptor onto the tail of a ring.
+ * Returns 0 if it successfully pushes a descriptor, ENOSPC if the ring is full,
+ * and ENXIO if we detect that the rings have been reset.
  */
 static int
 tf_tbus_dr_push(tf_tbus_t *tbp, tf_tbus_dr_t *drp, uint64_t *desc)
 {
 	uint64_t *slot, tail;
+	int rval;
 
 	mutex_enter(&drp->tfdrp_mutex);
-	tf_tbus_dr_refresh_head(tbp, drp);
+	if (tbp->tbp_reset || tf_tbus_dr_refresh_head(tbp, drp) != 0) {
+		mutex_exit(&drp->tfdrp_mutex);
+		return (ENXIO);
+	}
+
 	if (tf_tbus_dr_full(drp)) {
 		mutex_exit(&drp->tfdrp_mutex);
-		return (-1);
+		return (ENOSPC);
 	}
 	if (tfpkt_tbus_debug > 1) {
 		uint64_t offset = DR_PTR_GET_BODY(drp->tfdrp_tail);
@@ -992,11 +1040,11 @@ tf_tbus_dr_push(tf_tbus_t *tbp, tf_tbus_dr_t *drp, uint64_t *desc)
 	(void) tf_tbus_dr_advance_tail(drp);
 	tail = DR_PTR_GET_BODY(drp->tfdrp_tail);
 	*drp->tfdrp_tail_ptr = tail;
-	tf_tbus_dr_write(tbp->tbp_tbus_hdl, drp, TBUS_DR_OFF_TAIL_PTR,
+	rval = tf_tbus_dr_write(tbp, drp, TBUS_DR_OFF_TAIL_PTR,
 	    drp->tfdrp_tail);
 	mutex_exit(&drp->tfdrp_mutex);
 
-	return (0);
+	return (rval);
 }
 
 /*
@@ -1041,42 +1089,58 @@ tf_tbus_push_fm(tf_tbus_t *tbp, tf_tbus_dr_t *drp, uint64_t addr, uint64_t size)
 static int
 tf_tbus_push_free_bufs(tf_tbus_t *tbp, int ring)
 {
-	int pushed = 0;
+	int rval = 0;
 	uint64_t dma_addr;
 	tf_tbus_dr_t *drp = &tbp->tbp_fm_drs[ring];
 	tf_tbus_buf_t *buf, *next;
+	int cnt = 0;
 
 	mutex_enter(&tbp->tbp_mutex);
 	for (buf = list_head(&tbp->tbp_rxbufs_free); buf != NULL; buf = next) {
 		next = list_next(&tbp->tbp_rxbufs_free, buf);
 		dma_addr = buf->tfb_dma.tpd_cookie.dmac_laddress;
-		if (tf_tbus_push_fm(tbp, drp, dma_addr, TFPORT_BUF_SIZE) < 0)
+		rval = tf_tbus_push_fm(tbp, drp, dma_addr, TFPORT_BUF_SIZE);
+		if (rval != 0) {
+			/*
+			 * ENOSPC is an indication that we've pushed as
+			 * many buffers as the ASIC can handle.  It means we
+			 * should stop trying to push more, but that we
+			 * shouldn't return an error to the caller.
+			 */
+			if (rval == ENOSPC)
+				rval = 0;
 			break;
+		}
 		list_remove(&tbp->tbp_rxbufs_free, buf);
 		list_insert_tail(&tbp->tbp_rxbufs_pushed, buf);
-		pushed++;
+		cnt++;
 	}
 	mutex_exit(&tbp->tbp_mutex);
+	dev_err(tbp->tbp_dip, CE_NOTE, "pushed %d rx bufs to the ASIC", cnt);
 
-	return (pushed);
+	return (rval);
 }
 
 /*
  * Setup the tbus control register to enable the pci network port
  */
-static void
+static int 
 tf_tbus_port_init(tf_tbus_t *tbp, dev_info_t *tfp_dip)
 {
 	tf_tbus_hdl_t hdl = tbp->tbp_tbus_hdl;
 	tf_tbus_ctrl_t ctrl;
+	uint32_t reg;
 	uint32_t *ctrlp = (uint32_t *)&ctrl;
+	int rval;
 
 	ASSERT(tbp->tbp_gen == TOFINO_G_TF1 || tbp->tbp_gen == TOFINO_G_TF2);
 	if (tbp->tbp_gen == TOFINO_G_TF1) {
-		*ctrlp = tofino_read_reg(hdl, TF_REG_TBUS_CTRL);
+		reg = TF_REG_TBUS_CTRL;
 	} else {
-		*ctrlp = tofino_read_reg(hdl, TF2_REG_TBUS_CTRL);
+		reg = TF2_REG_TBUS_CTRL;
 	}
+	if ((rval = tofino_tbus_read_reg(hdl, reg, ctrlp)) != 0)
+		return (rval);
 
 	ctrl.tftc_pfc_fm = 0x03;
 	ctrl.tftc_pfc_rx = 0x03;
@@ -1085,14 +1149,10 @@ tf_tbus_port_init(tf_tbus_t *tbp, dev_info_t *tfp_dip)
 	ctrl.tftc_ecc_dec_dis = 0;
 	ctrl.tftc_crcchk_dis = 1;
 	ctrl.tftc_crcrmv_dis = 0;
-
-	if (tbp->tbp_gen == TOFINO_G_TF1) {
-		tofino_write_reg(hdl, TF_REG_TBUS_CTRL, *ctrlp);
-	} else {
+	if (tbp->tbp_gen != TOFINO_G_TF1)
 		ctrl.tftc_rx_channel_offset = 0;
-		ctrl.tftc_crcerr_keep = 1;
-		tofino_write_reg(hdl, TF2_REG_TBUS_CTRL, *ctrlp);
-	}
+
+	return (tofino_tbus_write_reg(hdl, reg, *ctrlp));
 }
 
 static uint_t
@@ -1101,12 +1161,13 @@ tf_tbus_intr(caddr_t arg1, caddr_t arg2)
 	tf_tbus_t *tbp = (tf_tbus_t *)arg1;
 	int processed = 1;
 
-	while (processed > 0) {
+	while (!tbp->tbp_reset && (processed > 0)) {
 		processed = 0;
 		for (int i = 0; i < TF_PKT_RX_CNT; i++) {
 			if (tf_tbus_rx_poll(tbp, i) > 0) {
 				processed++;
-				(void) tf_tbus_push_free_bufs(tbp, i);
+				if (tf_tbus_push_free_bufs(tbp, i))
+					break;
 			}
 		}
 
@@ -1160,6 +1221,7 @@ tf_tbus_init(tfpkt_t *tfp)
 
 	tbp = kmem_zalloc(sizeof (*tbp), KM_SLEEP);
 	mutex_init(&tbp->tbp_mutex, NULL, MUTEX_DRIVER, NULL);
+	tbp->tbp_reset = false;
 	tbp->tbp_dip = tfp_dip;
 	tbp->tbp_tfp = tfp;
 	tfp->tfp_tbus_state = tbp;
@@ -1211,7 +1273,8 @@ tf_tbus_init(tfpkt_t *tfp)
 	}
 
 	for (int i = 0; i < TF_PKT_RX_CNT; i++)
-		(void) tf_tbus_push_free_bufs(tbp, i);
+		if ((err = tf_tbus_push_free_bufs(tbp, i)) != 0)
+			goto fail;
 
 	return (0);
 

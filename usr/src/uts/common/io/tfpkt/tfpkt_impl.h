@@ -37,6 +37,7 @@ typedef enum tfpkt_runstate {
 	TFPKT_RUNSTATE_UNINITIALIZED,
 	TFPKT_RUNSTATE_STOPPED,
 	TFPKT_RUNSTATE_STOPPING,
+	TFPKT_RUNSTATE_RESETTING,
 	TFPKT_RUNSTATE_RUNNING
 } tfpkt_runstate_t;
 
@@ -61,6 +62,7 @@ struct tfpkt {
 	mac_handle_t		tfp_mh;
 };
 
+void tfpkt_reset_trigger(tfpkt_t *tfp);
 void tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz);
 
 typedef struct tf_tbus tf_tbus_t;
@@ -199,6 +201,7 @@ typedef struct tf_tbus_buf {
  */
 struct tf_tbus {
 	kmutex_t		tbp_mutex;
+	boolean_t		tbp_reset;
 	tfpkt_t			*tbp_tfp;
 	dev_info_t		*tbp_dip;
 	ddi_softint_handle_t	tbp_softint;

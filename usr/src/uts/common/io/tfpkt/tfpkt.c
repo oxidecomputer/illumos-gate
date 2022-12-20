@@ -68,48 +68,70 @@ static mac_callbacks_t tfpkt_m_callbacks = {
 };
 
 static void
-tfpkt_stop()
+tfpkt_stop(tfpkt_t *tfp)
 {
-	ASSERT(MUTEX_HELD(&tfpkt->tfp_mutex));
-	ASSERT(tfpkt->tfp_refcnt == 0);
-	ASSERT(tfpkt->tfp_runstate == TFPKT_RUNSTATE_STOPPING);
+	ASSERT(MUTEX_HELD(&tfp->tfp_mutex));
+	ASSERT(tfp->tfp_refcnt == 0);
+	ASSERT(tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPING);
 
-	tfpkt->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
-	mutex_exit(&tfpkt->tfp_mutex);
+	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
+	mutex_exit(&tfp->tfp_mutex);
 	tf_tbus_fini(tfpkt);
-	mutex_enter(&tfpkt->tfp_mutex);
-	tfpkt->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
+	mutex_enter(&tfp->tfp_mutex);
+	tfp->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
+}
+
+static void
+tfpkt_reset(tfpkt_t *tfp)
+{
+	ASSERT(MUTEX_HELD(&tfp->tfp_mutex));
+	ASSERT(tfp->tfp_refcnt == 0);
+
+	dev_err(tfp->tfp_dip, CE_NOTE, "resetting tbus state");
+	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
+	mutex_exit(&tfp->tfp_mutex);
+
+	tf_tbus_fini(tfpkt);
+	if (tf_tbus_init(tfpkt) == 0) {
+		tfp->tfp_runstate = TFPKT_RUNSTATE_RUNNING;
+	} else {
+		tfp->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
+	}
+	mutex_enter(&tfp->tfp_mutex);
 }
 
 static int
-tfpkt_hold()
+tfpkt_hold(tfpkt_t *tfp)
 {
 	int rval = -1;
 
 	if (tfpkt != NULL) {
-		mutex_enter(&tfpkt->tfp_mutex);
-		if (tfpkt->tfp_runstate == TFPKT_RUNSTATE_RUNNING) {
-			tfpkt->tfp_refcnt++;
+		mutex_enter(&tfp->tfp_mutex);
+		if (tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING) {
+			tfp->tfp_refcnt++;
 			rval = 0;
 		}
-		mutex_exit(&tfpkt->tfp_mutex);
+		mutex_exit(&tfp->tfp_mutex);
 	}
 	return (rval);
 }
 
 static void
-tfpkt_release()
+tfpkt_release(tfpkt_t *tfp)
 {
-	ASSERT(tfpkt != NULL);
+	ASSERT(tfp != NULL);
 
-	mutex_enter(&tfpkt->tfp_mutex);
-	ASSERT(tfpkt->tfp_refcnt > 0);
-	tfpkt->tfp_refcnt--;
-	if (tfpkt->tfp_refcnt == 0 &&
-	    tfpkt->tfp_runstate == TFPKT_RUNSTATE_STOPPING) {
-		tfpkt_stop();
+	mutex_enter(&tfp->tfp_mutex);
+	ASSERT(tfp->tfp_refcnt > 0);
+	tfp->tfp_refcnt--;
+	if (tfp->tfp_refcnt == 0) {
+		if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPING) {
+			tfpkt_stop(tfp);
+		} else if (tfp->tfp_runstate == TFPKT_RUNSTATE_RESETTING) {
+			tfpkt_reset(tfp);
+		}
 	}
-	mutex_exit(&tfpkt->tfp_mutex);
+	mutex_exit(&tfp->tfp_mutex);
 }
 
 static int
@@ -420,7 +442,9 @@ tfpkt_m_stop(void *arg)
 
 	mutex_enter(&tfp->tfp_mutex);
 
-	ASSERT(tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING);
+	ASSERT((tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING) || 
+	    (tfp->tfp_runstate == TFPKT_RUNSTATE_RESETTING));
+
 	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPING;
 	if (tfp->tfp_refcnt == 0) {
 		tfpkt_stop(tfp);
@@ -448,6 +472,24 @@ static int
 tfpkt_m_unicst(void *arg, const uint8_t *macaddr)
 {
 	return (0);
+}
+
+void
+tfpkt_reset_trigger(tfpkt_t *tfp)
+{
+	dev_err(tfp->tfp_dip, CE_NOTE, "tbus reset triggered");
+	mutex_enter(&tfp->tfp_mutex);
+	if (tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING) {
+		tfp->tfp_runstate = TFPKT_RUNSTATE_RESETTING;
+		if (tfp->tfp_refcnt == 0) {
+			tfpkt_reset(tfp);
+		}
+	}
+	mutex_exit(&tfp->tfp_mutex);
+
+	/*
+	 * XXX: need to spawn a retry task
+	 */
 }
 
 void
