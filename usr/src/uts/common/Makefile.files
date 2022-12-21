@@ -210,6 +210,7 @@ GENUNIX_OBJS +=	\
 		hat_refmod.o	\
 		id32.o		\
 		id_space.o	\
+		ilstr.o		\
 		inet_ntop.o	\
 		instance.o	\
 		ioctl.o		\

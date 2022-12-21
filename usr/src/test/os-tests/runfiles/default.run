@@ -161,3 +161,6 @@ tests = [
 	'illumos-15031',
 	'illumos-15036'
 	]
+
+[/opt/os-tests/tests/ilstr]
+tests = ['ilstr_basic.32', 'ilstr_basic.64']
