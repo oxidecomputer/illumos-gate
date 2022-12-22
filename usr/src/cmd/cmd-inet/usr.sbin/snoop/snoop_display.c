@@ -93,6 +93,11 @@ process_pkt(struct sb_hdr *hdrp, char *pktp, int num, int flags)
 	if (pktlen <= 0)
 		return;
 
+	/*
+	 * Clear the summary line prefix string:
+	 */
+	ilstr_reset(get_prefix());
+
 	/* set up externals */
 	dlc_header = pktp;
 	pi_frame = num;

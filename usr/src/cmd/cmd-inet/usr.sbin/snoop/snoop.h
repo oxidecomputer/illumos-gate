@@ -36,6 +36,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/bufmod.h>
+#include <sys/ilstr.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/if_ether.h>
@@ -162,6 +163,7 @@ extern char *get_sum_line(void);
 extern char *get_detail_line(int, int);
 extern int want_packet(uchar_t *, int, int);
 extern void set_vlan_id(int);
+extern ilstr_t *get_prefix(void);
 extern struct timeval prev_time;
 extern void process_pkt(struct sb_hdr *, char *, int, int);
 extern char *getflag(int, int, char *, char *);
