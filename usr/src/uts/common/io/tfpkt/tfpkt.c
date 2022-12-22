@@ -13,6 +13,50 @@
  * Copyright 2022 Oxide Computer Company
  */
 
+/*
+ * The tofino ASIC includes a nic-like interface to the dataplane, using a set
+ * of registers in PCI space.  These registers describe a collection of ring
+ * buffers.  The dataplane pushes free memory buffers onto FM rings and packets
+ * to be transmitted onto TX rings.  The ASIC pulls buffers from the FM rings
+ * for incoming packets, and pushes the populated buffers onto RX rings.  When a
+ * packet has been sucessfuly transmitted, the ASIC will push a completion event
+ * onto a CMP ring.
+ *
+ * +---------+ +----------+  +----------+  +---------------+
+ * |  Free   | | Incoming |  | Outgoing |  |  Completion   |
+ * | buffers | | packets  |  | packets  |  | notifications |
+ * +---------+ +----------+  +----------+  +---------------+
+ *      |           ^             |                ^
+ *      V           |             V                |
+ * +---------+ +---------+   +---------+      +----------+
+ * | FM ring | | RX ring |   | TX ring |      | CMP ring |
+ * +---------+ +---------+   +---------+      +----------+
+ *     |            ^             |                ^
+ *     |            |             |                |
+ * +---|------------|-------------|----------------|-----+
+ * |   |            |             |                |     |
+ * |   +-> Packet --+             +-->  Packet ----+     |
+ * |       Receipt                     Transmit          |
+ * |                     Tofino                          |
+ * +-----------------------------------------------------+
+ *
+ * The Tofino register documentation refers to this collection of registers as
+ * the "tbus", although it doesn't explain why.  Access to the tbus by the p4
+ * program running on the ASIC is via port 0.
+ *
+ * This tfpkt driver provides access to this network-like device via a mac(9e)
+ * interface.
+ *
+ * Also managing the tbus register set is the dataplane daemon, running in
+ * userspace.  When the daemon (re)starts it resets the Tofino ASIC, erasing any
+ * configuration performed by this driver.  We rely on the daemon issuing a
+ * BF_TFPKT_INIT ioctl() before and after the reset for correct performance.
+ * When we are notified that a reset is happening, we stop using the registers,
+ * free the buffer memory we were using, and fail all attempted mac_tx() calls.
+ * When the reset completes, we allocate a new collection of buffers and
+ * reprogram the ring configuration registers.
+ */
+
 #include <sys/policy.h>
 #include <sys/conf.h>
 #include <sys/modctl.h>
@@ -67,69 +111,35 @@ static mac_callbacks_t tfpkt_m_callbacks = {
 	.mc_ioctl =			tfpkt_m_ioctl,
 };
 
-static void
-tfpkt_stop(tfpkt_t *tfp)
-{
-	ASSERT(MUTEX_HELD(&tfp->tfp_mutex));
-	ASSERT(tfp->tfp_refcnt == 0);
-	ASSERT(tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPING);
-
-	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
-	mutex_exit(&tfp->tfp_mutex);
-	tf_tbus_fini(tfpkt);
-	mutex_enter(&tfp->tfp_mutex);
-	tfp->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
-}
-
-static void
-tfpkt_reset(tfpkt_t *tfp)
-{
-	ASSERT(MUTEX_HELD(&tfp->tfp_mutex));
-	ASSERT(tfp->tfp_refcnt == 0);
-
-	dev_err(tfp->tfp_dip, CE_NOTE, "resetting tbus state");
-	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
-	mutex_exit(&tfp->tfp_mutex);
-
-	tf_tbus_fini(tfpkt);
-	if (tf_tbus_init(tfpkt) == 0) {
-		tfp->tfp_runstate = TFPKT_RUNSTATE_RUNNING;
-	} else {
-		tfp->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
-	}
-	mutex_enter(&tfp->tfp_mutex);
-}
-
 static int
-tfpkt_hold(tfpkt_t *tfp)
+tfpkt_mac_hold(tfpkt_t *tfp)
 {
-	int rval = -1;
+	int rval;
 
-	if (tfpkt != NULL) {
-		mutex_enter(&tfp->tfp_mutex);
-		if (tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING) {
-			tfp->tfp_refcnt++;
-			rval = 0;
-		}
-		mutex_exit(&tfp->tfp_mutex);
+	ASSERT(tfp != NULL);
+	mutex_enter(&tfp->tfp_mutex);
+	if (tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING) {
+		tfp->tfp_mac_refcnt++;
+		rval = 0;
+	} else {
+		rval = -1;
 	}
+	mutex_exit(&tfp->tfp_mutex);
+
 	return (rval);
 }
 
 static void
-tfpkt_release(tfpkt_t *tfp)
+tfpkt_mac_release(tfpkt_t *tfp)
 {
 	ASSERT(tfp != NULL);
 
 	mutex_enter(&tfp->tfp_mutex);
-	ASSERT(tfp->tfp_refcnt > 0);
-	tfp->tfp_refcnt--;
-	if (tfp->tfp_refcnt == 0) {
-		if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPING) {
-			tfpkt_stop(tfp);
-		} else if (tfp->tfp_runstate == TFPKT_RUNSTATE_RESETTING) {
-			tfpkt_reset(tfp);
-		}
+	ASSERT(tfp->tfp_mac_refcnt > 0);
+	tfp->tfp_mac_refcnt--;
+	if (tfp->tfp_mac_refcnt == 0) {
+		if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPING)
+			tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
 	}
 	mutex_exit(&tfp->tfp_mutex);
 }
@@ -212,11 +222,14 @@ tfpkt_cleanup(dev_info_t *dip)
 	tfpkt_t *tfp;
 
 	tfp = (tfpkt_t *)ddi_get_driver_private(dip);
-	ASSERT(tfp == tfpkt);
+	if (tfp != NULL) {
+		tfpkt_dip = NULL;
+		tfp->tfp_dip = NULL;
+		ddi_set_driver_private(dip, NULL);
+		if (tfpkt->tfp_tbus_tq != NULL)
+			taskq_destroy(tfpkt->tfp_tbus_tq);
+	}
 
-	tfpkt_dip = NULL;
-	tfp->tfp_dip = NULL;
-	ddi_set_driver_private(dip, NULL);
 	ddi_remove_minor_node(dip, "tfpkt");
 }
 
@@ -232,15 +245,29 @@ tfpkt_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	ASSERT3P(tfpkt_dip, ==, NULL);
 
 	if (!tfpkt_minor_create(dip, instance))
-		return (DDI_FAILURE);
+		goto fail;
 
 	tfpkt_dip = dip;
 	tfpkt->tfp_dip = dip;
 	ddi_set_driver_private(dip, tfpkt);
 
-	if (tfpkt_init_mac(tfpkt) == 0)
-		return (DDI_SUCCESS);
+	if (tfpkt_init_mac(tfpkt) != 0) {
+		dev_err(tfpkt->tfp_dip, CE_WARN, "failed to init mac");
+		goto fail;
+	}
 
+	if ((tfpkt->tfp_tbus_tq = taskq_create("tfpkt_tq", 1, minclsyspri, 1, 1,
+	    TASKQ_PREPOPULATE)) == NULL) {
+		dev_err(tfpkt->tfp_dip, CE_WARN, "failed to create taskq");
+		goto fail;
+	}
+
+	taskq_dispatch_ent(tfpkt->tfp_tbus_tq, tfpkt_tbus_monitor,
+	    dip, 0, &tfpkt->tfp_tbus_monitor);
+
+	return (DDI_SUCCESS);
+
+fail:
 	tfpkt_cleanup(dip);
 	return (DDI_FAILURE);
 }
@@ -254,11 +281,16 @@ tfpkt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	switch (cmd) {
 	case DDI_DETACH:
 		tfp = (tfpkt_t *)ddi_get_driver_private(dip);
-		if (tfp->tfp_runstate != TFPKT_RUNSTATE_UNINITIALIZED)
+		if (tfp->tfp_runstate != TFPKT_RUNSTATE_STOPPED)
 			return (DDI_FAILURE);
 
 		ASSERT(tfp == tfpkt);
-		ASSERT(tfp->tfp_refcnt == 0);
+		ASSERT(tfp->tfp_mac_refcnt == 0);
+
+		if (tfpkt_tbus_monitor_halt(tfp) != 0) {
+			dev_err(dip, CE_NOTE, "tbus_monitor halt failed");
+			return (DDI_FAILURE);
+		}
 
 		if ((r = mac_unregister(tfp->tfp_mh)) != 0) {
 			dev_err(dip, CE_NOTE, "mac unregister failed %d", r);
@@ -279,10 +311,10 @@ tfpkt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 static int
 tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 {
-	tf_tbus_t *tbp = tfp->tfp_tbus_state;
 	size_t full_sz = msgsize(mp_head);
 	struct ether_header *eth = NULL;
 	caddr_t tx_buf, tx_wp;
+	tf_tbus_t *tbp;
 
 	/* Drop packets without a sidecar header */
 	eth = (struct ether_header *)mp_head->b_rptr;
@@ -291,8 +323,13 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 		return (0);
 	}
 
-	if ((tx_buf = tofino_tbus_tx_alloc(tbp, full_sz)) == NULL)
+	if ((tbp = tfpkt_tbus_hold(tfp)) == NULL)
 		return (-1);
+
+	if ((tx_buf = tofino_tbus_tx_alloc(tbp, full_sz)) == NULL) {
+		tfpkt_tbus_release(tfp);
+		return (-1);
+	}
 
 	tx_wp = tx_buf;
 
@@ -315,9 +352,11 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 
 	if (tofino_tbus_tx(tbp, tx_buf, full_sz) != 0) {
 		tofino_tbus_tx_free(tbp, tx_buf);
+		tfpkt_tbus_release(tfp);
 		return (-1);
 	}
 
+	tfpkt_tbus_release(tfp);
 	freeb(mp_head);
 	return (0);
 }
@@ -333,7 +372,7 @@ tfpkt_m_tx(void *arg, mblk_t *mp_chain)
 	 * XXX: should we even get here if the link isn't running, or will the
 	 * mac layer catch that?
 	 */
-	if (tfpkt_hold(tfp) < 0) {
+	if (tfpkt_mac_hold(tfp) < 0) {
 		for (mp = mp_chain; mp != NULL; mp = next) {
 			next = mp->b_next;
 			freeb(mp);
@@ -346,7 +385,7 @@ tfpkt_m_tx(void *arg, mblk_t *mp_chain)
 		if (tfpkt_tx_one(tfp, mp) != 0)
 			break;
 	}
-	tfpkt_release(tfp);
+	tfpkt_mac_release(tfp);
 
 	/*
 	 * XXX: if we have unsent buffers left, call mac_tx_update() when more
@@ -377,10 +416,12 @@ tfpkt_m_stat(void *arg, uint_t stat, uint64_t *val)
 		*val = LINK_DUPLEX_FULL;
 		break;
 	case MAC_STAT_LINK_UP:
-		if (tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING)
+		mutex_enter(&tfp->tfp_tbus_mutex);
+		if (tfp->tfp_tbus_state == TFPKT_TBUS_ACTIVE)
 			*val = LINK_STATE_UP;
 		else
 			*val = LINK_STATE_DOWN;
+		mutex_exit(&tfp->tfp_tbus_mutex);
 		break;
 	case MAC_STAT_PROMISC:
 	case MAC_STAT_MULTIRCV:
@@ -419,20 +460,12 @@ static int
 tfpkt_m_start(void *arg)
 {
 	tfpkt_t *tfp = arg;
-	int rval = 0;
 
 	mutex_enter(&tfp->tfp_mutex);
-	if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPED ||
-	    tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPING) {
-		rval = EAGAIN;
-	} else {
-		ASSERT(tfp->tfp_runstate == TFPKT_RUNSTATE_UNINITIALIZED);
-		if ((rval = tf_tbus_init(tfp)) == 0)
-			tfp->tfp_runstate = TFPKT_RUNSTATE_RUNNING;
-	}
+	tfp->tfp_runstate = TFPKT_RUNSTATE_RUNNING;
 	mutex_exit(&tfp->tfp_mutex);
 
-	return (rval);
+	return (0);
 }
 
 static void
@@ -442,13 +475,10 @@ tfpkt_m_stop(void *arg)
 
 	mutex_enter(&tfp->tfp_mutex);
 
-	ASSERT((tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING) || 
-	    (tfp->tfp_runstate == TFPKT_RUNSTATE_RESETTING));
-
-	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPING;
-	if (tfp->tfp_refcnt == 0) {
-		tfpkt_stop(tfp);
-	}
+	if (tfp->tfp_mac_refcnt == 0)
+		tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
+	else
+		tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPING;
 
 	mutex_exit(&tfp->tfp_mutex);
 }
@@ -475,28 +505,11 @@ tfpkt_m_unicst(void *arg, const uint8_t *macaddr)
 }
 
 void
-tfpkt_reset_trigger(tfpkt_t *tfp)
-{
-	dev_err(tfp->tfp_dip, CE_NOTE, "tbus reset triggered");
-	mutex_enter(&tfp->tfp_mutex);
-	if (tfp->tfp_runstate == TFPKT_RUNSTATE_RUNNING) {
-		tfp->tfp_runstate = TFPKT_RUNSTATE_RESETTING;
-		if (tfp->tfp_refcnt == 0) {
-			tfpkt_reset(tfp);
-		}
-	}
-	mutex_exit(&tfp->tfp_mutex);
-
-	/*
-	 * XXX: need to spawn a retry task
-	 */
-}
-
-void
 tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz)
 {
 	caddr_t addr = (caddr_t)vaddr;
 	mblk_t *mp;
+	tf_tbus_t *tbp;
 
 	if (mblk_sz < ETHSZ) {
 		goto done;
@@ -508,15 +521,18 @@ tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz)
 	bcopy(addr, mp->b_rptr, mblk_sz);
 	mp->b_wptr = mp->b_rptr + mblk_sz;
 
-	if (tfpkt_hold(tfp) == 0) {
+	if (tfpkt_mac_hold(tfp) == 0) {
 		mac_rx(tfp->tfp_mh, NULL, mp);
-		tfpkt_release(tfp);
+		tfpkt_mac_release(tfp);
 	} else {
 		freeb(mp);
 	}
 
 done:
-	tofino_tbus_rx_done(tfp->tfp_tbus_state, addr, mblk_sz);
+	if ((tbp = tfpkt_tbus_hold(tfp)) != NULL) {
+		tofino_tbus_rx_done(tbp, addr, mblk_sz);
+		tfpkt_tbus_release(tfp);
+	}
 }
 
 static struct modldrv tfpkt_modldrv = {
@@ -536,14 +552,19 @@ tfpkt_dev_alloc()
 	tfpkt_t *tfp;
 
 	tfp = kmem_zalloc(sizeof (*tfp), KM_NOSLEEP);
-	if (tfp != NULL)
+	if (tfp != NULL) {
 		mutex_init(&tfp->tfp_mutex, NULL, MUTEX_DRIVER, NULL);
+		mutex_init(&tfp->tfp_tbus_mutex, NULL, MUTEX_DRIVER, NULL);
+		cv_init(&tfp->tfp_tbus_cv,  NULL, CV_DEFAULT, NULL);
+	}
 	return (tfp);
 }
 
 static void
 tfpkt_dev_free(tfpkt_t *tfp)
 {
+	cv_destroy(&tfp->tfp_tbus_cv);
+	mutex_destroy(&tfp->tfp_tbus_mutex);
 	mutex_destroy(&tfp->tfp_mutex);
 	kmem_free(tfp, sizeof (*tfp));
 }
@@ -562,6 +583,7 @@ _init(void)
 	mac_init_ops(&tfpkt_dev_ops, "tfpkt");
 	if ((status = mod_install(&modlinkage)) == 0) {
 		tfpkt = tfp;
+		cmn_err(CE_WARN, "loaded tfpkt, built at %s", __TIMESTAMP__);
 	} else {
 		cmn_err(CE_WARN, "failed to install tfpkt");
 		mac_fini_ops(&tfpkt_dev_ops);

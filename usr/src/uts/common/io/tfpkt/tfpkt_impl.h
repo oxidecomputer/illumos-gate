@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/list.h>
 #include <sys/mutex.h>
+#include <sys/taskq_impl.h>
 #include <sys/tofino.h>
 
 #ifdef	__cplusplus
@@ -34,12 +35,18 @@ typedef struct tfpkt tfpkt_t;
 typedef struct tf_tbus tf_tbus_t;
 
 typedef enum tfpkt_runstate {
-	TFPKT_RUNSTATE_UNINITIALIZED,
-	TFPKT_RUNSTATE_STOPPED,
+	TFPKT_RUNSTATE_RUNNING,
 	TFPKT_RUNSTATE_STOPPING,
-	TFPKT_RUNSTATE_RESETTING,
-	TFPKT_RUNSTATE_RUNNING
+	TFPKT_RUNSTATE_STOPPED,
 } tfpkt_runstate_t;
+
+typedef enum tfpkt_tbus_state {
+	TFPKT_TBUS_UNINIT,
+	TFPKT_TBUS_ACTIVE,
+	TFPKT_TBUS_RESETTING,
+	TFPKT_TBUS_HALTING,
+	TFPKT_TBUS_HALTED,
+} tfpkt_tbus_state_t;
 
 typedef struct tfpkt_stats {
 	uint64_t		tfs_rbytes;
@@ -54,12 +61,19 @@ struct tfpkt {
 	kmutex_t		tfp_mutex;
 	dev_info_t		*tfp_dip;	// tfpkt device
 	int			tfp_instance;
-	int32_t			tfp_refcnt;
+	uint32_t		tfp_mac_refcnt;
 	tfpkt_runstate_t	tfp_runstate;
-	tf_tbus_t		*tfp_tbus_state;
 	tfpkt_stats_t		tfp_stats;
 	boolean_t		tfp_promisc;
 	mac_handle_t		tfp_mh;
+
+	kmutex_t		tfp_tbus_mutex;
+	kcondvar_t		tfp_tbus_cv;
+	uint32_t		tfp_tbus_refcnt;
+	tfpkt_tbus_state_t	tfp_tbus_state;
+	tf_tbus_t		*tfp_tbus_data;
+	taskq_ent_t		tfp_tbus_monitor;
+	taskq_t			*tfp_tbus_tq;
 };
 
 void tfpkt_reset_trigger(tfpkt_t *tfp);
@@ -201,11 +215,10 @@ typedef struct tf_tbus_buf {
  */
 struct tf_tbus {
 	kmutex_t		tbp_mutex;
-	boolean_t		tbp_reset;
 	tfpkt_t			*tbp_tfp;
 	dev_info_t		*tbp_dip;
 	ddi_softint_handle_t	tbp_softint;
-	tf_tbus_hdl_t		tbp_tbus_hdl;
+	tf_tbus_hdl_t		tbp_tbus_hdl;	/* tofino driver handle */
 
 	tofino_gen_t		tbp_gen;
 
@@ -230,18 +243,15 @@ struct tf_tbus {
 
 	/* Internal debugging statistics: */
 	uint64_t	tbp_rxfail_excess_loans;
-	uint64_t	tbp_rxfail_dma_handle;
-	uint64_t	tbp_rxfail_dma_buffer;
-	uint64_t	tbp_rxfail_dma_bind;
-	uint64_t	tbp_rxfail_chain_undersize;
+	// uint64_t	tbp_rxfail_dma_handle;
+	// uint64_t	tbp_rxfail_dma_buffer;
+	// uint64_t	tbp_rxfail_dma_bind;
 	uint64_t	tbp_rxfail_no_descriptors;
 	uint64_t	tbp_txfail_no_bufs;
 	uint64_t	tbp_txfail_no_descriptors;
-	uint64_t	tbp_txfail_dma_handle;
-	uint64_t	tbp_txfail_dma_bind;
-	uint64_t	tbp_txfail_indirect_limit;
-
-	uint64_t	tbp_stat_tx_reclaim;
+	// uint64_t	tbp_txfail_dma_handle;
+	// uint64_t	tbp_txfail_dma_bind;
+	// uint64_t	tbp_txfail_indirect_limit;
 };
 
 
@@ -249,8 +259,11 @@ void tofino_tbus_rx_done(tf_tbus_t *, void *, size_t);
 void *tofino_tbus_tx_alloc(tf_tbus_t *, size_t sz);
 void tofino_tbus_tx_free(tf_tbus_t *, void *addr);
 int tofino_tbus_tx(tf_tbus_t *, void *, size_t sz);
-int tf_tbus_init(tfpkt_t *);
-void tf_tbus_fini(tfpkt_t *);
+tf_tbus_t *tfpkt_tbus_hold(tfpkt_t *tfp);
+void tfpkt_tbus_release(tfpkt_t *tfp);
+void tfpkt_tbus_reset_detected(tfpkt_t *tfp);
+void tfpkt_tbus_monitor(void *);
+int tfpkt_tbus_monitor_halt(tfpkt_t *);
 
 #ifdef	__cplusplus
 }

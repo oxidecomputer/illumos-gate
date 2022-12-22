@@ -62,6 +62,39 @@ tf_tbus_err(tf_tbus_t *tbp, const char *fmt, ...)
 	va_end(args);
 }
 
+tf_tbus_t *
+tfpkt_tbus_hold(tfpkt_t *tfp)
+{
+	tf_tbus_t *rval = NULL;
+
+	mutex_enter(&tfp->tfp_tbus_mutex);
+	if (tfp->tfp_tbus_state == TFPKT_TBUS_ACTIVE) {
+		rval = tfp->tfp_tbus_data;
+		tfp->tfp_tbus_refcnt++;
+	}
+	mutex_exit(&tfp->tfp_tbus_mutex);
+
+	return (rval);
+}
+
+void
+tfpkt_tbus_release(tfpkt_t *tfp)
+{
+	mutex_enter(&tfp->tfp_tbus_mutex);
+	ASSERT(tfp->tfp_tbus_refcnt > 0);
+	tfp->tfp_tbus_refcnt--;
+
+	/*
+	 * If the refcnt drops to 0 when we're in a state in which someone might
+	 * care, wake 'em up.
+	 */
+	if ((tfp->tfp_tbus_refcnt == 0) && 
+	    (tfp->tfp_tbus_state != TFPKT_TBUS_ACTIVE))
+		cv_broadcast(&tfp->tfp_tbus_cv);
+
+	mutex_exit(&tfp->tfp_tbus_mutex);
+}
+
 /*
  * This routine frees a DMA buffer and its state, but does not free the
  * tf_tbus_dma_t structure itself.
@@ -585,9 +618,7 @@ tofino_tbus_tx(tf_tbus_t *tbp, void *addr, size_t sz)
 	int rval = 0;
 
 	mutex_enter(&tbp->tbp_mutex);
-	if (tbp->tbp_reset) {
-		rval = ENXIO;
-	} else if (sz > TFPORT_BUF_SIZE) {
+	if (sz > TFPORT_BUF_SIZE) {
 		rval = EINVAL;
 	} else {
 		buf = tf_tbus_loaned_buf_by_va(tbp, &tbp->tbp_txbufs_loaned,
@@ -715,11 +746,8 @@ tf_tbus_reg_op(tf_tbus_t *tbp, size_t offset, uint32_t *val, bool rd)
 		rval = tofino_tbus_write_reg(tbp->tbp_tbus_hdl, offset, *val);
 	}
 
-	if (rval != 0) {
-		if (!tbp->tbp_reset)
-			tf_tbus_err(tbp, "tofino has been reset");
-		tbp->tbp_reset = true;
-	}
+	if (rval != 0)
+		tfpkt_tbus_reset_detected(tbp->tbp_tfp);
 
 	return (rval);
 }
@@ -967,7 +995,7 @@ tf_tbus_dr_pull(tf_tbus_t *tbp, tf_tbus_dr_t *drp, uint64_t *desc)
 	int rval;
 
 	mutex_enter(&drp->tfdrp_mutex);
-	if (tbp->tbp_reset || tf_tbus_dr_refresh_tail(tbp, drp) != 0) {
+	if (tf_tbus_dr_refresh_tail(tbp, drp) != 0) {
 		mutex_exit(&drp->tfdrp_mutex);
 		return (ENXIO);
 	}
@@ -1013,7 +1041,7 @@ tf_tbus_dr_push(tf_tbus_t *tbp, tf_tbus_dr_t *drp, uint64_t *desc)
 	int rval;
 
 	mutex_enter(&drp->tfdrp_mutex);
-	if (tbp->tbp_reset || tf_tbus_dr_refresh_head(tbp, drp) != 0) {
+	if (tf_tbus_dr_refresh_head(tbp, drp) != 0) {
 		mutex_exit(&drp->tfdrp_mutex);
 		return (ENXIO);
 	}
@@ -1116,7 +1144,6 @@ tf_tbus_push_free_bufs(tf_tbus_t *tbp, int ring)
 		cnt++;
 	}
 	mutex_exit(&tbp->tbp_mutex);
-	dev_err(tbp->tbp_dip, CE_NOTE, "pushed %d rx bufs to the ASIC", cnt);
 
 	return (rval);
 }
@@ -1158,10 +1185,11 @@ tf_tbus_port_init(tf_tbus_t *tbp, dev_info_t *tfp_dip)
 static uint_t
 tf_tbus_intr(caddr_t arg1, caddr_t arg2)
 {
-	tf_tbus_t *tbp = (tf_tbus_t *)arg1;
+	tfpkt_t *tfp = (tfpkt_t *)arg1;
+	tf_tbus_t *tbp;
 	int processed = 1;
 
-	while (!tbp->tbp_reset && (processed > 0)) {
+	while (processed > 0 && ((tbp = tfpkt_tbus_hold(tfp)) != NULL)) {
 		processed = 0;
 		for (int i = 0; i < TF_PKT_RX_CNT; i++) {
 			if (tf_tbus_rx_poll(tbp, i) > 0) {
@@ -1176,19 +1204,15 @@ tf_tbus_intr(caddr_t arg1, caddr_t arg2)
 				processed++;
 			}
 		}
+		tfpkt_tbus_release(tfp);
 	}
 
 	return (DDI_INTR_CLAIMED);
 }
 
-void
-tf_tbus_fini(tfpkt_t *tfp)
+static void
+tf_tbus_fini(tfpkt_t *tfp, tf_tbus_t *tbp)
 {
-	tf_tbus_t *tbp = tfp->tfp_tbus_state;
-
-	if (tfp->tfp_runstate == TFPKT_RUNSTATE_UNINITIALIZED)
-		return;
-
 	ASSERT(tbp != NULL);
 	if (tbp->tbp_tbus_hdl != NULL) {
 		VERIFY0(tofino_tbus_unregister_softint(tbp->tbp_tbus_hdl,
@@ -1204,12 +1228,26 @@ tf_tbus_fini(tfpkt_t *tfp)
 	tf_tbus_free_drs(tbp);
 	mutex_destroy(&tbp->tbp_mutex);
 	kmem_free(tbp, sizeof (*tbp));
-
-	tfp->tfp_tbus_state = NULL;
-	tfp->tfp_runstate = TFPKT_RUNSTATE_UNINITIALIZED;
+	tfp->tfp_tbus_data = NULL;
 }
 
-int
+/*
+ * tf_tbus_init() is called in a loop, and can reasonably be expected to fail
+ * the same way many times in a row.  There is no benefit to repeating the error
+ * message each time, so we don't.
+ */
+static void
+oneshot_error(tf_tbus_t *tbp, const char *msg)
+{
+	static const char *last_msg = NULL;
+
+	if (msg != last_msg) {
+		tf_tbus_err(tbp, msg);
+		last_msg = msg;
+	}
+}
+
+static tf_tbus_t *
 tf_tbus_init(tfpkt_t *tfp)
 {
 	dev_info_t *tfp_dip = tfp->tfp_dip;
@@ -1217,31 +1255,25 @@ tf_tbus_init(tfpkt_t *tfp)
 	tf_tbus_hdl_t hdl;
 	int err;
 
-	ASSERT(tfp->tfp_runstate == TFPKT_RUNSTATE_UNINITIALIZED);
-
 	tbp = kmem_zalloc(sizeof (*tbp), KM_SLEEP);
 	mutex_init(&tbp->tbp_mutex, NULL, MUTEX_DRIVER, NULL);
-	tbp->tbp_reset = false;
 	tbp->tbp_dip = tfp_dip;
 	tbp->tbp_tfp = tfp;
-	tfp->tfp_tbus_state = tbp;
-	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
 
 	if ((err = tofino_tbus_register(&hdl)) != 0) {
 		if (err == EBUSY) {
-			tf_tbus_err(tbp, "tofino tbus already in use");
+			oneshot_error(tbp, "tofino tbus in use");
 		} else if (err == ENXIO) {
 			/* The driver was loaded but not attached. */
-			tf_tbus_err(tbp, "tofino driver offline");
+			 oneshot_error(tbp, "tofino driver offline");
 		} else if (err == EAGAIN) {
 			/*
 			 * The userspace daemon hasn't yet initialized the
 			 * ASIC
 			 */
-			tf_tbus_err(tbp, "tofino asic not ready");
+			 oneshot_error(tbp, "tofino asic not ready");
 		} else {
-			tf_tbus_err(tbp, "tofino_tbus_register failed: %d",
-			    err);
+			 oneshot_error(tbp, "tofino_tbus_register failed");
 		}
 		goto fail;
 	}
@@ -1250,11 +1282,11 @@ tf_tbus_init(tfpkt_t *tfp)
 	tbp->tbp_gen = tofino_get_generation(hdl);
 
 	if ((err = tf_tbus_alloc_bufs(tbp)) != 0) {
-		tf_tbus_err(tbp, "failed to allocate buffers");
+		 oneshot_error(tbp, "failed to allocate buffers");
 	} else if ((err = tf_tbus_alloc_drs(tbp)) != 0) {
-		tf_tbus_err(tbp, "failed to allocate drs");
+		 oneshot_error(tbp, "failed to allocate drs");
 	} else if ((err = tf_tbus_init_drs(tbp)) != 0) {
-		tf_tbus_err(tbp, "failed to init drs");
+		 oneshot_error(tbp, "failed to init drs");
 	}
 	if (err != 0)
 		goto fail;
@@ -1262,13 +1294,13 @@ tf_tbus_init(tfpkt_t *tfp)
 	tf_tbus_port_init(tbp, tfp_dip);
 
 	err = ddi_intr_add_softint(tfp_dip, &tbp->tbp_softint,
-	    DDI_INTR_SOFTPRI_DEFAULT, tf_tbus_intr, tbp);
+	    DDI_INTR_SOFTPRI_DEFAULT, tf_tbus_intr, tfp);
 	if (err != 0) {
-		dev_err(tfp_dip, CE_WARN, "failed to allocate softint");
+		oneshot_error(tbp, "failed to allocate softint");
 		goto fail;
 	}
 	if ((err = tofino_tbus_register_softint(hdl, tbp->tbp_softint)) != 0) {
-		dev_err(tfp_dip, CE_WARN, "failed to register softint");
+		oneshot_error(tbp, "failed to register softint");
 		VERIFY0(tofino_tbus_unregister(hdl));
 	}
 
@@ -1276,10 +1308,137 @@ tf_tbus_init(tfpkt_t *tfp)
 		if ((err = tf_tbus_push_free_bufs(tbp, i)) != 0)
 			goto fail;
 
-	return (0);
+	return (tbp);
 
 fail:
-	tf_tbus_fini(tfp);
-	tfp->tfp_tbus_state = NULL;
-	return (err);
+	tf_tbus_fini(tfp, tbp);
+	return (NULL);
 }
+
+void
+tfpkt_tbus_reset_detected(tfpkt_t *tfp)
+{
+	mutex_enter(&tfp->tfp_tbus_mutex);
+	if (tfp->tfp_tbus_state == TFPKT_TBUS_ACTIVE) {
+		tfp->tfp_tbus_state = TFPKT_TBUS_RESETTING;
+		cv_broadcast(&tfp->tfp_tbus_cv);
+	}
+	mutex_exit(&tfp->tfp_tbus_mutex);
+}
+
+void
+tfpkt_tbus_monitor(void *arg)
+{
+	dev_info_t *dip = arg;
+	tfpkt_t *tfp = (tfpkt_t *)ddi_get_driver_private(dip);
+	clock_t time;
+
+	dev_err(tfp->tfp_dip, CE_NOTE, "tbus monitor started");
+
+	mutex_enter(&tfp->tfp_tbus_mutex);
+	while (tfp->tfp_tbus_state != TFPKT_TBUS_HALTING) {
+		tf_tbus_t *tbp = tfp->tfp_tbus_data;
+
+		switch (tfp->tfp_tbus_state) {
+			case TFPKT_TBUS_UNINIT:
+				/*
+				 * Keep asking the tofino driver to let us
+				 * use the tbus until it says OK.
+				 */
+				ASSERT(tbp == NULL);
+				tfp->tfp_tbus_data = tf_tbus_init(tfp);
+				if (tfp->tfp_tbus_data != NULL)
+					tfp->tfp_tbus_state = TFPKT_TBUS_ACTIVE;
+				break;
+
+			case TFPKT_TBUS_ACTIVE:
+				/*
+				 * Verify that the tbus registers haven't been
+				 * reset on us.  In most cases, this will
+				 * already have been detected in one of the
+				 * packet processing paths.
+				 */
+				if (tofino_tbus_state(tbp->tbp_tbus_hdl) ==
+				    TF_TBUS_READY)
+					break;
+				tfp->tfp_tbus_state = TFPKT_TBUS_RESETTING;
+				/* FALLTHRU */
+
+			case TFPKT_TBUS_RESETTING:
+				/*
+				 * Don't clean up the tbus data while someone
+				 * is actively using it.
+				 */
+				if (tfp->tfp_tbus_refcnt == 0) {
+					tf_tbus_fini(tfp, tbp);
+					tfp->tfp_tbus_state = TFPKT_TBUS_UNINIT;
+				}
+				break;
+
+			case TFPKT_TBUS_HALTING:
+				/*
+				 * A no-op to make the default case useful
+				 */
+				continue;
+
+			case TFPKT_TBUS_HALTED:
+				panic("tbus monitor halted by third party");
+
+			default:
+				ASSERT(0);
+		}
+
+		time = ddi_get_lbolt() + hz;
+		cv_timedwait(&tfp->tfp_tbus_cv, &tfp->tfp_tbus_mutex, time);
+	}
+
+	while (tfp->tfp_tbus_refcnt != 0) {
+		dev_err(dip, CE_NOTE, "waiting for %d tbus refs to drop",
+				tfp->tfp_tbus_refcnt);
+		time = ddi_get_lbolt() + hz;
+		cv_timedwait(&tfp->tfp_tbus_cv, &tfp->tfp_tbus_mutex, time);
+	}
+
+	if (tfp->tfp_tbus_data != NULL)
+		tf_tbus_fini(tfp, tfp->tfp_tbus_data);
+
+	tfp->tfp_tbus_state = TFPKT_TBUS_HALTED;
+	cv_broadcast(&tfp->tfp_tbus_cv);
+	mutex_exit(&tfp->tfp_tbus_mutex);
+	dev_err(tfp->tfp_dip, CE_NOTE, "tbus monitor exiting");
+}
+
+int
+tfpkt_tbus_monitor_halt(tfpkt_t *tfp)
+{
+	time_t deadline, left;
+	int rval;
+
+	dev_err(tfp->tfp_dip, CE_NOTE, "halting tbus monitor");
+	mutex_enter(&tfp->tfp_tbus_mutex);
+	if (tfp->tfp_tbus_state != TFPKT_TBUS_HALTED) {
+		tfp->tfp_tbus_state = TFPKT_TBUS_HALTING;
+		cv_broadcast(&tfp->tfp_tbus_cv);
+	}
+
+	left = hz;
+	deadline = ddi_get_lbolt() + left;
+	while (left > 0 && tfp->tfp_tbus_state != TFPKT_TBUS_HALTED) {
+		left = cv_timedwait(&tfp->tfp_tbus_cv, &tfp->tfp_tbus_mutex,
+		    deadline);
+
+	}
+
+	if (tfp->tfp_tbus_state == TFPKT_TBUS_HALTED) {
+		dev_err(tfp->tfp_dip, CE_NOTE, "halted tbus monitor");
+		rval = 0;
+	} else {
+		dev_err(tfp->tfp_dip, CE_WARN, "failed to halt tbus monitor");
+		rval = -1;
+	}
+
+	mutex_exit(&tfp->tfp_tbus_mutex);
+
+	return rval;
+}
+
