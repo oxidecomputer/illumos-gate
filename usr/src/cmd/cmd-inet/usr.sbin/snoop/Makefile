@@ -65,8 +65,6 @@ CERRWARN += -_gcc=-Wno-unused-function
 # we really should have smatch running on this code but...
 SMATCH=off
 
-snoop_sc.o := CPPFLAGS += -I$(SRC)/uts/intel
-
 .KEEP_STATE:
 
 .PARALLEL: $(OBJS)

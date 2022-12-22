@@ -21,6 +21,9 @@ extern "C" {
 #endif
 
 #include <sys/mac.h>
+#include <sys/socket.h>
+#include <sys/ethernet.h>
+#include <sys/dld_ioc.h>
 
 #define	TFPORT_IOC_CREATE	TFPORTIOC(0x0001)
 #define	TFPORT_IOC_DELETE	TFPORTIOC(0x0002)

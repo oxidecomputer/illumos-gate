@@ -35,7 +35,7 @@
 #define	CODELEN 32
 
 int
-interpret_sidecar(int flags, struct schdr *sc, int iplen, int len)
+interpret_sidecar(int flags, schdr_t *sc, int iplen, int len)
 {
 	char *data;
 	int udplen;
@@ -43,11 +43,11 @@ interpret_sidecar(int flags, struct schdr *sc, int iplen, int len)
 	char *pname;
 	char code[CODELEN];
 
-	if (len < sizeof (struct schdr))
+	if (len < sizeof (schdr_t))
 		return (len);
 
-	data = (char *)sc + sizeof (struct schdr);
-	len -= sizeof (struct schdr);
+	data = (char *)sc + sizeof (schdr_t);
+	len -= sizeof (schdr_t);
 
 	switch (sc->sc_code) {
 	case SC_FORWARD_FROM_USERSPACE:
@@ -77,7 +77,7 @@ interpret_sidecar(int flags, struct schdr *sc, int iplen, int len)
 	    code, ntohs(sc->sc_ingress), ntohs(sc->sc_egress));
 
 	if (flags & F_DTAIL) {
-		show_header("SC:   ", "Sidecar Header", sizeof (struct schdr));
+		show_header("SC:   ", "Sidecar Header", sizeof (schdr_t));
 		show_space();
 		(void) snprintf(get_line(0, 0), get_line_remain(),
 		    "Code = 0x%x (%s)", sc->sc_code, code);

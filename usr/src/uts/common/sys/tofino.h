@@ -26,13 +26,13 @@ extern "C" {
  * This header is inserted between the ethernet and ip headers by the p4 program
  * running on the Tofino ASIC.
  */
-struct schdr {
+typedef struct schdr {
 	uint8_t		sc_code;
 	uint16_t	sc_ingress;
 	uint16_t	sc_egress;
 	uint16_t	sc_ethertype;
 	uint8_t		sc_payload[16];
-} __packed;
+} __packed schdr_t;
 
 #define	SC_FORWARD_FROM_USERSPACE	0x00
 #define	SC_FORWARD_TO_USERSPACE		0x01
@@ -86,10 +86,18 @@ typedef enum {
 	TOFINO_G_TF2
 } tofino_gen_t;
 
+typedef enum {
+	TF_TBUS_UNINITIALIZED,
+	TF_TBUS_RESETTING,
+	TF_TBUS_RESET,
+	TF_TBUS_READY,
+} tofino_tbus_state_t;
+
 int tofino_tbus_register(tf_tbus_hdl_t *);
 int tofino_tbus_unregister(tf_tbus_hdl_t);
 int tofino_tbus_register_softint(tf_tbus_hdl_t, ddi_softint_handle_t);
 int tofino_tbus_unregister_softint(tf_tbus_hdl_t, ddi_softint_handle_t);
+tofino_tbus_state_t tofino_tbus_state(tf_tbus_hdl_t);
 int tofino_get_generation(tf_tbus_hdl_t);
 
 int tofino_tbus_read_reg(tf_tbus_hdl_t, size_t offset, uint32_t *val);

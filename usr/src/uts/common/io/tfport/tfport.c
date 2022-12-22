@@ -77,7 +77,7 @@
 #include "tfport_impl.h"
 
 #define	ETHSZ (sizeof (struct ether_header))
-#define	SCSZ (sizeof (struct schdr))
+#define	SCSZ (sizeof (schdr_t))
 
 static tfport_t *tfport;
 static dev_info_t *tfport_dip;
@@ -98,7 +98,7 @@ static mblk_t *tfport_m_tx(void *, mblk_t *);
 
 DDI_DEFINE_STREAM_OPS(tfport_dev_ops, nulldev, nulldev, tfport_attach,
     tfport_detach, nodev, tfport_getinfo, D_MP, NULL,
-    ddi_quiesce_not_supported);
+    ddi_quiesce_not_needed);
 
 static mac_callbacks_t tfport_m_callbacks = {
 	.mc_callbacks =		MC_IOCTL,
@@ -126,6 +126,30 @@ static dld_ioc_info_t tfport_ioc_list[] = {
 	{TFPORT_IOC_INFO, DLDCOPYINOUT, sizeof (tfport_ioc_info_t),
 	    tfport_ioc_info, NULL},
 };
+
+int tfport_debug = 1;
+
+static void
+tfport_dlog(tfport_t *t, const char *fmt, ...)
+{
+	va_list args;
+
+	if (tfport_debug) {
+		va_start(args, fmt);
+		vdev_err(t->tfp_dip, CE_NOTE, fmt, args);
+		va_end(args);
+	}
+}
+
+static void
+tfport_err(tfport_t *t, const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vdev_err(t->tfp_dip, CE_WARN, fmt, args);
+	va_end(args);
+}
 
 static void
 tfport_random_mac(uint8_t mac[ETHERADDRL])
@@ -242,7 +266,7 @@ tfport_tx_one(tfport_port_t *portp, mblk_t *mp_head)
 		 * ethernet header:
 		 */
 		if (portp->tp_port != 0) {
-			struct schdr *sc = (struct schdr *)(tx_buf->b_wptr);
+			schdr_t *sc = (schdr_t *)(tx_buf->b_wptr);
 
 			sc->sc_code = SC_FORWARD_FROM_USERSPACE;
 			sc->sc_ingress = 0;
@@ -286,6 +310,7 @@ tfport_m_tx(void *arg, mblk_t *mp_chain)
 
 	for (mp = mp_chain; mp != NULL; mp = next) {
 		next = mp->b_next;
+		mp->b_next = NULL;
 		if (tfport_tx_one(portp, mp) != 0) {
 			/*
 			 * XXX: call mac_tx_update() when more tx_bufs
@@ -313,7 +338,7 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 	tfport_port_t *portp;
 
 	struct ether_header *eth = NULL;
-	struct schdr *sc = NULL;
+	schdr_t *sc = NULL;
 	uint32_t port = 0;
 	size_t mblk_sz = msgsize(mp);
 
@@ -327,14 +352,14 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 
 	/*
 	 * Look for a sidecar header to determine whether the packet should be
-	 * sent to an indexed port the default port.
+	 * sent to an indexed port or the default port.
 	 */
 	eth = (struct ether_header *)mp->b_rptr;
 	if (ntohs(eth->ether_type) == ETHERTYPE_SIDECAR) {
 		if (mblk_sz < ETHSZ + SCSZ) {
 			goto done;
 		}
-		sc = (struct schdr *)(mp->b_rptr + ETHSZ);
+		sc = (schdr_t *)(mp->b_rptr + ETHSZ);
 		if (sc->sc_code == SC_FORWARD_TO_USERSPACE)
 			port = ntohs(sc->sc_ingress);
 	}
@@ -345,30 +370,22 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 	}
 
 	/*
-	 * If the packet is going to a port device, we strip off the sidecar
-	 * header.
-	 * XXX: is there a more streams-specific idiom to use here, rather
-	 * than allocating a new buffer and doing this manual offset
-	 * calculation and copying?
+	 * If the packet is going to a port device, we strip out the sidecar
+	 * header.  This requires:
+	 *   - copying the ethertype from the sidecar header to the ethernet
+	 *     header
+	 *   - moving the body of the packet to replace the sidecar header
+	 *   - adjusting the size of the buffer to reflect the removed header
 	 */
 	if (portp->tp_port != 0) {
-		mblk_t *edited;
-		size_t hdr_sz = ETHSZ + SCSZ;
-		size_t body_sz = mblk_sz - hdr_sz;
-
-		if ((edited = allocb(mblk_sz - SCSZ, 0)) == NULL) {
-			dev_err(devp->tfp_dip, CE_NOTE, "allocb failed");
-			goto done;
-		}
+		unsigned char *base = mp->b_rptr;
+		size_t eth_hdr_end = ETHSZ;
+		size_t sc_hdr_end = ETHSZ + SCSZ;
+		size_t body_sz = mblk_sz - sc_hdr_end;
 
 		eth->ether_type = sc->sc_ethertype;
-		bcopy(eth, edited->b_wptr, ETHSZ);
-		edited->b_wptr += ETHSZ;
-		bcopy(mp->b_rptr + hdr_sz, edited->b_wptr, body_sz);
-		edited->b_wptr += body_sz;
-
-		freemsgchain(mp);
-		mp = edited;
+		bcopy(base + sc_hdr_end, base + eth_hdr_end, body_sz);
+		mp->b_wptr = base + (ETHSZ + body_sz);
 	}
 
 	mac_rx(portp->tp_mh, NULL, mp);
@@ -408,8 +425,8 @@ tfport_mac_init(tfport_t *devp, tfport_port_t *portp)
 		mac_link_update(portp->tp_mh, LINK_STATE_UP);
 		mac_tx_update(portp->tp_mh);
 	} else {
-		dev_err(devp->tfp_dip, CE_WARN, "failed to register port %d",
-		    portp->tp_port);
+		tfport_dlog(devp, "failed to register port %d: %d",
+		    portp->tp_port, err);
 	}
 
 	return (err);
@@ -418,6 +435,8 @@ tfport_mac_init(tfport_t *devp, tfport_port_t *portp)
 static void
 tfport_close_source(tfport_t *devp, tfport_source_t *srcp)
 {
+	int err;
+
 	if (srcp == NULL)
 		return;
 
@@ -425,17 +444,15 @@ tfport_close_source(tfport_t *devp, tfport_source_t *srcp)
 		mac_rx_clear(srcp->tps_mch);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_UNICAST_ADD &&
-	    mac_unicast_remove(srcp->tps_mch, srcp->tps_muh) != 0) {
-		dev_err(devp->tfp_dip, CE_WARN, "mac_unicast_remove() failed");
-	}
+	    ((err = mac_unicast_remove(srcp->tps_mch, srcp->tps_muh)) != 0))
+		tfport_err(devp, "mac_unicast_remove() failed: %d", err);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_NOTIFY_ADD &&
-	    mac_notify_remove(srcp->tps_mnh, B_FALSE) != 0) {
-		dev_err(devp->tfp_dip, CE_WARN, "mac_notify_remove() failed");
-	}
+	    ((err = mac_notify_remove(srcp->tps_mnh, B_FALSE)) != 0))
+		tfport_err(devp, "mac_notify_remove() failed: %d", err);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_CLIENT_OPEN)
-		mac_client_close(srcp->tps_mch, 0);
+		mac_client_close(srcp->tps_mch, MAC_CLOSE_FLAGS_EXCLUSIVE);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_OPEN)
 		mac_close(srcp->tps_mh);
@@ -463,7 +480,8 @@ tfport_open_source(tfport_t *devp, datalink_id_t src_id,
 		goto out;
 	srcp->tps_init_state |= TFPORT_SOURCE_OPEN;
 
-	err = mac_client_open(srcp->tps_mh, &srcp->tps_mch, "tfport", 0);
+	err = mac_client_open(srcp->tps_mh, &srcp->tps_mch, "tfport",
+	    MAC_OPEN_FLAGS_EXCLUSIVE);
 	if (err != 0)
 		goto out;
 	srcp->tps_init_state |= TFPORT_SOURCE_CLIENT_OPEN;
@@ -493,10 +511,6 @@ tfport_open_source(tfport_t *devp, datalink_id_t src_id,
 	mac_rx_set(srcp->tps_mch, tfport_rx, srcp);
 	srcp->tps_init_state |= TFPORT_SOURCE_RX_SET;
 
-	/*
-	 * XXX mac_promisc_add() needed too?
-	 */
-
 out:
 	if (err == 0) {
 		*srcpp = srcp;
@@ -512,19 +526,19 @@ tfport_port_fini(tfport_t *devp, tfport_port_t *portp)
 {
 	char name[64];
 	datalink_id_t tmpid;
+	int err;
 
 	(void) snprintf(name, sizeof (name), "tfport%d", portp->tp_port);
 	if (portp->tp_init_state & TFPORT_INIT_DEVNET &&
-	    dls_devnet_destroy(portp->tp_mh, &tmpid, B_TRUE) != 0) {
-		dev_err(devp->tfp_dip, CE_WARN,
-		    "%s: failed to clean up devnet for %d", name,
-		    portp->tp_link_id);
+	    ((err = dls_devnet_destroy(portp->tp_mh, &tmpid, B_TRUE)) != 0)) {
+		tfport_err(devp, "failed to clean up devnet.  "
+		    "name: %s  link: %d  err: %d", name, portp->tp_link_id, err);
 	}
 
 	if (portp->tp_init_state & TFPORT_INIT_MAC_REGISTER &&
-	    mac_unregister(portp->tp_mh) != 0) {
-		dev_err(devp->tfp_dip, CE_WARN,
-		    "%s: failed to unregister mac", name);
+	    ((err = mac_unregister(portp->tp_mh)) != 0)) {
+		tfport_err(devp, "failed to unregister mac.  name: %s  err: %d",
+		    name, err);
 	}
 
 	mutex_destroy(&portp->tp_mutex);
@@ -542,10 +556,8 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	uchar_t *mac_addr;
 	int err;
 
-	if (carg->tic_port_id > 2048) {
-		dev_err(devp->tfp_dip, CE_WARN, "invalid port-id");
-		return (EINVAL);
-	}
+	tfport_dlog(devp, "%s(port: %d  link: %d)", __func__,
+	    carg->tic_port_id, carg->tic_link_id);
 
 	if (carg->tic_mac_len == 0) {
 		tfport_random_mac(mac_buf);
@@ -553,7 +565,6 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	} else if (carg->tic_mac_len == ETHERADDRL) {
 		mac_addr = carg->tic_mac_addr;
 	} else {
-		dev_err(devp->tfp_dip, CE_WARN, "invalid mac address");
 		return (EINVAL);
 	}
 
@@ -576,12 +587,7 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 		goto out;
 	}
 
-	portp = kmem_zalloc(sizeof (*portp), KM_NOSLEEP);
-	if (portp == NULL) {
-		err = ENOMEM;
-		goto out;
-	}
-
+	portp = kmem_zalloc(sizeof (*portp), KM_SLEEP);
 	mutex_init(&portp->tp_mutex, NULL, MUTEX_DRIVER, NULL);
 	portp->tp_refcnt = 0;
 	portp->tp_tfport = devp;
@@ -594,13 +600,13 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	portp->tp_ls = LINK_STATE_UNKNOWN;
 
 	if ((err = tfport_mac_init(devp, portp)) != 0) {
-		dev_err(devp->tfp_dip, CE_WARN, "tfport_init_mac() failed");
+		tfport_err(devp, "tfport_init_mac() failed: %d", err);
 		goto out;
 	}
 
 	if ((err = dls_devnet_create(portp->tp_mh, portp->tp_link_id,
 	    getzoneid())) != 0) {
-		dev_err(devp->tfp_dip, CE_WARN, "dls_devnet_create() failed");
+		tfport_err(devp, "dls_devnet_create() failed: %d", err);
 		goto out;
 	}
 	portp->tp_init_state |= TFPORT_INIT_DEVNET;
@@ -624,27 +630,24 @@ tfport_ioc_delete(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	datalink_id_t link = darg->tid_link_id;
 	int rval = 0;
 
+	tfport_dlog(devp, "%s(link: %d)", __func__, darg->tid_link_id);
 	mutex_enter(&devp->tfp_mutex);
 	portp = tfport_find_link(devp, link);
 	if (portp == NULL) {
 		rval = ENOENT;
 	} else {
 		mutex_enter(&portp->tp_mutex);
-		if (portp->tp_run_state != TFPORT_RUNSTATE_STOPPED) {
-			dev_err(devp->tfp_dip, CE_WARN, "port %d is busy",
-			    link);
+		if (portp->tp_run_state != TFPORT_RUNSTATE_STOPPED)
 			rval = EBUSY;
-		} else {
+		else
 			list_remove(&devp->tfp_source->tps_ports, portp);
-		}
 		mutex_exit(&portp->tp_mutex);
 
 	}
 	mutex_exit(&devp->tfp_mutex);
 
-	if (rval == 0) {
+	if (rval == 0)
 		tfport_port_fini(devp, portp);
-	}
 
 	return (rval);
 }
@@ -716,7 +719,7 @@ tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
 		sin->sin_addr = ((sin_t *)addr)->sin_addr;
 
 		char buf1[INET6_ADDRSTRLEN];
-		dev_err(devp->tfp_dip, CE_NOTE, "ipv4 addr: %s",
+		tfport_dlog(devp, "ipv4 addr: %s",
 		    inet_ntop(AF_INET, &sin->sin_addr, buf1, sizeof (buf1)));
 	} else if (addr->sa_family == AF_INET6) {
 		sin6_t *sin6 = (sin6_t *)&ip2m.ip2mac_pa;
@@ -724,11 +727,10 @@ tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
 		sin6->sin6_addr = ((sin6_t *)addr)->sin6_addr;
 
 		char buf1[INET6_ADDRSTRLEN];
-		dev_err(devp->tfp_dip, CE_NOTE, "ipv6 addr: %s on %d",
+		tfport_dlog(devp, "ipv6 addr: %s on %d",
 		    inet_ntop(AF_INET6, &sin6->sin6_addr, buf1, sizeof (buf1)),
 		    ip2m.ip2mac_ifindex);
 	} else {
-		dev_err(devp->tfp_dip, CE_NOTE, "failed at %d", __LINE__);
 		return (miocnak(q, mp, 0, EINVAL));
 	}
 
@@ -737,14 +739,13 @@ tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
 	    (void *)cnt, 0);
 	switch (ip2m.ip2mac_err) {
 	case EINPROGRESS:
-		dev_err(devp->tfp_dip, CE_NOTE, "searching for %ld", cnt);
+		tfport_dlog(devp, "searching for %ld", cnt);
 		return (miocack(q, mp, 0, 0));
 	case 0:
-		dev_err(devp->tfp_dip, CE_NOTE, "already loaded");
+		tfport_dlog(devp, "already loaded");
 		return (miocack(q, mp, 0, 0));
 	default:
-		dev_err(devp->tfp_dip, CE_NOTE, "ip2mac failed: %d",
-		    ip2m.ip2mac_err);
+		tfport_dlog(devp, "ip2mac failed: %d", ip2m.ip2mac_err);
 		return (miocnak(q, mp, 0, EIO));
 	}
 }
@@ -753,13 +754,10 @@ static void
 tfport_m_ioctl(void *arg, queue_t *q, mblk_t *mp)
 {
 	tfport_port_t *portp = arg;
-	tfport_t *devp = tfport;
 	struct iocblk *iocp;
 	int cmd;
 
 	if (MBLKL(mp) < sizeof (struct iocblk)) {
-		dev_err(devp->tfp_dip, CE_WARN,
-		    "tfport: ioctl buffer too short, %lu", MBLKL(mp));
 		miocnak(q, mp, 0, EINVAL);
 		return;
 	}
@@ -785,9 +783,6 @@ tfport_m_stat(void *arg, uint_t stat, uint64_t *val)
 	ASSERT(portp->tp_mh != NULL);
 
 	switch (stat) {
-	case MAC_STAT_IFSPEED:
-		*val = 100 * 1000000ull; /* 100 Mbps */
-		break;
 	case MAC_STAT_LINK_STATE:
 		*val = LINK_DUPLEX_FULL;
 		break;
@@ -797,6 +792,7 @@ tfport_m_stat(void *arg, uint_t stat, uint64_t *val)
 		else
 			*val = LINK_STATE_DOWN;
 		break;
+	case MAC_STAT_IFSPEED:
 	case MAC_STAT_PROMISC:
 	case MAC_STAT_MULTIRCV:
 	case MAC_STAT_MULTIXMT:
@@ -846,11 +842,14 @@ tfport_m_stop(void *arg)
 	tfport_t *devp = portp->tp_tfport;
 
 	mutex_enter(&devp->tfp_mutex);
-	if (portp->tp_refcnt == 0) {
+	tfport_dlog(devp, "%s(port: %d  refcnt: %d)", __func__, 
+	    portp->tp_port, portp->tp_refcnt);
+
+	if (portp->tp_refcnt == 0)
 		portp->tp_run_state = TFPORT_RUNSTATE_STOPPED;
-	} else {
+	else
 		portp->tp_run_state = TFPORT_RUNSTATE_STOPPING;
-	}
+
 	mutex_exit(&devp->tfp_mutex);
 }
 
@@ -894,14 +893,10 @@ static int
 tfport_dev_alloc(dev_info_t *dip)
 {
 	ASSERT(tfport == NULL);
-	tfport = kmem_zalloc(sizeof (*tfport), KM_NOSLEEP);
-	if (tfport == NULL) {
-		return (DDI_ENOMEM);
-	} else {
-		mutex_init(&tfport->tfp_mutex, NULL, MUTEX_DRIVER, NULL);
-		tfport->tfp_dip = dip;
-		return (DDI_SUCCESS);
-	}
+	tfport = kmem_zalloc(sizeof (*tfport), KM_SLEEP);
+	mutex_init(&tfport->tfp_mutex, NULL, MUTEX_DRIVER, NULL);
+	tfport->tfp_dip = dip;
+	return (DDI_SUCCESS);
 }
 
 static void
@@ -932,7 +927,7 @@ tfport_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		ASSERT(tfport_dip == NULL);
 
 		if ((err = tfport_dev_alloc(dip)) != 0) {
-			dev_err(dip, CE_WARN, "failed to allocate tfport");
+			dev_err(dip, CE_WARN, "failed to allocate tfport: %d", err);
 			return (err);
 		}
 
@@ -1003,13 +998,13 @@ _init(void)
 	ASSERT(tfport == NULL);
 	mac_init_ops(&tfport_dev_ops, "tfport");
 	if ((r = mod_install(&modlinkage)) != 0) {
-		cmn_err(CE_WARN, "tfport: modinstall failed");
+		cmn_err(CE_WARN, "tfport: modinstall failed: %d", r);
 		goto err1;
 	}
 
 	if ((r = dld_ioc_register(TFPORT_IOC, tfport_ioc_list,
 	    DLDIOCCNT(tfport_ioc_list))) != 0) {
-		cmn_err(CE_WARN, "tfport: failed to register ioctls");
+		cmn_err(CE_WARN, "tfport: failed to register ioctls: %d", r);
 		goto err2;
 	}
 
