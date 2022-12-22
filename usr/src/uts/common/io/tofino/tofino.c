@@ -1129,6 +1129,7 @@ _init(void)
 		    TOFINO_MAX_INSTANCE + 1, UINT16_MAX);
 
 		err = mod_install(&tofino_modlinkage);
+		cmn_err(CE_WARN, "loaded tofino, built at %s", __TIMESTAMP__);
 	}
 
 	return (err);

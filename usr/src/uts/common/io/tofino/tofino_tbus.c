@@ -316,7 +316,7 @@ tofino_tbus_write_reg(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t val)
 }
 
 const char *
-state_name(tf_tbus_state_t s)
+state_name(tofino_tbus_state_t s)
 {
 	switch (s) {
 		case TF_TBUS_UNINITIALIZED: return ("Uninitialized");
@@ -328,7 +328,7 @@ state_name(tf_tbus_state_t s)
 }
 
 int
-tofino_tbus_state_update(tofino_t *tf, tf_tbus_state_t new_state)
+tofino_tbus_state_update(tofino_t *tf, tofino_tbus_state_t new_state)
 {
 	ASSERT(MUTEX_HELD(&tf->tf_mutex));
 	if (new_state < TF_TBUS_UNINITIALIZED || new_state > TF_TBUS_READY)
@@ -338,14 +338,21 @@ tofino_tbus_state_update(tofino_t *tf, tf_tbus_state_t new_state)
 	    state_name(tf->tf_tbus_state), state_name(new_state));
 	tf->tf_tbus_state = new_state;
 
-	if (tf->tf_tbus_client != NULL) {
-		ddi_softint_handle_t h = tf->tf_tbus_client->tbc_tbus_softint;
-		if (h != NULL) {
-			(void) ddi_intr_trigger_softint(h, NULL);
-		}
+	return (0);
+}
+
+tofino_tbus_state_t
+tofino_tbus_state(tf_tbus_hdl_t tf_hdl)
+{
+	tofino_t *tf;
+	tofino_tbus_state_t rval = TF_TBUS_UNINITIALIZED;
+
+	if ((tf = hdl2tf(tf_hdl)) != NULL) {
+		rval = tf->tf_tbus_state;
+		mutex_exit(&tf->tf_mutex);
 	}
 
-	return (0);
+	return rval;
 }
 
 /*
