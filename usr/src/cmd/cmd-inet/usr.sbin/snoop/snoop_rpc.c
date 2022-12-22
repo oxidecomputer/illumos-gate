@@ -544,9 +544,12 @@ struct rpcnames {
 500021, "ZNS",			/* Zeus Network Service */
 };
 
-int
-compare(struct rpcnames *a, struct rpcnames *b)
+static int
+compare(const void *aa, const void *bb)
 {
+	const struct rpcnames *a = aa;
+	const struct rpcnames *b = bb;
+
 	return (a->rp_prog - b->rp_prog);
 }
 
@@ -554,7 +557,6 @@ char *
 nameof_prog(int prog)
 {
 	struct rpcnames *r;
-	struct rpcnames *bsearch();
 	int elems = sizeof (rpcnames) / sizeof (*r);
 
 	r = bsearch(&prog, rpcnames, elems, sizeof (*r), compare);

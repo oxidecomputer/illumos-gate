@@ -90,6 +90,8 @@ boolean_t zflg;
 struct Pf_ext_packetfilt pf;
 
 static int vlanid = 0;
+static ilstr_t prefix;
+static char prefix_buffer[128];
 
 static void usage(void);
 static void snoop_sigrecover(int sig, siginfo_t *info, void *p);
@@ -125,6 +127,8 @@ main(int argc, char **argv)
 	int nbytes;
 	char *datalink = NULL;
 	dlpi_handle_t dh;
+
+	ilstr_init_prealloc(&prefix, prefix_buffer, sizeof (prefix_buffer));
 
 	names[0] = '\0';
 	/*
@@ -587,6 +591,11 @@ show_pktinfo(int flags, int num, char *src, char *dst, struct timeval *ptvp,
 		}
 	}
 
+	if ((flags & F_SUM) && !(flags & F_ALLSUM) && ilstr_len(&prefix) != 0) {
+		(void) snprintf(lp, MAXLINE, "%s", ilstr_cstr(&prefix));
+		lp += strlen(lp);
+	}
+
 	if ((flags & F_SUM) && !(flags & F_ALLSUM) && (vlanid != 0)) {
 		(void) snprintf(lp, MAXLINE, "VLAN#%i: ", vlanid);
 		lp += strlen(lp);
@@ -683,6 +692,12 @@ void
 set_vlan_id(int id)
 {
 	vlanid = id;
+}
+
+ilstr_t *
+get_prefix(void)
+{
+	return (&prefix);
 }
 
 /*

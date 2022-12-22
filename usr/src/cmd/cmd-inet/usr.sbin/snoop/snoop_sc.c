@@ -20,6 +20,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <sys/ilstr.h>
 
 #include <sys/socket.h>
 #include <sys/sockio.h>
@@ -34,6 +35,18 @@
 
 #define	CODELEN 32
 
+static struct sidecar_code {
+	char *scc_long;
+	char *scc_short;
+} sidecar_codes[UINT8_MAX + 1] = {
+	[SC_FORWARD_FROM_USERSPACE] =	{ "FWD_FROM_USERSPACE",	"FOUT" },
+	[SC_FORWARD_TO_USERSPACE] =	{ "FWD_TO_USERSPACE",	"FWIN" },
+	[SC_ICMP_NEEDED] =		{ "ICMP_NEEDED",	"ICMP" },
+	[SC_ARP_NEEDED] =		{ "ARP_NEEDED",		"ARPN" },
+	[SC_NEIGHBOR_NEEDED] =		{ "NDP_NEEDED",		"NDPN" },
+	[SC_INVALID] =			{ "INVALID",		"INVL" },
+};
+
 int
 interpret_sidecar(int flags, schdr_t *sc, int iplen, int len)
 {
@@ -42,6 +55,8 @@ interpret_sidecar(int flags, schdr_t *sc, int iplen, int len)
 	int sunrpc;
 	char *pname;
 	char code[CODELEN];
+	struct sidecar_code *scc;
+	uint_t ingress, egress;
 
 	if (len < sizeof (schdr_t))
 		return (len);
@@ -49,38 +64,53 @@ interpret_sidecar(int flags, schdr_t *sc, int iplen, int len)
 	data = (char *)sc + sizeof (schdr_t);
 	len -= sizeof (schdr_t);
 
-	switch (sc->sc_code) {
-	case SC_FORWARD_FROM_USERSPACE:
-		snprintf(code, CODELEN, "FWD_FROM_USERSPACE");
-		break;
-	case SC_FORWARD_TO_USERSPACE:
-		snprintf(code, CODELEN, "FWD_TO_USERSPACE");
-		break;
-	case SC_ICMP_NEEDED:
-		snprintf(code, CODELEN, "ICMP_NEEDED");
-		break;
-	case SC_ARP_NEEDED:
-		snprintf(code, CODELEN, "ARP_NEEDED");
-		break;
-	case SC_NEIGHBOR_NEEDED:
-		snprintf(code, CODELEN, "NDP_NEEDED");
-		break;
-	case SC_INVALID:
-		snprintf(code, CODELEN, "INVALID");
-		break;
-	default:
-		snprintf(code, CODELEN, "Code=0x%x", sc->sc_code);
-		break;
+	scc = &sidecar_codes[sc->sc_code & UINT8_MAX];
+	ingress = ntohs(sc->sc_ingress);
+	egress = ntohs(sc->sc_egress);
+
+	if (flags & F_ALLSUM) {
+		ilstr_t s;
+
+		ilstr_init_prealloc(&s, get_sum_line(), MAXLINE);
+
+		ilstr_append_str(&s, "SIDECAR ");
+		if (scc->scc_long != NULL) {
+			ilstr_append_str(&s, scc->scc_long);
+		} else {
+			ilstr_aprintf(&s, "Code=0x%x", sc->sc_code);
+		}
+		ilstr_aprintf(&s, "  Ingress=%d Egress=%d",
+		    ntohs(sc->sc_ingress), ntohs(sc->sc_egress));
+
+		ilstr_fini(&s);
+	} else if (flags & F_SUM) {
+		ilstr_t *p = get_prefix();
+
+		ilstr_append_str(p, "SC/");
+		if (scc->scc_short != NULL) {
+			ilstr_aprintf(p, "%-4s", scc->scc_short);
+		} else {
+			ilstr_aprintf(p, "0x%02x", sc->sc_code);
+		}
+		if (ingress != 0) {
+			ilstr_aprintf(p, "-i%03d", ingress);
+		}
+		if (egress != 0) {
+			ilstr_aprintf(p, "-e%03d", egress);
+		}
+		ilstr_append_str(p, ": ");
 	}
-	(void) snprintf(get_sum_line(), MAXLINE,
-	    "SIDECAR %s Ingress=%d Egress=%d",
-	    code, ntohs(sc->sc_ingress), ntohs(sc->sc_egress));
 
 	if (flags & F_DTAIL) {
 		show_header("SC:   ", "Sidecar Header", sizeof (schdr_t));
 		show_space();
-		(void) snprintf(get_line(0, 0), get_line_remain(),
-		    "Code = 0x%x (%s)", sc->sc_code, code);
+		if (scc->scc_long != NULL) {
+			(void) snprintf(get_line(0, 0), get_line_remain(),
+			    "Code = 0x%x (%s)", sc->sc_code, scc->scc_long);
+		} else {
+			(void) snprintf(get_line(0, 0), get_line_remain(),
+			    "Code = 0x%x", sc->sc_code);
+		}
 		(void) snprintf(get_line(0, 0), get_line_remain(),
 		    "Ingress port = %d", ntohs(sc->sc_ingress));
 		(void) snprintf(get_line(0, 0), get_line_remain(),
