@@ -27,6 +27,27 @@ extern "C" {
 
 typedef struct tfport tfport_t;
 
+/*
+ * Represents a single source/target for tofino/sidecar packets:
+ */
+typedef struct tfport_source {
+	list_node_t	tps_listnode;
+	kmutex_t	tps_mutex;
+	uint32_t	tps_refcnt;
+	tfport_t	*tps_tfport;;
+
+	/*
+	 * All the handles and state used to manage our interaction with the
+	 * mac device over which the tfport multiplexer is layered:
+	 */
+	uint8_t			tps_init_state;
+	datalink_id_t		tps_id;
+	mac_handle_t		tps_mh;
+	mac_client_handle_t	tps_mch;
+	mac_notify_handle_t	tps_mnh;
+	mac_unicast_handle_t	tps_muh;
+} tfport_source_t;
+
 typedef enum tfport_runstate {
 	TFPORT_RUNSTATE_STOPPED = 1,
 	TFPORT_RUNSTATE_STOPPING,
@@ -43,19 +64,17 @@ typedef struct tfport_stats {
 } tfport_stats_t;
 
 #define	TFPORT_INIT_MAC_REGISTER	0x01
-#define	TFPORT_INIT_DEVNET		0x02
+#define	TFPORT_INIT_INDEXED		0x02
+#define	TFPORT_INIT_DEVNET		0x04
 
 /*
- * Represents a single port on the switch:
+ * Represents a single port on the switch.
  */
 typedef struct tfport_port {
-	list_node_t		tp_listnode;
-	tfport_t		*tp_tfport;
 	uint32_t		tp_refcnt;
-	uint32_t		tp_port;
-	datalink_id_t		tp_link_id;
-	datalink_id_t		tp_pkt_id;
-	kmutex_t		tp_mutex;
+	uint32_t		tp_port;	/* tofino port ID */
+	datalink_id_t		tp_link_id;	/* dladm link ID */
+	tfport_source_t		*tp_pkt_src;
 	uint16_t		tp_init_state;
 	tfport_runstate_t	tp_run_state;
 	mac_handle_t		tp_mh;
@@ -64,6 +83,9 @@ typedef struct tfport_port {
 	uint8_t			tp_mac_addr[ETHERADDRL];
 	tfport_stats_t		tp_stats;
 	link_state_t		tp_ls;
+	tfport_t		*tp_tfport;	/* link to global state */
+	avl_node_t		tp_link_node;	/* link-indexed tree */
+	avl_node_t		tp_port_node;	/* source/port-indexed tree */
 } tfport_port_t;
 
 #define	TFPORT_SOURCE_OPEN		0x01
@@ -72,36 +94,15 @@ typedef struct tfport_port {
 #define	TFPORT_SOURCE_NOTIFY_ADD	0x08
 #define	TFPORT_SOURCE_RX_SET		0x10
 
-/*
- * Represents a single source/target for tofino/sidecar packets:
- */
-typedef struct tfport_source {
-	tfport_t		*tps_tfport;
-	kmutex_t		tps_mutex;
-
-	/*
-	 * All the handles and state used to manage our interaction with the
-	 * mac device over which the tfport multiplexer is layered:
-	 */
-	uint8_t			tps_init_state;
-	datalink_id_t		tps_id;
-	mac_handle_t		tps_mh;
-	mac_client_handle_t	tps_mch;
-	mac_notify_handle_t	tps_mnh;
-	mac_unicast_handle_t	tps_muh;
-
-	/*
-	 * All of the ports currently instantiated to/from which we will
-	 * deliver packets:
-	 */
-	list_t			tps_ports;
-} tfport_source_t;
-
 struct tfport {
 	kmutex_t		tfp_mutex;
 	dev_info_t		*tfp_dip;
 	int			tfp_instance;
-	tfport_source_t		*tfp_source;
+	list_t			tfp_sources;
+
+	/* all tfport_port_t nodes */
+	avl_tree_t		tfp_ports_by_port;
+	avl_tree_t		tfp_ports_by_link;
 };
 
 #ifdef	__cplusplus

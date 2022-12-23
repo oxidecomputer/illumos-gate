@@ -97,7 +97,7 @@ static mblk_t *tfpkt_m_tx(void *, mblk_t *);
 
 DDI_DEFINE_STREAM_OPS(tfpkt_dev_ops, nulldev, tfpkt_probe, tfpkt_attach,
     tfpkt_detach, nodev, tfpkt_getinfo, D_MP, NULL,
-    ddi_quiesce_not_supported);
+    ddi_quiesce_not_needed);
 
 static mac_callbacks_t tfpkt_m_callbacks = {
 	.mc_callbacks =			MC_IOCTL,
