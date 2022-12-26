@@ -41,8 +41,12 @@ i_dladm_create_tfport(dladm_handle_t handle, dladm_tfport_attr_t *attrp)
 	ioc.tic_pkt_id = attrp->tfa_pkt_id;
 	ioc.tic_port_id = attrp->tfa_port_id;
 	ioc.tic_mac_len = attrp->tfa_mac_len;
-	if (attrp->tfa_mac_len)
+	if (attrp->tfa_mac_len == sizeof(ioc.tic_mac_addr)) {
+		ioc.tic_mac_len = attrp->tfa_mac_len;
 		bcopy(attrp->tfa_mac_addr, ioc.tic_mac_addr, ioc.tic_mac_len);
+	} else if (attrp->tfa_mac_len != 0) {
+		return DLADM_STATUS_INVALIDMACADDRLEN;
+	}
 
 	rc = ioctl(dladm_dld_fd(handle), TFPORT_IOC_CREATE, &ioc);
 	if (rc < 0)
@@ -51,8 +55,13 @@ i_dladm_create_tfport(dladm_handle_t handle, dladm_tfport_attr_t *attrp)
 	if (status != DLADM_STATUS_OK)
 		return (status);
 
-	bcopy(ioc.tic_mac_addr, attrp->tfa_mac_addr, ioc.tic_mac_len);
-	attrp->tfa_mac_len = ioc.tic_mac_len;
+	if (ioc.tic_mac_len == sizeof (attrp->tfa_mac_addr)) {
+		bcopy(ioc.tic_mac_addr, attrp->tfa_mac_addr, ioc.tic_mac_len);
+		attrp->tfa_mac_len = ioc.tic_mac_len;
+	} else {
+		status = DLADM_STATUS_INVALIDMACADDRLEN;
+	}
+
 	return (status);
 }
 

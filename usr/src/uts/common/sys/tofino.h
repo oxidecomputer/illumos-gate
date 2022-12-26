@@ -16,6 +16,8 @@
 #ifndef	_SYS_TOFINO_H
 #define	_SYS_TOFINO_H
 
+#include <sys/ccompile.h>
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -34,6 +36,9 @@ typedef struct schdr {
 	uint8_t		sc_payload[16];
 } __packed schdr_t;
 
+/*
+ * These codes are also defined in the p4 code that runs on the tofino ASIC.
+ */
 #define	SC_FORWARD_FROM_USERSPACE	0x00
 #define	SC_FORWARD_TO_USERSPACE		0x01
 #define	SC_ICMP_NEEDED			0x02

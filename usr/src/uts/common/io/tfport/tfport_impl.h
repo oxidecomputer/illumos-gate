@@ -43,9 +43,9 @@ typedef struct tfport_source {
 	uint8_t			tps_init_state;
 	datalink_id_t		tps_id;
 	mac_handle_t		tps_mh;
+	mac_unicast_handle_t	tps_muh;
 	mac_client_handle_t	tps_mch;
 	mac_notify_handle_t	tps_mnh;
-	mac_unicast_handle_t	tps_muh;
 } tfport_source_t;
 
 typedef enum tfport_runstate {
@@ -55,12 +55,10 @@ typedef enum tfport_runstate {
 } tfport_runstate_t;
 
 typedef struct tfport_stats {
-	uint64_t		tfs_rbytes;
-	uint64_t		tfs_obytes;
-	uint64_t		tfs_xmit_errors;
-	uint64_t		tfs_xmit_count;
-	uint64_t		tfs_recv_count;
-	uint64_t		tfs_recv_errors;
+	uint64_t		tfs_rx_bytes;
+	uint64_t		tfs_rx_pkts;
+	uint64_t		tfs_tx_bytes;
+	uint64_t		tfs_tx_pkts;
 } tfport_stats_t;
 
 #define	TFPORT_INIT_MAC_REGISTER	0x01
@@ -71,10 +69,11 @@ typedef struct tfport_stats {
  * Represents a single port on the switch.
  */
 typedef struct tfport_port {
+	kmutex_t		tp_mutex;
 	uint32_t		tp_refcnt;
 	uint32_t		tp_port;	/* tofino port ID */
 	datalink_id_t		tp_link_id;	/* dladm link ID */
-	tfport_source_t		*tp_pkt_src;
+	datalink_id_t		tp_src_id;	/* dladm link ID of source */
 	uint16_t		tp_init_state;
 	tfport_runstate_t	tp_run_state;
 	mac_handle_t		tp_mh;

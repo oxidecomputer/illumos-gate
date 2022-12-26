@@ -129,7 +129,7 @@ static dld_ioc_info_t tfport_ioc_list[] = {
 	    tfport_ioc_info, NULL},
 };
 
-int tfport_debug = 1;
+int tfport_debug = 0;
 
 static void
 tfport_dlog(tfport_t *t, const char *fmt, ...)
@@ -166,7 +166,7 @@ tfport_port_cmp(const void *a, const void *b)
 	int c;
 
 	if ((c = CMP(ta->tp_port, tb->tp_port)) == 0)
-		c = CMP(ta->tp_pkt_src->tps_id, tb->tp_pkt_src->tps_id);
+		c = CMP(ta->tp_src_id, tb->tp_src_id);
 	return (c);
 }
 
@@ -213,7 +213,7 @@ tfport_find_port(tfport_t *devp, tfport_source_t *srcp, int port)
 
 	mutex_enter(&devp->tfp_mutex);
 	find.tp_port = port;
-	find.tp_pkt_src = srcp;
+	find.tp_src_id = srcp->tps_id;
 	portp = avl_find(&devp->tfp_ports_by_port, &find, NULL);
 	if (portp == NULL || portp->tp_run_state != TFPORT_RUNSTATE_RUNNING) {
 		find.tp_port = 0;
@@ -221,10 +221,14 @@ tfport_find_port(tfport_t *devp, tfport_source_t *srcp, int port)
 	}
 
 	if (portp != NULL) {
-		if (portp->tp_run_state == TFPORT_RUNSTATE_RUNNING)
+		mutex_enter(&portp->tp_mutex);
+		if (portp->tp_run_state == TFPORT_RUNSTATE_RUNNING) {
 			portp->tp_refcnt++;
-		else
+			mutex_exit(&portp->tp_mutex);
+		} else {
+			mutex_exit(&portp->tp_mutex);
 			portp = NULL;
+		}
 	}
 
 	mutex_exit(&devp->tfp_mutex);
@@ -242,18 +246,18 @@ tfport_rele_port(tfport_t *devp, tfport_port_t *portp)
 	if (portp == NULL)
 		return;
 
-	mutex_enter(&devp->tfp_mutex);
+	mutex_enter(&portp->tp_mutex);
 	ASSERT(portp->tp_refcnt > 0);
 	portp->tp_refcnt--;
 	if (portp->tp_refcnt == 0 &&
 	    portp->tp_run_state == TFPORT_RUNSTATE_STOPPING) {
 		portp->tp_run_state = TFPORT_RUNSTATE_STOPPED;
 	}
-	mutex_exit(&devp->tfp_mutex);
+	mutex_exit(&portp->tp_mutex);
 }
 
 static int
-tfport_tx_one(tfport_source_t *srcp, int port, mblk_t *mp_head)
+tfport_tx_one(tfport_source_t *srcp, tfport_port_t *portp, mblk_t *mp_head)
 {
 	mblk_t *tx_buf;
 	size_t full_sz = msgsize(mp_head);
@@ -263,37 +267,31 @@ tfport_tx_one(tfport_source_t *srcp, int port, mblk_t *mp_head)
 	 * after the ethernet header, so the ASIC knows which port the packet
 	 * should egress.
 	 */
-	if (port == 0) {
+	if (portp->tp_port == 0) {
 		tx_buf = mp_head;
 	} else {
-		full_sz += SCSZ;
+		schdr_t sc;
 
+		full_sz += SCSZ;
 		if ((tx_buf = allocb(full_sz, BPRI_HI)) == NULL) {
 			return (-1);
 		}
 
-		/*
-		 * Copy the ethernet header into the transfer buffer:
-		 */
+		/* Copy the ethernet header into the transfer buffer */
 		struct ether_header *eth =
 		    (struct ether_header *)(tx_buf->b_wptr);
 		bcopy(mp_head->b_rptr, tx_buf->b_wptr, ETHSZ);
 		tx_buf->b_wptr += ETHSZ;
 
-		/*
-		 * If needed, construct the sidecar header and update the
-		 * ethernet header:
-		 */
-		if (port != 0) {
-			schdr_t *sc = (schdr_t *)(tx_buf->b_wptr);
-
-			sc->sc_code = SC_FORWARD_FROM_USERSPACE;
-			sc->sc_ingress = 0;
-			sc->sc_egress = htons(port);
-			sc->sc_ethertype = eth->ether_type;
-			eth->ether_type = htons(ETHERTYPE_SIDECAR);
-			tx_buf->b_wptr += SCSZ;
-		}
+		/* construct the sidecar header and update the ethernet header */
+		bzero(&sc, sizeof (sc));
+		sc.sc_code = SC_FORWARD_FROM_USERSPACE;
+		sc.sc_ingress = 0;
+		sc.sc_egress = htons(portp->tp_port);
+		sc.sc_ethertype = eth->ether_type;
+		bcopy((void *)&sc, tx_buf->b_wptr, sizeof (sc));
+		tx_buf->b_wptr += SCSZ;
+		eth->ether_type = htons(ETHERTYPE_SIDECAR);
 
 		/*
 		 * Copy the rest of the packet into the tx buffer, skipping
@@ -308,6 +306,11 @@ tfport_tx_one(tfport_source_t *srcp, int port, mblk_t *mp_head)
 			skip = 0;
 		}
 	}
+
+	mutex_enter(&portp->tp_mutex);
+	portp->tp_stats.tfs_tx_pkts++;
+	portp->tp_stats.tfs_tx_bytes += full_sz;
+	mutex_exit(&portp->tp_mutex);
 
 	(void) mac_tx(srcp->tps_mch, tx_buf, 0, MAC_DROP_ON_NO_DESC, NULL);
 
@@ -326,7 +329,6 @@ tfport_m_tx(void *arg, mblk_t *mp_chain)
 {
 	tfport_port_t *portp = arg;
 	tfport_t *devp = portp->tp_tfport;
-	int port = portp->tp_port;
 	tfport_source_t *srcp;
 	mblk_t *mp, *next;
 
@@ -340,7 +342,7 @@ tfport_m_tx(void *arg, mblk_t *mp_chain)
 		mp->b_next = NULL;
 		if (srcp == NULL)
 			freemsg(mp);
-		else if (tfport_tx_one(srcp, port, mp) != 0)
+		else if (tfport_tx_one(srcp, portp, mp) != 0)
 			break;
 	}
 
@@ -357,6 +359,9 @@ tfport_m_tx(void *arg, mblk_t *mp_chain)
 static void
 tfport_pkt_notify_cb(void *arg, mac_notify_type_t type)
 {
+	tfport_source_t *srcp = arg;
+	tfport_t *devp = srcp->tps_tfport;
+	tfport_dlog(devp, "%s(%d)", __func__, type);
 }
 
 static void
@@ -368,7 +373,7 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 	tfport_port_t *portp;
 
 	struct ether_header *eth = NULL;
-	schdr_t *sc = NULL;
+	schdr_t sc;
 	uint32_t port = 0;
 	size_t mblk_sz = msgsize(mp);
 
@@ -384,9 +389,9 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 		if (mblk_sz < ETHSZ + SCSZ) {
 			goto done;
 		}
-		sc = (schdr_t *)(mp->b_rptr + ETHSZ);
-		if (sc->sc_code == SC_FORWARD_TO_USERSPACE)
-			port = ntohs(sc->sc_ingress);
+		bcopy(mp->b_rptr + ETHSZ, (void *) &sc, sizeof (sc));
+		if (sc.sc_code == SC_FORWARD_TO_USERSPACE)
+			port = ntohs(sc.sc_ingress);
 	}
 
 	if ((portp = tfport_find_port(devp, srcp, port)) == NULL)
@@ -406,9 +411,14 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 		size_t sc_hdr_end = ETHSZ + SCSZ;
 		size_t body_sz = mblk_sz - sc_hdr_end;
 
-		eth->ether_type = sc->sc_ethertype;
+		eth->ether_type = sc.sc_ethertype;
 		bcopy(base + sc_hdr_end, base + eth_hdr_end, body_sz);
 		mp->b_wptr = base + (ETHSZ + body_sz);
+
+		mutex_enter(&portp->tp_mutex);
+		portp->tp_stats.tfs_rx_pkts++;
+		portp->tp_stats.tfs_rx_bytes += mblk_sz;
+		mutex_exit(&portp->tp_mutex);
 	}
 
 	mac_rx(portp->tp_mh, NULL, mp);
@@ -425,15 +435,13 @@ tfport_mac_init(tfport_t *devp, tfport_port_t *portp)
 	mac_register_t *mac;
 	int err;
 
-	mac = mac_alloc(MAC_VERSION);
-	if (mac == NULL) {
-		return (ENOMEM);
-	}
+	if ((mac = mac_alloc(MAC_VERSION)) == NULL)
+		return (EINVAL);
 
 	/* Register the new device with the mac(9e) framework */
 	mac->m_driver = portp;
 	mac->m_dip = devp->tfp_dip;
-	mac->m_instance = portp->tp_port;
+	mac->m_instance = portp->tp_link_id;
 	mac->m_src_addr = portp->tp_mac_addr;
 	mac->m_callbacks = &tfport_m_callbacks;
 	mac->m_min_sdu = 0;
@@ -446,7 +454,6 @@ tfport_mac_init(tfport_t *devp, tfport_port_t *portp)
 	if (err == 0) {
 		portp->tp_init_state |= TFPORT_INIT_MAC_REGISTER;
 		mac_link_update(portp->tp_mh, LINK_STATE_UP);
-		mac_tx_update(portp->tp_mh);
 	} else {
 		tfport_dlog(devp, "failed to register port %d: %d",
 		    portp->tp_port, err);
@@ -456,19 +463,26 @@ tfport_mac_init(tfport_t *devp, tfport_port_t *portp)
 }
 
 static tfport_source_t *
-tfport_hold_source(tfport_t *devp, datalink_id_t src_id)
+tfport_find_source(tfport_t *devp, datalink_id_t src_id)
 {
 	tfport_source_t *srcp;
 
 	ASSERT(MUTEX_HELD(&devp->tfp_mutex));
 	for (srcp = list_head(&devp->tfp_sources);
-	    srcp != NULL;
-	    srcp = list_next(&devp->tfp_sources, srcp)) {
-		if (srcp->tps_id == src_id) {
-			srcp->tps_refcnt++;
-			break;
-		}
-	}
+	    (srcp != NULL) && (srcp->tps_id != src_id);
+	    srcp = list_next(&devp->tfp_sources, srcp))
+		;
+
+	return (srcp);
+}
+static tfport_source_t *
+tfport_hold_source(tfport_t *devp, datalink_id_t src_id)
+{
+	tfport_source_t *srcp;
+
+	if ((srcp = tfport_find_source(devp, src_id)) != NULL)
+		srcp->tps_refcnt++;
+
 	return (srcp);
 }
 
@@ -482,19 +496,23 @@ tfport_rele_source(tfport_t *devp, tfport_source_t *srcp)
 }
 
 static int
-tfport_close_source(tfport_t *devp, tfport_source_t *srcp)
+tfport_close_source(tfport_t *devp, datalink_id_t src_id)
 {
+	tfport_source_t *srcp;
 	int err;
 
+	if ((srcp = tfport_find_source(devp, src_id)) == NULL)
+		return (ENOENT);
+
 	if (tfport_rele_source(devp, srcp) != 0)
-		return (-1);
+		return (0);
 
 	list_remove(&devp->tfp_sources, srcp);
 	if (srcp->tps_init_state & TFPORT_SOURCE_RX_SET)
 		mac_rx_clear(srcp->tps_mch);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_UNICAST_ADD &&
-	    ((err = mac_unicast_remove(srcp->tps_mch, srcp->tps_muh)) != 0))
+	    (err = mac_unicast_remove(srcp->tps_mch, srcp->tps_muh) != 0))
 		tfport_err(devp, "mac_unicast_remove() failed: %d", err);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_NOTIFY_ADD &&
@@ -502,7 +520,7 @@ tfport_close_source(tfport_t *devp, tfport_source_t *srcp)
 		tfport_err(devp, "mac_notify_remove() failed: %d", err);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_CLIENT_OPEN)
-		mac_client_close(srcp->tps_mch, MAC_CLOSE_FLAGS_EXCLUSIVE);
+		mac_client_close(srcp->tps_mch, 0);
 
 	if (srcp->tps_init_state & TFPORT_SOURCE_OPEN)
 		mac_close(srcp->tps_mh);
@@ -513,37 +531,49 @@ tfport_close_source(tfport_t *devp, tfport_source_t *srcp)
 }
 
 static int
-tfport_open_source(tfport_t *devp, datalink_id_t link, tfport_source_t **srcpp)
+tfport_open_source(tfport_t *devp, datalink_id_t src_id, tfport_source_t **srcpp)
 {
 	tfport_source_t *srcp;
 	const mac_info_t *minfop;
+	char name[32];
 	int err;
 
 	ASSERT(MUTEX_HELD(&devp->tfp_mutex));
 
-	if ((srcp = tfport_hold_source(devp, link)) != NULL) {
+	if ((srcp = tfport_hold_source(devp, src_id)) != NULL) {
 		*srcpp = srcp;
 		return (0);
 	}
 
-	tfport_dlog(devp, "opening source link %d", link);
+	tfport_dlog(devp, "opening source link %d", src_id);
 
 	srcp = kmem_zalloc(sizeof (*srcp), KM_SLEEP);
 	list_insert_head(&devp->tfp_sources, srcp);
 	mutex_init(&srcp->tps_mutex, NULL, MUTEX_DRIVER, NULL);
 	srcp->tps_refcnt = 1;
 	srcp->tps_tfport = devp;
-	srcp->tps_id = link;
+	srcp->tps_id = src_id;
 
-	if ((err = mac_open_by_linkid(link, &srcp->tps_mh)) != 0)
+	if ((err = mac_open_by_linkid(src_id, &srcp->tps_mh)) != 0)
 		goto out;
 	srcp->tps_init_state |= TFPORT_SOURCE_OPEN;
 
-	err = mac_client_open(srcp->tps_mh, &srcp->tps_mch, "tfport",
-	    MAC_OPEN_FLAGS_EXCLUSIVE);
+	(void) snprintf(name, sizeof (name), "tfport%d", src_id);
+	err = mac_client_open(srcp->tps_mh, &srcp->tps_mch, name,
+	    0);
 	if (err != 0)
 		goto out;
 	srcp->tps_init_state |= TFPORT_SOURCE_CLIENT_OPEN;
+
+	uint8_t mac_buf[ETHERADDRL];
+	mac_diag_t mac_diag = MAC_DIAG_NONE;
+	tfport_random_mac(mac_buf);
+
+	err = mac_unicast_add(srcp->tps_mch, mac_buf, 0, &srcp->tps_muh, 0,
+	    &mac_diag);
+	if (err != 0)
+		goto out;
+	srcp->tps_init_state |= TFPORT_SOURCE_UNICAST_ADD;
 
 	minfop = mac_info(srcp->tps_mh);
 	if (minfop->mi_media != DL_ETHER ||
@@ -555,25 +585,13 @@ tfport_open_source(tfport_t *devp, datalink_id_t link, tfport_source_t **srcpp)
 	    srcp);
 	srcp->tps_init_state |= TFPORT_SOURCE_NOTIFY_ADD;
 
-#if 0
-	/* XXX: is there any reason we need this? */
-	uint8_t mac_buf[ETHERADDRL];
-	tfport_random_mac(mac_buf);
-
-	err = mac_unicast_add(src->tps_mch, mac_buf, 0, &src->tps_muh, 0,
-	    &mac_diag);
-	if (err != 0)
-		goto out;
-	src->tps_init_state |= TFPORT_SOURCE_UNICAST_ADD;
-#endif
-
 	mac_rx_set(srcp->tps_mch, tfport_rx, srcp);
 	srcp->tps_init_state |= TFPORT_SOURCE_RX_SET;
 out:
 	if (err == 0) {
 		*srcpp = srcp;
 	} else {
-		(void) tfport_close_source(devp, srcp);
+		(void) tfport_close_source(devp, src_id);
 	}
 
 	return (err);
@@ -582,28 +600,39 @@ out:
 static void
 tfport_port_fini(tfport_t *devp, tfport_port_t *portp)
 {
-	char name[64];
+	char name[32];
 	datalink_id_t tmpid;
 	int err;
 
 	ASSERT(MUTEX_NOT_HELD(&devp->tfp_mutex));
 
-	(void) snprintf(name, sizeof (name), "tfport%d", portp->tp_port);
-	if (portp->tp_init_state & TFPORT_INIT_DEVNET &&
-	    ((err = dls_devnet_destroy(portp->tp_mh, &tmpid, B_TRUE)) != 0)) {
-		tfport_err(devp, "failed to clean up devnet.  "
-		    "name: %s  link: %d  err: %d", name, portp->tp_link_id, err);
+	if (!(portp->tp_init_state & TFPORT_INIT_MAC_REGISTER))
+		return;
+
+	(void) snprintf(name, sizeof (name), "tfport%d", portp->tp_link_id);
+	if (portp->tp_init_state & TFPORT_INIT_DEVNET) {
+		err = dls_devnet_destroy(portp->tp_mh, &tmpid, B_TRUE);
+		if (err != 0)  {
+			tfport_err(devp, "failed to clean up devnet.  name: %s"
+			    "link: %d  err: %d", name, portp->tp_link_id, err);
+			return;
+		}
 	}
 
-	if (portp->tp_init_state & TFPORT_INIT_MAC_REGISTER &&
-	    ((err = mac_unregister(portp->tp_mh)) != 0)) {
+	if ((err = mac_unregister(portp->tp_mh)) != 0) {
 		tfport_err(devp, "failed to unregister mac.  name: %s  err: %d",
-		    name, err);
+				name, err);
 	}
 
 	kmem_free(portp, sizeof (*portp));
 }
 
+struct foo {
+	struct avl_node *avl_child[2];	/* left/right children */
+	struct avl_node *avl_parent;	/* this node's parent */
+	unsigned short avl_child_index;	/* my index in parent's avl_child[] */
+	short avl_balance;		/* balance value: -1, 0, +1 */
+};
 /*
  * If the provided port doesn't exist in either the link-indexed or port-indexed
  * trees, insert into both and return 0.  If the port is in either tree, return
@@ -614,6 +643,8 @@ tfport_port_index(tfport_t *devp, tfport_port_t *portp)
 {
 	avl_index_t port_where;
 	avl_index_t link_where;
+
+	tfport_dlog(devp, "indexing (%d, %d)", portp->tp_port, portp->tp_src_id);
 
 	ASSERT(MUTEX_HELD(&devp->tfp_mutex));
 
@@ -627,7 +658,8 @@ tfport_port_index(tfport_t *devp, tfport_port_t *portp)
 		return (-1);
 	}
 	avl_insert(&devp->tfp_ports_by_port, portp, port_where);
-	avl_insert(&devp->tfp_ports_by_link, &portp, link_where);
+	avl_insert(&devp->tfp_ports_by_link, portp, link_where);
+
 	return (0);
 }
 
@@ -637,6 +669,8 @@ tfport_port_index(tfport_t *devp, tfport_port_t *portp)
 static void
 tfport_port_deindex(tfport_t *devp, tfport_port_t *portp)
 {
+	tfport_dlog(devp, "removing (%d, %d)", portp->tp_port, portp->tp_src_id);
+
 	ASSERT(MUTEX_HELD(&devp->tfp_mutex));
 	ASSERT(avl_find(&devp->tfp_ports_by_port, portp, NULL) != NULL);
 	ASSERT(avl_find(&devp->tfp_ports_by_link, portp, NULL) != NULL);
@@ -646,7 +680,7 @@ tfport_port_deindex(tfport_t *devp, tfport_port_t *portp)
 }
 
 static tfport_port_t *
-tfport_port_new(tfport_t *devp, tfport_ioc_create_t *carg)
+tfport_port_new(tfport_t *devp, tfport_source_t *srcp, tfport_ioc_create_t *carg)
 {
 	tfport_port_t *portp;
 	uchar_t mac_buf[ETHERADDRL];
@@ -655,6 +689,8 @@ tfport_port_new(tfport_t *devp, tfport_ioc_create_t *carg)
 	if (carg->tic_mac_len == 0) {
 		tfport_random_mac(mac_buf);
 		mac_addr = mac_buf;
+		carg->tic_mac_len = ETHERADDRL;
+		bcopy(mac_addr, carg->tic_mac_addr, ETHERADDRL);
 	} else if (carg->tic_mac_len == ETHERADDRL) {
 		mac_addr = carg->tic_mac_addr;
 	} else {
@@ -662,11 +698,13 @@ tfport_port_new(tfport_t *devp, tfport_ioc_create_t *carg)
 	}
 
 	portp = kmem_zalloc(sizeof (*portp), KM_SLEEP);
+	mutex_init(&portp->tp_mutex, NULL, MUTEX_DRIVER, NULL);
 	portp->tp_refcnt = 0;
 	portp->tp_tfport = devp;
 	portp->tp_run_state = TFPORT_RUNSTATE_STOPPED;
 	portp->tp_port = carg->tic_port_id;
 	portp->tp_link_id = carg->tic_link_id;
+	portp->tp_src_id = carg->tic_pkt_id;
 	bcopy(mac_addr, portp->tp_mac_addr, ETHERADDRL);
 	portp->tp_mac_len = ETHERADDRL;
 	portp->tp_ls = LINK_STATE_UNKNOWN;
@@ -681,24 +719,24 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	tfport_t *devp = tfport;
 	datalink_id_t src_link;
 	tfport_source_t *src;
-	tfport_port_t *portp;
+	tfport_port_t *portp = NULL;
 	int err;
 
 	tfport_dlog(devp, "%s(port: %d  link: %d  src: %d)",
 	    __func__, carg->tic_port_id, carg->tic_link_id, carg->tic_pkt_id);
 
+	mutex_enter(&devp->tfp_mutex);
 	src_link = carg->tic_pkt_id;
 	if ((err = tfport_open_source(devp, src_link, &src)) != 0) {
 		mutex_exit(&devp->tfp_mutex);
 		return (err);
 	}
 
-	if ((portp = tfport_port_new(devp, carg)) == NULL) {
+	if ((portp = tfport_port_new(devp, src, carg)) == NULL) {
 		err = EINVAL;
 		goto out;
 	}
 
-	mutex_enter(&devp->tfp_mutex);
 	if (tfport_port_index(devp, portp) != 0)
 		goto out;
 	portp->tp_init_state |= TFPORT_INIT_INDEXED;
@@ -708,26 +746,26 @@ tfport_ioc_create(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 		goto out;
 	}
 
+	/* XXX: drop the lock across this? */
 	if ((err = dls_devnet_create(portp->tp_mh, portp->tp_link_id,
 	    getzoneid())) != 0) {
 		tfport_err(devp, "dls_devnet_create() failed: %d", err);
 		goto out;
 	}
+
 	portp->tp_init_state |= TFPORT_INIT_DEVNET;
 	mutex_exit(&devp->tfp_mutex);
 
 	return (0);
 
 out:
-	(void) tfport_close_source(devp, src);
-	if (portp != NULL) {
-		if (portp->tp_init_state & TFPORT_INIT_INDEXED) {
-			mutex_enter(&devp->tfp_mutex);
-			tfport_port_deindex(devp, portp);
-			mutex_exit(&devp->tfp_mutex);
-		}
+	if (portp != NULL && portp->tp_init_state & TFPORT_INIT_INDEXED)
+		tfport_port_deindex(devp, portp);
+	(void) tfport_close_source(devp, carg->tic_pkt_id);
+	mutex_exit(&devp->tfp_mutex);
+
+	if (portp != NULL)
 		tfport_port_fini(devp, portp);
-	}
 
 	return (err);
 }
@@ -746,10 +784,10 @@ tfport_ioc_delete(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	mutex_enter(&devp->tfp_mutex);
 	portp = tfport_find_link(devp, link);
 	if (portp == NULL) {
-		rval =  (ENOENT);
+		rval = ENOENT;
 	} else if (portp->tp_run_state != TFPORT_RUNSTATE_STOPPED) {
 		rval = EBUSY;
-	} else if (tfport_close_source(devp, portp->tp_pkt_src) != 0) {
+	} else if (tfport_close_source(devp, portp->tp_src_id) != 0) {
 		rval = EBUSY;
 	} else {
 		tfport_port_deindex(devp, portp);
@@ -779,10 +817,12 @@ tfport_ioc_info(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	} else {
 		iarg->tii_port_id = portp->tp_port;
 		iarg->tii_link_id = portp->tp_link_id;
-		iarg->tii_pkt_id = portp->tp_pkt_src->tps_id;
-		iarg->tii_mac_len = MIN(portp->tp_mac_len, ETHERADDRL);
-		bcopy(portp->tp_mac_addr, iarg->tii_mac_addr,
-		    iarg->tii_mac_len);
+		iarg->tii_pkt_id = portp->tp_src_id;
+		iarg->tii_mac_len = portp->tp_mac_len;
+		if (iarg->tii_mac_len <= sizeof (iarg->tii_mac_addr)) {
+			bcopy(portp->tp_mac_addr, iarg->tii_mac_addr,
+			    iarg->tii_mac_len);
+		}
 	}
 	mutex_exit(&devp->tfp_mutex);
 
@@ -894,6 +934,7 @@ tfport_m_stat(void *arg, uint_t stat, uint64_t *val)
 
 	ASSERT(portp->tp_mh != NULL);
 
+	mutex_enter(&portp->tp_mutex);
 	switch (stat) {
 	case MAC_STAT_LINK_STATE:
 		*val = LINK_DUPLEX_FULL;
@@ -910,30 +951,27 @@ tfport_m_stat(void *arg, uint_t stat, uint64_t *val)
 	case MAC_STAT_MULTIXMT:
 	case MAC_STAT_BRDCSTRCV:
 	case MAC_STAT_BRDCSTXMT:
+	case MAC_STAT_IERRORS:
+	case MAC_STAT_OERRORS:
 		rval = ENOTSUP;
 		break;
 	case MAC_STAT_OPACKETS:
-		*val = portp->tp_stats.tfs_xmit_count;
+		*val = portp->tp_stats.tfs_tx_pkts;
 		break;
 	case MAC_STAT_OBYTES:
-		*val = portp->tp_stats.tfs_obytes;
-		break;
-	case MAC_STAT_IERRORS:
-		*val = portp->tp_stats.tfs_recv_errors;
-		break;
-	case MAC_STAT_OERRORS:
-		*val = portp->tp_stats.tfs_xmit_errors;
+		*val = portp->tp_stats.tfs_tx_bytes;
 		break;
 	case MAC_STAT_RBYTES:
-		*val = portp->tp_stats.tfs_rbytes;
+		*val = portp->tp_stats.tfs_rx_pkts;
 		break;
 	case MAC_STAT_IPACKETS:
-		*val = portp->tp_stats.tfs_recv_count;
+		*val = portp->tp_stats.tfs_rx_bytes;
 		break;
 	default:
 		rval = ENOTSUP;
 		break;
 	}
+	mutex_exit(&portp->tp_mutex);
 
 	return (rval);
 }
@@ -953,13 +991,16 @@ tfport_m_start(void *arg)
 	 * avoid re-enabling a port that's going away.
 	 */
 	mutex_enter(&devp->tfp_mutex);
+	tfport_dlog(devp, "%s(%p)", __func__, portp->tp_link_id);
 	indexed = tfport_find_link(devp, portp->tp_link_id);
 	if (indexed == NULL) {
 		rval = ENXIO;
 	} else {
+		mutex_enter(&portp->tp_mutex);
 		ASSERT(indexed == portp);
 		rval = 0;
 		portp->tp_run_state = TFPORT_RUNSTATE_RUNNING;
+		mutex_exit(&portp->tp_mutex);
 	}
 	mutex_exit(&devp->tfp_mutex);
 
@@ -972,7 +1013,7 @@ tfport_m_stop(void *arg)
 	tfport_port_t *portp = arg;
 	tfport_t *devp = portp->tp_tfport;
 
-	mutex_enter(&devp->tfp_mutex);
+	mutex_enter(&portp->tp_mutex);
 	tfport_dlog(devp, "%s(port: %d  refcnt: %d)", __func__, 
 	    portp->tp_port, portp->tp_refcnt);
 
@@ -981,7 +1022,7 @@ tfport_m_stop(void *arg)
 	else
 		portp->tp_run_state = TFPORT_RUNSTATE_STOPPING;
 
-	mutex_exit(&devp->tfp_mutex);
+	mutex_exit(&portp->tp_mutex);
 }
 
 static int
@@ -996,13 +1037,17 @@ tfport_m_promisc(void *arg, boolean_t on)
 static int
 tfport_m_multicst(void *arg, boolean_t add, const uint8_t *addrp)
 {
-	return (ENOTSUP);
+	tfport_port_t *portp = arg;
+	tfport_dlog(portp->tp_tfport, "%s(%p)", __func__, portp->tp_link_id);
+	return (0);
 }
 
 static int
 tfport_m_unicst(void *arg, const uint8_t *macaddr)
 {
-	return (ENOTSUP);
+	tfport_port_t *portp = arg;
+	tfport_dlog(portp->tp_tfport, "%s(%p)", __func__, portp->tp_link_id);
+	return (0);
 }
 
 static int
@@ -1033,6 +1078,7 @@ tfport_dev_alloc(dev_info_t *dip)
 	    sizeof (tfport_port_t), offsetof(tfport_port_t, tp_port_node));
 	avl_create(&tfport->tfp_ports_by_link, tfport_link_cmp,
 	    sizeof (tfport_port_t), offsetof(tfport_port_t, tp_link_node));
+
 	return (DDI_SUCCESS);
 }
 
@@ -1161,8 +1207,7 @@ _fini(void)
 {
 	int status;
 
-	if (tfport != NULL)
-		return (EBUSY);
+	ASSERT(tfport == NULL);
 
 	dld_ioc_unregister(TFPORT_IOC);
 	if ((status = mod_remove(&modlinkage)) == 0) {

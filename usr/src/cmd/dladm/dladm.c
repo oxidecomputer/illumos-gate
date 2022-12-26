@@ -1156,17 +1156,20 @@ static const ofmt_field_t simnet_fields[] = {
 typedef struct tfport_fields_buf_s
 {
 	char tfport_name[DLPI_LINKNAME_MAX];
-	char tfport_macaddr[MAXMACADDRLEN];
+	char tfport_source[DLPI_LINKNAME_MAX];
 	char tfport_port[LINKID_STR_WIDTH];
+	char tfport_macaddr[MAXMACADDRLEN];
 } tfport_fields_buf_t;
 
 static const ofmt_field_t tfport_fields[] = {
 { "LINK",		12,
 	offsetof(tfport_fields_buf_t, tfport_name), print_default_cb},
+{ "SOURCE",		12,
+	offsetof(tfport_fields_buf_t, tfport_source), print_default_cb},
+{ "PORT",		12,
+	offsetof(tfport_fields_buf_t, tfport_port), print_default_cb},
 { "MACADDRESS",		18,
 	offsetof(tfport_fields_buf_t, tfport_macaddr), print_default_cb},
-{ "PORT",		4,
-	offsetof(tfport_fields_buf_t, tfport_port), print_default_cb},
 { NULL,			0, 0, NULL}}
 ;
 
@@ -5602,6 +5605,11 @@ print_tfport(show_state_t *state, datalink_id_t linkid)
 	if (tlinfo.tfa_mac_len != ETHERADDRL)
 		return (DLADM_STATUS_BADVAL);
 
+	if ((status = dladm_datalink_id2info(handle, tlinfo.tfa_pkt_id,
+	    &flags, NULL, NULL, tlbuf.tfport_source,
+	    sizeof (tlbuf.tfport_source))) != DLADM_STATUS_OK) {
+		return (status);
+	}
 	(void) _link_ntoa(tlinfo.tfa_mac_addr, tlbuf.tfport_macaddr, ETHERADDRL,
 	    IFT_OTHER);
 	(void) snprintf(tlbuf.tfport_port, LINKID_STR_WIDTH, "%d",
@@ -5633,7 +5641,7 @@ do_show_tfport(int argc, char *argv[], const char *use)
 	boolean_t	o_arg = B_FALSE;
 	ofmt_handle_t	ofmt;
 	ofmt_status_t	oferr;
-	char		*all_fields = "link,macaddress,port";
+	char		*all_fields = "link,source,port,macaddress";
 	char		*fields_str = all_fields;
 	uint_t		ofmtflags = 0;
 
