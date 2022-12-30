@@ -30,6 +30,7 @@ extern "C" {
  */
 typedef struct schdr {
 	uint8_t		sc_code;
+	uint8_t		sc_pad;
 	uint16_t	sc_ingress;
 	uint16_t	sc_egress;
 	uint16_t	sc_ethertype;

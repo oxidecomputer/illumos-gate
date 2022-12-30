@@ -26,6 +26,7 @@
  * Copyright 2020 Peter Tribble.
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2021 RackTop Systems, Inc.
+ * Copyright 2022 Oxide Computer Company
  */
 
 #include <stdio.h>

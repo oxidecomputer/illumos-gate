@@ -41,11 +41,11 @@ i_dladm_create_tfport(dladm_handle_t handle, dladm_tfport_attr_t *attrp)
 	ioc.tic_pkt_id = attrp->tfa_pkt_id;
 	ioc.tic_port_id = attrp->tfa_port_id;
 	ioc.tic_mac_len = attrp->tfa_mac_len;
-	if (attrp->tfa_mac_len == sizeof(ioc.tic_mac_addr)) {
+	if (attrp->tfa_mac_len == sizeof (ioc.tic_mac_addr)) {
 		ioc.tic_mac_len = attrp->tfa_mac_len;
 		bcopy(attrp->tfa_mac_addr, ioc.tic_mac_addr, ioc.tic_mac_len);
 	} else if (attrp->tfa_mac_len != 0) {
-		return DLADM_STATUS_INVALIDMACADDRLEN;
+		return (DLADM_STATUS_INVALIDMACADDRLEN);
 	}
 
 	rc = ioctl(dladm_dld_fd(handle), TFPORT_IOC_CREATE, &ioc);
@@ -168,8 +168,6 @@ dladm_tfport_delete(dladm_handle_t handle, datalink_id_t tfport_id)
 	attr.tfa_link_id = tfport_id;
 	status = i_dladm_delete_tfport(handle, &attr);
 	if (status == DLADM_STATUS_OK) {
-		(void) dladm_set_linkprop(handle, tfport_id, NULL,
-		    NULL, 0, DLADM_OPT_ACTIVE);
 		(void) dladm_destroy_datalink_id(handle, tfport_id,
 		    DLADM_OPT_ACTIVE);
 	}

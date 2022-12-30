@@ -117,7 +117,8 @@ static int tfport_ioc_delete(void *, intptr_t, int, cred_t *, int *);
 static int tfport_ioc_info(void *, intptr_t, int, cred_t *, int *);
 static void tfport_ioc_l2_needed(tfport_port_t *, struct iocblk *, queue_t *,
     mblk_t *);
-static tfport_source_t *tfport_hold_source(tfport_t *devp, datalink_id_t src_id);
+static tfport_source_t *tfport_hold_source(tfport_t *devp,
+    datalink_id_t src_id);
 static int tfport_rele_source(tfport_t *devp, tfport_source_t *src);
 
 static dld_ioc_info_t tfport_ioc_list[] = {
@@ -129,7 +130,16 @@ static dld_ioc_info_t tfport_ioc_list[] = {
 	    tfport_ioc_info, NULL},
 };
 
-int tfport_debug = 0;
+/*
+ * By default we drop packets without a sidecar header or a matching tfport
+ * device.  For debugging, these flags will can be used to send them to tfport0
+ * instead.
+ */
+#define	TFPORT_PORT0_NONSIDECAR	0x01
+#define	TFPORT_PORT0_NONCLAIMED	0x02
+int tfport_port0 = 0;
+
+int tfport_debug = 1;
 
 static void
 tfport_dlog(tfport_t *t, const char *fmt, ...)
@@ -153,7 +163,7 @@ tfport_err(tfport_t *t, const char *fmt, ...)
 	va_end(args);
 }
 
-#define CMP(a, b) ((a) < (b) ? -1 : (a) > (b) ? 1 : 0)
+#define	CMP(a, b) ((a) < (b) ? -1 : (a) > (b) ? 1 : 0)
 /*
  * Nodes in the port/source-indexed are sorted by port first, then by the link
  * id of the packet source.
@@ -202,9 +212,8 @@ tfport_find_link(tfport_t *devp, datalink_id_t link)
 }
 
 /*
- * Return the active device associated with this port.  If no such device
- * exists, return the default device for this source.  In either case, take a
- * reference on the returned port.
+ * Return the active device associated with this port, after taking a reference
+ * on it.
  */
 static tfport_port_t *
 tfport_find_port(tfport_t *devp, tfport_source_t *srcp, int port)
@@ -212,12 +221,17 @@ tfport_find_port(tfport_t *devp, tfport_source_t *srcp, int port)
 	tfport_port_t find, *portp;
 
 	mutex_enter(&devp->tfp_mutex);
+
 	find.tp_port = port;
 	find.tp_src_id = srcp->tps_id;
 	portp = avl_find(&devp->tfp_ports_by_port, &find, NULL);
 	if (portp == NULL || portp->tp_run_state != TFPORT_RUNSTATE_RUNNING) {
-		find.tp_port = 0;
-		portp = avl_find(&devp->tfp_ports_by_port, &find, NULL);
+		devp->tfp_stats.tfs_unclaimed_pkts++;
+
+		if (tfport_port0 & TFPORT_PORT0_NONCLAIMED) {
+			find.tp_port = 0;
+			portp = avl_find(&devp->tfp_ports_by_port, &find, NULL);
+		}
 	}
 
 	if (portp != NULL) {
@@ -226,6 +240,7 @@ tfport_find_port(tfport_t *devp, tfport_source_t *srcp, int port)
 			portp->tp_refcnt++;
 			mutex_exit(&portp->tp_mutex);
 		} else {
+			devp->tfp_stats.tfs_zombie_pkts++;
 			mutex_exit(&portp->tp_mutex);
 			portp = NULL;
 		}
@@ -259,52 +274,64 @@ tfport_rele_port(tfport_t *devp, tfport_port_t *portp)
 static int
 tfport_tx_one(tfport_source_t *srcp, tfport_port_t *portp, mblk_t *mp_head)
 {
+	tfport_t *devp = srcp->tps_tfport;
+	schdr_t sc;
 	mblk_t *tx_buf;
 	size_t full_sz = msgsize(mp_head);
 
 	/*
-	 * If this is from a port device, we need to insert a sidecar header
-	 * after the ethernet header, so the ASIC knows which port the packet
-	 * should egress.
+	 * The tfport on which the packet arrives determines which tofino port
+	 * the packet will egress.  We don't allow packets to loopback on port
+	 * 0, so we drop them here.
 	 */
 	if (portp->tp_port == 0) {
-		tx_buf = mp_head;
-	} else {
-		schdr_t sc;
+		mutex_enter(&devp->tfp_mutex);
+		devp->tfp_stats.tfs_loopback_pkts++;
+		mutex_exit(&devp->tfp_mutex);
+		freemsg(mp_head);
+		return (0);
+	}
 
-		full_sz += SCSZ;
-		if ((tx_buf = allocb(full_sz, BPRI_HI)) == NULL) {
-			return (-1);
-		}
+	/*
+	 * Insert a sidecar header after the ethernet header, so the ASIC knows
+	 * which port the packet should egress.
+	 */
+	full_sz += SCSZ;
+	if ((tx_buf = allocb(full_sz, BPRI_HI)) == NULL) {
+		mutex_enter(&devp->tfp_mutex);
+		devp->tfp_stats.tfs_tx_nomem_drops++;
+		mutex_exit(&devp->tfp_mutex);
+		return (-1);
+	}
 
-		/* Copy the ethernet header into the transfer buffer */
-		struct ether_header *eth =
-		    (struct ether_header *)(tx_buf->b_wptr);
-		bcopy(mp_head->b_rptr, tx_buf->b_wptr, ETHSZ);
-		tx_buf->b_wptr += ETHSZ;
+	/* Copy the ethernet header into the transfer buffer */
+	struct ether_header *eth = (struct ether_header *)(tx_buf->b_wptr);
+	bcopy(mp_head->b_rptr, tx_buf->b_wptr, ETHSZ);
+	tx_buf->b_wptr += ETHSZ;
 
-		/* construct the sidecar header and update the ethernet header */
-		bzero(&sc, sizeof (sc));
-		sc.sc_code = SC_FORWARD_FROM_USERSPACE;
-		sc.sc_ingress = 0;
-		sc.sc_egress = htons(portp->tp_port);
-		sc.sc_ethertype = eth->ether_type;
-		bcopy((void *)&sc, tx_buf->b_wptr, sizeof (sc));
-		tx_buf->b_wptr += SCSZ;
-		eth->ether_type = htons(ETHERTYPE_SIDECAR);
+	/* construct the sidecar header and update the ethernet header */
+	bzero(&sc, sizeof (sc));
+	sc.sc_code = SC_FORWARD_FROM_USERSPACE;
+	sc.sc_ingress = 0;
+	sc.sc_egress = htons(portp->tp_port);
+	sc.sc_ethertype = eth->ether_type;
+	bcopy((void *)&sc, tx_buf->b_wptr, sizeof (sc));
+	tx_buf->b_wptr += SCSZ;
+	eth->ether_type = htons(ETHERTYPE_SIDECAR);
 
-		/*
-		 * Copy the rest of the packet into the tx buffer, skipping
-		 * over the ethernet header we've already copied.
-		 */
-		size_t skip = ETHSZ;
-		for (mblk_t *m = mp_head; m != NULL; m = m->b_cont) {
-			size_t sz = MBLKL(m) - skip;
+	/*
+	 * Copy the rest of the packet into the tx buffer, skipping
+	 * over the ethernet header we've already copied.
+	 */
+	size_t skip = ETHSZ;
+	for (mblk_t *m = mp_head; m != NULL; m = m->b_cont) {
+		size_t sz = MBLKL(m) - skip;
 
+		if (sz > 0) {
 			bcopy(m->b_rptr + skip, tx_buf->b_wptr, sz);
 			tx_buf->b_wptr += sz;
-			skip = 0;
 		}
+		skip = 0;
 	}
 
 	mutex_enter(&portp->tp_mutex);
@@ -315,12 +342,11 @@ tfport_tx_one(tfport_source_t *srcp, tfport_port_t *portp, mblk_t *mp_head)
 	(void) mac_tx(srcp->tps_mch, tx_buf, 0, MAC_DROP_ON_NO_DESC, NULL);
 
 	/*
-	 * On success, the lower level is responsible for the transmit mblk.
-	 * If that was our temporary mblk, then it is our responsibility to
-	 * free the original mblk.
+	 * The lower level is responsible for the freeing transmit mblk.  It is
+	 * our responsibility to free the original mblk.
 	 */
-	if (tx_buf != mp_head)
-		freeb(mp_head);
+	freemsg(mp_head);
+
 	return (0);
 }
 
@@ -334,27 +360,24 @@ tfport_m_tx(void *arg, mblk_t *mp_chain)
 
 	mutex_enter(&devp->tfp_mutex);
 	ASSERT(portp == tfport_find_link(devp, portp->tp_link_id));
-	srcp = tfport_hold_source(devp, portp->tp_link_id);
+
+	srcp = tfport_hold_source(devp, portp->tp_src_id);
+	ASSERT(srcp != NULL);
 	mutex_exit(&devp->tfp_mutex);
 
 	for (mp = mp_chain; mp != NULL; mp = next) {
 		next = mp->b_next;
 		mp->b_next = NULL;
-		if (srcp == NULL)
-			freemsg(mp);
-		else if (tfport_tx_one(srcp, portp, mp) != 0)
+		if (tfport_tx_one(srcp, portp, mp) != 0)
 			break;
 	}
 
-	if (srcp != NULL) {
-		mutex_enter(&devp->tfp_mutex);
-		tfport_rele_source(devp, srcp);
-		mutex_exit(&devp->tfp_mutex);
-	}
+	mutex_enter(&devp->tfp_mutex);
+	tfport_rele_source(devp, srcp);
+	mutex_exit(&devp->tfp_mutex);
 
 	return (mp);
 }
-
 
 static void
 tfport_pkt_notify_cb(void *arg, mac_notify_type_t type)
@@ -364,34 +387,68 @@ tfport_pkt_notify_cb(void *arg, mac_notify_type_t type)
 	tfport_dlog(devp, "%s(%d)", __func__, type);
 }
 
-static void
-tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
-    boolean_t is_loopback)
+static int
+mac_sidecar_header_info(tfport_t *devp, mac_handle_t mh, mblk_t *mp,
+    tfport_header_info_t *thip)
 {
-	tfport_source_t *srcp = arg;
-	tfport_t *devp = srcp->tps_tfport;
-	tfport_port_t *portp;
-
-	struct ether_header *eth = NULL;
+	mac_header_info_t mhi;
 	schdr_t sc;
-	uint32_t port = 0;
-	size_t mblk_sz = msgsize(mp);
 
-	if (is_loopback || mblk_sz < ETHSZ)
-		goto done;
+	if (mac_header_info(mh, mp, &mhi) != 0) {
+		mutex_enter(&devp->tfp_mutex);
+		devp->tfp_stats.tfs_truncated_eth++;
+		mutex_exit(&devp->tfp_mutex);
+		return (-1);
+	}
 
-	/*
-	 * Look for a sidecar header to determine whether the packet should be
-	 * sent to an indexed port or the default port.
-	 */
-	eth = (struct ether_header *)mp->b_rptr;
-	if (ntohs(eth->ether_type) == ETHERTYPE_SIDECAR) {
-		if (mblk_sz < ETHSZ + SCSZ) {
-			goto done;
+	thip->thi_eth_type = mhi.mhi_origsap;
+	if (thip->thi_eth_type == ETHERTYPE_SIDECAR) {
+		size_t hdr_size = ETHSZ + SCSZ;
+		mblk_t *tmp = NULL;
+
+		if (MBLKL(mp) < hdr_size)  {
+			if ((tmp = msgpullup(mp, hdr_size)) == NULL) {
+				mutex_enter(&devp->tfp_mutex);
+				devp->tfp_stats.tfs_truncated_eth++;
+				mutex_exit(&devp->tfp_mutex);
+				return (-1);
+			}
+			mp = tmp;
 		}
 		bcopy(mp->b_rptr + ETHSZ, (void *) &sc, sizeof (sc));
-		if (sc.sc_code == SC_FORWARD_TO_USERSPACE)
-			port = ntohs(sc.sc_ingress);
+		thip->thi_sc_eth_type = ntohs(sc.sc_ethertype);
+		thip->thi_sc_code = sc.sc_code;
+		thip->thi_sc_port = ntohs(sc.sc_ingress);
+		freemsg(tmp);
+	}
+
+	return (0);
+}
+
+static void
+tfport_rx_one(tfport_source_t *srcp, mac_resource_handle_t mrh, mblk_t *mp)
+{
+	tfport_t *devp = srcp->tps_tfport;
+	tfport_port_t *portp = NULL;
+	tfport_header_info_t hdr_info;
+	uint32_t port = 0;
+
+	if (mac_sidecar_header_info(devp, srcp->tps_mh, mp, &hdr_info) != 0) {
+		mutex_enter(&devp->tfp_mutex);
+		devp->tfp_stats.tfs_truncated_eth++;
+		mutex_exit(&devp->tfp_mutex);
+		goto done;
+	}
+
+	if (hdr_info.thi_eth_type == ETHERTYPE_SIDECAR) {
+		if (hdr_info.thi_sc_code == SC_FORWARD_TO_USERSPACE)
+			port = hdr_info.thi_sc_port;
+
+	} else if ((tfport_port0 & TFPORT_PORT0_NONSIDECAR) == 0) {
+		mutex_enter(&devp->tfp_mutex);
+		devp->tfp_stats.tfs_non_sidecar++;
+		mutex_exit(&devp->tfp_mutex);
+		goto done;
 	}
 
 	if ((portp = tfport_find_port(devp, srcp, port)) == NULL)
@@ -400,33 +457,83 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
 	/*
 	 * If the packet is going to a port device, we strip out the sidecar
 	 * header.  This requires:
-	 *   - copying the ethertype from the sidecar header to the ethernet
-	 *     header
-	 *   - moving the body of the packet to replace the sidecar header
-	 *   - adjusting the size of the buffer to reflect the removed header
+	 *    - copying the ethertype from the sidecar header to the ethernet
+	 *	header
+	 *    - moving the body of the packet to replace the sidecar header
+	 *    - adjusting the size of the buffer to reflect the removed header
 	 */
 	if (portp->tp_port != 0) {
-		unsigned char *base = mp->b_rptr;
-		size_t eth_hdr_end = ETHSZ;
-		size_t sc_hdr_end = ETHSZ + SCSZ;
-		size_t body_sz = mblk_sz - sc_hdr_end;
+		struct ether_header *eth;
+		size_t blk_size, hdr_size, body_size;
 
-		eth->ether_type = sc.sc_ethertype;
-		bcopy(base + sc_hdr_end, base + eth_hdr_end, body_sz);
-		mp->b_wptr = base + (ETHSZ + body_sz);
+		/*
+		 * If we don't have both headers in the first mblk, we need to
+		 * do a pullup().
+		 */
+		blk_size = MBLKL(mp);
+		hdr_size = ETHSZ + SCSZ;
+		if (blk_size < hdr_size) {
+			struct ether_header;
+			mblk_t *tmp = NULL;
 
-		mutex_enter(&portp->tp_mutex);
-		portp->tp_stats.tfs_rx_pkts++;
-		portp->tp_stats.tfs_rx_bytes += mblk_sz;
-		mutex_exit(&portp->tp_mutex);
+			if ((tmp = msgpullup(mp, hdr_size)) == NULL) {
+				mutex_enter(&devp->tfp_mutex);
+				devp->tfp_stats.tfs_rx_nomem_drops++;
+				mutex_exit(&devp->tfp_mutex);
+				goto done;
+			}
+			freemsg(mp);
+			mp = tmp;
+			blk_size = MBLKL(mp);
+		}
+
+		eth = (struct ether_header *)mp->b_rptr;
+		eth->ether_type = htons(hdr_info.thi_sc_eth_type);
+
+		body_size = blk_size - hdr_size;
+		if (body_size > 0)
+			bcopy(mp->b_rptr + hdr_size, mp->b_rptr + ETHSZ,
+			    body_size);
+		mp->b_wptr = mp->b_rptr + (ETHSZ + body_size);
 	}
+
+	mutex_enter(&portp->tp_mutex);
+	portp->tp_stats.tfs_rx_pkts++;
+	portp->tp_stats.tfs_rx_bytes += msgsize(mp);
+	mutex_exit(&portp->tp_mutex);
 
 	mac_rx(portp->tp_mh, NULL, mp);
 	tfport_rele_port(devp, portp);
 	return;
 
 done:
-	freemsgchain(mp);
+	if (portp != NULL)
+		tfport_rele_port(devp, portp);
+
+	freemsg(mp);
+}
+
+static void
+tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp_chain, boolean_t lb)
+{
+	tfport_source_t *srcp = arg;
+	mblk_t *mp, *next;
+
+	if (lb) {
+		tfport_t *devp = srcp->tps_tfport;
+		mutex_enter(&devp->tfp_mutex);
+		devp->tfp_stats.tfs_mac_loopback++;
+		mutex_exit(&devp->tfp_mutex);
+		freemsgchain(mp_chain);
+		return;
+	}
+
+	for (mp = mp_chain; mp != NULL; mp = next) {
+		next = mp->b_next;
+		mp->b_next = NULL;
+
+		tfport_rx_one(srcp, mrh, mp);
+	}
 }
 
 static int
@@ -441,7 +548,8 @@ tfport_mac_init(tfport_t *devp, tfport_port_t *portp)
 	/* Register the new device with the mac(9e) framework */
 	mac->m_driver = portp;
 	mac->m_dip = devp->tfp_dip;
-	mac->m_instance = portp->tp_link_id;
+	/* let mac layer assign a unique instance */
+	mac->m_instance = -1;
 	mac->m_src_addr = portp->tp_mac_addr;
 	mac->m_callbacks = &tfport_m_callbacks;
 	mac->m_min_sdu = 0;
@@ -475,6 +583,7 @@ tfport_find_source(tfport_t *devp, datalink_id_t src_id)
 
 	return (srcp);
 }
+
 static tfport_source_t *
 tfport_hold_source(tfport_t *devp, datalink_id_t src_id)
 {
@@ -531,7 +640,8 @@ tfport_close_source(tfport_t *devp, datalink_id_t src_id)
 }
 
 static int
-tfport_open_source(tfport_t *devp, datalink_id_t src_id, tfport_source_t **srcpp)
+tfport_open_source(tfport_t *devp, datalink_id_t src_id,
+    tfport_source_t **srcpp)
 {
 	tfport_source_t *srcp;
 	const mac_info_t *minfop;
@@ -621,18 +731,12 @@ tfport_port_fini(tfport_t *devp, tfport_port_t *portp)
 
 	if ((err = mac_unregister(portp->tp_mh)) != 0) {
 		tfport_err(devp, "failed to unregister mac.  name: %s  err: %d",
-				name, err);
+		    name, err);
 	}
 
 	kmem_free(portp, sizeof (*portp));
 }
 
-struct foo {
-	struct avl_node *avl_child[2];	/* left/right children */
-	struct avl_node *avl_parent;	/* this node's parent */
-	unsigned short avl_child_index;	/* my index in parent's avl_child[] */
-	short avl_balance;		/* balance value: -1, 0, +1 */
-};
 /*
  * If the provided port doesn't exist in either the link-indexed or port-indexed
  * trees, insert into both and return 0.  If the port is in either tree, return
@@ -644,7 +748,8 @@ tfport_port_index(tfport_t *devp, tfport_port_t *portp)
 	avl_index_t port_where;
 	avl_index_t link_where;
 
-	tfport_dlog(devp, "indexing (%d, %d)", portp->tp_port, portp->tp_src_id);
+	tfport_dlog(devp, "indexing (%d, %d)", portp->tp_port,
+	    portp->tp_src_id);
 
 	ASSERT(MUTEX_HELD(&devp->tfp_mutex));
 
@@ -669,7 +774,8 @@ tfport_port_index(tfport_t *devp, tfport_port_t *portp)
 static void
 tfport_port_deindex(tfport_t *devp, tfport_port_t *portp)
 {
-	tfport_dlog(devp, "removing (%d, %d)", portp->tp_port, portp->tp_src_id);
+	tfport_dlog(devp, "removing (%d, %d)", portp->tp_port,
+	    portp->tp_src_id);
 
 	ASSERT(MUTEX_HELD(&devp->tfp_mutex));
 	ASSERT(avl_find(&devp->tfp_ports_by_port, portp, NULL) != NULL);
@@ -680,7 +786,8 @@ tfport_port_deindex(tfport_t *devp, tfport_port_t *portp)
 }
 
 static tfport_port_t *
-tfport_port_new(tfport_t *devp, tfport_source_t *srcp, tfport_ioc_create_t *carg)
+tfport_port_new(tfport_t *devp, tfport_source_t *srcp,
+    tfport_ioc_create_t *carg)
 {
 	tfport_port_t *portp;
 	uchar_t mac_buf[ETHERADDRL];
@@ -819,7 +926,8 @@ tfport_ioc_info(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 		iarg->tii_link_id = portp->tp_link_id;
 		iarg->tii_pkt_id = portp->tp_src_id;
 		iarg->tii_mac_len = portp->tp_mac_len;
-		if (iarg->tii_mac_len <= sizeof (iarg->tii_mac_addr)) {
+		if (iarg->tii_mac_len > 0 &&
+		    iarg->tii_mac_len <= sizeof (iarg->tii_mac_addr)) {
 			bcopy(portp->tp_mac_addr, iarg->tii_mac_addr,
 			    iarg->tii_mac_len);
 		}
@@ -842,8 +950,6 @@ static void
 tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
     mblk_t *mp)
 {
-	tfport_t *devp = tfport;
-	static uintptr_t cnt = 0;
 	tfport_ioc_l2_t *arg;
 	struct sockaddr *addr;
 	mblk_t *mp1;
@@ -869,35 +975,21 @@ tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
 		sin_t *sin = (sin_t *)&ip2m.ip2mac_pa;
 		sin->sin_family = AF_INET;
 		sin->sin_addr = ((sin_t *)addr)->sin_addr;
-
-		char buf1[INET6_ADDRSTRLEN];
-		tfport_dlog(devp, "ipv4 addr: %s",
-		    inet_ntop(AF_INET, &sin->sin_addr, buf1, sizeof (buf1)));
 	} else if (addr->sa_family == AF_INET6) {
 		sin6_t *sin6 = (sin6_t *)&ip2m.ip2mac_pa;
 		sin6->sin6_family = AF_INET6;
 		sin6->sin6_addr = ((sin6_t *)addr)->sin6_addr;
-
-		char buf1[INET6_ADDRSTRLEN];
-		tfport_dlog(devp, "ipv6 addr: %s on %d",
-		    inet_ntop(AF_INET6, &sin6->sin6_addr, buf1, sizeof (buf1)),
-		    ip2m.ip2mac_ifindex);
 	} else {
 		return (miocnak(q, mp, 0, EINVAL));
 	}
 
-	cnt++;
-	(void) ip2mac(IP2MAC_RESOLVE, &ip2m, tfport_ioc_l2_done,
-	    (void *)cnt, 0);
+	(void) ip2mac(IP2MAC_RESOLVE, &ip2m, tfport_ioc_l2_done, NULL, 0);
+
 	switch (ip2m.ip2mac_err) {
-	case EINPROGRESS:
-		tfport_dlog(devp, "searching for %ld", cnt);
-		return (miocack(q, mp, 0, 0));
 	case 0:
-		tfport_dlog(devp, "already loaded");
+	case EINPROGRESS:
 		return (miocack(q, mp, 0, 0));
 	default:
-		tfport_dlog(devp, "ip2mac failed: %d", ip2m.ip2mac_err);
 		return (miocnak(q, mp, 0, EIO));
 	}
 }
@@ -1014,7 +1106,7 @@ tfport_m_stop(void *arg)
 	tfport_t *devp = portp->tp_tfport;
 
 	mutex_enter(&portp->tp_mutex);
-	tfport_dlog(devp, "%s(port: %d  refcnt: %d)", __func__, 
+	tfport_dlog(devp, "%s(port: %d  refcnt: %d)", __func__,
 	    portp->tp_port, portp->tp_refcnt);
 
 	if (portp->tp_refcnt == 0)
@@ -1072,7 +1164,7 @@ tfport_dev_alloc(dev_info_t *dip)
 	tfport = kmem_zalloc(sizeof (*tfport), KM_SLEEP);
 	tfport->tfp_dip = dip;
 	mutex_init(&tfport->tfp_mutex, NULL, MUTEX_DRIVER, NULL);
-	list_create(&tfport->tfp_sources, sizeof(tfport_source_t),
+	list_create(&tfport->tfp_sources, sizeof (tfport_source_t),
 	    offsetof(tfport_source_t, tps_listnode));
 	avl_create(&tfport->tfp_ports_by_port, tfport_port_cmp,
 	    sizeof (tfport_port_t), offsetof(tfport_port_t, tp_port_node));
@@ -1113,7 +1205,8 @@ tfport_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		ASSERT(tfport_dip == NULL);
 
 		if ((err = tfport_dev_alloc(dip)) != 0) {
-			dev_err(dip, CE_WARN, "failed to allocate tfport: %d", err);
+			dev_err(dip, CE_WARN, "failed to allocate tfport: %d",
+			    err);
 			return (err);
 		}
 
