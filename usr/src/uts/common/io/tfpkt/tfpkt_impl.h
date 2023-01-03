@@ -32,12 +32,12 @@ extern "C" {
 #endif
 
 typedef struct tfpkt tfpkt_t;
-typedef struct tf_tbus tf_tbus_t;
+typedef struct tfpkt_tbus tfpkt_tbus_t;
 
 typedef enum tfpkt_runstate {
+	TFPKT_RUNSTATE_STOPPED,
 	TFPKT_RUNSTATE_RUNNING,
 	TFPKT_RUNSTATE_STOPPING,
-	TFPKT_RUNSTATE_STOPPED,
 } tfpkt_runstate_t;
 
 typedef enum tfpkt_tbus_state {
@@ -49,54 +49,33 @@ typedef enum tfpkt_tbus_state {
 } tfpkt_tbus_state_t;
 
 typedef struct tfpkt_stats {
-	uint64_t		tfs_rbytes;
-	uint64_t		tfs_obytes;
-	uint64_t		tfs_xmit_errors;
-	uint64_t		tfs_xmit_count;
-	uint64_t		tfs_recv_count;
-	uint64_t		tfs_recv_errors;
+	uint64_t tps_tx_pkts;
+	uint64_t tps_tx_bytes;
+	uint64_t tps_tx_errs;
+	uint64_t tps_tx_zombie;
+	uint64_t tps_tx_alloc_fails;
+	uint64_t tps_tx_tbus_fails;
+	uint64_t tps_tx_missing_schdr;
+	uint64_t tps_tx_truncated_eth;
+
+	uint64_t tps_rx_pkts;
+	uint64_t tps_rx_bytes;
+	uint64_t tps_rx_errs;
+	uint64_t tps_rx_zombie;
+	uint64_t tps_rx_alloc_fails;
+	uint64_t tps_rx_truncated_eth;
+
+	uint64_t tps_detach_fails;
+	uint64_t tps_tbus_inactive;
+	uint64_t tps_tbus_hold_fails;
 } tfpkt_stats_t;
 
-struct tfpkt {
-	kmutex_t		tfp_mutex;
-	dev_info_t		*tfp_dip;	// tfpkt device
-	int			tfp_instance;
-	uint32_t		tfp_mac_refcnt;
-	tfpkt_runstate_t	tfp_runstate;
-	tfpkt_stats_t		tfp_stats;
-	boolean_t		tfp_promisc;
-	mac_handle_t		tfp_mh;
+#define	TFPKT_NET_TX_BUFS	256
+#define	TFPKT_NET_RX_BUFS	256
+#define	TFPKT_BUF_SIZE		2048
 
-	kmutex_t		tfp_tbus_mutex;
-	kcondvar_t		tfp_tbus_cv;
-	uint32_t		tfp_tbus_refcnt;
-	tfpkt_tbus_state_t	tfp_tbus_state;
-	tf_tbus_t		*tfp_tbus_data;
-	taskq_ent_t		tfp_tbus_monitor;
-	taskq_t			*tfp_tbus_tq;
-};
-
-void tfpkt_reset_trigger(tfpkt_t *tfp);
-void tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz);
-
-typedef struct tf_tbus tf_tbus_t;
-struct tf_tbus_dev;
-
-typedef struct tf_tbus_stats {
-	uint64_t		rbytes;
-	uint64_t		obytes;
-	uint64_t		xmit_errors;
-	uint64_t		xmit_count;
-	uint64_t		recv_count;
-	uint64_t		recv_errors;
-} tf_tbus_stats_t;
-
-#define	TFPORT_NET_TX_BUFS	256
-#define	TFPORT_NET_RX_BUFS	256
-#define	TFPORT_BUF_SIZE		2048
-
-#define	TFPORT_BUF_DMA_ALLOCED	0x01
-#define	TFPORT_BUF_LOANED	0x02
+#define	TFPKT_BUF_DMA_ALLOCED	0x01
+#define	TFPKT_BUF_LOANED	0x02
 
 /* Descriptor ring management */
 
@@ -111,42 +90,40 @@ typedef struct tf_tbus_stats {
  */
 
 typedef enum {
-	TF_PKT_DR_TX,
-	TF_PKT_DR_CMP,
-	TF_PKT_DR_FM,
-	TF_PKT_DR_RX,
-} tf_tbus_dr_type_t;
+	TFPKT_DR_TX,
+	TFPKT_DR_CMP,
+	TFPKT_DR_FM,
+	TFPKT_DR_RX,
+} tfpkt_dr_type_t;
 
 /* Number of DRs of each type */
-#define	TF_PKT_CMP_CNT		4
-#define	TF_PKT_FM_CNT		8
-#define	TF_PKT_TX_CNT		4
-#define	TF_PKT_RX_CNT		8
+#define	TFPKT_CMP_CNT		4
+#define	TFPKT_FM_CNT		8
+#define	TFPKT_TX_CNT		4
+#define	TFPKT_RX_CNT		8
 
 /* Number of entries in each DR of each type */
-#define	TF_PKT_CMP_DEPTH	16
-#define	TF_PKT_FM_DEPTH		16
-#define	TF_PKT_TX_DEPTH		16
-#define	TF_PKT_RX_DEPTH		16
-
-#define	DR_NAME_LEN		32
+#define	TFPKT_CMP_DEPTH	16
+#define	TFPKT_FM_DEPTH		16
+#define	TFPKT_TX_DEPTH		16
+#define	TFPKT_RX_DEPTH		16
 
 typedef struct {
-	char		tfdrp_name[DR_NAME_LEN];
-	kmutex_t	tfdrp_mutex;
-	uint32_t	tfdrp_reg_base;		/* start of config registers */
-	tf_tbus_dr_type_t	tfdrp_type;	/* variety of descriptors */
-	int		tfdrp_id;		/* index into per-type list */
-	uint64_t	tfdrp_phys_base;	/* PA of the descriptor ring */
-	uint64_t	tfdrp_virt_base;	/* VA of the descriptor ring */
-	uint64_t	*tfdrp_tail_ptr;	/* VA of the tail ptr copy */
-	uint64_t	tfdrp_depth;		/* # of descriptors in ring */
-	uint64_t	tfdrp_desc_size;	/* size of each descriptor */
-	uint64_t	tfdrp_ring_size;	/* size of descriptor data */
-	uint64_t	tfdrp_head;		/* head offset */
-	uint64_t	tfdrp_tail;		/* tail offset */
-	tf_tbus_dma_t	tfdrp_dma;		/* descriptor data */
-} tf_tbus_dr_t;
+	char		tdr_name[32];
+	kmutex_t	tdr_mutex;
+	uint32_t	tdr_reg_base;		/* start of config registers */
+	tfpkt_dr_type_t	tdr_type;	/* variety of descriptors */
+	int		tdr_id;		/* index into per-type list */
+	uint64_t	tdr_phys_base;	/* PA of the descriptor ring */
+	uint64_t	tdr_virt_base;	/* VA of the descriptor ring */
+	uint64_t	*tdr_tail_ptr;	/* VA of the tail ptr copy */
+	uint64_t	tdr_depth;		/* # of descriptors in ring */
+	uint64_t	tdr_desc_size;	/* size of each descriptor */
+	uint64_t	tdr_ring_size;	/* size of descriptor data */
+	uint64_t	tdr_head;		/* head offset */
+	uint64_t	tdr_tail;		/* tail offset */
+	tf_tbus_dma_t	tdr_dma;		/* descriptor data */
+} tfpkt_dr_t;
 
 /* rx descriptor entry */
 typedef struct {
@@ -157,7 +134,7 @@ typedef struct {
 	uint64_t rx_attr: 25;
 	uint64_t rx_size: 32;
 	uint64_t rx_addr;
-} tf_tbus_dr_rx_t;
+} tfpkt_dr_rx_t;
 
 #define	TFPRT_RX_DESC_TYPE_LRT		0
 #define	TFPRT_RX_DESC_TYPE_IDLE		1
@@ -176,7 +153,7 @@ typedef struct {
 	uint64_t tx_src;
 	uint64_t tx_dst;
 	uint64_t tx_msg_id;
-} tf_tbus_dr_tx_t;
+} tfpkt_dr_tx_t;
 
 #define	TFPRT_TX_DESC_TYPE_IL		1
 #define	TFPRT_TX_DESC_TYPE_WR_BLK	3
@@ -195,7 +172,7 @@ typedef struct {
 	uint64_t cmp_attr: 25;
 	uint64_t cmp_size: 32;
 	uint64_t cmp_addr;
-} tf_tbus_dr_cmp_t;
+} tfpkt_dr_cmp_t;
 
 /*
  * Buffers are allocated in advance as a combination of DMA memory and
@@ -203,64 +180,83 @@ typedef struct {
  * to avoid copying, and this object contains the free routine to pass to
  * desballoc().
  */
-typedef struct tf_tbus_buf {
-	tf_tbus_t	*tfb_tbus;
+typedef struct tfpkt_buf {
+	tfpkt_tbus_t	*tfb_tbus;
 	int		tfb_flags;
 	tf_tbus_dma_t	tfb_dma;
 	list_node_t	tfb_link;
-} tf_tbus_buf_t;
+} tfpkt_buf_t;
 
 /*
  * State managed by the tofino tbus handler
  */
-struct tf_tbus {
-	kmutex_t		tbp_mutex;
-	tfpkt_t			*tbp_tfp;
-	dev_info_t		*tbp_dip;
-	ddi_softint_handle_t	tbp_softint;
-	tf_tbus_hdl_t		tbp_tbus_hdl;	/* tofino driver handle */
+struct tfpkt_tbus {
+	kmutex_t		ttb_mutex;
+	tfpkt_t			*ttb_tfp;
+	dev_info_t		*ttb_dip;
+	ddi_softint_handle_t	ttb_softint;
+	tf_tbus_hdl_t		ttb_tbus_hdl;	/* tofino driver handle */
 
-	tofino_gen_t		tbp_gen;
+	tofino_gen_t		ttb_gen;
 
 	/* DR management */
-	tf_tbus_dr_t	*tbp_rx_drs;	/* Rx DRs */
-	tf_tbus_dr_t	*tbp_tx_drs;	/* Tx DRs */
-	tf_tbus_dr_t	*tbp_fm_drs;	/* Free memory DRs */
-	tf_tbus_dr_t	*tbp_cmp_drs;	/* Tx completion DRs */
+	tfpkt_dr_t	*ttb_rx_drs;	/* Rx DRs */
+	tfpkt_dr_t	*ttb_tx_drs;	/* Tx DRs */
+	tfpkt_dr_t	*ttb_fm_drs;	/* Free memory DRs */
+	tfpkt_dr_t	*ttb_cmp_drs;	/* Tx completion DRs */
 
 	/* DMA buffer management */
-	list_t		tbp_rxbufs_free;	/* unused rx bufs */
-	list_t		tbp_rxbufs_pushed;	/* rx bufs in ASIC FM */
-	list_t		tbp_rxbufs_loaned;	/* rx bufs loaned to pkt drv */
-	list_t		tbp_txbufs_free;	/* unused tx bufs */
-	list_t		tbp_txbufs_pushed;	/* tx bufs on TX DR */
-	list_t		tbp_txbufs_loaned;	/* tx bufs loaned to pkt drv */
-	uint_t		tbp_ntxbufs_onloan;	/* # of tx bufs on loan */
-	uint_t		tbp_nrxbufs_onloan;	/* # of rx bufs on loan */
-	uint_t		tbp_nrxbufs_onloan_max;	/* max bufs we can loan out */
-	uint_t		tbp_bufs_capacity;	/* total rx+tx bufs */
-	tf_tbus_buf_t	*tbp_bufs_mem;		/* all rx+tx bufs */
+	list_t		ttb_rxbufs_free;	/* unused rx bufs */
+	list_t		ttb_rxbufs_pushed;	/* rx bufs in ASIC FM */
+	list_t		ttb_rxbufs_loaned;	/* rx bufs loaned to pkt drv */
+	list_t		ttb_txbufs_free;	/* unused tx bufs */
+	list_t		ttb_txbufs_pushed;	/* tx bufs on TX DR */
+	list_t		ttb_txbufs_loaned;	/* tx bufs loaned to tfport v */
+
+	uint_t		ttb_ntxbufs_onloan;	/* # of tx bufs on loan */
+	uint_t		ttb_nrxbufs_onloan;	/* # of rx bufs on loan */
+	uint_t		ttb_nrxbufs_onloan_max;	/* max bufs we can loan out */
+	uint_t		ttb_bufs_capacity;	/* total rx+tx bufs */
+	tfpkt_buf_t	*ttb_bufs_mem;		/* all rx+tx bufs */
 
 	/* Internal debugging statistics: */
-	uint64_t	tbp_rxfail_excess_loans;
-	// uint64_t	tbp_rxfail_dma_handle;
-	// uint64_t	tbp_rxfail_dma_buffer;
-	// uint64_t	tbp_rxfail_dma_bind;
-	uint64_t	tbp_rxfail_no_descriptors;
-	uint64_t	tbp_txfail_no_bufs;
-	uint64_t	tbp_txfail_no_descriptors;
-	// uint64_t	tbp_txfail_dma_handle;
-	// uint64_t	tbp_txfail_dma_bind;
-	// uint64_t	tbp_txfail_indirect_limit;
+	uint64_t	ttb_rxfail_excess_loans;
+	uint64_t	ttb_rxfail_no_descriptors;
+	uint64_t	ttb_txfail_pkt_too_large;
+	uint64_t	ttb_txfail_no_bufs;
+	uint64_t	ttb_txfail_no_descriptors;
+	uint64_t	ttb_txfail_other;
 };
 
+struct tfpkt {
+	kmutex_t		tfp_mutex;
+	dev_info_t		*tfp_dip;	// tfpkt device
+	int			tfp_instance;
+	uint32_t		tfp_mac_refcnt;
+	tfpkt_runstate_t	tfp_runstate;
+	tfpkt_stats_t		tfp_stats;
+	mac_handle_t		tfp_mh;
 
-void tofino_tbus_rx_done(tf_tbus_t *, void *, size_t);
-void *tofino_tbus_tx_alloc(tf_tbus_t *, size_t sz);
-void tofino_tbus_tx_free(tf_tbus_t *, void *addr);
-int tofino_tbus_tx(tf_tbus_t *, void *, size_t sz);
-tf_tbus_t *tfpkt_tbus_hold(tfpkt_t *tfp);
+	kmutex_t		tfp_tbus_mutex;
+	kcondvar_t		tfp_tbus_cv;
+	uint32_t		tfp_tbus_refcnt;
+	tfpkt_tbus_state_t	tfp_tbus_state;
+	tfpkt_tbus_t		*tfp_tbus_data;
+
+	taskq_ent_t		tfp_tbus_monitor;
+	taskq_t			*tfp_tbus_tq;
+};
+
+void *tfpkt_tbus_tx_alloc(tfpkt_tbus_t *, size_t sz);
+void tfpkt_tbus_tx_free(tfpkt_tbus_t *, void *addr);
+int tfpkt_tbus_tx(tfpkt_tbus_t *, void *, size_t sz);
+void tfpkt_tbus_rx_done(tfpkt_tbus_t *, void *, size_t);
+
+tfpkt_tbus_t *tfpkt_tbus_hold(tfpkt_t *tfp);
 void tfpkt_tbus_release(tfpkt_t *tfp);
+void tfpkt_reset_trigger(tfpkt_t *tfp);
+void tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz);
+
 void tfpkt_tbus_reset_detected(tfpkt_t *tfp);
 void tfpkt_tbus_monitor(void *);
 int tfpkt_tbus_monitor_halt(tfpkt_t *);
