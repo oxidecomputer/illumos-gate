@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _SYS_TOFINO_IMPL_H
@@ -19,6 +19,10 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+#define	TOFINO_DRIVER_MAJOR	1
+#define	TOFINO_DRIVER_MINOR	0
+#define	TOFINO_DRIVER_PATCH	0
 
 #define	TOFINO_DEVID_TF1_A0	0x0001
 #define	TOFINO_DEVID_TF1_B0	0x0010
@@ -106,8 +110,8 @@ typedef struct tofino_open {
 
 void tofino_dlog(tofino_t *tf, const char *fmt, ...);
 void tofino_err(tofino_t *tf, const char *fmt, ...);
-uint32_t tf_read_reg(dev_info_t *dip, size_t offset);
-void tf_write_reg(dev_info_t *dip, size_t offset, uint32_t val);
+uint32_t tofino_read_reg(dev_info_t *dip, size_t offset);
+void tofino_write_reg(dev_info_t *dip, size_t offset, uint32_t val);
 int tofino_tbus_state_update(tofino_t *tf, tofino_tbus_state_t new_state);
 
 #ifdef	__cplusplus

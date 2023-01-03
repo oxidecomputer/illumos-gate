@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -132,35 +132,35 @@ tofino_tbus_intr_set(tofino_t *tf, bool enable)
 		uint32_t bit_fld = (1u << intr_bit);
 
 		uint32_t shadow_msk_reg = shadow_msk_base + (4 * intr_reg);
-		uint32_t old = tf_read_reg(tf->tf_dip, shadow_msk_reg);
+		uint32_t old = tofino_read_reg(tf->tf_dip, shadow_msk_reg);
 
 		uint32_t mask = old & ~bit_fld;
-		tf_write_reg(tf->tf_dip, shadow_msk_reg, mask);
+		tofino_write_reg(tf->tf_dip, shadow_msk_reg, mask);
 	}
 
 	if (tf->tf_gen == TOFINO_G_TF1) {
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN0_1, en0);
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN1_1, en1);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN0_1, en0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN1_1, en1);
 	} else {
 		ASSERT(tf->tf_gen == TOFINO_G_TF2);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN0_1, en0);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN1_1, en1);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN0_1, en0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN1_1, en1);
 	}
 
 	/*
 	 * Unconditionally disable the interrupts we're not looking for
 	 */
 	if (tf->tf_gen == TOFINO_G_TF1) {
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN2_1, 0);
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN0_0, 0);
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN1_0, 0);
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN2_0, 0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN2_1, 0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN0_0, 0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN1_0, 0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN2_0, 0);
 	} else {
 		ASSERT(tf->tf_gen == TOFINO_G_TF2);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN2_1, 0);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN0_0, 0);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN1_0, 0);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN2_0, 0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN2_1, 0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN0_0, 0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN1_0, 0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN2_0, 0);
 	}
 	tofino_dlog(tf, "%s interrupts", enable ? "enabled" : "disabled");
 }
@@ -291,10 +291,10 @@ tofino_tbus_reg_op(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t *val,
 			rval = EAGAIN;
 		} else if (rd) {
 			rval = 0;
-			*val = tf_read_reg(tf->tf_dip, offset);
+			*val = tofino_read_reg(tf->tf_dip, offset);
 		} else {
 			rval = 0;
-			tf_write_reg(tf->tf_dip, offset, *val);
+			tofino_write_reg(tf->tf_dip, offset, *val);
 		}
 
 		mutex_exit(&tf->tf_mutex);
@@ -316,7 +316,7 @@ tofino_tbus_write_reg(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t val)
 }
 
 const char *
-state_name(tofino_tbus_state_t s)
+tofino_state_name(tofino_tbus_state_t s)
 {
 	switch (s) {
 		case TF_TBUS_UNINITIALIZED: return ("Uninitialized");
@@ -335,7 +335,8 @@ tofino_tbus_state_update(tofino_t *tf, tofino_tbus_state_t new_state)
 		return (EINVAL);
 
 	tofino_dlog(tf, "updating tbus state %s -> %s",
-	    state_name(tf->tf_tbus_state), state_name(new_state));
+	    tofino_state_name(tf->tf_tbus_state),
+	    tofino_state_name(new_state));
 	tf->tf_tbus_state = new_state;
 
 	return (0);

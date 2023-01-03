@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -113,7 +113,7 @@ tofino_err(tofino_t *tf, const char *fmt, ...)
  * provided in bytes.
  */
 uint32_t
-tf_read_reg(dev_info_t *dip, size_t offset)
+tofino_read_reg(dev_info_t *dip, size_t offset)
 {
 	tofino_t *tf = ddi_get_driver_private(dip);
 	ddi_acc_handle_t hdl = tf->tf_regs_hdls[0];
@@ -131,7 +131,7 @@ tf_read_reg(dev_info_t *dip, size_t offset)
  * provided in bytes.
  */
 void
-tf_write_reg(dev_info_t *dip, size_t offset, uint32_t val)
+tofino_write_reg(dev_info_t *dip, size_t offset, uint32_t val)
 {
 	tofino_t *tf = ddi_get_driver_private(dip);
 	ddi_acc_handle_t hdl = tf->tf_regs_hdls[0];
@@ -461,6 +461,12 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
     int *rvalp)
 {
 	const uint32_t imode = BF_INTR_MODE_MSI;
+	const tofino_version_t tf_version = {
+		.tofino_major = TOFINO_DRIVER_MAJOR,
+		.tofino_minor = TOFINO_DRIVER_MINOR,
+		.tofino_patch = TOFINO_DRIVER_PATCH,
+	};
+
 	int minor = getminor(dev);
 	int resetting;
 	tofino_open_t *top;
@@ -506,9 +512,15 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		return (0);
 
 	case BF_GET_PCI_DEVID:
+		if (ddi_copyout(&tf_version, (void *)arg,
+		    sizeof (tf_version), mode))
+			return (EFAULT);
+		return (0);
+
+	case BF_GET_VERSION:
 		tf = ddi_get_driver_private(tofino_dip);
-		if (ddi_copyout(&tf->tf_devid, (void *)arg,
-		    sizeof (tf->tf_devid), mode))
+		if (ddi_copyout(&tf_version, (void *)arg, sizeof (tf_version),
+		    mode))
 			return (EFAULT);
 		return (0);
 	}
@@ -615,19 +627,19 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	 * iterating over the status registers.
 	 */
 	if (tf->tf_gen == TOFINO_G_TF1) {
-		s0 = tf_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0);
-		s1 = tf_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1);
-		s2 = tf_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2);
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, s0);
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1, s1);
-		tf_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2, s2);
+		s0 = tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0);
+		s1 = tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1);
+		s2 = tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, s0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1, s1);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2, s2);
 	} else {
-		s0 = tf_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0);
-		s1 = tf_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1);
-		s2 = tf_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0, s0);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1, s1);
-		tf_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, s2);
+		s0 = tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0);
+		s1 = tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1);
+		s2 = tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0, s0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1, s1);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, s2);
 	}
 
 	atomic_inc_32(&tf->tf_intr_cnt[intr_no]);

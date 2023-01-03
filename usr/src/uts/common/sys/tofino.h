@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_SYS_TOFINO_H
@@ -57,6 +57,7 @@ typedef struct schdr {
 #define	BF_GET_INTR_MODE	TOF_IOC(0x0004)
 #define	BF_PKT_INIT		TOF_IOC(0x1000)
 #define	BF_GET_PCI_DEVID	TOF_IOC(0x1001)
+#define	BF_GET_VERSION		TOF_IOC(0x1002)
 
 #define	BF_INTR_MODE_NONE	0
 #define	BF_INTR_MODE_LEGACY	1
@@ -72,6 +73,15 @@ typedef struct {
 	uintptr_t dma_addr;
 	size_t size;
 } bf_dma_bus_map_t;
+
+/*
+ * Used to communicate the tofino driver version number to the userspace daemon.
+ */
+typedef struct {
+	uint32_t tofino_major;
+	uint32_t tofino_minor;
+	uint32_t tofino_patch;
+} tofino_version_t;
 
 #ifdef _KERNEL
 /*
