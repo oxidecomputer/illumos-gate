@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_SYS_TFPKT_IMPL_H
@@ -70,23 +70,16 @@ typedef struct tfpkt_stats {
 	uint64_t tps_tbus_hold_fails;
 } tfpkt_stats_t;
 
-#define	TFPKT_NET_TX_BUFS	256
-#define	TFPKT_NET_RX_BUFS	256
-#define	TFPKT_BUF_SIZE		2048
-
-#define	TFPKT_BUF_DMA_ALLOCED	0x01
-#define	TFPKT_BUF_LOANED	0x02
-
 /* Descriptor ring management */
 
 /*
  * There are four types of Descriptor Ring involved with processing packets on
  * the PCI port:
- *   Rx: packets transferred from the ASIC across the PCI bus
- *   Fm: free memory handed to the ASIC into which packets can be received
  *   Tx: packets to be transferred across the PCI bus to the ASIC
  *   Cmp: completion notifications from the ASIC that a Tx packet has been
  *        processed
+ *   Fm: free memory handed to the ASIC into which packets can be received
+ *   Rx: packets transferred from the ASIC across the PCI bus
  */
 
 typedef enum {
@@ -174,11 +167,17 @@ typedef struct {
 	uint64_t cmp_addr;
 } tfpkt_dr_cmp_t;
 
+#define	TFPKT_NET_TX_BUFS	256
+#define	TFPKT_NET_RX_BUFS	256
+#define	TFPKT_BUF_SIZE		2048
+
+#define	TFPKT_BUF_DMA_ALLOCED	0x01
+#define	TFPKT_BUF_PUSHED	0x02
+#define	TFPKT_BUF_INUSE		0x04
+
 /*
- * Buffers are allocated in advance as a combination of DMA memory and
- * a descriptor chain.  Buffers can be loaned to the networking stack
- * to avoid copying, and this object contains the free routine to pass to
- * desballoc().
+ * Buffers are allocated in advance with memory capable of DMA to/from
+ * the Tofino ASIC.
  */
 typedef struct tfpkt_buf {
 	tfpkt_tbus_t	*tfb_tbus;
@@ -208,19 +207,15 @@ struct tfpkt_tbus {
 	/* DMA buffer management */
 	list_t		ttb_rxbufs_free;	/* unused rx bufs */
 	list_t		ttb_rxbufs_pushed;	/* rx bufs in ASIC FM */
-	list_t		ttb_rxbufs_loaned;	/* rx bufs loaned to pkt drv */
+	list_t		ttb_rxbufs_inuse;	/* rx bufs in use */
 	list_t		ttb_txbufs_free;	/* unused tx bufs */
 	list_t		ttb_txbufs_pushed;	/* tx bufs on TX DR */
-	list_t		ttb_txbufs_loaned;	/* tx bufs loaned to tfport v */
+	list_t		ttb_txbufs_inuse;	/* tx bufs inuse */
 
-	uint_t		ttb_ntxbufs_onloan;	/* # of tx bufs on loan */
-	uint_t		ttb_nrxbufs_onloan;	/* # of rx bufs on loan */
-	uint_t		ttb_nrxbufs_onloan_max;	/* max bufs we can loan out */
 	uint_t		ttb_bufs_capacity;	/* total rx+tx bufs */
 	tfpkt_buf_t	*ttb_bufs_mem;		/* all rx+tx bufs */
 
 	/* Internal debugging statistics: */
-	uint64_t	ttb_rxfail_excess_loans;
 	uint64_t	ttb_rxfail_no_descriptors;
 	uint64_t	ttb_txfail_pkt_too_large;
 	uint64_t	ttb_txfail_no_bufs;

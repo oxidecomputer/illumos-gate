@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -114,8 +114,6 @@ tfpkt_tbus_dma_free(tf_tbus_dma_t *dmap)
 static void
 tfpkt_tbus_free_buf(tfpkt_buf_t *buf)
 {
-	VERIFY3U((buf->tfb_flags & TFPKT_BUF_LOANED), ==, 0);
-
 	if (buf->tfb_flags & TFPKT_BUF_DMA_ALLOCED) {
 		tfpkt_tbus_dma_free(&buf->tfb_dma);
 		buf->tfb_flags &= ~TFPKT_BUF_DMA_ALLOCED;
@@ -150,6 +148,8 @@ tfpkt_tbus_free_bufs(tfpkt_tbus_t *tbp)
 	if (tbp->ttb_bufs_mem == NULL)
 		return;
 
+	VERIFY3U(list_head(&tbp->ttb_rxbufs_inuse), ==, NULL);
+	VERIFY3U(list_head(&tbp->ttb_txbufs_inuse), ==, NULL);
 	freed = tfpkt_tbus_free_buf_list(&tbp->ttb_rxbufs_free);
 	freed += tfpkt_tbus_free_buf_list(&tbp->ttb_rxbufs_pushed);
 	freed += tfpkt_tbus_free_buf_list(&tbp->ttb_txbufs_free);
@@ -166,7 +166,7 @@ tfpkt_tbus_free_bufs(tfpkt_tbus_t *tbp)
 }
 
 static void
-tfpkt_tbus_buf_list_init(list_t *list)
+tfpkt_buf_list_init(list_t *list)
 {
 	list_create(list, sizeof (tfpkt_buf_t),
 	    offsetof(tfpkt_buf_t, tfb_link));
@@ -187,18 +187,12 @@ tfpkt_tbus_alloc_bufs(tfpkt_tbus_t *tbp)
 	tbp->ttb_bufs_capacity = TFPKT_NET_RX_BUFS + TFPKT_NET_TX_BUFS;
 	tbp->ttb_bufs_mem = kmem_zalloc(
 	    sizeof (tfpkt_buf_t) * tbp->ttb_bufs_capacity, KM_SLEEP);
-	tfpkt_tbus_buf_list_init(&tbp->ttb_rxbufs_free);
-	tfpkt_tbus_buf_list_init(&tbp->ttb_rxbufs_pushed);
-	tfpkt_tbus_buf_list_init(&tbp->ttb_rxbufs_loaned);
-	tfpkt_tbus_buf_list_init(&tbp->ttb_txbufs_free);
-	tfpkt_tbus_buf_list_init(&tbp->ttb_txbufs_pushed);
-	tfpkt_tbus_buf_list_init(&tbp->ttb_txbufs_loaned);
-
-	/*
-	 * Do not loan more than half of our allocated receive buffers into
-	 * the networking stack.
-	 */
-	tbp->ttb_nrxbufs_onloan_max = TFPKT_NET_RX_BUFS / 2;
+	tfpkt_buf_list_init(&tbp->ttb_rxbufs_free);
+	tfpkt_buf_list_init(&tbp->ttb_rxbufs_pushed);
+	tfpkt_buf_list_init(&tbp->ttb_rxbufs_inuse);
+	tfpkt_buf_list_init(&tbp->ttb_txbufs_free);
+	tfpkt_buf_list_init(&tbp->ttb_txbufs_pushed);
+	tfpkt_buf_list_init(&tbp->ttb_txbufs_inuse);
 
 	for (uint_t i = 0; i < tbp->ttb_bufs_capacity; i++) {
 		tfpkt_buf_t *buf = &tbp->ttb_bufs_mem[i];
@@ -460,7 +454,7 @@ fail:
  * Given a virtual address, search for the tfpkt_buf_t that contains it.
  */
 static tfpkt_buf_t *
-tfpkt_tbus_buf_by_va(list_t *list, caddr_t va)
+tfpkt_buf_by_va(list_t *list, caddr_t va)
 {
 	tfpkt_buf_t *buf;
 
@@ -477,7 +471,7 @@ tfpkt_tbus_buf_by_va(list_t *list, caddr_t va)
  * Given a physical address, search for the tfpkt_buf_t that contains it.
  */
 static tfpkt_buf_t *
-tfpkt_tbus_buf_by_pa(list_t *list, uint64_t pa)
+tfpkt_buf_by_pa(list_t *list, uint64_t pa)
 {
 	tfpkt_buf_t *buf;
 
@@ -488,68 +482,6 @@ tfpkt_tbus_buf_by_pa(list_t *list, uint64_t pa)
 		}
 	}
 	return (NULL);
-}
-
-static tfpkt_buf_t *
-tfpkt_tbus_loaned_buf_by_va(tfpkt_tbus_t *tbp, list_t *list, caddr_t va)
-{
-	tfpkt_buf_t *buf = tfpkt_tbus_buf_by_va(list, va);
-
-	if (buf == NULL) {
-		tfpkt_tbus_err(tbp, "unrecognized loaned buf: %p", va);
-	} else if ((buf->tfb_flags & TFPKT_BUF_LOANED) == 0) {
-		tfpkt_tbus_err(tbp, "buf not marked as loaned: %p", va);
-	}
-	return (buf);
-}
-
-/*
- * Mark a tx buffer for loaning to a client, and do the necessary accounting.
- */
-static void
-tfpkt_tbus_tx_loan(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf)
-{
-	ASSERT(mutex_owned(&tbp->ttb_mutex));
-	buf->tfb_flags |= TFPKT_BUF_LOANED;
-	tbp->ttb_ntxbufs_onloan++;
-	list_insert_tail(&tbp->ttb_txbufs_loaned, buf);
-}
-
-/*
- * Process the return of a tx buffer from a client.
- */
-static void
-tfpkt_tbus_tx_return(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf)
-{
-	ASSERT(mutex_owned(&tbp->ttb_mutex));
-	buf->tfb_flags &= ~TFPKT_BUF_LOANED;
-	ASSERT(tbp->ttb_ntxbufs_onloan > 0);
-	tbp->ttb_ntxbufs_onloan--;
-}
-
-/*
- * Mark an rx buffer for loaning to the mac framework, and do the necessary
- * accounting.
- */
-static void
-tfpkt_tbus_rx_loan(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf)
-{
-	ASSERT(mutex_owned(&tbp->ttb_mutex));
-	buf->tfb_flags |= TFPKT_BUF_LOANED;
-	tbp->ttb_nrxbufs_onloan++;
-	list_insert_tail(&tbp->ttb_rxbufs_loaned, buf);
-}
-
-/*
- * Process the return of an rx buffer from the mac framework.
- */
-static void
-tfpkt_tbus_rx_return(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf)
-{
-	ASSERT(mutex_owned(&tbp->ttb_mutex));
-	buf->tfb_flags &= ~TFPKT_BUF_LOANED;
-	ASSERT(tbp->ttb_nrxbufs_onloan > 0);
-	tbp->ttb_nrxbufs_onloan--;
 }
 
 /*
@@ -572,7 +504,8 @@ tfpkt_tbus_tx_alloc(tfpkt_tbus_t *tbp, size_t sz)
 		tbp->ttb_txfail_no_bufs++;
 	} else {
 		va = buf->tfb_dma.tpd_addr;
-		tfpkt_tbus_tx_loan(tbp, buf);
+		buf->tfb_flags |= TFPKT_BUF_INUSE;
+		list_insert_tail(&tbp->ttb_txbufs_inuse, buf);
 	}
 
 	mutex_exit(&tbp->ttb_mutex);
@@ -589,9 +522,10 @@ tfpkt_tbus_tx_free(tfpkt_tbus_t *tbp, void *addr)
 	tfpkt_buf_t *buf;
 
 	mutex_enter(&tbp->ttb_mutex);
-	buf = tfpkt_tbus_loaned_buf_by_va(tbp, &tbp->ttb_txbufs_loaned, addr);
+	buf = tfpkt_buf_by_va(&tbp->ttb_txbufs_inuse, addr);
 	if (buf != NULL) {
-		tfpkt_tbus_tx_return(tbp, buf);
+		ASSERT(buf->tfb_flags & TFPKT_BUF_INUSE);
+		buf->tfb_flags &= ~TFPKT_BUF_INUSE;
 		list_insert_tail(&tbp->ttb_txbufs_free, buf);
 	} else {
 		tfpkt_tbus_dlog(tbp, "freeing unknown buf %p", addr);
@@ -623,7 +557,7 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 		return (EINVAL);
 
 	mutex_enter(&tbp->ttb_mutex);
-	buf = tfpkt_tbus_loaned_buf_by_va(tbp, &tbp->ttb_txbufs_loaned, addr);
+	buf = tfpkt_buf_by_va(&tbp->ttb_txbufs_inuse, addr);
 	if (buf == NULL)  {
 		tfpkt_tbus_dlog(tbp, "sending unknown buf %p", addr);
 		rval = EINVAL;
@@ -648,7 +582,9 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 	rval = tfpkt_dr_push(tbp, drp, (uint64_t *)&tx_dr);
 	mutex_enter(&tbp->ttb_mutex);
 	if (rval == 0) {
-		tfpkt_tbus_tx_return(tbp, buf);
+		ASSERT(buf->tfb_flags & TFPKT_BUF_INUSE);
+		buf->tfb_flags &= ~TFPKT_BUF_INUSE;
+		buf->tfb_flags |= TFPKT_BUF_PUSHED;
 		list_insert_tail(&tbp->ttb_txbufs_pushed, buf);
 	} else if (rval == ENOSPC) {
 		tbp->ttb_txfail_no_descriptors++;
@@ -661,8 +597,8 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 }
 
 /*
- * The packet driver has finished processing the received packet, so we are free
- * to reuse the buffer.
+ * We've finished processing the received packet, so we are free to reuse the
+ * buffer.
  */
 void
 tfpkt_tbus_rx_done(tfpkt_tbus_t *tbp, void *addr, size_t sz)
@@ -670,9 +606,10 @@ tfpkt_tbus_rx_done(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 	tfpkt_buf_t *buf;
 
 	mutex_enter(&tbp->ttb_mutex);
-	buf = tfpkt_tbus_loaned_buf_by_va(tbp, &tbp->ttb_rxbufs_loaned, addr);
+	buf = tfpkt_buf_by_va(&tbp->ttb_rxbufs_inuse, addr);
 	if (buf != NULL) {
-		tfpkt_tbus_rx_return(tbp, buf);
+		ASSERT(buf->tfb_flags & TFPKT_BUF_INUSE);
+		buf->tfb_flags &= ~TFPKT_BUF_INUSE;
 		list_insert_tail(&tbp->ttb_rxbufs_free, buf);
 	}
 	mutex_exit(&tbp->ttb_mutex);
@@ -682,46 +619,48 @@ static void
 tfpkt_tbus_process_rx(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, tfpkt_dr_rx_t *rx_dr)
 {
 	tfpkt_buf_t *buf;
-	int loan = 0;
+	boolean_t process;
 
 	mutex_enter(&tbp->ttb_mutex);
-	buf = tfpkt_tbus_buf_by_pa(&tbp->ttb_rxbufs_pushed, rx_dr->rx_addr);
+	buf = tfpkt_buf_by_pa(&tbp->ttb_rxbufs_pushed, rx_dr->rx_addr);
 	if (buf == NULL) {
-		tfpkt_tbus_dlog(tbp, "unrecognized rx buf: %lx", rx_dr->rx_addr);
-		mutex_exit(&tbp->ttb_mutex);
-		return;
-	}
+		tfpkt_tbus_dlog(tbp, "unrecognized rx buf: %lx",
+		    rx_dr->rx_addr);
+		process = false;
 
-	if (rx_dr->rx_type != TFPRT_RX_DESC_TYPE_PKT) {
-		/* should never happen. */
-		tfpkt_tbus_err(tbp, "non-pkt descriptor (%d) on %s",
-		    rx_dr->rx_type, drp->tdr_name);
-	} else if (tbp->ttb_nrxbufs_onloan < tbp->ttb_nrxbufs_onloan_max) {
-		tfpkt_tbus_rx_loan(tbp, buf);
-		loan = 1;
 	} else {
-		tbp->ttb_rxfail_excess_loans++;
-	}
-	if (!loan) {
-		list_insert_tail(&tbp->ttb_rxbufs_free, buf);
-	}
+		buf->tfb_flags &= ~TFPKT_BUF_PUSHED;
 
+		if (rx_dr->rx_type != TFPRT_RX_DESC_TYPE_PKT) {
+			/* should never happen. */
+			tfpkt_tbus_err(tbp, "non-pkt descriptor (%d) on %s",
+			    rx_dr->rx_type, drp->tdr_name);
+			list_insert_tail(&tbp->ttb_rxbufs_free, buf);
+			process = false;
+		} else {
+			buf->tfb_flags |= TFPKT_BUF_INUSE;
+			list_insert_tail(&tbp->ttb_rxbufs_inuse, buf);
+			process = true;
+		}
+	}
 	mutex_exit(&tbp->ttb_mutex);
 
-	if (loan)
+	if (process)
 		tfpkt_rx(tbp->ttb_tfp, buf->tfb_dma.tpd_addr, rx_dr->rx_size);
 }
 
 static void
-tfpkt_tbus_process_cmp(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, tfpkt_dr_cmp_t *cmp_dr)
+tfpkt_tbus_process_cmp(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp,
+    tfpkt_dr_cmp_t *cmp_dr)
 {
 	tfpkt_buf_t *buf;
 
 	mutex_enter(&tbp->ttb_mutex);
 
-	buf = tfpkt_tbus_buf_by_pa(&tbp->ttb_txbufs_pushed, cmp_dr->cmp_addr);
+	buf = tfpkt_buf_by_pa(&tbp->ttb_txbufs_pushed, cmp_dr->cmp_addr);
 	if (buf == NULL) {
-		tfpkt_tbus_dlog(tbp, "unrecognized tx buf: %lx", cmp_dr->cmp_addr);
+		tfpkt_tbus_dlog(tbp, "unrecognized tx buf: %lx",
+		    cmp_dr->cmp_addr);
 	} else if (cmp_dr->cmp_type != TFPRT_TX_DESC_TYPE_PKT) {
 		/* should never happen. */
 		tfpkt_tbus_err(tbp, "non-pkt descriptor (%d) on %s",
@@ -760,7 +699,8 @@ static int
 tfpkt_dr_write(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, size_t offset,
     uint32_t val)
 {
-	return (tfpkt_tbus_reg_op(tbp, drp->tdr_reg_base + offset, &val, false));
+	return (tfpkt_tbus_reg_op(tbp, drp->tdr_reg_base + offset, &val,
+	    false));
 }
 
 static int
@@ -842,7 +782,8 @@ tfpkt_tbus_init_dr(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp)
 			ctrl = TBUS_DR_CTRL_HEAD_PTR_MODE;
 			break;
 		case TFPKT_DR_RX:
-			(void) tfpkt_dr_write(tbp, drp, TBUS_DR_OFF_DATA_TIMEOUT, 1);
+			(void) tfpkt_dr_write(tbp, drp,
+			    TBUS_DR_OFF_DATA_TIMEOUT, 1);
 			/* fallthru */
 		case TFPKT_DR_CMP:
 			ctrl = TBUS_DR_CTRL_TAIL_PTR_MODE;
@@ -1011,7 +952,8 @@ tfpkt_dr_pull(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, uint64_t *desc)
 		uint64_t wrap = DR_PTR_GET_WRAP_BIT(drp->tdr_head) != 0;
 		int idx = offset / drp->tdr_desc_size;
 
-		tfpkt_tbus_dlog(tbp, "pulling from %s at %ld (wrap: %ld %d/%ld)",
+		tfpkt_tbus_dlog(tbp,
+		    "pulling from %s at %ld (wrap: %ld %d/%ld)",
 		    drp->tdr_name, drp->tdr_head, wrap, idx,
 		    drp->tdr_depth);
 	}
@@ -1076,7 +1018,8 @@ tfpkt_dr_push(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, uint64_t *desc)
  * Push a free DMA buffer onto a free_memory descriptor ring.
  */
 static int
-tfpkt_tbus_push_fm(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, uint64_t addr, uint64_t size)
+tfpkt_tbus_push_fm(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, uint64_t addr,
+    uint64_t size)
 {
 	uint64_t descriptor;
 	uint64_t bucket = 0;
@@ -1137,6 +1080,7 @@ tfpkt_tbus_push_free_bufs(tfpkt_tbus_t *tbp, int ring)
 			break;
 		}
 		list_remove(&tbp->ttb_rxbufs_free, buf);
+		buf->tfb_flags |= TFPKT_BUF_PUSHED;
 		list_insert_tail(&tbp->ttb_rxbufs_pushed, buf);
 		cnt++;
 	}
@@ -1148,7 +1092,7 @@ tfpkt_tbus_push_free_bufs(tfpkt_tbus_t *tbp, int ring)
 /*
  * Setup the tbus control register to enable the pci network port
  */
-static int 
+static int
 tfpkt_tbus_port_init(tfpkt_tbus_t *tbp, dev_info_t *tfp_dip)
 {
 	tf_tbus_hdl_t hdl = tbp->ttb_tbus_hdl;
@@ -1262,15 +1206,15 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 			oneshot_error(tbp, "tofino tbus in use");
 		} else if (err == ENXIO) {
 			/* The driver was loaded but not attached. */
-			 oneshot_error(tbp, "tofino driver offline");
+			oneshot_error(tbp, "tofino driver offline");
 		} else if (err == EAGAIN) {
 			/*
 			 * The userspace daemon hasn't yet initialized the
 			 * ASIC
 			 */
-			 oneshot_error(tbp, "tofino asic not ready");
+			oneshot_error(tbp, "tofino asic not ready");
 		} else {
-			 oneshot_error(tbp, "tofino_tbus_register failed");
+			oneshot_error(tbp, "tofino_tbus_register failed");
 		}
 		goto fail;
 	}
@@ -1279,11 +1223,11 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 	tbp->ttb_gen = tofino_get_generation(hdl);
 
 	if ((err = tfpkt_tbus_alloc_bufs(tbp)) != 0) {
-		 oneshot_error(tbp, "failed to allocate buffers");
+		oneshot_error(tbp, "failed to allocate buffers");
 	} else if ((err = tfpkt_tbus_alloc_drs(tbp)) != 0) {
-		 oneshot_error(tbp, "failed to allocate drs");
+		oneshot_error(tbp, "failed to allocate drs");
 	} else if ((err = tfpkt_tbus_init_drs(tbp)) != 0) {
-		 oneshot_error(tbp, "failed to init drs");
+		oneshot_error(tbp, "failed to init drs");
 	}
 	if (err != 0)
 		goto fail;
@@ -1392,7 +1336,7 @@ tfpkt_tbus_monitor(void *arg)
 
 	while (tfp->tfp_tbus_refcnt != 0) {
 		dev_err(dip, CE_NOTE, "waiting for %d tbus refs to drop",
-				tfp->tfp_tbus_refcnt);
+		    tfp->tfp_tbus_refcnt);
 		time = ddi_get_lbolt() + hz;
 		cv_timedwait(&tfp->tfp_tbus_cv, &tfp->tfp_tbus_mutex, time);
 	}
@@ -1438,6 +1382,5 @@ tfpkt_tbus_monitor_halt(tfpkt_t *tfp)
 
 	mutex_exit(&tfp->tfp_tbus_mutex);
 
-	return rval;
+	return (rval);
 }
-
