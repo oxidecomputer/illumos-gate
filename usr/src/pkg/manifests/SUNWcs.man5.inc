@@ -66,9 +66,9 @@ file path=usr/share/man/man5/logadm.conf.5
 file path=usr/share/man/man5/logindevperm.5
 file path=usr/share/man/man5/loginlog.5
 file path=usr/share/man/man5/magic.5
-file path=usr/share/man/man5/menu.lst.5
 link path=usr/share/man/man5/mdi_ib_cache.5 target=devices.5
 link path=usr/share/man/man5/mdi_scsi_vhci_cache.5 target=devices.5
+file path=usr/share/man/man5/menu.lst.5
 file path=usr/share/man/man5/mnttab.5
 file path=usr/share/man/man5/ndpd.conf.5
 file path=usr/share/man/man5/netconfig.5
@@ -103,6 +103,7 @@ file path=usr/share/man/man5/shadow.5
 file path=usr/share/man/man5/sharetab.5
 file path=usr/share/man/man5/shells.5
 link path=usr/share/man/man5/snapshot_cache.5 target=devices.5
+file path=usr/share/man/man5/style.5
 file path=usr/share/man/man5/sulog.5
 file path=usr/share/man/man5/syslog.conf.5
 file path=usr/share/man/man5/term.5
