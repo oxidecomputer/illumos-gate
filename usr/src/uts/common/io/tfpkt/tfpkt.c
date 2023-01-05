@@ -214,13 +214,11 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 		goto done;
 	}
 	rval = 0;
+	freemsg(mp_head);
 
 done:
 	if (tbp != NULL)
 		tfpkt_tbus_release(tfp);
-
-	if (mp_head != NULL)
-		freemsg(mp_head);
 
 	mutex_enter(&tfp->tfp_mutex);
 	if (errstat == NULL) {
@@ -491,8 +489,14 @@ tfpkt_cleanup(dev_info_t *dip)
 		tfpkt_dip = NULL;
 		tfp->tfp_dip = NULL;
 		ddi_set_driver_private(dip, NULL);
-		if (tfpkt->tfp_tbus_tq != NULL)
+		if (tfpkt->tfp_tbus_tq != NULL) {
+			/*
+			 * By the time we get here, the tbus monitor and dr
+			 * processing tasks should have been cleaned up.
+			 */
+			ASSERT(taskq_empty(tfpkt->tfp_tbus_tq));
 			taskq_destroy(tfpkt->tfp_tbus_tq);
+		}
 	}
 
 	ddi_remove_minor_node(dip, "tfpkt");
@@ -522,7 +526,11 @@ tfpkt_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto fail;
 	}
 
-	tfpkt->tfp_tbus_tq = taskq_create("tfpkt_tq", 1, minclsyspri, 1, 1,
+	/*
+	 * Create a taskq with 2 threads: one for monitoring the tbus state and
+	 * one for handling interrupts.
+	 */
+	tfpkt->tfp_tbus_tq = taskq_create("tfpkt_tq", 2, minclsyspri, 1, 1,
 	    TASKQ_PREPOPULATE);
 	if (tfpkt->tfp_tbus_tq == NULL) {
 		tfpkt_err(tfpkt, "failed to create taskq");
@@ -554,6 +562,8 @@ tfpkt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 		if (tfp->tfp_runstate != TFPKT_RUNSTATE_STOPPED) {
 			r = EBUSY;
+		} else if ((r = tfpkt_dr_process_halt(tfp) != 0)) {
+			dev_err(dip, CE_NOTE, "dr_process halt failed");
 		} else if ((r = tfpkt_tbus_monitor_halt(tfp) != 0)) {
 			dev_err(dip, CE_NOTE, "tbus_monitor halt failed");
 		} else if ((r = mac_unregister(tfp->tfp_mh)) != 0) {
@@ -597,6 +607,7 @@ tfpkt_dev_alloc()
 	tfp = kmem_zalloc(sizeof (*tfp), KM_SLEEP);
 	mutex_init(&tfp->tfp_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&tfp->tfp_tbus_mutex, NULL, MUTEX_DRIVER, NULL);
+	mutex_init(&tfp->tfp_dr_process_mutex, NULL, MUTEX_DRIVER, NULL);
 	cv_init(&tfp->tfp_tbus_cv,  NULL, CV_DEFAULT, NULL);
 	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
 
@@ -609,6 +620,7 @@ tfpkt_dev_free(tfpkt_t *tfp)
 	cv_destroy(&tfp->tfp_tbus_cv);
 	mutex_destroy(&tfp->tfp_tbus_mutex);
 	mutex_destroy(&tfp->tfp_mutex);
+	mutex_destroy(&tfp->tfp_dr_process_mutex);
 	kmem_free(tfp, sizeof (*tfp));
 }
 

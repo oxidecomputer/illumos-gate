@@ -193,7 +193,6 @@ struct tfpkt_tbus {
 	kmutex_t		ttb_mutex;
 	tfpkt_t			*ttb_tfp;
 	dev_info_t		*ttb_dip;
-	ddi_softint_handle_t	ttb_softint;
 	tf_tbus_hdl_t		ttb_tbus_hdl;	/* tofino driver handle */
 
 	tofino_gen_t		ttb_gen;
@@ -223,6 +222,13 @@ struct tfpkt_tbus {
 	uint64_t	ttb_txfail_other;
 };
 
+typedef enum {
+	TFPKT_DR_IDLE,
+	TFPKT_DR_DISPATCHED,
+	TFPKT_DR_STOPPING,
+	TFPKT_DR_STOPPED
+} tfpkt_dr_process_state_t;
+
 struct tfpkt {
 	kmutex_t		tfp_mutex;
 	dev_info_t		*tfp_dip;	// tfpkt device
@@ -232,14 +238,31 @@ struct tfpkt {
 	tfpkt_stats_t		tfp_stats;
 	mac_handle_t		tfp_mh;
 
+	/*
+	 * task queue for the threads used to monitor the tbus state and to
+	 * process incoming packets and tx completions.
+	 */
+	taskq_t			*tfp_tbus_tq;
+
+	/*
+	 * Tracks the state of the tofino tbus, ensuring that we don't release
+	 * it while in use, and that we don't use it while the userspace
+	 * dataplane daemon is resetting it.
+	 */
 	kmutex_t		tfp_tbus_mutex;
 	kcondvar_t		tfp_tbus_cv;
 	uint32_t		tfp_tbus_refcnt;
 	tfpkt_tbus_state_t	tfp_tbus_state;
 	tfpkt_tbus_t		*tfp_tbus_data;
-
 	taskq_ent_t		tfp_tbus_monitor;
-	taskq_t			*tfp_tbus_tq;
+
+	/*
+	 * Used to coordinate the lifecycle of the rx/cmp processing thread.
+	 */
+	kmutex_t			tfp_dr_process_mutex;
+	kcondvar_t			tfp_dr_process_cv;
+	tfpkt_dr_process_state_t	tfp_dr_process_state;
+	taskq_ent_t			tfp_dr_process;
 };
 
 void *tfpkt_tbus_tx_alloc(tfpkt_tbus_t *, size_t sz);
@@ -254,7 +277,8 @@ void tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz);
 
 void tfpkt_tbus_reset_detected(tfpkt_t *tfp);
 void tfpkt_tbus_monitor(void *);
-int tfpkt_tbus_monitor_halt(tfpkt_t *);
+int tfpkt_tbus_monitor_halt(tfpkt_t *tfp);
+int tfpkt_dr_process_halt(tfpkt_t *tfp);
 
 #ifdef	__cplusplus
 }
