@@ -61,6 +61,7 @@
 #include <sys/ksynch.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <sys/list.h>
 #include <sys/tofino.h>
 
 #include <sys/tofino.h>
@@ -78,7 +79,7 @@ const int tofino_max_instance = TOFINO_MAX_INSTANCE;
 dev_info_t		*tofino_dip = NULL;
 static void		*tofino_soft_state = NULL;
 static id_space_t	*tofino_minors = NULL;
-static int		tofino_debug = 0;
+int			tofino_debug = 0;
 
 /*
  * Utility function for debug logging
@@ -112,37 +113,35 @@ tofino_err(tofino_t *tf, const char *fmt, ...)
  * Read a single 32-bit register from the device's MMIO space.  The offset is
  * provided in bytes.
  */
-uint32_t
-tofino_read_reg(dev_info_t *dip, size_t offset)
+int
+tofino_read_reg(dev_info_t *dip, size_t offset, uint32_t *val)
 {
 	tofino_t *tf = ddi_get_driver_private(dip);
 	ddi_acc_handle_t hdl = tf->tf_regs_hdls[0];
 	caddr_t base = tf->tf_regs_bases[0];
 
-	if (offset > tf->tf_regs_lens[0]) {
-		dev_err(dip, CE_WARN, "regs offset %lx out of range", offset);
-		return ((uint32_t)-1);
-	}
-	return (ddi_get32(hdl, (uint32_t *)(base + offset)));
+	if (offset > tf->tf_regs_lens[0])
+		return (EINVAL);
+	*val = ddi_get32(hdl, (uint32_t *)(base + offset));
+	return (0);
 }
 
 /*
  * Write to a single 32-bit register in the device's MMIO space.  The offset is
  * provided in bytes.
  */
-void
+int
 tofino_write_reg(dev_info_t *dip, size_t offset, uint32_t val)
 {
 	tofino_t *tf = ddi_get_driver_private(dip);
 	ddi_acc_handle_t hdl = tf->tf_regs_hdls[0];
 	caddr_t base = tf->tf_regs_bases[0];
 
-	if (offset > tf->tf_regs_lens[0]) {
-		dev_err(dip, CE_WARN, "regs offset %lx out of range", offset);
-		return;
-	}
+	if (offset > tf->tf_regs_lens[0])
+		return (EINVAL);
 
 	ddi_put32(hdl, (uint32_t *)(base + offset), val);
+	return (0);
 }
 
 static int
@@ -153,6 +152,9 @@ tofino_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 	minor_t minor;
 	int instance = getminor(*devp);
 
+	/* XXX: add support for 32-bit opens */
+	if (get_udatamodel() != DATAMODEL_LP64)
+		return (ENOSYS);
 	if (otyp != OTYP_CHR)
 		return (EINVAL);
 	if (instance >= TOFINO_MAX_INSTANCE)
@@ -174,8 +176,10 @@ tofino_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 
 	*devp = makedevice(getmajor(*devp), minor);
 	top = ddi_get_soft_state(tofino_soft_state, minor);
-	mutex_init(&top->to_mutex, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&top->to_mutex, NULL, MUTEX_DRIVER, NULL);
 	top->to_device = tf;
+	list_create(&top->to_pages, sizeof (tofino_dma_page_t),
+	    offsetof(tofino_dma_page_t, td_list_node));
 
 	return (0);
 }
@@ -192,7 +196,7 @@ static ddi_dma_attr_t dma_attr = {
 	.dma_attr_seg =			0xFFFFFFFFFFFFFFFFull,
 	.dma_attr_sgllen =		1,
 	.dma_attr_granular =		1,
-	.dma_attr_flags =		DDI_DMA_FLAGERR,
+	.dma_attr_flags =		0,
 };
 
 static void
@@ -200,7 +204,7 @@ tofino_dma_page_teardown(tofino_dma_page_t *tdp)
 {
 	if (tdp->td_va != 0) {
 		if (ddi_dma_unbind_handle(tdp->td_dma_hdl) != 0) {
-			cmn_err(CE_WARN, "error unbinding dma hdl");
+			cmn_err(CE_WARN, "!error unbinding dma hdl");
 		}
 		ddi_dma_free_handle(&tdp->td_dma_hdl);
 		if (tdp->td_umem_cookie != NULL)
@@ -234,34 +238,32 @@ tofino_dma_page_setup(tofino_open_t *top, caddr_t va, size_t sz)
 	 */
 	const int lock_flags = DDI_UMEMLOCK_READ | DDI_UMEMLOCK_WRITE;
 	if (ddi_umem_lock(va, sz, lock_flags, &um_cookie) != 0) {
-		cmn_err(CE_WARN, "lock failed");
+		cmn_err(CE_WARN, "!lock failed");
 		return (NULL);
 	}
 #else
 	um_cookie = NULL;
 #endif
 
-	if ((err = ddi_dma_alloc_handle(tf->tf_dip, &dma_attr, DDI_DMA_DONTWAIT,
+	if ((err = ddi_dma_alloc_handle(tf->tf_dip, &dma_attr, DDI_DMA_SLEEP,
 	    NULL, &dma_hdl)) != 0) {
-		cmn_err(CE_WARN, "alloc_handle failed: %d", err);
+		cmn_err(CE_WARN, "!alloc_handle failed: %d", err);
 		goto fail1;
 	}
 
 	if ((err = ddi_dma_addr_bind_handle(dma_hdl, curproc->p_as,
 	    va, sz, dma_flags, DDI_DMA_DONTWAIT, NULL,
 	    &dma_cookie, &cnt)) != 0) {
-		cmn_err(CE_WARN, "bind_handle failed: %d", err);
+		cmn_err(CE_WARN, "!bind_handle failed: %d", err);
 		goto fail2;
 	}
 
-	tdp = kmem_alloc(sizeof (*tdp), KM_SLEEP);
+	tdp = kmem_zalloc(sizeof (*tdp), KM_SLEEP);
 	tdp->td_va = va;
 	tdp->td_refcnt = 0;
 	tdp->td_dma_addr = dma_cookie.dmac_laddress;
 	tdp->td_umem_cookie = um_cookie;
 	tdp->td_dma_hdl = dma_hdl;
-	tdp->td_dma_cookie = dma_cookie;
-	tdp->td_next = NULL;
 
 	return (tdp);
 
@@ -305,6 +307,23 @@ tofino_dma_copyin(intptr_t arg, int mode, bf_dma_bus_map_t *dbm)
 	return (0);
 }
 
+static tofino_dma_page_t *
+tofino_dma_page_find(tofino_open_t *top, caddr_t va)
+{
+	tofino_dma_page_t *tdp;
+
+	ASSERT(MUTEX_HELD(&top->to_mutex));
+
+	for (tdp = list_head(&top->to_pages);
+	    tdp != NULL;
+	    tdp = list_next(&top->to_pages, tdp)) {
+		if (tdp->td_va == va)
+			break;
+	}
+
+	return (tdp);
+}
+
 /*
  * Process a request from the userspace daemon to allocate a DMA-capable
  * physical page to back the given virtual address.
@@ -320,19 +339,14 @@ tofino_dma_setup(tofino_open_t *top, intptr_t arg, int mode)
 		return (error);
 
 	mutex_enter(&top->to_mutex);
-	for (tdp = top->to_pages; tdp != NULL; tdp = tdp->td_next) {
-		if (tdp->td_va == dbm.va)
-			break;
-	}
-
+	tdp = tofino_dma_page_find(top, dbm.va);
 	if (tdp == NULL) {
 		tdp = tofino_dma_page_setup(top, dbm.va, dbm.size);
 		if (tdp == NULL) {
 			mutex_exit(&top->to_mutex);
 			return (EFAULT);
 		}
-		tdp->td_next = top->to_pages;
-		top->to_pages = tdp;
+		list_insert_head(&top->to_pages, tdp);
 	}
 
 	tdp->td_refcnt++;
@@ -354,30 +368,19 @@ static int
 tofino_dma_teardown(tofino_open_t *top, intptr_t arg, int mode)
 {
 	bf_dma_bus_map_t dbm;
-	tofino_dma_page_t *tdp, *lastdp;
+	tofino_dma_page_t *tdp;
 	int error;
 
 	if ((error = tofino_dma_copyin(arg, mode, &dbm)) != 0)
 		return (error);
 
 	mutex_enter(&top->to_mutex);
-	lastdp = NULL;
-	for (tdp = top->to_pages; tdp != NULL; tdp = tdp->td_next) {
-		if (tdp->td_va == dbm.va)
-			break;
-		lastdp = tdp;
-	}
+	tdp = tofino_dma_page_find(top, dbm.va);
 
-	if (tdp != NULL) {
-		if (--tdp->td_refcnt == 0) {
-			if (lastdp == NULL) {
-				top->to_pages = tdp->td_next;
-			} else {
-				lastdp->td_next = tdp->td_next;
-			}
-			tofino_dma_page_teardown(tdp);
-			kmem_free(tdp, sizeof (*tdp));
-		}
+	if (tdp != NULL && --tdp->td_refcnt == 0) {
+		list_remove(&top->to_pages, tdp);
+		tofino_dma_page_teardown(tdp);
+		kmem_free(tdp, sizeof (*tdp));
 	}
 	mutex_exit(&top->to_mutex);
 
@@ -396,7 +399,7 @@ tofino_read(dev_t dev, struct uio *uio, cred_t *cr)
 	uint32_t fired[TOFINO_MAX_MSI_INTRS];
 	tofino_open_t *top;
 	tofino_t *tf;
-	int max, rc = 0;
+	uint32_t max;
 
 	if ((top = ddi_get_soft_state(tofino_soft_state, dev)) == NULL)
 		return (ENXIO);
@@ -404,7 +407,7 @@ tofino_read(dev_t dev, struct uio *uio, cred_t *cr)
 
 	max = MIN(TOFINO_MAX_MSI_INTRS, uio->uio_resid / sizeof (uint32_t));
 	mutex_enter(&top->to_mutex);
-	for (int i = 0; i < max; i++) {
+	for (uint32_t i = 0; i < max; i++) {
 		uint32_t cnt = tf->tf_intr_cnt[i];
 
 		if (cnt != top->to_intr_read[i]) {
@@ -415,11 +418,10 @@ tofino_read(dev_t dev, struct uio *uio, cred_t *cr)
 	}
 	mutex_exit(&top->to_mutex);
 
-	if (uiomove(fired, max * sizeof (uint32_t), UIO_READ, uio)) {
-		rc = EFAULT;
-	}
+	if (uiomove(fired, max * sizeof (uint32_t), UIO_READ, uio) != 0)
+		return (EFAULT);
 
-	return (rc);
+	return (0);
 }
 
 static int
@@ -585,20 +587,20 @@ tofino_close(dev_t dev, int flag, int otyp, cred_t *credp)
 {
 	minor_t minor = getminor(dev);
 	tofino_open_t *top;
-	tofino_dma_page_t *tdp, *nextdp;
-	int cnt = 0;
+	tofino_dma_page_t *tdp;
 
 	top = ddi_get_soft_state(tofino_soft_state, minor);
 	ASSERT(top != NULL);
 
-	for (tdp = top->to_pages; tdp != NULL; tdp = nextdp) {
-		nextdp = tdp->td_next;
+	while ((tdp = list_remove_tail(&top->to_pages)) != NULL) {
 		tofino_dma_page_teardown(tdp);
 		kmem_free(tdp, sizeof (*tdp));
-		cnt++;
 	}
 
 	id_free(tofino_minors, minor);
+	list_destroy(&top->to_pages);
+	mutex_destroy(&top->to_mutex);
+
 	ddi_soft_state_free(tofino_soft_state, minor);
 
 	return (0);
@@ -609,6 +611,7 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 {
 	tofino_t *tf = (tofino_t *)arg;
 	int intr_no = (int)(uintptr_t)arg2;
+	tofino_tbus_client_t *tbc;
 	uint32_t s0, s1, s2;
 
 	if (tf->tf_dip == NULL)
@@ -616,39 +619,56 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 
 	if (intr_no >= TOFINO_MAX_MSI_INTRS)
 		return (DDI_INTR_UNCLAIMED);
-
+	atomic_inc_32(&tf->tf_intr_cnt[intr_no]);
 	pollwakeup(&tf->tf_pollhead, POLLRDNORM);
+
+	mutex_enter(&tf->tf_mutex);
 
 	/*
 	 * We are only interested in the three status registers related to
-	 * packet transfer.  Copy them and clear them.
+	 * packet transfer.  The registers are RW1C (i.e., cleared in a bitwise
+	 * fashion), so by writing back the same value we read we clear just
+	 * those bits we've already seen.
+	 *
 	 * XXX: we should really let the softint reset the triggers, so we don't
 	 * end up catching a needless interrupt while the softint is still
 	 * iterating over the status registers.
 	 */
 	if (tf->tf_gen == TOFINO_G_TF1) {
-		s0 = tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0);
-		s1 = tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1);
-		s2 = tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2);
+		tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, &s0);
+		tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1, &s1);
+		tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2, &s2);
 		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, s0);
 		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1, s1);
 		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2, s2);
 	} else {
-		s0 = tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0);
-		s1 = tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1);
-		s2 = tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2);
+		tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0, &s0);
+		tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1, &s1);
+		tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, &s2);
 		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0, s0);
 		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1, s1);
 		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, s2);
 	}
 
-	atomic_inc_32(&tf->tf_intr_cnt[intr_no]);
-	if (tf->tf_tbus_client != NULL) {
-		ddi_softint_handle_t h = tf->tf_tbus_client->tbc_tbus_softint;
-		if (h != NULL) {
-			(void) ddi_intr_trigger_softint(h, NULL);
-		}
+	/*
+	 * If a tbus client has registered an interrupt handler, call it.
+	 * Setting tbc_intr_busy across the call ensures that we won't
+	 * invalidate the handler fields or have multiple calls into the handler
+	 * simultaneously.
+	 */
+	tbc = tf->tf_tbus_client;
+	if (tbc != NULL && tbc->tbc_intr != NULL && !tbc->tbc_intr_busy) {
+		tbc->tbc_intr_busy = true;
+
+		mutex_exit(&tf->tf_mutex);
+		tbc->tbc_intr(tbc->tbc_intr_arg);
+		mutex_enter(&tf->tf_mutex);
+
+		ASSERT(tf->tf_tbus_client == tbc);
+		ASSERT(tbc->tbc_intr_busy);
+		tbc->tbc_intr_busy = false;
 	}
+	mutex_exit(&tf->tf_mutex);
 
 	return (DDI_INTR_CLAIMED);
 }
@@ -656,26 +676,28 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 static int
 tofino_asic_identify(tofino_t *tf)
 {
-	uint16_t venid = pci_config_get16(tf->tf_cfgspace, PCI_CONF_VENID);
+	uint16_t vendid = pci_config_get16(tf->tf_cfgspace, PCI_CONF_VENID);
+	uint16_t devid = pci_config_get16(tf->tf_cfgspace, PCI_CONF_DEVID);
 
-	tf->tf_devid = pci_config_get16(tf->tf_cfgspace, PCI_CONF_DEVID);
-	switch (tf->tf_devid) {
-	case TOFINO_DEVID_TF1_A0:
-	case TOFINO_DEVID_TF1_B0:
-		tf->tf_gen = TOFINO_G_TF1;
-		break;
-	case TOFINO_DEVID_TF2_A0:
-	case TOFINO_DEVID_TF2_A00:
-	case TOFINO_DEVID_TF2_B0:
-		tf->tf_gen = TOFINO_G_TF2;
-		break;
-	default:
-		tofino_err(tf, "Unable to map %x,%x to a known tofino model",
-		    venid, tf->tf_devid);
-		return (-1);
+	if (vendid == TOFINO_VENDID) {
+		switch (tf->tf_devid) {
+		case TOFINO_DEVID_TF1_A0:
+		case TOFINO_DEVID_TF1_B0:
+			tf->tf_devid = devid;
+			tf->tf_gen = TOFINO_G_TF1;
+			return (0);
+		case TOFINO_DEVID_TF2_A0:
+		case TOFINO_DEVID_TF2_A00:
+		case TOFINO_DEVID_TF2_B0:
+			tf->tf_devid = devid;
+			tf->tf_gen = TOFINO_G_TF2;
+			return (0);
+		}
 	}
 
-	return (0);
+	tofino_err(tf, "!Unable to map %x,%x to a known tofino model",
+	    vendid, devid);
+	return (-1);
 }
 
 /*
@@ -705,7 +727,7 @@ tofino_regs_map(tofino_t *tf)
 		 */
 		regno = i + 1;
 		if (ddi_dev_regsize(tf->tf_dip, regno, &memsize) != 0) {
-			tofino_err(tf, "failed to get register set size for "
+			tofino_err(tf, "!failed to get register set size for "
 			    "regs[%u]", i + 1);
 			return (-1);
 		}
@@ -713,7 +735,7 @@ tofino_regs_map(tofino_t *tf)
 		ret = ddi_regs_map_setup(tf->tf_dip, regno, &base, 0, memsize,
 		    &da, &hdl);
 		if (ret != DDI_SUCCESS) {
-			tofino_err(tf, "failed to map register set %u: %d",
+			tofino_err(tf, "!failed to map register set %u: %d",
 			    i, ret);
 			return (-1);
 		}
@@ -730,33 +752,33 @@ static int
 tofino_intr_init(tofino_t *tf)
 {
 	const int intr_type = DDI_INTR_TYPE_MSI;
-	int ret, types, avail, count;
+	int ret, types, avail, nintrs;
 
 	ret = ddi_intr_get_supported_types(tf->tf_dip, &types);
 	if (ret != DDI_SUCCESS) {
-		tofino_err(tf, "failed to get supported interrupt types: %d",
+		tofino_err(tf, "!failed to get supported interrupt types: %d",
 		    ret);
 		return (-1);
 	}
 
 	if ((types & DDI_INTR_TYPE_MSI) == 0) {
-		tofino_err(tf, "missing required MSI support, found types %d",
+		tofino_err(tf, "!missing required MSI support, found types %d",
 		    types);
 		return (-1);
 	}
 
 	/* Get number of interrupts */
-	ret = ddi_intr_get_nintrs(tf->tf_dip, intr_type, &count);
-	if ((ret != DDI_SUCCESS) || (count == 0)) {
-		tofino_err(tf, "ddi_intr_get_nintrs() failure.  "
-		    "ret: %d, count: %d", ret, count);
+	ret = ddi_intr_get_nintrs(tf->tf_dip, intr_type, &nintrs);
+	if ((ret != DDI_SUCCESS) || (nintrs == 0)) {
+		tofino_err(tf, "!ddi_intr_get_nintrs() failure.  "
+		    "ret: %d, nintrs: %d", ret, nintrs);
 		return (-1);
 	}
 
 	/* Get number of available interrupts */
 	ret = ddi_intr_get_navail(tf->tf_dip, intr_type, &avail);
 	if ((ret != DDI_SUCCESS) || (avail == 0)) {
-		tofino_err(tf, "ddi_intr_get_navail() failure, "
+		tofino_err(tf, "!ddi_intr_get_navail() failure, "
 		    "ret: %d, avail: %d\n", ret, avail);
 		return (-1);
 	}
@@ -764,7 +786,7 @@ tofino_intr_init(tofino_t *tf)
 	ret = ddi_intr_alloc(tf->tf_dip, tf->tf_intrs, intr_type,
 	    0, TOFINO_MAX_MSI_INTRS, &tf->tf_nintrs, DDI_INTR_ALLOC_NORMAL);
 	if (ret != DDI_SUCCESS) {
-		tofino_err(tf, "failed to allocate interrupts: %d", ret);
+		tofino_err(tf, "!failed to allocate interrupts: %d", ret);
 		return (-1);
 	}
 
@@ -776,14 +798,27 @@ tofino_intr_init(tofino_t *tf)
 
 	ret = ddi_intr_get_cap(tf->tf_intrs[0], &tf->tf_intr_cap);
 	if (ret != DDI_SUCCESS) {
-		tofino_err(tf, "failed to get interrupt caps: %d", ret);
+		tofino_err(tf, "!failed to get interrupt caps: %d", ret);
 		return (-1);
 	}
 
-	ret = ddi_intr_get_pri(tf->tf_intrs[0], &tf->tf_intr_pri);
-	if (ret != DDI_SUCCESS) {
-		tofino_err(tf, "failed to get interrupt pri: %d", ret);
-		return (-1);
+	for (uint32_t i = 0; i < nintrs; i++) {
+		ret = ddi_intr_get_pri(tf->tf_intrs[i], &tf->tf_intr_pri);
+		if (ret != DDI_SUCCESS) {
+			tofino_err(tf, "!failed to get interrupt pri: %d", ret);
+			return (-1);
+		}
+
+		if (tf->tf_intr_pri >= LOCK_LEVEL) {
+			tf->tf_intr_pri = LOCK_LEVEL - 1;
+			ret = ddi_intr_set_pri(tf->tf_intrs[i],
+			    tf->tf_intr_pri);
+			if (ret != DDI_SUCCESS) {
+				tofino_err(tf, "!failed to set intr pri: %d",
+				    ret);
+				return (-1);
+			}
+		}
 	}
 
 	return (0);
@@ -792,12 +827,12 @@ tofino_intr_init(tofino_t *tf)
 static int
 tofino_intr_handlers_add(tofino_t *tf)
 {
-	tofino_dlog(tf, "adding %d tofino interrupt handlers", tf->tf_nintrs);
+	tofino_dlog(tf, "!adding %d tofino interrupt handlers", tf->tf_nintrs);
 	for (int i = 0; i < tf->tf_nintrs; i++) {
 		int ret = ddi_intr_add_handler(tf->tf_intrs[i], tofino_intr,
 		    tf, (void *)(uintptr_t)i);
 		if (ret != DDI_SUCCESS) {
-			tofino_err(tf, "failed to add interrupt handler %d: %d",
+			tofino_err(tf, "!failed to add intr handler %d: %d",
 			    i, ret);
 			for (i--; i >= 0; i--) {
 				(void) ddi_intr_remove_handler(tf->tf_intrs[i]);
@@ -812,11 +847,11 @@ tofino_intr_handlers_add(tofino_t *tf)
 static void
 tofino_intr_handlers_rem(tofino_t *tf)
 {
-	tofino_dlog(tf, "removing tofino interrupt handlers");
+	tofino_dlog(tf, "!removing tofino interrupt handlers");
 	for (int i = 0; i < tf->tf_nintrs; i++) {
 		int ret = ddi_intr_remove_handler(tf->tf_intrs[i]);
 		if (ret != DDI_SUCCESS) {
-			tofino_err(tf, "failed to remove interrupt handler "
+			tofino_err(tf, "!failed to remove interrupt handler "
 			    "%d: %d", i, ret);
 		}
 	}
@@ -825,13 +860,13 @@ tofino_intr_handlers_rem(tofino_t *tf)
 static int
 tofino_intr_enable(tofino_t *tf)
 {
-	tofino_dlog(tf, "enabling tofino interrupts");
+	tofino_dlog(tf, "!enabling tofino interrupts");
 	if ((tf->tf_intr_cap & DDI_INTR_FLAG_BLOCK) != 0) {
 		int ret;
 
 		ret = ddi_intr_block_enable(tf->tf_intrs, tf->tf_nintrs);
 		if (ret != DDI_SUCCESS) {
-			tofino_err(tf, "failed to block enable interrupts: %d",
+			tofino_err(tf, "!failed to block enable interrupts: %d",
 			    ret);
 			return (-1);
 		}
@@ -839,8 +874,8 @@ tofino_intr_enable(tofino_t *tf)
 		for (int i = 0; i < tf->tf_nintrs; i++) {
 			int ret = ddi_intr_enable(tf->tf_intrs[i]);
 			if (ret != DDI_SUCCESS) {
-				tofino_err(tf, "failed to enable interrupt %d: "
-				    "%d", i, ret);
+				tofino_err(tf, "!failed to enable interrupt %d:"
+				    " %d", i, ret);
 				for (i--; i >= 0; i--) {
 					(void) ddi_intr_disable(
 					    tf->tf_intrs[i]);
@@ -856,21 +891,21 @@ tofino_intr_enable(tofino_t *tf)
 static void
 tofino_intr_disable(tofino_t *tf)
 {
-	tofino_dlog(tf, "disabling tofino interrupts");
+	tofino_dlog(tf, "!disabling tofino interrupts");
 
 	if ((tf->tf_intr_cap & DDI_INTR_FLAG_BLOCK) != 0) {
 		int ret;
 
 		ret = ddi_intr_block_disable(tf->tf_intrs, tf->tf_nintrs);
 		if (ret != DDI_SUCCESS) {
-			tofino_err(tf, "failed to block disable interrupts: %d",
+			tofino_err(tf, "!failed to disable interrupts: %d",
 			    ret);
 		}
 	} else {
 		for (int i = 0; i < tf->tf_nintrs; i++) {
 			int ret = ddi_intr_disable(tf->tf_intrs[i]);
 			if (ret != DDI_SUCCESS) {
-				tofino_err(tf, "failed to disable interrupt "
+				tofino_err(tf, "!failed to disable interrupt "
 				    "%d: %d", i, ret);
 			}
 		}
@@ -880,23 +915,12 @@ tofino_intr_disable(tofino_t *tf)
 static int
 tofino_minor_create(tofino_t *tf)
 {
-	tofino_open_t *top;
 	minor_t m = (minor_t)ddi_get_instance(tf->tf_dip);
 
 	if (ddi_create_minor_node(tf->tf_dip, "tofino", S_IFCHR, m, DDI_PSEUDO,
 	    0) != DDI_SUCCESS) {
-		tofino_err(tf, "failed to create minor nodes");
 		return (-1);
 	}
-
-	if (ddi_soft_state_zalloc(tofino_soft_state, m) == DDI_FAILURE) {
-		ddi_remove_minor_node(tf->tf_dip, NULL);
-		return (-1);
-	}
-	top = ddi_get_soft_state(tofino_soft_state, m);
-	mutex_init(&top->to_mutex, NULL, MUTEX_DRIVER, NULL);
-	top->to_device = tf;
-	top->to_pages = NULL;
 
 	return (0);
 }
@@ -907,9 +931,7 @@ tofino_cleanup(tofino_t *tf)
 	ASSERT(tf->tf_tbus_client == NULL);
 
 	if ((tf->tf_attach & TOFINO_A_MINOR) != 0) {
-		minor_t m = (minor_t)ddi_get_instance(tf->tf_dip);
-		ddi_remove_minor_node(tf->tf_dip, NULL);
-		ddi_soft_state_free(tofino_soft_state, m);
+		ddi_remove_minor_node(tf->tf_dip, "tofino");
 		tf->tf_attach &= ~TOFINO_A_MINOR;
 	}
 
@@ -929,7 +951,7 @@ tofino_cleanup(tofino_t *tf)
 
 			ret = ddi_intr_free(tf->tf_intrs[i]);
 			if (ret != DDI_SUCCESS) {
-				tofino_err(tf, "failed to free interrupt %d: "
+				tofino_err(tf, "!failed to free interrupt %d: "
 				    "%d", i, ret);
 			}
 		}
@@ -968,7 +990,7 @@ tofino_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	instance = ddi_get_instance(dip);
 	if (instance > TOFINO_MAX_INSTANCE) {
-		dev_err(dip, CE_WARN, "invalid instance: %d", instance);
+		dev_err(dip, CE_WARN, "!invalid instance: %d", instance);
 		return (DDI_FAILURE);
 	}
 
@@ -977,11 +999,8 @@ tofino_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	tf->tf_instance = instance;
 	ddi_set_driver_private(dip, tf);
 
-	mutex_init(&tf->tf_mutex, NULL, MUTEX_DRIVER,
-	    DDI_INTR_PRI(tf->tf_intr_pri));
-
 	if (pci_config_setup(dip, &tf->tf_cfgspace) != DDI_SUCCESS) {
-		tofino_err(tf, "failed to set up pci config space");
+		tofino_err(tf, "!failed to set up pci config space");
 		goto cleanup;
 	}
 
@@ -996,6 +1015,9 @@ tofino_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	if (tofino_intr_init(tf) != 0) {
 		goto cleanup;
 	}
+
+	mutex_init(&tf->tf_mutex, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(tf->tf_intr_pri));
 
 	if (tofino_intr_handlers_add(tf) != 0) {
 		goto cleanup;
@@ -1014,7 +1036,7 @@ tofino_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	tofino_dip = dip;
 	ddi_report_dev(dip);
-	tofino_dlog(tf, "%s(): tofino driver attached", __func__);
+	tofino_dlog(tf, "!%s(): tofino driver attached", __func__);
 	return (DDI_SUCCESS);
 
 cleanup:
@@ -1065,7 +1087,7 @@ tofino_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 	tf = ddi_get_driver_private(dip);
 	if (tf == NULL) {
-		dev_err(dip, CE_WARN, "asked to detach but no private data");
+		dev_err(dip, CE_WARN, "!asked to detach but no private data");
 		goto fail1;
 	}
 
@@ -1141,7 +1163,7 @@ _init(void)
 		    TOFINO_MAX_INSTANCE + 1, UINT16_MAX);
 
 		err = mod_install(&tofino_modlinkage);
-		cmn_err(CE_WARN, "loaded tofino, built at %s", __TIMESTAMP__);
+		cmn_err(CE_WARN, "!loaded tofino, built at %s", __TIMESTAMP__);
 	}
 
 	return (err);

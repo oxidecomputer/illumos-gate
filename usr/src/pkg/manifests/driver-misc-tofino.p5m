@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 #
@@ -42,8 +42,6 @@ file path=usr/lib/devfsadm/linkmod/SUNW_tofino_link.so group=sys
 driver name=tfpkt perms="* 0600 root sys"
 driver name=tfport
 driver name=tofino perms="* 0600 root sys" \
-    alias=pci1d1c,100 \
-    alias=pci1d1c,110 \
     alias=pciex1d1c,100 \
     alias=pciex1d1c,110
 license lic_CDDL license=lic_CDDL

@@ -99,7 +99,8 @@ typedef struct tofino_tbus_client *tf_tbus_hdl_t;
 
 typedef enum {
 	TOFINO_G_TF1 = 1,
-	TOFINO_G_TF2
+	TOFINO_G_TF2,
+	TOFINO_G_INVALID
 } tofino_gen_t;
 
 typedef enum {
@@ -109,12 +110,14 @@ typedef enum {
 	TF_TBUS_READY,
 } tofino_tbus_state_t;
 
+typedef int (*tofino_intr_hdlr)(void *);
+
 int tofino_tbus_register(tf_tbus_hdl_t *);
 int tofino_tbus_unregister(tf_tbus_hdl_t);
-int tofino_tbus_register_softint(tf_tbus_hdl_t, ddi_softint_handle_t);
-int tofino_tbus_unregister_softint(tf_tbus_hdl_t, ddi_softint_handle_t);
+int tofino_tbus_register_intr(tf_tbus_hdl_t, tofino_intr_hdlr, void *);
+int tofino_tbus_unregister_intr(tf_tbus_hdl_t);
 tofino_tbus_state_t tofino_tbus_state(tf_tbus_hdl_t);
-int tofino_get_generation(tf_tbus_hdl_t);
+tofino_gen_t tofino_get_generation(tf_tbus_hdl_t);
 
 int tofino_tbus_read_reg(tf_tbus_hdl_t, size_t offset, uint32_t *val);
 int tofino_tbus_write_reg(tf_tbus_hdl_t, size_t offset, uint32_t val);

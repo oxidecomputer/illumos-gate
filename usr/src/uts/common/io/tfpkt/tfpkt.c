@@ -258,8 +258,11 @@ tfpkt_m_tx(void *arg, mblk_t *mp_chain)
 	for (mp = mp_chain; mp != NULL; mp = next) {
 		next = mp->b_next;
 		mp->b_next = NULL;
-		if (tfpkt_tx_one(tfp, mp) != 0)
+		if (tfpkt_tx_one(tfp, mp) != 0) {
+			/* relink to avoid losing packets later in the chain */
+			mp->b_next = next;
 			break;
+		}
 	}
 	tfpkt_mac_release(tfp);
 

@@ -24,6 +24,8 @@ extern "C" {
 #define	TOFINO_DRIVER_MINOR	0
 #define	TOFINO_DRIVER_PATCH	0
 
+#define	TOFINO_VENDID		0x1d1c
+
 #define	TOFINO_DEVID_TF1_A0	0x0001
 #define	TOFINO_DEVID_TF1_B0	0x0010
 #define	TOFINO_DEVID_TF2_A0	0x0100
@@ -47,12 +49,6 @@ typedef enum {
 	TOFINO_A_INTR_ENABLE	= 1 << 2,
 	TOFINO_A_MINOR		= 1 << 3,
 } tofino_attach_t;
-
-typedef struct tofino_tbus_client {
-	uint32_t		tbc_dma_allocs;
-	uint32_t		tbc_dma_frees;
-	ddi_softint_handle_t	tbc_tbus_softint;
-} tofino_tbus_client_t;
 
 typedef struct tofino {
 	kmutex_t		tf_mutex;
@@ -78,6 +74,18 @@ typedef struct tofino {
 	tf_tbus_hdl_t		tf_tbus_client;
 } tofino_t;
 
+/*
+ * An opaque pointer to this struct is returned when a tbus client registers
+ * with the tofino driver.
+ */
+typedef struct tofino_tbus_client {
+	tofino_t		*tbc_tofino;
+	kmutex_t		tbc_mutex;
+	tofino_intr_hdlr	tbc_intr;
+	void			*tbc_intr_arg;
+	boolean_t		tbc_intr_busy;
+} tofino_tbus_client_t;
+
 // We always use 2MB pages for Tofino DMA ranges
 #define	TF_DMA_PGSIZE	(1 << 21)
 #define	TF_DMA_PGMASK	((1 << 21) - 1)
@@ -89,13 +97,12 @@ typedef struct tofino {
  * and shutdown, there is no need for anything more performant and complex.
  */
 typedef struct tofino_dma_page {
+	list_node_t		td_list_node;
 	caddr_t			td_va;
 	uint32_t		td_refcnt;
 	uintptr_t		td_dma_addr;
 	ddi_dma_handle_t	td_dma_hdl;
 	ddi_umem_cookie_t	td_umem_cookie;
-	ddi_dma_cookie_t	td_dma_cookie;
-	struct tofino_dma_page	*td_next;
 } tofino_dma_page_t;
 
 /*
@@ -105,13 +112,13 @@ typedef struct tofino_open {
 	kmutex_t		to_mutex;
 	tofino_t		*to_device;
 	uint32_t		to_intr_read[TOFINO_MAX_MSI_INTRS];
-	tofino_dma_page_t	*to_pages;
+	list_t			to_pages;
 } tofino_open_t;
 
 void tofino_dlog(tofino_t *tf, const char *fmt, ...);
 void tofino_err(tofino_t *tf, const char *fmt, ...);
-uint32_t tofino_read_reg(dev_info_t *dip, size_t offset);
-void tofino_write_reg(dev_info_t *dip, size_t offset, uint32_t val);
+int tofino_read_reg(dev_info_t *dip, size_t offset, uint32_t *val);
+int tofino_write_reg(dev_info_t *dip, size_t offset, uint32_t val);
 int tofino_tbus_state_update(tofino_t *tf, tofino_tbus_state_t new_state);
 
 #ifdef	__cplusplus
