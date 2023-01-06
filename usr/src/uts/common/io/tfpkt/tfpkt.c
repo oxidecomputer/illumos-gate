@@ -536,7 +536,6 @@ tfpkt_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		tfpkt_err(tfpkt, "failed to create taskq");
 		goto fail;
 	}
-
 	taskq_dispatch_ent(tfpkt->tfp_tbus_tq, tfpkt_tbus_monitor,
 	    dip, 0, &tfpkt->tfp_tbus_monitor);
 
@@ -562,8 +561,6 @@ tfpkt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 		if (tfp->tfp_runstate != TFPKT_RUNSTATE_STOPPED) {
 			r = EBUSY;
-		} else if ((r = tfpkt_dr_process_halt(tfp) != 0)) {
-			dev_err(dip, CE_NOTE, "dr_process halt failed");
 		} else if ((r = tfpkt_tbus_monitor_halt(tfp) != 0)) {
 			dev_err(dip, CE_NOTE, "tbus_monitor halt failed");
 		} else if ((r = mac_unregister(tfp->tfp_mh)) != 0) {

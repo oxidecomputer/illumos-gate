@@ -1123,89 +1123,50 @@ tfpkt_tbus_port_init(tfpkt_tbus_t *tbp, dev_info_t *tfp_dip)
 	return (tofino_tbus_write_reg(hdl, reg, *ctrlp));
 }
 
-/*
- * Tofino descriptor rings are processed in a taskq, dispatched when the tofino
- * driver calls into tpkt in its own interupt handler.  The lifecycle of that dr
- * mechanism is governed by the following simple state machine:
- *
- *     +------+     +------------+
- *     |      |---->|            |
- *     | Idle |     | Dispatched |
- *     |      |<----|            |
- *     +------+     +------------+
- *         |              |
- *         V              V
- *    +---------+    +----------+
- *    |         |    |          |
- *    | Stopped |<---| Stopping |
- *    |         |    |          |
- *    +---------+    +----------+
- */
-
-/*
- * Scan all of the rx and cmp rings looking for packets or completions that need
- * to be processed.
- */
 static void
 tfpkt_dr_process(void *arg)
 {
-	tfpkt_t *tfp = (tfpkt_t *)arg;
-	tfpkt_tbus_t *tbp;
-	boolean_t last_gasp = false;
-	boolean_t progress = false;
+	tfpkt_t *tfp = arg;
+	tfpkt_tbus_t *tbp = tfp->tfp_tbus_data;
+	boolean_t progress;
+	clock_t time;
 
 	mutex_enter(&tfp->tfp_dr_process_mutex);
+	if (tfp->tfp_dr_process_state == TFPKT_DR_STARTING)
+		tfp->tfp_dr_process_state = TFPKT_DR_RUNNING;
 
-	mutex_enter(&tfp->tfp_mutex);
-	ASSERT(tfp->tfp_dr_process_state == TFPKT_DR_DISPATCHED ||
-	    tfp->tfp_dr_process_state == TFPKT_DR_STOPPING);
+	while (tfp->tfp_dr_process_state != TFPKT_DR_HALTING) {
+		mutex_exit(&tfp->tfp_dr_process_mutex);
 
-	while (tfp->tfp_dr_process_state != TFPKT_DR_STOPPING) {
-		mutex_exit(&tfp->tfp_mutex);
+		progress = true;
+		while (progress) {
+			if ((tbp = tfpkt_tbus_hold(tfp)) == NULL)
+				break;
 
-		if ((tbp = tfpkt_tbus_hold(tfp)) == NULL)
-			break;
-
-		progress = false;
-		for (int i = 0; i < TFPKT_RX_CNT; i++) {
-			if (tfpkt_tbus_rx_poll(tbp, i) > 0) {
-				progress = true;
-				if (tfpkt_tbus_push_free_bufs(tbp, i))
-					break;
+			progress = false;
+			for (int i = 0; i < TFPKT_RX_CNT; i++) {
+				if (tfpkt_tbus_rx_poll(tbp, i) > 0) {
+					progress = true;
+					if (tfpkt_tbus_push_free_bufs(tbp, i))
+						break;
+				}
 			}
-		}
 
-		for (int i = 0; i < TFPKT_CMP_CNT; i++) {
-			if (tfpkt_tbus_cmp_poll(tbp, i)) {
-				progress = true;
+			for (int i = 0; i < TFPKT_CMP_CNT; i++) {
+				if (tfpkt_tbus_cmp_poll(tbp, i)) {
+					progress = true;
+				}
 			}
+			tfpkt_tbus_release(tfp);
 		}
-		tfpkt_tbus_release(tfp);
-
-		mutex_enter(&tfp->tfp_mutex);
-		/*
-		 * If we make a full pass over the rings without finding any new
-		 * work, we assume we're done.  Drop the state back to 'idle' to
-		 * allow a subsequent interrupt to kick off a new process loop.
-		 * Because it is possible for a new interrupt to have arrived
-		 * and been non-dispatched while we were iterating over the
-		 * rings, we make one final pass before bailing.
-		 */
-		if (last_gasp)
-			break;
-		if (!progress) {
-			last_gasp = true;
-			if (tfp->tfp_dr_process_state == TFPKT_DR_DISPATCHED)
-				tfp->tfp_dr_process_state = TFPKT_DR_IDLE;
-		}
+		mutex_enter(&tfp->tfp_dr_process_mutex);
+		time = ddi_get_lbolt() + hz / 1000;
+		cv_timedwait(&tfp->tfp_dr_process_cv,
+		    &tfp->tfp_dr_process_mutex, time);
 	}
 
-	if (tfp->tfp_dr_process_state == TFPKT_DR_STOPPING) {
-		tfp->tfp_dr_process_state = TFPKT_DR_STOPPED;
-		cv_signal(&tfp->tfp_dr_process_cv);
-	}
-	mutex_exit(&tfp->tfp_mutex);
-
+	tfp->tfp_dr_process_state = TFPKT_DR_HALTED;
+	cv_signal(&tfp->tfp_dr_process_cv);
 	mutex_exit(&tfp->tfp_dr_process_mutex);
 }
 
@@ -1217,24 +1178,24 @@ static int
 tfpkt_tbus_intr(void *arg)
 {
 	tfpkt_t *tfp = (tfpkt_t *)arg;
-	boolean_t dispatch;
 
-	/*
-	 * If we are currently processing rings or we're trying to shut
-	 * everything down, then we return without taking any action.  If the
-	 * loop is idle, kick off a new task to start processing descriptors.
-	 */
-	mutex_enter(&tfp->tfp_mutex);
-	dispatch = (tfp->tfp_dr_process_state == TFPKT_DR_IDLE);
-	if (dispatch)
-		tfp->tfp_dr_process_state = TFPKT_DR_DISPATCHED;
-	mutex_exit(&tfp->tfp_mutex);
-
-	if (dispatch)
-		taskq_dispatch_ent(tfp->tfp_tbus_tq, tfpkt_dr_process,
-		    tfp, 0, &tfp->tfp_dr_process);
+	mutex_enter(&tfp->tfp_dr_process_mutex);
+	if (tfp->tfp_dr_process_state == TFPKT_DR_RUNNING)
+		cv_signal(&tfp->tfp_dr_process_cv);
+	mutex_exit(&tfp->tfp_dr_process_mutex);
 
 	return (0);
+}
+
+static void
+tfpkt_dr_process_init(tfpkt_t *tfp)
+{
+	mutex_enter(&tfp->tfp_dr_process_mutex);
+	ASSERT(tfp->tfp_dr_process_state == TFPKT_DR_HALTED);
+	tfp->tfp_dr_process_state = TFPKT_DR_STARTING;
+	taskq_dispatch_ent(tfp->tfp_tbus_tq, tfpkt_dr_process, tfp, 0,
+	    &tfp->tfp_dr_process);
+	mutex_exit(&tfp->tfp_dr_process_mutex);
 }
 
 /*
@@ -1242,26 +1203,38 @@ tfpkt_tbus_intr(void *arg)
  * is idle, immediately mark it as stopped.  If the loop is active, move it to
  * the "stopping" state and block until it stops.
  */
-int
+static void
 tfpkt_dr_process_halt(tfpkt_t *tfp)
 {
-	mutex_enter(&tfp->tfp_mutex);
-	if (tfp->tfp_dr_process_state == TFPKT_DR_DISPATCHED)
-		tfp->tfp_dr_process_state = TFPKT_DR_STOPPING;
-	else
-		tfp->tfp_dr_process_state = TFPKT_DR_STOPPED;
+	mutex_enter(&tfp->tfp_dr_process_mutex);
 
-	while (tfp->tfp_dr_process_state != TFPKT_DR_STOPPED)
-		cv_wait(&tfp->tfp_dr_process_cv, &tfp->tfp_mutex);
-	mutex_exit(&tfp->tfp_mutex);
-	return (0);
+	switch (tfp->tfp_dr_process_state) {
+	case TFPKT_DR_STARTING:
+	case TFPKT_DR_RUNNING:
+		tfp->tfp_dr_process_state = TFPKT_DR_HALTING;
+		cv_signal(&tfp->tfp_dr_process_cv);
+		break;
+	case TFPKT_DR_HALTING:
+		ASSERT(0);
+	case TFPKT_DR_HALTED:
+		/* no-op */
+		;
+	}
 
+	while (tfp->tfp_dr_process_state != TFPKT_DR_HALTED)
+		cv_wait(&tfp->tfp_dr_process_cv, &tfp->tfp_dr_process_mutex);
+
+	tfp->tfp_dr_process_state = TFPKT_DR_HALTED;
+	mutex_exit(&tfp->tfp_dr_process_mutex);
 }
 
 static void
 tfpkt_tbus_fini(tfpkt_t *tfp, tfpkt_tbus_t *tbp)
 {
 	ASSERT(tbp != NULL);
+
+	tfpkt_dr_process_halt(tfp);
+
 	if (tbp->ttb_tbus_hdl != NULL) {
 		VERIFY0(tofino_tbus_unregister_intr(tbp->ttb_tbus_hdl));
 		VERIFY0(tofino_tbus_unregister(tbp->ttb_tbus_hdl));
@@ -1330,7 +1303,10 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 		oneshot_error(tbp, "failed to allocate drs");
 	} else if ((err = tfpkt_tbus_init_drs(tbp)) != 0) {
 		oneshot_error(tbp, "failed to init drs");
+	} else {
+		tfpkt_dr_process_init(tfp);
 	}
+
 	if (err != 0)
 		goto fail;
 
@@ -1341,11 +1317,9 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 		VERIFY0(tofino_tbus_unregister(hdl));
 	}
 
-
 	for (int i = 0; i < TFPKT_RX_CNT; i++)
 		if ((err = tfpkt_tbus_push_free_bufs(tbp, i)) != 0)
 			goto fail;
-
 	return (tbp);
 
 fail:

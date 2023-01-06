@@ -223,10 +223,10 @@ struct tfpkt_tbus {
 };
 
 typedef enum {
-	TFPKT_DR_IDLE,
-	TFPKT_DR_DISPATCHED,
-	TFPKT_DR_STOPPING,
-	TFPKT_DR_STOPPED
+	TFPKT_DR_HALTED,
+	TFPKT_DR_STARTING,
+	TFPKT_DR_RUNNING,
+	TFPKT_DR_HALTING
 } tfpkt_dr_process_state_t;
 
 struct tfpkt {
@@ -278,7 +278,6 @@ void tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz);
 void tfpkt_tbus_reset_detected(tfpkt_t *tfp);
 void tfpkt_tbus_monitor(void *);
 int tfpkt_tbus_monitor_halt(tfpkt_t *tfp);
-int tfpkt_dr_process_halt(tfpkt_t *tfp);
 
 #ifdef	__cplusplus
 }
