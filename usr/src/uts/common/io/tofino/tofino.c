@@ -220,10 +220,9 @@ tofino_dma_page_setup(tofino_open_t *top, caddr_t va, size_t sz)
 	tofino_t *tf = top->to_device;
 	int dma_flags = DDI_DMA_RDWR | DDI_DMA_STREAMING;
 	ddi_dma_handle_t dma_hdl;
-	ddi_dma_cookie_t dma_cookie;
+	const ddi_dma_cookie_t *dma_cookie;
 	ddi_umem_cookie_t um_cookie;
 	tofino_dma_page_t *tdp;
-	uint_t cnt;
 	int err;
 
 #if 0
@@ -252,16 +251,16 @@ tofino_dma_page_setup(tofino_open_t *top, caddr_t va, size_t sz)
 	}
 
 	if ((err = ddi_dma_addr_bind_handle(dma_hdl, curproc->p_as,
-	    va, sz, dma_flags, DDI_DMA_DONTWAIT, NULL,
-	    &dma_cookie, &cnt)) != 0) {
+	    va, sz, dma_flags, DDI_DMA_DONTWAIT, NULL, NULL, NULL)) != 0) {
 		cmn_err(CE_WARN, "!bind_handle failed: %d", err);
 		goto fail2;
 	}
 
+	dma_cookie = ddi_dma_cookie_one(dma_hdl);
 	tdp = kmem_zalloc(sizeof (*tdp), KM_SLEEP);
 	tdp->td_va = va;
 	tdp->td_refcnt = 0;
-	tdp->td_dma_addr = dma_cookie.dmac_laddress;
+	tdp->td_dma_addr = dma_cookie->dmac_laddress;
 	tdp->td_umem_cookie = um_cookie;
 	tdp->td_dma_hdl = dma_hdl;
 
@@ -546,7 +545,7 @@ tofino_devmap(dev_t dev, devmap_cookie_t dhp, offset_t off, size_t len,
 	uint_t maxprot;
 	int err;
 	size_t length;
-	off_t regsize;
+	off_t range_size;
 
 	bzero(&da, sizeof (da));
 	da.devacc_attr_version = DDI_DEVICE_ATTR_V1;
@@ -560,16 +559,21 @@ tofino_devmap(dev_t dev, devmap_cookie_t dhp, offset_t off, size_t len,
 	}
 
 	tf = top->to_device;
-	if ((err = ddi_dev_regsize(tf->tf_dip, BAR0, &regsize)) != DDI_SUCCESS)
-		return (EINVAL);
-	if (off >= regsize)
+	range_size = tf->tf_regs_lens[0];
+
+	if (off >= range_size)
 		return (EINVAL);
 
 	len = ptob(btopr(len));
-	if (off + len < regsize) {
+
+	/* check for overflow */
+	if (off + len < off) {
+		return (EINVAL);
+	}
+	if (off + len < range_size) {
 		length = len;
 	} else {
-		length = regsize - off;
+		length = range_size - off;
 	}
 
 	maxprot = PROT_ALL & ~PROT_EXEC;
@@ -968,6 +972,7 @@ tofino_cleanup(tofino_t *tf)
 		pci_config_teardown(&tf->tf_cfgspace);
 	}
 
+	ddi_set_driver_private(tf->tf_dip, NULL);
 	mutex_destroy(&tf->tf_mutex);
 
 	ASSERT0(tf->tf_attach);
@@ -1048,29 +1053,22 @@ static int
 tofino_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **resultp)
 {
 	tofino_open_t *top;
-	tofino_t *tf;
+	tofino_t *tf = NULL;
 	minor_t minor;
+
+	if (cmd != DDI_INFO_DEVT2DEVINFO && cmd != DDI_INFO_DEVT2INSTANCE)
+		return (DDI_FAILURE);
 
 	minor = getminor((dev_t)arg);
 	if ((top = ddi_get_soft_state(tofino_soft_state, minor)) == NULL)
 		return (DDI_FAILURE);
-
 	if ((tf = top->to_device) == NULL)
 		return (DDI_FAILURE);
 
-
-	switch (cmd) {
-	case DDI_INFO_DEVT2DEVINFO:
+	if (cmd == DDI_INFO_DEVT2DEVINFO)
 		*resultp = (void *)tf->tf_dip;
-		break;
-
-	case DDI_INFO_DEVT2INSTANCE:
+	else
 		*resultp = (void *)(uintptr_t)tf->tf_instance;
-		break;
-
-	default:
-		return (DDI_FAILURE);
-	}
 
 	return (DDI_SUCCESS);
 }
@@ -1096,7 +1094,6 @@ tofino_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		goto fail2;
 
 	tofino_cleanup(tf);
-	ddi_set_driver_private(dip, NULL);
 	tofino_dip = NULL;
 
 	return (DDI_SUCCESS);
@@ -1163,7 +1160,8 @@ _init(void)
 		    TOFINO_MAX_INSTANCE + 1, UINT16_MAX);
 
 		err = mod_install(&tofino_modlinkage);
-		cmn_err(CE_WARN, "!loaded tofino, built at %s", __TIMESTAMP__);
+		if (err != 0)
+			id_space_destroy(tofino_minors);
 	}
 
 	return (err);
