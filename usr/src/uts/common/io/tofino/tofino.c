@@ -81,6 +81,8 @@ static void		*tofino_soft_state = NULL;
 static id_space_t	*tofino_minors = NULL;
 int			tofino_debug = 0;
 
+static int tofino_open_init(tofino_t *tf, minor_t minor);
+static void tofino_open_fini(tofino_t *tf, minor_t minor);
 /*
  * Utility function for debug logging
  */
@@ -147,10 +149,10 @@ tofino_write_reg(dev_info_t *dip, size_t offset, uint32_t val)
 static int
 tofino_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 {
-	tofino_open_t *top;
 	tofino_t *tf;
 	minor_t minor;
 	int instance = getminor(*devp);
+	int err;
 
 	/* XXX: add support for 32-bit opens */
 	if (get_udatamodel() != DATAMODEL_LP64)
@@ -169,17 +171,11 @@ tofino_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 		return (EBUSY);
 	}
 
-	if (ddi_soft_state_zalloc(tofino_soft_state, minor) != DDI_SUCCESS) {
+	if ((err = tofino_open_init(tf, minor)) != 0) {
 		id_free(tofino_minors, minor);
-		return (ENOMEM);
+		return (err);
 	}
-
 	*devp = makedevice(getmajor(*devp), minor);
-	top = ddi_get_soft_state(tofino_soft_state, minor);
-	mutex_init(&top->to_mutex, NULL, MUTEX_DRIVER, NULL);
-	top->to_device = tf;
-	list_create(&top->to_pages, sizeof (tofino_dma_page_t),
-	    offsetof(tofino_dma_page_t, td_list_node));
 
 	return (0);
 }
@@ -590,23 +586,10 @@ static int
 tofino_close(dev_t dev, int flag, int otyp, cred_t *credp)
 {
 	minor_t minor = getminor(dev);
-	tofino_open_t *top;
-	tofino_dma_page_t *tdp;
+	tofino_t *tf = ddi_get_driver_private(tofino_dip);
 
-	top = ddi_get_soft_state(tofino_soft_state, minor);
-	ASSERT(top != NULL);
-
-	while ((tdp = list_remove_tail(&top->to_pages)) != NULL) {
-		tofino_dma_page_teardown(tdp);
-		kmem_free(tdp, sizeof (*tdp));
-	}
-
+	tofino_open_fini(tf, minor);
 	id_free(tofino_minors, minor);
-	list_destroy(&top->to_pages);
-	mutex_destroy(&top->to_mutex);
-
-	ddi_soft_state_free(tofino_soft_state, minor);
-
 	return (0);
 }
 
@@ -942,10 +925,17 @@ static int
 tofino_minor_create(tofino_t *tf)
 {
 	minor_t m = (minor_t)ddi_get_instance(tf->tf_dip);
+	int err;
 
 	if (ddi_create_minor_node(tf->tf_dip, "tofino", S_IFCHR, m, DDI_PSEUDO,
 	    0) != DDI_SUCCESS) {
+		dev_err(tf->tf_dip, CE_WARN, "unable to create minor node");
 		return (-1);
+	}
+
+	if ((err = tofino_open_init(tf, m)) != 0) {
+		ddi_remove_minor_node(tf->tf_dip, "tofino");
+		return (err);
 	}
 
 	return (0);
@@ -999,6 +989,46 @@ tofino_cleanup(tofino_t *tf)
 
 	ASSERT0(tf->tf_attach);
 	kmem_free(tf, sizeof (*tf));
+}
+
+static int
+tofino_open_init(tofino_t *tf, minor_t minor)
+{
+	tofino_open_t *top;
+
+	if (ddi_soft_state_zalloc(tofino_soft_state, minor) != DDI_SUCCESS) {
+		tofino_err(tf, "!failed to alloc softstate for %d", minor);
+		return (ENOMEM);
+	}
+
+	top = ddi_get_soft_state(tofino_soft_state, minor);
+	top->to_device = tf;
+	mutex_init(&top->to_mutex, NULL, MUTEX_DRIVER, NULL);
+	list_create(&top->to_pages, sizeof (tofino_dma_page_t),
+	    offsetof(tofino_dma_page_t, td_list_node));
+
+	return (0);
+}
+
+static void
+tofino_open_fini(tofino_t *tf, minor_t minor)
+{
+	tofino_open_t *top;
+	tofino_dma_page_t *tdp;
+
+	top = ddi_get_soft_state(tofino_soft_state, minor);
+	if (top == NULL)
+		return;
+
+	while ((tdp = list_remove_tail(&top->to_pages)) != NULL) {
+		tofino_dma_page_teardown(tdp);
+		kmem_free(tdp, sizeof (*tdp));
+	}
+
+	list_destroy(&top->to_pages);
+	mutex_destroy(&top->to_mutex);
+
+	ddi_soft_state_free(tofino_soft_state, minor);
 }
 
 static int
