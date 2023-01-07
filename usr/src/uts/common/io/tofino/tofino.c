@@ -1082,10 +1082,15 @@ tofino_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **resultp)
 		return (DDI_FAILURE);
 
 	minor = getminor((dev_t)arg);
-	if ((top = ddi_get_soft_state(tofino_soft_state, minor)) == NULL)
+	if ((top = ddi_get_soft_state(tofino_soft_state, minor)) == NULL) {
+		if (minor == ddi_get_instance(tofino_dip)) {
+			tf = ddi_get_driver_private(tofino_dip);
+		} else {
+			return (DDI_FAILURE);
+		}
+	} else if ((tf = top->to_device) == NULL) {
 		return (DDI_FAILURE);
-	if ((tf = top->to_device) == NULL)
-		return (DDI_FAILURE);
+	}
 
 	if (cmd == DDI_INFO_DEVT2DEVINFO)
 		*resultp = (void *)tf->tf_dip;
