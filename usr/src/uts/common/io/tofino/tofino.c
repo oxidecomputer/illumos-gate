@@ -610,6 +610,22 @@ tofino_close(dev_t dev, int flag, int otyp, cred_t *credp)
 	return (0);
 }
 
+static void
+tofino_tbus_intr_set(tofino_t *tf, bool enable)
+{
+	uint32_t en0 = enable ? TBUS_INT0_CPL_EVENT : 0;
+	uint32_t en1 = enable ? TBUS_INT1_RX_EVENT : 0;
+
+	if (tf->tf_gen == TOFINO_G_TF1) {
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN0_1, en0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_EN1_1, en1);
+	} else {
+		ASSERT(tf->tf_gen == TOFINO_G_TF2);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN0_1, en0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_EN1_1, en1);
+	}
+}
+
 static uint_t
 tofino_intr(caddr_t arg, caddr_t arg2)
 {
@@ -626,7 +642,7 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	atomic_inc_32(&tf->tf_intr_cnt[intr_no]);
 	pollwakeup(&tf->tf_pollhead, POLLRDNORM);
 
-	mutex_enter(&tf->tf_mutex);
+	tofino_tbus_intr_set(tf, false);
 
 	/*
 	 * We are only interested in the three status registers related to
@@ -642,16 +658,10 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 		tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, &s0);
 		tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1, &s1);
 		tofino_read_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2, &s2);
-		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, s0);
-		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1, s1);
-		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2, s2);
 	} else {
 		tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0, &s0);
 		tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1, &s1);
 		tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, &s2);
-		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0, s0);
-		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1, s1);
-		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, s2);
 	}
 
 	/*
@@ -660,6 +670,7 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	 * invalidate the handler fields or have multiple calls into the handler
 	 * simultaneously.
 	 */
+	mutex_enter(&tf->tf_mutex);
 	tbc = tf->tf_tbus_client;
 	if (tbc != NULL && tbc->tbc_intr != NULL && !tbc->tbc_intr_busy) {
 		tbc->tbc_intr_busy = true;
@@ -672,7 +683,18 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 		ASSERT(tbc->tbc_intr_busy);
 		tbc->tbc_intr_busy = false;
 	}
+
+	if (tf->tf_gen == TOFINO_G_TF1) {
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, s0);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT1, s1);
+		tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT2, s2);
+	} else {
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT0, s0);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT1, s1);
+		tofino_write_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, s2);
+	}
 	mutex_exit(&tf->tf_mutex);
+	tofino_tbus_intr_set(tf, true);
 
 	return (DDI_INTR_CLAIMED);
 }

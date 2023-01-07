@@ -147,8 +147,6 @@ tofino_tbus_dma_alloc(tf_tbus_hdl_t tf_hdl, tf_tbus_dma_t *dmap, size_t size,
 	unsigned int count;
 	int err;
 
-	mutex_enter(&tf->tf_mutex);
-
 	err = ddi_dma_alloc_handle(tf->tf_dip, &tf_tbus_dma_attr_buf,
 	    DDI_DMA_SLEEP, NULL, &dmap->tpd_handle);
 	if (err != DDI_SUCCESS) {
@@ -176,7 +174,6 @@ tofino_tbus_dma_alloc(tf_tbus_hdl_t tf_hdl, tf_tbus_dma_t *dmap, size_t size,
 		tofino_err(tf, "!%s: more than one DMA cookie", __func__);
 		goto fail2;
 	}
-	mutex_exit(&tf->tf_mutex);
 
 	return (0);
 fail2:
@@ -184,7 +181,6 @@ fail2:
 fail1:
 	ddi_dma_free_handle(&dmap->tpd_handle);
 fail0:
-	mutex_exit(&tf->tf_mutex);
 	return (-1);
 }
 
@@ -253,14 +249,12 @@ tofino_tbus_reg_op(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t *val,
 	tofino_t *tf = tf_hdl->tbc_tofino;
 	int rval;
 
-	mutex_enter(&tf->tf_mutex);
 	if (tf->tf_tbus_state != TF_TBUS_READY)
 		rval = EAGAIN;
 	else if (rd)
 		rval = tofino_read_reg(tf->tf_dip, offset, val);
 	else
 		rval = tofino_write_reg(tf->tf_dip, offset, *val);
-	mutex_exit(&tf->tf_mutex);
 
 	return (rval);
 }
