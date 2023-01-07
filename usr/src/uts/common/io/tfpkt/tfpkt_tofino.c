@@ -535,6 +535,24 @@ tfpkt_tbus_tx_free(tfpkt_tbus_t *tbp, void *addr)
 }
 
 /*
+ * Select a tx ring for this buffer.  We currently just use a simple
+ * round-robin, but we could try something more clever in the future.
+ */
+static uint32_t
+tfpkt_tx_ring(tfpkt_tbus_t *tbp, void *addr, size_t sz)
+{
+	static uint32_t next_ring = 0;
+	uint32_t proposed, rval;
+
+	while (1) {
+		rval = next_ring;
+		proposed = (rval + 1) % TFPKT_TX_CNT;
+		if (atomic_cas_32(&next_ring, rval, proposed) == rval)
+			return (rval);
+	}
+}
+
+/*
  * Push a single message to the ASIC.
  *
  * On success, that call returns 0 and consumes the provided buffer.  On
@@ -544,8 +562,9 @@ int
 tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 {
 	tfpkt_buf_t *buf;
-	tfpkt_dr_t *drp = &tbp->ttb_tx_drs[0];
+	tfpkt_dr_t *drp;
 	tfpkt_dr_tx_t tx_dr;
+	uint32_t ring;
 	int rval = 0;
 
 	/*
@@ -579,7 +598,20 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 	 */
 	tx_dr.tx_msg_id = tx_dr.tx_src;
 
-	rval = tfpkt_dr_push(tbp, drp, (uint64_t *)&tx_dr);
+	/*
+	 * Try to push the descriptor onto the selected ring.  If the initial
+	 * ring is full, we try each of the others in turn before giving up.
+	 * This is fine with our simple ring-selection algorithm, but may not be
+	 * acceptable with something more sophisticated.
+	 */
+	ring = tfpkt_tx_ring(tbp, addr, sz);
+	for (uint32_t i = 0; i < TFPKT_TX_CNT; i++) {
+		drp = &tbp->ttb_tx_drs[ring];
+		if ((rval = tfpkt_dr_push(tbp, drp, (uint64_t *)&tx_dr)) == 0)
+			break;
+		ring = (ring + 1) % TFPKT_TX_CNT;
+	}
+
 	mutex_enter(&tbp->ttb_mutex);
 	if (rval == 0) {
 		ASSERT(buf->tfb_flags & TFPKT_BUF_INUSE);
