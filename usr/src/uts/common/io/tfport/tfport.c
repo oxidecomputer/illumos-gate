@@ -139,7 +139,7 @@ static dld_ioc_info_t tfport_ioc_list[] = {
 #define	TFPORT_PORT0_NONCLAIMED	0x02
 int tfport_port0 = 0;
 
-int tfport_debug = 1;
+int tfport_debug = 0;
 
 static void
 tfport_dlog(tfport_t *t, const char *fmt, ...)
