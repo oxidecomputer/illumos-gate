@@ -70,6 +70,14 @@ typedef struct tfpkt_stats {
 	uint64_t tps_tbus_hold_fails;
 } tfpkt_stats_t;
 
+typedef struct tfpkt_tbus_stats {
+	uint64_t	ttb_rxfail_no_descriptors;
+	uint64_t	ttb_txfail_pkt_too_large;
+	uint64_t	ttb_txfail_no_bufs;
+	uint64_t	ttb_txfail_no_descriptors;
+	uint64_t	ttb_txfail_other;
+} tfpkt_tbus_stats_t;
+
 /* Descriptor ring management */
 
 /*
@@ -172,8 +180,6 @@ typedef struct {
 #define	TFPKT_BUF_SIZE		2048
 
 #define	TFPKT_BUF_DMA_ALLOCED	0x01
-#define	TFPKT_BUF_PUSHED	0x02
-#define	TFPKT_BUF_INUSE		0x04
 
 /*
  * Buffers are allocated in advance with memory capable of DMA to/from
@@ -185,6 +191,18 @@ typedef struct tfpkt_buf {
 	tf_tbus_dma_t	tfb_dma;
 	list_node_t	tfb_link;
 } tfpkt_buf_t;
+
+typedef struct tfpkt_buf_list {
+	kmutex_t	tbl_mutex;
+	list_t		tbl_data;
+
+	uint64_t	tbl_count;
+	uint64_t	tbl_low_water;
+	uint64_t	tbl_high_water;
+	uint64_t	tbl_alloc_fails;
+	uint64_t	tbl_va_lookup_fails;
+	uint64_t	tbl_pa_lookup_fails;
+} tfpkt_buf_list_t;
 
 /*
  * State managed by the tofino tbus handler
@@ -204,22 +222,17 @@ struct tfpkt_tbus {
 	tfpkt_dr_t	*ttb_cmp_drs;	/* Tx completion DRs */
 
 	/* DMA buffer management */
-	list_t		ttb_rxbufs_free;	/* unused rx bufs */
-	list_t		ttb_rxbufs_pushed;	/* rx bufs in ASIC FM */
-	list_t		ttb_rxbufs_inuse;	/* rx bufs in use */
-	list_t		ttb_txbufs_free;	/* unused tx bufs */
-	list_t		ttb_txbufs_pushed;	/* tx bufs on TX DR */
-	list_t		ttb_txbufs_inuse;	/* tx bufs inuse */
+	tfpkt_buf_list_t	ttb_rxbufs_free;	/* unused rx bufs */
+	tfpkt_buf_list_t	ttb_rxbufs_pushed;	/* rx bufs in ASIC FM */
+	tfpkt_buf_list_t	ttb_rxbufs_inuse;	/* rx bufs in use */
+	tfpkt_buf_list_t	ttb_txbufs_free;	/* unused tx bufs */
+	tfpkt_buf_list_t	ttb_txbufs_pushed;	/* tx bufs on TX DR */
+	tfpkt_buf_list_t	ttb_txbufs_inuse;	/* tx bufs inuse */
 
 	uint_t		ttb_bufs_capacity;	/* total rx+tx bufs */
 	tfpkt_buf_t	*ttb_bufs_mem;		/* all rx+tx bufs */
 
-	/* Internal debugging statistics: */
-	uint64_t	ttb_rxfail_no_descriptors;
-	uint64_t	ttb_txfail_pkt_too_large;
-	uint64_t	ttb_txfail_no_bufs;
-	uint64_t	ttb_txfail_no_descriptors;
-	uint64_t	ttb_txfail_other;
+	tfpkt_tbus_stats_t	ttb_stats;
 };
 
 typedef enum {
@@ -265,17 +278,15 @@ struct tfpkt {
 	taskq_ent_t			tfp_dr_process;
 };
 
-void *tfpkt_tbus_tx_alloc(tfpkt_tbus_t *, size_t sz);
-void tfpkt_tbus_tx_free(tfpkt_tbus_t *, void *addr);
-int tfpkt_tbus_tx(tfpkt_tbus_t *, void *, size_t sz);
+caddr_t tfpkt_buf_va(tfpkt_buf_t *buf);
+tfpkt_buf_t *tfpkt_tbus_tx_alloc(tfpkt_tbus_t *, size_t sz);
+void tfpkt_tbus_tx_free(tfpkt_tbus_t *, tfpkt_buf_t *);
+int tfpkt_tbus_tx(tfpkt_tbus_t *, tfpkt_buf_t *, size_t sz);
+void tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz);
 void tfpkt_tbus_rx_done(tfpkt_tbus_t *, void *, size_t);
 
 tfpkt_tbus_t *tfpkt_tbus_hold(tfpkt_t *tfp);
 void tfpkt_tbus_release(tfpkt_t *tfp);
-void tfpkt_reset_trigger(tfpkt_t *tfp);
-void tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t mblk_sz);
-
-void tfpkt_tbus_reset_detected(tfpkt_t *tfp);
 void tfpkt_tbus_monitor(void *);
 int tfpkt_tbus_monitor_halt(tfpkt_t *tfp);
 

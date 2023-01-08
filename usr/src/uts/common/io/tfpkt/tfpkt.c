@@ -166,7 +166,8 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 	size_t full_sz = msgsize(mp_head);
 	struct ether_header *eth;
 	tfpkt_tbus_t *tbp = NULL;
-	caddr_t tx_wp, tx_buf = NULL;
+	tfpkt_buf_t *tx_buf;
+	caddr_t tx_wp;
 	size_t *errstat = NULL;
 	int rval;
 
@@ -199,7 +200,7 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 	}
 
 	/* Copy the packet into the tx buffer */
-	tx_wp = tx_buf;
+	tx_wp = tfpkt_buf_va(tx_buf);
 	for (mblk_t *m = mp_head; m != NULL; m = m->b_cont) {
 		size_t sz = MBLKL(m);
 		if (sz > 0) {

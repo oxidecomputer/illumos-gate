@@ -33,12 +33,15 @@
 
 int tfpkt_tbus_debug = 0;
 
+#define	TBUS_STAT_BUMP(TBP, STAT) atomic_inc_64(&(TBP)->ttb_stats.STAT)
+
 /*
  * Forward references
  */
 static int tfpkt_dr_push(tfpkt_tbus_t *, tfpkt_dr_t *, uint64_t *);
 static int tfpkt_dr_pull(tfpkt_tbus_t *, tfpkt_dr_t *, uint64_t *);
 static int tfpkt_tbus_push_free_bufs(tfpkt_tbus_t *, int);
+static void tfpkt_tbus_reset_detected(tfpkt_t *);
 
 static void
 tfpkt_tbus_dlog(tfpkt_tbus_t *tbp, const char *fmt, ...)
@@ -60,6 +63,164 @@ tfpkt_tbus_err(tfpkt_tbus_t *tbp, const char *fmt, ...)
 	va_start(args, fmt);
 	vdev_err(tbp->ttb_dip, CE_WARN, fmt, args);
 	va_end(args);
+}
+
+uint64_t
+tfpkt_buf_pa(tfpkt_buf_t *buf)
+{
+	return (buf->tfb_dma.tpd_cookie.dmac_laddress);
+}
+
+caddr_t
+tfpkt_buf_va(tfpkt_buf_t *buf)
+{
+	return (buf->tfb_dma.tpd_addr);
+}
+
+static void
+tfpkt_buf_list_init(tfpkt_buf_list_t *list)
+{
+	bzero(list, sizeof (*list));
+	list->tbl_low_water = UINT64_MAX;
+	mutex_init(&list->tbl_mutex, NULL, MUTEX_DRIVER, NULL);
+	list_create(&list->tbl_data, sizeof (tfpkt_buf_t),
+	    offsetof(tfpkt_buf_t, tfb_link));
+}
+
+static void
+tfpkt_buf_list_fini(tfpkt_buf_list_t *list)
+{
+	mutex_destroy(&list->tbl_mutex);
+	list_destroy(&list->tbl_data);
+}
+
+static void
+tfpkt_buf_remove_locked(tfpkt_buf_list_t *list, tfpkt_buf_t *buf)
+{
+	ASSERT(MUTEX_HELD(&list->tbl_mutex));
+	list_remove(&list->tbl_data, buf);
+	ASSERT(list->tbl_count > 0);
+	if (--list->tbl_count < list->tbl_low_water)
+		list->tbl_low_water = list->tbl_count;
+}
+
+/*
+ * Remove a specific buffer from the list
+ */
+static void
+tfpkt_buf_remove(tfpkt_buf_list_t *list, tfpkt_buf_t *buf)
+{
+	mutex_enter(&list->tbl_mutex);
+
+#ifdef DEBUG
+	tfpkt_buf_t *scan;
+	for (scan = list_head(&list->tbl_data);
+	    scan != NULL && scan != buf;
+	    scan = list_next(&list->tbl_data, scan))
+		;
+	VERIFY3P(buf, ==, scan);
+#endif
+
+	tfpkt_buf_remove_locked(list, buf);
+	mutex_exit(&list->tbl_mutex);
+}
+
+/*
+ * Pull a single buffer from the head of the list.
+ */
+static tfpkt_buf_t *
+tfpkt_buf_alloc(tfpkt_buf_list_t *list)
+{
+	tfpkt_buf_t *buf;
+
+	mutex_enter(&list->tbl_mutex);
+	buf = list_head(&list->tbl_data);
+	if (buf == NULL) {
+		list->tbl_alloc_fails++;
+	} else {
+		tfpkt_buf_remove_locked(list, buf);
+	}
+	mutex_exit(&list->tbl_mutex);
+
+	return (buf);
+}
+
+/*
+ * Pull a single buffer from the head of the list.  This differs from
+ * tfpkt_buf_alloc() in that it isn't an error if the list is empty.
+ */
+static tfpkt_buf_t *
+tfpkt_buf_pop(tfpkt_buf_list_t *list)
+{
+	tfpkt_buf_t *buf;
+
+	mutex_enter(&list->tbl_mutex);
+	buf = list_head(&list->tbl_data);
+	if (buf != NULL)
+		tfpkt_buf_remove_locked(list, buf);
+	mutex_exit(&list->tbl_mutex);
+
+	return (buf);
+}
+
+/*
+ * Given a virtual address, search for the tfpkt_buf_t that contains it.
+ */
+static tfpkt_buf_t *
+tfpkt_buf_by_va(tfpkt_buf_list_t *list, caddr_t va)
+{
+	tfpkt_buf_t *buf;
+
+	mutex_enter(&list->tbl_mutex);
+	for (buf = list_head(&list->tbl_data);
+	    buf != NULL;
+	    buf = list_next(&list->tbl_data, buf)) {
+		if (tfpkt_buf_va(buf) == va) {
+			tfpkt_buf_remove_locked(list, buf);
+			break;
+		}
+	}
+	if (buf == NULL)
+		list->tbl_va_lookup_fails++;
+
+	mutex_exit(&list->tbl_mutex);
+
+	return (buf);
+}
+
+/*
+ * Given a physical address, search for the tfpkt_buf_t that contains it.
+ */
+static tfpkt_buf_t *
+tfpkt_buf_by_pa(tfpkt_buf_list_t *list, uint64_t pa)
+{
+	tfpkt_buf_t *buf;
+
+	mutex_enter(&list->tbl_mutex);
+	for (buf = list_head(&list->tbl_data);
+	    buf != NULL;
+	    buf = list_next(&list->tbl_data, buf)) {
+		if (tfpkt_buf_pa(buf) == pa) {
+			tfpkt_buf_remove_locked(list, buf);
+			break;
+		}
+	}
+	if (buf == NULL)
+		list->tbl_pa_lookup_fails++;
+
+	mutex_exit(&list->tbl_mutex);
+
+	return (buf);
+}
+
+static void
+tfpkt_buf_insert(tfpkt_buf_list_t *list, tfpkt_buf_t *buf)
+{
+	mutex_enter(&list->tbl_mutex);
+	list_insert_tail(&list->tbl_data, buf);
+	if (++list->tbl_count > list->tbl_high_water)
+		list->tbl_high_water = list->tbl_count;
+	mutex_exit(&list->tbl_mutex);
 }
 
 tfpkt_tbus_t *
@@ -108,29 +269,19 @@ tfpkt_tbus_dma_free(tf_tbus_dma_t *dmap)
 }
 
 /*
- * Free a single tfpkt_buf_t structure.  If the buffer includes a DMA
- * buffer, that is freed as well.
- */
-static void
-tfpkt_tbus_free_buf(tfpkt_buf_t *buf)
-{
-	if (buf->tfb_flags & TFPKT_BUF_DMA_ALLOCED) {
-		tfpkt_tbus_dma_free(&buf->tfb_dma);
-		buf->tfb_flags &= ~TFPKT_BUF_DMA_ALLOCED;
-	}
-}
-
-/*
  * Free all of the buffers on a list.  Returns the number of buffers freed.
  */
 static int
-tfpkt_tbus_free_buf_list(list_t *list)
+tfpkt_tbus_list_free_all(tfpkt_buf_list_t *list)
 {
 	tfpkt_buf_t *buf;
 	int freed = 0;
 
-	while ((buf = list_remove_head(list)) != NULL) {
-		tfpkt_tbus_free_buf(buf);
+	while ((buf = tfpkt_buf_pop(list)) != NULL) {
+		if (buf->tfb_flags & TFPKT_BUF_DMA_ALLOCED) {
+			tfpkt_tbus_dma_free(&buf->tfb_dma);
+			buf->tfb_flags &= ~TFPKT_BUF_DMA_ALLOCED;
+		}
 		freed++;
 	}
 
@@ -148,28 +299,29 @@ tfpkt_tbus_free_bufs(tfpkt_tbus_t *tbp)
 	if (tbp->ttb_bufs_mem == NULL)
 		return;
 
-	VERIFY3U(list_head(&tbp->ttb_rxbufs_inuse), ==, NULL);
-	VERIFY3U(list_head(&tbp->ttb_txbufs_inuse), ==, NULL);
-	freed = tfpkt_tbus_free_buf_list(&tbp->ttb_rxbufs_free);
-	freed += tfpkt_tbus_free_buf_list(&tbp->ttb_rxbufs_pushed);
-	freed += tfpkt_tbus_free_buf_list(&tbp->ttb_txbufs_free);
-	freed += tfpkt_tbus_free_buf_list(&tbp->ttb_txbufs_pushed);
+	VERIFY3U(tfpkt_tbus_list_free_all(&tbp->ttb_rxbufs_inuse), ==, 0);
+	VERIFY3U(tfpkt_tbus_list_free_all(&tbp->ttb_txbufs_inuse), ==, 0);
+
+	freed = tfpkt_tbus_list_free_all(&tbp->ttb_rxbufs_free);
+	freed += tfpkt_tbus_list_free_all(&tbp->ttb_rxbufs_pushed);
+	freed += tfpkt_tbus_list_free_all(&tbp->ttb_txbufs_free);
+	freed += tfpkt_tbus_list_free_all(&tbp->ttb_txbufs_pushed);
 
 	if (freed != tbp->ttb_bufs_capacity)
 		tfpkt_tbus_err(tbp, "lost track of %d/%d buffers",
 		    tbp->ttb_bufs_capacity - freed, tbp->ttb_bufs_capacity);
 
+	tfpkt_buf_list_fini(&tbp->ttb_rxbufs_free);
+	tfpkt_buf_list_fini(&tbp->ttb_rxbufs_pushed);
+	tfpkt_buf_list_fini(&tbp->ttb_rxbufs_inuse);
+	tfpkt_buf_list_fini(&tbp->ttb_txbufs_free);
+	tfpkt_buf_list_fini(&tbp->ttb_txbufs_pushed);
+	tfpkt_buf_list_fini(&tbp->ttb_txbufs_inuse);
+
 	kmem_free(tbp->ttb_bufs_mem,
 	    sizeof (tfpkt_buf_t) * tbp->ttb_bufs_capacity);
 	tbp->ttb_bufs_mem = NULL;
 	tbp->ttb_bufs_capacity = 0;
-}
-
-static void
-tfpkt_buf_list_init(list_t *list)
-{
-	list_create(list, sizeof (tfpkt_buf_t),
-	    offsetof(tfpkt_buf_t, tfb_link));
 }
 
 /*
@@ -203,9 +355,9 @@ tfpkt_tbus_alloc_bufs(tfpkt_tbus_t *tbp)
 		buf->tfb_flags |= TFPKT_BUF_DMA_ALLOCED;
 		buf->tfb_tbus = tbp;
 		if (i < TFPKT_NET_RX_BUFS)
-			list_insert_tail(&tbp->ttb_rxbufs_free, buf);
+			tfpkt_buf_insert(&tbp->ttb_rxbufs_free, buf);
 		else
-			list_insert_tail(&tbp->ttb_txbufs_free, buf);
+			tfpkt_buf_insert(&tbp->ttb_txbufs_free, buf);
 	}
 
 	return (0);
@@ -451,87 +603,35 @@ fail:
 }
 
 /*
- * Given a virtual address, search for the tfpkt_buf_t that contains it.
- */
-static tfpkt_buf_t *
-tfpkt_buf_by_va(list_t *list, caddr_t va)
-{
-	tfpkt_buf_t *buf;
-
-	for (buf = list_head(list); buf != NULL; buf = list_next(list, buf)) {
-		if (buf->tfb_dma.tpd_addr == va) {
-			list_remove(list, buf);
-			return (buf);
-		}
-	}
-	return (NULL);
-}
-
-/*
- * Given a physical address, search for the tfpkt_buf_t that contains it.
- */
-static tfpkt_buf_t *
-tfpkt_buf_by_pa(list_t *list, uint64_t pa)
-{
-	tfpkt_buf_t *buf;
-
-	for (buf = list_head(list); buf != NULL; buf = list_next(list, buf)) {
-		if (buf->tfb_dma.tpd_cookie.dmac_laddress == pa) {
-			list_remove(list, buf);
-			return (buf);
-		}
-	}
-	return (NULL);
-}
-
-/*
  * Allocate a transmit-ready buffer capable of holding at least sz bytes.
  *
  * The return value is the virtual address at which the data should be stored,
  * and which must be provided to the transmit routine.
  */
-void *
+tfpkt_buf_t *
 tfpkt_tbus_tx_alloc(tfpkt_tbus_t *tbp, size_t sz)
 {
-	tfpkt_buf_t *buf;
-	void *va = NULL;
-
-	mutex_enter(&tbp->ttb_mutex);
+	tfpkt_buf_t *buf = NULL;
 
 	if (sz > TFPKT_BUF_SIZE) {
-		tbp->ttb_txfail_pkt_too_large++;
-	} else if ((buf = list_remove_head(&tbp->ttb_txbufs_free)) == NULL) {
-		tbp->ttb_txfail_no_bufs++;
+		TBUS_STAT_BUMP(tbp, ttb_txfail_pkt_too_large);
+	} else if ((buf = tfpkt_buf_alloc(&tbp->ttb_txbufs_free)) == NULL) {
+		TBUS_STAT_BUMP(tbp, ttb_txfail_no_bufs);
 	} else {
-		va = buf->tfb_dma.tpd_addr;
-		buf->tfb_flags |= TFPKT_BUF_INUSE;
-		list_insert_tail(&tbp->ttb_txbufs_inuse, buf);
+		tfpkt_buf_insert(&tbp->ttb_txbufs_inuse, buf);
 	}
 
-	mutex_exit(&tbp->ttb_mutex);
-
-	return (va);
+	return (buf);
 }
 
 /*
  * Return a transmit buffer to the freelist from whence it came.
  */
 void
-tfpkt_tbus_tx_free(tfpkt_tbus_t *tbp, void *addr)
+tfpkt_tbus_tx_free(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf)
 {
-	tfpkt_buf_t *buf;
-
-	mutex_enter(&tbp->ttb_mutex);
-	buf = tfpkt_buf_by_va(&tbp->ttb_txbufs_inuse, addr);
-	if (buf != NULL) {
-		ASSERT(buf->tfb_flags & TFPKT_BUF_INUSE);
-		buf->tfb_flags &= ~TFPKT_BUF_INUSE;
-		list_insert_tail(&tbp->ttb_txbufs_free, buf);
-	} else {
-		tfpkt_tbus_dlog(tbp, "freeing unknown buf %p", addr);
-	}
-
-	mutex_exit(&tbp->ttb_mutex);
+	tfpkt_buf_remove(&tbp->ttb_txbufs_inuse, buf);
+	tfpkt_buf_insert(&tbp->ttb_txbufs_free, buf);
 }
 
 /*
@@ -559,39 +659,21 @@ tfpkt_tx_ring(tfpkt_tbus_t *tbp, void *addr, size_t sz)
  * failure, the call returns -1 and buffer ownership remains with the caller.
  */
 int
-tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
+tfpkt_tbus_tx(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf, size_t sz)
 {
-	tfpkt_buf_t *buf;
 	tfpkt_dr_t *drp;
 	tfpkt_dr_tx_t tx_dr;
 	uint32_t ring;
-	int rval = 0;
+	int rval;
 
-	/*
-	 * The caller should be handing us back a buffer that we allocated on
-	 * its behalf, so both the size and identity checks below should always
-	 * succeed.
-	 */
-	if (sz > TFPKT_BUF_SIZE)
-		return (EINVAL);
-
-	mutex_enter(&tbp->ttb_mutex);
-	buf = tfpkt_buf_by_va(&tbp->ttb_txbufs_inuse, addr);
-	if (buf == NULL)  {
-		tfpkt_tbus_dlog(tbp, "sending unknown buf %p", addr);
-		rval = EINVAL;
-	}
-	mutex_exit(&tbp->ttb_mutex);
-
-	if (rval != 0)
-		return (rval);
-
+	tfpkt_buf_remove(&tbp->ttb_txbufs_inuse, buf);
 	bzero(&tx_dr, sizeof (tx_dr));
 	tx_dr.tx_s = 1;
 	tx_dr.tx_e = 1;
 	tx_dr.tx_type = TFPRT_TX_DESC_TYPE_PKT;
 	tx_dr.tx_size = sz;
-	tx_dr.tx_src = buf->tfb_dma.tpd_cookie.dmac_laddress;
+	tx_dr.tx_src = tfpkt_buf_pa(buf);
+
 	/*
 	 * the reference driver sets the dst field to the same address, but has
 	 * a comment asking if it's necessary.  Let's find out...
@@ -604,7 +686,10 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 	 * This is fine with our simple ring-selection algorithm, but may not be
 	 * acceptable with something more sophisticated.
 	 */
-	ring = tfpkt_tx_ring(tbp, addr, sz);
+	tfpkt_buf_insert(&tbp->ttb_txbufs_pushed, buf);
+
+	rval = 0;
+	ring = tfpkt_tx_ring(tbp, tfpkt_buf_va(buf), sz);
 	for (uint32_t i = 0; i < TFPKT_TX_CNT; i++) {
 		drp = &tbp->ttb_tx_drs[ring];
 		if ((rval = tfpkt_dr_push(tbp, drp, (uint64_t *)&tx_dr)) == 0)
@@ -613,15 +698,14 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 	}
 
 	mutex_enter(&tbp->ttb_mutex);
-	if (rval == 0) {
-		ASSERT(buf->tfb_flags & TFPKT_BUF_INUSE);
-		buf->tfb_flags &= ~TFPKT_BUF_INUSE;
-		buf->tfb_flags |= TFPKT_BUF_PUSHED;
-		list_insert_tail(&tbp->ttb_txbufs_pushed, buf);
-	} else if (rval == ENOSPC) {
-		tbp->ttb_txfail_no_descriptors++;
-	} else {
-		tbp->ttb_txfail_other++;
+	if (rval != 0) {
+		tfpkt_buf_remove(&tbp->ttb_txbufs_pushed, buf);
+		tfpkt_buf_insert(&tbp->ttb_txbufs_inuse, buf);
+		if (rval == ENOSPC) {
+			TBUS_STAT_BUMP(tbp, ttb_txfail_no_descriptors);
+		} else {
+			TBUS_STAT_BUMP(tbp, ttb_txfail_other);
+		}
 	}
 	mutex_exit(&tbp->ttb_mutex);
 
@@ -640,13 +724,14 @@ tfpkt_tbus_rx_done(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 	mutex_enter(&tbp->ttb_mutex);
 	buf = tfpkt_buf_by_va(&tbp->ttb_rxbufs_inuse, addr);
 	if (buf != NULL) {
-		ASSERT(buf->tfb_flags & TFPKT_BUF_INUSE);
-		buf->tfb_flags &= ~TFPKT_BUF_INUSE;
-		list_insert_tail(&tbp->ttb_rxbufs_free, buf);
+		tfpkt_buf_insert(&tbp->ttb_rxbufs_free, buf);
 	}
 	mutex_exit(&tbp->ttb_mutex);
 }
 
+/*
+ * Process a single rx descriptor, representing a single incoming packet.
+ */
 static void
 tfpkt_tbus_process_rx(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, tfpkt_dr_rx_t *rx_dr)
 {
@@ -661,26 +746,27 @@ tfpkt_tbus_process_rx(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, tfpkt_dr_rx_t *rx_dr)
 		process = false;
 
 	} else {
-		buf->tfb_flags &= ~TFPKT_BUF_PUSHED;
-
 		if (rx_dr->rx_type != TFPRT_RX_DESC_TYPE_PKT) {
 			/* should never happen. */
 			tfpkt_tbus_err(tbp, "non-pkt descriptor (%d) on %s",
 			    rx_dr->rx_type, drp->tdr_name);
-			list_insert_tail(&tbp->ttb_rxbufs_free, buf);
+			tfpkt_buf_insert(&tbp->ttb_rxbufs_free, buf);
 			process = false;
 		} else {
-			buf->tfb_flags |= TFPKT_BUF_INUSE;
-			list_insert_tail(&tbp->ttb_rxbufs_inuse, buf);
+			tfpkt_buf_insert(&tbp->ttb_rxbufs_inuse, buf);
 			process = true;
 		}
 	}
 	mutex_exit(&tbp->ttb_mutex);
 
 	if (process)
-		tfpkt_rx(tbp->ttb_tfp, buf->tfb_dma.tpd_addr, rx_dr->rx_size);
+		tfpkt_rx(tbp->ttb_tfp, tfpkt_buf_va(buf), rx_dr->rx_size);
 }
 
+/*
+ * Process a single cmp descriptor, representing the completion of a single
+ * packet transmit operation.
+ */
 static void
 tfpkt_tbus_process_cmp(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp,
     tfpkt_dr_cmp_t *cmp_dr)
@@ -698,12 +784,19 @@ tfpkt_tbus_process_cmp(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp,
 		tfpkt_tbus_err(tbp, "non-pkt descriptor (%d) on %s",
 		    cmp_dr->cmp_type, drp->tdr_name);
 	} else {
-		list_insert_tail(&tbp->ttb_txbufs_free, buf);
+		tfpkt_buf_insert(&tbp->ttb_txbufs_free, buf);
 	}
 
 	mutex_exit(&tbp->ttb_mutex);
 }
 
+/*
+ * Read or write a single tbus register, returning 0 on success and -1 on
+ * failure.
+ *
+ * The only reason a failure should occur is if the tbus has been reset.  In
+ * that case, we signal our tbus monitor thread to begin the cleanup process.
+ */
 static int
 tfpkt_tbus_reg_op(tfpkt_tbus_t *tbp, size_t offset, uint32_t *val, bool rd)
 {
@@ -1092,13 +1185,11 @@ tfpkt_tbus_push_free_bufs(tfpkt_tbus_t *tbp, int ring)
 	int rval = 0;
 	uint64_t dma_addr;
 	tfpkt_dr_t *drp = &tbp->ttb_fm_drs[ring];
-	tfpkt_buf_t *buf, *next;
+	tfpkt_buf_t *buf;
 	int cnt = 0;
 
-	mutex_enter(&tbp->ttb_mutex);
-	for (buf = list_head(&tbp->ttb_rxbufs_free); buf != NULL; buf = next) {
-		next = list_next(&tbp->ttb_rxbufs_free, buf);
-		dma_addr = buf->tfb_dma.tpd_cookie.dmac_laddress;
+	while ((buf = tfpkt_buf_pop(&tbp->ttb_rxbufs_free)) != NULL) {
+		dma_addr = tfpkt_buf_pa(buf);
 		rval = tfpkt_tbus_push_fm(tbp, drp, dma_addr, TFPKT_BUF_SIZE);
 		if (rval != 0) {
 			/*
@@ -1109,14 +1200,12 @@ tfpkt_tbus_push_free_bufs(tfpkt_tbus_t *tbp, int ring)
 			 */
 			if (rval == ENOSPC)
 				rval = 0;
+			tfpkt_buf_insert(&tbp->ttb_rxbufs_free, buf);
 			break;
 		}
-		list_remove(&tbp->ttb_rxbufs_free, buf);
-		buf->tfb_flags |= TFPKT_BUF_PUSHED;
-		list_insert_tail(&tbp->ttb_rxbufs_pushed, buf);
+		tfpkt_buf_insert(&tbp->ttb_rxbufs_pushed, buf);
 		cnt++;
 	}
-	mutex_exit(&tbp->ttb_mutex);
 
 	return (rval);
 }
@@ -1359,7 +1448,7 @@ fail:
 	return (NULL);
 }
 
-void
+static void
 tfpkt_tbus_reset_detected(tfpkt_t *tfp)
 {
 	mutex_enter(&tfp->tfp_tbus_mutex);
