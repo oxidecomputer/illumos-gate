@@ -155,6 +155,8 @@ fch_i2c_mmio_block(const uint8_t unit)
 	return (mmio_reg_block_map(SMN_UNIT_FCH_I2C, phys));
 }
 
+MAKE_MMIO_FCH_REG_FN(I2C, i2c, 4);
+
 /*
  * Compile-time constant version of fch_i2c_mmio_aperture().  Normal code should
  * not use this, only where required for a const initialiser.  const_fn sure
@@ -163,6 +165,43 @@ fch_i2c_mmio_block(const uint8_t unit)
 #define	FCH_I2C_MMIO_APERTURE(u)	\
 	((u == 5) ? FCH_I2C_PHYS_BASE + 0x9000 :	\
 	FCH_I2C_PHYS_BASE + u * FCH_I2C_SIZE)
+
+/*
+ * FCH::I2C::IC_CON.  Main configuration register for each I2C peripheral.
+ */
+#define	D_FCH_I2C_IC_CON	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_I2C,	\
+	.srd_reg = 0x00			\
+}
+#define	FCH_I2C_IC_CON_MMIO(b)	\
+    fch_i2c_mmio_reg((b), D_FCH_I2C_IC_CON, 0)
+
+#define	FCH_I2C_IC_CON_GET_HOLD_ON_RX_FULL(r)	bitx32(r, 9, 9)
+#define	FCH_I2C_IC_CON_SET_HOLD_ON_RX_FULL(r, v)	bitset32(r, 9, 9, v)
+#define	FCH_I2C_IC_CON_GET_TXE_INTR_EN(r)	bitx32(r, 8, 8)
+#define	FCH_I2C_IC_CON_SET_TXE_INTR_EN(r, v)	bitset32(r, 8, 8, v)
+#define	FCH_I2C_IC_CON_GET_SD_INTR_ADDRONLY(r)	bitx32(r, 7, 7)
+#define	FCH_I2C_IC_CON_SET_SD_INTR_ADDRONLY(r, v)	bitset32(r, 7, 7, v)
+#define	FCH_I2C_IC_CON_GET_SLAVE_DIS(r)		bitx32(r, 6, 6)
+#define	FCH_I2C_IC_CON_SET_SLAVE_DIS(r, v)	bitset32(r, 6, 6, v)
+#define	FCH_I2C_IC_CON_GET_RESTART_EN(r)	bitx32(r, 5, 5)
+#define	FCH_I2C_IC_CON_SET_RESTART_EN(r, v)	bitset32(r, 5, 5, v)
+
+#define	FCH_I2C_IC_CON_GET_MA_ADDRWIDTH(r)	bitx32(r, 4, 4)
+#define	FCH_I2C_IC_CON_SET_MA_ADDRWIDTH(r, v)	bitset32(r, 4, 4, v)
+#define	FCH_I2C_IC_CON_GET_SL_ADDRWIDTH(r)	bitx32(r, 3, 3)
+#define	FCH_I2C_IC_CON_SET_SL_ADDRWIDTH(r, v)	bitset32(r, 3, 3, v)
+#define	FCH_I2C_IC_CON_ADDRWIDTH_7	0
+#define	FCH_I2C_IC_CON_ADDRWIDTH_10	1
+
+#define	FCH_I2C_IC_CON_GET_SPEED(r)		bitx32(r, 2, 1)
+#define	FCH_I2C_IC_CON_SET_SPEED(r, v)		bitset32(r, 2, 1, v)
+#define	FCH_I2C_IC_CON_SPEED_STD	1
+#define	FCH_I2C_IC_CON_SPEED_FAST	2
+#define	FCH_I2C_IC_CON_SPEED_HIGH	3
+
+#define	FCH_I2C_IC_CON_GET_MASTER_EN(r)		bitx32(r, 0, 0)
+#define	FCH_I2C_IC_CON_SET_MASTER_EN(r, v)	bitset32(r, 0, 0, v)
 
 #endif	/* _ASM */
 

@@ -73,6 +73,78 @@ MAKE_MMIO_FCH_RELOC_REG_BLOCK_FNS(MISC_B, misc_b, FCH_MISC_B_OFF,
 MAKE_MMIO_FCH_REG_FN(MISC_B, misc_b, 4);
 
 /*
+ * FCH::MISC::CGPLLCONFIG1.  One of many clock generator garbage barges; we
+ * define only the bits we use, which for now is one needed for setting up SSC.
+ */
+#define	D_FCH_MISC_A_CGPLLCFG1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
+	.srd_reg = 0x08				\
+}
+#define	FCH_MISC_A_CGPLLCFG1_MMIO(b)	\
+    fch_misc_a_mmio_reg((b), D_FCH_MISC_A_CGPLLCFG1, 0)
+
+#define	FCH_MISC_A_CGPLLCFG1_GET_SSC_EN(r)	bitx32(r, 0, 0)
+#define	FCH_MISC_A_CGPLLCFG1_SET_SSC_EN(r, v)	bitset32(r, 0, 0, v)
+
+/*
+ * FCH::MISC::CGPLLCONFIG3.  Likewise.  The CGPLLCONFIG registers are named as
+ * if they're a sequence that might have the same contents and each apply to a
+ * single clock generator but in fact they are all different and apply to the
+ * same one, CG1.  There is also CG2 which has similar but not identical
+ * configuration registers that exist in the MISC2 block.
+ */
+#define	D_FCH_MISC_A_CGPLLCFG3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
+	.srd_reg = 0x10				\
+}
+#define	FCH_MISC_A_CGPLLCFG3_MMIO(b)	\
+    fch_misc_a_mmio_reg((b), D_FCH_MISC_A_CGPLLCFG3, 0)
+
+#define	FCH_MISC_A_CGPLLCFG3_GET_FRACN_EN_OVR(r)	bitx32(r, 29, 29)
+#define	FCH_MISC_A_CGPLLCFG3_SET_FRACN_EN_OVR(r, v)	bitset32(r, 29, 29, v)
+
+/*
+ * FCH::MISC::MISCCLKCNTRL0.  This register, along with subsequent ones, is a
+ * different kind of garbage barge from the CGPLLCONFIG set; it contains bits
+ * that affect both CG1 and CG2.  The only bit we care about here is one used to
+ * request that CG1 re-sample the bits in its configuration registers and
+ * reconfigure its clocks accordingly.  Until this bit is set, at least some of
+ * those registers don't take effect.  HW clears it again once it's handled the
+ * request, and clearing the bit from SW does nothing.  Note that for reasons we
+ * don't understand, there does not seem to be a corresponding bit for CG2;
+ * there's none in this register, and the similar place we'd expect it to be in
+ * MISC2 is reserved.  It's unclear whether or how CG2 is really controlled
+ * independently at all.
+ */
+#define	D_FCH_MISC_A_CLKCTL0		(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
+	.srd_reg = 0x40				\
+}
+#define	FCH_MISC_A_CLKCTL0_MMIO(b)	\
+    fch_misc_a_mmio_reg((b), D_FCH_MISC_A_CLKCTL0, 0)
+
+#define	FCH_MISC_A_CLKCTL0_GET_UPDATE_REQ(r)	bitx32(r, 30, 30)
+#define	FCH_MISC_A_CLKCTL0_SET_UPDATE_REQ(r, v)	bitset32(r, 30, 30, v)
+
+/*
+ * FCH::MISC::STRAPSTATUS.  Provides bits showing the state of the FCH's straps
+ * when they were sampled.  Some, BUT NOT ALL, of these straps are bonded out
+ * and documented as processor straps, while others are internal to the package
+ * and make sense only if one recalls that this logic used to be in an external
+ * southbridge package.  This register is read-only.
+ */
+#define	D_FCH_MISC_A_STRAPSTATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
+	.srd_reg = 0x80				\
+}
+#define	FCH_MISC_A_STRAPSTATUS_MMIO(b)	\
+    fch_misc_a_mmio_reg((b), D_FCH_MISC_A_STRAPSTATUS, 0)
+
+#define	FCH_MISC_A_STRAPSTATUS_GET_CLKGEN(r)	bitx32(r, 17, 17)
+#define	FCH_MISC_A_STRAPSTATUS_CLKGEN_EXT	0
+#define	FCH_MISC_A_STRAPSTATUS_CLKGEN_INT	1
+
+/*
  * FCH::MISC::I2Cn_PADCTRL.  Sets electrical parameters of pads that may be (but
  * are not always, depending on the IOMUX) associated with I2C functions.  These
  * pads are designed for I2C and have somewhat limited functionality as a
