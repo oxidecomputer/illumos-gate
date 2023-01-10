@@ -149,12 +149,11 @@
  *
  * If corruption is detected by the SP, then it will reply with a special
  * message that indicates it is unable to decode the request, and the host will
- * send a new one, after incrementing the sequence number. Similarly, if the
- * host detects corruption in a reply, it will discard it and issue a new
- * request with a new sequence number.
+ * re-send. Similarly, if the host detects corruption in a reply, it will
+ * discard it and re-send the request.
  *
  * A special case is if there is corruption in the frame terminator itself.
- * Without anything been done to guard against this the channel would
+ * Without anything being done to guard against this the channel would
  * become permanently wedged. Implementing a timeout here was considered but
  * discarded as an option because there is no guaranteed response time for any
  * message sent to the SP. Some messages are likely to take a while and the SP
@@ -177,8 +176,7 @@
  * request to retrieve the status register. It then processes the bits which
  * are set there, clearing them by retrieving data from the SP or send commands
  * to acknowledge the event. Once the register is clear (and the interrupt
- * de-asserted), the original command is sent again but with a new sequence
- * number.
+ * de-asserted), the original command is sent again.
  *
  * Whilst this next part is implemented on the SP side, it's worth mentioning
  * what happens if the reverse occurs. One of the messages that the host can
@@ -193,8 +191,23 @@
  * Finally, in testing we've seen a situation where the host and the SP are out
  * of step. The host is transmitting requests and the SP is returning replies,
  * but the SP reply is a response to an old request. In this case, when an SP
- * reply is valid in all aspects apart from having an old sequence number, the
+ * reply is valid in all aspects apart from having a bad sequence number, the
  * host will discard the reply and listen again, without re-sending.
+ *
+ * Sequence number
+ * ==============
+ *
+ * Each message contains a 64-bit sequence number in the header which is used
+ * to uniquely identify a particular request (wraparound aside). When a message
+ * must be re-transmitted for any reason, those retransmissions will carry the
+ * same sequence number as the original. In particular this allows the receiver
+ * to detect a retransmitted message so that it can reply with the same data
+ * rather than assuming that its last response was successfully received.
+ * This is especially important for things such as alert messages where a
+ * message would otherwise be lost. Note that sequence numbers may not always
+ * be used in order. For example, if message X is delayed because the SP has
+ * asserted its interrupt line, then additional messages X + 1 .. X + n will be
+ * sent to process the cause of this, before message X is finally sent.
  *
  * Phases of boot
  * ==============
@@ -301,8 +314,8 @@
  * ===============
  *
  * As may have become apparent from what's above, there are some cases when the
- * host will automatically resend a message with a new sequence number during a
- * transaction. This can occur when:
+ * host will automatically resend a message during a transaction. This can
+ * occur when:
  *
  *  - the SP asserts its interrupt while the host is sending or waiting for
  *    a response;
@@ -420,9 +433,6 @@
 
 /* See "Retransmissions" above */
 #define	IPCC_MAX_ATTEMPTS	10
-
-/* Sequence number for requests */
-static uint64_t ipcc_seq;
 
 /*
  * Global message and packet buffers.
@@ -659,7 +669,8 @@ ipcc_failure_str(uint8_t reason)
 }
 
 static int
-ipcc_msg_init(uint8_t *buf, size_t len, size_t *off, ipcc_hss_cmd_t cmd)
+ipcc_msg_init(uint8_t *buf, size_t len, uint64_t seq, size_t *off,
+    ipcc_hss_cmd_t cmd)
 {
 	uint32_t ver = IPCC_VERSION;
 	uint32_t magic = IPCC_MAGIC;
@@ -669,14 +680,9 @@ ipcc_msg_init(uint8_t *buf, size_t len, size_t *off, ipcc_hss_cmd_t cmd)
 	if (len - *off < IPCC_MIN_PACKET_SIZE)
 		return (ENOBUFS);
 
-	/* Wrap if we have got to the reply namespace (top bit set) */
-	if (++ipcc_seq & IPCC_SEQ_REPLY)
-		ipcc_seq = 1;
-
 	ipcc_encode_bytes((uint8_t *)&magic, sizeof (magic), buf, off);
 	ipcc_encode_bytes((uint8_t *)&ver, sizeof (ver), buf, off);
-	ipcc_encode_bytes((uint8_t *)&ipcc_seq, sizeof (ipcc_seq),
-	    buf, off);
+	ipcc_encode_bytes((uint8_t *)&seq, sizeof (seq), buf, off);
 	ipcc_encode_bytes((uint8_t *)&cmd, sizeof (uint8_t), buf, off);
 
 	return (0);
@@ -880,8 +886,10 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
     uint8_t *dataout, size_t dataoutl,
     uint8_t **datain, size_t *datainl)
 {
+	/* Sequence number for requests */
+	static uint64_t ipcc_seq;
 	size_t off, pktl, rcvd_datal;
-	uint64_t rcvd_seq;
+	uint64_t send_seq, rcvd_seq;
 	uint32_t rcvd_magic, rcvd_version;
 	uint16_t rcvd_crc, crc;
 	uint8_t rcvd_cmd, *end;
@@ -895,6 +903,11 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 			return (EINTR);
 	}
 
+	/* Wrap if we have got to the reply namespace (top bit set) */
+	if ((++ipcc_seq & IPCC_SEQ_REPLY) != 0)
+		ipcc_seq = 1;
+	send_seq = ipcc_seq;
+
 resend:
 
 	if (++attempt > IPCC_MAX_ATTEMPTS) {
@@ -906,7 +919,7 @@ resend:
 	    cmd, attempt, IPCC_MAX_ATTEMPTS);
 
 	off = 0;
-	err = ipcc_msg_init(ipcc_msg, sizeof (ipcc_msg), &off, cmd);
+	err = ipcc_msg_init(ipcc_msg, sizeof (ipcc_msg), send_seq, &off, cmd);
 	if (err != 0)
 		return (err);
 
@@ -1030,18 +1043,16 @@ reread:
 		LOG("Decode failed, sequence ignored.\n");
 	} else {
 		rcvd_seq &= IPCC_SEQ_MASK;
-		if (rcvd_seq != ipcc_seq) {
+		if (rcvd_seq != send_seq) {
 			LOG("Incorrect sequence in response "
 			    "(0x%lx) vs expected (0x%lx)\n",
-			    rcvd_seq, ipcc_seq);
+			    rcvd_seq, send_seq);
 			/*
-			 * If we've received an old sequence number from the SP
-			 * in an otherwise valid packet, then we may be out of
-			 * sync. Discard and read again.
+			 * If we've received the wrong sequence number from
+			 * the SP in an otherwise valid packet, then we are
+			 * out of sync. Discard and read again.
 			 */
-			if (rcvd_seq != ipcc_seq)
-				goto reread;
-			goto resend;
+			goto reread;
 		}
 	}
 	if (rcvd_cmd == IPCC_SP_DECODEFAIL) {
