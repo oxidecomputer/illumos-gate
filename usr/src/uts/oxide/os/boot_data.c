@@ -36,6 +36,7 @@
 #include <sys/boot_physmem.h>
 #include <sys/boot_debug.h>
 #include <sys/kernel_ipcc.h>
+#include <sys/time.h>
 
 extern int bootrd_debug, prom_debug;
 extern boolean_t kbm_debug;
@@ -422,4 +423,9 @@ genunix_set_tunables(void)
 	 * We don't support running in a virtual environment.
 	 */
 	enable_platform_detection = 0;
+
+	/*
+	 * No time-of-day unit so tell the clock code not to bother.
+	 */
+	have_hw_tod = 0;
 }

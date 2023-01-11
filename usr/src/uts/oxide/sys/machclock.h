@@ -22,6 +22,8 @@
 /*
  * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef	_SYS_MACHCLOCK_H
@@ -32,40 +34,17 @@ extern "C" {
 #endif
 
 /*
- * tod module name and operations
+ * Stubs relied upon by other parts of the system; we don't support a
+ * time-of-day clock on this architecture.
  */
 
 struct tod_ops;
 typedef struct tod_ops tod_ops_t;
 
-/*
- * TOD Ops.
- * The only functions that _must_ be defined are the tod_get() and
- * tod_set() functions.  All others may be unused, and need to be
- * checked for NULL before using.
- */
-struct tod_ops {
-	int		tod_version;
-	timestruc_t	(*tod_get)(tod_ops_t *);
-	void		(*tod_set)(tod_ops_t *, timestruc_t);
-	uint_t		(*tod_set_watchdog_timer)(tod_ops_t *, int);
-	uint_t		(*tod_clear_watchdog_timer)(tod_ops_t *);
-	void		(*tod_set_wake_alarm)(tod_ops_t *, int);
-	void		(*tod_clear_wake_alarm)(tod_ops_t *);
-	struct tod_ops	*tod_next;
-};
-
-#define	TOD_OPS_VERSION	1
-
 extern tod_ops_t	*tod_ops;
-extern char		*tod_module_name;
 
-#define	TODOP_GET(top)		((top)->tod_get(top))
-#define	TODOP_SET(top, ts)	((top)->tod_set(top, ts))
-#define	TODOP_SETWD(top, nsec)	((top)->tod_set_watchdog_timer(top, nsec))
-#define	TODOP_CLRWD(top)	((top)->tod_clear_watchdog_timer(top))
-#define	TODOP_SETWAKE(top, nsec) ((top)->tod_set_wake_alarm(top, nsec))
-#define	TODOP_CLRWAKE(top)	((top)->tod_clear_wake_alarm(top))
+#define	TODOP_GET(_)		tod_get()
+#define	TODOP_SET(_, _ts)
 
 #ifdef	__cplusplus
 }

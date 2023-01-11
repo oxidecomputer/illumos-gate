@@ -346,6 +346,7 @@ extern	int64_t		timedelta;
 extern	int		timechanged;
 extern	int		tod_needsync;
 extern	kmutex_t	tod_lock;
+extern	int		have_hw_tod;
 extern	volatile timestruc_t	hrestime;
 extern	hrtime_t	hres_last_tick;
 extern	int64_t		hrestime_adj;

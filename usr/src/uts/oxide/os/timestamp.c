@@ -26,6 +26,7 @@
  * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/types.h>
@@ -800,128 +801,12 @@ tsc_adjust_delta(hrtime_t tdelta)
 }
 
 /*
- * Functions to manage TSC and high-res time on suspend and resume.
+ * Suspend/resume is not supported on this architecture so we do not implement
+ * TSC functions for it.  However, this variable is referenced ifndef sparc
+ * (sigh) on common/cpr/cpr_main.c so it has to exist.  It doesn't control
+ * anything and should go away.
  */
-
-/* tod_ops from "uts/i86pc/io/todpc_subr.c" */
-extern tod_ops_t *tod_ops;
-
-static uint64_t tsc_saved_tsc = 0; /* 1 in 2^64 chance this'll screw up! */
-static timestruc_t tsc_saved_ts;
-static int	tsc_needs_resume = 0;	/* We only want to do this once. */
-int		tsc_delta_onsuspend = 0;
-int		tsc_adjust_seconds = 1;
-int		tsc_suspend_count = 0;
 int		tsc_resume_in_cyclic = 0;
-
-/*
- * Take snapshots of the current time and do any other pre-suspend work.
- */
-void
-tsc_suspend(void)
-{
-	/*
-	 * We need to collect the time at which we suspended here so we know
-	 * now much should be added during the resume.  This is called by each
-	 * CPU, so reentry must be properly handled.
-	 */
-	if (tsc_gethrtime_enable) {
-		/*
-		 * Perform the tsc_read after acquiring the lock to make it as
-		 * accurate as possible in the face of contention.
-		 */
-		mutex_enter(&tod_lock);
-		tsc_saved_tsc = tsc_read();
-		tsc_saved_ts = TODOP_GET(tod_ops);
-		mutex_exit(&tod_lock);
-		/* We only want to do this once. */
-		if (tsc_needs_resume == 0) {
-			if (tsc_delta_onsuspend) {
-				tsc_adjust_delta(tsc_saved_tsc);
-			} else {
-				tsc_adjust_delta(nsec_scale);
-			}
-			tsc_suspend_count++;
-		}
-	}
-
-	invalidate_cache();
-	tsc_needs_resume = 1;
-}
-
-/*
- * Restore all timestamp state based on the snapshots taken at suspend time.
- */
-void
-tsc_resume(void)
-{
-	/*
-	 * We only need to (and want to) do this once.  So let the first
-	 * caller handle this (we are locked by the cpu lock), as it
-	 * is preferential that we get the earliest sync.
-	 */
-	if (tsc_needs_resume) {
-		/*
-		 * If using the TSC, adjust the delta based on how long
-		 * we were sleeping (or away).  We also adjust for
-		 * migration and a grown TSC.
-		 */
-		if (tsc_saved_tsc != 0) {
-			timestruc_t	ts;
-			hrtime_t	now, sleep_tsc = 0;
-			int		sleep_sec;
-			extern void	tsc_tick(void);
-			extern uint64_t cpu_freq_hz;
-
-			/* tsc_read() MUST be before TODOP_GET() */
-			mutex_enter(&tod_lock);
-			now = tsc_read();
-			ts = TODOP_GET(tod_ops);
-			mutex_exit(&tod_lock);
-
-			/* Compute seconds of sleep time */
-			sleep_sec = ts.tv_sec - tsc_saved_ts.tv_sec;
-
-			/*
-			 * If the saved sec is less that or equal to
-			 * the current ts, then there is likely a
-			 * problem with the clock.  Assume at least
-			 * one second has passed, so that time goes forward.
-			 */
-			if (sleep_sec <= 0) {
-				sleep_sec = 1;
-			}
-
-			/* How many TSC's should have occured while sleeping */
-			if (tsc_adjust_seconds)
-				sleep_tsc = sleep_sec * cpu_freq_hz;
-
-			/*
-			 * We also want to subtract from the "sleep_tsc"
-			 * the current value of tsc_read(), so that our
-			 * adjustment accounts for the amount of time we
-			 * have been resumed _or_ an adjustment based on
-			 * the fact that we didn't actually power off the
-			 * CPU (migration is another issue, but _should_
-			 * also comply with this calculation).  If the CPU
-			 * never powered off, then:
-			 *    'now == sleep_tsc + saved_tsc'
-			 * and the delta will effectively be "0".
-			 */
-			sleep_tsc -= now;
-			if (tsc_delta_onsuspend) {
-				tsc_adjust_delta(sleep_tsc);
-			} else {
-				tsc_adjust_delta(tsc_saved_tsc + sleep_tsc);
-			}
-			tsc_saved_tsc = 0;
-
-			tsc_tick();
-		}
-		tsc_needs_resume = 0;
-	}
-
-}
 
 static int
 tsc_calibrate_cmp(const void *a, const void *b)

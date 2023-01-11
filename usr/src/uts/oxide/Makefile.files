@@ -111,7 +111,6 @@ CORE_OBJS +=			\
 	startup.o		\
 	stubs.o			\
 	timestamp.o		\
-	todpc_subr.o		\
 	trap.o			\
 	tscc_hpet.o		\
 	tscc_pit.o		\

@@ -25,6 +25,7 @@
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/param.h>
@@ -314,6 +315,8 @@ static int fsflushcnt;	/* counter for t_fsflushr */
 int	dosynctodr = 1;	/* patchable; enable/disable sync to TOD chip */
 int	tod_needsync = 0;	/* need to sync tod chip with software time */
 static int tod_broken = 0;	/* clock chip doesn't work */
+int	have_hw_tod = 1;	/* this machine has a usable TOD chip */
+				/* int not boolean_t to support /etc/system */
 time_t	boot_time = 0;		/* Boot time in seconds since 1970 */
 cyclic_id_t clock_cyclic;	/* clock()'s cyclic_id */
 cyclic_id_t deadman_cyclic;	/* deadman()'s cyclic_id */
@@ -1842,10 +1845,10 @@ delay_sig(clock_t ticks)
 #define	SECONDS_PER_DAY 86400
 
 /*
- * Initialize the system time based on the TOD chip.  approx is used as
- * an approximation of time (e.g. from the filesystem) in the event that
- * the TOD chip has been cleared or is unresponsive.  An approx of -1
- * means the filesystem doesn't keep time.
+ * Initialize the system time based on the TOD chip, if this machine has one.
+ * approx is used as an approximation of time (e.g. from the filesystem) in the
+ * event that there's no usable time from a TOD chip.  An approx of -1 means the
+ * filesystem doesn't keep time.
  */
 void
 clkset(time_t approx)
@@ -1855,7 +1858,24 @@ clkset(time_t approx)
 	int set_clock = 0;
 
 	mutex_enter(&tod_lock);
-	ts = tod_get();
+
+	/*
+	 * This machine does not have a hardware TOD clock, or machine-dependent
+	 * code has told us it's not persistent or otherwise unusable.  Below
+	 * we'll set the clock to an arbitrary time before which this code was
+	 * written, as we would if we found the TOD not advancing.  We also need
+	 * to set a few related variables so that we avoid most of the intended
+	 * uses of a TOD unit.
+	 */
+	if (have_hw_tod == 0) {
+		tod_broken = 1;
+		dosynctodr = 0;
+		tod_validate_enable = 0;
+		ts.tv_sec = 0;
+		ts.tv_nsec = 0;
+	} else {
+		ts = tod_get();
+	}
 
 	if (ts.tv_sec > 365 * SECONDS_PER_DAY) {
 		/*
@@ -1882,22 +1902,27 @@ clkset(time_t approx)
 		ts.tv_sec = (approx > diagnose_date ? approx : diagnose_date);
 		ts.tv_nsec = 0;
 
-		/*
-		 * Attempt to write the new time to the TOD chip.  Set spl high
-		 * to avoid getting preempted between the tod_set and tod_get.
-		 */
-		spl = splhi();
-		tod_set(ts);
-		tmp = tod_get();
-		splx(spl);
+		if (have_hw_tod != 0) {
+			/*
+			 * Attempt to write the new time to the TOD chip.  Set
+			 * spl high to avoid getting preempted between the
+			 * tod_set and tod_get.
+			 */
+			spl = splhi();
+			tod_set(ts);
+			tmp = tod_get();
+			splx(spl);
 
-		if (tmp.tv_sec != ts.tv_sec && tmp.tv_sec != ts.tv_sec + 1) {
-			tod_broken = 1;
-			dosynctodr = 0;
-			cmn_err(CE_WARN, "Time-of-day chip unresponsive.");
-		} else {
-			cmn_err(CE_WARN, "Time-of-day chip had "
-			    "incorrect date; check and reset.");
+			if (tmp.tv_sec != ts.tv_sec &&
+			    tmp.tv_sec != ts.tv_sec + 1) {
+				tod_broken = 1;
+				dosynctodr = 0;
+				cmn_err(CE_WARN,
+				    "Time-of-day chip unresponsive.");
+			} else {
+				cmn_err(CE_WARN, "Time-of-day chip had "
+				    "incorrect date; check and reset.");
+			}
 		}
 		set_clock = 1;
 	}

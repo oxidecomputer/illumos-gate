@@ -22,6 +22,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/systm.h>
@@ -226,24 +228,16 @@ extern void	tsc_resume(void);
  */
 extern int	tsc_resume_in_cyclic;
 
-/*ARGSUSED*/
 static void
 cbe_suspend(cyb_arg_t arg)
 {
-	/*
-	 * This is an x86 backend, so let the tsc_suspend
-	 * that is specific to x86 platforms do the work.
-	 */
-	tsc_suspend();
+	panic("CPR/suspend not supported on this architecture!");
 }
 
-/*ARGSUSED*/
 static void
 cbe_resume(cyb_arg_t arg)
 {
-	if (tsc_resume_in_cyclic) {
-		tsc_resume();
-	}
+	panic("CPR/resume not supported on this architecture!");
 }
 
 void

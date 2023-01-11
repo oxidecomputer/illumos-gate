@@ -421,9 +421,6 @@ static pgcnt_t kphysm_init(page_t *, pgcnt_t);
  * stacks.
  */
 
-/* real-time-clock initialization parameters */
-extern time_t process_rtc_config_file(void);
-
 uintptr_t	kernelbase;
 uintptr_t	postbootkernelbase;	/* not set till boot loader is gone */
 uintptr_t	eprom_kernelbase;
@@ -1308,11 +1305,6 @@ startup_modules(void)
 	PRM_POINT("startup_modules() starting...");
 
 	/*
-	 * Read the GMT lag from /etc/rtc_config.
-	 */
-	sgmtl(process_rtc_config_file());
-
-	/*
 	 * Calculate default settings of system parameters based upon
 	 * maxusers, yet allow to be overridden via the /etc/system file.
 	 */
@@ -1840,15 +1832,6 @@ startup_end(void)
 	if (opteron_erratum_147)
 		patch_erratum_147();
 #endif
-	/*
-	 * If needed, load TOD module now so that ddi_get_time(9F) etc. work
-	 * (For now, "needed" is defined as set tod_module_name in /etc/system)
-	 */
-	if (tod_module_name != NULL) {
-		PRM_POINT("load_tod_module()");
-		load_tod_module(tod_module_name);
-	}
-
 	/*
 	 * Configure the system.
 	 */
