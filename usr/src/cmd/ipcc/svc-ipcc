@@ -10,55 +10,95 @@
 # http://www.illumos.org/license/CDDL.
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
-
-# XXX -	where does this eventually live? Ideally we would set up the DPIO from
-#	the kernel, in the ipcc module.
-#
-
-#
-# CONTROLLER      GPIO                ID
-# zen_gpio0       AGPIO139            53
-#
-# Connected to the SP and used for SP-to-Host interrupt.
-GPIO="AGPIO139"
-IPCC_CONF="/platform/$(uname -m)/kernel/drv/ipcc.conf"
 
 . /lib/svc/share/smf_include.sh
 
+#
+# This service creates a DPIO (Dedicated Purpose I/O) for the SP-to-Host
+# interrupt line. It contains hard-coded knowledge of the required parameters
+# based on the platform, which will need extending to support future systems.
+#
+# It may also be possible in the future to create the DPIO from the ipcc kernel
+# module, rather than requiring this service.
+
+# GPIO location based on platform
+typeset -rA GPIOMAP=(
+	[Oxide,Gimlet]=(
+		[controller]=zen_gpio0
+		[gpio]=AGPIO139
+	)
+)
+
+if [[ -z "$SMF_FMRI" ]]; then
+        echo "this script can only be invoked by smf(7)"
+        exit $SMF_EXIT_ERR_NOSMF
+fi
+
 smf_is_globalzone || exit $SMF_EXIT_OK
 
-if [[ ! -r "$IPCC_CONF" ]]; then
-	echo "$IPCC_CONF not found."
+typeset -r GPIOADM=/usr/sbin/gpioadm
+
+typeset -r PLATFORM=$(prtconf /devices)
+typeset -r IPCC_CONF="/platform/$(uname -m)/kernel/drv/ipcc.conf"
+
+if [[ -z "${GPIOMAP[$PLATFORM]}" ]]; then
+	echo "$SMF_FMRI is not supported for $PLATFORM"
+	/usr/sbin/svcadm disable $SMF_FMRI
+	# This sleep is here to allow the effect of the 'svcadm disable'
+	# to propagate through to the repository in order to work around a race
+	# condition where the service may start up again. Once illumos
+	# 15320 is resolved, it should be removed in favour of this script
+	# exiting with the new $SMF_EXIT_TEMP_DISABLE
+	sleep 5 &
+	exit $SMF_EXIT_OK
+fi
+
+typeset -r CTRL="${GPIOMAP[$PLATFORM][controller]}"
+typeset -r GPIO="${GPIOMAP[$PLATFORM][gpio]}"
+
+if [[ -z "$CTRL" || -z "$GPIO" ]]; then
+	echo "Could not determine controller/gpio for $PLATFORM"
 	exit $SMF_EXIT_ERR_CONFIG
 fi
 
-DPIO_NAME=$(grep sp-intr-path "$IPCC_CONF" | cut -d\" -f2)
+if [[ ! -r "$IPCC_CONF" ]]; then
+	echo "ipcc configuration file $IPCC_CONF could not be read."
+	exit $SMF_EXIT_ERR_CONFIG
+fi
+
+DPIO_NAME=$(awk -F'"' '/^sp-intr-path/ { print $2 }' $IPCC_CONF)
 if [[ -z "$DPIO_NAME" ]]; then
 	echo "Could not extract the DPIO name from $IPCC_CONF"
 	exit $SMF_EXIT_ERR_CONFIG
 fi
 DPIO_NAME=${DPIO_NAME##*/}
 
-# On gimlet there is only ever one zen_gpio controller (which currently has
-# instance number 0). Search for any controller which has the GPIO we are
-# looking for. XXX - reconsider after stlouis#215 and once gpio is
-# reparented under fch.
-GPIO_PIN=$(gpioadm gpio list -1 -p -o controller,id "*/$GPIO")
-(( $? == 0 )) || exit $SMF_EXIT_ERR_FATAL
-CONTROLLER="${GPIO_PIN%:*}"
-ID="${GPIO_PIN#*:}"
-GPIO_PIN_NAME="$CONTROLLER/$ID"
+existing=$($GPIOADM dpio list -Hpo controller,gpionum $DPIO_NAME 2>/dev/null)
+if (($? == 0)) && [[ -n "$existing" ]]; then
+	controller=${existing%:*}
+	id=${existing#*:}
+	echo "Found existing DPIO $DPIO_NAME at $controller/$id"
+	if [[ "$controller" != "$CTRL" ]]; then
+		echo "Existing DPIO is on controller $controller and not $CTRL"
+		exit $SMF_EXIT_ERR_FATAL
+	fi
+	echo "Removing DPIO $DPIO_NAME"
+	if ! $GPIOADM dpio undefine "$controller/$id"; then
+		echo "Could not undefine existing DPIO $DPIO_NAME"
+		exit $SMF_EXIT_ERR_FATAL
+	fi
+fi
 
 case "$1" in
 start)
-	/usr/sbin/gpioadm dpio define -K -r "$GPIO_PIN_NAME" "$DPIO_NAME" || \
+	echo "Creating DPIO $DPIO_NAME over $CTRL/$GPIO"
+	$GPIOADM dpio define -K -r "$CTRL/$GPIO" "$DPIO_NAME" || \
 	    exit $SMF_EXIT_ERR_FATAL
 	;;
 stop)
-	# This service never undefines the DPIO as it is intended to persist
-	# after boot so that the ipcc kernel module can use it.
+	# Any existing DPIO will have been undefined above.
 	;;
 *)
 	echo "ERROR: $0: unsupported command '$1'" >&2

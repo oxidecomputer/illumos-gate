@@ -43,7 +43,7 @@
         <exec_method name="stop"
                      type="method"
                      timeout_seconds="60"
-                     exec=":true" />
+                     exec="/lib/svc/method/svc-ipcc %m" />
 
         <property_group name="startd"
                         type="framework">

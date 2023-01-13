@@ -29,7 +29,7 @@
 # Copyright 2019 Joyent, Inc.
 # Copyright (c) 2011, 2015 by Delphix. All rights reserved.
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
-# Copyright 2021 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 <include SUNWcs.man1.inc>
@@ -389,7 +389,8 @@ $(i386_ONLY)file path=lib/svc/manifest/system/hostid.xml group=sys mode=0444
 file path=lib/svc/manifest/system/hotplug.xml group=sys mode=0444
 file path=lib/svc/manifest/system/identity.xml group=sys mode=0444
 file path=lib/svc/manifest/system/idmap.xml group=sys mode=0444
-file path=lib/svc/manifest/system/ipcc.xml group=sys mode=0444
+file path=lib/svc/manifest/system/ipcc.xml group=sys mode=0444 \
+    variant.opensolaris.zone=global
 file path=lib/svc/manifest/system/keymap.xml group=sys mode=0444
 file path=lib/svc/manifest/system/logadm-upgrade.xml group=sys mode=0444
 file path=lib/svc/manifest/system/manifest-import.xml group=sys mode=0444
@@ -450,7 +451,7 @@ file path=lib/svc/method/svc-dlmgmtd mode=0555
 file path=lib/svc/method/svc-forwarding mode=0555
 $(i386_ONLY)file path=lib/svc/method/svc-hostid mode=0555
 file path=lib/svc/method/svc-hotplug mode=0555
-file path=lib/svc/method/svc-ipcc mode=0555
+file path=lib/svc/method/svc-ipcc mode=0555 variant.opensolaris.zone=global
 file path=lib/svc/method/svc-legacy-routing mode=0555
 file path=lib/svc/method/svc-nscd mode=0555
 file path=lib/svc/method/svc-rbac mode=0555
