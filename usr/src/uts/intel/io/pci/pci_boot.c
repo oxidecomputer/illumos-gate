@@ -23,7 +23,7 @@
  * Copyright 2019 Joyent, Inc.
  * Copyright 2019 Western Digital Corporation
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -124,7 +124,7 @@
  *	<foreach ROOT bus>
  *	    populate_bus_res()
  *				Find resources associated with this root bus
- *				based on what the platform provideds through the
+ *				based on what the platform provides through the
  *				pci platform interfaces defined in
  *				sys/plat/pci_prd.h. On i86pc this is driven by
  *				ACPI and BIOS tables.
@@ -749,6 +749,31 @@ resolve_alloc_bus(uchar_t bus, mem_res_t type)
 	return (bus);
 }
 
+/*
+ * Each root port has a record of the number of PCIe bridges that is under it
+ * and the amount of memory that is has available which is not otherwise
+ * required for BARs.
+ *
+ * This function finds the root port for a given bus and returns the amount of
+ * spare memory that is available for allocation to any one of its bridges. In
+ * general, not all bridges end up being reprogrammed, so this is usually an
+ * underestimate. A smarter allocator could account for this by building up a
+ * better picture of the topology.
+ */
+static uint64_t
+get_per_bridge_avail(uchar_t bus)
+{
+	uchar_t par_bus;
+
+	par_bus = pci_bus_res[bus].par_bus;
+	while (par_bus != (uchar_t)-1) {
+		bus = par_bus;
+		par_bus = pci_bus_res[par_bus].par_bus;
+	}
+
+	return (pci_bus_res[bus].mem_buffer / pci_bus_res[bus].num_bridge);
+}
+
 static uint64_t
 lookup_parbus_res(uchar_t parbus, uint64_t size, uint64_t align, mem_res_t type)
 {
@@ -834,6 +859,18 @@ get_parbus_res(uchar_t parbus, uchar_t bus, uint64_t size, uint64_t align,
 	memlist_free_all(avail);
 
 	addr = lookup_parbus_res(parbus, size, align, type);
+
+	/*
+	 * The system may have provided a 64-bit non-PF memory region to the
+	 * parent bus, but we cannot use that for programming a bridge. Since
+	 * the memlists are kept sorted by base address and searched in order,
+	 * then if we received a 64-bit address here we know that the request
+	 * is unsatisfiable from the available 32-bit ranges.
+	 */
+	if (type == RES_MEM &&
+	    (addr >= UINT32_MAX || addr >= UINT32_MAX - size)) {
+		return (0);
+	}
 
 	if (addr != 0) {
 		memlist_insert(par_used, addr, size);
@@ -1190,8 +1227,12 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	}
 
 	buscount = subbus - secbus + 1;
-	dcmn_err(CE_NOTE, MSGHDR " bus count %u", "ppb", bus, dev, func,
-	    buscount);
+
+	dcmn_err(CE_NOTE, MSGHDR
+	    "secbus 0x%x existing sizes I/O 0x%x, MEM 0x%lx, PMEM 0x%lx",
+	    "ppb", bus, dev, func, secbus,
+	    pci_bus_res[secbus].io_size, pci_bus_res[secbus].mem_size,
+	    pci_bus_res[secbus].pmem_size);
 
 	/*
 	 * If the bridge's I/O range needs to be reprogrammed, then the
@@ -1199,22 +1240,60 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	 *  - 512 bytes per downstream bus;
 	 *  - the amount required by its current children.
 	 * rounded up to the next 4K.
+	 */
+	io.size = MAX(pci_bus_res[secbus].io_size, buscount * 0x200);
+
+	/*
+	 * Similarly if the memory ranges need to be reprogrammed, then we'd
+	 * like to assign some extra memory to the bridge in case there is
+	 * anything hotplugged underneath later.
 	 *
-	 * Similarly if the memory ranges need to be reprogrammed, then the
-	 * bridge is going to be allocated memory with the greater of:
-	 *  - 32MiB per downstream bus;
-	 *  - the amount required by its current children.
+	 * We use the information gathered earlier relating to the number of
+	 * bridges that must share the resource of this bus' root port, and how
+	 * much memory is available that isn't already accounted for to
+	 * determine how much to use.
 	 *
-	 * For the PF memory range, if the parent bus could allocate a block
-	 * that requires a 64-bit range, the minimum memory is increased to
-	 * 512MiB. XXX - this is a workaround that probably will not go well on
-	 * PCs, certainly not if the available PF MMIO space is the same as the
-	 * regular MMIO space or is otherwise limited to being below the 32-bit
-	 * boundary.  Since on oxide machines this is always above the boundary
-	 * and practically unlimited, we allocate each bridge 512 MiB.  The
-	 * number is arbitrary and could be much greater, and computed from the
-	 * number of bridges that share the parent bus's resources.
-	 *
+	 * At least the existing `mem_size` must be allocated as that has been
+	 * gleaned from enumeration.
+	 */
+	uint64_t avail = get_per_bridge_avail(bus);
+
+	if (avail > 0) {
+		/* Try 32MiB first, then adjust down until it fits */
+		for (uint_t i = 32; i > 0; i >>= 1) {
+			if (avail >= buscount * PPB_MEM_ALIGNMENT * i) {
+				mem.size = buscount * PPB_MEM_ALIGNMENT * i;
+				dcmn_err(CE_NOTE, MSGHDR
+				    "Allocating %uMiB",
+				    "ppb", bus, dev, func, i);
+				break;
+			}
+		}
+	}
+	mem.size = MAX(pci_bus_res[secbus].mem_size, mem.size);
+
+	/*
+	 * For the PF memory range, illumos has not historically handed out
+	 * any additional memory to bridges. However there are some
+	 * hotpluggable devices which need 64-bit PF space and so we now always
+	 * attempt to allocate at least 32 MiB. If there is enough space
+	 * available from a parent then we will increase this to 512MiB.
+	 * If we're unable to find memory to satisfy this, we just move on and
+	 * are no worse off than before.
+	 */
+	pmem.size = MAX(pci_bus_res[secbus].pmem_size,
+	    buscount * PPB_MEM_ALIGNMENT * 32);
+
+	/*
+	 * Check if the parent bus could allocate a 64-bit sized PF
+	 * range and bump the minimum pmem.size to 512MB if so.
+	 */
+	if (lookup_parbus_res(parbus, 1ULL << 32, mem.align, RES_PMEM) > 0) {
+		pmem.size = MAX(pci_bus_res[secbus].pmem_size,
+		    buscount * PPB_MEM_ALIGNMENT * 512);
+	}
+
+	/*
 	 * I/O space needs to be 4KiB aligned, Memory space needs to be 1MiB
 	 * aligned.
 	 *
@@ -1223,27 +1302,6 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	 * align to the size of the largest child request within that size
 	 * (which is always a power of two).
 	 */
-	dcmn_err(CE_NOTE, MSGHDR
-	    "Existing Bus sizes I/O 0x%x, MEM 0x%lx, PMEM 0x%lx",
-	    "ppb", bus, dev, func,
-	    pci_bus_res[secbus].io_size, pci_bus_res[secbus].mem_size,
-	    pci_bus_res[secbus].pmem_size);
-
-	io.size = MAX(pci_bus_res[secbus].io_size, buscount * 0x200);
-	mem.size = MAX(pci_bus_res[secbus].mem_size,
-	    buscount * PPB_MEM_ALIGNMENT * 32);
-	pmem.size = MAX(pci_bus_res[secbus].pmem_size,
-	    buscount * PPB_MEM_ALIGNMENT * 32);
-
-	/*
-	 * Check if there the parent bus could allocate a 64-bit sized
-	 * range and bump pmem.size to 512MB if so.
-	 */
-	if (lookup_parbus_res(parbus, 1ULL << 32, mem.align, RES_PMEM) > 0) {
-		pmem.size = MAX(pci_bus_res[secbus].pmem_size,
-		    buscount * PPB_MEM_ALIGNMENT * 512);
-	}
-
 	io.size = P2ROUNDUP(io.size, PPB_IO_ALIGNMENT);
 	mem.size = P2ROUNDUP(mem.size, PPB_MEM_ALIGNMENT);
 	pmem.size = P2ROUNDUP(pmem.size, PPB_MEM_ALIGNMENT);
@@ -1579,9 +1637,63 @@ pci_reprogram(void)
 		 */
 		populate_bus_res(bus);
 
+		/*
+		 * 2. Exclude <1M address range here in case below reserved
+		 * ranges for BIOS data area, ROM area etc are wrongly reported
+		 * in ACPI resource producer entries for PCI root bus.
+		 *	00000000 - 000003FF	RAM
+		 *	00000400 - 000004FF	BIOS data area
+		 *	00000500 - 0009FFFF	RAM
+		 *	000A0000 - 000BFFFF	VGA RAM
+		 *	000C0000 - 000FFFFF	ROM area
+		 */
+		(void) memlist_remove(&pci_bus_res[bus].mem_avail, 0, 0x100000);
+		(void) memlist_remove(&pci_bus_res[bus].pmem_avail,
+		    0, 0x100000);
 
 		/*
-		 * 2. Remove used PCI and ISA resources from bus resource map
+		 * 3. Calculate the amount of "spare" 32-bit memory so that we
+		 * can use that later to determine how much additional memory
+		 * to allocate to bridges in order that they have a better
+		 * chance of supporting a device being hotplugged under them.
+		 *
+		 * This is a root bus and the previous CONFIG_INFO pass has
+		 * populated `mem_size` with the sum of all of the BAR sizes
+		 * for all devices underneath, possibly adjusted up to allow
+		 * for alignment when it is later allocated. This pass has also
+		 * recorded the number of child bridges found under this bus in
+		 * `num_bridge`. To calculate the memory which can be used for
+		 * additional bridge allocations we sum up the contents of the
+		 * `mem_avail` list and subtract `mem_size`.
+		 *
+		 * When programming child bridges later in fix_ppb_res(), the
+		 * bridge count and spare memory values cached against the
+		 * relevant root port are used to determine how much memory to
+		 * be allocated.
+		 */
+		if (pci_bus_res[bus].num_bridge > 0) {
+			uint64_t mem = 0;
+
+			for (struct memlist *ml = pci_bus_res[bus].mem_avail;
+			    ml != NULL; ml = ml->ml_next) {
+				if (ml->ml_address < UINT32_MAX)
+					mem += ml->ml_size;
+			}
+
+			if (mem > pci_bus_res[bus].mem_size)
+				mem -= pci_bus_res[bus].mem_size;
+			else
+				mem = 0;
+
+			pci_bus_res[bus].mem_buffer = mem;
+
+			dcmn_err(CE_NOTE,
+			    "Bus 0x%02x, bridges 0x%x, buffer mem 0x%lx",
+			    bus, pci_bus_res[bus].num_bridge, mem);
+		}
+
+		/*
+		 * 4. Remove used PCI and ISA resources from bus resource map
 		 */
 
 		memlist_remove_list(&pci_bus_res[bus].io_avail,
@@ -1599,20 +1711,6 @@ pci_reprogram(void)
 		    isa_res.io_used);
 		memlist_remove_list(&pci_bus_res[bus].mem_avail,
 		    isa_res.mem_used);
-
-		/*
-		 * 3. Exclude <1M address range here in case below reserved
-		 * ranges for BIOS data area, ROM area etc are wrongly reported
-		 * in ACPI resource producer entries for PCI root bus.
-		 *	00000000 - 000003FF	RAM
-		 *	00000400 - 000004FF	BIOS data area
-		 *	00000500 - 0009FFFF	RAM
-		 *	000A0000 - 000BFFFF	VGA RAM
-		 *	000C0000 - 000FFFFF	ROM area
-		 */
-		(void) memlist_remove(&pci_bus_res[bus].mem_avail, 0, 0x100000);
-		(void) memlist_remove(&pci_bus_res[bus].pmem_avail,
-		    0, 0x100000);
 	}
 
 	memlist_free_all(&isa_res.io_used);
@@ -1858,6 +1956,9 @@ enumerate_bus_devs(uchar_t bus, int config_op)
 				memlist_merge(&pci_bus_res[bus].pmem_used,
 				    &pci_bus_res[par_bus].pmem_used);
 			}
+
+			pci_bus_res[par_bus].num_bridge +=
+			    pci_bus_res[bus].num_bridge;
 
 			bus = par_bus;
 			par_bus = pci_bus_res[par_bus].par_bus;
@@ -3289,6 +3390,12 @@ add_ppb_props(dev_info_t *dip, uchar_t bus, uchar_t dev, uchar_t func,
 	 */
 	for (i = secbus + 1; i <= subbus; i++)
 		pci_bus_res[i].par_bus = bus;
+
+	/*
+	 * Update the number of bridges on the bus.
+	 */
+	if (is_pci_bridge == 0)
+		pci_bus_res[bus].num_bridge++;
 
 	(void) ndi_prop_update_string(DDI_DEV_T_NONE, dip,
 	    "device_type", dev_type);
