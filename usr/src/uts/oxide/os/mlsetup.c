@@ -24,7 +24,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 by Delphix. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -68,6 +68,7 @@
 #include <sys/boot_data.h>
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
+#include <sys/io/milan/ras.h>
 #include <milan/milan_apob.h>
 
 /*
@@ -285,6 +286,11 @@ mlsetup(struct regs *rp)
 	 * APs later on.
 	 */
 	milan_ccx_init();
+
+	/*
+	 * Initialize the BSP's MCA banks.
+	 */
+	milan_ras_init();
 
 	/*
 	 * The x86_featureset is initialized here based on the capabilities

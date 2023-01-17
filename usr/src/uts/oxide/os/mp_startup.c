@@ -30,7 +30,7 @@
  * Copyright 2020 Joyent, Inc.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 /*
@@ -147,6 +147,7 @@
 #include <sys/ontrap.h>
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
+#include <sys/io/milan/ras.h>
 
 #include <milan/milan_physaddrs.h>
 
@@ -1657,6 +1658,7 @@ mp_startup(void)
 	cpuid_execpass(cp, CPUID_PASS_IDENT, NULL);
 	milan_ccx_init();
 	cpuid_execpass(cp, CPUID_PASS_BASIC, new_x86_featureset);
+	milan_ras_init();
 
 	/*
 	 * We need to get TSC on this proc synced (i.e., any delta
