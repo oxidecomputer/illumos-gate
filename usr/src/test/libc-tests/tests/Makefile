@@ -44,9 +44,11 @@ PROGS = \
 	endian \
 	env-7076 \
 	fnmatch \
+	isatty \
 	memchr \
 	memset_s \
 	posix_memalign \
+	printf-15294 \
 	printf-9511 \
 	psignal-5097 \
 	quick_exit_order \
@@ -83,6 +85,9 @@ memset_s.32 :=	CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 memset_s.64 :=	CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 set_constraint_handler_s.32 := CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 set_constraint_handler_s.64 := CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
+
+isatty.32 :=	CSTD=$(GNU_C99)
+isatty.64 :=	CSTD=$(GNU_C99)
 
 ROOTOPTDIR = $(ROOT)/opt/libc-tests/tests
 ROOTOPTPROGS = $(PROGS32:%=$(ROOTOPTDIR)/%) \
