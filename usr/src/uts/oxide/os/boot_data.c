@@ -419,11 +419,6 @@ extern void
 genunix_set_tunables(void)
 {
 	/*
-	 * XXX Temporary for bringup: don't automatically unload modules.
-	 */
-	moddebug |= MODDEBUG_NOAUTOUNLOAD;
-
-	/*
 	 * We don't support running in a virtual environment.
 	 */
 	enable_platform_detection = 0;
