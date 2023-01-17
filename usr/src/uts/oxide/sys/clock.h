@@ -26,8 +26,6 @@
 #ifndef _SYS_CLOCK_H
 #define	_SYS_CLOCK_H
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -92,7 +90,7 @@ extern int tsc_gethrtime_enable;
 #define	HRES_LOCK_OFFSET 0	/* byte 0 has the lock bit(bit 0 in the byte) */
 
 #define	CLOCK_LOCK(oldsplp)	\
-	lock_set_spl((lock_t *)&hres_lock + HRES_LOCK_OFFSET, 	\
+	lock_set_spl((lock_t *)&hres_lock + HRES_LOCK_OFFSET,	\
 		ipltospl(XC_HI_PIL), oldsplp)
 
 #define	CLOCK_UNLOCK(spl)		\

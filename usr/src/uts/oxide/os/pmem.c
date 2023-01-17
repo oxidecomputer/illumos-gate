@@ -23,8 +23,6 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 /*
  * PMEM - Direct mapping physical memory pages to userland process
  *
@@ -422,7 +420,7 @@ devmap_pmem_free(devmap_pmem_cookie_t cookie)
 	pgcnt_t		i;
 	pgcnt_t		tpages = 0;
 	page_t		*pp;
-	pmem_lpg_t 	*pl1, *plp;
+	pmem_lpg_t	*pl1, *plp;
 	pmem_lpg_t	*pf_lpgs = NULL;
 	uint_t		npls = 0;
 	pmem_lpg_t *last_pl = NULL;

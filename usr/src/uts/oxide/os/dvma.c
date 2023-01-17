@@ -24,8 +24,6 @@
  * All rights reserved.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -58,7 +56,7 @@ dvma_release(ddi_dma_handle_t h)
 /*ARGSUSED*/
 void
 dvma_kaddr_load(ddi_dma_handle_t h, caddr_t a, u_int len, u_int index,
-	ddi_dma_cookie_t *cp)
+    ddi_dma_cookie_t *cp)
 {
 }
 

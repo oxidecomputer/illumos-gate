@@ -27,9 +27,6 @@
 /*	Copyright (c) 1988 AT&T	*/
 /*	  All Rights Reserved	*/
 
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <sys/proc.h>
 #include <sys/param.h>
 #include <sys/cmn_err.h>

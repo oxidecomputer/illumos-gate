@@ -26,12 +26,10 @@
 
 /*	Copyright (c) 1990, 1991 UNIX System Laboratories, Inc.	*/
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989, 1990 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	All Rights Reserved	*/
 
 #ifndef _SYS_XQUE_H
 #define	_SYS_XQUE_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #ifdef	__cplusplus
 extern "C" {
@@ -50,7 +48,7 @@ typedef struct xqEvent {
 				/*	bit 2 clear if left button pushed; */
 	char	xq_x;		/* delta x movement (mouse motion only) */
 	char	xq_y;		/* delta y movement (mouse motion only) */
-	time_t	xq_time; 	/* event timestamp in "milliseconds" */
+	time_t	xq_time;	/* event timestamp in "milliseconds" */
 } xqEvent;
 
 /*	xq_type values		*/

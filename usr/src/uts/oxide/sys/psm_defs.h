@@ -27,8 +27,6 @@
 #ifndef	_SYS_PSM_DEFS_H
 #define	_SYS_PSM_DEFS_H
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 /*
  * Platform Specific Module Definitions
  */
@@ -50,7 +48,7 @@ typedef	char *opaque_t;
  *	External Kernel Interface
  */
 
-extern void picsetup(void);	/* isp initialization 			*/
+extern void picsetup(void);	/* isp initialization */
 extern u_longlong_t mul32(uint_t a, uint_t b);
 				/* u_long_long = uint_t x uint_t */
 
