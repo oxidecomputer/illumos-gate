@@ -69,9 +69,8 @@ typedef enum zen_dxio_anc_type {
 typedef struct zen_dxio_anc_data {
 	uint8_t		zdad_type;
 	uint8_t		zdad_vers:4;
-	uint8_t		zdad_rsvd0:4;
+	uint8_t		zdad_rsvd:4;
 	uint16_t	zdad_nu32s;
-	uint8_t		zdad_rsvd1;
 } zen_dxio_anc_data_t;
 
 typedef struct zen_dxio_link_cap {

@@ -107,6 +107,17 @@ typedef struct milan_apob_coremap {
 	milan_apob_ccd_t macm_ccds[MILAN_APOB_CCX_MAX_CCDS];
 } milan_apob_coremap_t;
 
+#define	MILAN_APOB_PHY_OVERRIDE_MAX_LEN	256
+
+/*
+ * What we get back (if anything) from GROUP_FABRIC type
+ * MILAN_APOB_FABRIC_PHY_OVERRIDE instance 0
+ */
+typedef struct milan_apob_phyovr {
+	uint32_t map_datalen;
+	uint8_t map_data[MILAN_APOB_PHY_OVERRIDE_MAX_LEN];
+} milan_apob_phyovr_t;
+
 #pragma pack()
 
 extern void milan_apob_init(uint64_t);

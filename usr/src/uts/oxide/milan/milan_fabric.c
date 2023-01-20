@@ -3260,7 +3260,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	milan_soc_t *soc = iodie->mi_soc;
 	const zen_dxio_platform_t *source_data;
 	zen_dxio_anc_data_t *anc;
-	const void *phy_override;
+	const milan_apob_phyovr_t *phy_override;
 	size_t phy_len;
 	int err;
 
@@ -3314,6 +3314,30 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 		    "0x%x", err);
 		return (1);
 	}
+	if (phy_len < offsetof(milan_apob_phyovr_t, map_data[0])) {
+		cmn_err(CE_WARN, "APOB phy override table is too short "
+		    "(actual size 0x%lx)", phy_len);
+		return (1);
+	}
+
+	/*
+	 * The actual length of phy data is in map_datalen; it must be no larger
+	 * than the maximum and must fit in the APOB entry.
+	 */
+	if (phy_override->map_datalen > MILAN_APOB_PHY_OVERRIDE_MAX_LEN ||
+	    phy_override->map_datalen >
+	    phy_len - offsetof(milan_apob_phyovr_t, map_data[0])) {
+		cmn_err(CE_WARN, "APOB phy override table data doesn't fit "
+		    "(datalen = 0x%x, entry len = 0x%lx)",
+		    phy_override->map_datalen, phy_len);
+		return (1);
+	}
+
+	/*
+	 * The headers for the ancillary heap and payload must be 4 bytes in
+	 * size.
+	 */
+	CTASSERT(sizeof (zen_dxio_anc_data_t) == 4);
 
 	conf->mdc_anc = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(conf->mdc_anc, MMU_PAGESIZE);
@@ -3332,14 +3356,17 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	anc = conf->mdc_anc;
 	anc->zdad_type = MILAN_DXIO_HEAP_ANCILLARY;
 	anc->zdad_vers = DXIO_ANCILLARY_VERSION;
-	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) + phy_len) >> 2;
+	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
+	    phy_override->map_datalen) >> 2;
 	anc++;
 	anc->zdad_type = ZEN_DXIO_ANCILLARY_T_PHY;
 	anc->zdad_vers = DXIO_ANCILLARY_PAYLOAD_VERSION;
-	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) + phy_len) >> 2;
+	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
+	    phy_override->map_datalen) >> 2;
 	anc++;
-	bcopy(phy_override, anc, phy_len);
-	conf->mdc_anc_len = phy_len + 2 * sizeof (zen_dxio_anc_data_t);
+	bcopy(phy_override->map_data, anc, phy_override->map_datalen);
+	conf->mdc_anc_len = phy_override->map_datalen +
+	    2 * sizeof (zen_dxio_anc_data_t);
 
 	return (0);
 }

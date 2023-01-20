@@ -170,7 +170,9 @@ milan_apob_init(uint64_t apob_pa)
  * Walk through entires attempting to find the first entry that matches the
  * requested group, type, and instance. Entries have their size embedded in them
  * with pointers to the next one. This leads to lots of uintptr_t arithmetic.
- * Sorry.
+ * Sorry.  The size we return in *lenp is the number of bytes in the data
+ * portion of the entry; it can in principle be 0 so the caller must not assume
+ * that the entry actually contains a specific data structure without checking.
  */
 const void *
 milan_apob_find(milan_apob_group_t group, uint32_t type, uint32_t inst,
@@ -209,7 +211,8 @@ milan_apob_find(milan_apob_group_t group, uint32_t type, uint32_t inst,
 
 		if (entry->mae_group == group && entry->mae_type == type &&
 		    entry->mae_inst == inst) {
-			*lenp = entry->mae_size;
+			*lenp = entry->mae_size -
+			    offsetof (milan_apob_entry_t, mae_data);
 			*errp = 0;
 			return (&entry->mae_data);
 		}
