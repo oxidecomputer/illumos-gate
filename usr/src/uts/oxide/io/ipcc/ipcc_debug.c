@@ -67,9 +67,8 @@ ipcc_dbgmsg_fini(void)
 	ipcc_dbgmsg_t *idm;
 
 	while ((idm = list_remove_head(&ipcc_dbgmsgs)) != NULL) {
-		size_t size = sizeof (ipcc_dbgmsg_t) + strlen(idm->idm_msg) + 1;
-		kmem_free(idm, size);
-		ipcc_dbgmsg_size -= size;
+		ipcc_dbgmsg_size -= idm->idm_buflen;
+		kmem_free(idm, idm->idm_buflen);
 	}
 	mutex_destroy(&ipcc_dbgmsgs_lock);
 	ASSERT0(ipcc_dbgmsg_size);
@@ -85,7 +84,7 @@ void
 ipcc_dbgmsg(void *arg __unused, ipcc_log_type_t type __unused,
     const char *fmt, ...)
 {
-	size_t msgsize;
+	size_t msgsize, len;
 	va_list adx;
 	ipcc_dbgmsg_t *idm;
 
@@ -93,9 +92,11 @@ ipcc_dbgmsg(void *arg __unused, ipcc_log_type_t type __unused,
 	msgsize = vsnprintf(NULL, 0, fmt, adx) + 1;
 	va_end(adx);
 
-	idm = kmem_alloc(sizeof (ipcc_dbgmsg_t) + msgsize, KM_SLEEP);
+	len = sizeof (ipcc_dbgmsg_t) + msgsize;
+	idm = kmem_alloc(len, KM_SLEEP);
 	idm->idm_timestamp = gethrestime_sec();
 	idm->idm_hrtime = gethrtime();
+	idm->idm_buflen = len;
 
 	va_start(adx, fmt);
 	(void) vsnprintf(idm->idm_msg, msgsize, fmt, adx);
@@ -108,12 +109,11 @@ ipcc_dbgmsg(void *arg __unused, ipcc_log_type_t type __unused,
 
 	mutex_enter(&ipcc_dbgmsgs_lock);
 	list_insert_tail(&ipcc_dbgmsgs, idm);
-	ipcc_dbgmsg_size += sizeof (ipcc_dbgmsg_t) + msgsize;
+	ipcc_dbgmsg_size += len;
 	while (ipcc_dbgmsg_size > ipcc_dbgmsg_maxsize) {
-		size_t size = sizeof (ipcc_dbgmsg_t) + strlen(idm->idm_msg) + 1;
 		idm = list_remove_head(&ipcc_dbgmsgs);
-		kmem_free(idm, size);
-		ipcc_dbgmsg_size -= size;
+		ipcc_dbgmsg_size -= idm->idm_buflen;
+		kmem_free(idm, idm->idm_buflen);
 	}
 	mutex_exit(&ipcc_dbgmsgs_lock);
 }

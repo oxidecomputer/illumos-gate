@@ -27,6 +27,7 @@ typedef struct ipcc_dbgmsg {
 	list_node_t idm_node;
 	time_t idm_timestamp;
 	hrtime_t idm_hrtime;
+	size_t idm_buflen;
 	char idm_msg[];
 } ipcc_dbgmsg_t;
 
