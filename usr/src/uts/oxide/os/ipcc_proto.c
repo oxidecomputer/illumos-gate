@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -1396,6 +1396,55 @@ out:
 }
 
 int
+ipcc_keylookup(const ipcc_ops_t *ops, void *arg, ipcc_keylookup_t *klookup,
+    uint8_t *response)
+{
+	uint8_t buf[sizeof (uint8_t) + sizeof (uint16_t)];
+	size_t off, datal = 0;
+	uint8_t *data;
+	int err = 0;
+
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+
+	off = 0;
+	ipcc_encode_bytes((uint8_t *)&klookup->ik_key,
+	    sizeof (klookup->ik_key), buf, &off);
+	ipcc_encode_bytes((uint8_t *)&klookup->ik_buflen,
+	    sizeof (klookup->ik_buflen), buf, &off);
+
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_KEYLOOKUP,
+	    IPCC_SP_KEYLOOKUP, buf, off, &data, &datal);
+	if (err != 0)
+		goto out;
+
+	if (datal < sizeof (klookup->ik_result)) {
+		LOG("Short keylookup reply - got 0x%lx bytes\n", datal);
+		err = EIO;
+		goto out;
+	}
+
+	off = 0;
+	ipcc_decode_bytes((uint8_t *)&klookup->ik_result,
+	    sizeof (klookup->ik_result), data, &off);
+
+	if (datal - off > klookup->ik_buflen) {
+		LOG("Too much data in keylookup response - "
+		    "got 0x%lx bytes (buffer 0x%lx)\n", datal,
+		    klookup->ik_buflen);
+		err = EOVERFLOW;
+		goto out;
+	}
+
+	klookup->ik_datalen = datal - off;
+	bcopy(data + off, response, datal - off);
+
+out:
+	ipcc_release_channel(ops, arg, true);
+	return (err);
+}
+
+int
 ipcc_rot(const ipcc_ops_t *ops, void *arg, ipcc_rot_t *rot)
 {
 	int err = 0;
@@ -1412,7 +1461,7 @@ ipcc_rot(const ipcc_ops_t *ops, void *arg, ipcc_rot_t *rot)
 
 	if (datal > sizeof (rot->ir_data)) {
 		LOG("Too much data in RoT response - got 0x%lx bytes\n", datal);
-		err = ENOMEM;
+		err = EOVERFLOW;
 		goto out;
 	}
 

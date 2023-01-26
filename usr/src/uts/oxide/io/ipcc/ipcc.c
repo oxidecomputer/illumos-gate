@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -384,6 +384,8 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 {
 	void *datap = (void *)data;
 	ipcc_state_t ipcc = { 0 };
+	uint_t model;
+	int cflag;
 	int err = 0;
 
 	if (getminor(dev) != IPCC_MINOR)
@@ -391,6 +393,9 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 
 	if ((mode & FREAD) == 0)
 		return (EBADF);
+
+	model = ddi_model_convert_from(mode & FMODELS);
+	cflag = mode & FKIOCTL;
 
 	switch (cmd) {
 	case IPCC_GET_VERSION:
@@ -404,18 +409,15 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 
 	switch (cmd) {
 	case IPCC_STATUS: {
-		uint64_t status, startup;
+		ipcc_status_t status;
 
 		BUMP_STAT(ioctl_status);
-		err = ipcc_status(&ipcc_ops, &ipcc, &status, &startup);
+		err = ipcc_status(&ipcc_ops, &ipcc,
+		    &status.is_status, &status.is_startup);
 		if (err != 0)
 			break;
 
-		/*
-		 * The kernel startup options are not currently exposed to
-		 * userland via this call.
-		 */
-		if (ddi_copyout(&status, datap, sizeof (status), mode) != 0)
+		if (ddi_copyout(&status, datap, sizeof (status), cflag) != 0)
 			err = EFAULT;
 
 		break;
@@ -428,7 +430,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 		if (err != 0)
 			break;
 
-		if (ddi_copyout(&ident, datap, sizeof (ident), mode) != 0)
+		if (ddi_copyout(&ident, datap, sizeof (ident), cflag) != 0)
 			err = EFAULT;
 
 		break;
@@ -441,9 +443,83 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 		if (err != 0)
 			break;
 
-		if (ddi_copyout(&mac, datap, sizeof (mac), mode) != 0)
+		if (ddi_copyout(&mac, datap, sizeof (mac), cflag) != 0)
 			err = EFAULT;
 
+		break;
+	}
+	case IPCC_KEYLOOKUP: {
+		ipcc_keylookup_t kl;
+#ifdef _MULTI_DATAMODEL
+		ipcc_keylookup32_t kl32;
+#endif
+		uint8_t *buf;
+
+		BUMP_STAT(ioctl_keylookup);
+
+		switch (model) {
+#ifdef _MULTI_DATAMODEL
+		case DDI_MODEL_ILP32:
+			if (ddi_copyin(datap, &kl32, sizeof (kl32), cflag) != 0)
+				return (EFAULT);
+
+			bzero(&kl, sizeof (kl));
+			kl.ik_key = kl32.ik_key;
+			kl.ik_buflen = kl32.ik_buflen;
+			kl.ik_buf = (uint8_t *)(uintptr_t)kl32.ik_buf;
+			break;
+#endif /* _MULTI_DATAMODEL */
+		case DDI_MODEL_NONE:
+			if (ddi_copyin(datap, &kl, sizeof (kl), cflag) != 0)
+				return (EFAULT);
+			break;
+		default:
+			return (ENOTSUP);
+		}
+
+		if (kl.ik_buflen == 0 ||
+		    kl.ik_buflen > IPCC_KEYLOOKUP_MAX_MSGSIZE) {
+			err = EINVAL;
+			break;
+		}
+
+		buf = kmem_zalloc(kl.ik_buflen, KM_SLEEP);
+
+		err = ipcc_keylookup(&ipcc_ops, &ipcc, &kl, buf);
+		if (err != 0)
+			goto keylookup_done;
+
+		if (kl.ik_datalen > kl.ik_buflen) {
+			err = EOVERFLOW;
+			goto keylookup_done;
+		}
+
+		if (ddi_copyout(buf, kl.ik_buf, kl.ik_datalen, cflag) != 0) {
+			err = EFAULT;
+			goto keylookup_done;
+		}
+
+		switch (model) {
+#ifdef _MULTI_DATAMODEL
+		case DDI_MODEL_ILP32:
+			kl32.ik_datalen = kl.ik_datalen;
+			kl32.ik_result = kl.ik_result;
+			if (ddi_copyout(&kl32, datap, sizeof (kl32),
+			    cflag) != 0) {
+				err = EFAULT;
+			}
+			break;
+#endif /* _MULTI_DATAMODEL */
+		case DDI_MODEL_NONE:
+			if (ddi_copyout(&kl, datap, sizeof (kl), cflag) != 0)
+				err = EFAULT;
+			break;
+		default:
+			return (ENOTSUP);
+		}
+
+keylookup_done:
+		kmem_free(buf, kl.ik_buflen);
 		break;
 	}
 	case IPCC_ROT: {
@@ -452,7 +528,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 		BUMP_STAT(ioctl_rot);
 		rot = kmem_zalloc(sizeof (*rot), KM_SLEEP);
 
-		if (ddi_copyin(datap, rot, sizeof (*rot), mode) != 0) {
+		if (ddi_copyin(datap, rot, sizeof (*rot), cflag) != 0) {
 			err = EFAULT;
 			goto rot_done;
 		}
@@ -461,7 +537,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 		if (err != 0)
 			goto rot_done;
 
-		if (ddi_copyout(rot, datap, sizeof (*rot), mode) != 0)
+		if (ddi_copyout(rot, datap, sizeof (*rot), cflag) != 0)
 			err = EFAULT;
 
 rot_done:
@@ -560,6 +636,8 @@ ipcc_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	kstat_named_init(&ipcc_stat->ioctl_ident, "total_ident_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_macs, "total_mac_req",
+	    KSTAT_DATA_UINT64);
+	kstat_named_init(&ipcc_stat->ioctl_keylookup, "total_keylookup_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_rot, "total_rot_req",
 	    KSTAT_DATA_UINT64);

@@ -10,28 +10,45 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
-# XXX - this is a temporary service to set up the DPIO that IPCC uses to
-#       receive SP interrupts.
-
-PROG=
+PROG= ipcc
+OBJS= ipcc_cmd.o
 MANIFEST= ipcc.xml
 SVCMETHOD= svc-ipcc
 
-include $(SRC)/cmd/Makefile.cmd
+include ../Makefile.cmd
+include ../Makefile.cmd.64
+include ../Makefile.ctf
 
+ROOTUSRARCHBIN = $(ROOT)/usr/platform/oxide/bin
+ROOTUSRARCHBINPROG = $(PROG:%=$(ROOTUSRARCHBIN)/%)
 ROOTMANIFESTDIR = $(ROOTSVCSYSTEM)
+
+CSTD= $(CSTD_GNU99)
+CPPFLAGS += -I$(SRC)/uts/oxide
+LDLIBS += -lsocket
 
 .KEEP_STATE:
 
-all:
+all: $(PROG)
 
-install: $(DIRS) $(ROOTMANIFEST) $(ROOTSVCMETHOD)
+install: $(ROOTMANIFEST) $(ROOTSVCMETHOD) $(ROOTUSRARCHBINPROG)
 
 check:	$(CHKMANIFEST)
 
 clean:
+	-$(RM) $(OBJS)
 
-include $(SRC)/cmd/Makefile.targ
+$(ROOTUSRARCHBIN):
+	$(INS.dir)
+
+$(ROOTUSRARCHBIN)/%: $(ROOTUSRARCHBIN) %
+	$(INS.file)
+
+$(PROG): $(OBJS)
+	$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
+	$(POST_PROCESS)
+
+include ../Makefile.targ

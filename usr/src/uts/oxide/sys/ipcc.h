@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_SYS_IPCC_H
@@ -33,7 +33,8 @@ extern "C" {
 #define	IPCC_STATUS		(IPCC_IOC|1)
 #define	IPCC_IDENT		(IPCC_IOC|2)
 #define	IPCC_MACS		(IPCC_IOC|3)
-#define	IPCC_ROT		(IPCC_IOC|4)
+#define	IPCC_KEYLOOKUP		(IPCC_IOC|4)
+#define	IPCC_ROT		(IPCC_IOC|5)
 
 /*
  * The minimum message size is a protocol detail that should be in
@@ -69,6 +70,34 @@ typedef struct ipcc_mac {
 	uint8_t		im_base[ETHERADDRL];
 	uint8_t		im_stride;
 } ipcc_mac_t;
+
+typedef struct ipcc_status {
+	uint64_t	is_status;
+	uint64_t	is_startup;
+} ipcc_status_t;
+
+typedef struct ipcc_keylookup {
+	uint8_t		ik_key;
+	uint16_t	ik_buflen;
+	uint8_t		ik_result;
+	uint16_t	ik_datalen;
+	uint8_t		*ik_buf;
+} ipcc_keylookup_t;
+
+#if defined(_SYSCALL32)
+typedef struct ipcc_keylookup32 {
+	uint8_t		ik_key;
+	uint16_t	ik_buflen;
+	uint8_t		ik_result;
+	uint16_t	ik_datalen;
+	caddr32_t	ik_buf;
+} ipcc_keylookup32_t;
+#endif
+
+#define	IPCC_KEYLOOKUP_SUCCESS		0
+#define	IPCC_KEYLOOKUP_UNKNOWN_KEY	1
+#define	IPCC_KEYLOOKUP_NO_VALUE		2
+#define	IPCC_KEYLOOKUP_BUFFER_TOO_SMALL	3
 
 typedef struct ipcc_rot {
 	uint64_t	ir_len;

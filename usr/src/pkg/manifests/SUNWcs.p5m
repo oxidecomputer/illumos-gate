@@ -1251,6 +1251,10 @@ dir  path=usr/net/servers group=sys
 link path=usr/news target=../var/news
 dir  path=usr/old
 dir  path=usr/platform group=sys
+dir  path=usr/platform group=sys
+dir  path=usr/platform/oxide group=sys
+dir  path=usr/platform/oxide/bin group=sys
+file path=usr/platform/oxide/bin/ipcc mode=0555
 link path=usr/preserve target=../var/preserve
 link path=usr/pub target=./share/lib/pub
 dir  path=usr/sadm

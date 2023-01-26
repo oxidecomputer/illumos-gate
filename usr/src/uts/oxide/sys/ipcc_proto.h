@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_SYS_IPCC_PROTO_H
@@ -53,6 +53,7 @@ typedef enum ipcc_hss_cmd {
 	IPCC_HSS_ROT,
 	IPCC_HSS_ADD_MEASUREMENTS,
 	IPCC_HSS_IMAGEBLOCK,
+	IPCC_HSS_KEYLOOKUP,
 } ipcc_hss_cmd_t;
 
 typedef enum ipcc_sp_cmd {
@@ -66,6 +67,7 @@ typedef enum ipcc_sp_cmd {
 	IPCC_SP_ALERT,
 	IPCC_SP_ROT,
 	IPCC_SP_IMAGEBLOCK,
+	IPCC_SP_KEYLOOKUP,
 } ipcc_sp_cmd_t;
 
 typedef enum ipcc_sp_decode_failure {
@@ -110,6 +112,8 @@ typedef enum ipcc_sp_startup {
 #define	IPCC_STATUS_DATALEN		16
 #define	IPCC_BOOTFAIL_MAX_MSGSIZE	\
 	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
+#define	IPCC_KEYLOOKUP_MAX_MSGSIZE	\
+	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
 /* Keep synchronised with the header definition in boot_image/oxide_boot_sp.c */
 #define	IPCC_IMAGE_HASHLEN		32
 
@@ -145,6 +149,8 @@ extern int ipcc_panic(const ipcc_ops_t *, void *, uint8_t *, size_t);
 extern int ipcc_bsu(const ipcc_ops_t *, void *, uint8_t *);
 extern int ipcc_ident(const ipcc_ops_t *, void *, ipcc_ident_t *);
 extern int ipcc_macs(const ipcc_ops_t *, void *, ipcc_mac_t *);
+extern int ipcc_keylookup(const ipcc_ops_t *, void *, ipcc_keylookup_t *,
+    uint8_t *buf);
 extern int ipcc_rot(const ipcc_ops_t *, void *, ipcc_rot_t *);
 extern int ipcc_bootfail(const ipcc_ops_t *, void *, ipcc_host_boot_failure_t,
     const uint8_t *, size_t);

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _IPCC_DRV_H
@@ -54,6 +54,7 @@ typedef struct ipcc_stats {
 	struct kstat_named	ioctl_status;
 	struct kstat_named	ioctl_ident;
 	struct kstat_named	ioctl_macs;
+	struct kstat_named	ioctl_keylookup;
 	struct kstat_named	ioctl_rot;
 	struct kstat_named	ioctl_unknown;
 } ipcc_stats_t;
