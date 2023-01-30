@@ -24,6 +24,7 @@
  * Copyright 2018 Joyent, Inc.
  * Copyright (c) 2015 Garrett D'Amore <garrett@damore.org>
  * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_SYS_MAC_H
@@ -737,6 +738,13 @@ extern void			mac_bridge_vectors(mac_bridge_tx_t,
 
 /* special case function for TRILL observability */
 extern void			mac_trill_snoop(mac_handle_t, mblk_t *);
+
+typedef struct mac_direct_rxs_s {
+	mac_direct_rx_t	mdrx_v4;
+	mac_direct_rx_t	mdrx_v6;
+	void		*mdrx_arg_v4;
+	void		*mdrx_arg_v6;
+} mac_direct_rxs_t;
 
 #endif	/* _KERNEL */
 

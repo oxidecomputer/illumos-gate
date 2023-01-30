@@ -22,6 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_INET_IP_IMPL_H
@@ -179,6 +180,12 @@ extern "C" {
 	(DB_REF(mp) != 1) ||						\
 	!OK_32PTR(ipha) ||						\
 	(((uchar_t *)ipha + IP_SIMPLE_HDR_LENGTH) >= (mp)->b_wptr))
+
+#define	MBLK_RX_FANOUT_SLOWPATH6(mp, ip6)				\
+	(DB_TYPE(mp) != M_DATA ||					\
+	(DB_REF(mp) != 1) ||						\
+	!OK_32PTR(ip6) ||						\
+	(((uchar_t *)ip6 + IPV6_HDR_LEN) >= (mp)->b_wptr))
 
 /*
  * In non-global zone exclusive IP stacks, data structures such as IRE

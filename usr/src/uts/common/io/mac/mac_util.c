@@ -818,6 +818,11 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	uint16_t ip_id;
 	uint32_t tcp_seq, tcp_sum, otcp_sum;
 
+	boolean_t is_v6 = B_FALSE;
+	const ip6_t *oiph6;
+	ip6_t *niph6;
+	uint8_t ip_version, ulp;
+
 	uint32_t offset;
 	mblk_t *odatamp;
 	mblk_t *seg_chain, *prev_nhdrmp, *next_nhdrmp, *nhdrmp, *ndatamp;
@@ -906,23 +911,34 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		goto fail;
 	}
 
-	oiph = (ipha_t *)(omp->b_rptr + oehlen);
-	oiphlen = IPH_HDR_LENGTH(oiph);
-	otcph = (tcph_t *)(omp->b_rptr + oehlen + oiphlen);
-	otcphlen = TCP_HDR_LENGTH(otcph);
+	ip_version = (*(uint8_t *)(omp->b_rptr + oehlen)) >> 4;
 
-	/*
-	 * Currently we only support LSO for TCP/IPv4.
-	 */
-	if (IPH_HDR_VERSION(oiph) != IPV4_VERSION) {
+	if (ip_version == IPV4_VERSION) {
+		oiph = (ipha_t *)(omp->b_rptr + oehlen);
+		oiphlen = IPH_HDR_LENGTH(oiph);
+		otcph = (tcph_t *)(omp->b_rptr + oehlen + oiphlen);
+		otcphlen = TCP_HDR_LENGTH(otcph);
+		ulp = oiph->ipha_protocol;
+	} else if (ip_version == IPV6_VERSION) {
+		is_v6 = B_TRUE;
+		oiph6 = (ip6_t *)(omp->b_rptr + oehlen);
+		oiphlen = IPV6_HDR_LEN;
+		/*
+		 * We're not dealing with extension headers for now. In the
+		 * event that there are extension headers, the ulp check that
+		 * immediately follows will fail and we bail.
+		 */
+		otcph = (tcph_t *)(omp->b_rptr + oehlen + oiphlen);
+		otcphlen = TCP_HDR_LENGTH(otcph);
+		ulp = oiph6->ip6_nxt;
+	} else {
 		mac_drop_pkt(omp, "LSO unsupported IP version: %uhh",
-		    IPH_HDR_VERSION(oiph));
+		    ip_version);
 		goto fail;
 	}
 
-	if (oiph->ipha_protocol != IPPROTO_TCP) {
-		mac_drop_pkt(omp, "LSO unsupported protocol: %uhh",
-		    oiph->ipha_protocol);
+	if (ulp != IPPROTO_TCP) {
+		mac_drop_pkt(omp, "LSO unsupported protocol: %uhh", ulp);
 		goto fail;
 	}
 
@@ -976,7 +992,10 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 */
 	ASSERT3S(DB_TYPE(omp), ==, M_DATA);
 	ocsum_flags = DB_CKSUMFLAGS(omp);
-	ASSERT3U(ocsum_flags & HCK_IPV4_HDRCKSUM, !=, 0);
+	/* The IPv6 header has no checksum field. */
+	if (!is_v6) {
+		ASSERT3U(ocsum_flags & HCK_IPV4_HDRCKSUM, !=, 0);
+	}
 	ASSERT3U(ocsum_flags & (HCK_PARTIALCKSUM | HCK_FULLCKSUM), !=, 0);
 
 	/*
@@ -1020,9 +1039,15 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		goto fail;
 	}
 
-	DTRACE_PROBE6(sw__lso__start, mblk_t *, omp, void_ip_t *, oiph,
-	    __dtrace_tcp_tcph_t *, otcph, uint_t, odatalen, uint_t, mss, uint_t,
-	    nsegs);
+	if (is_v6) {
+		DTRACE_PROBE6(sw__lso__start, mblk_t *, omp, void_ip_t *, oiph6,
+		    __dtrace_tcp_tcph_t *, otcph, uint_t, odatalen, uint_t, mss,
+		    uint_t, nsegs);
+	} else {
+		DTRACE_PROBE6(sw__lso__start, mblk_t *, omp, void_ip_t *, oiph,
+		    __dtrace_tcp_tcph_t *, otcph, uint_t, odatalen, uint_t, mss,
+		    uint_t, nsegs);
+	}
 
 	seg_chain = NULL;
 	tmptail = seg_chain;
@@ -1054,7 +1079,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		tmptail = nhdrmp;
 
 		/*
-		 * Calculate this segment's lengh. It's either the MSS
+		 * Calculate this segment's length. It's either the MSS
 		 * or whatever remains for the last segment.
 		 */
 		seg_len = last_seg ? oleft : mss;
@@ -1090,11 +1115,16 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	nhdrmp = seg_chain;
 	bcopy(omp->b_rptr, nhdrmp->b_rptr, ohdrslen);
 	nhdrmp->b_wptr = nhdrmp->b_rptr + ohdrslen;
-	niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
 	ASSERT3U(msgsize(nhdrmp->b_cont), ==, mss);
-	niph->ipha_length = htons(oiphlen + otcphlen + mss);
-	niph->ipha_hdr_checksum = 0;
-	ip_id = ntohs(niph->ipha_ident);
+	if (is_v6) {
+		niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen);
+		niph6->ip6_plen = htons(otcphlen + mss);
+	} else {
+		niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
+		niph->ipha_length = htons(oiphlen + otcphlen + mss);
+		niph->ipha_hdr_checksum = 0;
+		ip_id = ntohs(niph->ipha_ident);
+	}
 	ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen);
 	tcp_seq = BE32_TO_U32(ntcph->th_seq);
 	tcp_seq += mss;
@@ -1117,7 +1147,12 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 */
 	if (ocsum_flags & HCK_PARTIALCKSUM) {
 		DB_CKSUMSTART(nhdrmp) = ocsum_start;
-		DB_CKSUMEND(nhdrmp) = ntohs(niph->ipha_length);
+		if (is_v6) {
+			DB_CKSUMEND(nhdrmp) =
+			    IPV6_HDR_LEN + ntohs(niph6->ip6_plen);
+		} else {
+			DB_CKSUMEND(nhdrmp) = ntohs(niph->ipha_length);
+		}
 		DB_CKSUMSTUFF(nhdrmp) = ocsum_stuff;
 		tcp_sum = BE16_TO_U16(ntcph->th_sum);
 		otcp_sum = tcp_sum;
@@ -1145,10 +1180,17 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	ASSERT3P(nhdrmp, !=, NULL);
 
 	seg = 1;
-	DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp, void_ip_t *,
-	    (ipha_t *)(nhdrmp->b_rptr + oehlen), __dtrace_tcp_tcph_t *,
-	    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen), uint_t, mss,
-	    uint_t, seg);
+	if (is_v6) {
+		DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp, void_ip_t *,
+		    (ip6_t *)(nhdrmp->b_rptr + oehlen), __dtrace_tcp_tcph_t *,
+		    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen), uint_t, mss,
+		    uint_t, seg);
+	} else {
+		DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp, void_ip_t *,
+		    (ipha_t *)(nhdrmp->b_rptr + oehlen), __dtrace_tcp_tcph_t *,
+		    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen), uint_t, mss,
+		    uint_t, seg);
+	}
 	seg++;
 
 	/* There better be at least 2 segs. */
@@ -1179,11 +1221,16 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		 */
 		bcopy(seg_chain->b_rptr, nhdrmp->b_rptr, ohdrslen);
 		nhdrmp->b_wptr = nhdrmp->b_rptr + ohdrslen;
-		niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
-		niph->ipha_ident = htons(++ip_id);
 		ASSERT3P(msgsize(nhdrmp->b_cont), ==, mss);
-		niph->ipha_length = htons(oiphlen + otcphlen + mss);
-		niph->ipha_hdr_checksum = 0;
+		if (is_v6) {
+			niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen);
+			niph6->ip6_plen = htons(otcphlen + mss);
+		} else {
+			niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
+			niph->ipha_ident = htons(++ip_id);
+			niph->ipha_length = htons(oiphlen + otcphlen + mss);
+			niph->ipha_hdr_checksum = 0;
+		}
 		ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen);
 		U32_TO_BE32(tcp_seq, ntcph->th_seq);
 		tcp_seq += mss;
@@ -1201,7 +1248,12 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 			 */
 			U16_TO_BE16(tcp_sum, ntcph->th_sum);
 			DB_CKSUMSTART(nhdrmp) = ocsum_start;
-			DB_CKSUMEND(nhdrmp) = ntohs(niph->ipha_length);
+			if (is_v6) {
+				DB_CKSUMEND(nhdrmp) =
+				    IPV6_HDR_LEN + ntohs(niph6->ip6_plen);
+			} else {
+				DB_CKSUMEND(nhdrmp) = ntohs(niph->ipha_length);
+			}
 			DB_CKSUMSTUFF(nhdrmp) = ocsum_stuff;
 		}
 
@@ -1216,10 +1268,19 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 			prev_nhdrmp->b_next = nhdrmp;
 		}
 
-		DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp, void_ip_t *,
-		    (ipha_t *)(nhdrmp->b_rptr + oehlen), __dtrace_tcp_tcph_t *,
-		    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen),
-		    uint_t, mss, uint_t, seg);
+		if (is_v6) {
+			DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp,
+			    void_ip_t *, (ip6_t *)(nhdrmp->b_rptr + oehlen),
+			    __dtrace_tcp_tcph_t *,
+			    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen),
+			    uint_t, mss, uint_t, seg);
+		} else {
+			DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp,
+			    void_ip_t *, (ipha_t *)(nhdrmp->b_rptr + oehlen),
+			    __dtrace_tcp_tcph_t *,
+			    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen),
+			    uint_t, mss, uint_t, seg);
+		}
 
 		ASSERT3P(nhdrmp->b_next, !=, NULL);
 		prev_nhdrmp = nhdrmp;
@@ -1236,19 +1297,29 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 */
 	bcopy(seg_chain->b_rptr, nhdrmp->b_rptr, ohdrslen);
 	nhdrmp->b_wptr = nhdrmp->b_rptr + ohdrslen;
-	niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
-	niph->ipha_ident = htons(++ip_id);
 	len = msgsize(nhdrmp->b_cont);
 	ASSERT3S(len, >, 0);
-	niph->ipha_length = htons(oiphlen + otcphlen + len);
-	niph->ipha_hdr_checksum = 0;
+	if (is_v6) {
+		niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen);
+		niph6->ip6_plen = htons(otcphlen + len);
+	} else {
+		niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
+		niph->ipha_ident = htons(++ip_id);
+		niph->ipha_length = htons(oiphlen + otcphlen + len);
+		niph->ipha_hdr_checksum = 0;
+	}
 	ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen);
 	U32_TO_BE32(tcp_seq, ntcph->th_seq);
 
 	DB_CKSUMFLAGS(nhdrmp) = (uint16_t)(ocsum_flags & ~HW_LSO);
 	if (ocsum_flags & HCK_PARTIALCKSUM) {
 		DB_CKSUMSTART(nhdrmp) = ocsum_start;
-		DB_CKSUMEND(nhdrmp) = ntohs(niph->ipha_length);
+		if (is_v6) {
+			DB_CKSUMEND(nhdrmp) =
+			    IPV6_HDR_LEN + ntohs(niph6->ip6_plen);
+		} else {
+			DB_CKSUMEND(nhdrmp) = ntohs(niph->ipha_length);
+		}
 		DB_CKSUMSTUFF(nhdrmp) = ocsum_stuff;
 		tcp_sum = otcp_sum;
 		tcp_sum += len + otcphlen;
@@ -1264,10 +1335,17 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		prev_nhdrmp->b_next = nhdrmp;
 	}
 
-	DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp, void_ip_t *,
-	    (ipha_t *)(nhdrmp->b_rptr + oehlen), __dtrace_tcp_tcph_t *,
-	    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen), uint_t, len,
-	    uint_t, seg);
+	if (is_v6) {
+		DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp, void_ip_t *,
+		    (ip6_t *)(nhdrmp->b_rptr + oehlen), __dtrace_tcp_tcph_t *,
+		    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen), uint_t, len,
+		    uint_t, seg);
+	} else {
+		DTRACE_PROBE5(sw__lso__seg, mblk_t *, nhdrmp, void_ip_t *,
+		    (ipha_t *)(nhdrmp->b_rptr + oehlen), __dtrace_tcp_tcph_t *,
+		    (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen), uint_t, len,
+		    uint_t, seg);
+	}
 
 	/*
 	 * Free the reference to the original LSO message as it is

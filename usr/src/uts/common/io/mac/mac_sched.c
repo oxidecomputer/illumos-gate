@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.
  * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -1433,6 +1434,14 @@ mac_srs_fire(void *arg)
 	(ntohl((src) + (dst)) ^ ((ports) >> 24) ^ ((ports) >> 16) ^	\
 	((ports) >> 8) ^ (ports))
 
+#define	HASH_ADDR6(src, dst, ports)					\
+	((src.s6_addr32[0] ^ src.s6_addr32[1] ^                         \
+	src.s6_addr32[2] ^ src.s6_addr32[3]) ^				\
+	(dst.s6_addr32[0] ^ dst.s6_addr32[1] ^                          \
+	dst.s6_addr32[2] ^ dst.s6_addr32[3]) ^				\
+	((ports) >> 24) ^ ((ports) >> 16) ^	                        \
+	((ports) >> 8) ^ (ports))
+
 #define	COMPUTE_INDEX(key, sz)	(key % sz)
 
 #define	FANOUT_ENQUEUE_MP(head, tail, cnt, bw_ctl, sz, sz0, mp) {	\
@@ -1453,11 +1462,13 @@ mac_srs_fire(void *arg)
 #define	MAC_FANOUT_RND_ROBIN	1
 int mac_fanout_type = MAC_FANOUT_DEFAULT;
 
-#define	MAX_SR_TYPES	3
+#define	MAX_SR_TYPES	5
 /* fanout types for port based hashing */
 enum pkt_type {
 	V4_TCP = 0,
 	V4_UDP,
+	V6_TCP,
+	V6_UDP,
 	OTH,
 	UNDEF
 };
@@ -1485,6 +1496,7 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	struct ether_vlan_header	*evhp;
 	uint32_t			sap;
 	ipha_t				*ipha;
+	ip6_t				*ip6;
 	uint8_t				*dstaddr;
 	size_t				hdrsize;
 	mblk_t				*mp;
@@ -1500,6 +1512,7 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	boolean_t			is_unicast;
 	enum pkt_type			type;
 	mac_client_impl_t		*mcip = mac_srs->srs_mcip;
+	uint8_t				protocol;
 
 	is_ether = (mcip->mci_mip->mi_info.mi_nativemedia == DL_ETHER);
 	bw_ctl = ((mac_srs->srs_type & SRST_BW_CONTROL) != 0);
@@ -1553,11 +1566,13 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 				continue;
 			}
 			ehp = (struct ether_header *)mp->b_rptr;
+			sap = ntohs(ehp->ether_type);
+			DTRACE_PROBE1(ethertype, uint8_t, sap);
 
 			/*
 			 * Determine if this is a VLAN or non-VLAN packet.
 			 */
-			if ((sap = ntohs(ehp->ether_type)) == VLAN_TPID) {
+			if (sap == VLAN_TPID) {
 				evhp = (struct ether_vlan_header *)mp->b_rptr;
 				sap = ntohs(evhp->ether_type);
 				hdrsize = sizeof (struct ether_vlan_header);
@@ -1596,12 +1611,13 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		}
 
 		if (!dls_bypass) {
+			DTRACE_PROBE(no__dls__bypass);
 			FANOUT_ENQUEUE_MP(headmp[type], tailmp[type],
 			    cnt[type], bw_ctl, sz[type], sz1, mp);
 			continue;
 		}
 
-		if (sap == ETHERTYPE_IP) {
+		if (sap == ETHERTYPE_IP || sap == ETHERTYPE_IPV6) {
 			/*
 			 * If we are H/W classified, but we have promisc
 			 * on, then we need to check for the unicast address.
@@ -1633,9 +1649,24 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 * performance and may bypass DLS. All other cases go through
 		 * the 'OTH' type path without DLS bypass.
 		 */
-		ipha = (ipha_t *)(mp->b_rptr + hdrsize);
-		if ((type != OTH) && MBLK_RX_FANOUT_SLOWPATH(mp, ipha))
-			type = OTH;
+		if (sap == ETHERTYPE_IP) {
+			ipha = (ipha_t *)(mp->b_rptr + hdrsize);
+			if ((type != OTH) &&
+			    MBLK_RX_FANOUT_SLOWPATH(mp, ipha)) {
+				DTRACE_PROBE(v4__slowpath);
+				type = OTH;
+			}
+			protocol = ipha->ipha_protocol;
+		}
+		if (sap == ETHERTYPE_IPV6) {
+			ip6 = (ip6_t *)(mp->b_rptr + hdrsize);
+			if ((type != OTH) &&
+			    MBLK_RX_FANOUT_SLOWPATH6(mp, ip6)) {
+				DTRACE_PROBE(v6__slowpath);
+				type = OTH;
+			}
+			protocol = ip6->ip6_nxt;
+		}
 
 		if (type == OTH) {
 			FANOUT_ENQUEUE_MP(headmp[type], tailmp[type],
@@ -1645,6 +1676,8 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 
 		ASSERT(type == UNDEF);
 
+		DTRACE_PROBE1(proto, uint8_t, protocol);
+
 		/*
 		 * Determine the type from the IP protocol value. If
 		 * classified as TCP or UDP, then update the read
@@ -1652,13 +1685,13 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 * Otherwise leave the message as is for further
 		 * processing by DLS.
 		 */
-		switch (ipha->ipha_protocol) {
+		switch (protocol) {
 		case IPPROTO_TCP:
-			type = V4_TCP;
+			type = sap == ETHERTYPE_IPV6 ? V6_TCP : V4_TCP;
 			mp->b_rptr += hdrsize;
 			break;
 		case IPPROTO_UDP:
-			type = V4_UDP;
+			type = sap == ETHERTYPE_IPV6 ? V6_UDP : V4_UDP;
 			mp->b_rptr += hdrsize;
 			break;
 		default:
@@ -1679,8 +1712,14 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			case V4_TCP:
 				softring = mac_srs->srs_tcp_soft_rings[0];
 				break;
+			case V6_TCP:
+				softring = mac_srs->srs_tcp6_soft_rings[0];
+				break;
 			case V4_UDP:
 				softring = mac_srs->srs_udp_soft_rings[0];
+				break;
+			case V6_UDP:
+				softring = mac_srs->srs_udp6_soft_rings[0];
 				break;
 			case OTH:
 				softring = mac_srs->srs_oth_soft_rings[0];
@@ -1897,10 +1936,11 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	struct ether_vlan_header	*evhp;
 	uint32_t			sap;
 	ipha_t				*ipha;
+	ip6_t				*ip6;
 	uint8_t				*dstaddr;
 	uint_t				indx;
 	size_t				ports_offset;
-	size_t				ipha_len;
+	size_t				iph_len;
 	size_t				hdrsize;
 	uint_t				hash;
 	mblk_t				*mp;
@@ -1917,6 +1957,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	int				fanout_cnt;
 	enum pkt_type			type;
 	mac_client_impl_t		*mcip = mac_srs->srs_mcip;
+	uint8_t				protocol;
 
 	is_ether = (mcip->mci_mip->mi_info.mi_nativemedia == DL_ETHER);
 	bw_ctl = ((mac_srs->srs_type & SRST_BW_CONTROL) != 0);
@@ -1980,11 +2021,13 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 				continue;
 			}
 			ehp = (struct ether_header *)mp->b_rptr;
+			sap = ntohs(ehp->ether_type);
+			DTRACE_PROBE1(ethertype, uint8_t, sap);
 
 			/*
 			 * Determine if this is a VLAN or non-VLAN packet.
 			 */
-			if ((sap = ntohs(ehp->ether_type)) == VLAN_TPID) {
+			if (sap == VLAN_TPID) {
 				evhp = (struct ether_vlan_header *)mp->b_rptr;
 				sap = ntohs(evhp->ether_type);
 				hdrsize = sizeof (struct ether_vlan_header);
@@ -2023,6 +2066,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		}
 
 		if (!dls_bypass) {
+			DTRACE_PROBE(no__dls__bypass);
 			if (mac_rx_srs_long_fanout(mac_srs, mp, sap,
 			    hdrsize, &type, &indx) == -1) {
 				mac_rx_drop_pkt(mac_srs, mp);
@@ -2040,7 +2084,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 * classification has not happened, we need to verify if
 		 * this unicast packet really belongs to us.
 		 */
-		if (sap == ETHERTYPE_IP) {
+		if (sap == ETHERTYPE_IP || sap == ETHERTYPE_IPV6) {
 			/*
 			 * If we are H/W classified, but we have promisc
 			 * on, then we need to check for the unicast address.
@@ -2064,37 +2108,76 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 * the fast path.
 		 */
 
-		ipha = (ipha_t *)(mp->b_rptr + hdrsize);
-		if ((type != OTH) && MBLK_RX_FANOUT_SLOWPATH(mp, ipha)) {
-			type = OTH;
-			fanout_oth1++;
+		if (sap == ETHERTYPE_IP) {
+			ipha = (ipha_t *)(mp->b_rptr + hdrsize);
+			if ((type != OTH) &&
+			    MBLK_RX_FANOUT_SLOWPATH(mp, ipha)) {
+				DTRACE_PROBE(v4__slowpath);
+				type = OTH;
+				fanout_oth1++;
+			}
+			protocol = ipha->ipha_protocol;
+			iph_len = IPH_HDR_LENGTH(ipha);
+		}
+		if (sap == ETHERTYPE_IPV6) {
+			ip6 = (ip6_t *)(mp->b_rptr + hdrsize);
+			if ((type != OTH) &&
+			    MBLK_RX_FANOUT_SLOWPATH6(mp, ip6)) {
+				DTRACE_PROBE(v6__slowpath);
+				type = OTH;
+				fanout_oth1++;
+			}
+			protocol = ip6->ip6_nxt;
+			iph_len = IPV6_HDR_LEN;
 		}
 
 		if (type != OTH) {
 			uint16_t	frag_offset_flags;
 
-			switch (ipha->ipha_protocol) {
+			switch (protocol) {
 			case IPPROTO_TCP:
 			case IPPROTO_UDP:
 			case IPPROTO_SCTP:
 			case IPPROTO_ESP:
-				ipha_len = IPH_HDR_LENGTH(ipha);
-				if ((uchar_t *)ipha + ipha_len + PORTS_SIZE >
-				    mp->b_wptr) {
-					type = OTH;
-					break;
+				if (sap == ETHERTYPE_IP) {
+					if ((uchar_t *)ipha + iph_len
+					    + PORTS_SIZE > mp->b_wptr) {
+						DTRACE_PROBE(v4__too__long);
+						type = OTH;
+						break;
+					}
+					frag_offset_flags = ntohs(ipha->
+					    ipha_fragment_offset_and_flags);
+					if ((frag_offset_flags &
+					    (IPH_MF | IPH_OFFSET)) != 0) {
+						DTRACE_PROBE(v4__frag);
+						type = OTH;
+						fanout_oth3++;
+						break;
+					}
 				}
-				frag_offset_flags =
-				    ntohs(ipha->ipha_fragment_offset_and_flags);
-				if ((frag_offset_flags &
-				    (IPH_MF | IPH_OFFSET)) != 0) {
-					type = OTH;
-					fanout_oth3++;
-					break;
+				if (sap == ETHERTYPE_IPV6) {
+					if ((uchar_t *)ip6 + iph_len +
+					    PORTS_SIZE > mp->b_wptr) {
+						DTRACE_PROBE(v6__too__long);
+						type = OTH;
+						break;
+					}
+					/*
+					 * Since the protocol variable comes
+					 * directly from ip6->ip6_nxt, if we are
+					 * here that means there is no IPv6
+					 * fragmentation header e.g. the IPv6
+					 * next header field points directly to
+					 * the ULP and we don't need to consider
+					 * fragmentation like we do for IPv4.
+					 */
 				}
-				ports_offset = hdrsize + ipha_len;
+				ports_offset = hdrsize + iph_len;
 				break;
 			default:
+				DTRACE_PROBE1(unhandled__proto, uint8_t,
+				    protocol);
 				type = OTH;
 				fanout_oth4++;
 				break;
@@ -2115,6 +2198,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		}
 
 		ASSERT(type == UNDEF);
+		DTRACE_PROBE1(proto, uint8_t, protocol);
 
 		/*
 		 * XXX-Sunay: We should hold srs_lock since ring_count
@@ -2124,25 +2208,41 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 * to change fanout type or ring count, the calling
 		 * thread needs to be behind SRS_PROC.
 		 */
-		switch (ipha->ipha_protocol) {
+		switch (protocol) {
 		case IPPROTO_TCP:
 			/*
 			 * Note that for ESP, we fanout on SPI and it is at the
 			 * same offset as the 2x16-bit ports. So it is clumped
 			 * along with TCP, UDP and SCTP.
 			 */
-			hash = HASH_ADDR(ipha->ipha_src, ipha->ipha_dst,
-			    *(uint32_t *)(mp->b_rptr + ports_offset));
+			if (sap == ETHERTYPE_IP) {
+				hash = HASH_ADDR(ipha->ipha_src, ipha->ipha_dst,
+				    *(uint32_t *)(mp->b_rptr + ports_offset));
+			}
+			if (sap == ETHERTYPE_IPV6) {
+				hash = HASH_ADDR6(ip6->ip6_src, ip6->ip6_dst,
+				    *(uint32_t *)(mp->b_rptr + ports_offset));
+			}
 			indx = COMPUTE_INDEX(hash, mac_srs->srs_tcp_ring_count);
-			type = V4_TCP;
+			type = sap == ETHERTYPE_IPV6 ? V6_TCP : V4_TCP;
 			mp->b_rptr += hdrsize;
 			break;
 		case IPPROTO_UDP:
 		case IPPROTO_SCTP:
 		case IPPROTO_ESP:
 			if (mac_fanout_type == MAC_FANOUT_DEFAULT) {
-				hash = HASH_ADDR(ipha->ipha_src, ipha->ipha_dst,
-				    *(uint32_t *)(mp->b_rptr + ports_offset));
+				if (sap == ETHERTYPE_IP) {
+					hash = HASH_ADDR(ipha->ipha_src,
+					    ipha->ipha_dst,
+					    *(uint32_t *)(mp->b_rptr +
+					    ports_offset));
+				}
+				if (sap == ETHERTYPE_IPV6) {
+					hash = HASH_ADDR6(ip6->ip6_src,
+					    ip6->ip6_dst,
+					    *(uint32_t *)(mp->b_rptr +
+					    ports_offset));
+				}
 				indx = COMPUTE_INDEX(hash,
 				    mac_srs->srs_udp_ring_count);
 			} else {
@@ -2150,7 +2250,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 				    mac_srs->srs_udp_ring_count;
 				mac_srs->srs_ind++;
 			}
-			type = V4_UDP;
+			type = sap == ETHERTYPE_IPV6 ? V6_UDP : V4_UDP;
 			mp->b_rptr += hdrsize;
 			break;
 		default:
@@ -2175,9 +2275,17 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 					softring =
 					    mac_srs->srs_tcp_soft_rings[i];
 					break;
+				case V6_TCP:
+					softring =
+					    mac_srs->srs_tcp6_soft_rings[i];
+					break;
 				case V4_UDP:
 					softring =
 					    mac_srs->srs_udp_soft_rings[i];
+					break;
+				case V6_UDP:
+					softring =
+					    mac_srs->srs_udp6_soft_rings[i];
 					break;
 				case OTH:
 					softring =
