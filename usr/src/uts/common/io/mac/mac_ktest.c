@@ -22,28 +22,32 @@
 #include <sys/dlpi.h>
 #include <sys/ethernet.h>
 #include <sys/ktest.h>
+#include <sys/mac_client.h>
 #include <sys/mac_provider.h>
 #include <sys/pattr.h>
+#include <sys/strsubr.h>
 #include <sys/strsun.h>
-
-typedef mblk_t *(*mac_sw_cksum_t)(mblk_t *, mac_emul_t);
 
 /* Arbitrary limits for cksum tests */
 #define	PADDING_MAX	32
 #define	SPLITS_MAX	8
 
-typedef struct cksum_test_params {
+typedef struct emul_test_params {
 	mblk_t		*ctp_mp;
 	uchar_t		*ctp_raw;
 	uint_t		ctp_raw_sz;
+	uchar_t		*ctp_outputs;
+	uint_t		ctp_outputs_sz;
 	boolean_t	ctp_do_partial;
 	boolean_t	ctp_do_full;
 	boolean_t	ctp_do_ipv4;
+	boolean_t	ctp_do_lso;
+	uint_t		ctp_mss;
 	uint_t		ctp_splits[SPLITS_MAX];
-} cksum_test_params_t;
+} emul_test_params_t;
 
 static mblk_t *
-cksum_alloc_pkt(const cksum_test_params_t *ctp, uint32_t padding)
+cksum_alloc_pkt(const emul_test_params_t *ctp, uint32_t padding)
 {
 	uint32_t remain = ctp->ctp_raw_sz;
 	uint_t split_idx = 0;
@@ -89,7 +93,7 @@ cksum_alloc_pkt(const cksum_test_params_t *ctp, uint32_t padding)
 }
 
 static boolean_t
-cksum_test_parse_input(ktest_ctx_hdl_t *ctx, cksum_test_params_t *ctp)
+emul_test_parse_input(ktest_ctx_hdl_t *ctx, emul_test_params_t *ctp)
 {
 	uchar_t *bytes;
 	size_t num_bytes = 0;
@@ -103,8 +107,8 @@ cksum_test_parse_input(ktest_ctx_hdl_t *ctx, cksum_test_params_t *ctp)
 		return (B_FALSE);
 	}
 
-	uchar_t *pkt_bytes;
-	uint_t pkt_sz;
+	uchar_t *pkt_bytes, *out_pkt_bytes;
+	uint_t pkt_sz, out_pkt_sz;
 
 	if (nvlist_lookup_byte_array(params, "pkt_bytes", &pkt_bytes,
 	    &pkt_sz) != 0) {
@@ -115,6 +119,19 @@ cksum_test_parse_input(ktest_ctx_hdl_t *ctx, cksum_test_params_t *ctp)
 		KT_ERROR(ctx, "Packet must not be 0-length");
 		goto bail;
 	}
+
+	if (nvlist_lookup_byte_array(params, "out_pkt_bytes", &out_pkt_bytes,
+	    &out_pkt_sz) == 0) {
+		if (pkt_sz < sizeof (uint64_t)) {
+			KT_ERROR(ctx, "Serialized packets need a u64 length");
+			goto bail;
+		}
+		ctp->ctp_outputs = kmem_alloc(out_pkt_sz, KM_SLEEP);
+		bcopy(out_pkt_bytes, ctp->ctp_outputs, out_pkt_sz);
+		ctp->ctp_outputs_sz = out_pkt_sz;
+	}
+
+	(void) nvlist_lookup_uint32(params, "mss", &ctp->ctp_mss);
 
 	uint32_t padding = 0;
 	(void) nvlist_lookup_uint32(params, "padding", &padding);
@@ -181,7 +198,7 @@ bail:
 /* Calculate pseudo-header checksum for a packet */
 static uint16_t
 cksum_calc_pseudo(ktest_ctx_hdl_t *ctx, const uint8_t *pkt_data,
-    const mac_ether_offload_info_t *meoi)
+    const mac_ether_offload_info_t *meoi, boolean_t exclude_len)
 {
 	if ((meoi->meoi_flags & MEOI_L4INFO_SET) == 0) {
 		KT_ERROR(ctx, "MEOI lacks L4 info");
@@ -234,7 +251,9 @@ cksum_calc_pseudo(ktest_ctx_hdl_t *ctx, const uint8_t *pkt_data,
 		ulp_len = ntohs(ipha->ipha_length) - meoi->meoi_l3hlen;
 	}
 
-	cksum += htons(ulp_len);
+	/* illumos does not include ULP length in LSO packets' partial csums */
+	if (!exclude_len)
+		cksum += htons(ulp_len);
 
 	cksum = (cksum >> 16) + (cksum & 0xffff);
 	cksum = (cksum >> 16) + (cksum & 0xffff);
@@ -266,26 +285,26 @@ mblk_write16(mblk_t *mp, uint_t off, uint16_t val)
 	*datap = val;
 }
 
-/* Compare resulting mblk with known good value in test parameters.  */
+/* Compare an individual mblk with known good value in test parameters.  */
 static boolean_t
-cksum_result_compare(ktest_ctx_hdl_t *ctx, const cksum_test_params_t *ctp,
+pkt_compare(ktest_ctx_hdl_t *ctx, const uchar_t *buf, const uint64_t len,
     mblk_t *mp)
 {
-	if (msgdsize(mp) != ctp->ctp_raw_sz) {
-		KT_FAIL(ctx, "mp size %u != %u", msgdsize(mp), ctp->ctp_raw_sz);
+	if (msgdsize(mp) != len) {
+		KT_FAIL(ctx, "mp size %u != %u", msgdsize(mp), len);
 		return (B_FALSE);
 	}
 
 	uint32_t fail_val = 0, good_val = 0;
 	uint_t mp_off = 0, fail_len = 0, i;
-	for (i = 0; i < ctp->ctp_raw_sz; i++) {
+	for (i = 0; i < len; i++) {
 		/*
 		 * If we encounter a mismatch, collect up to 4 bytes of context
 		 * to print with the failure.
 		 */
-		if (mp->b_rptr[mp_off] != ctp->ctp_raw[i] || fail_len != 0) {
+		if (mp->b_rptr[mp_off] != buf[i] || fail_len != 0) {
 			fail_val |= mp->b_rptr[mp_off] << (fail_len * 8);
-			good_val |= ctp->ctp_raw[i] << (fail_len * 8);
+			good_val |= buf[i] << (fail_len * 8);
 
 			fail_len++;
 			if (fail_len == 4) {
@@ -309,35 +328,60 @@ cksum_result_compare(ktest_ctx_hdl_t *ctx, const cksum_test_params_t *ctp,
 	return (B_TRUE);
 }
 
-/*
- * Verify mac_sw_cksum() emulation against an arbitrary input packet.  If the
- * packet is of a support protocol, any L3 and L4 checksums are cleared, and
- * then mac_sw_cksum() is called to perform the offload emulation.  Afterwards,
- * the packet is compared to see if it equasl the input, which is assumed to
- * have correct checksums.
- *
- * This can request either emulation via HCK_PARTIALCKSUM or HCK_FULLCKSUM.
- */
-static void
-mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
+/* Compare resulting mblk chain with known good values in test parameters.  */
+static boolean_t
+pkt_result_compare_chain(ktest_ctx_hdl_t *ctx, const emul_test_params_t *ctp,
+    mblk_t *mp)
 {
-	ddi_modhandle_t hdl = NULL;
-	mac_sw_cksum_t mac_sw_cksum = NULL;
+	uint_t remaining = ctp->ctp_outputs_sz;
+	const uchar_t *raw_cur = ctp->ctp_outputs;
 
-	if (ktest_hold_mod("mac", &hdl) != 0) {
-		KT_ERROR(ctx, "failed to hold 'mac' module");
-		return;
-	}
-	if (ktest_get_fn(hdl, "mac_sw_cksum", (void **)&mac_sw_cksum) != 0) {
-		KT_ERROR(ctx, "failed to resolve symbol mac`mac_sw_cksum");
-		goto cleanup;
+	int idx = 0;
+	while (remaining != 0 && mp != NULL) {
+		uint64_t inner_pkt_len;
+		if (remaining < sizeof (inner_pkt_len)) {
+			KT_ERROR(ctx, "insufficient bytes to read packet len");
+			return (B_FALSE);
+		}
+		bcopy(raw_cur, &inner_pkt_len, sizeof (inner_pkt_len));
+		inner_pkt_len = ntohll(inner_pkt_len);
+		remaining -= sizeof (inner_pkt_len);
+		raw_cur += sizeof (inner_pkt_len);
+
+		if (remaining < inner_pkt_len) {
+			KT_ERROR(ctx, "wanted %u bytes to read packet, had %u",
+			    inner_pkt_len, remaining);
+			return (B_FALSE);
+		}
+
+		if (!pkt_compare(ctx, raw_cur, inner_pkt_len, mp)) {
+			ktest_msg_prepend(ctx, "packet %u: ", idx);
+			return (B_FALSE);
+		}
+
+		remaining -= inner_pkt_len;
+		raw_cur += inner_pkt_len;
+		idx++;
+		mp = mp->b_next;
 	}
 
-	cksum_test_params_t ctp;
-	if (!cksum_test_parse_input(ctx, &ctp)) {
-		goto cleanup;
+	if (remaining != 0) {
+		KT_FAIL(ctx, "fewer packets returned than expected");
+		return (B_FALSE);
 	}
-	mblk_t *mp = ctp.ctp_mp;
+
+	if (mp != NULL) {
+		KT_FAIL(ctx, "more packets returned than expected");
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
+}
+
+static void
+mac_hw_emul_test(ktest_ctx_hdl_t *ctx, emul_test_params_t *ctp)
+{
+	mblk_t *mp = ctp->ctp_mp;
 
 	mac_ether_offload_info_t meoi;
 	mac_ether_offload_info(mp, &meoi);
@@ -351,14 +395,27 @@ mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
 
 	mac_emul_t emul_flags = 0;
 	uint_t hck_flags = 0, hck_start = 0, hck_stuff = 0, hck_end = 0;
-	if (meoi.meoi_l3proto == ETHERTYPE_IP && ctp.ctp_do_ipv4) {
+
+	if (ctp->ctp_do_lso) {
+		if ((meoi.meoi_flags & MEOI_L4INFO_SET) != 0 &&
+		    (meoi.meoi_l4proto == IPPROTO_TCP)) {
+			emul_flags |= MAC_LSO_EMUL;
+			hck_flags |= HW_LSO;
+		}
+		if (ctp->ctp_mss == 0) {
+			KT_ERROR(ctx, "invalid MSS for LSO");
+			goto cleanup;
+		}
+	}
+
+	if (meoi.meoi_l3proto == ETHERTYPE_IP && ctp->ctp_do_ipv4) {
 		mblk_write16(mp,
 		    meoi.meoi_l2hlen + offsetof(ipha_t, ipha_hdr_checksum), 0);
 		emul_flags |= MAC_IPCKSUM_EMUL;
 		hck_flags |= HCK_IPV4_HDRCKSUM;
 	}
 
-	const boolean_t do_l4 = ctp.ctp_do_partial || ctp.ctp_do_full;
+	const boolean_t do_l4 = ctp->ctp_do_partial || ctp->ctp_do_full;
 	if ((meoi.meoi_flags & MEOI_L4INFO_SET) != 0 && do_l4) {
 		boolean_t skip_pseudo = B_FALSE;
 		hck_start = meoi.meoi_l2hlen + meoi.meoi_l3hlen;
@@ -391,7 +448,7 @@ mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
 			 * account for its increased width.
 			 */
 			hck_stuff += SCTP_CHECKSUM_OFFSET;
-			if (ctp.ctp_do_full) {
+			if (ctp->ctp_do_full) {
 				mblk_write16(mp, hck_stuff, 0);
 				mblk_write16(mp, hck_stuff + 2, 0);
 			} else {
@@ -406,12 +463,12 @@ mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
 		}
 
 		emul_flags |= MAC_HWCKSUM_EMUL;
-		if (ctp.ctp_do_partial) {
+		if (ctp->ctp_do_partial) {
 			hck_flags |= HCK_PARTIALCKSUM;
 			if (!skip_pseudo) {
 				/* Populate L4 pseudo-header cksum */
-				const uint16_t pcksum =
-				    cksum_calc_pseudo(ctx, ctp.ctp_raw, &meoi);
+				const uint16_t pcksum = cksum_calc_pseudo(ctx,
+				    ctp->ctp_raw, &meoi, ctp->ctp_do_lso);
 				mblk_write16(mp, hck_stuff, pcksum);
 			} else {
 				mblk_write16(mp, hck_stuff, 0);
@@ -443,30 +500,111 @@ mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
 		/* Set hcksum information on all mblks in chain */
 		for (mblk_t *cmp = mp; cmp != NULL; cmp = cmp->b_cont) {
 			mac_hcksum_set(cmp, hck_start, hck_stuff, hck_end, 0,
-			    hck_flags);
+			    hck_flags & HCK_FLAGS);
+			lso_info_set(cmp, ctp->ctp_mss,
+			    hck_flags & HW_LSO_FLAGS);
 		}
-		ctp.ctp_mp = mp = mac_sw_cksum(mp, emul_flags);
+		mac_hw_emul(&mp, NULL, NULL, emul_flags);
+		ctp->ctp_mp = mp;
 
 		KT_ASSERT3UG(mp, !=, NULL, ctx, cleanup);
-		if (!cksum_result_compare(ctx, &ctp, mp)) {
+		boolean_t success = (ctp->ctp_outputs == NULL) ?
+		    pkt_compare(ctx, ctp->ctp_raw, ctp->ctp_raw_sz, mp) :
+		    pkt_result_compare_chain(ctx, ctp, mp);
+		if (!success) {
 			goto cleanup;
 		}
 	} else {
-		KT_SKIP(ctx, "no checksums supported for packet");
+		KT_SKIP(ctx, "offloads unsupported for packet");
 		goto cleanup;
 	}
 
 	KT_PASS(ctx);
 
 cleanup:
-	if (hdl != NULL) {
-		ktest_release_mod(hdl);
+	if (ctp->ctp_mp != NULL) {
+		freemsg(ctp->ctp_mp);
 	}
+	if (ctp->ctp_raw != NULL) {
+		kmem_free(ctp->ctp_raw, ctp->ctp_raw_sz);
+	}
+	if (ctp->ctp_outputs != NULL) {
+		kmem_free(ctp->ctp_outputs, ctp->ctp_outputs_sz);
+	}
+}
+
+/*
+ * Verify mac_sw_cksum() emulation against an arbitrary input packet.  If the
+ * packet is of a support protocol, any L3 and L4 checksums are cleared, and
+ * then mac_sw_cksum() is called to perform the offload emulation.  Afterwards,
+ * the packet is compared to see if it equasl the input, which is assumed to
+ * have correct checksums.
+ *
+ * This can request either emulation via HCK_PARTIALCKSUM or HCK_FULLCKSUM.
+ */
+static void
+mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
+{
+	emul_test_params_t ctp;
+	if (!emul_test_parse_input(ctx, &ctp)) {
+		goto cleanup;
+	}
+
+	mac_hw_emul_test(ctx, &ctp);
+
+	return;
+
+cleanup:
 	if (ctp.ctp_mp != NULL) {
 		freemsg(ctp.ctp_mp);
 	}
 	if (ctp.ctp_raw != NULL) {
 		kmem_free(ctp.ctp_raw, ctp.ctp_raw_sz);
+	}
+	if (ctp.ctp_outputs != NULL) {
+		kmem_free(ctp.ctp_outputs, ctp.ctp_outputs_sz);
+	}
+}
+
+/*
+ * Verify mac_sw_lso() (and checksum) emulation against an arbitrary input
+ * packet.  This test functions like mac_sw_cksum_test insofar as checksums can
+ * be customised, but also sets HW_LSO on any input packet, and compares the
+ * outputs against a mandatory chain of packets provided by the caller.
+ */
+static void
+mac_sw_lso_test(ktest_ctx_hdl_t *ctx)
+{
+	emul_test_params_t ctp;
+	if (!emul_test_parse_input(ctx, &ctp)) {
+		goto cleanup;
+	}
+
+	if (ctp.ctp_mss == 0) {
+		KT_ERROR(ctx, "invalid MSS for LSO");
+		goto cleanup;
+	}
+
+	if (ctp.ctp_outputs == NULL) {
+		KT_ERROR(ctx, "LSO tests require explicit packet list");
+		goto cleanup;
+	}
+
+	ctp.ctp_do_lso = B_TRUE;
+
+	mac_hw_emul_test(ctx, &ctp);
+
+	return;
+
+cleanup:
+	if (ctp.ctp_mp != NULL) {
+		freemsg(ctp.ctp_mp);
+	}
+	if (ctp.ctp_raw != NULL) {
+		kmem_free(ctp.ctp_raw, ctp.ctp_raw_sz);
+	}
+	if (ctp.ctp_outputs != NULL) {
+		kmem_free(ctp.ctp_outputs, ctp.ctp_outputs_sz);
 	}
 }
 
@@ -789,6 +927,11 @@ _init()
 	VERIFY0(ktest_add_suite(km, "checksum", &ks));
 	VERIFY0(ktest_add_test(ks, "mac_sw_cksum_test",
 	    mac_sw_cksum_test, KTEST_FLAG_INPUT));
+
+	ks = NULL;
+	VERIFY0(ktest_add_suite(km, "lso", &ks));
+	VERIFY0(ktest_add_test(ks, "mac_sw_lso_test",
+	    mac_sw_lso_test, KTEST_FLAG_INPUT));
 
 	ks = NULL;
 	VERIFY0(ktest_add_suite(km, "parsing", &ks));
