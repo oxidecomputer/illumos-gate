@@ -12,6 +12,7 @@
 #
 # Copyright 2011, Richard Lowe
 # Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2023 Oxide Computer Company
 #
 
 include		$(SRC)/Makefile.master
@@ -26,6 +27,7 @@ MANFILES=	audio.4i	\
 		fdio.4i		\
 		hdio.4i		\
 		iec61883.4i	\
+		ipcc.4i		\
 		ipnat.4i	\
 		mhd.4i		\
 		mixer.4i	\
