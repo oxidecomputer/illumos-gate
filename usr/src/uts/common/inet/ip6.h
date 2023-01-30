@@ -24,6 +24,7 @@
  * Use is subject to license terms.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_INET_IP6_H
@@ -44,6 +45,7 @@ extern "C" {
 #define	IPV6_VERSION		6
 
 #define	IPV6_HDR_LEN		40
+#define	IPV6_FRAG_EXT_HDR_LEN	8
 
 #define	IPV6_ADDR_LEN		16
 
