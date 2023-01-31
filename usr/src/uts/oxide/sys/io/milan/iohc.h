@@ -316,6 +316,22 @@ MILAN_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 #define	IOHC_INTR_EOI_SET_SMI(r)	bitset32(r, 0, 0, 1)
 
 /*
+ * IOHC::IOHC_INTR_CNTL.  Used to indicate where NMIs should be directed.
+ * Amazingly, if this is set to the default (0xff), NMIs sent *before* an
+ * AP is up appear to be latched -- and then delivered to the AP upon being
+ * powered up! (If it needs to be said: this results in an undebuggbable
+ * failure of the AP.)
+ */
+/*CSTYLED*/
+#define	D_IOHC_INTR_CNTL (const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x1012c	\
+}
+#define	IOHC_INTR_CNTL(h, nbio)	\
+	milan_iohc_smn_reg(h, D_IOHC_INTR_CNTL, nbio)
+#define	IOHC_INTR_CNTL_SET_NMI_DEST_CTRL(r, v)	bitset32(r, 15, 8, v)
+
+/*
  * IOHC::IOHC_PIN_CNTL.  This register has only a single field, which defines
  * whether external assertion of the NMI_SYNCFLOOD_L pin causes an NMI or a SYNC
  * FLOOD.  This register is defined only for the IOHC which shares an IOMS with

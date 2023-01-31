@@ -496,12 +496,31 @@ ioms_enable_nmi_cb(milan_ioms_t *ioms, void *arg __unused)
 	smn_reg_t reg;
 	uint32_t v;
 
+	/*
+	 * On reset, the NMI destination in IOHC::IOHC_INTR_CNTL is set to
+	 * 0xff.  We (emphatically) do not want any AP to get an NMI when
+	 * we first power it on, so we deliberately set all NMI destinations
+	 * to be the BSP.
+	 */
+	reg = milan_ioms_reg(ioms, D_IOHC_INTR_CNTL, 0);
+	v = IOHC_INTR_CNTL_SET_NMI_DEST_CTRL(0, 0);
+	milan_ioms_write(ioms, reg, v);
+
 	if ((milan_ioms_flags(ioms) & MILAN_IOMS_F_HAS_FCH) != 0) {
 		reg = milan_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
 		v = IOHC_PIN_CTL_SET_MODE_NMI(0);
 		milan_ioms_write(ioms, reg, v);
 	}
 
+	/*
+	 * Once we enable this, we can immediately take an NMI if it's
+	 * currently asserted.  We want to do this last and clear out of here
+	 * as quickly as possible:  this is all a bit dodgy, but the NMI
+	 * handler itself needs to issue an SMN write to indicate EOI -- and
+	 * if it finds that SMN-related locks are held, we will panic.  To
+	 * reduce the likelihood of that, we are going to enable NMI and
+	 * skedaddle...
+	 */
 	reg = milan_ioms_reg(ioms, D_IOHC_MISC_RAS_CTL, 0);
 	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(0, 1);
 	milan_ioms_write(ioms, reg, v);
