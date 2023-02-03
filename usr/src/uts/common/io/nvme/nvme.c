@@ -14,7 +14,7 @@
  * Copyright 2019 Unix Software Ltd.
  * Copyright 2020 Joyent, Inc.
  * Copyright 2020 Racktop Systems.
- * Copyright 2022 Oxide Computer Company.
+ * Copyright 2023 Oxide Computer Company.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
@@ -2940,42 +2940,113 @@ nvme_prepare_devid(nvme_t *nvme, uint32_t nsid)
 	    nvme->n_idctl->id_vid, model, serial, nsid);
 }
 
+static nvme_identify_nsid_list_t *
+nvme_update_nsid_list(nvme_t *nvme, int cns)
+{
+	nvme_identify_nsid_list_t *nslist;
+
+	/*
+	 * We currently don't handle cases where there are more than
+	 * 1024 active namespaces, requiring several IDENTIFY commands.
+	 */
+	if (nvme_identify(nvme, B_FALSE, 0, cns, (void **)&nslist) == 0)
+		return (nslist);
+
+	return (NULL);
+}
+
 static boolean_t
 nvme_allocated_ns(nvme_namespace_t *ns)
 {
 	nvme_t *nvme = ns->ns_nvme;
+	uint32_t i;
 
 	ASSERT(MUTEX_HELD(&nvme->n_mgmt_mutex));
 
 	/*
-	 * Since we don't know any better, we assume all namespaces to be
-	 * allocated.
+	 * If supported, update the list of allocated namespace IDs.
 	 */
-	return (B_TRUE);
+	if (NVME_VERSION_ATLEAST(&nvme->n_version, 1, 2) &&
+	    nvme->n_idctl->id_oacs.oa_nsmgmt != 0) {
+		nvme_identify_nsid_list_t *nslist = nvme_update_nsid_list(nvme,
+		    NVME_IDENTIFY_NSID_ALLOC_LIST);
+		boolean_t found = B_FALSE;
+
+		/*
+		 * When namespace management is supported, this really shouldn't
+		 * be NULL. Treat all namespaces as allocated if it is.
+		 */
+		if (nslist == NULL)
+			return (B_TRUE);
+
+		for (i = 0; i < ARRAY_SIZE(nslist->nl_nsid); i++) {
+			if (ns->ns_id == 0)
+				break;
+
+			if (ns->ns_id == nslist->nl_nsid[i])
+				found = B_TRUE;
+		}
+
+		kmem_free(nslist, NVME_IDENTIFY_BUFSIZE);
+		return (found);
+	} else {
+		/*
+		 * If namespace management isn't supported, report all
+		 * namespaces as allocated.
+		 */
+		return (B_TRUE);
+	}
 }
 
 static boolean_t
 nvme_active_ns(nvme_namespace_t *ns)
 {
 	nvme_t *nvme = ns->ns_nvme;
-	boolean_t ret = B_FALSE;
 	uint64_t *ptr;
+	uint32_t i;
 
 	ASSERT(MUTEX_HELD(&nvme->n_mgmt_mutex));
 
 	/*
+	 * If supported, update the list of active namespace IDs.
+	 */
+	if (NVME_VERSION_ATLEAST(&nvme->n_version, 1, 1)) {
+		nvme_identify_nsid_list_t *nslist = nvme_update_nsid_list(nvme,
+		    NVME_IDENTIFY_NSID_LIST);
+		boolean_t found = B_FALSE;
+
+		/*
+		 * When namespace management is supported, this really shouldn't
+		 * be NULL. Treat all namespaces as allocated if it is.
+		 */
+		if (nslist == NULL)
+			return (B_TRUE);
+
+		for (i = 0; i < ARRAY_SIZE(nslist->nl_nsid); i++) {
+			if (ns->ns_id == 0)
+				break;
+
+			if (ns->ns_id == nslist->nl_nsid[i])
+				found = B_TRUE;
+		}
+
+		kmem_free(nslist, NVME_IDENTIFY_BUFSIZE);
+		return (found);
+	}
+
+	/*
+	 * Workaround for revision 1.0:
 	 * Check whether the IDENTIFY NAMESPACE data is zero-filled.
 	 */
 	for (ptr = (uint64_t *)ns->ns_idns;
 	    ptr != (uint64_t *)(ns->ns_idns + 1);
 	    ptr++) {
 		if (*ptr != 0) {
-			ret = B_TRUE;
-			break;
+			return (B_TRUE);
 		}
 	}
 
-	return (ret);
+	return (B_FALSE);
 }
 
 static int
@@ -3054,11 +3125,14 @@ nvme_init_ns(nvme_t *nvme, int nsid)
 	was_ignored = ns->ns_ignore;
 
 	/*
-	 * We currently don't support namespaces that use either:
+	 * We currently don't support namespaces that are inactive, or use
+	 * either:
 	 * - protection information
 	 * - illegal block size (< 512)
 	 */
-	if (idns->id_dps.dp_pinfo) {
+	if (!ns->ns_active) {
+		ns->ns_ignore = B_TRUE;
+	} else if (idns->id_dps.dp_pinfo) {
 		dev_err(nvme->n_dip, CE_WARN,
 		    "!ignoring namespace %d, unsupported feature: "
 		    "pinfo = %d", nsid, idns->id_dps.dp_pinfo);

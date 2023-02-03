@@ -689,8 +689,8 @@ dladm_class2str(datalink_class_t class, char *buf)
 	case DATALINK_CLASS_TFPORT:
 		s = "tfport";
 		break;
-	case DATALINK_CLASS_XDE:
-		s = "xde";
+	case DATALINK_CLASS_MISC:
+		s = "misc";
 		break;
 	default:
 		s = "unknown";
