@@ -148,6 +148,12 @@
 #include <io/amdzen/amdzen.h>
 
 /*
+ * XXX Remove me and always enable SSC.  Patchable for now to aid development
+ * only.
+ */
+boolean_t milan_enable_ssc = B_FALSE;
+
+/*
  * This is a structure that we can use internally to pass around a DXIO RPC
  * request.
  */
@@ -5432,9 +5438,10 @@ milan_fabric_init(void)
 	 * driver hanging off the FCH nexus instead.
 	 */
 	milan_fabric_walk_ioms(fabric, milan_fabric_init_pcie_refclk, NULL);
-	if (!milan_cgpll_set_ssc(B_TRUE)) {
+	if (!milan_cgpll_set_ssc(milan_enable_ssc)) {
 		cmn_err(CE_WARN,
-		    "CGPLL: spread-spectrum clocking could not be enabled");
+		    "CGPLL: spread-spectrum clocking could not be %s",
+		    milan_enable_ssc ? "enabled" : "disabled");
 	}
 
 	milan_fabric_walk_ioms(fabric, milan_fabric_init_pci_to, NULL);
