@@ -22,6 +22,7 @@
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2015 Joyent, Inc.
 # Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2023 Oxide Computer Company
 #
 
 #
@@ -247,6 +248,10 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	dladm_bridge_get_nick;
 	dladm_bridge_set_nick;
 	dladm_bridge_get_privprop;
+
+	dladm_tfport_create;
+	dladm_tfport_delete;
+	dladm_tfport_info;
 
 	dladm_link_stat_query;
 	dladm_link_stat_diffchain;

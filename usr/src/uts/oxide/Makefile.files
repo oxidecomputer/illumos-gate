@@ -25,7 +25,7 @@
 # Copyright (c) 2010, Intel Corporation.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2019 Joyent, Inc.
-# Copyright 2022 Oxide Computer Co.
+# Copyright 2023 Oxide Computer Co.
 #
 #	This Makefile defines file modules in the directory uts/oxide
 #	and its children. These are the source files which are oxide
@@ -124,7 +124,8 @@ MILAN_OBJS +=			\
 	milan_apob_memlist.o	\
 	milan_ccx.o		\
 	milan_dxio_data.o	\
-	milan_fabric.o
+	milan_fabric.o		\
+	milan_ras.o
 
 CORE_OBJS += $(SMBIOS_OBJS) $(MILAN_OBJS)
 

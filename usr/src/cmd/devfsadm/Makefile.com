@@ -22,6 +22,7 @@
 # Use is subject to license terms.
 #
 # Copyright 2019, Joyent, Inc.
+# Copyright 2023 Oxide Computer Company
 
 # This target builds both a command (daemon) and various shared objects.  This
 # isn't a typical target, and the inclusion of both library and command
@@ -73,7 +74,8 @@ LINK_OBJS_CMN =			\
 	zfs_link.o		\
 	zut_link.o		\
 	sensor_link.o		\
-	dpio_link.o
+	dpio_link.o		\
+	tofino_link.o
 
 LINK_OBJS =	$(LINK_OBJS_CMN) \
 		$(LINK_OBJS_$(MACH))

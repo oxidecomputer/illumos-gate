@@ -11,10 +11,11 @@
 
 #
 # Copyright (c) 2019 by Chelsio Communications, Inc. All rights reserved.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 <include global_zone_only_component>
+<transform file path=kernel/firmware/cxgbe/.*\.txt$ -> set preserve renamenew>
 set name=pkg.fmri value=pkg:/driver/network/cxgbe@$(PKGVERS)
 set name=pkg.summary value="Chelsio T4/T5 10/40GE NIC Driver"
 set name=pkg.description \
@@ -28,6 +29,17 @@ dir  path=kernel/drv/$(ARCH64) group=sys
 file path=kernel/drv/$(ARCH64)/cxgbe group=sys
 file path=kernel/drv/$(ARCH64)/t4nex group=sys
 file path=kernel/drv/$(ARCH64)/t6mfg group=sys
+dir  path=kernel/firmware group=sys
+dir  path=kernel/firmware/cxgbe group=sys
+file path=kernel/firmware/cxgbe/t4fw-1.27.1.0.bin
+link path=kernel/firmware/cxgbe/t4fw.bin target=t4fw-1.27.1.0.bin
+file path=kernel/firmware/cxgbe/t4fw_cfg.txt
+file path=kernel/firmware/cxgbe/t5fw-1.27.1.0.bin
+link path=kernel/firmware/cxgbe/t5fw.bin target=t5fw-1.27.1.0.bin
+file path=kernel/firmware/cxgbe/t5fw_cfg.txt
+file path=kernel/firmware/cxgbe/t6fw-1.27.1.0.bin
+link path=kernel/firmware/cxgbe/t6fw.bin target=t6fw-1.27.1.0.bin
+file path=kernel/firmware/cxgbe/t6fw_cfg.txt
 dir  path=usr group=sys
 dir  path=usr/lib
 dir  path=usr/lib/$(ARCH64)

@@ -22,6 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2015 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <stdio.h>
@@ -344,6 +345,10 @@ inner_pkt:
 		case ETHERTYPE_REVARP:
 			interpret_arp(flags, (struct arphdr *)data, len);
 			break;
+		case ETHERTYPE_SIDECAR:
+			(void) interpret_sidecar(flags, (struct schdr *)data,
+			    len);
+			break;
 		case ETHERTYPE_PPPOED:
 		case ETHERTYPE_PPPOES:
 			(void) interpret_pppoe(flags, (poep_t *)data, len);
@@ -440,6 +445,7 @@ ETHERTYPE_PUP,	"Xerox PUP",
 0x0889, "Xyplex",
 0x088A, "Xyplex",
 0x0900, "Ungermann-Bass network debugger",
+0x0901, "Sidecar",
 0x0A00, "Xerox IEEE802.3 PUP",
 0x0A01, "Xerox IEEE802.3 PUP Address Translation",
 0x0BAD, "Banyan Systems",

@@ -1,0 +1,47 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2023 Oxide Computer Company
+#
+
+#
+# The default for payload-bearing actions in this package is to appear in the
+# global zone only.  See the include file for greater detail, as well as
+# information about overriding the defaults.
+#
+<include global_zone_only_component>
+set name=pkg.fmri value=pkg:/driver/misc/tofino@$(PKGVERS)
+set name=pkg.summary value="Tofino ASIC Driver"
+set name=pkg.description \
+    value="Driver for Barefoot/Intel Tofino programmable network ASICs"
+set name=info.classification value=org.opensolaris.category.2008:System/Hardware
+set name=variant.arch value=$(ARCH)
+dir  path=kernel group=sys
+dir  path=kernel/drv group=sys
+dir  path=kernel/drv/$(ARCH64) group=sys
+file path=kernel/drv/$(ARCH64)/tfpkt group=sys
+file path=kernel/drv/$(ARCH64)/tfport group=sys
+file path=kernel/drv/$(ARCH64)/tofino group=sys
+file path=kernel/drv/tfpkt.conf group=sys
+file path=kernel/drv/tfport.conf group=sys
+dir  path=usr group=sys
+dir  path=usr/lib
+dir  path=usr/lib/devfsadm group=sys
+dir  path=usr/lib/devfsadm/linkmod group=sys
+file path=usr/lib/devfsadm/linkmod/SUNW_tofino_link.so group=sys
+driver name=tfpkt
+driver name=tfport
+driver name=tofino perms="* 0600 root sys" \
+    alias=pciex1d1c,000 \
+    alias=pciex1d1c,100 \
+    alias=pciex1d1c,110
+license lic_CDDL license=lic_CDDL
