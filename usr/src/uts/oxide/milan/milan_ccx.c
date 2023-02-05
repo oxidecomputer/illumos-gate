@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -633,6 +633,29 @@ milan_core_undoc_init(void)
 	wrmsr_and_test(MSR_AMD_BP_CFG, v);
 }
 
+static void
+milan_core_dpm_init(void)
+{
+	const milan_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
+	const uint64_t *weights;
+	uint32_t nweights;
+	uint64_t cfg;
+
+	milan_fabric_thread_get_dpm_weights(thread, &weights, &nweights);
+
+	cfg = rdmsr(MSR_AMD_DPM_CFG);
+	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 0);
+	wrmsr_and_test(MSR_AMD_DPM_CFG, cfg);
+
+	for (uint32_t idx = 0; idx < nweights; idx++) {
+		wrmsr_and_test(MSR_AMD_DPM_WAC_ACC_INDEX, idx);
+		wrmsr_and_test(MSR_AMD_DPM_WAC_DATA, weights[idx]);
+	}
+
+	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 1);
+	wrmsr_and_test(MSR_AMD_DPM_CFG, cfg);
+}
+
 void
 milan_ccx_init(void)
 {
@@ -712,5 +735,6 @@ milan_ccx_init(void)
 		if (thread->mt_core->mc_logical_coreno == 0)
 			milan_ccx_l3_init();
 		milan_core_undoc_init();
+		milan_core_dpm_init();
 	}
 }

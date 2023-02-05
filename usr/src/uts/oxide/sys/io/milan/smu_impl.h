@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_SMU_IMPL_H
@@ -65,6 +65,7 @@ AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg, SMU_RPC,
 #define	MILAN_SMU_OP_TOOLS_ADDRESS	0x06
 #define	MILAN_SMU_OP_DEBUG_ADDRESS	0x07
 #define	MILAN_SMU_OP_DXIO		0x08
+#define	MILAN_SMU_OP_READ_DPM_WEIGHT	0x09
 #define	MILAN_SMU_OP_DC_BOOT_CALIB	0x0c
 #define	MILAN_SMU_OP_GET_BRAND_STRING	0x0d
 #define	MILAN_SMU_OP_TX_PP_TABLE	0x10

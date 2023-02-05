@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_FABRIC_IMPL_H
@@ -85,6 +85,13 @@ extern "C" {
 #define	MILAN_IOMS_HAS_WAFL	0
 
 /*
+ * There are supposed to be 23 digital power management (DPM) weights provided
+ * by each Milan SMU.  Note that older processor families may have fewer, and
+ * Naples also has more SMUs.
+ */
+#define	MILAN_MAX_DPM_WEIGHTS	23
+
+/*
  * Warning: These memlists cannot be given directly to PCI. They expect to be
  * kmem_alloc'd which we are not doing here at all.
  */
@@ -131,6 +138,7 @@ struct milan_iodie {
 	milan_iodie_flag_t	mi_flags;
 	milan_dxio_sm_state_t	mi_state;
 	milan_dxio_config_t	mi_dxio_conf;
+	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
 	milan_ioms_t		mi_ioms[MILAN_IOMS_PER_IODIE];
 	milan_ccd_t		mi_ccds[MILAN_MAX_CCDS_PER_IODIE];
 	milan_soc_t		*mi_soc;
