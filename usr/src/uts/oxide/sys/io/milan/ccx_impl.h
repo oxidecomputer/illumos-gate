@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_CCX_IMPL_H
@@ -104,6 +104,8 @@ struct milan_ccd {
 
 extern size_t milan_fabric_thread_get_brandstr(const milan_thread_t *,
     char *, size_t);
+extern void milan_fabric_thread_get_dpm_weights(const milan_thread_t *,
+    const uint64_t **, uint32_t *);
 
 #ifdef __cplusplus
 }

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -826,6 +826,15 @@ milan_fabric_thread_get_brandstr(const milan_thread_t *thread,
 {
 	milan_soc_t *soc = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie->mi_soc;
 	return (snprintf(buf, len, "%s", soc->ms_brandstr));
+}
+
+void
+milan_fabric_thread_get_dpm_weights(const milan_thread_t *thread,
+    const uint64_t **wp, uint32_t *nentp)
+{
+	milan_iodie_t *iodie = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie;
+	*wp = iodie->mi_dpm_weights;
+	*nentp = MILAN_MAX_DPM_WEIGHTS;
 }
 
 uint64_t
@@ -1670,6 +1679,30 @@ milan_smu_rpc_read_brand_string(milan_iodie_t *iodie, char *buf, size_t len)
 }
 
 static boolean_t
+milan_smu_rpc_read_dpm_weights(milan_iodie_t *iodie, uint64_t *buf, size_t len)
+{
+	milan_smu_rpc_t rpc = { 0 };
+
+	len = MIN(len, MILAN_MAX_DPM_WEIGHTS * sizeof (uint64_t));
+	bzero(buf, len);
+	rpc.msr_req = MILAN_SMU_OP_READ_DPM_WEIGHT;
+
+	for (uint32_t idx = 0; idx < len / sizeof (uint64_t); idx++) {
+		rpc.msr_arg0 = idx;
+		milan_smu_rpc(iodie, &rpc);
+
+		if (rpc.msr_resp != MILAN_SMU_RPC_OK)
+			return (B_FALSE);
+
+		buf[idx] = rpc.msr_arg1;
+		buf[idx] <<= 32;
+		buf[idx] |= rpc.msr_arg0;
+	}
+
+	return (B_TRUE);
+}
+
+static boolean_t
 milan_dxio_version_at_least(const milan_iodie_t *iodie,
     const uint32_t major, const uint32_t minor)
 {
@@ -2462,6 +2495,16 @@ milan_fabric_topo_init(void)
 		if (!milan_smu_rpc_read_brand_string(iodie, soc->ms_brandstr,
 		    sizeof (soc->ms_brandstr))) {
 			soc->ms_brandstr[0] = '\0';
+		}
+
+		if (!milan_smu_rpc_read_dpm_weights(iodie,
+		    iodie->mi_dpm_weights, sizeof (iodie->mi_dpm_weights))) {
+			/*
+			 * XXX It's unclear whether continuing is wise.
+			 */
+			cmn_err(CE_WARN, "SMU: failed to retrieve DPM weights");
+			bzero(iodie->mi_dpm_weights,
+			    sizeof (iodie->mi_dpm_weights));
 		}
 
 		/*
