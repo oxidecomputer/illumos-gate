@@ -125,6 +125,7 @@ retrieve_macaddr(int ipccfd, ether_addr_t *macp, char macstr[ETHERADDRSTRL])
 	t6init_verbose("Retrieving MAC addresses from SP");
 
 	bzero(&sp_mac, sizeof (sp_mac));
+	sp_mac.im_group = IPCC_MAC_GROUP_NIC;
 	if (ioctl(ipccfd, IPCC_MACS, &sp_mac) == -1) {
 		warn("could not retrieve MACs via ipcc");
 		return (false);

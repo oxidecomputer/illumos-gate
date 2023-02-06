@@ -108,15 +108,15 @@ ipcc_keylookup_result(uint8_t result)
 {
 	switch (result) {
 	case IPCC_KEYLOOKUP_SUCCESS:
-		return "Success";
+		return ("Success");
 	case IPCC_KEYLOOKUP_UNKNOWN_KEY:
-		return "Invalid key";
+		return ("Invalid key");
 	case IPCC_KEYLOOKUP_NO_VALUE:
-		return "No value";
+		return ("No value");
 	case IPCC_KEYLOOKUP_BUFFER_TOO_SMALL:
-		return "Buffer too small";
+		return ("Buffer too small");
 	}
-	return "Unknown";
+	return ("Unknown");
 }
 
 static int
@@ -173,16 +173,55 @@ ipcc_keylookup(int argc, char *argv[])
 	return (0);
 }
 
+static void
+ipcc_macs_usage(FILE *f)
+{
+	(void) fprintf(f, "\tmacs [group]\n");
+}
+
+static const char *
+mac_group_name(uint8_t group)
+{
+	switch (group) {
+	case IPCC_MAC_GROUP_ALL:
+		return ("ALL");
+	case IPCC_MAC_GROUP_NIC:
+		return ("NIC");
+	case IPCC_MAC_GROUP_BOOTSTRAP:
+		return ("BOOTSTRAP");
+	default:
+		break;
+	}
+	return ("UNKNOWN");
+}
+
 static int
 ipcc_macs(int argc, char *argv[])
 {
 	ipcc_mac_t mac;
 	char buf[ETHERADDRSTRL];
+	const char *errstr;
+
+	if (argc != 0 && argc != 1) {
+		fprintf(stderr, "Syntax: %s macs [group]\n", progname);
+		return (EXIT_FAILURE);
+	}
 
 	bzero(&mac, sizeof (mac));
+
+	if (argc == 1) {
+		mac.im_group = strtonum(argv[0], 0, 255, &errstr);
+		if (errstr != NULL) {
+			errx(EXIT_FAILURE, "group is %s (range 0-255): %s",
+			    errstr, argv[0]);
+		}
+	}
+
 	if (ioctl(ipcc_fd, IPCC_MACS, &mac) < 0)
 		err(EXIT_FAILURE, "IPCC_MACS ioctl failed");
 
+	(void) printf("Group   %u (%s)\n", mac.im_group,
+	    mac_group_name(mac.im_group));
 	(void) printf("Base:   %s\n",
 	    ether_ntoa_r((struct ether_addr *)&mac.im_base, buf));
 	(void) printf("Count:  0x%x\n", mac.im_count);
@@ -223,7 +262,7 @@ ipcc_version(int argc, char *argv[])
 static const ipcc_cmdtab_t ipcc_cmds[] = {
 	{ "ident", ipcc_ident, NULL },
 	{ "keylookup", ipcc_keylookup, ipcc_keylookup_usage },
-	{ "macs", ipcc_macs, NULL },
+	{ "macs", ipcc_macs, ipcc_macs_usage },
 	{ "status", ipcc_status, NULL },
 	{ "version", ipcc_version, NULL },
 	{ NULL, NULL, NULL }

@@ -1381,7 +1381,6 @@ ipcc_macs(const ipcc_ops_t *ops, void *arg, ipcc_mac_t *mac)
 	if (err != 0)
 		goto out;
 
-	bzero(mac, sizeof (*mac));
 	off = 0;
 	ipcc_decode_bytes((uint8_t *)&mac->im_base, sizeof (mac->im_base),
 	    data, &off);

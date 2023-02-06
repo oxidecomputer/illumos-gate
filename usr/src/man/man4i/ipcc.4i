@@ -10,7 +10,7 @@
 .\"
 .\" Copyright 2023 Oxide Computer Company
 .\"
-.Dd January 30, 2023
+.Dd February 6, 2023
 .Dt IPCC 4I
 .Os
 .Sh NAME
@@ -135,16 +135,49 @@ The argument is a pointer to a
 structure
 .Pq described below .
 On successful return, this structure will have been populated with information
-that defines the MAC addresses which are available for use by the host OS.
+that defines the MAC addresses which are available for use by the host OS for
+a particular purpose.
 .Bd -literal -offset 2n
 #define ETHERADDRL		6 /* from <sys/ethernet.h> */
 
+/* Values for im_group, see below */
+#define IPCC_MAC_GROUP_ALL              0
+#define IPCC_MAC_GROUP_NIC              1
+#define IPCC_MAC_GROUP_BOOTSTRAP        2
+
 typedef struct ipcc_mac {
+    uint8_t         im_group;
     uint16_t        im_count;
     uint8_t         im_base[ETHERADDRL];
     uint8_t         im_stride;
 } ipcc_mac_t;
 .Ed
+.Pp
+Before calling, the following fields must be set to appropriate values:
+.Bl -tag -width 10n -offset 2n
+.It Fa im_group
+The MAC address group being requested.
+.El
+.Pp
+Possible values for
+.Fa im_group
+are:
+.Bl -tag -width 10n -offset 2n
+.It Dv IPCC_MAC_GROUP_ALL
+Return all of the MAC addresses that the SP provides to the host.
+.It Dv IPCC_MAC_GROUP_NIC
+Return the subset of MAC addresses that are reserved for the host NICs.
+.It Dv IPCC_MAC_GROUP_BOOTSTRAP
+Return the subset of MAC addresses that are reserved for bootstrapping.
+.El
+.Pp
+On successful return, the
+.Fa im_count ,
+.Fa im_base
+and
+.Fa im_stride
+fields will have been updated to convey information about the requested
+addresses.
 .It Dv IPCC_KEYLOOKUP
 This request is a generic key/value lookup mechanism where the SP can be asked
 for the current value that corresponds to a specified lookup key.
@@ -219,7 +252,7 @@ The provided buffer is too small to contain the value for the requested key.
 .It Dv IPCC_ROT
 This is a placeholder that will be expanded later.
 .El
-.Ss RETURN VALUES
+.Sh RETURN VALUES
 .Bl -tag -offset 2n -width indent
 .It For Dv IPCC_VERSION :
 On success, the return value is the current version of the kernel
@@ -238,6 +271,47 @@ Otherwise,
 is returned and
 .Va errno
 is set to indicate the error.
+.El
+.Sh ERRORS
+These ioctls are subject to the errors described in
+.Xr ioctl 2 .
+In addition to those errors, the following
+.Nm Ns -specific errors may occur.
+.Bl -tag -offset indent -width 10n
+.It Er EINTR
+The SP interrupt line was raised and something went wrong while processing that.
+.It Er ETIMEDOUT
+Despite a number of retries, communication with the SP was ultimately
+unsuccessful.
+.El
+.\" command-specific
+.Pp
+The following command-specific errors may also occur:
+.Bl -item
+.It
+.Dv IPCC_MACS
+.Bl -tag -offset indent -width 10n
+.It Er ENOSPC
+Unable to allocate MAC addresses for the requested group.
+There are either insufficient MAC addresses provided by the SP, or the
+requirements for this group
+.Pq such as stride width
+cannot be met.
+.El
+.It
+.Dv IPCC_KEYLOOKUP
+.Bl -tag -offset indent -width 10n
+.It Er EIO
+An invalid reply was received from the SP.
+.It Er EOVERFLOW
+Too much data received in response to a lookup.
+This is generally a protocol error; the SP should usually indicate that the
+supplied buffer is too small via setting
+.Fa ik_result
+to
+.Dv IPCC_KEYLOOKUP_BUFFER_TOO_SMALL
+as described above.
+.El
 .El
 .Sh INTERFACE STABILITY
 .Sy Uncommitted
