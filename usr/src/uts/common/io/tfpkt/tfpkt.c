@@ -332,10 +332,14 @@ tfpkt_m_promisc(void *arg, boolean_t on)
 	return (0);
 }
 
+/*
+ * This is a no-op.  We return SUCCESS to keep the mac layer from dropping
+ * multicast traffic to/from this device.
+ */
 static int
 tfpkt_m_multicst(void *arg, boolean_t add, const uint8_t *addrp)
 {
-	return (ENOTSUP);
+	return (0);
 }
 
 static int

@@ -1203,14 +1203,13 @@ tfport_m_promisc(void *arg, boolean_t on)
 }
 
 /*
- * We don't attempt to do any multicast filtering here.  If you squint and look
- * at it sideways, that means we have 0 filter slots, so we always return
- * ENOSPC.
+ * This is a no-op.  We return SUCCESS to keep the mac layer from dropping
+ * multicast traffic to/from this device.
  */
 static int
 tfport_m_multicst(void *arg, boolean_t add, const uint8_t *addrp)
 {
-	return (ENOSPC);
+	return (0);
 }
 
 /*
