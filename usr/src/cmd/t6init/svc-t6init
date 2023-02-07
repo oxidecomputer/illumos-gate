@@ -1,0 +1,151 @@
+#!/bin/ksh
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2023 Oxide Computer Company
+#
+
+. /lib/svc/share/smf_include.sh
+
+# This service creates a DPIO (Dedicated Purpose I/O) for the Chelsio T6
+# pin that controls whether it comes up in manufacturing or mission mode
+# and then invokes the process that verifies/programs the device as necessary
+# before putting it into mission mode.
+#
+# It contains hard-coded knowledge of the required parameters based on the
+# platform, which will need extending to support future systems.
+
+# GPIO location based on platform
+typeset -rA GPIOMAP=(
+	[Oxide,Gimlet]=(
+		[controller]=zen_gpio0
+		[gpio]=EGPIO9_3
+		[attachment]=pcie16
+	)
+)
+
+smf_is_globalzone || exit $SMF_EXIT_OK
+
+# Running this script with "mfgmode" as the sole argument is a development aid
+# that allows for quick switching back to manufacturing mode and does not have
+# to be run from smf(7).
+if [[ "$1" != "mfgmode" && -z "$SMF_FMRI" ]]; then
+        echo "this script can only be invoked by smf(7)"
+        exit $SMF_EXIT_ERR_NOSMF
+fi
+
+function fatal {
+	echo "$@" >&2
+	exit $SMF_EXIT_ERR_FATAL
+}
+
+typeset -r GPIOADM=/usr/sbin/gpioadm
+
+typeset -r PLATFORM=$(prtconf /devices)
+typeset -r ARCH=$(uname -m)
+
+typeset -r DPIO_NAME=t6mission
+
+typeset -r SROM_FILE="/platform/$PLATFORM/firmware/t6srom.bin"
+typeset -r FW_FILE="/kernel/firmware/cxgbe/t6fw.bin"
+
+if [[ -z "${GPIOMAP[$PLATFORM]}" ]]; then
+	echo "$SMF_FMRI is not supported for $PLATFORM"
+	/usr/sbin/svcadm disable $SMF_FMRI
+	# This sleep is here to allow the effect of the 'svcadm disable'
+	# to propagate through to the repository in order to work around a race
+	# condition where the service may start up again. Once illumos
+	# 15320 is resolved, it should be removed in favour of this script
+	# exiting with the new $SMF_EXIT_TEMP_DISABLE
+	sleep 5 &
+	exit $SMF_EXIT_OK
+fi
+
+[[ -f "$SROM_FILE" ]] || fatal "SROM file $SROM_FILE not found"
+[[ -f "$FW_FILE" ]] || fatal "FW file $FW_FILE not found"
+
+typeset -r CTRL="${GPIOMAP[$PLATFORM][controller]}"
+typeset -r GPIO="${GPIOMAP[$PLATFORM][gpio]}"
+typeset -r ATTACH_POINT="${GPIOMAP[$PLATFORM][attachment]}"
+
+if [[ -z "$CTRL" || -z "$GPIO" || -z "$ATTACH_POINT" ]]; then
+	echo "Could not determine controller/gpio for $PLATFORM"
+	exit $SMF_EXIT_ERR_CONFIG
+fi
+
+function remove_dpio {
+	existing=$($GPIOADM dpio list -Hpo controller,gpionum $DPIO_NAME \
+	    2>/dev/null)
+	if (($? == 0)) && [[ -n "$existing" ]]; then
+		controller=${existing%:*}
+		id=${existing#*:}
+		echo "Found existing DPIO $DPIO_NAME at $controller/$id"
+		if [[ "$controller" != "$CTRL" ]]; then
+			fatal "Existing DPIO is on controller $controller"\
+			    "and not $CTRL"
+		fi
+		echo "Removing DPIO $DPIO_NAME"
+		if ! $GPIOADM dpio undefine "$controller/$id"; then
+			fatal "Could not undefine existing DPIO $DPIO_NAME"
+		fi
+	fi
+}
+
+case "$1" in
+start)
+	remove_dpio
+	echo "Configuring GPIO attributes"
+	$GPIOADM gpio attr set "$CTRL/$GPIO" "zen:pull=disabled" ||
+	    fatal "Failed to configure GPIO attributes"
+	echo "Creating DPIO $DPIO_NAME over $CTRL/$GPIO"
+	$GPIOADM dpio define -rw "$CTRL/$GPIO" "$DPIO_NAME" || \
+	    fatal "Failed to define DPIO"
+
+	echo "Waiting for DPIO device to appear"
+	while [[ ! -r /dev/dpio/$DPIO_NAME ]]; do
+		sleep 1
+		echo "  ... waiting"
+	done
+
+	# XXX temporarily record the link speeds for the T6 and its parent
+	# bridge
+	/usr/lib/pci/pcieadm show-devs -s 85/0/0 80/1/1
+
+	echo "Attempting to transition to mission mode"
+	/usr/platform/$ARCH/bin/t6init \
+	    -v \
+	    -D $DPIO_NAME \
+	    -A $ATTACH_POINT \
+	    -s $SROM_FILE \
+	    -f $FW_FILE || fatal "Failed to transition to mission mode"
+
+	# XXX
+	/usr/lib/pci/pcieadm show-devs -s 85/0/4 80/1/1
+	;;
+stop)
+	# No action taken on stop
+	;;
+mfgmode)
+	echo "Attempting to transition to manufacturing mode"
+	/usr/platform/$ARCH/bin/t6init \
+	    -v \
+	    -M \
+	    -D $DPIO_NAME \
+	    -A $ATTACH_POINT || fatal "Failed to transition to mfg mode"
+	remove_dpio
+	;;
+*)
+	fatal "ERROR: $0: unsupported command '$1'"
+	;;
+esac
+
+exit $SMF_EXIT_OK

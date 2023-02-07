@@ -30,6 +30,7 @@
 # Copyright 2018 Gary Mills
 # Copyright 2019 Peter Tribble
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2023 Oxide Computer Company
 #
 
 include ../Makefile.master
@@ -519,11 +520,12 @@ sparc_SUBDIRS=		\
 	vntsd
 
 # XXX Oxide
-# This 'ipcc' service is only applicable to the Oxide platform and the
-# initialisation it does could likely be moved to the ipcc kernel module.
-# The service could be delivered regardless and its state controlled by
+# These services are only applicable to the Oxide platform and some of the
+# initialisation they do could likely be moved to a kernel module or to a
+# dedicated DPIO management service.
+# The services could be delivered regardless and its state controlled by
 # a platform-specific profile (cf. cmd/prtdscp)
-i386_SUBDIRS +=		ipcc
+i386_SUBDIRS +=		ipcc t6init
 
 #
 # Commands that are messaged.  Note that 'lp' comes first

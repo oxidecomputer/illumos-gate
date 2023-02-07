@@ -40,11 +40,17 @@ file path=kernel/firmware/cxgbe/t5fw_cfg.txt
 file path=kernel/firmware/cxgbe/t6fw-1.27.1.0.bin
 link path=kernel/firmware/cxgbe/t6fw.bin target=t6fw-1.27.1.0.bin
 file path=kernel/firmware/cxgbe/t6fw_cfg.txt
+file path=lib/svc/manifest/system/t6init.xml group=sys mode=0444
+file path=lib/svc/method/svc-t6init mode=0555
 dir  path=usr group=sys
 dir  path=usr/lib
 dir  path=usr/lib/$(ARCH64)
 file path=usr/lib/$(ARCH64)/libt6mfg.so.1
 file path=usr/lib/libt6mfg.so.1
+dir  path=usr/platform group=sys
+dir  path=usr/platform/oxide group=sys
+dir  path=usr/platform/oxide/bin group=sys
+file path=usr/platform/oxide/bin/t6init mode=0555
 dir  path=usr/sbin
 file path=usr/sbin/cxgbetool mode=0555
 file path=usr/sbin/t6mfgadm mode=0555
