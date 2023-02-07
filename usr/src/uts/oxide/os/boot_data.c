@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co
+ * Copyright 2023 Oxide Computer Co
  * All rights reserved.
  */
 
@@ -223,10 +223,81 @@ bt_set_prop_str(const char *name, const char *value)
 	    name, strlen(name), value, strlen(value) + 1);
 }
 
-void
-eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
+static void
+eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 {
-	uint64_t spstatus, spstartup, ramdisk_start, ramdisk_end;
+	uint64_t ramdisk_start, ramdisk_end;
+
+	/*
+	 * The APOB address and reset vector are stored in, or computed
+	 * trivially from, data in the BHD.  See the discussion in AMD pub.
+	 * 57299 sec. 4.1.5 table 17, and sec. 4.2 especially steps 2 and 4e.
+	 * The APOB address can be set (by the SP and/or at image creation
+	 * time) to almost anything in the bottom 2 GiB that doesn't conflict
+	 * with other uses of memory; see the discussion in vm/kboot_mmu.c.
+	 */
+	const uint64_t apob_addr = 0x4000000UL;
+	const uint32_t reset_vector = 0x7ffefff0U;
+
+	bt_set_prop_u32(BTPROP_NAME_RESET_VECTOR, reset_vector);
+	bt_set_prop_u64(BTPROP_NAME_APOB_ADDRESS, apob_addr);
+
+	bt_set_prop_str(BTPROP_NAME_FSTYPE, "ufs");
+	bt_set_prop_str(BTPROP_NAME_WHOAMI,
+	    "/platform/oxide/kernel/amd64/unix");
+	bt_set_prop_str(BTPROP_NAME_IMPL_ARCH, "oxide");
+
+	if (ramdisk_paddr == 0)
+		bop_panic("Ramdisk parameters were not provided.");
+
+	ramdisk_start = ramdisk_paddr;
+	ramdisk_end = ramdisk_start + ramdisk_len;
+
+	/*
+	 * Validate that the ramdisk lies completely within the 48-bit physical
+	 * address space. The check against the length accounts for modular
+	 * arithmetic in the cyclic subgroup.
+	 */
+	const uint64_t PHYS_LIMIT = (1ULL << 48) - 1;
+	if (ramdisk_start > PHYS_LIMIT || ramdisk_end > PHYS_LIMIT ||
+	    ramdisk_len > PHYS_LIMIT || ramdisk_start >= ramdisk_end) {
+		bop_panic("Ramdisk parameter problem start=0x%lx end=0x%lx",
+		    ramdisk_start, ramdisk_end);
+	}
+
+	bt_set_prop_u64(BTPROP_NAME_RAMDISK_START, ramdisk_start);
+	bt_set_prop_u64(BTPROP_NAME_RAMDISK_END, ramdisk_end);
+
+	/*
+	 * Although the oxide arch does not use it, preferring to set flags
+	 * in boothowto directly, the "bootargs" property is required to exist
+	 * otherwise krtld objects.
+	 */
+	bt_set_prop_str(BTPROP_NAME_BOOTARGS, "");
+}
+
+static void
+eb_fake_ipcc_properties(void)
+{
+	boothowto |= RB_KMDB | RB_VERBOSE;
+	prom_debug = 1;
+
+	bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "ramdisk");
+	bt_set_prop_u8(BTPROP_NAME_BSU, 'A');
+
+	bt_set_prop_str(BTPROP_NAME_BOARD_IDENT, "FAKE-IDENT");
+	bt_set_prop_str(BTPROP_NAME_BOARD_MODEL, "FAKE-MODEL");
+	bt_set_prop_u32(BTPROP_NAME_BOARD_REVISION, 0);
+
+	const board_lookup_t *board =
+	    &board_lookup[ARRAY_SIZE(board_lookup) - 1];
+	bt_set_prop_str(BTPROP_NAME_MFG, board->bl_descr);
+}
+
+static void
+eb_real_ipcc_properties(void)
+{
+	uint64_t spstatus, spstartup;
 	ipcc_ident_t ident;
 	uint8_t bsu;
 	int err;
@@ -257,13 +328,6 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 
 	if ((spstartup & IPCC_STARTUP_PROM) != 0)
 		prom_debug = 1;
-
-	/*
-	 * XXX Although the oxide arch does not use it, preferring to set flags
-	 * in boothowto directly, the "bootargs" property is required to exist
-	 * otherwise krtld objects.
-	 */
-	bt_set_prop_str(BTPROP_NAME_BOOTARGS, "");
 
 	if ((spstatus & IPCC_STATUS_STARTED) != 0)
 		kernel_ipcc_ackstart();
@@ -307,57 +371,6 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	}
 
 	bt_set_prop_str(BTPROP_NAME_MFG, board->bl_descr);
-
-	/*
-	 * The APOB address and reset vector are stored in, or computed
-	 * trivially from, data in the BHD.  See the discussion in AMD pub.
-	 * 57299 sec. 4.1.5 table 17, and sec. 4.2 especially steps 2 and 4e.
-	 * The APOB address can be set (by the SP and/or at image creation
-	 * time) to almost anything in the bottom 2 GiB that doesn't conflict
-	 * with other uses of memory; see the discussion in vm/kboot_mmu.c.
-	 */
-	const uint64_t apob_addr = 0x4000000UL;
-	const uint32_t reset_vector = 0x7ffefff0U;
-
-	bt_set_prop_u32(BTPROP_NAME_RESET_VECTOR, reset_vector);
-	bt_set_prop_u64(BTPROP_NAME_APOB_ADDRESS, apob_addr);
-
-	bt_set_prop_str(BTPROP_NAME_FSTYPE, "ufs");
-	bt_set_prop_str(BTPROP_NAME_WHOAMI,
-	    "/platform/oxide/kernel/amd64/unix");
-	bt_set_prop_str(BTPROP_NAME_IMPL_ARCH, "oxide");
-
-	/*
-	 * If this parameter was provided by the loader then we assume that
-	 * we are using the unified boot strategy. Otherwise we use some
-	 * hardcoded defaults for the expected location of the ramdisk.
-	 */
-	if (ramdisk_paddr != 0) {
-		ramdisk_start = ramdisk_paddr;
-		ramdisk_end = ramdisk_start + ramdisk_len;
-
-		/*
-		 * Validate that the ramdisk lies completely
-		 * within the 48-bit physical address space.
-		 *
-		 * The check against the length accounts for
-		 * modular arithmetic in the cyclic subgroup.
-		 */
-		const uint64_t PHYS_LIMIT = (1ULL << 48) - 1;
-		if (ramdisk_start > PHYS_LIMIT ||
-		    ramdisk_end > PHYS_LIMIT ||
-		    ramdisk_len > PHYS_LIMIT ||
-		    ramdisk_start >= ramdisk_end) {
-			bop_panic(
-			    "Ramdisk parameter problem start=0x%lx end=0x%lx",
-			    ramdisk_start, ramdisk_end);
-		}
-	} else {
-		bop_panic("Ramdisk parameters were not provided.");
-	}
-
-	bt_set_prop_u64(BTPROP_NAME_RAMDISK_START, ramdisk_start);
-	bt_set_prop_u64(BTPROP_NAME_RAMDISK_END, ramdisk_end);
 
 	/*
 	 * Set properties to configure how we will boot. This is controlled by
@@ -405,6 +418,17 @@ eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, bootdev);
 		}
 	}
+}
+
+void
+eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
+{
+	eb_create_common_properties(ramdisk_paddr, ramdisk_len);
+
+	if (ipcc_enable)
+		eb_real_ipcc_properties();
+	else
+		eb_fake_ipcc_properties();
 }
 
 extern void

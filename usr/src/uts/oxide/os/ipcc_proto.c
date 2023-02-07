@@ -431,6 +431,8 @@
 #include <sys/ipcc.h>
 #include <sys/ipcc_proto.h>
 
+extern boolean_t ipcc_enable;
+
 #ifndef _LITTLE_ENDIAN
 /*
  * ipcc_{encode,decode}_bytes() rely on little-endian byte order (which is
@@ -895,6 +897,9 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 	uint8_t rcvd_cmd, *end;
 	uint8_t attempt = 0;
 	int err = 0;
+
+	if (!ipcc_enable)
+		return (EIO);
 
 	VERIFY(ipcc_channel_held());
 

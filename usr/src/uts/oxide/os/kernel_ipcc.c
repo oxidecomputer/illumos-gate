@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/boot_debug.h>
@@ -337,6 +337,8 @@ mb_ipcc_init(void)
 void
 kernel_ipcc_init(ipcc_init_t stage)
 {
+	if (!ipcc_enable)
+		return;
 	switch (stage) {
 	case IPCC_INIT_EARLYBOOT:
 		VERIFY3U(ipcc_init, ==, IPCC_INIT_UNSET);
@@ -387,7 +389,8 @@ kernel_ipcc_prepare_gasp(void)
 	 * multi-user then the `dwu` driver may have disabled RTS; reset
 	 * things.
 	 */
-	dw_apb_reset_mcr(&kernel_ipcc_data.kid_uart);
+	if (ipcc_enable)
+		dw_apb_reset_mcr(&kernel_ipcc_data.kid_uart);
 }
 
 void

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _SYS_KERNEL_IPCC_H
@@ -99,6 +99,8 @@ typedef enum ipcc_panic_field {
 	IPF_FP,
 	IPF_RP,
 } ipcc_panic_field_t;
+
+extern boolean_t ipcc_enable;
 
 void kernel_ipcc_init(ipcc_init_t);
 extern int kernel_ipcc_acquire(void);

@@ -28,7 +28,7 @@
  *
  * Copyright (c) 2012 Gary Mills
  * Copyright 2020 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 /*
@@ -93,6 +93,9 @@ extern int prom_debug;
  * existence of the boot property of the same name.
  */
 boolean_t kbm_debug = B_FALSE;
+
+/* Global that controls whether ipcc is used. */
+boolean_t ipcc_enable = B_TRUE;
 
 static bootops_t bootop;
 static struct bsys_mem bm;
@@ -625,6 +628,12 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 
 	kbm_init();
 	bsp = boot_console_init();
+
+	/*
+	 * XXX - how could we detect a non-oxide platform here and set
+	 *	ipcc_enable = B_FALSE?
+	 */
+
 	kernel_ipcc_init(IPCC_INIT_EARLYBOOT);
 	eb_physmem_init(&bm);
 	eb_create_properties(ramdisk_paddr, ramdisk_len);
