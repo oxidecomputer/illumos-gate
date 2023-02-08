@@ -148,12 +148,6 @@ bank_mask_set(int bank, uint64_t bit)
 	wrmsr(MILAN_RAS_MCA_CTL_MASK_MSR_BASE + bank, value);
 }
 
-static void
-assert_bank_supports_mcax(uint64_t cfg)
-{
-	ASSERT3U(bitx64(cfg, MILAN_RAS_CFG_MCAX, MILAN_RAS_CFG_MCAX), ==, 1);
-}
-
 static boolean_t
 is_setb(uint64_t val, uint_t bit)
 {
@@ -191,7 +185,16 @@ milan_ras_init(void)
 		 * Set up the bank configuration register.
 		 */
 		uint64_t cfg = read_bank_msr(bank, MILAN_RAS_MSR_CFG);
-		assert_bank_supports_mcax(cfg);
+
+		/*
+		 * Not all banks are guaranteed to exist; if a bank is somewhere
+		 * in the middle of the array and doesn't really exist on this
+		 * processor, all the bits indicating what it supports will be
+		 * clear.  This is architecturally allowed, and we need to check
+		 * for it and avoid enabling non-MCAX-capable banks.
+		 */
+		if (!is_setb(cfg, MILAN_RAS_CFG_MCAX))
+			continue;
 
 		if (is_setb(cfg, MILAN_RAS_CFG_DEFERRED_LOGGING_SUPTD))
 			cfg = setb(cfg, MILAN_RAS_CFG_LOG_DEFERRED_IN_MCA_STAT);
