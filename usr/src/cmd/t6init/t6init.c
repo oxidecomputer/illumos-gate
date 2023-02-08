@@ -464,7 +464,7 @@ start_mode(const char *ap, t6init_mode_t mode)
 
 	/* The previous script slept for a second here. */
 	t6init_verbose("    sleeping for 1s or so");
-	sleep(1);
+	(void) sleep(1);
 	t6init_verbose("    configuring %s", ap);
 	cfgerr = config_change_state(CFGA_CMD_CONFIGURE, 1, aplist, NULL,
 	    &conf, &msg, &errstr, CFGA_FLAG_FORCE | CFGA_FLAG_VERBOSE);
