@@ -387,6 +387,37 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(r, v)	bitset32(r, 28, 28, v)
 
 /*
+ * PCIEPORT::PCIE_LC_CNTL6 - Port Link Control Register 6.  SRIS stuff lives
+ * here, with other bits.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CTL6	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2ec	\
+}
+#define	PCIE_PORT_LC_CTL6(n, p, b)	\
+    milan_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL6, (p), (b))
+#define	PCIE_PORT_LC_CTL6_GET_SRIS_AUTODET_MODE(r)	bitx32(r, 17, 16)
+#define	PCIE_PORT_LC_CTL6_SET_SRIS_AUTODET_MODE(r, v)	bitset32(r, 17, 16, v)
+#define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_MODE_SKP_OS_INT_LK	0
+#define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_MODE_DYN_SKP_OS_INT_LK	1
+#define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_MODE_FE_NOM_EMPTY	2
+#define	PCIE_PORT_LC_CTL6_GET_SRIS_AUTODET_FACTOR(r)	bitx32(r, 15, 14)
+#define	PCIE_PORT_LC_CTL6_SET_SRIS_AUTODET_FACTOR(r, v)	bitset32(r, 15, 14, v)
+#define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_FACTOR_1X	0
+#define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_FACTOR_0_95X	1
+#define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_FACTOR_0_9X	2
+#define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_FACTOR_0_85X	3
+#define	PCIE_PORT_LC_CTL6_GET_SRIS_AUTODET_EN(r)	bitx32(r, 13, 13)
+#define	PCIE_PORT_LC_CTL6_SET_SRIS_AUTODET_EN(r, v)	bitset32(r, 13, 13, v)
+#define	PCIE_PORT_LC_CTL6_GET_SRIS_EN(r)		bitx32(r, 8, 8)
+#define	PCIE_PORT_LC_CTL6_SET_SRIS_EN(r, v)		bitset32(r, 8, 8, v)
+#define	PCIE_PORT_LC_CTL6_GET_SPC_MODE_8GT(r)		bitx32(r, 5, 4)
+#define	PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(r, v)	bitset32(r, 5, 4, v)
+#define	PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2	1
+#define	PCIE_PORT_LC_CTL6_SPC_MODE_8GT_4	2
+
+/*
  * PCIEPORT::PCIEP_HCNT_DESCRIPTOR - Port Hotplug Descriptor control. This is a
  * register that exists in 'Port Space' and is specific to a bridge. This seems
  * to relate something in the port to the SMU's hotplug engine.

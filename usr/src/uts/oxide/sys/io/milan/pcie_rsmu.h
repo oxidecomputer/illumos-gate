@@ -1380,12 +1380,16 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	MILAN_STRAP_PCIE_P_MC_ECRC_REGEN_SUP	0x10d
 
 /*
- * These next two straps control which of the Lower SKP bits are supported for
- * receiving and generation and almost certainly ties into the corresponding
- * fields in the Link Capabilities 2 register. These are both 4-bit fields (note
- * the actual spec is larger but for gen 4 only the first four bits are defined)
- * and this defaults to 0x0, which if right would indicate none of these are
- * supported for generation or receiving.
+ * Each of these fields is a mask with one bit per link speed, 2.5 GT/s in bit 0
+ * up to 16 GT/s in bit 3.  GEN controls whether we support generating SKP
+ * ordered sets at the lower rate used with common clocking or SRNS (600 ppm
+ * clock skew), while RCV controls whether we support receiving SKP OSs at that
+ * lower rate.  It's not clear whether this has any effect without either SRIS
+ * or SRIS autodetection being enabled.  The manual tells us that if we want to
+ * use SRIS, at least the receive register needs to be zero, meaning that we
+ * expect to receive SKP OSs at the higher rate specified for SRIS (5600 ppm),
+ * which makes sense: we need the extra SKPs to prevent the receiver's elastic
+ * buffers from over- or underflowing.  The default values are 0.
  */
 #define	MILAN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP	0x10e
 #define	MILAN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP	0x10f
@@ -1414,8 +1418,9 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * This strap seems to control a bunch of settings with respect to how the
  * device's training behavior operates. It is a 3-bit field with a bunch of
  * hardware-specific meanings. This generally seems to be left at 0x0 (the
- * default), which is to negotiate in a complaint mode trying to get as wide a
- * link as plausible.
+ * default), which is to negotiate in a compliant mode trying to get as wide a
+ * link as plausible.  Most likely this corresponds to
+ * PCIEPORT::PCIEP_STRAP_LC[STRAP_LANE_NEGOTIATION].
  */
 #define	MILAN_STRAP_PCIE_P_LANE_NEG_MODE	0x114
 
@@ -1426,20 +1431,23 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*
  * This strap isn't clear, but may suggest that hardware actually skip doing
  * receiver detection logic discussed in the PCIe spec. The default is 0x0,
- * suggesting that this is not bypassed.
+ * suggesting that this is not bypassed.  Most likely corresponds to
+ * PCIEPORT::PCIEP_STRAP_LC[STRAP_RCVR_BYPASS_DET].
  */
 #define	MILAN_STRAP_PCIE_P_BYPASS_RX_DET	0x116
 
 /*
  * This strap presumably allows for a link to be forced into compliance mode.
- * This defaults to 0x0, allowing the LTTSM to transition normally.
+ * This defaults to 0x0, allowing the LTTSM to transition normally.  Most likely
+ * corresponds to PCIEPORT::PCIEP_STRAP_LC[STRAP_FORCE_COMPLIANCE].
  */
 #define	MILAN_STRAP_PCIE_P_COMPLIANCE_FORCE	0x117
 
 /*
  * This is the opposite of the one above and seems to allow for compliance mode
  * to be disabled entirely. This defaults to 0x0, allowing the LTTSM to
- * transition to compliance mode.
+ * transition to compliance mode.  Most likely corresponds to
+ * PCIEPORT::PCIEP_STRAP_LC[STRAP_COMPLIANCE_DIS].
  */
 #define	MILAN_STRAP_PCIE_P_COMPLIANCE_DIS	0x118
 
@@ -1454,7 +1462,8 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * This strap seems to relate to lane reversal. What this is or isn't reversing
  * isn't clear; however, it seems this shouldn't be used and instead we should
  * use the features built into the DXIO subsystem for doing this. The default is
- * 0x0, suggesting no reversals.
+ * 0x0, suggesting no reversals.  This most likely corresponds to
+ * PCIEPORT::PCIEP_STRAP_MISC[STRAP_REVERSE_LANES].
  */
 #define	MILAN_STRAP_PCIE_P_REVERSE_LANES	0x11a
 

@@ -151,7 +151,7 @@
  * XXX Remove me and always enable SSC.  Patchable for now to aid development
  * only.
  */
-boolean_t milan_enable_ssc = B_FALSE;
+boolean_t milan_enable_ssc = B_TRUE;
 
 /*
  * This is a structure that we can use internally to pass around a DXIO RPC
@@ -1332,6 +1332,7 @@ milan_ioms_iodie(const milan_ioms_t *const ioms)
 }
 
 typedef enum {
+	MBT_ANY,
 	MBT_GIMLET,
 	MBT_ETHANOL
 } milan_board_type_t;
@@ -3582,10 +3583,28 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
  * as the default, while all the straps detailed underneath fall into category
  * 2. Note that this list is by no means definitive, and will almost certainly
  * change as our understanding of what we require from the hardware evolves.
+ *
+ * These can be matched to a board identifier, NBIO/IOMS number, PCIe core
+ * number (pcie_port_t.mpp_portno), and PCIe port number
+ * (pcie_bridge_t.mpb_bridgeno).  The board sentinel value MBT_ANY is 0 and may
+ * be omitted, but the others require nonzero sentinels as 0 is a valid index.
+ * The sentinel values of 0xFF here cannot match any real NBIO, core, or port:
+ * there are at most 4 NBIOs per die, 3 cores (port spaces) per NBIO, and 8
+ * ports (bridge spaces) per core.  The core and port filters are meaningful
+ * only if the corresponding strap exists at the port or bridge level.
  */
+
+#define	PCIE_NBIOMATCH_ANY	0xFF
+#define	PCIE_PORTMATCH_ANY	0xFF
+#define	PCIE_BRIDGEMATCH_ANY	0xFF
+
 typedef struct milan_pcie_strap_setting {
 	uint32_t		strap_reg;
 	uint32_t		strap_data;
+	milan_board_type_t	strap_boardmatch;
+	uint8_t			strap_nbiomatch;
+	uint8_t			strap_portmatch;
+	uint8_t			strap_bridgematch;
 } milan_pcie_strap_setting_t;
 
 /*
@@ -3644,46 +3663,52 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 	    .strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 	    .strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_5,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
-};
-
-/*
- * Strap settings that only apply to Ethanol
- */
-static const milan_pcie_strap_setting_t milan_pcie_strap_ethanol_settings[] = {
-};
-
-/*
- * Strap settings that only apply to Gimlet
- */
-static const milan_pcie_strap_setting_t milan_pcie_strap_gimlet_settings[] = {
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_SUBVID,
 	    .strap_data = PCI_VENDOR_ID_OXIDE,
+	    .strap_boardmatch = MBT_GIMLET,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_SUBDID,
 	    .strap_data = MILAN_STRAP_PCIE_SUBDID_BRIDGE,
+	    .strap_boardmatch = MBT_GIMLET,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 };
 
@@ -3694,44 +3719,141 @@ static const milan_pcie_strap_setting_t milan_pcie_bridge_settings[] = {
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_EXT_TAG_SUP,
 	    .strap_data = 0x1,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 	    .strap_data = 0x1,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 	    .strap_data = 0x1,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 	    .strap_data = 0x1,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_TCOMMONMODE_TIME,
 	    .strap_data = 0xa,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_TPON_SCALE,
 	    .strap_data = 0x1,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_TPON_VALUE,
 	    .strap_data = 0xf,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_DLF_SUP,
 	    .strap_data = 0x1,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 	    .strap_data = 0x1,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_FOM_TIME,
 	    .strap_data = MILAN_STRAP_PCIE_P_FOM_300US,
+	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY,
+	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
 	},
+	{
+		.strap_reg = MILAN_STRAP_PCIE_P_SPC_MODE_8GT,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY,
+		.strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	},
+	{
+		.strap_reg = MILAN_STRAP_PCIE_P_SRIS_EN,
+		.strap_data = 0,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY,
+		.strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	},
+	{
+		.strap_reg = MILAN_STRAP_PCIE_P_AUTO_SRIS_EN,
+		.strap_data = 0x1,
+		.strap_nbiomatch = 0,
+		.strap_portmatch = 1,
+		.strap_bridgematch = 1
+	},
+	{
+		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
+		.strap_data = 0,
+		.strap_nbiomatch = 0,
+		.strap_portmatch = 1,
+		.strap_bridgematch = 1
+	},
+	{
+		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
+		.strap_data = 0,
+		.strap_nbiomatch = 0,
+		.strap_portmatch = 1,
+		.strap_bridgematch = 1
+	}
 };
+
+static boolean_t
+milan_pcie_strap_matches(const milan_pcie_port_t *port, uint8_t bridgeno,
+    const milan_pcie_strap_setting_t *strap)
+{
+	const milan_ioms_t *ioms = port->mpp_ioms;
+	const milan_fabric_t *fabric = ioms->mio_iodie->mi_soc->ms_fabric;
+	const milan_board_type_t board = milan_board_type(fabric);
+
+	if (strap->strap_boardmatch != MBT_ANY &&
+	    strap->strap_boardmatch != board) {
+		return (B_FALSE);
+	}
+
+	if (strap->strap_nbiomatch != PCIE_NBIOMATCH_ANY &&
+	    strap->strap_nbiomatch != ioms->mio_num) {
+		return (B_FALSE);
+	}
+
+	if (strap->strap_portmatch != PCIE_PORTMATCH_ANY &&
+	    strap->strap_portmatch != port->mpp_portno) {
+		return (B_FALSE);
+	}
+
+	if (bridgeno != PCIE_BRIDGEMATCH_ANY &&
+	    strap->strap_bridgematch != PCIE_BRIDGEMATCH_ANY &&
+	    strap->strap_bridgematch != bridgeno) {
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
+}
 
 static void
 milan_fabric_write_pcie_strap(milan_pcie_port_t *port,
@@ -3760,8 +3882,6 @@ milan_fabric_write_pcie_strap(milan_pcie_port_t *port,
 static int
 milan_fabric_init_pcie_straps(milan_pcie_port_t *port, void *arg)
 {
-	const milan_fabric_t *fabric =
-	    port->mpp_ioms->mio_iodie->mi_soc->ms_fabric;
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_enable); i++) {
 		milan_fabric_write_pcie_strap(port,
 		    milan_pcie_strap_enable[i], 0x1);
@@ -3774,8 +3894,11 @@ milan_fabric_init_pcie_straps(milan_pcie_port_t *port, void *arg)
 		const milan_pcie_strap_setting_t *strap =
 		    &milan_pcie_strap_settings[i];
 
-		milan_fabric_write_pcie_strap(port,
-		    strap->strap_reg, strap->strap_data);
+		if (milan_pcie_strap_matches(port, PCIE_BRIDGEMATCH_ANY,
+		    strap)) {
+			milan_fabric_write_pcie_strap(port,
+			    strap->strap_reg, strap->strap_data);
+		}
 	}
 
 	/* Handle Special case for DLF which needs to be set on non WAFL */
@@ -3784,33 +3907,17 @@ milan_fabric_init_pcie_straps(milan_pcie_port_t *port, void *arg)
 		    MILAN_STRAP_PCIE_DLF_EN, 1);
 	}
 
-	/* Handle board specific straps */
-	const milan_pcie_strap_setting_t *board_list;
-	int array_size;
-	if (milan_board_type(fabric) == MBT_ETHANOL) {
-		board_list = milan_pcie_strap_ethanol_settings;
-		array_size = ARRAY_SIZE(milan_pcie_strap_ethanol_settings);
-	} else {
-		board_list = milan_pcie_strap_gimlet_settings;
-		array_size = ARRAY_SIZE(milan_pcie_strap_gimlet_settings);
-	}
-	for (uint_t i = 0; i < array_size; i++) {
-		const milan_pcie_strap_setting_t *strap =
-		    &board_list[i];
-
-		milan_fabric_write_pcie_strap(port,
-		    strap->strap_reg, strap->strap_data);
-	}
-
 	/* Handle per bridge initialization */
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_bridge_settings); i++) {
 		const milan_pcie_strap_setting_t *strap =
 		    &milan_pcie_bridge_settings[i];
 		for (uint_t j = 0; j < port->mpp_nbridges; j++) {
-			milan_fabric_write_pcie_strap(port,
-			    strap->strap_reg +
-			    (j * MILAN_STRAP_PCIE_NUM_PER_BRIDGE),
-			    strap->strap_data);
+			if (milan_pcie_strap_matches(port, j, strap)) {
+				milan_fabric_write_pcie_strap(port,
+				    strap->strap_reg +
+				    (j * MILAN_STRAP_PCIE_NUM_PER_BRIDGE),
+				    strap->strap_data);
+			}
 		}
 	}
 
@@ -4733,6 +4840,23 @@ milan_fabric_init_bridges(milan_pcie_bridge_t *bridge, void *arg)
 	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_HW_DBG);
 	val = milan_pcie_bridge_read(bridge, reg);
 	val = PCIE_PORT_HW_DBG_SET_DBG15(val, 1);
+	milan_pcie_bridge_write(bridge, reg, val);
+
+	/*
+	 * SRIS, where needed.  XXX board definition should be consulted.
+	 */
+	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_CTL6);
+	val = milan_pcie_bridge_read(bridge, reg);
+	if (ioms->mio_num == 0 && port->mpp_portno == 1 &&
+	    bridge->mpb_bridgeno == 1) {
+		val = PCIE_PORT_LC_CTL6_SET_SRIS_AUTODET_MODE(val,
+		    PCIE_PORT_LC_CTL6_SRIS_AUTODET_MODE_DYN_SKP_OS_INT_LK);
+		val = PCIE_PORT_LC_CTL6_SET_SRIS_AUTODET_FACTOR(val,
+		    PCIE_PORT_LC_CTL6_SRIS_AUTODET_FACTOR_1X);
+		/* XXX no need for SRIS_AUTODET_EN? */
+	}
+	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
+	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
 	milan_pcie_bridge_write(bridge, reg, val);
 
 	/*
