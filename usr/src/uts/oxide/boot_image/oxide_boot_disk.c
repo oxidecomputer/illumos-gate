@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -35,6 +35,7 @@
 
 typedef struct oxide_boot_disk_find_m2 {
 	int ofm_want_slot;
+	uint_t ofm_want_slice;
 	char ofm_physpath[MAXPATHLEN];
 } oxide_boot_disk_find_m2_t;
 
@@ -42,6 +43,14 @@ static int
 oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 {
 	oxide_boot_disk_find_m2_t *ofm = arg;
+	char slicec;
+
+	/*
+	 * Slices 0 to 6 use 'a' to 'f' for their minor name - beyond that
+	 * things are more complicated.
+	 */
+	VERIFY3U(ofm->ofm_want_slice, <=, 6);
+	slicec = ofm->ofm_want_slice + 'a';
 
 	if (i_ddi_devi_class(dip) == NULL ||
 	    strcmp(i_ddi_devi_class(dip), ESC_DISK) != 0) {
@@ -85,14 +94,12 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 	}
 
 	/*
-	 * Locate the minor for slice 0 on this disk.  The disk will have been
-	 * formatted such that s0 is set aside to hold the boot image by
-	 * upstack software.
+	 * Locate the minor for the requested slice on this disk.
 	 */
 	for (struct ddi_minor_data *md = DEVI(dip)->devi_minor; md != NULL;
 	    md = md->next) {
 		if (md->ddm_spec_type != S_IFBLK ||
-		    strcmp(md->ddm_name, "a") != 0) {
+		    md->ddm_name[0] != slicec || md->ddm_name[1] != '\0') {
 			continue;
 		}
 
@@ -101,8 +108,8 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 			printf("    %s (slot %d!)\n", ofm->ofm_physpath, slot);
 
 			/*
-			 * We have found the right disk, so the walk can
-			 * terminate here.
+			 * We have found the right disk and slice, so the walk
+			 * can terminate here.
 			 */
 			return (DDI_WALK_TERMINATE);
 		}
@@ -141,27 +148,20 @@ typedef struct oxide_boot_disk_header {
 	char odh_dataset[OXBOOT_DISK_DATASET_SIZE];
 } __packed oxide_boot_disk_header_t;
 
-bool
-oxide_boot_disk(oxide_boot_t *oxb, int slot)
+static bool
+oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 {
 	bool ok = false;
 	int r;
 	ldi_handle_t lh = NULL;
 	uint8_t *buf = NULL;
 
-	oxide_boot_disk_find_m2_t ofm = { .ofm_want_slot = slot };
+	oxide_boot_disk_find_m2_t ofm = {
+		.ofm_want_slot = slot,
+		.ofm_want_slice = slice,
+	};
 
-	printf("TRYING: boot disk (slot %d)\n", slot);
-
-	/*
-	 * First, force everything which can attach to do so.  The device class
-	 * is not derived until at least one minor mode is created, so we
-	 * cannot walk the device tree looking for a device class of
-	 * ESC_DISK until everything is attached.
-	 */
-	printf("attaching stuff...\n");
-	(void) ndi_devi_config(ddi_root_node(), NDI_CONFIG | NDI_DEVI_PERSIST |
-	    NDI_NO_EVENT | NDI_DRV_CONF_REPROBE);
+	printf("TRYING: boot disk (slot %d, slice %u)\n", slot, slice);
 
 	/*
 	 * We need to find the M.2 device that we want to boot.  It will be
@@ -177,7 +177,8 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 		return (false);
 	}
 
-	printf("found M.2 device (slot %d), @ %s\n", slot, ofm.ofm_physpath);
+	printf("found M.2 device (slot %d, slice %u), @ %s\n", slot, slice,
+	    ofm.ofm_physpath);
 
 	/*
 	 * Open the M.2 device:
@@ -277,4 +278,33 @@ out:
 	}
 
 	return (ok);
+}
+
+bool
+oxide_boot_disk(oxide_boot_t *oxb, int slot)
+{
+	/*
+	 * First, force everything which can attach to do so.  The device class
+	 * is not derived until at least one minor mode is created, so we
+	 * cannot walk the device tree looking for a device class of
+	 * ESC_DISK until everything is attached.
+	 */
+	printf("attaching stuff...\n");
+	(void) ndi_devi_config(ddi_root_node(), NDI_CONFIG | NDI_DEVI_PERSIST |
+	    NDI_NO_EVENT | NDI_DRV_CONF_REPROBE);
+
+	/*
+	 * The disk will have been formatted by upstack software such that
+	 * slices 0 and 1 are set aside to hold boot images. We try these
+	 * slices in order to try to find the image we want.
+	 */
+	for (uint_t slice = 0; slice <= 1; slice++) {
+		if (oxide_boot_disk_slice(oxb, slot, slice)) {
+			(void) e_ddi_prop_update_int(DDI_DEV_T_NONE,
+			    ddi_root_node(), "oxide-boot-disk-slice", slice);
+			return (true);
+		}
+	}
+
+	return (false);
 }
