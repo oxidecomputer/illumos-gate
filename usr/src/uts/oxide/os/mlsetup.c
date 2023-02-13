@@ -68,6 +68,7 @@
 #include <sys/boot_data.h>
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
+#include <sys/io/milan/hacks.h>
 #include <sys/io/milan/ras.h>
 #include <milan/milan_apob.h>
 
@@ -278,6 +279,13 @@ mlsetup(struct regs *rp)
 	 */
 	determine_platform();
 	cpuid_execpass(cpu[0], CPUID_PASS_IDENT, NULL);
+
+	/*
+	 * As early as we reasonably can, we want to perform the necessary
+	 * configuration in the FCH to assure that a core shutdown will
+	 * correctly induce an observable reset.
+	 */
+	milan_shutdown_detect_init();
 
 	/*
 	 * Now go through and set up the BSP's thread-, core-, and CCX-specific

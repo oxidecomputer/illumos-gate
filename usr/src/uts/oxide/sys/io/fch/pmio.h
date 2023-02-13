@@ -54,6 +54,11 @@ extern "C" {
  */
 
 #define	FCH_PMIO_REGOFF_DECODEEN		0x00
+#define	FCH_PMIO_REGOFF_PCICONTROL		0x08
+#define	FCH_PMIO_REGOFF_ACPICONFIG		0x74
+#define	FCH_PMIO_REGOFF_RESETCONTROL1		0xbe
+#define	FCH_PMIO_REGOFF_ALTMMIOEN		0xd5
+#define	FCH_PMIO_REGOFF_ALTMMIOBASE		0xd6
 
 #ifndef	_ASM
 
@@ -134,14 +139,59 @@ MAKE_MMIO_FCH_REG_FN(PMIO, pmio, 4);
 #define	FCH_PMIO_DECODEEN_SET_LEGACYIOEN(r, v)		bitset32(r, 0, 0, v)
 
 /*
+ * FCH::PM::PCICONTROL.  Another garbage barge of random configuration;
+ * we only care about shutdownoption (bit 20).
+ */
+#define	D_FCH_PMIO_PCICONTROL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_PMIO,	\
+	.srd_reg = FCH_PMIO_REGOFF_PCICONTROL	\
+}
+#define	FCH_PMIO_PCICONTROL_SMN()	\
+    fch_pmio_smn_reg(D_FCH_PMIO_PCICONTROL, 0)
+#define	FCH_PMIO_PCICONTROL_MMIO(b)	\
+    fch_pmio_mmio_reg((b), D_FCH_PMIO_PCICONTROL, 0)
+
+#define	FCH_PMIO_PCICONTROL_SET_SHUTDOWNOPTION(r, v)	bitset32(r, 20, 20, v)
+
+/*
+ * FCH::PM::ACPICONFIG.
+ */
+#define	D_FCH_PMIO_ACPICONFIG	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_PMIO,	\
+	.srd_reg = FCH_PMIO_REGOFF_ACPICONFIG \
+}
+#define	FCH_PMIO_ACPICONFIG_SMN()	\
+    fch_pmio_smn_reg(D_FCH_PMIO_ACPICONFIG, 0)
+#define	FCH_PMIO_ACPICONFIG_MMIO(b)	\
+    fch_pmio_mmio_reg((b), D_FCH_PMIO_ACPICONFIG, 0)
+
+#define	FCH_PMIO_ACPICONFIG_SET_EN_SHUTDOWN_MSG(r, v) bitset32(r, 17, 17, v)
+
+/*
+ * FCH::PM::RESETCONTROL1.
+ */
+/*CSTYLED*/
+#define	D_FCH_PMIO_RESETCONTROL1 (const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_PMIO,		\
+	.srd_reg = FCH_PMIO_REGOFF_RESETCONTROL1, \
+	.srd_size = 1				\
+}
+#define	FCH_PMIO_RESETCONTROL1_SMN()	\
+    fch_pmio_smn_reg(D_FCH_PMIO_RESETCONTROL1, 0)
+#define	FCH_PMIO_RESETCONTROL1_MMIO(b)	\
+    fch_pmio_mmio_reg((b), D_FCH_PMIO_RESETCONTROL1, 0)
+
+#define	FCH_PMIO_RESETCONTROL1_SET_RSTTOCPUPWRGDEN(r, v) bitset8(r, 7, 7, v)
+
+/*
  * FCH::PM::AltMmioEn.  Flags for the alternate MMIO space BAR.  Meaningful only
  * on secondary FCHs.
  */
 /*CSTYLED*/
 #define	D_FCH_PMIO_ALTMMIOEN	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_FCH_PMIO,	\
-	.srd_reg = 0xd5,		\
-	.srd_size = 1			\
+	.srd_unit = SMN_UNIT_FCH_PMIO,		\
+	.srd_reg = FCH_PMIO_REGOFF_ALTMMIOEN,	\
+	.srd_size = 1				\
 }
 #define	FCH_PMIO_ALTMMIOEN_SMN()	\
     fch_pmio_smn_reg(D_FCH_PMIO_ALTMMIOEN, 0)
@@ -160,9 +210,9 @@ MAKE_MMIO_FCH_REG_FN(PMIO, pmio, 4);
  */
 /*CSTYLED*/
 #define	D_FCH_PMIO_ALTMMIOBASE	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_FCH_PMIO,	\
-	.srd_reg = 0xd6,		\
-	.srd_size = 2			\
+	.srd_unit = SMN_UNIT_FCH_PMIO,			\
+	.srd_reg = FCH_PMIO_REGOFF_ALTMMIOBASE,		\
+	.srd_size = 2					\
 }
 #define	FCH_PMIO_ALTMMIOBASE_SMN()	\
     fch_pmio_smn_reg(D_FCH_PMIO_ALTMMIOBASE, 0)
