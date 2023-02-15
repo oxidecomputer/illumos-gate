@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _LIBT6MFG_H
@@ -117,7 +117,11 @@ typedef enum {
 	 * Generally indicates we got an invalid pointer argument, e.g. it was
 	 * NULL.
 	 */
-	T6_MFG_ERR_BAD_PTR
+	T6_MFG_ERR_BAD_PTR,
+	/*
+	 * Indicates that the provided PCI ID is invalid.
+	 */
+	T6_MFG_ERR_BAD_PCIID
 } t6_mfg_err_t;
 
 typedef struct t6_mfg t6_mfg_t;
@@ -197,24 +201,56 @@ typedef enum t6_mfg_source {
 #define	T6_PART_LEN	16
 #define	T6_SERIAL_LEN	24
 #define	T6_ID_LEN	16
+#define	T6_FN_COUNT	8
 
 typedef enum {
 	T6_REGION_F_CKSUM_VALID	= 1 << 0,
 	T6_REGION_F_ID_INFO	= 1 << 1,
 	T6_REGION_F_PN_INFO	= 1 << 2,
 	T6_REGION_F_SN_INFO	= 1 << 3,
-	T6_REGION_F_MAC_INFO	= 1 << 4
+	T6_REGION_F_MAC_INFO	= 1 << 4,
+	T6_REGION_F_SS_VID_INFO	= 1 << 5,
+	T6_REGION_F_SS_DID_INFO	= 1 << 6
 } t6_mfg_region_flags_t;
+
+typedef enum {
+	T6_REGION_T_SERCFG,
+	T6_REGION_T_VPD
+} t6_mfg_region_type_t;
+
+typedef struct t6_mfg_region_data_vpd {
+	uint8_t tregv_id[T6_ID_LEN + 1];
+	uint8_t tregv_part[T6_PART_LEN + 1];
+	uint8_t tregv_serial[T6_SERIAL_LEN + 1];
+	uint8_t tregv_mac[ETHERADDRL];
+} t6_mfg_region_data_vpd_t;
+
+typedef struct t6_mfg_region_data_sercfg {
+	uint16_t tregs_ss_vid;
+	uint16_t tregs_ss_did[T6_FN_COUNT];
+	uint8_t tregs_ss_did_cnt;
+} t6_mfg_region_data_sercfg_t;
 
 typedef struct t6_mfg_region_data {
 	uint32_t treg_base;
+	size_t treg_range;
 	t6_mfg_region_flags_t treg_flags;
 	t6_mfg_region_flags_t treg_exp;
-	uint8_t treg_id[T6_ID_LEN + 1];
-	uint8_t treg_part[T6_PART_LEN + 1];
-	uint8_t treg_serial[T6_SERIAL_LEN + 1];
-	uint8_t treg_mac[ETHERADDRL];
+	t6_mfg_region_type_t treg_type;
+	union {
+		t6_mfg_region_data_vpd_t tregd_vpd;
+		t6_mfg_region_data_sercfg_t tregd_sercfg;
+	} treg_data;
 } t6_mfg_region_data_t;
+
+#define	treg_id		treg_data.tregd_vpd.tregv_id
+#define	treg_part	treg_data.tregd_vpd.tregv_part
+#define	treg_serial	treg_data.tregd_vpd.tregv_serial
+#define	treg_mac	treg_data.tregd_vpd.tregv_mac
+
+#define	treg_ss_vid	treg_data.tregd_sercfg.tregs_ss_vid
+#define	treg_ss_did	treg_data.tregd_sercfg.tregs_ss_did
+#define	treg_ss_did_cnt	treg_data.tregd_sercfg.tregs_ss_did_cnt
 
 typedef boolean_t (*t6_mfg_srom_region_f)(const t6_mfg_region_data_t *,
     void *);
@@ -225,6 +261,8 @@ extern boolean_t t6_mfg_srom_set_id(t6_mfg_t *, const char *);
 extern boolean_t t6_mfg_srom_set_pn(t6_mfg_t *, const char *);
 extern boolean_t t6_mfg_srom_set_sn(t6_mfg_t *, const char *);
 extern boolean_t t6_mfg_srom_set_mac(t6_mfg_t *, const uint8_t *);
+extern boolean_t t6_mfg_srom_set_pci_ss_vid(t6_mfg_t *, uint16_t);
+extern boolean_t t6_mfg_srom_set_pci_ss_did(t6_mfg_t *, uint16_t);
 
 typedef enum {
 	T6_VALIDATE_F_OK		= 0,
@@ -234,7 +272,9 @@ typedef enum {
 	T6_VALIDATE_F_ERR_ID		= 1 << 3,
 	T6_VALIDATE_F_ERR_PN		= 1 << 4,
 	T6_VALIDATE_F_ERR_SN		= 1 << 5,
-	T6_VALIDATE_F_ERR_MAC		= 1 << 6
+	T6_VALIDATE_F_ERR_MAC		= 1 << 6,
+	T6_VALIDATE_F_ERR_SS_VID	= 1 << 7,
+	T6_VALIDATE_F_ERR_SS_DID	= 1 << 8
 } t6_mfg_validate_flags_t;
 
 typedef struct t6_mfg_validate_data {

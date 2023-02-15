@@ -30,6 +30,7 @@ typeset -rA GPIOMAP=(
 		[controller]=zen_gpio0
 		[gpio]=EGPIO9_3
 		[attachment]=pcie16
+		[pci_subsystem_device_id]=0xfff9
 	)
 )
 
@@ -76,8 +77,9 @@ fi
 typeset -r CTRL="${GPIOMAP[$PLATFORM][controller]}"
 typeset -r GPIO="${GPIOMAP[$PLATFORM][gpio]}"
 typeset -r ATTACH_POINT="${GPIOMAP[$PLATFORM][attachment]}"
+typeset -r PCISSDID="${GPIOMAP[$PLATFORM][pci_subsystem_device_id]}"
 
-if [[ -z "$CTRL" || -z "$GPIO" || -z "$ATTACH_POINT" ]]; then
+if [[ -z "$CTRL" || -z "$GPIO" || -z "$ATTACH_POINT" || -z "$PCISSDID" ]]; then
 	echo "Could not determine controller/gpio for $PLATFORM"
 	exit $SMF_EXIT_ERR_CONFIG
 fi
@@ -116,20 +118,14 @@ start)
 		echo "  ... waiting"
 	done
 
-	# XXX temporarily record the link speeds for the T6 and its parent
-	# bridge
-	/usr/lib/pci/pcieadm show-devs -s 85/0/0 80/1/1
-
 	echo "Attempting to transition to mission mode"
 	/usr/platform/$ARCH/bin/t6init \
 	    -v \
 	    -D $DPIO_NAME \
 	    -A $ATTACH_POINT \
 	    -s $SROM_FILE \
-	    -f $FW_FILE || fatal "Failed to transition to mission mode"
-
-	# XXX
-	/usr/lib/pci/pcieadm show-devs -s 85/0/4 80/1/1
+	    -f $FW_FILE \
+	    -P $PCISSDID || fatal "Failed to transition to mission mode"
 	;;
 stop)
 	# No action taken on stop

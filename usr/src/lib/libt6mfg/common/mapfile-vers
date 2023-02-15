@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 #
@@ -55,6 +55,8 @@ SYMBOL_VERSION ILLUMOSprivate {
 	t6_mfg_srom_set_pn;
 	t6_mfg_srom_set_sn;
 	t6_mfg_srom_set_mac;
+	t6_mfg_srom_set_pci_ss_vid;
+	t6_mfg_srom_set_pci_ss_did;
 	t6_mfg_srom_validate;
 	t6_mfg_srom_write;
 	t6_mfg_syserr;

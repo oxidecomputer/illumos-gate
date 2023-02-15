@@ -318,6 +318,10 @@ srom_validate_cb(const t6_mfg_validate_data_t *val, void *arg __unused)
 		t6init_verbose("\t\tSerial Number mismatch");
 	if ((val->tval_flags & T6_VALIDATE_F_ERR_MAC) != 0)
 		t6init_verbose("\t\tMAC Address mismatch");
+	if ((val->tval_flags & T6_VALIDATE_F_ERR_SS_VID) != 0)
+		t6init_verbose("\t\tSub-system Vendor ID mismatch");
+	if ((val->tval_flags & T6_VALIDATE_F_ERR_SS_DID) != 0)
+		t6init_verbose("\t\tSub-system Device ID mismatch");
 
 	/* Return false to indicate failure and stop iteration */
 	return (B_FALSE);
@@ -490,11 +494,12 @@ main(int argc, char **argv)
 	const char *dpioname = NULL, *attachment = NULL;
 	const char *sromfile = NULL, *flashfile = NULL;
 	t6init_mode_t mode = T6INIT_MODE_MISSION;
+	uint16_t pci_ss_did = UINT16_MAX;
 	int c, bfd, ipccfd;
 
 	progname = basename(argv[0]);
 
-	while ((c = getopt(argc, argv, ":hMvD:A:s:f:")) != -1) {
+	while ((c = getopt(argc, argv, ":hMvD:A:s:f:P:")) != -1) {
 		switch (c) {
 		case 'A':
 			attachment = optarg;
@@ -512,6 +517,26 @@ main(int argc, char **argv)
 		case 'M':
 			mode = T6INIT_MODE_MFG;
 			break;
+		case 'P': {
+			char *eptr;
+			unsigned long l;
+
+			errno = 0;
+			l = strtoul(optarg, &eptr, 0);
+			if (errno != 0 || *eptr != '\0') {
+				errx(EXIT_FAILURE,
+				    "failed to parse PCI sub-system ID: %s",
+				    optarg);
+			}
+
+			if (l >= UINT16_MAX) {
+				errx(EXIT_FAILURE,
+				    "PCI sub-system ID is out of range "
+				    "[0, UINT16_MAX): %lu", l);
+			}
+			pci_ss_did = (uint16_t)l;
+			break;
+		}
 		case 's':
 			sromfile = optarg;
 			break;
@@ -531,8 +556,10 @@ main(int argc, char **argv)
 		usage("-D and -A must always be specified");
 
 	if (mode == T6INIT_MODE_MISSION &&
-	    (flashfile == NULL || sromfile == NULL)) {
-		usage("-s and -f are mandatory when switching to mission mode");
+	    (flashfile == NULL || sromfile == NULL ||
+	    pci_ss_did == UINT16_MAX)) {
+		usage("-s, -f and -P are mandatory when switching to "
+		    "mission mode");
 	}
 
 	if (snprintf(dpiopath, sizeof (dpiopath), "/dev/dpio/%s", dpioname) >=
@@ -550,7 +577,6 @@ main(int argc, char **argv)
 
 		return (0);
 	}
-
 
 	if (get_dpio_mode() == T6INIT_MODE_MISSION) {
 		printf("DPIO is already set for mission mode\n");
@@ -606,6 +632,12 @@ main(int argc, char **argv)
 
 	if (!t6_mfg_srom_set_id(t6mfg, (char *)T6_PRODUCT_STR))
 		t6_fatal(t6mfg, "failed to set product string");
+
+	if (!t6_mfg_srom_set_pci_ss_vid(t6mfg, T6_PCI_SUBSYSTEM_VENDORID))
+		t6_fatal(t6mfg, "failed to set PCI sub-system vendor ID");
+
+	if (!t6_mfg_srom_set_pci_ss_did(t6mfg, pci_ss_did))
+		t6_fatal(t6mfg, "failed to set PCI sub-system device ID");
 
 	if ((bfd = open(sromfile, O_RDONLY)) < 0)
 		err(EXIT_FAILURE, "failed to open srom file %s", sromfile);

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -34,11 +34,13 @@
 #include <stdarg.h>
 #include <upanic.h>
 #include <sys/debug.h>
+#include <sys/bitext.h>
 
 #include <libt6mfg.h>
 
-#define	T6_MFG_SROM_VPD_REGION	0x400
-#define	T6_MFG_BUFSIZE	0x2000
+#define	T6_MFG_SROM_SERCFG_REGION	0x200
+#define	T6_MFG_SROM_VPD_REGION		0x400
+#define	T6_MFG_BUFSIZE			0x2000
 
 /*
  * The T6 SROM is a 32 KiB EEPROM; however, the last 4 bytes are used to control
@@ -88,6 +90,8 @@ struct t6_mfg {
 	uint8_t t6m_pn[T6_PART_LEN];
 	uint8_t t6m_sn[T6_SERIAL_LEN];
 	uint8_t t6m_mac[T6_MAC_LEN];
+	uint16_t t6m_ss_vid;
+	uint16_t t6m_ss_did;
 	t6_mfg_flash_info_t t6m_finfo;
 	t6_mfg_progress_f t6m_pfunc;
 	void *t6m_pfunc_arg;
@@ -144,16 +148,21 @@ const uint8_t t6_vpd_exp_sn_kw[3] = { 'S', 'N', T6_SERIAL_LEN };
 const uint8_t t6_vpd_exp_mac_kw[3] = { 'N', 'A', T6_MAC_LEN };
 
 /*
- * This represents a given T6 VPD region. There are two VPD formats that we can
- * encounter. One has a basic format (t6_vpd_t) and the other has an extended
- * set of information (t6_vpd_ext_t). This determines what we expect to be
- * present, e.g. which information is valid and which structure is present.
+ * This represents a given region within the T6 serial ROM. This ROM starts
+ * with a serial configuration (SERCFG) section, which is split into two
+ * regions, one for mission mode configuration, and the other for WoL
+ * configuration. This is followed by a number of VPD regions.
+ * There are two VPD formats that we can encounter. One has a basic format
+ * (t6_vpd_t) and the other has an extended set of information (t6_vpd_ext_t).
+ * This determines what we expect to be present, e.g. which information is
+ * valid and which structure is present.
  *
  * To simplify the library implementation, a region must be no more than
  * T6_MFG_BUSZIZE bytes in size.
  */
 typedef enum {
 	T6_SROM_R_OPAQUE,
+	T6_SROM_R_SERCFG,
 	T6_SROM_R_VPD,
 	T6_SROM_R_VPD_EXT
 } t6_srom_region_type_t;
@@ -165,7 +174,8 @@ typedef struct t6_srom_region {
 } t6_srom_region_t;
 
 static const t6_srom_region_t t6_srom_regions[] = {
-	{ 0x0000, T6_MFG_SROM_VPD_REGION, T6_SROM_R_OPAQUE },
+	{ 0x0000, T6_MFG_SROM_SERCFG_REGION, T6_SROM_R_SERCFG },
+	{ 0x0200, T6_MFG_SROM_SERCFG_REGION, T6_SROM_R_SERCFG },
 	{ 0x0400, T6_MFG_SROM_VPD_REGION, T6_SROM_R_VPD },
 	{ 0x0800, T6_MFG_SROM_VPD_REGION, T6_SROM_R_VPD_EXT },
 	{ 0x0c00, T6_MFG_SROM_VPD_REGION, T6_SROM_R_VPD },
@@ -184,6 +194,44 @@ static const t6_srom_region_t t6_srom_regions[] = {
 	{ 0x4000, T6_MFG_SROM_VPD_REGION, T6_SROM_R_VPD_EXT },
 	{ 0x4400, T6_MFG_BUFSIZE, T6_SROM_R_OPAQUE },
 	{ 0x6400, T6_SROM_LEN - 0x6400, T6_SROM_R_OPAQUE }
+};
+
+/*
+ * Serial configuration region information.
+ *
+ * The PCIe configuration fields are identified by a starting bit and a field
+ * width; the PCIe configuration is offset into the SERCFG region.
+ */
+
+#define	T6_MFG_SROM_SERCFG_PCIE_OFFSET	0x18
+
+typedef enum {
+	T6_SROM_SERCFG_SS_VID,
+	T6_SROM_SERCFG_SS_DID
+} t6_srom_sercfg_type_t;
+
+typedef struct t6_srom_sercfg_field {
+	uint32_t tsf_bitoffset;
+	uint8_t tsf_width;
+	t6_srom_sercfg_type_t tsf_type;
+} t6_srom_sercfg_field_t;
+
+static const t6_srom_sercfg_field_t t6_srom_sercfg_fields[] = {
+	{ 0x391,	0x10,	T6_SROM_SERCFG_SS_VID },
+	/*
+	 * The following fields are the PCI sub-system IDs for each PCI
+	 * function. They must be kept in ascending function order so that
+	 * t6_mfg_srom_region_parse_sercfg() retrieves them in the right
+	 * order.
+	 */
+	{ 0x4cb,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F0 */
+	{ 0x567,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F1 */
+	{ 0x603,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F2 */
+	{ 0x69f,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F3 */
+	{ 0x73b,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F4 */
+	{ 0x7d7,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F5 */
+	{ 0x873,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F6 */
+	{ 0x90f,	0x10,	T6_SROM_SERCFG_SS_DID },	/* F7 */
 };
 
 /*
@@ -362,6 +410,8 @@ t6_mfg_err2str(t6_mfg_t *t6mfg, t6_mfg_err_t err)
 		return ("T6_MFG_ERR_BAD_FLAGS");
 	case T6_MFG_ERR_BAD_PTR:
 		return ("T6_MFG_ERR_BAD_PTR");
+	case T6_MFG_ERR_BAD_PCIID:
+		return ("T6_MFG_ERR_BAD_PCIID");
 	default:
 		return ("unknown error");
 	}
@@ -818,6 +868,84 @@ t6_mfg_srom_region_parse_vpd_ext(t6_mfg_t *t6mfg, t6_mfg_region_data_t *data)
 	}
 }
 
+/*
+ * Fields within a SERCFG region are identified with a bit address and a width,
+ * with the bit address being the offset of the least significant bit of the
+ * field. The bit fields are not aligned and may cross 32-bit address
+ * boundaries. These functions handle reading and writing fields which have a
+ * width of 16-bits by building a 64-bit value that contains the field of
+ * interest and performing a read/modify/write when updating.
+ */
+static uint16_t
+t6_mfg_srom_sercfg_read16(const uint8_t *buf, size_t range, uint32_t bitoffset)
+{
+	uint32_t offset, *wbuf = (uint32_t *)buf;
+	uint64_t data;
+	uint8_t shift;
+
+	bitoffset += T6_MFG_SROM_SERCFG_PCIE_OFFSET;
+	offset = bitoffset >> 5;
+	shift = bitoffset - (offset << 5);
+
+	VERIFY3U(offset - 2, <=, range);
+
+	data = wbuf[offset] | ((uint64_t)wbuf[offset + 1] << 32);
+
+	return ((uint16_t)bitx64(data, shift + 15, shift));
+}
+
+static void
+t6_mfg_srom_sercfg_write16(uint8_t *buf, size_t range, uint32_t bitoffset,
+    uint16_t val)
+{
+	uint32_t offset, *wbuf = (uint32_t *)buf;
+	uint64_t data;
+	uint8_t shift;
+
+	bitoffset += T6_MFG_SROM_SERCFG_PCIE_OFFSET;
+	offset = bitoffset >> 5;
+	shift = bitoffset - (offset << 5);
+
+	VERIFY3U(offset - 2, <=, range);
+
+	data = wbuf[offset] | ((uint64_t)wbuf[offset + 1] << 32);
+
+	data = bitset64(data, shift + 15, shift, val);
+
+	wbuf[offset] = bitx64(data, 31, 0);
+	wbuf[offset + 1] = bitx64(data, 63, 32);
+}
+
+static void
+t6_mfg_srom_region_parse_sercfg(t6_mfg_t *t6mfg, t6_mfg_region_data_t *data)
+{
+	data->treg_ss_did_cnt = 0;
+
+	for (uint_t i = 0; i < ARRAY_SIZE(t6_srom_sercfg_fields); i++) {
+		const t6_srom_sercfg_field_t *f = &t6_srom_sercfg_fields[i];
+		uint16_t val;
+
+		/* Only 16-bit fields currently supported. */
+		VERIFY3U(f->tsf_width, ==, 0x10);
+
+		val = t6_mfg_srom_sercfg_read16(t6mfg->t6m_data_buf,
+		    data->treg_range, f->tsf_bitoffset);
+
+		switch (f->tsf_type) {
+		case T6_SROM_SERCFG_SS_VID:
+			data->treg_ss_vid = val;
+			data->treg_flags |= T6_REGION_F_SS_VID_INFO;
+			break;
+		case T6_SROM_SERCFG_SS_DID:
+			data->treg_ss_did[data->treg_ss_did_cnt] = val;
+			data->treg_ss_did_cnt++;
+			data->treg_flags |= T6_REGION_F_SS_DID_INFO;
+			VERIFY3U(data->treg_ss_did_cnt, <=, T6_FN_COUNT);
+			break;
+		}
+	}
+}
+
 static boolean_t
 t6_mfg_srom_source_validate(t6_mfg_t *t6mfg, t6_mfg_source_t src, int *fdp)
 {
@@ -878,10 +1006,9 @@ t6_mfg_srom_region_iter(t6_mfg_t *t6mfg, t6_mfg_source_t src,
 	}
 
 	/*
-	 * Read each region that we have. Each is T6_MFG_SROM_VPD_REGION bytes
-	 * long. These may be spread out, so seek to each one, if possible
-	 * before beginning to read. After that, we must then parse it based on
-	 * which region type this is.
+	 * Read each region that we have. These may be spread out, so seek to
+	 * each one, if possible before beginning to read. After that, we must
+	 * then parse it based on which region type this is.
 	 */
 	for (uint_t i = 0; i < ARRAY_SIZE(t6_srom_regions); i++) {
 		const t6_srom_region_t *reg = &t6_srom_regions[i];
@@ -899,9 +1026,23 @@ t6_mfg_srom_region_iter(t6_mfg_t *t6mfg, t6_mfg_source_t src,
 		}
 
 		data.treg_base = reg->reg_offset;
-		t6_mfg_srom_region_parse_vpd(t6mfg, &data);
-		if (reg->reg_type == T6_SROM_R_VPD_EXT) {
+		data.treg_range = reg->reg_len;
+
+		switch (reg->reg_type) {
+		case T6_SROM_R_VPD:
+			t6_mfg_srom_region_parse_vpd(t6mfg, &data);
+			data.treg_type = T6_REGION_T_VPD;
+			break;
+		case T6_SROM_R_VPD_EXT:
 			t6_mfg_srom_region_parse_vpd_ext(t6mfg, &data);
+			data.treg_type = T6_REGION_T_VPD;
+			break;
+		case T6_SROM_R_SERCFG:
+			t6_mfg_srom_region_parse_sercfg(t6mfg, &data);
+			data.treg_type = T6_REGION_T_SERCFG;
+			break;
+		default:
+			break;
 		}
 
 		if (!func(&data, arg)) {
@@ -1038,34 +1179,164 @@ t6_mfg_srom_set_mac(t6_mfg_t *t6mfg, const uint8_t *mac)
 	return (t6_mfg_success(t6mfg));
 }
 
+boolean_t
+t6_mfg_srom_set_pci_ss_vid(t6_mfg_t *t6mfg, uint16_t vid)
+{
+	if (vid == UINT16_MAX) {
+		return (t6_mfg_error(t6mfg, T6_MFG_ERR_BAD_PCIID, 0,
+		    "passed an invalid PCI ID: 0x%x", vid));
+	}
+
+	t6mfg->t6m_ss_vid = vid;
+	t6mfg->t6m_srom_set |= T6_REGION_F_SS_VID_INFO;
+
+	return (t6_mfg_success(t6mfg));
+}
+
+boolean_t
+t6_mfg_srom_set_pci_ss_did(t6_mfg_t *t6mfg, uint16_t did)
+{
+	if (did == UINT16_MAX) {
+		return (t6_mfg_error(t6mfg, T6_MFG_ERR_BAD_PCIID, 0,
+		    "passed an invalid PCI ID: 0x%x", did));
+	}
+
+	t6mfg->t6m_ss_did = did;
+	t6mfg->t6m_srom_set |= T6_REGION_F_SS_DID_INFO;
+
+	return (t6_mfg_success(t6mfg));
+}
+
+static void
+t6_mfg_srom_fill_sercfg(const t6_mfg_t *t6mfg, uint8_t *buf, size_t range)
+{
+	t6_mfg_region_flags_t set = t6mfg->t6m_srom_set;
+
+	/*
+	 * If none of the fields have been modified, there is nothing to do.
+	 */
+	if ((set & (T6_REGION_F_SS_VID_INFO|T6_REGION_F_SS_DID_INFO)) == 0)
+		return;
+
+	for (uint_t i = 0; i < ARRAY_SIZE(t6_srom_sercfg_fields); i++) {
+		const t6_srom_sercfg_field_t *f = &t6_srom_sercfg_fields[i];
+
+		/* Only 16-bit fields currently supported. */
+		VERIFY3U(f->tsf_width, ==, 0x10);
+
+		switch (f->tsf_type) {
+		case T6_SROM_SERCFG_SS_VID:
+			if ((set & T6_REGION_F_SS_VID_INFO) != 0) {
+				t6_mfg_srom_sercfg_write16(buf, range,
+				    f->tsf_bitoffset, t6mfg->t6m_ss_vid);
+			}
+			break;
+		case T6_SROM_SERCFG_SS_DID:
+			if ((set & T6_REGION_F_SS_DID_INFO) != 0) {
+				t6_mfg_srom_sercfg_write16(buf, range,
+				    f->tsf_bitoffset, t6mfg->t6m_ss_did);
+			}
+			break;
+		}
+	}
+}
+
+static void
+t6_mfg_srom_verify_sercfg(const t6_mfg_t *t6mfg, const t6_srom_region_t *reg,
+    t6_mfg_validate_data_t *data)
+{
+	/*
+	 * We need to create a copy of the base and set the appropriate fields
+	 * to the values we expect, and then compare the whole.
+	 */
+	uint8_t base[T6_MFG_SROM_SERCFG_REGION];
+
+	VERIFY3U(reg->reg_len, <=, T6_MFG_SROM_SERCFG_REGION);
+
+	(void) memcpy(base, t6mfg->t6m_base_buf, reg->reg_len);
+	t6_mfg_srom_fill_sercfg(t6mfg, base, reg->reg_len);
+
+	if (memcmp(t6mfg->t6m_data_buf, base, reg->reg_len) == 0)
+		return;
+
+	/*
+	 * Failed verification; go through and check the fields we know about.
+	 */
+
+	boolean_t found = B_FALSE;
+
+	for (uint_t i = 0; i < ARRAY_SIZE(t6_srom_sercfg_fields); i++) {
+		const t6_srom_sercfg_field_t *f = &t6_srom_sercfg_fields[i];
+		uint16_t bval, dval;
+
+		bval = t6_mfg_srom_sercfg_read16(base, reg->reg_len,
+		    f->tsf_bitoffset);
+		dval = t6_mfg_srom_sercfg_read16(t6mfg->t6m_data_buf,
+		    reg->reg_len, f->tsf_bitoffset);
+
+		if (bval != dval) {
+			switch (f->tsf_type) {
+			case T6_SROM_SERCFG_SS_VID:
+				data->tval_flags |= T6_VALIDATE_F_ERR_SS_VID;
+				found = B_TRUE;
+				break;
+			case T6_SROM_SERCFG_SS_DID:
+				data->tval_flags |= T6_VALIDATE_F_ERR_SS_DID;
+				found = B_TRUE;
+				break;
+			}
+		}
+	}
+
+	/*
+	 * If no mismatch was found in fields we know about, record this as an
+	 * opaque data mismatch, along with the offset at which the first
+	 * difference was encountered.
+	 */
+	if (!found) {
+		uint32_t off;
+
+		for (off = 0; off < reg->reg_len; off++) {
+			if (t6mfg->t6m_data_buf[off] != base[off])
+				break;
+		}
+		data->tval_opaque_err = off;
+		data->tval_flags |= T6_VALIDATE_F_ERR_OPAQUE;
+	}
+}
+
 static void
 t6_mfg_srom_fill_vpd(const t6_mfg_t *t6mfg, t6_vpd_t *vpd)
 {
+	boolean_t changed = B_FALSE;
+
 	(void) memcpy(vpd, t6mfg->t6m_base_buf, sizeof (*vpd));
+
+	if ((t6mfg->t6m_srom_set & T6_REGION_F_ID_INFO) != 0) {
+		(void) memcpy(vpd->tv_prod, t6mfg->t6m_id,
+		    sizeof (t6mfg->t6m_id));
+		changed = B_TRUE;
+	}
+
+	if ((t6mfg->t6m_srom_set & T6_REGION_F_PN_INFO) != 0) {
+		(void) memcpy(vpd->tv_pn, t6mfg->t6m_pn,
+		    sizeof (t6mfg->t6m_pn));
+		changed = B_TRUE;
+	}
+
+	if ((t6mfg->t6m_srom_set & T6_REGION_F_SN_INFO) != 0) {
+		(void) memcpy(vpd->tv_sn, t6mfg->t6m_sn,
+		    sizeof (t6mfg->t6m_sn));
+		changed = B_TRUE;
+	}
 
 	/*
 	 * If we have not modified any fields, there's nothing to do here and we
 	 * don't want to recalculate the VPD checksum. It is as right or as
 	 * wrong as it is in the base file.
 	 */
-	if (t6mfg->t6m_srom_set == 0) {
+	if (!changed)
 		return;
-	}
-
-	if ((t6mfg->t6m_srom_set & T6_REGION_F_ID_INFO) != 0) {
-		(void) memcpy(vpd->tv_prod, t6mfg->t6m_id,
-		    sizeof (t6mfg->t6m_id));
-	}
-
-	if ((t6mfg->t6m_srom_set & T6_REGION_F_PN_INFO) != 0) {
-		(void) memcpy(vpd->tv_pn, t6mfg->t6m_pn,
-		    sizeof (t6mfg->t6m_pn));
-	}
-
-	if ((t6mfg->t6m_srom_set & T6_REGION_F_SN_INFO) != 0) {
-		(void) memcpy(vpd->tv_sn, t6mfg->t6m_sn,
-		    sizeof (t6mfg->t6m_sn));
-	}
 
 	vpd->tv_rc_cksum = (0x100 - t6_mfg_srom_vpd_cksum((uint8_t *)vpd,
 	    sizeof (*vpd) - 1)) & 0xff;
@@ -1074,36 +1345,41 @@ t6_mfg_srom_fill_vpd(const t6_mfg_t *t6mfg, t6_vpd_t *vpd)
 static void
 t6_mfg_srom_fill_vpd_ext(const t6_mfg_t *t6mfg, t6_vpd_ext_t *vpd)
 {
+	boolean_t changed = B_FALSE;
+
 	(void) memcpy(vpd, t6mfg->t6m_base_buf, sizeof (*vpd));
+
+	if ((t6mfg->t6m_srom_set & T6_REGION_F_ID_INFO) != 0) {
+		(void) memcpy(vpd->tv_prod, t6mfg->t6m_id,
+		    sizeof (t6mfg->t6m_id));
+		changed = B_TRUE;
+	}
+
+	if ((t6mfg->t6m_srom_set & T6_REGION_F_PN_INFO) != 0) {
+		(void) memcpy(vpd->tv_pn, t6mfg->t6m_pn,
+		    sizeof (t6mfg->t6m_pn));
+		changed = B_TRUE;
+	}
+
+	if ((t6mfg->t6m_srom_set & T6_REGION_F_SN_INFO) != 0) {
+		(void) memcpy(vpd->tv_sn, t6mfg->t6m_sn,
+		    sizeof (t6mfg->t6m_sn));
+		changed = B_TRUE;
+	}
+
+	if ((t6mfg->t6m_srom_set & T6_REGION_F_MAC_INFO) != 0) {
+		(void) memcpy(vpd->tv_mac, t6mfg->t6m_mac,
+		    sizeof (t6mfg->t6m_mac));
+		changed = B_TRUE;
+	}
 
 	/*
 	 * If we have not modified any fields, there's nothing to do here and we
 	 * don't want to recalculate the VPD checksum. It is as right or as
 	 * wrong as it is in the base file.
 	 */
-	if (t6mfg->t6m_srom_set == 0) {
+	if (!changed)
 		return;
-	}
-
-	if ((t6mfg->t6m_srom_set & T6_REGION_F_ID_INFO) != 0) {
-		(void) memcpy(vpd->tv_prod, t6mfg->t6m_id,
-		    sizeof (t6mfg->t6m_id));
-	}
-
-	if ((t6mfg->t6m_srom_set & T6_REGION_F_PN_INFO) != 0) {
-		(void) memcpy(vpd->tv_pn, t6mfg->t6m_pn,
-		    sizeof (t6mfg->t6m_pn));
-	}
-
-	if ((t6mfg->t6m_srom_set & T6_REGION_F_SN_INFO) != 0) {
-		(void) memcpy(vpd->tv_sn, t6mfg->t6m_sn,
-		    sizeof (t6mfg->t6m_sn));
-	}
-
-	if ((t6mfg->t6m_srom_set & T6_REGION_F_MAC_INFO) != 0) {
-		(void) memcpy(vpd->tv_mac, t6mfg->t6m_mac,
-		    sizeof (t6mfg->t6m_mac));
-	}
 
 	vpd->tv_rc_cksum = (0x100 - t6_mfg_srom_vpd_cksum((uint8_t *)vpd,
 	    sizeof (*vpd) - 1)) & 0xff;
@@ -1275,7 +1551,8 @@ t6_mfg_srom_validate(t6_mfg_t *t6mfg, t6_mfg_source_t source,
 		 * opaque section. Simply compare the memory to determine
 		 * success or failure.
 		 */
-		if (reg->reg_type == T6_SROM_R_OPAQUE) {
+		switch (reg->reg_type) {
+		case T6_SROM_R_OPAQUE:
 			if (memcmp(t6mfg->t6m_data_buf, t6mfg->t6m_base_buf,
 			    reg->reg_len) != 0) {
 				uint32_t off;
@@ -1293,8 +1570,14 @@ t6_mfg_srom_validate(t6_mfg_t *t6mfg, t6_mfg_source_t source,
 				data.tval_opaque_err = off;
 				data.tval_flags |= T6_VALIDATE_F_ERR_OPAQUE;
 			}
-		} else {
+			break;
+		case T6_SROM_R_SERCFG:
+			t6_mfg_srom_verify_sercfg(t6mfg, reg, &data);
+			break;
+		case T6_SROM_R_VPD:
+		case T6_SROM_R_VPD_EXT:
 			t6_mfg_srom_verify_vpd(t6mfg, reg, &data);
+			break;
 		}
 
 		if (!func(&data, arg)) {
@@ -1405,23 +1688,35 @@ t6_mfg_srom_write(t6_mfg_t *t6mfg, t6_mfg_source_t source,
 		}
 
 		/*
-		 * For VPD based sections, modify data based on what we have
-		 * here and then write out the entire region. We always use an
-		 * intermediate buffer just to simplify our lives and ensure we
-		 * don't clobber ourselves before writing. For non-VPD we don't
-		 * modify things and just let it go.
+		 * For VPD and SERCFG based sections, modify data based on what
+		 * we have here and then write out the entire region.
 		 */
-		if (reg->reg_type == T6_SROM_R_VPD_EXT) {
+		switch (reg->reg_type) {
+		case T6_SROM_R_VPD_EXT: {
 			t6_vpd_ext_t vpd_ext;
 
 			t6_mfg_srom_fill_vpd_ext(t6mfg, &vpd_ext);
 			(void) memcpy(t6mfg->t6m_base_buf, &vpd_ext,
 			    sizeof (vpd_ext));
-		} else if (reg->reg_type == T6_SROM_R_VPD) {
+			break;
+		}
+		case T6_SROM_R_VPD: {
 			t6_vpd_t vpd;
 
 			t6_mfg_srom_fill_vpd(t6mfg, &vpd);
 			(void) memcpy(t6mfg->t6m_base_buf, &vpd, sizeof (vpd));
+			break;
+		}
+		case T6_SROM_R_SERCFG:
+			t6_mfg_srom_fill_sercfg(t6mfg, t6mfg->t6m_base_buf,
+			    reg->reg_len);
+			break;
+		default:
+			/*
+			 * For all other regions we don't modify things and
+			 * just let it go.
+			 */
+			break;
 		}
 
 		if (!t6_mfg_write(t6mfg, outfd, t6mfg->t6m_base_buf,

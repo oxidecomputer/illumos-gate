@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -496,7 +496,7 @@ t6mfgadm_flash_version(int argc, char *argv[])
 	const t6_mfg_flash_info_t *info;
 	t6mfgadm_flash_version_arg_t arg;
 
-	while ((c = getopt(argc, argv, ":d:f:Hop")) != -1) {
+	while ((c = getopt(argc, argv, ":d:f:Ho:p")) != -1) {
 		switch (c) {
 		case 'd':
 			dev = optarg;

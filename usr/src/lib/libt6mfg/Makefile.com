@@ -10,12 +10,12 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 LIBRARY =	libt6mfg.a
 VERS =		.1
-OBJECTS =	libt6mfg.o
+OBJECTS =	libt6mfg.o bitext.o
 
 include ../../Makefile.lib
 
@@ -25,6 +25,10 @@ CSTD =		$(CSTD_GNU99)
 LDLIBS +=	-lc -ldevinfo -lispi
 
 .KEEP_STATE:
+
+pics/%.o: $(SRC)/common/bitext/%.c
+	$(COMPILE.c) $< -o $@
+	$(POST_PROCESS_O)
 
 all: $(LIBS)
 
