@@ -68,6 +68,7 @@
 #include <sys/boot_data.h>
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
+#include <sys/io/milan/hacks.h>
 #include <sys/io/milan/ras.h>
 #include <milan/milan_apob.h>
 
@@ -280,6 +281,13 @@ mlsetup(struct regs *rp)
 	cpuid_execpass(cpu[0], CPUID_PASS_IDENT, NULL);
 
 	/*
+	 * As early as we reasonably can, we want to perform the necessary
+	 * configuration in the FCH to assure that a core shutdown will
+	 * correctly induce an observable reset.
+	 */
+	milan_shutdown_detect_init();
+
+	/*
 	 * Now go through and set up the BSP's thread-, core-, and CCX-specific
 	 * registers.  This includes registers that control what cpuid returns
 	 * so it must be done before the BASIC cpuid pass.  This will be run on
@@ -386,6 +394,11 @@ mlsetup(struct regs *rp)
 		prom_printf("unix: kernel halted by -h flag\n");
 		prom_enter_mon();
 	}
+
+	/*
+	 * Before we get too much further along, check for a furtive reset.
+	 */
+	milan_check_furtive_reset();
 
 	ASSERT_STACK_ALIGNED();
 
