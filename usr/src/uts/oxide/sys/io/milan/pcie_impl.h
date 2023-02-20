@@ -65,6 +65,52 @@ typedef enum milan_pcie_core_flag {
 	MILAN_PCIE_CORE_F_HAS_HOTPLUG	= 1 << 1,
 } milan_pcie_core_flag_t;
 
+/*
+ * These stages of configuration are referred to in the per-port and per-RC
+ * register storage structures, which provide a debugging facility to help
+ * understand what both firmware and software have done to these registers over
+ * time.  They do not control any software behaviour other than in mdb.  See the
+ * theory statement in milan_fabric.c for the definitions of these stages.
+ */
+typedef enum milan_pcie_config_stage {
+	MPCS_PRE_DXIO_INIT,
+	MPCS_DXIO_SM_START,
+	MPCS_DXIO_SM_MAPPED,
+	MPCS_DXIO_SM_MAPPED_RESUME,
+	MPCS_DXIO_SM_CONFIGURED,
+	MPCS_DXIO_SM_CONFIGURED_RESUME,
+	MPCS_DXIO_SM_PERST,
+	MPCS_DXIO_SM_PERST_RESUME,
+	MPCS_DXIO_SM_DONE,
+	MPCS_PRE_HOTPLUG,
+	MPCS_POST_HOTPLUG,
+	MPCS_USER_DIRECTED,
+	MPCS_NUM_STAGES
+} milan_pcie_config_stage_t;
+
+typedef struct milan_pcie_reg_dbg {
+	const char		*mprd_name;
+	smn_reg_def_t		mprd_def;
+	uint32_t		mprd_val[MPCS_NUM_STAGES];
+	hrtime_t		mprd_ts[MPCS_NUM_STAGES];
+} milan_pcie_reg_dbg_t;
+
+typedef struct milan_pcie_dbg {
+	milan_pcie_config_stage_t	mpd_last_stage;
+	uint32_t			mpd_nregs;
+	milan_pcie_reg_dbg_t		mpd_regs[];
+} milan_pcie_dbg_t;
+
+#define	MILAN_PCIE_DBG_SIZE(_nr)	\
+    (sizeof (milan_pcie_dbg_t) + (_nr) * sizeof (milan_pcie_reg_dbg_t))
+
+#ifdef	DEBUG
+extern const milan_pcie_reg_dbg_t milan_pcie_core_dbg_regs[];
+extern const size_t milan_pcie_core_dbg_nregs;
+extern const milan_pcie_reg_dbg_t milan_pcie_port_dbg_regs[];
+extern const size_t milan_pcie_port_dbg_nregs;
+#endif	/* DEBUG */
+
 struct milan_pcie_port {
 	milan_pcie_port_flag_t		mpp_flags;
 	uint8_t				mpp_portno;
@@ -74,6 +120,7 @@ struct milan_pcie_port {
 	smu_hotplug_type_t		mpp_hp_type;
 	uint16_t			mpp_hp_slotno;
 	uint32_t			mpp_hp_smu_mask;
+	milan_pcie_dbg_t		*mpp_dbg;
 	milan_pcie_core_t		*mpp_core;
 };
 
@@ -88,6 +135,7 @@ struct milan_pcie_core {
 	uint16_t		mpc_phys_lane_start;
 	uint16_t		mpc_phys_lane_end;
 	kmutex_t		mpc_strap_lock;
+	milan_pcie_dbg_t	*mpc_dbg;
 	milan_pcie_port_t	mpc_ports[MILAN_PCIE_CORE_MAX_PORTS];
 	milan_ioms_t		*mpc_ioms;
 };

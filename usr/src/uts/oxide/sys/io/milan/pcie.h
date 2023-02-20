@@ -147,6 +147,15 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_HW_DBG_SET_DBG15(r, v)	bitset32(r, 15, 15, v)
 
 /*
+ * PCIEPORT::PCIEP_HW_DEBUG_LC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_HW_DBG_LC	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x0c	\
+}
+
+/*
  * PCIEPORT::PCIEP_PORT_CNTL - General PCIe port controls. This is a register
  * that exists in 'Port Space' and is specific to a bridge.
  */
@@ -158,6 +167,15 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_PCTL(n, p, b)	\
     milan_pcie_port_smn_reg(n, D_PCIE_PORT_PCTL, p, b)
 #define	PCIE_PORT_PCTL_SET_PWRFLT_EN(r, v)	bitset32(r, 4, 4, v)
+
+/*
+ * PCIEPORT::PCIEP_SDP_CTRL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_SDP_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x44	\
+}
 
 /*
  * PCIEPORT::PCIE_TX_CNTL - PCIe TX Control. This is a register that exists in
@@ -187,6 +205,414 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_TX_ID_SET_BUS(r, v)	bitset32(r, 15, 8, v)
 #define	PCIE_PORT_TX_ID_SET_DEV(r, v)	bitset32(r, 7, 3, v)
 #define	PCIE_PORT_TX_ID_SET_FUNC(r, v)	bitset32(r, 2, 0, v)
+
+/*
+ * PCIEPORT::PCIE_TX_VENDOR_SPECIFIC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_VS_DLLP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x88	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_REQUEST_NUM_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_REQ_NUM_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x8c	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_SEQ - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_SEQ	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x90	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_REPLAY - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_REPLAY	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x94	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_ACK_LATENCY_LIMIT - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_ACK_LAT_LIM	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x98	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_NOP_DLLP - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_NOP_DLLP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x9c	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CNTL_2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CTL2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xa0	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_ADVT_P - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_ADVT_P	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xc0	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_ADVT_NP - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_ADVT_NP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xc4	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_ADVT_CPL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_ADVT_CPL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xc8	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_INIT_P - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_INIT_P	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xcc	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_INIT_NP - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_INIT_NP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xd0	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_INIT_CPL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_INIT_CPL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xd4	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_STATUS - unused but captured for debugging.  Some
+ * fields are RW1c (read/write-1-to-clear).
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xd8	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CREDITS_FCU_THRESHOLD - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CREDITS_FCU_THRESH	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xdc	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CCIX_PORT_CNTL0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CCIX_PORT_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xe0	\
+}
+
+/*
+ * PCIEPORT::PCIE_TX_CCIX_PORT_CNTL1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_TX_CCIX_PORT_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xe4	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_STACKED_BASE - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_STACKED_BASE	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xe8	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_STACKED_LIMIT - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_STACKED_LIM	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xec	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_DUMMY_RD_UPPER_ADDR - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_DUMMY_RD_ADDR_HI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xf0	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_DUMMY_RD_LOWER_ADDR - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_DUMMY_RD_ADDR_LO	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xf4	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_DUMMY_RD_CTRL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_DUMMY_RD_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xf8	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_DUMMY_WR_UPPER_ADDR - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_DUMMY_WR_ADDR_HI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0xfc	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_DUMMY_WR_LOWER_ADDR - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_DUMMY_WR_ADDR_LO	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x100	\
+}
+
+/*
+ * PCIEPORT::PCIE_CCIX_MISC_STATUS - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_CCIX_MISC_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x104	\
+}
+
+/*
+ * PCIEPORT::PCIE_P_PORT_LANE_STATUS - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_P_LANE_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x140	\
+}
+
+/*
+ * PCIEPORT::PCIE_FC_P - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_FC_P	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x180	\
+}
+
+/*
+ * PCIEPORT::PCIE_FC_NP - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_FC_NP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x184	\
+}
+
+/*
+ * PCIEPORT::PCIE_FC_CPL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_FC_CPL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x188	\
+}
+
+/*
+ * PCIEPORT::PCIE_FC_P_VC1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_FC_P_VC1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x18c	\
+}
+
+/*
+ * PCIEPORT::PCIE_FC_NP_VC1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_FC_NP_VC1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x190	\
+}
+
+/*
+ * PCIEPORT::PCIE_FC_CPL_VC1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_FC_CPL_VC1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x194	\
+}
+
+/*
+ * PCIEPORT::PCIE_ERR_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_ERR_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x1a8	\
+}
+
+/*
+ * PCIEPORT::PCIE_RX_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x1c0	\
+}
+
+/*
+ * PCIEPORT::PCIE_RX_EXPECTED_SEQNUM - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_EXP_SEQ	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x1c4	\
+}
+
+/*
+ * PCIEPORT::PCIE_RX_VENDOR_SPECIFIC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_VS_DLLP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x1c8	\
+}
+
+/*
+ * PCIEPORT::PCIE_RX_CNTL3 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_CTL3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x1d0	\
+}
+
+/*
+ * PCIEPORT::PCIE_RX_CREDITS_ALLOCATED_P - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_CREDITS_ALLOC_P	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x200	\
+}
+
+/*
+ * PCIEPORT::PCIE_RX_CREDITS_ALLOCATED_NP - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_CREDITS_ALLOC_NP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x204	\
+}
+
+/*
+ * PCIEPORT::PCIE_RX_CREDITS_ALLOCATED_CPL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_CREDITS_ALLOC_CPL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x208	\
+}
+
+/*
+ * PCIEPORT::PCIEP_ERROR_INJECT_PHYSICAL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_ERR_INJ_PHYS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x20c	\
+}
+
+/*
+ * PCIEPORT::PCIEP_ERROR_INJECT_TRANSACTION - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_ERR_INJ_TXN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x210	\
+}
+
+/*
+ * PCIEPORT::PCIEP_NAK_COUNTER - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_NAK_COUNTER	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x218	\
+}
+
+/*
+ * PCIEPORT::PCIEP_RX_CAPTURED_LTR_CTRL_STATUS - unused but captured for
+ * debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_CAPTURED_LTR_CTL_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x220	\
+}
+
+/*
+ * PCIEPORT::PCIEP_RX_CAPTURED_LTR_THRESHOLD_VALUES - unused but captured for
+ * debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_RX_CAPTURED_LTR_THRESH_VALS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x224	\
+}
 
 /*
  * PCIEPORT::PCIE_LC_CNTL - The first of several link controller control
@@ -228,6 +654,15 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     milan_pcie_port_smn_reg((n), D_PCIE_PORT_LC_WIDTH_CTL, (p), (b))
 #define	PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(r, v)	bitset32(r, 19, 19, v)
 #define	PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(r, v)	bitset32(r, 10, 10, v)
+
+/*
+ * PCIEPORT::PCIE_LC_N_FTS_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_NFTS_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x28c	\
+}
 
 /*
  * PCIEPORT::PCIE_LC_SPEED_CNTL - Link speed control register. This is used to
@@ -280,7 +715,9 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * and older things in them. That is, you can calculate a given state by
  * multiplying the register number by four. Unfortunately, the meanings of the
  * states are more unknown, but we have reason to expect that at least 0x10 is
- * one of several successful training states.
+ * one of several successful training states.  Note that additional history can
+ * be captured in the parent core's registers for a single port selected in the
+ * core's DBG_CTL (it's unclear what selecting multiple ports would do).
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_STATE0	(const smn_reg_def_t){	\
@@ -335,6 +772,15 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     milan_pcie_port_smn_reg((n), D_PCIE_PORT_LC_STATE5, (p), (b))
 
 /*
+ * PCIEPORT::PCIE_LINK_MANAGEMENT_CNTL2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LINK_MGMT_CTL2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2ac	\
+}
+
+/*
  * PCIEPORT::PCIE_LC_CNTL2 - Port Link Control Register 2.
  */
 /*CSTYLED*/
@@ -358,6 +804,33 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL2_TS2_CHANGE_128	1
 
 /*
+ * PCIEPORT::PCIE_LC_BW_CHANGE_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_BW_CHANGE_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2c8	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_CDR_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CDR_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2cc	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_LANE_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_LANE_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2d0	\
+}
+
+/*
  * PCIEPORT::PCIE_LC_CNTL3 - Port Link Control Register 3. This isn't the last
  * of these and is a bunch of different settings.
  */
@@ -373,8 +846,19 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL3_ENH_HP_EN(r, v)		bitset32(r, 10, 10, v)
 
 /*
+ * PCIEPORT::PCIE_LC_CNTL4 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CTL4	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2d8	\
+}
+
+/*
  * PCIEPORT::PCIE_LC_CNTL5 - Port Link Control Register 5. There are several
- * others, but this one seems to be required for hotplug.
+ * others, but this one seems to be required for hotplug.  Some fields in this
+ * register capture data for a lane selected by LC_DBG_CTL in the port's parent
+ * core.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_CTL5	(const smn_reg_def_t){	\
@@ -386,8 +870,40 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(r, v)	bitset32(r, 28, 28, v)
 
 /*
+ * PCIEPORT::PCIE_LC_FORCE_COEFF - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_FORCE_COEFF	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2e0	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_BEST_EQ_SETTINGS - unused but captured for debugging.  Data
+ * captured in this register's fields applies to a lane selected by the
+ * LC_DBG_CTL register in the port's parent core.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_BEST_EQ	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2e4	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_FORCE_EQ_REQ_COEFF - unused but captured for debugging.
+ * Data captured in some of this register's fields applies to a lane selected by
+ * the LC_DBG_CTL register in the port's parent core.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_FORCE_EQ_COEFF	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2e8	\
+}
+
+/*
  * PCIEPORT::PCIE_LC_CNTL6 - Port Link Control Register 6.  SRIS stuff lives
- * here, with other bits.
+ * here, with other bits.  Some field (not described here because they are not
+ * used) capture data for a specific lane set in the parent core's LC_DBG_CTL.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_CTL6	(const smn_reg_def_t){	\
@@ -417,6 +933,124 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL6_SPC_MODE_8GT_4	2
 
 /*
+ * PCIEPORT::PCIE_LC_CNTL7 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CTL7	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2f0	\
+}
+
+/*
+ * PCIEPORT::PCIE_LINK_MANAGEMENT_STATUS - unused but captured for debugging.
+ * Fields are RW1c.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LINK_MGMT_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2f4	\
+}
+
+/*
+ * PCIEPORT::PCIE_LINK_MANAGEMENT_MASK - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LINK_MGMT_MASK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2f8	\
+}
+
+/*
+ * PCIEPORT::PCIE_LINK_MANAGEMENT_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LINK_MGMT_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x2fc	\
+}
+
+/*
+ * PCIEPORT::PCIEP_STRAP_LC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_STRAP_LC	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x300	\
+}
+
+/*
+ * PCIEPORT::PCIEP_STRAP_MISC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_STRAP_MISC	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x304	\
+}
+
+/*
+ * PCIEPORT::PCIEP_STRAP_LC2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_STRAP_LC2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x308	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_L1_PM_SUBSTATE - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_L1_PM_SUBSTATE	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x318	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_L1_PM_SUBSTATE2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_L1_PM_SUBSTATE2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x31c	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_PORT_ORDER - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_PORT_ORDER	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x320	\
+}
+
+/*
+ * PCIEPORT::PCIEP_BCH_ECC_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_BCH_ECC_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x340	\
+}
+
+/*
+ * PCIEPORT::PCIEP_HPGI_PRIVATE - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_HPGI_PRIV	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x348	\
+}
+
+/*
+ * PCIEPORT::PCIEP_HPGI - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_HPGI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x368	\
+}
+
+/*
  * PCIEPORT::PCIEP_HCNT_DESCRIPTOR - Port Hotplug Descriptor control. This is a
  * register that exists in 'Port Space' and is specific to a bridge. This seems
  * to relate something in the port to the SMU's hotplug engine.
@@ -430,6 +1064,108 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     milan_pcie_port_smn_reg((n), D_PCIE_PORT_HP_CTL, (p), (b))
 #define	PCIE_PORT_HP_CTL_SET_ACTIVE(r, v)	bitset32(r, 31, 31, v)
 #define	PCIE_PORT_HP_CTL_SET_SLOT(r, v)		bitset32(r, 5, 0, v)
+
+/*
+ * PCIEPORT::PCIE_LC_CNTL8 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CTL8	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x374	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_CNTL9 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CTL9	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x378	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_FORCE_COEFF2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_FORCE_COEFF2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x37c	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_FORCE_EQ_REQ_COEFF2 - unused but captured for debugging.
+ * Data captured in some of this register's fields applies to a lane selected by
+ * the LC_DBG_CTL register in the port's parent core.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_FORCE_EQ_COEFF2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x380	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_FINE_GRAIN_CLK_GATE_OVERRIDES - unused but captured for
+ * debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_FINE_GRAIN_CLK_GATE_OVR	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x388	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_CNTL10 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CTL10	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x38c	\
+}
+
+/*
+ * PCIEPORT::PCIE_LC_CNTL11 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_CTL11	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x390	\
+}
+
+/*
+ * PCIECORE::PCIE_HW_DEBUG - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_HW_DBG	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x8	\
+}
+
+/*
+ * PCIECORE::PCIE_HW_DEBUG_LC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_HW_DBG_LC	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xc	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_NUM_NAK - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_NUM_NAK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x38	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_NUM_NAK_GENERATED - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_NUM_NAK_GEN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x3c	\
+}
 
 /*
  * PCIECORE::PCIE_CNTL - PCIe port level controls, generally around reordering,
@@ -449,6 +1185,33 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_PCIE_CTL_SET_HW_LOCK(r, v)		bitset32(r, 0, 0, v)
 
 /*
+ * PCIECORE::PCIE_CONFIG_CNTL - unused but captured for debugging.  Note that
+ * there is *also* a PCIE_CFG_CNTL at 0xf0.  We keep our conventions but add
+ * disambiguating characters to avoid confusion.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_CFG_CTL_CONFIG	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x44	\
+}
+
+/*
+ * PCIECORE::PCIE_DEBUG_CNTL - Selects the port(s) for which numerous other
+ * counters and state capture registers will be collected by hardware.  The
+ * PORT_EN field is a mask of ports, A=0, B=1, ... so that it is possible in
+ * some cases to advance counters for multiple ports if desired.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_DBG_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x48	\
+}
+#define	PCIE_CORE_DBG_CTL_GET_DBG_SELECT(r)	bitx32(r, 8, 8)
+#define	PCIE_CORE_DBG_CTL_SET_DBG_SELECT(r, v)	bitset32(r, 8, 8, v)
+#define	PCIE_CORE_DBG_CTL_GET_PORT_EN(r)	bitx32(r, 7, 0)
+#define	PCIE_CORE_DBG_CTL_SET_PORT_EN(r, v)	bitset32(r, 7, 0, v)
+
+/*
  * PCIECORE::PCIE_CNTL2 - Additional PCIe port level controls. Covers power,
  * atomics, and some amount of transmit.
  */
@@ -463,9 +1226,27 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_PCIE_CTL2_TX_ATOMIC_OPS_DIS(r, v)	bitset32(r, 13, 13, v)
 
 /*
+ * PCIECORE::PCIE_RX_CNTL2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_CTL2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x74	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_F0_ATTR_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_F0_ATTR_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x78	\
+}
+
+/*
  * PCIECORE::PCIE_CI_CNTL - PCIe Port level TX controls. Note, this register is
- * in 'core' space and is specific to the overall milan_pcie_port_t, as opposed
- * to the bridge. XXX Add in other bits.
+ * in 'core' space and is specific to the overall milan_pcie_core_t, as opposed
+ * to the port or bridge.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_CI_CTL	(const smn_reg_def_t){	\
@@ -476,7 +1257,276 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     milan_pcie_core_smn_reg((n), D_PCIE_CORE_CI_CTL, (p))
 #define	PCIE_CORE_CI_CTL_SET_IGN_LINK_DOWN_CTO_ERR(r, v)	\
     bitset32(r, 31, 31, v)
+#define	PCIE_CORE_CI_CTL_SET_ARB_WIDTH_WEIGHTED_RR(r, v)	\
+    bitset32(r, 30, 30, v)
 #define	PCIE_CORE_CI_CTL_SET_LINK_DOWN_CTO_EN(r, v)	bitset32(r, 29, 29, v)
+#define	PCIE_CORE_CI_CTL_SET_MST_TAG_BORROW_DIS(r, v)	bitset32(r, 28, 28, v)
+#define	PCIE_CORE_CI_CTL_SET_TXWR_SPLIT_QW_EN(r, v)	bitset32(r, 27, 27, v)
+#define	PCIE_CORE_CI_CTL_SET_MSTSPLIT_REQ_CHAIN_DIS(r, v)	\
+    bitset32(r, 26, 26, v)
+#define	PCIE_CORE_CI_CTL_SET_MSTSPLIT_DIS(r, v)		bitset32(r, 25, 25, v)
+#define	PCIE_CORE_CI_CTL_SET_RX_DPC_CPL_MODE(r, v)	bitset32(r, 24, 24, v)
+#define	PCIE_CORE_CI_CTL_RX_DPC_CPL_MODE_CTO	0
+#define	PCIE_CORE_CI_CTL_RX_DPC_CPL_MODE_URCA	1
+#define	PCIE_CORE_CI_CTL_SET_RX_DPC_RPIO_TO_CA_EN(r, v)	bitset32(r, 23, 23, v)
+#define	PCIE_CORE_CI_CTL_SET_RX_ALL_CTO_TO_UR_EN(r, v)	bitset32(r, 22, 22, v)
+#define	PCIE_CORE_CI_CTL_SET_TX_DIS_SLOW_PWR_LIM(r, v)	bitset32(r, 21, 21, v)
+#define	PCIE_CORE_CI_CTL_SET_DIS_SLOTCTL_PWR_LIM(r, v)	bitset32(r, 20, 20, v)
+#define	PCIE_CORE_CI_CTL_SET_TX_ATOMIC_EGR_BLOCK_DIS(r, v)	\
+    bitset32(r, 19, 19, v)
+#define	PCIE_CORE_CI_CTL_SET_TX_POISON_EGR_BLOCK_DIS(r, v)	\
+    bitset32(r, 18, 18, v)
+#define	PCIE_CORE_CI_CTL_SET_TX_TLP_PFX_BLOCK_DIS(r, v)	bitset32(r, 17, 17, v)
+#define	PCIE_CORE_CI_CTL_SET_SDP_POISON_ERR_DIS(r, v)	bitset32(r, 16, 16, v)
+#define	PCIE_CORE_CI_CTL_SET_CPL_ALLOC_SOR_EN(r, v)	bitset32(r, 12, 12, v)
+#define	PCIE_CORE_CI_CTL_SET_CPL_ALLOC_MODE(r, v)	bitset32(r, 11, 11, v)
+#define	PCIE_CORE_CI_CTL_CPL_ALLOC_MODE_DYNAMIC		0
+#define	PCIE_CORE_CI_CTL_CPL_ALLOC_MODE_STATIC_PORTCTL	1
+#define	PCIE_CORE_CI_CTL_SET_CPL_ALLOC_DIVBYLANE_DIS(r, v)	\
+    bitset32(r, 10, 10, v)
+#define	PCIE_CORE_CI_CTL_SET_RC_ORDERING_DIS(r, v)	bitset32(r, 9, 9, v)
+#define	PCIE_CORE_CI_CTL_SET_SLV_ORDERING_DIS(r, v)	bitset32(r, 8, 8, v)
+#define	PCIE_CORE_CI_CTL_GET_RC_RD_REQ_SZ(r)		bitx32(r, 7, 6)
+#define	PCIE_CORE_CI_CTL_SET_BAD_CPL_DUMMY(r, v)	bitset32(r, 4, 4, v)
+#define	PCIE_CORE_CI_CTL_BAD_CPL_DUMMY_DEADBEEF	0
+#define	PCIE_CORE_CI_CTL_BAD_CPL_DUMMY_ALL_1	1
+#define	PCIE_CORE_CI_CTL_SET_BAD_ADDR_UR_DIS(r, v)	bitset32(r, 3, 3, v)
+#define	PCIE_CORE_CI_CTL_SET_SPLIT_MODE(r, v)		bitset32(R, 2, 2, v)
+#define	PCIE_CORE_CI_CTL_SPLIT_MODE_FULL	0
+#define	PCIE_CORE_CI_CTL_SPLIT_MODE_EVEN	1
+
+/*
+ * PCIECORE::PCIE_BUS_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_BUS_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x84	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATE6 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATE6	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x88	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATE7 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATE7	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x8c	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATE8 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATE8	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x90	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATE9 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATE9	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x94	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATE10 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATE10	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x98	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATE11 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATE11	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x9c	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATUS1 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATUS1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xa0	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_STATUS2 - unused but captured for debugging.  Uses port
+ * selection in DBG_CTL.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_STATUS2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xa4	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_CNTL3 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_CTL3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xa8	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_STATUS - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xac	\
+}
+
+/*
+ * PCIECORE::PCIE_WPR_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_WPR_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xc0	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_LAST_TLP0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_LAST_TLP0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xc4	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_LAST_TLP1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_LAST_TLP1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xc8	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_LAST_TLP2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_LAST_TLP2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xcc	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_LAST_TLP3 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_LAST_TLP3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xd0	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_LAST_TLP0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_LAST_TLP0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xd4	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_LAST_TLP1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_LAST_TLP1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xd8	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_LAST_TLP2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_LAST_TLP2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xdc	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_LAST_TLP3 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_LAST_TLP3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xe0	\
+}
+
+/*
+ * PCIECORE::PCIE_I2C_REG_ADDR_EXPAND - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_I2C_ADDR	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xe8	\
+}
+
+/*
+ * PCIECORE::PCIE_I2C_REG_DATA - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_I2C_DATA	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xec	\
+}
+
+/*
+ * PCIECORE::PCIE_CFG_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_CFG_CTL_CFG	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xf0	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_PM_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_PM_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xf4	\
+}
+
+/*
+ * PCIECORE::PCIE_LC_PORT_ORDER_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_PORT_ORDER_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0xf8	\
+}
 
 /*
  * PCIECORE::PCIE_P_CNTL - Various controls around the phy.
@@ -514,6 +1564,96 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_PCIE_P_CTL_SET_IGN_CRC_ERR(r, v)	bitset32(r, 4, 4, v)
 
 /*
+ * PCIECORE::PCIE_P_BUF_STATUS - unused but captured for debugging.  RW1c.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_P_BUF_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x104	\
+}
+
+/*
+ * PCIECORE::PCIE_P_DECODER_STATUS - unused but captured for debugging.  RW1c.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_P_DECODER_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x108	\
+}
+
+/*
+ * PCIECORE::PCIE_P_MISC_STATUS - unused but captured for debugging.  RW1c.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_P_MISC_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x10c	\
+}
+
+/*
+ * PCIECORE::PCIE_P_RCV_L0S_FTS_DET - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_P_RX_L0S_FTS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x140	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_CCIX_CNTL0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_CCIX_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x150	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_CCIX_CNTL1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_CCIX_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x154	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_CCIX_PORT_MAP - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_CCIX_PORT_MAP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x158	\
+}
+
+/*
+ * PCIECORE::PCIE_TX_CCIX_ERR_CTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_TX_CCIX_ERR_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x15c	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_CCIX_CTL0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_CCIX_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x160	\
+}
+
+/*
+ * PCIECORE::PCIE_RX_AD - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_AD	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x188	\
+}
+
+/*
  * PCIECORE::PCIE_SDP_CTRL - PCIe port SDP Control. This register seems to be
  * used to tell the system how to map a given port to the data fabric and
  * related.
@@ -527,6 +1667,24 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     milan_pcie_core_smn_reg((n), D_PCIE_CORE_SDP_CTL, (p))
 #define	PCIE_CORE_SDP_CTL_SET_PORT_ID(r, v)	bitset32(r, 28, 26, v)
 #define	PCIE_CORE_SDP_CTL_SET_UNIT_ID(r, v)	bitset32(r, 3, 0, v)
+
+/*
+ * PCIECORE::PCIE_NBIO_CLKREQb_MAP_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_NBIO_CLKREQ_B_MAP_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x190	\
+}
+
+/*
+ * PCIECORE::PCIE_SDP_RC_SLV_ATTR_CTRL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SDP_RC_SLV_ATTR_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x198	\
+}
 
 /*
  * PCIECORE::PCIE_STRAP_F0 - PCIe Strap registers for function 0. As this
@@ -543,6 +1701,348 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     milan_pcie_core_smn_reg((n), D_PCIE_CORE_STRAP_F0, (p))
 #define	PCIE_CORE_STRAP_F0_SET_ATOMIC_ROUTE(r, v)	bitset32(r, 20, 20, v)
 #define	PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(r, v)		bitset32(r, 18, 18, v)
+
+/*
+ * PCIECORE::PCIE_STRAP_NTB - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_STRAP_NTB	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x2c4	\
+}
+
+/*
+ * PCIECORE::PCIE_STRAP_MISC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_STRAP_MISC	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x300	\
+}
+
+/*
+ * PCIECORE::PCIE_STRAP_MISC2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_STRAP_MISC2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x304	\
+}
+
+/*
+ * PCIECORE::PCIE_STRAP_PI - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_STRAP_PI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x308	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_CLR - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_CLR	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x320	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_STATUS1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_STATUS1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x324	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_STATUS2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_STATUS2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x328	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_FREERUN - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_FREERUN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x32c	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_MISC - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_MISC	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x330	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_USER_PATTERN - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_USER_PATTERN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x334	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_LO_BITCNT - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_LO_BITCNT	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x338	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_HI_BITCNT - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_HI_BITCNT	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x33c	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x340	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x344	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x348	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_3 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x34c	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_4 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT4	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x350	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_5 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT5	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x354	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_6 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT6	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x358	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_7 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT7	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x35c	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_8 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT8	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x360	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_9 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT9	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x364	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_10 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT10	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x368	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_11 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT11	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x36c	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_12 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT12	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x370	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_13 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT13	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x374	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_14 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT14	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x378	\
+}
+
+/*
+ * PCIECORE::PCIE_PRBS_ERRCNT_15 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PRBS_ERRCNT15	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x37c	\
+}
+
+/*
+ * PCIECORE::SWRST_COMMAND_STATUS - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CMD_STATUS	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x400	\
+}
+
+/*
+ * PCIECORE::SWRST_GENERAL_CONTROL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_GEN_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x404	\
+}
+
+/*
+ * PCIECORE::SWRST_COMMAND_0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CMD0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x408	\
+}
+
+/*
+ * PCIECORE::SWRST_COMMAND_1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CMD1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x40c	\
+}
+
+/*
+ * PCIECORE::SWRST_CONTROL_0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x410	\
+}
+
+/*
+ * PCIECORE::SWRST_CONTROL_1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x414	\
+}
+
+/*
+ * PCIECORE::SWRST_CONTROL_2 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CTL2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x418	\
+}
+
+/*
+ * PCIECORE::SWRST_CONTROL_3 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CTL3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x41c	\
+}
+
+/*
+ * PCIECORE::SWRST_CONTROL_4 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CTL4	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x420	\
+}
+
+/*
+ * PCIECORE::SWRST_CONTROL_5 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SWRST_CTL5	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x424	\
+}
 
 /*
  * PCIECORE::SWRST_CONTROL_6 - PCIe Software Reset Control #6. This is in 'Core
@@ -569,10 +2069,237 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_SWRST_CTL6_SET_HOLD_A(r, v)	bitset32(r, 0, 0, v)
 
 /*
+ * PCIECORE::CPM_CONTROL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_CPM_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x460	\
+}
+
+/*
+ * PCIECORE::CPM_SPLIT_CONTROL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_CPM_SPLIT_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x464	\
+}
+
+/*
+ * PCIECORE::SMN_APERTURE_ID_A - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMN_APERTURE_A	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x474	\
+}
+
+/*
+ * PCIECORE::SMN_APERTURE_ID_B - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMN_APERTURE_B	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x478	\
+}
+
+/*
+ * PCIECORE::RSMU_MASTER_CONTROL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RSMU_MASTER_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x47c	\
+}
+
+/*
+ * PCIECORE::RSMU_SLAVE_CONTROL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RSMU_SLAVE_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x480	\
+}
+
+/*
+ * PCIECORE::RSMU_POWER_GATING_CONTROL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RSMU_PWR_GATE_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x484	\
+}
+
+/*
+ * PCIECORE::RSMU_BIOS_TIMER_CMD - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RSMU_TIMER_CMD	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x488	\
+}
+
+/*
+ * PCIECORE::RSMU_BIOS_TIMER_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RSMU_TIMER_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x48c	\
+}
+
+/*
+ * PCIECORE::RSMU_BIOS_TIMER_DEBUG - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RSMU_TIMER_DBG	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x490	\
+}
+
+/*
+ * PCIECORE::LNCNT_CONTROL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LNCNT_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x494	\
+}
+
+/*
+ * PCIECORE::LNCNT_QUAN_THRD - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LNCNT_QUAN_THRD	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x49c	\
+}
+
+/*
+ * PCIECORE::LNCNT_WEIGHT - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LNCNT_WEIGHT	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4a0	\
+}
+
+/*
+ * PCIECORE::SMU_HP_STATUS_UPDATE - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMU_HP_STATUS_UPDATE	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4b0	\
+}
+
+/*
+ * PCIECORE::HP_SMU_COMMAND_UPDATE - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_HP_SMU_CMD_UPDATE	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4b4	\
+}
+
+/*
+ * PCIECORE::SMU_HP_END_OF_INTERRUPT - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMU_HP_EOI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4b8	\
+}
+
+/*
+ * PCIECORE::SMU_INT_PIN_SHARING_PORT_INDICATOR - unused but captured for
+ * debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMU_INT_PIN_SHARING	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4bc	\
+}
+
+/*
+ * PCIECORE::PCIE_PGMST_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PGMST_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4c0	\
+}
+
+/*
+ * PCIECORE::PCIE_PGSLV_CNTL - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PGSLV_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4c4	\
+}
+
+/*
+ * PCIECORE::SMU_PCIE_DF_Address - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMU_DF_ADDR	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4c8	\
+}
+
+/*
+ * PCIECORE::LC_CPM_CONTROL_0 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_CPM_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4cc	\
+}
+
+/*
+ * PCIECORE::LC_CPM_CONTROL_1 - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_CPM_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4d0	\
+}
+
+/*
+ * PCIECORE::PCIE_RXMARGIN_CONTROL_CAPABILITIES - unused but captured for
+ * debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_MARGIN_CTL_CAP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4d4	\
+}
+
+/*
+ * PCIECORE::PCIE_RXMARGIN_1_SETTINGS - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_MARGIN1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4d8	\
+}
+
+/*
+ * PCIECORE::PCIE_RXMARGIN_2_SETTINGS - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_RX_MARGIN2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4dc	\
+}
+
+/*
  * PCIECORE::PCIE_PRESENCE_DETECT_SELECT - PCIe Presence Detect Control. This is
- * 'Core Space', so it exists once per port. This is used to determine whether
- * we should consider something present based on the link up OR the side-band
- * signals, or instead require both (e.g. AND).
+ * 'Core Space', so it is shared among all the core's ports. This is used to
+ * determine whether we should consider something present based on the link up
+ * OR the side-band signals, or instead require both (e.g. AND).
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_PRES	(const smn_reg_def_t){	\
@@ -584,6 +2311,38 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_PRES_SET_MODE(r, v)	bitset32(r, 24, 24, v)
 #define	PCIE_CORE_PRES_MODE_OR	0
 #define	PCIE_CORE_PRES_MODE_AND	1
+
+/*
+ * PCIECORE::PCIE_LC_DEBUG_CNTL - Analogous to the DBG_CTL register's ability to
+ * select specific port(s) for which other data should be collected in debugging
+ * registers, this selects lane(s) for certain registers and and fields that
+ * collect per-lane debug data.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_DBG_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4e4	\
+}
+#define	PCIE_CORE_LC_DBG_CTL_SET_LANE_MASK(r, v)	bitset32(r, 31, 16, v)
+#define	PCIE_CORE_LC_DBG_CTL_GET_LANE_MASK(r)		bitx32(r, 31, 16)
+
+/*
+ * PCIECORE::SMU_PCIE_FENCED1_REG - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMU_FENCED1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x600	\
+}
+
+/*
+ * PCIECORE::SMU_PCIE_FENCED2_REG - unused but captured for debugging.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_SMU_FENCED2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x604	\
+}
 
 /*
  * The following definitions are all in normal PCI configuration space. These

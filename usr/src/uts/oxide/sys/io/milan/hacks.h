@@ -16,6 +16,9 @@
 #ifndef _SYS_IO_MILAN_HACKS_H
 #define	_SYS_IO_MILAN_HACKS_H
 
+#include <sys/types.h>
+#include <sys/io/milan/fabric.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -24,6 +27,18 @@ extern boolean_t milan_fixup_i2c_clock(void);
 extern boolean_t milan_cgpll_set_ssc(boolean_t);
 extern void milan_shutdown_detect_init(void);
 extern void milan_check_furtive_reset(void);
+
+/*
+ * Used internally by milan_hack_gpio().  Do not use outside this code.
+ */
+typedef enum milan_hack_gpio_op {
+	MHGOP_CONFIGURE,
+	MHGOP_RESET,
+	MHGOP_SET,
+	MHGOP_TOGGLE
+} milan_hack_gpio_op_t;
+
+extern void milan_hack_gpio(milan_hack_gpio_op_t, uint16_t);
 
 #ifdef __cplusplus
 }

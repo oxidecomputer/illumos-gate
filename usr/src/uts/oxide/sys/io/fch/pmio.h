@@ -185,6 +185,7 @@ MAKE_MMIO_FCH_REG_FN(PMIO, pmio, 4);
     fch_pmio_mmio_reg((b), D_FCH_PMIO_RESETCONTROL1, 0)
 
 #define	FCH_PMIO_RESETCONTROL1_SET_RSTTOCPUPWRGDEN(r, v) bitset8(r, 7, 7, v)
+#define	FCH_PMIO_RESETCONTROL1_SET_KBRSTEN(r, v)	bitset8(r, 4, 4, v)
 
 /*
  * FCH::PM::S5_RESET_STATUS.  Used to detect a furtive reset.

@@ -191,7 +191,7 @@ MAKE_MMIO_FCH_REG_FN(GPIO, gpio, 4);
 #define	FCH_GPIO_GPIO_INPUT_HIGH	1
 #define	FCH_GPIO_GPIO_GET_WAKE_S5(r)	bitx32(r, 15, 15)
 #define	FCH_GPIO_GPIO_GET_WAKE_S3(r)	bitx32(r, 14, 14)
-#define	FCH_GPIO_GPIO_GET_WAKE_SOI3(r)	bitx32(r, 13, 13)
+#define	FCH_GPIO_GPIO_GET_WAKE_S0I3(r)	bitx32(r, 13, 13)
 #define	FCH_GPIO_GPIO_GET_INT_EN(r)	bitx32(r, 12, 12)
 #define	FCH_GPIO_GPIO_GET_INT_STS_EN(r)	bitx32(r, 11, 11)
 #define	FCH_GPIO_GPIO_GET_LEVEL(r)	bitx32(r, 10, 9)
@@ -232,7 +232,7 @@ MAKE_MMIO_FCH_REG_FN(GPIO, gpio, 4);
 #define	FCH_GPIO_GPIO_SET_INPUT(r, v)		bitset32(r, 16, 16, v)
 #define	FCH_GPIO_GPIO_SET_WAKE_S5(r, v)		bitset32(r, 15, 15, v)
 #define	FCH_GPIO_GPIO_SET_WAKE_S3(r, v)		bitset32(r, 14, 14, v)
-#define	FCH_GPIO_GPIO_SET_WAKE_SOI3(r, v)	bitset32(r, 13, 13, v)
+#define	FCH_GPIO_GPIO_SET_WAKE_S0I3(r, v)	bitset32(r, 13, 13, v)
 #define	FCH_GPIO_GPIO_SET_INT_EN(r, v)		bitset32(r, 12, 12, v)
 #define	FCH_GPIO_GPIO_SET_INT_STS_EN(r, v)	bitset32(r, 11, 11, v)
 #define	FCH_GPIO_GPIO_SET_LEVEL(r, v)		bitset32(r, 10, 9, v)

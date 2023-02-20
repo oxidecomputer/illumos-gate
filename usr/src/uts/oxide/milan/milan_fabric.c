@@ -336,6 +336,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/ddi.h>
 #include <sys/ksynch.h>
 #include <sys/pci.h>
 #include <sys/pci_cfgspace.h>
@@ -1583,6 +1584,142 @@ milan_board_type(const milan_fabric_t *fabric)
 	} else {
 		return (MBT_GIMLET);
 	}
+}
+
+/*
+ * We pass these functions 64 bits of debug data consisting of 32 bits of stage
+ * number and 8 bits containing the I/O die index for which to capture register
+ * values.  A value of 0xff, which is never valid for any I/O die, means capture
+ * all of them.  These inline functions encode and decode this argument; we use
+ * functions so they are typed.
+ */
+#define	MILAN_IODIE_MATCH_ANY	0xff
+
+static inline void *
+milan_pcie_dbg_cookie(milan_pcie_config_stage_t stage, uint8_t iodie)
+{
+	uintptr_t rv;
+
+	rv = (uintptr_t)stage;
+	rv |= ((uintptr_t)iodie) << 32;
+
+	return ((void *)rv);
+}
+
+static inline milan_pcie_config_stage_t
+milan_pcie_dbg_cookie_to_stage(void *arg)
+{
+	uintptr_t av = (uintptr_t)arg;
+
+	return ((milan_pcie_config_stage_t)(av & UINT32_MAX));
+}
+
+static inline uint8_t
+milan_pcie_dbg_cookie_to_iodie(void *arg)
+{
+	uintptr_t av = (uintptr_t)arg;
+
+	return ((uint8_t)(av >> 32));
+}
+
+static int
+milan_pcie_populate_core_dbg(milan_pcie_core_t *pc, void *arg)
+{
+	milan_pcie_config_stage_t stage = milan_pcie_dbg_cookie_to_stage(arg);
+	uint8_t iodie_match = milan_pcie_dbg_cookie_to_iodie(arg);
+	milan_pcie_dbg_t *dp = pc->mpc_dbg;
+
+	if (dp == NULL)
+		return (0);
+
+	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
+	    iodie_match != pc->mpc_ioms->mio_iodie->mi_node_id) {
+		return (0);
+	}
+
+	for (uint_t rn = 0; rn < dp->mpd_nregs; rn++) {
+		smn_reg_t reg;
+
+		reg = milan_pcie_core_reg(pc, dp->mpd_regs[rn].mprd_def);
+		dp->mpd_regs[rn].mprd_val[stage] =
+		    milan_pcie_core_read(pc, reg);
+		dp->mpd_regs[rn].mprd_ts[stage] = gethrtime();
+	}
+
+	dp->mpd_last_stage = stage;
+
+	return (0);
+}
+
+static int
+milan_pcie_populate_port_dbg(milan_pcie_port_t *port, void *arg)
+{
+	milan_pcie_config_stage_t stage = milan_pcie_dbg_cookie_to_stage(arg);
+	uint8_t iodie_match = milan_pcie_dbg_cookie_to_iodie(arg);
+	milan_pcie_dbg_t *dp = port->mpp_dbg;
+
+	if (dp == NULL)
+		return (0);
+
+	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
+	    iodie_match != port->mpp_core->mpc_ioms->mio_iodie->mi_node_id) {
+		return (0);
+	}
+
+	for (uint_t rn = 0; rn < dp->mpd_nregs; rn++) {
+		smn_reg_t reg;
+
+		reg = milan_pcie_port_reg(port, dp->mpd_regs[rn].mprd_def);
+		dp->mpd_regs[rn].mprd_val[stage] =
+		    milan_pcie_port_read(port, reg);
+		dp->mpd_regs[rn].mprd_ts[stage] = gethrtime();
+	}
+
+	dp->mpd_last_stage = stage;
+
+	return (0);
+}
+
+static void
+milan_pcie_populate_dbg(milan_fabric_t *fabric, milan_pcie_config_stage_t stage,
+    uint8_t iodie_match)
+{
+	static boolean_t gpio_configured;
+	void *cookie = milan_pcie_dbg_cookie(stage, iodie_match);
+
+	/*
+	 * On Gimlet, we want to signal via GPIO that we're collecting register
+	 * data.  While rev C boards have a number of accessible GPIOs -- though
+	 * intended for other uses -- rev B boards do not.  The only one that's
+	 * available on all rev B and C boards is AGPIO129, which is shared with
+	 * KBRST_L.  Nothing uses this GPIO at all, nor any of the other
+	 * functions associated with the pin, but it has a handy test point.  We
+	 * will toggle this pin's state each time we collect registers.  This
+	 * allows someone using a logic analyser to look at low-speed signals to
+	 * correlate those observations with these register values.  The
+	 * register values are not a snapshot, but we do collect the timestamp
+	 * associated with each one so it's at least possible to reassemble a
+	 * complete strip chart with coordinated timestamps.
+	 *
+	 * If this is the first time we're using the GPIO, we will reset its
+	 * output, then toggle it twice at 1 microsecond intervals to provide a
+	 * clear start time (since the GPIO was previously an input and would
+	 * have read at an undefined level).
+	 */
+	if (milan_board_type(fabric) == MBT_GIMLET) {
+		if (!gpio_configured) {
+			milan_hack_gpio(MHGOP_CONFIGURE, 129);
+			milan_hack_gpio(MHGOP_TOGGLE, 129);
+			drv_usecwait(1);
+			gpio_configured = B_TRUE;
+		}
+		milan_hack_gpio(MHGOP_TOGGLE, 129);
+	}
+
+	(void) milan_fabric_walk_pcie_core(fabric, milan_pcie_populate_core_dbg,
+	    cookie);
+	(void) milan_fabric_walk_pcie_port(fabric, milan_pcie_populate_port_dbg,
+	    cookie);
 }
 
 static void
@@ -4152,27 +4289,65 @@ milan_fabric_init_pcie_straps(milan_pcie_core_t *pc, void *arg)
 	return (0);
 }
 
-/*
- * Helper function for PCIe reset (PERST_L) deassertion.  Used only on Ethanol-X
- * during the DXIO state machine execution.  GPIOs are in two primary banks;
- * those above 255 are part of a different register block.
- */
-static void
-milan_perst_deassert(milan_iodie_t *iodie, uint16_t gpio)
+static int
+milan_fabric_setup_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
 {
-	smn_reg_t reg;
-	uint32_t val;
+	for (uint16_t portno = 0; portno < pc->mpc_nports; portno++) {
+		milan_pcie_port_t *port = &pc->mpc_ports[portno];
 
-	if (gpio < 256) {
-		reg = milan_iodie_reg(iodie, D_FCH_GPIO_GPIO, gpio);
-	} else {
-		reg = milan_iodie_reg(iodie, D_FCH_RMTGPIO_GPIO, gpio - 256);
+		if (port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) {
+			smn_reg_t reg;
+			uint32_t val;
+			uint8_t laneno;
+
+			/*
+			 * This is the first mapped port in this core.  Enable
+			 * core-level debugging capture for this port, and only
+			 * this port.
+			 */
+			reg = milan_pcie_core_reg(pc, D_PCIE_CORE_DBG_CTL);
+			val = milan_pcie_core_read(pc, reg);
+			val = PCIE_CORE_DBG_CTL_SET_PORT_EN(val, 1U << portno);
+			milan_pcie_core_write(pc, reg, val);
+
+			/*
+			 * Find the lowest-numbered core lane index in this port
+			 * and set up lane-level debugging capture for that
+			 * lane.  We could instead set this to the bitmask of
+			 * all the lanes in this port, but many of the values
+			 * captured are not counting statistics and it's unclear
+			 * what this would do -- it's quite likely that we would
+			 * end up with the bitwise OR of the values we'd get for
+			 * each lane, which isn't useful.
+			 *
+			 * We ignore reversal here, because our only real goal
+			 * is to make sure the lane we select is part of the
+			 * port we selected above.  Whether it's the "first" or
+			 * "last", assuming that the "first" might provide us
+			 * with additional useful data about the training and
+			 * width negotiation process, is difficult to know
+			 * without some additional experimentation.  We may also
+			 * want to consider whether in-package lane reversal
+			 * should be treated differently from on-board reversal.
+			 * For now we just select the lane with the lowest index
+			 * at the core.  If this ends up being needed for e.g.
+			 * an SI investigation, it will likely require some
+			 * additional knob to select a specific lane of
+			 * interest.
+			 */
+			laneno = port->mpp_engine->zde_start_lane -
+			    pc->mpc_dxio_lane_start;
+			reg = milan_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
+			val = milan_pcie_core_read(pc, reg);
+			val = PCIE_CORE_LC_DBG_CTL_SET_LANE_MASK(val,
+			    1U << laneno);
+			milan_pcie_core_write(pc, reg, val);
+
+			break;
+		}
 	}
 
-	val = FCH_GPIO_GPIO_SET_OUT_EN(0, 1);
-	val = FCH_GPIO_GPIO_SET_OUTPUT(val, FCH_GPIO_GPIO_OUTPUT_HIGH);
-	val = FCH_GPIO_GPIO_SET_DRVSTR(val, FCH_GPIO_GPIO_DRVSTR_3P3_40R);
-	milan_iodie_write(iodie, reg, val);
+	return (0);
 }
 
 /*
@@ -4213,6 +4388,9 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 			 * being used by devices or not.
 			 */
 			case MILAN_DXIO_SM_MAPPED:
+				milan_pcie_populate_dbg(&milan_fabric,
+				    MPCS_DXIO_SM_MAPPED, iodie->mi_node_id);
+
 				if (!milan_dxio_rpc_retrieve_engine(iodie)) {
 					return (1);
 				}
@@ -4232,12 +4410,28 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				(void) milan_fabric_walk_pcie_core(fabric,
 				    milan_fabric_init_pcie_straps, NULL);
 
+				/*
+				 * Set up the core-level debugging controls so
+				 * that we get extended data for the first port
+				 * in the core that's been mapped.
+				 */
+				(void) milan_fabric_walk_pcie_core(fabric,
+				    milan_fabric_setup_pcie_core_dbg, NULL);
+
 				cmn_err(CE_NOTE, "Finished writing PCIe "
 				    "straps.");
+				milan_pcie_populate_dbg(&milan_fabric,
+				    MPCS_DXIO_SM_MAPPED_RESUME,
+				    iodie->mi_node_id);
 				break;
 			case MILAN_DXIO_SM_CONFIGURED:
+				milan_pcie_populate_dbg(&milan_fabric,
+				    MPCS_DXIO_SM_CONFIGURED, iodie->mi_node_id);
 				cmn_err(CE_WARN, "XXX skipping a ton of "
 				    "configured stuff");
+				milan_pcie_populate_dbg(&milan_fabric,
+				    MPCS_DXIO_SM_CONFIGURED_RESUME,
+				    iodie->mi_node_id);
 				break;
 			case MILAN_DXIO_SM_DONE:
 				/*
@@ -4256,16 +4450,18 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 			}
 			break;
 		case MILAN_DXIO_DATA_TYPE_RESET:
+			milan_pcie_populate_dbg(&milan_fabric,
+			    MPCS_DXIO_SM_PERST, iodie->mi_node_id);
 			cmn_err(CE_WARN, "let's go deasserting: %x, %x",
 			    reply.mds_arg0, reply.mds_arg1);
 			if (reply.mds_arg0 == 0) {
 				cmn_err(CE_WARN, "Asked to set GPIO to zero, "
 				    "which  would PERST. Nope. Continuing?");
-				break;
+				goto perst_done;
 			}
 
 			if (milan_board_type(fabric) != MBT_ETHANOL)
-				break;
+				goto perst_done;
 
 			/*
 			 * Release PERST manually on Ethanol-X which requires
@@ -4283,14 +4479,24 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 			 * the DPIO subsystem itself yet.
 			 *
 			 * XXX The only other function on these pins is the PCIe
-			 * reset itself.  Can we assume the mux is passing the
-			 * GPIO function at this point?  If it's not, this will
-			 * do nothing.
+			 * reset itself.  We assume the mux is passing the GPIO
+			 * function at this point: if it's not, this will do
+			 * nothing unless we invoke MHGOP_CONFIGURE first.  This
+			 * also works only for socket 0; we can't access the FCH
+			 * on socket 1 because won't let us use SMN and we
+			 * haven't set up the secondary FCH aperture here.  This
+			 * most likely means the NVMe sockets won't work.
 			 */
-			milan_perst_deassert(iodie, 26);
-			milan_perst_deassert(iodie, 27);
-			milan_perst_deassert(iodie, 266);
-			milan_perst_deassert(iodie, 267);
+			if (iodie->mi_node_id == 0) {
+				milan_hack_gpio(MHGOP_SET, 26);
+				milan_hack_gpio(MHGOP_SET, 27);
+				milan_hack_gpio(MHGOP_SET, 266);
+				milan_hack_gpio(MHGOP_SET, 267);
+			}
+
+perst_done:
+			milan_pcie_populate_dbg(&milan_fabric,
+			    MPCS_DXIO_SM_PERST_RESUME, iodie->mi_node_id);
 			break;
 		case MILAN_DXIO_DATA_TYPE_NONE:
 			cmn_err(CE_WARN, "Got the none data type... are we "
@@ -4309,6 +4515,9 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 	}
 
 done:
+	milan_pcie_populate_dbg(&milan_fabric, MPCS_DXIO_SM_DONE,
+	    iodie->mi_node_id);
+
 	if (!milan_dxio_rpc_retrieve_engine(iodie)) {
 		return (1);
 	}
@@ -5692,6 +5901,42 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	return (B_TRUE);
 }
 
+#ifdef	DEBUG
+static int
+milan_fabric_init_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
+{
+	pc->mpc_dbg = kmem_zalloc(
+	    MILAN_PCIE_DBG_SIZE(milan_pcie_core_dbg_nregs), KM_SLEEP);
+	pc->mpc_dbg->mpd_nregs = milan_pcie_core_dbg_nregs;
+
+	for (uint_t rn = 0; rn < pc->mpc_dbg->mpd_nregs; rn++) {
+		milan_pcie_reg_dbg_t *rd = &pc->mpc_dbg->mpd_regs[rn];
+
+		rd->mprd_name = milan_pcie_core_dbg_regs[rn].mprd_name;
+		rd->mprd_def = milan_pcie_core_dbg_regs[rn].mprd_def;
+	}
+
+	return (0);
+}
+
+static int
+milan_fabric_init_pcie_port_dbg(milan_pcie_port_t *port, void *arg)
+{
+	port->mpp_dbg = kmem_zalloc(
+	    MILAN_PCIE_DBG_SIZE(milan_pcie_port_dbg_nregs), KM_SLEEP);
+	port->mpp_dbg->mpd_nregs = milan_pcie_port_dbg_nregs;
+
+	for (uint_t rn = 0; rn < port->mpp_dbg->mpd_nregs; rn++) {
+		milan_pcie_reg_dbg_t *rd = &port->mpp_dbg->mpd_regs[rn];
+
+		rd->mprd_name = milan_pcie_port_dbg_regs[rn].mprd_name;
+		rd->mprd_def = milan_pcie_port_dbg_regs[rn].mprd_def;
+	}
+
+	return (0);
+}
+#endif	/* DEBUG */
+
 /*
  * This is the main place where we basically do everything that we need to do to
  * get the PCIe engine up and running.
@@ -5707,6 +5952,17 @@ milan_fabric_init(void)
 	 * of the memory controller driver and broader policy rather than all
 	 * here right now.
 	 */
+
+	/*
+	 * These register debugging facilities are costly in both space and
+	 * time, and are enabled only on DEBUG kernels.
+	 */
+#ifdef	DEBUG
+	(void) milan_fabric_walk_pcie_core(fabric,
+	    milan_fabric_init_pcie_core_dbg, NULL);
+	(void) milan_fabric_walk_pcie_port(fabric,
+	    milan_fabric_init_pcie_port_dbg, NULL);
+#endif
 
 	/*
 	 * When we come out of reset, the PSP and/or SMU have set up our DRAM
@@ -5834,6 +6090,8 @@ milan_fabric_init(void)
 	 *
 	 * XXX htf do we want to handle errors
 	 */
+	milan_pcie_populate_dbg(&milan_fabric, MPCS_PRE_DXIO_INIT,
+	    MILAN_IODIE_MATCH_ANY);
 	if (milan_fabric_walk_iodie(fabric, milan_dxio_init, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
@@ -5858,6 +6116,8 @@ milan_fabric_init(void)
 		return;
 	}
 
+	milan_pcie_populate_dbg(&milan_fabric, MPCS_DXIO_SM_START,
+	    MILAN_IODIE_MATCH_ANY);
 	if (milan_fabric_walk_iodie(fabric, milan_dxio_state_machine, NULL) !=
 	    0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to walk "
@@ -5885,11 +6145,16 @@ milan_fabric_init(void)
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
 	 */
+	milan_pcie_populate_dbg(&milan_fabric, MPCS_PRE_HOTPLUG,
+	    MILAN_IODIE_MATCH_ANY);
 	if (!milan_hotplug_init(fabric)) {
 		cmn_err(CE_WARN, "Eh, just don't unplug anything. I'm sure it "
 		    "will be fine. Not like someone's going to come and steal "
 		    "your silmarils");
 	}
+
+	milan_pcie_populate_dbg(&milan_fabric, MPCS_POST_HOTPLUG,
+	    MILAN_IODIE_MATCH_ANY);
 
 	/*
 	 * XXX At some point, maybe not here, but before we really go too much

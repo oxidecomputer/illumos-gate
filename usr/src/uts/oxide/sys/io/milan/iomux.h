@@ -49,6 +49,20 @@ extern "C" {
  * Pinmux function values.
  */
 
+/*
+ * Documentation is inconsistent with respect to the names of the GPIO functions
+ * associated with this pin: EGPIO_26 == EGPIO26_0 and EGPIO27 == EGPIO26_3.
+ */
+#define	MILAN_FCH_IOMUX_26_PCIE_RST0_L	0
+#define	MILAN_FCH_IOMUX_26_EGPIO26	1
+#define	MILAN_FCH_IOMUX_26_EGPIO26_0	1
+#define	MILAN_FCH_IOMUX_27_PCIE_RST3_L	0
+#define	MILAN_FCH_IOMUX_27_EGPIO27	1
+#define	MILAN_FCH_IOMUX_27_EGPIO26_3	1
+
+#define	MILAN_FCH_IOMUX_129_KBRST_L		0
+#define	MILAN_FCH_IOMUX_129_GPIO129		2
+
 #define	MILAN_FCH_IOMUX_135_UART0_CTS_L	0
 #define	MILAN_FCH_IOMUX_136_UART0_RXD		0
 #define	MILAN_FCH_IOMUX_137_UART0_RTS_L	0
@@ -60,6 +74,11 @@ extern "C" {
 #define	MILAN_FCH_IOMUX_142_UART1_RTS_L	0
 #define	MILAN_FCH_IOMUX_143_UART1_TXD		0
 #define	MILAN_FCH_IOMUX_144_GPIO144		1
+
+#define	MILAN_FCH_RMTMUX_10_PCIE_RST1_L		0
+#define	MILAN_FCH_RMTMUX_10_EGPIO26_1		1
+#define	MILAN_FCH_RMTMUX_11_PCIE_RST2_L		0
+#define	MILAN_FCH_RMTMUX_11_EGPIO26_2		1
 
 
 #ifdef __cplusplus
