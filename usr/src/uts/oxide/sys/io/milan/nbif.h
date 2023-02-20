@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_NBIF_H
@@ -38,6 +38,11 @@ struct milan_nbif;
 
 typedef struct milan_nbif milan_nbif_t;
 
+/*
+ * There are always three primary NBIFs in each NBIO unit, but only two of the
+ * SYSHUB NBIFs in alternate space.  These definitions live here because they
+ * are consumed by the register calculations below.
+ */
 #define	MILAN_IOMS_MAX_NBIF		3
 #define	MILAN_IOMS_MAX_NBIF_ALT		2
 #define	MILAN_NBIF_MAX_DEVS	3

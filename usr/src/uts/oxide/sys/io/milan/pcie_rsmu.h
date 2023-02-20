@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_RSMU_H
@@ -41,7 +41,8 @@ extern "C" {
  * srd_nents and srd_stride (more pointedly: they must not be set); each
  * register in this block has a number of instances that depend upon the unit (1
  * per IOMS) and the aperture base is effectively formed by both the unit and
- * register instance numbers.  Registers are 32 bits wide, however.
+ * register instance numbers.  Registers are 32 bits wide, however.  There is
+ * one instance per PCIe root complex.
  */
 
 static inline smn_reg_t
@@ -60,7 +61,7 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_RSMU_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t nents = (const uint32_t)milan_nbio_n_pcie_ports(iomsno);
+	const uint32_t nents = (const uint32_t)milan_nbio_n_pcie_cores(iomsno);
 	ASSERT3U(nents, >, reginst32);
 #endif	/* DEBUG */
 
@@ -77,7 +78,13 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 
 /*
  * Strap settings are accessed via the RSMU via this indirect index/data pair;
- * the registers are undocumented and their names are not known.
+ * their AMD names are
+ * SMU::RSMU::RSMU::PCIE0::MMIOEXT::RSMU_SW_STRAPRX_ADDR_PCIE0 and
+ * SMU::RSMU::RSMU::PCIE0::MMIOEXT::RSMU_SW_STRAPRX_DATA_PCIE0.  An associated
+ * register SMU::RSMU::RSMU::PCIE0::MMIOEXT::RSMU_SW_STRAP_CONTROL_PCIE0 is used
+ * to trigger reloading of straps but it not currently used by our code and its
+ * relationship with the PCIe internal configuration state machine is
+ * undocumented.
  */
 /*CSTYLED*/
 #define	D_PCIE_RSMU_STRAP_ADDR	(const smn_reg_def_t){	\
@@ -1048,12 +1055,12 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	MILAN_STRAP_PCIE_SWUS_OBFF_SUP		0xd0
 
 /*
- * At this point all of our PCIe straps are now changed to be per-logical
- * bridge. Each of the 8 bridges all have the same set of straps; however, each
+ * At this point all of our PCIe straps are now changed to be per port.
+ * Each of the 8 possible ports all have the same set of straps; however, each
  * one is 0x61 off from one another (or put differently there are 0x61 straps
- * per bridge).
+ * per port).
  */
-#define	MILAN_STRAP_PCIE_NUM_PER_BRIDGE		0x61
+#define	MILAN_STRAP_PCIE_NUM_PER_PORT		0x61
 
 /*
  * 0xd1 is reserved

@@ -18,18 +18,258 @@
  * Milan's I/O fabric. This consists of both the data fabric and the
  * northbridges.
  *
- * ---------------------
- * Physical Organization
- * ---------------------
+ * --------------------------------------
+ * Physical Organization and Nomenclature
+ * --------------------------------------
  *
  * In AMD's Zen 2 and 3 designs, the CPU socket is organized as a series of
  * chiplets with a series of compute complexes and then a central I/O die.
- * cpuid.c has an example of what this looks like. Critically, this I/O die is
- * the major device that we are concerned with here as it bridges the cores to
- * basically the outside world through a combination of different devices and
- * I/O paths.
+ * uts/intel/os/cpuid.c has an example of what this looks like. Critically, this
+ * I/O die is the major device that we are concerned with here as it bridges the
+ * cores to basically the outside world through a combination of different
+ * devices and I/O paths.  The part of the I/O die that we will spend most of
+ * our time dealing with is the "northbridge I/O unit", or NBIO.  In DF (Zen
+ * data fabric) terms, NBIOs are a class of device called an IOMS (I/O
+ * master-slave).  These are represented in our fabric data structures as
+ * subordinate to an I/O die.  On Milan processors, each I/O die has 4 NBIO
+ * instances; other processor families have these in differing number or
+ * organisation.  Since we're interested in Zen 3 here (and since Zen 2 and 4
+ * are very similar), let's expand the I/O Die portion of the Zen 2 diagram from
+ * cpuid.c:
  *
- * XXX More on physical organization, terms, and related. ASCII art.
+ *                      P  P  P  data fabric  P     P
+ *                      P  P  P       |       P     P
+ *             +--------P--P--P-------|-------P-----P--------+
+ *             |        P  P  P       |       P     P        |
+ *             |    +-------------+   |   +-------------+    |
+ *             |    |             |   |   |             |    |
+ *             |    |   NBIO 0    +---+---+   NBIO 1    |    |
+ *             |    |   (IOMS)    |   |   |   (IOMS)    |    |
+ *             |    |             |   |   |             |    |
+ *             |    +-------------+   |   +-------------+    |
+ *             |                      |                      |
+ *             |                      |                      |
+ *             |    +-------------+   |   +-------------+    |
+ *         MMMMMMMMM|     UMC     +---+---+     UMC     |    |
+ *             |    |    (CS)     |   |   |    (CS)     |MMMMMMMMM
+ *             |    +-------------+   |   +-------------+    |
+ *             |                      |                      |
+ *             |    +-------------+   |   +-------------+    |
+ *         MMMMMMMMM|     UMC     +---+---+     UMC     |    |
+ *             |    |    (CS)     |   |   |    (CS)     |MMMMMMMMM
+ *             |    +-------------+   |   +-------------+    |
+ *             |                      |                      |
+ *             |    +-------------+   |                      |
+ *             |    |     MP0     |   |                      |
+ *             |    +-------------+   |                      |
+ *             |                      |                      |
+ *             |    +-------------+   |                      |
+ *             |    |     MP1     |   |                      |
+ *             |    +-------------+   |                      |
+ *             |                      |                      |
+ *             |    +-------------+   |   +-------------+    |
+ *         MMMMMMMMM|     UMC     |   |   |     UMC     |    |
+ *                  |    (CS)     +---+---+    (CS)     |MMMMMMMMM
+ *             |    +-------------+   |   +-------------+    |
+ *             |                      |                      |
+ *             |    +-------------+   |   +-------------+    |
+ *         MMMMMMMMM|     UMC     |   |   |     UMC     |    |
+ *                  |    (CS)     +---+---+    (CS)     |MMMMMMMMM
+ *             |    +-------------+   |   +-------------+    |
+ *             |                      |                      |
+ *             |                      |                      |
+ *             |                      |   +-------------+    |
+ *             |                      |   |     FCH     |    |
+ *             |                      |   +------+------+    |
+ *             |                      |          |           |
+ *             |    +-------------+   |   +------+------+    |
+ *             |    |             |   |   |             |    |
+ *             |    |   NBIO 2    |   |   |   NBIO 3    |    |
+ *             |    |   (IOMS)    +---+---+   (IOMS)    |    |
+ *             |    |             |   |   |             |    |
+ *             |    +-------------+   |   +-------------+    |
+ *             |        P     P       |       P     P        |
+ *             +--------P-----P-------|-------P-----P--------+
+ *                      P     P       |       P     P
+ *                               DF to second
+ *                              socket via xGMI
+ *
+ * Each NBIO instance implements, among other things, a PCIe root complex (RC),
+ * consisting of two major components: an I/O hub core (IOHC) that implements
+ * the host side of the RC, and two or three PCIe cores that implement the PCIe
+ * side.  The IOHC appears in PCI configuration space as a root complex and is
+ * the attachment point for npe(4d).  The PCIe cores do not themselves appear in
+ * config space; however, each implements up to 8 PCIe root ports, and each root
+ * port has an associated host bridge that appears in configuration space.
+ * Externally-attached PCIe devices are enumerated under these bridges, and the
+ * bridge provides the standard PCIe interface to the downstream port including
+ * link status and control.
+ *
+ * Two of the NBIO instances are somewhat special and merit brief additional
+ * discussion.  Instance 0 has a third PCIe core, which is associated with the 2
+ * lanes that would otherwise be used for WAFL, and can form either 2 x1 ports
+ * or a single x2 port.  Instance 3 has the Fusion Controller Hub (FCH) attached
+ * to it; the FCH doesn't contain any real PCIe devices, but it does contain
+ * some fake ones and from what we can tell the NBIO is the DF endpoint where
+ * MMIO transactions targeting the FCH are directed.
+ *
+ * The UMCs are instances of CS (coherent slave) DF components; we do not
+ * discuss them further here, but details may be found in
+ * uts/intel/sys/amdzen/umc.h and uts/intel/io/amdzen/zen_umc.c.
+ *
+ * This is still a grossly simplified diagram: WAFL (GMI-over-PCIe x1) and xGMI
+ * (GMI-over-PCIe x16) are merely protocols sitting atop PCIe phys.  Each lane
+ * has an entire collection of phy-related logic that is also part of the I/O
+ * die but not part of the NBIO; this layer is known as direct crossbar I/O
+ * (DXIO), and contains logic that can multiplex a subset of the phys among
+ * protocols, including SATA if so configured.  WAFL and xGMI are used only in
+ * 2-socket (2S) configurations such as the Ethanol-X reference board supported
+ * by this code; these protocols and their phys are set up before we gain
+ * control, which conveniently allows us to access the remote socket as part of
+ * a single DF.  We do not support SATA at all, even on Ethanol-X which
+ * implements it in hardware, so it's not discussed further.  In addition to the
+ * extra complexity toward the periphery, there is also some additional
+ * complexity toward the interior: each component on the DF has a block of logic
+ * called a scalable data port (SDP) that provides the interface between the
+ * component and the DF.  Independent of this, at least conceptually, is the
+ * system management network (SMN, also called the scalable control fabric),
+ * used to access most of the logic in these components; each SMN endpoint also
+ * contains a remote system management unit (RSMU) that manages the control
+ * interface.  SMN has its own address space entirely separate from the "main"
+ * (RAM, MMIO, etc.) address space routed over the DF, and the level of
+ * granularity associated with SMN endpoints and RSMUs is much finer than the
+ * level associated with DF components.  Additional detail on the SMN may be
+ * found in uts/intel/sys/amdzen/smn.h.  There are undoubtedly yet more layers
+ * so undocumented that we remain ignorant of their existence, never mind their
+ * function.
+ *
+ * With all that in mind, let's zoom in one more time on the part of the I/O die
+ * around one of the typical NBIO instances:
+ *
+ *               SMN                                         DF
+ *                |                                          |
+ *         ~ ~ ~ ~|~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ | ~ ~
+ *             |  |   I/O die                                |
+ *             |  |                                          |
+ *             |  |  +------------------------------------+  |
+ *             |  |  | NBIO 2                             |  |
+ *             |  |  |                                    |  |
+ *             |  |  |         +---------------+          |  |
+ *             |  |  |  +------|               |-----+    |  |
+ *             |  +-----+ RSMU |     IOHC      | SDP +-------+
+ *             |  |  |  +------|               |-----+    |  |
+ *             |  |  |         +----+---------++          |  |
+ *             |  |  |              |         |           |  |
+ *             |  |  |              |         |           |  |
+ *             |  |  |         +----+------+  |           |  |
+ *             |  |  |  +------|   PCIe    |  |           |  |
+ *             |  +-----+ RSMU |  Core 0   |  |           |  |
+ *             |  |  |  +------|-----------+  |           |  |
+ *             |  |  |         | P | P |   |  |           |  |
+ *             |  |  |         | o | o | . |  |           |  |
+ *             |  |  |         | r | r | . |  |           |  |
+ *             |  |  |         | t | t | . |  |           |  |
+ *             |  |  |         |   |   |   |  |           |  |
+ *             |  |  |         | A | B |   |  |           |  |
+ *             |  |  |         +-+-+---+---+  |           |  |
+ *             |  |  |           |            |           |  |
+ *             |  |  |        +--+            |           |  |
+ *             |  |  |        |          +----+------+    |  |
+ *             |  |  |        |   +------|   PCIe    |    |  |
+ *             |  +---------------+ RSMU |  Core 1   |    |  |
+ *             |  |  |        |   +------|-----------+    |  |
+ *             |  |  |        |          | P | P |   |    |  |
+ *             |  |  |        |          | o | o | . |    |  |
+ *             |  |  |        |          | r | r | . |    |  |
+ *             |  |  |        |          | t | t | . |    |  |
+ *             |  |  |        |          |   |   |   |    |  |
+ *             |  |  |        |          | A | B |   |    |  |
+ *             |  |  |        +--+       +-+-+-+-+---+    |  |
+ *             |  |  |           |         |   |          |  |
+ *             |  |  +-----------|---------|---|----------+  |
+ *             |  |              |         |   |             |
+ *             |  |            +-+---------+---+-----+       |
+ *             |  |     +------|                     |       |
+ *             |  +-----+ RSMU |        DXIO         |       |
+ *             |        +------|                     |       |
+ *             |               +---------------------+       |
+ *             |               | P | P | P | P |     |       |
+ *             |               | h | h | h | h |  .  |       |
+ *             |               | y | y | y | y |  .  |       |
+ *             |               |   |   |   |   |  .  |       |
+ *             |               | 0 | 1 | 2 | 3 |     |       |
+ *             +---------------+---+---+---+---+-----+-------+
+ *                               P   P   P   P
+ *                               P   P   P   P
+ *
+ * While the detail of the DXIO subsystem is not shown here, diagrams may be
+ * found in chapter 16 of the PPR.  There are also components including the
+ * IOAGR and IOMMU that exist in each NBIO but are not shown here.  The SDP also
+ * has some additional components, including a mux that we configure in the code
+ * below.  The intent here is not to replicate the PPR but to give the reader a
+ * high-level sense of how these components fit together and correspond to the
+ * data structures we employ.  One additional component of the NBIO merits a
+ * brief mention: NBIFs (northbridge interfaces) are effectively peers of PCIe
+ * cores; however, they do not have an externally-visible port or phys
+ * associated with them.  Instead, they are connected internally to other logic
+ * on the I/O die that provides peripherals such as SATA and USB controllers.
+ * These devices appear in PCI configuration space and are enumerated as true
+ * PCIe devices; they even have link control and status capabilities like a PCIe
+ * device with a port would.  We perform minimal configuration of the NBIFs; the
+ * peripherals to which they provide access are not supported on this
+ * architecture.
+ *
+ * --------------
+ * Representation
+ * --------------
+ *
+ * We represent the NBIO entities described above and the CPU core entities
+ * described in cpuid.c in a hierarchical fashion:
+ *
+ * milan_fabric_t (DF -- root)
+ * |
+ * \-- milan_soc_t (qty 1 or 2)
+ *     |
+ *     \-- milan_iodie_t (qty 1)
+ *         |
+ *         +-- milan_ioms_t (qty 4, one per NBIO)
+ *         |   |
+ *         |   +-- milan_pcie_core_t (qty 2, except 3 for IOMS 0)
+ *         |   |   |
+ *         |   |   \-- milan_pcie_port_t (qty 8, except 2 for IOMS 0 RC 2)
+ *         |   |
+ *         |   \-- milan_nbif_t (qty 3 + 2 in "alternate space")
+ *         |
+ *         \-- milan_ccd_t (qty varies 1-8)
+ *             |
+ *             \-- milan_ccx_t (qty 1)
+ *                 |
+ *                 \-- milan_core_t (qty varies 4-8)
+ *                     |
+ *                     \-- milan_thread_t (qty 2, unless SMT is disabled)
+ *
+ * The PCIe bridge does not have its own representation in this schema, but is
+ * represented as a B/D/F associated with a PCIe port.  That B/D/F provides the
+ * standard PCIe bridge interfaces associated with a root port and host bridge.
+ *
+ * For our purposes, each PCIe core is associated with an instance of the
+ * PCIECORE register block and an RSMU (remote system management unit) register
+ * block.  These implementation-specific registers control the PCIe core logic.
+ * Each root port is associated with an instance of the PCIEPORT register block
+ * and the standard PCIe-defined registers of the host bridge which AMD refers
+ * to as PCIERCCFG.  Note that the MP1 DXIO firmware also accesses at least some
+ * of the PCIECORE, PCIEPORT, and the SMU::RSMU::RSMU::PCIE0::MMIOEXT registers,
+ * and a limited set of fields in the standard bridge registers associated with
+ * hotplug are controlled by that firmware as well, though the intent is that
+ * they are controlled in standards-compliant ways.  These associations allow us
+ * to obtain SMN register instances from a pointer to the entity to which those
+ * registers pertain.
+ *
+ * ------------------
+ * PCIe Configuration
+ * ------------------
+ *
+ * XXX First figure out how this works, then describe it.
  *
  * -------------------
  * Resource Allocation
@@ -163,16 +403,16 @@ typedef struct milan_dxio_rpc {
 	uint32_t	mdr_arg3;
 } milan_dxio_rpc_t;
 
-typedef struct milan_bridge_info {
-	uint8_t	mpbi_dev;
-	uint8_t	mpbi_func;
-} milan_bridge_info_t;
+typedef struct milan_pcie_port_info {
+	uint8_t	mppi_dev;
+	uint8_t	mppi_func;
+} milan_pcie_port_info_t;
 
 /*
  * These three tables encode knowledge about how the SoC assigns devices and
  * functions to root ports.
  */
-static const milan_bridge_info_t milan_pcie0[MILAN_IOMS_MAX_PCIE_BRIDGES] = {
+static const milan_pcie_port_info_t milan_pcie0[MILAN_PCIE_CORE_MAX_PORTS] = {
 	{ 0x1, 0x1 },
 	{ 0x1, 0x2 },
 	{ 0x1, 0x3 },
@@ -183,7 +423,7 @@ static const milan_bridge_info_t milan_pcie0[MILAN_IOMS_MAX_PCIE_BRIDGES] = {
 	{ 0x2, 0x1 }
 };
 
-static const milan_bridge_info_t milan_pcie1[MILAN_IOMS_MAX_PCIE_BRIDGES] = {
+static const milan_pcie_port_info_t milan_pcie1[MILAN_PCIE_CORE_MAX_PORTS] = {
 	{ 0x3, 0x1 },
 	{ 0x3, 0x2 },
 	{ 0x3, 0x3 },
@@ -194,15 +434,16 @@ static const milan_bridge_info_t milan_pcie1[MILAN_IOMS_MAX_PCIE_BRIDGES] = {
 	{ 0x4, 0x1 }
 };
 
-static const milan_bridge_info_t milan_pcie2[MILAN_IOMS_WAFL_PCIE_NBRIDGES] = {
+static const milan_pcie_port_info_t milan_pcie2[MILAN_PCIE_CORE_WAFL_NPORTS] = {
 	{ 0x5, 0x1 },
 	{ 0x5, 0x2 }
 };
 
 /*
- * These are internal bridges that correspond to NBIFs.
+ * These are internal bridges that correspond to NBIFs; they are modeled as
+ * ports but there is no physical port brought out of the package.
  */
-static const milan_bridge_info_t milan_int_bridges[4] = {
+static const milan_pcie_port_info_t milan_int_ports[4] = {
 	{ 0x7, 0x1 },
 	{ 0x8, 0x1 },
 	{ 0x8, 0x2 },
@@ -297,20 +538,20 @@ static const milan_nbif_info_t milan_nbif2[MILAN_NBIF2_NFUNCS] = {
 
 /*
  * This structure and the following table encodes the mapping of the set of dxio
- * lanes to a give PCIe port on an IOMS. This is ordered such that all of the
- * normal engines are present; however, the wafl port, being special is not
+ * lanes to a given PCIe core on an IOMS. This is ordered such that all of the
+ * normal engines are present; however, the wafl core, being special is not
  * here. The dxio engine uses different lane numbers than the phys. Note, that
  * all lanes here are inclusive. e.g. [start, end].
  */
-typedef struct milan_pcie_port_info {
-	const char	*mppi_name;
-	uint16_t	mppi_dxio_start;
-	uint16_t	mppi_dxio_end;
-	uint16_t	mppi_phy_start;
-	uint16_t	mppi_phy_end;
-} milan_pcie_port_info_t;
+typedef struct milan_pcie_core_info {
+	const char	*mpci_name;
+	uint16_t	mpci_dxio_start;
+	uint16_t	mpci_dxio_end;
+	uint16_t	mpci_phy_start;
+	uint16_t	mpci_phy_end;
+} milan_pcie_core_info_t;
 
-static const milan_pcie_port_info_t milan_lane_maps[8] = {
+static const milan_pcie_core_info_t milan_lane_maps[8] = {
 	{ "G0", 0x10, 0x1f, 0x10, 0x1f },
 	{ "P0", 0x2a, 0x39, 0x00, 0x0f },
 	{ "P1", 0x3a, 0x49, 0x20, 0x2f },
@@ -321,32 +562,33 @@ static const milan_pcie_port_info_t milan_lane_maps[8] = {
 	{ "G2", 0x82, 0x91, 0x40, 0x4f }
 };
 
-static const milan_pcie_port_info_t milan_wafl_map = {
+static const milan_pcie_core_info_t milan_wafl_map = {
 	"WAFL", 0x24, 0x25, 0x80, 0x81
 };
 
 /*
- * How many PCIe ports (root complexes) does this NBIO instance have?
+ * How many PCIe cores does this NBIO instance have?
  */
 uint8_t
-milan_nbio_n_pcie_ports(const uint8_t nbno)
+milan_nbio_n_pcie_cores(const uint8_t nbno)
 {
 	if (nbno == MILAN_IOMS_HAS_WAFL)
-		return (MILAN_IOMS_MAX_PCIE_PORTS);
-	return (MILAN_IOMS_MAX_PCIE_PORTS - 1);
+		return (MILAN_IOMS_MAX_PCIE_CORES);
+	return (MILAN_IOMS_MAX_PCIE_CORES - 1);
 }
 
 /*
- * How many PCIe bridges does this port (root complex) instance have?  Not all
- * bridges are necessarily enabled; this is used to compute the locations of
- * register blocks that pertain to the bridge that may exist.
+ * How many PCIe ports does this core instance have?  Not all ports are
+ * necessarily enabled, and ports that are disabled may have their associated
+ * bridges hidden; this is used to compute the locations of register blocks that
+ * pertain to the port that may exist.
  */
 uint8_t
-milan_pcie_port_n_bridges(const uint8_t portno)
+milan_pcie_core_n_ports(const uint8_t pcno)
 {
-	if (portno == MILAN_IOMS_WAFL_PCIE_PORT)
-		return (MILAN_IOMS_WAFL_PCIE_NBRIDGES);
-	return (MILAN_IOMS_MAX_PCIE_BRIDGES);
+	if (pcno == MILAN_IOMS_WAFL_PCIE_CORENO)
+		return (MILAN_PCIE_CORE_WAFL_NPORTS);
+	return (MILAN_PCIE_CORE_MAX_PORTS);
 }
 
 typedef enum milan_iommul1_subunit {
@@ -473,19 +715,54 @@ milan_fabric_walk_nbif(milan_fabric_t *fabric, milan_nbif_cb_f func, void *arg)
 	    &cb));
 }
 
+typedef struct milan_fabric_pcie_core_cb {
+	milan_pcie_core_cb_f	mfpcc_func;
+	void			*mfpcc_arg;
+} milan_fabric_pcie_core_cb_t;
+
+static int
+milan_fabric_walk_pcie_core_cb(milan_ioms_t *ioms, void *arg)
+{
+	milan_fabric_pcie_core_cb_t *cb = arg;
+
+	for (uint_t pcno = 0; pcno < ioms->mio_npcie_cores; pcno++) {
+		int ret;
+		milan_pcie_core_t *pc = &ioms->mio_pcie_cores[pcno];
+
+		ret = cb->mfpcc_func(pc, cb->mfpcc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+static int
+milan_fabric_walk_pcie_core(milan_fabric_t *fabric, milan_pcie_core_cb_f func,
+    void *arg)
+{
+	milan_fabric_pcie_core_cb_t cb;
+
+	cb.mfpcc_func = func;
+	cb.mfpcc_arg = arg;
+	return (milan_fabric_walk_ioms(fabric, milan_fabric_walk_pcie_core_cb,
+	    &cb));
+}
+
 typedef struct milan_fabric_pcie_port_cb {
 	milan_pcie_port_cb_f	mfppc_func;
 	void			*mfppc_arg;
 } milan_fabric_pcie_port_cb_t;
 
 static int
-milan_fabric_walk_pcie_port_cb(milan_ioms_t *ioms, void *arg)
+milan_fabric_walk_pcie_port_cb(milan_pcie_core_t *pc, void *arg)
 {
 	milan_fabric_pcie_port_cb_t *cb = arg;
 
-	for (uint_t portno = 0; portno < ioms->mio_npcie_ports; portno++) {
+	for (uint_t portno = 0; portno < pc->mpc_nports; portno++) {
 		int ret;
-		milan_pcie_port_t *port = &ioms->mio_pcie_ports[portno];
+		milan_pcie_port_t *port = &pc->mpc_ports[portno];
 
 		ret = cb->mfppc_func(port, cb->mfppc_arg);
 		if (ret != 0) {
@@ -504,44 +781,8 @@ milan_fabric_walk_pcie_port(milan_fabric_t *fabric, milan_pcie_port_cb_f func,
 
 	cb.mfppc_func = func;
 	cb.mfppc_arg = arg;
-	return (milan_fabric_walk_ioms(fabric, milan_fabric_walk_pcie_port_cb,
-	    &cb));
-}
-
-typedef struct milan_fabric_bridge_cb {
-	milan_bridge_cb_f	mfbc_func;
-	void			*mfbc_arg;
-} milan_fabric_bridge_cb_t;
-
-static int
-milan_fabric_walk_bridge_cb(milan_pcie_port_t *port, void *arg)
-{
-	milan_fabric_bridge_cb_t *cb = arg;
-
-	for (uint_t bridgeno = 0; bridgeno < port->mpp_nbridges;
-	    bridgeno++) {
-		int ret;
-		milan_pcie_bridge_t *bridge = &port->mpp_bridges[bridgeno];
-
-		ret = cb->mfbc_func(bridge, cb->mfbc_arg);
-		if (ret != 0) {
-			return (ret);
-		}
-	}
-
-	return (0);
-}
-
-static int
-milan_fabric_walk_bridge(milan_fabric_t *fabric, milan_bridge_cb_f func,
-    void *arg)
-{
-	milan_fabric_bridge_cb_t cb;
-
-	cb.mfbc_func = func;
-	cb.mfbc_arg = arg;
-	return (milan_fabric_walk_pcie_port(fabric, milan_fabric_walk_bridge_cb,
-	    &cb));
+	return (milan_fabric_walk_pcie_core(fabric,
+	    milan_fabric_walk_pcie_port_cb, &cb));
 }
 
 typedef struct milan_fabric_ccd_cb {
@@ -735,26 +976,26 @@ milan_fabric_find_ioms_by_bus(milan_fabric_t *fabric, uint32_t pci_bus)
 }
 
 typedef struct {
-	const milan_iodie_t *mffp_iodie;
-	uint16_t mffp_start;
-	uint16_t mffp_end;
-	milan_pcie_port_t *mffp_port;
-} milan_fabric_find_port_t;
+	const milan_iodie_t *mffpc_iodie;
+	uint16_t mffpc_start;
+	uint16_t mffpc_end;
+	milan_pcie_core_t *mffpc_pc;
+} milan_fabric_find_pcie_core_t;
 
 static int
-milan_fabric_find_port_by_lanes_cb(milan_pcie_port_t *port, void *arg)
+milan_fabric_find_pcie_core_by_lanes_cb(milan_pcie_core_t *pc, void *arg)
 {
-	milan_fabric_find_port_t *mffp = arg;
+	milan_fabric_find_pcie_core_t *mffpc = arg;
 
-	if (mffp->mffp_iodie != port->mpp_ioms->mio_iodie) {
+	if (mffpc->mffpc_iodie != pc->mpc_ioms->mio_iodie) {
 		return (0);
 	}
 
-	if (mffp->mffp_start >= port->mpp_dxio_lane_start &&
-	    mffp->mffp_start <= port->mpp_dxio_lane_end &&
-	    mffp->mffp_end >= port->mpp_dxio_lane_start &&
-	    mffp->mffp_end <= port->mpp_dxio_lane_end) {
-		mffp->mffp_port = port;
+	if (mffpc->mffpc_start >= pc->mpc_dxio_lane_start &&
+	    mffpc->mffpc_start <= pc->mpc_dxio_lane_end &&
+	    mffpc->mffpc_end >= pc->mpc_dxio_lane_start &&
+	    mffpc->mffpc_end <= pc->mpc_dxio_lane_end) {
+		mffpc->mffpc_pc = pc;
 		return (1);
 	}
 
@@ -762,22 +1003,22 @@ milan_fabric_find_port_by_lanes_cb(milan_pcie_port_t *port, void *arg)
 }
 
 
-static milan_pcie_port_t *
-milan_fabric_find_port_by_lanes(milan_iodie_t *iodie,
+static milan_pcie_core_t *
+milan_fabric_find_pcie_core_by_lanes(milan_iodie_t *iodie,
     uint16_t start, uint16_t end)
 {
-	milan_fabric_find_port_t mffp;
+	milan_fabric_find_pcie_core_t mffpc;
 
-	mffp.mffp_iodie = iodie;
-	mffp.mffp_start = start;
-	mffp.mffp_end = end;
-	mffp.mffp_port = NULL;
+	mffpc.mffpc_iodie = iodie;
+	mffpc.mffpc_start = start;
+	mffpc.mffpc_end = end;
+	mffpc.mffpc_pc = NULL;
 	ASSERT3U(start, <=, end);
 
-	(void) milan_fabric_walk_pcie_port(iodie->mi_soc->ms_fabric,
-	    milan_fabric_find_port_by_lanes_cb, &mffp);
+	(void) milan_fabric_walk_pcie_core(iodie->mi_soc->ms_fabric,
+	    milan_fabric_find_pcie_core_by_lanes_cb, &mffpc);
 
-	return (mffp.mffp_port);
+	return (mffpc.mffpc_pc);
 }
 
 typedef struct milan_fabric_find_thread {
@@ -1006,66 +1247,21 @@ milan_smn_write(milan_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
  */
 
 static smn_reg_t
-milan_pcie_bridge_reg(const milan_pcie_bridge_t *const bridge,
+milan_pcie_port_reg(const milan_pcie_port_t *const port,
     const smn_reg_def_t def)
 {
-	milan_pcie_port_t *port = bridge->mpb_port;
-	milan_ioms_t *ioms = port->mpp_ioms;
+	milan_pcie_core_t *pc = port->mpp_core;
+	milan_ioms_t *ioms = pc->mpc_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOHCDEV_PCIE:
 		reg = milan_iohcdev_pcie_smn_reg(ioms->mio_num, def,
-		    port->mpp_portno, bridge->mpb_bridgeno);
+		    pc->mpc_coreno, port->mpp_portno);
 		break;
 	case SMN_UNIT_PCIE_PORT:
 		reg = milan_pcie_port_smn_reg(ioms->mio_num, def,
-		    port->mpp_portno, bridge->mpb_bridgeno);
-		break;
-	default:
-		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe "
-		    "bridge", def.srd_unit);
-	}
-
-	return (reg);
-}
-
-static uint32_t
-milan_pcie_bridge_read(milan_pcie_bridge_t *bridge, const smn_reg_t reg)
-{
-	milan_iodie_t *iodie = bridge->mpb_port->mpp_ioms->mio_iodie;
-
-	return (milan_smn_read(iodie, reg));
-}
-
-static void
-milan_pcie_bridge_write(milan_pcie_bridge_t *bridge, const smn_reg_t reg,
-    const uint32_t val)
-{
-	milan_iodie_t *iodie = bridge->mpb_port->mpp_ioms->mio_iodie;
-
-	milan_smn_write(iodie, reg, val);
-}
-
-static smn_reg_t
-milan_pcie_port_reg(const milan_pcie_port_t *const port,
-    const smn_reg_def_t def)
-{
-	milan_ioms_t *ioms = port->mpp_ioms;
-	smn_reg_t reg;
-
-	switch (def.srd_unit) {
-	case SMN_UNIT_PCIE_CORE:
-		reg = milan_pcie_core_smn_reg(ioms->mio_num, def,
-		    port->mpp_portno);
-		break;
-	case SMN_UNIT_PCIE_RSMU:
-		reg = milan_pcie_rsmu_smn_reg(ioms->mio_num, def,
-		    port->mpp_portno);
-		break;
-	case SMN_UNIT_IOMMUL1:
-		reg = milan_iommul1_pcie_smn_reg(ioms->mio_num, def,
-		    port->mpp_portno);
+		    pc->mpc_coreno, port->mpp_portno);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe port",
@@ -1078,7 +1274,7 @@ milan_pcie_port_reg(const milan_pcie_port_t *const port,
 static uint32_t
 milan_pcie_port_read(milan_pcie_port_t *port, const smn_reg_t reg)
 {
-	milan_iodie_t *iodie = port->mpp_ioms->mio_iodie;
+	milan_iodie_t *iodie = port->mpp_core->mpc_ioms->mio_iodie;
 
 	return (milan_smn_read(iodie, reg));
 }
@@ -1087,7 +1283,51 @@ static void
 milan_pcie_port_write(milan_pcie_port_t *port, const smn_reg_t reg,
     const uint32_t val)
 {
-	milan_iodie_t *iodie = port->mpp_ioms->mio_iodie;
+	milan_iodie_t *iodie = port->mpp_core->mpc_ioms->mio_iodie;
+
+	milan_smn_write(iodie, reg, val);
+}
+
+static smn_reg_t
+milan_pcie_core_reg(const milan_pcie_core_t *const pc, const smn_reg_def_t def)
+{
+	milan_ioms_t *ioms = pc->mpc_ioms;
+	smn_reg_t reg;
+
+	switch (def.srd_unit) {
+	case SMN_UNIT_PCIE_CORE:
+		reg = milan_pcie_core_smn_reg(ioms->mio_num, def,
+		    pc->mpc_coreno);
+		break;
+	case SMN_UNIT_PCIE_RSMU:
+		reg = milan_pcie_rsmu_smn_reg(ioms->mio_num, def,
+		    pc->mpc_coreno);
+		break;
+	case SMN_UNIT_IOMMUL1:
+		reg = milan_iommul1_pcie_smn_reg(ioms->mio_num, def,
+		    pc->mpc_coreno);
+		break;
+	default:
+		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe RC",
+		    def.srd_unit);
+	}
+
+	return (reg);
+}
+
+static uint32_t
+milan_pcie_core_read(milan_pcie_core_t *pc, const smn_reg_t reg)
+{
+	milan_iodie_t *iodie = pc->mpc_ioms->mio_iodie;
+
+	return (milan_smn_read(iodie, reg));
+}
+
+static void
+milan_pcie_core_write(milan_pcie_core_t *pc, const smn_reg_t reg,
+    const uint32_t val)
+{
+	milan_iodie_t *iodie = pc->mpc_ioms->mio_iodie;
 
 	milan_smn_write(iodie, reg, val);
 }
@@ -1348,58 +1588,56 @@ milan_board_type(const milan_fabric_t *fabric)
 static void
 milan_fabric_ioms_pcie_init(milan_ioms_t *ioms)
 {
-	for (uint_t pcino = 0; pcino < ioms->mio_npcie_ports; pcino++) {
-		milan_pcie_port_t *port = &ioms->mio_pcie_ports[pcino];
-		const milan_bridge_info_t *binfop = NULL;
-		const milan_pcie_port_info_t *info;
+	for (uint_t pcno = 0; pcno < ioms->mio_npcie_cores; pcno++) {
+		milan_pcie_core_t *pc = &ioms->mio_pcie_cores[pcno];
+		const milan_pcie_port_info_t *pinfop = NULL;
+		const milan_pcie_core_info_t *cinfop;
 
-		port->mpp_portno = pcino;
-		port->mpp_ioms = ioms;
-		port->mpp_nbridges = milan_pcie_port_n_bridges(pcino);
-		mutex_init(&port->mpp_strap_lock, NULL, MUTEX_SPIN,
+		pc->mpc_coreno = pcno;
+		pc->mpc_ioms = ioms;
+		pc->mpc_nports = milan_pcie_core_n_ports(pcno);
+		mutex_init(&pc->mpc_strap_lock, NULL, MUTEX_SPIN,
 		    (ddi_iblock_cookie_t)ipltospl(15));
 
-		VERIFY3U(pcino, <=, MILAN_IOMS_WAFL_PCIE_PORT);
-		switch (pcino) {
+		VERIFY3U(pcno, <=, MILAN_IOMS_WAFL_PCIE_CORENO);
+		switch (pcno) {
 		case 0:
 			/* XXX Macros */
-			port->mpp_sdp_unit = 2;
-			port->mpp_sdp_port = 0;
-			binfop = milan_pcie0;
+			pc->mpc_sdp_unit = 2;
+			pc->mpc_sdp_port = 0;
+			pinfop = milan_pcie0;
 			break;
 		case 1:
-			port->mpp_sdp_unit = 3;
-			port->mpp_sdp_port = 0;
-			binfop = milan_pcie1;
+			pc->mpc_sdp_unit = 3;
+			pc->mpc_sdp_port = 0;
+			pinfop = milan_pcie1;
 			break;
-		case MILAN_IOMS_WAFL_PCIE_PORT:
-			port->mpp_sdp_unit = 4;
-			port->mpp_sdp_port = 5;
-			binfop = milan_pcie2;
+		case MILAN_IOMS_WAFL_PCIE_CORENO:
+			pc->mpc_sdp_unit = 4;
+			pc->mpc_sdp_port = 5;
+			pinfop = milan_pcie2;
 			break;
 		}
 
-		if (pcino == MILAN_IOMS_WAFL_PCIE_PORT) {
-			info = &milan_wafl_map;
+		if (pcno == MILAN_IOMS_WAFL_PCIE_CORENO) {
+			cinfop = &milan_wafl_map;
 		} else {
-			info = &milan_lane_maps[ioms->mio_num * 2 + pcino];
+			cinfop = &milan_lane_maps[ioms->mio_num * 2 + pcno];
 		}
 
-		port->mpp_dxio_lane_start = info->mppi_dxio_start;
-		port->mpp_dxio_lane_end = info->mppi_dxio_end;
-		port->mpp_phys_lane_start = info->mppi_phy_start;
-		port->mpp_phys_lane_end = info->mppi_phy_end;
+		pc->mpc_dxio_lane_start = cinfop->mpci_dxio_start;
+		pc->mpc_dxio_lane_end = cinfop->mpci_dxio_end;
+		pc->mpc_phys_lane_start = cinfop->mpci_phy_start;
+		pc->mpc_phys_lane_end = cinfop->mpci_phy_end;
 
-		for (uint_t bridgeno = 0; bridgeno < port->mpp_nbridges;
-		    bridgeno++) {
-			milan_pcie_bridge_t *bridge =
-			    &port->mpp_bridges[bridgeno];
+		for (uint_t portno = 0; portno < pc->mpc_nports; portno++) {
+			milan_pcie_port_t *port = &pc->mpc_ports[portno];
 
-			bridge->mpb_bridgeno = bridgeno;
-			bridge->mpb_port = port;
-			bridge->mpb_device = binfop[bridgeno].mpbi_dev;
-			bridge->mpb_func = binfop[bridgeno].mpbi_func;
-			bridge->mpb_hp_type = SMU_HP_INVALID;
+			port->mpp_portno = portno;
+			port->mpp_core = pc;
+			port->mpp_device = pinfop[portno].mppi_dev;
+			port->mpp_func = pinfop[portno].mppi_func;
+			port->mpp_hp_type = SMU_HP_INVALID;
 		}
 	}
 }
@@ -2465,7 +2703,7 @@ milan_fabric_topo_init(void)
 			/*
 			 * Only IOMS 0 has a WAFL port.
 			 */
-			ioms->mio_npcie_ports = milan_nbio_n_pcie_ports(iomsno);
+			ioms->mio_npcie_cores = milan_nbio_n_pcie_cores(iomsno);
 			if (iomsno == MILAN_IOMS_HAS_WAFL) {
 				ioms->mio_flags |= MILAN_IOMS_F_HAS_WAFL;
 			}
@@ -3506,52 +3744,52 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
 
 	for (uint_t i = 0; i < plat->zdp_nengines; i++) {
 		zen_dxio_engine_t *en = &plat->zdp_engines[i];
+		milan_pcie_core_t *pc;
 		milan_pcie_port_t *port;
-		milan_pcie_bridge_t *bridge;
-		uint8_t bridgeno;
+		uint8_t portno;
 
 		if (en->zde_type != DXIO_ENGINE_PCIE)
 			continue;
 
 
-		port = milan_fabric_find_port_by_lanes(iodie,
+		pc = milan_fabric_find_pcie_core_by_lanes(iodie,
 		    en->zde_start_lane, en->zde_end_lane);
-		if (port == NULL) {
+		if (pc == NULL) {
 			cmn_err(CE_WARN, "failed to map engine %u [%u, %u] to "
-			    "a PCIe port", i, en->zde_start_lane,
+			    "a PCIe core", i, en->zde_start_lane,
 			    en->zde_end_lane);
 			ret = B_FALSE;
 			continue;
 		}
 
-		bridgeno = en->zde_config.zdc_pcie.zdcp_mac_port_id;
-		if (bridgeno >= port->mpp_nbridges) {
+		portno = en->zde_config.zdc_pcie.zdcp_mac_port_id;
+		if (portno >= pc->mpc_nports) {
 			cmn_err(CE_WARN, "failed to map engine %u [%u, %u] to "
-			    "a PCIe bridge: found nbridges %u, but mapped to "
-			    "bridge %u",  i, en->zde_start_lane,
-			    en->zde_end_lane, port->mpp_nbridges, bridgeno);
+			    "a PCIe port: found nports %u, but mapped to "
+			    "port %u",  i, en->zde_start_lane,
+			    en->zde_end_lane, pc->mpc_nports, portno);
 			ret = B_FALSE;
 			continue;
 		}
 
-		bridge = &port->mpp_bridges[bridgeno];
-		if (bridge->mpb_engine != NULL) {
+		port = &pc->mpc_ports[portno];
+		if (port->mpp_engine != NULL) {
 			cmn_err(CE_WARN, "engine %u [%u, %u] mapped to "
-			    "bridge %u, which already has an engine [%u, %u]",
+			    "port %u, which already has an engine [%u, %u]",
 			    i, en->zde_start_lane, en->zde_end_lane,
-			    port->mpp_nbridges,
-			    bridge->mpb_engine->zde_start_lane,
-			    bridge->mpb_engine->zde_end_lane);
+			    pc->mpc_nports,
+			    port->mpp_engine->zde_start_lane,
+			    port->mpp_engine->zde_end_lane);
 			ret = B_FALSE;
 			continue;
 		}
 
-		bridge->mpb_flags |= MILAN_PCIE_BRIDGE_F_MAPPED;
-		bridge->mpb_engine = en;
-		port->mpp_flags |= MILAN_PCIE_PORT_F_USED;
+		port->mpp_flags |= MILAN_PCIE_PORT_F_MAPPED;
+		port->mpp_engine = en;
+		pc->mpc_flags |= MILAN_PCIE_CORE_F_USED;
 		if (en->zde_config.zdc_pcie.zdcp_caps.zdlc_hp !=
 		    DXIO_HOTPLUG_T_DISABLED) {
-			port->mpp_flags |= MILAN_PCIE_PORT_F_HAS_HOTPLUG;
+			pc->mpc_flags |= MILAN_PCIE_CORE_F_HAS_HOTPLUG;
 		}
 	}
 
@@ -3580,26 +3818,26 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
  * change as our understanding of what we require from the hardware evolves.
  *
  * These can be matched to a board identifier, NBIO/IOMS number, PCIe core
- * number (pcie_port_t.mpp_portno), and PCIe port number
- * (pcie_bridge_t.mpb_bridgeno).  The board sentinel value MBT_ANY is 0 and may
- * be omitted, but the others require nonzero sentinels as 0 is a valid index.
- * The sentinel values of 0xFF here cannot match any real NBIO, core, or port:
- * there are at most 4 NBIOs per die, 3 cores (port spaces) per NBIO, and 8
- * ports (bridge spaces) per core.  The core and port filters are meaningful
- * only if the corresponding strap exists at the port or bridge level.
+ * number (pcie_core_t.mpc_coreno), and PCIe port number
+ * (pcie_port_t.mpp_portno).  The board sentinel value MBT_ANY is 0 and may be
+ * omitted, but the others require nonzero sentinels as 0 is a valid index.  The
+ * sentinel values of 0xFF here cannot match any real NBIO, RC, or port: there
+ * are at most 4 NBIOs per die, 3 RC per NBIO, and 8 ports (bridges) per RC.
+ * The RC and port filters are meaningful only if the corresponding strap exists
+ * at the corresponding level.
  */
 
 #define	PCIE_NBIOMATCH_ANY	0xFF
+#define	PCIE_COREMATCH_ANY	0xFF
 #define	PCIE_PORTMATCH_ANY	0xFF
-#define	PCIE_BRIDGEMATCH_ANY	0xFF
 
 typedef struct milan_pcie_strap_setting {
 	uint32_t		strap_reg;
 	uint32_t		strap_data;
 	milan_board_type_t	strap_boardmatch;
 	uint8_t			strap_nbiomatch;
+	uint8_t			strap_corematch;
 	uint8_t			strap_portmatch;
-	uint8_t			strap_bridgematch;
 } milan_pcie_strap_setting_t;
 
 /*
@@ -3659,166 +3897,167 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 	    .strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 	    .strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_5,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_SUBVID,
 	    .strap_data = PCI_VENDOR_ID_OXIDE,
 	    .strap_boardmatch = MBT_GIMLET,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_SUBDID,
 	    .strap_data = MILAN_STRAP_PCIE_SUBDID_BRIDGE,
 	    .strap_boardmatch = MBT_GIMLET,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY
 	},
 };
 
 /*
- * PCIe Straps that exist on a per-bridge level.
+ * PCIe Straps that exist on a per-port level.  Most pertain to the port itself;
+ * others pertain to features exposed via the associated bridge.
  */
-static const milan_pcie_strap_setting_t milan_pcie_bridge_settings[] = {
+static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_EXT_TAG_SUP,
 	    .strap_data = 0x1,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 	    .strap_data = 0x1,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 	    .strap_data = 0x1,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 	    .strap_data = 0x1,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_TCOMMONMODE_TIME,
 	    .strap_data = 0xa,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_TPON_SCALE,
 	    .strap_data = 0x1,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_TPON_VALUE,
 	    .strap_data = 0xf,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_DLF_SUP,
 	    .strap_data = 0x1,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 	    .strap_data = 0x1,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 	    .strap_reg = MILAN_STRAP_PCIE_P_FOM_TIME,
 	    .strap_data = MILAN_STRAP_PCIE_P_FOM_300US,
 	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY,
-	    .strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+	    .strap_corematch = PCIE_COREMATCH_ANY,
+	    .strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_SPC_MODE_8GT,
 		.strap_data = 0x1,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-		.strap_portmatch = PCIE_PORTMATCH_ANY,
-		.strap_bridgematch = PCIE_BRIDGEMATCH_ANY
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_SRIS_EN,
 		.strap_data = 1,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nbiomatch = 0,
-		.strap_portmatch = 1,
-		.strap_bridgematch = 1
+		.strap_corematch = 1,
+		.strap_portmatch = 1
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
 		.strap_data = 0,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nbiomatch = 0,
-		.strap_portmatch = 1,
-		.strap_bridgematch = 1
+		.strap_corematch = 1,
+		.strap_portmatch = 1
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
 		.strap_data = 0,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nbiomatch = 0,
-		.strap_portmatch = 1,
-		.strap_bridgematch = 1
+		.strap_corematch = 1,
+		.strap_portmatch = 1
 	}
 };
 
 static boolean_t
-milan_pcie_strap_matches(const milan_pcie_port_t *port, uint8_t bridgeno,
+milan_pcie_strap_matches(const milan_pcie_core_t *pc, uint8_t portno,
     const milan_pcie_strap_setting_t *strap)
 {
-	const milan_ioms_t *ioms = port->mpp_ioms;
+	const milan_ioms_t *ioms = pc->mpc_ioms;
 	const milan_fabric_t *fabric = ioms->mio_iodie->mi_soc->ms_fabric;
 	const milan_board_type_t board = milan_board_type(fabric);
 
@@ -3832,14 +4071,14 @@ milan_pcie_strap_matches(const milan_pcie_port_t *port, uint8_t bridgeno,
 		return (B_FALSE);
 	}
 
-	if (strap->strap_portmatch != PCIE_PORTMATCH_ANY &&
-	    strap->strap_portmatch != port->mpp_portno) {
+	if (strap->strap_corematch != PCIE_COREMATCH_ANY &&
+	    strap->strap_corematch != pc->mpc_coreno) {
 		return (B_FALSE);
 	}
 
-	if (bridgeno != PCIE_BRIDGEMATCH_ANY &&
-	    strap->strap_bridgematch != PCIE_BRIDGEMATCH_ANY &&
-	    strap->strap_bridgematch != bridgeno) {
+	if (portno != PCIE_PORTMATCH_ANY &&
+	    strap->strap_portmatch != PCIE_PORTMATCH_ANY &&
+	    strap->strap_portmatch != portno) {
 		return (B_FALSE);
 	}
 
@@ -3847,18 +4086,18 @@ milan_pcie_strap_matches(const milan_pcie_port_t *port, uint8_t bridgeno,
 }
 
 static void
-milan_fabric_write_pcie_strap(milan_pcie_port_t *port,
+milan_fabric_write_pcie_strap(milan_pcie_core_t *pc,
     const uint32_t reg, const uint32_t data)
 {
 	smn_reg_t a_reg, d_reg;
 
-	a_reg = milan_pcie_port_reg(port, D_PCIE_RSMU_STRAP_ADDR);
-	d_reg = milan_pcie_port_reg(port, D_PCIE_RSMU_STRAP_DATA);
+	a_reg = milan_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_ADDR);
+	d_reg = milan_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_DATA);
 
-	mutex_enter(&port->mpp_strap_lock);
-	milan_pcie_port_write(port, a_reg, MILAN_STRAP_PCIE_ADDR_UPPER + reg);
-	milan_pcie_port_write(port, d_reg, data);
-	mutex_exit(&port->mpp_strap_lock);
+	mutex_enter(&pc->mpc_strap_lock);
+	milan_pcie_core_write(pc, a_reg, MILAN_STRAP_PCIE_ADDR_UPPER + reg);
+	milan_pcie_core_write(pc, d_reg, data);
+	mutex_exit(&pc->mpc_strap_lock);
 }
 
 /*
@@ -3871,42 +4110,40 @@ milan_fabric_write_pcie_strap(milan_pcie_port_t *port,
  * whether they are used, though this may be changed if it proves problematic.
  */
 static int
-milan_fabric_init_pcie_straps(milan_pcie_port_t *port, void *arg)
+milan_fabric_init_pcie_straps(milan_pcie_core_t *pc, void *arg)
 {
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_enable); i++) {
-		milan_fabric_write_pcie_strap(port,
+		milan_fabric_write_pcie_strap(pc,
 		    milan_pcie_strap_enable[i], 0x1);
 	}
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_disable); i++) {
-		milan_fabric_write_pcie_strap(port,
+		milan_fabric_write_pcie_strap(pc,
 		    milan_pcie_strap_disable[i], 0x0);
 	}
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_settings); i++) {
 		const milan_pcie_strap_setting_t *strap =
 		    &milan_pcie_strap_settings[i];
 
-		if (milan_pcie_strap_matches(port, PCIE_BRIDGEMATCH_ANY,
-		    strap)) {
-			milan_fabric_write_pcie_strap(port,
+		if (milan_pcie_strap_matches(pc, PCIE_PORTMATCH_ANY, strap)) {
+			milan_fabric_write_pcie_strap(pc,
 			    strap->strap_reg, strap->strap_data);
 		}
 	}
 
 	/* Handle Special case for DLF which needs to be set on non WAFL */
-	if (port->mpp_portno != MILAN_IOMS_WAFL_PCIE_PORT) {
-		milan_fabric_write_pcie_strap(port,
-		    MILAN_STRAP_PCIE_DLF_EN, 1);
+	if (pc->mpc_coreno != MILAN_IOMS_WAFL_PCIE_CORENO) {
+		milan_fabric_write_pcie_strap(pc, MILAN_STRAP_PCIE_DLF_EN, 1);
 	}
 
 	/* Handle per bridge initialization */
-	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_bridge_settings); i++) {
+	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_port_settings); i++) {
 		const milan_pcie_strap_setting_t *strap =
-		    &milan_pcie_bridge_settings[i];
-		for (uint_t j = 0; j < port->mpp_nbridges; j++) {
-			if (milan_pcie_strap_matches(port, j, strap)) {
-				milan_fabric_write_pcie_strap(port,
+		    &milan_pcie_port_settings[i];
+		for (uint_t j = 0; j < pc->mpc_nports; j++) {
+			if (milan_pcie_strap_matches(pc, j, strap)) {
+				milan_fabric_write_pcie_strap(pc,
 				    strap->strap_reg +
-				    (j * MILAN_STRAP_PCIE_NUM_PER_BRIDGE),
+				    (j * MILAN_STRAP_PCIE_NUM_PER_PORT),
 				    strap->strap_data);
 			}
 		}
@@ -3992,7 +4229,7 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				 * Now that we have the mapping done, we set up
 				 * the straps for PCIe.
 				 */
-				(void) milan_fabric_walk_pcie_port(fabric,
+				(void) milan_fabric_walk_pcie_core(fabric,
 				    milan_fabric_init_pcie_straps, NULL);
 
 				cmn_err(CE_NOTE, "Finished writing PCIe "
@@ -4704,13 +4941,13 @@ milan_fabric_gen_subsume(milan_ioms_t *ioms, ioms_rsrc_t ir)
  *     the link goes down.
  */
 static int
-milan_fabric_init_bridges(milan_pcie_bridge_t *bridge, void *arg)
+milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 	boolean_t hide;
-	milan_pcie_port_t *port = bridge->mpb_port;
-	milan_ioms_t *ioms = port->mpp_ioms;
+	milan_pcie_core_t *pc = port->mpp_core;
+	milan_ioms_t *ioms = pc->mpc_ioms;
 
 	/*
 	 * We need to determine whether or not this bridge should be considered
@@ -4735,13 +4972,12 @@ milan_fabric_init_bridges(milan_pcie_bridge_t *bridge, void *arg)
 	 * and it belongs to a hot-pluggable port then we always show it.
 	 * Otherwise we only show it if there's a device present.
 	 */
-	if ((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_MAPPED) != 0) {
+	if ((port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) != 0) {
 		boolean_t hotplug, trained;
 		uint8_t lt;
 
-		hotplug = (port->mpp_flags & MILAN_PCIE_PORT_F_HAS_HOTPLUG) !=
-		    0;
-		lt = bridge->mpb_engine->zde_config.zdc_pcie.zdcp_link_train;
+		hotplug = (pc->mpc_flags & MILAN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
+		lt = port->mpp_engine->zde_config.zdc_pcie.zdcp_link_train;
 		trained = lt == MILAN_DXIO_PCIE_SUCCESS;
 		hide = !hotplug && !trained;
 	} else {
@@ -4749,11 +4985,11 @@ milan_fabric_init_bridges(milan_pcie_bridge_t *bridge, void *arg)
 	}
 
 	if (hide) {
-		bridge->mpb_flags |= MILAN_PCIE_BRIDGE_F_HIDDEN;
+		port->mpp_flags |= MILAN_PCIE_PORT_F_BRIDGE_HIDDEN;
 	}
 
-	reg = milan_pcie_bridge_reg(bridge, D_IOHCDEV_PCIE_BRIDGE_CTL);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = milan_pcie_port_read(port, reg);
 	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
 	if (hide) {
 		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
@@ -4764,47 +5000,47 @@ milan_fabric_init_bridges(milan_pcie_bridge_t *bridge, void *arg)
 		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
 		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
 	}
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_TX_CTL);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_TX_CTL);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_TX_CTL_SET_TLP_FLUSH_DOWN_DIS(val, 0);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the hardware knows the corresponding b/d/f for this bridge.
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_TX_ID);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_TX_ID);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_TX_ID_SET_BUS(val, ioms->mio_pci_busno);
-	val = PCIE_PORT_TX_ID_SET_DEV(val, bridge->mpb_device);
-	val = PCIE_PORT_TX_ID_SET_FUNC(val, bridge->mpb_func);
-	milan_pcie_bridge_write(bridge, reg, val);
+	val = PCIE_PORT_TX_ID_SET_DEV(val, port->mpp_device);
+	val = PCIE_PORT_TX_ID_SET_FUNC(val, port->mpp_func);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * Next, we have to go through and set up a bunch of the lane controller
-	 * configuration controls for the individual bridge. These include
+	 * configuration controls for the individual port. These include
 	 * various settings around how idle transitions occur, how it replies to
 	 * certain messages, and related.
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_CTL);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL_SET_L1_IMM_ACK(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_TRAIN_CTL);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_TRAIN_CTL_SET_L0S_L1_TRAIN(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_WIDTH_CTL);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(val, 1);
 	val = PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_CTL2);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL2);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(val,
 	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
 	/*
@@ -4813,130 +5049,130 @@ milan_fabric_init_bridges(milan_pcie_bridge_t *bridge, void *arg)
 	 * (gimlet, Ethanol-X, etc.) always support that on the port unless this
 	 * is one of the WAFL related lanes, we always set this.
 	 */
-	if (port->mpp_portno != MILAN_IOMS_WAFL_PCIE_PORT) {
+	if (pc->mpc_coreno != MILAN_IOMS_WAFL_PCIE_CORENO) {
 		val = PCIE_PORT_LC_CTL2_SET_TS2_CHANGE_REQ(val,
 		    PCIE_PORT_LC_CTL2_TS2_CHANGE_128);
 	}
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_CTL3);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL3);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL3_SET_DOWN_SPEED_CHANGE(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * Lucky Hardware Debug 15. Why is it lucky? Because all we know is
 	 * we've been told to set it.
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_HW_DBG);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_HW_DBG_SET_DBG15(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the 8 GT/s symbols per clock is set to 2.
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_CTL6);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL6);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
 	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * Software expects to see the PCIe slot implemented bit when a slot
 	 * actually exists. For us, this is basically anything that actually is
-	 * considered MAPPED. Set that now on the bridge.
+	 * considered MAPPED. Set that now on the port.
 	 */
-	if ((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_MAPPED) != 0) {
+	if ((port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) != 0) {
 		uint16_t reg;
 
-		reg = pci_getw_func(ioms->mio_pci_busno, bridge->mpb_device,
-		    bridge->mpb_func, MILAN_BRIDGE_R_PCI_PCIE_CAP);
+		reg = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
+		    port->mpp_func, MILAN_BRIDGE_R_PCI_PCIE_CAP);
 		reg |= PCIE_PCIECAP_SLOT_IMPL;
-		pci_putw_func(ioms->mio_pci_busno, bridge->mpb_device,
-		    bridge->mpb_func, MILAN_BRIDGE_R_PCI_PCIE_CAP, reg);
+		pci_putw_func(ioms->mio_pci_busno, port->mpp_device,
+		    port->mpp_func, MILAN_BRIDGE_R_PCI_PCIE_CAP, reg);
 	}
 
 	return (0);
 }
 
 /*
- * This is a companion to milan_fabric_init_bidges, that operates on the PCIe
- * port level before we get to the individual bridge. This initialization
+ * This is a companion to milan_fabric_init_bridges, that operates on the PCIe
+ * RC level before we get to the individual bridge. This initialization
  * generally is required to ensure that each port (regardless of whether it's
  * hidden or not) is able to properly generate an all 1s response. In addition
  * we have to take care of things like atomics, idling defaults, certain
  * receiver completion buffer checks, etc.
  */
 static int
-milan_fabric_init_pcie_ports(milan_pcie_port_t *port, void *arg)
+milan_fabric_init_pcie_core(milan_pcie_core_t *pc, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_CI_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_CI_CTL);
+	val = milan_pcie_core_read(pc, reg);
 	val = PCIE_CORE_CI_CTL_SET_LINK_DOWN_CTO_EN(val, 1);
 	val = PCIE_CORE_CI_CTL_SET_IGN_LINK_DOWN_CTO_ERR(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	milan_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Program the unit ID for this device's SDP port.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_SDP_CTL);
-	val = milan_pcie_port_read(port, reg);
-	val = PCIE_CORE_SDP_CTL_SET_PORT_ID(val, port->mpp_sdp_port);
-	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID(val, port->mpp_sdp_unit);
-	milan_pcie_port_write(port, reg, val);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SDP_CTL);
+	val = milan_pcie_core_read(pc, reg);
+	val = PCIE_CORE_SDP_CTL_SET_PORT_ID(val, pc->mpc_sdp_port);
+	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID(val, pc->mpc_sdp_unit);
+	milan_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Ensure that RCB checking is what's seemingly expected.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_PCIE_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL);
+	val = milan_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_ATTR_DIS(val, 1);
 	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_SIZE_DIS(val, 0);
-	milan_pcie_port_write(port, reg, val);
+	milan_pcie_core_write(pc, reg, val);
 
 	/*
-	 * Enabling atomics in the core requires a few different registers. Both
+	 * Enabling atomics in the RC requires a few different registers. Both
 	 * a strap has to be overridden and then corresponding control bits.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_STRAP_F0);
-	val = milan_pcie_port_read(port, reg);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_STRAP_F0);
+	val = milan_pcie_core_read(pc, reg);
 	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_ROUTE(val, 1);
 	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	milan_pcie_core_write(pc, reg, val);
 
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_PCIE_CTL2);
-	val = milan_pcie_port_read(port, reg);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL2);
+	val = milan_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_ORD_DIS(val, 1);
 	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_OPS_DIS(val, 0);
-	milan_pcie_port_write(port, reg, val);
+	milan_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Ensure the correct electrical idle mode detection is set. In
 	 * addition, it's been recommended we ignore the K30.7 EDB (EnD Bad)
 	 * special symbol errors.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_PCIE_P_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
+	val = milan_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_P_CTL_SET_ELEC_IDLE(val,
 	    PCIE_CORE_PCIE_P_CTL_ELEC_IDLE_M1);
 	val = PCIE_CORE_PCIE_P_CTL_SET_IGN_EDB_ERR(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	milan_pcie_core_write(pc, reg, val);
 
 	/*
 	 * The IOMMUL1 does not have an instance for the on-the side WAFL lanes.
 	 * Skip the WAFL port if we're that.
 	 */
-	if (port->mpp_portno >= IOMMUL1_N_PCIE_PORTS)
+	if (pc->mpc_coreno >= IOMMUL1_N_PCIE_PORTS)
 		return (0);
 
-	reg = milan_pcie_port_reg(port, D_IOMMUL1_CTL1);
-	val = milan_pcie_port_read(port, reg);
+	reg = milan_pcie_core_reg(pc, D_IOMMUL1_CTL1);
+	val = milan_pcie_core_read(pc, reg);
 	val = IOMMUL1_CTL1_SET_ORDERING(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	milan_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
@@ -4947,39 +5183,40 @@ typedef struct {
 } pci_bus_counter_t;
 
 static int
-milan_fabric_hack_bridges_cb(milan_pcie_bridge_t *bridge, void *arg)
+milan_fabric_hack_bridges_cb(milan_pcie_port_t *port, void *arg)
 {
 	uint8_t bus, secbus;
 	pci_bus_counter_t *pbc = arg;
-	milan_ioms_t *ioms = bridge->mpb_port->mpp_ioms;
+	milan_ioms_t *ioms = port->mpp_core->mpc_ioms;
 
 	bus = ioms->mio_pci_busno;
 	if (pbc->pbc_ioms != ioms) {
 		pbc->pbc_ioms = ioms;
-		pbc->pbc_busoff = 1 + ARRAY_SIZE(milan_int_bridges);
-		for (uint_t i = 0; i < ARRAY_SIZE(milan_int_bridges); i++) {
-			const milan_bridge_info_t *info = &milan_int_bridges[i];
-			pci_putb_func(bus, info->mpbi_dev, info->mpbi_func,
+		pbc->pbc_busoff = 1 + ARRAY_SIZE(milan_int_ports);
+		for (uint_t i = 0; i < ARRAY_SIZE(milan_int_ports); i++) {
+			const milan_pcie_port_info_t *info =
+			    &milan_int_ports[i];
+			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
 			    PCI_BCNF_PRIBUS, bus);
-			pci_putb_func(bus, info->mpbi_dev, info->mpbi_func,
+			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
 			    PCI_BCNF_SECBUS, bus + 1 + i);
-			pci_putb_func(bus, info->mpbi_dev, info->mpbi_func,
+			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
 			    PCI_BCNF_SUBBUS, bus + 1 + i);
 
 		}
 	}
 
-	if ((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_HIDDEN) != 0) {
+	if ((port->mpp_flags & MILAN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0) {
 		return (0);
 	}
 
 	secbus = bus + pbc->pbc_busoff;
 
-	pci_putb_func(bus, bridge->mpb_device, bridge->mpb_func,
+	pci_putb_func(bus, port->mpp_device, port->mpp_func,
 	    PCI_BCNF_PRIBUS, bus);
-	pci_putb_func(bus, bridge->mpb_device, bridge->mpb_func,
+	pci_putb_func(bus, port->mpp_device, port->mpp_func,
 	    PCI_BCNF_SECBUS, secbus);
-	pci_putb_func(bus, bridge->mpb_device, bridge->mpb_func,
+	pci_putb_func(bus, port->mpp_device, port->mpp_func,
 	    PCI_BCNF_SUBBUS, secbus);
 
 	pbc->pbc_busoff++;
@@ -5002,7 +5239,7 @@ milan_fabric_hack_bridges(milan_fabric_t *fabric)
 	pci_bus_counter_t c;
 	bzero(&c, sizeof (c));
 
-	milan_fabric_walk_bridge(fabric, milan_fabric_hack_bridges_cb, &c);
+	milan_fabric_walk_pcie_port(fabric, milan_fabric_hack_bridges_cb, &c);
 }
 
 /*
@@ -5044,37 +5281,37 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 	 * The way the SMU takes this data table is that entries are indexed by
 	 * physical slot number. We basically use an interim structure that's
 	 * different so we can have a sparse table. In addition, if we find a
-	 * device, update that info on its bridge.
+	 * device, update that info on its port.
 	 */
 	for (uint_t i = 0; entry[i].se_slotno != SMU_HOTPLUG_ENT_LAST; i++) {
 		uint_t slot = entry[i].se_slotno;
 		const smu_hotplug_map_t *map;
 		milan_iodie_t *iodie;
 		milan_ioms_t *ioms;
+		milan_pcie_core_t *pc;
 		milan_pcie_port_t *port;
-		milan_pcie_bridge_t *bridge;
 
 		hp->mh_table->smt_map[slot] = entry[i].se_map;
 		hp->mh_table->smt_func[slot] = entry[i].se_func;
 		hp->mh_table->smt_reset[slot] = entry[i].se_reset;
 
 		/*
-		 * Attempt to find the bridge this corresponds to. It should
+		 * Attempt to find the port this corresponds to. It should
 		 * already have been mapped.
 		 */
 		map = &entry[i].se_map;
 		iodie = &fabric->mf_socs[map->shm_die_id].ms_iodies[0];
 		ioms = &iodie->mi_ioms[map->shm_tile_id % 4];
-		port = &ioms->mio_pcie_ports[map->shm_tile_id / 4];
-		bridge = &port->mpp_bridges[map->shm_port_id];
+		pc = &ioms->mio_pcie_cores[map->shm_tile_id / 4];
+		port = &pc->mpc_ports[map->shm_port_id];
 
-		cmn_err(CE_NOTE, "mapped entry %u to bridge %p", i, bridge);
-		VERIFY((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_MAPPED) != 0);
-		VERIFY((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_HIDDEN) == 0);
-		bridge->mpb_flags |= MILAN_PCIE_BRIDGE_F_HOTPLUG;
-		bridge->mpb_hp_type = map->shm_format;
-		bridge->mpb_hp_slotno = slot;
-		bridge->mpb_hp_smu_mask = entry[i].se_func.shf_mask;
+		cmn_err(CE_NOTE, "mapped entry %u to port %p", i, port);
+		VERIFY((port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) != 0);
+		VERIFY0(port->mpp_flags & MILAN_PCIE_PORT_F_BRIDGE_HIDDEN);
+		port->mpp_flags |= MILAN_PCIE_PORT_F_HOTPLUG;
+		port->mpp_hp_type = map->shm_format;
+		port->mpp_hp_slotno = slot;
+		port->mpp_hp_smu_mask = entry[i].se_func.shf_mask;
 	}
 
 	return (cont);
@@ -5085,14 +5322,14 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
  * use our hacky static versions for a moment.
  */
 static uint32_t
-milan_hotplug_bridge_features(milan_pcie_bridge_t *bridge)
+milan_hotplug_bridge_features(milan_pcie_port_t *port)
 {
 	uint32_t feats;
 	milan_fabric_t *fabric =
-	    bridge->mpb_port->mpp_ioms->mio_iodie->mi_soc->ms_fabric;
+	    port->mpp_core->mpc_ioms->mio_iodie->mi_soc->ms_fabric;
 
 	if (milan_board_type(fabric) == MBT_ETHANOL) {
-		if (bridge->mpb_hp_type == SMU_HP_ENTERPRISE_SSD) {
+		if (port->mpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
 			return (ethanolx_pcie_slot_cap_entssd);
 		} else {
 			return (ethanolx_pcie_slot_cap_express);
@@ -5110,7 +5347,7 @@ milan_hotplug_bridge_features(milan_pcie_bridge_t *bridge)
 	 * turn off features in the SMU, we check for the absence of it (e.g. ==
 	 * 0) to indicate that we should enable the feature.
 	 */
-	switch (bridge->mpb_hp_type) {
+	switch (port->mpp_hp_type) {
 	case SMU_HP_ENTERPRISE_SSD:
 		/*
 		 * For Enterprise SSD the set of features that are supported are
@@ -5121,46 +5358,46 @@ milan_hotplug_bridge_features(milan_pcie_bridge_t *bridge)
 		 */
 		return (feats | PCIE_SLOTCAP_NO_CMD_COMP_SUPP);
 	case SMU_HP_EXPRESS_MODULE_A:
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_EMILS) == 0 ||
-		    (bridge->mpb_hp_smu_mask & SMU_ENTA_EMIL) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTA_EMILS) == 0 ||
+		    (port->mpp_hp_smu_mask & SMU_ENTA_EMIL) == 0) {
 			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_PWREN) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTA_PWREN) == 0) {
 			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_ATTNLED) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTA_ATTNLED) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTA_PWRLED) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTA_PWRLED) == 0) {
 			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
 		}
 		break;
 	case SMU_HP_EXPRESS_MODULE_B:
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_EMILS) == 0 ||
-		    (bridge->mpb_hp_smu_mask & SMU_ENTB_EMIL) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTB_EMILS) == 0 ||
+		    (port->mpp_hp_smu_mask & SMU_ENTB_EMIL) == 0) {
 			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_PWREN) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTB_PWREN) == 0) {
 			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_ATTNLED) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTB_ATTNLED) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
 		}
 
-		if ((bridge->mpb_hp_smu_mask & SMU_ENTB_PWRLED) == 0) {
+		if ((port->mpp_hp_smu_mask & SMU_ENTB_PWRLED) == 0) {
 			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
 		}
 		break;
@@ -5182,13 +5419,13 @@ milan_hotplug_bridge_features(milan_pcie_bridge_t *bridge)
  * defined state.
  */
 static int
-milan_hotplug_bridge_post_start(milan_pcie_bridge_t *bridge, void *arg)
+milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 {
 	uint16_t ctl, sts;
-	milan_ioms_t *ioms = bridge->mpb_port->mpp_ioms;
+	milan_ioms_t *ioms = port->mpp_core->mpc_ioms;
 
-	sts = pci_getw_func(ioms->mio_pci_busno, bridge->mpb_device,
-	    bridge->mpb_func, MILAN_BRIDGE_R_PCI_SLOT_STS);
+	sts = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
+	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_STS);
 
 	/*
 	 * At this point, surprisingly enough, it is expected that all the
@@ -5201,8 +5438,8 @@ milan_hotplug_bridge_post_start(milan_pcie_bridge_t *bridge, void *arg)
 	 *
 	 *   o The power indicator to on when a device is present
 	 */
-	ctl = pci_getw_func(ioms->mio_pci_busno, bridge->mpb_device,
-	    bridge->mpb_func, MILAN_BRIDGE_R_PCI_SLOT_CTL);
+	ctl = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
+	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CTL);
 	ctl |= PCIE_SLOTCTL_ATTN_BTN_EN;
 	ctl |= PCIE_SLOTCTL_PWR_FAULT_EN;
 	ctl |= PCIE_SLOTCTL_PRESENCE_CHANGE_EN;
@@ -5220,8 +5457,8 @@ milan_hotplug_bridge_post_start(milan_pcie_bridge_t *bridge, void *arg)
 	} else {
 		ctl |= PCIE_SLOTCTL_PWR_CONTROL;
 	}
-	pci_putw_func(ioms->mio_pci_busno, bridge->mpb_device,
-	    bridge->mpb_func, MILAN_BRIDGE_R_PCI_SLOT_CTL, ctl);
+	pci_putw_func(ioms->mio_pci_busno, port->mpp_device,
+	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CTL, ctl);
 
 	return (0);
 }
@@ -5237,21 +5474,21 @@ milan_hotplug_bridge_post_start(milan_pcie_bridge_t *bridge, void *arg)
  *   o Making sure that power faults work.
  */
 static int
-milan_hotplug_bridge_init(milan_pcie_bridge_t *bridge, void *arg)
+milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 	uint32_t slot_mask;
-	milan_pcie_port_t *port = bridge->mpb_port;
-	milan_ioms_t *ioms = port->mpp_ioms;
+	milan_pcie_core_t *pc = port->mpp_core;
+	milan_ioms_t *ioms = pc->mpc_ioms;
 
 	/*
 	 * Skip over all non-hotplug slots and the simple presence mode. Though
 	 * one has to ask oneself, why have hotplug if you're going to use the
 	 * simple presence mode.
 	 */
-	if ((bridge->mpb_flags & MILAN_PCIE_BRIDGE_F_HOTPLUG) == 0 ||
-	    bridge->mpb_hp_type == SMU_HP_PRESENCE_DETECT) {
+	if ((port->mpp_flags & MILAN_PCIE_PORT_F_HOTPLUG) == 0 ||
+	    port->mpp_hp_type == SMU_HP_PRESENCE_DETECT) {
 		return (0);
 	}
 
@@ -5259,36 +5496,36 @@ milan_hotplug_bridge_init(milan_pcie_bridge_t *bridge, void *arg)
 	 * Set the hotplug slot information in the PCIe IP, presumably so that
 	 * it'll do something useful for the SMU.
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_HP_CTL);
-	val = milan_pcie_bridge_read(bridge, reg);
-	val = PCIE_PORT_HP_CTL_SET_SLOT(val, bridge->mpb_hp_slotno);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
+	val = milan_pcie_port_read(port, reg);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->mpp_hp_slotno);
 	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * This register is apparently set to ensure that we don't remain in the
 	 * detect state machine state.
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_CTL5);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL5);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(val, 0);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * This ensures the port can't enter loopback mode.
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_LC_TRAIN_CTL);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_TRAIN_CTL_SET_TRAIN_DIS(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure that power faults can actually work (in theory).
 	 */
-	reg = milan_pcie_bridge_reg(bridge, D_PCIE_PORT_PCTL);
-	val = milan_pcie_bridge_read(bridge, reg);
+	reg = milan_pcie_port_reg(port, D_PCIE_PORT_PCTL);
+	val = milan_pcie_port_read(port, reg);
 	val = PCIE_PORT_PCTL_SET_PWRFLT_EN(val, 1);
-	milan_pcie_bridge_write(bridge, reg, val);
+	milan_pcie_port_write(port, reg, val);
 
 	/*
 	 * Go through and set up the slot capabilities register. In our case
@@ -5304,15 +5541,15 @@ milan_hotplug_bridge_init(milan_pcie_bridge_t *bridge, void *arg)
 	    PCIE_SLOTCAP_HP_CAPABLE | PCIE_SLOTCAP_EMI_LOCK_PRESENT |
 	    PCIE_SLOTCAP_NO_CMD_COMP_SUPP;
 
-	val = pci_getl_func(ioms->mio_pci_busno, bridge->mpb_device,
-	    bridge->mpb_func, MILAN_BRIDGE_R_PCI_SLOT_CAP);
+	val = pci_getl_func(ioms->mio_pci_busno, port->mpp_device,
+	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CAP);
 	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
 	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
-	val |= bridge->mpb_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
+	val |= port->mpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	val &= ~slot_mask;
-	val |= milan_hotplug_bridge_features(bridge);
-	pci_putl_func(ioms->mio_pci_busno, bridge->mpb_device,
-	    bridge->mpb_func, MILAN_BRIDGE_R_PCI_SLOT_CAP, val);
+	val |= milan_hotplug_bridge_features(port);
+	pci_putl_func(ioms->mio_pci_busno, port->mpp_device,
+	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CAP, val);
 
 	/*
 	 * Finally we need to go through and unblock training now that we've set
@@ -5320,24 +5557,25 @@ milan_hotplug_bridge_init(milan_pcie_bridge_t *bridge, void *arg)
 	 * SMU about hotplug configuration, so strictly speaking devices will
 	 * unlikely start suddenly training.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_SWRST_CTL6);
-	val = milan_pcie_port_read(port, reg);
-	val = bitset32(val, bridge->mpb_bridgeno, bridge->mpb_bridgeno, 0);
-	milan_pcie_port_write(port, reg, val);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SWRST_CTL6);
+	val = milan_pcie_core_read(pc, reg);
+	val = bitset32(val, port->mpp_portno, port->mpp_portno, 0);
+	milan_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
 
 /*
  * This is an analogue to the above functions; however, it operates on the PCIe
- * port basis rather than the individual bridge. This mostly includes:
+ * core basis rather than the individual port or bridge. This mostly includes:
+ *
  *   o Making sure that there are no holds on link training on any port.
  *   o Ensuring that presence detection is based on an 'OR'
  *
  * XXX SMN_NBIO0PCIE0_SWRST_CONTROL_6_A
  */
 static int
-milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
+milan_hotplug_core_init(milan_pcie_core_t *pc, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -5345,14 +5583,14 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	/*
 	 * Nothing to do if there's no hotplug.
 	 */
-	if ((port->mpp_flags & MILAN_PCIE_PORT_F_HAS_HOTPLUG) == 0) {
+	if ((pc->mpc_flags & MILAN_PCIE_CORE_F_HAS_HOTPLUG) == 0) {
 		return (0);
 	}
 
-	reg = milan_pcie_port_reg(port, D_PCIE_CORE_PRES);
-	val = milan_pcie_port_read(port, reg);
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PRES);
+	val = milan_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PRES_SET_MODE(val, PCIE_CORE_PRES_MODE_OR);
-	milan_pcie_port_write(port, reg, val);
+	milan_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
@@ -5422,9 +5660,9 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	 * before we enable things. It's unclear if the order is load bearing or
 	 * not.
 	 */
-	(void) milan_fabric_walk_pcie_port(fabric, milan_hotplug_port_init,
+	(void) milan_fabric_walk_pcie_core(fabric, milan_hotplug_core_init,
 	    NULL);
-	(void) milan_fabric_walk_bridge(fabric, milan_hotplug_bridge_init,
+	(void) milan_fabric_walk_pcie_port(fabric, milan_hotplug_port_init,
 	    NULL);
 
 	if (!milan_smu_rpc_hotplug_flags(iodie, 0)) {
@@ -5448,8 +5686,8 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	 * pieces of slot initialization which are probably necessary to get the
 	 * SMU into the same place as we are with everything else.
 	 */
-	(void) milan_fabric_walk_bridge(fabric, milan_hotplug_bridge_post_start,
-	    NULL);
+	(void) milan_fabric_walk_pcie_port(fabric,
+	    milan_hotplug_bridge_post_start, NULL);
 
 	return (B_TRUE);
 }
@@ -5634,8 +5872,8 @@ milan_fabric_init(void)
 	 * through and set up the bridges so that way we can actual handle them
 	 * aborting transactions and related.
 	 */
-	milan_fabric_walk_pcie_port(fabric, milan_fabric_init_pcie_ports, NULL);
-	milan_fabric_walk_bridge(fabric, milan_fabric_init_bridges, NULL);
+	milan_fabric_walk_pcie_core(fabric, milan_fabric_init_pcie_core, NULL);
+	milan_fabric_walk_pcie_port(fabric, milan_fabric_init_bridges, NULL);
 
 	/*
 	 * XXX This is a terrible hack. We should really fix pci_boot.c and we

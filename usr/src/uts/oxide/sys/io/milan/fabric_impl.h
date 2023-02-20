@@ -59,14 +59,11 @@ extern "C" {
 #define	MILAN_IOMS_PER_IODIE	4
 
 /*
- * The maximum number of NBIFs and PCIe ports off of an IOMS. The IOMS has up to
- * three ports (though only one has three with the WAFL link). There are always
- * three primary NBIFs (nbif_impl.h), but only two of the SYSHUB NBIFs in
- * alternate space. Each PCIe PORT has a maximum of 8 bridges for devices
- * (pcie_impl.h).
+ * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to three
+ * cores, but only the one with the WAFL link has core number 2.
  */
-#define	MILAN_IOMS_MAX_PCIE_PORTS	3
-#define	MILAN_IOMS_WAFL_PCIE_PORT	2
+#define	MILAN_IOMS_MAX_PCIE_CORES	3
+#define	MILAN_IOMS_WAFL_PCIE_CORENO	2
 
 /*
  * Per the PPR, the following defines the first enry for the Milan IOMS.
@@ -116,9 +113,9 @@ struct milan_ioms {
 	uint8_t			mio_num;
 	uint8_t			mio_fabric_id;
 	uint8_t			mio_comp_id;
-	uint8_t			mio_npcie_ports;
+	uint8_t			mio_npcie_cores;
 	uint8_t			mio_nnbifs;
-	milan_pcie_port_t	mio_pcie_ports[MILAN_IOMS_MAX_PCIE_PORTS];
+	milan_pcie_core_t	mio_pcie_cores[MILAN_IOMS_MAX_PCIE_CORES];
 	milan_nbif_t		mio_nbifs[MILAN_IOMS_MAX_NBIF];
 	ioms_memlists_t		mio_memlists;
 	milan_iodie_t		*mio_iodie;

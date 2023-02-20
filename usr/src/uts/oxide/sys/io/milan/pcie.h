@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_H
@@ -34,17 +34,17 @@ extern "C" {
  * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
  * pointers to these types only as opaque handles.
  */
-struct milan_pcie_bridge;
+struct milan_pcie_core;
 struct milan_pcie_port;
 
-typedef struct milan_pcie_bridge milan_pcie_bridge_t;
+typedef struct milan_pcie_core milan_pcie_core_t;
 typedef struct milan_pcie_port milan_pcie_port_t;
 
+typedef int (*milan_pcie_core_cb_f)(milan_pcie_core_t *, void *);
 typedef int (*milan_pcie_port_cb_f)(milan_pcie_port_t *, void *);
-typedef int (*milan_bridge_cb_f)(milan_pcie_bridge_t *, void *);
 
-extern uint8_t milan_nbio_n_pcie_ports(const uint8_t);
-extern uint8_t milan_pcie_port_n_bridges(const uint8_t);
+extern uint8_t milan_nbio_n_pcie_cores(const uint8_t);
+extern uint8_t milan_pcie_core_n_ports(const uint8_t);
 
 /*
  * PCIe related SMN addresses. This is determined based on a combination of
@@ -69,11 +69,11 @@ extern uint8_t milan_pcie_port_n_bridges(const uint8_t);
 
 static inline smn_reg_t
 milan_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
-    const uint8_t portno)
+    const uint8_t coreno)
 {
 	const uint32_t PCIE_CORE_SMN_REG_MASK = 0x7ffff;
 	const uint32_t ioms32 = (const uint32_t)iomsno;
-	const uint32_t port32 = (const uint32_t)portno;
+	const uint32_t core32 = (const uint32_t)coreno;
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_CORE);
@@ -83,13 +83,13 @@ milan_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_CORE_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t nents = milan_nbio_n_pcie_ports(iomsno);
-	ASSERT3U(nents, >, port32);
+	const uint32_t nents = milan_nbio_n_pcie_cores(iomsno);
+	ASSERT3U(nents, >, core32);
 #endif	/* DEBUG */
 
 	const uint32_t aperture_base = 0x11180000;
 
-	const uint32_t aperture_off = (ioms32 << 20) + (port32 << 22);
+	const uint32_t aperture_off = (ioms32 << 20) + (core32 << 22);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
 	const uint32_t aperture = aperture_base + aperture_off;
@@ -100,12 +100,12 @@ milan_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 
 static inline smn_reg_t
 milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
-    const uint8_t portno, const uint8_t bridgeno)
+    const uint8_t coreno, const uint8_t portno)
 {
 	const uint32_t PCIE_PORT_SMN_REG_MASK = 0xfff;
 	const uint32_t ioms32 = (const uint32_t)iomsno;
+	const uint32_t core32 = (const uint32_t)coreno;
 	const uint32_t port32 = (const uint32_t)portno;
-	const uint32_t bridge32 = (const uint32_t)bridgeno;
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_PORT);
@@ -115,17 +115,16 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_PORT_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t nports = (const uint32_t)milan_nbio_n_pcie_ports(iomsno);
-	ASSERT3U(nports, >, port32);
-	const uint32_t nents =
-	    (const uint32_t)milan_pcie_port_n_bridges(portno);
-	ASSERT3U(nents, >, bridge32);
+	const uint32_t ncores = (const uint32_t)milan_nbio_n_pcie_cores(iomsno);
+	ASSERT3U(ncores, >, core32);
+	const uint32_t nents = (const uint32_t)milan_pcie_core_n_ports(coreno);
+	ASSERT3U(nents, >, port32);
 #endif	/* DEBUG */
 
 	const uint32_t aperture_base = 0x11140000;
 
-	const uint32_t aperture_off = (ioms32 << 20) + (port32 << 22) +
-	    (bridge32 << 12);
+	const uint32_t aperture_off = (ioms32 << 20) + (core32 << 22) +
+	    (port32 << 12);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
 	const uint32_t aperture = aperture_base + aperture_off;
