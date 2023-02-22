@@ -14,6 +14,34 @@
 # Copyright 2018 Joyent, Inc.
 #
 
-SUBDIRS = no-relobj-group-merge
+include $(SRC)/cmd/Makefile.cmd
+
+SUBDIRS = no-relobj-group-merge strip-groups
+
+DATAFILES =	common.sh
+
+ROOTOPTPKG = $(ROOT)/opt/elf-tests
+TESTDIR = $(ROOTOPTPKG)/tests/groups/
+
+DATA = $(DATAFILES:%=$(TESTDIR)/%)
+$(DATA) := FILEMODE = 0444
+
+all:
+
+install: all $(DATA)
+
+clean:
+	-$(RM) $(CLEANFILES)
+
+$(DATA): $(TESTDIR)
+
+$(TESTDIR):
+	$(INS.dir)
+
+$(TESTDIR)/%: %.sh
+	$(INS.rename)
+
+$(TESTDIR)/%: %
+	$(INS.file)
 
 include $(SRC)/test/Makefile.com

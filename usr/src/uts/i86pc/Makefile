@@ -110,5 +110,4 @@ XRDIRS	= ../i86pc ../intel ../common
 
 XRPRUNE	= sun4u sun4 oxide
 
-cscope.out tags: FRC
-	$(XREF) -x $@
+include ../../Makefile.xref
