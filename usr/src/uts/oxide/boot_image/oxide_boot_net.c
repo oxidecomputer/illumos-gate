@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -209,7 +209,7 @@ oxide_boot_net_find_ether(dev_info_t *dip, void *arg)
 	}
 
 	if (ofe->ofe_print_only) {
-		printf("    %s%d\n",
+		oxide_boot_debug("    %s%d",
 		    ddi_driver_name(dip),
 		    i_ddi_devi_get_ppa(dip));
 	}
@@ -365,7 +365,7 @@ oxide_boot_net_send_hello(oxide_boot_net_ether_t *oe, mac_client_handle_t mch)
 	mblk_t *m;
 	if ((m = allocb(ETHERMAX, 0)) == NULL) {
 		mutex_enter(&oe->oe_mutex);
-		printf("allocb failure\n");
+		oxide_boot_warn("allocb failure");
 		return;
 	}
 	mutex_enter(&oe->oe_mutex);
@@ -395,7 +395,7 @@ oxide_boot_net_send_read(oxide_boot_net_ether_t *oe, mac_client_handle_t mch)
 	mblk_t *m;
 	if ((m = allocb(ETHERMAX, 0)) == NULL) {
 		mutex_enter(&oe->oe_mutex);
-		printf("allocb failure\n");
+		oxide_boot_warn("allocb failure");
 		return;
 	}
 	mutex_enter(&oe->oe_mutex);
@@ -447,7 +447,7 @@ oxide_boot_net_send_finished(oxide_boot_net_ether_t *oe,
 	mblk_t *m;
 	if ((m = allocb(ETHERMAX, 0)) == NULL) {
 		mutex_enter(&oe->oe_mutex);
-		printf("allocb failure\n");
+		oxide_boot_warn("allocb failure");
 		return;
 	}
 	mutex_enter(&oe->oe_mutex);
@@ -537,10 +537,11 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 			if (!oxide_boot_ramdisk_set_csum(oxb, ofo->ofo_sha256,
 			    sizeof (ofo->ofo_sha256))) {
 				/*
-				 * This image does not match the cpio archive,
+				 * This image does not match the phase1 archive,
 				 * so we ignore it.
 				 */
-				printf("ignoring offer (checksum mismatch)\n");
+				oxide_boot_warn(
+				    "ignoring offer (checksum mismatch)");
 				freemsg(m);
 				continue;
 			}
@@ -548,9 +549,9 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 			bcopy(&ofh->ofh_ether.ether_shost,
 			    &oe->oe_server, ETHERADDRL);
 
-			printf("received offer from "
+			oxide_boot_note("received offer from "
 			    "%02x:%02x:%02x:%02x:%02x:%02x "
-			    " -- size %lu data size %lu dataset %s\n",
+			    " -- size %lu data size %lu dataset %s",
 			    oe->oe_server[0],
 			    oe->oe_server[1],
 			    oe->oe_server[2],
@@ -590,7 +591,7 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 			/*
 			 * Send a broadcast frame every four seconds.
 			 */
-			printf("hello...\n");
+			oxide_boot_note("hello...");
 			oxide_boot_net_send_hello(oe, mch);
 			oe->oe_last_hello = gethrtime();
 		}
@@ -631,8 +632,8 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 				uint64_t secs =
 				    (gethrtime() - oe->oe_download_start) /
 				    SEC2NSEC(1);
-				printf("reached EOF at offset %lu "
-				    "after %lu seconds           \n",
+				oxide_boot_note("reached EOF at offset %lu "
+				    "after %lu seconds           ",
 				    oe->oe_offset, secs);
 
 				oe->oe_state = OXBOOT_NET_STATE_FINISHED;
@@ -672,7 +673,8 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 				 * This is not an offset for which we are
 				 * currently expecting data.
 				 */
-				printf("dropped data packet for offset %lu\n",
+				oxide_boot_warn(
+				    "dropped data packet for offset %lu",
 				    offset);
 				freemsg(m);
 				continue;
@@ -807,7 +809,7 @@ oxide_boot_net_ether_turn(oxide_boot_t *oxb, oxide_boot_net_ether_t *oe,
 		return (1);
 
 	default:
-		panic("unexpected state %d\n", oe->oe_state);
+		panic("unexpected state %d", oe->oe_state);
 	}
 }
 
@@ -828,7 +830,7 @@ oxide_boot_net(oxide_boot_t *oxb)
 		.ofe_print_only = B_TRUE,
 	};
 
-	printf("TRYING: boot net\n");
+	oxide_boot_note("TRYING: boot net");
 
 	/*
 	 * First, force everything which can attach to do so.  The device class
@@ -836,35 +838,34 @@ oxide_boot_net(oxide_boot_t *oxb)
 	 * cannot walk the device tree looking for a device class of
 	 * ESC_NETWORK until everything is attached.
 	 */
-	printf("attaching stuff...\n");
+	oxide_boot_debug("attaching stuff...");
 	(void) ndi_devi_config(ddi_root_node(), NDI_CONFIG | NDI_DEVI_PERSIST |
 	    NDI_NO_EVENT | NDI_DRV_CONF_REPROBE);
 
 	/*
 	 * We need to find and attach the Ethernet device we want.
 	 */
-	printf("Ethernet interfaces:\n");
+	oxide_boot_debug("Ethernet interfaces:");
 	ddi_walk_devs(ddi_root_node(), oxide_boot_net_find_ether, &ofe);
-	printf("\n");
 
 	if (ofe.ofe_linkname[0] == '\0') {
-		printf("did not find any Ethernet devices!\n");
+		oxide_boot_warn("did not find any Ethernet devices!");
 		return (false);
 	}
 
 	int r;
 	mac_handle_t mh;
-	printf("opening %s handle\n", ofe.ofe_linkname);
+	oxide_boot_debug("opening %s handle", ofe.ofe_linkname);
 	if ((r = mac_open(ofe.ofe_linkname, &mh)) != 0) {
-		printf("mac_open failed with %d\n", r);
+		oxide_boot_warn("mac_open failed with %d", r);
 		return (false);
 	}
 
-	printf("opening client handle\n");
+	oxide_boot_debug("opening client handle");
 	mac_client_handle_t mch;
 	if ((r = mac_client_open(mh, &mch, NULL,
 	    MAC_OPEN_FLAGS_USE_DATALINK_NAME)) != 0) {
-		printf("failed to open client handle with %d\n", r);
+		oxide_boot_warn("failed to open client handle with %d", r);
 		mac_close(mh);
 		return (false);
 	}
@@ -874,19 +875,20 @@ oxide_boot_net(oxide_boot_t *oxb)
 	 * the console:
 	 */
 	mac_unicast_primary_get(mh, oe.oe_macaddr);
-	printf("MAC address is %02X:%02X:%02X:%02X:%02X:%02X\n",
+	oxide_boot_note("MAC address is %02X:%02X:%02X:%02X:%02X:%02X (%s)",
 	    oe.oe_macaddr[0],
 	    oe.oe_macaddr[1],
 	    oe.oe_macaddr[2],
 	    oe.oe_macaddr[3],
 	    oe.oe_macaddr[4],
-	    oe.oe_macaddr[5]);
+	    oe.oe_macaddr[5],
+	    ofe.ofe_linkname);
 
 	mac_unicast_handle_t muh;
 	mac_diag_t diag;
 	if (mac_unicast_add(mch, NULL, MAC_UNICAST_PRIMARY, &muh, 0, &diag) !=
 	    0) {
-		printf("mac unicast add failure (diag %d)\n", diag);
+		oxide_boot_warn("mac unicast add failure (diag %d)", diag);
 		mac_client_close(mch, 0);
 		mac_close(mh);
 		return (false);
@@ -898,10 +900,10 @@ oxide_boot_net(oxide_boot_t *oxb)
 	 */
 	mac_rx_set(mch, oxide_boot_net_ether_rx, &oe);
 	mutex_enter(&oe.oe_mutex);
-	printf("listening for packets...\n");
+	oxide_boot_note("listening for packets...");
 	for (;;) {
 		if (oxide_boot_net_ether_turn(oxb, &oe, mch) == 1) {
-			printf("all done!\n");
+			oxide_boot_debug("all done!");
 			break;
 		}
 
@@ -910,16 +912,16 @@ oxide_boot_net(oxide_boot_t *oxb)
 	}
 	mutex_exit(&oe.oe_mutex);
 
-	printf("closing unicast handle\n");
+	oxide_boot_debug("closing unicast handle");
 	(void) mac_unicast_remove(mch, muh);
-	printf("closing client handle\n");
+	oxide_boot_debug("closing client handle");
 	mac_rx_clear(mch);
 
-	printf("freeing remaining messages\n");
+	oxide_boot_debug("freeing remaining messages");
 	freemsgchain(oe.oe_q);
 
 	mac_client_close(mch, 0);
-	printf("closing handle\n");
+	oxide_boot_debug("closing handle");
 	mac_close(mh);
 
 	mutex_destroy(&oe.oe_mutex);

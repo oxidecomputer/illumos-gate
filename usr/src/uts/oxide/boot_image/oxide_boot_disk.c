@@ -88,7 +88,7 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 		 * This device is the right shape, but not the specific slot we
 		 * want.
 		 */
-		printf("    %s%d (slot %d)\n", ddi_driver_name(dip),
+		oxide_boot_debug("    %s%d (slot %d)", ddi_driver_name(dip),
 		    ddi_get_instance(dip), slot);
 		return (DDI_WALK_CONTINUE);
 	}
@@ -105,7 +105,8 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 
 		if (ofm->ofm_physpath[0] == '\0') {
 			(void) ddi_pathname_minor(md, ofm->ofm_physpath);
-			printf("    %s (slot %d!)\n", ofm->ofm_physpath, slot);
+			oxide_boot_debug("    %s (slot %d!)",
+			    ofm->ofm_physpath, slot);
 
 			/*
 			 * We have found the right disk and slice, so the walk
@@ -119,6 +120,7 @@ oxide_boot_disk_find_m2(dev_info_t *dip, void *arg)
 }
 
 #define	OXBOOT_DISK_DATASET_SIZE	128
+#define	OXBOOT_DISK_IMAGENAME_SIZE	128
 
 #define	OXBOOT_DISK_VERSION		2
 
@@ -146,6 +148,7 @@ typedef struct oxide_boot_disk_header {
 	uint8_t odh_sha256[OXBOOT_CSUMLEN_SHA256];
 
 	char odh_dataset[OXBOOT_DISK_DATASET_SIZE];
+	char odh_imagename[OXBOOT_DISK_IMAGENAME_SIZE];
 } __packed oxide_boot_disk_header_t;
 
 static bool
@@ -161,24 +164,24 @@ oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 		.ofm_want_slice = slice,
 	};
 
-	printf("TRYING: boot disk (slot %d, slice %u)\n", slot, slice);
+	oxide_boot_note("TRYING: boot disk (slot %d, slice %u)", slot, slice);
 
 	/*
 	 * We need to find the M.2 device that we want to boot.  It will be
 	 * attached under the bridge for the physical slot specified by the
 	 * caller.
 	 */
-	printf("NVMe boot devices:\n");
+	oxide_boot_debug("NVMe boot devices:");
 	ddi_walk_devs(ddi_root_node(), oxide_boot_disk_find_m2, &ofm);
-	printf("\n");
 
 	if (ofm.ofm_physpath[0] == '\0') {
-		printf("did not find the M.2 device in slot %d!\n", slot);
+		oxide_boot_warn("did not find the M.2 device in slot %d!",
+		    slot);
 		return (false);
 	}
 
-	printf("found M.2 device (slot %d, slice %u), @ %s\n", slot, slice,
-	    ofm.ofm_physpath);
+	oxide_boot_note("found M.2 device (slot %d, slice %u), @ %s",
+	    slot, slice, ofm.ofm_physpath);
 
 	/*
 	 * Open the M.2 device:
@@ -186,20 +189,20 @@ oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 	char fp[MAXPATHLEN];
 	if (snprintf(fp, sizeof (fp), "/devices%s", ofm.ofm_physpath) >=
 	    sizeof (fp)) {
-		printf("path construction failure!\n");
+		oxide_boot_warn("path construction failure!");
 		return (false);
 	}
 
-	printf("opening M.2 device\n");
+	oxide_boot_debug("opening M.2 device");
 	if ((r = ldi_open_by_name(fp, FREAD, kcred, &lh, oxb->oxb_li)) != 0) {
-		printf("M.2 open failure\n");
+		oxide_boot_warn("M.2 open failure");
 		goto out;
 	}
 
 	buf = kmem_zalloc(PAGESIZE, KM_SLEEP);
 
 	if (!oxide_boot_disk_read(lh, 0, buf, PAGESIZE)) {
-		printf("could not read header from disk\n");
+		oxide_boot_warn("could not read header from disk");
 		goto out;
 	}
 
@@ -211,25 +214,29 @@ oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 	    odh.odh_image_size > OXBOOT_MAX_IMAGE_SIZE ||
 	    odh.odh_image_size < PAGESIZE ||
 	    odh.odh_image_size > odh.odh_target_size ||
-	    odh.odh_dataset[OXBOOT_DISK_DATASET_SIZE - 1] != '\0') {
-		printf("invalid disk header\n");
+	    odh.odh_dataset[OXBOOT_DISK_DATASET_SIZE - 1] != '\0' ||
+	    odh.odh_imagename[OXBOOT_DISK_IMAGENAME_SIZE - 1] != '\0') {
+		oxide_boot_warn("invalid disk header");
 		goto out;
 	}
 
 	if (!oxide_boot_ramdisk_set_csum(oxb, odh.odh_sha256,
 	    OXBOOT_CSUMLEN_SHA256)) {
-		printf("checksum does not match cpio\n");
+		oxide_boot_warn("checksum does not match phase1");
 		goto out;
 	}
 
+	oxide_boot_note("attempting boot from image name '%s'",
+	    *odh.odh_imagename == '\0' ? "<none>" : odh.odh_imagename);
+
 	if (!oxide_boot_ramdisk_create(oxb, odh.odh_target_size)) {
-		printf("could not configure ramdisk\n");
+		oxide_boot_warn("could not configure ramdisk");
 		goto out;
 	}
 
 	if ((odh.odh_flags & ODH_FLAG_COMPRESSED) != 0) {
 		if (!oxide_boot_set_compressed(oxb)) {
-			printf("could not initialise decompression");
+			oxide_boot_warn("could not initialise decompression");
 			goto out;
 		}
 	}
@@ -243,13 +250,13 @@ oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 		}
 
 		if (!oxide_boot_disk_read(lh, PAGESIZE + pos, buf, PAGESIZE)) {
-			printf("could not read from disk\n");
+			oxide_boot_warn("could not read from disk");
 			goto out;
 		}
 
 
 		if (!oxide_boot_ramdisk_write_append(oxb, buf, sz)) {
-			printf("could not write to ramdisk\n");
+			oxide_boot_warn("could not write to ramdisk");
 			goto out;
 		}
 
@@ -260,20 +267,26 @@ oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 	if (!oxide_boot_ramdisk_write_flush(oxb) ||
 	    !oxide_boot_ramdisk_set_len(oxb, odh.odh_image_size) ||
 	    !oxide_boot_ramdisk_set_dataset(oxb, odh.odh_dataset)) {
-		printf("could not set ramdisk metadata\n");
+		oxide_boot_warn("could not set ramdisk metadata");
 		goto out;
 	}
 
 	ok = true;
+
+	if (*odh.odh_imagename != '\0') {
+		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
+		    ddi_root_node(), OXBOOT_DEVPROP_IMAGE_NAME,
+		    odh.odh_imagename);
+	}
 
 out:
 	if (buf != NULL) {
 		kmem_free(buf, PAGESIZE);
 	}
 	if (lh != NULL) {
-		printf("closing M.2\n");
+		oxide_boot_debug("closing M.2");
 		if ((r = ldi_close(lh, FREAD | FWRITE, kcred)) != 0) {
-			printf("M.2 close failure %d\n", r);
+			oxide_boot_warn("M.2 close failure %d", r);
 		}
 	}
 
@@ -289,7 +302,7 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 	 * cannot walk the device tree looking for a device class of
 	 * ESC_DISK until everything is attached.
 	 */
-	printf("attaching stuff...\n");
+	oxide_boot_debug("attaching stuff...");
 	(void) ndi_devi_config(ddi_root_node(), NDI_CONFIG | NDI_DEVI_PERSIST |
 	    NDI_NO_EVENT | NDI_DRV_CONF_REPROBE);
 
@@ -301,7 +314,7 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 	for (uint_t slice = 0; slice <= 1; slice++) {
 		if (oxide_boot_disk_slice(oxb, slot, slice)) {
 			(void) e_ddi_prop_update_int(DDI_DEV_T_NONE,
-			    ddi_root_node(), "oxide-boot-disk-slice", slice);
+			    ddi_root_node(), OXBOOT_DEVPROP_DISK_SLICE, slice);
 			return (true);
 		}
 	}

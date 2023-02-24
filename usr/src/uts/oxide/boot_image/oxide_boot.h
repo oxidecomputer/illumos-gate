@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_OXIDE_BOOT_H
@@ -20,6 +20,7 @@
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
 #include <sys/crypto/api.h>
+#include <sys/va_list.h>
 #include <sys/zmod.h>
 
 /*
@@ -31,9 +32,12 @@
 extern "C" {
 #endif
 
+#define	OXBOOT_DEVPROP_IMAGE_CHECKSUM		"oxide-boot-image-checksum"
+#define	OXBOOT_DEVPROP_IMAGE_NAME		"oxide-boot-image-name"
+#define	OXBOOT_DEVPROP_DISK_SLICE		"oxide-boot-disk-slice"
+
 #define	OXBOOT_RAMDISK_NAME	"rpool"
 
-#define	OXBOOT_DATASET_LEN	128
 #define	OXBOOT_CSUMLEN_SHA256	32
 #define	OXBOOT_CSUMBUF_SHA256	(OXBOOT_CSUMLEN_SHA256 * 2 + 1)
 /*
@@ -95,6 +99,18 @@ extern bool oxide_boot_disk_read(ldi_handle_t, uint64_t, uint8_t *, size_t);
 extern bool oxide_boot_net(oxide_boot_t *);
 extern bool oxide_boot_disk(oxide_boot_t *, int);
 extern bool oxide_boot_sp(oxide_boot_t *);
+
+extern void oxide_boot_warn(const char *, ...);
+extern void oxide_boot_vwarn(const char *, va_list);
+extern void oxide_boot_note(const char *, ...);
+extern void oxide_boot_vnote(const char *, va_list);
+#ifdef DEBUG
+extern void oxide_boot_debug_impl(const char *, ...);
+#define	oxide_boot_debug(fmt, ...) \
+    oxide_boot_debug_impl(fmt "\n", ##__VA_ARGS__)
+#else
+#define	oxide_boot_debug(fmt, ...)
+#endif
 
 #ifdef __cplusplus
 }

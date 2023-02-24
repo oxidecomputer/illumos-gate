@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -25,8 +25,11 @@
 #include <sys/vnode.h>
 #include <sys/file.h>
 #include <sys/ddi.h>
+#include <sys/sunddi.h>
+#include <sys/sunndi.h>
 #include <sys/time.h>
 #include <sys/sysmacros.h>
+#include <sys/va_list.h>
 #include <sys/kernel_ipcc.h>
 
 #include "oxide_boot.h"
@@ -55,6 +58,9 @@ CTASSERT(IPCC_IMAGE_HASHLEN == OXBOOT_CSUMLEN_SHA256);
 
 #define	OBSH_FLAG_COMPRESSED		0x1
 
+#define	OXBOOT_SP_DATASET_LEN	128
+#define	OXBOOT_SP_IMAGENAME_LEN	128
+
 typedef struct oxide_boot_sp_header {
 	uint32_t obsh_magic;
 	uint32_t obsh_version;
@@ -66,7 +72,8 @@ typedef struct oxide_boot_sp_header {
 
 	uint8_t obsh_sha256[OXBOOT_CSUMLEN_SHA256];
 
-	char obsh_dataset[OXBOOT_DATASET_LEN];
+	char obsh_dataset[OXBOOT_SP_DATASET_LEN];
+	char obsh_imagename[OXBOOT_SP_IMAGENAME_LEN];
 } oxide_boot_sp_header_t;
 
 static bool
@@ -81,7 +88,7 @@ oxide_boot_sp_fail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 	kernel_ipcc_release();
 
 	va_start(va, fmt);
-	(void) vprintf(fmt, va);
+	oxide_boot_vwarn(fmt, va);
 	va_end(va);
 	va_start(va, fmt);
 	(void) kernel_ipcc_bootfailv(reason, fmt, va);
@@ -98,7 +105,7 @@ oxide_boot_sp(oxide_boot_t *oxb)
 	size_t datal;
 	int err;
 
-	printf("TRYING: boot sp\n");
+	oxide_boot_note("TRYING: boot sp");
 
 	/*
 	 * Retrieving a phase 2 image from the SP involves transferring a
@@ -136,7 +143,8 @@ oxide_boot_sp(oxide_boot_t *oxb)
 	    obsh.obsh_image_size > OXBOOT_MAX_IMAGE_SIZE ||
 	    obsh.obsh_image_size < PAGESIZE ||
 	    obsh.obsh_image_size > obsh.obsh_target_size ||
-	    obsh.obsh_dataset[OXBOOT_DATASET_LEN - 1] != '\0') {
+	    obsh.obsh_dataset[OXBOOT_SP_DATASET_LEN - 1] != '\0' ||
+	    obsh.obsh_imagename[OXBOOT_SP_IMAGENAME_LEN - 1] != '\0') {
 		return (oxide_boot_sp_fail(IPCC_BOOTFAIL_HEADER,
 		    "invalid disk header"));
 	}
@@ -147,17 +155,20 @@ oxide_boot_sp(oxide_boot_t *oxb)
 		char got[OXBOOT_CSUMLEN_SHA256 * 2 + 1];
 
 		return (oxide_boot_sp_fail(IPCC_BOOTFAIL_INTEGRITY,
-		    "checksum does not match cpio want %s got %s",
+		    "checksum does not match phase1, want %s got %s",
 		    oxide_format_sum(want, sizeof (want), oxb->oxb_csum_want),
 		    oxide_format_sum(got, sizeof (got), obsh.obsh_sha256)));
 	}
 
-	printf("received offer from SP -- \n");
-	printf("    v%u flags 0x%lx\n",
+	oxide_boot_note("received offer from SP -- ");
+	oxide_boot_note("    v%u flags 0x%lx",
 	    obsh.obsh_version, obsh.obsh_flags);
-	printf("    data size 0x%lx image size 0x%lx target size 0x%lx\n",
+	oxide_boot_note(
+	    "    data size 0x%lx image size 0x%lx target size 0x%lx",
 	    obsh.obsh_data_size, obsh.obsh_image_size, obsh.obsh_target_size);
-	printf("    dataset %s\n", obsh.obsh_dataset);
+	oxide_boot_note("    dataset %s", obsh.obsh_dataset);
+	oxide_boot_note(" image name %s",
+	    *obsh.obsh_imagename == '\0' ? "<none>" : obsh.obsh_imagename);
 
 	if (!oxide_boot_ramdisk_create(oxb, obsh.obsh_target_size)) {
 		return (oxide_boot_sp_fail(IPCC_BOOTFAIL_GENERAL,
@@ -235,6 +246,12 @@ oxide_boot_sp(oxide_boot_t *oxb)
 	    !oxide_boot_ramdisk_set_dataset(oxb, obsh.obsh_dataset)) {
 		return (oxide_boot_sp_fail(IPCC_BOOTFAIL_RAMDISK,
 		    "could not set ramdisk metadata"));
+	}
+
+	if (*obsh.obsh_imagename != '\0') {
+		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
+		    ddi_root_node(), OXBOOT_DEVPROP_IMAGE_NAME,
+		    obsh.obsh_imagename);
 	}
 
 	kernel_ipcc_release();

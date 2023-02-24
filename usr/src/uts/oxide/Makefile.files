@@ -164,7 +164,7 @@ FCH_OBJS += fch.o ixbar.o
 DWU_OBJS += dwu.o
 
 BOOT_IMAGE_OBJS += oxide_boot.o oxide_boot_disk.o oxide_boot_net.o \
-	oxide_boot_sp.o
+	oxide_boot_sp.o oxide_boot_log.o
 
 IPCC_OBJS += ipcc.o ipcc_debug.o
 

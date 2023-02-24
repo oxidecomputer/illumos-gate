@@ -22,6 +22,7 @@
 #include <sys/ipcc_proto.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/psm_defs.h>
+#include <sys/reboot.h>
 #include <sys/stdbool.h>
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
@@ -193,8 +194,6 @@ static void
 eb_ipcc_log(void *arg __unused, ipcc_log_type_t type __maybe_unused,
     const char *fmt, ...)
 {
-	va_list ap;
-
 #ifndef DEBUG
 	/*
 	 * In a non-DEBUG kernel the hexdump messages are not logged to the
@@ -204,9 +203,13 @@ eb_ipcc_log(void *arg __unused, ipcc_log_type_t type __maybe_unused,
 		return;
 #endif
 
-	va_start(ap, fmt);
-	eb_vprintf(fmt, ap);
-	va_end(ap);
+	if ((boothowto & RB_VERBOSE) != 0) {
+		va_list ap;
+
+		va_start(ap, fmt);
+		eb_vprintf(fmt, ap);
+		va_end(ap);
+	}
 }
 
 static void

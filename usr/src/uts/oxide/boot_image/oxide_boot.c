@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -40,6 +40,7 @@
 #include <sys/sysmacros.h>
 #include <sys/crypto/api.h>
 #include <sys/kobj.h>
+#include <sys/va_list.h>
 #include <sys/boot_data.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/boot_image_ops.h>
@@ -102,7 +103,8 @@ oxide_dump_sum(const char *name, const uint8_t *sum)
 {
 	char buf[OXBOOT_CSUMBUF_SHA256];
 
-	printf("    %s: %s\n", name, oxide_format_sum(buf, sizeof (buf), sum));
+	oxide_boot_note("    %s: %s", name,
+	    oxide_format_sum(buf, sizeof (buf), sum));
 }
 
 bool
@@ -122,10 +124,10 @@ oxide_boot_ramdisk_create(oxide_boot_t *oxb, uint64_t size)
 		goto bail;
 	}
 
-	printf("opening ramdisk control device\n");
+	oxide_boot_debug("opening ramdisk control device");
 	if ((r = ldi_open_by_name("/devices/pseudo/ramdisk@1024:ctl",
 	    FEXCL | FREAD | FWRITE, kcred, &ctlh, oxb->oxb_li)) != 0) {
-		printf("control device open failure %d\n", r);
+		oxide_boot_warn("control device open failure %d", r);
 		goto bail;
 	}
 
@@ -134,10 +136,10 @@ oxide_boot_ramdisk_create(oxide_boot_t *oxb, uint64_t size)
 	(void) snprintf(ri.ri_name, sizeof (ri.ri_name), OXBOOT_RAMDISK_NAME);
 	ri.ri_size = size;
 
-	printf("creating ramdisk of size %lu\n", size);
+	oxide_boot_debug("creating ramdisk of size %lu", size);
 	if ((r = ldi_ioctl(ctlh, RD_CREATE_DISK, (intptr_t)&ri,
 	    FWRITE | FKIOCTL, kcred, NULL)) != 0) {
-		printf("ramdisk create failure %d\n", r);
+		oxide_boot_warn("ramdisk create failure %d", r);
 		goto bail;
 	}
 
@@ -146,10 +148,10 @@ oxide_boot_ramdisk_create(oxide_boot_t *oxb, uint64_t size)
 	oxb->oxb_ramdisk_size = size;
 	oxb->oxb_ramdisk_data_size = 0;
 
-	printf("opening ramdisk device: %s\n", oxb->oxb_ramdisk_path);
+	oxide_boot_debug("opening ramdisk device: %s", oxb->oxb_ramdisk_path);
 	if ((r = ldi_open_by_name(oxb->oxb_ramdisk_path, FREAD | FWRITE,
 	    kcred, &oxb->oxb_rd_disk, oxb->oxb_li)) != 0) {
-		printf("ramdisk open failure %d\n", r);
+		oxide_boot_warn("ramdisk open failure %d", r);
 		goto bail;
 	}
 
@@ -175,8 +177,9 @@ oxide_boot_write_iov(oxide_boot_t *oxb, iovec_t *iov, uint_t niov,
 			/*
 			 * This would overflow.
 			 */
-			printf("write to ramdisk (offset %lu) iovec "
-			    "too large\n", offset);
+			oxide_boot_warn(
+			    "write to ramdisk (offset %lu) iovec too large",
+			    offset);
 			return (false);
 		}
 		len += iov[i].iov_len;
@@ -202,13 +205,15 @@ oxide_boot_write_iov(oxide_boot_t *oxb, iovec_t *iov, uint_t niov,
 
 	int r;
 	if ((r = ldi_write(oxb->oxb_rd_disk, &uio, kcred)) != 0) {
-		printf("write to ramdisk (offset %lu size %lu) failed %d\n",
+		oxide_boot_warn(
+		    "write to ramdisk (offset %lu size %lu) failed %d",
 		    offset, len, r);
 		return (false);
 	}
 
 	if (uio.uio_resid != 0) {
-		printf("write to ramdisk (offset %lu) was short\n", offset);
+		oxide_boot_warn("write to ramdisk (offset %lu) was short",
+		    offset);
 		return (false);
 	}
 
@@ -318,15 +323,15 @@ oxide_boot_ramdisk_write_append(oxide_boot_t *oxb, uint8_t *buf, size_t len)
 
 	switch (err) {
 	case Z_STREAM_END:
-		printf("end of compression stream\n");
+		oxide_boot_debug("end of compression stream");
 		/* FALLTHROUGH */
 	case Z_OK:
 		return (true);
 	case Z_BUF_ERROR:
-		printf("failed ramdisk write at offset 0x%lx\n", opos);
+		oxide_boot_warn("failed ramdisk write at offset 0x%lx", opos);
 		break;
 	default:
-		printf("failed decompression: %s\n", z_strerror(err));
+		oxide_boot_warn("failed decompression: %s", z_strerror(err));
 		break;
 	}
 
@@ -368,7 +373,7 @@ oxide_boot_ramdisk_set_len(oxide_boot_t *oxb, uint64_t len)
 	mutex_enter(&oxb->oxb_mutex);
 
 	if (len < oxb->oxb_ramdisk_data_size) {
-		printf("image size %lu < written size %lu\n",
+		oxide_boot_warn("image size %lu < written size %lu",
 		    len, oxb->oxb_ramdisk_data_size);
 		mutex_exit(&oxb->oxb_mutex);
 		return (false);
@@ -402,7 +407,7 @@ oxide_boot_set_compressed(oxide_boot_t *oxb)
 
 	mutex_enter(&oxb->oxb_mutex);
 	if (z_uncompress_stream_init(&oxb->oxb_zstream) != Z_OK) {
-		printf("Could not initialise stream decompressor\n");
+		oxide_boot_warn("Could not initialise stream decompressor");
 		ret = false;
 	} else {
 		oxb->oxb_compressed = true;
@@ -429,13 +434,15 @@ oxide_boot_disk_read(ldi_handle_t lh, uint64_t offset, uint8_t *buf, size_t len)
 
 	int r;
 	if ((r = ldi_read(lh, &uio, kcred)) != 0) {
-		printf("read from disk (offset %lu size %lu) failed %d\n",
+		oxide_boot_warn(
+		    "read from disk (offset %lu size %lu) failed %d",
 		    offset, len, r);
 		return (false);
 	}
 
 	if (uio.uio_resid != 0) {
-		printf("read from disk (offset %lu) was short\n", offset);
+		oxide_boot_warn("read from disk (offset %lu) was short",
+		    offset);
 		return (false);
 	}
 
@@ -461,7 +468,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 	}
 
 	if ((r = crypto_digest_init(&cm, &cc, NULL)) != CRYPTO_SUCCESS) {
-		printf("crypto_digest_init() failed %d\n", r);
+		oxide_boot_warn("crypto_digest_init() failed %d", r);
 	}
 
 	uint8_t *buf = kmem_alloc(PAGESIZE, KM_SLEEP);
@@ -474,7 +481,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 		}
 
 		if (!oxide_boot_disk_read(oxb->oxb_rd_disk, pos, buf, sz)) {
-			printf("ramdisk read failed\n");
+			oxide_boot_warn("ramdisk read failed");
 			goto bail;
 		}
 
@@ -487,7 +494,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 			},
 		};
 		if ((r = crypto_digest_update(cc, &cd, 0) != CRYPTO_SUCCESS)) {
-			printf("crypto digest update failed %d\n", r);
+			oxide_boot_warn("crypto digest update failed %d", r);
 			goto bail;
 		}
 
@@ -504,7 +511,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 		},
 	};
 	if ((r = crypto_digest_final(cc, &cd, 0)) != CRYPTO_SUCCESS) {
-		printf("crypto digest final failed %d\n", r);
+		oxide_boot_warn("crypto digest final failed %d", r);
 		goto bail;
 	}
 
@@ -512,7 +519,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 
 	if (bcmp(oxb->oxb_csum_want, oxb->oxb_csum_have,
 	    OXBOOT_CSUMLEN_SHA256) != 0) {
-		printf("checksum mismatch\n");
+		oxide_boot_warn("checksum mismatch");
 		oxide_dump_sum("want", oxb->oxb_csum_want);
 		oxide_dump_sum("have", oxb->oxb_csum_have);
 
@@ -522,7 +529,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 		return (false);
 	}
 
-	printf("checksum ok!\n");
+	oxide_boot_debug("checksum ok!");
 	return (true);
 
 bail:
@@ -554,7 +561,7 @@ oxide_boot_fail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 	va_list va;
 
 	va_start(va, fmt);
-	(void) vprintf(fmt, va);
+	oxide_boot_vwarn(fmt, va);
 	va_end(va);
 
 	va_start(va, fmt);
@@ -571,8 +578,10 @@ oxide_boot_locate(void)
 {
 	int err;
 
+	oxide_boot_note("Starting Oxide boot");
+
 	oxide_boot_t *oxb = kmem_zalloc(sizeof (*oxb), KM_SLEEP);
-	printf("in oxide_boot! oxb=%p\n", oxb);
+	oxide_boot_debug("oxb=%p", oxb);
 	mutex_init(&oxb->oxb_mutex, NULL, MUTEX_DRIVER, NULL);
 	err = ldi_ident_from_mod(&oxide_boot_modlinkage, &oxb->oxb_li);
 	if (err != 0) {
@@ -581,7 +590,7 @@ oxide_boot_locate(void)
 	}
 
 	/*
-	 * Load the hash of the ramdisk that matches the bits in the cpio
+	 * Load the hash of the ramdisk that matches the bits in the phase1
 	 * archive.
 	 */
 	intptr_t fd;
@@ -592,7 +601,7 @@ oxide_boot_locate(void)
 		    "could not read /boot_image_csum");
 	}
 	kobj_close(fd);
-	oxide_dump_sum("cpio wants", oxb->oxb_csum_want);
+	oxide_dump_sum("Phase 1 wants", oxb->oxb_csum_want);
 
 	/*
 	 * The checksum only appears in the boot archive, which will be
@@ -600,7 +609,7 @@ oxide_boot_locate(void)
 	 * diagnostic purposes.
 	 */
 	(void) e_ddi_prop_update_byte_array(DDI_DEV_T_NONE, ddi_root_node(),
-	    "oxide-boot-image-checksum", oxb->oxb_csum_want,
+	    OXBOOT_DEVPROP_IMAGE_CHECKSUM, oxb->oxb_csum_want,
 	    OXBOOT_CSUMLEN_SHA256);
 
 	/*
@@ -647,7 +656,8 @@ oxide_boot_locate(void)
 
 	ddi_prop_free(bootdev);
 
-	printf("ramdisk data size = %lu\n", oxb->oxb_ramdisk_data_size);
+	oxide_boot_debug("ramdisk data size = %lu",
+	    oxb->oxb_ramdisk_data_size);
 	if (oxb->oxb_ramdisk_dataset == NULL) {
 		oxide_boot_fail(IPCC_BOOTFAIL_HEADER,
 		    "no dataset name was specified");
