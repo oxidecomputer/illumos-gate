@@ -114,8 +114,6 @@ typedef enum ipcc_sp_startup {
 	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
 #define	IPCC_KEYLOOKUP_MAX_MSGSIZE	\
 	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
-/* Keep synchronised with the header definition in boot_image/oxide_boot_sp.c */
-#define	IPCC_IMAGE_HASHLEN		32
 
 typedef enum ipcc_log_type {
 	IPCC_LOG_DEBUG,

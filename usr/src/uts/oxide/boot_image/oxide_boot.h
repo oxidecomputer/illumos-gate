@@ -17,8 +17,10 @@
 #define	_OXIDE_BOOT_H
 
 #include <sys/stdbool.h>
+#include <sys/ddi.h>
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
+#include <sys/sunndi.h>
 #include <sys/crypto/api.h>
 #include <sys/va_list.h>
 #include <sys/zmod.h>

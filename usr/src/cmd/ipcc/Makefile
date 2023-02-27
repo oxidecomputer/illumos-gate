@@ -28,7 +28,7 @@ ROOTMANIFESTDIR = $(ROOTSVCSYSTEM)
 
 CSTD= $(CSTD_GNU99)
 CPPFLAGS += -I$(SRC)/uts/oxide
-LDLIBS += -lsocket
+LDLIBS += -lsocket -lcmdutils
 
 .KEEP_STATE:
 

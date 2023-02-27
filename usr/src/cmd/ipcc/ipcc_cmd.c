@@ -19,6 +19,7 @@
 
 #include <err.h>
 #include <fcntl.h>
+#include <libcmdutils.h>
 #include <libgen.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -32,12 +33,15 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <sys/time.h>
 #include <sys/types.h>
+#include <boot_image/oxide_boot_sp.h>
 
 #include "ipcc_cmd.h"
 
 const char *progname;
 static int ipcc_fd;
+static bool ipcc_istty;
 
 static void
 hexdump(const void *ptr, size_t length)
@@ -73,6 +77,55 @@ hexdump(const void *ptr, size_t length)
 }
 
 static void
+ipcc_usage(const ipcc_cmdtab_t *cmdtab, const char *format, ...)
+{
+	if (format != NULL) {
+		va_list ap;
+
+		va_start(ap, format);
+		vwarnx(format, ap);
+		va_end(ap);
+	}
+
+	(void) fprintf(stderr, "Usage: %s <subcommand> <args> ...\n"
+	    "Available subcommands:\n", progname);
+
+	for (uint32_t cmd = 0; cmdtab[cmd].ic_name != NULL; cmd++) {
+		if (cmdtab[cmd].ic_use != NULL)
+			cmdtab[cmd].ic_use(stderr);
+		else
+			(void) fprintf(stderr, "\t%s\n", cmdtab[cmd].ic_name);
+	}
+}
+
+static int
+ipcc_walk_tab(const ipcc_cmdtab_t *cmdtab, int argc, char *argv[])
+{
+	uint32_t cmd;
+
+	if (argc == 0) {
+		ipcc_usage(cmdtab, "missing required sub-command");
+		exit(EXIT_USAGE);
+	}
+
+	for (cmd = 0; cmdtab[cmd].ic_name != NULL; cmd++) {
+		if (strcmp(argv[0], cmdtab[cmd].ic_name) == 0)
+			break;
+	}
+
+	if (cmdtab[cmd].ic_name == NULL) {
+		ipcc_usage(cmdtab, "unknown sub-command: %s", argv[0]);
+		exit(EXIT_USAGE);
+	}
+
+	argc--;
+	argv++;
+	optind = 0;
+
+	return (cmdtab[cmd].ic_op(argc, argv));
+}
+
+static void
 ipcc_init(void)
 {
 	ipcc_fd = open(IPCC_DEV, O_RDWR);
@@ -95,6 +148,251 @@ ipcc_ident(int argc, char *argv[])
 	(void) printf("Rev:    0x%x\n", ident.ii_rev);
 
 	return (0);
+}
+
+static bool
+ipcc_image_hash(const char *arg, uint8_t *hash)
+{
+	size_t len = strlen(arg);
+
+	/*
+	 * arg is expected to be a string containing a 64 hex-digit hash
+	 * that should be parsed into an array of uint8_ts.
+	 */
+	if (len != 64) {
+		warnx("hash length incorrect (got %zu, expected 64)", len);
+		return (false);
+	}
+
+	for (uint_t i = 0; i < len / 2; i++) {
+		if (sscanf(arg + 2 * i, "%2hhx", &hash[i]) != 1) {
+			warnx("hash parse failed at offset %u '%s'",
+			    2 * i, arg + 2 * i);
+			return (false);
+		}
+	}
+
+	return (true);
+}
+
+static void
+ipcc_image_info_usage(FILE *f)
+{
+	(void) fprintf(f, "\timage info <hash>\n");
+}
+
+static struct {
+	uint64_t	flag;
+	const char	*descr;
+} header_flags[] = {
+	{ OBSH_FLAG_COMPRESSED,		"Compressed" }
+};
+
+static void
+ipcc_image_header(uint8_t *hash, oxide_boot_sp_header_t *hdr)
+{
+	ipcc_imageblock_t ib;
+	char nnbuf[NN_NUMBUF_SZ];
+
+	bcopy(hash, ib.ii_hash, sizeof (ib.ii_hash));
+	ib.ii_buflen = sizeof (*hdr);
+	ib.ii_buf = (uint8_t *)hdr;
+
+	/* The header is retrieved by specifying offset 0 */
+	ib.ii_offset = 0;
+	if (ioctl(ipcc_fd, IPCC_IMAGEBLOCK, &ib) < 0)
+		err(EXIT_FAILURE, "IPCC_IMAGEBLOCK ioctl failed");
+
+	if (ib.ii_datalen == 0)
+		errx(EXIT_FAILURE, "No response from MGS");
+
+	printf("Received %u bytes\n", ib.ii_datalen);
+
+	if (ib.ii_datalen < sizeof (*hdr))
+		errx(EXIT_FAILURE, "MGS response too short for header");
+
+	(void) printf("\nImage header:\n");
+	(void) printf("       magic: 0x%" PRIx32 " (%s)\n", hdr->obsh_magic,
+	    hdr->obsh_magic == OXBOOT_SP_MAGIC ? "correct" : "! INCORRECT");
+	(void) printf("     version: 0x%" PRIx32 "\n", hdr->obsh_version);
+
+	uint64_t flags = hdr->obsh_flags;
+	(void) printf("       flags: 0x%" PRIx64 "\n", flags);
+	for (uint_t i = 0; i < ARRAY_SIZE(header_flags); i++) {
+		if ((flags & header_flags[i].flag) != 0) {
+			(void) printf("              - %s\n",
+			    header_flags[i].descr);
+			flags &= ~header_flags[i].flag;
+		}
+	}
+	if (flags != 0) {
+		(void) printf("              - ! UNKNOWN (0x%" PRIx64 ")\n",
+		    flags);
+	}
+
+	nicenum(hdr->obsh_data_size, nnbuf, sizeof (nnbuf));
+	(void) printf("   data size: 0x%" PRIx64 " (%siB)\n",
+	    hdr->obsh_data_size, nnbuf);
+	nicenum(hdr->obsh_image_size, nnbuf, sizeof (nnbuf));
+	(void) printf("  image size: 0x%" PRIx64 " (%siB)\n",
+	    hdr->obsh_image_size, nnbuf);
+	nicenum(hdr->obsh_target_size, nnbuf, sizeof (nnbuf));
+	(void) printf(" target size: 0x%" PRIx64 " (%siB)\n",
+	    hdr->obsh_target_size, nnbuf);
+	(void) printf("        hash: %s\n",
+	    memcmp(ib.ii_hash, hdr->obsh_sha256, sizeof (ib.ii_hash)) == 0 ?
+	    "match" : "! MISMATCH");
+	(void) printf("     dataset: %.*s\n", sizeof (hdr->obsh_dataset),
+	    hdr->obsh_dataset);
+	(void) printf("        name: %.*s\n", sizeof (hdr->obsh_imagename),
+	    hdr->obsh_imagename);
+}
+
+static int
+ipcc_image_info(int argc, char *argv[])
+{
+	oxide_boot_sp_header_t hdr;
+	uint8_t hash[IPCC_IMAGE_HASHLEN];
+
+	if (argc == 0)
+		errx(EXIT_USAGE, "image info <hash>");
+
+	if (!ipcc_image_hash(argv[0], hash))
+		errx(EXIT_FAILURE, "could not parse hash '%s'", argv[0]);
+
+	ipcc_image_header(hash, &hdr);
+
+	return (0);
+}
+
+static void
+ipcc_image_fetch_usage(FILE *f)
+{
+	(void) fprintf(f, "\timage fetch <hash> <output file>\n");
+}
+
+static int
+ipcc_image_fetch(int argc, char *argv[])
+{
+	oxide_boot_sp_header_t hdr;
+	uint8_t hash[IPCC_IMAGE_HASHLEN];
+	uint8_t buf[IPCC_MAX_DATA_SIZE];
+	int fd;
+
+	if (argc != 2)
+		errx(EXIT_USAGE, "image fetch <hash> <output file>");
+
+	if (!ipcc_image_hash(argv[0], hash))
+		errx(EXIT_FAILURE, "could not parse hash '%s'", argv[0]);
+
+	ipcc_image_header(hash, &hdr);
+
+	fd = open(argv[1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd == -1)
+		err(EXIT_FAILURE, "failed to open output file '%s'", argv[1]);
+
+	hrtime_t start = gethrtime();
+	size_t total = OXBOOT_SP_HEADER_SIZE + hdr.obsh_data_size;
+	size_t rem = total;
+	uint64_t offset = 0;
+	ipcc_imageblock_t ib;
+	uint8_t loop = 0;
+	uint8_t report_interval = ipcc_istty ? 20 : UINT8_MAX;
+
+	bcopy(hash, ib.ii_hash, sizeof (ib.ii_hash));
+
+	while (rem > 0) {
+		ib.ii_buf = (uint8_t *)buf;
+		ib.ii_buflen = sizeof (buf);
+		ib.ii_offset = offset;
+
+		if (ioctl(ipcc_fd, IPCC_IMAGEBLOCK, &ib) < 0) {
+			err(EXIT_FAILURE,
+			    "failed to read offset 0x" PRIx64 " from SP",
+			    offset);
+		}
+
+		if (ib.ii_datalen > rem) {
+			errx(EXIT_FAILURE,
+			    "too much data returned for offset 0x" PRIx64
+			    ", len=0x%x expected <= 0x%x",
+			    offset, ib.ii_datalen, rem);
+		}
+
+		offset += ib.ii_datalen;
+		rem -= ib.ii_datalen;
+
+		size_t done = 0;
+		do {
+			ssize_t ret;
+
+			ret = write(fd, buf + done, ib.ii_datalen - done);
+
+			if (ret > 0) {
+				done += ret;
+			} else if (errno != EINTR) {
+				err(EXIT_FAILURE,
+				    "writing to output file failed");
+			}
+		} while (done != ib.ii_datalen);
+
+		/* Report progress periodically */
+		if (++loop == report_interval) {
+			uint64_t secs = (gethrtime() - start) / SEC2NSEC(1);
+			uint_t pct = 100UL * offset / hdr.obsh_data_size;
+			uint64_t bw = 0;
+
+			if (secs > 0)
+				bw = (offset / secs) / 1024;
+
+			if (ipcc_istty)
+				printf("\r ");
+			printf("received %016" PRIx64 "/ %016" PRIx64
+			    " (%3u%%) %" PRIu64 "KiB/s",
+			    offset, total, pct, bw);
+			if (ipcc_istty) {
+				printf("                \r");
+				fflush(stdout);
+			} else {
+				printf("\n");
+			}
+			loop = 0;
+		}
+	}
+
+	uint64_t secs = (gethrtime() - start) / SEC2NSEC(1);
+	printf("transfer finished after %" PRIu64 " seconds, %" PRIu64 "KiB/s"
+	    "                        \n",
+	    secs, secs > 0 ? (total / secs) / 1024 : 0);
+
+	VERIFY0(close(fd));
+
+	return (0);
+}
+
+static const ipcc_cmdtab_t ipcc_image_cmds[] = {
+	{ "info", ipcc_image_info, ipcc_image_info_usage },
+	{ "fetch", ipcc_image_fetch, ipcc_image_fetch_usage },
+	{ NULL, NULL, NULL }
+};
+
+static void
+ipcc_image_usage(FILE *f)
+{
+	(void) fprintf(f, "\timage info <hash>\n");
+	(void) fprintf(f, "\timage fetch <hash> <output file>\n");
+}
+
+static int
+ipcc_image(int argc, char *argv[])
+{
+	if (argc == 0) {
+		ipcc_usage(ipcc_image_cmds,
+		    "missing required image subcommand");
+		exit(EXIT_USAGE);
+	}
+
+	return (ipcc_walk_tab(ipcc_image_cmds, argc, argv));
 }
 
 static void
@@ -261,61 +559,13 @@ ipcc_version(int argc, char *argv[])
 
 static const ipcc_cmdtab_t ipcc_cmds[] = {
 	{ "ident", ipcc_ident, NULL },
+	{ "image", ipcc_image, ipcc_image_usage },
 	{ "keylookup", ipcc_keylookup, ipcc_keylookup_usage },
 	{ "macs", ipcc_macs, ipcc_macs_usage },
 	{ "status", ipcc_status, NULL },
 	{ "version", ipcc_version, NULL },
 	{ NULL, NULL, NULL }
 };
-
-void
-ipcc_usage(const ipcc_cmdtab_t *cmdtab, const char *format, ...)
-{
-	if (format != NULL) {
-		va_list ap;
-
-		va_start(ap, format);
-		vwarnx(format, ap);
-		va_end(ap);
-	}
-
-	(void) fprintf(stderr, "Usage: %s <subcommand> <args> ...\n"
-	    "Available subcommands:\n", progname);
-
-	for (uint32_t cmd = 0; cmdtab[cmd].ic_name != NULL; cmd++) {
-		if (cmdtab[cmd].ic_use != NULL)
-			cmdtab[cmd].ic_use(stderr);
-		else
-			(void) fprintf(stderr, "\t%s\n", cmdtab[cmd].ic_name);
-	}
-}
-
-static int
-ipcc_walk_tab(const ipcc_cmdtab_t *cmdtab, int argc, char *argv[])
-{
-	uint32_t cmd;
-
-	if (argc == 0) {
-		ipcc_usage(cmdtab, "missing required sub-command");
-		exit(EXIT_USAGE);
-	}
-
-	for (cmd = 0; cmdtab[cmd].ic_name != NULL; cmd++) {
-		if (strcmp(argv[0], cmdtab[cmd].ic_name) == 0)
-			break;
-	}
-
-	if (cmdtab[cmd].ic_name == NULL) {
-		ipcc_usage(cmdtab, "unknown sub-command: %s", argv[0]);
-		exit(EXIT_USAGE);
-	}
-
-	argc--;
-	argv++;
-	optind = 0;
-
-	return (cmdtab[cmd].ic_op(argc, argv));
-}
 
 int
 main(int argc, char *argv[])
@@ -327,6 +577,7 @@ main(int argc, char *argv[])
 	optind = 0;
 
 	ipcc_init();
+	ipcc_istty = isatty(STDOUT_FILENO) == 1;
 
 	return (ipcc_walk_tab(ipcc_cmds, argc, argv));
 }

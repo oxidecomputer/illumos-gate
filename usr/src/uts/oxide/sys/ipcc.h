@@ -17,6 +17,7 @@
 #define	_SYS_IPCC_H
 
 #include <sys/ethernet.h>
+#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,7 @@ extern "C" {
 #define	IPCC_MACS		(IPCC_IOC|3)
 #define	IPCC_KEYLOOKUP		(IPCC_IOC|4)
 #define	IPCC_ROT		(IPCC_IOC|5)
+#define	IPCC_IMAGEBLOCK		(IPCC_IOC|6)
 
 /*
  * The minimum message size is a protocol detail that should be in
@@ -50,6 +52,9 @@ extern "C" {
 #define	IPCC_MIN_MESSAGE_SIZE	19
 #define	IPCC_MAX_MESSAGE_SIZE	4123
 #define	IPCC_MAX_DATA_SIZE	(IPCC_MAX_MESSAGE_SIZE - IPCC_MIN_MESSAGE_SIZE)
+
+/* Keep synchronised with the header definition in boot_image/oxide_boot_sp.h */
+#define	IPCC_IMAGE_HASHLEN		32
 
 /*
  * Both model and serial numbers are currently 11 bytes on Gimlet, but the
@@ -89,6 +94,14 @@ typedef struct ipcc_keylookup {
 	uint8_t		*ik_buf;
 } ipcc_keylookup_t;
 
+typedef struct ipcc_imageblock {
+	uint8_t		ii_hash[IPCC_IMAGE_HASHLEN];
+	uint64_t	ii_offset;
+	uint16_t	ii_buflen;
+	uint16_t	ii_datalen;
+	uint8_t		*ii_buf;
+} ipcc_imageblock_t;
+
 #if defined(_SYSCALL32)
 typedef struct ipcc_keylookup32 {
 	uint8_t		ik_key;
@@ -97,7 +110,15 @@ typedef struct ipcc_keylookup32 {
 	uint16_t	ik_datalen;
 	caddr32_t	ik_buf;
 } ipcc_keylookup32_t;
-#endif
+
+typedef struct ipcc_imageblock32 {
+	uint8_t		ii_hash[IPCC_IMAGE_HASHLEN];
+	uint64_t	ii_offset;
+	uint16_t	ii_buflen;
+	uint16_t	ii_datalen;
+	caddr32_t	ii_buf;
+} ipcc_imageblock32_t;
+#endif /* _SYSCALL32 */
 
 #define	IPCC_KEYLOOKUP_SUCCESS		0
 #define	IPCC_KEYLOOKUP_UNKNOWN_KEY	1

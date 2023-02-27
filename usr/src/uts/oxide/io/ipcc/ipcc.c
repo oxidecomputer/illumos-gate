@@ -620,6 +620,81 @@ rot_done:
 		kmem_free(rot, sizeof (*rot));
 		break;
 	}
+	case IPCC_IMAGEBLOCK: {
+		ipcc_imageblock_t ib;
+#ifdef _MULTI_DATAMODEL
+		ipcc_imageblock32_t ib32;
+#endif
+		uint8_t *data;
+		size_t datal;
+
+		switch (model) {
+#ifdef _MULTI_DATAMODEL
+		case DDI_MODEL_ILP32:
+			if (ddi_copyin(datap, &ib32, sizeof (ib32), cflag) != 0)
+				return (EFAULT);
+
+			bzero(&ib, sizeof (ib));
+			bcopy(ib32.ii_hash, ib.ii_hash, sizeof (ib32.ii_hash));
+			ib.ii_offset = ib32.ii_offset;
+			ib.ii_buflen = ib32.ii_buflen;
+			ib.ii_buf = (uint8_t *)(uintptr_t)ib32.ii_buf;
+			break;
+#endif /* _MULTI_DATAMODEL */
+		case DDI_MODEL_NONE:
+			if (ddi_copyin(datap, &ib, sizeof (ib), cflag) != 0)
+				return (EFAULT);
+			break;
+		default:
+			return (ENOTSUP);
+		}
+
+		if (ib.ii_buflen == 0 || ib.ii_buflen > IPCC_MAX_DATA_SIZE) {
+			err = EINVAL;
+			break;
+		}
+
+		err = ipcc_acquire_channel(&ipcc_ops, &ipcc);
+		if (err != 0)
+			break;
+		err = ipcc_imageblock(&ipcc_ops, &ipcc, ib.ii_hash,
+		    ib.ii_offset, &data, &datal);
+		if (err != 0)
+			goto imageblock_done;
+
+		datal = MIN(datal, ib.ii_buflen);
+
+		if (datal > 0) {
+			if (ddi_copyout(data, ib.ii_buf, datal, cflag) != 0) {
+				err = EFAULT;
+				goto imageblock_done;
+			}
+		}
+
+		ib.ii_datalen = datal;
+
+		switch (model) {
+#ifdef _MULTI_DATAMODEL
+		case DDI_MODEL_ILP32:
+			ib32.ii_datalen = ib.ii_datalen;
+			if (ddi_copyout(&ib32, datap, sizeof (ib32),
+			    cflag) != 0) {
+				err = EFAULT;
+			}
+			break;
+#endif /* _MULTI_DATAMODEL */
+		case DDI_MODEL_NONE:
+			if (ddi_copyout(&ib, datap, sizeof (ib), cflag) != 0)
+				err = EFAULT;
+			break;
+		default:
+			return (ENOTSUP);
+		}
+
+imageblock_done:
+		ipcc_release_channel(&ipcc_ops, &ipcc, true);
+		break;
+	}
 	default:
 		BUMP_STAT(ioctl_unknown);
 		err = ENOTTY;
