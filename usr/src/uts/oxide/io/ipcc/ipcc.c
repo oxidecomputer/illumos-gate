@@ -130,10 +130,10 @@ ipcc_cb_flush(void *arg)
 	    ipcc->is_cred, NULL);
 }
 
-static void
+static int
 ipcc_pause(uint64_t delay_ms)
 {
-	delay(drv_usectohz(delay_ms * (MICROSEC / MILLISEC)));
+	return (delay_sig(drv_usectohz(delay_ms * (MICROSEC / MILLISEC))));
 }
 
 static bool
@@ -208,6 +208,8 @@ ipcc_cb_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
 	uint_t loops = 0;
 
 	for (;;) {
+		int ret;
+
 		if ((ev & IPCC_INTR) != 0 && ipcc_cb_readintr(arg))
 			rev |= IPCC_INTR;
 		if ((ev & IPCC_POLLIN) != 0 && ipcc_readable(arg))
@@ -217,7 +219,8 @@ ipcc_cb_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
 		if (rev != 0)
 			break;
 
-		ipcc_pause(delay);
+		if ((ret = ipcc_pause(delay)) != 0)
+			return (ret);
 		elapsed += delay;
 		if (timeout_ms > 0 && elapsed >= timeout_ms)
 			return (ETIMEDOUT);

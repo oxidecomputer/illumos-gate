@@ -287,7 +287,8 @@
  *			 1. The SP asserts its SP->Host interrupt signal;
  *			 2. One of the requested events occurs on the channel;
  *			 3. The (optional) provided timeout is exceeded.
- *			Return ETIMEDOUT (for 3), 0 otherwise.
+ *			Return ETIMEDOUT (for 3), EINTR if interrupted,
+ *			otherwise 0.
  *	+io_readintr	Return true/false depending on whether the SP is
  *			currently asserting the SP->Host out-of-band interrupt
  *			signal.
@@ -467,6 +468,12 @@ static bool ipcc_channel_active = false;
 static kthread_t *ipcc_channel_owner;
 
 static int ipcc_sp_interrupt(const ipcc_ops_t *, void *);
+
+/*
+ * This is an error code return by ipcc_pkt_{send,recv} when the SP-to-host
+ * interrupt line is found asserted.
+ */
+#define	ESPINTR		(-2)
 
 void
 ipcc_begin_multithreaded(void)
@@ -724,7 +731,7 @@ ipcc_pkt_send(uint8_t *pkt, size_t len, const ipcc_ops_t *ops, void *arg)
 		if ((err = ops->io_poll(arg, ev, &rev, 0)) != 0)
 			return (err);
 		if ((rev & IPCC_INTR) != 0)
-			return (EINTR);
+			return (ESPINTR);
 		ASSERT((rev & IPCC_POLLOUT) != 0);
 
 		n = len;
@@ -771,7 +778,7 @@ ipcc_pkt_recv(uint8_t *pkt, size_t len, uint8_t **endp,
 			(void) ops->io_write(arg, &ka, &n);
 		}
 		if ((rev & IPCC_INTR) != 0)
-			return (EINTR);
+			return (ESPINTR);
 		ASSERT((rev & IPCC_POLLIN) != 0);
 
 		n = 1;
@@ -859,16 +866,11 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
  *
  * This function can return:
  *
- *	0		- Success
- *	EINTR		- The SP interrupt line was raised and something went
- *			  wrong while processing that. This is most likely
- *			  irrecoverable since it was for some reason not
- *			  possible to process the SP's status register and any
- *			  re-attempt will just perform the same actions that
- *			  have failed.
+ *	0		- Success.
+ *	EINTR		- The request was interrupted by a signal.
  *	ETIMEDOUT	- Despite a number of retries, communication was
- *			  unsuccessful. Like EINTR, the caller should
- *			  consider this a fatal problem with the channel.
+ *			  unsuccessful. The caller should consider this a fatal
+ *			  problem with the channel.
  *	ENOBUFS		- Out of buffer space; too much payload data was
  *			  provided.
  *	EINVAL		- Additional payload data was received and datain is
@@ -903,10 +905,8 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 
 	VERIFY(ipcc_channel_held());
 
-	if (ops->io_readintr != NULL && ops->io_readintr(arg)) {
-		if (ipcc_sp_interrupt(ops, arg) != 0)
-			return (EINTR);
-	}
+	if ((err = ipcc_sp_interrupt(ops, arg)) != 0)
+		return (err);
 
 	/* Wrap if we have got to the reply namespace (top bit set) */
 	if ((++ipcc_seq & IPCC_SEQ_REPLY) != 0)
@@ -957,8 +957,9 @@ resend:
 
 	err = ipcc_pkt_send(ipcc_pkt, pktl, ops, arg);
 
-	if (err == EINTR) {
-		if (ipcc_sp_interrupt(ops, arg) != 0)
+	if (err == ESPINTR) {
+		/* The SP-to-host interrupt line was asserted. */
+		if ((err = ipcc_sp_interrupt(ops, arg)) != 0)
 			return (err);
 		goto resend;
 	}
@@ -975,8 +976,9 @@ reread:
 
 	err = ipcc_pkt_recv(ipcc_pkt, sizeof (ipcc_pkt), &end, ops, arg);
 
-	if (err == EINTR) {
-		if (ipcc_sp_interrupt(ops, arg) != 0)
+	if (err == ESPINTR) {
+		/* The SP-to-host interrupt line was asserted. */
+		if ((err = ipcc_sp_interrupt(ops, arg)) != 0)
 			return (err);
 		goto resend;
 	}
@@ -1230,6 +1232,10 @@ ipcc_sp_interrupt(const ipcc_ops_t *ops, void *arg)
 	int err = 0;
 
 	VERIFY(ipcc_channel_held());
+
+	/* Return if the interrupt is not currently asserted. */
+	if (ops->io_readintr == NULL || !ops->io_readintr(arg))
+		return (0);
 
 	LOG("SP interrupt received\n");
 
