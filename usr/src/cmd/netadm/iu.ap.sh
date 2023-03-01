@@ -36,6 +36,7 @@ case "$MACH" in
 
 	wc	-1	0	ldterm ttcompat
 	asy	-1	0	ldterm ttcompat
+	dwu	-1	0	ldterm ttcompat
 	xencons	0	0	ldterm ttcompat
 	ptsl	0	47	ldterm ttcompat
 	usbsacm -1	0	ldterm ttcompat
