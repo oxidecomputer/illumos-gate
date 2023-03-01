@@ -1901,6 +1901,8 @@ async_txint(struct asycom *asy)
 	struct asyncline *async = asy->asy_priv;
 	int		fifo_len;
 
+	ASSERT(MUTEX_HELD(&asy->asy_excl_hi));
+
 	/*
 	 * If ASYNC_BREAK or ASYNC_OUT_SUSPEND has been set, return to
 	 * asyintr()'s context to claim the interrupt without performing
@@ -1940,6 +1942,8 @@ async_txint(struct asycom *asy)
 static void
 asy_ppsevent(struct asycom *asy, int msr)
 {
+	ASSERT(MUTEX_HELD(&asy->asy_excl_hi));
+
 	if (asy->asy_flags & ASY_PPS_EDGE) {
 		/* Have seen leading edge, now look for and record drop */
 		if ((msr & DCD) == 0)
@@ -2012,6 +2016,8 @@ async_rxint(struct asycom *asy, uchar_t lsr)
 	uint_t s, needsoft = 0;
 	tty_common_t *tp;
 	int looplim = asy->asy_fifo_buf * 2;
+
+	ASSERT(MUTEX_HELD(&asy->asy_excl_hi));
 
 	tp = &async->async_ttycommon;
 	if (!(tp->t_cflag & CREAD)) {
@@ -2130,8 +2136,9 @@ check_looplim:
 	}
 
 	if ((async->async_flags & ASYNC_SERVICEIMM) || needsoft ||
-	    (RING_FRAC(async)) || (async->async_polltid == 0))
+	    (RING_FRAC(async)) || (async->async_polltid == 0)) {
 		ASYSETSOFT(asy);	/* need a soft interrupt */
+	}
 }
 
 /*
@@ -2148,6 +2155,8 @@ async_msint(struct asycom *asy)
 #ifdef DEBUG
 	int instance = UNIT(async->async_dev);
 #endif
+
+	ASSERT(MUTEX_HELD(&asy->asy_excl_hi));
 
 async_msint_retry:
 	/* this resets the interrupt */
@@ -2468,12 +2477,13 @@ begin:
 	 * character as an argument. Let ldterm
 	 * figure out what to do with the error.
 	 */
-	if (cc) {
+	if (cc)
 		(void) putctl1(q, M_BREAK, c);
-		ASYSETSOFT(async->async_common);	/* finish cc chars */
-	}
 	mutex_enter(&asy->asy_excl);
 	mutex_enter(&asy->asy_excl_hi);
+	if (cc) {
+		ASYSETSOFT(asy);	/* finish cc chars */
+	}
 rv:
 	if ((RING_CNT(async) < (RINGSIZE/4)) &&
 	    (async->async_inflow_source & IN_FLOW_RINGBUFF)) {
@@ -3285,10 +3295,12 @@ async_ioctl(struct asyncline *async, queue_t *wq, mblk_t *mp)
 				break;
 			}
 
+			mutex_enter(&asy->asy_excl_hi);
 			if (*(intptr_t *)mp->b_cont->b_rptr)
 				asy->asy_flags |= ASY_CONSOLE;
 			else
 				asy->asy_flags &= ~ASY_CONSOLE;
+			mutex_exit(&asy->asy_excl_hi);
 
 			mp->b_datap->db_type = M_IOCACK;
 			iocp->ioc_error = 0;
@@ -3329,12 +3341,16 @@ asyrsrv(queue_t *q)
 {
 	mblk_t *bp;
 	struct asyncline *async;
+	struct asycom *asy;
 
 	async = (struct asyncline *)q->q_ptr;
+	asy = (struct asycom *)async->async_common;
 
 	while (canputnext(q) && (bp = getq(q)))
 		putnext(q, bp);
-	ASYSETSOFT(async->async_common);
+	mutex_enter(&asy->asy_excl_hi);
+	ASYSETSOFT(asy);
+	mutex_exit(&asy->asy_excl_hi);
 	async->async_polltid = 0;
 	return (0);
 }

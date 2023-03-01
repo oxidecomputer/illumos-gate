@@ -426,6 +426,7 @@ struct asyncline {
  */
 
 #define	ASYSETSOFT(asy)	{			\
+	ASSERT(MUTEX_HELD(&asy->asy_excl_hi));		\
 	if (mutex_tryenter(&asy->asy_soft_lock)) {	\
 		asy->asy_flags |= ASY_NEEDSOFT;		\
 		if (!asy->asysoftpend) {		\
