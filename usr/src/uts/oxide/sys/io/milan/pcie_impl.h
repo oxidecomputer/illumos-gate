@@ -102,7 +102,7 @@ typedef struct milan_pcie_dbg {
 } milan_pcie_dbg_t;
 
 #define	MILAN_PCIE_DBG_SIZE(_nr)	\
-    (sizeof (milan_pcie_dbg_t) + (_nr) * sizeof (milan_pcie_reg_dbg_t))
+	(sizeof (milan_pcie_dbg_t) + (_nr) * sizeof (milan_pcie_reg_dbg_t))
 
 #ifdef	DEBUG
 extern const milan_pcie_reg_dbg_t milan_pcie_core_dbg_regs[];

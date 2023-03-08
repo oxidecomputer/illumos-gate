@@ -2454,7 +2454,7 @@ milan_dump_versions(milan_iodie_t *iodie, void *arg)
 	milan_soc_t *soc = iodie->mi_soc;
 
 	if (milan_smu_rpc_get_version(iodie, &maj, &min, &patch)) {
-		cmn_err(CE_NOTE, "Socket %u SMU Version: %u.%u.%u",
+		cmn_err(CE_CONT, "?Socket %u SMU Version: %u.%u.%u\n",
 		    soc->ms_socno, maj, min, patch);
 		iodie->mi_smu_fw[0] = maj;
 		iodie->mi_smu_fw[1] = min;
@@ -2465,7 +2465,7 @@ milan_dump_versions(milan_iodie_t *iodie, void *arg)
 	}
 
 	if (milan_dxio_rpc_get_version(iodie, &dxmaj, &dxmin)) {
-		cmn_err(CE_NOTE, "Socket %u DXIO Version: %u.%u",
+		cmn_err(CE_CONT, "?Socket %u DXIO Version: %u.%u\n",
 		    soc->ms_socno, dxmaj, dxmin);
 		iodie->mi_dxio_fw[0] = dxmaj;
 		iodie->mi_dxio_fw[1] = dxmin;
@@ -2732,7 +2732,7 @@ milan_smu_features_init(milan_iodie_t *iodie)
 		    "Socket %u: SMU Enable Features RPC Failed: features: "
 		    "0x%x, SMU 0x%x", soc->ms_socno, features, rpc.msr_resp);
 	} else {
-		cmn_err(CE_NOTE, "Socket %u SMU features 0x%08x enabled",
+		cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
 		    soc->ms_socno, features);
 	}
 
@@ -4386,7 +4386,7 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 
 		switch (reply.mds_type) {
 		case MILAN_DXIO_DATA_TYPE_SM:
-			cmn_err(CE_WARN, "Socket %u SM 0x%x->0x%x",
+			cmn_err(CE_CONT, "?Socket %u LISM 0x%x->0x%x\n",
 			    soc->ms_socno, iodie->mi_state, reply.mds_arg0);
 			iodie->mi_state = reply.mds_arg0;
 			switch (iodie->mi_state) {
@@ -4409,19 +4409,27 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				}
 
 				if (!milan_dxio_map_engines(fabric, iodie)) {
-					cmn_err(CE_WARN, "failed to map all "
-					    "DXIO engines to devices in the "
-					    "milan_fabric_t");
+					cmn_err(CE_WARN, "Socket %u LISM: "
+					    "failed to map all DXIO engines to "
+					    "devices.  PCIe will not function",
+					    soc->ms_socno);
 					return (1);
 				}
-				cmn_err(CE_WARN, "XXX skipping a ton of mapped "
-				    "stuff");
+
+				/*
+				 * XXX There is a substantial body of additional
+				 * things that can be done here; investigation
+				 * is needed.
+				 */
+
 				/*
 				 * Now that we have the mapping done, we set up
 				 * the straps for PCIe.
 				 */
 				(void) milan_fabric_walk_pcie_core(fabric,
 				    milan_fabric_init_pcie_straps, NULL);
+				cmn_err(CE_CONT, "?Socket %u LISM: Finished "
+				    "writing PCIe straps\n", soc->ms_socno);
 
 				/*
 				 * Set up the core-level debugging controls so
@@ -4431,8 +4439,6 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				(void) milan_fabric_walk_pcie_core(fabric,
 				    milan_fabric_setup_pcie_core_dbg, NULL);
 
-				cmn_err(CE_NOTE, "Finished writing PCIe "
-				    "straps.");
 				milan_pcie_populate_dbg(&milan_fabric,
 				    MPCS_DXIO_SM_MAPPED_RESUME,
 				    iodie->mi_node_id);
@@ -4440,8 +4446,13 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 			case MILAN_DXIO_SM_CONFIGURED:
 				milan_pcie_populate_dbg(&milan_fabric,
 				    MPCS_DXIO_SM_CONFIGURED, iodie->mi_node_id);
-				cmn_err(CE_WARN, "XXX skipping a ton of "
-				    "configured stuff");
+
+				/*
+				 * XXX There is a substantial body of additional
+				 * things that can be done here; investigation
+				 * is needed.
+				 */
+
 				milan_pcie_populate_dbg(&milan_fabric,
 				    MPCS_DXIO_SM_CONFIGURED_RESUME,
 				    iodie->mi_node_id);
@@ -4450,7 +4461,8 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				/*
 				 * We made it. Somehow we're done!
 				 */
-				cmn_err(CE_WARN, "we're out of here");
+				cmn_err(CE_CONT, "?Socket %u LISM: done\n",
+				    soc->ms_socno);
 				goto done;
 			default:
 				/*
@@ -4465,60 +4477,62 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 		case MILAN_DXIO_DATA_TYPE_RESET:
 			milan_pcie_populate_dbg(&milan_fabric,
 			    MPCS_DXIO_SM_PERST, iodie->mi_node_id);
-			cmn_err(CE_WARN, "let's go deasserting: %x, %x",
-			    reply.mds_arg0, reply.mds_arg1);
+			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
+			    soc->ms_socno, reply.mds_arg0, reply.mds_arg1);
 			if (reply.mds_arg0 == 0) {
-				cmn_err(CE_WARN, "Asked to set GPIO to zero, "
-				    "which  would PERST. Nope. Continuing?");
-				goto perst_done;
+				cmn_err(CE_NOTE, "Socket %u LISM: disregarding "
+				    "request to assert PERST at index 0x%x",
+				    soc->ms_socno, reply.mds_arg1);
+				break;
 			}
 
-			if (milan_board_type(fabric) != MBT_ETHANOL)
-				goto perst_done;
+			if (milan_board_type(fabric) == MBT_ETHANOL) {
 
-			/*
-			 * Release PERST manually on Ethanol-X which requires
-			 * it.  PCIE_RSTn_L shares pins with the following
-			 * GPIOs:
-			 *
-			 * FCH::GPIO::GPIO_26
-			 * FCH::GPIO::GPIO_27
-			 * FCH::RMTGPIO::GPIO_266
-			 * FCH::RMTGPIO::GPIO_267
-			 *
-			 * If we were going to support this generically, these
-			 * should probably be part of the board definition.
-			 * They should also be DPIOs, but we probably can't use
-			 * the DPIO subsystem itself yet.
-			 *
-			 * XXX The only other function on these pins is the PCIe
-			 * reset itself.  We assume the mux is passing the GPIO
-			 * function at this point: if it's not, this will do
-			 * nothing unless we invoke MHGOP_CONFIGURE first.  This
-			 * also works only for socket 0; we can't access the FCH
-			 * on socket 1 because won't let us use SMN and we
-			 * haven't set up the secondary FCH aperture here.  This
-			 * most likely means the NVMe sockets won't work.
-			 */
-			if (iodie->mi_node_id == 0) {
-				milan_hack_gpio(MHGOP_SET, 26);
-				milan_hack_gpio(MHGOP_SET, 27);
-				milan_hack_gpio(MHGOP_SET, 266);
-				milan_hack_gpio(MHGOP_SET, 267);
+				/*
+				 * Release PERST manually on Ethanol-X which
+				 * requires it.  PCIE_RSTn_L shares pins with
+				 * the following GPIOs:
+				 *
+				 * FCH::GPIO::GPIO_26 FCH::GPIO::GPIO_27
+				 * FCH::RMTGPIO::GPIO_266 FCH::RMTGPIO::GPIO_267
+				 *
+				 * If we were going to support this generically,
+				 * these should probably be part of the board
+				 * definition.  They should also be DPIOs, but
+				 * we probably can't use the DPIO subsystem
+				 * itself yet.
+				 *
+				 * XXX The only other function on these pins is
+				 * the PCIe reset itself.  We assume the mux is
+				 * passing the GPIO function at this point: if
+				 * it's not, this will do nothing unless we
+				 * invoke MHGOP_CONFIGURE first.  This also
+				 * works only for socket 0; we can't access the
+				 * FCH on socket 1 because won't let us use SMN
+				 * and we haven't set up the secondary FCH
+				 * aperture here.  This most likely means the
+				 * NVMe sockets won't work.
+				 */
+				if (iodie->mi_node_id == 0) {
+					milan_hack_gpio(MHGOP_SET, 26);
+					milan_hack_gpio(MHGOP_SET, 27);
+					milan_hack_gpio(MHGOP_SET, 266);
+					milan_hack_gpio(MHGOP_SET, 267);
+				}
 			}
 
-perst_done:
 			milan_pcie_populate_dbg(&milan_fabric,
 			    MPCS_DXIO_SM_PERST_RESUME, iodie->mi_node_id);
+
 			break;
 		case MILAN_DXIO_DATA_TYPE_NONE:
-			cmn_err(CE_WARN, "Got the none data type... are we "
-			    "actually done?");
+			cmn_err(CE_WARN, "Socket %u LISM: Got the none data "
+			    "type... are we actually done?", soc->ms_socno);
 			goto done;
 		default:
-			cmn_err(CE_WARN, "Got unexpected DXIO return type: "
-			    "0x%x. Sorry, no PCIe for us on socket %u.",
-			    reply.mds_type, soc->ms_socno);
+			cmn_err(CE_WARN, "Socket %u LISM: Got unexpected DXIO "
+			    "return type 0x%x. PCIe will not function.",
+			    soc->ms_socno, reply.mds_type);
 			return (1);
 		}
 
@@ -5527,7 +5541,8 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 		pc = &ioms->mio_pcie_cores[map->shm_tile_id / 4];
 		port = &pc->mpc_ports[map->shm_port_id];
 
-		cmn_err(CE_NOTE, "mapped entry %u to port %p", i, port);
+		cmn_err(CE_CONT, "?SMUHP: mapped entry %u to port %p\n",
+		    i, port);
 		VERIFY((port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) != 0);
 		VERIFY0(port->mpp_flags & MILAN_PCIE_PORT_F_BRIDGE_HIDDEN);
 		port->mpp_flags |= MILAN_PCIE_PORT_F_HOTPLUG;
@@ -5656,9 +5671,7 @@ milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 	 * was one thing, but at this point it expects to have hotplug
 	 * interrupts enabled and all the rest of the features that the hardware
 	 * supports (e.g. no MRL sensor changed). Note, we have explicitly left
-	 * out setting the following that it does:
-	 *
-	 *   o The power indicator to on when a device is present
+	 * out turning on the power indicator for present devices.
 	 */
 	ctl = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
 	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CTL);
@@ -5734,11 +5747,17 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	milan_pcie_port_write(port, reg, val);
 
 	/*
-	 * This ensures the port can't enter loopback mode.
+	 * This bit causes the LC to disregard most training control bits in
+	 * received TS1 and TS2 ordered sets.  Training control bits include
+	 * Compliance Receive, Hot Reset, Link Disable, Loopback, and Disable
+	 * Scrambling.  As all our ports are Downstream Ports, we are required
+	 * to ignore most of these; the PCIe standard still requires us to act
+	 * on Compliance Receive and the PPR implies that we do even if this bit
+	 * is set (the other four are listed as being ignored).
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
 	val = milan_pcie_port_read(port, reg);
-	val = PCIE_PORT_LC_TRAIN_CTL_SET_TRAIN_DIS(val, 1);
+	val = PCIE_PORT_LC_TRAIN_CTL_SET_TRAINBITS_DIS(val, 1);
 	milan_pcie_port_write(port, reg, val);
 
 	/*
@@ -5777,7 +5796,8 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	 * Finally we need to go through and unblock training now that we've set
 	 * everything else on the slot. Note, this is done before we tell the
 	 * SMU about hotplug configuration, so strictly speaking devices will
-	 * unlikely start suddenly training.
+	 * unlikely start suddenly training: PERST is still asserted to them on
+	 * boards where that's under GPIO network control.
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SWRST_CTL6);
 	val = milan_pcie_core_read(pc, reg);
@@ -5793,8 +5813,6 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
  *
  *   o Making sure that there are no holds on link training on any port.
  *   o Ensuring that presence detection is based on an 'OR'
- *
- * XXX SMN_NBIO0PCIE0_SWRST_CONTROL_6_A
  */
 static int
 milan_hotplug_core_init(milan_pcie_core_t *pc, void *arg)
@@ -6130,7 +6148,7 @@ milan_fabric_init(void)
 		return;
 	}
 
-	cmn_err(CE_NOTE, "DXIO devices successfully trained?");
+	cmn_err(CE_CONT, "?DXIO LISM execution completed successfully");
 
 	/*
 	 * Now that we have successfully trained devices, it's time to go
@@ -6153,9 +6171,8 @@ milan_fabric_init(void)
 	milan_pcie_populate_dbg(&milan_fabric, MPCS_PRE_HOTPLUG,
 	    MILAN_IODIE_MATCH_ANY);
 	if (!milan_hotplug_init(fabric)) {
-		cmn_err(CE_WARN, "Eh, just don't unplug anything. I'm sure it "
-		    "will be fine. Not like someone's going to come and steal "
-		    "your silmarils");
+		cmn_err(CE_WARN, "SMUHP: initialisation failed; PCIe hotplug "
+		    "may not function properly");
 	}
 
 	milan_pcie_populate_dbg(&milan_fabric, MPCS_POST_HOTPLUG,

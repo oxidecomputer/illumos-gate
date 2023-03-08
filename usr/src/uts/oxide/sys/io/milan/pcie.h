@@ -638,7 +638,7 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_TRAIN_CTL(n, p, b)	\
     milan_pcie_port_smn_reg((n), D_PCIE_PORT_LC_TRAIN_CTL, (p), (b))
-#define	PCIE_PORT_LC_TRAIN_CTL_SET_TRAIN_DIS(r, v)	bitset32(r, 13, 13, v)
+#define	PCIE_PORT_LC_TRAIN_CTL_SET_TRAINBITS_DIS(r, v)	bitset32(r, 13, 13, v)
 #define	PCIE_PORT_LC_TRAIN_CTL_SET_L0S_L1_TRAIN(r, v)	bitset32(r, 6, 6, v)
 
 /*
