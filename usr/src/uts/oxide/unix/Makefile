@@ -150,8 +150,8 @@ $(UNIX_BIN):	$(UNIX_O) $(MODSTUBS_O) $(MAPFILE_NAME) \
 $(UNIX_O):	$(OBJECTS) $(CTFEXTRAOBJS)
 	$(LD) -r -o $@ $(OBJECTS) $(OBJS_DIR)/vers.o
 
-$(COMMP_CTF_SRC):	$(UTSBASE)/oxide/ml/comm_page.s
-	$(COMPILE.cpp) -D_GENCTF -o $@ $(UTSBASE)/oxide/ml/comm_page.s
+$(COMMP_CTF_SRC):	$(UTSBASE)/oxide/ml/comm_page.S
+	$(COMPILE.cpp) -D_GENCTF -o $@ $(UTSBASE)/oxide/ml/comm_page.S
 
 $(OBJS_DIR)/comm_page_ctf.o:	$(COMMP_CTF_SRC)
 	$(COMPILE.c) -o $@ $<

@@ -52,8 +52,10 @@ CFLAGS +=	-_gcc=-mno-sse3 -_gcc=-msoft-float
 CFLAGS +=	-_gcc=-mno-avx -_gcc=-mno-aes
 CFLAGS +=	-_gcc=-Wall
 CFLAGS +=	$(CCNOAUTOINLINE) $(CCNOREORDER) $(CSTD_GNU99)
+CFLAGS +=	$(CSOURCEDEBUGFLAGS)
 CCASFLAGS=	-Wa,--divide
-ASFLAGS=	--divide
+ASFLAGS=	-Wa,--divide
+ASFLAGS64=	-Wa,--divide
 
 SMATCH_ =
 SMATCH_on =

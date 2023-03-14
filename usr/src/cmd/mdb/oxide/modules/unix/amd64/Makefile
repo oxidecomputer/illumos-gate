@@ -28,7 +28,7 @@ MODULE = unix.so
 MDBTGT = kvm
 
 MODSRCS = unix.c i86mmu.c xcall.c
-MODASMSRCS = unix_sup.s
+MODASMSRCS = unix_sup.S
 
 KMODSRCS = $(MODSRCS) zen_kmdb.c
 KMODASMSRCS = $(MODASMSRCS)

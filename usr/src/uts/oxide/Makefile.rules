@@ -90,10 +90,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/ppm/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/ppm/%.s
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/ppm/%.S
 	$(COMPILE.s) -o $@ $<
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/ml/%.s
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/ml/%.S
 	$(COMPILE.s) -o $@ $<
 
 $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/os/%.c
@@ -149,7 +149,7 @@ ATOMIC_SUBDIR_32	= i386
 ATOMIC_SUBDIR_64	= amd64
 ATOMIC_SUBDIR		= $(ATOMIC_SUBDIR_$(CLASS))
 
-$(OBJS_DIR)/%.o:		$(SRC)/common/atomic/$(ATOMIC_SUBDIR)/%.s
+$(OBJS_DIR)/%.o:		$(SRC)/common/atomic/$(ATOMIC_SUBDIR)/%.S
 	$(COMPILE.s) -o $@ $<
 
 #
