@@ -527,7 +527,8 @@ ioms_enable_nmi_cb(milan_ioms_t *ioms, void *arg __unused)
 	 * skedaddle...
 	 */
 	reg = milan_ioms_reg(ioms, D_IOHC_MISC_RAS_CTL, 0);
-	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(0, 1);
+	v = milan_ioms_read(ioms, reg);
+	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(v, 1);
 	milan_ioms_write(ioms, reg, v);
 
 	return (0);
