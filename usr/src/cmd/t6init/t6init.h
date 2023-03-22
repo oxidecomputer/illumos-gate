@@ -31,6 +31,9 @@ extern "C" {
 #define	T6_MAC_STRIDE			8
 #define	T6_PCI_SUBSYSTEM_VENDORID	0x1de
 
+#define	T6_MFG_DRIVER			"t6mfg"
+#define	T6_MISSION_DRIVER		"t4nex"
+
 #ifdef __cplusplus
 }
 #endif

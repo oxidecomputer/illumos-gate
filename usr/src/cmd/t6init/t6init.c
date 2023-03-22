@@ -24,6 +24,7 @@
 #include <err.h>
 #include <fcntl.h>
 #include <ipcc.h>
+#include <libdevinfo.h>
 #include <libgen.h>
 #include <libt6mfg.h>
 #include <stdarg.h>
@@ -55,6 +56,18 @@ typedef enum {
 	T6INIT_MODE_MISSION,
 	T6INIT_MODE_MFG,
 } t6init_mode_t;
+
+static const char *
+t6init_modename(t6init_mode_t mode)
+{
+	switch (mode) {
+	case T6INIT_MODE_MISSION:
+		return ("mission");
+	case T6INIT_MODE_MFG:
+		return ("manufacturing");
+	}
+	return ("unknown");
+}
 
 static void
 t6init_log(const char *fmt, va_list va)
@@ -191,6 +204,7 @@ static t6init_mode_t
 get_dpio_mode(void)
 {
 	dpio_input_t val;
+	t6init_mode_t mode;
 	int fd;
 
 	t6init_verbose("Reading DPIO status");
@@ -204,11 +218,12 @@ get_dpio_mode(void)
 
 	VERIFY0(close(fd));
 
-	t6init_verbose("    DPIO is %s",
-	    val == DPIO_INPUT_HIGH ?
-	    "high (mission mode)" : "low (manufacturing mode)");
+	mode = (val == DPIO_INPUT_HIGH) ? T6INIT_MODE_MISSION : T6INIT_MODE_MFG;
 
-	return (val == DPIO_INPUT_HIGH ? T6INIT_MODE_MISSION : T6INIT_MODE_MFG);
+	t6init_verbose("    DPIO is %s (%s mode)",
+	    val == DPIO_INPUT_HIGH ? "high" : "low", t6init_modename(mode));
+
+	return (mode);
 }
 
 static void
@@ -217,10 +232,9 @@ set_dpio_mode(t6init_mode_t mode)
 	dpio_output_t val;
 	int fd;
 
-	t6init_verbose("Setting DPIO for %s mode",
-	    mode == T6INIT_MODE_MISSION ? "mission" : "manufacturing");
+	t6init_verbose("Setting DPIO for %s mode", t6init_modename(mode));
 
-	val = mode == T6INIT_MODE_MISSION ?
+	val = (mode == T6INIT_MODE_MISSION) ?
 	    DPIO_OUTPUT_HIGH : DPIO_OUTPUT_LOW;
 
 	fd = open(dpiopath, O_WRONLY);
@@ -443,6 +457,28 @@ cfg_msg(void *arg __unused, const char *msg)
 }
 
 static bool
+verify_mode(t6init_mode_t mode)
+{
+	di_node_t dnroot, dn;
+	bool ret;
+
+	dnroot = di_init("/", DINFOCPYALL);
+	if (dnroot == DI_NODE_NIL)
+		return (false);
+
+	dn = di_drv_first_node(
+	    (mode == T6INIT_MODE_MISSION) ? T6_MISSION_DRIVER : T6_MFG_DRIVER,
+	    dnroot);
+	ret = (dn != DI_NODE_NIL);
+	di_fini(dnroot);
+
+	t6init_verbose("Looking for T6 in %s mode: %s", t6init_modename(mode),
+	    ret ? "SUCCESS" : "FAILED");
+
+	return (ret);
+}
+
+static bool
 start_mode(const char *ap, t6init_mode_t mode)
 {
 	cfga_err_t cfgerr;
@@ -455,8 +491,7 @@ start_mode(const char *ap, t6init_mode_t mode)
 	char * const aplist[] = { (char *)ap };
 	char *errstr;
 
-	t6init_verbose("Switching to %s mode",
-	    mode == T6INIT_MODE_MISSION ? "mission" : "manufacturing");
+	t6init_verbose("Switching to %s mode", t6init_modename(mode));
 
 	t6init_verbose("    disconnecting %s", ap);
 	cfgerr = config_change_state(CFGA_CMD_DISCONNECT, 1, aplist, NULL,
@@ -467,7 +502,11 @@ start_mode(const char *ap, t6init_mode_t mode)
 
 	set_dpio_mode(mode);
 
-	/* The previous script slept for a second here. */
+	/*
+	 * We need to wait long enough after de-asserting PWREN_L for the SP
+	 * to notice and for the sequencer to release CLD_RST_L and PERST_L.
+	 * 1s is much longer than required.
+	 */
 	t6init_verbose("    sleeping for 1s or so");
 	(void) sleep(1);
 	t6init_verbose("    configuring %s", ap);
@@ -477,10 +516,15 @@ start_mode(const char *ap, t6init_mode_t mode)
 		cfg_err(cfgerr, errstr);
 	free(errstr);
 
-	t6init_verbose("Successfully switched to %s mode",
-	    mode == T6INIT_MODE_MISSION ? "mission" : "manufacturing");
+	if (verify_mode(mode)) {
+		t6init_verbose("Successfully switched to %s mode",
+		    t6init_modename(mode));
+		return (true);
+	}
 
-	return (true);
+	t6init_verbose("Failed to switch to %s mode", t6init_modename(mode));
+
+	return (false);
 }
 
 int
@@ -570,6 +614,8 @@ main(int argc, char **argv)
 	if (mode == T6INIT_MODE_MFG) {
 		if (get_dpio_mode() != T6INIT_MODE_MISSION) {
 			printf("DPIO is not set for mission mode\n");
+			if (!verify_mode(T6INIT_MODE_MFG))
+				errx(EXIT_FAILURE, "no mfg mode device found");
 			return (0);
 		}
 		if (!start_mode(attachment, T6INIT_MODE_MFG))
@@ -580,6 +626,8 @@ main(int argc, char **argv)
 
 	if (get_dpio_mode() == T6INIT_MODE_MISSION) {
 		printf("DPIO is already set for mission mode\n");
+		if (!verify_mode(T6INIT_MODE_MISSION))
+			errx(EXIT_FAILURE, "no mission mode device found");
 		return (0);
 	}
 

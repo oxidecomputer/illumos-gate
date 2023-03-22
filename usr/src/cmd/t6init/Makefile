@@ -28,7 +28,7 @@ ROOTMANIFESTDIR = $(ROOTSVCSYSTEM)
 
 CSTD= $(CSTD_GNU99)
 CPPFLAGS += -I$(SRC)/uts/oxide/sys
-LDLIBS += -lt6mfg -lcfgadm -lsocket -lumem
+LDLIBS += -lt6mfg -lcfgadm -ldevinfo -lsocket -lumem
 
 .KEEP_STATE:
 
