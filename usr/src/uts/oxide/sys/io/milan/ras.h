@@ -16,6 +16,7 @@
 #ifndef	_SYS_IO_MILAN_RAS_H
 #define	_SYS_IO_MILAN_RAS_H
 
+#include <sys/debug.h>
 #include <sys/int_types.h>
 #include <sys/types.h>
 
