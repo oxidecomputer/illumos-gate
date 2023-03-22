@@ -44,18 +44,32 @@ if [[ "$1" != "mfgmode" && -z "$SMF_FMRI" ]]; then
         exit $SMF_EXIT_ERR_NOSMF
 fi
 
+function scream {
+	logger -p kern.notice -t t6init "$@"
+	cat <<-EOM | tee -a /dev/console
+
+		$(printf "%0.s#" {1..78})
+		#### NOTE: T6 PROBLEM
+		#### $@
+		$(printf "%0.s#" {1..78})
+	EOM
+}
+
 function fatal {
+	scream "$@"
 	echo "$@" >&2
 	exit $SMF_EXIT_ERR_FATAL
 }
 
 typeset -r GPIOADM=/usr/sbin/gpioadm
+typeset -r PCIEADM=/usr/lib/pci/pcieadm
 
 typeset -r PLATFORM=$(prtconf /devices)
 typeset -r ARCH=$(uname -m)
 
 typeset -r DPIO_NAME=t6mission
 
+typeset -r T6INIT=/usr/platform/$ARCH/bin/t6init
 typeset -r SROM_FILE="/platform/$PLATFORM/firmware/t6srom.bin"
 typeset -r FW_FILE="/kernel/firmware/cxgbe/t6fw.bin"
 
@@ -84,60 +98,82 @@ if [[ -z "$CTRL" || -z "$GPIO" || -z "$ATTACH_POINT" || -z "$PCISSDID" ]]; then
 	exit $SMF_EXIT_ERR_CONFIG
 fi
 
-function remove_dpio {
-	existing=$($GPIOADM dpio list -Hpo controller,gpionum $DPIO_NAME \
-	    2>/dev/null)
-	if (($? == 0)) && [[ -n "$existing" ]]; then
-		controller=${existing%:*}
-		id=${existing#*:}
-		echo "Found existing DPIO $DPIO_NAME at $controller/$id"
-		if [[ "$controller" != "$CTRL" ]]; then
-			fatal "Existing DPIO is on controller $controller"\
-			    "and not $CTRL"
-		fi
-		echo "Removing DPIO $DPIO_NAME"
-		if ! $GPIOADM dpio undefine "$controller/$id"; then
-			fatal "Could not undefine existing DPIO $DPIO_NAME"
-		fi
-	fi
-}
+function create_dpio {
+	typeset existing=$($GPIOADM dpio list -Hpo controller,gpionum \
+	    $DPIO_NAME 2>/dev/null)
 
-case "$1" in
-start)
-	remove_dpio
+	if (($? == 0)) && [[ -n "$existing" ]]; then
+		return
+	fi
+
 	echo "Configuring GPIO attributes"
+
+	typeset cur=$($GPIOADM gpio attr get -po value "$CTRL/$GPIO" zen:output)
+	if [[ "$cur" == "disabled" ]]; then
+		$GPIOADM gpio attr set "$CTRL/$GPIO" "zen:output=low" ||
+		    fatal "Failed to configure GPIO output"
+	fi
+
 	$GPIOADM gpio attr set "$CTRL/$GPIO" "zen:pull=disabled" ||
-	    fatal "Failed to configure GPIO attributes"
+	    fatal "Failed to disable GPIO pulldown/up"
+
 	echo "Creating DPIO $DPIO_NAME over $CTRL/$GPIO"
 	$GPIOADM dpio define -rw "$CTRL/$GPIO" "$DPIO_NAME" || \
 	    fatal "Failed to define DPIO"
 
+	# Work around stlouis#294
 	echo "Waiting for DPIO device to appear"
 	while [[ ! -r /dev/dpio/$DPIO_NAME ]]; do
 		sleep 1
 		echo "  ... waiting"
 	done
+}
+
+function check_link {
+	typeset dev=$1; shift
+	typeset espeed=$1; shift
+	typeset ewidth=$1; shift
+
+	inst=$($PCIEADM show-devs -Ho instnum $dev | head -1)
+	if (($? != 0)); then
+		scream "No $dev devices"
+		return
+	fi
+	dev+=$inst
+	speed=$($PCIEADM show-cfgspace -d $dev -Hpo value pcie.linksts.speed)
+	width=$($PCIEADM show-cfgspace -d $dev -Hpo value pcie.linksts.width)
+	((speed == espeed)) || scream "wrong $dev speed $speed (want $espeed)"
+	((width == ewidth)) || scream "wrong $dev width $width (want $ewidth)"
+}
+
+case "$1" in
+start)
+	create_dpio
+
+	check_link t6mfg 0x2 0x8
 
 	echo "Attempting to transition to mission mode"
-	/usr/platform/$ARCH/bin/t6init \
+	$T6INIT \
 	    -v \
 	    -D $DPIO_NAME \
 	    -A $ATTACH_POINT \
 	    -s $SROM_FILE \
 	    -f $FW_FILE \
 	    -P $PCISSDID || fatal "Failed to transition to mission mode"
+
+	check_link t4nex 0x3 0x10
 	;;
 stop)
 	# No action taken on stop
 	;;
 mfgmode)
+	create_dpio
 	echo "Attempting to transition to manufacturing mode"
-	/usr/platform/$ARCH/bin/t6init \
+	$T6INIT \
 	    -v \
 	    -M \
 	    -D $DPIO_NAME \
 	    -A $ATTACH_POINT || fatal "Failed to transition to mfg mode"
-	remove_dpio
 	;;
 *)
 	fatal "ERROR: $0: unsupported command '$1'"
