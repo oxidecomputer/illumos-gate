@@ -343,6 +343,12 @@ typedef struct xhci_transfer {
 } xhci_transfer_t;
 
 /*
+ * A transfer on a periodic endpoint does not generally have an associated USB
+ * request, except in the case of a oneshot Interrupt IN transfer.
+ */
+#define	XHCI_IS_ONESHOT_XFER(xt)	((xt)->xt_usba_req != NULL)
+
+/*
  * This represents a ring in xHCI, upon which event, transfer, and command TRBs
  * are scheduled.
  */
