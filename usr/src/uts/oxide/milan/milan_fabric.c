@@ -333,6 +333,19 @@
  * the routing tables at runtime.  Either would be challenging, and can
  * undoubtedly wait until we have a real need for any of this.  See
  * milan_xx_allocate() for the implementation of these allocations/reservations.
+ *
+ * The last thing to be aware of here is what happens before we set up legacy
+ * I/O space and MMIO routing.  Here the implementation helps us out
+ * considerably: both legacy I/O space and MMIO are routed into the subtractive
+ * (compatibility) space.  This is a fancy way of saying the FCH in socket 0 is
+ * given an opportunity to decode them.  If it doesn't, reads return all-1s and
+ * writes are ignored.  We make use of this property in a number of ways, not
+ * least that the earlyboot code can make use of UARTs and GPIOs.  Additionally,
+ * we rely on this for setting up spread-spectrum clocking via the FCH prior to
+ * running any of this code; that allows us to calibrate the TSC properly before
+ * we get here and therefore to rely on having drv_usecwait(), as well as making
+ * sure SSC is on before we start doing any PCIe link training that would
+ * otherwise generate noise.
  */
 
 #include <sys/types.h>
@@ -5993,17 +6006,9 @@ milan_fabric_init(void)
 	 * Let's set up PCIe. To lead off, let's make sure the system uses the
 	 * right clock and let's start the process of dealing with the how
 	 * configuration space retries should work, though this isn't sufficient
-	 * for them to work.  We'll also enable SSC here, which is global across
-	 * all ports and is set up in the FCH's clock generator; it's a bit of a
-	 * hack to do this here as we should really have a clock generator
-	 * driver hanging off the FCH nexus instead.
+	 * for them to work.
 	 */
 	milan_fabric_walk_ioms(fabric, milan_fabric_init_pcie_refclk, NULL);
-	if (!milan_cgpll_set_ssc(B_TRUE)) {
-		cmn_err(CE_WARN,
-		    "CGPLL: spread-spectrum clocking could not be enabled");
-	}
-
 	milan_fabric_walk_ioms(fabric, milan_fabric_init_pci_to, NULL);
 	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_features, NULL);
 

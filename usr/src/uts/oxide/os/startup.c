@@ -133,6 +133,7 @@
 #include <sys/memlist_impl.h>
 #include <sys/smm.h>
 #include <sys/io/milan/fabric.h>
+#include <sys/io/milan/hacks.h>
 #include <sys/kernel_ipcc.h>
 
 extern void mem_config_init(void);
@@ -631,7 +632,23 @@ startup(void)
 	 * (e.g. the HPET), but still early enough to allow the rest of
 	 * the startup code to make use of the TSC (via tenmicrosec() or
 	 * the default TSC-based gethrtime()) as required.
+	 *
+	 * Before we calibrate the TSC, we need to make sure our clock
+	 * configuration matches what we're going to use; otherwise the
+	 * calibration will be systematically incorrect.  For now, this just
+	 * means we'll enable SSC here.  This is done primarily to reduce EMI
+	 * coming out of PCIe connectors, but it also affects all the other
+	 * clocks controlled by the FCH's clock generator; it's a bit of a
+	 * hack to do this here as we should really have a clock generator
+	 * driver hanging off the FCH nexus instead.  Additionally, whether to
+	 * enable SSC, and possibly how, should one day be both board- and
+	 * SOC-specific.
 	 */
+	if (!milan_cgpll_set_ssc(B_TRUE)) {
+		cmn_err(CE_WARN,
+		    "CGPLL: spread-spectrum clocking could not be enabled");
+	}
+
 	startup_tsc();
 
 	/*
