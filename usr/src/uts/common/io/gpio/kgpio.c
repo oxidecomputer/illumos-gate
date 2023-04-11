@@ -958,7 +958,6 @@ kgpio_release_meta(kgpio_t *kgpio)
 static int
 kgpio_hold_by_id(id_t id)
 {
-	int circ;
 	kgpio_t *kgpio;
 	dev_info_t *pdip;
 	kgpio_minor_t *minor;
@@ -1037,9 +1036,9 @@ restart:
 	/*
 	 * This is required to ensure that the driver can't go away.
 	 */
-	ndi_devi_enter(pdip, &circ);
+	ndi_devi_enter(pdip);
 	e_ddi_hold_devi(kgpio->kgpio_dip);
-	ndi_devi_exit(pdip, circ);
+	ndi_devi_exit(pdip);
 
 	/*
 	 * Because we dropped the main lock, we need to see if we lost a race

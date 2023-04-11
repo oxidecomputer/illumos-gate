@@ -265,7 +265,6 @@ pcitool_get_intr(dev_info_t *dip, void *arg, int mode)
 	uint8_t num_devs_ret = 0;
 	int copyout_rval;
 	int rval = SUCCESS;
-	int circ;
 	int i;
 	ddi_intr_handle_impl_t info_hdl;
 	apic_get_intr_t intr_info;
@@ -356,7 +355,7 @@ pcitool_get_intr(dev_info_t *dip, void *arg, int mode)
 	 * be extracted from dips returned from the tree.
 	 */
 	if (intr_info.avgi_req_flags & PSMGI_REQ_GET_DEVS) {
-		ndi_devi_enter(dip, &circ);
+		ndi_devi_enter(dip);
 	}
 
 	/* Call psm_intr_ops(PSM_INTR_OP_GET_INTR) to get information. */
@@ -406,7 +405,7 @@ pcitool_get_intr(dev_info_t *dip, void *arg, int mode)
 done_get_intr:
 
 	if (intr_info.avgi_req_flags & PSMGI_REQ_GET_DEVS) {
-		ndi_devi_exit(dip, circ);
+		ndi_devi_exit(dip);
 	}
 
 	iget->drvr_version = PCITOOL_VERSION;

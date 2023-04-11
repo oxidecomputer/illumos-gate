@@ -1966,7 +1966,7 @@ static int
 fch_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
     void *arg, dev_info_t **childp)
 {
-	int res, circ;
+	int res;
 	fch_t *fch = ddi_get_soft_state(fch_state, ddi_get_instance(pdip));
 
 	if (fch == NULL)
@@ -1976,7 +1976,7 @@ fch_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 	case BUS_CONFIG_ONE:
 	case BUS_CONFIG_ALL:
 	case BUS_CONFIG_DRIVER:
-		ndi_devi_enter(pdip, &circ);
+		ndi_devi_enter(pdip);
 		break;
 	default:
 		return (NDI_FAILURE);
@@ -1995,12 +1995,12 @@ fch_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 		if (arg == NULL) {
 			dev_err(pdip, CE_WARN, "BUS_CONFIG_ONE invoked with "
 			    "NULL child devname");
-			ndi_devi_exit(pdip, circ);
+			ndi_devi_exit(pdip);
 			return (NDI_EINVAL);
 		}
 		cdp = fch_lookup_child_def(fch, (const char *)arg);
 		if (cdp == NULL) {
-			ndi_devi_exit(pdip, circ);
+			ndi_devi_exit(pdip);
 			return (NDI_EINVAL);
 		}
 
@@ -2029,7 +2029,7 @@ fch_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 		res = NDI_SUCCESS;
 	}
 
-	ndi_devi_exit(pdip, circ);
+	ndi_devi_exit(pdip);
 
 	if (res != NDI_SUCCESS)
 		return (res);
