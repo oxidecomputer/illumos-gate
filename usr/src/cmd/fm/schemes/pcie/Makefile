@@ -13,8 +13,9 @@
 # Copyright 2023 Oxide Computer Company
 #
 
-SUBDIRS = oxhc pciebus zen
+include $(SRC)/cmd/Makefile.cmd
 
-.PARALLEL: $(SUBDIRS)
+SUBDIRS = $(MACH)
+$(BUILD64)SUBDIRS += $(MACH64)
 
-include ../../../Makefile.subdirs
+include ../../Makefile.subdirs

@@ -13,8 +13,25 @@
 # Copyright 2023 Oxide Computer Company
 #
 
-SUBDIRS = oxhc pciebus zen
+MODULE = pciebus
+ARCH = i86pc
+CLASS = arch
+UTILDIR = ../../common/pciebus
+MODULESRCS = \
+	topo_pcie.c \
+	topo_pcie_cfgspace.c \
+	topo_pcie_prop.c \
+	topo_pcie_util.c \
+	bitext.c \
+	topo_pcie_$(ARCH).c
 
-.PARALLEL: $(SUBDIRS)
+include ../../Makefile.plugin
 
-include ../../../Makefile.subdirs
+LDLIBS += -ldevinfo -lpcidb -lfmd_agent
+
+CPPFLAGS += -I$(SRC)/uts/common -I$(SRC)/uts/intel -I$(UTILDIR)
+
+%.o: $(SRC)/common/bitext/%.c
+	$(COMPILE.c) $<
+	$(CTFCONVERT_O)
+

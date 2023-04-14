@@ -16,7 +16,7 @@
 ARCH = oxide
 CLASS = arch
 DTDFILE = topology.dtd.1
-TOPOFILE = Gimlet-hc-topology.xml
+TOPOFILE = Gimlet-hc-topology.xml Gimlet-pcie-topology.xml
 SRCFILE = ../Oxide,Gimlet
 
 include ../Makefile.map

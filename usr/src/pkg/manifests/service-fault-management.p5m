@@ -24,6 +24,7 @@
 # Copyright 2020 Joyent, Inc.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2019 Peter Tribble.
+# Copyright 2023 Oxide Computer Company
 #
 
 #
@@ -336,6 +337,8 @@ file path=usr/lib/fm/fmd/schemes/$(ARCH64)/mem.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/schemes/$(ARCH64)/mod.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
+file path=usr/lib/fm/fmd/schemes/$(ARCH64)/pcie.so mode=0555 \
+    variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/schemes/$(ARCH64)/pkg.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/schemes/$(ARCH64)/svc.so mode=0555 \
@@ -357,6 +360,8 @@ file path=usr/lib/fm/fmd/schemes/legacy-hc.so mode=0555 \
 file path=usr/lib/fm/fmd/schemes/mem.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/schemes/mod.so mode=0555 \
+    variant.opensolaris.zone=__NODEFAULT
+file path=usr/lib/fm/fmd/schemes/pcie.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/schemes/pkg.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
@@ -619,6 +624,8 @@ $(i386_ONLY)file \
 $(i386_ONLY)file \
     path=usr/platform/i86pc/lib/fm/topo/maps/i86pc-legacy-hc-topology.xml \
     mode=0444
+$(i386_ONLY)file \
+    path=usr/platform/i86pc/lib/fm/topo/maps/i86pc-pcie-topology.xml mode=0444
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/maps/psu-hc-topology.xml \
     mode=0444
 $(i386_ONLY)dir path=usr/platform/i86pc/lib/fm/topo/plugins
@@ -628,6 +635,8 @@ $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/chipset.so \
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/hostbridge.so \
     mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/pcibus.so mode=0555
+$(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/pciebus.so \
+    mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/x86pi.so mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/zen.so mode=0555
 #
@@ -640,8 +649,12 @@ $(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo
 $(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/maps
 $(i386_ONLY)file \
     path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-hc-topology.xml mode=0444
+$(i386_ONLY)file \
+    path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-pcie-topology.xml mode=0444
 $(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/plugins
 $(i386_ONLY)file path=usr/platform/oxide/lib/fm/topo/plugins/oxhc.so mode=0555
+$(i386_ONLY)file path=usr/platform/oxide/lib/fm/topo/plugins/pciebus.so \
+    mode=0555
 $(i386_ONLY)file path=usr/platform/oxide/lib/fm/topo/plugins/zen.so mode=0555
 #
 # Some directories common to both global and non-global zones:

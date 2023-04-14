@@ -13,8 +13,12 @@
 # Copyright 2023 Oxide Computer Company
 #
 
-SUBDIRS = oxhc pciebus zen
+include ../../Makefile.com
+include $(SRC)/Makefile.master.64
 
-.PARALLEL: $(SUBDIRS)
+LDLIBS += -L$(ROOTLIB)/fm/$(MACH64) -ltopo
+LDFLAGS += -R/usr/lib/fm/$(MACH64)
 
-include ../../../Makefile.subdirs
+include ../../Makefile.targ
+
+install: all $(ROOTPROG64)
