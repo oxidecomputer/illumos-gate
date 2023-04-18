@@ -125,7 +125,35 @@ static const uint_t MILAN_RAS_CFG_LOG_DEFERRED_IN_MCA_STAT = 34;
 static const uint32_t MILAN_RAS_MCA_CTL_MASK_MSR_BASE = 0xc0010400U;
 
 /*
- * CS mask bits.
+ * LS (load-store) mask bits.  Only bits we refer to in the corresponding
+ * private setup code are defined here; these should eventually end up in
+ * generic headers as they are not specific to the oxide arch and correspond to
+ * status bits that machine-independent CPU modules will need.
+ *
+ * These are bit position numbers only.
+ */
+static const uint_t MILAN_RAS_MASK_LS_SYS_RD_DATA_LD = 19;
+static const uint_t MILAN_RAS_MASK_LS_SYS_RD_DATA_SCB = 20;
+static const uint_t MILAN_RAS_MASK_LS_SYS_RD_DATA_WCB = 21;
+
+/*
+ * IF (instruction fetch) mask bits.
+ */
+static const uint_t MILAN_RAS_MASK_IF_L2_BTB_MULTI = 11;
+static const uint_t MILAN_RAS_MASK_IF_L2_TLB_MULTI = 16;
+
+/*
+ * L2 mask bits.
+ */
+static const uint_t MILAN_RAS_MASK_L2_HWA = 3;
+
+/*
+ * FP (floating-point) mask bits.
+ */
+static const uint_t MILAN_RAS_MASK_FP_HWA = 6;
+
+/*
+ * CS (coherent slave - DF) mask bits.
  */
 static const uint_t MILAN_RAS_MASK_CS_FTI_ADDR_VIOL = 1;
 
@@ -133,6 +161,12 @@ static const uint_t MILAN_RAS_MASK_CS_FTI_ADDR_VIOL = 1;
  * L3 mask bits.
  */
 static const uint_t MILAN_RAS_MASK_L3_HWA = 7;
+
+/*
+ * NBIO (northbridge I/O) mask bits.
+ */
+static const uint_t MILAN_RAS_MASK_NBIO_PCIE_SB = 1;
+static const uint_t MILAN_RAS_MASK_NBIO_PCIE_ERR_EVT = 2;
 
 /*
  * Entry point for initialization.

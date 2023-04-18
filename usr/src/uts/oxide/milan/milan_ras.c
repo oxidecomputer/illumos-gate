@@ -220,11 +220,31 @@ milan_ras_init(void)
 		 * beyond the McaX maximum.
 		 */
 		switch (identify_bank(bank)) {
+		case MILAN_RBT_LS:
+			bank_mask_set(bank, MILAN_RAS_MASK_LS_SYS_RD_DATA_LD);
+			bank_mask_set(bank, MILAN_RAS_MASK_LS_SYS_RD_DATA_SCB);
+			bank_mask_set(bank, MILAN_RAS_MASK_LS_SYS_RD_DATA_WCB);
+			break;
+		case MILAN_RBT_IF:
+			/* These appear to be set by HW/FW; take no chances. */
+			bank_mask_set(bank, MILAN_RAS_MASK_IF_L2_BTB_MULTI);
+			bank_mask_set(bank, MILAN_RAS_MASK_IF_L2_TLB_MULTI);
+			break;
+		case MILAN_RBT_L2:
+			bank_mask_set(bank, MILAN_RAS_MASK_L2_HWA);
+			break;
+		case MILAN_RBT_FP:
+			bank_mask_set(bank, MILAN_RAS_MASK_FP_HWA);
+			break;
 		case MILAN_RBT_CS:
 			bank_mask_set(bank, MILAN_RAS_MASK_CS_FTI_ADDR_VIOL);
 			break;
 		case MILAN_RBT_L3:
 			bank_mask_set(bank, MILAN_RAS_MASK_L3_HWA);
+			break;
+		case MILAN_RBT_NBIO:
+			bank_mask_set(bank, MILAN_RAS_MASK_NBIO_PCIE_SB);
+			bank_mask_set(bank, MILAN_RAS_MASK_NBIO_PCIE_ERR_EVT);
 			break;
 		default:
 			break;
