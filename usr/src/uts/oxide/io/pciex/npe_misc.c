@@ -195,34 +195,6 @@ npe_child_is_pci(dev_info_t *dip)
 	return (parent_is_pci && !child_is_pciex);
 }
 
-/*
- * Checks to see if MMCFG is supported.
- * Returns: TRUE if MMCFG is supported, FALSE if not.
- *
- * If a device is attached to a parent whose "dev_type" is "pciex",
- * the device will support MMCFG access.  Otherwise, use legacy IOCFG access.
- *
- * Enable Legacy PCI config space access for AMD K8 north bridges.
- *	Host bridge: AMD HyperTransport Technology Configuration
- *	Host bridge: AMD Address Map
- *	Host bridge: AMD DRAM Controller
- *	Host bridge: AMD Miscellaneous Control
- * These devices do not support MMCFG access.
- */
-boolean_t
-npe_is_mmcfg_supported(dev_info_t *dip)
-{
-	int vendor_id, device_id;
-
-	vendor_id = ddi_prop_get_int(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "vendor-id", -1);
-	device_id = ddi_prop_get_int(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    "device-id", -1);
-
-	return !(npe_child_is_pci(dip) ||
-	    IS_BAD_AMD_NTBRIDGE(vendor_id, device_id));
-}
-
 int
 npe_enable_htmsi(ddi_acc_handle_t cfg_hdl)
 {

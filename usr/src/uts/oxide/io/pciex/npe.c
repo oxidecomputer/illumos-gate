@@ -210,7 +210,6 @@ extern void	npe_ck804_fix_aer_ptr(ddi_acc_handle_t cfg_hdl);
 extern int	npe_disable_empty_bridges_workaround(dev_info_t *child);
 extern void	npe_nvidia_error_workaround(ddi_acc_handle_t cfg_hdl);
 extern void	npe_intel_error_workaround(ddi_acc_handle_t cfg_hdl);
-extern boolean_t npe_is_mmcfg_supported(dev_info_t *dip);
 extern void	npe_enable_htmsi_children(dev_info_t *dip);
 extern int	npe_save_htconfig_children(dev_info_t *dip);
 extern int	npe_restore_htconfig_children(dev_info_t *dip);
@@ -502,7 +501,6 @@ npe_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 {
 	int		rnumber;
 	int		space;
-	ddi_acc_impl_t	*ap;
 	ddi_acc_hdl_t	*hp;
 	ddi_map_req_t	mr;
 	pci_regspec_t	pci_reg;
@@ -510,7 +508,6 @@ npe_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 	struct regspec64 reg;
 	pci_acc_cfblk_t	*cfp;
 	int		retval;
-	int64_t		*ecfginfo;
 	uint_t		nelem;
 	uint64_t	pci_rlength;
 
@@ -584,25 +581,20 @@ npe_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 
 		case PCI_ADDR_CONFIG:
 			/*
-			 * If this is an unmap/unlock of a standard config
-			 * space mapping (memory-mapped config space mappings
-			 * would have the DDI_ACCATTR_CPU_VADDR bit set in the
-			 * acc_attr), undo that setup here.
+			 * We support only standard mappings for config space,
+			 * so no CPU_VADDR mappings should ever get here.
 			 */
-			if (NPE_IS_HANDLE_FOR_STDCFG_ACC(mp->map_handlep)) {
+			ASSERT(NPE_IS_HANDLE_FOR_STDCFG_ACC(mp->map_handlep));
 
-				if (DDI_FM_ACC_ERR_CAP(ddi_fm_capable(rdip)) &&
-				    mp->map_handlep->ah_acc.devacc_attr_access
-				    != DDI_DEFAULT_ACC) {
-					ndi_fmc_remove(rdip, ACC_HANDLE,
-					    (void *)mp->map_handlep);
-				}
-				return (DDI_SUCCESS);
+			if (DDI_FM_ACC_ERR_CAP(ddi_fm_capable(rdip)) &&
+			    mp->map_handlep->ah_acc.devacc_attr_access
+			    != DDI_DEFAULT_ACC) {
+				ndi_fmc_remove(rdip, ACC_HANDLE,
+				    (void *)mp->map_handlep);
 			}
 
-			pci_rp->pci_size_low = PCIE_CONF_HDR_SIZE;
+			return (DDI_SUCCESS);
 
-			/* FALLTHROUGH */
 		case PCI_ADDR_MEM64:
 		case PCI_ADDR_MEM32:
 			reg.regspec_bustype = 0;
@@ -641,7 +633,9 @@ npe_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 	}
 
 	/* check for user mapping request - not legal for Config */
-	if (mp->map_op == DDI_MO_MAP_HANDLE && space == PCI_ADDR_CONFIG) {
+	if (space == PCI_ADDR_CONFIG &&
+	    (mp->map_op == DDI_MO_MAP_HANDLE ||
+	    (mp->map_flags & DDI_MF_DEVICE_MAPPING) != 0)) {
 		cmn_err(CE_NOTE, "npe: Config mapping request from user\n");
 		return (DDI_FAILURE);
 	}
@@ -665,48 +659,12 @@ npe_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 		cfp->c_devnum = PCI_REG_DEV_G(pci_rp->pci_phys_hi);
 		cfp->c_funcnum = PCI_REG_FUNC_G(pci_rp->pci_phys_hi);
 
+		/*
+		 * Range checks are done by code we're about to call.
+		 */
 		*vaddrp = (caddr_t)offset;
 
-		/* Check if MMCFG is supported */
-		if (!npe_is_mmcfg_supported(rdip)) {
-			return (npe_setup_std_pcicfg_acc(rdip, mp, hp,
-			    offset, len));
-		}
-
-
-		if (ddi_prop_lookup_int64_array(DDI_DEV_T_ANY, rdip, 0,
-		    "ecfg", &ecfginfo, &nelem) == DDI_PROP_SUCCESS) {
-
-			if (nelem != 4 ||
-			    cfp->c_busnum < ecfginfo[2] ||
-			    cfp->c_busnum > ecfginfo[3]) {
-				/*
-				 * Invalid property or Doesn't contain the
-				 * requested bus; fall back to standard
-				 * (I/O-based) config access.
-				 */
-				ddi_prop_free(ecfginfo);
-				return (npe_setup_std_pcicfg_acc(rdip, mp, hp,
-				    offset, len));
-			} else {
-				pci_rp->pci_phys_low = ecfginfo[0];
-
-				ddi_prop_free(ecfginfo);
-
-				pci_rp->pci_phys_low += ((cfp->c_busnum << 20) |
-				    (cfp->c_devnum) << 15 |
-				    (cfp->c_funcnum << 12));
-
-				pci_rp->pci_size_low = PCIE_CONF_HDR_SIZE;
-			}
-		} else {
-			/*
-			 * Couldn't find the MMCFG property -- fall back to
-			 * standard config access
-			 */
-			return (npe_setup_std_pcicfg_acc(rdip, mp, hp,
-			    offset, len));
-		}
+		return (npe_setup_std_pcicfg_acc(rdip, mp, hp, offset, len));
 	}
 
 	/*
@@ -727,7 +685,6 @@ npe_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 	case PCI_ADDR_IO:
 		reg.regspec_bustype = 1;
 		break;
-	case PCI_ADDR_CONFIG:
 	case PCI_ADDR_MEM64:
 	case PCI_ADDR_MEM32:
 		reg.regspec_bustype = 0;
@@ -755,23 +712,8 @@ npe_bus_map(dev_info_t *dip, dev_info_t *rdip, ddi_map_req_t *mp,
 	mp->map_flags |= DDI_MF_EXT_REGSPEC;
 	retval = ddi_map(dip, mp, (off_t)0, (off_t)0, vaddrp);
 	if (retval == DDI_SUCCESS) {
-		/*
-		 * For config space gets force use of cautious access routines.
-		 * These will handle default and protected mode accesses too.
-		 */
-		if (space == PCI_ADDR_CONFIG) {
-			ap = (ddi_acc_impl_t *)mp->map_handlep;
-			ap->ahi_acc_attr &= ~DDI_ACCATTR_DIRECT;
-			ap->ahi_acc_attr |= DDI_ACCATTR_CONFIG_SPACE;
-			ap->ahi_get8 = i_ddi_caut_get8;
-			ap->ahi_get16 = i_ddi_caut_get16;
-			ap->ahi_get32 = i_ddi_caut_get32;
-			ap->ahi_get64 = i_ddi_caut_get64;
-			ap->ahi_rep_get8 = i_ddi_caut_rep_get8;
-			ap->ahi_rep_get16 = i_ddi_caut_rep_get16;
-			ap->ahi_rep_get32 = i_ddi_caut_rep_get32;
-			ap->ahi_rep_get64 = i_ddi_caut_rep_get64;
-		}
+		ASSERT3S(space, !=, PCI_ADDR_CONFIG);
+
 		if (DDI_FM_ACC_ERR_CAP(ddi_fm_capable(rdip)) &&
 		    mp->map_handlep->ah_acc.devacc_attr_access !=
 		    DDI_DEFAULT_ACC) {
