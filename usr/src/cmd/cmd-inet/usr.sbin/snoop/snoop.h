@@ -25,6 +25,7 @@
  *
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2021 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_SNOOP_H
@@ -303,6 +304,8 @@ extern char *printether(struct ether_addr *);
 extern char *print_ethertype(int);
 extern const char *arp_htype(int);
 extern int valid_rpc(char *, int);
+struct schdr;
+extern int interpret_sidecar(int, struct schdr *sc, int);
 
 /*
  * Describes characteristics of the Media Access Layer.
