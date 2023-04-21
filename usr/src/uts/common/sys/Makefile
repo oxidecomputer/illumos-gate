@@ -549,6 +549,7 @@ CHKHDRS=			\
 	stat.h			\
 	statfs.h		\
 	statvfs.h		\
+	stdalign.h		\
 	stdbool.h		\
 	stddef.h		\
 	stdint.h		\
