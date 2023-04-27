@@ -20,8 +20,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ *	Copyright (c) 1991, Sun Microsystems, Inc.
  */
 
 /*
@@ -30,11 +29,10 @@
 #include <sys/syscall.h>
 
 	.file	"lddstub.S"
-
 	.text
 	.globl	stub
+
 stub:
-	movq	$0, %rdi
+	pushl	$0
 	movl	$SYS_exit, %eax
-	syscall
-	hlt
+	lcall	$7,$0
