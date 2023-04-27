@@ -103,6 +103,29 @@ static mac_callbacks_t tfpkt_m_callbacks = {
 	.mc_tx =			tfpkt_m_tx,
 };
 
+static tfpkt_stats_t tfpkt_stats_template = {
+	{ "tps_tx_pkts",		KSTAT_DATA_UINT64 },
+	{ "tps_tx_bytes",		KSTAT_DATA_UINT64 },
+	{ "tps_tx_errs",		KSTAT_DATA_UINT64 },
+	{ "tps_tx_zombie",		KSTAT_DATA_UINT64 },
+	{ "tps_tx_alloc_fails",		KSTAT_DATA_UINT64 },
+	{ "tps_tx_tbus_fails",		KSTAT_DATA_UINT64 },
+	{ "tps_tx_missing_schdr",	KSTAT_DATA_UINT64 },
+	{ "tps_tx_truncated_eth",	KSTAT_DATA_UINT64 },
+	{ "tps_tx_updates",		KSTAT_DATA_UINT64 },
+
+	{ "tps_rx_pkts",		KSTAT_DATA_UINT64 },
+	{ "tps_rx_bytes",		KSTAT_DATA_UINT64 },
+	{ "tps_rx_errs",		KSTAT_DATA_UINT64 },
+	{ "tps_rx_zombie",		KSTAT_DATA_UINT64 },
+	{ "tps_rx_alloc_fails",		KSTAT_DATA_UINT64 },
+	{ "tps_rx_truncated_eth",	KSTAT_DATA_UINT64 },
+
+	{ "tps_detach_fails",		KSTAT_DATA_UINT64 },
+	{ "tps_tbus_inactive",		KSTAT_DATA_UINT64 },
+	{ "tps_tbus_hold_fails",	KSTAT_DATA_UINT64 },
+};
+
 static void
 tfpkt_err(tfpkt_t *tfp, const char *fmt, ...)
 {
@@ -164,20 +187,20 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 
 	rval = 0;
 	if (MBLKL(mp_head) < sizeof (struct ether_header)) {
-		errstat = &tfp->tfp_stats.tps_tx_truncated_eth;
+		errstat = &tfp->tfp_stats.tps_tx_truncated_eth.value.ui64;
 		goto done;
 	}
 
 	/* Drop packets without a sidecar header */
 	eth = (struct ether_header *)mp_head->b_rptr;
 	if (ntohs(eth->ether_type) != ETHERTYPE_SIDECAR) {
-		errstat = &tfp->tfp_stats.tps_tx_missing_schdr;
+		errstat = &tfp->tfp_stats.tps_tx_missing_schdr.value.ui64;
 		goto done;
 	}
 
 	rval = -1;
 	if ((tbp = tfpkt_tbus_hold(tfp)) == NULL) {
-		errstat = &tfp->tfp_stats.tps_tx_tbus_fails;
+		errstat = &tfp->tfp_stats.tps_tx_tbus_fails.value.ui64;
 		goto done;
 	}
 
@@ -186,7 +209,7 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 	 * packet.
 	 */
 	if ((tx_buf = tfpkt_tbus_tx_alloc(tbp, full_sz)) == NULL) {
-		errstat = &tfp->tfp_stats.tps_tx_alloc_fails;
+		errstat = &tfp->tfp_stats.tps_tx_alloc_fails.value.ui64;
 		goto done;
 	}
 
@@ -202,7 +225,7 @@ tfpkt_tx_one(tfpkt_t *tfp, mblk_t *mp_head)
 
 	if (tfpkt_tbus_tx(tbp, tx_buf, full_sz) != 0) {
 		tfpkt_tbus_tx_free(tbp, tx_buf);
-		errstat = &tfp->tfp_stats.tps_tx_tbus_fails;
+		errstat = &tfp->tfp_stats.tps_tx_tbus_fails.value.ui64;
 		goto done;
 	}
 	rval = 0;
@@ -214,10 +237,10 @@ done:
 
 	mutex_enter(&tfp->tfp_mutex);
 	if (errstat == NULL) {
-		tfp->tfp_stats.tps_tx_pkts++;
-		tfp->tfp_stats.tps_tx_bytes += full_sz;
+		tfp->tfp_stats.tps_tx_pkts.value.ui64++;
+		tfp->tfp_stats.tps_tx_bytes.value.ui64 += full_sz;
 	} else {
-		tfp->tfp_stats.tps_tx_errs++;
+		tfp->tfp_stats.tps_tx_errs.value.ui64++;
 		(*errstat)++;
 	}
 	mutex_exit(&tfp->tfp_mutex);
@@ -236,7 +259,7 @@ tfpkt_m_tx(void *arg, mblk_t *mp_chain)
 	 */
 	if (tfpkt_mac_hold(tfp) < 0) {
 		mutex_enter(&tfp->tfp_mutex);
-		tfp->tfp_stats.tps_tx_zombie++;
+		tfp->tfp_stats.tps_tx_zombie.value.ui64++;
 		mutex_exit(&tfp->tfp_mutex);
 
 		freemsgchain(mp_chain);
@@ -270,25 +293,25 @@ tfpkt_m_stat(void *arg, uint_t stat, uint64_t *val)
 		*val = tfp->tfp_link_state;
 		break;
 	case MAC_STAT_OPACKETS:
-		*val = tfp->tfp_stats.tps_tx_pkts;
+		*val = tfp->tfp_stats.tps_tx_pkts.value.ui64;
 		break;
 	case MAC_STAT_OBYTES:
-		*val = tfp->tfp_stats.tps_tx_bytes;
+		*val = tfp->tfp_stats.tps_tx_bytes.value.ui64;
 		break;
 	case MAC_STAT_OERRORS:
-		*val = tfp->tfp_stats.tps_tx_errs;
+		*val = tfp->tfp_stats.tps_tx_errs.value.ui64;
 		break;
 	case MAC_STAT_IPACKETS:
-		*val = tfp->tfp_stats.tps_rx_pkts;
+		*val = tfp->tfp_stats.tps_rx_pkts.value.ui64;
 		break;
 	case MAC_STAT_RBYTES:
-		*val = tfp->tfp_stats.tps_rx_bytes;
+		*val = tfp->tfp_stats.tps_rx_bytes.value.ui64;
 		break;
 	case MAC_STAT_IERRORS:
-		*val = tfp->tfp_stats.tps_rx_errs;
+		*val = tfp->tfp_stats.tps_rx_errs.value.ui64;
 		break;
 	case ETHER_STAT_TOOSHORT_ERRORS:
-		*val = tfp->tfp_stats.tps_rx_truncated_eth;
+		*val = tfp->tfp_stats.tps_rx_truncated_eth.value.ui64;
 		break;
 	default:
 		rval = ENOTSUP;
@@ -356,19 +379,19 @@ tfpkt_rx(tfpkt_t *tfp, void *vaddr, size_t sz)
 	uint64_t *errstat = NULL;
 
 	if (sz < ETHSZ) {
-		errstat = &tfp->tfp_stats.tps_rx_truncated_eth;
+		errstat = &tfp->tfp_stats.tps_rx_truncated_eth.value.ui64;
 		goto done;
 	}
 
 	if ((mp = allocb(sz, 0)) == NULL) {
-		errstat = &tfp->tfp_stats.tps_rx_alloc_fails;
+		errstat = &tfp->tfp_stats.tps_rx_alloc_fails.value.ui64;
 		goto done;
 	}
 	bcopy(addr, mp->b_rptr, sz);
 	mp->b_wptr = mp->b_rptr + sz;
 
 	if (tfpkt_mac_hold(tfp) != 0) {
-		errstat = &tfp->tfp_stats.tps_rx_zombie;
+		errstat = &tfp->tfp_stats.tps_rx_zombie.value.ui64;
 		goto done;
 	}
 	mac_rx(tfp->tfp_mh, NULL, mp);
@@ -381,10 +404,10 @@ done:
 
 	mutex_enter(&tfp->tfp_mutex);
 	if (errstat == NULL) {
-		tfp->tfp_stats.tps_rx_pkts++;
-		tfp->tfp_stats.tps_rx_bytes += sz;
+		tfp->tfp_stats.tps_rx_pkts.value.ui64++;
+		tfp->tfp_stats.tps_rx_bytes.value.ui64 += sz;
 	} else {
-		tfp->tfp_stats.tps_rx_errs++;
+		tfp->tfp_stats.tps_rx_errs.value.ui64++;
 		(*errstat)++;
 	}
 	mutex_exit(&tfp->tfp_mutex);
@@ -440,6 +463,7 @@ tfpkt_cleanup(tfpkt_t *tfp)
 		(void) mac_unregister(tfp->tfp_mh);
 	}
 
+	kstat_delete(tfp->tfp_kstat);
 	cv_destroy(&tfp->tfp_tbus_cv);
 	mutex_destroy(&tfp->tfp_tbus_mutex);
 	mutex_destroy(&tfp->tfp_mutex);
@@ -449,19 +473,33 @@ tfpkt_cleanup(tfpkt_t *tfp)
 static int
 tfpkt_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
+	kstat_t *kstat;
 	tfpkt_t *tfp;
-	int err;
+	int err, count;
 
 	if (cmd != DDI_ATTACH)
 		return (DDI_FAILURE);
+
+	count = sizeof (tfpkt_stats_t) / sizeof (kstat_named_t);
+	kstat = kstat_create("tfpkt", ddi_get_instance(dip), "tfpkt",
+	    "tofino", KSTAT_TYPE_NAMED, count, KSTAT_FLAG_VIRTUAL);
+	if (kstat == NULL) {
+		dev_err(dip, CE_WARN, "failed to alloc tfpkt kstats");
+		return (DDI_FAILURE);
+	}
 
 	tfp = kmem_zalloc(sizeof (*tfp), KM_SLEEP);
 	mutex_init(&tfp->tfp_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&tfp->tfp_tbus_mutex, NULL, MUTEX_DRIVER, NULL);
 	cv_init(&tfp->tfp_tbus_cv,  NULL, CV_DEFAULT, NULL);
 	tfp->tfp_runstate = TFPKT_RUNSTATE_STOPPED;
-
 	tfp->tfp_dip = dip;
+
+	tfp->tfp_kstat = kstat;
+	kstat->ks_data = &tfp->tfp_stats;
+	bcopy(&tfpkt_stats_template, &tfp->tfp_stats, sizeof (tfpkt_stats_t));
+	kstat_install(kstat);
+
 	ddi_set_driver_private(dip, tfp);
 
 	if ((err = tfpkt_init_mac(tfp)) != 0) {
@@ -508,7 +546,7 @@ tfpkt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		}
 
 		mutex_enter(&tfp->tfp_mutex);
-		tfp->tfp_stats.tps_detach_fails++;
+		tfp->tfp_stats.tps_detach_fails.value.ui64++;
 		mutex_exit(&tfp->tfp_mutex);
 		/* FALLTHRU */
 	default:

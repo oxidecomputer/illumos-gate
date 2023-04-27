@@ -46,7 +46,20 @@ uint32_t tfpkt_buf_size = 2048;
 uint32_t tfpkt_rx_depth = 256;
 uint32_t tfpkt_tx_depth = 256;
 
-#define	TBUS_STAT_BUMP(TBP, STAT) atomic_inc_64(&(TBP)->ttb_stats.STAT)
+static tfpkt_tbus_stats_t tfpkt_tbus_stats_template = {
+	{ "ttb_rxfail_no_descriptors",		KSTAT_DATA_UINT64 },
+	{ "ttb_rxfail_bad_descriptor_type",	KSTAT_DATA_UINT64 },
+	{ "ttb_rxfail_unknown_buf",		KSTAT_DATA_UINT64 },
+	{ "ttb_txfail_pkt_too_large",		KSTAT_DATA_UINT64 },
+	{ "ttb_txfail_no_bufs",			KSTAT_DATA_UINT64 },
+	{ "ttb_txfail_no_descriptors",		KSTAT_DATA_UINT64 },
+	{ "ttb_txfail_bad_descriptor_type",	KSTAT_DATA_UINT64 },
+	{ "ttb_txfail_unknown_buf",		KSTAT_DATA_UINT64 },
+	{ "ttb_txfail_other",			KSTAT_DATA_UINT64 },
+};
+
+#define	TBUS_STAT_BUMP(TBP, STAT) \
+	atomic_inc_64(&(TBP)->ttb_stats.STAT.value.ui64)
 
 /*
  * Forward references
@@ -650,7 +663,7 @@ tfpkt_tbus_tx_free(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf)
 	tfpkt_buf_remove(&tbp->ttb_txbufs_inuse, buf);
 	if (tfpkt_buf_insert(&tbp->ttb_txbufs_free, buf)) {
 		/* Let mac know we just repopulated the freelist */
-		tbp->ttb_tfp->tfp_stats.tps_tx_updates++;
+		tbp->ttb_tfp->tfp_stats.tps_tx_updates.value.ui64++;
 		mac_tx_update(tbp->ttb_tfp->tfp_mh);
 	}
 }
@@ -803,7 +816,7 @@ tfpkt_tbus_process_cmp(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp,
 		TBUS_STAT_BUMP(tbp, ttb_txfail_bad_descriptor_type);
 	} else if (tfpkt_buf_insert(&tbp->ttb_txbufs_free, buf)) {
 		/* Let mac know we just repopulated the freelist */
-		tbp->ttb_tfp->tfp_stats.tps_tx_updates++;
+		tbp->ttb_tfp->tfp_stats.tps_tx_updates.value.ui64++;
 		mac_tx_update(tbp->ttb_tfp->tfp_mh);
 	}
 
@@ -1420,6 +1433,7 @@ tfpkt_tbus_fini(tfpkt_t *tfp, tfpkt_tbus_t *tbp)
 	tfpkt_tbus_free_bufs(tbp);
 	tfpkt_tbus_free_drs(tbp);
 	mutex_destroy(&tbp->ttb_mutex);
+	kstat_delete(tbp->ttb_kstat);
 	kmem_free(tbp, sizeof (*tbp));
 	tfp->tfp_tbus_data = NULL;
 }
@@ -1446,12 +1460,28 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 	dev_info_t *tfp_dip = tfp->tfp_dip;
 	tfpkt_tbus_t *tbp;
 	tf_tbus_hdl_t hdl;
-	int err;
+	kstat_t *kstat;
+	int count, err;
+
+	count = sizeof (tfpkt_tbus_stats_t) / sizeof (kstat_named_t);
+	kstat = kstat_create("tfpkt_tbus", ddi_get_instance(tfp_dip),
+	    "tfpkt_tbus", "tofino", KSTAT_TYPE_NAMED, count,
+	    KSTAT_FLAG_VIRTUAL);
+	if (kstat == NULL) {
+		dev_err(tfp_dip, CE_WARN, "failed to alloc tfpkt_tbus kstats");
+		return (NULL);
+	}
 
 	tbp = kmem_zalloc(sizeof (*tbp), KM_SLEEP);
 	mutex_init(&tbp->ttb_mutex, NULL, MUTEX_DRIVER, NULL);
 	tbp->ttb_dip = tfp_dip;
 	tbp->ttb_tfp = tfp;
+
+	tbp->ttb_kstat = kstat;
+	kstat->ks_data = &tbp->ttb_stats;
+	bcopy(&tfpkt_tbus_stats_template, &tbp->ttb_stats,
+	    sizeof (tfpkt_tbus_stats_t));
+	kstat_install(kstat);
 
 	if ((err = tofino_tbus_register(&hdl)) != 0) {
 		if (err == EBUSY) {

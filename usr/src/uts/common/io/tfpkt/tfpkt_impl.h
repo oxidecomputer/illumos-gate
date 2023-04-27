@@ -50,38 +50,38 @@ typedef enum tfpkt_tbus_state {
 } tfpkt_tbus_state_t;
 
 typedef struct tfpkt_stats {
-	uint64_t tps_tx_pkts;
-	uint64_t tps_tx_bytes;
-	uint64_t tps_tx_errs;
-	uint64_t tps_tx_zombie;
-	uint64_t tps_tx_alloc_fails;
-	uint64_t tps_tx_tbus_fails;
-	uint64_t tps_tx_missing_schdr;
-	uint64_t tps_tx_truncated_eth;
-	uint64_t tps_tx_updates;
+	kstat_named_t tps_tx_pkts;
+	kstat_named_t tps_tx_bytes;
+	kstat_named_t tps_tx_errs;
+	kstat_named_t tps_tx_zombie;
+	kstat_named_t tps_tx_alloc_fails;
+	kstat_named_t tps_tx_tbus_fails;
+	kstat_named_t tps_tx_missing_schdr;
+	kstat_named_t tps_tx_truncated_eth;
+	kstat_named_t tps_tx_updates;
 
-	uint64_t tps_rx_pkts;
-	uint64_t tps_rx_bytes;
-	uint64_t tps_rx_errs;
-	uint64_t tps_rx_zombie;
-	uint64_t tps_rx_alloc_fails;
-	uint64_t tps_rx_truncated_eth;
+	kstat_named_t tps_rx_pkts;
+	kstat_named_t tps_rx_bytes;
+	kstat_named_t tps_rx_errs;
+	kstat_named_t tps_rx_zombie;
+	kstat_named_t tps_rx_alloc_fails;
+	kstat_named_t tps_rx_truncated_eth;
 
-	uint64_t tps_detach_fails;
-	uint64_t tps_tbus_inactive;
-	uint64_t tps_tbus_hold_fails;
+	kstat_named_t tps_detach_fails;
+	kstat_named_t tps_tbus_inactive;
+	kstat_named_t tps_tbus_hold_fails;
 } tfpkt_stats_t;
 
 typedef struct tfpkt_tbus_stats {
-	uint64_t	ttb_rxfail_no_descriptors;
-	uint64_t	ttb_rxfail_bad_descriptor_type;
-	uint64_t	ttb_rxfail_unknown_buf;
-	uint64_t	ttb_txfail_pkt_too_large;
-	uint64_t	ttb_txfail_no_bufs;
-	uint64_t	ttb_txfail_no_descriptors;
-	uint64_t	ttb_txfail_bad_descriptor_type;
-	uint64_t	ttb_txfail_unknown_buf;
-	uint64_t	ttb_txfail_other;
+	kstat_named_t	ttb_rxfail_no_descriptors;
+	kstat_named_t	ttb_rxfail_bad_descriptor_type;
+	kstat_named_t	ttb_rxfail_unknown_buf;
+	kstat_named_t	ttb_txfail_pkt_too_large;
+	kstat_named_t	ttb_txfail_no_bufs;
+	kstat_named_t	ttb_txfail_no_descriptors;
+	kstat_named_t	ttb_txfail_bad_descriptor_type;
+	kstat_named_t	ttb_txfail_unknown_buf;
+	kstat_named_t	ttb_txfail_other;
 } tfpkt_tbus_stats_t;
 
 /*
@@ -265,6 +265,7 @@ struct tfpkt_tbus {
 	uint_t		ttb_bufs_capacity;	/* total rx+tx bufs */
 	tfpkt_buf_t	*ttb_bufs_mem;		/* all rx+tx bufs */
 
+	kstat_t			*ttb_kstat;
 	tfpkt_tbus_stats_t	ttb_stats;
 };
 
@@ -279,6 +280,7 @@ struct tfpkt {
 	uint32_t		tfp_init_state;
 	tfpkt_runstate_t	tfp_runstate;
 	link_state_t		tfp_link_state;
+	kstat_t			*tfp_kstat;
 	tfpkt_stats_t		tfp_stats;
 	mac_handle_t		tfp_mh;
 

@@ -98,15 +98,15 @@ typedef struct tfport_port {
 } tfport_port_t;
 
 typedef struct tfport_stats {
-	uint64_t tfs_unclaimed_pkts;	/* no matching tfport device */
-	uint64_t tfs_non_sidecar;	/* no sidecar header */
-	uint64_t tfs_zombie_pkts;	/* pkts for tfport shutting down */
-	uint64_t tfs_truncated_eth;	/* pkts shorter than an eth header */
-	uint64_t tfs_truncated_sidecar;	/* pkts shorter than eth+sidecar hdrs */
-	uint64_t tfs_loopback_pkts;	/* pkts both in and out on pci port */
-	uint64_t tfs_mac_loopback;	/* rx marked as "loopback" by mac */
-	uint64_t tfs_tx_nomem_drops;	/* failed to alloc tx buffer */
-	uint64_t tfs_rx_nomem_drops;	/* failed to alloc rx buffer */
+	kstat_named_t tfs_unclaimed_pkts;	/* no matching tfport device */
+	kstat_named_t tfs_non_sidecar;		/* no sidecar header */
+	kstat_named_t tfs_zombie_pkts;		/* port exists, but stopped */
+	kstat_named_t tfs_truncated_eth;	/* smaller than an eth header */
+	kstat_named_t tfs_truncated_sidecar;	/* smaller than eth+sidecar */
+	kstat_named_t tfs_loopback_pkts;	/* in and out on pci port */
+	kstat_named_t tfs_mac_loopback;		/* rx marked loopback by mac */
+	kstat_named_t tfs_tx_nomem_drops;	/* failed to alloc tx buffer */
+	kstat_named_t tfs_rx_nomem_drops;	/* failed to alloc rx buffer */
 } tfport_stats_t;
 
 #define	TFPORT_SOURCE_OPEN		0x01
@@ -125,6 +125,7 @@ struct tfport {
 	avl_tree_t	tfp_ports_by_port;
 	avl_tree_t	tfp_ports_by_link;
 
+	kstat_t		*tfp_kstat;
 	tfport_stats_t	tfp_stats;
 };
 

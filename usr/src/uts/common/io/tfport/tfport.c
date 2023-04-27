@@ -143,6 +143,18 @@ int tfport_port0 = 0;
 
 int tfport_debug = 0;
 
+static tfport_stats_t tfport_stats_template = {
+	{ "tfs_unclaimed_pkts",		KSTAT_DATA_UINT64 },
+	{ "tfs_non_sidecar",		KSTAT_DATA_UINT64 },
+	{ "tfs_zombie_pkts",		KSTAT_DATA_UINT64 },
+	{ "tfs_truncated_eth",		KSTAT_DATA_UINT64 },
+	{ "tfs_truncated_sidecar",	KSTAT_DATA_UINT64 },
+	{ "tfs_loopback_pkts",		KSTAT_DATA_UINT64 },
+	{ "tfs_mac_loopback",		KSTAT_DATA_UINT64 },
+	{ "tfs_tx_nomem_drops",		KSTAT_DATA_UINT64 },
+	{ "tfs_rx_nomem_drops",		KSTAT_DATA_UINT64 },
+};
+
 static void
 tfport_dlog(tfport_t *t, const char *fmt, ...)
 {
@@ -229,7 +241,7 @@ tfport_find_port(tfport_t *devp, tfport_source_t *srcp, int port)
 	portp = avl_find(&devp->tfp_ports_by_port, &find, NULL);
 
 	if (portp == NULL || portp->tp_run_state != TFPORT_RUNSTATE_RUNNING) {
-		devp->tfp_stats.tfs_unclaimed_pkts++;
+		devp->tfp_stats.tfs_unclaimed_pkts.value.ui64++;
 
 		if (tfport_port0 & TFPORT_PORT0_NONCLAIMED) {
 			find.tp_port = 0;
@@ -243,7 +255,7 @@ tfport_find_port(tfport_t *devp, tfport_source_t *srcp, int port)
 			portp->tp_refcnt++;
 			mutex_exit(&portp->tp_mutex);
 		} else {
-			devp->tfp_stats.tfs_zombie_pkts++;
+			devp->tfp_stats.tfs_zombie_pkts.value.ui64++;
 			mutex_exit(&portp->tp_mutex);
 			portp = NULL;
 		}
@@ -310,7 +322,7 @@ tfport_tx_one(tfport_source_t *srcp, tfport_port_t *portp, mblk_t *mp_head)
 	 */
 	if (portp->tp_port == 0) {
 		mutex_enter(&devp->tfp_mutex);
-		devp->tfp_stats.tfs_loopback_pkts++;
+		devp->tfp_stats.tfs_loopback_pkts.value.ui64++;
 		mutex_exit(&devp->tfp_mutex);
 		goto done;
 	}
@@ -322,7 +334,7 @@ tfport_tx_one(tfport_source_t *srcp, tfport_port_t *portp, mblk_t *mp_head)
 	full_sz = msgsize(mp_head) + SCSZ;
 	if ((tx_buf = allocb(full_sz, BPRI_HI)) == NULL) {
 		mutex_enter(&devp->tfp_mutex);
-		devp->tfp_stats.tfs_tx_nomem_drops++;
+		devp->tfp_stats.tfs_tx_nomem_drops.value.ui64++;
 		mutex_exit(&devp->tfp_mutex);
 		goto done;
 	}
@@ -463,7 +475,7 @@ mac_sidecar_header_info(tfport_t *devp, mac_handle_t mh, mblk_t *mp,
 
 	if (mac_header_info(mh, mp, &mhi) != 0) {
 		mutex_enter(&devp->tfp_mutex);
-		devp->tfp_stats.tfs_truncated_eth++;
+		devp->tfp_stats.tfs_truncated_eth.value.ui64++;
 		mutex_exit(&devp->tfp_mutex);
 		return (-1);
 	}
@@ -477,7 +489,7 @@ mac_sidecar_header_info(tfport_t *devp, mac_handle_t mh, mblk_t *mp,
 			tmp = msgpullup(mp, -1);
 			if (tmp == NULL || MBLKL(tmp) < hdr_size) {
 				mutex_enter(&devp->tfp_mutex);
-				devp->tfp_stats.tfs_truncated_eth++;
+				devp->tfp_stats.tfs_truncated_eth.value.ui64++;
 				mutex_exit(&devp->tfp_mutex);
 				if (tmp != NULL)
 					freemsg(tmp);
@@ -505,7 +517,7 @@ tfport_rx_one(tfport_source_t *srcp, mac_resource_handle_t mrh, mblk_t *mp)
 
 	if (mac_sidecar_header_info(devp, srcp->tps_mh, mp, &hdr_info) != 0) {
 		mutex_enter(&devp->tfp_mutex);
-		devp->tfp_stats.tfs_truncated_eth++;
+		devp->tfp_stats.tfs_truncated_eth.value.ui64++;
 		mutex_exit(&devp->tfp_mutex);
 		goto done;
 	}
@@ -516,7 +528,7 @@ tfport_rx_one(tfport_source_t *srcp, mac_resource_handle_t mrh, mblk_t *mp)
 
 	} else if ((tfport_port0 & TFPORT_PORT0_NONSIDECAR) == 0) {
 		mutex_enter(&devp->tfp_mutex);
-		devp->tfp_stats.tfs_non_sidecar++;
+		devp->tfp_stats.tfs_non_sidecar.value.ui64++;
 		mutex_exit(&devp->tfp_mutex);
 		goto done;
 	}
@@ -548,7 +560,7 @@ tfport_rx_one(tfport_source_t *srcp, mac_resource_handle_t mrh, mblk_t *mp)
 
 			if ((tmp = msgpullup(mp, -1)) == NULL) {
 				mutex_enter(&devp->tfp_mutex);
-				devp->tfp_stats.tfs_rx_nomem_drops++;
+				devp->tfp_stats.tfs_rx_nomem_drops.value.ui64++;
 				mutex_exit(&devp->tfp_mutex);
 				goto done;
 			}
@@ -592,7 +604,7 @@ tfport_rx(void *arg, mac_resource_handle_t mrh, mblk_t *mp_chain, boolean_t lb)
 	if (lb) {
 		tfport_t *devp = srcp->tps_tfport;
 		mutex_enter(&devp->tfp_mutex);
-		devp->tfp_stats.tfs_mac_loopback++;
+		devp->tfp_stats.tfs_mac_loopback.value.ui64++;
 		mutex_exit(&devp->tfp_mutex);
 		freemsgchain(mp_chain);
 		return;
@@ -1240,6 +1252,17 @@ tfport_getinfo(dev_info_t *dip, ddi_info_cmd_t infocmd, void *arg,
 static int
 tfport_dev_alloc(dev_info_t *dip)
 {
+	kstat_t *kstat;
+	int count;
+
+	count = sizeof (tfport_stats_t) / sizeof (kstat_named_t);
+	kstat = kstat_create("tfport", ddi_get_instance(dip), "tfport",
+	    "tofino", KSTAT_TYPE_NAMED, count, KSTAT_FLAG_VIRTUAL);
+	if (kstat == NULL) {
+		dev_err(dip, CE_WARN, "failed to alloc tfport kstats");
+		return (DDI_FAILURE);
+	}
+
 	ASSERT(tfport == NULL);
 	tfport = kmem_zalloc(sizeof (*tfport), KM_SLEEP);
 	tfport->tfp_dip = dip;
@@ -1250,6 +1273,12 @@ tfport_dev_alloc(dev_info_t *dip)
 	    sizeof (tfport_port_t), offsetof(tfport_port_t, tp_port_node));
 	avl_create(&tfport->tfp_ports_by_link, tfport_link_cmp,
 	    sizeof (tfport_port_t), offsetof(tfport_port_t, tp_link_node));
+
+	tfport->tfp_kstat = kstat;
+	kstat->ks_data = &tfport->tfp_stats;
+	bcopy(&tfport_stats_template, &tfport->tfp_stats,
+	    sizeof (tfport_stats_t));
+	kstat_install(kstat);
 
 	return (DDI_SUCCESS);
 }
@@ -1262,6 +1291,7 @@ tfport_dev_free(dev_info_t *dip)
 		list_destroy(&tfport->tfp_sources);
 		avl_destroy(&tfport->tfp_ports_by_link);
 		avl_destroy(&tfport->tfp_ports_by_port);
+		kstat_delete(tfport->tfp_kstat);
 		kmem_free(tfport, sizeof (*tfport));
 		tfport = NULL;
 	}
