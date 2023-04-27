@@ -269,7 +269,221 @@
  * PCIe Configuration
  * ------------------
  *
- * XXX First figure out how this works, then describe it.
+ * AMD's implementation of PCIe configuration reflects their overall legacy
+ * architecture: an early phase that they implement in UEFI firmware, and a
+ * standard enumeration phase that is done by the UEFI userland application,
+ * typically but not necessarily an "OS" like i86pc illumos.  For reasons of
+ * expediency, we've taken a similar approach here, but it's not necessary to do
+ * so, and some notes on possible future work may be found below.  This allows
+ * us to reuse the pci_autoconfig (one-shot enumeration and resource assignment
+ * at boot) and pciehp (hotplug controller management and runtime enumeration
+ * and resource assignment) code already available for PCs.  That code isn't
+ * really as generic as one might imagine; it makes a number of significant
+ * assumptions based on the ideas that (a) this machine has firmware and (b) it
+ * has done things that mostly conform to the PCIe Firmware Specification,
+ * neither of which is accurate.  Fortunately, PC firmware is so commonly and
+ * severely broken that those assumptions are not strongly held, and it's
+ * possible to achieve more or less correct results even though little or none
+ * of that is done here.  There are some very unfortunate consequences
+ * associated with the one-shot approach to resource allocation that will be
+ * discussed a bit more below, but first we'll discuss how a collection of
+ * internal processor logic is configured to provide standard access to both
+ * internal and external PCIe functions.  The remainder of this section is
+ * applicable to underlying mechanism and our current implementation, which is
+ * of course different from UEFI implementations.
+ *
+ * We have three basic goals during this part of PCIe configuration:
+ *
+ * 1. Construct the correct associations between the PCS (physical coding
+ *    sublayer) and a collection of PCIe ports that are attached to a specific
+ *    set of lanes routed on a given board to either chip-down devices or
+ *    connectors to which other PCIe devices can be attached.
+ *
+ * 2. Set a large number of parameters governing the behaviour, both
+ *    standardised and not, of each of the PCIe cores and ports.  This includes
+ *    everything from what kind of error conditions are reported when specific
+ *    events occur to how root complexes and host bridges identify themselves to
+ *    standard PCIe software to how each host bridge's hotplug functionality (if
+ *    any) is accessed.
+ *
+ * 3. Connect and route chunks of various address spaces from the amd64
+ *    processor cores (and sometimes other logic as well!) to the appropriate
+ *    PCIe root complex and host bridge.  This does not include assignment of
+ *    MMIO and legacy I/O address blocks to bridges or downstream devices, but
+ *    it does include allocating PCI bus numbers and top-level blocks of MMIO
+ *    and legacy I/O space to root complexes and causing accesses to these
+ *    regions to be routed to the correct RC (or another mechanism inside the
+ *    processor such as the FCH or an RCiEP).
+ *
+ * The first two pieces of this are discussed further here; resource allocation
+ * is discussed more generally in the next section and applies to both PCIe and
+ * other protocols.  What is written here should be thought of as a model: a
+ * useful simplification of reality.  AMD does not, generally, provide theory of
+ * operation documentation for its non-architectural logic, which means that
+ * what we have assembled here reflects an empirical understanding of the system
+ * that may not match the underlying implementation in all respects.  Readers
+ * with access to the PPRs will find references to named registers helpful
+ * anchor points, but should be aware that this interpretation of how those
+ * registers should be used or what they really do may not be entirely accurate.
+ * This is best-effort documentation that should be improved as new information
+ * becomes known.
+ *
+ * DXIO is the distributed crossbar I/O subsystem found in these SoCs.  This
+ * term is used in several ways, referring both to the subsystem containing the
+ * PCS, the muxes, and crossbars that implement this in hardware and to a
+ * firmware application that we believe runs on MP1.  The latter is potentially
+ * confusing because MP1 is also referred to as the SMU, but "SMU firmware" and
+ * "DXIO firmware" are different pieces of code that perform different
+ * functions.  Even more confusingly, both the SMU firmware and DXIO firmware
+ * provide RPC interfaces, and the DXIO RPCs are accessed through a passthrough
+ * SMU RPC function; see milan_dxio_rpc().  These form a critical mechanism for
+ * accomplishing the first of our goals: the Link Initialisation State Machine
+ * (LISM), a cooperative software-firmware subsystem that drives most low-level
+ * PCIe core/port configuration.
+
+ * The LISM is a per-iodie linear state machine (so far as we know, there are no
+ * backward transitions possible -- but we also know that handling errors is
+ * extremely difficult).  The expected terminal state is that all ports that are
+ * expected to exist, and their associated core and bridge logic, have been
+ * constructed, configured, and if a downstream link partner is present and
+ * working, the link has been negotiated and trained up.  Importantly, in AMD's
+ * implementation, the entire LISM executes before any hotplug configuration is
+ * done, meaning that the model at this stage is legacy non-hotpluggable static
+ * link setup.  While it's possible to declare to the DXIO subsystem that a port
+ * is hotplug-capable, this does not appear to have much effect on how DXIO
+ * firmware operates, and there is no *standard* means of performing essential
+ * actions like turning on a power controller.  Slots or bays that need bits
+ * changed in their standard slot control registers for downstream devices to
+ * link up -- or to have PERST released -- will fail to train at this stage and
+ * the LISM will terminate with the corresponding ports in a failed state.
+ * After configuring the hotplug firmware, those downstream devices can be
+ * controlled and will (potentially) link up.  It is possible to integrate
+ * hotplug firmware configuration into the LISM, which importantly allows
+ * turning on power controllers, releasing PERST, and performing other actions
+ * on any downstream devices attached to hotplug-capable ports at the normal
+ * time during LISM execution; however, the current implementation does not do
+ * so.  Unfortunately, some classes of failure during the link-training portion
+ * of LISM execution result in DXIO firmware incorrectly changing PCIe port
+ * registers in ways that prevent a working device from linking up properly upon
+ * a subsequent hot-insertion.  This is one of several races inherent in this
+ * mechanism; it's very likely that devices hot-inserted or hot-removed during
+ * LISM execution will confuse the firmware as well.  An important area of
+ * future work involves making sure that devices attached to all hotplug-capable
+ * ports are powered off and held in reset until LISM execution has completely
+ * finished, then overriding most of the firmware-created per-port link control
+ * parameters prior to configuring hotplug and allowing those devices to be
+ * turned on and come out of reset.  Doing so guarantees that when link training
+ * begins, the port's link controller will be in the same known and expected
+ * state it would be in when link training was first attempted (as if the port
+ * were non-hotplug-capable).
+ *
+ * While there are many additional LISM states, there are really only three of
+ * interest to us, plus a fourth pseudo-state.  Those states are:
+ *
+ * MAPPED - DXIO engine configuration (see milan_dxio_data.c) describing each
+ * port to be created has been sent to DXIO firmware, accepted, and the
+ * corresponding core and port setup completed so that port numbers are mapped
+ * to specific hardware lanes and the corresponding PCIEPORT registers can be
+ * used to control each port.  This is the first state reached after passing all
+ * engine and other configuration parameters to DXIO firmware and starting the
+ * LISM.
+ *
+ * CONFIGURED - Nominally, at this point all firmware-driven changes to core and
+ * port registers has been completed, and upon resuming the LISM out of this
+ * state link training will be attempted.  In reality, firmware does make
+ * additional (undocumented, of course) changes after this state.  Perhaps more
+ * significantly, once this state has been reached, firmware has latched the
+ * "straps" into each PCIe core; more on this later.
+ *
+ * PERST - This is a pseudo-state.  After resuming the LISM out of the
+ * CONFIGURED state, firmware will next signal not a new state but a request for
+ * software to release PERST to all downstream devices attached through the I/O
+ * die (for Milan, this means everything hanging off the socket for which this
+ * LISM is being run; the LISM is run to completion for each socket in turn,
+ * rather than advancing to each state on all sockets together).  The intent
+ * here is that if PERST is driven by the PCIE_RST_L signals, sharing pins with
+ * GPIOs, those pins can be controlled directly by software at this time.  One
+ * would think that instead the PCIe core logic could do this itself, but there
+ * appear to be timing considerations: leaving PERST deasserted "too long" may
+ * cause training logic to give up and enter various error states, so this
+ * mechanism allows software to ensure that PERST is released immediately before
+ * link training will begin.  Critically, if one uses instead the PERST
+ * mechanism intended for hotplug-capable devices in which PERST signals are
+ * supplied by GPIO expanders under hotplug firmware control, that setup hasn't
+ * been done at this point and there is no way to release PERST.  See notes
+ * above on the relationship between the legacy one-shot PCIe LISM and the
+ * hotplug subsystem.  In this case, downstream devices cannot be taken out of
+ * reset and will not train during LISM execution.
+ *
+ * DONE - Upon resuming out of the PERST pseudo-state, firmware will release the
+ * HOLD_TRAINING bit for each port, allowing the standard LTSSM to begin
+ * executing.  After approximately 1 second, whether each port's link has
+ * trained or not, we arrive at the DONE state.  At this point, we can retrieve
+ * the DXIO firmware's understanding of each engine (port) configuration
+ * including its training status.  We can also perform additional core and port
+ * configuration, set up hotplug, and perform standard PCI device enumeration.
+ *
+ * LISM execution is started by software, which then polls firmware for notices
+ * that we've advanced to the next state.  At each state execution then stops
+ * until we deliberately resume it, which means that we have an opportunity to
+ * do arbitrary work, including directly setting registers, setting "straps",
+ * logging debug data, and more.
+ *
+ * -------------
+ * PCIe "Straps"
+ * -------------
+ *
+ * When one thinks of a strap, one normally imagines an input pin that is
+ * externally tied to a specific voltage level or another pin via a precision
+ * resistor, which in turns latches some documented behaviour when the device is
+ * taken out of reset.  All of the "straps" we discuss in terms of PCIe (see
+ * milan_fabric_init_pcie_straps()) are nothing like this.  First, all of the
+ * NBIO logic is internal to the SoC; these settings do not have any external
+ * pins which is certainly good because there are thousands of bits.  In
+ * reality, these are just registers that are latched into other logic at one or
+ * more defined (but undocumented!) points during LISM execution.  These come in
+ * two different flavours, one for NBIFs and one for PCIe.  The registers
+ * containing the strap fields for NBIFs are mostly documented in the PPR, but
+ * their PCIe counterparts are not.  Our model, then, is this:
+ *
+ * 1. Writing to a PCIe strap really means writing to a hidden undocumented
+ *    register through the RSMU associated with the PCIe core.
+ *
+ * 2. At some point in LISM execution, a subset of these registers are latched
+ *    by DXIO firmware, probably by performing operations involved in taking the
+ *    core out of reset (see PCIECORE::SWRST_xx registers).  There may be more
+ *    than one such step, latching different subsets.  NOT ALL REGISTERS ARE
+ *    LATCHED IN DURING LISM EXECUTION!  Some of these "straps" can be changed
+ *    with immediate effect even after LISM execution has completed.  When they
+ *    are latched, some fields end up directly in documented registers.  Others
+ *    affect internal behaviour directly, and some are simply writable
+ *    interfaces to otherwise read-only fields.  Importantly, some have elements
+ *    of all of these.  The latching process may be done in hardware, may be
+ *    done by the RSMU, or may be done by DXIO firmware simply copying data
+ *    around.  We don't know, and in a sense it doesn't matter.
+ *
+ * 3. Firmware can and does write to these hidden strap registers itself,
+ *    sometimes replacing software's values if the sequence isn't right.  Even
+ *    more importantly, many of the documented register fields in which these
+ *    values end up when latched are also writable by both software and
+ *    firmware.  This means that a "strapped" value will replace the contents of
+ *    the documented register that were constructed at POR or written
+ *    previously.  It also means the converse: software -- and firmware! -- can
+ *    directly change the contents of the documented register after the hidden
+ *    strap register has been written and latched.
+ *
+ * Do not confuse these RSMU-accessed "strap" registers with documented
+ * registers with STRAP in their names.  Often they are related, in that some of
+ * the contents of hidden RSMU-accessed registers end up in the documented
+ * registers by one means or another, but not always.  And the hidden "strap"
+ * registers are in any case separate from the documented registers and have
+ * different addressing, access mechanisms, and layouts.
+ *
+ * One of the most valuable improvements to our body of documentation here and
+ * alongside register definitions is an inventory of when and how fields are
+ * accessed.  That is: which of these registers/fields (in hidden strap
+ * registers or documented ones) are modified by DXIO firmware, and if so, in
+ * which LISM state(s)?
  *
  * -------------------
  * Resource Allocation
@@ -346,6 +560,33 @@
  * we get here and therefore to rely on having drv_usecwait(), as well as making
  * sure SSC is on before we start doing any PCIe link training that would
  * otherwise generate noise.
+ *
+ * -----------
+ * Future Work
+ * -----------
+ *
+ * Most of the PCIe parts of this could be separated out of this file.  The NBIO
+ * device (root complex) could be used as the attachment point for the npe(7d)
+ * driver instead of the pseudo-nexus constructed today.  We could use NDI
+ * interfaces for much of the resource allocation done here, especially if the
+ * DF is also represented in the devinfo tree with appopriate drivers.
+ *
+ * "Generic" PCIe resource allocation via pcie_autoconfig is a good fit for
+ * enumeration and allocation for non-hotplug-capable systems with PC firmware.
+ * It's not a good fit for machines without firmware, and it's especially poor
+ * on machines with hotplug-capable attachment points.  A larger-scale (not
+ * limited to this kernel architecture) change here would be to treat all PCIe
+ * devices as being attached in a hotplug-capable manner, and simply treat
+ * non-hotplug-capable devices that are present at boot as if they had been
+ * hot-inserted during boot.
+ *
+ * PCIe port numbering and mapping is currently static, with fixed values in the
+ * engine configuration.  This could instead by dynamic.  Bus ranges are also
+ * allocated to bridges in a static and inflexible manner that does not properly
+ * support additional bridges or switches below the host bridge.
+ *
+ * There are numerous other opportunities to improve aspects of this software
+ * noted inline with XXX.
  */
 
 #include <sys/types.h>
@@ -2995,6 +3236,27 @@ milan_fabric_disable_iohc_vga(milan_ioms_t *ioms, void *arg)
 }
 
 /*
+ * Set the IOHC PCI device's subsystem identifiers.  This could be set to the
+ * baseboard's subsystem ID, but the IOHC PCI device doesn't have any
+ * oxide-specific semantics so we leave it at the AMD-recommended value.  Note
+ * that the POR default value is not the one AMD recommends, for whatever
+ * reason.
+ */
+static int
+milan_fabric_init_iohc_pci(milan_ioms_t *ioms, void *arg)
+{
+	uint32_t val;
+
+	val = pci_getl_func(ioms->mio_pci_busno, 0, 0, IOHC_NB_ADAPTER_ID_W);
+	val = IOHC_NB_ADAPTER_ID_W_SET_SVID(val, VENID_AMD);
+	val = IOHC_NB_ADAPTER_ID_W_SET_SDID(val,
+	    IOHC_NB_ADAPTER_ID_W_AMD_MILAN_IOHC);
+	pci_putl_func(ioms->mio_pci_busno, 0, 0, IOHC_NB_ADAPTER_ID_W, val);
+
+	return (0);
+}
+
+/*
  * Different parts of the IOMS need to be programmed such that they can figure
  * out if they have a corresponding FCH present on them. The FCH is only present
  * on IOMS 3. Therefore if we're on IOMS 3 we need to update various other bis
@@ -3996,7 +4258,7 @@ typedef struct milan_pcie_strap_setting {
 static const uint32_t milan_pcie_strap_enable[] = {
 	MILAN_STRAP_PCIE_MSI_EN,
 	MILAN_STRAP_PCIE_AER_EN,
-	MILAN_STRAP_PCIE_GEN2_COMP,
+	MILAN_STRAP_PCIE_GEN2_FEAT_EN,
 	/* We want completion timeouts */
 	MILAN_STRAP_PCIE_CPL_TO_EN,
 	MILAN_STRAP_PCIE_TPH_EN,
@@ -4044,54 +4306,54 @@ static const uint32_t milan_pcie_strap_disable[] = {
  */
 static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
-	    .strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
+		.strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
-	    .strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
+		.strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
-	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
+		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
-	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
+		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
-	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
+		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
-	    .strap_data = MILAN_STRAP_PCIE_TX_PRESET_5,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
+		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_5,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_SUBVID,
-	    .strap_data = PCI_VENDOR_ID_OXIDE,
-	    .strap_boardmatch = MBT_GIMLET,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_SUBVID,
+		.strap_data = PCI_VENDOR_ID_OXIDE,
+		.strap_boardmatch = MBT_GIMLET,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_SUBDID,
-	    .strap_data = MILAN_STRAP_PCIE_SUBDID_BRIDGE,
-	    .strap_boardmatch = MBT_GIMLET,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_SUBDID,
+		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
+		.strap_boardmatch = MBT_GIMLET,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 };
 
@@ -4101,74 +4363,74 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
  */
 static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_EXT_TAG_SUP,
-	    .strap_data = 0x1,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_EXT_FMT_SUP,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
-	    .strap_data = 0x1,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
-	    .strap_data = 0x1,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
-	    .strap_data = 0x1,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_TCOMMONMODE_TIME,
-	    .strap_data = 0xa,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_TCOMMONMODE_TIME,
+		.strap_data = 0xa,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_TPON_SCALE,
-	    .strap_data = 0x1,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_TPON_SCALE,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_TPON_VALUE,
-	    .strap_data = 0xf,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_TPON_VALUE,
+		.strap_data = 0xf,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_DLF_SUP,
-	    .strap_data = 0x1,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_DLF_SUP,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
-	    .strap_data = 0x1,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
+		.strap_data = 0x1,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-	    .strap_reg = MILAN_STRAP_PCIE_P_FOM_TIME,
-	    .strap_data = MILAN_STRAP_PCIE_P_FOM_300US,
-	    .strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-	    .strap_corematch = PCIE_COREMATCH_ANY,
-	    .strap_portmatch = PCIE_PORTMATCH_ANY
+		.strap_reg = MILAN_STRAP_PCIE_P_FOM_TIME,
+		.strap_data = MILAN_STRAP_PCIE_P_FOM_300US,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_SPC_MODE_8GT,
@@ -4200,6 +4462,13 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
 		.strap_portmatch = 1
+	},
+	{
+		.strap_reg = MILAN_STRAP_PCIE_P_L0s_EXIT_LAT,
+		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
 	}
 };
 
@@ -6019,6 +6288,7 @@ milan_fabric_init(void)
 	 */
 	milan_fabric_walk_ioms(fabric, milan_fabric_init_tom, NULL);
 	milan_fabric_walk_ioms(fabric, milan_fabric_disable_iohc_vga, NULL);
+	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_pci, NULL);
 
 	/*
 	 * Let's set up PCIe. To lead off, let's make sure the system uses the
@@ -6148,7 +6418,7 @@ milan_fabric_init(void)
 		return;
 	}
 
-	cmn_err(CE_CONT, "?DXIO LISM execution completed successfully");
+	cmn_err(CE_CONT, "?DXIO LISM execution completed successfully\n");
 
 	/*
 	 * Now that we have successfully trained devices, it's time to go

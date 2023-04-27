@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_IOHC_H
@@ -139,6 +139,20 @@ MILAN_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
  * IOHC Registers of Interest. The SMN based addresses are all relative to the
  * IOHC base address.
  */
+
+/*
+ * IOHC::NB_ADAPTER_ID_W.  This allows us to override the default subsystem
+ * vendor and device ID for the IOHC's PCI device.  By default, this is
+ * 1022,1450 which is the Naples pDID; AMD recommends setting it to the same
+ * value as the Milan pDID: 1022,1480.  This is in config space, not SMN!
+ */
+#define	IOHC_NB_ADAPTER_ID_W	0x50
+#define	IOHC_NB_ADAPTER_ID_W_GET_SDID(r)	bitx32(r, 31, 16)
+#define	IOHC_NB_ADAPTER_ID_W_SET_SDID(r, v)	bitset32(r, 31, 16, v)
+#define	IOHC_NB_ADAPTER_ID_W_GET_SVID(r)	bitx32(r, 15, 0)
+#define	IOHC_NB_ADAPTER_ID_W_SET_SVID(r, v)	bitset32(r, 15, 0, v)
+
+#define	IOHC_NB_ADAPTER_ID_W_AMD_MILAN_IOHC	0x1480
 
 /*
  * IOHC::NB_PCI_ARB.  Most of this register is occupied by PME functionality

@@ -24,6 +24,7 @@
  *
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
  *
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef	_SYS_PCI_CFGACC_X86_H
@@ -33,8 +34,18 @@
 extern "C" {
 #endif
 
-/* AMD's northbridges vendor-id and device-ids */
-#define	AMD_NTBRDIGE_VID		0x1022	/* AMD vendor-id */
+/*
+ * Also defined in sys/apic.h, which we don't want to include here.
+ */
+#ifndef	VENID_AMD
+#define	VENID_AMD			0x1022
+#endif
+
+/*
+ * AMD's old northbridge device-ids.  None of these are or will ever be
+ * supported by this architecture, but (brain-damaged) common code expects us to
+ * supply the test macros below anyway.
+ */
 #define	AMD_HT_NTBRIDGE_DID		0x1100	/* HT Configuration */
 #define	AMD_AM_NTBRIDGE_DID		0x1101	/* Address Map */
 #define	AMD_DC_NTBRIDGE_DID		0x1102	/* DRAM Controller */
@@ -53,14 +64,14 @@ extern "C" {
  * Check if the given device is an AMD northbridge
  */
 #define	IS_BAD_AMD_NTBRIDGE(vid, did) \
-	    (((vid) == AMD_NTBRDIGE_VID) && \
+	    (((vid) == VENID_AMD) && \
 	    (((did) == AMD_HT_NTBRIDGE_DID) || \
 	    ((did) == AMD_AM_NTBRIDGE_DID) || \
 	    ((did) == AMD_DC_NTBRIDGE_DID) || \
 	    ((did) == AMD_MC_NTBRIDGE_DID)))
 
 #define	IS_K10_AMD_NTBRIDGE(vid, did) \
-	    (((vid) == AMD_NTBRDIGE_VID) && \
+	    (((vid) == VENID_AMD) && \
 	    (((did) == AMD_K10_NTBRIDGE_DID_0) || \
 	    ((did) == AMD_K10_NTBRIDGE_DID_1) || \
 	    ((did) == AMD_K10_NTBRIDGE_DID_2) || \
@@ -68,7 +79,7 @@ extern "C" {
 	    ((did) == AMD_K10_NTBRIDGE_DID_4)))
 
 #define	IS_AMD_8132_CHIP(vid, did) \
-	    (((vid) == AMD_NTBRDIGE_VID) && \
+	    (((vid) == VENID_AMD) && \
 	    (((did) == AMD_8132_BRIDGE_DID) || \
 	    ((did) == AMD_8132_IOAPIC_DID)))
 
