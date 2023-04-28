@@ -662,9 +662,13 @@ tfpkt_tbus_tx_free(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf)
 {
 	tfpkt_buf_remove(&tbp->ttb_txbufs_inuse, buf);
 	if (tfpkt_buf_insert(&tbp->ttb_txbufs_free, buf)) {
+		tfpkt_t *tfp = tbp->ttb_tfp;
+
+		mutex_enter(&tfp->tfp_mutex);
+		tfp->tfp_stats.tps_tx_updates.value.ui64++;
+		mutex_exit(&tfp->tfp_mutex);
 		/* Let mac know we just repopulated the freelist */
-		tbp->ttb_tfp->tfp_stats.tps_tx_updates.value.ui64++;
-		mac_tx_update(tbp->ttb_tfp->tfp_mh);
+		mac_tx_update(tfp->tfp_mh);
 	}
 }
 
@@ -731,7 +735,6 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf, size_t sz)
 		ring = (ring + 1) % TFPKT_TX_CNT;
 	}
 
-	mutex_enter(&tbp->ttb_mutex);
 	if (rval != 0) {
 		tfpkt_buf_remove(&tbp->ttb_txbufs_pushed, buf);
 		(void) tfpkt_buf_insert(&tbp->ttb_txbufs_inuse, buf);
@@ -741,7 +744,6 @@ tfpkt_tbus_tx(tfpkt_tbus_t *tbp, tfpkt_buf_t *buf, size_t sz)
 			TBUS_STAT_BUMP(tbp, ttb_txfail_other);
 		}
 	}
-	mutex_exit(&tbp->ttb_mutex);
 
 	return (rval);
 }
@@ -755,12 +757,10 @@ tfpkt_tbus_rx_done(tfpkt_tbus_t *tbp, void *addr, size_t sz)
 {
 	tfpkt_buf_t *buf;
 
-	mutex_enter(&tbp->ttb_mutex);
 	buf = tfpkt_buf_by_va(&tbp->ttb_rxbufs_inuse, addr);
 	if (buf != NULL) {
 		(void) tfpkt_buf_insert(&tbp->ttb_rxbufs_free, buf);
 	}
-	mutex_exit(&tbp->ttb_mutex);
 }
 
 /*
@@ -802,8 +802,6 @@ tfpkt_tbus_process_cmp(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp,
 {
 	tfpkt_buf_t *buf;
 
-	mutex_enter(&tbp->ttb_mutex);
-
 	buf = tfpkt_buf_by_pa(&tbp->ttb_txbufs_pushed, cmp_dr->cmp_msg_id);
 	if (buf == NULL) {
 		tfpkt_tbus_dlog(tbp, "!unrecognized tx buf: %lx",
@@ -815,12 +813,14 @@ tfpkt_tbus_process_cmp(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp,
 		    cmp_dr->cmp_type, drp->tdr_name);
 		TBUS_STAT_BUMP(tbp, ttb_txfail_bad_descriptor_type);
 	} else if (tfpkt_buf_insert(&tbp->ttb_txbufs_free, buf)) {
+		tfpkt_t *tfp = tbp->ttb_tfp;
+
+		mutex_enter(&tfp->tfp_mutex);
+		tfp->tfp_stats.tps_tx_updates.value.ui64++;
+		mutex_exit(&tfp->tfp_mutex);
 		/* Let mac know we just repopulated the freelist */
-		tbp->ttb_tfp->tfp_stats.tps_tx_updates.value.ui64++;
 		mac_tx_update(tbp->ttb_tfp->tfp_mh);
 	}
-
-	mutex_exit(&tbp->ttb_mutex);
 }
 
 /*
@@ -1432,7 +1432,6 @@ tfpkt_tbus_fini(tfpkt_t *tfp, tfpkt_tbus_t *tbp)
 
 	tfpkt_tbus_free_bufs(tbp);
 	tfpkt_tbus_free_drs(tbp);
-	mutex_destroy(&tbp->ttb_mutex);
 	kstat_delete(tbp->ttb_kstat);
 	kmem_free(tbp, sizeof (*tbp));
 	tfp->tfp_tbus_data = NULL;
@@ -1473,7 +1472,6 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 	}
 
 	tbp = kmem_zalloc(sizeof (*tbp), KM_SLEEP);
-	mutex_init(&tbp->ttb_mutex, NULL, MUTEX_DRIVER, NULL);
 	tbp->ttb_dip = tfp_dip;
 	tbp->ttb_tfp = tfp;
 
@@ -1604,16 +1602,35 @@ tfpkt_tbus_monitor(void *arg)
 
 		case TFPKT_TBUS_RESETTING:
 			/*
-			 * Don't clean up the tbus data while someone
-			 * is actively using it.
+			 * Don't clean up the tbus data while someone is
+			 * actively using it.
 			 */
-			tfpkt_tbus_fini_drs(tbp);
-			if (tfp->tfp_tbus_refcnt == 0) {
-				tfpkt_tbus_fini(tfp, tbp);
-				tfpkt_bus_update_state(tfp, TFPKT_TBUS_UNINIT);
-				continue;
+			if (tfp->tfp_tbus_refcnt != 0) {
+				break;
 			}
-			break;
+
+			/*
+			 * We drop and reacquire the tbus_mutex here to maintain
+			 * the dr -> tbus lock ordering.  Because we aren't in
+			 * the BUS_ACTIVE state we know that nobody else will
+			 * attempt to take the DR locks so there is no risk of
+			 * deadlock, but maintaining the order is still good
+			 * hygiene.
+			 */
+			mutex_exit(&tfp->tfp_tbus_mutex);
+			tfpkt_tbus_fini_drs(tbp);
+			tfpkt_tbus_fini(tfp, tbp);
+			mutex_enter(&tfp->tfp_tbus_mutex);
+
+			/*
+			 * While we were cleaning up up the DRs, it's possible
+			 * that the driver started to detach.  If so, the state
+			 * will have changed and we should leave it alone.
+			 */
+			if (tfp->tfp_tbus_state == TFPKT_TBUS_RESETTING)
+				tfpkt_bus_update_state(tfp, TFPKT_TBUS_UNINIT);
+
+			continue;
 
 		case TFPKT_TBUS_HALTING:
 			/*

@@ -241,20 +241,28 @@ typedef struct tfpkt_buf_list {
  * State managed by the tofino tbus handler
  */
 struct tfpkt_tbus {
-	kmutex_t		ttb_mutex;
 	tfpkt_t			*ttb_tfp;
 	dev_info_t		*ttb_dip;
 	tf_tbus_hdl_t		ttb_tbus_hdl;	/* tofino driver handle */
-
 	tofino_gen_t		ttb_gen;
 
-	/* DR management */
+	/*
+	 * DR management.
+	 * The pointers to the descriptor rings below are protected by the tbus
+	 * refcnt maintained in the tfpkt_t structure.
+	 * The contents of each DR are protected by the per-DR tdr_mutex.
+	 */
 	tfpkt_dr_t	*ttb_rx_drs;	/* Rx DRs */
 	tfpkt_dr_t	*ttb_tx_drs;	/* Tx DRs */
 	tfpkt_dr_t	*ttb_fm_drs;	/* Free memory DRs */
 	tfpkt_dr_t	*ttb_cmp_drs;	/* Tx completion DRs */
 
-	/* DMA buffer management */
+	/*
+	 * DMA buffer management
+	 * The pointers to the buffer lists below are protected by the tbus
+	 * refcnt maintained in the tfpkt_t structure.
+	 * The contents of each list are protected by the per-list tbl_mutex.
+	 */
 	tfpkt_buf_list_t	ttb_rxbufs_free;	/* unused rx bufs */
 	tfpkt_buf_list_t	ttb_rxbufs_pushed;	/* rx bufs in ASIC FM */
 	tfpkt_buf_list_t	ttb_rxbufs_inuse;	/* rx bufs in use */
@@ -262,10 +270,19 @@ struct tfpkt_tbus {
 	tfpkt_buf_list_t	ttb_txbufs_pushed;	/* tx bufs on TX DR */
 	tfpkt_buf_list_t	ttb_txbufs_inuse;	/* tx bufs inuse */
 
+	/*
+	 * These are only accessed during setup/teardown, when there is only a
+	 * single thread operating on this struct.
+	 */
 	uint_t		ttb_bufs_capacity;	/* total rx+tx bufs */
 	tfpkt_buf_t	*ttb_bufs_mem;		/* all rx+tx bufs */
+	kstat_t		*ttb_kstat;
 
-	kstat_t			*ttb_kstat;
+	/*
+	 * These stats are all updated using atomic_inc_64() operations.  The
+	 * stats are all independent of one another, so there is no mechanism
+	 * provided to read/write the full set as an atomic operation.
+	 */
 	tfpkt_tbus_stats_t	ttb_stats;
 };
 
