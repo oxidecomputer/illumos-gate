@@ -420,6 +420,7 @@ dir  path=usr/lib/fm/topo/plugins variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/topo/plugins/disk.so mode=0555
 file path=usr/lib/fm/topo/plugins/fac_prov_ahci.so mode=0555
 file path=usr/lib/fm/topo/plugins/fac_prov_ipmi.so mode=0555
+file path=usr/lib/fm/topo/plugins/fac_prov_libhp.so mode=0555
 file path=usr/lib/fm/topo/plugins/fac_prov_mptsas.so mode=0555
 file path=usr/lib/fm/topo/plugins/ipmi.so mode=0555
 file path=usr/lib/fm/topo/plugins/nic.so mode=0555
@@ -627,6 +628,18 @@ $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/hostbridge.so \
     mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/pcibus.so mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/x86pi.so mode=0555
+#
+# Oxide Architecture Specific Maps and Modules
+#
+$(i386_ONLY)dir path=usr/platform/oxide group=sys
+$(i386_ONLY)dir path=usr/platform/oxide/lib
+$(i386_ONLY)dir path=usr/platform/oxide/lib/fm
+$(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo
+$(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/maps
+$(i386_ONLY)file \
+    path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-hc-topology.xml mode=0444
+$(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/plugins
+$(i386_ONLY)file path=usr/platform/oxide/lib/fm/topo/plugins/oxhc.so mode=0555
 #
 # Some directories common to both global and non-global zones:
 #

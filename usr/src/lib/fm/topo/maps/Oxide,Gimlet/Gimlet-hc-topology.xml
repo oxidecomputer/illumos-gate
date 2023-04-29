@@ -1,0 +1,807 @@
+<?xml version="1.0"?>
+<!DOCTYPE topology SYSTEM "/usr/share/lib/xml/dtd/topology.dtd.1">
+<!--
+
+ This file and its contents are supplied under the terms of the
+ Common Development and Distribution License ("CDDL"), version 1.0.
+ You may only use this file in accordance with the terms of version
+ 1.0 of the CDDL.
+
+ A full copy of the text of the CDDL should have accompanied this
+ source.  A copy of the CDDL is also available via the Internet at
+ http://www.illumos.org/license/CDDL.
+
+ Copyright 2023 Oxide Computer Company
+
+-->
+
+<!--
+  This is the primary topology XML file that is used to create the Gimlet
+  topology tree. When a topology snapshot takes place, libtopo will use find this
+  in /usr/platform/oxide/lib/fm/topo/maps and load this because the root devinfo
+  node on this system is Oxide,Gimlet (libtopo strips out the leading 'Oxide,').
+
+  This file is designed to work in tandem with our primary enumeration module,
+  which is Oxide-platform specific for the most part. We use this XML file to
+  describe and declare the most static things that we expect to be present in a
+  Gimlet chassis and instead allow the rest to be driven dynamically by the module
+  where it gets information from a combination of things such as devinfo, IPCC,
+  and other system resources. The distinction of what goes where is somewhat
+  arbitrary; however, right now one of our chief rules is that only things which
+  are guaranteed to be trust for most Gimlet revs should be here and in general
+  we prefer only putting the larger items here. This isn't the place to enumerate
+  things on the motherboard that are going to change between board revisions
+  because this file is used before topo knows the revision of the board.
+-->
+
+<topology name='oxide' scheme='hc'>
+  <range name='chassis' min='0' max='0'>
+    <enum-method name='oxhc' version='1' />
+    <node instance='0' static='true'>
+      <dependents grouping='children'>
+        <!--
+         Our U.2 disks are enumerated under bays on this system. There are
+         numerous ways to attempt to find the bays. We encode the internal PCIe
+         slot number in here in the topology module transform that to something
+         that can be found by the disk enumerator. The reason we use the slot
+         numbering here is that is the one thing that we fully control and can
+         guarantee will remain constant. It is possible that PCI bus numbers and
+         other thing will change over time as we further ratchet down the
+         existence of NBIFs and other items on this platform.
+        -->
+        <range name='bay' min='0' max='9'>
+          <enum-method name='oxhc' version='1' />
+          <node instance='0' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie0' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N0' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='0' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='1' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie1' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N1' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='1' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='2' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie2' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N2' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='2' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='3' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie3' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N3' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='3' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='4' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie4' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N4' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='4' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='5' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie5' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N5' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='5' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='6' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie6' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N6' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='6' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='7' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie7' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N7' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='7' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='8' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie8' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N8' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='8' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+          <node instance='9' static='true'>
+            <facility name='attention' type='indicator' provider='fac_prov_libhp'>
+              <propgroup name='libhp' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propval name='connector' type='string' value='pcie9' />
+                <propval name='option' type='string' value='attn_led' />
+                <propval name='opt_on' type='string' value='blink' />
+                <propval name='opt_off' type='string' value='default' />
+              </propgroup>
+              <propgroup name='facility' version='1'
+                  name-stability='Private' data-stability='Private' >
+                <propmethod name='libhp_opt_set' version='0' propname='mode'
+                    proptype='uint32' mutable='1' />
+              </propgroup>
+            </facility>
+            <propgroup name='protocol' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='label' type='string' value='N9' />
+            </propgroup>
+            <propgroup name='binding' version='1'
+                name-stability='Private' data-stability='Private' >
+              <propval name='slot' type='uint32' value='9' />
+            </propgroup>
+            <enum-method name='oxhc' version='1' />
+          </node>
+        </range>
+
+        <range name='fan-tray' min='0' max='0'>
+          <enum-method name='oxhc' version='1' />
+        </range>
+
+        <!--
+          The system board contains a number of different devices and ICs on it.
+          We enumerate the various slots and sockets that are on it, but leave
+          the ICs and other information there to be filled in by the acutal IPCC
+          data and drive that more programatically.
+        -->
+        <range name='systemboard' min='0' max='0'>
+          <enum-method name='oxhc' version='1' />
+          <node instance='0' static='true'>
+            <!-- XXX What label do we have for the system board?! -->
+          </node>
+
+          <!--
+            XXX This is pretty ugly. Right now we have DIMM, PCIe, and M.2 slots
+            on the board but they are a single range, which makes it a little
+            messy. We should really just allow ourselves to pass an argument
+            with info here. Instead we basically hardcode mappings of slot types
+            and related here. Range 0-9 are the CEM slots, range 10-25 are
+            DIMMs, and range 26-27 are M.2s. We cannot use multiple ranges here
+            because topo_node_range_create() doesn't support that.
+          -->
+          <dependents grouping='children'>
+            <range name='slot' min='0' max='27'>
+              <enum-method name='oxhc' version='1' />
+              <node instance='0' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM A (N0)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='1' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM B (N1)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='2' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM C (N2)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='3' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM D (N3)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='4' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM E (N4)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='5' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM F (N5)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='6' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM G (N6)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='7' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM H (N7)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='8' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM I (N8)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+              <node instance='9' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='CEM J (N9)' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='4' />
+                </propgroup>
+                <propgroup name='cem-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='width' type='uint32' value='4' />
+                </propgroup>
+              </node>
+
+              <node instance='10' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM A0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='11' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM A1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='12' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM B0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='13' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM B1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='14' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM C0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='15' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM C1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='16' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM D0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='17' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM D1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='18' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM E0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='19' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM E1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='20' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM F0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='21' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM F1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='22' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM G0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='23' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM G1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='24' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM H0' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+              <node instance='25' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='DIMM H1' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='1' />
+                </propgroup>
+                <propgroup name='dimm-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='form-factor' type='string' value='DIMM' />
+                  <propval name='standard' type='string' value='DDR4' />
+                </propgroup>
+              </node>
+
+              <node instance='26' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='M.2 East' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='3' />
+                </propgroup>
+                <propgroup name='m.2-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='socket' type='uint32' value='3' />
+                  <propval name='key' type='string' value='M' />
+                </propgroup>
+                <propgroup name='binding' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot' type='uint32' value='17' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+              <node instance='27' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='M.2 West' />
+                </propgroup>
+                <propgroup name='binding' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot' type='uint32' value='18' />
+                </propgroup>
+                <propgroup name='slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='slot-type' type='uint32' value='3' />
+                </propgroup>
+                <propgroup name='m.2-slot' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='socket' type='uint32' value='3' />
+                  <propval name='key' type='string' value='M' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+            </range>
+
+            <range name='socket' min='0' max='0'>
+              <enum-method name='oxhc' version='1' />
+              <node instance='0' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='P0' />
+                </propgroup>
+              </node>
+            </range>
+          </dependents>
+        </range>
+      </dependents>
+    </node>
+  </range>
+</topology>

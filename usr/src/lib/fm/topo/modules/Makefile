@@ -26,7 +26,7 @@
 # Copyright 2022 Garrett D'Amore
 #
 
-i386_SUBDIRS = i86pc
+i386_SUBDIRS = i86pc oxide
 
 SUBDIRS = common $($(MACH)_SUBDIRS)
 

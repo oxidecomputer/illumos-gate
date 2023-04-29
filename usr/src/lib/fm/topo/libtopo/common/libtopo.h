@@ -1075,7 +1075,8 @@ typedef enum topo_led_type {
 typedef enum topo_slot_type {
 	TOPO_SLOT_TYPE_DIMM = 1,
 	TOPO_SLOT_TYPE_UFM,
-	TOPO_SLOT_TYPE_M2
+	TOPO_SLOT_TYPE_M2,
+	TOPO_SLOT_TYPE_CEM
 } topo_slot_type_t;
 
 /*

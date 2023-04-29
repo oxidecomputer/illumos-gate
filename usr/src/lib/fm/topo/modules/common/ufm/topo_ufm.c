@@ -278,8 +278,7 @@ topo_ufm_devinfo(topo_mod_t *mod, tnode_t *pn, topo_instance_t min,
 		goto out;
 	}
 
-	if (nimg >= max)
-		max = nimg - 1;
+	max = MIN(max, nimg - 1);
 	if (topo_node_range_create(mod, pn, UFM, min, max) != 0) {
 		topo_mod_dprintf(mod, "failed to create node range %s[%" PRIu64
 		    ", %" PRIu64 "]: %s", UFM, min, max, topo_mod_errmsg(mod));
