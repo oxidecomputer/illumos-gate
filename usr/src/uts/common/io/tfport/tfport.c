@@ -1059,6 +1059,7 @@ tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
 	struct sockaddr *addr;
 	mblk_t *mp1;
 	ip2mac_t ip2m;
+	zoneid_t zoneid;
 
 	if (iocp->ioc_count < sizeof (tfport_ioc_l2_t))
 		return (miocnak(q, mp, 0, EINVAL));
@@ -1088,7 +1089,8 @@ tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
 		return (miocnak(q, mp, 0, EINVAL));
 	}
 
-	(void) ip2mac(IP2MAC_RESOLVE, &ip2m, tfport_ioc_l2_done, NULL, 0);
+	zoneid = crgetzoneid(iocp->ioc_cr);
+	(void) ip2mac(IP2MAC_RESOLVE, &ip2m, tfport_ioc_l2_done, NULL, zoneid);
 
 	switch (ip2m.ip2mac_err) {
 	case 0:
