@@ -3856,14 +3856,18 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
 	 * Historically Gimlet's APCB was basically the same as Ethanol-X's,
 	 * which included doing (or trying, since there's nothing connected)
 	 * early link training.  That necessitated always running SM RELOAD on
-	 * socket 0.  That option is set incorrectly for Gimlet, though, which
-	 * means this should really depend on milan_board_type(); when it does,
-	 * there will be an APCB-unix flag day.  We probably want to see if we
-	 * can do better by figuring out whether this is needed on socket 0, 1,
-	 * or neither.
+	 * socket 0.  These PCIe lanes are unused and there is no BMC on
+	 * Gimlet.  The current APCB does not include that option and
+	 * therefore we currently only run this if the board is identified as
+	 * Ethanol.
+	 *
+	 * We probably want to see if we can do better by figuring out whether
+	 * this is needed on socket 0, 1, or neither.
 	 */
-	if (soc->ms_socno == 0 && !milan_dxio_rpc_sm_reload(iodie)) {
-		return (1);
+	if (milan_board_type(soc->ms_fabric) == MBT_ETHANOL) {
+		if (soc->ms_socno == 0 && !milan_dxio_rpc_sm_reload(iodie)) {
+			return (1);
+		}
 	}
 
 
