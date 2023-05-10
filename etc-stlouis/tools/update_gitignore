@@ -1,0 +1,48 @@
+#!/bin/ksh
+
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source. A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+
+#
+# Copyright 2023 Oxide Computer Company
+#
+
+function fatal {
+	echo "$@" >&2
+	exit 1
+}
+
+[[ -n "$CODEMGR_WS" ]] || fatal "Run this from inside a bldenv"
+
+cd "$CODEMGR_WS" || fatal "Could not change directory to $CODEMGR_WS"
+
+nightly=log/latest/nightly.log
+[[ -f $nightly ]] || fatal "No nightly.log found under log/latest"
+
+(( $(egrep -c 'Creating (non-)?DEBUG packages' $nightly) == 2 )) ||
+    fatal "Last build does not seem to have been a full release build"
+
+print "Re-generating .gitignore"
+
+sed -i '/BEGIN AUTO-GENERATED/,$d' .gitignore
+{
+	print "# BEGIN AUTO-GENERATED SECTION"
+	print "# To refresh this section, do a release stlouis build and run:"
+	print "#     $0"
+	git status --short --branch -unormal | \
+	    grep '^?? ' | cut -d\  -f2-
+} >> .gitignore
+
+(( $(wc -l < .gitignore) < 4000 )) && \
+    fatal "WARNING, new .gitignore may be too short"
+
+print
+print "Complete. Now run 'git diff' to verify things look as you expect."
+
+exit 0
