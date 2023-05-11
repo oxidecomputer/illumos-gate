@@ -312,7 +312,6 @@ tofino_tbus_register(tf_tbus_hdl_t *tf_hdl)
 	int rval = 0;
 
 	if ((tf = tofino_get_phys()) == NULL) {
-		cmn_err(CE_WARN, "!%s() tofino driver has no device", __func__);
 		return (ENXIO);
 	}
 	ASSERT(MUTEX_HELD(&tf->tf_mutex));
