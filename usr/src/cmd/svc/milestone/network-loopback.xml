@@ -28,6 +28,8 @@
 	be overwritten by package or patch operations, including
 	operating system upgrade.  Make customizations in a different
 	file.
+
+ Copyright 2023 Oxide Computer Company
 -->
 
 <service_bundle type='manifest' name='SUNWcsr:network-loopback'>
@@ -38,6 +40,22 @@
 	version='1'>
 
 	<instance name='default' enabled='true'>
+
+	<!--
+		It is possible that we have booted from a slim boot archive
+		that only contains a subset of drivers. Before we go ahead and
+		attempt to initialise network loopbacks, wait until the
+		filesystem/root service has finished enumerating additional
+		drivers in mounted filesystems, so that `ip` and its
+		dependencies are present.
+	-->
+	<dependency
+		name='filesystem-root'
+		grouping='require_all'
+		restart_on='none'
+		type='service'>
+		<service_fmri value='svc:/system/filesystem/root' />
+	</dependency>
 
 	<exec_method
 		type='method'
