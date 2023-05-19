@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -103,6 +103,20 @@ void
 pci_prd_slot_name(uint32_t bus, dev_info_t *dip)
 {
 
+}
+
+/*
+ * This indicates to the system what naming compatibility we would like to have.
+ * On the Oxide platform, ISA free is the way to be, hence we don't need that.
+ * Similarly we don't need bridge compatibility because we know all the systems
+ * that the Oxide architecture runs on and we are not subject to issues there.
+ * We still set PCI_PRD_COMPAT_PCI_NODE_NAME not for a principled reason, but
+ * mostly to minimize risk late in the cycle here. XXX I am a chicken.
+ */
+pci_prd_compat_flags_t
+pci_prd_compat_flags(void)
+{
+	return (PCI_PRD_COMPAT_PCI_NODE_NAME);
 }
 
 static struct modlmisc pci_prd_modlmisc_oxide = {

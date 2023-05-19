@@ -203,11 +203,6 @@ typedef enum apic_mode {
 #define	IOAPICS_PROP_VENID	"vendor-id"
 #define	IOAPICS_PROP_DEVID	"device-id"
 
-#define	IS_CLASS_IOAPIC(b, s, p) \
-	((b) == PCI_CLASS_PERIPH && (s) == PCI_PERIPH_PIC &&	\
-	((p) == PCI_PERIPH_PIC_IF_IO_APIC ||			\
-	(p) == PCI_PERIPH_PIC_IF_IOX_APIC))
-
 /*
  * These macros are used in frequently called routines like
  * apic_intr_enter().

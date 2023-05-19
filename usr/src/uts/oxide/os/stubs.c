@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co
+ * Copyright 2023 Oxide Computer Co
  */
 
 #include <sys/types.h>
@@ -38,12 +38,9 @@
 char saved_cmdline[1] = "";
 
 /*
- * Used by pci_boot.c, which is really i86pc-specific.  Setting pseudo_isa
- * causes pci_boot to refrain from creating a device node for any PCI-ISA
- * bridges it encounters, which is desirable as we do not support ISA.
+ * Used by pci_boot.c, which is really i86pc-specific.
  */
 int apic_nvidia_io_max = 0;
-int pseudo_isa = 1;
 
 void
 read_bootenvrc(void)
