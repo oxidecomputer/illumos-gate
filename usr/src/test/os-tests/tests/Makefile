@@ -25,6 +25,7 @@ SUBDIRS =       \
 		definit \
 		file-locking \
 		ksensor \
+		ksid \
 		libtopo \
 		gpio \
 		pf_key \
