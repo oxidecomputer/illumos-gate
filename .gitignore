@@ -3072,6 +3072,7 @@ usr/src/lib/libdtrace/i386/regs.d
 usr/src/lib/libdtrace/i386/regs.sed
 usr/src/lib/libdtrace/i386/y.output
 usr/src/lib/libexacct/demo/exdump
+usr/src/lib/libfakekernel/common/sid.c
 usr/src/lib/libficl/amd64/libficl-sys.so.4.1.0
 usr/src/lib/libficl/i386/libficl-sys.so.4.1.0
 usr/src/lib/libficl/softcore/softcore.c
@@ -8865,6 +8866,8 @@ usr/src/test/os-tests/tests/ksensor/ksensor_err.32
 usr/src/test/os-tests/tests/ksensor/ksensor_err.64
 usr/src/test/os-tests/tests/ksensor/ksensor_sread.32
 usr/src/test/os-tests/tests/ksensor/ksensor_sread.64
+usr/src/test/os-tests/tests/ksid/ksid.32
+usr/src/test/os-tests/tests/ksid/ksid.64
 usr/src/test/os-tests/tests/libtopo/digraph-test
 usr/src/test/os-tests/tests/odirectory.32
 usr/src/test/os-tests/tests/odirectory.64
