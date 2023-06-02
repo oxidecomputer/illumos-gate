@@ -340,7 +340,7 @@
  * accomplishing the first of our goals: the Link Initialisation State Machine
  * (LISM), a cooperative software-firmware subsystem that drives most low-level
  * PCIe core/port configuration.
-
+ *
  * The LISM is a per-iodie linear state machine (so far as we know, there are no
  * backward transitions possible -- but we also know that handling errors is
  * extremely difficult).  The expected terminal state is that all ports that are
@@ -5603,7 +5603,7 @@ milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
 
 /*
  * This is a companion to milan_fabric_init_bridges, that operates on the PCIe
- * RC level before we get to the individual bridge. This initialization
+ * core level before we get to the individual bridge. This initialization
  * generally is required to ensure that each port (regardless of whether it's
  * hidden or not) is able to properly generate an all 1s response. In addition
  * we have to take care of things like atomics, idling defaults, certain
@@ -5628,6 +5628,41 @@ milan_fabric_init_pcie_core(milan_pcie_core_t *pc, void *arg)
 	val = milan_pcie_core_read(pc, reg);
 	val = PCIE_CORE_SDP_CTL_SET_PORT_ID(val, pc->mpc_sdp_port);
 	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID(val, pc->mpc_sdp_unit);
+	milan_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Program values required for receiver margining to work. These are
+	 * hidden in the core. Milan processors generally only support timing
+	 * margining as that's what's required by PCIe Gen 4. Voltage margining
+	 * was made mandatory in Gen 5.
+	 *
+	 * The first register (D_PCIE_CORE_RX_MARGIN_CTL_CAP) sets up the
+	 * supported margining. The second register (D_PCIE_CORE_RX_MARGIN1)
+	 * sets the supported offsets and steps. These values are given us by
+	 * AMD in a roundabout fashion. These values translate into allowing the
+	 * maximum timing offset to be 50% of a UI (unit interval) and taking up
+	 * to 23 steps in either direction. Because we've set the maximum offset
+	 * to be 50%, each step takes 50%/23 or ~2.17%. The third register
+	 * (D_PCIE_CORE_RX_MARGIN2) is used to set how many lanes can be
+	 * margined at the same time. Similarly we've been led to believe the
+	 * entire core supports margining at once, so that's 16 lanes and the
+	 * register is encoded as a zeros based value (so that's why we write
+	 * 0xf).
+	 */
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN_CTL_CAP);
+	val = milan_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_TIME(val, 1);
+	milan_pcie_core_write(pc, reg, val);
+
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
+	val = milan_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x32);
+	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x17);
+	milan_pcie_core_write(pc, reg, val);
+
+	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
+	val = milan_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN2_SET_NLANES(val, 0xf);
 	milan_pcie_core_write(pc, reg, val);
 
 	/*

@@ -2268,32 +2268,60 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIECORE::PCIE_RXMARGIN_CONTROL_CAPABILITIES - unused but captured for
- * debugging.
+ * PCIECORE::PCIE_RXMARGIN_CONTROL_CAPABILITIES - PCIe RX Margining controls.
+ * This is in 'Core Space' and controls what is advertised when the Lane
+ * Margining at the Receiver capability is used to ask for capabilities. That
+ * is, these aren't showing up in configuration space but rather are responses
+ * to the margining commands.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_RX_MARGIN_CTL_CAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x4d4	\
 }
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_SET_ERRORS(r, v)	bitset32(r, 4, 4, v)
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_ERRORS_EN	0
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_ERRORS_DIS	1
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_SET_METHOD(r, v)	bitset32(r, 3, 3, v)
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_METHOD_COUNT	0
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_METHOD_RATE		1
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_TIME(r, v)	bitset32(r, 2, 2, v)
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_VOLT(r, v)	bitset32(r, 1, 1, v)
+#define	PCIE_CORE_RX_MARGIN_CTL_CAP_SET_VOLT_SUP(r, v)	bitset32(r, 0, 0, v)
 
 /*
- * PCIECORE::PCIE_RXMARGIN_1_SETTINGS - unused but captured for debugging.
+ * PCIECORE::PCIE_RXMARGIN_1_SETTINGS - This register controls the limits of
+ * margining. The OFF fields control the maximum distance margining can
+ * travel. The STEPS fields control how many steps margining can take.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_RX_MARGIN1	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x4d8	\
 }
+#define	PCIE_CORE_RX_MARGIN1_SET_MAX_VOLT_OFF(r, v)	bitset32(r, 26, 20, v)
+#define	PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(r, v)	bitset32(r, 19, 13, v)
+#define	PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(r, v)	bitset32(r, 12, 7, v)
+#define	PCIE_CORE_RX_MARGIN1_SET_NUM_VOLT_STEPS(r, v)	bitset32(r, 6, 0, v)
 
 /*
- * PCIECORE::PCIE_RXMARGIN_2_SETTINGS - unused but captured for debugging.
+ * PCIECORE::PCIE_RXMARGIN_2_SETTINGS - This contains both controls and values
+ * that are used during the margining process itself.  The latter two fields
+ * control the sampling ratio which continues until either the counter is
+ * saturated or we hit the set error limit. This register is generally set
+ * during PCIe initialization and is instead utilized by the internal IP in
+ * response to PCIe margining commands.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_RX_MARGIN2	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x4dc	\
 }
+#define	PCIE_CORE_RX_MARGIN2_SET_ERR_LIM(r, v)		bitset32(r, 29, 24, v)
+#define	PCIE_CORE_RX_MARGIN2_SET_NLANES(r, v)		bitset32(r, 23, 19, v)
+#define	PCIE_CORE_RX_MARGIN2_GET_COUNT(r)		bitx32(r, 18, 12)
+#define	PCIE_CORE_RX_MARGIN2_SET_TIME_RATIO(r, v)	bitx32(r, 11, 6, v)
+#define	PCIE_CORE_RX_MARGIN2_SET_VOLT_RATIO(r, v)	bitx32(r, 5, 0, v)
 
 /*
  * PCIECORE::PCIE_PRESENCE_DETECT_SELECT - PCIe Presence Detect Control. This is
@@ -2315,8 +2343,8 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*
  * PCIECORE::PCIE_LC_DEBUG_CNTL - Analogous to the DBG_CTL register's ability to
  * select specific port(s) for which other data should be collected in debugging
- * registers, this selects lane(s) for certain registers and and fields that
- * collect per-lane debug data.
+ * registers, this selects lane(s) for certain registers and fields that collect
+ * per-lane debug data.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_LC_DBG_CTL	(const smn_reg_def_t){	\
