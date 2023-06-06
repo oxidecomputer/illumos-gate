@@ -42,6 +42,8 @@ illumos*.sh
 # BEGIN AUTO-GENERATED SECTION
 # To refresh this section, do a release stlouis build and run:
 #     ./etc-stlouis/tools/update_gitignore
+etc-stlouis/tools/builder/builder
+etc-stlouis/tools/builder/users.c
 usr/src/boot/efi/libefi/amd64/machine
 usr/src/boot/efi/libefi/amd64/x86
 usr/src/boot/efi/libefi/i386/machine
@@ -1550,11 +1552,6 @@ usr/src/cmd/print/bsd-sysv-commands/reject
 usr/src/cmd/print/conv_fix/conv_fix
 usr/src/cmd/print/lpget/lpget
 usr/src/cmd/print/lpset/lpset
-usr/src/cmd/print/printer-info/printer-info
-usr/src/cmd/print/printmgr/bin/printmgr
-usr/src/cmd/print/printmgr/com/sun/admin/pm/client/helptools/parsehelp
-usr/src/cmd/print/printmgr/com/sun/admin/pm/client/pmCopyright.java
-usr/src/cmd/print/printmgr/com/sun/admin/pm/client/pmHelpResources.java
 usr/src/cmd/printf/printf
 usr/src/cmd/priocntl/FSSpriocntl
 usr/src/cmd/priocntl/FXpriocntl
