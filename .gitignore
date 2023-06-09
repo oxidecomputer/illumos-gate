@@ -8620,6 +8620,7 @@ usr/src/test/bhyve-tests/tests/vmm/auto_destruct
 usr/src/test/bhyve-tests/tests/vmm/check_iommu
 usr/src/test/bhyve-tests/tests/vmm/cpuid_ioctl
 usr/src/test/bhyve-tests/tests/vmm/datarw_constraints
+usr/src/test/bhyve-tests/tests/vmm/datarw_msrs
 usr/src/test/bhyve-tests/tests/vmm/datarw_vcpu
 usr/src/test/bhyve-tests/tests/vmm/default_capabs
 usr/src/test/bhyve-tests/tests/vmm/drv_hold
