@@ -46,6 +46,7 @@
 #include <sys/boot_image_ops.h>
 
 #include "oxide_boot.h"
+#include "zen_umc.h"
 
 /*
  * Linkage structures
@@ -578,8 +579,96 @@ oxide_boot_locate(void)
 {
 	int err;
 
-	oxide_boot_note("Starting Oxide boot");
+	oxide_boot_note("Starting Oxide boot (DRAM test edition!)");
 
+	/*
+	 * XXX In the DRAM test image we're not going to do any of the usual
+	 * stuff.  We'll start up and just attempt to attach zen_umc so that we
+	 * can get the information out of it.  By never returning from this
+	 * function, we can prevent the OS from attempting to mount a root file
+	 * system, which we will not have on the test bench.
+	 */
+
+	const char *target = "zen_umc";
+	const char *symtarg = "zen_umc";
+	modctl_t *module = NULL;
+	zen_umc_t **umcp = NULL;
+
+	/*
+	 * First, attempt to load the module...
+	 */
+modagain:
+	delay(1 * drv_usectohz(MICROSEC));
+
+	printf(" * loading module \"%s\"...\n", target);
+	if (modload(NULL, target) == -1) {
+		printf("could not!\n");
+		goto modagain;
+	}
+
+	printf(" * holding module \"%s\"...\n", target);
+	if ((module = mod_hold_by_name(target)) == NULL) {
+		printf("could not!\n");
+		goto modagain;
+	}
+
+symagain:
+	delay(1 * drv_usectohz(MICROSEC));
+
+	printf(" * locating \"%s\" symbol from module \"%s\"...\n", symtarg,
+	    target);
+	if ((umcp = (void *)modlookup_by_modctl(module, symtarg)) == NULL) {
+		printf("could not!\n");
+		goto symagain;
+	}
+
+lookagain:
+	delay(1 * drv_usectohz(MICROSEC));
+
+	printf(" * zen_umc = %p\n", *umcp);
+	if (*umcp == NULL) {
+		printf("could not!\n");
+		goto lookagain;
+	}
+
+	/*
+	 * Attempt to fish out the information we want...
+	 */
+	zen_umc_t *umc = *umcp;
+	for (uint_t c = 0; c <= 7; c++) {
+		const char *chan_map[] = {
+		    "A", /* 0 */
+		    "B", /* 1 */
+		    "D", /* 2 */
+		    "C", /* 3 */
+		    "H", /* 4 */
+		    "G", /* 5 */
+		    "E", /* 6 */
+		    "F", /* 7 */
+		};
+		const uint32_t want_raw = (1 << 9) | (1 << 12) | (1 << 31);
+
+		zen_umc_chan_t *chan = &umc->umc_dfs[0].zud_chan[c];
+
+		printf("channel %s (%u) umccfg_raw = %x\n",
+		    chan_map[c], c,
+		    chan->chan_umccfg_raw);
+
+		for (uint_t d = 0; d <= 1; d++) {
+			printf("channel %s (%u) dimm %u ud_flags = %x\n",
+			    chan_map[c], c, d,
+			    chan->chan_dimms[d].ud_flags);
+			printf("channel %s (%u) dimm %u ud_dimm_size = %lx\n",
+			    chan_map[c], c, d,
+			    chan->chan_dimms[d].ud_dimm_size);
+		}
+	}
+
+	printf("\n");
+
+	goto lookagain;
+
+#if 0
 	oxide_boot_t *oxb = kmem_zalloc(sizeof (*oxb), KM_SLEEP);
 	oxide_boot_debug("oxb=%p", oxb);
 	mutex_init(&oxb->oxb_mutex, NULL, MUTEX_DRIVER, NULL);
@@ -687,6 +776,7 @@ oxide_boot_locate(void)
 	    oxb->oxb_ramdisk_path);
 
 	oxide_boot_fini(oxb);
+#endif
 }
 
 boot_image_ops_t _boot_image_ops = {
