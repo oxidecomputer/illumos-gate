@@ -46,6 +46,7 @@
 #include <sys/boot_image_ops.h>
 
 #include "oxide_boot.h"
+#include "zen_umc.h"
 
 /*
  * Linkage structures
@@ -573,13 +574,153 @@ oxide_boot_fail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 	/* vpanic() does not return */
 }
 
+static int
+just_attach_this(dev_info_t *dip, void *arg)
+{
+	const char *nodetarget = arg;
+
+	if (ddi_node_name(dip) == NULL ||
+	    strcmp(ddi_node_name(dip), nodetarget) != 0) {
+		goto skip;
+	}
+
+	char *path = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
+	(void) ddi_pathname(dip, path);
+	printf(" * attempting to attach: %s...\n", path);
+	kmem_free(path, MAXPATHLEN);
+
+	if (i_ddi_attach_node_hierarchy(dip) != DDI_SUCCESS) {
+		printf("could not!\n");
+	}
+
+	printf("ok!\n");
+
+skip:
+	return (DDI_WALK_CONTINUE);
+}
+
 static void
 oxide_boot_locate(void)
 {
 	int err;
 
-	oxide_boot_note("Starting Oxide boot");
+	oxide_boot_note("Starting Oxide boot (DRAM test edition!)");
 
+	/*
+	 * XXX In the DRAM test image we're not going to do any of the usual
+	 * stuff.  We'll start up and just attempt to attach zen_umc so that we
+	 * can get the information out of it.  By never returning from this
+	 * function, we can prevent the OS from attempting to mount a root file
+	 * system, which we will not have on the test bench.
+	 */
+
+	const char *modtarget = "drv/zen_umc";
+	const char *symtarg = "zen_umc";
+	modctl_t *module = NULL;
+	zen_umc_t **umcp = NULL;
+
+	/*
+	 * First, attempt to load the module...
+	 */
+modagain:
+	delay(1 * drv_usectohz(MICROSEC));
+
+	printf(" * loading module \"%s\"...\n", modtarget);
+	if (modload(NULL, modtarget) == -1) {
+		printf("could not!\n");
+		goto modagain;
+	}
+
+	printf(" * holding module \"%s\"...\n", modtarget);
+	if ((module = mod_hold_by_name(modtarget)) == NULL) {
+		printf("could not!\n");
+		goto modagain;
+	}
+
+symagain:
+	delay(1 * drv_usectohz(MICROSEC));
+
+	printf(" * locating \"%s\" symbol from module \"%s\"...\n", symtarg,
+	    modtarget);
+	if ((umcp = (void *)modlookup_by_modctl(module, symtarg)) == NULL) {
+		printf("could not!\n");
+		goto symagain;
+	}
+
+lookagain:
+	delay(1 * drv_usectohz(MICROSEC));
+
+	/*
+	 * Now that it is loaded, we need to attach things.
+	 */
+	printf(" * attaching amdzen...\n");
+	if (i_ddi_attach_pseudo_node("amdzen") == NULL) {
+		printf("could not!\n");
+	}
+
+	printf(" * attaching amdzen stubs...\n");
+	if (i_ddi_attach_hw_nodes("amdzen_stub") != DDI_SUCCESS) {
+		printf("could not!\n");
+	}
+
+	printf(" * attaching zen_umc nodes...\n");
+	if (i_ddi_attach_hw_nodes("zen_umc") != DDI_SUCCESS) {
+		printf("could not!\n");
+	}
+
+	/*ddi_walk_devs(ddi_root_node(), just_attach_this, (void *)"zen_umc");*/
+
+	printf(" * zen_umc = %p\n", *umcp);
+	if (*umcp == NULL) {
+		printf("could not!\n");
+		goto lookagain;
+	}
+
+	/*
+	 * Attempt to fish out the information we want...
+	 */
+	zen_umc_t *umc = *umcp;
+	for (uint_t c = 0; c <= 7; c++) {
+		const char *chan_map[] = {
+		    "A", /* 0 */
+		    "B", /* 1 */
+		    "D", /* 2 */
+		    "C", /* 3 */
+		    "H", /* 4 */
+		    "G", /* 5 */
+		    "E", /* 6 */
+		    "F", /* 7 */
+		};
+		const uint32_t want_raw = (1 << 9) | (1 << 12) | (1 << 31);
+
+		zen_umc_chan_t *chan = &umc->umc_dfs[0].zud_chan[c];
+
+		printf("channel %s (%u) umccfg_raw = %x\n",
+		    chan_map[c], c,
+		    chan->chan_umccfg_raw);
+
+		for (uint_t d = 0; d <= 1; d++) {
+			printf("channel %s (%u) dimm %u ud_flags = %x\n",
+			    chan_map[c], c, d,
+			    chan->chan_dimms[d].ud_flags);
+			printf("channel %s (%u) dimm %u ud_dimm_size = %lx\n",
+			    chan_map[c], c, d,
+			    chan->chan_dimms[d].ud_dimm_size);
+		}
+	}
+
+	/*
+	 * Throw in the detected installed memory size in bytes for good
+	 * measure:
+	 */
+	uint64_t membytes = physinstalled * PAGESIZE;
+	printf("physmem bytes = %lu\n", membytes);
+
+	printf("\n");
+
+	goto lookagain;
+
+#if 0
 	oxide_boot_t *oxb = kmem_zalloc(sizeof (*oxb), KM_SLEEP);
 	oxide_boot_debug("oxb=%p", oxb);
 	mutex_init(&oxb->oxb_mutex, NULL, MUTEX_DRIVER, NULL);
@@ -687,6 +828,7 @@ oxide_boot_locate(void)
 	    oxb->oxb_ramdisk_path);
 
 	oxide_boot_fini(oxb);
+#endif
 }
 
 boot_image_ops_t _boot_image_ops = {

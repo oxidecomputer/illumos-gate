@@ -40,6 +40,7 @@ INSTALL_TARGET =	$(BINARY) $(ROOTMODULE)
 # Overrides
 #
 INC_PATH +=		-I$(UTSBASE)/oxide/$(MODULE)
+INC_PATH +=		-I$(UTSBASE)/intel/io/amdzen
 
 #
 # Driver depends on mac
