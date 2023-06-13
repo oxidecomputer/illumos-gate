@@ -574,6 +574,31 @@ oxide_boot_fail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 	/* vpanic() does not return */
 }
 
+static int
+just_attach_this(dev_info_t *dip, void *arg)
+{
+	const char *nodetarget = arg;
+
+	if (ddi_node_name(dip) == NULL ||
+	    strcmp(ddi_node_name(dip), nodetarget) != 0) {
+		goto skip;
+	}
+
+	char *path = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
+	(void) ddi_pathname(dip, path);
+	printf(" * attempting to attach: %s...\n", path);
+	kmem_free(path, MAXPATHLEN);
+
+	if (i_ddi_attach_node_hierarchy(dip) != DDI_SUCCESS) {
+		printf("could not!\n");
+	}
+
+	printf("ok!\n");
+
+skip:
+	return (DDI_WALK_CONTINUE);
+}
+
 static void
 oxide_boot_locate(void)
 {
@@ -589,7 +614,7 @@ oxide_boot_locate(void)
 	 * system, which we will not have on the test bench.
 	 */
 
-	const char *target = "zen_umc";
+	const char *modtarget = "drv/zen_umc";
 	const char *symtarg = "zen_umc";
 	modctl_t *module = NULL;
 	zen_umc_t **umcp = NULL;
@@ -600,14 +625,14 @@ oxide_boot_locate(void)
 modagain:
 	delay(1 * drv_usectohz(MICROSEC));
 
-	printf(" * loading module \"%s\"...\n", target);
-	if (modload(NULL, target) == -1) {
+	printf(" * loading module \"%s\"...\n", modtarget);
+	if (modload(NULL, modtarget) == -1) {
 		printf("could not!\n");
 		goto modagain;
 	}
 
-	printf(" * holding module \"%s\"...\n", target);
-	if ((module = mod_hold_by_name(target)) == NULL) {
+	printf(" * holding module \"%s\"...\n", modtarget);
+	if ((module = mod_hold_by_name(modtarget)) == NULL) {
 		printf("could not!\n");
 		goto modagain;
 	}
@@ -616,7 +641,7 @@ symagain:
 	delay(1 * drv_usectohz(MICROSEC));
 
 	printf(" * locating \"%s\" symbol from module \"%s\"...\n", symtarg,
-	    target);
+	    modtarget);
 	if ((umcp = (void *)modlookup_by_modctl(module, symtarg)) == NULL) {
 		printf("could not!\n");
 		goto symagain;
@@ -624,6 +649,11 @@ symagain:
 
 lookagain:
 	delay(1 * drv_usectohz(MICROSEC));
+
+	/*
+	 * Now that it is loaded, we need to attach the thing.
+	 */
+	ddi_walk_devs(ddi_root_node(), just_attach_this, (void *)"amdzen");
 
 	printf(" * zen_umc = %p\n", *umcp);
 	if (*umcp == NULL) {
