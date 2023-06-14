@@ -651,9 +651,24 @@ lookagain:
 	delay(1 * drv_usectohz(MICROSEC));
 
 	/*
-	 * Now that it is loaded, we need to attach the thing.
+	 * Now that it is loaded, we need to attach things.
 	 */
-	ddi_walk_devs(ddi_root_node(), just_attach_this, (void *)"amdzen");
+	printf(" * attaching amdzen...\n");
+	if (i_ddi_attach_pseudo_node("amdzen") == NULL) {
+		printf("could not!\n");
+	}
+
+	printf(" * attaching amdzen stubs...\n");
+	if (i_ddi_attach_hw_nodes("amdzen_stub") != DDI_SUCCESS) {
+		printf("could not!\n");
+	}
+
+	printf(" * attaching zen_umc nodes...\n");
+	if (i_ddi_attach_hw_nodes("zen_umc") != DDI_SUCCESS) {
+		printf("could not!\n");
+	}
+
+	/*ddi_walk_devs(ddi_root_node(), just_attach_this, (void *)"zen_umc");*/
 
 	printf(" * zen_umc = %p\n", *umcp);
 	if (*umcp == NULL) {
@@ -693,6 +708,13 @@ lookagain:
 			    chan->chan_dimms[d].ud_dimm_size);
 		}
 	}
+
+	/*
+	 * Throw in the detected installed memory size in bytes for good
+	 * measure:
+	 */
+	uint64_t membytes = physinstalled * PAGESIZE;
+	printf("physmem bytes = %lu\n", membytes);
 
 	printf("\n");
 
