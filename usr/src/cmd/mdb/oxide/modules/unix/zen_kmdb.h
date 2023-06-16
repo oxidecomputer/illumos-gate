@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _ZEN_KMDB_H
@@ -41,6 +41,16 @@ extern int wrsmn_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 extern void df_route_dcmd_help(void);
 extern int df_route_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+
+extern int apob_walk_init(mdb_walk_state_t *);
+extern int apob_walk_step(mdb_walk_state_t *);
+
+extern void apob_dcmd_help(void);
+extern int apob_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern int pmuerr_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+
+extern void dimm_report_dcmd_help(void);
+extern int dimm_report_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 #endif	/* _KMDB */
 

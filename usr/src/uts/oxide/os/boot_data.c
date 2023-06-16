@@ -37,6 +37,7 @@
 #include <sys/boot_debug.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/time.h>
+#include <milan/milan_apob_impl.h>
 
 extern int bootrd_debug, prom_debug;
 extern boolean_t kbm_debug;
@@ -236,7 +237,7 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	 * time) to almost anything in the bottom 2 GiB that doesn't conflict
 	 * with other uses of memory; see the discussion in vm/kboot_mmu.c.
 	 */
-	const uint64_t apob_addr = 0x4000000UL;
+	const uint64_t apob_addr = MILAN_APOB_ADDR;
 	const uint32_t reset_vector = 0x7ffefff0U;
 
 	bt_set_prop_u32(BTPROP_NAME_RESET_VECTOR, reset_vector);

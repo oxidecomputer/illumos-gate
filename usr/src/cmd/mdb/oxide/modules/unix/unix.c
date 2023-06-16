@@ -22,7 +22,7 @@
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <mdb/mdb_modapi.h>
@@ -1020,6 +1020,10 @@ static const mdb_dcmd_t dcmds[] = {
 		x86_featureset_dcmd },
 	{ "xcall", ":", "print CPU cross-call state", xcall_dcmd, xcall_help },
 #ifdef _KMDB
+	{ "apob", "-g group -t type", "find APOB entry", apob_dcmd,
+	    apob_dcmd_help },
+	{ "dimm_report", "", "Summarize DRAM training and DIMMs",
+	    dimm_report_dcmd, dimm_report_dcmd_help },
 	{ "df_route", "-b | -d | -I | -m  [-i func] [-s socket]", "print df "
 	    "route tables", df_route_dcmd, df_route_dcmd_help },
 	{ "rddf", ":[-b | -i inst] [-f func] [-s socket]", "read df register",
@@ -1028,6 +1032,7 @@ static const mdb_dcmd_t dcmds[] = {
 	    "read a register in PCI config space", rdpcicfg_dcmd },
 	{ "rdsmn", ":[-L len] [-s socket]", "read smn register", rdsmn_dcmd,
 	    rdsmn_dcmd_help },
+	{ "pmuerr", ":", "decode APOB PMU Training error data", pmuerr_dcmd },
 	{ "sysregs", NULL, "dump system registers", sysregs_dcmd },
 	{ "wrdf", ":[-b | -i inst] [-f func] [-s socket] value",
 	    "write df register", wrdf_dcmd, wrdf_dcmd_help },
@@ -1046,6 +1051,9 @@ static const mdb_walker_t walkers[] = {
 		mutex_owner_init, mutex_owner_step },
 	{ "memseg", "walk the memseg structures",
 		memseg_walk_init, memseg_walk_step, memseg_walk_fini },
+#ifdef _KMDB
+	{ "apob", "walk the APOB", apob_walk_init, apob_walk_step },
+#endif
 	{ NULL }
 };
 

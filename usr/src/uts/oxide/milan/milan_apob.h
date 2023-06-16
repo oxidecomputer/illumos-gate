@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _MILAN_MILAN_APOB_H
@@ -39,6 +39,7 @@ typedef enum milan_apob_group {
 } milan_apob_group_t;
 
 #define	MILAN_APOB_FABRIC_PHY_OVERRIDE		21
+#define	MILAN_APOB_MEMORY_PMU_TRAIN_FAIL	22
 
 #define	MILAN_APOB_CCX_NONE			0xffU
 
@@ -117,6 +118,39 @@ typedef struct milan_apob_phyovr {
 	uint32_t map_datalen;
 	uint8_t map_data[MILAN_APOB_PHY_OVERRIDE_MAX_LEN];
 } milan_apob_phyovr_t;
+
+/*
+ * This represents a single training error entry.
+ */
+typedef struct milan_apob_pmu_tfi_ent {
+	/*
+	 * These indicate the socket and the numeric UMC entry.
+	 */
+	uint32_t mapte_sock:1;
+	uint32_t mapte_umc:3;
+	/*
+	 * This appears to be 0 for 1D and 1 for 2D.
+	 */
+	uint32_t mapte_1d2d:1;
+	uint32_t mapte_1dnum:3;
+	uint32_t mapte_rsvd:7;
+	uint32_t mapte_stage:16;
+	uint32_t mapte_error;
+	uint32_t mapte_data[4];
+} milan_apob_tfi_ent_t;
+
+typedef struct milan_apob_pmu_tfi {
+	/*
+	 * While we describe this as the number of valid entries, it represents
+	 * the next location that information should have been entered into.
+	 */
+	uint32_t mapt_nvalid;
+	/*
+	 * The use of 40 entries here comes from AMD. This represents 8 channels
+	 * times five errors each.
+	 */
+	milan_apob_tfi_ent_t mapt_ents[40];
+} milan_apob_pmu_tfi_t;
 
 #pragma pack()
 

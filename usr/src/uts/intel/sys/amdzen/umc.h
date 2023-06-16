@@ -85,14 +85,16 @@ amdzen_umc_smn_reg(const uint8_t umcno, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	const uint32_t APERTURE_BASE = 0x50000;
+#ifdef	DEBUG
 	const uint32_t APERTURE_MASK = 0xffffe000;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t)def.srd_nents;
+#endif
 
 	const uint32_t umc32 = (const uint32_t)umcno;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 
 	const uint32_t stride = (def.srd_stride == 0) ? 4 : def.srd_stride;
-	const uint32_t nents = (def.srd_nents == 0) ? 1 :
-	    (const uint32_t)def.srd_nents;
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_UMC);

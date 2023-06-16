@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -28,7 +28,11 @@
 #include <sys/sysmacros.h>
 #include <milan/milan_physaddrs.h>
 #include <sys/amdzen/ccx.h>
+#include <sys/amdzen/umc.h>
 #include <io/amdzen/amdzen.h>
+
+#include <milan_apob.h>
+#include <milan_apob_impl.h>
 
 static uint64_t pcicfg_physaddr;
 static boolean_t pcicfg_valid;
@@ -98,6 +102,17 @@ static const char *df_chan_ileaves[16] = {
 	"Reserved", "8", "6", "Reserved",
 	"Reserved", "Reserved", "Reserved", "Reserved",
 	"COD-4 2", "COD-2 4", "COD-1 8", "Reserved"
+};
+
+static const char *milan_chan_map[8] = {
+	[0] = "A",
+	[1] = "B",
+	[2] = "D",
+	[3] = "C",
+	[4] = "H",
+	[5] = "G",
+	[6] = "E",
+	[7] = "F",
 };
 
 static const char *
@@ -335,7 +350,7 @@ wrpcicfg_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 }
 
 static const char *dfhelp =
-"%s a register %s the data fabric. The register is indicated by the addres\n"
+"%s a register %s the data fabric. The register is indicated by the address\n"
 "of the dcmd. This can either be directed at a specific instance or be\n"
 "broadcast to all instances. One of -b or -i inst is required. If no socket\n"
 "(really the I/O die) is specified, then the first one will be selected. The\n"
@@ -375,7 +390,7 @@ df_dcmd_check(uintptr_t addr, uint_t flags, boolean_t inst_set, uintptr_t inst,
 	if (sock_set) {
 		/*
 		 * We don't really know how many I/O dies there are in advance;
-		 * however, the theoretical max is 8 (2P naples with 4 dies);
+		 * however, the theoretical max is 8 (2P Naples with 4 dies);
 		 * however, on the Oxide architecture there'll only ever be 2.
 		 */
 		if (*sock > 1) {
@@ -588,16 +603,87 @@ typedef enum smn_rw {
 } smn_rw_t;
 
 static int
-smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
-    smn_rw_t rw)
+smn_rw_regdef(const smn_reg_t reg, uint64_t sock, smn_rw_t rw,
+    uint32_t *smn_val)
 {
 	uint32_t df_busctl;
 	uint8_t smn_busno;
 	boolean_t res;
-	uint64_t sock = 0;
+	size_t len = SMN_REG_SIZE(reg);
+	uint32_t addr = SMN_REG_ADDR(reg);
+
+	if (!SMN_REG_SIZE_IS_VALID(reg)) {
+		mdb_warn("invalid read length %lu (allowed: {1,2,4})\n", len);
+		return (DCMD_ERR);
+	}
+
+	if (!SMN_REG_IS_NATURALLY_ALIGNED(reg)) {
+		mdb_warn("address %x is not aligned on a %lu-byte boundary\n",
+		    addr, len);
+		return (DCMD_ERR);
+	}
+
+	if (rw == SMN_WR && !SMN_REG_VALUE_FITS(reg, *smn_val)) {
+		mdb_warn("write value %lx does not fit in size %lu\n", *smn_val,
+		    len);
+		return (DCMD_ERR);
+	}
+
+	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
+	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+
+	if (!df_read32(sock, DF_CFG_ADDR_CTL_V2, &df_busctl)) {
+		mdb_warn("failed to read DF config address\n");
+		return (DCMD_ERR);
+	}
+
+	if (df_busctl == PCI_EINVAL32) {
+		mdb_warn("got back PCI_EINVAL32 when reading from the df\n");
+		return (DCMD_ERR);
+	}
+
+	smn_busno = DF_CFG_ADDR_CTL_GET_BUS_NUM(df_busctl);
+	if (!pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
+	    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR, sizeof (base_addr),
+	    base_addr)) {
+		mdb_warn("failed to write to IOHC SMN address register\n");
+		return (DCMD_ERR);
+	}
+
+	switch (rw) {
+	case SMN_RD:
+		res = pcicfg_read(smn_busno, AMDZEN_NB_SMN_DEVNO,
+		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
+		    SMN_REG_SIZE(reg), smn_val);
+		break;
+	case SMN_WR:
+		res = pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
+		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
+		    SMN_REG_SIZE(reg), *smn_val);
+		break;
+	default:
+		mdb_warn("internal error: unreachable SMN R/W type %d\n", rw);
+		return (DCMD_ERR);
+	}
+
+	if (!res) {
+		mdb_warn("failed to read from IOHC SMN data register\n");
+		return (DCMD_ERR);
+	}
+
+	return (DCMD_OK);
+
+}
+
+static int
+smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
+    smn_rw_t rw)
+{
 	size_t len = 4;
 	u_longlong_t parse_val;
 	uint32_t smn_val = 0;
+	uint64_t sock = 0;
+	int ret;
 
 	if (!(flags & DCMD_ADDRSPEC)) {
 		mdb_warn("a register must be specified via an address\n");
@@ -631,70 +717,22 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 
 	const smn_reg_t reg = SMN_MAKE_REG_SIZED(addr, len);
 
-	if (!SMN_REG_SIZE_IS_VALID(reg)) {
-		mdb_warn("invalid read length %lu (allowed: {1,2,4})\n", len);
-		return (DCMD_ERR);
-	}
-
-	if (!SMN_REG_IS_NATURALLY_ALIGNED(reg)) {
-		mdb_warn("address %lx is not aligned on a %lu-byte boundary\n",
-		    addr, len);
-		return (DCMD_ERR);
-	}
-
-	if (rw == SMN_WR && !SMN_REG_VALUE_FITS(reg, smn_val)) {
-		mdb_warn("write value %lx does not fit in size %lu\n", smn_val,
-		    len);
-		return (DCMD_ERR);
-	}
-
-	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
-	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
-
-	if (!df_read32(sock, DF_CFG_ADDR_CTL_V2, &df_busctl)) {
-		mdb_warn("failed to read DF config address\n");
-		return (DCMD_ERR);
-	}
-
-	if (df_busctl == PCI_EINVAL32) {
-		mdb_warn("got back PCI_EINVAL32 when reading from the df\n");
-		return (DCMD_ERR);
-	}
-
-	smn_busno = DF_CFG_ADDR_CTL_GET_BUS_NUM(df_busctl);
-	if (!pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
-	    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR, sizeof (base_addr),
-	    base_addr)) {
-		mdb_warn("failed to write to IOHC SMN address register\n");
-		return (DCMD_ERR);
-	}
-
-	switch (rw) {
-	case SMN_RD:
-		res = pcicfg_read(smn_busno, AMDZEN_NB_SMN_DEVNO,
-		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
-		    SMN_REG_SIZE(reg), &smn_val);
-		break;
-	case SMN_WR:
-		res = pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
-		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
-		    SMN_REG_SIZE(reg), smn_val);
-		break;
-	default:
-		mdb_warn("internal error: unreachable SMN R/W type %d\n", rw);
-		return (DCMD_ERR);
-	}
-
-	if (!res) {
-		mdb_warn("failed to read from IOHC SMN data register\n");
-		return (DCMD_ERR);
+	ret = smn_rw_regdef(reg, sock, rw, &smn_val);
+	if (ret != DCMD_OK) {
+		return (ret);
 	}
 
 	if (rw == SMN_RD) {
-		mdb_printf("%lx\n", smn_val);
+		mdb_printf("%x\n", smn_val);
 	}
 
 	return (DCMD_OK);
+}
+
+static int
+rdmsn_regdef(const smn_reg_t reg, uint8_t sock, uint32_t *val)
+{
+	return (smn_rw_regdef(reg, sock, SMN_RD, val));
 }
 
 int
@@ -1036,4 +1074,355 @@ df_route_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	}
 
 	return (DCMD_OK);
+}
+
+/*
+ * Milan APOB walker. The APOB is placed at a specific physical address and is
+ * not currently preserved past the initial kboot_mmu.
+ */
+int
+apob_walk_init(mdb_walk_state_t *wsp)
+{
+	uint_t khat;
+	uint64_t apob_addr = MILAN_APOB_ADDR, start, end;
+	milan_apob_header_t hdr;
+	const uint8_t milan_apob_sig[4] = { 'A', 'P', 'O', 'B' };
+
+	if (mdb_readvar(&khat, "khat_running") != sizeof (khat)) {
+		mdb_warn("failed to read khat_running");
+		return (WALK_ERR);
+	}
+
+	if (khat != 0) {
+		mdb_warn("khat is running, no APOB for you\n");
+		return (WALK_ERR);
+	}
+
+	if (wsp->walk_addr != 0) {
+		apob_addr = wsp->walk_addr;
+	}
+
+	if (mdb_pread(&hdr, sizeof (hdr), apob_addr) != sizeof (hdr)) {
+		mdb_warn("failed to read APOB header at 0x%lx", apob_addr);
+		return (WALK_ERR);
+	}
+
+	if (hdr.mah_sig[0] != milan_apob_sig[0] ||
+	    hdr.mah_sig[1] != milan_apob_sig[1] ||
+	    hdr.mah_sig[2] != milan_apob_sig[2] ||
+	    hdr.mah_sig[3] != milan_apob_sig[3]) {
+		mdb_warn("Bad APOB signature, found 0x%x 0x%x 0x%x 0x%x\n",
+		    hdr.mah_sig[0], hdr.mah_sig[1], hdr.mah_sig[2],
+		    hdr.mah_sig[3]);
+		return (WALK_ERR);
+	}
+
+	start = apob_addr + hdr.mah_off;
+	end = apob_addr + hdr.mah_size;
+	wsp->walk_data = (void *)end;
+	wsp->walk_addr = start;
+
+	return (WALK_NEXT);
+}
+
+int
+apob_walk_step(mdb_walk_state_t *wsp)
+{
+	uint64_t addr = wsp->walk_addr;
+	uint64_t limit = (uint64_t)wsp->walk_data;
+	milan_apob_entry_t entry;
+	int ret;
+
+	if (addr + sizeof (milan_apob_entry_t) >= limit) {
+		return (WALK_DONE);
+	}
+
+	if (mdb_pread(&entry, sizeof (entry), addr) != sizeof (entry)) {
+		mdb_warn("failed to read APOB entry at 0x%lx", addr);
+		return (WALK_ERR);
+	}
+
+	if (entry.mae_size < sizeof (milan_apob_entry_t)) {
+		mdb_warn("APOB entry at 0x%lx is smaller than the size of "
+		    "the APOB entry structure, found 0x%x bytes\n", addr,
+		    entry.mae_size);
+		return (WALK_ERR);
+	}
+
+	if (addr + entry.mae_size > limit) {
+		mdb_warn("APOB entry at 0x%x with size 0x%x extends beyond "
+		    "limit address 0x%x\n", addr, entry.mae_size, limit);
+		return (WALK_ERR);
+	}
+
+	ret = wsp->walk_callback(addr, &entry, wsp->walk_cbdata);
+	if (ret != WALK_NEXT) {
+		return (ret);
+	}
+
+	wsp->walk_addr += entry.mae_size;
+	return (WALK_NEXT);
+}
+
+static const char *apobhelp =
+"Walk the APOB and print all entries that match the specified group and\n"
+"type IDs. Both of these are required and will print all instances that\n"
+"match right now. The following options are supported:\n"
+"\n"
+"  -g group	Search for items that match the specified group\n"
+"  -t type	Search for items that match the specified type\n";
+
+void
+apob_dcmd_help(void)
+{
+	mdb_printf(apobhelp);
+}
+
+typedef struct apoc_dcmd_data {
+	uintptr_t add_group;
+	uintptr_t add_type;
+} apob_dcmd_data_t;
+
+static int
+apob_dcmd_cb(uintptr_t addr, const void *apob, void *arg)
+{
+	const milan_apob_entry_t *ent = apob;
+	const apob_dcmd_data_t *data = arg;
+
+	if (ent->mae_group == data->add_group &&
+	    ent->mae_type == data->add_type) {
+		mdb_printf("0x%lx\n", addr);
+	}
+
+	return (WALK_NEXT);
+}
+
+int
+apob_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	apob_dcmd_data_t data = { 0 };
+	boolean_t group_set, type_set;
+
+	if (mdb_getopts(argc, argv,
+	    'g', MDB_OPT_UINTPTR_SET, &group_set, &data.add_group,
+	    't', MDB_OPT_UINTPTR_SET, &type_set, &data.add_type, NULL) !=
+	    argc) {
+		return (DCMD_USAGE);
+	}
+
+	if (!group_set || !type_set) {
+		mdb_warn("both -g and -t must be specified\n");
+		return (DCMD_USAGE);
+	}
+
+	return (mdb_walk("apob", apob_dcmd_cb, &data));
+}
+
+
+int
+pmuerr_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	milan_apob_entry_t ent;
+	milan_apob_pmu_tfi_t tfi;
+	uint64_t paddr;
+	const size_t need = sizeof (milan_apob_entry_t) +
+	    sizeof (milan_apob_pmu_tfi_t);
+
+	if (!(flags & DCMD_ADDRSPEC))
+		return (DCMD_USAGE);
+
+	if (mdb_pread(&ent, sizeof (ent), addr) != sizeof (ent)) {
+		mdb_warn("failed to read APOB entry 0x%lx", addr);
+		return (DCMD_ERR);
+	}
+
+	if (ent.mae_group != MILAN_APOB_GROUP_MEMORY ||
+	    ent.mae_type != MILAN_APOB_MEMORY_PMU_TRAIN_FAIL) {
+		mdb_warn("APOB entry at 0x%lx does not have PMU Training "
+		    "Failure data group/type 0x%x/0x%x, found 0x%x/0x%x\n",
+		    addr, MILAN_APOB_GROUP_MEMORY,
+		    MILAN_APOB_MEMORY_PMU_TRAIN_FAIL, ent.mae_group,
+		    ent.mae_type);
+		return (DCMD_ERR);
+	}
+
+	if (ent.mae_size < need) {
+		mdb_warn("APOB entry at 0x%lx is not large enough to contain "
+		    "the expected training data size, found 0x%lx bytes, "
+		    "needed 0x%lx", addr, ent.mae_size, need);
+		return (DCMD_ERR);
+	}
+
+	paddr = addr + offsetof(milan_apob_entry_t, mae_data);
+	if (mdb_pread(&tfi, sizeof (tfi), paddr) != sizeof (tfi)) {
+		mdb_warn("failed to read PMU trainig data");
+		return (DCMD_ERR);
+	}
+
+	if (tfi.mapt_nvalid == 0) {
+		mdb_printf("No PMU failure entries. Either MBIST wasn't "
+		    "enabled or the system is clean\n");
+		return (DCMD_OK);
+	}
+
+	if (tfi.mapt_nvalid > ARRAY_SIZE(tfi.mapt_ents)) {
+		mdb_warn("structure claims %u valid events, but only "
+		    "%u are possible, limiting to %u\n", tfi.mapt_nvalid,
+		    ARRAY_SIZE(tfi.mapt_ents), ARRAY_SIZE(tfi.mapt_ents));
+		tfi.mapt_nvalid = ARRAY_SIZE(tfi.mapt_ents);
+	}
+
+	if (DCMD_HDRSPEC(flags)) {
+		mdb_printf("SOCK UMC   xD ATTEMPT STAGE ERROR      DATA\n");
+	}
+
+	for (uint32_t i = 0; i < tfi.mapt_nvalid; i++) {
+		const milan_apob_tfi_ent_t *ent = &tfi.mapt_ents[i];
+		const char *sp3chan = milan_chan_map[ent->mapte_umc];
+
+		mdb_printf("%-4u %-1u (%s) %-1uD %-7u %-5u 0x%-08x 0x%x 0x%x "
+		    "0x%x 0x%x\n", ent->mapte_sock, ent->mapte_umc, sp3chan,
+		    ent->mapte_1d2d + 1, ent->mapte_1dnum, ent->mapte_stage,
+		    ent->mapte_error, ent->mapte_data[0], ent->mapte_data[1],
+		    ent->mapte_data[2], ent->mapte_data[3]);
+	}
+
+	return (DCMD_OK);
+}
+
+static const char *dimmhelp =
+"Print a summary of DRAM training for each channel on the SoC. This uses the\n"
+"UMC::CH::UmcConfig Ready bit to determine whether or not the channel\n"
+"trained. Separately, there is a column indicating whether there is a DIMM\n"
+"installed in each location in the channel. A 1 DPC system will always show\n"
+"DIMM 1 missing. The following columns will be output:\n"
+"\n"
+"CHAN:\t\tIndicates the socket and board channel letter\n"
+"UMC:\t\tIndicates the UMC instance\n"
+"TRAIN:\tIndicates whether or not training completed successfully\n"
+"DIMM 0:\tIndicates whether DIMM 0 in the channel is present\n"
+"DIMM 1:\tIndicates whether DIMM 0 in the channel is present\n";
+
+
+void
+dimm_report_dcmd_help(void)
+{
+	mdb_printf(dimmhelp);
+}
+
+/*
+ * Check both the primary and secondary base address values to see if an enable
+ * flags is present. DIMM 0 uses chip selects 0/1 and DIMM 1 uses chip selects
+ * 2/3.
+ */
+static int
+dimm_report_dimm_present(uint8_t sock, uint8_t umcno, uint8_t dimm,
+    boolean_t *pres)
+{
+	int ret;
+	uint32_t base0, base1, sec0, sec1;
+	uint8_t cs0 = dimm * 2;
+	uint8_t cs1 = dimm * 2 + 1;
+	smn_reg_t base0_reg = UMC_BASE(umcno, cs0);
+	smn_reg_t base1_reg = UMC_BASE(umcno, cs1);
+	smn_reg_t sec0_reg = UMC_BASE_SEC(umcno, cs0);
+	smn_reg_t sec1_reg = UMC_BASE_SEC(umcno, cs1);
+
+	if ((ret = rdmsn_regdef(base0_reg, sock, &base0)) != DCMD_OK ||
+	    (ret = rdmsn_regdef(base1_reg, sock, &base1)) != DCMD_OK ||
+	    (ret = rdmsn_regdef(sec0_reg, sock, &sec0)) != DCMD_OK ||
+	    (ret = rdmsn_regdef(sec1_reg, sock, &sec1)) != DCMD_OK) {
+		return (ret);
+	}
+
+	*pres = UMC_BASE_GET_EN(base0) != 0 || UMC_BASE_GET_EN(base1) != 0 ||
+	    UMC_BASE_GET_EN(sec0) != 0 || UMC_BASE_GET_EN(sec1) != 0;
+	return (DCMD_OK);
+}
+
+/*
+ * Output in board order, not UMC order (hence umc_order[] below) a summary of
+ * training information for each DRAM channel.
+ */
+static int
+dimm_report_dcmd_sock(uint8_t sock)
+{
+	const uint8_t umc_order[8] = { 0, 1, 3, 2, 6, 7, 5, 4 };
+
+	for (size_t i = 0; i < ARRAY_SIZE(umc_order); i++) {
+		const uint8_t umcno = umc_order[i];
+		const char *brdchan = milan_chan_map[umcno];
+		int ret;
+		boolean_t train, dimm0, dimm1;
+
+		smn_reg_t umccfg_reg = UMC_UMCCFG(umcno);
+		uint32_t umccfg;
+
+		ret = rdmsn_regdef(umccfg_reg, sock, &umccfg);
+		if (ret != DCMD_OK) {
+			return (ret);
+		}
+		train = UMC_UMCCFG_GET_READY(umccfg);
+
+		ret = dimm_report_dimm_present(sock, umcno, 0, &dimm0);
+		if (ret != DCMD_OK) {
+			mdb_warn("failed to read UMC %u DIMM 0 presence\n",
+			    umcno);
+			return (DCMD_ERR);
+		}
+
+		ret = dimm_report_dimm_present(sock, umcno, 1, &dimm1);
+		if (ret != DCMD_OK) {
+			mdb_warn("failed to read UMC %u DIMM 1 presence\n",
+			    umcno);
+			return (DCMD_ERR);
+		}
+
+		mdb_printf("%u/%s\t%u\t%s\t%s\t%s\n", sock, brdchan, umcno,
+		    train ? "yes" : "no", dimm0 ? "present" : "missing",
+		    dimm1 ? "present" : "missing");
+	}
+
+	return (DCMD_OK);
+}
+
+/*
+ * Report DIMM presence and DRAM channel readiness, which is a proxy for
+ * training having completed.
+ */
+int
+dimm_report_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	int ret;
+	uint32_t val;
+
+	if ((flags & DCMD_ADDRSPEC) != 0) {
+		mdb_warn("::dimm_report does not support addresses\n");
+		return (DCMD_USAGE);
+	}
+
+	if (DCMD_HDRSPEC(flags)) {
+		mdb_printf("CHAN\tUMC\tTRAIN\tDIMM 0\tDIMM 1\n");
+	}
+
+	ret = dimm_report_dcmd_sock(0);
+	if (ret != DCMD_OK) {
+		return (ret);
+	}
+
+	/*
+	 * Attempt to read a DF entry to see if the other socket is present as a
+	 * proxy.
+	 */
+	if (!df_read32(1, DF_CFG_ADDR_CTL_V2, &val)) {
+		mdb_warn("failed to read DF config address\n");
+		return (DCMD_ERR);
+	}
+
+	if (val != PCI_EINVAL32) {
+		ret = dimm_report_dcmd_sock(1);
+
+	}
+
+	return (ret);
 }
