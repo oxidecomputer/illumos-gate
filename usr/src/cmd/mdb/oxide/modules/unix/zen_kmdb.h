@@ -48,6 +48,8 @@ extern int apob_walk_step(mdb_walk_state_t *);
 extern void apob_dcmd_help(void);
 extern int apob_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 extern int pmuerr_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void apob_event_dcmd_help(void);
+extern int apob_event_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 extern void dimm_report_dcmd_help(void);
 extern int dimm_report_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);

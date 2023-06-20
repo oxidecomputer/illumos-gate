@@ -1218,45 +1218,54 @@ apob_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	return (mdb_walk("apob", apob_dcmd_cb, &data));
 }
 
-
-int
-pmuerr_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+static int
+apob_read_entry(uintptr_t addr, milan_apob_group_t group, uint32_t type,
+    void *data, size_t data_size)
 {
 	milan_apob_entry_t ent;
-	milan_apob_pmu_tfi_t tfi;
 	uint64_t paddr;
-	const size_t need = sizeof (milan_apob_entry_t) +
-	    sizeof (milan_apob_pmu_tfi_t);
-
-	if (!(flags & DCMD_ADDRSPEC))
-		return (DCMD_USAGE);
+	const size_t need = sizeof (milan_apob_entry_t) + data_size;
 
 	if (mdb_pread(&ent, sizeof (ent), addr) != sizeof (ent)) {
 		mdb_warn("failed to read APOB entry 0x%lx", addr);
 		return (DCMD_ERR);
 	}
 
-	if (ent.mae_group != MILAN_APOB_GROUP_MEMORY ||
-	    ent.mae_type != MILAN_APOB_MEMORY_PMU_TRAIN_FAIL) {
-		mdb_warn("APOB entry at 0x%lx does not have PMU Training "
-		    "Failure data group/type 0x%x/0x%x, found 0x%x/0x%x\n",
-		    addr, MILAN_APOB_GROUP_MEMORY,
-		    MILAN_APOB_MEMORY_PMU_TRAIN_FAIL, ent.mae_group,
-		    ent.mae_type);
+	if (ent.mae_group != group || ent.mae_type != type) {
+		mdb_warn("APOB entry at 0x%lx does not have the expected APOB "
+		    "data group/type 0x%x/0x%x: found 0x%x/0x%x\n",
+		    addr, group, type, ent.mae_group, ent.mae_type);
 		return (DCMD_ERR);
 	}
 
 	if (ent.mae_size < need) {
 		mdb_warn("APOB entry at 0x%lx is not large enough to contain "
-		    "the expected training data size, found 0x%lx bytes, "
-		    "needed 0x%lx", addr, ent.mae_size, need);
+		    "the expected data size, found 0x%lx bytes, needed 0x%lx",
+		    addr, ent.mae_size, need);
 		return (DCMD_ERR);
 	}
 
 	paddr = addr + offsetof(milan_apob_entry_t, mae_data);
-	if (mdb_pread(&tfi, sizeof (tfi), paddr) != sizeof (tfi)) {
+	if (mdb_pread(data, data_size, paddr) != data_size) {
 		mdb_warn("failed to read PMU trainig data");
 		return (DCMD_ERR);
+	}
+
+	return (DCMD_OK);
+}
+
+int
+pmuerr_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	int ret;
+	milan_apob_pmu_tfi_t tfi;
+
+	if (!(flags & DCMD_ADDRSPEC))
+		return (DCMD_USAGE);
+
+	if ((ret = apob_read_entry(addr, MILAN_APOB_GROUP_MEMORY,
+	    MILAN_APOB_MEMORY_PMU_TRAIN_FAIL, &tfi, sizeof (tfi))) != DCMD_OK) {
+		return (ret);
 	}
 
 	if (tfi.mapt_nvalid == 0) {
@@ -1272,10 +1281,6 @@ pmuerr_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		tfi.mapt_nvalid = ARRAY_SIZE(tfi.mapt_ents);
 	}
 
-	if (DCMD_HDRSPEC(flags)) {
-		mdb_printf("SOCK UMC   xD ATTEMPT STAGE ERROR      DATA\n");
-	}
-
 	for (uint32_t i = 0; i < tfi.mapt_nvalid; i++) {
 		const milan_apob_tfi_ent_t *ent = &tfi.mapt_ents[i];
 		const char *sp3chan = milan_chan_map[ent->mapte_umc];
@@ -1285,6 +1290,140 @@ pmuerr_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		    ent->mapte_1d2d + 1, ent->mapte_1dnum, ent->mapte_stage,
 		    ent->mapte_error, ent->mapte_data[0], ent->mapte_data[1],
 		    ent->mapte_data[2], ent->mapte_data[3]);
+	}
+
+	return (DCMD_OK);
+}
+
+static const char *apob_eventhelp =
+"Decode the APOB Event log. This breaks out each event that occurs and\n"
+"where understood, decodes the class, event, and data. If the data is well\n"
+"understood, then it will be further decoded. Data is represented as\n"
+"tree-like to show the relationship between entities.\n";
+
+void
+apob_event_dcmd_help(void)
+{
+	mdb_printf(apob_eventhelp);
+}
+
+static const char *
+apob_event_class_to_name(uint32_t class)
+{
+	switch (class) {
+	case MILAN_APOB_EVC_ALERT:
+		return ("alert");
+	case MILAN_APOB_EVC_WARN:
+		return ("warning");
+	case MILAN_APOB_EVC_ERROR:
+		return ("error");
+	case MILAN_APOB_EVC_CRIT:
+		return ("critical");
+	case MILAN_APOB_EVC_FATAL:
+		return ("fatal");
+	default:
+		return ("unknown");
+	}
+}
+
+static const char *
+apob_event_info_to_name(uint32_t info)
+{
+	switch (info) {
+	case APOB_EVENT_TRAIN_ERROR:
+		return ("training error");
+	default:
+		return ("unknown event");
+	}
+}
+
+static void
+apob_event_dcmd_print_train(uint32_t data0, uint32_t data1)
+{
+	const uint32_t sock = APOB_EVENT_TRAIN_ERROR_GET_SOCK(data0);
+	const uint32_t chan = APOB_EVENT_TRAIN_ERROR_GET_CHAN(data0);
+	const char *bchan = chan > ARRAY_SIZE(milan_chan_map) ?
+	    "unknown" : milan_chan_map[chan];
+
+	if (APOB_EVENT_TRAIN_ERROR_GET_PMULOAD(data1) != 0) {
+		mdb_printf("    PMU Firmware Loading Error\n");
+	}
+
+	if (APOB_EVENT_TRAIN_ERROR_GET_PMUTRAIN(data1) != 0) {
+		mdb_printf("    PMU Training Error\n");
+	}
+
+	mdb_printf("    Socket: %u\n", sock);
+	mdb_printf("    UMC:    %u (%s)\n", chan, bchan);
+	mdb_printf("    DIMMs: ");
+	if (APOB_EVENT_TRAIN_ERROR_GET_DIMM0(data0) != 0) {
+		mdb_printf(" 0");
+	}
+
+	if (APOB_EVENT_TRAIN_ERROR_GET_DIMM1(data0) != 0) {
+		mdb_printf(" 1");
+	}
+
+	mdb_printf("\n    RANKs: ");
+	if (APOB_EVENT_TRAIN_ERROR_GET_RANK0(data0) != 0) {
+		mdb_printf(" 0");
+	}
+
+	if (APOB_EVENT_TRAIN_ERROR_GET_RANK1(data0) != 0) {
+		mdb_printf(" 1");
+	}
+
+	if (APOB_EVENT_TRAIN_ERROR_GET_RANK2(data0) != 0) {
+		mdb_printf(" 2");
+	}
+
+	if (APOB_EVENT_TRAIN_ERROR_GET_RANK3(data0) != 0) {
+		mdb_printf(" 3");
+	}
+	mdb_printf("\n");
+}
+
+int
+apob_event_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	int ret;
+	milan_apob_event_log_t log;
+
+	if (!(flags & DCMD_ADDRSPEC))
+		return (DCMD_USAGE);
+
+	if ((ret = apob_read_entry(addr, MILAN_APOB_GROUP_GENERAL,
+	    MILAN_APOB_GEN_EVENT_LOG, &log, sizeof (log))) != DCMD_OK) {
+		return (DCMD_ERR);
+	}
+
+	if (log.mevl_count > ARRAY_SIZE(log.mevl_events)) {
+		mdb_warn("structure claims %u valid events, but only "
+		    "%u are possible, limiting to %u\n", log.mevl_count,
+		    ARRAY_SIZE(log.mevl_events), ARRAY_SIZE(log.mevl_events));
+		log.mevl_count = ARRAY_SIZE(log.mevl_events);
+	}
+
+	for (uint16_t i = 0; i < log.mevl_count; i++) {
+		const milan_apob_event_t *event = &log.mevl_events[i];
+
+		mdb_printf("EVENT %u\n", i);
+		mdb_printf("  CLASS: %s (0x%x)\n",
+		    apob_event_class_to_name(event->mev_class),
+		    event->mev_class);
+		mdb_printf("  EVENT: %s (0x%x)\n",
+		    apob_event_info_to_name(event->mev_info), event->mev_info);
+		mdb_printf("  DATA:  0x%x 0x%x\n", event->mev_data0,
+		    event->mev_data1);
+
+		switch (event->mev_info) {
+		case APOB_EVENT_TRAIN_ERROR:
+			apob_event_dcmd_print_train(event->mev_data0,
+			    event->mev_data1);
+			break;
+		default:
+			break;
+		}
 	}
 
 	return (DCMD_OK);

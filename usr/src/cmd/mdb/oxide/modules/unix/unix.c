@@ -1022,6 +1022,8 @@ static const mdb_dcmd_t dcmds[] = {
 #ifdef _KMDB
 	{ "apob", "-g group -t type", "find APOB entry", apob_dcmd,
 	    apob_dcmd_help },
+	{ "apob_event", ":", "decode the APOB event log", apob_event_dcmd,
+	    apob_event_dcmd_help },
 	{ "dimm_report", "", "Summarize DRAM training and DIMMs",
 	    dimm_report_dcmd, dimm_report_dcmd_help },
 	{ "df_route", "-b | -d | -I | -m  [-i func] [-s socket]", "print df "
