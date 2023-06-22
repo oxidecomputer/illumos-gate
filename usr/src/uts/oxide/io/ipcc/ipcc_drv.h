@@ -62,8 +62,8 @@ typedef struct ipcc_stats {
 #define	IPCC_PROP_PATH			"path"
 #define	IPCC_PROP_SP_INTR_PATH		"sp-intr-path"
 
-#define	LDI_FLAGS		(FEXCL | FREAD | FWRITE)
-#define	LDI_SP_INTR_FLAGS	(FEXCL | FREAD)
+#define	LDI_FLAGS		(FEXCL | FREAD | FWRITE | FNOCTTY)
+#define	LDI_SP_INTR_FLAGS	(FEXCL | FREAD | FNOCTTY)
 
 #ifdef	__cplusplus
 }

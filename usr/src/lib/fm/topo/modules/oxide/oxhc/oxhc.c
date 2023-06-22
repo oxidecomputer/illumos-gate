@@ -591,7 +591,6 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 	}
 
 	if (ioctl(fd, IPCC_IDENT, &ident) != 0) {
-		(void) close(fd);
 		topo_mod_dprintf(mod, "failed to get ident via IPCC: %s\n",
 		    strerror(errno));
 		goto out;
@@ -632,7 +631,7 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 	if (oxhc->oxhc_enum == NULL || oxhc->oxhc_nenum == 0) {
 		topo_mod_dprintf(mod, "failed to get topo enum entries for pn "
 		    "%s\n", oxhc->oxhc_pn);
-		return (-1);
+		goto out;
 	}
 
 	/*
