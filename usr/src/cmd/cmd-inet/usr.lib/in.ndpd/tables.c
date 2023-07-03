@@ -467,7 +467,6 @@ error:
 
 /*
  * Delete (unlink and free).
- * Handles delete of things that have not yet been inserted in the list.
  */
 void
 phyint_delete(struct phyint *pi)

@@ -19,7 +19,7 @@
  * CDDL HEADER END
  *
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include "defs.h"
@@ -1874,10 +1874,10 @@ check_if_removed(struct phyint *pi)
 		}
 
 		/*
-		 * Clear state so that should the phyint reappear we will
-		 * start with initial advertisements or solicitations.
+		 * Clear state by deleting the phyint object so that if the
+		 * interface reappears we reinitialize it completely.
 		 */
-		phyint_cleanup(pi);
+		phyint_delete(pi);
 	}
 }
 
