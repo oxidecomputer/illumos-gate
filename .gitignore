@@ -5355,7 +5355,6 @@ usr/src/man/man3ext/rd_reset.3ext
 usr/src/man/man3ext/run_crypt.3ext
 usr/src/man/man3ext/run_setkey.3ext
 usr/src/man/man3ext/setkey.3ext
-usr/src/man/man3ext/tsalarm_set.3ext
 usr/src/man/man3ext/write_vtoc.3ext
 usr/src/man/man3fstyp/fstyp_fini.3fstyp
 usr/src/man/man3fstyp/fstyp_mod_dump.3fstyp
@@ -8559,10 +8558,12 @@ usr/src/pkg/license-list
 usr/src/pkg/packages.i386/
 usr/src/pkg/proto_list_i386
 usr/src/test/bhyve-tests/tests/inst_emul/cpuid
+usr/src/test/bhyve-tests/tests/inst_emul/exit_consistent
 usr/src/test/bhyve-tests/tests/inst_emul/exit_paging
 usr/src/test/bhyve-tests/tests/inst_emul/imul
 usr/src/test/bhyve-tests/tests/inst_emul/page_dirty
 usr/src/test/bhyve-tests/tests/inst_emul/payload_cpuid
+usr/src/test/bhyve-tests/tests/inst_emul/payload_exit_consistent
 usr/src/test/bhyve-tests/tests/inst_emul/payload_exit_paging
 usr/src/test/bhyve-tests/tests/inst_emul/payload_imul
 usr/src/test/bhyve-tests/tests/inst_emul/payload_page_dirty
@@ -8570,6 +8571,7 @@ usr/src/test/bhyve-tests/tests/inst_emul/payload_rdmsr
 usr/src/test/bhyve-tests/tests/inst_emul/payload_triple_fault
 usr/src/test/bhyve-tests/tests/inst_emul/payload_wrmsr
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_cpuid.s
+usr/src/test/bhyve-tests/tests/inst_emul/pobj_exit_consistent.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_exit_paging.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_imul.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_page_dirty.s
