@@ -321,14 +321,6 @@ fail1:
 
 /*
  * Copy in a bf_dma_bus_map_t structure from the userspace daemon.
- * Verify that the structure describes a range of memory that is both aligned
- * and sized to be mapped by large pages.
- *
- * XXX: the requirement that the daemon use large pages comes from Intel's
- * original Linux code.  I haven't yet come across any place where it
- * actually seems to be necessary, but I also haven't studied their driver
- * code in any detail.  It's definitely worth experimenting with allowing
- * small pages here as well.
  */
 static int
 tofino_dma_copyin(intptr_t arg, int mode, bf_dma_bus_map_t *dbm)
@@ -336,14 +328,6 @@ tofino_dma_copyin(intptr_t arg, int mode, bf_dma_bus_map_t *dbm)
 	if (ddi_copyin((void *)(uintptr_t)arg, dbm, sizeof (bf_dma_bus_map_t),
 	    mode) != 0) {
 		return (EFAULT);
-	}
-
-	/*
-	 * We expect/require the daemon to use only large pages.
-	 */
-	if ((dbm->size != TF_DMA_PGSIZE) ||
-	    (((uintptr_t)dbm->va & TF_DMA_PGMASK) != 0)) {
-		return (EINVAL);
 	}
 
 	return (0);

@@ -28,7 +28,7 @@ extern "C" {
  * version change as well.
  */
 #define	TOFINO_DRIVER_MAJOR	1
-#define	TOFINO_DRIVER_MINOR	0
+#define	TOFINO_DRIVER_MINOR	1
 #define	TOFINO_DRIVER_PATCH	0
 
 #define	TOFINO_VENDID		0x1d1c
@@ -93,10 +93,6 @@ typedef struct tofino_tbus_client {
 	void			*tbc_intr_arg;
 	boolean_t		tbc_intr_busy;
 } tofino_tbus_client_t;
-
-// We always use 2MB pages for Tofino DMA ranges
-#define	TF_DMA_PGSIZE	(1 << 21)
-#define	TF_DMA_PGMASK	((1 << 21) - 1)
 
 extern ddi_dma_attr_t tofino_dma_attr;
 
