@@ -23,6 +23,7 @@
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014 by Delphix. All rights reserved.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/types.h>
@@ -1344,6 +1345,12 @@ htable_attach(
 
 	/*
 	 * Count valid mappings and recursively attach lower level pagetables.
+	 * We also need to count this mapping in the hat; this code is part of
+	 * building up the kernel hat and *page* mappings need to be counted
+	 * within the hat.  Note that this is distinct from the htable count of
+	 * valid PTEs, which includes PTPs as well as pages.  If we don't count
+	 * these mappings, htable_walk() below may decide to overlook large or
+	 * huge page mappings and confuse callers.
 	 */
 	ptep = kbm_remap_window(pfn_to_pa(pfn), 0);
 	for (i = 0; i < HTABLE_NUM_PTES(ht); ++i) {
@@ -1353,7 +1360,9 @@ htable_attach(
 			pte = ((x86pte32_t *)ptep)[i];
 		if (!IN_HYPERVISOR_VA(base) && PTE_ISVALID(pte)) {
 			++ht->ht_valid_cnt;
-			if (!PTE_ISPAGE(pte, level)) {
+			if (PTE_ISPAGE(pte, level)) {
+				PGCNT_INC(hat, level)
+			} else {
 				htable_attach(hat, base, level - 1,
 				    ht, PTE2PFN(pte, level));
 				ptep = kbm_remap_window(pfn_to_pa(pfn), 0);
