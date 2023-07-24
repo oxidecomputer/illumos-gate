@@ -396,6 +396,72 @@ ipcc_image(int argc, char *argv[])
 }
 
 static void
+ipcc_inventory_usage(FILE *f)
+{
+	(void) fprintf(f, "\tinventory <index>\n");
+}
+
+static const char *
+ipcc_inventory_status2str(uint8_t res)
+{
+	switch (res) {
+	case IPCC_INVENTORY_SUCCESS:
+		return ("success");
+	case IPCC_INVENTORY_INVALID_INDEX:
+		return ("invalid index");
+	case IPCC_INVENTORY_IO_DEV_MISSING:
+		return ("I/O error -- device gone?");
+	case IPCC_INVENTORY_IO_ERROR:
+		return ("I/O error");
+	default:
+		return ("unknown");
+	}
+}
+
+static int
+ipcc_inventory(int argc, char *argv[])
+{
+	ipcc_inventory_t inv;
+	const char *errstr;
+
+	if (argc != 1)
+		errx(EXIT_USAGE, "inventory <index>\n");
+
+	inv.iinv_idx = (uint32_t)strtonum(argv[0], 0, UINT32_MAX, &errstr);
+	if (errstr != NULL) {
+		errx(EXIT_FAILURE, "inventory index is %s (range 0-%u): %s",
+		    errstr, UINT32_MAX, argv[0]);
+	}
+	if (ioctl(ipcc_fd, IPCC_INVENTORY, &inv) < 0)
+		err(EXIT_FAILURE, "IPCC_INVENTORY ioctl failed");
+
+	switch (inv.iinv_res) {
+	case IPCC_INVENTORY_SUCCESS:
+	case IPCC_INVENTORY_IO_DEV_MISSING:
+	case IPCC_INVENTORY_IO_ERROR:
+		(void) printf("%s (%u) -- Result: %u [%s]\n", inv.iinv_name,
+		    inv.iinv_idx, inv.iinv_res,
+		    ipcc_inventory_status2str(inv.iinv_res));
+		break;
+	case IPCC_INVENTORY_INVALID_INDEX:
+	default:
+		(void) printf("unknown (%u) -- Result %u [%s]\n", inv.iinv_idx,
+		    inv.iinv_res, ipcc_inventory_status2str(inv.iinv_res));
+		return (0);
+	}
+
+	if (inv.iinv_res != IPCC_INVENTORY_SUCCESS)
+		return (0);
+	(void) printf("Type %u, Payload: %u bytes\n", inv.iinv_type,
+	    inv.iinv_data_len);
+	if (inv.iinv_data_len > 0) {
+		hexdump(inv.iinv_data, inv.iinv_data_len);
+	}
+
+	return (0);
+}
+
+static void
 ipcc_keylookup_usage(FILE *f)
 {
 	(void) fprintf(f, "\tkeylookup <key> <buflen>\n");
@@ -560,6 +626,7 @@ ipcc_version(int argc, char *argv[])
 static const ipcc_cmdtab_t ipcc_cmds[] = {
 	{ "ident", ipcc_ident, NULL },
 	{ "image", ipcc_image, ipcc_image_usage },
+	{ "inventory", ipcc_inventory, ipcc_inventory_usage },
 	{ "keylookup", ipcc_keylookup, ipcc_keylookup_usage },
 	{ "macs", ipcc_macs, ipcc_macs_usage },
 	{ "status", ipcc_status, NULL },

@@ -698,6 +698,33 @@ imageblock_done:
 		ipcc_release_channel(&ipcc_ops, &ipcc, true);
 		break;
 	}
+	case IPCC_INVENTORY: {
+		ipcc_inventory_t *inv;
+
+		BUMP_STAT(ioctl_inventory);
+
+		inv = kmem_zalloc(sizeof (*inv), KM_NOSLEEP_LAZY);
+		if (inv == NULL) {
+			err = ENOMEM;
+			break;
+		}
+
+		if (ddi_copyin(datap, inv, offsetof(ipcc_inventory_t,
+		    iinv_res), cflag) != 0) {
+			err = EFAULT;
+			goto inventory_done;
+		}
+
+		err = ipcc_inventory(&ipcc_ops, &ipcc, inv);
+		if (err != 0)
+			goto inventory_done;
+
+		if (ddi_copyout(inv, datap, sizeof (*inv), cflag) != 0)
+			err = EFAULT;
+inventory_done:
+		kmem_free(inv, sizeof (*inv));
+		break;
+	}
 	default:
 		BUMP_STAT(ioctl_unknown);
 		err = ENOTTY;
@@ -794,6 +821,8 @@ ipcc_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	kstat_named_init(&ipcc_stat->ioctl_keylookup, "total_keylookup_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_rot, "total_rot_req",
+	    KSTAT_DATA_UINT64);
+	kstat_named_init(&ipcc_stat->ioctl_inventory, "total_inventory_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_unknown, "total_unknown_req",
 	    KSTAT_DATA_UINT64);

@@ -54,6 +54,7 @@ typedef enum ipcc_hss_cmd {
 	IPCC_HSS_ADD_MEASUREMENTS,
 	IPCC_HSS_IMAGEBLOCK,
 	IPCC_HSS_KEYLOOKUP,
+	IPCC_HSS_INVENTORY
 } ipcc_hss_cmd_t;
 
 typedef enum ipcc_sp_cmd {
@@ -68,6 +69,7 @@ typedef enum ipcc_sp_cmd {
 	IPCC_SP_ROT,
 	IPCC_SP_IMAGEBLOCK,
 	IPCC_SP_KEYLOOKUP,
+	IPCC_SP_INVENTORY
 } ipcc_sp_cmd_t;
 
 typedef enum ipcc_sp_decode_failure {
@@ -156,6 +158,7 @@ extern int ipcc_status(const ipcc_ops_t *, void *, uint64_t *, uint64_t *);
 extern int ipcc_ackstart(const ipcc_ops_t *, void *);
 extern int ipcc_imageblock(const ipcc_ops_t *, void *, uint8_t *, uint64_t,
     uint8_t **, size_t *);
+extern int ipcc_inventory(const ipcc_ops_t *, void *, ipcc_inventory_t *);
 
 #ifdef __cplusplus
 }

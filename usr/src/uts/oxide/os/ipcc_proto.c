@@ -887,7 +887,7 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
 static int
 ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
     ipcc_hss_cmd_t cmd, ipcc_sp_cmd_t expected_rcmd,
-    uint8_t *dataout, size_t dataoutl,
+    const uint8_t *dataout, size_t dataoutl,
     uint8_t **datain, size_t *datainl)
 {
 	/* Sequence number for requests */
@@ -1560,4 +1560,99 @@ ipcc_imageblock(const ipcc_ops_t *ops, void *arg, uint8_t *hash,
 	*datal = 0;
 	return (ipcc_command_locked(ops, arg, IPCC_HSS_IMAGEBLOCK,
 	    IPCC_SP_IMAGEBLOCK, buf, off, data, datal));
+}
+
+/*
+ * Read inventory data about a specific inventory index.
+ *
+ * The minimum response that we are guaranteed is that where the result
+ * indicates an invalid index, in which case the only thing that'll be
+ * valid is the basic uint8_t result data. If we get any kind of
+ * communication failure, then we're also guaranteed that the 32-byte
+ * name field will be plugged in so we know what it was that failed.
+ *
+ * Only if we get a successful return value (IPCC_INVENTORY_SUCCESS) will we
+ * then be able to fill in the type field. Any remaining data becomes the actual
+ * data field.
+ */
+int
+ipcc_inventory(const ipcc_ops_t *ops, void *arg, ipcc_inventory_t *inv)
+{
+	size_t off, datal = 0;
+	uint8_t *data;
+	int err = 0;
+	bool do_full = false;
+
+	const size_t min = sizeof (inv->iinv_res);
+	const size_t min_name = min + sizeof (inv->iinv_name);
+	const size_t min_success = min_name + sizeof (inv->iinv_type);
+
+	bzero(inv->iinv_name, sizeof (inv->iinv_name));
+	bzero(inv->iinv_data, sizeof (inv->iinv_data_len));
+	inv->iinv_type = 0;
+	inv->iinv_data_len = 0;
+
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+
+	off = sizeof (inv->iinv_idx);
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_INVENTORY,
+	    IPCC_SP_INVENTORY, (uint8_t *)&inv->iinv_idx, off, &data, &datal);
+	if (err != 0)
+		goto out;
+
+	if (datal < min) {
+		LOG("Short inventory initial reply - got 0x%lx bytes\n", datal);
+		err = EIO;
+		goto out;
+	}
+
+	off = 0;
+	ipcc_decode_bytes(&inv->iinv_res, sizeof (inv->iinv_res), data, &off);
+	switch (inv->iinv_res) {
+	case IPCC_INVENTORY_SUCCESS:
+		do_full = true;
+		break;
+	case IPCC_INVENTORY_IO_DEV_MISSING:
+	case IPCC_INVENTORY_IO_ERROR:
+		break;
+	case IPCC_INVENTORY_INVALID_INDEX:
+	default:
+		goto out;
+	}
+
+	if (datal < min_name) {
+		LOG("Short inventory, missing name - got 0x%lx bytes\n", datal);
+		err = EIO;
+		goto out;
+	}
+
+	ipcc_decode_bytes(inv->iinv_name, sizeof (inv->iinv_name), data, &off);
+	inv->iinv_name[IPCC_INVENTORY_NAMELEN - 1] = '\0';
+	if (!do_full) {
+		goto out;
+	}
+
+	if (datal < min_success) {
+		LOG("Short inventory, missing type - got 0x%lx bytes\n", datal);
+		err = EIO;
+		goto out;
+	}
+
+	ipcc_decode_bytes(&inv->iinv_type, sizeof (inv->iinv_type), data, &off);
+	if (datal - off > sizeof (inv->iinv_data)) {
+		LOG("inventory data payload would overflow data buffer - got "
+		    "0x%lx bytes\n", datal);
+		err = EOVERFLOW;
+		goto out;
+	}
+
+	inv->iinv_data_len = datal - off;
+	if (inv->iinv_data_len == 0)
+		goto out;
+	ipcc_decode_bytes(inv->iinv_data, inv->iinv_data_len, data, &off);
+
+out:
+	ipcc_release_channel(ops, arg, true);
+	return (err);
 }

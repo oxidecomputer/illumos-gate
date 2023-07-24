@@ -37,6 +37,7 @@ extern "C" {
 #define	IPCC_KEYLOOKUP		(IPCC_IOC|4)
 #define	IPCC_ROT		(IPCC_IOC|5)
 #define	IPCC_IMAGEBLOCK		(IPCC_IOC|6)
+#define	IPCC_INVENTORY		(IPCC_IOC|7)
 
 /*
  * The minimum message size is a protocol detail that should be in
@@ -129,6 +130,22 @@ typedef struct ipcc_rot {
 	uint64_t	ir_len;
 	uint8_t		ir_data[IPCC_MAX_DATA_SIZE];
 } ipcc_rot_t;
+
+#define	IPCC_INVENTORY_NAMELEN	32
+
+#define	IPCC_INVENTORY_SUCCESS		0
+#define	IPCC_INVENTORY_INVALID_INDEX	1
+#define	IPCC_INVENTORY_IO_DEV_MISSING	2
+#define	IPCC_INVENTORY_IO_ERROR		3
+
+typedef struct ipcc_inventory {
+	uint32_t	iinv_idx;
+	uint8_t		iinv_res;
+	uint8_t		iinv_name[IPCC_INVENTORY_NAMELEN];
+	uint8_t		iinv_type;
+	uint16_t	iinv_data_len;
+	uint8_t		iinv_data[IPCC_MAX_DATA_SIZE];
+} ipcc_inventory_t;
 
 #ifdef __cplusplus
 }
