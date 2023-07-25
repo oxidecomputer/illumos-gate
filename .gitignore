@@ -8243,7 +8243,7 @@ usr/src/man/man9f/mac_prop_info_set_default_uint64.9f
 usr/src/man/man9f/mac_prop_info_set_default_uint8.9f
 usr/src/man/man9f/mac_prop_info_set_perm.9f
 usr/src/man/man9f/mac_prop_info_set_range_uint32.9f
-usr/src/man/man9f/mac_ring_rx.9f
+usr/src/man/man9f/mac_rx_ring.9f
 usr/src/man/man9f/mac_transceiver_info_set_present.9f
 usr/src/man/man9f/mac_transceiver_info_set_usable.9f
 usr/src/man/man9f/mac_tx_ring_update.9f
@@ -8630,6 +8630,7 @@ usr/src/test/bhyve-tests/tests/vmm/fpu_getset
 usr/src/test/bhyve-tests/tests/vmm/import_vlapic
 usr/src/test/bhyve-tests/tests/vmm/interface_version
 usr/src/test/bhyve-tests/tests/vmm/legacy_destruct
+usr/src/test/bhyve-tests/tests/vmm/maxcpu
 usr/src/test/bhyve-tests/tests/vmm/mem_devmem
 usr/src/test/bhyve-tests/tests/vmm/mem_partial
 usr/src/test/bhyve-tests/tests/vmm/mem_seg_map
@@ -9098,9 +9099,9 @@ usr/src/tools/ndrgen/ndrgen
 usr/src/tools/ndrgen/ndrgen1
 usr/src/tools/ndrgen/y.tab.c
 usr/src/tools/ndrgen/y.tab.h
-usr/src/tools/onbld/Checks/py3/python3.9/
-usr/src/tools/onbld/Scm/py3/python3.9/
-usr/src/tools/onbld/py3/python3.9/
+usr/src/tools/onbld/Checks/py3/python3.11/
+usr/src/tools/onbld/Scm/py3/python3.11/
+usr/src/tools/onbld/py3/python3.11/
 usr/src/tools/proto/
 usr/src/tools/protocmp/protocmp
 usr/src/tools/protolist/protolist
