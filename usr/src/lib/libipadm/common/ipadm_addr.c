@@ -25,6 +25,7 @@
  * Copyright (c) 2016-2017, Chris Fraire <cfraire@me.com>.
  * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2023 Oxide Computer Company
+ * Copyright 2023 Michael Zeller
  */
 
 /*
@@ -2743,10 +2744,10 @@ ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 
 	/*
 	 * Some input validation based on the interface flags:
-	 * 1. in non-global zones, make sure that we are not persistently
+	 * 1. In non-global zones, make sure that we are not persistently
 	 *    creating addresses on interfaces that are acquiring
 	 *    address from the global zone.
-	 * 2. Validate static addresses for IFF_POINTOPOINT interfaces.
+	 * 2. Validate static addresses for point-to-point interfaces.
 	 */
 	if (addr->ipadm_atype == IPADM_ADDR_STATIC) {
 		status = i_ipadm_get_flags(iph, ifname, af, &ifflags);
@@ -2759,32 +2760,29 @@ ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 			goto fail;
 		}
 		daf = addr->ipadm_static_dst_addr.ss_family;
-		if (ifflags & IFF_POINTOPOINT) {
-			if (is_6to4) {
-				if (af != AF_INET6 || daf != AF_UNSPEC) {
-					status = IPADM_INVALID_ARG;
-					goto fail;
-				}
-			} else {
-				if (daf != af) {
-					status = IPADM_INVALID_ARG;
-					goto fail;
-				}
-				/* Check for a valid dst address. */
-				if (!legacy && sockaddrunspec(
-				    (struct sockaddr *)
-				    &addr->ipadm_static_dst_addr)) {
-					status = IPADM_BAD_ADDR;
-					goto fail;
-				}
+		/* 6to4 tunnels should not have a dst set */
+		if (is_6to4) {
+			if (af != AF_INET6 || daf != AF_UNSPEC) {
+				status = IPADM_INVALID_ARG;
+				goto fail;
 			}
-		} else {
-			/*
-			 * Disallow setting of dstaddr when the link is not
-			 * a point-to-point link.
-			 */
-			if (daf != AF_UNSPEC)
-				return (IPADM_INVALID_ARG);
+		/*
+		 * We have a dst addr which should have been set by
+		 * ipadm_set_dst_addr(), so now we need to further validate it.
+		 * We ensure that IFF_POINTOPOINT is set later via
+		 * SIOCSLIFDSTADDR.
+		 */
+		} else if (daf != AF_UNSPEC) {
+			if (daf != af) {
+				status = IPADM_INVALID_ARG;
+				goto fail;
+			}
+			/* Check for a valid dst address. */
+			if (!legacy && sockaddrunspec(
+			    (struct sockaddr *)&addr->ipadm_static_dst_addr)) {
+				status = IPADM_BAD_ADDR;
+				goto fail;
+			}
 		}
 	}
 
