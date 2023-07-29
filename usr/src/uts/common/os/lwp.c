@@ -269,6 +269,17 @@ lwp_create(void (*proc)(), caddr_t arg, size_t len, proc_t *p,
 	thread_load(t, proc, arg, len);
 
 	/*
+	 * This may allocate memory on some architectures.  We don't want to do
+	 * that while holding p_lock as that can deadlock; see the comment at
+	 * startover in prioctl() for additional details.  Therefore we do it
+	 * early; it's not too logically different from lwp_stk_init() above,
+	 * and in fact the corresponding cleanup is handled via
+	 * lwp_stk_cleanup() from thread_free() so we're covered in the error
+	 * cases too.
+	 */
+	lwp_fp_init(lwp);
+
+	/*
 	 * Allocate the SIGPROF buffer if ITIMER_REALPROF is in effect.
 	 */
 	if (p->p_rprof_cyclic != CYCLIC_NONE)
@@ -716,8 +727,6 @@ grow:
 	lep->le_lwpid = t->t_tid;
 	lep->le_start = t->t_start;
 	lwp_hash_in(p, lep, p->p_tidhash, p->p_tidhash_sz, 1);
-
-	lwp_fp_init(lwp);
 
 	if (state == TS_RUN) {
 		/*
