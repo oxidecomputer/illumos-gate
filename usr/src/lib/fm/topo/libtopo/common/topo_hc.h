@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _TOPO_HC_H
@@ -39,6 +40,9 @@ extern "C" {
 #define	BLADE		"blade"
 #define	BOARD		"board"
 #define	BRANCH		"branch"
+#define	CACHE		"cache"
+#define	CCD		"ccd"
+#define	CCX		"ccx"
 #define	CMP		"CMP"
 #define	CENTERPLANE	"centerplane"
 #define	CHASSIS		"chassis"
@@ -291,6 +295,23 @@ extern "C" {
 
 #define	TOPO_PGROUP_NVME		"nvme-properties"
 #define	TOPO_PROP_NVME_VER		"nvme-version"
+
+/*
+ * Hardware cache properties.
+ */
+#define	TOPO_PGROUP_CACHE	"cache"
+#define	TOPO_PGROUP_CACHE_LEVEL		"level"
+#define	TOPO_PGROUP_CACHE_WAYS		"ways"
+#define	TOPO_PGROUP_CACHE_SETS		"sets"
+#define	TOPO_PGROUP_CACHE_LINE_SIZE	"line-size"
+#define	TOPO_PGROUP_CACHE_SIZE		"size"
+#define	TOPO_PGROUP_CACHE_SYSTEM_ID	"system-id"
+#define	TOPO_PGROUP_CACHE_TYPES		"cache-types"
+#define	TOPO_PGROUP_CACHE_TYPES_DATA	"data"
+#define	TOPO_PGROUP_CACHE_TYPES_INSTR	"instruction"
+#define	TOPO_PGROUP_CACHE_FLAGS		"cache-flags"
+#define	TOPO_PGROUP_CACHE_FLAGS_UNIFIED	"unified"
+#define	TOPO_PGROUP_CACHE_FLAGS_FA	"fully-assosciative"
 
 #ifdef	__cplusplus
 }

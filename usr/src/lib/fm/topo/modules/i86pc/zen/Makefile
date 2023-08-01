@@ -13,8 +13,18 @@
 # Copyright 2023 Oxide Computer Company
 #
 
-SUBDIRS = oxhc zen
+MODULE = zen
+ARCH = i86pc
+CLASS = arch
 
-.PARALLEL: $(SUBDIRS)
+MODULESRCS = topo_zen.c topo_zen_tn.c
+ZENDIR = ../../common/zen/
 
-include ../../../Makefile.subdirs
+include ../../Makefile.plugin
+
+CPPFLAGS += -I$(ZENDIR) -I$(SRC)/uts/intel/io/amdzen -I$(SRC)/uts/intel
+LDLIBS += -lfmd_agent -lumem -lkstat
+
+%.o: $(ZENDIR)/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)

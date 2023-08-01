@@ -628,6 +628,7 @@ $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/hostbridge.so \
     mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/pcibus.so mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/x86pi.so mode=0555
+$(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/zen.so mode=0555
 #
 # Oxide Architecture Specific Maps and Modules
 #
@@ -640,6 +641,7 @@ $(i386_ONLY)file \
     path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-hc-topology.xml mode=0444
 $(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/plugins
 $(i386_ONLY)file path=usr/platform/oxide/lib/fm/topo/plugins/oxhc.so mode=0555
+$(i386_ONLY)file path=usr/platform/oxide/lib/fm/topo/plugins/zen.so mode=0555
 #
 # Some directories common to both global and non-global zones:
 #

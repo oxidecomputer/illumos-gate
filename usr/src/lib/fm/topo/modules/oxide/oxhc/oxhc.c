@@ -41,6 +41,7 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <sys/debug.h>
+#include <topo_zen.h>
 
 typedef struct oxhc oxhc_t;
 typedef struct oxhc_enum oxhc_enum_t;
@@ -416,6 +417,41 @@ topo_oxhc_enum_slot(topo_mod_t *mod, const oxhc_t *oxhc,
 	return (0);
 }
 
+static int
+topo_oxhc_enum_cpu(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	int ret;
+	topo_zen_chip_t chip;
+
+	if (topo_mod_load(mod, TOPO_MOD_ZEN, TOPO_VERSION) == NULL) {
+		topo_mod_dprintf(mod, "failed to load module %s: %s\n",
+		    TOPO_MOD_ZEN, topo_mod_errmsg(mod));
+		return (-1);
+	}
+
+	if (topo_node_range_create(mod, tn, CHIP, min, max) != 0) {
+		topo_mod_dprintf(mod, "failed to create %s range: %s\n", CHIP,
+		    topo_mod_errmsg(mod));
+		return (-1);
+	}
+
+	/*
+	 * If we ever support more than one processor on an Oxide platform then
+	 * the mapping to the socket number from AMD's perspective should happen
+	 * in the topo map.
+	 */
+	chip.tzc_sockid = 0;
+
+	ret = topo_mod_enumerate(mod, tn, TOPO_MOD_ZEN, CHIP, min, max, &chip);
+	if (ret != 0) {
+		topo_mod_dprintf(mod, "failed to enum %s: %s\n", CHIP,
+		    topo_mod_errmsg(mod));
+	}
+	return (ret);
+}
+
 /*
  * Data enumeration table. In particular, this module is the main enumeration
  * method for most of the chassis, motherboard, various, ports, etc. The
@@ -436,13 +472,13 @@ const oxhc_enum_t oxhc_enum_gimlet[] = {
 	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN |
 	    OXHC_ENUM_F_USE_IPCC_PN_AS_PART | OXHC_ENUM_F_FRU_SELF,
 	    .oe_range_enum = topo_oxhc_enum_range },
-	{ .oe_name = SOCKET, .oe_parent = SYSTEMBOARD,
-	    .oe_range_enum = topo_oxhc_enum_range  },
+	{ .oe_name = SOCKET, .oe_parent = SYSTEMBOARD, .oe_cpn = "215-0000014",
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_cpu },
 	{ .oe_name = SLOT, .oe_parent = SYSTEMBOARD,
 	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
 	    .oe_range_enum = topo_oxhc_enum_range_slot,
 	    .oe_post_enum = topo_oxhc_enum_slot },
-
 };
 
 typedef struct {

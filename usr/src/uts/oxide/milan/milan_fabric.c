@@ -2806,7 +2806,7 @@ milan_ccx_init_soc(milan_soc_t *soc)
 	 */
 	for (uint8_t ccdpno = 0, lccd = 0;
 	    ccdpno < MILAN_MAX_CCDS_PER_IODIE; ccdpno++) {
-		uint8_t core_shift, pcore, lcore;
+		uint8_t core_shift, pcore, lcore, pccx;
 		smn_reg_t reg;
 		uint32_t val;
 		uint32_t cores_enabled;
@@ -2894,7 +2894,7 @@ milan_ccx_init_soc(milan_soc_t *soc)
 		 */
 		ccx->mcx_ccd = ccd;
 		ccx->mcx_logical_cxno = 0;
-		ccx->mcx_physical_cxno = 0;
+		ccx->mcx_physical_cxno = pccx = 0;
 
 		/*
 		 * All the cores on the CCD will (should) return the
@@ -2913,7 +2913,7 @@ milan_ccx_init_soc(milan_soc_t *soc)
 			;
 		VERIFY3U(pcore, <, MILAN_MAX_CORES_PER_CCX);
 
-		reg = SCFCTP_PMREG_INITPKG7(ccdpno, pcore);
+		reg = SCFCTP_PMREG_INITPKG7(ccdpno, pccx, pcore);
 		val = milan_smn_read(iodie, reg);
 		VERIFY3U(val, !=, 0xffffffffU);
 

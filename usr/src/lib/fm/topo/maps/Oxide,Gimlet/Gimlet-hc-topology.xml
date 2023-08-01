@@ -797,6 +797,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='label' type='string' value='P0' />
                 </propgroup>
+                <propgroup name='socket-properties' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='type' type='string' value='SP3' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
             </range>
           </dependents>

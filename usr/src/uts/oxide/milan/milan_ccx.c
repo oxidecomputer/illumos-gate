@@ -83,13 +83,14 @@ milan_ccx_physmem_init(void)
 smn_reg_t
 milan_core_reg(const milan_core_t *const core, const smn_reg_def_t def)
 {
-	milan_ccd_t *ccd = core->mc_ccx->mcx_ccd;
+	milan_ccx_t *ccx = core->mc_ccx;
+	milan_ccd_t *ccd = ccx->mcx_ccd;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SCFCTP:
-		reg = milan_scfctp_smn_reg(ccd->mcd_physical_dieno, def,
-		    core->mc_physical_coreno);
+		reg = amdzen_scfctp_smn_reg(ccd->mcd_physical_dieno,
+		    ccx->mcx_physical_cxno, def, core->mc_physical_coreno);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for core",
@@ -106,7 +107,7 @@ milan_ccd_reg(const milan_ccd_t *const ccd, const smn_reg_def_t def)
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SMUPWR:
-		reg = milan_smupwr_smn_reg(ccd->mcd_physical_dieno, def, 0);
+		reg = amdzen_smupwr_smn_reg(ccd->mcd_physical_dieno, def, 0);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for CCD",

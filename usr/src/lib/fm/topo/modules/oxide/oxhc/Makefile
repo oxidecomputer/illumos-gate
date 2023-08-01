@@ -21,5 +21,5 @@ MODULESRCS = oxhc.c
 
 include ../../Makefile.plugin
 
-CPPFLAGS += -I$(SRC)/uts/oxide
+CPPFLAGS += -I$(SRC)/uts/oxide -I../../common/zen
 LDLIBS += -ldevinfo
