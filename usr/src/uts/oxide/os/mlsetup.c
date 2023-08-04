@@ -35,36 +35,24 @@
 #include <sys/sysmacros.h>
 #include <sys/disp.h>
 #include <sys/promif.h>
-#include <sys/clock.h>
 #include <sys/cpuvar.h>
 #include <sys/stack.h>
-#include <vm/as.h>
-#include <vm/hat.h>
 #include <sys/reboot.h>
-#include <sys/avintr.h>
-#include <sys/vtrace.h>
 #include <sys/proc.h>
 #include <sys/thread.h>
 #include <sys/cpupart.h>
 #include <sys/pset.h>
 #include <sys/copyops.h>
 #include <sys/pg.h>
-#include <sys/disp.h>
 #include <sys/debug.h>
-#include <sys/sunddi.h>
 #include <sys/x86_archext.h>
 #include <sys/privregs.h>
 #include <sys/machsystm.h>
-#include <sys/ontrap.h>
-#include <sys/bootconf.h>
 #include <sys/kdi_machimpl.h>
 #include <sys/archsystm.h>
 #include <sys/promif.h>
-#include <sys/apic.h>
-#include <sys/apic_common.h>
 #include <sys/bootvfs.h>
 #include <sys/tsc.h>
-#include <sys/smt.h>
 #include <sys/boot_data.h>
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
@@ -73,42 +61,12 @@
 #include <milan/milan_apob.h>
 
 /*
- * some globals for patching the result of cpuid
- * to solve problems w/ creative cpu vendors
- */
-
-extern uint32_t cpuid_feature_ecx_include;
-extern uint32_t cpuid_feature_ecx_exclude;
-extern uint32_t cpuid_feature_edx_include;
-extern uint32_t cpuid_feature_edx_exclude;
-
-nmi_action_t nmi_action = NMI_ACTION_UNSET;
-
-/*
- * Set console mode
- */
-static void
-set_console_mode(uint8_t val)
-{
-	struct bop_regs rp = {0};
-
-	rp.eax.byte.ah = 0x0;
-	rp.eax.byte.al = val;
-	rp.ebx.word.bx = 0x0;
-
-	BOP_DOINT(bootops, 0x10, &rp);
-}
-
-
-/*
- * Setup routine called right before main(). Interposing this function
- * before main() allows us to call it in a machine-independent fashion.
+ * Setup routine called right before main(), which is common code.  We have much
+ * to do still to satisfy the assumptions it will make.
  */
 void
 mlsetup(struct regs *rp)
 {
-	u_longlong_t prop_value;
-	char prop_str[BP_MAX_STRLEN];
 	extern struct classfuncs sys_classfuncs;
 	extern disp_t cpu0_disp;
 	extern char t0stack[];
@@ -121,73 +79,6 @@ mlsetup(struct regs *rp)
 	 * initialize cpu_self
 	 */
 	cpu[0]->cpu_self = cpu[0];
-
-	/*
-	 * check if we've got special bits to clear or set
-	 * when checking cpu features
-	 */
-
-	if (bootprop_getval("cpuid_feature_ecx_include", &prop_value) != 0)
-		cpuid_feature_ecx_include = 0;
-	else
-		cpuid_feature_ecx_include = (uint32_t)prop_value;
-
-	if (bootprop_getval("cpuid_feature_ecx_exclude", &prop_value) != 0)
-		cpuid_feature_ecx_exclude = 0;
-	else
-		cpuid_feature_ecx_exclude = (uint32_t)prop_value;
-
-	if (bootprop_getval("cpuid_feature_edx_include", &prop_value) != 0)
-		cpuid_feature_edx_include = 0;
-	else
-		cpuid_feature_edx_include = (uint32_t)prop_value;
-
-	if (bootprop_getval("cpuid_feature_edx_exclude", &prop_value) != 0)
-		cpuid_feature_edx_exclude = 0;
-	else
-		cpuid_feature_edx_exclude = (uint32_t)prop_value;
-
-	if (bootprop_getstr("nmi", prop_str, sizeof (prop_str)) == 0) {
-		if (strcmp(prop_str, "ignore") == 0) {
-			nmi_action = NMI_ACTION_IGNORE;
-		} else if (strcmp(prop_str, "panic") == 0) {
-			nmi_action = NMI_ACTION_PANIC;
-		} else if (strcmp(prop_str, "kmdb") == 0) {
-			nmi_action = NMI_ACTION_KMDB;
-		} else {
-			prom_printf("unix: ignoring unknown nmi=%s\n",
-			    prop_str);
-		}
-	}
-
-	/*
-	 * Check to see if KPTI has been explicitly enabled or disabled.
-	 * We have to check this before init_desctbls().
-	 */
-	if (bootprop_getval("kpti", &prop_value) == 0) {
-		kpti_enable = (uint64_t)(prop_value == 1);
-		prom_printf("unix: forcing kpti to %s due to boot argument\n",
-		    (kpti_enable == 1) ? "ON" : "OFF");
-	} else {
-		kpti_enable = 1;
-	}
-
-	if (bootprop_getval("pcid", &prop_value) == 0 && prop_value == 0) {
-		prom_printf("unix: forcing pcid to OFF due to boot argument\n");
-		x86_use_pcid = 0;
-	} else if (kpti_enable != 1) {
-		x86_use_pcid = 0;
-	}
-
-	/*
-	 * While we don't need to check this until later, we might as well do it
-	 * here.
-	 */
-	if (bootprop_getstr("smt_enabled", prop_str, sizeof (prop_str)) == 0) {
-		if (strcasecmp(prop_str, "false") == 0 ||
-		    strcmp(prop_str, "0") == 0)
-			smt_boot_disable = 1;
-	}
 
 	/*
 	 * Initialize idt0, gdt0, ldt0_default, ktss0 and dftss.
@@ -310,30 +201,42 @@ mlsetup(struct regs *rp)
 	cpuid_execpass(cpu[0], CPUID_PASS_BASIC, x86_featureset);
 
 	/*
-	 * Patch the tsc_read routine with appropriate set of instructions,
-	 * depending on the processor family and architecure, to read the
-	 * time-stamp counter while ensuring no out-of-order execution.
+	 * We can't get here with an unsupported processor, so we're going to
+	 * assert that whatever processor we're on supports the set of features
+	 * we expect.  Since it's unusual for newer processors to remove
+	 * features, this code shouldn't change much or often, and then only
+	 * when adding support for newer families.  Like the t0 initialisation
+	 * code above, parts of this could also be abstracted into an
+	 * ISA-specific library if we wanted to share it with i86pc, in which
+	 * case it really would be featureset-dependent but we'd still want to
+	 * assert the features we expect.  Being able to boot without these
+	 * features enabled would result in surprises during debugging, the
+	 * potential for breakage in some upstack software, and, more seriously,
+	 * a system that would not have the security properties users expect.
 	 */
-	if (is_x86_feature(x86_featureset, X86FSET_TSCP)) {
-		patch_tsc_read(TSC_TSCP);
-	} else if (is_x86_feature(x86_featureset, X86FSET_LFENCE_SER)) {
-		ASSERT(is_x86_feature(x86_featureset, X86FSET_SSE2));
-		patch_tsc_read(TSC_RDTSC_LFENCE);
-	}
 
+	/*
+	 * Patch the tsc_read routine with appropriate set of instructions, to
+	 * read the time-stamp counter while ensuring no out-of-order execution.
+	 * All supported CPUs have a TSC and offer the rdtscp instruction.
+	 */
+	ASSERT(is_x86_feature(x86_featureset, X86FSET_TSC));
+	ASSERT(is_x86_feature(x86_featureset, X86FSET_TSCP));
+	patch_tsc_read(TSC_TSCP);
+
+	/*
+	 * This is a nop on AMD CPUs, but could in principle be extended in a
+	 * future change so we'll continue calling into this generic function.
+	 */
 	patch_memops(cpuid_getvendor(CPU));
 
 	/*
 	 * While we're thinking about the TSC, let's set up %cr4 so that
 	 * userland can issue rdtsc, and initialize the TSC_AUX value
-	 * (the cpuid) for the rdtscp instruction on appropriately
-	 * capable hardware.
+	 * (the cpuid) for the rdtscp instruction.
 	 */
-	if (is_x86_feature(x86_featureset, X86FSET_TSC))
-		setcr4(getcr4() & ~CR4_TSD);
-
-	if (is_x86_feature(x86_featureset, X86FSET_TSCP))
-		(void) wrmsr(MSR_AMD_TSCAUX, 0);
+	setcr4(getcr4() & ~CR4_TSD);
+	(void) wrmsr(MSR_AMD_TSCAUX, 0);
 
 	/*
 	 * Let's get the other %cr4 stuff while we're here. Note, we defer
@@ -341,11 +244,9 @@ mlsetup(struct regs *rp)
 	 * before we start other CPUs. That ensures that it will be synced out
 	 * to other CPUs.
 	 */
-	if (is_x86_feature(x86_featureset, X86FSET_DE))
-		setcr4(getcr4() | CR4_DE);
-
-	if (is_x86_feature(x86_featureset, X86FSET_SMEP))
-		setcr4(getcr4() | CR4_SMEP);
+	ASSERT(is_x86_feature(x86_featureset, X86FSET_DE));
+	ASSERT(is_x86_feature(x86_featureset, X86FSET_SMEP));
+	setcr4(getcr4() | CR4_DE | CR4_SMEP);
 
 	/*
 	 * Initialize thread/cpu microstate accounting
@@ -368,11 +269,10 @@ mlsetup(struct regs *rp)
 		kdi_idt_sync();
 
 	/*
-	 * If requested (boot -d) drop into kmdb.
+	 * If requested by the SP (IPCC_STARTUP_KMDB_BOOT) drop into kmdb.
 	 *
-	 * This must be done after cpu_list_init() on the 64-bit kernel
-	 * since taking a trap requires that we re-compute gsbase based
-	 * on the cpu list.
+	 * This must be done after cpu_list_init() since taking a trap requires
+	 * that we re-compute gsbase based on the cpu list.
 	 */
 	if (boothowto & RB_DEBUGENTER)
 		kmdb_enter();
@@ -389,11 +289,6 @@ mlsetup(struct regs *rp)
 	 * Initialize the lgrp framework
 	 */
 	lgrp_init(LGRP_INIT_STAGE1);
-
-	if (boothowto & RB_HALT) {
-		prom_printf("unix: kernel halted by -h flag\n");
-		prom_enter_mon();
-	}
 
 	/*
 	 * Before we get too much further along, check for a furtive reset.
@@ -412,22 +307,37 @@ mlsetup(struct regs *rp)
 		panic("critical workaround(s) missing for boot cpu");
 }
 
-
+/*
+ * We are given the filename of the kernel we're booting, which may or may not
+ * be meaningful but on this platform refers to a path within the CPIO archive.
+ * Our job is to construct a space-separated list of paths, without the ISA
+ * (/amd64) suffix, that are to be prepended to the module search path by krtld.
+ * Note that this filename comes from BTPROP_NAME_WHOAMI, which is fixed on this
+ * platform to be /platform/oxide/kernel/amd64/unix.  On other platforms, this
+ * path can vary: one may for example construct a boot archive for i86pc that
+ * puts the kernel somewhere else, and instruct loader(8) to boot that instead.
+ * Since that's not an option on this architecture and we have no means of
+ * passing such properties along, we could replace all of this with something
+ * that just copies /platform/oxide/kernel into path and returns.  To relax the
+ * need to keep this in sync, and to allow krtld evolution that could
+ * conceivably change how we're called, we'll nevertheless look at the filename
+ * as we do on other platforms.
+ *
+ * Note that krtld allocates only MAXPATHLEN for the entire path buffer, even
+ * though there are at least three paths (see MOD_DEFPATH) that end up in the
+ * list.  This isn't dangerous on oxide because we know that the length of the
+ * path we're going to prepend here is short enough; on platforms where this
+ * path is variable and/or operator-controlled, it's a bug.  We also assume that
+ * the buffer we've been passed is filled with 0s, which isn't documented
+ * anywhere.  This interface needs work.
+ */
 void
 mach_modpath(char *path, const char *filename)
 {
-	/*
-	 * Construct the directory path from the filename.
-	 */
-
-	int len;
+	size_t len;
 	char *p;
 	const char isastr[] = "/amd64";
-	size_t isalen = strlen(isastr);
-
-	len = strlen(SYSTEM_BOOT_PATH "/kernel");
-	(void) strcpy(path, SYSTEM_BOOT_PATH "/kernel ");
-	path += len + 1;
+	const size_t isalen = strlen(isastr);
 
 	if ((p = strrchr(filename, '/')) == NULL)
 		return;
@@ -437,18 +347,16 @@ mach_modpath(char *path, const char *filename)
 	if (p == filename)
 		p++;	/* so "/" -is- the modpath in this case */
 
-	/*
-	 * Remove optional isa-dependent directory name - the module
-	 * subsystem will put this back again (!)
-	 */
 	len = p - filename;
-	if (len > isalen &&
-	    strncmp(&filename[len - isalen], isastr, isalen) == 0)
-		p -= isalen;
 
 	/*
-	 * "/platform/mumblefrotz" + " " + MOD_DEFPATH
+	 * Remove the ISA-dependent directory name - the module subsystem will
+	 * put this back again.
 	 */
-	len += (p - filename) + 1 + strlen(MOD_DEFPATH) + 1;
-	(void) strncpy(path, filename, p - filename);
+	if (len > isalen &&
+	    strncmp(&filename[len - isalen], isastr, isalen) == 0) {
+		len -= isalen;
+	}
+
+	(void) strncpy(path, filename, len);
 }

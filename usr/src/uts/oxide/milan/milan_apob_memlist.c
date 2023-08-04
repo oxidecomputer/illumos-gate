@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/boot_debug.h>
@@ -57,13 +57,13 @@ milan_apob_reserve_phys(void)
 		max_paddr = P2ALIGN(smp->masm_high_phys, MMU_PAGESIZE);
 	}
 
-	DBG(apob_hole_count);
-	DBG(max_paddr);
+	KBM_DBG(apob_hole_count);
+	KBM_DBG(max_paddr);
 
 	eb_physmem_set_max(max_paddr);
 
 	for (i = 0; i < apob_hole_count; i++) {
-		DBG_MSG("APOB: RAM hole @ %lx size %lx\n",
+		KBM_DBGMSG("APOB: RAM hole @ %lx size %lx\n",
 		    smp->masm_holes[i].masmrh_base,
 		    smp->masm_holes[i].masmrh_size);
 		start = P2ALIGN(smp->masm_holes[i].masmrh_base, MMU_PAGESIZE);

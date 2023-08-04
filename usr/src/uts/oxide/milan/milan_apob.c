@@ -85,7 +85,7 @@ milan_apob_init(uint64_t apob_pa)
 		bop_panic("failed to allocate %u bytes of VA for the APOB",
 		    milan_apob_size_cap);
 	}
-	DBG_MSG("allocated %lx as va\n", base);
+	EB_DBGMSG("APOB VA is [%lx, %lx)\n", base, base + milan_apob_size_cap);
 
 	/*
 	 * With the allocation of VA done, map the first 4 KiB and verify that
@@ -154,14 +154,14 @@ milan_apob_find(milan_apob_group_t group, uint32_t type, uint32_t inst,
 		 * our bound. If not, then we're sol.
 		 */
 		if (entry->mae_size < sizeof (milan_apob_entry_t)) {
-			DBG_MSG("Encountered APOB entry at offset 0x%lx with "
+			EB_DBGMSG("Encountered APOB entry at offset 0x%lx with "
 			    "too small size 0x%x", curaddr -
 			    (uintptr_t)milan_apob_header, entry->mae_size);
 			*errp = EIO;
 			return (NULL);
 		}
 		if (curaddr + entry->mae_size >= limit) {
-			DBG_MSG("Encountered APOB entry at offset 0x%lx with "
+			EB_DBGMSG("Encountered APOB entry at offset 0x%lx with "
 			    "size 0x%x that extends beyond limit", curaddr -
 			    (uintptr_t)milan_apob_header, entry->mae_size);
 			*errp = EIO;

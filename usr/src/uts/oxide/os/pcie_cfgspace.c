@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -396,7 +396,7 @@ pcie_cfgspace_init(void)
 	 */
 	pcie_cfgspace_vaddr = kbm_valloc(PCIE_CFGSPACE_SIZE,
 	    PCIE_CFGSPACE_ALIGN);
-	DBG_MSG("PCIe configuration space mapped at 0x%lx\n",
+	KBM_DBGMSG("PCIe configuration space mapped at 0x%lx\n",
 	    pcie_cfgspace_vaddr);
 
 	for (uintptr_t offset = 0; offset < PCIE_CFGSPACE_SIZE;

@@ -36,8 +36,15 @@
 #include <sys/boot_physmem.h>
 #include <sys/boot_debug.h>
 #include <sys/kernel_ipcc.h>
+#include <sys/smt.h>
 #include <sys/time.h>
 #include <milan/milan_apob_impl.h>
+
+/*
+ * Used by apix code that could be shared with other kernels.  Not tunable on
+ * this kernel except by manual change to source code.
+ */
+nmi_action_t nmi_action = NMI_ACTION_UNSET;
 
 extern int bootrd_debug, prom_debug;
 extern boolean_t kbm_debug;
@@ -135,7 +142,7 @@ bt_set_prop(uint32_t flags, const char *name, size_t nlen, const void *value,
 	}
 #endif
 
-	DBG_MSG("setprop %.*s (nlen %lx vlen %lx)\n", (int)nlen, name,
+	EB_DBGMSG("setprop %.*s (nlen %lx vlen %lx)\n", (int)nlen, name,
 	    nlen, vlen);
 
 	size = sizeof (bt_prop_t) + nlen + 1;
@@ -149,7 +156,7 @@ bt_set_prop(uint32_t flags, const char *name, size_t nlen, const void *value,
 			bop_panic("Boot property requires 0x%lx bytes "
 			    "(> MMU_PAGESIZE)", size);
 		}
-		DBG_MSG("New page (%lx > %lx)\n", size, bt_props_avail);
+		EB_DBGMSG("New page (%lx > %lx)\n", size, bt_props_avail);
 		bt_props_mem = (uint8_t *)eb_alloc_page();
 		bt_props_avail = MMU_PAGESIZE;
 	}
@@ -453,4 +460,36 @@ genunix_set_tunables(void)
 	 * No time-of-day unit so tell the clock code not to bother.
 	 */
 	have_hw_tod = 0;
+
+	/*
+	 * KPTI is always on, as is use of PCID.
+	 */
+	kpti_enable = 1;
+	x86_use_pcid = 1;
+
+	/*
+	 * We neither support nor have any need for monkeying with CPUID
+	 * results.  Note that even if we had, we'd instead change the
+	 * non-architectural MSRs that control what CPUID returns so that user
+	 * software would get the same thing if it chose to invoke the
+	 * instruction instead of getting the feature bits like it should.
+	 * Nevertheless, we must clear these explicitly as common code does not.
+	 */
+	extern uint32_t cpuid_feature_ecx_include;
+	extern uint32_t cpuid_feature_ecx_exclude;
+	extern uint32_t cpuid_feature_edx_include;
+	extern uint32_t cpuid_feature_edx_exclude;
+
+	cpuid_feature_ecx_include = 0;
+	cpuid_feature_ecx_exclude = 0;
+	cpuid_feature_edx_include = 0;
+	cpuid_feature_edx_exclude = 0;
+
+	/*
+	 * SMT is enabled unconditionally for now.  This could also be changed
+	 * to a policy communicated by the SP if needed, or SMT could be
+	 * disabled from userland.  Again, this is used by common code but has
+	 * no default value there so we must clear it.
+	 */
+	smt_boot_disable = 0;
 }

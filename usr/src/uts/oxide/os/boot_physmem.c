@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/boot_debug.h>
@@ -113,7 +113,7 @@ eb_alloc(caddr_t virthint, size_t size, size_t align)
 	 */
 	pa = eb_phys_alloc(size, a);
 
-	DBG_MSG("bsys_alloc: alloc sz %lx pa %lx for va %p...",
+	KBM_DBGMSG("bsys_alloc: alloc sz %lx pa %lx for va %p...",
 	    size, pa, virthint);
 
 	/*
@@ -147,7 +147,7 @@ eb_alloc(caddr_t virthint, size_t size, size_t align)
 
 	bzero(virthint, size);
 
-	DBG_MSG("done (%lx @ %p)\n", size, virthint);
+	KBM_DBGMSG("done (%lx @ %p)\n", size, virthint);
 
 	return (virthint);
 }
@@ -316,11 +316,11 @@ eb_physmem_init(struct bsys_mem *bmp)
 	 */
 	ebml_pool.mp_flags = MEMLP_FL_EARLYBOOT;
 	mlpage = eb_alloc_page();
-	DBG(mlpage);
+	KBM_DBG(mlpage);
 	xmemlist_free_block(&ebml_pool, mlpage, MMU_PAGESIZE);
 
 	mlp = xmemlist_get_one(&ebml_pool);
-	DBG(mlp);
+	KBM_DBG(mlp);
 	ASSERT(mlp != NULL);
 	mlp->ml_address = bsml_usable.ml_address;
 	mlp->ml_size = LOADER_PHYSLIMIT - mlp->ml_address;
@@ -329,7 +329,7 @@ eb_physmem_init(struct bsys_mem *bmp)
 	eballoc_mem.rsvdmem = eballoc_mem.pcimem = NULL;
 
 	mlp = xmemlist_get_one(&ebml_pool);
-	DBG(mlp);
+	KBM_DBG(mlp);
 	ASSERT(mlp != NULL);
 	mlp->ml_address = 0;
 	mlp->ml_size = LOADER_PHYSLIMIT;
@@ -374,6 +374,6 @@ void
 eb_physmem_fini(void)
 {
 	eballoc_mem.physinstalled = eballoc_mem.rsvdmem = NULL;
-	DBG(total_eb_alloc_scratch);
-	DBG(total_eb_alloc_kernel);
+	KBM_DBG(total_eb_alloc_scratch);
+	KBM_DBG(total_eb_alloc_kernel);
 }

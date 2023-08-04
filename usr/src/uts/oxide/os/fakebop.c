@@ -116,7 +116,7 @@ do_bsys_alloc(bootops_t *_bop, caddr_t virthint, size_t size, int align)
 static void
 do_bsys_free(bootops_t *_bop, caddr_t virt, size_t size)
 {
-	eb_printf("do_bsys_free(virt=0x%p, size=0x%lx) ignored\n",
+	KBM_DBGMSG("do_bsys_free(virt=0x%p, size=0x%lx) ignored\n",
 	    (void *)virt, size);
 }
 
@@ -638,7 +638,7 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	eb_physmem_init(&bm);
 	eb_create_properties(ramdisk_paddr, ramdisk_len);
 
-	DBG_MSG("\n\n*** Entered illumos in _start()\n");
+	EB_DBGMSG("\n\n*** Entered illumos in _start()\n");
 
 	eb_set_tunables();
 
@@ -683,10 +683,10 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	 * Install a GDT and an IDT to catch early pagefaults (shouldn't
 	 * have any).  Also needed for kmdb.
 	 */
-	DBG_MSG("Initializing temporary GDT and IDT: ");
+	EB_DBGMSG("Initializing temporary GDT and IDT: ");
 	early_gdt_init();
 	early_idt_init();
-	DBG_MSG("done\n");
+	EB_DBGMSG("done\n");
 
 	if (prom_debug || kbm_debug) {
 		char *bufpage;

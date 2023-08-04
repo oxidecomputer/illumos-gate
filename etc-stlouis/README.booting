@@ -58,6 +58,23 @@ To enable entering KMDB at boot, for example:
         -a startup_options=0x38
     ControlPlaneAgent.set_startup_options() => ()
 
+The boot-time spew options (KBM, BOOTRD, and PROM) are for bringup only and
+should never be enabled in production.  kbm_debug in particular is extremely
+verbose and intended only for debugging the memory mapping and allocation code
+used during boot; booting will take hours with this option enabled.  Setting
+STARTUP_KBM this way may not be sufficient for your debugging needs, even if
+IPCC is available; see the additional notes in sys/boot_debug.h.  All three of
+these options are useful mainly on new or experimental hardware or when making
+substantial changes to machdep boot code; if the target machine can reach
+userland there is no reason to enable them.  STARTUP_VERBOSE corresponds to
+the common illumos `-v` kernel option and provides a moderate amount of
+generally useful debugging spew, and this option never requires code changes
+to work.  If you are experiencing a boot hang during engineering activity,
+this is the place to start.  Setting this option in production is possible
+with SP software cooperation but is strongly discouraged; boot hangs should be
+debugged completely and eliminated prior to shipping, and once in userland,
+support bundles are more appropriate to investigating other problems.
+
 nanobl-rs loader + UFS ramdisk + optional phase2 via the network
 -----------------------------------------------------------------
 
@@ -386,62 +403,3 @@ if it exists. This is useful in order to run tasks on every boot such as
 setting up the system dump device.
 
 * https://github.com/oxidecomputer/helios/blob/master/image/templates/files/gimlet-postboot.sh
-
-Next steps:
------------
-
-There are many, many things to do next, and the good news is that there is
-enough parallelism here for 8-10 engineers.  A few examples:
-
-- Unmap the loader's text, data, and miscellany.  At present, we know where
-  the pagetables and earlyboot stack are, and the loader has set bit 11 in all
-PTEs for the kernel, so we should be able to delete these mappings if we wish.
-Regardless, they end up getting unmapped and the underlying pages freed later
-in boot.
-
-- Figure out how to turn off the three reserved regions of RAM the PSP wants.
-
-- Fix up the boot time properties code so we can accept the root pointer as a
-  physical address, or decide that we don't ever want the loader passing boot
-properties and just have it pass the ramdisk location.  There are several ways
-to do this and we should take a little time to think it through -- in
-particular, how offsets/pointers internally to the properties are represented.
-Doing 1275 is an option here though a read through that standard suggests far
-more complexity than we want or need.
-
-- Replace boot_data.c with RPC calls to the SP.
-
-- We can remove more of the bootaux code if we want.  The kernel's ELF object
-  is in memory, and we could have the loader tell us where it is if we wanted
-to.  If we were clever we could even dispense with copying the contents and
-just load it in the right place, then create the proper mappings.  You know,
-like a loader.  See the notes above on step 4.
-
-- Switch us to a compressed CPIO ramdisk.  This is currently under way in a
-  new flash-only loader called phbl.
-
-- Probably rewrite mlsetup(), which is needlessly complicated for our needs.
-
-- Commonise the rest of the microcode updating code.  Being able to upgrade
-  microcode will be one of the very first things we want to do, so we don't
-chase ghosts once we have single-user up.
-
-- Commonise (most?  all?) the x86 HAT code.  This is current machine arch
-  specific but most of it is really not.  This is in fact the same thing they
-found with SPARC when they created the sfmmu directory.
-
-- Audit and remove all the -Nmisc/acpica and other -Ndrv/acpidrv etc.
-  arguments.  This should be quick and simple, but removing the code that
-actually consumes these interfaces won't be.  In most cases that code needs to
-be rewritten entirely but that needs to be audited on a case by case basis;
-there are likely to be places where we want to share most code that currently
-consumes ACPI and it may be good to create a set of ops vectors or whatever
-that allow generic consumers to use ACPI or go direct (similar to platmod/PSM,
-probably, or we may even be able to just extend that interface to cover
-multiple machine architectures).
-
-- Delete the rebooting code, which doesn't work anyway.  Negotiate a
-  communication mechanism with the SP that can be used to request a reset from
-both earlyboot and a normal working system (i.e., this can't rely solely on
-STREAMS or something like that).  Stuff like `pc_reset` needs to move to
-i86pc.

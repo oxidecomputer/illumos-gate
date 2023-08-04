@@ -24,7 +24,7 @@
  * Use is subject to license terms.
  *
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/types.h>
@@ -306,19 +306,19 @@ kbm_init(void)
 	extern void hat_boot_kdi_init(void);
 
 	top_page_table = loader_pt_base;
-	DBG(top_page_table);
+	KBM_DBG(top_page_table);
 
 	window = (caddr_t)MMU_PAGESIZE;
-	DBG(window);
+	KBM_DBG(window);
 
 	pte_to_window = NULL;
 	if ((ptep = find_pte((uint64_t)window, NULL, 0, 1)) != NULL) {
 		pte_to_window = ptep;
-		DBG(pte_to_window);
+		KBM_DBG(pte_to_window);
 		return;
 	}
 
-	DBG(loader_pt_base);
+	KBM_DBG(loader_pt_base);
 
 #define	PT_USED(_pa) do {	\
 	idx = (_pa - loader_pt_base) >> MMU_PAGESHIFT;		\
@@ -393,7 +393,7 @@ kbm_init(void)
 		l1_pa = find_free_pagetable(loader_pt_base, loader_pt_last,
 		    loader_pt_pages_used);
 		PT_USED(l1_pa);
-		DBG(l1_pa);
+		KBM_DBG(l1_pa);
 		install_ptable(ptep, (void *)l1_pa, l1_pa);
 	}
 
@@ -403,13 +403,13 @@ kbm_init(void)
 	l0_pa = find_free_pagetable(loader_pt_base, loader_pt_last,
 	    loader_pt_pages_used);
 	PT_USED(l0_pa);
-	DBG(l0_pa);
+	KBM_DBG(l0_pa);
 	install_ptable(ptep, (void *)l0_pa, l0_pa);
 
 #undef	PT_USED
 
 	pte_to_window = find_pte((uint64_t)window, NULL, 0, 1);
-	DBG(pte_to_window);
+	KBM_DBG(pte_to_window);
 	ASSERT(pte_to_window != NULL);
 
 	/*
@@ -430,7 +430,7 @@ kbm_remap_window(paddr_t physaddr, int writeable)
 {
 	x86pte_t pt_bits = PT_NOCONSIST | PT_VALID | PT_WRITABLE;
 
-	DBG(physaddr);
+	KBM_DBG(physaddr);
 
 	if (pte_to_window == NULL)
 		return ((void *)(uintptr_t)physaddr);
@@ -438,7 +438,7 @@ kbm_remap_window(paddr_t physaddr, int writeable)
 	*pte_to_window = physaddr | pt_bits;
 	mmu_invlpg(window);
 
-	DBG(window);
+	KBM_DBG(window);
 	return (window);
 }
 
@@ -455,7 +455,7 @@ kbm_map(uintptr_t va, paddr_t pa, uint_t level, x86pte_t flags)
 	if (khat_running)
 		panic("kbm_map() called too late");
 
-	DBG_MSG("kbm_map(%lx, %lx, %x, %lx)\n", va, pa, level, flags);
+	KBM_DBGMSG("kbm_map(%lx, %lx, %x, %lx)\n", va, pa, level, flags);
 
 	pteval = pa | PT_NOCONSIST | PT_VALID | flags;
 	if (level >= 1)
@@ -559,7 +559,7 @@ restart_new_va:
 void
 kbm_unmap(uintptr_t va)
 {
-	DBG_MSG("kbm_unmap(%lx)\n", va);
+	KBM_DBGMSG("kbm_unmap(%lx)\n", va);
 
 	if (khat_running) {
 		panic("kbm_unmap() called too late");
@@ -642,13 +642,13 @@ kbm_valloc(size_t size, paddr_t align)
 	static uintptr_t next_virt = (uintptr_t)(MMU_PAGESIZE * 2);
 	uintptr_t rv;
 
-	DBG_MSG("kbm_valloc: sz %lx align %lx", size, align);
+	KBM_DBGMSG("kbm_valloc: sz %lx align %lx", size, align);
 
 	next_virt = P2ROUNDUP(next_virt, (uintptr_t)align);
 	rv = next_virt;
 	next_virt += size;
 
-	DBG_MSG(" = %lx\n", rv);
+	KBM_DBGMSG(" = %lx\n", rv);
 
 	return (rv);
 }
@@ -819,11 +819,11 @@ kbm_map_ramdisk(uint64_t start, uint64_t end)
 	off = start - P2ALIGN(start, pagesize);
 	start -= off;
 
-	DBG_MSG("ramdisk: start %lx end %lx base %lx vend %lx off %lx\n",
+	KBM_DBGMSG("ramdisk: start %lx end %lx base %lx vend %lx off %lx\n",
 	    start, end, vstart, vend, off);
 
 	for (p = 0; vstart + p < vend; p += pagesize) {
-		DBG_MSG("mapping ramdisk: %lx -> %lx\n",
+		KBM_DBGMSG("mapping ramdisk: %lx -> %lx\n",
 		    vstart + p, start + p);
 		kbm_map(vstart + p, start + p, level, 0);
 	}
@@ -854,7 +854,7 @@ dump_tables(void)
 	char *tabs = tablist + 3 - TOP_LEVEL;
 	uint64_t pa, pa1;
 
-	bop_printf(NULL, "Pagetables:\n");
+	eb_printf("Pagetables:\n");
 	table = (char *)(uintptr_t)top_page_table;
 	l = TOP_LEVEL;
 	va = 0;
@@ -864,10 +864,10 @@ dump_tables(void)
 		if (pteval == 0)
 			goto next_entry;
 
-		bop_printf(NULL, "%s %p[0x%x] = %" PRIx64 ", va=%" PRIx64,
+		eb_printf("%s %p[0x%x] = %" PRIx64 ", va=%" PRIx64,
 		    tabs + l, (void *)table, index, (uint64_t)pteval, va);
 		pa = pteval & MMU_PAGEMASK;
-		bop_printf(NULL, " physaddr=%lx\n", pa);
+		eb_printf(" physaddr=%lx\n", pa);
 
 		if ((l > 2 || (l > 0 && (pteval & PT_PAGESIZE) == 0))) {
 			save_table[l] = table;
@@ -890,7 +890,7 @@ dump_tables(void)
 				break;
 		}
 		if (i > 2) {
-			bop_printf(NULL, "%s...\n", tabs + l);
+			eb_printf("%s...\n", tabs + l);
 			va += pgsize * (i - 2);
 			index += i - 2;
 		}

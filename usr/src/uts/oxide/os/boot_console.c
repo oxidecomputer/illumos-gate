@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #include <sys/archsystm.h>
@@ -130,7 +130,8 @@ bop_printf(void *bop, const char *fmt, ...)
 }
 
 void
-kbm_debug_printf(const char *file, int line, const char *fmt, ...)
+eb_debug_printf_gated(boolean_t gate, const char *file, int line,
+    const char *fmt, ...)
 {
 	/*
 	 * This use of a static is safe because we are always single-threaded
@@ -141,14 +142,14 @@ kbm_debug_printf(const char *file, int line, const char *fmt, ...)
 	boolean_t is_end = (fmt[fmtlen - 1] == '\n');
 	va_list ap;
 
-	if (!kbm_debug || !con_uart_init)
+	if (!gate || !con_uart_init)
 		return;
 
-	if (!continuation)
-		eb_printf("%s:%d: ", file, line);
+	if (!continuation && file != NULL)
+		bop_printf(NULL, "%s:%d: ", file, line);
 
 	va_start(ap, fmt);
-	eb_vprintf(fmt, ap);
+	vbop_printf(NULL, fmt, ap);
 	va_end(ap);
 
 	continuation = !is_end;
@@ -173,6 +174,6 @@ bop_panic(const char *fmt, ...)
 	kipcc_panic_field(IPF_CAUSE, IPCC_PANIC_EARLYBOOT);
 	kernel_ipcc_panic();
 
-	eb_printf("\nRebooting.\n");
+	bop_printf(NULL, "\nRebooting.\n");
 	reset();
 }

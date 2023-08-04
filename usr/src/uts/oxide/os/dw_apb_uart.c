@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 /*
@@ -37,7 +37,6 @@
 
 #include <sys/cmn_err.h>
 #include <sys/prom_debug.h>
-#include <sys/boot_debug.h>
 #include <sys/bootconf.h>
 #include <sys/dw_apb_uart.h>
 #include <sys/stdbool.h>

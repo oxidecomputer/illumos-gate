@@ -13,9 +13,9 @@
  * Copyright 2023 Oxide Computer Company
  */
 
+#include <sys/types.h>
 #include <sys/boot_debug.h>
 #include <sys/clock.h>
-#include <sys/prom_debug.h>
 #include <sys/cmn_err.h>
 #include <sys/dw_apb_uart.h>
 #include <sys/file.h>
@@ -217,7 +217,7 @@ eb_ipcc_init(void)
 {
 	kernel_ipcc_data_t *data = &kernel_ipcc_data;
 
-	DBG_MSG("kernel_ipcc_init(EARLYBOOT)\n");
+	EB_DBGMSG("kernel_ipcc_init(EARLYBOOT)\n");
 
 	if (dw_apb_uart_init(&data->kid_uart, DAP_1,
 	    3000000, AD_8BITS, AP_NONE, AS_1BIT) != 0) {
@@ -252,8 +252,8 @@ eb_ipcc_init(void)
 	mmio_reg_write(data->kid_gpio_reg, gpio);
 	gpio = mmio_reg_read(data->kid_gpio_reg);
 
-	eb_printf("Configured AGPIO%d: %x (input is %s)\n", SP_AGPIO, gpio,
-	    FCH_GPIO_GPIO_GET_INPUT(gpio) == FCH_GPIO_GPIO_INPUT_HIGH ?
+	eb_debug_printf("Configured AGPIO%d: %x (input is %s)\n", SP_AGPIO,
+	    gpio, FCH_GPIO_GPIO_GET_INPUT(gpio) == FCH_GPIO_GPIO_INPUT_HIGH ?
 	    "high" : "low");
 
 	mmio_reg_block_t block = fch_iomux_mmio_block();
@@ -264,7 +264,7 @@ eb_ipcc_init(void)
 static void
 ebi_ipcc_init(void)
 {
-	DBG_MSG("kernel_ipcc_init(ENABLE_INTERRUPT)\n");
+	EB_DBGMSG("kernel_ipcc_init(ENABLE_INTERRUPT)\n");
 	kernel_ipcc_ops.io_readintr = eb_ipcc_readintr;
 }
 
@@ -300,7 +300,7 @@ mb_ipcc_init(void)
 {
 	kernel_ipcc_data_t *data = &kernel_ipcc_data;
 
-	DBG_MSG("kernel_ipcc_init(KVMAVAIL)\n");
+	EB_DBGMSG("kernel_ipcc_init(KVMAVAIL)\n");
 
 	/*
 	 * The UART is re-initialised to move the register MMIO mappings out
@@ -357,7 +357,7 @@ kernel_ipcc_init(ipcc_init_t stage)
 		break;
 	case IPCC_INIT_DEVTREE:
 		VERIFY3U(ipcc_init, ==, IPCC_INIT_KVMAVAIL);
-		DBG_MSG("kernel_ipcc_init(DEVTREE)\n");
+		EB_DBGMSG("kernel_ipcc_init(DEVTREE)\n");
 		break;
 	default:
 		break;
