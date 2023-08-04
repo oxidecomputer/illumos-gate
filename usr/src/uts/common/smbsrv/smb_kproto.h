@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Syneto S.R.L.  All rights reserved.
  * Copyright 2011-2022 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2016 Syneto S.R.L.  All rights reserved.
  * Copyright 2022 RackTop Systems, Inc.
  */
 
@@ -48,6 +48,7 @@ extern "C" {
 #include <sys/cred.h>
 #include <sys/nbmlock.h>
 #include <sys/sunddi.h>
+#include <sys/uio.h>
 #include <sys/atomic.h>
 #include <smbsrv/smb.h>
 #include <smbsrv/string.h>
@@ -425,6 +426,8 @@ int smb_sorecv(ksocket_t so, void *msg, size_t len);
 void smb_net_txl_constructor(smb_txlst_t *);
 void smb_net_txl_destructor(smb_txlst_t *);
 int smb_net_send_uio(smb_session_t *, struct uio *);
+int smb_net_send_mbufs(smb_session_t *, mbuf_t *);
+int smb_net_recv_mbufs(smb_session_t *, mbuf_t **, size_t);
 
 /*
  * SMB RPC interface
@@ -600,8 +603,8 @@ int smb_sign_check_secondary(smb_request_t *, unsigned int);
 void smb_sign_reply(smb_request_t *, mbuf_chain_t *);
 /* SMB2, but here because it's called from common code. */
 void smb2_sign_begin(smb_request_t *, smb_token_t *);
-void smb3_encrypt_begin(smb_request_t *, smb_token_t *);
-void smb3_encrypt_fini(smb_session_t *);
+void smb3_encrypt_begin(smb_user_t *, smb_token_t *);
+void smb3_encrypt_ssn_fini(smb_session_t *);
 
 boolean_t smb_sattr_check(uint16_t, uint16_t);
 
@@ -788,7 +791,10 @@ int smb_xa_complete(smb_xa_t *xa);
 smb_xa_t *smb_xa_find(smb_session_t *session, uint32_t pid, uint16_t mid);
 
 struct mbuf *smb_mbuf_get(uchar_t *buf, int nbytes);
+struct mbuf *smb_mbuf_alloc_kmem(int len);
+struct mbuf *smb_mbuf_alloc_chain(int nbytes);
 struct mbuf *smb_mbuf_allocate(struct uio *uio);
+int smb_mbuf_mkuio(mbuf_t *m, uio_t *uio);
 void smb_mbuf_trim(struct mbuf *mhead, int nbytes);
 
 int32_t smb_time_gmt_to_local(smb_request_t *, int32_t);
