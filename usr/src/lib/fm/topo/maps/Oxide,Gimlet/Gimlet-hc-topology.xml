@@ -310,26 +310,28 @@
         <!--
           The system board contains a number of different devices and ICs on it.
           We enumerate the various slots and sockets that are on it, but leave
-          the ICs and other information there to be filled in by the acutal IPCC
-          data and drive that more programatically.
+          the ICs and other information there to be filled in by the actual IPCC
+          data and drive that more programmatically.
         -->
         <range name='systemboard' min='0' max='0'>
           <enum-method name='oxhc' version='1' />
           <node instance='0' static='true'>
+            <enum-method name='oxhc' version='1' />
             <!-- XXX What label do we have for the system board?! -->
           </node>
 
           <!--
-            XXX This is pretty ugly. Right now we have DIMM, PCIe, and M.2 slots
-            on the board but they are a single range, which makes it a little
-            messy. We should really just allow ourselves to pass an argument
-            with info here. Instead we basically hardcode mappings of slot types
-            and related here. Range 0-9 are the CEM slots, range 10-25 are
-            DIMMs, and range 26-27 are M.2s. We cannot use multiple ranges here
+            XXX This is pretty ugly. Right now we have DIMM, PCIe, M.2 slots,
+            and temperature sensors on the board but they are a single range,
+            which makes it a little messy. We should really just allow ourselves
+            to pass an argument with info here. Instead we basically hardcode
+            mappings of slot types and related here. Range 0-9 are the CEM
+            slots, range 10-25 are DIMMs, range 26-27 are M.2s, and range 28-33
+            are for the temperature sensors. We cannot use multiple ranges here
             because topo_node_range_create() doesn't support that.
           -->
           <dependents grouping='children'>
-            <range name='slot' min='0' max='27'>
+            <range name='slot' min='0' max='33'>
               <enum-method name='oxhc' version='1' />
               <node instance='0' static='true'>
                 <propgroup name='protocol' version='1'
@@ -786,6 +788,73 @@
                   <propval name='socket' type='uint32' value='3' />
                   <propval name='key' type='string' value='M' />
                 </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+
+              <node instance='28' static='true'>
+                  <propgroup name='protocol' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='label' type='string' value='SW Thermal' />
+                  </propgroup>
+                  <propgroup name='oxhc' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='refdes' type='string' value='J194' />
+                  </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+              <node instance='29' static='true'>
+                  <propgroup name='protocol' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='label' type='string' value='South Thermal' />
+                  </propgroup>
+                  <propgroup name='oxhc' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='refdes' type='string' value='J195' />
+                  </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+              <node instance='30' static='true'>
+                  <propgroup name='protocol' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='label' type='string' value='SE Thermal' />
+                  </propgroup>
+                  <propgroup name='oxhc' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='refdes' type='string' value='J196' />
+                  </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+              <node instance='31' static='true'>
+                  <propgroup name='protocol' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='label' type='string' value='NW Thermal' />
+                  </propgroup>
+                  <propgroup name='oxhc' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='refdes' type='string' value='J199' />
+                  </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+              <node instance='32' static='true'>
+                  <propgroup name='protocol' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='label' type='string' value='North Thermal' />
+                  </propgroup>
+                  <propgroup name='oxhc' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='refdes' type='string' value='J198' />
+                  </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+              <node instance='33' static='true'>
+                  <propgroup name='protocol' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='label' type='string' value='NE Thermal' />
+                  </propgroup>
+                  <propgroup name='oxhc' version='1'
+                      name-stability='Private' data-stability='Private' >
+                    <propval name='refdes' type='string' value='J197' />
+                  </propgroup>
                 <enum-method name='oxhc' version='1' />
               </node>
             </range>

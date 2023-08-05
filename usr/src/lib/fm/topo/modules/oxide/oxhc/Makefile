@@ -17,9 +17,13 @@ MODULE = oxhc
 ARCH = oxide
 CLASS = arch
 
-MODULESRCS = oxhc.c
+MODULESRCS = oxhc.c oxhc_ipcc.c oxhc_ic.c bitext.o
 
 include ../../Makefile.plugin
 
 CPPFLAGS += -I$(SRC)/uts/oxide -I../../common/zen
-LDLIBS += -ldevinfo
+LDLIBS += -ldevinfo -lrename -lnvpair
+
+%.o: $(SRC)/common/bitext/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)

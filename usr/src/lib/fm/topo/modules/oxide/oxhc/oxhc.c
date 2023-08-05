@@ -29,77 +29,38 @@
  * described above.
  */
 
-#include <sys/fm/protocol.h>
-#include <fm/topo_mod.h>
-#include <fm/topo_hc.h>
 #include <strings.h>
-#include <sys/ipcc.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <stdbool.h>
 #include <sys/debug.h>
 #include <topo_zen.h>
 
-typedef struct oxhc oxhc_t;
-typedef struct oxhc_enum oxhc_enum_t;
-typedef int (*oxhc_enum_f)(topo_mod_t *, const oxhc_t *, const oxhc_enum_t *,
-    tnode_t *, tnode_t *, topo_instance_t, topo_instance_t);
+#include "oxhc.h"
 
-/*
- * Enumeration flags and structure definition. This is used to drive the
- * processing of various topology nodes.
- *
- * XXX We still need flags and logic for ASRU construction.
- */
-typedef enum {
-	/*
-	 * This flag is used to indicate that we are okay operating on a range
-	 * of instances. This should only happen during the range enumeration
-	 * phase, not during the post-creation enumeration phase.
-	 */
-	OXHC_ENUM_F_MULTI_RANGE		= 1 << 0,
-	/*
-	 * When enumerating information for this node, use the IPCC
-	 * identification information for various pieces of information in the
-	 * FMRI.
-	 */
-	OXHC_ENUM_F_USE_IPCC_SN		= 1 << 1,
-	OXHC_ENUM_F_USE_IPCC_PN_AS_PART	= 1 << 2,
-	/*
-	 * This is a note that we need to manually construct the auth field as
-	 * opposed to simply inheriting it. This is basically always the case
-	 * for our initial node.
-	 */
-	OXHC_ENUM_F_MAKE_AUTH		= 1 << 3,
-	/*
-	 * This indicates that we should set a FRU to ourselves. Otherwise we
-	 * will attempt to inherit the FRU from our parent.
-	 */
-	OXHC_ENUM_F_FRU_SELF		= 1 << 4
-} oxhc_enum_flags_t;
-
-struct oxhc_enum {
-	const char *oe_name;
-	const char *oe_parent;
-	oxhc_enum_flags_t oe_flags;
-	const char *oe_cpn;
-	oxhc_enum_f oe_range_enum;
-	oxhc_enum_f oe_post_enum;
+static const oxhc_slot_info_t oxhc_slots_gimlet[] = {
+	{ OXHC_SLOT_CEM, 0, 9, "215-0000085" },
+	{ OXHC_SLOT_DIMM, 10, 25, "215-0000086" },
+	{ OXHC_SLOT_M2, 26, 27, "215-0000072" },
+	{ OXHC_SLOT_TEMP, 28, 33, "215-0000092" }
 };
 
-/*
- * Misc. data that we want to keep around during the module's lifetime.
- */
-typedef struct oxhc {
-	char *oxhc_pn;
-	char *oxhc_sn;
-	char oxhc_rev[32];
-	const oxhc_enum_t *oxhc_enum;
-	size_t oxhc_nenum;
-} oxhc_t;
+static bool
+oxhc_slot_type(const oxhc_t *oxhc, topo_instance_t inst,
+    oxhc_slot_type_t *typep)
+{
+	for (size_t i = 0; i < oxhc->oxhc_nslots; i++) {
+		if (inst >= oxhc->oxhc_slots[i].osi_min &&
+		    inst <= oxhc->oxhc_slots[i].osi_max) {
+			*typep = oxhc->oxhc_slots[i].osi_type;
+			return (true);
+		}
+	}
+
+	return (false);
+}
 
 /*
  * Create our authority information for the system. While we inherit basic
@@ -169,8 +130,12 @@ topo_oxhc_enum_range(topo_mod_t *mod, const oxhc_t *oxhc, const oxhc_enum_t *oe,
 			serial = oxhc->oxhc_sn;
 		}
 
-		if ((oe->oe_flags & OXHC_ENUM_F_USE_IPCC_PN_AS_PART) != 0) {
-			serial = oxhc->oxhc_pn;
+		if ((oe->oe_flags & OXHC_ENUM_F_USE_IPCC_PN) != 0) {
+			part = oxhc->oxhc_pn;
+		}
+
+		if ((oe->oe_flags & OXHC_ENUM_F_USE_IPCC_REV) != 0) {
+			rev = oxhc->oxhc_revstr;
 		}
 
 		fmri = topo_mod_hcfmri(mod, parent, FM_HC_SCHEME_VERSION,
@@ -203,8 +168,8 @@ topo_oxhc_enum_range(topo_mod_t *mod, const oxhc_t *oxhc, const oxhc_enum_t *oe,
 		nvlist_free(fmri);
 
 		if (ret != 0) {
-			topo_mod_dprintf(mod, "failed to set FMRI: %s\n",
-			    topo_mod_errmsg(mod));
+			topo_mod_dprintf(mod, "failed to set FRU: %s\n",
+			    topo_strerror(err));
 			nvlist_free(auth);
 			return (topo_mod_seterrno(mod, err));
 		}
@@ -232,29 +197,29 @@ topo_oxhc_enum_range_slot(topo_mod_t *mod, const oxhc_t *oxhc,
     const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
     topo_instance_t max)
 {
-	oxhc_enum_t tmp;
-	int ret;
-
+	/*
+	 * When we add support for a second system board, then these verify
+	 * statements should go away and be folded into the board-specific data.
+	 */
 	VERIFY3U(min, ==, 0);
-	VERIFY3U(max, ==, 27);
+	VERIFY3U(max, ==, 33);
 
-	tmp = *oe;
-	tmp.oe_cpn = "215-0000085";
-	ret = topo_oxhc_enum_range(mod, oxhc, &tmp, pn, tn, 0, 9);
-	if (ret != 0) {
-		return (ret);
+	for (size_t i = 0; i < oxhc->oxhc_nslots; i++) {
+		const oxhc_slot_info_t *slot = &oxhc->oxhc_slots[i];
+		int ret;
+		oxhc_enum_t tmp;
+
+		tmp = *oe;
+		tmp.oe_cpn = slot->osi_cpn;
+
+		ret = topo_oxhc_enum_range(mod, oxhc, &tmp, pn, tn,
+		    slot->osi_min, slot->osi_max);
+		if (ret != 0) {
+			return (ret);
+		}
 	}
 
-	tmp = *oe;
-	tmp.oe_cpn = "215-0000086";
-	ret = topo_oxhc_enum_range(mod, oxhc, &tmp, pn, tn, 10, 25);
-	if (ret != 0) {
-		return (ret);
-	}
-
-	tmp = *oe;
-	tmp.oe_cpn = "215-0000072";
-	return (topo_oxhc_enum_range(mod, oxhc, &tmp, pn, tn, 26, 27));
+	return (0);
 }
 
 static int
@@ -288,7 +253,6 @@ topo_oxhc_enum_nvme(topo_mod_t *mod, tnode_t *tn, di_node_t child)
 	(void) topo_mod_enumerate(mod, tn, DISK, NVME, 0, 0, NULL);
 	return (0);
 }
-
 
 /*
  * This is the follow-up enumeration case for bays, slots, and ports that are
@@ -396,6 +360,129 @@ topo_oxhc_enum_pcie_child(topo_mod_t *mod, const oxhc_t *oxhc,
 	    "instance\n", tname, topo_node_instance(tn));
 	return (0);
 }
+
+/*
+ * We have found a slot that refers to a temp sensor board. Check to see if we
+ * have an IPCC entry for this based on its refdes property in the oxide
+ * property group. If it does, create a board and then ask the IC bits to fill
+ * it in. We will be looking for our refdes/U1 as a proxy for whether or not
+ * anything is there.
+ */
+static int
+topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	int err, ret;
+	const char *tname = topo_node_name(tn);
+	char *slot_refdes = NULL;
+	char ipcc[IPCC_INVENTORY_NAMELEN];
+	const ipcc_inventory_t *inv;
+	nvlist_t *auth = NULL, *fmri = NULL;
+	tnode_t *board;
+
+	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n", tname,
+	    topo_node_instance(tn));
+
+	if (topo_prop_get_string(tn, TOPO_PGROUP_OXHC, TOPO_PGROUP_OXHC_REFDES,
+	    &slot_refdes, &err) != 0) {
+		topo_mod_dprintf(mod, "%s[%" PRIu64 "] missing required refdes "
+		    "property: %s, cannot enumerate further", tname,
+		    topo_node_instance(tn), topo_strerror(err));
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	if (snprintf(ipcc, sizeof (ipcc), "%s/U1", slot_refdes) >=
+	    sizeof (ipcc)) {
+		topo_mod_dprintf(mod, "constructing expected temp sensor "
+		    "refdes for %s[%" PRIu64 "] based on found refdes '%s' "
+		    "is larger than the IPCC inventory name length", tname,
+		    topo_node_instance(tn), slot_refdes);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	if ((inv = topo_oxhc_inventory_find(oxhc, ipcc)) == NULL) {
+		topo_mod_dprintf(mod, "failed to find IPCC inventory entry %s",
+		    ipcc);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	/*
+	 * If there's a device present then go ahead and create the board
+	 * entity. We treat the idea of an I/O error in getting this as
+	 * generally there being a board present as something did more than just
+	 * NAK us over i2c. The actual IC will not be enumerated in that case.
+	 */
+	if (inv->iinv_res != IPCC_INVENTORY_SUCCESS &&
+	    inv->iinv_res != IPCC_INVENTORY_IO_ERROR) {
+		topo_mod_dprintf(mod, "%s device is not present, skipping "
+		    "board creation", ipcc);
+		ret = 0;
+		goto out;
+	}
+
+	if (topo_node_range_create(mod, tn, BOARD, 0, 0) != 0) {
+		topo_mod_dprintf(mod, "failed to create BOARD range: %s\n",
+		    topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	auth = topo_mod_auth(mod, tn);
+	if (auth == NULL) {
+		topo_mod_dprintf(mod, "failed to get auth data for %s[%" PRIu64
+		    "]: %s\n", tname, topo_node_instance(tn),
+		    topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	fmri = topo_mod_hcfmri(mod, tn, FM_HC_SCHEME_VERSION, BOARD, min, NULL,
+	    auth, "913-0000011", NULL, NULL);
+	if (fmri == NULL) {
+		topo_mod_dprintf(mod, "failed to create FMRI for temp sensor "
+		    "board under %s[%" PRIu64 "]: %s\n", tname,
+		    topo_node_instance(tn), topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	board = topo_node_bind(mod, tn, BOARD, min, fmri);
+	if (board == NULL) {
+		topo_mod_dprintf(mod, "failed to bind node for temp sensor "
+		    "board under %s[%" PRIu64 "]: %s\n", tname,
+		    topo_node_instance(tn), topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	topo_pgroup_hcset(tn, auth);
+
+	/*
+	 * The FRU for the temp sensor board is itself. Inherit the label from
+	 * our parent which will name the temp sensor according to the silk.
+	 */
+	if (topo_node_fru_set(board, fmri, 0, &err) != 0 ||
+	    topo_node_label_set(board, NULL, &err) != 0) {
+		topo_mod_dprintf(mod, "failed to set the FRU/label for "
+		    "temp sensor board under %s[%" PRIu64 "]: %s\n", tname,
+		    topo_node_instance(tn), topo_strerror(err));
+		ret = -1;
+		goto out;
+	}
+
+	ret = topo_oxhc_enum_ic_temp(mod, oxhc, board, slot_refdes);
+out:
+	nvlist_free(auth);
+	nvlist_free(fmri);
+	topo_mod_strfree(mod, slot_refdes);
+	return (ret);
+}
+
+
 /*
  * This is our second pass for slots. Because we have three different slots
  * types, what we do depends on which range we're in.
@@ -407,11 +494,24 @@ topo_oxhc_enum_slot(topo_mod_t *mod, const oxhc_t *oxhc,
     const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
     topo_instance_t max)
 {
+	oxhc_slot_type_t slot;
 	topo_instance_t inst = topo_node_instance(tn);
 
-	if (inst >= 26 && inst <= 27) {
+	if (!oxhc_slot_type(oxhc, inst, &slot)) {
+		topo_mod_dprintf(mod, "failed to map %s[%" PRId64 "] to a "
+		    "known slot type", topo_node_name(tn), inst);
+		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
+	}
+
+	switch (slot) {
+	case OXHC_SLOT_M2:
 		return (topo_oxhc_enum_pcie_child(mod, oxhc, oe, pn, tn, min,
 		    max));
+	case OXHC_SLOT_TEMP:
+		return (topo_oxhc_enum_temp_board(mod, oxhc, oe, pn, tn, min,
+		    max));
+	default:
+		break;
 	}
 
 	return (0);
@@ -452,12 +552,20 @@ topo_oxhc_enum_cpu(topo_mod_t *mod, const oxhc_t *oxhc,
 	return (ret);
 }
 
+static int
+topo_oxhc_enum_gimlet_board(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	return (topo_oxhc_enum_ic_gimlet(mod, oxhc, tn));
+}
+
 /*
  * Data enumeration table. In particular, this module is the main enumeration
  * method for most of the chassis, motherboard, various, ports, etc. The
  * following table directs how we process these items and what we require.
  */
-const oxhc_enum_t oxhc_enum_gimlet[] = {
+static const oxhc_enum_t oxhc_enum_gimlet[] = {
 	{ .oe_name = CHASSIS, .oe_parent = "hc", .oe_cpn = "992-0000015",
 	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN | OXHC_ENUM_F_MAKE_AUTH |
 	    OXHC_ENUM_F_FRU_SELF, .oe_range_enum = topo_oxhc_enum_range },
@@ -470,8 +578,10 @@ const oxhc_enum_t oxhc_enum_gimlet[] = {
 	    .oe_range_enum = topo_oxhc_enum_range  },
 	{ .oe_name = SYSTEMBOARD, .oe_parent = CHASSIS,
 	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN |
-	    OXHC_ENUM_F_USE_IPCC_PN_AS_PART | OXHC_ENUM_F_FRU_SELF,
-	    .oe_range_enum = topo_oxhc_enum_range },
+	    OXHC_ENUM_F_USE_IPCC_PN | OXHC_ENUM_F_USE_IPCC_REV |
+	    OXHC_ENUM_F_FRU_SELF,
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_gimlet_board },
 	{ .oe_name = SOCKET, .oe_parent = SYSTEMBOARD, .oe_cpn = "215-0000014",
 	    .oe_range_enum = topo_oxhc_enum_range,
 	    .oe_post_enum = topo_oxhc_enum_cpu },
@@ -485,10 +595,13 @@ typedef struct {
 	const char *oem_pn;
 	const oxhc_enum_t *oem_enum;
 	size_t oem_nenum;
+	const oxhc_slot_info_t *oem_slots;
+	size_t oem_nslots;
 } oxhc_enum_map_t;
 
 static const oxhc_enum_map_t oxhc_enum_map[] = {
-	{ "913-0000019", oxhc_enum_gimlet, ARRAY_SIZE(oxhc_enum_gimlet) }
+	{ "913-0000019", oxhc_enum_gimlet, ARRAY_SIZE(oxhc_enum_gimlet),
+	    oxhc_slots_gimlet, ARRAY_SIZE(oxhc_slots_gimlet) }
 };
 
 /*
@@ -607,6 +720,7 @@ topo_oxhc_cleanup(topo_mod_t *mod, oxhc_t *oxhc)
 		return;
 	}
 
+	topo_oxhc_inventory_fini(mod, oxhc);
 	topo_mod_strfree(mod, oxhc->oxhc_pn);
 	topo_mod_strfree(mod, oxhc->oxhc_sn);
 
@@ -645,8 +759,9 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 		goto out;
 	}
 
-	if (snprintf(oxhc->oxhc_rev, sizeof (oxhc->oxhc_rev), "%u",
-	    ident.ii_rev) >= sizeof (oxhc->oxhc_rev)) {
+	oxhc->oxhc_rev = ident.ii_rev;
+	if (snprintf(oxhc->oxhc_revstr, sizeof (oxhc->oxhc_revstr), "%u",
+	    ident.ii_rev) >= sizeof (oxhc->oxhc_revstr)) {
 		topo_mod_dprintf(mod, "failed to construct revision buffer due "
 		    "to overflow!");
 		goto out;
@@ -660,6 +775,8 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 		if (strcmp(oxhc_enum_map[i].oem_pn, oxhc->oxhc_pn) == 0) {
 			oxhc->oxhc_enum = oxhc_enum_map[i].oem_enum;
 			oxhc->oxhc_nenum = oxhc_enum_map[i].oem_nenum;
+			oxhc->oxhc_slots = oxhc_enum_map[i].oem_slots;
+			oxhc->oxhc_nslots = oxhc_enum_map[i].oem_nslots;
 			break;
 		}
 	}
@@ -670,10 +787,9 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 		goto out;
 	}
 
-	/*
-	 * XXX When we have IPCC data for inventory from the SP, this is where
-	 * we should grab it.
-	 */
+	if (topo_oxhc_inventory_init(mod, fd, oxhc) != 0) {
+		goto out;
+	}
 
 	/*
 	 * XXX This is where we should grab the memory controller snapshot for
