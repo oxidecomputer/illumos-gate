@@ -30,6 +30,7 @@ extern int librename_atomic_fdinit(int, const char *, const char *, int, int,
     librename_atomic_t **);
 extern int librename_atomic_fd(librename_atomic_t *);
 extern int librename_atomic_commit(librename_atomic_t *);
+extern int librename_atomic_abort(librename_atomic_t *);
 extern void librename_atomic_fini(librename_atomic_t *);
 
 #ifdef __cplusplus

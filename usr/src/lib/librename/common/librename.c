@@ -11,6 +11,7 @@
 
 /*
  * Copyright (c) 2014 Joyent, Inc.  All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <librename.h>
@@ -31,7 +32,8 @@ typedef enum librename_atomic_state {
 	LIBRENAME_ATOMIC_FSYNC,
 	LIBRENAME_ATOMIC_RENAME,
 	LIBRENAME_ATOMIC_POSTSYNC,
-	LIBRENAME_ATOMIC_COMPLETED
+	LIBRENAME_ATOMIC_COMPLETED,
+	LIBRENAME_ATOMIC_ABORTED
 } librename_atomic_state_t;
 
 struct librename_atomic {
@@ -126,7 +128,8 @@ librename_atomic_fdinit(int fd, const char *file, const char *prefix,
 		return (ret);
 	}
 
-	VERIFY0(mutex_init(&lrap->lra_lock, USYNC_THREAD, NULL));
+	VERIFY0(mutex_init(&lrap->lra_lock, USYNC_THREAD | LOCK_ERRORCHECK,
+	    NULL));
 
 	lrap->lra_state = LIBRENAME_ATOMIC_INITIAL;
 	*outp = lrap;
@@ -166,8 +169,8 @@ librename_atomic_commit(librename_atomic_t *lrap)
 {
 	int ret = 0;
 
-	VERIFY0(mutex_lock(&lrap->lra_lock));
-	if (lrap->lra_state == LIBRENAME_ATOMIC_COMPLETED) {
+	mutex_enter(&lrap->lra_lock);
+	if (lrap->lra_state >= LIBRENAME_ATOMIC_COMPLETED) {
 		ret = EINVAL;
 		goto out;
 	}
@@ -198,7 +201,32 @@ librename_atomic_commit(librename_atomic_t *lrap)
 	lrap->lra_state = LIBRENAME_ATOMIC_COMPLETED;
 
 out:
-	VERIFY0(mutex_unlock(&lrap->lra_lock));
+	mutex_exit(&lrap->lra_lock);
+	return (ret);
+}
+
+/*
+ * Abort an in-flight transaction.
+ */
+int
+librename_atomic_abort(librename_atomic_t *lrap)
+{
+	int ret;
+	mutex_enter(&lrap->lra_lock);
+	if (lrap->lra_state >= LIBRENAME_ATOMIC_COMPLETED) {
+		ret = EINVAL;
+		goto done;
+	}
+
+	if (unlinkat(lrap->lra_dirfd, lrap->lra_altname, 0) != 0) {
+		ret = errno;
+		goto done;
+	}
+
+	lrap->lra_state = LIBRENAME_ATOMIC_ABORTED;
+	ret = 0;
+done:
+	mutex_exit(&lrap->lra_lock);
 	return (ret);
 }
 
