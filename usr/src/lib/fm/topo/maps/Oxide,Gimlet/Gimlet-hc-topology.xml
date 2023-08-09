@@ -346,6 +346,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J206' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='1' static='true'>
                 <propgroup name='protocol' version='1'
@@ -360,6 +365,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J207' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='2' static='true'>
                 <propgroup name='protocol' version='1'
@@ -374,6 +384,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J208' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='3' static='true'>
                 <propgroup name='protocol' version='1'
@@ -388,6 +403,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J209' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='4' static='true'>
                 <propgroup name='protocol' version='1'
@@ -402,6 +422,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J210' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='5' static='true'>
                 <propgroup name='protocol' version='1'
@@ -416,6 +441,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J211' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='6' static='true'>
                 <propgroup name='protocol' version='1'
@@ -430,6 +460,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J212' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='7' static='true'>
                 <propgroup name='protocol' version='1'
@@ -444,6 +479,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J213' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='8' static='true'>
                 <propgroup name='protocol' version='1'
@@ -466,6 +506,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J214' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='9' static='true'>
                 <propgroup name='protocol' version='1'
@@ -480,6 +525,11 @@
                     name-stability='Private' data-stability='Private' >
                   <propval name='width' type='uint32' value='4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='J215' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
 
               <node instance='10' static='true'>
@@ -496,6 +546,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M0' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='11' static='true'>
                 <propgroup name='protocol' version='1'
@@ -511,6 +566,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M8' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='12' static='true'>
                 <propgroup name='protocol' version='1'
@@ -526,6 +586,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M1' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='13' static='true'>
                 <propgroup name='protocol' version='1'
@@ -541,6 +606,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M9' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='14' static='true'>
                 <propgroup name='protocol' version='1'
@@ -556,6 +626,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M2' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='15' static='true'>
                 <propgroup name='protocol' version='1'
@@ -571,6 +646,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M10' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='16' static='true'>
                 <propgroup name='protocol' version='1'
@@ -586,6 +666,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M3' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='17' static='true'>
                 <propgroup name='protocol' version='1'
@@ -610,6 +695,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M11' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='18' static='true'>
                 <propgroup name='protocol' version='1'
@@ -634,6 +724,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M4' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='19' static='true'>
                 <propgroup name='protocol' version='1'
@@ -649,6 +744,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M12' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='20' static='true'>
                 <propgroup name='protocol' version='1'
@@ -664,6 +764,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M5' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='21' static='true'>
                 <propgroup name='protocol' version='1'
@@ -679,6 +784,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M13' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='22' static='true'>
                 <propgroup name='protocol' version='1'
@@ -694,6 +804,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M6' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='23' static='true'>
                 <propgroup name='protocol' version='1'
@@ -718,6 +833,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M14' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='24' static='true'>
                 <propgroup name='protocol' version='1'
@@ -733,6 +853,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M7' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
               <node instance='25' static='true'>
                 <propgroup name='protocol' version='1'
@@ -748,6 +873,11 @@
                   <propval name='form-factor' type='string' value='DIMM' />
                   <propval name='standard' type='string' value='DDR4' />
                 </propgroup>
+                <propgroup name='oxhc' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='refdes' type='string' value='M15' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
               </node>
 
               <node instance='26' static='true'>
@@ -857,6 +987,50 @@
                   </propgroup>
                 <enum-method name='oxhc' version='1' />
               </node>
+            </range>
+
+            <!--
+              There are a total of four ports that exist on the Gimlet baseboard
+              that are for connectivity to external systems. These are the
+              various ExaMax connectors and the PowerBlade connector. While only
+              the ExaMax connector to Sidecar may have anything enumerated under
+              it. In this case, we number these from West to East, meaning that
+              the PCIe backplane connector is 0 and the PowerBlade is 3.
+            -->
+            <range name='port' min='0' max='3'>
+              <enum-method name='oxhc' version='1' />
+              <node instance='0' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='J3 (PCIe)' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+
+              <node instance='1' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='J2 (Switch 1)' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+
+              <node instance='2' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='J1 (Switch 0)' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+
+              <node instance='3' static='true'>
+                <propgroup name='protocol' version='1'
+                    name-stability='Private' data-stability='Private' >
+                  <propval name='label' type='string' value='J192' />
+                </propgroup>
+                <enum-method name='oxhc' version='1' />
+              </node>
+
             </range>
 
             <range name='socket' min='0' max='0'>

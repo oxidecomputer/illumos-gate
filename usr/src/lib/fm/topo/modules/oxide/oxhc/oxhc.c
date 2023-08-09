@@ -37,8 +37,17 @@
 #include <fcntl.h>
 #include <sys/debug.h>
 #include <topo_zen.h>
+#include <topo_dimm.h>
+#include <topo_ufm.h>
 
 #include "oxhc.h"
+
+static const topo_pgroup_info_t oxhc_io_pgroup = {
+	TOPO_PGROUP_IO,
+	TOPO_STABILITY_PRIVATE,
+	TOPO_STABILITY_PRIVATE,
+	1
+};
 
 static const oxhc_slot_info_t oxhc_slots_gimlet[] = {
 	{ OXHC_SLOT_CEM, 0, 9, "215-0000085" },
@@ -47,8 +56,13 @@ static const oxhc_slot_info_t oxhc_slots_gimlet[] = {
 	{ OXHC_SLOT_TEMP, 28, 33, "215-0000092" }
 };
 
+static const oxhc_port_info_t oxhc_ports_gimlet[] = {
+	{ OXHC_PORT_EXAMAX_4X8, 0, 2, "215-0000082" },
+	{ OXHC_PORT_PWRBLADE, 3, 3, "215-0000114" }
+};
+
 static bool
-oxhc_slot_type(const oxhc_t *oxhc, topo_instance_t inst,
+topo_oxhc_slot_type(const oxhc_t *oxhc, topo_instance_t inst,
     oxhc_slot_type_t *typep)
 {
 	for (size_t i = 0; i < oxhc->oxhc_nslots; i++) {
@@ -67,7 +81,7 @@ oxhc_slot_type(const oxhc_t *oxhc, topo_instance_t inst,
  * information from our parent, we override most of it with the information from
  * IPCC.
  */
-static nvlist_t *
+nvlist_t *
 topo_oxhc_auth(topo_mod_t *mod, const oxhc_t *oxhc, const oxhc_enum_t *oe,
     tnode_t *pnode)
 {
@@ -96,6 +110,73 @@ topo_oxhc_auth(topo_mod_t *mod, const oxhc_t *oxhc, const oxhc_enum_t *oe,
 	return (auth);
 }
 
+int
+topo_oxhc_tn_create(topo_mod_t *mod, tnode_t *pn, tnode_t **tnp,
+    const char *name, topo_instance_t inst, nvlist_t *auth, const char *part,
+    const char *rev, const char *serial, topo_oxhc_tn_flags_t flags,
+    const char *label)
+{
+	int ret;
+	nvlist_t *fmri = NULL, *fru;
+	tnode_t *tn, *fmri_parent;
+
+	if (tnp != NULL)
+		*tnp = NULL;
+
+	if ((flags & TOPO_OXHC_TN_F_NO_FMRI_PARENT) != 0) {
+		fmri_parent = NULL;
+	} else {
+		fmri_parent = pn;
+	}
+
+	fmri = topo_mod_hcfmri(mod, fmri_parent, FM_HC_SCHEME_VERSION, name,
+	    inst, NULL, auth, part, rev, serial);
+	if (fmri == NULL) {
+		topo_mod_dprintf(mod, "failed to create fmri for %s[%" PRIu64
+		    "]: %s\n", name, inst, topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	tn = topo_node_bind(mod, pn, name, inst, fmri);
+	if (tn == NULL) {
+		topo_mod_dprintf(mod, "failed to bind fmri for %s[%" PRIu64
+		    "]: %s\n", name, inst, topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	topo_pgroup_hcset(tn, auth);
+
+	if ((flags & TOPO_OXHC_TN_F_FRU_SELF) != 0) {
+		fru = fmri;
+	} else {
+		fru = NULL;
+	}
+
+	if (topo_node_fru_set(tn, fru, 0, &ret) != 0) {
+		topo_mod_dprintf(mod, "failed to set FRU: %s\n",
+		    topo_strerror(ret));
+		ret = topo_mod_seterrno(mod, ret);
+		goto out;
+	}
+
+	if ((flags & TOPO_OXHC_TN_F_SET_LABEL) != 0 &&
+	    topo_node_label_set(tn, label, &ret) != 0) {
+		topo_mod_dprintf(mod, "failed to set FRU: %s\n",
+		    topo_strerror(ret));
+		ret = topo_mod_seterrno(mod, ret);
+		goto out;
+	}
+
+	if (tnp != NULL)
+		*tnp = tn;
+	ret = 0;
+out:
+	nvlist_free(fmri);
+	return (ret);
+}
+
 /*
  * This is the common initial enumeration entry point for a node in the tree.
  */
@@ -113,17 +194,15 @@ topo_oxhc_enum_range(topo_mod_t *mod, const oxhc_t *oxhc, const oxhc_enum_t *oe,
 	}
 
 	for (topo_instance_t i = min; i <= max; i++) {
-		nvlist_t *fmri;
-		int ret, err;
-		tnode_t *parent = pn;
 		const char *part = oe->oe_cpn, *rev = NULL, *serial = NULL;
+		topo_oxhc_tn_flags_t flags = 0;
 
 		/*
 		 * When we're a child of hc we can't use it in our attempt to
 		 * construct an FMRI as that will fail at this point in time.
 		 */
 		if (strcmp(topo_node_name(pn), "hc") == 0) {
-			parent = NULL;
+			flags |= TOPO_OXHC_TN_F_NO_FMRI_PARENT;
 		}
 
 		if ((oe->oe_flags & OXHC_ENUM_F_USE_IPCC_SN) != 0) {
@@ -138,40 +217,14 @@ topo_oxhc_enum_range(topo_mod_t *mod, const oxhc_t *oxhc, const oxhc_enum_t *oe,
 			rev = oxhc->oxhc_revstr;
 		}
 
-		fmri = topo_mod_hcfmri(mod, parent, FM_HC_SCHEME_VERSION,
-		    oe->oe_name, i, NULL, auth, part, rev, serial);
-		if (fmri == NULL) {
-			topo_mod_dprintf(mod, "failed to create fmri for %s[%"
-			    PRIu64 "]: %s\n", oe->oe_name, i,
-			    topo_mod_errmsg(mod));
-			nvlist_free(auth);
-			return (-1);
-		}
-
-		tn = topo_node_bind(mod, pn, oe->oe_name, i, fmri);
-		if (tn == NULL) {
-			topo_mod_dprintf(mod, "failed to bind fmri for %s[%"
-			    PRIu64 "]: %s\n", oe->oe_name, i,
-			    topo_mod_errmsg(mod));
-			nvlist_free(fmri);
-			nvlist_free(auth);
-			return (-1);
-		}
-
-		topo_pgroup_hcset(tn, auth);
-
 		if ((oe->oe_flags & OXHC_ENUM_F_FRU_SELF) != 0) {
-			ret = topo_node_fru_set(tn, fmri, 0, &err);
-		} else {
-			ret = topo_node_fru_set(tn, NULL, 0, &err);
+			flags |= TOPO_OXHC_TN_F_FRU_SELF;
 		}
-		nvlist_free(fmri);
 
-		if (ret != 0) {
-			topo_mod_dprintf(mod, "failed to set FRU: %s\n",
-			    topo_strerror(err));
+		if (topo_oxhc_tn_create(mod, pn, NULL, oe->oe_name, i, auth,
+		    part, rev, serial, flags, NULL) != 0) {
 			nvlist_free(auth);
-			return (topo_mod_seterrno(mod, err));
+			return (-1);
 		}
 
 		/*
@@ -222,6 +275,114 @@ topo_oxhc_enum_range_slot(topo_mod_t *mod, const oxhc_t *oxhc,
 	return (0);
 }
 
+/*
+ * This enumerates basic information about a PCIe device child. Our primary
+ * concerns here right now are to just get the basic I/O property group
+ * populated as well as any UFMs. There may well be multiple functions here,
+ * which means the use of a single di_node_t doesn't give us the most accurate
+ * information.  The attempt here is to have something that's a little bit
+ * better than nothing. In general, we only expect this to be used for the T6.
+ * We should probably come up with something better for this over time.
+ */
+int
+topo_oxhc_enum_pcie(topo_mod_t *mod, tnode_t *tn, di_node_t di)
+{
+	topo_ufm_devinfo_t tud;
+	char *path = NULL;
+	int ret = -1, inst;
+	const char *drv;
+	const char *ppaths[1];
+	nvlist_t *fmri = NULL;
+
+	path = di_devfs_path(di);
+	if (path == NULL) {
+		topo_mod_dprintf(mod, "failed to get /devices path for %s%d: "
+		    "%s", di_driver_name(di), di_instance(di),
+		    strerror(errno));
+		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
+	}
+
+	tud.tud_method = TOPO_UFM_M_DEVINFO;
+	tud.tud_path = path;
+	if (topo_mod_load(mod, TOPO_MOD_UFM, TOPO_VERSION) == NULL) {
+		topo_mod_dprintf(mod, "failed to load %s module: %s",
+		    TOPO_MOD_UFM, topo_mod_errmsg(mod));
+		goto out;
+	}
+
+	if (topo_mod_enumerate(mod, tn, TOPO_MOD_UFM, UFM, 0, 0,
+	    &tud) != 0) {
+		goto out;
+	}
+
+	inst = di_instance(di);
+	drv = di_driver_name(di);
+	ppaths[0] = path;
+
+	/*
+	 * If we don't have a driver or instance, just proceed.
+	 */
+	if (inst == -1 || drv == NULL) {
+		ret = 0;
+		goto out;
+	}
+
+	if ((fmri = topo_mod_modfmri(mod, FM_MOD_SCHEME_VERSION, drv)) ==
+	    NULL) {
+		topo_mod_dprintf(mod, "failed to create mod FMRI for driver "
+		    "%s: %s", drv, topo_mod_errmsg(mod));
+		goto out;
+	}
+
+	if (topo_create_props(mod, tn, TOPO_PROP_IMMUTABLE,
+	    &oxhc_io_pgroup,
+	    TOPO_IO_INSTANCE, TOPO_TYPE_UINT32, inst,
+	    TOPO_IO_DRIVER, TOPO_TYPE_STRING, drv,
+	    TOPO_IO_MODULE, TOPO_TYPE_FMRI, fmri,
+	    TOPO_IO_DEV_PATH, TOPO_TYPE_STRING, path,
+	    TOPO_IO_PHYS_PATH, TOPO_TYPE_STRING_ARRAY, ppaths, 1,
+	    NULL) != 0) {
+		topo_mod_dprintf(mod, "failed to create I/O properties on "
+		    "%s[%" PRIu64 "]: %s", topo_node_name(tn),
+		    topo_node_instance(tn), topo_mod_errmsg(mod));
+		goto out;
+	}
+
+	ret = 0;
+out:
+	nvlist_free(fmri);
+	di_devfs_path_free(path);
+	return (ret);
+}
+
+di_node_t
+topo_oxhc_slot_to_devi(topo_mod_t *mod, uint32_t slot)
+{
+	di_node_t root;
+
+	if ((root = topo_mod_devinfo(mod)) == DI_NODE_NIL) {
+		topo_mod_dprintf(mod, "failed to get devinfo tree");
+		return (DI_NODE_NIL);
+	}
+
+	for (di_node_t di = di_drv_first_node("pcieb", root); di != DI_NODE_NIL;
+	    di = di_drv_next_node(di)) {
+		int *slots;
+
+		if (di_prop_lookup_ints(DDI_DEV_T_ANY, di, "physical-slot#",
+		    &slots) != 1) {
+			continue;
+		}
+
+		if ((uint32_t)slots[0] != slot)
+			continue;
+
+		return (di);
+	}
+
+	return (DI_NODE_NIL);
+}
+
 static int
 topo_oxhc_enum_nvme(topo_mod_t *mod, tnode_t *tn, di_node_t child)
 {
@@ -254,6 +415,56 @@ topo_oxhc_enum_nvme(topo_mod_t *mod, tnode_t *tn, di_node_t child)
 	return (0);
 }
 
+
+/*
+ * We have an unknown entity in the U.2 slot or possibly in the CEM itself. We
+ * want to have a best effort of representing that something is here. As such we
+ * create a board and then an IC under it.
+ */
+static int
+topo_oxhc_enum_unknown_pcie(topo_mod_t *mod, tnode_t *tn, di_node_t di)
+{
+	tnode_t *board, *ic;
+	nvlist_t *auth = NULL;
+	int ret = -1;
+
+	auth = topo_mod_auth(mod, tn);
+	if (auth == NULL) {
+		topo_mod_dprintf(mod, "failed to get auth data for %s[%" PRIu64
+		    "]: %s\n", topo_node_name(tn), topo_node_instance(tn),
+		    topo_mod_errmsg(mod));
+		goto out;
+	}
+
+	if (topo_node_range_create(mod, tn, BOARD, 0, 0) != 0) {
+		topo_mod_dprintf(mod, "failed to create board range: %s\n",
+		    topo_mod_errmsg(mod));
+		goto out;
+	}
+
+	if (topo_oxhc_tn_create(mod, tn, &board, BOARD, 0, auth, NULL, NULL,
+	    NULL, TOPO_OXHC_TN_F_FRU_SELF | TOPO_OXHC_TN_F_SET_LABEL, NULL) !=
+	    0) {
+		goto out;
+	}
+
+	if (topo_node_range_create(mod, board, IC, 0, 0) != 0) {
+		topo_mod_dprintf(mod, "failed to create board range: %s\n",
+		    topo_mod_errmsg(mod));
+		goto out;
+	}
+
+	if (topo_oxhc_tn_create(mod, board, &ic, IC, 0, auth, NULL, NULL,
+	    NULL, 0, NULL) != 0) {
+		goto out;
+	}
+
+	ret = topo_oxhc_enum_pcie(mod, ic, di);
+out:
+	nvlist_free(auth);
+	return (ret);
+}
+
 /*
  * This is the follow-up enumeration case for bays, slots, and ports that are
  * mechanically PCIe root ports. We have statically assigned a slot number for
@@ -275,8 +486,11 @@ topo_oxhc_enum_pcie_child(topo_mod_t *mod, const oxhc_t *oxhc,
 {
 	const char *tname = topo_node_name(tn);
 	uint32_t slot;
-	int err;
-	di_node_t root;
+	int ret, err;
+	di_node_t bridge;
+	char *path;
+	const char *dname;
+	di_node_t child;
 
 	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n", tname,
 	    topo_node_instance(tn));
@@ -287,78 +501,50 @@ topo_oxhc_enum_pcie_child(topo_mod_t *mod, const oxhc_t *oxhc,
 		return (topo_mod_seterrno(mod, err));
 	}
 
-	if ((root = topo_mod_devinfo(mod)) == DI_NODE_NIL) {
-		topo_mod_dprintf(mod, "failed to get devinfo tree");
-		return (-1);
-	}
-
-	/*
-	 * We need to search our pcieb instances until we find the one that
-	 * actually has a slot that matches what we want.
-	 */
-	for (di_node_t di = di_drv_first_node("pcieb", root); di != DI_NODE_NIL;
-	    di = di_drv_next_node(di)) {
-		int *slots, ret;
-		char *path;
-		const char *dname;
-		di_node_t child;
-
-		if (di_prop_lookup_ints(DDI_DEV_T_ANY, di, "physical-slot#",
-		    &slots) != 1) {
-			continue;
-		}
-
-		if ((uint32_t)slots[0] != slot)
-			continue;
-
-		path = di_devfs_path(di);
-		if (path == NULL) {
-			topo_mod_dprintf(mod, "failed to get /devices path for "
-			    "%s%d: %s", di_driver_name(di), di_instance(di),
-			    strerror(errno));
-			return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
-		}
-
-		ret = topo_prop_set_string(tn, TOPO_PGROUP_BINDING,
-		    TOPO_BINDING_PARENT_DEV, TOPO_PROP_IMMUTABLE, path, &err);
-		di_devfs_path_free(path);
-		if (ret != 0) {
-			topo_mod_dprintf(mod, "failed to set devfs path: %s",
-			    topo_strerror(err));
-			return (topo_mod_seterrno(mod, err));
-		}
-
+	if ((bridge = topo_oxhc_slot_to_devi(mod, slot)) == DI_NODE_NIL) {
 		/*
-		 * Look at the child and before we ask the disk enumerator to do
-		 * something we should see if it's an NVMe device, otherwise we
-		 * will want to do a different enumeration path.
+		 * If we didn't find anything, that's OK. It may not be present.
+		 * Our methods will help fill that in later.
 		 */
-		child = di_child_node(di);
-		if (child == DI_NODE_NIL) {
-			return (0);
-		}
+		topo_mod_dprintf(mod, "failed to map %s[%" PRIu64 "] to a "
+		    "pcieb instance\n", tname, topo_node_instance(tn));
+		return (0);
+	}
 
-		dname = di_driver_name(child);
-		if (dname != NULL && strcmp(dname, NVME) == 0) {
-			return (topo_oxhc_enum_nvme(mod, tn, child));
-		} else {
-			/*
-			 * XXX We should figure out what to do in this case.
-			 * Right now the PCI enumerator expects to have a PCI
-			 * Bus to be enumerated under a root port, which isn't
-			 * really right to create here.
-			 */
-			return (0);
-		}
+	path = di_devfs_path(bridge);
+	if (path == NULL) {
+		topo_mod_dprintf(mod, "failed to get /devices path for %s%d: "
+		    "%s", di_driver_name(bridge), di_instance(bridge),
+		    strerror(errno));
+		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
+	}
+
+	ret = topo_prop_set_string(tn, TOPO_PGROUP_BINDING,
+	    TOPO_BINDING_PARENT_DEV, TOPO_PROP_IMMUTABLE, path, &err);
+	di_devfs_path_free(path);
+	if (ret != 0) {
+		topo_mod_dprintf(mod, "failed to set devfs path: %s",
+		    topo_strerror(err));
+		return (topo_mod_seterrno(mod, err));
 	}
 
 	/*
-	 * If we didn't find anything, that's OK. It may not be present. Our
-	 * methods will help fill that in later.
+	 * Look at the child and before we ask the disk enumerator to do
+	 * something we should see if it's an NVMe device, otherwise we
+	 * will want to do a different enumeration path.
 	 */
-	topo_mod_dprintf(mod, "failed to map %s[%" PRIu64 "] to a pcieb "
-	    "instance\n", tname, topo_node_instance(tn));
-	return (0);
+	child = di_child_node(bridge);
+	if (child == DI_NODE_NIL) {
+		return (0);
+	}
+
+	dname = di_driver_name(child);
+	if (dname != NULL && strcmp(dname, NVME) == 0) {
+		return (topo_oxhc_enum_nvme(mod, tn, child));
+	} else {
+
+		return (topo_oxhc_enum_unknown_pcie(mod, tn, child));
+	}
 }
 
 /*
@@ -378,7 +564,7 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 	char *slot_refdes = NULL;
 	char ipcc[IPCC_INVENTORY_NAMELEN];
 	const ipcc_inventory_t *inv;
-	nvlist_t *auth = NULL, *fmri = NULL;
+	nvlist_t *auth = NULL;
 	tnode_t *board;
 
 	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n", tname,
@@ -431,7 +617,7 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	auth = topo_mod_auth(mod, tn);
+	auth = topo_oxhc_auth(mod, oxhc, oe, tn);
 	if (auth == NULL) {
 		topo_mod_dprintf(mod, "failed to get auth data for %s[%" PRIu64
 		    "]: %s\n", tname, topo_node_instance(tn),
@@ -440,36 +626,13 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	fmri = topo_mod_hcfmri(mod, tn, FM_HC_SCHEME_VERSION, BOARD, min, NULL,
-	    auth, "913-0000011", NULL, NULL);
-	if (fmri == NULL) {
-		topo_mod_dprintf(mod, "failed to create FMRI for temp sensor "
-		    "board under %s[%" PRIu64 "]: %s\n", tname,
-		    topo_node_instance(tn), topo_mod_errmsg(mod));
-		ret = -1;
-		goto out;
-	}
-
-	board = topo_node_bind(mod, tn, BOARD, min, fmri);
-	if (board == NULL) {
-		topo_mod_dprintf(mod, "failed to bind node for temp sensor "
-		    "board under %s[%" PRIu64 "]: %s\n", tname,
-		    topo_node_instance(tn), topo_mod_errmsg(mod));
-		ret = -1;
-		goto out;
-	}
-
-	topo_pgroup_hcset(tn, auth);
-
 	/*
 	 * The FRU for the temp sensor board is itself. Inherit the label from
 	 * our parent which will name the temp sensor according to the silk.
 	 */
-	if (topo_node_fru_set(board, fmri, 0, &err) != 0 ||
-	    topo_node_label_set(board, NULL, &err) != 0) {
-		topo_mod_dprintf(mod, "failed to set the FRU/label for "
-		    "temp sensor board under %s[%" PRIu64 "]: %s\n", tname,
-		    topo_node_instance(tn), topo_strerror(err));
+	if (topo_oxhc_tn_create(mod, tn, &board, BOARD, min, auth,
+	    "913-0000011", NULL, NULL,
+	    TOPO_OXHC_TN_F_FRU_SELF | TOPO_OXHC_TN_F_SET_LABEL, NULL) != 0) {
 		ret = -1;
 		goto out;
 	}
@@ -477,17 +640,193 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 	ret = topo_oxhc_enum_ic_temp(mod, oxhc, board, slot_refdes);
 out:
 	nvlist_free(auth);
-	nvlist_free(fmri);
 	topo_mod_strfree(mod, slot_refdes);
 	return (ret);
 }
 
+/*
+ * This indicates that we've found a CEM slot that should have a sharkfin. We
+ * will look for an IPCC entry of the form JXXX/U7/ID. This will tell us what
+ * board we actually have.
+ */
+static int
+topo_oxhc_enum_sharkfin(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	int err, ret;
+	const char *tname = topo_node_name(tn);
+	char *slot_refdes = NULL, *part = NULL, *serial = NULL;
+	char ipcc[IPCC_INVENTORY_NAMELEN], rev[16];
+	const ipcc_inventory_t *inv;
+	ipcc_inv_vpdid_t vpd;
+	tnode_t *board;
+	nvlist_t *auth = NULL;
+
+	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n", tname,
+	    topo_node_instance(tn));
+
+	if (topo_prop_get_string(tn, TOPO_PGROUP_OXHC, TOPO_PGROUP_OXHC_REFDES,
+	    &slot_refdes, &err) != 0) {
+		topo_mod_dprintf(mod, "%s[%" PRIu64 "] missing required refdes "
+		    "property: %s, cannot enumerate further", tname,
+		    topo_node_instance(tn), topo_strerror(err));
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	if (snprintf(ipcc, sizeof (ipcc), "%s/U7/ID", slot_refdes) >=
+	    sizeof (ipcc)) {
+		topo_mod_dprintf(mod, "constructing expected temp sensor "
+		    "refdes for %s[%" PRIu64 "] based on found refdes '%s' "
+		    "is larger than the IPCC inventory name length", tname,
+		    topo_node_instance(tn), slot_refdes);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	if ((inv = topo_oxhc_inventory_find(oxhc, ipcc)) == NULL) {
+		topo_mod_dprintf(mod, "failed to find IPCC inventory entry %s",
+		    ipcc);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	/*
+	 * If we don't have valid ID information then we should not create a
+	 * sharkfin. This is slightly different from the temp sensor board only
+	 * because the temp sensor board does not have a FRU ID ROM.
+	 */
+	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_VPDID, &vpd,
+	    sizeof (vpd), sizeof (vpd))) {
+		topo_mod_dprintf(mod, "IPCC information for %s is not "
+		    "copyable\n", ipcc);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	if ((part = topo_mod_clean_strn(mod, (const char *)vpd.vpdid_pn,
+	    sizeof (vpd.vpdid_pn))) == NULL ||
+	    (serial = topo_mod_clean_strn(mod, (const char *)vpd.vpdid_sn,
+	    sizeof (vpd.vpdid_sn))) == NULL) {
+		topo_mod_dprintf(mod, "failed to clean up strings for %s\n",
+		    ipcc);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	(void) snprintf(rev, sizeof (rev), "%u", vpd.vpdid_rev);
+
+	if (topo_node_range_create(mod, tn, BOARD, 0, 0) != 0) {
+		topo_mod_dprintf(mod, "failed to create BOARD range: %s\n",
+		    topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	auth = topo_oxhc_auth(mod, oxhc, oe, tn);
+	if (auth == NULL) {
+		topo_mod_dprintf(mod, "failed to get auth data for %s[%" PRIu64
+		    "]: %s\n", tname, topo_node_instance(tn),
+		    topo_mod_errmsg(mod));
+		ret = -1;
+		goto out;
+	}
+
+	/*
+	 * The FRU for the sharkfin is itself. Inherit the label from
+	 * our parent which will name the temp sensor according to the silk.
+	 */
+	if (topo_oxhc_tn_create(mod, tn, &board, BOARD, min, auth,
+	    part, rev, serial, TOPO_OXHC_TN_F_FRU_SELF |
+	    TOPO_OXHC_TN_F_SET_LABEL, NULL) != 0) {
+		ret = -1;
+		goto out;
+	}
+
+	ret = topo_oxhc_enum_ic_sharkfin(mod, oxhc, board, slot_refdes,
+	    vpd.vpdid_rev);
+out:
+	topo_mod_strfree(mod, slot_refdes);
+	topo_mod_strfree(mod, part);
+	topo_mod_strfree(mod, serial);
+	nvlist_free(auth);
+	return (ret);
+}
+
+/*
+ * Check to see what IPCC information we have for a given DIMM slot based on the
+ * refdes. Eventually this should be combined with the memory controller
+ * information. We generally just pass this to the common topo dimm module.
+ */
+static int
+topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	int ret, err;
+	char *slot_refdes = NULL;
+	const ipcc_inventory_t *inv;
+	ipcc_inv_ddr4_t ddr4;
+	topo_dimm_t dimm;
+
+	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n",
+	    topo_node_name(tn), topo_node_instance(tn));
+
+	if (topo_prop_get_string(tn, TOPO_PGROUP_OXHC, TOPO_PGROUP_OXHC_REFDES,
+	    &slot_refdes, &err) != 0) {
+		topo_mod_dprintf(mod, "%s[%" PRIu64 "] missing required refdes "
+		    "property: %s, cannot enumerate further",
+		    topo_node_name(tn), topo_node_instance(tn),
+		    topo_strerror(err));
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	if ((inv = topo_oxhc_inventory_find(oxhc, slot_refdes)) == NULL) {
+		topo_mod_dprintf(mod, "failed to find IPCC inventory entry %s",
+		    slot_refdes);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	/*
+	 * If we can't get IPCC information on a DIMM, it's definitely not
+	 * there. Though we should really cross reference presence with the zen
+	 * UMC information when available.
+	 */
+	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_DDR4, &ddr4,
+	    sizeof (ddr4), sizeof (ddr4))) {
+		topo_mod_dprintf(mod, "IPCC information for %s is not "
+		    "copyable\n", slot_refdes);
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+
+	/*
+	 * We have a DIMM. Ask the common DIMM module enumeration to take care
+	 * of this.
+	 */
+	(void) memset(&dimm, 0, sizeof (dimm));
+	dimm.td_nspd = ARRAY_SIZE(ddr4.ddr4_spd);
+	dimm.td_spd = ddr4.ddr4_spd;
+
+	if (topo_mod_load(mod, DIMM, TOPO_VERSION) == NULL) {
+		topo_mod_dprintf(mod, "failed to load DIMM enum: %s\n",
+		    topo_mod_errmsg(mod));
+		return (-1);
+	}
+
+	ret = topo_mod_enumerate(mod, tn, DIMM, DIMM, 0, 0, &dimm);
+
+out:
+	topo_mod_strfree(mod, slot_refdes);
+	return (ret);
+}
 
 /*
  * This is our second pass for slots. Because we have three different slots
  * types, what we do depends on which range we're in.
- *
- * XXX Do something for stuff other than M.2.
  */
 static int
 topo_oxhc_enum_slot(topo_mod_t *mod, const oxhc_t *oxhc,
@@ -497,7 +836,7 @@ topo_oxhc_enum_slot(topo_mod_t *mod, const oxhc_t *oxhc,
 	oxhc_slot_type_t slot;
 	topo_instance_t inst = topo_node_instance(tn);
 
-	if (!oxhc_slot_type(oxhc, inst, &slot)) {
+	if (!topo_oxhc_slot_type(oxhc, inst, &slot)) {
 		topo_mod_dprintf(mod, "failed to map %s[%" PRId64 "] to a "
 		    "known slot type", topo_node_name(tn), inst);
 		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
@@ -509,6 +848,12 @@ topo_oxhc_enum_slot(topo_mod_t *mod, const oxhc_t *oxhc,
 		    max));
 	case OXHC_SLOT_TEMP:
 		return (topo_oxhc_enum_temp_board(mod, oxhc, oe, pn, tn, min,
+		    max));
+	case OXHC_SLOT_CEM:
+		return (topo_oxhc_enum_sharkfin(mod, oxhc, oe, pn, tn, min,
+		    max));
+	case OXHC_SLOT_DIMM:
+		return (topo_oxhc_enum_dimm(mod, oxhc, oe, pn, tn, min,
 		    max));
 	default:
 		break;
@@ -553,6 +898,93 @@ topo_oxhc_enum_cpu(topo_mod_t *mod, const oxhc_t *oxhc,
 }
 
 static int
+topo_oxhc_enum_range_port(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	/*
+	 * When we add support for a second system board, then these verify
+	 * statements should go away and be folded into the board-specific data.
+	 */
+	VERIFY3U(min, ==, 0);
+	VERIFY3U(max, ==, 3);
+
+	for (size_t i = 0; i < oxhc->oxhc_nports; i++) {
+		const oxhc_port_info_t *port = &oxhc->oxhc_ports[i];
+		int ret;
+		oxhc_enum_t tmp;
+
+		tmp = *oe;
+		tmp.oe_cpn = port->opi_cpn;
+
+		ret = topo_oxhc_enum_range(mod, oxhc, &tmp, pn, tn,
+		    port->opi_min, port->opi_max);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+/*
+ * The only entity which may have children is the connection to Sidecar, which
+ * on Gimlet is port 0. This corresponds to the hotplug bridge pcie19.
+ */
+static int
+topo_oxhc_enum_gimlet_port(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	di_node_t bridge, child;
+	tnode_t *ic;
+	nvlist_t *auth;
+
+	if (topo_node_instance(tn) != 0) {
+		return (0);
+	}
+
+	if ((bridge = topo_oxhc_slot_to_devi(mod, 19)) == DI_NODE_NIL) {
+		topo_mod_dprintf(mod, "failed to locate slot19 for Sidecar");
+		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
+	}
+
+	child = di_child_node(bridge);
+	if (child == DI_NODE_NIL) {
+		return (0);
+	}
+
+	/*
+	 * We have a node here, so create a generic IC node at the far end. We
+	 * don't do much more because we don't know what else is actually there.
+	 */
+	if (topo_node_range_create(mod, tn, IC, 0, 0) != 0) {
+		topo_mod_dprintf(mod, "failed to create IC range: %s\n",
+		    topo_mod_errmsg(mod));
+		return (-1);
+	}
+
+	auth = topo_oxhc_auth(mod, oxhc, oe, tn);
+	if (auth == NULL) {
+		topo_mod_dprintf(mod, "failed to get auth data for %s[%" PRIu64
+		    "]: %s\n", topo_node_name(tn), topo_node_instance(tn),
+		    topo_mod_errmsg(mod));
+		return (-1);
+	}
+
+	if (topo_oxhc_tn_create(mod, tn, &ic, IC, 0, auth, NULL, NULL, NULL,
+	    TOPO_OXHC_TN_F_FRU_SELF, NULL) != 0) {
+		nvlist_free(auth);
+		return (-1);
+	}
+
+	nvlist_free(auth);
+
+	return (topo_oxhc_enum_pcie(mod, ic, child));
+}
+
+
+static int
 topo_oxhc_enum_gimlet_board(topo_mod_t *mod, const oxhc_t *oxhc,
     const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
     topo_instance_t max)
@@ -573,9 +1005,6 @@ static const oxhc_enum_t oxhc_enum_gimlet[] = {
 	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
 	    .oe_range_enum = topo_oxhc_enum_range,
 	    .oe_post_enum = topo_oxhc_enum_pcie_child },
-	{ .oe_name = PORT, .oe_parent = CHASSIS,
-	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
-	    .oe_range_enum = topo_oxhc_enum_range  },
 	{ .oe_name = SYSTEMBOARD, .oe_parent = CHASSIS,
 	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN |
 	    OXHC_ENUM_F_USE_IPCC_PN | OXHC_ENUM_F_USE_IPCC_REV |
@@ -589,6 +1018,19 @@ static const oxhc_enum_t oxhc_enum_gimlet[] = {
 	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
 	    .oe_range_enum = topo_oxhc_enum_range_slot,
 	    .oe_post_enum = topo_oxhc_enum_slot },
+	{ .oe_name = PORT, .oe_parent = SYSTEMBOARD,
+	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
+	    .oe_range_enum = topo_oxhc_enum_range_port,
+	    .oe_post_enum = topo_oxhc_enum_gimlet_port },
+	/*
+	 * Because the fan tray is a removable component it only implements the
+	 * enum range entry point and then will enumerate everything else under
+	 * itself. It does not rely upon any static properties in the map for
+	 * its nodes. This is why we have no oe_post_enum function.
+	 */
+	{ .oe_name = FANTRAY, .oe_parent = CHASSIS,
+	    .oe_flags = OXHC_ENUM_F_FRU_SELF,
+	    .oe_range_enum = topo_oxhc_enum_gimlet_fan_tray },
 };
 
 typedef struct {
@@ -597,11 +1039,14 @@ typedef struct {
 	size_t oem_nenum;
 	const oxhc_slot_info_t *oem_slots;
 	size_t oem_nslots;
+	const oxhc_port_info_t *oem_ports;
+	size_t oem_nports;
 } oxhc_enum_map_t;
 
 static const oxhc_enum_map_t oxhc_enum_map[] = {
 	{ "913-0000019", oxhc_enum_gimlet, ARRAY_SIZE(oxhc_enum_gimlet),
-	    oxhc_slots_gimlet, ARRAY_SIZE(oxhc_slots_gimlet) }
+	    oxhc_slots_gimlet, ARRAY_SIZE(oxhc_slots_gimlet),
+	    oxhc_ports_gimlet, ARRAY_SIZE(oxhc_ports_gimlet) }
 };
 
 /*
@@ -777,6 +1222,8 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 			oxhc->oxhc_nenum = oxhc_enum_map[i].oem_nenum;
 			oxhc->oxhc_slots = oxhc_enum_map[i].oem_slots;
 			oxhc->oxhc_nslots = oxhc_enum_map[i].oem_nslots;
+			oxhc->oxhc_ports = oxhc_enum_map[i].oem_ports;
+			oxhc->oxhc_nports = oxhc_enum_map[i].oem_nports;
 			break;
 		}
 	}

@@ -125,7 +125,7 @@ typedef struct {
 typedef struct {
 	ipcc_inv_vpdid_t ft_id;
 	ipcc_inv_vpdid_t ft_board;
-	ipcc_inv_vpdid_t ft_fans[4];
+	ipcc_inv_vpdid_t ft_fans[3];
 } ipcc_inv_fantray_t;
 
 typedef struct {

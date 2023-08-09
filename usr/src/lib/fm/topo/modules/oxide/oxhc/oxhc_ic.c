@@ -690,6 +690,45 @@ topo_oxhc_ic_tmp11x_fmri(topo_mod_t *mod, const oxhc_ic_info_t *ic_info,
 	return (OXHC_IC_FMRI_OK);
 }
 
+/*
+ * For the T6 IC we would like to enumerate a UFM and the I/O property group. To
+ * do this we need to find the root port that refers to this on the board and
+ * then look in the devinfo tree. On Gimlet, the root port is identified by
+ * having the slot 'pcie16'. If we can't find a child node, that's fine, nothing
+ * may be attached. If we don't find the bridge, that's quite weird and that is
+ * a fatal error.
+ */
+static bool
+topo_oxhc_ic_t6_enum(topo_mod_t *mod, const oxhc_ic_info_t *ic_info,
+    const oxhc_ic_hc_t *hc, tnode_t *tn)
+{
+	di_node_t bridge = topo_oxhc_slot_to_devi(mod, 0x10);
+
+	if (bridge == DI_NODE_NIL) {
+		topo_mod_dprintf(mod, "failed to find T6 bridge pcie16!");
+		(void) topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		return (false);
+	}
+
+	/*
+	 * Find the instance of t6mfg or t4nex that exists if any, in the
+	 * snapshot. That will the basis for which we'll try to construct an I/O
+	 * property group and UFMs.
+	 */
+	for (di_node_t di = di_child_node(bridge); di != DI_NODE_NIL;
+	    di = di_sibling_node(di)) {
+		const char *drv = di_driver_name(di);
+		if (drv == NULL)
+			continue;
+
+		if (strcmp(drv, "t6mfg") == 0 || strcmp(drv, "t4nex") == 0) {
+			return (topo_oxhc_enum_pcie(mod, tn, di) == 0);
+		}
+	}
+
+	return (true);
+}
+
 static const oxhc_ic_info_t oxhc_ic_adm1272 = {
 	.ic_cpn = "221-0000076", .ic_mfg = "Analog Devices",
 	.ic_mpn = "ADM1272-1ACPZ-RL", .ic_fmri = topo_oxhc_ic_adm1272_fmri
@@ -825,6 +864,16 @@ static const oxhc_ic_info_t oxhc_ic_tmp117 = {
 	.ic_mpn = "TMP117", .ic_fmri = topo_oxhc_ic_tmp11x_fmri
 };
 
+static const oxhc_ic_info_t oxhc_ic_max5970 = {
+	.ic_cpn = "221-0000070", .ic_mfg = "Maxim",
+	.ic_mpn = "MAX5970ETX"
+};
+
+static const oxhc_ic_info_t oxhc_ic_t6 = {
+	.ic_cpn = "221-0000024", .ic_mfg = "Chelsio",
+	.ic_mpn = "T6ASIC2100", .ic_enum = topo_oxhc_ic_t6_enum
+};
+
 /*
  * This represents information about a single board that we want to deal with.
  * The ib_min_rev being left at zero means that it applies to all boards. As
@@ -837,6 +886,10 @@ typedef struct {
 	uint32_t ib_min_rev;
 } oxhc_ic_board_t;
 
+/*
+ * To help maintain stable IDs in the tree, items in here should generally only
+ * be appended rather than reordered.
+ */
 static const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{ .ib_refdes = "U452", .ib_info = &oxhc_ic_adm1272 },
 	{ .ib_refdes = "U419", .ib_info = &oxhc_ic_adm1272 },
@@ -943,22 +996,33 @@ static const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{ .ib_refdes = "U401", .ib_info = &oxhc_ic_ksz8463 },
 	{ .ib_refdes = "U478", .ib_info = &oxhc_ic_vsc8552 },
 	{ .ib_refdes = "U476", .ib_info = &oxhc_ic_ice40seq },
+	{ .ib_refdes = "U477", .ib_info = &oxhc_ic_t6 },
 };
 
 static const oxhc_ic_board_t oxhc_ic_temp_board[] = {
 	{ .ib_refdes = "U1", .ib_info = &oxhc_ic_tmp117 },
 };
 
+static const oxhc_ic_board_t oxhc_ic_sharkfin[] = {
+	{ .ib_refdes = "U7", .ib_info = &oxhc_ic_at24csw },
+	{ .ib_refdes = "U8", .ib_info = &oxhc_ic_max5970 }
+};
+
+static const oxhc_ic_board_t oxhc_ic_fanvpd[] = {
+	{ .ib_refdes = "U1", .ib_info = &oxhc_ic_at24csw },
+};
+
 /*
  * This is our primary entry point to enumerate a single IC entry.
  */
 static int
-topo_oxhc_enum_ic(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *pnode,
-    const oxhc_ic_board_t *ib, topo_instance_t inst, const char *board_ipcc)
+topo_oxhc_enum_ic(topo_mod_t *mod, const oxhc_t *oxhc, uint32_t rev,
+    tnode_t *pnode, const oxhc_ic_board_t *ib, topo_instance_t inst,
+    const char *board_ipcc)
 {
-	int ret, err;
+	int ret;
 	oxhc_ic_fmri_ret_t fmri_ret;
-	nvlist_t *fmri = NULL, *auth = NULL;
+	nvlist_t *auth = NULL;
 	tnode_t *tn;
 	oxhc_ic_hc_t hc_info = { 0 };
 	oxhc_ic_info_t ic_info;
@@ -970,7 +1034,7 @@ topo_oxhc_enum_ic(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *pnode,
 	 * Note, this creates holes in the topo space; however, this allows
 	 * different revisions to have otherwise consistent entries.
 	 */
-	if (ib->ib_min_rev > oxhc->oxhc_rev) {
+	if (ib->ib_min_rev > rev) {
 		return (0);
 	}
 
@@ -1021,40 +1085,10 @@ topo_oxhc_enum_ic(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *pnode,
 		goto done;
 	}
 
-	fmri = topo_mod_hcfmri(mod, pnode, FM_HC_SCHEME_VERSION, IC, inst, NULL,
-	    auth, hc_info.oih_pn, hc_info.oih_rev, hc_info.oih_serial);
-	if (fmri == NULL) {
-		topo_mod_dprintf(mod, "failed to create FMRI for %s[%" PRIu64
-		    "] (%s): %s\n", IC, inst, ic_info.ic_refdes,
-		    topo_mod_errmsg(mod));
+	if (topo_oxhc_tn_create(mod, pnode, &tn, IC, inst, auth,
+	    hc_info.oih_pn, hc_info.oih_rev, hc_info.oih_serial,
+	    TOPO_OXHC_TN_F_SET_LABEL, ic_info.ic_refdes) != 0) {
 		ret = -1;
-		goto done;
-	}
-
-	tn = topo_node_bind(mod, pnode, IC, inst, fmri);
-	if (tn == NULL) {
-		topo_mod_dprintf(mod, "failed to bind FMRI for for %s[%" PRIu64
-		    "] (%s): %s\n", IC, inst, ic_info.ic_refdes,
-		    topo_mod_errmsg(mod));
-		ret = -1;
-		goto done;
-	}
-
-	topo_pgroup_hcset(tn, auth);
-
-	if (topo_node_fru_set(tn, NULL, 0, &err) != 0) {
-		topo_mod_dprintf(mod, "failed to set FRU for for %s[%" PRIu64
-		    "] (%s): %s\n", IC, inst, ic_info.ic_refdes,
-		    topo_strerror(err));
-		ret = topo_mod_seterrno(mod, err);
-		goto done;
-	}
-
-	if (topo_node_label_set(tn, ic_info.ic_refdes, &err) != 0) {
-		topo_mod_dprintf(mod, "failed to set label for for %s[%" PRIu64
-		    "] (%s): %s\n", IC, inst, ic_info.ic_refdes,
-		    topo_strerror(err));
-		ret = topo_mod_seterrno(mod, err);
 		goto done;
 	}
 
@@ -1067,7 +1101,6 @@ topo_oxhc_enum_ic(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *pnode,
 	ret = 0;
 done:
 	nvlist_free(auth);
-	nvlist_free(fmri);
 	topo_mod_strfree(mod, hc_info.oih_pn_dyn);
 	topo_mod_strfree(mod, hc_info.oih_rev_dyn);
 	topo_mod_strfree(mod, hc_info.oih_serial_dyn);
@@ -1086,9 +1119,9 @@ topo_oxhc_enum_ic_gimlet(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *tn)
 		return (-1);
 	}
 
-	for (size_t i = 0; i < ARRAY_SIZE(oxhc_ic_gimlet_main); i++) {
-		if (topo_oxhc_enum_ic(mod, oxhc, tn, &oxhc_ic_gimlet_main[i],
-		    i, NULL) != 0) {
+	for (size_t i = 0; i < ngimlet_ic; i++) {
+		if (topo_oxhc_enum_ic(mod, oxhc, oxhc->oxhc_rev, tn,
+		    &oxhc_ic_gimlet_main[i], i, NULL) != 0) {
 			return (-1);
 		}
 	}
@@ -1108,8 +1141,52 @@ topo_oxhc_enum_ic_temp(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *tn,
 		return (-1);
 	}
 
-	for (size_t i = 0; i < ARRAY_SIZE(oxhc_ic_temp_board); i++) {
-		if (topo_oxhc_enum_ic(mod, oxhc, tn, &oxhc_ic_temp_board[i],
+	for (size_t i = 0; i < nic; i++) {
+		if (topo_oxhc_enum_ic(mod, oxhc, 0, tn, &oxhc_ic_temp_board[i],
+		    i, refdes) != 0) {
+			return (-1);
+		}
+	}
+
+	return (0);
+}
+
+int
+topo_oxhc_enum_ic_sharkfin(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *tn,
+    const char *refdes, uint32_t rev)
+{
+	size_t nic = ARRAY_SIZE(oxhc_ic_sharkfin);
+
+	if (topo_node_range_create(mod, tn, IC, 0, nic - 1) != 0) {
+		topo_mod_dprintf(mod, "failed to create IC range: %s\n",
+		    topo_mod_errmsg(mod));
+		return (-1);
+	}
+
+	for (size_t i = 0; i < nic; i++) {
+		if (topo_oxhc_enum_ic(mod, oxhc, rev, tn, &oxhc_ic_sharkfin[i],
+		    i, refdes) != 0) {
+			return (-1);
+		}
+	}
+
+	return (0);
+}
+
+int
+topo_oxhc_enum_ic_fanvpd(topo_mod_t *mod, const oxhc_t *oxhc, tnode_t *tn,
+    const char *refdes, uint32_t rev)
+{
+	size_t nic = ARRAY_SIZE(oxhc_ic_fanvpd);
+
+	if (topo_node_range_create(mod, tn, IC, 0, nic - 1) != 0) {
+		topo_mod_dprintf(mod, "failed to create IC range: %s\n",
+		    topo_mod_errmsg(mod));
+		return (-1);
+	}
+
+	for (size_t i = 0; i < nic; i++) {
+		if (topo_oxhc_enum_ic(mod, oxhc, rev, tn, &oxhc_ic_fanvpd[i],
 		    i, refdes) != 0) {
 			return (-1);
 		}

@@ -13,18 +13,11 @@
 # Copyright 2023 Oxide Computer Company
 #
 
-MODULE = oxhc
-ARCH = oxide
-CLASS = arch
+MODULE = dimm
+CLASS = common
 
-MODULESRCS = oxhc.c oxhc_ipcc.c oxhc_ic.c bitext.o oxhc_fan.o
+MODULESRCS = topo_dimm.c
 
 include ../../Makefile.plugin
 
-CPPFLAGS += -I$(SRC)/uts/oxide -I../../common/zen -I../../common/dimm
-CPPFLAGS += -I../../common/ufm
-LDLIBS += -ldevinfo -lrename -lnvpair
-
-%.o: $(SRC)/common/bitext/%.c
-	$(COMPILE.c) -o $@ $<
-	$(CTFCONVERT_O)
+LDLIBS += -ljedec

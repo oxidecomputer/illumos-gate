@@ -108,6 +108,18 @@ typedef struct oxhc_slot_info {
 	const char *osi_cpn;
 } oxhc_slot_info_t;
 
+typedef enum oxhc_port {
+	OXHC_PORT_EXAMAX_4X8,
+	OXHC_PORT_PWRBLADE
+} oxhc_port_type_t;
+
+typedef struct oxhc_port_info {
+	oxhc_port_type_t opi_type;
+	topo_instance_t opi_min;
+	topo_instance_t opi_max;
+	const char *opi_cpn;
+} oxhc_port_info_t;
+
 /*
  * Misc. data that we want to keep around during the module's lifetime.
  */
@@ -120,9 +132,26 @@ typedef struct oxhc {
 	size_t oxhc_nenum;
 	const oxhc_slot_info_t *oxhc_slots;
 	size_t oxhc_nslots;
+	const oxhc_port_info_t *oxhc_ports;
+	size_t oxhc_nports;
 	uint32_t oxhc_ninv;
 	oxhc_ipcc_inv_t *oxhc_inv;
 } oxhc_t;
+
+/*
+ * Common topo node creation.
+ */
+extern nvlist_t *topo_oxhc_auth(topo_mod_t *, const oxhc_t *,
+    const oxhc_enum_t *, tnode_t *);
+
+typedef enum {
+	TOPO_OXHC_TN_F_FRU_SELF		= 1 << 0,
+	TOPO_OXHC_TN_F_SET_LABEL	= 1 << 1,
+	TOPO_OXHC_TN_F_NO_FMRI_PARENT	= 1 << 2
+} topo_oxhc_tn_flags_t;
+extern int topo_oxhc_tn_create(topo_mod_t *, tnode_t *, tnode_t **,
+    const char *, topo_instance_t, nvlist_t *, const char *, const char *,
+    const char *, topo_oxhc_tn_flags_t, const char *);
 
 /*
  * Inventory related setup.
@@ -140,7 +169,23 @@ extern bool topo_oxhc_inventory_bcopy(const ipcc_inventory_t *, ipcc_inv_type_t,
 extern int topo_oxhc_enum_ic_gimlet(topo_mod_t *, const oxhc_t *, tnode_t *);
 extern int topo_oxhc_enum_ic_temp(topo_mod_t *, const oxhc_t *, tnode_t *,
     const char *);
+extern int topo_oxhc_enum_ic_sharkfin(topo_mod_t *, const oxhc_t *, tnode_t *,
+    const char *, uint32_t);
+extern int topo_oxhc_enum_ic_fanvpd(topo_mod_t *, const oxhc_t *, tnode_t *,
+    const char *, uint32_t);
 
+/*
+ * Fan related functions.
+ */
+extern int topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *, const oxhc_t *,
+    const oxhc_enum_t *, tnode_t *, tnode_t *, topo_instance_t,
+    topo_instance_t);
+
+/*
+ * Miscellaneous enumeration functions.
+ */
+extern di_node_t topo_oxhc_slot_to_devi(topo_mod_t *, uint32_t);
+extern int topo_oxhc_enum_pcie(topo_mod_t *, tnode_t *, di_node_t);
 
 #ifdef __cplusplus
 }
