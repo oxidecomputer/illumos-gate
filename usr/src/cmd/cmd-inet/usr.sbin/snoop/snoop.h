@@ -26,6 +26,7 @@
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2021 Joyent, Inc.
  * Copyright 2023 Oxide Computer Company
+ * Copyright 2023 RackTop Systems, Inc.
  */
 
 #ifndef	_SNOOP_H
@@ -215,6 +216,7 @@ extern void load_names(char *);
 extern void cap_write(struct sb_hdr *, char *, int, int);
 extern void cap_open_read(const char *);
 extern void cap_open_write(const char *);
+extern void cap_open_wr_multi(const char *, size_t, off_t);
 extern void cap_read(int, int, int, void (*)(), int);
 extern void cap_close(void);
 extern boolean_t open_datalink(dlpi_handle_t *, const char *);

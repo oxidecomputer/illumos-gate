@@ -324,6 +324,7 @@ topo_ufm_enum(topo_mod_t *mod, tnode_t *pnode, const char *name,
 	if (data == NULL) {
 		topo_mod_dprintf(mod, "cannot enumerate %s: missing required "
 		    "data", name);
+		return (-1);
 	}
 
 	mp = data;
