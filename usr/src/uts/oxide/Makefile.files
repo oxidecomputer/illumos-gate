@@ -45,21 +45,21 @@ CORE_OBJS +=			\
 	cms.o			\
 	comm_page.o		\
 	confunix.o		\
+	cpu_acpi.o		\
 	cpu_idle.o		\
 	cpuid.o			\
 	cpuid_subr.o		\
 	cpupm.o			\
-	cpupm_mach.o		\
 	cpupm_amd.o		\
+	cpupm_mach.o		\
 	cpupm_throttle.o	\
-	cpu_acpi.o		\
-	dis_tables.o		\
 	ddi_impl.o		\
+	dis_tables.o		\
 	dtrace_subr.o		\
 	dvma.o			\
 	dw_apb_uart.o		\
-	fpu_subr.o		\
 	fakebop.o		\
+	fpu_subr.o		\
 	hardclk.o		\
 	hat_i86.o		\
 	hat_kdi.o		\
@@ -72,31 +72,31 @@ CORE_OBJS +=			\
 	intr.o			\
 	ipcc_proto.o		\
 	kboot_mmu.o		\
+	kdi_asm.o		\
 	kdi_idt.o		\
 	kdi_idthdl.o		\
-	kdi_asm.o		\
 	kernel_ipcc.o		\
 	lgrpplat.o		\
 	locore.o		\
-	machdep.o		\
 	mach_kdi.o		\
 	mach_sysconfig.o	\
+	machdep.o		\
 	md_clear.o		\
+	mem_config.o		\
+	mem_config_arch.o	\
+	mem_config_stubs.o	\
 	memlist_new.o		\
 	memnode.o		\
 	memscrub.o		\
-	mem_config.o		\
-	mem_config_stubs.o	\
-	mem_config_arch.o	\
-	microcode.o		\
+	microcode_amd.o		\
 	mlsetup.o		\
 	mmio_subr.o		\
-	mpcore.o		\
 	mp_call.o		\
 	mp_implfuncs.o		\
 	mp_machdep.o		\
 	mp_rmp.o		\
 	mp_startup.o		\
+	mpcore.o		\
 	notes.o			\
 	pci_cfgacc.o		\
 	pcie_cfgspace.o		\
@@ -115,6 +115,7 @@ CORE_OBJS +=			\
 	tscc_hpet.o		\
 	tscc_pit.o		\
 	turbo.o			\
+	ucode_utils_amd.o	\
 	vm_machdep.o		\
 	x_call.o
 
