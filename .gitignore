@@ -41,7 +41,7 @@ debug64/
 illumos*.sh
 # BEGIN AUTO-GENERATED SECTION
 # To refresh this section, do a release stlouis build and run:
-#     ./etc-stlouis/tools/update_gitignore
+#     ./update_gitignore
 etc-stlouis/tools/builder/builder
 etc-stlouis/tools/builder/users.c
 usr/src/boot/efi/libefi/amd64/machine
@@ -8619,6 +8619,9 @@ usr/src/test/bhyve-tests/tests/kdev/vlapic_msr_access
 usr/src/test/bhyve-tests/tests/kdev/vpmtmr_freq
 usr/src/test/bhyve-tests/tests/kdev/vrtc_ops
 usr/src/test/bhyve-tests/tests/kdev/wrmsr_tsc
+usr/src/test/bhyve-tests/tests/perf/entry_exit
+usr/src/test/bhyve-tests/tests/perf/payload_entry_exit
+usr/src/test/bhyve-tests/tests/perf/pobj_entry_exit.s
 usr/src/test/bhyve-tests/tests/viona/interface_version
 usr/src/test/bhyve-tests/tests/vmm/auto_destruct
 usr/src/test/bhyve-tests/tests/vmm/check_iommu
