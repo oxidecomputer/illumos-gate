@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -797,7 +797,6 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* Sidecar (x4) */
-	/* XXX pol/rev needs verification */
 	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x2a, .zde_end_lane = 0x2d,
 	    .zde_gpio_group = DXIO_GROUP_UNUSED,
@@ -842,8 +841,6 @@ const zen_dxio_platform_t gimlet_engine = {
  * U.2 8 (I)	G3	9506	0x21/1		9535	0x22/1-7	0x08
  * U.2 9 (J)	G3	9506	0x21/3		9535	0x22/1-6	0x09
  * Sidecar	P0	9535	0x25/1		9535	0x26/0-4	0x13
- *
- * XXX All bridges need work, Sidecar/NIC are still tbd.
  */
 const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	/* NIC */
@@ -1246,7 +1243,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shf_i2c_dtype = SMU_I2C_PCA9535,
 		.shf_i2c_bus = SMU_I2C_DIRECT,
 		.shf_mask = SMU_ENTA_ATTNSW | SMU_ENTA_ATTNLED |
-		    SMU_ENTA_PWRLED | SMU_ENTA_EMIL
+		    SMU_ENTA_PWRLED | SMU_ENTA_EMIL | SMU_ENTA_PWREN
 	    },
 	    .se_reset = {
 		.shr_i2c_gpio_byte = 0,

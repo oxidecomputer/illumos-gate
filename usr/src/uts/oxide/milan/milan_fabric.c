@@ -6013,10 +6013,23 @@ static int
 milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 {
 	uint16_t ctl, sts;
+	uint32_t cap;
 	milan_ioms_t *ioms = port->mpp_core->mpc_ioms;
+
+	/*
+	 * If there is no hotplug support we don't do anything here today. We
+	 * assume that if we're in the simple presence mode then we still need
+	 * to come through here because in theory the presence changed
+	 * indicators should work.
+	 */
+	if ((port->mpp_flags & MILAN_PCIE_PORT_F_HOTPLUG) == 0) {
+		return (0);
+	}
 
 	sts = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
 	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_STS);
+	cap = pci_getl_func(ioms->mio_pci_busno, port->mpp_device,
+	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CAP);
 
 	/*
 	 * At this point, surprisingly enough, it is expected that all the
@@ -6026,10 +6039,22 @@ milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 	 * interrupts enabled and all the rest of the features that the hardware
 	 * supports (e.g. no MRL sensor changed). Note, we have explicitly left
 	 * out turning on the power indicator for present devices.
+	 *
+	 * Some of the flags need to be conditionally set based on whether or
+	 * not they are actually present. We can't turn on the attention button
+	 * if there is none. However, others there is no means for software to
+	 * discover if they are present or not. So even though we know more and
+	 * that say the power fault detection will never work if you've used
+	 * Enterprise SSD (or even ExpressModule based on our masks), we set
+	 * them anyways, because software will anyways and it helps get the SMU
+	 * into a "reasonable" state.
 	 */
 	ctl = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
 	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CTL);
-	ctl |= PCIE_SLOTCTL_ATTN_BTN_EN;
+	if ((cap & PCIE_SLOTCAP_ATTN_BUTTON) != 0) {
+		ctl |= PCIE_SLOTCTL_ATTN_BTN_EN;
+	}
+
 	ctl |= PCIE_SLOTCTL_PWR_FAULT_EN;
 	ctl |= PCIE_SLOTCTL_PRESENCE_CHANGE_EN;
 	ctl |= PCIE_SLOTCTL_HP_INTR_EN;
@@ -6039,12 +6064,15 @@ milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 	 * at this time. Reminder: slot power is enabled when the bit is zero.
 	 * It is possible that this may still be creating a race downstream of
 	 * this, but in that case, that'll be on the pcieb hotplug logic rather
-	 * than us to set up that world here.
+	 * than us to set up that world here. Only do this if there actually is
+	 * a power controller.
 	 */
-	if ((sts & PCIE_SLOTSTS_PRESENCE_DETECTED) != 0) {
-		ctl &= ~PCIE_SLOTCTL_PWR_CONTROL;
-	} else {
-		ctl |= PCIE_SLOTCTL_PWR_CONTROL;
+	if ((cap & PCIE_SLOTCAP_POWER_CONTROLLER) != 0) {
+		if ((sts & PCIE_SLOTSTS_PRESENCE_DETECTED) != 0) {
+			ctl &= ~PCIE_SLOTCTL_PWR_CONTROL;
+		} else {
+			ctl |= PCIE_SLOTCTL_PWR_CONTROL;
+		}
 	}
 	pci_putw_func(ioms->mio_pci_busno, port->mpp_device,
 	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CTL, ctl);
