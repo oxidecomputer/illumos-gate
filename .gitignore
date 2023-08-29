@@ -41,7 +41,7 @@ debug64/
 illumos*.sh
 # BEGIN AUTO-GENERATED SECTION
 # To refresh this section, do a release stlouis build and run:
-#     ./update_gitignore
+#     ./etc-stlouis/tools/update_gitignore
 etc-stlouis/tools/builder/builder
 etc-stlouis/tools/builder/users.c
 usr/src/boot/efi/libefi/amd64/machine
@@ -8811,6 +8811,8 @@ usr/src/test/libc-tests/tests/stdio/test_mbrtowc.64
 usr/src/test/libc-tests/tests/strcoll-strxfrm-6907.32
 usr/src/test/libc-tests/tests/strcoll-strxfrm-6907.64
 usr/src/test/libc-tests/tests/strerror/strerror
+usr/src/test/libc-tests/tests/strtonum.32
+usr/src/test/libc-tests/tests/strtonum.64
 usr/src/test/libc-tests/tests/symbols/setup
 usr/src/test/libc-tests/tests/symbols/symbols_test.amd64
 usr/src/test/libc-tests/tests/symbols/symbols_test.i386
