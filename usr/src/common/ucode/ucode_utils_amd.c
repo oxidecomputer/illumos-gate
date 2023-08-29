@@ -36,6 +36,9 @@
 #include <strings.h>
 #endif
 
+/*
+ * Perform basic validation of an AMD microcode bundle file.
+ */
 ucode_errno_t
 ucode_validate_amd(uint8_t *ucodep, int size)
 {
@@ -50,20 +53,37 @@ ucode_validate_amd(uint8_t *ucodep, int size)
 	if (*ptr++ != 0x00414d44)
 		return (EM_FILEFORMAT);
 
-	/* equivalence table */
+	/*
+	 * There follows an equivalence table that maps processor IDs (family,
+	 * stepping, model) to a Microcode Patch Equivalent Processor ID.
+	 * The format of the equivalence table is:
+	 *    0-3 version? - always 0
+	 *    4-7 count - number of entries in table, including terminator
+	 *    < 16 byte record > * (count - 1)
+	 *    < 16 byte terminating record, all zeros >
+	 */
 	size -= 4;
-	if (*ptr++)
+	if (*ptr++ != 0)
 		return (EM_FILEFORMAT);
 
 	size -= 4;
-	if (((count = *ptr++) > size) || (count % 16))
+	count = *ptr++;
+	if (count > size || count % 16 != 0)
 		return (EM_FILEFORMAT);
 
+	/* Skip past equivalence table and the terminating record */
 	ptr = (uint32_t *)(((uint8_t *)ptr) + count);
 	size -= count;
 
+	/*
+	 * There then follow one or more microcode patches in the following
+	 * format:
+	 *   0-3   patch type
+	 *   4-7   patch length
+	 *   < length bytes >
+	 */
 	while (size > 8) {
-		/* microcode patch */
+		/* We only support patch type 1 */
 		size -= 4;
 		if (*ptr++ != 1)
 			return (EM_FILEFORMAT);
@@ -76,7 +96,7 @@ ucode_validate_amd(uint8_t *ucodep, int size)
 		size -= count;
 	}
 
-	if (size)
+	if (size != 0)
 		return (EM_FILEFORMAT);
 
 	return (EM_OK);

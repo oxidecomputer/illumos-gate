@@ -900,11 +900,7 @@ main(int argc, char *argv[])
 		int tmprc;
 		uint32_t *revp = NULL;
 		int i;
-#if defined(_SYSCALL32_IMPL)
-		struct ucode_get_rev_struct32 inf32;
-#else
 		struct ucode_get_rev_struct info;
-#endif
 
 		cpuid_max = (processorid_t)sysconf(_SC_CPUID_MAX);
 
@@ -918,19 +914,11 @@ main(int argc, char *argv[])
 		for (i = 0; i < cpuid_max; i++)
 			revp[i] = (uint32_t)-1;
 
-#if defined(_SYSCALL32_IMPL)
-		info32.ugv_rev = (caddr32_t)revp;
-		info32.ugv_size = cpuid_max;
-		info32.ugv_errno = EM_OK;
-		tmprc = ioctl(dev_fd, UCODE_GET_VERSION, &info32);
-		rc = info32.ugv_errno;
-#else
 		info.ugv_rev = revp;
 		info.ugv_size = cpuid_max;
 		info.ugv_errno = EM_OK;
 		tmprc = ioctl(dev_fd, UCODE_GET_VERSION, &info);
 		rc = info.ugv_errno;
-#endif
 
 		if (tmprc && rc == EM_OK) {
 			rc = EM_SYS;
@@ -953,26 +941,13 @@ main(int argc, char *argv[])
 
 	if (action & UCODE_OPT_UPDATE) {
 		int tmprc;
-#if defined(_SYSCALL32_IMPL)
-		struct ucode_write_struct32 uw_struct32;
-#else
 		struct ucode_write_struct uw_struct;
-#endif
 
-#if defined(_SYSCALL32_IMPL)
-		uw_struct32.uw_size = ucode_size;
-		uw_struct32.uw_ucode = (caddr32_t)buf;
-		uw_struct32.uw_errno = EM_OK;
-		tmprc = ioctl(dev_fd, UCODE_UPDATE, &uw_struct32);
-		rc = uw_struct32.uw_errno;
-
-#else
 		uw_struct.uw_size = ucode_size;
 		uw_struct.uw_ucode = buf;
 		uw_struct.uw_errno = EM_OK;
 		tmprc = ioctl(dev_fd, UCODE_UPDATE, &uw_struct);
 		rc = uw_struct.uw_errno;
-#endif
 
 		if (rc == EM_OK) {
 			if (tmprc) {
