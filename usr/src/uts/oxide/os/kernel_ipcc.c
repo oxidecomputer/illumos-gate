@@ -387,13 +387,19 @@ kernel_ipcc_prepare_gasp(void)
 	 * cases).
 	 */
 	kernel_ipcc_ops.io_log = NULL;
+
 	/*
 	 * The UART may not be configured as we require. For example, if we are
 	 * multi-user then the `dwu` driver may have disabled RTS; reset
-	 * things.
+	 * things.  We must also disable interrupts in case someone is currently
+	 * using the device or the normal driver has left interrupts enabled;
+	 * otherwise, the interrupt handler will consume received data before
+	 * our polled consumer gets a chance.
 	 */
-	if (ipcc_enable)
+	if (ipcc_enable) {
+		dw_apb_disable_intr(&kernel_ipcc_data.kid_uart);
 		dw_apb_reset_mcr(&kernel_ipcc_data.kid_uart);
+	}
 }
 
 void

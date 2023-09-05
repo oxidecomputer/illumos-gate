@@ -47,6 +47,8 @@
 #include <sys/io/milan/iomux.h>
 #include <vm/kboot_mmu.h>
 
+int dw_apb_invalid_disable_intr = 0;
+
 static int
 dw_apb_lcr(uint8_t *lcrp, const async_databits_t db, const async_parity_t par,
     const async_stopbits_t sb)
@@ -193,6 +195,8 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 	uart->dau_reg_usr = FCH_UART_USR_MMIO(uart->dau_reg_block);
 	uart->dau_reg_srr = FCH_UART_SRR_MMIO(uart->dau_reg_block);
 	uart->dau_reg_mcr = FCH_UART_MCR_MMIO(uart->dau_reg_block);
+	uart->dau_reg_ier = FCH_UART_IER_MMIO(uart->dau_reg_block);
+	uart->dau_reg_lcr = FCH_UART_LCR_MMIO(uart->dau_reg_block);
 
 	uart->dau_port = port;
 	uart->dau_flags |= DAUF_MAPPED;
@@ -201,7 +205,6 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 	    baud != uart->dau_baudrate || db != uart->dau_databits ||
 	    par != uart->dau_parity || sb != uart->dau_stopbits) {
 
-		const mmio_reg_t r_lcr = FCH_UART_LCR_MMIO(uart->dau_reg_block);
 		const mmio_reg_t r_dlh = FCH_UART_DLH_MMIO(uart->dau_reg_block);
 		const mmio_reg_t r_dll = FCH_UART_DLL_MMIO(uart->dau_reg_block);
 		const mmio_reg_t r_fcr = FCH_UART_FCR_MMIO(uart->dau_reg_block);
@@ -242,10 +245,11 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 		srr = FCH_UART_SRR_SET_UR(srr, 1);
 
 		mmio_reg_write(uart->dau_reg_srr, srr);
-		mmio_reg_write(r_lcr, lcr_dlab); /* Allow dlh/dll write */
+		/* Allow dlh/dll write */
+		mmio_reg_write(uart->dau_reg_lcr, lcr_dlab);
 		mmio_reg_write(r_dlh, dlh);
 		mmio_reg_write(r_dll, dll);
-		mmio_reg_write(r_lcr, lcr);
+		mmio_reg_write(uart->dau_reg_lcr, lcr);
 		mmio_reg_write(r_fcr, fcr);
 		mmio_reg_write(uart->dau_reg_mcr, mcr);
 
@@ -340,4 +344,26 @@ void
 dw_apb_reset_mcr(const dw_apb_uart_t * const uart)
 {
 	mmio_reg_write(uart->dau_reg_mcr, uart->dau_mcr);
+}
+
+void
+dw_apb_disable_intr(const dw_apb_uart_t * const uart)
+{
+	uint32_t lcr = mmio_reg_read(uart->dau_reg_lcr);
+
+	/*
+	 * If LCR[DLAB] is set, the UART cannot be operating.  This is
+	 * unexpected, but we also know it can't be generating interrupts in
+	 * this state.  We can't access the IER and we don't want to enable the
+	 * UART here by clearing DLAB, so we will do nothing.  The consumer is
+	 * probably confused and nothing good is going to happen, but we aren't
+	 * in a place to do much about it other than record this event should
+	 * anyone be able to get a crash dump or working debugger (unlikely).
+	 */
+	if (FCH_UART_LCR_GET_DLAB(lcr) != 0) {
+		++dw_apb_invalid_disable_intr;
+		return;
+	}
+
+	mmio_reg_write(uart->dau_reg_ier, 0);
 }

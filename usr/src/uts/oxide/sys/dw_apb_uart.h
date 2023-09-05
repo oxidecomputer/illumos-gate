@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Co.
  */
 
 #ifndef _SYS_DW_APB_UART_H
@@ -53,6 +53,8 @@ typedef struct {
 	mmio_reg_t		dau_reg_usr;
 	mmio_reg_t		dau_reg_srr;
 	mmio_reg_t		dau_reg_mcr;
+	mmio_reg_t		dau_reg_ier;
+	mmio_reg_t		dau_reg_lcr;
 
 	dw_apb_uart_flag_t	dau_flags;
 } dw_apb_uart_t;
@@ -71,6 +73,7 @@ extern void dw_apb_uart_tx(const dw_apb_uart_t * const, const uint8_t *,
 extern bool dw_apb_uart_readable(const dw_apb_uart_t * const);
 extern bool dw_apb_uart_writable(const dw_apb_uart_t * const);
 extern void dw_apb_reset_mcr(const dw_apb_uart_t * const);
+extern void dw_apb_disable_intr(const dw_apb_uart_t * const);
 
 #ifdef __cplusplus
 }
