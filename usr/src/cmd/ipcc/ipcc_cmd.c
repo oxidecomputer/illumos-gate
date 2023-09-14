@@ -427,7 +427,7 @@ ipcc_inventory(int argc, char *argv[])
 	if (argc != 1)
 		errx(EXIT_USAGE, "inventory <index>\n");
 
-	inv.iinv_idx = (uint32_t)strtonum(argv[0], 0, UINT32_MAX, &errstr);
+	inv.iinv_idx = (uint32_t)strtonumx(argv[0], 0, UINT32_MAX, &errstr, 0);
 	if (errstr != NULL) {
 		errx(EXIT_FAILURE, "inventory index is %s (range 0-%u): %s",
 		    errstr, UINT32_MAX, argv[0]);
@@ -510,12 +510,12 @@ ipcc_keylookup(int argc, char *argv[])
 	}
 
 	bzero(&kl, sizeof (kl));
-	kl.ik_key = strtonum(argv[0], 0, 255, &errstr);
+	kl.ik_key = strtonumx(argv[0], 0, 255, &errstr, 0);
 	if (errstr != NULL) {
 		errx(EXIT_FAILURE, "key is %s (range 0-255): %s",
 		    errstr, argv[0]);
 	}
-	kl.ik_buflen = strtonum(argv[1], 0, 8192, &errstr);
+	kl.ik_buflen = strtonumx(argv[1], 0, 8192, &errstr, 0);
 	if (errstr != NULL) {
 		errx(EXIT_FAILURE, "buflen is %s (range 0-8192): %s",
 		    errstr, argv[1]);
@@ -574,7 +574,7 @@ ipcc_macs(int argc, char *argv[])
 	bzero(&mac, sizeof (mac));
 
 	if (argc == 1) {
-		mac.im_group = strtonum(argv[0], 0, 255, &errstr);
+		mac.im_group = strtonumx(argv[0], 0, 255, &errstr, 0);
 		if (errstr != NULL) {
 			errx(EXIT_FAILURE, "group is %s (range 0-255): %s",
 			    errstr, argv[0]);
