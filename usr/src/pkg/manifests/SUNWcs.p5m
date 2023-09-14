@@ -262,6 +262,7 @@ file path=etc/svc/profile/ns_ldap.xml group=sys mode=0444
 file path=etc/svc/profile/ns_nis.xml group=sys mode=0444
 file path=etc/svc/profile/ns_none.xml group=sys mode=0444
 file path=etc/svc/profile/platform_none.xml group=sys mode=0444
+$(i386_ONLY)file path=etc/svc/profile/platform_oxide.xml group=sys mode=0444
 dir  path=etc/svc/profile/site group=sys
 dir  path=etc/svc/volatile group=sys
 link path=etc/swap target=../usr/sbin/swap

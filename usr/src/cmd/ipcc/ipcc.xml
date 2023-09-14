@@ -10,7 +10,7 @@
  source. A copy of the CDDL is also available via the Internet at
  http://www.illumos.org/license/CDDL.
 
- Copyright 2022 Oxide Computer Company
+ Copyright 2023 Oxide Computer Company
 -->
 <service_bundle type="manifest"
                 name="ipcc">
@@ -19,7 +19,7 @@
              type="service"
              version="1">
 
-        <create_default_instance enabled="true" />
+	<create_default_instance enabled="false" />
 
         <dependency name="filesystem"
                     grouping="require_all"

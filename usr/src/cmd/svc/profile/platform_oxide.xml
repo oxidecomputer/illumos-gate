@@ -1,0 +1,32 @@
+<?xml version='1.0'?>
+<!DOCTYPE service_bundle SYSTEM '/usr/share/lib/xml/dtd/service_bundle.dtd.1'>
+<!--
+ This file and its contents are supplied under the terms of the
+ Common Development and Distribution License ("CDDL"), version 1.0.
+ You may only use this file in accordance with the terms of version
+ 1.0 of the CDDL.
+
+ A full copy of the text of the CDDL should have accompanied this
+ source.  A copy of the CDDL is also available via the Internet at
+ http://www.illumos.org/license/CDDL.
+
+ Copyright 2023 Oxide Computer Co.
+-->
+<service_bundle type='profile' name='default'>
+	<!--
+		The IPCC service is notionally generic to all oxide
+		implementations.
+	-->
+	<service name='system/ipcc' version='1' type='service'>
+		<instance name='default' enabled='true'/>
+	</service>
+	<!--
+		The t6init service is notionally specific to the Oxide,Gimlet
+		implementation, but may also be used on future
+		implementations as well.  It should eventually be moved to a
+		profile specific to implementation (board or model).
+	-->
+	<service name='system/t6init' version='1' type='service'>
+		<instance name='default' enabled='true'/>
+	</service>
+</service_bundle>

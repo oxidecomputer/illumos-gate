@@ -45,6 +45,7 @@ PROFILESRCS = \
 	platform_SUNW,Sun-Fire-880.xml \
 	platform_SUNW,Sun-Fire.xml \
 	platform_none.xml \
+	platform_oxide.xml \
 	platform_sun4v.xml
 
 PROFILES = $(PROFILESRCS:%=$(ROOTPROFILE)/%)
