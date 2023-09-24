@@ -412,7 +412,9 @@ MILAN_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 #define	IOHC_PSP_ADDR_LO(h)	\
 	milan_iohc_smn_reg(h, D_IOHC_PSP_ADDR_LO, 0)
 #define	IOHC_PSP_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 20, v)
-#define	IOHC_PSP_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 8, 7, v)
+#define	IOHC_PSP_ADDR_LO_GET_LOCK(r) bitx32(r, 8, 8)
+#define	IOHC_PSP_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 8, 8, v)
+#define	IOHC_PSP_ADDR_LO_GET_EN(r) bitx32(r, 0, 0)
 #define	IOHC_PSP_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
 
 /*
@@ -440,7 +442,7 @@ MILAN_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 #define	IOHC_SMU_ADDR_LO(h)	\
 	milan_iohc_smn_reg(h, D_IOHC_SMU_ADDR_LO, 0)
 #define	IOHC_SMU_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 20, v)
-#define	IOHC_SMU_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 8, 7, v)
+#define	IOHC_SMU_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 1, 1, v)
 #define	IOHC_SMU_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
 
 /*

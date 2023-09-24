@@ -160,6 +160,8 @@ ROOTNEX_OBJS += rootnex.o
 
 PCI_PRD_OBJS += pci_prd_oxide.o
 
+PSP_OBJS += psp.o
+
 FCH_OBJS += fch.o ixbar.o
 
 DWU_OBJS += dwu.o
