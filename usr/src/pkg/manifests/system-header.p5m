@@ -1626,6 +1626,7 @@ $(i386_ONLY)dir path=usr/platform/i86xpv/include/vm
 $(i386_ONLY)file path=usr/platform/i86xpv/include/vm/seg_mf.h
 $(i386_ONLY)dir path=usr/platform/oxide group=sys
 $(i386_ONLY)dir path=usr/platform/oxide/include
+$(i386_ONLY)file path=usr/platform/oxide/include/libipcc.h
 $(i386_ONLY)dir path=usr/platform/oxide/include/sys
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/amd_iommu.h
 $(i386_ONLY)file path=usr/platform/oxide/include/sys/asm_misc.h

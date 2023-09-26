@@ -14,13 +14,14 @@
  */
 
 /*
- * A userland IPCC client, mostly for testing.
+ * A userland IPCC client, for exercising libipcc.
  */
 
 #include <err.h>
 #include <fcntl.h>
 #include <libcmdutils.h>
 #include <libgen.h>
+#include <libipcc.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -31,6 +32,7 @@
 #include <sys/debug.h>
 #include <sys/ipcc.h>
 #include <sys/param.h>
+#include <sys/sha2.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/time.h>
@@ -40,8 +42,9 @@
 #include "ipcc_cmd.h"
 
 const char *progname;
-static int ipcc_fd;
 static bool ipcc_istty;
+
+static libipcc_handle_t *ipcc_handle;
 
 static void
 hexdump(const void *ptr, size_t length)
@@ -125,27 +128,62 @@ ipcc_walk_tab(const ipcc_cmdtab_t *cmdtab, int argc, char *argv[])
 	return (cmdtab[cmd].ic_op(argc, argv));
 }
 
+static void __NORETURN
+libipcc_fatal_impl(libipcc_err_t lerr, int32_t syserr, const char *errmsg)
+{
+	(void) fprintf(stderr, "libipcc error: '%s' (%s / %s)\n",
+	    errmsg, libipcc_strerror(lerr),
+	    syserr == 0 ? "no system errno" : strerror(syserr));
+	exit(EXIT_FAILURE);
+}
+
+static void __PRINTFLIKE(1)
+libipcc_fatal(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	(void) vfprintf(stderr, fmt, ap);
+	va_end(ap);
+	fprintf(stderr, "\n");
+
+	libipcc_fatal_impl(libipcc_err(ipcc_handle),
+	    libipcc_syserr(ipcc_handle), libipcc_errmsg(ipcc_handle));
+}
+
 static void
 ipcc_init(void)
 {
-	ipcc_fd = open(IPCC_DEV, O_RDWR);
+	char errmsg[1024];
+	libipcc_err_t lerr;
+	int32_t syserr;
 
-	if (ipcc_fd == -1)
-		err(EXIT_FAILURE, "could not open ipcc device");
+	if (!libipcc_init(&ipcc_handle, &lerr, &syserr,
+	    errmsg, sizeof (errmsg))) {
+		(void) fprintf(stderr, "Could not init libipcc handle\n");
+		libipcc_fatal_impl(lerr, syserr, errmsg);
+	}
+}
+
+static void
+ipcc_fini(void)
+{
+	libipcc_fini(ipcc_handle);
 }
 
 static int
 ipcc_ident(int argc, char *argv[])
 {
-	ipcc_ident_t ident;
+	libipcc_ident_t *ident;
 
-	bzero(&ident, sizeof (ident));
-	if (ioctl(ipcc_fd, IPCC_IDENT, &ident) < 0)
-		err(EXIT_FAILURE, "IPCC_IDENT ioctl failed");
+	if (!libipcc_ident(ipcc_handle, &ident))
+		libipcc_fatal("Could not retrieve ident");
 
-	(void) printf("Serial: '%s'\n", ident.ii_serial);
-	(void) printf("Model:  '%s'\n", ident.ii_model);
-	(void) printf("Rev:    0x%x\n", ident.ii_rev);
+	(void) printf("Serial: '%s'\n", libipcc_ident_serial(ident));
+	(void) printf("Model:  '%s'\n", libipcc_ident_model(ident));
+	(void) printf("Rev:    0x%x\n", libipcc_ident_rev(ident));
+
+	libipcc_ident_free(ident);
 
 	return (0);
 }
@@ -159,8 +197,9 @@ ipcc_image_hash(const char *arg, uint8_t *hash)
 	 * arg is expected to be a string containing a 64 hex-digit hash
 	 * that should be parsed into an array of uint8_ts.
 	 */
-	if (len != 64) {
-		warnx("hash length incorrect (got %zu, expected 64)", len);
+	if (len != SHA256_DIGEST_LENGTH * 2) {
+		warnx("hash length incorrect (got %zu, expected %u)",
+		    len, SHA256_DIGEST_LENGTH * 2);
 		return (false);
 	}
 
@@ -191,24 +230,21 @@ static struct {
 static void
 ipcc_image_header(uint8_t *hash, oxide_boot_sp_header_t *hdr)
 {
-	ipcc_imageblock_t ib;
 	char nnbuf[NN_NUMBUF_SZ];
-
-	bcopy(hash, ib.ii_hash, sizeof (ib.ii_hash));
-	ib.ii_buflen = sizeof (*hdr);
-	ib.ii_buf = (uint8_t *)hdr;
+	size_t buflen = sizeof (*hdr);
 
 	/* The header is retrieved by specifying offset 0 */
-	ib.ii_offset = 0;
-	if (ioctl(ipcc_fd, IPCC_IMAGEBLOCK, &ib) < 0)
-		err(EXIT_FAILURE, "IPCC_IMAGEBLOCK ioctl failed");
+	if (!libipcc_imageblock(ipcc_handle, hash, SHA256_DIGEST_LENGTH,
+	    0, (uint8_t *)hdr, &buflen)) {
+		libipcc_fatal("Image header request failed");
+	}
 
-	if (ib.ii_datalen == 0)
+	if (buflen == 0)
 		errx(EXIT_FAILURE, "No response from MGS");
 
-	printf("Received %u bytes\n", ib.ii_datalen);
+	printf("Received 0x%zx bytes\n", buflen);
 
-	if (ib.ii_datalen < sizeof (*hdr))
+	if (buflen < sizeof (*hdr))
 		errx(EXIT_FAILURE, "MGS response too short for header");
 
 	(void) printf("\nImage header:\n");
@@ -240,7 +276,7 @@ ipcc_image_header(uint8_t *hash, oxide_boot_sp_header_t *hdr)
 	(void) printf(" target size: 0x%" PRIx64 " (%siB)\n",
 	    hdr->obsh_target_size, nnbuf);
 	(void) printf("        hash: %s\n",
-	    memcmp(ib.ii_hash, hdr->obsh_sha256, sizeof (ib.ii_hash)) == 0 ?
+	    memcmp(hash, hdr->obsh_sha256, sizeof (hdr->obsh_sha256)) == 0 ?
 	    "match" : "! MISMATCH");
 	(void) printf("     dataset: %.*s\n", sizeof (hdr->obsh_dataset),
 	    hdr->obsh_dataset);
@@ -295,38 +331,33 @@ ipcc_image_fetch(int argc, char *argv[])
 	size_t total = OXBOOT_SP_HEADER_SIZE + hdr.obsh_data_size;
 	size_t rem = total;
 	uint64_t offset = 0;
-	ipcc_imageblock_t ib;
 	uint8_t loop = 0;
 	uint8_t report_interval = ipcc_istty ? 20 : UINT8_MAX;
 
-	bcopy(hash, ib.ii_hash, sizeof (ib.ii_hash));
-
 	while (rem > 0) {
-		ib.ii_buf = (uint8_t *)buf;
-		ib.ii_buflen = sizeof (buf);
-		ib.ii_offset = offset;
+		size_t buflen = sizeof (buf);
 
-		if (ioctl(ipcc_fd, IPCC_IMAGEBLOCK, &ib) < 0) {
-			err(EXIT_FAILURE,
-			    "failed to read offset 0x" PRIx64 " from SP",
-			    offset);
+		if (!libipcc_imageblock(ipcc_handle, hash,
+		    SHA256_DIGEST_LENGTH, offset, buf, &buflen)) {
+			libipcc_fatal("failed to read offset 0x%" PRIx64
+			    " from SP", offset);
 		}
 
-		if (ib.ii_datalen > rem) {
+		if (buflen > rem) {
 			errx(EXIT_FAILURE,
-			    "too much data returned for offset 0x" PRIx64
+			    "too much data returned for offset 0x%" PRIx64
 			    ", len=0x%x expected <= 0x%x",
-			    offset, ib.ii_datalen, rem);
+			    offset, buflen, rem);
 		}
 
-		offset += ib.ii_datalen;
-		rem -= ib.ii_datalen;
+		offset += buflen;
+		rem -= buflen;
 
 		size_t done = 0;
 		do {
 			ssize_t ret;
 
-			ret = write(fd, buf + done, ib.ii_datalen - done);
+			ret = write(fd, buf + done, buflen - done);
 
 			if (ret > 0) {
 				done += ret;
@@ -334,7 +365,7 @@ ipcc_image_fetch(int argc, char *argv[])
 				err(EXIT_FAILURE,
 				    "writing to output file failed");
 			}
-		} while (done != ib.ii_datalen);
+		} while (done != buflen);
 
 		/* Report progress periodically */
 		if (++loop == report_interval) {
@@ -398,141 +429,179 @@ ipcc_image(int argc, char *argv[])
 static void
 ipcc_inventory_usage(FILE *f)
 {
-	(void) fprintf(f, "\tinventory <index>\n");
-}
-
-static const char *
-ipcc_inventory_status2str(uint8_t res)
-{
-	switch (res) {
-	case IPCC_INVENTORY_SUCCESS:
-		return ("success");
-	case IPCC_INVENTORY_INVALID_INDEX:
-		return ("invalid index");
-	case IPCC_INVENTORY_IO_DEV_MISSING:
-		return ("I/O error -- device gone?");
-	case IPCC_INVENTORY_IO_ERROR:
-		return ("I/O error");
-	default:
-		return ("unknown");
-	}
+	(void) fprintf(f, "\tinventory [index]\n");
 }
 
 static int
 ipcc_inventory(int argc, char *argv[])
 {
-	ipcc_inventory_t inv;
+	libipcc_inventory_t *inv;
 	const char *errstr;
+	uint32_t idx;
+	const uint8_t *data;
+	size_t datalen;
+	libipcc_inventory_status_t status;
 
-	if (argc != 1)
-		errx(EXIT_USAGE, "inventory <index>\n");
+	if (argc > 1)
+		errx(EXIT_USAGE, "inventory [index]\n");
 
-	inv.iinv_idx = (uint32_t)strtonumx(argv[0], 0, UINT32_MAX, &errstr, 0);
+	if (argc == 0) {
+		uint32_t ver, nents;
+
+		if (!libipcc_inventory_metadata(ipcc_handle, &ver, &nents))
+			libipcc_fatal("Inventory metadata request failed");
+
+		printf("metadata:\n    version: 0x%x\n    entries: 0x%x\n",
+		    ver, nents);
+		return (0);
+	}
+
+	idx = (uint32_t)strtonumx(argv[0], 0, UINT32_MAX, &errstr, 0);
 	if (errstr != NULL) {
 		errx(EXIT_FAILURE, "inventory index is %s (range 0-%u): %s",
 		    errstr, UINT32_MAX, argv[0]);
 	}
-	if (ioctl(ipcc_fd, IPCC_INVENTORY, &inv) < 0)
-		err(EXIT_FAILURE, "IPCC_INVENTORY ioctl failed");
+	if (!libipcc_inventory(ipcc_handle, idx, &inv))
+		libipcc_fatal("Inventory request failed");
 
-	switch (inv.iinv_res) {
-	case IPCC_INVENTORY_SUCCESS:
-	case IPCC_INVENTORY_IO_DEV_MISSING:
-	case IPCC_INVENTORY_IO_ERROR:
-		(void) printf("%s (%u) -- Result: %u [%s]\n", inv.iinv_name,
-		    inv.iinv_idx, inv.iinv_res,
-		    ipcc_inventory_status2str(inv.iinv_res));
+	status = libipcc_inventory_status(inv);
+
+	switch (status) {
+	case LIBIPCC_INVENTORY_STATUS_SUCCESS:
+	case LIBIPCC_INVENTORY_STATUS_IO_DEV_MISSING:
+	case LIBIPCC_INVENTORY_STATUS_IO_ERROR:
+		(void) printf("%s (%u) -- Result: %u [%s]\n",
+		    libipcc_inventory_name(inv, NULL), idx,
+		    status, libipcc_inventory_status_str(status));
 		break;
-	case IPCC_INVENTORY_INVALID_INDEX:
+	case LIBIPCC_INVENTORY_STATUS_INVALID_INDEX:
 	default:
-		(void) printf("unknown (%u) -- Result %u [%s]\n", inv.iinv_idx,
-		    inv.iinv_res, ipcc_inventory_status2str(inv.iinv_res));
-		return (0);
+		(void) printf("unknown (%u) -- Result %u [%s]\n", idx,
+		    status, libipcc_inventory_status_str(status));
+		goto out;
 	}
 
-	if (inv.iinv_res != IPCC_INVENTORY_SUCCESS)
-		return (0);
-	(void) printf("Type %u, Payload: %u bytes\n", inv.iinv_type,
-	    inv.iinv_data_len);
-	if (inv.iinv_data_len > 0) {
-		hexdump(inv.iinv_data, inv.iinv_data_len);
-	}
+	if (status != LIBIPCC_INVENTORY_STATUS_SUCCESS)
+		goto out;
 
+	data = libipcc_inventory_data(inv, &datalen);
+	(void) printf("Type %u, Payload: 0x%zx bytes\n",
+	    libipcc_inventory_type(inv), datalen);
+	if (datalen > 0)
+		hexdump(data, datalen);
+
+out:
+	libipcc_inventory_free(inv);
 	return (0);
 }
+
+static struct {
+	const char *key;
+	uint8_t val;
+} ipcc_keys[] = {
+	{ "ping",		LIBIPCC_KEY_PING },
+	{ "imageid",		LIBIPCC_KEY_INSTALLINATOR_IMAGE_ID },
+	{ "inventory",		LIBIPCC_KEY_INVENTORY },
+};
 
 static void
 ipcc_keylookup_usage(FILE *f)
 {
-	(void) fprintf(f, "\tkeylookup <key> <buflen>\n");
-}
-
-static const char *
-ipcc_keylookup_result(uint8_t result)
-{
-	switch (result) {
-	case IPCC_KEYLOOKUP_SUCCESS:
-		return ("Success");
-	case IPCC_KEYLOOKUP_UNKNOWN_KEY:
-		return ("Invalid key");
-	case IPCC_KEYLOOKUP_NO_VALUE:
-		return ("No value");
-	case IPCC_KEYLOOKUP_BUFFER_TOO_SMALL:
-		return ("Buffer too small");
-	}
-	return ("Unknown");
+	(void) fprintf(f, "\tkeylookup <key> [-c] [-b <buflen>]\n");
 }
 
 static int
 ipcc_keylookup(int argc, char *argv[])
 {
-	ipcc_keylookup_t kl;
+	libipcc_key_flag_t flags = 0;
 	const char *errstr;
+	bool keyfound = false, alloced = false;
+	uint8_t key;
+	uint8_t *buf;
+	size_t buflen = 0;
+	int c;
 
-	if (argc != 2) {
-		fprintf(stderr, "Syntax: %s keylookup <key> <buflen>\n",
-		    progname);
-		switch (argc) {
-		case 0:
-			fprintf(stderr,
-			    "missing required key and buffer length\n");
+	while ((c = getopt(argc, argv, ":b:c")) != -1) {
+		switch (c) {
+		case 'b':
+			/*
+			 * This allows for testing the API with a
+			 * caller-supplied buffer. Values in excess of
+			 * IPCC_MAX_DATA_SIZE are permitted to facilitate
+			 * testing edge conditions.
+			 */
+			buflen = strtonumx(optarg, 1, IPCC_MAX_DATA_SIZE * 2,
+			    &errstr, 0);
+			if (errstr != NULL) {
+				errx(EXIT_FAILURE,
+				    "buffer length is %s (range 1-%u): %s",
+				    errstr, IPCC_MAX_DATA_SIZE * 2, optarg);
+			}
 			break;
-		case 1:
-			fprintf(stderr, "missing required buffer length\n");
+		case 'c':
+			flags |= LIBIPCC_KEYF_COMPRESSED;
 			break;
-		default:
-			fprintf(stderr,
-			    "encountered extraneous arguments beginning "
-			    "with '%s'\n", argv[2]);
+		case '?':
+			fprintf(stderr, "Unknown option: -%c", optopt);
+			ipcc_keylookup_usage(stderr);
+			return (EXIT_USAGE);
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	if (argc != 1) {
+		fprintf(stderr, "Missing parameter:\n");
+		ipcc_keylookup_usage(stderr);
+		fprintf(stderr, "Keys may be specified by name or number:\n");
+		for (uint_t i = 0; i < ARRAY_SIZE(ipcc_keys); i++) {
+			fprintf(stderr, "        %4d - %s\n",
+			    ipcc_keys[i].val, ipcc_keys[i].key);
+		}
+		return (EXIT_USAGE);
+	}
+
+	for (uint_t i = 0; i < ARRAY_SIZE(ipcc_keys); i++) {
+		if (strcmp(argv[0], ipcc_keys[i].key) == 0) {
+			key = ipcc_keys[i].val;
+			keyfound = true;
 			break;
 		}
-		return (EXIT_FAILURE);
 	}
 
-	bzero(&kl, sizeof (kl));
-	kl.ik_key = strtonumx(argv[0], 0, 255, &errstr, 0);
-	if (errstr != NULL) {
-		errx(EXIT_FAILURE, "key is %s (range 0-255): %s",
-		    errstr, argv[0]);
-	}
-	kl.ik_buflen = strtonumx(argv[1], 0, 8192, &errstr, 0);
-	if (errstr != NULL) {
-		errx(EXIT_FAILURE, "buflen is %s (range 0-8192): %s",
-		    errstr, argv[1]);
+	if (!keyfound) {
+		key = strtonumx(argv[0], 0, 255, &errstr, 0);
+		if (errstr != NULL) {
+			errx(EXIT_FAILURE, "key is %s (range 0-255): %s",
+			    errstr, argv[0]);
+		}
 	}
 
-	kl.ik_buf = calloc(kl.ik_buflen, sizeof (*kl.ik_buf));
-	if (kl.ik_buf == NULL)
-		err(EXIT_FAILURE, "allocation failed");
+	if (buflen > 0) {
+		buf = calloc(1, buflen);
+		if (buf == NULL) {
+			err(EXIT_FAILURE,
+			    "could not allocate 0x%x bytes for buffer",
+			    buflen);
+		}
+		alloced = true;
+	} else {
+		/* Let the library allocate the buffer */
+		buflen = 0;
+		buf = NULL;
+	}
 
-	if (ioctl(ipcc_fd, IPCC_KEYLOOKUP, &kl) < 0)
-		err(EXIT_FAILURE, "IPCC_KEYLOOKUP ioctl failed");
+	if (!libipcc_keylookup(ipcc_handle, key, &buf, &buflen, flags))
+		libipcc_fatal("Failed to perform key lookup");
 
-	(void) printf("Result: %u [%s] (length %u)\n",
-	    kl.ik_result, ipcc_keylookup_result(kl.ik_result),  kl.ik_datalen);
-	hexdump(kl.ik_buf, kl.ik_datalen);
+	(void) printf("(length %u)\n", buflen);
+	hexdump(buf, buflen);
 
-	free(kl.ik_buf);
+	if (alloced)
+		free(buf);
+	else
+		libipcc_keylookup_free(buf, buflen);
 
 	return (0);
 }
@@ -543,53 +612,61 @@ ipcc_macs_usage(FILE *f)
 	(void) fprintf(f, "\tmacs [group]\n");
 }
 
-static const char *
-mac_group_name(uint8_t group)
-{
-	switch (group) {
-	case IPCC_MAC_GROUP_ALL:
-		return ("ALL");
-	case IPCC_MAC_GROUP_NIC:
-		return ("NIC");
-	case IPCC_MAC_GROUP_BOOTSTRAP:
-		return ("BOOTSTRAP");
-	default:
-		break;
-	}
-	return ("UNKNOWN");
-}
-
 static int
 ipcc_macs(int argc, char *argv[])
 {
-	ipcc_mac_t mac;
+	static const char *mac_groups[] = { "all", "nic", "bootstrap" };
+	uint_t group = 0;
+	const char *groupname;
 	char buf[ETHERADDRSTRL];
-	const char *errstr;
+	libipcc_mac_t *mac;
+	uint_t i;
+	bool ret;
 
 	if (argc != 0 && argc != 1) {
 		fprintf(stderr, "Syntax: %s macs [group]\n", progname);
 		return (EXIT_FAILURE);
 	}
 
-	bzero(&mac, sizeof (mac));
+	groupname = argc == 1 ? argv[0] : "all";
 
-	if (argc == 1) {
-		mac.im_group = strtonumx(argv[0], 0, 255, &errstr, 0);
-		if (errstr != NULL) {
-			errx(EXIT_FAILURE, "group is %s (range 0-255): %s",
-			    errstr, argv[0]);
+	for (i = 0; i < ARRAY_SIZE(mac_groups); i++) {
+		if (strcmp(groupname, mac_groups[i]) == 0) {
+			group = i;
+			break;
 		}
 	}
+	if (i >= ARRAY_SIZE(mac_groups)) {
+		fprintf(stderr, "Invalid group '%s' choose from:", groupname);
+		for (i = 0; i < ARRAY_SIZE(mac_groups); i++)
+			fprintf(stderr, " %s", mac_groups[i]);
+		fprintf(stderr, "\n");
+		return (EXIT_FAILURE);
+	}
 
-	if (ioctl(ipcc_fd, IPCC_MACS, &mac) < 0)
-		err(EXIT_FAILURE, "IPCC_MACS ioctl failed");
+	switch (group) {
+	case 0:
+		ret = libipcc_mac_all(ipcc_handle, &mac);
+		break;
+	case 1:
+		ret = libipcc_mac_nic(ipcc_handle, &mac);
+		break;
+	case 2:
+		ret = libipcc_mac_bootstrap(ipcc_handle, &mac);
+		break;
+	}
 
-	(void) printf("Group   %u (%s)\n", mac.im_group,
-	    mac_group_name(mac.im_group));
+	if (!ret) {
+		libipcc_fatal("Could not retrieve %s mac address(es)",
+		    groupname);
+	}
+
 	(void) printf("Base:   %s\n",
-	    ether_ntoa_r((struct ether_addr *)&mac.im_base, buf));
-	(void) printf("Count:  0x%x\n", mac.im_count);
-	(void) printf("Stride: 0x%x\n", mac.im_stride);
+	    ether_ntoa_r(libipcc_mac_addr(mac), buf));
+	(void) printf("Count:  0x%x\n", libipcc_mac_count(mac));
+	(void) printf("Stride: 0x%x\n", libipcc_mac_stride(mac));
+
+	libipcc_mac_free(mac);
 
 	return (0);
 }
@@ -597,28 +674,15 @@ ipcc_macs(int argc, char *argv[])
 static int
 ipcc_status(int argc, char *argv[])
 {
-	ipcc_status_t status;
+	uint64_t status, startup;
 
-	bzero(&status, sizeof (status));
-	if (ioctl(ipcc_fd, IPCC_STATUS, &status) < 0)
-		err(EXIT_FAILURE, "IPCC_STATUS ioctl failed");
+	if (!libipcc_status(ipcc_handle, &status))
+		libipcc_fatal("Could not retrieve status");
+	(void) printf("Status:          0x%" PRIx64 "\n", status);
 
-	(void) printf("Status:          0x%" PRIx64 "\n", status.is_status);
-	(void) printf("Startup Options: 0x%" PRIx64 "\n", status.is_startup);
-
-	return (0);
-}
-
-static int
-ipcc_version(int argc, char *argv[])
-{
-	int version;
-
-	version = ioctl(ipcc_fd, IPCC_GET_VERSION, 0);
-	if (version < 0)
-		err(EXIT_FAILURE, "IPCC_GET_VERSION ioctl failed");
-
-	(void) printf("Kernel interface version: %d\n", version);
+	if (!libipcc_startup_options(ipcc_handle, &startup))
+		libipcc_fatal("Could not retrieve startup options");
+	(void) printf("Startup Options: 0x%" PRIx64 "\n", startup);
 
 	return (0);
 }
@@ -630,13 +694,14 @@ static const ipcc_cmdtab_t ipcc_cmds[] = {
 	{ "keylookup", ipcc_keylookup, ipcc_keylookup_usage },
 	{ "macs", ipcc_macs, ipcc_macs_usage },
 	{ "status", ipcc_status, NULL },
-	{ "version", ipcc_version, NULL },
 	{ NULL, NULL, NULL }
 };
 
 int
 main(int argc, char *argv[])
 {
+	int rc;
+
 	progname = basename(argv[0]);
 
 	argc--;
@@ -646,5 +711,9 @@ main(int argc, char *argv[])
 	ipcc_init();
 	ipcc_istty = isatty(STDOUT_FILENO) == 1;
 
-	return (ipcc_walk_tab(ipcc_cmds, argc, argv));
+	rc = ipcc_walk_tab(ipcc_cmds, argc, argv);
+
+	ipcc_fini();
+
+	return (rc);
 }

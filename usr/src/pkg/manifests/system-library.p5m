@@ -1175,6 +1175,14 @@ file path=usr/lib/security/pkcs11_tpm.so.1
 link path=usr/lib/straddr.so target=./straddr.so.2
 file path=usr/lib/straddr.so.2
 file path=usr/lib/watchmalloc.so.1
+dir  path=usr/platform/oxide owner=root group=sys mode=0755
+dir  path=usr/platform/oxide/lib owner=root group=bin mode=0755
+dir  path=usr/platform/oxide/lib/$(ARCH64) owner=root group=bin mode=0755
+$(i386_ONLY)link path=usr/platform/oxide/lib/$(ARCH64)/libipcc.so \
+    target=libipcc.so.1
+$(i386_ONLY)file path=usr/platform/oxide/lib/$(ARCH64)/libipcc.so.1
+$(i386_ONLY)link path=usr/platform/oxide/lib/libipcc.so target=libipcc.so.1
+$(i386_ONLY)file path=usr/platform/oxide/lib/libipcc.so.1
 dir  path=usr/share/man
 dir  path=usr/share/man/man3
 dir  path=usr/share/man/man3avl

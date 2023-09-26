@@ -295,6 +295,10 @@ sparc_SUBDIRS=		\
 	libtsalarm	\
 	libv12n
 
+# Oxide subdirs
+i386_SUBDIRS +=		\
+	libipcc
+
 #
 # Create a special version of $(SUBDIRS) with no .WAIT's, for use with the
 # clean and clobber targets (for more information, see those targets, below).

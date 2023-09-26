@@ -64,9 +64,10 @@ extern "C" {
  * grow the message and increase the protocol version. It is still a short
  * message from the SP.
  */
+#define	MODEL_STRING_SIZE	51
 #define	IDENT_STRING_SIZE	51
 typedef struct ipcc_ident {
-	uint8_t		ii_model[IDENT_STRING_SIZE];	/* 913-nnnnnnn */
+	uint8_t		ii_model[MODEL_STRING_SIZE];	/* 913-nnnnnnn */
 	uint8_t		ii_serial[IDENT_STRING_SIZE];	/* MMSWWYYnnnn */
 	uint32_t	ii_rev;
 } ipcc_ident_t;
@@ -94,6 +95,10 @@ typedef struct ipcc_keylookup {
 	uint16_t	ik_datalen;
 	uint8_t		*ik_buf;
 } ipcc_keylookup_t;
+
+#define	IPCC_KEY_PING			0
+#define	IPCC_KEY_INSTALLINATOR_IMAGE_ID	1
+#define	IPCC_KEY_INVENTORY		2
 
 typedef struct ipcc_imageblock {
 	uint8_t		ii_hash[IPCC_IMAGE_HASHLEN];

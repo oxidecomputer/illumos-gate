@@ -22,13 +22,16 @@ include ../Makefile.cmd
 include ../Makefile.cmd.64
 include ../Makefile.ctf
 
-ROOTUSRARCHBIN = $(ROOT)/usr/platform/oxide/bin
+PLATFORM = /usr/platform/oxide
+ROOTPLATFORM = $(ROOT)$(PLATFORM)
+ROOTUSRARCHBIN = $(ROOTPLATFORM)/bin
 ROOTUSRARCHBINPROG = $(PROG:%=$(ROOTUSRARCHBIN)/%)
 ROOTMANIFESTDIR = $(ROOTSVCSYSTEM)
 
 CSTD= $(CSTD_GNU99)
-CPPFLAGS += -I$(SRC)/uts/oxide
-LDLIBS += -lsocket -lcmdutils
+CPPFLAGS += -I$(SRC)/uts/oxide -I$(ROOTPLATFORM)/include
+LDFLAGS += -L$(ROOTPLATFORM)/lib/$(MACH64) -R$(PLATFORM)/lib/$(MACH64)
+LDLIBS += -lipcc -lsocket -lcmdutils -lumem
 
 .KEEP_STATE:
 
