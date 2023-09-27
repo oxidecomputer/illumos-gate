@@ -115,6 +115,7 @@ extern int kernel_ipcc_ackstart(void);
 extern int kernel_ipcc_bootfailv(ipcc_host_boot_failure_t, const char *,
     va_list);
 extern int kernel_ipcc_bootfail(ipcc_host_boot_failure_t, const char *, ...);
+extern int kernel_ipcc_keylookup(uint8_t, uint8_t *, size_t *);
 extern int kernel_ipcc_imageblock(uint8_t *, uint64_t, uint8_t **, size_t *);
 
 extern void kipcc_panic_field(ipcc_panic_field_t, uint64_t);

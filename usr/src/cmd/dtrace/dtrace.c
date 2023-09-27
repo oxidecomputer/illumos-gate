@@ -1157,6 +1157,46 @@ intr(int signo)
 		g_impatient = 1;
 }
 
+/*
+ * XXX - the path to the helper to be used should be determined in some way
+ * from the distribution which this system is running. That could possibly be
+ * via the `ID` in /etc/os-release (which should be able to be processed with
+ * defopen(), even), or via a new dedicated mechanism.
+ */
+#define	DTRACE_HELPER	"/usr/platform/oxide/bin/dtrace_ipcc"
+void
+invoke_helper(const char *cmd)
+{
+	char *line = NULL;
+	char *cmdbuf;
+	size_t cap = 0;
+	int status;
+	FILE *fp;
+
+	if (asprintf(&cmdbuf, "%s %s", DTRACE_HELPER, cmd) == -1)
+		fatal("Failed to allocate memory for helper command");
+
+	fp = popen(cmdbuf, "r");
+	if (fp == NULL)
+		fatal("Failed to execute '%s'", cmdbuf);
+
+	while (getline(&line, &cap, fp) != -1)
+		printf("%s", line);
+
+	free(line);
+
+	status = pclose(fp);
+
+	if (WIFSIGNALED(status)) {
+		fatal("'%s' unexpectedly terminated due to signal %d\n",
+		    cmdbuf, WTERMSIG(status));
+	}
+	if (WEXITSTATUS(status) != 0)
+		fatal("'%s' exited with status %d\n", cmdbuf, status);
+
+	free(cmdbuf);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1630,6 +1670,7 @@ main(int argc, char *argv[])
 		etcsystem_prune(); /* string out any forceload directives */
 
 		if (g_cmdc == 0) {
+			invoke_helper("anon deactivate");
 			dtrace_close(g_dtp);
 			return (g_status);
 		}
@@ -1660,6 +1701,7 @@ main(int argc, char *argv[])
 		error("saved anonymous enabling in %s\n", g_ofile);
 		etcsystem_add();
 		error("run update_drv(8) or reboot to enable changes\n");
+		invoke_helper("anon activate");
 
 		dtrace_close(g_dtp);
 		return (g_status);

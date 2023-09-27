@@ -538,6 +538,28 @@ kernel_ipcc_bootfail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 }
 
 int
+kernel_ipcc_keylookup(uint8_t key, uint8_t *buf, size_t *bufl)
+{
+	ipcc_keylookup_t kl;
+	int ret;
+
+	kl.ik_key = key;
+	kl.ik_buf = buf;
+	kl.ik_buflen = *bufl;
+
+	ret = ipcc_keylookup(&kernel_ipcc_ops, &kernel_ipcc_data, &kl, buf);
+
+	if (ret != 0)
+		return (ret);
+	if (kl.ik_result != IPCC_KEYLOOKUP_SUCCESS)
+		return (ENOENT);
+
+	*bufl = kl.ik_datalen;
+
+	return (0);
+}
+
+int
 kernel_ipcc_imageblock(uint8_t *hash, uint64_t offset, uint8_t **data,
     size_t *datal)
 {
