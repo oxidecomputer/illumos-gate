@@ -21,9 +21,14 @@ MODULESRCS = oxhc.c oxhc_ipcc.c oxhc_ic.c bitext.o oxhc_fan.o
 
 include ../../Makefile.plugin
 
-CPPFLAGS += -I$(SRC)/uts/oxide -I../../common/zen -I../../common/dimm
-CPPFLAGS += -I../../common/ufm
-LDLIBS += -ldevinfo -lrename -lnvpair
+PLATFORM = /usr/platform/oxide
+ROOTPLATFORM = $(ROOT)$(PLATFORM)
+
+CPPFLAGS += -I$(SRC)/uts/oxide -I$(ROOTPLATFORM)/include
+CPPFLAGS += -I../../common/zen -I../../common/dimm -I../../common/ufm
+
+LDFLAGS += -L$(ROOTPLATFORM)/lib -R$(PLATFORM)/lib
+LDLIBS += -ldevinfo -lipcc
 
 %.o: $(SRC)/common/bitext/%.c
 	$(COMPILE.c) -o $@ $<

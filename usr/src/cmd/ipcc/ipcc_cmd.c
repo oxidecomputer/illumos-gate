@@ -154,7 +154,7 @@ libipcc_fatal(const char *fmt, ...)
 static void
 ipcc_init(void)
 {
-	char errmsg[1024];
+	char errmsg[LIBIPCC_ERR_LEN];
 	libipcc_err_t lerr;
 	int32_t syserr;
 
@@ -429,69 +429,88 @@ ipcc_image(int argc, char *argv[])
 static void
 ipcc_inventory_usage(FILE *f)
 {
-	(void) fprintf(f, "\tinventory [index]\n");
+	(void) fprintf(f, "\tinventory [-c] [index]\n");
 }
 
 static int
 ipcc_inventory(int argc, char *argv[])
 {
-	libipcc_inventory_t *inv;
+	libipcc_inv_handle_t *liih;
+	libipcc_inv_t *inv;
 	const char *errstr;
 	uint32_t idx;
 	const uint8_t *data;
+	uint32_t ver, nents;
 	size_t datalen;
-	libipcc_inventory_status_t status;
+	libipcc_inv_status_t status;
+	libipcc_inv_init_flag_t flags = 0;
+	int c;
+
+	while ((c = getopt(argc, argv, ":c")) != -1) {
+		switch (c) {
+		case 'c':
+			flags |= LIBIPCC_INV_INIT_CACHE;
+			break;
+		case '?':
+			fprintf(stderr, "Unknown option: -%c\n", optopt);
+			ipcc_inventory_usage(stderr);
+			return (EXIT_USAGE);
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
 
 	if (argc > 1)
-		errx(EXIT_USAGE, "inventory [index]\n");
+		errx(EXIT_USAGE, "inventory [-c] [index]\n");
 
-	if (argc == 0) {
-		uint32_t ver, nents;
+	if (!libipcc_inv_hdl_init(ipcc_handle, &ver, &nents, flags, &liih))
+		libipcc_fatal("Inventory init request failed");
 
-		if (!libipcc_inventory_metadata(ipcc_handle, &ver, &nents))
-			libipcc_fatal("Inventory metadata request failed");
-
-		printf("metadata:\n    version: 0x%x\n    entries: 0x%x\n",
-		    ver, nents);
+	printf("metadata:\n    version: 0x%x\n    entries: 0x%x\n", ver, nents);
+	if (argc == 0)
 		return (0);
-	}
 
 	idx = (uint32_t)strtonumx(argv[0], 0, UINT32_MAX, &errstr, 0);
 	if (errstr != NULL) {
 		errx(EXIT_FAILURE, "inventory index is %s (range 0-%u): %s",
 		    errstr, UINT32_MAX, argv[0]);
 	}
-	if (!libipcc_inventory(ipcc_handle, idx, &inv))
+	if (!libipcc_inv(ipcc_handle, liih, idx, &inv))
 		libipcc_fatal("Inventory request failed");
 
-	status = libipcc_inventory_status(inv);
+	status = libipcc_inv_status(inv);
 
 	switch (status) {
-	case LIBIPCC_INVENTORY_STATUS_SUCCESS:
-	case LIBIPCC_INVENTORY_STATUS_IO_DEV_MISSING:
-	case LIBIPCC_INVENTORY_STATUS_IO_ERROR:
+	case LIBIPCC_INV_STATUS_SUCCESS:
+	case LIBIPCC_INV_STATUS_IO_DEV_MISSING:
+	case LIBIPCC_INV_STATUS_IO_ERROR: {
+		size_t namelen;
+
 		(void) printf("%s (%u) -- Result: %u [%s]\n",
-		    libipcc_inventory_name(inv, NULL), idx,
-		    status, libipcc_inventory_status_str(status));
+		    libipcc_inv_name(inv, &namelen), idx,
+		    status, libipcc_inv_status_str(status));
 		break;
-	case LIBIPCC_INVENTORY_STATUS_INVALID_INDEX:
+	}
+	case LIBIPCC_INV_STATUS_INVALID_INDEX:
 	default:
 		(void) printf("unknown (%u) -- Result %u [%s]\n", idx,
-		    status, libipcc_inventory_status_str(status));
+		    status, libipcc_inv_status_str(status));
 		goto out;
 	}
 
-	if (status != LIBIPCC_INVENTORY_STATUS_SUCCESS)
+	if (status != LIBIPCC_INV_STATUS_SUCCESS)
 		goto out;
 
-	data = libipcc_inventory_data(inv, &datalen);
+	data = libipcc_inv_data(inv, &datalen);
 	(void) printf("Type %u, Payload: 0x%zx bytes\n",
-	    libipcc_inventory_type(inv), datalen);
+	    libipcc_inv_type(inv), datalen);
 	if (datalen > 0)
 		hexdump(data, datalen);
 
 out:
-	libipcc_inventory_free(inv);
+	libipcc_inv_free(inv);
+	libipcc_inv_hdl_fini(liih);
 	return (0);
 }
 
@@ -544,7 +563,7 @@ ipcc_keylookup(int argc, char *argv[])
 			flags |= LIBIPCC_KEYF_COMPRESSED;
 			break;
 		case '?':
-			fprintf(stderr, "Unknown option: -%c", optopt);
+			fprintf(stderr, "Unknown option: -%c\n", optopt);
 			ipcc_keylookup_usage(stderr);
 			return (EXIT_USAGE);
 		}
@@ -634,7 +653,7 @@ ipcc_keyset(int argc, char *argv[])
 			flags |= LIBIPCC_KEYF_COMPRESSED;
 			break;
 		case '?':
-			fprintf(stderr, "Unknown option: -%c", optopt);
+			fprintf(stderr, "Unknown option: -%c\n", optopt);
 			ipcc_keylookup_usage(stderr);
 			return (EXIT_USAGE);
 		}

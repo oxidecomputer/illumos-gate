@@ -147,7 +147,7 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
     topo_instance_t max)
 {
 	int ret;
-	const ipcc_inventory_t *inv;
+	libipcc_inv_t *inv;
 	ipcc_inv_fantray_t tray;
 	const ipcc_inv_vpdid_t *tinv, *binv;
 	char *tray_pn = NULL, *tray_sn = NULL, tray_rev[16];

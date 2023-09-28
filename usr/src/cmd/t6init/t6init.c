@@ -91,7 +91,28 @@ t6init_verbose(const char *fmt, ...)
 	va_end(va);
 }
 
-static void
+static void __VPRINTFLIKE(2)
+lipcc_verr(libipcc_handle_t *lih, const char *fmt, va_list va)
+{
+	(void) fprintf(stderr, "%s: ", progname);
+	(void) vfprintf(stderr, fmt, va);
+
+	(void) fprintf(stderr, ": %s: %s (libipcc: 0x%x, sys: %d)\n",
+	    libipcc_errmsg(lih), libipcc_strerror(libipcc_err(lih)),
+	    libipcc_err(lih), libipcc_syserr(lih));
+}
+
+static void __PRINTFLIKE(2)
+lipcc_err(libipcc_handle_t *lih, const char *fmt, ...)
+{
+	va_list va;
+
+	va_start(va, fmt);
+	lipcc_verr(lih, fmt, va);
+	va_end(va);
+}
+
+static void __VPRINTFLIKE(2)
 t6_verr(t6_mfg_t *t6mfg, const char *fmt, va_list va)
 {
 	(void) fprintf(stderr, "%s: ", progname);
@@ -102,7 +123,7 @@ t6_verr(t6_mfg_t *t6mfg, const char *fmt, va_list va)
 	    t6_mfg_err(t6mfg), t6_mfg_syserr(t6mfg));
 }
 
-static void
+static void __PRINTFLIKE(2)
 t6_err(t6_mfg_t *t6mfg, const char *fmt, ...)
 {
 	va_list va;
@@ -143,9 +164,7 @@ retrieve_macaddr(libipcc_handle_t *lih, ether_addr_t *macp,
 	t6init_verbose("Retrieving MAC addresses from SP");
 
 	if (!libipcc_mac_nic(lih, &mac)) {
-		warnx("could not retrieve MACs from SP: %s / %s",
-		    libipcc_strerror(libipcc_err(lih)),
-		    libipcc_errmsg(lih));
+		lipcc_err(lih, "could not retrieve MACs from SP");
 		return (false);
 	}
 
@@ -198,20 +217,20 @@ retrieve_macaddr(libipcc_handle_t *lih, ether_addr_t *macp,
 char *
 cleanstr(const char *str)
 {
-        const char *end, *cp;
+	const char *end, *cp;
 	size_t dstsize;
 	char *dst;
 
-        end = str + strlen((char *)str);
+	end = str + strlen((char *)str);
 
-        while (str < end && isspace(*str))
-                str++;
-        while (str < end && isspace(*(end - 1)))
-                end--;
+	while (str < end && isspace(*str))
+		str++;
+	while (str < end && isspace(*(end - 1)))
+		end--;
 
-        if (str >= end) {
+	if (str >= end) {
 		errno = EOVERFLOW;
-                return (NULL);
+		return (NULL);
 	}
 
 	dstsize = end - str + 1;
@@ -220,18 +239,18 @@ cleanstr(const char *str)
 		return (NULL);
 
 	cp = str;
-        for (size_t i = 0; i < dstsize - 1; i++) {
+	for (size_t i = 0; i < dstsize - 1; i++) {
 		char c;
 
-                if (cp >= end)
-                        break;
-                c = *cp;
-                if (isspace(c) || !isprint(c))
-                        dst[i] = '-';
-                else
-                        dst[i] = c;
-                cp++;
-        }
+		if (cp >= end)
+			break;
+		c = *cp;
+		if (isspace(c) || !isprint(c))
+			dst[i] = '-';
+		else
+			dst[i] = c;
+		cp++;
+	}
 
 	return (dst);
 }
@@ -245,8 +264,7 @@ retrieve_ident(libipcc_handle_t *lih, char **modelp, char **serialp)
 	t6init_verbose("Retrieving ident from SP");
 
 	if (!libipcc_ident(lih, &ident)) {
-		warn("could not retrieve ident from SP: %s / %s",
-		    libipcc_strerror(libipcc_err(lih)), libipcc_errmsg(lih));
+		lipcc_err(lih, "could not retrieve ident from SP");
 		return (false);
 	}
 
@@ -609,7 +627,7 @@ main(int argc, char **argv)
 	t6_mfg_t *t6mfg;
 	ether_addr_t mac;
 	char macstr[ETHERADDRSTRL];
-	char errmsg[1024];
+	char errmsg[LIBIPCC_ERR_LEN];
 	t6init_discover_t discover = { 0 };
 	const char *dpioname = NULL, *attachment = NULL;
 	const char *sromfile = NULL, *flashfile = NULL;

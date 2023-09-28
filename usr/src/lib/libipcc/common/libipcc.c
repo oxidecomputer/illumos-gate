@@ -20,12 +20,33 @@
  *
  * The interfaces herein are MT-Safe only if each thread within a
  * multi-threaded caller uses its own library handle.
+ *
+ * When interfacing with the ipcc(4D) driver's inventory capabilities, since
+ * the service processor does not cache most of this information per se and it
+ * is basically static across our lifetime (the SP cannot update without us
+ * going down along for the ride), we provide a facility for consumers to
+ * request that we use a cache for this information.
+ *
+ * Once we complete a successful read of all inventory elements without getting
+ * any IPCC-level I/O errors, then we will proceed to cache this data. Any
+ * cache that we create is likely to be wrong at some point. Right now we have
+ * a forced expiry after a number of hours with some random component to reduce
+ * the likelihood that everything does this at the same time.
+ *
+ * Currently the only thing that expires the cache other than bad data is time.
+ * This probably needs to be improved to deal with changes in the SP state or
+ * related. It mostly works due to the tied lifetime; however, if there was a
+ * flaky connection to a device it means we'll be caching that something is
+ * missing or that there was an I/O error at the inventory level for a larger
+ * period of time which isn't great. Figuring out a better refresh pattern is an
+ * area of future work.
  */
-
-#include <libipcc.h>
 
 #include <errno.h>
 #include <fcntl.h>
+#include <libnvpair.h>
+#include <librename.h>
+#include <priv.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -38,26 +59,37 @@
 #include <sys/ethernet.h>
 #include <sys/ipcc.h>
 #include <sys/ipcc_inventory.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 
-#define	SUPPORTED_IPCC_VERSION	1
+#include <libipcc.h>
+#include <libipcc_priv.h>
+#include <libipcc_dt.h>
 
-/* All supported key lookup/set flags */
-#define	LIBIPCC_KEYF_ALL	LIBIPCC_KEYF_COMPRESSED
+/*
+ * Debug messages can be traced with DTrace using something like the following:
+ *
+ * dtrace -n 'libipcc$target:::msg
+ *     {printf("%s:%s", copyinstr(arg0), copyinstr(arg1))}
+ *     ' [-c <command>|-p <pid>]
+ */
 
-/* Maximum size of an internal error message */
-#define	LIBIPCC_ERR_LEN	1024
+#define	LIBIPCC_DEBUG(fmt, ...) libipcc_debug(__func__, fmt, ##__VA_ARGS__)
 
-struct libipcc_handle {
-	int			lih_fd;
-	uint_t			lih_version;
-	/* Last error information */
-	libipcc_err_t		lih_err;
-	int32_t			lih_syserr;
-	char			lih_errmsg[LIBIPCC_ERR_LEN];
-};
+static void __PRINTFLIKE(2)
+libipcc_debug(const char *func, const char *fmt, ...)
+{
+	char message[LIBIPCC_ERR_LEN];
+	va_list ap;
+
+	va_start(ap, fmt);
+	(void) vsnprintf(message, sizeof (message), fmt, ap);
+	va_end(ap);
+
+	LIBIPCC_MSG((char *)func, message);
+}
 
 libipcc_err_t
 libipcc_err(libipcc_handle_t *lih)
@@ -202,12 +234,26 @@ libipcc_fini(libipcc_handle_t *lih)
 	free(lih);
 }
 
+static int
+libipcc_ioctl(libipcc_handle_t *lih, int cmd, void *arg)
+{
+	int ret;
+
+	do {
+		ret = ioctl(lih->lih_fd, cmd, arg);
+		if (ret == 0)
+			break;
+	} while (errno == EINTR);
+
+	return (ret);
+}
+
 bool
 libipcc_status(libipcc_handle_t *lih, uint64_t *valp)
 {
 	ipcc_status_t status;
 
-	if (ioctl(lih->lih_fd, IPCC_STATUS, &status) != 0) {
+	if (libipcc_ioctl(lih, IPCC_STATUS, &status) != 0) {
 		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_STATUS) failed: %s", strerror(errno)));
 	}
@@ -222,7 +268,7 @@ libipcc_startup_options(libipcc_handle_t *lih, uint64_t *valp)
 {
 	ipcc_status_t status;
 
-	if (ioctl(lih->lih_fd, IPCC_STATUS, &status) != 0) {
+	if (libipcc_ioctl(lih, IPCC_STATUS, &status) != 0) {
 		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_STATUS) failed: %s", strerror(errno)));
 	}
@@ -244,7 +290,7 @@ libipcc_ident(libipcc_handle_t *lih, libipcc_ident_t **identp)
 		    strerror(errno)));
 	}
 
-	if (ioctl(lih->lih_fd, IPCC_IDENT, ident) != 0) {
+	if (libipcc_ioctl(lih, IPCC_IDENT, ident) != 0) {
 		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_IDENT) failed: %s", strerror(errno));
 		free(ident);
@@ -304,7 +350,7 @@ libipcc_imageblock(libipcc_handle_t *lih, uint8_t *hash, size_t hashlen,
 	bcopy(hash, ib.ii_hash, sizeof (ib.ii_hash));
 	ib.ii_offset = offset;
 
-	if (ioctl(lih->lih_fd, IPCC_IMAGEBLOCK, &ib) != 0) {
+	if (libipcc_ioctl(lih, IPCC_IMAGEBLOCK, &ib) != 0) {
 		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_IMAGEBLOCK) failed: %s", strerror(errno));
 		return (false);
@@ -334,7 +380,7 @@ libipcc_mac_fetch(libipcc_handle_t *lih, uint8_t group, ipcc_mac_t **macp)
 	}
 
 	mac->im_group = group;
-	if (ioctl(lih->lih_fd, IPCC_MACS, mac) != 0) {
+	if (libipcc_ioctl(lih, IPCC_MACS, mac) != 0) {
 		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_MACS) failed: %s", strerror(errno));
 		free(mac);
@@ -422,7 +468,7 @@ libipcc_keylookup_int(libipcc_handle_t *lih, uint8_t ipcc_key,
 	kl.ik_buf = buf;
 	kl.ik_buflen = *lenp;
 
-	if (ioctl(lih->lih_fd, IPCC_KEYLOOKUP, &kl) != 0) {
+	if (libipcc_ioctl(lih, IPCC_KEYLOOKUP, &kl) != 0) {
 		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_KEYOOKUP) failed: %s", strerror(errno)));
 	}
@@ -458,7 +504,8 @@ libipcc_keylookup(libipcc_handle_t *lih, uint8_t key, uint8_t **bufp,
 
 	if ((flags & ~LIBIPCC_KEYF_ALL) != 0) {
 		return (libipcc_error(lih, LIBIPCC_ERR_INVALID_PARAM, 0,
-		    "invalid flags provided - 0x%x", flags));
+		    "invalid flag(s) provided - 0x%x",
+		    flags & ~LIBIPCC_KEYF_ALL));
 	}
 
 	if (buf != NULL) {
@@ -580,27 +627,6 @@ libipcc_keylookup_free(uint8_t *buf, size_t buflen __unused)
 }
 
 bool
-libipcc_inventory_metadata(libipcc_handle_t *lih, uint32_t *ver,
-    uint32_t *nents)
-{
-	ipcc_inv_key_t key;
-	size_t len = sizeof (key);
-
-	*ver = 0;
-	*nents = 0;
-
-	if (!libipcc_keylookup_int(lih, IPCC_KEY_INVENTORY,
-	    (uint8_t *)&key, &len)) {
-		return (false);
-	}
-
-	*ver = key.iki_vers;
-	*nents = key.iki_nents;
-
-	return (libipcc_success(lih));
-}
-
-bool
 libipcc_keyset(libipcc_handle_t *lih, uint8_t key, uint8_t *buf, size_t len,
     libipcc_key_flag_t flags)
 {
@@ -690,7 +716,7 @@ libipcc_keyset(libipcc_handle_t *lih, uint8_t key, uint8_t *buf, size_t len,
 		kset->iks_datalen = len;
 	}
 
-	if (ioctl(lih->lih_fd, IPCC_KEYSET, kset) != 0) {
+	if (libipcc_ioctl(lih, IPCC_KEYSET, kset) != 0) {
 		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_KEYSET) failed: %s", strerror(errno));
 		free(kset);
@@ -720,17 +746,373 @@ libipcc_keyset(libipcc_handle_t *lih, uint8_t key, uint8_t *buf, size_t len,
 	return (libipcc_success(lih));
 }
 
+static void
+libipcc_inv_nvl_write(const char *data, size_t len)
+{
+	librename_atomic_t *lra = NULL;
+	int ret, fd;
+	size_t off;
+
+	/*
+	 * Since LIBIPCC_INV_CACHEDIR is owned by root and on tmpfs, we know
+	 * that the call to librename_atomic_init() will fail if we are not
+	 * either the root user (directory owner), or another user who has a
+	 * full privilege set (that is, effectively a privilege unaware root
+	 * user). We set the mode of the file 0400 so that it can only be read
+	 * by the original creator, or users who are privileged enough to have
+	 * FILE_DAC_READ.
+	 */
+	if ((ret = librename_atomic_init(LIBIPCC_INV_CACHEDIR,
+	    LIBIPCC_INV_CACHENAME, NULL, 0400, LIBRENAME_ATOMIC_NOUNLINK,
+	    &lra)) != 0) {
+		LIBIPCC_DEBUG("librename_atomic_init failed: %s",
+		    strerror(errno));
+		return;
+	}
+
+	fd = librename_atomic_fd(lra);
+	off = 0;
+	while (len > 0) {
+		size_t towrite = MIN(LIBIPCC_INV_CHUNK, len);
+		ssize_t sret = write(fd, data + off, towrite);
+
+		if (sret == -1 && errno == EINTR)
+			continue;
+		if (sret == -1) {
+			LIBIPCC_DEBUG(
+			    "failed to write 0x%zx bytes to 0x%zx: %s",
+			    towrite, off, strerror(errno));
+			(void) librename_atomic_abort(lra);
+			goto done;
+		}
+
+		off += sret;
+		len -= sret;
+	}
+
+	do {
+		ret = librename_atomic_commit(lra);
+	} while (ret == EINTR);
+
+	if (ret != 0 && ret != EINTR) {
+		LIBIPCC_DEBUG("librename_atomic_commit failed: %s",
+		    strerror(errno));
+		(void) librename_atomic_abort(lra);
+	} else {
+		LIBIPCC_DEBUG("successfully stored inventory cache");
+	}
+
+done:
+	if (lra != NULL)
+		librename_atomic_fini(lra);
+}
+
+static void
+libipcc_inv_persist(libipcc_inv_handle_t *liih)
+{
+	int ret;
+	nvlist_t *nvl = NULL;
+	char *pack_data = NULL;
+	size_t pack_len = 0;
+
+	if ((ret = nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0)) != 0) {
+		LIBIPCC_DEBUG("Failed to allocate nvlist: %s",
+		    strerror(errno));
+		goto done;
+	}
+
+	if (nvlist_add_uint32(nvl, LIBIPCC_INV_NVL_NENTS,
+	    liih->liih_ninv) != 0 ||
+	    nvlist_add_uint32(nvl, LIBIPCC_INV_NVL_VERS, IPCC_INV_VERS) != 0 ||
+	    nvlist_add_int64(nvl, LIBIPCC_INV_NVL_HRTIME, gethrtime()) != 0) {
+		LIBIPCC_DEBUG(
+		    "Failed to add items to nvlist: %s", strerror(errno));
+		goto done;
+	}
+
+	for (uint32_t i = 0; i < liih->liih_ninv; i++) {
+		char name[32];
+
+		(void) snprintf(name, sizeof (name), "inventory-%u", i);
+		ret = nvlist_add_byte_array(nvl, name,
+		    (uchar_t *)&liih->liih_inv[i].lii_inv,
+		    sizeof (liih->liih_inv[i].lii_inv));
+		if (ret != 0) {
+			LIBIPCC_DEBUG("Failed to add item %u to nvlist: %s",
+			    i, strerror(errno));
+			goto done;
+		}
+	}
+
+	if ((ret = nvlist_pack(nvl, &pack_data, &pack_len, NV_ENCODE_NATIVE,
+	    0)) != 0) {
+		LIBIPCC_DEBUG("Failed to pack nvlist: %s", strerror(errno));
+		goto done;
+	}
+
+	libipcc_inv_nvl_write(pack_data, pack_len);
+
+done:
+	free(pack_data);
+	nvlist_free(nvl);
+}
+
+/*
+ * Attempt to load the data from our cache file if it exists and we consider it
+ * still valid. If we fail to do so or we have a version / data count mismatch
+ * then we'll ignore the cache.
+ */
+static bool
+libipcc_inv_restore(libipcc_inv_handle_t *liih)
+{
+	int fd = -1, ret;
+	char buf[PATH_MAX];
+	struct stat st;
+	void *addr = MAP_FAILED;
+	bool bret = false;
+	nvlist_t *nvl = NULL;
+	uint32_t nents, vers;
+	int64_t ctime, exp;
+	hrtime_t now;
+
+	if (snprintf(buf, sizeof (buf), "%s/%s", LIBIPCC_INV_CACHEDIR,
+	    LIBIPCC_INV_CACHENAME) >= sizeof (buf)) {
+		LIBIPCC_DEBUG("failed to construct cache file path: "
+		    "would have overflowed buffer");
+		goto err;
+	}
+
+	fd = open(buf, O_RDONLY);
+	if (fd < 0) {
+		LIBIPCC_DEBUG("failed to open inventory cache file: %s\n",
+		    strerror(errno));
+		goto err;
+	}
+
+	if (fstat(fd, &st) < 0) {
+		LIBIPCC_DEBUG("failed to stat the inventory cache fd: %s\n",
+		    strerror(errno));
+		goto err;
+	}
+
+	addr = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	if (addr == MAP_FAILED) {
+		LIBIPCC_DEBUG("failed to map the inventory cache fd: %s\n",
+		    strerror(errno));
+		goto err;
+	}
+
+	ret = nvlist_unpack(addr, st.st_size, &nvl, 0);
+	if (ret != 0) {
+		LIBIPCC_DEBUG("failed to unpack the inventory cache: %s",
+		    strerror(ret));
+		goto err;
+	}
+
+	if ((ret = nvlist_lookup_pairs(nvl, 0,
+	    LIBIPCC_INV_NVL_NENTS, DATA_TYPE_UINT32, &nents,
+	    LIBIPCC_INV_NVL_VERS, DATA_TYPE_UINT32, &vers,
+	    LIBIPCC_INV_NVL_HRTIME, DATA_TYPE_INT64, &ctime, NULL)) != 0) {
+		LIBIPCC_DEBUG("failed to look up cache data: %s",
+		    strerror(ret));
+		goto err;
+	}
+
+	if (vers != IPCC_INV_VERS) {
+		LIBIPCC_DEBUG("cached inventory from unsupported version: %u",
+		    vers);
+		goto err;
+	}
+
+	if (nents != liih->liih_ninv) {
+		LIBIPCC_DEBUG("cached inventory has different "
+		    "entry count (%u) than expected from SP (%u)",
+		    nents, liih->liih_ninv);
+		goto err;
+	}
+
+	now = gethrtime();
+	exp = ctime + LIBIPCC_INV_TIME_BASE +
+	    arc4random_uniform(LIBIPCC_INV_TIME_RAND_SEC) * NANOSEC;
+	if (now > exp) {
+		LIBIPCC_DEBUG(
+		    "cached inventory has expired %" PRId64 " > %" PRId64,
+		    (uint64_t)now, exp);
+		goto err;
+	} else {
+		LIBIPCC_DEBUG(
+		    "cached inventory is current %" PRId64 " <= %" PRId64,
+		    (uint64_t)now, exp);
+	}
+
+	for (uint32_t i = 0; i < liih->liih_ninv; i++) {
+		char name[32];
+		uchar_t *data;
+		uint_t data_len;
+
+		(void) snprintf(name, sizeof (name), "inventory-%u", i);
+		if ((ret = nvlist_lookup_byte_array(nvl, name, &data,
+		    &data_len)) != 0) {
+			LIBIPCC_DEBUG("cached data did not contain key %s: %s",
+			    name, strerror(ret));
+			goto err;
+		}
+
+		if (data_len != sizeof (liih->liih_inv[i].lii_inv)) {
+			LIBIPCC_DEBUG("key %s has wrong length: found "
+			    "0x%x, expected 0x%zx", name, data_len,
+			    sizeof (liih->liih_inv[i].lii_inv));
+			goto err;
+		}
+
+		(void) memcpy(&liih->liih_inv[i].lii_inv, data, data_len);
+	}
+
+	/*
+	 * Now that we have successfully loaded all data from the cache, go
+	 * ahead and mark everything valid.
+	 */
+	for (uint32_t i = 0; i < liih->liih_ninv; i++) {
+		liih->liih_inv[i].lii_valid = true;
+	}
+
+	bret = true;
+
+	LIBIPCC_DEBUG("successfully loaded inventory cache: %d item(s)",
+	    liih->liih_ninv);
+
+err:
+	nvlist_free(nvl);
+
+	if (addr != MAP_FAILED) {
+		VERIFY0(munmap(addr, st.st_size));
+	}
+
+	if (fd >= 0) {
+		VERIFY0(close(fd));
+	}
+
+	return (bret);
+}
+
+static bool
+libipcc_inv_load(libipcc_handle_t *lih, libipcc_inv_handle_t *liih)
+{
+	uint32_t nioc_fail;
+	int lasterrno = 0;
+
+	liih->liih_inv = recallocarray(NULL, 0, liih->liih_ninv,
+	    sizeof (libipcc_invcache_t));
+	if (liih->liih_inv == NULL) {
+		return (libipcc_error(lih, LIBIPCC_ERR_NO_MEM, errno,
+		    "failed to allocate memory for inventory cache"));
+	}
+
+	if (libipcc_inv_restore(liih))
+		return (true);
+
+	nioc_fail = 0;
+	for (uint32_t i = 0; i < liih->liih_ninv; i++) {
+		libipcc_invcache_t *invc = &liih->liih_inv[i];
+
+		invc->lii_inv.iinv_idx = i;
+		if (libipcc_ioctl(lih, IPCC_INVENTORY, &invc->lii_inv) != 0) {
+			invc->lii_errno = lasterrno = errno;
+			nioc_fail++;
+			continue;
+		}
+
+		invc->lii_valid = true;
+	}
+
+	if (nioc_fail == liih->liih_ninv) {
+		free(liih->liih_inv);
+		liih->liih_inv = NULL;
+		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, lasterrno,
+		    "failed to retrieve any inventory items"));
+	}
+
+	/*
+	 * If we were able to successfully retrieve all items, then we will
+	 * store this information in the cache file.
+	 */
+	if (nioc_fail == 0)
+		libipcc_inv_persist(liih);
+
+	return (true);
+}
+
+bool
+libipcc_inv_hdl_init(libipcc_handle_t *lih, uint32_t *ver,
+    uint32_t *nents, libipcc_inv_init_flag_t flags,
+    libipcc_inv_handle_t **liihp)
+{
+	libipcc_inv_handle_t *liih;
+	ipcc_inv_key_t key;
+	size_t len = sizeof (key);
+
+	if ((flags & ~LIBIPCC_INVF_ALL) != 0) {
+		return (libipcc_error(lih, LIBIPCC_ERR_INVALID_PARAM, 0,
+		    "invalid flag(s) provided - 0x%x",
+		    flags & ~LIBIPCC_INVF_ALL));
+	}
+
+	*ver = 0;
+	*nents = 0;
+	*liihp = NULL;
+
+	if (!libipcc_keylookup_int(lih, IPCC_KEY_INVENTORY,
+	    (uint8_t *)&key, &len)) {
+		return (false);
+	}
+
+	liih = calloc(1, sizeof (*liih));
+	if (liih == NULL) {
+		return (libipcc_error(lih, LIBIPCC_ERR_NO_MEM, errno,
+		    "failed to allocate memory for inventory handle: %s",
+		    strerror(errno)));
+	}
+
+	liih->liih_vers = key.iki_vers;
+	liih->liih_ninv = key.iki_nents;
+
+	if ((flags & LIBIPCC_INV_INIT_CACHE) != 0) {
+		/*
+		 * Since the key lookup above succeeded, we know that the
+		 * caller has privileges to access IPCC, so it's ok to go ahead
+		 * and attempt to read the cached data.
+		 */
+		if (!libipcc_inv_load(lih, liih)) {
+			free(liih);
+			return (false);
+		}
+	}
+
+	*ver = liih->liih_vers;
+	*nents = liih->liih_ninv;
+	*liihp = liih;
+
+	return (libipcc_success(lih));
+}
+
+void
+libipcc_inv_hdl_fini(libipcc_inv_handle_t *liih)
+{
+	free(liih->liih_inv);
+	free(liih);
+}
+
 const char *
-libipcc_inventory_status_str(libipcc_inventory_status_t status)
+libipcc_inv_status_str(libipcc_inv_status_t status)
 {
 	switch (status) {
-	case LIBIPCC_INVENTORY_STATUS_SUCCESS:
+	case LIBIPCC_INV_STATUS_SUCCESS:
 		return ("Success");
-	case LIBIPCC_INVENTORY_STATUS_INVALID_INDEX:
+	case LIBIPCC_INV_STATUS_INVALID_INDEX:
 		return ("Invalid index");
-	case LIBIPCC_INVENTORY_STATUS_IO_DEV_MISSING:
+	case LIBIPCC_INV_STATUS_IO_DEV_MISSING:
 		return ("I/O error -- device gone?");
-	case LIBIPCC_INVENTORY_STATUS_IO_ERROR:
+	case LIBIPCC_INV_STATUS_IO_ERROR:
 		return ("I/O error");
 	default:
 		break;
@@ -739,10 +1121,22 @@ libipcc_inventory_status_str(libipcc_inventory_status_t status)
 }
 
 bool
-libipcc_inventory(libipcc_handle_t *lih, uint32_t idx,
-    libipcc_inventory_t **invp)
+libipcc_inv(libipcc_handle_t *lih, libipcc_inv_handle_t *liih, uint32_t idx,
+    libipcc_inv_t **invp)
 {
 	ipcc_inventory_t *inv;
+
+	if (idx >= liih->liih_ninv) {
+		return (libipcc_error(lih, LIBIPCC_ERR_INVALID_PARAM, 0,
+		    "invalid index provided, valid range is [0,0x%x)",
+		    liih->liih_ninv));
+	}
+
+	if (liih->liih_inv != NULL && !liih->liih_inv[idx].lii_valid) {
+		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL,
+		    liih->liih_inv[idx].lii_errno,
+		    "failed to retrieve inventory item 0x%x", idx));
+	}
 
 	inv = calloc(1, sizeof (*inv));
 	if (inv == NULL) {
@@ -751,39 +1145,44 @@ libipcc_inventory(libipcc_handle_t *lih, uint32_t idx,
 		    strerror(errno)));
 	}
 
-	inv->iinv_idx = idx;
-	if (ioctl(lih->lih_fd, IPCC_INVENTORY, inv) != 0) {
-		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
-		    "ioctl(IPCC_INVENTORY) failed: %s", strerror(errno));
-		free(inv);
-		return (false);
+	if (liih->liih_inv != NULL) {
+		bcopy(&liih->liih_inv[idx].lii_inv, inv, sizeof (*inv));
+	} else {
+		inv->iinv_idx = idx;
+		if (libipcc_ioctl(lih, IPCC_INVENTORY, inv) != 0) {
+			(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
+			    "failed to retrieve inventory item 0x%x: %s",
+			    idx, strerror(errno));
+			free(inv);
+			return (false);
+		}
 	}
 
-	*invp = (libipcc_inventory_t *)inv;
+	*invp = (libipcc_inv_t *)inv;
 
 	return (libipcc_success(lih));
 }
 
-libipcc_inventory_status_t
-libipcc_inventory_status(libipcc_inventory_t *invp)
+libipcc_inv_status_t
+libipcc_inv_status(libipcc_inv_t *invp)
 {
 	ipcc_inventory_t *inv = (ipcc_inventory_t *)invp;
 
 	switch (inv->iinv_res) {
 	case IPCC_INVENTORY_SUCCESS:
-		return (LIBIPCC_INVENTORY_STATUS_SUCCESS);
+		return (LIBIPCC_INV_STATUS_SUCCESS);
 	case IPCC_INVENTORY_IO_DEV_MISSING:
-		return (LIBIPCC_INVENTORY_STATUS_IO_DEV_MISSING);
+		return (LIBIPCC_INV_STATUS_IO_DEV_MISSING);
 	case IPCC_INVENTORY_IO_ERROR:
-		return (LIBIPCC_INVENTORY_STATUS_IO_ERROR);
+		return (LIBIPCC_INV_STATUS_IO_ERROR);
 	case IPCC_INVENTORY_INVALID_INDEX:
 	default:
-		return (LIBIPCC_INVENTORY_STATUS_INVALID_INDEX);
+		return (LIBIPCC_INV_STATUS_INVALID_INDEX);
 	}
 }
 
 uint8_t
-libipcc_inventory_type(libipcc_inventory_t *invp)
+libipcc_inv_type(libipcc_inv_t *invp)
 {
 	ipcc_inventory_t *inv = (ipcc_inventory_t *)invp;
 
@@ -791,7 +1190,7 @@ libipcc_inventory_type(libipcc_inventory_t *invp)
 }
 
 const uint8_t *
-libipcc_inventory_name(libipcc_inventory_t *invp, size_t *lenp)
+libipcc_inv_name(libipcc_inv_t *invp, size_t *lenp)
 {
 	ipcc_inventory_t *inv = (ipcc_inventory_t *)invp;
 
@@ -800,7 +1199,7 @@ libipcc_inventory_name(libipcc_inventory_t *invp, size_t *lenp)
 }
 
 const uint8_t *
-libipcc_inventory_data(libipcc_inventory_t *invp, size_t *lenp)
+libipcc_inv_data(libipcc_inv_t *invp, size_t *lenp)
 {
 	ipcc_inventory_t *inv = (ipcc_inventory_t *)invp;
 
@@ -809,7 +1208,7 @@ libipcc_inventory_data(libipcc_inventory_t *invp, size_t *lenp)
 }
 
 void
-libipcc_inventory_free(libipcc_inventory_t *invp)
+libipcc_inv_free(libipcc_inv_t *invp)
 {
 	free(invp);
 }

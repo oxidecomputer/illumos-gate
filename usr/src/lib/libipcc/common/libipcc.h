@@ -31,7 +31,19 @@
 #include <sys/ethernet.h>
 #include <sys/ipcc.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct libipcc_handle libipcc_handle_t;
+
+/*
+ * This is the maximum size of an error message from the library.
+ * It is the maximum length of the NUL-terminated string returned by
+ * libipcc_errmsg(), and the size of the buffer that should be passed to
+ * libipcc_init() to receive any initialisation error.
+ */
+#define	LIBIPCC_ERR_LEN	1024
 
 typedef enum {
 	LIBIPCC_ERR_OK = 0,
@@ -156,41 +168,48 @@ extern void libipcc_keylookup_free(uint8_t *, size_t);
 /*
  * Setting key values in the SP's key/value store.
  */
-
 extern bool libipcc_keyset(libipcc_handle_t *, uint8_t, uint8_t *, size_t,
     libipcc_key_flag_t);
 
 /*
- * Retrieval of system inventory data from the SP. Retrieve an inventory item
- * with libipcc_inventory, interrogate it with
- * libipcc_inventory_{status,type,name,data} and then free it with
- * libipcc_inventory_free once done.
+ * Retrieval of system inventory data from the SP. Initialise an inventory
+ * handle with libipcc_inv_hdl_init, then use it to retrieve inventory items
+ * with libipcc_inv. Interrogate them with libipcc_inv_{status,type,name,data}
+ * and then free them with libipcc_inv_free once done. Once finished with the
+ * inventory handle, pass it to libipcc_inv_hdl_fini. Retrieved inventory items
+ * will persist until explicitly freed.
  */
-typedef struct libipcc_inventory libipcc_inventory_t;
+typedef struct libipcc_inv_handle libipcc_inv_handle_t;
+typedef struct libipcc_inv libipcc_inv_t;
 
 typedef enum {
-	LIBIPCC_INVENTORY_STATUS_SUCCESS = 0,
-	LIBIPCC_INVENTORY_STATUS_INVALID_INDEX,
-	LIBIPCC_INVENTORY_STATUS_IO_DEV_MISSING,
-	LIBIPCC_INVENTORY_STATUS_IO_ERROR
-} libipcc_inventory_status_t;
+	LIBIPCC_INV_STATUS_SUCCESS = 0,
+	LIBIPCC_INV_STATUS_INVALID_INDEX,
+	LIBIPCC_INV_STATUS_IO_DEV_MISSING,
+	LIBIPCC_INV_STATUS_IO_ERROR
+} libipcc_inv_status_t;
 
-extern bool libipcc_inventory_metadata(libipcc_handle_t *, uint32_t *,
-    uint32_t *);
-extern bool libipcc_inventory(libipcc_handle_t *, uint32_t,
-    libipcc_inventory_t **);
-extern const char *libipcc_inventory_status_str(libipcc_inventory_status_t);
-extern libipcc_inventory_status_t libipcc_inventory_status(
-    libipcc_inventory_t *);
-extern uint8_t libipcc_inventory_type(libipcc_inventory_t *);
-extern const uint8_t *libipcc_inventory_name(libipcc_inventory_t *, size_t *);
-extern const uint8_t *libipcc_inventory_data(libipcc_inventory_t *, size_t *);
-extern void libipcc_inventory_free(libipcc_inventory_t *);
+typedef enum {
+	/*
+	 * Use an on-disk cache for inventory data. If the caller has
+	 * insufficient privileges, this flag will be ignored and cache will
+	 * not be used. Otherwise, if the cache is not available or has expired
+	 * it will be fully populated.
+	 */
+	LIBIPCC_INV_INIT_CACHE = 1 << 0,
+} libipcc_inv_init_flag_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+extern bool libipcc_inv_hdl_init(libipcc_handle_t *, uint32_t *,
+    uint32_t *, libipcc_inv_init_flag_t, libipcc_inv_handle_t **);
+extern bool libipcc_inv(libipcc_handle_t *, libipcc_inv_handle_t *, uint32_t,
+    libipcc_inv_t **);
+extern const char *libipcc_inv_status_str(libipcc_inv_status_t);
+extern libipcc_inv_status_t libipcc_inv_status(libipcc_inv_t *);
+extern uint8_t libipcc_inv_type(libipcc_inv_t *);
+extern const uint8_t *libipcc_inv_name(libipcc_inv_t *, size_t *);
+extern const uint8_t *libipcc_inv_data(libipcc_inv_t *, size_t *);
+extern void libipcc_inv_free(libipcc_inv_t *);
+extern void libipcc_inv_hdl_fini(libipcc_inv_handle_t *);
 
 #ifdef __cplusplus
 }

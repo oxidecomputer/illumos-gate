@@ -261,7 +261,7 @@ static const cmdtab_t cmds[] = {
 int
 main(int argc, char *argv[])
 {
-	char errmsg[1024];
+	char errmsg[LIBIPCC_ERR_LEN];
 	int rc;
 
 	progname = basename(argv[0]);

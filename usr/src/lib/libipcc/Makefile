@@ -16,6 +16,7 @@
 include		../Makefile.lib
 
 HDRS =		libipcc.h
+DHDRS =		libipcc_dt.h
 HDRDIR =	common
 SUBDIRS = $(MACH)
 $(BUILD64)SUBDIRS += $(MACH64)
@@ -29,6 +30,8 @@ clean :=	TARGET = clean
 clobber :=	TARGET = clobber
 install :=	TARGET = install
 
+CLEANFILES += $(DHDRS:%=$(HDRDIR)/%)
+
 .KEEP_STATE:
 
 all clean clobber: $(SUBDIRS)
@@ -39,8 +42,11 @@ install_h:	$(ROOTHDRS)
 
 check:		$(CHECKHDRS)
 
-$(SUBDIRS):  FRC
+$(SUBDIRS): $(DHDRS:%=$(HDRDIR)/%)
 	@cd $@; pwd; $(MAKE) $(TARGET) ARCH=$(ARCH)
+
+$(HDRDIR)/%.h: $(HDRDIR)/%.d
+	$(DTRACE) -xnolibs -h -s $< -o $@
 
 FRC:
 

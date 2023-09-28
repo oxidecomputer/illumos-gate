@@ -43,7 +43,7 @@ struct oxhc_ic_hc {
 	char *oih_pn_dyn;
 	char *oih_rev_dyn;
 	char *oih_serial_dyn;
-	const ipcc_inventory_t *oih_inv;
+	libipcc_inv_t *oih_inv;
 };
 
 /*

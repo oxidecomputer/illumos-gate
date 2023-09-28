@@ -24,7 +24,7 @@
 #include <sys/fm/protocol.h>
 #include <fm/topo_mod.h>
 #include <fm/topo_hc.h>
-#include <sys/ipcc.h>
+#include <libipcc.h>
 #include <sys/ipcc_inventory.h>
 
 #ifdef __cplusplus
@@ -85,11 +85,6 @@ struct oxhc_enum {
 	oxhc_enum_f oe_post_enum;
 };
 
-typedef struct oxhc_ipcc_inv {
-	bool oii_valid;
-	ipcc_inventory_t oii_ipcc;
-} oxhc_ipcc_inv_t;
-
 /*
  * Our systems often have a number of different kinds of slots. The types of
  * slots and the corresponding instance numbers will vary based upon the board.
@@ -135,7 +130,7 @@ typedef struct oxhc {
 	const oxhc_port_info_t *oxhc_ports;
 	size_t oxhc_nports;
 	uint32_t oxhc_ninv;
-	oxhc_ipcc_inv_t *oxhc_inv;
+	libipcc_inv_t **oxhc_inv;
 } oxhc_t;
 
 /*
@@ -154,13 +149,18 @@ extern int topo_oxhc_tn_create(topo_mod_t *, tnode_t *, tnode_t **,
     const char *, topo_oxhc_tn_flags_t, const char *);
 
 /*
+ * Miscellaneous utility functions.
+ */
+void topo_oxhc_libipcc_error(topo_mod_t *, libipcc_handle_t *, const char *);
+
+/*
  * Inventory related setup.
  */
-extern int topo_oxhc_inventory_init(topo_mod_t *, int, oxhc_t *);
+extern int topo_oxhc_inventory_init(topo_mod_t *, libipcc_handle_t *, oxhc_t *);
 extern void topo_oxhc_inventory_fini(topo_mod_t *, oxhc_t *);
-extern const ipcc_inventory_t *topo_oxhc_inventory_find(const oxhc_t *,
+extern libipcc_inv_t *topo_oxhc_inventory_find(const oxhc_t *,
     const char *);
-extern bool topo_oxhc_inventory_bcopy(const ipcc_inventory_t *, ipcc_inv_type_t,
+extern bool topo_oxhc_inventory_bcopy(libipcc_inv_t *, ipcc_inv_type_t,
     void *, size_t, size_t);
 
 /*

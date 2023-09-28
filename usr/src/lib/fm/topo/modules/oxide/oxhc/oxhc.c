@@ -563,7 +563,8 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 	const char *tname = topo_node_name(tn);
 	char *slot_refdes = NULL;
 	char ipcc[IPCC_INVENTORY_NAMELEN];
-	const ipcc_inventory_t *inv;
+	libipcc_inv_t *inv;
+	libipcc_inv_status_t status;
 	nvlist_t *auth = NULL;
 	tnode_t *board;
 
@@ -602,8 +603,10 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 	 * generally there being a board present as something did more than just
 	 * NAK us over i2c. The actual IC will not be enumerated in that case.
 	 */
-	if (inv->iinv_res != IPCC_INVENTORY_SUCCESS &&
-	    inv->iinv_res != IPCC_INVENTORY_IO_ERROR) {
+
+	status = libipcc_inv_status(inv);
+	if (status != LIBIPCC_INV_STATUS_SUCCESS &&
+	    status != LIBIPCC_INV_STATUS_IO_ERROR) {
 		topo_mod_dprintf(mod, "%s device is not present, skipping "
 		    "board creation", ipcc);
 		ret = 0;
@@ -658,7 +661,7 @@ topo_oxhc_enum_sharkfin(topo_mod_t *mod, const oxhc_t *oxhc,
 	const char *tname = topo_node_name(tn);
 	char *slot_refdes = NULL, *part = NULL, *serial = NULL;
 	char ipcc[IPCC_INVENTORY_NAMELEN], rev[16];
-	const ipcc_inventory_t *inv;
+	libipcc_inv_t *inv;
 	ipcc_inv_vpdid_t vpd;
 	tnode_t *board;
 	nvlist_t *auth = NULL;
@@ -766,7 +769,7 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 {
 	int ret, err;
 	char *slot_refdes = NULL;
-	const ipcc_inventory_t *inv;
+	libipcc_inv_t *inv;
 	ipcc_inv_ddr4_t ddr4;
 	topo_dimm_t dimm;
 
@@ -1175,38 +1178,44 @@ topo_oxhc_cleanup(topo_mod_t *mod, oxhc_t *oxhc)
 static int
 topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 {
-	int fd = -1, ret = -1;
-	ipcc_ident_t ident;
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	int32_t syserr;
+	libipcc_ident_t *ident = NULL;
+	char errmsg[LIBIPCC_ERR_LEN];
+	int ret = -1;
 
-	fd = open(IPCC_DEV, O_RDWR);
-	if (fd < 0) {
-		topo_mod_dprintf(mod, "failed to open %s: %s\n", IPCC_DEV,
-		    strerror(errno));
-		goto out;
+	if (!libipcc_init(&lih, &lerr, &syserr, errmsg, sizeof (errmsg))) {
+		topo_mod_dprintf(mod, "failed to initialize libipcc: "
+		    "%s: %s (libipcc: 0x%x, sys: %d)\n",
+		    errmsg, libipcc_strerror(lerr), lerr, syserr);
+		return (-1);
 	}
 
-	if (ioctl(fd, IPCC_IDENT, &ident) != 0) {
-		topo_mod_dprintf(mod, "failed to get ident via IPCC: %s\n",
-		    strerror(errno));
+	if (!libipcc_ident(lih, &ident)) {
+		topo_oxhc_libipcc_error(mod, lih, "failed to retrieve ident");
 		goto out;
 	}
 
 	/*
 	 * The IPCC kernel driver has guaranteed that these strings are NULL
-	 * terminated, but not really anything else.
+	 * terminated, but not really anything else, so we clean them up.
 	 */
-	oxhc->oxhc_pn = topo_mod_clean_str(mod, (char *)ident.ii_model);
-	oxhc->oxhc_sn = topo_mod_clean_str(mod, (char *)ident.ii_serial);
+	oxhc->oxhc_pn = topo_mod_clean_str(mod,
+	    (char *)libipcc_ident_model(ident));
+	oxhc->oxhc_sn = topo_mod_clean_str(mod,
+	    (char *)libipcc_ident_serial(ident));
+	oxhc->oxhc_rev = libipcc_ident_rev(ident);
+
 	if (oxhc->oxhc_pn == NULL || oxhc->oxhc_sn == NULL) {
 		(void) topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
-		topo_mod_dprintf(mod, "failed to cleanup pn and sn strings: "
+		topo_mod_dprintf(mod, "failed to clean up pn and sn strings: "
 		    "%s\n", topo_mod_errmsg(mod));
 		goto out;
 	}
 
-	oxhc->oxhc_rev = ident.ii_rev;
 	if (snprintf(oxhc->oxhc_revstr, sizeof (oxhc->oxhc_revstr), "%u",
-	    ident.ii_rev) >= sizeof (oxhc->oxhc_revstr)) {
+	    oxhc->oxhc_rev) >= sizeof (oxhc->oxhc_revstr)) {
 		topo_mod_dprintf(mod, "failed to construct revision buffer due "
 		    "to overflow!");
 		goto out;
@@ -1234,7 +1243,7 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 		goto out;
 	}
 
-	if (topo_oxhc_inventory_init(mod, fd, oxhc) != 0) {
+	if (topo_oxhc_inventory_init(mod, lih, oxhc) != 0) {
 		goto out;
 	}
 
@@ -1244,10 +1253,10 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 	 */
 
 	ret = 0;
+
 out:
-	if (fd >= 0) {
-		(void) close(fd);
-	}
+	libipcc_ident_free(ident);
+	libipcc_fini(lih);
 
 	return (ret);
 }

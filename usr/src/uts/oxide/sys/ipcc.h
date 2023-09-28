@@ -161,6 +161,8 @@ typedef struct ipcc_rot {
 } ipcc_rot_t;
 
 #define	IPCC_INVENTORY_NAMELEN	32
+#define	IPCC_INVENTORY_DATALEN	\
+	(IPCC_MAX_DATA_SIZE - IPCC_INVENTORY_NAMELEN - sizeof (uint8_t) * 2)
 
 #define	IPCC_INVENTORY_SUCCESS		0
 #define	IPCC_INVENTORY_INVALID_INDEX	1
@@ -173,7 +175,7 @@ typedef struct ipcc_inventory {
 	uint8_t		iinv_name[IPCC_INVENTORY_NAMELEN];
 	uint8_t		iinv_type;
 	uint16_t	iinv_data_len;
-	uint8_t		iinv_data[IPCC_MAX_DATA_SIZE];
+	uint8_t		iinv_data[IPCC_INVENTORY_DATALEN];
 } ipcc_inventory_t;
 
 #ifdef __cplusplus

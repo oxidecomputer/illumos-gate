@@ -38,10 +38,9 @@ extern "C" {
 #define	IPCC_INV_VERS	0
 
 /*
- * This is the index and structure of the inventory key that is used to
- * determine the total number of entries and the version.
+ * This is the structure of the inventory key that is used to determine the
+ * total number of entries and the version.
  */
-#define	IPCC_INV_KEYNO	2
 typedef struct {
 	uint32_t iki_nents;
 	uint32_t iki_vers;
