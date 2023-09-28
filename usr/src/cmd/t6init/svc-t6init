@@ -134,16 +134,22 @@ function check_link {
 	typeset espeed=$1; shift
 	typeset ewidth=$1; shift
 
-	inst=$($PCIEADM show-devs -Ho instnum $dev | head -1)
+	instlist=$($PCIEADM show-devs -Ho instnum $dev)
 	if (($? != 0)); then
 		scream "No $dev devices"
 		return
 	fi
-	dev+=$inst
-	speed=$($PCIEADM show-cfgspace -d $dev -Hpo value pcie.linksts.speed)
-	width=$($PCIEADM show-cfgspace -d $dev -Hpo value pcie.linksts.width)
-	((speed == espeed)) || scream "wrong $dev speed $speed (want $espeed)"
-	((width == ewidth)) || scream "wrong $dev width $width (want $ewidth)"
+	for inst in $instlist; do
+		d="$dev$inst"
+		speed=$($PCIEADM show-cfgspace -d $d \
+		    -Hpo value pcie.linksts.speed)
+		width=$($PCIEADM show-cfgspace -d $d \
+		    -Hpo value pcie.linksts.width)
+		((speed == espeed)) || \
+			scream "wrong $d speed $speed (want $espeed)"
+		((width == ewidth)) || \
+			scream "wrong $d width $width (want $ewidth)"
+	done
 }
 
 case "$1" in

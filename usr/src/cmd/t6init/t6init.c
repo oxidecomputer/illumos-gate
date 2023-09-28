@@ -21,11 +21,12 @@
  */
 
 #include <config_admin.h>
+#include <ctype.h>
 #include <err.h>
 #include <fcntl.h>
-#include <ipcc.h>
 #include <libdevinfo.h>
 #include <libgen.h>
+#include <libipcc.h>
 #include <libt6mfg.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -72,8 +73,9 @@ t6init_modename(t6init_mode_t mode)
 static void
 t6init_log(const char *fmt, va_list va)
 {
-	(void) vprintf(fmt, va);
-	(void) printf("\n");
+	(void) vfprintf(stdout, fmt, va);
+	(void) fprintf(stdout, "\n");
+	(void) fflush(stdout);
 }
 
 static void
@@ -123,36 +125,45 @@ t6_fatal(t6_mfg_t *t6mfg, const char *fmt, ...)
 }
 
 /*
- * Retrieve the MAC addresses assigned to for use by the host OS from the
- * service processor.
- * For programming the dual port T6, there need to be at least T6_MAC_COUNT
- * addresses separated exactly by T6_MAC_STRIDE. Only the base address is
- * programmed and the second port is automatically given an address which is
- * the base + T6_MAC_STRIDE.
+ * Retrieve the MAC addresses assigned by the service processor for use by the
+ * host OS. For programming the dual port T6, there need to be at least
+ * T6_MAC_COUNT addresses separated exactly by T6_MAC_STRIDE. Only the base
+ * address is programmed and the second port is automatically given an address
+ * which is the base + T6_MAC_STRIDE.
  */
 static bool
-retrieve_macaddr(int ipccfd, ether_addr_t *macp, char macstr[ETHERADDRSTRL])
+retrieve_macaddr(libipcc_handle_t *lih, ether_addr_t *macp,
+    char macstr[ETHERADDRSTRL])
 {
-	ipcc_mac_t sp_mac;
+	const struct ether_addr *base;
+	libipcc_mac_t *mac;
+	uint8_t stride;
+	uint16_t count;
 
 	t6init_verbose("Retrieving MAC addresses from SP");
 
-	bzero(&sp_mac, sizeof (sp_mac));
-	sp_mac.im_group = IPCC_MAC_GROUP_NIC;
-	if (ioctl(ipccfd, IPCC_MACS, &sp_mac) == -1) {
-		warn("could not retrieve MACs via ipcc");
+	if (!libipcc_mac_nic(lih, &mac)) {
+		warnx("could not retrieve MACs from SP: %s / %s",
+		    libipcc_strerror(libipcc_err(lih)),
+		    libipcc_errmsg(lih));
 		return (false);
 	}
 
-	if (ether_ntoa_r((struct ether_addr *)&sp_mac.im_base,
-	    macstr) == NULL) {
+	base = libipcc_mac_addr(mac);
+	count = libipcc_mac_count(mac);
+	stride = libipcc_mac_stride(mac);
+
+	if (ether_ntoa_r(base, macstr) == NULL) {
 		warnx("Could not convert MAC address to string");
+		libipcc_mac_free(mac);
 		return (false);
 	}
+
+	libipcc_mac_free(mac);
 
 	t6init_verbose("    Base:   %s", macstr);
-	t6init_verbose("    Count:  %x", sp_mac.im_count);
-	t6init_verbose("    Stride: %x", sp_mac.im_stride);
+	t6init_verbose("    Count:  %x", count);
+	t6init_verbose("    Stride: %x", stride);
 
 	if (strcmp(macstr, "0:0:0:0:0:0") == 0) {
 		/*
@@ -163,39 +174,104 @@ retrieve_macaddr(int ipccfd, ether_addr_t *macp, char macstr[ETHERADDRSTRL])
 		return (false);
 	}
 
-	if (sp_mac.im_count < T6_MAC_COUNT) {
-		warnx("too few MAC addresses from SP, "
-		    "got %d, need at least %d",
-		    sp_mac.im_count, T6_MAC_COUNT);
+	if (count < T6_MAC_COUNT) {
+		warnx("too few MAC addresses from SP, got %d, need at least %d",
+		    count, T6_MAC_COUNT);
 		return (false);
 	}
-	if (sp_mac.im_stride != T6_MAC_STRIDE) {
-		warnx("MAC address stride incorrect, got %d, "
-		    "need %d", sp_mac.im_stride, T6_MAC_STRIDE);
+	if (stride != T6_MAC_STRIDE) {
+		warnx("MAC address stride incorrect, got %d, need %d",
+		    stride, T6_MAC_STRIDE);
 		return (false);
 	}
 
-	bcopy(&sp_mac.im_base, macp, sizeof (sp_mac.im_base));
+	bcopy(base, macp, sizeof (*base));
 
 	return (true);
 }
 
-static bool
-retrieve_ident(int ipccfd, ipcc_ident_t *identp)
+
+/*
+ * The kernel guarantees that the ident strings are NUL terminated, but not
+ * much else.
+ */
+char *
+cleanstr(const char *str)
 {
+        const char *end, *cp;
+	size_t dstsize;
+	char *dst;
+
+        end = str + strlen((char *)str);
+
+        while (str < end && isspace(*str))
+                str++;
+        while (str < end && isspace(*(end - 1)))
+                end--;
+
+        if (str >= end) {
+		errno = EOVERFLOW;
+                return (NULL);
+	}
+
+	dstsize = end - str + 1;
+	dst = calloc(1, dstsize);
+	if (dst == NULL)
+		return (NULL);
+
+	cp = str;
+        for (size_t i = 0; i < dstsize - 1; i++) {
+		char c;
+
+                if (cp >= end)
+                        break;
+                c = *cp;
+                if (isspace(c) || !isprint(c))
+                        dst[i] = '-';
+                else
+                        dst[i] = c;
+                cp++;
+        }
+
+	return (dst);
+}
+
+static bool
+retrieve_ident(libipcc_handle_t *lih, char **modelp, char **serialp)
+{
+	libipcc_ident_t *ident;
+	char *model, *serial;
+
 	t6init_verbose("Retrieving ident from SP");
 
-	bzero(identp, sizeof (*identp));
-	if (ioctl(ipccfd, IPCC_IDENT, identp) < 0) {
-		warn("could not retrieve ident via ipcc");
+	if (!libipcc_ident(lih, &ident)) {
+		warn("could not retrieve ident from SP: %s / %s",
+		    libipcc_strerror(libipcc_err(lih)), libipcc_errmsg(lih));
 		return (false);
 	}
 
-	t6init_verbose("       Model: %-.*s", IDENT_STRING_SIZE,
-	    identp->ii_model);
-	t6init_verbose("      Serial: %-.*s", IDENT_STRING_SIZE,
-	    identp->ii_serial);
-	t6init_verbose("    Revision: %u", identp->ii_rev);
+	model = cleanstr((const char *)libipcc_ident_model(ident));
+	if (model == NULL) {
+		warn("could not clean ident model string");
+		libipcc_ident_free(ident);
+		return (false);
+	}
+
+	serial = cleanstr((const char *)libipcc_ident_serial(ident));
+	if (serial == NULL) {
+		warn("could not clean ident serial string");
+		free(model);
+		libipcc_ident_free(ident);
+		return (false);
+	}
+
+	libipcc_ident_free(ident);
+
+	t6init_verbose("       Model: '%s'", model);
+	t6init_verbose("      Serial: '%s'", serial);
+
+	*modelp = model;
+	*serialp = serial;
 
 	return (true);
 }
@@ -533,13 +609,15 @@ main(int argc, char **argv)
 	t6_mfg_t *t6mfg;
 	ether_addr_t mac;
 	char macstr[ETHERADDRSTRL];
-	ipcc_ident_t ident;
+	char errmsg[1024];
 	t6init_discover_t discover = { 0 };
 	const char *dpioname = NULL, *attachment = NULL;
 	const char *sromfile = NULL, *flashfile = NULL;
 	t6init_mode_t mode = T6INIT_MODE_MISSION;
 	uint16_t pci_ss_did = UINT16_MAX;
-	int c, bfd, ipccfd;
+	char *model, *serial;
+	libipcc_handle_t *lih;
+	int c, bfd;
 
 	progname = basename(argv[0]);
 
@@ -613,7 +691,7 @@ main(int argc, char **argv)
 
 	if (mode == T6INIT_MODE_MFG) {
 		if (get_dpio_mode() != T6INIT_MODE_MISSION) {
-			printf("DPIO is not set for mission mode\n");
+			fprintf(stderr, "DPIO is not set for mission mode\n");
 			if (!verify_mode(T6INIT_MODE_MFG))
 				errx(EXIT_FAILURE, "no mfg mode device found");
 			return (0);
@@ -625,7 +703,7 @@ main(int argc, char **argv)
 	}
 
 	if (get_dpio_mode() == T6INIT_MODE_MISSION) {
-		printf("DPIO is already set for mission mode\n");
+		fprintf(stderr, "DPIO is already set for mission mode\n");
 		if (!verify_mode(T6INIT_MODE_MISSION))
 			errx(EXIT_FAILURE, "no mission mode device found");
 		return (0);
@@ -638,17 +716,16 @@ main(int argc, char **argv)
 
 	/* Retrieve required information from the service processor */
 
-	ipccfd = open(IPCC_DEV, O_RDWR);
-	if (ipccfd == -1)
-		err(EXIT_FAILURE, "could not open ipcc device %s", IPCC_DEV);
+	if (!libipcc_init(&lih, NULL, NULL, errmsg, sizeof (errmsg)))
+		errx(EXIT_FAILURE, "Failed to init libipcc handle: %s", errmsg);
 
-	if (!retrieve_ident(ipccfd, &ident))
+	if (!retrieve_ident(lih, &model, &serial))
 		errx(EXIT_FAILURE, "failed to obtain ident");
 
-	if (!retrieve_macaddr(ipccfd, &mac, macstr))
+	if (!retrieve_macaddr(lih, &mac, macstr))
 		errx(EXIT_FAILURE, "failed to obtain MAC address");
 
-	VERIFY0(close(ipccfd));
+	libipcc_fini(lih);
 
 	/* Find a T6 in manufacturing mode */
 
@@ -669,11 +746,13 @@ main(int argc, char **argv)
 
 	/* Verify/program SROM */
 
-	if (!t6_mfg_srom_set_pn(t6mfg, (char *)ident.ii_model))
+	if (!t6_mfg_srom_set_pn(t6mfg, model))
 		t6_fatal(t6mfg, "failed to set model number");
+	free(model);
 
-	if (!t6_mfg_srom_set_sn(t6mfg, (char *)ident.ii_serial))
+	if (!t6_mfg_srom_set_sn(t6mfg, serial))
 		t6_fatal(t6mfg, "failed to set serial number");
+	free(serial);
 
 	if (!t6_mfg_srom_set_mac(t6mfg, (uint8_t *)&mac))
 		t6_fatal(t6mfg, "failed to set MAC address");
