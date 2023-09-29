@@ -54,7 +54,8 @@ typedef enum ipcc_hss_cmd {
 	IPCC_HSS_ADD_MEASUREMENTS,
 	IPCC_HSS_IMAGEBLOCK,
 	IPCC_HSS_KEYLOOKUP,
-	IPCC_HSS_INVENTORY
+	IPCC_HSS_INVENTORY,
+	IPCC_HSS_KEYSET
 } ipcc_hss_cmd_t;
 
 typedef enum ipcc_sp_cmd {
@@ -69,7 +70,8 @@ typedef enum ipcc_sp_cmd {
 	IPCC_SP_ROT,
 	IPCC_SP_IMAGEBLOCK,
 	IPCC_SP_KEYLOOKUP,
-	IPCC_SP_INVENTORY
+	IPCC_SP_INVENTORY,
+	IPCC_SP_KEYSET
 } ipcc_sp_cmd_t;
 
 typedef enum ipcc_sp_decode_failure {
@@ -79,7 +81,7 @@ typedef enum ipcc_sp_decode_failure {
 	IPCC_DECODEFAIL_MAGIC,
 	IPCC_DECODEFAIL_VERSION,
 	IPCC_DECODEFAIL_SEQUENCE,
-	IPCC_DECODEFAIL_DATALEN,
+	IPCC_DECODEFAIL_DATALEN
 } ipcc_sp_decode_failure_t;
 
 typedef enum ipcc_host_boot_failure {
@@ -87,13 +89,13 @@ typedef enum ipcc_host_boot_failure {
 	IPCC_BOOTFAIL_NOPHASE2,
 	IPCC_BOOTFAIL_HEADER,
 	IPCC_BOOTFAIL_INTEGRITY,
-	IPCC_BOOTFAIL_RAMDISK,
+	IPCC_BOOTFAIL_RAMDISK
 } ipcc_host_boot_failure_t;
 
 typedef enum ipcc_sp_status {
 	IPCC_STATUS_STARTED		= 1 << 0,
 	IPCC_STATUS_ALERT		= 1 << 1,
-	IPCC_STATUS_RESET		= 1 << 2,
+	IPCC_STATUS_RESET		= 1 << 2
 } ipcc_sp_status_t;
 
 typedef enum ipcc_sp_startup {
@@ -105,27 +107,26 @@ typedef enum ipcc_sp_startup {
 	IPCC_STARTUP_KMDB_BOOT		= 1 << 5, /* boot with -kd */
 	IPCC_STARTUP_BOOT_RAMDISK	= 1 << 6, /* no phase 2, use ramdisk */
 	IPCC_STARTUP_BOOT_NET		= 1 << 7, /* boot from network */
-	IPCC_STARTUP_VERBOSE		= 1 << 8, /* boot with -v */
+	IPCC_STARTUP_VERBOSE		= 1 << 8  /* boot with -v */
 } ipcc_sp_startup_t;
 
 #define	IPCC_IDENT_DATALEN		106
 #define	IPCC_BSU_DATALEN		1
 #define	IPCC_MAC_DATALEN		9
 #define	IPCC_STATUS_DATALEN		16
-#define	IPCC_BOOTFAIL_MAX_MSGSIZE	\
-	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
-#define	IPCC_KEYLOOKUP_MAX_MSGSIZE	\
+#define	IPCC_KEYSET_DATALEN		1
+#define	IPCC_BOOTFAIL_MAX_PAYLOAD	\
 	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
 
 typedef enum ipcc_log_type {
 	IPCC_LOG_DEBUG,
-	IPCC_LOG_HEX,
+	IPCC_LOG_HEX
 } ipcc_log_type_t;
 
 typedef enum ipcc_pollevent {
 	IPCC_INTR	= 1 << 0,
 	IPCC_POLLIN	= 1 << 1,
-	IPCC_POLLOUT	= 1 << 2,
+	IPCC_POLLOUT	= 1 << 2
 } ipcc_pollevent_t;
 
 typedef struct ipcc_ops {
@@ -150,7 +151,8 @@ extern int ipcc_bsu(const ipcc_ops_t *, void *, uint8_t *);
 extern int ipcc_ident(const ipcc_ops_t *, void *, ipcc_ident_t *);
 extern int ipcc_macs(const ipcc_ops_t *, void *, ipcc_mac_t *);
 extern int ipcc_keylookup(const ipcc_ops_t *, void *, ipcc_keylookup_t *,
-    uint8_t *buf);
+    uint8_t *);
+extern int ipcc_keyset(const ipcc_ops_t *, void *, ipcc_keyset_t *);
 extern int ipcc_rot(const ipcc_ops_t *, void *, ipcc_rot_t *);
 extern int ipcc_bootfail(const ipcc_ops_t *, void *, ipcc_host_boot_failure_t,
     const uint8_t *, size_t);

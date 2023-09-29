@@ -557,7 +557,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 		}
 
 		if (kl.ik_buflen == 0 ||
-		    kl.ik_buflen > IPCC_KEYLOOKUP_MAX_MSGSIZE) {
+		    kl.ik_buflen > IPCC_KEYLOOKUP_MAX_PAYLOAD) {
 			err = EINVAL;
 			break;
 		}
@@ -725,6 +725,38 @@ inventory_done:
 		kmem_free(inv, sizeof (*inv));
 		break;
 	}
+	case IPCC_KEYSET: {
+		ipcc_keyset_t *kset;
+
+		BUMP_STAT(ioctl_keyset);
+
+		kset = kmem_zalloc(sizeof (*kset), KM_NOSLEEP_LAZY);
+		if (kset == NULL) {
+			err = ENOMEM;
+			break;
+		}
+
+		if (ddi_copyin(datap, kset, sizeof (*kset), cflag) != 0) {
+			err = EFAULT;
+			goto keyset_done;
+		}
+
+		err = ipcc_keyset(&ipcc_ops, &ipcc, kset);
+		if (err != 0)
+			goto keyset_done;
+
+		/*
+		 * We only need to copy out the result, which is the first
+		 * field of the struct, placed before iks_key.
+		 */
+		if (ddi_copyout(kset, datap, offsetof(ipcc_keyset_t, iks_key),
+		    cflag) != 0) {
+			err = EFAULT;
+		}
+keyset_done:
+		kmem_free(kset, sizeof (*kset));
+		break;
+	}
 	default:
 		BUMP_STAT(ioctl_unknown);
 		err = ENOTTY;
@@ -823,6 +855,8 @@ ipcc_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	kstat_named_init(&ipcc_stat->ioctl_rot, "total_rot_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_inventory, "total_inventory_req",
+	    KSTAT_DATA_UINT64);
+	kstat_named_init(&ipcc_stat->ioctl_keyset, "total_keyset_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_unknown, "total_unknown_req",
 	    KSTAT_DATA_UINT64);

@@ -60,6 +60,15 @@ typedef enum {
 	 */
 	LIBIPCC_ERR_KEY_BUFTOOSMALL,
 	/*
+	 * An attempt to write to a key failed because the key is read-only.
+	 */
+	LIBIPCC_ERR_KEY_READONLY,
+	/*
+	 * An attempt to write to a key failed because the passed value is too
+	 * long.
+	 */
+	LIBIPCC_ERR_KEY_VALTOOLONG,
+	/*
 	 * Compression or decompression failed. If appropriate,
 	 * libipcc_syserr() will return the Z_ error from zlib.
 	 */
@@ -126,6 +135,8 @@ extern void libipcc_mac_free(libipcc_mac_t *);
 #define	LIBIPCC_KEY_PING			IPCC_KEY_PING
 #define	LIBIPCC_KEY_INSTALLINATOR_IMAGE_ID	IPCC_KEY_INSTALLINATOR_IMAGE_ID
 #define	LIBIPCC_KEY_INVENTORY			IPCC_KEY_INVENTORY
+#define	LIBIPCC_KEY_ETC_SYSTEM			IPCC_KEY_ETC_SYSTEM
+#define	LIBIPCC_KEY_DTRACE_CONF			IPCC_KEY_DTRACE_CONF
 
 typedef enum {
 	/*
@@ -141,6 +152,13 @@ typedef enum {
 extern bool libipcc_keylookup(libipcc_handle_t *, uint8_t, uint8_t **,
     size_t *, libipcc_key_flag_t);
 extern void libipcc_keylookup_free(uint8_t *, size_t);
+
+/*
+ * Setting key values in the SP's key/value store.
+ */
+
+extern bool libipcc_keyset(libipcc_handle_t *, uint8_t, uint8_t *, size_t,
+    libipcc_key_flag_t);
 
 /*
  * Retrieval of system inventory data from the SP. Retrieve an inventory item

@@ -58,6 +58,7 @@ SYMBOL_VERSION ILLUMOSprivate {
 	libipcc_mac_free;
 	libipcc_mac_nic;
 	libipcc_mac_stride;
+	libipcc_keyset;
 	libipcc_startup_options;
 	libipcc_status;
 	libipcc_strerror;

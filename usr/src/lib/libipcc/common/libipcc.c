@@ -434,7 +434,7 @@ libipcc_keylookup_int(libipcc_handle_t *lih, uint8_t ipcc_key,
 		    kl.ik_buflen));
 	case IPCC_KEYLOOKUP_UNKNOWN_KEY:
 		return (libipcc_error(lih, LIBIPCC_ERR_KEY_UNKNOWN, 0,
-		    "requested key 0x%x was not known to the SP", ipcc_key));
+		    "key 0x%x was not known to the SP", ipcc_key));
 	default:
 		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, 0,
 		    "unknown keylookup result from SP: 0x%x", kl.ik_result));
@@ -596,6 +596,126 @@ libipcc_inventory_metadata(libipcc_handle_t *lih, uint32_t *ver,
 
 	*ver = key.iki_vers;
 	*nents = key.iki_nents;
+
+	return (libipcc_success(lih));
+}
+
+bool
+libipcc_keyset(libipcc_handle_t *lih, uint8_t key, uint8_t *buf, size_t len,
+    libipcc_key_flag_t flags)
+{
+	ipcc_keyset_t *kset;
+	uint8_t result;
+
+	if ((flags & ~LIBIPCC_KEYF_ALL) != 0) {
+		return (libipcc_error(lih, LIBIPCC_ERR_INVALID_PARAM, 0,
+		    "invalid flags provided - 0x%x", flags));
+	}
+
+	kset = calloc(1, sizeof (*kset));
+	if (kset == NULL) {
+		return (libipcc_error(lih, LIBIPCC_ERR_NO_MEM, errno,
+		    "failed to allocate memory for keyset structure"));
+	}
+
+	kset->iks_key = key;
+
+	if (len > 0 && (flags & LIBIPCC_KEYF_COMPRESSED) != 0) {
+		size_t maxlen, dstlen;
+		int zret;
+
+		/*
+		 * If the data is being stored in a compressed form, we prefix
+		 * it with the size of the original uncompressed data as a
+		 * uint16_t, and limit the source size to that.
+		 */
+		if (len > UINT16_MAX) {
+			free(kset);
+			return (libipcc_error(lih, LIBIPCC_ERR_KEY_VALTOOLONG,
+			    0, "value too long: 0x%zx bytes; "
+			    "upper bound with compression: 0x%x",
+			    len, UINT16_MAX));
+		}
+		maxlen = dstlen = sizeof (kset->iks_data) - sizeof (uint16_t);
+		zret = compress2(kset->iks_data + sizeof (uint16_t),
+		    (uLongf *)&dstlen, buf, len, Z_BEST_COMPRESSION);
+		if (zret != Z_OK) {
+			switch (zret) {
+			case Z_MEM_ERROR:
+				/*
+				 * zlib appears to preserve errno here,
+				 * although it is not documented in the manual.
+				 */
+				(void) libipcc_error(lih, LIBIPCC_ERR_NO_MEM,
+				    errno, "could not allocate memory during "
+				    "compression");
+				break;
+			case Z_BUF_ERROR:
+				/*
+				 * compressBound() provides an upper bound and
+				 * it is likely that compression would produce
+				 * slightly smaller data, but it's at least an
+				 * indication of how far off the data is from
+				 * fitting.
+				 */
+				(void) libipcc_error(lih,
+				    LIBIPCC_ERR_KEY_VALTOOLONG, 0,
+				    "input data was too large after "
+				    "compression ~0x%zx; limit is 0x%zx",
+				    (size_t)compressBound(len), maxlen);
+				break;
+			default:
+				(void) libipcc_error(lih, LIBIPCC_ERR_KEY_ZERR,
+				    zret, "compression failure: %s",
+				    zError(zret));
+				break;
+			}
+
+			free(kset);
+			return (false);
+		}
+
+		*(uint16_t *)kset->iks_data = len;
+		kset->iks_datalen = dstlen + sizeof (uint16_t);
+	} else {
+		if (len > sizeof (kset->iks_data)) {
+			free(kset);
+			return (libipcc_error(lih, LIBIPCC_ERR_KEY_VALTOOLONG,
+			    0, "value too long: 0x%zx bytes; "
+			    "upper bound without compression: 0x%zx",
+			    len, sizeof (kset->iks_data)));
+		}
+		if (len > 0)
+			bcopy(buf, kset->iks_data, len);
+		kset->iks_datalen = len;
+	}
+
+	if (ioctl(lih->lih_fd, IPCC_KEYSET, kset) != 0) {
+		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
+		    "ioctl(IPCC_KEYSET) failed: %s", strerror(errno));
+		free(kset);
+		return (false);
+	}
+
+	result = kset->iks_result;
+	free(kset);
+
+	switch (result) {
+	case IPCC_KEYSET_SUCCESS:
+		break;
+	case IPCC_KEYSET_UNKNOWN_KEY:
+		return (libipcc_error(lih, LIBIPCC_ERR_KEY_UNKNOWN, 0,
+		    "key 0x%x was not known to the SP", key));
+	default:
+		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, 0,
+		    "unknown keyset result from SP: 0x%x", result));
+	case IPCC_KEYSET_READONLY:
+		return (libipcc_error(lih, LIBIPCC_ERR_KEY_READONLY, 0,
+		    "key 0x%x is read-only", key));
+	case IPCC_KEYSET_TOO_LONG:
+		return (libipcc_error(lih, LIBIPCC_ERR_KEY_VALTOOLONG, 0,
+		    "value too long for key 0x%x", key));
+	}
 
 	return (libipcc_success(lih));
 }

@@ -513,7 +513,7 @@ kernel_ipcc_bootfailv(ipcc_host_boot_failure_t reason, const char *fmt,
 	bufsize = vsnprintf(NULL, 0, fmt, vas) + 1;
 	va_end(vas);
 
-	bufsize = MIN(bufsize, IPCC_BOOTFAIL_MAX_MSGSIZE);
+	bufsize = MIN(bufsize, IPCC_BOOTFAIL_MAX_PAYLOAD);
 	buf = kmem_alloc(bufsize, KM_SLEEP);
 	(void) vsnprintf(buf, bufsize, fmt, va);
 

@@ -1455,6 +1455,46 @@ out:
 }
 
 int
+ipcc_keyset(const ipcc_ops_t *ops, void *arg, ipcc_keyset_t *kset)
+{
+	size_t inputl, outputl, off;
+	uint8_t *input, *output;
+	int err = 0;
+
+	inputl = sizeof (kset->iks_key) + kset->iks_datalen;
+	if (inputl > IPCC_MAX_DATA_SIZE)
+		return (EINVAL);
+
+	input = kmem_alloc(inputl, KM_SLEEP);
+	off = 0;
+	ipcc_encode_bytes(&kset->iks_key, sizeof (kset->iks_key),
+	    input, &off);
+	ipcc_encode_bytes(kset->iks_data, kset->iks_datalen,
+	    input, &off);
+
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0) {
+		kmem_free(input, inputl);
+		return (err);
+	}
+
+	outputl = IPCC_KEYSET_DATALEN;
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_KEYSET,
+	    IPCC_SP_KEYSET, input, off, &output, &outputl);
+	if (err != 0)
+		goto out;
+
+	off = 0;
+	ipcc_decode_bytes(&kset->iks_result, sizeof (kset->iks_result),
+	    output, &off);
+
+out:
+	ipcc_release_channel(ops, arg, true);
+
+	kmem_free(input, inputl);
+	return (err);
+}
+
+int
 ipcc_rot(const ipcc_ops_t *ops, void *arg, ipcc_rot_t *rot)
 {
 	int err = 0;
@@ -1491,7 +1531,7 @@ ipcc_bootfail(const ipcc_ops_t *ops, void *arg, ipcc_host_boot_failure_t type,
 	uint8_t *data;
 	int err = 0;
 
-	datal = MIN(len, IPCC_BOOTFAIL_MAX_MSGSIZE);
+	datal = MIN(len, IPCC_BOOTFAIL_MAX_PAYLOAD);
 	datal += sizeof (uint8_t);
 
 	data = kmem_alloc(datal, KM_SLEEP);

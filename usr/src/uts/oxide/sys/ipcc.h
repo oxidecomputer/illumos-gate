@@ -38,6 +38,7 @@ extern "C" {
 #define	IPCC_ROT		(IPCC_IOC|5)
 #define	IPCC_IMAGEBLOCK		(IPCC_IOC|6)
 #define	IPCC_INVENTORY		(IPCC_IOC|7)
+#define	IPCC_KEYSET		(IPCC_IOC|8)
 
 /*
  * The minimum message size is a protocol detail that should be in
@@ -47,8 +48,6 @@ extern "C" {
  * checksum - i.e. the size of a message with no associated data.
  * IPCC_MAX_MESSAGE_SIZE is chosen to allow a message to contain a full 4KiB of
  * data with an additional 64-bits in the data portion of the message.
- * XXX - this may be revised once the details of the phase2 image transfer and
- * RoT messages are further along.
  */
 #define	IPCC_MIN_MESSAGE_SIZE	19
 #define	IPCC_MAX_MESSAGE_SIZE	4123
@@ -96,9 +95,29 @@ typedef struct ipcc_keylookup {
 	uint8_t		*ik_buf;
 } ipcc_keylookup_t;
 
+/*
+ * A keyset message is prefixed by a uint8_t that selects the slot being
+ * written.
+ */
+#define	IPCC_KEYSET_MAX_PAYLOAD (IPCC_MAX_DATA_SIZE - sizeof (uint8_t))
+
+typedef struct ipcc_keyset {
+	uint8_t		iks_result;
+	uint8_t		iks_key;
+	uint16_t	iks_datalen;
+	uint8_t		iks_data[IPCC_KEYSET_MAX_PAYLOAD];
+} ipcc_keyset_t;
+
+/*
+ * A keylookup response is prefixed by a uint8_t response code.
+ */
+#define	IPCC_KEYLOOKUP_MAX_PAYLOAD (IPCC_MAX_DATA_SIZE - sizeof (uint8_t))
+
 #define	IPCC_KEY_PING			0
 #define	IPCC_KEY_INSTALLINATOR_IMAGE_ID	1
 #define	IPCC_KEY_INVENTORY		2
+#define	IPCC_KEY_ETC_SYSTEM		3
+#define	IPCC_KEY_DTRACE_CONF		4
 
 typedef struct ipcc_imageblock {
 	uint8_t		ii_hash[IPCC_IMAGE_HASHLEN];
@@ -130,6 +149,11 @@ typedef struct ipcc_imageblock32 {
 #define	IPCC_KEYLOOKUP_UNKNOWN_KEY	1
 #define	IPCC_KEYLOOKUP_NO_VALUE		2
 #define	IPCC_KEYLOOKUP_BUFFER_TOO_SMALL	3
+
+#define	IPCC_KEYSET_SUCCESS		0
+#define	IPCC_KEYSET_UNKNOWN_KEY		1
+#define	IPCC_KEYSET_READONLY		2
+#define	IPCC_KEYSET_TOO_LONG		3
 
 typedef struct ipcc_rot {
 	uint64_t	ir_len;

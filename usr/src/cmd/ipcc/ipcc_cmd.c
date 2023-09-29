@@ -502,6 +502,8 @@ static struct {
 	{ "ping",		LIBIPCC_KEY_PING },
 	{ "imageid",		LIBIPCC_KEY_INSTALLINATOR_IMAGE_ID },
 	{ "inventory",		LIBIPCC_KEY_INVENTORY },
+	{ "system",		LIBIPCC_KEY_ETC_SYSTEM },
+	{ "dtrace",		LIBIPCC_KEY_DTRACE_CONF },
 };
 
 static void
@@ -552,7 +554,7 @@ ipcc_keylookup(int argc, char *argv[])
 	argv += optind;
 
 	if (argc != 1) {
-		fprintf(stderr, "Missing parameter:\n");
+		fprintf(stderr, "%s: missing parameter:\n", progname);
 		ipcc_keylookup_usage(stderr);
 		fprintf(stderr, "Keys may be specified by name or number:\n");
 		for (uint_t i = 0; i < ARRAY_SIZE(ipcc_keys); i++) {
@@ -603,6 +605,114 @@ ipcc_keylookup(int argc, char *argv[])
 	else
 		libipcc_keylookup_free(buf, buflen);
 
+	return (0);
+}
+
+static void
+ipcc_keyset_usage(FILE *f)
+{
+	(void) fprintf(f, "\tkeyset [-c] <key> <filename>\n");
+}
+
+static int
+ipcc_keyset(int argc, char *argv[])
+{
+	libipcc_key_flag_t flags = 0;
+	const char *errstr;
+	char *filename;
+	bool keyfound = false;
+	struct stat st;
+	uint8_t key;
+	uint8_t *buf, *readbuf;
+	size_t remaining;
+	off_t off;
+	int c, fd;
+
+	while ((c = getopt(argc, argv, ":c")) != -1) {
+		switch (c) {
+		case 'c':
+			flags |= LIBIPCC_KEYF_COMPRESSED;
+			break;
+		case '?':
+			fprintf(stderr, "Unknown option: -%c", optopt);
+			ipcc_keylookup_usage(stderr);
+			return (EXIT_USAGE);
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	if (argc != 2) {
+		fprintf(stderr, "%s: missing parameter:\n", progname);
+		ipcc_keyset_usage(stderr);
+		fprintf(stderr, "Keys may be specified by name or number:\n");
+		for (uint_t i = 0; i < ARRAY_SIZE(ipcc_keys); i++) {
+			fprintf(stderr, "        %4d - %s\n",
+			    ipcc_keys[i].val, ipcc_keys[i].key);
+		}
+		return (EXIT_USAGE);
+	}
+
+	for (uint_t i = 0; i < ARRAY_SIZE(ipcc_keys); i++) {
+		if (strcmp(argv[0], ipcc_keys[i].key) == 0) {
+			key = ipcc_keys[i].val;
+			keyfound = true;
+			break;
+		}
+	}
+
+	filename = argv[1];
+
+	if (!keyfound) {
+		key = strtonumx(argv[0], 0, 255, &errstr, 0);
+		if (errstr != NULL) {
+			errx(EXIT_FAILURE, "key is %s (range 0-255): %s",
+			    errstr, argv[0]);
+		}
+	}
+
+	if ((fd = open(filename, O_RDONLY)) == -1)
+		err(EXIT_FAILURE, "could not open '%s'", filename);
+
+	if (fstat(fd, &st) == -1)
+		err(EXIT_FAILURE, "failed to stat '%s'", filename);
+
+	buf = calloc(1, st.st_size);
+	if (buf == NULL) {
+		err(EXIT_FAILURE, "failed to allocate 0x%x bytes for file",
+		    st.st_size);
+	}
+
+	readbuf = buf;
+	remaining = st.st_size;
+	off = 0;
+	while (remaining > 0) {
+		ssize_t len;
+
+		len = pread(fd, readbuf, remaining, off);
+		if (len == -1) {
+			err(EXIT_FAILURE, "failed to read 0x%x bytes from '%s' "
+			    "at offset 0x%zx", remaining, filename, off);
+		}
+		if (len == 0) {
+			errx(EXIT_FAILURE,
+			    "unexpected EOF reading from '%s' at offset 0x%zx; "
+			    "still wanted 0x%zx bytes", filename, off,
+			    remaining);
+		}
+		remaining -= len;
+		off += len;
+		readbuf += len;
+	}
+	VERIFY0(close(fd));
+
+	if (!libipcc_keyset(ipcc_handle, key, buf, st.st_size, flags))
+		libipcc_fatal("Failed to perform key set operation");
+
+	printf("Success\n");
+
+	free(buf);
 	return (0);
 }
 
@@ -692,6 +802,7 @@ static const ipcc_cmdtab_t ipcc_cmds[] = {
 	{ "image", ipcc_image, ipcc_image_usage },
 	{ "inventory", ipcc_inventory, ipcc_inventory_usage },
 	{ "keylookup", ipcc_keylookup, ipcc_keylookup_usage },
+	{ "keyset", ipcc_keyset, ipcc_keyset_usage },
 	{ "macs", ipcc_macs, ipcc_macs_usage },
 	{ "status", ipcc_status, NULL },
 	{ NULL, NULL, NULL }

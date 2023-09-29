@@ -57,6 +57,7 @@ typedef struct ipcc_stats {
 	struct kstat_named	ioctl_keylookup;
 	struct kstat_named	ioctl_rot;
 	struct kstat_named	ioctl_inventory;
+	struct kstat_named	ioctl_keyset;
 	struct kstat_named	ioctl_unknown;
 } ipcc_stats_t;
 
