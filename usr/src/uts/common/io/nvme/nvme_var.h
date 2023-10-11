@@ -13,7 +13,7 @@
  * Copyright 2016 The MathWorks, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2019 Unix Software Ltd.
- * Copyright 2021 Oxide Computer Company.
+ * Copyright 2023 Oxide Computer Company.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
@@ -26,6 +26,8 @@
 #include <sys/blkdev.h>
 #include <sys/taskq_impl.h>
 #include <sys/list.h>
+#include <sys/callb.h>
+#include "nvme_reg.h"
 
 /*
  * NVMe driver state
@@ -61,6 +63,7 @@ typedef struct nvme_cmd nvme_cmd_t;
 typedef struct nvme_cq nvme_cq_t;
 typedef struct nvme_qpair nvme_qpair_t;
 typedef struct nvme_task_arg nvme_task_arg_t;
+typedef struct nvme_panicdata nvme_panicdata_t;
 
 struct nvme_minor_state {
 	kthread_t	*nm_oexcl;
@@ -135,6 +138,13 @@ struct nvme_qpair {
 
 	kmutex_t nq_mutex;	/* protects shared state */
 	ksema_t nq_sema; /* semaphore to ensure q always has >= 1 empty slot */
+};
+
+struct nvme_panicdata {
+	callb_id_t np_cbid;
+	nvme_reg_csts_t np_csts;
+	nvme_reg_cc_t np_cc;
+	ddi_fm_error_t np_acc_err;
 };
 
 struct nvme {
@@ -274,6 +284,9 @@ struct nvme {
 	nvme_fwslot_log_t *n_fwslot;
 	/* Lock protecting the cached firmware slot info */
 	kmutex_t n_fwslot_mutex;
+
+	/* Controller state saved on panic */
+	nvme_panicdata_t n_panicdata;
 };
 
 struct nvme_namespace {

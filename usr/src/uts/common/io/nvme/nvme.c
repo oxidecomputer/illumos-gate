@@ -339,6 +339,7 @@
 #include <sys/policy.h>
 #include <sys/list.h>
 #include <sys/dkio.h>
+#include <sys/callb.h>
 
 #include <sys/nvme.h>
 
@@ -3922,6 +3923,28 @@ nvme_remove_callback(dev_info_t *dip, ddi_eventcookie_t cookie, void *a,
 	}
 }
 
+/*
+ * Collect a small amount of data to help determine whether something went wrong
+ * in the controller that led to the panic, such as by an I/O deadman timer.  If
+ * we're unable to access these registers because of some larger-scope problem,
+ * we may get all-1s back and/or the handle may provide some FMA error state,
+ * which we also record.  This information can be inspected in the dump using
+ * the kernel debugger.  We want to do as little as possible here to avoid
+ * panicking again.
+ */
+static boolean_t
+nvme_panic_callback(void *arg, int code)
+{
+	nvme_t *nvme = (nvme_t *)arg;
+	nvme_panicdata_t *npp = &nvme->n_panicdata;
+
+	npp->np_cc.r = nvme_get32(nvme, NVME_REG_CC);
+	npp->np_csts.r = nvme_get32(nvme, NVME_REG_CSTS);
+	ddi_fm_acc_err_get(nvme->n_regh, &npp->np_acc_err, DDI_FME_VERSION);
+
+	return (B_TRUE);
+}
+
 static int
 nvme_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
@@ -4089,6 +4112,15 @@ nvme_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 
 	nvme->n_progress |= NVME_REGS_MAPPED;
+
+	/*
+	 * If the system panics after we've arrived here, we want to capture a
+	 * small amount of controller state to help determine whether the
+	 * device or driver state may have contributed.  This could be made DDI
+	 * compliant by introducing an NDI event for panics at the rootnex.
+	 */
+	nvme->n_panicdata.np_cbid = callb_add(nvme_panic_callback, (void *)nvme,
+	    CB_CL_PANIC, "nvme_panic");
 
 	/*
 	 * Create PRP DMA cache
@@ -4303,6 +4335,23 @@ nvme_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 	if (nvme->n_idctl)
 		kmem_free(nvme->n_idctl, NVME_IDENTIFY_BUFSIZE);
+
+	/*
+	 * After this point, we can no longer usefully collect data should we
+	 * panic, so remove the callback.  Note that the data we collect
+	 * (register state) has already been modified by nvme_reset(), but
+	 * that's ok; if we did panic sometime before here, whatever state
+	 * exists would still have been accessible and interesting.
+	 *
+	 * While callbacks aren't synchronised with detach, we can't race with a
+	 * callback here because panic callbacks are called with all
+	 * non-panicking CPUs already stopped.  Either a thread running detach
+	 * on such a CPU got here or it didn't; if it didn't, the handle needed
+	 * by the callback is still valid, and if it did, the callback won't be
+	 * invoked.
+	 */
+	if (nvme->n_panicdata.np_cbid != 0)
+		(void) callb_delete(nvme->n_panicdata.np_cbid);
 
 	if (nvme->n_progress & NVME_REGS_MAPPED)
 		ddi_regs_map_free(&nvme->n_regh);
