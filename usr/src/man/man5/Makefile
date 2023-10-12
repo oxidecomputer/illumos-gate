@@ -177,7 +177,6 @@ _MANFILES=	Intro.5				\
 		smhba.conf.5			\
 		sock2path.d.5			\
 		space.5				\
-		style.5				\
 		sulog.5				\
 		syslog.conf.5			\
 		system.5			\
