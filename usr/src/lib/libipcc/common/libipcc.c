@@ -477,7 +477,7 @@ libipcc_keylookup(libipcc_handle_t *lih, uint8_t key, uint8_t **bufp,
 
 	VERIFY3U(len, ==, 0);
 
-	len = IPCC_MAX_DATA_SIZE;
+	len = IPCC_KEYLOOKUP_MAX_PAYLOAD;
 	buf = calloc(1, len);
 	if (buf == NULL) {
 		(void) libipcc_error(lih, LIBIPCC_ERR_NO_MEM, errno,
