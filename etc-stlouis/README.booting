@@ -46,8 +46,8 @@ have the following meanings:
   8*	STARTUP_VERBOSE		0x100	Enable verbose boot
 
 The options which have a * after their bit number are currently enabled by
-default when the SP's control-plane-agent task starts. The value can be queried
-and adjusted via hiffy:
+default **in a lab SP image** when the SP's control-plane-agent task starts.
+The value can be queried and adjusted via hiffy:
 
     % pfexec humility -t sn6 hiffy -c ControlPlaneAgent.get_startup_options
     ControlPlaneAgent.get_startup_options() => HostStartupOptions { bits: 0x18 }
@@ -403,3 +403,116 @@ if it exists. This is useful in order to run tasks on every boot such as
 setting up the system dump device.
 
 * https://github.com/oxidecomputer/helios/blob/master/image/templates/files/gimlet-postboot.sh
+
+Anonymous DTrace support
+------------------------
+
+Anonymous DTrace is supported on a gimlet and should work transparently, in the
+same way as on a traditional disk root system, via the dtrace(8) command with
+the `-A` option.
+
+More information on Anonymous DTrace can be found in the DTrace book at
+     https://illumos.org/books/dtrace/chp-anon.html#chp-anon
+
+On a gimlet, this stores a compressed version of `/etc/system` and
+`/kernel/drv/dtrace.conf` in dedicated slots in the SP's key value store.
+
+    gimlet# dtrace -An 'fbt::bd_xfer_done:entry/arg1/{stack(); print(*args[0])}'
+    dtrace: saved anonymous enabling in /kernel/drv/dtrace.conf
+    dtrace: added forceload directives to /etc/system
+    dtrace: run update_drv(8) or reboot to enable changes
+    Successfully stored '/etc/system' in SP
+    Successfully stored '/kernel/drv/dtrace.conf' in SP
+
+On the next boot, these saved files are retrieved and used in place of any
+corresponding files in the ramdisk image. Depending on verbosity settings,
+you will see these files being accessed during boot, and the associated
+IPCC transactions.
+
+    ipcc: opened '/etc/system', 0x6b bytes
+    ipcc: decompressed to 0x178 bytes
+    ipcc: opened '/kernel/drv/dtrace.conf', 0x2f7 bytes
+    ipcc: decompressed to 0x2553 bytes
+
+It is possible to view the stored values using the `ipcc` utility:
+
+    gimlet# /usr/platform/oxide/bin/ipcc keylookup system
+    (length 78)
+    0000   af 00 78 da 4b cb 2f 4a 4e cd c9 4f 4c b1 52 48  |..x.K./JN..OL.RH|
+    0010   29 2a d3 2f ae 2c 2e 29 4a 4c 4e e5 4a 43 13 4f  |)*./.,.)JLN.JC.O|
+    0020   29 41 17 2a 28 ca 4f cb cc c1 50 99 93 9f 9c 5d  |)A.*(.O...P....]|
+    0030   5c 92 88 a1 3c 2d 09 53 28 b1 b8 04 68 5b 01 ba  |\...<-.S(...h[..|
+    0040   78 4a 72 41 32 86 18 c4 59 00 47 82 40 2e        |xJrA2...Y.G.@.  |
+
+or, in the decompressed form:
+
+    gimlet# /usr/platform/oxide/bin/ipcc keylookup -c system
+    (length 175)
+    0000   66 6f 72 63 65 6c 6f 61 64 3a 20 64 72 76 2f 73  |forceload: drv/s|
+    0010   79 73 74 72 61 63 65 0a 66 6f 72 63 65 6c 6f 61  |ystrace.forceloa|
+    0020   64 3a 20 64 72 76 2f 73 64 74 0a 66 6f 72 63 65  |d: drv/sdt.force|
+    0030   6c 6f 61 64 3a 20 64 72 76 2f 70 72 6f 66 69 6c  |load: drv/profil|
+    0040   65 0a 66 6f 72 63 65 6c 6f 61 64 3a 20 64 72 76  |e.forceload: drv|
+    0050   2f 6c 6f 63 6b 73 74 61 74 0a 66 6f 72 63 65 6c  |/lockstat.forcel|
+    0060   6f 61 64 3a 20 64 72 76 2f 66 62 74 0a 66 6f 72  |oad: drv/fbt.for|
+    0070   63 65 6c 6f 61 64 3a 20 64 72 76 2f 66 61 73 74  |ceload: drv/fast|
+    0080   74 72 61 70 0a 66 6f 72 63 65 6c 6f 61 64 3a 20  |trap.forceload: |
+    0090   64 72 76 2f 64 63 70 63 0a 66 6f 72 63 65 6c 6f  |drv/dcpc.forcelo|
+    00a0   61 64 3a 20 64 72 76 2f 64 74 72 61 63 65 0a     |ad: drv/dtrace. |
+
+Undoing this, and disabling anonymous DTrace is just the same as on a
+traditional system, via the dtrace(8) command with only the `-A` option.
+
+    gimlet# dtrace -A
+    dtrace: cleaned up old anonymous enabling in /kernel/drv/dtrace.conf
+    dtrace: cleaned up forceload directives in /etc/system
+    Clearing '/etc/system' from SP
+    Clearing '/kernel/drv/dtrace.conf' from SP
+
+If the system is unable to boot due to these settings, they can be cleared by
+restarting the `host_sp_comms` task in the SP.
+
+    butler% pfexec humility jefe -f host_sp_comms
+    butler% pfexec humility jefe -s host_sp_comms
+
+after which they will be empty:
+
+    gimlet# /usr/platform/oxide/bin/ipcc keylookup system
+    (length 0)
+
+An SP reset will also achieve this, but will put the host into A2 - not
+really a problem if it is in a boot loop - and leave it there if the SP is
+running a lab image.
+
+In a rack environment, without debug probes, one would use one of:
+
+ -  pilot sp exec -e reset <cubby|ip|serial>
+ -  humility -a <archive> -i <SP IP> reset
+
+Persistent /etc/system support
+------------------------------
+
+As a benefit of the anonymous DTrace support, there is also a limited ability
+to set things persistently in `/etc/system`. There are only 256 bytes available
+in the SP to store the compressed file so generally you will have to strip out
+all of the comments in order for it to fit.
+
+Here is an example of setting such a variable persistently to support testing
+and avoiding the need to manually set things from kmdb on each boot:
+
+    gimlet# ls -l /etc/system
+    -rw-r--r--   1 root     sys         3814 Dec 28 02:18 /etc/system
+    gimlet# sed -i '/^\*/d; /^$/d' /etc/system
+    gimlet# ls -l /etc/system
+    -rw-r--r--   1 root     sys          175 Dec 28 02:32 /etc/system
+    gimlet# echo set ip:ip_squeue_fanout=1 >> /etc/system
+    gimlet# /usr/platform/oxide/bin/ipcc keyset -c system /etc/system
+    Success
+
+To undo this, you can set the file to `/dev/null`:
+
+    gimlet# /usr/platform/oxide/bin/ipcc keyset system /dev/null
+
+If changes to this file render the system unbootable, it can be cleared by
+restarting the SP's `host_sp_comms` task or resetting the SP as described in
+the section on Anonymous DTrace above.
