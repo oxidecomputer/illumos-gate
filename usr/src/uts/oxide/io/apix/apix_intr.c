@@ -235,7 +235,8 @@ apix_do_softint_prolog(struct cpu *cpu, uint_t pil, uint_t oldpil,
 	hrtime_t now;
 
 	UNREFERENCED_1PARAMETER(oldpil);
-	ASSERT(pil > mcpu->mcpu_pri && pil > cpu->cpu_base_spl);
+	ASSERT3U(pil, >, mcpu->mcpu_pri);
+	ASSERT3U(pil, >, cpu->cpu_base_spl);
 
 	atomic_and_32((uint32_t *)&mcpu->mcpu_softinfo.st_pending, ~(1 << pil));
 
@@ -277,7 +278,7 @@ apix_do_softint_prolog(struct cpu *cpu, uint_t pil, uint_t oldpil,
 	 * resume() may use that stack between threads.
 	 */
 
-	ASSERT(SA((uintptr_t)stackptr) == (uintptr_t)stackptr);
+	ASSERT3U(SA((uintptr_t)stackptr), ==, (uintptr_t)stackptr);
 	t->t_sp = (uintptr_t)stackptr;
 
 	it->t_intr = t;
@@ -287,7 +288,7 @@ apix_do_softint_prolog(struct cpu *cpu, uint_t pil, uint_t oldpil,
 	/*
 	 * Set bit for this pil in CPU's interrupt active bitmask.
 	 */
-	ASSERT((cpu->cpu_intr_actv & (1 << pil)) == 0);
+	ASSERT0(cpu->cpu_intr_actv & (1 << pil));
 	cpu->cpu_intr_actv |= (1 << pil);
 
 	/*
@@ -314,7 +315,7 @@ apix_do_softint_epilog(struct cpu *cpu, uint_t oldpil)
 
 	cpu->cpu_stats.sys.intr[pil - 1]++;
 
-	ASSERT(cpu->cpu_intr_actv & (1 << pil));
+	ASSERT3U(cpu->cpu_intr_actv & (1 << pil), !=, 0);
 	cpu->cpu_intr_actv &= ~(1 << pil);
 
 	intrtime = now - it->t_intr_start;
@@ -422,7 +423,8 @@ apix_hilevel_intr_prolog(struct cpu *cpu, uint_t pil, uint_t oldpil,
 	apix_impl_t *apixp = apixs[cpu->cpu_id];
 	uint_t mask;
 
-	ASSERT(pil > mcpu->mcpu_pri && pil > cpu->cpu_base_spl);
+	ASSERT3U(pil, >, mcpu->mcpu_pri);
+	ASSERT3U(pil, >, cpu->cpu_base_spl);
 
 	if (pil == CBE_HIGH_PIL) {	/* 14 */
 		cpu->cpu_profile_pil = oldpil;
@@ -505,7 +507,7 @@ apix_hilevel_intr_epilog(struct cpu *cpu, uint_t oldpil)
 	pil = mcpu->mcpu_pri;
 	cpu->cpu_stats.sys.intr[pil - 1]++;
 
-	ASSERT(cpu->cpu_intr_actv & (1 << pil));
+	ASSERT3U(cpu->cpu_intr_actv & (1 << pil), !=, 0);
 
 	if (pil == 15) {
 		/*
@@ -516,7 +518,7 @@ apix_hilevel_intr_epilog(struct cpu *cpu, uint_t oldpil)
 		 */
 		uint16_t *refcntp = (uint16_t *)&cpu->cpu_intr_actv + 1;
 
-		ASSERT(*refcntp > 0);
+		ASSERT3U(*refcntp, >, 0);
 
 		if (--(*refcntp) == 0)
 			cpu->cpu_intr_actv &= ~(1 << pil);
@@ -524,7 +526,7 @@ apix_hilevel_intr_epilog(struct cpu *cpu, uint_t oldpil)
 		cpu->cpu_intr_actv &= ~(1 << pil);
 	}
 
-	ASSERT(mcpu->pil_high_start[pil - (LOCK_LEVEL + 1)] != 0);
+	ASSERT3U(mcpu->pil_high_start[pil - (LOCK_LEVEL + 1)], !=, 0);
 
 	intrtime = now - mcpu->pil_high_start[pil - (LOCK_LEVEL + 1)];
 	mcpu->intrstat[pil][0] += intrtime;
@@ -537,13 +539,13 @@ apix_hilevel_intr_epilog(struct cpu *cpu, uint_t oldpil)
 	 */
 	mask = cpu->cpu_intr_actv & CPU_INTR_ACTV_HIGH_LEVEL_MASK;
 	if (mask != 0) {
-		int nestpil;
+		uint_t nestpil;
 
 		/*
 		 * find PIL of nested interrupt
 		 */
 		nestpil = bsrw_insn((uint16_t)mask);
-		ASSERT(nestpil < pil);
+		ASSERT3U(nestpil, <, pil);
 		mcpu->pil_high_start[nestpil - (LOCK_LEVEL + 1)] = now;
 		/*
 		 * (Another high-level interrupt is active below this one,
@@ -592,7 +594,8 @@ apix_do_pending_hilevel(struct cpu *cpu, struct regs *rp)
 
 	while ((pending = HILEVEL_PENDING(cpu)) != 0) {
 		newipl = bsrw_insn(pending);
-		ASSERT(newipl > LOCK_LEVEL && newipl > cpu->cpu_base_spl);
+		ASSERT3U(newipl, >, LOCK_LEVEL);
+		ASSERT3U(newipl, >, cpu->cpu_base_spl);
 		oldipl = cpu->cpu_pri;
 		if (newipl <= oldipl)
 			return (-1);
@@ -626,10 +629,11 @@ apix_intr_thread_prolog(struct cpu *cpu, uint_t pil, caddr_t stackptr)
 	hrtime_t now = tsc_read();
 	kthread_t *t, *volatile it;
 
-	ASSERT(pil > mcpu->mcpu_pri && pil > cpu->cpu_base_spl);
+	ASSERT3U(pil, >, mcpu->mcpu_pri);
+	ASSERT3U(pil, >, cpu->cpu_base_spl);
 
 	apixp->x_intr_pending &= ~(1 << pil);
-	ASSERT((cpu->cpu_intr_actv & (1 << pil)) == 0);
+	ASSERT0(cpu->cpu_intr_actv & (1 << pil));
 	cpu->cpu_intr_actv |= (1 << pil);
 	mcpu->mcpu_pri = pil;
 
@@ -654,7 +658,7 @@ apix_intr_thread_prolog(struct cpu *cpu, uint_t pil, caddr_t stackptr)
 	 * resume() may use that stack between threads.
 	 */
 
-	ASSERT(SA((uintptr_t)stackptr) == (uintptr_t)stackptr);
+	ASSERT3U(SA((uintptr_t)stackptr), ==, (uintptr_t)stackptr);
 
 	t->t_sp = (uintptr_t)stackptr;	/* mark stack in curthread for resume */
 
@@ -701,10 +705,10 @@ apix_intr_thread_epilog(struct cpu *cpu, uint_t oldpil)
 	pil = it->t_pil;
 	cpu->cpu_stats.sys.intr[pil - 1]++;
 
-	ASSERT(cpu->cpu_intr_actv & (1 << pil));
+	ASSERT3U(cpu->cpu_intr_actv & (1 << pil), !=, 0);
 	cpu->cpu_intr_actv &= ~(1 << pil);
 
-	ASSERT(it->t_intr_start != 0);
+	ASSERT3U(it->t_intr_start, !=, 0);
 	intrtime = now - it->t_intr_start;
 	mcpu->intrstat[pil][0] += intrtime;
 	cpu->cpu_intracct[cpu->cpu_mstate] += intrtime;
@@ -802,7 +806,7 @@ apix_do_pending_hardint(struct cpu *cpu, struct regs *rp)
 
 	while ((pending = LOWLEVEL_PENDING(cpu)) != 0) {
 		newipl = bsrw_insn(pending);
-		ASSERT(newipl <= LOCK_LEVEL);
+		ASSERT3U(newipl, <=, LOCK_LEVEL);
 		oldipl = cpu->cpu_pri;
 		if (newipl <= oldipl || newipl <= cpu->cpu_base_spl)
 			return (-1);
@@ -828,7 +832,8 @@ apix_post_hardint(int vector)
 	apix_vector_t *vecp = xv_vector(psm_get_cpu_id(), vector);
 	int irqno = vecp->v_inum;
 
-	ASSERT(vecp->v_type == APIX_TYPE_FIXED && apic_level_intr[irqno]);
+	ASSERT3U(vecp->v_type, ==, APIX_TYPE_FIXED);
+	ASSERT3U(apic_level_intr[irqno], !=, 0);
 
 	apix_level_intr_post_dispatch(irqno);
 }
@@ -926,7 +931,7 @@ apix_do_interrupt(struct regs *rp, trap_trace_rec_t *ttp)
 		(void) apix_do_pending_hilevel(cpu, rp);
 		(void) apix_do_pending_hardint(cpu, rp);
 		(void) apix_do_softint(rp);
-		ASSERT(!interrupts_enabled());
+		ASSERT0(interrupts_enabled());
 #ifdef TRAPTRACE
 		ttp->ttr_vector = T_SOFTINT;
 #endif

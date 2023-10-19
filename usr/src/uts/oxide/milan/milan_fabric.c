@@ -2653,7 +2653,7 @@ milan_dxio_rpc_sm_getstate(milan_iodie_t *iodie, milan_dxio_reply_t *smp)
 	}
 
 	smp->mds_type = bitx64(rpc.mdr_engine, 7, 0);
-	smp->mds_nargs = bitx64(rpc.mdr_engine, 16, 8);
+	smp->mds_nargs = bitx64(rpc.mdr_engine, 15, 8);
 	smp->mds_arg0 = rpc.mdr_arg0;
 	smp->mds_arg1 = rpc.mdr_arg1;
 	smp->mds_arg2 = rpc.mdr_arg2;
@@ -6129,13 +6129,26 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	milan_pcie_port_write(port, reg, val);
 
 	/*
-	 * This bit causes the LC to disregard most training control bits in
-	 * received TS1 and TS2 ordered sets.  Training control bits include
-	 * Compliance Receive, Hot Reset, Link Disable, Loopback, and Disable
-	 * Scrambling.  As all our ports are Downstream Ports, we are required
-	 * to ignore most of these; the PCIe standard still requires us to act
-	 * on Compliance Receive and the PPR implies that we do even if this bit
-	 * is set (the other four are listed as being ignored).
+	 * This bit is documented to cause the LC to disregard most training
+	 * control bits in received TS1 and TS2 ordered sets.  Training control
+	 * bits include Compliance Receive, Hot Reset, Link Disable, Loopback,
+	 * and Disable Scrambling.  As all our ports are Downstream Ports, we
+	 * are required to ignore most of these; the PCIe standard still
+	 * requires us to act on Compliance Receive and the PPR implies that we
+	 * do even if this bit is set (the other four are listed as being
+	 * ignored).
+	 *
+	 * However... an AMD firmware bug for which we have no additional
+	 * information implies that this does more than merely ignore training
+	 * bits in received TSx, and also makes the Secondary Bus Reset bit in
+	 * the Bridge Control register not work or work incorrectly.  That is,
+	 * there may be a hardware bug that causes this bit to have unintended
+	 * and undocumented side effects that also violate the standard.  In our
+	 * case, we're going to set this anyway, because there is nothing
+	 * anywhere in illumos that uses the Secondary Bus Reset feature and it
+	 * seems much more important to be sure that our downstream ports can't
+	 * be disabled or otherwise affected by a misbehaving or malicious
+	 * downstream device that might set some of these bits.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
 	val = milan_pcie_port_read(port, reg);
