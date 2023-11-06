@@ -231,12 +231,17 @@
  */
 #define	BARMASKTOLEN(value) ((((value) ^ ((value) - 1)) + 1) >> 1)
 
-typedef enum mem_res {
+typedef enum {
 	RES_IO,
 	RES_MEM,
 	RES_PMEM
 } mem_res_t;
 
+/*
+ * In order to disable an IO or memory range on a bridge, the range's base must
+ * be set to a value greater than its limit. The following values are used for
+ * this purpose.
+ */
 #define	PPB_DISABLE_IORANGE_BASE	0x9fff
 #define	PPB_DISABLE_IORANGE_LIMIT	0x1000
 #define	PPB_DISABLE_MEMRANGE_BASE	0x9ff00000
@@ -267,11 +272,7 @@ extern int apic_nvidia_io_max;
 static uchar_t max_dev_pci = 32;	/* PCI standard */
 int pci_boot_maxbus;
 
-#ifdef DEBUG
-int pci_boot_debug = 1;
-#else
 int pci_boot_debug = 0;
-#endif
 int pci_debug_bus_start = -1;
 int pci_debug_bus_end = -1;
 
@@ -766,6 +767,11 @@ get_per_bridge_avail(uchar_t bus)
 		par_bus = pci_bus_res[par_bus].par_bus;
 	}
 
+	if (pci_bus_res[bus].mem_buffer == 0 ||
+	    pci_bus_res[bus].num_bridge == 0) {
+		return (0);
+	}
+
 	return (pci_bus_res[bus].mem_buffer / pci_bus_res[bus].num_bridge);
 }
 
@@ -1138,7 +1144,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	dev_info_t *dip;
 	uint16_t cmd_reg;
 	struct memlist *scratch_list;
-	boolean_t reprogram_mem;
+	boolean_t reprogram_io, reprogram_mem;
 
 	/* skip root (peer) PCI busses */
 	if (pci_bus_res[secbus].par_bus == (uchar_t)-1)
@@ -1273,8 +1279,8 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	 * hotpluggable devices which need 64-bit PF space and so we now always
 	 * attempt to allocate at least 32 MiB. If there is enough space
 	 * available from a parent then we will increase this to 512MiB.
-	 * If we're unable to find memory to satisfy this, we just move on and
-	 * are no worse off than before.
+	 * If we're later unable to find memory to satisfy this, we just move
+	 * on and are no worse off than before.
 	 */
 	pmem.size = MAX(pci_bus_res[secbus].pmem_size,
 	    buscount * PPB_MEM_ALIGNMENT * 32);
@@ -1283,7 +1289,8 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	 * Check if the parent bus could allocate a 64-bit sized PF
 	 * range and bump the minimum pmem.size to 512MB if so.
 	 */
-	if (lookup_parbus_res(parbus, 1ULL << 32, mem.align, RES_PMEM) > 0) {
+	if (lookup_parbus_res(parbus, 1ULL << 32, PPB_MEM_ALIGNMENT,
+	    RES_PMEM) > 0) {
 		pmem.size = MAX(pci_bus_res[secbus].pmem_size,
 		    buscount * PPB_MEM_ALIGNMENT * 512);
 	}
@@ -1336,7 +1343,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 		if (pci_bus_res[secbus].io_avail == NULL) {
 			addr = get_parbus_res(parbus, secbus, io.size,
 			    io.align, RES_IO);
-			if (addr) {
+			if (addr != 0) {
 				add_ranges_prop(secbus, B_TRUE);
 				pci_bus_res[secbus].io_reprogram =
 				    pci_bus_res[parbus].io_reprogram;
@@ -1354,7 +1361,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 		if (pci_bus_res[secbus].mem_avail == NULL) {
 			addr = get_parbus_res(parbus, secbus, mem.size,
 			    mem.align, RES_MEM);
-			if (addr) {
+			if (addr != 0) {
 				add_ranges_prop(secbus, B_TRUE);
 				pci_bus_res[secbus].mem_reprogram =
 				    pci_bus_res[parbus].mem_reprogram;
@@ -1379,18 +1386,27 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 	fetch_ppb_res(bus, dev, func, RES_PMEM, &pmem.base, &pmem.limit);
 
 	/*
-	 * Check to see if we need to reprogram I/O space, either because the
-	 * parent bus needed reprogramming and so do we, or because I/O space
-	 * is disabled via base > limit or the command register.
+	 * Reprogram IO if:
+	 *
+	 *	- The list does not consist entirely of legacy VGA resources;
+	 *
+	 * and any of
+	 *
+	 *	- The parent bus is flagged for reprogramming;
+	 *	- IO space is currently disabled in the command register;
+	 *	- IO space is disabled via base/limit.
 	 */
 	scratch_list = memlist_dup(pci_bus_res[secbus].io_avail);
 	memlist_merge(&pci_bus_res[secbus].io_used, &scratch_list);
 
-	if ((pci_bus_res[parbus].io_reprogram ||
-	    io.base > io.limit ||
-	    !(cmd_reg & PCI_COMM_IO)) &&
-	    !list_is_vga_only(scratch_list, RES_IO)) {
+	reprogram_io = !list_is_vga_only(scratch_list, RES_IO) &&
+	    (pci_bus_res[parbus].io_reprogram ||
+	    (cmd_reg & PCI_COMM_IO) == 0 ||
+	    io.base > io.limit);
 
+	memlist_free_all(&scratch_list);
+
+	if (reprogram_io) {
 		if (pci_bus_res[secbus].io_used != NULL) {
 			memlist_subsume(&pci_bus_res[secbus].io_used,
 			    &pci_bus_res[secbus].io_avail);
@@ -1425,7 +1441,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 			/* get new io ports from parent bus */
 			addr = get_parbus_res(parbus, secbus, io.size,
 			    io.align, RES_IO);
-			if (addr) {
+			if (addr != 0) {
 				io.base = addr;
 				io.limit = addr + io.size - 1;
 				pci_bus_res[secbus].io_reprogram = B_TRUE;
@@ -1438,10 +1454,13 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 			add_ranges_prop(secbus, B_TRUE);
 		}
 	}
-	memlist_free_all(&scratch_list);
 
 	/*
-	 * Reprogram memory if any of:
+	 * Reprogram memory if:
+	 *
+	 *	- The list does not consist entirely of legacy VGA resources;
+	 *
+	 * and any of
 	 *
 	 *	- The list does not consist entirely of legacy VGA resources;
 	 *	- The parent bus is flagged for reprogramming;
@@ -1457,7 +1476,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 
 	reprogram_mem = !list_is_vga_only(scratch_list, RES_MEM) &&
 	    (pci_bus_res[parbus].mem_reprogram ||
-	    !(cmd_reg & PCI_COMM_MAE) ||
+	    (cmd_reg & PCI_COMM_MAE) == 0 ||
 	    (mem.base > mem.limit && pmem.base > pmem.limit));
 
 	memlist_free_all(&scratch_list);
@@ -1503,7 +1522,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 			/* get new mem resource from parent bus */
 			addr = get_parbus_res(parbus, secbus, mem.size,
 			    mem.align, RES_MEM);
-			if (addr) {
+			if (addr != 0) {
 				mem.base = addr;
 				mem.limit = addr + mem.size - 1;
 				pci_bus_res[secbus].mem_reprogram = B_TRUE;
@@ -1542,18 +1561,20 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 			/* get new mem resource from parent bus */
 			addr = get_parbus_res(parbus, secbus, pmem.size,
 			    pmem.align, RES_PMEM);
-			if (addr) {
+			if (addr != 0) {
 				pmem.base = addr;
 				pmem.limit = addr + pmem.size - 1;
 				pci_bus_res[secbus].mem_reprogram = B_TRUE;
 			}
 		}
-	}
 
-	if (pci_bus_res[secbus].mem_reprogram) {
-		set_ppb_res(bus, dev, func, RES_MEM, mem.base, mem.limit);
-		set_ppb_res(bus, dev, func, RES_PMEM, pmem.base, pmem.limit);
-		add_ranges_prop(secbus, B_TRUE);
+		if (pci_bus_res[secbus].mem_reprogram) {
+			set_ppb_res(bus, dev, func,
+			    RES_MEM, mem.base, mem.limit);
+			set_ppb_res(bus, dev, func,
+			    RES_PMEM, pmem.base, pmem.limit);
+			add_ranges_prop(secbus, B_TRUE);
+		}
 	}
 
 cmd_enable:

@@ -24,6 +24,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2023 Oxide Computer Company
+ */
+
 #include <sys/types.h>
 #include <sys/cmn_err.h>
 #include <sys/errno.h>
