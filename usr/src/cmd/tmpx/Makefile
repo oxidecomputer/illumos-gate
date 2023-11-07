@@ -24,6 +24,7 @@ ROOTUSRARCHBIN = $(ROOT)/usr/platform/oxide/bin
 ROOTUSRARCHBINPROG = $(PROG:%=$(ROOTUSRARCHBIN)/%)
 
 CSTD= $(CSTD_GNU99)
+LDLIBS += -lkstat -lzonecfg
 
 .KEEP_STATE:
 

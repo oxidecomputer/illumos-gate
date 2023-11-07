@@ -1929,6 +1929,7 @@ clkset(time_t approx)
 
 	if (!boot_time) {
 		boot_time = ts.tv_sec;
+		global_zone->zone_boot_time = ts.tv_sec;
 		set_clock = 1;
 	}
 

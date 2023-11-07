@@ -39,6 +39,7 @@
 #include <sys/clock.h>
 #include <sys/debug.h>
 #include <sys/smp_impldefs.h>
+#include <sys/zone.h>
 
 /*
  * This file contains all generic part of clock and timer handling.
@@ -47,14 +48,34 @@
  * architecture so some of this is stubbed out.
  */
 
-extern void tod_set_prev(timestruc_t);
-
 void
 tod_set(timestruc_t ts)
 {
+	time_t adj;
+	extern time_t boot_time;
+
 	ASSERT(MUTEX_HELD(&tod_lock));
 
-	/* No TOD; do nothing. */
+	/*
+	 * There is no TOD unit, so there's nothing to do regarding that.
+	 *
+	 * However we take this opportunity to spot when the clock is stepped
+	 * significantly forward, and use that as a cue that the system clock
+	 * has been set initially after time synchronisation. When this happens
+	 * we go through and update the global `boot_time` variable, and the
+	 * `zone_boot_time` stored in each active zone (including the GZ) to
+	 * correct the kstats and so that userland software can use this to
+	 * obtain a more correct notion of the time that the system, and each
+	 * zone, booted.
+	 */
+	adj = ts.tv_sec - hrestime.tv_sec;
+	if (adj < 86400)
+		return;
+
+	if (boot_time < INT64_MAX - adj)
+		boot_time += adj;
+
+	zone_boottime_adjust(adj);
 }
 
 timestruc_t
