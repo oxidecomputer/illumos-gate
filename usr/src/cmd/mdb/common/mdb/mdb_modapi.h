@@ -25,6 +25,7 @@
  * Copyright 2019 Joyent, Inc.
  * Copyright 2022 Oxide Computer Co.
  * Copyright 2023 RackTop Systems, Inc.
+ * Copyright 2023 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #ifndef	_MDB_MODAPI_H
@@ -190,6 +191,8 @@ extern int mdb_walk(const char *, mdb_walk_cb_t, void *);
 
 extern int mdb_pwalk_dcmd(const char *, const char *,
 	int, const mdb_arg_t *, uintptr_t);
+extern int mdb_fpwalk_dcmd(const char *, const char *,
+	int, const mdb_arg_t *, uintptr_t, uint_t);
 
 extern int mdb_walk_dcmd(const char *, const char *, int, const mdb_arg_t *);
 
