@@ -1375,6 +1375,7 @@ usr/src/cmd/mdb/intel/modules/amd_opteron/amd64/kmod/
 usr/src/cmd/mdb/intel/modules/generic_cpu/amd64/kmod/
 usr/src/cmd/mdb/intel/modules/i40e/amd64/kmod/
 usr/src/cmd/mdb/intel/modules/sata/amd64/kmod/
+usr/src/cmd/mdb/intel/modules/vmm/amd64/kmod/
 usr/src/cmd/mdb/intel/modules/xhci/amd64/kmod/
 usr/src/cmd/mdb/oxide/modules/apix/amd64/kmod/
 usr/src/cmd/mdb/oxide/modules/ipcc/kmod/
@@ -8526,7 +8527,9 @@ usr/src/test/bhyve-tests/tests/inst_emul/payload_exit_paging
 usr/src/test/bhyve-tests/tests/inst_emul/payload_imul
 usr/src/test/bhyve-tests/tests/inst_emul/payload_page_dirty
 usr/src/test/bhyve-tests/tests/inst_emul/payload_rdmsr
+usr/src/test/bhyve-tests/tests/inst_emul/payload_suspend_info
 usr/src/test/bhyve-tests/tests/inst_emul/payload_triple_fault
+usr/src/test/bhyve-tests/tests/inst_emul/payload_vcpu_barrier
 usr/src/test/bhyve-tests/tests/inst_emul/payload_wrmsr
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_cpuid.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_exit_consistent.s
@@ -8534,10 +8537,14 @@ usr/src/test/bhyve-tests/tests/inst_emul/pobj_exit_paging.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_imul.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_page_dirty.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_rdmsr.s
+usr/src/test/bhyve-tests/tests/inst_emul/pobj_suspend_info.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_triple_fault.s
+usr/src/test/bhyve-tests/tests/inst_emul/pobj_vcpu_barrier.s
 usr/src/test/bhyve-tests/tests/inst_emul/pobj_wrmsr.s
 usr/src/test/bhyve-tests/tests/inst_emul/rdmsr
+usr/src/test/bhyve-tests/tests/inst_emul/suspend_info
 usr/src/test/bhyve-tests/tests/inst_emul/triple_fault
+usr/src/test/bhyve-tests/tests/inst_emul/vcpu_barrier
 usr/src/test/bhyve-tests/tests/inst_emul/wrmsr
 usr/src/test/bhyve-tests/tests/kdev/guest_tsc_adjust
 usr/src/test/bhyve-tests/tests/kdev/payload_guest_tsc_adjust
