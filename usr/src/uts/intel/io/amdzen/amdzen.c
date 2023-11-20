@@ -2341,9 +2341,8 @@ amdzen_topo_ioctl_df(amdzen_t *azn, intptr_t arg, int mode)
 	    df->adf_decomp.dfd_die_shift;
 	topo_df.atd_rev = df->adf_rev;
 	topo_df.atd_df_act_nents = df->adf_nents;
-	max_ents = MIN(topo_df.atd_df_buf_nents, df->adf_nents);
-
 	topo_df.atd_nb_busno = df->adf_nb_busno;
+	max_ents = MIN(topo_df.atd_df_buf_nents, df->adf_nents);
 
 	if (topo_df.atd_df_ents == NULL) {
 		topo_df.atd_df_buf_nvalid = 0;

@@ -97,7 +97,7 @@ topo_hdl_vasprintf(topo_hdl_t *thp, char **str, const char *fmt, va_list ap)
 	 * If an attempt to format a given string is inconsistent, then that
 	 * means something is extremely wrong and we're not going to try again
 	 * and leave that ultimately to the caller to deal with as it suggests
-	 * they were changing something about the arguments itself. While
+	 * they were changing something about the arguments themselves. While
 	 * asprintf(3C) does loop on this, we are not as forgiving.
 	 */
 	ret = vsnprintf(*str, len, fmt, ap);
