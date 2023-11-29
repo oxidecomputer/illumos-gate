@@ -80,12 +80,27 @@ print_entry(struct utmpx *u, char context)
 }
 
 static void
-process_database(const char *dbfile, time_t ts)
+process_database(const char *dbfile, const char *dir, time_t ts)
 {
 	struct utmpx *u;
 	time_t start;
 
-	printf("Updating database '%s'\n", dbfile);
+	/*
+	 * Unfortunately, utmpxname(3C) and friends only work with file paths
+	 * up to 78 characters in length and the paths to zone roots can easily
+	 * exceed this. If a directory name is provided, chdir() and use the
+	 * provided relative path.
+	 */
+	if (dir != NULL) {
+		VERIFY(*dir == '/' && *dbfile != '/');
+		if (chdir(dir) != 0) {
+			err(EXIT_FAILURE, "Could not change directory to '%s'",
+			    dir);
+		}
+		printf("Updating database '%s/%s'\n", dir, dbfile);
+	} else {
+		printf("Updating database '%s'\n", dbfile);
+	}
 
 	if (access(dbfile, R_OK | W_OK) == -1)
 		err(EXIT_FAILURE, dbfile);
@@ -134,6 +149,8 @@ process_database(const char *dbfile, time_t ts)
 	}
 
 out:
+	if (dir != NULL)
+		(void) chdir("/");
 	endutxent();
 }
 
@@ -172,7 +189,7 @@ process_zone(char *zonename)
 {
 	zoneid_t zid;
 	time_t boot_ts;
-	char zoneroot[MAXPATHLEN] = "";
+	char zoneroot[MAXPATHLEN] = "/";
 	static char *files[] = { "var/adm/wtmpx", "var/adm/utmpx" };
 
 	zid = getzoneidbyname(zonename);
@@ -196,15 +213,8 @@ process_zone(char *zonename)
 	}
 	printf("Root path: %s\n", zoneroot);
 
-	for (uint_t i = 0; i < ARRAY_SIZE(files); i++) {
-		char dbfile[MAXPATHLEN * 2];
-
-		if (snprintf(dbfile, sizeof (dbfile), "%s/%s", zoneroot,
-		    files[i]) >= sizeof (dbfile)) {
-			err(EXIT_FAILURE, "Could not build database path");
-		}
-		process_database(dbfile, boot_ts);
-	}
+	for (uint_t i = 0; i < ARRAY_SIZE(files); i++)
+		process_database(files[i], zoneroot, boot_ts);
 }
 
 static void
@@ -324,7 +334,7 @@ main(int argc, char **argv)
 			errx(EXIT_FAILURE, "epoch timestamp is %s: %s",
 			    errstr, argv[0]);
 		}
-		process_database(argv[1], ts);
+		process_database(argv[1], NULL, ts);
 	} else {
 		if (argc > 0) {
 			fprintf(stderr, "Unexpected additional arguments found "
