@@ -25,7 +25,7 @@
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/param.h>
