@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #include <sys/boot_debug.h>
@@ -19,6 +19,8 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <vm/kboot_mmu.h>
+#include <sys/apob.h>
+#include <sys/kapob.h>
 
 #include "milan_apob.h"
 #include "milan_physaddrs.h"
@@ -40,7 +42,7 @@ milan_apob_reserve_phys(void)
 	err = 0;
 	sysmap_len = 0;
 
-	smp = milan_apob_find(MILAN_APOB_GROUP_FABRIC, 9, 0, &sysmap_len, &err);
+	smp = kapob_find(APOB_GROUP_FABRIC, 9, 0, &sysmap_len, &err);
 	if (err != 0) {
 		eb_printf("couldn't find APOB system memory map "
 		    "(errno = %d); using bootstrap RAM only\n", err);

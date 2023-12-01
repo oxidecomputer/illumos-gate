@@ -29,7 +29,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2019 Peter Tribble.
 # Copyright 2015, Joyent, Inc. All rights reserved.
-# Copyright 2023 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -77,6 +77,8 @@ CHKHDRS=			\
 	aio_impl.h		\
 	aio_req.h		\
 	aiocb.h			\
+	apob.h			\
+	apob_impl.h		\
 	ascii.h			\
 	asynch.h		\
 	atomic.h		\

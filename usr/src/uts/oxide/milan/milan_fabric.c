@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -607,6 +607,8 @@
 #include <sys/plat/pci_prd.h>
 #include <sys/apic.h>
 #include <sys/cpuvar.h>
+#include <sys/apob.h>
+#include <sys/kapob.h>
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/gpio.h>
 #include <sys/amdzen/fch/iomux.h>
@@ -4002,7 +4004,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	conf->mdc_conf_len += 8;
 	conf->mdc_conf_len = P2ROUNDUP(conf->mdc_conf_len, 4);
 
-	phy_override = milan_apob_find(MILAN_APOB_GROUP_FABRIC,
+	phy_override = kapob_find(APOB_GROUP_FABRIC,
 	    MILAN_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
 	if (phy_override == NULL) {
 		if (err == ENOENT) {

@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co
+ * Copyright 2024 Oxide Computer Co
  * All rights reserved.
  */
 
@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <sys/dditypes.h>
 #include <sys/ddipropdefs.h>
+#include <sys/stdbool.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -69,6 +70,7 @@ extern void bt_set_prop(uint32_t, const char *, size_t, const void *, size_t);
 extern void eb_create_properties(uint64_t, size_t);
 extern void eb_set_tunables(void);
 extern void genunix_set_tunables(void);
+extern bool genunix_is_loaded(void);
 
 #ifdef	__cplusplus
 }

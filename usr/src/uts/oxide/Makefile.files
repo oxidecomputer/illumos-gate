@@ -25,7 +25,7 @@
 # Copyright (c) 2010, Intel Corporation.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2019 Joyent, Inc.
-# Copyright 2023 Oxide Computer Co.
+# Copyright 2024 Oxide Computer Co.
 #
 #	This Makefile defines file modules in the directory uts/oxide
 #	and its children. These are the source files which are oxide
@@ -36,6 +36,7 @@
 #	object lists
 #
 CORE_OBJS +=			\
+	apob_common.o		\
 	boot_console.o		\
 	boot_data.o		\
 	boot_physmem.o		\
@@ -71,6 +72,7 @@ CORE_OBJS +=			\
 	instr_size.o		\
 	intr.o			\
 	ipcc_proto.o		\
+	kapob.o			\
 	kboot_mmu.o		\
 	kdi_asm.o		\
 	kdi_idt.o		\
@@ -120,8 +122,6 @@ CORE_OBJS +=			\
 	x_call.o
 
 MILAN_OBJS +=			\
-	milan_apob.o		\
-	milan_apob_ccx.o	\
 	milan_apob_memlist.o	\
 	milan_ccx.o		\
 	milan_dxio_data.o	\
@@ -170,6 +170,8 @@ BOOT_IMAGE_OBJS += oxide_boot.o oxide_boot_disk.o oxide_boot_net.o \
 IPCC_OBJS += ipcc.o ipcc_debug.o
 
 ZEN_GPIO_OBJS += zen_gpio.o
+
+APOB_OBJS += apobdrv.o
 
 #
 #	Build up defines and paths.

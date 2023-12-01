@@ -28,7 +28,7 @@
  *
  * Copyright (c) 2012 Gary Mills
  * Copyright 2020 Joyent, Inc.
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 /*
@@ -71,10 +71,12 @@
 #include <sys/dw_apb_uart.h>
 #include <sys/uart.h>
 #include <sys/memlist_impl.h>
+#include <sys/apob.h>
+#include <sys/kapob.h>
 #include <sys/io/milan/ccx.h>
 
-#include <milan/milan_apob.h>
-#include <milan/milan_physaddrs.h>
+#include "milan/milan_apob.h"
+#include "milan/milan_physaddrs.h"
 
 /*
  * Comes from fs/ufsops.c.  For debugging the ramdisk/root fs operations.  Set
@@ -342,12 +344,6 @@ typedef struct bop_frame {
 	long arg[1];
 } bop_frame_t;
 
-static boolean_t
-weakish_is_null(void *p)
-{
-	return (p == NULL);
-}
-
 /* XXX shareable */
 static void
 bop_traceback(bop_frame_t *frame)
@@ -356,7 +352,6 @@ bop_traceback(bop_frame_t *frame)
 	int cnt;
 	char *ksym;
 	ulong_t off;
-	extern kmutex_t mod_lock;
 
 	eb_printf("Stack traceback:\n");
 	for (cnt = 0; cnt < 30; ++cnt) {	/* up to 30 frames */
@@ -366,7 +361,7 @@ bop_traceback(bop_frame_t *frame)
 
 		ksym = NULL;
 		off = 0;
-		if (!weakish_is_null(&mod_lock))
+		if (genunix_is_loaded())
 			ksym = kobj_getsymname(pc, &off);
 
 		if (ksym != NULL)
@@ -504,6 +499,7 @@ static void
 apob_init(void)
 {
 	const bt_prop_t *apob_prop = find_bt_prop(BTPROP_NAME_APOB_ADDRESS);
+	paddr_t apob_pa, apob_limit;
 
 	if (apob_prop == NULL) {
 		bop_panic("APOB address property %s is missing; don't "
@@ -521,7 +517,13 @@ apob_init(void)
 	 * The APOB is assumed to be physically contiguous.  All known
 	 * implementations have this property.
 	 */
-	milan_apob_init((paddr_t)(*(uint64_t *)apob_prop->btp_value));
+	apob_pa = (paddr_t)(*(uint64_t *)apob_prop->btp_value);
+	apob_limit = eb_phys_bound_usable(apob_pa);
+
+	if (apob_limit == 0) {
+		bop_panic("APOB lies in unusable memory region");
+	}
+	kapob_eb_init(apob_pa, apob_limit);
 }
 
 /*

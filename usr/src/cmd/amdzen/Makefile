@@ -10,23 +10,38 @@
 #
 
 #
-# Copyright 2020 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 #
 
-PROG= usmn udf
+PROG= usmn udf apobdump
 
 include ../Makefile.cmd
 
 ROOTCMDDIR = $(ROOTLIB)
 CPPFLAGS += -I$(SRC)/uts/intel/io/amdzen
 CFLAGS += $(CCVERBOSE)
+CSTD = $(CSTD_GNU99)
+COMMON_OBJS = apob_common.o
+
+apobdump := EXTRA_OBJS += apob_common.o
 
 .KEEP_STATE:
 
 all: $(PROG)
 
+$(PROG): $(COMMON_OBJS)
+
+%: %.o
+	$(LINK.c) -o $@ $< $(EXTRA_OBJS) $(LDLIBS)
+	$(POST_PROCESS)
+
+%.o: $(SRC)/common/apob/%.c
+	$(COMPILE.c) -o $@ $<
+	$(POST_PROCESS_O)
+
 install: all $(ROOTCMD)
 
 clean:
+	$(RM) $(COMMON_OBJS) $(PROG:%=%.o)
 
 include ../Makefile.targ

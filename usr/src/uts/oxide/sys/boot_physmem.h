@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_BOOT_PHYSMEM_H
@@ -33,6 +33,7 @@ extern "C" {
 extern void eb_physmem_init(struct bsys_mem *);
 extern void eb_physmem_fini(void);
 
+extern paddr_t eb_phys_bound_usable(paddr_t);
 extern paddr_t eb_phys_alloc(size_t, size_t);
 extern caddr_t eb_alloc(caddr_t, size_t, size_t);
 

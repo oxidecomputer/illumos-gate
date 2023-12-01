@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #include <sys/boot_debug.h>
@@ -38,6 +38,28 @@ static paddr_t max_phys = LOADER_PHYSLIMIT;
  */
 static ulong_t total_eb_alloc_scratch = 0;
 static ulong_t total_eb_alloc_kernel = 0;
+
+/*
+ * Find the end of the usable memory region beginning at the specified starting
+ * address.  The return value is 0 if start is not contained within a usable
+ * region, otherwise it is the address of the first byte following the end of
+ * the contiguous usable space.  This can be used to determine the maximum
+ * possible size of an object stored at the starting address.
+ */
+paddr_t
+eb_phys_bound_usable(paddr_t start)
+{
+	const struct memlist *ml = eballoc_mem.physinstalled;
+
+	for (; ml; ml = ml->ml_next) {
+		if (ml->ml_address > start)
+			return (0);
+		if (ml->ml_address + ml->ml_size > start)
+			return (ml->ml_address + ml->ml_size);
+	}
+
+	return (0);
+}
 
 paddr_t
 eb_phys_alloc(size_t size, size_t align)

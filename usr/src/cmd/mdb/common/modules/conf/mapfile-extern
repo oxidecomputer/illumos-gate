@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2013, 2015 by Delphix. All rights reserved.
-# Copyright 2022 Oxide Computer Co.
+# Copyright 2024 Oxide Computer Co.
 # Copyright 2023 RackTop Systems, Inc.
 # Copyright 2023 OmniOS Community Edition (OmniOSce) Association.
 #
@@ -183,4 +183,14 @@ SYMBOL_SCOPE {
 		mdb_writesym			{ FLAGS = EXTERN };
 		mdb_writevar			{ FLAGS = EXTERN };
 		mdb_zalloc			{ FLAGS = EXTERN };
+
+		bitdel64			{ FLAGS = EXTERN };
+		bitset8				{ FLAGS = EXTERN };
+		bitset16			{ FLAGS = EXTERN };
+		bitset32			{ FLAGS = EXTERN };
+		bitset64			{ FLAGS = EXTERN };
+		bitx8				{ FLAGS = EXTERN };
+		bitx16				{ FLAGS = EXTERN };
+		bitx32				{ FLAGS = EXTERN };
+		bitx64				{ FLAGS = EXTERN };
 };

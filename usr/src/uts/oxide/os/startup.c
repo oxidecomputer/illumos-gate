@@ -25,7 +25,7 @@
  * Copyright 2017 Nexenta Systems, Inc.
  * Copyright (c) 2020 Joyent, Inc.
  * Copyright (c) 2015 by Delphix. All rights reserved.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  * Copyright (c) 2020 Carlos Neira <cneirabustos@gmail.com>
  */
 /*
@@ -135,6 +135,8 @@
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/hacks.h>
 #include <sys/kernel_ipcc.h>
+#include <sys/apob.h>
+#include <sys/kapob.h>
 
 extern void mem_config_init(void);
 
@@ -1790,6 +1792,7 @@ startup_vm(void)
 	setup_vaddr_for_ppcopy(CPU);
 
 	segdev_init();
+	kapob_preserve();
 	pmem_init();
 
 	PRM_POINT("startup_vm() done");

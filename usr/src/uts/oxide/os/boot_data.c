@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co
+ * Copyright 2024 Oxide Computer Co
  * All rights reserved.
  */
 
@@ -38,13 +38,18 @@
 #include <sys/kernel_ipcc.h>
 #include <sys/smt.h>
 #include <sys/time.h>
-#include <milan/milan_apob_impl.h>
 
 /*
  * Used by apix code that could be shared with other kernels.  Not tunable on
  * this kernel except by manual change to source code.
  */
 nmi_action_t nmi_action = NMI_ACTION_UNSET;
+
+/*
+ * This is the default address of the APOB. See the discussion in
+ * eb_create_common_properties() for more information.
+ */
+static const uint64_t APOB_ADDR = 0x4000000UL;
 
 extern int bootrd_debug, prom_debug;
 extern boolean_t kbm_debug;
@@ -244,7 +249,7 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	 * time) to almost anything in the bottom 2 GiB that doesn't conflict
 	 * with other uses of memory; see the discussion in vm/kboot_mmu.c.
 	 */
-	const uint64_t apob_addr = MILAN_APOB_ADDR;
+	const uint64_t apob_addr = APOB_ADDR;
 	const uint32_t reset_vector = 0x7ffefff0U;
 
 	bt_set_prop_u32(BTPROP_NAME_RESET_VECTOR, reset_vector);
@@ -492,4 +497,29 @@ genunix_set_tunables(void)
 	 * no default value there so we must clear it.
 	 */
 	smt_boot_disable = 0;
+}
+
+/*
+ * This function is used only by genunix_is_loaded() below.  It has to be a
+ * separate function because if we were to simply take the address of an extern
+ * global, the compiler would optimise it away because that can "never" be NULL.
+ * In reality, it can be NULL if the symbol is outside unix and krtld has not
+ * yet processed the relocation against the symbol (in our case, always
+ * something from genunix).  Until that relocation has been processed, the
+ * address of that symbol will be 0.  Such symbols are "weakish": they aren't
+ * declared weak because most code is supposed to assume the fiction that unix
+ * and genunix are all one object, but some of our code needs to know the truth.
+ */
+static bool
+weakish_is_null(const void *p)
+{
+	return (p == NULL);
+}
+
+extern bool
+genunix_is_loaded(void)
+{
+	extern kmutex_t mod_lock;
+
+	return (!weakish_is_null(&mod_lock));
 }

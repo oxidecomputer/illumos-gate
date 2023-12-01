@@ -26,7 +26,7 @@
 # Copyright 2020 Peter Tribble.
 # Copyright 2019 Joyent, Inc.
 # Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 #
 
 #
@@ -185,11 +185,13 @@ $(i386_ONLY)file path=platform/oxide/kernel/dacf/$(ARCH64)/consconfig_dacf \
     group=sys mode=0755
 $(i386_ONLY)dir path=platform/oxide/kernel/drv group=sys
 $(i386_ONLY)dir path=platform/oxide/kernel/drv/$(ARCH64) group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/apob group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/dwu group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/fch group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/ipcc group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/npe group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/rootnex group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/apob.conf group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/dwu.conf group=sys
 $(i386_ONLY)file path=platform/oxide/kernel/drv/ipcc.conf group=sys
 $(i386_ONLY)dir path=platform/oxide/kernel/mach group=sys
@@ -216,6 +218,7 @@ $(i386_ONLY)driver name=acpippm
 $(i386_ONLY)driver name=amd_iommu perms="* 0644 root sys" \
     alias=pci1002,5a23 \
     alias=pci1022,11ff
+$(i386_ONLY)driver name=apob perms="* 0444 root sys"
 $(i386_ONLY)driver name=balloon perms="* 0444 root sys"
 $(i386_ONLY)driver name=cpudrv alias=cpu
 $(i386_ONLY)driver name=domcaps perms="* 0444 root sys"

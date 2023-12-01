@@ -23,11 +23,12 @@
 # Use is subject to license terms.
 #
 # Copyright 2019 Joyent, Inc.
+# Copyright 2024 Oxide Computer Co.
 
 MODULE = unix.so
 MDBTGT = kvm
 
-MODSRCS = unix.c i86mmu.c xcall.c
+MODSRCS = unix.c i86mmu.c xcall.c apob.c zen_umc.c
 MODASMSRCS = unix_sup.S
 
 KMODSRCS = $(MODSRCS) zen_kmdb.c

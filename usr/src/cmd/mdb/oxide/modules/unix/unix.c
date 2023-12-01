@@ -22,7 +22,7 @@
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #include <mdb/mdb_modapi.h>
@@ -38,6 +38,7 @@
 #include <sys/trap.h>
 #include <sys/mutex.h>
 #include <sys/mutex_impl.h>
+#include "apob_mod.h"
 #include "i86mmu.h"
 #include "unix_sup.h"
 #include "zen_kmdb.h"
@@ -993,6 +994,12 @@ extern void xcall_help(void);
 extern int xcall_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 static const mdb_dcmd_t dcmds[] = {
+	{ "apob", "?-g group -t type", "find APOB entry", apob_dcmd,
+	    apob_dcmd_help },
+	{ "apob_entry", ":[-r|-x]", "display an APOB entry", apob_entry_dcmd,
+	    apob_entry_dcmd_help },
+	{ "apob_event", ":", "decode the APOB event log", apob_event_dcmd,
+	    apob_event_dcmd_help },
 	{ "gate_desc", ":", "dump a gate descriptor", gate_desc },
 	{ "idt", ":[-v]", "dump an IDT", idt },
 	{ "ttrace", "[-x] [-t kthread]", "dump trap trace buffers", ttrace },
@@ -1014,16 +1021,13 @@ static const mdb_dcmd_t dcmds[] = {
 	{ "mfntopfn", ":", "convert hypervisor machine page to physical page",
 	    mfntopfn_dcmd },
 	{ "memseg_list", ":", "show memseg list", memseg_list },
+	{ "pmuerr", ":", "decode APOB PMU Training error data", pmuerr_dcmd },
 	{ "scalehrtime", ":[-a|-r]", "scale an unscaled high-res time",
 	    scalehrtime_dcmd, scalehrtime_help },
 	{ "x86_featureset", ":", "dump the x86_featureset vector",
 		x86_featureset_dcmd },
 	{ "xcall", ":", "print CPU cross-call state", xcall_dcmd, xcall_help },
 #ifdef _KMDB
-	{ "apob", "-g group -t type", "find APOB entry", apob_dcmd,
-	    apob_dcmd_help },
-	{ "apob_event", ":", "decode the APOB event log", apob_event_dcmd,
-	    apob_event_dcmd_help },
 	{ "dimm_report", "", "Summarize DRAM training and DIMMs",
 	    dimm_report_dcmd, dimm_report_dcmd_help },
 	{ "df_route", "-b | -d | -I | -m  [-i func] [-s socket]", "print df "
@@ -1034,7 +1038,6 @@ static const mdb_dcmd_t dcmds[] = {
 	    "read a register in PCI config space", rdpcicfg_dcmd },
 	{ "rdsmn", ":[-L len] [-s socket]", "read smn register", rdsmn_dcmd,
 	    rdsmn_dcmd_help },
-	{ "pmuerr", ":", "decode APOB PMU Training error data", pmuerr_dcmd },
 	{ "sysregs", NULL, "dump system registers", sysregs_dcmd },
 	{ "wrdf", ":[-b | -i inst] [-f func] [-s socket] value",
 	    "write df register", wrdf_dcmd, wrdf_dcmd_help },
@@ -1047,15 +1050,13 @@ static const mdb_dcmd_t dcmds[] = {
 };
 
 static const mdb_walker_t walkers[] = {
+	{ "apob", "walk the APOB", apob_walk_init, apob_walk_step },
 	{ "ttrace", "walks trap trace buffers in reverse chronological order",
 		ttrace_walk_init, ttrace_walk_step, ttrace_walk_fini },
 	{ "mutex_owner", "walks the owner of a mutex",
 		mutex_owner_init, mutex_owner_step },
 	{ "memseg", "walk the memseg structures",
 		memseg_walk_init, memseg_walk_step, memseg_walk_fini },
-#ifdef _KMDB
-	{ "apob", "walk the APOB", apob_walk_init, apob_walk_step },
-#endif
 	{ NULL }
 };
 

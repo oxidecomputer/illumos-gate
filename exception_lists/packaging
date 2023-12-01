@@ -31,7 +31,7 @@
 # Copyright 2019, Joyent, Inc.
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2020 Peter Tribble
-# Copyright 2023 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 #
 
 #
@@ -834,3 +834,9 @@ platform/oxide/kernel/drv/amd64/cpudrv		i386
 #
 usr/include/sys/tfport.h
 usr/include/sys/tofino.h
+
+#
+# APOB functionality is 100% Private
+#
+usr/include/sys/apob.h
+usr/include/sys/apob_impl.h
