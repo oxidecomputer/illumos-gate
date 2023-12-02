@@ -346,7 +346,7 @@ ipcc_image_fetch(int argc, char *argv[])
 		if (buflen > rem) {
 			errx(EXIT_FAILURE,
 			    "too much data returned for offset 0x%" PRIx64
-			    ", len=0x%x expected <= 0x%x",
+			    ", len=0x%zx expected <= 0x%zx",
 			    offset, buflen, rem);
 		}
 
@@ -603,7 +603,7 @@ ipcc_keylookup(int argc, char *argv[])
 		buf = calloc(1, buflen);
 		if (buf == NULL) {
 			err(EXIT_FAILURE,
-			    "could not allocate 0x%x bytes for buffer",
+			    "could not allocate 0x%zx bytes for buffer",
 			    buflen);
 		}
 		alloced = true;
@@ -699,8 +699,8 @@ ipcc_keyset(int argc, char *argv[])
 
 	buf = calloc(1, st.st_size);
 	if (buf == NULL) {
-		err(EXIT_FAILURE, "failed to allocate 0x%x bytes for file",
-		    st.st_size);
+		err(EXIT_FAILURE, "failed to allocate 0x%" PRIx64 " bytes for "
+		    "file", st.st_size);
 	}
 
 	readbuf = buf;
@@ -711,8 +711,8 @@ ipcc_keyset(int argc, char *argv[])
 
 		len = pread(fd, readbuf, remaining, off);
 		if (len == -1) {
-			err(EXIT_FAILURE, "failed to read 0x%x bytes from '%s' "
-			    "at offset 0x%zx", remaining, filename, off);
+			err(EXIT_FAILURE, "failed to read 0x%zx bytes from "
+			    "'%s' at offset 0x%zx", remaining, filename, off);
 		}
 		if (len == 0) {
 			errx(EXIT_FAILURE,

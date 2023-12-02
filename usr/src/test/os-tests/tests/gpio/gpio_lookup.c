@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -89,11 +89,11 @@ gpio_lookup_errs(int fd)
 
 	(void) memset(kin.kin_name, 'a', sizeof (kin.kin_name));
 	if (ioctl(fd, KGPIO_IOC_GPIO_NAME2ID, &kin) == 0) {
-		warnx("TEST FAILED: no '\0' lookup passed, expected "
+		warnx("TEST FAILED: no '\\0' lookup passed, expected "
 		    "EINVAL");
 		gpio_lookup_ret = EXIT_FAILURE;
 	} else if (errno != EINVAL) {
-		warn("TEST FAILED: no '\0' lookup had wrong errno, "
+		warn("TEST FAILED: no '\\0' lookup had wrong errno, "
 		    "expected EINVAL, found");
 		gpio_lookup_ret = EXIT_FAILURE;
 	}
@@ -141,7 +141,7 @@ main(void)
 			if (found_ids[ctrl] != id0) {
 				warnx("ID Mismatch for %s: got %u on "
 				    "%s and %u on %s", gpio_names[name],
-				    id0, gpio_paths[0], found_ids[ctrl], 
+				    id0, gpio_paths[0], found_ids[ctrl],
 				    gpio_paths[ctrl]);
 				gpio_lookup_ret = EXIT_FAILURE;
 			}
