@@ -29,6 +29,8 @@
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
 #include <sys/sunldi.h>
+#include <sys/dumphdr.h>
+#include <sys/dumpadm.h>
 #include <sys/sysmacros.h>
 
 #include "oxide_boot.h"
@@ -154,17 +156,18 @@ typedef struct oxide_boot_disk_header {
 static bool
 oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 {
+	oxide_boot_disk_find_m2_t *ofm;
+	char *fp = NULL;
 	bool ok = false;
 	int r;
 	ldi_handle_t lh = NULL;
 	uint8_t *buf = NULL;
 
-	oxide_boot_disk_find_m2_t ofm = {
-		.ofm_want_slot = slot,
-		.ofm_want_slice = slice,
-	};
-
 	oxide_boot_note("TRYING: boot disk (slot %d, slice %u)", slot, slice);
+
+	ofm = kmem_zalloc(sizeof (*ofm), KM_SLEEP);
+	ofm->ofm_want_slot = slot;
+	ofm->ofm_want_slice = slice;
 
 	/*
 	 * We need to find the M.2 device that we want to boot.  It will be
@@ -172,25 +175,25 @@ oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 	 * caller.
 	 */
 	oxide_boot_debug("NVMe boot devices:");
-	ddi_walk_devs(ddi_root_node(), oxide_boot_disk_find_m2, &ofm);
+	ddi_walk_devs(ddi_root_node(), oxide_boot_disk_find_m2, ofm);
 
-	if (ofm.ofm_physpath[0] == '\0') {
+	if (ofm->ofm_physpath[0] == '\0') {
 		oxide_boot_warn("did not find the M.2 device in slot %d!",
 		    slot);
-		return (false);
+		goto out;
 	}
 
 	oxide_boot_note("found M.2 device (slot %d, slice %u), @ %s",
-	    slot, slice, ofm.ofm_physpath);
+	    slot, slice, ofm->ofm_physpath);
 
 	/*
 	 * Open the M.2 device:
 	 */
-	char fp[MAXPATHLEN];
-	if (snprintf(fp, sizeof (fp), "/devices%s", ofm.ofm_physpath) >=
-	    sizeof (fp)) {
+	fp = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	if (snprintf(fp, MAXPATHLEN, "/devices%s", ofm->ofm_physpath) >=
+	    MAXPATHLEN) {
 		oxide_boot_warn("path construction failure!");
-		return (false);
+		goto out;
 	}
 
 	oxide_boot_debug("opening M.2 device");
@@ -280,6 +283,10 @@ oxide_boot_disk_slice(oxide_boot_t *oxb, int slot, uint_t slice)
 	}
 
 out:
+	kmem_free(ofm, sizeof (*ofm));
+	if (fp != NULL) {
+		kmem_free(fp, MAXPATHLEN);
+	}
 	if (buf != NULL) {
 		kmem_free(buf, PAGESIZE);
 	}
@@ -291,6 +298,64 @@ out:
 	}
 
 	return (ok);
+}
+
+static void
+oxide_boot_disk_dump(oxide_boot_t *oxb, int slot, uint_t slice)
+{
+	oxide_boot_disk_find_m2_t *ofm;
+	char *dumpdev = NULL;
+	vnode_t *vp;
+	int ret;
+
+	oxide_boot_note("SEEKING: dump device (slot %d, slice %u)",
+	    slot, slice);
+
+	ofm = kmem_zalloc(sizeof (*ofm), KM_SLEEP);
+	ofm->ofm_want_slot = slot;
+	ofm->ofm_want_slice = slice;
+
+	ddi_walk_devs(ddi_root_node(), oxide_boot_disk_find_m2, ofm);
+
+	if (ofm->ofm_physpath[0] == '\0') {
+		oxide_boot_warn("did not find a dump device in slot %d!",
+		    slot);
+		goto out;
+	}
+
+	oxide_boot_note("found dump device (slot %d, slice %u), @ %s",
+	    slot, slice, ofm->ofm_physpath);
+
+	dumpdev = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+	if (snprintf(dumpdev, MAXPATHLEN, "/devices%s", ofm->ofm_physpath) >=
+	    MAXPATHLEN) {
+		oxide_boot_warn("dump device path construction failure!");
+		goto out;
+	}
+
+	if ((ret = ldi_vp_from_name(dumpdev, &vp)) != 0) {
+		oxide_boot_warn("dump device vnode lookup failure, errno %d",
+		    ret);
+		goto out;
+	}
+
+	mutex_enter(&dump_lock);
+
+	if ((ret = dumpinit(vp, dumpdev, 0)) != 0) {
+		oxide_boot_warn("dump device setup failure, errno %d", ret);
+	} else {
+		oxide_boot_note("successfully configured dump device");
+		dump_conflags = DUMP_CURPROC;
+	}
+
+	mutex_exit(&dump_lock);
+
+	VN_RELE(vp);
+
+out:
+	kmem_free(ofm, sizeof (*ofm));
+	if (dumpdev != NULL)
+		kmem_free(dumpdev, MAXPATHLEN);
 }
 
 bool
@@ -311,10 +376,16 @@ oxide_boot_disk(oxide_boot_t *oxb, int slot)
 	 * slices 0 and 1 are set aside to hold boot images. We try these
 	 * slices in order to try to find the image we want.
 	 */
-	for (uint_t slice = 0; slice <= 1; slice++) {
+	for (uint_t slice = OXBOOT_SLICE_MIN; slice <= OXBOOT_SLICE_MAX;
+	    slice++) {
 		if (oxide_boot_disk_slice(oxb, slot, slice)) {
 			(void) e_ddi_prop_update_int(DDI_DEV_T_NONE,
 			    ddi_root_node(), OXBOOT_DEVPROP_DISK_SLICE, slice);
+			/*
+			 * Attempt to set up a dump device on the selected
+			 * boot disk now.
+			 */
+			oxide_boot_disk_dump(oxb, slot, OXBOOT_SLICE_DUMP);
 			return (true);
 		}
 	}

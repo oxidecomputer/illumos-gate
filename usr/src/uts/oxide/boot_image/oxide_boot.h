@@ -48,6 +48,18 @@ extern "C" {
  */
 #define	OXBOOT_MAX_IMAGE_SIZE		(4UL * 1024 * 1024 * 1024)
 
+/*
+ * The minimum and maximum disk slices which should be checked for a boot
+ * image when booting from disk.
+ */
+#define	OXBOOT_SLICE_MIN	0
+#define	OXBOOT_SLICE_MAX	1
+/*
+ * The slice of the selected boot disk which should be configured as a system
+ * dump device.
+ */
+#define	OXBOOT_SLICE_DUMP	4
+
 typedef struct oxide_boot {
 	/*
 	 * Data marked I is initialised once when the object is created.  Other

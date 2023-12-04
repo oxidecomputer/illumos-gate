@@ -23,6 +23,7 @@
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 Joyent, Inc.
  * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -63,6 +64,7 @@
 #include <sys/errorq.h>
 #include <sys/fm/util.h>
 #include <sys/fs/zfs.h>
+#include <sys/bootconf.h>
 
 #include <vm/hat.h>
 #include <vm/as.h>
@@ -1187,10 +1189,12 @@ dumpinit(vnode_t *vp, char *name, int justchecking)
 	if ((error = VOP_GETATTR(cvp, &vattr, 0, kcred, NULL)) == 0) {
 		if (vattr.va_type == VBLK || vattr.va_type == VCHR) {
 			if (devopsp[getmajor(vattr.va_rdev)]->
-			    devo_cb_ops->cb_dump == nodev)
+			    devo_cb_ops->cb_dump == nodev) {
 				error = ENOTSUP;
-			else if (vfs_devismounted(vattr.va_rdev))
+			} else if (modrootloaded != 0 &&
+			    vfs_devismounted(vattr.va_rdev)) {
 				error = EBUSY;
+			}
 			if (strcmp(ddi_driver_name(VTOS(cvp)->s_dip),
 			    ZFS_DRIVER) == 0 &&
 			    IS_SWAPVP(common_specvp(cvp)))
@@ -3125,6 +3129,13 @@ dump_set_uuid(const char *uuidstr)
 
 	cmn_err(CE_CONT, "?This illumos instance has UUID %s\n",
 	    dump_osimage_uuid);
+
+	mutex_enter(&dump_lock);
+	if (dumphdr != NULL) {
+		(void) strncpy(dumphdr->dump_uuid, dump_osimage_uuid,
+		    sizeof (dumphdr->dump_uuid));
+	}
+	mutex_exit(&dump_lock);
 
 	return (0);
 }
