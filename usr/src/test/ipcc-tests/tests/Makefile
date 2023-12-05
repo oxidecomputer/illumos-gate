@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 include $(SRC)/cmd/Makefile.cmd
@@ -37,6 +37,9 @@ $(CMDS) := FILEMODE = 0555
 
 CSTD=		$(CSTD_GNU99)
 CPPFLAGS +=	-I$(SRC)/uts/oxide
+
+interface_version.32 := CPPFLAGS += -I$(SRC)/uts/oxide/io/ipcc
+interface_version.64 := CPPFLAGS += -I$(SRC)/uts/oxide/io/ipcc
 
 .KEEP_STATE:
 

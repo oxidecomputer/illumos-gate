@@ -121,6 +121,18 @@ libipcc_strerror(libipcc_err_t err)
 		return ("LIBIPCC_ERR_INVALID_PARAM");
 	case LIBIPCC_ERR_INTERNAL:
 		return ("LIBIPCC_ERR_INTERNAL");
+	case LIBIPCC_ERR_KEY_UNKNOWN:
+		return ("LIBIPCC_ERR_KEY_UNKNOWN");
+	case LIBIPCC_ERR_KEY_BUFTOOSMALL:
+		return ("LIBIPCC_ERR_KEY_BUFTOOSMALL");
+	case LIBIPCC_ERR_KEY_READONLY:
+		return ("LIBIPCC_ERR_KEY_READONLY");
+	case LIBIPCC_ERR_KEY_VALTOOLONG:
+		return ("LIBIPCC_ERR_KEY_VALTOOLONG");
+	case LIBIPCC_ERR_KEY_ZERR:
+		return ("LIBIPCC_ERR_KEY_ZERR");
+	case LIBIPCC_ERR_INSUFFMACS:
+		return ("LIBIPCC_ERR_INSUFFMACS");
 	default:
 		break;
 	}
@@ -361,14 +373,75 @@ libipcc_imageblock(libipcc_handle_t *lih, uint8_t *hash, size_t hashlen,
 	return (libipcc_success(lih));
 }
 
+typedef struct {
+	libipcc_mac_group_t ims_group;
+	uint16_t ims_count;
+} libipcc_mac_split_t;
+
 /*
- * In the future, once all direct IPCC consumers have been migrated to use
- * libipcc, the logic for splitting MAC addresses up into groups can be moved
- * out of the kernel and into here. For now, we retrieve the requested group
- * from the driver.
+ * This table defines how the MAC addresses provided by the SP are broken up
+ * into groups for host use. It may need extending in the future for different
+ * Oxide platforms. Each group's addresses start straight after the previous
+ * group's range.
  */
+static libipcc_mac_split_t libipcc_mac_splits[] = {
+	{ LIBIPCC_MAC_GROUP_NIC,	2 },
+	{ LIBIPCC_MAC_GROUP_BOOTSTRAP,	1 },
+};
+
 static bool
-libipcc_mac_fetch(libipcc_handle_t *lih, uint8_t group, ipcc_mac_t **macp)
+libipcc_mac_filter(libipcc_handle_t *lih, libipcc_mac_group_t group,
+    ipcc_mac_t *mac)
+{
+	uint16_t count = 0;
+	libipcc_mac_split_t *s = NULL;
+
+	if (group == LIBIPCC_MAC_GROUP_ALL)
+		return (true);
+
+	for (uint_t i = 0; i < ARRAY_SIZE(libipcc_mac_splits); i++) {
+		if (group == libipcc_mac_splits[i].ims_group) {
+			s = &libipcc_mac_splits[i];
+			break;
+		}
+		count += libipcc_mac_splits[i].ims_count;
+	}
+
+	if (s == NULL) {
+		return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, 0,
+		    "unknown MAC address group 0x%x", group));
+	}
+
+	if (count >= mac->im_count || mac->im_count - count < s->ims_count) {
+		return (libipcc_error(lih, LIBIPCC_ERR_INSUFFMACS, ENOSPC,
+		    "Insufficent MAC addresses for group 0x%x", group));
+	}
+
+	/*
+	 * We now know that there are sufficient remaining MAC addresses to
+	 * satisfy this request. Set the count and calculate the base mac
+	 * address for the group.
+	 */
+	mac->im_count = s->ims_count;
+
+	for (uint_t j = mac->im_stride * count; j > 0; j--) {
+		for (int i = ETHERADDRL - 1; i >= 0; i--) {
+			/*
+			 * If incrementing this byte wraps around to zero, we
+			 * need to also increment the next byte along,
+			 * otherwise we're done.
+			 */
+			if (++mac->im_base[i] != 0)
+				break;
+		}
+	}
+
+	return (true);
+}
+
+static bool
+libipcc_mac_fetch(libipcc_handle_t *lih, libipcc_mac_group_t group,
+    ipcc_mac_t **macp)
 {
 	ipcc_mac_t *mac;
 
@@ -379,10 +452,15 @@ libipcc_mac_fetch(libipcc_handle_t *lih, uint8_t group, ipcc_mac_t **macp)
 		    strerror(errno)));
 	}
 
-	mac->im_group = group;
 	if (libipcc_ioctl(lih, IPCC_MACS, mac) != 0) {
 		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
 		    "ioctl(IPCC_MACS) failed: %s", strerror(errno));
+		free(mac);
+		return (false);
+	}
+
+	if (!libipcc_mac_filter(lih, group, mac)) {
+		/* ipcc_mac_filter will have populated the error information */
 		free(mac);
 		return (false);
 	}
@@ -397,7 +475,7 @@ libipcc_mac_all(libipcc_handle_t *lih, libipcc_mac_t **macp)
 {
 	ipcc_mac_t *mac;
 
-	if (!libipcc_mac_fetch(lih, IPCC_MAC_GROUP_ALL, &mac))
+	if (!libipcc_mac_fetch(lih, LIBIPCC_MAC_GROUP_ALL, &mac))
 		return (false);
 
 	*macp = (libipcc_mac_t *)mac;
@@ -410,7 +488,7 @@ libipcc_mac_nic(libipcc_handle_t *lih, libipcc_mac_t **macp)
 {
 	ipcc_mac_t *mac;
 
-	if (!libipcc_mac_fetch(lih, IPCC_MAC_GROUP_NIC, &mac))
+	if (!libipcc_mac_fetch(lih, LIBIPCC_MAC_GROUP_NIC, &mac))
 		return (false);
 
 	*macp = (libipcc_mac_t *)mac;
@@ -423,7 +501,7 @@ libipcc_mac_bootstrap(libipcc_handle_t *lih, libipcc_mac_t **macp)
 {
 	ipcc_mac_t *mac;
 
-	if (!libipcc_mac_fetch(lih, IPCC_MAC_GROUP_BOOTSTRAP, &mac))
+	if (!libipcc_mac_fetch(lih, LIBIPCC_MAC_GROUP_BOOTSTRAP, &mac))
 		return (false);
 
 	*macp = (libipcc_mac_t *)mac;

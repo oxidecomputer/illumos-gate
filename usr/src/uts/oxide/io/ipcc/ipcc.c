@@ -382,69 +382,6 @@ ipcc_close(dev_t dev, int flag, int otyp, cred_t *cr)
 	return (0);
 }
 
-typedef struct {
-	uint8_t ims_group;
-	uint16_t ims_count;
-} ipcc_mac_split_t;
-
-/*
- * This table defines how the MAC addresses provided by the SP are broken up
- * into groups for host use. It may need extending in the future for different
- * Oxide platforms. Each group's addresses start straight after the previous
- * group's range.
- */
-static ipcc_mac_split_t ipcc_mac_splits[] = {
-	{ IPCC_MAC_GROUP_NIC,		2 },
-	{ IPCC_MAC_GROUP_BOOTSTRAP,	1 },
-};
-
-static int
-ipcc_mac_allocate(ipcc_mac_t *mac)
-{
-	uint16_t count = 0;
-	ipcc_mac_split_t *s = NULL;
-
-	for (uint_t i = 0; i < ARRAY_SIZE(ipcc_mac_splits); i++) {
-		if (mac->im_group == ipcc_mac_splits[i].ims_group) {
-			s = &ipcc_mac_splits[i];
-			break;
-		}
-		count += ipcc_mac_splits[i].ims_count;
-	}
-
-	if (s == NULL) {
-		ipcc_dbgmsg(NULL, 0, "Unknown MAC group, %u", mac->im_group);
-		return (-1);
-	}
-
-	if (count >= mac->im_count || mac->im_count - count < s->ims_count) {
-		ipcc_dbgmsg(NULL, 0,
-		    "Insufficent MAC addresses for group %u", mac->im_group);
-		return (-1);
-	}
-
-	/*
-	 * We now know that there are sufficient remaining MAC addresses to
-	 * satisfy this request. Set the count and calculate the base mac
-	 * address for the group.
-	 */
-	mac->im_count = s->ims_count;
-
-	for (uint_t j = mac->im_stride * count; j > 0; j--) {
-		for (int i = ETHERADDRL - 1; i >= 0; i--) {
-			/*
-			 * If incrementing this byte wraps around to zero, we
-			 * need to also increment the next byte along,
-			 * otherwise we're done.
-			 */
-			if (++mac->im_base[i] != 0)
-				break;
-		}
-	}
-
-	return (0);
-}
-
 static int
 ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 {
@@ -466,7 +403,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 	switch (cmd) {
 	case IPCC_GET_VERSION:
 		BUMP_STAT(ioctl_version);
-		*rv = IPCC_VERSION;
+		*rv = IPCC_DRIVER_VERSION;
 		return (0);
 	}
 
@@ -506,21 +443,9 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 
 		BUMP_STAT(ioctl_macs);
 
-		if (ddi_copyin(datap, &mac, sizeof (mac), cflag) != 0) {
-			err = EFAULT;
-			break;
-		}
-
 		err = ipcc_macs(&ipcc_ops, &ipcc, &mac);
 		if (err != 0)
 			break;
-
-		if (mac.im_group != IPCC_MAC_GROUP_ALL) {
-			if (ipcc_mac_allocate(&mac) != 0) {
-				err = ENOSPC;
-				break;
-			}
-		}
 
 		if (ddi_copyout(&mac, datap, sizeof (mac), cflag) != 0)
 			err = EFAULT;

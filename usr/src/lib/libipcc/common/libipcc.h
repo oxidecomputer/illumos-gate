@@ -85,6 +85,10 @@ typedef enum {
 	 * libipcc_syserr() will return the Z_ error from zlib.
 	 */
 	LIBIPCC_ERR_KEY_ZERR,
+	/*
+	 * The SP provided insufficient MAC addresses to satisfy the request.
+	 */
+	LIBIPCC_ERR_INSUFFMACS,
 } libipcc_err_t;
 
 extern libipcc_err_t libipcc_err(libipcc_handle_t *);

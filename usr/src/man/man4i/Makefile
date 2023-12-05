@@ -27,7 +27,6 @@ MANFILES=	audio.4i	\
 		fdio.4i		\
 		hdio.4i		\
 		iec61883.4i	\
-		ipcc.4i		\
 		ipnat.4i	\
 		mhd.4i		\
 		mixer.4i	\

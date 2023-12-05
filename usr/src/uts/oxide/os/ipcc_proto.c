@@ -681,7 +681,7 @@ static int
 ipcc_msg_init(uint8_t *buf, size_t len, uint64_t seq, size_t *off,
     ipcc_hss_cmd_t cmd)
 {
-	uint32_t ver = IPCC_VERSION;
+	uint32_t ver = IPCC_PROTOCOL_VERSION;
 	uint32_t magic = IPCC_MAGIC;
 
 	VERIFY(ipcc_channel_held());
@@ -1038,7 +1038,7 @@ reread:
 		LOG("Invalid magic number in response, 0x%x\n", rcvd_magic);
 		goto resend;
 	}
-	if (rcvd_version != IPCC_VERSION) {
+	if (rcvd_version != IPCC_PROTOCOL_VERSION) {
 		LOG("Invalid version field in response, 0x%x\n", rcvd_version);
 		goto resend;
 	}

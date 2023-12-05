@@ -29,7 +29,7 @@
 extern "C" {
 #endif
 
-#define	IPCC_VERSION		1
+#define	IPCC_PROTOCOL_VERSION	1
 #define	IPCC_MAGIC		0x1DE19CC
 
 #define	IPCC_COBS_SIZE(x)	(1 + (x) + (x) / 0xfe)

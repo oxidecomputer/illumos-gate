@@ -20,7 +20,13 @@
 #include <sys/time.h>
 #include <libipcc.h>
 
-#define	SUPPORTED_IPCC_VERSION	1
+#define	SUPPORTED_IPCC_VERSION	2
+
+typedef enum {
+	LIBIPCC_MAC_GROUP_ALL = 0,
+	LIBIPCC_MAC_GROUP_NIC,
+	LIBIPCC_MAC_GROUP_BOOTSTRAP
+} libipcc_mac_group_t;
 
 /* All supported key lookup/set flags */
 #define	LIBIPCC_KEYF_ALL	LIBIPCC_KEYF_COMPRESSED

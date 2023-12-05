@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <stdio.h>
@@ -22,6 +22,7 @@
 
 #include <sys/ipcc.h>
 #include <sys/ipcc_proto.h>
+#include <ipcc_drv.h>
 
 int
 main(int argc, char **argv)
@@ -36,9 +37,9 @@ main(int argc, char **argv)
 	if (version < 0)
 		err(EXIT_FAILURE, "IPCC_GET_VERSION ioctl failed");
 
-	if (version != IPCC_VERSION) {
-		errx(EXIT_FAILURE, "kernel version %d != expected %d\n",
-		    version, IPCC_VERSION);
+	if (version != IPCC_DRIVER_VERSION) {
+		errx(EXIT_FAILURE, "kernel driver version %d != expected %d\n",
+		    version, IPCC_DRIVER_VERSION);
 	}
 
 	(void) close(fd);

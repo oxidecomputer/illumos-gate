@@ -208,8 +208,6 @@ dir  path=usr/share/man
 dir  path=usr/share/man/man4d
 link path=usr/share/man/man4d/fdc.4d target=fd.4d
 $(i386_ONLY)file path=usr/share/man/man4d/npe.4d
-dir  path=usr/share/man/man4i
-$(i386_ONLY)file path=usr/share/man/man4i/ipcc.4i
 dir  path=usr/share/man/man5
 $(i386_ONLY)link path=usr/share/man/man5/isa.5 target=sysbus.5
 $(i386_ONLY)file path=usr/share/man/man5/sysbus.5

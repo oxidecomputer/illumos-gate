@@ -20,6 +20,16 @@
 extern "C" {
 #endif
 
+/*
+ * Version history
+ *   1	- initial integration.
+ *   2	- IPCC_MACS no longer has an input parameter for group, the driver
+ *	  now always returns the full set of MACs provided by the SP.
+ */
+#define	IPCC_DRIVER_VERSION	2
+
+#ifdef _KERNEL
+
 #include <sys/stdbool.h>
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
@@ -66,6 +76,8 @@ typedef struct ipcc_stats {
 
 #define	LDI_FLAGS		(FEXCL | FREAD | FWRITE | FNOCTTY)
 #define	LDI_SP_INTR_FLAGS	(FEXCL | FREAD | FNOCTTY)
+
+#endif /* _KERNEL */
 
 #ifdef	__cplusplus
 }

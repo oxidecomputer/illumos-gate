@@ -72,15 +72,10 @@ typedef struct ipcc_ident {
 } ipcc_ident_t;
 
 typedef struct ipcc_mac {
-	uint8_t		im_group;
 	uint16_t	im_count;
 	uint8_t		im_base[ETHERADDRL];
 	uint8_t		im_stride;
 } ipcc_mac_t;
-
-#define	IPCC_MAC_GROUP_ALL		0
-#define	IPCC_MAC_GROUP_NIC		1
-#define	IPCC_MAC_GROUP_BOOTSTRAP	2
 
 typedef struct ipcc_status {
 	uint64_t	is_status;
