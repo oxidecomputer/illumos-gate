@@ -20,16 +20,16 @@
 #include <sys/types.h>
 #include <vm/kboot_mmu.h>
 
-#include "milan_apob.h"
-#include "milan_physaddrs.h"
+#include "genoa_apob.h"
+#include "genoa_physaddrs.h"
 
 void
-milan_apob_reserve_phys(void)
+genoa_apob_reserve_phys(void)
 {
 	uint32_t i;
 	size_t sysmap_len;
 	int err;
-	const milan_apob_sysmap_t *smp;
+	const genoa_apob_sysmap_t *smp;
 	const uint_t MAX_APOB_HOLES = ARRAY_SIZE(smp->masm_holes);
 	uint32_t apob_hole_count;
 	paddr_t max_paddr;
@@ -40,7 +40,15 @@ milan_apob_reserve_phys(void)
 	err = 0;
 	sysmap_len = 0;
 
-	smp = milan_apob_find(MILAN_APOB_GROUP_FABRIC, 9, 0, &sysmap_len, &err);
+	smp = genoa_apob_find(GENOA_APOB_GROUP_FABRIC, 9, 0, &sysmap_len, &err);
+	/*
+	 * XXX(cross): Should we do something (early return?) in these
+	 * failure cases?  This wouuld cause a semantic difference, as
+	 * `eb_physmem_set_max(max_paddr)` is the same as
+	 * `eb_physmem_set_max(LOAD_PHYSLIMIT)` in the failure case(s),
+	 * and we would not be calling that.  However, we could call
+	 * `eb_physmem_set_max` twice, or perhaps it's already set.
+	 */
 	if (err != 0) {
 		eb_printf("couldn't find APOB system memory map "
 		    "(errno = %d); using bootstrap RAM only\n", err);

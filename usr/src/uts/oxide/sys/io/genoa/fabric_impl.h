@@ -1,0 +1,185 @@
+/*
+ * This file and its contents are supplied under the terms of the
+ * Common Development and Distribution License ("CDDL"), version 1.0.
+ * You may only use this file in accordance with the terms of version
+ * 1.0 of the CDDL.
+ *
+ * A full copy of the text of the CDDL should have accompanied this
+ * source.  A copy of the CDDL is also available via the Internet at
+ * http://www.illumos.org/license/CDDL.
+ */
+
+/*
+ * Copyright 2023 Oxide Computer Co.
+ */
+
+#ifndef _SYS_IO_GENOA_FABRIC_IMPL_H
+#define	_SYS_IO_GENOA_FABRIC_IMPL_H
+
+/*
+ * Private I/O fabric types.  This file should not be included outside the
+ * implementation.
+ */
+
+#include <sys/memlist.h>
+#include <sys/memlist_impl.h>
+#include <sys/types.h>
+#include <sys/x86_archext.h>
+#include <sys/io/genoa/fabric.h>
+#include <sys/io/genoa/ccx_impl.h>
+#include <sys/io/genoa/dxio_impl.h>
+#include <sys/io/genoa/nbif_impl.h>
+#include <sys/io/genoa/pcie_impl.h>
+#include <sys/amdzen/smn.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * This defines what the maximum number of SoCs that are supported in Genoa (
+ * and Milan and Rome).
+ */
+#define	GENOA_FABRIC_MAX_SOCS		2
+
+/*
+ * This is the maximum number of I/O dies that can exist in a given SoC. Since
+ * Rome this has been 1. Previously on Naples this was 4. Because we do not work
+ * on Naples based platforms, this is kept low (unlike the more general amdzen
+ * nexus driver).
+ */
+#define	GENOA_FABRIC_MAX_DIES_PER_SOC	1
+
+#define	GENOA_DF_FIRST_CCM_ID	16
+
+/*
+ * This is the number of IOMS instances that we know are supposed to exist per
+ * die.
+ */
+#define	GENOA_IOMS_PER_IODIE	4
+
+/*
+ * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to three
+ * cores, but only the one with the WAFL link has core number 2.
+ */
+#define	GENOA_IOMS_MAX_PCIE_CORES	3
+#define	GENOA_IOMS_WAFL_PCIE_CORENO	2
+
+/*
+ * Per the PPR, the following defines the first enry for the Genoa IOMS.
+ */
+#define	GENOA_DF_FIRST_IOMS_ID	24
+
+/*
+ * This indicates the ID number of the IOMS instance that happens to have the
+ * FCH present.
+ */
+#define	GENOA_IOMS_HAS_FCH	3
+
+/*
+ * Similarly, the IOMS instance with the WAFL port.
+ */
+#define	GENOA_IOMS_HAS_WAFL	0
+
+/*
+ * There are supposed to be 23 digital power management (DPM) weights provided
+ * by each Genoa SMU.  Note that older processor families may have fewer, and
+ * Naples also has more SMUs.
+ */
+#define	GENOA_MAX_DPM_WEIGHTS	23
+
+/*
+ * Warning: These memlists cannot be given directly to PCI. They expect to be
+ * kmem_alloc'd which we are not doing here at all.
+ */
+typedef struct ioms_memlists {
+	kmutex_t		im_lock;
+	struct memlist_pool	im_pool;
+	struct memlist		*im_io_avail_pci;
+	struct memlist		*im_io_avail_gen;
+	struct memlist		*im_io_used;
+	struct memlist		*im_mmio_avail_pci;
+	struct memlist		*im_mmio_avail_gen;
+	struct memlist		*im_mmio_used;
+	struct memlist		*im_pmem_avail;
+	struct memlist		*im_pmem_used;
+	struct memlist		*im_bus_avail;
+	struct memlist		*im_bus_used;
+} ioms_memlists_t;
+
+struct genoa_ioms {
+	genoa_ioms_flag_t	mio_flags;
+	uint16_t		mio_pci_busno;
+	uint8_t			mio_num;
+	uint8_t			mio_fabric_id;
+	uint8_t			mio_comp_id;
+	uint8_t			mio_npcie_cores;
+	uint8_t			mio_nnbifs;
+	genoa_pcie_core_t	mio_pcie_cores[GENOA_IOMS_MAX_PCIE_CORES];
+	genoa_nbif_t		mio_nbifs[GENOA_IOMS_MAX_NBIF];
+	ioms_memlists_t		mio_memlists;
+	genoa_iodie_t		*mio_iodie;
+};
+
+struct genoa_iodie {
+	kmutex_t		mi_df_ficaa_lock;
+	kmutex_t		mi_smn_lock;
+	kmutex_t		mi_smu_lock;
+	uint8_t			mi_node_id;
+	uint8_t			mi_dfno;
+	uint8_t			mi_smn_busno;
+	uint8_t			mi_nioms;
+	uint8_t			mi_nccds;
+	uint8_t			mi_smu_fw[3];
+	uint32_t		mi_dxio_fw[2];
+	genoa_iodie_flag_t	mi_flags;
+	genoa_dxio_sm_state_t	mi_state;
+	genoa_dxio_config_t	mi_dxio_conf;
+	uint64_t		mi_dpm_weights[GENOA_MAX_DPM_WEIGHTS];
+	genoa_ioms_t		mi_ioms[GENOA_IOMS_PER_IODIE];
+	genoa_ccd_t		mi_ccds[GENOA_MAX_CCDS_PER_IODIE];
+	genoa_soc_t		*mi_soc;
+};
+
+struct genoa_soc {
+	uint8_t			ms_socno;
+	uint8_t			ms_ndies;
+	char			ms_brandstr[CPUID_BRANDSTR_STRLEN + 1];
+	genoa_iodie_t		ms_iodies[GENOA_FABRIC_MAX_DIES_PER_SOC];
+	genoa_fabric_t		*ms_fabric;
+};
+
+struct genoa_fabric {
+	uint8_t		mf_nsocs;
+	/*
+	 * This represents a cache of everything that we've found in the fabric.
+	 */
+	uint_t		mf_total_ioms;
+	/*
+	 * These are masks and shifts that describe how to take apart an ID into
+	 * its node ID and corresponding component ID.
+	 */
+	uint8_t		mf_node_shift;
+	uint32_t	mf_node_mask;
+	uint32_t	mf_comp_mask;
+	/*
+	 * While TOM and TOM2 are nominally set per-core and per-IOHC, these
+	 * values are fabric-wide.
+	 */
+	uint64_t	mf_tom;
+	uint64_t	mf_tom2;
+	uint64_t	mf_ecam_base;
+	uint64_t	mf_mmio64_base;
+	genoa_hotplug_t	mf_hotplug;
+	genoa_soc_t	mf_socs[GENOA_FABRIC_MAX_SOCS];
+};
+
+extern uint32_t genoa_smn_read(struct genoa_iodie *, const smn_reg_t);
+extern void genoa_smn_write(struct genoa_iodie *, const smn_reg_t,
+    const uint32_t);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* _SYS_IO_GENOA_FABRIC_IMPL_H */
