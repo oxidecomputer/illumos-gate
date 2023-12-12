@@ -74,10 +74,10 @@
 #include <sys/memlist_impl.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
-#include <sys/io/genoa/ccx.h>
+#include <sys/io/milan/ccx.h>
 
-#include "genoa/genoa_apob.h"
-#include "genoa/genoa_physaddrs.h"
+#include "milan/milan_apob.h"
+#include "milan/milan_physaddrs.h"
 
 /*
  * Comes from fs/ufsops.c.  For debugging the ramdisk/root fs operations.  Set
@@ -692,7 +692,7 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 		boot_prop_display(bufpage);
 	}
 
-	genoa_ccx_physmem_init();
+	milan_ccx_physmem_init();
 	protect_ramdisk();
 
 	/*

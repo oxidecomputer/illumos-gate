@@ -67,7 +67,7 @@ extern const bt_prop_t *bt_props;
 extern const bt_prop_t * const bt_fallback_props;
 
 extern void bt_set_prop(uint32_t, const char *, size_t, const void *, size_t);
-extern void eb_create_properties(uint64_t, size_t);
+extern void eb_create_properties(uint64_t, size_t, uint64_t);
 extern void eb_set_tunables(void);
 extern void genunix_set_tunables(void);
 extern bool genunix_is_loaded(void);
