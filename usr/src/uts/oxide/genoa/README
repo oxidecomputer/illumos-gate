@@ -1,0 +1,11 @@
+# Oxide Genoa
+
+This directory contains Genoa-specific initialization code for the
+Oxide architecture.  Populating this follows a three-step plan:
+
+1. Copy the milan-specific bits from usr/src/uts/oxide/milan
+2. Modify those bits to work with Genoa
+3. Refactor to extract common bits between them and minimize
+   duplication and differences.
+
+We are current at step (1).
