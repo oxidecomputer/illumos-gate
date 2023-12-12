@@ -15,7 +15,7 @@
 
 /*
  * Various routines and things to access, initialize, understand, and manage
- * Milan's I/O fabric. This consists of both the data fabric and the
+ * Genoa's I/O fabric. This consists of both the data fabric and the
  * northbridges.
  *
  * --------------------------------------
@@ -31,7 +31,7 @@
  * our time dealing with is the "northbridge I/O unit", or NBIO.  In DF (Zen
  * data fabric) terms, NBIOs are a class of device called an IOMS (I/O
  * master-slave).  These are represented in our fabric data structures as
- * subordinate to an I/O die.  On Milan processors, each I/O die has 4 NBIO
+ * subordinate to an I/O die.  On Genoa processors, each I/O die has 4 NBIO
  * instances; other processor families have these in differing number or
  * organisation.  Since we're interested in Zen 3 here (and since Zen 2 and 4
  * are very similar), let's expand the I/O Die portion of the Zen 2 diagram from
@@ -226,27 +226,27 @@
  * We represent the NBIO entities described above and the CPU core entities
  * described in cpuid.c in a hierarchical fashion:
  *
- * milan_fabric_t (DF -- root)
+ * genoa_fabric_t (DF -- root)
  * |
- * \-- milan_soc_t (qty 1 or 2)
+ * \-- genoa_soc_t (qty 1 or 2)
  *     |
- *     \-- milan_iodie_t (qty 1)
+ *     \-- genoa_iodie_t (qty 1)
  *         |
- *         +-- milan_ioms_t (qty 4, one per NBIO)
+ *         +-- genoa_ioms_t (qty 4, one per NBIO)
  *         |   |
- *         |   +-- milan_pcie_core_t (qty 2, except 3 for IOMS 0)
+ *         |   +-- genoa_pcie_core_t (qty 2, except 3 for IOMS 0)
  *         |   |   |
- *         |   |   \-- milan_pcie_port_t (qty 8, except 2 for IOMS 0 RC 2)
+ *         |   |   \-- genoa_pcie_port_t (qty 8, except 2 for IOMS 0 RC 2)
  *         |   |
- *         |   \-- milan_nbif_t (qty 3 + 2 in "alternate space")
+ *         |   \-- genoa_nbif_t (qty 3 + 2 in "alternate space")
  *         |
- *         \-- milan_ccd_t (qty varies 1-8)
+ *         \-- genoa_ccd_t (qty varies 1-8)
  *             |
- *             \-- milan_ccx_t (qty 1)
+ *             \-- genoa_ccx_t (qty 1)
  *                 |
- *                 \-- milan_core_t (qty varies 4-8)
+ *                 \-- genoa_core_t (qty varies 4-8)
  *                     |
- *                     \-- milan_thread_t (qty 2, unless SMT is disabled)
+ *                     \-- genoa_thread_t (qty 2, unless SMT is disabled)
  *
  * The PCIe bridge does not have its own representation in this schema, but is
  * represented as a B/D/F associated with a PCIe port.  That B/D/F provides the
@@ -336,7 +336,7 @@
  * "DXIO firmware" are different pieces of code that perform different
  * functions.  Even more confusingly, both the SMU firmware and DXIO firmware
  * provide RPC interfaces, and the DXIO RPCs are accessed through a passthrough
- * SMU RPC function; see milan_dxio_rpc().  These form a critical mechanism for
+ * SMU RPC function; see genoa_dxio_rpc().  These form a critical mechanism for
  * accomplishing the first of our goals: the Link Initialisation State Machine
  * (LISM), a cooperative software-firmware subsystem that drives most low-level
  * PCIe core/port configuration.
@@ -380,7 +380,7 @@
  * While there are many additional LISM states, there are really only three of
  * interest to us, plus a fourth pseudo-state.  Those states are:
  *
- * MAPPED - DXIO engine configuration (see milan_dxio_data.c) describing each
+ * MAPPED - DXIO engine configuration (see genoa_dxio_data.c) describing each
  * port to be created has been sent to DXIO firmware, accepted, and the
  * corresponding core and port setup completed so that port numbers are mapped
  * to specific hardware lanes and the corresponding PCIEPORT registers can be
@@ -398,7 +398,7 @@
  * PERST - This is a pseudo-state.  After resuming the LISM out of the
  * CONFIGURED state, firmware will next signal not a new state but a request for
  * software to release PERST to all downstream devices attached through the I/O
- * die (for Milan, this means everything hanging off the socket for which this
+ * die (for Genoa, this means everything hanging off the socket for which this
  * LISM is being run; the LISM is run to completion for each socket in turn,
  * rather than advancing to each state on all sockets together).  The intent
  * here is that if PERST is driven by the PCIE_RST_L signals, sharing pins with
@@ -437,7 +437,7 @@
  * externally tied to a specific voltage level or another pin via a precision
  * resistor, which in turns latches some documented behaviour when the device is
  * taken out of reset.  All of the "straps" we discuss in terms of PCIe (see
- * milan_fabric_init_pcie_straps()) are nothing like this.  First, all of the
+ * genoa_fabric_init_pcie_straps()) are nothing like this.  First, all of the
  * NBIO logic is internal to the SoC; these settings do not have any external
  * pins which is certainly good because there are thousands of bits.  In
  * reality, these are just registers that are latched into other logic at one or
@@ -496,7 +496,7 @@
  * devices are referred to as "gen" or generic; these resources are used by
  * peripherals inside the FCH as well as potentially by others that are neither
  * PCI-like nor part of the FCH; e.g., the PSP or SMU mailbox apertures which
- * can be assigned resources via BARs.  The Milan PPR 13.1.4.4 imposes certain
+ * can be assigned resources via BARs.  The Genoa PPR 13.1.4.4 imposes certain
  * requirements on where this generic space is located and provides an
  * incomplete list of such consumers.  Note that the requirement that all
  * non-PCI resources of a particular type on an IOMS must be contiguous is
@@ -511,8 +511,8 @@
  * is attached), we always reserve the compatibility legacy I/O and 32-bit MMIO
  * spaces for generic consumers on that IOMS.  These are:
  *
- * - MILAN_IOPORT_COMPAT_SIZE ports beginning at 0 for legacy I/O
- * - MILAN_COMPAT_MMIO_SIZE bytes beginning at MILAN_PHYSADDR_COMPAT_MMIO for
+ * - GENOA_IOPORT_COMPAT_SIZE ports beginning at 0 for legacy I/O
+ * - GENOA_COMPAT_MMIO_SIZE bytes beginning at GENOA_PHYSADDR_COMPAT_MMIO for
  * 32-bit MMIO
  *
  * These reservations are unconditional for the primary IOMS; they are intended
@@ -523,16 +523,16 @@
  * on secondary IOMSs (those that do not have the FCH attached and/or are not on
  * the primary IO die) is governed by fixed compile-time constants:
  *
- * MILAN_SEC_IOMS_GEN_IO_SPACE is the number of contiguous legacy I/O ports to
+ * GENOA_SEC_IOMS_GEN_IO_SPACE is the number of contiguous legacy I/O ports to
  * reserve for non-PCI consumers.  While not currently used, the remote FCH has
  * a unit called the A-Link/B-Link bridge accessed via legacy I/O space at a
  * group of ports programmable via an FCH BAR; to access this, we would need to
  * reserve space routed to the secondary FCH's IOMS, so we try to do that.
  *
- * MILAN_SEC_IOMS_GEN_MMIO32_SPACE is the size in bytes of the contiguous MMIO
+ * GENOA_SEC_IOMS_GEN_MMIO32_SPACE is the size in bytes of the contiguous MMIO
  * region below the 32-bit boundary to reserve for non-PCI consumers.
  *
- * MILAN_SEC_IOMS_GEN_MMIO64_SPACE is the corresponding figure for MMIO space
+ * GENOA_SEC_IOMS_GEN_MMIO64_SPACE is the corresponding figure for MMIO space
  * above the 32-bit boundary.
  *
  * These will be reduced (possibly resulting in FCH peripherals not working) if
@@ -546,7 +546,7 @@
  * whether we want to be more clever by allowing it to be dynamic and altering
  * the routing tables at runtime.  Either would be challenging, and can
  * undoubtedly wait until we have a real need for any of this.  See
- * milan_xx_allocate() for the implementation of these allocations/reservations.
+ * genoa_xx_allocate() for the implementation of these allocations/reservations.
  *
  * The last thing to be aware of here is what happens before we set up legacy
  * I/O space and MMIO routing.  Here the implementation helps us out
@@ -614,27 +614,27 @@
 #include <sys/io/fch/misc.h>
 #include <sys/io/fch/pmio.h>
 #include <sys/io/fch/smi.h>
-#include <sys/io/milan/fabric.h>
-#include <sys/io/milan/fabric_impl.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/dxio_impl.h>
-#include <sys/io/milan/hacks.h>
-#include <sys/io/milan/ioapic.h>
-#include <sys/io/milan/iohc.h>
-#include <sys/io/milan/iommu.h>
-#include <sys/io/milan/nbif.h>
-#include <sys/io/milan/nbif_impl.h>
-#include <sys/io/milan/pcie.h>
-#include <sys/io/milan/pcie_impl.h>
-#include <sys/io/milan/pcie_rsmu.h>
-#include <sys/io/milan/smu_impl.h>
+#include <sys/io/genoa/fabric.h>
+#include <sys/io/genoa/fabric_impl.h>
+#include <sys/io/genoa/ccx.h>
+#include <sys/io/genoa/dxio_impl.h>
+#include <sys/io/genoa/hacks.h>
+#include <sys/io/genoa/ioapic.h>
+#include <sys/io/genoa/iohc.h>
+#include <sys/io/genoa/iommu.h>
+#include <sys/io/genoa/nbif.h>
+#include <sys/io/genoa/nbif_impl.h>
+#include <sys/io/genoa/pcie.h>
+#include <sys/io/genoa/pcie_impl.h>
+#include <sys/io/genoa/pcie_rsmu.h>
+#include <sys/io/genoa/smu_impl.h>
 
 #include <asm/bitmap.h>
 
 #include <sys/amdzen/df.h>
 
-#include <milan/milan_apob.h>
-#include <milan/milan_physaddrs.h>
+#include <genoa/genoa_apob.h>
+#include <genoa/genoa_physaddrs.h>
 
 /*
  * XXX This header contains a lot of the definitions that the broader system is
@@ -647,7 +647,7 @@
  * This is a structure that we can use internally to pass around a DXIO RPC
  * request.
  */
-typedef struct milan_dxio_rpc {
+typedef struct genoa_dxio_rpc {
 	uint32_t	mdr_req;
 	uint32_t	mdr_dxio_resp;
 	uint32_t	mdr_smu_resp;
@@ -656,18 +656,18 @@ typedef struct milan_dxio_rpc {
 	uint32_t	mdr_arg1;
 	uint32_t	mdr_arg2;
 	uint32_t	mdr_arg3;
-} milan_dxio_rpc_t;
+} genoa_dxio_rpc_t;
 
-typedef struct milan_pcie_port_info {
+typedef struct genoa_pcie_port_info {
 	uint8_t	mppi_dev;
 	uint8_t	mppi_func;
-} milan_pcie_port_info_t;
+} genoa_pcie_port_info_t;
 
 /*
  * These three tables encode knowledge about how the SoC assigns devices and
  * functions to root ports.
  */
-static const milan_pcie_port_info_t milan_pcie0[MILAN_PCIE_CORE_MAX_PORTS] = {
+static const genoa_pcie_port_info_t genoa_pcie0[GENOA_PCIE_CORE_MAX_PORTS] = {
 	{ 0x1, 0x1 },
 	{ 0x1, 0x2 },
 	{ 0x1, 0x3 },
@@ -678,7 +678,7 @@ static const milan_pcie_port_info_t milan_pcie0[MILAN_PCIE_CORE_MAX_PORTS] = {
 	{ 0x2, 0x1 }
 };
 
-static const milan_pcie_port_info_t milan_pcie1[MILAN_PCIE_CORE_MAX_PORTS] = {
+static const genoa_pcie_port_info_t genoa_pcie1[GENOA_PCIE_CORE_MAX_PORTS] = {
 	{ 0x3, 0x1 },
 	{ 0x3, 0x2 },
 	{ 0x3, 0x3 },
@@ -689,7 +689,7 @@ static const milan_pcie_port_info_t milan_pcie1[MILAN_PCIE_CORE_MAX_PORTS] = {
 	{ 0x4, 0x1 }
 };
 
-static const milan_pcie_port_info_t milan_pcie2[MILAN_PCIE_CORE_WAFL_NPORTS] = {
+static const genoa_pcie_port_info_t genoa_pcie2[GENOA_PCIE_CORE_WAFL_NPORTS] = {
 	{ 0x5, 0x1 },
 	{ 0x5, 0x2 }
 };
@@ -698,7 +698,7 @@ static const milan_pcie_port_info_t milan_pcie2[MILAN_PCIE_CORE_WAFL_NPORTS] = {
  * These are internal bridges that correspond to NBIFs; they are modeled as
  * ports but there is no physical port brought out of the package.
  */
-static const milan_pcie_port_info_t milan_int_ports[4] = {
+static const genoa_pcie_port_info_t genoa_int_ports[4] = {
 	{ 0x7, 0x1 },
 	{ 0x8, 0x1 },
 	{ 0x8, 0x2 },
@@ -709,13 +709,13 @@ static const milan_pcie_port_info_t milan_int_ports[4] = {
  * The following table encodes the per-bridge IOAPIC initialization routing. We
  * currently following the recommendation of the PPR.
  */
-typedef struct milan_ioapic_info {
+typedef struct genoa_ioapic_info {
 	uint8_t mii_group;
 	uint8_t mii_swiz;
 	uint8_t mii_map;
-} milan_ioapic_info_t;
+} genoa_ioapic_info_t;
 
-static const milan_ioapic_info_t milan_ioapic_routes[IOAPIC_NROUTES] = {
+static const genoa_ioapic_info_t genoa_ioapic_routes[IOAPIC_NROUTES] = {
 	{ .mii_group = 0x0, .mii_map = 0x10,
 	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
 	{ .mii_group = 0x1, .mii_map = 0x11,
@@ -763,32 +763,32 @@ static const milan_ioapic_info_t milan_ioapic_routes[IOAPIC_NROUTES] = {
 };
 
 /* XXX Track platform default presence */
-typedef struct milan_nbif_info {
-	milan_nbif_func_type_t	mni_type;
+typedef struct genoa_nbif_info {
+	genoa_nbif_func_type_t	mni_type;
 	uint8_t			mni_dev;
 	uint8_t			mni_func;
-} milan_nbif_info_t;
+} genoa_nbif_info_t;
 
-static const milan_nbif_info_t milan_nbif0[MILAN_NBIF0_NFUNCS] = {
-	{ .mni_type = MILAN_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_NTB, .mni_dev = 0, .mni_func = 1 },
-	{ .mni_type = MILAN_NBIF_T_PTDMA, .mni_dev = 0, .mni_func = 2 }
+static const genoa_nbif_info_t genoa_nbif0[GENOA_NBIF0_NFUNCS] = {
+	{ .mni_type = GENOA_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
+	{ .mni_type = GENOA_NBIF_T_NTB, .mni_dev = 0, .mni_func = 1 },
+	{ .mni_type = GENOA_NBIF_T_PTDMA, .mni_dev = 0, .mni_func = 2 }
 };
 
-static const milan_nbif_info_t milan_nbif1[MILAN_NBIF1_NFUNCS] = {
-	{ .mni_type = MILAN_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_PSPCCP, .mni_dev = 0, .mni_func = 1 },
-	{ .mni_type = MILAN_NBIF_T_PTDMA, .mni_dev = 0, .mni_func = 2 },
-	{ .mni_type = MILAN_NBIF_T_USB, .mni_dev = 0, .mni_func = 3 },
-	{ .mni_type = MILAN_NBIF_T_AZ, .mni_dev = 0, .mni_func = 4 },
-	{ .mni_type = MILAN_NBIF_T_SATA, .mni_dev = 1, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_SATA, .mni_dev = 2, .mni_func = 0 }
+static const genoa_nbif_info_t genoa_nbif1[GENOA_NBIF1_NFUNCS] = {
+	{ .mni_type = GENOA_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
+	{ .mni_type = GENOA_NBIF_T_PSPCCP, .mni_dev = 0, .mni_func = 1 },
+	{ .mni_type = GENOA_NBIF_T_PTDMA, .mni_dev = 0, .mni_func = 2 },
+	{ .mni_type = GENOA_NBIF_T_USB, .mni_dev = 0, .mni_func = 3 },
+	{ .mni_type = GENOA_NBIF_T_AZ, .mni_dev = 0, .mni_func = 4 },
+	{ .mni_type = GENOA_NBIF_T_SATA, .mni_dev = 1, .mni_func = 0 },
+	{ .mni_type = GENOA_NBIF_T_SATA, .mni_dev = 2, .mni_func = 0 }
 };
 
-static const milan_nbif_info_t milan_nbif2[MILAN_NBIF2_NFUNCS] = {
-	{ .mni_type = MILAN_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_NTB, .mni_dev = 0, .mni_func = 1 },
-	{ .mni_type = MILAN_NBIF_T_NVME, .mni_dev = 0, .mni_func = 2 }
+static const genoa_nbif_info_t genoa_nbif2[GENOA_NBIF2_NFUNCS] = {
+	{ .mni_type = GENOA_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
+	{ .mni_type = GENOA_NBIF_T_NTB, .mni_dev = 0, .mni_func = 1 },
+	{ .mni_type = GENOA_NBIF_T_NVME, .mni_dev = 0, .mni_func = 2 }
 };
 
 /*
@@ -798,15 +798,15 @@ static const milan_nbif_info_t milan_nbif2[MILAN_NBIF2_NFUNCS] = {
  * here. The dxio engine uses different lane numbers than the phys. Note, that
  * all lanes here are inclusive. e.g. [start, end].
  */
-typedef struct milan_pcie_core_info {
+typedef struct genoa_pcie_core_info {
 	const char	*mpci_name;
 	uint16_t	mpci_dxio_start;
 	uint16_t	mpci_dxio_end;
 	uint16_t	mpci_phy_start;
 	uint16_t	mpci_phy_end;
-} milan_pcie_core_info_t;
+} genoa_pcie_core_info_t;
 
-static const milan_pcie_core_info_t milan_lane_maps[8] = {
+static const genoa_pcie_core_info_t genoa_lane_maps[8] = {
 	{ "G0", 0x10, 0x1f, 0x10, 0x1f },
 	{ "P0", 0x2a, 0x39, 0x00, 0x0f },
 	{ "P1", 0x3a, 0x49, 0x20, 0x2f },
@@ -817,7 +817,7 @@ static const milan_pcie_core_info_t milan_lane_maps[8] = {
 	{ "G2", 0x82, 0x91, 0x40, 0x4f }
 };
 
-static const milan_pcie_core_info_t milan_wafl_map = {
+static const genoa_pcie_core_info_t genoa_wafl_map = {
 	"WAFL", 0x24, 0x25, 0x80, 0x81
 };
 
@@ -825,11 +825,11 @@ static const milan_pcie_core_info_t milan_wafl_map = {
  * How many PCIe cores does this NBIO instance have?
  */
 uint8_t
-milan_nbio_n_pcie_cores(const uint8_t nbno)
+genoa_nbio_n_pcie_cores(const uint8_t nbno)
 {
-	if (nbno == MILAN_IOMS_HAS_WAFL)
-		return (MILAN_IOMS_MAX_PCIE_CORES);
-	return (MILAN_IOMS_MAX_PCIE_CORES - 1);
+	if (nbno == GENOA_IOMS_HAS_WAFL)
+		return (GENOA_IOMS_MAX_PCIE_CORES);
+	return (GENOA_IOMS_MAX_PCIE_CORES - 1);
 }
 
 /*
@@ -839,17 +839,17 @@ milan_nbio_n_pcie_cores(const uint8_t nbno)
  * pertain to the port that may exist.
  */
 uint8_t
-milan_pcie_core_n_ports(const uint8_t pcno)
+genoa_pcie_core_n_ports(const uint8_t pcno)
 {
-	if (pcno == MILAN_IOMS_WAFL_PCIE_CORENO)
-		return (MILAN_PCIE_CORE_WAFL_NPORTS);
-	return (MILAN_PCIE_CORE_MAX_PORTS);
+	if (pcno == GENOA_IOMS_WAFL_PCIE_CORENO)
+		return (GENOA_PCIE_CORE_WAFL_NPORTS);
+	return (GENOA_PCIE_CORE_MAX_PORTS);
 }
 
-typedef enum milan_iommul1_subunit {
+typedef enum genoa_iommul1_subunit {
 	MIL1SU_NBIF,
 	MIL1SU_IOAGR
-} milan_iommul1_subunit_t;
+} genoa_iommul1_subunit_t;
 
 /*
  * XXX Belongs in a header.
@@ -857,29 +857,29 @@ typedef enum milan_iommul1_subunit {
 extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
 extern void contig_free(void *, size_t);
 
-static boolean_t milan_smu_rpc_read_brand_string(milan_iodie_t *,
+static boolean_t genoa_smu_rpc_read_brand_string(genoa_iodie_t *,
     char *, size_t);
 
 /*
  * Our primary global data. This is the reason that we exist.
  */
-static milan_fabric_t milan_fabric;
+static genoa_fabric_t genoa_fabric;
 static uint_t nthreads;
 
 /*
  * Variable to let us dump all SMN traffic while still developing.
  */
-int milan_smn_log = 0;
+int genoa_smn_log = 0;
 
 static int
-milan_fabric_walk_iodie(milan_fabric_t *fabric, milan_iodie_cb_f func,
+genoa_fabric_walk_iodie(genoa_fabric_t *fabric, genoa_iodie_cb_f func,
     void *arg)
 {
 	for (uint_t socno = 0; socno < fabric->mf_nsocs; socno++) {
-		milan_soc_t *soc = &fabric->mf_socs[socno];
+		genoa_soc_t *soc = &fabric->mf_socs[socno];
 		for (uint_t iono = 0; iono < soc->ms_ndies; iono++) {
 			int ret;
-			milan_iodie_t *iodie = &soc->ms_iodies[iono];
+			genoa_iodie_t *iodie = &soc->ms_iodies[iono];
 
 			ret = func(iodie, arg);
 			if (ret != 0) {
@@ -892,24 +892,24 @@ milan_fabric_walk_iodie(milan_fabric_t *fabric, milan_iodie_cb_f func,
 }
 
 int
-milan_walk_iodie(milan_iodie_cb_f func, void *arg)
+genoa_walk_iodie(genoa_iodie_cb_f func, void *arg)
 {
-	return (milan_fabric_walk_iodie(&milan_fabric, func, arg));
+	return (genoa_fabric_walk_iodie(&genoa_fabric, func, arg));
 }
 
-typedef struct milan_fabric_ioms_cb {
-	milan_ioms_cb_f	mfic_func;
+typedef struct genoa_fabric_ioms_cb {
+	genoa_ioms_cb_f	mfic_func;
 	void		*mfic_arg;
-} milan_fabric_ioms_cb_t;
+} genoa_fabric_ioms_cb_t;
 
 static int
-milan_fabric_walk_ioms_iodie_cb(milan_iodie_t *iodie, void *arg)
+genoa_fabric_walk_ioms_iodie_cb(genoa_iodie_t *iodie, void *arg)
 {
-	milan_fabric_ioms_cb_t *cb = arg;
+	genoa_fabric_ioms_cb_t *cb = arg;
 
 	for (uint_t iomsno = 0; iomsno < iodie->mi_nioms; iomsno++) {
 		int ret;
-		milan_ioms_t *ioms = &iodie->mi_ioms[iomsno];
+		genoa_ioms_t *ioms = &iodie->mi_ioms[iomsno];
 
 		ret = cb->mfic_func(ioms, cb->mfic_arg);
 		if (ret != 0) {
@@ -921,35 +921,35 @@ milan_fabric_walk_ioms_iodie_cb(milan_iodie_t *iodie, void *arg)
 }
 
 static int
-milan_fabric_walk_ioms(milan_fabric_t *fabric, milan_ioms_cb_f func, void *arg)
+genoa_fabric_walk_ioms(genoa_fabric_t *fabric, genoa_ioms_cb_f func, void *arg)
 {
-	milan_fabric_ioms_cb_t cb;
+	genoa_fabric_ioms_cb_t cb;
 
 	cb.mfic_func = func;
 	cb.mfic_arg = arg;
-	return (milan_fabric_walk_iodie(fabric, milan_fabric_walk_ioms_iodie_cb,
+	return (genoa_fabric_walk_iodie(fabric, genoa_fabric_walk_ioms_iodie_cb,
 	    &cb));
 }
 
 int
-milan_walk_ioms(milan_ioms_cb_f func, void *arg)
+genoa_walk_ioms(genoa_ioms_cb_f func, void *arg)
 {
-	return (milan_fabric_walk_ioms(&milan_fabric, func, arg));
+	return (genoa_fabric_walk_ioms(&genoa_fabric, func, arg));
 }
 
-typedef struct milan_fabric_nbif_cb {
-	milan_nbif_cb_f	mfnc_func;
+typedef struct genoa_fabric_nbif_cb {
+	genoa_nbif_cb_f	mfnc_func;
 	void		*mfnc_arg;
-} milan_fabric_nbif_cb_t;
+} genoa_fabric_nbif_cb_t;
 
 static int
-milan_fabric_walk_nbif_ioms_cb(milan_ioms_t *ioms, void *arg)
+genoa_fabric_walk_nbif_ioms_cb(genoa_ioms_t *ioms, void *arg)
 {
-	milan_fabric_nbif_cb_t *cb = arg;
+	genoa_fabric_nbif_cb_t *cb = arg;
 
 	for (uint_t nbifno = 0; nbifno < ioms->mio_nnbifs; nbifno++) {
 		int ret;
-		milan_nbif_t *nbif = &ioms->mio_nbifs[nbifno];
+		genoa_nbif_t *nbif = &ioms->mio_nbifs[nbifno];
 		ret = cb->mfnc_func(nbif, cb->mfnc_arg);
 		if (ret != 0) {
 			return (ret);
@@ -960,29 +960,29 @@ milan_fabric_walk_nbif_ioms_cb(milan_ioms_t *ioms, void *arg)
 }
 
 static int
-milan_fabric_walk_nbif(milan_fabric_t *fabric, milan_nbif_cb_f func, void *arg)
+genoa_fabric_walk_nbif(genoa_fabric_t *fabric, genoa_nbif_cb_f func, void *arg)
 {
-	milan_fabric_nbif_cb_t cb;
+	genoa_fabric_nbif_cb_t cb;
 
 	cb.mfnc_func = func;
 	cb.mfnc_arg = arg;
-	return (milan_fabric_walk_ioms(fabric, milan_fabric_walk_nbif_ioms_cb,
+	return (genoa_fabric_walk_ioms(fabric, genoa_fabric_walk_nbif_ioms_cb,
 	    &cb));
 }
 
-typedef struct milan_fabric_pcie_core_cb {
-	milan_pcie_core_cb_f	mfpcc_func;
+typedef struct genoa_fabric_pcie_core_cb {
+	genoa_pcie_core_cb_f	mfpcc_func;
 	void			*mfpcc_arg;
-} milan_fabric_pcie_core_cb_t;
+} genoa_fabric_pcie_core_cb_t;
 
 static int
-milan_fabric_walk_pcie_core_cb(milan_ioms_t *ioms, void *arg)
+genoa_fabric_walk_pcie_core_cb(genoa_ioms_t *ioms, void *arg)
 {
-	milan_fabric_pcie_core_cb_t *cb = arg;
+	genoa_fabric_pcie_core_cb_t *cb = arg;
 
 	for (uint_t pcno = 0; pcno < ioms->mio_npcie_cores; pcno++) {
 		int ret;
-		milan_pcie_core_t *pc = &ioms->mio_pcie_cores[pcno];
+		genoa_pcie_core_t *pc = &ioms->mio_pcie_cores[pcno];
 
 		ret = cb->mfpcc_func(pc, cb->mfpcc_arg);
 		if (ret != 0) {
@@ -994,30 +994,30 @@ milan_fabric_walk_pcie_core_cb(milan_ioms_t *ioms, void *arg)
 }
 
 static int
-milan_fabric_walk_pcie_core(milan_fabric_t *fabric, milan_pcie_core_cb_f func,
+genoa_fabric_walk_pcie_core(genoa_fabric_t *fabric, genoa_pcie_core_cb_f func,
     void *arg)
 {
-	milan_fabric_pcie_core_cb_t cb;
+	genoa_fabric_pcie_core_cb_t cb;
 
 	cb.mfpcc_func = func;
 	cb.mfpcc_arg = arg;
-	return (milan_fabric_walk_ioms(fabric, milan_fabric_walk_pcie_core_cb,
+	return (genoa_fabric_walk_ioms(fabric, genoa_fabric_walk_pcie_core_cb,
 	    &cb));
 }
 
-typedef struct milan_fabric_pcie_port_cb {
-	milan_pcie_port_cb_f	mfppc_func;
+typedef struct genoa_fabric_pcie_port_cb {
+	genoa_pcie_port_cb_f	mfppc_func;
 	void			*mfppc_arg;
-} milan_fabric_pcie_port_cb_t;
+} genoa_fabric_pcie_port_cb_t;
 
 static int
-milan_fabric_walk_pcie_port_cb(milan_pcie_core_t *pc, void *arg)
+genoa_fabric_walk_pcie_port_cb(genoa_pcie_core_t *pc, void *arg)
 {
-	milan_fabric_pcie_port_cb_t *cb = arg;
+	genoa_fabric_pcie_port_cb_t *cb = arg;
 
 	for (uint_t portno = 0; portno < pc->mpc_nports; portno++) {
 		int ret;
-		milan_pcie_port_t *port = &pc->mpc_ports[portno];
+		genoa_pcie_port_t *port = &pc->mpc_ports[portno];
 
 		ret = cb->mfppc_func(port, cb->mfppc_arg);
 		if (ret != 0) {
@@ -1029,30 +1029,30 @@ milan_fabric_walk_pcie_port_cb(milan_pcie_core_t *pc, void *arg)
 }
 
 static int
-milan_fabric_walk_pcie_port(milan_fabric_t *fabric, milan_pcie_port_cb_f func,
+genoa_fabric_walk_pcie_port(genoa_fabric_t *fabric, genoa_pcie_port_cb_f func,
     void *arg)
 {
-	milan_fabric_pcie_port_cb_t cb;
+	genoa_fabric_pcie_port_cb_t cb;
 
 	cb.mfppc_func = func;
 	cb.mfppc_arg = arg;
-	return (milan_fabric_walk_pcie_core(fabric,
-	    milan_fabric_walk_pcie_port_cb, &cb));
+	return (genoa_fabric_walk_pcie_core(fabric,
+	    genoa_fabric_walk_pcie_port_cb, &cb));
 }
 
-typedef struct milan_fabric_ccd_cb {
-	milan_ccd_cb_f	mfcc_func;
+typedef struct genoa_fabric_ccd_cb {
+	genoa_ccd_cb_f	mfcc_func;
 	void		*mfcc_arg;
-} milan_fabric_ccd_cb_t;
+} genoa_fabric_ccd_cb_t;
 
 static int
-milan_fabric_walk_ccd_iodie_cb(milan_iodie_t *iodie, void *arg)
+genoa_fabric_walk_ccd_iodie_cb(genoa_iodie_t *iodie, void *arg)
 {
-	milan_fabric_ccd_cb_t *cb = arg;
+	genoa_fabric_ccd_cb_t *cb = arg;
 
 	for (uint8_t ccdno = 0; ccdno < iodie->mi_nccds; ccdno++) {
 		int ret;
-		milan_ccd_t *ccd = &iodie->mi_ccds[ccdno];
+		genoa_ccd_t *ccd = &iodie->mi_ccds[ccdno];
 
 		if ((ret = cb->mfcc_func(ccd, cb->mfcc_arg)) != 0)
 			return (ret);
@@ -1062,29 +1062,29 @@ milan_fabric_walk_ccd_iodie_cb(milan_iodie_t *iodie, void *arg)
 }
 
 static int
-milan_fabric_walk_ccd(milan_fabric_t *fabric, milan_ccd_cb_f func, void *arg)
+genoa_fabric_walk_ccd(genoa_fabric_t *fabric, genoa_ccd_cb_f func, void *arg)
 {
-	milan_fabric_ccd_cb_t cb;
+	genoa_fabric_ccd_cb_t cb;
 
 	cb.mfcc_func = func;
 	cb.mfcc_arg = arg;
-	return (milan_fabric_walk_iodie(fabric,
-	    milan_fabric_walk_ccd_iodie_cb, &cb));
+	return (genoa_fabric_walk_iodie(fabric,
+	    genoa_fabric_walk_ccd_iodie_cb, &cb));
 }
 
-typedef struct milan_fabric_ccx_cb {
-	milan_ccx_cb_f	mfcc_func;
+typedef struct genoa_fabric_ccx_cb {
+	genoa_ccx_cb_f	mfcc_func;
 	void		*mfcc_arg;
-} milan_fabric_ccx_cb_t;
+} genoa_fabric_ccx_cb_t;
 
 static int
-milan_fabric_walk_ccx_ccd_cb(milan_ccd_t *ccd, void *arg)
+genoa_fabric_walk_ccx_ccd_cb(genoa_ccd_t *ccd, void *arg)
 {
-	milan_fabric_ccx_cb_t *cb = arg;
+	genoa_fabric_ccx_cb_t *cb = arg;
 
 	for (uint8_t ccxno = 0; ccxno < ccd->mcd_nccxs; ccxno++) {
 		int ret;
-		milan_ccx_t *ccx = &ccd->mcd_ccxs[ccxno];
+		genoa_ccx_t *ccx = &ccd->mcd_ccxs[ccxno];
 
 		if ((ret = cb->mfcc_func(ccx, cb->mfcc_arg)) != 0)
 			return (ret);
@@ -1094,29 +1094,29 @@ milan_fabric_walk_ccx_ccd_cb(milan_ccd_t *ccd, void *arg)
 }
 
 static int
-milan_fabric_walk_ccx(milan_fabric_t *fabric, milan_ccx_cb_f func, void *arg)
+genoa_fabric_walk_ccx(genoa_fabric_t *fabric, genoa_ccx_cb_f func, void *arg)
 {
-	milan_fabric_ccx_cb_t cb;
+	genoa_fabric_ccx_cb_t cb;
 
 	cb.mfcc_func = func;
 	cb.mfcc_arg = arg;
-	return (milan_fabric_walk_ccd(fabric,
-	    milan_fabric_walk_ccx_ccd_cb, &cb));
+	return (genoa_fabric_walk_ccd(fabric,
+	    genoa_fabric_walk_ccx_ccd_cb, &cb));
 }
 
-typedef struct milan_fabric_core_cb {
-	milan_core_cb_f	mfcc_func;
+typedef struct genoa_fabric_core_cb {
+	genoa_core_cb_f	mfcc_func;
 	void		*mfcc_arg;
-} milan_fabric_core_cb_t;
+} genoa_fabric_core_cb_t;
 
 static int
-milan_fabric_walk_core_ccx_cb(milan_ccx_t *ccx, void *arg)
+genoa_fabric_walk_core_ccx_cb(genoa_ccx_t *ccx, void *arg)
 {
-	milan_fabric_core_cb_t *cb = arg;
+	genoa_fabric_core_cb_t *cb = arg;
 
 	for (uint8_t coreno = 0; coreno < ccx->mcx_ncores; coreno++) {
 		int ret;
-		milan_core_t *core = &ccx->mcx_cores[coreno];
+		genoa_core_t *core = &ccx->mcx_cores[coreno];
 
 		if ((ret = cb->mfcc_func(core, cb->mfcc_arg)) != 0)
 			return (ret);
@@ -1126,29 +1126,29 @@ milan_fabric_walk_core_ccx_cb(milan_ccx_t *ccx, void *arg)
 }
 
 static int
-milan_fabric_walk_core(milan_fabric_t *fabric, milan_core_cb_f func, void *arg)
+genoa_fabric_walk_core(genoa_fabric_t *fabric, genoa_core_cb_f func, void *arg)
 {
-	milan_fabric_core_cb_t cb;
+	genoa_fabric_core_cb_t cb;
 
 	cb.mfcc_func = func;
 	cb.mfcc_arg = arg;
-	return (milan_fabric_walk_ccx(fabric,
-	    milan_fabric_walk_core_ccx_cb, &cb));
+	return (genoa_fabric_walk_ccx(fabric,
+	    genoa_fabric_walk_core_ccx_cb, &cb));
 }
 
-typedef struct milan_fabric_thread_cb {
-	milan_thread_cb_f	mftc_func;
+typedef struct genoa_fabric_thread_cb {
+	genoa_thread_cb_f	mftc_func;
 	void			*mftc_arg;
-} milan_fabric_thread_cb_t;
+} genoa_fabric_thread_cb_t;
 
 static int
-milan_fabric_walk_thread_core_cb(milan_core_t *core, void *arg)
+genoa_fabric_walk_thread_core_cb(genoa_core_t *core, void *arg)
 {
-	milan_fabric_thread_cb_t *cb = arg;
+	genoa_fabric_thread_cb_t *cb = arg;
 
 	for (uint8_t threadno = 0; threadno < core->mc_nthreads; threadno++) {
 		int ret;
-		milan_thread_t *thread = &core->mc_threads[threadno];
+		genoa_thread_t *thread = &core->mc_threads[threadno];
 
 		if ((ret = cb->mftc_func(thread, cb->mftc_arg)) != 0)
 			return (ret);
@@ -1158,32 +1158,32 @@ milan_fabric_walk_thread_core_cb(milan_core_t *core, void *arg)
 }
 
 static int
-milan_fabric_walk_thread(milan_fabric_t *fabric,
-    milan_thread_cb_f func, void *arg)
+genoa_fabric_walk_thread(genoa_fabric_t *fabric,
+    genoa_thread_cb_f func, void *arg)
 {
-	milan_fabric_thread_cb_t cb;
+	genoa_fabric_thread_cb_t cb;
 
 	cb.mftc_func = func;
 	cb.mftc_arg = arg;
-	return (milan_fabric_walk_core(fabric,
-	    milan_fabric_walk_thread_core_cb, &cb));
+	return (genoa_fabric_walk_core(fabric,
+	    genoa_fabric_walk_thread_core_cb, &cb));
 }
 
 int
-milan_walk_thread(milan_thread_cb_f func, void *arg)
+genoa_walk_thread(genoa_thread_cb_f func, void *arg)
 {
-	return (milan_fabric_walk_thread(&milan_fabric, func, arg));
+	return (genoa_fabric_walk_thread(&genoa_fabric, func, arg));
 }
 
 typedef struct {
 	uint32_t	mffi_dest;
-	milan_ioms_t	*mffi_ioms;
-} milan_fabric_find_ioms_t;
+	genoa_ioms_t	*mffi_ioms;
+} genoa_fabric_find_ioms_t;
 
 static int
-milan_fabric_find_ioms_cb(milan_ioms_t *ioms, void *arg)
+genoa_fabric_find_ioms_cb(genoa_ioms_t *ioms, void *arg)
 {
-	milan_fabric_find_ioms_t *mffi = arg;
+	genoa_fabric_find_ioms_t *mffi = arg;
 
 	if (mffi->mffi_dest == ioms->mio_fabric_id) {
 		mffi->mffi_ioms = ioms;
@@ -1193,9 +1193,9 @@ milan_fabric_find_ioms_cb(milan_ioms_t *ioms, void *arg)
 }
 
 static int
-milan_fabric_find_ioms_by_bus_cb(milan_ioms_t *ioms, void *arg)
+genoa_fabric_find_ioms_by_bus_cb(genoa_ioms_t *ioms, void *arg)
 {
-	milan_fabric_find_ioms_t *mffi = arg;
+	genoa_fabric_find_ioms_t *mffi = arg;
 
 	if (mffi->mffi_dest == ioms->mio_pci_busno) {
 		mffi->mffi_ioms = ioms;
@@ -1204,43 +1204,43 @@ milan_fabric_find_ioms_by_bus_cb(milan_ioms_t *ioms, void *arg)
 	return (0);
 }
 
-static milan_ioms_t *
-milan_fabric_find_ioms(milan_fabric_t *fabric, uint32_t destid)
+static genoa_ioms_t *
+genoa_fabric_find_ioms(genoa_fabric_t *fabric, uint32_t destid)
 {
-	milan_fabric_find_ioms_t mffi;
+	genoa_fabric_find_ioms_t mffi;
 
 	mffi.mffi_dest = destid;
 	mffi.mffi_ioms = NULL;
 
-	milan_fabric_walk_ioms(fabric, milan_fabric_find_ioms_cb, &mffi);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_find_ioms_cb, &mffi);
 
 	return (mffi.mffi_ioms);
 }
 
-static milan_ioms_t *
-milan_fabric_find_ioms_by_bus(milan_fabric_t *fabric, uint32_t pci_bus)
+static genoa_ioms_t *
+genoa_fabric_find_ioms_by_bus(genoa_fabric_t *fabric, uint32_t pci_bus)
 {
-	milan_fabric_find_ioms_t mffi;
+	genoa_fabric_find_ioms_t mffi;
 
 	mffi.mffi_dest = pci_bus;
 	mffi.mffi_ioms = NULL;
 
-	milan_fabric_walk_ioms(fabric, milan_fabric_find_ioms_by_bus_cb, &mffi);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_find_ioms_by_bus_cb, &mffi);
 
 	return (mffi.mffi_ioms);
 }
 
 typedef struct {
-	const milan_iodie_t *mffpc_iodie;
+	const genoa_iodie_t *mffpc_iodie;
 	uint16_t mffpc_start;
 	uint16_t mffpc_end;
-	milan_pcie_core_t *mffpc_pc;
-} milan_fabric_find_pcie_core_t;
+	genoa_pcie_core_t *mffpc_pc;
+} genoa_fabric_find_pcie_core_t;
 
 static int
-milan_fabric_find_pcie_core_by_lanes_cb(milan_pcie_core_t *pc, void *arg)
+genoa_fabric_find_pcie_core_by_lanes_cb(genoa_pcie_core_t *pc, void *arg)
 {
-	milan_fabric_find_pcie_core_t *mffpc = arg;
+	genoa_fabric_find_pcie_core_t *mffpc = arg;
 
 	if (mffpc->mffpc_iodie != pc->mpc_ioms->mio_iodie) {
 		return (0);
@@ -1258,11 +1258,11 @@ milan_fabric_find_pcie_core_by_lanes_cb(milan_pcie_core_t *pc, void *arg)
 }
 
 
-static milan_pcie_core_t *
-milan_fabric_find_pcie_core_by_lanes(milan_iodie_t *iodie,
+static genoa_pcie_core_t *
+genoa_fabric_find_pcie_core_by_lanes(genoa_iodie_t *iodie,
     uint16_t start, uint16_t end)
 {
-	milan_fabric_find_pcie_core_t mffpc;
+	genoa_fabric_find_pcie_core_t mffpc;
 
 	mffpc.mffpc_iodie = iodie;
 	mffpc.mffpc_start = start;
@@ -1270,22 +1270,22 @@ milan_fabric_find_pcie_core_by_lanes(milan_iodie_t *iodie,
 	mffpc.mffpc_pc = NULL;
 	ASSERT3U(start, <=, end);
 
-	(void) milan_fabric_walk_pcie_core(iodie->mi_soc->ms_fabric,
-	    milan_fabric_find_pcie_core_by_lanes_cb, &mffpc);
+	(void) genoa_fabric_walk_pcie_core(iodie->mi_soc->ms_fabric,
+	    genoa_fabric_find_pcie_core_by_lanes_cb, &mffpc);
 
 	return (mffpc.mffpc_pc);
 }
 
-typedef struct milan_fabric_find_thread {
+typedef struct genoa_fabric_find_thread {
 	uint32_t	mfft_search;
 	uint32_t	mfft_count;
-	milan_thread_t	*mfft_found;
-} milan_fabric_find_thread_t;
+	genoa_thread_t	*mfft_found;
+} genoa_fabric_find_thread_t;
 
 static int
-milan_fabric_find_thread_by_cpuid_cb(milan_thread_t *thread, void *arg)
+genoa_fabric_find_thread_by_cpuid_cb(genoa_thread_t *thread, void *arg)
 {
-	milan_fabric_find_thread_t *mfft = arg;
+	genoa_fabric_find_thread_t *mfft = arg;
 	if (mfft->mfft_count == mfft->mfft_search) {
 		mfft->mfft_found = thread;
 		return (1);
@@ -1294,16 +1294,16 @@ milan_fabric_find_thread_by_cpuid_cb(milan_thread_t *thread, void *arg)
 	return (0);
 }
 
-milan_thread_t *
-milan_fabric_find_thread_by_cpuid(uint32_t cpuid)
+genoa_thread_t *
+genoa_fabric_find_thread_by_cpuid(uint32_t cpuid)
 {
-	milan_fabric_find_thread_t mfft;
+	genoa_fabric_find_thread_t mfft;
 
 	mfft.mfft_search = cpuid;
 	mfft.mfft_count = 0;
 	mfft.mfft_found = NULL;
-	(void) milan_fabric_walk_thread(&milan_fabric,
-	    milan_fabric_find_thread_by_cpuid_cb, &mfft);
+	(void) genoa_fabric_walk_thread(&genoa_fabric,
+	    genoa_fabric_find_thread_by_cpuid_cb, &mfft);
 
 	return (mfft.mfft_found);
 }
@@ -1312,26 +1312,26 @@ milan_fabric_find_thread_by_cpuid(uint32_t cpuid)
  * buf, len, and return value semantics match those of snprintf(9f).
  */
 size_t
-milan_fabric_thread_get_brandstr(const milan_thread_t *thread,
+genoa_fabric_thread_get_brandstr(const genoa_thread_t *thread,
     char *buf, size_t len)
 {
-	milan_soc_t *soc = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie->mi_soc;
+	genoa_soc_t *soc = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie->mi_soc;
 	return (snprintf(buf, len, "%s", soc->ms_brandstr));
 }
 
 void
-milan_fabric_thread_get_dpm_weights(const milan_thread_t *thread,
+genoa_fabric_thread_get_dpm_weights(const genoa_thread_t *thread,
     const uint64_t **wp, uint32_t *nentp)
 {
-	milan_iodie_t *iodie = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie;
+	genoa_iodie_t *iodie = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie;
 	*wp = iodie->mi_dpm_weights;
-	*nentp = MILAN_MAX_DPM_WEIGHTS;
+	*nentp = GENOA_MAX_DPM_WEIGHTS;
 }
 
 uint64_t
-milan_fabric_ecam_base(void)
+genoa_fabric_ecam_base(void)
 {
-	uint64_t ecam = milan_fabric.mf_ecam_base;
+	uint64_t ecam = genoa_fabric.mf_ecam_base;
 
 	ASSERT3U(ecam, !=, 0);
 
@@ -1339,7 +1339,7 @@ milan_fabric_ecam_base(void)
 }
 
 static uint32_t
-milan_df_read32(milan_iodie_t *iodie, uint8_t inst, const df_reg_def_t def)
+genoa_df_read32(genoa_iodie_t *iodie, uint8_t inst, const df_reg_def_t def)
 {
 	uint32_t val = 0;
 	const df_reg_def_t ficaa = DF_FICAA_V2;
@@ -1368,14 +1368,14 @@ milan_df_read32(milan_iodie_t *iodie, uint8_t inst, const df_reg_def_t def)
  * there's only one use of it at any given time.
  */
 static uint32_t
-milan_df_bcast_read32(milan_iodie_t *iodie, const df_reg_def_t def)
+genoa_df_bcast_read32(genoa_iodie_t *iodie, const df_reg_def_t def)
 {
 	ASSERT0(def.drd_reg & 3);
 	return (pci_getl_func(0, iodie->mi_dfno, def.drd_func, def.drd_reg));
 }
 
 static void
-milan_df_bcast_write32(milan_iodie_t *iodie, const df_reg_def_t def,
+genoa_df_bcast_write32(genoa_iodie_t *iodie, const df_reg_def_t def,
     uint32_t val)
 {
 	ASSERT0(def.drd_reg & 3);
@@ -1388,7 +1388,7 @@ milan_df_bcast_write32(milan_iodie_t *iodie, const df_reg_def_t def,
  * data fabric instance which is required to be present.
  */
 static uint32_t
-milan_df_early_read32(const df_reg_def_t def)
+genoa_df_early_read32(const df_reg_def_t def)
 {
 	ASSERT0(def.drd_reg & 3);
 	return (pci_getl_func(AMDZEN_DF_BUSNO, AMDZEN_DF_FIRST_DEVICE,
@@ -1396,7 +1396,7 @@ milan_df_early_read32(const df_reg_def_t def)
 }
 
 uint32_t
-milan_smn_read(milan_iodie_t *iodie, const smn_reg_t reg)
+genoa_smn_read(genoa_iodie_t *iodie, const smn_reg_t reg)
 {
 	const uint32_t addr = SMN_REG_ADDR(reg);
 	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
@@ -1428,7 +1428,7 @@ milan_smn_read(milan_iodie_t *iodie, const smn_reg_t reg)
 		panic("unreachable invalid SMN register size %u",
 		    SMN_REG_SIZE(reg));
 	}
-	if (milan_smn_log != 0) {
+	if (genoa_smn_log != 0) {
 		cmn_err(CE_NOTE, "SMN R reg 0x%x: 0x%x", addr, val);
 	}
 	mutex_exit(&iodie->mi_smn_lock);
@@ -1437,7 +1437,7 @@ milan_smn_read(milan_iodie_t *iodie, const smn_reg_t reg)
 }
 
 void
-milan_smn_write(milan_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
+genoa_smn_write(genoa_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
 {
 	const uint32_t addr = SMN_REG_ADDR(reg);
 	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
@@ -1448,7 +1448,7 @@ milan_smn_write(milan_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
 	ASSERT(SMN_REG_VALUE_FITS(reg, val));
 
 	mutex_enter(&iodie->mi_smn_lock);
-	if (milan_smn_log != 0) {
+	if (genoa_smn_log != 0) {
 		cmn_err(CE_NOTE, "SMN W reg 0x%x: 0x%x", addr, val);
 	}
 	pci_putl_func(iodie->mi_smn_busno, AMDZEN_NB_SMN_DEVNO,
@@ -1481,7 +1481,7 @@ milan_smn_write(milan_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
  * These are candidates for making public if/when other code needs to manipulate
  * bridges.  There are some tradeoffs here: we don't need any of these
  * functions; callers could instead look up registers themselves, retrieve the
- * iodie by chasing back-pointers, and call milan_smn_{read,write}32()
+ * iodie by chasing back-pointers, and call genoa_smn_{read,write}32()
  * themselves.  Indeed, they still can, and if there are many register accesses
  * to be made in code that materially affects performance, that is likely to be
  * preferable.  However, it has a major drawback: it requires each caller to get
@@ -1502,21 +1502,21 @@ milan_smn_write(milan_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
  */
 
 static smn_reg_t
-milan_pcie_port_reg(const milan_pcie_port_t *const port,
+genoa_pcie_port_reg(const genoa_pcie_port_t *const port,
     const smn_reg_def_t def)
 {
-	milan_pcie_core_t *pc = port->mpp_core;
-	milan_ioms_t *ioms = pc->mpc_ioms;
+	genoa_pcie_core_t *pc = port->gpp_core;
+	genoa_ioms_t *ioms = pc->mpc_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOHCDEV_PCIE:
-		reg = milan_iohcdev_pcie_smn_reg(ioms->mio_num, def,
-		    pc->mpc_coreno, port->mpp_portno);
+		reg = genoa_iohcdev_pcie_smn_reg(ioms->mio_num, def,
+		    pc->mpc_coreno, port->gpp_portno);
 		break;
 	case SMN_UNIT_PCIE_PORT:
-		reg = milan_pcie_port_smn_reg(ioms->mio_num, def,
-		    pc->mpc_coreno, port->mpp_portno);
+		reg = genoa_pcie_port_smn_reg(ioms->mio_num, def,
+		    pc->mpc_coreno, port->gpp_portno);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe port",
@@ -1527,39 +1527,39 @@ milan_pcie_port_reg(const milan_pcie_port_t *const port,
 }
 
 static uint32_t
-milan_pcie_port_read(milan_pcie_port_t *port, const smn_reg_t reg)
+genoa_pcie_port_read(genoa_pcie_port_t *port, const smn_reg_t reg)
 {
-	milan_iodie_t *iodie = port->mpp_core->mpc_ioms->mio_iodie;
+	genoa_iodie_t *iodie = port->gpp_core->mpc_ioms->mio_iodie;
 
-	return (milan_smn_read(iodie, reg));
+	return (genoa_smn_read(iodie, reg));
 }
 
 static void
-milan_pcie_port_write(milan_pcie_port_t *port, const smn_reg_t reg,
+genoa_pcie_port_write(genoa_pcie_port_t *port, const smn_reg_t reg,
     const uint32_t val)
 {
-	milan_iodie_t *iodie = port->mpp_core->mpc_ioms->mio_iodie;
+	genoa_iodie_t *iodie = port->gpp_core->mpc_ioms->mio_iodie;
 
-	milan_smn_write(iodie, reg, val);
+	genoa_smn_write(iodie, reg, val);
 }
 
 static smn_reg_t
-milan_pcie_core_reg(const milan_pcie_core_t *const pc, const smn_reg_def_t def)
+genoa_pcie_core_reg(const genoa_pcie_core_t *const pc, const smn_reg_def_t def)
 {
-	milan_ioms_t *ioms = pc->mpc_ioms;
+	genoa_ioms_t *ioms = pc->mpc_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_PCIE_CORE:
-		reg = milan_pcie_core_smn_reg(ioms->mio_num, def,
+		reg = genoa_pcie_core_smn_reg(ioms->mio_num, def,
 		    pc->mpc_coreno);
 		break;
 	case SMN_UNIT_PCIE_RSMU:
-		reg = milan_pcie_rsmu_smn_reg(ioms->mio_num, def,
+		reg = genoa_pcie_rsmu_smn_reg(ioms->mio_num, def,
 		    pc->mpc_coreno);
 		break;
 	case SMN_UNIT_IOMMUL1:
-		reg = milan_iommul1_pcie_smn_reg(ioms->mio_num, def,
+		reg = genoa_iommul1_pcie_smn_reg(ioms->mio_num, def,
 		    pc->mpc_coreno);
 		break;
 	default:
@@ -1571,20 +1571,20 @@ milan_pcie_core_reg(const milan_pcie_core_t *const pc, const smn_reg_def_t def)
 }
 
 static uint32_t
-milan_pcie_core_read(milan_pcie_core_t *pc, const smn_reg_t reg)
+genoa_pcie_core_read(genoa_pcie_core_t *pc, const smn_reg_t reg)
 {
-	milan_iodie_t *iodie = pc->mpc_ioms->mio_iodie;
+	genoa_iodie_t *iodie = pc->mpc_ioms->mio_iodie;
 
-	return (milan_smn_read(iodie, reg));
+	return (genoa_smn_read(iodie, reg));
 }
 
 static void
-milan_pcie_core_write(milan_pcie_core_t *pc, const smn_reg_t reg,
+genoa_pcie_core_write(genoa_pcie_core_t *pc, const smn_reg_t reg,
     const uint32_t val)
 {
-	milan_iodie_t *iodie = pc->mpc_ioms->mio_iodie;
+	genoa_iodie_t *iodie = pc->mpc_ioms->mio_iodie;
 
-	milan_smn_write(iodie, reg, val);
+	genoa_smn_write(iodie, reg, val);
 }
 
 /*
@@ -1594,23 +1594,23 @@ milan_pcie_core_write(milan_pcie_core_t *pc, const smn_reg_t reg,
  */
 
 smn_reg_t
-milan_ioms_reg(const milan_ioms_t *const ioms, const smn_reg_def_t def,
+genoa_ioms_reg(const genoa_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOAPIC:
-		reg = milan_ioapic_smn_reg(ioms->mio_num, def, reginst);
+		reg = genoa_ioapic_smn_reg(ioms->mio_num, def, reginst);
 		break;
 	case SMN_UNIT_IOHC:
-		reg = milan_iohc_smn_reg(ioms->mio_num, def, reginst);
+		reg = genoa_iohc_smn_reg(ioms->mio_num, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = milan_ioagr_smn_reg(ioms->mio_num, def, reginst);
+		reg = genoa_ioagr_smn_reg(ioms->mio_num, def, reginst);
 		break;
 	case SMN_UNIT_SDPMUX:
-		reg = milan_sdpmux_smn_reg(ioms->mio_num, def, reginst);
+		reg = genoa_sdpmux_smn_reg(ioms->mio_num, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -1621,14 +1621,14 @@ milan_ioms_reg(const milan_ioms_t *const ioms, const smn_reg_def_t def,
 		 * this is, it greatly reduces triplication of register
 		 * definitions.  There is no way to win here.
 		 */
-		const milan_iommul1_subunit_t su =
-		    (const milan_iommul1_subunit_t)reginst;
+		const genoa_iommul1_subunit_t su =
+		    (const genoa_iommul1_subunit_t)reginst;
 		switch (su) {
 		case MIL1SU_NBIF:
-			reg = milan_iommul1_nbif_smn_reg(ioms->mio_num, def, 0);
+			reg = genoa_iommul1_nbif_smn_reg(ioms->mio_num, def, 0);
 			break;
 		case MIL1SU_IOAGR:
-			reg = milan_iommul1_ioagr_smn_reg(ioms->mio_num,
+			reg = genoa_iommul1_ioagr_smn_reg(ioms->mio_num,
 			    def, 0);
 			break;
 		default:
@@ -1638,7 +1638,7 @@ milan_ioms_reg(const milan_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	}
 	case SMN_UNIT_IOMMUL2:
-		reg = milan_iommul2_smn_reg(ioms->mio_num, def, reginst);
+		reg = genoa_iommul2_smn_reg(ioms->mio_num, def, reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
@@ -1649,35 +1649,35 @@ milan_ioms_reg(const milan_ioms_t *const ioms, const smn_reg_def_t def,
 }
 
 uint32_t
-milan_ioms_read(milan_ioms_t *ioms, const smn_reg_t reg)
+genoa_ioms_read(genoa_ioms_t *ioms, const smn_reg_t reg)
 {
-	milan_iodie_t *iodie = ioms->mio_iodie;
+	genoa_iodie_t *iodie = ioms->mio_iodie;
 
-	return (milan_smn_read(iodie, reg));
+	return (genoa_smn_read(iodie, reg));
 }
 
 void
-milan_ioms_write(milan_ioms_t *ioms, const smn_reg_t reg, const uint32_t val)
+genoa_ioms_write(genoa_ioms_t *ioms, const smn_reg_t reg, const uint32_t val)
 {
-	milan_iodie_t *iodie = ioms->mio_iodie;
+	genoa_iodie_t *iodie = ioms->mio_iodie;
 
-	milan_smn_write(iodie, reg, val);
+	genoa_smn_write(iodie, reg, val);
 }
 
 static smn_reg_t
-milan_nbif_reg(const milan_nbif_t *const nbif, const smn_reg_def_t def,
+genoa_nbif_reg(const genoa_nbif_t *const nbif, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	milan_ioms_t *ioms = nbif->mn_ioms;
+	genoa_ioms_t *ioms = nbif->mn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF:
-		reg = milan_nbif_smn_reg(ioms->mio_num, def, nbif->mn_nbifno,
+		reg = genoa_nbif_smn_reg(ioms->mio_num, def, nbif->mn_nbifno,
 		    reginst);
 		break;
 	case SMN_UNIT_NBIF_ALT:
-		reg = milan_nbif_alt_smn_reg(ioms->mio_num, def,
+		reg = genoa_nbif_alt_smn_reg(ioms->mio_num, def,
 		    nbif->mn_nbifno, reginst);
 		break;
 	default:
@@ -1689,28 +1689,28 @@ milan_nbif_reg(const milan_nbif_t *const nbif, const smn_reg_def_t def,
 }
 
 static uint32_t
-milan_nbif_read(milan_nbif_t *nbif, const smn_reg_t reg)
+genoa_nbif_read(genoa_nbif_t *nbif, const smn_reg_t reg)
 {
-	return (milan_smn_read(nbif->mn_ioms->mio_iodie, reg));
+	return (genoa_smn_read(nbif->mn_ioms->mio_iodie, reg));
 }
 
 static void
-milan_nbif_write(milan_nbif_t *nbif, const smn_reg_t reg, const uint32_t val)
+genoa_nbif_write(genoa_nbif_t *nbif, const smn_reg_t reg, const uint32_t val)
 {
-	milan_smn_write(nbif->mn_ioms->mio_iodie, reg, val);
+	genoa_smn_write(nbif->mn_ioms->mio_iodie, reg, val);
 }
 
 static smn_reg_t
-milan_nbif_func_reg(const milan_nbif_func_t *const func,
+genoa_nbif_func_reg(const genoa_nbif_func_t *const func,
     const smn_reg_def_t def)
 {
-	milan_nbif_t *nbif = func->mne_nbif;
-	milan_ioms_t *ioms = nbif->mn_ioms;
+	genoa_nbif_t *nbif = func->mne_nbif;
+	genoa_ioms_t *ioms = nbif->mn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF_FUNC:
-		reg = milan_nbif_func_smn_reg(ioms->mio_num, def,
+		reg = genoa_nbif_func_smn_reg(ioms->mio_num, def,
 		    nbif->mn_nbifno, func->mne_dev, func->mne_func);
 		break;
 	default:
@@ -1722,27 +1722,27 @@ milan_nbif_func_reg(const milan_nbif_func_t *const func,
 }
 
 static uint32_t
-milan_nbif_func_read(milan_nbif_func_t *func, const smn_reg_t reg)
+genoa_nbif_func_read(genoa_nbif_func_t *func, const smn_reg_t reg)
 {
-	return (milan_smn_read(func->mne_nbif->mn_ioms->mio_iodie, reg));
+	return (genoa_smn_read(func->mne_nbif->mn_ioms->mio_iodie, reg));
 }
 
 static void
-milan_nbif_func_write(milan_nbif_func_t *func, const smn_reg_t reg,
+genoa_nbif_func_write(genoa_nbif_func_t *func, const smn_reg_t reg,
     const uint32_t val)
 {
-	milan_smn_write(func->mne_nbif->mn_ioms->mio_iodie, reg, val);
+	genoa_smn_write(func->mne_nbif->mn_ioms->mio_iodie, reg, val);
 }
 
 smn_reg_t
-milan_iodie_reg(const milan_iodie_t *const iodie, const smn_reg_def_t def,
+genoa_iodie_reg(const genoa_iodie_t *const iodie, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SMU_RPC:
-		reg = milan_smu_smn_reg(0, def, reginst);
+		reg = genoa_smu_smn_reg(0, def, reginst);
 		break;
 	case SMN_UNIT_FCH_SMI:
 		reg = fch_smi_smn_reg(def, reginst);
@@ -1786,37 +1786,37 @@ milan_iodie_reg(const milan_iodie_t *const iodie, const smn_reg_def_t def,
 }
 
 uint32_t
-milan_iodie_read(milan_iodie_t *iodie, const smn_reg_t reg)
+genoa_iodie_read(genoa_iodie_t *iodie, const smn_reg_t reg)
 {
-	return (milan_smn_read(iodie, reg));
+	return (genoa_smn_read(iodie, reg));
 }
 
 void
-milan_iodie_write(milan_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
+genoa_iodie_write(genoa_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
 {
-	milan_smn_write(iodie, reg, val);
+	genoa_smn_write(iodie, reg, val);
 }
 
 uint8_t
-milan_iodie_node_id(const milan_iodie_t *const iodie)
+genoa_iodie_node_id(const genoa_iodie_t *const iodie)
 {
 	return (iodie->mi_node_id);
 }
 
-milan_iodie_flag_t
-milan_iodie_flags(const milan_iodie_t *const iodie)
+genoa_iodie_flag_t
+genoa_iodie_flags(const genoa_iodie_t *const iodie)
 {
 	return (iodie->mi_flags);
 }
 
-milan_ioms_flag_t
-milan_ioms_flags(const milan_ioms_t *const ioms)
+genoa_ioms_flag_t
+genoa_ioms_flags(const genoa_ioms_t *const ioms)
 {
 	return (ioms->mio_flags);
 }
 
-milan_iodie_t *
-milan_ioms_iodie(const milan_ioms_t *const ioms)
+genoa_iodie_t *
+genoa_ioms_iodie(const genoa_ioms_t *const ioms)
 {
 	return (ioms->mio_iodie);
 }
@@ -1825,13 +1825,13 @@ typedef enum {
 	MBT_ANY,
 	MBT_GIMLET,
 	MBT_ETHANOL
-} milan_board_type_t;
+} genoa_board_type_t;
 
 /*
  * Here is a temporary rough heuristic for determining what board we're on.
  */
-static milan_board_type_t
-milan_board_type(const milan_fabric_t *fabric)
+static genoa_board_type_t
+genoa_board_type(const genoa_fabric_t *fabric)
 {
 	if (fabric->mf_nsocs == 2) {
 		return (MBT_ETHANOL);
@@ -1847,10 +1847,10 @@ milan_board_type(const milan_fabric_t *fabric)
  * all of them.  These inline functions encode and decode this argument; we use
  * functions so they are typed.
  */
-#define	MILAN_IODIE_MATCH_ANY	0xff
+#define	GENOA_IODIE_MATCH_ANY	0xff
 
 static inline void *
-milan_pcie_dbg_cookie(milan_pcie_config_stage_t stage, uint8_t iodie)
+genoa_pcie_dbg_cookie(genoa_pcie_config_stage_t stage, uint8_t iodie)
 {
 	uintptr_t rv;
 
@@ -1860,16 +1860,16 @@ milan_pcie_dbg_cookie(milan_pcie_config_stage_t stage, uint8_t iodie)
 	return ((void *)rv);
 }
 
-static inline milan_pcie_config_stage_t
-milan_pcie_dbg_cookie_to_stage(void *arg)
+static inline genoa_pcie_config_stage_t
+genoa_pcie_dbg_cookie_to_stage(void *arg)
 {
 	uintptr_t av = (uintptr_t)arg;
 
-	return ((milan_pcie_config_stage_t)(av & UINT32_MAX));
+	return ((genoa_pcie_config_stage_t)(av & UINT32_MAX));
 }
 
 static inline uint8_t
-milan_pcie_dbg_cookie_to_iodie(void *arg)
+genoa_pcie_dbg_cookie_to_iodie(void *arg)
 {
 	uintptr_t av = (uintptr_t)arg;
 
@@ -1877,69 +1877,69 @@ milan_pcie_dbg_cookie_to_iodie(void *arg)
 }
 
 static int
-milan_pcie_populate_core_dbg(milan_pcie_core_t *pc, void *arg)
+genoa_pcie_populate_core_dbg(genoa_pcie_core_t *pc, void *arg)
 {
-	milan_pcie_config_stage_t stage = milan_pcie_dbg_cookie_to_stage(arg);
-	uint8_t iodie_match = milan_pcie_dbg_cookie_to_iodie(arg);
-	milan_pcie_dbg_t *dp = pc->mpc_dbg;
+	genoa_pcie_config_stage_t stage = genoa_pcie_dbg_cookie_to_stage(arg);
+	uint8_t iodie_match = genoa_pcie_dbg_cookie_to_iodie(arg);
+	genoa_pcie_dbg_t *dp = pc->mpc_dbg;
 
 	if (dp == NULL)
 		return (0);
 
-	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
+	if (iodie_match != GENOA_IODIE_MATCH_ANY &&
 	    iodie_match != pc->mpc_ioms->mio_iodie->mi_node_id) {
 		return (0);
 	}
 
-	for (uint_t rn = 0; rn < dp->mpd_nregs; rn++) {
+	for (uint_t rn = 0; rn < dp->gpd_nregs; rn++) {
 		smn_reg_t reg;
 
-		reg = milan_pcie_core_reg(pc, dp->mpd_regs[rn].mprd_def);
-		dp->mpd_regs[rn].mprd_val[stage] =
-		    milan_pcie_core_read(pc, reg);
-		dp->mpd_regs[rn].mprd_ts[stage] = gethrtime();
+		reg = genoa_pcie_core_reg(pc, dp->gpd_regs[rn].gprd_def);
+		dp->gpd_regs[rn].gprd_val[stage] =
+		    genoa_pcie_core_read(pc, reg);
+		dp->gpd_regs[rn].gprd_ts[stage] = gethrtime();
 	}
 
-	dp->mpd_last_stage = stage;
+	dp->gpd_last_stage = stage;
 
 	return (0);
 }
 
 static int
-milan_pcie_populate_port_dbg(milan_pcie_port_t *port, void *arg)
+genoa_pcie_populate_port_dbg(genoa_pcie_port_t *port, void *arg)
 {
-	milan_pcie_config_stage_t stage = milan_pcie_dbg_cookie_to_stage(arg);
-	uint8_t iodie_match = milan_pcie_dbg_cookie_to_iodie(arg);
-	milan_pcie_dbg_t *dp = port->mpp_dbg;
+	genoa_pcie_config_stage_t stage = genoa_pcie_dbg_cookie_to_stage(arg);
+	uint8_t iodie_match = genoa_pcie_dbg_cookie_to_iodie(arg);
+	genoa_pcie_dbg_t *dp = port->gpp_dbg;
 
 	if (dp == NULL)
 		return (0);
 
-	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
-	    iodie_match != port->mpp_core->mpc_ioms->mio_iodie->mi_node_id) {
+	if (iodie_match != GENOA_IODIE_MATCH_ANY &&
+	    iodie_match != port->gpp_core->mpc_ioms->mio_iodie->mi_node_id) {
 		return (0);
 	}
 
-	for (uint_t rn = 0; rn < dp->mpd_nregs; rn++) {
+	for (uint_t rn = 0; rn < dp->gpd_nregs; rn++) {
 		smn_reg_t reg;
 
-		reg = milan_pcie_port_reg(port, dp->mpd_regs[rn].mprd_def);
-		dp->mpd_regs[rn].mprd_val[stage] =
-		    milan_pcie_port_read(port, reg);
-		dp->mpd_regs[rn].mprd_ts[stage] = gethrtime();
+		reg = genoa_pcie_port_reg(port, dp->gpd_regs[rn].gprd_def);
+		dp->gpd_regs[rn].gprd_val[stage] =
+		    genoa_pcie_port_read(port, reg);
+		dp->gpd_regs[rn].gprd_ts[stage] = gethrtime();
 	}
 
-	dp->mpd_last_stage = stage;
+	dp->gpd_last_stage = stage;
 
 	return (0);
 }
 
 static void
-milan_pcie_populate_dbg(milan_fabric_t *fabric, milan_pcie_config_stage_t stage,
+genoa_pcie_populate_dbg(genoa_fabric_t *fabric, genoa_pcie_config_stage_t stage,
     uint8_t iodie_match)
 {
 	static boolean_t gpio_configured;
-	void *cookie = milan_pcie_dbg_cookie(stage, iodie_match);
+	void *cookie = genoa_pcie_dbg_cookie(stage, iodie_match);
 
 	/*
 	 * On Gimlet, we want to signal via GPIO that we're collecting register
@@ -1960,60 +1960,60 @@ milan_pcie_populate_dbg(milan_fabric_t *fabric, milan_pcie_config_stage_t stage,
 	 * clear start time (since the GPIO was previously an input and would
 	 * have read at an undefined level).
 	 */
-	if (milan_board_type(fabric) == MBT_GIMLET) {
+	if (genoa_board_type(fabric) == MBT_GIMLET) {
 		if (!gpio_configured) {
-			milan_hack_gpio(MHGOP_CONFIGURE, 129);
-			milan_hack_gpio(MHGOP_TOGGLE, 129);
+			genoa_hack_gpio(MHGOP_CONFIGURE, 129);
+			genoa_hack_gpio(MHGOP_TOGGLE, 129);
 			drv_usecwait(1);
 			gpio_configured = B_TRUE;
 		}
-		milan_hack_gpio(MHGOP_TOGGLE, 129);
+		genoa_hack_gpio(MHGOP_TOGGLE, 129);
 	}
 
-	(void) milan_fabric_walk_pcie_core(fabric, milan_pcie_populate_core_dbg,
+	(void) genoa_fabric_walk_pcie_core(fabric, genoa_pcie_populate_core_dbg,
 	    cookie);
-	(void) milan_fabric_walk_pcie_port(fabric, milan_pcie_populate_port_dbg,
+	(void) genoa_fabric_walk_pcie_port(fabric, genoa_pcie_populate_port_dbg,
 	    cookie);
 }
 
 static void
-milan_fabric_ioms_pcie_init(milan_ioms_t *ioms)
+genoa_fabric_ioms_pcie_init(genoa_ioms_t *ioms)
 {
 	for (uint_t pcno = 0; pcno < ioms->mio_npcie_cores; pcno++) {
-		milan_pcie_core_t *pc = &ioms->mio_pcie_cores[pcno];
-		const milan_pcie_port_info_t *pinfop = NULL;
-		const milan_pcie_core_info_t *cinfop;
+		genoa_pcie_core_t *pc = &ioms->mio_pcie_cores[pcno];
+		const genoa_pcie_port_info_t *pinfop = NULL;
+		const genoa_pcie_core_info_t *cinfop;
 
 		pc->mpc_coreno = pcno;
 		pc->mpc_ioms = ioms;
-		pc->mpc_nports = milan_pcie_core_n_ports(pcno);
+		pc->mpc_nports = genoa_pcie_core_n_ports(pcno);
 		mutex_init(&pc->mpc_strap_lock, NULL, MUTEX_SPIN,
 		    (ddi_iblock_cookie_t)ipltospl(15));
 
-		VERIFY3U(pcno, <=, MILAN_IOMS_WAFL_PCIE_CORENO);
+		VERIFY3U(pcno, <=, GENOA_IOMS_WAFL_PCIE_CORENO);
 		switch (pcno) {
 		case 0:
 			/* XXX Macros */
 			pc->mpc_sdp_unit = 2;
 			pc->mpc_sdp_port = 0;
-			pinfop = milan_pcie0;
+			pinfop = genoa_pcie0;
 			break;
 		case 1:
 			pc->mpc_sdp_unit = 3;
 			pc->mpc_sdp_port = 0;
-			pinfop = milan_pcie1;
+			pinfop = genoa_pcie1;
 			break;
-		case MILAN_IOMS_WAFL_PCIE_CORENO:
+		case GENOA_IOMS_WAFL_PCIE_CORENO:
 			pc->mpc_sdp_unit = 4;
 			pc->mpc_sdp_port = 5;
-			pinfop = milan_pcie2;
+			pinfop = genoa_pcie2;
 			break;
 		}
 
-		if (pcno == MILAN_IOMS_WAFL_PCIE_CORENO) {
-			cinfop = &milan_wafl_map;
+		if (pcno == GENOA_IOMS_WAFL_PCIE_CORENO) {
+			cinfop = &genoa_wafl_map;
 		} else {
-			cinfop = &milan_lane_maps[ioms->mio_num * 2 + pcno];
+			cinfop = &genoa_lane_maps[ioms->mio_num * 2 + pcno];
 		}
 
 		pc->mpc_dxio_lane_start = cinfop->mpci_dxio_start;
@@ -2022,44 +2022,44 @@ milan_fabric_ioms_pcie_init(milan_ioms_t *ioms)
 		pc->mpc_phys_lane_end = cinfop->mpci_phy_end;
 
 		for (uint_t portno = 0; portno < pc->mpc_nports; portno++) {
-			milan_pcie_port_t *port = &pc->mpc_ports[portno];
+			genoa_pcie_port_t *port = &pc->mpc_ports[portno];
 
-			port->mpp_portno = portno;
-			port->mpp_core = pc;
-			port->mpp_device = pinfop[portno].mppi_dev;
-			port->mpp_func = pinfop[portno].mppi_func;
-			port->mpp_hp_type = SMU_HP_INVALID;
+			port->gpp_portno = portno;
+			port->gpp_core = pc;
+			port->gpp_device = pinfop[portno].mppi_dev;
+			port->gpp_func = pinfop[portno].mppi_func;
+			port->gpp_hp_type = SMU_HP_INVALID;
 		}
 	}
 }
 
 static void
-milan_fabric_ioms_nbif_init(milan_ioms_t *ioms)
+genoa_fabric_ioms_nbif_init(genoa_ioms_t *ioms)
 {
 	for (uint_t nbifno = 0; nbifno < ioms->mio_nnbifs; nbifno++) {
-		const milan_nbif_info_t *ninfo = NULL;
-		milan_nbif_t *nbif = &ioms->mio_nbifs[nbifno];
+		const genoa_nbif_info_t *ninfo = NULL;
+		genoa_nbif_t *nbif = &ioms->mio_nbifs[nbifno];
 
 		nbif->mn_nbifno = nbifno;
 		nbif->mn_ioms = ioms;
-		VERIFY3U(nbifno, <, MILAN_IOMS_MAX_NBIF);
+		VERIFY3U(nbifno, <, GENOA_IOMS_MAX_NBIF);
 		switch (nbifno) {
 		case 0:
-			nbif->mn_nfuncs = MILAN_NBIF0_NFUNCS;
-			ninfo = milan_nbif0;
+			nbif->mn_nfuncs = GENOA_NBIF0_NFUNCS;
+			ninfo = genoa_nbif0;
 			break;
 		case 1:
-			nbif->mn_nfuncs = MILAN_NBIF1_NFUNCS;
-			ninfo = milan_nbif1;
+			nbif->mn_nfuncs = GENOA_NBIF1_NFUNCS;
+			ninfo = genoa_nbif1;
 			break;
 		case 2:
-			nbif->mn_nfuncs = MILAN_NBIF2_NFUNCS;
-			ninfo = milan_nbif2;
+			nbif->mn_nfuncs = GENOA_NBIF2_NFUNCS;
+			ninfo = genoa_nbif2;
 			break;
 		}
 
 		for (uint_t funcno = 0; funcno < nbif->mn_nfuncs; funcno++) {
-			milan_nbif_func_t *func = &nbif->mn_funcs[funcno];
+			genoa_nbif_func_t *func = &nbif->mn_funcs[funcno];
 
 			func->mne_nbif = nbif;
 			func->mne_type = ninfo[funcno].mni_type;
@@ -2070,15 +2070,15 @@ milan_fabric_ioms_nbif_init(milan_ioms_t *ioms)
 			 * As there is a dummy device on each of these, this in
 			 * theory doesn't need any explicit configuration.
 			 */
-			if (func->mne_type == MILAN_NBIF_T_DUMMY) {
-				func->mne_flags |= MILAN_NBIF_F_NO_CONFIG;
+			if (func->mne_type == GENOA_NBIF_T_DUMMY) {
+				func->mne_flags |= GENOA_NBIF_F_NO_CONFIG;
 			}
 		}
 	}
 }
 
 static boolean_t
-milan_smu_version_at_least(const milan_iodie_t *iodie,
+genoa_smu_version_at_least(const genoa_iodie_t *iodie,
     const uint8_t major, const uint8_t minor, const uint8_t patch)
 {
 	return (iodie->mi_smu_fw[0] > major ||
@@ -2098,7 +2098,7 @@ milan_smu_version_at_least(const milan_iodie_t *iodie,
  * XXX Remove 32-bit addr_hi constraint.
  */
 static void
-milan_smu_dma_attr(ddi_dma_attr_t *attr)
+genoa_smu_dma_attr(ddi_dma_attr_t *attr)
 {
 	bzero(attr, sizeof (attr));
 	attr->dma_attr_version = DMA_ATTR_V0;
@@ -2115,88 +2115,88 @@ milan_smu_dma_attr(ddi_dma_attr_t *attr)
 }
 
 static void
-milan_smu_rpc(milan_iodie_t *iodie, milan_smu_rpc_t *rpc)
+genoa_smu_rpc(genoa_iodie_t *iodie, genoa_smu_rpc_t *rpc)
 {
 	uint32_t resp;
 
 	mutex_enter(&iodie->mi_smu_lock);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_RESP(), MILAN_SMU_RPC_NOTDONE);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG0(), rpc->msr_arg0);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG1(), rpc->msr_arg1);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG2(), rpc->msr_arg2);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG3(), rpc->msr_arg3);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG4(), rpc->msr_arg4);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG5(), rpc->msr_arg5);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_REQ(), rpc->msr_req);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_RESP(), GENOA_SMU_RPC_NOTDONE);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_ARG0(), rpc->msr_arg0);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_ARG1(), rpc->msr_arg1);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_ARG2(), rpc->msr_arg2);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_ARG3(), rpc->msr_arg3);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_ARG4(), rpc->msr_arg4);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_ARG5(), rpc->msr_arg5);
+	genoa_iodie_write(iodie, GENOA_SMU_RPC_REQ(), rpc->msr_req);
 
 	/*
 	 * XXX Infinite spins are bad, but we don't even have drv_usecwait yet.
 	 * When we add a timeout this should then return an int.
 	 */
 	for (;;) {
-		resp = milan_iodie_read(iodie, MILAN_SMU_RPC_RESP());
-		if (resp != MILAN_SMU_RPC_NOTDONE) {
+		resp = genoa_iodie_read(iodie, GENOA_SMU_RPC_RESP());
+		if (resp != GENOA_SMU_RPC_NOTDONE) {
 			break;
 		}
 	}
 
 	rpc->msr_resp = resp;
-	if (rpc->msr_resp == MILAN_SMU_RPC_OK) {
-		rpc->msr_arg0 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG0());
-		rpc->msr_arg1 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG1());
-		rpc->msr_arg2 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG2());
-		rpc->msr_arg3 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG3());
-		rpc->msr_arg4 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG4());
-		rpc->msr_arg5 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG5());
+	if (rpc->msr_resp == GENOA_SMU_RPC_OK) {
+		rpc->msr_arg0 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG0());
+		rpc->msr_arg1 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG1());
+		rpc->msr_arg2 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG2());
+		rpc->msr_arg3 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG3());
+		rpc->msr_arg4 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG4());
+		rpc->msr_arg5 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG5());
 	}
 	mutex_exit(&iodie->mi_smu_lock);
 }
 
 static boolean_t
-milan_smu_rpc_get_version(milan_iodie_t *iodie, uint8_t *major, uint8_t *minor,
+genoa_smu_rpc_get_version(genoa_iodie_t *iodie, uint8_t *major, uint8_t *minor,
     uint8_t *patch)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 
-	rpc.msr_req = MILAN_SMU_OP_GET_VERSION;
-	milan_smu_rpc(iodie, &rpc);
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	rpc.msr_req = GENOA_SMU_OP_GET_VERSION;
+	genoa_smu_rpc(iodie, &rpc);
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		return (B_FALSE);
 	}
 
-	*major = MILAN_SMU_OP_GET_VERSION_MAJOR(rpc.msr_arg0);
-	*minor = MILAN_SMU_OP_GET_VERSION_MINOR(rpc.msr_arg0);
-	*patch = MILAN_SMU_OP_GET_VERSION_PATCH(rpc.msr_arg0);
+	*major = GENOA_SMU_OP_GET_VERSION_MAJOR(rpc.msr_arg0);
+	*minor = GENOA_SMU_OP_GET_VERSION_MINOR(rpc.msr_arg0);
+	*patch = GENOA_SMU_OP_GET_VERSION_PATCH(rpc.msr_arg0);
 
 	return (B_TRUE);
 }
 
 static boolean_t
-milan_smu_rpc_i2c_switch(milan_iodie_t *iodie, uint32_t addr)
+genoa_smu_rpc_i2c_switch(genoa_iodie_t *iodie, uint32_t addr)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 
-	rpc.msr_req = MILAN_SMU_OP_I2C_SWITCH_ADDR;
+	rpc.msr_req = GENOA_SMU_OP_I2C_SWITCH_ADDR;
 	rpc.msr_arg0 = addr;
-	milan_smu_rpc(iodie, &rpc);
+	genoa_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN, "SMU Set i2c address RPC Failed: addr: 0x%x, "
 		    "SMU 0x%x", addr, rpc.msr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
 }
 
 static boolean_t
-milan_smu_rpc_give_address(milan_iodie_t *iodie, milan_smu_addr_kind_t kind,
+genoa_smu_rpc_give_address(genoa_iodie_t *iodie, genoa_smu_addr_kind_t kind,
     uint64_t addr)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 
 	switch (kind) {
 	case MSAK_GENERIC:
-		rpc.msr_req = MILAN_SMU_OP_HAVE_AN_ADDRESS;
+		rpc.msr_req = GENOA_SMU_OP_HAVE_AN_ADDRESS;
 		break;
 	case MSAK_HOTPLUG:
 		/*
@@ -2204,97 +2204,97 @@ milan_smu_rpc_give_address(milan_iodie_t *iodie, milan_smu_addr_kind_t kind,
 		 * SMU in the same manner as any others; however, in recent
 		 * versions there is a separate RPC for that.
 		 */
-		rpc.msr_req = milan_smu_version_at_least(iodie, 45, 90, 0) ?
-		    MILAN_SMU_OP_HAVE_A_HP_ADDRESS :
-		    MILAN_SMU_OP_HAVE_AN_ADDRESS;
+		rpc.msr_req = genoa_smu_version_at_least(iodie, 45, 90, 0) ?
+		    GENOA_SMU_OP_HAVE_A_HP_ADDRESS :
+		    GENOA_SMU_OP_HAVE_AN_ADDRESS;
 		break;
 	default:
 		panic("invalid SMU address kind %d", (int)kind);
 	}
 	rpc.msr_arg0 = bitx64(addr, 31, 0);
 	rpc.msr_arg1 = bitx64(addr, 63, 32);
-	milan_smu_rpc(iodie, &rpc);
+	genoa_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN, "SMU Have an Address RPC Failed: addr: 0x%lx, "
 		    "SMU req 0x%x resp 0x%x", addr, rpc.msr_req, rpc.msr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
 
 }
 
 static boolean_t
-milan_smu_rpc_send_hotplug_table(milan_iodie_t *iodie)
+genoa_smu_rpc_send_hotplug_table(genoa_iodie_t *iodie)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 
-	rpc.msr_req = MILAN_SMU_OP_TX_PCIE_HP_TABLE;
-	milan_smu_rpc(iodie, &rpc);
+	rpc.msr_req = GENOA_SMU_OP_TX_PCIE_HP_TABLE;
+	genoa_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN, "SMU TX Hotplug Table Failed: SMU 0x%x",
 		    rpc.msr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
 }
 
 static boolean_t
-milan_smu_rpc_hotplug_flags(milan_iodie_t *iodie, uint32_t flags)
+genoa_smu_rpc_hotplug_flags(genoa_iodie_t *iodie, uint32_t flags)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 
-	rpc.msr_req = MILAN_SMU_OP_SET_HOPTLUG_FLAGS;
+	rpc.msr_req = GENOA_SMU_OP_SET_HOPTLUG_FLAGS;
 	rpc.msr_arg0 = flags;
-	milan_smu_rpc(iodie, &rpc);
+	genoa_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN, "SMU Set Hotplug Flags failed: SMU 0x%x",
 		    rpc.msr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
 }
 static boolean_t
-milan_smu_rpc_start_hotplug(milan_iodie_t *iodie, boolean_t one_based,
+genoa_smu_rpc_start_hotplug(genoa_iodie_t *iodie, boolean_t one_based,
     uint8_t flags)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 
-	rpc.msr_req = MILAN_SMU_OP_START_HOTPLUG;
+	rpc.msr_req = GENOA_SMU_OP_START_HOTPLUG;
 	if (one_based) {
 		rpc.msr_arg0 = 1;
 	}
 	rpc.msr_arg0 |= flags;
-	milan_smu_rpc(iodie, &rpc);
+	genoa_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN, "SMU Start Yer Hotplug Failed: SMU 0x%x",
 		    rpc.msr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
 }
 
 /*
  * buf and len semantics here match those of snprintf
  */
 static boolean_t
-milan_smu_rpc_read_brand_string(milan_iodie_t *iodie, char *buf, size_t len)
+genoa_smu_rpc_read_brand_string(genoa_iodie_t *iodie, char *buf, size_t len)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 	uint_t off;
 
 	len = MIN(len, CPUID_BRANDSTR_STRLEN + 1);
 	buf[len - 1] = '\0';
-	rpc.msr_req = MILAN_SMU_OP_GET_BRAND_STRING;
+	rpc.msr_req = GENOA_SMU_OP_GET_BRAND_STRING;
 
 	for (off = 0; off * 4 < len - 1; off++) {
 		rpc.msr_arg0 = off;
-		milan_smu_rpc(iodie, &rpc);
+		genoa_smu_rpc(iodie, &rpc);
 
-		if (rpc.msr_resp != MILAN_SMU_RPC_OK)
+		if (rpc.msr_resp != GENOA_SMU_RPC_OK)
 			return (B_FALSE);
 
 		bcopy(&rpc.msr_arg0, buf + off * 4, len - off * 4);
@@ -2304,19 +2304,19 @@ milan_smu_rpc_read_brand_string(milan_iodie_t *iodie, char *buf, size_t len)
 }
 
 static boolean_t
-milan_smu_rpc_read_dpm_weights(milan_iodie_t *iodie, uint64_t *buf, size_t len)
+genoa_smu_rpc_read_dpm_weights(genoa_iodie_t *iodie, uint64_t *buf, size_t len)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	genoa_smu_rpc_t rpc = { 0 };
 
-	len = MIN(len, MILAN_MAX_DPM_WEIGHTS * sizeof (uint64_t));
+	len = MIN(len, GENOA_MAX_DPM_WEIGHTS * sizeof (uint64_t));
 	bzero(buf, len);
-	rpc.msr_req = MILAN_SMU_OP_READ_DPM_WEIGHT;
+	rpc.msr_req = GENOA_SMU_OP_READ_DPM_WEIGHT;
 
 	for (uint32_t idx = 0; idx < len / sizeof (uint64_t); idx++) {
 		rpc.msr_arg0 = idx;
-		milan_smu_rpc(iodie, &rpc);
+		genoa_smu_rpc(iodie, &rpc);
 
-		if (rpc.msr_resp != MILAN_SMU_RPC_OK)
+		if (rpc.msr_resp != GENOA_SMU_RPC_OK)
 			return (B_FALSE);
 
 		buf[idx] = rpc.msr_arg1;
@@ -2328,7 +2328,7 @@ milan_smu_rpc_read_dpm_weights(milan_iodie_t *iodie, uint64_t *buf, size_t len)
 }
 
 static boolean_t
-milan_dxio_version_at_least(const milan_iodie_t *iodie,
+genoa_dxio_version_at_least(const genoa_iodie_t *iodie,
     const uint32_t major, const uint32_t minor)
 {
 	return (iodie->mi_dxio_fw[0] > major ||
@@ -2336,11 +2336,11 @@ milan_dxio_version_at_least(const milan_iodie_t *iodie,
 }
 
 static void
-milan_dxio_rpc(milan_iodie_t *iodie, milan_dxio_rpc_t *dxio_rpc)
+genoa_dxio_rpc(genoa_iodie_t *iodie, genoa_dxio_rpc_t *dxio_rpc)
 {
-	milan_smu_rpc_t smu_rpc = { 0 };
+	genoa_smu_rpc_t smu_rpc = { 0 };
 
-	smu_rpc.msr_req = MILAN_SMU_OP_DXIO;
+	smu_rpc.msr_req = GENOA_SMU_OP_DXIO;
 	smu_rpc.msr_arg0 = dxio_rpc->mdr_req;
 	smu_rpc.msr_arg1 = dxio_rpc->mdr_engine;
 	smu_rpc.msr_arg2 = dxio_rpc->mdr_arg0;
@@ -2348,10 +2348,10 @@ milan_dxio_rpc(milan_iodie_t *iodie, milan_dxio_rpc_t *dxio_rpc)
 	smu_rpc.msr_arg4 = dxio_rpc->mdr_arg2;
 	smu_rpc.msr_arg5 = dxio_rpc->mdr_arg3;
 
-	milan_smu_rpc(iodie, &smu_rpc);
+	genoa_smu_rpc(iodie, &smu_rpc);
 
 	dxio_rpc->mdr_smu_resp = smu_rpc.msr_resp;
-	if (smu_rpc.msr_resp == MILAN_SMU_RPC_OK) {
+	if (smu_rpc.msr_resp == GENOA_SMU_RPC_OK) {
 		dxio_rpc->mdr_dxio_resp = smu_rpc.msr_arg0;
 		dxio_rpc->mdr_engine = smu_rpc.msr_arg1;
 		dxio_rpc->mdr_arg0 = smu_rpc.msr_arg2;
@@ -2362,16 +2362,16 @@ milan_dxio_rpc(milan_iodie_t *iodie, milan_dxio_rpc_t *dxio_rpc)
 }
 
 static boolean_t
-milan_dxio_rpc_get_version(milan_iodie_t *iodie, uint32_t *major,
+genoa_dxio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
     uint32_t *minor)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_GET_VERSION;
+	rpc.mdr_req = GENOA_DXIO_OP_GET_VERSION;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (B_FALSE);
@@ -2384,15 +2384,15 @@ milan_dxio_rpc_get_version(milan_iodie_t *iodie, uint32_t *major,
 }
 
 static boolean_t
-milan_dxio_rpc_init(milan_iodie_t *iodie)
+genoa_dxio_rpc_init(genoa_iodie_t *iodie)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_INIT;
+	rpc.mdr_req = GENOA_DXIO_OP_INIT;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Init RPC Failed: SMU 0x%x, DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (B_FALSE);
@@ -2402,18 +2402,18 @@ milan_dxio_rpc_init(milan_iodie_t *iodie)
 }
 
 static boolean_t
-milan_dxio_rpc_set_var(milan_iodie_t *iodie, uint32_t var, uint32_t val)
+genoa_dxio_rpc_set_var(genoa_iodie_t *iodie, uint32_t var, uint32_t val)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_SET_VARIABLE;
+	rpc.mdr_req = GENOA_DXIO_OP_SET_VARIABLE;
 	rpc.mdr_engine = var;
 	rpc.mdr_arg0 = val;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == MILAN_DXIO_RPC_MBOX_IDLE)) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
+	    rpc.mdr_dxio_resp == GENOA_DXIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set Variable Failed: Var: 0x%x, "
 		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", var, val,
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2424,20 +2424,20 @@ milan_dxio_rpc_set_var(milan_iodie_t *iodie, uint32_t var, uint32_t val)
 }
 
 static boolean_t
-milan_dxio_rpc_pcie_poweroff_config(milan_iodie_t *iodie, uint8_t delay,
+genoa_dxio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
     boolean_t disable_prep)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_SET_VARIABLE;
-	rpc.mdr_engine = MILAN_DXIO_VAR_PCIE_POWER_OFF_DELAY;
+	rpc.mdr_req = GENOA_DXIO_OP_SET_VARIABLE;
+	rpc.mdr_engine = GENOA_DXIO_VAR_PCIE_POWER_OFF_DELAY;
 	rpc.mdr_arg0 = delay;
 	rpc.mdr_arg1 = disable_prep ? 1 : 0;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == MILAN_DXIO_RPC_MBOX_IDLE)) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
+	    rpc.mdr_dxio_resp == GENOA_DXIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set PCIe Power Off Config Failed: "
 		    "Delay: 0x%x, Disable Prep: 0x%x, SMU 0x%x, DXIO: 0x%x",
 		    delay, disable_prep, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2448,24 +2448,24 @@ milan_dxio_rpc_pcie_poweroff_config(milan_iodie_t *iodie, uint8_t delay,
 }
 
 static boolean_t
-milan_dxio_rpc_clock_gating(milan_iodie_t *iodie, uint8_t mask, uint8_t val)
+genoa_dxio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
 	/*
 	 * The mask and val are only allowed to be 7-bit values.
 	 */
 	VERIFY0(mask & 0x80);
 	VERIFY0(val & 0x80);
-	rpc.mdr_req = MILAN_DXIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = MILAN_DXIO_ENGINE_PCIE;
-	rpc.mdr_arg0 = MILAN_DXIO_RT_CONF_CLOCK_GATE;
+	rpc.mdr_req = GENOA_DXIO_OP_SET_RUNTIME_PROP;
+	rpc.mdr_engine = GENOA_DXIO_ENGINE_PCIE;
+	rpc.mdr_arg0 = GENOA_DXIO_RT_CONF_CLOCK_GATE;
 	rpc.mdr_arg1 = mask;
 	rpc.mdr_arg2 = val;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Clock Gating Failed: SMU 0x%x, "
 		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (B_FALSE);
@@ -2478,18 +2478,18 @@ milan_dxio_rpc_clock_gating(milan_iodie_t *iodie, uint8_t mask, uint8_t val)
  * Currently there are no capabilities defined, which makes it hard for us to
  * know the exact command layout here. The only thing we know is safe is that
  * it's all zeros, though it probably otherwise will look like
- * MILAN_DXIO_OP_LOAD_DATA.
+ * GENOA_DXIO_OP_LOAD_DATA.
  */
 static boolean_t
-milan_dxio_rpc_load_caps(milan_iodie_t *iodie)
+genoa_dxio_rpc_load_caps(genoa_iodie_t *iodie)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_LOAD_CAPS;
+	rpc.mdr_req = GENOA_DXIO_OP_LOAD_CAPS;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Load Caps Failed: SMU 0x%x, DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (B_FALSE);
@@ -2499,21 +2499,21 @@ milan_dxio_rpc_load_caps(milan_iodie_t *iodie)
 }
 
 static boolean_t
-milan_dxio_rpc_load_data(milan_iodie_t *iodie, uint32_t type,
+genoa_dxio_rpc_load_data(genoa_iodie_t *iodie, uint32_t type,
     uint64_t phys_addr, uint32_t len, uint32_t mystery)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_LOAD_DATA;
+	rpc.mdr_req = GENOA_DXIO_OP_LOAD_DATA;
 	rpc.mdr_engine = (uint32_t)(phys_addr >> 32);
 	rpc.mdr_arg0 = phys_addr & 0xffffffff;
 	rpc.mdr_arg1 = len / 4;
 	rpc.mdr_arg2 = mystery;
 	rpc.mdr_arg3 = type;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Load Data Failed: Heap: 0x%x, PA: "
 		    "0x%lx, Len: 0x%x, SMU 0x%x, DXIO: 0x%x", type, phys_addr,
 		    len, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2524,22 +2524,22 @@ milan_dxio_rpc_load_data(milan_iodie_t *iodie, uint32_t type,
 }
 
 static boolean_t
-milan_dxio_rpc_conf_training(milan_iodie_t *iodie, uint32_t reset_time,
+genoa_dxio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
     uint32_t rx_poll, uint32_t l0_poll)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = MILAN_DXIO_ENGINE_PCIE;
-	rpc.mdr_arg0 = MILAN_DXIO_RT_CONF_PCIE_TRAIN;
+	rpc.mdr_req = GENOA_DXIO_OP_SET_RUNTIME_PROP;
+	rpc.mdr_engine = GENOA_DXIO_ENGINE_PCIE;
+	rpc.mdr_arg0 = GENOA_DXIO_RT_CONF_PCIE_TRAIN;
 	rpc.mdr_arg1 = reset_time;
 	rpc.mdr_arg2 = rx_poll;
 	rpc.mdr_arg3 = l0_poll;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK)) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK)) {
 		cmn_err(CE_WARN, "DXIO Conf. PCIe Training RPC Failed: "
 		    "SMU 0x%x, DXIO: 0x%x", rpc.mdr_smu_resp,
 		    rpc.mdr_dxio_resp);
@@ -2554,21 +2554,21 @@ milan_dxio_rpc_conf_training(milan_iodie_t *iodie, uint32_t reset_time,
  * properties.
  */
 static boolean_t
-milan_dxio_rpc_misc_rt_conf(milan_iodie_t *iodie, uint32_t code,
+genoa_dxio_rpc_misc_rt_conf(genoa_iodie_t *iodie, uint32_t code,
     boolean_t state)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = MILAN_DXIO_ENGINE_NONE;
-	rpc.mdr_arg0 = MILAN_DXIO_RT_SET_CONF;
+	rpc.mdr_req = GENOA_DXIO_OP_SET_RUNTIME_PROP;
+	rpc.mdr_engine = GENOA_DXIO_ENGINE_NONE;
+	rpc.mdr_arg0 = GENOA_DXIO_RT_SET_CONF;
 	rpc.mdr_arg1 = code;
 	rpc.mdr_arg2 = state ? 1 : 0;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK)) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK)) {
 		cmn_err(CE_WARN, "DXIO Set Misc. rt conf failed: Code: 0x%x, "
 		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", code, state,
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2579,15 +2579,15 @@ milan_dxio_rpc_misc_rt_conf(milan_iodie_t *iodie, uint32_t code,
 }
 
 static boolean_t
-milan_dxio_rpc_sm_start(milan_iodie_t *iodie)
+genoa_dxio_rpc_sm_start(genoa_iodie_t *iodie)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_START_SM;
+	rpc.mdr_req = GENOA_DXIO_OP_START_SM;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2598,15 +2598,15 @@ milan_dxio_rpc_sm_start(milan_iodie_t *iodie)
 }
 
 static boolean_t
-milan_dxio_rpc_sm_resume(milan_iodie_t *iodie)
+genoa_dxio_rpc_sm_resume(genoa_iodie_t *iodie)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_RESUME_SM;
+	rpc.mdr_req = GENOA_DXIO_OP_RESUME_SM;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2617,15 +2617,15 @@ milan_dxio_rpc_sm_resume(milan_iodie_t *iodie)
 }
 
 static boolean_t
-milan_dxio_rpc_sm_reload(milan_iodie_t *iodie)
+genoa_dxio_rpc_sm_reload(genoa_iodie_t *iodie)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_RELOAD_SM;
+	rpc.mdr_req = GENOA_DXIO_OP_RELOAD_SM;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Reload RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2637,15 +2637,15 @@ milan_dxio_rpc_sm_reload(milan_iodie_t *iodie)
 
 
 static boolean_t
-milan_dxio_rpc_sm_getstate(milan_iodie_t *iodie, milan_dxio_reply_t *smp)
+genoa_dxio_rpc_sm_getstate(genoa_iodie_t *iodie, genoa_dxio_reply_t *smp)
 {
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_GET_SM_STATE;
+	rpc.mdr_req = GENOA_DXIO_OP_GET_SM_STATE;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2666,19 +2666,19 @@ milan_dxio_rpc_sm_getstate(milan_iodie_t *iodie, milan_dxio_reply_t *smp)
  * Retrieve the current engine data from DXIO.
  */
 static boolean_t
-milan_dxio_rpc_retrieve_engine(milan_iodie_t *iodie)
+genoa_dxio_rpc_retrieve_engine(genoa_iodie_t *iodie)
 {
-	milan_dxio_config_t *conf = &iodie->mi_dxio_conf;
-	milan_dxio_rpc_t rpc = { 0 };
+	genoa_dxio_config_t *conf = &iodie->mi_dxio_conf;
+	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = MILAN_DXIO_OP_GET_ENGINE_CFG;
+	rpc.mdr_req = GENOA_DXIO_OP_GET_ENGINE_CFG;
 	rpc.mdr_engine = (uint32_t)(conf->mdc_pa >> 32);
 	rpc.mdr_arg0 = conf->mdc_pa & 0xffffffff;
 	rpc.mdr_arg1 = conf->mdc_alloc_len / 4;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: SMU 0x%x, "
 		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (B_FALSE);
@@ -2688,13 +2688,13 @@ milan_dxio_rpc_retrieve_engine(milan_iodie_t *iodie)
 }
 
 static int
-milan_dump_versions(milan_iodie_t *iodie, void *arg)
+genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
 {
 	uint8_t maj, min, patch;
 	uint32_t dxmaj, dxmin;
-	milan_soc_t *soc = iodie->mi_soc;
+	genoa_soc_t *soc = iodie->mi_soc;
 
-	if (milan_smu_rpc_get_version(iodie, &maj, &min, &patch)) {
+	if (genoa_smu_rpc_get_version(iodie, &maj, &min, &patch)) {
 		cmn_err(CE_CONT, "?Socket %u SMU Version: %u.%u.%u\n",
 		    soc->ms_socno, maj, min, patch);
 		iodie->mi_smu_fw[0] = maj;
@@ -2705,7 +2705,7 @@ milan_dump_versions(milan_iodie_t *iodie, void *arg)
 		    soc->ms_socno);
 	}
 
-	if (milan_dxio_rpc_get_version(iodie, &dxmaj, &dxmin)) {
+	if (genoa_dxio_rpc_get_version(iodie, &dxmaj, &dxmin)) {
 		cmn_err(CE_CONT, "?Socket %u DXIO Version: %u.%u\n",
 		    soc->ms_socno, dxmaj, dxmin);
 		iodie->mi_dxio_fw[0] = dxmaj;
@@ -2719,19 +2719,19 @@ milan_dump_versions(milan_iodie_t *iodie, void *arg)
 }
 
 static void
-milan_ccx_init_core(milan_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
+genoa_ccx_init_core(genoa_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 {
 	smn_reg_t reg;
 	uint32_t val;
-	milan_core_t *core = &ccx->mcx_cores[lidx];
-	milan_ccd_t *ccd = ccx->mcx_ccd;
-	milan_iodie_t *iodie = ccd->mcd_iodie;
+	genoa_core_t *core = &ccx->mcx_cores[lidx];
+	genoa_ccd_t *ccd = ccx->mcx_ccd;
+	genoa_iodie_t *iodie = ccd->mcd_iodie;
 
 	core->mc_ccx = ccx;
 	core->mc_physical_coreno = pidx;
 
-	reg = milan_core_reg(core, D_SCFCTP_PMREG_INITPKG0);
-	val = milan_core_read(core, reg);
+	reg = genoa_core_reg(core, D_SCFCTP_PMREG_INITPKG0);
+	val = genoa_core_read(core, reg);
 	VERIFY3U(val, !=, 0xffffffffU);
 
 	core->mc_logical_coreno = SCFCTP_PMREG_INITPKG0_GET_LOG_CORE(val);
@@ -2743,11 +2743,11 @@ milan_ccx_init_core(milan_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 	    ccx->mcx_ccd->mcd_physical_dieno);
 
 	core->mc_nthreads = SCFCTP_PMREG_INITPKG0_GET_SMTEN(val) + 1;
-	VERIFY3U(core->mc_nthreads, <=, MILAN_MAX_THREADS_PER_CORE);
+	VERIFY3U(core->mc_nthreads, <=, GENOA_MAX_THREADS_PER_CORE);
 
 	for (uint8_t thr = 0; thr < core->mc_nthreads; thr++) {
 		uint32_t apicid = 0;
-		milan_thread_t *thread = &core->mc_threads[thr];
+		genoa_thread_t *thread = &core->mc_threads[thr];
 
 		thread->mt_threadno = thr;
 		thread->mt_core = core;
@@ -2765,7 +2765,7 @@ milan_ccx_init_core(milan_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 		 *   next power of 2 at each component.  For example, if there
 		 *   are 4 CCDs, there will be 2 bits in the APIC ID for the
 		 *   logical CCD number, even though representing the UnitId
-		 *   on Milan requires 3 bits for the CCD.  No, we don't know
+		 *   on Genoa requires 3 bits for the CCD.  No, we don't know
 		 *   why this is so; it would certainly have been simpler to
 		 *   always use the physical ID to compute the initial APIC ID.
 		 * - Second, not only are APIC IDs not UnitIds, there is nothing
@@ -2794,10 +2794,10 @@ milan_ccx_init_core(milan_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 }
 
 static void
-milan_ccx_init_soc(milan_soc_t *soc)
+genoa_ccx_init_soc(genoa_soc_t *soc)
 {
-	const milan_fabric_t *fabric = soc->ms_fabric;
-	milan_iodie_t *iodie = &soc->ms_iodies[0];
+	const genoa_fabric_t *fabric = soc->ms_fabric;
+	genoa_iodie_t *iodie = &soc->ms_iodies[0];
 
 	/*
 	 * We iterate over the physical CCD space; population of that
@@ -2805,20 +2805,20 @@ milan_ccx_init_soc(milan_soc_t *soc)
 	 * lccd; ccdpno is the physical CCD index we're considering.
 	 */
 	for (uint8_t ccdpno = 0, lccd = 0;
-	    ccdpno < MILAN_MAX_CCDS_PER_IODIE; ccdpno++) {
+	    ccdpno < GENOA_MAX_CCDS_PER_IODIE; ccdpno++) {
 		uint8_t core_shift, pcore, lcore, pccx;
 		smn_reg_t reg;
 		uint32_t val;
 		uint32_t cores_enabled;
-		milan_ccd_t *ccd = &iodie->mi_ccds[lccd];
-		milan_ccx_t *ccx = &ccd->mcd_ccxs[0];
+		genoa_ccd_t *ccd = &iodie->mi_ccds[lccd];
+		genoa_ccx_t *ccx = &ccd->mcd_ccxs[0];
 
 		/*
 		 * The CCM is part of the IO die, not the CCD itself.
 		 * If it is disabled, we skip this CCD index as even if
 		 * it exists nothing can reach it.
 		 */
-		val = milan_df_read32(iodie, MILAN_DF_FIRST_CCM_ID + ccdpno,
+		val = genoa_df_read32(iodie, GENOA_DF_FIRST_CCM_ID + ccdpno,
 		    DF_FBIINFO0);
 
 		VERIFY3U(DF_FBIINFO0_GET_TYPE(val), ==, DF_TYPE_CCM);
@@ -2828,41 +2828,41 @@ milan_ccx_init_soc(milan_soc_t *soc)
 		/*
 		 * At leaast some of the time, a CCM will be enabled
 		 * even if there is no corresponding CCD.  To avoid
-		 * a possibly invalid read (see milan_fabric_topo_init()
+		 * a possibly invalid read (see genoa_fabric_topo_init()
 		 * comments), we also check whether any core is enabled
 		 * on this CCD.
 		 *
 		 * XXX reduce magic
 		 */
-		val = milan_df_bcast_read32(iodie, (ccdpno < 4) ?
+		val = genoa_df_bcast_read32(iodie, (ccdpno < 4) ?
 		    DF_PHYS_CORE_EN0_V3 : DF_PHYS_CORE_EN1_V3);
-		core_shift = (ccdpno & 3) * MILAN_MAX_CORES_PER_CCX *
-		    MILAN_MAX_CCXS_PER_CCD;
+		core_shift = (ccdpno & 3) * GENOA_MAX_CORES_PER_CCX *
+		    GENOA_MAX_CCXS_PER_CCD;
 		cores_enabled = bitx32(val, core_shift + 7, core_shift);
 
 		if (cores_enabled == 0)
 			continue;
 
-		VERIFY3U(lccd, <, MILAN_MAX_CCDS_PER_IODIE);
+		VERIFY3U(lccd, <, GENOA_MAX_CCDS_PER_IODIE);
 		ccd->mcd_iodie = iodie;
 		ccd->mcd_logical_dieno = lccd++;
 		ccd->mcd_physical_dieno = ccdpno;
-		ccd->mcd_ccm_comp_id = MILAN_DF_FIRST_CCM_ID + ccdpno;
+		ccd->mcd_ccm_comp_id = GENOA_DF_FIRST_CCM_ID + ccdpno;
 		/*
-		 * XXX Non-Milan may require nonzero component ID shift.
+		 * XXX Non-Genoa may require nonzero component ID shift.
 		 */
 		ccd->mcd_ccm_fabric_id = ccd->mcd_ccm_comp_id |
 		    (iodie->mi_node_id << fabric->mf_node_shift);
 
 		/* XXX avoid panicking on bad data from firmware */
-		reg = milan_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
-		val = milan_ccd_read(ccd, reg);
+		reg = genoa_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
+		val = genoa_ccd_read(ccd, reg);
 		VERIFY3U(val, ==, ccdpno);
 
-		reg = milan_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
-		val = milan_ccd_read(ccd, reg);
+		reg = genoa_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
+		val = genoa_ccd_read(ccd, reg);
 		ccd->mcd_nccxs = SMUPWR_THREAD_CFG_GET_COMPLEX_COUNT(val) + 1;
-		VERIFY3U(ccd->mcd_nccxs, <=, MILAN_MAX_CCXS_PER_CCD);
+		VERIFY3U(ccd->mcd_nccxs, <=, GENOA_MAX_CCXS_PER_CCD);
 
 		if (ccd->mcd_nccxs == 0) {
 			cmn_err(CE_NOTE, "CCD 0x%x: no CCXs reported",
@@ -2876,18 +2876,18 @@ milan_ccx_init_soc(milan_soc_t *soc)
 		 * the DF.  A mismatch here is a firmware bug; XXX and
 		 * if that happens?
 		 */
-		reg = milan_ccd_reg(ccd, D_SMUPWR_CORE_EN);
-		val = milan_ccd_read(ccd, reg);
+		reg = genoa_ccd_reg(ccd, D_SMUPWR_CORE_EN);
+		val = genoa_ccd_read(ccd, reg);
 		VERIFY3U(SMUPWR_CORE_EN_GET(val), ==, cores_enabled);
 
 		/*
-		 * XXX While we know there is only ever 1 CCX per Milan CCD,
+		 * XXX While we know there is only ever 1 CCX per Genoa CCD,
 		 * DF::CCXEnable allows for 2 because the DFv3 implementation
 		 * is shared with Rome, which has up to 2 CCXs per CCD.
 		 * Although we know we only ever have 1 CCX, we don't,
 		 * strictly, know that the CCX is always physical index 0.
 		 * Here we assume it, but we probably want to change the
-		 * MILAN_MAX_xxx_PER_yyy so that they reflect the size of the
+		 * GENOA_MAX_xxx_PER_yyy so that they reflect the size of the
 		 * physical ID spaces rather than the maximum logical entity
 		 * counts.  Doing so would accommodate a part that has a single
 		 * CCX per CCD, but at index 1.
@@ -2909,22 +2909,22 @@ milan_ccx_init_soc(milan_soc_t *soc)
 		 */
 		for (pcore = 0;
 		    (cores_enabled & (1 << pcore)) == 0 &&
-		    pcore < MILAN_MAX_CORES_PER_CCX; pcore++)
+		    pcore < GENOA_MAX_CORES_PER_CCX; pcore++)
 			;
-		VERIFY3U(pcore, <, MILAN_MAX_CORES_PER_CCX);
+		VERIFY3U(pcore, <, GENOA_MAX_CORES_PER_CCX);
 
 		reg = SCFCTP_PMREG_INITPKG7(ccdpno, pccx, pcore);
-		val = milan_smn_read(iodie, reg);
+		val = genoa_smn_read(iodie, reg);
 		VERIFY3U(val, !=, 0xffffffffU);
 
 		ccx->mcx_ncores = SCFCTP_PMREG_INITPKG7_GET_N_CORES(val) + 1;
 		iodie->mi_nccds = SCFCTP_PMREG_INITPKG7_GET_N_DIES(val) + 1;
 
 		for (pcore = 0, lcore = 0;
-		    pcore < MILAN_MAX_CORES_PER_CCX; pcore++) {
+		    pcore < GENOA_MAX_CORES_PER_CCX; pcore++) {
 			if ((cores_enabled & (1 << pcore)) == 0)
 				continue;
-			milan_ccx_init_core(ccx, lcore, pcore);
+			genoa_ccx_init_core(ccx, lcore, pcore);
 			++lcore;
 		}
 
@@ -2933,10 +2933,10 @@ milan_ccx_init_soc(milan_soc_t *soc)
 }
 
 static boolean_t
-milan_smu_features_init(milan_iodie_t *iodie)
+genoa_smu_features_init(genoa_iodie_t *iodie)
 {
-	milan_smu_rpc_t rpc = { 0 };
-	milan_soc_t *soc = iodie->mi_soc;
+	genoa_smu_rpc_t rpc = { 0 };
+	genoa_soc_t *soc = iodie->mi_soc;
 
 	/*
 	 * Not all combinations of SMU features will result in correct system
@@ -2944,31 +2944,31 @@ milan_smu_features_init(milan_iodie_t *iodie)
 	 * enablement -- even where that means enabling features with unknown
 	 * functionality.
 	 */
-	uint32_t features = MILAN_SMU_FEATURE_DATA_CALCULATION |
-	    MILAN_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
-	    MILAN_SMU_FEATURE_THERMAL |
-	    MILAN_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
-	    MILAN_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
-	    MILAN_SMU_FEATURE_CSTATE_BOOST |
-	    MILAN_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
-	    MILAN_SMU_FEATURE_CORE_CLOCK_DPM |
-	    MILAN_SMU_FEATURE_FABRIC_CLOCK_DPM |
-	    MILAN_SMU_FEATURE_XGMI_DYNAMIC_LINK_WIDTH_MANAGEMENT |
-	    MILAN_SMU_FEATURE_DIGITAL_LDO |
-	    MILAN_SMU_FEATURE_SOCCLK_DEEP_SLEEP |
-	    MILAN_SMU_FEATURE_LCLK_DEEP_SLEEP |
-	    MILAN_SMU_FEATURE_SYSHUBCLK_DEEP_SLEEP |
-	    MILAN_SMU_FEATURE_CLOCK_GATING |
-	    MILAN_SMU_FEATURE_DYNAMIC_LDO_DROPOUT_LIMITER |
-	    MILAN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
-	    MILAN_SMU_FEATURE_AGE;
+	uint32_t features = GENOA_SMU_FEATURE_DATA_CALCULATION |
+	    GENOA_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
+	    GENOA_SMU_FEATURE_THERMAL |
+	    GENOA_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
+	    GENOA_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
+	    GENOA_SMU_FEATURE_CSTATE_BOOST |
+	    GENOA_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
+	    GENOA_SMU_FEATURE_CORE_CLOCK_DPM |
+	    GENOA_SMU_FEATURE_FABRIC_CLOCK_DPM |
+	    GENOA_SMU_FEATURE_XGMI_DYNAMIC_LINK_WIDTH_MANAGEMENT |
+	    GENOA_SMU_FEATURE_DIGITAL_LDO |
+	    GENOA_SMU_FEATURE_SOCCLK_DEEP_SLEEP |
+	    GENOA_SMU_FEATURE_LCLK_DEEP_SLEEP |
+	    GENOA_SMU_FEATURE_SYSHUBCLK_DEEP_SLEEP |
+	    GENOA_SMU_FEATURE_CLOCK_GATING |
+	    GENOA_SMU_FEATURE_DYNAMIC_LDO_DROPOUT_LIMITER |
+	    GENOA_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
+	    GENOA_SMU_FEATURE_AGE;
 
-	rpc.msr_req = MILAN_SMU_OP_ENABLE_FEATURE;
+	rpc.msr_req = GENOA_SMU_OP_ENABLE_FEATURE;
 	rpc.msr_arg0 = features;
 
-	milan_smu_rpc(iodie, &rpc);
+	genoa_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Features RPC Failed: features: "
 		    "0x%x, SMU 0x%x", soc->ms_socno, features, rpc.msr_resp);
@@ -2977,7 +2977,7 @@ milan_smu_features_init(milan_iodie_t *iodie)
 		    soc->ms_socno, features);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
 }
 
 /*
@@ -2992,13 +2992,13 @@ milan_smu_features_init(milan_iodie_t *iodie)
  * actual SoC has discovered here rather than trying to fill that in ourselves.
  */
 void
-milan_fabric_topo_init(void)
+genoa_fabric_topo_init(void)
 {
 	uint8_t nsocs;
 	uint32_t syscfg, syscomp, fidmask;
-	milan_fabric_t *fabric = &milan_fabric;
+	genoa_fabric_t *fabric = &genoa_fabric;
 
-	PRM_POINT("milan_fabric_topo_init() starting...");
+	PRM_POINT("genoa_fabric_topo_init() starting...");
 
 	/*
 	 * Before we can do anything else, we must set up PCIe ECAM.  We locate
@@ -3010,43 +3010,44 @@ milan_fabric_topo_init(void)
 	fabric->mf_tom2 = MSR_AMD_TOM2_MASK(rdmsr(MSR_AMD_TOM2));
 
 	fabric->mf_ecam_base = P2ROUNDUP(MAX(fabric->mf_tom2,
-	    MILAN_PHYSADDR_IOMMU_HOLE_END), PCIE_CFGSPACE_ALIGN);
+	    GENOA_PHYSADDR_IOMMU_HOLE_END), PCIE_CFGSPACE_ALIGN);
 	fabric->mf_mmio64_base = fabric->mf_ecam_base + PCIE_CFGSPACE_SIZE;
 
 	pcie_cfgspace_init();
 
-	syscfg = milan_df_early_read32(DF_SYSCFG_V3);
-	syscomp = milan_df_early_read32(DF_COMPCNT_V2);
+	syscfg = genoa_df_early_read32(DF_SYSCFG_V3);
+	syscomp = genoa_df_early_read32(DF_COMPCNT_V2);
 	nsocs = DF_SYSCFG_V3_GET_OTHER_SOCK(syscfg) + 1;
 
 	/*
 	 * These are used to ensure that we're on a platform that matches our
-	 * expectations. These are generally constraints of Rome and Milan.
+	 * expectations. These are generally constraints of Rome, Milan and
+	 * Genoa.
 	 */
 	VERIFY3U(nsocs, ==, DF_COMPCNT_V2_GET_PIE(syscomp));
-	VERIFY3U(nsocs * MILAN_IOMS_PER_IODIE, ==,
+	VERIFY3U(nsocs * GENOA_IOMS_PER_IODIE, ==,
 	    DF_COMPCNT_V2_GET_IOMS(syscomp));
 
 	/*
 	 * Gather the register masks for decoding global fabric IDs into local
 	 * instance IDs.
 	 */
-	fidmask = milan_df_early_read32(DF_FIDMASK0_V3);
+	fidmask = genoa_df_early_read32(DF_FIDMASK0_V3);
 	fabric->mf_node_mask = DF_FIDMASK0_V3_GET_NODE_MASK(fidmask);
 	fabric->mf_comp_mask = DF_FIDMASK0_V3_GET_COMP_MASK(fidmask);
 
-	fidmask = milan_df_early_read32(DF_FIDMASK1_V3);
+	fidmask = genoa_df_early_read32(DF_FIDMASK1_V3);
 	fabric->mf_node_shift = DF_FIDMASK1_V3_GET_NODE_SHIFT(fidmask);
 
 	fabric->mf_nsocs = nsocs;
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
 		uint32_t busno, nodeid;
 		const df_reg_def_t rd = DF_SYSCFG_V3;
-		milan_soc_t *soc = &fabric->mf_socs[socno];
-		milan_iodie_t *iodie = &soc->ms_iodies[0];
+		genoa_soc_t *soc = &fabric->mf_socs[socno];
+		genoa_iodie_t *iodie = &soc->ms_iodies[0];
 
 		soc->ms_socno = socno;
-		soc->ms_ndies = MILAN_FABRIC_MAX_DIES_PER_SOC;
+		soc->ms_ndies = GENOA_FABRIC_MAX_DIES_PER_SOC;
 		soc->ms_fabric = fabric;
 		iodie->mi_dfno = AMDZEN_DF_FIRST_DEVICE + socno;
 
@@ -3056,7 +3057,7 @@ milan_fabric_topo_init(void)
 		iodie->mi_soc = soc;
 
 		if (iodie->mi_node_id == 0) {
-			iodie->mi_flags |= MILAN_IODIE_F_PRIMARY;
+			iodie->mi_flags |= GENOA_IODIE_F_PRIMARY;
 		}
 
 		/*
@@ -3071,41 +3072,41 @@ milan_fabric_topo_init(void)
 		mutex_init(&iodie->mi_smu_lock, NULL, MUTEX_SPIN,
 		    (ddi_iblock_cookie_t)ipltospl(15));
 
-		busno = milan_df_bcast_read32(iodie, DF_CFG_ADDR_CTL_V2);
+		busno = genoa_df_bcast_read32(iodie, DF_CFG_ADDR_CTL_V2);
 		iodie->mi_smn_busno = DF_CFG_ADDR_CTL_GET_BUS_NUM(busno);
 
-		iodie->mi_nioms = MILAN_IOMS_PER_IODIE;
+		iodie->mi_nioms = GENOA_IOMS_PER_IODIE;
 		fabric->mf_total_ioms += iodie->mi_nioms;
 		for (uint8_t iomsno = 0; iomsno < iodie->mi_nioms; iomsno++) {
 			uint32_t val;
 
-			milan_ioms_t *ioms = &iodie->mi_ioms[iomsno];
+			genoa_ioms_t *ioms = &iodie->mi_ioms[iomsno];
 
 			ioms->mio_num = iomsno;
 			ioms->mio_iodie = iodie;
-			ioms->mio_comp_id = MILAN_DF_FIRST_IOMS_ID + iomsno;
+			ioms->mio_comp_id = GENOA_DF_FIRST_IOMS_ID + iomsno;
 			ioms->mio_fabric_id = ioms->mio_comp_id |
 			    (iodie->mi_node_id << fabric->mf_node_shift);
 
-			val = milan_df_read32(iodie, ioms->mio_comp_id,
+			val = genoa_df_read32(iodie, ioms->mio_comp_id,
 			    DF_CFG_ADDR_CTL_V2);
 			ioms->mio_pci_busno = DF_CFG_ADDR_CTL_GET_BUS_NUM(val);
 
 			/*
 			 * Only IOMS 0 has a WAFL port.
 			 */
-			ioms->mio_npcie_cores = milan_nbio_n_pcie_cores(iomsno);
-			if (iomsno == MILAN_IOMS_HAS_WAFL) {
-				ioms->mio_flags |= MILAN_IOMS_F_HAS_WAFL;
+			ioms->mio_npcie_cores = genoa_nbio_n_pcie_cores(iomsno);
+			if (iomsno == GENOA_IOMS_HAS_WAFL) {
+				ioms->mio_flags |= GENOA_IOMS_F_HAS_WAFL;
 			}
-			ioms->mio_nnbifs = MILAN_IOMS_MAX_NBIF;
+			ioms->mio_nnbifs = GENOA_IOMS_MAX_NBIF;
 
-			if (iomsno == MILAN_IOMS_HAS_FCH) {
-				ioms->mio_flags |= MILAN_IOMS_F_HAS_FCH;
+			if (iomsno == GENOA_IOMS_HAS_FCH) {
+				ioms->mio_flags |= GENOA_IOMS_F_HAS_FCH;
 			}
 
-			milan_fabric_ioms_pcie_init(ioms);
-			milan_fabric_ioms_nbif_init(ioms);
+			genoa_fabric_ioms_pcie_init(ioms);
+			genoa_fabric_ioms_nbif_init(ioms);
 		}
 
 		/*
@@ -3114,15 +3115,15 @@ milan_fabric_topo_init(void)
 		 * brand string for the CCXs even before then), we go through
 		 * now and capture firmware versions.
 		 */
-		VERIFY0(milan_dump_versions(iodie, NULL));
+		VERIFY0(genoa_dump_versions(iodie, NULL));
 
-		milan_ccx_init_soc(soc);
-		if (!milan_smu_rpc_read_brand_string(iodie, soc->ms_brandstr,
+		genoa_ccx_init_soc(soc);
+		if (!genoa_smu_rpc_read_brand_string(iodie, soc->ms_brandstr,
 		    sizeof (soc->ms_brandstr))) {
 			soc->ms_brandstr[0] = '\0';
 		}
 
-		if (!milan_smu_rpc_read_dpm_weights(iodie,
+		if (!genoa_smu_rpc_read_dpm_weights(iodie,
 		    iodie->mi_dpm_weights, sizeof (iodie->mi_dpm_weights))) {
 			/*
 			 * XXX It's unclear whether continuing is wise.
@@ -3137,7 +3138,7 @@ milan_fabric_topo_init(void)
 		 * dynamic frequency scaling -- which in turn makes the rest
 		 * of the boot much, much faster.
 		 */
-		VERIFY(milan_smu_features_init(iodie));
+		VERIFY(genoa_smu_features_init(iodie));
 	}
 
 	if (nthreads > NCPU) {
@@ -3156,12 +3157,12 @@ milan_fabric_topo_init(void)
  * register in the IOHC for indicating DRAM/MMIO splits.
  */
 static int
-milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_tom(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 	uint64_t tom2, tom3;
-	milan_fabric_t *fabric = ioms->mio_iodie->mi_soc->ms_fabric;
+	genoa_fabric_t *fabric = ioms->mio_iodie->mi_soc->ms_fabric;
 
 	/*
 	 * This register is a little funky. Bit 32 of the address has to be
@@ -3179,8 +3180,8 @@ milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
 		return (0);
 	}
 
-	if (fabric->mf_tom2 > MILAN_PHYSADDR_IOMMU_HOLE_END) {
-		tom2 = MILAN_PHYSADDR_IOMMU_HOLE;
+	if (fabric->mf_tom2 > GENOA_PHYSADDR_IOMMU_HOLE_END) {
+		tom2 = GENOA_PHYSADDR_IOMMU_HOLE;
 		tom3 = fabric->mf_tom2 - 1;
 	} else {
 		tom2 = fabric->mf_tom2;
@@ -3191,26 +3192,26 @@ milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
 	 * Write the upper register before the lower so we don't accidentally
 	 * enable it in an incomplete fashion.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_DRAM_TOM2_HI, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_DRAM_TOM2_HI, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_DRAM_TOM2_HI_SET_TOM2(val, bitx64(tom2, 40, 32));
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOHC_DRAM_TOM2_LOW, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_DRAM_TOM2_LOW, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_DRAM_TOM2_LOW_SET_EN(val, 1);
 	val = IOHC_DRAM_TOM2_LOW_SET_TOM2(val, bitx64(tom2, 31, 23));
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	if (tom3 == 0) {
 		return (0);
 	}
 
-	reg = milan_ioms_reg(ioms, D_IOHC_DRAM_TOM3, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_DRAM_TOM3, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_DRAM_TOM3_SET_EN(val, 1);
 	val = IOHC_DRAM_TOM3_SET_LIMIT(val, bitx64(tom3, 51, 22));
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3224,7 +3225,7 @@ milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
  * contents alone.
  */
 static int
-milan_fabric_disable_iohc_vga(milan_ioms_t *ioms, void *arg)
+genoa_fabric_disable_iohc_vga(genoa_ioms_t *ioms, void *arg)
 {
 	uint32_t val;
 
@@ -3243,14 +3244,14 @@ milan_fabric_disable_iohc_vga(milan_ioms_t *ioms, void *arg)
  * reason.
  */
 static int
-milan_fabric_init_iohc_pci(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_iohc_pci(genoa_ioms_t *ioms, void *arg)
 {
 	uint32_t val;
 
 	val = pci_getl_func(ioms->mio_pci_busno, 0, 0, IOHC_NB_ADAPTER_ID_W);
 	val = IOHC_NB_ADAPTER_ID_W_SET_SVID(val, VENID_AMD);
 	val = IOHC_NB_ADAPTER_ID_W_SET_SDID(val,
-	    IOHC_NB_ADAPTER_ID_W_AMD_MILAN_IOHC);
+	    IOHC_NB_ADAPTER_ID_W_AMD_GENOA_IOHC);
 	pci_putl_func(ioms->mio_pci_busno, 0, 0, IOHC_NB_ADAPTER_ID_W, val);
 
 	return (0);
@@ -3264,23 +3265,23 @@ milan_fabric_init_iohc_pci(milan_ioms_t *ioms, void *arg)
  * to zero out some of this.
  */
 static int
-milan_fabric_init_iohc_fch_link(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_iohc_fch_link(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	reg = genoa_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
+	if ((ioms->mio_flags & GENOA_IOMS_F_HAS_FCH) != 0) {
 		smn_reg_t iommureg;
 		uint32_t val;
 
-		val = milan_ioms_read(ioms, reg);
-		iommureg = milan_ioms_reg(ioms, D_IOMMUL1_SB_LOCATION,
+		val = genoa_ioms_read(ioms, reg);
+		iommureg = genoa_ioms_reg(ioms, D_IOMMUL1_SB_LOCATION,
 		    MIL1SU_IOAGR);
-		milan_ioms_write(ioms, iommureg, val);
-		iommureg = milan_ioms_reg(ioms, D_IOMMUL2_SB_LOCATION, 0);
-		milan_ioms_write(ioms, iommureg, val);
+		genoa_ioms_write(ioms, iommureg, val);
+		iommureg = genoa_ioms_reg(ioms, D_IOMMUL2_SB_LOCATION, 0);
+		genoa_ioms_write(ioms, iommureg, val);
 	} else {
-		milan_ioms_write(ioms, reg, 0);
+		genoa_ioms_write(ioms, reg, 0);
 	}
 
 	return (0);
@@ -3291,17 +3292,17 @@ milan_fabric_init_iohc_fch_link(milan_ioms_t *ioms, void *arg)
  * to do this ourselves. If we don't do this, PCIe will not be very happy.
  */
 static int
-milan_fabric_init_pcie_refclk(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_pcie_refclk(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_REFCLK_MODE, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_REFCLK_MODE, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_REFCLK_MODE_SET_27MHZ(val, 0);
 	val = IOHC_REFCLK_MODE_SET_25MHZ(val, 0);
 	val = IOHC_REFCLK_MODE_SET_100MHZ(val, 1);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3311,16 +3312,16 @@ milan_fabric_init_pcie_refclk(milan_ioms_t *ioms, void *arg)
  * comes from other AMD sources.
  */
 static int
-milan_fabric_init_pci_to(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_pci_to(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_PCIE_CRS_COUNT, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_PCIE_CRS_COUNT, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_PCIE_CRS_COUNT_SET_LIMIT(val, 0x262);
 	val = IOHC_PCIE_CRS_COUNT_SET_DELAY(val, 0x6);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3335,23 +3336,23 @@ milan_fabric_init_pci_to(milan_ioms_t *ioms, void *arg)
  * only touch this reg in one place if we can.
  */
 static int
-milan_fabric_init_iohc_features(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_iohc_features(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_FCTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_FCTL, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_FCTL_SET_ARI(val, 1);
 	/* XXX Wants to be IOHC_FCTL_P2P_DISABLE? */
 	val = IOHC_FCTL_SET_P2P(val, IOHC_FCTL_P2P_DROP_NMATCH);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
 
 static int
-milan_fabric_init_arbitration_ioms(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -3364,23 +3365,23 @@ milan_fabric_init_arbitration_ioms(milan_ioms_t *ioms, void *arg)
 	for (uint_t i = 0; i < IOHC_SION_MAX_ENTS; i++) {
 		uint32_t tsval;
 
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
 
 		switch (i) {
 		case 0:
@@ -3399,10 +3400,10 @@ milan_fabric_init_arbitration_ioms(milan_ioms_t *ioms, void *arg)
 			continue;
 		}
 
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_LOW, i);
-		milan_ioms_write(ioms, reg, tsval);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_HI, i);
-		milan_ioms_write(ioms, reg, tsval);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_LOW, i);
+		genoa_ioms_write(ioms, reg, tsval);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_HI, i);
+		genoa_ioms_write(ioms, reg, tsval);
 	}
 
 	/*
@@ -3411,22 +3412,22 @@ milan_fabric_init_arbitration_ioms(milan_ioms_t *ioms, void *arg)
 	 * Apparently it's not necessary to set instances 5 and 6.
 	 */
 	for (uint_t i = 0; i < 4; i++) {
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_Sn_CLI_NP_DEFICIT, i);
+		reg = genoa_ioms_reg(ioms, D_IOHC_SION_Sn_CLI_NP_DEFICIT, i);
 
-		val = milan_ioms_read(ioms, reg);
+		val = genoa_ioms_read(ioms, reg);
 		val = IOHC_SION_CLI_NP_DEFICIT_SET(val,
 		    IOHC_SION_CLI_NP_DEFICIT_VAL);
-		milan_ioms_write(ioms, reg, val);
+		genoa_ioms_write(ioms, reg, val);
 	}
 
 	/*
 	 * Go back and finally set the live lock watchdog to finish off the
 	 * IOHC.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_SION_LLWD_THRESH, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_SION_LLWD_THRESH, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_SION_LLWD_THRESH_SET(val, IOHC_SION_LLWD_THRESH_VAL);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	/*
 	 * Next on our list is the IOAGR. While there are 5 entries, only 4 are
@@ -3435,23 +3436,23 @@ milan_fabric_init_arbitration_ioms(milan_ioms_t *ioms, void *arg)
 	for (uint_t i = 0; i < 4; i++) {
 		uint32_t tsval;
 
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
 
 		switch (i) {
 		case 0:
@@ -3466,91 +3467,91 @@ milan_fabric_init_arbitration_ioms(milan_ioms_t *ioms, void *arg)
 			continue;
 		}
 
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_LOW, i);
-		milan_ioms_write(ioms, reg, tsval);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_HI, i);
-		milan_ioms_write(ioms, reg, tsval);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_LOW, i);
+		genoa_ioms_write(ioms, reg, tsval);
+		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_HI, i);
+		genoa_ioms_write(ioms, reg, tsval);
 	}
 
 	/*
 	 * The IOAGR only has the watchdog.
 	 */
 
-	reg = milan_ioms_reg(ioms, D_IOAGR_SION_LLWD_THRESH, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOAGR_SION_LLWD_THRESH, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOAGR_SION_LLWD_THRESH_SET(val, IOAGR_SION_LLWD_THRESH_VAL);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	/*
 	 * Finally, the SDPMUX variant, which is surprisingly consistent
 	 * compared to everything else to date.
 	 */
 	for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
-		reg = milan_ioms_reg(ioms,
+		reg = genoa_ioms_reg(ioms,
 		    D_SDPMUX_SION_S0_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms,
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms,
 		    D_SDPMUX_SION_S1_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S1_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S1_CLIREQ_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_LOW, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_HI, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_LOW, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
+		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_HI, i);
+		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
 	}
 
-	reg = milan_ioms_reg(ioms, D_SDPMUX_SION_LLWD_THRESH, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_LLWD_THRESH, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = SDPMUX_SION_LLWD_THRESH_SET(val, SDPMUX_SION_LLWD_THRESH_VAL);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	/*
 	 * XXX We probably don't need this since we don't have USB. But until we
 	 * have things working and can experiment, hard to say. If someone were
 	 * to use the bus, probably something we need to consider.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_USB_QOS_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_USB_QOS_CTL, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_USB_QOS_CTL_SET_UNID1_EN(val, 0x1);
 	val = IOHC_USB_QOS_CTL_SET_UNID1_PRI(val, 0x0);
 	val = IOHC_USB_QOS_CTL_SET_UNID1_ID(val, 0x30);
 	val = IOHC_USB_QOS_CTL_SET_UNID0_EN(val, 0x1);
 	val = IOHC_USB_QOS_CTL_SET_UNID0_PRI(val, 0x0);
 	val = IOHC_USB_QOS_CTL_SET_UNID0_ID(val, 0x2f);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
 
 static int
-milan_fabric_init_arbitration_nbif(milan_nbif_t *nbif, void *arg)
+genoa_fabric_init_arbitration_nbif(genoa_nbif_t *nbif, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT2, 0);
-	milan_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
-	reg = milan_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT3, 0);
-	milan_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
+	reg = genoa_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT2, 0);
+	genoa_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
+	reg = genoa_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT3, 0);
+	genoa_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
 
-	reg = milan_nbif_reg(nbif, D_NBIF_BIFC_MISC_CTL0, 0);
-	val = milan_nbif_read(nbif, reg);
+	reg = genoa_nbif_reg(nbif, D_NBIF_BIFC_MISC_CTL0, 0);
+	val = genoa_nbif_read(nbif, reg);
 	val = NBIF_BIFC_MISC_CTL0_SET_PME_TURNOFF(val,
 	    NBIF_BIFC_MISC_CTL0_PME_TURNOFF_FW);
-	milan_nbif_write(nbif, reg, val);
+	genoa_nbif_write(nbif, reg, val);
 
 	return (0);
 }
@@ -3563,33 +3564,33 @@ milan_fabric_init_arbitration_nbif(milan_nbif_t *nbif, void *arg)
  * not have an early wake up register.
  */
 static int
-milan_fabric_init_sdp_control(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_sdp_control(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_SDP_PORT_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_SDP_PORT_CTL, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOHC_SDP_EARLY_WAKE_UP, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_SDP_EARLY_WAKE_UP, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_SDP_EARLY_WAKE_UP_SET_HOST_ENABLE(val, 0xffff);
 	val = IOHC_SDP_EARLY_WAKE_UP_SET_DMA_ENABLE(val, 0x1);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOAGR_EARLY_WAKE_UP, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOAGR_EARLY_WAKE_UP, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOAGR_EARLY_WAKE_UP_SET_DMA_ENABLE(val, 0x1);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_SDPMUX_SDP_PORT_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_SDPMUX_SDP_PORT_CTL, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = SDPMUX_SDP_PORT_CTL_SET_HOST_ENABLE(val, 0xffff);
 	val = SDPMUX_SDP_PORT_CTL_SET_DMA_ENABLE(val, 0x1);
 	val = SDPMUX_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3603,7 +3604,7 @@ milan_fabric_init_sdp_control(milan_ioms_t *ioms, void *arg)
  * actually be on IOMS 3.
  */
 static int
-milan_fabric_init_nbif_syshub_dma(milan_nbif_t *nbif, void *arg)
+genoa_fabric_init_nbif_syshub_dma(genoa_nbif_t *nbif, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -3615,10 +3616,10 @@ milan_fabric_init_nbif_syshub_dma(milan_nbif_t *nbif, void *arg)
 	    (nbif->mn_nbifno > 0 && nbif->mn_ioms->mio_num > 1)) {
 		return (0);
 	}
-	reg = milan_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SOC, 0);
-	val = milan_nbif_read(nbif, reg);
+	reg = genoa_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SOC, 0);
+	val = genoa_nbif_read(nbif, reg);
 	val = NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(val, 1);
-	milan_nbif_write(nbif, reg, val);
+	genoa_nbif_write(nbif, reg, val);
 	return (0);
 }
 
@@ -3634,25 +3635,25 @@ milan_fabric_init_nbif_syshub_dma(milan_nbif_t *nbif, void *arg)
  * has the FCH.
  */
 static int
-milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_ioapic(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	ASSERT3U(ARRAY_SIZE(milan_ioapic_routes), ==, IOAPIC_NROUTES);
+	ASSERT3U(ARRAY_SIZE(genoa_ioapic_routes), ==, IOAPIC_NROUTES);
 
-	for (uint_t i = 0; i < ARRAY_SIZE(milan_ioapic_routes); i++) {
-		smn_reg_t reg = milan_ioms_reg(ioms, D_IOAPIC_ROUTE, i);
-		uint32_t route = milan_ioms_read(ioms, reg);
+	for (uint_t i = 0; i < ARRAY_SIZE(genoa_ioapic_routes); i++) {
+		smn_reg_t reg = genoa_ioms_reg(ioms, D_IOAPIC_ROUTE, i);
+		uint32_t route = genoa_ioms_read(ioms, reg);
 
 		route = IOAPIC_ROUTE_SET_BRIDGE_MAP(route,
-		    milan_ioapic_routes[i].mii_map);
+		    genoa_ioapic_routes[i].mii_map);
 		route = IOAPIC_ROUTE_SET_INTX_SWIZZLE(route,
-		    milan_ioapic_routes[i].mii_swiz);
+		    genoa_ioapic_routes[i].mii_swiz);
 		route = IOAPIC_ROUTE_SET_INTX_GROUP(route,
-		    milan_ioapic_routes[i].mii_group);
+		    genoa_ioapic_routes[i].mii_group);
 
-		milan_ioms_write(ioms, reg, route);
+		genoa_ioms_write(ioms, reg, route);
 	}
 
 	/*
@@ -3661,21 +3662,21 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
 	 * enabled with reset addresses, we instead lock them. XXX Should we
 	 * lock primary?
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_HI, 0);
-	val = milan_ioms_read(ioms, reg);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	reg = genoa_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_HI, 0);
+	val = genoa_ioms_read(ioms, reg);
+	if ((ioms->mio_flags & GENOA_IOMS_F_HAS_FCH) != 0) {
 		val = IOHC_IOAPIC_ADDR_HI_SET_ADDR(val,
-		    bitx64(MILAN_PHYSADDR_IOHC_IOAPIC, 47, 32));
+		    bitx64(GENOA_PHYSADDR_IOHC_IOAPIC, 47, 32));
 	} else {
 		val = IOHC_IOAPIC_ADDR_HI_SET_ADDR(val, 0);
 	}
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_LO, 0);
-	val = milan_ioms_read(ioms, reg);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	reg = genoa_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_LO, 0);
+	val = genoa_ioms_read(ioms, reg);
+	if ((ioms->mio_flags & GENOA_IOMS_F_HAS_FCH) != 0) {
 		val = IOHC_IOAPIC_ADDR_LO_SET_ADDR(val,
-		    bitx64(MILAN_PHYSADDR_IOHC_IOAPIC, 31, 8));
+		    bitx64(GENOA_PHYSADDR_IOHC_IOAPIC, 31, 8));
 		val = IOHC_IOAPIC_ADDR_LO_SET_LOCK(val, 0);
 		val = IOHC_IOAPIC_ADDR_LO_SET_EN(val, 1);
 	} else {
@@ -3683,7 +3684,7 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
 		val = IOHC_IOAPIC_ADDR_LO_SET_LOCK(val, 1);
 		val = IOHC_IOAPIC_ADDR_LO_SET_EN(val, 0);
 	}
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	/*
 	 * Every IOAPIC requires that we enable 8-bit addressing and that it be
@@ -3691,16 +3692,16 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
 	 * is the secondary bit which determines whether or not this IOAPIC is
 	 * subordinate to another.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOAPIC_FEATURES, 0);
-	val = milan_ioms_read(ioms, reg);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	reg = genoa_ioms_reg(ioms, D_IOAPIC_FEATURES, 0);
+	val = genoa_ioms_read(ioms, reg);
+	if ((ioms->mio_flags & GENOA_IOMS_F_HAS_FCH) != 0) {
 		val = IOAPIC_FEATURES_SET_SECONDARY(val, 0);
 	} else {
 		val = IOAPIC_FEATURES_SET_SECONDARY(val, 1);
 	}
 	val = IOAPIC_FEATURES_SET_FCH(val, 1);
 	val = IOAPIC_FEATURES_SET_ID_EXT(val, 1);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3711,16 +3712,16 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
  * IOHC with its primary bus number and enable this.
  */
 static int
-milan_fabric_init_bus_num(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_bus_num(genoa_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_BUS_NUM_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_BUS_NUM_CTL, 0);
+	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_BUS_NUM_CTL_SET_EN(val, 1);
 	val = IOHC_BUS_NUM_CTL_SET_BUS(val, ioms->mio_pci_busno);
-	milan_ioms_write(ioms, reg, val);
+	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3739,17 +3740,17 @@ milan_fabric_init_bus_num(milan_ioms_t *ioms, void *arg)
  * related to interrupts, enables, and cfg comps.
  */
 static int
-milan_fabric_init_nbif_dev_straps(milan_nbif_t *nbif, void *arg)
+genoa_fabric_init_nbif_dev_straps(genoa_nbif_t *nbif, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t intr;
 
-	reg = milan_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
-	intr = milan_nbif_read(nbif, reg);
+	reg = genoa_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
+	intr = genoa_nbif_read(nbif, reg);
 	for (uint8_t funcno = 0; funcno < nbif->mn_nfuncs; funcno++) {
 		smn_reg_t strapreg;
 		uint32_t strap;
-		milan_nbif_func_t *func = &nbif->mn_funcs[funcno];
+		genoa_nbif_func_t *func = &nbif->mn_funcs[funcno];
 
 		/*
 		 * This indicates that we have a dummy function or similar. In
@@ -3757,14 +3758,14 @@ milan_fabric_init_nbif_dev_straps(milan_nbif_t *nbif, void *arg)
 		 * are generally what we want. XXX Kind of sort of. Not true
 		 * over time.
 		 */
-		if ((func->mne_flags & MILAN_NBIF_F_NO_CONFIG) != 0) {
+		if ((func->mne_flags & GENOA_NBIF_F_NO_CONFIG) != 0) {
 			continue;
 		}
 
-		strapreg = milan_nbif_func_reg(func, D_NBIF_FUNC_STRAP0);
-		strap = milan_nbif_func_read(func, strapreg);
+		strapreg = genoa_nbif_func_reg(func, D_NBIF_FUNC_STRAP0);
+		strap = genoa_nbif_func_read(func, strapreg);
 
-		if ((func->mne_flags & MILAN_NBIF_F_ENABLED) != 0) {
+		if ((func->mne_flags & GENOA_NBIF_F_ENABLED) != 0) {
 			strap = NBIF_FUNC_STRAP0_SET_EXIST(strap, 1);
 			intr = NBIF_INTR_LINE_EN_SET_I(intr,
 			    func->mne_dev, func->mne_func, 1);
@@ -3772,7 +3773,7 @@ milan_fabric_init_nbif_dev_straps(milan_nbif_t *nbif, void *arg)
 			/*
 			 * Strap enabled SATA devices to what AMD asks for.
 			 */
-			if (func->mne_type == MILAN_NBIF_T_SATA) {
+			if (func->mne_type == GENOA_NBIF_T_SATA) {
 				strap = NBIF_FUNC_STRAP0_SET_MAJ_REV(strap, 7);
 				strap = NBIF_FUNC_STRAP0_SET_MIN_REV(strap, 1);
 			}
@@ -3782,24 +3783,24 @@ milan_fabric_init_nbif_dev_straps(milan_nbif_t *nbif, void *arg)
 			    func->mne_dev, func->mne_func, 0);
 		}
 
-		milan_nbif_func_write(func, strapreg, strap);
+		genoa_nbif_func_write(func, strapreg, strap);
 	}
 
-	milan_nbif_write(nbif, reg, intr);
+	genoa_nbif_write(nbif, reg, intr);
 
 	/*
 	 * Each nBIF has up to three devices on them, though not all of them
 	 * seem to be used. However, it's suggested that we enable completion
 	 * timeouts on all three device straps.
 	 */
-	for (uint8_t devno = 0; devno < MILAN_NBIF_MAX_DEVS; devno++) {
+	for (uint8_t devno = 0; devno < GENOA_NBIF_MAX_DEVS; devno++) {
 		smn_reg_t reg;
 		uint32_t val;
 
-		reg = milan_nbif_reg(nbif, D_NBIF_PORT_STRAP3, devno);
-		val = milan_nbif_read(nbif, reg);
+		reg = genoa_nbif_reg(nbif, D_NBIF_PORT_STRAP3, devno);
+		val = genoa_nbif_read(nbif, reg);
 		val = NBIF_PORT_STRAP3_SET_COMP_TO(val, 1);
-		milan_nbif_write(nbif, reg, val);
+		genoa_nbif_write(nbif, reg, val);
 	}
 
 	return (0);
@@ -3813,7 +3814,7 @@ milan_fabric_init_nbif_dev_straps(milan_nbif_t *nbif, void *arg)
  * all been left enabled for now.
  */
 static int
-milan_fabric_init_nbif_bridge(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_nbif_bridge(genoa_ioms_t *ioms, void *arg)
 {
 	uint32_t val;
 	const smn_reg_t smn_regs[5] = {
@@ -3825,17 +3826,17 @@ milan_fabric_init_nbif_bridge(milan_ioms_t *ioms, void *arg)
 	};
 
 	for (uint_t i = 0; i < ARRAY_SIZE(smn_regs); i++) {
-		val = milan_ioms_read(ioms, smn_regs[i]);
+		val = genoa_ioms_read(ioms, smn_regs[i]);
 		val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
-		milan_ioms_write(ioms, smn_regs[i], val);
+		genoa_ioms_write(ioms, smn_regs[i], val);
 	}
 	return (0);
 }
 
 static int
-milan_dxio_init(milan_iodie_t *iodie, void *arg)
+genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 {
-	milan_soc_t *soc = iodie->mi_soc;
+	genoa_soc_t *soc = iodie->mi_soc;
 
 	/*
 	 * XXX Ethanol-X has a BMC hanging off socket 0, so on that platform we
@@ -3864,14 +3865,14 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
 	 * We probably want to see if we can do better by figuring out whether
 	 * this is needed on socket 0, 1, or neither.
 	 */
-	if (milan_board_type(soc->ms_fabric) == MBT_ETHANOL) {
-		if (soc->ms_socno == 0 && !milan_dxio_rpc_sm_reload(iodie)) {
+	if (genoa_board_type(soc->ms_fabric) == MBT_ETHANOL) {
+		if (soc->ms_socno == 0 && !genoa_dxio_rpc_sm_reload(iodie)) {
 			return (1);
 		}
 	}
 
 
-	if (!milan_dxio_rpc_init(iodie)) {
+	if (!genoa_dxio_rpc_init(iodie)) {
 		return (1);
 	}
 
@@ -3879,19 +3880,19 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
 	 * XXX These 0x4f values were kind of given to us. Do better than a
 	 * magic constant, rm.
 	 */
-	if (!milan_dxio_rpc_clock_gating(iodie, 0x4f, 0x4f)) {
+	if (!genoa_dxio_rpc_clock_gating(iodie, 0x4f, 0x4f)) {
 		return (1);
 	}
 
 	/*
 	 * Set up a few different variables in firmware. Best guesses is that we
-	 * need MILAN_DXIO_VAR_PCIE_COMPL so we can get PCIe completions to
-	 * actually happen, MILAN_DXIO_VAR_SLIP_INTERVAL is disabled, but I
+	 * need GENOA_DXIO_VAR_PCIE_COMPL so we can get PCIe completions to
+	 * actually happen, GENOA_DXIO_VAR_SLIP_INTERVAL is disabled, but I
 	 * can't say why. XXX We should probably disable NTB hotplug because we
 	 * don't have them just in case something changes here.
 	 */
-	if (!milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_PCIE_COMPL, 1) ||
-	    !milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_SLIP_INTERVAL, 0)) {
+	if (!genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_PCIE_COMPL, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_SLIP_INTERVAL, 0)) {
 		return (1);
 	}
 
@@ -3902,8 +3903,8 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
 	 * firmware in its expected path we don't set that.  Older DXIO firmware
 	 * doesn't support this so we skip it there.
 	 */
-	if (milan_dxio_version_at_least(iodie, 45, 682) &&
-	    !milan_dxio_rpc_pcie_poweroff_config(iodie, 0, B_FALSE)) {
+	if (genoa_dxio_version_at_least(iodie, 45, 682) &&
+	    !genoa_dxio_rpc_pcie_poweroff_config(iodie, 0, B_FALSE)) {
 		return (1);
 	}
 
@@ -3913,31 +3914,31 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
 	 * and then also to indicate that we want to use the v1 ancillary data
 	 * format.
 	 */
-	if (!milan_dxio_rpc_set_var(iodie, MLIAN_DXIO_VAR_RET_AFTER_MAP, 1) ||
-	    !milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_RET_AFTER_CONF, 1) ||
-	    !milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_ANCILLARY_V1, 1)) {
+	if (!genoa_dxio_rpc_set_var(iodie, MLIAN_DXIO_VAR_RET_AFTER_MAP, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_RET_AFTER_CONF, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_ANCILLARY_V1, 1)) {
 		return (1);
 	}
 
 	/*
 	 * Here, it's worth calling out what we're not setting. One of which is
-	 * MILAN_DXIO_VAR_MAP_EXACT_MATCH which ends up being used to cause
+	 * GENOA_DXIO_VAR_MAP_EXACT_MATCH which ends up being used to cause
 	 * the mapping phase to only work if there are exact matches. I believe
 	 * this means that if a device has more lanes then the configured port,
 	 * it wouldn't link up, which generally speaking isn't something we want
 	 * to do. Similarly, since there is no S3 support here, no need to
-	 * change the save and restore mode with MILAN_DXIO_VAR_S3_MODE.
+	 * change the save and restore mode with GENOA_DXIO_VAR_S3_MODE.
 	 *
-	 * From here, we do want to set MILAN_DXIO_VAR_SKIP_PSP, because the PSP
+	 * From here, we do want to set GENOA_DXIO_VAR_SKIP_PSP, because the PSP
 	 * really doesn't need to do anything with us. We do want to enable
-	 * MILAN_DXIO_VAR_PHY_PROG so the dxio engine can properly configure
+	 * GENOA_DXIO_VAR_PHY_PROG so the dxio engine can properly configure
 	 * things.
 	 *
 	 * XXX Should we gamble and set things that aren't unconditionally set
 	 * so we don't rely on hw defaults?
 	 */
-	if (!milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_PHY_PROG, 1) ||
-	    !milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_SKIP_PSP, 1)) {
+	if (!genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_PHY_PROG, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_SKIP_PSP, 1)) {
 		return (0);
 	}
 
@@ -3950,16 +3951,16 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
  * the PSP.
  */
 static int
-milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
+genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 {
 	ddi_dma_attr_t attr;
 	size_t engn_size;
 	pfn_t pfn;
-	milan_dxio_config_t *conf = &iodie->mi_dxio_conf;
-	milan_soc_t *soc = iodie->mi_soc;
+	genoa_dxio_config_t *conf = &iodie->mi_dxio_conf;
+	genoa_soc_t *soc = iodie->mi_soc;
 	const zen_dxio_platform_t *source_data;
 	zen_dxio_anc_data_t *anc;
-	const milan_apob_phyovr_t *phy_override;
+	const genoa_apob_phyovr_t *phy_override;
 	size_t phy_len;
 	int err;
 
@@ -3967,7 +3968,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	 * XXX Figure out how to best not hardcode Ethanol. Realistically
 	 * probably an SP boot property.
 	 */
-	if (milan_board_type(soc->ms_fabric) == MBT_ETHANOL) {
+	if (genoa_board_type(soc->ms_fabric) == MBT_ETHANOL) {
 		if (soc->ms_socno == 0) {
 			source_data = &ethanolx_engine_s0;
 		} else {
@@ -3983,7 +3984,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	VERIFY3U(engn_size, <=, MMU_PAGESIZE);
 	conf->mdc_conf_len = engn_size;
 
-	milan_smu_dma_attr(&attr);
+	genoa_smu_dma_attr(&attr);
 	conf->mdc_alloc_len = MMU_PAGESIZE;
 	conf->mdc_conf = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(conf->mdc_conf, MMU_PAGESIZE);
@@ -4002,8 +4003,8 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	conf->mdc_conf_len += 8;
 	conf->mdc_conf_len = P2ROUNDUP(conf->mdc_conf_len, 4);
 
-	phy_override = milan_apob_find(MILAN_APOB_GROUP_FABRIC,
-	    MILAN_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
+	phy_override = genoa_apob_find(GENOA_APOB_GROUP_FABRIC,
+	    GENOA_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
 	if (phy_override == NULL) {
 		if (err == ENOENT) {
 			return (0);
@@ -4013,7 +4014,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 		    "0x%x", err);
 		return (1);
 	}
-	if (phy_len < offsetof(milan_apob_phyovr_t, map_data[0])) {
+	if (phy_len < offsetof(genoa_apob_phyovr_t, map_data[0])) {
 		cmn_err(CE_WARN, "APOB phy override table is too short "
 		    "(actual size 0x%lx)", phy_len);
 		return (1);
@@ -4023,9 +4024,9 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	 * The actual length of phy data is in map_datalen; it must be no larger
 	 * than the maximum and must fit in the APOB entry.
 	 */
-	if (phy_override->map_datalen > MILAN_APOB_PHY_OVERRIDE_MAX_LEN ||
+	if (phy_override->map_datalen > GENOA_APOB_PHY_OVERRIDE_MAX_LEN ||
 	    phy_override->map_datalen >
-	    phy_len - offsetof(milan_apob_phyovr_t, map_data[0])) {
+	    phy_len - offsetof(genoa_apob_phyovr_t, map_data[0])) {
 		cmn_err(CE_WARN, "APOB phy override table data doesn't fit "
 		    "(datalen = 0x%x, entry len = 0x%lx)",
 		    phy_override->map_datalen, phy_len);
@@ -4053,7 +4054,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	 * space its header takes up. However, the subsequent payloads do.
 	 */
 	anc = conf->mdc_anc;
-	anc->zdad_type = MILAN_DXIO_HEAP_ANCILLARY;
+	anc->zdad_type = GENOA_DXIO_HEAP_ANCILLARY;
 	anc->zdad_vers = DXIO_ANCILLARY_VERSION;
 	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
 	    phy_override->map_datalen) >> 2;
@@ -4071,19 +4072,19 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 }
 
 static int
-milan_dxio_load_data(milan_iodie_t *iodie, void *arg)
+genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 {
-	milan_dxio_config_t *conf = &iodie->mi_dxio_conf;
+	genoa_dxio_config_t *conf = &iodie->mi_dxio_conf;
 
 	/*
 	 * Begin by loading the NULL capabilities before we load any data heaps.
 	 */
-	if (!milan_dxio_rpc_load_caps(iodie)) {
+	if (!genoa_dxio_rpc_load_caps(iodie)) {
 		return (1);
 	}
 
-	if (conf->mdc_anc != NULL && !milan_dxio_rpc_load_data(iodie,
-	    MILAN_DXIO_HEAP_ANCILLARY, conf->mdc_anc_pa, conf->mdc_anc_len,
+	if (conf->mdc_anc != NULL && !genoa_dxio_rpc_load_data(iodie,
+	    GENOA_DXIO_HEAP_ANCILLARY, conf->mdc_anc_pa, conf->mdc_anc_len,
 	    0)) {
 		return (1);
 	}
@@ -4094,16 +4095,16 @@ milan_dxio_load_data(milan_iodie_t *iodie, void *arg)
 	 * it does; however, these heaps are always loaded with no data, even
 	 * though ancillary is skipped if there is none.
 	 */
-	if (!milan_dxio_rpc_load_data(iodie, MILAN_DXIO_HEAP_MACPCS,
+	if (!genoa_dxio_rpc_load_data(iodie, GENOA_DXIO_HEAP_MACPCS,
 	    0, 0, 1) ||
-	    !milan_dxio_rpc_load_data(iodie, MILAN_DXIO_HEAP_GPIO, 0, 0, 1)) {
+	    !genoa_dxio_rpc_load_data(iodie, GENOA_DXIO_HEAP_GPIO, 0, 0, 1)) {
 		return (1);
 	}
 
 	/*
 	 * Load our real data!
 	 */
-	if (!milan_dxio_rpc_load_data(iodie, MILAN_DXIO_HEAP_ENGINE_CONFIG,
+	if (!genoa_dxio_rpc_load_data(iodie, GENOA_DXIO_HEAP_ENGINE_CONFIG,
 	    conf->mdc_pa, conf->mdc_conf_len, 0)) {
 		return (1);
 	}
@@ -4112,24 +4113,24 @@ milan_dxio_load_data(milan_iodie_t *iodie, void *arg)
 }
 
 static int
-milan_dxio_more_conf(milan_iodie_t *iodie, void *arg)
+genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 {
 	/*
-	 * Note, here we might use milan_dxio_rpc_conf_training() if we want to
+	 * Note, here we might use genoa_dxio_rpc_conf_training() if we want to
 	 * override any of the properties there. But the defaults in DXIO
 	 * firmware seem to be used by default. We also might apply various
 	 * workarounds that we don't seem to need to
-	 * (MILAN_DXIO_RT_SET_CONF_DXIO_WA, MILAN_DXIO_RT_SET_CONF_SPC_WA,
-	 * MILAN_DXIO_RT_SET_CONF_FC_CRED_WA_DIS).
+	 * (GENOA_DXIO_RT_SET_CONF_DXIO_WA, GENOA_DXIO_RT_SET_CONF_SPC_WA,
+	 * GENOA_DXIO_RT_SET_CONF_FC_CRED_WA_DIS).
 	 */
 
 	/*
 	 * XXX Do we care about any of the following:
-	 *    o MILAN_DXIO_RT_SET_CONF_TX_CLOCK
-	 *    o MILAN_DXIO_RT_SET_CONF_SRNS
-	 *    o MILAN_DXIO_RT_SET_CONF_DLF_WA_DIS
+	 *    o GENOA_DXIO_RT_SET_CONF_TX_CLOCK
+	 *    o GENOA_DXIO_RT_SET_CONF_SRNS
+	 *    o GENOA_DXIO_RT_SET_CONF_DLF_WA_DIS
 	 *
-	 * I wonder why we don't enable MILAN_DXIO_RT_SET_CONF_CE_SRAM_ECC in
+	 * I wonder why we don't enable GENOA_DXIO_RT_SET_CONF_CE_SRAM_ECC in
 	 * the old world.
 	 */
 
@@ -4137,8 +4138,8 @@ milan_dxio_more_conf(milan_iodie_t *iodie, void *arg)
 	 * This is set to 1 by default because we want 'latency behaviour' not
 	 * 'improved latency'.
 	 */
-	if (!milan_dxio_rpc_misc_rt_conf(iodie,
-	    MILAN_DXIO_RT_SET_CONF_TX_FIFO_MODE, 1)) {
+	if (!genoa_dxio_rpc_misc_rt_conf(iodie,
+	    GENOA_DXIO_RT_SET_CONF_TX_FIFO_MODE, 1)) {
 		return (1);
 	}
 
@@ -4153,22 +4154,22 @@ milan_dxio_more_conf(milan_iodie_t *iodie, void *arg)
  * operates on a single I/O die.
  */
 static boolean_t
-milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
+genoa_dxio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 {
 	boolean_t ret = B_TRUE;
 	zen_dxio_platform_t *plat = iodie->mi_dxio_conf.mdc_conf;
 
 	for (uint_t i = 0; i < plat->zdp_nengines; i++) {
 		zen_dxio_engine_t *en = &plat->zdp_engines[i];
-		milan_pcie_core_t *pc;
-		milan_pcie_port_t *port;
+		genoa_pcie_core_t *pc;
+		genoa_pcie_port_t *port;
 		uint8_t portno;
 
 		if (en->zde_type != DXIO_ENGINE_PCIE)
 			continue;
 
 
-		pc = milan_fabric_find_pcie_core_by_lanes(iodie,
+		pc = genoa_fabric_find_pcie_core_by_lanes(iodie,
 		    en->zde_start_lane, en->zde_end_lane);
 		if (pc == NULL) {
 			cmn_err(CE_WARN, "failed to map engine %u [%u, %u] to "
@@ -4189,23 +4190,23 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
 		}
 
 		port = &pc->mpc_ports[portno];
-		if (port->mpp_engine != NULL) {
+		if (port->gpp_engine != NULL) {
 			cmn_err(CE_WARN, "engine %u [%u, %u] mapped to "
 			    "port %u, which already has an engine [%u, %u]",
 			    i, en->zde_start_lane, en->zde_end_lane,
 			    pc->mpc_nports,
-			    port->mpp_engine->zde_start_lane,
-			    port->mpp_engine->zde_end_lane);
+			    port->gpp_engine->zde_start_lane,
+			    port->gpp_engine->zde_end_lane);
 			ret = B_FALSE;
 			continue;
 		}
 
-		port->mpp_flags |= MILAN_PCIE_PORT_F_MAPPED;
-		port->mpp_engine = en;
-		pc->mpc_flags |= MILAN_PCIE_CORE_F_USED;
+		port->gpp_flags |= GENOA_PCIE_PORT_F_MAPPED;
+		port->gpp_engine = en;
+		pc->mpc_flags |= GENOA_PCIE_CORE_F_USED;
 		if (en->zde_config.zdc_pcie.zdcp_caps.zdlc_hp !=
 		    DXIO_HOTPLUG_T_DISABLED) {
-			pc->mpc_flags |= MILAN_PCIE_CORE_F_HAS_HOTPLUG;
+			pc->mpc_flags |= GENOA_PCIE_CORE_F_HAS_HOTPLUG;
 		}
 	}
 
@@ -4235,13 +4236,13 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
  *
  * These can be matched to a board identifier, I/O die DF node ID, NBIO/IOMS
  * number, PCIe core number (pcie_core_t.mpc_coreno), and PCIe port number
- * (pcie_port_t.mpp_portno).  The board sentinel value MBT_ANY is 0 and may be
+ * (pcie_port_t.gpp_portno).  The board sentinel value MBT_ANY is 0 and may be
  * omitted, but the others require nonzero sentinels as 0 is a valid index.  The
  * sentinel values of 0xFF here cannot match any real NBIO, RC, or port: there
  * are at most 4 NBIOs per die, 3 RC per NBIO, and 8 ports (bridges) per RC.
  * The RC and port filters are meaningful only if the corresponding strap exists
  * at the corresponding level.  The node ID, which incorporates both socket and
- * die number (die number is always 0 for Milan), is 8 bits so in principle it
+ * die number (die number is always 0 for Genoa), is 8 bits so in principle it
  * could be 0xFF and we use 32 bits there instead.  While it's still 8 bits in
  * Genoa, AMD have reserved another 8 bits that are likely to be used in future
  * families so we opt to go all the way to 32 here.  This can be reevaluated
@@ -4253,49 +4254,49 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
 #define	PCIE_COREMATCH_ANY	0xFF
 #define	PCIE_PORTMATCH_ANY	0xFF
 
-typedef struct milan_pcie_strap_setting {
+typedef struct genoa_pcie_strap_setting {
 	uint32_t		strap_reg;
 	uint32_t		strap_data;
-	milan_board_type_t	strap_boardmatch;
+	genoa_board_type_t	strap_boardmatch;
 	uint32_t		strap_nodematch;
 	uint8_t			strap_nbiomatch;
 	uint8_t			strap_corematch;
 	uint8_t			strap_portmatch;
-} milan_pcie_strap_setting_t;
+} genoa_pcie_strap_setting_t;
 
 /*
  * PCIe Straps that we unconditionally set to 1
  */
-static const uint32_t milan_pcie_strap_enable[] = {
-	MILAN_STRAP_PCIE_MSI_EN,
-	MILAN_STRAP_PCIE_AER_EN,
-	MILAN_STRAP_PCIE_GEN2_FEAT_EN,
+static const uint32_t genoa_pcie_strap_enable[] = {
+	GENOA_STRAP_PCIE_MSI_EN,
+	GENOA_STRAP_PCIE_AER_EN,
+	GENOA_STRAP_PCIE_GEN2_FEAT_EN,
 	/* We want completion timeouts */
-	MILAN_STRAP_PCIE_CPL_TO_EN,
-	MILAN_STRAP_PCIE_TPH_EN,
-	MILAN_STRAP_PCIE_MULTI_FUNC_EN,
-	MILAN_STRAP_PCIE_DPC_EN,
-	MILAN_STRAP_PCIE_ARI_EN,
-	MILAN_STRAP_PCIE_PL_16G_EN,
-	MILAN_STRAP_PCIE_LANE_MARGIN_EN,
-	MILAN_STRAP_PCIE_LTR_SUP,
-	MILAN_STRAP_PCIE_LINK_BW_NOTIF_SUP,
-	MILAN_STRAP_PCIE_GEN3_1_FEAT_EN,
-	MILAN_STRAP_PCIE_GEN4_FEAT_EN,
-	MILAN_STRAP_PCIE_ECRC_GEN_EN,
-	MILAN_STRAP_PCIE_ECRC_CHECK_EN,
-	MILAN_STRAP_PCIE_CPL_ABORT_ERR_EN,
-	MILAN_STRAP_PCIE_INT_ERR_EN,
-	MILAN_STRAP_PCIE_RXP_ACC_FULL_DIS,
+	GENOA_STRAP_PCIE_CPL_TO_EN,
+	GENOA_STRAP_PCIE_TPH_EN,
+	GENOA_STRAP_PCIE_MULTI_FUNC_EN,
+	GENOA_STRAP_PCIE_DPC_EN,
+	GENOA_STRAP_PCIE_ARI_EN,
+	GENOA_STRAP_PCIE_PL_16G_EN,
+	GENOA_STRAP_PCIE_LANE_MARGIN_EN,
+	GENOA_STRAP_PCIE_LTR_SUP,
+	GENOA_STRAP_PCIE_LINK_BW_NOTIF_SUP,
+	GENOA_STRAP_PCIE_GEN3_1_FEAT_EN,
+	GENOA_STRAP_PCIE_GEN4_FEAT_EN,
+	GENOA_STRAP_PCIE_ECRC_GEN_EN,
+	GENOA_STRAP_PCIE_ECRC_CHECK_EN,
+	GENOA_STRAP_PCIE_CPL_ABORT_ERR_EN,
+	GENOA_STRAP_PCIE_INT_ERR_EN,
+	GENOA_STRAP_PCIE_RXP_ACC_FULL_DIS,
 
 	/* ACS straps */
-	MILAN_STRAP_PCIE_ACS_EN,
-	MILAN_STRAP_PCIE_ACS_SRC_VALID,
-	MILAN_STRAP_PCIE_ACS_TRANS_BLOCK,
-	MILAN_STRAP_PCIE_ACS_DIRECT_TRANS_P2P,
-	MILAN_STRAP_PCIE_ACS_P2P_CPL_REDIR,
-	MILAN_STRAP_PCIE_ACS_P2P_REQ_RDIR,
-	MILAN_STRAP_PCIE_ACS_UPSTREAM_FWD,
+	GENOA_STRAP_PCIE_ACS_EN,
+	GENOA_STRAP_PCIE_ACS_SRC_VALID,
+	GENOA_STRAP_PCIE_ACS_TRANS_BLOCK,
+	GENOA_STRAP_PCIE_ACS_DIRECT_TRANS_P2P,
+	GENOA_STRAP_PCIE_ACS_P2P_CPL_REDIR,
+	GENOA_STRAP_PCIE_ACS_P2P_REQ_RDIR,
+	GENOA_STRAP_PCIE_ACS_UPSTREAM_FWD,
 };
 
 /*
@@ -4303,63 +4304,63 @@ static const uint32_t milan_pcie_strap_enable[] = {
  * These are generally debug and test settings that are usually not a good idea
  * in my experience to allow accidental enablement.
  */
-static const uint32_t milan_pcie_strap_disable[] = {
-	MILAN_STRAP_PCIE_I2C_DBG_EN,
-	MILAN_STRAP_PCIE_DEBUG_RXP,
-	MILAN_STRAP_PCIE_NO_DEASSERT_RX_EN_TEST,
-	MILAN_STRAP_PCIE_ERR_REPORT_DIS,
-	MILAN_STRAP_PCIE_TX_TEST_ALL,
-	MILAN_STRAP_PCIE_MCAST_EN,
+static const uint32_t genoa_pcie_strap_disable[] = {
+	GENOA_STRAP_PCIE_I2C_DBG_EN,
+	GENOA_STRAP_PCIE_DEBUG_RXP,
+	GENOA_STRAP_PCIE_NO_DEASSERT_RX_EN_TEST,
+	GENOA_STRAP_PCIE_ERR_REPORT_DIS,
+	GENOA_STRAP_PCIE_TX_TEST_ALL,
+	GENOA_STRAP_PCIE_MCAST_EN,
 };
 
 /*
  * PCIe Straps that have other values.
  */
-static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
+static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	{
-		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
-		.strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+		.strap_reg = GENOA_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
+		.strap_data = GENOA_STRAP_PCIE_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
-		.strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+		.strap_reg = GENOA_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
+		.strap_data = GENOA_STRAP_PCIE_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_reg = GENOA_STRAP_PCIE_EQ_DS_TX_PRESET,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_reg = GENOA_STRAP_PCIE_EQ_US_TX_PRESET,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_reg = GENOA_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_5,
+		.strap_reg = GENOA_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_5,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_SUBVID,
+		.strap_reg = GENOA_STRAP_PCIE_SUBVID,
 		.strap_data = PCI_VENDOR_ID_OXIDE,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
@@ -4367,7 +4368,7 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_SUBDID,
+		.strap_reg = GENOA_STRAP_PCIE_SUBDID,
 		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
@@ -4380,9 +4381,9 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
  * PCIe Straps that exist on a per-port level.  Most pertain to the port itself;
  * others pertain to features exposed via the associated bridge.
  */
-static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
+static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_EXT_FMT_SUP,
+		.strap_reg = GENOA_STRAP_PCIE_P_EXT_FMT_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4390,7 +4391,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
+		.strap_reg = GENOA_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4398,7 +4399,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
+		.strap_reg = GENOA_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4406,7 +4407,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
+		.strap_reg = GENOA_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4414,7 +4415,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_TCOMMONMODE_TIME,
+		.strap_reg = GENOA_STRAP_PCIE_P_TCOMMONMODE_TIME,
 		.strap_data = 0xa,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4422,7 +4423,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_TPON_SCALE,
+		.strap_reg = GENOA_STRAP_PCIE_P_TPON_SCALE,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4430,7 +4431,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_TPON_VALUE,
+		.strap_reg = GENOA_STRAP_PCIE_P_TPON_VALUE,
 		.strap_data = 0xf,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4438,7 +4439,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_DLF_SUP,
+		.strap_reg = GENOA_STRAP_PCIE_P_DLF_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4446,7 +4447,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
+		.strap_reg = GENOA_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4454,15 +4455,15 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_FOM_TIME,
-		.strap_data = MILAN_STRAP_PCIE_P_FOM_300US,
+		.strap_reg = GENOA_STRAP_PCIE_P_FOM_TIME,
+		.strap_data = GENOA_STRAP_PCIE_P_FOM_300US,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_SPC_MODE_8GT,
+		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_8GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4470,7 +4471,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_SRIS_EN,
+		.strap_reg = GENOA_STRAP_PCIE_P_SRIS_EN,
 		.strap_data = 1,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nodematch = 0,
@@ -4479,7 +4480,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = 1
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
+		.strap_reg = GENOA_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
 		.strap_data = 0,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nodematch = 0,
@@ -4488,7 +4489,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = 1
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
+		.strap_reg = GENOA_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
 		.strap_data = 0,
 		.strap_boardmatch = MBT_GIMLET,
 		.strap_nodematch = 0,
@@ -4497,7 +4498,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_portmatch = 1
 	},
 	{
-		.strap_reg = MILAN_STRAP_PCIE_P_L0s_EXIT_LAT,
+		.strap_reg = GENOA_STRAP_PCIE_P_L0s_EXIT_LAT,
 		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
@@ -4507,13 +4508,13 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 };
 
 static boolean_t
-milan_pcie_strap_matches(const milan_pcie_core_t *pc, uint8_t portno,
-    const milan_pcie_strap_setting_t *strap)
+genoa_pcie_strap_matches(const genoa_pcie_core_t *pc, uint8_t portno,
+    const genoa_pcie_strap_setting_t *strap)
 {
-	const milan_ioms_t *ioms = pc->mpc_ioms;
-	const milan_iodie_t *iodie = ioms->mio_iodie;
-	const milan_fabric_t *fabric = iodie->mi_soc->ms_fabric;
-	const milan_board_type_t board = milan_board_type(fabric);
+	const genoa_ioms_t *ioms = pc->mpc_ioms;
+	const genoa_iodie_t *iodie = ioms->mio_iodie;
+	const genoa_fabric_t *fabric = iodie->mi_soc->ms_fabric;
+	const genoa_board_type_t board = genoa_board_type(fabric);
 
 	if (strap->strap_boardmatch != MBT_ANY &&
 	    strap->strap_boardmatch != board) {
@@ -4545,17 +4546,17 @@ milan_pcie_strap_matches(const milan_pcie_core_t *pc, uint8_t portno,
 }
 
 static void
-milan_fabric_write_pcie_strap(milan_pcie_core_t *pc,
+genoa_fabric_write_pcie_strap(genoa_pcie_core_t *pc,
     const uint32_t reg, const uint32_t data)
 {
 	smn_reg_t a_reg, d_reg;
 
-	a_reg = milan_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_ADDR);
-	d_reg = milan_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_DATA);
+	a_reg = genoa_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_ADDR);
+	d_reg = genoa_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_DATA);
 
 	mutex_enter(&pc->mpc_strap_lock);
-	milan_pcie_core_write(pc, a_reg, MILAN_STRAP_PCIE_ADDR_UPPER + reg);
-	milan_pcie_core_write(pc, d_reg, data);
+	genoa_pcie_core_write(pc, a_reg, GENOA_STRAP_PCIE_ADDR_UPPER + reg);
+	genoa_pcie_core_write(pc, d_reg, data);
 	mutex_exit(&pc->mpc_strap_lock);
 }
 
@@ -4574,45 +4575,45 @@ milan_fabric_write_pcie_strap(milan_pcie_core_t *pc,
  * during socket 0's DXIO SM.
  */
 static int
-milan_fabric_init_pcie_straps(milan_pcie_core_t *pc, void *arg)
+genoa_fabric_init_pcie_straps(genoa_pcie_core_t *pc, void *arg)
 {
-	const milan_iodie_t *iodie = (const milan_iodie_t *)arg;
+	const genoa_iodie_t *iodie = (const genoa_iodie_t *)arg;
 
 	if (iodie != NULL && pc->mpc_ioms->mio_iodie != iodie)
 		return (0);
 
-	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_enable); i++) {
-		milan_fabric_write_pcie_strap(pc,
-		    milan_pcie_strap_enable[i], 0x1);
+	for (uint_t i = 0; i < ARRAY_SIZE(genoa_pcie_strap_enable); i++) {
+		genoa_fabric_write_pcie_strap(pc,
+		    genoa_pcie_strap_enable[i], 0x1);
 	}
-	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_disable); i++) {
-		milan_fabric_write_pcie_strap(pc,
-		    milan_pcie_strap_disable[i], 0x0);
+	for (uint_t i = 0; i < ARRAY_SIZE(genoa_pcie_strap_disable); i++) {
+		genoa_fabric_write_pcie_strap(pc,
+		    genoa_pcie_strap_disable[i], 0x0);
 	}
-	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_settings); i++) {
-		const milan_pcie_strap_setting_t *strap =
-		    &milan_pcie_strap_settings[i];
+	for (uint_t i = 0; i < ARRAY_SIZE(genoa_pcie_strap_settings); i++) {
+		const genoa_pcie_strap_setting_t *strap =
+		    &genoa_pcie_strap_settings[i];
 
-		if (milan_pcie_strap_matches(pc, PCIE_PORTMATCH_ANY, strap)) {
-			milan_fabric_write_pcie_strap(pc,
+		if (genoa_pcie_strap_matches(pc, PCIE_PORTMATCH_ANY, strap)) {
+			genoa_fabric_write_pcie_strap(pc,
 			    strap->strap_reg, strap->strap_data);
 		}
 	}
 
 	/* Handle Special case for DLF which needs to be set on non WAFL */
-	if (pc->mpc_coreno != MILAN_IOMS_WAFL_PCIE_CORENO) {
-		milan_fabric_write_pcie_strap(pc, MILAN_STRAP_PCIE_DLF_EN, 1);
+	if (pc->mpc_coreno != GENOA_IOMS_WAFL_PCIE_CORENO) {
+		genoa_fabric_write_pcie_strap(pc, GENOA_STRAP_PCIE_DLF_EN, 1);
 	}
 
 	/* Handle per bridge initialization */
-	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_port_settings); i++) {
-		const milan_pcie_strap_setting_t *strap =
-		    &milan_pcie_port_settings[i];
+	for (uint_t i = 0; i < ARRAY_SIZE(genoa_pcie_port_settings); i++) {
+		const genoa_pcie_strap_setting_t *strap =
+		    &genoa_pcie_port_settings[i];
 		for (uint_t j = 0; j < pc->mpc_nports; j++) {
-			if (milan_pcie_strap_matches(pc, j, strap)) {
-				milan_fabric_write_pcie_strap(pc,
+			if (genoa_pcie_strap_matches(pc, j, strap)) {
+				genoa_fabric_write_pcie_strap(pc,
 				    strap->strap_reg +
-				    (j * MILAN_STRAP_PCIE_NUM_PER_PORT),
+				    (j * GENOA_STRAP_PCIE_NUM_PER_PORT),
 				    strap->strap_data);
 			}
 		}
@@ -4622,12 +4623,12 @@ milan_fabric_init_pcie_straps(milan_pcie_core_t *pc, void *arg)
 }
 
 static int
-milan_fabric_setup_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
+genoa_fabric_setup_pcie_core_dbg(genoa_pcie_core_t *pc, void *arg)
 {
 	for (uint16_t portno = 0; portno < pc->mpc_nports; portno++) {
-		milan_pcie_port_t *port = &pc->mpc_ports[portno];
+		genoa_pcie_port_t *port = &pc->mpc_ports[portno];
 
-		if (port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) {
+		if (port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) {
 			smn_reg_t reg;
 			uint32_t val;
 			uint8_t laneno;
@@ -4637,10 +4638,10 @@ milan_fabric_setup_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
 			 * core-level debugging capture for this port, and only
 			 * this port.
 			 */
-			reg = milan_pcie_core_reg(pc, D_PCIE_CORE_DBG_CTL);
-			val = milan_pcie_core_read(pc, reg);
+			reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_DBG_CTL);
+			val = genoa_pcie_core_read(pc, reg);
 			val = PCIE_CORE_DBG_CTL_SET_PORT_EN(val, 1U << portno);
-			milan_pcie_core_write(pc, reg, val);
+			genoa_pcie_core_write(pc, reg, val);
 
 			/*
 			 * Find the lowest-numbered core lane index in this port
@@ -4667,13 +4668,13 @@ milan_fabric_setup_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
 			 * additional knob to select a specific lane of
 			 * interest.
 			 */
-			laneno = port->mpp_engine->zde_start_lane -
+			laneno = port->gpp_engine->zde_start_lane -
 			    pc->mpc_dxio_lane_start;
-			reg = milan_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
-			val = milan_pcie_core_read(pc, reg);
+			reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
+			val = genoa_pcie_core_read(pc, reg);
 			val = PCIE_CORE_LC_DBG_CTL_SET_LANE_MASK(val,
 			    1U << laneno);
-			milan_pcie_core_write(pc, reg, val);
+			genoa_pcie_core_write(pc, reg, val);
 
 			break;
 		}
@@ -4687,24 +4688,24 @@ milan_fabric_setup_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
  * wanted to do.
  */
 static int
-milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
+genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 {
-	milan_soc_t *soc = iodie->mi_soc;
-	milan_fabric_t *fabric = soc->ms_fabric;
+	genoa_soc_t *soc = iodie->mi_soc;
+	genoa_fabric_t *fabric = soc->ms_fabric;
 
-	if (!milan_dxio_rpc_sm_start(iodie)) {
+	if (!genoa_dxio_rpc_sm_start(iodie)) {
 		return (1);
 	}
 
 	for (;;) {
-		milan_dxio_reply_t reply = { 0 };
+		genoa_dxio_reply_t reply = { 0 };
 
-		if (!milan_dxio_rpc_sm_getstate(iodie, &reply)) {
+		if (!genoa_dxio_rpc_sm_getstate(iodie, &reply)) {
 			return (1);
 		}
 
 		switch (reply.mds_type) {
-		case MILAN_DXIO_DATA_TYPE_SM:
+		case GENOA_DXIO_DATA_TYPE_SM:
 			cmn_err(CE_CONT, "?Socket %u LISM 0x%x->0x%x\n",
 			    soc->ms_socno, iodie->mi_state, reply.mds_arg0);
 			iodie->mi_state = reply.mds_arg0;
@@ -4719,15 +4720,15 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 			 * mapped to what and update what ports are actually
 			 * being used by devices or not.
 			 */
-			case MILAN_DXIO_SM_MAPPED:
-				milan_pcie_populate_dbg(&milan_fabric,
+			case GENOA_DXIO_SM_MAPPED:
+				genoa_pcie_populate_dbg(&genoa_fabric,
 				    MPCS_DXIO_SM_MAPPED, iodie->mi_node_id);
 
-				if (!milan_dxio_rpc_retrieve_engine(iodie)) {
+				if (!genoa_dxio_rpc_retrieve_engine(iodie)) {
 					return (1);
 				}
 
-				if (!milan_dxio_map_engines(fabric, iodie)) {
+				if (!genoa_dxio_map_engines(fabric, iodie)) {
 					cmn_err(CE_WARN, "Socket %u LISM: "
 					    "failed to map all DXIO engines to "
 					    "devices.  PCIe will not function",
@@ -4745,8 +4746,8 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				 * Now that we have the mapping done, we set up
 				 * the straps for PCIe.
 				 */
-				(void) milan_fabric_walk_pcie_core(fabric,
-				    milan_fabric_init_pcie_straps, iodie);
+				(void) genoa_fabric_walk_pcie_core(fabric,
+				    genoa_fabric_init_pcie_straps, iodie);
 				cmn_err(CE_CONT, "?Socket %u LISM: Finished "
 				    "writing PCIe straps\n", soc->ms_socno);
 
@@ -4755,15 +4756,15 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				 * that we get extended data for the first port
 				 * in the core that's been mapped.
 				 */
-				(void) milan_fabric_walk_pcie_core(fabric,
-				    milan_fabric_setup_pcie_core_dbg, NULL);
+				(void) genoa_fabric_walk_pcie_core(fabric,
+				    genoa_fabric_setup_pcie_core_dbg, NULL);
 
-				milan_pcie_populate_dbg(&milan_fabric,
+				genoa_pcie_populate_dbg(&genoa_fabric,
 				    MPCS_DXIO_SM_MAPPED_RESUME,
 				    iodie->mi_node_id);
 				break;
-			case MILAN_DXIO_SM_CONFIGURED:
-				milan_pcie_populate_dbg(&milan_fabric,
+			case GENOA_DXIO_SM_CONFIGURED:
+				genoa_pcie_populate_dbg(&genoa_fabric,
 				    MPCS_DXIO_SM_CONFIGURED, iodie->mi_node_id);
 
 				/*
@@ -4772,11 +4773,11 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				 * is needed.
 				 */
 
-				milan_pcie_populate_dbg(&milan_fabric,
+				genoa_pcie_populate_dbg(&genoa_fabric,
 				    MPCS_DXIO_SM_CONFIGURED_RESUME,
 				    iodie->mi_node_id);
 				break;
-			case MILAN_DXIO_SM_DONE:
+			case GENOA_DXIO_SM_DONE:
 				/*
 				 * We made it. Somehow we're done!
 				 */
@@ -4793,8 +4794,8 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				break;
 			}
 			break;
-		case MILAN_DXIO_DATA_TYPE_RESET:
-			milan_pcie_populate_dbg(&milan_fabric,
+		case GENOA_DXIO_DATA_TYPE_RESET:
+			genoa_pcie_populate_dbg(&genoa_fabric,
 			    MPCS_DXIO_SM_PERST, iodie->mi_node_id);
 			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
 			    soc->ms_socno, reply.mds_arg0, reply.mds_arg1);
@@ -4805,7 +4806,7 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				break;
 			}
 
-			if (milan_board_type(fabric) == MBT_ETHANOL) {
+			if (genoa_board_type(fabric) == MBT_ETHANOL) {
 
 				/*
 				 * Release PERST manually on Ethanol-X which
@@ -4833,18 +4834,18 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				 * NVMe sockets won't work.
 				 */
 				if (iodie->mi_node_id == 0) {
-					milan_hack_gpio(MHGOP_SET, 26);
-					milan_hack_gpio(MHGOP_SET, 27);
-					milan_hack_gpio(MHGOP_SET, 266);
-					milan_hack_gpio(MHGOP_SET, 267);
+					genoa_hack_gpio(MHGOP_SET, 26);
+					genoa_hack_gpio(MHGOP_SET, 27);
+					genoa_hack_gpio(MHGOP_SET, 266);
+					genoa_hack_gpio(MHGOP_SET, 267);
 				}
 			}
 
-			milan_pcie_populate_dbg(&milan_fabric,
+			genoa_pcie_populate_dbg(&genoa_fabric,
 			    MPCS_DXIO_SM_PERST_RESUME, iodie->mi_node_id);
 
 			break;
-		case MILAN_DXIO_DATA_TYPE_NONE:
+		case GENOA_DXIO_DATA_TYPE_NONE:
 			cmn_err(CE_WARN, "Socket %u LISM: Got the none data "
 			    "type... are we actually done?", soc->ms_socno);
 			goto done;
@@ -4855,16 +4856,16 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 			return (1);
 		}
 
-		if (!milan_dxio_rpc_sm_resume(iodie)) {
+		if (!genoa_dxio_rpc_sm_resume(iodie)) {
 			return (1);
 		}
 	}
 
 done:
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_DXIO_SM_DONE,
+	genoa_pcie_populate_dbg(&genoa_fabric, MPCS_DXIO_SM_DONE,
 	    iodie->mi_node_id);
 
-	if (!milan_dxio_rpc_retrieve_engine(iodie)) {
+	if (!genoa_dxio_rpc_retrieve_engine(iodie)) {
 		return (1);
 	}
 
@@ -4878,7 +4879,7 @@ done:
  * merge that is likely not to happen anytime soon.
  */
 static int
-milan_fabric_init_memlists(milan_ioms_t *ioms, void *arg)
+genoa_fabric_init_memlists(genoa_ioms_t *ioms, void *arg)
 {
 	ioms_memlists_t *imp = &ioms->mio_memlists;
 	void *page = kmem_zalloc(MMU_PAGESIZE, KM_SLEEP);
@@ -4896,17 +4897,17 @@ milan_fabric_init_memlists(milan_ioms_t *ioms, void *arg)
  * IOMS to figure this out.
  */
 static void
-milan_route_pci_bus(milan_fabric_t *fabric)
+genoa_route_pci_bus(genoa_fabric_t *fabric)
 {
-	milan_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
+	genoa_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
 	uint_t inst = iodie->mi_ioms[0].mio_comp_id;
 
 	for (uint_t i = 0; i < DF_MAX_CFGMAP; i++) {
 		int ret;
-		milan_ioms_t *ioms;
+		genoa_ioms_t *ioms;
 		ioms_memlists_t *imp;
 		uint32_t base, limit, dest;
-		uint32_t val = milan_df_read32(iodie, inst, DF_CFGMAP_V2(i));
+		uint32_t val = genoa_df_read32(iodie, inst, DF_CFGMAP_V2(i));
 
 		/*
 		 * If a configuration map entry doesn't have both read and write
@@ -4923,7 +4924,7 @@ milan_route_pci_bus(milan_fabric_t *fabric)
 		limit = DF_CFGMAP_V2_GET_BUS_LIMIT(val);
 		dest = DF_CFGMAP_V3_GET_DEST_ID(val);
 
-		ioms = milan_fabric_find_ioms(fabric, dest);
+		ioms = genoa_fabric_find_ioms(fabric, dest);
 		if (ioms == NULL) {
 			cmn_err(CE_WARN, "PCI Bus fabric rule %u [0x%x, 0x%x] "
 			    "maps to unknown fabric id: 0x%x", i, base, limit,
@@ -4954,9 +4955,9 @@ milan_route_pci_bus(milan_fabric_t *fabric)
 	}
 }
 
-#define	MILAN_SEC_IOMS_GEN_IO_SPACE	0x1000
+#define	GENOA_SEC_IOMS_GEN_IO_SPACE	0x1000
 
-typedef struct milan_route_io {
+typedef struct genoa_route_io {
 	uint32_t	mri_per_ioms;
 	uint32_t	mri_next_base;
 	uint32_t	mri_cur;
@@ -4964,13 +4965,13 @@ typedef struct milan_route_io {
 	uint32_t	mri_bases[DF_MAX_IO_RULES];
 	uint32_t	mri_limits[DF_MAX_IO_RULES];
 	uint32_t	mri_dests[DF_MAX_IO_RULES];
-} milan_route_io_t;
+} genoa_route_io_t;
 
 static int
-milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
+genoa_io_ports_allocate(genoa_ioms_t *ioms, void *arg)
 {
 	int ret;
-	milan_route_io_t *mri = arg;
+	genoa_route_io_t *mri = arg;
 	ioms_memlists_t *imp = &ioms->mio_memlists;
 	uint32_t pci_base;
 
@@ -4979,14 +4980,14 @@ milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
 	 * has a base of zero so we can cover the legacy I/O ports.  That range
 	 * is not available for PCI allocation, however.
 	 */
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0 &&
-	    (ioms->mio_iodie->mi_flags & MILAN_IODIE_F_PRIMARY) != 0) {
+	if ((ioms->mio_flags & GENOA_IOMS_F_HAS_FCH) != 0 &&
+	    (ioms->mio_iodie->mi_flags & GENOA_IODIE_F_PRIMARY) != 0) {
 		mri->mri_bases[mri->mri_cur] = 0;
-		pci_base = MILAN_IOPORT_COMPAT_SIZE;
-	} else if (mri->mri_per_ioms > 2 * MILAN_SEC_IOMS_GEN_IO_SPACE) {
+		pci_base = GENOA_IOPORT_COMPAT_SIZE;
+	} else if (mri->mri_per_ioms > 2 * GENOA_SEC_IOMS_GEN_IO_SPACE) {
 		mri->mri_bases[mri->mri_cur] = mri->mri_next_base;
 		pci_base = mri->mri_bases[mri->mri_cur] +
-		    MILAN_SEC_IOMS_GEN_IO_SPACE;
+		    GENOA_SEC_IOMS_GEN_IO_SPACE;
 		mri->mri_next_base += mri->mri_per_ioms;
 
 		mri->mri_last_ioms = mri->mri_cur;
@@ -5042,9 +5043,9 @@ milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
  * for a given entry.
  */
 static int
-milan_io_ports_assign(milan_iodie_t *iodie, void *arg)
+genoa_io_ports_assign(genoa_iodie_t *iodie, void *arg)
 {
-	milan_route_io_t *mri = arg;
+	genoa_route_io_t *mri = arg;
 
 	for (uint32_t i = 0; i < mri->mri_cur; i++) {
 		uint32_t base = 0, limit = 0;
@@ -5058,8 +5059,8 @@ milan_io_ports_assign(milan_iodie_t *iodie, void *arg)
 		limit = DF_IO_LIMIT_V2_SET_LIMIT(limit,
 		    mri->mri_limits[i] >> DF_IO_LIMIT_SHIFT);
 
-		milan_df_bcast_write32(iodie, DF_IO_LIMIT_V2(i), limit);
-		milan_df_bcast_write32(iodie, DF_IO_BASE_V2(i), base);
+		genoa_df_bcast_write32(iodie, DF_IO_LIMIT_V2(i), limit);
+		genoa_df_bcast_write32(iodie, DF_IO_BASE_V2(i), base);
 	}
 
 	return (0);
@@ -5090,9 +5091,9 @@ milan_io_ports_assign(milan_iodie_t *iodie, void *arg)
  *  o Whoever is last gets all the extra I/O ports filling up the 1 MiB.
  */
 static void
-milan_route_io_ports(milan_fabric_t *fabric)
+genoa_route_io_ports(genoa_fabric_t *fabric)
 {
-	milan_route_io_t mri;
+	genoa_route_io_t mri;
 	uint32_t total_size = UINT16_MAX + 1;
 
 	bzero(&mri, sizeof (mri));
@@ -5105,15 +5106,15 @@ milan_route_io_ports(milan_fabric_t *fabric)
 	 * then find the last non-primary one and that'll be the one that gets a
 	 * larger limit.
 	 */
-	(void) milan_fabric_walk_ioms(fabric, milan_io_ports_allocate, &mri);
+	(void) genoa_fabric_walk_ioms(fabric, genoa_io_ports_allocate, &mri);
 	mri.mri_limits[mri.mri_last_ioms] = DF_MAX_IO_LIMIT;
-	(void) milan_fabric_walk_iodie(fabric, milan_io_ports_assign, &mri);
+	(void) genoa_fabric_walk_iodie(fabric, genoa_io_ports_assign, &mri);
 }
 
-#define	MILAN_SEC_IOMS_GEN_MMIO32_SPACE 0x10000
-#define	MILAN_SEC_IOMS_GEN_MMIO64_SPACE 0x10000
+#define	GENOA_SEC_IOMS_GEN_MMIO32_SPACE 0x10000
+#define	GENOA_SEC_IOMS_GEN_MMIO64_SPACE 0x10000
 
-typedef struct milan_route_mmio {
+typedef struct genoa_route_mmio {
 	uint32_t	mrm_cur;
 	uint32_t	mrm_mmio32_base;
 	uint32_t	mrm_mmio32_chunks;
@@ -5124,7 +5125,7 @@ typedef struct milan_route_mmio {
 	uint64_t	mrm_bases[DF_MAX_MMIO_RULES];
 	uint64_t	mrm_limits[DF_MAX_MMIO_RULES];
 	uint32_t	mrm_dests[DF_MAX_MMIO_RULES];
-} milan_route_mmio_t;
+} genoa_route_mmio_t;
 
 /*
  * We allocate two rules per device. The first is a 32-bit rule. The second is
@@ -5134,10 +5135,10 @@ typedef struct milan_route_mmio {
  * the limitations of PCI-PCI bridges (64-bit memory has to be prefetch).
  */
 static int
-milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
+genoa_mmio_allocate(genoa_ioms_t *ioms, void *arg)
 {
 	int ret;
-	milan_route_mmio_t *mrm = arg;
+	genoa_route_mmio_t *mrm = arg;
 	const uint32_t mmio_gran = 1 << DF_MMIO_SHIFT;
 	ioms_memlists_t *imp = &ioms->mio_memlists;
 	uint32_t gen_base32 = 0;
@@ -5150,14 +5151,14 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 	 * need to keep track of where it is so the FCH driver or its children
 	 * can allocate from it.
 	 */
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0 &&
-	    (ioms->mio_iodie->mi_flags & MILAN_IODIE_F_PRIMARY) != 0) {
+	if ((ioms->mio_flags & GENOA_IOMS_F_HAS_FCH) != 0 &&
+	    (ioms->mio_iodie->mi_flags & GENOA_IODIE_F_PRIMARY) != 0) {
 		mrm->mrm_bases[mrm->mrm_cur] = mrm->mrm_fch_base;
 		mrm->mrm_limits[mrm->mrm_cur] = mrm->mrm_fch_base;
 		mrm->mrm_limits[mrm->mrm_cur] += mrm->mrm_fch_chunks *
 		    mmio_gran - 1;
 		ret = xmemlist_add_span(&imp->im_pool,
-		    mrm->mrm_limits[mrm->mrm_cur] + 1, MILAN_COMPAT_MMIO_SIZE,
+		    mrm->mrm_limits[mrm->mrm_cur] + 1, GENOA_COMPAT_MMIO_SIZE,
 		    &imp->im_mmio_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	} else {
@@ -5169,9 +5170,9 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 		    mmio_gran;
 
 		if (mrm->mrm_mmio32_chunks * mmio_gran >
-		    2 * MILAN_SEC_IOMS_GEN_MMIO32_SPACE) {
+		    2 * GENOA_SEC_IOMS_GEN_MMIO32_SPACE) {
 			gen_base32 = mrm->mrm_limits[mrm->mrm_cur] -
-			    (MILAN_SEC_IOMS_GEN_MMIO32_SPACE - 1);
+			    (GENOA_SEC_IOMS_GEN_MMIO32_SPACE - 1);
 		}
 	}
 
@@ -5186,12 +5187,12 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 		    mrm->mrm_bases[mrm->mrm_cur],
 		    mrm->mrm_limits[mrm->mrm_cur] -
 		    mrm->mrm_bases[mrm->mrm_cur] -
-		    MILAN_SEC_IOMS_GEN_MMIO32_SPACE + 1,
+		    GENOA_SEC_IOMS_GEN_MMIO32_SPACE + 1,
 		    &imp->im_mmio_avail_pci, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 		ret = xmemlist_add_span(&imp->im_pool, gen_base32,
-		    MILAN_SEC_IOMS_GEN_MMIO32_SPACE,
+		    GENOA_SEC_IOMS_GEN_MMIO32_SPACE,
 		    &imp->im_mmio_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	} else {
@@ -5216,20 +5217,20 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 	mrm->mrm_dests[mrm->mrm_cur] = ioms->mio_fabric_id;
 
 	if (mrm->mrm_mmio64_chunks * mmio_gran >
-	    2 * MILAN_SEC_IOMS_GEN_MMIO64_SPACE) {
+	    2 * GENOA_SEC_IOMS_GEN_MMIO64_SPACE) {
 		gen_base64 = mrm->mrm_limits[mrm->mrm_cur] -
-		    (MILAN_SEC_IOMS_GEN_MMIO64_SPACE - 1);
+		    (GENOA_SEC_IOMS_GEN_MMIO64_SPACE - 1);
 
 		ret = xmemlist_add_span(&imp->im_pool,
 		    mrm->mrm_bases[mrm->mrm_cur],
 		    mrm->mrm_limits[mrm->mrm_cur] -
 		    mrm->mrm_bases[mrm->mrm_cur] -
-		    MILAN_SEC_IOMS_GEN_MMIO64_SPACE + 1,
+		    GENOA_SEC_IOMS_GEN_MMIO64_SPACE + 1,
 		    &imp->im_pmem_avail, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 		ret = xmemlist_add_span(&imp->im_pool, gen_base64,
-		    MILAN_SEC_IOMS_GEN_MMIO64_SPACE,
+		    GENOA_SEC_IOMS_GEN_MMIO64_SPACE,
 		    &imp->im_mmio_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	} else {
@@ -5252,9 +5253,9 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
  * bits.
  */
 static int
-milan_mmio_assign(milan_iodie_t *iodie, void *arg)
+genoa_mmio_assign(genoa_iodie_t *iodie, void *arg)
 {
-	milan_route_mmio_t *mrm = arg;
+	genoa_route_mmio_t *mrm = arg;
 
 	for (uint32_t i = 0; i < mrm->mrm_cur; i++) {
 		uint32_t base, limit;
@@ -5266,9 +5267,9 @@ milan_mmio_assign(milan_iodie_t *iodie, void *arg)
 		ctrl = DF_MMIO_CTL_SET_WE(ctrl, 1);
 		ctrl = DF_MMIO_CTL_V3_SET_DEST_ID(ctrl, mrm->mrm_dests[i]);
 
-		milan_df_bcast_write32(iodie, DF_MMIO_BASE_V2(i), base);
-		milan_df_bcast_write32(iodie, DF_MMIO_LIMIT_V2(i), limit);
-		milan_df_bcast_write32(iodie, DF_MMIO_CTL_V2(i), ctrl);
+		genoa_df_bcast_write32(iodie, DF_MMIO_BASE_V2(i), base);
+		genoa_df_bcast_write32(iodie, DF_MMIO_LIMIT_V2(i), limit);
+		genoa_df_bcast_write32(iodie, DF_MMIO_CTL_V2(i), ctrl);
 	}
 
 	return (0);
@@ -5282,7 +5283,7 @@ milan_mmio_assign(milan_iodie_t *iodie, void *arg)
  * because we're being lazy).
  *
  * The below 4 GiB space is split due to the compat region
- * (MILAN_PHYSADDR_COMPAT_MMIO).  The way we divide up the lower region is
+ * (GENOA_PHYSADDR_COMPAT_MMIO).  The way we divide up the lower region is
  * simple:
  *
  *   o The region between TOM and 4 GiB is split evenly among all IOMSs.
@@ -5296,9 +5297,9 @@ milan_mmio_assign(milan_iodie_t *iodie, void *arg)
  *     remainder is routed to the primary root bridge.
  *
  * 64-bit space is also simple. We find which is higher: TOM2 or the top of the
- * second hole (MILAN_PHYSADDR_IOMMU_HOLE_END).  The 256 MiB ECAM region lives
+ * second hole (GENOA_PHYSADDR_IOMMU_HOLE_END).  The 256 MiB ECAM region lives
  * there; above it, we just divide all the remaining space between that and
- * MILAN_PHYSADDR_MMIO_END. This is the milan_fabric_t's mf_mmio64_base member.
+ * GENOA_PHYSADDR_MMIO_END. This is the genoa_fabric_t's mf_mmio64_base member.
  *
  * Our general assumption with this strategy is that 64-bit MMIO is plentiful
  * and that's what we'd rather assign and use.  This ties into the last bit
@@ -5306,43 +5307,43 @@ milan_mmio_assign(milan_iodie_t *iodie, void *arg)
  * we actually really treat all of our allocations as units of 64 KiB.
  */
 static void
-milan_route_mmio(milan_fabric_t *fabric)
+genoa_route_mmio(genoa_fabric_t *fabric)
 {
 	uint32_t mmio32_size;
 	uint64_t mmio64_size;
 	uint_t nioms32;
-	milan_route_mmio_t mrm;
+	genoa_route_mmio_t mrm;
 	const uint32_t mmio_gran = DF_MMIO_LIMIT_EXCL;
 
 	VERIFY(IS_P2ALIGNED(fabric->mf_tom, mmio_gran));
-	VERIFY3U(MILAN_PHYSADDR_COMPAT_MMIO, >, fabric->mf_tom);
-	mmio32_size = MILAN_PHYSADDR_MMIO32_END - fabric->mf_tom;
+	VERIFY3U(GENOA_PHYSADDR_COMPAT_MMIO, >, fabric->mf_tom);
+	mmio32_size = GENOA_PHYSADDR_MMIO32_END - fabric->mf_tom;
 	nioms32 = fabric->mf_total_ioms;
 	VERIFY3U(mmio32_size, >,
-	    nioms32 * mmio_gran + MILAN_COMPAT_MMIO_SIZE);
+	    nioms32 * mmio_gran + GENOA_COMPAT_MMIO_SIZE);
 
 	VERIFY(IS_P2ALIGNED(fabric->mf_mmio64_base, mmio_gran));
-	VERIFY3U(MILAN_PHYSADDR_MMIO_END, >, fabric->mf_mmio64_base);
-	mmio64_size = MILAN_PHYSADDR_MMIO_END - fabric->mf_mmio64_base;
+	VERIFY3U(GENOA_PHYSADDR_MMIO_END, >, fabric->mf_mmio64_base);
+	mmio64_size = GENOA_PHYSADDR_MMIO_END - fabric->mf_mmio64_base;
 	VERIFY3U(mmio64_size, >,  fabric->mf_total_ioms * mmio_gran);
 
-	CTASSERT(IS_P2ALIGNED(MILAN_PHYSADDR_COMPAT_MMIO, DF_MMIO_LIMIT_EXCL));
+	CTASSERT(IS_P2ALIGNED(GENOA_PHYSADDR_COMPAT_MMIO, DF_MMIO_LIMIT_EXCL));
 
 	bzero(&mrm, sizeof (mrm));
 	mrm.mrm_mmio32_base = fabric->mf_tom;
 	mrm.mrm_mmio32_chunks = mmio32_size / mmio_gran / nioms32;
-	mrm.mrm_fch_base = MILAN_PHYSADDR_MMIO32_END - mmio32_size / nioms32;
+	mrm.mrm_fch_base = GENOA_PHYSADDR_MMIO32_END - mmio32_size / nioms32;
 	mrm.mrm_fch_chunks = mrm.mrm_mmio32_chunks -
-	    MILAN_COMPAT_MMIO_SIZE / mmio_gran;
+	    GENOA_COMPAT_MMIO_SIZE / mmio_gran;
 	mrm.mrm_mmio64_base = fabric->mf_mmio64_base;
 	mrm.mrm_mmio64_chunks = mmio64_size / mmio_gran / fabric->mf_total_ioms;
 
-	(void) milan_fabric_walk_ioms(fabric, milan_mmio_allocate, &mrm);
-	(void) milan_fabric_walk_iodie(fabric, milan_mmio_assign, &mrm);
+	(void) genoa_fabric_walk_ioms(fabric, genoa_mmio_allocate, &mrm);
+	(void) genoa_fabric_walk_iodie(fabric, genoa_mmio_assign, &mrm);
 }
 
 static ioms_rsrc_t
-milan_ioms_prd_to_rsrc(pci_prd_rsrc_t rsrc)
+genoa_ioms_prd_to_rsrc(pci_prd_rsrc_t rsrc)
 {
 	switch (rsrc) {
 	case PCI_PRD_R_IO:
@@ -5359,7 +5360,7 @@ milan_ioms_prd_to_rsrc(pci_prd_rsrc_t rsrc)
 }
 
 static struct memlist *
-milan_fabric_rsrc_subsume(milan_ioms_t *ioms, ioms_rsrc_t rsrc)
+genoa_fabric_rsrc_subsume(genoa_ioms_t *ioms, ioms_rsrc_t rsrc)
 {
 	ioms_memlists_t *imp;
 	struct memlist **avail, **used, *ret;
@@ -5438,20 +5439,20 @@ milan_fabric_rsrc_subsume(milan_ioms_t *ioms, ioms_rsrc_t rsrc)
  *     just for our own tracking purposes.
  */
 struct memlist *
-milan_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
+genoa_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
 {
-	milan_ioms_t *ioms;
-	milan_fabric_t *fabric = &milan_fabric;
+	genoa_ioms_t *ioms;
+	genoa_fabric_t *fabric = &genoa_fabric;
 	ioms_rsrc_t ir;
 
-	ioms = milan_fabric_find_ioms_by_bus(fabric, bus);
+	ioms = genoa_fabric_find_ioms_by_bus(fabric, bus);
 	if (ioms == NULL) {
 		return (NULL);
 	}
 
-	ir = milan_ioms_prd_to_rsrc(rsrc);
+	ir = genoa_ioms_prd_to_rsrc(rsrc);
 
-	return (milan_fabric_rsrc_subsume(ioms, ir));
+	return (genoa_fabric_rsrc_subsume(ioms, ir));
 }
 
 /*
@@ -5477,9 +5478,9 @@ milan_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
  * future's so bright, we gotta wear shades.
  */
 struct memlist *
-milan_fabric_gen_subsume(milan_ioms_t *ioms, ioms_rsrc_t ir)
+genoa_fabric_gen_subsume(genoa_ioms_t *ioms, ioms_rsrc_t ir)
 {
-	return (milan_fabric_rsrc_subsume(ioms, ir));
+	return (genoa_fabric_rsrc_subsume(ioms, ir));
 }
 
 /*
@@ -5496,13 +5497,13 @@ milan_fabric_gen_subsume(milan_ioms_t *ioms, ioms_rsrc_t ir)
  *     the link goes down.
  */
 static int
-milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
+genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 	boolean_t hide;
-	milan_pcie_core_t *pc = port->mpp_core;
-	milan_ioms_t *ioms = pc->mpc_ioms;
+	genoa_pcie_core_t *pc = port->gpp_core;
+	genoa_ioms_t *ioms = pc->mpc_ioms;
 
 	/*
 	 * We need to determine whether or not this bridge should be considered
@@ -5527,24 +5528,24 @@ milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
 	 * and it belongs to a hot-pluggable port then we always show it.
 	 * Otherwise we only show it if there's a device present.
 	 */
-	if ((port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) != 0) {
+	if ((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0) {
 		boolean_t hotplug, trained;
 		uint8_t lt;
 
-		hotplug = (pc->mpc_flags & MILAN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		lt = port->mpp_engine->zde_config.zdc_pcie.zdcp_link_train;
-		trained = lt == MILAN_DXIO_PCIE_SUCCESS;
+		hotplug = (pc->mpc_flags & GENOA_PCIE_CORE_F_HAS_HOTPLUG) != 0;
+		lt = port->gpp_engine->zde_config.zdc_pcie.zdcp_link_train;
+		trained = lt == GENOA_DXIO_PCIE_SUCCESS;
 		hide = !hotplug && !trained;
 	} else {
 		hide = B_TRUE;
 	}
 
 	if (hide) {
-		port->mpp_flags |= MILAN_PCIE_PORT_F_BRIDGE_HIDDEN;
+		port->gpp_flags |= GENOA_PCIE_PORT_F_BRIDGE_HIDDEN;
 	}
 
-	reg = milan_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = genoa_pcie_port_read(port, reg);
 	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
 	if (hide) {
 		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
@@ -5555,22 +5556,22 @@ milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
 		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
 		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
 	}
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_TX_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_TX_CTL);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_TX_CTL_SET_TLP_FLUSH_DOWN_DIS(val, 0);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the hardware knows the corresponding b/d/f for this bridge.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_TX_ID);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_TX_ID);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_TX_ID_SET_BUS(val, ioms->mio_pci_busno);
-	val = PCIE_PORT_TX_ID_SET_DEV(val, port->mpp_device);
-	val = PCIE_PORT_TX_ID_SET_FUNC(val, port->mpp_func);
-	milan_pcie_port_write(port, reg, val);
+	val = PCIE_PORT_TX_ID_SET_DEV(val, port->gpp_device);
+	val = PCIE_PORT_TX_ID_SET_FUNC(val, port->gpp_func);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Next, we have to go through and set up a bunch of the lane controller
@@ -5578,24 +5579,24 @@ milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
 	 * various settings around how idle transitions occur, how it replies to
 	 * certain messages, and related.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL_SET_L1_IMM_ACK(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_TRAIN_CTL_SET_L0S_L1_TRAIN(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(val, 1);
 	val = PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL2);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL2);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(val,
 	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
 	/*
@@ -5604,55 +5605,55 @@ milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
 	 * (gimlet, Ethanol-X, etc.) always support that on the port unless this
 	 * is one of the WAFL related lanes, we always set this.
 	 */
-	if (pc->mpc_coreno != MILAN_IOMS_WAFL_PCIE_CORENO) {
+	if (pc->mpc_coreno != GENOA_IOMS_WAFL_PCIE_CORENO) {
 		val = PCIE_PORT_LC_CTL2_SET_TS2_CHANGE_REQ(val,
 		    PCIE_PORT_LC_CTL2_TS2_CHANGE_128);
 	}
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL3);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL3);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL3_SET_DOWN_SPEED_CHANGE(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Lucky Hardware Debug 15. Why is it lucky? Because all we know is
 	 * we've been told to set it.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_HW_DBG_SET_DBG15(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the 8 GT/s symbols per clock is set to 2.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL6);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL6);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
 	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Software expects to see the PCIe slot implemented bit when a slot
 	 * actually exists. For us, this is basically anything that actually is
 	 * considered MAPPED. Set that now on the port.
 	 */
-	if ((port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) != 0) {
+	if ((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0) {
 		uint16_t reg;
 
-		reg = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
-		    port->mpp_func, MILAN_BRIDGE_R_PCI_PCIE_CAP);
+		reg = pci_getw_func(ioms->mio_pci_busno, port->gpp_device,
+		    port->gpp_func, GENOA_BRIDGE_R_PCI_PCIE_CAP);
 		reg |= PCIE_PCIECAP_SLOT_IMPL;
-		pci_putw_func(ioms->mio_pci_busno, port->mpp_device,
-		    port->mpp_func, MILAN_BRIDGE_R_PCI_PCIE_CAP, reg);
+		pci_putw_func(ioms->mio_pci_busno, port->gpp_device,
+		    port->gpp_func, GENOA_BRIDGE_R_PCI_PCIE_CAP, reg);
 	}
 
 	return (0);
 }
 
 /*
- * This is a companion to milan_fabric_init_bridges, that operates on the PCIe
+ * This is a companion to genoa_fabric_init_bridges, that operates on the PCIe
  * core level before we get to the individual bridge. This initialization
  * generally is required to ensure that each port (regardless of whether it's
  * hidden or not) is able to properly generate an all 1s response. In addition
@@ -5660,29 +5661,29 @@ milan_fabric_init_bridges(milan_pcie_port_t *port, void *arg)
  * receiver completion buffer checks, etc.
  */
 static int
-milan_fabric_init_pcie_core(milan_pcie_core_t *pc, void *arg)
+genoa_fabric_init_pcie_core(genoa_pcie_core_t *pc, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_CI_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_CI_CTL);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_CI_CTL_SET_LINK_DOWN_CTO_EN(val, 1);
 	val = PCIE_CORE_CI_CTL_SET_IGN_LINK_DOWN_CTO_ERR(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Program the unit ID for this device's SDP port.
 	 */
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SDP_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_SDP_CTL);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_SDP_CTL_SET_PORT_ID(val, pc->mpc_sdp_port);
 	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID(val, pc->mpc_sdp_unit);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Program values required for receiver margining to work. These are
-	 * hidden in the core. Milan processors generally only support timing
+	 * hidden in the core. Genoa processors generally only support timing
 	 * margining as that's what's required by PCIe Gen 4. Voltage margining
 	 * was made mandatory in Gen 5.
 	 *
@@ -5699,58 +5700,58 @@ milan_fabric_init_pcie_core(milan_pcie_core_t *pc, void *arg)
 	 * register is encoded as a zeros based value (so that's why we write
 	 * 0xf).
 	 */
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN_CTL_CAP);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN_CTL_CAP);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_TIME(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x32);
 	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x17);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN2_SET_NLANES(val, 0xf);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Ensure that RCB checking is what's seemingly expected.
 	 */
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_ATTR_DIS(val, 1);
 	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_SIZE_DIS(val, 0);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Enabling atomics in the RC requires a few different registers. Both
 	 * a strap has to be overridden and then corresponding control bits.
 	 */
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_STRAP_F0);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_STRAP_F0);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_ROUTE(val, 1);
 	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL2);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL2);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_ORD_DIS(val, 1);
 	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_OPS_DIS(val, 0);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Ensure the correct electrical idle mode detection is set. In
 	 * addition, it's been recommended we ignore the K30.7 EDB (EnD Bad)
 	 * special symbol errors.
 	 */
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_P_CTL_SET_ELEC_IDLE(val,
 	    PCIE_CORE_PCIE_P_CTL_ELEC_IDLE_M1);
 	val = PCIE_CORE_PCIE_P_CTL_SET_IGN_EDB_ERR(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	/*
 	 * The IOMMUL1 does not have an instance for the on-the side WAFL lanes.
@@ -5759,33 +5760,33 @@ milan_fabric_init_pcie_core(milan_pcie_core_t *pc, void *arg)
 	if (pc->mpc_coreno >= IOMMUL1_N_PCIE_PORTS)
 		return (0);
 
-	reg = milan_pcie_core_reg(pc, D_IOMMUL1_CTL1);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_IOMMUL1_CTL1);
+	val = genoa_pcie_core_read(pc, reg);
 	val = IOMMUL1_CTL1_SET_ORDERING(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
 
 typedef struct {
-	milan_ioms_t *pbc_ioms;
+	genoa_ioms_t *pbc_ioms;
 	uint8_t pbc_busoff;
 } pci_bus_counter_t;
 
 static int
-milan_fabric_hack_bridges_cb(milan_pcie_port_t *port, void *arg)
+genoa_fabric_hack_bridges_cb(genoa_pcie_port_t *port, void *arg)
 {
 	uint8_t bus, secbus;
 	pci_bus_counter_t *pbc = arg;
-	milan_ioms_t *ioms = port->mpp_core->mpc_ioms;
+	genoa_ioms_t *ioms = port->gpp_core->mpc_ioms;
 
 	bus = ioms->mio_pci_busno;
 	if (pbc->pbc_ioms != ioms) {
 		pbc->pbc_ioms = ioms;
-		pbc->pbc_busoff = 1 + ARRAY_SIZE(milan_int_ports);
-		for (uint_t i = 0; i < ARRAY_SIZE(milan_int_ports); i++) {
-			const milan_pcie_port_info_t *info =
-			    &milan_int_ports[i];
+		pbc->pbc_busoff = 1 + ARRAY_SIZE(genoa_int_ports);
+		for (uint_t i = 0; i < ARRAY_SIZE(genoa_int_ports); i++) {
+			const genoa_pcie_port_info_t *info =
+			    &genoa_int_ports[i];
 			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
 			    PCI_BCNF_PRIBUS, bus);
 			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
@@ -5796,17 +5797,17 @@ milan_fabric_hack_bridges_cb(milan_pcie_port_t *port, void *arg)
 		}
 	}
 
-	if ((port->mpp_flags & MILAN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0) {
+	if ((port->gpp_flags & GENOA_PCIE_PORT_F_BRIDGE_HIDDEN) != 0) {
 		return (0);
 	}
 
 	secbus = bus + pbc->pbc_busoff;
 
-	pci_putb_func(bus, port->mpp_device, port->mpp_func,
+	pci_putb_func(bus, port->gpp_device, port->gpp_func,
 	    PCI_BCNF_PRIBUS, bus);
-	pci_putb_func(bus, port->mpp_device, port->mpp_func,
+	pci_putb_func(bus, port->gpp_device, port->gpp_func,
 	    PCI_BCNF_SECBUS, secbus);
-	pci_putb_func(bus, port->mpp_device, port->mpp_func,
+	pci_putb_func(bus, port->gpp_device, port->gpp_func,
 	    PCI_BCNF_SUBBUS, secbus);
 
 	pbc->pbc_busoff++;
@@ -5824,12 +5825,12 @@ milan_fabric_hack_bridges_cb(milan_pcie_port_t *port, void *arg)
  *     it one. I'm sorry future us.
  */
 static void
-milan_fabric_hack_bridges(milan_fabric_t *fabric)
+genoa_fabric_hack_bridges(genoa_fabric_t *fabric)
 {
 	pci_bus_counter_t c;
 	bzero(&c, sizeof (c));
 
-	milan_fabric_walk_pcie_port(fabric, milan_fabric_hack_bridges_cb, &c);
+	genoa_fabric_walk_pcie_port(fabric, genoa_fabric_hack_bridges_cb, &c);
 }
 
 /*
@@ -5844,22 +5845,22 @@ CTASSERT(sizeof (smu_hotplug_table_t) <= MMU_PAGESIZE);
  * not with actual set up.
  */
 static boolean_t
-milan_smu_hotplug_data_init(milan_fabric_t *fabric)
+genoa_smu_hotplug_data_init(genoa_fabric_t *fabric)
 {
 	ddi_dma_attr_t attr;
-	milan_hotplug_t *hp = &fabric->mf_hotplug;
+	genoa_hotplug_t *hp = &fabric->mf_hotplug;
 	const smu_hotplug_entry_t *entry;
 	pfn_t pfn;
 	boolean_t cont;
 
-	milan_smu_dma_attr(&attr);
+	genoa_smu_dma_attr(&attr);
 	hp->mh_alloc_len = MMU_PAGESIZE;
 	hp->mh_table = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(hp->mh_table, MMU_PAGESIZE);
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)hp->mh_table);
 	hp->mh_pa = mmu_ptob((uint64_t)pfn);
 
-	if (milan_board_type(fabric) == MBT_ETHANOL) {
+	if (genoa_board_type(fabric) == MBT_ETHANOL) {
 		entry = ethanolx_hotplug_ents;
 	} else {
 		entry = gimlet_hotplug_ents;
@@ -5876,10 +5877,10 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 	for (uint_t i = 0; entry[i].se_slotno != SMU_HOTPLUG_ENT_LAST; i++) {
 		uint_t slot = entry[i].se_slotno;
 		const smu_hotplug_map_t *map;
-		milan_iodie_t *iodie;
-		milan_ioms_t *ioms;
-		milan_pcie_core_t *pc;
-		milan_pcie_port_t *port;
+		genoa_iodie_t *iodie;
+		genoa_ioms_t *ioms;
+		genoa_pcie_core_t *pc;
+		genoa_pcie_port_t *port;
 
 		hp->mh_table->smt_map[slot] = entry[i].se_map;
 		hp->mh_table->smt_func[slot] = entry[i].se_func;
@@ -5897,12 +5898,12 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 
 		cmn_err(CE_CONT, "?SMUHP: mapped entry %u to port %p\n",
 		    i, port);
-		VERIFY((port->mpp_flags & MILAN_PCIE_PORT_F_MAPPED) != 0);
-		VERIFY0(port->mpp_flags & MILAN_PCIE_PORT_F_BRIDGE_HIDDEN);
-		port->mpp_flags |= MILAN_PCIE_PORT_F_HOTPLUG;
-		port->mpp_hp_type = map->shm_format;
-		port->mpp_hp_slotno = slot;
-		port->mpp_hp_smu_mask = entry[i].se_func.shf_mask;
+		VERIFY((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0);
+		VERIFY0(port->gpp_flags & GENOA_PCIE_PORT_F_BRIDGE_HIDDEN);
+		port->gpp_flags |= GENOA_PCIE_PORT_F_HOTPLUG;
+		port->gpp_hp_type = map->shm_format;
+		port->gpp_hp_slotno = slot;
+		port->gpp_hp_smu_mask = entry[i].se_func.shf_mask;
 	}
 
 	return (cont);
@@ -5913,14 +5914,14 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
  * use our hacky static versions for a moment.
  */
 static uint32_t
-milan_hotplug_bridge_features(milan_pcie_port_t *port)
+genoa_hotplug_bridge_features(genoa_pcie_port_t *port)
 {
 	uint32_t feats;
-	milan_fabric_t *fabric =
-	    port->mpp_core->mpc_ioms->mio_iodie->mi_soc->ms_fabric;
+	genoa_fabric_t *fabric =
+	    port->gpp_core->mpc_ioms->mio_iodie->mi_soc->ms_fabric;
 
-	if (milan_board_type(fabric) == MBT_ETHANOL) {
-		if (port->mpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
+	if (genoa_board_type(fabric) == MBT_ETHANOL) {
+		if (port->gpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
 			return (ethanolx_pcie_slot_cap_entssd);
 		} else {
 			return (ethanolx_pcie_slot_cap_express);
@@ -5938,7 +5939,7 @@ milan_hotplug_bridge_features(milan_pcie_port_t *port)
 	 * turn off features in the SMU, we check for the absence of it (e.g. ==
 	 * 0) to indicate that we should enable the feature.
 	 */
-	switch (port->mpp_hp_type) {
+	switch (port->gpp_hp_type) {
 	case SMU_HP_ENTERPRISE_SSD:
 		/*
 		 * For Enterprise SSD the set of features that are supported are
@@ -5949,46 +5950,46 @@ milan_hotplug_bridge_features(milan_pcie_port_t *port)
 		 */
 		return (feats | PCIE_SLOTCAP_NO_CMD_COMP_SUPP);
 	case SMU_HP_EXPRESS_MODULE_A:
-		if ((port->mpp_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTA_EMILS) == 0 ||
-		    (port->mpp_hp_smu_mask & SMU_ENTA_EMIL) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTA_EMILS) == 0 ||
+		    (port->gpp_hp_smu_mask & SMU_ENTA_EMIL) == 0) {
 			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTA_PWREN) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTA_PWREN) == 0) {
 			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTA_ATTNLED) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTA_ATTNLED) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTA_PWRLED) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTA_PWRLED) == 0) {
 			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
 		}
 		break;
 	case SMU_HP_EXPRESS_MODULE_B:
-		if ((port->mpp_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTB_EMILS) == 0 ||
-		    (port->mpp_hp_smu_mask & SMU_ENTB_EMIL) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTB_EMILS) == 0 ||
+		    (port->gpp_hp_smu_mask & SMU_ENTB_EMIL) == 0) {
 			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTB_PWREN) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTB_PWREN) == 0) {
 			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTB_ATTNLED) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTB_ATTNLED) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
 		}
 
-		if ((port->mpp_hp_smu_mask & SMU_ENTB_PWRLED) == 0) {
+		if ((port->gpp_hp_smu_mask & SMU_ENTB_PWRLED) == 0) {
 			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
 		}
 		break;
@@ -6010,11 +6011,11 @@ milan_hotplug_bridge_features(milan_pcie_port_t *port)
  * defined state.
  */
 static int
-milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
+genoa_hotplug_bridge_post_start(genoa_pcie_port_t *port, void *arg)
 {
 	uint16_t ctl, sts;
 	uint32_t cap;
-	milan_ioms_t *ioms = port->mpp_core->mpc_ioms;
+	genoa_ioms_t *ioms = port->gpp_core->mpc_ioms;
 
 	/*
 	 * If there is no hotplug support we don't do anything here today. We
@@ -6022,14 +6023,14 @@ milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 	 * to come through here because in theory the presence changed
 	 * indicators should work.
 	 */
-	if ((port->mpp_flags & MILAN_PCIE_PORT_F_HOTPLUG) == 0) {
+	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0) {
 		return (0);
 	}
 
-	sts = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
-	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_STS);
-	cap = pci_getl_func(ioms->mio_pci_busno, port->mpp_device,
-	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CAP);
+	sts = pci_getw_func(ioms->mio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_STS);
+	cap = pci_getl_func(ioms->mio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP);
 
 	/*
 	 * At this point, surprisingly enough, it is expected that all the
@@ -6049,8 +6050,8 @@ milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 	 * them anyways, because software will anyways and it helps get the SMU
 	 * into a "reasonable" state.
 	 */
-	ctl = pci_getw_func(ioms->mio_pci_busno, port->mpp_device,
-	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CTL);
+	ctl = pci_getw_func(ioms->mio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL);
 	if ((cap & PCIE_SLOTCAP_ATTN_BUTTON) != 0) {
 		ctl |= PCIE_SLOTCTL_ATTN_BTN_EN;
 	}
@@ -6074,8 +6075,8 @@ milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
 			ctl |= PCIE_SLOTCTL_PWR_CONTROL;
 		}
 	}
-	pci_putw_func(ioms->mio_pci_busno, port->mpp_device,
-	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CTL, ctl);
+	pci_putw_func(ioms->mio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL, ctl);
 
 	return (0);
 }
@@ -6091,21 +6092,21 @@ milan_hotplug_bridge_post_start(milan_pcie_port_t *port, void *arg)
  *   o Making sure that power faults work.
  */
 static int
-milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
+genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 	uint32_t slot_mask;
-	milan_pcie_core_t *pc = port->mpp_core;
-	milan_ioms_t *ioms = pc->mpc_ioms;
+	genoa_pcie_core_t *pc = port->gpp_core;
+	genoa_ioms_t *ioms = pc->mpc_ioms;
 
 	/*
 	 * Skip over all non-hotplug slots and the simple presence mode. Though
 	 * one has to ask oneself, why have hotplug if you're going to use the
 	 * simple presence mode.
 	 */
-	if ((port->mpp_flags & MILAN_PCIE_PORT_F_HOTPLUG) == 0 ||
-	    port->mpp_hp_type == SMU_HP_PRESENCE_DETECT) {
+	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0 ||
+	    port->gpp_hp_type == SMU_HP_PRESENCE_DETECT) {
 		return (0);
 	}
 
@@ -6113,20 +6114,20 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	 * Set the hotplug slot information in the PCIe IP, presumably so that
 	 * it'll do something useful for the SMU.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
-	val = milan_pcie_port_read(port, reg);
-	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->mpp_hp_slotno);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->gpp_hp_slotno);
 	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * This register is apparently set to ensure that we don't remain in the
 	 * detect state machine state.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL5);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL5);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(val, 0);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * This bit is documented to cause the LC to disregard most training
@@ -6150,18 +6151,18 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	 * be disabled or otherwise affected by a misbehaving or malicious
 	 * downstream device that might set some of these bits.
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_TRAIN_CTL_SET_TRAINBITS_DIS(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure that power faults can actually work (in theory).
 	 */
-	reg = milan_pcie_port_reg(port, D_PCIE_PORT_PCTL);
-	val = milan_pcie_port_read(port, reg);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_PCTL);
+	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_PCTL_SET_PWRFLT_EN(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Go through and set up the slot capabilities register. In our case
@@ -6177,15 +6178,15 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	    PCIE_SLOTCAP_HP_CAPABLE | PCIE_SLOTCAP_EMI_LOCK_PRESENT |
 	    PCIE_SLOTCAP_NO_CMD_COMP_SUPP;
 
-	val = pci_getl_func(ioms->mio_pci_busno, port->mpp_device,
-	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CAP);
+	val = pci_getl_func(ioms->mio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP);
 	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
 	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
-	val |= port->mpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
+	val |= port->gpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	val &= ~slot_mask;
-	val |= milan_hotplug_bridge_features(port);
-	pci_putl_func(ioms->mio_pci_busno, port->mpp_device,
-	    port->mpp_func, MILAN_BRIDGE_R_PCI_SLOT_CAP, val);
+	val |= genoa_hotplug_bridge_features(port);
+	pci_putl_func(ioms->mio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP, val);
 
 	/*
 	 * Finally we need to go through and unblock training now that we've set
@@ -6194,10 +6195,10 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
 	 * unlikely start suddenly training: PERST is still asserted to them on
 	 * boards where that's under GPIO network control.
 	 */
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SWRST_CTL6);
-	val = milan_pcie_core_read(pc, reg);
-	val = bitset32(val, port->mpp_portno, port->mpp_portno, 0);
-	milan_pcie_core_write(pc, reg, val);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_SWRST_CTL6);
+	val = genoa_pcie_core_read(pc, reg);
+	val = bitset32(val, port->gpp_portno, port->gpp_portno, 0);
+	genoa_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
@@ -6210,7 +6211,7 @@ milan_hotplug_port_init(milan_pcie_port_t *port, void *arg)
  *   o Ensuring that presence detection is based on an 'OR'
  */
 static int
-milan_hotplug_core_init(milan_pcie_core_t *pc, void *arg)
+genoa_hotplug_core_init(genoa_pcie_core_t *pc, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -6218,14 +6219,14 @@ milan_hotplug_core_init(milan_pcie_core_t *pc, void *arg)
 	/*
 	 * Nothing to do if there's no hotplug.
 	 */
-	if ((pc->mpc_flags & MILAN_PCIE_CORE_F_HAS_HOTPLUG) == 0) {
+	if ((pc->mpc_flags & GENOA_PCIE_CORE_F_HAS_HOTPLUG) == 0) {
 		return (0);
 	}
 
-	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PRES);
-	val = milan_pcie_core_read(pc, reg);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PRES);
+	val = genoa_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PRES_SET_MODE(val, PCIE_CORE_PRES_MODE_OR);
-	milan_pcie_core_write(pc, reg, val);
+	genoa_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
@@ -6251,10 +6252,10 @@ milan_hotplug_core_init(milan_pcie_core_t *pc, void *arg)
  * bus; however, it is still also a bit mysterious.
  */
 static boolean_t
-milan_hotplug_init(milan_fabric_t *fabric)
+genoa_hotplug_init(genoa_fabric_t *fabric)
 {
-	milan_hotplug_t *hp = &fabric->mf_hotplug;
-	milan_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
+	genoa_hotplug_t *hp = &fabric->mf_hotplug;
+	genoa_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
 
 	/*
 	 * These represent the addresses that we need to program in the SMU.
@@ -6266,7 +6267,7 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	 */
 	const uint32_t i2c_addrs[4] = { 0x70, 0x171, 0x272, 0x373 };
 
-	if (!milan_smu_hotplug_data_init(fabric)) {
+	if (!genoa_smu_hotplug_data_init(fabric)) {
 		/*
 		 * This case is used to indicate that there was nothing in
 		 * particular that needed hotplug. Therefore, we don't bother
@@ -6276,16 +6277,16 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	}
 
 	for (uint_t i = 0; i < ARRAY_SIZE(i2c_addrs); i++) {
-		if (!milan_smu_rpc_i2c_switch(iodie, i2c_addrs[i])) {
+		if (!genoa_smu_rpc_i2c_switch(iodie, i2c_addrs[i])) {
 			return (B_FALSE);
 		}
 	}
 
-	if (!milan_smu_rpc_give_address(iodie, MSAK_HOTPLUG, hp->mh_pa)) {
+	if (!genoa_smu_rpc_give_address(iodie, MSAK_HOTPLUG, hp->mh_pa)) {
 		return (B_FALSE);
 	}
 
-	if (!milan_smu_rpc_send_hotplug_table(iodie)) {
+	if (!genoa_smu_rpc_send_hotplug_table(iodie)) {
 		return (B_FALSE);
 	}
 
@@ -6295,12 +6296,12 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	 * before we enable things. It's unclear if the order is load bearing or
 	 * not.
 	 */
-	(void) milan_fabric_walk_pcie_core(fabric, milan_hotplug_core_init,
+	(void) genoa_fabric_walk_pcie_core(fabric, genoa_hotplug_core_init,
 	    NULL);
-	(void) milan_fabric_walk_pcie_port(fabric, milan_hotplug_port_init,
+	(void) genoa_fabric_walk_pcie_port(fabric, genoa_hotplug_port_init,
 	    NULL);
 
-	if (!milan_smu_rpc_hotplug_flags(iodie, 0)) {
+	if (!genoa_smu_rpc_hotplug_flags(iodie, 0)) {
 		return (B_FALSE);
 	}
 
@@ -6308,11 +6309,11 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	 * This is an unfortunate bit. The SMU relies on someone else to have
 	 * set the actual state of the i2c clock.
 	 */
-	if (!milan_fixup_i2c_clock()) {
+	if (!genoa_fixup_i2c_clock()) {
 		return (B_FALSE);
 	}
 
-	if (!milan_smu_rpc_start_hotplug(iodie, B_FALSE, 0)) {
+	if (!genoa_smu_rpc_start_hotplug(iodie, B_FALSE, 0)) {
 		return (B_FALSE);
 	}
 
@@ -6321,42 +6322,42 @@ milan_hotplug_init(milan_fabric_t *fabric)
 	 * pieces of slot initialization which are probably necessary to get the
 	 * SMU into the same place as we are with everything else.
 	 */
-	(void) milan_fabric_walk_pcie_port(fabric,
-	    milan_hotplug_bridge_post_start, NULL);
+	(void) genoa_fabric_walk_pcie_port(fabric,
+	    genoa_hotplug_bridge_post_start, NULL);
 
 	return (B_TRUE);
 }
 
 #ifdef	DEBUG
 static int
-milan_fabric_init_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
+genoa_fabric_init_pcie_core_dbg(genoa_pcie_core_t *pc, void *arg)
 {
 	pc->mpc_dbg = kmem_zalloc(
-	    MILAN_PCIE_DBG_SIZE(milan_pcie_core_dbg_nregs), KM_SLEEP);
-	pc->mpc_dbg->mpd_nregs = milan_pcie_core_dbg_nregs;
+	    GENOA_PCIE_DBG_SIZE(genoa_pcie_core_dbg_nregs), KM_SLEEP);
+	pc->mpc_dbg->gpd_nregs = genoa_pcie_core_dbg_nregs;
 
-	for (uint_t rn = 0; rn < pc->mpc_dbg->mpd_nregs; rn++) {
-		milan_pcie_reg_dbg_t *rd = &pc->mpc_dbg->mpd_regs[rn];
+	for (uint_t rn = 0; rn < pc->mpc_dbg->gpd_nregs; rn++) {
+		genoa_pcie_reg_dbg_t *rd = &pc->mpc_dbg->gpd_regs[rn];
 
-		rd->mprd_name = milan_pcie_core_dbg_regs[rn].mprd_name;
-		rd->mprd_def = milan_pcie_core_dbg_regs[rn].mprd_def;
+		rd->gprd_name = genoa_pcie_core_dbg_regs[rn].gprd_name;
+		rd->gprd_def = genoa_pcie_core_dbg_regs[rn].gprd_def;
 	}
 
 	return (0);
 }
 
 static int
-milan_fabric_init_pcie_port_dbg(milan_pcie_port_t *port, void *arg)
+genoa_fabric_init_pcie_port_dbg(genoa_pcie_port_t *port, void *arg)
 {
-	port->mpp_dbg = kmem_zalloc(
-	    MILAN_PCIE_DBG_SIZE(milan_pcie_port_dbg_nregs), KM_SLEEP);
-	port->mpp_dbg->mpd_nregs = milan_pcie_port_dbg_nregs;
+	port->gpp_dbg = kmem_zalloc(
+	    GENOA_PCIE_DBG_SIZE(genoa_pcie_port_dbg_nregs), KM_SLEEP);
+	port->gpp_dbg->gpd_nregs = genoa_pcie_port_dbg_nregs;
 
-	for (uint_t rn = 0; rn < port->mpp_dbg->mpd_nregs; rn++) {
-		milan_pcie_reg_dbg_t *rd = &port->mpp_dbg->mpd_regs[rn];
+	for (uint_t rn = 0; rn < port->gpp_dbg->gpd_nregs; rn++) {
+		genoa_pcie_reg_dbg_t *rd = &port->gpp_dbg->gpd_regs[rn];
 
-		rd->mprd_name = milan_pcie_port_dbg_regs[rn].mprd_name;
-		rd->mprd_def = milan_pcie_port_dbg_regs[rn].mprd_def;
+		rd->gprd_name = genoa_pcie_port_dbg_regs[rn].gprd_name;
+		rd->gprd_def = genoa_pcie_port_dbg_regs[rn].gprd_def;
 	}
 
 	return (0);
@@ -6368,9 +6369,9 @@ milan_fabric_init_pcie_port_dbg(milan_pcie_port_t *port, void *arg)
  * get the PCIe engine up and running.
  */
 void
-milan_fabric_init(void)
+genoa_fabric_init(void)
 {
-	milan_fabric_t *fabric = &milan_fabric;
+	genoa_fabric_t *fabric = &genoa_fabric;
 
 	/*
 	 * XXX We're missing initialization of some different pieces of the data
@@ -6384,10 +6385,10 @@ milan_fabric_init(void)
 	 * time, and are enabled only on DEBUG kernels.
 	 */
 #ifdef	DEBUG
-	(void) milan_fabric_walk_pcie_core(fabric,
-	    milan_fabric_init_pcie_core_dbg, NULL);
-	(void) milan_fabric_walk_pcie_port(fabric,
-	    milan_fabric_init_pcie_port_dbg, NULL);
+	(void) genoa_fabric_walk_pcie_core(fabric,
+	    genoa_fabric_init_pcie_core_dbg, NULL);
+	(void) genoa_fabric_walk_pcie_port(fabric,
+	    genoa_fabric_init_pcie_port_dbg, NULL);
 #endif
 
 	/*
@@ -6397,10 +6398,10 @@ milan_fabric_init(void)
 	 * process will also save our own allocations of these resources,
 	 * allowing us to use them for our own purposes or for PCI.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_memlists, NULL);
-	milan_route_pci_bus(fabric);
-	milan_route_io_ports(fabric);
-	milan_route_mmio(fabric);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_memlists, NULL);
+	genoa_route_pci_bus(fabric);
+	genoa_route_io_ports(fabric);
+	genoa_route_mmio(fabric);
 
 	/*
 	 * While DRAM training seems to have programmed the initial memory
@@ -6412,9 +6413,9 @@ milan_fabric_init(void)
 	 * don't use VGA and we don't use ASeg, so there's no reason to hide
 	 * this RAM from anyone.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_tom, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_disable_iohc_vga, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_pci, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_tom, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_disable_iohc_vga, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_iohc_pci, NULL);
 
 	/*
 	 * Let's set up PCIe. To lead off, let's make sure the system uses the
@@ -6422,9 +6423,9 @@ milan_fabric_init(void)
 	 * configuration space retries should work, though this isn't sufficient
 	 * for them to work.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_pcie_refclk, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_pci_to, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_features, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_pcie_refclk, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_pci_to, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_iohc_features, NULL);
 
 	/*
 	 * There is a lot of different things that we have to do here. But first
@@ -6433,13 +6434,13 @@ milan_fabric_init(void)
 	 * explicitly told to in the PPR or through other means. This is going
 	 * to be weird and you have every right to complain.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_fch_link, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_arbitration_ioms,
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_iohc_fch_link, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_arbitration_ioms,
 	    NULL);
-	milan_fabric_walk_nbif(fabric, milan_fabric_init_arbitration_nbif,
+	genoa_fabric_walk_nbif(fabric, genoa_fabric_init_arbitration_nbif,
 	    NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_sdp_control, NULL);
-	milan_fabric_walk_nbif(fabric, milan_fabric_init_nbif_syshub_dma,
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_sdp_control, NULL);
+	genoa_fabric_walk_nbif(fabric, genoa_fabric_init_nbif_syshub_dma,
 	    NULL);
 
 	/*
@@ -6452,14 +6453,14 @@ milan_fabric_init(void)
 	 * need to go through and deal with interrupt routing and how that
 	 * interface with each of the northbridges here.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_ioapic, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_ioapic, NULL);
 
 	/*
 	 * XXX For some reason programming IOHC::NB_BUS_NUM_CNTL is lopped in
 	 * with the IOAPIC initialization. We may want to do this, but it can at
 	 * least be its own function.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_bus_num, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_bus_num, NULL);
 
 	/*
 	 * Go through and configure all of the straps for NBIF devices before
@@ -6479,14 +6480,14 @@ milan_fabric_init(void)
 	 */
 
 	/* XXX Need a way to know which devs to enable on the board */
-	milan_fabric_walk_nbif(fabric, milan_fabric_init_nbif_dev_straps, NULL);
+	genoa_fabric_walk_nbif(fabric, genoa_fabric_init_nbif_dev_straps, NULL);
 
 	/*
 	 * To wrap up the nBIF devices, go through and update the bridges here.
 	 * We do two passes, one to get the NBIF instances and another to deal
 	 * with the special instance that we believe is for the southbridge.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_nbif_bridge, NULL);
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_nbif_bridge, NULL);
 
 	/*
 	 * Currently we do all of our initial DXIO training for PCIe before we
@@ -6509,35 +6510,35 @@ milan_fabric_init(void)
 	 *
 	 * XXX htf do we want to handle errors
 	 */
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_PRE_DXIO_INIT,
-	    MILAN_IODIE_MATCH_ANY);
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_init, NULL) != 0) {
+	genoa_pcie_populate_dbg(&genoa_fabric, MPCS_PRE_DXIO_INIT,
+	    GENOA_IODIE_MATCH_ANY);
+	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_init, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
 		return;
 	}
 
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_plat_data, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_plat_data, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: no platform "
 		    "data");
 		return;
 	}
 
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_load_data, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_load_data, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to load "
 		    "data into dxio");
 		return;
 	}
 
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_more_conf, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_more_conf, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to do yet "
 		    "more configuration");
 		return;
 	}
 
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_DXIO_SM_START,
-	    MILAN_IODIE_MATCH_ANY);
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_state_machine, NULL) !=
+	genoa_pcie_populate_dbg(&genoa_fabric, MPCS_DXIO_SM_START,
+	    GENOA_IODIE_MATCH_ANY);
+	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_state_machine, NULL) !=
 	    0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to walk "
 		    "through the state machine");
@@ -6551,28 +6552,28 @@ milan_fabric_init(void)
 	 * through and set up the bridges so that way we can actual handle them
 	 * aborting transactions and related.
 	 */
-	milan_fabric_walk_pcie_core(fabric, milan_fabric_init_pcie_core, NULL);
-	milan_fabric_walk_pcie_port(fabric, milan_fabric_init_bridges, NULL);
+	genoa_fabric_walk_pcie_core(fabric, genoa_fabric_init_pcie_core, NULL);
+	genoa_fabric_walk_pcie_port(fabric, genoa_fabric_init_bridges, NULL);
 
 	/*
 	 * XXX This is a terrible hack. We should really fix pci_boot.c and we
 	 * better before we go to market.
 	 */
-	milan_fabric_hack_bridges(fabric);
+	genoa_fabric_hack_bridges(fabric);
 
 	/*
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
 	 */
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_PRE_HOTPLUG,
-	    MILAN_IODIE_MATCH_ANY);
-	if (!milan_hotplug_init(fabric)) {
+	genoa_pcie_populate_dbg(&genoa_fabric, MPCS_PRE_HOTPLUG,
+	    GENOA_IODIE_MATCH_ANY);
+	if (!genoa_hotplug_init(fabric)) {
 		cmn_err(CE_WARN, "SMUHP: initialisation failed; PCIe hotplug "
 		    "may not function properly");
 	}
 
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_POST_HOTPLUG,
-	    MILAN_IODIE_MATCH_ANY);
+	genoa_pcie_populate_dbg(&genoa_fabric, MPCS_POST_HOTPLUG,
+	    GENOA_IODIE_MATCH_ANY);
 
 	/*
 	 * XXX At some point, maybe not here, but before we really go too much

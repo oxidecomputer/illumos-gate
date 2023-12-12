@@ -14,13 +14,13 @@
  */
 
 /*
- * This implements RAS support on Milan.
+ * This implements RAS support on Genoa.
  */
 
 #include <sys/bitext.h>
 #include <sys/cmn_err.h>
 #include <sys/int_types.h>
-#include <sys/io/milan/ras.h>
+#include <sys/io/genoa/ras.h>
 #include <sys/mca_amd.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
@@ -58,10 +58,10 @@
  * bank is valid.
  */
 static uint64_t
-read_bank_msr(uint_t bank, enum milan_ras_mcax_bank_reg reg)
+read_bank_msr(uint_t bank, enum genoa_ras_mcax_bank_reg reg)
 {
-	uint_t bank_offset = MILAN_RAS_MSR_BANK_NREGS * bank;
-	uint_t msr = MILAN_RAS_BANK_MSR_BASE + bank_offset + reg;
+	uint_t bank_offset = GENOA_RAS_MSR_BANK_NREGS * bank;
+	uint_t msr = GENOA_RAS_BANK_MSR_BASE + bank_offset + reg;
 	return (rdmsr(msr));
 }
 
@@ -71,10 +71,10 @@ read_bank_msr(uint_t bank, enum milan_ras_mcax_bank_reg reg)
  * bank is valid.
  */
 static void
-write_bank_msr(uint_t bank, enum milan_ras_mcax_bank_reg reg, uint64_t value)
+write_bank_msr(uint_t bank, enum genoa_ras_mcax_bank_reg reg, uint64_t value)
 {
-	uint_t bank_offset = MILAN_RAS_MSR_BANK_NREGS * bank;
-	uint_t msr = MILAN_RAS_BANK_MSR_BASE + bank_offset + reg;
+	uint_t bank_offset = GENOA_RAS_MSR_BANK_NREGS * bank;
+	uint_t msr = GENOA_RAS_BANK_MSR_BASE + bank_offset + reg;
 	wrmsr(msr, value);
 }
 
@@ -94,13 +94,13 @@ ipid_mca_type(uint64_t ipid)
  * Decodes the bank type from the hardware ID and MCA "type"
  * fields in the IP ID register.
  */
-static enum milan_ras_bank_type
+static enum genoa_ras_bank_type
 identify_bank(uint_t bank)
 {
 	const struct {
 		uint64_t hardware_id;
 		uint64_t mca_type;
-		enum milan_ras_bank_type bank_type;
+		enum genoa_ras_bank_type bank_type;
 	} type_map[] = {
 		/*
 		 * These constants are taken from the PPR and seem mostly
@@ -109,25 +109,25 @@ identify_bank(uint_t bank)
 		 * documentation.  Note that the ordering here is from the table
 		 * in the PPR from ease of cross-reference.
 		 */
-		{ 0xb0, 0x10, MILAN_RBT_LS },
-		{ 0xb0, 0x01, MILAN_RBT_IF },
-		{ 0xb0, 0x02, MILAN_RBT_L2 },
-		{ 0xb0, 0x07, MILAN_RBT_L3 },
-		{ 0x01, 0x02, MILAN_RBT_MP5 },
-		{ 0x05, 0x00, MILAN_RBT_PB },
-		{ 0x96, 0x00, MILAN_RBT_UMC },
-		{ 0x18, 0x00, MILAN_RBT_NBIO },
-		{ 0x46, 0x00, MILAN_RBT_PCIE },
-		{ 0x01, 0x01, MILAN_RBT_SMU },
-		{ 0xff, 0x01, MILAN_RBT_PSP },
-		{ 0x2e, 0x01, MILAN_RBT_PIE },
-		{ 0x2e, 0x02, MILAN_RBT_CS },
-		{ 0xb0, 0x05, MILAN_RBT_EX },
-		{ 0xb0, 0x06, MILAN_RBT_FP },
-		{ 0xb0, 0x03, MILAN_RBT_DE },
+		{ 0xb0, 0x10, GENOA_RBT_LS },
+		{ 0xb0, 0x01, GENOA_RBT_IF },
+		{ 0xb0, 0x02, GENOA_RBT_L2 },
+		{ 0xb0, 0x07, GENOA_RBT_L3 },
+		{ 0x01, 0x02, GENOA_RBT_MP5 },
+		{ 0x05, 0x00, GENOA_RBT_PB },
+		{ 0x96, 0x00, GENOA_RBT_UMC },
+		{ 0x18, 0x00, GENOA_RBT_NBIO },
+		{ 0x46, 0x00, GENOA_RBT_PCIE },
+		{ 0x01, 0x01, GENOA_RBT_SMU },
+		{ 0xff, 0x01, GENOA_RBT_PSP },
+		{ 0x2e, 0x01, GENOA_RBT_PIE },
+		{ 0x2e, 0x02, GENOA_RBT_CS },
+		{ 0xb0, 0x05, GENOA_RBT_EX },
+		{ 0xb0, 0x06, GENOA_RBT_FP },
+		{ 0xb0, 0x03, GENOA_RBT_DE },
 	};
 
-	uint64_t ipid = read_bank_msr(bank, MILAN_RAS_MSR_IPID);
+	uint64_t ipid = read_bank_msr(bank, GENOA_RAS_MSR_IPID);
 	uint64_t hardware_id = ipid_hardware_id(ipid);
 	uint64_t mca_type = ipid_mca_type(ipid);
 
@@ -137,15 +137,15 @@ identify_bank(uint_t bank)
 			return (type_map[i].bank_type);
 	}
 
-	return (MILAN_RBT_UNK);
+	return (GENOA_RBT_UNK);
 }
 
 static void
 bank_mask_set(int bank, uint64_t bit)
 {
-	const uint64_t mask = rdmsr(MILAN_RAS_MCA_CTL_MASK_MSR_BASE + bank);
+	const uint64_t mask = rdmsr(GENOA_RAS_MCA_CTL_MASK_MSR_BASE + bank);
 	const uint64_t value = bitset64(mask, bit, bit, 1);
-	wrmsr(MILAN_RAS_MCA_CTL_MASK_MSR_BASE + bank, value);
+	wrmsr(GENOA_RAS_MCA_CTL_MASK_MSR_BASE + bank, value);
 }
 
 static boolean_t
@@ -171,20 +171,20 @@ delb(uint64_t val, uint_t bit)
  * on each CPU in the system.
  */
 void
-milan_ras_init(void)
+genoa_ras_init(void)
 {
 	/*
 	 * The total count of banks is available in the low bits of the MCG_CAP
 	 * MSR.  It is capped at a maximum, as per the PPR.
 	 */
 	uint_t nbanks = MCG_CAP_COUNT(rdmsr(IA32_MSR_MCG_CAP));
-	if (nbanks > MILAN_RAS_MAX_BANKS)
+	if (nbanks > GENOA_RAS_MAX_BANKS)
 		panic("more RAS banks than we can handle (%d banks)", nbanks);
 	for (uint_t bank = 0; bank < nbanks; bank++) {
 		/*
 		 * Set up the bank configuration register.
 		 */
-		uint64_t cfg = read_bank_msr(bank, MILAN_RAS_MSR_CFG);
+		uint64_t cfg = read_bank_msr(bank, GENOA_RAS_MSR_CFG);
 
 		/*
 		 * Not all banks are guaranteed to exist; if a bank is somewhere
@@ -193,26 +193,26 @@ milan_ras_init(void)
 		 * clear.  This is architecturally allowed, and we need to check
 		 * for it and avoid enabling non-MCAX-capable banks.
 		 */
-		if (!is_setb(cfg, MILAN_RAS_CFG_MCAX))
+		if (!is_setb(cfg, GENOA_RAS_CFG_MCAX))
 			continue;
 
-		if (is_setb(cfg, MILAN_RAS_CFG_DEFERRED_LOGGING_SUPTD))
-			cfg = setb(cfg, MILAN_RAS_CFG_LOG_DEFERRED_IN_MCA_STAT);
-		if (is_setb(cfg, MILAN_RAS_CFG_TRANSPARENT_LOGGING_SUPTD))
-			cfg = delb(cfg, MILAN_RAS_CFG_TRANSPARENT_LOGGING_EN);
+		if (is_setb(cfg, GENOA_RAS_CFG_DEFERRED_LOGGING_SUPTD))
+			cfg = setb(cfg, GENOA_RAS_CFG_LOG_DEFERRED_IN_MCA_STAT);
+		if (is_setb(cfg, GENOA_RAS_CFG_TRANSPARENT_LOGGING_SUPTD))
+			cfg = delb(cfg, GENOA_RAS_CFG_TRANSPARENT_LOGGING_EN);
 
 		/*
 		 * Noted: the '>' is intention.  We set the MCAX enable bit
 		 * in the config register iff banks <= the max constant.
 		 * See 55898 sec 3.1.5.3.
 		 */
-		if (bank > MILAN_RAS_MAX_MCAX_BANKS) {
-			cfg = delb(cfg, MILAN_RAS_CFG_MCAX_EN);
-			write_bank_msr(bank, MILAN_RAS_MSR_CFG, cfg);
+		if (bank > GENOA_RAS_MAX_MCAX_BANKS) {
+			cfg = delb(cfg, GENOA_RAS_CFG_MCAX_EN);
+			write_bank_msr(bank, GENOA_RAS_MSR_CFG, cfg);
 			continue;
 		}
-		cfg = setb(cfg, MILAN_RAS_CFG_MCAX_EN);
-		write_bank_msr(bank, MILAN_RAS_MSR_CFG, cfg);
+		cfg = setb(cfg, GENOA_RAS_CFG_MCAX_EN);
+		write_bank_msr(bank, GENOA_RAS_MSR_CFG, cfg);
 
 		/*
 		 * Access to the IP ID register is dependent on McaX being set
@@ -220,31 +220,31 @@ milan_ras_init(void)
 		 * beyond the McaX maximum.
 		 */
 		switch (identify_bank(bank)) {
-		case MILAN_RBT_LS:
-			bank_mask_set(bank, MILAN_RAS_MASK_LS_SYS_RD_DATA_LD);
-			bank_mask_set(bank, MILAN_RAS_MASK_LS_SYS_RD_DATA_SCB);
-			bank_mask_set(bank, MILAN_RAS_MASK_LS_SYS_RD_DATA_WCB);
+		case GENOA_RBT_LS:
+			bank_mask_set(bank, GENOA_RAS_MASK_LS_SYS_RD_DATA_LD);
+			bank_mask_set(bank, GENOA_RAS_MASK_LS_SYS_RD_DATA_SCB);
+			bank_mask_set(bank, GENOA_RAS_MASK_LS_SYS_RD_DATA_WCB);
 			break;
-		case MILAN_RBT_IF:
+		case GENOA_RBT_IF:
 			/* These appear to be set by HW/FW; take no chances. */
-			bank_mask_set(bank, MILAN_RAS_MASK_IF_L2_BTB_MULTI);
-			bank_mask_set(bank, MILAN_RAS_MASK_IF_L2_TLB_MULTI);
+			bank_mask_set(bank, GENOA_RAS_MASK_IF_L2_BTB_MULTI);
+			bank_mask_set(bank, GENOA_RAS_MASK_IF_L2_TLB_MULTI);
 			break;
-		case MILAN_RBT_L2:
-			bank_mask_set(bank, MILAN_RAS_MASK_L2_HWA);
+		case GENOA_RBT_L2:
+			bank_mask_set(bank, GENOA_RAS_MASK_L2_HWA);
 			break;
-		case MILAN_RBT_FP:
-			bank_mask_set(bank, MILAN_RAS_MASK_FP_HWA);
+		case GENOA_RBT_FP:
+			bank_mask_set(bank, GENOA_RAS_MASK_FP_HWA);
 			break;
-		case MILAN_RBT_CS:
-			bank_mask_set(bank, MILAN_RAS_MASK_CS_FTI_ADDR_VIOL);
+		case GENOA_RBT_CS:
+			bank_mask_set(bank, GENOA_RAS_MASK_CS_FTI_ADDR_VIOL);
 			break;
-		case MILAN_RBT_L3:
-			bank_mask_set(bank, MILAN_RAS_MASK_L3_HWA);
+		case GENOA_RBT_L3:
+			bank_mask_set(bank, GENOA_RAS_MASK_L3_HWA);
 			break;
-		case MILAN_RBT_NBIO:
-			bank_mask_set(bank, MILAN_RAS_MASK_NBIO_PCIE_SB);
-			bank_mask_set(bank, MILAN_RAS_MASK_NBIO_PCIE_ERR_EVT);
+		case GENOA_RBT_NBIO:
+			bank_mask_set(bank, GENOA_RAS_MASK_NBIO_PCIE_SB);
+			bank_mask_set(bank, GENOA_RAS_MASK_NBIO_PCIE_ERR_EVT);
 			break;
 		default:
 			break;

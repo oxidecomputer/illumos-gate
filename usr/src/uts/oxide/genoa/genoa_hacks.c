@@ -20,14 +20,14 @@
 #include <sys/io/fch/i2c.h>
 #include <sys/io/fch/misc.h>
 #include <sys/io/fch/pmio.h>
-#include <sys/io/milan/fabric.h>
-#include <sys/io/milan/hacks.h>
-#include <sys/io/milan/iomux.h>
+#include <sys/io/genoa/fabric.h>
+#include <sys/io/genoa/hacks.h>
+#include <sys/io/genoa/iomux.h>
 
 /*
  * Various regrettable hacks that are unfortunate but necessary -- and don't
- * seem to fit anywhere else.  This file could also be called milan_misc.c or
- * milan_subr.c, but it seems that being slightly pejorative with respect to its
+ * seem to fit anywhere else.  This file could also be called genoa_misc.c or
+ * genoa_subr.c, but it seems that being slightly pejorative with respect to its
  * name may make it a little less likely to grow appendages that in fact belong
  * elsewhere...
  */
@@ -39,7 +39,7 @@
  * register, preserving only those that are reserved.
  */
 boolean_t
-milan_fixup_i2c_clock(void)
+genoa_fixup_i2c_clock(void)
 {
 	mmio_reg_block_t fch_i2c0 = fch_i2c_mmio_block(0);
 	mmio_reg_t reg;
@@ -76,7 +76,7 @@ milan_fixup_i2c_clock(void)
  * from socket 0 ends up being passed along to socket 1.
  */
 boolean_t
-milan_cgpll_set_ssc(boolean_t ssc)
+genoa_cgpll_set_ssc(boolean_t ssc)
 {
 	mmio_reg_block_t fch_misc_a = fch_misc_a_mmio_block();
 	mmio_reg_t reg;
@@ -173,7 +173,7 @@ milan_cgpll_set_ssc(boolean_t ssc)
  * desired semantics:  a machine reset through A2.
  */
 void
-milan_shutdown_detect_init()
+genoa_shutdown_detect_init()
 {
 	mmio_reg_block_t fch_pmio = fch_pmio_mmio_block();
 	mmio_reg_t reg;
@@ -213,7 +213,7 @@ milan_shutdown_detect_init()
  * stale, hidden state.
  */
 void
-milan_check_furtive_reset()
+genoa_check_furtive_reset()
 {
 	mmio_reg_block_t fch_pmio = fch_pmio_mmio_block();
 	mmio_reg_t reg = FCH_PMIO_S5_RESET_STATUS_MMIO(fch_pmio);
@@ -261,7 +261,7 @@ milan_check_furtive_reset()
  * these blocks.
  */
 void
-milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
+genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 {
 	mmio_reg_block_t gpio_block;
 	mmio_reg_t gpio_reg;
@@ -292,10 +292,10 @@ milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
 
 		switch (gpio) {
 		case 26:
-			mux_val = MILAN_FCH_IOMUX_26_EGPIO26;
+			mux_val = GENOA_FCH_IOMUX_26_EGPIO26;
 			break;
 		case 27:
-			mux_val = MILAN_FCH_IOMUX_27_EGPIO26_3;
+			mux_val = GENOA_FCH_IOMUX_27_EGPIO26_3;
 			break;
 		case 129: {
 			/*
@@ -321,14 +321,14 @@ milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
 			mmio_reg_write(rstctl_reg, rstctl_val);
 			mmio_reg_block_unmap(&fch_pmio);
 
-			mux_val = MILAN_FCH_IOMUX_129_GPIO129;
+			mux_val = GENOA_FCH_IOMUX_129_GPIO129;
 		}
 			break;
 		case 266:
-			mux_val = MILAN_FCH_RMTMUX_10_EGPIO26_1;
+			mux_val = GENOA_FCH_RMTMUX_10_EGPIO26_1;
 			break;
 		case 267:
-			mux_val = MILAN_FCH_RMTMUX_11_EGPIO26_2;
+			mux_val = GENOA_FCH_RMTMUX_11_EGPIO26_2;
 			break;
 		default:
 			cmn_err(CE_PANIC, "attempt to hack unexpected GPIO %d",
@@ -376,7 +376,7 @@ milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
 	}
 		break;
 	default:
-		cmn_err(CE_PANIC, "invalid milan GPIO hack op %d", op);
+		cmn_err(CE_PANIC, "invalid genoa GPIO hack op %d", op);
 	}
 
 	mmio_reg_block_unmap(&gpio_block);
