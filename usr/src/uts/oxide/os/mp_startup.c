@@ -145,11 +145,11 @@
 #include <sys/hma.h>
 #include <sys/cpu_module.h>
 #include <sys/ontrap.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
-#include <sys/io/milan/ras.h>
+#include <sys/io/genoa/ccx.h>
+#include <sys/io/genoa/fabric.h>
+#include <sys/io/genoa/ras.h>
 
-#include <milan/milan_physaddrs.h>
+#include <genoa/genoa_physaddrs.h>
 
 struct cpu	cpus[1] __aligned(MMU_PAGESIZE);
 struct cpu	*cpu[NCPU] = {&cpus[0]};
@@ -365,7 +365,7 @@ mp_cpu_configure_common(int cpun)
 		cpu_free_list = cp->cpu_next_free;
 	}
 
-	cp->cpu_m.mcpu_hwthread = milan_fabric_find_thread_by_cpuid(cpun);
+	cp->cpu_m.mcpu_hwthread = genoa_fabric_find_thread_by_cpuid(cpun);
 	cp->cpu_m.mcpu_istamp = cpun << 16;
 
 	/* Create per CPU specific threads in the process p0. */
@@ -1652,13 +1652,13 @@ mp_startup(void)
 	uchar_t new_x86_featureset[BT_SIZEOFMAP(NUM_X86_FEATURES)];
 	extern void cpu_event_init_cpu(cpu_t *);
 
-	milan_ccx_mmio_init(milan_fabric_ecam_base(), B_FALSE);
+	genoa_ccx_mmio_init(genoa_fabric_ecam_base(), B_FALSE);
 	bzero(new_x86_featureset, BT_SIZEOFMAP(NUM_X86_FEATURES));
 	cpuid_execpass(cp, CPUID_PASS_PRELUDE, new_x86_featureset);
 	cpuid_execpass(cp, CPUID_PASS_IDENT, NULL);
-	milan_ccx_init();
+	genoa_ccx_init();
 	cpuid_execpass(cp, CPUID_PASS_BASIC, new_x86_featureset);
-	milan_ras_init();
+	genoa_ras_init();
 
 	/*
 	 * We need to get TSC on this proc synced (i.e., any delta

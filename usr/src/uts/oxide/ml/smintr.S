@@ -100,7 +100,7 @@
  * are:
  *
  * * Pretty much everything is accessible via SMN.  If we want to enter 64-bit
- * mode, we can use the kernel's milan_smn_{read,write}32() functions.  These
+ * mode, we can use the kernel's genoa_smn_{read,write}32() functions.  These
  * rely on PCI config space access having been set up, which isn't a problem
  * since this handler isn't installed until after that's done.  This approach
  * also, obviously, relies on the kernel's pagetables and executing kernel

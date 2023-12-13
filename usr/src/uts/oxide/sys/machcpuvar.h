@@ -70,7 +70,10 @@ struct cpuid_info;
 struct cpu_ucode_info;
 struct cmi_hdl;
 
-struct milan_thread;
+/*
+ * XXX(cross): We need to generify this somehow.
+ * struct genoa_thread;
+ */
 
 /*
  * A note about the hypervisor affinity bits: a one bit in the affinity mask
@@ -229,7 +232,11 @@ struct	machcpu {
 	void			*mcpu_pm_mach_state;
 	struct cmi_hdl		*mcpu_cmi_hdl;
 	void			*mcpu_mach_ctx_ptr;
-	struct milan_thread	*mcpu_hwthread;
+	/*
+	 * XXX(cross): Generify this.
+	 * struct genoa_thread	*mcpu_hwthread;
+	 */
+	void			*mcpu_hwthread;
 
 	/*
 	 * A stamp that is unique per processor and changes

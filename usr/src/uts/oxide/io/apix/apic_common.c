@@ -81,10 +81,10 @@
 #include <sys/amdzen/fch.h>
 #include <sys/io/fch/pmio.h>
 #include <sys/amdzen/mmioreg.h>
-#include <sys/io/milan/iohc.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
-#include <milan/milan_physaddrs.h>
+#include <sys/io/genoa/iohc.h>
+#include <sys/io/genoa/ccx.h>
+#include <sys/io/genoa/fabric.h>
+#include <genoa/genoa_physaddrs.h>
 
 static void	apic_record_ioapic_rdt(void *intrmap_private,
 		    ioapic_rdt_t *irdt);
@@ -370,7 +370,7 @@ apic_probe_common(char *modname)
 }
 
 static int
-apic_count_thread(milan_thread_t *mtp, void *arg)
+apic_count_thread(genoa_thread_t *mtp, void *arg)
 {
 	int *nthreadp = arg;
 
@@ -380,12 +380,12 @@ apic_count_thread(milan_thread_t *mtp, void *arg)
 }
 
 static int
-apic_enumerate_one(milan_thread_t *mtp, void *arg)
+apic_enumerate_one(genoa_thread_t *mtp, void *arg)
 {
 	uint32_t *idxp = arg;
 	apic_cpus_info_t *acip = &apic_cpus[*idxp];
 
-	acip->aci_local_id = milan_thread_apicid(mtp);
+	acip->aci_local_id = genoa_thread_apicid(mtp);
 	acip->aci_processor_id = acip->aci_local_id;
 	acip->aci_local_ver = 0;
 	acip->aci_status = 0;
@@ -409,7 +409,7 @@ apic_probe_raw(const char *modname)
 	mmio_reg_t reg;
 	uint64_t val;
 
-	(void) milan_walk_thread(apic_count_thread, &apic_nproc);
+	(void) genoa_walk_thread(apic_count_thread, &apic_nproc);
 	apic_cpus_size = max(apic_nproc, max_ncpus) * sizeof (*apic_cpus);
 	if ((apic_cpus = kmem_zalloc(apic_cpus_size, KM_NOSLEEP)) == NULL) {
 		apic_max_nproc = -1;
@@ -420,7 +420,7 @@ apic_probe_raw(const char *modname)
 	apic_enable_x2apic();
 
 	CPUSET_ZERO(apic_cpumask);
-	(void) milan_walk_thread(apic_enumerate_one, &apic_index);
+	(void) genoa_walk_thread(apic_enumerate_one, &apic_index);
 
 	reg = FCH_PMIO_DECODEEN_MMIO(fch_pmio);
 	val = mmio_reg_read(reg);
@@ -431,12 +431,12 @@ apic_probe_raw(const char *modname)
 	mmio_reg_block_unmap(&fch_pmio);
 
 	apic_io_id[0] = 0xf0;
-	apic_physaddr[0] = MILAN_PHYSADDR_FCH_IOAPIC;
+	apic_physaddr[0] = GENOA_PHYSADDR_FCH_IOAPIC;
 	apicioadr[0] = (void *)mapin_ioapic(apic_physaddr[0], APIC_IO_MEMLEN,
 	    PROT_READ | PROT_WRITE);
 
 	apic_io_id[1] = 0xf1;
-	apic_physaddr[1] = MILAN_PHYSADDR_IOHC_IOAPIC;
+	apic_physaddr[1] = GENOA_PHYSADDR_IOHC_IOAPIC;
 	apicioadr[1] = (void *)mapin_ioapic(apic_physaddr[1], APIC_IO_MEMLEN,
 	    PROT_READ | PROT_WRITE);
 
@@ -1040,7 +1040,7 @@ apic_cmci_setup(processorid_t cpuid, boolean_t enable)
 int
 apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 {
-	milan_thread_t *mtp;
+	genoa_thread_t *mtp;
 
 	ASSERT(MUTEX_HELD(&cpu_lock));
 
@@ -1070,10 +1070,10 @@ apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 	 * PSM as conceived for i86pc is not factored correctly for this
 	 * machine.
 	 */
-	mtp = milan_fabric_find_thread_by_cpuid(cpun);
+	mtp = genoa_fabric_find_thread_by_cpuid(cpun);
 	VERIFY(mtp != NULL);
 
-	if (!milan_ccx_start_thread(mtp)) {
+	if (!genoa_ccx_start_thread(mtp)) {
 		cmn_err(CE_WARN, "attempt to start already-running CPU 0x%x",
 		    cpun);
 	}
@@ -1317,13 +1317,13 @@ gethrtime_again:
 }
 
 static int
-apic_iohc_nmi_eoi(milan_ioms_t *ioms, void *arg __unused)
+apic_iohc_nmi_eoi(genoa_ioms_t *ioms, void *arg __unused)
 {
 	smn_reg_t reg;
 	uint32_t v;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_FCTL2, 0);
-	v = milan_ioms_read(ioms, reg);
+	reg = genoa_ioms_reg(ioms, D_IOHC_FCTL2, 0);
+	v = genoa_ioms_read(ioms, reg);
 	v = IOHC_FCTL2_GET_NMI(v);
 	if (v != 0) {
 		/*
@@ -1331,10 +1331,10 @@ apic_iohc_nmi_eoi(milan_ioms_t *ioms, void *arg __unused)
 		 * those conditions may not have resulted in an NMI.  Clear only
 		 * the bit whose condition we have handled.
 		 */
-		milan_ioms_write(ioms, reg, v);
-		reg = milan_ioms_reg(ioms, D_IOHC_INTR_EOI, 0);
+		genoa_ioms_write(ioms, reg, v);
+		reg = genoa_ioms_reg(ioms, D_IOHC_INTR_EOI, 0);
 		v = IOHC_INTR_EOI_SET_NMI(0);
-		milan_ioms_write(ioms, reg, v);
+		genoa_ioms_write(ioms, reg, v);
 	}
 
 	return (0);
@@ -1406,7 +1406,7 @@ apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
 	 * clear the indicator flag and signal EOI to the IOHC in order to
 	 * receive subsequent such NMIs.
 	 */
-	(void) milan_walk_ioms(apic_iohc_nmi_eoi, NULL);
+	(void) genoa_walk_ioms(apic_iohc_nmi_eoi, NULL);
 
 	lock_clear(&apic_nmi_lock);
 	return (DDI_INTR_CLAIMED);

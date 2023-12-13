@@ -39,6 +39,7 @@
 #include <sys/kernel_ipcc.h>
 #include <sys/smt.h>
 #include <sys/time.h>
+#include <genoa/genoa_apob_impl.h>
 
 /*
  * Used by apix code that could be shared with other kernels.  Not tunable on
@@ -254,7 +255,7 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len,
 	 * time) to almost anything in the bottom 2 GiB that doesn't conflict
 	 * with other uses of memory; see the discussion in vm/kboot_mmu.c.
 	 */
-	const uint64_t apob_addr = APOB_ADDR;
+	const uint64_t apob_addr = GENOA_APOB_ADDR;
 	const uint32_t reset_vector = 0x7ffefff0U;
 
 	bt_set_prop_str(BTPROP_NAME_MFG, oxide_board_data->obd_rootnexus);

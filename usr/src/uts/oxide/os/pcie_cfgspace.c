@@ -49,9 +49,9 @@
 #include <sys/pci_cfgacc.h>
 #include <sys/pci_cfgspace_impl.h>
 #include <sys/machsystm.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
-#include <milan/milan_physaddrs.h>
+#include <sys/io/genoa/ccx.h>
+#include <sys/io/genoa/fabric.h>
+#include <genoa/genoa_physaddrs.h>
 
 /*
  * XXX This section contains variables that the rest of the system expects to
@@ -381,13 +381,13 @@ pcie_cfgspace_acc(pci_cfgacc_req_t *req)
 void
 pcie_cfgspace_init(void)
 {
-	uint64_t ecam_base = milan_fabric_ecam_base();
+	uint64_t ecam_base = genoa_fabric_ecam_base();
 
 	/*
 	 * This ensures that the boot CPU will be programmed with everything
 	 * needed to access PCIe configuration space.
 	 */
-	milan_ccx_mmio_init(ecam_base, B_TRUE);
+	genoa_ccx_mmio_init(ecam_base, B_TRUE);
 
 	/*
 	 * This is a temporary VA range that we'll use during bootstrapping.
@@ -427,7 +427,7 @@ pcie_cfgspace_init(void)
 void
 pcie_cfgspace_remap(void)
 {
-	uint64_t ecam_base = milan_fabric_ecam_base();
+	uint64_t ecam_base = genoa_fabric_ecam_base();
 	void *new_va = device_arena_alloc(PCIE_CFGSPACE_SIZE, VM_SLEEP);
 	pfn_t pfn = mmu_btop(ecam_base);
 

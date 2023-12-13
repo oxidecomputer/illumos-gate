@@ -64,9 +64,9 @@ typedef enum genoa_apob_group {
 #pragma pack(1)
 
 typedef struct genoa_apob_sysmap_ram_hole {
-	uint64_t masmrh_base;
-	uint64_t masmrh_size;
-	uint32_t masmrh_reason;
+	uint64_t gasmrh_base;
+	uint64_t gasmrh_size;
+	uint32_t gasmrh_reason;
 	uint32_t _pad;
 } genoa_apob_sysmap_ram_hole_t;
 
@@ -76,31 +76,31 @@ typedef struct genoa_apob_sysmap_ram_hole {
  * What we get back (if anything) from GROUP_FABRIC type 9 instance 0
  */
 typedef struct genoa_apob_sysmap {
-	uint64_t masm_high_phys;
-	uint32_t masm_hole_count;
+	uint64_t gasm_high_phys;
+	uint32_t gasm_hole_count;
 	uint32_t _pad;
-	genoa_apob_sysmap_ram_hole_t masm_holes[18];
+	genoa_apob_sysmap_ram_hole_t gasm_holes[18];
 } genoa_apob_sysmap_t;
 
 #define	GENOA_APOB_CCX_MAX_THREADS	2
 
 typedef struct genoa_apob_core {
-	uint8_t mac_id;
-	uint8_t mac_thread_exists[GENOA_APOB_CCX_MAX_THREADS];
+	uint8_t gac_id;
+	uint8_t gac_thread_exists[GENOA_APOB_CCX_MAX_THREADS];
 } genoa_apob_core_t;
 
 #define	GENOA_APOB_CCX_MAX_CORES	8
 
 typedef struct genoa_apob_ccx {
-	uint8_t macx_id;
-	genoa_apob_core_t macx_cores[GENOA_APOB_CCX_MAX_CORES];
+	uint8_t gacx_id;
+	genoa_apob_core_t gacx_cores[GENOA_APOB_CCX_MAX_CORES];
 } genoa_apob_ccx_t;
 
 #define	GENOA_APOB_CCX_MAX_CCXS		2
 
 typedef struct genoa_apob_ccd {
-	uint8_t macd_id;
-	genoa_apob_ccx_t macd_ccxs[GENOA_APOB_CCX_MAX_CCXS];
+	uint8_t gacd_id;
+	genoa_apob_ccx_t gacd_ccxs[GENOA_APOB_CCX_MAX_CCXS];
 } genoa_apob_ccd_t;
 
 #define	GENOA_APOB_CCX_MAX_CCDS		8
@@ -109,7 +109,7 @@ typedef struct genoa_apob_ccd {
  * What we get back (if anything) from GROUP_CCX type 3 instance 0
  */
 typedef struct genoa_apob_coremap {
-	genoa_apob_ccd_t macm_ccds[GENOA_APOB_CCX_MAX_CCDS];
+	genoa_apob_ccd_t gacm_ccds[GENOA_APOB_CCX_MAX_CCDS];
 } genoa_apob_coremap_t;
 
 #define	GENOA_APOB_PHY_OVERRIDE_MAX_LEN	256
@@ -119,8 +119,8 @@ typedef struct genoa_apob_coremap {
  * GENOA_APOB_FABRIC_PHY_OVERRIDE instance 0
  */
 typedef struct genoa_apob_phyovr {
-	uint32_t map_datalen;
-	uint8_t map_data[GENOA_APOB_PHY_OVERRIDE_MAX_LEN];
+	uint32_t gap_datalen;
+	uint8_t gap_data[GENOA_APOB_PHY_OVERRIDE_MAX_LEN];
 } genoa_apob_phyovr_t;
 
 /*
@@ -130,17 +130,17 @@ typedef struct genoa_apob_pmu_tfi_ent {
 	/*
 	 * These indicate the socket and the numeric UMC entry.
 	 */
-	uint32_t mapte_sock:1;
-	uint32_t mapte_umc:3;
+	uint32_t gapte_sock:1;
+	uint32_t gapte_umc:3;
 	/*
 	 * This appears to be 0 for 1D and 1 for 2D.
 	 */
-	uint32_t mapte_1d2d:1;
-	uint32_t mapte_1dnum:3;
-	uint32_t mapte_rsvd:7;
-	uint32_t mapte_stage:16;
-	uint32_t mapte_error;
-	uint32_t mapte_data[4];
+	uint32_t gapte_1d2d:1;
+	uint32_t gapte_1dnum:3;
+	uint32_t gapte_rsvd:7;
+	uint32_t gapte_stage:16;
+	uint32_t gapte_error;
+	uint32_t gapte_data[4];
 } genoa_apob_tfi_ent_t;
 
 typedef struct genoa_apob_pmu_tfi {
@@ -148,12 +148,12 @@ typedef struct genoa_apob_pmu_tfi {
 	 * While we describe this as the number of valid entries, it represents
 	 * the next location that information should have been entered into.
 	 */
-	uint32_t mapt_nvalid;
+	uint32_t gapt_nvalid;
 	/*
 	 * The use of 40 entries here comes from AMD. This represents 8 channels
 	 * times five errors each.
 	 */
-	genoa_apob_tfi_ent_t mapt_ents[40];
+	genoa_apob_tfi_ent_t gapt_ents[40];
 } genoa_apob_pmu_tfi_t;
 
 /*
@@ -161,16 +161,16 @@ typedef struct genoa_apob_pmu_tfi {
  * enter the APOB.
  */
 typedef struct genoa_apob_event {
-	uint32_t mev_class;
-	uint32_t mev_info;
-	uint32_t mev_data0;
-	uint32_t mev_data1;
+	uint32_t gev_class;
+	uint32_t gev_info;
+	uint32_t gev_data0;
+	uint32_t gev_data1;
 } genoa_apob_event_t;
 
 typedef struct genoa_apob_event_log {
-	uint16_t mevl_count;
-	uint16_t mevl_pad;
-	genoa_apob_event_t mevl_events[64];
+	uint16_t gevl_count;
+	uint16_t gevl_pad;
+	genoa_apob_event_t gevl_events[64];
 } genoa_apob_event_log_t;
 
 /*

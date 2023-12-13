@@ -115,18 +115,18 @@ genoa_apob_init(uint64_t apob_pa)
 	 * Note, we can't use bcmp/memcmp at this phase of boot because krtld
 	 * hasn't initialized them and they are in genunix.
 	 */
-	if (genoa_apob_header->mah_sig[0] != GENOA_APOB_SIG[0] ||
-	    genoa_apob_header->mah_sig[1] != GENOA_APOB_SIG[1] ||
-	    genoa_apob_header->mah_sig[2] != GENOA_APOB_SIG[2] ||
-	    genoa_apob_header->mah_sig[3] != GENOA_APOB_SIG[3]) {
+	if (genoa_apob_header->gah_sig[0] != GENOA_APOB_SIG[0] ||
+	    genoa_apob_header->gah_sig[1] != GENOA_APOB_SIG[1] ||
+	    genoa_apob_header->gah_sig[2] != GENOA_APOB_SIG[2] ||
+	    genoa_apob_header->gah_sig[3] != GENOA_APOB_SIG[3]) {
 		bop_panic("Bad APOB signature, found 0x%x 0x%x 0x%x 0x%x",
-		    genoa_apob_header->mah_sig[0],
-		    genoa_apob_header->mah_sig[1],
-		    genoa_apob_header->mah_sig[2],
-		    genoa_apob_header->mah_sig[3]);
+		    genoa_apob_header->gah_sig[0],
+		    genoa_apob_header->gah_sig[1],
+		    genoa_apob_header->gah_sig[2],
+		    genoa_apob_header->gah_sig[3]);
 	}
 
-	genoa_apob_len = MIN(genoa_apob_header->mah_size, GENOA_APOB_SIZE_CAP);
+	genoa_apob_len = MIN(genoa_apob_header->gah_size, GENOA_APOB_SIZE_CAP);
 	for (size_t offset = MMU_PAGESIZE;
 	    offset < genoa_apob_len;
 	    offset += MMU_PAGESIZE) {
@@ -160,7 +160,7 @@ genoa_apob_find(genoa_apob_group_t group, uint32_t type, uint32_t inst,
 		return (NULL);
 	}
 
-	curaddr = apob_base + genoa_apob_header->mah_off;
+	curaddr = apob_base + genoa_apob_header->gah_off;
 	while (curaddr + sizeof (genoa_apob_entry_t) < limit) {
 		const genoa_apob_entry_t *entry = (genoa_apob_entry_t *)curaddr;
 
@@ -168,30 +168,30 @@ genoa_apob_find(genoa_apob_group_t group, uint32_t type, uint32_t inst,
 		 * First ensure that this items size actually all fits within
 		 * our bound. If not, we fail.
 		 */
-		if (entry->mae_size < sizeof (genoa_apob_entry_t)) {
+		if (entry->gae_size < sizeof (genoa_apob_entry_t)) {
 			EB_DBGMSG("Encountered APOB entry at offset 0x%lx with "
 			    "too small size 0x%x",
-			    curaddr - apob_base, entry->mae_size);
+			    curaddr - apob_base, entry->gae_size);
 			*errp = EIO;
 			return (NULL);
 		}
-		if (curaddr + entry->mae_size >= limit) {
+		if (curaddr + entry->gae_size >= limit) {
 			EB_DBGMSG("Encountered APOB entry at offset 0x%lx with "
 			    "size 0x%x that extends beyond limit",
-			    curaddr - apob_base, entry->mae_size);
+			    curaddr - apob_base, entry->gae_size);
 			*errp = EIO;
 			return (NULL);
 		}
 
-		if (entry->gae_group == group && entry->mae_type == type &&
-		    entry->mae_inst == inst) {
-			*lenp = entry->mae_size -
-			    offsetof(genoa_apob_entry_t, mae_data);
+		if (entry->gae_group == group && entry->gae_type == type &&
+		    entry->gae_inst == inst) {
+			*lenp = entry->gae_size -
+			    offsetof(genoa_apob_entry_t, gae_data);
 			*errp = 0;
-			return (&entry->mae_data);
+			return (&entry->gae_data);
 		}
 
-		curaddr += entry->mae_size;
+		curaddr += entry->gae_size;
 	}
 
 	*errp = ENOENT;

@@ -455,15 +455,14 @@ typedef struct smu_hotplug_entry {
 
 #pragma	pack()	/* pragma pack(4) */
 
-extern const zen_dxio_platform_t ethanolx_engine_s0;
-extern const zen_dxio_platform_t ethanolx_engine_s1;
-extern const smu_hotplug_entry_t ethanolx_hotplug_ents[];
+extern const zen_dxio_platform_t ruby_engine_s0;
+extern const smu_hotplug_entry_t ruby_hotplug_ents[];
 
-extern const uint32_t ethanolx_pcie_slot_cap_entssd;
-extern const uint32_t ethanolx_pcie_slot_cap_express;
+extern const uint32_t ruby_pcie_slot_cap_entssd;
+extern const uint32_t ruby_pcie_slot_cap_express;
 
-extern const zen_dxio_platform_t gimlet_engine;
-extern const smu_hotplug_entry_t gimlet_hotplug_ents[];
+extern const zen_dxio_platform_t cosmo_engine;
+extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 
 /*
  * DXIO message codes. These are also specific to firmware.

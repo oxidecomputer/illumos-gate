@@ -54,11 +54,11 @@
 #include <sys/bootvfs.h>
 #include <sys/tsc.h>
 #include <sys/boot_data.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
-#include <sys/io/milan/hacks.h>
-#include <sys/io/milan/ras.h>
-#include <milan/milan_apob.h>
+#include <sys/io/genoa/ccx.h>
+#include <sys/io/genoa/fabric.h>
+#include <sys/io/genoa/hacks.h>
+#include <sys/io/genoa/ras.h>
+#include <genoa/genoa_apob.h>
 
 /*
  * Setup routine called right before main(), which is common code.  We have much
@@ -157,9 +157,9 @@ mlsetup(struct regs *rp)
 	 * mcpu_hwthread, and we need mcpu_hwthread to set up brand strings for
 	 * cpuid in a later pass.
 	 */
-	milan_fabric_topo_init();
+	genoa_fabric_topo_init();
 	CPU->cpu_m.mcpu_hwthread =
-	    milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
+	    genoa_fabric_find_thread_by_cpuid(CPU->cpu_id);
 
 	/*
 	 * Figure out what kind of CPU this is via pass 0.  We need this before
@@ -176,7 +176,7 @@ mlsetup(struct regs *rp)
 	 * configuration in the FCH to assure that a core shutdown will
 	 * correctly induce an observable reset.
 	 */
-	milan_shutdown_detect_init();
+	genoa_shutdown_detect_init();
 
 	/*
 	 * Now go through and set up the BSP's thread-, core-, and CCX-specific
@@ -184,12 +184,12 @@ mlsetup(struct regs *rp)
 	 * so it must be done before the BASIC cpuid pass.  This will be run on
 	 * APs later on.
 	 */
-	milan_ccx_init();
+	genoa_ccx_init();
 
 	/*
 	 * Initialize the BSP's MCA banks.
 	 */
-	milan_ras_init();
+	genoa_ras_init();
 
 	/*
 	 * The x86_featureset is initialized here based on the capabilities
@@ -277,7 +277,7 @@ mlsetup(struct regs *rp)
 	if (boothowto & RB_DEBUGENTER)
 		kmdb_enter();
 
-	milan_apob_reserve_phys();
+	genoa_apob_reserve_phys();
 
 	cpu_vm_data_init(CPU);
 
@@ -293,7 +293,7 @@ mlsetup(struct regs *rp)
 	/*
 	 * Before we get too much further along, check for a furtive reset.
 	 */
-	milan_check_furtive_reset();
+	genoa_check_furtive_reset();
 
 	ASSERT_STACK_ALIGNED();
 

@@ -30,7 +30,7 @@ genoa_apob_reserve_phys(void)
 	size_t sysmap_len;
 	int err;
 	const genoa_apob_sysmap_t *smp;
-	const uint_t MAX_APOB_HOLES = ARRAY_SIZE(smp->masm_holes);
+	const uint_t MAX_APOB_HOLES = ARRAY_SIZE(smp->gasm_holes);
 	uint32_t apob_hole_count;
 	paddr_t max_paddr;
 	paddr_t start, end;
@@ -56,13 +56,13 @@ genoa_apob_reserve_phys(void)
 		eb_printf("APOB system memory map too small "
 		    "(0x%lx < 0x%lx bytes); using bootstrap RAM only\n",
 		    sysmap_len, sizeof (*smp));
-	} else if (smp->masm_hole_count > MAX_APOB_HOLES) {
+	} else if (smp->gasm_hole_count > MAX_APOB_HOLES) {
 		eb_printf("APOB system memory map has too many holes "
 		    "(0x%x > 0x%x allowed); using bootstrap RAM only\n",
-		    smp->masm_hole_count, MAX_APOB_HOLES);
+		    smp->gasm_hole_count, MAX_APOB_HOLES);
 	} else {
-		apob_hole_count = smp->masm_hole_count;
-		max_paddr = P2ALIGN(smp->masm_high_phys, MMU_PAGESIZE);
+		apob_hole_count = smp->gasm_hole_count;
+		max_paddr = P2ALIGN(smp->gasm_high_phys, MMU_PAGESIZE);
 	}
 
 	KBM_DBG(apob_hole_count);
@@ -72,11 +72,11 @@ genoa_apob_reserve_phys(void)
 
 	for (i = 0; i < apob_hole_count; i++) {
 		KBM_DBGMSG("APOB: RAM hole @ %lx size %lx\n",
-		    smp->masm_holes[i].masmrh_base,
-		    smp->masm_holes[i].masmrh_size);
-		start = P2ALIGN(smp->masm_holes[i].masmrh_base, MMU_PAGESIZE);
-		end = P2ROUNDUP(smp->masm_holes[i].masmrh_base +
-		    smp->masm_holes[i].masmrh_size, MMU_PAGESIZE);
+		    smp->gasm_holes[i].gasmrh_base,
+		    smp->gasm_holes[i].gasmrh_size);
+		start = P2ALIGN(smp->gasm_holes[i].gasmrh_base, MMU_PAGESIZE);
+		end = P2ROUNDUP(smp->gasm_holes[i].gasmrh_base +
+		    smp->gasm_holes[i].gasmrh_size, MMU_PAGESIZE);
 
 		eb_physmem_reserve_range(start, end - start, EBPR_NOT_RAM);
 	}
