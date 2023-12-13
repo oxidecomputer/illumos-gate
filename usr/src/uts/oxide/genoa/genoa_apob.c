@@ -92,7 +92,7 @@ genoa_apob_init(uint64_t apob_pa)
 	base = kbm_valloc(GENOA_APOB_SIZE_CAP, MMU_PAGESIZE);
 	if (base == 0) {
 		bop_panic("failed to allocate %u bytes of VA for the APOB",
-		    genoa_apob_size_cap);
+		    GENOA_APOB_SIZE_CAP);
 	}
 	EB_DBGMSG("APOB VA is [%lx, %lx)\n", base, base + GENOA_APOB_SIZE_CAP);
 
@@ -126,7 +126,7 @@ genoa_apob_init(uint64_t apob_pa)
 		    genoa_apob_header->mah_sig[3]);
 	}
 
-	genoa_apob_len = MIN(genoa_apob_header->mah_size, genoa_apob_size_cap);
+	genoa_apob_len = MIN(genoa_apob_header->mah_size, GENOA_APOB_SIZE_CAP);
 	for (size_t offset = MMU_PAGESIZE;
 	    offset < genoa_apob_len;
 	    offset += MMU_PAGESIZE) {

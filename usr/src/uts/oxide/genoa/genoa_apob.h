@@ -210,7 +210,7 @@ typedef enum {
 #pragma pack()
 
 extern void genoa_apob_init(uint64_t);
-extern const void *genoa_apob_find(milan_apob_group_t, uint32_t, uint32_t,
+extern const void *genoa_apob_find(genoa_apob_group_t, uint32_t, uint32_t,
     size_t *, int *);
 
 extern void genoa_apob_reserve_phys(void);
