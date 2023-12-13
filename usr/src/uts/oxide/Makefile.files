@@ -131,7 +131,18 @@ MILAN_OBJS +=			\
 	milan_pcie_dbg.o	\
 	milan_ras.o
 
-CORE_OBJS += $(SMBIOS_OBJS) $(MILAN_OBJS)
+GENOA_OBJS +=			\
+	genoa_apob.o		\
+	genoa_apob_cxx.o	\
+	genoa_apob_memlist.o	\
+	genoa_cxx.o		\
+	genoa_dxio_data.o	\
+	genoa_fabric.o		\
+	genoa_hacks.o		\
+	genoa_pcie_dbg.o	\
+	genoa_ras.o
+
+CORE_OBJS += $(SMBIOS_OBJS) $(MILAN_OBJS) $(GENOA_OBJS)
 
 #
 # locore.o used to be special because on other architectures that's where
