@@ -26,6 +26,7 @@
 #include <sys/bitext.h>
 #include <sys/stdint.h>
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/amdzen/smn.h>
 #include <sys/amdzen/ccd.h>
 
@@ -49,9 +50,9 @@ typedef struct genoa_core genoa_core_t;
 typedef struct genoa_ccx genoa_ccx_t;
 typedef struct genoa_ccd genoa_ccd_t;
 
-extern void genoa_ccx_mmio_init(uint64_t, boolean_t);
+extern void genoa_ccx_mmio_init(uint64_t, bool);
 extern void genoa_ccx_physmem_init(void);
-extern boolean_t genoa_ccx_start_thread(const genoa_thread_t *);
+extern bool genoa_ccx_start_thread(const genoa_thread_t *);
 extern void genoa_ccx_init(void);
 
 /* Walker callback function types */

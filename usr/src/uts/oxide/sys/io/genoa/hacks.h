@@ -17,14 +17,15 @@
 #define	_SYS_IO_GENOA_HACKS_H
 
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/io/genoa/fabric.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern boolean_t genoa_fixup_i2c_clock(void);
-extern boolean_t genoa_cgpll_set_ssc(boolean_t);
+extern bool genoa_fixup_i2c_clock(void);
+extern bool genoa_cgpll_set_ssc(bool);
 extern void genoa_shutdown_detect_init(void);
 extern void genoa_check_furtive_reset(void);
 

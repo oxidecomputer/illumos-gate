@@ -24,6 +24,7 @@
 #include <sys/mca_amd.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/x86_archext.h>
 
 /*
@@ -148,7 +149,7 @@ bank_mask_set(int bank, uint64_t bit)
 	wrmsr(GENOA_RAS_MCA_CTL_MASK_MSR_BASE + bank, value);
 }
 
-static boolean_t
+static bool
 is_setb(uint64_t val, uint_t bit)
 {
 	return (bitx64(val, bit, bit) != 0);

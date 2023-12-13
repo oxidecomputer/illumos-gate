@@ -28,11 +28,12 @@
 #include <sys/boot_physmem.h>
 #include <sys/x86_archext.h>
 #include <sys/types.h>
+#include <sys/stdbool.h>
 
 /*
  * We run before kmdb loads, so these chicken switches are static consts.
  */
-static const boolean_t genoa_ccx_allow_unsupported_processor = B_FALSE;
+static const bool genoa_ccx_allow_unsupported_processor = false;
 
 /*
  * Set the contents of undocumented registers to what we imagine they should be.
@@ -40,16 +41,16 @@ static const boolean_t genoa_ccx_allow_unsupported_processor = B_FALSE;
  * it's also entirely possible that our sketchy information about what these
  * should hold is just wrong (for this machine, or entirely).
  */
-static const boolean_t genoa_ccx_set_undoc_regs = B_TRUE;
+static const bool genoa_ccx_set_undoc_regs = true;
 
 /*
  * Set the contents of undocumented fields in otherwise documented registers to
  * what we imagine they should be.
  */
-static const boolean_t genoa_ccx_set_undoc_fields = B_TRUE;
+static const bool genoa_ccx_set_undoc_fields = true;
 
 void
-genoa_ccx_mmio_init(uint64_t pa, boolean_t reserve)
+genoa_ccx_mmio_init(uint64_t pa, bool reserve)
 {
 	uint64_t val;
 
@@ -180,7 +181,7 @@ genoa_core_write(genoa_core_t *core, const smn_reg_t reg, const uint32_t val)
  *
  * See MP boot theory in os/mp_startup.c
  */
-boolean_t
+bool
 genoa_ccx_start_thread(const genoa_thread_t *thread)
 {
 	genoa_core_t *core = thread->gt_core;
@@ -217,7 +218,7 @@ genoa_thread_apicid(const genoa_thread_t *thread)
 	return (thread->gt_apicid);
 }
 
-boolean_t
+bool
 genoa_ccx_is_supported(void)
 {
 	x86_chiprev_t chiprev;
