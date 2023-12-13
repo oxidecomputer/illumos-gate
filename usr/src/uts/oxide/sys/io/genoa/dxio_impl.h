@@ -17,7 +17,7 @@
 #define	_SYS_IO_GENOA_DXIO_IMPL_H
 
 /*
- * Definitions for getting to the DXIO Engine configuration data format.
+ * Definitions for the DXIO Engine configuration data format.
  */
 
 #include <sys/param.h>

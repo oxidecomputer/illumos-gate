@@ -73,32 +73,32 @@ typedef enum genoa_pcie_core_flag {
  * theory statement in genoa_fabric.c for the definitions of these stages.
  */
 typedef enum genoa_pcie_config_stage {
-	MPCS_PRE_DXIO_INIT,
-	MPCS_DXIO_SM_START,
-	MPCS_DXIO_SM_MAPPED,
-	MPCS_DXIO_SM_MAPPED_RESUME,
-	MPCS_DXIO_SM_CONFIGURED,
-	MPCS_DXIO_SM_CONFIGURED_RESUME,
-	MPCS_DXIO_SM_PERST,
-	MPCS_DXIO_SM_PERST_RESUME,
-	MPCS_DXIO_SM_DONE,
-	MPCS_PRE_HOTPLUG,
-	MPCS_POST_HOTPLUG,
-	MPCS_USER_DIRECTED,
-	MPCS_NUM_STAGES
+	GPCS_PRE_DXIO_INIT,
+	GPCS_DXIO_SM_START,
+	GPCS_DXIO_SM_MAPPED,
+	GPCS_DXIO_SM_MAPPED_RESUME,
+	GPCS_DXIO_SM_CONFIGURED,
+	GPCS_DXIO_SM_CONFIGURED_RESUME,
+	GPCS_DXIO_SM_PERST,
+	GPCS_DXIO_SM_PERST_RESUME,
+	GPCS_DXIO_SM_DONE,
+	GPCS_PRE_HOTPLUG,
+	GPCS_POST_HOTPLUG,
+	GPCS_USER_DIRECTED,
+	GPCS_NUM_STAGES
 } genoa_pcie_config_stage_t;
 
 typedef struct genoa_pcie_reg_dbg {
-	const char		*mprd_name;
-	smn_reg_def_t		mprd_def;
-	uint32_t		mprd_val[MPCS_NUM_STAGES];
-	hrtime_t		mprd_ts[MPCS_NUM_STAGES];
+	const char		*gprd_name;
+	smn_reg_def_t		gprd_def;
+	uint32_t		gprd_val[GPCS_NUM_STAGES];
+	hrtime_t		gprd_ts[GPCS_NUM_STAGES];
 } genoa_pcie_reg_dbg_t;
 
 typedef struct genoa_pcie_dbg {
-	genoa_pcie_config_stage_t	mpd_last_stage;
-	uint32_t			mpd_nregs;
-	genoa_pcie_reg_dbg_t		mpd_regs[];
+	genoa_pcie_config_stage_t	gpd_last_stage;
+	uint32_t			gpd_nregs;
+	genoa_pcie_reg_dbg_t		gpd_regs[];
 } genoa_pcie_dbg_t;
 
 #define	GENOA_PCIE_DBG_SIZE(_nr)	\
@@ -112,32 +112,32 @@ extern const size_t genoa_pcie_port_dbg_nregs;
 #endif	/* DEBUG */
 
 struct genoa_pcie_port {
-	genoa_pcie_port_flag_t		mpp_flags;
-	uint8_t				mpp_portno;
-	uint8_t				mpp_device;
-	uint8_t				mpp_func;
-	zen_dxio_engine_t		*mpp_engine;
-	smu_hotplug_type_t		mpp_hp_type;
-	uint16_t			mpp_hp_slotno;
-	uint32_t			mpp_hp_smu_mask;
-	genoa_pcie_dbg_t		*mpp_dbg;
-	genoa_pcie_core_t		*mpp_core;
+	genoa_pcie_port_flag_t		gpp_flags;
+	uint8_t				gpp_portno;
+	uint8_t				gpp_device;
+	uint8_t				gpp_func;
+	zen_dxio_engine_t		*gpp_engine;
+	smu_hotplug_type_t		gpp_hp_type;
+	uint16_t			gpp_hp_slotno;
+	uint32_t			gpp_hp_smu_mask;
+	genoa_pcie_dbg_t		*gpp_dbg;
+	genoa_pcie_core_t		*gpp_core;
 };
 
 struct genoa_pcie_core {
-	genoa_pcie_core_flag_t	mpc_flags;
-	uint8_t			mpc_coreno;
-	uint8_t			mpc_sdp_unit;
-	uint8_t			mpc_sdp_port;
-	uint8_t			mpc_nports;
-	uint16_t		mpc_dxio_lane_start;
-	uint16_t		mpc_dxio_lane_end;
-	uint16_t		mpc_phys_lane_start;
-	uint16_t		mpc_phys_lane_end;
-	kmutex_t		mpc_strap_lock;
-	genoa_pcie_dbg_t	*mpc_dbg;
-	genoa_pcie_port_t	mpc_ports[GENOA_PCIE_CORE_MAX_PORTS];
-	genoa_ioms_t		*mpc_ioms;
+	genoa_pcie_core_flag_t	gpc_flags;
+	uint8_t			gpc_coreno;
+	uint8_t			gpc_sdp_unit;
+	uint8_t			gpc_sdp_port;
+	uint8_t			gpc_nports;
+	uint16_t		gpc_dxio_lane_start;
+	uint16_t		gpc_dxio_lane_end;
+	uint16_t		gpc_phys_lane_start;
+	uint16_t		gpc_phys_lane_end;
+	kmutex_t		gpc_strap_lock;
+	genoa_pcie_dbg_t	*gpc_dbg;
+	genoa_pcie_port_t	gpc_ports[GENOA_PCIE_CORE_MAX_PORTS];
+	genoa_ioms_t		*gpc_ioms;
 };
 
 #ifdef __cplusplus

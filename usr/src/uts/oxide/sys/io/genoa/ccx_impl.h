@@ -17,9 +17,9 @@
 #define	_SYS_IO_GENOA_CCX_IMPL_H
 
 /*
- * Structure and register definitions for the resources contained on the
- * core-complex dies (CCDs), including the core complexes (CCXs) themselves and
- * the cores and constituent compute threads they contain.
+ * Structure and register definitions for the resources contained on
+ * core-complex dies (CCDs), including the core complexes (CCXs) themselves
+ * and the cores and constituent compute threads they contain.
  */
 
 #include <sys/apic.h>
@@ -34,10 +34,12 @@ extern "C" {
 #endif
 
 /*
- * Maximum Zen cores/thread parameters for Milan.  Naples and Rome each have
- * up to 4 cores per CCX and 2 CCXs per CCD; Naples always has 1 CCD per
- * IO die as they were colocated.  Supporting Rome or other old processor
- * packages requires generalising these parameters.  CCX == L3.
+ * Maximum Zen cores/thread parameters for Genoa and Milan.  Naples and
+ * Rome each have up to 4 cores per CCX and 2 CCXs per CCD; Naples always
+ * has 1 CCD per IO die as they are colocated.
+ *
+ * Supporting Rome or other old processor packages requires generalizing
+ * these parameters.  CCX == L3.
  *
  * Namespaces
  *
@@ -45,24 +47,23 @@ extern "C" {
  * siblings: a compact logical one and a possibly sparse physical one.  These
  * names are unique among siblings but not across e.g. cousins.  Both names are
  * provided to us for each object by the DF and APOB, and which name is used
- * to compute a register or bit address varies from one register to the next.
- * Therefore we need, and keep, both of them.  The logical name should always
+ * to compute a register or bit address varies from one register to the next,
+ * we must keep track of both of them.  Note that the logical name should always
  * correspond to the index into the parent's array.
  *
- * Threads are different: each core has some number of threads which in current
- * implementations is either 1 or 2.  There is no separate physical thread
+ * Threads are different: each core has some number of threads; in current
+ * implementations this is either 1 or 2.  There is no separate physical thread
  * identifier as there is no way for some discontiguous subset of threads to
- * exist.  Therefore each thread has but a single logical identifier, also its
- * index within its parent core's array of them.  However, the thread also has
- * an APIC ID, which unlike the other identifiers is globally unique across the
- * entire fabric.  The APIC ID namespace is sparse when any of a thread's
- * containing entities is one of a collection of siblings whose number is not
- * a power of 2.
+ * exist.  Therefore each thread only has a single logical identifier that is
+ * also its index within its parent core's thread array.  However, the thread
+ * also has an APIC ID, which unlike the other identifier,s is globally unique
+ * across the entire fabric.  The APIC ID namespace is sparse when any of a
+ * thread's containing entities is one of a set of siblings whose number of
+ * elements is not a power of 2.
  *
  * One last note on APIC IDs: while we compute the APIC ID that is assigned to
  * each thread by firmware prior to boot, that ID can be changed by writing to
- * the thread's APIC ID MSR (or, in xAPIC mode which we never use, the
- * analogous MMIO register).  The one we compute and store here is the one
+ * the thread's APIC ID register.  The one we compute and store here is the one
  * set by firmware before boot.
  */
 #define	GENOA_MAX_CCDS_PER_IODIE	8

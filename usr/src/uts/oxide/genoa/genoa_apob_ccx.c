@@ -64,10 +64,10 @@ genoa_apob_populate_coremap(uint8_t *nccds, genoa_ccd_t *ccdmap)
 	ccd = 0;
 
 	for (uint8_t accd = 0; accd < GENOA_APOB_CCX_MAX_CCDS; accd++) {
-		const genoa_apob_ccd_t *accdp = &acmp->macm_ccds[accd];
-		genoa_ccd_t *mcdp = &ccdmap[ccd];
+		const genoa_apob_ccd_t *accdp = &acmp->gacm_ccds[accd];
+		genoa_ccd_t *gcdp = &ccdmap[ccd];
 
-		if (accdp->macd_id == GENOA_APOB_CCX_NONE)
+		if (accdp->gacd_id == GENOA_APOB_CCX_NONE)
 			continue;
 
 		/*
@@ -83,39 +83,39 @@ genoa_apob_populate_coremap(uint8_t *nccds, genoa_ccd_t *ccdmap)
 			break;
 		}
 
-		mcdp->mcd_logical_dieno = accd;
-		mcdp->mcd_physical_dieno = accdp->macd_id;
+		gcdp->gcd_logical_dieno = accd;
+		gcdp->gcd_physical_dieno = accdp->gacd_id;
 
 		ccx = 0;
 
 		for (uint8_t accx = 0; accx < GENOA_APOB_CCX_MAX_CCXS; accx++) {
-			const genoa_apob_ccx_t *accxp = &accdp->macd_ccxs[accx];
-			genoa_ccx_t *mcxp = &mcdp->mcd_ccxs[ccx];
+			const genoa_apob_ccx_t *accxp = &accdp->gacd_ccxs[accx];
+			genoa_ccx_t *gcxp = &gcdp->gcd_ccxs[ccx];
 
-			if (accxp->macx_id == GENOA_APOB_CCX_NONE)
+			if (accxp->gacx_id == GENOA_APOB_CCX_NONE)
 				continue;
 
 			if (ccx == GENOA_MAX_CCXS_PER_CCD) {
 				cmn_err(CE_WARN,
 				    "unexpected extra CCXs found in APOB for "
 				    "CCD 0x%x (already have %d); ignored",
-				    mcdp->mcd_physical_dieno,
+				    gcdp->gcd_physical_dieno,
 				    ccx);
 				break;
 			}
 
-			mcxp->mcx_logical_cxno = accx;
-			mcxp->mcx_physical_cxno = accxp->macx_id;
+			gcxp->gcx_logical_cxno = accx;
+			gcxp->gcx_physical_cxno = accxp->gacx_id;
 
 			core = 0;
 
 			for (uint8_t acore = 0;
 			    acore < GENOA_APOB_CCX_MAX_CORES; acore++) {
 				const genoa_apob_core_t *acp =
-				    &accxp->macx_cores[acore];
-				genoa_core_t *mcp = &mcxp->mcx_cores[core];
+				    &accxp->gacx_cores[acore];
+				genoa_core_t *mcp = &gcxp->gcx_cores[core];
 
-				if (acp->mac_id == GENOA_APOB_CCX_NONE)
+				if (acp->gac_id == GENOA_APOB_CCX_NONE)
 					continue;
 
 				if (core == GENOA_MAX_CORES_PER_CCX) {
@@ -124,23 +124,23 @@ genoa_apob_populate_coremap(uint8_t *nccds, genoa_ccd_t *ccdmap)
 					    "APOB for CCX (0x%x, 0x%x) "
 					    "(already have %d); "
 					    "ignored",
-					    mcdp->mcd_physical_dieno,
-					    mcxp->mcx_physical_cxno,
+					    gcdp->gcd_physical_dieno,
+					    gcxp->gcx_physical_cxno,
 					    core);
 					break;
 				}
 
-				mcp->mc_logical_coreno = acore;
-				mcp->mc_physical_coreno = acp->mac_id;
+				gcp->gc_logical_coreno = acore;
+				gcp->gc_physical_coreno = acp->gac_id;
 
 				thr = 0;
 
 				for (uint8_t athr = 0;
 				    athr < GENOA_APOB_CCX_MAX_THREADS; athr++) {
-					genoa_thread_t *mtp =
-					    &mcp->mc_threads[thr];
+					genoa_thread_t *gtp =
+					    &gcp->gc_threads[thr];
 
-					if (acp->mac_thread_exists[athr] == 0)
+					if (acp->gac_thread_exists[athr] == 0)
 						continue;
 
 					if (thr == GENOA_MAX_THREADS_PER_CORE) {
@@ -150,26 +150,26 @@ genoa_apob_populate_coremap(uint8_t *nccds, genoa_ccd_t *ccdmap)
 						    "(0x%x, 0x%x, 0x%x) "
 						    "(already have %d); "
 						    "ignored\n",
-						    mcdp->mcd_physical_dieno,
-						    mcxp->mcx_physical_cxno,
-						    mcp->mc_physical_coreno,
+						    gcdp->gcd_physical_dieno,
+						    gcxp->gcx_physical_cxno,
+						    gcp->gc_physical_coreno,
 						    thr);
 						break;
 					}
 
-					mtp->mt_threadno = athr;
+					gtp->gt_threadno = athr;
 					++thr;
 				}
 
-				mcp->mc_nthreads = thr;
+				gcp->gc_nthreads = thr;
 				++core;
 			}
 
-			mcxp->mcx_ncores = core;
+			gcxp->gcx_ncores = core;
 			++ccx;
 		}
 
-		mcdp->mcd_nccxs = ccx;
+		gcdp->gcd_nccxs = ccx;
 		++ccd;
 	}
 

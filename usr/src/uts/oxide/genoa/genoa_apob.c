@@ -183,7 +183,7 @@ genoa_apob_find(genoa_apob_group_t group, uint32_t type, uint32_t inst,
 			return (NULL);
 		}
 
-		if (entry->mae_group == group && entry->mae_type == type &&
+		if (entry->gae_group == group && entry->mae_type == type &&
 		    entry->mae_inst == inst) {
 			*lenp = entry->mae_size -
 			    offsetof(genoa_apob_entry_t, mae_data);

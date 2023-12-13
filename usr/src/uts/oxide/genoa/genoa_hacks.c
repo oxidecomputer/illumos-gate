@@ -276,7 +276,7 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 	}
 
 	switch (op) {
-	case MHGOP_CONFIGURE: {
+	case GHGOP_CONFIGURE: {
 		mmio_reg_block_t iomux_block;
 		mmio_reg_t iomux_reg;
 		uint8_t mux_val = 0;
@@ -356,17 +356,17 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 		mmio_reg_block_unmap(&iomux_block);
 	}
 		break;
-	case MHGOP_RESET:
+	case GHGOP_RESET:
 		val = mmio_reg_read(gpio_reg);
 		val = FCH_GPIO_GPIO_SET_OUTPUT(val, 0);
 		mmio_reg_write(gpio_reg, val);
 		break;
-	case MHGOP_SET:
+	case GHGOP_SET:
 		val = mmio_reg_read(gpio_reg);
 		val = FCH_GPIO_GPIO_SET_OUTPUT(val, 1);
 		mmio_reg_write(gpio_reg, val);
 		break;
-	case MHGOP_TOGGLE: {
+	case GHGOP_TOGGLE: {
 		uint32_t output;
 
 		val = mmio_reg_read(gpio_reg);

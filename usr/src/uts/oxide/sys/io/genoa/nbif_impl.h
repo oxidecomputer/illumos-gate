@@ -70,18 +70,18 @@ typedef enum genoa_nbif_func_flag {
 } genoa_nbif_func_flag_t;
 
 struct genoa_nbif_func {
-	genoa_nbif_func_type_t	mne_type;
-	genoa_nbif_func_flag_t	mne_flags;
-	uint8_t			mne_dev;
-	uint8_t			mne_func;
-	genoa_nbif_t		*mne_nbif;
+	genoa_nbif_func_type_t	gne_type;
+	genoa_nbif_func_flag_t	gne_flags;
+	uint8_t			gne_dev;
+	uint8_t			gne_func;
+	genoa_nbif_t		*gne_nbif;
 };
 
 struct genoa_nbif {
-	uint8_t			mn_nbifno;
-	uint8_t			mn_nfuncs;
-	genoa_nbif_func_t	mn_funcs[GENOA_NBIF_MAX_FUNCS];
-	genoa_ioms_t		*mn_ioms;
+	uint8_t			gn_nbifno;
+	uint8_t			gn_nfuncs;
+	genoa_nbif_func_t	gn_funcs[GENOA_NBIF_MAX_FUNCS];
+	genoa_ioms_t		*gn_ioms;
 };
 
 #ifdef __cplusplus
