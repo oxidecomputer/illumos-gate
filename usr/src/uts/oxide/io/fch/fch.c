@@ -36,7 +36,7 @@
  * FCH		Processor Family
  * -----------------------------
  * Huashan	Rome, Milan
- * Songshan	Genoa
+ * Songshan	Genoa, Bergamo/Siena
  *
  * The Taishan FCH incorporated into Naples processors poses challenges that
  * others do not, on account of its internal multi-die organisation, though most
