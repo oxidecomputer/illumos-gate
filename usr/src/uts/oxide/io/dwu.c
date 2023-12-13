@@ -783,7 +783,7 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + ICR, 0);
 	/* select baud rate generator */
 	ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + LCR, DLAB);
-	/* Set the baud rate to 9600 */
+	/* Set the baud rate */
 	ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + (DAT+DLL),
 	    asyspdtab[asy->asy_bidx] & 0xff);
 	ddi_put32(asy->asy_iohandle, asy->asy_ioaddr + (DAT+DLH),
