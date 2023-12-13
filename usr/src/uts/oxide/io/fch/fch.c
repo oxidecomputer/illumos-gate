@@ -133,7 +133,7 @@
  * generate its own node: the fch_enumerate() routine does what the parent we
  * don't have should have done for us.  Although that parent doesn't currently
  * exist, we still rely on other software reserving the resources we need and
- * providing them to us, currently via milan_gen_resource_subsume() which is
+ * providing them to us, currently via genoa_gen_resource_subsume() which is
  * also analogous to the PCI PRD mechanism but without the intermediate
  * abstraction that would be required to make this driver machine-independent.
  * That software must also ensure that access to those MMIO and legacy IO
@@ -654,7 +654,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/x86_archext.h>
-#include <sys/io/milan/fabric.h>
+#include <sys/io/genoa/fabric.h>
 #include <sys/amdzen/mmioreg.h>
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/gpio.h>
@@ -665,8 +665,8 @@
 #include <sys/io/fch/pmio.h>
 #include <sys/io/fch/smi.h>
 #include <sys/io/fch/uart.h>
-#include <sys/io/milan/iomux.h>
-#include <milan/milan_physaddrs.h>
+#include <sys/io/genoa/iomux.h>
+#include <genoa/genoa_physaddrs.h>
 
 #include "fch_props.h"
 #include "fch_impl.h"
@@ -678,7 +678,7 @@
 #define	FCH_PROPNAME_INTR		"interrupts"
 #define	FCH_PROPNAME_INTR_PRI		"interrupt-priorities"
 
-/* XXX should be generic DDI; see notes in milan_fabric.c. */
+/* XXX should be generic DDI; see notes in genoa_fabric.c. */
 typedef enum fch_addrsp {
 	FA_NONE,
 	FA_LEGACY,
@@ -928,13 +928,13 @@ static const fch_rangespec_t uart0_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_UART_MMIO_APERTURE(0) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_UART_SIZE
 	},
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_DMA_MMIO_APERTURE(0) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_DMA_SIZE
 	}
 };
@@ -942,13 +942,13 @@ static const fch_rangespec_t uart1_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_UART_MMIO_APERTURE(1) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_UART_SIZE
 	},
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_DMA_MMIO_APERTURE(1) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_DMA_SIZE
 	}
 };
@@ -956,13 +956,13 @@ static const fch_rangespec_t uart2_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_UART_MMIO_APERTURE(2) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_UART_SIZE
 	},
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_DMA_MMIO_APERTURE(2) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_DMA_SIZE
 	}
 };
@@ -970,13 +970,13 @@ static const fch_rangespec_t uart3_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_UART_MMIO_APERTURE(3) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_UART_SIZE
 	},
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_DMA_MMIO_APERTURE(3) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_DMA_SIZE
 	}
 };
@@ -1012,21 +1012,21 @@ static const fch_rangespec_t kczgp_regs[] = {
 	/* FCH::GPIO */
 	{
 		.fr_addrsp = FA_MMIO,
-		.fr_physlo = FCH_GPIO_PHYS_BASE - MILAN_PHYSADDR_COMPAT_MMIO,
+		.fr_physlo = FCH_GPIO_PHYS_BASE - GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_GPIO_SIZE
 	},
 	/* FCH::RMTGPIO bank registers */
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_RMTGPIO_PHYS_BASE -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_RMTGPIO_SIZE
 	},
 	/* FCH::RMTGPIO aggregate control/status registers */
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_RMTGPIO_AGG_PHYS_BASE -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_RMTGPIO_AGG_SIZE
 	}
 };
@@ -1054,13 +1054,13 @@ static const fch_rangespec_t kczmux_regs[] = {
 	/* FCH::IOMUX */
 	{
 		.fr_addrsp = FA_MMIO,
-		.fr_physlo = FCH_IOMUX_PHYS_BASE - MILAN_PHYSADDR_COMPAT_MMIO,
+		.fr_physlo = FCH_IOMUX_PHYS_BASE - GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_IOMUX_SIZE
 	},
 	/* FCH::RMTGPIO, for pins shared with "remote" GPIO functions */
 	{
 		.fr_addrsp = FA_MMIO,
-		.fr_physlo = FCH_RMTMUX_PHYS_BASE - MILAN_PHYSADDR_COMPAT_MMIO,
+		.fr_physlo = FCH_RMTMUX_PHYS_BASE - GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_RMTMUX_SIZE
 	}
 };
@@ -1086,7 +1086,7 @@ static const fch_rangespec_t i2c0_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_I2C_MMIO_APERTURE(0) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_I2C_SIZE
 	}
 };
@@ -1095,7 +1095,7 @@ static const fch_rangespec_t i2c1_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_I2C_MMIO_APERTURE(1) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_I2C_SIZE
 	}
 };
@@ -1104,7 +1104,7 @@ static const fch_rangespec_t i2c2_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_I2C_MMIO_APERTURE(2) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_I2C_SIZE
 	}
 };
@@ -1113,7 +1113,7 @@ static const fch_rangespec_t i2c3_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_I2C_MMIO_APERTURE(3) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_I2C_SIZE
 	}
 };
@@ -1122,7 +1122,7 @@ static const fch_rangespec_t i2c4_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_I2C_MMIO_APERTURE(4) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_I2C_SIZE
 	}
 };
@@ -1131,7 +1131,7 @@ static const fch_rangespec_t i2c5_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = FCH_I2C_MMIO_APERTURE(5) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = FCH_I2C_SIZE
 	}
 };
@@ -1169,7 +1169,7 @@ static const fch_rangespec_t i3c0_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(0) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = SONGSHAN_I3C_SIZE
 	}
 };
@@ -1178,7 +1178,7 @@ static const fch_rangespec_t i3c1_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(1) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = SONGSHAN_I3C_SIZE
 	}
 };
@@ -1187,7 +1187,7 @@ static const fch_rangespec_t i3c2_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(2) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = SONGSHAN_I3C_SIZE
 	}
 };
@@ -1196,7 +1196,7 @@ static const fch_rangespec_t i3c3_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
 		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(3) -
-		    MILAN_PHYSADDR_COMPAT_MMIO,
+		    GENOA_PHYSADDR_COMPAT_MMIO,
 		.fr_sizelo = SONGSHAN_I3C_SIZE
 	}
 };
@@ -1282,21 +1282,21 @@ static const fch_def_t fch_defs[] = {
 		.fd_range_bases = {
 			{
 				.fr_addrsp = FA_LEGACY,
-				.fr_physlo = MILAN_IOPORT_COMPAT_BASE
+				.fr_physlo = GENOA_IOPORT_COMPAT_BASE
 			},
 			{
 				.fr_addrsp = FA_MMIO,
-				.fr_physlo = MILAN_PHYSADDR_COMPAT_MMIO
+				.fr_physlo = GENOA_PHYSADDR_COMPAT_MMIO
 			}
 		},
 		.fd_sec_bar_off =
-		    FCH_RELOCATABLE_PHYS_BASE - MILAN_PHYSADDR_COMPAT_MMIO,
+		    FCH_RELOCATABLE_PHYS_BASE - GENOA_PHYSADDR_COMPAT_MMIO,
 		.fd_nchildren = ARRAY_SIZE(huashan_children),
 		.fd_children = huashan_children
 	},
 
 	/*
-	 * XXX These macros (e.g., MILAN_IOPORT_COMPAT_BASE) should really be
+	 * XXX These macros (e.g., GENOA_IOPORT_COMPAT_BASE) should really be
 	 * references to Genoa, or should be renamed to reflect what is common
 	 * to both Milan and Genoa.  These are really for Genoa, as Milan never
 	 * has Songshan, but I believe their values are common to both.
@@ -1308,15 +1308,15 @@ static const fch_def_t fch_defs[] = {
 		.fd_range_bases = {
 			{
 				.fr_addrsp = FA_LEGACY,
-				.fr_physlo = MILAN_IOPORT_COMPAT_BASE
+				.fr_physlo = GENOA_IOPORT_COMPAT_BASE
 			},
 			{
 				.fr_addrsp = FA_MMIO,
-				.fr_physlo = MILAN_PHYSADDR_COMPAT_MMIO
+				.fr_physlo = GENOA_PHYSADDR_COMPAT_MMIO
 			}
 		},
 		.fd_sec_bar_off =
-		    FCH_RELOCATABLE_PHYS_BASE - MILAN_PHYSADDR_COMPAT_MMIO,
+		    FCH_RELOCATABLE_PHYS_BASE - GENOA_PHYSADDR_COMPAT_MMIO,
 		.fd_nchildren = ARRAY_SIZE(songshan_children),
 		.fd_children = songshan_children
 	}
@@ -1797,7 +1797,7 @@ fch_config_child(fch_t *fch, const fch_child_def_t *const cdp)
 	 * specified relative to a notional base address, which is found in the
 	 * parent definition as a series of ranges, one per address space
 	 * supported by the FCH.  On all currently supported FCHs, this is 0 for
-	 * legacy IO port space and MILAN_PHYSADDR_COMPAT_MMIO for MMIO space.
+	 * legacy IO port space and GENOA_PHYSADDR_COMPAT_MMIO for MMIO space.
 	 * Instead of hardcoding these bases, we allow the possibility that a
 	 * future FCH might have a similar collection of peripherals at similar
 	 * internal offsets but at a different overall base (ideally in 64-bit
@@ -2592,7 +2592,7 @@ memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
  * XXX We're going to want to abstract this away so that this driver can be
  * generic, first by having a parent representing either the IOMS on the oxide
  * arch or something else if we want this on i86pc.  That parent can eliminate
- * the need for the milan-specific walk here.  We also would need to add another
+ * the need for the genoa-specific walk here.  We also would need to add another
  * layer to the subsume logic as in the PCI PRD or have that parent supply our
  * address space.  There are other ways of figuring this out but they require
  * reaching into a lot of private data.  So for now we practically support only
@@ -2604,12 +2604,12 @@ memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
  * there is no node for the IOMS.
  */
 static int
-fch_ioms_cb(milan_ioms_t *ioms, void *arg)
+fch_ioms_cb(genoa_ioms_t *ioms, void *arg)
 {
 	dev_info_t *dip = NULL;
-	milan_iodie_t *iodie = milan_ioms_iodie(ioms);
-	const smn_reg_t enreg = milan_iodie_reg(iodie, D_FCH_PMIO_ALTMMIOEN, 0);
-	const smn_reg_t bar = milan_iodie_reg(iodie, D_FCH_PMIO_ALTMMIOBASE, 0);
+	genoa_iodie_t *iodie = genoa_ioms_iodie(ioms);
+	const smn_reg_t enreg = genoa_iodie_reg(iodie, D_FCH_PMIO_ALTMMIOEN, 0);
+	const smn_reg_t bar = genoa_iodie_reg(iodie, D_FCH_PMIO_ALTMMIOBASE, 0);
 	memlist_t *ioml, *mmml;
 	boolean_t is_primary = B_FALSE;
 	int reg[6] = { 0 };
@@ -2620,10 +2620,10 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 	uint64_t rr_base, rr_len;
 	const char *ident;
 
-	if ((milan_ioms_flags(ioms) & MILAN_IOMS_F_HAS_FCH) == 0)
+	if ((genoa_ioms_flags(ioms) & GENOA_IOMS_F_HAS_FCH) == 0)
 		return (0);
 
-	if ((milan_iodie_flags(iodie) & MILAN_IODIE_F_PRIMARY) != 0) {
+	if ((genoa_iodie_flags(iodie) & GENOA_IODIE_F_PRIMARY) != 0) {
 		uint32_t val;
 
 		/*
@@ -2637,7 +2637,7 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 		 * below the chiprev_family() check and clearing out this bogus
 		 * state for FCHs we really think we understand.
 		 */
-		val = milan_iodie_read(iodie, enreg);
+		val = genoa_iodie_read(iodie, enreg);
 		if (FCH_PMIO_ALTMMIOEN_GET_EN(val) != 0) {
 			cmn_err(CE_WARN, "primary FCH has alternate MMIO "
 			    "base address set; ignoring");
@@ -2647,8 +2647,8 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 		is_primary = B_TRUE;
 	}
 
-	ioml = milan_fabric_gen_subsume(ioms, IR_GEN_LEGACY);
-	mmml = milan_fabric_gen_subsume(ioms, IR_GEN_MMIO);
+	ioml = genoa_fabric_gen_subsume(ioms, IR_GEN_LEGACY);
+	mmml = genoa_fabric_gen_subsume(ioms, IR_GEN_MMIO);
 
 	mlcount = memlist_count(ioml) + memlist_count(mmml);
 
@@ -2741,21 +2741,21 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 			ufrp->fr_physlo = (uint32_t)addr;
 			ufrp->fr_sizelo = FCH_PMIO_ALTMMIOBASE_SIZE;
 
-			val = milan_iodie_read(iodie, enreg);
+			val = genoa_iodie_read(iodie, enreg);
 			if (FCH_PMIO_ALTMMIOEN_GET_EN(val) != 0) {
 				val = FCH_PMIO_ALTMMIOEN_SET_EN(val, 0);
-				milan_iodie_write(iodie, enreg, val);
+				genoa_iodie_write(iodie, enreg, val);
 			}
 
-			val = milan_iodie_read(iodie, bar);
+			val = genoa_iodie_read(iodie, bar);
 			val = FCH_PMIO_ALTMMIOBASE_SET(val,
 			    (uint32_t)addr >> FCH_PMIO_ALTMMIOBASE_SHIFT);
-			milan_iodie_write(iodie, bar, val);
+			genoa_iodie_write(iodie, bar, val);
 
 			val = FCH_PMIO_ALTMMIOEN_SET_EN(0, 1);
 			val = FCH_PMIO_ALTMMIOEN_SET_WIDTH(val,
 			    FCH_PMIO_ALTMMIOEN_WIDTH_32);
-			milan_iodie_write(iodie, enreg, val);
+			genoa_iodie_write(iodie, enreg, val);
 
 			break;
 		}
@@ -2805,7 +2805,7 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 	 * impl_sunbus_name_child()'s interpretation of our "reg" property!
 	 */
 	reg[0] = 0;
-	reg[1] = milan_iodie_node_id(iodie);
+	reg[1] = genoa_iodie_node_id(iodie);
 	reg[2] = 0;
 
 	if (is_primary) {
@@ -2885,7 +2885,7 @@ fch_enumerate(int reprobe)
 	if (reprobe)
 		return;
 
-	(void) milan_walk_ioms(fch_ioms_cb, NULL);
+	(void) genoa_walk_ioms(fch_ioms_cb, NULL);
 }
 
 int

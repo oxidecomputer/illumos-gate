@@ -45,24 +45,24 @@ extern "C" {
  */
 typedef struct genoa_apob_entry {
 	uint32_t	gae_group;
-	uint32_t	mae_type;
-	uint32_t	mae_inst;
+	uint32_t	gae_type;
+	uint32_t	gae_inst;
 	/*
 	 * Size in bytes oe this structure including the header.
 	 */
-	uint32_t	mae_size;
-	uint8_t		mae_hmac[GENOA_APOB_HMAC_LEN];
-	uint8_t		mae_data[];
+	uint32_t	gae_size;
+	uint8_t		gae_hmac[GENOA_APOB_HMAC_LEN];
+	uint8_t		gae_data[];
 } genoa_apob_entry_t;
 
 /*
  * This structure represents the start of the APOB.
  */
 typedef struct genoa_apob_header {
-	uint8_t			mah_sig[4];
-	uint32_t		mah_vers;
-	uint32_t		mah_size;
-	uint32_t		mah_off;
+	uint8_t			gah_sig[4];
+	uint32_t		gah_vers;
+	uint32_t		gah_size;
+	uint32_t		gah_off;
 } genoa_apob_header_t;
 
 #pragma pack()	/* pack(1) */

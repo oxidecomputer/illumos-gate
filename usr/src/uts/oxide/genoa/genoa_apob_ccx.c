@@ -113,7 +113,7 @@ genoa_apob_populate_coremap(uint8_t *nccds, genoa_ccd_t *ccdmap)
 			    acore < GENOA_APOB_CCX_MAX_CORES; acore++) {
 				const genoa_apob_core_t *acp =
 				    &accxp->gacx_cores[acore];
-				genoa_core_t *mcp = &gcxp->gcx_cores[core];
+				genoa_core_t *gcp = &gcxp->gcx_cores[core];
 
 				if (acp->gac_id == GENOA_APOB_CCX_NONE)
 					continue;

@@ -16,13 +16,13 @@
 /*
  * This implements the interfaces required to get PCI resource discovery out to
  * the rest of the system. This is effectively a thin veneer around
- * milan_fabric.c and related pieces of our platform's unix.
+ * genoa_fabric.c and related pieces of our platform's unix.
  */
 
 #include <sys/plat/pci_prd.h>
 #include <sys/modctl.h>
 #include <sys/pci.h>
-#include <sys/io/milan/fabric.h>
+#include <sys/io/genoa/fabric.h>
 
 /*
  * We always just tell the system to scan all PCI buses.
@@ -51,7 +51,7 @@ pci_prd_find_resource(uint32_t bus, pci_prd_rsrc_t rsrc)
 		 * keep things what PCI expects and so as not to confuse someone
 		 * who is debugging later.
 		 */
-		ret = milan_fabric_pci_subsume(bus, rsrc);
+		ret = genoa_fabric_pci_subsume(bus, rsrc);
 		if (ret != NULL) {
 			struct memlist *fix = ret;
 			while (fix != NULL) {

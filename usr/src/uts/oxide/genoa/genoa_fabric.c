@@ -1823,8 +1823,8 @@ genoa_ioms_iodie(const genoa_ioms_t *const ioms)
 
 typedef enum {
 	MBT_ANY,
-	MBT_GIMLET,
-	MBT_ETHANOL
+	MBT_RUBY,
+	MBT_COSMO,
 } genoa_board_type_t;
 
 /*
@@ -1834,10 +1834,9 @@ static genoa_board_type_t
 genoa_board_type(const genoa_fabric_t *fabric)
 {
 	if (fabric->gf_nsocs == 2) {
-		return (MBT_ETHANOL);
-	} else {
-		return (MBT_GIMLET);
+		return (MBT_RUBY);
 	}
+	return (MBT_ANY);
 }
 
 /*
@@ -1960,7 +1959,7 @@ genoa_pcie_populate_dbg(genoa_fabric_t *fabric, genoa_pcie_config_stage_t stage,
 	 * clear start time (since the GPIO was previously an input and would
 	 * have read at an undefined level).
 	 */
-	if (genoa_board_type(fabric) == MBT_GIMLET) {
+	if (genoa_board_type(fabric) == MBT_COSMO) {
 		if (!gpio_configured) {
 			genoa_hack_gpio(GHGOP_CONFIGURE, 129);
 			genoa_hack_gpio(GHGOP_TOGGLE, 129);
@@ -3865,7 +3864,7 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	 * We probably want to see if we can do better by figuring out whether
 	 * this is needed on socket 0, 1, or neither.
 	 */
-	if (genoa_board_type(soc->gs_fabric) == MBT_ETHANOL) {
+	if (genoa_board_type(soc->gs_fabric) == MBT_RUBY) {
 		if (soc->gs_socno == 0 && !genoa_dxio_rpc_sm_reload(iodie)) {
 			return (1);
 		}
@@ -3968,15 +3967,10 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * XXX Figure out how to best not hardcode Ethanol. Realistically
 	 * probably an SP boot property.
 	 */
-	if (genoa_board_type(soc->gs_fabric) == MBT_ETHANOL) {
+	if (genoa_board_type(soc->gs_fabric) == MBT_RUBY) {
 		if (soc->gs_socno == 0) {
-			source_data = &ethanolx_engine_s0;
-		} else {
-			source_data = &ethanolx_engine_s1;
+			source_data = &ruby_engine_s0;
 		}
-	} else {
-		VERIFY3U(soc->gs_socno, ==, 0);
-		source_data = &gimlet_engine;
 	}
 
 	engn_size = sizeof (zen_dxio_platform_t) +
@@ -4014,22 +4008,22 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 		    "0x%x", err);
 		return (1);
 	}
-	if (phy_len < offsetof(genoa_apob_phyovr_t, map_data[0])) {
+	if (phy_len < offsetof(genoa_apob_phyovr_t, gap_data[0])) {
 		cmn_err(CE_WARN, "APOB phy override table is too short "
 		    "(actual size 0x%lx)", phy_len);
 		return (1);
 	}
 
 	/*
-	 * The actual length of phy data is in map_datalen; it must be no larger
+	 * The actual length of phy data is in gap_datalen; it must be no larger
 	 * than the maximum and must fit in the APOB entry.
 	 */
-	if (phy_override->map_datalen > GENOA_APOB_PHY_OVERRIDE_MAX_LEN ||
-	    phy_override->map_datalen >
-	    phy_len - offsetof(genoa_apob_phyovr_t, map_data[0])) {
+	if (phy_override->gap_datalen > GENOA_APOB_PHY_OVERRIDE_MAX_LEN ||
+	    phy_override->gap_datalen >
+	    phy_len - offsetof(genoa_apob_phyovr_t, gap_data[0])) {
 		cmn_err(CE_WARN, "APOB phy override table data doesn't fit "
 		    "(datalen = 0x%x, entry len = 0x%lx)",
-		    phy_override->map_datalen, phy_len);
+		    phy_override->gap_datalen, phy_len);
 		return (1);
 	}
 
@@ -4057,15 +4051,15 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	anc->zdad_type = GENOA_DXIO_HEAP_ANCILLARY;
 	anc->zdad_vers = DXIO_ANCILLARY_VERSION;
 	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
-	    phy_override->map_datalen) >> 2;
+	    phy_override->gap_datalen) >> 2;
 	anc++;
 	anc->zdad_type = ZEN_DXIO_ANCILLARY_T_PHY;
 	anc->zdad_vers = DXIO_ANCILLARY_PAYLOAD_VERSION;
 	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
-	    phy_override->map_datalen) >> 2;
+	    phy_override->gap_datalen) >> 2;
 	anc++;
-	bcopy(phy_override->map_data, anc, phy_override->map_datalen);
-	conf->gdc_anc_len = phy_override->map_datalen +
+	bcopy(phy_override->gap_data, anc, phy_override->gap_datalen);
+	conf->gdc_anc_len = phy_override->gap_datalen +
 	    2 * sizeof (zen_dxio_anc_data_t);
 
 	return (0);
@@ -4362,7 +4356,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_SUBVID,
 		.strap_data = PCI_VENDOR_ID_OXIDE,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = MBT_COSMO,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4370,7 +4364,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_SUBDID,
 		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = MBT_COSMO,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4473,7 +4467,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_SRIS_EN,
 		.strap_data = 1,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = MBT_COSMO,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4482,7 +4476,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
 		.strap_data = 0,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = MBT_COSMO,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4491,7 +4485,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
 		.strap_data = 0,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = MBT_COSMO,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4806,10 +4800,10 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				break;
 			}
 
-			if (genoa_board_type(fabric) == MBT_ETHANOL) {
+			if (genoa_board_type(fabric) == MBT_RUBY) {
 
 				/*
-				 * Release PERST manually on Ethanol-X which
+				 * Release PERST manually on Ruby which
 				 * requires it.  PCIE_RSTn_L shares pins with
 				 * the following GPIOs:
 				 *
@@ -5601,8 +5595,8 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
 	/*
 	 * This is supposed to be set as part of some workaround for ports that
-	 * support at least PCIe Gen 3.0 speeds. As all supported platforms
-	 * (gimlet, Ethanol-X, etc.) always support that on the port unless this
+	 * support at least PCIe Gen 4.0 speeds. As all supported platforms
+	 * (Ruby, Cosmo, etc.) always support that on the port unless this
 	 * is one of the WAFL related lanes, we always set this.
 	 */
 	if (pc->gpc_coreno != GENOA_IOMS_WAFL_PCIE_CORENO) {
@@ -5860,10 +5854,8 @@ genoa_smu_hotplug_data_init(genoa_fabric_t *fabric)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)hp->gh_table);
 	hp->gh_pa = mmu_ptob((uint64_t)pfn);
 
-	if (genoa_board_type(fabric) == MBT_ETHANOL) {
-		entry = ethanolx_hotplug_ents;
-	} else {
-		entry = gimlet_hotplug_ents;
+	if (genoa_board_type(fabric) == MBT_RUBY) {
+		entry = ruby_hotplug_ents;
 	}
 
 	cont = entry[0].se_slotno != SMU_HOTPLUG_ENT_LAST;
@@ -5920,11 +5912,11 @@ genoa_hotplug_bridge_features(genoa_pcie_port_t *port)
 	genoa_fabric_t *fabric =
 	    port->gpp_core->gpc_ioms->gio_iodie->gi_soc->gs_fabric;
 
-	if (genoa_board_type(fabric) == MBT_ETHANOL) {
+	if (genoa_board_type(fabric) == MBT_RUBY) {
 		if (port->gpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
-			return (ethanolx_pcie_slot_cap_entssd);
+			return (ruby_pcie_slot_cap_entssd);
 		} else {
-			return (ethanolx_pcie_slot_cap_express);
+			return (ruby_pcie_slot_cap_express);
 		}
 	}
 
