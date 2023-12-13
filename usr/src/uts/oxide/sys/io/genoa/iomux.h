@@ -65,11 +65,6 @@ extern "C" {
 #define	GENOA_FCH_IOMUX_141_UART1_RXD		0
 #define	GENOA_FCH_IOMUX_142_UART1_TXD		0
 
-#define	GENOA_FCH_RMTMUX_10_PCIE_RST1_L		0
-#define	GENOA_FCH_RMTMUX_10_EGPIO26_1		1
-#define	GENOA_FCH_RMTMUX_11_PCIE_RST2_L		0
-#define	GENOA_FCH_RMTMUX_11_EGPIO26_2		1
-
 #ifdef __cplusplus
 }
 #endif

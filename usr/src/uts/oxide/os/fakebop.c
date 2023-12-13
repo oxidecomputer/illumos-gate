@@ -70,6 +70,7 @@
 #include <sys/pci_cfgspace_impl.h>
 #include <sys/ddipropdefs.h>	/* For DDI prop types */
 #include <sys/dw_apb_uart.h>
+#include <sys/x86_archext.h>
 #include <sys/uart.h>
 #include <sys/memlist_impl.h>
 #include <sys/apob.h>
@@ -101,6 +102,54 @@ static bootops_t bootop;
 static struct bsys_mem bm;
 
 uint32_t reset_vector;
+
+/*
+ * We want to make runtime decisions based on what CPU/platform we're running
+ * on but we don't have access to the cpuid_* interfaces yet.  So we'll just
+ * have to gather that info ourselves.
+ */
+x86_chiprev_t early_chiprev = X86_CHIPREV_UNKNOWN;
+
+extern x86_chiprev_t _cpuid_chiprev(uint_t, uint_t, uint_t, uint_t);
+extern uint_t _cpuid_vendorstr_to_vendorcode(char *);
+
+static void
+early_cpuid_ident(void)
+{
+	struct cpuid_regs cp;
+	char vendorstr[13];
+	uint_t vendor, family, model, stepping;
+
+	bzero(&cp, sizeof (cp));
+	cp.cp_eax = 0;
+	(void) __cpuid_insn(&cp);
+	{
+		uint32_t *iptr = (uint32_t *)vendorstr;
+		*iptr++ = cp.cp_ebx;
+		*iptr++ = cp.cp_edx;
+		*iptr++ = cp.cp_ecx;
+		vendorstr[12] = '\0';
+	}
+	vendor = _cpuid_vendorstr_to_vendorcode(vendorstr);
+	if (vendor != X86_VENDOR_AMD)
+		return;
+
+	bzero(&cp, sizeof (cp));
+	cp.cp_eax = 1;
+	(void) __cpuid_insn(&cp);
+
+	family = BITX(cp.cp_eax, 11, 8);
+	if (family == 0xf)
+		family += BITX(cp.cp_eax, 27, 20);
+
+	model = BITX(cp.cp_eax, 7, 4);
+	if (family >= 0xf)
+		model += BITX(cp.cp_eax, 19, 16) << 4;
+
+	stepping = BITX(cp.cp_eax, 3, 0);
+
+	early_chiprev = _cpuid_chiprev(vendor, family, model, stepping);
+}
 
 /*ARGSUSED*/
 static caddr_t
@@ -625,6 +674,8 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	extern void _kobj_boot();
 	extern int use_mp;
 	struct boot_syscalls *bsp;
+
+	early_cpuid_ident();
 
 	kbm_init();
 	oxide_derive_platform();
