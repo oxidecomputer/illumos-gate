@@ -267,6 +267,9 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 	mmio_reg_t gpio_reg;
 	uint32_t val;
 
+	/* XXX: Verify before start poking at GPIOs */
+	return;
+
 	if (gpio < 256) {
 		gpio_block = fch_gpio_mmio_block();
 		gpio_reg = FCH_GPIO_GPIO_MMIO(gpio_block, gpio);
