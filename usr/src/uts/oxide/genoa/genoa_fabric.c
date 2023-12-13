@@ -1347,11 +1347,11 @@ genoa_df_read32(genoa_iodie_t *iodie, uint8_t inst, const df_reg_def_t def)
 
 	mutex_enter(&iodie->gi_df_ficaa_lock);
 	ASSERT3U(def.drd_gens & DF_REV_3, ==, DF_REV_3);
-	val = DF_FICAA_V4_SET_TARG_INST(val, 1);
-	val = DF_FICAA_V4_SET_FUNC(val, def.drd_func);
-	val = DF_FICAA_V4_SET_INST(val, inst);
-	val = DF_FICAA_V4_SET_64B(val, 0);
-	val = DF_FICAA_V4_SET_REG(val, def.drd_reg >> 2);
+	val = DF_FICAA_V2_SET_TARG_INST(val, 1);
+	val = DF_FICAA_V2_SET_FUNC(val, def.drd_func);
+	val = DF_FICAA_V2_SET_INST(val, inst);
+	val = DF_FICAA_V2_SET_64B(val, 0);
+	val = DF_FICAA_V2_SET_REG(val, def.drd_reg >> 2);
 
 	ASSERT0(ficaa.drd_reg & 3);
 	pci_putl_func(0, iodie->gi_dfno, ficaa.drd_func, ficaa.drd_reg, val);
@@ -1916,7 +1916,7 @@ genoa_pcie_populate_port_dbg(genoa_pcie_port_t *port, void *arg)
 		return (0);
 
 	if (iodie_match != GENOA_IODIE_MATCH_ANY &&
-	    iodie_match != port->gpp_core->gpc_ioms->mio_iodie->gi_node_id) {
+	    iodie_match != port->gpp_core->gpc_ioms->gio_iodie->gi_node_id) {
 		return (0);
 	}
 
@@ -2822,7 +2822,7 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 		    DF_FBIINFO0);
 
 		VERIFY3U(DF_FBIINFO0_GET_TYPE(val), ==, DF_TYPE_CCM);
-		if (DF_FBIINFO0_V4_GET_ENABLED(val) == 0)
+		if (DF_FBIINFO0_V3_GET_ENABLED(val) == 0)
 			continue;
 
 		/*
@@ -3026,18 +3026,18 @@ genoa_fabric_topo_init(void)
 	 */
 	VERIFY3U(nsocs, ==, DF_COMPCNT_V4_GET_PIE(syscomp));
 	VERIFY3U(nsocs * GENOA_IOMS_PER_IODIE, ==,
-	    DF_COMPCNT_V4_GET_IOMS(syscomp));
+	    DF_COMPCNT_V4_GET_IOM(syscomp));
 
 	/*
 	 * Gather the register masks for decoding global fabric IDs into local
 	 * instance IDs.
 	 */
 	fidmask = genoa_df_early_read32(DF_FIDMASK0_V4);
-	fabric->gf_node_mask = DF_FIDMASK0_V4_GET_NODE_MASK(fidmask);
-	fabric->gf_comp_mask = DF_FIDMASK0_V4_GET_COMP_MASK(fidmask);
+	fabric->gf_node_mask = DF_FIDMASK0_V3P5_GET_NODE_MASK(fidmask);
+	fabric->gf_comp_mask = DF_FIDMASK0_V3P5_GET_COMP_MASK(fidmask);
 
 	fidmask = genoa_df_early_read32(DF_FIDMASK1_V4);
-	fabric->gf_node_shift = DF_FIDMASK1_V4_GET_NODE_SHIFT(fidmask);
+	fabric->gf_node_shift = DF_FIDMASK1_V3P5_GET_NODE_SHIFT(fidmask);
 
 	fabric->gf_nsocs = nsocs;
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
@@ -4900,14 +4900,14 @@ static void
 genoa_route_pci_bus(genoa_fabric_t *fabric)
 {
 	genoa_iodie_t *iodie = &fabric->gf_socs[0].gs_iodies[0];
-	uint_t inst = iodie->gi_ioms[0].mio_comp_id;
+	uint_t inst = iodie->gi_ioms[0].gio_comp_id;
 
 	for (uint_t i = 0; i < DF_MAX_CFGMAP; i++) {
 		int ret;
 		genoa_ioms_t *ioms;
 		ioms_memlists_t *imp;
 		uint32_t base, limit, dest;
-		uint32_t val = genoa_df_read32(iodie, inst, DF_CFGMAP_V4(i));
+		uint32_t val = genoa_df_read32(iodie, inst, DF_CFGMAP_V2(i));
 
 		/*
 		 * If a configuration map entry doesn't have both read and write
@@ -4915,14 +4915,14 @@ genoa_route_pci_bus(genoa_fabric_t *fabric)
 		 * There is no validity bit here, so this is the closest that we
 		 * can come to.
 		 */
-		if (DF_CFGMAP_V4_GET_RE(val) == 0 ||
-		    DF_CFGMAP_V4_GET_WE(val) == 0) {
+		if (DF_CFGMAP_V2_GET_RE(val) == 0 ||
+		    DF_CFGMAP_V2_GET_WE(val) == 0) {
 			continue;
 		}
 
-		base = DF_CFGMAP_V4_GET_BUS_BASE(val);
-		limit = DF_CFGMAP_V4_GET_BUS_LIMIT(val);
-		dest = DF_CFGMAP_V4_GET_DEST_ID(val);
+		base = DF_CFGMAP_V2_GET_BUS_BASE(val);
+		limit = DF_CFGMAP_V2_GET_BUS_LIMIT(val);
+		dest = DF_CFGMAP_V3P5_GET_DEST_ID(val);
 
 		ioms = genoa_fabric_find_ioms(fabric, dest);
 		if (ioms == NULL) {

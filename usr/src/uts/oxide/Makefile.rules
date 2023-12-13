@@ -136,6 +136,10 @@ $(OBJS_DIR)/%.o:		$(SRC)/common/dis/i386/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/genoa/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/milan/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
