@@ -83,14 +83,14 @@ genoa_ccx_physmem_init(void)
 smn_reg_t
 genoa_core_reg(const genoa_core_t *const core, const smn_reg_def_t def)
 {
-	genoa_ccx_t *ccx = core->mc_ccx;
-	genoa_ccd_t *ccd = ccx->mcx_ccd;
+	genoa_ccx_t *ccx = core->gc_ccx;
+	genoa_ccd_t *ccd = ccx->gcx_ccd;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SCFCTP:
-		reg = amdzen_scfctp_smn_reg(ccd->mcd_physical_dieno,
-		    ccx->mcx_physical_cxno, def, core->mc_physical_coreno);
+		reg = amdzen_scfctp_smn_reg(ccd->gcd_physical_dieno,
+		    ccx->gcx_physical_cxno, def, core->gc_physical_coreno);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for core",
@@ -107,7 +107,7 @@ genoa_ccd_reg(const genoa_ccd_t *const ccd, const smn_reg_def_t def)
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SMUPWR:
-		reg = amdzen_smupwr_smn_reg(ccd->mcd_physical_dieno, def, 0);
+		reg = amdzen_smupwr_smn_reg(ccd->gcd_physical_dieno, def, 0);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for CCD",
@@ -120,7 +120,7 @@ genoa_ccd_reg(const genoa_ccd_t *const ccd, const smn_reg_def_t def)
 uint32_t
 genoa_ccd_read(genoa_ccd_t *ccd, const smn_reg_t reg)
 {
-	genoa_iodie_t *iodie = ccd->mcd_iodie;
+	genoa_iodie_t *iodie = ccd->gcd_iodie;
 
 	return (genoa_smn_read(iodie, reg));
 }
@@ -128,7 +128,7 @@ genoa_ccd_read(genoa_ccd_t *ccd, const smn_reg_t reg)
 void
 genoa_ccd_write(genoa_ccd_t *ccd, const smn_reg_t reg, const uint32_t val)
 {
-	genoa_iodie_t *iodie = ccd->mcd_iodie;
+	genoa_iodie_t *iodie = ccd->gcd_iodie;
 
 	genoa_smn_write(iodie, reg, val);
 }
@@ -136,7 +136,7 @@ genoa_ccd_write(genoa_ccd_t *ccd, const smn_reg_t reg, const uint32_t val)
 uint32_t
 genoa_ccx_read(genoa_ccx_t *ccx, const smn_reg_t reg)
 {
-	genoa_iodie_t *iodie = ccx->mcx_ccd->mcd_iodie;
+	genoa_iodie_t *iodie = ccx->gcx_ccd->gcd_iodie;
 
 	return (genoa_smn_read(iodie, reg));
 }
@@ -144,7 +144,7 @@ genoa_ccx_read(genoa_ccx_t *ccx, const smn_reg_t reg)
 void
 genoa_ccx_write(genoa_ccx_t *ccx, const smn_reg_t reg, const uint32_t val)
 {
-	genoa_iodie_t *iodie = ccx->mcx_ccd->mcd_iodie;
+	genoa_iodie_t *iodie = ccx->gcx_ccd->gcd_iodie;
 
 	genoa_smn_write(iodie, reg, val);
 }
@@ -152,7 +152,7 @@ genoa_ccx_write(genoa_ccx_t *ccx, const smn_reg_t reg, const uint32_t val)
 uint32_t
 genoa_core_read(genoa_core_t *core, const smn_reg_t reg)
 {
-	genoa_iodie_t *iodie = core->mc_ccx->mcx_ccd->mcd_iodie;
+	genoa_iodie_t *iodie = core->gc_ccx->gcx_ccd->gcd_iodie;
 
 	return (genoa_smn_read(iodie, reg));
 }
@@ -160,7 +160,7 @@ genoa_core_read(genoa_core_t *core, const smn_reg_t reg)
 void
 genoa_core_write(genoa_core_t *core, const smn_reg_t reg, const uint32_t val)
 {
-	genoa_iodie_t *iodie = core->mc_ccx->mcx_ccd->mcd_iodie;
+	genoa_iodie_t *iodie = core->gc_ccx->gcx_ccd->gcd_iodie;
 
 	genoa_smn_write(iodie, reg, val);
 }
@@ -183,20 +183,20 @@ genoa_core_write(genoa_core_t *core, const smn_reg_t reg, const uint32_t val)
 boolean_t
 genoa_ccx_start_thread(const genoa_thread_t *thread)
 {
-	genoa_core_t *core = thread->mt_core;
-	genoa_ccx_t *ccx = core->mc_ccx;
-	genoa_ccd_t *ccd = ccx->mcx_ccd;
+	genoa_core_t *core = thread->gt_core;
+	genoa_ccx_t *ccx = core->gc_ccx;
+	genoa_ccd_t *ccd = ccx->gcx_ccd;
 	smn_reg_t reg;
 	uint8_t thr_ccd_idx;
 	uint32_t en;
 
 	VERIFY3U(CPU->cpu_id, ==, 0);
 
-	thr_ccd_idx = ccx->mcx_logical_cxno;
-	thr_ccd_idx *= ccx->mcx_ncores;
-	thr_ccd_idx += core->mc_logical_coreno;
-	thr_ccd_idx *= core->mc_nthreads;
-	thr_ccd_idx += thread->mt_threadno;
+	thr_ccd_idx = ccx->gcx_logical_cxno;
+	thr_ccd_idx *= ccx->gcx_ncores;
+	thr_ccd_idx += core->gc_logical_coreno;
+	thr_ccd_idx *= core->gc_nthreads;
+	thr_ccd_idx += thread->gt_threadno;
 
 	VERIFY3U(thr_ccd_idx, <, GENOA_MAX_CCXS_PER_CCD *
 	    GENOA_MAX_CORES_PER_CCX * GENOA_MAX_THREADS_PER_CORE);
@@ -214,7 +214,7 @@ genoa_ccx_start_thread(const genoa_thread_t *thread)
 apicid_t
 genoa_thread_apicid(const genoa_thread_t *thread)
 {
-	return (thread->mt_apicid);
+	return (thread->gt_apicid);
 }
 
 boolean_t
@@ -724,16 +724,16 @@ genoa_ccx_init(void)
 	 */
 	genoa_thread_feature_init();
 	genoa_thread_uc_init();
-	if (thread->mt_threadno == 1) {
+	if (thread->gt_threadno == 1) {
 		genoa_core_tw_init();
 	}
-	if (thread->mt_threadno == 0) {
+	if (thread->gt_threadno == 0) {
 		genoa_core_ls_init();
 		genoa_core_ic_init();
 		genoa_core_dc_init();
 		genoa_core_de_init();
 		genoa_core_l2_init();
-		if (thread->mt_core->mc_logical_coreno == 0)
+		if (thread->gt_core->gc_logical_coreno == 0)
 			genoa_ccx_l3_init();
 		genoa_core_undoc_init();
 		genoa_core_dpm_init();

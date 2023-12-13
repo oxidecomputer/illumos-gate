@@ -36,7 +36,7 @@ extern "C" {
 /*
  * The following types are exposed to implementers but not consumers,
  * which are only allowed to use pointers to objects of those types as
- * opaque handles; hence the forward-declares.  The actual definitions
+ * opaque handles; hence the forward-declarations.  The actual definitions
  * are in the corresponding *_impl.h header files.
  */
 struct genoa_thread;

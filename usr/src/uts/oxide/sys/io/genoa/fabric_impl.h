@@ -108,70 +108,70 @@ typedef struct ioms_memlists {
 } ioms_memlists_t;
 
 struct genoa_ioms {
-	genoa_ioms_flag_t	mio_flags;
-	uint16_t		mio_pci_busno;
-	uint8_t			mio_num;
-	uint8_t			mio_fabric_id;
-	uint8_t			mio_comp_id;
-	uint8_t			mio_npcie_cores;
-	uint8_t			mio_nnbifs;
-	genoa_pcie_core_t	mio_pcie_cores[GENOA_IOMS_MAX_PCIE_CORES];
-	genoa_nbif_t		mio_nbifs[GENOA_IOMS_MAX_NBIF];
-	ioms_memlists_t		mio_memlists;
-	genoa_iodie_t		*mio_iodie;
+	genoa_ioms_flag_t	gio_flags;
+	uint16_t		gio_pci_busno;
+	uint8_t			gio_num;
+	uint8_t			gio_fabric_id;
+	uint8_t			gio_comp_id;
+	uint8_t			gio_npcie_cores;
+	uint8_t			gio_nnbifs;
+	genoa_pcie_core_t	gio_pcie_cores[GENOA_IOMS_MAX_PCIE_CORES];
+	genoa_nbif_t		gio_nbifs[GENOA_IOMS_MAX_NBIF];
+	ioms_memlists_t		gio_memlists;
+	genoa_iodie_t		*gio_iodie;
 };
 
 struct genoa_iodie {
-	kmutex_t		mi_df_ficaa_lock;
-	kmutex_t		mi_smn_lock;
-	kmutex_t		mi_smu_lock;
-	uint8_t			mi_node_id;
-	uint8_t			mi_dfno;
-	uint8_t			mi_smn_busno;
-	uint8_t			mi_nioms;
-	uint8_t			mi_nccds;
-	uint8_t			mi_smu_fw[3];
-	uint32_t		mi_dxio_fw[2];
-	genoa_iodie_flag_t	mi_flags;
-	genoa_dxio_sm_state_t	mi_state;
-	genoa_dxio_config_t	mi_dxio_conf;
-	uint64_t		mi_dpm_weights[GENOA_MAX_DPM_WEIGHTS];
-	genoa_ioms_t		mi_ioms[GENOA_IOMS_PER_IODIE];
-	genoa_ccd_t		mi_ccds[GENOA_MAX_CCDS_PER_IODIE];
-	genoa_soc_t		*mi_soc;
+	kmutex_t		gi_df_ficaa_lock;
+	kmutex_t		gi_smn_lock;
+	kmutex_t		gi_smu_lock;
+	uint8_t			gi_node_id;
+	uint8_t			gi_dfno;
+	uint8_t			gi_smn_busno;
+	uint8_t			gi_nioms;
+	uint8_t			gi_nccds;
+	uint8_t			gi_smu_fw[3];
+	uint32_t		gi_dxio_fw[2];
+	genoa_iodie_flag_t	gi_flags;
+	genoa_dxio_sm_state_t	gi_state;
+	genoa_dxio_config_t	gi_dxio_conf;
+	uint64_t		gi_dpm_weights[GENOA_MAX_DPM_WEIGHTS];
+	genoa_ioms_t		gi_ioms[GENOA_IOMS_PER_IODIE];
+	genoa_ccd_t		gi_ccds[GENOA_MAX_CCDS_PER_IODIE];
+	genoa_soc_t		*gi_soc;
 };
 
 struct genoa_soc {
-	uint8_t			ms_socno;
-	uint8_t			ms_ndies;
-	char			ms_brandstr[CPUID_BRANDSTR_STRLEN + 1];
-	genoa_iodie_t		ms_iodies[GENOA_FABRIC_MAX_DIES_PER_SOC];
-	genoa_fabric_t		*ms_fabric;
+	uint8_t			gs_socno;
+	uint8_t			gs_ndies;
+	char			gs_brandstr[CPUID_BRANDSTR_STRLEN + 1];
+	genoa_iodie_t		gs_iodies[GENOA_FABRIC_MAX_DIES_PER_SOC];
+	genoa_fabric_t		*gs_fabric;
 };
 
 struct genoa_fabric {
-	uint8_t		mf_nsocs;
+	uint8_t		gf_nsocs;
 	/*
 	 * This represents a cache of everything that we've found in the fabric.
 	 */
-	uint_t		mf_total_ioms;
+	uint_t		gf_total_ioms;
 	/*
 	 * These are masks and shifts that describe how to take apart an ID into
 	 * its node ID and corresponding component ID.
 	 */
-	uint8_t		mf_node_shift;
-	uint32_t	mf_node_mask;
-	uint32_t	mf_comp_mask;
+	uint8_t		gf_node_shift;
+	uint32_t	gf_node_mask;
+	uint32_t	gf_comp_mask;
 	/*
 	 * While TOM and TOM2 are nominally set per-core and per-IOHC, these
 	 * values are fabric-wide.
 	 */
-	uint64_t	mf_tom;
-	uint64_t	mf_tom2;
-	uint64_t	mf_ecam_base;
-	uint64_t	mf_mmio64_base;
-	genoa_hotplug_t	mf_hotplug;
-	genoa_soc_t	mf_socs[GENOA_FABRIC_MAX_SOCS];
+	uint64_t	gf_tom;
+	uint64_t	gf_tom2;
+	uint64_t	gf_ecam_base;
+	uint64_t	gf_mmio64_base;
+	genoa_hotplug_t	gf_hotplug;
+	genoa_soc_t	gf_socs[GENOA_FABRIC_MAX_SOCS];
 };
 
 extern uint32_t genoa_smn_read(struct genoa_iodie *, const smn_reg_t);

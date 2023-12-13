@@ -44,7 +44,7 @@ extern "C" {
  * by its size.
  */
 typedef struct genoa_apob_entry {
-	uint32_t	mae_group;
+	uint32_t	gae_group;
 	uint32_t	mae_type;
 	uint32_t	mae_inst;
 	/*
