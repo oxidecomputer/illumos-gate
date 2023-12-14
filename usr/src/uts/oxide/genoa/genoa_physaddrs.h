@@ -29,24 +29,32 @@ extern "C" {
  * XXX This memory map is definitely incomplete. Please expand it.
  *
  * The following diagram describes how physical memory is allocated on this
- * system. There are a couple of things to note. First, there are two major
- * reserved areas that exist in the > 4GiB space, each of which is 12 GiB in
- * size. The lower one is problematic in that it shows up right in the middle of
- * the above 4 GiB region of DRAM. As such, we will make sure that we never
- * start MMIO space below this point as we have plenty of space and there's not
- * really much point.
+ * system. Genoa supports a 52-bit physical address space.
  *
- * +---------------------+ UINT64_MAX
+ * There are a couple of things to note. First, there are two major reserved
+ * areas that exist above 4GiB; both are 12 GiB in size.
+ *
+ * The lower one is problematic in that it shows up right in the middle of
+ * the RAM region above 4 GiB.  We make sure that we never start MMIO space
+ * below this point as we have plenty of space elsewhere and we don't want
+ * to preclude access to RAM.
+ *
+ * +---------------------+ 0xFFFF_FFFF_FFFF_FFFF
  * |                     |
  * |     End of the      |  All addresses here are aborted by the CPU.
  * |        World        |
  * |                     |
- * +---------------------+ 0xffff_ffff_ffff -- 48 TiB
+ * +---------------------+ 0x000F_FFFF_FFFF_FFFF --
+ * |                     |
+ * | End of the physical |
+ * |    address space    |
+ * |                     |
+ * +---------------------+ 0xFFFF_FFFF_FFFF
  * |                     |
  * |       System        |  Reserved by the SoC.
  * |      Reserved       |
  * |                     |
- * +---------------------+ 0xfffd_0000_0000 -- 48 TiB - 12 GiB
+ * +---------------------+ 0xFFFD_0000_0000 -- 0xFFFF_FFFF_FFFF - 12 GiB + 1
  * |                     |
  * |      Primary        |  Primary MMIO Space. Must be assigned to each IOMS
  * |      MMIO to        |  and can then be assigned to each PCIe root complex.
@@ -149,10 +157,12 @@ extern "C" {
  */
 
 /*
- * This address represents the beginning of a compatibility MMIO range. This
- * range is accessed using subtractive decoding somehow, which means that if we
- * program an address range into the DF that overlaps this we will lose access
- * to these compatibility devices which generally speaking contain the FCH.
+ * These addresses represents the beginning, size and end of a compatibility
+ * MMIO range. This is often used for access to the FCH.
+ *
+ * This range is accessed using subtractive decoding somehow, which means that
+ * if we program an address range into the DF that overlaps this we will lose
+ * access to these compatibility devices.
  */
 #define	GENOA_PHYSADDR_COMPAT_MMIO	0xfec00000UL
 #define	GENOA_COMPAT_MMIO_SIZE		0x01400000UL
@@ -167,8 +177,10 @@ extern "C" {
 /*
  * This 12 GiB range below 1 TiB can't be accessed as DRAM and is not supposed
  * to be used for MMIO in general, although it may be used for the 64 MiB flash
- * aperture from the SPI controller.  The exact reason for this hole is not well
- * documented but it is known to be an artefact of the IOMMU implementation.
+ * aperture from the SPI controller.
+ *
+ * The rationale for this hole's existence is not well documented, but is known
+ * to be an artifact of the IOMMU implementation.
  */
 #define	GENOA_PHYSADDR_IOMMU_HOLE	0xfd00000000UL
 #define	GENOA_PHYSADDR_IOMMU_HOLE_END	0x10000000000UL
@@ -183,7 +195,8 @@ extern "C" {
  * These are the MMIO Addresses for the IOAPICs.  One of them is in the FCH
  * and cannot be moved, the other is in the IOH/NBIO3.  The latter can be put
  * almost anywhere, as long as it is part of the non-PCI range routed to IOMS3.
- * That link is necessitated by the connection between NBIO3 and the FCH. This
+ *
+ * That link is required by the connection between NBIO3 and the FCH. This
  * address is fairly arbitrary; AGESA on Ethanol-X puts it here by default; we
  * may wish to change it to something else.
  */
