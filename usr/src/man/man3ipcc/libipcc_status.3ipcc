@@ -1,0 +1,123 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_STATUS 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_status ,
+.Nm libipcc_startup_options
+.Nd Retrieve SP status and startup registers
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_status
+.Fa "libipcc_handle_t *handle"
+.Fa "uint64_t *reg"
+.Fc
+.Ft bool
+.Fo libipcc_startup_options
+.Fa "libipcc_handle_t *handle"
+.Fa "uint64_t *reg"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve 64-bit register values from the Service Processor
+in Oxide hardware.
+The meaning of the register values themselves is a private interface between
+the SP and the Oxide platform, and is not documented here.
+.Pp
+.Fn libipcc_status
+and
+.Fn libipcc_startup_options
+take as their first argument a libipcc
+.Fa handle
+obtained via a call to
+.Xr libipcc_init 3IPCC ,
+and the variable pointed to by
+.Fa reg
+will be filled in with the current value of the register on success.
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_status
+and
+.Fn libipcc_startup_options
+return
+.Dv true
+and
+.Fa reg
+is updated with the corresponding value.
+Otherwise,
+.Dv false
+is returned and the libipcc handle will contains details of the reason for the
+failure which can be retrieved by interrogating the handle using the functions
+described in
+.Xr libipcc_err 3IPCC .
+.Sh EXAMPLES
+.Sy Example 1
+Retrieve the SP's status register
+.Pp
+The following example shows how to retrieve the SP's status register.
+.Bd -literal -offset 2
+#include <inttypes.h>
+#include <err.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+	uint64_t status;
+
+	if (!libipcc_status(lih, &status)) {
+		libipcc_err_t lerr = libipcc_err(lih);
+
+		errx(EXIT_FAILURE, "libipcc error: '%s' (0x%x %s / %s)",
+		    libipcc_errmsg(lih),
+		    lerr, libipcc_strerror(lerr),
+		    strerror(libipcc_syserr(lih)));
+	}
+
+	(void) printf("Status register: 0x" PRIx64 "\en", status);
+
+	libipcc_fini(lih);
+}
+.Ed
+.Sh ERRORS
+When the functions defined in this page return
+.Dv false ,
+the reason for the failure can be determined from the library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc 3LIB

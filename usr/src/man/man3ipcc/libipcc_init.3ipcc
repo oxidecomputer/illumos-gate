@@ -1,0 +1,196 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_INIT 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_init ,
+.Nm libipcc_fini
+.Nd Initialise or finalise an IPCC library handle
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_init
+.Fa "libipcc_handle_t **handlep"
+.Fa "libipcc_err_t *errp"
+.Fa "int32_t *syserrp"
+.Fa "char * const errbuf"
+.Fa "size_t errbuflen"
+.Fc
+.Ft void
+.Fo libipcc_fini
+.Fa "libipcc_handle_t *handle"
+.Fc
+.Sh DESCRIPTION
+.Fn libipcc_init
+and
+.Fn libipcc_fini
+respectively initialise and finalise a handle that can be subsequently
+passed to other
+.Xr libipcc 3LIB
+functions in order to interact with the Service Processor
+.Pq SP
+present within Oxide hardware.
+.Pp
+A handle is initialised via a call to
+.Fn libipcc_init .
+.Fa handlep
+must point to a location that can hold the allocated library handle on
+success, and
+.Fa errp ,
+.Fa syserrp
+and
+.Fa errbuf
+point to variables that will be populated on failure.
+If any of
+.Fa errp ,
+.Fa syserrp
+or
+.Fa errbuf
+are not desired by the caller, they should be set to
+.Dv NULL .
+If
+.Fa errbuf
+is non-NULL, then
+.Fa errbuflen
+must be set to the size of this buffer, and otherwise left as 0.
+If provided, it is recommended that
+.Fa errbuf
+is at least as large as
+.Dv LIBIPCC_ERR_LEN
+or the returned message may be truncated.
+On success, this function will return
+.Dv true
+and
+.Fa handlep
+will have been set to point to the handle which has been allocated by the
+library.
+This handle should be freed when no longer needed via a call to
+.Fn libipcc_fini .
+On failure,
+.Dv false
+is returned and any of the
+.Fa errp ,
+.Fa syserrp
+and
+.Fa errbuf
+pointers that were not
+.Dv NULL
+will have been updated with values indicating the reason for the
+failure.
+The meanings of those values are:
+.Bl -tag -width Fa
+.It Fa errp
+The error value associated with the failure; one of the values enumerated in
+.Xr libipcc_err 3IPCC .
+This value can be passed to
+.Xr libipcc_strerror 3IPCC
+to obtain a string representation.
+.It Fa syserrp
+The
+.Va errno
+associated with the failure, if there is one, otherwise 0.
+.It Fa errbuf
+A NUL-terminated error message, suitable for display.
+.El
+.Pp
+.Fn libipcc_fini
+is used to free a library handle previously allocated by
+.Fn libipcc_init .
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_init
+returns
+.Dv true
+and
+.Fa handlep
+will have been updated.
+Otherwise
+.Dv false
+is returned and the reason for the failure can be determined by inspecting
+the values of
+.Fa errp ,
+.Fa syserrp
+and
+.Fa errbuf
+as described above.
+.Sh EXAMPLES
+.Sy Example 1
+Allocating and finalising a library handle
+.Pp
+The following example shows how to allocate and finalise a library handle, and
+how to output error information if it fails.
+.Bd -literal -offset 2
+#include <err.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+	/* Use the handle here */
+
+	libipcc_fini(lih);
+}
+.Ed
+.Sh ERRORS
+When
+.Fn libipcc_init
+returns
+.Dv false ,
+the
+.Fa syserrp
+pointer
+.Pq if not Dv NULL
+will be set either to 0, if no system
+.Va errno
+is associated with the failure, or to one of the errors listed below, or
+to one of the errors that can be returned by the
+.Xr open 2
+or
+.Xr ioctl 2
+functions.
+.Bl  -tag -width Er
+.It Er ENOMEM
+The system cannot allocate memory for the library handle.
+.It Er EPERM
+The caller has insufficient privileges to perform the operation.
+.It Er ENOENT
+The IPCC device was not found on this system.
+.El
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr ioctl 2 ,
+.Xr open 2 ,
+.Xr libipcc 3LIB ,
+.Xr libipcc_err 3LIB ,
+.Xr libipcc_strerror 3LIB

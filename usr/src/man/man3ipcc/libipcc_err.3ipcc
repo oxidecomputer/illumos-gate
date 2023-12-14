@@ -1,0 +1,184 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_ERR 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_err ,
+.Nm libipcc_strerror ,
+.Nm libipcc_syserr ,
+.Nm libipcc_errmsg
+.Nd Retrieve information about the last libipcc error
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft libipcc_err_t
+.Fo libipcc_err
+.Fa "libipcc_handle_t *handle"
+.Fc
+.Ft "const char *"
+.Fo libipcc_strerror
+.Fa "libipcc_err_t err"
+.Fc
+.Ft int32_t
+.Fo libipcc_syserr
+.Fa "libipcc_handle_t *handle"
+.Fc
+.Ft "const char *"
+.Fo libipcc_errmsg
+.Fa "libipcc_handle_t *handle"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve information about the last operation that was
+performed on a libipcc library handle.
+They are generally used after an operation returns
+.Dv false ,
+indicating that the call failed, in order to determine the cause.
+.Pp
+.Fn libipcc_err
+returns the error value associated with the last operation, which may
+be
+.Dv LIBIPCC_ERR_OK
+indicating that no error occurred.
+The possible returned value are enumerated in
+.Sx RETURN VALUES .
+.Pp
+.Fn libipcc_strerror
+returns a pointer to a constant string corresponding to the provided error
+value.
+The returned pointer is valid for the lifetime of the process and not
+invalidated on the next libipcc operation.
+.Pp
+In most cases,
+.Fn libipcc_syserr
+returns the system
+.Va errno
+related to the last operation.
+If the last operation was successful, or there is no
+.Va errno
+associated with the failure, then this will return 0.
+For a compression or decompression error, this value is instead a
+.Dv Z_
+value from
+.Xr zlib 3 ,
+rather than a system
+.Va errno .
+.Pp
+.Fn libipcc_errmsg
+returns a NUL-terminated message relating to the last operation, suitable
+for display.
+If the last operation was successful, the returned message will be an
+empty string.
+The returned message is only valid until the next library handle operation.
+.Sh RETURN VALUES
+.Fn libipcc_err
+always succeeds, and returns one of the following error values:
+.Bl -tag -width Dv
+.It Dv LIBIPCC_ERR_OK
+No error was encountered.
+.It Dv LIBIPCC_ERR_NO_MEM
+A memory allocation error occurred.
+The actual
+.Va errno
+can be retrieved by
+.Fn libipcc_syserr .
+.It Dv LIBIPCC_ERR_INVALID_PARAM
+One of the function parameters does not pass validation.
+.Fn libipcc_errmsg .
+.It Dv LIBIPCC_ERR_INTERNAL
+An internal error occurred.
+.It Dv LIBIPCC_ERR_KEY_UNKNOWN
+The requested lookup key was not known to the service processor.
+.It Dv LIBIPCC_ERR_KEY_BUFTOOSMALL
+The value for the requested lookup key was too large for the supplied buffer.
+.It Dv LIBIPCC_ERR_KEY_READONLY
+An attempt to write to a key failed because the key is read-only.
+.It Dv LIBIPCC_ERR_KEY_VALTOOLONG
+An attempt to write to a key failed because the provided value is too long.
+.It Dv LIBIPCC_ERR_KEY_ZERR
+Compression or decompression failed.
+In this case,
+.Fn libipcc_syserr
+will return the
+.Dv Z_
+error from
+.Xr zlib 3 .
+.It Dv LIBIPCC_ERR_INSUFFMACS
+The service processor provided insufficient MAC addresses to satisfy the
+request.
+.El
+.Pp
+.Fn libipcc_strerror
+returns a pointer to a constant string corresponding to the provided
+.Fa err
+value.
+.Pp
+.Fn libipcc_syserr
+returns an
+.Va errno
+value, or 0, indicating that no
+.Va errno
+is associated with the last operation.
+.Pp
+.Fn libipcc_errmsg
+returns a NUL-terminated error message suitable for display.
+.Sh EXAMPLES
+.Sy Example 1
+Reporting the reason for a call failure
+.Pp
+The following example shows how to exit with information relating to a failed
+library call.
+.Bd -literal -offset 2
+#include <err.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	uint64_t status;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+	if (!libipcc_status(lih, &status)) {
+		libipcc_err_t lerr = libipcc_err(lih);
+
+		errx(EXIT_FAILURE, "libipcc error: '%s' (0x%x %s / %s)",
+		    libipcc_errmsg(lih),
+		    lerr, libipcc_strerror(lerr),
+		    strerror(libipcc_syserr(lih)));
+	}
+
+	libipcc_fini(lih);
+}
+.Ed
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr zlib 3 ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc 3LIB

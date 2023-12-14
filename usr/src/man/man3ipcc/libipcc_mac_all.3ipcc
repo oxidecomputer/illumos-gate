@@ -1,0 +1,218 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_MAC_ALL 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_mac_all ,
+.Nm libipcc_mac_addr ,
+.Nm libipcc_mac_bootstrap ,
+.Nm libipcc_mac_count ,
+.Nm libipcc_mac_free ,
+.Nm libipcc_mac_nic ,
+.Nm libipcc_mac_stride
+.Nd Retrieve allocated MAC address information
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_mac_all
+.Fa "libipcc_handle_t *handle"
+.Fa "libipcc_mac_t **macp"
+.Fc
+.Ft bool
+.Fo libipcc_mac_bootstrap
+.Fa "libipcc_handle_t *handle"
+.Fa "libipcc_mac_t **macp"
+.Fc
+.Ft bool
+.Fo libipcc_mac_nic
+.Fa "libipcc_handle_t *handle"
+.Fa "libipcc_mac_t **macp"
+.Fc
+.Ft "const struct ether_addr *"
+.Fo libipcc_mac_addr
+.Fa "libipcc_mac_t *mac"
+.Fc
+.Ft uint16_t
+.Fo libipcc_mac_count
+.Fa "libipcc_mac_t *mac"
+.Fc
+.Ft uint8_t
+.Fo libipcc_mac_stride
+.Fa "libipcc_mac_t *mac"
+.Fc
+.Ft void
+.Fo libipcc_mac_free
+.Fa "libipcc_mac_t *mac"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve information about MAC addresses allocated to the OS
+for various purposes.
+These are ultimately a subset of the MAC addresses assigned to the
+physical server in its Vital Product Data
+.Pq VPD .
+.Pp
+Each set of addresses is described by three attributes:
+.Bl -dash -offset Ds
+.It
+A
+.Sq base_mac
+which indicates the lowest MAC address in the assigned range;
+.It
+A
+.Sq count
+which communicates the number of addresses that have been assigned
+.Po including
+.Sq base_mac
+.Pc ;
+.It
+A
+.Sq stride
+which describes the distance between each MAC address.
+.El
+.Pp
+A
+.Sy mac handle
+is retrieved via a call to
+.Fn libipcc_mac_all ,
+.Fn libipcc_mac_nic
+or
+.Fn libipcc_mac_bootstrap ,
+passing in a libipcc handle previously obtained via a call to
+.Xr libipcc_init 3IPCC .
+The returned
+.Sy mac handle
+can be interrogated to retrieve information about the allocated MAC addresses
+in that category.
+When finished, the
+.Sy mac handle
+should be freed via a call to
+.Fn libipcc_mac_free .
+.Pp
+Note that the
+.Sy mac handle
+lifetime is separate to that of the libipcc handle.
+That is, it may still be used after the library handle is closed via a call to
+.Xr libipcc_fini 3IPCC
+as shown in the example below.
+.Pp
+Once a
+.Sy mac handle
+is acquired, the attributes of the MAC address set can be retrieved.
+.Fn libipcc_mac_addr
+returns a pointer to the
+.Sq base_mac ,
+.Fn libipcc_mac_count
+returns the
+.Sq count ,
+and
+.Fn libipcc_mac_stride
+returns the
+.Sq stride .
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_mac_all ,
+.Fn libipcc_mac_nic
+and
+.Fn libipcc_mac_bootstrap
+return
+.Dv true
+and store a
+.Sy mac handle
+in the variable referenced by
+.Fa macp .
+Otherwise, they return
+.Dv false
+and the libipcc handle will contains details of the reason for the failure
+which can be retrieved by interrogating the handle using the functions
+described in
+.Xr libipcc_err 3IPCC .
+.Pp
+.Fn libipcc_mac_addr ,
+.Fn libipcc_mac_count
+and
+.Fn libipcc_mac_stride
+always succeed and return attributes of the MAC address set corresponding to
+the
+.Sy mac handle .
+.Sh EXAMPLES
+.Sy Example 1
+Retrieve and display the bootstrap MAC address range.
+.Pp
+The following example shows how to retrieve and display the allocated bootstrap
+MAC address range.
+.Bd -literal -offset 2
+#include <err.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+	libipcc_mac_t *mac;
+
+	if (!libipcc_mac_bootstrap(lihandle, &mac)) {
+		libipcc_err_t lerr = libipcc_err(lih);
+
+		errx(EXIT_FAILURE, "libipcc error: '%s' (0x%x %s / %s)",
+		    libipcc_errmsg(lih),
+		    lerr, libipcc_strerror(lerr),
+		    strerror(libipcc_syserr(lih)));
+	}
+
+	/* Note that it is safe to close the library handle here */
+	libipcc_fini(lih);
+
+        (void) printf("Base:   %s\en",
+            ether_ntoa_r(libipcc_mac_addr(mac), buf));
+        (void) printf("Count:  0x%x\en", libipcc_mac_count(mac));
+        (void) printf("Stride: 0x%x\en", libipcc_mac_stride(mac));
+        libipcc_mac_free(mac);
+}
+.Ed
+.Sh ERRORS
+When
+.Fn libipcc_mac_all ,
+.Fn libipcc_mac_bootstrap
+or
+.Fn libipcc_mac_nic
+return
+.Dv false ,
+the reason for the failure can be determined from the library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_fini 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc 3LIB

@@ -1,0 +1,166 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc
+.Nd IPCC support library
+.Sh LIBRARY
+.Lb libipcc
+.In libipcc.h
+.Sh DESCRIPTION
+The
+.Nm
+library provides consumers access to the Inter-Processor Communications Channel
+that enables issuing commands to, and retrieving data from, the platform
+Service Processor (SP) on Oxide hardware.
+.Sh INTERFACES
+The shared object
+.Pa libipcc.so.1
+provides the interfaces defined below.
+See
+.Xr Intro 3
+for additional information on shared object interfaces.
+Functions are organized into categories that describe their purpose.
+Individual functions are documented in their own manual pages.
+.Ss Opening, Closing
+The following routines are related to creating and releasing library handles.
+To use any of the other functions in the library, a handle must be acquired
+.Pq and subsequently released
+by these functions.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_init Ta Sy libipcc_fini
+.El
+.Ss Error Handling
+The following routines are used to interrogate a library handle
+.Po
+previously initialised via a call to
+.Sy libipcc_init
+.Pc ,
+in order to determine whether an error occurred, and any associated reason
+or error codes.
+Error information stored in the handle is invalidated by any call to a
+function other than those in this group.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_err Ta Sy libipcc_errmsg
+.It Sy libipcc_strerror Ta Sy libipcc_syserr
+.El
+.Ss System Identity
+The following routines are used to retrieve system identity information from
+the server's VPD
+.Pq Vital Product Data .
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_ident Ta Sy libipcc_ident_free
+.It Sy libipcc_ident_model Ta Sy libipcc_ident_rev
+.It Sy libipcc_ident_serial Ta
+.El
+.Ss Service processor registers
+The following routines retrieve values of various registers held within the
+service processor.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_startup_options Ta Sy libipcc_status
+.El
+.Ss Assigned MAC addresses
+The following routines retrieve information relating to MAC addresses which
+have been assigned to the system.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_mac_addr Ta Sy libipcc_mac_all
+.It Sy libipcc_mac_bootstrap Ta Sy libipcc_mac_count
+.It Sy libipcc_mac_free Ta Sy libipcc_mac_nic
+.It Sy libipcc_mac_stride Ta
+.El
+.Ss System Inventory
+The following routines retrieve data related to the system hardware inventory.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_inv Ta Sy libipcc_inv_data
+.It Sy libipcc_inv_free Ta Sy libipcc_inv_hdl_fini
+.It Sy libipcc_inv_hdl_init Ta Sy libipcc_inv_name
+.It Sy libipcc_inv_status_str Ta Sy libipcc_inv_type
+.El
+.Ss Key/Value Store Management
+The following routines retrieve and store data held against keys in the service
+processor.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_keylookup Ta Sy libipcc_keylookup_free
+.It Sy libipcc_keyset Ta
+.El
+.Ss Image Retrieval
+The following routines retrieve operating system image data.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_imageblock Ta
+.El
+.Sh LOCKING
+Most functions operate on a handle in the form of a
+.Vt "libipcc_handle_t *" .
+Unless otherwise indicated, the library does not provide any synchronization
+for different routines that are operating on the
+.Em same
+.Nm
+library handle.
+It is up to the caller to ensure that only a single thread is using a handle at
+any given time.
+Multiple threads may call
+.Nm
+library routines at the same time as long as each thread is using a different
+handle.
+.Sh ARCHITECTURE
+The
+.Nm
+functions are only available on the
+.Sy x86
+architecture and
+.Sy Oxide
+platform.
+.Sh INTERFACE STABILITY
+.Sy Private
+.Pp
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+.Sy MT-Safe with exceptions .
+See
+.Sx LOCKING .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_errmsg 3IPCC ,
+.Xr libipcc_fini 3IPCC ,
+.Xr libipcc_ident 3IPCC ,
+.Xr libipcc_ident_free 3IPCC ,
+.Xr libipcc_ident_model 3IPCC ,
+.Xr libipcc_ident_rev 3IPCC ,
+.Xr libipcc_ident_serial 3IPCC ,
+.Xr libipcc_imageblock 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc_inv 3IPCC ,
+.Xr libipcc_inv_data 3IPCC ,
+.Xr libipcc_inv_free 3IPCC ,
+.Xr libipcc_inv_hdl_fini 3IPCC ,
+.Xr libipcc_inv_hdl_init 3IPCC ,
+.Xr libipcc_inv_name 3IPCC ,
+.Xr libipcc_inv_status_str 3IPCC ,
+.Xr libipcc_inv_type 3IPCC ,
+.Xr libipcc_keylookup 3IPCC ,
+.Xr libipcc_keylookup_free 3IPCC ,
+.Xr libipcc_keyset 3IPCC ,
+.Xr libipcc_mac_addr 3IPCC ,
+.Xr libipcc_mac_all 3IPCC ,
+.Xr libipcc_mac_bootstrap 3IPCC ,
+.Xr libipcc_mac_count 3IPCC ,
+.Xr libipcc_mac_free 3IPCC ,
+.Xr libipcc_mac_nic 3IPCC ,
+.Xr libipcc_mac_stride 3IPCC ,
+.Xr libipcc_startup_options 3IPCC ,
+.Xr libipcc_status 3IPCC ,
+.Xr libipcc_strerror 3IPCC ,
+.Xr libipcc_syserr 3IPCC

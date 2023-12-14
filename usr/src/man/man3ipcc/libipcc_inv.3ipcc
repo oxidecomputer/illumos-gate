@@ -1,0 +1,388 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_IDENT_INV 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_inv ,
+.Nm libipcc_inv_data ,
+.Nm libipcc_inv_free ,
+.Nm libipcc_inv_hdl_fini ,
+.Nm libipcc_inv_hdl_init ,
+.Nm libipcc_inv_name ,
+.Nm libipcc_inv_status_str ,
+.Nm libipcc_inv_type
+.Nd Retrieve system inventory information from the Service Processor
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_inv_hdl_init
+.Fa "libipcc_handle_t *handle"
+.Fa "uint32_t *verp"
+.Fa "uint32_t *nentsp"
+.Fa "libipcc_inv_init_flag_t flags"
+.Fa "libipcc_inv_handle_t **invhandlep"
+.Fc
+.Ft void
+.Fo libipcc_inv_hdl_fini
+.Fa "libipcc_inv_handle_t *invhandle"
+.Fc
+.Ft bool
+.Fo libipcc_inv
+.Fa "libipcc_handle_t *handle"
+.Fa "libipcc_inv_handle_t *invhandle"
+.Fa "uint32_t index"
+.Fa "libipcc_inv_t **invp"
+.Fc
+.Ft libipcc_inv_status_t
+.Fo libipcc_inv_status
+.Fa "libipcc_inv_t *inv"
+.Fc
+.Ft uint8_t
+.Fo libipcc_inv_type
+.Fa "libipcc_inv_t *inv"
+.Fc
+.Ft "const uint8_t *"
+.Fo libipcc_inv_name
+.Fa "libipcc_inv_t *inv"
+.Fa "size_t *lenp"
+.Fc
+.Ft "const uint8_t *"
+.Fo libipcc_inv_data
+.Fa "libipcc_inv_t *inv"
+.Fa "size_t *lenp"
+.Fc
+.Ft void
+.Fo libippcc_inv_free
+.Fa "libipcc_inv_t *inv"
+.Fc
+.Ft "const char *"
+.Fo libipcc_inv_status_str
+.Fa "libipcc_inv_status_t status"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve information about system inventory from the Service
+Processor in Oxide hardware.
+.Pp
+The operations here use various opaque handles returned by the library.
+In summary:
+.Bl -tag -offset Sy -width indent
+.It Sy libipcc handle
+A library handle previously allocated via a call to
+.Xr libipcc_init 3IPCC .
+.It Sy inventory handle
+A handle representing the overall system inventory.
+.It Sy inventory item handle
+A handle representing an individual inventory item, part of the overall
+system inventory.
+.El
+.Pp
+An
+.Sy inventory item handle
+has an independent lifetime.
+That is, it may continue to be used after the
+.Sy inventory handle
+from which it was obtained is finalised via a call to
+.Fn libipcc_inv_hdl_fini ,
+and after the
+.Sy libipcc handle
+is closed via a call to
+.Fn libipcc_fini .
+.Pp
+The
+.Sy inventory handle
+lifetime is tied to that of
+.Sy libipcc handle .
+The
+.Sy libipcc handle
+must remain open as long as the
+.Sy inventory handle
+is in use.
+.Pp
+To retrieve inventory items, an
+.Sy inventory handle
+is obtained via a call to
+.Fn libipcc_inv_hdl_init .
+.Fa handle
+is a
+.Sy libipcc_handle
+previously obtained via a call to
+.Xr libipcc_init 3IPCC ,
+and
+.Fa invhandlep
+is a pointer to a variable which will receive the allocated
+.Sy inventory handle
+on successful completion.
+The
+.Fa verp
+and
+.Fa nentsp
+arguments point to variables which will be updated with the current
+inventory format version, and the number of entries in the overall system
+inventory, respectively.
+Values for
+.Fa flags
+are constructed by a bitwise inclusive-OR of the values below:
+.Bl -tag -width Dv
+.It Dv LIBIPCC_INV_INIT_CACHE
+Specify that the library should return cached inventory data.
+If this is not possible, for example due to the caller having insufficient
+privileges to maintain a global system cache, the flag will be ignored and no
+cache will be used.
+Otherwise, if there is no current cache, it will be fully populated as a
+result of this call.
+.El
+.Pp
+Once a
+.Sy inventory handle
+has been obtained, it can be used to retrieve
+.Sy inventory item handles
+that can in turn be interrogated to retrieve underlying information about the
+system hardware.
+.Pp
+An
+.Sy inventory item handle
+is retrieved via a call to
+.Fn libipcc_inv ,
+Providing a
+.Sy libipcc handle
+and
+.Sy inventory handle
+as
+.Fa handle
+and
+.Fa invhandle ,
+specifying the
+.Fa index
+of the desired inventory item
+.Po
+with
+.Fa index
+being between 0 and one less than the value that was stored in
+.Fa nentsp
+when retrieving the
+.Sy inventory handle
+\(em that is, in the range
+.Ql [0, Ns Fa nentsp Ns No \&)
+.Pc ,
+and setting
+.Fa invp
+to a location which will receive the
+.Sy inventory item handle .
+.Pp
+.Fn libipcc_inv_status
+returns the status of the item referenced by a
+.Sy inventory item handle .
+This is the status that was returned by the SP when the inventory item was
+requested from it, one of the following values:
+.Bl -tag -width indent
+.It Dv LIBIPCC_INV_STATUS_SUCCESS
+The inventory item was successfully retrieved.
+.It Dv LIBIPCC_INV_STATUS_INVALID_INDEX
+The supplied inventory item index is invalid
+.Pq out of range ,
+according to the SP.
+This value is not expected to be seen, and would mean something is
+inconsistent within the SP.
+A call to
+.Fn libipcc_inv
+with an index value outside the range originally provided by the SP is an
+error
+.Po
+.Fn libipcc_inv
+will return
+.Dv false
+.Pc .
+.It Dv LIBIPCC_INV_STATUS_IO_DEV_MISSING
+The inventory item index is valid, but the corresponding device is not found in
+the system.
+.It Dv LIBIPCC_INV_STATUS_IO_ERROR
+The inventory item index is valid, but an I/O error occurred when retrieving
+device information.
+.El
+.Pp
+The returned status value can be converted to a printable string, suitable
+for use in error messages, via a call to
+.Fn libipcc_inv_status_str .
+.Pp
+In the case that the inventory status is
+.Dv LIBIPCC_INV_STATUS_SUCCESS ,
+.Fn libipcc_inv_type ,
+.Fn libipcc_inv_name ,
+and
+.Fn libipcc_inv_data
+can be used to retrieve information from the inventory item handle.
+Interpretation of these values for each device type is a private interface
+between the SP and the Host, and is not documented here.
+Types returned from
+.Fn libipcc_inv_type
+must be interpreted in conjunction with the inventory version returned when
+the
+.Sy inventory handle
+was obtained.
+The data returned by
+.Fn libipcc_inv_name
+is guaranteed to be NUL-terminated; the variable pointed to by
+.Fa lenp
+will also be updated with the number of bytes that constitute the name,
+including the NUL terminator.
+.Fn libipcc_inv_data
+returns binary data which should be interpreted in conjunction with the
+inventory version and the type returned from
+.Fn libipcc_inv_type .
+The length of these data will be stored in the variable referenced by
+.Fa lenp .
+The pointers returned by
+.Fa libipcc_inv_name
+and
+.Fa libipcc_inv_type
+reference memory which is freed along with the inventory item.
+They must not be used following a call to
+.Fn libipcc_inv_free .
+.Pp
+When finished with an
+.Sy inventory item handle ,
+it should be freed via a call to
+.Fn libipcc_inv_free .
+When finished with an
+.Sy inventory handle ,
+it should be finalized via a call to
+.Fn libipcc_inv_hdl_fini .
+.Sh RETURN VALUES
+Upon successful completion
+.Fn libipcc_inv_hdl_init
+and
+.Fn libipcc_inv
+return either
+.Dv true
+and that the returned handles can be used for further operations.
+Otherwise, they return
+.Dv false
+and the libipcc handle will contains details of the reason for the failure
+which can be retrieved by interrogating the handle using the functions
+described in
+.Xr libipcc_err 3IPCC .
+.Pp
+.Fn libipcc_inv_status_str ,
+.Fn libipcc_inv_status ,
+.Fn libipcc_inv_type ,
+.Fn libipcc_inv_name
+and
+.Fn libipcc_inv_data
+always succeed.
+.Sh EXAMPLES
+.Sy Example 1
+Retrieve and display inventory types and names
+.Pp
+The following example shows how to retrieve and display the type code and
+name of each available inventory item.
+.Bd -literal -offset 2
+#include <err.h>
+#include <inttypes.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+	libipcc_inv_handle_t *invhandle;
+	uint32_t ver, nents;
+
+	if (!libipcc_inv_hdl_init(lih, &ver, &nents,
+	    LIBIPCC_INV_INIT_CACHE, &invhandle)) {
+		libipcc_err_t lerr = libipcc_err(lih);
+
+		errx(EXIT_FAILURE, "libipcc error: '%s' (0x%x %s / %s)",
+		    libipcc_errmsg(lih),
+		    lerr, libipcc_strerror(lerr),
+		    strerror(libipcc_syserr(lih)));
+	}
+
+	(void) printf("Inventory version %" PRIu32 "\en", ver);
+	(void) printf("Entry count %" PRIu32 "\en", nents);
+
+	for (uint32_t idx = 0; idx < nents; idx++) {
+		libipcc_inv_status_t status;
+		libipcc_inv_t *inv;
+
+		if (!libipcc_inv(lih, invhandle, idx, &inv)) {
+			libipcc_err_t lerr = libipcc_err(lih);
+
+			warnx("error retrieving inventory item %"
+			PRIu32 ": '%s' (0x%x %s / %s)",
+			   idx, libipcc_errmsg(lih),
+			    lerr, libipcc_strerror(lerr),
+			    strerror(libipcc_syserr(lih)));
+			continue;
+		}
+
+		status = libipcc_inv_status(inv);
+		switch (status) {
+		case LIBIPCC_INV_STATUS_SUCCESS: {
+			uint8_t *name;
+			size_t namelen;
+
+			name = libipcc_inv_name(inv, &namelen);
+			(void) printf("[%05d] Type %d - %.*s\en",
+			    idx, libipcc_inv_type(inv),
+			    namelen, name);
+			break;
+		}
+		default:
+			(void) printf("[%05d] Status %s\en",
+				libipcc_inv_status_str(inv));
+			break;
+		}
+
+		libipcc_inv_free(inv);
+	}
+
+	libipcc_inv_hdl_fini(invhandle);
+	libipcc_fini(lih);
+}
+.Ed
+.Sh ERRORS
+When
+.Fn libipcc_inv_hdl_init
+or
+.Fn libipcc_inv
+return
+.Dv false ,
+the reason for the failure can be determined from the library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_fini 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc 3LIB

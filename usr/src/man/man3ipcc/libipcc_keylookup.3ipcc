@@ -1,0 +1,182 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_KEYLOOKUP 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_keylookup ,
+.Nm libipcc_keylookup_free
+.Nd Retrieve a value from the Service Processor, corresponding to a key
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_keylookup
+.Fa "libipcc_handle_t *handle"
+.Fa "uint8_t key"
+.Fa "uint8_t **bufp"
+.Fa "size_t *buflenp"
+.Fa "libipcc_key_flag_t flags"
+.Fc
+.Ft void
+.Fo libipcc_keylookup_free
+.Fa "uint8_t *buf"
+.Fa "size_t buflen"
+.Fc
+.Sh DESCRIPTION
+.Fn libipcc_keylookup
+retrieves data from the Service Processor in Oxide hardware, corresponding to a
+specified
+.Fa key .
+.Pp
+Data are retrieved via a call to
+.Fn libipcc_keylookup ,
+passing in a libipcc
+.Fa handle
+obtained via a call to
+.Xr libipcc_init 3IPCC .
+.Pp
+A pre-allocated buffer can be passed to
+.Fn libipcc_keylookup
+and will be used to store the result on a successful operation.
+In this case,
+.Fa bufp
+must point to a pointer to the buffer, and
+.Fa buflenp
+must point to a variable which has been initialized with the size of that
+buffer.
+On successful return, the variable that
+.Fa buflenp
+points to will have been updated to reflect the amount of data that has been
+stored in the buffer.
+.Pp
+Alternatively, if
+.Fa bufp
+points to a pointer that has been set to
+.Dv NULL ,
+then the library will allocate a buffer to hold the result.
+In this case,
+.Fa buflep
+must point to a variable which has been initialized to 0.
+On successful return, the variable that
+.Fa bufp
+points to will have been updated to point to the allocated buffer, and that
+which
+.Fa buflenp
+points to will have been updated to reflect the amount of data that has been
+stored in that buffer.
+Once the buffer is no longer required, it should be freed using
+.Fn libipcc_keylookup_free .
+.Pp
+Values for
+.Fa flags
+are constructed by a bitwise inclusive-OR of the values below:
+.Bl -tag -width Dv
+.It Dv LIBIPCC_KEYF_COMPRESSED
+The data that the SP will return is expected to be in compressed form, and
+the library should attempt to decompress it, and return the uncompressed data
+to the caller.
+Note that this flag can only be used when the buffer is allocated by the
+library.
+.El
+.Pp
+The meaning of specific keys is a private interface between the caller and
+the SP, and is not documented here.
+However key
+.Sq 0
+is a ping query that can be used for testing, to which the SP always responds
+with the four-byte sequence
+.Dq pong .
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_keylookup
+returns
+.Dv true .
+Otherwise,
+.Dv false
+is returned and the libipcc handle will contains details of the reason for the
+failure which can be retrieved by interrogating the handle using the functions
+described in
+.Xr libipcc_err 3IPCC .
+.Sh EXAMPLES
+.Sy Example 1
+Retrieve the value corresponding to the
+.Sq ping
+key .
+.Pp
+The following example shows how to retrieve and display the SP's response
+to a lookup for the special
+.Sq ping
+key .
+.Bd -literal -offset 2
+#include <err.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+
+	uint8_t *buf = NULL;
+	size_t buflen = 0;
+
+	if (!libipcc_keylookup(lih, 0, &buf, &buflen, 0))
+		libipcc_err_t lerr = libipcc_err(lih);
+
+		errx(EXIT_FAILURE, "libipcc error: '%s' (0x%x %s / %s)",
+		    libipcc_errmsg(lih),
+	}
+
+	/*
+	 * Note that it is safe to close the library handle here as the
+	 * buffer lifetime is independent.
+	 */
+	libipcc_fini(lih);
+
+	(void) printf("Key lookup response: %.*s\en", buflen, buf);
+	libipcc_keylookup_free(buf, buflen);
+}
+.Ed
+.Sh ERRORS
+When
+.Fn libipcc_ident
+returns
+.Dv false ,
+the reason for the failure can be determined from the library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_fini 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc_keyset 3IPCC ,
+.Xr libipcc 3LIB

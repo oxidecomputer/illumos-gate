@@ -27,6 +27,7 @@
 # Copyright 2017 RackTop Systems.
 # Copyright 2018, Joyent, Inc.
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2024 Oxide Computer Company
 #
 
 <include system-library.man3.inc>
@@ -46,6 +47,7 @@
 <include system-library.man3ext.inc>
 <include system-library.man3fstyp.inc>
 <include system-library.man3gen.inc>
+<include system-library.man3ipcc.inc>
 <include system-library.man3kstat.inc>
 <include system-library.man3kvm.inc>
 <include system-library.man3jedec.inc>
@@ -1204,6 +1206,7 @@ dir  path=usr/share/man/man3exacct
 dir  path=usr/share/man/man3ext
 dir  path=usr/share/man/man3fstyp
 dir  path=usr/share/man/man3gen
+dir  path=usr/share/man/man3ipcc
 dir  path=usr/share/man/man3jedec
 dir  path=usr/share/man/man3kstat
 dir  path=usr/share/man/man3kvm

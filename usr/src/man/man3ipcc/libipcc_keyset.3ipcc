@@ -1,0 +1,91 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_KEYSET 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_keyset
+.Nd Store a value against a key in the Service Processor
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_keyset
+.Fa "libipcc_handle_t *handle"
+.Fa "uint8_t key"
+.Fa "uint8_t *buf"
+.Fa "size_t buflen"
+.Fa "libipcc_key_flag_t flags"
+.Fc
+.Sh DESCRIPTION
+.Fn libipcc_keyset
+stores data against a key in the Service Processor in Oxide hardware.
+.Pp
+Data are set via a call to
+.Fn libipcc_keyset ,
+passing in a libipcc
+.Fa handle
+obtained via a call to
+.Xr libipcc_init 3IPCC ,
+and providing the
+.Fa key
+against which data should be stored, along with the data itself in a buffer
+pointed to by
+.Fa buf
+with a length of
+.Fa buflen .
+.Pp
+.Fa flags
+are constructed by a bitwise inclusive-OR of the values below:
+.Bl -tag -width Dv
+.It Dv LIBIPCC_KEYF_COMPRESSED
+The data should be compressed prior to being sent to the SP for storage.
+.El
+.Pp
+The meaning of specific keys is a private interface between the caller and
+the SP, and is not documented here.
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_keyset
+returns
+.Dv true .
+Otherwise,
+.Dv false
+is returned and the libipcc handle will contains details of the reason for the
+failure which can be retrieved by interrogating the handle using the functions
+described in
+.Xr libipcc_err 3IPCC .
+.Sh ERRORS
+When
+.Fn libipcc_ident
+returns
+.Dv false ,
+the reason for the failure can be determined from the library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_fini 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc_keylookup 3IPCC ,
+.Xr libipcc 3LIB

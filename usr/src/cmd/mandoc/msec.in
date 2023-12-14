@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2024 Oxide Computer Company
  */
 
 LINE("1",		"User Commands")
@@ -46,6 +47,7 @@ LINE("3FSTYP",		"File System Type Identification Library Functions")
 LINE("3GEN",		"String Pattern-Matching Library Functions")
 LINE("3GSS",		"Generic Security Services API Library Functions")
 LINE("3HEAD",		"Headers")
+LINE("3IPCC",		"IPCC Support Library Functions")
 LINE("3ISCSIT",		"iSCSI Management Library Functions")
 LINE("3JEDEC",		"JEDEC Support Library Functions")
 LINE("3KRB",		"Kerberos Library Functions")

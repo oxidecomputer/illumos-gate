@@ -14,6 +14,7 @@
 # Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2020 Joyent, Inc.
 # Copyright 2023 Peter Tribble
+# Copyright 2024 Oxide Computer Company
 #
 
 include		$(SRC)/Makefile.master
@@ -52,6 +53,7 @@ MANFILES=	libMPAPI.3lib		\
 		libgen.3lib		\
 		libgss.3lib		\
 		libintl.3lib		\
+		libipcc.3lib		\
 		libiscsit.3lib		\
 		libjedec.3lib		\
 		libkmf.3lib		\

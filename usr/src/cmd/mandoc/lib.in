@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2014 Garrett D'Amore <garrett@damore.org>
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -40,6 +41,7 @@ LINE("libfcoe",		"FCoE Port Management Library (libfcoe, \\-lfcoe)")
 LINE("libfstyp",	"File System Type Identification Library (libfstyp, \\-lfstyp \\-lnvpair)")
 LINE("libgen",		"String Pattern Matching Library (libgen, \\-lgen)")
 LINE("libgss",		"Generic Security Services Library (libgss, \\-lgss)")
+LINE("libipcc",		"IPCC Support Library Functions (libipcc, \\-lipcc)")
 LINE("libiscsit",	"iSCSI Management Library (libiscsit, \\-liscsit)")
 LINE("libjedec",	"JEDEC Support Library Functions (libjedec, \\-ljedec)")
 LINE("libkstat",	"Kernel Statistics Library (libkstat, \\-lkstat)")

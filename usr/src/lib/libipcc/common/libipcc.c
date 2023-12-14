@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -225,7 +225,7 @@ libipcc_init(libipcc_handle_t **lihp, libipcc_err_t *libipcc_errp,
 
 	if (lih->lih_version != SUPPORTED_IPCC_VERSION) {
 		(void) libipcc_init_error(libipcc_errp, syserrp, errmsg,
-		    errlen, LIBIPCC_ERR_INTERNAL, errno,
+		    errlen, LIBIPCC_ERR_INTERNAL, 0,
 		    "unsupported kernel IPCC version; got %u, need %u",
 		    lih->lih_version, SUPPORTED_IPCC_VERSION);
 		free(lih);

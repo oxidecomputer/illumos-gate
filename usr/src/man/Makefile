@@ -13,6 +13,7 @@
 # Copyright 2011, Richard Lowe
 # Copyright (c) 2012, Igor Kozhukhov <ikozhukhov@gmail.com>
 # Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2024 Oxide Computer Company
 #
 
 SUBDIRS=	man1		\
@@ -44,6 +45,7 @@ SUBDIRS=	man1		\
 		man3gen		\
 		man3gss		\
 		man3head	\
+		man3ipcc	\
 		man3iscsit	\
 		man3kstat	\
 		man3kvm		\

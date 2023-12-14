@@ -13,6 +13,7 @@
 # Copyright 2011, Richard Lowe
 # Copyright 2012 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2020 Joyent, Inc.
+# Copyright 2024 Oxide Computer Company
 #
 
 file path=usr/share/man/man3lib/libadm.3lib
@@ -39,6 +40,7 @@ file path=usr/share/man/man3lib/libform.3lib
 file path=usr/share/man/man3lib/libfstyp.3lib
 file path=usr/share/man/man3lib/libgen.3lib
 file path=usr/share/man/man3lib/libintl.3lib
+file path=usr/share/man/man3lib/libipcc.3lib
 file path=usr/share/man/man3lib/libjedec.3lib
 file path=usr/share/man/man3lib/libkmf.3lib
 file path=usr/share/man/man3lib/libkstat.3lib

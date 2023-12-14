@@ -1,0 +1,178 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_IDENT 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_ident ,
+.Nm libipcc_ident_serial ,
+.Nm libipcc_ident_model ,
+.Nm libipcc_ident_rev ,
+.Nm libipcc_ident_free
+.Nd Retrieve VPD identity information
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_ident
+.Fa "libipcc_handle_t *handle"
+.Fa "libipcc_ident_t **identp"
+.Fc
+.Ft "const uint8_t *"
+.Fo libipcc_ident_serial
+.Fa "libipcc_ident_t *ident"
+.Fc
+.Ft "const uint8_t *"
+.Fo libipcc_ident_model
+.Fa "libipcc_ident_t *ident"
+.Fc
+.Ft uint32_t
+.Fo libipcc_ident_rev
+.Fa "libipcc_ident_t *ident"
+.Fc
+.Ft void
+.Fo libipcc_ident_free
+.Fa "libipcc_ident_t *ident"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve Vital Product Data
+.Pq VPD
+from the Service Processor in Oxide hardware.
+.Pp
+An
+.Sy ident handle
+is retrieved via a call to
+.Fn libipcc_ident ,
+passing in a libipcc
+.Fa handle
+obtained via a call to
+.Xr libipcc_init 3IPCC ,
+and then that
+.Sy ident handle
+can be interrogated to retrieve information about the system's serial number,
+model and revision.
+When finished with, the
+.Sy ident handle
+should be freed via a call to
+.Fn libipcc_ident_free .
+.Pp
+.Fn libipcc_ident_serial
+and
+.Fn libipcc_ident_model
+return a pointer to the serial number and model information from the VPD,
+respectfully.
+The returned data are guaranteed to be NUL-terminated.
+.Pp
+.Fn libipcc_ident_rev
+returns the revision information from the VPD.
+.Pp
+Note that the
+.Sy ident handle
+lifetime is separate to that of the
+.Vt "libipcc_ident_t *"
+handle.
+That is, the
+.Sy ident handle
+may continue to be used after the library handle is closed via a call to
+.Xr libipcc_fini 3IPCC
+as shown in the example below.
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_ident
+returns
+.Dv true
+and
+.Fa identp
+is updated to point to a newly allocated
+.Sy ident handle .
+Otherwise,
+.Dv false
+is returned and the libipcc handle will contains details of the reason for the
+failure which can be retrieved by interrogating the handle using the functions
+described in
+.Xr libipcc_err 3IPCC .
+.Pp
+.Fn libipcc_ident_serial ,
+.Fn libipcc_ident_model
+and
+.Fn libipcc_rev
+always succeed and return the requested data as described above.
+.Sh EXAMPLES
+.Sy Example 1
+Retrieve and display vital product data.
+.Pp
+The following example shows how to retrieve and display the VPD information.
+.Bd -literal -offset 2
+#include <inttypes.h>
+#include <err.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_err_t lerr;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+	libipcc_ident_t *ident;
+
+	if (!libipcc_ident(lih, &ident)) {
+		libipcc_err_t lerr = libipcc_err(lih);
+
+		errx(EXIT_FAILURE, "libipcc error: '%s' (0x%x %s / %s)",
+		    libipcc_errmsg(lih),
+		    lerr, libipcc_strerror(lerr),
+		    strerror(libipcc_syserr(lih)));
+	}
+
+	/*
+	 * Note that it is safe to close the library handle here as the
+	 * ident handle lifetime is independent.
+	 */
+	libipcc_fini(lih);
+
+	(void) printf("Serial: %s\en",libipcc_ident_serial(ident));
+	(void) printf("Model: %s\en", libipcc_ident_model(ident));
+	(void) printf("Rev: %" PRId32 "\en", libipcc_ident_rev(ident));
+	libipcc_ident_free(ident);
+}
+.Ed
+.Sh ERRORS
+When
+.Fn libipcc_ident
+returns
+.Dv false ,
+the reason for the failure can be determined from the library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_fini 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc 3LIB

@@ -1,0 +1,87 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd December 13, 2023
+.Dt LIBIPCC_IMAGEBLOCK 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_imageblock
+.Nd Attempt retrieval of a phase 2 image block served by the service processor
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_imageblock
+.Fa "libipcc_handle_t *handle"
+.Fa "uint8_t *hash"
+.Fa "size_t hashlen"
+.Fa "uint64_t offset"
+.Fa "uint8_t *buf"
+.Fa "size_t *lenp"
+.Fc
+.Sh DESCRIPTION
+.Fn libipcc_imageblock
+attempts to retrieve a range of bytes from the phase 2 OS image currently being
+served by the Service Processor in Oxide hardware.
+.Pp
+Data for the image identified by the cryptographic hash
+.Fa hash
+with length
+.Fa hashlen
+at offset
+.Fa offset
+are retrieved via a call to
+.Fn libipcc_imageblock ,
+passing in a libipcc handle previously obtained via a call to
+.Xr libipcc_init 3IPCC .
+The returned data are stored in the buffer pointed to by
+.Fa buf
+and the variable pointed to by
+.Fa lenp
+is updated to reflect the amount of data placed into the buffer.
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_imageblock
+returns
+.Dv true
+and the variable pointed to by
+.Fa lenp
+will reflect the amount of successfully retrieved data.
+Otherwise, it returns
+.Dv false
+and the libipcc handle will contains details of the reason for the failure
+which can be retrieved by interrogating the handle using the functions
+described in
+.Xr libipcc_err 3IPCC .
+.Sh ERRORS
+When
+.Fn libipcc_imageblock
+returns
+.Dv false ,
+the reason for the failure can be determined from the library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_fini 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc 3LIB
