@@ -20,7 +20,7 @@
 #include <sys/bitext.h>
 
 /*
- * Definitions that relate to parsing and understanding the Genoa APOB
+ * Definitions that relate to parsing and understanding the Genoa APOB.
  */
 
 #ifdef __cplusplus

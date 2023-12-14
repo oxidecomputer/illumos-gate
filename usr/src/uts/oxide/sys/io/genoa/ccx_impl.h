@@ -66,7 +66,7 @@ extern "C" {
  * the thread's APIC ID register.  The one we compute and store here is the one
  * set by firmware before boot.
  */
-#define	GENOA_MAX_CCDS_PER_IODIE	8
+#define	GENOA_MAX_CCDS_PER_IODIE	12
 #define	GENOA_MAX_CCXS_PER_CCD		1
 #define	GENOA_MAX_CORES_PER_CCX		8
 #define	GENOA_MAX_THREADS_PER_CORE	2
