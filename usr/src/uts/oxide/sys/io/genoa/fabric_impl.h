@@ -50,19 +50,22 @@ extern "C" {
  */
 #define	GENOA_FABRIC_MAX_DIES_PER_SOC	1
 
+/*
+ * The ID of the first CCM in the SoC.
+ */
 #define	GENOA_DF_FIRST_CCM_ID	16
 
 /*
  * This is the number of IOMS instances that we know are supposed to exist per
  * die.
  */
-#define	GENOA_IOMS_PER_IODIE	4
+#define	GENOA_IOMS_PER_IODIE	2
 
 /*
- * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to three
+ * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to four
  * cores, but only the one with the WAFL link has core number 2.
  */
-#define	GENOA_IOMS_MAX_PCIE_CORES	3
+#define	GENOA_IOMS_MAX_PCIE_CORES	4
 #define	GENOA_IOMS_WAFL_PCIE_CORENO	2
 
 /*

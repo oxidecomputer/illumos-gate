@@ -19,7 +19,7 @@
  *
  * The following table has the general mapping of logical ports and engines to
  * the corresponding lanes and other properties. This is currently valid for all
- * SP3 systems and the ports are ordered based on how hardware and the SMN
+ * SP5 systems and the ports are ordered based on how hardware and the SMN
  * expect them.
  *
  * PORT	REV	PHYS	DXIO	1P BUS	2P BUS
