@@ -14,26 +14,26 @@
  */
 
 /*
- * Various routines and things to access, initialize, understand, and manage
- * Genoa's I/O fabric. This consists of both the data fabric and the
- * northbridges.
+ * Code to access, initialize, inspect, and manage Genoa's I/O fabric,
+ * consisting of the data fabric and northbridges.
  *
  * --------------------------------------
  * Physical Organization and Nomenclature
  * --------------------------------------
  *
- * In AMD's Zen 2 and 3 designs, the CPU socket is organized as a series of
- * chiplets with a series of compute complexes and then a central I/O die.
- * uts/intel/os/cpuid.c has an example of what this looks like. Critically, this
- * I/O die is the major device that we are concerned with here as it bridges the
- * cores to basically the outside world through a combination of different
+ * In AMD's Zen 2, 3, and 4 designs, the CPU socket is organized as a series of
+ * chiplets with a series of compute complexes coupled to a central I/O die; see
+ * uts/intel/os/cpuid.c has an example.
+ *
+ * The I/O die is the major device that we are concerned with here as it
+ * bridges the cores to the rest of the system through a combination of
  * devices and I/O paths.  The part of the I/O die that we will spend most of
  * our time dealing with is the "northbridge I/O unit", or NBIO.  In DF (Zen
  * data fabric) terms, NBIOs are a class of device called an IOMS (I/O
  * master-slave).  These are represented in our fabric data structures as
- * subordinate to an I/O die.  On Genoa processors, each I/O die has 4 NBIO
+ * subordinate to an I/O die.  On Genoa processors, each I/O die has 2 NBIO
  * instances; other processor families have these in differing number or
- * organisation.  Since we're interested in Zen 3 here (and since Zen 2 and 4
+ * organization.  Since we're interested in Zen 4 here (and since Zen 2 and 3
  * are very similar), let's expand the I/O Die portion of the Zen 2 diagram from
  * cpuid.c:
  *

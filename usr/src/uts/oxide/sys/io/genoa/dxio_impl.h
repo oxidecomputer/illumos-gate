@@ -63,7 +63,7 @@ typedef enum zen_dxio_anc_type {
 } zen_dxio_anc_type_t;
 
 /*
- * Structures defined here are expected to be packed here by firmware.
+ * Structures defined here are expected to be packed by firmware.
  */
 #pragma	pack(1)
 typedef struct zen_dxio_anc_data {
