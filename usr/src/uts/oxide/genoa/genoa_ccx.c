@@ -281,6 +281,18 @@ genoa_thread_feature_init(void)
 	v = rdmsr(MSR_AMD_CPUID_7_FEATURES);
 	v = AMD_CPUID_7_FEATURES_SET_RTM(v, 0);
 	v = AMD_CPUID_7_FEATURES_SET_HLE(v, 0);
+
+	/*
+	 * While the RDSEED instruction does exist on these processors and can
+	 * work, it is not actually implemented by the Zen3 core.  Instead, one
+	 * must configure an MMIO aperture for the PSP and then a separate MSR
+	 * to allow the core to access it, through which the instruction
+	 * operates; without this, it always returns 0 with CF clear.  As we
+	 * don't currently have the infrastructure to set this up, we want to
+	 * inform software that the instruction doesn't work to encourage it to
+	 * obtain entropy by other means.
+	 */
+	v = AMD_CPUID_7_FEATURES_SET_RDSEED(v, 0);
 	if (chiprev_matches(chiprev, X86_CHIPREV_AMD_GENOA_B0))
 		v = AMD_CPUID_7_FEATURES_SET_ERMS(v, 0);
 	else
