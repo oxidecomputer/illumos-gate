@@ -2242,8 +2242,7 @@ usr/src/cmd/troff/troff.d/makedev
 usr/src/cmd/troff/troff.d/ta
 usr/src/cmd/troff/troff.d/troff
 usr/src/cmd/true/true
-usr/src/cmd/truss/amd64/truss
-usr/src/cmd/truss/i386/truss
+usr/src/cmd/truss/truss
 usr/src/cmd/tsol/atohexlabel/atohexlabel
 usr/src/cmd/tsol/getlabel/getlabel
 usr/src/cmd/tsol/getzonepath/getzonepath
@@ -6521,6 +6520,7 @@ usr/src/man/man3proc/proc_finistdio.3proc
 usr/src/man/man3proc/proc_flushstdio.3proc
 usr/src/man/man3proc/proc_free_priv.3proc
 usr/src/man/man3proc/proc_get_ldt.3proc
+usr/src/man/man3proc/proc_get_lwpstatus.3proc
 usr/src/man/man3proc/proc_lwp_range_valid.3proc
 usr/src/man/man3proc/proc_signame.3proc
 usr/src/man/man3proc/proc_sigset2str.3proc
