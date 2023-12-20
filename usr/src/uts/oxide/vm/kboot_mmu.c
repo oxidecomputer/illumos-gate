@@ -159,7 +159,7 @@ uint_t kbm_nucleus_size = TWO_MEG;
  * fairly tightly bound to the previous discussion of the VA space at this
  * moment in time.
  *
- * We assume in the absence of evidence to the contrary that LOADER_PHYS_LIMIT
+ * We assume in the absence of evidence to the contrary that LOADER_PHYSLIMIT
  * is the lowest physical address guaranteed not to be used by any part of the
  * loader we might need to preserve, and that every physical address below it
  * addresses RAM.  That is true on every implementation we know about; it is

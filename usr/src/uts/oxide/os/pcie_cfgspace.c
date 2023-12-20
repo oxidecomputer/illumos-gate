@@ -22,7 +22,7 @@
  * we will unmap that and leverage addresses from the device arena once that has
  * been set up.
  *
- * Configuration space is accessed by constructing and addresss that has the
+ * Configuration space is accessed by constructing an address that has the
  * bits arranged in the following pattern to indicate what the bus, device,
  * function, and register is:
  *
@@ -32,7 +32,7 @@
  *	reg[11:0]	addr[11:0]
  *
  * The CPU does not generally support 64-bit accesses, which means that a 64-bit
- * access requires us to write the lower 32-bits followed by the uppwer 32-bits.
+ * access requires us to write the lower 32-bits followed by the upper 32-bits.
  */
 
 #include <sys/machparam.h>
