@@ -2979,6 +2979,64 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 }
 
 /*
+ * XXX: Copied from <sys/pci_impl.h> to avoid clashing memlist_insert defs
+ */
+#define	PCI_CONFADD		0xcf8
+#define	PCI_CONFDATA		0xcfc
+#define	PCI_CONE		0x80000000
+/*
+ * Like PCI_CADDR1, but allows for access to extended configuration space.
+ * If `DF::CoreMasterAccessCtrl[EnableCf8ExtCfg]` is enabled, the usually
+ * reserved bits 27:24 are set to bits 11:8 of the register offset.
+ */
+#define	PCI_CADDR1_EXT(b, d, f, r) \
+		(PCI_CONE | ((((r) >> 8) & 0xf) << 24) | (((b) & 0xff) << 16) \
+			    | (((d & 0x1f)) << 11) | (((f) & 0x7) << 8) \
+			    | ((r) & 0xfc))
+
+static void
+genoa_df_mech1_write32(df_reg_def_t reg, uint32_t val)
+{
+	outl(PCI_CONFADD, PCI_CADDR1_EXT(AMDZEN_DF_BUSNO,
+	    AMDZEN_DF_FIRST_DEVICE, reg.drd_func, reg.drd_reg));
+	outl(PCI_CONFDATA, val);
+}
+
+/*
+ * Genoa seems to require that whatever address we set for PCI MMIO
+ * access (via `Core::X86::Msr::MmioCfgBaseAddr`) matches DF registers
+ * `DF::MmioPciCfg{Base,Limit}Addr{,Ext}` as set by the firmware on
+ * startup (see `APCB_TOKEN_UID_DF_PCI_MMIO{,_HI}_BASE` and
+ * `APCB_TOKEN_UID_DF_PCI_MMIO_SIZE`).
+ * But rather than require some fixed address in either the firmware or
+ * the OS, we'll update the DF registers to match the address we've
+ * chosen. This does present a bit of a chicken-and-egg problem since
+ * we've not setup PCIe configuration space yet, so instead we resort to
+ * the classic PCI Configuration Mechanism #1 via x86 I/O ports.
+ */
+static void
+genoa_df_set_mmio_pci_cfg_space(uint64_t ecam_base)
+{
+	uint32_t val;
+	uint64_t ecam_limit = ecam_base + PCIE_CFGSPACE_SIZE - (1*1024*1024);
+
+	val = DF_MMIO_PCI_BASE_V4_SET_EN(0, 1);
+	val = DF_MMIO_PCI_BASE_V4_SET_ADDR(val,
+	    ((uint32_t)ecam_base) >> DF_MMIO_PCI_BASE_ADDR_SHIFT);
+	genoa_df_mech1_write32(DF_MMIO_PCI_BASE_V4, val);
+
+	val = DF_MMIO_PCI_BASE_EXT_V4_SET_ADDR(0, ecam_base >> 32);
+	genoa_df_mech1_write32(DF_MMIO_PCI_BASE_EXT_V4, val);
+
+	val = DF_MMIO_PCI_LIMIT_V4_SET_ADDR(0,
+	    ((uint32_t)ecam_limit) >> DF_MMIO_PCI_LIMIT_ADDR_SHIFT);
+	genoa_df_mech1_write32(DF_MMIO_PCI_LIMIT_V4, val);
+
+	val = DF_MMIO_PCI_LIMIT_EXT_V4_SET_ADDR(0, ecam_limit >> 32);
+	genoa_df_mech1_write32(DF_MMIO_PCI_LIMIT_EXT_V4, val);
+}
+
+/*
  * Right now we're running on the boot CPU. We know that a single socket has to
  * be populated. Our job is to go through and determine what the rest of the
  * topology of this system looks like in terms of the data fabric, north
@@ -3011,6 +3069,7 @@ genoa_fabric_topo_init(void)
 	    GENOA_PHYSADDR_IOMMU_HOLE_END), PCIE_CFGSPACE_ALIGN);
 	fabric->gf_mmio64_base = fabric->gf_ecam_base + PCIE_CFGSPACE_SIZE;
 
+	genoa_df_set_mmio_pci_cfg_space(fabric->gf_ecam_base);
 	pcie_cfgspace_init();
 
 	syscfg = genoa_df_early_read32(DF_SYSCFG_V4);
