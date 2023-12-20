@@ -808,9 +808,9 @@ extern "C" {
  * and above 4 GiB respectively. These have existed since family 0xf.
  */
 #define	MSR_AMD_TOM				0xc001001a
-#define	MSR_AMD_TOM_MASK(x)			((x) & 0xffffff800000)
+#define	MSR_AMD_TOM_MASK(x)			((x) & 0xfffffff800000)
 #define	MSR_AMD_TOM2				0xc001001d
-#define	MSR_AMD_TOM2_MASK(x)			((x) & 0xffffff800000)
+#define	MSR_AMD_TOM2_MASK(x)			((x) & 0xfffffff800000)
 
 #define	MCI_CTL_VALUE		0xffffffff
 
