@@ -1352,7 +1352,7 @@ genoa_df_read32(genoa_iodie_t *iodie, uint8_t inst, const df_reg_def_t def)
 	val = DF_FICAA_V2_SET_FUNC(val, def.drd_func);
 	val = DF_FICAA_V2_SET_INST(val, inst);
 	val = DF_FICAA_V2_SET_64B(val, 0);
-	val = DF_FICAA_V2_SET_REG(val, def.drd_reg >> 2);
+	val = DF_FICAA_V4_SET_REG(val, def.drd_reg >> 2);
 
 	ASSERT0(ficaa.drd_reg & 3);
 	pci_putl_func(0, iodie->gi_dfno, ficaa.drd_func, ficaa.drd_reg, val);
