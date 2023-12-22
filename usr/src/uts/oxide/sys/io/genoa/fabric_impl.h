@@ -56,10 +56,22 @@ extern "C" {
 #define	GENOA_DF_FIRST_CCM_ID	16
 
 /*
- * This is the number of IOMS instances that we know are supposed to exist per
+ * This is the number of IO[MS] (IOHUB[MS]) instances that we know are supposed
+ * to exist per NBIO.
+ */
+#define	GENOA_IOMS_PER_NBIO	2
+
+/*
+ * This is the number of NBIO instances that we know are supposed to exist per
  * die.
  */
-#define	GENOA_IOMS_PER_IODIE	2
+#define	GENOA_NBIO_PER_IODIE	2
+
+/*
+ * This is the number of IO[MS] instances that we know are supposed to exist per
+ * die.
+ */
+#define	GENOA_IOMS_PER_IODIE	(GENOA_IOMS_PER_NBIO*GENOA_NBIO_PER_IODIE)
 
 /*
  * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to four
@@ -69,12 +81,17 @@ extern "C" {
 #define	GENOA_IOMS_WAFL_PCIE_CORENO	2
 
 /*
- * Per the PPR, the following defines the first enry for the Genoa IOMS.
+ * Per the PPR, the following defines the first Instance & Component IDs for the
+ * Genoa IOMs (IOMx_IOHUBMx) & IOS (IOHUBSx) instances.
  */
-#define	GENOA_DF_FIRST_IOMS_ID	24
+#define	GENOA_DF_FIRST_IOM_INST_ID	0x20
+#define	GENOA_DF_FIRST_IOM_COMP_ID	0x78
+
+#define	GENOA_DF_FIRST_IOS_INST_ID	0x24
+#define	GENOA_DF_FIRST_IOS_COMP_ID	0x20
 
 /*
- * This indicates the ID number of the IOMS instance that happens to have the
+ * This indicates the ID number of the IOS instance that happens to have the
  * FCH present.
  */
 #define	GENOA_IOMS_HAS_FCH	3
@@ -114,8 +131,12 @@ struct genoa_ioms {
 	genoa_ioms_flag_t	gio_flags;
 	uint16_t		gio_pci_busno;
 	uint8_t			gio_num;
-	uint8_t			gio_fabric_id;
-	uint8_t			gio_comp_id;
+	uint8_t			gio_iom_fabric_id;
+	uint8_t			gio_iom_comp_id;
+	uint8_t			gio_iom_inst_id;
+	uint8_t			gio_ios_fabric_id;
+	uint8_t			gio_ios_comp_id;
+	uint8_t			gio_ios_inst_id;
 	uint8_t			gio_npcie_cores;
 	uint8_t			gio_nnbifs;
 	genoa_pcie_core_t	gio_pcie_cores[GENOA_IOMS_MAX_PCIE_CORES];

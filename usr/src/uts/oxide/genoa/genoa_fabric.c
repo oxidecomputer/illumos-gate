@@ -1186,7 +1186,10 @@ genoa_fabric_find_ioms_cb(genoa_ioms_t *ioms, void *arg)
 {
 	genoa_fabric_find_ioms_t *mffi = arg;
 
-	if (mffi->mffi_dest == ioms->gio_fabric_id) {
+	/*
+	 * Note the DstFabricId is for the IOS and not the IOM.
+	 */
+	if (mffi->mffi_dest == ioms->gio_ios_fabric_id) {
 		mffi->mffi_ioms = ioms;
 	}
 
@@ -3078,12 +3081,13 @@ genoa_fabric_topo_init(void)
 
 	/*
 	 * These are used to ensure that we're on a platform that matches our
-	 * expectations. These are generally constraints of Rome, Milan and
-	 * Genoa.
+	 * expectations.
 	 */
 	VERIFY3U(nsocs, ==, DF_COMPCNT_V4_GET_PIE(syscomp));
 	VERIFY3U(nsocs * GENOA_IOMS_PER_IODIE, ==,
 	    DF_COMPCNT_V4_GET_IOM(syscomp));
+	VERIFY3U(nsocs * GENOA_IOMS_PER_IODIE, ==,
+	    DF_COMPCNT_V4_GET_IOS(syscomp));
 
 	/*
 	 * Gather the register masks for decoding global fabric IDs into local
@@ -3141,16 +3145,48 @@ genoa_fabric_topo_init(void)
 
 			ioms->gio_num = iomsno;
 			ioms->gio_iodie = iodie;
-			ioms->gio_comp_id = GENOA_DF_FIRST_IOMS_ID + iomsno;
-			ioms->gio_fabric_id = ioms->gio_comp_id |
+
+			/*
+			 * Determine the Instance, Component & Fabric IDs for
+			 * the corresponding IOM and IOS instances.
+			 *
+			 * XXX: Verify
+			 * 	IO[MS]0 => NBIO 0, IOHC 0
+			 * 	IO[MS]1 => NBIO 0, IOHC 1
+			 * 	IO[MS]2 => NBIO 1, IOHC 0
+			 * 	IO[MS]3 => NBIO 1, IOHC 1
+			 *
+			 * XXX: Just find the FabricId via
+			 * DF::FabricBlockInstanceInformation3_CSNCSPIEALLM and
+			 * DF::FabricBlockInstanceInformation3_IOS
+			 */
+
+			ioms->gio_iom_inst_id = GENOA_DF_FIRST_IOM_INST_ID
+			    + iomsno;
+			/* XXX: don't seem to need the IOM's FabricID ? */
+			ioms->gio_iom_comp_id = GENOA_DF_FIRST_IOM_COMP_ID
+			    + iomsno;
+			ioms->gio_iom_fabric_id = ioms->gio_iom_comp_id |
 			    (iodie->gi_node_id << fabric->gf_node_shift);
 
-			val = genoa_df_read32(iodie, ioms->gio_comp_id,
+			ioms->gio_ios_inst_id = GENOA_DF_FIRST_IOS_INST_ID
+			    + iomsno;
+			ioms->gio_ios_comp_id = GENOA_DF_FIRST_IOS_COMP_ID
+			    + iomsno;
+			ioms->gio_ios_fabric_id = ioms->gio_ios_comp_id |
+			    (iodie->gi_node_id << fabric->gf_node_shift);
+
+			/*
+			 * Grab the bus number for the IO Link from the IOS
+			 */
+			val = genoa_df_read32(iodie, ioms->gio_ios_inst_id,
 			    DF_CFG_ADDR_CTL_V4);
 			ioms->gio_pci_busno = DF_CFG_ADDR_CTL_GET_BUS_NUM(val);
 
 			/*
 			 * Only IOMS 0 has a WAFL port.
+			 *
+			 * XXX: Verify
 			 */
 			ioms->gio_npcie_cores = genoa_nbio_n_pcie_cores(iomsno);
 			if (iomsno == GENOA_IOMS_HAS_WAFL) {
@@ -3158,6 +3194,12 @@ genoa_fabric_topo_init(void)
 			}
 			ioms->gio_nnbifs = GENOA_IOMS_MAX_NBIF;
 
+			/*
+			 * Only IOMS 3 has an FCH.
+			 *
+			 * XXX: Don't need to hardcode?
+			 *     DF::SpecialSysFunctionFabricID2[FchIOSFabricID]
+			 */
 			if (iomsno == GENOA_IOMS_HAS_FCH) {
 				ioms->gio_flags |= GENOA_IOMS_F_HAS_FCH;
 			}
@@ -4946,20 +4988,21 @@ genoa_fabric_init_memlists(genoa_ioms_t *ioms, void *arg)
  * We make an assumption here, which is that each DF instance has been
  * programmed the same way by the PSP/SMU (which if was not done would lead to
  * some chaos). As such, we end up using the first socket's df and its first
- * IOMS to figure this out.
+ * IOM to figure this out.
  */
 static void
 genoa_route_pci_bus(genoa_fabric_t *fabric)
 {
 	genoa_iodie_t *iodie = &fabric->gf_socs[0].gs_iodies[0];
-	uint_t inst = iodie->gi_ioms[0].gio_comp_id;
+	uint_t inst = iodie->gi_ioms[0].gio_iom_inst_id;
 
 	for (uint_t i = 0; i < DF_MAX_CFGMAP; i++) {
 		int ret;
 		genoa_ioms_t *ioms;
 		ioms_memlists_t *imp;
 		uint32_t base, limit, dest;
-		uint32_t val = genoa_df_read32(iodie, inst, DF_CFGMAP_V2(i));
+		uint32_t val = genoa_df_read32(iodie, inst,
+		    DF_CFGMAP_BASE_V4(i));
 
 		/*
 		 * If a configuration map entry doesn't have both read and write
@@ -4967,14 +5010,16 @@ genoa_route_pci_bus(genoa_fabric_t *fabric)
 		 * There is no validity bit here, so this is the closest that we
 		 * can come to.
 		 */
-		if (DF_CFGMAP_V2_GET_RE(val) == 0 ||
-		    DF_CFGMAP_V2_GET_WE(val) == 0) {
+		if (DF_CFGMAP_BASE_V4_GET_RE(val) == 0 ||
+		    DF_CFGMAP_BASE_V4_GET_WE(val) == 0) {
 			continue;
 		}
 
-		base = DF_CFGMAP_V2_GET_BUS_BASE(val);
-		limit = DF_CFGMAP_V2_GET_BUS_LIMIT(val);
-		dest = DF_CFGMAP_V3P5_GET_DEST_ID(val);
+		base = DF_CFGMAP_BASE_V4_GET_BASE(val);
+
+		val = genoa_df_read32(iodie, inst, DF_CFGMAP_LIMIT_V4(i));
+		limit = DF_CFGMAP_LIMIT_V4_GET_LIMIT(val);
+		dest = DF_CFGMAP_LIMIT_V4_GET_DEST_ID(val);
 
 		ioms = genoa_fabric_find_ioms(fabric, dest);
 		if (ioms == NULL) {
@@ -5052,7 +5097,7 @@ genoa_io_ports_allocate(genoa_ioms_t *ioms, void *arg)
 
 	mri->mri_limits[mri->mri_cur] = mri->mri_bases[mri->mri_cur] +
 	    mri->mri_per_ioms - 1;
-	mri->mri_dests[mri->mri_cur] = ioms->gio_fabric_id;
+	mri->mri_dests[mri->mri_cur] = ioms->gio_ios_fabric_id;
 
 	/*
 	 * We must always have some I/O port space available for PCI.  The PCI
@@ -5233,7 +5278,7 @@ genoa_mmio_allocate(genoa_ioms_t *ioms, void *arg)
 	 * reserve a small amount of space for general use and give the rest to
 	 * PCI.  If there's not enough, we give it all to PCI.
 	 */
-	mrm->mrm_dests[mrm->mrm_cur] = ioms->gio_fabric_id;
+	mrm->mrm_dests[mrm->mrm_cur] = ioms->gio_ios_fabric_id;
 	if (gen_base32 != 0) {
 		ret = xmemlist_add_span(&imp->im_pool,
 		    mrm->mrm_bases[mrm->mrm_cur],
@@ -5266,7 +5311,7 @@ genoa_mmio_allocate(genoa_ioms_t *ioms, void *arg)
 	mrm->mrm_limits[mrm->mrm_cur] = mrm->mrm_mmio64_base +
 	    mrm->mrm_mmio64_chunks * mmio_gran - 1;
 	mrm->mrm_mmio64_base += mrm->mrm_mmio64_chunks * mmio_gran;
-	mrm->mrm_dests[mrm->mrm_cur] = ioms->gio_fabric_id;
+	mrm->mrm_dests[mrm->mrm_cur] = ioms->gio_ios_fabric_id;
 
 	if (mrm->mrm_mmio64_chunks * mmio_gran >
 	    2 * GENOA_SEC_IOMS_GEN_MMIO64_SPACE) {
