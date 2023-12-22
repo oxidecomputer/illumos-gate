@@ -1834,7 +1834,7 @@ typedef enum {
 static genoa_board_type_t
 genoa_board_type(const genoa_fabric_t *fabric)
 {
-	if (fabric->gf_nsocs == 2) {
+	if (fabric->gf_nsocs == 1) {
 		return (MBT_RUBY);
 	}
 	return (MBT_ANY);
