@@ -2819,15 +2819,15 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 		 * If it is disabled, we skip this CCD index as even if
 		 * it exists nothing can reach it.
 		 */
-		val = genoa_df_read32(iodie, GENOA_DF_FIRST_CCM_ID + ccdpno,
-		    DF_FBIINFO0);
+		val = genoa_df_read32(iodie,
+		    GENOA_DF_FIRST_CCM_INST_ID + ccdpno, DF_FBIINFO0);
 
 		VERIFY3U(DF_FBIINFO0_GET_TYPE(val), ==, DF_TYPE_CCM);
 		if (DF_FBIINFO0_V3_GET_ENABLED(val) == 0)
 			continue;
 
 		/*
-		 * At leaast some of the time, a CCM will be enabled
+		 * At least some of the time, a CCM will be enabled
 		 * even if there is no corresponding CCD.  To avoid
 		 * a possibly invalid read (see genoa_fabric_topo_init()
 		 * comments), we also check whether any core is enabled
@@ -2835,8 +2835,9 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 		 *
 		 * XXX reduce magic
 		 */
-		val = genoa_df_bcast_read32(iodie, (ccdpno < 4) ?
-		    DF_PHYS_CORE_EN0_V4 : DF_PHYS_CORE_EN1_V4);
+		val = genoa_df_bcast_read32(iodie,
+		    (ccdpno < 4) ? DF_PHYS_CORE_EN0_V4 : ((ccdpno < 8) ?
+		    DF_PHYS_CORE_EN1_V4 : DF_PHYS_CORE_EN2_V4));
 		core_shift = (ccdpno & 3) * GENOA_MAX_CORES_PER_CCX *
 		    GENOA_MAX_CCXS_PER_CCD;
 		cores_enabled = bitx32(val, core_shift + 7, core_shift);
@@ -2848,10 +2849,7 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 		ccd->gcd_iodie = iodie;
 		ccd->gcd_logical_dieno = lccd++;
 		ccd->gcd_physical_dieno = ccdpno;
-		ccd->gcd_ccm_comp_id = GENOA_DF_FIRST_CCM_ID + ccdpno;
-		/*
-		 * XXX Non-Genoa may require nonzero component ID shift.
-		 */
+		ccd->gcd_ccm_comp_id = GENOA_DF_FIRST_CCM_COMP_ID + ccdpno;
 		ccd->gcd_ccm_fabric_id = ccd->gcd_ccm_comp_id |
 		    (iodie->gi_node_id << fabric->gf_node_shift);
 

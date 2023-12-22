@@ -51,9 +51,10 @@ extern "C" {
 #define	GENOA_FABRIC_MAX_DIES_PER_SOC	1
 
 /*
- * The ID of the first CCM in the SoC.
+ * The Instance & Component IDs of the first CCM in the SoC.
  */
-#define	GENOA_DF_FIRST_CCM_ID	16
+#define	GENOA_DF_FIRST_CCM_INST_ID	0x10
+#define	GENOA_DF_FIRST_CCM_COMP_ID	0x60
 
 /*
  * This is the number of IO[MS] (IOHUB[MS]) instances that we know are supposed
