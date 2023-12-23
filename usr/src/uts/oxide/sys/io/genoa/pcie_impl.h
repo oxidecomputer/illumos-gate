@@ -26,11 +26,11 @@ extern "C" {
 #endif
 
 /*
- * Each of the normal PCIe cores is an RC8x16: up to 8 ports across 16 lanes.
- * The PCIe core that shares lanes with WAFL is an RC2x2.
+ * Each of the normal PCIe cores is an RC9x16: up to 9 ports across 16 lanes.
+ * The PCIe core that shares lanes with WAFL is an RC4x4.
  */
-#define	GENOA_PCIE_CORE_MAX_PORTS	8
-#define	GENOA_PCIE_CORE_WAFL_NPORTS	2
+#define	GENOA_PCIE_CORE_MAX_PORTS	9
+#define	GENOA_PCIE_CORE_WAFL_NPORTS	4
 
 typedef enum genoa_pcie_port_flag {
 	/*
