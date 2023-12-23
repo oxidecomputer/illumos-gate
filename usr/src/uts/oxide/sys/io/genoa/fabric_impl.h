@@ -78,7 +78,7 @@ extern "C" {
  * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to four
  * cores, but only the one with the WAFL link has core number 2.
  */
-#define	GENOA_IOMS_MAX_PCIE_CORES	4
+#define	GENOA_IOMS_MAX_PCIE_CORES	3
 #define	GENOA_IOMS_WAFL_PCIE_CORENO	2
 
 /*
