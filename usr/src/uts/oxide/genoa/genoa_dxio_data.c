@@ -67,13 +67,13 @@
  *    |  2   |        | 13   |		[3:0] is instead actually using [15:12].
  *    |  3   |        | 12   |		An important caveat here is that any
  *    |  4   |        | 11   |		device in this world must initially set
- *    |  5   |        | 10   |		the `zdlc_reverse` field in its DXIO
+ *    |  5   |        | 10   |		the `zmlc_reverse` field in its DXIO
  *    |  6   |        |  9   |		configuration as the core itself is
  *    |  7   |------->|  8   |		reversed.
  *    |  8   |        |  7   |
  *    |  9   |        |  6   |		If instead, the device has actually
  *    | 10   |        |  5   |		reversed its lanes, then we do not need
- *    | 11   |        |  4   |		to set 'zdlc_reverse' as it cancels out.
+ *    | 11   |        |  4   |		to set 'zmlc_reverse' as it cancels out.
  *    | 12   |        |  3   |
  *    | 13   |        |  2   |		Regardless, it's important to note the
  *    | 14   |        |  1   |		DXIO lane numbering is different here.
@@ -102,14 +102,14 @@
 #include <sys/pcie.h>
 #include <sys/io/genoa/dxio_impl.h>
 
-CTASSERT(sizeof (zen_dxio_link_cap_t) == 0x8);
-CTASSERT(sizeof (zen_dxio_config_base_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_config_net_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_config_pcie_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_config_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_engine_t) == 0x28);
-CTASSERT(offsetof(zen_dxio_engine_t, zde_config) == 0x8);
-CTASSERT(sizeof (zen_dxio_platform_t) == 0x10);
+CTASSERT(sizeof (zen_mpio_link_cap_t) == 0x8);
+CTASSERT(sizeof (zen_mpio_config_base_t) == 0x18);
+CTASSERT(sizeof (zen_mpio_config_net_t) == 0x18);
+CTASSERT(sizeof (zen_mpio_config_pcie_t) == 0x18);
+CTASSERT(sizeof (zen_mpio_config_t) == 0x18);
+CTASSERT(sizeof (zen_mpio_engine_t) == 0x28);
+CTASSERT(offsetof(zen_mpio_engine_t, zme_config) == 0x8);
+CTASSERT(sizeof (zen_mpio_platform_t) == 0x10);
 
 CTASSERT(offsetof(genoa_pptable_t, ppt_plat_tdp_lim) == 0x14);
 CTASSERT(offsetof(genoa_pptable_t, ppt_fan_override) == 0x24);
@@ -132,97 +132,97 @@ CTASSERT(sizeof (smu_hotplug_function_t) == 4);
 CTASSERT(sizeof (smu_hotplug_reset_t) == 4);
 CTASSERT(sizeof (smu_hotplug_table_t) == 0x480);
 
-const zen_dxio_platform_t ruby_engine_s0 = {
-    .zdp_type = DXIO_PLATFORM_EPYC,
-    .zdp_nengines = 4,
-    .zdp_engines = {
+const zen_mpio_platform_t ruby_engine_s0 = {
+    .zmp_type = MPIO_PLATFORM_EPYC,
+    .zmp_nengines = 4,
+    .zmp_engines = {
 	{
-	    .zde_type = DXIO_ENGINE_PCIE,
-	    .zde_hp = 0,
-	    .zde_start_lane = 0x2a,
-	    .zde_end_lane = 0x39,
-	    .zde_gpio_group = 1,
-	    .zde_reset_group = 1,
-	    .zde_search_depth = 0,
-	    .zde_kpnp_reset = 0,
-	    .zde_config = {
-		.zdc_pcie = {
-		    .zdcp_caps = {
-			.zdlc_present = DXIO_PORT_PRESENT,
-			.zdlc_early_train = 0,
-			.zdlc_comp_mode = 0,
-			.zdlc_reverse = 1,
-			.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
+	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
+	    .zme_hotpluggable = 0,
+	    .zme_start_lane = 0x2a,
+	    .zme_end_lane = 0x39,
+	    .zme_gpio_group = 1,
+	    .zme_reset_group = 1,
+	    .zme_search_depth = 0,
+	    .zme_force_kpnp_reset = 0,
+	    .zme_config = {
+		.zmc_pcie = {
+		    .zmcp_caps = {
+			.zmlc_present = MPIO_PORT_PRESENT,
+			.zmlc_early_train = 0,
+			.zmlc_comp_mode = 0,
+			.zmlc_reverse = 1,
+			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
 			/* XXX Next two always seems to be set */
-			.zdlc_en_off_config = 1,
-			.zdlc_off_unused = 1,
+			.zmlc_en_off_config = 1,
+			.zmlc_turn_off_unused = 1,
 			/* XXX This pair is always overriden */
-			.zdlc_eq_override = 1,
-			.zdlc_eq_mode = 3,
+			.zmlc_eq_mode_override = 1,
+			.zmlc_eq_search_mode = 3,
 			/* XXX Trust the gods */
-			.zdlc_invert_rx_pol = 0x1,
+			.zmlc_invert_rx_pol = 0x1,
 	            }
 		}
 	    }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
-	    .zde_start_lane = 0x3a, .zde_end_lane = 0x49, .zde_gpio_group = 1,
-	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
-	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
-		.zdlc_early_train = 0,
-		.zdlc_comp_mode = 0,
-		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
+	{ .zme_type = ZEN_MPIO_ENGINE_PCIE, .zme_hotpluggable = 0,
+	    .zme_start_lane = 0x3a, .zme_end_lane = 0x49, .zme_gpio_group = 1,
+	    .zme_reset_group = 1, .zme_search_depth = 0, .zme_force_kpnp_reset = 0,
+	    .zme_config = { .zmc_pcie = { .zmcp_caps = {
+		.zmlc_present = MPIO_PORT_PRESENT,
+		.zmlc_early_train = 0,
+		.zmlc_comp_mode = 0,
+		.zmlc_reverse = 1,
+		.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
 		/* XXX Next two always seems to be set */
-		.zdlc_en_off_config = 1,
-		.zdlc_off_unused = 1,
+		.zmlc_en_off_config = 1,
+		.zmlc_turn_off_unused = 1,
 		/* XXX This pair is always overriden */
-		.zdlc_eq_override = 1,
-		.zdlc_eq_mode = 3,
+		.zmlc_eq_mode_override = 1,
+		.zmlc_eq_search_mode = 3,
 		/* XXX Trust the gods */
-		.zdlc_invert_rx_pol = 0x1,
+		.zmlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
-	    .zde_start_lane = 0x4a, .zde_end_lane = 0x59, .zde_gpio_group = 1,
-	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
-	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
-		.zdlc_early_train = 0,
-		.zdlc_comp_mode = 0,
+	{ .zme_type = ZEN_MPIO_ENGINE_PCIE, .zme_hotpluggable = 0,
+	    .zme_start_lane = 0x4a, .zme_end_lane = 0x59, .zme_gpio_group = 1,
+	    .zme_reset_group = 1, .zme_search_depth = 0, .zme_force_kpnp_reset = 0,
+	    .zme_config = { .zmc_pcie = { .zmcp_caps = {
+		.zmlc_present = MPIO_PORT_PRESENT,
+		.zmlc_early_train = 0,
+		.zmlc_comp_mode = 0,
 		/* No reversing here */
-		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zmlc_reverse = 0,
+		.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
+		.zmlc_hotplug = ZEN_MPIO_HOTPLUG_T_EXPRESS_MODULE,
 		/* XXX Next two always seems to be set */
-		.zdlc_en_off_config = 1,
-		.zdlc_off_unused = 1,
+		.zmlc_en_off_config = 1,
+		.zmlc_turn_off_unused = 1,
 		/* XXX This pair is always overriden */
-		.zdlc_eq_override = 1,
-		.zdlc_eq_mode = 3,
+		.zmlc_eq_mode_override = 1,
+		.zmlc_eq_search_mode = 3,
 		/* XXX Trust the gods */
-		.zdlc_invert_rx_pol = 0x1,
+		.zmlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
-	    .zde_start_lane = 0x5a, .zde_end_lane = 0x69, .zde_gpio_group = 1,
-	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
-	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
-		.zdlc_early_train = 0,
-		.zdlc_comp_mode = 0,
+	{ .zme_type = ZEN_MPIO_ENGINE_PCIE, .zme_hotpluggable = 0,
+	    .zme_start_lane = 0x5a, .zme_end_lane = 0x69, .zme_gpio_group = 1,
+	    .zme_reset_group = 1, .zme_search_depth = 0, .zme_force_kpnp_reset = 0,
+	    .zme_config = { .zmc_pcie = { .zmcp_caps = {
+		.zmlc_present = MPIO_PORT_PRESENT,
+		.zmlc_early_train = 0,
+		.zmlc_comp_mode = 0,
 		/* No reversing here */
-		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
+		.zmlc_reverse = 0,
+		.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
 		/* XXX Next two always seems to be set */
-		.zdlc_en_off_config = 1,
-		.zdlc_off_unused = 1,
+		.zmlc_en_off_config = 1,
+		.zmlc_turn_off_unused = 1,
 		/* XXX This pair is always overriden */
-		.zdlc_eq_override = 1,
-		.zdlc_eq_mode = 3,
+		.zmlc_eq_mode_override = 1,
+		.zmlc_eq_search_mode = 3,
 		/* XXX Trust the gods */
-		.zdlc_invert_rx_pol = 0x1,
+		.zmlc_invert_rx_pol = 0x1,
 	    } } }
 	} }
 };

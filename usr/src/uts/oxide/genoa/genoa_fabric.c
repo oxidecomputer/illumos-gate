@@ -4055,8 +4055,8 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	pfn_t pfn;
 	genoa_dxio_config_t *conf = &iodie->gi_dxio_conf;
 	genoa_soc_t *soc = iodie->gi_soc;
-	const zen_dxio_platform_t *source_data;
-	zen_dxio_anc_data_t *anc;
+	const zen_mpio_platform_t *source_data;
+	zen_mpio_anc_data_t *anc;
 	const genoa_apob_phyovr_t *phy_override;
 	size_t phy_len;
 	int err;
@@ -4071,8 +4071,8 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 		}
 	}
 
-	engn_size = sizeof (zen_dxio_platform_t) +
-	    source_data->zdp_nengines * sizeof (zen_dxio_engine_t);
+	engn_size = sizeof (zen_mpio_platform_t) +
+	    source_data->zmp_nengines * sizeof (zen_mpio_engine_t);
 	VERIFY3U(engn_size, <=, MMU_PAGESIZE);
 	conf->gdc_conf_len = engn_size;
 
@@ -4129,7 +4129,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * The headers for the ancillary heap and payload must be 4 bytes in
 	 * size.
 	 */
-	CTASSERT(sizeof (zen_dxio_anc_data_t) == 4);
+	CTASSERT(sizeof (zen_mpio_anc_data_t) == 4);
 
 	conf->gdc_anc = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(conf->gdc_anc, MMU_PAGESIZE);
@@ -4146,19 +4146,19 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * space its header takes up. However, the subsequent payloads do.
 	 */
 	anc = conf->gdc_anc;
-	anc->zdad_type = GENOA_DXIO_HEAP_ANCILLARY;
-	anc->zdad_vers = DXIO_ANCILLARY_VERSION;
-	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
+	anc->zmad_type = GENOA_DXIO_HEAP_ANCILLARY;
+	anc->zmad_vers = DXIO_ANCILLARY_VERSION;
+	anc->zmad_nu32s = (sizeof (zen_mpio_anc_data_t) +
 	    phy_override->gap_datalen) >> 2;
 	anc++;
-	anc->zdad_type = ZEN_DXIO_ANCILLARY_T_PHY;
-	anc->zdad_vers = DXIO_ANCILLARY_PAYLOAD_VERSION;
-	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
+	anc->zmad_type = ZEN_MPIO_ANCILLARY_T_PHY_CONFIG;
+	anc->zmad_vers = DXIO_ANCILLARY_PAYLOAD_VERSION;
+	anc->zmad_nu32s = (sizeof (zen_mpio_anc_data_t) +
 	    phy_override->gap_datalen) >> 2;
 	anc++;
 	bcopy(phy_override->gap_data, anc, phy_override->gap_datalen);
 	conf->gdc_anc_len = phy_override->gap_datalen +
-	    2 * sizeof (zen_dxio_anc_data_t);
+	    2 * sizeof (zen_mpio_anc_data_t);
 
 	return (0);
 }
@@ -4249,34 +4249,34 @@ static bool
 genoa_dxio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 {
 	bool ret = true;
-	zen_dxio_platform_t *plat = iodie->gi_dxio_conf.gdc_conf;
+	zen_mpio_platform_t *plat = iodie->gi_dxio_conf.gdc_conf;
 
-	for (uint_t i = 0; i < plat->zdp_nengines; i++) {
-		zen_dxio_engine_t *en = &plat->zdp_engines[i];
+	for (uint_t i = 0; i < plat->zmp_nengines; i++) {
+		zen_mpio_engine_t *en = &plat->zmp_engines[i];
 		genoa_pcie_core_t *pc;
 		genoa_pcie_port_t *port;
 		uint8_t portno;
 
-		if (en->zde_type != DXIO_ENGINE_PCIE)
+		if (en->zme_type != ZEN_MPIO_ENGINE_PCIE)
 			continue;
 
 
 		pc = genoa_fabric_find_pcie_core_by_lanes(iodie,
-		    en->zde_start_lane, en->zde_end_lane);
+		    en->zme_start_lane, en->zme_end_lane);
 		if (pc == NULL) {
 			cmn_err(CE_WARN, "failed to map engine %u [%u, %u] to "
-			    "a PCIe core", i, en->zde_start_lane,
-			    en->zde_end_lane);
+			    "a PCIe core", i, en->zme_start_lane,
+			    en->zme_end_lane);
 			ret = false;
 			continue;
 		}
 
-		portno = en->zde_config.zdc_pcie.zdcp_mac_port_id;
+		portno = en->zme_config.zmc_pcie.zmcp_mac_port_id;
 		if (portno >= pc->gpc_nports) {
 			cmn_err(CE_WARN, "failed to map engine %u [%u, %u] to "
 			    "a PCIe port: found nports %u, but mapped to "
-			    "port %u",  i, en->zde_start_lane,
-			    en->zde_end_lane, pc->gpc_nports, portno);
+			    "port %u",  i, en->zme_start_lane,
+			    en->zme_end_lane, pc->gpc_nports, portno);
 			ret = false;
 			continue;
 		}
@@ -4285,10 +4285,10 @@ genoa_dxio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 		if (port->gpp_engine != NULL) {
 			cmn_err(CE_WARN, "engine %u [%u, %u] mapped to "
 			    "port %u, which already has an engine [%u, %u]",
-			    i, en->zde_start_lane, en->zde_end_lane,
+			    i, en->zme_start_lane, en->zme_end_lane,
 			    pc->gpc_nports,
-			    port->gpp_engine->zde_start_lane,
-			    port->gpp_engine->zde_end_lane);
+			    port->gpp_engine->zme_start_lane,
+			    port->gpp_engine->zme_end_lane);
 			ret = false;
 			continue;
 		}
@@ -4296,8 +4296,8 @@ genoa_dxio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 		port->gpp_flags |= GENOA_PCIE_PORT_F_MAPPED;
 		port->gpp_engine = en;
 		pc->gpc_flags |= GENOA_PCIE_CORE_F_USED;
-		if (en->zde_config.zdc_pcie.zdcp_caps.zdlc_hp !=
-		    DXIO_HOTPLUG_T_DISABLED) {
+		if (en->zme_config.zmc_pcie.zmcp_caps.zmlc_hotplug !=
+		    ZEN_MPIO_HOTPLUG_T_DISABLED) {
 			pc->gpc_flags |= GENOA_PCIE_CORE_F_HAS_HOTPLUG;
 		}
 	}
@@ -4760,7 +4760,7 @@ genoa_fabric_setup_pcie_core_dbg(genoa_pcie_core_t *pc, void *arg)
 			 * additional knob to select a specific lane of
 			 * interest.
 			 */
-			laneno = port->gpp_engine->zde_start_lane -
+			laneno = port->gpp_engine->zme_start_lane -
 			    pc->gpc_dxio_lane_start;
 			reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
 			val = genoa_pcie_core_read(pc, reg);
@@ -5628,7 +5628,7 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 		uint8_t lt;
 
 		hotplug = (pc->gpc_flags & GENOA_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		lt = port->gpp_engine->zde_config.zdc_pcie.zdcp_link_train;
+		lt = port->gpp_engine->zme_config.zmc_pcie.zmcp_link_train_state;
 		trained = lt == GENOA_DXIO_PCIE_SUCCESS;
 		hide = !hotplug && !trained;
 	} else {

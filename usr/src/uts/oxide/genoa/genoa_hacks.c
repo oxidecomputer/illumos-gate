@@ -24,6 +24,9 @@
 #include <sys/io/genoa/hacks.h>
 #include <sys/io/genoa/iomux.h>
 
+/* True while we're hacking. */
+bool xxxhackymchackface = true;
+
 /*
  * Various regrettable hacks that are unfortunate but necessary -- and don't
  * seem to fit anywhere else.  This file could also be called genoa_misc.c or
@@ -268,7 +271,8 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 	uint32_t val;
 
 	/* XXX: Verify before start poking at GPIOs */
-	return;
+	if (xxxhackymchackface)
+	    return;
 
 	if (gpio < 256) {
 		gpio_block = fch_gpio_mmio_block();
