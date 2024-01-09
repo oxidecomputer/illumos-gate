@@ -17,7 +17,7 @@
 #define	_SYS_IO_GENOA_DXIO_IMPL_H
 
 /*
- * Definitions for the DXIO Engine configuration data format.
+ * Definitions for the MPIO Engine configuration data format.
  */
 
 #include <sys/param.h>
@@ -27,25 +27,28 @@
 extern "C" {
 #endif
 
-#define	DXIO_PORT_NOT_PRESENT	0
-#define	DXIO_PORT_PRESENT	1
+#define	MPIO_PORT_NOT_PRESENT	0
+#define	MPIO_PORT_PRESENT	1
 
-typedef enum zen_dxio_link_speed {
-	DXIO_LINK_SPEED_MAX	= 0,
-	DXIO_LINK_SPEDD_GEN1,
-	DXIO_LINK_SPEED_GEN2,
-	DXIO_LINK_SPEED_GEN3,
-	DXIO_LINK_SPEED_GEN4
-} zen_dxio_link_speed_t;
+typedef enum zen_mpio_link_speed {
+	ZEN_MPIO_LINK_SPEED_MAX	= 0,
+	ZEN_MPIO_LINK_SPEDD_GEN1,
+	ZEN_MPIO_LINK_SPEED_GEN2,
+	ZEN_MPIO_LINK_SPEED_GEN3,
+	ZEN_MPIO_LINK_SPEED_GEN4,
+	ZEN_MPIO_LINK_SPEED_GEN5,
+} zen_mpio_link_speed_t;
 
-typedef enum zen_dxio_hotplug_type {
-	DXIO_HOTPLUG_T_DISABLED	= 0,
-	DXIO_HOTPLUG_T_BASIC,
-	DXIO_HOTPLUG_T_EXPRESS_MODULE,
-	DXIO_HOTPLUG_T_ENHANCED,
-	DXIO_HOTPLUG_T_INBOARD,
-	DXIO_HOTPLUG_T_ENT_SSD
-} zen_dxio_hotplug_type_t;
+typedef enum zen_mpio_hotplug_type {
+	ZEN_MPIO_HOTPLUG_T_DISABLED	= 0,
+	ZEN_MPIO_HOTPLUG_T_BASIC,
+	ZEN_MPIO_HOTPLUG_T_EXPRESS_MODULE,
+	ZEN_MPIO_HOTPLUG_T_ENHANCED,
+	ZEN_MPIO_HOTPLUG_T_INBOARD,
+	ZEN_MPIO_HOTPLUG_T_ENT_SSD,
+	ZEN_MPIO_HOTPLUG_T_UBM,
+	ZEN_MPIO_HOTPLUG_T_OCP,
+} zen_mpio_hotplug_type_t;
 
 /*
  * There are two different versions that we need to track. That over the overall
@@ -55,129 +58,145 @@ typedef enum zen_dxio_hotplug_type {
 #define	DXIO_ANCILLARY_VERSION		0
 #define	DXIO_ANCILLARY_PAYLOAD_VERSION	1
 
-typedef enum zen_dxio_anc_type {
-	ZEN_DXIO_ANCILLARY_T_XGBE = 1,
-	ZEN_DXIO_ANCILLARY_T_OVERRIDE = 3,
-	ZEN_DXIO_ANCILLARY_T_PSPP = 4,
-	ZEN_DXIO_ANCILLARY_T_PHY = 5
-} zen_dxio_anc_type_t;
+typedef enum zen_mpio_anc_type {
+	ZEN_MPIO_ANCILLARY_T_XGBE = 1,
+	ZEN_MPIO_ANCILLARY_T_HIER = 2,
+	ZEN_MPIO_ANCILLARY_T_OVERRIDE = 3,
+	ZEN_MPIO_ANCILLARY_T_PSPP = 4,
+	ZEN_MPIO_ANCILLARY_T_PHY_CONFIG = 5,
+	ZEN_MPIO_ANCILLARY_T_PHY_VALUE = 6,
+	ZEN_MPIO_ANCILLARY_T_PCIE_STRAP = 7,
+} zen_mpio_anc_type_t;
 
 /*
  * Structures defined here are expected to be packed by firmware.
  */
 #pragma	pack(1)
-typedef struct zen_dxio_anc_data {
-	uint8_t		zdad_type;
-	uint8_t		zdad_vers:4;
-	uint8_t		zdad_rsvd:4;
-	uint16_t	zdad_nu32s;
-} zen_dxio_anc_data_t;
+typedef struct zen_mpio_anc_data {
+	uint8_t		zmad_type;
+	uint8_t		zmad_vers:4;
+	uint8_t		zmad_rsvd0:4;
+	uint8_t		zmad_nu32s;
+	uint8_t		zmad_rsvd1;
+} zen_mpio_anc_data_t;
 
-typedef struct zen_dxio_link_cap {
-	uint32_t	zdlc_present:1;
-	uint32_t	zdlc_early_train:1;
-	uint32_t	zdlc_comp_mode:1;
-	uint32_t	zdlc_reverse:1;
-	uint32_t	zdlc_max_speed:3;
-	uint32_t	zdlc_ep_status:1;
-	uint32_t	zdlc_hp:3;
-	uint32_t	zdlc_size:5;
-	uint32_t	zdlc_trained_speed:3;
-	uint32_t	zdlc_en_off_config:1;
-	uint32_t	zdlc_off_unused:1;
-	uint32_t	zdlc_ntb_hp:1;
-	uint32_t	zdlc_pspp_speed:2;
-	uint32_t	zdlc_pspp_mode:3;
-	uint32_t	zdlc_peer_type:2;
-	uint32_t	zdlc_auto_change_ctrl:2;
-	uint32_t	zdlc_primary_pll:1;
-	uint32_t	zdlc_eq_mode:2;
-	uint32_t	zdlc_eq_override:1;
-	uint32_t	zdlc_invert_rx_pol:1;
-	uint32_t	zdlc_tx_vet:1;
-	uint32_t	zdlc_rx_vet:1;
-	uint32_t	zdlc_tx_deemph:2;
-	uint32_t	zdlc_tx_deemph_override:1;
-	uint32_t	zdlc_invert_tx_pol:1;
-	uint32_t	zdlc_targ_speed:3;
-	uint32_t	zdlc_skip_eq_gen3:1;
-	uint32_t	zdlc_skip_eq_gen4:1;
-	uint32_t	zdlc_rsvd:17;
-} zen_dxio_link_cap_t;
+typedef struct zen_mpio_link_cap {
+	uint32_t	zmlc_present:1;
+	uint32_t	zmlc_early_train:1;
+	uint32_t	zmlc_comp_mode:1;
+	uint32_t	zmlc_reverse:1;
+	uint32_t	zmlc_max_speed:3;
+	uint32_t	zmlc_ep_status:1;
+	uint32_t	zmlc_hotplug:3;
+	uint32_t	zmlc_port_size:5;
+	uint32_t	zmlc_max_trained_speed:3;
+	uint32_t	zmlc_en_off_config:1;
+	uint32_t	zmlc_turn_off_unused:1;
+	uint32_t	zmlc_ntb_hotplug:1;
+	uint32_t	zmlc_pspp_speed:2;
+	uint32_t	zmlc_pspp_mode:3;
+	uint32_t	zmlc_peer_type:2;
+	uint32_t	zmlc_auto_change_ctrl:2;
+	uint32_t	zmlc_primary_pll:1;
+	uint32_t	zmlc_eq_search_mode:2;
+	uint32_t	zmlc_eq_mode_override:1;
+	uint32_t	zmlc_invert_rx_pol:1;
+	uint32_t	zmlc_tx_vet:1;
+	uint32_t	zmlc_rx_vet:1;
+	uint32_t	zmlc_tx_deemph:2;
+	uint32_t	zmlc_tx_deemph_override:1;
+	uint32_t	zmlc_invert_tx_pol:1;
+	uint32_t	zmlc_targ_speed:3;
+	uint32_t	zmlc_skip_eq_gen3:1;
+	uint32_t	zmlc_skip_eq_gen4:1;
+	uint32_t	zmlc_rsvd:17;
+} zen_mpio_link_cap_t;
 
 /*
  * Note, this type is used for configuration descriptors involving SATA, USB,
  * GOP, GMI, and DP.
  */
-typedef struct zen_dxio_config_base {
-	uint8_t		zdcb_chan_type;
-	uint8_t		zdcb_chan_descid;
-	uint16_t	zdcb_anc_off;
-	uint32_t	zdcb_bdf_num;
-	zen_dxio_link_cap_t zdcb_caps;
-	uint8_t		zdcb_mac_id;
-	uint8_t		zdcb_mac_port_id;
-	uint8_t		zdcb_start_lane;
-	uint8_t		zdcb_end_lane;
-	uint8_t		zdcb_pcs_id;
-	uint8_t		zdcb_rsvd0[3];
-} zen_dxio_config_base_t;
+typedef struct zen_mpio_config_base {
+	uint8_t		zmcb_chan_type;
+	uint8_t		zmcb_chan_descid;
+	uint16_t	zmcb_anc_off;
+	uint32_t	zmcb_bdf_num;
+	zen_mpio_link_cap_t zmcb_caps;
+	uint8_t		zmcb_mac_id;
+	uint8_t		zmcb_mac_port_id;
+	uint8_t		zmcb_start_lane;
+	uint8_t		zmcb_end_lane;
+	uint8_t		zmcb_pcs_id;
+	uint8_t		zmcb_rsvd0[3];
+} zen_mpio_config_base_t;
 
-typedef struct zen_dxio_config_net {
-	uint8_t		zdcn_chan_type;
-	uint8_t		zdcn_rsvd0;
-	uint16_t	zdcn_anc_off;
-	uint32_t	zdcn_bdf_num;
-	zen_dxio_link_cap_t zdcn_caps;
-	uint8_t		zdcb_rsvd1[8];
-} zen_dxio_config_net_t;
+typedef struct zen_mpio_config_net {
+	uint8_t		zmcn_chan_type;
+	uint8_t		zmcn_rsvd0;
+	uint16_t	zmcn_anc_off;
+	uint32_t	zmcn_bdf_num;
+	zen_mpio_link_cap_t zmcn_caps;
+	uint8_t		zmcb_rsvd1[8];
+} zen_mpio_config_net_t;
 
-typedef struct zen_dxio_config_pcie {
-	uint8_t		zdcp_chan_type;
-	uint8_t		zdcp_chan_descid;
-	uint16_t	zdcp_anc_off;
-	uint32_t	zdcp_bdf_num;
-	zen_dxio_link_cap_t zdcp_caps;
-	uint8_t		zdcp_mac_id;
-	uint8_t		zdcp_mac_port_id;
-	uint8_t		zdcp_start_lane;
-	uint8_t		zdcp_end_lane;
-	uint8_t		zdcp_pcs_id;
-	uint8_t		zdcp_link_train;
-	uint8_t		zdcp_rsvd0[2];
-} zen_dxio_config_pcie_t;
+typedef struct zen_mpio_config_pcie {
+	uint8_t		zmcp_chan_type;
+	uint8_t		zmcp_chan_descid;
+	uint16_t	zmcp_anc_off;
+	uint32_t	zmcp_bdf_num;
+	zen_mpio_link_cap_t zmcp_caps;
+	uint8_t		zmcp_mac_id;
+	uint8_t		zmcp_mac_port_id;
+	uint8_t		zmcp_start_lane;
+	uint8_t		zmcp_end_lane;
+	uint8_t		zmcp_pcs_id;
+	uint8_t		zmcp_link_train_state;
+	uint8_t		zmcp_rsvd0[2];
+} zen_mpio_config_pcie_t;
 
 typedef union {
-	zen_dxio_config_base_t	zdc_base;
-	zen_dxio_config_net_t	zdc_net;
-	zen_dxio_config_pcie_t	zdc_pcie;
-} zen_dxio_config_t;
+	zen_mpio_config_base_t	zmc_base;
+	zen_mpio_config_net_t	zmc_net;
+	zen_mpio_config_pcie_t	zmc_pcie;
+} zen_mpio_config_t;
 
-typedef enum zen_dxio_engine_type {
-	DXIO_ENGINE_UNUSED	= 0x00,
-	DXIO_ENGINE_PCIE	= 0x01,
-	DXIO_ENGINE_SATA	= 0x03,
-	DXIO_ENGINE_ETH		= 0x10
-} zen_dxio_engine_type_t;
+typedef enum zen_mpio_engine_type {
+	ZEN_MPIO_ENGINE_UNUSED	= 0x00,
+	ZEN_MPIO_ENGINE_PCIE	= 0x01,
+	ZEN_MPIO_ENGINE_SATA	= 0x03,
+	ZEN_MPIO_ENGINE_ETH	= 0x10,
+} zen_mpio_engine_type_t;
 
-typedef struct zen_dxio_engine {
-	uint8_t		zde_type;
-	uint8_t		zde_hp:1;
-	uint8_t		zde_rsvd0:7;
-	uint8_t		zde_start_lane;
-	uint8_t		zde_end_lane;
-	uint8_t		zde_gpio_group;
-	uint8_t		zde_reset_group;
-	uint16_t	zde_search_depth:1;
-	uint16_t	zde_kpnp_reset:1;
-	uint16_t	zde_rsvd1:14;
-	zen_dxio_config_t	zde_config;
-	uint16_t	zde_mac_ptr;
-	uint8_t		zde_first_lgd;
-	uint8_t		zde_last_lgd;
-	uint32_t	zde_train_state:4;
+typedef struct zen_mpio_engine {
+	uint8_t		zme_type;
+	uint8_t		zme_hotpluggable:1;
+	uint8_t		zme_rsvd0:7;
+	uint8_t		zme_start_lane;
+	uint8_t		zme_end_lane;
+	uint8_t		zme_gpio_group;
+	uint8_t		zme_reset_group;
+	uint16_t	zme_search_depth:1;
+	uint16_t	zme_force_kpnp_reset:1;
+	uint16_t	zme_rsvd1:14;
+	zen_mpio_config_t	zme_config;
+	uint16_t	zme_mac_ptr;
+	uint8_t		zme_first_lgd;
+	uint8_t		zme_last_lgd;
+	uint32_t	zme_train_state:4;
 	uint32_t	zde_rsvd2:28;
-} zen_dxio_engine_t;
+} zen_mpio_engine_t;
+
+typedef struct zen_mpio_engine_data {
+	uint8_t		zmed_type;
+	uint8_t		zmed_hotpluggable:1;
+	uint8_t		zmed_rsvd0:7;
+	uint8_t		zmed_start_lane;
+	uint8_t		zmed_end_lane;
+	uint8_t		zmed_gpio_group;
+	uint8_t		zmed_mpio_start_lane;
+	uint8_t		zmed_mpio_end_lane;
+	uint8_t		zmed_search_depth;
+} zen_mpio_engine_data_t;
 
 /*
  * This macro should be a value like 0xff because this reset group is defined to
@@ -189,16 +208,16 @@ typedef struct zen_dxio_engine {
  * should go through GPIO expanders so we have a chance of being a fool of a
  * Took.
  */
-#define	DXIO_GROUP_UNUSED	0x01
-#define	DXIO_PLATFORM_EPYC	0x00
+#define	MPIO_GROUP_UNUSED	0x01
+#define	MPIO_PLATFORM_EPYC	0x00
 
-typedef struct zen_dxio_platform {
-	uint16_t		zdp_type;
-	uint8_t			zdp_rsvd0[10];
-	uint16_t		zdp_nengines;
-	uint8_t			zdp_rsvd1[2];
-	zen_dxio_engine_t	zdp_engines[];
-} zen_dxio_platform_t;
+typedef struct zen_mpio_platform {
+	uint16_t		zmp_type;
+	uint8_t			zmp_rsvd0[10];
+	uint16_t		zmp_nengines;
+	uint8_t			zmp_rsvd1[2];
+	zen_mpio_engine_t	zmp_engines[];
+} zen_mpio_platform_t;
 #pragma pack()	/* pragma pack(1) */
 
 /*
@@ -455,17 +474,17 @@ typedef struct smu_hotplug_entry {
 
 #pragma	pack()	/* pragma pack(4) */
 
-extern const zen_dxio_platform_t ruby_engine_s0;
+extern const zen_mpio_platform_t ruby_engine_s0;
 extern const smu_hotplug_entry_t ruby_hotplug_ents[];
 
 extern const uint32_t ruby_pcie_slot_cap_entssd;
 extern const uint32_t ruby_pcie_slot_cap_express;
 
-extern const zen_dxio_platform_t cosmo_engine;
+extern const zen_mpio_platform_t cosmo_engine;
 extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 
 /*
- * DXIO message codes. These are also specific to firmware.
+ * DXIO message codes. These are also specific to firmware revision.
  */
 #define	GENOA_DXIO_OP_INIT		0x00
 #define	GENOA_DXIO_OP_GET_SM_STATE	0x09
@@ -488,10 +507,12 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_DXIO_OP_RESUME_SM		0x308
 
 /*
- * Various DXIO Reply codes. Most of these codes are undocumented. In general,
- * most RPCs will return GENOA_DXIO_RPC_OK to indicate success. However, we have
- * seen GENOA_DXIO_OP_SET_VARIABLE actually return GENOA_DXIO_RPC_MBOX_IDLE as
- * it seems to actually be using the mailboxes under the hood.
+ * MPIO RPC reply codes.
+ *
+ * While most of these codes are undocumented, most RPCs return
+ * GENOA_DXIO_RPC_OK to indicate success.  But note that we have seen
+ * GENOA_DXIO_OP_SET_VARIABLE return GENOA_DXIO_RPC_MBOX_IDLE in this
+ * case as it seems to actually be using the mailboxes under the hood.
  */
 #define	GENOA_DXIO_RPC_NULL		0
 #define	GENOA_DXIO_RPC_TIMEOUT		1
@@ -634,8 +655,8 @@ typedef struct genoa_dxio_reply {
 #define	GENOA_DXIO_LINK_SPEED_SINGLE	0x800
 
 typedef struct genoa_dxio_config {
-	zen_dxio_platform_t	*gdc_conf;
-	zen_dxio_anc_data_t	*gdc_anc;
+	zen_mpio_platform_t	*gdc_conf;
+	zen_mpio_anc_data_t	*gdc_anc;
 	uint64_t		gdc_pa;
 	uint64_t		gdc_anc_pa;
 	uint32_t		gdc_alloc_len;

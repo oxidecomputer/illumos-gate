@@ -34,7 +34,7 @@ extern "C" {
 
 typedef enum genoa_pcie_port_flag {
 	/*
-	 * Indicates that there is a corresponding zen_dxio_engine_t associated
+	 * Indicates that there is a corresponding zen_mpio_engine_t associated
 	 * with this port and bridge.
 	 */
 	GENOA_PCIE_PORT_F_MAPPED	= 1 << 0,
@@ -116,7 +116,7 @@ struct genoa_pcie_port {
 	uint8_t				gpp_portno;
 	uint8_t				gpp_device;
 	uint8_t				gpp_func;
-	zen_dxio_engine_t		*gpp_engine;
+	zen_mpio_engine_t		*gpp_engine;
 	smu_hotplug_type_t		gpp_hp_type;
 	uint16_t			gpp_hp_slotno;
 	uint32_t			gpp_hp_smu_mask;
