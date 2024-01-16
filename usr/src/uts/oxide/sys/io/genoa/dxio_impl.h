@@ -654,15 +654,15 @@ typedef struct genoa_dxio_reply {
  */
 #define	GENOA_DXIO_LINK_SPEED_SINGLE	0x800
 
-typedef struct genoa_dxio_config {
-	zen_mpio_platform_t	*gdc_conf;
-	zen_mpio_anc_data_t	*gdc_anc;
-	uint64_t		gdc_pa;
-	uint64_t		gdc_anc_pa;
-	uint32_t		gdc_alloc_len;
-	uint32_t		gdc_conf_len;
-	uint32_t		gdc_anc_len;
-} genoa_dxio_config_t;
+typedef struct genoa_mpio_config {
+	zen_mpio_platform_t	*gmc_conf;
+	zen_mpio_anc_data_t	*gmc_anc;
+	uint64_t		gmc_pa;
+	uint64_t		gmc_anc_pa;
+	uint32_t		gmc_alloc_len;
+	uint32_t		gmc_conf_len;
+	uint32_t		gmc_anc_len;
+} genoa_mpio_config_t;
 
 typedef struct genoa_hotplug {
 	smu_hotplug_table_t	*gh_table;
