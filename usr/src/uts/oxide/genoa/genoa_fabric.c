@@ -2669,13 +2669,13 @@ genoa_dxio_rpc_sm_getstate(genoa_iodie_t *iodie, genoa_dxio_reply_t *smp)
 static bool
 genoa_dxio_rpc_retrieve_engine(genoa_iodie_t *iodie)
 {
-	genoa_dxio_config_t *conf = &iodie->gi_dxio_conf;
+	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
 	genoa_dxio_rpc_t rpc = { 0 };
 
 	rpc.mdr_req = GENOA_DXIO_OP_GET_ENGINE_CFG;
-	rpc.mdr_engine = (uint32_t)(conf->gdc_pa >> 32);
-	rpc.mdr_arg0 = conf->gdc_pa & 0xffffffff;
-	rpc.mdr_arg1 = conf->gdc_alloc_len / 4;
+	rpc.mdr_engine = (uint32_t)(conf->gmc_pa >> 32);
+	rpc.mdr_arg0 = conf->gmc_pa & 0xffffffff;
+	rpc.mdr_arg1 = conf->gmc_alloc_len / 4;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
@@ -4053,7 +4053,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	ddi_dma_attr_t attr;
 	size_t engn_size;
 	pfn_t pfn;
-	genoa_dxio_config_t *conf = &iodie->gi_dxio_conf;
+	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
 	genoa_soc_t *soc = iodie->gi_soc;
 	const zen_mpio_platform_t *source_data;
 	zen_mpio_anc_data_t *anc;
@@ -4074,17 +4074,17 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	engn_size = sizeof (zen_mpio_platform_t) +
 	    source_data->zmp_nengines * sizeof (zen_mpio_engine_t);
 	VERIFY3U(engn_size, <=, MMU_PAGESIZE);
-	conf->gdc_conf_len = engn_size;
+	conf->gmc_conf_len = engn_size;
 
 	genoa_smu_dma_attr(&attr);
-	conf->gdc_alloc_len = MMU_PAGESIZE;
-	conf->gdc_conf = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->gdc_conf, MMU_PAGESIZE);
+	conf->gmc_alloc_len = MMU_PAGESIZE;
+	conf->gmc_conf = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->gmc_conf, MMU_PAGESIZE);
 
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gdc_conf);
-	conf->gdc_pa = mmu_ptob((uint64_t)pfn);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_conf);
+	conf->gmc_pa = mmu_ptob((uint64_t)pfn);
 
-	bcopy(source_data, conf->gdc_conf, engn_size);
+	bcopy(source_data, conf->gmc_conf, engn_size);
 
 	/*
 	 * We need to account for an extra 8 bytes, surprisingly. It's a good
@@ -4092,8 +4092,8 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * that when we make the RPC call. Finally, we want to make sure that if
 	 * we're in an incomplete word, that we account for that in the length.
 	 */
-	conf->gdc_conf_len += 8;
-	conf->gdc_conf_len = P2ROUNDUP(conf->gdc_conf_len, 4);
+	conf->gmc_conf_len += 8;
+	conf->gmc_conf_len = P2ROUNDUP(conf->gmc_conf_len, 4);
 
 	phy_override = genoa_apob_find(GENOA_APOB_GROUP_FABRIC,
 	    GENOA_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
@@ -4131,11 +4131,11 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 */
 	CTASSERT(sizeof (zen_mpio_anc_data_t) == 4);
 
-	conf->gdc_anc = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->gdc_anc, MMU_PAGESIZE);
+	conf->gmc_anc = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->gmc_anc, MMU_PAGESIZE);
 
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gdc_anc);
-	conf->gdc_anc_pa = mmu_ptob((uint64_t)pfn);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_anc);
+	conf->gmc_anc_pa = mmu_ptob((uint64_t)pfn);
 
 	/*
 	 * First we need to program the initial descriptor. Its type is one of
@@ -4145,7 +4145,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * up. Confusingly, it seems that the top entry does not include the
 	 * space its header takes up. However, the subsequent payloads do.
 	 */
-	anc = conf->gdc_anc;
+	anc = conf->gmc_anc;
 	anc->zmad_type = GENOA_DXIO_HEAP_ANCILLARY;
 	anc->zmad_vers = DXIO_ANCILLARY_VERSION;
 	anc->zmad_nu32s = (sizeof (zen_mpio_anc_data_t) +
@@ -4157,7 +4157,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	    phy_override->gap_datalen) >> 2;
 	anc++;
 	bcopy(phy_override->gap_data, anc, phy_override->gap_datalen);
-	conf->gdc_anc_len = phy_override->gap_datalen +
+	conf->gmc_anc_len = phy_override->gap_datalen +
 	    2 * sizeof (zen_mpio_anc_data_t);
 
 	return (0);
@@ -4166,7 +4166,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 static int
 genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 {
-	genoa_dxio_config_t *conf = &iodie->gi_dxio_conf;
+	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
 
 	/*
 	 * Begin by loading the NULL capabilities before we load any data heaps.
@@ -4175,8 +4175,8 @@ genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 		return (1);
 	}
 
-	if (conf->gdc_anc != NULL && !genoa_dxio_rpc_load_data(iodie,
-	    GENOA_DXIO_HEAP_ANCILLARY, conf->gdc_anc_pa, conf->gdc_anc_len,
+	if (conf->gmc_anc != NULL && !genoa_dxio_rpc_load_data(iodie,
+	    GENOA_DXIO_HEAP_ANCILLARY, conf->gmc_anc_pa, conf->gmc_anc_len,
 	    0)) {
 		return (1);
 	}
@@ -4197,7 +4197,7 @@ genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 	 * Load our real data!
 	 */
 	if (!genoa_dxio_rpc_load_data(iodie, GENOA_DXIO_HEAP_ENGINE_CONFIG,
-	    conf->gdc_pa, conf->gdc_conf_len, 0)) {
+	    conf->gmc_pa, conf->gmc_conf_len, 0)) {
 		return (1);
 	}
 
@@ -4249,7 +4249,7 @@ static bool
 genoa_dxio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 {
 	bool ret = true;
-	zen_mpio_platform_t *plat = iodie->gi_dxio_conf.gdc_conf;
+	zen_mpio_platform_t *plat = iodie->gi_dxio_conf.gmc_conf;
 
 	for (uint_t i = 0; i < plat->zmp_nengines; i++) {
 		zen_mpio_engine_t *en = &plat->zmp_engines[i];
