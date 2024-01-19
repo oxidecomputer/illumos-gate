@@ -2369,11 +2369,11 @@ genoa_dxio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_GET_VERSION;
+	rpc.mdr_req = GENOA_MPIO_OP_GET_VERSION;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (false);
@@ -2390,11 +2390,11 @@ genoa_dxio_rpc_init(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_INIT;
+	rpc.mdr_req = GENOA_MPIO_OP_INIT;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Init RPC Failed: SMU 0x%x, DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (false);
@@ -2408,14 +2408,14 @@ genoa_dxio_rpc_set_var(genoa_iodie_t *iodie, uint32_t var, uint32_t val)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_SET_VARIABLE;
+	rpc.mdr_req = GENOA_MPIO_OP_SET_VARIABLE;
 	rpc.mdr_engine = var;
 	rpc.mdr_arg0 = val;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == GENOA_DXIO_RPC_MBOX_IDLE)) {
+	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.mdr_dxio_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set Variable Failed: Var: 0x%x, "
 		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", var, val,
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2431,15 +2431,15 @@ genoa_dxio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_SET_VARIABLE;
-	rpc.mdr_engine = GENOA_DXIO_VAR_PCIE_POWER_OFF_DELAY;
+	rpc.mdr_req = GENOA_MPIO_OP_SET_VARIABLE;
+	rpc.mdr_engine = GENOA_MPIO_VAR_PCIE_POWER_OFF_DELAY;
 	rpc.mdr_arg0 = delay;
 	rpc.mdr_arg1 = disable_prep ? 1 : 0;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == GENOA_DXIO_RPC_MBOX_IDLE)) {
+	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.mdr_dxio_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set PCIe Power Off Config Failed: "
 		    "Delay: 0x%x, Disable Prep: 0x%x, SMU 0x%x, DXIO: 0x%x",
 		    delay, disable_prep, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2459,15 +2459,15 @@ genoa_dxio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 	 */
 	VERIFY0(mask & 0x80);
 	VERIFY0(val & 0x80);
-	rpc.mdr_req = GENOA_DXIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = GENOA_DXIO_ENGINE_PCIE;
-	rpc.mdr_arg0 = GENOA_DXIO_RT_CONF_CLOCK_GATE;
+	rpc.mdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
+	rpc.mdr_engine = GENOA_MPIO_ENGINE_PCIE;
+	rpc.mdr_arg0 = GENOA_MPIO_RT_CONF_CLOCK_GATE;
 	rpc.mdr_arg1 = mask;
 	rpc.mdr_arg2 = val;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Clock Gating Failed: SMU 0x%x, "
 		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (false);
@@ -2480,18 +2480,18 @@ genoa_dxio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
  * Currently there are no capabilities defined, which makes it hard for us to
  * know the exact command layout here. The only thing we know is safe is that
  * it's all zeros, though it probably otherwise will look like
- * GENOA_DXIO_OP_LOAD_DATA.
+ * GENOA_MPIO_OP_LOAD_DATA.
  */
 static bool
 genoa_dxio_rpc_load_caps(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_LOAD_CAPS;
+	rpc.mdr_req = GENOA_MPIO_OP_LOAD_CAPS;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Load Caps Failed: SMU 0x%x, DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (false);
@@ -2506,7 +2506,7 @@ genoa_dxio_rpc_load_data(genoa_iodie_t *iodie, uint32_t type,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_LOAD_DATA;
+	rpc.mdr_req = GENOA_MPIO_OP_LOAD_DATA;
 	rpc.mdr_engine = (uint32_t)(phys_addr >> 32);
 	rpc.mdr_arg0 = phys_addr & 0xffffffff;
 	rpc.mdr_arg1 = len / 4;
@@ -2515,7 +2515,7 @@ genoa_dxio_rpc_load_data(genoa_iodie_t *iodie, uint32_t type,
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Load Data Failed: Heap: 0x%x, PA: "
 		    "0x%lx, Len: 0x%x, SMU 0x%x, DXIO: 0x%x", type, phys_addr,
 		    len, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2531,17 +2531,17 @@ genoa_dxio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = GENOA_DXIO_ENGINE_PCIE;
-	rpc.mdr_arg0 = GENOA_DXIO_RT_CONF_PCIE_TRAIN;
+	rpc.mdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
+	rpc.mdr_engine = GENOA_MPIO_ENGINE_PCIE;
+	rpc.mdr_arg0 = GENOA_MPIO_RT_CONF_PCIE_TRAIN;
 	rpc.mdr_arg1 = reset_time;
 	rpc.mdr_arg2 = rx_poll;
 	rpc.mdr_arg3 = l0_poll;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK)) {
+	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK)) {
 		cmn_err(CE_WARN, "DXIO Conf. PCIe Training RPC Failed: "
 		    "SMU 0x%x, DXIO: 0x%x", rpc.mdr_smu_resp,
 		    rpc.mdr_dxio_resp);
@@ -2560,16 +2560,16 @@ genoa_dxio_rpc_misc_rt_conf(genoa_iodie_t *iodie, uint32_t code, bool state)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = GENOA_DXIO_ENGINE_NONE;
-	rpc.mdr_arg0 = GENOA_DXIO_RT_SET_CONF;
+	rpc.mdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
+	rpc.mdr_engine = GENOA_MPIO_ENGINE_NONE;
+	rpc.mdr_arg0 = GENOA_MPIO_RT_SET_CONF;
 	rpc.mdr_arg1 = code;
 	rpc.mdr_arg2 = state ? 1 : 0;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK)) {
+	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK)) {
 		cmn_err(CE_WARN, "DXIO Set Misc. rt conf failed: Code: 0x%x, "
 		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", code, state,
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2584,11 +2584,11 @@ genoa_dxio_rpc_sm_start(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_START_SM;
+	rpc.mdr_req = GENOA_MPIO_OP_START_SM;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2603,11 +2603,11 @@ genoa_dxio_rpc_sm_resume(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_RESUME_SM;
+	rpc.mdr_req = GENOA_MPIO_OP_RESUME_SM;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2622,11 +2622,11 @@ genoa_dxio_rpc_sm_reload(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_RELOAD_SM;
+	rpc.mdr_req = GENOA_MPIO_OP_RELOAD_SM;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Reload RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2638,15 +2638,15 @@ genoa_dxio_rpc_sm_reload(genoa_iodie_t *iodie)
 
 
 static bool
-genoa_dxio_rpc_sm_getstate(genoa_iodie_t *iodie, genoa_dxio_reply_t *smp)
+genoa_dxio_rpc_sm_getstate(genoa_iodie_t *iodie, genoa_mpio_reply_t *smp)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_GET_SM_STATE;
+	rpc.mdr_req = GENOA_MPIO_OP_GET_SM_STATE;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
 		    "DXIO: 0x%x",
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
@@ -2672,14 +2672,14 @@ genoa_dxio_rpc_retrieve_engine(genoa_iodie_t *iodie)
 	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_DXIO_OP_GET_ENGINE_CFG;
+	rpc.mdr_req = GENOA_MPIO_OP_GET_ENGINE_CFG;
 	rpc.mdr_engine = (uint32_t)(conf->gmc_pa >> 32);
 	rpc.mdr_arg0 = conf->gmc_pa & 0xffffffff;
 	rpc.mdr_arg1 = conf->gmc_alloc_len / 4;
 
 	genoa_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_DXIO_RPC_OK) {
+	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: SMU 0x%x, "
 		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
 		return (false);
@@ -3983,13 +3983,13 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 
 	/*
 	 * Set up a few different variables in firmware. Best guesses is that we
-	 * need GENOA_DXIO_VAR_PCIE_COMPL so we can get PCIe completions to
-	 * actually happen, GENOA_DXIO_VAR_SLIP_INTERVAL is disabled, but I
+	 * need GENOA_MPIO_VAR_PCIE_COMPL so we can get PCIe completions to
+	 * actually happen, GENOA_MPIO_VAR_SLIP_INTERVAL is disabled, but I
 	 * can't say why. XXX We should probably disable NTB hotplug because we
 	 * don't have them just in case something changes here.
 	 */
-	if (!genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_PCIE_COMPL, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_SLIP_INTERVAL, 0)) {
+	if (!genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_PCIE_COMPL, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_SLIP_INTERVAL, 0)) {
 		return (1);
 	}
 
@@ -4012,30 +4012,30 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	 * format.
 	 */
 	if (!genoa_dxio_rpc_set_var(iodie, MLIAN_DXIO_VAR_RET_AFTER_MAP, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_RET_AFTER_CONF, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_ANCILLARY_V1, 1)) {
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_RET_AFTER_CONF, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_ANCILLARY_V1, 1)) {
 		return (1);
 	}
 
 	/*
 	 * Here, it's worth calling out what we're not setting. One of which is
-	 * GENOA_DXIO_VAR_MAP_EXACT_MATCH which ends up being used to cause
+	 * GENOA_MPIO_VAR_MAP_EXACT_MATCH which ends up being used to cause
 	 * the mapping phase to only work if there are exact matches. I believe
 	 * this means that if a device has more lanes then the configured port,
 	 * it wouldn't link up, which generally speaking isn't something we want
 	 * to do. Similarly, since there is no S3 support here, no need to
-	 * change the save and restore mode with GENOA_DXIO_VAR_S3_MODE.
+	 * change the save and restore mode with GENOA_MPIO_VAR_S3_MODE.
 	 *
-	 * From here, we do want to set GENOA_DXIO_VAR_SKIP_PSP, because the PSP
+	 * From here, we do want to set GENOA_MPIO_VAR_SKIP_PSP, because the PSP
 	 * really doesn't need to do anything with us. We do want to enable
-	 * GENOA_DXIO_VAR_PHY_PROG so the dxio engine can properly configure
+	 * GENOA_MPIO_VAR_PHY_PROG so the dxio engine can properly configure
 	 * things.
 	 *
 	 * XXX Should we gamble and set things that aren't unconditionally set
 	 * so we don't rely on hw defaults?
 	 */
-	if (!genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_PHY_PROG, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_SKIP_PSP, 1)) {
+	if (!genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_PHY_PROG, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_SKIP_PSP, 1)) {
 		return (0);
 	}
 
@@ -4146,7 +4146,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * space its header takes up. However, the subsequent payloads do.
 	 */
 	anc = conf->gmc_anc;
-	anc->zmad_type = GENOA_DXIO_HEAP_ANCILLARY;
+	anc->zmad_type = GENOA_MPIO_HEAP_ANCILLARY;
 	anc->zmad_vers = DXIO_ANCILLARY_VERSION;
 	anc->zmad_nu32s = (sizeof (zen_mpio_anc_data_t) +
 	    phy_override->gap_datalen) >> 2;
@@ -4176,7 +4176,7 @@ genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 	}
 
 	if (conf->gmc_anc != NULL && !genoa_dxio_rpc_load_data(iodie,
-	    GENOA_DXIO_HEAP_ANCILLARY, conf->gmc_anc_pa, conf->gmc_anc_len,
+	    GENOA_MPIO_HEAP_ANCILLARY, conf->gmc_anc_pa, conf->gmc_anc_len,
 	    0)) {
 		return (1);
 	}
@@ -4187,16 +4187,16 @@ genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 	 * it does; however, these heaps are always loaded with no data, even
 	 * though ancillary is skipped if there is none.
 	 */
-	if (!genoa_dxio_rpc_load_data(iodie, GENOA_DXIO_HEAP_MACPCS,
+	if (!genoa_dxio_rpc_load_data(iodie, GENOA_MPIO_HEAP_MACPCS,
 	    0, 0, 1) ||
-	    !genoa_dxio_rpc_load_data(iodie, GENOA_DXIO_HEAP_GPIO, 0, 0, 1)) {
+	    !genoa_dxio_rpc_load_data(iodie, GENOA_MPIO_HEAP_GPIO, 0, 0, 1)) {
 		return (1);
 	}
 
 	/*
 	 * Load our real data!
 	 */
-	if (!genoa_dxio_rpc_load_data(iodie, GENOA_DXIO_HEAP_ENGINE_CONFIG,
+	if (!genoa_dxio_rpc_load_data(iodie, GENOA_MPIO_HEAP_ENGINE_CONFIG,
 	    conf->gmc_pa, conf->gmc_conf_len, 0)) {
 		return (1);
 	}
@@ -4212,17 +4212,17 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 	 * override any of the properties there. But the defaults in DXIO
 	 * firmware seem to be used by default. We also might apply various
 	 * workarounds that we don't seem to need to
-	 * (GENOA_DXIO_RT_SET_CONF_DXIO_WA, GENOA_DXIO_RT_SET_CONF_SPC_WA,
-	 * GENOA_DXIO_RT_SET_CONF_FC_CRED_WA_DIS).
+	 * (GENOA_MPIO_RT_SET_CONF_DXIO_WA, GENOA_MPIO_RT_SET_CONF_SPC_WA,
+	 * GENOA_MPIO_RT_SET_CONF_FC_CRED_WA_DIS).
 	 */
 
 	/*
 	 * XXX Do we care about any of the following:
-	 *    o GENOA_DXIO_RT_SET_CONF_TX_CLOCK
-	 *    o GENOA_DXIO_RT_SET_CONF_SRNS
-	 *    o GENOA_DXIO_RT_SET_CONF_DLF_WA_DIS
+	 *    o GENOA_MPIO_RT_SET_CONF_TX_CLOCK
+	 *    o GENOA_MPIO_RT_SET_CONF_SRNS
+	 *    o GENOA_MPIO_RT_SET_CONF_DLF_WA_DIS
 	 *
-	 * I wonder why we don't enable GENOA_DXIO_RT_SET_CONF_CE_SRAM_ECC in
+	 * I wonder why we don't enable GENOA_MPIO_RT_SET_CONF_CE_SRAM_ECC in
 	 * the old world.
 	 */
 
@@ -4231,7 +4231,7 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 	 * 'improved latency'.
 	 */
 	if (!genoa_dxio_rpc_misc_rt_conf(iodie,
-	    GENOA_DXIO_RT_SET_CONF_TX_FIFO_MODE, 1)) {
+	    GENOA_MPIO_RT_SET_CONF_TX_FIFO_MODE, 1)) {
 		return (1);
 	}
 
@@ -4790,14 +4790,14 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 	}
 
 	for (;;) {
-		genoa_dxio_reply_t reply = { 0 };
+		genoa_mpio_reply_t reply = { 0 };
 
 		if (!genoa_dxio_rpc_sm_getstate(iodie, &reply)) {
 			return (1);
 		}
 
 		switch (reply.gdr_type) {
-		case GENOA_DXIO_DATA_TYPE_SM:
+		case GENOA_MPIO_DATA_TYPE_SM:
 			cmn_err(CE_CONT, "?Socket %u LISM 0x%x->0x%x\n",
 			    soc->gs_socno, iodie->gi_state, reply.gdr_arg0);
 			iodie->gi_state = reply.gdr_arg0;
@@ -4812,7 +4812,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 			 * mapped to what and update what ports are actually
 			 * being used by devices or not.
 			 */
-			case GENOA_DXIO_SM_MAPPED:
+			case GENOA_MPIO_SM_MAPPED:
 				genoa_pcie_populate_dbg(&genoa_fabric,
 				    GPCS_DXIO_SM_MAPPED, iodie->gi_node_id);
 
@@ -4855,7 +4855,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				    GPCS_DXIO_SM_MAPPED_RESUME,
 				    iodie->gi_node_id);
 				break;
-			case GENOA_DXIO_SM_CONFIGURED:
+			case GENOA_MPIO_SM_CONFIGURED:
 				genoa_pcie_populate_dbg(&genoa_fabric,
 				    GPCS_DXIO_SM_CONFIGURED, iodie->gi_node_id);
 
@@ -4869,7 +4869,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				    GPCS_DXIO_SM_CONFIGURED_RESUME,
 				    iodie->gi_node_id);
 				break;
-			case GENOA_DXIO_SM_DONE:
+			case GENOA_MPIO_SM_DONE:
 				/*
 				 * We made it. Somehow we're done!
 				 */
@@ -4886,7 +4886,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				break;
 			}
 			break;
-		case GENOA_DXIO_DATA_TYPE_RESET:
+		case GENOA_MPIO_DATA_TYPE_RESET:
 			genoa_pcie_populate_dbg(&genoa_fabric,
 			    GPCS_DXIO_SM_PERST, iodie->gi_node_id);
 			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
@@ -4937,7 +4937,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 			    GPCS_DXIO_SM_PERST_RESUME, iodie->gi_node_id);
 
 			break;
-		case GENOA_DXIO_DATA_TYPE_NONE:
+		case GENOA_MPIO_DATA_TYPE_NONE:
 			cmn_err(CE_WARN, "Socket %u LISM: Got the none data "
 			    "type... are we actually done?", soc->gs_socno);
 			goto done;

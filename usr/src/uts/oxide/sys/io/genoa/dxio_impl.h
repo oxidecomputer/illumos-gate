@@ -13,8 +13,8 @@
  * Copyright 2022 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_GENOA_DXIO_IMPL_H
-#define	_SYS_IO_GENOA_DXIO_IMPL_H
+#ifndef _SYS_IO_GENOA_MPIO_IMPL_H
+#define	_SYS_IO_GENOA_MPIO_IMPL_H
 
 /*
  * Definitions for the MPIO Engine configuration data format.
@@ -201,7 +201,7 @@ typedef struct zen_mpio_engine_data {
 /*
  * This macro should be a value like 0xff because this reset group is defined to
  * be an opaque token that is passed back to us. However, if we actually want to
- * do something with reset and get a chance to do something before the DXIO
+ * do something with reset and get a chance to do something before the MPIO
  * engine begins training, that value will not work and experimentally the value
  * 0x1 (which is what Ethanol and others use, likely every other board too),
  * then it does. For the time being, use this for our internal things which
@@ -223,7 +223,7 @@ typedef struct zen_mpio_platform {
 /*
  * These next structures are meant to assume standard x86 ILP32 alignment. These
  * structures are definitely Genoa and firmware revision specific. Hence we have
- * different packing requirements from the dxio bits above.
+ * different packing requirements from the MPIO bits above.
  */
 #pragma	pack(4)
 
@@ -484,122 +484,122 @@ extern const zen_mpio_platform_t cosmo_engine;
 extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 
 /*
- * DXIO message codes. These are also specific to firmware revision.
+ * MPIO message codes. These are also specific to firmware revision.
  */
-#define	GENOA_DXIO_OP_INIT		0x00
-#define	GENOA_DXIO_OP_GET_SM_STATE	0x09
-#define	GENOA_DXIO_OP_SET_LINK_SPEED	0x10
-#define	GENOA_DXIO_OP_GET_VERSION	0x13
-#define	GENOA_DXIO_OP_GET_ENGINE_CFG	0x14
-#define	GENOA_DXIO_OP_SET_VARIABLE	0x22
-#define	GENOA_DXIO_OP_LOAD_DATA		0x23
-#define	GENOA_DXIO_OP_LOAD_CAPS		0x24
-#define	GENOA_DXIO_OP_RELOAD_SM		0x2d
-#define	GENOA_DXIO_OP_GET_ERROR_LOG	0x2b
-#define	GENOA_DXIO_OP_SET_RUNTIME_PROP	0x3a
-#define	GENOA_DXIO_OP_XGMI_BER_ADAPT	0x40
-#define	GENOA_DXIO_OP_INIT_ESM		0x53
+#define	GENOA_MPIO_OP_INIT		0x00
+#define	GENOA_MPIO_OP_GET_SM_STATE	0x09
+#define	GENOA_MPIO_OP_SET_LINK_SPEED	0x10
+#define	GENOA_MPIO_OP_GET_VERSION	0x13
+#define	GENOA_MPIO_OP_GET_ENGINE_CFG	0x14
+#define	GENOA_MPIO_OP_SET_VARIABLE	0x22
+#define	GENOA_MPIO_OP_LOAD_DATA		0x23
+#define	GENOA_MPIO_OP_LOAD_CAPS		0x24
+#define	GENOA_MPIO_OP_RELOAD_SM		0x2d
+#define	GENOA_MPIO_OP_GET_ERROR_LOG	0x2b
+#define	GENOA_MPIO_OP_SET_RUNTIME_PROP	0x3a
+#define	GENOA_MPIO_OP_XGMI_BER_ADAPT	0x40
+#define	GENOA_MPIO_OP_INIT_ESM		0x53
 
 /*
  * The 0x300 in these are used to indicate deferred returns.
  */
-#define	GENOA_DXIO_OP_START_SM		0x307
-#define	GENOA_DXIO_OP_RESUME_SM		0x308
+#define	GENOA_MPIO_OP_START_SM		0x307
+#define	GENOA_MPIO_OP_RESUME_SM		0x308
 
 /*
  * MPIO RPC reply codes.
  *
  * While most of these codes are undocumented, most RPCs return
- * GENOA_DXIO_RPC_OK to indicate success.  But note that we have seen
- * GENOA_DXIO_OP_SET_VARIABLE return GENOA_DXIO_RPC_MBOX_IDLE in this
+ * GENOA_MPIO_RPC_OK to indicate success.  But note that we have seen
+ * GENOA_MPIO_OP_SET_VARIABLE return GENOA_MPIO_RPC_MBOX_IDLE in this
  * case as it seems to actually be using the mailboxes under the hood.
  */
-#define	GENOA_DXIO_RPC_NULL		0
-#define	GENOA_DXIO_RPC_TIMEOUT		1
-#define	GENOA_DXIO_RPC_ERROR		2
-#define	GENOA_DXIO_RPC_OK		3
-#define	GENOA_DXIO_RPC_UNKNOWN_LOCK	4
-#define	GENOA_DXIO_RPC_EAGAIN		5
-#define	GENOA_DXIO_RPC_MBOX_IDLE	6
-#define	GENOA_DXIO_RPC_MBOX_BUSY	7
-#define	GENOA_DXIO_RPC_MBOX_DONE	8
+#define	GENOA_MPIO_RPC_NULL		0
+#define	GENOA_MPIO_RPC_TIMEOUT		1
+#define	GENOA_MPIO_RPC_ERROR		2
+#define	GENOA_MPIO_RPC_OK		3
+#define	GENOA_MPIO_RPC_UNKNOWN_LOCK	4
+#define	GENOA_MPIO_RPC_EAGAIN		5
+#define	GENOA_MPIO_RPC_MBOX_IDLE	6
+#define	GENOA_MPIO_RPC_MBOX_BUSY	7
+#define	GENOA_MPIO_RPC_MBOX_DONE	8
 
 /*
  * Different data heaps that can be loaded.
  */
-#define	GENOA_DXIO_HEAP_EMPTY		0x00
-#define	GENOA_DXIO_HEAP_FABRIC_INIT	0x01
-#define	GENOA_DXIO_HEAP_MACPCS		0x02
-#define	GENOA_DXIO_HEAP_ENGINE_CONFIG	0x03
-#define	GENOA_DXIO_HEAP_CAPABILITIES	0x04
-#define	GENOA_DXIO_HEAP_GPIO		0x05
-#define	GENOA_DXIO_HEAP_ANCILLARY	0x06
+#define	GENOA_MPIO_HEAP_EMPTY		0x00
+#define	GENOA_MPIO_HEAP_FABRIC_INIT	0x01
+#define	GENOA_MPIO_HEAP_MACPCS		0x02
+#define	GENOA_MPIO_HEAP_ENGINE_CONFIG	0x03
+#define	GENOA_MPIO_HEAP_CAPABILITIES	0x04
+#define	GENOA_MPIO_HEAP_GPIO		0x05
+#define	GENOA_MPIO_HEAP_ANCILLARY	0x06
 
 /*
  * Some commands refer to an explicit engine in their request.
  */
-#define	GENOA_DXIO_ENGINE_NONE		0x00
-#define	GENOA_DXIO_ENGINE_PCIE		0x01
-#define	GENOA_DXIO_ENGINE_USB		0x02
-#define	GENOA_DXIO_ENGINE_SATA		0x03
+#define	GENOA_MPIO_ENGINE_NONE		0x00
+#define	GENOA_MPIO_ENGINE_PCIE		0x01
+#define	GENOA_MPIO_ENGINE_USB		0x02
+#define	GENOA_MPIO_ENGINE_SATA		0x03
 
 /*
  * The various variable codes that one can theoretically use with
- * GENOA_DXIO_OP_SET_VARIABLE.
+ * GENOA_MPIO_OP_SET_VARIABLE.
  */
-#define	GENOA_DXIO_VAR_SKIP_PSP			0x0d
+#define	GENOA_MPIO_VAR_SKIP_PSP			0x0d
 #define	MLIAN_DXIO_VAR_RET_AFTER_MAP		0x0e
-#define	GENOA_DXIO_VAR_RET_AFTER_CONF		0x0f
-#define	GENOA_DXIO_VAR_ANCILLARY_V1		0x10
-#define	GENOA_DXIO_VAR_NTB_HP_EN		0x11
-#define	GENOA_DXIO_VAR_MAP_EXACT_MATCH		0x12
-#define	GENOA_DXIO_VAR_S3_MODE			0x13
-#define	GENOA_DXIO_VAR_PHY_PROG			0x14
-#define	GENOA_DXIO_VAR_PCIE_COMPL		0x23
-#define	GENOA_DXIO_VAR_SLIP_INTERVAL		0x24
-#define	GENOA_DXIO_VAR_PCIE_POWER_OFF_DELAY	0x25
+#define	GENOA_MPIO_VAR_RET_AFTER_CONF		0x0f
+#define	GENOA_MPIO_VAR_ANCILLARY_V1		0x10
+#define	GENOA_MPIO_VAR_NTB_HP_EN		0x11
+#define	GENOA_MPIO_VAR_MAP_EXACT_MATCH		0x12
+#define	GENOA_MPIO_VAR_S3_MODE			0x13
+#define	GENOA_MPIO_VAR_PHY_PROG			0x14
+#define	GENOA_MPIO_VAR_PCIE_COMPL		0x23
+#define	GENOA_MPIO_VAR_SLIP_INTERVAL		0x24
+#define	GENOA_MPIO_VAR_PCIE_POWER_OFF_DELAY	0x25
 
 /*
  * The following are all values that can be used with
- * GENOA_DXIO_OP_SET_RUNTIME_PROP. It consists of various codes. Some of which
+ * GENOA_MPIO_OP_SET_RUNTIME_PROP. It consists of various codes. Some of which
  * have their own codes.
  */
-#define	GENOA_DXIO_RT_SET_CONF		0x00
-#define	GENOA_DXIO_RT_SET_CONF_DXIO_WA		0x03
-#define	GENOA_DXIO_RT_SET_CONF_SPC_WA		0x04
-#define	GENOA_DXIO_RT_SET_CONF_FC_CRED_WA_DIS	0x05
-#define	GENOA_DXIO_RT_SET_CONF_TX_CLOCK		0x07
-#define	GENOA_DXIO_RT_SET_CONF_SRNS		0x08
-#define	GENOA_DXIO_RT_SET_CONF_TX_FIFO_MODE	0x09
-#define	GENOA_DXIO_RT_SET_CONF_DLF_WA_DIS	0x0a
-#define	GENOA_DXIO_RT_SET_CONF_CE_SRAM_ECC	0x0b
+#define	GENOA_MPIO_RT_SET_CONF		0x00
+#define	GENOA_MPIO_RT_SET_CONF_DXIO_WA		0x03
+#define	GENOA_MPIO_RT_SET_CONF_SPC_WA		0x04
+#define	GENOA_MPIO_RT_SET_CONF_FC_CRED_WA_DIS	0x05
+#define	GENOA_MPIO_RT_SET_CONF_TX_CLOCK		0x07
+#define	GENOA_MPIO_RT_SET_CONF_SRNS		0x08
+#define	GENOA_MPIO_RT_SET_CONF_TX_FIFO_MODE	0x09
+#define	GENOA_MPIO_RT_SET_CONF_DLF_WA_DIS	0x0a
+#define	GENOA_MPIO_RT_SET_CONF_CE_SRAM_ECC	0x0b
 
-#define	GENOA_DXIO_RT_CONF_PCIE_TRAIN	0x02
-#define	GENOA_DXIO_RT_CONF_CLOCK_GATE	0x03
-#define	GENOA_DXIO_RT_PLEASE_LEAVE	0x05
-#define	GENOA_DXIO_RT_FORGET_BER	0x22
+#define	GENOA_MPIO_RT_CONF_PCIE_TRAIN	0x02
+#define	GENOA_MPIO_RT_CONF_CLOCK_GATE	0x03
+#define	GENOA_MPIO_RT_PLEASE_LEAVE	0x05
+#define	GENOA_MPIO_RT_FORGET_BER	0x22
 
 /*
  * DXIO Link training state machine states
  */
-typedef enum genoa_dxio_sm_state {
-	GENOA_DXIO_SM_INIT =		0x00,
-	GENOA_DXIO_SM_DISABLED =	0x01,
-	GENOA_DXIO_SM_SCANNED =		0x02,
-	GENOA_DXIO_SM_CANNED =		0x03,
-	GENOA_DXIO_SM_LOADED =		0x04,
-	GENOA_DXIO_SM_CONFIGURED =	0x05,
-	GENOA_DXIO_SM_IN_EARLY_TRAIN =	0x06,
-	GENOA_DXIO_SM_EARLY_TRAINED =	0x07,
-	GENOA_DXIO_SM_VETTING =		0x08,
-	GENOA_DXIO_SM_GET_VET =		0x09,
-	GENOA_DXIO_SM_NO_VET =		0x0a,
-	GENOA_DXIO_SM_GPIO_INIT =	0x0b,
-	GENOA_DXIO_SM_NHP_TRAIN =	0x0c,
-	GENOA_DXIO_SM_DONE =		0x0d,
-	GENOA_DXIO_SM_ERROR =		0x0e,
-	GENOA_DXIO_SM_MAPPED =		0x0f
-} genoa_dxio_sm_state_t;
+typedef enum genoa_mpio_sm_state {
+	GENOA_MPIO_SM_INIT =		0x00,
+	GENOA_MPIO_SM_DISABLED =	0x01,
+	GENOA_MPIO_SM_SCANNED =		0x02,
+	GENOA_MPIO_SM_CANNED =		0x03,
+	GENOA_MPIO_SM_LOADED =		0x04,
+	GENOA_MPIO_SM_CONFIGURED =	0x05,
+	GENOA_MPIO_SM_IN_EARLY_TRAIN =	0x06,
+	GENOA_MPIO_SM_EARLY_TRAINED =	0x07,
+	GENOA_MPIO_SM_VETTING =		0x08,
+	GENOA_MPIO_SM_GET_VET =		0x09,
+	GENOA_MPIO_SM_NO_VET =		0x0a,
+	GENOA_MPIO_SM_GPIO_INIT =	0x0b,
+	GENOA_MPIO_SM_NHP_TRAIN =	0x0c,
+	GENOA_MPIO_SM_DONE =		0x0d,
+	GENOA_MPIO_SM_ERROR =		0x0e,
+	GENOA_MPIO_SM_MAPPED =		0x0f
+} genoa_mpio_sm_state_t;
 
 /*
  * PCIe Link Training States
@@ -627,32 +627,32 @@ typedef enum genoa_dxio_pcie_state {
 } genoa_dxio_pcie_state_t;
 
 /*
- * When using GENOA_DXIO_OP_GET_SM_STATE, the following structure is actually
+ * When using GENOA_MPIO_OP_GET_SM_STATE, the following structure is actually
  * filled in via the RPC argument. This structure is more generally used amongst
  * different RPCs; however, since the state machine can often get different
  * types of requests this ends up mattering a bit more.
  */
-typedef enum genoa_dxio_data_type {
-	GENOA_DXIO_DATA_TYPE_NONE	 = 0,
-	GENOA_DXIO_DATA_TYPE_GENERIC,
-	GENOA_DXIO_DATA_TYPE_SM,
-	GENOA_DXIO_DATA_TYPE_HPSM,
-	GENOA_DXIO_DATA_TYPE_RESET
-} genoa_dxio_data_type_t;
+typedef enum genoa_mpio_data_type {
+	GENOA_MPIO_DATA_TYPE_NONE	 = 0,
+	GENOA_MPIO_DATA_TYPE_GENERIC,
+	GENOA_MPIO_DATA_TYPE_SM,
+	GENOA_MPIO_DATA_TYPE_HPSM,
+	GENOA_MPIO_DATA_TYPE_RESET
+} genoa_mpio_data_type_t;
 
-typedef struct genoa_dxio_reply {
-	genoa_dxio_data_type_t	gdr_type;
+typedef struct genoa_mpio_reply {
+	genoa_mpio_data_type_t	gdr_type;
 	uint8_t			gdr_nargs;
 	uint32_t		gdr_arg0;
 	uint32_t		gdr_arg1;
 	uint32_t		gdr_arg2;
 	uint32_t		gdr_arg3;
-} genoa_dxio_reply_t;
+} genoa_mpio_reply_t;
 
 /*
- * Types of DXIO Link speed updates. These must be ORed in with the base code.
+ * Types of MPIO Link speed updates. These must be ORed in with the base code.
  */
-#define	GENOA_DXIO_LINK_SPEED_SINGLE	0x800
+#define	GENOA_MPIO_LINK_SPEED_SINGLE	0x800
 
 typedef struct genoa_mpio_config {
 	zen_mpio_platform_t	*gmc_conf;
@@ -674,4 +674,4 @@ typedef struct genoa_hotplug {
 }
 #endif
 
-#endif /* _SYS_IO_GENOA_DXIO_IMPL_H */
+#endif /* _SYS_IO_GENOA_MPIO_IMPL_H */
