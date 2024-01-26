@@ -130,7 +130,7 @@ CTASSERT(sizeof (genoa_pptable_t) == 0x520);
 CTASSERT(sizeof (smu_hotplug_map_t) == 4);
 CTASSERT(sizeof (smu_hotplug_function_t) == 4);
 CTASSERT(sizeof (smu_hotplug_reset_t) == 4);
-CTASSERT(sizeof (smu_hotplug_table_t) == 0x480);
+CTASSERT(sizeof (smu_hotplug_table_t) == 0x780);
 
 const zen_mpio_platform_t ruby_engine_s0 = {
     .zmp_type = MPIO_PLATFORM_EPYC,

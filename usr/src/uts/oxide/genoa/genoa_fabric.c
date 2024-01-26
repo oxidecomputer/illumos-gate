@@ -2432,7 +2432,7 @@ genoa_dxio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
 	genoa_dxio_rpc_t rpc = { 0 };
 
 	rpc.mdr_req = GENOA_MPIO_OP_SET_VARIABLE;
-	rpc.mdr_engine = GENOA_MPIO_VAR_PCIE_POWER_OFF_DELAY;
+	rpc.mdr_engine = GENOA_DXIO_VAR_UNKNOWN;
 	rpc.mdr_arg0 = delay;
 	rpc.mdr_arg1 = disable_prep ? 1 : 0;
 
@@ -3983,13 +3983,13 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 
 	/*
 	 * Set up a few different variables in firmware. Best guesses is that we
-	 * need GENOA_MPIO_VAR_PCIE_COMPL so we can get PCIe completions to
-	 * actually happen, GENOA_MPIO_VAR_SLIP_INTERVAL is disabled, but I
+	 * need GENOA_DXIO_VAR_PCIE_COMPL so we can get PCIe completions to
+	 * actually happen, GENOA_DXIO_VAR_SLIP_INTERVAL is disabled, but I
 	 * can't say why. XXX We should probably disable NTB hotplug because we
 	 * don't have them just in case something changes here.
 	 */
-	if (!genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_PCIE_COMPL, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_SLIP_INTERVAL, 0)) {
+	if (!genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_PCIE_COMPL, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_SLIP_INTERVAL, 0)) {
 		return (1);
 	}
 
@@ -3998,9 +3998,12 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	 * power off. We explicitly ask for no delay. The latter argument is
 	 * about disabling another command (which we don't use), but to keep
 	 * firmware in its expected path we don't set that.  Older DXIO firmware
-	 * doesn't support this so we skip it there.
+	 * doesn't support this so we skip it there.  XXX(cross) Neither does
+	 * newer firmware, though we need to see if there is an analogue.
 	 */
-	if (genoa_dxio_version_at_least(iodie, 45, 682) &&
+	extern bool xxxhackymchackface;
+	if (!xxxhackymchackface &&
+	    genoa_dxio_version_at_least(iodie, 45, 682) &&
 	    !genoa_dxio_rpc_pcie_poweroff_config(iodie, 0, false)) {
 		return (1);
 	}
@@ -4011,31 +4014,31 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	 * and then also to indicate that we want to use the v1 ancillary data
 	 * format.
 	 */
-	if (!genoa_dxio_rpc_set_var(iodie, MLIAN_DXIO_VAR_RET_AFTER_MAP, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_RET_AFTER_CONF, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_ANCILLARY_V1, 1)) {
+	if (!genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_RET_AFTER_MAP, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_RET_AFTER_CONF, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_ANCILLARY_V1, 1)) {
 		return (1);
 	}
 
 	/*
 	 * Here, it's worth calling out what we're not setting. One of which is
-	 * GENOA_MPIO_VAR_MAP_EXACT_MATCH which ends up being used to cause
+	 * GENOA_DXIO_VAR_MAP_EXACT_MATCH which ends up being used to cause
 	 * the mapping phase to only work if there are exact matches. I believe
 	 * this means that if a device has more lanes then the configured port,
 	 * it wouldn't link up, which generally speaking isn't something we want
 	 * to do. Similarly, since there is no S3 support here, no need to
-	 * change the save and restore mode with GENOA_MPIO_VAR_S3_MODE.
+	 * change the save and restore mode with GENOA_DXIO_VAR_S3_MODE.
 	 *
-	 * From here, we do want to set GENOA_MPIO_VAR_SKIP_PSP, because the PSP
+	 * From here, we do want to set GENOA_DXIO_VAR_SKIP_PSP, because the PSP
 	 * really doesn't need to do anything with us. We do want to enable
-	 * GENOA_MPIO_VAR_PHY_PROG so the dxio engine can properly configure
+	 * GENOA_DXIO_VAR_PHY_PROG so the dxio engine can properly configure
 	 * things.
 	 *
 	 * XXX Should we gamble and set things that aren't unconditionally set
 	 * so we don't rely on hw defaults?
 	 */
-	if (!genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_PHY_PROG, 1) ||
-	    !genoa_dxio_rpc_set_var(iodie, GENOA_MPIO_VAR_SKIP_PSP, 1)) {
+	if (!genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_PHY_PROG, 1) ||
+	    !genoa_dxio_rpc_set_var(iodie, GENOA_DXIO_VAR_SKIP_PSP, 1)) {
 		return (0);
 	}
 
@@ -4797,7 +4800,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 		}
 
 		switch (reply.gdr_type) {
-		case GENOA_MPIO_DATA_TYPE_SM:
+		case GENOA_DXIO_DATA_TYPE_SM:
 			cmn_err(CE_CONT, "?Socket %u LISM 0x%x->0x%x\n",
 			    soc->gs_socno, iodie->gi_state, reply.gdr_arg0);
 			iodie->gi_state = reply.gdr_arg0;
@@ -4812,7 +4815,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 			 * mapped to what and update what ports are actually
 			 * being used by devices or not.
 			 */
-			case GENOA_MPIO_SM_MAPPED:
+			case GENOA_DXIO_SM_MAPPED:
 				genoa_pcie_populate_dbg(&genoa_fabric,
 				    GPCS_DXIO_SM_MAPPED, iodie->gi_node_id);
 
@@ -4855,7 +4858,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				    GPCS_DXIO_SM_MAPPED_RESUME,
 				    iodie->gi_node_id);
 				break;
-			case GENOA_MPIO_SM_CONFIGURED:
+			case GENOA_DXIO_SM_CONFIGURED:
 				genoa_pcie_populate_dbg(&genoa_fabric,
 				    GPCS_DXIO_SM_CONFIGURED, iodie->gi_node_id);
 
@@ -4869,7 +4872,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				    GPCS_DXIO_SM_CONFIGURED_RESUME,
 				    iodie->gi_node_id);
 				break;
-			case GENOA_MPIO_SM_DONE:
+			case GENOA_DXIO_SM_DONE:
 				/*
 				 * We made it. Somehow we're done!
 				 */
@@ -4886,7 +4889,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				break;
 			}
 			break;
-		case GENOA_MPIO_DATA_TYPE_RESET:
+		case GENOA_DXIO_DATA_TYPE_RESET:
 			genoa_pcie_populate_dbg(&genoa_fabric,
 			    GPCS_DXIO_SM_PERST, iodie->gi_node_id);
 			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
@@ -4937,7 +4940,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 			    GPCS_DXIO_SM_PERST_RESUME, iodie->gi_node_id);
 
 			break;
-		case GENOA_MPIO_DATA_TYPE_NONE:
+		case GENOA_DXIO_DATA_TYPE_NONE:
 			cmn_err(CE_WARN, "Socket %u LISM: Got the none data "
 			    "type... are we actually done?", soc->gs_socno);
 			goto done;
