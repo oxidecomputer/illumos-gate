@@ -236,81 +236,98 @@ typedef struct genoa_pptable {
 	/*
 	 * Default limits in the system.
 	 */
-	uint32_t	ppt_tdp;
-	uint32_t	ppt_ppt;
-	uint32_t	ppt_tdc;
-	uint32_t	ppt_edc;
-	uint32_t	ppt_tjmax;
+	uint32_t	ppt_tdp;		/* Milliwatts */
+	uint32_t	ppt_ppt;		/* Milliwatts */
+	uint32_t	ppt_tdc;		/* Amps */
+	uint32_t	ppt_edc;		/* Amps */
+	uint32_t	ppt_tjmax;		/* Deg C */
 	/*
 	 * Platform specific limits.
 	 */
-	uint32_t	ppt_plat_tdp_lim;
-	uint32_t	ppt_plat_ppt_lim;
-	uint32_t	ppt_plat_tdc_lim;
-	uint32_t	ppt_plat_edc_lim;
+	uint32_t	ppt_plat_tdp_lim;	/* Milliwatts */
+	uint32_t	ppt_plat_ppt_lim;	/* Milliwatts */
+	uint32_t	ppt_plat_tdc_lim;	/* Amps */
+	uint32_t	ppt_plat_edc_lim;	/* Amps */
 	/*
-	 * Table of values that are meant to drive fans and can probably be left
-	 * all at zero.
+	 * Table of values for driving fans.  Can probably be left zeroed.
 	 */
-	uint8_t		ppt_fan_override;
-	uint8_t		ppt_fan_hyst;
-	uint8_t		ppt_fan_temp_low;
-	uint8_t		ppt_fan_temp_med;
-	uint8_t		ppt_fan_temp_high;
-	uint8_t		ppt_fan_temp_crit;
-	uint8_t		ppt_fan_pwm_low;
-	uint8_t		ppt_fan_pwm_med;
-	uint8_t		ppt_fan_pwm_high;
-	uint8_t		ppt_fan_pwm_freq;
-	uint8_t		ppt_fan_polarity;
+	uint8_t		ppt_fan_override;	/* 1: use these, 0: defaults */
+	uint8_t		ppt_fan_hyst;		/* Deg C */
+	uint8_t		ppt_fan_temp_low;	/* Deg C */
+	uint8_t		ppt_fan_temp_med;	/* Deg C */
+	uint8_t		ppt_fan_temp_high;	/* Deg C */
+	uint8_t		ppt_fan_temp_crit;	/* Deg C */
+	uint8_t		ppt_fan_pwm_low;	/* 0 - 100 */
+	uint8_t		ppt_fan_pwm_med;	/* 0 - 100 */
+	uint8_t		ppt_fan_pwm_high;	/* 0 - 100 */
+	uint8_t		ppt_fan_pwm_freq;	/* 0 = 25kHz, 1 = 100 Hz */
+	uint8_t		ppt_fan_polarity;	/* 0 = neg, 1 = pos */
 	uint8_t		ppt_fan_spare;
 
 	/*
-	 * Misc. debug options.
+	 * Misc. debug options
 	 */
-	int32_t		ppt_core_dldo_margin;
-	int32_t		ppt_vddcr_cpu_margin;
-	int32_t		ppt_vddcr_soc_margin;
-	uint8_t		ppt_cc1_dis;
-	uint8_t		ppt_detpct_en;
-	uint8_t		ppt_detpct;
-	uint8_t		ppt_ccx_dci_mode;
-	uint8_t		ppt_apb_dis;
-	uint8_t		ppt_eff_mode_en;
-	uint8_t		ppt_pwr_mgmt_override;
-	uint8_t		ppt_pwr_mgmt;
-	uint8_t		ppt_esm[4];
+	int32_t		ppt_core_dldo_margin;	/* PSM count */
+	int32_t		ppt_vddcr_cpu_margin;	/* Millivolts */
+	int32_t		ppt_vddcr_soc_margin;	/* Millivolts */
+	int32_t		ppt_vddio_volt_margin;	/* Millivolts */
+	uint8_t		ppt_cc1_dis;		/* CC1; 0=en, 1=dis */
+	uint8_t		ppt_detism_en;		/* perf determinism; 1=en */
+	uint8_t		ppt_ccx_vdci_mode;	/* 0=predictive, 1=async */
+	uint8_t		ppt_apbdis;		/* 1=APBDIS, 0=mission mode */
+	uint8_t		ppt_effiency_policy;	/* 0=high, 1=eff, 2=max io */
+	uint8_t		ppt_pcie_speed_ctl;	/* 0=enable, 1=gen4, 2=gen5 */
+	uint8_t		ppt_mdo_spare[2];
 
 	/*
-	 * DF Cstate configuration.
+	 * DF Cstate configuration
 	 */
 	uint8_t		ppt_df_override;
-	uint8_t		ppt_df_clk_pwrdn;
-	uint8_t		ppt_df_refresh_en;
-	uint8_t		ppt_df_gmi_pwrdn;
-	uint8_t		ppt_df_gop_pwrdn;
-	uint8_t		ppt_df_spare[2];
-
-	uint8_t		ppt_ccr_en;
+	uint8_t		ppt_df_clk_pwrdn_en;
+	uint8_t		ppt_df_self_refresh_en;
+	uint8_t		ppt_df_gmi_pwrdn_en;
+	uint8_t		ppt_df_gop_pwrdn_en;
+	uint8_t		ppt_df_spare[3];
 
 	/*
-	 * xGMI Configuration
+	 * xGMI configuration
 	 */
 	uint8_t		ppt_xgmi_max_width_en;
 	uint8_t		ppt_xgmi_max_width;
-	uint8_t		ppt_xgmi_min_width_en;
-	uint8_t		ppt_xgmi_min_width;
 	uint8_t		ppt_xgmi_force_width_en;
 	uint8_t		ppt_xgmi_force_width;
-	uint8_t		ppt_spare[2];
+
+	/*
+	 * GFXCLK/GFXOFF configuration
+	 */
+	uint8_t		ppt_gfx_clk_src;		/* 0=PLL, 1=DFLL */
+	uint8_t		ppt_gfx_msmu_sec_restore_dis;	/* 1=use PSP not MSMU */
+	uint8_t		ppt_gfx_apcc_en;		/* 1=en */
+	uint8_t		ppt_gfx_spare0;
+	uint16_t	ppt_gfx_init_min_volt;		/* Millivolts */
+	uint16_t	ppt_gfx_clk_init_freq;		/* MHz */
+	uint16_t	ppt_gfx_clkoff_entry_freq;	/* MHz */
+	uint16_t	ppt_gfx_clk_idle_freq;		/* MHz */
+	uint16_t	ppt_gfx_clk_slew_rate;
+	uint16_t	ppt_gfx_clk_fmin_override;	/* MHz */
+	uint16_t	ppt_gfx_min_volt;		/* Millivolts */
+	uint16_t	ppt_gfx_max_volt;		/* Millivolts */
+	uint16_t	ppt_gfx_clk_force_freq;		/* MHz */
+	uint16_t	ppt_gfx_clk_max_override_freq;	/* MHz */
+	uint8_t		ppt_gfx_dldo_bypass;
+	uint8_t		ppt_gfx_spare1[3];
 
 	/*
 	 * Telemetry and Calibration
 	 */
-	uint32_t	ppt_cpu_full_scale;
-	int32_t		ppt_cpu_offset;
-	uint32_t	ppt_soc_full_scale;
-	int32_t		ppt_soc_offset;
+	uint8_t		ppt_i3c_sda_hold_tm[4];
+	uint8_t		ppt_telem_current_guard_band;	/* 0.125% */
+	uint8_t		ppt_svi3_svc_speed;
+	uint8_t		ppt_telem_spare0[2];
+	uint16_t	ppt_pcc_limit;			/* Amps */
+	uint8_t		ppt_i3c_scl_pp_high_cnt;
+	uint8_t		ppt_i3c_sdr_speed;
+	uint32_t	ppt_telem_spare1;
 
 	/*
 	 * Overclocking.
@@ -322,42 +339,47 @@ typedef struct genoa_pptable {
 	/*
 	 * Clock frequency forcing
 	 */
-	uint16_t	ppt_cclk_freq;
-	uint16_t	ppt_fmax_override;
+	uint16_t	ppt_force_cclk_freq;	/* MHz */
+	uint16_t	ppt_fmax_override;	/* MHz */
 	uint8_t		ppt_apbdis_dfps;
 	uint8_t		ppt_dfps_freqo_dis;
-	uint8_t		ppt_dfps_lato_dis;
-	uint8_t		ppt_cclk_spare[1];
+	uint8_t		ppt_cclk_spare;
+	uint8_t		ppt_cclk_dfs_bypass_off;
 
 	/*
 	 * HTF Overrides
 	 */
-	uint16_t	ppt_htf_temp_max;
-	uint16_t	ppt_htf_freq_max;
-	uint16_t	ppt_mtf_temp_max;
-	uint16_t	ppt_mtf_freq_max;
+	uint16_t	ppt_htf_temp_max;	/* Deg C */
+	uint16_t	ppt_htf_freq_max;	/* MHz */
+	uint16_t	ppt_mtf_temp_max;	/* Deg C */
+	uint16_t	ppt_mtf_freq_max;	/* MHz */
 
 	/*
-	 * Various CPPC settings.
+	 * CPPC Defaults
 	 */
-	uint8_t		ppt_ccp_override;
-	uint8_t		ppt_ccp_epp;
-	uint8_t		ppt_ccp_perf_max;
-	uint8_t		ppt_ccp_perf_min;
-	uint16_t	ppt_ccp_thr_apic_size;
-	uint8_t		ppt_ccp_spare[2];
-	uint16_t	ppt_ccp_thr_map[256];
+	uint8_t		ppt_cppc_override;
+	uint8_t		ppt_cppc_epp;		/* 0-100 */
+	uint8_t		ppt_cppc_perf_max;	/* 0-100 */
+	uint8_t		ppt_cppc_perf_min;	/* 0-100 */
+
+	uint16_t	ppt_cppc_thr_apicid_size;
+	uint8_t		ppt_cppc_spare[2];
+	uint16_t	ppt_cppc_thr_map[512];
 
 	/*
 	 * Other Values
 	 */
-	uint16_t	ppt_vddcr_cpu_force;
-	uint16_t	ppt_vddcr_soc_force;
-	uint16_t	ppt_cstate_boost_override;
-	uint8_t		ppt_max_did_override;
-	uint8_t		ppt_cca_en;
-	uint8_t		ppt_more_spare[2];
-	uint32_t	ppt_l3credit_ceil;
+	uint16_t	ppt_vddcr_cpu_volt_force;	/* mV */
+	uint16_t	ppt_vddcr_soc_volt_force;	/* mV */
+	uint16_t	ppt_vddio_volt_force;		/* mV */
+	uint8_t		ppt_other_spare[2];
+
+	uint32_t	ppt_min_s0_i3_sleep_tm;		/* mS */
+	uint32_t	ppt_wlan_bdf;
+	uint8_t		ppt_df_pstate_range_en;
+	uint8_t		ppt_df_pstate_range_min;
+	uint8_t		ppt_df_pstate_range_max;
+	uint8_t		ppt_df_pstate_spare;
 
 	uint32_t	ppt_reserved[28];
 } genoa_pptable_t;
