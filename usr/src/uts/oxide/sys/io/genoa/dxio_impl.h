@@ -13,8 +13,8 @@
  * Copyright 2022 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_GENOA_MPIO_IMPL_H
-#define	_SYS_IO_GENOA_MPIO_IMPL_H
+#ifndef _SYS_IO_GENOA_DXIO_IMPL_H
+#define	_SYS_IO_GENOA_DXIO_IMPL_H
 
 /*
  * Definitions for the MPIO Engine configuration data format.
@@ -228,9 +228,9 @@ typedef struct zen_mpio_platform {
 #pragma	pack(4)
 
 /*
- * Power and Performance Table. XXX This seems to vary a bit depending on the
- * firmware version. We will need to be careful and figure out what version of
- * firmware we have to ensure that we have the right table.
+ * Power and Performance Table. XXX This varies depending on the
+ * firmware version.  Be careful to ensure that the definition
+ * here matches the version of firmware one uses.
  */
 typedef struct genoa_pptable {
 	/*
@@ -441,20 +441,22 @@ typedef enum smu_entb_bits {
 
 #define	SMU_I2C_DIRECT	0x7
 
+/*
+ * PCIe Hotplug mapping
+ */
 typedef struct smu_hotplug_map {
 	uint32_t	shm_format:3;
-	uint32_t	shm_rsvd0:2;
 	uint32_t	shm_rst_valid:1;
 	uint32_t	shm_active:1;
 	uint32_t	shm_apu:1;
 	uint32_t	shm_die_id:1;
-	uint32_t	shm_port_id:3;
-	uint32_t	shm_tile_id:3;
+	uint32_t	shm_port_id:4;
+	uint32_t	shm_tile_id:4;
 	uint32_t	shm_bridge:5;
-	uint32_t	shm_rsvd1:4;
+	uint32_t	shm_rsvd0:4;
 	uint32_t	shm_alt_slot_no:6;
 	uint32_t	shm_sec:1;
-	uint32_t	shm_rsvsd2:1;
+	uint32_t	shm_rsvsd1:1;
 } smu_hotplug_map_t;
 
 typedef struct smu_hotplug_function {
@@ -464,10 +466,10 @@ typedef struct smu_hotplug_function {
 	uint32_t	shf_i2c_dtype:2;
 	uint32_t	shf_i2c_bus:5;
 	uint32_t	shf_mask:8;
-	uint32_t	shf_rsvd0:6;
+	uint32_t	shf_i2c_bus2:6;
 } smu_hotplug_function_t;
 
-typedef struct smu_hotpug_reset {
+typedef struct smu_hotplug_reset {
 	uint32_t	shr_rsvd0:3;
 	uint32_t	shr_i2c_gpio_byte:3;
 	uint32_t	shr_i2c_daddr:5;
@@ -477,7 +479,14 @@ typedef struct smu_hotpug_reset {
 	uint32_t	shr_rsvd1:6;
 } smu_hotplug_reset_t;
 
-#define	GENOA_HOTPLUG_MAX_PORTS	96
+typedef struct smu_hotplug_engine_data {
+	uint8_t		shed_start_lane;
+	uint8_t		shed_end_lane;
+	uint8_t		shed_socket;
+	uint8_t		shed_slot;
+} smu_hotplot_engine_data_t;
+
+#define	GENOA_HOTPLUG_MAX_PORTS	160
 
 typedef struct smu_hotplug_table {
 	smu_hotplug_map_t	smt_map[GENOA_HOTPLUG_MAX_PORTS];
@@ -569,22 +578,42 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
  * The various variable codes that one can theoretically use with
  * GENOA_MPIO_OP_SET_VARIABLE.
  */
-#define	GENOA_MPIO_VAR_SKIP_PSP			0x0d
-#define	MLIAN_DXIO_VAR_RET_AFTER_MAP		0x0e
-#define	GENOA_MPIO_VAR_RET_AFTER_CONF		0x0f
-#define	GENOA_MPIO_VAR_ANCILLARY_V1		0x10
-#define	GENOA_MPIO_VAR_NTB_HP_EN		0x11
-#define	GENOA_MPIO_VAR_MAP_EXACT_MATCH		0x12
-#define	GENOA_MPIO_VAR_S3_MODE			0x13
-#define	GENOA_MPIO_VAR_PHY_PROG			0x14
-#define	GENOA_MPIO_VAR_PCIE_COMPL		0x23
-#define	GENOA_MPIO_VAR_SLIP_INTERVAL		0x24
-#define	GENOA_MPIO_VAR_PCIE_POWER_OFF_DELAY	0x25
+#define	GENOA_DXIO_INDEX_REG_END		0x0c
+#define	GENOA_DXIO_VAR_SKIP_PSP			0x0d
+#define	GENOA_DXIO_VAR_RET_AFTER_MAP		0x0e
+#define	GENOA_DXIO_VAR_RET_AFTER_CONF		0x0f
+#define	GENOA_DXIO_VAR_ANCILLARY_V1		0x10
+#define	GENOA_DXIO_VAR_NTB_HP_EN		0x11
+#define	GENOA_DXIO_VAR_MAP_EXACT_MATCH		0x12
+#define	GENOA_DXIO_VAR_S3_MODE			0x13
+#define	GENOA_DXIO_VAR_PHY_PROG			0x14
+#define	GENOA_DXIO_VAR_CCA_DIS			0x16
+#define	GENOA_DXIO_VAR_REC_CTL			0x17
+#define	GENOA_DXIO_VAR_SKIP_ADAPT_RX_DFE	0x18
+#define	GENOA_DXIO_VAR_EXP_NUM			0x19
+#define	GENOA_DXIO_VAR_PWR_CLK_GATING		0x1a
+#define	GENOA_DXIO_VAR_PWR_STATIC_CLK_GATING	0x1b
+#define	GENOA_DXIO_VAR_PWR_SHUTDOWN_REFCLK	0x1c
+#define	GENOA_DXIO_VAR_GPIO26_GEN_RST		0x1d
+#define	GENOA_DXIO_VAR_GPIO40_NVME_RST		0x1e
+#define	GENOA_DXIO_VAR_VALID_PHY_W_FLAG		0x1f
+#define	GENOA_DXIO_VAR_CBS_OPT_EN_PWR_MGMT	0x20
+#define	GENOA_DXIO_VAR_PWR_MGMT_PWR_GATING	0x21
+#define	GENOA_DXIO_VAR_PWR_MGMT_CLK_GATING	0x22
+#define	GENOA_DXIO_VAR_PCIE_COMPL		0x23
+#define	GENOA_DXIO_VAR_SLIP_INTERVAL		0x24
+#define	GENOA_DXIO_VAR_UNKNOWN			0x25
+#define	GENOA_DXIO_VAR_INIT_GEN3_RX		0x26
+#define	GENOA_DXIO_VAR_INIT_GEN4_RX		0x27
+#define	GENOA_DXIO_VAR_EP2_GPIO_RST		0x28
+#define	GENOA_DXIO_SATA_GEN1_SETTINGS		0x29
+#define	GENOA_DXIO_SATA_GEN2_SETTINGS		0x2a
+#define	GENOA_DXIO_SATA_GEN3_SETTINGS		0x2b
 
 /*
  * The following are all values that can be used with
- * GENOA_MPIO_OP_SET_RUNTIME_PROP. It consists of various codes. Some of which
- * have their own codes.
+ * GENOA_MPIO_OP_SET_RUNTIME_PROP. Some of the various
+ * codes have their own sub-codes.
  */
 #define	GENOA_MPIO_RT_SET_CONF		0x00
 #define	GENOA_MPIO_RT_SET_CONF_DXIO_WA		0x03
@@ -604,24 +633,24 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 /*
  * DXIO Link training state machine states
  */
-typedef enum genoa_mpio_sm_state {
-	GENOA_MPIO_SM_INIT =		0x00,
-	GENOA_MPIO_SM_DISABLED =	0x01,
-	GENOA_MPIO_SM_SCANNED =		0x02,
-	GENOA_MPIO_SM_CANNED =		0x03,
-	GENOA_MPIO_SM_LOADED =		0x04,
-	GENOA_MPIO_SM_CONFIGURED =	0x05,
-	GENOA_MPIO_SM_IN_EARLY_TRAIN =	0x06,
-	GENOA_MPIO_SM_EARLY_TRAINED =	0x07,
-	GENOA_MPIO_SM_VETTING =		0x08,
-	GENOA_MPIO_SM_GET_VET =		0x09,
-	GENOA_MPIO_SM_NO_VET =		0x0a,
-	GENOA_MPIO_SM_GPIO_INIT =	0x0b,
-	GENOA_MPIO_SM_NHP_TRAIN =	0x0c,
-	GENOA_MPIO_SM_DONE =		0x0d,
-	GENOA_MPIO_SM_ERROR =		0x0e,
-	GENOA_MPIO_SM_MAPPED =		0x0f
-} genoa_mpio_sm_state_t;
+typedef enum genoa_dxio_sm_state {
+	GENOA_DXIO_SM_INIT =		0x00,
+	GENOA_DXIO_SM_DISABLED =	0x01,
+	GENOA_DXIO_SM_SCANNED =		0x02,
+	GENOA_DXIO_SM_CANNED =		0x03,
+	GENOA_DXIO_SM_LOADED =		0x04,
+	GENOA_DXIO_SM_CONFIGURED =	0x05,
+	GENOA_DXIO_SM_IN_EARLY_TRAIN =	0x06,
+	GENOA_DXIO_SM_EARLY_TRAINED =	0x07,
+	GENOA_DXIO_SM_VETTING =		0x08,
+	GENOA_DXIO_SM_GET_VET =		0x09,
+	GENOA_DXIO_SM_NO_VET =		0x0a,
+	GENOA_DXIO_SM_GPIO_INIT =	0x0b,
+	GENOA_DXIO_SM_NHP_TRAIN =	0x0c,
+	GENOA_DXIO_SM_DONE =		0x0d,
+	GENOA_DXIO_SM_ERROR =		0x0e,
+	GENOA_DXIO_SM_MAPPED =		0x0f
+} genoa_dxio_sm_state_t;
 
 /*
  * PCIe Link Training States
@@ -654,16 +683,16 @@ typedef enum genoa_dxio_pcie_state {
  * different RPCs; however, since the state machine can often get different
  * types of requests this ends up mattering a bit more.
  */
-typedef enum genoa_mpio_data_type {
-	GENOA_MPIO_DATA_TYPE_NONE	 = 0,
-	GENOA_MPIO_DATA_TYPE_GENERIC,
-	GENOA_MPIO_DATA_TYPE_SM,
-	GENOA_MPIO_DATA_TYPE_HPSM,
-	GENOA_MPIO_DATA_TYPE_RESET
-} genoa_mpio_data_type_t;
+typedef enum genoa_dxio_data_type {
+	GENOA_DXIO_DATA_TYPE_NONE	 = 0,
+	GENOA_DXIO_DATA_TYPE_GENERIC,
+	GENOA_DXIO_DATA_TYPE_SM,
+	GENOA_DXIO_DATA_TYPE_HPSM,
+	GENOA_DXIO_DATA_TYPE_RESET
+} genoa_dxio_data_type_t;
 
 typedef struct genoa_mpio_reply {
-	genoa_mpio_data_type_t	gdr_type;
+	genoa_dxio_data_type_t	gdr_type;
 	uint8_t			gdr_nargs;
 	uint32_t		gdr_arg0;
 	uint32_t		gdr_arg1;
@@ -696,4 +725,4 @@ typedef struct genoa_hotplug {
 }
 #endif
 
-#endif /* _SYS_IO_GENOA_MPIO_IMPL_H */
+#endif /* _SYS_IO_GENOA_DXIO_IMPL_H */

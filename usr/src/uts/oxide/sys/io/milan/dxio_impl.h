@@ -457,7 +457,7 @@ typedef struct smu_hotplug_function {
 	uint32_t	shf_rsvd0:6;
 } smu_hotplug_function_t;
 
-typedef struct smu_hotpug_reset {
+typedef struct smu_hotplug_reset {
 	uint32_t	shr_rsvd0:3;
 	uint32_t	shr_i2c_gpio_byte:3;
 	uint32_t	shr_i2c_daddr:5;

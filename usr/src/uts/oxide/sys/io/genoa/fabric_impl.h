@@ -160,7 +160,7 @@ struct genoa_iodie {
 	uint8_t			gi_smu_fw[3];
 	uint32_t		gi_dxio_fw[2];
 	genoa_iodie_flag_t	gi_flags;
-	genoa_mpio_sm_state_t	gi_state;
+	genoa_dxio_sm_state_t	gi_state;
 	genoa_mpio_config_t	gi_dxio_conf;
 	uint64_t		gi_dpm_weights[GENOA_MAX_DPM_WEIGHTS];
 	genoa_ioms_t		gi_ioms[GENOA_IOMS_PER_IODIE];
