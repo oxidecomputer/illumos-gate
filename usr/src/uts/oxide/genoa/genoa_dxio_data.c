@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -116,16 +116,16 @@ CTASSERT(offsetof(genoa_pptable_t, ppt_fan_override) == 0x24);
 CTASSERT(offsetof(genoa_pptable_t, ppt_core_dldo_margin) == 0x30);
 CTASSERT(offsetof(genoa_pptable_t, ppt_df_override) == 0x48);
 CTASSERT(offsetof(genoa_pptable_t, ppt_xgmi_max_width_en) == 0x50);
-CTASSERT(offsetof(genoa_pptable_t, ppt_cpu_full_scale) == 0x58);
-CTASSERT(offsetof(genoa_pptable_t, ppt_oc_dis) == 0x68);
-CTASSERT(offsetof(genoa_pptable_t, ppt_cclk_freq) == 0x6c);
-CTASSERT(offsetof(genoa_pptable_t, ppt_htf_temp_max) == 0x74);
-CTASSERT(offsetof(genoa_pptable_t, ppt_ccp_override) == 0x7c);
-CTASSERT(offsetof(genoa_pptable_t, ppt_ccp_thr_apic_size) == 0x80);
-CTASSERT(offsetof(genoa_pptable_t, ppt_ccp_thr_map) == 0x84);
-CTASSERT(offsetof(genoa_pptable_t, ppt_vddcr_cpu_force) == 0x284);
-CTASSERT(offsetof(genoa_pptable_t, ppt_reserved) == 0x294);
-CTASSERT(sizeof (genoa_pptable_t) == 0x304);
+CTASSERT(offsetof(genoa_pptable_t, ppt_i3c_sda_hold_tm) == 0x70);
+CTASSERT(offsetof(genoa_pptable_t, ppt_oc_dis) == 0x80);
+CTASSERT(offsetof(genoa_pptable_t, ppt_force_cclk_freq) == 0x84);
+CTASSERT(offsetof(genoa_pptable_t, ppt_htf_temp_max) == 0x8c);
+CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_override) == 0x94);
+CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_thr_apicid_size) == 0x98);
+CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_thr_map) == 0x9c);
+CTASSERT(offsetof(genoa_pptable_t, ppt_vddcr_cpu_volt_force) == 0x49c);
+CTASSERT(offsetof(genoa_pptable_t, ppt_reserved) == 0x4b0);
+CTASSERT(sizeof (genoa_pptable_t) == 0x520);
 
 CTASSERT(sizeof (smu_hotplug_map_t) == 4);
 CTASSERT(sizeof (smu_hotplug_function_t) == 4);
