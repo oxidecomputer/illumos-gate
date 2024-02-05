@@ -1825,24 +1825,6 @@ genoa_ioms_iodie(const genoa_ioms_t *const ioms)
 	return (ioms->gio_iodie);
 }
 
-typedef enum {
-	MBT_ANY,
-	MBT_RUBY,
-	MBT_COSMO,
-} genoa_board_type_t;
-
-/*
- * Here is a temporary rough heuristic for determining what board we're on.
- */
-static genoa_board_type_t
-genoa_board_type(const genoa_fabric_t *fabric)
-{
-	if (fabric->gf_nsocs == 1) {
-		return (MBT_RUBY);
-	}
-	return (MBT_ANY);
-}
-
 /*
  * We pass these functions 64 bits of debug data consisting of 32 bits of stage
  * number and 8 bits containing the I/O die index for which to capture register
@@ -1963,7 +1945,7 @@ genoa_pcie_populate_dbg(genoa_fabric_t *fabric, genoa_pcie_config_stage_t stage,
 	 * clear start time (since the GPIO was previously an input and would
 	 * have read at an undefined level).
 	 */
-	if (genoa_board_type(fabric) == MBT_COSMO) {
+	if (genoa_board_type() == MBT_COSMO) {
 		if (!gpio_configured) {
 			genoa_hack_gpio(GHGOP_CONFIGURE, 129);
 			genoa_hack_gpio(GHGOP_TOGGLE, 129);
@@ -3962,7 +3944,7 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	 * We probably want to see if we can do better by figuring out whether
 	 * this is needed on socket 0, 1, or neither.
 	 */
-	if (genoa_board_type(soc->gs_fabric) == MBT_RUBY) {
+	if (genoa_board_type() == MBT_RUBY) {
 		if (soc->gs_socno == 0 && !genoa_dxio_rpc_sm_reload(iodie)) {
 			return (1);
 		}
@@ -4068,7 +4050,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * XXX Figure out how to best not hardcode Ethanol. Realistically
 	 * probably an SP boot property.
 	 */
-	if (genoa_board_type(soc->gs_fabric) == MBT_RUBY) {
+	if (genoa_board_type() == MBT_RUBY) {
 		if (soc->gs_socno == 0) {
 			source_data = &ruby_engine_s0;
 		}
@@ -4608,8 +4590,7 @@ genoa_pcie_strap_matches(const genoa_pcie_core_t *pc, uint8_t portno,
 {
 	const genoa_ioms_t *ioms = pc->gpc_ioms;
 	const genoa_iodie_t *iodie = ioms->gio_iodie;
-	const genoa_fabric_t *fabric = iodie->gi_soc->gs_fabric;
-	const genoa_board_type_t board = genoa_board_type(fabric);
+	const genoa_board_type_t board = genoa_board_type();
 
 	if (strap->strap_boardmatch != MBT_ANY &&
 	    strap->strap_boardmatch != board) {
@@ -4901,7 +4882,7 @@ genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 				break;
 			}
 
-			if (genoa_board_type(fabric) == MBT_RUBY) {
+			if (genoa_board_type() == MBT_RUBY) {
 
 				/*
 				 * Release PERST manually on Ruby which
@@ -5958,7 +5939,7 @@ genoa_smu_hotplug_data_init(genoa_fabric_t *fabric)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)hp->gh_table);
 	hp->gh_pa = mmu_ptob((uint64_t)pfn);
 
-	if (genoa_board_type(fabric) == MBT_RUBY) {
+	if (genoa_board_type() == MBT_RUBY) {
 		entry = ruby_hotplug_ents;
 	}
 
@@ -6013,10 +5994,8 @@ static uint32_t
 genoa_hotplug_bridge_features(genoa_pcie_port_t *port)
 {
 	uint32_t feats;
-	genoa_fabric_t *fabric =
-	    port->gpp_core->gpc_ioms->gio_iodie->gi_soc->gs_fabric;
 
-	if (genoa_board_type(fabric) == MBT_RUBY) {
+	if (genoa_board_type() == MBT_RUBY) {
 		if (port->gpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
 			return (ruby_pcie_slot_cap_entssd);
 		} else {
