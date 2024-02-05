@@ -25,6 +25,8 @@
 extern "C" {
 #endif
 
+extern bool xxxhackymchackface;
+
 typedef enum genoa_board_type {
 	MBT_ANY,
 	MBT_RUBY,

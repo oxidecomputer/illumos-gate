@@ -2919,6 +2919,12 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	genoa_smu_rpc_t rpc = { 0 };
 	genoa_soc_t *soc = iodie->gi_soc;
 
+	if (!xxxhackymchackface)
+	{
+		cmn_err(CE_WARN, "skipping SMU feature init");
+		return (true);
+	}
+
 	/*
 	 * Not all combinations of SMU features will result in correct system
 	 * behavior, so we therefore err on the side of matching stock platform
@@ -3218,6 +3224,12 @@ genoa_fabric_topo_init(void)
 		 * of the boot much, much faster.
 		 */
 		VERIFY(genoa_smu_features_init(iodie));
+	}
+
+	if (!xxxhackymchackface) {
+		cmn_err(CE_WARN, "limit to single cpu: nthreads %d -> 1",
+		    nthreads);
+		nthreads = 1;
 	}
 
 	if (nthreads > NCPU) {
@@ -3983,7 +3995,6 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	 * doesn't support this so we skip it there.  XXX(cross) Neither does
 	 * newer firmware, though we need to see if there is an analogue.
 	 */
-	extern bool xxxhackymchackface;
 	if (!xxxhackymchackface &&
 	    genoa_dxio_version_at_least(iodie, 45, 682) &&
 	    !genoa_dxio_rpc_pcie_poweroff_config(iodie, 0, false)) {
