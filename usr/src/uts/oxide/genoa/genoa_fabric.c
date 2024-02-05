@@ -1350,7 +1350,7 @@ genoa_df_read32(genoa_iodie_t *iodie, uint8_t inst, const df_reg_def_t def)
 	const df_reg_def_t ficad = DF_FICAD_LO_V4;
 
 	mutex_enter(&iodie->gi_df_ficaa_lock);
-	ASSERT3U(def.drd_gens & DF_REV_3, ==, DF_REV_3);
+	ASSERT3U(def.drd_gens & DF_REV_4, ==, DF_REV_4);
 	val = DF_FICAA_V2_SET_TARG_INST(val, 1);
 	val = DF_FICAA_V2_SET_FUNC(val, def.drd_func);
 	val = DF_FICAA_V2_SET_INST(val, inst);

@@ -1151,34 +1151,34 @@ typedef enum {
  * of address space devoted to MMIO-based PCI configuration space access.
  */
 /*CSTYLED*/
-#define DF_MMIO_PCI_BASE_V4		(df_reg_def_t){ .drd_gens = DF_REV_4, \
+#define	DF_MMIO_PCI_BASE_V4		(df_reg_def_t){ .drd_gens = DF_REV_4, \
 					.drd_func = 0, \
 					.drd_reg = 0xc10}
-#define DF_MMIO_PCI_BASE_ADDR_SHIFT	20
-#define DF_MMIO_PCI_BASE_V4_GET_ADDR(r)			bitx32(r, 31, 20)
-#define DF_MMIO_PCI_BASE_V4_SET_ADDR(r, v)		bitset32(r, 31, 20, v)
-#define DF_MMIO_PCI_BASE_V4_GET_EN(r)			bitx32(r, 0, 0)
-#define DF_MMIO_PCI_BASE_V4_SET_EN(r, v)		bitset32(r, 0, 0, v)
+#define	DF_MMIO_PCI_BASE_ADDR_SHIFT	20
+#define	DF_MMIO_PCI_BASE_V4_GET_ADDR(r)			bitx32(r, 31, 20)
+#define	DF_MMIO_PCI_BASE_V4_SET_ADDR(r, v)		bitset32(r, 31, 20, v)
+#define	DF_MMIO_PCI_BASE_V4_GET_EN(r)			bitx32(r, 0, 0)
+#define	DF_MMIO_PCI_BASE_V4_SET_EN(r, v)		bitset32(r, 0, 0, v)
 
 /*CSTYLED*/
-#define DF_MMIO_PCI_BASE_EXT_V4		(df_reg_def_t){ .drd_gens = DF_REV_4, \
+#define	DF_MMIO_PCI_BASE_EXT_V4		(df_reg_def_t){ .drd_gens = DF_REV_4, \
 					.drd_func = 0, \
 					.drd_reg = 0xc14}
-#define DF_MMIO_PCI_BASE_EXT_V4_GET_ADDR(r)		bitx32(r, 23, 0)
-#define DF_MMIO_PCI_BASE_EXT_V4_SET_ADDR(r, v)		bitset32(r, 23, 0, v)
+#define	DF_MMIO_PCI_BASE_EXT_V4_GET_ADDR(r)		bitx32(r, 23, 0)
+#define	DF_MMIO_PCI_BASE_EXT_V4_SET_ADDR(r, v)		bitset32(r, 23, 0, v)
 /*CSTYLED*/
-#define DF_MMIO_PCI_LIMIT_V4		(df_reg_def_t){ .drd_gens = DF_REV_4, \
+#define	DF_MMIO_PCI_LIMIT_V4		(df_reg_def_t){ .drd_gens = DF_REV_4, \
 					.drd_func = 0, \
 					.drd_reg = 0xc18}
-#define DF_MMIO_PCI_LIMIT_ADDR_SHIFT	20
-#define DF_MMIO_PCI_LIMIT_V4_GET_ADDR(r)		bitx32(r, 31, 20)
-#define DF_MMIO_PCI_LIMIT_V4_SET_ADDR(r, v)		bitset32(r, 31, 20, v)
+#define	DF_MMIO_PCI_LIMIT_ADDR_SHIFT	20
+#define	DF_MMIO_PCI_LIMIT_V4_GET_ADDR(r)		bitx32(r, 31, 20)
+#define	DF_MMIO_PCI_LIMIT_V4_SET_ADDR(r, v)		bitset32(r, 31, 20, v)
 /*CSTYLED*/
-#define DF_MMIO_PCI_LIMIT_EXT_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
+#define	DF_MMIO_PCI_LIMIT_EXT_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
 					.drd_func = 0, \
 					.drd_reg = 0xc1c}
-#define DF_MMIO_PCI_LIMIT_EXT_V4_GET_ADDR(r)		bitx32(r, 23, 0)
-#define DF_MMIO_PCI_LIMIT_EXT_V4_SET_ADDR(r, v)		bitset32(r, 23, 0, v)
+#define	DF_MMIO_PCI_LIMIT_EXT_V4_GET_ADDR(r)		bitx32(r, 23, 0)
+#define	DF_MMIO_PCI_LIMIT_EXT_V4_SET_ADDR(r, v)		bitset32(r, 23, 0, v)
 
 #ifdef __cplusplus
 }
