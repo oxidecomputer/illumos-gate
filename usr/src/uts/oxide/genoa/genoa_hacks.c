@@ -242,8 +242,14 @@ genoa_check_furtive_reset()
 	    FCH_PMIO_S5_RESET_STATUS_GET_SHUTDOWN(val) != 0 ||
 	    FCH_PMIO_S5_RESET_STATUS_GET_PWRBTN4SECOND(val) != 0 ||
 	    FCH_PMIO_S5_RESET_STATUS_GET_THERMALTRIP(val) != 0) {
-		panic("FCH::PM::S5_RESET_STATUS 0x%08lx "
-		    "implies furtive reset", val);
+		// Don't if there's no SP (e.g. we're running on a Ruby)
+		if (genoa_board_type() == MBT_COSMO) {
+			panic("FCH::PM::S5_RESET_STATUS 0x%08lx "
+			    "implies furtive reset", val);
+		} else {
+			cmn_err(CE_WARN, "FCH::PM::S5_RESET_STATUS 0x%08lx "
+			    "implies furtive reset", val);
+		}
 	}
 
 	mmio_reg_block_unmap(&fch_pmio);
