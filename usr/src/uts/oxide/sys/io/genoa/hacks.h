@@ -19,10 +19,26 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/io/genoa/fabric.h>
+#include <sys/kernel_ipcc.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef enum genoa_board_type {
+	MBT_ANY,
+	MBT_RUBY,
+	MBT_COSMO,
+} genoa_board_type_t;
+
+/*
+ * Here is a temporary rough heuristic for determining what board we're on.
+ */
+static inline genoa_board_type_t
+genoa_board_type(void)
+{
+	return (ipcc_enable ? MBT_COSMO : MBT_RUBY);
+}
 
 extern bool genoa_fixup_i2c_clock(void);
 extern bool genoa_cgpll_set_ssc(bool);
