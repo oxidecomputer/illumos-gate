@@ -40,6 +40,10 @@
 #include <sys/ddi_impldefs.h>
 #include <sys/promif.h>
 #include <sys/modctl.h>
+#include <sys/cpuvar.h>
+#include <sys/x86_archext.h>
+
+#include <sys/amdzen/fch.h>
 
 int
 plat_use_polled_debug()
@@ -86,7 +90,15 @@ plat_kbdpath(void)
 static char *
 plat_conspath(void)
 {
-	return ("/huashan@0,0/dwu@0:0");
+	switch (chiprev_fch_kind(cpuid_getchiprev(CPU))) {
+	case FK_HUASHAN:
+		return ("/huashan@0,0/dwu@0:0");
+	case FK_SONGSHAN:
+		return ("/songshan@0,0/dwu@0:0");
+	case FK_NONE:
+	default:
+		panic("plat_conspath: unsupported FCH type");
+	}
 }
 
 char *
