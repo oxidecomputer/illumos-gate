@@ -97,7 +97,7 @@ extern "C" {
  * This indicates the ID number of the IOS instance that happens to have the
  * FCH present.
  */
-#define	GENOA_IOMS_HAS_FCH	3
+#define	GENOA_IOMS_HAS_FCH	2
 
 /*
  * Similarly, the IOMS instance with the WAFL port.

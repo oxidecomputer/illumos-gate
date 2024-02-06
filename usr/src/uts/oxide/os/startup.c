@@ -654,7 +654,7 @@ startup(void)
 	startup_tsc();
 
 	/*
-	 * At this point in time, go through and initialize the Milan SoC's I/O
+	 * At this point in time, go through and initialize the Genoa SoC's I/O
 	 * fabric. This includes the SMU, DXIO, NBIO, etc.
 	 */
 	genoa_fabric_init();
