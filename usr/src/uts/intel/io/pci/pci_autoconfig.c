@@ -121,6 +121,9 @@ _info(struct modinfo *modinfop)
 void
 pci_enumerate(int reprogram)
 {
+	// XXX(genoa)
+	return;
+
 	extern void add_pci_fixes(void);
 	extern void undo_pci_fixes(void);
 
