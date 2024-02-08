@@ -2340,6 +2340,7 @@ phyint_cleanup(struct phyint *pi)
 	pi->pi_stateless = pi->pi_StatelessAddrConf;
 	pi->pi_stateful = pi->pi_StatefulAddrConf;
 	pi->pi_ipadm_aobjname[0] = '\0';
+	pi->pi_ifaddr = in6addr_any;
 }
 
 /*

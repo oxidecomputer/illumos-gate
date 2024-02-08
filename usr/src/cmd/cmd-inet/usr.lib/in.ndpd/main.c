@@ -19,7 +19,7 @@
  * CDDL HEADER END
  *
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #include "defs.h"
@@ -1874,10 +1874,10 @@ check_if_removed(struct phyint *pi)
 		}
 
 		/*
-		 * Clear state by deleting the phyint object so that if the
-		 * interface reappears we reinitialize it completely.
+		 * Clear state so that should the phyint reappear we will
+		 * start with initial advertisements or solicitations.
 		 */
-		phyint_delete(pi);
+		phyint_cleanup(pi);
 	}
 }
 
@@ -2426,7 +2426,7 @@ ndpd_delete_addrs(const char *ifname)
 		ifsock = socket(AF_INET6, SOCK_DGRAM, 0);
 		if (ifsock < 0) {
 			err = errno;
-			logperror("ndpd_create_addrs: socket");
+			logperror("ndpd_delete_addrs: socket");
 			return (err);
 		}
 	}
@@ -2476,6 +2476,7 @@ ndpd_delete_addrs(const char *ifname)
 	 * until a new interface ID is provided.
 	 */
 	pi->pi_token = in6addr_any;
+	pi->pi_ifaddr = in6addr_any;
 	pi->pi_token_length = 0;
 	pi->pi_autoconf = _B_FALSE;
 	pi->pi_ipadm_aobjname[0] = '\0';
