@@ -2919,7 +2919,7 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	genoa_smu_rpc_t rpc = { 0 };
 	genoa_soc_t *soc = iodie->gi_soc;
 
-	if (!xxxhackymchackface)
+	if (xxxhackymchackface)
 	{
 		cmn_err(CE_WARN, "skipping SMU feature init");
 		return (true);
