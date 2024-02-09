@@ -3226,12 +3226,6 @@ genoa_fabric_topo_init(void)
 		VERIFY(genoa_smu_features_init(iodie));
 	}
 
-	if (!xxxhackymchackface) {
-		cmn_err(CE_WARN, "limit to single cpu: nthreads %d -> 1",
-		    nthreads);
-		nthreads = 1;
-	}
-
 	if (nthreads > NCPU) {
 		cmn_err(CE_WARN, "%d CPUs found but only %d supported",
 		    nthreads, NCPU);
