@@ -413,9 +413,14 @@ typedef enum smu_exp_type {
 	SMU_I2C_PCA9506 = 2
 } smu_exp_type_t;
 
+typedef enum smu_gpio_sw_type {
+	SMU_GPIO_SW_9545 = 0,
+	SMU_GPIO_SW_9546_48 = 1,
+} smu_gpio_sw_type_t;
+
 /*
  * XXX it may be nicer for us to define our own semantic set of bits here that
- * dont' change based on verison and then we change it.
+ * don't change based on verison and then we change it.
  */
 typedef enum smu_enta_bits {
 	SMU_ENTA_PRSNT		= 1 << 0,
