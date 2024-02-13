@@ -165,66 +165,97 @@ const zen_mpio_platform_t ruby_engine_s0 = {
 		}
 	    }
 	},
-	{ .zme_type = ZEN_MPIO_ENGINE_PCIE, .zme_hotpluggable = 0,
-	    .zme_start_lane = 0x3a, .zme_end_lane = 0x49, .zme_gpio_group = 1,
-	    .zme_reset_group = 1, .zme_search_depth = 0, .zme_force_kpnp_reset = 0,
-	    .zme_config = { .zmc_pcie = { .zmcp_caps = {
-		.zmlc_present = MPIO_PORT_PRESENT,
-		.zmlc_early_train = 0,
-		.zmlc_comp_mode = 0,
-		.zmlc_reverse = 1,
-		.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-		/* XXX Next two always seems to be set */
-		.zmlc_en_off_config = 1,
-		.zmlc_turn_off_unused = 1,
-		/* XXX This pair is always overriden */
-		.zmlc_eq_mode_override = 1,
-		.zmlc_eq_search_mode = 3,
-		/* XXX Trust the gods */
-		.zmlc_invert_rx_pol = 0x1,
-	    } } }
+	{
+	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
+	    .zme_hotpluggable = 0,
+	    .zme_start_lane = 0x3a,
+	    .zme_end_lane = 0x49,
+	    .zme_gpio_group = 1,
+	    .zme_reset_group = 1,
+	    .zme_search_depth = 0,
+	    .zme_force_kpnp_reset = 0,
+	    .zme_config = {
+		.zmc_pcie = {
+		    .zmcp_caps = {
+			.zmlc_present = MPIO_PORT_PRESENT,
+			.zmlc_early_train = 0,
+			.zmlc_comp_mode = 0,
+			.zmlc_reverse = 1,
+			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
+			/* XXX Next two always seems to be set */
+			.zmlc_en_off_config = 1,
+			.zmlc_turn_off_unused = 1,
+			/* XXX This pair is always overriden */
+			.zmlc_eq_mode_override = 1,
+			.zmlc_eq_search_mode = 3,
+			/* XXX Trust the gods */
+			.zmlc_invert_rx_pol = 0x1,
+		    }
+		}
+	    }
 	},
-	{ .zme_type = ZEN_MPIO_ENGINE_PCIE, .zme_hotpluggable = 0,
-	    .zme_start_lane = 0x4a, .zme_end_lane = 0x59, .zme_gpio_group = 1,
-	    .zme_reset_group = 1, .zme_search_depth = 0, .zme_force_kpnp_reset = 0,
-	    .zme_config = { .zmc_pcie = { .zmcp_caps = {
-		.zmlc_present = MPIO_PORT_PRESENT,
-		.zmlc_early_train = 0,
-		.zmlc_comp_mode = 0,
-		/* No reversing here */
-		.zmlc_reverse = 0,
-		.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-		.zmlc_hotplug = ZEN_MPIO_HOTPLUG_T_EXPRESS_MODULE,
-		/* XXX Next two always seems to be set */
-		.zmlc_en_off_config = 1,
-		.zmlc_turn_off_unused = 1,
-		/* XXX This pair is always overriden */
-		.zmlc_eq_mode_override = 1,
-		.zmlc_eq_search_mode = 3,
-		/* XXX Trust the gods */
-		.zmlc_invert_rx_pol = 0x1,
-	    } } }
+	{
+	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
+	    .zme_hotpluggable = 0,
+	    .zme_start_lane = 0x4a,
+	    .zme_end_lane = 0x59,
+	    .zme_gpio_group = 1,
+	    .zme_reset_group = 1,
+	    .zme_search_depth = 0,
+	    .zme_force_kpnp_reset = 0,
+	    .zme_config = {
+		.zmc_pcie = {
+		    .zmcp_caps = {
+			.zmlc_present = MPIO_PORT_PRESENT,
+			.zmlc_early_train = 0,
+			.zmlc_comp_mode = 0,
+			/* No reversing here */
+			.zmlc_reverse = 0,
+			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
+			.zmlc_hotplug = ZEN_MPIO_HOTPLUG_T_EXPRESS_MODULE,
+			/* XXX Next two always seems to be set */
+			.zmlc_en_off_config = 1,
+			.zmlc_turn_off_unused = 1,
+			/* XXX This pair is always overriden */
+			.zmlc_eq_mode_override = 1,
+			.zmlc_eq_search_mode = 3,
+			/* XXX Trust the gods */
+			.zmlc_invert_rx_pol = 0x1,
+		    }
+		}
+	    }
 	},
-	{ .zme_type = ZEN_MPIO_ENGINE_PCIE, .zme_hotpluggable = 0,
-	    .zme_start_lane = 0x5a, .zme_end_lane = 0x69, .zme_gpio_group = 1,
-	    .zme_reset_group = 1, .zme_search_depth = 0, .zme_force_kpnp_reset = 0,
-	    .zme_config = { .zmc_pcie = { .zmcp_caps = {
-		.zmlc_present = MPIO_PORT_PRESENT,
-		.zmlc_early_train = 0,
-		.zmlc_comp_mode = 0,
-		/* No reversing here */
-		.zmlc_reverse = 0,
-		.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-		/* XXX Next two always seems to be set */
-		.zmlc_en_off_config = 1,
-		.zmlc_turn_off_unused = 1,
-		/* XXX This pair is always overriden */
-		.zmlc_eq_mode_override = 1,
-		.zmlc_eq_search_mode = 3,
-		/* XXX Trust the gods */
-		.zmlc_invert_rx_pol = 0x1,
-	    } } }
-	} }
+	{
+	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
+	    .zme_hotpluggable = 0,
+	    .zme_start_lane = 0x5a,
+	    .zme_end_lane = 0x69,
+	    .zme_gpio_group = 1,
+	    .zme_reset_group = 1,
+	    .zme_search_depth = 0,
+	    .zme_force_kpnp_reset = 0,
+	    .zme_config = {
+		.zmc_pcie = {
+		    .zmcp_caps = {
+			c_present = MPIO_PORT_PRESENT,
+			c_early_train = 0,
+			c_comp_mode = 0,
+			o reversing here */
+			c_reverse = 0,
+			c_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
+			XX Next two always seems to be set */
+			c_en_off_config = 1,
+			c_turn_off_unused = 1,
+			XX This pair is always overriden */
+			c_eq_mode_override = 1,
+			c_eq_search_mode = 3,
+			XX Trust the gods */
+			c_invert_rx_pol = 0x1,
+		    }
+		}
+	    }
+	}
+    }
 };
 
 /*
@@ -364,11 +395,15 @@ const smu_hotplug_entry_t ruby_hotplug_ents[] = {
  * supports.
  */
 const uint32_t ruby_pcie_slot_cap_entssd =
-    PCIE_SLOTCAP_HP_SURPRISE | PCIE_SLOTCAP_HP_CAPABLE |
+    PCIE_SLOTCAP_HP_SURPRISE |
+    PCIE_SLOTCAP_HP_CAPABLE |
     PCIE_SLOTCAP_NO_CMD_COMP_SUPP;
-const uint32_t ruby_pcie_slot_cap_express =
-    PCIE_SLOTCAP_ATTN_BUTTON | PCIE_SLOTCAP_POWER_CONTROLLER |
-    PCIE_SLOTCAP_ATTN_INDICATOR | PCIE_SLOTCAP_PWR_INDICATOR |
-    PCIE_SLOTCAP_HP_SURPRISE | PCIE_SLOTCAP_HP_CAPABLE |
-    PCIE_SLOTCAP_EMI_LOCK_PRESENT;
 
+const uint32_t ruby_pcie_slot_cap_express =
+    PCIE_SLOTCAP_ATTN_BUTTON |
+    PCIE_SLOTCAP_POWER_CONTROLLER |
+    PCIE_SLOTCAP_ATTN_INDICATOR |
+    PCIE_SLOTCAP_PWR_INDICATOR |
+    PCIE_SLOTCAP_HP_SURPRISE |
+    PCIE_SLOTCAP_HP_CAPABLE |
+    PCIE_SLOTCAP_EMI_LOCK_PRESENT;
