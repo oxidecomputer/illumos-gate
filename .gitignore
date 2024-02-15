@@ -212,6 +212,7 @@ usr/src/cmd/allocate/sr0
 usr/src/cmd/allocate/st0
 usr/src/cmd/allocate/st1
 usr/src/cmd/allocate/st_clean
+usr/src/cmd/amdzen/apobdump
 usr/src/cmd/amdzen/udf
 usr/src/cmd/amdzen/usmn
 usr/src/cmd/amt/amd64/amt
@@ -3408,6 +3409,7 @@ usr/src/man/man2/execlp.2
 usr/src/man/man2/execv.2
 usr/src/man/man2/execve.2
 usr/src/man/man2/execvp.2
+usr/src/man/man2/execvpe.2
 usr/src/man/man2/faccessat.2
 usr/src/man/man2/facl.2
 usr/src/man/man2/fchdir.2
@@ -8820,6 +8822,8 @@ usr/src/test/os-tests/tests/definit/definit_test.32
 usr/src/test/os-tests/tests/definit/definit_test.64
 usr/src/test/os-tests/tests/eventfd.32
 usr/src/test/os-tests/tests/eventfd.64
+usr/src/test/os-tests/tests/execvpe/execvpe-test.32
+usr/src/test/os-tests/tests/execvpe/execvpe-test.64
 usr/src/test/os-tests/tests/file-locking/acquire-lock.32
 usr/src/test/os-tests/tests/file-locking/acquire-lock.64
 usr/src/test/os-tests/tests/file-locking/runtests.32
