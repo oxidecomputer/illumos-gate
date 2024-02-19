@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  *
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -151,7 +152,8 @@ const mdb_tgt_ops_t kt_ia32_ops = {
 	kt_getareg,				/* t_getareg */
 	kt_putareg,				/* t_putareg */
 	mdb_ia32_kvm_stack_iter,		/* t_stack_iter */
-	(int (*)())mdb_tgt_notsup		/* t_auxv */
+	(int (*)())mdb_tgt_notsup,		/* t_auxv */
+	(int (*)())(uintptr_t)mdb_tgt_notsup	/* t_thread_name */
 };
 
 void

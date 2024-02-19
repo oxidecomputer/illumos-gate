@@ -26,6 +26,7 @@
  * Copyright 2022 Oxide Computer Co.
  * Copyright 2023 RackTop Systems, Inc.
  * Copyright 2023 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef	_MDB_MODAPI_H
@@ -245,6 +246,7 @@ typedef uintptr_t mdb_tid_t;
 typedef uint64_t mdb_reg_t;
 
 extern int mdb_getareg(mdb_tid_t, const char *, mdb_reg_t *);
+extern int mdb_thread_name(mdb_tid_t, char *, size_t);
 
 #define	MDB_OPT_SETBITS	1			/* Set specified flag bits */
 #define	MDB_OPT_CLRBITS	2			/* Clear specified flag bits */
