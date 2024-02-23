@@ -175,6 +175,7 @@ SUBDIRS +=				\
 	libndmp		\
 	libnisdb	\
 	libnls		\
+	libnvme		\
 	libnwam		\
 	libofmt		\
 	libpam		\
@@ -431,6 +432,7 @@ HDRSUBDIRS=				\
 	libmtmalloc	\
 	libndmp		\
 	libnsl		\
+	libnvme		\
 	libnvpair	\
 	libnwam		\
 	libofmt		\
@@ -583,7 +585,7 @@ brand:		libzonecfg libmapmalloc
 cfgadm_plugins:	libdevice libdevinfo libhotplug librcm hbaapi libkstat libscf
 fm:		libexacct libipmi libzfs scsi libdevinfo libdevid libcfgadm \
 		libcontract libsysevent ../cmd/sgs/libelf libdladm libsff \
-		libpcidb libdiskmgt libjedec
+		libpcidb libdiskmgt libjedec libnvme
 $(SPARC_BLD)fm:	libpri
 gss_mechs/mech_dh: libgss
 gss_mechs/mech_dummy: libgss
@@ -649,6 +651,7 @@ libmapid:	libresolv2 libscf
 libmlrpc:	libsmbfs libuuid
 libndmp:	libscf
 libnisdb:	libldap5
+libnvme:	libdevinfo libnvpair
 libnwam:	libscf libbsm libdladm libipadm
 libpcp:		libumem libdevinfo
 libpctx:	libproc

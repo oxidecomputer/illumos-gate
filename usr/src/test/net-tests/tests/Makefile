@@ -11,6 +11,7 @@
 
 #
 # Copyright 2019 Joyent, Inc.
+# Copyright 2024 Oxide Computer Company
 #
 include $(SRC)/Makefile.master
 include $(SRC)/cmd/Makefile.cmd

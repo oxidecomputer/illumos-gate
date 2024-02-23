@@ -894,6 +894,12 @@ GPIOHDRS=			\
 	gpio_sim.h		\
 	zen_gpio.h
 
+NVMEHDRS=		\
+	discovery.h	\
+	wdc.h		\
+	wdc_sn840.h	\
+	wdc_sn65x.h
+
 SCSIHDRS=		\
 	scsi.h		\
 	scsi_address.h	\
@@ -1184,6 +1190,7 @@ CHECKHDRS=						\
 	$(FMIOHDRS:%.h=fm/io/%.check)			\
 	$(FSHDRS:%.h=fs/%.check)			\
 	$(GPIOHDRS:%.h=gpio/%.check)			\
+	$(NVMEHDRS:%.h=nvme/%.check)			\
 	$(SCSIHDRS:%.h=scsi/%.check)			\
 	$(SCSIADHDRS:%.h=scsi/adapters/%.check)		\
 	$(SCSICONFHDRS:%.h=scsi/conf/%.check)		\
@@ -1244,6 +1251,7 @@ CHECKHDRS=						\
 	$(ROOTIBNEXHDRS)	\
 	$(ROOTIBMGTHDRS)	\
 	$(ROOTIBMFHDRS)		\
+	$(ROOTNVMEHDRS)		\
 	$(ROOTOFHDRS)		\
 	$(ROOTRDMAHDRS)		\
 	$(ROOTSATAGENHDRS)	\
@@ -1317,6 +1325,7 @@ install_h:			\
 	$(ROOTIBNEXHDRS)	\
 	$(ROOTIBMGTHDRS)	\
 	$(ROOTIBMFHDRS)		\
+	$(ROOTNVMEHDRS)		\
 	$(ROOTOFHDRS)		\
 	$(ROOTRDMAHDRS)		\
 	$(ROOTSATAGENHDRS)	\

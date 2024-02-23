@@ -28,7 +28,7 @@
 # Copyright 2020 Joyent, Inc.
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2023 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 # Copyright 2023 RackTop Systems, Inc.
 #
 
@@ -1941,7 +1941,12 @@ YGE_OBJS = yge.o
 
 SKD_OBJS = skd.o
 
-NVME_OBJS = nvme.o
+#
+# Objects in the driver followed by common objects.
+#
+NVME_OBJS += nvme.o nvme_validate.o nvme_lock.o
+NVME_OBJS += nvme_feature.o nvme_field.o nvme_firmware.o nvme_format.o \
+		nvme_identify.o nvme_log.o nvme_version.o nvme_vuc.o
 
 PVSCSI_OBJS = pvscsi.o
 
@@ -2356,3 +2361,6 @@ TFPKT_OBJS += tfpkt.o tfpkt_tofino.o
 # tfport(4D)
 #
 TFPORT_OBJS += tfport.o
+
+IGC_CORE_OBJS += igc_api.o igc_base.o igc_i225.o igc_mac.o igc_nvm.o igc_phy.o
+IGC_OBJS += $(IGC_CORE_OBJS) igc.o igc_osdep.o igc_gld.o igc_ring.o igc_stat.o
