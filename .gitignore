@@ -8606,6 +8606,7 @@ usr/src/test/bhyve-tests/tests/vmm/maxcpu
 usr/src/test/bhyve-tests/tests/vmm/mem_devmem
 usr/src/test/bhyve-tests/tests/vmm/mem_partial
 usr/src/test/bhyve-tests/tests/vmm/mem_seg_map
+usr/src/test/bhyve-tests/tests/vmm/npt_ops
 usr/src/test/bhyve-tests/tests/vmm/pause_resume
 usr/src/test/bhyve-tests/tests/vmm/self_destruct
 usr/src/test/bhyve-tests/tests/vmm/time_data
@@ -8714,6 +8715,8 @@ usr/src/test/libc-tests/tests/memchr.32
 usr/src/test/libc-tests/tests/memchr.64
 usr/src/test/libc-tests/tests/memset_s.32
 usr/src/test/libc-tests/tests/memset_s.64
+usr/src/test/libc-tests/tests/mutex-16200.32
+usr/src/test/libc-tests/tests/mutex-16200.64
 usr/src/test/libc-tests/tests/newlocale/newlocale_test
 usr/src/test/libc-tests/tests/newlocale/newlocale_test.amd64
 usr/src/test/libc-tests/tests/newlocale/newlocale_test.i386
