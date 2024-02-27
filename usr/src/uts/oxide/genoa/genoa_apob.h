@@ -27,18 +27,6 @@
 extern "C" {
 #endif
 
-typedef enum genoa_apob_group {
-	GENOA_APOB_GROUP_MEMORY	= 1,
-	GENOA_APOB_GROUP_DF,
-	GENOA_APOB_GROUP_CCX,
-	GENOA_APOB_GROUP_NBIO,
-	GENOA_APOB_GROUP_FCH,
-	GENOA_APOB_GROUP_PSP,
-	GENOA_APOB_GROUP_GENERAL,
-	GENOA_APOB_GROUP_SMBIOS,
-	GENOA_APOB_GROUP_FABRIC
-} genoa_apob_group_t;
-
 #define	GENOA_APOB_FABRIC_PHY_OVERRIDE		21
 #define	GENOA_APOB_MEMORY_PMU_TRAIN_FAIL	22
 #define	GENOA_APOB_GEN_EVENT_LOG		6
@@ -208,10 +196,6 @@ typedef enum {
 #define	APOB_EVENT_TRAIN_ERROR_GET_PMUTRAIN(x)	bitx32(x, 1, 1)
 
 #pragma pack()
-
-extern void genoa_apob_init(uint64_t);
-extern const void *genoa_apob_find(genoa_apob_group_t, uint32_t, uint32_t,
-    size_t *, int *);
 
 extern void genoa_apob_reserve_phys(void);
 

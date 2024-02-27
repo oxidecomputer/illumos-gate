@@ -15,6 +15,8 @@
 
 #include <sys/boot_debug.h>
 #include <sys/boot_physmem.h>
+#include <sys/apob.h>
+#include <sys/kapob.h>
 #include <sys/memlist.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
@@ -40,7 +42,7 @@ genoa_apob_reserve_phys(void)
 	err = 0;
 	sysmap_len = 0;
 
-	smp = genoa_apob_find(GENOA_APOB_GROUP_FABRIC, 9, 0, &sysmap_len, &err);
+	smp = kapob_find(APOB_GROUP_FABRIC, 9, 0, &sysmap_len, &err);
 	/*
 	 * XXX(cross): Should we do something (early return?) in these
 	 * failure cases?  This wouuld cause a semantic difference, as

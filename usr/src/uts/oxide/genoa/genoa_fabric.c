@@ -608,6 +608,8 @@
 #include <sys/plat/pci_prd.h>
 #include <sys/apic.h>
 #include <sys/cpuvar.h>
+#include <sys/apob.h>
+#include <sys/kapob.h>
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/gpio.h>
 #include <sys/amdzen/fch/iomux.h>
@@ -4085,7 +4087,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	conf->gmc_conf_len += 8;
 	conf->gmc_conf_len = P2ROUNDUP(conf->gmc_conf_len, 4);
 
-	phy_override = genoa_apob_find(GENOA_APOB_GROUP_FABRIC,
+	phy_override = kapob_find(APOB_GROUP_FABRIC,
 	    GENOA_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
 	if (phy_override == NULL) {
 		if (err == ENOENT) {
