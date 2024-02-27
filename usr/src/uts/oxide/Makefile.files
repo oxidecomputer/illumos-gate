@@ -132,8 +132,6 @@ MILAN_OBJS +=			\
 	milan_ras.o
 
 GENOA_OBJS +=			\
-	genoa_apob.o		\
-	genoa_apob_ccx.o	\
 	genoa_apob_memlist.o	\
 	genoa_ccx.o		\
 	genoa_dxio_data.o	\
