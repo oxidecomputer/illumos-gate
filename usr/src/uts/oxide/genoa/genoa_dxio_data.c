@@ -237,20 +237,20 @@ const zen_mpio_platform_t ruby_engine_s0 = {
 	    .zme_config = {
 		.zmc_pcie = {
 		    .zmcp_caps = {
-			c_present = MPIO_PORT_PRESENT,
-			c_early_train = 0,
-			c_comp_mode = 0,
-			o reversing here */
-			c_reverse = 0,
-			c_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-			XX Next two always seems to be set */
-			c_en_off_config = 1,
-			c_turn_off_unused = 1,
-			XX This pair is always overriden */
-			c_eq_mode_override = 1,
-			c_eq_search_mode = 3,
-			XX Trust the gods */
-			c_invert_rx_pol = 0x1,
+			.zmlc_present = MPIO_PORT_PRESENT,
+			.zmlc_early_train = 0,
+			.zmlc_comp_mode = 0,
+			/* No reversing here */
+			.zmlc_reverse = 0,
+			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
+			/* XXX Next two always seems to be set */
+			.zmlc_en_off_config = 1,
+			.zmlc_turn_off_unused = 1,
+			/* XXX This pair is always overriden */
+			.zmlc_eq_mode_override = 1,
+			.zmlc_eq_search_mode = 3,
+			/* XXX Trust the gods */
+			.zmlc_invert_rx_pol = 0x1,
 		    }
 		}
 	    }
