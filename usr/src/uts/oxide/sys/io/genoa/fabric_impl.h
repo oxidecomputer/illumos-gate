@@ -152,6 +152,7 @@ struct genoa_iodie {
 	kmutex_t		gi_df_ficaa_lock;
 	kmutex_t		gi_smn_lock;
 	kmutex_t		gi_smu_lock;
+	kmutex_t		gi_mpio_lock;
 	uint8_t			gi_node_id;
 	uint8_t			gi_dfno;
 	uint8_t			gi_smn_busno;
