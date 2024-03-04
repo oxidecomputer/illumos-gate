@@ -727,7 +727,7 @@ typedef struct genoa_hotplug {
 	uint32_t		gh_alloc_len;
 } genoa_hotplug_t;
 
-AMDZEN_MAKE_SMN_REG_FN(genoa_mpio_smn_reg, SMU_RPC,
+AMDZEN_MAKE_SMN_REG_FN(genoa_mpio_smn_reg, MPIO_RPC,
     0x0c910000U, 0xfffff000U, 1, 0);
 
 /*CSTYLED*/
@@ -762,42 +762,42 @@ AMDZEN_MAKE_SMN_REG_FN(genoa_mpio_smn_reg, SMU_RPC,
 	.srd_unit = SMN_UNIT_MPIO_RPC,	\
 	.srd_reg = 0x9cc,		\
 }
-#define	GENOA_MPIO_RPC_ARG0()	genoa_smu_smn_reg(0, D_GENOA_MPIO_RPC_ARG0, 0)
+#define	GENOA_MPIO_RPC_ARG0()	genoa_mpio_smn_reg(0, D_GENOA_MPIO_RPC_ARG0, 0)
 
 /*CSTYLED*/
 #define	D_GENOA_MPIO_RPC_ARG1	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_MPIO_RPC,	\
 	.srd_reg = 0x9d0,		\
 }
-#define	GENOA_MPIO_RPC_ARG1()	genoa_smu_smn_reg(0, D_GENOA_MPIO_RPC_ARG1, 0)
+#define	GENOA_MPIO_RPC_ARG1()	genoa_mpio_smn_reg(0, D_GENOA_MPIO_RPC_ARG1, 0)
 
 /*CSTYLED*/
 #define	D_GENOA_MPIO_RPC_ARG2	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_MPIO_RPC,	\
 	.srd_reg = 0x9d4,		\
 }
-#define	GENOA_MPIO_RPC_ARG2()	genoa_smu_smn_reg(0, D_GENOA_MPIO_RPC_ARG2, 0)
+#define	GENOA_MPIO_RPC_ARG2()	genoa_mpio_smn_reg(0, D_GENOA_MPIO_RPC_ARG2, 0)
 
 /*CSTYLED*/
 #define	D_GENOA_MPIO_RPC_ARG3	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_MPIO_RPC,	\
 	.srd_reg = 0x9d8,		\
 }
-#define	GENOA_MPIO_RPC_ARG3()	genoa_smu_smn_reg(0, D_GENOA_MPIO_RPC_ARG3, 0)
+#define	GENOA_MPIO_RPC_ARG3()	genoa_mpio_smn_reg(0, D_GENOA_MPIO_RPC_ARG3, 0)
 
 /*CSTYLED*/
 #define	D_GENOA_MPIO_RPC_ARG4	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_MPIO_RPC,	\
 	.srd_reg = 0x9dc,		\
 }
-#define	GENOA_MPIO_RPC_ARG4()	genoa_smu_smn_reg(0, D_GENOA_MPIO_RPC_ARG4, 0)
+#define	GENOA_MPIO_RPC_ARG4()	genoa_mpio_smn_reg(0, D_GENOA_MPIO_RPC_ARG4, 0)
 
 /*CSTYLED*/
 #define	D_GENOA_MPIO_RPC_ARG5	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_MPIO_RPC,	\
 	.srd_reg = 0x9e0,		\
 }
-#define	GENOA_MPIO_RPC_ARG5()	genoa_smu_smn_reg(0, D_GENOA_MPIO_RPC_ARG5, 0)
+#define	GENOA_MPIO_RPC_ARG5()	genoa_mpio_smn_reg(0, D_GENOA_MPIO_RPC_ARG5, 0)
 
 
 #ifdef __cplusplus
