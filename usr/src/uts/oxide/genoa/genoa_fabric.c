@@ -651,14 +651,15 @@
  * request.
  */
 typedef struct genoa_dxio_rpc {
-	uint32_t	mdr_req;
-	uint32_t	mdr_dxio_resp;
-	uint32_t	mdr_smu_resp;
-	uint32_t	mdr_engine;
-	uint32_t	mdr_arg0;
-	uint32_t	mdr_arg1;
-	uint32_t	mdr_arg2;
-	uint32_t	mdr_arg3;
+	uint32_t	gdr_req;
+	uint32_t	gdr_resp;
+	uint32_t	gdr_engine;
+	uint32_t	gdr_arg0;
+	uint32_t	gdr_arg1;
+	uint32_t	gdr_arg2;
+	uint32_t	gdr_arg3;
+	uint32_t	gdr_arg4;
+	uint32_t	gdr_arg5;
 } genoa_dxio_rpc_t;
 
 typedef struct genoa_pcie_port_info {
@@ -2322,29 +2323,49 @@ genoa_dxio_version_at_least(const genoa_iodie_t *iodie,
 }
 
 static void
-genoa_dxio_rpc(genoa_iodie_t *iodie, genoa_dxio_rpc_t *dxio_rpc)
+genoa_dxio_rpc(genoa_iodie_t *iodie, genoa_dxio_rpc_t *rpc)
 {
-	genoa_smu_rpc_t smu_rpc = { 0 };
+	const uint32_t rdybit = 1U << 31;
+	uint32_t resp, req, doorbell;
 
-	smu_rpc.msr_req = GENOA_SMU_OP_DXIO;
-	smu_rpc.msr_arg0 = dxio_rpc->mdr_req;
-	smu_rpc.msr_arg1 = dxio_rpc->mdr_engine;
-	smu_rpc.msr_arg2 = dxio_rpc->mdr_arg0;
-	smu_rpc.msr_arg3 = dxio_rpc->mdr_arg1;
-	smu_rpc.msr_arg4 = dxio_rpc->mdr_arg2;
-	smu_rpc.msr_arg5 = dxio_rpc->mdr_arg3;
-
-	genoa_smu_rpc(iodie, &smu_rpc);
-
-	dxio_rpc->mdr_smu_resp = smu_rpc.msr_resp;
-	if (smu_rpc.msr_resp == GENOA_SMU_RPC_OK) {
-		dxio_rpc->mdr_dxio_resp = smu_rpc.msr_arg0;
-		dxio_rpc->mdr_engine = smu_rpc.msr_arg1;
-		dxio_rpc->mdr_arg0 = smu_rpc.msr_arg2;
-		dxio_rpc->mdr_arg1 = smu_rpc.msr_arg3;
-		dxio_rpc->mdr_arg2 = smu_rpc.msr_arg4;
-		dxio_rpc->mdr_arg3 = smu_rpc.msr_arg5;
+	mutex_enter(&iodie->gi_mpio_lock);
+	/* Wait until the MPIO engine is ready to receive an RPC. */
+	resp = 0;
+	for (int k = 0; (resp & rdybit) == 0 && k < (1 << 30); k++) {
+		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
 	}
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG0(), rpc->gdr_arg0);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG1(), rpc->gdr_arg1);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG2(), rpc->gdr_arg2);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG3(), rpc->gdr_arg3);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG4(), rpc->gdr_arg4);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG5(), rpc->gdr_arg5);
+
+	/* The request number is written to the response register. */
+	req = (rpc->gdr_req & 0xFF) << 8;
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_RESP(), req);
+
+	/* Ring the doorbell. */
+	doorbell = ~0U;
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_DOORBELL(), doorbell);
+
+	/* Wait for completion. */
+	resp = 0;
+	for (int k = 0; (resp & (1U << 31)) == 0 && k < (1 << 30); k++) {
+		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
+		resp &= (1U << 31);
+	}
+
+	/* Read updated args. */
+	rpc->gdr_arg0 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG0());
+	rpc->gdr_arg1 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG1());
+	rpc->gdr_arg2 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG2());
+	rpc->gdr_arg3 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG3());
+	rpc->gdr_arg4 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG4());
+	rpc->gdr_arg5 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG5());
+	rpc->gdr_resp = resp;
+
+	mutex_exit(&iodie->gi_mpio_lock);
 }
 
 static bool
@@ -2353,18 +2374,17 @@ genoa_dxio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_GET_VERSION;
+	rpc.gdr_req = GENOA_MPIO_OP_GET_VERSION;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: MPIO Resp: 0x%x",
+		   rpc.gdr_resp);
 		return (false);
 	}
 
-	*major = rpc.mdr_arg0;
-	*minor = rpc.mdr_arg1;
+	*major = rpc.gdr_arg0;
+	*minor = rpc.gdr_arg1;
 
 	return (true);
 }
@@ -2374,13 +2394,12 @@ genoa_dxio_rpc_init(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_INIT;
+	rpc.gdr_req = GENOA_MPIO_OP_INIT;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Init RPC Failed: SMU 0x%x, DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO Init RPC Failed: DXIO Resp 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2392,17 +2411,16 @@ genoa_dxio_rpc_set_var(genoa_iodie_t *iodie, uint32_t var, uint32_t val)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_SET_VARIABLE;
-	rpc.mdr_engine = var;
-	rpc.mdr_arg0 = val;
+	rpc.gdr_req = GENOA_MPIO_OP_SET_VARIABLE;
+	rpc.gdr_engine = var;
+	rpc.gdr_arg0 = val;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
+	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.gdr_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set Variable Failed: Var: 0x%x, "
-		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", var, val,
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "Val: 0x%x, DXIO: 0x%x", var, val,
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2415,18 +2433,17 @@ genoa_dxio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_SET_VARIABLE;
-	rpc.mdr_engine = GENOA_DXIO_VAR_UNKNOWN;
-	rpc.mdr_arg0 = delay;
-	rpc.mdr_arg1 = disable_prep ? 1 : 0;
+	rpc.gdr_req = GENOA_MPIO_OP_SET_VARIABLE;
+	rpc.gdr_engine = GENOA_DXIO_VAR_UNKNOWN;
+	rpc.gdr_arg0 = delay;
+	rpc.gdr_arg1 = disable_prep ? 1 : 0;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
+	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.gdr_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set PCIe Power Off Config Failed: "
-		    "Delay: 0x%x, Disable Prep: 0x%x, SMU 0x%x, DXIO: 0x%x",
-		    delay, disable_prep, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "Delay: 0x%x, Disable Prep: 0x%x, DXIO: 0x%x",
+		    delay, disable_prep, rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2443,17 +2460,16 @@ genoa_dxio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 	 */
 	VERIFY0(mask & 0x80);
 	VERIFY0(val & 0x80);
-	rpc.mdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = GENOA_MPIO_ENGINE_PCIE;
-	rpc.mdr_arg0 = GENOA_MPIO_RT_CONF_CLOCK_GATE;
-	rpc.mdr_arg1 = mask;
-	rpc.mdr_arg2 = val;
+	rpc.gdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
+	rpc.gdr_engine = GENOA_MPIO_ENGINE_PCIE;
+	rpc.gdr_arg0 = GENOA_MPIO_RT_CONF_CLOCK_GATE;
+	rpc.gdr_arg1 = mask;
+	rpc.gdr_arg2 = val;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Clock Gating Failed: SMU 0x%x, "
-		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO Clock Gating Failed: DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2471,13 +2487,12 @@ genoa_dxio_rpc_load_caps(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_LOAD_CAPS;
+	rpc.gdr_req = GENOA_MPIO_OP_LOAD_CAPS;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Load Caps Failed: SMU 0x%x, DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO Load Caps Failed: DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2490,19 +2505,18 @@ genoa_dxio_rpc_load_data(genoa_iodie_t *iodie, uint32_t type,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_LOAD_DATA;
-	rpc.mdr_engine = (uint32_t)(phys_addr >> 32);
-	rpc.mdr_arg0 = phys_addr & 0xffffffff;
-	rpc.mdr_arg1 = len / 4;
-	rpc.mdr_arg2 = mystery;
-	rpc.mdr_arg3 = type;
+	rpc.gdr_req = GENOA_MPIO_OP_LOAD_DATA;
+	rpc.gdr_engine = (uint32_t)(phys_addr >> 32);
+	rpc.gdr_arg0 = phys_addr & 0xffffffff;
+	rpc.gdr_arg1 = len / 4;
+	rpc.gdr_arg2 = mystery;
+	rpc.gdr_arg3 = type;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Load Data Failed: Heap: 0x%x, PA: "
-		    "0x%lx, Len: 0x%x, SMU 0x%x, DXIO: 0x%x", type, phys_addr,
-		    len, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "0x%lx, Len: 0x%x, DXIO: 0x%x", type, phys_addr,
+		    len, rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2515,20 +2529,19 @@ genoa_dxio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = GENOA_MPIO_ENGINE_PCIE;
-	rpc.mdr_arg0 = GENOA_MPIO_RT_CONF_PCIE_TRAIN;
-	rpc.mdr_arg1 = reset_time;
-	rpc.mdr_arg2 = rx_poll;
-	rpc.mdr_arg3 = l0_poll;
+	rpc.gdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
+	rpc.gdr_engine = GENOA_MPIO_ENGINE_PCIE;
+	rpc.gdr_arg0 = GENOA_MPIO_RT_CONF_PCIE_TRAIN;
+	rpc.gdr_arg1 = reset_time;
+	rpc.gdr_arg2 = rx_poll;
+	rpc.gdr_arg3 = l0_poll;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK)) {
+	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.gdr_resp != GENOA_MPIO_RPC_OK)) {
 		cmn_err(CE_WARN, "DXIO Conf. PCIe Training RPC Failed: "
-		    "SMU 0x%x, DXIO: 0x%x", rpc.mdr_smu_resp,
-		    rpc.mdr_dxio_resp);
+		    "DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2544,19 +2557,18 @@ genoa_dxio_rpc_misc_rt_conf(genoa_iodie_t *iodie, uint32_t code, bool state)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = GENOA_MPIO_ENGINE_NONE;
-	rpc.mdr_arg0 = GENOA_MPIO_RT_SET_CONF;
-	rpc.mdr_arg1 = code;
-	rpc.mdr_arg2 = state ? 1 : 0;
+	rpc.gdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
+	rpc.gdr_engine = GENOA_MPIO_ENGINE_NONE;
+	rpc.gdr_arg0 = GENOA_MPIO_RT_SET_CONF;
+	rpc.gdr_arg1 = code;
+	rpc.gdr_arg2 = state ? 1 : 0;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK)) {
+	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
+	    rpc.gdr_resp != GENOA_MPIO_RPC_OK)) {
 		cmn_err(CE_WARN, "DXIO Set Misc. rt conf failed: Code: 0x%x, "
-		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", code, state,
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "Val: 0x%x, DXIO: 0x%x", code, state,
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2568,14 +2580,12 @@ genoa_dxio_rpc_sm_start(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_START_SM;
+	rpc.gdr_req = GENOA_MPIO_OP_START_SM;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2587,14 +2597,12 @@ genoa_dxio_rpc_sm_resume(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_RESUME_SM;
+	rpc.gdr_req = GENOA_MPIO_OP_RESUME_SM;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2606,14 +2614,12 @@ genoa_dxio_rpc_sm_reload(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_RELOAD_SM;
+	rpc.gdr_req = GENOA_MPIO_OP_RELOAD_SM;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Reload RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO SM Reload RPC Failed: DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -2626,23 +2632,21 @@ genoa_dxio_rpc_sm_getstate(genoa_iodie_t *iodie, genoa_mpio_reply_t *smp)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_GET_SM_STATE;
+	rpc.gdr_req = GENOA_MPIO_OP_GET_SM_STATE;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
-	smp->gdr_type = bitx64(rpc.mdr_engine, 7, 0);
-	smp->gdr_nargs = bitx64(rpc.mdr_engine, 15, 8);
-	smp->gdr_arg0 = rpc.mdr_arg0;
-	smp->gdr_arg1 = rpc.mdr_arg1;
-	smp->gdr_arg2 = rpc.mdr_arg2;
-	smp->gdr_arg3 = rpc.mdr_arg3;
+	smp->gdr_type = bitx64(rpc.gdr_engine, 7, 0);
+	smp->gdr_nargs = bitx64(rpc.gdr_engine, 15, 8);
+	smp->gdr_arg0 = rpc.gdr_arg0;
+	smp->gdr_arg1 = rpc.gdr_arg1;
+	smp->gdr_arg2 = rpc.gdr_arg2;
+	smp->gdr_arg3 = rpc.gdr_arg3;
 
 	return (true);
 }
@@ -2656,16 +2660,15 @@ genoa_dxio_rpc_retrieve_engine(genoa_iodie_t *iodie)
 	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
 	genoa_dxio_rpc_t rpc = { 0 };
 
-	rpc.mdr_req = GENOA_MPIO_OP_GET_ENGINE_CFG;
-	rpc.mdr_engine = (uint32_t)(conf->gmc_pa >> 32);
-	rpc.mdr_arg0 = conf->gmc_pa & 0xffffffff;
-	rpc.mdr_arg1 = conf->gmc_alloc_len / 4;
+	rpc.gdr_req = GENOA_MPIO_OP_GET_ENGINE_CFG;
+	rpc.gdr_engine = (uint32_t)(conf->gmc_pa >> 32);
+	rpc.gdr_arg0 = conf->gmc_pa & 0xffffffff;
+	rpc.gdr_arg1 = conf->gmc_alloc_len / 4;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != GENOA_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: SMU 0x%x, "
-		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: DXIO: 0x%x",
+		    rpc.gdr_resp);
 		return (false);
 	}
 
@@ -3119,6 +3122,8 @@ genoa_fabric_topo_init(void)
 		mutex_init(&iodie->gi_smn_lock, NULL, MUTEX_SPIN,
 		    (ddi_iblock_cookie_t)ipltospl(15));
 		mutex_init(&iodie->gi_smu_lock, NULL, MUTEX_SPIN,
+		    (ddi_iblock_cookie_t)ipltospl(15));
+		mutex_init(&iodie->gi_mpio_lock, NULL, MUTEX_SPIN,
 		    (ddi_iblock_cookie_t)ipltospl(15));
 
 		busno = genoa_df_bcast_read32(iodie, DF_CFG_ADDR_CTL_V4);
