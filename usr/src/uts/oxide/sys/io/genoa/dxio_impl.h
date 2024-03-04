@@ -521,12 +521,14 @@ extern const zen_mpio_platform_t cosmo_engine;
 extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 
 /*
- * MPIO message codes. These are also specific to firmware revision.
+ * MPIO message codes.  These are specific to firmware revision 3.
  */
+#define	GENOA_MPIO_OP_GET_VERSION	0x00
+#define	GENOA_MPIO_OP_GET_STATUS	0x01
 #define	GENOA_MPIO_OP_INIT		0x00
 #define	GENOA_MPIO_OP_GET_SM_STATE	0x09
+#define	GENOA_MPIO_OP_INIT_ESM		0x0a
 #define	GENOA_MPIO_OP_SET_LINK_SPEED	0x10
-#define	GENOA_MPIO_OP_GET_VERSION	0x0
 #define	GENOA_MPIO_OP_GET_ENGINE_CFG	0x14
 #define	GENOA_MPIO_OP_SET_VARIABLE	0x22
 #define	GENOA_MPIO_OP_LOAD_DATA		0x23
@@ -535,7 +537,6 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_OP_GET_ERROR_LOG	0x2b
 #define	GENOA_MPIO_OP_SET_RUNTIME_PROP	0x3a
 #define	GENOA_MPIO_OP_XGMI_BER_ADAPT	0x40
-#define	GENOA_MPIO_OP_INIT_ESM		0x53
 
 /*
  * The 0x300 in these are used to indicate deferred returns.
@@ -551,15 +552,16 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
  * GENOA_MPIO_OP_SET_VARIABLE return GENOA_MPIO_RPC_MBOX_IDLE in this
  * case as it seems to actually be using the mailboxes under the hood.
  */
-#define	GENOA_MPIO_RPC_NULL		0
-#define	GENOA_MPIO_RPC_TIMEOUT		1
-#define	GENOA_MPIO_RPC_ERROR		2
-#define	GENOA_MPIO_RPC_OK		3
-#define	GENOA_MPIO_RPC_UNKNOWN_LOCK	4
-#define	GENOA_MPIO_RPC_EAGAIN		5
-#define	GENOA_MPIO_RPC_MBOX_IDLE	6
-#define	GENOA_MPIO_RPC_MBOX_BUSY	7
-#define	GENOA_MPIO_RPC_MBOX_DONE	8
+
+/*
+ * MPIO RPC Response codes
+ */
+#define	GENOA_MPIO_RPC_NOTDONE	0x00
+#define	GENOA_MPIO_RPC_OK	0x01
+#define	GENOA_MPIO_RPC_EBUSY	0xfc
+#define	GENOA_MPIO_RPC_EPREREQ	0xfd
+#define	GENOA_MPIO_RPC_EUNKNOWN	0xfe
+#define	GENOA_MPIO_RPC_ERROR	0xff
 
 /*
  * Different data heaps that can be loaded.
@@ -744,18 +746,6 @@ AMDZEN_MAKE_SMN_REG_FN(genoa_mpio_smn_reg, MPIO_RPC,
 	.srd_reg = 0x9c8,		\
 }
 #define	GENOA_MPIO_RPC_RESP()	genoa_mpio_smn_reg(0, D_GENOA_MPIO_RPC_RESP, 0)
-
-#if 0
-/*
- * MPIO RPC Response codes
- */
-#define	GENOA_MPIO_RPC_NOTDONE	0x00
-#define	GENOA_MPIO_RPC_OK	0x01
-#define	GENOA_MPIO_RPC_EBUSY	0xfc
-#define	GENOA_MPIO_RPC_EPREREQ	0xfd
-#define	GENOA_MPIO_RPC_EUNKNOWN	0xfe
-#define	GENOA_MPIO_RPC_ERROR	0xff
-#endif
 
 /*CSTYLED*/
 #define	D_GENOA_MPIO_RPC_ARG0	(const smn_reg_def_t){	\

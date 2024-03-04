@@ -2297,8 +2297,12 @@ genoa_smu_rpc_read_dpm_weights(genoa_iodie_t *iodie, uint64_t *buf, size_t len)
 
 	len = MIN(len, GENOA_MAX_DPM_WEIGHTS * sizeof (uint64_t));
 	bzero(buf, len);
-	rpc.msr_req = GENOA_SMU_OP_READ_DPM_WEIGHT;
 
+	/* Genoa and later seem to have this as a noop */
+	if (xxxhackymchackface)
+		return (true);
+
+	rpc.msr_req = GENOA_SMU_OP_READ_DPM_WEIGHT;
 	for (uint32_t idx = 0; idx < len / sizeof (uint64_t); idx++) {
 		rpc.msr_arg0 = idx;
 		genoa_smu_rpc(iodie, &rpc);
@@ -2325,13 +2329,13 @@ genoa_dxio_version_at_least(const genoa_iodie_t *iodie,
 static void
 genoa_dxio_rpc(genoa_iodie_t *iodie, genoa_dxio_rpc_t *rpc)
 {
-	const uint32_t rdybit = 1U << 31;
+	const uint32_t READY = 1U << 31;
 	uint32_t resp, req, doorbell;
 
 	mutex_enter(&iodie->gi_mpio_lock);
 	/* Wait until the MPIO engine is ready to receive an RPC. */
 	resp = 0;
-	for (int k = 0; (resp & rdybit) == 0 && k < (1 << 30); k++) {
+	for (int k = 0; (resp & READY) == 0 && k < (1 << 30); k++) {
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
 	}
 	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG0(), rpc->gdr_arg0);
@@ -2351,9 +2355,8 @@ genoa_dxio_rpc(genoa_iodie_t *iodie, genoa_dxio_rpc_t *rpc)
 
 	/* Wait for completion. */
 	resp = 0;
-	for (int k = 0; (resp & (1U << 31)) == 0 && k < (1 << 30); k++) {
+	for (int k = 0; (resp & READY) == 0 && k < (1 << 30); k++) {
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
-		resp &= (1U << 31);
 	}
 
 	/* Read updated args. */
@@ -2363,7 +2366,7 @@ genoa_dxio_rpc(genoa_iodie_t *iodie, genoa_dxio_rpc_t *rpc)
 	rpc->gdr_arg3 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG3());
 	rpc->gdr_arg4 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG4());
 	rpc->gdr_arg5 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG5());
-	rpc->gdr_resp = resp;
+	rpc->gdr_resp = resp & 0xFF;
 
 	mutex_exit(&iodie->gi_mpio_lock);
 }
