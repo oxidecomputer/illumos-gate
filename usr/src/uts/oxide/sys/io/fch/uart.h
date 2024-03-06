@@ -193,9 +193,9 @@ huashan_uart_mmio_block(const uint8_t unit)
 }
 
 static inline mmio_reg_block_t
-songhan_uart_mmio_block(const uint8_t unit)
+songshan_uart_mmio_block(const uint8_t unit)
 {
-	return (__common_dma_mmio_block(unit, SONGSHAN_MAX_UART));
+	return (__common_uart_mmio_block(unit, SONGSHAN_MAX_UART));
 }
 
 static inline mmio_reg_block_t
@@ -205,7 +205,7 @@ huashan_dma_mmio_block(const uint8_t unit)
 }
 
 static inline mmio_reg_block_t
-songhan_dma_mmio_block(const uint8_t unit)
+songshan_dma_mmio_block(const uint8_t unit)
 {
 	return (__common_dma_mmio_block(unit, SONGSHAN_MAX_UART));
 }
