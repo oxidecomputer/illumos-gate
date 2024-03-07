@@ -2293,27 +2293,9 @@ genoa_smu_rpc_read_brand_string(genoa_iodie_t *iodie, char *buf, size_t len)
 static bool
 genoa_smu_rpc_read_dpm_weights(genoa_iodie_t *iodie, uint64_t *buf, size_t len)
 {
-	genoa_smu_rpc_t rpc = { 0 };
-
+	/* Genoa and later seem to have this as a noop. */
 	len = MIN(len, GENOA_MAX_DPM_WEIGHTS * sizeof (uint64_t));
 	bzero(buf, len);
-
-	/* Genoa and later seem to have this as a noop */
-	if (xxxhackymchackface)
-		return (true);
-
-	rpc.msr_req = GENOA_SMU_OP_READ_DPM_WEIGHT;
-	for (uint32_t idx = 0; idx < len / sizeof (uint64_t); idx++) {
-		rpc.msr_arg0 = idx;
-		genoa_smu_rpc(iodie, &rpc);
-
-		if (rpc.msr_resp != GENOA_SMU_RPC_OK)
-			return (false);
-
-		buf[idx] = rpc.msr_arg1;
-		buf[idx] <<= 32;
-		buf[idx] |= rpc.msr_arg0;
-	}
 
 	return (true);
 }
@@ -2371,6 +2353,10 @@ genoa_dxio_rpc(genoa_iodie_t *iodie, genoa_dxio_rpc_t *rpc)
 	mutex_exit(&iodie->gi_mpio_lock);
 }
 
+/*
+ * XXX we really should have some sort of MPIO ops abstraction
+ * here.
+ */
 static bool
 genoa_dxio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
     uint32_t *minor)
@@ -2386,8 +2372,8 @@ genoa_dxio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 		return (false);
 	}
 
-	*major = rpc.gdr_arg0;
-	*minor = rpc.gdr_arg1;
+	*major = rpc.gdr_arg0 >> 24;
+	*minor = (rpc.gdr_arg0 >> 16) & 0xFF;
 
 	return (true);
 }
@@ -2396,6 +2382,9 @@ static bool
 genoa_dxio_rpc_init(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
+
+	if (xxxhackymchackface)
+		return (false);
 
 	rpc.gdr_req = GENOA_MPIO_OP_INIT;
 
@@ -2414,13 +2403,15 @@ genoa_dxio_rpc_set_var(genoa_iodie_t *iodie, uint32_t var, uint32_t val)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
+	if (xxxhackymchackface)
+		return (true);
+
 	rpc.gdr_req = GENOA_MPIO_OP_SET_VARIABLE;
 	rpc.gdr_engine = var;
 	rpc.gdr_arg0 = val;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.gdr_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Set Variable Failed: Var: 0x%x, "
 		    "Val: 0x%x, DXIO: 0x%x", var, val,
 		    rpc.gdr_resp);
@@ -2436,14 +2427,16 @@ genoa_dxio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
+	if (xxxhackymchackface)
+		return (true);
+
 	rpc.gdr_req = GENOA_MPIO_OP_SET_VARIABLE;
 	rpc.gdr_engine = GENOA_DXIO_VAR_UNKNOWN;
 	rpc.gdr_arg0 = delay;
 	rpc.gdr_arg1 = disable_prep ? 1 : 0;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.gdr_resp == GENOA_MPIO_RPC_MBOX_IDLE)) {
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Set PCIe Power Off Config Failed: "
 		    "Delay: 0x%x, Disable Prep: 0x%x, DXIO: 0x%x",
 		    delay, disable_prep, rpc.gdr_resp);
@@ -2457,6 +2450,9 @@ static bool
 genoa_dxio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
+
+	if (xxxhackymchackface)
+		return (true);
 
 	/*
 	 * The mask and val are only allowed to be 7-bit values.
@@ -2489,6 +2485,9 @@ static bool
 genoa_dxio_rpc_load_caps(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
+
+	if (xxxhackymchackface)
+		return (true);
 
 	rpc.gdr_req = GENOA_MPIO_OP_LOAD_CAPS;
 
@@ -2532,6 +2531,9 @@ genoa_dxio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
+	if (xxxhackymchackface)
+		return (false);
+
 	rpc.gdr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
 	rpc.gdr_engine = GENOA_MPIO_ENGINE_PCIE;
 	rpc.gdr_arg0 = GENOA_MPIO_RT_CONF_PCIE_TRAIN;
@@ -2540,8 +2542,7 @@ genoa_dxio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
 	rpc.gdr_arg3 = l0_poll;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.gdr_resp != GENOA_MPIO_RPC_OK)) {
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Conf. PCIe Training RPC Failed: "
 		    "DXIO: 0x%x",
 		    rpc.gdr_resp);
@@ -2567,8 +2568,7 @@ genoa_dxio_rpc_misc_rt_conf(genoa_iodie_t *iodie, uint32_t code, bool state)
 	rpc.gdr_arg2 = state ? 1 : 0;
 
 	genoa_dxio_rpc(iodie, &rpc);
-	if (!(rpc.gdr_resp == GENOA_MPIO_RPC_OK ||
-	    rpc.gdr_resp != GENOA_MPIO_RPC_OK)) {
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Set Misc. rt conf failed: Code: 0x%x, "
 		    "Val: 0x%x, DXIO: 0x%x", code, state,
 		    rpc.gdr_resp);
@@ -2600,6 +2600,9 @@ genoa_dxio_rpc_sm_resume(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
 
+	if (xxxhackymchackface)
+		return (true);
+
 	rpc.gdr_req = GENOA_MPIO_OP_RESUME_SM;
 
 	genoa_dxio_rpc(iodie, &rpc);
@@ -2616,6 +2619,10 @@ static bool
 genoa_dxio_rpc_sm_reload(genoa_iodie_t *iodie)
 {
 	genoa_dxio_rpc_t rpc = { 0 };
+
+	/* Genoa and later don't seem to support this. */
+	if (xxxhackymchackface)
+		return (true);
 
 	rpc.gdr_req = GENOA_MPIO_OP_RELOAD_SM;
 
@@ -2927,8 +2934,7 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	genoa_smu_rpc_t rpc = { 0 };
 	genoa_soc_t *soc = iodie->gi_soc;
 
-	if (xxxhackymchackface)
-	{
+	if (xxxhackymchackface) {
 		cmn_err(CE_WARN, "skipping SMU feature init");
 		return (true);
 	}
@@ -3999,8 +4005,7 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	 * doesn't support this so we skip it there.  XXX(cross) Neither does
 	 * newer firmware, though we need to see if there is an analogue.
 	 */
-	if (!xxxhackymchackface &&
-	    genoa_dxio_version_at_least(iodie, 45, 682) &&
+	if (genoa_dxio_version_at_least(iodie, 45, 682) &&
 	    !genoa_dxio_rpc_pcie_poweroff_config(iodie, 0, false)) {
 		return (1);
 	}
