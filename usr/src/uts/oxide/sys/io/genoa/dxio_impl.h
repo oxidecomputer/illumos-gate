@@ -548,9 +548,7 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
  * MPIO RPC reply codes.
  *
  * While most of these codes are undocumented, most RPCs return
- * GENOA_MPIO_RPC_OK to indicate success.  But note that we have seen
- * GENOA_MPIO_OP_SET_VARIABLE return GENOA_MPIO_RPC_MBOX_IDLE in this
- * case as it seems to actually be using the mailboxes under the hood.
+ * GENOA_MPIO_RPC_OK to indicate success.
  */
 
 /*
