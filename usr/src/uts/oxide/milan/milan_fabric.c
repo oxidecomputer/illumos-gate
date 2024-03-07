@@ -2540,8 +2540,7 @@ milan_dxio_rpc_conf_training(milan_iodie_t *iodie, uint32_t reset_time,
 
 	milan_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK)) {
+	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Conf. PCIe Training RPC Failed: "
 		    "SMU 0x%x, DXIO: 0x%x", rpc.mdr_smu_resp,
 		    rpc.mdr_dxio_resp);
@@ -2562,15 +2561,14 @@ milan_dxio_rpc_misc_rt_conf(milan_iodie_t *iodie, uint32_t code,
 	milan_dxio_rpc_t rpc = { 0 };
 
 	rpc.mdr_req = MILAN_DXIO_OP_SET_RUNTIME_PROP;
-	rpc.mdr_engine = MILAN_DXIO_ENGINE_NONE;
+	rpc.mdr_engine = MILAN_DXIO_ENGINE_PCIE;
 	rpc.mdr_arg0 = MILAN_DXIO_RT_SET_CONF;
 	rpc.mdr_arg1 = code;
 	rpc.mdr_arg2 = state ? 1 : 0;
 
 	milan_dxio_rpc(iodie, &rpc);
 	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK)) {
+	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Set Misc. rt conf failed: Code: 0x%x, "
 		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", code, state,
 		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
