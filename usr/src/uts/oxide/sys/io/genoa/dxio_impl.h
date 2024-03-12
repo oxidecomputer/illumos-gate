@@ -73,6 +73,51 @@ typedef enum zen_mpio_anc_type {
  * Structures defined here are expected to be packed by firmware.
  */
 #pragma	pack(1)
+typedef struct zen_mpio_global_config {
+	/* uint32_t mpio_global_cfg_args[0]: General settings */
+	uint32_t	zmgc_skip_vet:1;
+	uint32_t	zmgc_ntb_hp_ival:1;
+	uint32_t	zmgc_save_restore_mode:2;
+	uint32_t	zmgc_exact_match_port_size:1;
+	uint32_t	zmgc_skip_disable_link_on_fail:1;
+	uint32_t	zmgc_use_phy_sram:1;
+	uint32_t	zmgc_valid_phy_firmware:1;
+	uint32_t	zmgc_enable_loopback_support:1;
+	uint32_t	zmgc_stb_verbosity:2;
+	uint32_t	zmgc_en_pcie_noncomp_wa:1;
+	uint32_t	zmgc_active_slt_mode:1;
+	uint32_t	zmgc_legacy_dev_boot_fail_wa:1;
+	uint32_t	zmgc_deferred_msg_supt:1;
+	uint32_t	zmgc_cxl_gpf_phase2_timeout:4;
+	uint32_t	zmgc_run_xgmi_safe_recov_odt;
+	uint32_t	zmgc_run_z_cal:1;
+	uint32_t	zmgc_pad0:11;
+	/* uint32_t mpio_global_cfg_args[1]: Power settings */
+	uint32_t	zmgc_pwr_mgmt_clk_gating:1;
+	uint32_t	zmgc_pwr_mgmt_static_pwr_gating:1;
+	uint32_t	zmgc_pwr_mgmt_refclk_shutdown:1;
+	uint32_t	zmgc_cbs_opts_en_pwr_mgmt:1;
+	uint32_t	zmgc_pwr_mgmt_pma_pwr_gating:1;
+	uint32_t	zmgc_pwr_mgmt_pma_clk_gating:1;
+	uint32_t	zmgc_pad1:26;
+	/* uint32_t mpio_global_cfg_args[2]: Link timeouts */
+	uint16_t	zmgc_link_rcvr_det_poll_timeout_ms;
+	uint16_t	zmgc_link_l0_poll_timeout_ms;
+	/* uint32_t mpio_global_cfg_args[3]: Protocol settings */
+	uint16_t	zmgc_link_reset_to_training_time_ms;
+	uint16_t	zmgc_pcie_allow_completion_pass:1;
+	uint16_t	zmgc_cbs_opts_allow_ptr_slip_ival:1;
+	uint16_t	zmgc_link_dis_at_pwr_off_delay:4;
+	uint16_t	zmgc_en_2spc_gen4:1;
+	uint16_t	zmgc_pad2:9;
+	/* uint32_t mpio_global_cfg_args[4]: Trap control */
+	uint32_t	zmgc_dis_sbr_trap:1;
+	uint32_t	zmgc_dis_lane_margining_trap:1;
+	uint32_t	zmgc_pad3:30;
+	/* uint32_t mpio_global_cfg_args[5]: Reserved */
+	uint32_t	zmgc_resv;
+} zen_mpio_global_config_t;
+
 typedef struct zen_mpio_anc_data {
 	uint8_t		zmad_type;
 	uint8_t		zmad_vers:4;
