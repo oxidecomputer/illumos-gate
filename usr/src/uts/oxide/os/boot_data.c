@@ -35,6 +35,7 @@
 #include <sys/boot_image_ops.h>
 #include <sys/boot_physmem.h>
 #include <sys/boot_debug.h>
+#include <sys/platform_detect.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/smt.h>
 #include <sys/time.h>
@@ -53,25 +54,6 @@ static const uint64_t APOB_ADDR = 0x4000000UL;
 
 extern int bootrd_debug, prom_debug;
 extern boolean_t kbm_debug;
-
-/*
- * A lookup table that maps a board model and revision to various data
- * required for populating boot properties. First match wins. If the revision is
- * set to UINT32_MAX then the entry applies to all revisions. if the model is
- * set to NULL, then the entry applies to all models.
- */
-typedef struct {
-	const char	*bl_model;
-	uint32_t	bl_rev;
-	const char	*bl_descr;
-	uint16_t	bl_bsu_slota;	/* Slot corresponding to BSU A */
-	uint16_t	bl_bsu_slotb;	/* Slot corresponding to BSU B */
-} board_lookup_t;
-
-static const board_lookup_t board_lookup[] = {
-	{ "913-0000019",	UINT32_MAX,	"Oxide,Gimlet",  17, 18, },
-	{ NULL,			UINT32_MAX,	"Oxide,Unknown", 17, 18, },
-};
 
 /*
  * Boot properties. We build a list of boot properties backed by boot pages -
@@ -237,9 +219,32 @@ bt_set_prop_str(const char *name, const char *value)
 }
 
 static void
-eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
+eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len,
+    uint64_t spstartup)
 {
 	uint64_t ramdisk_start, ramdisk_end;
+
+	/*
+	 * krtld will ignore RB_DEBUGENTER when not accompanied by RB_KMDB.
+	 * Setting IPCC_STARTUP_KMDB_BOOT will set both, regardless of the
+	 * status of IPCC_STARTUP_KMDB.
+	 */
+	if ((spstartup & IPCC_STARTUP_KMDB_BOOT) != 0)
+		boothowto |= RB_KMDB | RB_DEBUGENTER;
+	else if ((spstartup & IPCC_STARTUP_KMDB) != 0)
+		boothowto |= RB_KMDB;
+
+	if ((spstartup & IPCC_STARTUP_VERBOSE) != 0)
+		boothowto |= RB_VERBOSE;
+
+	if ((spstartup & IPCC_STARTUP_KBM) != 0)
+		kbm_debug = B_TRUE;
+
+	if ((spstartup & IPCC_STARTUP_BOOTRD) != 0)
+		bootrd_debug = 1;
+
+	if ((spstartup & IPCC_STARTUP_PROM) != 0)
+		prom_debug = 1;
 
 	/*
 	 * The APOB address and reset vector are stored in, or computed
@@ -252,6 +257,7 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	const uint64_t apob_addr = APOB_ADDR;
 	const uint32_t reset_vector = 0x7ffefff0U;
 
+	bt_set_prop_str(BTPROP_NAME_MFG, oxide_board_data->obd_rootnexus);
 	bt_set_prop_u32(BTPROP_NAME_RESET_VECTOR, reset_vector);
 	bt_set_prop_u64(BTPROP_NAME_APOB_ADDRESS, apob_addr);
 
@@ -284,7 +290,7 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	/*
 	 * Although the oxide arch does not use it, preferring to set flags
 	 * in boothowto directly, the "bootargs" property is required to exist
-	 * otherwise krtld objects.
+	 * to sate krtld.
 	 */
 	bt_set_prop_str(BTPROP_NAME_BOOTARGS, "");
 }
@@ -292,55 +298,20 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 static void
 eb_fake_ipcc_properties(void)
 {
-	boothowto |= RB_KMDB | RB_VERBOSE;
-	prom_debug = 1;
-
 	bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "ramdisk");
 	bt_set_prop_u8(BTPROP_NAME_BSU, 'A');
 
 	bt_set_prop_str(BTPROP_NAME_BOARD_IDENT, "FAKE-IDENT");
 	bt_set_prop_str(BTPROP_NAME_BOARD_MODEL, "FAKE-MODEL");
 	bt_set_prop_u32(BTPROP_NAME_BOARD_REVISION, 0);
-
-	const board_lookup_t *board =
-	    &board_lookup[ARRAY_SIZE(board_lookup) - 1];
-	bt_set_prop_str(BTPROP_NAME_MFG, board->bl_descr);
 }
 
 static void
-eb_real_ipcc_properties(void)
+eb_real_ipcc_properties(uint64_t spstatus, uint64_t spstartup)
 {
-	uint64_t spstatus, spstartup;
 	ipcc_ident_t ident;
 	uint8_t bsu;
 	int err;
-
-	if ((err = kernel_ipcc_status(&spstatus, &spstartup)) != 0) {
-		bop_panic("Could not retrieve status registers from SP (%d)",
-		    err);
-	}
-
-	/*
-	 * krtld will ignore RB_DEBUGENTER when not accompanied by RB_KMDB.
-	 * Setting IPCC_STARTUP_KMDB_BOOT will set both, regardless of the
-	 * status of IPCC_STARTUP_KMDB.
-	 */
-	if ((spstartup & IPCC_STARTUP_KMDB_BOOT) != 0)
-		boothowto |= RB_KMDB | RB_DEBUGENTER;
-	else if ((spstartup & IPCC_STARTUP_KMDB) != 0)
-		boothowto |= RB_KMDB;
-
-	if ((spstartup & IPCC_STARTUP_VERBOSE) != 0)
-		boothowto |= RB_VERBOSE;
-
-	if ((spstartup & IPCC_STARTUP_KBM) != 0)
-		kbm_debug = B_TRUE;
-
-	if ((spstartup & IPCC_STARTUP_BOOTRD) != 0)
-		bootrd_debug = 1;
-
-	if ((spstartup & IPCC_STARTUP_PROM) != 0)
-		prom_debug = 1;
 
 	if ((spstatus & IPCC_STATUS_STARTED) != 0)
 		kernel_ipcc_ackstart();
@@ -363,27 +334,6 @@ eb_real_ipcc_properties(void)
 	bt_set_prop_str(BTPROP_NAME_BOARD_IDENT, (char *)ident.ii_serial);
 	bt_set_prop_str(BTPROP_NAME_BOARD_MODEL, (char *)ident.ii_model);
 	bt_set_prop_u32(BTPROP_NAME_BOARD_REVISION, ident.ii_rev);
-
-	const board_lookup_t *board = NULL;
-	for (uint_t i = 0; i < ARRAY_SIZE(board_lookup); i++) {
-		const board_lookup_t *b = &board_lookup[i];
-
-		if (b->bl_model != NULL &&
-		    strcmp(b->bl_model, (char *)ident.ii_model) != 0) {
-			continue;
-		}
-		if (b->bl_rev != UINT32_MAX && b->bl_rev != ident.ii_rev)
-			continue;
-
-		board = b;
-		break;
-	}
-	if (board == NULL) {
-		bop_panic("Could not find model %s/%u in lookup table",
-		    ident.ii_model, ident.ii_rev);
-	}
-
-	bt_set_prop_str(BTPROP_NAME_MFG, board->bl_descr);
 
 	/*
 	 * Set properties to configure how we will boot. This is controlled by
@@ -425,8 +375,8 @@ eb_real_ipcc_properties(void)
 			char bootdev[sizeof ("disk:") + 10];
 
 			(void) snprintf(bootdev, sizeof (bootdev), "disk:%u",
-			    bsu == 'A' ? (uint32_t)board->bl_bsu_slota :
-			    (uint32_t)board->bl_bsu_slotb);
+			    (uint32_t)oxide_board_data->obd_bsu_slot[bsu ==
+			    'A' ? 0 : 1]);
 
 			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, bootdev);
 		}
@@ -436,12 +386,24 @@ eb_real_ipcc_properties(void)
 void
 eb_create_properties(uint64_t ramdisk_paddr, size_t ramdisk_len)
 {
-	eb_create_common_properties(ramdisk_paddr, ramdisk_len);
 
-	if (ipcc_enable)
-		eb_real_ipcc_properties();
-	else
+	if (oxide_board_data->obd_ipccmode == IPCC_MODE_DISABLED) {
+		eb_create_common_properties(ramdisk_paddr, ramdisk_len,
+		    oxide_board_data->obd_startupopts);
 		eb_fake_ipcc_properties();
+	} else {
+		uint64_t spstatus, spstartup;
+		int err;
+
+		if ((err = kernel_ipcc_status(&spstatus, &spstartup)) != 0) {
+			bop_panic(
+			    "Could not retrieve status registers from SP (%d)",
+			    err);
+		}
+		eb_create_common_properties(ramdisk_paddr, ramdisk_len,
+		    spstartup);
+		eb_real_ipcc_properties(spstatus, spstartup);
+	}
 }
 
 extern void

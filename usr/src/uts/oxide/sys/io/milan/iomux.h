@@ -41,45 +41,43 @@ extern "C" {
  * using MMIO.  It uses the function values defined below and will fail to
  * compile if a definition for the requested function and pin does not exist.
  */
-#define	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(b, r, f)	\
+#define	MILAN_FCH_IOMUX_IOMUX_SET_MMIO(b, r, f)	\
 	mmio_reg_write(FCH_IOMUX_IOMUX_MMIO(b, r),	\
 	MILAN_FCH_IOMUX_ ## r ## _ ## f)
 
 /*
- * Pinmux function values.
+ * IOMUX function values.
  */
 
 /*
  * Documentation is inconsistent with respect to the names of the GPIO functions
  * associated with this pin: EGPIO_26 == EGPIO26_0 and EGPIO27 == EGPIO26_3.
  */
-#define	MILAN_FCH_IOMUX_26_PCIE_RST0_L	0
-#define	MILAN_FCH_IOMUX_26_EGPIO26	1
-#define	MILAN_FCH_IOMUX_26_EGPIO26_0	1
-#define	MILAN_FCH_IOMUX_27_PCIE_RST3_L	0
-#define	MILAN_FCH_IOMUX_27_EGPIO27	1
-#define	MILAN_FCH_IOMUX_27_EGPIO26_3	1
+#define	MILAN_FCH_IOMUX_26_PCIE_RST0_L		0
+#define	MILAN_FCH_IOMUX_26_EGPIO26		1
+#define	MILAN_FCH_IOMUX_26_EGPIO26_0		1
+#define	MILAN_FCH_IOMUX_27_PCIE_RST3_L		0
+#define	MILAN_FCH_IOMUX_27_EGPIO27		1
+#define	MILAN_FCH_IOMUX_27_EGPIO26_3		1
 
 #define	MILAN_FCH_IOMUX_129_KBRST_L		0
-#define	MILAN_FCH_IOMUX_129_GPIO129		2
+#define	MILAN_FCH_IOMUX_129_AGPIO129		2
 
-#define	MILAN_FCH_IOMUX_135_UART0_CTS_L	0
+#define	MILAN_FCH_IOMUX_135_UART0_CTS_L		0
 #define	MILAN_FCH_IOMUX_136_UART0_RXD		0
-#define	MILAN_FCH_IOMUX_137_UART0_RTS_L	0
+#define	MILAN_FCH_IOMUX_137_UART0_RTS_L		0
 #define	MILAN_FCH_IOMUX_138_UART0_TXD		0
-#define	MILAN_FCH_IOMUX_139_GPIO139		1
+#define	MILAN_FCH_IOMUX_139_AGPIO139		1
 
-#define	MILAN_FCH_IOMUX_140_UART1_CTS_L	0
+#define	MILAN_FCH_IOMUX_140_UART1_CTS_L		0
 #define	MILAN_FCH_IOMUX_141_UART1_RXD		0
-#define	MILAN_FCH_IOMUX_142_UART1_RTS_L	0
+#define	MILAN_FCH_IOMUX_142_UART1_RTS_L		0
 #define	MILAN_FCH_IOMUX_143_UART1_TXD		0
-#define	MILAN_FCH_IOMUX_144_GPIO144		1
 
 #define	MILAN_FCH_RMTMUX_10_PCIE_RST1_L		0
 #define	MILAN_FCH_RMTMUX_10_EGPIO26_1		1
 #define	MILAN_FCH_RMTMUX_11_PCIE_RST2_L		0
 #define	MILAN_FCH_RMTMUX_11_EGPIO26_2		1
-
 
 #ifdef __cplusplus
 }

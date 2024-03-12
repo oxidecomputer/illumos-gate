@@ -87,6 +87,7 @@ milan_cgpll_set_ssc(boolean_t ssc)
 		val = mmio_reg_read(reg);
 		if (FCH_MISC_A_STRAPSTATUS_GET_CLKGEN(val) !=
 		    FCH_MISC_A_STRAPSTATUS_CLKGEN_INT) {
+			mmio_reg_block_unmap(&fch_misc_a);
 			return (B_FALSE);
 		}
 	}
@@ -321,7 +322,7 @@ milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
 			mmio_reg_write(rstctl_reg, rstctl_val);
 			mmio_reg_block_unmap(&fch_pmio);
 
-			mux_val = MILAN_FCH_IOMUX_129_GPIO129;
+			mux_val = MILAN_FCH_IOMUX_129_AGPIO129;
 		}
 			break;
 		case 266:
@@ -381,4 +382,3 @@ milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
 
 	mmio_reg_block_unmap(&gpio_block);
 }
-

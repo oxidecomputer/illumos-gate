@@ -102,6 +102,7 @@ CORE_OBJS +=			\
 	notes.o			\
 	pci_cfgacc.o		\
 	pcie_cfgspace.o		\
+	platform_detect.o	\
 	pmem.o			\
 	ppage.o			\
 	prom_panic.o		\

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 /*
@@ -37,14 +37,13 @@
 
 #include <sys/cmn_err.h>
 #include <sys/prom_debug.h>
+#include <sys/platform_detect.h>
 #include <sys/bootconf.h>
 #include <sys/dw_apb_uart.h>
 #include <sys/stdbool.h>
 #include <sys/types.h>
 #include <sys/uart.h>
-#include <sys/amdzen/fch/iomux.h>
 #include <sys/io/fch/uart.h>
-#include <sys/io/milan/iomux.h>
 #include <vm/kboot_mmu.h>
 
 int dw_apb_invalid_disable_intr = 0;
@@ -113,48 +112,6 @@ dw_apb_lcr(uint8_t *lcrp, const async_databits_t db, const async_parity_t par,
 	return (0);
 }
 
-/*
- * The default at-reset mappings for IOMUX pins relating to UARTs on Milan
- * according to the PPRs are shown below. By the time we get here it is possible
- * that some of these pins will have been remapped by the ABL based on the APCB
- * contents. Regardless, we explicitly set each pin to the function we need
- * (shown in square brackets).
- *
- *	0x87 - GPIO135		[UART0_CTS_L]
- *	0x88 - UART0_RXD	[UART0_RXD]
- *	0x89 - GPIO_137		[UART0_RTS_L]
- *	0x8a - GPIO_138		[UART0_TXD]
- *
- *	0x8c - GPIO_140		[UART1_CTS_L]
- *	0x8d - UART1_RXD	[UART1_RXD]
- *	0x8e - GPIO_142		[UART1_RTS_L]
- *	0x8f - GPIO_143		[UART1_TXD]
- */
-static void
-dw_apb_uart_iomux_pinmux_set(void)
-{
-	static bool mapped = false;
-
-	if (mapped)
-		return;
-
-	mmio_reg_block_t block = fch_iomux_mmio_block();
-
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 135, UART0_CTS_L);
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 136, UART0_RXD);
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 137, UART0_RTS_L);
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 138, UART0_TXD);
-
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 140, UART1_CTS_L);
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 141, UART1_RXD);
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 142, UART1_RTS_L);
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 143, UART1_TXD);
-
-	mmio_reg_block_unmap(&block);
-
-	mapped = true;
-}
-
 int
 dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
     const uint32_t baud, const async_databits_t db,
@@ -179,16 +136,20 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 		return (-1);
 	}
 
-	dw_apb_uart_iomux_pinmux_set();
-
 	if ((uart->dau_flags & DAUF_MAPPED))
 		mmio_reg_block_unmap(&uart->dau_reg_block);
 
-	/*
-	 * Assume Huashan for now; this will also work for Songshan.
-	 * XXX use cpuid as a proxy as fch does?
-	 */
-	uart->dau_reg_block = huashan_uart_mmio_block(unit);
+	switch (oxide_board_data->obd_cpuinfo.obc_fchkind) {
+	case FK_HUASHAN:
+		uart->dau_reg_block = huashan_uart_mmio_block(unit);
+		break;
+	case FK_SONGSHAN:
+		uart->dau_reg_block = songshan_uart_mmio_block(unit);
+		break;
+	default:
+		return (-1);
+	}
+
 	uart->dau_reg_thr = FCH_UART_THR_MMIO(uart->dau_reg_block);
 	uart->dau_reg_rbr = FCH_UART_RBR_MMIO(uart->dau_reg_block);
 	uart->dau_reg_lsr = FCH_UART_LSR_MMIO(uart->dau_reg_block);
@@ -261,6 +222,13 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 	}
 
 	return (0);
+}
+
+int
+dw_apb_uart_reinit(dw_apb_uart_t * const uart)
+{
+	return (dw_apb_uart_init(uart, uart->dau_port, uart->dau_baudrate,
+	    uart->dau_databits, uart->dau_parity, uart->dau_stopbits));
 }
 
 inline bool

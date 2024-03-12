@@ -100,8 +100,6 @@ typedef enum ipcc_panic_field {
 	IPF_RP,
 } ipcc_panic_field_t;
 
-extern boolean_t ipcc_enable;
-
 void kernel_ipcc_init(ipcc_init_t);
 extern int kernel_ipcc_acquire(void);
 extern void kernel_ipcc_release(void);

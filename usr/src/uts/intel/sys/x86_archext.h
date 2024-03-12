@@ -52,6 +52,20 @@ extern "C" {
 #endif
 
 /*
+ * These bit fields are defined by the Intel 64 and IA-32 Architectures
+ * Software Developer's Manual, Volume 2.
+ * These should be applied to the value returned in %eax from standard function
+ * 1.
+ */
+#define	CPUID_XFAMILY_XTD(eax)	BITX((eax), 27, 20)
+#define	CPUID_XMODEL_XTD(eax)	BITX((eax), 19, 16)
+#define	CPUID_XMODEL_XTD_SHIFT	4
+#define	CPUID_XTYPE(eax)	BITX((eax), 13, 12)
+#define	CPUID_XFAMILY(eax)	BITX((eax), 11, 8)
+#define	CPUID_XMODEL(eax)	BITX((eax), 7, 4)
+#define	CPUID_XSTEPPING(eax)	BITX((eax), 3, 0)
+
+/*
  * cpuid instruction feature flags in %edx (standard function 1)
  */
 

@@ -872,12 +872,6 @@ CTASSERT(sizeof (fch_intrspec_t) == 12);
 static const uint_t INTS_PER_INTRSPEC =
 	(sizeof (fch_intrspec_t) / sizeof (uint32_t));
 
-typedef enum fch_kind {
-	FK_NONE,
-	FK_HUASHAN,
-	FK_SONGSHAN
-} fch_kind_t;
-
 typedef struct fch_def {
 	const char		*fd_nodename;
 	const char		*fd_desc;
@@ -2663,15 +2657,14 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 		return (0);
 	}
 
-	switch (chiprev_family(cpuid_getchiprev(CPU))) {
-	case X86_PF_AMD_NAPLES:
+	switch (chiprev_fch_kind(cpuid_getchiprev(CPU))) {
+	case FK_TAISHAN:
 		ident = "taishan";
 		break;
-	case X86_PF_AMD_ROME:
-	case X86_PF_AMD_MILAN:
+	case FK_HUASHAN:
 		ident = "huashan";
 		break;
-	case X86_PF_AMD_GENOA:
+	case FK_SONGSHAN:
 		ident = "songshan";
 		break;
 	default:

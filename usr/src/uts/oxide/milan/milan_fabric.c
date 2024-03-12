@@ -599,6 +599,7 @@
 #include <sys/spl.h>
 #include <sys/debug.h>
 #include <sys/prom_debug.h>
+#include <sys/platform_detect.h>
 #include <sys/x86_archext.h>
 #include <sys/bitext.h>
 #include <sys/sysmacros.h>
@@ -1823,25 +1824,6 @@ milan_ioms_iodie(const milan_ioms_t *const ioms)
 	return (ioms->mio_iodie);
 }
 
-typedef enum {
-	MBT_ANY,
-	MBT_GIMLET,
-	MBT_ETHANOL
-} milan_board_type_t;
-
-/*
- * Here is a temporary rough heuristic for determining what board we're on.
- */
-static milan_board_type_t
-milan_board_type(const milan_fabric_t *fabric)
-{
-	if (fabric->mf_nsocs == 2) {
-		return (MBT_ETHANOL);
-	} else {
-		return (MBT_GIMLET);
-	}
-}
-
 /*
  * We pass these functions 64 bits of debug data consisting of 32 bits of stage
  * number and 8 bits containing the I/O die index for which to capture register
@@ -1962,7 +1944,7 @@ milan_pcie_populate_dbg(milan_fabric_t *fabric, milan_pcie_config_stage_t stage,
 	 * clear start time (since the GPIO was previously an input and would
 	 * have read at an undefined level).
 	 */
-	if (milan_board_type(fabric) == MBT_GIMLET) {
+	if (oxide_board_data->obd_board == OXIDE_BOARD_GIMLET) {
 		if (!gpio_configured) {
 			milan_hack_gpio(MHGOP_CONFIGURE, 129);
 			milan_hack_gpio(MHGOP_TOGGLE, 129);
@@ -3864,7 +3846,7 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
 	 * We probably want to see if we can do better by figuring out whether
 	 * this is needed on socket 0, 1, or neither.
 	 */
-	if (milan_board_type(soc->ms_fabric) == MBT_ETHANOL) {
+	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
 		if (soc->ms_socno == 0 && !milan_dxio_rpc_sm_reload(iodie)) {
 			return (1);
 		}
@@ -3963,11 +3945,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	size_t phy_len;
 	int err;
 
-	/*
-	 * XXX Figure out how to best not hardcode Ethanol. Realistically
-	 * probably an SP boot property.
-	 */
-	if (milan_board_type(soc->ms_fabric) == MBT_ETHANOL) {
+	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
 		if (soc->ms_socno == 0) {
 			source_data = &ethanolx_engine_s0;
 		} else {
@@ -4235,7 +4213,7 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
  *
  * These can be matched to a board identifier, I/O die DF node ID, NBIO/IOMS
  * number, PCIe core number (pcie_core_t.mpc_coreno), and PCIe port number
- * (pcie_port_t.mpp_portno).  The board sentinel value MBT_ANY is 0 and may be
+ * (pcie_port_t.mpp_portno).  The board sentinel value is 0 and may be
  * omitted, but the others require nonzero sentinels as 0 is a valid index.  The
  * sentinel values of 0xFF here cannot match any real NBIO, RC, or port: there
  * are at most 4 NBIOs per die, 3 RC per NBIO, and 8 ports (bridges) per RC.
@@ -4256,7 +4234,7 @@ milan_dxio_map_engines(milan_fabric_t *fabric, milan_iodie_t *iodie)
 typedef struct milan_pcie_strap_setting {
 	uint32_t		strap_reg;
 	uint32_t		strap_data;
-	milan_board_type_t	strap_boardmatch;
+	oxide_board_t		strap_boardmatch;
 	uint32_t		strap_nodematch;
 	uint8_t			strap_nbiomatch;
 	uint8_t			strap_corematch;
@@ -4361,7 +4339,7 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_SUBVID,
 		.strap_data = PCI_VENDOR_ID_OXIDE,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4369,7 +4347,7 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_SUBDID,
 		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4472,7 +4450,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_SRIS_EN,
 		.strap_data = 1,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4481,7 +4459,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
 		.strap_data = 0,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4490,7 +4468,7 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
 		.strap_data = 0,
-		.strap_boardmatch = MBT_GIMLET,
+		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4512,10 +4490,9 @@ milan_pcie_strap_matches(const milan_pcie_core_t *pc, uint8_t portno,
 {
 	const milan_ioms_t *ioms = pc->mpc_ioms;
 	const milan_iodie_t *iodie = ioms->mio_iodie;
-	const milan_fabric_t *fabric = iodie->mi_soc->ms_fabric;
-	const milan_board_type_t board = milan_board_type(fabric);
+	const oxide_board_t board = oxide_board_data->obd_board;
 
-	if (strap->strap_boardmatch != MBT_ANY &&
+	if (strap->strap_boardmatch != 0 &&
 	    strap->strap_boardmatch != board) {
 		return (B_FALSE);
 	}
@@ -4805,7 +4782,8 @@ milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
 				break;
 			}
 
-			if (milan_board_type(fabric) == MBT_ETHANOL) {
+			if (oxide_board_data->obd_board ==
+			    OXIDE_BOARD_ETHANOLX) {
 
 				/*
 				 * Release PERST manually on Ethanol-X which
@@ -5859,7 +5837,7 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)hp->mh_table);
 	hp->mh_pa = mmu_ptob((uint64_t)pfn);
 
-	if (milan_board_type(fabric) == MBT_ETHANOL) {
+	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
 		entry = ethanolx_hotplug_ents;
 	} else {
 		entry = gimlet_hotplug_ents;
@@ -5916,10 +5894,8 @@ static uint32_t
 milan_hotplug_bridge_features(milan_pcie_port_t *port)
 {
 	uint32_t feats;
-	milan_fabric_t *fabric =
-	    port->mpp_core->mpc_ioms->mio_iodie->mi_soc->ms_fabric;
 
-	if (milan_board_type(fabric) == MBT_ETHANOL) {
+	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
 		if (port->mpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
 			return (ethanolx_pcie_slot_cap_entssd);
 		} else {

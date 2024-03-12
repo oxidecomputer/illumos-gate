@@ -63,6 +63,7 @@ extern void dw_apb_uart_deinit(dw_apb_uart_t * const);
 extern int dw_apb_uart_init(dw_apb_uart_t * const, const dw_apb_port_t,
     const uint32_t, const async_databits_t, const async_parity_t,
     const async_stopbits_t);
+extern int dw_apb_uart_reinit(dw_apb_uart_t * const);
 extern void dw_apb_uart_flush(const dw_apb_uart_t * const);
 extern size_t dw_apb_uart_rx_nb(const dw_apb_uart_t * const, uint8_t *, size_t);
 extern uint8_t dw_apb_uart_rx_one(const dw_apb_uart_t * const);

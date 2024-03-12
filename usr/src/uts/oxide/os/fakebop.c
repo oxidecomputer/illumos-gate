@@ -46,6 +46,7 @@
 #include <sys/boot_console.h>
 #include <sys/boot_data.h>
 #include <sys/boot_debug.h>
+#include <sys/platform_detect.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/boot_physmem.h>
 #include <sys/varargs.h>
@@ -95,9 +96,6 @@ extern int prom_debug;
  * existence of the boot property of the same name.
  */
 boolean_t kbm_debug = B_FALSE;
-
-/* Global that controls whether ipcc is used. */
-boolean_t ipcc_enable = B_TRUE;
 
 static bootops_t bootop;
 static struct bsys_mem bm;
@@ -629,12 +627,9 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	struct boot_syscalls *bsp;
 
 	kbm_init();
+	oxide_derive_platform();
 	bsp = boot_console_init();
-
-	/*
-	 * XXX - how could we detect a non-oxide platform here and set
-	 *	ipcc_enable = B_FALSE?
-	 */
+	oxide_report_platform();
 
 	kernel_ipcc_init(IPCC_INIT_EARLYBOOT);
 	eb_physmem_init(&bm);

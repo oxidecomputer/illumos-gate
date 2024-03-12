@@ -428,11 +428,10 @@
 #include <sys/sysmacros.h>
 #include <sys/systm.h>
 #include <sys/types.h>
+#include <sys/platform_detect.h>
 
 #include <sys/ipcc.h>
 #include <sys/ipcc_proto.h>
-
-extern boolean_t ipcc_enable;
 
 #ifndef _LITTLE_ENDIAN
 /*
@@ -900,7 +899,7 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 	uint8_t attempt = 0;
 	int err = 0;
 
-	if (!ipcc_enable)
+	if (oxide_board_data->obd_ipccmode == IPCC_MODE_DISABLED)
 		return (EIO);
 
 	VERIFY(ipcc_channel_held());

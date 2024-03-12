@@ -76,6 +76,7 @@ MAKE_MMIO_FCH_REG_FN(MISC_B, misc_b, 4);
  * FCH::MISC::CGPLLCONFIG1.  One of many clock generator garbage barges; we
  * define only the bits we use, which for now is one needed for setting up SSC.
  */
+/*CSTYLED*/
 #define	D_FCH_MISC_A_CGPLLCFG1	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
 	.srd_reg = 0x08				\
@@ -93,6 +94,7 @@ MAKE_MMIO_FCH_REG_FN(MISC_B, misc_b, 4);
  * same one, CG1.  There is also CG2 which has similar but not identical
  * configuration registers that exist in the MISC2 block.
  */
+/*CSTYLED*/
 #define	D_FCH_MISC_A_CGPLLCFG3	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
 	.srd_reg = 0x10				\
@@ -116,6 +118,7 @@ MAKE_MMIO_FCH_REG_FN(MISC_B, misc_b, 4);
  * MISC2 is reserved.  It's unclear whether or how CG2 is really controlled
  * independently at all.
  */
+/*CSTYLED*/
 #define	D_FCH_MISC_A_CLKCTL0		(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
 	.srd_reg = 0x40				\
@@ -133,6 +136,7 @@ MAKE_MMIO_FCH_REG_FN(MISC_B, misc_b, 4);
  * and make sense only if one recalls that this logic used to be in an external
  * southbridge package.  This register is read-only.
  */
+/*CSTYLED*/
 #define	D_FCH_MISC_A_STRAPSTATUS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
 	.srd_reg = 0x80				\
@@ -143,6 +147,13 @@ MAKE_MMIO_FCH_REG_FN(MISC_B, misc_b, 4);
 #define	FCH_MISC_A_STRAPSTATUS_GET_CLKGEN(r)	bitx32(r, 17, 17)
 #define	FCH_MISC_A_STRAPSTATUS_CLKGEN_EXT	0
 #define	FCH_MISC_A_STRAPSTATUS_CLKGEN_INT	1
+
+#define	FCH_MISC_A_STRAPSTATUS_GET_ROMTYPE(r) \
+	((bitx32(r, 3, 3) << 1) | bitx32(r, 1, 1))
+#define	FCH_MISC_A_STRAPSTATUS_ROMTYPE_ESPI		3
+#define	FCH_MISC_A_STRAPSTATUS_ROMTYPE_ESPI_SAFS	2
+#define	FCH_MISC_A_STRAPSTATUS_ROMTYPE_SPI		1
+#define	FCH_MISC_A_STRAPSTATUS_ROMTYPE_RESERVED		0
 
 /*
  * FCH::MISC::I2Cn_PADCTRL.  Sets electrical parameters of pads that may be (but

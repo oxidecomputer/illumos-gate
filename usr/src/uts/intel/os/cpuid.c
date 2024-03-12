@@ -1926,16 +1926,12 @@ struct cpuid_info {
 
 static struct cpuid_info cpuid_info0;
 
-/*
- * These bit fields are defined by the Intel Application Note AP-485
- * "Intel Processor Identification and the CPUID Instruction"
- */
-#define	CPI_FAMILY_XTD(cpi)	BITX((cpi)->cpi_std[1].cp_eax, 27, 20)
-#define	CPI_MODEL_XTD(cpi)	BITX((cpi)->cpi_std[1].cp_eax, 19, 16)
-#define	CPI_TYPE(cpi)		BITX((cpi)->cpi_std[1].cp_eax, 13, 12)
-#define	CPI_FAMILY(cpi)		BITX((cpi)->cpi_std[1].cp_eax, 11, 8)
-#define	CPI_STEP(cpi)		BITX((cpi)->cpi_std[1].cp_eax, 3, 0)
-#define	CPI_MODEL(cpi)		BITX((cpi)->cpi_std[1].cp_eax, 7, 4)
+#define	CPI_FAMILY_XTD(cpi)	CPUID_XFAMILY_XTD((cpi)->cpi_std[1].cp_eax)
+#define	CPI_MODEL_XTD(cpi)	CPUID_XMODEL_XTD((cpi)->cpi_std[1].cp_eax)
+#define	CPI_TYPE(cpi)		CPUID_XTYPE((cpi)->cpi_std[1].cp_eax)
+#define	CPI_FAMILY(cpi)		CPUID_XFAMILY((cpi)->cpi_std[1].cp_eax)
+#define	CPI_STEP(cpi)		CPUID_XSTEPPING((cpi)->cpi_std[1].cp_eax)
+#define	CPI_MODEL(cpi)		CPUID_XMODEL((cpi)->cpi_std[1].cp_eax)
 
 #define	CPI_FEATURES_EDX(cpi)		((cpi)->cpi_std[1].cp_edx)
 #define	CPI_FEATURES_ECX(cpi)		((cpi)->cpi_std[1].cp_ecx)
@@ -3963,19 +3959,25 @@ cpuid_pass_ident(cpu_t *cpu, void *arg __unused)
 
 	switch (cpi->cpi_vendor) {
 	case X86_VENDOR_Intel:
-		if (IS_EXTENDED_MODEL_INTEL(cpi))
-			cpi->cpi_model += CPI_MODEL_XTD(cpi) << 4;
+		if (IS_EXTENDED_MODEL_INTEL(cpi)) {
+			cpi->cpi_model +=
+			    CPI_MODEL_XTD(cpi) << CPUID_XMODEL_XTD_SHIFT;
+		}
 		break;
 	case X86_VENDOR_AMD:
-		if (CPI_FAMILY(cpi) == 0xf)
-			cpi->cpi_model += CPI_MODEL_XTD(cpi) << 4;
+		if (CPI_FAMILY(cpi) == 0xf) {
+			cpi->cpi_model +=
+			    CPI_MODEL_XTD(cpi) << CPUID_XMODEL_XTD_SHIFT;
+		}
 		break;
 	case X86_VENDOR_HYGON:
-		cpi->cpi_model += CPI_MODEL_XTD(cpi) << 4;
+		cpi->cpi_model += CPI_MODEL_XTD(cpi) << CPUID_XMODEL_XTD_SHIFT;
 		break;
 	default:
-		if (cpi->cpi_model == 0xf)
-			cpi->cpi_model += CPI_MODEL_XTD(cpi) << 4;
+		if (cpi->cpi_model == 0xf) {
+			cpi->cpi_model +=
+			    CPI_MODEL_XTD(cpi) << CPUID_XMODEL_XTD_SHIFT;
+		}
 		break;
 	}
 

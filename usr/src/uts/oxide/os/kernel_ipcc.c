@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -34,13 +34,8 @@
 #include <sys/io/fch/uart.h>
 #include <sys/io/milan/iomux.h>
 #include <sys/archsystm.h>
+#include <sys/platform_detect.h>
 #include <sys/cpu.h>
-
-/*
- * This is correct for the current Gimlet platform, in the future this may
- * need to be determined dynamically.
- */
-#define	SP_AGPIO	139
 
 static ipcc_ops_t kernel_ipcc_ops;
 static ipcc_init_t ipcc_init = IPCC_INIT_UNSET;
@@ -75,6 +70,7 @@ static ipcc_panic_data_t ipcc_panic_buf;
 
 typedef struct {
 	dw_apb_uart_t		kid_uart;
+	uint32_t		kid_agpio;
 	mmio_reg_block_t	kid_gpio_block;
 	mmio_reg_t		kid_gpio_reg;
 } kernel_ipcc_data_t;
@@ -213,35 +209,29 @@ eb_ipcc_log(void *arg __unused, ipcc_log_type_t type __maybe_unused,
 }
 
 static void
-eb_ipcc_init(void)
+eb_ipcc_init_gpio(kernel_ipcc_data_t *data)
 {
-	kernel_ipcc_data_t *data = &kernel_ipcc_data;
-
-	EB_DBGMSG("kernel_ipcc_init(EARLYBOOT)\n");
-
-	if (dw_apb_uart_init(&data->kid_uart, DAP_1,
-	    3000000, AD_8BITS, AP_NONE, AS_1BIT) != 0) {
-		bop_panic("Could not initialize SP/Host UART");
+	switch (oxide_board_data->obd_ipccspintr) {
+	case IPCC_SPINTR_DISABLED:
+		data->kid_agpio = UINT32_MAX;
+		return;
+	case IPCC_SPINTR_SP3_AGPIO139:
+		data->kid_agpio = 139;
+		break;
+	default:
+		bop_panic("Unknown SPINTR mode");
 	}
 
-	bzero(&kernel_ipcc_ops, sizeof (kernel_ipcc_ops));
-	kernel_ipcc_ops.io_poll = eb_ipcc_poll;
-	kernel_ipcc_ops.io_flush = eb_ipcc_flush;
-	kernel_ipcc_ops.io_read = eb_ipcc_read;
-	kernel_ipcc_ops.io_write = eb_ipcc_write;
-	kernel_ipcc_ops.io_log = eb_ipcc_log;
-
 	/*
-	 * XXX - this is correct for Gimlet but will need to be factored out
-	 *	 for boards that aren't Gimlet and/or processors that aren't
-	 *	 Milan.
-	 * AGPIO139 is the interrupt line from the SP that signals when it
-	 * has information for us. Set up the GPIO parameters and then
-	 * configure the pinmux to make it active on the pad.
+	 * Configure the interrupt line from the SP that signals when it
+	 * has information for us. The IOMUX has already been configured for
+	 * us in oxide_derive_platform(); we still have to set up GPIO
+	 * parameters as we'd like.
 	 */
 	data->kid_gpio_block = fch_gpio_mmio_block();
 	data->kid_gpio_reg = FCH_GPIO_GPIO_MMIO(data->kid_gpio_block,
-	    SP_AGPIO);
+	    data->kid_agpio);
+
 	uint32_t gpio = mmio_reg_read(data->kid_gpio_reg);
 	gpio = FCH_GPIO_GPIO_SET_OUT_EN(gpio, 0);
 	gpio = FCH_GPIO_GPIO_SET_PD_EN(gpio, 0);
@@ -250,15 +240,42 @@ eb_ipcc_init(void)
 	gpio = FCH_GPIO_GPIO_SET_LEVEL(gpio, FCH_GPIO_GPIO_LEVEL_ACT_LOW);
 	gpio = FCH_GPIO_GPIO_SET_INT_EN(gpio, 0);
 	mmio_reg_write(data->kid_gpio_reg, gpio);
+
 	gpio = mmio_reg_read(data->kid_gpio_reg);
 
-	eb_debug_printf("Configured AGPIO%d: %x (input is %s)\n", SP_AGPIO,
-	    gpio, FCH_GPIO_GPIO_GET_INPUT(gpio) == FCH_GPIO_GPIO_INPUT_HIGH ?
+	eb_debug_printf("Configured AGPIO%d: %x (input is %s)\n",
+	    data->kid_agpio, gpio,
+	    FCH_GPIO_GPIO_GET_INPUT(gpio) == FCH_GPIO_GPIO_INPUT_HIGH ?
 	    "high" : "low");
+}
 
-	mmio_reg_block_t block = fch_iomux_mmio_block();
-	MILAN_FCH_IOMUX_PINMUX_SET_MMIO(block, 139, GPIO139);
-	mmio_reg_block_unmap(&block);
+static void
+eb_ipcc_init(void)
+{
+	kernel_ipcc_data_t *data = &kernel_ipcc_data;
+	oxide_ipcc_mode_t mode;
+
+	EB_DBGMSG("kernel_ipcc_init(EARLYBOOT)\n");
+
+	eb_ipcc_init_gpio(data);
+
+	switch ((mode = oxide_board_data->obd_ipccmode)) {
+	case IPCC_MODE_UART1:
+		if (dw_apb_uart_init(&data->kid_uart, DAP_1, 3000000,
+		    AD_8BITS, AP_NONE, AS_1BIT) != 0) {
+			bop_panic("Could not initialize SP/Host UART");
+		}
+
+		bzero(&kernel_ipcc_ops, sizeof (kernel_ipcc_ops));
+		kernel_ipcc_ops.io_poll = eb_ipcc_poll;
+		kernel_ipcc_ops.io_flush = eb_ipcc_flush;
+		kernel_ipcc_ops.io_read = eb_ipcc_read;
+		kernel_ipcc_ops.io_write = eb_ipcc_write;
+		kernel_ipcc_ops.io_log = eb_ipcc_log;
+		break;
+	default:
+		bop_panic("Unknown IPCC mode: 0x%x", mode);
+	}
 }
 
 static void
@@ -299,24 +316,33 @@ static void
 mb_ipcc_init(void)
 {
 	kernel_ipcc_data_t *data = &kernel_ipcc_data;
+	oxide_ipcc_mode_t mode;
 
 	EB_DBGMSG("kernel_ipcc_init(KVMAVAIL)\n");
 
-	/*
-	 * The UART is re-initialised to move the register MMIO mappings out
-	 * of the boot pages.
-	 */
-	if (dw_apb_uart_init(&data->kid_uart, DAP_1,
-	    3000000, AD_8BITS, AP_NONE, AS_1BIT) != 0) {
-		bop_panic("Could not re-initialize SP/Host UART");
+	switch ((mode = oxide_board_data->obd_ipccmode)) {
+	case IPCC_MODE_UART1:
+		/*
+		 * The UART is re-initialised to move the register MMIO
+		 * mappings out of the boot pages.
+		 */
+		if (dw_apb_uart_reinit(&data->kid_uart) != 0)
+			bop_panic("Could not re-initialize SP/Host UART");
+		break;
+	default:
+		bop_panic("Unknown IPCC mode: 0x%x", mode);
 	}
 
 	/*
-	 * Similarly the GPIO MMIO block and register.
+	 * Re-initialise the GPIO MMIO block and register to move the
+	 * MMIO mappings out of the boot pages.
 	 */
-	mmio_reg_block_unmap(&data->kid_gpio_block);
-	data->kid_gpio_block = fch_gpio_mmio_block();
-	data->kid_gpio_reg = FCH_GPIO_GPIO_MMIO(data->kid_gpio_block, SP_AGPIO);
+	if (data->kid_agpio != UINT32_MAX) {
+		mmio_reg_block_unmap(&data->kid_gpio_block);
+		data->kid_gpio_block = fch_gpio_mmio_block();
+		data->kid_gpio_reg = FCH_GPIO_GPIO_MMIO(data->kid_gpio_block,
+		    data->kid_agpio);
+	}
 
 	/*
 	 * Switch to the cmn_err()-based logger.
@@ -340,7 +366,7 @@ mb_ipcc_init(void)
 void
 kernel_ipcc_init(ipcc_init_t stage)
 {
-	if (!ipcc_enable)
+	if (oxide_board_data->obd_ipccmode == IPCC_MODE_DISABLED)
 		return;
 	switch (stage) {
 	case IPCC_INIT_EARLYBOOT:
@@ -396,7 +422,7 @@ kernel_ipcc_prepare_gasp(void)
 	 * otherwise, the interrupt handler will consume received data before
 	 * our polled consumer gets a chance.
 	 */
-	if (ipcc_enable) {
+	if (oxide_board_data->obd_ipccmode == IPCC_MODE_UART1) {
 		dw_apb_disable_intr(&kernel_ipcc_data.kid_uart);
 		dw_apb_reset_mcr(&kernel_ipcc_data.kid_uart);
 	}
