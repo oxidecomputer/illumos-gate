@@ -3934,9 +3934,19 @@ genoa_fabric_init_nbif_bridge(genoa_ioms_t *ioms, void *arg)
 	return (0);
 }
 
+/*
+ * Do MPIO initialization.  Unlike earlier systems that did
+ * this via DXIO and discrete RPCs, MPIO takes a single global
+ * configuration parameter in an RPC.
+ */
 static int
-genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 {
+
+
+	return (0);
+
+#if 0
 	genoa_soc_t *soc = iodie->gi_soc;
 
 	/*
@@ -4045,6 +4055,7 @@ genoa_dxio_init(genoa_iodie_t *iodie, void *arg)
 	}
 
 	return (0);
+#endif
 }
 
 /*
@@ -6607,7 +6618,7 @@ genoa_fabric_init(void)
 	 */
 	genoa_pcie_populate_dbg(&genoa_fabric, GPCS_PRE_DXIO_INIT,
 	    GENOA_IODIE_MATCH_ANY);
-	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_init, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
 		return;
