@@ -44,6 +44,7 @@ illumos*.sh
 #     ./etc-stlouis/tools/update_gitignore
 etc-stlouis/tools/builder/builder
 etc-stlouis/tools/builder/users.c
+genoa/
 usr/src/boot/efi/libefi/amd64/machine
 usr/src/boot/efi/libefi/amd64/x86
 usr/src/boot/efi/libefi/i386/machine
@@ -5518,6 +5519,29 @@ usr/src/man/man3head/wchar.3head
 usr/src/man/man3head/wctype.3head
 usr/src/man/man3head/wordexp.3head
 usr/src/man/man3head/xlocale.3head
+usr/src/man/man3ipcc/libipcc_errmsg.3ipcc
+usr/src/man/man3ipcc/libipcc_fini.3ipcc
+usr/src/man/man3ipcc/libipcc_ident_free.3ipcc
+usr/src/man/man3ipcc/libipcc_ident_model.3ipcc
+usr/src/man/man3ipcc/libipcc_ident_rev.3ipcc
+usr/src/man/man3ipcc/libipcc_ident_serial.3ipcc
+usr/src/man/man3ipcc/libipcc_inv_data.3ipcc
+usr/src/man/man3ipcc/libipcc_inv_free.3ipcc
+usr/src/man/man3ipcc/libipcc_inv_hdl_fini.3ipcc
+usr/src/man/man3ipcc/libipcc_inv_hdl_init.3ipcc
+usr/src/man/man3ipcc/libipcc_inv_name.3ipcc
+usr/src/man/man3ipcc/libipcc_inv_status_str.3ipcc
+usr/src/man/man3ipcc/libipcc_inv_type.3ipcc
+usr/src/man/man3ipcc/libipcc_keylookup_free.3ipcc
+usr/src/man/man3ipcc/libipcc_mac_addr.3ipcc
+usr/src/man/man3ipcc/libipcc_mac_bootstrap.3ipcc
+usr/src/man/man3ipcc/libipcc_mac_count.3ipcc
+usr/src/man/man3ipcc/libipcc_mac_free.3ipcc
+usr/src/man/man3ipcc/libipcc_mac_nic.3ipcc
+usr/src/man/man3ipcc/libipcc_mac_stride.3ipcc
+usr/src/man/man3ipcc/libipcc_startup_options.3ipcc
+usr/src/man/man3ipcc/libipcc_strerror.3ipcc
+usr/src/man/man3ipcc/libipcc_syserr.3ipcc
 usr/src/man/man3iscsit/it_config_commit.3iscsit
 usr/src/man/man3iscsit/it_config_free.3iscsit
 usr/src/man/man3iscsit/it_config_setprop.3iscsit
@@ -8642,6 +8666,8 @@ usr/src/test/crypto-tests/tests/hmac/hmac_sha1_32_kcf
 usr/src/test/crypto-tests/tests/hmac/hmac_sha1_32_pkcs
 usr/src/test/crypto-tests/tests/hmac/hmac_sha1_64_kcf
 usr/src/test/crypto-tests/tests/hmac/hmac_sha1_64_pkcs
+usr/src/test/crypto-tests/tests/longhash/longhash_32
+usr/src/test/crypto-tests/tests/longhash/longhash_64
 usr/src/test/crypto-tests/tests/modes/aes/cbc/aes_cbc_32_kcf
 usr/src/test/crypto-tests/tests/modes/aes/cbc/aes_cbc_32_pkcs
 usr/src/test/crypto-tests/tests/modes/aes/cbc/aes_cbc_64_kcf
@@ -9213,7 +9239,6 @@ usr/src/tools/proto/
 usr/src/tools/protocmp/protocmp
 usr/src/tools/protolist/protolist
 usr/src/tools/rpcgen/rpcgen
-usr/src/tools/scripts/Install
 usr/src/tools/scripts/bldenv.1onbld
 usr/src/tools/scripts/build_cscope
 usr/src/tools/scripts/cddlchk
