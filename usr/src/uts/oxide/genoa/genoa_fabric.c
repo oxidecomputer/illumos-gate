@@ -2446,6 +2446,7 @@ genoa_dxio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
 	return (true);
 }
 
+#if 0
 static bool
 genoa_dxio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 {
@@ -2474,6 +2475,7 @@ genoa_dxio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 
 	return (true);
 }
+#endif
 
 /*
  * Currently there are no capabilities defined, which makes it hard for us to
@@ -2525,6 +2527,7 @@ genoa_dxio_rpc_load_data(genoa_iodie_t *iodie, uint32_t type,
 	return (true);
 }
 
+#if 0
 static bool
 genoa_dxio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
     uint32_t rx_poll, uint32_t l0_poll)
@@ -2551,7 +2554,9 @@ genoa_dxio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
 
 	return (true);
 }
+#endif
 
+#if 0
 /*
  * This is a hodgepodge RPC that is used to set various rt configuration
  * properties.
@@ -2577,6 +2582,7 @@ genoa_dxio_rpc_misc_rt_conf(genoa_iodie_t *iodie, uint32_t code, bool state)
 
 	return (true);
 }
+#endif
 
 static bool
 genoa_dxio_rpc_sm_start(genoa_iodie_t *iodie)
@@ -3942,9 +3948,30 @@ genoa_fabric_init_nbif_bridge(genoa_ioms_t *ioms, void *arg)
 static int
 genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 {
+	genoa_dxio_rpc_t rpc = { 0 };
+	zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)&rpc.gdr_arg0;
+
+	args->zmgc_use_phy_sram = 1;
+	args->zmgc_valid_phy_firmware = 1;
+	args->zmgc_cbs_opts_allow_ptr_slip_ival = 1;
+	args->zmgc_pwr_mgmt_clk_gating = 1;
+	args->zmgc_pwr_mgmt_static_pwr_gating = 1;
+	args->zmgc_pwr_mgmt_refclk_shutdown = 1;
+	args->zmgc_cbs_opts_en_pwr_mgmt = 1;
+	args->zmgc_pwr_mgmt_pma_pwr_gating = 1;
+	args->zmgc_pwr_mgmt_pma_clk_gating = 1;
+
+	rpc.gdr_req = GENOA_MPIO_OP_SET_GLOBAL_CONFIG;
+	genoa_dxio_rpc(iodie, &rpc);
+	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO set global config RPC Failed: MPIO Resp: 0x%x",
+		   rpc.gdr_resp);
+		return (false);
+	}
 
 
-	return (0);
+	return (true);
 
 #if 0
 	genoa_soc_t *soc = iodie->gi_soc;
@@ -4246,10 +4273,12 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 	 * This is set to 1 by default because we want 'latency behaviour' not
 	 * 'improved latency'.
 	 */
+#if 0
 	if (!genoa_dxio_rpc_misc_rt_conf(iodie,
 	    GENOA_MPIO_RT_SET_CONF_TX_FIFO_MODE, 1)) {
 		return (1);
 	}
+#endif
 
 	return (0);
 }

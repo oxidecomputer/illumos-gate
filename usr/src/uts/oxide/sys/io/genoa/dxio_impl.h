@@ -31,6 +31,9 @@ extern "C" {
 #define	MPIO_PORT_NOT_PRESENT	0
 #define	MPIO_PORT_PRESENT	1
 
+#define	MPIO_XFER_TO_RAM	0
+#define	MPIO_XFER_FROM_RAM	1
+
 typedef enum zen_mpio_link_speed {
 	ZEN_MPIO_LINK_SPEED_MAX	= 0,
 	ZEN_MPIO_LINK_SPEDD_GEN1,
@@ -118,6 +121,83 @@ typedef struct zen_mpio_global_config {
 	uint32_t	zmgc_resv;
 } zen_mpio_global_config_t;
 
+typedef struct zen_mpio_link_attr {
+	/* uint32_t zmla[0]: General */
+	uint32_t	zmla_dev_func;
+	uint32_t	zmla_port_present:1;
+	uint32_t	zmla_early_link_train:1;
+	uint32_t	zmla_link_compl_mode:1;
+	uint32_t	zmla_pad0:1;
+	uint32_t	zmla_link_hp_type:4;
+
+	/* Speed parameters */
+	uint32_t	zmla_max_link_speed_cap:4;
+	uint32_t	zmla_target_link_speed:4;
+
+	/* PSP parameters */
+	uint32_t	zmla_psp_mode:3;
+	uint32_t	zmla_partner_dev_type:2;
+	uint32_t	zmla_pad1:3;
+
+	/* Control parameters */
+	uint32_t	zmla_local_perst:1;
+	uint32_t	zmla_bif_mode:1;
+	uint32_t	zmla_is_master_pll:1;
+	uint32_t	zmla_invert_rx_pol:1;
+	uint32_t	zmla_invert_tx_pol:1;
+	uint32_t	zmla_pad2:3;
+
+	/* uint32_t zmla[1]: Gen3 and Gen4 search parameters */
+	uint32_t	zmla_gen3_eq_search_mode:2;
+	uint32_t	zmla_en_gen3_eq_search_mode:2;
+	uint32_t	zmla_gen4_eq_search_mode:2;
+	uint32_t	zmla_en_gen4_eq_search_mode:2;
+
+	/* Gen5 and Gen6 search parameters */
+	uint32_t	zmla_gen5_eq_search_mode:2;
+	uint32_t	zmla_en_gen5_eq_search_mode:2;
+	uint32_t	zmla_gen6_eq_search_mode:2;
+	uint32_t	zmla_en_gen6_eq_search_mode:2;
+
+	/* Tx/Rx parameters */
+	uint32_t	zmla_demph_tx:2;
+	uint32_t	zmla_en_demph_tx:1;
+	uint32_t	zmla_tx_vetting:1;
+	uint32_t	zmla_rx_vetting:1;
+	uint32_t	zmla_pad3:3;
+
+	/* ESM parameters */
+	uint32_t	zmla_esm_speed:6;
+	uint32_t	zmla_esm_mode:2;
+
+	/* uint32_t zmla[2]: Bridge parameters */
+	uint8_t		zmla_hfc_idx;
+	uint8_t		zmla_dfc_idx;
+	uint16_t	zmla_log_bridge_id:5;
+	uint16_t	zmla_swing_mode:3;
+	uint16_t	zmla_sris_skip_ival:3;
+	uint16_t	zmla_pad4:5;
+
+	/* uint32_t zmla[3]: Reserved */
+	uint32_t	zmla_resv0;
+
+	/* uint32_t zmla[4]: Reserved */
+	uint32_t	zmla_resv1;
+} zen_mpio_link_attr_t;
+
+typedef struct zen_mpio_link {
+	uint32_t	zml_lane_start:16;
+	uint32_t	zml_num_lanes:6;
+	uint32_t	zml_resv:1;
+	uint32_t	zml_status:5;
+	uint32_t	zml_ctl_type:4;
+	uint32_t	zml_gpio_id:8;
+	uint32_t	zml_chan_type:8;
+	uint32_t	zml_anc_data_idx:16;
+
+	zen_mpio_link_attr_t zml_attrs;
+} zen_mpio_link_t;
+
 typedef struct zen_mpio_anc_data {
 	uint8_t		zmad_type;
 	uint8_t		zmad_vers:4;
@@ -157,6 +237,14 @@ typedef struct zen_mpio_link_cap {
 	uint32_t	zmlc_skip_eq_gen4:1;
 	uint32_t	zmlc_rsvd:17;
 } zen_mpio_link_cap_t;
+
+typedef struct zen_mpio_ict_link_status {
+	uint32_t	zmils_state:4;
+	uint32_t	zmils_speed:7;
+	uint32_t	zmils_width:5;
+	uint32_t	zmils_port:8;
+	uint32_t	zmils_resv:8;
+} zen_mpio_ict_link_status_t;
 
 /*
  * Note, this type is used for configuration descriptors involving SATA, USB,
@@ -206,12 +294,14 @@ typedef union {
 	zen_mpio_config_pcie_t	zmc_pcie;
 } zen_mpio_config_t;
 
-typedef enum zen_mpio_engine_type {
-	ZEN_MPIO_ENGINE_UNUSED	= 0x00,
-	ZEN_MPIO_ENGINE_PCIE	= 0x01,
-	ZEN_MPIO_ENGINE_SATA	= 0x03,
-	ZEN_MPIO_ENGINE_ETH	= 0x10,
-} zen_mpio_engine_type_t;
+typedef enum zen_mpio_ask_link_type {
+	ZEN_MPIO_ASK_LINK_PCIE	= 0x00,
+	ZEN_MPIO_ASK_LINK_SATA	= 0x01,
+	ZEN_MPIO_ASK_LINK_XGMI	= 0x02,
+	ZEN_MPIO_ASK_LINK_GMI	= 0x03,
+	ZEN_MPIO_ASK_LINK_ETH	= 0x04,
+	ZEN_MPIO_ASK_LINK_USB	= 0x05,
+} zen_mpio_ask_link_type_t;
 
 typedef struct zen_mpio_engine {
 	uint8_t		zme_type;
@@ -570,6 +660,11 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
  */
 #define	GENOA_MPIO_OP_GET_VERSION	0x00
 #define	GENOA_MPIO_OP_GET_STATUS	0x01
+#define	GENOA_MPIO_OP_SET_GLOBAL_CONFIG	0x02
+#define	GENOA_MPIO_OP_GET_ASK_RESULT	0x03
+#define	GENOA_MPIO_OP_SETUP_LINK	0x04
+#define	GENOA_MPIO_OP_EN_CLK_GATING	0x05
+
 #define	GENOA_MPIO_OP_INIT		0x00
 #define	GENOA_MPIO_OP_GET_SM_STATE	0x09
 #define	GENOA_MPIO_OP_INIT_ESM		0x0a
@@ -620,10 +715,10 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 /*
  * Some commands refer to an explicit engine in their request.
  */
-#define	GENOA_MPIO_ENGINE_NONE		0x00
-#define	GENOA_MPIO_ENGINE_PCIE		0x01
-#define	GENOA_MPIO_ENGINE_USB		0x02
-#define	GENOA_MPIO_ENGINE_SATA		0x03
+#define	ZEN_MPIO_ENGINE_NONE		0x00
+#define	ZEN_MPIO_ENGINE_PCIE		0x01
+#define	ZEN_MPIO_ENGINE_USB		0x02
+#define	ZEN_MPIO_ENGINE_SATA		0x03
 
 /*
  * The various variable codes that one can theoretically use with
