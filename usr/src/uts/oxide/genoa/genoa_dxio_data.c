@@ -100,7 +100,7 @@
 #include <sys/stddef.h>
 #include <sys/debug.h>
 #include <sys/pcie.h>
-#include <sys/io/genoa/dxio_impl.h>
+#include <sys/io/genoa/mpio_impl.h>
 
 CTASSERT(sizeof (zen_mpio_link_cap_t) == 0x8);
 CTASSERT(sizeof (zen_mpio_config_base_t) == 0x18);

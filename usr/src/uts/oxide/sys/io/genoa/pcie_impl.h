@@ -18,7 +18,7 @@
 
 #include <sys/types.h>
 #include <sys/io/genoa/fabric.h>
-#include <sys/io/genoa/dxio_impl.h>
+#include <sys/io/genoa/mpio_impl.h>
 #include <sys/io/genoa/pcie.h>
 
 #ifdef __cplusplus

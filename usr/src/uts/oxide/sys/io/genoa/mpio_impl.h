@@ -17,7 +17,8 @@
 #define	_SYS_IO_GENOA_MPIO_IMPL_H
 
 /*
- * Definitions for the MPIO Engine configuration data format.
+ * Definitions for the MPIO (MicroProcessor Input Output) Engine
+ * configuration data format.
  */
 
 #include <sys/param.h>
@@ -728,6 +729,7 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	ZEN_MPIO_ENGINE_USB		0x02
 #define	ZEN_MPIO_ENGINE_SATA		0x03
 
+#if 0
 /*
  * The various variable codes that one can theoretically use with
  * GENOA_MPIO_OP_SET_VARIABLE.
@@ -853,6 +855,7 @@ typedef struct genoa_mpio_reply {
 	uint32_t		gdr_arg2;
 	uint32_t		gdr_arg3;
 } genoa_mpio_reply_t;
+#endif
 
 /*
  * Types of MPIO Link speed updates. These must be ORed in with the base code.
