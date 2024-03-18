@@ -39,6 +39,7 @@
 #include <sys/clock.h>
 #include <sys/debug.h>
 #include <sys/smp_impldefs.h>
+#include <sys/stdbool.h>
 #include <sys/zone.h>
 
 /*
@@ -52,6 +53,7 @@ void
 tod_set(timestruc_t ts)
 {
 	time_t adj;
+	static bool already_stepped = false;
 	extern time_t boot_time;
 
 	ASSERT(MUTEX_HELD(&tod_lock));
@@ -67,10 +69,20 @@ tod_set(timestruc_t ts)
 	 * correct the kstats and so that userland software can use this to
 	 * obtain a more correct notion of the time that the system, and each
 	 * zone, booted.
+	 *
+	 * To protect somewhat against a system clock being stepped multiple
+	 * times forwards and backwards, either by hand or as a result of
+	 * an upstream NTP server being authoratatively stuck in the past, we
+	 * are only prepared to do this once per boot.
 	 */
+	if (already_stepped)
+		return;
+
 	adj = ts.tv_sec - hrestime.tv_sec;
 	if (adj < 86400)
 		return;
+
+	already_stepped = true;
 
 	if (boot_time < INT64_MAX - adj)
 		boot_time += adj;
