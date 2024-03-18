@@ -652,8 +652,6 @@
  */
 typedef struct genoa_mpio_rpc {
 	uint32_t	gdr_req;
-	uint32_t	gdr_resp;
-	uint32_t	gdr_engine;
 	uint32_t	gdr_arg0;
 	uint32_t	gdr_arg1;
 	uint32_t	gdr_arg2;
@@ -2310,7 +2308,7 @@ genoa_dxio_version_at_least(const genoa_iodie_t *iodie,
 }
 #endif
 
-static void
+static int
 genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 {
 	const uint32_t READY = 1U << 31;
@@ -2351,9 +2349,9 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 	rpc->gdr_arg3 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG3());
 	rpc->gdr_arg4 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG4());
 	rpc->gdr_arg5 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG5());
-	rpc->gdr_resp = resp & 0xFF;
-
 	mutex_exit(&iodie->gi_mpio_lock);
+
+	return (resp & 0xFF);
 }
 
 /*
@@ -2365,13 +2363,14 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
     uint32_t *minor)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
 
 	rpc.gdr_req = GENOA_MPIO_OP_GET_VERSION;
 
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: MPIO Resp: 0x%x",
-		   rpc.gdr_resp);
+		   resp);
 		return (false);
 	}
 
@@ -2381,6 +2380,7 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 	return (true);
 }
 
+#if 0
 static bool
 genoa_mpio_rpc_init(genoa_iodie_t *iodie)
 {
@@ -2449,7 +2449,6 @@ genoa_mpio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
 	return (true);
 }
 
-#if 0
 static bool
 genoa_mpio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 {
@@ -2478,7 +2477,7 @@ genoa_mpio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
 
 	return (true);
 }
-#endif
+
 
 /*
  * Currently there are no capabilities defined, which makes it hard for us to
@@ -2530,7 +2529,6 @@ genoa_mpio_rpc_load_data(genoa_iodie_t *iodie, uint32_t type,
 	return (true);
 }
 
-#if 0
 static bool
 genoa_mpio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
     uint32_t rx_poll, uint32_t l0_poll)
@@ -2557,9 +2555,6 @@ genoa_mpio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
 
 	return (true);
 }
-#endif
-
-#if 0
 /*
  * This is a hodgepodge RPC that is used to set various rt configuration
  * properties.
@@ -2585,7 +2580,6 @@ genoa_mpio_rpc_misc_rt_conf(genoa_iodie_t *iodie, uint32_t code, bool state)
 
 	return (true);
 }
-#endif
 
 static bool
 genoa_mpio_rpc_sm_start(genoa_iodie_t *iodie)
@@ -2598,6 +2592,7 @@ genoa_mpio_rpc_sm_start(genoa_iodie_t *iodie)
 	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: DXIO: 0x%x",
 		    rpc.gdr_resp);
+
 		return (false);
 	}
 
@@ -2693,6 +2688,7 @@ genoa_mpio_rpc_retrieve_engine(genoa_iodie_t *iodie)
 
 	return (true);
 }
+#endif
 
 static int
 genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
@@ -3953,6 +3949,7 @@ genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
 	zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)&rpc.gdr_arg0;
+	int resp;
 
 	args->zmgc_use_phy_sram = 1;
 	args->zmgc_valid_phy_firmware = 1;
@@ -3965,16 +3962,16 @@ genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 	args->zmgc_pwr_mgmt_pma_clk_gating = 1;
 
 	rpc.gdr_req = GENOA_MPIO_OP_SET_GLOBAL_CONFIG;
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gdr_resp != GENOA_MPIO_RPC_OK) {
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN,
 		    "MPIO set global config RPC Failed: MPIO Resp: 0x%x",
-		   rpc.gdr_resp);
-		return (false);
+		   resp);
+		return (1);
 	}
 
 
-	return (true);
+	return (0);
 
 #if 0
 	genoa_soc_t *soc = iodie->gi_soc;
@@ -4212,6 +4209,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 static int
 genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 {
+#if 0
 	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
 
 	/*
@@ -4246,6 +4244,7 @@ genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 	    conf->gmc_pa, conf->gmc_conf_len, 0)) {
 		return (1);
 	}
+#endif
 
 	return (0);
 }
@@ -4829,6 +4828,7 @@ genoa_fabric_setup_pcie_core_dbg(genoa_pcie_core_t *pc, void *arg)
 static int
 genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
 {
+#if 0
 	genoa_soc_t *soc = iodie->gi_soc;
 	genoa_fabric_t *fabric = soc->gs_fabric;
 
@@ -5007,6 +5007,7 @@ done:
 	if (!genoa_mpio_rpc_retrieve_engine(iodie)) {
 		return (1);
 	}
+#endif
 
 	return (0);
 }
@@ -5676,7 +5677,7 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 
 		hotplug = (pc->gpc_flags & GENOA_PCIE_CORE_F_HAS_HOTPLUG) != 0;
 		lt = port->gpp_engine->zme_config.zmc_pcie.zmcp_link_train_state;
-		trained = lt == GENOA_DXIO_PCIE_SUCCESS;
+		trained = lt != 0; /* GENOA_DXIO_PCIE_SUCCESS;*/
 		hide = !hotplug && !trained;
 	} else {
 		hide = true;
@@ -5976,7 +5977,7 @@ genoa_fabric_hack_bridges(genoa_fabric_t *fabric)
 }
 
 /*
- * If this assertion fails, fix the definition in dxio_impl.h or increase the
+ * If this assertion fails, fix the definition in mpio_impl.h or increase the
  * size of the contiguous mapping below.
  */
 CTASSERT(sizeof (smu_hotplug_table_t) <= MMU_PAGESIZE);
@@ -6655,6 +6656,8 @@ genoa_fabric_init(void)
 		    "speranza voi che pcie");
 		return;
 	}
+	cmn_err(CE_CONT, "GENOA FABRIC INIT SUCCEEDED");
+#if 0
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_plat_data, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: no platform "
@@ -6718,4 +6721,5 @@ genoa_fabric_init(void)
 	 * futher we should lock all the various MMIO assignment registers,
 	 * especially ones we don't intend to use.
 	 */
+#endif
 }

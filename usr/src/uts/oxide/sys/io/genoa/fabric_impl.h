@@ -27,7 +27,7 @@
 #include <sys/x86_archext.h>
 #include <sys/io/genoa/fabric.h>
 #include <sys/io/genoa/ccx_impl.h>
-#include <sys/io/genoa/dxio_impl.h>
+#include <sys/io/genoa/mpio_impl.h>
 #include <sys/io/genoa/nbif_impl.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/amdzen/smn.h>
@@ -161,7 +161,7 @@ struct genoa_iodie {
 	uint8_t			gi_smu_fw[3];
 	uint32_t		gi_dxio_fw[2];
 	genoa_iodie_flag_t	gi_flags;
-	genoa_dxio_sm_state_t	gi_state;
+	int /*genoa_dxio_sm_state_t*/	gi_state;
 	genoa_mpio_config_t	gi_dxio_conf;
 	uint64_t		gi_dpm_weights[GENOA_MAX_DPM_WEIGHTS];
 	genoa_ioms_t		gi_ioms[GENOA_IOMS_PER_IODIE];
