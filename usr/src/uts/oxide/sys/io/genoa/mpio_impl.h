@@ -32,8 +32,8 @@ extern "C" {
 #define	MPIO_PORT_NOT_PRESENT	0
 #define	MPIO_PORT_PRESENT	1
 
-#define	MPIO_XFER_TO_RAM	0
-#define	MPIO_XFER_FROM_RAM	1
+#define	MPIO_LINK_ALL 0
+#define	MPIO_LINK_SELECTED 1
 
 typedef enum zen_mpio_link_speed {
 	ZEN_MPIO_LINK_SPEED_MAX	= 0,
@@ -213,13 +213,43 @@ typedef struct zen_mpio_ask {
 	uint32_t	zma_resv[4];
 } zen_mpio_ask_t;
 
-typedef struct zen_mpio_anc_data {
+typedef struct zen_mpio_ext_attrs {
 	uint8_t		zmad_type;
 	uint8_t		zmad_vers:4;
 	uint8_t		zmad_rsvd0:4;
 	uint8_t		zmad_nu32s;
 	uint8_t		zmad_rsvd1;
-} zen_mpio_anc_data_t;
+} zen_mpio_ext_attrs_t;
+
+typedef struct zen_mpio_xfer_ask_args {
+	uint32_t	zmxaa_paddr_hi;
+	uint32_t	zmxaa_paddr_lo;
+	uint32_t	zmxaa_links:1;
+	uint32_t	zmxaa_dir:1;
+	uint32_t	zmxaa_resv0:30;
+	uint32_t	zmxaa_link_start;
+	uint32_t	zmxaa_link_count;
+	uint32_t	zmxaa_resv1;
+} zen_mpio_xfer_ask_args_t;
+
+typedef struct zen_mpio_xfer_ask_resp {
+	uint32_t	zmxar_res;
+	uint32_t	zmxar_nbytes;
+	uint32_t	zmxar_resv[4];
+} zen_mpio_xfer_ask_resp_t;
+
+typedef struct zen_mpio_xfer_ext_attrs_args {
+	uint32_t	zmxeaa_paddr_hi;
+	uint32_t	zmxeaa_paddr_lo;
+	uint32_t	zmxeaa_nwords;
+	uint32_t	zmxeaa_resv[3];
+} zen_mpio_xfer_ext_attrs_args_t;
+
+typedef struct zen_xfer_ext_attrs_resp {
+	uint32_t	zxear_res;
+	uint32_t	zxear_nbytes;
+	uint32_t	zxear_resv[4];
+} zen_xfer_ext_attrs_resp_t;
 
 typedef struct zen_mpio_link_cap {
 	uint32_t	zmlc_present:1;
@@ -671,27 +701,26 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_OP_GET_ASK_RESULT	0x03
 #define	GENOA_MPIO_OP_SETUP_LINK	0x04
 #define	GENOA_MPIO_OP_EN_CLK_GATING	0x05
+#define	GENOA_MPIO_OP_RECOVER_ASK	0x06
+#define	GENOA_MPIO_OP_XFER_ASK		0x07
+#define	GENOA_MPIO_OP_XFER_EXT_ATTRS	0x08
+#define	GENOA_MPIO_OP_PCIE_SET_SPEED	0x09
+#define	GENOA_MPIO_OP_PCIE_INIT_ESM	0x0a
+#define	GENOA_MPIO_OP_PCIE_RST_CTLR	0x0b
+#define	GENOA_MPIO_OP_PCIE_WRITE_STRAP	0x0c
+#define	GENOA_MPIO_OP_CXL_INIT		0x0d
+#define	GENOA_MPIO_OP_GET_DELI_INFO	0x0e
+#define	GENOA_MPIO_OP_ENUMERATE_I2C	0x10
+#define	GENOA_MPIO_OP_GET_I2C_DEV	0x11
+#define	GENOA_MPIO_OP_GET_I2C_DEV_CHG	0x12
+#define	GENOA_MPIO_OP_SET_HP_CFG_TBL	0x13
+#define	GENOA_MPIO_OP_LEGACY_HP_EN	0x14
+#define	GENOA_MPIO_OP_LEGACY_HP_DIS	0x15
+#define	GENOA_MPIO_OP_SET_HP_I2C_SW_ADDR 0x16
 
-#if 0
-#define	GENOA_MPIO_OP_INIT		0x00
-#define	GENOA_MPIO_OP_GET_SM_STATE	0x09
-#define	GENOA_MPIO_OP_INIT_ESM		0x0a
-#define	GENOA_MPIO_OP_SET_LINK_SPEED	0x10
-#define	GENOA_MPIO_OP_GET_ENGINE_CFG	0x14
-#define	GENOA_MPIO_OP_SET_VARIABLE	0x22
-#define	GENOA_MPIO_OP_LOAD_DATA		0x23
-#define	GENOA_MPIO_OP_LOAD_CAPS		0x24
-#define	GENOA_MPIO_OP_RELOAD_SM		0x2d
-#define	GENOA_MPIO_OP_GET_ERROR_LOG	0x2b
-#define	GENOA_MPIO_OP_SET_RUNTIME_PROP	0x3a
-#define	GENOA_MPIO_OP_XGMI_BER_ADAPT	0x40
 
-/*
- * The 0x300 in these are used to indicate deferred returns.
- */
-#define	GENOA_MPIO_OP_START_SM		0x307
-#define	GENOA_MPIO_OP_RESUME_SM		0x308
-#endif
+#define	MPIO_XFER_TO_RAM	0
+#define	MPIO_XFER_FROM_RAM	1
 
 /*
  * MPIO RPC reply codes.
@@ -730,42 +759,6 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	ZEN_MPIO_ENGINE_SATA		0x03
 
 #if 0
-/*
- * The various variable codes that one can theoretically use with
- * GENOA_MPIO_OP_SET_VARIABLE.
- */
-#define	GENOA_DXIO_INDEX_REG_END		0x0c
-#define	GENOA_DXIO_VAR_SKIP_PSP			0x0d
-#define	GENOA_DXIO_VAR_RET_AFTER_MAP		0x0e
-#define	GENOA_DXIO_VAR_RET_AFTER_CONF		0x0f
-#define	GENOA_DXIO_VAR_ANCILLARY_V1		0x10
-#define	GENOA_DXIO_VAR_NTB_HP_EN		0x11
-#define	GENOA_DXIO_VAR_MAP_EXACT_MATCH		0x12
-#define	GENOA_DXIO_VAR_S3_MODE			0x13
-#define	GENOA_DXIO_VAR_PHY_PROG			0x14
-#define	GENOA_DXIO_VAR_CCA_DIS			0x16
-#define	GENOA_DXIO_VAR_REC_CTL			0x17
-#define	GENOA_DXIO_VAR_SKIP_ADAPT_RX_DFE	0x18
-#define	GENOA_DXIO_VAR_EXP_NUM			0x19
-#define	GENOA_DXIO_VAR_PWR_CLK_GATING		0x1a
-#define	GENOA_DXIO_VAR_PWR_STATIC_CLK_GATING	0x1b
-#define	GENOA_DXIO_VAR_PWR_SHUTDOWN_REFCLK	0x1c
-#define	GENOA_DXIO_VAR_GPIO26_GEN_RST		0x1d
-#define	GENOA_DXIO_VAR_GPIO40_NVME_RST		0x1e
-#define	GENOA_DXIO_VAR_VALID_PHY_W_FLAG		0x1f
-#define	GENOA_DXIO_VAR_CBS_OPT_EN_PWR_MGMT	0x20
-#define	GENOA_DXIO_VAR_PWR_MGMT_PWR_GATING	0x21
-#define	GENOA_DXIO_VAR_PWR_MGMT_CLK_GATING	0x22
-#define	GENOA_DXIO_VAR_PCIE_COMPL		0x23
-#define	GENOA_DXIO_VAR_SLIP_INTERVAL		0x24
-#define	GENOA_DXIO_VAR_UNKNOWN			0x25
-#define	GENOA_DXIO_VAR_INIT_GEN3_RX		0x26
-#define	GENOA_DXIO_VAR_INIT_GEN4_RX		0x27
-#define	GENOA_DXIO_VAR_EP2_GPIO_RST		0x28
-#define	GENOA_DXIO_SATA_GEN1_SETTINGS		0x29
-#define	GENOA_DXIO_SATA_GEN2_SETTINGS		0x2a
-#define	GENOA_DXIO_SATA_GEN3_SETTINGS		0x2b
-
 /*
  * The following are all values that can be used with
  * GENOA_MPIO_OP_SET_RUNTIME_PROP. Some of the various
@@ -847,14 +840,6 @@ typedef enum genoa_dxio_data_type {
 	GENOA_DXIO_DATA_TYPE_RESET
 } genoa_dxio_data_type_t;
 
-typedef struct genoa_mpio_reply {
-	genoa_dxio_data_type_t	gdr_type;
-	uint8_t			gdr_nargs;
-	uint32_t		gdr_arg0;
-	uint32_t		gdr_arg1;
-	uint32_t		gdr_arg2;
-	uint32_t		gdr_arg3;
-} genoa_mpio_reply_t;
 #endif
 
 /*
@@ -864,12 +849,17 @@ typedef struct genoa_mpio_reply {
 
 typedef struct genoa_mpio_config {
 	zen_mpio_platform_t	*gmc_conf;
-	zen_mpio_anc_data_t	*gmc_anc;
+	zen_mpio_ext_attrs_t	*gmc_ext_attrs;
+	zen_mpio_ask_t		*gmc_ask;
 	uint64_t		gmc_pa;
-	uint64_t		gmc_anc_pa;
-	uint32_t		gmc_alloc_len;
+	uint64_t		gmc_ext_attrs_pa;
+	uint64_t		gmc_ask_pa;
+	uint32_t		gmc_conf_alloc_len;
+	uint32_t		gmc_ask_alloc_len;
+	uint32_t		gmc_ext_attrs_alloc_len;
 	uint32_t		gmc_conf_len;
-	uint32_t		gmc_anc_len;
+	uint32_t		gmc_ext_attrs_len;
+	uint32_t		gmc_ask_nlinks;
 } genoa_mpio_config_t;
 
 typedef struct genoa_hotplug {
