@@ -639,6 +639,8 @@
 #include <genoa/genoa_apob.h>
 #include <genoa/genoa_physaddrs.h>
 
+static const uint32_t RPC_MAX_TRIES = 1U << 30;
+
 /*
  * XXX This header contains a lot of the definitions that the broader system is
  * currently using for register definitions. For the moment we're trying to keep
@@ -2302,13 +2304,12 @@ static int
 genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 {
 	const uint32_t READY = 1U << 31;
-	const uint32_t MAX_TRIES = 1U << 30;
 	uint32_t resp, req, doorbell;
 
 	mutex_enter(&iodie->gi_mpio_lock);
 	/* Wait until the MPIO engine is ready to receive an RPC. */
 	resp = 0;
-	for (int k = 0; (resp & READY) == 0 && k < MAX_TRIES; k++) {
+	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++) {
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
 	}
 	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG0(), rpc->gmr_arg0);
@@ -2328,7 +2329,7 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 
 	/* Wait for completion. */
 	resp = 0;
-	for (int k = 0; (resp & READY) == 0 && k < MAX_TRIES; k++) {
+	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++) {
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
 	}
 
@@ -2363,278 +2364,47 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 		   resp);
 		return (false);
 	}
-
 	*major = rpc.gmr_arg0;
 	*minor = 0;
 
 	return (true);
 }
 
-#if 0
 static bool
-genoa_mpio_rpc_pcie_poweroff_config(genoa_iodie_t *iodie, uint8_t delay,
-    bool disable_prep)
+genoa_mpio_rpc_get_status(genoa_iodie_t *iodie, zen_mpio_status_t *status)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
 
-	if (xxxhackymchackface)
-		return (true);
-
-	rpc.gmr_req = GENOA_MPIO_OP_SET_VARIABLE;
-	rpc.gmr_engine = GENOA_DXIO_VAR_UNKNOWN;
-	rpc.gmr_arg0 = delay;
-	rpc.gmr_arg1 = disable_prep ? 1 : 0;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Set PCIe Power Off Config Failed: "
-		    "Delay: 0x%x, Disable Prep: 0x%x, DXIO: 0x%x",
-		    delay, disable_prep, rpc.gmr_resp);
+	rpc.gmr_req = GENOA_MPIO_OP_GET_STATUS;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO Get Status Failed: 0x%x", resp);
 		return (false);
 	}
+	bcopy(&rpc.gmr_arg0, status, sizeof (*status));
 
 	return (true);
 }
 
 static bool
-genoa_mpio_rpc_clock_gating(genoa_iodie_t *iodie, uint8_t mask, uint8_t val)
+genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 {
-	genoa_mpio_rpc_t rpc = { 0 };
+	zen_mpio_status_t status = { 0 };
 
-	if (xxxhackymchackface)
-		return (true);
-
-	/*
-	 * The mask and val are only allowed to be 7-bit values.
-	 */
-	VERIFY0(mask & 0x80);
-	VERIFY0(val & 0x80);
-	rpc.gmr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
-	rpc.gmr_engine = GENOA_MPIO_ENGINE_PCIE;
-	rpc.gmr_arg0 = GENOA_MPIO_RT_CONF_CLOCK_GATE;
-	rpc.gmr_arg1 = mask;
-	rpc.gmr_arg2 = val;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Clock Gating Failed: DXIO: 0x%x",
-		    rpc.gmr_resp);
-		return (false);
+	for (int k = 0; k < RPC_MAX_TRIES; k++) {
+		if (!genoa_mpio_rpc_get_status(iodie, &status)) {
+			cmn_err(CE_WARN, "MPIO wait ready RPC failed");
+			return (false);
+		}
+		if (status.zms_cmd_stat == 0)
+			return (true);
 	}
+	cmn_err(CE_WARN, "MPIO wait ready timed out, cmd status: 0%x",
+	    status.zms_cmd_stat);
 
-	return (true);
+	return (false);
 }
-1
-/*
- * Currently there are no capabilities defined, which makes it hard for us to
- * know the exact command layout here. The only thing we know is safe is that
- * it's all zeros, though it probably otherwise will look like
- * GENOA_MPIO_OP_LOAD_DATA.
- */
-static bool
-genoa_mpio_rpc_load_caps(genoa_iodie_t *iodie)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	if (xxxhackymchackface)
-		return (true);
-
-	rpc.gmr_req = GENOA_MPIO_OP_LOAD_CAPS;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Load Caps Failed: DXIO: 0x%x",
-		    rpc.gmr_resp);
-		return (false);
-	}
-
-	return (true);
-}
-
-static bool
-genoa_mpio_rpc_load_data(genoa_iodie_t *iodie, uint32_t type,
-    uint64_t phys_addr, uint32_t len, uint32_t mystery)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	rpc.gmr_req = GENOA_MPIO_OP_LOAD_DATA;
-	rpc.gmr_engine = (uint32_t)(phys_addr >> 32);
-	rpc.gmr_arg0 = phys_addr & 0xffffffff;
-	rpc.gmr_arg1 = len / 4;
-	rpc.gmr_arg2 = mystery;
-	rpc.gmr_arg3 = type;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Load Data Failed: Heap: 0x%x, PA: "
-		    "0x%lx, Len: 0x%x, DXIO: 0x%x", type, phys_addr,
-		    len, rpc.gmr_resp);
-		return (false);
-	}
-
-	return (true);
-}
-
-static bool
-genoa_mpio_rpc_conf_training(genoa_iodie_t *iodie, uint32_t reset_time,
-    uint32_t rx_poll, uint32_t l0_poll)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	if (xxxhackymchackface)
-		return (false);
-
-	rpc.gmr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
-	rpc.gmr_engine = GENOA_MPIO_ENGINE_PCIE;
-	rpc.gmr_arg0 = GENOA_MPIO_RT_CONF_PCIE_TRAIN;
-	rpc.gmr_arg1 = reset_time;
-	rpc.gmr_arg2 = rx_poll;
-	rpc.gmr_arg3 = l0_poll;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Conf. PCIe Training RPC Failed: "
-		    "DXIO: 0x%x",
-		    rpc.gmr_resp);
-		return (false);
-	}
-
-	return (true);
-}
-/*
- * This is a hodgepodge RPC that is used to set various rt configuration
- * properties.
- */
-static bool
-genoa_mpio_rpc_misc_rt_conf(genoa_iodie_t *iodie, uint32_t code, bool state)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	rpc.gmr_req = GENOA_MPIO_OP_SET_RUNTIME_PROP;
-	rpc.gmr_engine = GENOA_MPIO_ENGINE_NONE;
-	rpc.gmr_arg0 = GENOA_MPIO_RT_SET_CONF;
-	rpc.gmr_arg1 = code;
-	rpc.gmr_arg2 = state ? 1 : 0;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Set Misc. rt conf failed: Code: 0x%x, "
-		    "Val: 0x%x, DXIO: 0x%x", code, state,
-		    rpc.gmr_resp);
-		return (false);
-	}
-
-	return (true);
-}
-
-static bool
-genoa_mpio_rpc_sm_start(genoa_iodie_t *iodie)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	rpc.gmr_req = GENOA_MPIO_OP_START_SM;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: DXIO: 0x%x",
-		    rpc.gmr_resp);
-
-		return (false);
-	}
-
-	return (true);
-}
-
-static bool
-genoa_mpio_rpc_sm_resume(genoa_iodie_t *iodie)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	if (xxxhackymchackface)
-		return (true);
-
-	rpc.gmr_req = GENOA_MPIO_OP_RESUME_SM;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: DXIO: 0x%x",
-		    rpc.gmr_resp);
-		return (false);
-	}
-
-	return (true);
-}
-
-static bool
-genoa_mpio_rpc_sm_reload(genoa_iodie_t *iodie)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	/* Genoa and later don't seem to support this. */
-	if (xxxhackymchackface)
-		return (true);
-
-	rpc.gmr_req = GENOA_MPIO_OP_RELOAD_SM;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Reload RPC Failed: DXIO: 0x%x",
-		    rpc.gmr_resp);
-		return (false);
-	}
-
-	return (true);
-}
-
-
-static bool
-genoa_mpio_rpc_sm_getstate(genoa_iodie_t *iodie, genoa_mpio_reply_t *smp)
-{
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	rpc.gmr_req = GENOA_MPIO_OP_GET_SM_STATE;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: DXIO: 0x%x",
-		    rpc.gmr_resp);
-		return (false);
-	}
-
-	smp->gmr_type = bitx64(rpc.gmr_engine, 7, 0);
-	smp->gmr_nargs = bitx64(rpc.gmr_engine, 15, 8);
-	smp->gmr_arg0 = rpc.gmr_arg0;
-	smp->gmr_arg1 = rpc.gmr_arg1;
-	smp->gmr_arg2 = rpc.gmr_arg2;
-	smp->gmr_arg3 = rpc.gmr_arg3;
-
-	return (true);
-}
-
-/*
- * Retrieve the current engine data from DXIO.
- */
-static bool
-genoa_mpio_rpc_retrieve_engine(genoa_iodie_t *iodie)
-{
-	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
-	genoa_mpio_rpc_t rpc = { 0 };
-
-	rpc.gmr_req = GENOA_MPIO_OP_GET_ENGINE_CFG;
-	rpc.gmr_engine = (uint32_t)(conf->gmc_pa >> 32);
-	rpc.gmr_arg0 = conf->gmc_pa & 0xffffffff;
-	rpc.gmr_arg1 = conf->gmc_alloc_len / 4;
-
-	genoa_mpio_rpc(iodie, &rpc);
-	if (rpc.gmr_resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: DXIO: 0x%x",
-		    rpc.gmr_resp);
-		return (false);
-	}
-
-	return (true);
-}
-#endif
 
 static int
 genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
@@ -2657,8 +2427,8 @@ genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
 	if (genoa_mpio_rpc_get_version(iodie, &dxmaj, &dxmin)) {
 		cmn_err(CE_CONT, "?Socket %u DXIO Version: %u.%u\n",
 		    soc->gs_socno, dxmaj, dxmin);
-		iodie->gi_dxio_fw[0] = dxmaj;
-		iodie->gi_dxio_fw[1] = dxmin;
+		iodie->gi_mpio_fw[0] = dxmaj;
+		iodie->gi_mpio_fw[1] = dxmin;
 	} else {
 		cmn_err(CE_NOTE, "Socket %u: failed to read DXIO version",
 		    soc->gs_socno);
@@ -3917,117 +3687,6 @@ genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 	}
 
 	return (0);
-
-#if 0
-	genoa_soc_t *soc = iodie->gi_soc;
-
-	/*
-	 * XXX Ethanol-X has a BMC hanging off socket 0, so on that platform we
-	 * need to reload the state machine because it's already been used to do
-	 * what the ABL calls early link training.  Not doing this results in
-	 * this failure when we run dxio_load: DXIO Load Data Failed: Heap: 0x6,
-	 * PA: 0x7ff98000, Len: 0x13e, SMU 0x1, DXIO: 0x2
-	 *
-	 * There's a catch: the dependency here is specifically that this is
-	 * required on any socket where early link training has been done, which
-	 * is controlled by an APCB token -- it's not board-dependent, although
-	 * in practice the correct value for the token is permanently fixed for
-	 * each board.  If the SM reload is run on a socket other than the one
-	 * that has been marked for this use in the APCB, it will fail and at
-	 * present that will result in not doing the rest of DXIO setup and then
-	 * panicking in PCIe setup.
-	 *
-	 * Historically Gimlet's APCB was basically the same as Ethanol-X's,
-	 * which included doing (or trying, since there's nothing connected)
-	 * early link training.  That necessitated always running SM RELOAD on
-	 * socket 0.  These PCIe lanes are unused and there is no BMC on
-	 * Gimlet.  The current APCB does not include that option and
-	 * therefore we currently only run this if the board is identified as
-	 * Ethanol.
-	 *
-	 * We probably want to see if we can do better by figuring out whether
-	 * this is needed on socket 0, 1, or neither.
-	 */
-	if (genoa_board_type() == MBT_RUBY) {
-		if (soc->gs_socno == 0 && !genoa_mpio_rpc_sm_reload(iodie)) {
-			return (1);
-		}
-	}
-
-
-	if (!genoa_mpio_rpc_init(iodie)) {
-		return (1);
-	}
-
-	/*
-	 * XXX These 0x4f values were kind of given to us. Do better than a
-	 * magic constant, rm.
-	 */
-	if (!genoa_mpio_rpc_clock_gating(iodie, 0x4f, 0x4f)) {
-		return (1);
-	}
-
-	/*
-	 * Set up a few different variables in firmware. Best guesses is that we
-	 * need GENOA_DXIO_VAR_PCIE_COMPL so we can get PCIe completions to
-	 * actually happen, GENOA_DXIO_VAR_SLIP_INTERVAL is disabled, but I
-	 * can't say why. XXX We should probably disable NTB hotplug because we
-	 * don't have them just in case something changes here.
-	 */
-	if (!genoa_mpio_rpc_set_var(iodie, GENOA_DXIO_VAR_PCIE_COMPL, 1) ||
-	    !genoa_mpio_rpc_set_var(iodie, GENOA_DXIO_VAR_SLIP_INTERVAL, 0)) {
-		return (1);
-	}
-
-	/*
-	 * This seems to configure behavior when the link is going down and
-	 * power off. We explicitly ask for no delay. The latter argument is
-	 * about disabling another command (which we don't use), but to keep
-	 * firmware in its expected path we don't set that.  Older DXIO firmware
-	 * doesn't support this so we skip it there.  XXX(cross) Neither does
-	 * newer firmware, though we need to see if there is an analogue.
-	 */
-	if (genoa_dxio_version_at_least(iodie, 45, 682) &&
-	    !genoa_mpio_rpc_pcie_poweroff_config(iodie, 0, false)) {
-		return (1);
-	}
-
-	/*
-	 * Next we set a couple of variables that are required for us to
-	 * cause the state machine to pause after a couple of different stages
-	 * and then also to indicate that we want to use the v1 ancillary data
-	 * format.
-	 */
-	if (!genoa_mpio_rpc_set_var(iodie, GENOA_DXIO_VAR_RET_AFTER_MAP, 1) ||
-	    !genoa_mpio_rpc_set_var(iodie, GENOA_DXIO_VAR_RET_AFTER_CONF, 1) ||
-	    !genoa_mpio_rpc_set_var(iodie, GENOA_DXIO_VAR_ANCILLARY_V1, 1)) {
-		return (1);
-	}
-
-	/*
-	 * Here, it's worth calling out what we're not setting. One of which is
-	 * GENOA_DXIO_VAR_MAP_EXACT_MATCH which ends up being used to cause
-	 * the mapping phase to only work if there are exact matches. I believe
-	 * this means that if a device has more lanes then the configured port,
-	 * it wouldn't link up, which generally speaking isn't something we want
-	 * to do. Similarly, since there is no S3 support here, no need to
-	 * change the save and restore mode with GENOA_DXIO_VAR_S3_MODE.
-	 *
-	 * From here, we do want to set GENOA_DXIO_VAR_SKIP_PSP, because the PSP
-	 * really doesn't need to do anything with us. We do want to enable
-	 * GENOA_DXIO_VAR_PHY_PROG so the dxio engine can properly configure
-	 * things.
-	 *
-	 * XXX Should we gamble and set things that aren't unconditionally set
-	 * so we don't rely on hw defaults?
-	 */
-	if (!genoa_mpio_rpc_set_var(iodie, GENOA_DXIO_VAR_PHY_PROG, 1) ||
-	    !genoa_mpio_rpc_set_var(iodie, GENOA_DXIO_VAR_SKIP_PSP, 1)) {
-		return (0);
-	}
-
-	return (0);
-#endif
 }
 
 static int
@@ -4039,7 +3698,7 @@ genoa_mpio_send_ext_attrs(genoa_iodie_t *iodie, void *arg)
 	int resp;
 
 	ASSERT3P(iodie, !=, NULL);
-	conf = &iodie->gi_dxio_conf;
+	conf = &iodie->gi_mpio_conf;
 	ASSERT(conf->gmc_ext_attrs != NULL);
 	ASSERT3U(conf->gmc_ext_attrs_pa, !=, 0);
 
@@ -4069,7 +3728,7 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie, void *arg)
 	int resp;
 
 	ASSERT3P(iodie, !=, NULL);
-	conf = &iodie->gi_dxio_conf;
+	conf = &iodie->gi_mpio_conf;
 	ASSERT3P(conf, !=, NULL);
 	ASSERT3P(conf->gmc_ask, !=, NULL);
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
@@ -4077,7 +3736,7 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie, void *arg)
 	args = (zen_mpio_xfer_ask_args_t *)&rpc.gmr_arg0;
 	args->zmxaa_paddr_hi = conf->gmc_ask_pa >> 32;
 	args->zmxaa_paddr_lo = conf->gmc_ask_pa & 0xFFFFFFFFU;
-	args->zmxaa_link_count = conf->gmc_ask_nlinks;
+	args->zmxaa_link_count = conf->gmc_ask_nports;
 	args->zmxaa_links = MPIO_LINK_SELECTED;
 	args->zmxaa_dir = MPIO_XFER_FROM_RAM;
 
@@ -4102,7 +3761,7 @@ genoa_mpio_recv_ask(genoa_iodie_t *iodie, void *arg)
 	int resp;
 
 	ASSERT3P(iodie, !=, NULL);
-	conf = &iodie->gi_dxio_conf;
+	conf = &iodie->gi_mpio_conf;
 	ASSERT3P(conf, !=, NULL);
 	ASSERT3P(conf->gmc_ask, !=, NULL);
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
@@ -4132,11 +3791,11 @@ static int
 genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 {
 	ddi_dma_attr_t attr;
-	size_t engn_size;
+	size_t ask_size;
 	pfn_t pfn;
-	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
+	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 	genoa_soc_t *soc = iodie->gi_soc;
-	const zen_mpio_platform_t *source_data;
+	const zen_mpio_ask_port_t *source_data;
 	const genoa_apob_phyovr_t *phy_override;
 	size_t phy_len;
 	int err;
@@ -4146,37 +3805,29 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 * probably an SP boot property.
 	 */
 	if (genoa_board_type() == MBT_RUBY && soc->gs_socno == 0) {
-		source_data = &ruby_engine_s0;
+		source_data = ruby_mpio_pcie_s0;
+	} else {
+		return (0);
 	}
+	VERIFY3P(source_data, !=, NULL);
 
-	engn_size = sizeof (zen_mpio_platform_t) +
-	    source_data->zmp_nengines * sizeof (zen_mpio_engine_t);
-	VERIFY3U(engn_size, <=, MMU_PAGESIZE);
-	conf->gmc_conf_len = engn_size;
+	ask_size = conf->gmc_ask_nports * sizeof (zen_mpio_ask_port_t);
+	VERIFY3U(ask_size, <=, MMU_PAGESIZE);
 
 	genoa_dma_attr(&attr);
-
-	conf->gmc_conf_alloc_len = MMU_PAGESIZE;
-	conf->gmc_conf = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->gmc_conf, MMU_PAGESIZE);
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_conf);
-	conf->gmc_pa = mmu_ptob((uint64_t)pfn);
-	bcopy(source_data, conf->gmc_conf, engn_size);
 
 	conf->gmc_ask_alloc_len = MMU_PAGESIZE;
 	conf->gmc_ask = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(conf->gmc_ask, MMU_PAGESIZE);
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ask);
 	conf->gmc_ask_pa = mmu_ptob((uint64_t)pfn);
+	bcopy(source_data, conf->gmc_ask, ask_size);
 
-	/*
-	 * We need to account for an extra 8 bytes, surprisingly. It's a good
-	 * thing we have a page. Note, dxio wants this in uint32_t units. We do
-	 * that when we make the RPC call. Finally, we want to make sure that if
-	 * we're in an incomplete word, that we account for that in the length.
-	 */
-	conf->gmc_conf_len += 8;
-	conf->gmc_conf_len = P2ROUNDUP(conf->gmc_conf_len, 4);
+	conf->gmc_ask_alloc_len = MMU_PAGESIZE;
+	conf->gmc_ask = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->gmc_ask, MMU_PAGESIZE);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ask);
+	conf->gmc_ask_pa = mmu_ptob((uint64_t)pfn);
 
 	phy_override = kapob_find(APOB_GROUP_FABRIC,
 	    GENOA_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
@@ -4253,7 +3904,7 @@ static int
 genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
 {
 #if 0
-	genoa_mpio_config_t *conf = &iodie->gi_dxio_conf;
+	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 
 	/*
 	 * Begin by loading the NULL capabilities before we load any data heaps.
@@ -4328,7 +3979,6 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 	return (0);
 }
 
-
 /*
  * Given all of the engines on an I/O die, try and map each one to a
  * corresponding IOMS and bridge. We only care about an engine if it is a PCIe
@@ -4336,57 +3986,60 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
  * operates on a single I/O die.
  */
 static bool
-genoa_dxio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
+genoa_mpio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 {
 	bool ret = true;
-	zen_mpio_platform_t *plat = iodie->gi_dxio_conf.gmc_conf;
+	zen_mpio_ask_t *ask = iodie->gi_mpio_conf.gmc_ask;
 
-	for (uint_t i = 0; i < plat->zmp_nengines; i++) {
-		zen_mpio_engine_t *en = &plat->zmp_engines[i];
+	for (uint_t i = 0; i < iodie->gi_mpio_conf.gmc_ask_nports; i++) {
+		zen_mpio_ask_port_t *ap = &ask->zma_ports[i];
+		zen_mpio_link_t *lp = &ap->zma_link;
 		genoa_pcie_core_t *pc;
 		genoa_pcie_port_t *port;
+		uint32_t start_lane, end_lane;
 		uint8_t portno;
 
-		if (en->zme_type != ZEN_MPIO_ENGINE_PCIE)
+		if (lp->zml_ctlr_type != ZEN_MPIO_ENGINE_PCIE)
 			continue;
 
+		start_lane = lp->zml_lane_start;
+		end_lane = start_lane + lp->zml_num_lanes - 1;
 
 		pc = genoa_fabric_find_pcie_core_by_lanes(iodie,
-		    en->zme_start_lane, en->zme_end_lane);
+		    start_lane, end_lane);
 		if (pc == NULL) {
 			cmn_err(CE_WARN, "failed to map engine %u [%u, %u] to "
-			    "a PCIe core", i, en->zme_start_lane,
-			    en->zme_end_lane);
+			    "a PCIe core", i, start_lane, end_lane);
 			ret = false;
 			continue;
 		}
 
-		portno = en->zme_config.zmc_pcie.zmcp_mac_port_id;
+		portno = ap->zma_status.zmils_port;
 		if (portno >= pc->gpc_nports) {
 			cmn_err(CE_WARN, "failed to map engine %u [%u, %u] to "
 			    "a PCIe port: found nports %u, but mapped to "
-			    "port %u",  i, en->zme_start_lane,
-			    en->zme_end_lane, pc->gpc_nports, portno);
+			    "port %u",  i, start_lane, end_lane,
+			    pc->gpc_nports, portno);
 			ret = false;
 			continue;
 		}
 
 		port = &pc->gpc_ports[portno];
-		if (port->gpp_engine != NULL) {
+		if (port->gpp_ask_port != NULL) {
+			zen_mpio_link_t *l = &port->gpp_ask_port->zma_link;
 			cmn_err(CE_WARN, "engine %u [%u, %u] mapped to "
 			    "port %u, which already has an engine [%u, %u]",
-			    i, en->zme_start_lane, en->zme_end_lane,
-			    pc->gpc_nports,
-			    port->gpp_engine->zme_start_lane,
-			    port->gpp_engine->zme_end_lane);
+			    i, start_lane, end_lane, pc->gpc_nports,
+			    l->zml_lane_start,
+			    l->zml_lane_start + l->zml_num_lanes - 1);
 			ret = false;
 			continue;
 		}
 
 		port->gpp_flags |= GENOA_PCIE_PORT_F_MAPPED;
-		port->gpp_engine = en;
+		port->gpp_ask_port = ap;
 		pc->gpc_flags |= GENOA_PCIE_CORE_F_USED;
-		if (en->zme_config.zmc_pcie.zmcp_caps.zmlc_hotplug !=
+		if (lp->zml_attrs.zmla_link_hp_type !=
 		    ZEN_MPIO_HOTPLUG_T_DISABLED) {
 			pc->gpc_flags |= GENOA_PCIE_CORE_F_HAS_HOTPLUG;
 		}
@@ -4849,7 +4502,7 @@ genoa_fabric_setup_pcie_core_dbg(genoa_pcie_core_t *pc, void *arg)
 			 * additional knob to select a specific lane of
 			 * interest.
 			 */
-			laneno = port->gpp_engine->zme_start_lane -
+			laneno = port->gpp_ask_port->zma_link.zml_lane_start -
 			    pc->gpc_dxio_lane_start;
 			reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
 			val = genoa_pcie_core_read(pc, reg);
@@ -4860,197 +4513,6 @@ genoa_fabric_setup_pcie_core_dbg(genoa_pcie_core_t *pc, void *arg)
 			break;
 		}
 	}
-
-	return (0);
-}
-
-/*
- * Here we are, it's time to actually kick off the state machine that we've
- * wanted to do.
- */
-static int
-genoa_dxio_state_machine(genoa_iodie_t *iodie, void *arg)
-{
-#if 0
-	genoa_soc_t *soc = iodie->gi_soc;
-	genoa_fabric_t *fabric = soc->gs_fabric;
-
-	if (!genoa_mpio_rpc_sm_start(iodie)) {
-		return (1);
-	}
-
-	for (;;) {
-		genoa_mpio_reply_t reply = { 0 };
-
-		if (!genoa_mpio_rpc_sm_getstate(iodie, &reply)) {
-			return (1);
-		}
-
-		switch (reply.gmr_type) {
-		case GENOA_DXIO_DATA_TYPE_SM:
-			cmn_err(CE_CONT, "?Socket %u LISM 0x%x->0x%x\n",
-			    soc->gs_socno, iodie->gi_state, reply.gmr_arg0);
-			iodie->gi_state = reply.gmr_arg0;
-			switch (iodie->gi_state) {
-			/*
-			 * The mapped state indicates that the engines and lanes
-			 * that we have provided in our DXIO configuration have
-			 * been mapped back to the actual set of PCIe ports on
-			 * the IOMS (e.g. G0, P0) and specific bridge indexes
-			 * within that port group. The very first thing we need
-			 * to do here is to figure out what actually has been
-			 * mapped to what and update what ports are actually
-			 * being used by devices or not.
-			 */
-			case GENOA_DXIO_SM_MAPPED:
-				genoa_pcie_populate_dbg(&genoa_fabric,
-				    GPCS_DXIO_SM_MAPPED, iodie->gi_node_id);
-
-				if (!genoa_mpio_rpc_retrieve_engine(iodie)) {
-					return (1);
-				}
-
-				if (!genoa_dxio_map_engines(fabric, iodie)) {
-					cmn_err(CE_WARN, "Socket %u LISM: "
-					    "failed to map all DXIO engines to "
-					    "devices.  PCIe will not function",
-					    soc->gs_socno);
-					return (1);
-				}
-
-				/*
-				 * XXX There is a substantial body of additional
-				 * things that can be done here; investigation
-				 * is needed.
-				 */
-
-				/*
-				 * Now that we have the mapping done, we set up
-				 * the straps for PCIe.
-				 */
-				(void) genoa_fabric_walk_pcie_core(fabric,
-				    genoa_fabric_init_pcie_straps, iodie);
-				cmn_err(CE_CONT, "?Socket %u LISM: Finished "
-				    "writing PCIe straps\n", soc->gs_socno);
-
-				/*
-				 * Set up the core-level debugging controls so
-				 * that we get extended data for the first port
-				 * in the core that's been mapped.
-				 */
-				(void) genoa_fabric_walk_pcie_core(fabric,
-				    genoa_fabric_setup_pcie_core_dbg, NULL);
-
-				genoa_pcie_populate_dbg(&genoa_fabric,
-				    GPCS_DXIO_SM_MAPPED_RESUME,
-				    iodie->gi_node_id);
-				break;
-			case GENOA_DXIO_SM_CONFIGURED:
-				genoa_pcie_populate_dbg(&genoa_fabric,
-				    GPCS_DXIO_SM_CONFIGURED, iodie->gi_node_id);
-
-				/*
-				 * XXX There is a substantial body of additional
-				 * things that can be done here; investigation
-				 * is needed.
-				 */
-
-				genoa_pcie_populate_dbg(&genoa_fabric,
-				    GPCS_DXIO_SM_CONFIGURED_RESUME,
-				    iodie->gi_node_id);
-				break;
-			case GENOA_DXIO_SM_DONE:
-				/*
-				 * We made it. Somehow we're done!
-				 */
-				cmn_err(CE_CONT, "?Socket %u LISM: done\n",
-				    soc->gs_socno);
-				goto done;
-			default:
-				/*
-				 * For most states there doesn't seem to be much
-				 * to do. So for now we just leave the default
-				 * case to continue and proceed to the next
-				 * state machine state.
-				 */
-				break;
-			}
-			break;
-		case GENOA_DXIO_DATA_TYPE_RESET:
-			genoa_pcie_populate_dbg(&genoa_fabric,
-			    GPCS_DXIO_SM_PERST, iodie->gi_node_id);
-			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
-			    soc->gs_socno, reply.gmr_arg0, reply.gmr_arg1);
-			if (reply.gmr_arg0 == 0) {
-				cmn_err(CE_NOTE, "Socket %u LISM: disregarding "
-				    "request to assert PERST at index 0x%x",
-				    soc->gs_socno, reply.gmr_arg1);
-				break;
-			}
-
-			if (genoa_board_type() == MBT_RUBY) {
-
-				/*
-				 * Release PERST manually on Ruby which
-				 * requires it.  PCIE_RSTn_L shares pins with
-				 * the following GPIOs:
-				 *
-				 * FCH::GPIO::GPIO_26 FCH::GPIO::GPIO_27
-				 * FCH::RMTGPIO::GPIO_266 FCH::RMTGPIO::GPIO_267
-				 *
-				 * If we were going to support this generically,
-				 * these should probably be part of the board
-				 * definition.  They should also be DPIOs, but
-				 * we probably can't use the DPIO subsystem
-				 * itself yet.
-				 *
-				 * XXX The only other function on these pins is
-				 * the PCIe reset itself.  We assume the mux is
-				 * passing the GPIO function at this point: if
-				 * it's not, this will do nothing unless we
-				 * invoke GHGOP_CONFIGURE first.  This also
-				 * works only for socket 0; we can't access the
-				 * FCH on socket 1 because won't let us use SMN
-				 * and we haven't set up the secondary FCH
-				 * aperture here.  This most likely means the
-				 * NVMe sockets won't work.
-				 */
-				if (iodie->gi_node_id == 0) {
-					genoa_hack_gpio(GHGOP_SET, 26);
-					genoa_hack_gpio(GHGOP_SET, 27);
-					genoa_hack_gpio(GHGOP_SET, 266);
-					genoa_hack_gpio(GHGOP_SET, 267);
-				}
-			}
-
-			genoa_pcie_populate_dbg(&genoa_fabric,
-			    GPCS_DXIO_SM_PERST_RESUME, iodie->gi_node_id);
-
-			break;
-		case GENOA_DXIO_DATA_TYPE_NONE:
-			cmn_err(CE_WARN, "Socket %u LISM: Got the none data "
-			    "type... are we actually done?", soc->gs_socno);
-			goto done;
-		default:
-			cmn_err(CE_WARN, "Socket %u LISM: Got unexpected DXIO "
-			    "return type 0x%x. PCIe will not function.",
-			    soc->gs_socno, reply.gmr_type);
-			return (1);
-		}
-
-		if (!genoa_mpio_rpc_sm_resume(iodie)) {
-			return (1);
-		}
-	}
-
-done:
-	genoa_pcie_populate_dbg(&genoa_fabric, GPCS_DXIO_SM_DONE,
-	    iodie->gi_node_id);
-
-	if (!genoa_mpio_rpc_retrieve_engine(iodie)) {
-		return (1);
-	}
-#endif
 
 	return (0);
 }
@@ -5715,12 +5177,13 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	 * Otherwise we only show it if there's a device present.
 	 */
 	if ((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0) {
-		bool hotplug, trained;
+		zen_mpio_link_t *lp = &port->gpp_ask_port->zma_link;
 		uint8_t lt;
+		bool hotplug, trained;
 
 		hotplug = (pc->gpc_flags & GENOA_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		lt = port->gpp_engine->zme_config.zmc_pcie.zmcp_link_train_state;
-		trained = lt != 0; /* GENOA_DXIO_PCIE_SUCCESS;*/
+		lt = lp->zml_attrs.zmla_early_link_train;
+		trained = lt != 0;
 		hide = !hotplug && !trained;
 	} else {
 		hide = true;
@@ -6700,13 +6163,13 @@ genoa_fabric_init(void)
 		return;
 	}
 	cmn_err(CE_CONT, "GENOA FABRIC INIT SUCCEEDED");
-#if 0
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_plat_data, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: no platform "
 		    "data");
 		return;
 	}
+#if 0
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_load_data, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to load "
