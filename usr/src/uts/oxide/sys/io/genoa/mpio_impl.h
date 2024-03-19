@@ -37,7 +37,7 @@ extern "C" {
 
 typedef enum zen_mpio_link_speed {
 	ZEN_MPIO_LINK_SPEED_MAX	= 0,
-	ZEN_MPIO_LINK_SPEDD_GEN1,
+	ZEN_MPIO_LINK_SPEED_GEN1,
 	ZEN_MPIO_LINK_SPEED_GEN2,
 	ZEN_MPIO_LINK_SPEED_GEN3,
 	ZEN_MPIO_LINK_SPEED_GEN4,
@@ -123,8 +123,10 @@ typedef struct zen_mpio_global_config {
 } zen_mpio_global_config_t;
 
 typedef struct zen_mpio_link_attr {
-	/* uint32_t zmla[0]: General */
+	/* uint32_t zmla[0]: BDF */
 	uint32_t	zmla_dev_func;
+
+	/* uint32_t zmla[1]: General */
 	uint32_t	zmla_port_present:1;
 	uint32_t	zmla_early_link_train:1;
 	uint32_t	zmla_link_compl_mode:1;
@@ -148,7 +150,7 @@ typedef struct zen_mpio_link_attr {
 	uint32_t	zmla_invert_tx_pol:1;
 	uint32_t	zmla_pad2:3;
 
-	/* uint32_t zmla[1]: Gen3 and Gen4 search parameters */
+	/* uint32_t zmla[2]: Gen3 and Gen4 search parameters */
 	uint32_t	zmla_gen3_eq_search_mode:2;
 	uint32_t	zmla_en_gen3_eq_search_mode:2;
 	uint32_t	zmla_gen4_eq_search_mode:2;
@@ -171,7 +173,7 @@ typedef struct zen_mpio_link_attr {
 	uint32_t	zmla_esm_speed:6;
 	uint32_t	zmla_esm_mode:2;
 
-	/* uint32_t zmla[2]: Bridge parameters */
+	/* uint32_t zmla[3]: Bridge parameters */
 	uint8_t		zmla_hfc_idx;
 	uint8_t		zmla_dfc_idx;
 	uint16_t	zmla_log_bridge_id:5;
@@ -179,10 +181,10 @@ typedef struct zen_mpio_link_attr {
 	uint16_t	zmla_sris_skip_ival:3;
 	uint16_t	zmla_pad4:5;
 
-	/* uint32_t zmla[3]: Reserved */
+	/* uint32_t zmla[4]: Reserved */
 	uint32_t	zmla_resv0;
 
-	/* uint32_t zmla[4]: Reserved */
+	/* uint32_t zmla[5]: Reserved */
 	uint32_t	zmla_resv1;
 } zen_mpio_link_attr_t;
 
@@ -191,7 +193,7 @@ typedef struct zen_mpio_link {
 	uint32_t	zml_num_lanes:6;
 	uint32_t	zml_resv:1;
 	uint32_t	zml_status:5;
-	uint32_t	zml_ctl_type:4;
+	uint32_t	zml_ctlr_type:4;
 	uint32_t	zml_gpio_id:8;
 	uint32_t	zml_chan_type:8;
 	uint32_t	zml_anc_data_idx:16;
@@ -207,10 +209,15 @@ typedef struct zen_mpio_ict_link_status {
 	uint32_t	zmils_resv:8;
 } zen_mpio_ict_link_status_t;
 
-typedef struct zen_mpio_ask {
-	zen_mpio_link_t	zma_descrip;
+typedef struct zen_mpio_ask_port {
+	zen_mpio_link_t	zma_link;
 	zen_mpio_ict_link_status_t zma_status;
 	uint32_t	zma_resv[4];
+} zen_mpio_ask_port_t;
+
+#define	ZEN_MPIO_ASK_MAX_PORTS	24
+typedef struct zen_mpio_ask {
+	zen_mpio_ask_port_t	zma_ports[ZEN_MPIO_ASK_MAX_PORTS];
 } zen_mpio_ask_t;
 
 typedef struct zen_mpio_ext_attrs {
@@ -245,11 +252,19 @@ typedef struct zen_mpio_xfer_ext_attrs_args {
 	uint32_t	zmxeaa_resv[3];
 } zen_mpio_xfer_ext_attrs_args_t;
 
-typedef struct zen_xfer_ext_attrs_resp {
+typedef struct zen_mpio_xfer_ext_attrs_resp {
 	uint32_t	zxear_res;
 	uint32_t	zxear_nbytes;
 	uint32_t	zxear_resv[4];
-} zen_xfer_ext_attrs_resp_t;
+} zen_mpio_xfer_ext_attrs_resp_t;
+
+typedef struct zen_mpio_status {
+	uint32_t	zms_cmd_stat;
+	uint32_t	zms_cycle_stat;
+	uint32_t	zms_fw_post_code;
+	uint32_t	zms_fw_status;
+	uint32_t	zms_resv[2];
+} zen_mpio_status_t;
 
 typedef struct zen_mpio_link_cap {
 	uint32_t	zmlc_present:1;
@@ -340,37 +355,6 @@ typedef enum zen_mpio_ask_link_type {
 	ZEN_MPIO_ASK_LINK_USB	= 0x05,
 } zen_mpio_ask_link_type_t;
 
-typedef struct zen_mpio_engine {
-	uint8_t		zme_type;
-	uint8_t		zme_hotpluggable:1;
-	uint8_t		zme_rsvd0:7;
-	uint8_t		zme_start_lane;
-	uint8_t		zme_end_lane;
-	uint8_t		zme_gpio_group;
-	uint8_t		zme_reset_group;
-	uint16_t	zme_search_depth:1;
-	uint16_t	zme_force_kpnp_reset:1;
-	uint16_t	zme_rsvd1:14;
-	zen_mpio_config_t	zme_config;
-	uint16_t	zme_mac_ptr;
-	uint8_t		zme_first_lgd;
-	uint8_t		zme_last_lgd;
-	uint32_t	zme_train_state:4;
-	uint32_t	zde_rsvd2:28;
-} zen_mpio_engine_t;
-
-typedef struct zen_mpio_engine_data {
-	uint8_t		zmed_type;
-	uint8_t		zmed_hotpluggable:1;
-	uint8_t		zmed_rsvd0:7;
-	uint8_t		zmed_start_lane;
-	uint8_t		zmed_end_lane;
-	uint8_t		zmed_gpio_group;
-	uint8_t		zmed_mpio_start_lane;
-	uint8_t		zmed_mpio_end_lane;
-	uint8_t		zmed_search_depth;
-} zen_mpio_engine_data_t;
-
 /*
  * This macro should be a value like 0xff because this reset group is defined to
  * be an opaque token that is passed back to us. However, if we actually want to
@@ -384,13 +368,6 @@ typedef struct zen_mpio_engine_data {
 #define	MPIO_GROUP_UNUSED	0x01
 #define	MPIO_PLATFORM_EPYC	0x00
 
-typedef struct zen_mpio_platform {
-	uint16_t		zmp_type;
-	uint8_t			zmp_rsvd0[10];
-	uint16_t		zmp_nengines;
-	uint8_t			zmp_rsvd1[2];
-	zen_mpio_engine_t	zmp_engines[];
-} zen_mpio_platform_t;
 #pragma pack()	/* pragma pack(1) */
 
 /*
@@ -683,13 +660,13 @@ typedef struct smu_hotplug_entry {
 
 #pragma	pack()	/* pragma pack(4) */
 
-extern const zen_mpio_platform_t ruby_engine_s0;
+extern const zen_mpio_ask_port_t ruby_mpio_pcie_s0[];
 extern const smu_hotplug_entry_t ruby_hotplug_ents[];
 
 extern const uint32_t ruby_pcie_slot_cap_entssd;
 extern const uint32_t ruby_pcie_slot_cap_express;
 
-extern const zen_mpio_platform_t cosmo_engine;
+extern const zen_mpio_ask_t cosmo_mpio_pcie_s0;
 extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 
 /*
@@ -758,108 +735,20 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	ZEN_MPIO_ENGINE_USB		0x02
 #define	ZEN_MPIO_ENGINE_SATA		0x03
 
-#if 0
-/*
- * The following are all values that can be used with
- * GENOA_MPIO_OP_SET_RUNTIME_PROP. Some of the various
- * codes have their own sub-codes.
- */
-#define	GENOA_MPIO_RT_SET_CONF		0x00
-#define	GENOA_MPIO_RT_SET_CONF_DXIO_WA		0x03
-#define	GENOA_MPIO_RT_SET_CONF_SPC_WA		0x04
-#define	GENOA_MPIO_RT_SET_CONF_FC_CRED_WA_DIS	0x05
-#define	GENOA_MPIO_RT_SET_CONF_TX_CLOCK		0x07
-#define	GENOA_MPIO_RT_SET_CONF_SRNS		0x08
-#define	GENOA_MPIO_RT_SET_CONF_TX_FIFO_MODE	0x09
-#define	GENOA_MPIO_RT_SET_CONF_DLF_WA_DIS	0x0a
-#define	GENOA_MPIO_RT_SET_CONF_CE_SRAM_ECC	0x0b
-
-#define	GENOA_MPIO_RT_CONF_PCIE_TRAIN	0x02
-#define	GENOA_MPIO_RT_CONF_CLOCK_GATE	0x03
-#define	GENOA_MPIO_RT_PLEASE_LEAVE	0x05
-#define	GENOA_MPIO_RT_FORGET_BER	0x22
-
-/*
- * DXIO Link training state machine states
- */
-typedef enum genoa_dxio_sm_state {
-	GENOA_DXIO_SM_INIT =		0x00,
-	GENOA_DXIO_SM_DISABLED =	0x01,
-	GENOA_DXIO_SM_SCANNED =		0x02,
-	GENOA_DXIO_SM_CANNED =		0x03,
-	GENOA_DXIO_SM_LOADED =		0x04,
-	GENOA_DXIO_SM_CONFIGURED =	0x05,
-	GENOA_DXIO_SM_IN_EARLY_TRAIN =	0x06,
-	GENOA_DXIO_SM_EARLY_TRAINED =	0x07,
-	GENOA_DXIO_SM_VETTING =		0x08,
-	GENOA_DXIO_SM_GET_VET =		0x09,
-	GENOA_DXIO_SM_NO_VET =		0x0a,
-	GENOA_DXIO_SM_GPIO_INIT =	0x0b,
-	GENOA_DXIO_SM_NHP_TRAIN =	0x0c,
-	GENOA_DXIO_SM_DONE =		0x0d,
-	GENOA_DXIO_SM_ERROR =		0x0e,
-	GENOA_DXIO_SM_MAPPED =		0x0f
-} genoa_dxio_sm_state_t;
-
-/*
- * PCIe Link Training States
- */
-typedef enum genoa_dxio_pcie_state {
-	GENOA_DXIO_PCIE_ASSERT_RESET_GPIO	= 0x00,
-	GENOA_DXIO_PCIE_ASSERT_RESET_DURATION	= 0x01,
-	GENOA_DXIO_PCIE_DEASSERT_RESET_GPIO	= 0x02,
-	GENOA_DXIO_PCIE_ASSERT_RESET_ENTRY	= 0x03,
-	GENOA_DXIO_PCIE_GPIO_RESET_TIMEOUT	= 0x04,
-	GENOA_DXIO_PCIE_RELEASE_LINK_TRAIN	= 0x05,
-	GENOA_DXIO_PCIE_DETECT_PRESENCE		= 0x06,
-	GENOA_DXIO_PCIE_DETECTING		= 0x07,
-	GENOA_DXIO_PCIE_BAD_LANE		= 0x08,
-	GENOA_DXIO_PCIE_GEN2_FAILURE		= 0x09,
-	GENOA_DXIO_PCIE_REACHED_L0		= 0x0a,
-	GENOA_DXIO_PCIE_VCO_NEGOTIATED		= 0x0b,
-	GENOA_DXIO_PCIE_FORCE_RETRAIN		= 0x0c,
-	GENOA_DXIO_PCIE_FAILED			= 0x0d,
-	GENOA_DXIO_PCIE_SUCCESS			= 0x0e,
-	GENOA_DXIO_PCIE_GRAPHICS_WORKAROUND	= 0x0f,
-	GENOA_DXIO_PCIE_COMPLIANCE_MODE		= 0x10,
-	GENOA_DXIO_PCIE_NO_DEVICE		= 0x11,
-	GENOA_DXIO_PCIE_COMPLETED		= 0x12
-} genoa_dxio_pcie_state_t;
-
-/*
- * When using GENOA_MPIO_OP_GET_SM_STATE, the following structure is actually
- * filled in via the RPC argument. This structure is more generally used amongst
- * different RPCs; however, since the state machine can often get different
- * types of requests this ends up mattering a bit more.
- */
-typedef enum genoa_dxio_data_type {
-	GENOA_DXIO_DATA_TYPE_NONE	 = 0,
-	GENOA_DXIO_DATA_TYPE_GENERIC,
-	GENOA_DXIO_DATA_TYPE_SM,
-	GENOA_DXIO_DATA_TYPE_HPSM,
-	GENOA_DXIO_DATA_TYPE_RESET
-} genoa_dxio_data_type_t;
-
-#endif
-
 /*
  * Types of MPIO Link speed updates. These must be ORed in with the base code.
  */
 #define	GENOA_MPIO_LINK_SPEED_SINGLE	0x800
 
 typedef struct genoa_mpio_config {
-	zen_mpio_platform_t	*gmc_conf;
-	zen_mpio_ext_attrs_t	*gmc_ext_attrs;
 	zen_mpio_ask_t		*gmc_ask;
-	uint64_t		gmc_pa;
-	uint64_t		gmc_ext_attrs_pa;
+	zen_mpio_ext_attrs_t	*gmc_ext_attrs;
 	uint64_t		gmc_ask_pa;
-	uint32_t		gmc_conf_alloc_len;
+	uint64_t		gmc_ext_attrs_pa;
 	uint32_t		gmc_ask_alloc_len;
 	uint32_t		gmc_ext_attrs_alloc_len;
-	uint32_t		gmc_conf_len;
+	uint32_t		gmc_ask_nports;
 	uint32_t		gmc_ext_attrs_len;
-	uint32_t		gmc_ask_nlinks;
 } genoa_mpio_config_t;
 
 typedef struct genoa_hotplug {

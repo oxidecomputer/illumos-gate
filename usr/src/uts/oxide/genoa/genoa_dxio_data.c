@@ -14,8 +14,8 @@
  */
 
 /*
- * This file contains platform-specific data blobs that are required for the
- * DXIO engine.
+ * This file contains platform-specific data blobs that are required for
+ * MPIO.
  *
  * The following table has the general mapping of logical ports and engines to
  * the corresponding lanes and other properties. This is currently valid for all
@@ -23,14 +23,15 @@
  * expect them.
  *
  * PORT	REV	PHYS	DXIO	1P BUS	2P BUS
- * G0	1	0x10	0x10	0xc0	0x60,0x30
- * P0	0	0x00	0x2a	0xc0	0x60,0xe0
- * P1	0	0x20	0x3a	0x80	0x40,0xc0
- * G1	1	0x30	0x00	0x80	0x40,0xc0
- * G3	0	0x60	0x72	0x40	0x20,0xa0
- * P3	1	0x70	0x5a	0x40	0x20,0xa0
- * P2	1	0x50	0x4a	0x00	0x00,0x80
- * G2	0	0x40	0x82	0x00	0x00,0x80
+ * P0	0	0x00	0x00	??	0x60,0xe0
+ * G0	1	0x60	0x60	??	0x60,0x30
+ * P1	0	0x20	0x20	??	0x40,0xc0
+ * G1	1	0x40	0x40	??	0x40,0xc0
+ * P2	1	0x30	0x30	??	0x00,0x80
+ * G2	0	0x70	0x70	??	0x00,0x80
+ * P3	1	0x10	0x10	??	0x20,0xa0
+ * G3	0	0x50	0x50	??	0x20,0xa0
+ * P4	0	0x84
  *
  * A core reversal is where the actual lanes are swapped in a way that might not
  * be expected here. Let's try and draw this out here. In the general case, the
@@ -100,8 +101,10 @@
 #include <sys/stddef.h>
 #include <sys/debug.h>
 #include <sys/pcie.h>
+#include <sys/sysmacros.h>
 #include <sys/io/genoa/mpio_impl.h>
 
+#if 0
 CTASSERT(sizeof (zen_mpio_link_cap_t) == 0x8);
 CTASSERT(sizeof (zen_mpio_config_base_t) == 0x18);
 CTASSERT(sizeof (zen_mpio_config_net_t) == 0x18);
@@ -110,6 +113,9 @@ CTASSERT(sizeof (zen_mpio_config_t) == 0x18);
 CTASSERT(sizeof (zen_mpio_engine_t) == 0x28);
 CTASSERT(offsetof(zen_mpio_engine_t, zme_config) == 0x8);
 CTASSERT(sizeof (zen_mpio_platform_t) == 0x10);
+#endif
+CTASSERT(sizeof (zen_mpio_ask_t) < MMU_PAGESIZE);
+
 
 CTASSERT(offsetof(genoa_pptable_t, ppt_plat_tdp_lim) == 0x14);
 CTASSERT(offsetof(genoa_pptable_t, ppt_fan_override) == 0x24);
@@ -132,131 +138,134 @@ CTASSERT(sizeof (smu_hotplug_function_t) == 4);
 CTASSERT(sizeof (smu_hotplug_reset_t) == 4);
 CTASSERT(sizeof (smu_hotplug_table_t) == 0x780);
 
-const zen_mpio_platform_t ruby_engine_s0 = {
-    .zmp_type = MPIO_PLATFORM_EPYC,
-    .zmp_nengines = 4,
-    .zmp_engines = {
-	{
-	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
-	    .zme_hotpluggable = 0,
-	    .zme_start_lane = 0x2a,
-	    .zme_end_lane = 0x39,
-	    .zme_gpio_group = 1,
-	    .zme_reset_group = 1,
-	    .zme_search_depth = 0,
-	    .zme_force_kpnp_reset = 0,
-	    .zme_config = {
-		.zmc_pcie = {
-		    .zmcp_caps = {
-			.zmlc_present = MPIO_PORT_PRESENT,
-			.zmlc_early_train = 0,
-			.zmlc_comp_mode = 0,
-			.zmlc_reverse = 1,
-			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-			/* XXX Next two always seems to be set */
-			.zmlc_en_off_config = 1,
-			.zmlc_turn_off_unused = 1,
-			/* XXX This pair is always overriden */
-			.zmlc_eq_mode_override = 1,
-			.zmlc_eq_search_mode = 3,
-			/* XXX Trust the gods */
-			.zmlc_invert_rx_pol = 0x1,
-	            }
-		}
-	    }
-	},
-	{
-	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
-	    .zme_hotpluggable = 0,
-	    .zme_start_lane = 0x3a,
-	    .zme_end_lane = 0x49,
-	    .zme_gpio_group = 1,
-	    .zme_reset_group = 1,
-	    .zme_search_depth = 0,
-	    .zme_force_kpnp_reset = 0,
-	    .zme_config = {
-		.zmc_pcie = {
-		    .zmcp_caps = {
-			.zmlc_present = MPIO_PORT_PRESENT,
-			.zmlc_early_train = 0,
-			.zmlc_comp_mode = 0,
-			.zmlc_reverse = 1,
-			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-			/* XXX Next two always seems to be set */
-			.zmlc_en_off_config = 1,
-			.zmlc_turn_off_unused = 1,
-			/* XXX This pair is always overriden */
-			.zmlc_eq_mode_override = 1,
-			.zmlc_eq_search_mode = 3,
-			/* XXX Trust the gods */
-			.zmlc_invert_rx_pol = 0x1,
-		    }
-		}
-	    }
-	},
-	{
-	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
-	    .zme_hotpluggable = 0,
-	    .zme_start_lane = 0x4a,
-	    .zme_end_lane = 0x59,
-	    .zme_gpio_group = 1,
-	    .zme_reset_group = 1,
-	    .zme_search_depth = 0,
-	    .zme_force_kpnp_reset = 0,
-	    .zme_config = {
-		.zmc_pcie = {
-		    .zmcp_caps = {
-			.zmlc_present = MPIO_PORT_PRESENT,
-			.zmlc_early_train = 0,
-			.zmlc_comp_mode = 0,
-			/* No reversing here */
-			.zmlc_reverse = 0,
-			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-			.zmlc_hotplug = ZEN_MPIO_HOTPLUG_T_EXPRESS_MODULE,
-			/* XXX Next two always seems to be set */
-			.zmlc_en_off_config = 1,
-			.zmlc_turn_off_unused = 1,
-			/* XXX This pair is always overriden */
-			.zmlc_eq_mode_override = 1,
-			.zmlc_eq_search_mode = 3,
-			/* XXX Trust the gods */
-			.zmlc_invert_rx_pol = 0x1,
-		    }
-		}
-	    }
-	},
-	{
-	    .zme_type = ZEN_MPIO_ENGINE_PCIE,
-	    .zme_hotpluggable = 0,
-	    .zme_start_lane = 0x5a,
-	    .zme_end_lane = 0x69,
-	    .zme_gpio_group = 1,
-	    .zme_reset_group = 1,
-	    .zme_search_depth = 0,
-	    .zme_force_kpnp_reset = 0,
-	    .zme_config = {
-		.zmc_pcie = {
-		    .zmcp_caps = {
-			.zmlc_present = MPIO_PORT_PRESENT,
-			.zmlc_early_train = 0,
-			.zmlc_comp_mode = 0,
-			/* No reversing here */
-			.zmlc_reverse = 0,
-			.zmlc_max_speed = ZEN_MPIO_LINK_SPEED_MAX,
-			/* XXX Next two always seems to be set */
-			.zmlc_en_off_config = 1,
-			.zmlc_turn_off_unused = 1,
-			/* XXX This pair is always overriden */
-			.zmlc_eq_mode_override = 1,
-			.zmlc_eq_search_mode = 3,
-			/* XXX Trust the gods */
-			.zmlc_invert_rx_pol = 0x1,
-		    }
-		}
-	    }
+#define	SP5_PHY_OFFSET_P0	0
+#define	SP5_PHY_OFFSET_G0	96
+#define	SP5_PHY_OFFSET_P1	32
+#define	SP5_PHY_OFFSET_G1	64
+#define	SP5_PHY_OFFSET_P2	48
+#define	SP5_PHY_OFFSET_G2	112
+#define	SP5_PHY_OFFSET_P3	16
+#define	SP5_PHY_OFFSET_G3	80
+
+/* XXX TODO: ASPM, seems to be set in config space */
+/* XXX TODO: Target link speed? */
+/* XXX TODO: Slot nums */
+const zen_mpio_ask_port_t ruby_mpio_pcie_s0[] = {
+    { /* P0, riser 0 */
+	.zma_link = {
+	    .zml_lane_start = 0,
+	    .zml_num_lanes = 8,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+	    },
 	}
-    }
+    },
+    { /* P0, riser 1 */
+	.zma_link = {
+	    .zml_lane_start = 8,
+	    .zml_num_lanes = 8,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+	    },
+	},
+    },
+    { /* P1 */
+	.zma_link = {
+	    .zml_lane_start = 32,
+	    .zml_num_lanes = 16,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+	    },
+	},
+    },
+    { /* P2 */
+	.zma_link = {
+	    .zml_lane_start = 48,
+	    .zml_num_lanes = 16,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+	    },
+	},
+    },
+    { /* P3 */
+	.zma_link = {
+	    .zml_lane_start = 16,
+	    .zml_num_lanes = 16,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+	    },
+	},
+    },
+    { /* P4 */
+	.zma_link = {
+	    .zml_lane_start = 128,
+	    .zml_num_lanes = 4,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		.zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+	    },
+	},
+    },
+    { /* P5 M.2 (1/2) */
+	.zma_link = {
+	    .zml_lane_start = 132,
+	    .zml_num_lanes = 1,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		.zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+	    },
+	},
+    },
+    { /* P5 M.2 (2/2) */
+	.zma_link = {
+	    .zml_lane_start = 133,
+	    .zml_num_lanes = 1,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		.zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+	    },
+	},
+    },
+    { /* P5 NIC */
+	.zma_link = {
+	    .zml_lane_start = 135,
+	    .zml_num_lanes = 1,
+	    .zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+	    .zml_gpio_id = 1,
+	    .zml_attrs = {
+		.zmla_port_present = 1,
+		.zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		.zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+	    },
+	},
+    },
 };
+
+const size_t RUBY_MPIO_PCIE_S0_LEN = ARRAY_SIZE(ruby_mpio_pcie_s0);
 
 /*
  * Ethanol-X hotplug data.
