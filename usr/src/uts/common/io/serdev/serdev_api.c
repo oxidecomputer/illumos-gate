@@ -314,8 +314,7 @@ serdev_handle_detach(serdev_handle_t *srdh)
 		return (DDI_SUCCESS);
 	}
 
-	int circular;
-	ndi_devi_enter(srdh->srdh_parent, &circular);
+	ndi_devi_enter(srdh->srdh_parent);
 
 	if (srdh->srdh_child == NULL) {
 		/*
@@ -336,7 +335,7 @@ serdev_handle_detach(serdev_handle_t *srdh)
 		}
 	}
 
-	ndi_devi_exit(srdh->srdh_parent, circular);
+	ndi_devi_exit(srdh->srdh_parent);
 
 	if (r == DDI_SUCCESS) {
 		srdh->srdh_child = NULL;
