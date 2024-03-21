@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_IPCC_INVENTORY_H
@@ -23,6 +23,14 @@
  * structure that is based on that type. These structures have members that are
  * appended to them in subsequent software revisions and the length of the
  * overall data payload is used to indicate what is valid.
+ *
+ * Data availability history:
+ *
+ *  o The original version of data had all types through the KSZ. However, there
+ *    were no sensors.
+ *  o Sensors were added in release v1.0.2 of SP software. This added the
+ *    MAX5970 type and initial versions of all sensors.
+ *  o The MAX31790 was added in v1.0.13.
  */
 
 #include <sys/stdint.h>
@@ -36,6 +44,11 @@ extern "C" {
  * returned through the key lookup mechanisms.
  */
 #define	IPCC_INV_VERS	0
+
+/*
+ * Exported sensor IDs right now are all little endian u32s.
+ */
+typedef uint32_t ipcc_sensor_id_t;
 
 /*
  * This is the structure of the inventory key that is used to determine the
@@ -59,12 +72,16 @@ typedef enum {
 	IPCC_INVENTORY_T_ADM1272,
 	IPCC_INVENTORY_T_TMP117,
 	IPCC_INVENTORY_T_8A34XXX,
-	IPCC_INVENTORY_T_KSZ8463
+	IPCC_INVENTORY_T_KSZ8463,
+	IPCC_INVENTORY_T_MAX5970,
+	/* Added in SP release v1.0.13 */
+	IPCC_INVENTORY_T_MAX31790
 } ipcc_inv_type_t;
 
 #pragma pack(1)
 typedef struct {
 	uint8_t ddr4_spd[512];
+	ipcc_sensor_id_t ddr4_temp;
 } ipcc_inv_ddr4_t;
 
 typedef struct {
@@ -91,6 +108,10 @@ typedef struct {
 	uint8_t bmr_mfr_date[12];
 	uint8_t bmr_mfr_serial[20];
 	uint8_t bmr_mfr_fw[20];
+	ipcc_sensor_id_t bmr_temp;
+	ipcc_sensor_id_t bmr_pout;
+	ipcc_sensor_id_t bmr_vout;
+	ipcc_sensor_id_t bmr_iout;
 } ipcc_inv_bmr491_t;
 
 typedef struct {
@@ -100,6 +121,8 @@ typedef struct {
 	uint8_t isl_mfr_date[4];
 	uint8_t isl_ic_id[4];
 	uint8_t isl_ic_rev[4];
+	ipcc_sensor_id_t isl_rail_vout[3];
+	ipcc_sensor_id_t isl_rail_iout[3];
 } ipcc_inv_isl68224_t;
 
 typedef struct {
@@ -109,6 +132,14 @@ typedef struct {
 	uint8_t raa_mfr_date[4];
 	uint8_t raa_ic_id[4];
 	uint8_t raa_ic_rev[4];
+	/*
+	 * The initial batch of sensors are organized by rail. These first
+	 * temperature sensors are the hottest output stage in the rail.
+	 */
+	ipcc_sensor_id_t raa_stage_temp_max[2];
+	ipcc_sensor_id_t raa_rail_pout[2];
+	ipcc_sensor_id_t raa_rail_vout[2];
+	ipcc_sensor_id_t raa_rail_iout[2];
 } ipcc_inv_raa229618_t;
 
 typedef struct {
@@ -119,6 +150,9 @@ typedef struct {
 	uint8_t tps_ic_id[6];
 	uint8_t tps_ic_rev[2];
 	uint16_t tps_nvm_cksum;
+	ipcc_sensor_id_t tps_temp;
+	ipcc_sensor_id_t tps_vout;
+	ipcc_sensor_id_t tps_iout;
 } ipcc_inv_tps546b24a_t;
 
 typedef struct {
@@ -132,6 +166,9 @@ typedef struct {
 	uint8_t adm_mfr_model[10];
 	uint8_t adm_mfr_rev[2];
 	uint8_t adm_mfr_date[6];
+	ipcc_sensor_id_t adm_temp;
+	ipcc_sensor_id_t adm_vout;
+	ipcc_sensor_id_t adm_iout;
 } ipcc_inv_adm1272_t;
 
 typedef struct {
@@ -143,6 +180,7 @@ typedef struct {
 	uint16_t tmp_ee1;
 	uint16_t tmp_ee2;
 	uint16_t tmp_ee3;
+	ipcc_sensor_id_t tmp_temp;
 } ipcc_inv_tmp11x_t;
 
 typedef struct {
@@ -156,6 +194,18 @@ typedef struct {
 typedef struct {
 	uint16_t ksz_cider;
 } ipcc_inv_ksz8463_t;
+
+typedef struct {
+	ipcc_sensor_id_t max_rails_vout[2];
+	ipcc_sensor_id_t max_rails_iout[2];
+} ipcc_inv_max5970_t;
+
+/*
+ * Added in SP release 1.0.13.
+ */
+typedef struct {
+	ipcc_sensor_id_t max_tach[6];
+} ipcc_inv_max31790_t;
 
 #pragma pack() /* pack(1) */
 

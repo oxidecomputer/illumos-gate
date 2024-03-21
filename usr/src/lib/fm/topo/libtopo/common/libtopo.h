@@ -24,7 +24,7 @@
  */
 /*
  * Copyright 2020 Joyent, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _LIBTOPO_H
@@ -506,6 +506,16 @@ void topo_sensor_state_name(uint32_t sensor_type, uint8_t state, char *buf,
  */
 #define	TOPO_SENSOR_CLASS_THRESHOLD	"threshold"
 #define	TOPO_SENSOR_CLASS_DISCRETE	"discrete"
+
+/*
+ * Some sensors contain the ability to be fetched locally and have a reading
+ * method. In addition to or instead of that, some sensors may be known to the
+ * topology tree but only accessible via a remote entity external to the system.
+ * This property is a string array. Each entry in the array has a corresponding
+ * property group labeled 'remote-<array entry>' that contains the specifics
+ * relevant for that entity.
+ */
+#define	TOPO_PROP_REMOTE_AGENTS		"remote-agents"
 
 /*
  * Sensor unit types.  We're using the unit types and corresponding

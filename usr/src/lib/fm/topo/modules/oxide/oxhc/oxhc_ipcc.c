@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -159,7 +159,6 @@ topo_oxhc_inventory_bcopy(libipcc_inv_t *inv, ipcc_inv_type_t exp_type,
 	}
 
 	data = libipcc_inv_data(inv, &len);
-
 	if (len < minlen) {
 		return (false);
 	}
@@ -171,5 +170,33 @@ topo_oxhc_inventory_bcopy(libipcc_inv_t *inv, ipcc_inv_type_t exp_type,
 		(void) memcpy(dest, data, destlen);
 	}
 
+	return (true);
+}
+
+/*
+ * This is a variant of our inventory copying that checks to see if a range of
+ * bytes starting at a given offset is available. It will copy those and only
+ * those into the output buffer. The assumption is that someone already has
+ * validated that the types make sense and therefore we can assume that the data
+ * offset is valid.
+ */
+bool
+topo_oxhc_inventory_bcopyoff(libipcc_inv_t *inv, void *buf, size_t len,
+    size_t off)
+{
+	const uint8_t *data;
+	size_t datalen;
+
+	if (inv == NULL ||
+	    libipcc_inv_status(inv) != LIBIPCC_INV_STATUS_SUCCESS) {
+		return (false);
+	}
+
+	data = libipcc_inv_data(inv, &datalen);
+	if (len > datalen || off > datalen || (len + off) > datalen) {
+		return (false);
+	}
+
+	(void) memcpy(buf, data + off, len);
 	return (true);
 }

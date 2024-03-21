@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _OXHC_H
@@ -36,6 +36,13 @@ extern "C" {
  */
 #define	TOPO_PGROUP_OXHC	"oxhc"
 #define	TOPO_PGROUP_OXHC_REFDES	"refdes"
+
+/*
+ * MGS remote sensor and property group.
+ */
+#define	TOPO_PROP_MGS_AGENT	"mgs"
+#define	TOPO_PGROUP_REMOTE_MGS	"remote-mgs"
+#define	TOPO_PROP_MGS_SENSOR	"mgs-sensor-id"
 
 typedef struct oxhc oxhc_t;
 typedef struct oxhc_enum oxhc_enum_t;
@@ -134,7 +141,7 @@ typedef struct oxhc {
 } oxhc_t;
 
 /*
- * Common topo node creation.
+ * Common topo node and facility creation.
  */
 extern nvlist_t *topo_oxhc_auth(topo_mod_t *, const oxhc_t *,
     const oxhc_enum_t *, tnode_t *);
@@ -148,10 +155,15 @@ extern int topo_oxhc_tn_create(topo_mod_t *, tnode_t *, tnode_t **,
     const char *, topo_instance_t, nvlist_t *, const char *, const char *,
     const char *, topo_oxhc_tn_flags_t, const char *);
 
+extern bool topo_oxhc_mgs_sensor(topo_mod_t *, tnode_t *, const char *,
+    uint32_t, uint32_t, ipcc_sensor_id_t);
+
 /*
  * Miscellaneous utility functions.
  */
-void topo_oxhc_libipcc_error(topo_mod_t *, libipcc_handle_t *, const char *);
+extern void topo_oxhc_libipcc_error(topo_mod_t *, libipcc_handle_t *,
+    const char *);
+
 
 /*
  * Inventory related setup.
@@ -162,6 +174,8 @@ extern libipcc_inv_t *topo_oxhc_inventory_find(const oxhc_t *,
     const char *);
 extern bool topo_oxhc_inventory_bcopy(libipcc_inv_t *, ipcc_inv_type_t,
     void *, size_t, size_t);
+extern bool topo_oxhc_inventory_bcopyoff(libipcc_inv_t *, void *, size_t,
+    size_t);
 
 /*
  * IC related functions.

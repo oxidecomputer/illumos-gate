@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -44,6 +44,20 @@
 
 static const topo_pgroup_info_t oxhc_io_pgroup = {
 	TOPO_PGROUP_IO,
+	TOPO_STABILITY_PRIVATE,
+	TOPO_STABILITY_PRIVATE,
+	1
+};
+
+static const topo_pgroup_info_t oxhc_sensor_pgroup = {
+	TOPO_PGROUP_FACILITY,
+	TOPO_STABILITY_PRIVATE,
+	TOPO_STABILITY_PRIVATE,
+	1
+};
+
+static const topo_pgroup_info_t oxhc_remote_mgs_pgroup = {
+	TOPO_PGROUP_REMOTE_MGS,
 	TOPO_STABILITY_PRIVATE,
 	TOPO_STABILITY_PRIVATE,
 	1
@@ -175,6 +189,60 @@ topo_oxhc_tn_create(topo_mod_t *mod, tnode_t *pn, tnode_t **tnp,
 out:
 	nvlist_free(fmri);
 	return (ret);
+}
+
+/*
+ * This is used to create a remote sensor that has data available in MGS. Right
+ * now we just assume all sensors are remote threshold sensors. This should be
+ * pulled out when we have discrete sensors we need to support.
+ */
+bool
+topo_oxhc_mgs_sensor(topo_mod_t *mod, tnode_t *pn, const char *fname,
+    uint32_t type, uint32_t unit, ipcc_sensor_id_t mgsid)
+{
+	tnode_t *fac;
+	const char *agents[] = { TOPO_PROP_MGS_AGENT };
+	uint_t nagents = 1;
+
+	if ((fac = topo_node_facbind(mod, pn, fname, TOPO_FAC_TYPE_SENSOR)) ==
+	    NULL) {
+		topo_mod_dprintf(mod, "failed to create sensor %s facility for "
+		    "%s[%" PRIu64 "]: %s\n", fname, topo_node_name(pn),
+		    topo_node_instance(pn), topo_mod_errmsg(mod));
+		return (false);
+	}
+
+	if (topo_create_props(mod, fac, TOPO_PROP_IMMUTABLE,
+	    &oxhc_sensor_pgroup,
+	    TOPO_SENSOR_CLASS, TOPO_TYPE_STRING, TOPO_SENSOR_CLASS_THRESHOLD,
+	    TOPO_FACILITY_TYPE, TOPO_TYPE_UINT32, type,
+	    TOPO_SENSOR_UNITS, TOPO_TYPE_UINT32, unit,
+	    TOPO_PROP_REMOTE_AGENTS, TOPO_TYPE_STRING_ARRAY, agents, nagents,
+	    NULL) != 0) {
+		topo_mod_dprintf(mod, "failed to create %s properties for "
+		    "facility %s on %s[%" PRIu64 "]: %s\n",
+		    oxhc_sensor_pgroup.tpi_name, fname, topo_node_name(pn),
+		    topo_node_instance(pn), topo_mod_errmsg(mod));
+		goto err;
+	}
+
+	if (topo_create_props(mod, fac, TOPO_PROP_IMMUTABLE,
+	    &oxhc_remote_mgs_pgroup,
+	    TOPO_PROP_MGS_SENSOR, TOPO_TYPE_UINT32, mgsid,
+	    NULL) != 0) {
+		topo_mod_dprintf(mod, "failed to create %s properties for "
+		    "facility %s on %s[%" PRIu64 "]: %s\n",
+		    oxhc_remote_mgs_pgroup.tpi_name, fname,
+		    topo_node_name(pn), topo_node_instance(pn),
+		    topo_mod_errmsg(mod));
+		goto err;
+	}
+
+	return (true);
+
+err:
+	topo_node_unbind(fac);
+	return (false);
 }
 
 /*
@@ -772,6 +840,8 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 	libipcc_inv_t *inv;
 	ipcc_inv_ddr4_t ddr4;
 	topo_dimm_t dimm;
+	tnode_t *dtn;
+	ipcc_sensor_id_t temp;
 
 	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n",
 	    topo_node_name(tn), topo_node_instance(tn));
@@ -799,7 +869,7 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 	 * UMC information when available.
 	 */
 	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_DDR4, &ddr4,
-	    sizeof (ddr4), sizeof (ddr4))) {
+	    sizeof (ddr4), offsetof(ipcc_inv_ddr4_t, ddr4_temp))) {
 		topo_mod_dprintf(mod, "IPCC information for %s is not "
 		    "copyable\n", slot_refdes);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
@@ -820,8 +890,36 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 		return (-1);
 	}
 
-	ret = topo_mod_enumerate(mod, tn, DIMM, DIMM, 0, 0, &dimm);
+	if ((ret = topo_mod_enumerate(mod, tn, DIMM, DIMM, 0, 0, &dimm)) != 0) {
+		goto out;
+	}
 
+	/*
+	 * Attempt to create a temperature sensor for this DIMM if we can. If we
+	 * fail because we can't actually find the data about the sensor because
+	 * the SP didn't provide that, we consider that fine and just a case
+	 * that we shouldn't create a sensor for.
+	 */
+	if ((dtn = topo_node_lookup(tn, DIMM, 0)) == NULL) {
+		topo_mod_dprintf(mod, "failed to find DIMM under %s[%" PRIu64
+		    "]\n", topo_node_name(tn), topo_node_instance(tn));
+		ret = topo_mod_seterrno(mod, EMOD_NODE_NOENT);
+		goto out;
+	}
+
+	if (!topo_oxhc_inventory_bcopyoff(inv, &temp, sizeof (temp),
+	    offsetof(ipcc_inv_ddr4_t, ddr4_temp))) {
+		ret = 0;
+		goto out;
+	}
+
+	if (!topo_oxhc_mgs_sensor(mod, dtn, "temp", TOPO_SENSOR_TYPE_TEMP,
+	    TOPO_SENSOR_UNITS_DEGREES_C, temp)) {
+		ret = -1;
+		goto out;
+	}
+
+	ret = 0;
 out:
 	topo_mod_strfree(mod, slot_refdes);
 	return (ret);

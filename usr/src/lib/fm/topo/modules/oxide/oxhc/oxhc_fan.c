@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -34,7 +34,7 @@
  *     board=0
  *       ic=0		U1
  *
- * When enumerating the fan tray things are a little more nuanced beacuse of the
+ * When enumerating the fan tray things are a little more nuanced because of the
  * fact that the whole tray may be missing so we don't want to use the normal
  * node range enumeration and the topology map here if they don't exist.
  */
@@ -48,13 +48,29 @@
 #define	OXHC_GIMLET_TRAY_VPD	"J180"
 #define	OXHC_GIMLET_TRAY_REFDES	"J180/ID"
 #define	OXHC_GIMLET_TRAY_CPN	"991-0000084"
+#define	OXHC_GIMLET_MAX31790_REFDES	"U321"
+#define	OXHC_GIMLET_NFANS		3
 
-static const char *oxhc_gimlet_fan_labels[3] = {
+/*
+ * These two tables are used for the fans labeling in the tree and relate to the
+ * compass rose usage. The first table is the label for the fan itself, the
+ * second is used as part of the rotor's label and combined with the actual
+ * rotor information contained in the of_labels member of the oxhc_fan_t.
+ */
+static const char *oxhc_gimlet_fan_labels[OXHC_GIMLET_NFANS] = {
 	"West", "Center", "East"
 };
 
-static const char *oxhc_gimlet_fan_dirs[3] = {
+static const char *oxhc_gimlet_fan_dirs[OXHC_GIMLET_NFANS] = {
 	"west", "", "east"
+};
+
+/*
+ * We enumerate fans from West to East, the sensors are from east to west. This
+ * gives the starting index for a sensor for those three entries.
+ */
+static uint32_t oxhc_gimlet_fan_sensors[OXHC_GIMLET_NFANS] = {
+	4, 2, 0
 };
 
 typedef struct oxhc_fan {
@@ -70,7 +86,7 @@ static const oxhc_fan_t oxhc_fans[] = {
 static int
 topo_oxhc_enum_fan(topo_mod_t *mod, const ipcc_inv_vpdid_t *fan_vpd,
     tnode_t *tray, topo_instance_t inst, nvlist_t *auth, const char *loc,
-    const char *dir)
+    const char *dir, const ipcc_sensor_id_t *sensors, uint32_t sensor_base)
 {
 	int ret;
 	char *fan_pn = NULL, *fan_sn = NULL, fan_rev[16];
@@ -125,11 +141,19 @@ topo_oxhc_enum_fan(topo_mod_t *mod, const ipcc_inv_vpdid_t *fan_vpd,
 	}
 
 	for (uint32_t i = 0; i < fan_info->of_nrotors; i++) {
+		uint32_t sidx = sensor_base + i;
 		(void) snprintf(label, sizeof (label), "%s%s",
 		    fan_info->of_labels[i], dir);
 
 		if ((ret = topo_oxhc_tn_create(mod, fan, &rotor, ROTOR, i, auth,
 		    NULL, NULL, NULL, TOPO_OXHC_TN_F_SET_LABEL, label)) == -1) {
+			goto out;
+		}
+
+		if (sensors[sidx] != UINT32_MAX && !topo_oxhc_mgs_sensor(mod,
+		    rotor, "tach", TOPO_SENSOR_TYPE_FAN, TOPO_SENSOR_UNITS_RPM,
+		    sensors[sidx])) {
+			ret = -1;
 			goto out;
 		}
 	}
@@ -147,8 +171,9 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
     topo_instance_t max)
 {
 	int ret;
-	libipcc_inv_t *inv;
+	libipcc_inv_t *inv, *sense_inv;
 	ipcc_inv_fantray_t tray;
+	ipcc_inv_max31790_t max31790;
 	const ipcc_inv_vpdid_t *tinv, *binv;
 	char *tray_pn = NULL, *tray_sn = NULL, tray_rev[16];
 	char *board_pn = NULL, *board_sn = NULL, board_rev[16];
@@ -226,11 +251,25 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
+	/*
+	 * Check to see if we have sensors available for the fans. This may not
+	 * exist in all version of the software so we treat the lack of it as a
+	 * non-failure and set the sensor IDs to UINT32_MAX, which the fan
+	 * enum will take as a cue not to do anything here.
+	 */
+	sense_inv = topo_oxhc_inventory_find(oxhc, OXHC_GIMLET_MAX31790_REFDES);
+	if (sense_inv == NULL || !topo_oxhc_inventory_bcopy(sense_inv,
+	    IPCC_INVENTORY_T_MAX31790, &max31790, sizeof (max31790),
+	    sizeof (max31790))) {
+		(void) memset(&max31790, 0xff, sizeof (max31790));
+	}
+
 	for (size_t i = 0; i < ARRAY_SIZE(tray.ft_fans); i++) {
 		const ipcc_inv_vpdid_t *fan_vpd = &tray.ft_fans[i];
 
 		if ((ret = topo_oxhc_enum_fan(mod, fan_vpd, tray_tn, i, auth,
-		    oxhc_gimlet_fan_labels[i], oxhc_gimlet_fan_dirs[i])) != 0) {
+		    oxhc_gimlet_fan_labels[i], oxhc_gimlet_fan_dirs[i],
+		    max31790.max_tach, oxhc_gimlet_fan_sensors[i])) != 0) {
 			goto out;
 		}
 	}
