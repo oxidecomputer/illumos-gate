@@ -98,7 +98,7 @@ struct port_info {
 	uint8_t  port_id;
 	uint8_t  tx_chan;
 	uint8_t  rx_chan;
-	uint8_t  rx_cchan;
+	uint8_t  rx_cchan;	/* Rx TP c-channel */
 	uint8_t instance; /* Associated adapter instance */
 	uint8_t child_inst; /* Associated child instance */
 
@@ -373,6 +373,11 @@ struct sge_rxq {
 
 	/* stats for not-that-common events */
 
+	/*
+	 * RPZ: we don't actually use this, but we should.
+	 *
+	 * RPZ: we have an allocb_fail stat on the freelist
+	 */
 	uint32_t nomem;		/* mblk allocation during rx failed */
 };
 
@@ -603,6 +608,18 @@ t4_mbox_list_first_entry(struct adapter *adap)
 	return (STAILQ_FIRST(&adap->mbox_list));
 }
 
+#define T4_GET_STAT(pi, name)						\
+	t4_get_port_stats_lb_mode((pi)->adapter, (pi)->lport,		\
+	    A_MPS_PORT_STAT_##name##_L)
+
+/*
+ * RPZ: should this be using different reg base depending on chip?
+ *
+ * RPZ: check this impl against linux.
+ */
+#define	T4_GET_STAT_COM(pi, name)				\
+	t4_read_reg64((pi)->adapter, A_MPS_STAT_##name##_L)
+
 static inline struct port_info *
 adap2pinfo(struct adapter *sc, int idx)
 {
@@ -648,6 +665,15 @@ static inline bool
 t4_cver_ge(const adapter_t *adap, uint8_t ver)
 {
 	return (CHELSIO_CHIP_VERSION(adap->params.chip) >= ver);
+}
+
+/*
+ * RPZ: AFAICT a "platform device" is a Linux-specific thing. For now
+ * do this, but consider removing code related to this check.
+ */
+static inline bool t4_os_is_platform_device(struct adapter *adap)
+{
+	return(false);
 }
 
 /* t4_nexus.c */

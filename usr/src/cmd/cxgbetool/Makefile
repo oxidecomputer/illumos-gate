@@ -21,6 +21,7 @@ VPATH = $(SRC)/uts/common/io/cxgbe/t4nex/
 
 include ../Makefile.cmd
 
+CSTD = $(CSTD_GNU99)
 CFLAGS += $(CCVERBOSE) -I$(SRC)/uts/common/io/cxgbe/t4nex -I$(SRC)/uts/common/io/cxgbe/firmware \
 	  -I$(SRC)/uts/common/io/cxgbe/common -I$(SRC)/uts/common/io/cxgbe/shared
 

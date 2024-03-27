@@ -12,7 +12,7 @@
 /*
  * This file is part of the Chelsio T4/T5/T6 Ethernet driver.
  *
- * Copyright (C) 2003-2019 Chelsio Communications.  All rights reserved.
+ * Copyright (C) 2003-2021 Chelsio Communications.  All rights reserved.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -43,6 +43,8 @@
 #define CHELSIO_T5_FPGA		0xb
 #define CHELSIO_T6		0x6
 #define CHELSIO_T6_FPGA		0xc
+#define CHELSIO_T7		0x7
+#define CHELSIO_T7_FPGA		0xd
 
 /*
  * Internally we code the Chelsio T4 Family "Chip Code" as a tuple:
@@ -74,11 +76,16 @@ enum chip_type {
 	T6_A0 = CHELSIO_CHIP_CODE(CHELSIO_T6, 0),
 	T6_FIRST_REV	= T6_A0,
 	T6_LAST_REV	= T6_A0,
+
+	T7_A0 = CHELSIO_CHIP_CODE(CHELSIO_T7, 0),
+	T7_FIRST_REV	= T7_A0,
+	T7_LAST_REV	= T7_A0,
 };
 
 int is_t4(enum chip_type chip);
 int is_t5(enum chip_type chip);
 int is_t6(enum chip_type chip);
+int is_t7(enum chip_type chip);
 int is_fpga(enum chip_type chip);
 
 #endif /* __T4_CHIP_TYPE_H__ */

@@ -23,14 +23,16 @@ UTSBASE = ../../..
 FW_VERSION_T4=	1.27.1.0
 FW_VERSION_T5=	1.27.5.0
 FW_VERSION_T6=	1.27.5.0
+FW_VERSION_T7=	1.27.0.57
 
 FWDIR	= $(UTSBASE)/common/io/cxgbe/firmware
 FWFILES	= \
 	t4fw-$(FW_VERSION_T4).bin \
 	t5fw-$(FW_VERSION_T5).bin \
-	t6fw-$(FW_VERSION_T6).bin
-FWLINKS = t4fw.bin t5fw.bin t6fw.bin
-CFGFILES = t4fw_cfg.txt t5fw_cfg.txt t6fw_cfg.txt
+	t6fw-$(FW_VERSION_T6).bin \
+	t7fw-$(FW_VERSION_T7).bin
+FWLINKS = t4fw.bin t5fw.bin t6fw.bin t7fw.bin
+CFGFILES = t4fw_cfg.txt t5fw_cfg.txt t6fw_cfg.txt t7fw_cfg_fpga.txt
 
 MODULE		= cxgbe
 ROOTFIRMWARE	= \
@@ -52,6 +54,8 @@ $(ROOT_FIRMWARE_DIR)/$(MODULE)/t5fw.bin := \
 	INSLINKTARGET= t5fw-$(FW_VERSION_T5).bin
 $(ROOT_FIRMWARE_DIR)/$(MODULE)/t6fw.bin := \
 	INSLINKTARGET= t6fw-$(FW_VERSION_T6).bin
+$(ROOT_FIRMWARE_DIR)/$(MODULE)/t7fw.bin := \
+	INSLINKTARGET= t7fw-$(FW_VERSION_T7).bin
 
 #
 #	Include common targets.

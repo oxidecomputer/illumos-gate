@@ -386,25 +386,20 @@ static int dump_regs_t6(int argc, char *argv[], int start_arg, const u32 *regs)
 static int
 get_regdump(int argc, char *argv[], int start_arg, const char *iff_name)
 {
-	int rc, vers, revision, is_pcie;
-	uint32_t len, length;
-	struct t4_regdump *regs;
-
-	len = MAX(T5_REGDUMP_SIZE, T6_REGDUMP_SIZE);
-
-	regs = malloc(len + sizeof(struct t4_regdump));
-	if (!regs)
+	uint32_t len = T5_REGMAP_SIZE;
+	struct t4_regdump *regs = malloc(len + sizeof(struct t4_regdump));
+	if (regs == NULL)
 		err(1, "%s: can't allocate reg dump buffer", __func__);
 
 	regs->len = len;
 
-	rc = doit(iff_name, T4_IOCTL_REGDUMP, regs);
+	int rc = doit(iff_name, T4_IOCTL_REGDUMP, regs);
 
 	if (rc == ENOBUFS) {
-		length = regs->len;
+		len = regs->len;
 		free(regs);
 
-		regs = malloc(length + sizeof(struct t4_regdump));
+		regs = malloc(len + sizeof(struct t4_regdump));
 		if (regs == NULL)
 			err(1, "%s: can't reallocate regs buffer", __func__);
 
@@ -416,15 +411,16 @@ get_regdump(int argc, char *argv[], int start_arg, const char *iff_name)
 		errx(1, "%s: can't get register dumps", __func__);
 	}
 
-	vers = regs->version & 0x3ff;
-	revision = (regs->version >> 10) & 0x3f;
-	is_pcie = (regs->version & 0x80000000) != 0;
+	int vers = regs->version & 0x3ff;
+	int revision = (regs->version >> 10) & 0x3f;
+	int is_pcie = (regs->version & 0x80000000) != 0;
 
 	if (vers == 5) {
 		return dump_regs_t5(argc, argv, start_arg, regs->data);
 	} else if (vers == 6) {
 		return dump_regs_t6(argc, argv, start_arg, regs->data);
 	} else {
+		/* RPZ: Add T7 dump. */
 		errx(1, "unknown card type %d.%d.%d", vers, revision, is_pcie);
 	}
 

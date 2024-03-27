@@ -18,9 +18,9 @@
 <include global_zone_only_component>
 <transform file path=kernel/firmware/cxgbe/.*\.txt$ -> set preserve renamenew>
 set name=pkg.fmri value=pkg:/driver/network/cxgbe@$(PKGVERS)
-set name=pkg.summary value="Chelsio T4/T5 10/40GE NIC Driver"
+set name=pkg.summary value="Chelsio T4/T5/T6/T7 10/40/100/200/400 NIC Driver"
 set name=pkg.description \
-    value="Chelsio T4/T5 10/40 Gigabit Ethernet Adapter Driver"
+    value="Chelsio T4/T5/T6/T7 10/40/100/200/400 Gigabit Ethernet Adapter Driver"
 set name=info.classification \
     value=org.opensolaris.category.2008:Drivers/Networking
 set name=variant.arch value=i386
@@ -43,6 +43,9 @@ link path=kernel/firmware/cxgbe/t6fw.bin target=t6fw-1.27.5.0.bin
 file path=kernel/firmware/cxgbe/t6fw_cfg.txt
 file path=lib/svc/manifest/system/t6init.xml group=sys mode=0444
 file path=lib/svc/method/svc-t6init mode=0555
+file path=kernel/firmware/cxgbe/t7fw-1.27.0.57.bin
+link path=kernel/firmware/cxgbe/t7fw.bin target=t7fw-1.27.0.57.bin
+file path=kernel/firmware/cxgbe/t7fw_cfg_fpga.txt
 dir  path=usr group=sys
 dir  path=usr/lib
 dir  path=usr/lib/$(ARCH64)
@@ -163,6 +166,21 @@ driver name=t4nex perms="* 0666 root sys" clone_perms="t4nex 0666 root sys" \
     alias=pciex1425,648a \
     alias=pciex1425,648b \
     alias=pciex1425,6492 devlink=type=ddi_ctl:devctl;minor1=t4nex\tt4nex\M2
+    alias=pciex1425,6492 \
+    alias=pciex1425,7400 \
+    alias=pciex1425,7401 \
+    alias=pciex1425,7402 \
+    alias=pciex1425,7403 \
+    alias=pciex1425,7404 \
+    alias=pciex1425,7405 \
+    alias=pciex1425,7406 \
+    alias=pciex1425,7407 \
+    alias=pciex1425,7408 \
+    alias=pciex1425,7409 \
+    alias=pciex1425,740a \
+    alias=pciex1425,740b \
+    alias=pciex1425,740c \
+    alias=pciex1425,d000 devlink=type=ddi_ctl:devctl;minor1=t4nex\tt4nex\M2
 driver name=t6mfg alias=pciex1425,b000
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL

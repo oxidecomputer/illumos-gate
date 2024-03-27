@@ -9,6 +9,8 @@
  * http://www.illumos.org/license/CDDL.
  */
 
+/* RPZ: replace these regs with new t4_regs.h */
+
 /*
  * Copyright 2023 Oxide Computer Company
  */

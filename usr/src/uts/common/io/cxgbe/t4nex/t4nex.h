@@ -52,10 +52,6 @@ struct t4_reg32_cmd {
 	uint32_t value;
 };
 
-#define	T4_REGDUMP_SIZE (160 * 1024)
-#define	T6_REGDUMP_SIZE (332 * 1024)
-#define	T5_REGDUMP_SIZE (332 * 1024)
-
 struct t4_regdump {
 	uint32_t version;
 	uint32_t len;
@@ -112,6 +108,7 @@ struct t4_cim_qcfg {
 	uint32_t num_obq;
 };
 
+/* RPZ: check? */
 #define	T4_DEVLOG_SIZE	32768
 struct t4_devlog {
 	uint32_t len;

@@ -272,7 +272,7 @@ t4_port_to_media(struct port_info *pi)
 	size_t count = 0;
 
 	if (lc->link_ok != 0) {
-		speed = t4_link_fwcap_to_fwspeed(lc->link_caps);
+		speed = t4_fwcap_to_fwspeed(lc->link_caps);
 	} else {
 		return (ETHER_MEDIA_UNKNOWN);
 	}
@@ -372,9 +372,6 @@ t4_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 	struct adapter *sc = pi->adapter;
 	struct link_config *lc = &pi->link_cfg;
 
-#define	GET_STAT(name) \
-	t4_read_reg64(sc, PORT_REG(pi->tx_chan, A_MPS_PORT_STAT_##name##_L))
-
 	switch (stat) {
 	case MAC_STAT_IFSPEED:
 		if (lc->link_ok != 0) {
@@ -385,69 +382,82 @@ t4_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 		break;
 
 	case MAC_STAT_MULTIRCV:
-		*val = GET_STAT(RX_PORT_MCAST);
+		*val = T4_GET_STAT(pi, RX_PORT_MCAST);
 		break;
 
 	case MAC_STAT_BRDCSTRCV:
-		*val = GET_STAT(RX_PORT_BCAST);
+		*val = T4_GET_STAT(pi, RX_PORT_BCAST);
 		break;
 
 	case MAC_STAT_MULTIXMT:
-		*val = GET_STAT(TX_PORT_MCAST);
+		*val = T4_GET_STAT(pi, TX_PORT_MCAST);
 		break;
 
 	case MAC_STAT_BRDCSTXMT:
-		*val = GET_STAT(TX_PORT_BCAST);
+		*val = T4_GET_STAT(pi, TX_PORT_BCAST);
 		break;
 
-	case MAC_STAT_NORCVBUF:
-		*val = 0;	/* TODO should come from rxq->nomem */
+	case MAC_STAT_NORCVBUF: {
+		unsigned int bgmap = t4_get_mps_bg_map(sc, pi->port_id);
+		*val = (bgmap & 1) ?
+		    T4_GET_STAT_COM(pi, RX_BG_0_MAC_DROP_FRAME) : 0;
+		*val += (bgmap & 2) ?
+		    T4_GET_STAT_COM(pi, RX_BG_1_MAC_DROP_FRAME) : 0;
+		*val += (bgmap & 4) ?
+		    T4_GET_STAT_COM(pi, RX_BG_2_MAC_DROP_FRAME) : 0;
+		*val += (bgmap & 8) ?
+		    T4_GET_STAT_COM(pi, RX_BG_3_MAC_DROP_FRAME) : 0;
 		break;
+	}
 
 	case MAC_STAT_IERRORS:
-		*val = GET_STAT(RX_PORT_MTU_ERROR) +
-		    GET_STAT(RX_PORT_MTU_CRC_ERROR) +
-		    GET_STAT(RX_PORT_CRC_ERROR) +
-		    GET_STAT(RX_PORT_LEN_ERROR) +
-		    GET_STAT(RX_PORT_SYM_ERROR) +
-		    GET_STAT(RX_PORT_LESS_64B);
+		*val = T4_GET_STAT(pi, RX_PORT_MTU_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_MTU_CRC_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_CRC_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_LEN_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_SYM_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_LESS_64B);
 		break;
 
 	case MAC_STAT_UNKNOWNS:
 		return (ENOTSUP);
 
 	case MAC_STAT_NOXMTBUF:
-		*val = GET_STAT(TX_PORT_DROP);
+		*val = T4_GET_STAT(pi, TX_PORT_DROP);
 		break;
 
 	case MAC_STAT_OERRORS:
-		*val = GET_STAT(TX_PORT_ERROR);
+		*val = T4_GET_STAT(pi, TX_PORT_ERROR);
 		break;
 
 	case MAC_STAT_COLLISIONS:
 		return (ENOTSUP);
 
 	case MAC_STAT_RBYTES:
-		*val = GET_STAT(RX_PORT_BYTES);
+		*val = T4_GET_STAT(pi, RX_PORT_BYTES);
 		break;
 
 	case MAC_STAT_IPACKETS:
-		*val = GET_STAT(RX_PORT_FRAMES);
+		*val = T4_GET_STAT(pi, RX_PORT_FRAMES);
 		break;
 
 	case MAC_STAT_OBYTES:
-		*val = GET_STAT(TX_PORT_BYTES);
+		*val = T4_GET_STAT(pi, TX_PORT_BYTES);
 		break;
 
 	case MAC_STAT_OPACKETS:
-		*val = GET_STAT(TX_PORT_FRAMES);
+		*val = T4_GET_STAT(pi, TX_PORT_FRAMES);
 		break;
 
 	case ETHER_STAT_ALIGN_ERRORS:
 		return (ENOTSUP);
 
+		/*
+		 * RPZ: FreeBSD uses different stats for FCS depending
+		 * on speed and FEC setting.
+		 */
 	case ETHER_STAT_FCS_ERRORS:
-		*val = GET_STAT(RX_PORT_CRC_ERROR);
+		*val = T4_GET_STAT(pi, RX_PORT_CRC_ERROR);
 		break;
 
 	case ETHER_STAT_FIRST_COLLISIONS:
@@ -459,23 +469,23 @@ t4_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 		return (ENOTSUP);
 
 	case ETHER_STAT_MACXMT_ERRORS:
-		*val = GET_STAT(TX_PORT_ERROR);
+		*val = T4_GET_STAT(pi, TX_PORT_ERROR);
 		break;
 
 	case ETHER_STAT_CARRIER_ERRORS:
 		return (ENOTSUP);
 
 	case ETHER_STAT_TOOLONG_ERRORS:
-		*val = GET_STAT(RX_PORT_MTU_ERROR);
+		*val = T4_GET_STAT(pi, RX_PORT_MTU_ERROR);
 		break;
 
 	case ETHER_STAT_MACRCV_ERRORS:
-		*val = GET_STAT(RX_PORT_MTU_ERROR) +
-		    GET_STAT(RX_PORT_MTU_CRC_ERROR) +
-		    GET_STAT(RX_PORT_CRC_ERROR) +
-		    GET_STAT(RX_PORT_LEN_ERROR) +
-		    GET_STAT(RX_PORT_SYM_ERROR) +
-		    GET_STAT(RX_PORT_LESS_64B);
+		*val = T4_GET_STAT(pi, RX_PORT_MTU_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_MTU_CRC_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_CRC_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_LEN_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_SYM_ERROR) +
+		    T4_GET_STAT(pi, RX_PORT_LESS_64B);
 		break;
 
 	case ETHER_STAT_XCVR_ADDR:
@@ -483,6 +493,14 @@ t4_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 		return (ENOTSUP);
 	case ETHER_STAT_XCVR_INUSE:
 		*val = t4_port_to_media(pi);
+		break;
+
+	case ETHER_STAT_CAP_400GFDX:
+		*val = !!(lc->pcaps & FW_PORT_CAP32_SPEED_400G);
+		break;
+
+	case ETHER_STAT_CAP_200GFDX:
+		*val = !!(lc->pcaps & FW_PORT_CAP32_SPEED_200G);
 		break;
 
 	case ETHER_STAT_CAP_100GFDX:
@@ -570,6 +588,18 @@ t4_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 			*val = !!(lc->admin_caps & FW_PORT_CAP32_FC_TX);
 		break;
 
+		/* RPZ: I thought admin_caps are what we requested and
+		 * ADV is what the system decided to advertise? They
+		 * are, come back to this later and maybe file a bug.
+		 */
+	case ETHER_STAT_ADV_CAP_400GFDX:
+		*val = !!(lc->admin_caps & FW_PORT_CAP32_SPEED_400G);
+		break;
+
+	case ETHER_STAT_ADV_CAP_200GFDX:
+		*val = !!(lc->admin_caps & FW_PORT_CAP32_SPEED_200G);
+		break;
+
 	case ETHER_STAT_ADV_CAP_100GFDX:
 		*val = !!(lc->admin_caps & FW_PORT_CAP32_SPEED_100G);
 		break;
@@ -627,6 +657,20 @@ t4_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 			*val = !!(lc->lpacaps & FW_PORT_CAP32_802_3_PAUSE);
 		else
 			*val = !!(lc->lpacaps & FW_PORT_CAP32_FC_TX);
+		break;
+
+	case ETHER_STAT_LP_CAP_400GFDX:
+		if (!(lc->acaps & FW_PORT_CAP32_ANEG))
+			return (ENOTSUP);
+
+		*val = !!(lc->lpacaps & FW_PORT_CAP32_SPEED_400G);
+		break;
+
+	case ETHER_STAT_LP_CAP_200GFDX:
+		if (!(lc->acaps & FW_PORT_CAP32_ANEG))
+			return (ENOTSUP);
+
+		*val = !!(lc->lpacaps & FW_PORT_CAP32_SPEED_200G);
 		break;
 
 	case ETHER_STAT_LP_CAP_100GFDX:
@@ -714,7 +758,6 @@ t4_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 	default:
 		return (ENOTSUP);
 	}
-#undef GET_STAT
 
 	return (0);
 }
@@ -1282,7 +1325,7 @@ t4_mac_link_caps_to_flowctrl(fw_port_cap32_t caps, link_flowctrl_t *fc)
 		*fc = LINK_FLOWCTRL_NONE;
 }
 
-static int
+static void
 t4_mac_flowctrl_to_link_caps(struct port_info *pi, link_flowctrl_t fc,
     fw_port_cap32_t *new_caps)
 {
@@ -1305,7 +1348,7 @@ t4_mac_flowctrl_to_link_caps(struct port_info *pi, link_flowctrl_t fc,
 	if (pi->link_cfg.admin_caps & FW_PORT_CAP32_ANEG)
 		pause |= PAUSE_AUTONEG;
 
-	return (t4_link_set_pause(pi, pause, new_caps));
+	t4_link_set_pause(pi, pause, new_caps);
 }
 
 static link_fec_t
@@ -1372,14 +1415,14 @@ t4_mac_fec_cap_to_link_caps(struct port_info *pi, link_fec_t v,
 	}
 
 	if (v != 0)
-		return (-1);
+		return (EINVAL);
 
 	ASSERT3S(fec, !=, 0);
 
 	fec |= FEC_FORCE;
 
 out:
-	return (t4_link_set_fec(pi, fec, new_caps));
+	return (-t4_link_set_fec(pi, fec, new_caps));
 }
 
 /* ARGSUSED */
@@ -1397,7 +1440,7 @@ t4_mc_setprop(void *arg, const char *name, mac_prop_id_t id, uint_t size,
 
 	switch (id) {
 	case MAC_PROP_AUTONEG:
-		rc = t4_link_set_autoneg(pi, v8, &new_caps);
+		rc = -t4_link_set_autoneg(pi, v8, &new_caps);
 		relink = 1;
 		break;
 
@@ -1412,8 +1455,8 @@ t4_mc_setprop(void *arg, const char *name, mac_prop_id_t id, uint_t size,
 		break;
 
 	case MAC_PROP_FLOWCTRL:
-		rc = t4_mac_flowctrl_to_link_caps(pi,
-		    *(const link_flowctrl_t *)val, &new_caps);
+		t4_mac_flowctrl_to_link_caps(pi, *(const link_flowctrl_t *)val,
+		    &new_caps);
 		relink = 1;
 		break;
 
@@ -1423,44 +1466,62 @@ t4_mc_setprop(void *arg, const char *name, mac_prop_id_t id, uint_t size,
 		relink = 1;
 		break;
 
+		/*
+		 * RPZ: Should the various 400/200 props actually
+		 * check for T7, otherwise return ENOTSUP? Same goes
+		 * for older chips: should we instead limit the
+		 * properties exposed based on the chip in play?
+		 */
+	case MAC_PROP_EN_400GFDX_CAP:
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_400G, v8,
+		    &new_caps);
+		relink = 1;
+		break;
+
+	case MAC_PROP_EN_200GFDX_CAP:
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_200G, v8,
+		    &new_caps);
+		relink = 1;
+		break;
+
 	case MAC_PROP_EN_100GFDX_CAP:
-		rc = t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_100G, v8,
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_100G, v8,
 		    &new_caps);
 		relink = 1;
 		break;
 
 	case MAC_PROP_EN_50GFDX_CAP:
-		rc = t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_50G, v8,
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_50G, v8,
 		    &new_caps);
 		relink = 1;
 		break;
 
 	case MAC_PROP_EN_40GFDX_CAP:
-		rc = t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_40G, v8,
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_40G, v8,
 		    &new_caps);
 		relink = 1;
 		break;
 
 	case MAC_PROP_EN_25GFDX_CAP:
-		rc = t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_25G, v8,
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_25G, v8,
 		    &new_caps);
 		relink = 1;
 		break;
 
 	case MAC_PROP_EN_10GFDX_CAP:
-		rc = t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_10G, v8,
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_10G, v8,
 		    &new_caps);
 		relink = 1;
 		break;
 
 	case MAC_PROP_EN_1000FDX_CAP:
-		rc = t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_1G, v8,
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_1G, v8,
 		    &new_caps);
 		relink = 1;
 		break;
 
 	case MAC_PROP_EN_100FDX_CAP:
-		rc = t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_100M, v8,
+		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_100M, v8,
 		    &new_caps);
 		relink = 1;
 		break;
@@ -1560,6 +1621,22 @@ t4_mc_getprop(void *arg, const char *name, mac_prop_id_t id, uint_t size,
 
 	case MAC_PROP_EN_FEC_CAP:
 		t4_mac_admin_caps_to_fec_cap(lc->admin_caps, val);
+		break;
+
+	case MAC_PROP_ADV_400GFDX_CAP:
+		*u = !!(lc->link_caps & FW_PORT_CAP32_SPEED_400G);
+		break;
+
+	case MAC_PROP_EN_400GFDX_CAP:
+		*u = !!(lc->admin_caps & FW_PORT_CAP32_SPEED_400G);
+		break;
+
+	case MAC_PROP_ADV_200GFDX_CAP:
+		*u = !!(lc->link_caps & FW_PORT_CAP32_SPEED_200G);
+		break;
+
+	case MAC_PROP_EN_200GFDX_CAP:
+		*u = !!(lc->admin_caps & FW_PORT_CAP32_SPEED_200G);
 		break;
 
 	case MAC_PROP_ADV_100GFDX_CAP:
@@ -1666,6 +1743,20 @@ t4_mc_propinfo(void *arg, const char *name, mac_prop_id_t id,
 		mac_prop_info_set_default_fec(ph, LINK_FEC_AUTO);
 		break;
 
+	case MAC_PROP_EN_400GFDX_CAP:
+		if (lc->pcaps & FW_PORT_CAP32_SPEED_400G)
+			mac_prop_info_set_default_uint8(ph, 1);
+		else
+			mac_prop_info_set_perm(ph, MAC_PROP_PERM_READ);
+		break;
+
+	case MAC_PROP_EN_200GFDX_CAP:
+		if (lc->pcaps & FW_PORT_CAP32_SPEED_200G)
+			mac_prop_info_set_default_uint8(ph, 1);
+		else
+			mac_prop_info_set_perm(ph, MAC_PROP_PERM_READ);
+		break;
+
 	case MAC_PROP_EN_100GFDX_CAP:
 		if (lc->pcaps & FW_PORT_CAP32_SPEED_100G)
 			mac_prop_info_set_default_uint8(ph, 1);
@@ -1715,6 +1806,8 @@ t4_mc_propinfo(void *arg, const char *name, mac_prop_id_t id,
 			mac_prop_info_set_perm(ph, MAC_PROP_PERM_READ);
 		break;
 
+	case MAC_PROP_ADV_400GFDX_CAP:
+	case MAC_PROP_ADV_200GFDX_CAP:
 	case MAC_PROP_ADV_100GFDX_CAP:
 	case MAC_PROP_ADV_50GFDX_CAP:
 	case MAC_PROP_ADV_40GFDX_CAP:

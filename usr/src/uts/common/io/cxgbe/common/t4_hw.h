@@ -39,17 +39,22 @@ enum {
 	NTX_SCHED       = 8,     /* # of HW Tx scheduling queues */
 	PM_NSTATS       = 5,     /* # of PM stats */
 	T6_PM_NSTATS    = 7,     /* # of PM stats in T6 */
+	T7_PM_RX_CACHE_NSTATS = 27, /* # of PM Rx Cache stats in T7 */
 	MBOX_LEN        = 64,    /* mailbox size in bytes */
 	TRACE_LEN       = 112,   /* length of trace data and mask */
 	FILTER_OPT_LEN  = 36,    /* filter tuple width of optional components */
 	UDBS_SEG_SIZE   = 128,   /* segment size for BAR2 user doorbells */
+	MAX_UP_CORES = 8, /* Max # of uP cores that can be enabled */
 };
 
 enum {
 	CIM_NUM_IBQ    = 6,     /* # of CIM IBQs */
+	CIM_NUM_IBQ_T7 = 16,    /* # of CIM IBQs for T7 */
 	CIM_NUM_OBQ    = 6,     /* # of CIM OBQs */
 	CIM_NUM_OBQ_T5 = 8,     /* # of CIM OBQs for T5 adapter */
-	CIMLA_SIZE     = 2048,  /* # of 32-bit words in CIM LA */
+	CIM_NUM_OBQ_T7 = 16,    /* # of CIM OBQs for T7 adapter */
+	CIMLA_SIZE     = (256 * 8),  /* 256 rows * ceil(235/32) 32-bit words */
+	CIMLA_SIZE_T6  = (256 * 10), /* 256 rows * ceil(311/32) 32-bit words */
 	CIM_PIFLA_SIZE = 64,    /* # of 192-bit words in CIM PIF LA */
 	CIM_MALA_SIZE  = 64,    /* # of 160-bit words in CIM MA LA */
 	CIM_IBQ_SIZE   = 128,   /* # of 128-bit words in a CIM IBQ */
@@ -198,94 +203,94 @@ struct pagepod {
 #define FLASH_START(start)	((start) * SF_SEC_SIZE)
 #define FLASH_MAX_SIZE(nsecs)	((nsecs) * SF_SEC_SIZE)
 
-enum {
+enum t4_flash_loc {
 	/*
 	 * Various Expansion-ROM boot images, etc.
 	 */
-	FLASH_EXP_ROM_START_SEC = 0,
-	FLASH_EXP_ROM_NSECS = 6,
-	FLASH_EXP_ROM_START = FLASH_START(FLASH_EXP_ROM_START_SEC),
-	FLASH_EXP_ROM_MAX_SIZE = FLASH_MAX_SIZE(FLASH_EXP_ROM_NSECS),
+	FLASH_LOC_EXP_ROM = 0,
 
 	/*
 	 * iSCSI Boot Firmware Table (iBFT) and other driver-related
 	 * parameters ...
 	 */
-	FLASH_IBFT_START_SEC = 6,
-	FLASH_IBFT_NSECS = 1,
-	FLASH_IBFT_START = FLASH_START(FLASH_IBFT_START_SEC),
-	FLASH_IBFT_MAX_SIZE = FLASH_MAX_SIZE(FLASH_IBFT_NSECS),
+	FLASH_LOC_IBFT,
 
 	/*
 	 * Boot configuration data.
 	 */
-	FLASH_BOOTCFG_START_SEC = 7,
-	FLASH_BOOTCFG_NSECS = 1,
-	FLASH_BOOTCFG_START = FLASH_START(FLASH_BOOTCFG_START_SEC),
-	FLASH_BOOTCFG_MAX_SIZE = FLASH_MAX_SIZE(FLASH_BOOTCFG_NSECS),
+	FLASH_LOC_BOOTCFG,
 
 	/*
 	 * Location of firmware image in FLASH.
 	 */
-	FLASH_FW_START_SEC = 8,
-	FLASH_FW_NSECS = 16,
-	FLASH_FW_START = FLASH_START(FLASH_FW_START_SEC),
-	FLASH_FW_MAX_SIZE = FLASH_MAX_SIZE(FLASH_FW_NSECS),
- 
+	FLASH_LOC_FW,
+
 	/*
 	 * Location of bootstrap firmware image in FLASH.
 	 */
-	FLASH_FWBOOTSTRAP_START_SEC = 27,
-	FLASH_FWBOOTSTRAP_NSECS = 1,
-	FLASH_FWBOOTSTRAP_START = FLASH_START(FLASH_FWBOOTSTRAP_START_SEC),
-	FLASH_FWBOOTSTRAP_MAX_SIZE = FLASH_MAX_SIZE(FLASH_FWBOOTSTRAP_NSECS),
+	FLASH_LOC_FWBOOTSTRAP,
 
 	/*
 	 * iSCSI persistent/crash information.
 	 */
-	FLASH_ISCSI_CRASH_START_SEC = 29,
-	FLASH_ISCSI_CRASH_NSECS = 1,
-	FLASH_ISCSI_CRASH_START = FLASH_START(FLASH_ISCSI_CRASH_START_SEC),
-	FLASH_ISCSI_CRASH_MAX_SIZE = FLASH_MAX_SIZE(FLASH_ISCSI_CRASH_NSECS),
+	FLASH_LOC_ISCSI_CRASH,
 
 	/*
 	 * FCoE persistent/crash information.
 	 */
-	FLASH_FCOE_CRASH_START_SEC = 30,
-	FLASH_FCOE_CRASH_NSECS = 1,
-	FLASH_FCOE_CRASH_START = FLASH_START(FLASH_FCOE_CRASH_START_SEC),
-	FLASH_FCOE_CRASH_MAX_SIZE = FLASH_MAX_SIZE(FLASH_FCOE_CRASH_NSECS),
+	FLASH_LOC_FCOE_CRASH,
 
 	/*
 	 * Location of Firmware Configuration File in FLASH.
 	 */
-	FLASH_CFG_START_SEC = 31,
-	FLASH_CFG_NSECS = 1,
-	FLASH_CFG_START = FLASH_START(FLASH_CFG_START_SEC),
-	FLASH_CFG_MAX_SIZE = FLASH_MAX_SIZE(FLASH_CFG_NSECS),
+	FLASH_LOC_CFG,
 
 	/*
-	 * We don't support FLASH devices which can't support the full
-	 * standard set of sections which we need for normal operations.
+	 * CUDBG chip dump.
 	 */
-	FLASH_MIN_SIZE = FLASH_CFG_START + FLASH_CFG_MAX_SIZE,
+	FLASH_LOC_CUDBG,
 
 	/*
-	 * Sectors 32-63 for CUDBG.
+	 * FW chip dump.
 	 */
-	FLASH_CUDBG_START_SEC = 32,
-	FLASH_CUDBG_NSECS = 32,
-	FLASH_CUDBG_START = FLASH_START(FLASH_CUDBG_START_SEC),
-	FLASH_CUDBG_MAX_SIZE = FLASH_MAX_SIZE(FLASH_CUDBG_NSECS),
+	FLASH_LOC_CHIP_DUMP,
 
 	/*
-	 * Size of defined FLASH regions.
+	 * DPU boot information store.
 	 */
-	FLASH_END_SEC = 64,
+	FLASH_LOC_DPU_BOOT,
+
+	/*
+	 * DPU peristent information store.
+	 */
+	FLASH_LOC_DPU_AREA,
+
+	/*
+	 * VPD location.
+	 */
+	FLASH_LOC_VPD,
+
+	/*
+	 * Helper to retrieve info that spans the entire Boot related area.
+	 */
+	FLASH_LOC_BOOT_AREA,
+
+	/*
+	 * Helper to determine minimum standard set of sections needed for
+	 * normal operations.
+	 */
+	FLASH_LOC_MIN_SIZE,
+
+	/*
+	 * End of FLASH regions.
+	 */
+	FLASH_LOC_END
 };
 
-#undef FLASH_START
-#undef FLASH_MAX_SIZE
+struct t4_flash_loc_entry {
+	u16 start_sec;
+	u16 nsecs;
+};
 
 #define S_SGE_TIMESTAMP 0
 #define M_SGE_TIMESTAMP 0xfffffffffffffffULL

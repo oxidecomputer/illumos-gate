@@ -4123,6 +4123,7 @@ struct fw_crypto_lookaside_wr {
  * reply before declaring the firmware as dead/unreachable ...
  */
 #define FW_CMD_MAX_TIMEOUT	10000
+#define	FW_CMD_MAX_TIMEOUT_FPGA	90000
 
 /*
  * If a host driver does a HELLO and discovers that there's already a MASTER
@@ -4731,7 +4732,7 @@ struct fw_caps_config_cmd {
 	__be16 nbmcaps;
 	__be16 linkcaps;
 	__be16 switchcaps;
-	__be16 r3;
+	__be16 nvmecaps;
 	__be16 niccaps;
 	__be16 toecaps;
 	__be16 rdmacaps;
@@ -4851,6 +4852,7 @@ enum fw_params_param_dev {
 	FW_PARAMS_PARAM_DEV_VF_TRVLAN = 0x2C,
 	FW_PARAMS_PARAM_DEV_TCB_CACHE_FLUSH = 0x2D,
 	FW_PARAMS_PARAM_DEV_FILTER = 0x2E,
+	FW_PARAMS_PARAM_DEV_TX_TPCHMAP	= 0x3A,
 };
 
 /*
@@ -4980,6 +4982,18 @@ enum fw_params_param_dmaq {
 	FW_PARAMS_PARAM_DMAQ_CONM_CTXT	= 0x20,
 	FW_PARAMS_PARAM_DMAQ_FLM_DCA	= 0x30
 };
+
+#define S_T7_DMAQ_CONM_CTXT_CNGTPMODE 0
+#define M_T7_DMAQ_CONM_CTXT_CNGTPMODE 0x3
+#define V_T7_DMAQ_CONM_CTXT_CNGTPMODE(x)  ((x) << S_T7_DMAQ_CONM_CTXT_CNGTPMODE)
+#define G_T7_DMAQ_CONM_CTXT_CNGTPMODE(x)  \
+	(((x) >> S_T7_DMAQ_CONM_CTXT_CNGTPMODE) & M_T7_DMAQ_CONM_CTXT_CNGTPMODE)
+
+#define S_T7_DMAQ_CONM_CTXT_CH_VEC 2
+#define M_T7_DMAQ_CONM_CTXT_CH_VEC 0xf
+#define V_T7_DMAQ_CONM_CTXT_CH_VEC(x)  ((x) << S_T7_DMAQ_CONM_CTXT_CH_VEC)
+#define G_T7_DMAQ_CONM_CTXT_CH_VEC(x)  \
+	(((x) >> S_T7_DMAQ_CONM_CTXT_CH_VEC) & M_T7_DMAQ_CONM_CTXT_CH_VEC)
 
 /*
  * chnet parameters
@@ -7808,6 +7822,7 @@ enum fw_port_module_type {
 	FW_PORT_MOD_TYPE_TWINAX_PASSIVE	= 0x4,
 	FW_PORT_MOD_TYPE_TWINAX_ACTIVE	= 0x5,
 	FW_PORT_MOD_TYPE_LRM		= 0x6,
+	FW_PORT_MOD_TYPE_LR_SIMPLEX	= 0x7,
 	FW_PORT_MOD_TYPE_ERROR		= M_FW_PORT_CMD_MODTYPE - 3,
 	FW_PORT_MOD_TYPE_UNKNOWN	= M_FW_PORT_CMD_MODTYPE - 2,
 	FW_PORT_MOD_TYPE_NOTSUPPORTED	= M_FW_PORT_CMD_MODTYPE - 1,
@@ -8848,7 +8863,9 @@ struct fw_devlog_cmd {
 	__u8   r2[7];
 	__be32 memtype_devlog_memaddr16_devlog;
 	__be32 memsize_devlog;
-	__be32 r3[2];
+	__u8   num_devlog;
+	__u8   r3[3];
+	__be32 r4;
 };
 
 #define S_FW_DEVLOG_CMD_MEMTYPE_DEVLOG	28
@@ -9839,8 +9856,15 @@ enum pcie_fw_eval {
  */
 #define PCIE_FW_PF_DEVLOG		7
 
+#define S_PCIE_FW_PF_DEVLOG_COUNT_MSB	31
+#define M_PCIE_FW_PF_DEVLOG_COUNT_MSB	0x1
+#define V_PCIE_FW_PF_DEVLOG_COUNT_MSB(x) \
+	((x) << S_PCIE_FW_PF_DEVLOG_COUNT_MSB)
+#define G_PCIE_FW_PF_DEVLOG_COUNT_MSB(x) \
+	(((x) >> S_PCIE_FW_PF_DEVLOG_COUNT_MSB) & M_PCIE_FW_PF_DEVLOG_COUNT_MSB)
+
 #define S_PCIE_FW_PF_DEVLOG_NENTRIES128	28
-#define M_PCIE_FW_PF_DEVLOG_NENTRIES128	0xf
+#define M_PCIE_FW_PF_DEVLOG_NENTRIES128	0x7
 #define V_PCIE_FW_PF_DEVLOG_NENTRIES128(x) \
 	((x) << S_PCIE_FW_PF_DEVLOG_NENTRIES128)
 #define G_PCIE_FW_PF_DEVLOG_NENTRIES128(x) \
@@ -9853,8 +9877,15 @@ enum pcie_fw_eval {
 #define G_PCIE_FW_PF_DEVLOG_ADDR16(x) \
 	(((x) >> S_PCIE_FW_PF_DEVLOG_ADDR16) & M_PCIE_FW_PF_DEVLOG_ADDR16)
 
+#define S_PCIE_FW_PF_DEVLOG_COUNT_LSB	3
+#define M_PCIE_FW_PF_DEVLOG_COUNT_LSB	0x1
+#define V_PCIE_FW_PF_DEVLOG_COUNT_LSB(x) \
+	((x) << S_PCIE_FW_PF_DEVLOG_COUNT_LSB)
+#define G_PCIE_FW_PF_DEVLOG_COUNT_LSB(x) \
+	(((x) >> S_PCIE_FW_PF_DEVLOG_COUNT_LSB) & M_PCIE_FW_PF_DEVLOG_COUNT_LSB)
+
 #define S_PCIE_FW_PF_DEVLOG_MEMTYPE	0
-#define M_PCIE_FW_PF_DEVLOG_MEMTYPE	0xf
+#define M_PCIE_FW_PF_DEVLOG_MEMTYPE	0x7
 #define V_PCIE_FW_PF_DEVLOG_MEMTYPE(x)	((x) << S_PCIE_FW_PF_DEVLOG_MEMTYPE)
 #define G_PCIE_FW_PF_DEVLOG_MEMTYPE(x) \
 	(((x) >> S_PCIE_FW_PF_DEVLOG_MEMTYPE) & M_PCIE_FW_PF_DEVLOG_MEMTYPE)
@@ -9891,7 +9922,8 @@ struct fw_hdr {
 enum fw_hdr_chip {
 	FW_HDR_CHIP_T4,
 	FW_HDR_CHIP_T5,
-	FW_HDR_CHIP_T6
+	FW_HDR_CHIP_T6,
+	FW_HDR_CHIP_T7
 };
 
 #define S_FW_HDR_FW_VER_MAJOR	24
@@ -9955,6 +9987,17 @@ enum {
 	T6FW_HDR_INTFVER_ISCSI	= 0x00,
 	T6FW_HDR_INTFVER_FCOEPDU= 0x00,
 	T6FW_HDR_INTFVER_FCOE	= 0x00,
+
+	/* T7
+	 */
+	T7FW_HDR_INTFVER_NIC	= 0x00,
+	T7FW_HDR_INTFVER_VNIC	= 0x00,
+	T7FW_HDR_INTFVER_OFLD	= 0x00,
+	T7FW_HDR_INTFVER_RI	= 0x00,
+	T7FW_HDR_INTFVER_ISCSIPDU= 0x00,
+	T7FW_HDR_INTFVER_ISCSI	= 0x00,
+	T7FW_HDR_INTFVER_FCOEPDU= 0x00,
+	T7FW_HDR_INTFVER_FCOE	= 0x00,
 };
 
 enum {

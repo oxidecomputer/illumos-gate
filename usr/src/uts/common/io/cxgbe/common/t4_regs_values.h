@@ -12,7 +12,7 @@
 /*
  * This file is part of the Chelsio T4/T5/T6 support code.
  *
- * Copyright (C) 2003-2019 Chelsio Communications.  All rights reserved.
+ * Copyright (C) 2003-2021 Chelsio Communications.  All rights reserved.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -262,6 +262,7 @@
 
 #define X_WINDOW_SHIFT			10
 #define X_PCIEOFST_SHIFT		10
+#define X_T7_MEMOFST_SHIFT		4
 
 /*
  * TP definitions.
@@ -277,6 +278,10 @@
 #define S_FT_FIRST			S_FCOE
 #define S_FT_LAST			S_FRAGMENTATION
 
+#define S_T7_FT_FIRST			S_IPSECIDX
+#define S_T7_FT_LAST			S_TCPFLAGS
+
+#define W_FT_IPSECIDX			12
 #define W_FT_FCOE			1
 #define W_FT_PORT			3
 #define W_FT_VNIC_ID			17
@@ -287,6 +292,9 @@
 #define W_FT_MACMATCH			9
 #define W_FT_MPSHITTYPE			3
 #define W_FT_FRAGMENTATION		1
+#define W_FT_ROCE			1
+#define W_FT_SYNONLY			1
+#define W_FT_TCPFLAGS			12
 
 /*
  * Some of the Compressed Filter Tuple fields have internal structure.  These

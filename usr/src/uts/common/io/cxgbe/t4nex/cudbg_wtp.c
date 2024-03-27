@@ -594,6 +594,7 @@ t5_wtp_data(struct cudbg_init *pdbg_init,
 								     */
 	}
 	for (i = 0; i < 4; i++) {
+		/* RPZ: do we need to update uses of T5_PORT0_REG for T7? */
 		value = t4_read_reg(padap,
 				(T5_PORT0_REG(A_MPS_PORT_STAT_TX_PORT_DROP_L) +
 				(i * T5_PORT_STRIDE)));

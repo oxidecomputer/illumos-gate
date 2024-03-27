@@ -45,10 +45,9 @@
 
 #define	CH_MSG(sc, level, category, fmt, ...)	do {} while (0)
 #ifdef DEBUG
-#define	CH_DBG(sc, category, fmt, ...)	\
-	cxgb_printf(sc->dip, CE_NOTE, ##__VA_ARGS__)
+#define	CH_DBG(sc, ...)	cxgb_printf(sc->dip, CE_NOTE, ##__VA_ARGS__)
 #else
-#define	CH_DBG(sc, category, fmt, ...)		do {} while (0)
+#define	CH_DBG(sc, ...)	do {} while (0)
 #endif
 
 extern int cxgb_printf(dev_info_t *dip, int level, char *f, ...);

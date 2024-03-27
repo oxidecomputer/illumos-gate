@@ -50,9 +50,13 @@
 #include "common/common.h"
 #include "common/t4_msg.h"
 #include "common/t4_regs.h"
+#include "common/t4_regs_values.h"
 #include "common/t4_extra_regs.h"
 
 static void *t4_soft_state;
+
+/* RPZ: Set to non-zero for extra debug. */
+int rpz_debug = 1;
 
 static kmutex_t t4_adapter_list_lock;
 static list_t t4_adapter_list;
@@ -137,6 +141,9 @@ t4_devo_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **rp)
 	return (DDI_SUCCESS);
 }
 
+#define	T6_FPGA	0xa000
+#define	T7_FPGA	0xd000
+
 static int
 t4_devo_probe(dev_info_t *dip)
 {
@@ -157,7 +164,7 @@ t4_devo_probe(dev_info_t *dip)
 	ddi_prop_free(reg);
 
 	/* Prevent driver attachment on any PF except 0 on the FPGA */
-	if (id == 0xa000 && pf != 0)
+	if ((id == T6_FPGA || id == T7_FPGA) && pf != 0)
 		return (DDI_PROBE_FAILURE);
 
 	return (DDI_PROBE_DONTCARE);
@@ -237,6 +244,7 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto done;
 	}
 
+	/* RPZ: Do we need to deal with this old TODO? */
 	/* TODO: Set max read request to 4K */
 
 	/*
@@ -296,6 +304,11 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		}
 	}
 
+	unsigned int chip_ver = CHELSIO_CHIP_VERSION(sc->params.chip);
+	/* RPZ: temporary */
+	CH_DBG(sc, "chip version: %u (FPGA: %d) v17", chip_ver,
+	    is_fpga(sc->params.chip));
+
 	/*
 	 * Do this really early.  Note that minor number = instance.
 	 */
@@ -336,6 +349,7 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		}
 	}
 
+	/* RPZ: ummmm, is post_init supposed to be called twice? */
 	rc = get_params__post_init(sc);
 	if (rc != 0)
 		goto done; /* error message displayed already */
@@ -981,6 +995,9 @@ prep_firmware(struct adapter *sc)
 	case CHELSIO_T6:
 		fw_file = "t6fw.bin";
 		break;
+	case CHELSIO_T7:
+		fw_file = "t7fw.bin";
+		break;
 	default:
 		cxgb_printf(sc->dip, CE_WARN, "Adapter type not supported\n");
 		return (EINVAL);
@@ -1000,10 +1017,12 @@ prep_firmware(struct adapter *sc)
 		return (EINVAL);
 	}
 
-	if (fw_size > FLASH_FW_MAX_SIZE) {
+	int fw_maxsz = t4_flash_location_size(sc, FLASH_LOC_FW);
+
+	if (fw_size > fw_maxsz) {
 		cxgb_printf(sc->dip, CE_WARN,
 		    "%s is too large (%ld bytes, max allowed is %ld)\n",
-		    fw_file, fw_size, FLASH_FW_MAX_SIZE);
+		    fw_file, fw_size, fw_maxsz);
 		firmware_close(fw_hdl);
 		return (EFBIG);
 	}
@@ -1209,6 +1228,10 @@ upload_config_file(struct adapter *sc, uint32_t *mt, uint32_t *ma)
 	case CHELSIO_T6:
 		cfg_file = "t6fw_cfg.txt";
 		break;
+	case CHELSIO_T7:
+		/* RPZ: For now we just support FPGA. */
+		cfg_file = "t7fw_cfg_fpga.txt";
+		break;
 	default:
 		cxgb_printf(sc->dip, CE_WARN, "Invalid Adapter detected\n");
 		return (EINVAL);
@@ -1227,10 +1250,19 @@ upload_config_file(struct adapter *sc, uint32_t *mt, uint32_t *ma)
 	 */
 	cflen &= ~3;
 
-	if (cflen > FLASH_CFG_MAX_SIZE) {
+	/*
+	 * RPZ: I'm using the new flash code to determine CFG size,
+	 * but the rest is unchanged. The Linux common code has an
+	 * entirely different method for loading the config file. We
+	 * may want to use it, but I'm going to wait to see what they
+	 * do in the latest FreeBSD drop.
+	 */
+	int cfmaxsz = t4_flash_location_size(sc, FLASH_LOC_CFG);
+
+	if (cflen > cfmaxsz) {
 		cxgb_printf(sc->dip, CE_WARN,
-		    "config file too long (%d, max allowed is %d).  ",
-		    cflen, FLASH_CFG_MAX_SIZE);
+		    "config file too long (%d, max allowed is %d).  ", cflen,
+		    cfmaxsz);
 		firmware_close(fw_hdl);
 		return (EFBIG);
 	}
@@ -1311,11 +1343,22 @@ partition_resources(struct adapter *sc)
 	}
 	sc->cfcsum = cfcsum;
 
-	/* TODO: Need to configure this correctly */
+#ifdef TCP_OFFLOAD_ENABLE
 	caps.toecaps = htons(FW_CAPS_CONFIG_TOE);
+#else
+	/*
+	 * By disabling all offload caps we allow the firmware to
+	 * optimize the hardware configuration for "pure NIC"
+	 * usage.
+	 */
+	caps.toecaps = 0;
+	caps.niccaps ^= htons(FW_CAPS_CONFIG_NIC_ETHOFLD);
+#endif
 	caps.iscsicaps = 0;
 	caps.rdmacaps = 0;
 	caps.fcoecaps = 0;
+	caps.nvmecaps = 0;
+	caps.cryptocaps = 0;
 	/* TODO: Disable VNIC cap for now */
 	caps.niccaps ^= htons(FW_CAPS_CONFIG_NIC_VM);
 
@@ -1331,6 +1374,7 @@ partition_resources(struct adapter *sc)
 
 	return (0);
 }
+
 
 /*
  * Tweak configuration based on module parameters, etc.  Most of these have
@@ -1357,6 +1401,40 @@ adap__pre_init_tweaks(struct adapter *sc)
 	t4_set_reg_field(sc, A_SGE_CONTROL, V_PKTSHIFT(M_PKTSHIFT),
 	    V_PKTSHIFT(rx_dma_offset));
 
+#ifdef DEBUG
+	unsigned int sge_hps = t4_read_reg(sc, A_SGE_HOST_PAGE_SIZE);
+	CH_DBG(sc, "HOSTPAGESIZEPF0: 0x%x", G_HOSTPAGESIZEPF0(sge_hps));
+	CH_DBG(sc, "HOSTPAGESIZEPF1: 0x%x", G_HOSTPAGESIZEPF1(sge_hps));
+	CH_DBG(sc, "HOSTPAGESIZEPF2: 0x%x", G_HOSTPAGESIZEPF2(sge_hps));
+	CH_DBG(sc, "HOSTPAGESIZEPF3: 0x%x", G_HOSTPAGESIZEPF3(sge_hps));
+	CH_DBG(sc, "HOSTPAGESIZEPF4: 0x%x", G_HOSTPAGESIZEPF4(sge_hps));
+	CH_DBG(sc, "HOSTPAGESIZEPF5: 0x%x", G_HOSTPAGESIZEPF5(sge_hps));
+	CH_DBG(sc, "HOSTPAGESIZEPF6: 0x%x", G_HOSTPAGESIZEPF6(sge_hps));
+	CH_DBG(sc, "HOSTPAGESIZEPF7: 0x%x", G_HOSTPAGESIZEPF7(sge_hps));
+
+	unsigned int sge_ctl = t4_read_reg(sc, A_SGE_CONTROL);
+	CH_DBG(sc, "INGPADBOUNDARY: 0x%x", G_INGPADBOUNDARY(sge_ctl));
+
+	unsigned int esps = (sge_ctl >> S_EGRSTATUSPAGESIZE) & 0x1;
+	CH_DBG(sc, "EGRSTATUSPAGESIZE: 0x%x", esps);
+
+	if (CHELSIO_CHIP_VERSION(sc->params.chip) > CHELSIO_T4) {
+		unsigned int sge_ctl2 = t4_read_reg(sc, A_SGE_CONTROL2);
+
+		CH_DBG(sc, "INGPACKBOUNDARY: 0x%x",
+		    G_INGPACKBOUNDARY(sge_ctl2));
+	}
+
+	unsigned int bs0 = t4_read_reg(sc, A_SGE_FL_BUFFER_SIZE0);
+	CH_DBG(sc, "A_SGE_FL_BUFFER_SIZE0: 0x%x", bs0);
+
+	unsigned int bs2 = t4_read_reg(sc, A_SGE_FL_BUFFER_SIZE2);
+	CH_DBG(sc, "A_SGE_FL_BUFFER_SIZE2: 0x%x", bs2);
+
+	unsigned int bs3 = t4_read_reg(sc, A_SGE_FL_BUFFER_SIZE3);
+	CH_DBG(sc, "A_SGE_FL_BUFFER_SIZE3: 0x%x", bs3);
+#endif	/* DEBUG */
+
 	return (0);
 }
 /*
@@ -1366,10 +1444,8 @@ adap__pre_init_tweaks(struct adapter *sc)
 static int
 get_params__pre_init(struct adapter *sc)
 {
-	int rc;
+	int rc = 0;
 	uint32_t param[2], val[2];
-	struct fw_devlog_cmd cmd;
-	struct devlog_params *dlog = &sc->params.devlog;
 
 	/*
 	 * Grab the raw VPD parameters.
@@ -1403,24 +1479,8 @@ get_params__pre_init(struct adapter *sc)
 	}
 
 	sc->params.vpd.cclk = val[1];
-
-	/* Read device log parameters. */
-	bzero(&cmd, sizeof (cmd));
-	cmd.op_to_write = htonl(V_FW_CMD_OP(FW_DEVLOG_CMD) |
-	    F_FW_CMD_REQUEST | F_FW_CMD_READ);
-	cmd.retval_len16 = htonl(FW_LEN16(cmd));
-	rc = -t4_wr_mbox(sc, sc->mbox, &cmd, sizeof (cmd), &cmd);
-	if (rc != 0) {
-		cxgb_printf(sc->dip, CE_WARN,
-		    "failed to get devlog parameters: %d.\n", rc);
-		bzero(dlog, sizeof (*dlog));
-		rc = 0;	/* devlog isn't critical for device operation */
-	} else {
-		val[0] = ntohl(cmd.memtype_devlog_memaddr16_devlog);
-		dlog->memtype = G_FW_DEVLOG_CMD_MEMTYPE_DEVLOG(val[0]);
-		dlog->start = G_FW_DEVLOG_CMD_MEMADDR16_DEVLOG(val[0]) << 4;
-		dlog->size = ntohl(cmd.memsize_devlog);
-	}
+	sc->sge.fwq_tmr_idx = sc->props.fwq_tmr_idx;
+	sc->sge.fwq_pktc_idx = sc->props.fwq_pktc_idx;
 
 	return (rc);
 }
@@ -1452,6 +1512,12 @@ get_params__post_init(struct adapter *sc)
 	sc->sge.iqmap_sz = val[2] - sc->sge.iq_start + 1;
 	sc->sge.eqmap_sz = val[3] - sc->sge.eq_start + 1;
 
+	/*
+	 * RPZ: Linux/FreeBSD call t4_init_sge_params() to set
+	 * iq/eq_qpp, we also do now thanks to Patrick's changes. So
+	 * we can probably remove this code here. However, I'd still
+	 * like to compare our QPP code with that of the other drivers.
+	 */
 	uint32_t r = t4_read_reg(sc, A_SGE_EGRESS_QUEUES_PER_PAGE_PF);
 	r >>= S_QUEUESPERPAGEPF0 +
 	    (S_QUEUESPERPAGEPF1 - S_QUEUESPERPAGEPF0) * sc->pf;
@@ -1522,7 +1588,11 @@ get_params__post_init(struct adapter *sc)
 		return (rc);
 	}
 
+
 	/* These are finalized by FW initialization, load their values now */
+
+	/* RPZ: Call t4_init_tp_params() like fbsd/linux? There are
+	 * various params that are set, some of them realted to filtering.*/
 	val[0] = t4_read_reg(sc, A_TP_TIMER_RESOLUTION);
 	sc->params.tp.tre = G_TIMERRESOLUTION(val[0]);
 	sc->params.tp.dack_re = G_DELAYEDACKRESOLUTION(val[0]);
@@ -1545,7 +1615,6 @@ set_params__post_init(struct adapter *sc)
 	return (0);
 }
 
-/* TODO: verify */
 static void
 t4_setup_adapter_memwin(struct adapter *sc)
 {
@@ -1581,21 +1650,28 @@ t4_setup_adapter_memwin(struct adapter *sc)
 		mem_win2_aperture = MEMWIN2_APERTURE_T5;
 	}
 
-	t4_write_reg(sc, PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_BASE_WIN, 0),
-	    mem_win0_base | V_BIR(0) |
-	    V_WINDOW(ilog2(MEMWIN0_APERTURE) - 10));
+	CH_DBG(sc, "mem_win0_base: 0x%x", mem_win0_base);
+	CH_DBG(sc, "mem_win1_base: 0x%x", mem_win1_base);
+	CH_DBG(sc, "mem_win2_base: 0x%x", mem_win2_base);
+	CH_DBG(sc, "mem_win2_aperture: 0x%x", mem_win2_aperture);
 
-	t4_write_reg(sc, PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_BASE_WIN, 1),
-	    mem_win1_base | V_BIR(0) |
-	    V_WINDOW(ilog2(MEMWIN1_APERTURE) - 10));
+	uint32_t reg0 = t4_pcie_mem_access_base_win_reg(sc, 0);
 
-	t4_write_reg(sc, PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_BASE_WIN, 2),
-	    mem_win2_base | V_BIR(0) |
-	    V_WINDOW(ilog2(mem_win2_aperture) - 10));
+	t4_write_reg(sc, reg0, mem_win0_base | V_BIR(0) |
+	    V_WINDOW(ilog2(MEMWIN0_APERTURE) - X_WINDOW_SHIFT));
+	t4_read_reg(sc, reg0);
 
-	/* flush */
-	(void) t4_read_reg(sc,
-	    PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_BASE_WIN, 2));
+	uint32_t reg1 = t4_pcie_mem_access_base_win_reg(sc, 1);
+
+	t4_write_reg(sc, reg1, mem_win1_base | V_BIR(0) |
+	    V_WINDOW(ilog2(MEMWIN1_APERTURE) - X_WINDOW_SHIFT));
+	t4_read_reg(sc, reg1);
+
+	uint32_t reg2 = t4_pcie_mem_access_base_win_reg(sc, 2);
+
+	t4_write_reg(sc, reg2, mem_win2_base | V_BIR(0) |
+	    V_WINDOW(ilog2(mem_win2_aperture) - X_WINDOW_SHIFT));
+	t4_read_reg(sc, reg2);
 }
 
 /*
@@ -1607,7 +1683,8 @@ static uint32_t
 t4_position_memwin(struct adapter *sc, int n, uint32_t addr)
 {
 	uint32_t start, pf;
-	uint32_t reg;
+	uint32_t reg, val;
+	unsigned int chip_ver = CHELSIO_CHIP_VERSION(sc->params.chip);
 
 	if (addr & 3) {
 		cxgb_printf(sc->dip, CE_WARN,
@@ -1622,9 +1699,16 @@ t4_position_memwin(struct adapter *sc, int n, uint32_t addr)
 		pf = V_PFNUM(sc->pf);
 		start = addr & ~0x7f;   /* start must be 128B aligned */
 	}
-	reg = PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_OFFSET, n);
 
-	t4_write_reg(sc, reg, start | pf);
+	if (chip_ver > CHELSIO_T6) {
+		reg = PCIE_MEM_ACCESS_T7_REG(A_PCIE_MEM_ACCESS_OFFSET0, n);
+		val = (start >> X_T7_MEMOFST_SHIFT) | pf;
+	} else {
+		reg = PCIE_MEM_ACCESS_REG(A_PCIE_MEM_ACCESS_OFFSET, n);
+		val = start | pf;
+	}
+
+	t4_write_reg(sc, reg, val);
 	(void) t4_read_reg(sc, reg);
 
 	return (addr - start);
@@ -2064,7 +2148,11 @@ t4_port_speed_name(const struct port_info *pi)
 	}
 
 	const uint32_t pcaps = pi->link_cfg.pcaps;
-	if (pcaps & FW_PORT_CAP32_SPEED_100G) {
+	if (pcaps & FW_PORT_CAP32_SPEED_400G) {
+		return ("400G");
+	} else if (pcaps & FW_PORT_CAP32_SPEED_200G) {
+		return ("200G");
+	} else if (pcaps & FW_PORT_CAP32_SPEED_100G) {
 		return ("100G");
 	} else if (pcaps & FW_PORT_CAP32_SPEED_50G) {
 		return ("50G");
@@ -2230,6 +2318,11 @@ update_wc_kstats(kstat_t *ksp, int rw)
 	if (rw == KSTAT_WRITE)
 		return (0);
 
+	/*
+	 * RPZ: Patrick updated this from being a strict T5 check to a
+	 * GE check. What does this code do? Does it need to do
+	 * anything different for T6 or T7?
+	 */
 	if (t4_cver_ge(sc, CHELSIO_T5)) {
 		wc_total = t4_read_reg(sc, A_SGE_STAT_TOTAL);
 		wc_failure = t4_read_reg(sc, A_SGE_STAT_MATCH);
@@ -2278,8 +2371,14 @@ read_fec_pair(struct port_info *pi, uint32_t lo_reg, uint32_t high_reg)
 	uint8_t port = pi->tx_chan;
 	uint32_t low, high, ret;
 
-	low = t4_read_reg(sc, T5_PORT_REG(port, lo_reg));
-	high = t4_read_reg(sc, T5_PORT_REG(port, high_reg));
+	/*
+	 * RPZ: I need to look for _all places_ in the code where we
+	 * were using things like T5_PORT_REG (and any other macros
+	 * like that), because now with T7 support we probably want to
+	 * replace them all with t4_port_reg().
+	 */
+	low = t4_read_reg(sc, t4_port_reg(sc, port, lo_reg));
+	high = t4_read_reg(sc, t4_port_reg(sc, port, high_reg));
 	ret = low & 0xffff;
 	ret |= (high & 0xffff) << 16;
 	return (ret);
@@ -2340,6 +2439,7 @@ setup_port_fec_kstats(struct port_info *pi)
 	kstat_t *ksp;
 	struct cxgbe_port_fec_kstats *kstatp;
 
+	/* RPZ: For now I've assumed T7 has same FEC stats as T6 */
 	if (!t4_cver_ge(pi->adapter, CHELSIO_T6)) {
 		return (NULL);
 	}
