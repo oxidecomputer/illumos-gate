@@ -93,7 +93,7 @@ typedef struct zen_mpio_global_config {
 	uint32_t	zmgc_legacy_dev_boot_fail_wa:1;
 	uint32_t	zmgc_deferred_msg_supt:1;
 	uint32_t	zmgc_cxl_gpf_phase2_timeout:4;
-	uint32_t	zmgc_run_xgmi_safe_recov_odt;
+	uint32_t	zmgc_run_xgmi_safe_recov_odt:1;
 	uint32_t	zmgc_run_z_cal:1;
 	uint32_t	zmgc_pad0:11;
 	/* uint32_t mpio_global_cfg_args[1]: Power settings */
@@ -661,6 +661,7 @@ typedef struct smu_hotplug_entry {
 #pragma	pack()	/* pragma pack(4) */
 
 extern const zen_mpio_ask_port_t ruby_mpio_pcie_s0[];
+extern const size_t RUBY_MPIO_PCIE_S0_LEN;
 extern const smu_hotplug_entry_t ruby_hotplug_ents[];
 
 extern const uint32_t ruby_pcie_slot_cap_entssd;
@@ -694,7 +695,6 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_OP_LEGACY_HP_EN	0x14
 #define	GENOA_MPIO_OP_LEGACY_HP_DIS	0x15
 #define	GENOA_MPIO_OP_SET_HP_I2C_SW_ADDR 0x16
-
 
 #define	MPIO_XFER_TO_RAM	0
 #define	MPIO_XFER_FROM_RAM	1
