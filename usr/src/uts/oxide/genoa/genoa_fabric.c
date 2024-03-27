@@ -654,12 +654,7 @@ static const uint32_t RPC_MAX_TRIES = 1U << 30;
  */
 typedef struct genoa_mpio_rpc {
 	uint32_t	gmr_req;
-	uint32_t	gmr_arg0;
-	uint32_t	gmr_arg1;
-	uint32_t	gmr_arg2;
-	uint32_t	gmr_arg3;
-	uint32_t	gmr_arg4;
-	uint32_t	gmr_arg5;
+	uint32_t	gmr_args[6];
 } genoa_mpio_rpc_t;
 
 typedef struct genoa_pcie_port_info {
@@ -2312,12 +2307,12 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++) {
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
 	}
-	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG0(), rpc->gmr_arg0);
-	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG1(), rpc->gmr_arg1);
-	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG2(), rpc->gmr_arg2);
-	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG3(), rpc->gmr_arg3);
-	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG4(), rpc->gmr_arg4);
-	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG5(), rpc->gmr_arg5);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG0(), rpc->gmr_args[0]);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG1(), rpc->gmr_args[1]);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG2(), rpc->gmr_args[2]);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG3(), rpc->gmr_args[3]);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG4(), rpc->gmr_args[4]);
+	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG5(), rpc->gmr_args[5]);
 
 	/* The request number is written to the response register. */
 	req = (rpc->gmr_req & 0xFF) << 8;
@@ -2334,12 +2329,12 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 	}
 
 	/* Read response. */
-	rpc->gmr_arg0 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG0());
-	rpc->gmr_arg1 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG1());
-	rpc->gmr_arg2 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG2());
-	rpc->gmr_arg3 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG3());
-	rpc->gmr_arg4 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG4());
-	rpc->gmr_arg5 = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG5());
+	rpc->gmr_args[0] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG0());
+	rpc->gmr_args[1] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG1());
+	rpc->gmr_args[2] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG2());
+	rpc->gmr_args[3] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG3());
+	rpc->gmr_args[4] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG4());
+	rpc->gmr_args[5] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG5());
 	mutex_exit(&iodie->gi_mpio_lock);
 
 	return (resp & 0xFF);
@@ -2356,15 +2351,14 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 	genoa_mpio_rpc_t rpc = { 0 };
 	int resp;
 
-	rpc.gmr_req = GENOA_MPIO_OP_GET_VERSION;
+	rpc.gmr_req = 12345; /*GENOA_MPIO_OP_GET_VERSION;*/
 
 	resp = genoa_mpio_rpc(iodie, &rpc);
 	if (resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: MPIO Resp: 0x%x",
-		   resp);
+		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: 0x%x", resp);
 		return (false);
 	}
-	*major = rpc.gmr_arg0;
+	*major = rpc.gmr_args[0];
 	*minor = 0;
 
 	return (true);
@@ -2382,7 +2376,8 @@ genoa_mpio_rpc_get_status(genoa_iodie_t *iodie, zen_mpio_status_t *status)
 		cmn_err(CE_WARN, "MPIO Get Status Failed: 0x%x", resp);
 		return (false);
 	}
-	bcopy(&rpc.gmr_arg0, status, sizeof (*status));
+	ASSERT3U(sizeof (rpc.gmr_args), ==, sizeof (*status));
+	bcopy(rpc.gmr_args, status, sizeof (*status));
 
 	return (true);
 }
@@ -2392,16 +2387,22 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 {
 	zen_mpio_status_t status = { 0 };
 
-	for (int k = 0; k < RPC_MAX_TRIES; k++) {
+	cmn_err(CE_WARN, "wait_ready called");
+	for (int k = 0; k < 20000; k++) {
 		if (!genoa_mpio_rpc_get_status(iodie, &status)) {
 			cmn_err(CE_WARN, "MPIO wait ready RPC failed");
 			return (false);
 		}
 		if (status.zms_cmd_stat == 0)
+			cmn_err(CE_WARN, "waitready done");
+		if (status.zms_cmd_stat == 0)
 			return (true);
 	}
 	cmn_err(CE_WARN, "MPIO wait ready timed out, cmd status: 0%x",
 	    status.zms_cmd_stat);
+
+	if (xxxhackymchackface)
+		return (true);
 
 	return (false);
 }
@@ -2433,6 +2434,7 @@ genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
 		cmn_err(CE_NOTE, "Socket %u: failed to read DXIO version",
 		    soc->gs_socno);
 	}
+	genoa_mpio_wait_ready(iodie);
 
 	return (0);
 }
@@ -3664,18 +3666,19 @@ static int
 genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
-	zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)&rpc.gmr_arg0;
+	//zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)rpc.gmr_args;
 	int resp;
 
-	args->zmgc_use_phy_sram = 1;
-	args->zmgc_valid_phy_firmware = 1;
-	args->zmgc_cbs_opts_allow_ptr_slip_ival = 1;
-	args->zmgc_pwr_mgmt_clk_gating = 1;
-	args->zmgc_pwr_mgmt_static_pwr_gating = 1;
-	args->zmgc_pwr_mgmt_refclk_shutdown = 1;
-	args->zmgc_cbs_opts_en_pwr_mgmt = 1;
-	args->zmgc_pwr_mgmt_pma_pwr_gating = 1;
-	args->zmgc_pwr_mgmt_pma_clk_gating = 1;
+	//args->zmgc_use_phy_sram = 1;
+	//args->zmgc_valid_phy_firmware = 1;
+	//args->zmgc_deferred_msg_supt = 1;
+	//args->zmgc_cbs_opts_allow_ptr_slip_ival = 1;
+	//args->zmgc_pwr_mgmt_clk_gating = 1;
+	//args->zmgc_pwr_mgmt_static_pwr_gating = 1;
+	//args->zmgc_pwr_mgmt_refclk_shutdown = 1;
+	//args->zmgc_cbs_opts_en_pwr_mgmt = 1;
+	//args->zmgc_pwr_mgmt_pma_pwr_gating = 1;
+	//args->zmgc_pwr_mgmt_pma_clk_gating = 1;
 
 	rpc.gmr_req = GENOA_MPIO_OP_SET_GLOBAL_CONFIG;
 	resp = genoa_mpio_rpc(iodie, &rpc);
@@ -3702,7 +3705,7 @@ genoa_mpio_send_ext_attrs(genoa_iodie_t *iodie, void *arg)
 	ASSERT(conf->gmc_ext_attrs != NULL);
 	ASSERT3U(conf->gmc_ext_attrs_pa, !=, 0);
 
-	args = (zen_mpio_xfer_ext_attrs_args_t *)&rpc.gmr_arg0;
+	args = (zen_mpio_xfer_ext_attrs_args_t *)rpc.gmr_args;
 	args->zmxeaa_paddr_hi = conf->gmc_ext_attrs_pa >> 32;
 	args->zmxeaa_paddr_lo = conf->gmc_ext_attrs_pa & 0xFFFFFFFFU;
 	args->zmxeaa_nwords = conf->gmc_ext_attrs_len / 4;
@@ -3720,7 +3723,7 @@ genoa_mpio_send_ext_attrs(genoa_iodie_t *iodie, void *arg)
 }
 
 static int
-genoa_mpio_send_ask(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_send_ask(genoa_iodie_t *iodie)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
 	genoa_mpio_config_t *conf;
@@ -3733,7 +3736,12 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie, void *arg)
 	ASSERT3P(conf->gmc_ask, !=, NULL);
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
 
-	args = (zen_mpio_xfer_ask_args_t *)&rpc.gmr_arg0;
+	if (!genoa_mpio_wait_ready(iodie)) {
+		cmn_err(CE_WARN, "MPIO wait for ready to send ASK failed");
+		return (1);
+	}
+
+	args = (zen_mpio_xfer_ask_args_t *)rpc.gmr_args;
 	args->zmxaa_paddr_hi = conf->gmc_ask_pa >> 32;
 	args->zmxaa_paddr_lo = conf->gmc_ask_pa & 0xFFFFFFFFU;
 	args->zmxaa_link_count = conf->gmc_ask_nports;
@@ -3753,7 +3761,7 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie, void *arg)
 }
 
 static int
-genoa_mpio_recv_ask(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_recv_ask(genoa_iodie_t *iodie)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
 	genoa_mpio_config_t *conf;
@@ -3766,7 +3774,12 @@ genoa_mpio_recv_ask(genoa_iodie_t *iodie, void *arg)
 	ASSERT3P(conf->gmc_ask, !=, NULL);
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
 
-	args = (zen_mpio_xfer_ask_args_t *)&rpc.gmr_arg0;
+	if (!genoa_mpio_wait_ready(iodie)) {
+		cmn_err(CE_WARN, "MPIO wait for ready to recveive ASK failed");
+		return (0);
+	}
+
+	args = (zen_mpio_xfer_ask_args_t *)rpc.gmr_args;
 	args->zmxaa_paddr_hi = conf->gmc_ask_pa >> 32;
 	args->zmxaa_paddr_lo = conf->gmc_ask_pa & 0xFFFFFFFFU;
 	args->zmxaa_links = MPIO_LINK_ALL;
@@ -3788,7 +3801,7 @@ genoa_mpio_recv_ask(genoa_iodie_t *iodie, void *arg)
  * Here we need to assemble data for the system we're actually on.
  */
 static int
-genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 {
 	ddi_dma_attr_t attr;
 	size_t ask_size;
@@ -3796,9 +3809,11 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 	genoa_soc_t *soc = iodie->gi_soc;
 	const zen_mpio_ask_port_t *source_data;
+#if 0
 	const genoa_apob_phyovr_t *phy_override;
 	size_t phy_len;
 	int err;
+#endif
 
 	/*
 	 * XXX Figure out how to best not hardcode Ethanol. Realistically
@@ -3806,6 +3821,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	 */
 	if (genoa_board_type() == MBT_RUBY && soc->gs_socno == 0) {
 		source_data = ruby_mpio_pcie_s0;
+		conf->gmc_ask_nports = RUBY_MPIO_PCIE_S0_LEN;
 	} else {
 		return (0);
 	}
@@ -3829,6 +3845,7 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ask);
 	conf->gmc_ask_pa = mmu_ptob((uint64_t)pfn);
 
+#if 0
 	phy_override = kapob_find(APOB_GROUP_FABRIC,
 	    GENOA_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
 	if (phy_override == NULL) {
@@ -3872,7 +3889,6 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 	conf->gmc_ext_attrs_pa = mmu_ptob((uint64_t)pfn);
 
 
-#if 0
 	/*
 	 * First we need to program the initial descriptor. Its type is one of
 	 * the Heap types. Yes, this is different from the sub data payloads
@@ -3901,8 +3917,19 @@ genoa_dxio_plat_data(genoa_iodie_t *iodie, void *arg)
 }
 
 static int
-genoa_dxio_load_data(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_send_data(genoa_iodie_t *iodie, void *arg)
 {
+
+	if (genoa_mpio_send_ask(iodie) != 0) {
+		cmn_err(CE_WARN, "MPIO send ASK failed");
+		return (1);
+	}
+	cmn_err(CE_WARN, "sent ask, waiting on resp");
+	if (genoa_mpio_recv_ask(iodie) != 0) {
+		cmn_err(CE_WARN, "MPIO recv ASK failed");
+		return (1);
+	}
+	cmn_err(CE_WARN, "sent ask, waiting on resp");
 #if 0
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 
@@ -6162,21 +6189,23 @@ genoa_fabric_init(void)
 		    "speranza voi che pcie");
 		return;
 	}
-	cmn_err(CE_CONT, "GENOA FABRIC INIT SUCCEEDED");
+	cmn_err(CE_WARN, "GENOA FABRIC INIT SUCCEEDED\n");
 
-	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_plat_data, NULL) != 0) {
-		cmn_err(CE_WARN, "DXIO Initialization failed: no platform "
-		    "data");
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init_data, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO ASK Initialization failed");
 		return;
 	}
+	cmn_err(CE_WARN, "after genoa_mpio_init_data");
+
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_send_data, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO Initialization failed: failed to load "
+		    "data into mpio");
+		return;
+	}
+
+	cmn_err(CE_WARN, "GOT HERE");
+
 #if 0
-
-	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_load_data, NULL) != 0) {
-		cmn_err(CE_WARN, "DXIO Initialization failed: failed to load "
-		    "data into dxio");
-		return;
-	}
-
 	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_more_conf, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to do yet "
 		    "more configuration");
