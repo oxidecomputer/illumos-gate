@@ -1208,7 +1208,8 @@ main(int argc, char *argv[])
 
 	int done = 0, mode = 0;
 	int err, i;
-	char c, *p, **v;
+	int c;
+	char *p, **v;
 	struct ps_prochandle *P;
 	pid_t pid;
 

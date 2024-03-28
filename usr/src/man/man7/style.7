@@ -10,9 +10,9 @@
 .\"
 .\"
 .\" Copyright (c) 1993 by Sun Microsystems, Inc.
-.\" Copyright 2023 Oxide Computer Company
+.\" Copyright 2024 Oxide Computer Company
 .\"
-.Dd January 1, 2023
+.Dd March 17, 2024
 .Dt STYLE 7
 .Os
 .Sh NAME
@@ -27,7 +27,7 @@ This document is based on
 by Bill Shannon.
 .Sh INTRODUCTION
 The purpose of the document is to establish a consistent style for C program
-source files within the gate.
+source files within the illumos gate.
 Collectively, this document describes the
 .Dq illumos C style ,
 and the scope is limited to the application of illumos coding style to the C
@@ -56,8 +56,8 @@ acceptable solution.
 .Pp
 The illumos code base has a long history, dating back to the original Unix from
 AT&T and Bell Labs.
-Furthermore, for many years illumos C style was not formally defined,
-and there was much variation and many corner cases as it evolved.
+Furthermore, for many years the C style was not formally defined, and there was
+much variation and many corner cases as it evolved.
 As such, it is possible to find examples of code that do not conform to this
 standard in the source tree.
 If possible, strongly consider converting to this style before beginning
@@ -134,7 +134,7 @@ When this happens, the line should be broken as follows:
 .It
 After a comma in the case of a function call or function definition.
 Note, never break in the middle of a parameter expression, such as between the
-type and argument name!
+type and argument name.
 .It
 After the last operator that fits on the line for arithmetic, boolean and
 ternary expressions.
@@ -206,7 +206,7 @@ A space followed by a tab outside of a string constant is forbidden.
 .Pp
 Trailing white space is not permitted, whether at the ends of lines or at the
 end of the file.
-That is, neither trailing blanks or tabs at the ends of lines nor trailing
+That is, neither trailing blanks or tabs at the ends of lines nor additional
 newlines at the end of a file are allowed.
 The last character in each source file should be a newline character.
 .\"
@@ -388,7 +388,8 @@ Trailing comments are often also used on preprocessor
 .Sy #else
 and
 .Sy #endif
-statements if they are far away from the corresponding test, see
+statements if they are far away from the corresponding test.
+See
 .Sx Preprocessor
 for more guidance on this.
 .Ss XXX and TODO comments
@@ -417,8 +418,7 @@ project.
 Individual projects will undoubtedly have their own naming conventions
 incorporating terminology specific to that project.
 .Pp
-We recognize that there are few right answers when it comes to naming
-conventions, but offer some general guidance:
+In general, the following guidelines should be followed:
 .Bl -bullet -offset indent
 .It
 The length of a name should be proportional to its scope.
@@ -598,7 +598,7 @@ enum vmx_caps {
 };
 .Ed
 .Pp
-with a all bits set is printed by
+with all bits set is printed by
 .Xr mdb 1
 as
 .Bd -literal -offset indent
@@ -619,7 +619,7 @@ that is unique to the package, such as,
 .Ql _panel_caret_mpr ,
 but it is not necessary to use stylistic conventions to hide symbols that
 will not be exported.
-Engineers may optionally use such a naming convention as an additional signal
+Programmers may optionally use such a naming convention as an additional signal
 that symbols are internal to a library, but this is not required.
 .It
 One should always use care to avoid conflicts with identifiers reserved by C.
@@ -628,7 +628,7 @@ Generally use nouns for type names and verbs or verb phrases for functions.
 .El
 .\"
 .Sh Declarations
-There is considerable variation in the format of declarations within illumos
+There is considerable variation in the format of declarations within the illumos
 gate.
 As an example, there are many places that use one declaration per line, and
 employ tab characters to line up the variable names:
@@ -730,9 +730,11 @@ Each declaration should be on a separate line.
 A comment describing the role of the object being declared should be included,
 with the exception that a list of defined constants does not need comments if
 the constant names themselves are sufficient documentation.
+Constant names and their defined values should be tabbed so that they line up
+underneath each other.
 For a block of related objects, a single block comment is sufficient.
-The comments should be tabbed so that they line up underneath each
-other.
+However, if trailing comments are used, these should also be tabbed to line up
+underneath each other.
 .Ss Structures and Unions
 For structure and union template declarations, each element should be on its
 own line with a comment describing it.
@@ -786,7 +788,7 @@ For example, a
 qualified pointer points to an object that cannot be modified; an attempt to do
 so will give a compile-time error, rather than runtime data corruption.
 Additionally, use of such qualifiers can communicate attributes of an interface
-to a programmer who uses that interface: a programmer who passes a pointer to
+to a programmer who uses that interface; a programmer who passes a pointer to a
 function that expects a
 .Sq const
 qualified parameter knows that the function will not modify the value the
@@ -795,7 +797,7 @@ Use qualifiers, but beware of some caveats.
 .Pp
 Pointer variables that are
 .Sq const
-qualified should not cast away the qualifier: the compiler may make
+qualified should not cast away the qualifier; the compiler may make
 optimizations based on the qualification that are invalid if applied in a
 non-const context.
 Similarly, it is undefined behavior to discard the qualifier for variables that
@@ -834,8 +836,8 @@ the possibility of name conflicts with variables and procedures in other files.
 Functions must be declared using
 .St -ansiC
 syntax rather than K&R.
-There are still places within the gate that use K&R syntax and these should
-be converted as work is done in those areas.
+There are still places within the illumos gate that use K&R syntax and these
+should be converted as work is done in those areas.
 .Pp
 All local declarations and code within the function body should be tabbed over
 at least one tab, with the level of indentation reflecting the structure of the
@@ -973,7 +975,7 @@ unsigned integer identifiers of the form
 .Vt uintXX_t
 is preferred over the older BSD-style
 .Vt u_intXX_t .
-New code should use the former and old code should be converted to the new form
+New code should use the former, and old code should be converted to the new form
 if other work is being done in that area.
 .Sh Boolean Types
 .St -isoC-99
@@ -1084,7 +1086,7 @@ As mentioned above, care must taken when mixing
 and
 .Vt boolean_t
 types.
-We provide some advice for typical situations.
+In particular:
 .Bl -bullet -offset indent
 .It
 Assigning from a variable of type
@@ -1108,7 +1110,7 @@ Similarly, changing the definition of one type to another in a
 or
 .Vt union
 is not safe unless one can guarantee that the element of such a compound type
-is never referred to by pointer, and that the type is never used as part of a
+is never referred to by pointer and that the type is never used as part of a
 public interface, such as an
 .Xr ioctl 2 .
 .\"
@@ -1154,7 +1156,7 @@ enclosed in braces
 The enclosed list should be indented one more level than the compound statement
 itself.
 The opening left brace should be at the end of the line beginning the compound
-statement and the closing right brace should be alone on a line, positioned
+statement, and the closing right brace should be alone on a line, positioned
 under the beginning of the compound statement
 .Pq see examples below .
 Note that the left brace that begins a function body is the only occurrence
@@ -1516,9 +1518,8 @@ Use tabs to separate single line comments from the corresponding code.
 .El
 .\"
 .Sh Parentheses
-Since C has complex precedence rules.
-Parentheses can clarify the programmer's intent in complex expressions
-that mix operators.
+Since C has complex precedence rules, parentheses can clarify the programmer's
+intent in complex expressions that mix operators.
 Programmers should feel free to use parentheses if they feel that they make
 the code clearer and easier to understand.
 However, bear in mind that this can be taken too far, so some judgment must
@@ -1705,7 +1706,7 @@ foo_bar.fb_name.firstch = bar_foo.fb_name.lastch = 'c'; /* Yecch */
 .\"
 .Sh Preprocessor
 The C preprocessor provides support for textual inclusion of files
-.Pq header files ,
+.Pq most often header files ,
 conditional compilation, and macro definitions and substitutions.
 .Pp
 It should be noted that the preprocessor works at the lexicographical, not
@@ -1824,8 +1825,8 @@ should be followed by a single tab character.
 .It
 .Sq #if ,
 .Sq #ifdef ,
-and other preprocessor statements should may be followed by either a tab or
-space, but be consistent with the surrounding code.
+and other preprocessor statements may be followed by either a tab or space, but
+be consistent with the surrounding code.
 .El
 .\"
 .Sh Miscellaneous Comments on Good Taste
@@ -1940,7 +1941,7 @@ Has no other purpose than to return true or false.
 .It
 Returns 0 for false, non-zero for true.
 .It
-Is named so that the meaning of the return value is absolutely obvious.
+Is named so that the meaning of the return value is obvious.
 .El
 .Pp
 Call a predicate
@@ -2041,7 +2042,7 @@ while ((c = getchar()) != EOF) {
 }
 .Ed
 .Pp
-Using embedded assignments used to provide modest improvement in run-time
+Embedded assignments used to provide modest improvement in run-time
 performance, but this is no longer the case with modern optimizing compilers.
 Do note write, for example,
 .Bd -literal -offset indent
@@ -2057,7 +2058,7 @@ d = a + 4;
 .Ed
 .Pp
 In general, avoid such premature micro-optimization unless performance
-is clearly a bottleneck and a profile shows that the optimization provides
+is clearly a bottleneck, and a profile shows that the optimization provides
 a significant performance boost.
 Be aware how in the long run hand-optimized code often turns into a
 pessimization, and maintenance difficulty will increase as the human
@@ -2078,7 +2079,8 @@ it should be parenthesized:
 .Ed
 .Pp
 Nested ternary operators can be confusing and should be avoided if possible.
-The comma operator can also be useful in
+.Pp
+The comma operator can be useful in
 .Ic for
 statements to provide multiple initializations or incrementations.
 .Sh SEE ALSO
