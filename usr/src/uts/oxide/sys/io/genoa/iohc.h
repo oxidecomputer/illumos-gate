@@ -913,25 +913,6 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	IOHC_SION_RDRSP_BURST_VAL	0x02020202
 
 /*
- * IOHC::IOHC_SION_S1_CLIENT_NP_ReqDeficitThreshold only has a single instance
- * and IOHC::IOHC_SION_S0_CLIENT_NP_ReqDeficitThreshold actually starts at
- * instance 1, there is no instance 0.  For simplicity's sake, we model these
- * two nominally distinct registers as if they were a single register with 7
- * instances [6:0], with instance 0 belonging to S1 and the others to S0.
- */
-/*CSTYLED*/
-#define	D_IOHC_SION_Sn_CLI_NP_DEFICIT	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_IOHC,	\
-	.srd_reg = 0x14480,	\
-	.srd_nents = 7,	\
-	.srd_stride = 0x404	\
-}
-#define	IOHC_SION_Sn_CLI_NP_DEFICIT(h, i)	\
-	genoa_iohc_smn_reg(h, D_IOHC_SION_Sn_CLI_NP_DEFICIT, i)
-#define	IOHC_SION_CLI_NP_DEFICIT_SET(r, v)	bitset32(r, 7, 0, v)
-#define	IOHC_SION_CLI_NP_DEFICIT_VAL	0x40
-
-/*
  * IOHC::IOHC_SION_LiveLock_WatchDog_Threshold. This is used to set an
  * arbitration threshold for the overall bus.
  */

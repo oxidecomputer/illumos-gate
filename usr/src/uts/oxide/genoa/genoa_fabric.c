@@ -3194,7 +3194,7 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 	 * varies.
 	 */
 	for (uint_t i = 0; i < IOHC_SION_MAX_ENTS; i++) {
-		uint32_t tsval;
+		// uint32_t tsval;
 
 		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i);
 		genoa_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
@@ -3214,6 +3214,8 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_HI, i);
 		genoa_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
 
+		// XXX: Not specified in Genoa PPR
+#if 0
 		switch (i) {
 		case 0:
 		case 1:
@@ -3235,26 +3237,14 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 		genoa_ioms_write(ioms, reg, tsval);
 		reg = genoa_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_HI, i);
 		genoa_ioms_write(ioms, reg, tsval);
-	}
-
-	/*
-	 * Yes, we only set [4:0] here. I know it's odd. We're actually setting
-	 * S1's only instance (0) and the first 4 of the 6 instances of S0.
-	 * Apparently it's not necessary to set instances 5 and 6.
-	 */
-	for (uint_t i = 0; i < 4; i++) {
-		reg = genoa_ioms_reg(ioms, D_IOHC_SION_Sn_CLI_NP_DEFICIT, i);
-
-		val = genoa_ioms_read(ioms, reg);
-		val = IOHC_SION_CLI_NP_DEFICIT_SET(val,
-		    IOHC_SION_CLI_NP_DEFICIT_VAL);
-		genoa_ioms_write(ioms, reg, val);
+#endif
 	}
 
 	/*
 	 * Go back and finally set the live lock watchdog to finish off the
 	 * IOHC.
 	 */
+	// XXX: Why only the first instance?
 	reg = genoa_ioms_reg(ioms, D_IOHC_SION_LLWD_THRESH, 0);
 	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_SION_LLWD_THRESH_SET(val, IOHC_SION_LLWD_THRESH_VAL);
@@ -3267,7 +3257,7 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 	 *      Control" section so can only go by  "Init: BIOS" values.
 	 */
 	for (uint_t i = 0; i < 4; i++) {
-		uint32_t tsval;
+		// uint32_t tsval;
 
 		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_LOW, i);
 		genoa_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
@@ -3288,6 +3278,8 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_HI, i);
 		genoa_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
 
+		// XXX: Not specified in Genoa PPR
+#if 0
 		switch (i) {
 		case 0:
 		case 1:
@@ -3305,6 +3297,7 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 		genoa_ioms_write(ioms, reg, tsval);
 		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_HI, i);
 		genoa_ioms_write(ioms, reg, tsval);
+#endif
 	}
 
 	/*
@@ -3361,10 +3354,13 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_HI, i);
 		genoa_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
 
+		// XXX: Not specified in Genoa PPR
+#if 0
 		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_LOW, i);
 		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
 		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_HI, i);
 		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
+#endif
 	}
 
 	reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_LLWD_THRESH, 0);
@@ -3405,13 +3401,16 @@ genoa_fabric_init_arbitration_nbif(genoa_nbif_t *nbif, void *arg)
 static int
 genoa_fabric_init_sdp_control(genoa_ioms_t *ioms, void *arg)
 {
-	smn_reg_t reg;
-	uint32_t val;
+	// smn_reg_t reg;
+	// uint32_t val;
 
+	// XXX: Not specified in Genoa PPR
+#if 0
 	reg = genoa_ioms_reg(ioms, D_IOHC_SDP_PORT_CTL, 0);
 	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
 	genoa_ioms_write(ioms, reg, val);
+#endif
 
 	// XXX: Genoa PPR says to set these but registers are not defined??
 #if 0
@@ -3427,12 +3426,15 @@ genoa_fabric_init_sdp_control(genoa_ioms_t *ioms, void *arg)
 	genoa_ioms_write(ioms, reg, val);
 #endif
 
+	// XXX: Not specified in Genoa PPR
+#if 0
 	reg = genoa_ioms_reg(ioms, D_SDPMUX_SDP_PORT_CTL, 0);
 	val = genoa_ioms_read(ioms, reg);
 	val = SDPMUX_SDP_PORT_CTL_SET_HOST_ENABLE(val, 0xffff);
 	val = SDPMUX_SDP_PORT_CTL_SET_DMA_ENABLE(val, 0x1);
 	val = SDPMUX_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
 	genoa_ioms_write(ioms, reg, val);
+#endif
 
 	return (0);
 }
