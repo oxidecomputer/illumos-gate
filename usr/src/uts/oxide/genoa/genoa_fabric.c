@@ -2351,9 +2351,9 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 	genoa_mpio_rpc_t rpc = { 0 };
 	int resp;
 
-	rpc.gmr_req = 12345; /*GENOA_MPIO_OP_GET_VERSION;*/
+	rpc.gmr_req = GENOA_MPIO_OP_GET_VERSION;
 
-	resp = genoa_mpio_rpc(iodie, &rpc);
+	resp =  genoa_mpio_rpc(iodie, &rpc);
 	if (resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: 0x%x", resp);
 		return (false);
@@ -2388,7 +2388,7 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 	zen_mpio_status_t status = { 0 };
 
 	cmn_err(CE_WARN, "wait_ready called");
-	for (int k = 0; k < 20000; k++) {
+	for (int k = 0; k < 100000; k++) {
 		if (!genoa_mpio_rpc_get_status(iodie, &status)) {
 			cmn_err(CE_WARN, "MPIO wait ready RPC failed");
 			return (false);
@@ -2398,7 +2398,7 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 		if (status.zms_cmd_stat == 0)
 			return (true);
 	}
-	cmn_err(CE_WARN, "MPIO wait ready timed out, cmd status: 0%x",
+	cmn_err(CE_WARN, "MPIO wait ready timed out, cmd status: 0x%x",
 	    status.zms_cmd_stat);
 
 	if (xxxhackymchackface)
@@ -3666,19 +3666,15 @@ static int
 genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
-	//zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)rpc.gmr_args;
+	zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)rpc.gmr_args;
 	int resp;
 
-	//args->zmgc_use_phy_sram = 1;
-	//args->zmgc_valid_phy_firmware = 1;
-	//args->zmgc_deferred_msg_supt = 1;
-	//args->zmgc_cbs_opts_allow_ptr_slip_ival = 1;
-	//args->zmgc_pwr_mgmt_clk_gating = 1;
-	//args->zmgc_pwr_mgmt_static_pwr_gating = 1;
-	//args->zmgc_pwr_mgmt_refclk_shutdown = 1;
-	//args->zmgc_cbs_opts_en_pwr_mgmt = 1;
-	//args->zmgc_pwr_mgmt_pma_pwr_gating = 1;
-	//args->zmgc_pwr_mgmt_pma_clk_gating = 1;
+	args->zmgc_skip_vet = 1;
+	args->zmgc_save_restore_mode = 3;
+	args->zmgc_use_phy_sram = 1;
+	args->zmgc_valid_phy_firmware = 1;
+	args->zmgc_en_pcie_noncomp_wa = 1;
+	args->zmgc_pwr_mgmt_clk_gating = 1;
 
 	rpc.gmr_req = GENOA_MPIO_OP_SET_GLOBAL_CONFIG;
 	resp = genoa_mpio_rpc(iodie, &rpc);
@@ -3930,6 +3926,7 @@ genoa_mpio_send_data(genoa_iodie_t *iodie, void *arg)
 		return (1);
 	}
 	cmn_err(CE_WARN, "sent ask, waiting on resp");
+
 #if 0
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 
@@ -5328,6 +5325,27 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	return (0);
 }
 
+static int
+genoa_fabric_unhide_bridges(genoa_pcie_port_t *port, void *arg)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * All bridges need to be visible before we attempt to
+	 * configure MPIO.
+	 */
+	reg = genoa_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = genoa_pcie_port_read(port, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
+	genoa_pcie_port_write(port, reg, val);
+
+	return (0);
+}
+
 /*
  * This is a companion to genoa_fabric_init_bridges, that operates on the PCIe
  * core level before we get to the individual bridge. This initialization
@@ -6182,20 +6200,23 @@ genoa_fabric_init(void)
 	 *
 	 * XXX htf do we want to handle errors
 	 */
+	genoa_fabric_walk_pcie_port(fabric, genoa_fabric_unhide_bridges, NULL);
+
 	genoa_pcie_populate_dbg(&genoa_fabric, GPCS_PRE_DXIO_INIT,
 	    GENOA_IODIE_MATCH_ANY);
-	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init, NULL) != 0) {
-		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
-		    "speranza voi che pcie");
-		return;
-	}
-	cmn_err(CE_WARN, "GENOA FABRIC INIT SUCCEEDED\n");
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init_data, NULL) != 0) {
 		cmn_err(CE_WARN, "MPIO ASK Initialization failed");
 		return;
 	}
 	cmn_err(CE_WARN, "after genoa_mpio_init_data");
+
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init, NULL) != 0) {
+		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
+		    "speranza voi che pcie");
+		return;
+	}
+	cmn_err(CE_WARN, "GENOA FABRIC INIT SUCCEEDED\n");
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_send_data, NULL) != 0) {
 		cmn_err(CE_WARN, "MPIO Initialization failed: failed to load "
@@ -6205,13 +6226,13 @@ genoa_fabric_init(void)
 
 	cmn_err(CE_WARN, "GOT HERE");
 
-#if 0
 	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_more_conf, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to do yet "
 		    "more configuration");
 		return;
 	}
 
+#if 0
 	genoa_pcie_populate_dbg(&genoa_fabric, GPCS_DXIO_SM_START,
 	    GENOA_IODIE_MATCH_ANY);
 	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_state_machine, NULL) !=
