@@ -906,7 +906,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	IOHC_SION_S1_WRRSP_TIME_HI(h, i)	\
 	genoa_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_TIME_HI, i)
 
-#define	IOHC_SION_CLIREQ_BURST_VAL	0x08080808
+#define	IOHC_SION_CLIREQ_BURST_VAL	0x04040404
 #define	IOHC_SION_CLIREQ_TIME_0_2_VAL	0x21212121
 #define	IOHC_SION_CLIREQ_TIME_3_4_VAL	0x84218421
 #define	IOHC_SION_CLIREQ_TIME_5_VAL	0x85218521
@@ -1301,7 +1301,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	IOAGR_SION_S1_WRRSP_TIME_HI(a, i)	\
 	genoa_ioagr_smn_reg(h, D_IOAGR_SION_S1_WRRSP_TIME_HI, i)
 
-#define	IOAGR_SION_CLIREQ_BURST_VAL	0x08080808
+#define	IOAGR_SION_CLIREQ_BURST_VAL	0x04040404
 #define	IOAGR_SION_CLIREQ_TIME_0_2_VAL	0x21212121
 #define	IOAGR_SION_CLIREQ_TIME_3_VAL	0x84218421
 #define	IOAGR_SION_RDRSP_BURST_VAL	0x02020202
@@ -1346,7 +1346,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_SDPMUX_SION_LLWD_THRESH	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SDPMUX,	\
-	.srd_reg = 0x01498	\
+	.srd_reg = 0x014A0	\
 }
 #define	SDPMUX_SION_LLWD_THRESH(m)	\
 	genoa_sdpmux_smn_reg(m, D_SDPMUX_SION_LLWD_THRESH, 0)
@@ -1600,7 +1600,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	SDPMUX_SION_S1_WRRSP_TIME_HI(m, i)	\
 	genoa_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_TIME_HI, i)
 
-#define	SDPMUX_SION_CLIREQ_BURST_VAL	0x08080808
+#define	SDPMUX_SION_CLIREQ_BURST_VAL	0x04040404
 #define	SDPMUX_SION_CLIREQ_TIME_VAL	0x21212121
 #define	SDPMUX_SION_RDRSP_BURST_VAL	0x02020202
 

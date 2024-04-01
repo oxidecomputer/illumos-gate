@@ -3263,6 +3263,8 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 	/*
 	 * Next on our list is the IOAGR. While there are 5 entries, only 4 are
 	 * ever set it seems.
+	 * XXX: Is this still true in Genoa? No separate "IOHC Arbitration
+	 *      Control" section so can only go by  "Init: BIOS" values.
 	 */
 	for (uint_t i = 0; i < 4; i++) {
 		uint32_t tsval;
@@ -3276,6 +3278,7 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_HI, i);
 		genoa_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
 
+		// XXX: These are already the reset values
 		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_LOW, i);
 		genoa_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
 		reg = genoa_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_HI, i);
@@ -3348,6 +3351,7 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S1_CLIREQ_BURST_HI, i);
 		genoa_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
 
+		// XXX: These are already the reset values
 		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_LOW, i);
 		genoa_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
 		reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_HI, i);
@@ -3409,6 +3413,8 @@ genoa_fabric_init_sdp_control(genoa_ioms_t *ioms, void *arg)
 	val = IOHC_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
 	genoa_ioms_write(ioms, reg, val);
 
+	// XXX: Genoa PPR says to set these but registers are not defined??
+#if 0
 	reg = genoa_ioms_reg(ioms, D_IOHC_SDP_EARLY_WAKE_UP, 0);
 	val = genoa_ioms_read(ioms, reg);
 	val = IOHC_SDP_EARLY_WAKE_UP_SET_HOST_ENABLE(val, 0xffff);
@@ -3419,6 +3425,7 @@ genoa_fabric_init_sdp_control(genoa_ioms_t *ioms, void *arg)
 	val = genoa_ioms_read(ioms, reg);
 	val = IOAGR_EARLY_WAKE_UP_SET_DMA_ENABLE(val, 0x1);
 	genoa_ioms_write(ioms, reg, val);
+#endif
 
 	reg = genoa_ioms_reg(ioms, D_SDPMUX_SDP_PORT_CTL, 0);
 	val = genoa_ioms_read(ioms, reg);
