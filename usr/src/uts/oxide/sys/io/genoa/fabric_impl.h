@@ -110,6 +110,11 @@ extern "C" {
 #define	GENOA_NBIO_IOHUB_HAS_WAFL	0
 
 /*
+ * Only the first IOHUB per NBIO has an SDPMUX.
+ */
+#define GENOA_NBIO_IOHUB_HAS_SDPMUX	0
+
+/*
  * There are supposed to be 23 digital power management (DPM) weights provided
  * by each Genoa SMU.  Note that older processor families may have fewer, and
  * Naples also has more SMUs.

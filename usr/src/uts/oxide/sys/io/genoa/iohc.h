@@ -21,14 +21,15 @@
  * processors and likely future generations as well.  The IOHC is part of the
  * NBIO block, which comes from the legacy "north bridge" designation, and
  * connects the internal HT-based fabric with PCIe, the FCH, and other I/O
- * devices and fabrics.  While there is nominally but one IOHC per I/O die (of
- * which Genoa has but one per SOC), in practice there are four instances on
- * that die, each of which is connected to the DF via an I/O master/slave (IOMS)
- * component, has its own independent set of registers, and connects its own
- * collection of downstream resources (root ports, NBIFs, etc.) to the DF.
- * There are several sub-blocks in the IOHC including the IOAGR and SDP mux, and
- * their registers are defined here.  Registers in connected components such as
- * PCIe root ports, NBIFs, IOAPICs, IOMMUs, and the FCH are defined elsewhere.
+ * devices and fabrics.  Genoa comes with 2 NBIO blocks per die (of which Genoa
+ * has but one per SOC) and thus 2 IOHCs per die.  In practice, there are four
+ * IOHC instances (2 per NBIO), each of which is connected to the DF via I/O
+ * master (IOM) and I/O slave (IOS) components, has its own independent set of
+ * registers, and connects its own collection of downstream resources (root
+ * ports, NBIFs, etc.) to the DF. There are several sub-blocks in the IOHC
+ * including the IOAGR and SDP mux, and their registers are defined here.
+ * Registers in connected components such as PCIe root ports, NBIFs, IOAPICs,
+ * IOMMUs, and the FCH are defined elsewhere.
  */
 
 #include <sys/bitext.h>
@@ -43,18 +44,20 @@ AMDZEN_MAKE_SMN_REG_FN(genoa_iohc_smn_reg, IOHC, 0x13b00000,
 AMDZEN_MAKE_SMN_REG_FN(genoa_ioagr_smn_reg, IOAGR, 0x15b00000,
     SMN_APERTURE_MASK, 4, 20);
 
+
 /*
- * The SDPMUX SMN addresses are a bit weird. There is one per IOMS instance;
- * however, the SMN addresses are very different. The aperture number of the
- * first SDPMUX is found where we would expect; however, after that we not only
- * skip the next aperture but also add (1 << 23) to the base address for all
- * SDPMUX instances beyond 0.  It's unclear why this is so.  All registers are
- * 32 bits wide; we check for violations.
+ * The SDPMUX SMN addresses are a bit weird.  Unlike IOHC and IOAGR units, there
+ * are only 2 SDPMUX units (one per IOHUB0 in each NBIO).  The aperture number
+ * of the first SDPMUX is found where we would expect; however, after that we
+ * not only skip the next aperture but also add (1 << 23) to the base address to
+ * get the second SDPMUX instance.  It's unclear why this is so.  All registers
+ * are 32 bits wide; we check for violations.
  */
 static inline smn_reg_t
 genoa_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
     const uint16_t reginst)
 {
+	const uint32_t GENOA_SDPMUX_COUNT = 2;
 	const uint32_t sdpmux32 = (const uint32_t)sdpmuxno;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t stride = (def.srd_stride == 0) ? 4 :
@@ -64,7 +67,7 @@ genoa_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_SDPMUX);
-	ASSERT3U(sdpmux32, <, 4);
+	ASSERT3U(sdpmux32, <, GENOA_SDPMUX_COUNT);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
@@ -129,11 +132,47 @@ genoa_iohcdev_ ## _unitlc ## _smn_reg(const uint8_t iohcno,		\
 }
 
 GENOA_MAKE_SMN_IOHCDEV_REG_FN(PCIE, pcie, 0x13b31000, 0xffff8000, 3, 13);
-/*
- * For reasons not understood, NBIF2 doesn't have an IOHCDEV group.
- */
-GENOA_MAKE_SMN_IOHCDEV_REG_FN(NBIF, nbif, 0x13b38000, 0xffffc000, 2, 12);
 GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
+
+/*
+ * For reasons not understood, NBIF0 & NBIF2 don't have an IOHCDEV group.
+ * For consistency, accept unit numbers for NBIF0 & NBIF2 but assert that
+ * they are not used.
+ */
+static inline smn_reg_t
+genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
+    const uint8_t unitno, const uint8_t reginst)
+{
+	const uint32_t SMN_IOHCDEV_REG_MASK = 0x3ff;
+	const uint32_t iohc32 = (const uint32_t)iohcno;
+	const uint32_t unit32 = (const uint32_t)unitno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t stride = (def.srd_stride == 0) ? 4 :
+	    (const uint32_t)def.srd_stride;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t) def.srd_nents;
+
+	ASSERT0(def.srd_size);
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHCDEV_NBIF);
+	ASSERT3U(iohc32, <, 4);
+	ASSERT3U(unit32, ==, 1);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);
+
+	const uint32_t aperture_base = 0x13b38000;
+
+	const uint32_t aperture_off = (iohc32 << 20);
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & SMN_IOHCDEV_REG_MASK);
+
+	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	const uint32_t apmask = 0xffffc000;
+	ASSERT0(reg & apmask);
+
+	return (SMN_MAKE_REG(aperture + reg));
+}
 
 /*
  * IOHC Registers of Interest. The SMN based addresses are all relative to the
@@ -143,8 +182,8 @@ GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 /*
  * IOHC::NB_ADAPTER_ID_W.  This allows us to override the default subsystem
  * vendor and device ID for the IOHC's PCI device.  By default, this is
- * 1022,1450 which is the Naples pDID; AMD recommends setting it to the same
- * value as the Genoa pDID: 1022,1480.  This is in config space, not SMN!
+ * 1022,14A4 which is the Genoa pDID and can be left as-is. This is in config
+ * space, not SMN!
  */
 #define	IOHC_NB_ADAPTER_ID_W	0x50
 #define	IOHC_NB_ADAPTER_ID_W_GET_SDID(r)	bitx32(r, 31, 16)
@@ -217,6 +256,7 @@ GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 }
 #define	IOHC_BUS_NUM_CTL(h)	\
 	genoa_iohc_smn_reg(h, D_IOHC_BUS_NUM_CTL, 0)
+#define IOHC_BUS_NUM_CTL_SET_SEGMENT(r, v)	bitset32(r, 23, 16, v)
 #define	IOHC_BUS_NUM_CTL_SET_EN(r, v)		bitset32(r, 8, 8, v)
 #define	IOHC_BUS_NUM_CTL_SET_BUS(r, v)		bitset32(r, 7, 0, v)
 
@@ -302,9 +342,9 @@ GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 }
 #define	IOHC_FCTL(h)	\
 	genoa_iohc_smn_reg(h, D_IOHC_FCTL, 0)
-#define	IOHC_FCTL_GET_DGPU(r)		bitx32(r, 28, 28)
+// #define	IOHC_FCTL_GET_DGPU(r)		bitx32(r, 28, 28)
 #define	IOHC_FCTL_SET_ARI(r, v)		bitset32(r, 22, 22, v)
-#define	IOHC_FCTL_GET_ARCH(r)		bitx32(r, 3, 3)
+// #define	IOHC_FCTL_GET_ARCH(r)		bitx32(r, 3, 3)
 #define	IOHC_FCTL_SET_P2P(r, v)		bitset32(r, 2, 1, v)
 #define	IOHC_FCTL_P2P_DROP_NMATCH	0
 #define	IOHC_FCTL_P2P_FWD_NMATCH	1
@@ -956,7 +996,7 @@ GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 #define	D_IOHCDEV_PCIE_BRIDGE_CTL	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOHCDEV_PCIE,	\
 	.srd_reg = 0x4,	\
-	.srd_nents = 8,	\
+	.srd_nents = 9,	\
 	.srd_stride = 0x400	\
 }
 #define	IOHCDEV_PCIE_BRIDGE_CTL(h, p, i)	\
@@ -966,7 +1006,7 @@ GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
 #define	D_IOHCDEV_NBIF_BRIDGE_CTL	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOHCDEV_NBIF,	\
 	.srd_reg = 0x4,	\
-	.srd_nents = 3,	\
+	.srd_nents = 2,	\
 	.srd_stride = 0x400	\
 }
 #define	IOHCDEV_NBIF_BRIDGE_CTL(h, n, i)	\
