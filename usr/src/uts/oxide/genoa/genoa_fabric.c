@@ -2875,12 +2875,6 @@ genoa_fabric_topo_init(void)
 			 * Determine the Instance, Component & Fabric IDs for
 			 * the corresponding IOM and IOS instances.
 			 *
-			 * XXX: Verify
-			 * 	IO[MS]0 => NBIO 0, IOHC 0
-			 * 	IO[MS]1 => NBIO 0, IOHC 1
-			 * 	IO[MS]2 => NBIO 1, IOHC 0
-			 * 	IO[MS]3 => NBIO 1, IOHC 1
-			 *
 			 * XXX: Just find the FabricId via
 			 * DF::FabricBlockInstanceInformation3_CSNCSPIEALLM and
 			 * DF::FabricBlockInstanceInformation3_IOS
@@ -2920,7 +2914,7 @@ genoa_fabric_topo_init(void)
 			ioms->gio_nnbifs = GENOA_IOMS_MAX_NBIF;
 
 			/*
-			 * Only IOMS 3 has an FCH.
+			 * Only IOMS 3 (IOHUB1, NBIO1) has an FCH.
 			 *
 			 * XXX: Don't need to hardcode?
 			 *     DF::SpecialSysFunctionFabricID2[FchIOSFabricID]
