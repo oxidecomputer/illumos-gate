@@ -43,7 +43,7 @@ typedef struct genoa_pcie_port genoa_pcie_port_t;
 typedef int (*genoa_pcie_core_cb_f)(genoa_pcie_core_t *, void *);
 typedef int (*genoa_pcie_port_cb_f)(genoa_pcie_port_t *, void *);
 
-extern uint8_t genoa_nbio_n_pcie_cores(const uint8_t);
+extern uint8_t genoa_ioms_n_pcie_cores(const uint8_t);
 extern uint8_t genoa_pcie_core_n_ports(const uint8_t);
 
 /*
@@ -83,7 +83,7 @@ genoa_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_CORE_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t nents = genoa_nbio_n_pcie_cores(iomsno);
+	const uint32_t nents = genoa_ioms_n_pcie_cores(iomsno);
 	ASSERT3U(nents, >, core32);
 #endif	/* DEBUG */
 
@@ -115,7 +115,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_PORT_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t ncores = (const uint32_t)genoa_nbio_n_pcie_cores(iomsno);
+	const uint32_t ncores = (const uint32_t)genoa_ioms_n_pcie_cores(iomsno);
 	ASSERT3U(ncores, >, core32);
 	const uint32_t nents = (const uint32_t)genoa_pcie_core_n_ports(coreno);
 	ASSERT3U(nents, >, port32);

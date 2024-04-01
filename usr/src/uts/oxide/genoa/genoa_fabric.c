@@ -821,12 +821,12 @@ static const genoa_pcie_core_info_t genoa_wafl_map = {
 };
 
 /*
- * How many PCIe cores does this NBIO instance have?
+ * How many PCIe cores does this IOMS instance have?
  */
 uint8_t
-genoa_nbio_n_pcie_cores(const uint8_t nbno)
+genoa_ioms_n_pcie_cores(const uint8_t iomsno)
 {
-	if (nbno == GENOA_IOMS_HAS_WAFL)
+	if (GENOA_IOMS_IOHUB_NUM(iomsno) == GENOA_NBIO_IOHUB_HAS_WAFL)
 		return (GENOA_IOMS_MAX_PCIE_CORES);
 	return (GENOA_IOMS_MAX_PCIE_CORES - 1);
 }
@@ -2903,12 +2903,11 @@ genoa_fabric_topo_init(void)
 			ioms->gio_pci_busno = DF_CFG_ADDR_CTL_GET_BUS_NUM(val);
 
 			/*
-			 * Only IOMS 0 has a WAFL port.
-			 *
-			 * XXX: Verify
+			 * Only the first IOHUBs on each NBIO have a WAFL port.
 			 */
-			ioms->gio_npcie_cores = genoa_nbio_n_pcie_cores(iomsno);
-			if (iomsno == GENOA_IOMS_HAS_WAFL) {
+			ioms->gio_npcie_cores = genoa_ioms_n_pcie_cores(iomsno);
+			if (GENOA_IOMS_IOHUB_NUM(iomsno) ==
+			    GENOA_NBIO_IOHUB_HAS_WAFL) {
 				ioms->gio_flags |= GENOA_IOMS_F_HAS_WAFL;
 			}
 			ioms->gio_nnbifs = GENOA_IOMS_MAX_NBIF;
