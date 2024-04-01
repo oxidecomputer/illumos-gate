@@ -80,6 +80,11 @@ extern "C" {
  * has 3.  Thus, the max number of cores per NBIO in an IOMS is 3, but the
  * number is usually 2.  The WAFL link has core number 2.
  */
+/*
+ * Each NBIO has 4 x16 PCIe Gen5 cores, split across two IOHUBs.  Additionally,
+ * each NBIO also a x4 PCIe Gen3 core which shares a port with the WAFL PHY.
+ * The WAFL core is linked to IOHUB 0.
+ */
 #define	GENOA_IOMS_MAX_PCIE_CORES	3
 #define	GENOA_IOMS_WAFL_PCIE_CORENO	2
 
@@ -100,9 +105,9 @@ extern "C" {
 #define	GENOA_IOMS_HAS_FCH	3
 
 /*
- * Similarly, the IOMS instance with the WAFL port.
+ * Similarly, the per-NBIO IOHUB instances with the WAFL port.
  */
-#define	GENOA_IOMS_HAS_WAFL	0
+#define	GENOA_NBIO_IOHUB_HAS_WAFL	0
 
 /*
  * There are supposed to be 23 digital power management (DPM) weights provided
@@ -129,6 +134,16 @@ typedef struct ioms_memlists {
 	struct memlist		*im_bus_avail;
 	struct memlist		*im_bus_used;
 } ioms_memlists_t;
+
+/*
+ * Convenience macro to convert an IOMS number to the corresponding NBIO.
+ */
+#define GENOA_IOMS_NBIO_NUM(num) ((num) / GENOA_IOMS_PER_NBIO)
+
+/*
+ * Convenience macro to convert an IOMS number to the corresponding IOHUB.
+ */
+#define GENOA_IOMS_IOHUB_NUM(num) ((num) % GENOA_IOMS_PER_NBIO)
 
 struct genoa_ioms {
 	genoa_ioms_flag_t	gio_flags;
