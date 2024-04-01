@@ -1612,7 +1612,13 @@ genoa_ioms_reg(const genoa_ioms_t *const ioms, const smn_reg_def_t def,
 		reg = genoa_ioagr_smn_reg(ioms->gio_num, def, reginst);
 		break;
 	case SMN_UNIT_SDPMUX:
-		reg = genoa_sdpmux_smn_reg(ioms->gio_num, def, reginst);
+		/*
+		 * Not all IOMS have an SDPMUX; only the first IOHUB per NBIO.
+		 */
+		ASSERT3U(GENOA_IOMS_IOHUB_NUM(ioms->gio_num), ==,
+		    GENOA_NBIO_IOHUB_HAS_SDPMUX);
+		reg = genoa_sdpmux_smn_reg(GENOA_IOMS_NBIO_NUM(ioms->gio_num),
+		    def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -3054,22 +3060,30 @@ genoa_fabric_disable_iohc_vga(genoa_ioms_t *ioms, void *arg)
 }
 
 /*
- * Set the IOHC PCI device's subsystem identifiers.  This could be set to the
- * baseboard's subsystem ID, but the IOHC PCI device doesn't have any
- * oxide-specific semantics so we leave it at the AMD-recommended value.  Note
- * that the POR default value is not the one AMD recommends, for whatever
- * reason.
+ * We disable the bridge corresponding to the non-existent third PCIe core on
+ * IOHUB 1 of each NBIO.
  */
 static int
 genoa_fabric_init_iohc_pci(genoa_ioms_t *ioms, void *arg)
 {
 	uint32_t val;
 
-	val = pci_getl_func(ioms->gio_pci_busno, 0, 0, IOHC_NB_ADAPTER_ID_W);
-	val = IOHC_NB_ADAPTER_ID_W_SET_SVID(val, VENID_AMD);
-	val = IOHC_NB_ADAPTER_ID_W_SET_SDID(val,
-	    IOHC_NB_ADAPTER_ID_W_AMD_GENOA_IOHC);
-	pci_putl_func(ioms->gio_pci_busno, 0, 0, IOHC_NB_ADAPTER_ID_W, val);
+	if (GENOA_IOMS_IOHUB_NUM(ioms->gio_num) == GENOA_NBIO_IOHUB_HAS_WAFL)
+		return (0);
+
+	const smn_reg_t smn_regs[4] = {
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->gio_num, 2, 0),
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->gio_num, 2, 1),
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->gio_num, 2, 2),
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->gio_num, 2, 3),
+	};
+
+	for (uint_t i = 0; i < ARRAY_SIZE(smn_regs); i++) {
+		val = genoa_ioms_read(ioms, smn_regs[i]);
+		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+		genoa_ioms_write(ioms, smn_regs[i], val);
+	}
 
 	return (0);
 }
@@ -3300,9 +3314,28 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 	genoa_ioms_write(ioms, reg, val);
 
 	/*
-	 * Finally, the SDPMUX variant, which is surprisingly consistent
-	 * compared to everything else to date.
+	 * XXX We probably don't need this since we don't have USB. But until we
+	 * have things working and can experiment, hard to say. If someone were
+	 * to use the bus, probably something we need to consider.
 	 */
+	reg = genoa_ioms_reg(ioms, D_IOHC_USB_QOS_CTL, 0);
+	val = genoa_ioms_read(ioms, reg);
+	val = IOHC_USB_QOS_CTL_SET_UNID1_EN(val, 0x1);
+	val = IOHC_USB_QOS_CTL_SET_UNID1_PRI(val, 0x0);
+	val = IOHC_USB_QOS_CTL_SET_UNID1_ID(val, 0x30);
+	val = IOHC_USB_QOS_CTL_SET_UNID0_EN(val, 0x1);
+	val = IOHC_USB_QOS_CTL_SET_UNID0_PRI(val, 0x0);
+	val = IOHC_USB_QOS_CTL_SET_UNID0_ID(val, 0x2f);
+	genoa_ioms_write(ioms, reg, val);
+
+	/*
+	 * Finally, the SDPMUX variant, which is surprisingly consistent
+	 * compared to everything else to date.  The only thing to take note of
+	 * is that not all IOMS have an SDPMUX; only the first IOHUB per NBIO.
+	 */
+	if (GENOA_IOMS_IOHUB_NUM(ioms->gio_num) != GENOA_NBIO_IOHUB_HAS_SDPMUX)
+		return (0);
+
 	for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
 		reg = genoa_ioms_reg(ioms,
 		    D_SDPMUX_SION_S0_CLIREQ_BURST_LOW, i);
@@ -3333,21 +3366,6 @@ genoa_fabric_init_arbitration_ioms(genoa_ioms_t *ioms, void *arg)
 	reg = genoa_ioms_reg(ioms, D_SDPMUX_SION_LLWD_THRESH, 0);
 	val = genoa_ioms_read(ioms, reg);
 	val = SDPMUX_SION_LLWD_THRESH_SET(val, SDPMUX_SION_LLWD_THRESH_VAL);
-	genoa_ioms_write(ioms, reg, val);
-
-	/*
-	 * XXX We probably don't need this since we don't have USB. But until we
-	 * have things working and can experiment, hard to say. If someone were
-	 * to use the bus, probably something we need to consider.
-	 */
-	reg = genoa_ioms_reg(ioms, D_IOHC_USB_QOS_CTL, 0);
-	val = genoa_ioms_read(ioms, reg);
-	val = IOHC_USB_QOS_CTL_SET_UNID1_EN(val, 0x1);
-	val = IOHC_USB_QOS_CTL_SET_UNID1_PRI(val, 0x0);
-	val = IOHC_USB_QOS_CTL_SET_UNID1_ID(val, 0x30);
-	val = IOHC_USB_QOS_CTL_SET_UNID0_EN(val, 0x1);
-	val = IOHC_USB_QOS_CTL_SET_UNID0_PRI(val, 0x0);
-	val = IOHC_USB_QOS_CTL_SET_UNID0_ID(val, 0x2f);
 	genoa_ioms_write(ioms, reg, val);
 
 	return (0);
@@ -3524,7 +3542,7 @@ genoa_fabric_init_ioapic(genoa_ioms_t *ioms, void *arg)
 }
 
 /*
- * Each IOHC has registers that can further constraion what type of PCI bus
+ * Each IOHC has registers that can further constrain what type of PCI bus
  * numbers the IOHC itself is expecting to reply to. As such, we program each
  * IOHC with its primary bus number and enable this.
  */
@@ -3536,6 +3554,7 @@ genoa_fabric_init_bus_num(genoa_ioms_t *ioms, void *arg)
 
 	reg = genoa_ioms_reg(ioms, D_IOHC_BUS_NUM_CTL, 0);
 	val = genoa_ioms_read(ioms, reg);
+	val = IOHC_BUS_NUM_CTL_SET_SEGMENT(val, 0);
 	val = IOHC_BUS_NUM_CTL_SET_EN(val, 1);
 	val = IOHC_BUS_NUM_CTL_SET_BUS(val, ioms->gio_pci_busno);
 	genoa_ioms_write(ioms, reg, val);
@@ -3624,21 +3643,19 @@ genoa_fabric_init_nbif_dev_straps(genoa_nbif_t *nbif, void *arg)
 }
 
 /*
- * There are five bridges that are associated with the NBIFs. One on NBIF0,
- * three on NBIF1, and the last on the SB. There is nothing on NBIF 2 which is
- * why we don't use the nbif iterator, though this is somewhat uglier. The
- * default expectation of the system is that the CRS bit is set. XXX these have
- * all been left enabled for now.
+ * There are three bridges that are associated with the NBIFs. Two on NBIF1
+ * one on the SB. There is nothing on NBIF0 & NBIF2 which is why we don't use
+ * the nbif iterator, though this is somewhat uglier. The default expectation of
+ * the system is that the CRS bit is set.
+ * XXX these have all been left enabled for now.
  */
 static int
 genoa_fabric_init_nbif_bridge(genoa_ioms_t *ioms, void *arg)
 {
 	uint32_t val;
-	const smn_reg_t smn_regs[5] = {
-		IOHCDEV_NBIF_BRIDGE_CTL(ioms->gio_num, 0, 0),
+	const smn_reg_t smn_regs[3] = {
 		IOHCDEV_NBIF_BRIDGE_CTL(ioms->gio_num, 1, 0),
 		IOHCDEV_NBIF_BRIDGE_CTL(ioms->gio_num, 1, 1),
-		IOHCDEV_NBIF_BRIDGE_CTL(ioms->gio_num, 1, 2),
 		IOHCDEV_SB_BRIDGE_CTL(ioms->gio_num)
 	};
 
