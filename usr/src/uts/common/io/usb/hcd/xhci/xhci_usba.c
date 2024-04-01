@@ -263,7 +263,16 @@ xhci_hcdi_pipe_open(usba_pipe_handle_data_t *ph, usb_flags_t usb_flags)
 	XHCI_DMA_SYNC(xd->xd_ictx, DDI_DMA_SYNC_FORDEV);
 	if (xhci_check_dma_handle(xhcip, &xd->xd_ictx) != DDI_FM_OK) {
 		mutex_exit(&xd->xd_imtx);
+
+		/*
+		 * Because this failure occured prior to the configure endpoint
+		 * command, we should both release _and_ free the endpoint.
+		 */
+		mutex_enter(&xhcip->xhci_lock);
+		xhci_endpoint_release(xhcip, xep);
 		xhci_endpoint_fini(xd, epid);
+		mutex_exit(&xhcip->xhci_lock);
+
 		kmem_free(pipe, sizeof (xhci_pipe_t));
 		xhci_error(xhcip, "failed to open pipe on endpoint %d of "
 		    "device with slot %d and port %d: encountered fatal FM "
@@ -275,7 +284,22 @@ xhci_hcdi_pipe_open(usba_pipe_handle_data_t *ph, usb_flags_t usb_flags)
 
 	if ((ret = xhci_command_configure_endpoint(xhcip, xd)) != USB_SUCCESS) {
 		mutex_exit(&xd->xd_imtx);
+
+		xhci_error(xhcip, "failed to open pipe on endpoint %d of "
+		    "device with slot %d and port %d: configure endpoint "
+		    "command failed (%d)", epid, xd->xd_slot, xd->xd_port, ret);
+
+		/*
+		 * Because the configure endpoint command failed, we should
+		 * both release _and_ free the endpoint.  If we don't do this,
+		 * the endpoint will remain stuck in the open state until it is
+		 * removed and reinserted.
+		 */
+		mutex_enter(&xhcip->xhci_lock);
+		xhci_endpoint_release(xhcip, xep);
 		xhci_endpoint_fini(xd, epid);
+		mutex_exit(&xhcip->xhci_lock);
+
 		kmem_free(pipe, sizeof (xhci_pipe_t));
 		return (ret);
 	}

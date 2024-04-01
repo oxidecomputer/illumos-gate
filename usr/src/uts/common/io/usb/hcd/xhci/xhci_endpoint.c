@@ -76,6 +76,10 @@ xhci_endpoint_timeout_cancel(xhci_t *xhcip, xhci_endpoint_t *xep)
 	}
 }
 
+/*
+ * Release an endpoint that has been initialised; i.e., either
+ * xhci_endpoint_init() or xhci_endpoint_reinit() have completed successfully.
+ */
 void
 xhci_endpoint_release(xhci_t *xhcip, xhci_endpoint_t *xep)
 {
@@ -94,7 +98,9 @@ xhci_endpoint_release(xhci_t *xhcip, xhci_endpoint_t *xep)
 
 /*
  * The assumption is that someone calling this owns this endpoint / device and
- * that it's in a state where it's safe to zero out that information.
+ * that it's in a state where it's safe to zero out that information.  In
+ * particular, if the endpoint has ever been initialised and is marked open,
+ * xhci_endpoint_release() must have been called before this routine.
  */
 void
 xhci_endpoint_fini(xhci_device_t *xd, int endpoint)
@@ -105,6 +111,10 @@ xhci_endpoint_fini(xhci_device_t *xd, int endpoint)
 	xd->xd_endpoints[endpoint] = NULL;
 
 	if (endpoint != XHCI_DEFAULT_ENDPOINT) {
+		/*
+		 * Make sure xhci_endpoint_release() was called before we get
+		 * here:
+		 */
 		VERIFY(!(xep->xep_state & XHCI_ENDPOINT_OPEN));
 	}
 
