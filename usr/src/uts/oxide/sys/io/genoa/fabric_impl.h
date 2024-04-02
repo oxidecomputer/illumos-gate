@@ -99,12 +99,6 @@ extern "C" {
 #define	GENOA_DF_FIRST_IOS_COMP_ID	0x20
 
 /*
- * This indicates the ID number of the IOS instance that happens to have the
- * FCH present.
- */
-#define	GENOA_IOMS_HAS_FCH	3
-
-/*
  * Similarly, the per-NBIO IOHUB instances with the WAFL port.
  */
 #define	GENOA_NBIO_IOHUB_HAS_WAFL	0

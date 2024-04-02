@@ -2783,7 +2783,7 @@ void
 genoa_fabric_topo_init(void)
 {
 	uint8_t nsocs;
-	uint32_t syscfg, syscomp, fidmask;
+	uint32_t syscfg, syscomp, fidmask, fch_ios_fabric_id;
 	genoa_fabric_t *fabric = &genoa_fabric;
 
 	PRM_POINT("genoa_fabric_topo_init() starting...");
@@ -2828,6 +2828,13 @@ genoa_fabric_topo_init(void)
 
 	fidmask = genoa_df_early_read32(DF_FIDMASK1_V4);
 	fabric->gf_node_shift = DF_FIDMASK1_V3P5_GET_NODE_SHIFT(fidmask);
+
+	/*
+	 * We need to know which IOMS has the FCH which we can find by reading
+	 * DF::SpecialSysFunctionFabricID2[FchIOSFabricID].
+	 */
+	fch_ios_fabric_id = DF_SYS_FUN_FID2_V4_GET_FCH_IOS_FID(
+	    genoa_df_early_read32(DF_SYS_FUN_FID2_V4));
 
 	fabric->gf_nsocs = nsocs;
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
@@ -2918,13 +2925,7 @@ genoa_fabric_topo_init(void)
 			}
 			ioms->gio_nnbifs = GENOA_IOMS_MAX_NBIF;
 
-			/*
-			 * Only IOMS 3 (IOHUB1, NBIO1) has an FCH.
-			 *
-			 * XXX: Don't need to hardcode?
-			 *     DF::SpecialSysFunctionFabricID2[FchIOSFabricID]
-			 */
-			if (iomsno == GENOA_IOMS_HAS_FCH) {
+			if (fch_ios_fabric_id == ioms->gio_ios_fabric_id) {
 				ioms->gio_flags |= GENOA_IOMS_F_HAS_FCH;
 			}
 

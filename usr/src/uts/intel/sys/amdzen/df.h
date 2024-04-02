@@ -995,6 +995,28 @@ typedef enum {
 #define	DF_FIDMASK2_V3P5_GET_DIE_MASK(r)	bitx32(r, 15, 0)
 
 /*
+ * DF::SpecialSysFunctionFabricID1, DF::SpecialSysFunctionFabricID2,
+ * DF::SpecialSysFunctionFabricID3 -- These are used to determine the fabric ID
+ * of various functional groups.
+ */
+/*CSTYLED*/
+#define DF_SYS_FUN_FID1_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
+				.drd_func = 4, \
+				.drd_reg = 0x190 }
+#define DF_SYS_FUN_FID1_V4_GET_MSTR_PIE_FID(r)	bitx32(r, 27, 16)
+#define DF_SYS_FUN_FID1_V4_GET_LCL_PIE_FID(r)	bitx32(r, 11, 0)
+/*CSTYLED*/
+#define DF_SYS_FUN_FID2_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
+				.drd_func = 4, \
+				.drd_reg = 0x194 }
+#define DF_SYS_FUN_FID2_V4_GET_FCH_IOS_FID(r)	bitx32(r, 27, 16)
+/*CSTYLED*/
+#define DF_SYS_FUN_FID3_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
+				.drd_func = 4, \
+				.drd_reg = 0x198 }
+#define DF_SYS_FUN_FID3_V4_GET_LCL_CNG_FID(r)	bitx32(r, 11, 0)
+
+/*
  * DF::DieFabricIdMask -- This is a Zeppelin, DFv2 special. There are a couple
  * instances of this for different types of devices; however, this is where the
  * component mask is actually stored. This is replicated for a CPU, APU, and
