@@ -2393,7 +2393,6 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 {
 	zen_mpio_status_t status = { 0 };
 
-	cmn_err(CE_WARN, "wait_ready called");
 	for (int k = 0; k < 100000; k++) {
 		if (!genoa_mpio_rpc_get_status(iodie, &status)) {
 			cmn_err(CE_WARN, "MPIO wait ready RPC failed");
@@ -2440,7 +2439,6 @@ genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
 		cmn_err(CE_NOTE, "Socket %u: failed to read DXIO version",
 		    soc->gs_socno);
 	}
-	genoa_mpio_wait_ready(iodie);
 
 	return (0);
 }
@@ -3791,8 +3789,7 @@ genoa_mpio_recv_ask(genoa_iodie_t *iodie)
 	ASSERT3P(conf->gmc_ask, !=, NULL);
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
 
-	cmn_err(CE_WARN, "recv ask");
-	if (0 && !genoa_mpio_wait_ready(iodie)) {
+	if (!genoa_mpio_wait_ready(iodie)) {
 		cmn_err(CE_WARN, "MPIO wait for ready to recveive ASK failed");
 		return (1);
 	}
@@ -4005,18 +4002,47 @@ genoa_mpio_setup_link_post_perst_req(genoa_iodie_t *iodie)
 }
 
 static int
-genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_send_data(genoa_iodie_t *iodie, void *arg)
 {
 	if (genoa_mpio_send_ask(iodie) != 0) {
 		cmn_err(CE_WARN, "MPIO send ASK failed");
 		return (1);
 	}
 
+	return (0);
+}
+
+static bool genoa_mpio_map_engines(genoa_fabric_t *fabric,
+    genoa_iodie_t *iodie);
+
+static int
+genoa_mpio_init_mapping(genoa_iodie_t *iodie, void *arg)
+{
 	if (genoa_mpio_setup_link_post_map(iodie) != 0 ||
 	    genoa_mpio_recv_ask(iodie) != 0) {
 		cmn_err(CE_WARN, "MPIO reconcile map failed");
 		return (1);
 	}
+
+
+	if (genoa_mpio_map_engines(iodie->gi_soc->gs_fabric, iodie) == 0) {
+		cmn_err(CE_WARN, "Socket %u failed to map all DXIO engines "
+		    "to devices.  PCIe will not function",
+		    iodie->gi_soc->gs_socno);
+		return (1);
+	}
+
+	return (0);
+}
+static int genoa_fabric_init_pcie_straps(genoa_pcie_core_t *pc, void *arg);
+
+static int
+genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
+{
+	(void) genoa_fabric_walk_pcie_core(iodie->gi_soc->gs_fabric,
+	    genoa_fabric_init_pcie_straps, iodie);
+	cmn_err(CE_CONT, "?Socket %u MPIO: Wrote PCIe straps\n",
+	    iodie->gi_soc->gs_socno);
 
 	if (genoa_mpio_setup_link_post_config_reconfig(iodie) != 0 ||
 	    genoa_mpio_recv_ask(iodie) != 0) {
@@ -4030,72 +4056,10 @@ genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
 		return (1);
 	}
 #if 0
-	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
-
-	/*
-	 * Begin by loading the NULL capabilities before we load any data heaps.
-	 */
-	if (!genoa_mpio_rpc_load_caps(iodie)) {
-		return (1);
-	}
-
-	if (conf->gmc_anc != NULL && !genoa_mpio_rpc_load_data(iodie,
-	    GENOA_MPIO_HEAP_ANCILLARY, conf->gmc_anc_pa, conf->gmc_anc_len,
-	    0)) {
-		return (1);
-	}
-
-	/*
-	 * It seems that we're required to load both of these heaps with the
-	 * mystery bit set to one. It's called that because we don't know what
-	 * it does; however, these heaps are always loaded with no data, even
-	 * though ancillary is skipped if there is none.
-	 */
-	if (!genoa_mpio_rpc_load_data(iodie, GENOA_MPIO_HEAP_MACPCS,
-	    0, 0, 1) ||
-	    !genoa_mpio_rpc_load_data(iodie, GENOA_MPIO_HEAP_GPIO, 0, 0, 1)) {
-		return (1);
-	}
-
-	/*
-	 * Load our real data!
-	 */
-	if (!genoa_mpio_rpc_load_data(iodie, GENOA_MPIO_HEAP_ENGINE_CONFIG,
-	    conf->gmc_pa, conf->gmc_conf_len, 0)) {
-		return (1);
-	}
-#endif
-
-	return (0);
-}
-
-static int
-genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
-{
-	/*
-	 * Note, here we might use genoa_mpio_rpc_conf_training() if we want to
-	 * override any of the properties there. But the defaults in DXIO
-	 * firmware seem to be used by default. We also might apply various
-	 * workarounds that we don't seem to need to
-	 * (GENOA_MPIO_RT_SET_CONF_DXIO_WA, GENOA_MPIO_RT_SET_CONF_SPC_WA,
-	 * GENOA_MPIO_RT_SET_CONF_FC_CRED_WA_DIS).
-	 */
-
-	/*
-	 * XXX Do we care about any of the following:
-	 *    o GENOA_MPIO_RT_SET_CONF_TX_CLOCK
-	 *    o GENOA_MPIO_RT_SET_CONF_SRNS
-	 *    o GENOA_MPIO_RT_SET_CONF_DLF_WA_DIS
-	 *
-	 * I wonder why we don't enable GENOA_MPIO_RT_SET_CONF_CE_SRAM_ECC in
-	 * the old world.
-	 */
-
 	/*
 	 * This is set to 1 by default because we want 'latency behaviour' not
 	 * 'improved latency'.
 	 */
-#if 0
 	if (!genoa_mpio_rpc_misc_rt_conf(iodie,
 	    GENOA_MPIO_RT_SET_CONF_TX_FIFO_MODE, 1)) {
 		return (1);
@@ -6320,9 +6284,15 @@ genoa_fabric_init(void)
 		return;
 	}
 
-	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_send_data, NULL) != 0) {
 		cmn_err(CE_WARN, "MPIO Initialization failed: failed to load "
 		    "data into mpio");
+		return;
+	}
+
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init_mapping, NULL)
+	    != 0) {
+		cmn_err(CE_WARN, "MPIO Initialize mapping failed");
 		return;
 	}
 
@@ -6342,8 +6312,8 @@ genoa_fabric_init(void)
 		return;
 	}
 
-	cmn_err(CE_CONT, "?DXIO LISM execution completed successfully\n");
 #endif
+	cmn_err(CE_CONT, "?MPIO initialization completed successfully\n");
 	/*
 	 * Now that we have successfully trained devices, it's time to go
 	 * through and set up the bridges so that way we can actual handle them

@@ -191,7 +191,7 @@ typedef struct zen_mpio_link_attr {
 typedef struct zen_mpio_link {
 	uint32_t	zml_lane_start:16;
 	uint32_t	zml_num_lanes:6;
-	uint32_t	zml_resv:1;
+	uint32_t	zml_reversed:1;
 	uint32_t	zml_status:5;
 	uint32_t	zml_ctlr_type:4;
 	uint32_t	zml_gpio_id:8;
@@ -200,6 +200,19 @@ typedef struct zen_mpio_link {
 
 	zen_mpio_link_attr_t zml_attrs;
 } zen_mpio_link_t;
+
+typedef enum zen_mpio_link_state {
+	ZEN_MPIO_LINK_STATE_FREE = 0,
+	ZEN_MPIO_LINK_STATE_ALLOCATED,
+	ZEN_MPIO_LINK_STATE_PROVISIONED,
+	ZEN_MPIO_LINK_STATE_BIFURCATION_FAILED,
+	ZEN_MPIO_LINK_STATE_RESET,
+	ZEN_MPIO_LINK_STATE_UNTRAINED,
+	ZEN_MPIO_LINK_STATE_TRAINED,
+	ZEN_MPIO_LINK_STATE_FAILURE,
+	ZEN_MPIO_LINK_STATE_TRAINING_FAILURE,
+	ZEN_MPIO_LINK_STATE_TIMEOUT
+} zen_mpio_link_state_t;
 
 typedef struct zen_mpio_ict_link_status {
 	uint32_t	zmils_state:4;
