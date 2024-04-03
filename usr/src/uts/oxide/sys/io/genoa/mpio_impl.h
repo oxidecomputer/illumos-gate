@@ -220,6 +220,10 @@ typedef struct zen_mpio_ask {
 	zen_mpio_ask_port_t	zma_ports[ZEN_MPIO_ASK_MAX_PORTS];
 } zen_mpio_ask_t;
 
+typedef struct zen_mpio_port_conf {
+	zen_mpio_ask_port_t	zmpc_ask;
+} zen_mpio_port_conf_t;
+
 typedef struct zen_mpio_ext_attrs {
 	uint8_t		zmad_type;
 	uint8_t		zmad_vers:4;
@@ -265,6 +269,29 @@ typedef struct zen_mpio_status {
 	uint32_t	zms_fw_status;
 	uint32_t	zms_resv[2];
 } zen_mpio_status_t;
+
+typedef struct zen_mpio_link_setup_args {
+	uint32_t	zmlsa_map:1;
+	uint32_t	zmlsa_configure:1;
+	uint32_t	zmlsa_reconfigure:1;
+	uint32_t	zmlsa_perst_req:1;
+	uint32_t	zmlsa_training:1;
+	uint32_t	zmlsa_enumerate:1;
+	uint32_t	zmlsa_resv0:26;
+	uint32_t	zmlsa_resv1[5];
+} zen_mpio_link_setup_args_t;
+
+typedef struct zen_mpio_link_setup_resp {
+	uint32_t	zmlsr_result;
+	uint32_t	zmlsr_map:1;
+	uint32_t	zmlsr_configure:1;
+	uint32_t	zmlsr_reconfigure:1;
+	uint32_t	zmlsr_perst_req:1;
+	uint32_t	zmlsr_training:1;
+	uint32_t	zmlsr_enumerate:1;
+	uint32_t	zmlsr_resv0:26;
+	uint32_t	zmlsr_resv1[4];
+} zen_mpio_link_setup_resp_t;
 
 typedef struct zen_mpio_link_cap {
 	uint32_t	zmlc_present:1;
@@ -660,7 +687,7 @@ typedef struct smu_hotplug_entry {
 
 #pragma	pack()	/* pragma pack(4) */
 
-extern const zen_mpio_ask_port_t ruby_mpio_pcie_s0[];
+extern const zen_mpio_port_conf_t ruby_mpio_pcie_s0[];
 extern const size_t RUBY_MPIO_PCIE_S0_LEN;
 extern const smu_hotplug_entry_t ruby_hotplug_ents[];
 
@@ -695,6 +722,8 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_OP_LEGACY_HP_EN	0x14
 #define	GENOA_MPIO_OP_LEGACY_HP_DIS	0x15
 #define	GENOA_MPIO_OP_SET_HP_I2C_SW_ADDR 0x16
+
+#define	GENOA_MPIO_OP_POSTED		(3 << 8)
 
 #define	MPIO_XFER_TO_RAM	0
 #define	MPIO_XFER_FROM_RAM	1
@@ -741,13 +770,14 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_LINK_SPEED_SINGLE	0x800
 
 typedef struct genoa_mpio_config {
+	zen_mpio_port_conf_t	*gmc_port_conf;
 	zen_mpio_ask_t		*gmc_ask;
 	zen_mpio_ext_attrs_t	*gmc_ext_attrs;
 	uint64_t		gmc_ask_pa;
 	uint64_t		gmc_ext_attrs_pa;
+	uint32_t		gmc_nports;
 	uint32_t		gmc_ask_alloc_len;
 	uint32_t		gmc_ext_attrs_alloc_len;
-	uint32_t		gmc_ask_nports;
 	uint32_t		gmc_ext_attrs_len;
 } genoa_mpio_config_t;
 

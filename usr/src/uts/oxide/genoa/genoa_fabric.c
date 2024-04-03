@@ -2359,7 +2359,7 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 
 	rpc.gmr_req = GENOA_MPIO_OP_GET_VERSION;
 
-	resp =  genoa_mpio_rpc(iodie, &rpc);
+	resp = genoa_mpio_rpc(iodie, &rpc);
 	if (resp != GENOA_MPIO_RPC_OK) {
 		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: 0x%x", resp);
 		return (false);
@@ -3678,12 +3678,12 @@ genoa_fabric_init_nbif_bridge(genoa_ioms_t *ioms, void *arg)
 }
 
 /*
- * Do MPIO initialization.  Unlike earlier systems that did
- * this via DXIO and discrete RPCs, MPIO takes a single global
- * configuration parameter in an RPC.
+ * Do MPIO global configuration initialization.  Unlike earlier
+ * systems that did this via DXIO and discrete RPCs, MPIO takes
+ * a single global configuration parameter in an RPC.
  */
 static int
-genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_init_global_config(genoa_iodie_t *iodie, void *arg)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
 	zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)rpc.gmr_args;
@@ -3752,7 +3752,8 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie)
 	ASSERT3P(conf->gmc_ask, !=, NULL);
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
 
-	if (!genoa_mpio_wait_ready(iodie)) {
+	cmn_err(CE_WARN, "send ask");
+	if (0 && !genoa_mpio_wait_ready(iodie)) {
 		cmn_err(CE_WARN, "MPIO wait for ready to send ASK failed");
 		return (1);
 	}
@@ -3760,7 +3761,7 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie)
 	args = (zen_mpio_xfer_ask_args_t *)rpc.gmr_args;
 	args->zmxaa_paddr_hi = conf->gmc_ask_pa >> 32;
 	args->zmxaa_paddr_lo = conf->gmc_ask_pa & 0xFFFFFFFFU;
-	args->zmxaa_link_count = conf->gmc_ask_nports;
+	args->zmxaa_link_count = conf->gmc_nports;
 	args->zmxaa_links = MPIO_LINK_SELECTED;
 	args->zmxaa_dir = MPIO_XFER_FROM_RAM;
 
@@ -3790,9 +3791,10 @@ genoa_mpio_recv_ask(genoa_iodie_t *iodie)
 	ASSERT3P(conf->gmc_ask, !=, NULL);
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
 
-	if (!genoa_mpio_wait_ready(iodie)) {
+	cmn_err(CE_WARN, "recv ask");
+	if (0 && !genoa_mpio_wait_ready(iodie)) {
 		cmn_err(CE_WARN, "MPIO wait for ready to recveive ASK failed");
-		return (0);
+		return (1);
 	}
 
 	args = (zen_mpio_xfer_ask_args_t *)rpc.gmr_args;
@@ -3820,11 +3822,13 @@ static int
 genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 {
 	ddi_dma_attr_t attr;
-	size_t ask_size;
+	size_t size;
 	pfn_t pfn;
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 	genoa_soc_t *soc = iodie->gi_soc;
-	const zen_mpio_ask_port_t *source_data;
+	const zen_mpio_port_conf_t *source_data;
+	zen_mpio_ask_port_t *ask;
+	int i;
 #if 0
 	const genoa_apob_phyovr_t *phy_override;
 	size_t phy_len;
@@ -3835,31 +3839,38 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	 * XXX Figure out how to best not hardcode Ethanol. Realistically
 	 * probably an SP boot property.
 	 */
-	if (genoa_board_type() == MBT_RUBY && soc->gs_socno == 0) {
-		source_data = ruby_mpio_pcie_s0;
-		conf->gmc_ask_nports = RUBY_MPIO_PCIE_S0_LEN;
-	} else {
+	if (genoa_board_type() != MBT_RUBY || soc->gs_socno != 0) {
 		return (0);
 	}
+	source_data = ruby_mpio_pcie_s0;
+	conf->gmc_nports = RUBY_MPIO_PCIE_S0_LEN;
+
+	size = sizeof (zen_mpio_port_conf_t) * conf->gmc_nports;
+	conf->gmc_port_conf = kmem_zalloc(size, KM_SLEEP);
+	bcopy(source_data, conf->gmc_port_conf, size);
 	VERIFY3P(source_data, !=, NULL);
 
-	ask_size = conf->gmc_ask_nports * sizeof (zen_mpio_ask_port_t);
-	VERIFY3U(ask_size, <=, MMU_PAGESIZE);
+	size = conf->gmc_nports * sizeof (zen_mpio_ask_port_t);
+	VERIFY3U(size, <=, MMU_PAGESIZE);
 
 	genoa_dma_attr(&attr);
 
 	conf->gmc_ask_alloc_len = MMU_PAGESIZE;
 	conf->gmc_ask = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(conf->gmc_ask, MMU_PAGESIZE);
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ask);
-	conf->gmc_ask_pa = mmu_ptob((uint64_t)pfn);
-	bcopy(source_data, conf->gmc_ask, ask_size);
+	ask = conf->gmc_ask->zma_ports;
+	for (i = 0; i < conf->gmc_nports; i++)
+		bcopy(&source_data[i].zmpc_ask, ask + i, sizeof (*ask));
 
-	conf->gmc_ask_alloc_len = MMU_PAGESIZE;
-	conf->gmc_ask = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->gmc_ask, MMU_PAGESIZE);
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ask);
 	conf->gmc_ask_pa = mmu_ptob((uint64_t)pfn);
+
+	conf->gmc_ext_attrs_alloc_len = MMU_PAGESIZE;
+	conf->gmc_ext_attrs = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->gmc_ext_attrs, MMU_PAGESIZE);
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ext_attrs);
+	conf->gmc_ext_attrs_pa = mmu_ptob((uint64_t)pfn);
 
 #if 0
 	phy_override = kapob_find(APOB_GROUP_FABRIC,
@@ -3933,20 +3944,91 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 }
 
 static int
-genoa_mpio_send_data(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_setup_link_post_map(genoa_iodie_t *iodie)
 {
+	genoa_mpio_rpc_t rpc = { 0 };
+	zen_mpio_link_setup_args_t *args;
+	int resp;
 
+	cmn_err(CE_WARN, "setup link post map");
+	rpc.gmr_req = GENOA_MPIO_OP_POSTED | GENOA_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.gmr_args;
+	args->zmlsa_map = 1;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link RPC failed: 0x%x", resp);
+		return (1);
+	}
+
+	return (0);
+}
+
+static int
+genoa_mpio_setup_link_post_config_reconfig(genoa_iodie_t *iodie)
+{
+	genoa_mpio_rpc_t rpc = { 0 };
+	zen_mpio_link_setup_args_t *args;
+	int resp;
+
+	cmn_err(CE_WARN, "setup link config/reconfig");
+	rpc.gmr_req = GENOA_MPIO_OP_POSTED | GENOA_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.gmr_args;
+	args->zmlsa_configure = 1;
+	args->zmlsa_reconfigure = 1;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link RPC failed: 0x%x", resp);
+		return (1);
+	}
+
+	return (0);
+}
+
+static int
+genoa_mpio_setup_link_post_perst_req(genoa_iodie_t *iodie)
+{
+	genoa_mpio_rpc_t rpc = { 0 };
+	zen_mpio_link_setup_args_t *args;
+	int resp;
+
+	cmn_err(CE_WARN, "setup link perst req");
+	rpc.gmr_req = GENOA_MPIO_OP_POSTED | GENOA_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.gmr_args;
+	args->zmlsa_perst_req = 1;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link RPC failed: 0x%x", resp);
+		return (1);
+	}
+
+	return (0);
+}
+
+static int
+genoa_mpio_init(genoa_iodie_t *iodie, void *arg)
+{
 	if (genoa_mpio_send_ask(iodie) != 0) {
 		cmn_err(CE_WARN, "MPIO send ASK failed");
 		return (1);
 	}
-	cmn_err(CE_WARN, "sent ask, waiting on resp");
-	if (genoa_mpio_recv_ask(iodie) != 0) {
-		cmn_err(CE_WARN, "MPIO recv ASK failed");
+
+	if (genoa_mpio_setup_link_post_map(iodie) != 0 ||
+	    genoa_mpio_recv_ask(iodie) != 0) {
+		cmn_err(CE_WARN, "MPIO reconcile map failed");
 		return (1);
 	}
-	cmn_err(CE_WARN, "sent ask, waiting on resp");
 
+	if (genoa_mpio_setup_link_post_config_reconfig(iodie) != 0 ||
+	    genoa_mpio_recv_ask(iodie) != 0) {
+		cmn_err(CE_WARN, "MPIO config/reconfig failed");
+		return (1);
+	}
+
+	if (genoa_mpio_setup_link_post_perst_req(iodie) != 0 ||
+	    genoa_mpio_recv_ask(iodie) != 0) {
+		cmn_err(CE_WARN, "MPIO PERST request failed");
+		return (1);
+	}
 #if 0
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 
@@ -4033,10 +4115,11 @@ static bool
 genoa_mpio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 {
 	bool ret = true;
-	zen_mpio_ask_t *ask = iodie->gi_mpio_conf.gmc_ask;
+	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 
-	for (uint_t i = 0; i < iodie->gi_mpio_conf.gmc_ask_nports; i++) {
-		zen_mpio_ask_port_t *ap = &ask->zma_ports[i];
+	for (uint_t i = 0; i < conf->gmc_nports; i++) {
+		zen_mpio_port_conf_t *gpc = conf->gmc_port_conf + i;
+		zen_mpio_ask_port_t *ap = &gpc->zmpc_ask;
 		zen_mpio_link_t *lp = &ap->zma_link;
 		genoa_pcie_core_t *pc;
 		genoa_pcie_port_t *port;
@@ -6229,22 +6312,19 @@ genoa_fabric_init(void)
 		cmn_err(CE_WARN, "MPIO ASK Initialization failed");
 		return;
 	}
-	cmn_err(CE_WARN, "after genoa_mpio_init_data");
 
-	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init_global_config,
+	    NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
 		return;
 	}
-	cmn_err(CE_WARN, "GENOA FABRIC INIT SUCCEEDED\n");
 
-	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_send_data, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init, NULL) != 0) {
 		cmn_err(CE_WARN, "MPIO Initialization failed: failed to load "
 		    "data into mpio");
 		return;
 	}
-
-	cmn_err(CE_WARN, "GOT HERE");
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_more_conf, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to do yet "
@@ -6263,7 +6343,7 @@ genoa_fabric_init(void)
 	}
 
 	cmn_err(CE_CONT, "?DXIO LISM execution completed successfully\n");
-
+#endif
 	/*
 	 * Now that we have successfully trained devices, it's time to go
 	 * through and set up the bridges so that way we can actual handle them
@@ -6278,6 +6358,7 @@ genoa_fabric_init(void)
 	 */
 	genoa_fabric_hack_bridges(fabric);
 
+#if 0
 	/*
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
