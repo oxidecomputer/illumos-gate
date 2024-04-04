@@ -173,12 +173,12 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_RSMU_STRAP_ADDR	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_RSMU,	\
-	.srd_reg = 0x7ac	\
+	.srd_reg = 0x0ac	\
 }
 /*CSTYLED*/
 #define	D_PCIE_RSMU_STRAP_DATA	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_RSMU,	\
-	.srd_reg = 0x7b0	\
+	.srd_reg = 0x020	\
 }
 #define	PCIE_RSMU_STRAP_ADDR(h, p)	\
     genoa_pcie_rsmu_smn_reg(h, D_PCIE_RSMU_STRAP_ADDR, p)
@@ -191,6 +191,31 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  */
 #define	GENOA_STRAP_PCIE_ADDR_UPPER	0xfffe0000
 
+
+/*
+ * See PPR.  This defines the port bifurcation (set of ports to
+ * be created and the number of lanes in each) from the 16 lanes
+ * available to this core.  This is normally set up by DXIO
+ * firmware from the engine configuration.
+ */
+#define	GENOA_STRAP_PCIE_LINK_CONFIG		0x00
+
+/*
+ * We have no idea what this controls, if anything.  It is 4 bits wide,
+ * supposedly defaults to 0, and AMD never uses it.
+ */
+#define	GENOA_STRAP_PCIE_LINK_CONFIG_PERMUTE	0x01
+
+/*
+ * We have no idea what this controls, if anything. It is 8 bits wide,
+ * supposedly defaults to 0xff, and AMD never uses it.
+ */
+#define	GENOA_STRAP_PCIE_CHIP_MODE		0x02
+
+/*
+ * 0x03 is reserved
+ */
+
 /*
  * A control that disallows further writes to some, but possibly not all, the
  * various RSMU straps. The default is zero. Write 0x1 to disable writes; AMD
@@ -201,7 +226,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * during boot.  See also PCIECORE::SWRST_COMMAND_1 and related registers
  * providing access to the PCIe core reset functionality.
  */
-#define	GENOA_STRAP_PCIE_WRITE_DISABLE		0x00
+#define	GENOA_STRAP_PCIE_WRITE_DISABLE		0x04
 
 /*
  * Controls whether MSI's are supported. Default value is 0x1, aka MSIs are
@@ -209,7 +234,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIECORE::PCIE_STRAP_F0[STRAP_F0_MSI_EN].  Regardless, it needs to be left
  * enabled because MSI support is required by PCIe.  See PCIe4 7.7.1.
  */
-#define	GENOA_STRAP_PCIE_MSI_EN			0x01
+#define	GENOA_STRAP_PCIE_MSI_EN			0x05
 
 /*
  * Controls whether the AER capability structure exists for the host bridges in
@@ -217,7 +242,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * enabling it does not enable error detection or reporting by itself, but
  * allows generic code to do so.
  */
-#define	GENOA_STRAP_PCIE_AER_EN			0x02
+#define	GENOA_STRAP_PCIE_AER_EN			0x06
 
 /*
  * 0x3 is reserved
@@ -228,21 +253,21 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * companions below at GENOA_STRAP_PCIE_GEN3_1_FEAT_EN.  This single-bit strap
  * defaults to 1.
  */
-#define	GENOA_STRAP_PCIE_GEN2_FEAT_EN		0x04
+#define	GENOA_STRAP_PCIE_GEN2_FEAT_EN		0x07
 
 /*
  * See PCIECORE::PCIE_STRAP_MISC[STRAP_CLK_PM_EN] and PCIe4 7.5.3.6.  This
  * controls the PCIe Link Capability bit 18 Clock Power Management feature.
  * Default is 0x0.
  */
-#define	GENOA_STRAP_PCIE_CLK_PM_EN		0x05
+#define	GENOA_STRAP_PCIE_CLK_PM_EN		0x08
 
 /*
  * See PCIECORE::PCIE_CFG_CNTL[CFG_EN_DEC_TO_HIDDEN_REG].  This single-bit strap
  * is 0 by default.  It's not known which registers this, or its two companions,
  * exposes.
  */
-#define	GENOA_STRAP_PCIE_DECODE_TO_HIDDEN_REG	0x06
+#define	GENOA_STRAP_PCIE_DECODE_TO_HIDDEN_REG	0x09
 
 /*
  * See PCIECORE::PCIE_STRAP_F0[STRAP_F0_LEGACY_DEVICE_TYPE_EN] and PCIe4 1.3.2.
@@ -250,7 +275,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * bridges are all PCI Express endpoints.  This single-bit strap defaults to 0
  * and needs to be left there.
  */
-#define	GENOA_STRAP_PCIE_LEGACY_DEVICE_EN	0x07
+#define	GENOA_STRAP_PCIE_LEGACY_DEVICE_EN	0x0a
 
 /*
  * We believe that this controls the generation of initiator (master) completion
@@ -258,14 +283,14 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIECORE::PCIE_STRAP_MISC2[STRAP_MSTCPL_TIMEOUT_EN]. This defaults to 0x1,
  * that is, enabled.
  */
-#define	GENOA_STRAP_PCIE_CPL_TO_EN		0x08
+#define	GENOA_STRAP_PCIE_CPL_TO_EN		0x0b
 
 /*
  * This appears to be a means to force some master timeout. Its relationship to
  * the strap above is unclear and this doesn't correspond to anything
  * documented.  Single bit, defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_FORCE_TO_EN		0x09
+#define	GENOA_STRAP_PCIE_FORCE_TO_EN		0x0c
 
 /*
  * The PCIe hardware apparently has an i2c debug interface that this allows one
@@ -273,7 +298,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIECORE::PCIE_STRAP_I2C_BD and the companion strap
  * GENOA_STRAP_PCIE_I2C_TARG_ADDR below.
  */
-#define	GENOA_STRAP_PCIE_I2C_DBG_EN		0x0a
+#define	GENOA_STRAP_PCIE_I2C_DBG_EN		0x0d
 
 /*
  * This controls whether or not the Device Capabilities 2 TPH Completer
@@ -283,20 +308,20 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * core register, is only 1, implying that the HW does not support the extended
  * variant of the feature.  The default value is 0.
  */
-#define	GENOA_STRAP_PCIE_TPH_EN			0x0b
+#define	GENOA_STRAP_PCIE_TPH_EN			0x0e
 
 /*
  * See PCIe4 7.5.2.2; this controls PCIERCCFG::PMI_STATUS_CNTL[NO_SOFT_RESET].
  * It's a single-bit strap that defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_NO_SOFT_RST		0x0c
+#define	GENOA_STRAP_PCIE_NO_SOFT_RST		0x0f
 
 /*
  * This controls whether or not the device advertises itself as a multi-function
  * device and presumably a bunch more of side effects. This defaults to 0x1,
  * enabled.
  */
-#define	GENOA_STRAP_PCIE_MULTI_FUNC_EN		0x0d
+#define	GENOA_STRAP_PCIE_MULTI_FUNC_EN		0x10
 
 /*
  * See the PPR discussion of extended tag support in 13.6.5.4.4; this is mainly
@@ -307,14 +332,14 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * bits.  See also PCIe4 7.5.3.4, and note that we normally enable 10-bit tags
  * regardless.  The default value of this single-bit strap is 0.
  */
-#define	GENOA_STRAP_PCIE_TAG_EXT_ECN_EN		0x0e
+#define	GENOA_STRAP_PCIE_TAG_EXT_ECN_EN		0x11
 
 /*
  * This controls whether or not the device advertises downstream port
  * containment features or not; the exact effect on the system isn't documented.
  * See PCIe4 6.2.10.  This single-bit field defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_DPC_EN			0x0f
+#define	GENOA_STRAP_PCIE_DPC_EN			0x12
 
 /*
  * This controls whether or not the Data Link Feature Extended Capability (0x25)
@@ -323,25 +348,32 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * GENOA_STRAP_PCIE_P_DLF_SUP below, which control the values of bits in this
  * capability if this strap enables its existence.
  */
-#define	GENOA_STRAP_PCIE_DLF_EN			0x10
+#define	GENOA_STRAP_PCIE_DLF_EN			0x13
 
 /*
  * This controls whether or not the Physical Layer 16.0 GT/s Extended Capability
  * (0x26) is advertised. See PCIECORE::PCIE_STRAP_MISC[STRAP_16GT_EN] and PCIe4
  * 7.7.5.  The single-bit default is 0x1, enabled.
  */
-#define	GENOA_STRAP_PCIE_PL_16G_EN		0x11
+#define	GENOA_STRAP_PCIE_PL_16G_EN		0x14
 
 /*
  * This controls whether or not the Lane Margining at the Receiver Extended
  * Capability (0x27) exists. See PCIECORE::PCIE_STRAP_MISC[STRAP_MARGINING_EN]
  * and PCIe4 7.7.6.  The single-bit default is 0x1, enabled.
  */
-#define	GENOA_STRAP_PCIE_LANE_MARGIN_EN		0x12
+#define	GENOA_STRAP_PCIE_LANE_MARGIN_EN		0x15
 
 /*
- * 0x13 is reserved
+ * This controls whether the Physical Layer 32.0 GT/s Extended Capability
+ * is advertised.  XXX: Fill in reference.
  */
+#define	GENOA_STRAP_PCIE_PL_32G_EN		0x16
+
+/*
+ * NPEM Extended capability. XXX: Fill in reference.
+ */
+#define	GENOA_STRAP_PCIE_NPEM_EN		0x17
 
 /*
  * Virtual channel capability.  See PCIECORE::PCIE_STRAP_F0[STRAP_F0_VC_EN],
@@ -349,8 +381,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * these isn't documented.  Both are enabled for cores that need to support
  * CCIX, which ours do not.  These are single-bit straps that default to 0.
  */
-#define	GENOA_STRAP_PCIE_VC_EN			0x14
-#define	GENOA_STRAP_PCIE_2VC_EN			0x15
+#define	GENOA_STRAP_PCIE_VC_EN			0x18
+#define	GENOA_STRAP_PCIE_2VC_EN			0x19
 
 /*
  * See PCIECORE::PCIE_STRAP_F0[STRAP_F0_DSN_EN].  This enables the device serial
@@ -358,7 +390,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * number to present to software is set by GENOA_STRAP_PCIE_SN_{L,M}SB straps
  * below.  This single-bit strap defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_DSN_EN			0x16
+#define	GENOA_STRAP_PCIE_DSN_EN			0x1a
 
 /*
  * This controls the ARI Extended Capability and whether those features are
@@ -367,7 +399,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * claims to override this strap for SWUS ports only, which we don't have. This
  * single-bit strap defaults to 1.
  */
-#define	GENOA_STRAP_PCIE_ARI_EN			0x17
+#define	GENOA_STRAP_PCIE_ARI_EN			0x1b
 
 /*
  * Controls whether to expose function 0 on each of the devices that can contain
@@ -382,35 +414,35 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * size and is enabled by default; it sets the default value of
  * PCIECORE::PCIE_STRAP_F0[STRAP_F0_EN].
  */
-#define	GENOA_STRAP_PCIE_F0_EN			0x18
+#define	GENOA_STRAP_PCIE_F0_EN			0x1c
 
 /*
  * The next two control whether we advertise support for D1 and D2 power states
  * in the otherwise read-only PMI_CAP[D{2,1}_SUPPORT] fields.  Each single-bit
  * strap defaults to 0.  See PCIe4 7.5.2.1.
  */
-#define	GENOA_STRAP_PCIE_POWER_D1_SUP		0x19
-#define	GENOA_STRAP_PCIE_POWER_D2_SUP		0x1a
+#define	GENOA_STRAP_PCIE_POWER_D1_SUP		0x1d
+#define	GENOA_STRAP_PCIE_POWER_D2_SUP		0x1e
 
 /*
  * See PCIECORE::PCIE_MISC_STRAP[STRAP_MST_ADR64_EN], basically the main switch
  * for 64-bit addressing.  This single-bit strap defaults to 1, which everyone
  * wants.
  */
-#define	GENOA_STRAP_PCIE_64BIT_ADDRS		0x1b
+#define	GENOA_STRAP_PCIE_64BIT_ADDRS		0x1f
 
 /*
  * See PCIECORE::PCIE_STRAP_MISC[STRAP_TL_ALT_BUF_EN], not that it will help you
  * any.  This single-bit strap defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_ALT_BUF_EN		0x1c
+#define	GENOA_STRAP_PCIE_ALT_BUF_EN		0x20
 
 /*
  * Enables support for the Latency Tolerance Reporting (LTR) Extended
  * Capability. This changes the values in the device capabilities 2 register.
  * See PCIe4 7.8.2.  This single-bit field defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_LTR_SUP		0x1d
+#define	GENOA_STRAP_PCIE_LTR_SUP		0x21
 
 /*
  * Controls whether optimized buffer flush/fill is advertised as supported in
@@ -418,20 +450,24 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIEPORT::PCIEP_STRAP_MISC[STRAP_OBFF_SUPPORTED].  This is a 2-bit field that
  * defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_OBFF_SUP		0x1e
+#define	GENOA_STRAP_PCIE_OBFF_SUP		0x22
+
+/*
+ * 0x23 is reserved
+ */
 
 /*
  * See PCIECORE::PCIE_P_CNTL[P_SYMALIGN_{MODE,HW_DEBUG}].  This and its
  * subsequent companion are both single-bit fields that default to 0.
  */
-#define	GENOA_STRAP_PCIE_SYMALIGN_MODE		0x1f
-#define	GENOA_STRAP_PCIE_SYMALIGN_DBG		0x20
+#define	GENOA_STRAP_PCIE_SYMALIGN_MODE		0x24
+#define	GENOA_STRAP_PCIE_SYMALIGN_DBG		0x25
 
 /*
  * See PCIECORE::PCIE_STRAP_MISC[STRAP_BYPASS_SCRAMBLER] and PCIe4 4.2.1.3.
  * This single-bit strap defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_BYPASS_SCRAMBLER	0x21
+#define	GENOA_STRAP_PCIE_BYPASS_SCRAMBLER	0x26
 
 /*
  * This seems to control some internal rx error limit on deskewed data. It seems
@@ -440,43 +476,43 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  *
  * The next several straps all involve deskew logic, and all are undocumented.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_RXERR_LIMIT	0x22
+#define	GENOA_STRAP_PCIE_DESKEW_RXERR_LIMIT	0x27
 
 /*
  * This controls whether a deskew on 'empty mode' is supported. The default is
  * 0x1, suggesting it is by default.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_EMPTY		0x23
+#define	GENOA_STRAP_PCIE_DESKEW_EMPTY		0x28
 
 /*
  * Suggests that we only perform a deskew when a TS2 ordered set is received.
  * Default is 0x0, suggesting we don't.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_TS2_ONLY	0x24
+#define	GENOA_STRAP_PCIE_DESKEW_TS2_ONLY	0x29
 
 /*
  * This one is mostly a guess from the name on deskewing when there's a bulk
  * unlikely repeating packet perhaps? Default is 0x0.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_RPT		0x25
+#define	GENOA_STRAP_PCIE_DESKEW_RPT		0x2a
 
 /*
  * This seems to control deskewing on all SKP OSs.  The default is 0x1,
  * suggesting enabled.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_ALL_SKP		0x26
+#define	GENOA_STRAP_PCIE_DESKEW_ALL_SKP		0x2b
 
 /*
  * This seems to control whether or not a transition in the link training and
  * status state machine (LTSSM) will cause a reset to the deskew logic.
  */
-#define	GENOA_STRAP_PCIE_LTSSM_DESKEW_RESET	0x27
+#define	GENOA_STRAP_PCIE_LTSSM_DESKEW_RESET	0x2c
 
 /*
  * This seems to control whether or not SKP symbols are removed on the data
  * path. The default is 0x1, suggesting this is enabled.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_RM_SKP		0x28
+#define	GENOA_STRAP_PCIE_DESKEW_RM_SKP		0x2d
 
 /*
  * This next one seems to be related to 'EI' or 'IE', which we're guessing
@@ -484,67 +520,67 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * control how many clock cycles are used to avoid some behavior happening.
  * Probably ignoring garbage. The default appears to be 0x20 cycles.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_EI_GAP		0x29
+#define	GENOA_STRAP_PCIE_DESKEW_EI_GAP		0x2e
 
 /*
  * This is related to the above and indicates when dealing with electrical idle
  * ordered sets whether or not the symbol data after the logical idle (IDL)
  * framing data is removed. The default is 0x1, indicating that this is done.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_EI_RM		0x2a
+#define	GENOA_STRAP_PCIE_DESKEW_EI_RM		0x2f
 
 /*
  * This controls whether or not the hardware performs deskew logic on TS ordered
  * sets when it receives both a TS and SKP. The default appears to be 0x0,
  * indicating this is not performed.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_TS_SKP		0x2b
+#define	GENOA_STRAP_PCIE_DESKEW_TS_SKP		0x30
 
 /*
  * This is a mysterious entry that appears to manipulate some aspect of the
  * deskew behavior, perhaps shrinking it. The default is 0x0, we probably
  * shouldn't toggle this.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_SHRINK		0x2c
+#define	GENOA_STRAP_PCIE_DESKEW_SHRINK		0x31
 
 /*
  * This appears to control specific behavior in PCIe Gen 3 related to the LSFR
  * (part of the scrambling behavior it appears) when SKP ordered sets are
  * received. The default is 0x0.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_GEN3_SKP	0x2d
+#define	GENOA_STRAP_PCIE_DESKEW_GEN3_SKP	0x32
 
 /*
  * This appears to control whether or not the read pointer is reset in hardware
  * after a deskew attempt fails. The default is 0x1, this is enabled.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_READ_RST	0x2e
+#define	GENOA_STRAP_PCIE_DESKEW_READ_RST	0x33
 
 /*
  * This appears to control some amount of phase shift manipulation after a
  * deskew event has occurred. The default is 0x1, that this occurs.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_PHASE		0x2f
+#define	GENOA_STRAP_PCIE_DESKEW_PHASE		0x34
 
 /*
  * This is a bit vague, but appears to control whether or not we report block
  * sync header errors from the deskew logic.  This doesn't correspond to
  * anything documented.  The default for this single-bit strap is 0x1.
  */
-#define	GENOA_STRAP_PCIE_DESKEW_BLOCK_HDR	0x30
+#define	GENOA_STRAP_PCIE_DESKEW_BLOCK_HDR	0x35
 
 /*
  * This appears to be a means to ignore part of the SKP ordered set related to
  * DC balancing, possibly for interoperability reasons. The default is 0x1, that
  * presumably this is enabled.
  */
-#define	GENOA_STRAP_PCIE_SKP_IGNORE_DC_BAL	0x31
+#define	GENOA_STRAP_PCIE_SKP_IGNORE_DC_BAL	0x36
 
 /*
  * This is an unknown debug interface, seemingly reserved and 4 bits wide. This
  * defaults to 0x0.  It doesn't correspond to anything documented.
  */
-#define	GENOA_STRAP_PCIE_DEBUG_RXP		0x32
+#define	GENOA_STRAP_PCIE_DEBUG_RXP		0x37
 
 /*
  * See PCIEPORT::PCIE_LC_SPEED_CNTL[LC_CHECK_DATA_RATE] and note the
@@ -552,37 +588,48 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * This single-bit strap defaults to 1 and is not port-specific even though the
  * registers it sets up are.
  */
-#define	GENOA_STRAP_PCIE_DATA_RATE_CHECK	0x33
+#define	GENOA_STRAP_PCIE_DATA_RATE_CHECK	0x38
 
 /*
  * See PCIECORE::PCIE_P_CNTL[P_ALWAYS_USE_FAST_TXCLK].  This single-bit strap
  * defaults to 0, and changing it looks like a very bad idea.
  */
-#define	GENOA_STRAP_PCIE_FAST_TXCLK_EN		0x34
+#define	GENOA_STRAP_PCIE_FAST_TXCLK_EN		0x39
 
 /*
  * This impacts the PLL somehow indicating the mode that it operates in or is
  * comparing against. This is a 2 bit field and the value defaults to 0x2 and
  * doesn't correspond to any documented register or standard feature.
  */
-#define	GENOA_STRAP_PCIE_PLL_FREQ_MODE		0x35
+#define	GENOA_STRAP_PCIE_PLL_FREQ_MODE		0x3a
 
 /*
  * This seems to exist to force the link into Gen 2 mode. It defaults to 0,
  * disabled.  Note that, like all per-core straps, this presumably affects all
  * ports formed from this core.
  */
-#define	GENOA_STRAP_PCIE_FORCE_GEN2		0x36
+#define	GENOA_STRAP_PCIE_FORCE_GEN2		0x3b
 
 /*
- * 0x37 and 0x38 are reserved
+ * "Controls logic on the RX and TX tiles."
+ * XXX: Reference.
  */
+#define	GENOA_STRAP_PCIE_PLL_2GHZ_TILE_MAPPING	0x3c
+
+/*
+ * 0x3d are reserved
+ */
+
+/*
+ * Controls whether RxEqEval works in loopback.
+ */
+#define	GENOA_STRAP_PCIE_RXEQEVAL_EQ_BYPASS	0x3e
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL9[LC_LOOPBACK_RXEQEVAL_EN].  This single-bit strap
  * defaults to 1.
  */
-#define	GENOA_STRAP_PCIE_LO_RXEQEVAL_EN		0x39
+#define	GENOA_STRAP_PCIE_LO_RXEQEVAL_EN		0x3f
 
 /*
  * This seems to control whether the device advertises whether or not it
@@ -591,32 +638,32 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIEPORT::PCIE_LC_LINK_WIDTH_CNTL[LC_UPCONFIGURE_SUPPORT].  Also see the next
  * strap.  Presumably these affect all ports in this core.
  */
-#define	GENOA_STRAP_PCIE_UPCONF_SUP		0x3a
+#define	GENOA_STRAP_PCIE_UPCONF_SUP		0x40
 
 /*
  * See PCIEPORT::PCIE_LC_LINK_WIDTH_CNTL[LC_UPCONFIGURE_DIS].  This single-bit
  * strap is 0 by default.
  */
-#define	GENOA_STRAP_PCIE_UPCONF_DIS		0x3b
+#define	GENOA_STRAP_PCIE_UPCONF_DIS		0x41
 
 /*
  * See PCIEPORT::PCIE_LC_TRAINING_CNTL[LC_DONT_DEASSERT_RX_EN_IN_TEST] and mind
  * the triple-negatives.  Single bit, defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_NO_DEASSERT_RX_EN_TEST	0x3c
+#define	GENOA_STRAP_PCIE_NO_DEASSERT_RX_EN_TEST	0x42
 
 /*
- * 0x3d is reserved.
+ * 0x43 is reserved.
  */
 
 /*
  * See discussion below on GENOA_STRAP_PCIE_P_DEEMPH_SEL.  This single-bit strap
  * defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_SELECT_DEEMPH		0x3e
+#define	GENOA_STRAP_PCIE_SELECT_DEEMPH		0x44
 
 /*
- * 0x3f is reserved.
+ * 0x45 is reserved.
  */
 
 /*
@@ -624,7 +671,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * Link Capabilities register is advertised. The single-bit strap defaults to
  * 0x1.
  */
-#define	GENOA_STRAP_PCIE_LINK_BW_NOTIF_SUP	0x40
+#define	GENOA_STRAP_PCIE_LINK_BW_NOTIF_SUP	0x46
 
 /*
  * See PCIECORE::PCIE_STRAP_MISC[STRAP_REVERSE_ALL].  Note that this applies to
@@ -632,22 +679,24 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * port-specific variant.  Like that one, leave this to the DXIO firmware to
  * configure based on our engine configuration.
  */
-#define	GENOA_STRAP_PCIE_REVERSE_ALL		0x41
+#define	GENOA_STRAP_PCIE_REVERSE_ALL		0x47
 
 /*
  * This seems to exist to force the link into Gen 3 mode. It's a single bit and
  * defaults to 0x0, disabled.  This doesn't correspond to any documented
  * register or standard feature.
  */
-#define	GENOA_STRAP_PCIE_FORCE_GEN3		0x42
+#define	GENOA_STRAP_PCIE_FORCE_GEN3		0x48
 
 /*
- * The next two single-bit fields both default to 1.  They control whether the
- * root ports in this core enable PCIe 3.1 and PCIe 4.0 compliant features
- * respectively, not the LTSSM compliance mode.  See PCIECORE::PCIE_STRAP_MISC2.
+ * The next several single-bit fields both default to 1.  They
+ * control whether the root ports in this core enable PCIe 3.1,
+ * 4.0, and 5.0 compliant features respectively, not the LTSSM
+ * compliance mode.  See PCIECORE::PCIE_STRAP_MISC2.
  */
-#define	GENOA_STRAP_PCIE_GEN3_1_FEAT_EN		0x43
-#define	GENOA_STRAP_PCIE_GEN4_FEAT_EN		0x44
+#define	GENOA_STRAP_PCIE_GEN3_1_FEAT_EN		0x49
+#define	GENOA_STRAP_PCIE_GEN4_FEAT_EN		0x4a
+#define	GENOA_STRAP_PCIE_GEN5_FEAT_EN		0x4b
 
 /*
  * This controls the otherwise read-only 'ECRC Generation Capable' bit in the
@@ -655,7 +704,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * advertised.  See PCIe4 7.8.4.7.  Note that this applies to all ports in this
  * core.
  */
-#define	GENOA_STRAP_PCIE_ECRC_GEN_EN		0x45
+#define	GENOA_STRAP_PCIE_ECRC_GEN_EN		0x4c
 
 /*
  * This pairs with the strap above and indicates whether or not the root port
@@ -663,17 +712,17 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * Capable' bit in the AER capability. The default is 0x0, saying that this is
  * not advertised.
  */
-#define	GENOA_STRAP_PCIE_ECRC_CHECK_EN		0x46
+#define	GENOA_STRAP_PCIE_ECRC_CHECK_EN		0x4d
 
 /*
  * See PCIEPORT::LC_CNTL3[LC_AUTO_DISABLE_SPEED_SUPPORT_MAX_FAIL_SEL].  This
  * 2-bit strap defaults to 2 and maps directly to that field.  See additional
  * comments on GENOA_STRAP_PCIE_P_AUTO_DIS_SPEED_SUP_EN below.
  */
-#define	GENOA_STRAP_PCIE_TRAIN_FAIL_SPEED_DIS	0x47
+#define	GENOA_STRAP_PCIE_TRAIN_FAIL_SPEED_DIS	0x4e
 
 /*
- * 0x48 is reserved.
+ * 0x4f is reserved.
  */
 
 /*
@@ -683,7 +732,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * single-bit strap that defaults to 0.  Our implementation doesn't need port
  * reordering and we leave this to the DXIO firmware to deal with.
  */
-#define	GENOA_STRAP_PCIE_PORT_ORDER_EN		0x49
+#define	GENOA_STRAP_PCIE_PORT_ORDER_EN		0x50
 
 
 /*
@@ -692,24 +741,24 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * receive side. These all default to 0x0, indicating that we do *not* ignore
  * the error, which is what we want.
  */
-#define	GENOA_STRAP_PCIE_IGN_RX_IO_ERR		0x4a
-#define	GENOA_STRAP_PCIE_IGN_RX_BE_ERR		0x4b
-#define	GENOA_STRAP_PCIE_IGN_RX_MSG_ERR		0x4c
-/*
- * 0x4d is reserved
- */
-#define	GENOA_STRAP_PCIE_IGN_RX_CFG_ERR		0x4e
-#define	GENOA_STRAP_PCIE_IGN_RX_CPL_ERR		0x4f
-#define	GENOA_STRAP_PCIE_IGN_RX_EP_ERR		0x50
-#define	GENOA_STRAP_PCIE_IGN_RX_BAD_LEN_ERR	0x51
-#define	GENOA_STRAP_PCIE_IGN_RX_MAX_PAYLOAD_ERR	0x52
-#define	GENOA_STRAP_PCIE_IGN_RX_TC_ERR		0x53
+#define	GENOA_STRAP_PCIE_IGN_RX_IO_ERR		0x51
+#define	GENOA_STRAP_PCIE_IGN_RX_BE_ERR		0x52
+#define	GENOA_STRAP_PCIE_IGN_RX_MSG_ERR		0x53
 /*
  * 0x54 is reserved
  */
-#define	GENOA_STRAP_PCIE_IGN_RX_AT_ERR		0x55
+#define	GENOA_STRAP_PCIE_IGN_RX_CFG_ERR		0x55
+#define	GENOA_STRAP_PCIE_IGN_RX_CPL_ERR		0x56
+#define	GENOA_STRAP_PCIE_IGN_RX_EP_ERR		0x57
+#define	GENOA_STRAP_PCIE_IGN_RX_BAD_LEN_ERR	0x58
+#define	GENOA_STRAP_PCIE_IGN_RX_MAX_PAYLOAD_ERR	0x59
+#define	GENOA_STRAP_PCIE_IGN_RX_TC_ERR		0x5a
 /*
- * 0x56 is reserved
+ * 0x5b is reserved
+ */
+#define	GENOA_STRAP_PCIE_IGN_RX_AT_ERR		0x5c
+/*
+ * 0x5d is reserved
  */
 
 /*
@@ -718,31 +767,41 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * doesn't correspond to any documented register or feature and is distinct from
  * AER capability enabling via GENOA_STRAP_PCIE_AER_EN.
  */
-#define	GENOA_STRAP_PCIE_ERR_REPORT_DIS		0x57
+#define	GENOA_STRAP_PCIE_ERR_REPORT_DIS		0x5e
 
 /*
  * This controls whether or not completer abort error reporting is enabled in
  * hardware.  The default for this single-bit strap is 0x1.
  */
-#define	GENOA_STRAP_PCIE_CPL_ABORT_ERR_EN	0x58
+#define	GENOA_STRAP_PCIE_CPL_ABORT_ERR_EN	0x5f
 
 /*
  * See PCIECORE::PCIE_STRAP_MISC[STRAP_INTERNAL_ERR_EN].  The default for this
  * single-bit strap is 0x1.
  */
-#define	GENOA_STRAP_PCIE_INT_ERR_EN		0x59
+#define	GENOA_STRAP_PCIE_INT_ERR_EN		0x60
 
 /*
  * This strap is mysterious, all we get is a name and this corresponds to no
  * documented register or standard feature.  However, we do know that despite
  * the name, this needs to be set in order to enable a feature AMD refers to as
  * RX margin persistence mode.  The single-bit default is 0x0 and we'd best
- * leave it there.
+ * leave it there.  Called STRAP_BIF_MARGIN_IGNORE_C_SKP in AGESA.
  */
-#define	GENOA_STRAP_PCIE_RXP_ACC_FULL_DIS	0x5a
+#define	GENOA_STRAP_PCIE_RXP_ACC_FULL_DIS	0x61
 
 /*
- * 0x5b is reserved.
+ * XXX: Provide reference.
+ */
+#define	GENOA_STRAP_PCIE_SLV_SDP_OPT_POOL_CR_EN	0x62
+
+/*
+ * XXX: Provide reference.
+ */
+#define	GENOA_STRAP_PCIE_SURPRISE_DOWN_ERR_REPORTING_CAP 0x63
+
+/*
+ * 0x64 is reserved
  */
 
 /*
@@ -753,54 +812,54 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * widths as the corresponding fields in the documented register and their
  * defaults are those found in the PPR.
  */
-#define	GENOA_STRAP_PCIE_CDR_TEST_OFF		0x5c
-#define	GENOA_STRAP_PCIE_CDR_TEST_SETS		0x5d
-#define	GENOA_STRAP_PCIE_CDR_TYPE		0x5e
-#define	GENOA_STRAP_PCIE_CDR_MODE_FORCE		0x5f
+#define	GENOA_STRAP_PCIE_CDR_TEST_OFF		0x65
+#define	GENOA_STRAP_PCIE_CDR_TEST_SETS		0x66
+#define	GENOA_STRAP_PCIE_CDR_TYPE		0x67
+#define	GENOA_STRAP_PCIE_CDR_MODE_FORCE		0x68
 
 /*
- * 0x60 is reserved.
+ * 0x69 is reserved.
  */
 
 /*
  * See PCIECORE::PCIE_STRAP_PI; this is used for validation and shouldn't be
  * done by normal software.  Both single-bit fields default to 0.
  */
-#define	GENOA_STRAP_PCIE_TEST_TOGGLE		0x61
-#define	GENOA_STRAP_PCIE_TEST_PATTERN		0x62
+#define	GENOA_STRAP_PCIE_TEST_TOGGLE		0x6a
+#define	GENOA_STRAP_PCIE_TEST_PATTERN		0x6b
 
 /*
  * This one is just a generic transmit test bit. It is 2 bits wide and defaults
  * to 0x0. Not sure what this controls exactly; it corresponds to no documented
  * register.
  */
-#define	GENOA_STRAP_PCIE_TX_TEST_ALL		0x63
+#define	GENOA_STRAP_PCIE_TX_TEST_ALL		0x6c
 
 /*
  * Overwrite the advertised vendor id for the host bridges in this core! The
  * default is unsurprisingly 0x1022.  This is 16 bits wide.  For this and
  * following straps, see PCIe4 7.5.1.
  */
-#define	GENOA_STRAP_PCIE_VENDOR_ID		0x64
+#define	GENOA_STRAP_PCIE_VENDOR_ID		0x6d
 
 /*
  * Set the base and sub class code. This is 0x6 and 0x4 as expected. Each of
  * these is 8 bits wide. These are what are advertised in configuration space
  * for host bridges in this core.
  */
-#define	GENOA_STRAP_PCIE_BASE_CLASS		0x65
-#define	GENOA_STRAP_PCIE_SUB_CLASS		0x66
+#define	GENOA_STRAP_PCIE_BASE_CLASS		0x6e
+#define	GENOA_STRAP_PCIE_SUB_CLASS		0x6f
 
 /*
  * These two bits control the upper and lower nibble of the configuration space
  * revision ID for each host bridge. This defaults to 0x0. Each of these is 4
  * bits wide.
  */
-#define	GENOA_STRAP_PCIE_REV_ID_UPPER		0x67
-#define	GENOA_STRAP_PCIE_REV_ID_LOWER		0x68
+#define	GENOA_STRAP_PCIE_REV_ID_UPPER		0x70
+#define	GENOA_STRAP_PCIE_REV_ID_LOWER		0x71
 
 /*
- * 0x69 is reserved.
+ * 0x72 is reserved.
  */
 
 /*
@@ -809,10 +868,10 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * enable the port; see GENOA_STRAP_PCIE_I2C_DBG_EN above).  This is presumably
  * used for debugging; we don't use it.
  */
-#define	GENOA_STRAP_PCIE_I2C_TARG_ADDR		0x6a
+#define	GENOA_STRAP_PCIE_I2C_TARG_ADDR		0x73
 
 /*
- * 0x6b is a reserved control related to i2c.
+ * 0x74 is a reserved control related to i2c.
  */
 
 /*
@@ -822,10 +881,10 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * the Link Control register (see PCIe4 7.5.3.6).  Empirically, it does neither,
  * and if it does anything we know not what.
  */
-#define	GENOA_STRAP_PCIE_LINK_AUTO_BW_INT	0x6c
+#define	GENOA_STRAP_PCIE_LINK_AUTO_BW_INT	0x75
 
 /*
- * 0x6d is reserved.
+ * 0x76 is reserved.
  */
 
 /*
@@ -834,13 +893,13 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * See PCIe4 7.7.7; these control whether this capability exists and the
  * otherwise read-only fields in it.
  */
-#define	GENOA_STRAP_PCIE_ACS_EN			0x6e
-#define	GENOA_STRAP_PCIE_ACS_SRC_VALID		0x6f
-#define	GENOA_STRAP_PCIE_ACS_TRANS_BLOCK	0x70
-#define	GENOA_STRAP_PCIE_ACS_DIRECT_TRANS_P2P	0x71
-#define	GENOA_STRAP_PCIE_ACS_P2P_CPL_REDIR	0x72
-#define	GENOA_STRAP_PCIE_ACS_P2P_REQ_RDIR	0x73
-#define	GENOA_STRAP_PCIE_ACS_UPSTREAM_FWD	0x74
+#define	GENOA_STRAP_PCIE_ACS_EN			0x77
+#define	GENOA_STRAP_PCIE_ACS_SRC_VALID		0x78
+#define	GENOA_STRAP_PCIE_ACS_TRANS_BLOCK	0x79
+#define	GENOA_STRAP_PCIE_ACS_DIRECT_TRANS_P2P	0x7a
+#define	GENOA_STRAP_PCIE_ACS_P2P_CPL_REDIR	0x7b
+#define	GENOA_STRAP_PCIE_ACS_P2P_REQ_RDIR	0x7c
+#define	GENOA_STRAP_PCIE_ACS_UPSTREAM_FWD	0x7d
 
 /*
  * See PCIECORE::PCIE_SDP_CTRL[SDP_UNIT_ID].  Note that this strap doesn't
@@ -848,11 +907,17 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * capable of doing so.  This is a 4-bit field that defaults to 0x2.  Note that
  * we program these fields directly from SW.
  */
-#define	GENOA_STRAP_PCIE_SDP_UNIT_ID		0x75
+#define	GENOA_STRAP_PCIE_SDP_UNIT_ID		0x7e
 
 /*
- * Strap 0x76 is reserved for ACS.
- * Strap 0x77 is reserved for PM (power management).
+ * TX port acces stimer skew
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_TX_PORT_ACC_TMR_SKEW	0x7f
+
+/*
+ * Strap 0x80 is reserved for ACS.
+ * Strap 0x81 is reserved for PM (power management).
  */
 
 /*
@@ -860,10 +925,30 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * corresponding to the PME_Support field of the Power Management Capabilities
  * register.  See PCIe4 7.5.2.1.  This is a 5-bit field that defaults to 0x19.
  */
-#define	GENOA_STRAP_PCIE_PME_SUP		0x78
+#define	GENOA_STRAP_PCIE_PME_SUP		0x82
 
 /*
- * Strap 0x79 is reserved for PM again.
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_REDUCE_LANES		0x83
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_ISOLATED_RESET		0x84
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_LTR_RSMU_ACK_MASK	0x85
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_WAIT_FOR_SLOW_CLK_DOM	0x86
+
+/*
+ * Strap 0x87 is reserved for PM again.
  */
 
 /*
@@ -872,14 +957,14 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * default is 0x0, Gen 3 is enabled.  See additional notes on PCIE_GEN4_DIS
  * below.
  */
-#define	GENOA_STRAP_PCIE_GEN3_DIS		0x7a
+#define	GENOA_STRAP_PCIE_GEN3_DIS		0x88
 
 /*
  * This is used to control whether or not multicast is supported on the core's
  * host bridges.  If this single-bit field, which defaults to 0, is set, the
  * multicast capability will be advertised.  See PCIe4 7.9.11.
  */
-#define	GENOA_STRAP_PCIE_MCAST_EN		0x7b
+#define	GENOA_STRAP_PCIE_MCAST_EN		0x89
 
 /*
  * These next two control whether or not we have AtomicOp completion and
@@ -890,8 +975,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * supported by hardware and the corresponding bit is fixed at 0, so there is no
  * corresponding strap.  The default for each is 0x0.
  */
-#define	GENOA_STRAP_PCIE_F0_ATOMIC_EN		0x7c
-#define	GENOA_STRAP_PCIE_F0_ATOMIC_ROUTE_EN	0x7d
+#define	GENOA_STRAP_PCIE_F0_ATOMIC_EN		0x8a
+#define	GENOA_STRAP_PCIE_F0_ATOMIC_ROUTE_EN	0x8b
 
 /*
  * This controls the number of MSIs requested by the bridge in the otherwise
@@ -901,7 +986,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * indicate which interrupt is used for reporting various conditions are all
  * fixed at 0, so there's no use for the additional vectors.
  */
-#define	GENOA_STRAP_PCIE_MSI_MULTI_MSG_CAP	0x7e
+#define	GENOA_STRAP_PCIE_MSI_MULTI_MSG_CAP	0x8c
 
 /*
  * This controls whether or not the primary root complex advertises the 'No
@@ -911,13 +996,13 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * The default appears to be 0x0, suggesting it does not advertise this bit and,
  * therefore, relaxed-ordering of peer-to-peer posted requests is allowed.
  */
-#define	GENOA_STRAP_PCIE_F0_NO_RO_PR_PR_PASS	0x7f
+#define	GENOA_STRAP_PCIE_F0_NO_RO_PR_PR_PASS	0x8d
 
 /*
  * See PCIECORE::PCIE_STRAP_F0[STRAP_F0_MSI_MAP_EN].  This single-bit field
  * defaults to 1.
  */
-#define	GENOA_STRAP_PCIE_MSI_MAP_EN		0x80
+#define	GENOA_STRAP_PCIE_MSI_MAP_EN		0x8e
 
 /*
  * This single-bit field defaults to 0.  Its semantics are unknown; phy
@@ -927,7 +1012,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * on root ports as well.  There is no documented place where this strap, as a
  * control value, would end up.
  */
-#define	GENOA_STRAP_PCIE_PHY_CALIB_RESET	0x81
+#define	GENOA_STRAP_PCIE_PHY_CALIB_RESET	0x8f
 
 /*
  * Most likely PCIECORE::SWRST_EP_CONTROL_0[EP_CFG_RESET_ONLY_EN].  This
@@ -935,7 +1020,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * endpoints which in our machines this logic never supports.  Actual semantics
  * are unknown.
  */
-#define	GENOA_STRAP_PCIE_CFG_REG_RST_ONLY	0x82
+#define	GENOA_STRAP_PCIE_CFG_REG_RST_ONLY	0x90
 
 /*
  * Most likely PCIECORE::SWRST_EP_CONTROL_0[EP_LNKDWN_RESET_EN].  This
@@ -943,7 +1028,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * endpoints which in our machines this logic never supports.  Actual semantics
  * are unknown.
  */
-#define	GENOA_STRAP_PCIE_LINK_DOWN_RST_EN	0x83
+#define	GENOA_STRAP_PCIE_LINK_DOWN_RST_EN	0x91
 
 /*
  * This strap is used to seemingly disable all Gen 4 features. This is used when
@@ -955,20 +1040,20 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * indices correspond to unused bits in 32-bit strap registers) that are either
  * inaccessible or just undocumented.
  */
-#define	GENOA_STRAP_PCIE_GEN4_DIS		0x84
+#define	GENOA_STRAP_PCIE_GEN4_DIS		0x92
 
 /*
  * This is a power-gating mechanism related to the next two straps, but exactly
  * what it controls isn't known (consider PCIECORE::PCIE_PGMST_CNTL[CFG_PG_EN]).
  * It's a single bit and defaults to 0x0.
  */
-#define	GENOA_STRAP_PCIE_STATIC_PG_EN		0x85
+#define	GENOA_STRAP_PCIE_STATIC_PG_EN		0x93
 
 /*
  * See PCIECORE::PCIE_PGMST_CNTL[CFG_FW_PG_EXIT_CNTL].  This 2-bit field
  * defaults to 0x0.
  */
-#define	GENOA_STRAP_PCIE_FW_PG_EXIT_CTL		0x86
+#define	GENOA_STRAP_PCIE_FW_PG_EXIT_CTL		0x94
 
 /*
  * This presumably relates to the previous two clock gating settings in some
@@ -976,10 +1061,100 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIECORE::CPM_CONTROL[PCIE_CORE_IDLE]). This single-bit strap defaults to
  * 0x0.
  */
-#define	GENOA_STRAP_PCIE_LIVMIN_EXIT_CTL	0x87
+#define	GENOA_STRAP_PCIE_LIVMIN_EXIT_CTL	0x95
 
 /*
- * 0x88 is reserved.
+ * Controls whether PCIe Gen 5 is disabled.
+ * XXX: Reference.
+ */
+#define	GENOA_STRAP_PCIE_GEN5_DIS		0x96
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_RCV_OVFL_EN		0x97
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_DRS_SUP		0x98
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_FRS_SUP		0x99
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_FRS_QUEUE_EN		0x9a
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_FRS_QUEUE_MAX_DEPTH	0x9b
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_RTR_EN			0x9c
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_IMMEDIATE_READINESS_EN	0x9d
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_RTR_RESET_TIME		0x9e
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_LCLK_DEEPSLEEP_OVR	0x9f
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_MSI_EXT_MSG_DATA_CAP	0xa0
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_CTO_LOG_CAPABLE	0xa1
+
+/*
+ * 0xa2 is reserved
+ */
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_SFI_EN			0xa3
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_RTR_VALID		0xa4
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_IMMED_READINESS_D0_EN	0xa5
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_DOE_EN			0xa6
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_FCC_P_RESERVE_EN	0xa7
+
+/*
+ * 0xa8 is reserved
  */
 
 /*
@@ -988,56 +1163,99 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * whether support is advertised at all; it's a single bit that defaults to 0
  * which is where we'll leave it because we don't support this ever.
  */
-#define	GENOA_STRAP_PCIE_CCIX_ESM_SUP		0x89
+#define	GENOA_STRAP_PCIE_CCIX_ESM_SUP		0xa9
 
 /*
  * See PCIEPORT::PCIEP_STRAP_LC2[STRAP_ESM_PHY_REACH_LEN_CAP]. This defaults to
  * 0x0 and is 2 bits wide.
  */
-#define	GENOA_STRAP_PCIE_CCIX_ESM_PHY_REACH_CAP	0x8a
+#define	GENOA_STRAP_PCIE_CCIX_ESM_PHY_REACH_CAP	0xaa
 
 /*
  * This controls whether or not a recalibrate is needed and defaults to 0x0.
  * See PCIEPORT::PCIEP_STRAP_LC2[STRAP_ESM_RECAL_NEEDED].
  */
-#define	GENOA_STRAP_PCIE_CCIX_ESM_RECALIBRATE	0x8b
+#define	GENOA_STRAP_PCIE_CCIX_ESM_RECALIBRATE	0xab
 
 /*
  * These next several all relate to calibration time and timeouts. Each field is
  * 3 bits wide and defaults to 0.  See PCIEPORT::PCIEP_STRAP_LC2.
  */
-#define	GENOA_STRAP_PCIE_CCIX_ESM_CALIB_TIME	0x8c
-#define	GENOA_STRAP_PCIE_CCIX_ESM_QUICK_EQ_TO	0x8d
-#define	GENOA_STRAP_PCIE_CCIX_ESM_EQ_PHASE2_TO	0x8e
-#define	GENOA_STRAP_PCIE_CCIX_ESM_EQ_PHASE3_TO	0x8f
+#define	GENOA_STRAP_PCIE_CCIX_ESM_CALIB_TIME	0xac
+#define	GENOA_STRAP_PCIE_CCIX_ESM_QUICK_EQ_TO	0xad
+#define	GENOA_STRAP_PCIE_CCIX_ESM_EQ_PHASE2_TO	0xae
+#define	GENOA_STRAP_PCIE_CCIX_ESM_EQ_PHASE3_TO	0xaf
 
 /*
  * These control the upstream and downstream tx equalization presets. These are
  * both 3 bit fields and default to 0x0.  See
  * PCIERCCFG::ESM_LANE_EQUALIZATION_CNTL_20GT.
  */
-#define	GENOA_STRAP_PCIE_CCIX_ESM_DSP_20GT_EQ_TX	0x90
-#define	GENOA_STRAP_PCIE_CCIX_ESM_USP_20GT_EQ_TX	0x91
+#define	GENOA_STRAP_PCIE_CCIX_ESM_DSP_20GT_EQ_TX	0xb0
+#define	GENOA_STRAP_PCIE_CCIX_ESM_USP_20GT_EQ_TX	0xb1
 
 /*
  * See PCIEPORT::PCIEP_STRAP_MISC[STRAP_CCIX_OPT_TLP_FMT_SUPPORT].  Likely
  * applies to all ports in the core we're strapping, but if CCIX were in use
  * that presumably means there's only one.
  */
-#define	GENOA_STRAP_PCIE_CCIX_OPT_TLP_FMT_SUP	0x92
+#define	GENOA_STRAP_PCIE_CCIX_OPT_TLP_FMT_SUP	0xb2
 
 /*
- * 0x93 is reserved.
+ * 0xb3 is reserved.
  */
 
 /*
  * This controls the CCIX vendor ID level value. This 16-bit field defaults to
  * 0x1002; see PCIECORE::PCIE_TX_CCIX_CNTL1.
  */
-#define	GENOA_STRAP_PCIE_CCIX_VENDOR_ID		0x94
+#define	GENOA_STRAP_PCIE_CCIX_VENDOR_ID		0xb4
 
 /*
- * 0x95 is reserved.
+ * 25.0 GT/s ESM (enhanced speed mode, a CCIX extension we don't use) TX EQ
+ * presets. 4 bits wide, defaults to 0xf in both cases.  Presumably the
+ * semantics are similar to the foregoing.
+ */
+#define	GENOA_STRAP_PCIE_25GT_EQ_DS_TX_PRESET	0xb5
+#define	GENOA_STRAP_PCIE_25GT_EQ_US_TX_PRESET	0xb6
+
+/*
+ * 0xb7 is reserved.
+ */
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_CXL_APERTURE		0xb8
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_PCIE_APERTURE		0xb9
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_APERTURE_TIEOFF_EN	0xba
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_CXL_EN			0xbb
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_CXL_MODE		0xbc
+
+/*
+ * 0xbd is reserved.
+ */
+#define	GENOA_STRAP_PCIE_CXL_VENDOR_ID		0xbe
+
+/*
+ *
+ 0xbf is reserved for CXL
  */
 
 /*
@@ -1046,7 +1264,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * entirely.  This strap isn't used, but we do set some of these registers from
  * software.
  */
-#define	GENOA_STRAP_PCIE_PI_HW_DEBUG		0x96
+#define	GENOA_STRAP_PCIE_PI_HW_DEBUG		0xc0
 
 /*
  * These next two are used to advertise values in the standard device serial
@@ -1054,8 +1272,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * default values of these two 32-bit fields are 0xc8700 (MSB) and 1 (LSB).
  * Note that the use of non-unique values violates the standard.
  */
-#define	GENOA_STRAP_PCIE_SN_LSB			0x97
-#define	GENOA_STRAP_PCIE_SN_MSB			0x98
+#define	GENOA_STRAP_PCIE_SN_LSB			0xc1
+#define	GENOA_STRAP_PCIE_SN_MSB			0xc2
 
 /*
  * These next two straps control our the subsystem vendor and device IDs for the
@@ -1065,31 +1283,11 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * genoa_fabric.c: this needs to be board-specific and the definitions don't
  * belong here.
  */
-#define	GENOA_STRAP_PCIE_SUBVID			0x99
-#define	GENOA_STRAP_PCIE_SUBDID			0x9a
+#define	GENOA_STRAP_PCIE_SUBVID			0xc3
+#define	GENOA_STRAP_PCIE_SUBDID			0xc4
 
 #define	PCI_VENDOR_ID_OXIDE			0x1de
 #define	PCI_SDID_OXIDE_GIMLET_BASE		0xfff9
-
-/*
- * See PPR 13.5.4.3.1.  This defines the port bifurcation (set of ports to be
- * created and the number of lanes in each) from the 16 lanes available to this
- * core.  This is normally set up by DXIO firmware from the engine
- * configuration.
- */
-#define	GENOA_STRAP_PCIE_LINK_CONFIG		0x9b
-
-/*
- * We have no idea what this controls, if anything.  It is 4 bits wide,
- * supposedly defaults to 0, and AMD never uses it.
- */
-#define	GENOA_STRAP_PCIE_LINK_CONFIG_PERMUTE	0x9c
-
-/*
- * We have no idea what this controls, if anything. It is 8 bits wide,
- * supposedly defaults to 0xff, and AMD never uses it.
- */
-#define	GENOA_STRAP_PCIE_CHIP_MODE		0x9d
 
 /*
  * 0x9e is reserved.
@@ -1102,8 +1300,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * wide.  See PCIe4 7.7.3.4, and note that these apply only to the 8 GT/s EQ
  * procedure; hints don't apply to the 16 GT/s EQ scheme.
  */
-#define	GENOA_STRAP_PCIE_EQ_DS_RX_PRESET_HINT	0x9f
-#define	GENOA_STRAP_PCIE_EQ_US_RX_PRESET_HINT	0xa0
+#define	GENOA_STRAP_PCIE_EQ_DS_RX_PRESET_HINT	0xc5
+#define	GENOA_STRAP_PCIE_EQ_US_RX_PRESET_HINT	0xc6
 
 /*
  * Gen3 (8 GT/s) reciever preset hint encodings; these match PCIe3 4.2.3.2.
@@ -1124,24 +1322,23 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * the values in the Lane Equalization Control registers for all lanes in this
  * core; see PCIe4 7.7.3.4.
  */
-#define	GENOA_STRAP_PCIE_EQ_DS_TX_PRESET	0xa1
-#define	GENOA_STRAP_PCIE_EQ_US_TX_PRESET	0xa2
+#define	GENOA_STRAP_PCIE_EQ_DS_TX_PRESET	0xc7
+#define	GENOA_STRAP_PCIE_EQ_US_TX_PRESET	0xc8
 
 /*
  * 16.0 GT/s TX EQ presets. 4 bits wide and defaults to 0x3 for downstream and
  * 0x1 for upstream, establishing the values in the 16 GT/s Lane Equalization
  * Control registers for all lanes in this core.  See PCIe4 7.7.5.9.
  */
-#define	GENOA_STRAP_PCIE_16GT_EQ_DS_TX_PRESET	0xa3
-#define	GENOA_STRAP_PCIE_16GT_EQ_US_TX_PRESET	0xa4
+#define	GENOA_STRAP_PCIE_16GT_EQ_DS_TX_PRESET	0xc9
+#define	GENOA_STRAP_PCIE_16GT_EQ_US_TX_PRESET	0xca
 
 /*
- * 25.0 GT/s ESM (enhanced speed mode, a CCIX extension we don't use) TX EQ
- * presets. 4 bits wide, defaults to 0xf in both cases.  Presumably the
- * semantics are similar to the foregoing.
+ * 32.0 GT/s TX EQ presets.
+ * XXX: Reference.
  */
-#define	GENOA_STRAP_PCIE_25GT_EQ_DS_TX_PRESET	0xa5
-#define	GENOA_STRAP_PCIE_25GT_EQ_US_TX_PRESET	0xa6
+#define	GENOA_STRAP_PCIE_32GT_EQ_DS_TX_PRESET	0xcb
+#define	GENOA_STRAP_PCIE_32GT_EQ_US_TX_PRESET	0xcc
 
 /*
  * The transmitter preset encodings, which can be found in the PCIe 4.0 base
@@ -1162,7 +1359,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	GENOA_STRAP_PCIE_TX_PRESET_10	10
 
 /*
- * 0xa7 is reserved.
+ * 0xcd is reserved.
  */
 
 /*
@@ -1171,7 +1368,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * https://www.amd.com/system/files/TechDocs/48692.pdf.  See also
  * PCIECORE::PCIE_STRAP_PI[STRAP_QUICKSIM_START].
  */
-#define	GENOA_STRAP_PCIE_QUICKSIM_START		0xa8
+#define	GENOA_STRAP_PCIE_QUICKSIM_START		0xce
 
 /*
  * This is documented as a 31-bit field with a default value of 0; the
@@ -1181,10 +1378,19 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * register; see PCIe4 6.2 and 7.5.3.6, especially the implementation notes.
  * There are additional steps and sequencing requirements associated with
  * enabling this feature.
+ *
+ * Used in one place in Genoa, with a comment that says, "For configurable
+ * SSID/SSVID" and the value BIT9 is written.  0x605 does not appear.
  */
-#define	GENOA_STRAP_PCIE_WRP_MISC		0xa9
-#define	GENOA_STRAP_PCIE_WRP_MISC_SURPDN_EN	0x605
+#define	GENOA_STRAP_PCIE_WRP_MISC		0xcf
 
+/*
+ * XXX: Reference.  These appear to be reserved, but so does
+ * GENOA_STRAP_PCIE_WRP_MISC.
+ */
+#define	GENOA_STRAP_PCIE_TX_MISC		0xd0
+#define	GENOA_STRAP_PCIE_LC_MISC		0xd1
+#define	GENOA_STRAP_PCIE_RXPI_MISC		0xd2
 /*
  * This next set all control various ESM speeds it seems. These all default to
  * 0x1 and are 1 bit wide with the exception of the minimum time in electrical
@@ -1193,24 +1399,24 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * fields in the CCIX ESM capability registers; the PPR documents these but
  * presumably the real documentation is found only in the CCIX specs.
  */
-#define	GENOA_STRAP_PCIE_ESM_12P6_12P8		0xaa
-#define	GENOA_STRAP_PCIE_ESM_12P1_12P5		0xab
-#define	GENOA_STRAP_PCIE_ESM_11P1_12P0		0xac
-#define	GENOA_STRAP_PCIE_ESM_9P6_11P0		0xad
-#define	GENOA_STRAP_PCIE_ESM_MIN_EI_TIME	0xae
-#define	GENOA_STRAP_PCIE_ESM_16P0		0xaf
-#define	GENOA_STRAP_PCIE_ESM_17P0		0xb0
-#define	GENOA_STRAP_PCIE_ESM_18P0		0xb1
-#define	GENOA_STRAP_PCIE_ESM_19P0		0xb2
-#define	GENOA_STRAP_PCIE_ESM_20P0		0xb3
-#define	GENOA_STRAP_PCIE_ESM_21P0		0xb4
-#define	GENOA_STRAP_PCIE_ESM_22P0		0xb5
-#define	GENOA_STRAP_PCIE_ESM_23P0		0xb6
-#define	GENOA_STRAP_PCIE_ESM_24P0		0xb7
-#define	GENOA_STRAP_PCIE_ESM_25P0		0xb8
+#define	GENOA_STRAP_PCIE_ESM_12P6_12P8		0xde
+#define	GENOA_STRAP_PCIE_ESM_12P1_12P5		0xd4
+#define	GENOA_STRAP_PCIE_ESM_11P1_12P0		0xd5
+#define	GENOA_STRAP_PCIE_ESM_9P6_11P0		0xd6
+#define	GENOA_STRAP_PCIE_ESM_MIN_EI_TIME	0xd7
+#define	GENOA_STRAP_PCIE_ESM_16P0		0xd8
+#define	GENOA_STRAP_PCIE_ESM_17P0		0xd9
+#define	GENOA_STRAP_PCIE_ESM_18P0		0xda
+#define	GENOA_STRAP_PCIE_ESM_19P0		0xdb
+#define	GENOA_STRAP_PCIE_ESM_20P0		0xdc
+#define	GENOA_STRAP_PCIE_ESM_21P0		0xdd
+#define	GENOA_STRAP_PCIE_ESM_22P0		0xde
+#define	GENOA_STRAP_PCIE_ESM_23P0		0xdf
+#define	GENOA_STRAP_PCIE_ESM_24P0		0xe0
+#define	GENOA_STRAP_PCIE_ESM_25P0		0xe1
 
 /*
- * 0xb9 is reserved.
+ * 0xe2 is reserved.
  */
 
 /*
@@ -1219,41 +1425,47 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * supported by this kernel.  These all seem to have the same sizes and defaults
  * values as the non-SWUS variant.
  */
-#define	GENOA_STRAP_PCIE_SWUS_MSI_EN		0xba
-#define	GENOA_STRAP_PCIE_SWUS_VC_EN		0xbb
-#define	GENOA_STRAP_PCIE_SWUS_DSN_EN		0xbc
-#define	GENOA_STRAP_PCIE_SWUS_AER_EN		0xbd
-#define	GENOA_STRAP_PCIE_SWUS_ECRC_CHECK_EN	0xbe
-#define	GENOA_STRAP_PCIE_SWUS_ECRC_GEN_EN	0xbf
-#define	GENOA_STRAP_PCIE_SWUS_CPL_ABORT_ERR_EN	0xc0
-#define	GENOA_STRAP_PCIE_SWUS_F0_ATOMIC_EN	0xc1
-#define	GENOA_STRAP_PCIE_SWUS_F0_ATOMIC_ROUTE_EN	0xc2
-#define	GENOA_STRAP_PCIE_SWUS_F0_NO_RO_PR_PR_PASS	0xc3
-#define	GENOA_STRAP_PCIE_SWUS_ERR_REPORT_DIS	0xc4
-#define	GENOA_STRAP_PCIE_SWUS_NO_SOFT_RST	0xc5
-#define	GENOA_STRAP_PCIE_SWUS_POWER_D1_SUP	0xc6
-#define	GENOA_STRAP_PCIE_SWUS_POWER_D2_SUP	0xc7
-#define	GENOA_STRAP_PCIE_SWUS_LTR_SUP		0xc8
-#define	GENOA_STRAP_PCIE_SWUS_ARI_EN		0xc9
-#define	GENOA_STRAP_PCIE_SWUS_SUBVID		0xca
-#define	GENOA_STRAP_PCIE_SWUS_SUB_CLASS		0xcb
-#define	GENOA_STRAP_PCIE_SWUS_BASE_CLASS	0xcc
-#define	GENOA_STRAP_PCIE_SWUS_REV_ID_UPPER	0xcd
-#define	GENOA_STRAP_PCIE_SWUS_REV_ID_LOWER	0xce
-#define	GENOA_STRAP_PCIE_SWUS_PME_SUP		0xcf
-#define	GENOA_STRAP_PCIE_SWUS_OBFF_SUP		0xd0
+#define	GENOA_STRAP_PCIE_SWUS_MSI_EN		0xe3
+#define	GENOA_STRAP_PCIE_SWUS_VC_EN		0xe4
+#define	GENOA_STRAP_PCIE_SWUS_DSN_EN		0xe5
+#define	GENOA_STRAP_PCIE_SWUS_AER_EN		0xe6
+#define	GENOA_STRAP_PCIE_SWUS_ECRC_CHECK_EN	0xe7
+#define	GENOA_STRAP_PCIE_SWUS_ECRC_GEN_EN	0xe8
+#define	GENOA_STRAP_PCIE_SWUS_CPL_ABORT_ERR_EN	0xe9
+#define	GENOA_STRAP_PCIE_SWUS_F0_ATOMIC_EN	0xea
+#define	GENOA_STRAP_PCIE_SWUS_F0_ATOMIC_ROUTE_EN	0xeb
+#define	GENOA_STRAP_PCIE_SWUS_F0_NO_RO_PR_PR_PASS	0xec
+#define	GENOA_STRAP_PCIE_SWUS_ERR_REPORT_DIS	0xed
+#define	GENOA_STRAP_PCIE_SWUS_NO_SOFT_RST	0xee
+#define	GENOA_STRAP_PCIE_SWUS_POWER_D2_SUP	0xef
+#define	GENOA_STRAP_PCIE_SWUS_POWER_D1_SUP	0xf0
+#define	GENOA_STRAP_PCIE_SWUS_LTR_SUP		0xf1
+#define	GENOA_STRAP_PCIE_SWUS_ARI_EN		0xf2
+#define	GENOA_STRAP_PCIE_SWUS_SUBVID		0xf3
+#define	GENOA_STRAP_PCIE_SWUS_SUB_CLASS		0xf4
+#define	GENOA_STRAP_PCIE_SWUS_BASE_CLASS	0xf5
+#define	GENOA_STRAP_PCIE_SWUS_REV_ID_UPPER	0xf6
+#define	GENOA_STRAP_PCIE_SWUS_REV_ID_LOWER	0xf7
+#define	GENOA_STRAP_PCIE_SWUS_PME_SUP		0xf8
+#define	GENOA_STRAP_PCIE_SWUS_OBFF_SUP		0xf9
 
 /*
- * 0xd1 is reserved
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_TX_CHK_FC_FOR_L1_DIS	0xfa
+#define	GENOA_STRAP_PCIE_SWUS_SSID_EN		0xfb
+
+/*
+ * 0xfc is reserved
  */
 
 /*
  * At this point all of our PCIe straps are now changed to be per port.
- * Each of the 8 possible ports all have the same set of straps; however, each
- * one is 0x61 off from one another (or put differently there are 0x61 straps
- * per port).
+ * Each of the possible ports all have the same set of straps; however, each
+ * one is a constant distance from one another (or put differently there are
+ * 0x61 straps per port).
  */
-#define	GENOA_STRAP_PCIE_NUM_PER_PORT		0x61
+#define	GENOA_STRAP_PCIE_NUM_PER_PORT		(0x1a0 - 0xfd)
 
 /*
  * The relationship between this strap and
@@ -1264,7 +1476,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * the HOLD_TRAINING bit automatically during LISM execution.  See the LISM
  * notes in genoa_fabric.c.
  */
-#define	GENOA_STRAP_PCIE_P_HOLD_TRAINING	0xd2
+#define	GENOA_STRAP_PCIE_P_HOLD_TRAINING	0xfd
 
 /*
  * This strap ostensibly is only a single bit wide, which makes it an
@@ -1275,10 +1487,15 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * believe that setting this to 1 specifically means that mode 1 (electrical
  * idle/compliance mode) should be used when training is being held off.
  */
-#define	GENOA_STRAP_PCIE_P_LC_HOLD_TRAINING_MODE	0xd3
+#define	GENOA_STRAP_PCIE_P_LC_HOLD_TRAINING_MODE	0xfe
 
 /*
- * 0xd4 and 0xd5 are reserved
+ * XXX: Reference.
+ */
+#define	GENOA_STRAP_PCIE_P_AUTO_RELEASE_TRAINING_HOLD	0xff
+
+/*
+ * 0x100 is reserved
  */
 
 /*
@@ -1289,16 +1506,17 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * no observable effect on private register state, and its semantics are
  * unknown.
  */
-#define	GENOA_STRAP_PCIE_P_RC_SPEED_NEG_DIS	0xd6
-#define	GENOA_STRAP_PCIE_P_RC_SPEED_NEG_16GT_DIS	0xd7
+#define	GENOA_STRAP_PCIE_P_RC_SPEED_NEG_DIS	0x101
+#define	GENOA_STRAP_PCIE_P_RC_SPEED_NEG_16GT_DIS	0x102
+#define	GENOA_STRAP_PCIE_P_RC_SPEED_NEG_32GT_DIS	0x103
 
 /*
  * See PCIEPORT::PCIE_LC_SPEED_CNTL[LC_INIT_SPEED_NEG_IN_L{1,0s}_EN].
  * Both these single-bit straps default to 0x1, allowing speed negotiation in L1
  * (and in principle the unsupported L0s).
  */
-#define	GENOA_STRAP_PCIE_P_L0s_SPEED_NEG_EN	0xd8
-#define	GENOA_STRAP_PCIE_P_L1_SPEED_NEG_EN	0xd9
+#define	GENOA_STRAP_PCIE_P_L0s_SPEED_NEG_EN	0x104
+#define	GENOA_STRAP_PCIE_P_L1_SPEED_NEG_EN	0x105
 
 /*
  * See PCIEPORT::PCIE_LC_SPEED_CNTL[LC_TARGET_LINK_SPEED_OVERRIDE_EN].  This
@@ -1307,30 +1525,30 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * which would contain the actual setting. This single-bit strap defaults to
  * 0x0, disabled.
  */
-#define	GENOA_STRAP_PCIE_P_TARG_LINK_SPEED_EN	0xda
+#define	GENOA_STRAP_PCIE_P_TARG_LINK_SPEED_EN	0x106
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL4[LC_BYPASS_EQ_{,REQ_PHASE_}8GT].  The default
  * values of these single-bit fields is 0, which leaves the normal gen3 EQ
  * process intact.
  */
-#define	GENOA_STRAP_PCIE_P_8GT_BYPASS_EQ	0xdb
-#define	GENOA_STRAP_PCIE_P_8GT_BYPASS_EQ_REQ	0xdc
+#define	GENOA_STRAP_PCIE_P_8GT_BYPASS_EQ	0x107
+#define	GENOA_STRAP_PCIE_P_8GT_BYPASS_EQ_REQ	0x108
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL4[LC_EQ_SEARCH_MODE_8GT].  This is a two bit field
  * that defaults to 0x3 (preset search); see PPR for encodings.
  */
-#define	GENOA_STRAP_PCIE_P_8GT_EQ_SEARCH_MODE	0xdd
+#define	GENOA_STRAP_PCIE_P_8GT_EQ_SEARCH_MODE	0x109
 
 /*
  * These next three are the Gen 4 variants of the Gen 3 bits above. They have
  * the same sizes and default values; see corresponding fields in
  * PCIEPORT::PCIE_LC_CNTL8.
  */
-#define	GENOA_STRAP_PCIE_P_16GT_BYPASS_EQ	0xde
-#define	GENOA_STRAP_PCIE_P_16GT_BYPASS_EQ_REQ	0xdf
-#define	GENOA_STRAP_PCIE_P_16GT_EQ_SEARCH_MODE	0xe0
+#define	GENOA_STRAP_PCIE_P_16GT_BYPASS_EQ	0x10a
+#define	GENOA_STRAP_PCIE_P_16GT_BYPASS_EQ_REQ	0x10b
+#define	GENOA_STRAP_PCIE_P_16GT_EQ_SEARCH_MODE	0x10c
 
 /*
  * This strap works in tandem with the GENOA_STRAP_PCIE_P_TARG_LINK_SPEED_EN
@@ -1338,10 +1556,22 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * controls what the target link speed of the port would be. It is a two bit
  * field that defaults to 0x3.  See PPR for encodings.
  */
-#define	GENOA_STRAP_PCIE_P_TARG_LINK_SPEED	0xe1
+#define	GENOA_STRAP_PCIE_P_TARG_LINK_SPEED		0x10d
 
 /*
- * 0xe2 and 0xe3 are reserved
+ * XXX: Reference.
+ */
+#define	GENOA_STRAP_PCIE_P_32GT_BYPASS			0x10e
+#define	GENOA_STRAP_PCIE_P_32GT_BYPASS_EQ_REQ		0x10f
+#define	GENOA_STRAP_PCIE_P_32GT_EQ_SEARCH_MODE		0x110
+#define	GENOA_STRAP_PCIE_P_HIGH_RATE_BYPASS_EQ_SUP	0x111
+#define	GENOA_STRAP_PCIE_P_HIGH_RATE_ADVERTISE_EQ_SUP	0x112
+#define	GENOA_STRAP_PCIE_P_NO_EQ_NEEDED_SUP		0x113
+#define	GENOA_STRAP_PCIE_P_ADVERTISE_NO_EQ_NEEDED_SUP	0x114
+#define	GENOA_STRAP_PCIE_P_COMP_PATTERN_MAX_SPEED	0x115
+
+/*
+ * 0x116 is reserved.
  */
 
 /*
@@ -1349,11 +1579,17 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * 0, which disables entering the corresponding state.  Note that the L1 time is
  * applicable only to upstream ports, which ours never are.
  */
-#define	GENOA_STRAP_PCIE_P_L0s_INACTIVITY	0xe4
-#define	GENOA_STRAP_PCIE_P_L1_INACTIVITY	0xe5
+#define	GENOA_STRAP_PCIE_P_L0s_INACTIVITY	0x117
+#define	GENOA_STRAP_PCIE_P_L1_INACTIVITY	0x118
 
 /*
- * 0xe6 is reserved.
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_P_RCV_L0_TO_RCV_L0S_DIS	0x119
+#define	GENOA_STRAP_PCIE_P_GO_TO_RECOVERY_ANY_UNEXPECTED_EIOS	0x11a
+
+/*
+ * 0x11b is reserved.
  */
 
 /*
@@ -1361,7 +1597,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * encodings with PCIE_PORT_LC_CTL2_ELEC_IDLE_xx and defaults to 1.  Note that
  * we set this from software instead of strapping it.
  */
-#define	GENOA_STRAP_PCIE_P_ELEC_IDLE_MODE	0xe7
+#define	GENOA_STRAP_PCIE_P_ELEC_IDLE_MODE	0x11c
 
 /*
  * See PCIERCCFG::LINK_CAP[PM_SUPPORT], especially the contradictory notes in
@@ -1370,7 +1606,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * capability field really is hardwired to 2.  If the strap does anything, its
  * effects aren't visible.  See also PCIEPORT::PCIE_LC_CNTL[LC_ASPM_TO_L1_DIS].
  */
-#define	GENOA_STRAP_PCIE_P_ASPM_SUP		0xe8
+#define	GENOA_STRAP_PCIE_P_ASPM_SUP		0x11d
 
 /*
  * These next two straps control the defined exit latency values for L0s and L1
@@ -1381,8 +1617,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * never has the kind of legacy software that note describes so this is of
  * little importance.
  */
-#define	GENOA_STRAP_PCIE_P_L1_EXIT_LAT		0xe9
-#define	GENOA_STRAP_PCIE_P_L0s_EXIT_LAT		0xea
+#define	GENOA_STRAP_PCIE_P_L1_EXIT_LAT		0x11e
+#define	GENOA_STRAP_PCIE_P_L0s_EXIT_LAT		0x11f
 
 /*
  * It isn't exactly clear what this does. Based on the fact that it's in the
@@ -1391,17 +1627,17 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * L1 state.  It doesn't correspond to any documented register or field, and has
  * no observable effect on any PCIe port registers.
  */
-#define	GENOA_STRAP_PCIE_P_L1_EXIT_SIGNAL	0xeb
+#define	GENOA_STRAP_PCIE_P_L1_EXIT_SIGNAL_EN	0x120
 
 /*
- * 0xec is reserved.
+ * 0x121 is reserved.
  */
 
 /*
  * See PCIEPORT::PCIE_LC_BW_CHANGE_CNTL[LC_LINK_BW_NOTIFICATION_DETECT_MODE].
  * This single-bit strap defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_P_LINK_BW_NOTIF_DETECT_MODE	0xed
+#define	GENOA_STRAP_PCIE_P_LINK_BW_NOTIF_DETECT_MODE	0x122
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL7[LC_AUTO_REJECT_AFTER_TIMEOUT].  This single-bit
@@ -1409,17 +1645,19 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * explicitly straps it to 1, firmware clears the bit anyway before the LISM
  * reaches the CONFIGURED state, making the strap effectively useless.
  */
-#define	GENOA_STRAP_PCIE_P_LINK_EQ_DISCARD_AFTER_TIMEOUT	0xee
+#define	GENOA_STRAP_PCIE_P_LINK_EQ_DISCARD_AFTER_TIMEOUT	0x123
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL9[LC_EX_SEARCH_TRAVERSAL_MODE].  This single-bit
  * strap defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_P_LINK_EQ_SEARCH_MODE	0xef
+#define	GENOA_STRAP_PCIE_P_LINK_EQ_SEARCH_MODE	0x124
 
 /*
- * 0xf0 is reserved.
+ * XXX: Reference
  */
+#define	GENOA_STRAP_PCIE_P_REFCLK_OFF_NO_RCVR_LANES		0x125
+#define	GENOA_STRAP_PCIE_P_USE_LONG_SERIAL_QUICKSIM_TIMEOUTS	0x126
 
 /*
  * One would be forgiven for supposing that this controls the initial value of
@@ -1436,7 +1674,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * status register bit is always 1, LC_SELECT_DEEMPHASIS_CNTL is always 3, and
  * if this strap does anything at all, it's impossible to see.
  */
-#define	GENOA_STRAP_PCIE_P_DEEMPH_SEL		0xf1
+#define	GENOA_STRAP_PCIE_P_DEEMPH_SEL		0x127
 
 /*
  * These next two straps are used to control the indication of retimer presence
@@ -1451,8 +1689,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * work (i.e., whether this does anything other than simply advertise the
  * capability).
  */
-#define	GENOA_STRAP_PCIE_P_RETIMER1_DET_SUP	0xf2
-#define	GENOA_STRAP_PCIE_P_RETIMER2_DET_SUP	0xf3
+#define	GENOA_STRAP_PCIE_P_RETIMER1_DET_SUP	0x128
+#define	GENOA_STRAP_PCIE_P_RETIMER2_DET_SUP	0x129
 
 /*
  * Allows changing the timeout values used by the LTSSM, primarily for
@@ -1460,7 +1698,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * This 2-bit field defaults to 0, which codes as PCIe-compliant values.  Don't
  * touch.
  */
-#define	GENOA_STRAP_PCIE_P_TEST_TIMER_SEL	0xf4
+#define	GENOA_STRAP_PCIE_P_TEST_TIMER_SEL	0x12a
 
 /*
  * See PCIEPORT::PCIEP_STRAP_LC[STRAP_MARGINING_USES_SOFTWARE].  This single-bit
@@ -1468,7 +1706,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * apparently not needed for RX margining.  We don't know what happens if one
  * sets this, so leave it alone.
  */
-#define	GENOA_STRAP_PCIE_P_MARGIN_NEEDS_SW	0xf5
+#define	GENOA_STRAP_PCIE_P_MARGIN_NEEDS_SW	0x12b
 
 /*
  * This strap controls hardware autonomous disabling of higher-speed support,
@@ -1480,7 +1718,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * support only 2.5 GT/s even though it was configured to support other speeds
  * in the DXIO engine definition.  Changing this strap won't help.
  */
-#define	GENOA_STRAP_PCIE_P_AUTO_DIS_SPEED_SUP_EN	0xf6
+#define	GENOA_STRAP_PCIE_P_AUTO_DIS_SPEED_SUP_EN	0x12c
 
 /*
  * These per-link-speed straps are each 2 bits wide. 2.5GT and 5.0GT default to
@@ -1488,10 +1726,11 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIEPORT::PCIE_LC_CNTL6, which almost certainly should not be changed from
  * the recommended values.
  */
-#define	GENOA_STRAP_PCIE_P_SPC_MODE_2P5GT	0xf7
-#define	GENOA_STRAP_PCIE_P_SPC_MODE_5GT		0xf8
-#define	GENOA_STRAP_PCIE_P_SPC_MODE_8GT		0xf9
-#define	GENOA_STRAP_PCIE_P_SPC_MODE_16GT	0xfa
+#define	GENOA_STRAP_PCIE_P_SPC_MODE_2P5GT	0x12d
+#define	GENOA_STRAP_PCIE_P_SPC_MODE_5GT		0x12e
+#define	GENOA_STRAP_PCIE_P_SPC_MODE_8GT		0x12f
+#define	GENOA_STRAP_PCIE_P_SPC_MODE_16GT	0x130
+#define	GENOA_STRAP_PCIE_P_SPC_MODE_32GT	0x131
 
 /*
  * The next two straps are part of SRIS (separate reference clocks with
@@ -1504,22 +1743,22 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * triggering fatal errors when first configured, but otherwise the reason for
  * these straps is unknown.
  */
-#define	GENOA_STRAP_PCIE_P_SRIS_EN		0xfb
-#define	GENOA_STRAP_PCIE_P_AUTO_SRIS_EN		0xfc
+#define	GENOA_STRAP_PCIE_P_SRIS_EN		0x132
+#define	GENOA_STRAP_PCIE_P_AUTO_SRIS_EN		0x133
 
 /*
  * Single-bit field controlling PCIEPORT::PCIE_LC_CNTL4[LC_TX_SWING].  The
  * default is 0, full-swing mode for the transmitters on this port.  See PCIe4
  * 8.3.3.10, 4.2.3.1, and ch. 8 generally.
  */
-#define	GENOA_STRAP_PCIE_P_TX_SWING		0xfd
+#define	GENOA_STRAP_PCIE_P_TX_SWING		0x134
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL5[LC_ACCEPT_ALL_PRESETS{,_TEST}].  These default to
  * 0 and are relevant only in reduced swing mode which is not currently used.
  */
-#define	GENOA_STRAP_PCIE_P_ACCEPT_PRESETS	0xfe
-#define	GENOA_STRAP_PCIE_P_ACCEPT_PRESETS_TEST	0xff
+#define	GENOA_STRAP_PCIE_P_ACCEPT_PRESETS	0x135
+#define	GENOA_STRAP_PCIE_P_ACCEPT_PRESETS_TEST	0x136
 
 /*
  * This controls how long the PHY has for Figure of Merit (FOM). This is a 2-bit
@@ -1532,7 +1771,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * actual semantics are undocumented, but see also
  * PCIEPORT::PCIE_LC_TRAINING_CNTL[LC_WAIT_FOR_FOM_VALID_AFTER_TRACK].
  */
-#define	GENOA_STRAP_PCIE_P_FOM_TIME		0x100
+#define	GENOA_STRAP_PCIE_P_FOM_TIME		0x137
 #define	GENOA_STRAP_PCIE_P_FOM_300US		0
 #define	GENOA_STRAP_PCIE_P_FOM_200US		1
 #define	GENOA_STRAP_PCIE_P_FOM_100US		2
@@ -1541,8 +1780,29 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*
  * See PCIEPORT::LC_CNTL8[LC_SAFE_EQ_SEARCH].  Single bit, defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_P_EQ_SAFE_SEARCH	0x101
+#define	GENOA_STRAP_PCIE_P_EQ_SAFE_SEARCH	0x138
 
+#define	GENOA_STRAP_PCIE_P_SET_TRANSMITTER_PRECODE_REQ	0x139
+#define	GENOA_STRAP_PCIE_P_REP_RXEQEVAL_AFTER_TIMEOUT	0x13a
+#define	GENOA_STRAP_PCIE_P_TRAINING_BITS_REQD		0x13b
+#define	GENOA_STRAP_PCIE_P_SAVE_RESTORE_EN		0x13c
+#define	GENOA_STRAP_PCIE_P_RXRECOVER_EN			0x13d
+#define	GENOA_STRAP_PCIE_P_RXRECOVER_IN_POLL_ACTIVE_EN	0x13e
+#define	GENOA_STRAP_PCIE_P_RXRECOVER_IN_CONFIG_EN	0x13f
+#define	GENOA_STRAP_PCIE_P_DSC_CHECK_COEFFS_IN_RLOCK	0x140
+#define	GENOA_STRAP_PCIE_P_EXTEND_EIEOS_MODE		0x141
+#define	GENOA_STRAP_PCIE_P_ALT_RX_EQ_IN_PROGRESS_EN	0x142
+#define	GENOA_STRAP_PCIE_P_EXTEND_EIEOS			0x143
+#define	GENOA_STRAP_PCIE_P_ALWAYS_GEN3_PRESET_CONV	0x144
+#define	GENOA_STRAP_PCIE_P_ALWAYS_GEN4_PRESET_CONV	0x145
+#define	GENOA_STRAP_PCIE_P_ALWAYS_GEN5_PRESET_CONV	0x146
+#define	GENOA_STRAP_PCIE_P_LOOPBACK_TEST_MODE_RCVRDET	0x147
+#define	GENOA_STRAP_PCIE_P_LOOPBACK_EQ_LOCK_REVERSAL	0x148
+#define	GENOA_STRAP_PCIE_P_LIVE_DESKEW_MASK_EN		0x149
+#define	GENOA_STRAP_PCIE_P_EQ_REQ_PHASE_WAIT_FINAL_TS1	0x14a
+#define	GENOA_STRAP_PCIE_P_RESET_TSX_CNT_ON_RXEQEVAL	0x14b
+#define	GENOA_STRAP_PCIE_P_RESET_TSX_CNT_ON_SAFERECOVER	0x14c
+#define	GENOA_STRAP_PCIE_P_TRACK_RX_WAIT_FOR_TS1	0x14d
 /*
  * See PCIEPORT::LC_CNTL10[LC_ENH_PRESET_SEARCH_SEL_{8,16}GT].  2 bits each,
  * default to 0.  It's unclear whether these straps have an effect if
@@ -1551,18 +1811,24 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * search mode at during the strapping process.  See also
  * GENOA_STRAP_PCIE_P_{8,16}GT_EQ_SEARCH_MODE above.
  */
-#define	GENOA_STRAP_PCIE_P_8GT_PRESET_SEARCH_SEL	0x102
-#define	GENOA_STRAP_PCIE_P_16GT_PRESET_SEARCH_SEL	0x103
+#define	GENOA_STRAP_PCIE_P_8GT_PRESET_SEARCH_SEL	0x14e
+#define	GENOA_STRAP_PCIE_P_16GT_PRESET_SEARCH_SEL	0x14f
+#define	GENOA_STRAP_PCIE_P_32GT_PRESET_SEARCH_SEL	0x150
+
+/*
+ * 0x151 reserved.
+ */
 
 /*
  * These 10-bit fields default to 0 and correspond to
  * PCIEPORT::PCIE_LC_CNTL10[LC_PRESET_MASK_{8,16}GT].
  */
-#define	GENOA_STRAP_PCIE_P_8GT_PRESET_MASK	0x104
-#define	GENOA_STRAP_PCIE_P_16GT_PRESET_MASK	0x105
+#define	GENOA_STRAP_PCIE_P_8GT_PRESET_MASK	0x152
+#define	GENOA_STRAP_PCIE_P_16GT_PRESET_MASK	0x153
+#define	GENOA_STRAP_PCIE_P_32GT_PRESET_MASK	0x154
 
 /*
- * 0x106 is reserved.
+ * 0x155 is reserved.
  */
 
 /*
@@ -1571,7 +1837,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * be made if a device below the port sends poisoned TLPs before software has an
  * opportunity to set this bit directly.
  */
-#define	GENOA_STRAP_PCIE_P_POISON_ADV_NF	0x107
+#define	GENOA_STRAP_PCIE_P_POISON_ADV_NF	0x156
 
 /*
  * Empirical results indicate that this strap sets the otherwise read-only MPS
@@ -1582,13 +1848,13 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIEPORT::PCIE_CONFIG_CNTL; those registers aren't affected by this strap,
  * and firmware always sets the mode bits such that the devctl value is used.
  */
-#define	GENOA_STRAP_PCIE_P_MAX_PAYLOAD_SUP	0x108
+#define	GENOA_STRAP_PCIE_P_MAX_PAYLOAD_SUP	0x157
 
 /*
  * See PCIEPORT::PCIE_ERR_CNTL[STRAP_FIRST_RCVD_ERR_LOG].  This single-bit field
  * defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_P_LOG_FIRST_RX_ERR	0x109
+#define	GENOA_STRAP_PCIE_P_LOG_FIRST_RX_ERR	0x158
 
 /*
  * See PCIEPORT::PCIEP_STRAP_MISC[STRAP_EXTENDED_FMT_SUPPORTED] and PCIe4
@@ -1597,14 +1863,14 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * this capability so that the 3-bit TLP fmt field is available to support
  * end-to-end TLP prefixes.
  */
-#define	GENOA_STRAP_PCIE_P_EXT_FMT_SUP		0x10a
+#define	GENOA_STRAP_PCIE_P_EXT_FMT_SUP		0x159
 
 /*
  * See PCIEPORT::PCIEP_STRAP_MISC[STRAP_E2E_PREFIX_EN].  Almost certainly needs
  * the previous strap to be set in order to work; this single-bit field defaults
  * to 0.
  */
-#define	GENOA_STRAP_PCIE_P_E2E_TLP_PREFIX_EN	0x10b
+#define	GENOA_STRAP_PCIE_P_E2E_TLP_PREFIX_EN	0x15a
 
 /*
  * We know what this sets, but not what it means.  The single-bit field defaults
@@ -1613,7 +1879,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * does it mean?  Well, setting this bit means your machine will hang hard when
  * PCIe traffic happens later on.
  */
-#define	GENOA_STRAP_PCIE_P_BCH_ECC_EN		0x10c
+#define	GENOA_STRAP_PCIE_P_BCH_ECC_EN		0x15b
 
 /*
  * This controls whether the port supports the ECRC being regenerated when
@@ -1623,7 +1889,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * which will matter only if multicast is also enabled
  * (GENOA_STRAP_PCIE_MCAST_EN).
  */
-#define	GENOA_STRAP_PCIE_P_MC_ECRC_REGEN_SUP	0x10d
+#define	GENOA_STRAP_PCIE_P_MC_ECRC_REGEN_SUP	0x15c
 
 /*
  * Each of these fields is a mask with one bit per link speed, 2.5 GT/s in bit 0
@@ -1638,8 +1904,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * buffers from over- or underflowing.  The default values are 0.  See PCIe4
  * 7.5.3.18; these settings end up in the Link Capabilities 2 register.
  */
-#define	GENOA_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP	0x10e
-#define	GENOA_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP	0x10f
+#define	GENOA_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP	0x15d
+#define	GENOA_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP	0x15e
 
 /*
  * These next two also relate to the Device Capabilities 2 register and whether
@@ -1647,27 +1913,36 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * These single-bit fields default to 0 and set the otherwise read-only
  * capabilities directly, not via the overrides in PCIEPORT::PCIE_CONFIG_CNTL.
  */
-#define	GENOA_STRAP_PCIE_P_10B_TAG_CMPL_SUP	0x110
-#define	GENOA_STRAP_PCIE_P_10B_TAG_REQ_SUP	0x111
+#define	GENOA_STRAP_PCIE_P_10B_TAG_CMPL_SUP	0x15f
+#define	GENOA_STRAP_PCIE_P_10B_TAG_REQ_SUP	0x160
 
 /*
  * This controls whether or not the CCIX vendor specific cap is advertised or
  * not.  This single-bit field defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_P_CCIX_EN		0x112
+#define	GENOA_STRAP_PCIE_P_CCIX_EN		0x161
 
 /*
- * 0x113 is reserved
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_P_MEMBAR0_SIZE		0x162
+
+/*
+ * XXX: Reference
+ */
+#define	GENOA_STRAP_PCIE_P_AP_EN		0x163
+/*
+ * 0x164 is reserved
  */
 
 /*
  * See PCIEPORT::PCIEP_STRAP_LC[STRAP_LANE_NEGOTIATION].  This 3-bit field's
  * encodings are the same, and it defaults to 0.
  */
-#define	GENOA_STRAP_PCIE_P_LANE_NEG_MODE	0x114
+#define	GENOA_STRAP_PCIE_P_LANE_NEG_MODE	0x165
 
 /*
- * 0x115 is reserved
+ * 0x166 is reserved
  */
 
 /*
@@ -1675,13 +1950,13 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * defaults to 0, meaning we get the behaviour described in PCIe4 ch. 4.  Don't
  * touch.
  */
-#define	GENOA_STRAP_PCIE_P_BYPASS_RX_DET	0x116
+#define	GENOA_STRAP_PCIE_P_BYPASS_RX_DET	0x167
 
 /*
  * See PCIEPORT::PCIEP_STRAP_LC[STRAP_FORCE_COMPLIANCE].  This single-bit field
  * defaults to 0, allowing the LTSSM to transition normally.
  */
-#define	GENOA_STRAP_PCIE_P_COMPLIANCE_FORCE	0x117
+#define	GENOA_STRAP_PCIE_P_COMPLIANCE_FORCE	0x168
 
 /*
  * This is the opposite of the one above and seems to allow for compliance mode
@@ -1689,14 +1964,14 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * 4.2.5.2.  The single-bit field defaults to 0, meaning compliance mode is
  * supported.  See PCIEPORT::PCIEP_STRAP_LC[STRAP_COMPLIANCE_DIS].
  */
-#define	GENOA_STRAP_PCIE_P_COMPLIANCE_DIS	0x118
+#define	GENOA_STRAP_PCIE_P_COMPLIANCE_DIS	0x169
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL2[LC_X12_NEGOTIATION_DIS].  This single-bit field
  * defaults to 1, which causes this bit to be set and x12 negotiation to be
  * prohibited.
  */
-#define	GENOA_STRAP_PCIE_P_NEG_X12_DIS		0x119
+#define	GENOA_STRAP_PCIE_P_NEG_X12_DIS		0x16a
 
 /*
  * See PCIEPORT::PCIEP_STRAP_MISC[STRAP_REVERSE_LANES].  Setting this single-bit
@@ -1704,10 +1979,10 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * shouldn't normally be used and instead we should use the features built into
  * the DXIO subsystem for communicating reversal.
  */
-#define	GENOA_STRAP_PCIE_P_REVERSE_LANES	0x11a
+#define	GENOA_STRAP_PCIE_P_REVERSE_LANES	0x16b
 
 /*
- * 0x11b is reserved.
+ * 0x16c is reserved.
  */
 
 /*
@@ -1716,10 +1991,10 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * supported by this kernel and this single-bit strap should be left at its
  * default value of 0.
  */
-#define	GENOA_STRAP_PCIE_P_ENHANCED_HP_EN	0x11c
+#define	GENOA_STRAP_PCIE_P_ENHANCED_HP_EN	0x16d
 
 /*
- * 0x11d is reserved.
+ * 0x16e is reserved.
  */
 
 /*
@@ -1735,14 +2010,14 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * chance to do that before the field's value has an effect.  It shouldn't be
  * necessary to change any of this.
  */
-#define	GENOA_STRAP_PCIE_P_FTS_TS_COUNT		0x11e
-#define	GENOA_STRAP_PCIE_P_FTS_INIT_NUM		0x11f
+#define	GENOA_STRAP_PCIE_P_FTS_TS_COUNT		0x16f
+#define	GENOA_STRAP_PCIE_P_FTS_INIT_NUM		0x170
 
 /*
  * Sets the device ID for SWUS, defaulting to 0x148d.  This doesn't exist in any
  * processor we support.
  */
-#define	GENOA_STRAP_PCIE_P_DEVID		0x120
+#define	GENOA_STRAP_PCIE_P_DEVID		0x171
 
 /*
  * This strap is a bit mysterious. It basically is used to indicate if it is a
@@ -1751,11 +2026,12 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * obvious. All we know is that this is a 1-bit field that defaults to 0x0.  AMD
  * doesn't document nor use this strap, and we shouldn't either.
  */
-#define	GENOA_STRAP_PCIE_P_IS_SB		0x121
+#define	GENOA_STRAP_PCIE_P_IS_SB		0x172
 
 /*
- * 0x122 is reserved
+ * XXX: Reference
  */
+#define	GENOA_STRAP_PCIE_P_WRP_MISC		0x173
 
 /*
  * These next few fields all relate to the L1 PM substates capability and
@@ -1766,14 +2042,14 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * Substates Capabilities register.  Note that the PPR claims these bits are
  * read/write there, which somewhat surprisingly is true.
  */
-#define	GENOA_STRAP_PCIE_P_PCIPM_L1P2_SUP	0x123
-#define	GENOA_STRAP_PCIE_P_PCIPM_L1P1_SUP	0x124
-#define	GENOA_STRAP_PCIE_P_ASPM_L1P2_SUP	0x125
-#define	GENOA_STRAP_PCIE_P_ASPM_L1P1_SUP	0x126
-#define	GENOA_STRAP_PCIE_P_PM_SUB_SUP		0x127
+#define	GENOA_STRAP_PCIE_P_PCIPM_L1P2_SUP	0x174
+#define	GENOA_STRAP_PCIE_P_PCIPM_L1P1_SUP	0x175
+#define	GENOA_STRAP_PCIE_P_ASPM_L1P2_SUP	0x176
+#define	GENOA_STRAP_PCIE_P_ASPM_L1P1_SUP	0x177
+#define	GENOA_STRAP_PCIE_P_PM_SUB_SUP		0x178
 
 /*
- * 0x128 is reserved
+ * 0x179 is reserved
  */
 
 /*
@@ -1785,7 +2061,7 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * PCIe4 7.8.3.3 which describes the field in the L1 PM substates control
  * register that this value overrides.
  */
-#define	GENOA_STRAP_PCIE_P_TCOMMONMODE_TIME	0x129
+#define	GENOA_STRAP_PCIE_P_TCOMMONMODE_TIME	0x17a
 
 /*
  * This presumably sets the default Tpower_on scale value in the L1 PM Substates
@@ -1795,10 +2071,10 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * set the standard register directly rather than putting the value in the
  * override field PCIEPORT::PCIE_LC_L1_PM_SUBSTATE[LC_T_POWER_ON_SCALE].
  */
-#define	GENOA_STRAP_PCIE_P_TPON_SCALE		0x12a
+#define	GENOA_STRAP_PCIE_P_TPON_SCALE		0x17b
 
 /*
- * 0x12b is reserved
+ * 0x17c is reserved
  */
 
 /*
@@ -1807,10 +2083,10 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * and the default value is 0x5. It seems software may be expected to set this
  * to 0xf, meaning (with the preceding) 150 microseconds.
  */
-#define	GENOA_STRAP_PCIE_P_TPON_VALUE		0x12c
+#define	GENOA_STRAP_PCIE_P_TPON_VALUE		0x17d
 
 /*
- * 0x12d is reserved
+ * 0x17e is reserved
  */
 
 /*
@@ -1823,8 +2099,8 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * to be set.  Note that the corresponding capability bits are otherwise
  * read-only.
  */
-#define	GENOA_STRAP_PCIE_P_DLF_SUP		0x12e
-#define	GENOA_STRAP_PCIE_P_DLF_EXCHANGE_EN	0x12f
+#define	GENOA_STRAP_PCIE_P_DLF_SUP		0x17f
+#define	GENOA_STRAP_PCIE_P_DLF_EXCHANGE_EN	0x180
 
 /*
  * This strap controls the header scaling factor used in scaled flow control.
@@ -1832,10 +2108,18 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * that defaults to 0x0.  See PCIe4 3.4.2.  This doesn't appear to correspond to
  * any documented register.
  */
-#define	GENOA_STRAP_PCIE_P_DLF_HDR_SCALE_MODE	0x130
+#define	GENOA_STRAP_PCIE_P_DLF_HDR_SCALE_MODE	0x181
 
 /*
- * 0x131 is reserved
+ * 0x182 is reserved
+ */
+#define	GENOA_STRAP_PCIE_P_SFI_EN	0x183
+#define	GENOA_STRAP_PCIE_P_OOB_PD_SUP	0x184
+#define	GENOA_STRAP_PCIE_P_ERR_COR_SUBCLASS_CAP	0x185
+#define	GENOA_STRAP_PCIE_P_DPC_EN	0x186
+
+/*
+ * 0x187 is reserved
  */
 
 /*
@@ -1847,7 +2131,48 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * ordering if needed.  Our implementation is indifferent to port ordering and
  * doesn't set these straps.
  */
-#define	GENOA_STRAP_PCIE_P_PORT_OFF		0x132
+#define	GENOA_STRAP_PCIE_P_PORT_OFF		0x188
+
+/*
+ * XXX: Reference.
+ */
+#define	GENOA_STRAP_PCIE_P_ADVERTISE_MODIFIED_TS_OS_SUPPORT	0x189
+#define	GENOA_STRAP_PCIE_P_CXL_SPEED_FAILURE_OVERRIDE_EN	0x18a
+#define	GENOA_STRAP_PCIE_P_CXL_SPEED_FAILURE_AUTO_HOTRESET	0x18b
+#define	GENOA_STRAP_PCIE_P_CXL_SPEED_FAILURE_AUTO_HOTRESET_MODE	0x18c
+#define	GENOA_STRAP_PCIE_P_CXL_BYPASS_ARBMUX_IO_ONLY		0x18d
+#define	GENOA_STRAP_PCIE_P_CXL_SPEED_FAILURE_WAIT_DETECT_EN	0x18e
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_RESPONSE_TIME_LIM		0x18f
+#define	GENOA_STRAP_PCIE_P_CXL_SKIP_NEGOTIATION			0x190
+
+/*
+ * 0x191 is reserved.
+ */
+
+/*
+ * XXX: Reference.
+ */
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_COUNT			0x192
+#define	GENOA_STRAP_PCIE_P_MODIFIED_TS_USAGE_MODE_1_SUP		0x193
+#define	GENOA_STRAP_PCIE_P_MODIFIED_TS_USAGE_MODE_2_SUP		0x194
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_SELECTIVE_EN_SUP		0x195
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_CXL_PCIE_ONLY_NEG_MODE	0x196
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_CHECK_COMMON_CLOCK		0x197
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_CHECK_RTM_CXL_AWARE	0x198
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_ABORT_RCVD_USAGE_MODE_000	0x199
+#define	GENOA_STRAP_PCIE_P_CXL_COMMON_CLOCK_IN_MODTS2		0x19a
+
+/*
+ * 0x19b is reserved
+ */
+
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_DETAILS_1			0x19c
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_VENDOR_ID			0x19d
+#define	GENOA_STRAP_PCIE_P_ALT_PROTO_DETAILS_2			0x19e
+
+/*
+ * 0x19f is reserved
+ */
 
 #ifdef __cplusplus
 }
