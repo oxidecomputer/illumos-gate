@@ -291,7 +291,9 @@ typedef struct zen_mpio_link_setup_args {
 	uint32_t	zmlsa_training:1;
 	uint32_t	zmlsa_enumerate:1;
 	uint32_t	zmlsa_resv0:26;
-	uint32_t	zmlsa_resv1[5];
+	uint32_t	zmlsa_early:1;
+	uint32_t	zmlsa_resv1:31;
+	uint32_t	zmlsa_resv2[4];
 } zen_mpio_link_setup_args_t;
 
 typedef struct zen_mpio_link_setup_resp {

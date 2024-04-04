@@ -4002,6 +4002,29 @@ genoa_mpio_setup_link_post_perst_req(genoa_iodie_t *iodie)
 }
 
 static int
+genoa_mpio_setup_link_train_enumerate(genoa_iodie_t *iodie, bool early)
+{
+	genoa_mpio_rpc_t rpc = { 0 };
+	zen_mpio_link_setup_args_t *args;
+	int resp;
+
+	cmn_err(CE_WARN, "Training link");
+	rpc.gmr_req = GENOA_MPIO_OP_POSTED | GENOA_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.gmr_args;
+	args->zmlsa_training = 1;
+	args->zmlsa_enumerate = 1;
+	args->zmlsa_early = early;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link train/enum failed: 0x%x",
+		    resp);
+		return (1);
+	}
+
+	return (0);
+}
+
+static int
 genoa_mpio_send_data(genoa_iodie_t *iodie, void *arg)
 {
 	if (genoa_mpio_send_ask(iodie) != 0) {
@@ -4053,6 +4076,12 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 	if (genoa_mpio_setup_link_post_perst_req(iodie) != 0 ||
 	    genoa_mpio_recv_ask(iodie) != 0) {
 		cmn_err(CE_WARN, "MPIO PERST request failed");
+		return (1);
+	}
+
+	if (genoa_mpio_setup_link_train_enumerate(iodie, false) != 0 ||
+	    genoa_mpio_recv_ask(iodie) != 0) {
+		cmn_err(CE_WARN, "MPIO train and enumerate request failed");
 		return (1);
 	}
 #if 0
