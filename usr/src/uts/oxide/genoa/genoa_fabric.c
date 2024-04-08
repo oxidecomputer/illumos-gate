@@ -4547,15 +4547,21 @@ static void
 genoa_fabric_write_pcie_strap(genoa_pcie_core_t *pc,
     const uint32_t reg, const uint32_t data)
 {
-	smn_reg_t a_reg, d_reg;
+	genoa_iodie_t *iodie = pc->gpc_ioms->gio_iodie;
+	const genoa_ioms_t *ioms = pc->gpc_ioms;
+	uint32_t addr, inst;
+	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
 
-	a_reg = genoa_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_ADDR);
-	d_reg = genoa_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_DATA);
-
-	mutex_enter(&pc->gpc_strap_lock);
-	genoa_pcie_core_write(pc, a_reg, GENOA_STRAP_PCIE_ADDR_UPPER + reg);
-	genoa_pcie_core_write(pc, d_reg, data);
-	mutex_exit(&pc->gpc_strap_lock);
+	inst = ioms->gio_num /* + 4 * something // Igore G ports for now? */;
+	addr = GENOA_STRAP_PCIE_ADDR_UPPER + reg;
+	rpc.gmr_req = GENOA_MPIO_OP_PCIE_WRITE_STRAP;
+	rpc.gmr_args[0] = addr + (inst << 16);
+	rpc.gmr_args[1] = data;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "writing strap failed");
+	}
 }
 
 /*
