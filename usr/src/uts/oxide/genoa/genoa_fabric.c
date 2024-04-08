@@ -4079,6 +4079,12 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 		return (1);
 	}
 
+	/* XXX: Ruby only? */
+	if (iodie->gi_node_id == 0) {
+		genoa_hack_gpio(GHGOP_SET, 26);
+		genoa_hack_gpio(GHGOP_SET, 266);
+	}
+
 	if (genoa_mpio_setup_link_train_enumerate(iodie, false) != 0 ||
 	    genoa_mpio_recv_ask(iodie) != 0) {
 		cmn_err(CE_WARN, "MPIO train and enumerate request failed");
@@ -4226,6 +4232,8 @@ static const uint32_t genoa_pcie_strap_enable[] = {
 	GENOA_STRAP_PCIE_MSI_EN,
 	GENOA_STRAP_PCIE_AER_EN,
 	GENOA_STRAP_PCIE_GEN2_FEAT_EN,
+	GENOA_STRAP_PCIE_NPEM_EN,
+
 	/* We want completion timeouts */
 	GENOA_STRAP_PCIE_CPL_TO_EN,
 	GENOA_STRAP_PCIE_TPH_EN,
@@ -4280,6 +4288,20 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
+		.strap_reg = GENOA_STRAP_PCIE_P_MAX_PAYLOAD_SUP,
+		.strap_data = 0x2,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = GENOA_STRAP_PCIE_PLL_FREQ_MODE,
+		.strap_data = 2,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+	},
+	{
 		.strap_reg = GENOA_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 		.strap_data = GENOA_STRAP_PCIE_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
@@ -4310,6 +4332,20 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_5,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = GENOA_STRAP_PCIE_32GT_EQ_DS_TX_PRESET,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_7,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = GENOA_STRAP_PCIE_32GT_EQ_US_TX_PRESET,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4404,6 +4440,14 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = GENOA_STRAP_PCIE_WRP_MISC,
+		.strap_data = 0x1 << 9,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
