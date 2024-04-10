@@ -4549,13 +4549,16 @@ genoa_fabric_write_pcie_strap(genoa_pcie_core_t *pc,
 {
 	genoa_iodie_t *iodie = pc->gpc_ioms->gio_iodie;
 	const genoa_ioms_t *ioms = pc->gpc_ioms;
-	uint32_t addr, inst;
+	uint32_t inst, addr;
 	genoa_mpio_rpc_t rpc = { 0 };
 	int resp;
 
-	inst = ioms->gio_num /* + 4 * something // Igore G ports for now? */;
-	addr = GENOA_STRAP_PCIE_ADDR_UPPER + reg;
+	inst = ioms->gio_num + 4 * pc->gpc_coreno;
 	rpc.gmr_req = GENOA_MPIO_OP_PCIE_WRITE_STRAP;
+	/* B1 and later: subtract two for some reason. */
+	addr = reg;
+	if (addr > 0xa8)
+		addr -= 2;
 	rpc.gmr_args[0] = addr + (inst << 16);
 	rpc.gmr_args[1] = data;
 	resp = genoa_mpio_rpc(iodie, &rpc);
