@@ -2321,7 +2321,7 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG5(), rpc->gmr_args[5]);
 
 	/* The request number is written to the response register. */
-	req = (rpc->gmr_req & 0xFF) << 8;
+	req = (rpc->gmr_req & 0xFFF) << 8;
 	genoa_iodie_write(iodie, GENOA_MPIO_RPC_RESP(), req);
 
 	/* Ring the doorbell. */
@@ -2398,8 +2398,6 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 			cmn_err(CE_WARN, "MPIO wait ready RPC failed");
 			return (false);
 		}
-		if (status.zms_cmd_stat == 0)
-			cmn_err(CE_WARN, "waitready done");
 		if (status.zms_cmd_stat == 0)
 			return (true);
 	}
@@ -2661,18 +2659,15 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	genoa_smu_rpc_t rpc = { 0 };
 	genoa_soc_t *soc = iodie->gi_soc;
 
-	if (xxxhackymchackface) {
-		cmn_err(CE_WARN, "skipping SMU feature init");
-		return (true);
-	}
-
 	/*
 	 * Not all combinations of SMU features will result in correct system
 	 * behavior, so we therefore err on the side of matching stock platform
 	 * enablement -- even where that means enabling features with unknown
 	 * functionality.
+	 *
+	 * XXX: Early features in PEI are zeroed.
 	 */
-	uint32_t features = GENOA_SMU_FEATURE_DATA_CALCULATION |
+	uint32_t features = 0; /*GENOA_SMU_FEATURE_DATA_CALCULATION |
 	    GENOA_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
 	    GENOA_SMU_FEATURE_THERMAL |
 	    GENOA_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
@@ -2689,10 +2684,11 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	    GENOA_SMU_FEATURE_CLOCK_GATING |
 	    GENOA_SMU_FEATURE_DYNAMIC_LDO_DROPOUT_LIMITER |
 	    GENOA_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
-	    GENOA_SMU_FEATURE_AGE;
+	    GENOA_SMU_FEATURE_AGE;*/
 
 	rpc.msr_req = GENOA_SMU_OP_ENABLE_FEATURE;
 	rpc.msr_arg0 = features;
+
 
 	genoa_smu_rpc(iodie, &rpc);
 
@@ -3688,7 +3684,7 @@ genoa_mpio_init_global_config(genoa_iodie_t *iodie, void *arg)
 	int resp;
 
 	args->zmgc_skip_vet = 1;
-	args->zmgc_save_restore_mode = 3;
+	args->zmgc_save_restore_mode = 0;
 	args->zmgc_use_phy_sram = 1;
 	args->zmgc_valid_phy_firmware = 1;
 	args->zmgc_en_pcie_noncomp_wa = 1;
@@ -3751,7 +3747,7 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie)
 	ASSERT3U(conf->gmc_ask_pa, !=, 0);
 
 	cmn_err(CE_WARN, "send ask");
-	if (0 && !genoa_mpio_wait_ready(iodie)) {
+	if (!genoa_mpio_wait_ready(iodie)) {
 		cmn_err(CE_WARN, "MPIO wait for ready to send ASK failed");
 		return (1);
 	}
@@ -3772,8 +3768,8 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie)
 		return (1);
 	}
 	if (rpc.gmr_args[0] != 1) {
-		cmn_err(CE_WARN, "ASK rejected by MPIO");
-		return (1);
+		cmn_err(CE_WARN, "ASK rejected by MPIO: MPIO Resp: 0x%x", rpc.gmr_args[0]);
+		//return (1);
 	}
 
 	return (0);
@@ -6271,6 +6267,13 @@ genoa_fabric_init(void)
 	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_iohc_features, NULL);
 
 	/*
+	 * XXX For some reason programming IOHC::NB_BUS_NUM_CNTL is lopped in
+	 * with the IOAPIC initialization. We may want to do this, but it can at
+	 * least be its own function.
+	 */
+	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_bus_num, NULL);
+
+	/*
 	 * There is a lot of different things that we have to do here. But first
 	 * let me apologize in advance. The what here is weird and the why is
 	 * non-existent. Effectively this is being done because either we were
@@ -6297,13 +6300,6 @@ genoa_fabric_init(void)
 	 * interface with each of the northbridges here.
 	 */
 	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_ioapic, NULL);
-
-	/*
-	 * XXX For some reason programming IOHC::NB_BUS_NUM_CNTL is lopped in
-	 * with the IOAPIC initialization. We may want to do this, but it can at
-	 * least be its own function.
-	 */
-	genoa_fabric_walk_ioms(fabric, genoa_fabric_init_bus_num, NULL);
 
 	/*
 	 * Go through and configure all of the straps for NBIF devices before
