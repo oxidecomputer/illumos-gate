@@ -3771,6 +3771,10 @@ genoa_mpio_send_ask(genoa_iodie_t *iodie)
 		    "MPIO transfer ASK RPC Failed: MPIO Resp: 0x%x", resp);
 		return (1);
 	}
+	if (rpc.gmr_args[0] != 1) {
+		cmn_err(CE_WARN, "ASK rejected by MPIO");
+		return (1);
+	}
 
 	return (0);
 }
