@@ -2411,10 +2411,9 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 }
 
 static int
-genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
+genoa_dump_smu_version(genoa_iodie_t *iodie, void *arg)
 {
 	uint8_t maj, min, patch;
-	uint32_t dxmaj, dxmin;
 	genoa_soc_t *soc = iodie->gi_soc;
 
 	if (genoa_smu_rpc_get_version(iodie, &maj, &min, &patch)) {
@@ -2428,15 +2427,8 @@ genoa_dump_versions(genoa_iodie_t *iodie, void *arg)
 		    soc->gs_socno);
 	}
 
-	if (genoa_mpio_rpc_get_version(iodie, &dxmaj, &dxmin)) {
-		cmn_err(CE_CONT, "?Socket %u DXIO Version: %u.%u\n",
-		    soc->gs_socno, dxmaj, dxmin);
-		iodie->gi_mpio_fw[0] = dxmaj;
-		iodie->gi_mpio_fw[1] = dxmin;
-	} else {
-		cmn_err(CE_NOTE, "Socket %u: failed to read DXIO version",
-		    soc->gs_socno);
-	}
+	iodie->gi_mpio_fw[0] = 0;
+	iodie->gi_mpio_fw[1] = 0;
 
 	return (0);
 }
@@ -2689,19 +2681,18 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	rpc.msr_req = GENOA_SMU_OP_ENABLE_FEATURE;
 	rpc.msr_arg0 = features;
 
-
 	genoa_smu_rpc(iodie, &rpc);
 
 	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Features RPC Failed: features: "
 		    "0x%x, SMU 0x%x", soc->gs_socno, features, rpc.msr_resp);
-	} else {
-		cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
-		    soc->gs_socno, features);
+		    return (0);
 	}
+	cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
+	    soc->gs_socno, features);
 
-	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
+	return (1);
 }
 
 /*
@@ -2931,9 +2922,9 @@ genoa_fabric_topo_init(void)
 		 * In order to guarantee that we can safely perform SMU and DXIO
 		 * functions once we have returned (and when we go to read the
 		 * brand string for the CCXs even before then), we go through
-		 * now and capture firmware versions.
+		 * now and capture the SMU firmware version.
 		 */
-		VERIFY0(genoa_dump_versions(iodie, NULL));
+		VERIFY0(genoa_dump_smu_version(iodie, NULL));
 
 		genoa_ccx_init_soc(soc);
 		if (!genoa_smu_rpc_read_brand_string(iodie, soc->gs_brandstr,
