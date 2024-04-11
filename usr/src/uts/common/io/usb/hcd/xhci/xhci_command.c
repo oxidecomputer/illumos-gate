@@ -580,6 +580,65 @@ done:
 }
 
 int
+xhci_command_get_port_bandwidth(xhci_t *xhcip, uint8_t speed)
+{
+	int ret, code;
+	xhci_command_t co;
+
+	VERIFY(xhcip != NULL);
+
+	xhci_command_init(&co);
+	co.xco_req.trb_addr = LE_64(xhci_dma_pa(&xhcip->xhci_pbctx));
+	co.xco_req.trb_status = LE_32(0);
+	co.xco_req.trb_flags = LE_32(XHCI_CMD_GET_BW |
+	    XHCI_TRB_SET_SPEED(speed) |
+	    XHCI_TRB_SET_SLOT(0));
+	/* XXX */
+
+	ret = xhci_command_submit(xhcip, &co);
+	if (ret != 0)
+		goto done;
+	code = XHCI_TRB_GET_CODE(co.xco_res.trb_status);
+	switch (code) {
+	case XHCI_CODE_SUCCESS:
+		ret = USB_SUCCESS;
+		break;
+	default:
+		ret = USB_HC_HARDWARE_ERROR;
+		xhci_log(xhcip, "!unexpected error when getting port "
+		    "bandwidth (speed %u): %d", (uint_t)speed, code);
+		break;
+	}
+
+	XHCI_DMA_SYNC(xhcip->xhci_pbctx, DDI_DMA_SYNC_FORKERNEL);
+	if (xhci_check_dma_handle(xhcip, &xhcip->xhci_pbctx) != DDI_FM_OK) {
+		xhci_error(xhcip, "encountered fatal FM error syncing port "
+		    "bandwidth context DMA contents: resetting device");
+		xhci_fm_runtime_reset(xhcip);
+		return (USB_HC_HARDWARE_ERROR);
+	}
+
+	if (ret == USB_SUCCESS) {
+		uint8_t *pbctx = (uint8_t *)xhcip->xhci_pbctx.xdb_va;
+		char blah[400];
+		size_t pos = 0;
+
+		for (uint_t n = 0; n < xhcip->xhci_caps.xcap_max_ports; n++) {
+			pos += snprintf(blah + pos, sizeof (blah) - pos,
+			    "%03u ", pbctx[n + 1]);
+		}
+		blah[pos] = '\0';
+
+		xhci_log(xhcip, "!get port bandwidth (speed %u): %s",
+		    (uint_t)speed, blah);
+	}
+
+done:
+	xhci_command_fini(&co);
+	return (ret);
+}
+
+int
 xhci_command_configure_endpoint(xhci_t *xhcip, xhci_device_t *xd)
 {
 	int ret, code;
