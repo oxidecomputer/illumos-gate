@@ -2337,6 +2337,11 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 	resp = 0;
 	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++)
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
+	if ((resp & READY) == 0) {
+		cmn_err(CE_WARN, "MPIO RPC failed to complete");
+		mutex_exit(&iodie->gi_mpio_lock);
+		return (GENOA_MPIO_RPC_EUNKNOWN);
+	}
 
 	/* Read response. */
 	rpc->gmr_args[0] = genoa_iodie_read(iodie, GENOA_MPIO_RPC_ARG0());
