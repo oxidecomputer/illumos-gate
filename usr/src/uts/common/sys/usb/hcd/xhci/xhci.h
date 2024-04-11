@@ -664,6 +664,7 @@ typedef struct xhci {
 	kcondvar_t		xhci_statecv;
 	xhci_state_flags_t	xhci_state;
 	xhci_usba_t		xhci_usba;
+	xhci_dma_buffer_t	xhci_pbctx;
 } xhci_t;
 
 /*
@@ -787,6 +788,7 @@ extern int xhci_command_enable_slot(xhci_t *, uint8_t *);
 extern int xhci_command_disable_slot(xhci_t *, uint8_t);
 extern int xhci_command_set_address(xhci_t *, xhci_device_t *, boolean_t);
 extern int xhci_command_configure_endpoint(xhci_t *, xhci_device_t *);
+extern int xhci_command_get_port_bandwidth(xhci_t *, uint8_t);
 extern int xhci_command_evaluate_context(xhci_t *, xhci_device_t *);
 extern int xhci_command_reset_endpoint(xhci_t *, xhci_device_t *,
     xhci_endpoint_t *);
