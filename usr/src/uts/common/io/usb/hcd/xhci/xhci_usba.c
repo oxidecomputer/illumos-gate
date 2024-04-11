@@ -282,12 +282,28 @@ xhci_hcdi_pipe_open(usba_pipe_handle_data_t *ph, usb_flags_t usb_flags)
 		return (USB_HC_HARDWARE_ERROR);
 	}
 
+	/*
+	 * XXX
+	 */
+	(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_FULL);
+	(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_LOW);
+	(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_HIGH);
+	(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_SUPER);
+
 	if ((ret = xhci_command_configure_endpoint(xhcip, xd)) != USB_SUCCESS) {
 		mutex_exit(&xd->xd_imtx);
 
 		xhci_error(xhcip, "failed to open pipe on endpoint %d of "
 		    "device with slot %d and port %d: configure endpoint "
 		    "command failed (%d)", epid, xd->xd_slot, xd->xd_port, ret);
+
+		/*
+		 * XXX
+		 */
+		(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_FULL);
+		(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_LOW);
+		(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_HIGH);
+		(void) xhci_command_get_port_bandwidth(xhcip, XHCI_SPEED_SUPER);
 
 		/*
 		 * Because the configure endpoint command failed, we should

@@ -1953,6 +1953,34 @@ xhci_close(dev_t dev, int flag, int otyp, cred_t *credp)
 	return (usba_hubdi_close(dip, dev, flag, otyp, credp));
 }
 
+static boolean_t
+xhci_bandwidth_init(xhci_t *xhcip)
+{
+	ddi_device_acc_attr_t acc;
+	ddi_dma_attr_t attr;
+
+	xhci_dma_acc_attr(xhcip, &acc);
+	xhci_dma_dma_attr(xhcip, &attr);
+
+	/*
+	 * XXX describe
+	 */
+	size_t pbsize = P2ROUNDUP(1 + xhcip->xhci_caps.xcap_max_ports, 8);
+
+	if (xhci_dma_alloc(xhcip, &xhcip->xhci_pbctx, &attr, &acc, B_TRUE,
+	    pbsize, B_FALSE) == B_FALSE) {
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
+}
+
+static void
+xhci_bandwidth_fini(xhci_t *xhcip)
+{
+	xhci_dma_free(&xhcip->xhci_pbctx);
+}
+
 /*
  * We try to clean up everything that we can. The only thing that we let stop us
  * at this time is a failure to remove the root hub, which is realistically the
@@ -1988,6 +2016,7 @@ xhci_cleanup(xhci_t *xhcip)
 	xhci_event_fini(xhcip);
 	xhci_command_ring_fini(xhcip);
 	xhci_context_fini(xhcip);
+	xhci_bandwidth_fini(xhcip);
 
 	if (xhcip->xhci_seq & XHCI_ATTACH_INTR_ENABLE) {
 		(void) xhci_ddi_intr_disable(xhcip);
@@ -2078,6 +2107,9 @@ xhci_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto err;
 
 	if (xhci_read_params(xhcip) == B_FALSE)
+		goto err;
+
+	if (xhci_bandwidth_init(xhcip) == B_FALSE)
 		goto err;
 
 	if (xhci_identify(xhcip) == B_FALSE)
