@@ -639,8 +639,6 @@
 #include <genoa/genoa_apob.h>
 #include <genoa/genoa_physaddrs.h>
 
-static const uint32_t RPC_MAX_TRIES = 1U << 30;
-
 /*
  * XXX This header contains a lot of the definitions that the broader system is
  * currently using for register definitions. For the moment we're trying to keep
@@ -2304,15 +2302,22 @@ genoa_smu_rpc_read_dpm_weights(genoa_iodie_t *iodie, uint64_t *buf, size_t len)
 static int
 genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 {
+	const uint32_t RPC_MAX_TRIES = 1U << 30;
 	const uint32_t READY = 1U << 31;
 	uint32_t resp, req, doorbell;
 
 	mutex_enter(&iodie->gi_mpio_lock);
 	/* Wait until the MPIO engine is ready to receive an RPC. */
 	resp = 0;
-	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++) {
+	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++)
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
+	if ((resp & READY) == 0) {
+		cmn_err(CE_WARN, "MPIO failed to become ready for RPC");
+		mutex_exit(&iodie->gi_mpio_lock);
+		return (GENOA_MPIO_RPC_EBUSY);
 	}
+
+	/* Write arguments. */
 	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG0(), rpc->gmr_args[0]);
 	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG1(), rpc->gmr_args[1]);
 	genoa_iodie_write(iodie, GENOA_MPIO_RPC_ARG2(), rpc->gmr_args[2]);
@@ -2330,17 +2335,16 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
 
 	/* Wait for completion. */
 	resp = 0;
-	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++) {
+	for (int k = 0; (resp & READY) == 0 && k < RPC_MAX_TRIES; k++)
 		resp = genoa_iodie_read(iodie, GENOA_MPIO_RPC_RESP());
-	}
 
 	/* Read response. */
-	rpc->gmr_args[0] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG0());
-	rpc->gmr_args[1] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG1());
-	rpc->gmr_args[2] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG2());
-	rpc->gmr_args[3] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG3());
-	rpc->gmr_args[4] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG4());
-	rpc->gmr_args[5] = genoa_iodie_read(iodie, GENOA_SMU_RPC_ARG5());
+	rpc->gmr_args[0] = genoa_iodie_read(iodie, GENOA_MPIO_RPC_ARG0());
+	rpc->gmr_args[1] = genoa_iodie_read(iodie, GENOA_MPIO_RPC_ARG1());
+	rpc->gmr_args[2] = genoa_iodie_read(iodie, GENOA_MPIO_RPC_ARG2());
+	rpc->gmr_args[3] = genoa_iodie_read(iodie, GENOA_MPIO_RPC_ARG3());
+	rpc->gmr_args[4] = genoa_iodie_read(iodie, GENOA_MPIO_RPC_ARG4());
+	rpc->gmr_args[5] = genoa_iodie_read(iodie, GENOA_MPIO_RPC_ARG5());
 	mutex_exit(&iodie->gi_mpio_lock);
 
 	return (resp & 0xFF);
