@@ -2351,10 +2351,10 @@ genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc)
  * here.
  */
 static bool
-genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
-    uint32_t *minor)
+genoa_mpio_rpc_get_version(genoa_iodie_t *iodie)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
+	uint32_t *vs;
 	int resp;
 
 	rpc.gmr_req = GENOA_MPIO_OP_GET_VERSION;
@@ -2364,8 +2364,9 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie, uint32_t *major,
 		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: 0x%x", resp);
 		return (false);
 	}
-	*major = rpc.gmr_args[0];
-	*minor = 0;
+	vs = rpc.gmr_args;
+	cmn_err(CE_CONT, "MPIO Firmware Version: %u.%u.%u.%u.%u.%u\n",
+	    vs[0], vs[1], vs[2], vs[3], vs[4], vs[5]);
 
 	return (true);
 }
@@ -2646,6 +2647,32 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 }
 
 static bool
+genoa_smu_early_features_init(genoa_iodie_t *iodie)
+{
+	genoa_smu_rpc_t rpc = { 0 };
+	genoa_soc_t *soc = iodie->gi_soc;
+
+	/*
+	 * Early features in PEI are zeroed, but issuing this RPC
+	 * seem to be important to enabling subsequent MPIO RPCs
+	 * to succeed.
+	 */
+	rpc.msr_req = GENOA_SMU_OP_ENABLE_FEATURE;
+
+	genoa_smu_rpc(iodie, &rpc);
+
+	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "Socket %u: SMU Enable Early Features RPC failed: 0x%x",
+		    soc->gs_socno, rpc.msr_resp);
+		    return (0);
+	}
+
+	return (1);
+}
+
+
+static bool
 genoa_smu_features_init(genoa_iodie_t *iodie)
 {
 	genoa_smu_rpc_t rpc = { 0 };
@@ -2659,7 +2686,8 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	 *
 	 * XXX: Early features in PEI are zeroed.
 	 */
-	uint32_t features = 0; /*GENOA_SMU_FEATURE_DATA_CALCULATION |
+	uint32_t features = GENOA_SMU_FEATURE_DATA_CALCULATION |
+	    GENOA_SMU_FEATURE_PPT |
 	    GENOA_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
 	    GENOA_SMU_FEATURE_THERMAL |
 	    GENOA_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
@@ -2668,18 +2696,23 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	    GENOA_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
 	    GENOA_SMU_FEATURE_CORE_CLOCK_DPM |
 	    GENOA_SMU_FEATURE_FABRIC_CLOCK_DPM |
-	    GENOA_SMU_FEATURE_XGMI_DYNAMIC_LINK_WIDTH_MANAGEMENT |
-	    GENOA_SMU_FEATURE_DIGITAL_LDO |
-	    GENOA_SMU_FEATURE_SOCCLK_DEEP_SLEEP |
+	    GENOA_SMU_FEATURE_LCLK_DPM |
 	    GENOA_SMU_FEATURE_LCLK_DEEP_SLEEP |
-	    GENOA_SMU_FEATURE_SYSHUBCLK_DEEP_SLEEP |
-	    GENOA_SMU_FEATURE_CLOCK_GATING |
-	    GENOA_SMU_FEATURE_DYNAMIC_LDO_DROPOUT_LIMITER |
 	    GENOA_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
-	    GENOA_SMU_FEATURE_AGE;*/
+	    GENOA_SMU_FEATURE_CORE_C6 |
+	    GENOA_SMU_FEATURE_DF_CSTATES |
+	    GENOA_SMU_FEATURE_CLOCK_GATING |
+	    GENOA_SMU_FEATURE_CPPC |
+	    GENOA_SMU_FEATURE_GMI_DLWM |
+	    GENOA_SMU_FEATURE_XGMI_DLWM;
+	uint32_t features_ext = GENOA_SMU_EXT_FEATURE_PCC |
+	    GENOA_SMU_EXT_FEATURE_MPDMA_TF_CLK_DEEP_SLEEP |
+	    GENOA_SMU_EXT_FEATURE_MPDMA_PM_CLK_DEEP_SLEEP;
+
 
 	rpc.msr_req = GENOA_SMU_OP_ENABLE_FEATURE;
 	rpc.msr_arg0 = features;
+	rpc.msr_arg1 = features_ext;
 
 	genoa_smu_rpc(iodie, &rpc);
 
@@ -2689,8 +2722,8 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 		    "0x%x, SMU 0x%x", soc->gs_socno, features, rpc.msr_resp);
 		    return (0);
 	}
-	cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
-	    soc->gs_socno, features);
+	cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x and 0x%08x enabled\n",
+	    soc->gs_socno, features, features_ext);
 
 	return (1);
 }
@@ -2947,7 +2980,7 @@ genoa_fabric_topo_init(void)
 		 * dynamic frequency scaling -- which in turn makes the rest
 		 * of the boot much, much faster.
 		 */
-		VERIFY(genoa_smu_features_init(iodie));
+		VERIFY(genoa_smu_early_features_init(iodie));
 	}
 
 	if (nthreads > NCPU) {
@@ -4091,6 +4124,7 @@ genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
 		return (1);
 	}
 #endif
+	genoa_mpio_rpc_get_version(iodie);
 
 	return (0);
 }
