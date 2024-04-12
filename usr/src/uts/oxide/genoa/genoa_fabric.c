@@ -691,15 +691,21 @@ static const genoa_pcie_port_info_t genoa_pcie2[GENOA_PCIE_CORE_WAFL_NPORTS] = {
 	{ 0x5, 0x2 }
 };
 
+typedef struct genoa_ioms_pcie_port_info {
+	uint8_t gippi_count;
+	genoa_pcie_port_info_t gippi_info[4];
+} genoa_ioms_pcie_port_info_t;
+
 /*
  * These are internal bridges that correspond to NBIFs; they are modeled as
  * ports but there is no physical port brought out of the package.
  */
-static const genoa_pcie_port_info_t genoa_int_ports[4] = {
-	{ 0x7, 0x1 },
-	{ 0x8, 0x1 },
-	{ 0x8, 0x2 },
-	{ 0x8, 0x3 }
+static const genoa_ioms_pcie_port_info_t genoa_int_ports[GENOA_IOMS_PER_IODIE] =
+{
+	{ 2, { { 0x7, 0x1 }, { 0x7, 0x2 } } },
+	{ 1, { { 0x7, 0x1 } } },
+	{ 2, { { 0x7, 0x1 }, { 0x7, 0x2 } } },
+	{ 1, { { 0x7, 0x1 } } }
 };
 
 /*
@@ -5660,10 +5666,12 @@ genoa_fabric_hack_bridges_cb(genoa_pcie_port_t *port, void *arg)
 	bus = ioms->gio_pci_busno;
 	if (pbc->pbc_ioms != ioms) {
 		pbc->pbc_ioms = ioms;
-		pbc->pbc_busoff = 1 + ARRAY_SIZE(genoa_int_ports);
-		for (uint_t i = 0; i < ARRAY_SIZE(genoa_int_ports); i++) {
+		const genoa_ioms_pcie_port_info_t *int_ports =
+		    &genoa_int_ports[ioms->gio_num];
+		pbc->pbc_busoff = 1 + int_ports->gippi_count;
+		for (uint_t i = 0; i < int_ports->gippi_count; i++) {
 			const genoa_pcie_port_info_t *info =
-			    &genoa_int_ports[i];
+			    &int_ports->gippi_info[i];
 			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
 			    PCI_BCNF_PRIBUS, bus);
 			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
