@@ -656,8 +656,8 @@ typedef struct genoa_mpio_rpc {
 } genoa_mpio_rpc_t;
 
 typedef struct genoa_pcie_port_info {
-	uint8_t	mppi_dev;
-	uint8_t	mppi_func;
+	uint8_t	gppi_dev;
+	uint8_t	gppi_func;
 } genoa_pcie_port_info_t;
 
 /*
@@ -2019,8 +2019,8 @@ genoa_fabric_ioms_pcie_init(genoa_ioms_t *ioms)
 
 			port->gpp_portno = portno;
 			port->gpp_core = pc;
-			port->gpp_device = pinfop[portno].mppi_dev;
-			port->gpp_func = pinfop[portno].mppi_func;
+			port->gpp_device = pinfop[portno].gppi_dev;
+			port->gpp_func = pinfop[portno].gppi_func;
 			port->gpp_hp_type = SMU_HP_INVALID;
 		}
 	}
@@ -5672,11 +5672,11 @@ genoa_fabric_hack_bridges_cb(genoa_pcie_port_t *port, void *arg)
 		for (uint_t i = 0; i < int_ports->gippi_count; i++) {
 			const genoa_pcie_port_info_t *info =
 			    &int_ports->gippi_info[i];
-			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
+			pci_putb_func(bus, info->gppi_dev, info->gppi_func,
 			    PCI_BCNF_PRIBUS, bus);
-			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
+			pci_putb_func(bus, info->gppi_dev, info->gppi_func,
 			    PCI_BCNF_SECBUS, bus + 1 + i);
-			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
+			pci_putb_func(bus, info->gppi_dev, info->gppi_func,
 			    PCI_BCNF_SUBBUS, bus + 1 + i);
 
 		}
