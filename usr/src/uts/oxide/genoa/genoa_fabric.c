@@ -2684,15 +2684,15 @@ genoa_smu_early_features_init(genoa_iodie_t *iodie)
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Early Features RPC failed: 0x%x",
 		    soc->gs_socno, rpc.msr_resp);
-		    return (0);
+		    return (false);
 	}
 
-	return (1);
+	return (true);
 }
 
 
-static bool
-genoa_smu_features_init(genoa_iodie_t *iodie)
+static int
+genoa_smu_features_init(genoa_iodie_t *iodie, void *arg)
 {
 	genoa_smu_rpc_t rpc = { 0 };
 	genoa_soc_t *soc = iodie->gi_soc;
@@ -2702,8 +2702,6 @@ genoa_smu_features_init(genoa_iodie_t *iodie)
 	 * behavior, so we therefore err on the side of matching stock platform
 	 * enablement -- even where that means enabling features with unknown
 	 * functionality.
-	 *
-	 * XXX: Early features in PEI are zeroed.
 	 */
 	uint32_t features = GENOA_SMU_FEATURE_DATA_CALCULATION |
 	    GENOA_SMU_FEATURE_PPT |
@@ -3944,19 +3942,6 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	}
 
 	/*
-	 * The headers for the ancillary heap and payload must be 4 bytes in
-	 * size.
-	 */
-	CTASSERT(sizeof (zen_mpio_ext_attrs_t) == 4);
-
-	conf->gmc_ext_attrs_alloc_len = 2 * MMU_PAGESIZE;
-	conf->gmc_ext_attrs = contig_alloc(2 * MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->gmc_ext_attrs, 2 * MMU_PAGESIZE);
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ext_attrs);
-	conf->gmc_ext_attrs_pa = mmu_ptob((uint64_t)pfn);
-
-
-	/*
 	 * First we need to program the initial descriptor. Its type is one of
 	 * the Heap types. Yes, this is different from the sub data payloads
 	 * that we use. Yes, this is different from the way that the engine
@@ -4103,7 +4088,7 @@ genoa_mpio_init_mapping(genoa_iodie_t *iodie, void *arg)
 static int genoa_fabric_init_pcie_straps(genoa_pcie_core_t *pc, void *arg);
 
 static int
-genoa_dxio_more_conf(genoa_iodie_t *iodie, void *arg)
+genoa_mpio_more_conf(genoa_iodie_t *iodie, void *arg)
 {
 	(void) genoa_fabric_walk_pcie_core(iodie->gi_soc->gs_fabric,
 	    genoa_fabric_init_pcie_straps, iodie);
@@ -4291,7 +4276,9 @@ static const uint32_t genoa_pcie_strap_enable[] = {
 	GENOA_STRAP_PCIE_GEN3_1_FEAT_EN,
 	GENOA_STRAP_PCIE_GEN4_FEAT_EN,
 	GENOA_STRAP_PCIE_ECRC_GEN_EN,
+	GENOA_STRAP_PCIE_SWUS_ECRC_GEN_EN,
 	GENOA_STRAP_PCIE_ECRC_CHECK_EN,
+	GENOA_STRAP_PCIE_SWUS_ECRC_CHECK_EN,
 	GENOA_STRAP_PCIE_CPL_ABORT_ERR_EN,
 	GENOA_STRAP_PCIE_INT_ERR_EN,
 	GENOA_STRAP_PCIE_RXP_ACC_FULL_DIS,
@@ -4318,19 +4305,14 @@ static const uint32_t genoa_pcie_strap_disable[] = {
 	GENOA_STRAP_PCIE_ERR_REPORT_DIS,
 	GENOA_STRAP_PCIE_TX_TEST_ALL,
 	GENOA_STRAP_PCIE_MCAST_EN,
+	GENOA_STRAP_PCIE_DESKEW_EMPTY,
+	GENOA_STRAP_PCIE_SWUS_AER_EN,
 };
 
 /*
  * PCIe Straps that have other values.
  */
 static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
-	{
-		.strap_reg = GENOA_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
-		.strap_data = GENOA_STRAP_PCIE_RX_PRESET_9DB,
-		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-		.strap_corematch = PCIE_COREMATCH_ANY
-	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_MAX_PAYLOAD_SUP,
 		.strap_data = 0x2,
@@ -4344,6 +4326,13 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
+	},
+	{
+		.strap_reg = GENOA_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
+		.strap_data = GENOA_STRAP_PCIE_RX_PRESET_9DB,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
@@ -4652,9 +4641,11 @@ genoa_fabric_init_pcie_straps(genoa_pcie_core_t *pc, void *arg)
 	}
 
 	/* Handle Special case for DLF which needs to be set on non WAFL */
+	/* Does not appear to be used on Genoa.
 	if (pc->gpc_coreno != GENOA_IOMS_WAFL_PCIE_CORENO) {
 		genoa_fabric_write_pcie_strap(pc, GENOA_STRAP_PCIE_DLF_EN, 1);
 	}
+	*/
 
 	/* Handle per bridge initialization */
 	for (uint_t i = 0; i < ARRAY_SIZE(genoa_pcie_port_settings); i++) {
@@ -6424,7 +6415,7 @@ genoa_fabric_init(void)
 		return;
 	}
 
-	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_more_conf, NULL) != 0) {
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_more_conf, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to do yet "
 		    "more configuration");
 		return;
@@ -6477,4 +6468,5 @@ genoa_fabric_init(void)
 	 * especially ones we don't intend to use.
 	 */
 #endif
+	genoa_fabric_walk_iodie(fabric, genoa_smu_features_init, NULL);
 }

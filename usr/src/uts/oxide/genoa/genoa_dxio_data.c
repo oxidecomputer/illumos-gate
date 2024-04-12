@@ -159,7 +159,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
 		.zml_gpio_id = 1,
 		.zml_attrs = {
-		   .zmla_port_present = 1,
+		    .zmla_port_present = 1,
 		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
 		},
 	    },
