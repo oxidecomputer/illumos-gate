@@ -949,7 +949,7 @@ xhci_hcdi_pipe_bulk_xfer(usba_pipe_handle_data_t *ph, usb_bulk_req_t *ubrp,
 	epid = xhci_endpoint_pipe_to_epid(ph);
 	if (xd->xd_endpoints[epid] == NULL) {
 		mutex_exit(&xhcip->xhci_lock);
-		xhci_error(xhcip, "asked to do control transfer on slot %d, "
+		xhci_error(xhcip, "asked to do bulk transfer on slot %d, "
 		    "port %d, endpoint: %d, but no endpoint structure",
 		    xd->xd_slot, xd->xd_port, epid);
 		return (USB_FAILURE);
