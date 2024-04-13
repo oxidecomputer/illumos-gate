@@ -87,7 +87,7 @@ genoa_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT3U(nents, >, core32);
 #endif	/* DEBUG */
 
-	const uint32_t aperture_base = 0x11180000;
+	const uint32_t aperture_base = 0x1A380000;
 
 	const uint32_t aperture_off = (ioms32 << 20) + (core32 << 22);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
@@ -121,7 +121,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT3U(nents, >, port32);
 #endif	/* DEBUG */
 
-	const uint32_t aperture_base = 0x11140000;
+	const uint32_t aperture_base = 0x1A340000;
 
 	const uint32_t aperture_off = (ioms32 << 20) + (core32 << 22) +
 	    (port32 << 12);
