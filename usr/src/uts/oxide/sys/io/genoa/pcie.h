@@ -178,18 +178,19 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIEPORT::PCIE_TX_CNTL - PCIe TX Control. This is a register that exists in
- * 'Port Space' and is specific to a bridge. XXX figure out what other bits we
- * need.
+ * PCIEPORT::PCIE_TX_PORT_CTRL_1 - PCIe TX Control. This is a register that
+ * exists in 'Port Space' and is specific to a bridge. XXX figure out what other
+ * bits we need.
  */
 /*CSTYLED*/
-#define	D_PCIE_PORT_TX_CTL	(const smn_reg_def_t){	\
+#define	D_PCIE_PORT_TX_PORT_CTL1	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
-	.srd_reg = 0x80	\
+	.srd_reg = 0x600	\
 }
-#define	PCIE_PORT_TX_CTL(n, p, b)	\
-    genoa_pcie_port_smn_reg((n), D_PCIE_PORT_TX_CTL, (p), (b))
-#define	PCIE_PORT_TX_CTL_SET_TLP_FLUSH_DOWN_DIS(r, v)	bitset32(r, 15, 15, v)
+#define	PCIE_PORT_TX_PORT_CTL1(n, p, b)	\
+    genoa_pcie_port_smn_reg((n), D_PCIE_PORT_TX_PORT_CTL1, (p), (b))
+#define	PCIE_PORT_TX_PORT_CTL1_SET_TLP_FLUSH_DOWN_DIS(r, v)	\
+    bitset32(r, 15, 15, v)
 
 /*
  * PCIEPORT::PCIE_TX_REQUESTER_ID - Encodes information about the bridge's PCI
@@ -1212,18 +1213,26 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_DBG_CTL_SET_PORT_EN(r, v)	bitset32(r, 7, 0, v)
 
 /*
- * PCIECORE::PCIE_CNTL2 - Additional PCIe port level controls. Covers power,
- * atomics, and some amount of transmit.
+ * PCIECORE::PCIE_CNTL2 - unused but captured for debugging.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_PCIE_CTL2	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x70	\
 }
-#define	PCIE_CORE_PCIE_CTL2(n, p)	\
-    genoa_pcie_core_smn_reg((n), D_PCIE_CORE_PCIE_CTL2, (p))
-#define	PCIE_CORE_PCIE_CTL2_TX_ATOMIC_ORD_DIS(r, v)	bitset32(r, 14, 14, v)
-#define	PCIE_CORE_PCIE_CTL2_TX_ATOMIC_OPS_DIS(r, v)	bitset32(r, 13, 13, v)
+
+/*
+ * PCIECORE::PCIE_TX_CTRL_1 - PCIe port level transmit controls.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_PCIE_TX_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x620	\
+}
+#define	PCIE_CORE_PCIE_TX_CTL1(n, p)	\
+    genoa_pcie_core_smn_reg((n), D_PCIE_CORE_PCIE_TX_CTL1, (p))
+#define	PCIE_CORE_PCIE_TX_CTL1_TX_ATOMIC_ORD_DIS(r, v)	bitset32(r, 25, 25, v)
+#define	PCIE_CORE_PCIE_TX_CTL1_TX_ATOMIC_OPS_DIS(r, v)	bitset32(r, 24, 24, v)
 
 /*
  * PCIECORE::PCIE_RX_CNTL2 - unused but captured for debugging.

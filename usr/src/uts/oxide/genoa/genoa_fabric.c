@@ -5420,9 +5420,9 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	}
 	genoa_pcie_port_write(port, reg, val);
 
-	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_TX_CTL);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_TX_PORT_CTL1);
 	val = genoa_pcie_port_read(port, reg);
-	val = PCIE_PORT_TX_CTL_SET_TLP_FLUSH_DOWN_DIS(val, 0);
+	val = PCIE_PORT_TX_PORT_CTL1_SET_TLP_FLUSH_DOWN_DIS(val, 0);
 	genoa_pcie_port_write(port, reg, val);
 
 	/*
@@ -5482,10 +5482,10 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	 * Lucky Hardware Debug 15. Why is it lucky? Because all we know is
 	 * we've been told to set it.
 	 */
-	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
-	val = genoa_pcie_port_read(port, reg);
-	val = PCIE_PORT_HW_DBG_SET_DBG15(val, 1);
-	genoa_pcie_port_write(port, reg, val);
+	// reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
+	// val = genoa_pcie_port_read(port, reg);
+	// val = PCIE_PORT_HW_DBG_SET_DBG15(val, 1);
+	// genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the 8 GT/s symbols per clock is set to 2.
@@ -5618,10 +5618,10 @@ genoa_fabric_init_pcie_core(genoa_pcie_core_t *pc, void *arg)
 	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(val, 1);
 	genoa_pcie_core_write(pc, reg, val);
 
-	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL2);
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_TX_CTL1);
 	val = genoa_pcie_core_read(pc, reg);
-	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_ORD_DIS(val, 1);
-	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_OPS_DIS(val, 0);
+	val = PCIE_CORE_PCIE_TX_CTL1_TX_ATOMIC_ORD_DIS(val, 1);
+	val = PCIE_CORE_PCIE_TX_CTL1_TX_ATOMIC_OPS_DIS(val, 0);
 	genoa_pcie_core_write(pc, reg, val);
 
 	/*
