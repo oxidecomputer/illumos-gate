@@ -95,7 +95,7 @@ genoa_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
  */
 
 #define	GENOA_MAKE_SMN_IOHCDEV_REG_FN(_unit, _unitlc, _base, _apmask,	\
-    _nunits, _unitshift)	\
+    _nunits, _unitshift, _unitmult)	\
 static inline smn_reg_t							\
 genoa_iohcdev_ ## _unitlc ## _smn_reg(const uint8_t iohcno,		\
     const smn_reg_def_t def, const uint8_t unitno, const uint8_t reginst) \
@@ -119,7 +119,7 @@ genoa_iohcdev_ ## _unitlc ## _smn_reg(const uint8_t iohcno,		\
 	const uint32_t aperture_base = (_base);				\
 									\
 	const uint32_t aperture_off = (iohc32 << 20) +			\
-	    (unit32 << _unitshift);					\
+	    ((unit32 * _unitmult) << _unitshift);			\
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);		\
 									\
 	const uint32_t aperture = aperture_base + aperture_off;		\
@@ -131,8 +131,8 @@ genoa_iohcdev_ ## _unitlc ## _smn_reg(const uint8_t iohcno,		\
 	return (SMN_MAKE_REG(aperture + reg));				\
 }
 
-GENOA_MAKE_SMN_IOHCDEV_REG_FN(PCIE, pcie, 0x13b31000, 0xffff8000, 3, 13);
-GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0);
+GENOA_MAKE_SMN_IOHCDEV_REG_FN(PCIE, pcie, 0x13b31000, 0xffff8000, 3, 10, 9);
+GENOA_MAKE_SMN_IOHCDEV_REG_FN(SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 
 /*
  * For reasons not understood, NBIF0 & NBIF2 don't have an IOHCDEV group.
