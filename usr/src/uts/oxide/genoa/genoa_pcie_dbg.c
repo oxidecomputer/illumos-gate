@@ -524,8 +524,8 @@ const genoa_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 		.gprd_def = D_PCIE_PORT_SDP_CTL
 	},
 	{
-		.gprd_name = "PCIEPORT::PCIE_TX_CNTL",
-		.gprd_def = D_PCIE_PORT_TX_CTL
+		.gprd_name = "PCIEPORT::PCIE_TX_PORT_CTRL_1",
+		.gprd_def = D_PCIE_PORT_TX_PORT_CTL1
 	},
 	{
 		.gprd_name = "PCIEPORT::PCIE_TX_REQUESTER_ID",
