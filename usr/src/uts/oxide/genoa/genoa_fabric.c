@@ -672,7 +672,8 @@ static const genoa_pcie_port_info_t genoa_pcie0[GENOA_PCIE_CORE_MAX_PORTS] = {
 	{ 0x1, 0x5 },
 	{ 0x1, 0x6 },
 	{ 0x1, 0x7 },
-	{ 0x2, 0x1 }
+	{ 0x2, 0x1 },
+	{ 0x2, 0x2 }
 };
 
 static const genoa_pcie_port_info_t genoa_pcie1[GENOA_PCIE_CORE_MAX_PORTS] = {
@@ -683,12 +684,15 @@ static const genoa_pcie_port_info_t genoa_pcie1[GENOA_PCIE_CORE_MAX_PORTS] = {
 	{ 0x3, 0x5 },
 	{ 0x3, 0x6 },
 	{ 0x3, 0x7 },
-	{ 0x4, 0x1 }
+	{ 0x4, 0x1 },
+	{ 0x4, 0x2 }
 };
 
 static const genoa_pcie_port_info_t genoa_pcie2[GENOA_PCIE_CORE_WAFL_NPORTS] = {
 	{ 0x5, 0x1 },
-	{ 0x5, 0x2 }
+	{ 0x5, 0x2 },
+	{ 0x5, 0x3 },
+	{ 0x5, 0x4 }
 };
 
 typedef struct genoa_ioms_pcie_port_info {
@@ -1993,12 +1997,12 @@ genoa_fabric_ioms_pcie_init(genoa_ioms_t *ioms)
 			break;
 		case 1:
 			pc->gpc_sdp_unit = 3;
-			pc->gpc_sdp_port = 0;
+			pc->gpc_sdp_port = 1;
 			pinfop = genoa_pcie1;
 			break;
 		case GENOA_IOMS_WAFL_PCIE_CORENO:
 			pc->gpc_sdp_unit = 4;
-			pc->gpc_sdp_port = 5;
+			pc->gpc_sdp_port = 2;
 			pinfop = genoa_pcie2;
 			break;
 		}
