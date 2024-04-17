@@ -2404,7 +2404,7 @@ void usb_pipe_stop_isoc_polling(
 /*
  *
  * As any usb device will have a max of 4 possible power states
- * the #define	for them are provided below with mapping to the
+ * the #define for them are provided below with mapping to the
  * corresponding OS power levels.
  */
 #define	USB_DEV_PWR_D0		USB_DEV_OS_FULL_PWR

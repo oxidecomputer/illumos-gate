@@ -99,25 +99,18 @@ typedef struct hub_power_struct {
 
 	hrtime_t	hubp_min_pm_threshold;		/* in nanoseconds */
 
-	/* power state of all children are tracked here */
-	uint8_t		*hubp_child_pwrstate;
+	/*
+	 * The power level of devices attached to this hub.  As per power(9E),
+	 * levels are driver-defined; for USBA the USB_DEV_OS_PWR_* constants
+	 * are used here.
+	 */
+	int		hubp_child_pwrstate[MAX_PORTS];
 
 	/* pm-components properties are stored here */
 	char		*hubp_pmcomp[5];
 
 	usba_cfg_pwr_descr_t	hubp_confpwr_descr; /* config pwr descr */
 } hub_power_t;
-
-/* warlock directives, stable data */
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_hubd))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_wakeup_enabled))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_pwr_states))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_time_at_full_power))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_min_pm_threshold))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_pm_capabilities))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_pmcomp))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hub_power_t::hubp_confpwr_descr))
-
 
 #define	HUBD_APID_NAMELEN	32		/* max len in cfgadm display */
 
@@ -131,10 +124,6 @@ typedef struct hubd_cpr {
 	kmutex_t		lockp;
 } hubd_cpr_t;
 
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hubd_cpr_t::cpr))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hubd_cpr_t::statep))
-
-
 /*
  * soft	state information for this hubd
  */
@@ -142,8 +131,8 @@ typedef struct hubd {
 	int			h_instance;
 	uint_t			h_init_state;
 	uint_t			h_dev_state;
-	int8_t			h_bus_ctls;
-	int8_t			h_bus_pwr;
+	uint_t			h_bus_ctls;
+	uint_t			h_bus_pwr;
 	hub_power_t		*h_hubpm; /* pointer to power struct */
 	dev_info_t		*h_dip;
 
@@ -258,25 +247,6 @@ typedef struct hubd {
 	int			(*h_cleanup_child)(dev_info_t *);
 } hubd_t;
 
-_NOTE(MUTEX_PROTECTS_DATA(hubd::h_mutex, hubd))
-_NOTE(MUTEX_PROTECTS_DATA(hubd::h_mutex, hub_power_t))
-_NOTE(DATA_READABLE_WITHOUT_LOCK(hubd::h_default_pipe
-		hubd::h_usba_device
-		hubd::h_dev_data
-		hubd::h_ndi_event_hdl
-		hubd::h_cpr_cb
-		hubd::h_log_handle
-		hubd::h_ep1_ph
-		hubd::h_instance
-		hubd::h_hubpm
-		hubd::h_dip
-		hubd::h_ignore_pwr_budget
-		hubd::h_hub_descr
-		hubd::h_cleanup_child
-))
-
-_NOTE(SCHEME_PROTECTS_DATA("stable data", usb_ep_descr))
-
 /*
  * hubd hotplug thread argument data structure
  */
@@ -300,9 +270,6 @@ typedef struct hubd_reset_arg {
 	/* The port needs to be reset */
 	uint16_t	reset_port;
 } hubd_reset_arg_t;
-
-_NOTE(SCHEME_PROTECTS_DATA("unshared", hubd_hotplug_arg))
-_NOTE(SCHEME_PROTECTS_DATA("unshared", hubd_reset_arg))
 
 #define	HUBD_UNIT(dev)		(getminor((dev)))
 #define	HUBD_MUTEX(hubd)	(&((hubd)->h_mutex))
@@ -369,8 +336,6 @@ typedef struct hubd_offline_req {
 	dev_info_t		*or_dip;
 	uint_t			or_flag;
 } hubd_offline_req_t;
-
-_NOTE(SCHEME_PROTECTS_DATA("unshared", hubd_offline_req))
 
 
 /*

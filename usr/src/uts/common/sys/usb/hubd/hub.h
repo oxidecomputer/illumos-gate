@@ -99,7 +99,7 @@ typedef struct usb_ss_hub_descr {
 
 #define	HUB_CHARS_TT_SHIFT		5
 
-/* Default Power On to Power Good time */
+/* Default Power On to Power Good time (in milliseconds) */
 #define	HUB_DEFAULT_POPG	10
 
 /* Hub Status */

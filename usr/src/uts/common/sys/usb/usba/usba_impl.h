@@ -229,13 +229,9 @@ void	usba_unset_usb_address(usba_device_t *);
 /*
  * Per Hub Data Structures
  */
-typedef  struct usba_hubdi {
-	usba_list_entry_t hubdi_list;	 /* linking in hubdi list */
-
-	dev_info_t	*hubdi_dip;	 /* ptr to devinfo struct */
-
-	int		hubdi_flags;	/* flag options */
-
+typedef struct usba_hubdi {
+	usba_list_entry_t	hubdi_list;	/* linking in hubdi list */
+	dev_info_t		*hubdi_dip;	/* ptr to devinfo struct */
 } usba_hubdi_t;
 
 /*
@@ -264,9 +260,6 @@ void	usba_hubdi_destroy();
 
 void	usba_devdb_initialization();
 void	usba_devdb_destroy();
-
-int	usba_hubdi_register(dev_info_t	*, uint_t);
-int	usba_hubdi_unregister(dev_info_t *);
 
 int	usba_is_root_hub(dev_info_t *dip);
 

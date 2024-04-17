@@ -747,11 +747,9 @@ usba_free_usba_device(usba_device_t *usba_device)
 			for (i = 0;
 			    i < usba_device->usb_dev_descr->bNumConfigurations;
 			    i++) {
-				if (usba_device->usb_cfg_str_descr[i]) {
-					kmem_free(
-					    usba_device->usb_cfg_str_descr[i],
-					    strlen(usba_device->
-					    usb_cfg_str_descr[i]) + 1);
+				if (usba_device->usb_cfg_str_descr[i] != NULL) {
+					strfree(
+					    usba_device->usb_cfg_str_descr[i]);
 				}
 			}
 			/* free the array pointers */
@@ -759,24 +757,21 @@ usba_free_usba_device(usba_device_t *usba_device)
 			    sizeof (uchar_t *) * usba_device->usb_n_cfgs);
 		}
 
-		if (usba_device->usb_dev_descr) {
+		if (usba_device->usb_dev_descr != NULL) {
 			kmem_free(usba_device->usb_dev_descr,
 			    sizeof (usb_dev_descr_t));
 		}
 
-		if (usba_device->usb_mfg_str) {
-			kmem_free(usba_device->usb_mfg_str,
-			    strlen(usba_device->usb_mfg_str) + 1);
+		if (usba_device->usb_mfg_str != NULL) {
+			strfree(usba_device->usb_mfg_str);
 		}
 
-		if (usba_device->usb_product_str) {
-			kmem_free(usba_device->usb_product_str,
-			    strlen(usba_device->usb_product_str) + 1);
+		if (usba_device->usb_product_str != NULL) {
+			strfree(usba_device->usb_product_str);
 		}
 
-		if (usba_device->usb_serialno_str) {
-			kmem_free(usba_device->usb_serialno_str,
-			    strlen(usba_device->usb_serialno_str) + 1);
+		if (usba_device->usb_serialno_str != NULL) {
+			strfree(usba_device->usb_serialno_str);
 		}
 
 		usba_free_binary_object_store(usba_device);

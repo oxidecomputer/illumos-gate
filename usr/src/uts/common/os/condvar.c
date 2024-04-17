@@ -496,6 +496,13 @@ cv_timedwait_sig_hrtime(kcondvar_t *cvp, kmutex_t *mp, hrtime_t tim)
 	}
 }
 
+int
+cv_timedwait_hrtime(kcondvar_t *cvp, kmutex_t *mp, hrtime_t tim)
+{
+	return (cv_timedwait_hires(cvp, mp, tim, 1,
+	    CALLOUT_FLAG_ABSOLUTE | CALLOUT_FLAG_ROUNDUP));
+}
+
 /*
  * Same as cv_timedwait_sig() except that the third argument is a relative
  * timeout value, as opposed to an absolute one. There is also a fourth
