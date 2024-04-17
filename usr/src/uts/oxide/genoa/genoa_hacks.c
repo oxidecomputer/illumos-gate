@@ -279,16 +279,12 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 	mmio_reg_t gpio_reg;
 	uint32_t val;
 
-	/* XXX: Verify before start poking at GPIOs */
-	if (xxxhackymchackface)
-	    return;
-
 	if (gpio < 256) {
 		gpio_block = fch_gpio_mmio_block();
 		gpio_reg = FCH_GPIO_GPIO_MMIO(gpio_block, gpio);
 	} else {
 		gpio_block = fch_rmtgpio_mmio_block();
-		gpio_reg = FCH_GPIO_GPIO_MMIO(gpio_block, gpio - 256);
+		gpio_reg = FCH_RMTGPIO_GPIO_MMIO(gpio_block, gpio - 256);
 	}
 
 	switch (op) {
@@ -370,8 +366,8 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 		mmio_reg_write(iomux_reg, mux_val);
 
 		mmio_reg_block_unmap(&iomux_block);
-	}
 		break;
+	}
 	case GHGOP_RESET:
 		val = mmio_reg_read(gpio_reg);
 		val = FCH_GPIO_GPIO_SET_OUTPUT(val, 0);
@@ -389,8 +385,8 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 		output = FCH_GPIO_GPIO_GET_OUTPUT(val);
 		val = FCH_GPIO_GPIO_SET_OUTPUT(val, !output);
 		mmio_reg_write(gpio_reg, val);
-	}
 		break;
+	}
 	default:
 		cmn_err(CE_PANIC, "invalid genoa GPIO hack op %d", op);
 	}

@@ -2411,9 +2411,10 @@ genoa_mpio_rpc_get_status(genoa_iodie_t *iodie, zen_mpio_status_t *status)
 static bool
 genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 {
+	const uint32_t RPC_MAX_WAIT_READY = 1U << 30;
 	zen_mpio_status_t status = { 0 };
 
-	for (int k = 0; k < 100000; k++) {
+	for (int k = 0; k < RPC_MAX_WAIT_READY; k++) {
 		if (!genoa_mpio_rpc_get_status(iodie, &status)) {
 			cmn_err(CE_WARN, "MPIO wait ready RPC failed");
 			return (false);
@@ -2423,9 +2424,6 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 	}
 	cmn_err(CE_WARN, "MPIO wait ready timed out, cmd status: 0x%x",
 	    status.zms_cmd_stat);
-
-	if (xxxhackymchackface)
-		return (true);
 
 	return (false);
 }
