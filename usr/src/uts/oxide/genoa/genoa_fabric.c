@@ -2384,7 +2384,7 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie)
 		return (false);
 	}
 	vs = rpc.gmr_args;
-	cmn_err(CE_CONT, "MPIO Firmware Version: %u.%u.%u.%u.%u.%u\n",
+	cmn_err(CE_CONT, "?MPIO Firmware Version: %u.%u.%u.%u.%u.%u\n",
 	    vs[0], vs[1], vs[2], vs[3], vs[4], vs[5]);
 
 	return (true);
