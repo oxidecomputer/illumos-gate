@@ -191,6 +191,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_TX_PORT_CTL1, (p), (b))
 #define	PCIE_PORT_TX_PORT_CTL1_SET_TLP_FLUSH_DOWN_DIS(r, v)	\
     bitset32(r, 15, 15, v)
+#define	PCIE_PORT_TX_PORT_CTL1_SET_CPL_PASS(r, v)	bitset32(r, 20, 20, v)
 
 /*
  * PCIEPORT::PCIE_TX_REQUESTER_ID - Encodes information about the bridge's PCI
@@ -1124,13 +1125,61 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIEPORT::PCIE_LC_CNTL11 - unused but captured for debugging.
+ * PCIEPORT::PCIE_LC_EQ_CNTL_8GT - Used to set equalization
+ * search modes etc.
  */
 /*CSTYLED*/
-#define	D_PCIE_PORT_LC_CTL11	(const smn_reg_def_t){	\
+#define	D_PCIE_PORT_LC_EQ_CTL_8GT	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x390	\
 }
+#define	PCIE_PORT_LC_EQ_CTL_8GT(n, p, b)	\
+    genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_8GT, (p), (b))
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(r, v) bitset32(r, 3, 2, v)
+
+/*
+ * PCIEPORT::PCIE_LC_EQ_CNTL_16GT - Used to set equalization
+ * search modes etc.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_EQ_CTL_16GT	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x394	\
+}
+#define	PCIE_PORT_LC_EQ_CTL_16GT(n, p, b)	\
+    genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_16GT, (p), (b))
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(r, v) bitset32(r, 3, 2, v)
+
+/*
+ * PCIEPORT::PCIE_LC_EQ_CNTL_32GT - Used to set equalization
+ * search modes etc.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_EQ_CTL_32GT	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x400	\
+}
+#define	PCIE_PORT_LC_EQ_CTL_32GT(n, p, b)	\
+    genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_32GT, (p), (b))
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(r, v) bitset32(r, 3, 2, v)
+
+/*
+ * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL - Used to control
+ * preset masks.
+ */
+/*CSTYLED*/
+#define	D_PCIE_PORT_LC_PRESET_MASK_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x404	\
+}
+#define	PCIE_PORT_LC_PRESET_MASK_CTL(n, p, b)	\
+    genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_PRESET_MASK_CTL, (p), (b))
+#define	PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_8GT(r, v) \
+    bitset32(r, 9, 0, v)
+#define	PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_16GT(r, v) \
+    bitset32(r, 19, 10, v)
+#define	PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_32GT(r, v) \
+    bitset32(r, 29, 20, v)
 
 /*
  * PCIECORE::PCIE_HW_DEBUG - unused but captured for debugging.

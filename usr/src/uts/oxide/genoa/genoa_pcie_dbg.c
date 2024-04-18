@@ -884,8 +884,20 @@ const genoa_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 		.gprd_def = D_PCIE_PORT_LC_CTL10
 	},
 	{
-		.gprd_name = "PCIEPORT::PCIE_LC_CNTL11",
-		.gprd_def = D_PCIE_PORT_LC_CTL11
+		.gprd_name = "PCIEPORT::PCIE_LC_EQ_CNTL_8GT",
+		.gprd_def = D_PCIE_PORT_LC_EQ_CTL_8GT
+	},
+	{
+		.gprd_name = "PCIEPORT::PCIE_LC_EQ_CNTL_16GT",
+		.gprd_def = D_PCIE_PORT_LC_EQ_CTL_16GT
+	},
+	{
+		.gprd_name = "PCIEPORT::PCIE_LC_EQ_CNTL_32GT",
+		.gprd_def = D_PCIE_PORT_LC_EQ_CTL_32GT
+	},
+	{
+		.gprd_name = "PCIEPORT::PCIE_LC_PRESET_MASK_CNTL",
+		.gprd_def = D_PCIE_PORT_LC_PRESET_MASK_CTL
 	}
 };
 const size_t genoa_pcie_port_dbg_nregs = ARRAY_SIZE(genoa_pcie_port_dbg_regs);
