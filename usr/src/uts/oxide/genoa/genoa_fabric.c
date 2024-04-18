@@ -4085,11 +4085,63 @@ genoa_mpio_init_mapping(genoa_iodie_t *iodie, void *arg)
 static int genoa_fabric_init_pcie_straps(genoa_pcie_core_t *pc, void *arg);
 
 static int
+genoa_fabric_init_smn_port_state(genoa_pcie_port_t *port, void *arg)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * Turn off unused lanes.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_TURN_OFF_UNUSED_LANES(val, 1);
+	genoa_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set search equalization modes.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_8GT);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(val, 3);
+	genoa_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_16GT);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(val, 3);
+	genoa_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_32GT);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(val, 3);
+	genoa_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set preset masks.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_PRESET_MASK_CTL);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_8GT(val, 0x370);
+	val = PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_16GT(val, 0x370);
+	val = PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_32GT(val, 0x78);
+	genoa_pcie_port_write(port, reg, val);
+
+	return (0);
+}
+
+static int genoa_fabric_init_pcie_core(genoa_pcie_core_t *pc, void *arg);
+
+static int
 genoa_mpio_more_conf(genoa_iodie_t *iodie, void *arg)
 {
 	(void) genoa_fabric_walk_pcie_core(iodie->gi_soc->gs_fabric,
 	    genoa_fabric_init_pcie_straps, iodie);
 	cmn_err(CE_CONT, "?Socket %u MPIO: Wrote PCIe straps\n",
+	    iodie->gi_soc->gs_socno);
+
+	(void) genoa_fabric_walk_pcie_port(iodie->gi_soc->gs_fabric,
+	    genoa_fabric_init_smn_port_state, NULL);
+	cmn_err(CE_CONT, "?Socket %u MPIO: Wrote PCIe SMN registers\n",
 	    iodie->gi_soc->gs_socno);
 
 	if (genoa_mpio_setup_link_post_config_reconfig(iodie) != 0 ||
@@ -4098,6 +4150,10 @@ genoa_mpio_more_conf(genoa_iodie_t *iodie, void *arg)
 		return (1);
 	}
 
+	/* XXX: This happens after reconfig, but before training in AGESA */
+	(void) genoa_fabric_walk_pcie_core(iodie->gi_soc->gs_fabric,
+	    genoa_fabric_init_pcie_core, NULL);
+
 	if (genoa_mpio_setup_link_post_perst_req(iodie) != 0 ||
 	    genoa_mpio_recv_ask(iodie) != 0) {
 		cmn_err(CE_WARN, "MPIO PERST request failed");
@@ -4105,7 +4161,7 @@ genoa_mpio_more_conf(genoa_iodie_t *iodie, void *arg)
 	}
 
 	/* XXX: Ruby only? */
-	if (iodie->gi_node_id == 0) {
+	if (genoa_board_type() == MBT_RUBY && iodie->gi_node_id == 0) {
 		genoa_hack_gpio(GHGOP_SET, 26);
 		genoa_hack_gpio(GHGOP_SET, 266);
 	}
@@ -4501,6 +4557,14 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
+		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_16GT,
+		.strap_data = 0x2,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
 		.strap_reg = GENOA_STRAP_PCIE_P_SET_TRANSMITTER_PRECODE_REQ,
 		.strap_data = 0x0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
@@ -4535,14 +4599,14 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_corematch = 1,
 		.strap_portmatch = 1
 	},
-	{
-		.strap_reg = GENOA_STRAP_PCIE_P_L0s_EXIT_LAT,
-		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
-		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-		.strap_corematch = PCIE_COREMATCH_ANY,
-		.strap_portmatch = PCIE_PORTMATCH_ANY
-	}
+	// {
+	// 	.strap_reg = GENOA_STRAP_PCIE_P_L0s_EXIT_LAT,
+	// 	.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
+	// 	.strap_nodematch = PCIE_NODEMATCH_ANY,
+	// 	.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	// 	.strap_corematch = PCIE_COREMATCH_ANY,
+	// 	.strap_portmatch = PCIE_PORTMATCH_ANY
+	// }
 };
 
 static bool
@@ -5619,8 +5683,8 @@ genoa_fabric_init_pcie_core(genoa_pcie_core_t *pc, void *arg)
 
 	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
 	val = genoa_pcie_core_read(pc, reg);
-	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x32);
-	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x17);
+	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x19);
+	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x10);
 	genoa_pcie_core_write(pc, reg, val);
 
 	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
