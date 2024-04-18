@@ -656,6 +656,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_WIDTH_CTL, (p), (b))
 #define	PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(r, v)	bitset32(r, 19, 19, v)
 #define	PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(r, v)	bitset32(r, 10, 10, v)
+#define	PCIE_PORT_LC_TURN_OFF_UNUSED_LANES(r, v)	bitset32(r, 30, 30, v)
 
 /*
  * PCIEPORT::PCIE_LC_N_FTS_CNTL - unused but captured for debugging.
