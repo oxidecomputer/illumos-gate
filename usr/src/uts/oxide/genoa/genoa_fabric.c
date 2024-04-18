@@ -4073,7 +4073,6 @@ genoa_mpio_init_mapping(genoa_iodie_t *iodie, void *arg)
 		return (1);
 	}
 
-
 	if (genoa_mpio_map_engines(iodie->gi_soc->gs_fabric, iodie) == 0) {
 		cmn_err(CE_WARN, "Socket %u failed to map all DXIO engines "
 		    "to devices.  PCIe will not function",
@@ -4260,9 +4259,7 @@ static const uint32_t genoa_pcie_strap_enable[] = {
 	GENOA_STRAP_PCIE_AER_EN,
 	GENOA_STRAP_PCIE_GEN2_FEAT_EN,
 	GENOA_STRAP_PCIE_NPEM_EN,
-
-	/* We want completion timeouts */
-	GENOA_STRAP_PCIE_CPL_TO_EN,
+	GENOA_STRAP_PCIE_CPL_TO_EN,	/* We want completion timeouts */
 	GENOA_STRAP_PCIE_TPH_EN,
 	GENOA_STRAP_PCIE_MULTI_FUNC_EN,
 	GENOA_STRAP_PCIE_DPC_EN,
@@ -4273,13 +4270,16 @@ static const uint32_t genoa_pcie_strap_enable[] = {
 	GENOA_STRAP_PCIE_LINK_BW_NOTIF_SUP,
 	GENOA_STRAP_PCIE_GEN3_1_FEAT_EN,
 	GENOA_STRAP_PCIE_GEN4_FEAT_EN,
+	GENOA_STRAP_PCIE_GEN5_FEAT_EN,
 	GENOA_STRAP_PCIE_ECRC_GEN_EN,
 	GENOA_STRAP_PCIE_SWUS_ECRC_GEN_EN,
 	GENOA_STRAP_PCIE_ECRC_CHECK_EN,
 	GENOA_STRAP_PCIE_SWUS_ECRC_CHECK_EN,
+	GENOA_STRAP_PCIE_SWUS_ARI_EN,
 	GENOA_STRAP_PCIE_CPL_ABORT_ERR_EN,
 	GENOA_STRAP_PCIE_INT_ERR_EN,
 	GENOA_STRAP_PCIE_RXP_ACC_FULL_DIS,
+	GENOA_STRAP_PCIE_SURPRISE_DOWN_ERR_REPORTING_CAP,
 
 	/* ACS straps */
 	GENOA_STRAP_PCIE_ACS_EN,
@@ -4501,6 +4501,14 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
 	{
+		.strap_reg = GENOA_STRAP_PCIE_P_SET_TRANSMITTER_PRECODE_REQ,
+		.strap_data = 0x0,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
 		.strap_reg = GENOA_STRAP_PCIE_P_SRIS_EN,
 		.strap_data = 1,
 		.strap_boardmatch = MBT_COSMO,
@@ -4639,11 +4647,10 @@ genoa_fabric_init_pcie_straps(genoa_pcie_core_t *pc, void *arg)
 	}
 
 	/* Handle Special case for DLF which needs to be set on non WAFL */
-	/* Does not appear to be used on Genoa.
+	/* Does not appear to be used on Genoa. */
 	if (pc->gpc_coreno != GENOA_IOMS_WAFL_PCIE_CORENO) {
 		genoa_fabric_write_pcie_strap(pc, GENOA_STRAP_PCIE_DLF_EN, 1);
 	}
-	*/
 
 	/* Handle per bridge initialization */
 	for (uint_t i = 0; i < ARRAY_SIZE(genoa_pcie_port_settings); i++) {
@@ -5416,6 +5423,35 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_TX_PORT_CTL1);
 	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_TX_PORT_CTL1_SET_TLP_FLUSH_DOWN_DIS(val, 0);
+	val = PCIE_PORT_TX_PORT_CTL1_SET_CPL_PASS(val, 1);
+	genoa_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set search equalization modes.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_8GT);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(val, 3);
+	genoa_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_16GT);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(val, 3);
+	genoa_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_32GT);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(val, 3);
+	genoa_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set preset masks.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_PRESET_MASK_CTL);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_8GT(val, 0x370);
+	val = PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_16GT(val, 0x370);
+	val = PCIE_PORT_LC_PRESET_MASK_CTL_SET_PRESET_MASK_32GT(val, 0x78);
 	genoa_pcie_port_write(port, reg, val);
 
 	/*
