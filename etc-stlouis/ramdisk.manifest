@@ -308,6 +308,7 @@ f kernel/dacf/amd64/net_dacf 0755 root sys
 d kernel/drv 0755 root sys
 d kernel/drv/amd64 0755 root sys
 f kernel/drv/amd64/arp 0755 root sys
+f kernel/drv/amd64/bge 0755 root sys
 f kernel/drv/amd64/blkdev 0755 root sys
 f kernel/drv/amd64/clone 0755 root sys
 f kernel/drv/amd64/cn 0755 root sys
@@ -361,6 +362,7 @@ f kernel/drv/amd64/udp 0755 root sys
 f kernel/drv/amd64/udp6 0755 root sys
 f kernel/drv/amd64/zfs 0755 root sys
 f kernel/drv/arp.conf 0644 root sys
+f kernel/drv/bge.conf 0644 root sys
 f kernel/drv/clone.conf 0644 root sys
 f kernel/drv/cn.conf 0644 root sys
 f kernel/drv/cpuid.conf 0644 root sys
