@@ -223,7 +223,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 	    },
 	},
     },
-    { /* P4 */
+    { /* P4, M.2 x4 */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 128,
@@ -238,7 +238,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 	    },
 	},
     },
-    { /* P5 M.2 (1/2) */
+    { /* P5, M.2 (1/2) */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 132,
@@ -253,7 +253,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 	    },
 	},
     },
-    { /* P5 M.2 (2/2) */
+    { /* P5, M.2 (2/2) */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 133,
@@ -268,7 +268,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 	    },
 	},
     },
-    { /* P5 NIC */
+    { /* P5, NIC */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 135,
@@ -279,6 +279,62 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 		    .zmla_port_present = 1,
 		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
 		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+		},
+	    },
+	},
+    },
+    { /* G0, NVMe x16 */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 96,
+		.zml_num_lanes = 16,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		},
+	    },
+	},
+    },
+    { /* G1, NVMe x16 */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 64,
+		.zml_num_lanes = 16,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		},
+	    },
+	},
+    },
+    { /* G2, NVMe x16 */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 112,
+		.zml_num_lanes = 16,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		},
+	    },
+	},
+    },
+    { /* G3, NVMe x16 */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 80,
+		.zml_num_lanes = 16,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
 		},
 	    },
 	},
