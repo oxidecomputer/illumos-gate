@@ -824,8 +824,12 @@ static const genoa_pcie_core_info_t genoa_lane_maps[8] = {
 	{ "G3", 0x50, 0x5f, 0x50, 0x5f }
 };
 
+static const genoa_pcie_core_info_t genoa_p4_map = {
+	"P4", 0x80, 0x83, 0x80, 0x83
+};
+
 static const genoa_pcie_core_info_t genoa_wafl_map = {
-	"WAFL", 0x80, 0x83, 0x80, 0x83
+	"WAFL", 0x84, 0x87, 0x84, 0x87
 };
 
 /*
@@ -2007,8 +2011,10 @@ genoa_fabric_ioms_pcie_init(genoa_ioms_t *ioms)
 			break;
 		}
 
+		cmn_err(CE_WARN, "mapping: ioms->gio_num = %d, pcno = %d",
+		    ioms->gio_num, pcno);
 		if (pcno == GENOA_IOMS_WAFL_PCIE_CORENO) {
-			cinfop = &genoa_wafl_map;
+			cinfop = (ioms->gio_num == 0) ? &genoa_wafl_map : &genoa_p4_map;
 		} else {
 			cinfop = &genoa_lane_maps[ioms->gio_num * 2 + pcno];
 		}
@@ -3880,6 +3886,8 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	}
 	source_data = ruby_mpio_pcie_s0;
 	conf->gmc_nports = RUBY_MPIO_PCIE_S0_LEN;
+	if (conf->gmc_nports > ZEN_MPIO_ASK_MAX_PORTS)
+		conf->gmc_nports = ZEN_MPIO_ASK_MAX_PORTS;
 
 	size = sizeof (zen_mpio_port_conf_t) * conf->gmc_nports;
 	conf->gmc_port_conf = kmem_zalloc(size, KM_SLEEP);
@@ -4199,15 +4207,14 @@ genoa_mpio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 
 	for (uint_t i = 0; i < conf->gmc_nports; i++) {
-		zen_mpio_port_conf_t *gpc = conf->gmc_port_conf + i;
-		zen_mpio_ask_port_t *ap = &gpc->zmpc_ask;
+		zen_mpio_ask_port_t *ap = &conf->gmc_ask->zma_ports[i];
 		zen_mpio_link_t *lp = &ap->zma_link;
 		genoa_pcie_core_t *pc;
 		genoa_pcie_port_t *port;
 		uint32_t start_lane, end_lane;
 		uint8_t portno;
 
-		if (lp->zml_ctlr_type != ZEN_MPIO_ENGINE_PCIE)
+		if (lp->zml_ctlr_type != ZEN_MPIO_ASK_LINK_PCIE)
 			continue;
 
 		start_lane = lp->zml_lane_start;
@@ -5454,13 +5461,11 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	 * Otherwise we only show it if there's a device present.
 	 */
 	if ((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0) {
-		zen_mpio_link_t *lp = &port->gpp_ask_port->zma_link;
-		uint8_t lt;
+		zen_mpio_ict_link_status_t *lp = &port->gpp_ask_port->zma_status;
 		bool hotplug, trained;
 
 		hotplug = (pc->gpc_flags & GENOA_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		lt = lp->zml_attrs.zmla_early_link_train;
-		trained = lt != 0;
+		trained = lp->zmils_state == ZEN_MPIO_LINK_STATE_TRAINED;
 		hide = !hotplug && !trained;
 	} else {
 		hide = true;

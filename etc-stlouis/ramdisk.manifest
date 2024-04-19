@@ -998,6 +998,7 @@ f usr/lib/amd64/libexacct.so.1 0755 root bin
 f usr/lib/amd64/libidmap.so.1 0755 root bin
 f usr/lib/amd64/libkvm.so.1 0755 root bin
 f usr/lib/amd64/liblzma.so.5 0755 root bin
+f usr/lib/amd64/libnvme.so.1 0755 root bin
 f usr/lib/amd64/libpcidb.so.1 0755 root bin
 f usr/lib/amd64/libpctx.so.1 0755 root bin
 f usr/lib/amd64/libpkcs11.so.1 0755 root bin
@@ -1101,6 +1102,7 @@ f usr/lib/libinstzones.so.1 0755 root bin
 f usr/lib/libipmi.so.1 0755 root bin
 f usr/lib/libkrb5.so.1 0755 root bin
 f usr/lib/liblzma.so.5 0755 root bin
+f usr/lib/libnvme.so.1 0755 root bin
 f usr/lib/libpcidb.so.1 0755 root bin
 f usr/lib/libpkcs11.so.1 0755 root bin
 f usr/lib/libkvm.so.1 0755 root bin
