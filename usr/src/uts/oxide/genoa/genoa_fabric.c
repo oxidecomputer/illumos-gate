@@ -2011,8 +2011,6 @@ genoa_fabric_ioms_pcie_init(genoa_ioms_t *ioms)
 			break;
 		}
 
-		cmn_err(CE_WARN, "mapping: ioms->gio_num = %d, pcno = %d",
-		    ioms->gio_num, pcno);
 		if (pcno == GENOA_IOMS_WAFL_PCIE_CORENO) {
 			cinfop = (ioms->gio_num == 0) ? &genoa_wafl_map : &genoa_p4_map;
 		} else {
