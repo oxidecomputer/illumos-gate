@@ -317,6 +317,75 @@ typedef enum zen_mpio_ask_link_type {
 	ZEN_MPIO_ASK_LINK_USB	= 0x05,
 } zen_mpio_ask_link_type_t;
 
+typedef enum zen_mpio_i2c_node_type {
+	ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	ZEN_MPIO_I2C_NODE_TYPE_OCP,
+	ZEN_MPIO_I2C_NODE_TYPE_U2,
+	ZEN_MPIO_I2C_NODE_TYPE_U3,
+} zen_mpio_i2c_node_type_t;
+
+typedef struct zen_mpio_i2c_switch {
+	uint8_t		zmis_addr;
+	uint8_t		zmis_select:4;
+	uint8_t		zmis_type:4;
+} zen_mpio_i2c_switch_t;
+
+
+typedef struct zen_mpio_i2c_expander {
+	uint8_t		zmie_addr;
+	uint8_t		zmie_type:7;
+	uint8_t		zmie_clear_intrs:1;
+} zen_mpio_i2c_expander_t;
+
+typedef struct zen_mpio_ubm_data {
+	uint8_t		zmud_bp_type_bitno;
+	uint8_t		zmud_i2c_reset_bitno;
+	uint8_t		zmud_resv;
+	uint8_t		zmud_slot_num;
+} zen_mpio_ubm_data_t;
+
+typedef struct zen_mpio_ocp_data {
+	uint8_t		zmod_present_start;
+	uint8_t		zmod_num_hosts:4;
+	uint8_t		zmod_num_sockets:4;
+	uint8_t		zmod_bif_prim:3;
+	uint8_t		zmod_bif_sec:3;
+	uint8_t		zmod_form_factor:1;
+	uint8_t		zmod_resv:1;
+	uint8_t		zmod_slot_num;
+} zen_mpio_ocp_data_t;
+
+#define	ZEN_MPIO_I2C_SWITCH_DEPTH	2
+
+typedef struct zen_mpio_hfc_ubm_port {
+	uint8_t			zmhp_node_type;
+	zen_mpio_i2c_expander_t	zmhp_expander;
+	uint8_t			zmhp_start_lane;
+	zen_mpio_ubm_data_t	zmhp_ocp_device;
+	zen_mpio_i2c_switch_t	zmhp_i2c_switch[ZEN_MPIO_I2C_SWITCH_DEPTH];
+} zen_mpio_hfc_port_t;
+
+typedef struct zen_mpio_anc_data {
+	uint32_t	zmad_count;
+	uint32_t	zmad_override;
+} zen_mpio_anc_data_t;
+
+typedef struct zen_mpio_htod_data {
+	uint16_t		zmhdd_npem_en;
+	uint16_t		zmhdd_npem_cap;
+	zen_mpio_anc_data_t	zmhdd_anc_data;
+	uint8_t			zmhdd_ocp_def_valid;
+	uint8_t			zmhdd_ocp_def_prim_present_b;
+	uint8_t			zmhdd_ocp_def_sec_present_b;
+	uint8_t			zmhdd_ocp_slot_num;
+} zen_mpio_htod_data_t;
+
+typedef struct zen_mpio_ubm_hfc_descr {
+	uint32_t		zmuhd_size;
+	zen_mpio_hfc_port_t	zmuhd_ports[32];
+	zen_mpio_htod_data_t	zmuhd_hfc_to_dfc_data[32];
+} zen_mpio_ubm_hfc_descr_t;
+
 /*
  * This macro should be a value like 0xff because this reset group is defined to
  * be an opaque token that is passed back to us. However, if we actually want to
