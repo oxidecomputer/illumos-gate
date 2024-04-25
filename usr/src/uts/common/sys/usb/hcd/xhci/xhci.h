@@ -12,7 +12,7 @@
 /*
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright (c) 2019 by Western Digital Corporation
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_USB_XHCI_XHCI_H
@@ -862,6 +862,8 @@ extern int xhci_endpoint_init(xhci_t *, xhci_device_t *,
 extern int xhci_endpoint_reinit(xhci_t *, xhci_device_t *,
     xhci_endpoint_t *, usba_pipe_handle_data_t *);
 extern void xhci_endpoint_release(xhci_t *, xhci_endpoint_t *);
+extern int xhci_endpoint_unconfigure(xhci_t *, xhci_device_t *,
+    xhci_endpoint_t *);
 extern void xhci_endpoint_fini(xhci_device_t *, int);
 extern int xhci_endpoint_update_default(xhci_t *, xhci_device_t *,
     xhci_endpoint_t *);
