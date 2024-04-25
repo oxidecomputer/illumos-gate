@@ -423,7 +423,6 @@ extern "C" {
 #define	XHCI_TRB_SET_EP(x)	(((x) & 0x1f) << 16)
 #define	XHCI_TRB_GET_STYPE(x)	(((x) >> 16) & 0x1f)
 #define	XHCI_TRB_SET_STYPE(x)	(((x) & 0x1f) << 16)
-#define	XHCI_TRB_SET_SPEED(x)	(((x) & 0xf) << 16)
 #define	XHCI_TRB_GET_SLOT(x)	(((x) >> 24) & 0xff)
 #define	XHCI_TRB_SET_SLOT(x)	(((x) & 0xff) << 24)
 
