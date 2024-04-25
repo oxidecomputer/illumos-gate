@@ -12,7 +12,7 @@
 /*
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright (c) 2019 by Western Digital Corporation
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -36,6 +36,22 @@ xhci_endpoint_is_periodic_in(xhci_endpoint_t *xep)
 	return ((xep->xep_type == USB_EP_ATTR_INTR ||
 	    xep->xep_type == USB_EP_ATTR_ISOCH) &&
 	    (ph->p_ep.bEndpointAddress & USB_EP_DIR_MASK) == USB_EP_DIR_IN);
+}
+
+static int
+xhci_input_context_sync(xhci_t *xhcip, xhci_device_t *xd, xhci_endpoint_t *xep)
+{
+	XHCI_DMA_SYNC(xd->xd_ictx, DDI_DMA_SYNC_FORDEV);
+	if (xhci_check_dma_handle(xhcip, &xd->xd_ictx) != DDI_FM_OK) {
+		xhci_error(xhcip, "failed to initialize device input "
+		    "context on slot %d and port %d for endpoint %u: "
+		    "encountered fatal FM error synchronizing input context "
+		    "DMA memory", xd->xd_slot, xd->xd_port, xep->xep_num);
+		xhci_fm_runtime_reset(xhcip);
+		return (EIO);
+	}
+
+	return (0);
 }
 
 /*
@@ -94,6 +110,51 @@ xhci_endpoint_release(xhci_t *xhcip, xhci_endpoint_t *xep)
 	xep->xep_state &= ~XHCI_ENDPOINT_OPEN;
 
 	xhci_endpoint_timeout_cancel(xhcip, xep);
+}
+
+/*
+ * Attempt to unconfigure an endpoint that was previously initialised, but has
+ * now been released.  If this function succeeds, it is then safe to call
+ * xhci_endpoint_fini().
+ */
+int
+xhci_endpoint_unconfigure(xhci_t *xhcip, xhci_device_t *xd,
+    xhci_endpoint_t *xep)
+{
+	int r;
+
+	VERIFY(MUTEX_HELD(&xhcip->xhci_lock));
+	VERIFY3U(xep->xep_num, !=, XHCI_DEFAULT_ENDPOINT);
+	VERIFY(!(xep->xep_state & XHCI_ENDPOINT_OPEN));
+	VERIFY(xep->xep_state & XHCI_ENDPOINT_TEARDOWN);
+
+	/*
+	 * We only do this for periodic endpoints, in order to make their
+	 * reserved bandwidth available.
+	 */
+	VERIFY(xep->xep_type == USB_EP_ATTR_INTR ||
+	    xep->xep_type == USB_EP_ATTR_ISOCH);
+
+	/*
+	 * Drop the endpoint we are unconfiguring.
+	 */
+	mutex_enter(&xd->xd_imtx);
+	xd->xd_input->xic_drop_flags =
+	    LE_32(XHCI_INCTX_MASK_DCI(xep->xep_num + 1));
+	xd->xd_input->xic_add_flags = LE_32(XHCI_INCTX_MASK_DCI(0));
+
+	if ((r = xhci_input_context_sync(xhcip, xd, xep)) != 0) {
+		r = USB_HC_HARDWARE_ERROR;
+		goto done;
+	}
+
+	mutex_exit(&xhcip->xhci_lock);
+	r = xhci_command_configure_endpoint(xhcip, xd);
+
+done:
+	mutex_exit(&xd->xd_imtx);
+	mutex_enter(&xhcip->xhci_lock);
+	return (r);
 }
 
 /*
@@ -187,17 +248,7 @@ xhci_endpoint_setup_default_context(xhci_t *xhcip, xhci_device_t *xd,
 	ectx->xec_txinfo = LE_32(XHCI_EPCTX_MAX_ESIT_PAYLOAD(0) |
 	    XHCI_EPCTX_AVG_TRB_LEN(XHCI_CONTEXT_DEF_CTRL_ATL));
 
-	XHCI_DMA_SYNC(xd->xd_ictx, DDI_DMA_SYNC_FORDEV);
-	if (xhci_check_dma_handle(xhcip, &xd->xd_ictx) != DDI_FM_OK) {
-		xhci_error(xhcip, "failed to initialize default device input "
-		    "context on slot %d and port %d for endpoint %u:  "
-		    "encountered fatal FM error synchronizing input context "
-		    "DMA memory", xd->xd_slot, xd->xd_port, xep->xep_num);
-		xhci_fm_runtime_reset(xhcip);
-		return (EIO);
-	}
-
-	return (0);
+	return (xhci_input_context_sync(xhcip, xd, xep));
 }
 
 /*
@@ -233,9 +284,15 @@ xhci_endpoint_update_default(xhci_t *xhcip, xhci_device_t *xd,
 	xd->xd_input->xic_drop_flags = LE_32(0);
 	xd->xd_input->xic_add_flags = LE_32(XHCI_INCTX_MASK_DCI(1));
 
-	ret = xhci_command_evaluate_context(xhcip, xd);
-	mutex_exit(&xd->xd_imtx);
+	if (xhci_input_context_sync(xhcip, xd, xep) != 0) {
+		ret = USB_HC_HARDWARE_ERROR;
+		goto done;
+	}
 
+	ret = xhci_command_evaluate_context(xhcip, xd);
+
+done:
+	mutex_exit(&xd->xd_imtx);
 	return (ret);
 }
 
@@ -484,6 +541,7 @@ xhci_endpoint_setup_context(xhci_t *xhcip, xhci_device_t *xd,
 	xhci_endpoint_params_t new_xepp;
 	xhci_endpoint_context_t *ectx;
 	uint64_t deq;
+	int r;
 
 	/*
 	 * Explicitly zero this entire struct to start so that we can compare
@@ -621,14 +679,8 @@ xhci_endpoint_setup_context(xhci_t *xhcip, xhci_device_t *xd,
 	    XHCI_EPCTX_MAX_ESIT_PAYLOAD(new_xepp.xepp_max_esit) |
 	    XHCI_EPCTX_AVG_TRB_LEN(new_xepp.xepp_avgtrb));
 
-	XHCI_DMA_SYNC(xd->xd_ictx, DDI_DMA_SYNC_FORDEV);
-	if (xhci_check_dma_handle(xhcip, &xd->xd_ictx) != DDI_FM_OK) {
-		xhci_error(xhcip, "failed to initialize device input "
-		    "context on slot %d and port %d for endpoint %u:  "
-		    "encountered fatal FM error synchronizing input context "
-		    "DMA memory", xd->xd_slot, xd->xd_port, xep->xep_num);
-		xhci_fm_runtime_reset(xhcip);
-		return (EIO);
+	if ((r = xhci_input_context_sync(xhcip, xd, xep)) != 0) {
+		return (r);
 	}
 
 	bcopy(&new_xepp, &xep->xep_params, sizeof (new_xepp));
