@@ -30,6 +30,7 @@ SUBDIRS =       \
 		ksid \
 		libtopo \
 		gpio \
+		minttl \
 		pf_key \
 		poll \
 		portfs \
@@ -43,6 +44,7 @@ SUBDIRS =       \
 		stackalign \
 		stress \
 		syscall \
+		tcpsig \
 		timer \
 		uccid \
 		$(SUBDIRS_$(MACH))
