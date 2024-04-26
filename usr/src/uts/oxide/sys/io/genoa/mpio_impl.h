@@ -357,13 +357,13 @@ typedef struct zen_mpio_ocp_data {
 
 #define	ZEN_MPIO_I2C_SWITCH_DEPTH	2
 
-typedef struct zen_mpio_hfc_ubm_port {
-	uint8_t			zmhp_node_type;
-	zen_mpio_i2c_expander_t	zmhp_expander;
-	uint8_t			zmhp_start_lane;
-	zen_mpio_ubm_data_t	zmhp_ocp_device;
-	zen_mpio_i2c_switch_t	zmhp_i2c_switch[ZEN_MPIO_I2C_SWITCH_DEPTH];
-} zen_mpio_hfc_port_t;
+typedef struct zen_mpio_ubm_hfc_port {
+	uint8_t			zmhup_node_type;
+	zen_mpio_i2c_expander_t	zmhup_expander;
+	uint8_t			zmhup_start_lane;
+	zen_mpio_ubm_data_t	zmhup_ocp_device;
+	zen_mpio_i2c_switch_t	zmhup_i2c_switch[ZEN_MPIO_I2C_SWITCH_DEPTH];
+} zen_mpio_ubm_hfc_port_t;
 
 typedef struct zen_mpio_anc_data {
 	uint32_t	zmad_count;
@@ -381,9 +381,9 @@ typedef struct zen_mpio_htod_data {
 } zen_mpio_htod_data_t;
 
 typedef struct zen_mpio_ubm_hfc_descr {
-	uint32_t		zmuhd_size;
-	zen_mpio_hfc_port_t	zmuhd_ports[32];
-	zen_mpio_htod_data_t	zmuhd_hfc_to_dfc_data[32];
+	uint32_t		zmhud_size;
+	zen_mpio_ubm_hfc_port_t	zmhud_ports[32];
+	zen_mpio_htod_data_t	zmhud_hfc_to_dfc_data[32];
 } zen_mpio_ubm_hfc_descr_t;
 
 /*
@@ -693,6 +693,10 @@ typedef struct smu_hotplug_entry {
 
 extern const zen_mpio_port_conf_t ruby_mpio_pcie_s0[];
 extern const size_t RUBY_MPIO_PCIE_S0_LEN;
+
+extern const zen_mpio_ubm_hfc_descr_t ruby_mpio_hfc_descr;
+extern const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
+
 extern const smu_hotplug_entry_t ruby_hotplug_ents[];
 
 extern const uint32_t ruby_pcie_slot_cap_entssd;
@@ -774,15 +778,19 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_LINK_SPEED_SINGLE	0x800
 
 typedef struct genoa_mpio_config {
-	zen_mpio_port_conf_t	*gmc_port_conf;
-	zen_mpio_ask_t		*gmc_ask;
-	zen_mpio_ext_attrs_t	*gmc_ext_attrs;
-	uint64_t		gmc_ask_pa;
-	uint64_t		gmc_ext_attrs_pa;
-	uint32_t		gmc_nports;
-	uint32_t		gmc_ask_alloc_len;
-	uint32_t		gmc_ext_attrs_alloc_len;
-	uint32_t		gmc_ext_attrs_len;
+	zen_mpio_port_conf_t		*gmc_port_conf;
+	zen_mpio_ask_t			*gmc_ask;
+	zen_mpio_ubm_hfc_descr_t	*gmc_ubm_hfc_descr;
+	zen_mpio_ext_attrs_t		*gmc_ext_attrs;
+	uint64_t			gmc_ask_pa;
+	uint64_t			gmc_ext_attrs_pa;
+	uint64_t			gmc_ubm_hfc_descr_pa;
+	uint32_t			gmc_nports;
+	uint32_t			gmc_ubm_hfc_nports;
+	uint32_t			gmc_ask_alloc_len;
+	uint32_t			gmc_ext_attrs_alloc_len;
+	uint32_t			gmc_ext_attrs_len;
+	uint32_t			gmc_ubm_hfc_descr_alloc_len;
 } genoa_mpio_config_t;
 
 typedef struct genoa_hotplug {
