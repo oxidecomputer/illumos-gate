@@ -814,8 +814,8 @@ typedef struct genoa_pcie_core_info {
 } genoa_pcie_core_info_t;
 
 static const genoa_pcie_core_info_t genoa_lane_maps[8] = {
-	{ "P0", 0x00, 0x1f, 0x00, 0x0f },
-	{ "G0", 0x60, 0x1f, 0x60, 0x6f },
+	{ "P0", 0x00, 0x0f, 0x00, 0x0f },
+	{ "G0", 0x60, 0x6f, 0x60, 0x6f },
 	{ "P1", 0x20, 0x2f, 0x20, 0x2f },
 	{ "G1", 0x40, 0x4f, 0x40, 0x4f },
 	{ "P2", 0x30, 0x3f, 0x30, 0x3f },
@@ -2432,6 +2432,36 @@ genoa_mpio_wait_ready(genoa_iodie_t *iodie)
 	return (false);
 }
 
+static bool
+genoa_mpio_rpc_enumerate_i2c(genoa_iodie_t *iodie)
+{
+	genoa_mpio_config_t *conf;
+	genoa_mpio_rpc_t rpc = { 0 };
+
+	ASSERT3P(iodie, !=, NULL);
+	conf = &iodie->gi_mpio_conf;
+	ASSERT(conf->gmc_ubm_hfc_descr != NULL);
+	ASSERT3U(conf->gmc_ubm_hfc_descr_pa, !=, 0);
+
+	/*
+	 * Sadly, this RPC can only accept 32-bits worth of a
+	 * physical address.  Thus, the data is artificially
+	 * constrained to be in the first 4GiB of address space.
+	 */
+	rpc.gmr_args[0] = conf->gmc_ubm_hfc_descr_pa;
+	rpc.gmr_args[1] = conf->gmc_ubm_hfc_nports;
+	int resp;
+	rpc.gmr_req = GENOA_MPIO_OP_ENUMERATE_I2C;
+
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: 0x%x", resp);
+		return (false);
+	}
+
+	return (true);
+}
+
 static int
 genoa_dump_smu_version(genoa_iodie_t *iodie, void *arg)
 {
@@ -3867,6 +3897,7 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 	genoa_soc_t *soc = iodie->gi_soc;
 	const zen_mpio_port_conf_t *source_data;
+	const zen_mpio_ubm_hfc_descr_t *source_ubm_data;
 	zen_mpio_ask_port_t *ask;
 	int i;
 #if 0
@@ -3876,21 +3907,24 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 #endif
 
 	/*
-	 * XXX Figure out how to best not hardcode Ethanol. Realistically
-	 * probably an SP boot property.
+	 * XXX Figure out how to best not hardcode Ruby. This should
+	 * intersect with Andy's platform determination code.
 	 */
 	if (genoa_board_type() != MBT_RUBY || soc->gs_socno != 0) {
 		return (0);
 	}
 	source_data = ruby_mpio_pcie_s0;
+	source_ubm_data = &ruby_mpio_hfc_descr;
+	conf->gmc_ubm_hfc_nports = RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
+
 	conf->gmc_nports = RUBY_MPIO_PCIE_S0_LEN;
 	if (conf->gmc_nports > ZEN_MPIO_ASK_MAX_PORTS)
 		conf->gmc_nports = ZEN_MPIO_ASK_MAX_PORTS;
 
 	size = sizeof (zen_mpio_port_conf_t) * conf->gmc_nports;
 	conf->gmc_port_conf = kmem_zalloc(size, KM_SLEEP);
-	bcopy(source_data, conf->gmc_port_conf, size);
 	VERIFY3P(source_data, !=, NULL);
+	bcopy(source_data, conf->gmc_port_conf, size);
 
 	size = conf->gmc_nports * sizeof (zen_mpio_ask_port_t);
 	VERIFY3U(size, <=, MMU_PAGESIZE);
@@ -3913,6 +3947,18 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ext_attrs);
 	conf->gmc_ext_attrs_pa = mmu_ptob((uint64_t)pfn);
+
+	conf->gmc_ubm_hfc_descr_alloc_len = MMU_PAGESIZE;
+	conf->gmc_ubm_hfc_descr = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->gmc_ubm_hfc_descr, MMU_PAGESIZE);
+
+	VERIFY3P(source_ubm_data, !=, NULL);
+	size = sizeof (zen_mpio_ubm_hfc_descr_t);
+	bcopy(source_ubm_data, conf->gmc_ubm_hfc_descr, size);
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ubm_hfc_descr);
+	conf->gmc_ubm_hfc_descr_pa = mmu_ptob((uint64_t)pfn);
+
 
 #if 0
 	phy_override = kapob_find(APOB_GROUP_FABRIC,

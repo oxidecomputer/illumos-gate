@@ -345,6 +345,10 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 
 const size_t RUBY_MPIO_PCIE_S0_LEN = ARRAY_SIZE(ruby_mpio_pcie_s0);
 
+const zen_mpio_ubm_hfc_descr_t ruby_mpio_hfc_descr = { 0 };
+
+const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = 10;
+
 /*
  * Ethanol-X hotplug data.
  */
