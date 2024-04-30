@@ -480,6 +480,15 @@ serdev_taskq_dispatch(serdev_t *srd)
 }
 
 static void
+serdev_status_request(serdev_t *srd)
+{
+	VERIFY(MUTEX_HELD(&srd->srd_mutex));
+
+	srd->srd_flags |= SERDEV_FL_NEED_STATUS;
+	serdev_taskq_dispatch(srd);
+}
+
+static void
 serdev_teardown(serdev_t *srd)
 {
 	VERIFY(MUTEX_HELD(&srd->srd_mutex));
@@ -834,6 +843,15 @@ serdev_configure(serdev_t *srd)
 	}
 	mutex_enter(&srd->srd_mutex);
 
+	/*
+	 * Request a status update from the driver after programming.  Some
+	 * expected changes in tty state are only handled after polling for
+	 * device status; e.g., if we are stopped waiting for CTS, but then the
+	 * caller disables flow control, the decision to get moving again is
+	 * made after checking the status bits.
+	 */
+	serdev_status_request(srd);
+
 	return (r);
 }
 
@@ -1151,8 +1169,7 @@ serdev_open_finish(serdev_t *srd, queue_t *rq, queue_t *wq, bool noblock)
 	 * Ensure we request a full status update at least once up front, even
 	 * if the driver never ends up pushing a status update.
 	 */
-	srd->srd_flags |= SERDEV_FL_NEED_STATUS;
-	serdev_taskq_dispatch(srd);
+	serdev_status_request(srd);
 
 	mutex_exit(&srd->srd_mutex);
 	return (0);
