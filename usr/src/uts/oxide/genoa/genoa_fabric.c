@@ -6563,7 +6563,7 @@ genoa_fabric_init(void)
 	}
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_more_conf, NULL) != 0) {
-		cmn_err(CE_WARN, "DXIO Initialization failed: failed to do yet "
+		cmn_err(CE_WARN, "MPIO Initialization failed: failed to do yet "
 		    "more configuration");
 		return;
 	}
@@ -6577,7 +6577,6 @@ genoa_fabric_init(void)
 		    "through the state machine");
 		return;
 	}
-
 #endif
 	cmn_err(CE_CONT, "?MPIO initialization completed successfully\n");
 	/*
