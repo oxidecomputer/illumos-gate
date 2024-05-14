@@ -126,7 +126,7 @@ CTASSERT(offsetof(genoa_pptable_t, ppt_i3c_sda_hold_tm) == 0x70);
 CTASSERT(offsetof(genoa_pptable_t, ppt_oc_dis) == 0x80);
 CTASSERT(offsetof(genoa_pptable_t, ppt_force_cclk_freq) == 0x84);
 CTASSERT(offsetof(genoa_pptable_t, ppt_htf_temp_max) == 0x8c);
-CTASSERT(offsetoriserf(genoa_pptable_t, ppt_cppc_override) == 0x94);
+CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_override) == 0x94);
 CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_thr_apicid_size) == 0x98);
 CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_thr_map) == 0x9c);
 CTASSERT(offsetof(genoa_pptable_t, ppt_vddcr_cpu_volt_force) == 0x49c);
