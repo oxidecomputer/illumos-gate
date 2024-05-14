@@ -253,8 +253,7 @@ pmuerr_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	}
 
 	if (tfi.mapt_nvalid == 0) {
-		mdb_printf("No PMU failure entries. Either MBIST wasn't "
-		    "enabled or the system is clean\n");
+		mdb_printf("No PMU failure entries found.\n");
 		return (DCMD_OK);
 	}
 
