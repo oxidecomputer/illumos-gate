@@ -126,7 +126,7 @@ CTASSERT(offsetof(genoa_pptable_t, ppt_i3c_sda_hold_tm) == 0x70);
 CTASSERT(offsetof(genoa_pptable_t, ppt_oc_dis) == 0x80);
 CTASSERT(offsetof(genoa_pptable_t, ppt_force_cclk_freq) == 0x84);
 CTASSERT(offsetof(genoa_pptable_t, ppt_htf_temp_max) == 0x8c);
-CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_override) == 0x94);
+CTASSERT(offsetoriserf(genoa_pptable_t, ppt_cppc_override) == 0x94);
 CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_thr_apicid_size) == 0x98);
 CTASSERT(offsetof(genoa_pptable_t, ppt_cppc_thr_map) == 0x9c);
 CTASSERT(offsetof(genoa_pptable_t, ppt_vddcr_cpu_volt_force) == 0x49c);
@@ -151,7 +151,7 @@ CTASSERT(sizeof (smu_hotplug_table_t) == 0x780);
 /* XXX TODO: Target link speed? */
 /* XXX TODO: Slot nums */
 const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
-    { /* P0, riser 0 */
+    { /* P0,  0 */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 0,
@@ -345,9 +345,166 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 
 const size_t RUBY_MPIO_PCIE_S0_LEN = ARRAY_SIZE(ruby_mpio_pcie_s0);
 
-const zen_mpio_ubm_hfc_descr_t ruby_mpio_hfc_descr = { 0 };
+const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
+    { /* P0 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x21,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 0,
+	.zmuhp_ocp_device = {
+	    .zmud_bp_type_bitno = 0,
+	    .zmud_i2c_reset_bitno = 1,
+	    .zmud_slot_num = 0x10,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x71,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G0 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 96,
+	.zmuhp_ocp_device = {
+	    .zmud_bp_type_bitno = 0,
+	    .zmud_i2c_reset_bitno = 1,
+	    .zmud_slot_num = 0x14,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G1 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 64,
+	.zmuhp_ocp_device = {
+	    .zmud_bp_type_bitno = 2,
+	    .zmud_i2c_reset_bitno = 3,
+	    .zmud_slot_num = 0x18,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 1,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G2 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 112,
+	.zmuhp_ocp_device = {
+	.zmud_bp_type_bitno = 4,
+	.zmud_i2c_reset_bitno = 5,
+	.zmud_slot_num = 0x1c,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 2,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* P3 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x21,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 16,
+	.zmuhp_ocp_device = {
+	    .zmud_bp_type_bitno = 2,
+	    .zmud_i2c_reset_bitno = 3,
+	    .zmud_slot_num = 0x20,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x71,
+		.zmis_select = 1,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G3 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 80,
+	.zmuhp_ocp_device = {
+	    .zmud_bp_type_bitno = 6,
+	    .zmud_i2c_reset_bitno = 7,
+	    .zmud_slot_num = 0x24,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 3,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+};
 
-const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = 10;
+const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = ARRAY_SIZE(ruby_mpio_hfc_ports);
 
 /*
  * Ethanol-X hotplug data.

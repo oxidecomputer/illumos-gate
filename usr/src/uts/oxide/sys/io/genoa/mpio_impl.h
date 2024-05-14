@@ -358,11 +358,11 @@ typedef struct zen_mpio_ocp_data {
 #define	ZEN_MPIO_I2C_SWITCH_DEPTH	2
 
 typedef struct zen_mpio_ubm_hfc_port {
-	uint8_t			zmhup_node_type;
-	zen_mpio_i2c_expander_t	zmhup_expander;
-	uint8_t			zmhup_start_lane;
-	zen_mpio_ubm_data_t	zmhup_ocp_device;
-	zen_mpio_i2c_switch_t	zmhup_i2c_switch[ZEN_MPIO_I2C_SWITCH_DEPTH];
+	uint8_t			zmuhp_node_type;
+	zen_mpio_i2c_expander_t	zmuhp_expander;
+	uint8_t			zmuhp_start_lane;
+	zen_mpio_ubm_data_t	zmuhp_ocp_device;
+	zen_mpio_i2c_switch_t	zmuhp_i2c_switch[ZEN_MPIO_I2C_SWITCH_DEPTH];
 } zen_mpio_ubm_hfc_port_t;
 
 typedef struct zen_mpio_anc_data {
@@ -381,10 +381,34 @@ typedef struct zen_mpio_htod_data {
 } zen_mpio_htod_data_t;
 
 typedef struct zen_mpio_ubm_hfc_descr {
-	uint32_t		zmhud_size;
-	zen_mpio_ubm_hfc_port_t	zmhud_ports[32];
-	zen_mpio_htod_data_t	zmhud_hfc_to_dfc_data[32];
+	uint32_t		zmuhd_size;
+	zen_mpio_ubm_hfc_port_t	zmuhd_ports[32];
+	zen_mpio_htod_data_t	zmuhd_hfc_to_dfc_data[32];
 } zen_mpio_ubm_hfc_descr_t;
+
+typedef struct zen_mpio_ubm_dfc_data {
+	uint8_t			zmudd_gen_speed;
+	uint8_t			zmudd_type:3;
+	uint8_t			zmudd_rsvd0:3;
+	uint8_t			zmudd_bifurcate_port:1;
+	uint8_t			zmudd_secondary_port:1;
+	uint8_t			zmudd_ref_clk:1;
+	uint8_t			zmudd_pwr_dis:1;
+	uint8_t			zmudd_has_perst:1;
+	uint8_t			zmudd_dual_port:1;
+	uint8_t			zmudd_rsvd1:4;
+	uint8_t			zmudd_slot;
+	uint8_t			zmudd_pad[2];
+} zen_mpio_ubm_dfc_data_t;
+
+typedef struct zen_mpio_ubm_dfc_descr {
+	uint8_t			zmudd_hfcno;
+	uint8_t			zmudd_event;
+	uint16_t		zmudd_ndfcs;
+	uint8_t			zmudd_lane_start;
+	uint8_t			zmudd_lane_width;
+	zen_mpio_ubm_dfc_data_t	zmudd_data;
+} zen_mpio_ubm_dfc_descr_t;
 
 /*
  * This macro should be a value like 0xff because this reset group is defined to
@@ -694,7 +718,7 @@ typedef struct smu_hotplug_entry {
 extern const zen_mpio_port_conf_t ruby_mpio_pcie_s0[];
 extern const size_t RUBY_MPIO_PCIE_S0_LEN;
 
-extern const zen_mpio_ubm_hfc_descr_t ruby_mpio_hfc_descr;
+extern const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[];
 extern const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
 
 extern const smu_hotplug_entry_t ruby_hotplug_ents[];

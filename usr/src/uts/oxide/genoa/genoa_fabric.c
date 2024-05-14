@@ -2437,27 +2437,48 @@ genoa_mpio_rpc_enumerate_i2c(genoa_iodie_t *iodie)
 {
 	genoa_mpio_config_t *conf;
 	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
 
 	ASSERT3P(iodie, !=, NULL);
 	conf = &iodie->gi_mpio_conf;
 	ASSERT(conf->gmc_ubm_hfc_descr != NULL);
 	ASSERT3U(conf->gmc_ubm_hfc_descr_pa, !=, 0);
+	ASSERT3U(conf->gmc_ubm_hfc_descr_pa, <, 0xFFFFFFFFU);
 
 	/*
 	 * Sadly, this RPC can only accept 32-bits worth of a
 	 * physical address.  Thus, the data is artificially
 	 * constrained to be in the first 4GiB of address space.
 	 */
-	rpc.gmr_args[0] = conf->gmc_ubm_hfc_descr_pa;
+	rpc.gmr_args[0] = (uint32_t)conf->gmc_ubm_hfc_descr_pa;
 	rpc.gmr_args[1] = conf->gmc_ubm_hfc_nports;
-	int resp;
 	rpc.gmr_req = GENOA_MPIO_OP_ENUMERATE_I2C;
 
 	resp = genoa_mpio_rpc(iodie, &rpc);
 	if (resp != GENOA_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: 0x%x", resp);
+		cmn_err(CE_WARN, "MPIO I2C Enumerate RPC Failed: 0x%x", resp);
 		return (false);
 	}
+
+	return (true);
+}
+
+static bool
+genoa_mpio_rpc_get_i2c_device(genoa_iodie_t *iodie, uint32_t hfc, uint32_t dfc,
+    zen_mpio_ubm_dfc_descr_t *descr)
+{
+	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
+
+	rpc.gmr_args[0] = hfc;
+	rpc.gmr_args[1] = dfc;
+	rpc.gmr_req = GENOA_MPIO_OP_GET_I2C_DEV;
+
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK && (resp & 0xFF) != 0) {
+		return (false);
+	}
+	bcopy(&rpc.gmr_args[1], descr, sizeof (*descr));
 
 	return (true);
 }
@@ -3753,7 +3774,8 @@ static int
 genoa_mpio_init_global_config(genoa_iodie_t *iodie, void *arg)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
-	zen_mpio_global_config_t *args = (zen_mpio_global_config_t *)rpc.gmr_args;
+	zen_mpio_global_config_t *args =
+	    (zen_mpio_global_config_t *)rpc.gmr_args;
 	int resp;
 
 	args->zmgc_skip_vet = 1;
@@ -3770,6 +3792,44 @@ genoa_mpio_init_global_config(genoa_iodie_t *iodie, void *arg)
 		    "MPIO set global config RPC Failed: MPIO Resp: 0x%x",
 		   resp);
 		return (1);
+	}
+
+	return (0);
+}
+
+static void
+genoa_mpio_ubm_dump(genoa_iodie_t *iodie, int i)
+{
+	zen_mpio_ubm_dfc_descr_t d;
+	int j, ndfc;
+
+	for (j = 0, ndfc = 1; j < ndfc; j++) {
+		if (!genoa_mpio_rpc_get_i2c_device(iodie, i, j, &d)) {
+			return;
+		}
+		if (j == 0)
+			ndfc = d.zmudd_ndfcs;
+		cmn_err(CE_WARN, "dfc(%u,%u):", i, j);
+		cmn_err(CE_CONT, " zmudd_hfcno = %u\n", d.zmudd_hfcno);
+		cmn_err(CE_CONT, " zmudd_ndfcs = %hu\n", d.zmudd_ndfcs);
+		cmn_err(CE_CONT, " zmudd_lane_start = %02x\n",
+		    d.zmudd_lane_start);
+		cmn_err(CE_CONT, " zmudd_lane_width = %02x\n",
+		    d.zmudd_lane_width);
+	}
+}
+
+static int
+genoa_mpio_init_ubm(genoa_iodie_t *iodie, void *arg)
+{
+	genoa_mpio_config_t *conf;
+
+	if (!genoa_mpio_rpc_enumerate_i2c(iodie)) {
+		return (1);
+	}
+	conf = &iodie->gi_mpio_conf;
+	for (int i = 0; i < conf->gmc_ubm_hfc_nports; i++) {
+		genoa_mpio_ubm_dump(iodie, i);
 	}
 
 	return (0);
@@ -3897,7 +3957,7 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 	genoa_soc_t *soc = iodie->gi_soc;
 	const zen_mpio_port_conf_t *source_data;
-	const zen_mpio_ubm_hfc_descr_t *source_ubm_data;
+	const zen_mpio_ubm_hfc_port_t *source_ubm_data;
 	zen_mpio_ask_port_t *ask;
 	int i;
 #if 0
@@ -3914,7 +3974,7 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 		return (0);
 	}
 	source_data = ruby_mpio_pcie_s0;
-	source_ubm_data = &ruby_mpio_hfc_descr;
+	source_ubm_data = ruby_mpio_hfc_ports;
 	conf->gmc_ubm_hfc_nports = RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
 
 	conf->gmc_nports = RUBY_MPIO_PCIE_S0_LEN;
@@ -3953,7 +4013,8 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	bzero(conf->gmc_ubm_hfc_descr, MMU_PAGESIZE);
 
 	VERIFY3P(source_ubm_data, !=, NULL);
-	size = sizeof (zen_mpio_ubm_hfc_descr_t);
+	size = sizeof (zen_mpio_ubm_hfc_port_t) *
+	    RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
 	bcopy(source_ubm_data, conf->gmc_ubm_hfc_descr, size);
 
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ubm_hfc_descr);
@@ -6545,8 +6606,13 @@ genoa_fabric_init(void)
 
 	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init_global_config,
 	    NULL) != 0) {
-		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
+		cmn_err(CE_WARN, "MPIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
+		return;
+	}
+
+	if (genoa_fabric_walk_iodie(fabric, genoa_mpio_init_ubm, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO UBM enumeration failed");
 		return;
 	}
 
