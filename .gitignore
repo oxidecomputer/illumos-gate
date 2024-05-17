@@ -8703,6 +8703,8 @@ usr/src/test/elf-tests/tests/tls/amd64/ld/amd64-ld-test
 usr/src/test/elf-tests/tests/tls/i386/ld/i386-ld-test
 usr/src/test/libc-tests/tests/aligned_alloc.32
 usr/src/test/libc-tests/tests/aligned_alloc.64
+usr/src/test/libc-tests/tests/ascftime.32
+usr/src/test/libc-tests/tests/ascftime.64
 usr/src/test/libc-tests/tests/asprintf-14933.32
 usr/src/test/libc-tests/tests/asprintf-14933.64
 usr/src/test/libc-tests/tests/c11_threads.32
