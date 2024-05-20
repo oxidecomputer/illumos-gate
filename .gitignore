@@ -549,9 +549,8 @@ usr/src/cmd/devmgmt/cmds/putdgrp
 usr/src/cmd/devprop/devprop
 usr/src/cmd/dfs.cmds/dfshares/dfshares
 usr/src/cmd/dfs.cmds/shareall/shareall
-usr/src/cmd/dfs.cmds/sharectl/i386/sharectl
-usr/src/cmd/dfs.cmds/sharectl/i386/shareutil.c
-usr/src/cmd/dfs.cmds/sharemgr/i386/sharemgr
+usr/src/cmd/dfs.cmds/sharectl/sharectl
+usr/src/cmd/dfs.cmds/sharemgr/sharemgr
 usr/src/cmd/dfs.cmds/unshareall/unshareall
 usr/src/cmd/diff/diff
 usr/src/cmd/diff/diff.dc
@@ -8969,6 +8968,8 @@ usr/src/test/os-tests/tests/eventfd.32
 usr/src/test/os-tests/tests/eventfd.64
 usr/src/test/os-tests/tests/execvpe/execvpe-test.32
 usr/src/test/os-tests/tests/execvpe/execvpe-test.64
+usr/src/test/os-tests/tests/fifo-tvnsec.32
+usr/src/test/os-tests/tests/fifo-tvnsec.64
 usr/src/test/os-tests/tests/file-locking/acquire-lock.32
 usr/src/test/os-tests/tests/file-locking/acquire-lock.64
 usr/src/test/os-tests/tests/file-locking/runtests.32
