@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -338,7 +338,6 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 		.shm_die_id = 1,
 		.shm_port_id = 0,
 		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 0
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 1,
@@ -363,7 +362,6 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 		.shm_die_id = 1,
 		.shm_port_id = 1,
 		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 1
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 1,
@@ -388,7 +386,6 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 		.shm_die_id = 1,
 		.shm_port_id = 2,
 		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 2
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 1,
@@ -413,7 +410,6 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 		.shm_die_id = 1,
 		.shm_port_id = 3,
 		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 3
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 1,
@@ -438,7 +434,6 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0,
 		.shm_tile_id = SMU_TILE_P2,
-		.shm_bridge = 0
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -841,6 +836,9 @@ const zen_dxio_platform_t gimlet_engine = {
  * U.2 8 (I)	G3	9506	0x21/1		9535	0x22/1-7	0x08
  * U.2 9 (J)	G3	9506	0x21/3		9535	0x22/1-6	0x09
  * Sidecar	P0	9535	0x25/1		9535	0x26/0-4	0x13
+ *
+ * We explicitly do not fill in the shm_bridge member of the map as it is
+ * calculated at runtime in milan_smu_hotplug_data_init().
  */
 const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	/* NIC */
@@ -854,7 +852,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x0,
 		.shm_tile_id = SMU_TILE_P1,
-		.shm_bridge = 0x0
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -884,7 +881,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x2,
 		.shm_tile_id = SMU_TILE_P2,
-		.shm_bridge = 0x2
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -914,7 +910,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x2,
 		.shm_tile_id = SMU_TILE_P3,
-		.shm_bridge = 0x2
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -944,7 +939,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x0,
 		.shm_tile_id = SMU_TILE_G0,
-		.shm_bridge = 0x0
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -973,7 +967,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x1,
 		.shm_tile_id = SMU_TILE_G0,
-		.shm_bridge = 0x1
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1002,7 +995,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x2,
 		.shm_tile_id = SMU_TILE_G0,
-		.shm_bridge = 0x2
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1031,7 +1023,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x3,
 		.shm_tile_id = SMU_TILE_G0,
-		.shm_bridge = 0x3
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1060,7 +1051,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x3,
 		.shm_tile_id = SMU_TILE_G2,
-		.shm_bridge = 0x3
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1089,7 +1079,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x2,
 		.shm_tile_id = SMU_TILE_G2,
-		.shm_bridge = 0x2
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1118,7 +1107,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x1,
 		.shm_tile_id = SMU_TILE_G2,
-		.shm_bridge = 0x1
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1147,7 +1135,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x2,
 		.shm_tile_id = SMU_TILE_G3,
-		.shm_bridge = 0x2
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1176,7 +1163,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x1,
 		.shm_tile_id = SMU_TILE_G3,
-		.shm_bridge = 0x1
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1205,7 +1191,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x0,
 		.shm_tile_id = SMU_TILE_G3,
-		.shm_bridge = 0x0
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,
@@ -1234,7 +1219,6 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 		.shm_die_id = 0,
 		.shm_port_id = 0x1,
 		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 0x1
 	    },
 	    .se_func = {
 		.shf_i2c_bit = 0,

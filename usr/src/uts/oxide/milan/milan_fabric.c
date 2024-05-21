@@ -5881,6 +5881,13 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 		port->mpp_hp_type = map->shm_format;
 		port->mpp_hp_slotno = slot;
 		port->mpp_hp_smu_mask = entry[i].se_func.shf_mask;
+
+		/*
+		 * Calculate any information that can be derived from the port
+		 * information.
+		 */
+		hp->mh_table->smt_map[slot].shm_bridge = pc->mpc_coreno *
+		    MILAN_PCIE_CORE_MAX_PORTS + port->mpp_portno;
 	}
 
 	return (cont);

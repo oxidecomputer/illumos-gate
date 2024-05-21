@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_DXIO_IMPL_H
@@ -373,8 +373,8 @@ typedef enum smu_exp_type {
 } smu_exp_type_t;
 
 /*
- * XXX it may be nicer for us to define our own semantic set of bits here that
- * dont' change based on verison and then we change it.
+ * XXX It may be nicer for us to define our own semantic set of bits here that
+ * don't change based on version and then we change it.
  */
 typedef enum smu_enta_bits {
 	SMU_ENTA_PRSNT		= 1 << 0,
@@ -401,14 +401,45 @@ typedef enum smu_entb_bits {
 #define	SMU_I2C_DIRECT	0x7
 
 typedef struct smu_hotplug_map {
+	/*
+	 * Indicates what kind of hotplug entity this is. One of the
+	 * smu_hotplug_type_t values.
+	 */
 	uint32_t	shm_format:3;
 	uint32_t	shm_rsvd0:2;
+	/*
+	 * If set to 1, indicates that the corresponding reset entry in the
+	 * hotplug table should be looked at.
+	 */
 	uint32_t	shm_rst_valid:1;
+	/*
+	 * We believe this indicates whether or not this entry should be
+	 * evaluated.
+	 */
 	uint32_t	shm_active:1;
+	/*
+	 * These next two are used to indicate which device to talk to. As far
+	 * as we know, the die_id corresponds to the socket ID and apu should be
+	 * left as 0 in SP3 systems we support.
+	 */
 	uint32_t	shm_apu:1;
 	uint32_t	shm_die_id:1;
+	/*
+	 * The port ID indicates the PCIe port that was chosen by DXIO. This
+	 * value is specific to the core.
+	 */
 	uint32_t	shm_port_id:3;
+	/*
+	 * This indicates which of the cores is in use. Valid values are in
+	 * smu_pci_tileid_t.
+	 */
 	uint32_t	shm_tile_id:3;
+	/*
+	 * This indicates the logical bridge ID with the NBIO instance. That is,
+	 * it is not specific to the PCIe core. Phrased differently, this
+	 * corresponds to the bridge's index in the IOHC::IOHC_Bridge_CNTL
+	 * register. Note, this is calculated from other parameters.
+	 */
 	uint32_t	shm_bridge:5;
 	uint32_t	shm_rsvd1:4;
 	uint32_t	shm_alt_slot_no:6;
