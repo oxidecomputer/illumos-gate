@@ -610,6 +610,7 @@
 #include <sys/cpuvar.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
+#include <sys/platform_detect.h>
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/gpio.h>
 #include <sys/amdzen/fch/iomux.h>
@@ -831,6 +832,18 @@ static const genoa_pcie_core_info_t genoa_p4_map = {
 static const genoa_pcie_core_info_t genoa_wafl_map = {
 	"WAFL", 0x84, 0x87, 0x84, 0x87
 };
+
+static bool
+genoa_is_cosmo(void)
+{
+	return (oxide_board_data->obd_board == OXIDE_BOARD_COSMO);
+}
+
+static bool
+genoa_is_ruby(void)
+{
+	return (oxide_board_data->obd_board == OXIDE_BOARD_RUBY);
+}
 
 /*
  * How many PCIe cores does this IOMS instance have?
@@ -1961,7 +1974,7 @@ genoa_pcie_populate_dbg(genoa_fabric_t *fabric, genoa_pcie_config_stage_t stage,
 	 * clear start time (since the GPIO was previously an input and would
 	 * have read at an undefined level).
 	 */
-	if (genoa_board_type() == MBT_COSMO) {
+	if (genoa_is_cosmo()) {
 		if (!gpio_configured) {
 			genoa_hack_gpio(GHGOP_CONFIGURE, 129);
 			genoa_hack_gpio(GHGOP_TOGGLE, 129);
@@ -3970,7 +3983,7 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	 * XXX Figure out how to best not hardcode Ruby. This should
 	 * intersect with Andy's platform determination code.
 	 */
-	if (genoa_board_type() != MBT_RUBY || soc->gs_socno != 0) {
+	if (!genoa_is_ruby() || soc->gs_socno != 0) {
 		return (0);
 	}
 	source_data = ruby_mpio_pcie_s0;
@@ -4274,7 +4287,7 @@ genoa_mpio_more_conf(genoa_iodie_t *iodie, void *arg)
 	}
 
 	/* XXX: Ruby only? */
-	if (genoa_board_type() == MBT_RUBY && iodie->gi_node_id == 0) {
+	if (genoa_is_ruby() && iodie->gi_node_id == 0) {
 		genoa_hack_gpio(GHGOP_SET, 26);
 		genoa_hack_gpio(GHGOP_SET, 266);
 	}
@@ -4412,7 +4425,7 @@ genoa_mpio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 typedef struct genoa_pcie_strap_setting {
 	uint32_t		strap_reg;
 	uint32_t		strap_data;
-	genoa_board_type_t	strap_boardmatch;
+	oxide_board_t		strap_boardmatch;
 	uint32_t		strap_nodematch;
 	uint8_t			strap_nbiomatch;
 	uint8_t			strap_corematch;
@@ -4552,7 +4565,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_SUBVID,
 		.strap_data = PCI_VENDOR_ID_OXIDE,
-		.strap_boardmatch = MBT_COSMO,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4560,7 +4573,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_SUBDID,
 		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
-		.strap_boardmatch = MBT_COSMO,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4687,7 +4700,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_SRIS_EN,
 		.strap_data = 1,
-		.strap_boardmatch = MBT_COSMO,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4696,7 +4709,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
 		.strap_data = 0,
-		.strap_boardmatch = MBT_COSMO,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4705,7 +4718,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
 		.strap_data = 0,
-		.strap_boardmatch = MBT_COSMO,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = 0,
 		.strap_nbiomatch = 0,
 		.strap_corematch = 1,
@@ -4727,9 +4740,9 @@ genoa_pcie_strap_matches(const genoa_pcie_core_t *pc, uint8_t portno,
 {
 	const genoa_ioms_t *ioms = pc->gpc_ioms;
 	const genoa_iodie_t *iodie = ioms->gio_iodie;
-	const genoa_board_type_t board = genoa_board_type();
+	const oxide_board_t board = oxide_board_data->obd_board;
 
-	if (strap->strap_boardmatch != MBT_ANY &&
+	if (strap->strap_boardmatch != 0 &&
 	    strap->strap_boardmatch != board) {
 		return (false);
 	}
@@ -5948,7 +5961,7 @@ genoa_smu_hotplug_data_init(genoa_fabric_t *fabric)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)hp->gh_table);
 	hp->gh_pa = mmu_ptob((uint64_t)pfn);
 
-	if (genoa_board_type() == MBT_RUBY) {
+	if (genoa_is_ruby()) {
 		entry = ruby_hotplug_ents;
 	}
 
@@ -6004,7 +6017,7 @@ genoa_hotplug_bridge_features(genoa_pcie_port_t *port)
 {
 	uint32_t feats;
 
-	if (genoa_board_type() == MBT_RUBY) {
+	if (genoa_is_ruby()) {
 		if (port->gpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
 			return (ruby_pcie_slot_cap_entssd);
 		} else {

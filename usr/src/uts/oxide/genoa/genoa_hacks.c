@@ -23,6 +23,7 @@
 #include <sys/io/genoa/fabric.h>
 #include <sys/io/genoa/hacks.h>
 #include <sys/io/genoa/iomux.h>
+#include <sys/platform_detect.h>
 
 /* True while we're hacking. */
 bool xxxhackymchackface = true;
@@ -243,7 +244,7 @@ genoa_check_furtive_reset()
 	    FCH_PMIO_S5_RESET_STATUS_GET_PWRBTN4SECOND(val) != 0 ||
 	    FCH_PMIO_S5_RESET_STATUS_GET_THERMALTRIP(val) != 0) {
 		// Don't if there's no SP (e.g. we're running on a Ruby)
-		if (genoa_board_type() == MBT_COSMO) {
+		if (oxide_board_data->obd_board == OXIDE_BOARD_COSMO) {
 			panic("FCH::PM::S5_RESET_STATUS 0x%08lx "
 			    "implies furtive reset", val);
 		} else {
@@ -304,7 +305,7 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 
 		switch (gpio) {
 		case 26:
-			mux_val = GENOA_FCH_IOMUX_26_EGPIO26;
+			mux_val = GENOA_FCH_IOMUX_26_AGPIO26;
 			break;
 		case 27:
 			mux_val = GENOA_FCH_IOMUX_27_EGPIO26_3;
@@ -333,7 +334,7 @@ genoa_hack_gpio(genoa_hack_gpio_op_t op, uint16_t gpio)
 			mmio_reg_write(rstctl_reg, rstctl_val);
 			mmio_reg_block_unmap(&fch_pmio);
 
-			mux_val = GENOA_FCH_IOMUX_129_GPIO129;
+			mux_val = GENOA_FCH_IOMUX_129_AGPIO129;
 		}
 			break;
 		case 266:

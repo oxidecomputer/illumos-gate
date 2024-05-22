@@ -67,13 +67,6 @@ typedef struct genoa_apob_header {
 
 #pragma pack()	/* pack(1) */
 
-/*
- * This is the default address of the APOB; see the discussion in
- * eb_create_common_properties() for more information.  We define
- * it here for sharing with kmdb.
- */
-#define	GENOA_APOB_ADDR	0x4000000UL
-
 #ifdef __cplusplus
 }
 #endif
