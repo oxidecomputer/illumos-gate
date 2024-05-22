@@ -46,6 +46,12 @@
  */
 nmi_action_t nmi_action = NMI_ACTION_UNSET;
 
+/*
+ * This is the default address of the APOB. See the discussion in
+ * eb_create_common_properties() for more information.
+ */
+static const uint64_t APOB_ADDR = 0x4000000UL;
+
 extern int bootrd_debug, prom_debug;
 extern boolean_t kbm_debug;
 

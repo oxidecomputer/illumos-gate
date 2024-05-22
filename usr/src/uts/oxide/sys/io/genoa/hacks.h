@@ -27,21 +27,6 @@ extern "C" {
 
 extern bool xxxhackymchackface;
 
-typedef enum genoa_board_type {
-	MBT_ANY,
-	MBT_RUBY,
-	MBT_COSMO,
-} genoa_board_type_t;
-
-/*
- * Here is a temporary rough heuristic for determining what board we're on.
- */
-static inline genoa_board_type_t
-genoa_board_type(void)
-{
-	return (ipcc_enable ? MBT_COSMO : MBT_RUBY);
-}
-
 extern bool genoa_fixup_i2c_clock(void);
 extern bool genoa_cgpll_set_ssc(bool);
 extern void genoa_shutdown_detect_init(void);
