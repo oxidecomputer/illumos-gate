@@ -661,6 +661,8 @@ typedef struct genoa_pcie_port_info {
 	uint8_t	gppi_func;
 } genoa_pcie_port_info_t;
 
+static int genoa_mpio_rpc(genoa_iodie_t *iodie, genoa_mpio_rpc_t *rpc);
+
 /*
  * These three tables encode knowledge about how the SoC assigns devices and
  * functions to root ports.
@@ -2042,7 +2044,7 @@ genoa_fabric_ioms_pcie_init(genoa_ioms_t *ioms)
 			port->gpp_core = pc;
 			port->gpp_device = pinfop[portno].gppi_dev;
 			port->gpp_func = pinfop[portno].gppi_func;
-			port->gpp_hp_type = SMU_HP_INVALID;
+			port->gpp_hp_type = MPIO_HP_INVALID;
 		}
 	}
 }
@@ -2186,23 +2188,6 @@ genoa_smu_rpc_get_version(genoa_iodie_t *iodie, uint8_t *major, uint8_t *minor,
 }
 
 static bool
-genoa_smu_rpc_i2c_switch(genoa_iodie_t *iodie, uint32_t addr)
-{
-	genoa_smu_rpc_t rpc = { 0 };
-
-	rpc.msr_req = GENOA_SMU_OP_I2C_SWITCH_ADDR;
-	rpc.msr_arg0 = addr;
-	genoa_smu_rpc(iodie, &rpc);
-
-	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU Set i2c address RPC Failed: addr: 0x%x, "
-		    "SMU 0x%x", addr, rpc.msr_resp);
-	}
-
-	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
-}
-
-static bool
 genoa_smu_rpc_give_address(genoa_iodie_t *iodie, genoa_smu_addr_kind_t kind,
     uint64_t addr)
 {
@@ -2239,19 +2224,22 @@ genoa_smu_rpc_give_address(genoa_iodie_t *iodie, genoa_smu_addr_kind_t kind,
 }
 
 static bool
-genoa_smu_rpc_send_hotplug_table(genoa_iodie_t *iodie)
+genoa_mpio_rpc_send_hotplug_table(genoa_iodie_t *iodie, uint64_t addr)
 {
-	genoa_smu_rpc_t rpc = { 0 };
+	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
 
-	rpc.msr_req = GENOA_SMU_OP_TX_PCIE_HP_TABLE;
-	genoa_smu_rpc(iodie, &rpc);
+	rpc.gmr_req = GENOA_MPIO_OP_SET_HP_CFG_TBL;
+	rpc.gmr_args[0] = bitx64(addr, 31, 0);
+	rpc.gmr_args[1] = bitx64(addr, 63, 32);
 
-	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU TX Hotplug Table Failed: SMU 0x%x",
-		    rpc.msr_resp);
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO TX Hotplug Table Failed: 0x%x", resp);
+		return (false);
 	}
 
-	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
+	return (true);
 }
 
 static bool
@@ -2265,25 +2253,6 @@ genoa_smu_rpc_hotplug_flags(genoa_iodie_t *iodie, uint32_t flags)
 
 	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
 		cmn_err(CE_WARN, "SMU Set Hotplug Flags failed: SMU 0x%x",
-		    rpc.msr_resp);
-	}
-
-	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
-}
-static bool
-genoa_smu_rpc_start_hotplug(genoa_iodie_t *iodie, bool one_based, uint8_t flags)
-{
-	genoa_smu_rpc_t rpc = { 0 };
-
-	rpc.msr_req = GENOA_SMU_OP_START_HOTPLUG;
-	if (one_based) {
-		rpc.msr_arg0 = 1;
-	}
-	rpc.msr_arg0 |= flags;
-	genoa_smu_rpc(iodie, &rpc);
-
-	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU Start Yer Hotplug Failed: SMU 0x%x",
 		    rpc.msr_resp);
 	}
 
@@ -2492,6 +2461,45 @@ genoa_mpio_rpc_get_i2c_device(genoa_iodie_t *iodie, uint32_t hfc, uint32_t dfc,
 		return (false);
 	}
 	bcopy(&rpc.gmr_args[1], descr, sizeof (*descr));
+
+	return (true);
+}
+
+static bool
+genoa_mpio_rpc_set_i2c_switch_addr(genoa_iodie_t *iodie, uint32_t addr)
+{
+	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
+
+	rpc.gmr_req = GENOA_MPIO_OP_SET_HP_I2C_SW_ADDR;
+	rpc.gmr_args[0] = addr;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO Set i2c address RPC Failed: addr: 0x%x, "
+		    "SMU 0x%x", addr, resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+genoa_mpio_rpc_start_hotplug(genoa_iodie_t *iodie, bool one_based, uint8_t flags)
+{
+	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
+
+	rpc.gmr_req = GENOA_SMU_OP_START_HOTPLUG;
+	if (one_based) {
+		rpc.gmr_args[0] = 1;
+	}
+	rpc.gmr_args[0] |= flags;
+	resp = genoa_mpio_rpc(iodie, &rpc);
+
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO Start Hotplug Failed: 0x%x", resp);
+		return false;
+	}
 
 	return (true);
 }
@@ -5938,7 +5946,7 @@ genoa_fabric_hack_bridges(genoa_fabric_t *fabric)
  * If this assertion fails, fix the definition in mpio_impl.h or increase the
  * size of the contiguous mapping below.
  */
-CTASSERT(sizeof (smu_hotplug_table_t) <= MMU_PAGESIZE);
+CTASSERT(sizeof (mpio_hotplug_table_t) <= MMU_PAGESIZE);
 
 /*
  * Allocate and initialize the hotplug table. The return value here is used to
@@ -5946,11 +5954,11 @@ CTASSERT(sizeof (smu_hotplug_table_t) <= MMU_PAGESIZE);
  * not with actual set up.
  */
 static bool
-genoa_smu_hotplug_data_init(genoa_fabric_t *fabric)
+genoa_hotplug_data_init(genoa_fabric_t *fabric)
 {
 	ddi_dma_attr_t attr;
 	genoa_hotplug_t *hp = &fabric->gf_hotplug;
-	const smu_hotplug_entry_t *entry;
+	const mpio_hotplug_entry_t *entry;
 	pfn_t pfn;
 	bool cont;
 
@@ -5965,7 +5973,7 @@ genoa_smu_hotplug_data_init(genoa_fabric_t *fabric)
 		entry = ruby_hotplug_ents;
 	}
 
-	cont = entry[0].se_slotno != SMU_HOTPLUG_ENT_LAST;
+	cont = entry[0].me_slotno != MPIO_HOTPLUG_ENT_LAST;
 
 	/*
 	 * The way the SMU takes this data table is that entries are indexed by
@@ -5973,36 +5981,36 @@ genoa_smu_hotplug_data_init(genoa_fabric_t *fabric)
 	 * different so we can have a sparse table. In addition, if we find a
 	 * device, update that info on its port.
 	 */
-	for (uint_t i = 0; entry[i].se_slotno != SMU_HOTPLUG_ENT_LAST; i++) {
-		uint_t slot = entry[i].se_slotno;
-		const smu_hotplug_map_t *map;
+	for (uint_t i = 0; entry[i].me_slotno != MPIO_HOTPLUG_ENT_LAST; i++) {
+		uint_t slot = entry[i].me_slotno;
+		const mpio_hotplug_map_t *map;
 		genoa_iodie_t *iodie;
 		genoa_ioms_t *ioms;
 		genoa_pcie_core_t *pc;
 		genoa_pcie_port_t *port;
 
-		hp->gh_table->smt_map[slot] = entry[i].se_map;
-		hp->gh_table->smt_func[slot] = entry[i].se_func;
-		hp->gh_table->smt_reset[slot] = entry[i].se_reset;
+		hp->gh_table->mmt_map[slot] = entry[i].me_map;
+		hp->gh_table->mmt_func[slot] = entry[i].me_func;
+		hp->gh_table->mmt_reset[slot] = entry[i].me_reset;
 
 		/*
 		 * Attempt to find the port this corresponds to. It should
 		 * already have been mapped.
 		 */
-		map = &entry[i].se_map;
-		iodie = &fabric->gf_socs[map->shm_die_id].gs_iodies[0];
-		ioms = &iodie->gi_ioms[map->shm_tile_id % 4];
-		pc = &ioms->gio_pcie_cores[map->shm_tile_id / 4];
-		port = &pc->gpc_ports[map->shm_port_id];
+		map = &entry[i].me_map;
+		iodie = &fabric->gf_socs[map->mhm_die_id].gs_iodies[0];
+		ioms = &iodie->gi_ioms[map->mhm_tile_id % 4];
+		pc = &ioms->gio_pcie_cores[map->mhm_tile_id / 4];
+		port = &pc->gpc_ports[map->mhm_port_id];
 
-		cmn_err(CE_CONT, "?SMUHP: mapped entry %u to port %p\n",
+		cmn_err(CE_CONT, "?MPIOHP: mapped entry %u to port %p\n",
 		    i, port);
 		VERIFY((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0);
 		VERIFY0(port->gpp_flags & GENOA_PCIE_PORT_F_BRIDGE_HIDDEN);
 		port->gpp_flags |= GENOA_PCIE_PORT_F_HOTPLUG;
-		port->gpp_hp_type = map->shm_format;
+		port->gpp_hp_type = map->mhm_format;
 		port->gpp_hp_slotno = slot;
-		port->gpp_hp_smu_mask = entry[i].se_func.shf_mask;
+		port->gpp_hp_mpio_mask = entry[i].me_func.mhf_mask;
 	}
 
 	return (cont);
@@ -6018,7 +6026,7 @@ genoa_hotplug_bridge_features(genoa_pcie_port_t *port)
 	uint32_t feats;
 
 	if (genoa_is_ruby()) {
-		if (port->gpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
+		if (port->gpp_hp_type == MPIO_HP_ENTERPRISE_SSD) {
 			return (ruby_pcie_slot_cap_entssd);
 		} else {
 			return (ruby_pcie_slot_cap_express);
@@ -6037,7 +6045,7 @@ genoa_hotplug_bridge_features(genoa_pcie_port_t *port)
 	 * 0) to indicate that we should enable the feature.
 	 */
 	switch (port->gpp_hp_type) {
-	case SMU_HP_ENTERPRISE_SSD:
+	case MPIO_HP_ENTERPRISE_SSD:
 		/*
 		 * For Enterprise SSD the set of features that are supported are
 		 * considered a constant and this doesn't really vary based on
@@ -6046,47 +6054,47 @@ genoa_hotplug_bridge_features(genoa_pcie_port_t *port)
 		 * completion.
 		 */
 		return (feats | PCIE_SLOTCAP_NO_CMD_COMP_SUPP);
-	case SMU_HP_EXPRESS_MODULE_A:
-		if ((port->gpp_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
+	case MPIO_HP_EXPRESS_MODULE_A:
+		if ((port->gpp_hp_mpio_mask & SMU_ENTA_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTA_EMILS) == 0 ||
-		    (port->gpp_hp_smu_mask & SMU_ENTA_EMIL) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTA_EMILS) == 0 ||
+		    (port->gpp_hp_mpio_mask & SMU_ENTA_EMIL) == 0) {
 			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTA_PWREN) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTA_PWREN) == 0) {
 			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTA_ATTNLED) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTA_ATTNLED) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTA_PWRLED) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTA_PWRLED) == 0) {
 			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
 		}
 		break;
-	case SMU_HP_EXPRESS_MODULE_B:
-		if ((port->gpp_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
+	case MPIO_HP_EXPRESS_MODULE_B:
+		if ((port->gpp_hp_mpio_mask & SMU_ENTB_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTB_EMILS) == 0 ||
-		    (port->gpp_hp_smu_mask & SMU_ENTB_EMIL) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTB_EMILS) == 0 ||
+		    (port->gpp_hp_mpio_mask & SMU_ENTB_EMIL) == 0) {
 			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTB_PWREN) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTB_PWREN) == 0) {
 			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTB_ATTNLED) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTB_ATTNLED) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
 		}
 
-		if ((port->gpp_hp_smu_mask & SMU_ENTB_PWRLED) == 0) {
+		if ((port->gpp_hp_mpio_mask & SMU_ENTB_PWRLED) == 0) {
 			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
 		}
 		break;
@@ -6203,7 +6211,7 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 	 * simple presence mode.
 	 */
 	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0 ||
-	    port->gpp_hp_type == SMU_HP_PRESENCE_DETECT) {
+	    port->gpp_hp_type == MPIO_HP_PRESENCE_DETECT) {
 		return (0);
 	}
 
@@ -6355,16 +6363,16 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 	genoa_iodie_t *iodie = &fabric->gf_socs[0].gs_iodies[0];
 
 	/*
-	 * These represent the addresses that we need to program in the SMU.
-	 * Strictly speaking, the lower 8-bits represents the addresses that the
-	 * SMU seems to expect. The upper byte is a bit more of a mystery;
+	 * These represent the addresses that we need to program in the MPIO.
+	 * Strictly speaking, the lower 8-bits represents the addresses that
+	 * MPIO seems to expect. The upper byte is a bit more of a mystery;
 	 * however, it does correspond to the expected values that AMD roughly
 	 * documents for 5-bit bus segment value which is the shf_i2c_bus member
-	 * of the smu_hotplug_function_t.
+	 * of the mpio_hotplug_function_t.
 	 */
 	const uint32_t i2c_addrs[4] = { 0x70, 0x171, 0x272, 0x373 };
 
-	if (!genoa_smu_hotplug_data_init(fabric)) {
+	if (!genoa_hotplug_data_init(fabric)) {
 		/*
 		 * This case is used to indicate that there was nothing in
 		 * particular that needed hotplug. Therefore, we don't bother
@@ -6374,18 +6382,20 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 	}
 
 	for (uint_t i = 0; i < ARRAY_SIZE(i2c_addrs); i++) {
-		if (!genoa_smu_rpc_i2c_switch(iodie, i2c_addrs[i])) {
+		if (!genoa_mpio_rpc_set_i2c_switch_addr(iodie, i2c_addrs[i])) {
 			return (false);
 		}
 	}
 
+#if 0
 	if (!genoa_smu_rpc_give_address(iodie, MSAK_HOTPLUG, hp->gh_pa)) {
 		return (false);
 	}
-
-	if (!genoa_smu_rpc_send_hotplug_table(iodie)) {
+#endif
+	if (!genoa_mpio_rpc_send_hotplug_table(iodie, hp->gh_pa)) {
 		return (false);
 	}
+
 
 	/*
 	 * Go through now and set up bridges for hotplug data. Honor the spirit
@@ -6410,7 +6420,7 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 		return (false);
 	}
 
-	if (!genoa_smu_rpc_start_hotplug(iodie, false, 0)) {
+	if (!genoa_mpio_rpc_start_hotplug(iodie, false, 0)) {
 		return (false);
 	}
 
@@ -6647,16 +6657,6 @@ genoa_fabric_init(void)
 		return;
 	}
 
-#if 0
-	genoa_pcie_populate_dbg(&genoa_fabric, GPCS_DXIO_SM_START,
-	    GENOA_IODIE_MATCH_ANY);
-	if (genoa_fabric_walk_iodie(fabric, genoa_dxio_state_machine, NULL) !=
-	    0) {
-		cmn_err(CE_WARN, "DXIO Initialization failed: failed to walk "
-		    "through the state machine");
-		return;
-	}
-#endif
 	cmn_err(CE_CONT, "?MPIO initialization completed successfully\n");
 	/*
 	 * Now that we have successfully trained devices, it's time to go
@@ -6672,7 +6672,6 @@ genoa_fabric_init(void)
 	 */
 	genoa_fabric_hack_bridges(fabric);
 
-#if 0
 	/*
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
@@ -6680,7 +6679,7 @@ genoa_fabric_init(void)
 	genoa_pcie_populate_dbg(&genoa_fabric, GPCS_PRE_HOTPLUG,
 	    GENOA_IODIE_MATCH_ANY);
 	if (!genoa_hotplug_init(fabric)) {
-		cmn_err(CE_WARN, "SMUHP: initialisation failed; PCIe hotplug "
+		cmn_err(CE_WARN, "SMUHP: initialization failed; PCIe hotplug "
 		    "may not function properly");
 	}
 
@@ -6692,6 +6691,5 @@ genoa_fabric_init(void)
 	 * futher we should lock all the various MMIO assignment registers,
 	 * especially ones we don't intend to use.
 	 */
-#endif
 	genoa_fabric_walk_iodie(fabric, genoa_smu_features_init, NULL);
 }
