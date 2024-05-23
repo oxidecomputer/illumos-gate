@@ -133,10 +133,10 @@ CTASSERT(offsetof(genoa_pptable_t, ppt_vddcr_cpu_volt_force) == 0x49c);
 CTASSERT(offsetof(genoa_pptable_t, ppt_reserved) == 0x4b0);
 CTASSERT(sizeof (genoa_pptable_t) == 0x520);
 
-CTASSERT(sizeof (smu_hotplug_map_t) == 4);
-CTASSERT(sizeof (smu_hotplug_function_t) == 4);
-CTASSERT(sizeof (smu_hotplug_reset_t) == 4);
-CTASSERT(sizeof (smu_hotplug_table_t) == 0x780);
+CTASSERT(sizeof (mpio_hotplug_map_t) == 4);
+CTASSERT(sizeof (mpio_hotplug_function_t) == 4);
+CTASSERT(sizeof (mpio_hotplug_reset_t) == 4);
+CTASSERT(sizeof (mpio_hotplug_table_t) == 0x780);
 
 #define	SP5_PHY_OFFSET_P0	0
 #define	SP5_PHY_OFFSET_G0	96
@@ -151,16 +151,46 @@ CTASSERT(sizeof (smu_hotplug_table_t) == 0x780);
 /* XXX TODO: Target link speed? */
 /* XXX TODO: Slot nums */
 const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
+//     { /* P0,  0 */
+// 	.zmpc_ask = {
+// 	    .zma_link = {
+// 		.zml_lane_start = 0,
+// 		.zml_num_lanes = 8,
+// 		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+// 		.zml_gpio_id = 1,
+// 		.zml_attrs = {
+// 		    .zmla_port_present = 1,
+// 		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+// 		},
+// 	    },
+// 	},
+//     },
     { /* P0,  0 */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 0,
-		.zml_num_lanes = 8,
+		.zml_num_lanes = 1,
 		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
 		.zml_gpio_id = 1,
 		.zml_attrs = {
 		    .zmla_port_present = 1,
 		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		    .zmla_link_hp_type = ZEN_MPIO_HOTPLUG_T_UBM,
+		},
+	    },
+	},
+    },
+    { /* P0,  0 */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 1,
+		.zml_num_lanes = 1,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		    .zmla_link_hp_type = ZEN_MPIO_HOTPLUG_T_UBM,
 		},
 	    },
 	},
@@ -343,7 +373,70 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
     },
 };
 
-const size_t RUBY_MPIO_PCIE_S0_LEN = ARRAY_SIZE(ruby_mpio_pcie_s0);
+const zen_mpio_port_conf_t ruby_mpio_pcie_s0_[] = {
+    { /* P4, M.2 x4 */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 128,
+		.zml_num_lanes = 4,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+		},
+	    },
+	},
+    },
+    { /* P5, M.2 (1/2) */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 132,
+		.zml_num_lanes = 1,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+		},
+	    },
+	},
+    },
+    { /* P5, M.2 (2/2) */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 133,
+		.zml_num_lanes = 1,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+		},
+	    },
+	},
+    },
+    { /* P5, NIC */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = 135,
+		.zml_num_lanes = 1,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_GEN4,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_GEN3,
+		},
+	    },
+	},
+    },
+};
+
+size_t RUBY_MPIO_PCIE_S0_LEN = ARRAY_SIZE(ruby_mpio_pcie_s0);
 
 const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
     { /* P0 */
@@ -509,133 +602,133 @@ const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = ARRAY_SIZE(ruby_mpio_hfc_ports);
 /*
  * Ethanol-X hotplug data.
  */
-const smu_hotplug_entry_t ruby_hotplug_ents[] = {
+const mpio_hotplug_entry_t ruby_hotplug_ents[] = {
 	/* NVMe Port 0 */
 	{
-	    .se_slotno = 8,
-	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
-		.shm_active = 1,
+	    .me_slotno = 8,
+	    .me_map = {
+		.mhm_format = MPIO_HP_ENTERPRISE_SSD,
+		.mhm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
 		 * our gut.
 		 */
-		.shm_apu = 1,
-		.shm_die_id = 1,
-		.shm_port_id = 0,
-		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 0
+		.mhm_apu = 1,
+		.mhm_die_id = 1,
+		.mhm_port_id = 0,
+		.mhm_tile_id = MPIO_TILE_P0,
+		.mhm_bridge = 0
 	    },
-	    .se_func = {
-		.shf_i2c_bit = 1,
-		.shf_i2c_byte = 0,
-		.shf_i2c_daddr = 8,
-		.shf_i2c_dtype = 1,
-		.shf_i2c_bus = 1,
-		.shf_mask = 0
+	    .me_func = {
+		.mhf_i2c_bit = 1,
+		.mhf_i2c_byte = 0,
+		.mhf_i2c_daddr = 8,
+		.mhf_i2c_dtype = 1,
+		.mhf_i2c_bus = 1,
+		.mhf_mask = 0
 	    },
 	},
 	/* NVMe Port 1 */
 	{
-	    .se_slotno = 9,
-	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
-		.shm_active = 1,
+	    .me_slotno = 9,
+	    .me_map = {
+		.mhm_format = MPIO_HP_ENTERPRISE_SSD,
+		.mhm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
 		 * our gut.
 		 */
-		.shm_apu = 1,
-		.shm_die_id = 1,
-		.shm_port_id = 1,
-		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 1
+		.mhm_apu = 1,
+		.mhm_die_id = 1,
+		.mhm_port_id = 1,
+		.mhm_tile_id = MPIO_TILE_P0,
+		.mhm_bridge = 1
 	    },
-	    .se_func = {
-		.shf_i2c_bit = 1,
-		.shf_i2c_byte = 1,
-		.shf_i2c_daddr = 8,
-		.shf_i2c_dtype = 1,
-		.shf_i2c_bus = 1,
-		.shf_mask = 0
+	    .me_func = {
+		.mhf_i2c_bit = 1,
+		.mhf_i2c_byte = 1,
+		.mhf_i2c_daddr = 8,
+		.mhf_i2c_dtype = 1,
+		.mhf_i2c_bus = 1,
+		.mhf_mask = 0
 	    },
 	},
 	/* NVMe Port 2 */
 	{
-	    .se_slotno = 10,
-	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
-		.shm_active = 1,
+	    .me_slotno = 10,
+	    .me_map = {
+		.mhm_format = MPIO_HP_ENTERPRISE_SSD,
+		.mhm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
 		 * our gut.
 		 */
-		.shm_apu = 1,
-		.shm_die_id = 1,
-		.shm_port_id = 2,
-		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 2
+		.mhm_apu = 1,
+		.mhm_die_id = 1,
+		.mhm_port_id = 2,
+		.mhm_tile_id = MPIO_TILE_P0,
+		.mhm_bridge = 2
 	    },
-	    .se_func = {
-		.shf_i2c_bit = 1,
-		.shf_i2c_byte = 0,
-		.shf_i2c_daddr = 9,
-		.shf_i2c_dtype = 1,
-		.shf_i2c_bus = 1,
-		.shf_mask = 0
+	    .me_func = {
+		.mhf_i2c_bit = 1,
+		.mhf_i2c_byte = 0,
+		.mhf_i2c_daddr = 9,
+		.mhf_i2c_dtype = 1,
+		.mhf_i2c_bus = 1,
+		.mhf_mask = 0
 	    },
 	},
 	/* NVMe Port 3 */
 	{
-	    .se_slotno = 11,
-	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
-		.shm_active = 1,
+	    .me_slotno = 11,
+	    .me_map = {
+		.mhm_format = MPIO_HP_ENTERPRISE_SSD,
+		.mhm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
 		 * our gut.
 		 */
-		.shm_apu = 1,
-		.shm_die_id = 1,
-		.shm_port_id = 3,
-		.shm_tile_id = SMU_TILE_P0,
-		.shm_bridge = 3
+		.mhm_apu = 1,
+		.mhm_die_id = 1,
+		.mhm_port_id = 3,
+		.mhm_tile_id = MPIO_TILE_P0,
+		.mhm_bridge = 3
 	    },
-	    .se_func = {
-		.shf_i2c_bit = 1,
-		.shf_i2c_byte = 1,
-		.shf_i2c_daddr = 9,
-		.shf_i2c_dtype = 1,
-		.shf_i2c_bus = 1,
-		.shf_mask = 0
+	    .me_func = {
+		.mhf_i2c_bit = 1,
+		.mhf_i2c_byte = 1,
+		.mhf_i2c_daddr = 9,
+		.mhf_i2c_dtype = 1,
+		.mhf_i2c_bus = 1,
+		.mhf_mask = 0
 	    },
 	},
 	/* PCIe x16 Slot 4 */
 	{
-	    .se_slotno = 4,
-	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
-		.shm_active = 1,
+	    .me_slotno = 4,
+	    .me_map = {
+		.mhm_format = MPIO_HP_EXPRESS_MODULE_A,
+		.mhm_active = 1,
 		/*
 		 * XXX Other sources suggest this should be apu/die 1, but it's
 		 * P0
 		 */
-		.shm_apu = 0,
-		.shm_die_id = 0,
-		.shm_port_id = 0,
-		.shm_tile_id = SMU_TILE_P2,
-		.shm_bridge = 0
+		.mhm_apu = 0,
+		.mhm_die_id = 0,
+		.mhm_port_id = 0,
+		.mhm_tile_id = MPIO_TILE_P2,
+		.mhm_bridge = 0
 	    },
-	    .se_func = {
-		.shf_i2c_bit = 0,
-		.shf_i2c_byte = 0,
-		.shf_i2c_daddr = 3,
-		.shf_i2c_dtype = 1,
-		.shf_i2c_bus = 7,
-		.shf_mask = 0
+	    .me_func = {
+		.mhf_i2c_bit = 0,
+		.mhf_i2c_byte = 0,
+		.mhf_i2c_daddr = 3,
+		.mhf_i2c_dtype = 1,
+		.mhf_i2c_bus = 7,
+		.mhf_mask = 0
 	    },
 	},
-	{ .se_slotno = SMU_HOTPLUG_ENT_LAST }
+	{ .me_slotno = MPIO_HOTPLUG_ENT_LAST }
 };
 
 /*

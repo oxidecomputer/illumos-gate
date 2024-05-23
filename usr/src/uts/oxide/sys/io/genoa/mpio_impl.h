@@ -589,28 +589,28 @@ typedef struct genoa_pptable {
 	uint32_t	ppt_reserved[28];
 } genoa_pptable_t;
 
-typedef enum smu_hotplug_type {
-	SMU_HP_PRESENCE_DETECT	= 0,
-	SMU_HP_EXPRESS_MODULE_A,
-	SMU_HP_ENTERPRISE_SSD,
-	SMU_HP_EXPRESS_MODULE_B,
+typedef enum mpio_hotplug_type {
+	MPIO_HP_PRESENCE_DETECT	= 0,
+	MPIO_HP_EXPRESS_MODULE_A,
+	MPIO_HP_ENTERPRISE_SSD,
+	MPIO_HP_EXPRESS_MODULE_B,
 	/*
 	 * This value must not be sent to the SMU. It's an internal value to us.
 	 * The other values are actually meaningful.
 	 */
-	SMU_HP_INVALID = INT32_MAX
-} smu_hotplug_type_t;
+	MPIO_HP_INVALID = INT32_MAX
+} mpio_hotplug_type_t;
 
-typedef enum smu_pci_tileid {
-	SMU_TILE_G0 = 0,
-	SMU_TILE_P1,
-	SMU_TILE_G3,
-	SMU_TILE_P2,
-	SMU_TILE_P0,
-	SMU_TILE_G1,
-	SMU_TILE_P3,
-	SMU_TILE_G2
-} smu_pci_tileid_t;
+typedef enum mpio_pci_tileid {
+	MPIO_TILE_G0 = 0,
+	MPIO_TILE_P1,
+	MPIO_TILE_G3,
+	MPIO_TILE_P2,
+	MPIO_TILE_P0,
+	MPIO_TILE_G1,
+	MPIO_TILE_P3,
+	MPIO_TILE_G2
+} mpio_pci_tileid_t;
 
 typedef enum smu_exp_type {
 	SMU_I2C_PCA9539 = 0,
@@ -654,80 +654,73 @@ typedef enum smu_entb_bits {
 /*
  * PCIe Hotplug mapping
  */
-typedef struct smu_hotplug_map {
-	uint32_t	shm_format:3;
-	uint32_t	shm_rst_valid:1;
-	uint32_t	shm_active:1;
-	uint32_t	shm_apu:1;
-	uint32_t	shm_die_id:1;
-	uint32_t	shm_port_id:4;
-	uint32_t	shm_tile_id:4;
-	uint32_t	shm_bridge:5;
-	uint32_t	shm_rsvd0:4;
-	uint32_t	shm_alt_slot_no:6;
-	uint32_t	shm_sec:1;
-	uint32_t	shm_rsvsd1:1;
-} smu_hotplug_map_t;
+typedef struct mpio_hotplug_map {
+	uint32_t	mhm_format:3;
+	uint32_t	mhm_rst_valid:1;
+	uint32_t	mhm_active:1;
+	uint32_t	mhm_apu:1;
+	uint32_t	mhm_die_id:1;
+	uint32_t	mhm_port_id:4;
+	uint32_t	mhm_tile_id:4;
+	uint32_t	mhm_bridge:5;
+	uint32_t	mhm_rsvd0:4;
+	uint32_t	mhm_alt_slot_no:6;
+	uint32_t	mhm_sec:1;
+	uint32_t	mhm_rsvsd1:1;
+} mpio_hotplug_map_t;
 
-typedef struct smu_hotplug_function {
-	uint32_t	shf_i2c_bit:3;
-	uint32_t	shf_i2c_byte:3;
-	uint32_t	shf_i2c_daddr:5;
-	uint32_t	shf_i2c_dtype:2;
-	uint32_t	shf_i2c_bus:5;
-	uint32_t	shf_mask:8;
-	uint32_t	shf_i2c_bus2:6;
-} smu_hotplug_function_t;
+typedef struct mpio_hotplug_function {
+	uint32_t	mhf_i2c_bit:3;
+	uint32_t	mhf_i2c_byte:3;
+	uint32_t	mhf_i2c_daddr:5;
+	uint32_t	mhf_i2c_dtype:2;
+	uint32_t	mhf_i2c_bus:5;
+	uint32_t	mhf_mask:8;
+	uint32_t	mhf_i2c_bus2:6;
+} mpio_hotplug_function_t;
 
-typedef struct smu_hotplug_reset {
-	uint32_t	shr_rsvd0:3;
-	uint32_t	shr_i2c_gpio_byte:3;
-	uint32_t	shr_i2c_daddr:5;
-	uint32_t	shr_i2c_dtype:2;
-	uint32_t	shr_i2c_bus:5;
-	uint32_t	shr_i2c_reset:8;
-	uint32_t	shr_rsvd1:6;
-} smu_hotplug_reset_t;
-
-typedef struct smu_hotplug_engine_data {
-	uint8_t		shed_start_lane;
-	uint8_t		shed_end_lane;
-	uint8_t		shed_socket;
-	uint8_t		shed_slot;
-} smu_hotplot_engine_data_t;
+typedef struct mpio_hotplug_reset {
+	uint32_t	mhr_rsvd0:3;
+	uint32_t	mhr_i2c_gpio_byte:3;
+	uint32_t	mhr_i2c_daddr:5;
+	uint32_t	mhr_i2c_dtype:2;
+	uint32_t	mhr_i2c_bus:5;
+	uint32_t	mhr_i2c_reset:8;
+	uint32_t	mhr_rsvd1:6;
+} mpio_hotplug_reset_t;
 
 #define	GENOA_HOTPLUG_MAX_PORTS	160
 
-typedef struct smu_hotplug_table {
-	smu_hotplug_map_t	smt_map[GENOA_HOTPLUG_MAX_PORTS];
-	smu_hotplug_function_t	smt_func[GENOA_HOTPLUG_MAX_PORTS];
-	smu_hotplug_reset_t	smt_reset[GENOA_HOTPLUG_MAX_PORTS];
-} smu_hotplug_table_t;
+typedef struct mpio_hotplug_table {
+	mpio_hotplug_map_t	mmt_map[GENOA_HOTPLUG_MAX_PORTS];
+	mpio_hotplug_function_t	mmt_func[GENOA_HOTPLUG_MAX_PORTS];
+	mpio_hotplug_reset_t	mmt_reset[GENOA_HOTPLUG_MAX_PORTS];
+} mpio_hotplug_table_t;
 
-typedef struct smu_hotplug_entry {
-	uint_t			se_slotno;
-	smu_hotplug_map_t	se_map;
-	smu_hotplug_function_t	se_func;
-	smu_hotplug_reset_t	se_reset;
-} smu_hotplug_entry_t;
+typedef struct mpio_hotplug_entry {
+	uint_t			me_slotno;
+	mpio_hotplug_map_t	me_map;
+	mpio_hotplug_function_t	me_func;
+	mpio_hotplug_reset_t	me_reset;
+} mpio_hotplug_entry_t;
 
-#define	SMU_HOTPLUG_ENT_LAST	UINT_MAX
+#define	MPIO_HOTPLUG_ENT_LAST	UINT_MAX
 
 #pragma	pack()	/* pragma pack(4) */
 
 extern const zen_mpio_port_conf_t ruby_mpio_pcie_s0[];
-extern const size_t RUBY_MPIO_PCIE_S0_LEN;
+extern size_t RUBY_MPIO_PCIE_S0_LEN;
 
 extern const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[];
 extern const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
 
-extern const smu_hotplug_entry_t ruby_hotplug_ents[];
+extern const mpio_hotplug_entry_t ruby_hotplug_ents[];
 
 extern const uint32_t ruby_pcie_slot_cap_entssd;
 extern const uint32_t ruby_pcie_slot_cap_express;
 
 extern const zen_mpio_ask_t cosmo_mpio_pcie_s0;
-extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
+extern const mpio_hotplug_entry_t cosmo_hotplug_ents[];
 
 /*
  * MPIO message codes.  These are specific to firmware revision 3.
@@ -751,7 +744,7 @@ extern const smu_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_OP_GET_I2C_DEV	0x11
 #define	GENOA_MPIO_OP_GET_I2C_DEV_CHG	0x12
 #define	GENOA_MPIO_OP_SET_HP_CFG_TBL	0x13
-#define	GENOA_MPIO_OP_LEGACY_HP_EN	0x14
+#define	GENOA_MPIO_OP_HOTPLUG_EN	0x14
 #define	GENOA_MPIO_OP_LEGACY_HP_DIS	0x15
 #define	GENOA_MPIO_OP_SET_HP_I2C_SW_ADDR 0x16
 
@@ -818,7 +811,7 @@ typedef struct genoa_mpio_config {
 } genoa_mpio_config_t;
 
 typedef struct genoa_hotplug {
-	smu_hotplug_table_t	*gh_table;
+	mpio_hotplug_table_t	*gh_table;
 	uint64_t		gh_pa;
 	uint32_t		gh_alloc_len;
 } genoa_hotplug_t;
