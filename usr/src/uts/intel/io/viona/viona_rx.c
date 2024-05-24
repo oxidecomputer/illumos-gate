@@ -724,6 +724,8 @@ viona_rx_set(viona_link_t *link, viona_promisc_t mode)
 {
 	viona_vring_t *ring = &link->l_vrings[VIONA_VQ_RX];
 	int err = 0;
+	int flags = MAC_PROMISC_FLAGS_NO_TX_LOOP |
+	    MAC_PROMISC_FLAGS_VLAN_TAG_STRIP;
 
 	if (link->l_mph != NULL) {
 		mac_promisc_remove(link->l_mph);
@@ -734,16 +736,16 @@ viona_rx_set(viona_link_t *link, viona_promisc_t mode)
 	case VIONA_PROMISC_MULTI:
 		mac_rx_set(link->l_mch, viona_rx_classified, ring);
 		err = mac_promisc_add(link->l_mch, MAC_CLIENT_PROMISC_MULTI,
-		    viona_rx_mcast, ring, &link->l_mph,
-		    MAC_PROMISC_FLAGS_NO_TX_LOOP |
-		    MAC_PROMISC_FLAGS_VLAN_TAG_STRIP);
+		    viona_rx_mcast, ring, &link->l_mph, flags);
 		break;
+	case VIONA_PROMISC_ALL_VLAN:
+		flags &= ~MAC_PROMISC_FLAGS_VLAN_TAG_STRIP;
+		/* FALLTHRU */
 	case VIONA_PROMISC_ALL:
 		mac_rx_clear(link->l_mch);
 		err = mac_promisc_add(link->l_mch, MAC_CLIENT_PROMISC_ALL,
-		    viona_rx_classified, ring, &link->l_mph,
-		    MAC_PROMISC_FLAGS_NO_TX_LOOP |
-		    MAC_PROMISC_FLAGS_VLAN_TAG_STRIP);
+		    viona_rx_classified, ring, &link->l_mph, flags);
+
 		/*
 		 * In case adding the promisc handler failed, restore the
 		 * generic classified callback so that packets continue to

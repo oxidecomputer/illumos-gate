@@ -760,7 +760,15 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 		goto bail;
 	}
 
-	err = mac_unicast_add(link->l_mch, NULL, MAC_UNICAST_PRIMARY,
+	/*
+	 * NOTE: the last 2 flags are needed to allow vlan tagged packets to
+	 * be forwarded from a guest to the underlying mac device.  This
+	 * probably isn't acceptable, so I need to find a better solution.
+	 */
+	err = mac_unicast_add(link->l_mch, NULL,
+	    MAC_UNICAST_PRIMARY |
+	    MAC_UNICAST_TAG_DISABLE |
+	    MAC_UNICAST_DISABLE_TX_VID_CHECK,
 	    &link->l_muh, VLAN_ID_NONE, &mac_diag);
 	if (err != 0) {
 		goto bail;
