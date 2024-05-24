@@ -387,18 +387,18 @@ typedef struct zen_mpio_ubm_hfc_descr {
 } zen_mpio_ubm_hfc_descr_t;
 
 typedef struct zen_mpio_ubm_dfc_data {
-	uint8_t			zmudd_gen_speed;
-	uint8_t			zmudd_type:3;
-	uint8_t			zmudd_rsvd0:3;
-	uint8_t			zmudd_bifurcate_port:1;
-	uint8_t			zmudd_secondary_port:1;
-	uint8_t			zmudd_ref_clk:1;
-	uint8_t			zmudd_pwr_dis:1;
-	uint8_t			zmudd_has_perst:1;
-	uint8_t			zmudd_dual_port:1;
-	uint8_t			zmudd_rsvd1:4;
-	uint8_t			zmudd_slot;
-	uint8_t			zmudd_pad[2];
+	uint8_t			zmudt_gen_speed;
+	uint8_t			zmudt_type:3;
+	uint8_t			zmudt_rsvd0:3;
+	uint8_t			zmudt_bifurcate_port:1;
+	uint8_t			zmudt_secondary_port:1;
+	uint8_t			zmudt_ref_clk:1;
+	uint8_t			zmudt_pwr_dis:1;
+	uint8_t			zmudt_has_perst:1;
+	uint8_t			zmudt_dual_port:1;
+	uint8_t			zmudt_rsvd1:4;
+	uint8_t			zmudt_slot;
+	uint8_t			zmudt_pad[2];
 } zen_mpio_ubm_dfc_data_t;
 
 typedef struct zen_mpio_ubm_dfc_descr {
@@ -602,14 +602,14 @@ typedef enum mpio_hotplug_type {
 } mpio_hotplug_type_t;
 
 typedef enum mpio_pci_tileid {
-	MPIO_TILE_G0 = 0,
+	MPIO_TILE_P0 = 0,
 	MPIO_TILE_P1,
-	MPIO_TILE_G3,
 	MPIO_TILE_P2,
-	MPIO_TILE_P0,
-	MPIO_TILE_G1,
 	MPIO_TILE_P3,
-	MPIO_TILE_G2
+	MPIO_TILE_G0,
+	MPIO_TILE_G1,
+	MPIO_TILE_G2,
+	MPIO_TILE_G3,
 } mpio_pci_tileid_t;
 
 typedef enum smu_exp_type {

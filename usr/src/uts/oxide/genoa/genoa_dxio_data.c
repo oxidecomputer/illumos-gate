@@ -151,7 +151,7 @@ CTASSERT(sizeof (mpio_hotplug_table_t) == 0x780);
 /* XXX TODO: Target link speed? */
 /* XXX TODO: Slot nums */
 const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
-//     { /* P0,  0 */
+//     { /* P0, riser 0 */
 // 	.zmpc_ask = {
 // 	    .zma_link = {
 // 		.zml_lane_start = 0,
@@ -165,7 +165,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 // 	    },
 // 	},
 //     },
-    { /* P0,  0 */
+    { /* P0, riser 0 */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 0,
@@ -180,7 +180,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 	    },
 	},
     },
-    { /* P0,  0 */
+    { /* P0, riser 0, 1 */
 	.zmpc_ask = {
 	    .zma_link = {
 		.zml_lane_start = 1,
@@ -603,19 +603,15 @@ const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = ARRAY_SIZE(ruby_mpio_hfc_ports);
  * Ethanol-X hotplug data.
  */
 const mpio_hotplug_entry_t ruby_hotplug_ents[] = {
-	/* NVMe Port 0 */
+	/* NVMe Port 0, riser 0 */
 	{
-	    .me_slotno = 8,
+	    .me_slotno = 0x10,
 	    .me_map = {
 		.mhm_format = MPIO_HP_ENTERPRISE_SSD,
 		.mhm_active = 1,
-		/*
-		 * XXX They claim this is Die ID 0, though it's on P1, roll with
-		 * our gut.
-		 */
 		.mhm_apu = 1,
-		.mhm_die_id = 1,
-		.mhm_port_id = 0,
+		.mhm_die_id = 0,
+		.mhm_port_id = 3,
 		.mhm_tile_id = MPIO_TILE_P0,
 		.mhm_bridge = 0
 	    },
@@ -628,11 +624,12 @@ const mpio_hotplug_entry_t ruby_hotplug_ents[] = {
 		.mhf_mask = 0
 	    },
 	},
-	/* NVMe Port 1 */
+#if 0
+	/* NVMe Port 0, riser 1 */
 	{
-	    .me_slotno = 9,
+	    .me_slotno = 0x11,
 	    .me_map = {
-		.mhm_format = MPIO_HP_ENTERPRISE_SSD,
+		.mhm_format = MPIO_HP_EXPRESS_MODULE_A,
 		.mhm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
@@ -728,6 +725,7 @@ const mpio_hotplug_entry_t ruby_hotplug_ents[] = {
 		.mhf_mask = 0
 	    },
 	},
+#endif
 	{ .me_slotno = MPIO_HOTPLUG_ENT_LAST }
 };
 

@@ -2188,42 +2188,6 @@ genoa_smu_rpc_get_version(genoa_iodie_t *iodie, uint8_t *major, uint8_t *minor,
 }
 
 static bool
-genoa_smu_rpc_give_address(genoa_iodie_t *iodie, genoa_smu_addr_kind_t kind,
-    uint64_t addr)
-{
-	genoa_smu_rpc_t rpc = { 0 };
-
-	switch (kind) {
-	case MSAK_GENERIC:
-		rpc.msr_req = GENOA_SMU_OP_HAVE_AN_ADDRESS;
-		break;
-	case MSAK_HOTPLUG:
-		/*
-		 * For a long time, hotplug table addresses were provided to the
-		 * SMU in the same manner as any others; however, in recent
-		 * versions there is a separate RPC for that.
-		 */
-		rpc.msr_req = genoa_smu_version_at_least(iodie, 45, 90, 0) ?
-		    GENOA_SMU_OP_HAVE_A_HP_ADDRESS :
-		    GENOA_SMU_OP_HAVE_AN_ADDRESS;
-		break;
-	default:
-		panic("invalid SMU address kind %d", (int)kind);
-	}
-	rpc.msr_arg0 = bitx64(addr, 31, 0);
-	rpc.msr_arg1 = bitx64(addr, 63, 32);
-	genoa_smu_rpc(iodie, &rpc);
-
-	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU Have an Address RPC Failed: addr: 0x%lx, "
-		    "SMU req 0x%x resp 0x%x", addr, rpc.msr_req, rpc.msr_resp);
-	}
-
-	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
-
-}
-
-static bool
 genoa_mpio_rpc_send_hotplug_table(genoa_iodie_t *iodie, uint64_t addr)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
@@ -3837,6 +3801,24 @@ genoa_mpio_ubm_dump(genoa_iodie_t *iodie, int i)
 		    d.zmudd_lane_start);
 		cmn_err(CE_CONT, " zmudd_lane_width = %02x\n",
 		    d.zmudd_lane_width);
+		cmn_err(CE_CONT, " zmudt_gen_speed = %02x\n",
+		    d.zmudd_data.zmudt_gen_speed);
+		cmn_err(CE_CONT, " zmudt_type = %02x\n",
+		    d.zmudd_data.zmudt_type);
+		cmn_err(CE_CONT, " zmudt_bifurcate_port = %x\n",
+		    d.zmudd_data.zmudt_bifurcate_port);
+		cmn_err(CE_CONT, " zmudt_zecondary_port = %x\n",
+		    d.zmudd_data.zmudt_secondary_port);
+		cmn_err(CE_CONT, " zmudt_ref_clk = %02x\n",
+		    d.zmudd_data.zmudt_ref_clk);
+		cmn_err(CE_CONT, " zmudt_pwr_dis = %02x\n",
+		    d.zmudd_data.zmudt_pwr_dis);
+		cmn_err(CE_CONT, " zmudt_has_perst = %x\n",
+		    d.zmudd_data.zmudt_has_perst);
+		cmn_err(CE_CONT, " zmudt_dual_port = %02x\n",
+		    d.zmudd_data.zmudt_dual_port);
+		cmn_err(CE_CONT, " zmudt_slot = %02x\n",
+		    d.zmudd_data.zmudt_slot);
 	}
 }
 
@@ -5962,6 +5944,9 @@ genoa_hotplug_data_init(genoa_fabric_t *fabric)
 	pfn_t pfn;
 	bool cont;
 
+	if (xxxhackymchackface)
+		return true;
+
 	genoa_dma_attr(&attr);
 	hp->gh_alloc_len = MMU_PAGESIZE;
 	hp->gh_table = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
@@ -6420,7 +6405,8 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 		return (false);
 	}
 
-	if (!genoa_mpio_rpc_start_hotplug(iodie, false, 0)) {
+	if (!xxxhackymchackface &&
+	    !genoa_mpio_rpc_start_hotplug(iodie, false, 0)) {
 		return (false);
 	}
 
