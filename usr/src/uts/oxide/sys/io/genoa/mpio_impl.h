@@ -747,6 +747,9 @@ extern const mpio_hotplug_entry_t cosmo_hotplug_ents[];
 #define	GENOA_MPIO_OP_HOTPLUG_EN	0x14
 #define	GENOA_MPIO_OP_LEGACY_HP_DIS	0x15
 #define	GENOA_MPIO_OP_SET_HP_I2C_SW_ADDR 0x16
+#define	GENOA_MPIO_OP_SET_HP_BLINK_IVAL	0x17
+#define	GENOA_MPIO_OP_SET_HP_POLL_IVAL	0x18
+#define	GENOA_MPIO_OP_SET_HP_FLAGS	0x19
 
 #define	GENOA_MPIO_OP_POSTED		(3 << 8)
 
