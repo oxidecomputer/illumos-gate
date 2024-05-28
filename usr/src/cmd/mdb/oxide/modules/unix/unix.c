@@ -1030,7 +1030,7 @@ static const mdb_dcmd_t dcmds[] = {
 #ifdef _KMDB
 	{ "dimm_report", "", "Summarize DRAM training and DIMMs",
 	    dimm_report_dcmd, dimm_report_dcmd_help },
-	{ "df_route", "-b | -d | -I | -m  [-i func] [-s socket]", "print df "
+	{ "df_route", "-b | -d | -I | -m  [-i inst] [-s socket]", "print df "
 	    "route tables", df_route_dcmd, df_route_dcmd_help },
 	{ "rddf", ":[-b | -i inst] [-f func] [-s socket]", "read df register",
 	    rddf_dcmd, rddf_dcmd_help },
@@ -1065,6 +1065,12 @@ static const mdb_modinfo_t modinfo = { MDB_API_VERSION, dcmds, walkers };
 const mdb_modinfo_t *
 _mdb_init(void)
 {
+#ifdef _KMDB
+	if (!df_props_init()) {
+		mdb_warn("failed to initialize df properties\n");
+		return (NULL);
+	}
+#endif
 	return (&modinfo);
 }
 

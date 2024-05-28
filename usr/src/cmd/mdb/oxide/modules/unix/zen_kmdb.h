@@ -39,6 +39,8 @@ extern void wrsmn_dcmd_help(void);
 extern int rdsmn_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 extern int wrsmn_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
+extern boolean_t df_props_init(void);
+
 extern void df_route_dcmd_help(void);
 extern int df_route_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
