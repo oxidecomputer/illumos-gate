@@ -2196,6 +2196,7 @@ genoa_mpio_rpc_send_hotplug_table(genoa_iodie_t *iodie, uint64_t addr)
 	rpc.gmr_req = GENOA_MPIO_OP_SET_HP_CFG_TBL;
 	rpc.gmr_args[0] = bitx64(addr, 31, 0);
 	rpc.gmr_args[1] = bitx64(addr, 63, 32);
+	rpc.gmr_args[2] = sizeof(mpio_hotplug_table_t);
 
 	resp = genoa_mpio_rpc(iodie, &rpc);
 	if (resp != GENOA_MPIO_RPC_OK) {
@@ -2207,20 +2208,21 @@ genoa_mpio_rpc_send_hotplug_table(genoa_iodie_t *iodie, uint64_t addr)
 }
 
 static bool
-genoa_smu_rpc_hotplug_flags(genoa_iodie_t *iodie, uint32_t flags)
+genoa_mpio_rpc_hotplug_flags(genoa_iodie_t *iodie, uint32_t flags)
 {
-	genoa_smu_rpc_t rpc = { 0 };
+	genoa_mpio_rpc_t rpc = { 0 };
+	int resp;
 
-	rpc.msr_req = GENOA_SMU_OP_SET_HOPTLUG_FLAGS;
-	rpc.msr_arg0 = flags;
-	genoa_smu_rpc(iodie, &rpc);
+	rpc.gmr_req = GENOA_MPIO_OP_SET_HP_FLAGS;
+	rpc.gmr_args[0] = flags;
+	resp = genoa_mpio_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != GENOA_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU Set Hotplug Flags failed: SMU 0x%x",
-		    rpc.msr_resp);
+	if (resp != GENOA_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO Set Hotplug Flags failed: 0x%x", resp);
+		return (false);
 	}
 
-	return (rpc.msr_resp == GENOA_SMU_RPC_OK);
+	return (true);
 }
 
 /*
@@ -5946,9 +5948,6 @@ genoa_hotplug_data_init(genoa_fabric_t *fabric)
 	pfn_t pfn;
 	bool cont;
 
-	if (xxxhackymchackface)
-		return true;
-
 	genoa_dma_attr(&attr);
 	hp->gh_alloc_len = MMU_PAGESIZE;
 	hp->gh_table = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
@@ -5992,6 +5991,8 @@ genoa_hotplug_data_init(genoa_fabric_t *fabric)
 
 		cmn_err(CE_CONT, "?MPIOHP: mapped entry %u to port %p\n",
 		    i, port);
+		if (xxxhackymchackface)
+			continue;
 		VERIFY((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0);
 		VERIFY0(port->gpp_flags & GENOA_PCIE_PORT_F_BRIDGE_HIDDEN);
 		port->gpp_flags |= GENOA_PCIE_PORT_F_HOTPLUG;
@@ -6374,15 +6375,10 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 		}
 	}
 
-#if 0
-	if (!genoa_smu_rpc_give_address(iodie, MSAK_HOTPLUG, hp->gh_pa)) {
-		return (false);
-	}
-#endif
+	cmn_err(CE_WARN, "Sending hotplug table");
 	if (!genoa_mpio_rpc_send_hotplug_table(iodie, hp->gh_pa)) {
 		return (false);
 	}
-
 
 	/*
 	 * Go through now and set up bridges for hotplug data. Honor the spirit
@@ -6395,7 +6391,7 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 	(void) genoa_fabric_walk_pcie_port(fabric, genoa_hotplug_port_init,
 	    NULL);
 
-	if (!genoa_smu_rpc_hotplug_flags(iodie, 0)) {
+	if (!genoa_mpio_rpc_hotplug_flags(iodie, 0)) {
 		return (false);
 	}
 
@@ -6407,8 +6403,7 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 		return (false);
 	}
 
-	if (!xxxhackymchackface &&
-	    !genoa_mpio_rpc_start_hotplug(iodie, false, 0)) {
+	if (!genoa_mpio_rpc_start_hotplug(iodie, false, 0)) {
 		return (false);
 	}
 
