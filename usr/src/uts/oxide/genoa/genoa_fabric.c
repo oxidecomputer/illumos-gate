@@ -2389,16 +2389,16 @@ genoa_mpio_rpc_enumerate_i2c(genoa_iodie_t *iodie)
 
 	ASSERT3P(iodie, !=, NULL);
 	conf = &iodie->gi_mpio_conf;
-	ASSERT(conf->gmc_ubm_hfc_descr != NULL);
-	ASSERT3U(conf->gmc_ubm_hfc_descr_pa, !=, 0);
-	ASSERT3U(conf->gmc_ubm_hfc_descr_pa, <, 0xFFFFFFFFU);
+	ASSERT(conf->gmc_ubm_hfc_ports != NULL);
+	ASSERT3U(conf->gmc_ubm_hfc_ports_pa, !=, 0);
+	ASSERT3U(conf->gmc_ubm_hfc_ports_pa, <, 0xFFFFFFFFU);
 
 	/*
 	 * Sadly, this RPC can only accept 32-bits worth of a
 	 * physical address.  Thus, the data is artificially
 	 * constrained to be in the first 4GiB of address space.
 	 */
-	rpc.gmr_args[0] = (uint32_t)conf->gmc_ubm_hfc_descr_pa;
+	rpc.gmr_args[0] = (uint32_t)conf->gmc_ubm_hfc_ports_pa;
 	rpc.gmr_args[1] = conf->gmc_ubm_hfc_nports;
 	rpc.gmr_req = GENOA_MPIO_OP_ENUMERATE_I2C;
 
@@ -2450,7 +2450,7 @@ genoa_mpio_rpc_set_i2c_switch_addr(genoa_iodie_t *iodie, uint32_t addr)
 }
 
 static bool
-genoa_mpio_rpc_start_hotplug(genoa_iodie_t *iodie, bool one_based, uint8_t flags)
+genoa_mpio_rpc_start_hotplug(genoa_iodie_t *iodie, bool one_based, uint32_t flags)
 {
 	genoa_mpio_rpc_t rpc = { 0 };
 	int resp;
@@ -3785,22 +3785,52 @@ genoa_mpio_init_global_config(genoa_iodie_t *iodie, void *arg)
 }
 
 static void
-genoa_mpio_ubm_dump(genoa_iodie_t *iodie, int i)
+genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 {
+	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
+	zen_mpio_ask_port_t *ask;
 	zen_mpio_ubm_dfc_descr_t d;
+	zen_mpio_ubm_hfc_port_t *hfc_port;
 	int j, ndfc;
 
+	hfc_port = &conf->gmc_ubm_hfc_ports[i];
+	if (conf->gmc_nports >= ZEN_MPIO_ASK_MAX_PORTS)
+		return;
 	for (j = 0, ndfc = 1; j < ndfc; j++) {
 		if (!genoa_mpio_rpc_get_i2c_device(iodie, i, j, &d)) {
 			return;
 		}
 		if (j == 0)
 			ndfc = d.zmudd_ndfcs;
+		ask = &conf->gmc_ask->zma_ports[conf->gmc_nports++];
+		ask->zma_link.zml_lane_start =
+		    hfc_port->zmuhp_start_lane + d.zmudd_lane_start;
+		ask->zma_link.zml_num_lanes = d.zmudd_lane_width;
+		ask->zma_link.zml_gpio_id = 0;
+
+		ask->zma_link.zml_attrs.zmla_link_hp_type =
+		    ZEN_MPIO_HOTPLUG_T_UBM;
+		ask->zma_link.zml_attrs.zmla_hfc_idx = i;
+		ask->zma_link.zml_attrs.zmla_dfc_idx = j;
+		ask->zma_link.zml_attrs.zmla_port_present = 1;
+		ask->zma_link.zml_attrs.zmla_max_link_speed_cap =
+		    d.zmudd_data.zmudt_gen_speed;
+		switch (d.zmudd_data.zmudt_type) {
+		case ZEN_MPIO_UBM_DFC_TYPE_QUAD_PCI:
+			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE;
+			break;
+		case ZEN_MPIO_UBM_DFC_TYPE_SATA_SAS:
+			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_SATA;
+			break;
+		case ZEN_MPIO_UBM_DFC_TYPE_EMPTY:
+			ask->zma_link.zml_attrs.zmla_port_present = 0;
+			break;
+		}
 		cmn_err(CE_WARN, "dfc(%u,%u):", i, j);
 		cmn_err(CE_CONT, " zmudd_hfcno = %u\n", d.zmudd_hfcno);
 		cmn_err(CE_CONT, " zmudd_ndfcs = %hu\n", d.zmudd_ndfcs);
 		cmn_err(CE_CONT, " zmudd_lane_start = %02x\n",
-		    d.zmudd_lane_start);
+		    ask->zma_link.zml_lane_start);
 		cmn_err(CE_CONT, " zmudd_lane_width = %02x\n",
 		    d.zmudd_lane_width);
 		cmn_err(CE_CONT, " zmudt_gen_speed = %02x\n",
@@ -3834,7 +3864,7 @@ genoa_mpio_init_ubm(genoa_iodie_t *iodie, void *arg)
 	}
 	conf = &iodie->gi_mpio_conf;
 	for (int i = 0; i < conf->gmc_ubm_hfc_nports; i++) {
-		genoa_mpio_ubm_dump(iodie, i);
+		genoa_mpio_ubm_hfc_init(iodie, i);
 	}
 
 	return (0);
@@ -4013,17 +4043,17 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ext_attrs);
 	conf->gmc_ext_attrs_pa = mmu_ptob((uint64_t)pfn);
 
-	conf->gmc_ubm_hfc_descr_alloc_len = MMU_PAGESIZE;
-	conf->gmc_ubm_hfc_descr = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->gmc_ubm_hfc_descr, MMU_PAGESIZE);
+	conf->gmc_ubm_hfc_ports_alloc_len = MMU_PAGESIZE;
+	conf->gmc_ubm_hfc_ports = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->gmc_ubm_hfc_ports, MMU_PAGESIZE);
 
 	VERIFY3P(source_ubm_data, !=, NULL);
 	size = sizeof (zen_mpio_ubm_hfc_port_t) *
 	    RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
-	bcopy(source_ubm_data, conf->gmc_ubm_hfc_descr, size);
+	bcopy(source_ubm_data, conf->gmc_ubm_hfc_ports, size);
 
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ubm_hfc_descr);
-	conf->gmc_ubm_hfc_descr_pa = mmu_ptob((uint64_t)pfn);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ubm_hfc_ports);
+	conf->gmc_ubm_hfc_ports_pa = mmu_ptob((uint64_t)pfn);
 
 
 #if 0
@@ -5987,10 +6017,10 @@ genoa_hotplug_data_init(genoa_fabric_t *fabric)
 		pc = &ioms->gio_pcie_cores[map->mhm_tile_id / 4];
 		port = &pc->gpc_ports[map->mhm_port_id];
 
+		if (xxxhackymchackface && (port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) == 0)
+			continue;
 		cmn_err(CE_CONT, "?MPIOHP: mapped entry %u to port %p\n",
 		    i, port);
-		if (xxxhackymchackface)
-			continue;
 		VERIFY((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0);
 		VERIFY0(port->gpp_flags & GENOA_PCIE_PORT_F_BRIDGE_HIDDEN);
 		port->gpp_flags |= GENOA_PCIE_PORT_F_HOTPLUG;
@@ -6401,7 +6431,7 @@ genoa_hotplug_init(genoa_fabric_t *fabric)
 		return (false);
 	}
 
-	if (!genoa_mpio_rpc_start_hotplug(iodie, false, 0)) {
+	if (!genoa_mpio_rpc_start_hotplug(iodie, false, 0x0000FF00)) {
 		return (false);
 	}
 

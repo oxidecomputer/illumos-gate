@@ -324,6 +324,12 @@ typedef enum zen_mpio_i2c_node_type {
 	ZEN_MPIO_I2C_NODE_TYPE_U3,
 } zen_mpio_i2c_node_type_t;
 
+typedef enum zen_mpio_ubm_dfc_type {
+	ZEN_MPIO_UBM_DFC_TYPE_SATA_SAS = 0x04,
+	ZEN_MPIO_UBM_DFC_TYPE_QUAD_PCI = 0x05,
+	ZEN_MPIO_UBM_DFC_TYPE_EMPTY = 0x07,
+} zen_mpio_ubm_dfc_type_t;
+
 typedef struct zen_mpio_i2c_switch {
 	uint8_t		zmis_addr;
 	uint8_t		zmis_select:4;
@@ -379,12 +385,6 @@ typedef struct zen_mpio_htod_data {
 	uint8_t			zmhdd_ocp_def_sec_present_b;
 	uint8_t			zmhdd_ocp_slot_num;
 } zen_mpio_htod_data_t;
-
-typedef struct zen_mpio_ubm_hfc_descr {
-	uint32_t		zmuhd_size;
-	zen_mpio_ubm_hfc_port_t	zmuhd_ports[32];
-	zen_mpio_htod_data_t	zmuhd_hfc_to_dfc_data[32];
-} zen_mpio_ubm_hfc_descr_t;
 
 typedef struct zen_mpio_ubm_dfc_data {
 	uint8_t			zmudt_gen_speed;
@@ -800,17 +800,17 @@ extern const mpio_hotplug_entry_t cosmo_hotplug_ents[];
 typedef struct genoa_mpio_config {
 	zen_mpio_port_conf_t		*gmc_port_conf;
 	zen_mpio_ask_t			*gmc_ask;
-	zen_mpio_ubm_hfc_descr_t	*gmc_ubm_hfc_descr;
+	zen_mpio_ubm_hfc_port_t		*gmc_ubm_hfc_ports;
 	zen_mpio_ext_attrs_t		*gmc_ext_attrs;
 	uint64_t			gmc_ask_pa;
 	uint64_t			gmc_ext_attrs_pa;
-	uint64_t			gmc_ubm_hfc_descr_pa;
+	uint64_t			gmc_ubm_hfc_ports_pa;
 	uint32_t			gmc_nports;
 	uint32_t			gmc_ubm_hfc_nports;
 	uint32_t			gmc_ask_alloc_len;
 	uint32_t			gmc_ext_attrs_alloc_len;
 	uint32_t			gmc_ext_attrs_len;
-	uint32_t			gmc_ubm_hfc_descr_alloc_len;
+	uint32_t			gmc_ubm_hfc_ports_alloc_len;
 } genoa_mpio_config_t;
 
 typedef struct genoa_hotplug {
