@@ -883,7 +883,6 @@ plat_traceback(void *fpreg)
 {
 	struct frame *fp = (struct frame *)fpreg;
 	uintptr_t pc;
-	uint_t i = 0;
 
 	kipcc_panic_field(IPF_CAUSE, IPCC_PANIC_CALL);
 
@@ -907,7 +906,7 @@ plat_traceback(void *fpreg)
 	kipcc_panic_field(IPF_PC, pc);
 	kipcc_panic_field(IPF_FP, (uintptr_t)fp);
 
-	while ((uintptr_t)fp >= kernelbase && i++ < IPCC_PANIC_STACKS) {
+	while ((uintptr_t)fp >= kernelbase) {
 		ulong_t off;
 		char *sym;
 

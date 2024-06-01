@@ -21,6 +21,8 @@
 #include <sys/file.h>
 #include <sys/ipcc_proto.h>
 #include <sys/kernel_ipcc.h>
+#include <sys/panic.h>
+#include <sys/privregs.h>
 #include <sys/psm_defs.h>
 #include <sys/reboot.h>
 #include <sys/stdbool.h>
@@ -62,6 +64,11 @@ static bool ipcc_fastpoll;
  * which phase of boot the system is in when a panic occurs.
  */
 static ipcc_panic_data_t ipcc_panic_buf;
+/*
+ * A small buffer used for assembling data for addition to ipcc_panic_buf
+ * during a panic.
+ */
+static uint8_t ipcc_panic_scratch[0x100];
 
 /*
  * Functions for using IPCC from the kernel, driving the UART directly using the
@@ -446,6 +453,8 @@ void
 kernel_ipcc_panic(void)
 {
 	ipcc_panic_buf.ipd_version = IPCC_PANIC_VERSION;
+	ipcc_panic_buf.ipd_hrtime = panic_hrtime;
+	ipcc_panic_buf.ipd_hrestime = panic_hrestime;
 
 	/*
 	 * A panic message is not exactly a gasp, but we are single threaded
@@ -462,7 +471,9 @@ kernel_ipcc_panic(void)
 	 */
 	kernel_ipcc_prepare_gasp();
 	(void) ipcc_panic(&kernel_ipcc_ops, &kernel_ipcc_data,
-	    (uint8_t *)&ipcc_panic_buf, sizeof (ipcc_panic_buf));
+	    (uint8_t *)&ipcc_panic_buf,
+	    offsetof(ipcc_panic_data_t, ipd_items) +
+	    ipcc_panic_buf.ipd_items_len);
 }
 
 /*
@@ -685,10 +696,47 @@ kipcc_panic_field(ipcc_panic_field_t type, uint64_t val)
 }
 
 void
+kipcc_panic_regs(struct regs *rp)
+{
+	bcopy(rp, &ipcc_panic_buf.ipd_regs, sizeof (*rp));
+}
+
+static void
+ipcc_panic_add(ipcc_panic_item_t type, const uint8_t *data, uint16_t len)
+{
+	uint16_t avail = sizeof (ipcc_panic_buf.ipd_items) -
+	    ipcc_panic_buf.ipd_items_len;
+	ipcc_panic_tlvhdr_t *hdr = (ipcc_panic_tlvhdr_t *)
+	    &ipcc_panic_buf.ipd_items[ipcc_panic_buf.ipd_items_len];
+	const uint16_t hdrlen = sizeof (*hdr);
+
+	if (avail < hdrlen + 1) {
+		/*
+		 * If we don't even have space for 1 byte of data after the
+		 * header, give up on this item.
+		 */
+		return;
+	}
+
+	len += hdrlen;
+	len = MIN(len, avail);
+
+	hdr->ipth_type = (uint8_t)type;
+	hdr->ipth_len = len;
+
+	bcopy(data, hdr->ipth_data, len - hdrlen);
+	ipcc_panic_buf.ipd_nitems++;
+	ipcc_panic_buf.ipd_items_len += len;
+}
+
+void
 kipcc_panic_vmessage(const char *fmt, va_list ap)
 {
-	(void) vsnprintf(ipcc_panic_buf.ipd_message,
-	    sizeof (ipcc_panic_buf.ipd_message), fmt, ap);
+	int len;
+
+	len = vsnprintf((char *)ipcc_panic_scratch, sizeof (ipcc_panic_scratch),
+	    fmt, ap);
+	ipcc_panic_add(IPI_MESSAGE, ipcc_panic_scratch, len);
 }
 
 void
@@ -701,49 +749,43 @@ kipcc_panic_message(const char *fmt, ...)
 	va_end(ap);
 }
 
+/*
+ * A stack item is encoded as:
+ *	uint64_t	address
+ *	uint64_t	offset
+ *	uint8_t[]	symbol name (may be zero-length)
+ */
 void
 kipcc_panic_stack_item(uintptr_t addr, const char *sym, off_t off)
 {
-	ipcc_panic_stack_t *stack;
+	ipcc_panic_stackentry_t *s =
+	    (ipcc_panic_stackentry_t *)ipcc_panic_scratch;
+	uint16_t len = 0;
 
-	if (ipcc_panic_buf.ipd_stackidx >= IPCC_PANIC_STACKS)
-		return;
+	s->ipse_addr = addr;
+	s->ipse_offset = off;
+	len += sizeof (*s);
 
-	stack = &ipcc_panic_buf.ipd_stack[ipcc_panic_buf.ipd_stackidx++];
-
-	stack->ips_addr = addr;
 	if (sym != NULL) {
-		/*
-		 * The symbol does not have be NUL-terminated since it is being
-		 * written to a buffer with a fixed known size. The global
-		 * ipcc_panic_buf variable will have been initialised with
-		 * zeros so a shorter string will end up zero padded to the
-		 * size of the buffer. The most likely consumers of these data
-		 * are rust programs using hubpack, which works with fixed size
-		 * arrays rather than C-style strings.
-		 */
-		bcopy((char *)sym, stack->ips_symbol,
-		    MIN(IPCC_PANIC_SYMLEN, strlen(sym)));
-		stack->ips_offset = off;
+		size_t symlen, cpylen;
+
+		symlen = strlen(sym);
+		cpylen = MIN(sizeof (ipcc_panic_scratch) - len, symlen);
+		bcopy((char *)sym, s->ipse_symbol, cpylen);
+		len += cpylen;
 	}
+
+	ipcc_panic_add(IPI_STACKENTRY, ipcc_panic_scratch, len);
 }
 
 void
 kipcc_panic_vdata(const char *fmt, va_list ap)
 {
-	size_t datalen, space;
+	uint16_t len;
 
-	space = sizeof (ipcc_panic_buf.ipd_data) - ipcc_panic_buf.ipd_dataidx;
-	if (space == 0)
-		return;
-
-	datalen = vsnprintf(ipcc_panic_buf.ipd_data +
-	    ipcc_panic_buf.ipd_dataidx, space, fmt, ap);
-
-	if (datalen <= space)
-		ipcc_panic_buf.ipd_dataidx += datalen;
-	else
-		ipcc_panic_buf.ipd_dataidx = sizeof (ipcc_panic_buf.ipd_data);
+	len = vsnprintf((char *)ipcc_panic_scratch, sizeof (ipcc_panic_scratch),
+	    fmt, ap);
+	ipcc_panic_add(IPI_ANCIL, ipcc_panic_scratch, len);
 }
 
 void

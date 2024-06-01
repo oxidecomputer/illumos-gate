@@ -2108,5 +2108,6 @@ panic_showtrap(struct panic_trap_info *tip)
 void
 panic_savetrap(panic_data_t *pdp, struct panic_trap_info *tip)
 {
+	kipcc_panic_regs(tip->trap_regs);
 	panic_saveregs(pdp, tip->trap_regs);
 }

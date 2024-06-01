@@ -18,7 +18,9 @@
 
 #include <sys/ipcc_proto.h>
 #include <sys/types.h>
+#include <sys/privregs.h>
 #include <sys/varargs.h>
+#include <sys/debug.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,16 +34,21 @@ typedef enum {
 	IPCC_INIT_DEVTREE,
 } ipcc_init_t;
 
-/*
- * The sizes of various static buffers in the panic data structures. The sizes
- * of these are a balance between having enough space to record panic
- * information and being able to fit the final packed structure into a
- * message to the SP.
- */
-#define	IPCC_PANIC_STACKS		0x10
-#define	IPCC_PANIC_DATALEN		0x100
-#define	IPCC_PANIC_SYMLEN		0x20
-#define	IPCC_PANIC_MSGLEN		0x80
+void kernel_ipcc_init(ipcc_init_t);
+extern int kernel_ipcc_acquire(void);
+extern void kernel_ipcc_release(void);
+extern void kernel_ipcc_reboot(void);
+extern void kernel_ipcc_poweroff(void);
+extern void kernel_ipcc_panic(void);
+extern int kernel_ipcc_bsu(uint8_t *);
+extern int kernel_ipcc_ident(ipcc_ident_t *);
+extern int kernel_ipcc_status(uint64_t *, uint64_t *);
+extern int kernel_ipcc_ackstart(void);
+extern int kernel_ipcc_bootfailv(ipcc_host_boot_failure_t, const char *,
+    va_list);
+extern int kernel_ipcc_bootfail(ipcc_host_boot_failure_t, const char *, ...);
+extern int kernel_ipcc_keylookup(uint8_t, uint8_t *, size_t *);
+extern int kernel_ipcc_imageblock(uint8_t *, uint64_t, uint8_t **, size_t *);
 
 /*
  * Panic reasons used to populate ipd_cause in ipcc_panic_data.
@@ -60,18 +67,53 @@ typedef enum {
  * stream. It is __packed to allow deserialisation with hubpack downstream,
  * and to save space.
  */
-typedef struct ipcc_panic_stack {
-	char		ips_symbol[IPCC_PANIC_SYMLEN];
-	uintptr_t	ips_addr;
-	off_t		ips_offset;
-} __packed ipcc_panic_stack_t;
 
-#define	IPCC_PANIC_VERSION	1
+#define	IPCC_PANIC_VERSION	2
+
+typedef enum {
+	/*
+	 * An empty item that should be disregarded. This is chosen as 0 so
+	 * that any trailing NUL bytes in the data are considered to be this
+	 * type.
+	 */
+	IPI_NOP = 0,
+	/*
+	 * A message associated with the panic. Typically the "panic string".
+	 * A sequence of printable characters.
+	 */
+	IPI_MESSAGE,
+	/*
+	 * An element of the stack trace for this panic. The data is a
+	 * ipcc_panic_stackentry_t. If the symbol name cannot be resolved, it
+	 * will be zero length.
+	 */
+	IPI_STACKENTRY,
+	/*
+	 * Additional ancillary data associated with the panic. A sequence of
+	 * bytes, not necessarily printable.
+	 */
+	IPI_ANCIL,
+} ipcc_panic_item_t;
+
+typedef struct ipcc_panic_tlvhdr {
+	uint8_t		ipth_type;
+	uint16_t	ipth_len;
+	uint8_t		ipth_data[];
+} __packed ipcc_panic_tlvhdr_t;
+
+typedef struct ipcc_panic_stackentry {
+	uint64_t	ipse_addr;
+	uint64_t	ipse_offset;
+	uint8_t		ipse_symbol[];
+} __packed ipcc_panic_stackentry_t;
 
 typedef struct ipcc_panic_data {
 	uint8_t			ipd_version;
 	uint16_t		ipd_cause;
 	uint32_t		ipd_error;
+
+	hrtime_t		ipd_hrtime;
+	timespec_t		ipd_hrestime;
 
 	uint32_t		ipd_cpuid;
 	uint64_t		ipd_thread;
@@ -80,16 +122,22 @@ typedef struct ipcc_panic_data {
 	uint64_t		ipd_fp;
 	uint64_t		ipd_rp;
 
-	char			ipd_message[IPCC_PANIC_MSGLEN];
+	struct regs		ipd_regs;
 
-	uint8_t			ipd_stackidx;
-	ipcc_panic_stack_t	ipd_stack[IPCC_PANIC_STACKS];
-
-	uint_t			ipd_dataidx;
-	char			ipd_data[IPCC_PANIC_DATALEN];
+	/*
+	 * The remaining panic data in ipd_data is a sequence of TLV-encoded
+	 * records. Each item is an ipcc_panic_tlvhdr_t followed by
+	 * type-specific data; see the definition of ipcc_panic_item_t for more
+	 * details.
+	 */
+	uint16_t		ipd_nitems;
+	uint16_t		ipd_items_len;
+	uint8_t			ipd_items[IPCC_MAX_DATA_SIZE - 0x150];
 } __packed ipcc_panic_data_t;
 
-typedef enum ipcc_panic_field {
+CTASSERT(sizeof (ipcc_panic_data_t) <= IPCC_MAX_DATA_SIZE);
+
+typedef enum {
 	IPF_CAUSE,
 	IPF_ERROR,
 	IPF_CPUID,
@@ -100,23 +148,8 @@ typedef enum ipcc_panic_field {
 	IPF_RP,
 } ipcc_panic_field_t;
 
-void kernel_ipcc_init(ipcc_init_t);
-extern int kernel_ipcc_acquire(void);
-extern void kernel_ipcc_release(void);
-extern void kernel_ipcc_reboot(void);
-extern void kernel_ipcc_poweroff(void);
-extern void kernel_ipcc_panic(void);
-extern int kernel_ipcc_bsu(uint8_t *);
-extern int kernel_ipcc_ident(ipcc_ident_t *);
-extern int kernel_ipcc_status(uint64_t *, uint64_t *);
-extern int kernel_ipcc_ackstart(void);
-extern int kernel_ipcc_bootfailv(ipcc_host_boot_failure_t, const char *,
-    va_list);
-extern int kernel_ipcc_bootfail(ipcc_host_boot_failure_t, const char *, ...);
-extern int kernel_ipcc_keylookup(uint8_t, uint8_t *, size_t *);
-extern int kernel_ipcc_imageblock(uint8_t *, uint64_t, uint8_t **, size_t *);
-
 extern void kipcc_panic_field(ipcc_panic_field_t, uint64_t);
+extern void kipcc_panic_regs(struct regs *);
 extern void kipcc_panic_vmessage(const char *, va_list);
 extern void kipcc_panic_message(const char *, ...);
 extern void kipcc_panic_stack_item(uintptr_t, const char *, off_t);
