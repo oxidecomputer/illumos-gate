@@ -117,6 +117,7 @@ struct genoa_pcie_port {
 	uint8_t				gpp_device;
 	uint8_t				gpp_func;
 	zen_mpio_ask_port_t		*gpp_ask_port;
+	zen_mpio_ubm_extra_t		*gpp_ubm_extra;
 	mpio_hotplug_type_t		gpp_hp_type;
 	uint16_t			gpp_hp_slotno;
 	uint32_t			gpp_hp_mpio_mask;

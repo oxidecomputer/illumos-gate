@@ -3791,14 +3791,15 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 {
 	genoa_mpio_config_t *conf = &iodie->gi_mpio_conf;
 	zen_mpio_ask_port_t *ask;
+	zen_mpio_ubm_extra_t *extra;
 	zen_mpio_ubm_dfc_descr_t d;
 	zen_mpio_ubm_hfc_port_t *hfc_port;
 	int j, ndfc;
 
 	hfc_port = &conf->gmc_ubm_hfc_ports[i];
-	if (conf->gmc_nports >= ZEN_MPIO_ASK_MAX_PORTS)
-		return;
 	for (j = 0, ndfc = 1; j < ndfc; j++) {
+		if (conf->gmc_nports >= ZEN_MPIO_ASK_MAX_PORTS)
+			return;
 		if (!genoa_mpio_rpc_get_i2c_device(iodie, i, j, &d)) {
 			return;
 		}
@@ -3828,6 +3829,13 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 			ask->zma_link.zml_attrs.zmla_port_present = 0;
 			break;
 		}
+
+		extra = &conf->gmc_ubm_extra[conf->gmc_ubm_extra_len++];
+		extra->zmue_ubm = true;
+		extra->zmue_npem_cap = 0xFFF;  /* XXX */
+		extra->zmue_npem_en = 1;
+		extra->zmue_slot = d.zmudd_data.zmudt_slot;
+
 		cmn_err(CE_WARN, "dfc(%u,%u):", i, j);
 		cmn_err(CE_CONT, " zmudd_hfcno = %u\n", d.zmudd_hfcno);
 		cmn_err(CE_CONT, " zmudd_ndfcs = %hu\n", d.zmudd_ndfcs);
@@ -4027,6 +4035,11 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	VERIFY3U(size, <=, MMU_PAGESIZE);
 
 	genoa_dma_attr(&attr);
+
+	conf->gmc_ubm_extra =
+	    kmem_zalloc(ZEN_MPIO_ASK_MAX_PORTS * sizeof (zen_mpio_ubm_extra_t),
+	        KM_SLEEP);
+	conf->gmc_ubm_extra_len = 0;
 
 	conf->gmc_ask_alloc_len = MMU_PAGESIZE;
 	conf->gmc_ask = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
@@ -4395,6 +4408,7 @@ genoa_mpio_map_engines(genoa_fabric_t *fabric, genoa_iodie_t *iodie)
 
 		port->gpp_flags |= GENOA_PCIE_PORT_F_MAPPED;
 		port->gpp_ask_port = ap;
+		port->gpp_ubm_extra = &conf->gmc_ubm_extra[i];
 		pc->gpc_flags |= GENOA_PCIE_CORE_F_USED;
 		if (lp->zml_attrs.zmla_link_hp_type !=
 		    ZEN_MPIO_HOTPLUG_T_DISABLED) {
@@ -5602,6 +5616,7 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	 * and it belongs to a hot-pluggable port then we always show it.
 	 * Otherwise we only show it if there's a device present.
 	 */
+	hide = true;
 	if ((port->gpp_flags & GENOA_PCIE_PORT_F_MAPPED) != 0) {
 		zen_mpio_ict_link_status_t *lp = &port->gpp_ask_port->zma_status;
 		bool hotplug, trained;
@@ -5609,8 +5624,6 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 		hotplug = (pc->gpc_flags & GENOA_PCIE_CORE_F_HAS_HOTPLUG) != 0;
 		trained = lp->zmils_state == ZEN_MPIO_LINK_STATE_TRAINED;
 		hide = !hotplug && !trained;
-	} else {
-		hide = true;
 	}
 
 	if (hide) {

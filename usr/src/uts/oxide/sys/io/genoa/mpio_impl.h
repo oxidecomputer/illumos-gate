@@ -21,6 +21,7 @@
  * configuration data format.
  */
 
+#include <sys/stdbool.h>
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
@@ -409,6 +410,13 @@ typedef struct zen_mpio_ubm_dfc_descr {
 	uint8_t			zmudd_lane_width;
 	zen_mpio_ubm_dfc_data_t	zmudd_data;
 } zen_mpio_ubm_dfc_descr_t;
+
+typedef struct zen_mpio_ubm_extra {
+	bool			zmue_ubm;
+	uint8_t			zmue_slot;
+	uint8_t			zmue_npem_en;
+	uint16_t		zmue_npem_cap;
+} zen_mpio_ubm_extra_t;
 
 /*
  * This macro should be a value like 0xff because this reset group is defined to
@@ -801,12 +809,14 @@ typedef struct genoa_mpio_config {
 	zen_mpio_port_conf_t		*gmc_port_conf;
 	zen_mpio_ask_t			*gmc_ask;
 	zen_mpio_ubm_hfc_port_t		*gmc_ubm_hfc_ports;
+	zen_mpio_ubm_extra_t		*gmc_ubm_extra;
 	zen_mpio_ext_attrs_t		*gmc_ext_attrs;
 	uint64_t			gmc_ask_pa;
 	uint64_t			gmc_ext_attrs_pa;
 	uint64_t			gmc_ubm_hfc_ports_pa;
 	uint32_t			gmc_nports;
 	uint32_t			gmc_ubm_hfc_nports;
+	uint32_t			gmc_ubm_extra_len;
 	uint32_t			gmc_ask_alloc_len;
 	uint32_t			gmc_ext_attrs_alloc_len;
 	uint32_t			gmc_ext_attrs_len;
