@@ -5981,6 +5981,10 @@ CTASSERT(sizeof (mpio_hotplug_table_t) <= MMU_PAGESIZE);
  * Allocate and initialize the hotplug table. The return value here is used to
  * indicate whether or not the platform has hotplug and thus should continue or
  * not with actual set up.
+ *
+ * Note that this does not include UBM data: that is discovered (and added to
+ * the ASK) before PCIe training.  Thus, the relevant ports have already been
+ * mapped as necessary.
  */
 static bool
 genoa_hotplug_data_init(genoa_fabric_t *fabric)
@@ -6232,7 +6236,7 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
-	uint32_t slot_mask;
+	uint32_t slot_mask, slotno;
 	genoa_pcie_core_t *pc = port->gpp_core;
 	genoa_ioms_t *ioms = pc->gpc_ioms;
 
@@ -6241,18 +6245,24 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 	 * one has to ask oneself, why have hotplug if you're going to use the
 	 * simple presence mode.
 	 */
-	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0 ||
+	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0)
+		return (0);
+	if (port->gpp_ubm_extra == NULL &&
 	    port->gpp_hp_type == MPIO_HP_PRESENCE_DETECT) {
 		return (0);
 	}
 
+	slotno = port->gpp_hp_slotno;
+	if (port->gpp_ubm_extra != NULL) {
+		slotno = port->gpp_ubm_extra->zmue_slot;
+	}
 	/*
 	 * Set the hotplug slot information in the PCIe IP, presumably so that
 	 * it'll do something useful for the SMU.
 	 */
 	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
 	val = genoa_pcie_port_read(port, reg);
-	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->gpp_hp_slotno);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, slotno);
 	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
 	genoa_pcie_port_write(port, reg, val);
 
@@ -6316,14 +6326,30 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 
 	val = pci_getl_func(ioms->gio_pci_busno, port->gpp_device,
 	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP);
-	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
-	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
-	val |= port->gpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	val &= ~slot_mask;
 	val |= genoa_hotplug_bridge_features(port);
+	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
+	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
+	val |= slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	pci_putl_func(ioms->gio_pci_busno, port->gpp_device,
 	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP, val);
 
+	/*
+	 * If applicable for this port, set up NPEM for UBM hotplug.
+	 */
+	if (port->gpp_ubm_extra != NULL) {
+		reg = genoa_pcie_port_reg(port, D_PCIE_PORT_NPEM_CAP);
+		val = genoa_pcie_port_read(port, reg);
+		val = PCIE_PORT_NPEM_CAP_SET_CAPS(val,
+		    port->gpp_ubm_extra->zmue_npem_cap);
+		genoa_pcie_port_write(port, reg, val);
+
+		reg = genoa_pcie_port_reg(port, D_PCIE_PORT_NPEM_CTL);
+		val = genoa_pcie_port_read(port, reg);
+		val = PCIE_PORT_NPEM_CTL_SET_NPEM_EN(val,
+		    port->gpp_ubm_extra->zmue_npem_en);
+		genoa_pcie_port_write(port, reg, val);
+	}
 	/*
 	 * Finally we need to go through and unblock training now that we've set
 	 * everything else on the slot. Note, this is done before we tell the
