@@ -3805,6 +3805,11 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 		}
 		if (j == 0)
 			ndfc = d.zmudd_ndfcs;
+		extra = &conf->gmc_ubm_extra[conf->gmc_ubm_extra_len++];
+		extra->zmue_ubm = true;
+		extra->zmue_npem_cap = 0xFFF;  /* XXX */
+		extra->zmue_npem_en = 1;
+
 		ask = &conf->gmc_ask->zma_ports[conf->gmc_nports++];
 		ask->zma_link.zml_lane_start =
 		    hfc_port->zmuhp_start_lane + d.zmudd_lane_start;
@@ -3818,9 +3823,12 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 		ask->zma_link.zml_attrs.zmla_port_present = 1;
 		ask->zma_link.zml_attrs.zmla_max_link_speed_cap =
 		    d.zmudd_data.zmudt_gen_speed;
+		ask->zma_link.zml_attrs.zmla_target_link_speed =
+		    d.zmudd_data.zmudt_gen_speed;
 		switch (d.zmudd_data.zmudt_type) {
 		case ZEN_MPIO_UBM_DFC_TYPE_QUAD_PCI:
 			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE;
+			extra->zmue_slot = d.zmudd_data.zmudt_slot;
 			break;
 		case ZEN_MPIO_UBM_DFC_TYPE_SATA_SAS:
 			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_SATA;
@@ -3829,12 +3837,6 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 			ask->zma_link.zml_attrs.zmla_port_present = 0;
 			break;
 		}
-
-		extra = &conf->gmc_ubm_extra[conf->gmc_ubm_extra_len++];
-		extra->zmue_ubm = true;
-		extra->zmue_npem_cap = 0xFFF;  /* XXX */
-		extra->zmue_npem_en = 1;
-		extra->zmue_slot = d.zmudd_data.zmudt_slot;
 
 		cmn_err(CE_WARN, "dfc(%u,%u):", i, j);
 		cmn_err(CE_CONT, " zmudd_hfcno = %u\n", d.zmudd_hfcno);
@@ -4722,6 +4724,14 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_16GT,
 		.strap_data = 0x2,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_32GT,
+		.strap_data = 0x0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
@@ -6218,6 +6228,14 @@ genoa_hotplug_bridge_post_start(genoa_pcie_port_t *port, void *arg)
 	pci_putw_func(ioms->gio_pci_busno, port->gpp_device,
 	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL, ctl);
 
+	/*
+	 * For whatever reason, AGESA reads and writes this again.
+	 */
+	ctl = pci_getw_func(ioms->gio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL);
+	pci_putw_func(ioms->gio_pci_busno, port->gpp_device,
+	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL, ctl);
+
 	return (0);
 }
 
@@ -6236,33 +6254,32 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
-	uint32_t slot_mask, slotno;
+	uint32_t slot_mask;
 	genoa_pcie_core_t *pc = port->gpp_core;
 	genoa_ioms_t *ioms = pc->gpc_ioms;
+
+	if (port->gpp_ubm_extra != NULL) {
+		port->gpp_hp_slotno = port->gpp_ubm_extra->zmue_slot;
+		// port->gpp_hp_type = ZEN_MPIO_HOTPLUG_T_UBM;
+	}
 
 	/*
 	 * Skip over all non-hotplug slots and the simple presence mode. Though
 	 * one has to ask oneself, why have hotplug if you're going to use the
 	 * simple presence mode.
 	 */
-	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0)
-		return (0);
-	if (port->gpp_ubm_extra == NULL &&
+	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0 ||
 	    port->gpp_hp_type == MPIO_HP_PRESENCE_DETECT) {
 		return (0);
 	}
 
-	slotno = port->gpp_hp_slotno;
-	if (port->gpp_ubm_extra != NULL) {
-		slotno = port->gpp_ubm_extra->zmue_slot;
-	}
 	/*
 	 * Set the hotplug slot information in the PCIe IP, presumably so that
 	 * it'll do something useful for the SMU.
 	 */
 	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
 	val = genoa_pcie_port_read(port, reg);
-	val = PCIE_PORT_HP_CTL_SET_SLOT(val, slotno);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->gpp_hp_slotno);
 	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
 	genoa_pcie_port_write(port, reg, val);
 
@@ -6318,10 +6335,15 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 	 * to give the SMU a list of functions to mask, the unmasked bits tells
 	 * us what to enable as features here.
 	 */
-	slot_mask = PCIE_SLOTCAP_ATTN_BUTTON | PCIE_SLOTCAP_POWER_CONTROLLER |
-	    PCIE_SLOTCAP_MRL_SENSOR | PCIE_SLOTCAP_ATTN_INDICATOR |
-	    PCIE_SLOTCAP_PWR_INDICATOR | PCIE_SLOTCAP_HP_SURPRISE |
-	    PCIE_SLOTCAP_HP_CAPABLE | PCIE_SLOTCAP_EMI_LOCK_PRESENT |
+	slot_mask =
+	    PCIE_SLOTCAP_ATTN_BUTTON |
+	    PCIE_SLOTCAP_POWER_CONTROLLER |
+	    PCIE_SLOTCAP_MRL_SENSOR |
+	    PCIE_SLOTCAP_ATTN_INDICATOR |
+	    PCIE_SLOTCAP_PWR_INDICATOR |
+	    PCIE_SLOTCAP_HP_SURPRISE |
+	    PCIE_SLOTCAP_HP_CAPABLE |
+	    PCIE_SLOTCAP_EMI_LOCK_PRESENT |
 	    PCIE_SLOTCAP_NO_CMD_COMP_SUPP;
 
 	val = pci_getl_func(ioms->gio_pci_busno, port->gpp_device,
@@ -6330,7 +6352,7 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 	val |= genoa_hotplug_bridge_features(port);
 	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
 	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
-	val |= slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
+	val |= port->gpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	pci_putl_func(ioms->gio_pci_busno, port->gpp_device,
 	    port->gpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP, val);
 
@@ -6350,6 +6372,7 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 		    port->gpp_ubm_extra->zmue_npem_en);
 		genoa_pcie_port_write(port, reg, val);
 	}
+
 	/*
 	 * Finally we need to go through and unblock training now that we've set
 	 * everything else on the slot. Note, this is done before we tell the
