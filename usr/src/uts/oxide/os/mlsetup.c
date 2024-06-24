@@ -189,7 +189,7 @@ mlsetup(struct regs *rp)
 	/*
 	 * Initialize the BSP's MCA banks.
 	 */
-	milan_ras_init();
+	zen_ras_init();
 
 	/*
 	 * The x86_featureset is initialized here based on the capabilities
