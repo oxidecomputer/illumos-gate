@@ -368,7 +368,7 @@ typedef struct zen_mpio_ubm_hfc_port {
 	uint8_t			zmuhp_node_type;
 	zen_mpio_i2c_expander_t	zmuhp_expander;
 	uint8_t			zmuhp_start_lane;
-	zen_mpio_ubm_data_t	zmuhp_ocp_device;
+	zen_mpio_ubm_data_t	zmuhp_ubm_device;
 	zen_mpio_i2c_switch_t	zmuhp_i2c_switch[ZEN_MPIO_I2C_SWITCH_DEPTH];
 } zen_mpio_ubm_hfc_port_t;
 
