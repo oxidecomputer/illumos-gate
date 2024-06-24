@@ -131,6 +131,9 @@ MILAN_OBJS +=			\
 	milan_pcie_dbg.o	\
 	milan_ras.o
 
+ZEN_OBJS +=			\
+	zen_ras.o
+
 CORE_OBJS += $(SMBIOS_OBJS) $(MILAN_OBJS)
 
 #
