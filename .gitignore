@@ -6480,6 +6480,7 @@ usr/src/man/man3proc/Lxecbkpt.3proc
 usr/src/man/man3proc/Lxecwapt.3proc
 usr/src/man/man3proc/Paddr_to_text_map.3proc
 usr/src/man/man3proc/Pcreate_callback.3proc
+usr/src/man/man3proc/Pcwd_free.3proc
 usr/src/man/man3proc/Pdstop.3proc
 usr/src/man/man3proc/Pfgcore.3proc
 usr/src/man/man3proc/Pfgrab_core.3proc
@@ -7764,6 +7765,8 @@ usr/src/man/man9e/gldm_start.9e
 usr/src/man/man9e/gldm_stop.9e
 usr/src/man/man9e/gldv3.9e
 usr/src/man/man9e/intro.9e
+usr/src/man/man9e/kso_kind.9e
+usr/src/man/man9e/kso_scalar.9e
 usr/src/man/man9e/mc_close.9e
 usr/src/man/man9e/mc_stop.9e
 usr/src/man/man9e/mcl_set.9e
@@ -8172,6 +8175,11 @@ usr/src/man/man9f/kmem_cache_free.9f
 usr/src/man/man9f/kmem_cache_set_move.9f
 usr/src/man/man9f/kmem_free.9f
 usr/src/man/man9f/kmem_zalloc.9f
+usr/src/man/man9f/ksensor_create_scalar_pcidev.9f
+usr/src/man/man9f/ksensor_kind_current.9f
+usr/src/man/man9f/ksensor_kind_temperature.9f
+usr/src/man/man9f/ksensor_kind_voltage.9f
+usr/src/man/man9f/ksensor_remove.9f
 usr/src/man/man9f/kstat_named_setstr.9f
 usr/src/man/man9f/kstat_runq_back_to_waitq.9f
 usr/src/man/man9f/kstat_runq_enter.9f
@@ -8836,6 +8844,8 @@ usr/src/test/libmlrpc-tests/tests/netrlogon/krb5_pac_tests/krb5_pac_decode
 usr/src/test/libmlrpc-tests/tests/netrlogon/krb5_pac_tests/run_krb5_pac_tests
 usr/src/test/libmlrpc-tests/tests/netrlogon/samlogon_tests/run_samlogon_tests
 usr/src/test/libmlrpc-tests/tests/netrlogon/samlogon_tests/samlogon
+usr/src/test/libsec-tests/cmd/acl_fromtext
+usr/src/test/libsec-tests/cmd/acl_totext
 usr/src/test/nvme-tests/tests/ioctl/bad-lock.32
 usr/src/test/nvme-tests/tests/ioctl/bad-lock.64
 usr/src/test/nvme-tests/tests/ioctl/bad-lock.o.32
@@ -9013,6 +9023,15 @@ usr/src/test/os-tests/tests/portfs/file_assoc.32
 usr/src/test/os-tests/tests/portfs/file_assoc.64
 usr/src/test/os-tests/tests/regression/illumos-15031
 usr/src/test/os-tests/tests/regression/illumos-15036
+usr/src/test/os-tests/tests/saveargs/functional/align
+usr/src/test/os-tests/tests/saveargs/functional/basic
+usr/src/test/os-tests/tests/saveargs/functional/big-struct-ret
+usr/src/test/os-tests/tests/saveargs/functional/big-struct-ret-and-spill
+usr/src/test/os-tests/tests/saveargs/functional/functional
+usr/src/test/os-tests/tests/saveargs/functional/small-struct-ret
+usr/src/test/os-tests/tests/saveargs/functional/small-struct-ret-and-spill
+usr/src/test/os-tests/tests/saveargs/functional/stack-spill
+usr/src/test/os-tests/tests/saveargs/testmatch/testmatch
 usr/src/test/os-tests/tests/sdevfs/sdevfs_eisdir
 usr/src/test/os-tests/tests/secflags/addrs-32
 usr/src/test/os-tests/tests/secflags/addrs-64
@@ -9359,6 +9378,7 @@ usr/src/tools/smatch/src/check_list_local.h
 usr/src/tools/smatch/src/version.h
 usr/src/tools/tic/tic
 usr/src/tools/vtfontcvt/vtfontcvt
+usr/src/tools/yacc/yacc
 usr/src/tools/zic/zic
 usr/src/ucbcmd/basename/basename
 usr/src/ucbcmd/biff/biff
