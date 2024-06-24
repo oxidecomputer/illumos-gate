@@ -212,7 +212,7 @@ const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
 
 size_t RUBY_MPIO_PCIE_S0_LEN = ARRAY_SIZE(ruby_mpio_pcie_s0);
 
-const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
+const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports_full_nvme[] = {
     { /* P0 */
 	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
 	.zmuhp_expander = {
@@ -221,7 +221,7 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
 	    .zmie_clear_intrs = 0,
 	},
 	.zmuhp_start_lane = 0,
-	.zmuhp_ocp_device = {
+	.zmuhp_ubm_device = {
 	    .zmud_bp_type_bitno = 0,
 	    .zmud_i2c_reset_bitno = 1,
 	    .zmud_slot_num = 0x10,
@@ -247,7 +247,7 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
 	    .zmie_clear_intrs = 0,
 	},
 	.zmuhp_start_lane = 96,
-	.zmuhp_ocp_device = {
+	.zmuhp_ubm_device = {
 	    .zmud_bp_type_bitno = 0,
 	    .zmud_i2c_reset_bitno = 1,
 	    .zmud_slot_num = 0x14,
@@ -273,7 +273,7 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
 	    .zmie_clear_intrs = 0,
 	},
 	.zmuhp_start_lane = 64,
-	.zmuhp_ocp_device = {
+	.zmuhp_ubm_device = {
 	    .zmud_bp_type_bitno = 2,
 	    .zmud_i2c_reset_bitno = 3,
 	    .zmud_slot_num = 0x18,
@@ -299,10 +299,10 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
 	    .zmie_clear_intrs = 0,
 	},
 	.zmuhp_start_lane = 112,
-	.zmuhp_ocp_device = {
-	.zmud_bp_type_bitno = 4,
-	.zmud_i2c_reset_bitno = 5,
-	.zmud_slot_num = 0x1c,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 4,
+	    .zmud_i2c_reset_bitno = 5,
+	    .zmud_slot_num = 0x1c,
 	},
 	.zmuhp_i2c_switch = {
 	    {
@@ -325,7 +325,7 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
 	    .zmie_clear_intrs = 0,
 	},
 	.zmuhp_start_lane = 16,
-	.zmuhp_ocp_device = {
+	.zmuhp_ubm_device = {
 	    .zmud_bp_type_bitno = 2,
 	    .zmud_i2c_reset_bitno = 3,
 	    .zmud_slot_num = 0x20,
@@ -351,7 +351,7 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
 	    .zmie_clear_intrs = 0,
 	},
 	.zmuhp_start_lane = 80,
-	.zmuhp_ocp_device = {
+	.zmuhp_ubm_device = {
 	    .zmud_bp_type_bitno = 6,
 	    .zmud_i2c_reset_bitno = 7,
 	    .zmud_slot_num = 0x24,
@@ -370,6 +370,328 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
 	},
     },
 };
+
+const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[] = {
+    { /* P0 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x21,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 0,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 0,
+	    .zmud_i2c_reset_bitno = 1,
+	    .zmud_slot_num = 0x10,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x71,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G0 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 96,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 0,
+	    .zmud_i2c_reset_bitno = 1,
+	    .zmud_slot_num = 0x14,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G1 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 64,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 2,
+	    .zmud_i2c_reset_bitno = 3,
+	    .zmud_slot_num = 0x18,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 1,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G2 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 112,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 4,
+	    .zmud_i2c_reset_bitno = 5,
+	    .zmud_slot_num = 0x1c,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 2,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G3 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 80,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 6,
+	    .zmud_i2c_reset_bitno = 7,
+	    .zmud_slot_num = 0x20,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 3,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+};
+
+const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports_standard_nvme[] = {
+    { /* G0 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 96,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 0,
+	    .zmud_i2c_reset_bitno = 1,
+	    .zmud_slot_num = 0x10,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G1 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 64,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 2,
+	    .zmud_i2c_reset_bitno = 3,
+	    .zmud_slot_num = 0x14,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 1,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G2 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 112,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 4,
+	    .zmud_i2c_reset_bitno = 5,
+	    .zmud_slot_num = 0x18,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 2,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G3 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 80,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 6,
+	    .zmud_i2c_reset_bitno = 7,
+	    .zmud_slot_num = 0x1c,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 3,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+};
+
+const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports_full_sata[] = {
+    { /* P0 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x21,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 0,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 0,
+	    .zmud_i2c_reset_bitno = 1,
+	    .zmud_slot_num = 0,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x71,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G3 0-7 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x20,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 80,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 6,
+	    .zmud_i2c_reset_bitno = 7,
+	    .zmud_slot_num = 0,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x70,
+		.zmis_select = 3,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+    { /* G3 8-15 */
+	.zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM,
+	.zmuhp_expander = {
+	    .zmie_addr = 0x21,
+	    .zmie_type = SMU_I2C_PCA9535,
+	    .zmie_clear_intrs = 0,
+	},
+	.zmuhp_start_lane = 88,
+	.zmuhp_ubm_device = {
+	    .zmud_bp_type_bitno = 4,
+	    .zmud_i2c_reset_bitno = 5,
+	    .zmud_slot_num = 0,
+	},
+	.zmuhp_i2c_switch = {
+	    {
+		.zmis_addr = 0x72,
+		.zmis_select = 0,
+		.zmis_type = SMU_GPIO_SW_9546_48,
+	    },
+	    {
+		.zmis_addr = 0x71,
+		.zmis_select = 2,
+		.zmis_type = SMU_GPIO_SW_9545,
+	    },
+	},
+    },
+};
+
 
 const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = ARRAY_SIZE(ruby_mpio_hfc_ports);
 

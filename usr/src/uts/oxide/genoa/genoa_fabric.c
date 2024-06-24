@@ -3805,6 +3805,8 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 		}
 		if (j == 0)
 			ndfc = d.zmudd_ndfcs;
+		if (ndfc == 0)
+			break;
 		extra = &conf->gmc_ubm_extra[conf->gmc_ubm_extra_len++];
 		extra->zmue_ubm = true;
 		extra->zmue_npem_cap = 0xFFF;  /* XXX */
@@ -3814,7 +3816,7 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 		ask->zma_link.zml_lane_start =
 		    hfc_port->zmuhp_start_lane + d.zmudd_lane_start;
 		ask->zma_link.zml_num_lanes = d.zmudd_lane_width;
-		ask->zma_link.zml_gpio_id = 0;
+		ask->zma_link.zml_gpio_id = 1;
 
 		ask->zma_link.zml_attrs.zmla_link_hp_type =
 		    ZEN_MPIO_HOTPLUG_T_UBM;
@@ -6258,7 +6260,7 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 	genoa_pcie_core_t *pc = port->gpp_core;
 	genoa_ioms_t *ioms = pc->gpc_ioms;
 
-	if (port->gpp_ubm_extra != NULL) {
+	if (port->gpp_ubm_extra != NULL && port->gpp_ubm_extra->zmue_ubm) {
 		port->gpp_hp_slotno = port->gpp_ubm_extra->zmue_slot;
 		// port->gpp_hp_type = ZEN_MPIO_HOTPLUG_T_UBM;
 	}
@@ -6270,6 +6272,7 @@ genoa_hotplug_port_init(genoa_pcie_port_t *port, void *arg)
 	 */
 	if ((port->gpp_flags & GENOA_PCIE_PORT_F_HOTPLUG) == 0 ||
 	    port->gpp_hp_type == MPIO_HP_PRESENCE_DETECT) {
+		cmn_err(CE_WARN, "Skipping a port.");
 		return (0);
 	}
 
