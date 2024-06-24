@@ -654,7 +654,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/x86_archext.h>
-#include <sys/io/milan/fabric.h>
+#include <sys/io/zen/fabric.h>
 #include <sys/amdzen/mmioreg.h>
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/gpio.h>
@@ -665,6 +665,7 @@
 #include <sys/io/fch/pmio.h>
 #include <sys/io/fch/smi.h>
 #include <sys/io/fch/uart.h>
+#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/iomux.h>
 #include <milan/milan_physaddrs.h>
 
@@ -2604,10 +2605,10 @@ memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
  * there is no node for the IOMS.
  */
 static int
-fch_ioms_cb(milan_ioms_t *ioms, void *arg)
+fch_ioms_cb(zen_ioms_t *ioms, void *arg)
 {
 	dev_info_t *dip = NULL;
-	milan_iodie_t *iodie = milan_ioms_iodie(ioms);
+	zen_iodie_t *iodie = milan_ioms_iodie(ioms);
 	const smn_reg_t enreg = milan_iodie_reg(iodie, D_FCH_PMIO_ALTMMIOEN, 0);
 	const smn_reg_t bar = milan_iodie_reg(iodie, D_FCH_PMIO_ALTMMIOBASE, 0);
 	memlist_t *ioml, *mmml;
@@ -2620,10 +2621,10 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 	uint64_t rr_base, rr_len;
 	const char *ident;
 
-	if ((milan_ioms_flags(ioms) & MILAN_IOMS_F_HAS_FCH) == 0)
+	if ((milan_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) == 0)
 		return (0);
 
-	if ((milan_iodie_flags(iodie) & MILAN_IODIE_F_PRIMARY) != 0) {
+	if ((milan_iodie_flags(iodie) & ZEN_IODIE_F_PRIMARY) != 0) {
 		uint32_t val;
 
 		/*
@@ -2885,7 +2886,7 @@ fch_enumerate(int reprobe)
 	if (reprobe)
 		return;
 
-	(void) milan_walk_ioms(fch_ioms_cb, NULL);
+	(void) zen_walk_ioms(fch_ioms_cb, NULL);
 }
 
 int

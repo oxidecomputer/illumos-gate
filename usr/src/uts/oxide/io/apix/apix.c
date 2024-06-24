@@ -491,7 +491,7 @@ apix_init_intr()
 }
 
 static int
-ioms_enable_nmi_cb(milan_ioms_t *ioms, void *arg __unused)
+ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
 {
 	smn_reg_t reg;
 	uint32_t v;
@@ -511,7 +511,7 @@ ioms_enable_nmi_cb(milan_ioms_t *ioms, void *arg __unused)
 	v = IOHC_INTR_CNTL_SET_NMI_DEST_CTRL(v, 0);
 	milan_ioms_write(ioms, reg, v);
 
-	if ((milan_ioms_flags(ioms) & MILAN_IOMS_F_HAS_FCH) != 0) {
+	if ((milan_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) != 0) {
 		reg = milan_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
 		v = IOHC_PIN_CTL_SET_MODE_NMI(0);
 		milan_ioms_write(ioms, reg, v);
@@ -535,7 +535,7 @@ ioms_enable_nmi_cb(milan_ioms_t *ioms, void *arg __unused)
 }
 
 static void
-apix_picinit(void)
+apix_picinit()
 {
 	APIC_VERBOSE(INIT, (CE_CONT, "apix: psm_picinit\n"));
 
@@ -568,7 +568,7 @@ apix_picinit(void)
 	 * (i.e., the SP) to signal an NMI via the dedicated NMI_SYNCFLOOD_L
 	 * pin.
 	 */
-	(void) milan_walk_ioms(ioms_enable_nmi_cb, NULL);
+	(void) zen_walk_ioms(ioms_enable_nmi_cb, NULL);
 
 	apix_init_intr();
 

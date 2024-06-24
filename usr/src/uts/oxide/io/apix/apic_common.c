@@ -81,8 +81,10 @@
 #include <sys/amdzen/fch.h>
 #include <sys/io/fch/pmio.h>
 #include <sys/amdzen/mmioreg.h>
-#include <sys/io/milan/iohc.h>
+#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/ccx.h>
 #include <sys/io/milan/ccx.h>
+#include <sys/io/milan/iohc.h>
 #include <sys/io/milan/fabric.h>
 #include <milan/milan_physaddrs.h>
 
@@ -370,7 +372,7 @@ apic_probe_common(char *modname)
 }
 
 static int
-apic_count_thread(milan_thread_t *mtp, void *arg)
+apic_count_thread(zen_thread_t *mtp, void *arg)
 {
 	int *nthreadp = arg;
 
@@ -380,12 +382,12 @@ apic_count_thread(milan_thread_t *mtp, void *arg)
 }
 
 static int
-apic_enumerate_one(milan_thread_t *mtp, void *arg)
+apic_enumerate_one(zen_thread_t *mtp, void *arg)
 {
 	uint32_t *idxp = arg;
 	apic_cpus_info_t *acip = &apic_cpus[*idxp];
 
-	acip->aci_local_id = milan_thread_apicid(mtp);
+	acip->aci_local_id = zen_thread_apicid(mtp);
 	acip->aci_processor_id = acip->aci_local_id;
 	acip->aci_local_ver = 0;
 	acip->aci_status = 0;
@@ -409,7 +411,7 @@ apic_probe_raw(const char *modname)
 	mmio_reg_t reg;
 	uint64_t val;
 
-	(void) milan_walk_thread(apic_count_thread, &apic_nproc);
+	(void) zen_walk_thread(apic_count_thread, &apic_nproc);
 	apic_cpus_size = max(apic_nproc, max_ncpus) * sizeof (*apic_cpus);
 	if ((apic_cpus = kmem_zalloc(apic_cpus_size, KM_NOSLEEP)) == NULL) {
 		apic_max_nproc = -1;
@@ -420,7 +422,7 @@ apic_probe_raw(const char *modname)
 	apic_enable_x2apic();
 
 	CPUSET_ZERO(apic_cpumask);
-	(void) milan_walk_thread(apic_enumerate_one, &apic_index);
+	(void) zen_walk_thread(apic_enumerate_one, &apic_index);
 
 	reg = FCH_PMIO_DECODEEN_MMIO(fch_pmio);
 	val = mmio_reg_read(reg);
@@ -1040,7 +1042,7 @@ apic_cmci_setup(processorid_t cpuid, boolean_t enable)
 int
 apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 {
-	milan_thread_t *mtp;
+	zen_thread_t *mtp;
 
 	ASSERT(MUTEX_HELD(&cpu_lock));
 
@@ -1070,7 +1072,7 @@ apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 	 * PSM as conceived for i86pc is not factored correctly for this
 	 * machine.
 	 */
-	mtp = milan_fabric_find_thread_by_cpuid(cpun);
+	mtp = zen_fabric_find_thread_by_cpuid(cpun);
 	VERIFY(mtp != NULL);
 
 	if (!milan_ccx_start_thread(mtp)) {
@@ -1317,7 +1319,7 @@ gethrtime_again:
 }
 
 static int
-apic_iohc_nmi_eoi(milan_ioms_t *ioms, void *arg __unused)
+apic_iohc_nmi_eoi(zen_ioms_t *ioms, void *arg __unused)
 {
 	smn_reg_t reg;
 	uint32_t v;
@@ -1406,7 +1408,7 @@ apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
 	 * clear the indicator flag and signal EOI to the IOHC in order to
 	 * receive subsequent such NMIs.
 	 */
-	(void) milan_walk_ioms(apic_iohc_nmi_eoi, NULL);
+	(void) zen_walk_ioms(apic_iohc_nmi_eoi, NULL);
 
 	lock_clear(&apic_nmi_lock);
 	return (DDI_INTR_CLAIMED);

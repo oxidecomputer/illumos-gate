@@ -57,7 +57,7 @@
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/hacks.h>
-#include <sys/io/milan/ras.h>
+#include <sys/io/zen/ras.h>
 #include <milan/milan_apob.h>
 
 /*

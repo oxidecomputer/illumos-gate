@@ -60,7 +60,7 @@
 static uint64_t
 read_bank_msr(uint_t bank, enum zen_ras_mcax_bank_reg reg)
 {
-	uint_t bank_offset = ZENN_RAS_MSR_BANK_NREGS * bank;
+	uint_t bank_offset = ZEN_RAS_MSR_BANK_NREGS * bank;
 	uint_t msr = ZEN_RAS_BANK_MSR_BASE + bank_offset + reg;
 	return (rdmsr(msr));
 }
@@ -71,7 +71,7 @@ read_bank_msr(uint_t bank, enum zen_ras_mcax_bank_reg reg)
  * bank is valid.
  */
 static void
-write_bank_msr(uint_t bank, enum zenn_ras_mcax_bank_reg reg, uint64_t value)
+write_bank_msr(uint_t bank, enum zen_ras_mcax_bank_reg reg, uint64_t value)
 {
 	uint_t bank_offset = ZEN_RAS_MSR_BANK_NREGS * bank;
 	uint_t msr = ZEN_RAS_BANK_MSR_BASE + bank_offset + reg;
@@ -94,13 +94,13 @@ ipid_mca_type(uint64_t ipid)
  * Decodes the bank type from the hardware ID and MCA "type"
  * fields in the IP ID register.
  */
-static enum zenn_ras_bank_type
+static enum zen_ras_bank_type
 identify_bank(uint_t bank)
 {
 	const struct {
 		uint64_t hardware_id;
 		uint64_t mca_type;
-		enum zenn_ras_bank_type bank_type;
+		enum zen_ras_bank_type bank_type;
 	} type_map[] = {
 		/*
 		 * These constants are taken from the PPR and seem mostly

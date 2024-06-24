@@ -128,13 +128,13 @@ MILAN_OBJS +=			\
 	milan_dxio_data.o	\
 	milan_fabric.o		\
 	milan_hacks.o		\
-	milan_pcie_dbg.o	\
-	milan_ras.o
+	milan_pcie_dbg.o
 
 ZEN_OBJS +=			\
+	zen_fabric.o		\
 	zen_ras.o
 
-CORE_OBJS += $(SMBIOS_OBJS) $(MILAN_OBJS)
+CORE_OBJS += $(SMBIOS_OBJS) $(MILAN_OBJS) $(ZEN_OBJS)
 
 #
 # locore.o used to be special because on other architectures that's where

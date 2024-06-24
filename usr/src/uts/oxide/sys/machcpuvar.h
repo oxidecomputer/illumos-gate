@@ -70,7 +70,7 @@ struct cpuid_info;
 struct cpu_ucode_info;
 struct cmi_hdl;
 
-struct milan_thread;
+struct zen_thread;
 
 /*
  * A note about the hypervisor affinity bits: a one bit in the affinity mask
@@ -229,7 +229,7 @@ struct	machcpu {
 	void			*mcpu_pm_mach_state;
 	struct cmi_hdl		*mcpu_cmi_hdl;
 	void			*mcpu_mach_ctx_ptr;
-	struct milan_thread	*mcpu_hwthread;
+	struct zen_thread	*mcpu_hwthread;
 
 	/*
 	 * A stamp that is unique per processor and changes

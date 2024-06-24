@@ -30,23 +30,6 @@ extern "C" {
 #define	DXIO_PORT_NOT_PRESENT	0
 #define	DXIO_PORT_PRESENT	1
 
-typedef enum zen_dxio_link_speed {
-	DXIO_LINK_SPEED_MAX	= 0,
-	DXIO_LINK_SPEDD_GEN1,
-	DXIO_LINK_SPEED_GEN2,
-	DXIO_LINK_SPEED_GEN3,
-	DXIO_LINK_SPEED_GEN4
-} zen_dxio_link_speed_t;
-
-typedef enum zen_dxio_hotplug_type {
-	DXIO_HOTPLUG_T_DISABLED	= 0,
-	DXIO_HOTPLUG_T_BASIC,
-	DXIO_HOTPLUG_T_EXPRESS_MODULE,
-	DXIO_HOTPLUG_T_ENHANCED,
-	DXIO_HOTPLUG_T_INBOARD,
-	DXIO_HOTPLUG_T_ENT_SSD
-} zen_dxio_hotplug_type_t;
-
 /*
  * There are two different versions that we need to track. That over the overall
  * structure, which is at version 0 and then that of individual payloads, which
@@ -152,13 +135,6 @@ typedef union {
 	zen_dxio_config_net_t	zdc_net;
 	zen_dxio_config_pcie_t	zdc_pcie;
 } zen_dxio_config_t;
-
-typedef enum zen_dxio_engine_type {
-	DXIO_ENGINE_UNUSED	= 0x00,
-	DXIO_ENGINE_PCIE	= 0x01,
-	DXIO_ENGINE_SATA	= 0x03,
-	DXIO_ENGINE_ETH		= 0x10
-} zen_dxio_engine_type_t;
 
 typedef struct zen_dxio_engine {
 	uint8_t		zde_type;
@@ -342,18 +318,6 @@ typedef struct milan_pptable {
 
 	uint32_t	ppt_reserved[28];
 } milan_pptable_t;
-
-typedef enum smu_hotplug_type {
-	SMU_HP_PRESENCE_DETECT	= 0,
-	SMU_HP_EXPRESS_MODULE_A,
-	SMU_HP_ENTERPRISE_SSD,
-	SMU_HP_EXPRESS_MODULE_B,
-	/*
-	 * This value must not be sent to the SMU. It's an internal value to us.
-	 * The other values are actually meaningful.
-	 */
-	SMU_HP_INVALID = INT32_MAX
-} smu_hotplug_type_t;
 
 typedef enum smu_pci_tileid {
 	SMU_TILE_G0 = 0,

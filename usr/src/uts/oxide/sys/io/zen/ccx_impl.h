@@ -13,21 +13,21 @@
  * Copyright 2023 Oxide Computer Co.
  */
 
-#ifndef _SYS_IO_MILAN_CCX_IMPL_H
-#define	_SYS_IO_MILAN_CCX_IMPL_H
+#ifndef _SYS_IO_ZEN_CCX_IMPL_H
+#define	_SYS_IO_ZEN_CCX_IMPL_H
 
 /*
  * Structure and register definitions for the resources contained on the
- * core-complex dies (CCDs), including the core complexes (CCXs) themselves and
- * the cores and constituent compute threads they contain.
+ * core-complex dies (CCDs), including the core complexes (CCXs) themselves
+ * and the cores and constituent compute threads they contain.
  */
 
 #include <sys/apic.h>
 #include <sys/bitext.h>
 #include <sys/stdint.h>
 #include <sys/types.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
+#include <sys/io/zen/ccx.h>
+#include <sys/io/zen/fabric.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,18 +65,50 @@ extern "C" {
  * analogous MMIO register).  The one we compute and store here is the one
  * set by firmware before boot.
  */
-#define	MILAN_MAX_CCDS_PER_IODIE	8
-#define	MILAN_MAX_CCXS_PER_CCD		1
-#define	MILAN_MAX_CORES_PER_CCX		8
-#define	MILAN_MAX_THREADS_PER_CORE	2
+#define	ZEN_MAX_CCDS_PER_IODIE		8
+#define	ZEN_MAX_CCXS_PER_CCD		1
+#define	ZEN_MAX_CORES_PER_CCX		8
+#define	ZEN_MAX_THREADS_PER_CORE	2
 
-extern size_t milan_fabric_thread_get_brandstr(const zen_thread_t *,
+struct zen_thread {
+	uint8_t		zt_threadno;
+	apicid_t	zt_apicid;
+	zen_core_t	*zt_core;
+};
+
+struct zen_core {
+	uint8_t		zc_logical_coreno;
+	uint8_t		zc_physical_coreno;
+	uint8_t		zc_nthreads;
+	zen_thread_t	zc_threads[ZEN_MAX_THREADS_PER_CORE];
+	zen_ccx_t	*zc_ccx;
+};
+
+struct zen_ccx {
+	uint8_t		zcx_logical_cxno;
+	uint8_t		zcx_physical_cxno;
+	uint8_t		zcx_ncores;
+	zen_core_t	zcx_cores[ZEN_MAX_CORES_PER_CCX];
+	zen_ccd_t	*zcx_ccd;
+};
+
+struct zen_ccd {
+	uint8_t		zcd_logical_dieno;
+	uint8_t		zcd_physical_dieno;
+	uint8_t		zcd_ccm_fabric_id;
+	uint8_t		zcd_ccm_comp_id;
+	uint8_t		zcd_nccxs;
+	zen_ccx_t	zcd_ccxs[ZEN_MAX_CCXS_PER_CCD];
+	zen_iodie_t	*zcd_iodie;
+};
+
+extern size_t zen_fabric_thread_get_brandstr(const zen_thread_t *,
     char *, size_t);
-extern void milan_fabric_thread_get_dpm_weights(const zen_thread_t *,
+extern void zen_fabric_thread_get_dpm_weights(const zen_thread_t *,
     const uint64_t **, uint32_t *);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_MILAN_CCX_IMPL_H */
+#endif /* _SYS_IO_ZEN_CCX_IMPL_H */

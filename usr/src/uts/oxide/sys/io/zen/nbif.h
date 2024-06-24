@@ -13,11 +13,11 @@
  * Copyright 2023 Oxide Computer Co.
  */
 
-#ifndef _SYS_IO_MILAN_NBIF_H
-#define	_SYS_IO_MILAN_NBIF_H
+#ifndef _SYS_IO_ZEN_NBIF_H
+#define	_SYS_IO_ZEN_NBIF_H
 
 /*
- * Milan-specific register and bookkeeping definitions for PCIe root complexes,
+ * Zen-specific register and bookkeeping definitions for PCIe root complexes,
  * ports, and bridges.
  */
 
@@ -31,27 +31,27 @@ extern "C" {
 /*
  * The implementation of these types is exposed to implementers but not to
  * consumers; therefore we forward-declare them here and provide the actual
- * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
- * pointers to these types only as opaque handles.
+ * definitions only in the corresponding impl header.
+ *
+ * Consumers are allowed to use pointers to these types as opaque handles.
  */
-struct milan_nbif;
-
-typedef struct milan_nbif milan_nbif_t;
+struct zen_nbif;
+typedef struct zen_nbif zen_nbif_t;
 
 /*
  * There are always three primary NBIFs in each NBIO unit, but only two of the
  * SYSHUB NBIFs in alternate space.  These definitions live here because they
  * are consumed by the register calculations below.
  */
-#define	MILAN_IOMS_MAX_NBIF		3
-#define	MILAN_IOMS_MAX_NBIF_ALT		2
-#define	MILAN_NBIF_MAX_DEVS	3
-#define	MILAN_NBIF_MAX_FUNCS	7
+#define	ZEN_IOMS_MAX_NBIF	3
+#define	ZEN_IOMS_MAX_NBIF_ALT	2
+#define	ZEN_NBIF_MAX_DEVS	3
+#define	ZEN_NBIF_MAX_FUNCS	7
 
 /*
  * Function callback signatures for making operating on a given unit simpler.
  */
-typedef int (*milan_nbif_cb_f)(milan_nbif_t *, void *);
+typedef int (*zen_nbif_cb_f)(zen_nbif_t *, void *);
 
 /*
  * nBIF SMN Addresses. These have multiple different shifts that we need to
@@ -68,7 +68,7 @@ typedef int (*milan_nbif_cb_f)(milan_nbif_t *, void *);
  */
 
 static inline smn_reg_t
-milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+zen_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     const uint8_t nbifno, const uint8_t devno, const uint8_t funcno)
 {
 	const uint32_t NBIF_FUNC_SMN_REG_MASK = 0x1ff;
@@ -77,13 +77,13 @@ milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	 * Each entry in this matrix is a bitmask of valid function numbers for
 	 * each device on each NBIF (on all IOMSs).  This is used only for
 	 * checking the device and function numbers passed to us when built with
-	 * DEBUG enabled.  This must be in sync with milan_nbifN in
-	 * milan_fabric.c, though these describe hardware so no changes are
+	 * DEBUG enabled.  This must be in sync with zen_nbifN in
+	 * zen_fabric.c, though these describe hardware so no changes are
 	 * forseen.
 	 */
 #ifdef	DEBUG
-	const uint8_t MILAN_NBIF_FNVALID[MILAN_IOMS_MAX_NBIF]
-	    [MILAN_NBIF_MAX_DEVS] = {
+	const uint8_t ZEN_NBIF_FNVALID[ZEN_IOMS_MAX_NBIF]
+	    [ZEN_NBIF_MAX_DEVS] = {
 		{ 0x07, 0x00, 0x00 },
 		{ 0x1f, 0x01, 0x01 },
 		{ 0x07, 0x00, 0x00 }
@@ -101,11 +101,11 @@ milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~NBIF_FUNC_SMN_REG_MASK);
 
 	ASSERT3U(ioms32, <, 4);
-	ASSERT3U(nbif32, <, MILAN_IOMS_MAX_NBIF);
-	ASSERT3U(dev32, <, MILAN_NBIF_MAX_DEVS);
-	ASSERT3U(func32, <, MILAN_NBIF_MAX_FUNCS);
+	ASSERT3U(nbif32, <, ZEN_IOMS_MAX_NBIF);
+	ASSERT3U(dev32, <, ZEN_NBIF_MAX_DEVS);
+	ASSERT3U(func32, <, ZEN_NBIF_MAX_FUNCS);
 
-	ASSERT3U(bitx8(MILAN_NBIF_FNVALID[nbifno][devno], funcno, funcno), !=,
+	ASSERT3U(bitx8(ZEN_NBIF_FNVALID[nbifno][devno], funcno, funcno), !=,
 	    0);
 
 	const uint32_t aperture_base = 0x10134000;
@@ -121,7 +121,7 @@ milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 static inline smn_reg_t
-milan_nbif_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+zen_nbif_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     const uint8_t nbifno, const uint16_t reginst)
 {
 	const uint32_t ioms32 = (const uint32_t)iomsno;
@@ -135,7 +135,7 @@ milan_nbif_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_NBIF);
 	ASSERT3U(ioms32, <, 4);
-	ASSERT3U(nbif32, <, MILAN_IOMS_MAX_NBIF);
+	ASSERT3U(nbif32, <, ZEN_IOMS_MAX_NBIF);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
@@ -154,7 +154,7 @@ milan_nbif_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 static inline smn_reg_t
-milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+zen_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     const uint8_t nbifno, const uint16_t reginst)
 {
 	const uint32_t ioms32 = (const uint32_t)iomsno;
@@ -168,7 +168,7 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_NBIF_ALT);
 	ASSERT3U(ioms32, <, 4);
-	ASSERT3U(nbif32, <, MILAN_IOMS_MAX_NBIF_ALT);
+	ASSERT3U(nbif32, <, ZEN_IOMS_MAX_NBIF_ALT);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
@@ -191,35 +191,36 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * relative to the actual function space.
  */
 /*CSTYLED*/
-#define	D_NBIF_FUNC_STRAP0	(const smn_reg_def_t){	\
+#define	D_ZEN_NBIF_FUNC_STRAP0	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF_FUNC,	\
 	.srd_reg = 0x00	\
 }
-#define	NBIF_FUNC_STRAP0(i, n, d, f)	\
-    milan_nbif_func_smn_reg(i, D_NBIF_FUNC_STRAP0, n, d, f)
-#define	NBIF_FUNC_STRAP0_SET_SUP_D2(r, v)	bitset32(r, 31, 31, v)
-#define	NBIF_FUNC_STRAP0_SET_SUP_D1(r, v)	bitset32(r, 30, 30, v)
-#define	NBIF_FUNC_STRAP0_SET_BE_PCIE(r, v)	bitset32(r, 29, 29, v)
-#define	NBIF_FUNC_STRAP0_SET_EXIST(r, v)	bitset32(r, 28, 28, v)
-#define	NBIF_FUNC_STRAP0_SET_GFX_REV(r, v)	bitset32(r, 27, 24, v)
-#define	NBIF_FUNC_STRAP0_SET_MIN_REV(r, v)	bitset32(r, 23, 20, v)
-#define	NBIF_FUNC_STRAP0_SET_MAJ_REV(r, v)	bitset32(r, 19, 16, v)
-#define	NBIF_FUNC_STRAP0_SET_DEV_ID(r, v)	bitset32(r, 0, 15, v)
+#define	ZEN_NBIF_FUNC_STRAP0(i, n, d, f)	\
+    zen_nbif_func_smn_reg(i, D_NBIF_FUNC_STRAP0, n, d, f)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_SUP_D2(r, v)	bitset32(r, 31, 31, v)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_SUP_D1(r, v)	bitset32(r, 30, 30, v)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_BE_PCIE(r, v)	bitset32(r, 29, 29, v)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_EXIST(r, v)	bitset32(r, 28, 28, v)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_GFX_REV(r, v)	bitset32(r, 27, 24, v)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_MIN_REV(r, v)	bitset32(r, 23, 20, v)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_MAJ_REV(r, v)	bitset32(r, 19, 16, v)
+#define	ZEN_NBIF_FUNC_STRAP0_SET_DEV_ID(r, v)	bitset32(r, 0, 15, v)
 
 /*
  * NBIFMM::INTR_LINE_ENABLE.  This register is arranged with one byte per
  * device. Each bit corresponds to an endpoint function.
  */
 /*CSTYLED*/
-#define	D_NBIF_INTR_LINE_EN	(const smn_reg_def_t){	\
+#define	D_ZEN_NBIF_INTR_LINE_EN	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF,	\
 	.srd_reg = 0x3a008	\
 }
-#define	NBIF_INTR_LINE_EN(i, n)	milan_nbif_smn_reg(i, D_NBIF_INTR_LINE_EN, n)
+#define	ZEN_NBIF_INTR_LINE_EN(i, n)	\
+    zen_nbif_smn_reg(i, D_NBIF_INTR_LINE_EN, n)
 /*
  * XXX Assert on the validity of dev and func.
  */
-#define	NBIF_INTR_LINE_EN_SET_I(reg, dev, func, val)	\
+#define	ZEN_NBIF_INTR_LINE_EN_SET_I(reg, dev, func, val)	\
     bitset32(reg, ((dev) * 8) + (func), ((dev) * 8) + (func), val)
 
 /*
@@ -227,15 +228,15 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * control bits.
  */
 /*CSTYLED*/
-#define	D_NBIF_BIFC_MISC_CTL0	(const smn_reg_def_t){	\
+#define	D_ZEN_NBIF_BIFC_MISC_CTL0	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF,	\
 	.srd_reg = 0x3a010	\
 }
-#define	NBIF_BIFC_MISC_CTL0(i, n)	\
-    milan_nbif_smn_reg(i, D_NBIF_BIFC_MISC_CTL0, n, 0)
-#define	NBIF_BIFC_MISC_CTL0_SET_PME_TURNOFF(r, v)	bitset32(r, 28, 28, v)
-#define	NBIF_BIFC_MISC_CTL0_PME_TURNOFF_BYPASS		0
-#define	NBIF_BIFC_MISC_CTL0_PME_TURNOFF_FW		1
+#define	ZEN_NBIF_BIFC_MISC_CTL0(i, n)	\
+    zen_nbif_smn_reg(i, D_NBIF_BIFC_MISC_CTL0, n, 0)
+#define	ZEN_NBIF_BIFC_MISC_CTL0_SET_PME_TURNOFF(r, v)	bitset32(r, 28, 28, v)
+#define	ZEN_NBIF_BIFC_MISC_CTL0_PME_TURNOFF_BYPASS		0
+#define	ZEN_NBIF_BIFC_MISC_CTL0_PME_TURNOFF_FW		1
 
 /*
  * NBIFMM::BIF_GMI_WRR_WEIGHT[3:2].  These two registers are used for some
@@ -244,60 +245,52 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * request-based interpretation of these values.
  */
 /*CSTYLED*/
-#define	D_NBIF_GMI_WRR_WEIGHT2	(const smn_reg_def_t){	\
+#define	D_ZEN_NBIF_GMI_WRR_WEIGHT2	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF,	\
 	.srd_reg = 0x3a124	\
 }
 /*CSTYLED*/
-#define	D_NBIF_GMI_WRR_WEIGHT3	(const smn_reg_def_t){	\
+#define	D_ZEN_NBIF_GMI_WRR_WEIGHT3	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF,	\
 	.srd_reg = 0x3a128	\
 }
-#define	NBIF_GMI_WRR_WEIGHT2(i, n)	\
-    milan_nbif_smn_reg(i, D_NBIF_GMI_WRR_WEIGHT2, n, 0)
-#define	NBIF_GMI_WRR_WEIGHT3(i, n)	\
-    milan_nbif_smn_reg(i, D_NBIF_GMI_WRR_WEIGHT3, n, 0)
-#define	NBIF_GMI_WRR_WEIGHTn_VAL	0x04040404
+#define	ZEN_NBIF_GMI_WRR_WEIGHT2(i, n)	\
+    zen_nbif_smn_reg(i, D_NBIF_GMI_WRR_WEIGHT2, n, 0)
+#define	ZEN_NBIF_GMI_WRR_WEIGHT3(i, n)	\
+    zen_nbif_smn_reg(i, D_NBIF_GMI_WRR_WEIGHT3, n, 0)
+#define	ZEN_NBIF_GMI_WRR_WEIGHTn_VAL	0x04040404
 
 /*
  * NBIFMM::RCC_DEVn_PORT_STRAP3.  Straps for the NBIF port. These are relative
  * to the main NBIF base aperture.
  */
 /*CSTYLED*/
-#define	D_NBIF_PORT_STRAP3	(const smn_reg_def_t){	\
+#define	D_ZEN_NBIF_PORT_STRAP3	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF,	\
 	.srd_reg = 0x3100c,	\
-	.srd_nents = MILAN_NBIF_MAX_DEVS,	\
+	.srd_nents = ZEN_NBIF_MAX_DEVS,	\
 	.srd_stride = 0x200	\
 }
-#define	NBIF_PORT_STRAP3(i, n, d)	\
-    milan_nbif_smn_reg(i, D_NBIF_PORT_STRAP3, n, d)
-#define	NBIF_PORT_STRAP3_SET_COMP_TO(r, v)	bitset32(r, 7, 7, v)
+#define	ZEN_NBIF_PORT_STRAP3(i, n, d)	\
+    zen_nbif_smn_reg(i, D_NBIF_PORT_STRAP3, n, d)
+#define	ZEN_NBIF_PORT_STRAP3_SET_COMP_TO(r, v)	bitset32(r, 7, 7, v)
 
 /*
  * SYSHUBMM::SYSHUB_BGEN_ENHANCEMENT_BYPASS_EN_SOCCLK.  Yes, really.  This
  * register is a weird SYSHUB and NBIF crossover that is in the alternate space.
  */
 /*CSTYLED*/
-#define	D_NBIF_ALT_BGEN_BYP_SOC	(const smn_reg_def_t){	\
+#define	D_ZEN_NBIF_ALT_BGEN_BYP_SOC	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF_ALT,	\
 	.srd_reg = 0x10008	\
 }
-#define	NBIF_ALT_BGEN_BYP_SOC(i, n)	\
-    milan_nbif_alt_smn_reg(i, D_NBIF_ALT_BGEN_BYP_SOC, n, 0)
-#define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW1(r, v)	bitset32(r, 17, 17, v)
-#define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(r, v)	bitset32(r, 16, 16, v)
-
-/*
- * The maximum number of functions supported by the hardware. Each
- * NBIF has potentially one or more root complexes and endpoints.
- */
-#define	MILAN_NBIF0_NFUNCS	3
-#define	MILAN_NBIF1_NFUNCS	7
-#define	MILAN_NBIF2_NFUNCS	3
+#define	ZEN_NBIF_ALT_BGEN_BYP_SOC(i, n)	\
+    zen_nbif_alt_smn_reg(i, D_NBIF_ALT_BGEN_BYP_SOC, n, 0)
+#define	ZEN_NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW1(r, v)	bitset32(r, 17, 17, v)
+#define	ZEN_NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(r, v)	bitset32(r, 16, 16, v)
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_MILAN_NBIF_H */
+#endif /* _SYS_IO_ZEN_NBIF_H */
