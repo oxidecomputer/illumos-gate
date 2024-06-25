@@ -26,6 +26,7 @@ MANFILES =					\
 		libipcc_keylookup.3ipcc		\
 		libipcc_keyset.3ipcc		\
 		libipcc_mac_all.3ipcc		\
+		libipcc_rot_send.3ipcc		\
 		libipcc_status.3ipcc
 
 MANLINKS =					\
@@ -49,6 +50,8 @@ MANLINKS =					\
 		libipcc_mac_free.3ipcc		\
 		libipcc_mac_nic.3ipcc		\
 		libipcc_mac_stride.3ipcc	\
+		libipcc_rot_resp_free.3ipcc	\
+		libipcc_rot_resp_get.3ipcc	\
 		libipcc_startup_options.3ipcc	\
 		libipcc_strerror.3ipcc		\
 		libipcc_syserr.3ipcc
@@ -73,6 +76,8 @@ libipcc_mac_count.3ipcc		:= LINKSRC = libipcc_mac_all.3ipcc
 libipcc_mac_free.3ipcc		:= LINKSRC = libipcc_mac_all.3ipcc
 libipcc_mac_nic.3ipcc		:= LINKSRC = libipcc_mac_all.3ipcc
 libipcc_mac_stride.3ipcc	:= LINKSRC = libipcc_mac_all.3ipcc
+libipcc_rot_resp_get.3ipcc	:= LINKSRC = libipcc_rot_send.3ipcc
+libipcc_rot_resp_free.3ipcc	:= LINKSRC = libipcc_rot_send.3ipcc
 libipcc_startup_options.3ipcc	:= LINKSRC = libipcc_status.3ipcc
 libipcc_strerror.3ipcc		:= LINKSRC = libipcc_err.3ipcc
 libipcc_syserr.3ipcc		:= LINKSRC = libipcc_err.3ipcc

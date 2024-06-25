@@ -345,16 +345,66 @@ libipcc_ident_free(libipcc_ident_t *identp)
 }
 
 bool
+libipcc_rot_send(libipcc_handle_t *lih, const uint8_t *request, size_t len,
+    libipcc_rot_resp_t **rotrp)
+{
+	ipcc_rot_t *rot;
+
+	*rotrp = NULL;
+
+	if (len == 0 || len > sizeof (rot->ir_data)) {
+		return (libipcc_error(lih, LIBIPCC_ERR_INVALID_PARAM, 0,
+		    "Invalid RoT request length %zu; "
+		    "must be in range (0,%zu]",
+		    len, sizeof (rot->ir_data)));
+	}
+
+	rot = calloc(1, sizeof (*rot));
+	if (rot == NULL) {
+		return (libipcc_error(lih, LIBIPCC_ERR_NO_MEM, errno,
+		    "failed to allocate memory for RoT request: %s",
+		    strerror(errno)));
+	}
+
+	rot->ir_len = len;
+	bcopy(request, rot->ir_data, rot->ir_len);
+
+	if (libipcc_ioctl(lih, IPCC_ROT, rot) != 0) {
+		(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
+		    "ioctl(IPCC_ROT) failed: %s", strerror(errno));
+		free(rot);
+		return (false);
+	}
+
+	*rotrp = (libipcc_rot_resp_t *)rot;
+	return (libipcc_success(lih));
+}
+
+const uint8_t *
+libipcc_rot_resp_get(libipcc_rot_resp_t *rotp, size_t *lenp)
+{
+	ipcc_rot_t *rot = (ipcc_rot_t *)rotp;
+
+	*lenp = rot->ir_len;
+	return (rot->ir_data);
+}
+
+void
+libipcc_rot_resp_free(libipcc_rot_resp_t *rot)
+{
+	free(rot);
+}
+
+bool
 libipcc_imageblock(libipcc_handle_t *lih, uint8_t *hash, size_t hashlen,
     uint64_t offset, uint8_t *buf, size_t *lenp)
 {
 	ipcc_imageblock_t ib;
 
 	if (hashlen != sizeof (ib.ii_hash)) {
-		(void) libipcc_error(lih, LIBIPCC_ERR_INVALID_PARAM, 0,
+		return (libipcc_error(lih, LIBIPCC_ERR_INVALID_PARAM, 0,
 		    "invalid hash length specified, a %zu byte SHA-256 hash is "
-		    "required", sizeof (ib.ii_hash));
-		return (false);
+		    "required", sizeof (ib.ii_hash)));
 	}
 
 	ib.ii_buf = buf;
@@ -705,8 +755,8 @@ libipcc_keylookup_free(uint8_t *buf, size_t buflen __unused)
 }
 
 bool
-libipcc_keyset(libipcc_handle_t *lih, uint8_t key, uint8_t *buf, size_t len,
-    libipcc_key_flag_t flags)
+libipcc_keyset(libipcc_handle_t *lih, uint8_t key, const uint8_t *buf,
+    size_t len, libipcc_key_flag_t flags)
 {
 	ipcc_keyset_t *kset;
 	uint8_t result;

@@ -1,0 +1,164 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2024 Oxide Computer Company
+.\"
+.Dd June 26, 2024
+.Dt LIBIPCC_ROT_SEND 3IPCC
+.Os
+.Sh NAME
+.Nm libipcc_rot_send ,
+.Nm libipcc_rot_resp_get ,
+.Nm libipcc_rot_resp_free
+.Nd Communicate with the system Root of Trust
+.Sh LIBRARY
+.Lb libipcc
+.Sh SYNOPSIS
+.In libipcc.h
+.Ft bool
+.Fo libipcc_rot_send
+.Fa "libipcc_handle_t *handle"
+.Fa "const uint8_t *buf"
+.Fa "size_t len"
+.Fa "libipcc_rot_resp_t **rotp"
+.Fc
+.Ft "const uint8_t *"
+.Fo libipcc_rot_resp_get
+.Fa "libipcc_rot_resp_t *rot"
+.Fa "size_t *lenp"
+.Fc
+.Ft void
+.Fo libipcc_rot_resp_free
+.Fa "libipcc_rot_resp_t *rot"
+.Fc
+.Sh DESCRIPTION
+These functions enable communication with the Root Of Trust
+.Pq RoT
+within Oxide hardware.
+The message format is a private contract between the consumer and the RoT and
+is opaque to libipcc.
+.Pp
+.Fn libipcc_rot_send
+sends a message to the RoT and retrieves a response.
+.Fa buf
+must point to a buffer containing the message to be transmitted, with the length
+of that message being passed in via
+.Fa len .
+If the transaction is successful,
+.Fa rotp
+is populated with a reply handle that can then be used to get at the data
+contained in the RoT's response.
+When finished with, the reply handle should be freed via a call to
+.Fn libipcc_rot_resp_free .
+If the transaction fails, however,
+.Fa rotp
+will be set to
+.Dv NULL ,
+and the reason for the failure can be determined by interrogating the libipcc
+handle using the functions described in
+.Xr libipcc_err 3IPCC .
+.Pp
+.Fn libipcc_rot_resp_get
+returns a pointer to the reply data received from the RoT, and updates its
+.Fa lenp
+parameter with the length of that data.
+.Pp
+Note that the reply handle lifetime is separate to that of the
+.Vt "libipcc_handle_t *" .
+That is, the reply handle
+may continue to be used after the library handle is closed via a call to
+.Xr libipcc_fini 3IPCC
+as shown in the example below.
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libipcc_rot_send
+returns
+.Dv true
+and
+.Fa rotp
+is updated to point to a newly allocated reply handle.
+Otherwise,
+.Dv false
+is returned,
+.Fa rotp
+will not be modified, and the libipcc handle will contain details of the reason
+for the failure which can be retrieved by interrogating the handle using the
+functions described in
+.Xr libipcc_err 3IPCC .
+.Pp
+.Fn libipcc_rot_resp_get
+can only be called with a reply handle obtained from a successful call to
+.Fn libipcc_rot_send ,
+and will always return a pointer to the response data contained within that
+handle.
+.Sh EXAMPLES
+.Sy Example 1
+Send a message to the RoT and print the response length
+.Pp
+The following example shows how to send a message to the RoT.
+.Bd -literal -offset 2
+#include <stdlib.h>
+#include <string.h>
+#include <inttypes.h>
+#include <err.h>
+#include <libipcc.h>
+
+int
+main(void)
+{
+	char errmsg[LIBIPCC_ERR_LEN];
+	libipcc_handle_t *lih;
+	libipcc_rot_resp_t *resp;
+	libipcc_err_t lerr;
+	int32_t serr;
+
+	if (!libipcc_init(&lih, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libipcc error: '%s' (%s / %s)",
+		    errmsg, libipcc_strerror(lerr), strerror(serr));
+	}
+
+	const uint8_t *buf = "test message";
+	size_t len = strlen(buf) + 1;
+
+	if (!libipcc_rot_send(lih, buf, len, &resp)) {
+		libipcc_err_t lerr = libipcc_err(lih);
+
+		errx(EXIT_FAILURE, "libipcc error: '%s' (0x%x %s / %s)",
+		    libipcc_errmsg(lih),
+		    lerr, libipcc_strerror(lerr),
+		    strerror(libipcc_syserr(lih)));
+	}
+
+	libipcc_fini(lih);
+
+	buf = libipcc_rot_resp_get(resp, &len);
+	(void) printf("RoT replied with 0x%zx bytes\en", len);
+	libipcc_rot_resp_free(resp);
+}
+.Ed
+.Sh ERRORS
+When the functions defined in this page return
+.Dv false ,
+the reason for the failure can be determined from the libipcc library handle
+via the functions defined in
+.Xr libipcc_err 3IPCC .
+.Sh INTERFACE STABILITY
+.Sy Private
+The interfaces in this library are designed for use by Oxide software.
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libipcc 3IPCC .
+.Sh SEE ALSO
+.Xr libipcc_err 3IPCC ,
+.Xr libipcc_init 3IPCC ,
+.Xr libipcc 3LIB

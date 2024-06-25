@@ -11,7 +11,7 @@
 .\"
 .\" Copyright 2024 Oxide Computer Company
 .\"
-.Dd December 13, 2023
+.Dd June 26, 2024
 .Dt LIBIPCC 3IPCC
 .Os
 .Sh NAME
@@ -101,6 +101,12 @@ The following routines retrieve operating system image data.
 .Bl -column -offset indent libipcc_startup_options libipcc_startup_options
 .It Sy libipcc_imageblock Ta
 .El
+.Ss RoT Communication
+The following routines allow for communication with the RoT via the SP.
+.Bl -column -offset indent libipcc_startup_options libipcc_startup_options
+.It Sy libipcc_rot_send Ta Sy libipcc_rot_resp_get
+.It Sy libipcc_rot_resp_free Ta
+.El
 .Sh LOCKING
 Most functions operate on a handle in the form of a
 .Vt "libipcc_handle_t *" .
@@ -160,6 +166,7 @@ See
 .Xr libipcc_mac_free 3IPCC ,
 .Xr libipcc_mac_nic 3IPCC ,
 .Xr libipcc_mac_stride 3IPCC ,
+.Xr libipcc_rot 3IPCC ,
 .Xr libipcc_startup_options 3IPCC ,
 .Xr libipcc_status 3IPCC ,
 .Xr libipcc_strerror 3IPCC ,

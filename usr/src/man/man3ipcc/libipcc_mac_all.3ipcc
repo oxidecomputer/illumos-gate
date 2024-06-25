@@ -136,7 +136,7 @@ in the variable referenced by
 .Fa macp .
 Otherwise, they return
 .Dv false
-and the libipcc handle will contains details of the reason for the failure
+and the libipcc handle will contain details of the reason for the failure
 which can be retrieved by interrogating the handle using the functions
 described in
 .Xr libipcc_err 3IPCC .

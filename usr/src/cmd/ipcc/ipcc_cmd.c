@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -52,6 +52,11 @@ hexdump(const void *ptr, size_t length)
 	const unsigned char *cp;
 	const char delim = ' ';
 	const int cols = 16;
+
+	if (length == 0) {
+		printf("hexdump: no data\n");
+		return;
+	}
 
 	cp = ptr;
 	for (uint_t i = 0; i < length; i += cols) {
@@ -149,6 +154,30 @@ libipcc_fatal(const char *fmt, ...)
 
 	libipcc_fatal_impl(libipcc_err(ipcc_handle),
 	    libipcc_syserr(ipcc_handle), libipcc_errmsg(ipcc_handle));
+}
+
+static uint8_t *
+ipcc_mapfile(const char *filename, size_t *lenp)
+{
+	uint8_t *p;
+	struct stat st;
+	int fd;
+
+	if ((fd = open(filename, O_RDONLY)) == -1)
+		err(EXIT_FAILURE, "could not open '%s'", filename);
+
+	if (fstat(fd, &st) == -1)
+		err(EXIT_FAILURE, "failed to stat '%s'", filename);
+
+	p = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+	if (p == MAP_FAILED)
+		err(EXIT_FAILURE, "failed to mmap 0x%zx bytes from '%s'",
+		    st.st_size, filename);
+
+	VERIFY0(close(fd));
+
+	*lenp = st.st_size;
+	return (p);
 }
 
 static void
@@ -638,14 +667,12 @@ ipcc_keyset(int argc, char *argv[])
 {
 	libipcc_key_flag_t flags = 0;
 	const char *errstr;
-	char *filename;
+	const char *filename;
 	bool keyfound = false;
-	struct stat st;
+	size_t len;
 	uint8_t key;
-	uint8_t *buf, *readbuf;
-	size_t remaining;
-	off_t off;
-	int c, fd;
+	uint8_t *data;
+	int c;
 
 	while ((c = getopt(argc, argv, ":c")) != -1) {
 		switch (c) {
@@ -691,47 +718,49 @@ ipcc_keyset(int argc, char *argv[])
 		}
 	}
 
-	if ((fd = open(filename, O_RDONLY)) == -1)
-		err(EXIT_FAILURE, "could not open '%s'", filename);
+	data = ipcc_mapfile(filename, &len);
 
-	if (fstat(fd, &st) == -1)
-		err(EXIT_FAILURE, "failed to stat '%s'", filename);
-
-	buf = calloc(1, st.st_size);
-	if (buf == NULL) {
-		err(EXIT_FAILURE, "failed to allocate 0x%" PRIx64 " bytes for "
-		    "file", st.st_size);
-	}
-
-	readbuf = buf;
-	remaining = st.st_size;
-	off = 0;
-	while (remaining > 0) {
-		ssize_t len;
-
-		len = pread(fd, readbuf, remaining, off);
-		if (len == -1) {
-			err(EXIT_FAILURE, "failed to read 0x%zx bytes from "
-			    "'%s' at offset 0x%zx", remaining, filename, off);
-		}
-		if (len == 0) {
-			errx(EXIT_FAILURE,
-			    "unexpected EOF reading from '%s' at offset 0x%zx; "
-			    "still wanted 0x%zx bytes", filename, off,
-			    remaining);
-		}
-		remaining -= len;
-		off += len;
-		readbuf += len;
-	}
-	VERIFY0(close(fd));
-
-	if (!libipcc_keyset(ipcc_handle, key, buf, st.st_size, flags))
+	if (!libipcc_keyset(ipcc_handle, key, data, len, flags))
 		libipcc_fatal("Failed to perform key set operation");
 
 	printf("Success\n");
 
-	free(buf);
+	VERIFY0(munmap(data, len));
+	return (0);
+}
+
+static void
+ipcc_rot_usage(FILE *f)
+{
+	(void) fprintf(f, "\trot <filename>\n");
+}
+
+static int
+ipcc_rot(int argc, char *argv[])
+{
+	libipcc_rot_resp_t *response;
+	uint8_t *req;
+	const uint8_t *data;
+	size_t len;
+
+	if (argc != 1) {
+		fprintf(stderr, "%s: missing parameter:\n", progname);
+		ipcc_rot_usage(stderr);
+		return (EXIT_USAGE);
+	}
+
+	req = ipcc_mapfile(argv[0], &len);
+
+	if (!libipcc_rot_send(ipcc_handle, req, len, &response))
+		libipcc_fatal("Failed to perform RoT operation");
+	VERIFY0(munmap(req, len));
+
+	printf("Success\n");
+
+	data = libipcc_rot_resp_get(response, &len);
+	hexdump(data, len);
+	libipcc_rot_resp_free(response);
+
 	return (0);
 }
 
@@ -823,6 +852,7 @@ static const ipcc_cmdtab_t ipcc_cmds[] = {
 	{ "keylookup", ipcc_keylookup, ipcc_keylookup_usage },
 	{ "keyset", ipcc_keyset, ipcc_keyset_usage },
 	{ "macs", ipcc_macs, ipcc_macs_usage },
+	{ "rot", ipcc_rot, ipcc_rot_usage },
 	{ "status", ipcc_status, NULL },
 	{ NULL, NULL, NULL }
 };

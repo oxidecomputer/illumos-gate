@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _LIBIPCC_H
@@ -88,7 +88,7 @@ typedef enum {
 	/*
 	 * The SP provided insufficient MAC addresses to satisfy the request.
 	 */
-	LIBIPCC_ERR_INSUFFMACS,
+	LIBIPCC_ERR_INSUFFMACS
 } libipcc_err_t;
 
 extern libipcc_err_t libipcc_err(libipcc_handle_t *);
@@ -116,6 +116,16 @@ extern const uint8_t *libipcc_ident_serial(libipcc_ident_t *);
 extern const uint8_t *libipcc_ident_model(libipcc_ident_t *);
 extern uint32_t libipcc_ident_rev(libipcc_ident_t *);
 extern void libipcc_ident_free(libipcc_ident_t *);
+
+/*
+ * RoT request.
+ */
+typedef struct libipcc_rot_resp libipcc_rot_resp_t;
+
+extern bool libipcc_rot_send(libipcc_handle_t *, const uint8_t *, size_t,
+    libipcc_rot_resp_t **);
+extern const uint8_t *libipcc_rot_resp_get(libipcc_rot_resp_t *, size_t *);
+extern void libipcc_rot_resp_free(libipcc_rot_resp_t *);
 
 /*
  * Attempt to retrieve a block of an image served by MGS.
@@ -172,7 +182,7 @@ extern void libipcc_keylookup_free(uint8_t *, size_t);
 /*
  * Setting key values in the SP's key/value store.
  */
-extern bool libipcc_keyset(libipcc_handle_t *, uint8_t, uint8_t *, size_t,
+extern bool libipcc_keyset(libipcc_handle_t *, uint8_t, const uint8_t *, size_t,
     libipcc_key_flag_t);
 
 /*
@@ -200,7 +210,7 @@ typedef enum {
 	 * not be used. Otherwise, if the cache is not available or has expired
 	 * it will be fully populated.
 	 */
-	LIBIPCC_INV_INIT_CACHE = 1 << 0,
+	LIBIPCC_INV_INIT_CACHE = 1 << 0
 } libipcc_inv_init_flag_t;
 
 extern bool libipcc_inv_hdl_init(libipcc_handle_t *, uint32_t *,

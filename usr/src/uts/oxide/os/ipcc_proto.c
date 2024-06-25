@@ -1500,6 +1500,13 @@ ipcc_rot(const ipcc_ops_t *ops, void *arg, ipcc_rot_t *rot)
 	uint8_t *data;
 	size_t datal = 0;
 
+	if (rot->ir_len == 0 || rot->ir_len > sizeof (rot->ir_data)) {
+		LOG("Invalid RoT request length %zu; "
+		    "must be in range (0, %zu]",
+		    rot->ir_len, sizeof (rot->ir_data));
+		return (EINVAL);
+	}
+
 	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
 		return (err);
 
