@@ -7,7 +7,7 @@ set -e
 
 SRC=$1
 
-SVCCFG="${SRC}/cmd/svc/svccfg/svccfg-native"
+SVCCFG="${SRC}/tools/proto/root_i386-nd/opt/onbld/bin/i386/svccfg"
 
 rdmnt=$2
 if [ -z "${rdmnt}" ] || [ ! -d "${rdmnt}" ]; then
@@ -17,7 +17,7 @@ if [ -z "${rdmnt}" ] || [ ! -d "${rdmnt}" ]; then
 fi
 
 if [[ ! -x ${SVCCFG} ]]; then
-	echo "FATAL: Missing svccfg-native binary from illumos build looked in '${SVCCFG}'"
+	echo "FATAL: Missing native svccfg binary from illumos build looked in '${SVCCFG}'"
 	exit 1
 fi
 
