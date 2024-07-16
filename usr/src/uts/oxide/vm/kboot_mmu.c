@@ -194,11 +194,11 @@ uint_t kbm_nucleus_size = TWO_MEG;
  * |          APOB          |
  * +------------------------+ somewhere
  * |  delicious free pages  |
- * +------------------------+ 0x0600_0000 (from Mapfile.amd64)
+ * +------------------------+ 0x0060_0000 (from Mapfile.amd64)
  * |   kernel nucleus data  |
- * +------------------------+ 0x0400_0000 (from Mapfile.amd64)
+ * +------------------------+ 0x0040_0000 (from Mapfile.amd64)
  * |   kernel nucleus text  |
- * +------------------------+ 0x0200_0000 (from Mapfile.amd64)
+ * +------------------------+ 0x0020_0000 (from Mapfile.amd64)
  * |  free pages we want to |
  * |  save for special uses |
  * +------------------------+ 0

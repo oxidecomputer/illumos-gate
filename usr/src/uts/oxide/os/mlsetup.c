@@ -59,6 +59,7 @@
 #include <sys/io/genoa/hacks.h>
 #include <sys/io/genoa/ras.h>
 #include <genoa/genoa_apob.h>
+#include <sys/prom_debug.h>
 
 /*
  * Setup routine called right before main(), which is common code.  We have much
@@ -158,6 +159,7 @@ mlsetup(struct regs *rp)
 	 * cpuid in a later pass.
 	 */
 	genoa_fabric_topo_init();
+	PRM_POINT("mlsetup - fabric setup done");
 	CPU->cpu_m.mcpu_hwthread =
 	    genoa_fabric_find_thread_by_cpuid(CPU->cpu_id);
 

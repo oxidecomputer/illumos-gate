@@ -1000,21 +1000,25 @@ typedef enum {
  * of various functional groups.
  */
 /*CSTYLED*/
-#define DF_SYS_FUN_FID1_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
+#define DF_SYS_FUN_FID1_V4	(df_reg_def_t){ .drd_gens = DF_REV_ALL_4, \
 				.drd_func = 4, \
 				.drd_reg = 0x190 }
-#define DF_SYS_FUN_FID1_V4_GET_MSTR_PIE_FID(r)	bitx32(r, 27, 16)
-#define DF_SYS_FUN_FID1_V4_GET_LCL_PIE_FID(r)	bitx32(r, 11, 0)
+#define DF_SYS_FUN_FID1_V4_GET_MSTR_PIE_FID(r)		bitx32(r, 27, 16)
+#define DF_SYS_FUN_FID1_V4D2_GET_MSTR_PIE_FID(r)	bitx32(r, 23, 16)
+#define DF_SYS_FUN_FID1_V4_GET_LCL_PIE_FID(r)		bitx32(r, 11, 0)
+#define DF_SYS_FUN_FID1_V4D2_GET_LCL_PIE_FID(r)		bitx32(r, 7, 0)
 /*CSTYLED*/
-#define DF_SYS_FUN_FID2_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
+#define DF_SYS_FUN_FID2_V4	(df_reg_def_t){ .drd_gens = DF_REV_ALL_4, \
 				.drd_func = 4, \
 				.drd_reg = 0x194 }
-#define DF_SYS_FUN_FID2_V4_GET_FCH_IOS_FID(r)	bitx32(r, 27, 16)
+#define DF_SYS_FUN_FID2_V4_GET_FCH_IOS_FID(r)		bitx32(r, 27, 16)
+#define DF_SYS_FUN_FID2_V4D2_GET_FCH_IOS_FID(r)		bitx32(r, 23, 16)
 /*CSTYLED*/
-#define DF_SYS_FUN_FID3_V4	(df_reg_def_t){ .drd_gens = DF_REV_4, \
+#define DF_SYS_FUN_FID3_V4	(df_reg_def_t){ .drd_gens = DF_REV_ALL_4, \
 				.drd_func = 4, \
 				.drd_reg = 0x198 }
-#define DF_SYS_FUN_FID3_V4_GET_LCL_CNG_FID(r)	bitx32(r, 11, 0)
+#define DF_SYS_FUN_FID3_V4_GET_LCL_CNG_FID(r)		bitx32(r, 11, 0)
+#define DF_SYS_FUN_FID3_V4D2_GET_LCL_CNG_FID(r)		bitx32(r, 7, 0)
 
 /*
  * DF::DieFabricIdMask -- This is a Zeppelin, DFv2 special. There are a couple

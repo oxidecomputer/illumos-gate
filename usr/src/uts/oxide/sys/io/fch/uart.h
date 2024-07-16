@@ -42,10 +42,12 @@ extern "C" {
  * SMN access to the UART registers is possible only on Songshan (yes, I tried
  * it on Huashan; no go).  The DMA controllers are never accessible over SMN
  * apparently.
+ * XXX: check if Kunlun allows SMN access.
  */
 
 #define	HUASHAN_MAX_UART	4
 #define	SONGSHAN_MAX_UART	3
+#define	KUNLUN_MAX_UART		3
 
 #define	FCH_UART_SMN_BASE	0x2dd9000
 #define	FCH_UART_PHYS_BASE	0xfedc9000
@@ -149,6 +151,12 @@ songshan_uart_mmio_aperture(const uint8_t unit)
 }
 
 static inline paddr_t
+kunlun_uart_mmio_aperture(const uint8_t unit)
+{
+	return (__common_uart_mmio_aperture(unit, KUNLUN_MAX_UART));
+}
+
+static inline paddr_t
 huashan_dma_mmio_aperture(const uint8_t unit)
 {
 	return (__common_dma_mmio_aperture(unit, HUASHAN_MAX_UART));
@@ -158,6 +166,12 @@ static inline paddr_t
 songshan_dma_mmio_aperture(const uint8_t unit)
 {
 	return (__common_dma_mmio_aperture(unit, SONGSHAN_MAX_UART));
+}
+
+static inline paddr_t
+kunlun_dma_mmio_aperture(const uint8_t unit)
+{
+	return (__common_dma_mmio_aperture(unit, KUNLUN_MAX_UART));
 }
 
 static inline mmio_reg_block_t
@@ -199,6 +213,12 @@ songshan_uart_mmio_block(const uint8_t unit)
 }
 
 static inline mmio_reg_block_t
+kunlun_uart_mmio_block(const uint8_t unit)
+{
+	return (__common_uart_mmio_block(unit, KUNLUN_MAX_UART));
+}
+
+static inline mmio_reg_block_t
 huashan_dma_mmio_block(const uint8_t unit)
 {
 	return (__common_dma_mmio_block(unit, HUASHAN_MAX_UART));
@@ -208,6 +228,12 @@ static inline mmio_reg_block_t
 songshan_dma_mmio_block(const uint8_t unit)
 {
 	return (__common_dma_mmio_block(unit, SONGSHAN_MAX_UART));
+}
+
+static inline mmio_reg_block_t
+kunlun_dma_mmio_block(const uint8_t unit)
+{
+	return (__common_dma_mmio_block(unit, KUNLUN_MAX_UART));
 }
 
 /*

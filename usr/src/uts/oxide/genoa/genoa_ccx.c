@@ -33,7 +33,7 @@
 /*
  * We run before kmdb loads, so these chicken switches are static consts.
  */
-static const bool genoa_ccx_allow_unsupported_processor = false;
+static const bool genoa_ccx_allow_unsupported_processor = true; // XXX: turin
 
 /*
  * Set the contents of undocumented registers to what we imagine they should be.
@@ -109,6 +109,9 @@ genoa_ccd_reg(const genoa_ccd_t *const ccd, const smn_reg_def_t def)
 	switch (def.srd_unit) {
 	case SMN_UNIT_SMUPWR:
 		reg = amdzen_smupwr_smn_reg(ccd->gcd_physical_dieno, def, 0);
+		break;
+	case SMN_UNIT_L3SOC:
+		reg = amdzen_l3soc_smn_reg(ccd->gcd_physical_dieno, def, 0);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for CCD",

@@ -54,13 +54,13 @@ extern "C" {
  * The Instance & Component IDs of the first CCM in the SoC.
  */
 #define	GENOA_DF_FIRST_CCM_INST_ID	0x10
-#define	GENOA_DF_FIRST_CCM_COMP_ID	0x60
+#define	GENOA_DF_FIRST_CCM_COMP_ID	0x40 // XXX: turin
 
 /*
  * This is the number of IO[MS] (IOHUB[MS]) instances that we know are supposed
  * to exist per NBIO.
  */
-#define	GENOA_IOMS_PER_NBIO	2
+#define	GENOA_IOMS_PER_NBIO	4 // XXX: turin
 
 /*
  * This is the number of NBIO instances that we know are supposed to exist per
@@ -85,7 +85,10 @@ extern "C" {
  * each NBIO also a x4 PCIe Gen3 core which shares a port with the WAFL PHY.
  * The WAFL core is linked to IOHUB 0.
  */
-#define	GENOA_IOMS_MAX_PCIE_CORES	3
+/* XXX: turin
+ * Each NBIO has 4 x16 PCIe Gen5 cores, split across 4 IOHUBs.
+ */
+#define	GENOA_IOMS_MAX_PCIE_CORES	5
 #define	GENOA_IOMS_WAFL_PCIE_CORENO	2
 
 /*

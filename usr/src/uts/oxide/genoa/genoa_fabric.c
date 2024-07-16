@@ -1375,7 +1375,8 @@ genoa_df_read32(genoa_iodie_t *iodie, uint8_t inst, const df_reg_def_t def)
 	const df_reg_def_t ficad = DF_FICAD_LO_V4;
 
 	mutex_enter(&iodie->gi_df_ficaa_lock);
-	ASSERT3U(def.drd_gens & DF_REV_4, ==, DF_REV_4);
+	// XXX: turin
+	ASSERT3U(def.drd_gens & DF_REV_4D2, ==, DF_REV_4D2);
 	val = DF_FICAA_V2_SET_TARG_INST(val, 1);
 	val = DF_FICAA_V2_SET_FUNC(val, def.drd_func);
 	val = DF_FICAA_V2_SET_INST(val, inst);
@@ -2610,8 +2611,10 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 		 * XXX reduce magic
 		 */
 		val = genoa_df_bcast_read32(iodie,
-		    (ccdpno < 4) ? DF_PHYS_CORE_EN0_V4 : ((ccdpno < 8) ?
-		    DF_PHYS_CORE_EN1_V4 : DF_PHYS_CORE_EN2_V4));
+		    (ccdpno < 4) ? DF_PHYS_CORE_EN0_V4 :
+		        ((ccdpno < 8) ? DF_PHYS_CORE_EN1_V4 :
+		            ((ccdpno < 12) ? DF_PHYS_CORE_EN2_V4 :
+		                DF_PHYS_CORE_EN3_V4)));
 		core_shift = (ccdpno & 3) * GENOA_MAX_CORES_PER_CCX *
 		    GENOA_MAX_CCXS_PER_CCD;
 		cores_enabled = bitx32(val, core_shift + 7, core_shift);
@@ -2632,9 +2635,9 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 		val = genoa_ccd_read(ccd, reg);
 		VERIFY3U(val, ==, ccdpno);
 
-		reg = genoa_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
+		reg = genoa_ccd_reg(ccd, D_L3SOC_THREAD_CFG);
 		val = genoa_ccd_read(ccd, reg);
-		ccd->gcd_nccxs = SMUPWR_THREAD_CFG_GET_COMPLEX_COUNT(val) + 1;
+		ccd->gcd_nccxs = L3SOC_THREAD_CFG_GET_COMPLEX_COUNT(val) + 1;
 		VERIFY3U(ccd->gcd_nccxs, <=, GENOA_MAX_CCXS_PER_CCD);
 
 		if (ccd->gcd_nccxs == 0) {
@@ -2649,9 +2652,9 @@ genoa_ccx_init_soc(genoa_soc_t *soc)
 		 * the DF.  A mismatch here is a firmware bug; XXX and
 		 * if that happens?
 		 */
-		reg = genoa_ccd_reg(ccd, D_SMUPWR_CORE_EN);
+		reg = genoa_ccd_reg(ccd, D_L3SOC_CORE_EN);
 		val = genoa_ccd_read(ccd, reg);
-		VERIFY3U(SMUPWR_CORE_EN_GET(val), ==, cores_enabled);
+		VERIFY3U(L3SOC_CORE_EN_GET(val), ==, cores_enabled);
 
 		/*
 		 * XXX While we know there is only ever 1 CCX per Genoa CCD,
@@ -2908,7 +2911,8 @@ genoa_fabric_topo_init(void)
 	 * We need to know which IOMS has the FCH which we can find by reading
 	 * DF::SpecialSysFunctionFabricID2[FchIOSFabricID].
 	 */
-	fch_ios_fabric_id = DF_SYS_FUN_FID2_V4_GET_FCH_IOS_FID(
+	// XXX: turin
+	fch_ios_fabric_id = DF_SYS_FUN_FID2_V4D2_GET_FCH_IOS_FID(
 	    genoa_df_early_read32(DF_SYS_FUN_FID2_V4));
 
 	fabric->gf_nsocs = nsocs;
@@ -3004,8 +3008,11 @@ genoa_fabric_topo_init(void)
 				ioms->gio_flags |= GENOA_IOMS_F_HAS_FCH;
 			}
 
+			PRM_POINT("skipping ioms pcie/nbif init");
+#if 0
 			genoa_fabric_ioms_pcie_init(ioms);
 			genoa_fabric_ioms_nbif_init(ioms);
+#endif
 		}
 
 		/*
@@ -3014,13 +3021,21 @@ genoa_fabric_topo_init(void)
 		 * brand string for the CCXs even before then), we go through
 		 * now and capture the SMU firmware version.
 		 */
+		PRM_POINT("skip dump_smu_version");
+#if 0
 		VERIFY0(genoa_dump_smu_version(iodie, NULL));
+#endif
 
 		genoa_ccx_init_soc(soc);
+
+		PRM_POINT("skip read_brand_string");
+		soc->gs_brandstr[0] = '\0';
+#if 0
 		if (!genoa_smu_rpc_read_brand_string(iodie, soc->gs_brandstr,
 		    sizeof (soc->gs_brandstr))) {
 			soc->gs_brandstr[0] = '\0';
 		}
+#endif
 
 		if (!genoa_smu_rpc_read_dpm_weights(iodie,
 		    iodie->gi_dpm_weights, sizeof (iodie->gi_dpm_weights))) {
@@ -3037,8 +3052,14 @@ genoa_fabric_topo_init(void)
 		 * dynamic frequency scaling -- which in turn makes the rest
 		 * of the boot much, much faster.
 		 */
+		PRM_POINT("skipping smu features init");
+#if 0
 		VERIFY(genoa_smu_early_features_init(iodie));
+#endif
 	}
+
+	PRM_POINT("hack nthreads = 1");
+	nthreads = 1;
 
 	if (nthreads > NCPU) {
 		cmn_err(CE_WARN, "%d CPUs found but only %d supported",
@@ -4997,7 +5018,7 @@ genoa_route_pci_bus(genoa_fabric_t *fabric)
 	genoa_iodie_t *iodie = &fabric->gf_socs[0].gs_iodies[0];
 	uint_t inst = iodie->gi_ioms[0].gio_iom_inst_id;
 
-	for (uint_t i = 0; i < DF_MAX_CFGMAP; i++) {
+	for (uint_t i = 0; i < DF_MAX_CFGMAP_TURIN /* XXX: turin */; i++) {
 		int ret;
 		genoa_ioms_t *ioms;
 		ioms_memlists_t *imp;
