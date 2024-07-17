@@ -2724,7 +2724,7 @@ genoa_smu_early_features_init(genoa_iodie_t *iodie)
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Early Features RPC failed: 0x%x",
 		    soc->gs_socno, rpc.msr_resp);
-		    return (false);
+		return (false);
 	}
 
 	return (true);
@@ -2777,7 +2777,7 @@ genoa_smu_features_init(genoa_iodie_t *iodie, void *arg)
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Features RPC Failed: features: "
 		    "0x%x, SMU 0x%x", soc->gs_socno, features, rpc.msr_resp);
-		    return (0);
+		return (0);
 	}
 	cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x and 0x%08x enabled\n",
 	    soc->gs_socno, features, features_ext);
