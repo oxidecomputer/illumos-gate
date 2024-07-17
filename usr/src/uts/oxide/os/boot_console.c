@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #include <sys/archsystm.h>
@@ -90,7 +90,7 @@ boot_console_init(void)
 {
 	if (dw_apb_uart_init(&con_uart, DAP_0, 3000000,
 	    AD_8BITS, AP_NONE, AS_1BIT) != 0) {
-		return (NULL);
+		bop_panic("Could not initialize boot console UART");
 	}
 
 	con_uart_init = true;

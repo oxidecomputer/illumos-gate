@@ -128,7 +128,7 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 		break;
 	/*
 	 * UARTs 2 & 3 are not currently supported. Their use would consume the
-	 * flow control pins for 0 & 1, and Songshan does not have UART 3.
+	 * flow control pins for 0 & 1, and Songshan/Kunlun do not have UART 3.
 	 */
 	case DAP_2:
 	case DAP_3:
@@ -145,6 +145,9 @@ dw_apb_uart_init(dw_apb_uart_t * const uart, const dw_apb_port_t port,
 		break;
 	case FK_SONGSHAN:
 		uart->dau_reg_block = songshan_uart_mmio_block(unit);
+		break;
+	case FK_KUNLUN:
+		uart->dau_reg_block = kunlun_uart_mmio_block(unit);
 		break;
 	default:
 		return (-1);

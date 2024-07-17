@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 /*
@@ -37,6 +37,7 @@
  * -----------------------------
  * Huashan	Rome, Milan
  * Songshan	Genoa
+ * Kunlun	Turin
  *
  * The Taishan FCH incorporated into Naples processors poses challenges that
  * others do not, on account of its internal multi-die organisation, though most
