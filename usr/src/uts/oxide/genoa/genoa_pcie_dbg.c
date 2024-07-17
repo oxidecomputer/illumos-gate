@@ -192,26 +192,6 @@ const genoa_pcie_reg_dbg_t genoa_pcie_core_dbg_regs[] = {
 		.gprd_def = D_PCIE_CORE_P_RX_L0S_FTS
 	},
 	{
-		.gprd_name = "PCIECORE::PCIE_TX_CCIX_CNTL0",
-		.gprd_def = D_PCIE_CORE_TX_CCIX_CTL0
-	},
-	{
-		.gprd_name = "PCIECORE::PCIE_TX_CCIX_CNTL1",
-		.gprd_def = D_PCIE_CORE_TX_CCIX_CTL1
-	},
-	{
-		.gprd_name = "PCIECORE::PCIE_TX_CCIX_PORT_MAP",
-		.gprd_def = D_PCIE_CORE_TX_CCIX_PORT_MAP
-	},
-	{
-		.gprd_name = "PCIECORE::PCIE_TX_CCIX_ERR_CTL",
-		.gprd_def = D_PCIE_CORE_TX_CCIX_ERR_CTL
-	},
-	{
-		.gprd_name = "PCIECORE::PCIE_RX_CCIX_CTL0",
-		.gprd_def = D_PCIE_CORE_RX_CCIX_CTL0
-	},
-	{
 		.gprd_name = "PCIECORE::PCIE_RX_AD",
 		.gprd_def = D_PCIE_CORE_RX_AD
 	},
@@ -432,14 +412,6 @@ const genoa_pcie_reg_dbg_t genoa_pcie_core_dbg_regs[] = {
 		.gprd_def = D_PCIE_CORE_LNCNT_CTL
 	},
 	{
-		.gprd_name = "PCIECORE::LNCNT_QUAN_THRD",
-		.gprd_def = D_PCIE_CORE_LNCNT_QUAN_THRD
-	},
-	{
-		.gprd_name = "PCIECORE::LNCNT_WEIGHT",
-		.gprd_def = D_PCIE_CORE_LNCNT_WEIGHT
-	},
-	{
 		.gprd_name = "PCIECORE::SMU_HP_STATUS_UPDATE",
 		.gprd_def = D_PCIE_CORE_SMU_HP_STATUS_UPDATE
 	},
@@ -556,10 +528,6 @@ const genoa_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 		.gprd_def = D_PCIE_PORT_TX_NOP_DLLP
 	},
 	{
-		.gprd_name = "PCIEPORT::PCIE_TX_CNTL_2",
-		.gprd_def = D_PCIE_PORT_TX_CTL2
-	},
-	{
 		.gprd_name = "PCIEPORT::PCIE_TX_CREDITS_ADVT_P",
 		.gprd_def = D_PCIE_PORT_TX_CREDITS_ADVT_P
 	},
@@ -590,46 +558,6 @@ const genoa_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 	{
 		.gprd_name = "PCIEPORT::PCIE_TX_CREDITS_FCU_THRESHOLD",
 		.gprd_def = D_PCIE_PORT_TX_CREDITS_FCU_THRESH
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_TX_CCIX_PORT_CNTL0",
-		.gprd_def = D_PCIE_PORT_TX_CCIX_PORT_CTL0
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_TX_CCIX_PORT_CNTL1",
-		.gprd_def = D_PCIE_PORT_TX_CCIX_PORT_CTL1
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_STACKED_BASE",
-		.gprd_def = D_PCIE_PORT_CCIX_STACKED_BASE
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_STACKED_LIMIT",
-		.gprd_def = D_PCIE_PORT_CCIX_STACKED_LIM
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_DUMMY_RD_UPPER_ADDR",
-		.gprd_def = D_PCIE_PORT_CCIX_DUMMY_RD_ADDR_HI
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_DUMMY_RD_LOWER_ADDR",
-		.gprd_def = D_PCIE_PORT_CCIX_DUMMY_RD_ADDR_LO
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_DUMMY_RD_CTRL",
-		.gprd_def = D_PCIE_PORT_CCIX_DUMMY_RD_CTL
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_DUMMY_WR_UPPER_ADDR",
-		.gprd_def = D_PCIE_PORT_CCIX_DUMMY_WR_ADDR_HI
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_DUMMY_WR_LOWER_ADDR",
-		.gprd_def = D_PCIE_PORT_CCIX_DUMMY_WR_ADDR_LO
-	},
-	{
-		.gprd_name = "PCIEPORT::PCIE_CCIX_MISC_STATUS",
-		.gprd_def = D_PCIE_PORT_CCIX_MISC_STATUS
 	},
 	{
 		.gprd_name = "PCIEPORT::PCIE_P_PORT_LANE_STATUS",
@@ -756,10 +684,6 @@ const genoa_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 		.gprd_def = D_PCIE_PORT_LC_STATE5
 	},
 	{
-		.gprd_name = "PCIEPORT::PCIE_LINK_MANAGEMENT_CNTL2",
-		.gprd_def = D_PCIE_PORT_LINK_MGMT_CTL2
-	},
-	{
 		.gprd_name = "PCIEPORT::PCIE_LC_CNTL2",
 		.gprd_def = D_PCIE_PORT_LC_CTL2
 	},
@@ -840,8 +764,8 @@ const genoa_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 		.gprd_def = D_PCIE_PORT_LC_L1_PM_SUBSTATE2
 	},
 	{
-		.gprd_name = "PCIEPORT::PCIE_LC_PORT_ORDER",
-		.gprd_def = D_PCIE_PORT_LC_PORT_ORDER
+		.gprd_name = "PCIEPORT::PCIE_LC_L1_PM_SUBSTATE3",
+		.gprd_def = D_PCIE_PORT_LC_L1_PM_SUBSTATE3
 	},
 	{
 		.gprd_name = "PCIEPORT::PCIE_BCH_ECC_CNTL",
