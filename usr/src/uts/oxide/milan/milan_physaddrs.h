@@ -165,15 +165,6 @@ extern "C" {
 #define	MILAN_IOPORT_COMPAT_SIZE	0x1000U
 
 /*
- * This 12 GiB range below 1 TiB can't be accessed as DRAM and is not supposed
- * to be used for MMIO in general, although it may be used for the 64 MiB flash
- * aperture from the SPI controller.  The exact reason for this hole is not well
- * documented but it is known to be an artefact of the IOMMU implementation.
- */
-#define	MILAN_PHYSADDR_IOMMU_HOLE	0xfd00000000UL
-#define	MILAN_PHYSADDR_IOMMU_HOLE_END	0x10000000000UL
-
-/*
  * This is the final address that we can use for MMIO. Beyond this is an
  * explicitly reserved area that we're not supposed to touch.
  */

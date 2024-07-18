@@ -31,6 +31,15 @@
 #include <sys/io/milan/iomux.h>
 #include <sys/io/genoa/iomux.h>
 #include <sys/io/turin/iomux.h>
+#include <sys/io/zen/platform.h>
+#include <sys/io/milan/platform_impl.h>
+#include <sys/io/genoa/platform_impl.h>
+#include <sys/io/turin/platform_impl.h>
+
+/*
+ * A chicken switch to skip the early supported processor check for bringup.
+ */
+static const bool allow_unsupported_processor = false;
 
 extern x86_chiprev_t _cpuid_chiprev(uint_t, uint_t, uint_t, uint_t);
 extern const char *_cpuid_chiprevstr(uint_t, uint_t, uint_t, uint_t);
@@ -133,6 +142,9 @@ static void eb_disable_kbrst(const oxide_board_cpuinfo_t *,
     const oxide_board_test_t *);
 static void eb_enable_kbrst(const oxide_board_cpuinfo_t *,
     const oxide_board_test_t *);
+
+static const char *
+oxide_board_name(oxide_board_t board);
 
 /*
  * This is a table of boards that may be present in an Oxide system, followed
@@ -626,6 +638,24 @@ oxide_derive_platform(void)
 			data->obd_cpuinfo = cpuinfo;
 			oxide_board_iomux_setup(b);
 
+			switch (_X86_CHIPREV_FAMILY(cpuinfo.obc_chiprev)) {
+			case X86_PF_AMD_MILAN:
+				data->obd_zen_platform = &milan_platform;
+				break;
+			case X86_PF_AMD_GENOA:
+				data->obd_zen_platform = &genoa_platform;
+				break;
+			case X86_PF_AMD_TURIN:
+			case X86_PF_AMD_DENSE_TURIN: /* XXX: separate out dense turin? */
+				data->obd_zen_platform = &turin_platform;
+				break;
+			default:
+				bop_printf(NULL, "Oxide board %s -- %s\n",
+				    oxide_board_name(data->obd_board),
+				    data->obd_cpuinfo.obc_chiprevstr);
+				bop_panic("Unsupported processor family");
+			}
+
 			oxide_board_data = data;
 			break;
 		}
@@ -661,4 +691,16 @@ oxide_report_platform(void)
 	bop_printf(NULL, "Oxide board %s -- %s\n",
 	    oxide_board_name(oxide_board_data->obd_board),
 	    oxide_board_data->obd_cpuinfo.obc_chiprevstr);
+
+	/*
+	 * We currently detect more platforms than are fully supported and so let's
+	 * be conservative unless otherwise explicitly requested.
+	 */
+	switch (_X86_CHIPREV_FAMILY(oxide_board_data->obd_cpuinfo.obc_chiprev)) {
+	case X86_PF_AMD_MILAN:
+		break;
+	default:
+		if (!allow_unsupported_processor)
+			bop_panic("Unsupported processor family");
+	}
 }

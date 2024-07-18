@@ -66,20 +66,6 @@ milan_ccx_mmio_init(uint64_t pa, boolean_t reserve)
 	}
 }
 
-void
-milan_ccx_physmem_init(void)
-{
-	/*
-	 * Due to undocumented, unspecified, and unknown bugs in the IOMMU
-	 * (supposedly), there is a hole in RAM below 1 TiB.  It may or may not
-	 * be usable as MMIO space but regardless we need to not treat it as
-	 * RAM.
-	 */
-	eb_physmem_reserve_range(MILAN_PHYSADDR_IOMMU_HOLE,
-	    MILAN_PHYSADDR_IOMMU_HOLE_END - MILAN_PHYSADDR_IOMMU_HOLE,
-	    EBPR_NOT_RAM);
-}
-
 smn_reg_t
 milan_core_reg(const milan_core_t *const core, const smn_reg_def_t def)
 {

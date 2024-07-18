@@ -638,6 +638,7 @@
 
 #include <milan/milan_apob.h>
 #include <milan/milan_physaddrs.h>
+#include <zen/physaddrs.h>
 
 /*
  * XXX This header contains a lot of the definitions that the broader system is
@@ -2992,7 +2993,7 @@ milan_fabric_topo_init(void)
 	fabric->mf_tom2 = MSR_AMD_TOM2_MASK(rdmsr(MSR_AMD_TOM2));
 
 	fabric->mf_ecam_base = P2ROUNDUP(MAX(fabric->mf_tom2,
-	    MILAN_PHYSADDR_IOMMU_HOLE_END), PCIE_CFGSPACE_ALIGN);
+	    ZEN_PHYSADDR_IOMMU_HOLE_END), PCIE_CFGSPACE_ALIGN);
 	fabric->mf_mmio64_base = fabric->mf_ecam_base + PCIE_CFGSPACE_SIZE;
 
 	pcie_cfgspace_init();
@@ -3161,8 +3162,8 @@ milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
 		return (0);
 	}
 
-	if (fabric->mf_tom2 > MILAN_PHYSADDR_IOMMU_HOLE_END) {
-		tom2 = MILAN_PHYSADDR_IOMMU_HOLE;
+	if (fabric->mf_tom2 > ZEN_PHYSADDR_IOMMU_HOLE_END) {
+		tom2 = ZEN_PHYSADDR_IOMMU_HOLE;
 		tom3 = fabric->mf_tom2 - 1;
 	} else {
 		tom2 = fabric->mf_tom2;
@@ -5274,7 +5275,7 @@ milan_mmio_assign(milan_iodie_t *iodie, void *arg)
  *     remainder is routed to the primary root bridge.
  *
  * 64-bit space is also simple. We find which is higher: TOM2 or the top of the
- * second hole (MILAN_PHYSADDR_IOMMU_HOLE_END).  The 256 MiB ECAM region lives
+ * second hole (ZEN_PHYSADDR_IOMMU_HOLE_END).  The 256 MiB ECAM region lives
  * there; above it, we just divide all the remaining space between that and
  * MILAN_PHYSADDR_MMIO_END. This is the milan_fabric_t's mf_mmio64_base member.
  *
