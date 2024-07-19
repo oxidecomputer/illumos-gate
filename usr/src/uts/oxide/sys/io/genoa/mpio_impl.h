@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_GENOA_MPIO_IMPL_H
@@ -229,7 +229,14 @@ typedef struct zen_mpio_ask_port {
 	uint32_t	zma_resv[4];
 } zen_mpio_ask_port_t;
 
-#define	ZEN_MPIO_ASK_MAX_PORTS	24
+/*
+ * We size the maximum number of ports in the ask roughly based on the SP5
+ * design and I/O die constraints as a rough swag. P0 and G3 can each support up
+ * to 16 PCIe devices, while the remaining 6 groups cans upport up to 8-9
+ * devices and P4/P5 can support up to 4 devices. That gives us 88 devices. We
+ * currently require this to be a page size which can only fit up to 78 devices.
+ */
+#define	ZEN_MPIO_ASK_MAX_PORTS	78
 typedef struct zen_mpio_ask {
 	zen_mpio_ask_port_t	zma_ports[ZEN_MPIO_ASK_MAX_PORTS];
 } zen_mpio_ask_t;
