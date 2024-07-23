@@ -4833,10 +4833,19 @@ genoa_fabric_write_pcie_strap(genoa_pcie_core_t *pc,
 
 	inst = ioms->gio_num + 4 * pc->gpc_coreno;
 	rpc.gmr_req = GENOA_MPIO_OP_PCIE_WRITE_STRAP;
-	/* B1 and later: subtract two for some reason. */
+
+	/*
+	 * The strap namespace has gone through some changes in the processor
+	 * revisions and changed started with B0 processors. For earlier
+	 * processors we must adjust things. Please see
+	 * <sys/io/genoa/pcie_rsmu.h> for more information.
+	 */
 	addr = reg;
-	if (addr > 0xa8)
-		addr -= 2;
+	if (!chiprev_at_least(cpuid_getchiprev(CPU), X86_CHIPREV_AMD_GENOA_B0) &&
+	    addr >= GENOA_STRAP_PCIE_B0_ADJ_BASE) {
+		addr -= GENOA_STRAP_PCIE_B0_ADJ_VAL;
+	}
+
 	rpc.gmr_args[0] = addr + (inst << 16);
 	rpc.gmr_args[1] = data;
 	resp = genoa_mpio_rpc(iodie, &rpc);

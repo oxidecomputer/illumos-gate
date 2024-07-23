@@ -25,18 +25,21 @@
  * one another but different from the per-core groups, one for each possible
  * port/host bridge the core can provide.
  *
- * To set a strap's value, the index register is first written with the upper 15
- * bits set (GENOA_STRAP_PCIE_ADDR_UPPER) and the lower 17 set to the address of
- * the strap to be set (definitions below).  The data register is then written
- * with a value; the number of bits that are meaningful depends on the strap and
- * these are listed with each where we have information.  The first group of
- * straps applies to the entire PCIe core to which this RSMU is attached, and is
- * followed by a set of groups, identical to one another but different from the
- * per-core straps, one for each of the 8 possible ports the core can support.
- * AMD documentation suggests it is also possible to read the value of a strap,
- * but whether this is meaningful depends on what has previously been done to
- * set up the core.  For more on where and how these straps fit into PCIe
- * initialisation, see the theory statement in genoa_fabric.c.
+ * To read a strap's value, the index register is first written with the upper
+ * 15 bits set (GENOA_STRAP_PCIE_ADDR_UPPER) and the lower 17 set to the address
+ * of the strap to be set (definitions below).  The data register is then read
+ * via SMN.  Writing a strap works differently in Genoa from Milan.  Instead of
+ * writing the strap address register or data register, you instead use the MPIO
+ * opcode GENOA_MPIO_OP_PCIE_WRITE_STRAP for this.  The number of bits that are
+ * meaningful depends on the strap and these are listed with each where we have
+ * information.  The first group of straps applies to the entire PCIe core to
+ * which this RSMU is attached, and is followed by a set of groups, identical to
+ * one another but different from the per-core straps, one for each of the 8
+ * possible ports the core can support.  AMD documentation suggests it is also
+ * possible to read the value of a strap, but whether this is meaningful depends
+ * on what has previously been done to set up the core.  For more on where and
+ * how these straps fit into PCIe initialisation, see the theory statement in
+ * genoa_fabric.c. XXX rm: only 8? Check logic.
  *
  * Many abbreviations and acronyms are used here.  Many are defined in the PCIe4
  * Terms and Acronyms introductory section starting on page 43.  Others not
@@ -191,6 +194,15 @@ genoa_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  */
 #define	GENOA_STRAP_PCIE_ADDR_UPPER	0xfffe0000
 
+/*
+ * The strap numbering namespace changed across various revisions of Genoa
+ * parts. Two additional straps were added starting in B0 parts which occurred
+ * at 0xa8. The straps in this header are all numbered according to the B0 and
+ * later parts. As such, if we encounter a chip rev prior to B0, we must adjust
+ * this for things to make sense.
+ */
+#define	GENOA_STRAP_PCIE_B0_ADJ_BASE	0xa8
+#define	GENOA_STRAP_PCIE_B0_ADJ_VAL	0x2
 
 /*
  * See PPR.  This defines the port bifurcation (set of ports to
