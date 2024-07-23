@@ -148,6 +148,68 @@ CTASSERT(sizeof (mpio_hotplug_table_t) == 0x780);
 #define	SP5_PHY_OFFSET_G3	80
 
 const zen_mpio_port_conf_t ruby_mpio_pcie_s0[] = {
+    { /* P1, "Ruby Riser 1" */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = SP5_PHY_OFFSET_P1,
+		.zml_num_lanes = 16,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_MAX,
+		},
+	    },
+	},
+    },
+    { /* P0_1, "Ruby Riser 2" */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = SP5_PHY_OFFSET_P0 + 8,
+		.zml_num_lanes = 8,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_MAX,
+		},
+	    },
+	},
+    },
+    { /* P3, "Ruby Riser 3" */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = SP5_PHY_OFFSET_P3,
+		.zml_num_lanes = 16,
+		.zml_reversed = 1,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_MAX,
+		},
+	    },
+	},
+    },
+    { /* P2, "OCP 3.0" */
+	.zmpc_ask = {
+	    .zma_link = {
+		.zml_lane_start = SP5_PHY_OFFSET_P2,
+		.zml_num_lanes = 16,
+		.zml_reversed = 1,
+		.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE,
+		.zml_gpio_id = 1,
+		.zml_attrs = {
+		    .zmla_port_present = 1,
+		    .zmla_max_link_speed_cap = ZEN_MPIO_LINK_SPEED_MAX,
+		    .zmla_target_link_speed = ZEN_MPIO_LINK_SPEED_MAX,
+		},
+	    },
+	},
+    },
     { /* P4, M.2 x4 */
 	.zmpc_ask = {
 	    .zma_link = {
