@@ -75,10 +75,7 @@
 #include <sys/memlist_impl.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
-#include <sys/io/milan/ccx.h>
-
-#include "milan/milan_apob.h"
-#include "milan/milan_physaddrs.h"
+#include <sys/io/genoa/ccx.h>
 
 /*
  * Comes from fs/ufsops.c.  For debugging the ramdisk/root fs operations.  Set
@@ -743,7 +740,8 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 		boot_prop_display(bufpage);
 	}
 
-	milan_ccx_physmem_init();
+	// XXX: turin
+	genoa_ccx_physmem_init();
 	protect_ramdisk();
 
 	/*

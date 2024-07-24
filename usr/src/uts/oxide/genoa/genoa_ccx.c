@@ -79,6 +79,18 @@ genoa_ccx_physmem_init(void)
 	eb_physmem_reserve_range(GENOA_PHYSADDR_IOMMU_HOLE,
 	    GENOA_PHYSADDR_IOMMU_HOLE_END - GENOA_PHYSADDR_IOMMU_HOLE,
 	    EBPR_NOT_RAM);
+
+	/*
+	 * XXX: turin
+	 * For undocumented reasons, the first 64KiB above 4GiB cannot be used
+	 * as RAM.
+	 */
+	const uint64_t tom2 = MSR_AMD_TOM2_MASK(rdmsr(MSR_AMD_TOM2));
+	const uint64_t base_4gib = 0x100000000UL;
+	const uint64_t size_64kib = 0x10000;
+	if (tom2 >= (base_4gib + size_64kib)) {
+		eb_physmem_reserve_range(base_4gib, size_64kib, EBPR_NOT_RAM);
+	}
 }
 
 smn_reg_t
