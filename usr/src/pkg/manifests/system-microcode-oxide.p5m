@@ -31,6 +31,7 @@ dir  path=platform/oxide group=sys
 dir  path=platform/oxide/ucode group=sys
 dir  path=platform/oxide/ucode/AuthenticAMD group=sys
 file path=platform/oxide/ucode/AuthenticAMD/A011-00 group=sys mode=0444
+file path=platform/oxide/ucode/AuthenticAMD/A111-00 group=sys mode=0444
 file path=platform/oxide/ucode/AuthenticAMD/equivalence-table group=sys \
     mode=0444
 license lic_CDDL license=lic_CDDL
