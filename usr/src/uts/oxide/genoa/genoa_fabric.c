@@ -3021,21 +3021,14 @@ genoa_fabric_topo_init(void)
 		 * brand string for the CCXs even before then), we go through
 		 * now and capture the SMU firmware version.
 		 */
-		PRM_POINT("skip dump_smu_version");
-#if 0
 		VERIFY0(genoa_dump_smu_version(iodie, NULL));
-#endif
 
 		genoa_ccx_init_soc(soc);
 
-		PRM_POINT("skip read_brand_string");
-		soc->gs_brandstr[0] = '\0';
-#if 0
 		if (!genoa_smu_rpc_read_brand_string(iodie, soc->gs_brandstr,
 		    sizeof (soc->gs_brandstr))) {
 			soc->gs_brandstr[0] = '\0';
 		}
-#endif
 
 		if (!genoa_smu_rpc_read_dpm_weights(iodie,
 		    iodie->gi_dpm_weights, sizeof (iodie->gi_dpm_weights))) {

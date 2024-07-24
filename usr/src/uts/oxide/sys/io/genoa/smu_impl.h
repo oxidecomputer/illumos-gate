@@ -46,8 +46,8 @@ AMDZEN_MAKE_SMN_REG_FN(genoa_smu_smn_reg, SMU_RPC,
 /*CSTYLED*/
 #define	D_GENOA_SMU_RPC_REQ	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x530,		\
-}
+	.srd_reg = 0x930,		\
+} // XXX: ^ Turin new register
 #define	GENOA_SMU_RPC_REQ()	genoa_smu_smn_reg(0, D_GENOA_SMU_RPC_REQ, 0)
 
 /*
@@ -93,8 +93,8 @@ AMDZEN_MAKE_SMN_REG_FN(genoa_smu_smn_reg, SMU_RPC,
 /*CSTYLED*/
 #define	D_GENOA_SMU_RPC_RESP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x57c,		\
-}
+	.srd_reg = 0x97c,		\
+} // XXX: ^ Turin new register
 #define	GENOA_SMU_RPC_RESP()	genoa_smu_smn_reg(0, D_GENOA_SMU_RPC_RESP, 0)
 
 /*
