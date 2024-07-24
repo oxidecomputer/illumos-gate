@@ -5034,7 +5034,8 @@ genoa_route_pci_bus(genoa_fabric_t *fabric)
 
 		val = genoa_df_read32(iodie, inst, DF_CFGMAP_LIMIT_V4(i));
 		limit = DF_CFGMAP_LIMIT_V4_GET_LIMIT(val);
-		dest = DF_CFGMAP_LIMIT_V4_GET_DEST_ID(val);
+		// XXX: turin
+		dest = DF_CFGMAP_LIMIT_V4D2_GET_DEST_ID(val);
 
 		ioms = genoa_fabric_find_ioms(fabric, dest);
 		if (ioms == NULL) {
@@ -5167,7 +5168,8 @@ genoa_io_ports_assign(genoa_iodie_t *iodie, void *arg)
 		base = DF_IO_BASE_V4_SET_BASE(base,
 		    mri->mri_bases[i] >> DF_IO_BASE_SHIFT);
 
-		limit = DF_IO_LIMIT_V4_SET_DEST_ID(limit, mri->mri_dests[i]);
+		// XXX: turin
+		limit = DF_IO_LIMIT_V4D2_GET_DEST_ID(limit, mri->mri_dests[i]);
 		limit = DF_IO_LIMIT_V4_SET_LIMIT(limit,
 		    mri->mri_limits[i] >> DF_IO_LIMIT_SHIFT);
 
@@ -5234,9 +5236,10 @@ typedef struct genoa_route_mmio {
 	uint32_t	mrm_fch_chunks;
 	uint64_t	mrm_mmio64_base;
 	uint64_t	mrm_mmio64_chunks;
-	uint64_t	mrm_bases[DF_MAX_MMIO_RULES];
-	uint64_t	mrm_limits[DF_MAX_MMIO_RULES];
-	uint32_t	mrm_dests[DF_MAX_MMIO_RULES];
+	// XXX: turin
+	uint64_t	mrm_bases[DF_MAX_MMIO_RULES_TURIN];
+	uint64_t	mrm_limits[DF_MAX_MMIO_RULES_TURIN];
+	uint32_t	mrm_dests[DF_MAX_MMIO_RULES_TURIN];
 } genoa_route_mmio_t;
 
 /*
