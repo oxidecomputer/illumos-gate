@@ -136,10 +136,14 @@ MILAN_OBJS +=			\
 GENOA_OBJS +=			\
 	genoa_platform.o
 TURIN_OBJS +=			\
+	turin_ccx.o		\
 	turin_platform.o
 
 ZEN_OBJS +=			\
-	zen_ccx.o
+	zen_ccx.o		\
+	zen_df_utils.o		\
+	zen_fabric.o		\
+	zen_platform.o
 
 CORE_OBJS += $(ZEN_OBJS) $(MILAN_OBJS) $(GENOA_OBJS) $(TURIN_OBJS)
 

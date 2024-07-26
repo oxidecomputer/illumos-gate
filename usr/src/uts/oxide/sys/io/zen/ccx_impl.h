@@ -13,35 +13,20 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef	_SYS_IO_ZEN_PLATFORM_UTILS_H
-#define	_SYS_IO_ZEN_PLATFORM_UTILS_H
+#ifndef	_SYS_IO_ZEN_CCX_IMPL_H
+#define	_SYS_IO_ZEN_CCX_IMPL_H
 
 #include <sys/types.h>
-#include <sys/debug.h>
-#include <sys/null.h>
-#include <sys/platform_detect.h>
-
-#include <sys/io/zen/platform.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
-static inline const zen_ccx_ops_t *
-oxide_zen_ccx_ops(void)
-{
-	const zen_platform_t *platform = oxide_zen_platform();
-	const zen_ccx_ops_t *ccx_ops;
-
-	ASSERT3P(platform, !=, NULL);
-	ccx_ops = platform->zp_ccx_ops;
-	ASSERT3P(ccx_ops, !=, NULL);
-
-	return (ccx_ops);
-}
+extern void zen_ccx_physmem_init(void);
+extern void zen_ccx_mmio_init(uint64_t, boolean_t);
 
 #ifdef	__cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_ZEN_PLATFORM_UTILS_H */
+#endif /* _SYS_IO_ZEN_CCX_IMPL_H */

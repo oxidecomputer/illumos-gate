@@ -16,15 +16,15 @@
 #ifndef	_SYS_IO_ZEN_CCX_H
 #define	_SYS_IO_ZEN_CCX_H
 
+#include <sys/types.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
-extern void zen_ccx_physmem_init(void);
-
 typedef struct zen_ccx_ops {
 	void	(*zco_physmem_init)(void);
+	void	(*zco_mmio_init)(uint64_t, boolean_t);
 } zen_ccx_ops_t;
 
 #ifdef	__cplusplus

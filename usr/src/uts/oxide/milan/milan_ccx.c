@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -48,23 +48,6 @@ static const boolean_t milan_ccx_set_undoc_regs = B_TRUE;
  */
 static const boolean_t milan_ccx_set_undoc_fields = B_TRUE;
 
-void
-milan_ccx_mmio_init(uint64_t pa, boolean_t reserve)
-{
-	uint64_t val;
-
-	val = AMD_MMIO_CFG_BASE_ADDR_SET_EN(0, 1);
-	val = AMD_MMIO_CFG_BASE_ADDR_SET_BUS_RANGE(val,
-	    AMD_MMIO_CFG_BASE_ADDR_BUS_RANGE_256);
-	val = AMD_MMIO_CFG_BASE_ADDR_SET_ADDR(val,
-	    pa >> AMD_MMIO_CFG_BASE_ADDR_ADDR_SHIFT);
-	wrmsr(MSR_AMD_MMIO_CFG_BASE_ADDR, val);
-
-	if (reserve) {
-		eb_physmem_reserve_range(pa,
-		    256UL << AMD_MMIO_CFG_BASE_ADDR_ADDR_SHIFT, EBPR_NOT_RAM);
-	}
-}
 
 smn_reg_t
 milan_core_reg(const milan_core_t *const core, const smn_reg_def_t def)
@@ -635,10 +618,16 @@ milan_core_undoc_init(void)
 static void
 milan_core_dpm_init(void)
 {
-	const milan_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
+	const milan_thread_t *thread;
 	const uint64_t *weights;
 	uint32_t nweights;
 	uint64_t cfg;
+
+	thread = milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
+	if (thread == NULL) {
+		cmn_err(CE_PANIC, "cpu%d: unable to find thread for DPM "
+		    "initialization\n", CPU->cpu_id);
+	}
 
 	milan_fabric_thread_get_dpm_weights(thread, &weights, &nweights);
 
@@ -658,8 +647,14 @@ milan_core_dpm_init(void)
 void
 milan_ccx_init(void)
 {
-	const milan_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
+	const milan_thread_t *thread;
 	char str[CPUID_BRANDSTR_STRLEN + 1];
+
+	thread = milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
+	if (thread == NULL) {
+		cmn_err(CE_PANIC, "cpu%d: unable to find thread for CCX "
+		    "initialization\n", CPU->cpu_id);
+	}
 
 	/*
 	 * First things first: it shouldn't be (and generally isn't) possible to

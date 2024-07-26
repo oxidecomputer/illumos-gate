@@ -74,7 +74,7 @@
 #include <sys/memlist_impl.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
-#include <sys/io/zen/platform_utils.h>
+#include <sys/io/zen/platform.h>
 
 /*
  * Comes from fs/ufsops.c.  For debugging the ramdisk/root fs operations.  Set

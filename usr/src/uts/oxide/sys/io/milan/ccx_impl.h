@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_CCX_IMPL_H
@@ -95,7 +95,6 @@ struct milan_ccx {
 struct milan_ccd {
 	uint8_t			mcd_logical_dieno;
 	uint8_t			mcd_physical_dieno;
-	uint8_t			mcd_ccm_fabric_id;
 	uint8_t			mcd_ccm_comp_id;
 	uint8_t			mcd_nccxs;
 	milan_ccx_t		mcd_ccxs[MILAN_MAX_CCXS_PER_CCD];

@@ -24,7 +24,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 by Delphix. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -55,9 +55,9 @@
 #include <sys/tsc.h>
 #include <sys/boot_data.h>
 #include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/hacks.h>
 #include <sys/io/milan/ras.h>
+#include <sys/io/zen/fabric.h>
 #include <milan/milan_apob.h>
 
 /*
@@ -152,14 +152,11 @@ mlsetup(struct regs *rp)
 	 * PCI config space access is required for fabric setup, and depends on
 	 * a few addresses the early fabric initialisation code will retrieve.
 	 * After setting up config space, this will then set up all our data
-	 * structures for tracking the Milan topology so we can use the at later
-	 * parts of the build.  We need to probe out the CCXs before we can set
-	 * mcpu_hwthread, and we need mcpu_hwthread to set up brand strings for
-	 * cpuid in a later pass.
+	 * structures for tracking the Zen topology so we can use the at later
+	 * parts of the build.  We need to probe out the CCXs to set up brand
+	 * strings for cpuid in a later pass.
 	 */
-	milan_fabric_topo_init();
-	CPU->cpu_m.mcpu_hwthread =
-	    milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
+	zen_fabric_topo_init();
 
 	/*
 	 * Figure out what kind of CPU this is via pass 0.  We need this before

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_FABRIC_IMPL_H
@@ -25,6 +25,7 @@
 #include <sys/memlist_impl.h>
 #include <sys/types.h>
 #include <sys/x86_archext.h>
+#include <sys/io/zen/fabric.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/ccx_impl.h>
 #include <sys/io/milan/dxio_impl.h>
@@ -108,11 +109,8 @@ typedef struct ioms_memlists {
 } ioms_memlists_t;
 
 struct milan_ioms {
+	zen_ioms_t		*zen_ioms;
 	milan_ioms_flag_t	mio_flags;
-	uint16_t		mio_pci_busno;
-	uint8_t			mio_num;
-	uint8_t			mio_fabric_id;
-	uint8_t			mio_comp_id;
 	uint8_t			mio_npcie_cores;
 	uint8_t			mio_nnbifs;
 	milan_pcie_core_t	mio_pcie_cores[MILAN_IOMS_MAX_PCIE_CORES];
@@ -122,12 +120,7 @@ struct milan_ioms {
 };
 
 struct milan_iodie {
-	kmutex_t		mi_df_ficaa_lock;
-	kmutex_t		mi_smn_lock;
-	kmutex_t		mi_smu_lock;
-	uint8_t			mi_node_id;
-	uint8_t			mi_dfno;
-	uint8_t			mi_smn_busno;
+	zen_iodie_t		*zen_iodie;
 	uint8_t			mi_nioms;
 	uint8_t			mi_nccds;
 	uint8_t			mi_smu_fw[3];
@@ -142,34 +135,15 @@ struct milan_iodie {
 };
 
 struct milan_soc {
-	uint8_t			ms_socno;
+	zen_soc_t		*zen_soc;
 	uint8_t			ms_ndies;
-	char			ms_brandstr[CPUID_BRANDSTR_STRLEN + 1];
 	milan_iodie_t		ms_iodies[MILAN_FABRIC_MAX_DIES_PER_SOC];
 	milan_fabric_t		*ms_fabric;
 };
 
 struct milan_fabric {
+	zen_fabric_t	*zen_fabric;
 	uint8_t		mf_nsocs;
-	/*
-	 * This represents a cache of everything that we've found in the fabric.
-	 */
-	uint_t		mf_total_ioms;
-	/*
-	 * These are masks and shifts that describe how to take apart an ID into
-	 * its node ID and corresponding component ID.
-	 */
-	uint8_t		mf_node_shift;
-	uint32_t	mf_node_mask;
-	uint32_t	mf_comp_mask;
-	/*
-	 * While TOM and TOM2 are nominally set per-core and per-IOHC, these
-	 * values are fabric-wide.
-	 */
-	uint64_t	mf_tom;
-	uint64_t	mf_tom2;
-	uint64_t	mf_ecam_base;
-	uint64_t	mf_mmio64_base;
 	milan_hotplug_t	mf_hotplug;
 	milan_soc_t	mf_socs[MILAN_FABRIC_MAX_SOCS];
 };

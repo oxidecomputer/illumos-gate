@@ -16,6 +16,8 @@
 #ifndef	_SYS_IO_ZEN_PLATFORM_H
 #define	_SYS_IO_ZEN_PLATFORM_H
 
+#include <sys/amdzen/df.h>
+
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric.h>
 
@@ -23,12 +25,36 @@
 extern "C" {
 #endif
 
-typedef struct zen_platform {
-	const zen_ccx_ops_t	*zp_ccx_ops;
-	const zen_fabric_ops_t	*zp_fabric_ops;
+typedef struct zen_platform_consts {
+	/*
+	 * The specific DF revision supported by this platform.
+	 * XXX: Determine dynamically?
+	 */
+	const df_rev_t		zpc_df_rev;
+	/*
+	 * The number of IOM/S per IO die.
+	 */
+	const uint8_t		zpc_ioms_per_iodie;
+	/*
+	 * The InstanceID of the first IOM.
+	 */
+	const uint8_t		zpc_df_first_iom_id;
+	/*
+	 * The InstanceID of the first IOS.
+	 */
+	const uint8_t		zpc_df_first_ios_id;
+} zen_platform_consts_t;
 
-	zen_fabric_t		zp_fabric;
+typedef struct zen_platform {
+	const zen_platform_consts_t	zp_consts;
+	const zen_ccx_ops_t		*zp_ccx_ops;
+	const zen_fabric_ops_t		*zp_fabric_ops;
 } zen_platform_t;
+
+
+extern const zen_platform_consts_t *oxide_zen_platform_consts(void);
+extern const zen_ccx_ops_t *oxide_zen_ccx_ops(void);
+extern const zen_fabric_ops_t *oxide_zen_fabric_ops(void);
 
 #ifdef	__cplusplus
 }

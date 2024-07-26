@@ -18,8 +18,12 @@
  * aspects of a CPU core common across Zen family processors.
  */
 
-#include <zen/physaddrs.h>
 #include <sys/boot_physmem.h>
+#include <sys/types.h>
+#include <sys/x86_archext.h>
+#include <sys/amdzen/ccx.h>
+
+#include <zen/physaddrs.h>
 
 
 void
@@ -34,4 +38,22 @@ zen_ccx_physmem_init(void)
 	eb_physmem_reserve_range(ZEN_PHYSADDR_IOMMU_HOLE,
 	    ZEN_PHYSADDR_IOMMU_HOLE_END - ZEN_PHYSADDR_IOMMU_HOLE,
 	    EBPR_NOT_RAM);
+}
+
+void
+zen_ccx_mmio_init(uint64_t pa, boolean_t reserve)
+{
+	uint64_t val;
+
+	val = AMD_MMIO_CFG_BASE_ADDR_SET_EN(0, 1);
+	val = AMD_MMIO_CFG_BASE_ADDR_SET_BUS_RANGE(val,
+	    AMD_MMIO_CFG_BASE_ADDR_BUS_RANGE_256);
+	val = AMD_MMIO_CFG_BASE_ADDR_SET_ADDR(val,
+	    pa >> AMD_MMIO_CFG_BASE_ADDR_ADDR_SHIFT);
+	wrmsr(MSR_AMD_MMIO_CFG_BASE_ADDR, val);
+
+	if (reserve) {
+		eb_physmem_reserve_range(pa,
+		    256UL << AMD_MMIO_CFG_BASE_ADDR_ADDR_SHIFT, EBPR_NOT_RAM);
+	}
 }

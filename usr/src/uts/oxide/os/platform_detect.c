@@ -696,7 +696,8 @@ oxide_report_platform(void)
 	 * We currently detect more platforms than are fully supported and so
 	 * let's be conservative unless otherwise explicitly requested.
 	 */
-	switch (_X86_CHIPREV_FAMILY(oxide_board_data->obd_cpuinfo.obc_chiprev)) {
+	switch (_X86_CHIPREV_FAMILY(
+	    oxide_board_data->obd_cpuinfo.obc_chiprev)) {
 	case X86_PF_AMD_MILAN:
 		break;
 	default:

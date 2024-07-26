@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_CCX_H
@@ -49,7 +49,6 @@ typedef struct milan_core milan_core_t;
 typedef struct milan_ccx milan_ccx_t;
 typedef struct milan_ccd milan_ccd_t;
 
-extern void milan_ccx_mmio_init(uint64_t, boolean_t);
 extern boolean_t milan_ccx_start_thread(const milan_thread_t *);
 extern void milan_ccx_init(void);
 
