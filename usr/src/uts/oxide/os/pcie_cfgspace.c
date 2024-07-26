@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -32,7 +32,7 @@
  *	reg[11:0]	addr[11:0]
  *
  * The CPU does not generally support 64-bit accesses, which means that a 64-bit
- * access requires us to write the lower 32-bits followed by the uppwer 32-bits.
+ * access requires us to write the lower 32-bits followed by the upper 32-bits.
  */
 
 #include <sys/machparam.h>
