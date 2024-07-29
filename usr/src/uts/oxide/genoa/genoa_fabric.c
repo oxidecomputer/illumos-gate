@@ -2336,8 +2336,9 @@ genoa_mpio_rpc_get_version(genoa_iodie_t *iodie)
 		return (false);
 	}
 	vs = rpc.gmr_args;
-	cmn_err(CE_CONT, "?MPIO Firmware Version: %u.%u.%u.%u.%u.%u\n",
-	    vs[0], vs[1], vs[2], vs[3], vs[4], vs[5]);
+	cmn_err(CE_CONT, "?MPIO Firmware Version: 0x%02x.0x%2x.0x%2x.0x%2x\n",
+	    bitx32(vs[0], 31, 24), bitx32(vs[0], 23, 16), bitx32(vs[0], 15, 8),
+	    bitx32(vs[0], 7, 0));
 
 	return (true);
 }
@@ -3823,6 +3824,7 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 		ask->zma_link.zml_attrs.zmla_hfc_idx = i;
 		ask->zma_link.zml_attrs.zmla_dfc_idx = j;
 		ask->zma_link.zml_attrs.zmla_port_present = 1;
+
 		ask->zma_link.zml_attrs.zmla_max_link_speed_cap =
 		    d.zmudd_data.zmudt_gen_speed;
 		ask->zma_link.zml_attrs.zmla_target_link_speed =
