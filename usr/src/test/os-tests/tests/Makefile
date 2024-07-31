@@ -36,6 +36,7 @@ SUBDIRS =       \
 		libtopo \
 		gpio \
 		minttl \
+		oclo \
 		pf_key \
 		poll \
 		portfs \
