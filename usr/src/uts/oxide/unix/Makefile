@@ -99,6 +99,11 @@ CFLAGS += -DDIS_MEM
 CERRWARN	+= -_gcc=-Wno-char-subscripts
 CERRWARN	+= -_gcc=-Wno-unused-function
 
+#
+# We're somehow triggering -Winline on gcc7 shadow.
+#
+CERRWARN	+= -_gcc7=-Wno-inline
+
 # false positives
 SMOFF += index_overflow
 
