@@ -120,7 +120,6 @@ struct milan_soc {
 
 struct milan_fabric {
 	zen_fabric_t	*zen_fabric;
-	uint8_t		mf_nsocs;
 	milan_hotplug_t	mf_hotplug;
 	milan_soc_t	mf_socs[MILAN_FABRIC_MAX_SOCS];
 };

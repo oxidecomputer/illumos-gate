@@ -883,7 +883,9 @@ static int
 milan_fabric_walk_iodie(milan_fabric_t *fabric, milan_iodie_cb_f func,
     void *arg)
 {
-	for (uint_t socno = 0; socno < fabric->mf_nsocs; socno++) {
+	uint8_t nsocs = fabric->zen_fabric->zf_nsocs;
+
+	for (uint_t socno = 0; socno < nsocs; socno++) {
 		milan_soc_t *soc = &fabric->mf_socs[socno];
 		for (uint_t iono = 0; iono < soc->ms_ndies; iono++) {
 			int ret;
@@ -2955,6 +2957,7 @@ milan_fabric_topo_init(void)
 {
 	extern zen_fabric_t *zen_fabric;
 	milan_fabric_t *fabric = &milan_fabric;
+	uint8_t nsocs;
 
 	PRM_POINT("milan_fabric_topo_init() [zen compat] starting...");
 
@@ -2967,9 +2970,9 @@ milan_fabric_topo_init(void)
 	 */
 
 	fabric->zen_fabric = zen_fabric;
+	nsocs = zen_fabric->zf_nsocs;
 
-	fabric->mf_nsocs = zen_fabric->zf_nsocs;
-	for (uint8_t socno = 0; socno < fabric->mf_nsocs; socno++) {
+	for (uint8_t socno = 0; socno < nsocs; socno++) {
 		zen_soc_t *zen_soc = &zen_fabric->zf_socs[socno];
 		zen_iodie_t *zen_iodie = &zen_soc->zs_iodie;
 
