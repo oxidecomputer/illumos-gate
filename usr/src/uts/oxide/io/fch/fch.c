@@ -655,6 +655,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/x86_archext.h>
+#include <sys/io/zen/fabric.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/amdzen/mmioreg.h>
 #include <sys/amdzen/fch.h>
@@ -2621,10 +2622,10 @@ fch_ioms_cb(milan_ioms_t *ioms, void *arg)
 	uint64_t rr_base, rr_len;
 	const char *ident;
 
-	if ((milan_ioms_flags(ioms) & MILAN_IOMS_F_HAS_FCH) == 0)
+	if ((milan_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) == 0)
 		return (0);
 
-	if ((milan_iodie_flags(iodie) & MILAN_IODIE_F_PRIMARY) != 0) {
+	if ((milan_iodie_flags(iodie) & ZEN_IODIE_F_PRIMARY) != 0) {
 		uint32_t val;
 
 		/*

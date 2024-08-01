@@ -21,11 +21,9 @@
  * implementation.
  */
 
-#include <sys/memlist.h>
-#include <sys/memlist_impl.h>
 #include <sys/types.h>
 #include <sys/x86_archext.h>
-#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/fabric_impl.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/ccx_impl.h>
 #include <sys/io/milan/dxio_impl.h>
@@ -89,33 +87,13 @@ extern "C" {
  */
 #define	MILAN_MAX_DPM_WEIGHTS	23
 
-/*
- * Warning: These memlists cannot be given directly to PCI. They expect to be
- * kmem_alloc'd which we are not doing here at all.
- */
-typedef struct ioms_memlists {
-	kmutex_t		im_lock;
-	struct memlist_pool	im_pool;
-	struct memlist		*im_io_avail_pci;
-	struct memlist		*im_io_avail_gen;
-	struct memlist		*im_io_used;
-	struct memlist		*im_mmio_avail_pci;
-	struct memlist		*im_mmio_avail_gen;
-	struct memlist		*im_mmio_used;
-	struct memlist		*im_pmem_avail;
-	struct memlist		*im_pmem_used;
-	struct memlist		*im_bus_avail;
-	struct memlist		*im_bus_used;
-} ioms_memlists_t;
-
 struct milan_ioms {
 	zen_ioms_t		*zen_ioms;
-	milan_ioms_flag_t	mio_flags;
 	uint8_t			mio_npcie_cores;
 	uint8_t			mio_nnbifs;
 	milan_pcie_core_t	mio_pcie_cores[MILAN_IOMS_MAX_PCIE_CORES];
 	milan_nbif_t		mio_nbifs[MILAN_IOMS_MAX_NBIF];
-	ioms_memlists_t		mio_memlists;
+	zen_ioms_memlists_t	mio_memlists;
 	milan_iodie_t		*mio_iodie;
 };
 
@@ -125,7 +103,6 @@ struct milan_iodie {
 	uint8_t			mi_nccds;
 	uint8_t			mi_smu_fw[3];
 	uint32_t		mi_dxio_fw[2];
-	milan_iodie_flag_t	mi_flags;
 	milan_dxio_sm_state_t	mi_state;
 	milan_dxio_config_t	mi_dxio_conf;
 	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];

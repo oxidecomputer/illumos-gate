@@ -38,9 +38,19 @@ typedef enum zen_ioms_flag {
 	ZEN_IOMS_F_HAS_WAFL	= 1 << 1
 } zen_ioms_flag_t;
 
+/*
+ * Returns the set of flags set on the given IOMS.
+ */
+extern zen_ioms_flag_t zen_ioms_flags(const zen_ioms_t *const);
+
 typedef enum zen_iodie_flag {
 	ZEN_IODIE_F_PRIMARY	= 1 << 0
 } zen_iodie_flag_t;
+
+/*
+ * Returns the set of flags set on the given IO die.
+ */
+extern zen_iodie_flag_t zen_iodie_flags(const zen_iodie_t *const);
 
 /*
  * The entry point for early boot which intializes the general fabric

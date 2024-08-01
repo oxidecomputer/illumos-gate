@@ -17,6 +17,8 @@
 #define	_SYS_IO_ZEN_FABRIC_IMPL_H
 
 #include <sys/types.h>
+#include <sys/memlist.h>
+#include <sys/memlist_impl.h>
 #include <sys/mutex.h>
 #include <sys/x86_archext.h>
 
@@ -44,6 +46,25 @@ extern void zen_fabric_topo_init_common(void);
  * determined by the platform's `zpc_ioms_per_iodie`.
  */
 #define	ZEN_IODIE_MAX_IOMS		8
+
+/*
+ * Warning: These memlists cannot be given directly to PCI. They expect to be
+ * kmem_alloc'd which we are not doing here at all.
+ */
+typedef struct zen_ioms_memlists {
+	kmutex_t		zim_lock;
+	struct memlist_pool	zim_pool;
+	struct memlist		*zim_io_avail_pci;
+	struct memlist		*zim_io_avail_gen;
+	struct memlist		*zim_io_used;
+	struct memlist		*zim_mmio_avail_pci;
+	struct memlist		*zim_mmio_avail_gen;
+	struct memlist		*zim_mmio_used;
+	struct memlist		*zim_pmem_avail;
+	struct memlist		*zim_pmem_used;
+	struct memlist		*zim_bus_avail;
+	struct memlist		*zim_bus_used;
+} zen_ioms_memlists_t;
 
 /*
  * On Milan, the IOMS is a single component within the data fabric as far as

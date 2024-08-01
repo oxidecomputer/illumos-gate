@@ -19,6 +19,17 @@
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_impl.h>
 
+/*
+ * pci_impl.h and memlist_impl.h conflict.
+ */
+#ifdef memlist_insert
+#undef memlist_insert
+#endif
+
+#ifdef memlist_find
+#undef memlist_find
+#endif
+
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/df.h>
 #include <sys/io/zen/fabric.h>

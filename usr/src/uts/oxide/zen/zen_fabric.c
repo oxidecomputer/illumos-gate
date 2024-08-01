@@ -272,6 +272,24 @@ zen_ios_fabric_id(zen_ioms_t *ioms)
 }
 
 /*
+ * Returns the flags that have been set on this IOMS.
+ */
+zen_ioms_flag_t
+zen_ioms_flags(const zen_ioms_t *const ioms)
+{
+	return (ioms->zio_flags);
+}
+
+/*
+ * Returns the flags that have been set on this IO die.
+ */
+zen_iodie_flag_t
+zen_iodie_flags(const zen_iodie_t *const iodie)
+{
+	return (iodie->zi_flags);
+}
+
+/*
  * Right now we're running on the boot CPU. We know that a single socket has to
  * be populated. Our job is to go through and determine what the rest of the
  * topology of this system looks like in terms of the data fabric, north

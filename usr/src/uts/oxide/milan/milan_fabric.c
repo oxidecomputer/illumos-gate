@@ -1747,16 +1747,16 @@ milan_iodie_node_id(const milan_iodie_t *const iodie)
 	return (iodie->zen_iodie->zi_node_id);
 }
 
-milan_iodie_flag_t
+zen_iodie_flag_t
 milan_iodie_flags(const milan_iodie_t *const iodie)
 {
-	return (iodie->mi_flags);
+	return (zen_iodie_flags(iodie->zen_iodie));
 }
 
-milan_ioms_flag_t
+zen_ioms_flag_t
 milan_ioms_flags(const milan_ioms_t *const ioms)
 {
-	return (ioms->mio_flags);
+	return (zen_ioms_flags(ioms->zen_ioms));
 }
 
 milan_iodie_t *
@@ -2931,9 +2931,6 @@ milan_fabric_topo_init(void)
 
 		iodie->zen_iodie = zen_iodie;
 		iodie->mi_soc = soc;
-		if ((zen_iodie->zi_flags & ZEN_IODIE_F_PRIMARY) != 0) {
-			iodie->mi_flags |= MILAN_IODIE_F_PRIMARY;
-		}
 
 		iodie->mi_nioms = zen_iodie->zi_nioms;
 		for (uint8_t iomsno = 0; iomsno < iodie->mi_nioms; iomsno++) {
@@ -2942,10 +2939,6 @@ milan_fabric_topo_init(void)
 
 			ioms->zen_ioms = zen_ioms;
 			ioms->mio_iodie = iodie;
-
-			if ((zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
-				ioms->mio_flags |= MILAN_IOMS_F_HAS_FCH;
-			}
 
 			/*
 			 * XXX: The rest of this is not yet handled in common
@@ -2957,7 +2950,8 @@ milan_fabric_topo_init(void)
 			 */
 			ioms->mio_npcie_cores = milan_nbio_n_pcie_cores(iomsno);
 			if (iomsno == MILAN_IOMS_HAS_WAFL) {
-				ioms->mio_flags |= MILAN_IOMS_F_HAS_WAFL;
+				ioms->zen_ioms->zio_flags |=
+				    ZEN_IOMS_F_HAS_WAFL;
 			}
 			ioms->mio_nnbifs = MILAN_IOMS_MAX_NBIF;
 
@@ -3129,7 +3123,7 @@ milan_fabric_init_iohc_fch_link(milan_ioms_t *ioms, void *arg)
 	smn_reg_t reg;
 
 	reg = milan_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	if ((ioms->zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		smn_reg_t iommureg;
 		uint32_t val;
 
@@ -3523,7 +3517,7 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
 	 */
 	reg = milan_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_HI, 0);
 	val = milan_ioms_read(ioms, reg);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	if ((ioms->zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		val = IOHC_IOAPIC_ADDR_HI_SET_ADDR(val,
 		    bitx64(MILAN_PHYSADDR_IOHC_IOAPIC, 47, 32));
 	} else {
@@ -3533,7 +3527,7 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
 
 	reg = milan_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_LO, 0);
 	val = milan_ioms_read(ioms, reg);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	if ((ioms->zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		val = IOHC_IOAPIC_ADDR_LO_SET_ADDR(val,
 		    bitx64(MILAN_PHYSADDR_IOHC_IOAPIC, 31, 8));
 		val = IOHC_IOAPIC_ADDR_LO_SET_LOCK(val, 0);
@@ -3553,7 +3547,7 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
 	 */
 	reg = milan_ioms_reg(ioms, D_IOAPIC_FEATURES, 0);
 	val = milan_ioms_read(ioms, reg);
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0) {
+	if ((ioms->zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		val = IOAPIC_FEATURES_SET_SECONDARY(val, 0);
 	} else {
 		val = IOAPIC_FEATURES_SET_SECONDARY(val, 1);
@@ -4740,11 +4734,11 @@ done:
 static int
 milan_fabric_init_memlists(milan_ioms_t *ioms, void *arg)
 {
-	ioms_memlists_t *imp = &ioms->mio_memlists;
+	zen_ioms_memlists_t *imp = &ioms->mio_memlists;
 	void *page = kmem_zalloc(MMU_PAGESIZE, KM_SLEEP);
 
-	mutex_init(&imp->im_lock, NULL, MUTEX_DRIVER, NULL);
-	xmemlist_free_block(&imp->im_pool, page, MMU_PAGESIZE);
+	mutex_init(&imp->zim_lock, NULL, MUTEX_DRIVER, NULL);
+	xmemlist_free_block(&imp->zim_pool, page, MMU_PAGESIZE);
 	return (0);
 }
 
@@ -4764,7 +4758,7 @@ milan_route_pci_bus(milan_fabric_t *fabric)
 	for (uint_t i = 0; i < DF_MAX_CFGMAP; i++) {
 		int ret;
 		milan_ioms_t *ioms;
-		ioms_memlists_t *imp;
+		zen_ioms_memlists_t *imp;
 		uint32_t base, limit, dest;
 		uint32_t val = zen_df_read32(iodie->zen_iodie, inst,
 		    DF_CFGMAP_V2(i));
@@ -4791,7 +4785,6 @@ milan_route_pci_bus(milan_fabric_t *fabric)
 			    dest);
 			continue;
 		}
-		imp = &ioms->mio_memlists;
 
 		if (base != ioms->zen_ioms->zio_pci_busno) {
 			cmn_err(CE_PANIC, "unexpected bus routing rule, rule "
@@ -4803,14 +4796,15 @@ milan_route_pci_bus(milan_fabric_t *fabric)
 		 * We assign the IOMS's PCI bus as used and all the remainin as
 		 * available.
 		 */
-		ret = xmemlist_add_span(&imp->im_pool, base, 1,
-		    &imp->im_bus_used, 0);
+		imp = &ioms->mio_memlists;
+		ret = xmemlist_add_span(&imp->zim_pool, base, 1,
+		    &imp->zim_bus_used, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 		if (base == limit)
 			continue;
-		ret = xmemlist_add_span(&imp->im_pool, base + 1, limit - base,
-		    &imp->im_bus_avail, 0);
+		ret = xmemlist_add_span(&imp->zim_pool, base + 1, limit - base,
+		    &imp->zim_bus_avail, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	}
 }
@@ -4832,7 +4826,7 @@ milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
 {
 	int ret;
 	milan_route_io_t *mri = arg;
-	ioms_memlists_t *imp = &ioms->mio_memlists;
+	zen_ioms_memlists_t *imp = &ioms->mio_memlists;
 	uint32_t pci_base;
 
 	/*
@@ -4840,8 +4834,8 @@ milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
 	 * has a base of zero so we can cover the legacy I/O ports.  That range
 	 * is not available for PCI allocation, however.
 	 */
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0 &&
-	    (ioms->mio_iodie->mi_flags & MILAN_IODIE_F_PRIMARY) != 0) {
+	if ((ioms->zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0 &&
+	    (ioms->mio_iodie->zen_iodie->zi_flags & ZEN_IODIE_F_PRIMARY) != 0) {
 		mri->mri_bases[mri->mri_cur] = 0;
 		pci_base = MILAN_IOPORT_COMPAT_SIZE;
 	} else if (mri->mri_per_ioms > 2 * MILAN_SEC_IOMS_GEN_IO_SPACE) {
@@ -4883,14 +4877,14 @@ milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
 	 * its children requests it.
 	 */
 	if (pci_base != mri->mri_bases[mri->mri_cur]) {
-		ret = xmemlist_add_span(&imp->im_pool,
+		ret = xmemlist_add_span(&imp->zim_pool,
 		    mri->mri_bases[mri->mri_cur], pci_base,
-		    &imp->im_io_avail_gen, 0);
+		    &imp->zim_io_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	}
-	ret = xmemlist_add_span(&imp->im_pool, pci_base,
+	ret = xmemlist_add_span(&imp->zim_pool, pci_base,
 	    mri->mri_limits[mri->mri_cur] - mri->mri_bases[mri->mri_cur] + 1,
-	    &imp->im_io_avail_pci, 0);
+	    &imp->zim_io_avail_pci, 0);
 	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 	mri->mri_cur++;
@@ -5001,7 +4995,7 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 	int ret;
 	milan_route_mmio_t *mrm = arg;
 	const uint32_t mmio_gran = 1 << DF_MMIO_SHIFT;
-	ioms_memlists_t *imp = &ioms->mio_memlists;
+	zen_ioms_memlists_t *imp = &ioms->mio_memlists;
 	uint32_t gen_base32 = 0;
 	uint64_t gen_base64 = 0;
 
@@ -5012,15 +5006,15 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 	 * need to keep track of where it is so the FCH driver or its children
 	 * can allocate from it.
 	 */
-	if ((ioms->mio_flags & MILAN_IOMS_F_HAS_FCH) != 0 &&
-	    (ioms->mio_iodie->mi_flags & MILAN_IODIE_F_PRIMARY) != 0) {
+	if ((ioms->zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0 &&
+	    (ioms->mio_iodie->zen_iodie->zi_flags & ZEN_IODIE_F_PRIMARY) != 0) {
 		mrm->mrm_bases[mrm->mrm_cur] = mrm->mrm_fch_base;
 		mrm->mrm_limits[mrm->mrm_cur] = mrm->mrm_fch_base;
 		mrm->mrm_limits[mrm->mrm_cur] += mrm->mrm_fch_chunks *
 		    mmio_gran - 1;
-		ret = xmemlist_add_span(&imp->im_pool,
+		ret = xmemlist_add_span(&imp->zim_pool,
 		    mrm->mrm_limits[mrm->mrm_cur] + 1, MILAN_COMPAT_MMIO_SIZE,
-		    &imp->im_mmio_avail_gen, 0);
+		    &imp->zim_mmio_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	} else {
 		mrm->mrm_bases[mrm->mrm_cur] = mrm->mrm_mmio32_base;
@@ -5044,24 +5038,24 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 	 */
 	mrm->mrm_dests[mrm->mrm_cur] = ioms->zen_ioms->zio_dest_id;
 	if (gen_base32 != 0) {
-		ret = xmemlist_add_span(&imp->im_pool,
+		ret = xmemlist_add_span(&imp->zim_pool,
 		    mrm->mrm_bases[mrm->mrm_cur],
 		    mrm->mrm_limits[mrm->mrm_cur] -
 		    mrm->mrm_bases[mrm->mrm_cur] -
 		    MILAN_SEC_IOMS_GEN_MMIO32_SPACE + 1,
-		    &imp->im_mmio_avail_pci, 0);
+		    &imp->zim_mmio_avail_pci, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
-		ret = xmemlist_add_span(&imp->im_pool, gen_base32,
+		ret = xmemlist_add_span(&imp->zim_pool, gen_base32,
 		    MILAN_SEC_IOMS_GEN_MMIO32_SPACE,
-		    &imp->im_mmio_avail_gen, 0);
+		    &imp->zim_mmio_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	} else {
-		ret = xmemlist_add_span(&imp->im_pool,
+		ret = xmemlist_add_span(&imp->zim_pool,
 		    mrm->mrm_bases[mrm->mrm_cur],
 		    mrm->mrm_limits[mrm->mrm_cur] -
 		    mrm->mrm_bases[mrm->mrm_cur] + 1,
-		    &imp->im_mmio_avail_pci, 0);
+		    &imp->zim_mmio_avail_pci, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	}
 
@@ -5082,24 +5076,24 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
 		gen_base64 = mrm->mrm_limits[mrm->mrm_cur] -
 		    (MILAN_SEC_IOMS_GEN_MMIO64_SPACE - 1);
 
-		ret = xmemlist_add_span(&imp->im_pool,
+		ret = xmemlist_add_span(&imp->zim_pool,
 		    mrm->mrm_bases[mrm->mrm_cur],
 		    mrm->mrm_limits[mrm->mrm_cur] -
 		    mrm->mrm_bases[mrm->mrm_cur] -
 		    MILAN_SEC_IOMS_GEN_MMIO64_SPACE + 1,
-		    &imp->im_pmem_avail, 0);
+		    &imp->zim_pmem_avail, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
-		ret = xmemlist_add_span(&imp->im_pool, gen_base64,
+		ret = xmemlist_add_span(&imp->zim_pool, gen_base64,
 		    MILAN_SEC_IOMS_GEN_MMIO64_SPACE,
-		    &imp->im_mmio_avail_gen, 0);
+		    &imp->zim_mmio_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	} else {
-		ret = xmemlist_add_span(&imp->im_pool,
+		ret = xmemlist_add_span(&imp->zim_pool,
 		    mrm->mrm_bases[mrm->mrm_cur],
 		    mrm->mrm_limits[mrm->mrm_cur] -
 		    mrm->mrm_bases[mrm->mrm_cur] + 1,
-		    &imp->im_pmem_avail, 0);
+		    &imp->zim_pmem_avail, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	}
 
@@ -5227,38 +5221,38 @@ milan_ioms_prd_to_rsrc(pci_prd_rsrc_t rsrc)
 static struct memlist *
 milan_fabric_rsrc_subsume(milan_ioms_t *ioms, ioms_rsrc_t rsrc)
 {
-	ioms_memlists_t *imp;
+	zen_ioms_memlists_t *imp;
 	struct memlist **avail, **used, *ret;
 
 	imp = &ioms->mio_memlists;
-	mutex_enter(&imp->im_lock);
+	mutex_enter(&imp->zim_lock);
 	switch (rsrc) {
 	case IR_PCI_LEGACY:
-		avail = &imp->im_io_avail_pci;
-		used = &imp->im_io_used;
+		avail = &imp->zim_io_avail_pci;
+		used = &imp->zim_io_used;
 		break;
 	case IR_PCI_MMIO:
-		avail = &imp->im_mmio_avail_pci;
-		used = &imp->im_mmio_used;
+		avail = &imp->zim_mmio_avail_pci;
+		used = &imp->zim_mmio_used;
 		break;
 	case IR_PCI_PREFETCH:
-		avail = &imp->im_pmem_avail;
-		used = &imp->im_pmem_used;
+		avail = &imp->zim_pmem_avail;
+		used = &imp->zim_pmem_used;
 		break;
 	case IR_PCI_BUS:
-		avail = &imp->im_bus_avail;
-		used = &imp->im_bus_used;
+		avail = &imp->zim_bus_avail;
+		used = &imp->zim_bus_used;
 		break;
 	case IR_GEN_LEGACY:
-		avail = &imp->im_io_avail_gen;
-		used = &imp->im_io_used;
+		avail = &imp->zim_io_avail_gen;
+		used = &imp->zim_io_used;
 		break;
 	case IR_GEN_MMIO:
-		avail = &imp->im_mmio_avail_gen;
-		used = &imp->im_mmio_used;
+		avail = &imp->zim_mmio_avail_gen;
+		used = &imp->zim_mmio_used;
 		break;
 	default:
-		mutex_exit(&imp->im_lock);
+		mutex_exit(&imp->zim_lock);
 		return (NULL);
 	}
 
@@ -5267,7 +5261,7 @@ milan_fabric_rsrc_subsume(milan_ioms_t *ioms, ioms_rsrc_t rsrc)
 	 * or they had already been handed out.
 	 */
 	if (*avail == NULL) {
-		mutex_exit(&imp->im_lock);
+		mutex_exit(&imp->zim_lock);
 		return (NULL);
 	}
 
@@ -5289,7 +5283,7 @@ milan_fabric_rsrc_subsume(milan_ioms_t *ioms, ioms_rsrc_t rsrc)
 		memlist_insert(to_move, used);
 	}
 
-	mutex_exit(&imp->im_lock);
+	mutex_exit(&imp->zim_lock);
 	return (ret);
 }
 

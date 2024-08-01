@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_FABRIC_H
@@ -25,6 +25,7 @@
 #include <sys/plat/pci_prd.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
+#include <sys/io/zen/fabric.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,15 +46,6 @@ typedef struct milan_ioms milan_ioms_t;
 typedef struct milan_iodie milan_iodie_t;
 typedef struct milan_soc milan_soc_t;
 typedef struct milan_fabric milan_fabric_t;
-
-typedef enum milan_ioms_flag {
-	MILAN_IOMS_F_HAS_FCH	= 1 << 0,
-	MILAN_IOMS_F_HAS_WAFL	= 1 << 1
-} milan_ioms_flag_t;
-
-typedef enum milan_iodie_flag {
-	MILAN_IODIE_F_PRIMARY	= 1 << 0
-} milan_iodie_flag_t;
 
 /*
  * Generic resource types that can be routed via an IOMS.
@@ -96,14 +88,14 @@ typedef int (*milan_ioms_cb_f)(milan_ioms_t *, void *);
 extern int milan_walk_iodie(milan_iodie_cb_f, void *);
 extern int milan_walk_ioms(milan_ioms_cb_f, void *);
 
-extern milan_ioms_flag_t milan_ioms_flags(const milan_ioms_t *const);
+extern zen_ioms_flag_t milan_ioms_flags(const milan_ioms_t *const);
 extern milan_iodie_t *milan_ioms_iodie(const milan_ioms_t *const);
 extern smn_reg_t milan_ioms_reg(const milan_ioms_t *const, const smn_reg_def_t,
     const uint16_t);
 extern uint32_t milan_ioms_read(milan_ioms_t *, const smn_reg_t);
 extern void milan_ioms_write(milan_ioms_t *, const smn_reg_t, const uint32_t);
 
-extern milan_iodie_flag_t milan_iodie_flags(const milan_iodie_t *const);
+extern zen_iodie_flag_t milan_iodie_flags(const milan_iodie_t *const);
 extern uint8_t milan_iodie_node_id(const milan_iodie_t *const);
 extern smn_reg_t milan_iodie_reg(const milan_iodie_t *const,
     const smn_reg_def_t, const uint16_t);

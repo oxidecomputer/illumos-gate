@@ -26,7 +26,7 @@
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 /*
@@ -81,6 +81,7 @@
 #include <sys/apix.h>
 #include <sys/apix_irm_impl.h>
 #include <sys/smm.h>
+#include <sys/io/zen/fabric.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/iohc.h>
 
@@ -511,7 +512,7 @@ ioms_enable_nmi_cb(milan_ioms_t *ioms, void *arg __unused)
 	v = IOHC_INTR_CNTL_SET_NMI_DEST_CTRL(v, 0);
 	milan_ioms_write(ioms, reg, v);
 
-	if ((milan_ioms_flags(ioms) & MILAN_IOMS_F_HAS_FCH) != 0) {
+	if ((milan_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) != 0) {
 		reg = milan_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
 		v = IOHC_PIN_CTL_SET_MODE_NMI(0);
 		milan_ioms_write(ioms, reg, v);
