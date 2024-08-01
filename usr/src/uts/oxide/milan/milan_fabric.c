@@ -2970,6 +2970,7 @@ milan_fabric_topo_init(void)
 	 */
 
 	fabric->zen_fabric = zen_fabric;
+	zen_fabric->zf_uarch_fabric = fabric;
 	nsocs = zen_fabric->zf_nsocs;
 
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
@@ -2978,10 +2979,12 @@ milan_fabric_topo_init(void)
 
 		milan_soc_t *soc = &fabric->mf_socs[socno];
 		milan_iodie_t *iodie = &soc->ms_iodies[0];
+		zen_iodie->zi_uarch_iodie = iodie;
 
 		soc->zen_soc = zen_soc;
 		soc->ms_ndies = MILAN_FABRIC_MAX_DIES_PER_SOC;
 		soc->ms_fabric = fabric;
+		zen_soc->zs_uarch_soc = soc;
 
 		iodie->zen_iodie = zen_iodie;
 		iodie->mi_soc = soc;
@@ -2993,6 +2996,7 @@ milan_fabric_topo_init(void)
 
 			ioms->zen_ioms = zen_ioms;
 			ioms->mio_iodie = iodie;
+			zen_ioms->zio_uarch_ioms = ioms;
 
 			/*
 			 * XXX: The rest of this is not yet handled in common

@@ -106,6 +106,12 @@ struct zen_ioms {
 	 * The IO Die to which this IOMS belongs.
 	 */
 	zen_iodie_t		*zio_iodie;
+
+	/*
+	 * A pointer to the microarchitecturally specific state for this
+	 * IOMS.
+	 */
+	void			*zio_uarch_ioms;
 };
 
 struct zen_iodie {
@@ -159,6 +165,11 @@ struct zen_iodie {
 	 * The SOC to which this IO Die belongs.
 	 */
 	zen_soc_t		*zi_soc;
+
+	/*
+	 * A pointer to microarchitecturally specific state for this die.
+	 */
+	void			*zi_uarch_iodie;
 };
 
 /*
@@ -185,6 +196,11 @@ struct zen_soc {
 	 * The fabric to which this SOC belongs.
 	 */
 	zen_fabric_t		*zs_fabric;
+
+	/*
+	 * A pointer to the microarchitecturally specific data for this SOC.
+	 */
+	void			*zs_uarch_soc;
 };
 
 /*
@@ -236,6 +252,12 @@ struct zen_fabric {
 	 * The per-SOC details. Always at least one, up to `zf_nsocs`.
 	 */
 	zen_soc_t		zf_socs[ZEN_FABRIC_MAX_SOCS];
+
+	/*
+	 * A pointer to the microarchitecturally specific data for this
+	 * fabric.
+	 */
+	void			*zf_uarch_fabric;
 };
 
 #ifdef	__cplusplus
