@@ -65,6 +65,7 @@ extern uint64_t zen_fabric_ecam_base(void);
 
 typedef struct zen_fabric_ops {
 	void		(*zfo_topo_init)(void);
+	void		(*zfo_enable_nmi)(void);
 } zen_fabric_ops_t;
 
 #ifdef	__cplusplus

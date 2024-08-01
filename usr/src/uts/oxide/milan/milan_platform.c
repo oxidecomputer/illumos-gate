@@ -15,9 +15,10 @@
 
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/ccx_impl.h>
-#include <sys/io/zen/fabric.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/platform.h>
+
+#include <sys/io/milan/fabric_impl.h>
 
 
 /*
@@ -49,6 +50,7 @@ static const zen_ccx_ops_t milan_ccx_ops = {
 
 static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_topo_init = milan_fabric_topo_init,
+	.zfo_enable_nmi = milan_fabric_enable_nmi,
 };
 
 zen_platform_t milan_platform = {
