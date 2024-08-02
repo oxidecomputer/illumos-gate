@@ -34,6 +34,8 @@ typedef int (*zen_thread_cb_f)(zen_thread_t *, void *);
 
 extern int zen_walk_thread(zen_thread_cb_f, void *);
 
+extern zen_thread_t *zen_fabric_find_thread_by_cpuid(uint32_t);
+
 extern apicid_t zen_thread_apicid(const zen_thread_t *);
 
 typedef struct zen_ccx_ops {

@@ -105,14 +105,12 @@ struct milan_ioms {
 struct milan_iodie {
 	zen_iodie_t		*zen_iodie;
 	uint8_t			mi_nioms;
-	uint8_t			mi_nccds;
 	uint8_t			mi_smu_fw[3];
 	uint32_t		mi_dxio_fw[2];
 	milan_dxio_sm_state_t	mi_state;
 	milan_dxio_config_t	mi_dxio_conf;
 	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
 	milan_ioms_t		mi_ioms[MILAN_IOMS_PER_IODIE];
-	milan_ccd_t		mi_ccds[MILAN_MAX_CCDS_PER_IODIE];
 	milan_soc_t		*mi_soc;
 };
 
@@ -130,8 +128,8 @@ struct milan_fabric {
 };
 
 extern void milan_fabric_enable_nmi(void);
-extern uint32_t milan_smn_read(struct milan_iodie *, const smn_reg_t);
-extern void milan_smn_write(struct milan_iodie *, const smn_reg_t,
+extern uint32_t milan_smn_read(struct zen_iodie *, const smn_reg_t);
+extern void milan_smn_write(struct zen_iodie *, const smn_reg_t,
     const uint32_t);
 
 #ifdef __cplusplus

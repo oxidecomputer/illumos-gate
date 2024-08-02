@@ -71,36 +71,17 @@ extern "C" {
 #define	MILAN_MAX_CORES_PER_CCX		8
 #define	MILAN_MAX_THREADS_PER_CORE	2
 
-struct milan_core {
-	uint8_t			mc_logical_coreno;
-	uint8_t			mc_physical_coreno;
-	uint8_t			mc_nthreads;
-	zen_thread_t		mc_threads[MILAN_MAX_THREADS_PER_CORE];
-	milan_ccx_t		*mc_ccx;
-};
-
-struct milan_ccx {
-	uint8_t			mcx_logical_cxno;
-	uint8_t			mcx_physical_cxno;
-	uint8_t			mcx_ncores;
-	milan_core_t		mcx_cores[MILAN_MAX_CORES_PER_CCX];
-	zen_core_t		mcx_zcores[MILAN_MAX_CORES_PER_CCX];
-	milan_ccd_t		*mcx_ccd;
-};
-
-struct milan_ccd {
-	uint8_t			mcd_logical_dieno;
-	uint8_t			mcd_physical_dieno;
-	uint8_t			mcd_ccm_comp_id;
-	uint8_t			mcd_nccxs;
-	milan_ccx_t		mcd_ccxs[MILAN_MAX_CCXS_PER_CCD];
-	milan_iodie_t		*mcd_iodie;
-};
-
 extern size_t milan_fabric_thread_get_brandstr(const zen_thread_t *,
     char *, size_t);
 extern void milan_fabric_thread_get_dpm_weights(const zen_thread_t *,
     const uint64_t **, uint32_t *);
+
+extern smn_reg_t milan_core_reg(const zen_core_t *const, const smn_reg_def_t);
+extern smn_reg_t milan_ccd_reg(const zen_ccd_t *const, const smn_reg_def_t);
+extern uint32_t milan_ccd_read(zen_ccd_t *, const smn_reg_t);
+extern void milan_ccd_write(zen_ccd_t *, const smn_reg_t, const uint32_t);
+extern uint32_t milan_core_read(zen_core_t *, const smn_reg_t);
+extern void milan_core_write(zen_core_t *, const smn_reg_t, const uint32_t);
 
 #ifdef __cplusplus
 }

@@ -50,16 +50,19 @@ static const boolean_t milan_ccx_set_undoc_fields = B_TRUE;
 
 
 smn_reg_t
-milan_core_reg(const milan_core_t *const core, const smn_reg_def_t def)
+milan_core_reg(const zen_core_t *const core, const smn_reg_def_t def)
 {
-	milan_ccx_t *ccx = core->mc_ccx;
-	milan_ccd_t *ccd = ccx->mcx_ccd;
+	zen_ccx_t *ccx = core->zc_ccx;
+	ASSERT(ccx != NULL);
+	zen_ccd_t *ccd = ccx->zcx_ccd;
+	ASSERT(ccd != NULL);
 	smn_reg_t reg;
+
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SCFCTP:
-		reg = amdzen_scfctp_smn_reg(ccd->mcd_physical_dieno,
-		    ccx->mcx_physical_cxno, def, core->mc_physical_coreno);
+		reg = amdzen_scfctp_smn_reg(ccd->zcd_physical_dieno,
+		    ccx->zcx_physical_cxno, def, core->zc_physical_coreno);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for core",
@@ -70,13 +73,13 @@ milan_core_reg(const milan_core_t *const core, const smn_reg_def_t def)
 }
 
 smn_reg_t
-milan_ccd_reg(const milan_ccd_t *const ccd, const smn_reg_def_t def)
+milan_ccd_reg(const zen_ccd_t *const ccd, const smn_reg_def_t def)
 {
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SMUPWR:
-		reg = amdzen_smupwr_smn_reg(ccd->mcd_physical_dieno, def, 0);
+		reg = amdzen_smupwr_smn_reg(ccd->zcd_physical_dieno, def, 0);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for CCD",
@@ -87,51 +90,39 @@ milan_ccd_reg(const milan_ccd_t *const ccd, const smn_reg_def_t def)
 }
 
 uint32_t
-milan_ccd_read(milan_ccd_t *ccd, const smn_reg_t reg)
+milan_ccd_read(zen_ccd_t *ccd, const smn_reg_t reg)
 {
-	milan_iodie_t *iodie = ccd->mcd_iodie;
-
-	return (milan_smn_read(iodie, reg));
+	return (milan_smn_read(ccd->zcd_iodie, reg));
 }
 
 void
-milan_ccd_write(milan_ccd_t *ccd, const smn_reg_t reg, const uint32_t val)
+milan_ccd_write(zen_ccd_t *ccd, const smn_reg_t reg, const uint32_t val)
 {
-	milan_iodie_t *iodie = ccd->mcd_iodie;
-
-	milan_smn_write(iodie, reg, val);
+	milan_smn_write(ccd->zcd_iodie, reg, val);
 }
 
 uint32_t
-milan_ccx_read(milan_ccx_t *ccx, const smn_reg_t reg)
+milan_ccx_read(zen_ccx_t *ccx, const smn_reg_t reg)
 {
-	milan_iodie_t *iodie = ccx->mcx_ccd->mcd_iodie;
-
-	return (milan_smn_read(iodie, reg));
+	return (milan_smn_read(ccx->zcx_ccd->zcd_iodie, reg));
 }
 
 void
-milan_ccx_write(milan_ccx_t *ccx, const smn_reg_t reg, const uint32_t val)
+milan_ccx_write(zen_ccx_t *ccx, const smn_reg_t reg, const uint32_t val)
 {
-	milan_iodie_t *iodie = ccx->mcx_ccd->mcd_iodie;
-
-	milan_smn_write(iodie, reg, val);
+	milan_smn_write(ccx->zcx_ccd->zcd_iodie, reg, val);
 }
 
 uint32_t
-milan_core_read(milan_core_t *core, const smn_reg_t reg)
+milan_core_read(zen_core_t *core, const smn_reg_t reg)
 {
-	milan_iodie_t *iodie = core->mc_ccx->mcx_ccd->mcd_iodie;
-
-	return (milan_smn_read(iodie, reg));
+	return (milan_smn_read(core->zc_ccx->zcx_ccd->zcd_iodie, reg));
 }
 
 void
-milan_core_write(milan_core_t *core, const smn_reg_t reg, const uint32_t val)
+milan_core_write(zen_core_t *core, const smn_reg_t reg, const uint32_t val)
 {
-	milan_iodie_t *iodie = core->mc_ccx->mcx_ccd->mcd_iodie;
-
-	milan_smn_write(iodie, reg, val);
+	milan_smn_write(core->zc_ccx->zcx_ccd->zcd_iodie, reg, val);
 }
 
 /*
@@ -152,20 +143,18 @@ milan_core_write(milan_core_t *core, const smn_reg_t reg, const uint32_t val)
 boolean_t
 milan_ccx_start_thread(const zen_thread_t *thread)
 {
-	zen_core_t *zcore = thread->zt_core;
-	milan_core_t *core = (milan_core_t *)zcore->zc_uarch_core;
-	milan_ccx_t *ccx = core->mc_ccx;
-	milan_ccd_t *ccd = ccx->mcx_ccd;
+	zen_core_t *core = thread->zt_core;
+	zen_ccd_t *ccd = core->zc_ccx->zcx_ccd;
 	smn_reg_t reg;
 	uint8_t thr_ccd_idx;
 	uint32_t en;
 
 	VERIFY3U(CPU->cpu_id, ==, 0);
 
-	thr_ccd_idx = ccx->mcx_logical_cxno;
-	thr_ccd_idx *= ccx->mcx_ncores;
-	thr_ccd_idx += core->mc_logical_coreno;
-	thr_ccd_idx *= core->mc_nthreads;
+	thr_ccd_idx = core->zc_ccx->zcx_logical_cxno;
+	thr_ccd_idx *= core->zc_ccx->zcx_ncores;
+	thr_ccd_idx += core->zc_logical_coreno;
+	thr_ccd_idx *= core->zc_nthreads;
 	thr_ccd_idx += thread->zt_threadno;
 
 	VERIFY3U(thr_ccd_idx, <, MILAN_MAX_CCXS_PER_CCD *
@@ -618,7 +607,7 @@ milan_core_dpm_init(void)
 	uint32_t nweights;
 	uint64_t cfg;
 
-	thread = milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
+	thread = zen_fabric_find_thread_by_cpuid(CPU->cpu_id);
 	if (thread == NULL) {
 		cmn_err(CE_PANIC, "cpu%d: unable to find thread for DPM "
 		    "initialization\n", CPU->cpu_id);
@@ -645,7 +634,7 @@ milan_ccx_init(void)
 	const zen_thread_t *thread;
 	char str[CPUID_BRANDSTR_STRLEN + 1];
 
-	thread = milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
+	thread = zen_fabric_find_thread_by_cpuid(CPU->cpu_id);
 	if (thread == NULL) {
 		cmn_err(CE_PANIC, "cpu%d: unable to find thread for CCX "
 		    "initialization\n", CPU->cpu_id);
@@ -716,14 +705,12 @@ milan_ccx_init(void)
 		milan_core_tw_init();
 	}
 	if (thread->zt_threadno == 0) {
-		milan_core_t *core =
-		    (milan_core_t *)thread->zt_core->zc_uarch_core;
 		milan_core_ls_init();
 		milan_core_ic_init();
 		milan_core_dc_init();
 		milan_core_de_init();
 		milan_core_l2_init();
-		if (core->mc_logical_coreno == 0)
+		if (thread->zt_core->zc_logical_coreno == 0)
 			milan_ccx_l3_init();
 		milan_core_undoc_init();
 		milan_core_dpm_init();

@@ -411,7 +411,7 @@ apic_probe_raw(const char *modname)
 	mmio_reg_t reg;
 	uint64_t val;
 
-	(void) milan_walk_thread(apic_count_thread, &apic_nproc);
+	(void) zen_walk_thread(apic_count_thread, &apic_nproc);
 	apic_cpus_size = max(apic_nproc, max_ncpus) * sizeof (*apic_cpus);
 	if ((apic_cpus = kmem_zalloc(apic_cpus_size, KM_NOSLEEP)) == NULL) {
 		apic_max_nproc = -1;
@@ -422,7 +422,7 @@ apic_probe_raw(const char *modname)
 	apic_enable_x2apic();
 
 	CPUSET_ZERO(apic_cpumask);
-	(void) milan_walk_thread(apic_enumerate_one, &apic_index);
+	(void) zen_walk_thread(apic_enumerate_one, &apic_index);
 
 	reg = FCH_PMIO_DECODEEN_MMIO(fch_pmio);
 	val = mmio_reg_read(reg);
@@ -1072,7 +1072,7 @@ apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 	 * PSM as conceived for i86pc is not factored correctly for this
 	 * machine.
 	 */
-	thread = milan_fabric_find_thread_by_cpuid(cpun);
+	thread = zen_fabric_find_thread_by_cpuid(cpun);
 	VERIFY(thread != NULL);
 
 	if (!milan_ccx_start_thread(thread)) {

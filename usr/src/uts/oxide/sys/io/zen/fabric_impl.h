@@ -24,6 +24,7 @@
 
 #include <io/amdzen/amdzen_client.h>
 #include <sys/io/zen/fabric.h>
+#include <sys/io/zen/ccx_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -170,6 +171,11 @@ struct zen_iodie {
 	uint8_t			zi_nioms;
 
 	/*
+	 * The actual number of CCDs on this die.
+	 */
+	uint8_t			zi_nccds;
+
+	/*
 	 * Per-die flags.
 	 */
 	zen_iodie_flag_t	zi_flags;
@@ -178,6 +184,11 @@ struct zen_iodie {
 	 * The IOMS instances present on this IO Die.
 	 */
 	zen_ioms_t		zi_ioms[ZEN_IODIE_MAX_IOMS];
+
+	/*
+	 * CCDs on this die.
+	 */
+	zen_ccd_t		zi_ccds[ZEN_MAX_CCDS_PER_IODIE];
 
 	/*
 	 * The SOC to which this IO Die belongs.

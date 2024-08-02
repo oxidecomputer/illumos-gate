@@ -34,10 +34,14 @@ typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;
+typedef struct zen_thread zen_thread_t;
 
-/* Walker callback function types */
+/* Walker callback function type */
 typedef int (*zen_ioms_cb_f)(zen_ioms_t *, void *);
 
+/*
+ * Walks IOMSes and applies a callback.
+ */
 extern int zen_walk_ioms(zen_ioms_cb_f, void *);
 
 typedef enum zen_ioms_flag {
@@ -53,6 +57,11 @@ extern zen_ioms_flag_t zen_ioms_flags(const zen_ioms_t *const);
 typedef enum zen_iodie_flag {
 	ZEN_IODIE_F_PRIMARY	= 1 << 0
 } zen_iodie_flag_t;
+
+/*
+ * Returns the node ID associated corresponding to this die.
+ */
+extern uint8_t zen_iodie_node_id(const zen_iodie_t *const);
 
 /*
  * Returns the set of flags set on the given IO die.

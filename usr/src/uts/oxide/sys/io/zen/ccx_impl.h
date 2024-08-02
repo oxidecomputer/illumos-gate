@@ -20,15 +20,22 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/io/zen/ccx.h>
+#include <sys/io/zen/fabric.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
 /*
- * Current architectural limits
+ * Current architectural limits.
+ *
+ * XXX: This currently reflects Milan.  We know that this
+ * expand in Genoa and Turin, but we're proceeding incrementally.
  */
+#define	ZEN_MAX_CCDS_PER_IODIE		8
 #define	ZEN_MAX_CCXS_PER_CCD		1
+#define	ZEN_MAX_CORES_PER_CCX		8
+#define	ZEN_MAX_THREADS_PER_CORE	2
 
 struct zen_thread {
 	/*
@@ -53,28 +60,70 @@ struct zen_thread {
 
 struct zen_core {
 	/*
-	 * A pointer to the microarchitecturally specific data for
-	 * this core.
+	 * The logical core identifier for this core.  This is a sequential
+	 * integer, starting from 0.
 	 */
-	void		*zc_uarch_core;
+	uint8_t		zc_logical_coreno;
+
+	/*
+	 * The physical core identifier for this core.  This may be sparse.
+	 */
+	uint8_t		zc_physical_coreno;
+
+	/*
+	 * The number of hyperthreads for this core.
+	 */
+	uint8_t		zc_nthreads;
+
+	/*
+	 * The hyperthreads that are part of this core.
+	 */
+	zen_thread_t	zc_threads[ZEN_MAX_THREADS_PER_CORE];
+
+	/*
+	 * A pointer to the CCX that this core belongs to.
+	 */
+	zen_ccx_t	*zc_ccx;
 };
 
 struct zen_ccx {
 	/*
-	 * A pointer to the microarchitecturally specific data for this
-	 * CCX.
+	 * The logical identifier for this core-complex.  This is a
+	 * sequential identifier, origin 0.
 	 */
-	void		*zcx_uarch_ccx;
+	uint8_t		zcx_logical_cxno;
+
+	/*
+	 * The physical identifier for this core-complex.  This may
+	 * be sparse.
+	 */
+	uint8_t		zcx_physical_cxno;
+
+	/*
+	 * The number of cores in this complex.
+	 */
+	uint8_t		zcx_ncores;
+
+	/*
+	 * The cores in this complex.
+	 */
+	zen_core_t	zcx_cores[ZEN_MAX_CORES_PER_CCX];
+
+	/*
+	 * A pointer to the CCD that this CCX is part of.
+	 */
+	zen_ccd_t	*zcx_ccd;
 };
 
 struct zen_ccd {
 	/*
-	 * The logical die number for this CCD.
+	 * The logical die number for this CCD.  This is a sequential
+	 * identifier; origin 0.
 	 */
 	uint8_t		zcd_logical_dieno;
 
 	/*
-	 * The physical die number for this CCD.
+	 * The physical die number for this CCD.  This may be sparse.
 	 */
 	uint8_t		zcd_physical_dieno;
 
@@ -88,7 +137,17 @@ struct zen_ccd {
 	 * from the architectural maximum.
 	 */
 	uint8_t		zcd_nccxs;
+
+	/*
+	 * A pointer to the microarchitecturally specific IO die this
+	 * CCD is attached to.
+	 */
+	zen_iodie_t	*zcd_iodie;
 };
+
+typedef int (*zen_ccd_cb_f)(zen_ccd_t *, void *);
+typedef int (*zen_ccx_cb_f)(zen_ccx_t *, void *);
+typedef int (*zen_core_cb_f)(zen_core_t *, void *);
 
 extern void zen_ccx_physmem_init(void);
 extern void zen_ccx_mmio_init(uint64_t, bool);

@@ -282,7 +282,7 @@ zen_fch_ios_fabric_id(df_rev_t df_rev)
  * DF::SystemCfg[NodeId]
  */
 static uint16_t
-zen_iodie_node_id(zen_iodie_t *iodie)
+zen_fabric_iodie_node_id(zen_iodie_t *iodie)
 {
 	const df_rev_t df_rev = oxide_zen_platform_consts()->zpc_df_rev;
 	switch (df_rev) {
@@ -356,6 +356,15 @@ zen_ios_fabric_id(zen_ioms_t *ioms)
 		cmn_err(CE_PANIC, "Unsupported DF revision %d", df_rev);
 		return (-1);
 	}
+}
+
+/*
+ * Returns the node ID corresponding to this die.
+ */
+uint8_t
+zen_iodie_node_id(const zen_iodie_t *const iodie)
+{
+	return (iodie->zi_node_id);
 }
 
 /*
@@ -466,7 +475,7 @@ zen_fabric_topo_init_common(void)
 		soc->zs_fabric = fabric;
 
 		iodie->zi_devno = AMDZEN_DF_FIRST_DEVICE + socno;
-		iodie->zi_node_id = zen_iodie_node_id(iodie);
+		iodie->zi_node_id = zen_fabric_iodie_node_id(iodie);
 		iodie->zi_soc = soc;
 
 		if (iodie->zi_node_id == 0) {
@@ -571,6 +580,141 @@ zen_walk_ioms(zen_ioms_cb_f func, void *arg)
 {
 	return (zen_fabric_walk_ioms(&zen_fabric, func, arg));
 }
+typedef struct zen_fabric_ccd_cb {
+	zen_ccd_cb_f	zfcc_func;
+	void		*zfcc_arg;
+} zen_fabric_ccd_cb_t;
+
+static int
+zen_fabric_walk_ccd_iodie_cb(zen_iodie_t *iodie, void *arg)
+{
+	const zen_fabric_ccd_cb_t *cb = (const zen_fabric_ccd_cb_t *)arg;
+
+	for (uint8_t ccdno = 0; ccdno < iodie->zi_nccds; ccdno++) {
+		zen_ccd_t *ccd = &iodie->zi_ccds[ccdno];
+		int ret = cb->zfcc_func(ccd, cb->zfcc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+static int
+zen_fabric_walk_ccd(zen_fabric_t *fabric, zen_ccd_cb_f func, void *arg)
+{
+	zen_fabric_ccd_cb_t cb = {
+	    .zfcc_func = func,
+	    .zfcc_arg = arg,
+	};
+
+	return (zen_fabric_walk_iodie(fabric, zen_fabric_walk_ccd_iodie_cb,
+	    &cb));
+}
+
+typedef struct zen_fabric_ccx_cb {
+	zen_ccx_cb_f	zfcc_func;
+	void		*zfcc_arg;
+} zen_fabric_ccx_cb_t;
+
+static int
+zen_fabric_walk_ccx_ccd_cb(zen_ccd_t *ccd, void *arg)
+{
+	const zen_fabric_ccx_cb_t *cb = (const zen_fabric_ccx_cb_t *)arg;
+
+	for (uint8_t ccxno = 0; ccxno < ccd->zcd_nccxs; ccxno++) {
+		zen_ccx_t *ccx = &ccd->zcd_ccxs[ccxno];
+		int ret = cb->zfcc_func(ccx, cb->zfcc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+static int
+zen_fabric_walk_ccx(zen_fabric_t *fabric, zen_ccx_cb_f func, void *arg)
+{
+	zen_fabric_ccx_cb_t cb = {
+	    .zfcc_func = func,
+	    .zfcc_arg = arg,
+	};
+
+	return (zen_fabric_walk_ccd(fabric, zen_fabric_walk_ccx_ccd_cb, &cb));
+}
+
+typedef struct zen_fabric_core_cb {
+	zen_core_cb_f	zfcc_func;
+	void		*zfcc_arg;
+} zen_fabric_core_cb_t;
+
+static int
+zen_fabric_walk_core_ccx_cb(zen_ccx_t *ccx, void *arg)
+{
+	const zen_fabric_core_cb_t *cb = (const zen_fabric_core_cb_t *)arg;
+
+	for (uint8_t coreno = 0; coreno < ccx->zcx_ncores; coreno++) {
+		zen_core_t *core = &ccx->zcx_cores[coreno];
+		int ret = cb->zfcc_func(core, cb->zfcc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+static int
+zen_fabric_walk_core(zen_fabric_t *fabric, zen_core_cb_f func, void *arg)
+{
+	zen_fabric_core_cb_t cb = {
+	    .zfcc_func = func,
+	    .zfcc_arg = arg,
+	};
+
+	return (zen_fabric_walk_ccx(fabric, zen_fabric_walk_core_ccx_cb, &cb));
+}
+
+typedef struct zen_fabric_thread_cb {
+	zen_thread_cb_f		zftc_func;
+	void			*zftc_arg;
+} zen_fabric_thread_cb_t;
+
+static int
+zen_fabric_walk_thread_core_cb(zen_core_t *core, void *arg)
+{
+	zen_fabric_thread_cb_t *cb = (zen_fabric_thread_cb_t *)arg;
+
+	for (uint8_t threadno = 0; threadno < core->zc_nthreads; threadno++) {
+		zen_thread_t *thread = &core->zc_threads[threadno];
+		int ret = cb->zftc_func(thread, cb->zftc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+static int
+zen_fabric_walk_thread(zen_fabric_t *fabric, zen_thread_cb_f func, void *arg)
+{
+	zen_fabric_thread_cb_t cb = {
+	    .zftc_func = func,
+	    .zftc_arg = arg,
+	};
+
+	return (zen_fabric_walk_core(fabric, zen_fabric_walk_thread_core_cb,
+	    &cb));
+}
+
+int
+zen_walk_thread(zen_thread_cb_f func, void *arg)
+{
+	return (zen_fabric_walk_thread(&zen_fabric, func, arg));
+}
 typedef struct {
 	uint32_t	zffi_dest;
 	zen_ioms_t	*zffi_ioms;
@@ -628,6 +772,41 @@ zen_fabric_find_ioms_by_bus(zen_fabric_t *fabric, uint32_t pci_bus)
 	    &zffi);
 
 	return (zffi.zffi_ioms);
+}
+
+typedef struct zen_fabric_find_thread {
+	uint32_t	zfft_search;
+	uint32_t	zfft_count;
+	zen_thread_t	*zfft_found;
+} zen_fabric_find_thread_t;
+
+static int
+zen_fabric_find_thread_by_cpuid_cb(zen_thread_t *thread, void *arg)
+{
+	zen_fabric_find_thread_t *zfft = (zen_fabric_find_thread_t *)arg;
+
+	if (zfft->zfft_count == zfft->zfft_search) {
+		zfft->zfft_found = thread;
+		return (1);
+	}
+	++zfft->zfft_count;
+
+	return (0);
+}
+
+zen_thread_t *
+zen_fabric_find_thread_by_cpuid(uint32_t cpuid)
+{
+	zen_fabric_find_thread_t zfft = {
+	    .zfft_search = cpuid,
+	    .zfft_count = 0,
+	    .zfft_found = NULL,
+	};
+
+	(void) zen_fabric_walk_thread(&zen_fabric,
+	    zen_fabric_find_thread_by_cpuid_cb, &zfft);
+
+	return (zfft.zfft_found);
 }
 
 /*
