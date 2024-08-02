@@ -16,15 +16,29 @@
 #ifndef	_SYS_IO_ZEN_CCX_H
 #define	_SYS_IO_ZEN_CCX_H
 
+#include <sys/apic.h>
 #include <sys/types.h>
+#include <sys/stdbool.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
+typedef struct zen_thread zen_thread_t;
+typedef struct zen_core zen_core_t;
+typedef struct zen_ccx zen_ccx_t;
+typedef struct zen_ccd zen_ccd_t;
+
+/* Walker callback function types */
+typedef int (*zen_thread_cb_f)(zen_thread_t *, void *);
+
+extern int zen_walk_thread(zen_thread_cb_f, void *);
+
+extern apicid_t zen_thread_apicid(const zen_thread_t *);
+
 typedef struct zen_ccx_ops {
 	void	(*zco_physmem_init)(void);
-	void	(*zco_mmio_init)(uint64_t, boolean_t);
+	void	(*zco_mmio_init)(uint64_t, bool);
 } zen_ccx_ops_t;
 
 #ifdef	__cplusplus

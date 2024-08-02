@@ -246,7 +246,7 @@
  *                 |
  *                 \-- milan_core_t (qty varies 4-8)
  *                     |
- *                     \-- milan_thread_t (qty 2, unless SMT is disabled)
+ *                     \-- zen_thread_t (qty 2, unless SMT is disabled)
  *
  * The PCIe bridge does not have its own representation in this schema, but is
  * represented as a B/D/F associated with a PCIe port.  That B/D/F provides the
@@ -1130,7 +1130,7 @@ milan_fabric_walk_thread_core_cb(milan_core_t *core, void *arg)
 
 	for (uint8_t threadno = 0; threadno < core->mc_nthreads; threadno++) {
 		int ret;
-		milan_thread_t *thread = &core->mc_threads[threadno];
+		zen_thread_t *thread = &core->mc_threads[threadno];
 
 		if ((ret = cb->mftc_func(thread, cb->mftc_arg)) != 0)
 			return (ret);
@@ -1229,11 +1229,11 @@ milan_fabric_find_pcie_core_by_lanes(milan_iodie_t *iodie,
 typedef struct milan_fabric_find_thread {
 	uint32_t	mfft_search;
 	uint32_t	mfft_count;
-	milan_thread_t	*mfft_found;
+	zen_thread_t	*mfft_found;
 } milan_fabric_find_thread_t;
 
 static int
-milan_fabric_find_thread_by_cpuid_cb(milan_thread_t *thread, void *arg)
+milan_fabric_find_thread_by_cpuid_cb(zen_thread_t *thread, void *arg)
 {
 	milan_fabric_find_thread_t *mfft = arg;
 	if (mfft->mfft_count == mfft->mfft_search) {
@@ -1244,7 +1244,7 @@ milan_fabric_find_thread_by_cpuid_cb(milan_thread_t *thread, void *arg)
 	return (0);
 }
 
-milan_thread_t *
+zen_thread_t *
 milan_fabric_find_thread_by_cpuid(uint32_t cpuid)
 {
 	milan_fabric_find_thread_t mfft;
@@ -1262,18 +1262,22 @@ milan_fabric_find_thread_by_cpuid(uint32_t cpuid)
  * buf, len, and return value semantics match those of snprintf(9f).
  */
 size_t
-milan_fabric_thread_get_brandstr(const milan_thread_t *thread,
+milan_fabric_thread_get_brandstr(const zen_thread_t *thread,
     char *buf, size_t len)
 {
-	milan_soc_t *soc = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie->mi_soc;
+	zen_core_t *zcore = thread->zt_core;
+	milan_core_t *core = (milan_core_t *)zcore->zc_uarch_core;
+	milan_soc_t *soc = core->mc_ccx->mcx_ccd->mcd_iodie->mi_soc;
 	return (snprintf(buf, len, "%s", soc->zen_soc->zs_brandstr));
 }
 
 void
-milan_fabric_thread_get_dpm_weights(const milan_thread_t *thread,
+milan_fabric_thread_get_dpm_weights(const zen_thread_t *thread,
     const uint64_t **wp, uint32_t *nentp)
 {
-	milan_iodie_t *iodie = thread->mt_core->mc_ccx->mcx_ccd->mcd_iodie;
+	zen_core_t *zcore = thread->zt_core;
+	milan_core_t *core = (milan_core_t *)zcore->zc_uarch_core;
+	milan_iodie_t *iodie = core->mc_ccx->mcx_ccd->mcd_iodie;
 	*wp = iodie->mi_dpm_weights;
 	*nentp = MILAN_MAX_DPM_WEIGHTS;
 }
@@ -2616,12 +2620,14 @@ milan_ccx_init_core(milan_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 {
 	smn_reg_t reg;
 	uint32_t val;
+	zen_core_t *zcore = &ccx->mcx_zcores[lidx];
 	milan_core_t *core = &ccx->mcx_cores[lidx];
 	milan_ccd_t *ccd = ccx->mcx_ccd;
 	milan_iodie_t *iodie = ccd->mcd_iodie;
 
 	core->mc_ccx = ccx;
 	core->mc_physical_coreno = pidx;
+	zcore->zc_uarch_core = core;
 
 	reg = milan_core_reg(core, D_SCFCTP_PMREG_INITPKG0);
 	val = milan_core_read(core, reg);
@@ -2640,10 +2646,10 @@ milan_ccx_init_core(milan_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 
 	for (uint8_t thr = 0; thr < core->mc_nthreads; thr++) {
 		uint32_t apicid = 0;
-		milan_thread_t *thread = &core->mc_threads[thr];
+		zen_thread_t *thread = &core->mc_threads[thr];
 
-		thread->mt_threadno = thr;
-		thread->mt_core = core;
+		thread->zt_threadno = thr;
+		thread->zt_core = zcore;
 		nthreads++;
 
 		/*
@@ -2682,7 +2688,7 @@ milan_ccx_init_core(milan_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 		apicid <<= highbit(core->mc_nthreads - 1);
 		apicid |= thr;
 
-		thread->mt_apicid = (apicid_t)apicid;
+		thread->zt_apicid = (apicid_t)apicid;
 	}
 }
 

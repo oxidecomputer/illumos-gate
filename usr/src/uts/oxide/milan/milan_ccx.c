@@ -143,16 +143,17 @@ milan_core_write(milan_core_t *core, const smn_reg_t reg, const uint32_t val)
  * we must never clear this bit.  What happens if we do, I do not know.  If the
  * thread was already booted, this function does nothing and returns B_FALSE;
  * otherwise it returns B_TRUE and the AP will be started.  There is no way to
- * fail; we don't construct a milan_thread_t for hardware that doesn't exist, so
+ * fail; we don't construct a zen_thread_t for hardware that doesn't exist, so
  * it's always possible to perform this operation if what we are handed points
  * to genuine data.
  *
  * See MP boot theory in os/mp_startup.c
  */
 boolean_t
-milan_ccx_start_thread(const milan_thread_t *thread)
+milan_ccx_start_thread(const zen_thread_t *thread)
 {
-	milan_core_t *core = thread->mt_core;
+	zen_core_t *zcore = thread->zt_core;
+	milan_core_t *core = (milan_core_t *)zcore->zc_uarch_core;
 	milan_ccx_t *ccx = core->mc_ccx;
 	milan_ccd_t *ccd = ccx->mcx_ccd;
 	smn_reg_t reg;
@@ -165,7 +166,7 @@ milan_ccx_start_thread(const milan_thread_t *thread)
 	thr_ccd_idx *= ccx->mcx_ncores;
 	thr_ccd_idx += core->mc_logical_coreno;
 	thr_ccd_idx *= core->mc_nthreads;
-	thr_ccd_idx += thread->mt_threadno;
+	thr_ccd_idx += thread->zt_threadno;
 
 	VERIFY3U(thr_ccd_idx, <, MILAN_MAX_CCXS_PER_CCD *
 	    MILAN_MAX_CORES_PER_CCX * MILAN_MAX_THREADS_PER_CORE);
@@ -178,12 +179,6 @@ milan_ccx_start_thread(const milan_thread_t *thread)
 	en = SMUPWR_THREAD_EN_SET_T(en, thr_ccd_idx);
 	milan_ccd_write(ccd, reg, en);
 	return (B_TRUE);
-}
-
-apicid_t
-milan_thread_apicid(const milan_thread_t *thread)
-{
-	return (thread->mt_apicid);
 }
 
 boolean_t
@@ -618,7 +613,7 @@ milan_core_undoc_init(void)
 static void
 milan_core_dpm_init(void)
 {
-	const milan_thread_t *thread;
+	const zen_thread_t *thread;
 	const uint64_t *weights;
 	uint32_t nweights;
 	uint64_t cfg;
@@ -647,7 +642,7 @@ milan_core_dpm_init(void)
 void
 milan_ccx_init(void)
 {
-	const milan_thread_t *thread;
+	const zen_thread_t *thread;
 	char str[CPUID_BRANDSTR_STRLEN + 1];
 
 	thread = milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
@@ -717,16 +712,18 @@ milan_ccx_init(void)
 	 */
 	milan_thread_feature_init();
 	milan_thread_uc_init();
-	if (thread->mt_threadno == 1) {
+	if (thread->zt_threadno == 1) {
 		milan_core_tw_init();
 	}
-	if (thread->mt_threadno == 0) {
+	if (thread->zt_threadno == 0) {
+		milan_core_t *core =
+		    (milan_core_t *)thread->zt_core->zc_uarch_core;
 		milan_core_ls_init();
 		milan_core_ic_init();
 		milan_core_dc_init();
 		milan_core_de_init();
 		milan_core_l2_init();
-		if (thread->mt_core->mc_logical_coreno == 0)
+		if (core->mc_logical_coreno == 0)
 			milan_ccx_l3_init();
 		milan_core_undoc_init();
 		milan_core_dpm_init();

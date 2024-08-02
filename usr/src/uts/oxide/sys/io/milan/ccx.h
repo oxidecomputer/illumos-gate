@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
 #include <sys/amdzen/ccd.h>
+#include <sys/io/zen/ccx.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,29 +40,26 @@ extern "C" {
  * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
  * pointers to these types only as opaque handles.
  */
-struct milan_thread;
 struct milan_core;
 struct milan_ccx;
 struct milan_ccd;
 
-typedef struct milan_thread milan_thread_t;
 typedef struct milan_core milan_core_t;
 typedef struct milan_ccx milan_ccx_t;
 typedef struct milan_ccd milan_ccd_t;
 
-extern boolean_t milan_ccx_start_thread(const milan_thread_t *);
+extern boolean_t milan_ccx_start_thread(const zen_thread_t *);
 extern void milan_ccx_init(void);
 
 /* Walker callback function types */
-typedef int (*milan_thread_cb_f)(milan_thread_t *, void *);
+typedef int (*milan_thread_cb_f)(zen_thread_t *, void *);
 typedef int (*milan_ccd_cb_f)(milan_ccd_t *, void *);
 typedef int (*milan_ccx_cb_f)(milan_ccx_t *, void *);
 typedef int (*milan_core_cb_f)(milan_core_t *, void *);
 
 extern int milan_walk_thread(milan_thread_cb_f, void *);
 
-extern milan_thread_t *milan_fabric_find_thread_by_cpuid(uint32_t);
-extern apicid_t milan_thread_apicid(const milan_thread_t *);
+extern zen_thread_t *milan_fabric_find_thread_by_cpuid(uint32_t);
 
 extern smn_reg_t milan_core_reg(const milan_core_t *const, const smn_reg_def_t);
 extern smn_reg_t milan_ccd_reg(const milan_ccd_t *const, const smn_reg_def_t);

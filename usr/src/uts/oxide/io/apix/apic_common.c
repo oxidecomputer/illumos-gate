@@ -26,7 +26,7 @@
  * Copyright 2019 Joshua M. Clulow <josh@sysmgr.org>
  * Copyright 2020 RackTop Systems, Inc.
  * Copyright 2021 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -82,6 +82,7 @@
 #include <sys/io/fch/pmio.h>
 #include <sys/amdzen/mmioreg.h>
 #include <sys/io/milan/iohc.h>
+#include <sys/io/zen/ccx.h>
 #include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
 #include <milan/milan_physaddrs.h>
@@ -370,22 +371,23 @@ apic_probe_common(char *modname)
 }
 
 static int
-apic_count_thread(milan_thread_t *mtp, void *arg)
+apic_count_thread(zen_thread_t *thread, void *arg)
 {
 	int *nthreadp = arg;
 
+	(void) thread;
 	++*nthreadp;
 
 	return (0);
 }
 
 static int
-apic_enumerate_one(milan_thread_t *mtp, void *arg)
+apic_enumerate_one(zen_thread_t *thread, void *arg)
 {
 	uint32_t *idxp = arg;
 	apic_cpus_info_t *acip = &apic_cpus[*idxp];
 
-	acip->aci_local_id = milan_thread_apicid(mtp);
+	acip->aci_local_id = zen_thread_apicid(thread);
 	acip->aci_processor_id = acip->aci_local_id;
 	acip->aci_local_ver = 0;
 	acip->aci_status = 0;
@@ -1040,7 +1042,7 @@ apic_cmci_setup(processorid_t cpuid, boolean_t enable)
 int
 apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 {
-	milan_thread_t *mtp;
+	zen_thread_t *thread;
 
 	ASSERT(MUTEX_HELD(&cpu_lock));
 
@@ -1070,10 +1072,10 @@ apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 	 * PSM as conceived for i86pc is not factored correctly for this
 	 * machine.
 	 */
-	mtp = milan_fabric_find_thread_by_cpuid(cpun);
-	VERIFY(mtp != NULL);
+	thread = milan_fabric_find_thread_by_cpuid(cpun);
+	VERIFY(thread != NULL);
 
-	if (!milan_ccx_start_thread(mtp)) {
+	if (!milan_ccx_start_thread(thread)) {
 		cmn_err(CE_WARN, "attempt to start already-running CPU 0x%x",
 		    cpun);
 	}
