@@ -29,12 +29,30 @@
 extern "C" {
 #endif
 
+typedef int (*zen_iodie_cb_f)(zen_iodie_t *, void *);
+
+extern int zen_fabric_walk_ioms(zen_fabric_t *, zen_ioms_cb_f, void *);
+extern int zen_fabric_walk_iodie(zen_fabric_t *, zen_iodie_cb_f, void *);
+extern zen_ioms_t *zen_fabric_find_ioms(zen_fabric_t *, uint32_t);
+extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
+
+extern void zen_fabric_dma_attr(ddi_dma_attr_t *attr);
+
 extern void zen_fabric_topo_init_common(void);
 
 /*
  * These are platform maximums, and are sized to accommodate
  * the largest number used by any supported microarchitecture.
  */
+
+/*
+ * This is the maximum number of I/O dies that can exist in a given SoC. Since
+ * Rome this has been 1. Previously on Naples this was 4. Because we do not work
+ * on Naples based platforms, this is kept low (unlike the more general amdzen
+ * nexus driver).
+ */
+#define	ZEN_FABRIC_MAX_DIES_PER_SOC	1
+
 
 /*
  * The Oxide platform supports a maximum of 2 SOCs.
@@ -188,9 +206,17 @@ struct zen_soc {
 
 	/*
 	 * While earlier generations of EPYC supported more (Naples had 4),
-	 * since Rome there is only one IO Die per SOC.
+	 * since Rome there is only one IO Die per SOC.  Regardless, keep
+	 * this as an array in order to accommodate future architectures
+	 * that may expand this again.
 	 */
-	zen_iodie_t		zs_iodie;
+	zen_iodie_t		zs_iodies[ZEN_FABRIC_MAX_DIES_PER_SOC];
+
+	/*
+	 * The number of IO dies in the sock; statically initialized to
+	 * whatever the microarchitectural constant is (usually 1).
+	 */
+	uint8_t			zs_niodies;
 
 	/*
 	 * The fabric to which this SOC belongs.

@@ -34,6 +34,94 @@
 #include <zen/df_utils.h>
 #include <zen/physaddrs.h>
 
+/*
+*
+ * --------------------------------------
+ * Physical Organization and Nomenclature
+ * --------------------------------------
+ *
+ * In AMD's Zen microarchitectures, the CPU socket is organized as a series of
+ * chiplets coupled with a series of compute complexes and then a central IO
+ * die.  uts/intel/os/cpuid.c has an example of what this looks like.
+ *
+ * Critically, this IO die is the major device that we are concerned with here,
+ * as it bridges the cores to the outside world through a combination of
+ * different devices and IO paths.  The part of the IO die that we will spend
+ * most of our time dealing with is the "northbridge IO unit", or NBIO.  In DF
+ * (data fabric) terms, NBIOs are a class of device called an IOMS (IO
+ * master-slave).  These are represented in our fabric data structures as
+ * subordinate to an IO die.
+ *
+ * Each NBIO instance implements, among other things, a PCIe root complex (RC),
+ * consisting of two major components: an IO hub core (IOHC) that implements the
+ * host side of the RC, and some number of PCIe cores that implement the PCIe
+ * side.  The IOHC appears in PCI configuration space as a root complex and is
+ * the attachment point for npe(4d).  The PCIe cores do not themselves appear in
+ * config space, though each implements PCIe root ports, and each root port has
+ * an associated host bridge that appears in configuration space.
+ * Externally-attached PCIe devices are enumerated under these bridges, and the
+ * bridge provides the standard PCIe interface to the downstream port including
+ * link status and control.  Specific quantities of these vary, depending on the
+ * microarchitecture.
+ *
+ * Again, depending on microarchitecture, some of the NBIO instances are
+ * somewhat special and merit brief additional discussion.  Some instances may
+ * contain additional PCIe core(s) associated with the lanes that would
+ * otherwise be used for WAFL.  An instance will have the Fusion Controller Hub
+ * (FCH) attached to it; the FCH doesn't contain any real PCIe devices, but it
+ * does contain some fake ones and from what we can tell the NBIO is the DF
+ * endpoint where MMIO transactions targeting the FCH are directed.
+ *
+ * The UMCs are instances of CS (coherent slave) DF components; we do not
+ * discuss them further here, but details may be found in
+ * uts/intel/sys/amdzen/umc.h and uts/intel/io/amdzen/zen_umc.c.
+ *
+ * --------------
+ * Representation
+ * --------------
+ *
+ * We represent the NBIO entities described above and the CPU core entities
+ * described in cpuid.c in a hierarchical fashion:
+ *
+ * zen_fabric_t (DF -- root)
+ * |
+ * \-- zen_soc_t
+ *     |
+ *     \-- zen_iodie_t
+ *         |
+ *         +-- zen_ioms_t
+ *         |   |
+ *         |   +-- zen_pcie_core_t
+ *         |   |   |
+ *         |   |   \-- zen_pcie_port_t
+ *         |   |
+ *         |   \-- zen_nbif_t
+ *         |
+ *         \-- zen_ccd_t
+ *             |
+ *             \-- zen_ccx_t
+ *                 |
+ *                 \-- zen_core_t
+ *                     |
+ *                     \-- zen_thread_t
+ *
+ * The PCIe bridge does not have its own representation in this schema, but is
+ * represented as a B/D/F associated with a PCIe port.  That B/D/F provides the
+ * standard PCIe bridge interfaces associated with a root port and host bridge.
+ *
+ * For our purposes, each PCIe core is associated with an instance of the
+ * PCIECORE register block and an RSMU (remote system management unit) register
+ * block.  These implementation-specific registers control the PCIe core logic.
+ * Each root port is associated with an instance of the PCIEPORT register block
+ * and the standard PCIe-defined registers of the host bridge which AMD refers
+ * to as PCIERCCFG.  Note that the MP1 DXIO firmware also accesses at least ome
+ * of the PCIECORE, PCIEPORT, and the SMU::RSMU::RSMU::PCIE0::MMIOEXT registers,
+ * and a limited set of fields in the standard bridge registers associated with
+ * hotplug are controlled by that firmware as well, though the intent is that
+ * they are controlled in standards-compliant ways.  These associations allow us
+ * to obtain SMN register instances from a pointer to the entity to which those
+ * registers pertain.
+ */
 
 /*
  * The global fabric object describing the system topology.
@@ -41,7 +129,6 @@
  * XXX: Make static once old milan code is migrated fully
  */
 zen_fabric_t zen_fabric;
-
 
 void
 zen_fabric_topo_init(void)
@@ -373,7 +460,7 @@ zen_fabric_topo_init_common(void)
 	fabric->zf_nsocs = nsocs;
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
 		zen_soc_t *soc = &fabric->zf_socs[socno];
-		zen_iodie_t *iodie = &soc->zs_iodie;
+		zen_iodie_t *iodie = &soc->zs_iodies[0];
 
 		soc->zs_socno = socno;
 		soc->zs_fabric = fabric;
@@ -421,4 +508,152 @@ zen_fabric_topo_init_common(void)
 			}
 		}
 	}
+}
+
+/*
+ * Utility routines to traverse and search across the Zen fabric, both the data
+ * fabric and the northbridges.
+ */
+int
+zen_fabric_walk_iodie(zen_fabric_t *fabric, zen_iodie_cb_f func, void *arg)
+{
+	for (uint_t socno = 0; socno < fabric->zf_nsocs; socno++) {
+		zen_soc_t *soc = &fabric->zf_socs[socno];
+		for (uint_t iono = 0; iono < soc->zs_niodies; iono++) {
+			int ret;
+			zen_iodie_t *iodie = &soc->zs_iodies[iono];
+
+			ret = func(iodie, arg);
+			if (ret != 0) {
+				return (ret);
+			}
+		}
+	}
+
+	return (0);
+}
+
+typedef struct zen_fabric_ioms_cb {
+	zen_ioms_cb_f	zfic_func;
+	void		*zfic_arg;
+} zen_fabric_ioms_cb_t;
+
+static int
+zen_fabric_walk_ioms_iodie_cb(zen_iodie_t *iodie, void *arg)
+{
+	const zen_fabric_ioms_cb_t *cb =
+	    (const zen_fabric_ioms_cb_t *)arg;
+	for (uint_t iomsno = 0; iomsno < iodie->zi_nioms; iomsno++) {
+		zen_ioms_t *ioms = &iodie->zi_ioms[iomsno];
+		int ret = cb->zfic_func(ioms, cb->zfic_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+int
+zen_fabric_walk_ioms(zen_fabric_t *fabric, zen_ioms_cb_f func, void *arg)
+{
+	zen_fabric_ioms_cb_t cb = {
+	    .zfic_func = func,
+	    .zfic_arg = arg,
+	};
+
+	return (zen_fabric_walk_iodie(fabric, zen_fabric_walk_ioms_iodie_cb,
+	    &cb));
+}
+
+int
+zen_walk_ioms(zen_ioms_cb_f func, void *arg)
+{
+	return (zen_fabric_walk_ioms(&zen_fabric, func, arg));
+}
+typedef struct {
+	uint32_t	zffi_dest;
+	zen_ioms_t	*zffi_ioms;
+} zen_fabric_find_ioms_t;
+
+static int
+zen_fabric_find_ioms_cb(zen_ioms_t *ioms, void *arg)
+{
+	zen_fabric_find_ioms_t *zffi = (zen_fabric_find_ioms_t *)arg;
+
+	if (zffi->zffi_dest == ioms->zio_dest_id) {
+		zffi->zffi_ioms = ioms;
+		return (1);
+	}
+
+	return (0);
+}
+
+static int
+zen_fabric_find_ioms_by_bus_cb(zen_ioms_t *ioms, void *arg)
+{
+	zen_fabric_find_ioms_t *zffi = (zen_fabric_find_ioms_t *)arg;
+
+	if (zffi->zffi_dest == ioms->zio_pci_busno) {
+		zffi->zffi_ioms = ioms;
+		return (1);
+	}
+
+	return (0);
+}
+
+zen_ioms_t *
+zen_fabric_find_ioms(zen_fabric_t *fabric, uint32_t destid)
+{
+	zen_fabric_find_ioms_t zffi = {
+	    .zffi_dest = destid,
+	    .zffi_ioms = NULL,
+	};
+
+	(void) zen_fabric_walk_ioms(fabric, zen_fabric_find_ioms_cb,
+	    &zffi);
+
+	return (zffi.zffi_ioms);
+}
+
+zen_ioms_t *
+zen_fabric_find_ioms_by_bus(zen_fabric_t *fabric, uint32_t pci_bus)
+{
+	zen_fabric_find_ioms_t zffi = {
+	    .zffi_dest = pci_bus,
+	    .zffi_ioms = NULL,
+	};
+
+	(void) zen_fabric_walk_ioms(fabric, zen_fabric_find_ioms_by_bus_cb,
+	    &zffi);
+
+	return (zffi.zffi_ioms);
+}
+
+/*
+ * Create DMA attributes that are appropriate for the use with the fabric code.
+ * These attributes are mostly used for communicating with the SMU and MPIO.
+ * For DMA, we know experimentally that there are generally a register pair
+ * consisting of a 32-bit length and a 64-bit address. There aren't many other
+ * bits that we actually know here, however, so we generally end up making some
+ * rather more conservative assumptions an attempt at safety. In particular, we
+ * assume and ask for page alignment.
+ *
+ * XXX Remove 32-bit addr_hi constraint.
+ */
+void
+zen_fabric_dma_attr(ddi_dma_attr_t *attr)
+{
+	bzero(attr, sizeof (attr));
+	attr->dma_attr_version = DMA_ATTR_V0;
+	attr->dma_attr_addr_lo = 0;
+	attr->dma_attr_addr_hi = UINT32_MAX;
+	attr->dma_attr_count_max = UINT32_MAX;
+	attr->dma_attr_align = MMU_PAGESIZE;
+	attr->dma_attr_minxfer = 1;
+	attr->dma_attr_maxxfer = UINT32_MAX;
+	attr->dma_attr_seg = UINT32_MAX;
+	attr->dma_attr_sgllen = 1;
+	attr->dma_attr_granular = 1;
+	attr->dma_attr_flags = 0;
 }

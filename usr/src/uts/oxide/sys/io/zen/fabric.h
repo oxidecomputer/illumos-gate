@@ -17,6 +17,8 @@
 #define	_SYS_IO_ZEN_FABRIC_H
 
 #include <sys/types.h>
+#include <sys/ddi.h>
+#include <sys/ddidmareq.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -32,6 +34,11 @@ typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;
+
+/* Walker callback function types */
+typedef int (*zen_ioms_cb_f)(zen_ioms_t *, void *);
+
+extern int zen_walk_ioms(zen_ioms_cb_f, void *);
 
 typedef enum zen_ioms_flag {
 	ZEN_IOMS_F_HAS_FCH	= 1 << 0,

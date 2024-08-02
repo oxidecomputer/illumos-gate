@@ -874,38 +874,12 @@ static boolean_t milan_smu_rpc_read_brand_string(milan_iodie_t *,
 static milan_fabric_t milan_fabric;
 static uint_t nthreads;
 
+typedef int (*milan_iodie_cb_f)(milan_iodie_t *, void *);
+
 /*
  * Variable to let us dump all SMN traffic while still developing.
  */
 int milan_smn_log = 0;
-
-static int
-milan_fabric_walk_iodie(milan_fabric_t *fabric, milan_iodie_cb_f func,
-    void *arg)
-{
-	uint8_t nsocs = fabric->zen_fabric->zf_nsocs;
-
-	for (uint_t socno = 0; socno < nsocs; socno++) {
-		milan_soc_t *soc = &fabric->mf_socs[socno];
-		for (uint_t iono = 0; iono < soc->ms_ndies; iono++) {
-			int ret;
-			milan_iodie_t *iodie = &soc->ms_iodies[iono];
-
-			ret = func(iodie, arg);
-			if (ret != 0) {
-				return (ret);
-			}
-		}
-	}
-
-	return (0);
-}
-
-int
-milan_walk_iodie(milan_iodie_cb_f func, void *arg)
-{
-	return (milan_fabric_walk_iodie(&milan_fabric, func, arg));
-}
 
 typedef struct milan_fabric_ioms_cb {
 	milan_ioms_cb_f	mfic_func;
@@ -913,8 +887,9 @@ typedef struct milan_fabric_ioms_cb {
 } milan_fabric_ioms_cb_t;
 
 static int
-milan_fabric_walk_ioms_iodie_cb(milan_iodie_t *iodie, void *arg)
+milan_fabric_walk_ioms_iodie_cb(zen_iodie_t *ziodie, void *arg)
 {
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
 	milan_fabric_ioms_cb_t *cb = arg;
 
 	for (uint_t iomsno = 0; iomsno < iodie->mi_nioms; iomsno++) {
@@ -930,21 +905,15 @@ milan_fabric_walk_ioms_iodie_cb(milan_iodie_t *iodie, void *arg)
 	return (0);
 }
 
-static int
-milan_fabric_walk_ioms(milan_fabric_t *fabric, milan_ioms_cb_f func, void *arg)
+int
+milan_walk_ioms(milan_ioms_cb_f func, void *arg)
 {
 	milan_fabric_ioms_cb_t cb;
 
 	cb.mfic_func = func;
 	cb.mfic_arg = arg;
-	return (milan_fabric_walk_iodie(fabric, milan_fabric_walk_ioms_iodie_cb,
-	    &cb));
-}
-
-int
-milan_walk_ioms(milan_ioms_cb_f func, void *arg)
-{
-	return (milan_fabric_walk_ioms(&milan_fabric, func, arg));
+	return (zen_fabric_walk_iodie(milan_fabric.zen_fabric,
+	    milan_fabric_walk_ioms_iodie_cb, &cb));
 }
 
 typedef struct milan_fabric_nbif_cb {
@@ -953,8 +922,9 @@ typedef struct milan_fabric_nbif_cb {
 } milan_fabric_nbif_cb_t;
 
 static int
-milan_fabric_walk_nbif_ioms_cb(milan_ioms_t *ioms, void *arg)
+milan_fabric_walk_nbif_ioms_cb(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	milan_fabric_nbif_cb_t *cb = arg;
 
 	for (uint_t nbifno = 0; nbifno < ioms->mio_nnbifs; nbifno++) {
@@ -976,8 +946,8 @@ milan_fabric_walk_nbif(milan_fabric_t *fabric, milan_nbif_cb_f func, void *arg)
 
 	cb.mfnc_func = func;
 	cb.mfnc_arg = arg;
-	return (milan_fabric_walk_ioms(fabric, milan_fabric_walk_nbif_ioms_cb,
-	    &cb));
+	return (zen_fabric_walk_ioms(fabric->zen_fabric,
+	    milan_fabric_walk_nbif_ioms_cb, &cb));
 }
 
 typedef struct milan_fabric_pcie_core_cb {
@@ -986,8 +956,9 @@ typedef struct milan_fabric_pcie_core_cb {
 } milan_fabric_pcie_core_cb_t;
 
 static int
-milan_fabric_walk_pcie_core_cb(milan_ioms_t *ioms, void *arg)
+milan_fabric_walk_pcie_core_cb(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	milan_fabric_pcie_core_cb_t *cb = arg;
 
 	for (uint_t pcno = 0; pcno < ioms->mio_npcie_cores; pcno++) {
@@ -1011,8 +982,8 @@ milan_fabric_walk_pcie_core(milan_fabric_t *fabric, milan_pcie_core_cb_f func,
 
 	cb.mfpcc_func = func;
 	cb.mfpcc_arg = arg;
-	return (milan_fabric_walk_ioms(fabric, milan_fabric_walk_pcie_core_cb,
-	    &cb));
+	return (zen_fabric_walk_ioms(fabric->zen_fabric,
+	    milan_fabric_walk_pcie_core_cb, &cb));
 }
 
 typedef struct milan_fabric_pcie_port_cb {
@@ -1056,8 +1027,9 @@ typedef struct milan_fabric_ccd_cb {
 } milan_fabric_ccd_cb_t;
 
 static int
-milan_fabric_walk_ccd_iodie_cb(milan_iodie_t *iodie, void *arg)
+milan_fabric_walk_ccd_iodie_cb(zen_iodie_t *ziodie, void *arg)
 {
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
 	milan_fabric_ccd_cb_t *cb = arg;
 
 	for (uint8_t ccdno = 0; ccdno < iodie->mi_nccds; ccdno++) {
@@ -1078,7 +1050,7 @@ milan_fabric_walk_ccd(milan_fabric_t *fabric, milan_ccd_cb_f func, void *arg)
 
 	cb.mfcc_func = func;
 	cb.mfcc_arg = arg;
-	return (milan_fabric_walk_iodie(fabric,
+	return (zen_fabric_walk_iodie(fabric->zen_fabric,
 	    milan_fabric_walk_ccd_iodie_cb, &cb));
 }
 
@@ -1185,59 +1157,27 @@ milan_walk_thread(milan_thread_cb_f func, void *arg)
 	return (milan_fabric_walk_thread(&milan_fabric, func, arg));
 }
 
-typedef struct {
-	uint32_t	mffi_dest;
-	milan_ioms_t	*mffi_ioms;
-} milan_fabric_find_ioms_t;
-
-static int
-milan_fabric_find_ioms_cb(milan_ioms_t *ioms, void *arg)
-{
-	milan_fabric_find_ioms_t *mffi = arg;
-
-	if (mffi->mffi_dest == ioms->zen_ioms->zio_dest_id) {
-		mffi->mffi_ioms = ioms;
-	}
-
-	return (0);
-}
-
-static int
-milan_fabric_find_ioms_by_bus_cb(milan_ioms_t *ioms, void *arg)
-{
-	milan_fabric_find_ioms_t *mffi = arg;
-
-	if (mffi->mffi_dest == ioms->zen_ioms->zio_pci_busno) {
-		mffi->mffi_ioms = ioms;
-	}
-
-	return (0);
-}
-
 static milan_ioms_t *
 milan_fabric_find_ioms(milan_fabric_t *fabric, uint32_t destid)
 {
-	milan_fabric_find_ioms_t mffi;
+	zen_ioms_t *ioms = zen_fabric_find_ioms(fabric->zen_fabric, destid);
 
-	mffi.mffi_dest = destid;
-	mffi.mffi_ioms = NULL;
+	if (ioms == NULL)
+		return (NULL);
 
-	milan_fabric_walk_ioms(fabric, milan_fabric_find_ioms_cb, &mffi);
-
-	return (mffi.mffi_ioms);
+	return ((milan_ioms_t *)ioms->zio_uarch_ioms);
 }
 
 static milan_ioms_t *
 milan_fabric_find_ioms_by_bus(milan_fabric_t *fabric, uint32_t pci_bus)
 {
-	milan_fabric_find_ioms_t mffi;
+	zen_ioms_t *ioms =
+	    zen_fabric_find_ioms_by_bus(fabric->zen_fabric, pci_bus);
 
-	mffi.mffi_dest = pci_bus;
-	mffi.mffi_ioms = NULL;
+	if (ioms == NULL)
+		return (NULL);
 
-	milan_fabric_walk_ioms(fabric, milan_fabric_find_ioms_by_bus_cb, &mffi);
-
-	return (mffi.mffi_ioms);
+	return ((milan_ioms_t *)ioms->zio_uarch_ioms);
 }
 
 typedef struct {
@@ -1348,6 +1288,7 @@ milan_smn_read(milan_iodie_t *iodie, const smn_reg_t reg)
 
 	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
 	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
+	ASSERT(iodie != NULL);
 
 	mutex_enter(&iodie->zen_iodie->zi_smn_lock);
 	pci_putl_func(iodie->zen_iodie->zi_smn_busno, AMDZEN_NB_SMN_DEVNO,
@@ -1390,6 +1331,7 @@ milan_smn_write(milan_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
 	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
 	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
 	ASSERT(SMN_REG_VALUE_FITS(reg, val));
+	ASSERT(iodie != NULL);
 
 	mutex_enter(&iodie->zen_iodie->zi_smn_lock);
 	if (milan_smn_log != 0) {
@@ -2065,33 +2007,6 @@ milan_smu_version_at_least(const milan_iodie_t *iodie,
 	    (iodie->mi_smu_fw[0] == major && iodie->mi_smu_fw[1] > minor) ||
 	    (iodie->mi_smu_fw[0] == major && iodie->mi_smu_fw[1] == minor &&
 	    iodie->mi_smu_fw[2] >= patch));
-}
-
-/*
- * Create DMA attributes that are appropriate for the SMU. In particular, we
- * know experimentally that there is usually a 32-bit length register for DMA
- * and generally a 64-bit address register. There aren't many other bits that we
- * actually know here, as such, we generally end up making some assumptions out
- * of paranoia in an attempt at safety. In particular, we assume and ask for
- * page alignment here.
- *
- * XXX Remove 32-bit addr_hi constraint.
- */
-static void
-milan_smu_dma_attr(ddi_dma_attr_t *attr)
-{
-	bzero(attr, sizeof (attr));
-	attr->dma_attr_version = DMA_ATTR_V0;
-	attr->dma_attr_addr_lo = 0;
-	attr->dma_attr_addr_hi = UINT32_MAX;
-	attr->dma_attr_count_max = UINT32_MAX;
-	attr->dma_attr_align = MMU_PAGESIZE;
-	attr->dma_attr_minxfer = 1;
-	attr->dma_attr_maxxfer = UINT32_MAX;
-	attr->dma_attr_seg = UINT32_MAX;
-	attr->dma_attr_sgllen = 1;
-	attr->dma_attr_granular = 1;
-	attr->dma_attr_flags = 0;
 }
 
 static void
@@ -2955,7 +2870,7 @@ milan_smu_features_init(milan_iodie_t *iodie)
 void
 milan_fabric_topo_init(void)
 {
-	extern zen_fabric_t *zen_fabric;
+	extern zen_fabric_t zen_fabric;
 	milan_fabric_t *fabric = &milan_fabric;
 	uint8_t nsocs;
 
@@ -2969,25 +2884,29 @@ milan_fabric_topo_init(void)
 	 * Eventually zen_fabric_topo_init should subsume this completely.
 	 */
 
-	fabric->zen_fabric = zen_fabric;
-	zen_fabric->zf_uarch_fabric = fabric;
-	nsocs = zen_fabric->zf_nsocs;
+	fabric->zen_fabric = &zen_fabric;
+	zen_fabric.zf_uarch_fabric = fabric;
+	nsocs = zen_fabric.zf_nsocs;
 
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
-		zen_soc_t *zen_soc = &zen_fabric->zf_socs[socno];
-		zen_iodie_t *zen_iodie = &zen_soc->zs_iodie;
+		zen_soc_t *zen_soc = &zen_fabric.zf_socs[socno];
+		zen_iodie_t *zen_iodie = &zen_soc->zs_iodies[0];
 
 		milan_soc_t *soc = &fabric->mf_socs[socno];
 		milan_iodie_t *iodie = &soc->ms_iodies[0];
-		zen_iodie->zi_uarch_iodie = iodie;
 
-		soc->zen_soc = zen_soc;
-		soc->ms_ndies = MILAN_FABRIC_MAX_DIES_PER_SOC;
-		soc->ms_fabric = fabric;
 		zen_soc->zs_uarch_soc = soc;
-
+		soc->zen_soc = zen_soc;
+		zen_iodie->zi_uarch_iodie = iodie;
+		zen_iodie->zi_soc = zen_soc;
 		iodie->zen_iodie = zen_iodie;
 		iodie->mi_soc = soc;
+
+		/* XXX(cross): Need to plumb this in earlier. */
+		zen_soc->zs_niodies = MILAN_FABRIC_MAX_DIES_PER_SOC;
+		soc->ms_ndies = MILAN_FABRIC_MAX_DIES_PER_SOC;
+		soc->ms_fabric = fabric;
+
 
 		iodie->mi_nioms = zen_iodie->zi_nioms;
 		for (uint8_t iomsno = 0; iomsno < iodie->mi_nioms; iomsno++) {
@@ -3065,13 +2984,14 @@ milan_fabric_topo_init(void)
  * register in the IOHC for indicating DRAM/MMIO splits.
  */
 static int
-milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_tom(zen_ioms_t *zioms, void *arg)
 {
 	smn_reg_t reg;
 	uint32_t val;
 	uint64_t tom2, tom3;
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	zen_fabric_t *fabric = ioms->mio_iodie->mi_soc->zen_soc->zs_fabric;
-	uint8_t bus = ioms->zen_ioms->zio_pci_busno;
+	uint8_t bus = zioms->zio_pci_busno;
 
 	/*
 	 * This register is a little funky. Bit 32 of the address has to be
@@ -3134,10 +3054,10 @@ milan_fabric_init_tom(milan_ioms_t *ioms, void *arg)
  * contents alone.
  */
 static int
-milan_fabric_disable_iohc_vga(milan_ioms_t *ioms, void *arg)
+milan_fabric_disable_iohc_vga(zen_ioms_t *ioms, void *arg)
 {
 	uint32_t val;
-	uint8_t bus = ioms->zen_ioms->zio_pci_busno;
+	uint8_t bus = ioms->zio_pci_busno;
 
 	val = pci_getl_func(bus, 0, 0, IOHC_NB_PCI_ARB);
 	val = IOHC_NB_PCI_ARB_SET_VGA_HOLE(val, IOHC_NB_PCI_ARB_VGA_HOLE_RAM);
@@ -3154,10 +3074,10 @@ milan_fabric_disable_iohc_vga(milan_ioms_t *ioms, void *arg)
  * reason.
  */
 static int
-milan_fabric_init_iohc_pci(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_iohc_pci(zen_ioms_t *ioms, void *arg)
 {
 	uint32_t val;
-	uint8_t bus = ioms->zen_ioms->zio_pci_busno;
+	uint8_t bus = ioms->zio_pci_busno;
 
 	val = pci_getl_func(bus, 0, 0, IOHC_NB_ADAPTER_ID_W);
 	val = IOHC_NB_ADAPTER_ID_W_SET_SVID(val, VENID_AMD);
@@ -3176,12 +3096,13 @@ milan_fabric_init_iohc_pci(milan_ioms_t *ioms, void *arg)
  * to zero out some of this.
  */
 static int
-milan_fabric_init_iohc_fch_link(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_iohc_fch_link(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 
 	reg = milan_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
-	if ((ioms->zen_ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
+	if ((zioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		smn_reg_t iommureg;
 		uint32_t val;
 
@@ -3203,8 +3124,9 @@ milan_fabric_init_iohc_fch_link(milan_ioms_t *ioms, void *arg)
  * to do this ourselves. If we don't do this, PCIe will not be very happy.
  */
 static int
-milan_fabric_init_pcie_refclk(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_pcie_refclk(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3223,8 +3145,9 @@ milan_fabric_init_pcie_refclk(milan_ioms_t *ioms, void *arg)
  * comes from other AMD sources.
  */
 static int
-milan_fabric_init_pci_to(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_pci_to(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3247,8 +3170,9 @@ milan_fabric_init_pci_to(milan_ioms_t *ioms, void *arg)
  * only touch this reg in one place if we can.
  */
 static int
-milan_fabric_init_iohc_features(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_iohc_features(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3263,8 +3187,9 @@ milan_fabric_init_iohc_features(milan_ioms_t *ioms, void *arg)
 }
 
 static int
-milan_fabric_init_arbitration_ioms(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_arbitration_ioms(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3475,8 +3400,9 @@ milan_fabric_init_arbitration_nbif(milan_nbif_t *nbif, void *arg)
  * not have an early wake up register.
  */
 static int
-milan_fabric_init_sdp_control(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_sdp_control(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3546,8 +3472,9 @@ milan_fabric_init_nbif_syshub_dma(milan_nbif_t *nbif, void *arg)
  * has the FCH.
  */
 static int
-milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_ioapic(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3623,8 +3550,9 @@ milan_fabric_init_ioapic(milan_ioms_t *ioms, void *arg)
  * IOHC with its primary bus number and enable this.
  */
 static int
-milan_fabric_init_bus_num(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_bus_num(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3725,10 +3653,10 @@ milan_fabric_init_nbif_dev_straps(milan_nbif_t *nbif, void *arg)
  * all been left enabled for now.
  */
 static int
-milan_fabric_init_nbif_bridge(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_nbif_bridge(zen_ioms_t *zioms, void *arg)
 {
 	uint32_t val;
-	uint8_t iomno = ioms->zen_ioms->zio_num;
+	uint8_t iomno = zioms->zio_num;
 	const smn_reg_t smn_regs[5] = {
 		IOHCDEV_NBIF_BRIDGE_CTL(iomno, 0, 0),
 		IOHCDEV_NBIF_BRIDGE_CTL(iomno, 1, 0),
@@ -3736,6 +3664,7 @@ milan_fabric_init_nbif_bridge(milan_ioms_t *ioms, void *arg)
 		IOHCDEV_NBIF_BRIDGE_CTL(iomno, 1, 2),
 		IOHCDEV_SB_BRIDGE_CTL(iomno)
 	};
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 
 	for (uint_t i = 0; i < ARRAY_SIZE(smn_regs); i++) {
 		val = milan_ioms_read(ioms, smn_regs[i]);
@@ -3746,8 +3675,9 @@ milan_fabric_init_nbif_bridge(milan_ioms_t *ioms, void *arg)
 }
 
 static int
-milan_dxio_init(milan_iodie_t *iodie, void *arg)
+milan_dxio_init(zen_iodie_t *ziodie, void *arg)
 {
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
 	zen_soc_t *soc = iodie->mi_soc->zen_soc;
 
 	/*
@@ -3863,8 +3793,9 @@ milan_dxio_init(milan_iodie_t *iodie, void *arg)
  * the PSP.
  */
 static int
-milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
+milan_dxio_plat_data(zen_iodie_t *ziodie, void *arg)
 {
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
 	ddi_dma_attr_t attr;
 	size_t engn_size;
 	pfn_t pfn;
@@ -3892,7 +3823,7 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 	VERIFY3U(engn_size, <=, MMU_PAGESIZE);
 	conf->mdc_conf_len = engn_size;
 
-	milan_smu_dma_attr(&attr);
+	zen_fabric_dma_attr(&attr);
 	conf->mdc_alloc_len = MMU_PAGESIZE;
 	conf->mdc_conf = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(conf->mdc_conf, MMU_PAGESIZE);
@@ -3980,8 +3911,9 @@ milan_dxio_plat_data(milan_iodie_t *iodie, void *arg)
 }
 
 static int
-milan_dxio_load_data(milan_iodie_t *iodie, void *arg)
+milan_dxio_load_data(zen_iodie_t *ziodie, void *arg)
 {
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
 	milan_dxio_config_t *conf = &iodie->mi_dxio_conf;
 
 	/*
@@ -4021,8 +3953,10 @@ milan_dxio_load_data(milan_iodie_t *iodie, void *arg)
 }
 
 static int
-milan_dxio_more_conf(milan_iodie_t *iodie, void *arg)
+milan_dxio_more_conf(zen_iodie_t *ziodie, void *arg)
 {
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
+
 	/*
 	 * Note, here we might use milan_dxio_rpc_conf_training() if we want to
 	 * override any of the properties there. But the defaults in DXIO
@@ -4595,9 +4529,10 @@ milan_fabric_setup_pcie_core_dbg(milan_pcie_core_t *pc, void *arg)
  * wanted to do.
  */
 static int
-milan_dxio_state_machine(milan_iodie_t *iodie, void *arg)
+milan_dxio_state_machine(zen_iodie_t *ziodie, void *arg)
 {
-	zen_soc_t *soc = iodie->mi_soc->zen_soc;
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
+	zen_soc_t *soc = ziodie->zi_soc;
 	milan_fabric_t *fabric = iodie->mi_soc->ms_fabric;
 
 	if (!milan_dxio_rpc_sm_start(iodie)) {
@@ -4790,8 +4725,9 @@ done:
  * merge that is likely not to happen anytime soon.
  */
 static int
-milan_fabric_init_memlists(milan_ioms_t *ioms, void *arg)
+milan_fabric_init_memlists(zen_ioms_t *zioms, void *arg)
 {
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	zen_ioms_memlists_t *imp = &ioms->mio_memlists;
 	void *page = kmem_zalloc(MMU_PAGESIZE, KM_SLEEP);
 
@@ -4808,8 +4744,9 @@ milan_fabric_init_memlists(milan_ioms_t *ioms, void *arg)
  * IOMS to figure this out.
  */
 static void
-milan_route_pci_bus(milan_fabric_t *fabric)
+milan_route_pci_bus(zen_fabric_t *zfabric)
 {
+	milan_fabric_t *fabric = (milan_fabric_t *)zfabric->zf_uarch_fabric;
 	milan_iodie_t *iodie = &fabric->mf_socs[0].ms_iodies[0];
 	uint_t inst = iodie->mi_ioms[0].zen_ioms->zio_iom_inst_id;
 
@@ -4880,9 +4817,10 @@ typedef struct milan_route_io {
 } milan_route_io_t;
 
 static int
-milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
+milan_io_ports_allocate(zen_ioms_t *zioms, void *arg)
 {
 	int ret;
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	milan_route_io_t *mri = arg;
 	zen_ioms_memlists_t *imp = &ioms->mio_memlists;
 	uint32_t pci_base;
@@ -4955,8 +4893,9 @@ milan_io_ports_allocate(milan_ioms_t *ioms, void *arg)
  * for a given entry.
  */
 static int
-milan_io_ports_assign(milan_iodie_t *iodie, void *arg)
+milan_io_ports_assign(zen_iodie_t *ziodie, void *arg)
 {
+	milan_iodie_t *iodie = (milan_iodie_t *)ziodie->zi_uarch_iodie;
 	milan_route_io_t *mri = arg;
 
 	for (uint32_t i = 0; i < mri->mri_cur; i++) {
@@ -5004,13 +4943,13 @@ milan_io_ports_assign(milan_iodie_t *iodie, void *arg)
  *  o Whoever is last gets all the extra I/O ports filling up the 1 MiB.
  */
 static void
-milan_route_io_ports(milan_fabric_t *fabric)
+milan_route_io_ports(zen_fabric_t *fabric)
 {
 	milan_route_io_t mri;
 	uint32_t total_size = UINT16_MAX + 1;
 
 	bzero(&mri, sizeof (mri));
-	mri.mri_per_ioms = total_size / fabric->zen_fabric->zf_total_ioms;
+	mri.mri_per_ioms = total_size / fabric->zf_total_ioms;
 	VERIFY3U(mri.mri_per_ioms, >=, 1 << DF_IO_BASE_SHIFT);
 	mri.mri_next_base = mri.mri_per_ioms;
 
@@ -5019,9 +4958,9 @@ milan_route_io_ports(milan_fabric_t *fabric)
 	 * then find the last non-primary one and that'll be the one that gets a
 	 * larger limit.
 	 */
-	(void) milan_fabric_walk_ioms(fabric, milan_io_ports_allocate, &mri);
+	(void) zen_fabric_walk_ioms(fabric, milan_io_ports_allocate, &mri);
 	mri.mri_limits[mri.mri_last_ioms] = DF_MAX_IO_LIMIT;
-	(void) milan_fabric_walk_iodie(fabric, milan_io_ports_assign, &mri);
+	(void) zen_fabric_walk_iodie(fabric, milan_io_ports_assign, &mri);
 }
 
 #define	MILAN_SEC_IOMS_GEN_MMIO32_SPACE 0x10000
@@ -5048,9 +4987,10 @@ typedef struct milan_route_mmio {
  * the limitations of PCI-PCI bridges (64-bit memory has to be prefetch).
  */
 static int
-milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
+milan_mmio_allocate(zen_ioms_t *zioms, void *arg)
 {
 	int ret;
+	milan_ioms_t *ioms = (milan_ioms_t *)zioms->zio_uarch_ioms;
 	milan_route_mmio_t *mrm = arg;
 	const uint32_t mmio_gran = 1 << DF_MMIO_SHIFT;
 	zen_ioms_memlists_t *imp = &ioms->mio_memlists;
@@ -5166,7 +5106,7 @@ milan_mmio_allocate(milan_ioms_t *ioms, void *arg)
  * bits.
  */
 static int
-milan_mmio_assign(milan_iodie_t *iodie, void *arg)
+milan_mmio_assign(zen_iodie_t *iodie, void *arg)
 {
 	milan_route_mmio_t *mrm = arg;
 
@@ -5180,11 +5120,9 @@ milan_mmio_assign(milan_iodie_t *iodie, void *arg)
 		ctrl = DF_MMIO_CTL_SET_WE(ctrl, 1);
 		ctrl = DF_MMIO_CTL_V3_SET_DEST_ID(ctrl, mrm->mrm_dests[i]);
 
-		zen_df_bcast_write32(iodie->zen_iodie, DF_MMIO_BASE_V2(i),
-		    base);
-		zen_df_bcast_write32(iodie->zen_iodie, DF_MMIO_LIMIT_V2(i),
-		    limit);
-		zen_df_bcast_write32(iodie->zen_iodie, DF_MMIO_CTL_V2(i), ctrl);
+		zen_df_bcast_write32(iodie, DF_MMIO_BASE_V2(i), base);
+		zen_df_bcast_write32(iodie, DF_MMIO_LIMIT_V2(i), limit);
+		zen_df_bcast_write32(iodie, DF_MMIO_CTL_V2(i), ctrl);
 	}
 
 	return (0);
@@ -5222,41 +5160,39 @@ milan_mmio_assign(milan_iodie_t *iodie, void *arg)
  * we actually really treat all of our allocations as units of 64 KiB.
  */
 static void
-milan_route_mmio(milan_fabric_t *fabric)
+milan_route_mmio(zen_fabric_t *fabric)
 {
 	uint32_t mmio32_size;
 	uint64_t mmio64_size;
 	uint_t nioms32;
 	milan_route_mmio_t mrm;
 	const uint32_t mmio_gran = DF_MMIO_LIMIT_EXCL;
-	const zen_fabric_t *zfabric = fabric->zen_fabric;
 
-	VERIFY(IS_P2ALIGNED(zfabric->zf_tom, mmio_gran));
-	VERIFY3U(MILAN_PHYSADDR_COMPAT_MMIO, >, zfabric->zf_tom);
-	mmio32_size = MILAN_PHYSADDR_MMIO32_END - zfabric->zf_tom;
-	nioms32 = zfabric->zf_total_ioms;
+	VERIFY(IS_P2ALIGNED(fabric->zf_tom, mmio_gran));
+	VERIFY3U(MILAN_PHYSADDR_COMPAT_MMIO, >, fabric->zf_tom);
+	mmio32_size = MILAN_PHYSADDR_MMIO32_END - fabric->zf_tom;
+	nioms32 = fabric->zf_total_ioms;
 	VERIFY3U(mmio32_size, >,
 	    nioms32 * mmio_gran + MILAN_COMPAT_MMIO_SIZE);
 
-	VERIFY(IS_P2ALIGNED(zfabric->zf_mmio64_base, mmio_gran));
-	VERIFY3U(MILAN_PHYSADDR_MMIO_END, >, zfabric->zf_mmio64_base);
-	mmio64_size = MILAN_PHYSADDR_MMIO_END - zfabric->zf_mmio64_base;
-	VERIFY3U(mmio64_size, >,  zfabric->zf_total_ioms * mmio_gran);
+	VERIFY(IS_P2ALIGNED(fabric->zf_mmio64_base, mmio_gran));
+	VERIFY3U(MILAN_PHYSADDR_MMIO_END, >, fabric->zf_mmio64_base);
+	mmio64_size = MILAN_PHYSADDR_MMIO_END - fabric->zf_mmio64_base;
+	VERIFY3U(mmio64_size, >, fabric->zf_total_ioms * mmio_gran);
 
 	CTASSERT(IS_P2ALIGNED(MILAN_PHYSADDR_COMPAT_MMIO, DF_MMIO_LIMIT_EXCL));
 
 	bzero(&mrm, sizeof (mrm));
-	mrm.mrm_mmio32_base = zfabric->zf_tom;
+	mrm.mrm_mmio32_base = fabric->zf_tom;
 	mrm.mrm_mmio32_chunks = mmio32_size / mmio_gran / nioms32;
 	mrm.mrm_fch_base = MILAN_PHYSADDR_MMIO32_END - mmio32_size / nioms32;
 	mrm.mrm_fch_chunks = mrm.mrm_mmio32_chunks -
 	    MILAN_COMPAT_MMIO_SIZE / mmio_gran;
-	mrm.mrm_mmio64_base = zfabric->zf_mmio64_base;
-	mrm.mrm_mmio64_chunks = mmio64_size / mmio_gran /
-	    zfabric->zf_total_ioms;
+	mrm.mrm_mmio64_base = fabric->zf_mmio64_base;
+	mrm.mrm_mmio64_chunks = mmio64_size / mmio_gran / fabric->zf_total_ioms;
 
-	(void) milan_fabric_walk_ioms(fabric, milan_mmio_allocate, &mrm);
-	(void) milan_fabric_walk_iodie(fabric, milan_mmio_assign, &mrm);
+	(void) zen_fabric_walk_ioms(fabric, milan_mmio_allocate, &mrm);
+	(void) zen_fabric_walk_iodie(fabric, milan_mmio_assign, &mrm);
 }
 
 static ioms_rsrc_t
@@ -5281,6 +5217,8 @@ milan_fabric_rsrc_subsume(milan_ioms_t *ioms, ioms_rsrc_t rsrc)
 {
 	zen_ioms_memlists_t *imp;
 	struct memlist **avail, **used, *ret;
+
+	ASSERT(ioms != NULL);
 
 	imp = &ioms->mio_memlists;
 	mutex_enter(&imp->zim_lock);
@@ -5771,7 +5709,7 @@ milan_smu_hotplug_data_init(milan_fabric_t *fabric)
 	pfn_t pfn;
 	boolean_t cont;
 
-	milan_smu_dma_attr(&attr);
+	zen_fabric_dma_attr(&attr);
 	hp->mh_alloc_len = MMU_PAGESIZE;
 	hp->mh_table = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(hp->mh_table, MMU_PAGESIZE);
@@ -6297,6 +6235,7 @@ void
 milan_fabric_init(void)
 {
 	milan_fabric_t *fabric = &milan_fabric;
+	zen_fabric_t *zfabric = fabric->zen_fabric;
 
 	/*
 	 * XXX We're missing initialization of some different pieces of the data
@@ -6323,10 +6262,10 @@ milan_fabric_init(void)
 	 * process will also save our own allocations of these resources,
 	 * allowing us to use them for our own purposes or for PCI.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_memlists, NULL);
-	milan_route_pci_bus(fabric);
-	milan_route_io_ports(fabric);
-	milan_route_mmio(fabric);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_memlists, NULL);
+	milan_route_pci_bus(zfabric);
+	milan_route_io_ports(zfabric);
+	milan_route_mmio(zfabric);
 
 	/*
 	 * While DRAM training seems to have programmed the initial memory
@@ -6338,9 +6277,9 @@ milan_fabric_init(void)
 	 * don't use VGA and we don't use ASeg, so there's no reason to hide
 	 * this RAM from anyone.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_tom, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_disable_iohc_vga, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_pci, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_tom, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_disable_iohc_vga, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_iohc_pci, NULL);
 
 	/*
 	 * Let's set up PCIe. To lead off, let's make sure the system uses the
@@ -6348,9 +6287,9 @@ milan_fabric_init(void)
 	 * configuration space retries should work, though this isn't sufficient
 	 * for them to work.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_pcie_refclk, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_pci_to, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_features, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_pcie_refclk, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_pci_to, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_iohc_features, NULL);
 
 	/*
 	 * There is a lot of different things that we have to do here. But first
@@ -6359,12 +6298,11 @@ milan_fabric_init(void)
 	 * explicitly told to in the PPR or through other means. This is going
 	 * to be weird and you have every right to complain.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_iohc_fch_link, NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_arbitration_ioms,
-	    NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_iohc_fch_link, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_arbitration_ioms, NULL);
 	milan_fabric_walk_nbif(fabric, milan_fabric_init_arbitration_nbif,
 	    NULL);
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_sdp_control, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_sdp_control, NULL);
 	milan_fabric_walk_nbif(fabric, milan_fabric_init_nbif_syshub_dma,
 	    NULL);
 
@@ -6378,14 +6316,14 @@ milan_fabric_init(void)
 	 * need to go through and deal with interrupt routing and how that
 	 * interface with each of the northbridges here.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_ioapic, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_ioapic, NULL);
 
 	/*
 	 * XXX For some reason programming IOHC::NB_BUS_NUM_CNTL is lopped in
 	 * with the IOAPIC initialization. We may want to do this, but it can at
 	 * least be its own function.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_bus_num, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_bus_num, NULL);
 
 	/*
 	 * Go through and configure all of the straps for NBIF devices before
@@ -6412,7 +6350,7 @@ milan_fabric_init(void)
 	 * We do two passes, one to get the NBIF instances and another to deal
 	 * with the special instance that we believe is for the southbridge.
 	 */
-	milan_fabric_walk_ioms(fabric, milan_fabric_init_nbif_bridge, NULL);
+	zen_fabric_walk_ioms(zfabric, milan_fabric_init_nbif_bridge, NULL);
 
 	/*
 	 * Currently we do all of our initial DXIO training for PCIe before we
@@ -6435,35 +6373,35 @@ milan_fabric_init(void)
 	 *
 	 * XXX htf do we want to handle errors
 	 */
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_PRE_DXIO_INIT,
+	milan_pcie_populate_dbg(fabric, MPCS_PRE_DXIO_INIT,
 	    MILAN_IODIE_MATCH_ANY);
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_init, NULL) != 0) {
+	if (zen_fabric_walk_iodie(zfabric, milan_dxio_init, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
 		return;
 	}
 
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_plat_data, NULL) != 0) {
+	if (zen_fabric_walk_iodie(zfabric, milan_dxio_plat_data, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: no platform "
 		    "data");
 		return;
 	}
 
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_load_data, NULL) != 0) {
+	if (zen_fabric_walk_iodie(zfabric, milan_dxio_load_data, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to load "
 		    "data into dxio");
 		return;
 	}
 
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_more_conf, NULL) != 0) {
+	if (zen_fabric_walk_iodie(zfabric, milan_dxio_more_conf, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to do yet "
 		    "more configuration");
 		return;
 	}
 
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_DXIO_SM_START,
+	milan_pcie_populate_dbg(fabric, MPCS_DXIO_SM_START,
 	    MILAN_IODIE_MATCH_ANY);
-	if (milan_fabric_walk_iodie(fabric, milan_dxio_state_machine, NULL) !=
+	if (zen_fabric_walk_iodie(zfabric, milan_dxio_state_machine, NULL) !=
 	    0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to walk "
 		    "through the state machine");
@@ -6490,14 +6428,14 @@ milan_fabric_init(void)
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
 	 */
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_PRE_HOTPLUG,
+	milan_pcie_populate_dbg(fabric, MPCS_PRE_HOTPLUG,
 	    MILAN_IODIE_MATCH_ANY);
 	if (!milan_hotplug_init(fabric)) {
 		cmn_err(CE_WARN, "SMUHP: initialisation failed; PCIe hotplug "
 		    "may not function properly");
 	}
 
-	milan_pcie_populate_dbg(&milan_fabric, MPCS_POST_HOTPLUG,
+	milan_pcie_populate_dbg(fabric, MPCS_POST_HOTPLUG,
 	    MILAN_IODIE_MATCH_ANY);
 
 	/*

@@ -87,6 +87,11 @@ extern "C" {
  */
 #define	MILAN_MAX_DPM_WEIGHTS	23
 
+typedef struct milan_fabric milan_fabric_t;
+typedef struct milan_ioms milan_ioms_t;
+typedef struct milan_iodie milan_iodie_t;
+typedef struct milan_soc milan_soc_t;
+
 struct milan_ioms {
 	zen_ioms_t		*zen_ioms;
 	uint8_t			mio_npcie_cores;

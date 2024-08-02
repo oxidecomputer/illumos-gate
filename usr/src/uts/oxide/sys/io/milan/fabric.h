@@ -45,7 +45,6 @@ struct milan_fabric;
 typedef struct milan_ioms milan_ioms_t;
 typedef struct milan_iodie milan_iodie_t;
 typedef struct milan_soc milan_soc_t;
-typedef struct milan_fabric milan_fabric_t;
 
 /*
  * Generic resource types that can be routed via an IOMS.
@@ -82,10 +81,8 @@ extern struct memlist *milan_fabric_pci_subsume(uint32_t, pci_prd_rsrc_t);
 extern struct memlist *milan_fabric_gen_subsume(milan_ioms_t *, ioms_rsrc_t);
 
 /* Walker callback function types */
-typedef int (*milan_iodie_cb_f)(milan_iodie_t *, void *);
 typedef int (*milan_ioms_cb_f)(milan_ioms_t *, void *);
 
-extern int milan_walk_iodie(milan_iodie_cb_f, void *);
 extern int milan_walk_ioms(milan_ioms_cb_f, void *);
 
 extern zen_ioms_flag_t milan_ioms_flags(const milan_ioms_t *const);
