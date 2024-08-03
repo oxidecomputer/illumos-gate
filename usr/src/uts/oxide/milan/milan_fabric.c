@@ -632,6 +632,7 @@
 #include <sys/io/milan/pcie_rsmu.h>
 #include <sys/io/milan/smu_impl.h>
 
+#include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/physaddrs.h>
 
@@ -641,8 +642,6 @@
 
 #include <milan/milan_apob.h>
 #include <milan/milan_physaddrs.h>
-
-#include <zen/df_utils.h>
 
 /*
  * XXX This header contains a lot of the definitions that the broader system is

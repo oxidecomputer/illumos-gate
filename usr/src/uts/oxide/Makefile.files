@@ -142,6 +142,7 @@ TURIN_OBJS +=			\
 ZEN_OBJS +=			\
 	zen_ccx.o		\
 	zen_df_utils.o		\
+	zen_df_pci_utils.o	\
 	zen_fabric.o		\
 	zen_platform.o
 

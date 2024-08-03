@@ -17,44 +17,13 @@
 #include <sys/cmn_err.h>
 #include <sys/mutex.h>
 #include <sys/pci_cfgspace.h>
-#include <sys/pci_impl.h>
-
-/*
- * pci_impl.h and memlist_impl.h conflict.
- */
-#ifdef memlist_insert
-#undef memlist_insert
-#endif
-
-#ifdef memlist_find
-#undef memlist_find
-#endif
-
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/df.h>
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/platform.h>
 
-#include <zen/df_utils.h>
-
-
-/*
- * Like PCI_CADDR1, but allows for access to extended configuration space.
- * If DF::CoreMasterAccessCtrl[EnableCf8ExtCfg] is enabled, the usually
- * reserved bits 27:24 are set to bits 11:8 of the register offset.
- */
-
-#define	PCI_CADDR1_EXT(b, d, f, r) \
-		PCI_CADDR1(b, d, f, r) | ((((r) >> 8) & 0xf) << 24)
-
-void
-zen_df_mech1_write32(const df_reg_def_t reg, uint32_t val)
-{
-	outl(PCI_CONFADD, PCI_CADDR1_EXT(AMDZEN_DF_BUSNO,
-	    AMDZEN_DF_FIRST_DEVICE, reg.drd_func, reg.drd_reg));
-	outl(PCI_CONFDATA, val);
-}
+#include <sys/io/zen/df_utils.h>
 
 uint32_t
 zen_df_early_read32(const df_reg_def_t def)

@@ -27,12 +27,10 @@
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/df.h>
 #include <sys/io/zen/ccx_impl.h>
-#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/platform.h>
 #include <sys/io/zen/physaddrs.h>
-
-#include <zen/df_utils.h>
 
 /*
 *
