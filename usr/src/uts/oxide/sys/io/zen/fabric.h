@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include <sys/ddi.h>
 #include <sys/ddidmareq.h>
+#include <sys/plat/pci_prd.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -35,6 +36,8 @@ typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;
 typedef struct zen_thread zen_thread_t;
+
+struct memlist;
 
 /* Walker callback function type */
 typedef int (*zen_ioms_cb_f)(zen_ioms_t *, void *);
@@ -84,6 +87,7 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_fabric_init)(void);
 	void		(*zfo_enable_nmi)(void);
 	void		(*zfo_nmi_eoi)(void);
+	struct memlist	*(*zfo_pci_subsume)(uint32_t, pci_prd_rsrc_t);
 } zen_fabric_ops_t;
 
 #ifdef	__cplusplus

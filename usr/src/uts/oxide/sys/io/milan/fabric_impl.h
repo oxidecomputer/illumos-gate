@@ -129,6 +129,7 @@ struct milan_fabric {
 
 extern void milan_fabric_enable_nmi(void);
 extern void milan_fabric_nmi_eoi(void);
+extern struct memlist *milan_fabric_pci_subsume(uint32_t, pci_prd_rsrc_t);
 extern uint32_t milan_smn_read(struct zen_iodie *, const smn_reg_t);
 extern void milan_smn_write(struct zen_iodie *, const smn_reg_t,
     const uint32_t);

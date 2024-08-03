@@ -77,7 +77,6 @@ extern uint64_t milan_fabric_ecam_base(void);
  */
 extern void milan_fabric_init(void);
 
-extern struct memlist *milan_fabric_pci_subsume(uint32_t, pci_prd_rsrc_t);
 extern struct memlist *milan_fabric_gen_subsume(milan_ioms_t *, ioms_rsrc_t);
 
 /* Walker callback function types */

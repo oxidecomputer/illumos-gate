@@ -56,6 +56,7 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_fabric_init = milan_fabric_init,
 	.zfo_enable_nmi = milan_fabric_enable_nmi,
 	.zfo_nmi_eoi = milan_fabric_nmi_eoi,
+	.zfo_pci_subsume = milan_fabric_pci_subsume,
 };
 
 static const zen_ras_ops_t milan_ras_ops = {
