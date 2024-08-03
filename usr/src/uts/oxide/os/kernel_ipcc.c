@@ -34,7 +34,6 @@
 #include <sys/amdzen/fch/gpio.h>
 #include <sys/amdzen/fch/iomux.h>
 #include <sys/io/fch/uart.h>
-#include <sys/io/milan/iomux.h>
 #include <sys/archsystm.h>
 #include <sys/platform_detect.h>
 #include <sys/cpu.h>
