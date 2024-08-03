@@ -610,6 +610,7 @@
 #include <sys/cpuvar.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
+#include <sys/amdzen/ccd.h>
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/gpio.h>
 #include <sys/amdzen/fch/iomux.h>
@@ -619,7 +620,6 @@
 #include <sys/io/fch/smi.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/fabric_impl.h>
-#include <sys/io/milan/ccx.h>
 #include <sys/io/milan/dxio_impl.h>
 #include <sys/io/milan/hacks.h>
 #include <sys/io/milan/ioapic.h>
@@ -2621,7 +2621,7 @@ milan_ccx_init_soc(milan_soc_t *soc)
 		/*
 		 * XXX: This is never used, so comment out for now.
 		 */
-		/*ccd->zcd_ccm_comp_id = MILAN_DF_FIRST_CCM_ID + ccdpno;*/
+		/* ccd->zcd_ccm_comp_id = MILAN_DF_FIRST_CCM_ID + ccdpno; */
 
 		/* XXX avoid panicking on bad data from firmware */
 		reg = milan_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);

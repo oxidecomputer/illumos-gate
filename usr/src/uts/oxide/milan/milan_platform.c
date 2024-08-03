@@ -13,12 +13,13 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#include <sys/io/zen/ccx.h>
-#include <sys/io/zen/ccx_impl.h>
-#include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/platform.h>
 
+#include <sys/io/zen/ccx_impl.h>
+#include <sys/io/zen/fabric_impl.h>
+
 #include <sys/io/milan/fabric_impl.h>
+#include <sys/io/milan/ras.h>
 
 
 /*
@@ -44,6 +45,7 @@ extern void milan_fabric_topo_init(void);
 
 
 static const zen_ccx_ops_t milan_ccx_ops = {
+	.zco_init = milan_ccx_init,
 	.zco_physmem_init = zen_ccx_physmem_init,
 	.zco_mmio_init = zen_ccx_mmio_init,
 	.zco_start_thread = milan_ccx_start_thread,
@@ -51,8 +53,13 @@ static const zen_ccx_ops_t milan_ccx_ops = {
 
 static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_topo_init = milan_fabric_topo_init,
+	.zfo_fabric_init = milan_fabric_init,
 	.zfo_enable_nmi = milan_fabric_enable_nmi,
 	.zfo_nmi_eoi = milan_fabric_nmi_eoi,
+};
+
+static const zen_ras_ops_t milan_ras_ops = {
+	.zro_ras_init = milan_ras_init,
 };
 
 zen_platform_t milan_platform = {
@@ -67,4 +74,5 @@ zen_platform_t milan_platform = {
 	},
 	.zp_ccx_ops = &milan_ccx_ops,
 	.zp_fabric_ops = &milan_fabric_ops,
+	.zp_ras_ops = &milan_ras_ops,
 };

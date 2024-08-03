@@ -27,7 +27,6 @@
 #include <sys/stdint.h>
 #include <sys/types.h>
 #include <sys/io/zen/ccx_impl.h>
-#include <sys/io/milan/ccx.h>
 #include <sys/io/milan/fabric.h>
 
 #ifdef __cplusplus
@@ -82,6 +81,9 @@ extern uint32_t milan_ccd_read(zen_ccd_t *, const smn_reg_t);
 extern void milan_ccd_write(zen_ccd_t *, const smn_reg_t, const uint32_t);
 extern uint32_t milan_core_read(zen_core_t *, const smn_reg_t);
 extern void milan_core_write(zen_core_t *, const smn_reg_t, const uint32_t);
+
+extern bool milan_ccx_start_thread(const zen_thread_t *);
+extern void milan_ccx_init(void);
 
 #ifdef __cplusplus
 }

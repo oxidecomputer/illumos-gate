@@ -53,3 +53,16 @@ oxide_zen_fabric_ops(void)
 
 	return (fabric_ops);
 }
+
+const zen_ras_ops_t *
+oxide_zen_ras_ops(void)
+{
+	const zen_platform_t *platform = oxide_zen_platform();
+	const zen_ras_ops_t *ras_ops;
+
+	ASSERT3P(platform, !=, NULL);
+	ras_ops = platform->zp_ras_ops;
+	ASSERT3P(ras_ops, !=, NULL);
+
+	return (ras_ops);
+}

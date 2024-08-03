@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #include <sys/apic.h>

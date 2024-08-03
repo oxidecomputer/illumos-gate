@@ -54,9 +54,8 @@
 #include <sys/bootvfs.h>
 #include <sys/tsc.h>
 #include <sys/boot_data.h>
-#include <sys/io/milan/ccx.h>
 #include <sys/io/milan/hacks.h>
-#include <sys/io/milan/ras.h>
+#include <sys/io/zen/platform.h>
 #include <sys/io/zen/fabric.h>
 #include <milan/milan_apob.h>
 
@@ -181,12 +180,12 @@ mlsetup(struct regs *rp)
 	 * so it must be done before the BASIC cpuid pass.  This will be run on
 	 * APs later on.
 	 */
-	milan_ccx_init();
+	oxide_zen_ccx_ops()->zco_init();
 
 	/*
 	 * Initialize the BSP's MCA banks.
 	 */
-	milan_ras_init();
+	oxide_zen_ras_ops()->zro_ras_init();
 
 	/*
 	 * The x86_featureset is initialized here based on the capabilities

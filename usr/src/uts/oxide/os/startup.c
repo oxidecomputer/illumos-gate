@@ -132,6 +132,7 @@
 #include <sys/boot_data.h>
 #include <sys/memlist_impl.h>
 #include <sys/smm.h>
+#include <sys/io/zen/platform.h>
 #include <sys/io/milan/fabric.h>
 #include <sys/io/milan/hacks.h>
 #include <sys/kernel_ipcc.h>
@@ -657,7 +658,7 @@ startup(void)
 	 * At this point in time, go through and initialize the Milan SoC's I/O
 	 * fabric. This includes the SMU, DXIO, NBIO, etc.
 	 */
-	milan_fabric_init();
+	oxide_zen_fabric_ops()->zfo_fabric_init();
 	if (smm_init() != 0)
 		cmn_err(CE_WARN, "SMI handler initialisation failed");
 

@@ -145,8 +145,6 @@
 #include <sys/hma.h>
 #include <sys/cpu_module.h>
 #include <sys/ontrap.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/ras.h>
 #include <sys/io/zen/platform.h>
 
 struct cpu	cpus[1] __aligned(MMU_PAGESIZE);
@@ -1653,9 +1651,9 @@ mp_startup(void)
 	bzero(new_x86_featureset, BT_SIZEOFMAP(NUM_X86_FEATURES));
 	cpuid_execpass(cp, CPUID_PASS_PRELUDE, new_x86_featureset);
 	cpuid_execpass(cp, CPUID_PASS_IDENT, NULL);
-	milan_ccx_init();
+	oxide_zen_ccx_ops()->zco_init();
 	cpuid_execpass(cp, CPUID_PASS_BASIC, new_x86_featureset);
-	milan_ras_init();
+	oxide_zen_ras_ops()->zro_ras_init();
 
 	/*
 	 * We need to get TSC on this proc synced (i.e., any delta
