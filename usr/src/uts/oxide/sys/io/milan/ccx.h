@@ -24,6 +24,7 @@
 
 #include <sys/apic.h>
 #include <sys/bitext.h>
+#include <sys/stdbool.h>
 #include <sys/stdint.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
@@ -41,7 +42,7 @@ extern "C" {
  * pointers to these types only as opaque handles.
  */
 
-extern boolean_t milan_ccx_start_thread(const zen_thread_t *);
+extern bool milan_ccx_start_thread(const zen_thread_t *);
 extern void milan_ccx_init(void);
 
 #ifdef __cplusplus

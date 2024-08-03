@@ -24,8 +24,8 @@
 #include <sys/x86_archext.h>
 #include <sys/amdzen/ccx.h>
 
-#include <zen/physaddrs.h>
 #include <sys/io/zen/ccx_impl.h>
+#include <sys/io/zen/physaddrs.h>
 
 void
 zen_ccx_physmem_init(void)

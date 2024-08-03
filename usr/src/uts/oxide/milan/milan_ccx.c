@@ -140,7 +140,7 @@ milan_core_write(zen_core_t *core, const smn_reg_t reg, const uint32_t val)
  *
  * See MP boot theory in os/mp_startup.c
  */
-boolean_t
+bool
 milan_ccx_start_thread(const zen_thread_t *thread)
 {
 	zen_core_t *core = thread->zt_core;

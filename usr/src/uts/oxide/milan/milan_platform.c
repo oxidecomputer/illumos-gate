@@ -46,11 +46,13 @@ extern void milan_fabric_topo_init(void);
 static const zen_ccx_ops_t milan_ccx_ops = {
 	.zco_physmem_init = zen_ccx_physmem_init,
 	.zco_mmio_init = zen_ccx_mmio_init,
+	.zco_start_thread = milan_ccx_start_thread,
 };
 
 static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_topo_init = milan_fabric_topo_init,
 	.zfo_enable_nmi = milan_fabric_enable_nmi,
+	.zfo_nmi_eoi = milan_fabric_nmi_eoi,
 };
 
 zen_platform_t milan_platform = {

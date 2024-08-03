@@ -13,8 +13,8 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef	_ZEN_PHYSADDRS_H
-#define	_ZEN_PHYSADDRS_H
+#ifndef	_SYS_IO_ZEN_PHYSADDRS_H
+#define	_SYS_IO_ZEN_PHYSADDRS_H
 
 #ifdef	__cplusplus
 extern "C" {
@@ -29,8 +29,22 @@ extern "C" {
 #define	ZEN_PHYSADDR_IOMMU_HOLE		0xfd00000000UL
 #define	ZEN_PHYSADDR_IOMMU_HOLE_END	0x10000000000UL
 
+/*
+ * The physical addresses of the IOAPIC are set by us,
+ * not architecturally defined.  However, these are the
+ * most common addresses used.
+ *
+ * If we ever need to adjust them based on a new
+ * microarchitecture, we can do so then.
+ */
+#define	ZEN_PHYSADDR_FCH_IOAPIC		0xfec00000UL
+#define	ZEN_PORTADDR_FCH_IOAPIC		0xf0
+
+#define	ZEN_PHYSADDR_IOHC_IOAPIC	0xfec01000UL
+#define	ZEN_PORTADDR_IOHC_IOAPIC	0xf1
+
 #ifdef	__cplusplus
 }
 #endif
 
-#endif /* _ZEN_PHYSADDRS_H */
+#endif /* _SYS_IO_ZEN_PHYSADDRS_H */

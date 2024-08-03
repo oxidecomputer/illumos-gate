@@ -30,9 +30,9 @@
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/platform.h>
+#include <sys/io/zen/physaddrs.h>
 
 #include <zen/df_utils.h>
-#include <zen/physaddrs.h>
 
 /*
 *

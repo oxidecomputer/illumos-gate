@@ -633,6 +633,7 @@
 #include <sys/io/milan/smu_impl.h>
 
 #include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/physaddrs.h>
 
 #include <asm/bitmap.h>
 
@@ -642,7 +643,6 @@
 #include <milan/milan_physaddrs.h>
 
 #include <zen/df_utils.h>
-#include <zen/physaddrs.h>
 
 /*
  * XXX This header contains a lot of the definitions that the broader system is
@@ -1599,6 +1599,41 @@ void
 milan_fabric_enable_nmi(void)
 {
 	(void) milan_walk_ioms(milan_ioms_enable_nmi_cb, NULL);
+}
+
+static int
+milan_iohc_nmi_eoi_cb(milan_ioms_t *ioms, void *arg __unused)
+{
+	smn_reg_t reg;
+	uint32_t v;
+
+	reg = milan_ioms_reg(ioms, D_IOHC_FCTL2, 0);
+	v = milan_ioms_read(ioms, reg);
+	v = IOHC_FCTL2_GET_NMI(v);
+	if (v != 0) {
+		/*
+		 * We have no ability to handle the other bits here, as
+		 * those conditions may not have resulted in an NMI.  Clear only
+		 * the bit whose condition we have handled.
+		 */
+		milan_ioms_write(ioms, reg, v);
+		reg = milan_ioms_reg(ioms, D_IOHC_INTR_EOI, 0);
+		v = IOHC_INTR_EOI_SET_NMI(0);
+		milan_ioms_write(ioms, reg, v);
+	}
+
+	return (0);
+}
+
+/*
+ * Called for NMIs that originated from the IOHC in response to an external
+ * assertion of NMI_SYNCFLOOD_L.  We must clear the indicator flag and signal
+ * EOI to the fabric in order to receive subsequent such NMIs.
+ */
+void
+milan_fabric_nmi_eoi(void)
+{
+	(void) milan_walk_ioms(milan_iohc_nmi_eoi_cb, NULL);
 }
 
 /*

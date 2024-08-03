@@ -41,6 +41,7 @@ extern apicid_t zen_thread_apicid(const zen_thread_t *);
 typedef struct zen_ccx_ops {
 	void	(*zco_physmem_init)(void);
 	void	(*zco_mmio_init)(uint64_t, bool);
+	bool	(*zco_start_thread)(const zen_thread_t *);
 } zen_ccx_ops_t;
 
 #ifdef	__cplusplus
