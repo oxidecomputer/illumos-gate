@@ -21,10 +21,12 @@
 #include <sys/memlist_impl.h>
 #include <sys/mutex.h>
 #include <sys/x86_archext.h>
-
 #include <io/amdzen/amdzen_client.h>
+
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/ccx_impl.h>
+#include <sys/io/zen/nbif_impl.h>
+#include <sys/io/zen/pcie_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -34,6 +36,12 @@ typedef int (*zen_iodie_cb_f)(zen_iodie_t *, void *);
 
 extern int zen_fabric_walk_ioms(zen_fabric_t *, zen_ioms_cb_f, void *);
 extern int zen_fabric_walk_iodie(zen_fabric_t *, zen_iodie_cb_f, void *);
+extern int zen_fabric_walk_pcie_core(zen_fabric_t *, zen_pcie_core_cb_f,
+    void *);
+extern int zen_fabric_walk_pcie_port(zen_fabric_t *, zen_pcie_port_cb_f,
+    void *);
+extern int zen_fabric_walk_nbif(zen_fabric_t *, zen_nbif_cb_f, void *);
+
 extern zen_ioms_t *zen_fabric_find_ioms(zen_fabric_t *, uint32_t);
 extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
 
@@ -54,7 +62,6 @@ extern void zen_fabric_topo_init_common(void);
  */
 #define	ZEN_FABRIC_MAX_DIES_PER_SOC	1
 
-
 /*
  * The Oxide platform supports a maximum of 2 SOCs.
  */
@@ -65,6 +72,17 @@ extern void zen_fabric_topo_init_common(void);
  * determined by the platform's `zpc_ioms_per_iodie`.
  */
 #define	ZEN_IODIE_MAX_IOMS		8
+
+/*
+ * The maximum number of PCIe cores per IOMS.
+ */
+#define	ZEN_IOMS_MAX_PCIE_CORES		3
+
+/*
+ * The maximum numer of NBIFs (Northbridge Interfaces, though possible
+ * Northbridge interconnect functions; definitions vary) per IOMS.
+ */
+#define	ZEN_IOMS_MAX_NBIF		3
 
 /*
  * Warning: These memlists cannot be given directly to PCI. They expect to be
@@ -122,9 +140,34 @@ struct zen_ioms {
 	zen_ioms_flag_t		zio_flags;
 
 	/*
+	 * The PCIe cores associated with this IOMS.
+	 */
+	zen_pcie_core_t		zio_pcie_cores[ZEN_IOMS_MAX_PCIE_CORES];
+
+	/*
+	 * The actual number of PCIe cores for this IOMS.
+	 */
+	uint8_t			zio_npcie_cores;
+
+	/*
+	 * The northbridges associated with this IOMS.
+	 */
+	zen_nbif_t		zio_nbifs[ZEN_IOMS_MAX_NBIF];
+
+	/*
+	 * The actual number of NBIFs for this IOMS.
+	 */
+	uint8_t			zio_nnbifs;
+
+	/*
 	 * The IO Die to which this IOMS belongs.
 	 */
 	zen_iodie_t		*zio_iodie;
+
+	/*
+	 * A set of memlists for this IOMS.
+	 */
+	zen_ioms_memlists_t	zio_memlists;
 
 	/*
 	 * A pointer to the microarchitecturally specific state for this

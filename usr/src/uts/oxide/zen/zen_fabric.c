@@ -29,11 +29,12 @@
 #include <sys/io/zen/ccx_impl.h>
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
-#include <sys/io/zen/platform.h>
+#include <sys/io/zen/nbif_impl.h>
+#include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
+#include <sys/io/zen/platform.h>
 
 /*
-*
  * --------------------------------------
  * Physical Organization and Nomenclature
  * --------------------------------------
@@ -578,6 +579,107 @@ zen_walk_ioms(zen_ioms_cb_f func, void *arg)
 {
 	return (zen_fabric_walk_ioms(&zen_fabric, func, arg));
 }
+
+typedef struct zen_fabric_nbif_cb {
+	zen_nbif_cb_f	zfnc_func;
+	void		*zfnc_arg;
+} zen_fabric_nbif_cb_t;
+
+static int
+zen_fabric_walk_nbif_ioms_cb(zen_ioms_t *ioms, void *arg)
+{
+	const zen_fabric_nbif_cb_t *cb = (const zen_fabric_nbif_cb_t *)arg;
+	for (uint_t nbifno = 0; nbifno < ioms->zio_nnbifs; nbifno++) {
+		zen_nbif_t *nbif = &ioms->zio_nbifs[nbifno];
+		int ret = cb->zfnc_func(nbif, cb->zfnc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+int
+zen_fabric_walk_nbif(zen_fabric_t *fabric, zen_nbif_cb_f func, void *arg)
+{
+	zen_fabric_nbif_cb_t cb = {
+	    .zfnc_func = func,
+	    .zfnc_arg = arg,
+	};
+
+	return (zen_fabric_walk_ioms(fabric, zen_fabric_walk_nbif_ioms_cb,
+	    &cb));
+}
+
+typedef struct zen_fabric_pcie_core_cb {
+	zen_pcie_core_cb_f	zfpcc_func;
+	void			*zfpcc_arg;
+} zen_fabric_pcie_core_cb_t;
+
+static int
+zen_fabric_walk_pcie_core_cb(zen_ioms_t *ioms, void *arg)
+{
+	const zen_fabric_pcie_core_cb_t *cb =
+	    (const zen_fabric_pcie_core_cb_t *)arg;
+	for (uint_t pcno = 0; pcno < ioms->zio_npcie_cores; pcno++) {
+		zen_pcie_core_t *pc = &ioms->zio_pcie_cores[pcno];
+		int ret = cb->zfpcc_func(pc, cb->zfpcc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+int
+zen_fabric_walk_pcie_core(zen_fabric_t *fabric, zen_pcie_core_cb_f func,
+    void *arg)
+{
+	zen_fabric_pcie_core_cb_t cb = {
+	    .zfpcc_func = func,
+	    .zfpcc_arg = arg,
+	};
+
+	return (zen_fabric_walk_ioms(fabric, zen_fabric_walk_pcie_core_cb,
+	    &cb));
+}
+
+typedef struct zen_fabric_pcie_port_cb {
+	zen_pcie_port_cb_f	zfppc_func;
+	void			*zfppc_arg;
+} zen_fabric_pcie_port_cb_t;
+
+static int
+zen_fabric_walk_pcie_port_cb(zen_pcie_core_t *pc, void *arg)
+{
+	zen_fabric_pcie_port_cb_t *cb = (zen_fabric_pcie_port_cb_t *)arg;
+
+	for (uint_t portno = 0; portno < pc->zpc_nports; portno++) {
+		zen_pcie_port_t *port = &pc->zpc_ports[portno];
+		int ret = cb->zfppc_func(port, cb->zfppc_arg);
+		if (ret != 0) {
+			return (ret);
+		}
+	}
+
+	return (0);
+}
+
+int
+zen_fabric_walk_pcie_port(zen_fabric_t *fabric, zen_pcie_port_cb_f func,
+    void *arg)
+{
+	zen_fabric_pcie_port_cb_t cb = {
+	    .zfppc_func = func,
+	    .zfppc_arg = arg,
+	};
+
+	return (zen_fabric_walk_pcie_core(fabric, zen_fabric_walk_pcie_port_cb,
+	    &cb));
+}
+
 typedef struct zen_fabric_ccd_cb {
 	zen_ccd_cb_f	zfcc_func;
 	void		*zfcc_arg;
@@ -713,6 +815,7 @@ zen_walk_thread(zen_thread_cb_f func, void *arg)
 {
 	return (zen_fabric_walk_thread(&zen_fabric, func, arg));
 }
+
 typedef struct {
 	uint32_t	zffi_dest;
 	zen_ioms_t	*zffi_ioms;
@@ -770,6 +873,49 @@ zen_fabric_find_ioms_by_bus(zen_fabric_t *fabric, uint32_t pci_bus)
 	    &zffi);
 
 	return (zffi.zffi_ioms);
+}
+
+typedef struct zen_fabric_find_pcie_core {
+	const zen_iodie_t *zffpc_iodie;
+	uint16_t zffpc_start;
+	uint16_t zffpc_end;
+	zen_pcie_core_t *zffpc_pc;
+} zen_fabric_find_pcie_core_t;
+
+static int
+zen_fabric_find_pcie_core_by_lanes_cb(zen_pcie_core_t *pc, void *arg)
+{
+	zen_fabric_find_pcie_core_t *zffpc = (zen_fabric_find_pcie_core_t *)arg;
+
+	if (zffpc->zffpc_iodie == pc->zpc_ioms->zio_iodie &&
+	    zffpc->zffpc_start >= pc->zpc_dxio_lane_start &&
+	    zffpc->zffpc_start <= pc->zpc_dxio_lane_end &&
+	    zffpc->zffpc_end >= pc->zpc_dxio_lane_start &&
+	    zffpc->zffpc_end <= pc->zpc_dxio_lane_end) {
+		zffpc->zffpc_pc = pc;
+		return (1);
+	}
+
+	return (0);
+}
+
+zen_pcie_core_t *
+zen_fabric_find_pcie_core_by_lanes(zen_iodie_t *iodie,
+    uint16_t start, uint16_t end)
+{
+	ASSERT3U(start, <=, end);
+
+	zen_fabric_find_pcie_core_t zffpc = {
+	    .zffpc_iodie = iodie,
+	    .zffpc_start = start,
+	    .zffpc_end = end,
+	    .zffpc_pc = NULL,
+	};
+
+	(void) zen_fabric_walk_pcie_core(iodie->zi_soc->zs_fabric,
+	    zen_fabric_find_pcie_core_by_lanes_cb, &zffpc);
+
+	return (zffpc.zffpc_pc);
 }
 
 typedef struct zen_fabric_find_thread {

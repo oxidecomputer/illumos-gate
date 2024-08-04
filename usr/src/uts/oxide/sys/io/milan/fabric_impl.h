@@ -93,39 +93,40 @@ typedef struct milan_iodie milan_iodie_t;
 typedef struct milan_soc milan_soc_t;
 
 struct milan_ioms {
-	zen_ioms_t		*zen_ioms;
-	uint8_t			mio_npcie_cores;
-	uint8_t			mio_nnbifs;
 	milan_pcie_core_t	mio_pcie_cores[MILAN_IOMS_MAX_PCIE_CORES];
 	milan_nbif_t		mio_nbifs[MILAN_IOMS_MAX_NBIF];
-	zen_ioms_memlists_t	mio_memlists;
-	milan_iodie_t		*mio_iodie;
 };
 
 struct milan_iodie {
-	zen_iodie_t		*zen_iodie;
-	uint8_t			mi_nioms;
 	uint8_t			mi_smu_fw[3];
 	uint32_t		mi_dxio_fw[2];
 	milan_dxio_sm_state_t	mi_state;
 	milan_dxio_config_t	mi_dxio_conf;
 	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
 	milan_ioms_t		mi_ioms[MILAN_IOMS_PER_IODIE];
-	milan_soc_t		*mi_soc;
 };
 
 struct milan_soc {
-	zen_soc_t		*zen_soc;
-	uint8_t			ms_ndies;
 	milan_iodie_t		ms_iodies[MILAN_FABRIC_MAX_DIES_PER_SOC];
-	milan_fabric_t		*ms_fabric;
 };
 
 struct milan_fabric {
-	zen_fabric_t	*zen_fabric;
 	milan_hotplug_t	mf_hotplug;
 	milan_soc_t	mf_socs[MILAN_FABRIC_MAX_SOCS];
 };
+
+/*
+ * This is an entry point for early boot that is used after we have PCIe
+ * configuration space set up so we can load up all the information about the
+ * actual system itself.
+ */
+extern void milan_fabric_topo_init(void);
+
+/*
+ * This is the primary initialization point for the Milan Data Fabric,
+ * Northbridges, PCIe, and related.
+ */
+extern void milan_fabric_init(void);
 
 extern void milan_fabric_enable_nmi(void);
 extern void milan_fabric_nmi_eoi(void);

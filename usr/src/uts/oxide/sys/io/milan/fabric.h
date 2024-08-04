@@ -59,44 +59,21 @@ typedef enum ioms_rsrc {
 	IR_GEN_MMIO
 } ioms_rsrc_t;
 
-/*
- * This is an entry point for early boot that is used after we have PCIe
- * configuration space set up so we can load up all the information about the
- * actual system itself.
- */
-extern void milan_fabric_topo_init(void);
+extern struct memlist *milan_fabric_gen_subsume(zen_ioms_t *, ioms_rsrc_t);
 
-/*
- * Retrieve the base physical address of the PCIe ECAM region.
- */
-extern uint64_t milan_fabric_ecam_base(void);
-
-/*
- * This is the primary initialization point for the Milan Data Fabric,
- * Northbridges, PCIe, and related.
- */
-extern void milan_fabric_init(void);
-
-extern struct memlist *milan_fabric_gen_subsume(milan_ioms_t *, ioms_rsrc_t);
-
-/* Walker callback function types */
-typedef int (*milan_ioms_cb_f)(milan_ioms_t *, void *);
-
-extern int milan_walk_ioms(milan_ioms_cb_f, void *);
-
-extern zen_ioms_flag_t milan_ioms_flags(const milan_ioms_t *const);
-extern milan_iodie_t *milan_ioms_iodie(const milan_ioms_t *const);
-extern smn_reg_t milan_ioms_reg(const milan_ioms_t *const, const smn_reg_def_t,
+extern zen_ioms_flag_t milan_ioms_flags(const zen_ioms_t *const);
+extern zen_iodie_t *milan_ioms_iodie(const zen_ioms_t *const);
+extern smn_reg_t milan_ioms_reg(const zen_ioms_t *const, const smn_reg_def_t,
     const uint16_t);
-extern uint32_t milan_ioms_read(milan_ioms_t *, const smn_reg_t);
-extern void milan_ioms_write(milan_ioms_t *, const smn_reg_t, const uint32_t);
+extern uint32_t milan_ioms_read(zen_ioms_t *, const smn_reg_t);
+extern void milan_ioms_write(zen_ioms_t *, const smn_reg_t, const uint32_t);
 
-extern zen_iodie_flag_t milan_iodie_flags(const milan_iodie_t *const);
-extern uint8_t milan_iodie_node_id(const milan_iodie_t *const);
-extern smn_reg_t milan_iodie_reg(const milan_iodie_t *const,
+extern zen_iodie_flag_t milan_iodie_flags(const zen_iodie_t *const);
+extern uint8_t milan_iodie_node_id(const zen_iodie_t *const);
+extern smn_reg_t milan_iodie_reg(const zen_iodie_t *const,
     const smn_reg_def_t, const uint16_t);
-extern uint32_t milan_iodie_read(milan_iodie_t *, const smn_reg_t);
-extern void milan_iodie_write(milan_iodie_t *, const smn_reg_t, const uint32_t);
+extern uint32_t milan_iodie_read(zen_iodie_t *, const smn_reg_t);
+extern void milan_iodie_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
 
 #ifdef __cplusplus
 }
