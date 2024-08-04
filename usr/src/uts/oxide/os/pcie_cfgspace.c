@@ -22,7 +22,7 @@
  * we will unmap that and leverage addresses from the device arena once that has
  * been set up.
  *
- * Configuration space is accessed by constructing and addresss that has the
+ * Configuration space is accessed by constructing an address that has the
  * bits arranged in the following pattern to indicate what the bus, device,
  * function, and register is:
  *
@@ -162,8 +162,8 @@ pcie_bdfr_to_addr(int bus, int dev, int func, int reg)
  * requirements result in undefined behavior."
  *
  * These requirements, or substantially identical phrasings of them, have been
- * carried into all known subsequent PPRs, including those for Rome, Milan, and
- * Genoa processor families.
+ * carried into all known subsequent PPRs, including those for Rome, Milan,
+ * Genoa, and Turin processor families.
  *
  * The first of these is guaranteed here by our device mapping (in
  * pcie_cfgspace_{init,remap}() and by hat_devload()) and in the KDI by

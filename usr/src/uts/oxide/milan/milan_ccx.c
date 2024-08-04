@@ -19,7 +19,6 @@
  */
 
 #include <milan/milan_physaddrs.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/fabric_impl.h>
 #include <sys/io/milan/ccx_impl.h>
 #include <sys/amdzen/ccd.h>

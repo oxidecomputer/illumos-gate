@@ -653,8 +653,8 @@ startup(void)
 	startup_tsc();
 
 	/*
-	 * At this point in time, go through and initialize the Milan SoC's I/O
-	 * fabric. This includes the SMU, DXIO, NBIO, etc.
+	 * At this point in time, go through and initialize the SoC's I/O
+	 * fabric.
 	 */
 	oxide_zen_fabric_ops()->zfo_fabric_init();
 	if (smm_init() != 0)

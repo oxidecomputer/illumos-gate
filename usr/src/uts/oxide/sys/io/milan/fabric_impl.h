@@ -22,9 +22,9 @@
  */
 
 #include <sys/types.h>
+#include <sys/stdint.h>
 #include <sys/x86_archext.h>
 #include <sys/io/zen/fabric_impl.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/ccx_impl.h>
 #include <sys/io/milan/dxio_impl.h>
 #include <sys/io/milan/nbif_impl.h>
@@ -130,7 +130,12 @@ extern void milan_fabric_init(void);
 
 extern void milan_fabric_enable_nmi(void);
 extern void milan_fabric_nmi_eoi(void);
-extern struct memlist *milan_fabric_pci_subsume(uint32_t, pci_prd_rsrc_t);
+
+extern smn_reg_t milan_smn_ioms_reg(const zen_ioms_t *const,
+    const smn_reg_def_t, const uint16_t);
+extern smn_reg_t milan_smn_iodie_reg(const zen_iodie_t *const,
+    const smn_reg_def_t, const uint16_t);
+
 extern uint32_t milan_smn_read(struct zen_iodie *, const smn_reg_t);
 extern void milan_smn_write(struct zen_iodie *, const smn_reg_t,
     const uint32_t);

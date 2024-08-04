@@ -376,6 +376,15 @@ zen_ioms_flags(const zen_ioms_t *const ioms)
 }
 
 /*
+ * Returns the IO die this IOMS is attached to.
+ */
+zen_iodie_t *
+zen_ioms_iodie(const zen_ioms_t *const ioms)
+{
+	return (ioms->zio_iodie);
+}
+
+/*
  * Returns the flags that have been set on this IO die.
  */
 zen_iodie_flag_t
@@ -979,4 +988,185 @@ zen_fabric_dma_attr(ddi_dma_attr_t *attr)
 	attr->dma_attr_sgllen = 1;
 	attr->dma_attr_granular = 1;
 	attr->dma_attr_flags = 0;
+}
+
+static zen_ioms_rsrc_t
+zen_ioms_prd_to_rsrc(pci_prd_rsrc_t rsrc)
+{
+	switch (rsrc) {
+	case PCI_PRD_R_IO:
+		return (ZIR_PCI_LEGACY);
+	case PCI_PRD_R_MMIO:
+		return (ZIR_PCI_MMIO);
+	case PCI_PRD_R_PREFETCH:
+		return (ZIR_PCI_PREFETCH);
+	case PCI_PRD_R_BUS:
+		return (ZIR_PCI_BUS);
+	default:
+		return (ZIR_NONE);
+	}
+}
+
+static struct memlist *
+zen_fabric_rsrc_subsume(zen_ioms_t *ioms, zen_ioms_rsrc_t rsrc)
+{
+	zen_ioms_memlists_t *imp;
+	struct memlist **avail, **used, *ret;
+
+	ASSERT(ioms != NULL);
+
+	imp = &ioms->zio_memlists;
+	mutex_enter(&imp->zim_lock);
+	switch (rsrc) {
+	case ZIR_PCI_LEGACY:
+		avail = &imp->zim_io_avail_pci;
+		used = &imp->zim_io_used;
+		break;
+	case ZIR_PCI_MMIO:
+		avail = &imp->zim_mmio_avail_pci;
+		used = &imp->zim_mmio_used;
+		break;
+	case ZIR_PCI_PREFETCH:
+		avail = &imp->zim_pmem_avail;
+		used = &imp->zim_pmem_used;
+		break;
+	case ZIR_PCI_BUS:
+		avail = &imp->zim_bus_avail;
+		used = &imp->zim_bus_used;
+		break;
+	case ZIR_GEN_LEGACY:
+		avail = &imp->zim_io_avail_gen;
+		used = &imp->zim_io_used;
+		break;
+	case ZIR_GEN_MMIO:
+		avail = &imp->zim_mmio_avail_gen;
+		used = &imp->zim_mmio_used;
+		break;
+	default:
+		mutex_exit(&imp->zim_lock);
+		return (NULL);
+	}
+
+	/*
+	 * If there are no resources, that may be because there never were any
+	 * or they had already been handed out.
+	 */
+	if (*avail == NULL) {
+		mutex_exit(&imp->zim_lock);
+		return (NULL);
+	}
+
+	/*
+	 * We have some resources available for this NB instance. In this
+	 * particular case, we need to first duplicate these using kmem and then
+	 * we can go ahead and move all of these to the used list.  This is done
+	 * for the benefit of PCI code which expects it, but we do it
+	 * universally for consistency.
+	 */
+	ret = memlist_kmem_dup(*avail, KM_SLEEP);
+
+	/*
+	 * XXX This ends up not really coalescing ranges, but maybe that's fine.
+	 */
+	while (*avail != NULL) {
+		struct memlist *to_move = *avail;
+		memlist_del(to_move, avail);
+		memlist_insert(to_move, used);
+	}
+
+	mutex_exit(&imp->zim_lock);
+	return (ret);
+}
+
+/*
+ * This is a request that we take resources from a given IOMS root port and
+ * basically give what remains and hasn't been allocated to PCI. This is a bit
+ * of a tricky process as we want to both:
+ *
+ *  1. Give everything that's currently available to PCI; however, it needs
+ *     memlists that are allocated with kmem due to how PCI memlists work.
+ *  2. We need to move everything that we're giving to PCI into our used list
+ *     just for our own tracking purposes.
+ */
+struct memlist *
+zen_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
+{
+	extern zen_fabric_t zen_fabric;
+	zen_ioms_t *ioms;
+	zen_ioms_rsrc_t ir;
+
+	ioms = zen_fabric_find_ioms_by_bus(&zen_fabric, bus);
+	if (ioms == NULL) {
+		return (NULL);
+	}
+
+	ir = zen_ioms_prd_to_rsrc(rsrc);
+
+	return (zen_fabric_rsrc_subsume(ioms, ir));
+}
+
+/*
+ * This is for the rest of the available legacy IO and MMIO space that we've set
+ * aside for things that are not PCI.  The intent is that the caller will feed
+ * the space to busra or the moral equivalent.  While this is presently used
+ * only by the FCH and is set up only for the IOMSs that have an FCH attached,
+ * in principle this could be applied to other users as well, including IOAPICs
+ * and IOMMUs that are present in all NB instances.  For now this is really
+ * about getting all this out of earlyboot context where we don't have modules
+ * like rootnex and busra and into places where it's better managed; in this it
+ * has the same purpose as its PCI counterpart above.  The memlists we supply
+ * don't have to be allocated by kmem, but we do it anyway for consistency and
+ * ease of use for callers.
+ *
+ * Curiously, AMD's documentation indicates that each of the PCI and non-PCI
+ * regions associated with each NB instance must be contiguous, but there's no
+ * hardware reason for that beyond the mechanics of assigning resources to PCIe
+ * root ports.  So if we were to improve busra to manage these resources
+ * globally instead of making PCI its own separate pool, we wouldn't need this
+ * clumsy non-PCI reservation and could instead assign resources globally with
+ * respect to each NB instance regardless of the requesting device type.  The
+ * future's so bright, we gotta wear shades.
+ */
+struct memlist *
+zen_fabric_gen_subsume(zen_ioms_t *ioms, zen_ioms_rsrc_t ir)
+{
+	return (zen_fabric_rsrc_subsume(ioms, ir));
+}
+
+smn_reg_t
+zen_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	return (oxide_zen_smn_ops()->zso_smn_ioms_reg(ioms, def, reginst));
+}
+
+uint32_t
+zen_ioms_read(zen_ioms_t *ioms, const smn_reg_t reg)
+{
+	return (oxide_zen_smn_ops()->zso_smn_read(ioms->zio_iodie, reg));
+}
+
+void
+zen_ioms_write(zen_ioms_t *ioms, const smn_reg_t reg, const uint32_t val)
+{
+	oxide_zen_smn_ops()->zso_smn_write(ioms->zio_iodie, reg, val);
+}
+
+smn_reg_t
+zen_iodie_reg(const zen_iodie_t *const iodie, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	return (oxide_zen_smn_ops()->zso_smn_iodie_reg(iodie, def, reginst));
+}
+
+uint32_t
+zen_iodie_read(zen_iodie_t *iodie, const smn_reg_t reg)
+{
+	return (oxide_zen_smn_ops()->zso_smn_read(iodie, reg));
+}
+
+void
+zen_iodie_write(zen_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
+{
+	oxide_zen_smn_ops()->zso_smn_write(iodie, reg, val);
 }

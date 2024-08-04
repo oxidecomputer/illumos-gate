@@ -22,7 +22,7 @@
 #include <sys/plat/pci_prd.h>
 #include <sys/modctl.h>
 #include <sys/pci.h>
-#include <sys/io/zen/platform.h>
+#include <sys/io/zen/fabric.h>
 
 /*
  * We always just tell the system to scan all PCI buses.
@@ -51,7 +51,7 @@ pci_prd_find_resource(uint32_t bus, pci_prd_rsrc_t rsrc)
 		 * keep things what PCI expects and so as not to confuse someone
 		 * who is debugging later.
 		 */
-		ret = oxide_zen_fabric_ops()->zfo_pci_subsume(bus, rsrc);
+		ret = zen_fabric_pci_subsume(bus, rsrc);
 		if (ret != NULL) {
 			struct memlist *fix = ret;
 			while (fix != NULL) {

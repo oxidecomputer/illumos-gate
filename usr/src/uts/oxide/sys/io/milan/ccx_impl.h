@@ -27,7 +27,6 @@
 #include <sys/stdint.h>
 #include <sys/types.h>
 #include <sys/io/zen/ccx_impl.h>
-#include <sys/io/milan/fabric.h>
 
 #ifdef __cplusplus
 extern "C" {

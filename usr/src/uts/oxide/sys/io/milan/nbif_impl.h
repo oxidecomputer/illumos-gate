@@ -23,7 +23,7 @@
  * supported by this machine architecture.
  */
 
-#include <sys/io/milan/fabric.h>
+#include <sys/io/milan/fabric_impl.h>
 #include <sys/io/zen/nbif_impl.h>
 
 #ifdef __cplusplus

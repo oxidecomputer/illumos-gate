@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_HACKS_H
@@ -18,7 +18,6 @@
 
 #include <sys/types.h>
 #include <sys/stdbool.h>
-#include <sys/io/milan/fabric.h>
 
 #ifdef __cplusplus
 extern "C" {

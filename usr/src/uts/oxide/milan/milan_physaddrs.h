@@ -149,22 +149,6 @@ extern "C" {
  */
 
 /*
- * This address represents the beginning of a compatibility MMIO range. This
- * range is accessed using subtractive decoding somehow, which means that if we
- * program an address range into the DF that overlaps this we will lose access
- * to these compatibility devices which generally speaking contain the FCH.
- */
-#define	MILAN_PHYSADDR_COMPAT_MMIO	0xfec00000UL
-#define	MILAN_COMPAT_MMIO_SIZE		0x01400000UL
-#define	MILAN_PHYSADDR_MMIO32_END	0x100000000UL
-
-/*
- * The FCH also has a compatibility range for legacy I/O ports.
- */
-#define	MILAN_IOPORT_COMPAT_BASE	0U
-#define	MILAN_IOPORT_COMPAT_SIZE	0x1000U
-
-/*
  * This is the final address that we can use for MMIO. Beyond this is an
  * explicitly reserved area that we're not supposed to touch.
  */

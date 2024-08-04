@@ -23,6 +23,7 @@
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/hacks.h>
 #include <sys/io/zen/ras.h>
+#include <sys/io/zen/smn.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -55,6 +56,7 @@ typedef struct zen_platform {
 	const zen_fabric_ops_t		*zp_fabric_ops;
 	const zen_hack_ops_t		*zp_hack_ops;
 	const zen_ras_ops_t		*zp_ras_ops;
+	const zen_smn_ops_t		*zp_smn_ops;
 } zen_platform_t;
 
 extern const zen_apob_ops_t *oxide_zen_apob_ops(void);
@@ -63,6 +65,7 @@ extern const zen_fabric_ops_t *oxide_zen_fabric_ops(void);
 extern const zen_hack_ops_t *oxide_zen_hack_ops(void);
 extern const zen_platform_consts_t *oxide_zen_platform_consts(void);
 extern const zen_ras_ops_t *oxide_zen_ras_ops(void);
+extern const zen_smn_ops_t *oxide_zen_smn_ops(void);
 
 #ifdef	__cplusplus
 }

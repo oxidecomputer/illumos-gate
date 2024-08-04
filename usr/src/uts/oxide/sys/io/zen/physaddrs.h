@@ -21,6 +21,22 @@ extern "C" {
 #endif
 
 /*
+ * This address represents the beginning of a compatibility MMIO range. This
+ * range is accessed using subtractive decoding somehow, which means that if we
+ * program an address range into the DF that overlaps this we will lose access
+ * to these compatibility devices which generally speaking contain the FCH.
+ */
+#define	ZEN_PHYSADDR_COMPAT_MMIO	0xfec00000UL
+#define	ZEN_COMPAT_MMIO_SIZE		0x01400000UL
+#define	ZEN_PHYSADDR_MMIO32_END		0x100000000UL
+
+/*
+ * The FCH also has a compatibility range for legacy I/O ports.
+ */
+#define	ZEN_IOPORT_COMPAT_BASE	0U
+#define	ZEN_IOPORT_COMPAT_SIZE	0x1000U
+
+/*
  * This 12 GiB range below 1 TiB can't be accessed as DRAM and is not supposed
  * to be used for MMIO in general, although it may be used for the 64 MiB flash
  * aperture from the SPI controller.  The exact reason for this hole is not well

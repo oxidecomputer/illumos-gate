@@ -18,7 +18,6 @@
 
 #include <sys/types.h>
 #include <sys/io/zen/pcie_impl.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/dxio_impl.h>
 #include <sys/io/milan/pcie.h>
 

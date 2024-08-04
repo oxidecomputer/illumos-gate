@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -21,7 +21,6 @@
 #include <sys/io/fch/i2c.h>
 #include <sys/io/fch/misc.h>
 #include <sys/io/fch/pmio.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/hacks.h>
 #include <sys/io/milan/iomux.h>
 

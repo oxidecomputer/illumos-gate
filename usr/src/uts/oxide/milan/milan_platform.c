@@ -61,7 +61,6 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_fabric_init = milan_fabric_init,
 	.zfo_enable_nmi = milan_fabric_enable_nmi,
 	.zfo_nmi_eoi = milan_fabric_nmi_eoi,
-	.zfo_pci_subsume = milan_fabric_pci_subsume,
 };
 
 static const zen_hack_ops_t milan_hack_ops = {
@@ -72,6 +71,13 @@ static const zen_hack_ops_t milan_hack_ops = {
 
 static const zen_ras_ops_t milan_ras_ops = {
 	.zro_ras_init = milan_ras_init,
+};
+
+static const zen_smn_ops_t milan_smn_ops = {
+	.zso_smn_ioms_reg = milan_smn_ioms_reg,
+	.zso_smn_iodie_reg = milan_smn_iodie_reg,
+	.zso_smn_read = milan_smn_read,
+	.zso_smn_write = milan_smn_write,
 };
 
 zen_platform_t milan_platform = {
@@ -89,4 +95,5 @@ zen_platform_t milan_platform = {
 	.zp_fabric_ops = &milan_fabric_ops,
 	.zp_hack_ops = &milan_hack_ops,
 	.zp_ras_ops = &milan_ras_ops,
+	.zp_smn_ops = &milan_smn_ops,
 };

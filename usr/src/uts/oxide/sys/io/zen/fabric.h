@@ -17,6 +17,7 @@
 #define	_SYS_IO_ZEN_FABRIC_H
 
 #include <sys/types.h>
+#include <sys/amdzen/smn.h>
 #include <sys/ddi.h>
 #include <sys/ddidmareq.h>
 #include <sys/plat/pci_prd.h>
@@ -37,6 +38,20 @@ typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;
 typedef struct zen_thread zen_thread_t;
 
+/*
+ * Generic resource types that can be routed via an IOMS.
+ */
+typedef enum zen_ioms_rsrc {
+	ZIR_NONE,
+	ZIR_PCI_LEGACY,
+	ZIR_PCI_MMIO,
+	ZIR_PCI_PREFETCH,
+	ZIR_PCI_BUS,
+	ZIR_GEN_LEGACY,
+	ZIR_GEN_MMIO
+} zen_ioms_rsrc_t;
+
+
 struct memlist;
 
 /* Walker callback function type */
@@ -56,6 +71,11 @@ typedef enum zen_ioms_flag {
  * Returns the set of flags set on the given IOMS.
  */
 extern zen_ioms_flag_t zen_ioms_flags(const zen_ioms_t *const);
+
+/*
+ * Returns a pointer to the IO die the given IOMS is connected to.
+ */
+extern zen_iodie_t *zen_ioms_iodie(const zen_ioms_t *const);
 
 typedef enum zen_iodie_flag {
 	ZEN_IODIE_F_PRIMARY	= 1 << 0
@@ -82,12 +102,36 @@ extern void zen_fabric_topo_init(void);
  */
 extern uint64_t zen_fabric_ecam_base(void);
 
+/*
+ * Memlist subsumption.
+ */
+extern struct memlist *zen_fabric_pci_subsume(uint32_t, pci_prd_rsrc_t);
+extern struct memlist *zen_fabric_gen_subsume(zen_ioms_t *, zen_ioms_rsrc_t);
+
+/*
+ * Accessors for IOMS registers.
+ */
+extern smn_reg_t zen_ioms_reg(const zen_ioms_t *const, const smn_reg_def_t,
+    const uint16_t);
+extern uint32_t zen_ioms_read(zen_ioms_t *, const smn_reg_t);
+extern void zen_ioms_write(zen_ioms_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Accessors for IO die registers.
+ */
+extern smn_reg_t zen_iodie_reg(const zen_iodie_t *const,
+    const smn_reg_def_t, const uint16_t);
+extern uint32_t zen_iodie_read(zen_iodie_t *, const smn_reg_t);
+extern void zen_iodie_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Externally visible operations called from common code.
+ */
 typedef struct zen_fabric_ops {
 	void		(*zfo_topo_init)(void);
 	void		(*zfo_fabric_init)(void);
 	void		(*zfo_enable_nmi)(void);
 	void		(*zfo_nmi_eoi)(void);
-	struct memlist	*(*zfo_pci_subsume)(uint32_t, pci_prd_rsrc_t);
 } zen_fabric_ops_t;
 
 #ifdef	__cplusplus

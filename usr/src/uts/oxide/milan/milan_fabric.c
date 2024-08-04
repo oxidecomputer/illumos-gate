@@ -511,8 +511,8 @@
  * is attached), we always reserve the compatibility legacy I/O and 32-bit MMIO
  * spaces for generic consumers on that IOMS.  These are:
  *
- * - MILAN_IOPORT_COMPAT_SIZE ports beginning at 0 for legacy I/O
- * - MILAN_COMPAT_MMIO_SIZE bytes beginning at MILAN_PHYSADDR_COMPAT_MMIO for
+ * - ZEN_IOPORT_COMPAT_SIZE ports beginning at 0 for legacy I/O
+ * - ZEN_COMPAT_MMIO_SIZE bytes beginning at ZEN_PHYSADDR_COMPAT_MMIO for
  * 32-bit MMIO
  *
  * These reservations are unconditional for the primary IOMS; they are intended
@@ -618,7 +618,6 @@
 #include <sys/io/fch/misc.h>
 #include <sys/io/fch/pmio.h>
 #include <sys/io/fch/smi.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/fabric_impl.h>
 #include <sys/io/milan/dxio_impl.h>
 #include <sys/io/milan/hacks.h>
@@ -1104,7 +1103,7 @@ milan_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
  */
 
 smn_reg_t
-milan_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
+milan_smn_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	smn_reg_t reg;
@@ -1156,22 +1155,6 @@ milan_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	}
 
 	return (reg);
-}
-
-uint32_t
-milan_ioms_read(zen_ioms_t *ioms, const smn_reg_t reg)
-{
-	zen_iodie_t *iodie = ioms->zio_iodie;
-
-	return (milan_smn_read(iodie, reg));
-}
-
-void
-milan_ioms_write(zen_ioms_t *ioms, const smn_reg_t reg, const uint32_t val)
-{
-	zen_iodie_t *iodie = ioms->zio_iodie;
-
-	milan_smn_write(iodie, reg, val);
 }
 
 static smn_reg_t
@@ -1249,7 +1232,7 @@ milan_nbif_func_write(zen_nbif_func_t *func, const smn_reg_t reg,
 }
 
 smn_reg_t
-milan_iodie_reg(const zen_iodie_t *const iodie, const smn_reg_def_t def,
+milan_smn_iodie_reg(const zen_iodie_t *const iodie, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	smn_reg_t reg;
@@ -1299,43 +1282,6 @@ milan_iodie_reg(const zen_iodie_t *const iodie, const smn_reg_def_t def,
 	return (reg);
 }
 
-uint32_t
-milan_iodie_read(zen_iodie_t *iodie, const smn_reg_t reg)
-{
-	return (milan_smn_read(iodie, reg));
-}
-
-void
-milan_iodie_write(zen_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
-{
-	milan_smn_write(iodie, reg, val);
-}
-
-uint8_t
-milan_iodie_node_id(const zen_iodie_t *const iodie)
-{
-	return (zen_iodie_node_id(iodie));
-}
-
-zen_iodie_flag_t
-milan_iodie_flags(const zen_iodie_t *const iodie)
-{
-	return (zen_iodie_flags(iodie));
-}
-
-zen_ioms_flag_t
-milan_ioms_flags(const zen_ioms_t *const ioms)
-{
-	return (zen_ioms_flags(ioms));
-}
-
-zen_iodie_t *
-milan_ioms_iodie(const zen_ioms_t *const ioms)
-{
-	return (ioms->zio_iodie);
-}
-
-
 static int
 milan_ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
 {
@@ -1352,15 +1298,15 @@ milan_ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
 	 * of NMI, below) and does not provide any value for our use case of
 	 * NMI.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_INTR_CNTL, 0);
-	v = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_INTR_CNTL, 0);
+	v = zen_ioms_read(ioms, reg);
 	v = IOHC_INTR_CNTL_SET_NMI_DEST_CTRL(v, 0);
-	milan_ioms_write(ioms, reg, v);
+	zen_ioms_write(ioms, reg, v);
 
-	if ((milan_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) != 0) {
-		reg = milan_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
+	if ((zen_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) != 0) {
+		reg = zen_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
 		v = IOHC_PIN_CTL_SET_MODE_NMI(0);
-		milan_ioms_write(ioms, reg, v);
+		zen_ioms_write(ioms, reg, v);
 	}
 
 	/*
@@ -1372,10 +1318,10 @@ milan_ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
 	 * reduce the likelihood of that, we are going to enable NMI and
 	 * skedaddle...
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_MISC_RAS_CTL, 0);
-	v = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_MISC_RAS_CTL, 0);
+	v = zen_ioms_read(ioms, reg);
 	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(v, 1);
-	milan_ioms_write(ioms, reg, v);
+	zen_ioms_write(ioms, reg, v);
 
 	return (0);
 }
@@ -1392,8 +1338,8 @@ milan_iohc_nmi_eoi_cb(zen_ioms_t *ioms, void *arg __unused)
 	smn_reg_t reg;
 	uint32_t v;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_FCTL2, 0);
-	v = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_FCTL2, 0);
+	v = zen_ioms_read(ioms, reg);
 	v = IOHC_FCTL2_GET_NMI(v);
 	if (v != 0) {
 		/*
@@ -1401,10 +1347,10 @@ milan_iohc_nmi_eoi_cb(zen_ioms_t *ioms, void *arg __unused)
 		 * those conditions may not have resulted in an NMI.  Clear only
 		 * the bit whose condition we have handled.
 		 */
-		milan_ioms_write(ioms, reg, v);
-		reg = milan_ioms_reg(ioms, D_IOHC_INTR_EOI, 0);
+		zen_ioms_write(ioms, reg, v);
+		reg = zen_ioms_reg(ioms, D_IOHC_INTR_EOI, 0);
 		v = IOHC_INTR_EOI_SET_NMI(0);
-		milan_ioms_write(ioms, reg, v);
+		zen_ioms_write(ioms, reg, v);
 	}
 
 	return (0);
@@ -1469,7 +1415,7 @@ milan_pcie_populate_core_dbg(zen_pcie_core_t *pc, void *arg)
 		return (0);
 
 	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
-	    iodie_match != milan_iodie_node_id(pc->zpc_ioms->zio_iodie)) {
+	    iodie_match != zen_iodie_node_id(pc->zpc_ioms->zio_iodie)) {
 		return (0);
 	}
 
@@ -1500,7 +1446,7 @@ milan_pcie_populate_port_dbg(zen_pcie_port_t *port, void *arg)
 
 	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
 	    iodie_match !=
-	    milan_iodie_node_id(port->zpp_core->zpc_ioms->zio_iodie)) {
+	    zen_iodie_node_id(port->zpp_core->zpc_ioms->zio_iodie)) {
 		return (0);
 	}
 
@@ -1692,21 +1638,21 @@ milan_smu_rpc(zen_iodie_t *iodie, milan_smu_rpc_t *rpc)
 	uint32_t resp;
 
 	mutex_enter(&iodie->zi_smu_lock);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_RESP(), MILAN_SMU_RPC_NOTDONE);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG0(), rpc->msr_arg0);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG1(), rpc->msr_arg1);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG2(), rpc->msr_arg2);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG3(), rpc->msr_arg3);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG4(), rpc->msr_arg4);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_ARG5(), rpc->msr_arg5);
-	milan_iodie_write(iodie, MILAN_SMU_RPC_REQ(), rpc->msr_req);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_RESP(), MILAN_SMU_RPC_NOTDONE);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG0(), rpc->msr_arg0);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG1(), rpc->msr_arg1);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG2(), rpc->msr_arg2);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG3(), rpc->msr_arg3);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG4(), rpc->msr_arg4);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG5(), rpc->msr_arg5);
+	zen_iodie_write(iodie, MILAN_SMU_RPC_REQ(), rpc->msr_req);
 
 	/*
 	 * XXX Infinite spins are bad, but we don't even have drv_usecwait yet.
 	 * When we add a timeout this should then return an int.
 	 */
 	for (;;) {
-		resp = milan_iodie_read(iodie, MILAN_SMU_RPC_RESP());
+		resp = zen_iodie_read(iodie, MILAN_SMU_RPC_RESP());
 		if (resp != MILAN_SMU_RPC_NOTDONE) {
 			break;
 		}
@@ -1714,12 +1660,12 @@ milan_smu_rpc(zen_iodie_t *iodie, milan_smu_rpc_t *rpc)
 
 	rpc->msr_resp = resp;
 	if (rpc->msr_resp == MILAN_SMU_RPC_OK) {
-		rpc->msr_arg0 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG0());
-		rpc->msr_arg1 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG1());
-		rpc->msr_arg2 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG2());
-		rpc->msr_arg3 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG3());
-		rpc->msr_arg4 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG4());
-		rpc->msr_arg5 = milan_iodie_read(iodie, MILAN_SMU_RPC_ARG5());
+		rpc->msr_arg0 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG0());
+		rpc->msr_arg1 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG1());
+		rpc->msr_arg2 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG2());
+		rpc->msr_arg3 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG3());
+		rpc->msr_arg4 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG4());
+		rpc->msr_arg5 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG5());
 	}
 	mutex_exit(&iodie->zi_smu_lock);
 }
@@ -2694,26 +2640,26 @@ milan_fabric_init_tom(zen_ioms_t *ioms, void *arg)
 	 * Write the upper register before the lower so we don't accidentally
 	 * enable it in an incomplete fashion.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_DRAM_TOM2_HI, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_DRAM_TOM2_HI, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_DRAM_TOM2_HI_SET_TOM2(val, bitx64(tom2, 40, 32));
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOHC_DRAM_TOM2_LOW, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_DRAM_TOM2_LOW, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_DRAM_TOM2_LOW_SET_EN(val, 1);
 	val = IOHC_DRAM_TOM2_LOW_SET_TOM2(val, bitx64(tom2, 31, 23));
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	if (tom3 == 0) {
 		return (0);
 	}
 
-	reg = milan_ioms_reg(ioms, D_IOHC_DRAM_TOM3, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_DRAM_TOM3, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_DRAM_TOM3_SET_EN(val, 1);
 	val = IOHC_DRAM_TOM3_SET_LIMIT(val, bitx64(tom3, 51, 22));
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -2773,19 +2719,19 @@ milan_fabric_init_iohc_fch_link(zen_ioms_t *ioms, void *arg)
 {
 	smn_reg_t reg;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
+	reg = zen_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
 	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		smn_reg_t iommureg;
 		uint32_t val;
 
-		val = milan_ioms_read(ioms, reg);
-		iommureg = milan_ioms_reg(ioms, D_IOMMUL1_SB_LOCATION,
+		val = zen_ioms_read(ioms, reg);
+		iommureg = zen_ioms_reg(ioms, D_IOMMUL1_SB_LOCATION,
 		    MIL1SU_IOAGR);
-		milan_ioms_write(ioms, iommureg, val);
-		iommureg = milan_ioms_reg(ioms, D_IOMMUL2_SB_LOCATION, 0);
-		milan_ioms_write(ioms, iommureg, val);
+		zen_ioms_write(ioms, iommureg, val);
+		iommureg = zen_ioms_reg(ioms, D_IOMMUL2_SB_LOCATION, 0);
+		zen_ioms_write(ioms, iommureg, val);
 	} else {
-		milan_ioms_write(ioms, reg, 0);
+		zen_ioms_write(ioms, reg, 0);
 	}
 
 	return (0);
@@ -2801,12 +2747,12 @@ milan_fabric_init_pcie_refclk(zen_ioms_t *ioms, void *arg)
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_REFCLK_MODE, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_REFCLK_MODE, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_REFCLK_MODE_SET_27MHZ(val, 0);
 	val = IOHC_REFCLK_MODE_SET_25MHZ(val, 0);
 	val = IOHC_REFCLK_MODE_SET_100MHZ(val, 1);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -2821,11 +2767,11 @@ milan_fabric_init_pci_to(zen_ioms_t *ioms, void *arg)
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_PCIE_CRS_COUNT, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_PCIE_CRS_COUNT, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_PCIE_CRS_COUNT_SET_LIMIT(val, 0x262);
 	val = IOHC_PCIE_CRS_COUNT_SET_DELAY(val, 0x6);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -2845,12 +2791,12 @@ milan_fabric_init_iohc_features(zen_ioms_t *ioms, void *arg)
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_FCTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_FCTL, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_FCTL_SET_ARI(val, 1);
 	/* XXX Wants to be IOHC_FCTL_P2P_DISABLE? */
 	val = IOHC_FCTL_SET_P2P(val, IOHC_FCTL_P2P_DROP_NMATCH);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -2869,23 +2815,23 @@ milan_fabric_init_arbitration_ioms(zen_ioms_t *ioms, void *arg)
 	for (uint_t i = 0; i < IOHC_SION_MAX_ENTS; i++) {
 		uint32_t tsval;
 
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S1_CLIREQ_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S0_RDRSP_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S1_RDRSP_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOHC_SION_RDRSP_BURST_VAL);
 
 		switch (i) {
 		case 0:
@@ -2904,10 +2850,10 @@ milan_fabric_init_arbitration_ioms(zen_ioms_t *ioms, void *arg)
 			continue;
 		}
 
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_LOW, i);
-		milan_ioms_write(ioms, reg, tsval);
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_HI, i);
-		milan_ioms_write(ioms, reg, tsval);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_LOW, i);
+		zen_ioms_write(ioms, reg, tsval);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_TIME_HI, i);
+		zen_ioms_write(ioms, reg, tsval);
 	}
 
 	/*
@@ -2916,22 +2862,22 @@ milan_fabric_init_arbitration_ioms(zen_ioms_t *ioms, void *arg)
 	 * Apparently it's not necessary to set instances 5 and 6.
 	 */
 	for (uint_t i = 0; i < 4; i++) {
-		reg = milan_ioms_reg(ioms, D_IOHC_SION_Sn_CLI_NP_DEFICIT, i);
+		reg = zen_ioms_reg(ioms, D_IOHC_SION_Sn_CLI_NP_DEFICIT, i);
 
-		val = milan_ioms_read(ioms, reg);
+		val = zen_ioms_read(ioms, reg);
 		val = IOHC_SION_CLI_NP_DEFICIT_SET(val,
 		    IOHC_SION_CLI_NP_DEFICIT_VAL);
-		milan_ioms_write(ioms, reg, val);
+		zen_ioms_write(ioms, reg, val);
 	}
 
 	/*
 	 * Go back and finally set the live lock watchdog to finish off the
 	 * IOHC.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_SION_LLWD_THRESH, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_SION_LLWD_THRESH, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_SION_LLWD_THRESH_SET(val, IOHC_SION_LLWD_THRESH_VAL);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	/*
 	 * Next on our list is the IOAGR. While there are 5 entries, only 4 are
@@ -2940,23 +2886,23 @@ milan_fabric_init_arbitration_ioms(zen_ioms_t *ioms, void *arg)
 	for (uint_t i = 0; i < 4; i++) {
 		uint32_t tsval;
 
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S1_CLIREQ_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S0_RDRSP_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S1_RDRSP_BURST_HI, i);
+		zen_ioms_write(ioms, reg, IOAGR_SION_RDRSP_BURST_VAL);
 
 		switch (i) {
 		case 0:
@@ -2971,71 +2917,71 @@ milan_fabric_init_arbitration_ioms(zen_ioms_t *ioms, void *arg)
 			continue;
 		}
 
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_LOW, i);
-		milan_ioms_write(ioms, reg, tsval);
-		reg = milan_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_HI, i);
-		milan_ioms_write(ioms, reg, tsval);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_LOW, i);
+		zen_ioms_write(ioms, reg, tsval);
+		reg = zen_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_TIME_HI, i);
+		zen_ioms_write(ioms, reg, tsval);
 	}
 
 	/*
 	 * The IOAGR only has the watchdog.
 	 */
 
-	reg = milan_ioms_reg(ioms, D_IOAGR_SION_LLWD_THRESH, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOAGR_SION_LLWD_THRESH, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOAGR_SION_LLWD_THRESH_SET(val, IOAGR_SION_LLWD_THRESH_VAL);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	/*
 	 * Finally, the SDPMUX variant, which is surprisingly consistent
 	 * compared to everything else to date.
 	 */
 	for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
-		reg = milan_ioms_reg(ioms,
+		reg = zen_ioms_reg(ioms,
 		    D_SDPMUX_SION_S0_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms,
+		zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_BURST_HI, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms,
 		    D_SDPMUX_SION_S1_CLIREQ_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S1_CLIREQ_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S1_CLIREQ_BURST_HI, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S0_RDRSP_BURST_HI, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_LOW, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S1_RDRSP_BURST_HI, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
 
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_LOW, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
-		reg = milan_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_HI, i);
-		milan_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_LOW, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
+		reg = zen_ioms_reg(ioms, D_SDPMUX_SION_S0_CLIREQ_TIME_HI, i);
+		zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
 	}
 
-	reg = milan_ioms_reg(ioms, D_SDPMUX_SION_LLWD_THRESH, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_SDPMUX_SION_LLWD_THRESH, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = SDPMUX_SION_LLWD_THRESH_SET(val, SDPMUX_SION_LLWD_THRESH_VAL);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	/*
 	 * XXX We probably don't need this since we don't have USB. But until we
 	 * have things working and can experiment, hard to say. If someone were
 	 * to use the bus, probably something we need to consider.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_USB_QOS_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_USB_QOS_CTL, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_USB_QOS_CTL_SET_UNID1_EN(val, 0x1);
 	val = IOHC_USB_QOS_CTL_SET_UNID1_PRI(val, 0x0);
 	val = IOHC_USB_QOS_CTL_SET_UNID1_ID(val, 0x30);
 	val = IOHC_USB_QOS_CTL_SET_UNID0_EN(val, 0x1);
 	val = IOHC_USB_QOS_CTL_SET_UNID0_PRI(val, 0x0);
 	val = IOHC_USB_QOS_CTL_SET_UNID0_ID(val, 0x2f);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3073,28 +3019,28 @@ milan_fabric_init_sdp_control(zen_ioms_t *ioms, void *arg)
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_SDP_PORT_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_SDP_PORT_CTL, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOHC_SDP_EARLY_WAKE_UP, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_SDP_EARLY_WAKE_UP, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_SDP_EARLY_WAKE_UP_SET_HOST_ENABLE(val, 0xffff);
 	val = IOHC_SDP_EARLY_WAKE_UP_SET_DMA_ENABLE(val, 0x1);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOAGR_EARLY_WAKE_UP, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOAGR_EARLY_WAKE_UP, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOAGR_EARLY_WAKE_UP_SET_DMA_ENABLE(val, 0x1);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_SDPMUX_SDP_PORT_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_SDPMUX_SDP_PORT_CTL, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = SDPMUX_SDP_PORT_CTL_SET_HOST_ENABLE(val, 0xffff);
 	val = SDPMUX_SDP_PORT_CTL_SET_DMA_ENABLE(val, 0x1);
 	val = SDPMUX_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3147,8 +3093,8 @@ milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
 	ASSERT3U(ARRAY_SIZE(milan_ioapic_routes), ==, IOAPIC_NROUTES);
 
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_ioapic_routes); i++) {
-		smn_reg_t reg = milan_ioms_reg(ioms, D_IOAPIC_ROUTE, i);
-		uint32_t route = milan_ioms_read(ioms, reg);
+		smn_reg_t reg = zen_ioms_reg(ioms, D_IOAPIC_ROUTE, i);
+		uint32_t route = zen_ioms_read(ioms, reg);
 
 		route = IOAPIC_ROUTE_SET_BRIDGE_MAP(route,
 		    milan_ioapic_routes[i].mii_map);
@@ -3157,7 +3103,7 @@ milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
 		route = IOAPIC_ROUTE_SET_INTX_GROUP(route,
 		    milan_ioapic_routes[i].mii_group);
 
-		milan_ioms_write(ioms, reg, route);
+		zen_ioms_write(ioms, reg, route);
 	}
 
 	/*
@@ -3166,21 +3112,21 @@ milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
 	 * enabled with reset addresses, we instead lock them. XXX Should we
 	 * lock primary?
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_HI, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_HI, 0);
+	val = zen_ioms_read(ioms, reg);
 	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		val = IOHC_IOAPIC_ADDR_HI_SET_ADDR(val,
-		    bitx64(MILAN_PHYSADDR_IOHC_IOAPIC, 47, 32));
+		    bitx64(ZEN_PHYSADDR_IOHC_IOAPIC, 47, 32));
 	} else {
 		val = IOHC_IOAPIC_ADDR_HI_SET_ADDR(val, 0);
 	}
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
-	reg = milan_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_LO, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_LO, 0);
+	val = zen_ioms_read(ioms, reg);
 	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		val = IOHC_IOAPIC_ADDR_LO_SET_ADDR(val,
-		    bitx64(MILAN_PHYSADDR_IOHC_IOAPIC, 31, 8));
+		    bitx64(ZEN_PHYSADDR_IOHC_IOAPIC, 31, 8));
 		val = IOHC_IOAPIC_ADDR_LO_SET_LOCK(val, 0);
 		val = IOHC_IOAPIC_ADDR_LO_SET_EN(val, 1);
 	} else {
@@ -3188,7 +3134,7 @@ milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
 		val = IOHC_IOAPIC_ADDR_LO_SET_LOCK(val, 1);
 		val = IOHC_IOAPIC_ADDR_LO_SET_EN(val, 0);
 	}
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	/*
 	 * Every IOAPIC requires that we enable 8-bit addressing and that it be
@@ -3196,8 +3142,8 @@ milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
 	 * is the secondary bit which determines whether or not this IOAPIC is
 	 * subordinate to another.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOAPIC_FEATURES, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOAPIC_FEATURES, 0);
+	val = zen_ioms_read(ioms, reg);
 	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
 		val = IOAPIC_FEATURES_SET_SECONDARY(val, 0);
 	} else {
@@ -3205,7 +3151,7 @@ milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
 	}
 	val = IOAPIC_FEATURES_SET_FCH(val, 1);
 	val = IOAPIC_FEATURES_SET_ID_EXT(val, 1);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3221,11 +3167,11 @@ milan_fabric_init_bus_num(zen_ioms_t *ioms, void *arg)
 	smn_reg_t reg;
 	uint32_t val;
 
-	reg = milan_ioms_reg(ioms, D_IOHC_BUS_NUM_CTL, 0);
-	val = milan_ioms_read(ioms, reg);
+	reg = zen_ioms_reg(ioms, D_IOHC_BUS_NUM_CTL, 0);
+	val = zen_ioms_read(ioms, reg);
 	val = IOHC_BUS_NUM_CTL_SET_EN(val, 1);
 	val = IOHC_BUS_NUM_CTL_SET_BUS(val, ioms->zio_pci_busno);
-	milan_ioms_write(ioms, reg, val);
+	zen_ioms_write(ioms, reg, val);
 
 	return (0);
 }
@@ -3331,9 +3277,9 @@ milan_fabric_init_nbif_bridge(zen_ioms_t *ioms, void *arg)
 	};
 
 	for (uint_t i = 0; i < ARRAY_SIZE(smn_regs); i++) {
-		val = milan_ioms_read(ioms, smn_regs[i]);
+		val = zen_ioms_read(ioms, smn_regs[i]);
 		val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
-		milan_ioms_write(ioms, smn_regs[i], val);
+		zen_ioms_write(ioms, smn_regs[i], val);
 	}
 	return (0);
 }
@@ -4493,7 +4439,7 @@ milan_io_ports_allocate(zen_ioms_t *ioms, void *arg)
 	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0 &&
 	    (ioms->zio_iodie->zi_flags & ZEN_IODIE_F_PRIMARY) != 0) {
 		mri->mri_bases[mri->mri_cur] = 0;
-		pci_base = MILAN_IOPORT_COMPAT_SIZE;
+		pci_base = ZEN_IOPORT_COMPAT_SIZE;
 	} else if (mri->mri_per_ioms > 2 * MILAN_SEC_IOMS_GEN_IO_SPACE) {
 		mri->mri_bases[mri->mri_cur] = mri->mri_next_base;
 		pci_base = mri->mri_bases[mri->mri_cur] +
@@ -4668,7 +4614,7 @@ milan_mmio_allocate(zen_ioms_t *ioms, void *arg)
 		mrm->mrm_limits[mrm->mrm_cur] += mrm->mrm_fch_chunks *
 		    mmio_gran - 1;
 		ret = xmemlist_add_span(&imp->zim_pool,
-		    mrm->mrm_limits[mrm->mrm_cur] + 1, MILAN_COMPAT_MMIO_SIZE,
+		    mrm->mrm_limits[mrm->mrm_cur] + 1, ZEN_COMPAT_MMIO_SIZE,
 		    &imp->zim_mmio_avail_gen, 0);
 		VERIFY3S(ret, ==, MEML_SPANOP_OK);
 	} else {
@@ -4793,7 +4739,7 @@ milan_mmio_assign(zen_iodie_t *iodie, void *arg)
  * because we're being lazy).
  *
  * The below 4 GiB space is split due to the compat region
- * (MILAN_PHYSADDR_COMPAT_MMIO).  The way we divide up the lower region is
+ * (ZEN_PHYSADDR_COMPAT_MMIO).  The way we divide up the lower region is
  * simple:
  *
  *   o The region between TOM and 4 GiB is split evenly among all IOMSs.
@@ -4826,173 +4772,30 @@ milan_route_mmio(zen_fabric_t *fabric)
 	const uint32_t mmio_gran = DF_MMIO_LIMIT_EXCL;
 
 	VERIFY(IS_P2ALIGNED(fabric->zf_tom, mmio_gran));
-	VERIFY3U(MILAN_PHYSADDR_COMPAT_MMIO, >, fabric->zf_tom);
-	mmio32_size = MILAN_PHYSADDR_MMIO32_END - fabric->zf_tom;
+	VERIFY3U(ZEN_PHYSADDR_COMPAT_MMIO, >, fabric->zf_tom);
+	mmio32_size = ZEN_PHYSADDR_MMIO32_END - fabric->zf_tom;
 	nioms32 = fabric->zf_total_ioms;
 	VERIFY3U(mmio32_size, >,
-	    nioms32 * mmio_gran + MILAN_COMPAT_MMIO_SIZE);
+	    nioms32 * mmio_gran + ZEN_COMPAT_MMIO_SIZE);
 
 	VERIFY(IS_P2ALIGNED(fabric->zf_mmio64_base, mmio_gran));
 	VERIFY3U(MILAN_PHYSADDR_MMIO_END, >, fabric->zf_mmio64_base);
 	mmio64_size = MILAN_PHYSADDR_MMIO_END - fabric->zf_mmio64_base;
 	VERIFY3U(mmio64_size, >, fabric->zf_total_ioms * mmio_gran);
 
-	CTASSERT(IS_P2ALIGNED(MILAN_PHYSADDR_COMPAT_MMIO, DF_MMIO_LIMIT_EXCL));
+	CTASSERT(IS_P2ALIGNED(ZEN_PHYSADDR_COMPAT_MMIO, DF_MMIO_LIMIT_EXCL));
 
 	bzero(&mrm, sizeof (mrm));
 	mrm.mrm_mmio32_base = fabric->zf_tom;
 	mrm.mrm_mmio32_chunks = mmio32_size / mmio_gran / nioms32;
-	mrm.mrm_fch_base = MILAN_PHYSADDR_MMIO32_END - mmio32_size / nioms32;
+	mrm.mrm_fch_base = ZEN_PHYSADDR_MMIO32_END - mmio32_size / nioms32;
 	mrm.mrm_fch_chunks = mrm.mrm_mmio32_chunks -
-	    MILAN_COMPAT_MMIO_SIZE / mmio_gran;
+	    ZEN_COMPAT_MMIO_SIZE / mmio_gran;
 	mrm.mrm_mmio64_base = fabric->zf_mmio64_base;
 	mrm.mrm_mmio64_chunks = mmio64_size / mmio_gran / fabric->zf_total_ioms;
 
 	(void) zen_fabric_walk_ioms(fabric, milan_mmio_allocate, &mrm);
 	(void) zen_fabric_walk_iodie(fabric, milan_mmio_assign, &mrm);
-}
-
-static ioms_rsrc_t
-milan_ioms_prd_to_rsrc(pci_prd_rsrc_t rsrc)
-{
-	switch (rsrc) {
-	case PCI_PRD_R_IO:
-		return (IR_PCI_LEGACY);
-	case PCI_PRD_R_MMIO:
-		return (IR_PCI_MMIO);
-	case PCI_PRD_R_PREFETCH:
-		return (IR_PCI_PREFETCH);
-	case PCI_PRD_R_BUS:
-		return (IR_PCI_BUS);
-	default:
-		return (IR_NONE);
-	}
-}
-
-static struct memlist *
-milan_fabric_rsrc_subsume(zen_ioms_t *ioms, ioms_rsrc_t rsrc)
-{
-	zen_ioms_memlists_t *imp;
-	struct memlist **avail, **used, *ret;
-
-	ASSERT(ioms != NULL);
-
-	imp = &ioms->zio_memlists;
-	mutex_enter(&imp->zim_lock);
-	switch (rsrc) {
-	case IR_PCI_LEGACY:
-		avail = &imp->zim_io_avail_pci;
-		used = &imp->zim_io_used;
-		break;
-	case IR_PCI_MMIO:
-		avail = &imp->zim_mmio_avail_pci;
-		used = &imp->zim_mmio_used;
-		break;
-	case IR_PCI_PREFETCH:
-		avail = &imp->zim_pmem_avail;
-		used = &imp->zim_pmem_used;
-		break;
-	case IR_PCI_BUS:
-		avail = &imp->zim_bus_avail;
-		used = &imp->zim_bus_used;
-		break;
-	case IR_GEN_LEGACY:
-		avail = &imp->zim_io_avail_gen;
-		used = &imp->zim_io_used;
-		break;
-	case IR_GEN_MMIO:
-		avail = &imp->zim_mmio_avail_gen;
-		used = &imp->zim_mmio_used;
-		break;
-	default:
-		mutex_exit(&imp->zim_lock);
-		return (NULL);
-	}
-
-	/*
-	 * If there are no resources, that may be because there never were any
-	 * or they had already been handed out.
-	 */
-	if (*avail == NULL) {
-		mutex_exit(&imp->zim_lock);
-		return (NULL);
-	}
-
-	/*
-	 * We have some resources available for this NB instance. In this
-	 * particular case, we need to first duplicate these using kmem and then
-	 * we can go ahead and move all of these to the used list.  This is done
-	 * for the benefit of PCI code which expects it, but we do it
-	 * universally for consistency.
-	 */
-	ret = memlist_kmem_dup(*avail, KM_SLEEP);
-
-	/*
-	 * XXX This ends up not really coalescing ranges, but maybe that's fine.
-	 */
-	while (*avail != NULL) {
-		struct memlist *to_move = *avail;
-		memlist_del(to_move, avail);
-		memlist_insert(to_move, used);
-	}
-
-	mutex_exit(&imp->zim_lock);
-	return (ret);
-}
-
-/*
- * This is a request that we take resources from a given IOMS root port and
- * basically give what remains and hasn't been allocated to PCI. This is a bit
- * of a tricky process as we want to both:
- *
- *  1. Give everything that's currently available to PCI; however, it needs
- *     memlists that are allocated with kmem due to how PCI memlists work.
- *  2. We need to move everything that we're giving to PCI into our used list
- *     just for our own tracking purposes.
- */
-struct memlist *
-milan_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
-{
-	extern zen_fabric_t zen_fabric;
-	zen_ioms_t *ioms;
-	ioms_rsrc_t ir;
-
-	ioms = zen_fabric_find_ioms_by_bus(&zen_fabric, bus);
-	if (ioms == NULL) {
-		return (NULL);
-	}
-
-	ir = milan_ioms_prd_to_rsrc(rsrc);
-
-	return (milan_fabric_rsrc_subsume(ioms, ir));
-}
-
-/*
- * This is for the rest of the available legacy IO and MMIO space that we've set
- * aside for things that are not PCI.  The intent is that the caller will feed
- * the space to busra or the moral equivalent.  While this is presently used
- * only by the FCH and is set up only for the IOMSs that have an FCH attached,
- * in principle this could be applied to other users as well, including IOAPICs
- * and IOMMUs that are present in all NB instances.  For now this is really
- * about getting all this out of earlyboot context where we don't have modules
- * like rootnex and busra and into places where it's better managed; in this it
- * has the same purpose as its PCI counterpart above.  The memlists we supply
- * don't have to be allocated by kmem, but we do it anyway for consistency and
- * ease of use for callers.
- *
- * Curiously, AMD's documentation indicates that each of the PCI and non-PCI
- * regions associated with each NB instance must be contiguous, but there's no
- * hardware reason for that beyond the mechanics of assigning resources to PCIe
- * root ports.  So if we were to improve busra to manage these resources
- * globally instead of making PCI its own separate pool, we wouldn't need this
- * clumsy non-PCI reservation and could instead assign resources globally with
- * respect to each NB instance regardless of the requesting device type.  The
- * future's so bright, we gotta wear shades.
- */
-struct memlist *
-milan_fabric_gen_subsume(zen_ioms_t *ioms, ioms_rsrc_t ir)
-{
-	return (milan_fabric_rsrc_subsume(ioms, ir));
 }
 
 /*

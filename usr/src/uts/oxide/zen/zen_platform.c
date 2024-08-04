@@ -92,3 +92,16 @@ oxide_zen_ras_ops(void)
 
 	return (ras_ops);
 }
+
+const zen_smn_ops_t *
+oxide_zen_smn_ops(void)
+{
+	const zen_platform_t *platform = oxide_zen_platform();
+	const zen_smn_ops_t *smn_ops;
+
+	ASSERT3P(platform, !=, NULL);
+	smn_ops = platform->zp_smn_ops;
+	ASSERT3P(smn_ops, !=, NULL);
+
+	return (smn_ops);
+}
