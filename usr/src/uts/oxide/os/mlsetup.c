@@ -57,7 +57,6 @@
 #include <sys/io/milan/hacks.h>
 #include <sys/io/zen/platform.h>
 #include <sys/io/zen/fabric.h>
-#include <milan/milan_apob.h>
 
 /*
  * Setup routine called right before main(), which is common code.  We have much
@@ -273,7 +272,7 @@ mlsetup(struct regs *rp)
 	if (boothowto & RB_DEBUGENTER)
 		kmdb_enter();
 
-	milan_apob_reserve_phys();
+	oxide_zen_apob_ops()->zao_reserve_phys();
 
 	cpu_vm_data_init(CPU);
 

@@ -20,7 +20,7 @@
 
 #include <sys/io/milan/fabric_impl.h>
 #include <sys/io/milan/ras.h>
-
+#include <milan/milan_apob.h>
 
 /*
  * XXX: To keep milan working, we still make use of the existing milan_* ccx &
@@ -43,6 +43,10 @@ extern void milan_fabric_topo_init(void);
  */
 #define	MILAN_DF_FIRST_IOMS_ID	24
 
+
+static const zen_apob_ops_t milan_apob_ops = {
+	.zao_reserve_phys = milan_apob_reserve_phys,
+};
 
 static const zen_ccx_ops_t milan_ccx_ops = {
 	.zco_init = milan_ccx_init,
@@ -73,6 +77,7 @@ zen_platform_t milan_platform = {
 		.zpc_df_first_iom_id = MILAN_DF_FIRST_IOMS_ID,
 		.zpc_df_first_ios_id = MILAN_DF_FIRST_IOMS_ID,
 	},
+	.zp_apob_ops = &milan_apob_ops,
 	.zp_ccx_ops = &milan_ccx_ops,
 	.zp_fabric_ops = &milan_fabric_ops,
 	.zp_ras_ops = &milan_ras_ops,
