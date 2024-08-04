@@ -14,6 +14,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/amdzen/mmioreg.h>
 #include <sys/amdzen/fch/iomux.h>
 #include <sys/amdzen/fch/gpio.h>
@@ -38,7 +39,7 @@
  * this the max power way.  We set all the defined fields of the control
  * register, preserving only those that are reserved.
  */
-boolean_t
+bool
 milan_fixup_i2c_clock(void)
 {
 	mmio_reg_block_t fch_i2c0 = fch_i2c_mmio_block(0);
@@ -75,8 +76,8 @@ milan_fixup_i2c_clock(void)
  * supposed to enable SSC only on socket 0 anyway, presumably because the clock
  * from socket 0 ends up being passed along to socket 1.
  */
-boolean_t
-milan_cgpll_set_ssc(boolean_t ssc)
+bool
+milan_cgpll_set_ssc(bool ssc)
 {
 	mmio_reg_block_t fch_misc_a = fch_misc_a_mmio_block();
 	mmio_reg_t reg;

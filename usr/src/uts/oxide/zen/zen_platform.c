@@ -67,6 +67,19 @@ oxide_zen_fabric_ops(void)
 	return (fabric_ops);
 }
 
+const zen_hack_ops_t *
+oxide_zen_hack_ops(void)
+{
+	const zen_platform_t *platform = oxide_zen_platform();
+	const zen_hack_ops_t *hack_ops;
+
+	ASSERT3P(platform, !=, NULL);
+	hack_ops = platform->zp_hack_ops;
+	ASSERT3P(hack_ops, !=, NULL);
+
+	return (hack_ops);
+}
+
 const zen_ras_ops_t *
 oxide_zen_ras_ops(void)
 {

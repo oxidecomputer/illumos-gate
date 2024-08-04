@@ -54,7 +54,6 @@
 #include <sys/bootvfs.h>
 #include <sys/tsc.h>
 #include <sys/boot_data.h>
-#include <sys/io/milan/hacks.h>
 #include <sys/io/zen/platform.h>
 #include <sys/io/zen/fabric.h>
 
@@ -171,7 +170,7 @@ mlsetup(struct regs *rp)
 	 * configuration in the FCH to assure that a core shutdown will
 	 * correctly induce an observable reset.
 	 */
-	milan_shutdown_detect_init();
+	oxide_zen_hack_ops()->zho_shutdown_detect_init();
 
 	/*
 	 * Now go through and set up the BSP's thread-, core-, and CCX-specific
@@ -288,7 +287,7 @@ mlsetup(struct regs *rp)
 	/*
 	 * Before we get too much further along, check for a furtive reset.
 	 */
-	milan_check_furtive_reset();
+	oxide_zen_hack_ops()->zho_check_furtive_reset();
 
 	ASSERT_STACK_ALIGNED();
 

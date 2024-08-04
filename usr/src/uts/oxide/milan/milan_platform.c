@@ -20,6 +20,7 @@
 
 #include <sys/io/milan/fabric_impl.h>
 #include <sys/io/milan/ras.h>
+#include <sys/io/milan/hacks.h>
 #include <milan/milan_apob.h>
 
 /*
@@ -63,6 +64,12 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_pci_subsume = milan_fabric_pci_subsume,
 };
 
+static const zen_hack_ops_t milan_hack_ops = {
+	.zho_check_furtive_reset = milan_check_furtive_reset,
+	.zho_cgpll_set_ssc = milan_cgpll_set_ssc,
+	.zho_shutdown_detect_init = milan_shutdown_detect_init,
+};
+
 static const zen_ras_ops_t milan_ras_ops = {
 	.zro_ras_init = milan_ras_init,
 };
@@ -80,5 +87,6 @@ zen_platform_t milan_platform = {
 	.zp_apob_ops = &milan_apob_ops,
 	.zp_ccx_ops = &milan_ccx_ops,
 	.zp_fabric_ops = &milan_fabric_ops,
+	.zp_hack_ops = &milan_hack_ops,
 	.zp_ras_ops = &milan_ras_ops,
 };
