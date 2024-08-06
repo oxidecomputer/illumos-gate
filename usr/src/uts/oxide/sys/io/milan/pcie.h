@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_H
@@ -1063,7 +1063,7 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_HP_CTL(n, p, b)	\
     milan_pcie_port_smn_reg((n), D_PCIE_PORT_HP_CTL, (p), (b))
 #define	PCIE_PORT_HP_CTL_SET_ACTIVE(r, v)	bitset32(r, 31, 31, v)
-#define	PCIE_PORT_HP_CTL_SET_SLOT(r, v)		bitset32(r, 5, 0, v)
+#define	PCIE_PORT_HP_CTL_SET_SLOT(r, v)		bitset32(r, 12, 0, v)
 
 /*
  * PCIEPORT::PCIE_LC_CNTL8 - unused but captured for debugging.
@@ -2320,8 +2320,8 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_RX_MARGIN2_SET_ERR_LIM(r, v)		bitset32(r, 29, 24, v)
 #define	PCIE_CORE_RX_MARGIN2_SET_NLANES(r, v)		bitset32(r, 23, 19, v)
 #define	PCIE_CORE_RX_MARGIN2_GET_COUNT(r)		bitx32(r, 18, 12)
-#define	PCIE_CORE_RX_MARGIN2_SET_TIME_RATIO(r, v)	bitx32(r, 11, 6, v)
-#define	PCIE_CORE_RX_MARGIN2_SET_VOLT_RATIO(r, v)	bitx32(r, 5, 0, v)
+#define	PCIE_CORE_RX_MARGIN2_SET_TIME_RATIO(r, v)	bitset32(r, 11, 6, v)
+#define	PCIE_CORE_RX_MARGIN2_SET_VOLT_RATIO(r, v)	bitset32(r, 5, 0, v)
 
 /*
  * PCIECORE::PCIE_PRESENCE_DETECT_SELECT - PCIe Presence Detect Control. This is
