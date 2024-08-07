@@ -51,6 +51,7 @@ typedef enum {
 typedef struct oxide_board_cpuinfo {
 	x86_chiprev_t		obc_chiprev;
 	const char		*obc_chiprevstr;
+	x86_uarchrev_t		obc_uarchrev;
 	uint32_t		obc_socket;
 	fch_kind_t		obc_fchkind;
 } oxide_board_cpuinfo_t;

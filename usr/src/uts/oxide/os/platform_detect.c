@@ -43,6 +43,7 @@ static const bool allow_unsupported_processor = false;
 
 extern x86_chiprev_t _cpuid_chiprev(uint_t, uint_t, uint_t, uint_t);
 extern const char *_cpuid_chiprevstr(uint_t, uint_t, uint_t, uint_t);
+extern x86_uarchrev_t _cpuid_uarchrev(uint_t, uint_t, uint_t, uint_t);
 extern uint32_t _cpuid_skt(uint_t, uint_t, uint_t, uint_t);
 
 const oxide_board_data_t *oxide_board_data = NULL;
@@ -614,6 +615,8 @@ oxide_derive_platform(void)
 	cpuinfo.obc_chiprev = early_cpuid_ident(&family, &model, &stepping);
 	cpuinfo.obc_chiprevstr = _cpuid_chiprevstr(
 	    X86_VENDOR_AMD, family, model, stepping);
+	cpuinfo.obc_uarchrev = _cpuid_uarchrev(X86_VENDOR_AMD, family, model,
+	    stepping);
 	cpuinfo.obc_socket = _cpuid_skt(X86_VENDOR_AMD, family, model,
 	    stepping);
 	cpuinfo.obc_fchkind = chiprev_fch_kind(cpuinfo.obc_chiprev);
