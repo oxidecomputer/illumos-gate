@@ -4076,62 +4076,6 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->gmc_ubm_hfc_ports);
 	conf->gmc_ubm_hfc_ports_pa = mmu_ptob((uint64_t)pfn);
 
-
-#if 0
-	phy_override = kapob_find(APOB_GROUP_FABRIC,
-	    GENOA_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
-	if (phy_override == NULL) {
-		if (err == ENOENT) {
-			return (0);
-		}
-
-		cmn_err(CE_WARN, "failed to find phy override table in APOB: "
-		    "0x%x", err);
-		return (1);
-	}
-	if (phy_len < offsetof(genoa_apob_phyovr_t, gap_data[0])) {
-		cmn_err(CE_WARN, "APOB phy override table is too short "
-		    "(actual size 0x%lx)", phy_len);
-		return (1);
-	}
-
-	/*
-	 * The actual length of phy data is in gap_datalen; it must be no larger
-	 * than the maximum and must fit in the APOB entry.
-	 */
-	if (phy_override->gap_datalen > GENOA_APOB_PHY_OVERRIDE_MAX_LEN ||
-	    phy_override->gap_datalen >
-	    phy_len - offsetof(genoa_apob_phyovr_t, gap_data[0])) {
-		cmn_err(CE_WARN, "APOB phy override table data doesn't fit "
-		    "(datalen = 0x%x, entry len = 0x%lx)",
-		    phy_override->gap_datalen, phy_len);
-		return (1);
-	}
-
-	/*
-	 * First we need to program the initial descriptor. Its type is one of
-	 * the Heap types. Yes, this is different from the sub data payloads
-	 * that we use. Yes, this is different from the way that the engine
-	 * config data is laid out. Each entry has the amount of space they take
-	 * up. Confusingly, it seems that the top entry does not include the
-	 * space its header takes up. However, the subsequent payloads do.
-	 */
-	anc = conf->gmc_anc;
-	anc->zmad_type = GENOA_MPIO_HEAP_ANCILLARY;
-	anc->zmad_vers = DXIO_ANCILLARY_VERSION;
-	anc->zmad_nu32s = (sizeof (zen_mpio_anc_data_t) +
-	    phy_override->gap_datalen) >> 2;
-	anc++;
-	anc->zmad_type = ZEN_MPIO_ANCILLARY_T_PHY_CONFIG;
-	anc->zmad_vers = DXIO_ANCILLARY_PAYLOAD_VERSION;
-	anc->zmad_nu32s = (sizeof (zen_mpio_anc_data_t) +
-	    phy_override->gap_datalen) >> 2;
-	anc++;
-	bcopy(phy_override->gap_data, anc, phy_override->gap_datalen);
-	conf->gmc_ext_attrs_len = phy_override->gap_datalen +
-	    2 * sizeof (zen_mpio_anc_data_t);
-#endif
-
 	return (0);
 }
 
