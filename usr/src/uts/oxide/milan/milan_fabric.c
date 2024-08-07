@@ -1257,7 +1257,7 @@ milan_smn_iodie_reg(const zen_iodie_t *const iodie, const smn_reg_def_t def,
 		reg = fch_misc_b_smn_reg(def, reginst);
 		break;
 	case SMN_UNIT_FCH_I2C:
-		reg = huashan_i2c_smn_reg(reginst, def);
+		reg = huashan_i2c_smn_reg(def, reginst);
 		break;
 	case SMN_UNIT_FCH_IOMUX:
 		reg = fch_iomux_smn_reg(def, reginst);

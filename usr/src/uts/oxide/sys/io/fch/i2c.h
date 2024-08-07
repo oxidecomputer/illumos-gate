@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_FCH_I2C_H
@@ -80,7 +80,7 @@ __common_i2c_smn_aperture(const uint8_t unit, const uint8_t count)
 }
 
 static inline smn_reg_t
-__common_i2c_smn_reg(const uint8_t unit, const smn_reg_def_t def,
+__common_i2c_smn_reg(const smn_reg_def_t def, const uint8_t unit,
     const uint8_t count)
 {
 	const uint32_t aperture = __common_i2c_smn_aperture(unit, count);
@@ -113,15 +113,15 @@ songshan_i2c_smn_aperture(const uint8_t unit)
 }
 
 static inline smn_reg_t
-huashan_i2c_smn_reg(const uint8_t unit, const smn_reg_def_t def)
+huashan_i2c_smn_reg(const smn_reg_def_t def, const uint16_t unit)
 {
-	return (__common_i2c_smn_reg(unit, def, HUASHAN_MAX_SMN_I2C));
+	return (__common_i2c_smn_reg(def, unit, HUASHAN_MAX_SMN_I2C));
 }
 
 static inline smn_reg_t
-songshan_i2c_smn_reg(const uint8_t unit, const smn_reg_def_t def)
+songshan_i2c_smn_reg(const smn_reg_def_t def, const uint16_t unit)
 {
-	return (__common_i2c_smn_reg(unit, def, FCH_MAX_I2C));
+	return (__common_i2c_smn_reg(def, unit, FCH_MAX_I2C));
 }
 
 /*
@@ -169,6 +169,7 @@ MAKE_MMIO_FCH_REG_FN(I2C, i2c, 4);
 /*
  * FCH::I2C::IC_CON.  Main configuration register for each I2C peripheral.
  */
+/*CSTYLED*/
 #define	D_FCH_I2C_IC_CON	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_FCH_I2C,	\
 	.srd_reg = 0x00			\
