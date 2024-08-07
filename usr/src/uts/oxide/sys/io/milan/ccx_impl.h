@@ -74,13 +74,6 @@ extern size_t milan_fabric_thread_get_brandstr(const zen_thread_t *,
 extern void milan_fabric_thread_get_dpm_weights(const zen_thread_t *,
     const uint64_t **, uint32_t *);
 
-extern smn_reg_t milan_core_reg(const zen_core_t *const, const smn_reg_def_t);
-extern smn_reg_t milan_ccd_reg(const zen_ccd_t *const, const smn_reg_def_t);
-extern uint32_t milan_ccd_read(zen_ccd_t *, const smn_reg_t);
-extern void milan_ccd_write(zen_ccd_t *, const smn_reg_t, const uint32_t);
-extern uint32_t milan_core_read(zen_core_t *, const smn_reg_t);
-extern void milan_core_write(zen_core_t *, const smn_reg_t, const uint32_t);
-
 extern bool milan_ccx_start_thread(const zen_thread_t *);
 extern void milan_ccx_init(void);
 

@@ -634,6 +634,7 @@
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
+#include <sys/io/zen/smn.h>
 
 #include <asm/bitmap.h>
 
@@ -852,11 +853,6 @@ milan_pcie_core_n_ports(const uint8_t pcno)
 	return (MILAN_PCIE_CORE_MAX_PORTS);
 }
 
-typedef enum milan_iommul1_subunit {
-	MIL1SU_NBIF,
-	MIL1SU_IOAGR
-} milan_iommul1_subunit_t;
-
 /*
  * XXX Belongs in a header.
  */
@@ -871,11 +867,6 @@ static bool milan_smu_rpc_read_brand_string(zen_iodie_t *,
  */
 static milan_fabric_t milan_fabric;
 static uint_t nthreads;
-
-/*
- * Variable to let us dump all SMN traffic while still developing.
- */
-int milan_smn_log = 0;
 
 /*
  * buf, len, and return value semantics match those of snprintf(9f).
@@ -900,97 +891,12 @@ milan_fabric_thread_get_dpm_weights(const zen_thread_t *thread,
 	*nentp = MILAN_MAX_DPM_WEIGHTS;
 }
 
-uint32_t
-milan_smn_read(zen_iodie_t *iodie, const smn_reg_t reg)
-{
-	const uint32_t addr = SMN_REG_ADDR(reg);
-	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
-	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
-	uint32_t val;
-
-	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
-	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
-	ASSERT(iodie != NULL);
-
-	mutex_enter(&iodie->zi_smn_lock);
-	pci_putl_func(iodie->zi_smn_busno, AMDZEN_NB_SMN_DEVNO,
-	    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR, base_addr);
-	switch (SMN_REG_SIZE(reg)) {
-	case 1:
-		val = (uint32_t)pci_getb_func(iodie->zi_smn_busno,
-		    AMDZEN_NB_SMN_DEVNO, AMDZEN_NB_SMN_FUNCNO,
-		    AMDZEN_NB_SMN_DATA + addr_off);
-		break;
-	case 2:
-		val = (uint32_t)pci_getw_func(iodie->zi_smn_busno,
-		    AMDZEN_NB_SMN_DEVNO, AMDZEN_NB_SMN_FUNCNO,
-		    AMDZEN_NB_SMN_DATA + addr_off);
-		break;
-	case 4:
-		val = pci_getl_func(iodie->zi_smn_busno,
-		    AMDZEN_NB_SMN_DEVNO, AMDZEN_NB_SMN_FUNCNO,
-		    AMDZEN_NB_SMN_DATA);
-		break;
-	default:
-		panic("unreachable invalid SMN register size %u",
-		    SMN_REG_SIZE(reg));
-	}
-	if (milan_smn_log != 0) {
-		cmn_err(CE_NOTE, "SMN R reg 0x%x: 0x%x", addr, val);
-	}
-	mutex_exit(&iodie->zi_smn_lock);
-
-	return (val);
-}
-
-void
-milan_smn_write(zen_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
-{
-	const uint32_t addr = SMN_REG_ADDR(reg);
-	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
-	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
-
-	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
-	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
-	ASSERT(SMN_REG_VALUE_FITS(reg, val));
-	ASSERT(iodie != NULL);
-
-	mutex_enter(&iodie->zi_smn_lock);
-	if (milan_smn_log != 0) {
-		cmn_err(CE_NOTE, "SMN W reg 0x%x: 0x%x", addr, val);
-	}
-	pci_putl_func(iodie->zi_smn_busno, AMDZEN_NB_SMN_DEVNO,
-	    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR, base_addr);
-	switch (SMN_REG_SIZE(reg)) {
-	case 1:
-		pci_putb_func(iodie->zi_smn_busno,
-		    AMDZEN_NB_SMN_DEVNO, AMDZEN_NB_SMN_FUNCNO,
-		    AMDZEN_NB_SMN_DATA + addr_off, (uint8_t)val);
-		break;
-	case 2:
-		pci_putw_func(iodie->zi_smn_busno,
-		    AMDZEN_NB_SMN_DEVNO, AMDZEN_NB_SMN_FUNCNO,
-		    AMDZEN_NB_SMN_DATA + addr_off, (uint16_t)val);
-		break;
-	case 4:
-		pci_putl_func(iodie->zi_smn_busno,
-		    AMDZEN_NB_SMN_DEVNO, AMDZEN_NB_SMN_FUNCNO,
-		    AMDZEN_NB_SMN_DATA, val);
-		break;
-	default:
-		panic("unreachable invalid SMN register size %u",
-		    SMN_REG_SIZE(reg));
-	}
-
-	mutex_exit(&iodie->zi_smn_lock);
-}
-
 /*
  * Convenience functions for accessing SMN registers pertaining to a bridge.
  * These are candidates for making public if/when other code needs to manipulate
  * bridges.  There are some tradeoffs here: we don't need any of these
  * functions; callers could instead look up registers themselves, retrieve the
- * iodie by chasing back-pointers, and call milan_smn_{read,write}32()
+ * iodie by chasing back-pointers, and call zen_smn_{read,write}32()
  * themselves.  Indeed, they still can, and if there are many register accesses
  * to be made in code that materially affects performance, that is likely to be
  * preferable.  However, it has a major drawback: it requires each caller to get
@@ -1040,7 +946,7 @@ milan_pcie_port_read(zen_pcie_port_t *port, const smn_reg_t reg)
 {
 	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
 
-	return (milan_smn_read(iodie, reg));
+	return (zen_smn_read(iodie, reg));
 }
 
 static void
@@ -1049,7 +955,7 @@ milan_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
 {
 	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
 
-	milan_smn_write(iodie, reg, val);
+	zen_smn_write(iodie, reg, val);
 }
 
 static smn_reg_t
@@ -1084,7 +990,7 @@ milan_pcie_core_read(zen_pcie_core_t *pc, const smn_reg_t reg)
 {
 	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
 
-	return (milan_smn_read(iodie, reg));
+	return (zen_smn_read(iodie, reg));
 }
 
 static void
@@ -1093,68 +999,7 @@ milan_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
 {
 	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
 
-	milan_smn_write(iodie, reg, val);
-}
-
-/*
- * We consider the IOAGR to be part of the NBIO/IOHC/IOMS, so the IOMMUL1's
- * IOAGR block falls under the IOMS; the IOAPIC, SDPMUX, and IOMMUL2 are similar
- * as they do not (currently) have independent representation in the fabric.
- */
-
-smn_reg_t
-milan_smn_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
-    const uint16_t reginst)
-{
-	smn_reg_t reg;
-
-	switch (def.srd_unit) {
-	case SMN_UNIT_IOAPIC:
-		reg = milan_ioapic_smn_reg(ioms->zio_num, def, reginst);
-		break;
-	case SMN_UNIT_IOHC:
-		reg = milan_iohc_smn_reg(ioms->zio_num, def, reginst);
-		break;
-	case SMN_UNIT_IOAGR:
-		reg = milan_ioagr_smn_reg(ioms->zio_num, def, reginst);
-		break;
-	case SMN_UNIT_SDPMUX:
-		reg = milan_sdpmux_smn_reg(ioms->zio_num, def, reginst);
-		break;
-	case SMN_UNIT_IOMMUL1: {
-		/*
-		 * Confusingly, this pertains to the IOMS, not the NBIF; there
-		 * is only one unit per IOMS, not one per NBIF.  Because.  To
-		 * accommodate this, we need to treat the reginst as an
-		 * enumerated type to distinguish the sub-units.  As gross as
-		 * this is, it greatly reduces triplication of register
-		 * definitions.  There is no way to win here.
-		 */
-		const milan_iommul1_subunit_t su =
-		    (const milan_iommul1_subunit_t)reginst;
-		switch (su) {
-		case MIL1SU_NBIF:
-			reg = milan_iommul1_nbif_smn_reg(ioms->zio_num, def, 0);
-			break;
-		case MIL1SU_IOAGR:
-			reg = milan_iommul1_ioagr_smn_reg(ioms->zio_num,
-			    def, 0);
-			break;
-		default:
-			cmn_err(CE_PANIC, "invalid IOMMUL1 subunit %d", su);
-			break;
-		}
-		break;
-	}
-	case SMN_UNIT_IOMMUL2:
-		reg = milan_iommul2_smn_reg(ioms->zio_num, def, reginst);
-		break;
-	default:
-		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
-		    def.srd_unit);
-	}
-
-	return (reg);
+	zen_smn_write(iodie, reg, val);
 }
 
 static smn_reg_t
@@ -1184,13 +1029,13 @@ milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 static uint32_t
 milan_nbif_read(zen_nbif_t *nbif, const smn_reg_t reg)
 {
-	return (milan_smn_read(nbif->zn_ioms->zio_iodie, reg));
+	return (zen_smn_read(nbif->zn_ioms->zio_iodie, reg));
 }
 
 static void
 milan_nbif_write(zen_nbif_t *nbif, const smn_reg_t reg, const uint32_t val)
 {
-	milan_smn_write(nbif->zn_ioms->zio_iodie, reg, val);
+	zen_smn_write(nbif->zn_ioms->zio_iodie, reg, val);
 }
 
 static smn_reg_t
@@ -1219,7 +1064,7 @@ milan_nbif_func_read(zen_nbif_func_t *func, const smn_reg_t reg)
 {
 	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
 
-	return (milan_smn_read(iodie, reg));
+	return (zen_smn_read(iodie, reg));
 }
 
 static void
@@ -1228,58 +1073,7 @@ milan_nbif_func_write(zen_nbif_func_t *func, const smn_reg_t reg,
 {
 	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
 
-	milan_smn_write(iodie, reg, val);
-}
-
-smn_reg_t
-milan_smn_iodie_reg(const zen_iodie_t *const iodie, const smn_reg_def_t def,
-    const uint16_t reginst)
-{
-	smn_reg_t reg;
-
-	switch (def.srd_unit) {
-	case SMN_UNIT_SMU_RPC:
-		reg = milan_smu_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_SMI:
-		reg = fch_smi_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_PMIO:
-		reg = fch_pmio_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_MISC_A:
-		reg = fch_misc_a_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_I2CPAD:
-		reg = fch_i2cpad_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_MISC_B:
-		reg = fch_misc_b_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_I2C:
-		reg = huashan_i2c_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_IOMUX:
-		reg = fch_iomux_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_GPIO:
-		reg = fch_gpio_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_RMTGPIO:
-		reg = fch_rmtgpio_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_RMTMUX:
-		reg = fch_rmtmux_smn_reg(def, reginst);
-		break;
-	case SMN_UNIT_FCH_RMTGPIO_AGG:
-		reg = fch_rmtgpio_agg_smn_reg(def, reginst);
-		break;
-	default:
-		cmn_err(CE_PANIC, "invalid SMN register type %d for IO die",
-		    def.srd_unit);
-	}
-
-	return (reg);
+	zen_smn_write(iodie, reg, val);
 }
 
 static int
@@ -2247,8 +2041,8 @@ milan_ccx_init_core(zen_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 	core->zc_ccx = ccx;
 	core->zc_physical_coreno = pidx;
 
-	reg = milan_core_reg(core, D_SCFCTP_PMREG_INITPKG0);
-	val = milan_core_read(core, reg);
+	reg = zen_core_reg(core, D_SCFCTP_PMREG_INITPKG0);
+	val = zen_core_read(core, reg);
 	VERIFY3U(val, !=, 0xffffffffU);
 
 	core->zc_logical_coreno = SCFCTP_PMREG_INITPKG0_GET_LOG_CORE(val);
@@ -2320,12 +2114,12 @@ milan_fabric_ccx_init(zen_ccd_t *ccd, zen_ccx_t *ccx, uint32_t cores_enabled)
 	uint32_t val;
 
 	/* XXX avoid panicking on bad data from firmware */
-	reg = milan_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
-	val = milan_ccd_read(ccd, reg);
+	reg = zen_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
+	val = zen_ccd_read(ccd, reg);
 	VERIFY3U(val, ==, ccdpno);
 
-	reg = milan_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
-	val = milan_ccd_read(ccd, reg);
+	reg = zen_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
+	val = zen_ccd_read(ccd, reg);
 	ccd->zcd_nccxs = SMUPWR_THREAD_CFG_GET_COMPLEX_COUNT(val) + 1;
 	VERIFY3U(ccd->zcd_nccxs, <=, MILAN_MAX_CCXS_PER_CCD);
 
@@ -2338,8 +2132,8 @@ milan_fabric_ccx_init(zen_ccd_t *ccd, zen_ccx_t *ccx, uint32_t cores_enabled)
 	 * the DF.  A mismatch here is a firmware bug; XXX and
 	 * if that happens?
 	 */
-	reg = milan_ccd_reg(ccd, D_SMUPWR_CORE_EN);
-	val = milan_ccd_read(ccd, reg);
+	reg = zen_ccd_reg(ccd, D_SMUPWR_CORE_EN);
+	val = zen_ccd_read(ccd, reg);
 	VERIFY3U(SMUPWR_CORE_EN_GET(val), ==, cores_enabled);
 
 	/*
@@ -2374,7 +2168,7 @@ milan_fabric_ccx_init(zen_ccd_t *ccd, zen_ccx_t *ccx, uint32_t cores_enabled)
 	VERIFY3U(pcore, <, MILAN_MAX_CORES_PER_CCX);
 
 	reg = SCFCTP_PMREG_INITPKG7(ccdpno, pccx, pcore);
-	val = milan_smn_read(iodie, reg);
+	val = zen_smn_read(iodie, reg);
 	VERIFY3U(val, !=, 0xffffffffU);
 
 	ccx->zcx_ncores = SCFCTP_PMREG_INITPKG7_GET_N_CORES(val) + 1;

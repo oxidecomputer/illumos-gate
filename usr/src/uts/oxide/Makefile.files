@@ -144,7 +144,8 @@ ZEN_OBJS +=			\
 	zen_df_utils.o		\
 	zen_df_pci_utils.o	\
 	zen_fabric.o		\
-	zen_platform.o
+	zen_platform.o		\
+	zen_smn.o
 
 CORE_OBJS += $(ZEN_OBJS) $(MILAN_OBJS) $(GENOA_OBJS) $(TURIN_OBJS)
 

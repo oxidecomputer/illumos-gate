@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_IOMMU_H
@@ -67,6 +67,40 @@ MILAN_MAKE_SMN_IOMMUL1_REG_FN(PCIE, pcie, 0x14700000,
     IOMMUL1_N_PCIE_PORTS, 22);
 MILAN_MAKE_SMN_IOMMUL1_REG_FN(NBIF, nbif, 0x14f00000, 1, 0);
 MILAN_MAKE_SMN_IOMMUL1_REG_FN(IOAGR, ioagr, 0x15300000, 1, 0);
+
+typedef enum milan_iommul1_subunit {
+	MIL1SU_NBIF,
+	MIL1SU_IOAGR
+} milan_iommul1_subunit_t;
+
+static inline smn_reg_t
+milan_iommul1_smn_reg(const uint8_t unitno, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	smn_reg_t reg;
+	/*
+	 * Confusingly, this pertains to the IOMS, not the NBIF; there
+	 * is only one unit per IOMS, not one per NBIF.  Because.  To
+	 * accommodate this, we need to treat the reginst as an
+	 * enumerated type to distinguish the sub-units.  As gross as
+	 * this is, it greatly reduces triplication of register
+	 * definitions.  There is no way to win here.
+	 */
+	const milan_iommul1_subunit_t su =
+	    (const milan_iommul1_subunit_t)reginst;
+	switch (su) {
+	case MIL1SU_NBIF:
+		reg = milan_iommul1_nbif_smn_reg(unitno, def, 0);
+		break;
+	case MIL1SU_IOAGR:
+		reg = milan_iommul1_ioagr_smn_reg(unitno, def, 0);
+		break;
+	default:
+		panic("invalid IOMMUL1 subunit %d", (int)su);
+		break;
+	}
+	return (reg);
+}
 
 AMDZEN_MAKE_SMN_REG_FN(milan_iommul2_smn_reg, IOMMUL2, 0x13f00000,
     SMN_APERTURE_MASK, 4, 20);

@@ -26,29 +26,75 @@
 extern "C" {
 #endif
 
+
+/*
+ * SMN access routines -- can only be used after early fabric init.
+ */
+
+extern uint32_t zen_smn_read(zen_iodie_t *, const smn_reg_t);
+extern void zen_smn_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Accessors for Core registers.
+ */
+extern smn_reg_t zen_core_reg(const zen_core_t *const, const smn_reg_def_t);
+extern uint32_t zen_core_read(zen_core_t *, const smn_reg_t);
+extern void zen_core_write(zen_core_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Accessors for CCD registers.
+ */
+extern smn_reg_t zen_ccd_reg(const zen_ccd_t *const, const smn_reg_def_t);
+extern uint32_t zen_ccd_read(zen_ccd_t *, const smn_reg_t);
+extern void zen_ccd_write(zen_ccd_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Accessors for IOMS registers.
+ */
+extern smn_reg_t zen_ioms_reg(const zen_ioms_t *const, const smn_reg_def_t,
+    const uint16_t);
+extern uint32_t zen_ioms_read(zen_ioms_t *, const smn_reg_t);
+extern void zen_ioms_write(zen_ioms_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Accessors for IO die registers.
+ */
+extern smn_reg_t zen_iodie_reg(const zen_iodie_t *const, const smn_reg_def_t,
+    const uint16_t);
+extern uint32_t zen_iodie_read(zen_iodie_t *, const smn_reg_t);
+extern void zen_iodie_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Function pointer types for retrieving different types of SMN registers.
+ */
+typedef smn_reg_t (*zen_smn_core_reg_f)(uint8_t, uint8_t, const smn_reg_def_t,
+    const uint16_t);
+typedef smn_reg_t (*zen_smn_ccd_reg_f)(uint8_t, const smn_reg_def_t,
+    const uint16_t);
+typedef smn_reg_t (*zen_smn_ioms_reg_f)(const uint8_t, const smn_reg_def_t,
+    const uint16_t);
+typedef smn_reg_t (*zen_smn_iodie_reg_f)(const smn_reg_def_t, const uint16_t);
+
 typedef struct zen_smn_ops {
 	/*
-	 * Retrieves an IOMS register.
+	 * Unit-specific Core register accessor functions.
 	 */
-	smn_reg_t	(*zso_smn_ioms_reg)(const zen_ioms_t *const,
-			    const smn_reg_def_t, const uint16_t);
+	const zen_smn_core_reg_f	zso_core_reg_fn[SMN_UNIT_MAX];
 
 	/*
-	 * Retrieves an IO die register.
+	 * Unit-specific CCD register accessor functions.
 	 */
-	smn_reg_t	(*zso_smn_iodie_reg)(const zen_iodie_t *const,
-			    const smn_reg_def_t, const uint16_t);
+	const zen_smn_ccd_reg_f		zso_ccd_reg_fn[SMN_UNIT_MAX];
 
 	/*
-	 * Reads the given SMN register from the given die.
+	 * Unit-specific IOMS register accessor functions.
 	 */
-	uint32_t	(*zso_smn_read)(zen_iodie_t *, const smn_reg_t);
+	const zen_smn_ioms_reg_f	zso_ioms_reg_fn[SMN_UNIT_MAX];
 
 	/*
-	 * Writes the given SMN register from the given die.
+	 * Unit-specific IO die register accessor functions.
 	 */
-	void		(*zso_smn_write)(zen_iodie_t *,
-			    const smn_reg_t, const uint32_t);
+	const zen_smn_iodie_reg_f	zso_iodie_reg_fn[SMN_UNIT_MAX];
 } zen_smn_ops_t;
 
 #ifdef	__cplusplus

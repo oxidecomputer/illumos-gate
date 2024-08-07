@@ -132,15 +132,6 @@ extern void milan_fabric_init(void);
 extern void milan_fabric_enable_nmi(void);
 extern void milan_fabric_nmi_eoi(void);
 
-extern smn_reg_t milan_smn_ioms_reg(const zen_ioms_t *const,
-    const smn_reg_def_t, const uint16_t);
-extern smn_reg_t milan_smn_iodie_reg(const zen_iodie_t *const,
-    const smn_reg_def_t, const uint16_t);
-
-extern uint32_t milan_smn_read(struct zen_iodie *, const smn_reg_t);
-extern void milan_smn_write(struct zen_iodie *, const smn_reg_t,
-    const uint32_t);
-
 #ifdef __cplusplus
 }
 #endif

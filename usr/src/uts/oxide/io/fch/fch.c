@@ -667,6 +667,7 @@
 #include <sys/io/fch/uart.h>
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/physaddrs.h>
+#include <sys/io/zen/smn.h>
 
 #include "fch_props.h"
 #include "fch_impl.h"

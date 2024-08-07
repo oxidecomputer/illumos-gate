@@ -28,6 +28,8 @@
 #include <sys/x86_archext.h>
 #include <sys/types.h>
 
+#include <sys/io/zen/smn.h>
+
 /*
  * We run before kmdb loads, so these chicken switches are static consts.
  */
@@ -47,82 +49,6 @@ static const boolean_t milan_ccx_set_undoc_regs = B_TRUE;
  */
 static const boolean_t milan_ccx_set_undoc_fields = B_TRUE;
 
-
-smn_reg_t
-milan_core_reg(const zen_core_t *const core, const smn_reg_def_t def)
-{
-	zen_ccx_t *ccx = core->zc_ccx;
-	ASSERT(ccx != NULL);
-	zen_ccd_t *ccd = ccx->zcx_ccd;
-	ASSERT(ccd != NULL);
-	smn_reg_t reg;
-
-
-	switch (def.srd_unit) {
-	case SMN_UNIT_SCFCTP:
-		reg = amdzen_scfctp_smn_reg(ccd->zcd_physical_dieno,
-		    ccx->zcx_physical_cxno, def, core->zc_physical_coreno);
-		break;
-	default:
-		cmn_err(CE_PANIC, "invalid SMN register type %d for core",
-		    def.srd_unit);
-	}
-
-	return (reg);
-}
-
-smn_reg_t
-milan_ccd_reg(const zen_ccd_t *const ccd, const smn_reg_def_t def)
-{
-	smn_reg_t reg;
-
-	switch (def.srd_unit) {
-	case SMN_UNIT_SMUPWR:
-		reg = amdzen_smupwr_smn_reg(ccd->zcd_physical_dieno, def, 0);
-		break;
-	default:
-		cmn_err(CE_PANIC, "invalid SMN register type %d for CCD",
-		    def.srd_unit);
-	}
-
-	return (reg);
-}
-
-uint32_t
-milan_ccd_read(zen_ccd_t *ccd, const smn_reg_t reg)
-{
-	return (milan_smn_read(ccd->zcd_iodie, reg));
-}
-
-void
-milan_ccd_write(zen_ccd_t *ccd, const smn_reg_t reg, const uint32_t val)
-{
-	milan_smn_write(ccd->zcd_iodie, reg, val);
-}
-
-uint32_t
-milan_ccx_read(zen_ccx_t *ccx, const smn_reg_t reg)
-{
-	return (milan_smn_read(ccx->zcx_ccd->zcd_iodie, reg));
-}
-
-void
-milan_ccx_write(zen_ccx_t *ccx, const smn_reg_t reg, const uint32_t val)
-{
-	milan_smn_write(ccx->zcx_ccd->zcd_iodie, reg, val);
-}
-
-uint32_t
-milan_core_read(zen_core_t *core, const smn_reg_t reg)
-{
-	return (milan_smn_read(core->zc_ccx->zcx_ccd->zcd_iodie, reg));
-}
-
-void
-milan_core_write(zen_core_t *core, const smn_reg_t reg, const uint32_t val)
-{
-	milan_smn_write(core->zc_ccx->zcx_ccd->zcd_iodie, reg, val);
-}
 
 /*
  * In this context, "thread" == AP.  SMT may or may not be enabled (by HW, FW,
@@ -159,13 +85,13 @@ milan_ccx_start_thread(const zen_thread_t *thread)
 	VERIFY3U(thr_ccd_idx, <, MILAN_MAX_CCXS_PER_CCD *
 	    MILAN_MAX_CORES_PER_CCX * MILAN_MAX_THREADS_PER_CORE);
 
-	reg = milan_ccd_reg(ccd, D_SMUPWR_THREAD_EN);
-	en = milan_ccd_read(ccd, reg);
+	reg = zen_ccd_reg(ccd, D_SMUPWR_THREAD_EN);
+	en = zen_ccd_read(ccd, reg);
 	if (SMUPWR_THREAD_EN_GET_T(en, thr_ccd_idx) != 0)
 		return (B_FALSE);
 
 	en = SMUPWR_THREAD_EN_SET_T(en, thr_ccd_idx);
-	milan_ccd_write(ccd, reg, en);
+	zen_ccd_write(ccd, reg, en);
 	return (B_TRUE);
 }
 

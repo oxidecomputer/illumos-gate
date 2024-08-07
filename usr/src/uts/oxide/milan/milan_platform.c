@@ -13,12 +13,24 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#include <sys/io/zen/platform.h>
+#include <sys/amdzen/ccd.h>
+#include <sys/amdzen/fch/iomux.h>
+#include <sys/amdzen/fch/gpio.h>
+#include <sys/io/fch/i2c.h>
+#include <sys/io/fch/misc.h>
+#include <sys/io/fch/pmio.h>
+#include <sys/io/fch/smi.h>
 
 #include <sys/io/zen/ccx_impl.h>
 #include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/platform.h>
+#include <sys/io/zen/smn.h>
 
 #include <sys/io/milan/fabric_impl.h>
+#include <sys/io/milan/ioapic.h>
+#include <sys/io/milan/iohc.h>
+#include <sys/io/milan/iommu.h>
+#include <sys/io/milan/smu_impl.h>
 #include <sys/io/milan/ras.h>
 #include <sys/io/milan/hacks.h>
 #include <milan/milan_apob.h>
@@ -69,10 +81,40 @@ static const zen_ras_ops_t milan_ras_ops = {
 };
 
 static const zen_smn_ops_t milan_smn_ops = {
-	.zso_smn_ioms_reg = milan_smn_ioms_reg,
-	.zso_smn_iodie_reg = milan_smn_iodie_reg,
-	.zso_smn_read = milan_smn_read,
-	.zso_smn_write = milan_smn_write,
+	.zso_core_reg_fn = {
+		[SMN_UNIT_SCFCTP]	= amdzen_scfctp_smn_reg,
+	},
+	.zso_ccd_reg_fn = {
+		[SMN_UNIT_SMUPWR]	= amdzen_smupwr_smn_reg,
+	},
+	/*
+	 * We consider the IOAGR to be part of the NBIO/IOHC/IOMS, so the
+	 * IOMMUL1's IOAGR block falls under the IOMS; the IOAPIC, SDPMUX, and
+	 * IOMMUL2 are similar as they do not (currently) have independent
+	 * representation in the fabric.
+	 */
+	.zso_ioms_reg_fn = {
+		[SMN_UNIT_IOAPIC]	= milan_ioapic_smn_reg,
+		[SMN_UNIT_IOHC]		= milan_iohc_smn_reg,
+		[SMN_UNIT_IOAGR]	= milan_ioagr_smn_reg,
+		[SMN_UNIT_SDPMUX]	= milan_sdpmux_smn_reg,
+		[SMN_UNIT_IOMMUL1]	= milan_iommul1_smn_reg,
+		[SMN_UNIT_IOMMUL2]	= milan_iommul2_smn_reg,
+	},
+	.zso_iodie_reg_fn = {
+		[SMN_UNIT_SMU_RPC]		= milan_smu_smn_reg,
+		[SMN_UNIT_FCH_SMI]		= fch_smi_smn_reg,
+		[SMN_UNIT_FCH_PMIO]		= fch_pmio_smn_reg,
+		[SMN_UNIT_FCH_MISC_A]		= fch_misc_a_smn_reg,
+		[SMN_UNIT_FCH_I2CPAD]		= fch_i2cpad_smn_reg,
+		[SMN_UNIT_FCH_MISC_B]		= fch_misc_b_smn_reg,
+		[SMN_UNIT_FCH_I2C]		= huashan_i2c_smn_reg,
+		[SMN_UNIT_FCH_IOMUX]		= fch_iomux_smn_reg,
+		[SMN_UNIT_FCH_GPIO]		= fch_gpio_smn_reg,
+		[SMN_UNIT_FCH_RMTGPIO]		= fch_rmtgpio_smn_reg,
+		[SMN_UNIT_FCH_RMTMUX]		= fch_rmtmux_smn_reg,
+		[SMN_UNIT_FCH_RMTGPIO_AGG]	= fch_rmtgpio_agg_smn_reg,
+	},
 };
 
 zen_platform_t milan_platform = {

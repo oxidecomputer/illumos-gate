@@ -110,22 +110,6 @@ extern struct memlist *zen_fabric_pci_subsume(uint32_t, pci_prd_rsrc_t);
 extern struct memlist *zen_fabric_gen_subsume(zen_ioms_t *, zen_ioms_rsrc_t);
 
 /*
- * Accessors for IOMS registers.
- */
-extern smn_reg_t zen_ioms_reg(const zen_ioms_t *const, const smn_reg_def_t,
-    const uint16_t);
-extern uint32_t zen_ioms_read(zen_ioms_t *, const smn_reg_t);
-extern void zen_ioms_write(zen_ioms_t *, const smn_reg_t, const uint32_t);
-
-/*
- * Accessors for IO die registers.
- */
-extern smn_reg_t zen_iodie_reg(const zen_iodie_t *const,
-    const smn_reg_def_t, const uint16_t);
-extern uint32_t zen_iodie_read(zen_iodie_t *, const smn_reg_t);
-extern void zen_iodie_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
-
-/*
  * Externally visible operations called from common code.
  */
 typedef struct zen_fabric_ops {
