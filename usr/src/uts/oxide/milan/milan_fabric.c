@@ -2310,141 +2310,85 @@ milan_ccx_init_core(zen_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 	}
 }
 
-static void
-milan_ccx_init_soc(zen_soc_t *soc)
+void
+milan_fabric_ccx_init(zen_ccd_t *ccd, zen_ccx_t *ccx, uint32_t cores_enabled)
 {
-	zen_iodie_t *iodie = &soc->zs_iodies[0];
+	zen_iodie_t *iodie = ccd->zcd_iodie;
+	smn_reg_t reg;
+	uint8_t pcore, lcore, pccx;
+	uint8_t ccdpno = ccd->zcd_physical_dieno;
+	uint32_t val;
+
+	/* XXX avoid panicking on bad data from firmware */
+	reg = milan_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
+	val = milan_ccd_read(ccd, reg);
+	VERIFY3U(val, ==, ccdpno);
+
+	reg = milan_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
+	val = milan_ccd_read(ccd, reg);
+	ccd->zcd_nccxs = SMUPWR_THREAD_CFG_GET_COMPLEX_COUNT(val) + 1;
+	VERIFY3U(ccd->zcd_nccxs, <=, MILAN_MAX_CCXS_PER_CCD);
+
+	if (ccd->zcd_nccxs == 0)
+		return;
 
 	/*
-	 * We iterate over the physical CCD space; population of that
-	 * space may be sparse.  Keep track of the logical CCD index in
-	 * lccd; ccdpno is the physical CCD index we're considering.
+	 * Make sure that the CCD's local understanding of
+	 * enabled cores matches what we found earlier through
+	 * the DF.  A mismatch here is a firmware bug; XXX and
+	 * if that happens?
 	 */
-	for (uint8_t ccdpno = 0, lccd = 0;
-	    ccdpno < MILAN_MAX_CCDS_PER_IODIE; ccdpno++) {
-		uint8_t core_shift, pcore, lcore, pccx;
-		smn_reg_t reg;
-		uint32_t val;
-		uint32_t cores_enabled;
-		zen_ccd_t *ccd = &iodie->zi_ccds[lccd];
-		zen_ccx_t *ccx = &ccd->zcd_ccxs[0];
+	reg = milan_ccd_reg(ccd, D_SMUPWR_CORE_EN);
+	val = milan_ccd_read(ccd, reg);
+	VERIFY3U(SMUPWR_CORE_EN_GET(val), ==, cores_enabled);
 
-		ccx->zcx_ccd = ccd;
+	/*
+	 * XXX While we know there is only ever 1 CCX per Milan CCD,
+	 * DF::CCXEnable allows for 2 because the DFv3 implementation
+	 * is shared with Rome, which has up to 2 CCXs per CCD.
+	 * Although we know we only ever have 1 CCX, we don't,
+	 * strictly, know that the CCX is always physical index 0.
+	 * Here we assume it, but we probably want to change the
+	 * MILAN_MAX_xxx_PER_yyy so that they reflect the size of the
+	 * physical ID spaces rather than the maximum logical entity
+	 * counts.  Doing so would accommodate a part that has a single
+	 * CCX per CCD, but at index 1.
+	 */
+	ccx->zcx_logical_cxno = 0;
+	ccx->zcx_physical_cxno = pccx = 0;
 
-		/*
-		 * The CCM is part of the IO die, not the CCD itself.
-		 * If it is disabled, we skip this CCD index as even if
-		 * it exists nothing can reach it.
-		 */
-		val = zen_df_read32(iodie, MILAN_DF_FIRST_CCM_ID +
-		    ccdpno, DF_FBIINFO0);
+	/*
+	 * All the cores on the CCD will (should) return the
+	 * same values in PMREG_INITPKG0 and PMREG_INITPKG7.
+	 * The catch is that we have to read them from a core
+	 * that exists or we get all-1s.  Use the mask of
+	 * cores enabled on this die that we already computed
+	 * to find one to read from, then bootstrap into the
+	 * core enumeration.  XXX At some point we probably
+	 * should do away with all this cross-checking and
+	 * choose something to trust.
+	 */
+	for (pcore = 0; (cores_enabled & (1 << pcore)) == 0 &&
+	    pcore < MILAN_MAX_CORES_PER_CCX; pcore++)
+		;
+	VERIFY3U(pcore, <, MILAN_MAX_CORES_PER_CCX);
 
-		VERIFY3U(DF_FBIINFO0_GET_TYPE(val), ==, DF_TYPE_CCM);
-		if (DF_FBIINFO0_V3_GET_ENABLED(val) == 0)
+	reg = SCFCTP_PMREG_INITPKG7(ccdpno, pccx, pcore);
+	val = milan_smn_read(iodie, reg);
+	VERIFY3U(val, !=, 0xffffffffU);
+
+	ccx->zcx_ncores = SCFCTP_PMREG_INITPKG7_GET_N_CORES(val) + 1;
+	/* XXX: overwriting this? */
+	iodie->zi_nccds = SCFCTP_PMREG_INITPKG7_GET_N_DIES(val) + 1;
+
+	for (pcore = 0, lcore = 0; pcore < MILAN_MAX_CORES_PER_CCX; pcore++) {
+		if ((cores_enabled & (1 << pcore)) == 0)
 			continue;
-
-		/*
-		 * At leaast some of the time, a CCM will be enabled
-		 * even if there is no corresponding CCD.  To avoid
-		 * a possibly invalid read (see milan_fabric_topo_init()
-		 * comments), we also check whether any core is enabled
-		 * on this CCD.
-		 *
-		 * XXX reduce magic
-		 */
-		val = zen_df_bcast_read32(iodie,
-		    (ccdpno < 4) ? DF_PHYS_CORE_EN0_V3 : DF_PHYS_CORE_EN1_V3);
-		core_shift = (ccdpno & 3) * MILAN_MAX_CORES_PER_CCX *
-		    MILAN_MAX_CCXS_PER_CCD;
-		cores_enabled = bitx32(val, core_shift + 7, core_shift);
-
-		if (cores_enabled == 0)
-			continue;
-
-		VERIFY3U(lccd, <, MILAN_MAX_CCDS_PER_IODIE);
-		ccd->zcd_iodie = iodie;
-		ccd->zcd_logical_dieno = lccd++;
-		ccd->zcd_physical_dieno = ccdpno;
-		/*
-		 * XXX: This is never used, so comment out for now.
-		 */
-		/* ccd->zcd_ccm_comp_id = MILAN_DF_FIRST_CCM_ID + ccdpno; */
-
-		/* XXX avoid panicking on bad data from firmware */
-		reg = milan_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
-		val = milan_ccd_read(ccd, reg);
-		VERIFY3U(val, ==, ccdpno);
-
-		reg = milan_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
-		val = milan_ccd_read(ccd, reg);
-		ccd->zcd_nccxs = SMUPWR_THREAD_CFG_GET_COMPLEX_COUNT(val) + 1;
-		VERIFY3U(ccd->zcd_nccxs, <=, MILAN_MAX_CCXS_PER_CCD);
-
-		if (ccd->zcd_nccxs == 0) {
-			cmn_err(CE_NOTE, "CCD 0x%x: no CCXs reported",
-			    ccd->zcd_physical_dieno);
-			continue;
-		}
-
-		/*
-		 * Make sure that the CCD's local understanding of
-		 * enabled cores matches what we found earlier through
-		 * the DF.  A mismatch here is a firmware bug; XXX and
-		 * if that happens?
-		 */
-		reg = milan_ccd_reg(ccd, D_SMUPWR_CORE_EN);
-		val = milan_ccd_read(ccd, reg);
-		VERIFY3U(SMUPWR_CORE_EN_GET(val), ==, cores_enabled);
-
-		/*
-		 * XXX While we know there is only ever 1 CCX per Milan CCD,
-		 * DF::CCXEnable allows for 2 because the DFv3 implementation
-		 * is shared with Rome, which has up to 2 CCXs per CCD.
-		 * Although we know we only ever have 1 CCX, we don't,
-		 * strictly, know that the CCX is always physical index 0.
-		 * Here we assume it, but we probably want to change the
-		 * MILAN_MAX_xxx_PER_yyy so that they reflect the size of the
-		 * physical ID spaces rather than the maximum logical entity
-		 * counts.  Doing so would accommodate a part that has a single
-		 * CCX per CCD, but at index 1.
-		 */
-		ccx->zcx_logical_cxno = 0;
-		ccx->zcx_physical_cxno = pccx = 0;
-
-		/*
-		 * All the cores on the CCD will (should) return the
-		 * same values in PMREG_INITPKG0 and PMREG_INITPKG7.
-		 * The catch is that we have to read them from a core
-		 * that exists or we get all-1s.  Use the mask of
-		 * cores enabled on this die that we already computed
-		 * to find one to read from, then bootstrap into the
-		 * core enumeration.  XXX At some point we probably
-		 * should do away with all this cross-checking and
-		 * choose something to trust.
-		 */
-		for (pcore = 0;
-		    (cores_enabled & (1 << pcore)) == 0 &&
-		    pcore < MILAN_MAX_CORES_PER_CCX; pcore++)
-			;
-		VERIFY3U(pcore, <, MILAN_MAX_CORES_PER_CCX);
-
-		reg = SCFCTP_PMREG_INITPKG7(ccdpno, pccx, pcore);
-		val = milan_smn_read(iodie, reg);
-		VERIFY3U(val, !=, 0xffffffffU);
-
-		ccx->zcx_ncores = SCFCTP_PMREG_INITPKG7_GET_N_CORES(val) + 1;
-		iodie->zi_nccds = SCFCTP_PMREG_INITPKG7_GET_N_DIES(val) + 1;
-
-		for (pcore = 0, lcore = 0;
-		    pcore < MILAN_MAX_CORES_PER_CCX; pcore++) {
-			if ((cores_enabled & (1 << pcore)) == 0)
-				continue;
-			milan_ccx_init_core(ccx, lcore, pcore);
-			++lcore;
-		}
-
-		VERIFY3U(lcore, ==, ccx->zcx_ncores);
+		milan_ccx_init_core(ccx, lcore, pcore);
+		++lcore;
 	}
+
+	VERIFY3U(lcore, ==, ccx->zcx_ncores);
 }
 
 static bool
@@ -2496,104 +2440,86 @@ milan_smu_features_init(zen_iodie_t *iodie)
 }
 
 void
-milan_fabric_topo_init(void)
+milan_fabric_topo_init(zen_fabric_t *fabric)
 {
-	extern zen_fabric_t zen_fabric;
-	zen_fabric_t *fabric = &zen_fabric;
-	milan_fabric_t *mfabric = &milan_fabric;
-	uint8_t nsocs;
-
-	PRM_POINT("milan_fabric_topo_init() [zen compat] starting...");
-
-	fabric->zf_uarch_fabric = mfabric;
-	zen_fabric_topo_init_common();
-
-	/*
-	 * XXX: While the common Zen routines are still getting fleshed out, we
-	 * want to keep Milan working. We fill in some missing pieces here.
-	 * Eventually zen_fabric_topo_init should subsume this completely.
-	 */
-	nsocs = fabric->zf_nsocs;
-
-	for (uint8_t socno = 0; socno < nsocs; socno++) {
-		zen_soc_t *soc = &fabric->zf_socs[socno];
-		zen_iodie_t *iodie = &soc->zs_iodies[0];
-
-		milan_soc_t *msoc = &mfabric->mf_socs[socno];
-		milan_iodie_t *miodie = &msoc->ms_iodies[0];
-
-		soc->zs_uarch_soc = msoc;
-		iodie->zi_uarch_iodie = miodie;
-		iodie->zi_soc = soc;
-
-		/* XXX(cross): Need to plumb this in earlier. */
-		soc->zs_niodies = MILAN_FABRIC_MAX_DIES_PER_SOC;
-		soc->zs_fabric = fabric;
-
-		for (uint8_t iomsno = 0; iomsno < iodie->zi_nioms; iomsno++) {
-			zen_ioms_t *ioms = &iodie->zi_ioms[iomsno];
-			milan_ioms_t *mioms = &miodie->mi_ioms[iomsno];
-
-			ioms->zio_uarch_ioms = mioms;
-			ioms->zio_iodie = iodie;
-
-			/*
-			 * XXX: The rest of this is not yet handled in common
-			 * Zen code.
-			 */
-
-			/*
-			 * Only IOMS 0 has a WAFL port.
-			 */
-			ioms->zio_npcie_cores = milan_nbio_n_pcie_cores(iomsno);
-			if (iomsno == MILAN_IOMS_HAS_WAFL) {
-				ioms->zio_flags |= ZEN_IOMS_F_HAS_WAFL;
-			}
-			ioms->zio_nnbifs = MILAN_IOMS_MAX_NBIF;
-
-			milan_fabric_ioms_pcie_init(ioms);
-			milan_fabric_ioms_nbif_init(ioms);
-		}
-
-		/*
-		 * In order to guarantee that we can safely perform SMU and DXIO
-		 * functions once we have returned (and when we go to read the
-		 * brand string for the CCXs even before then), we go through
-		 * now and capture firmware versions.
-		 */
-		VERIFY0(milan_dump_versions(iodie, NULL));
-
-		milan_ccx_init_soc(soc);
-		if (!milan_smu_rpc_read_brand_string(iodie,
-		    soc->zs_brandstr, sizeof (soc->zs_brandstr))) {
-			soc->zs_brandstr[0] = '\0';
-		}
-
-		if (!milan_smu_rpc_read_dpm_weights(iodie,
-		    miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights))) {
-			/*
-			 * XXX It's unclear whether continuing is wise.
-			 */
-			cmn_err(CE_WARN, "SMU: failed to retrieve DPM weights");
-			bzero(miodie->mi_dpm_weights,
-			    sizeof (miodie->mi_dpm_weights));
-		}
-
-		/*
-		 * We want to enable SMU features now because it will enable
-		 * dynamic frequency scaling -- which in turn makes the rest
-		 * of the boot much, much faster.
-		 */
-		VERIFY(milan_smu_features_init(iodie));
-	}
+	fabric->zf_uarch_fabric = &milan_fabric;
 
 	if (nthreads > NCPU) {
-		cmn_err(CE_WARN,
-		    "%d CPUs found but only %d supported",
+		cmn_err(CE_WARN, "%d CPUs found but only %d supported",
 		    nthreads, NCPU);
 		nthreads = NCPU;
 	}
 	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads;
+}
+
+void
+milan_fabric_soc_init(zen_soc_t *soc, zen_iodie_t *iodie)
+{
+	ASSERT3U(soc->zs_niodies, ==, MILAN_FABRIC_MAX_DIES_PER_SOC);
+
+	milan_fabric_t *mfabric = &milan_fabric;
+	milan_soc_t *msoc = &mfabric->mf_socs[soc->zs_socno];
+	milan_iodie_t *miodie = &msoc->ms_iodies[0];
+
+	soc->zs_uarch_soc = msoc;
+	iodie->zi_uarch_iodie = miodie;
+
+	/*
+	 * In order to guarantee that we can safely perform SMU and DXIO
+	 * functions once we have returned (and when we go to read the
+	 * brand string for the CCXs even before then), we go through
+	 * now and capture firmware versions.
+	 */
+	VERIFY0(milan_dump_versions(iodie, NULL));
+
+	if (!milan_smu_rpc_read_brand_string(iodie,
+	    soc->zs_brandstr, sizeof (soc->zs_brandstr))) {
+		soc->zs_brandstr[0] = '\0';
+	}
+
+	if (!milan_smu_rpc_read_dpm_weights(iodie,
+	    miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights))) {
+		/*
+		 * XXX It's unclear whether continuing is wise.
+		 */
+		cmn_err(CE_WARN, "SMU: failed to retrieve DPM weights");
+		bzero(miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights));
+	}
+
+	/*
+	 * We want to enable SMU features now because it will enable
+	 * dynamic frequency scaling -- which in turn makes the rest
+	 * of the boot much, much faster.
+	 */
+	VERIFY(milan_smu_features_init(iodie));
+}
+
+void
+milan_fabric_ioms_init(zen_ioms_t *ioms)
+{
+	const uint8_t iomsno = ioms->zio_num;
+	zen_iodie_t *iodie = ioms->zio_iodie;
+	zen_soc_t *soc = iodie->zi_soc;
+	milan_fabric_t *mfabric = &milan_fabric;
+	milan_soc_t *msoc = &mfabric->mf_socs[soc->zs_socno];
+	milan_iodie_t *miodie = &msoc->ms_iodies[0];
+	milan_ioms_t *mioms;
+
+	ASSERT3U(iomsno, <, MILAN_IOMS_PER_IODIE);
+	mioms = &miodie->mi_ioms[iomsno];
+	ioms->zio_uarch_ioms = mioms;
+
+	/*
+	 * Only IOMS 0 has a WAFL port.
+	 */
+	ioms->zio_npcie_cores = milan_nbio_n_pcie_cores(iomsno);
+	if (iomsno == MILAN_IOMS_HAS_WAFL) {
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_WAFL;
+	}
+	ioms->zio_nnbifs = MILAN_IOMS_MAX_NBIF;
+
+	milan_fabric_ioms_pcie_init(ioms);
+	milan_fabric_ioms_nbif_init(ioms);
 }
 
 /*

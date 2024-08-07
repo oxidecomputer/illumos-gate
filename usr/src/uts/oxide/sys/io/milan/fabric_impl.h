@@ -116,11 +116,12 @@ struct milan_fabric {
 };
 
 /*
- * This is an entry point for early boot that is used after we have PCIe
- * configuration space set up so we can load up all the information about the
- * actual system itself.
+ * The Milan uarch-specific hooks for initial fabric topology initialization.
  */
-extern void milan_fabric_topo_init(void);
+extern void milan_fabric_topo_init(zen_fabric_t *);
+extern void milan_fabric_soc_init(zen_soc_t *, zen_iodie_t *);
+extern void milan_fabric_ccx_init(zen_ccd_t *, zen_ccx_t *, uint32_t);
+extern void milan_fabric_ioms_init(zen_ioms_t *);
 
 /*
  * This is the primary initialization point for the Milan Data Fabric,

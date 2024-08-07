@@ -45,7 +45,6 @@ static const zen_ccx_ops_t genoa_ccx_ops = {
 };
 
 static const zen_fabric_ops_t genoa_fabric_ops = {
-	.zfo_topo_init = zen_fabric_topo_init_common,
 };
 
 zen_platform_t genoa_platform = {

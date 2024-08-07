@@ -40,6 +40,14 @@ typedef struct zen_platform_consts {
 	 */
 	const uint8_t		zpc_ioms_per_iodie;
 	/*
+	 * The number of CCDs per IO die.
+	 */
+	const uint8_t		zpc_ccds_per_iodie;
+	/*
+	 * The number of cores per CCX.
+	 */
+	const uint8_t		zpc_cores_per_ccx;
+	/*
 	 * The InstanceID of the first IOM.
 	 */
 	const uint8_t		zpc_df_first_iom_id;

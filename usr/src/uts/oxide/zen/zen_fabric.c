@@ -129,12 +129,6 @@
  */
 zen_fabric_t zen_fabric;
 
-void
-zen_fabric_topo_init(void)
-{
-	oxide_zen_fabric_ops()->zfo_topo_init();
-}
-
 uint64_t
 zen_fabric_ecam_base(void)
 {
@@ -393,6 +387,201 @@ zen_iodie_flags(const zen_iodie_t *const iodie)
 	return (iodie->zi_flags);
 }
 
+static uint32_t
+zen_ccd_cores_enabled(zen_iodie_t *iodie, uint8_t ccdpno)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const df_rev_t df_rev = oxide_zen_platform_consts()->zpc_df_rev;
+	df_reg_def_t phys_core_en_v3[] = {
+		DF_PHYS_CORE_EN0_V3,
+		DF_PHYS_CORE_EN1_V3,
+	};
+	df_reg_def_t phys_core_en_v4[] = {
+		DF_PHYS_CORE_EN0_V4,
+		DF_PHYS_CORE_EN1_V4,
+		DF_PHYS_CORE_EN2_V4,
+		DF_PHYS_CORE_EN3_V4,
+		DF_PHYS_CORE_EN5_V4,
+	};
+	df_reg_def_t *phys_core_en = NULL;
+	uint_t nphys_core_en, cores_per_ccd, ccds_per_reg, phys_core_reg,
+	    core_shift;
+	uint32_t cores_enabled;
+
+	switch (df_rev) {
+	case DF_REV_3:
+		phys_core_en = phys_core_en_v3;
+		nphys_core_en = ARRAY_SIZE(phys_core_en_v3);
+		break;
+	case DF_REV_4:
+	case DF_REV_4D2:
+		phys_core_en = phys_core_en_v4;
+		nphys_core_en = ARRAY_SIZE(phys_core_en_v4);
+		break;
+	default:
+		cmn_err(CE_PANIC, "Unsupported DF revision %d", df_rev);
+		return (-1);
+	}
+
+	/*
+	 * Each register contains 32 bits with each bit corresponding to a core.
+	 * Since we know the number of Cores per CCX and CCXs per CCD, we can
+	 * use that to determine which register to read and which bits to check
+	 * for the given CCD.
+	 */
+	cores_per_ccd = consts->zpc_cores_per_ccx * ZEN_MAX_CCXS_PER_CCD;
+	VERIFY3U(cores_per_ccd, <=, 32);
+	ccds_per_reg = 32 / cores_per_ccd;
+	phys_core_reg = ccdpno / ccds_per_reg;
+	VERIFY3U(phys_core_reg, <, nphys_core_en);
+	core_shift = ccdpno % ccds_per_reg * cores_per_ccd;
+
+	cores_enabled = zen_df_bcast_read32(iodie, phys_core_en[phys_core_reg]);
+	cores_enabled = bitx32(cores_enabled, core_shift + cores_per_ccd - 1,
+	    core_shift);
+
+	return (cores_enabled);
+}
+
+static void
+zen_fabric_ccx_init_soc(zen_soc_t *soc)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	const df_rev_t df_rev = consts->zpc_df_rev;
+	zen_iodie_t *iodie = &soc->zs_iodies[0];
+
+	/*
+	 * A 1-bit corresponds to an enabled CCD with the physical number being
+	 * the bit position. The logical numbers are assigned sequentially for
+	 * each enabled CCD.
+	 *
+	 * Bits x=0-7 : First port on CCM[x] has CCD enabled.
+	 * Bits x=8-15: Second port on CCM[x-8] has CCD enabled.
+	 */
+	uint16_t ccdmap = 0;
+
+	/*
+	 * To determine the physical CCD numbers, we iterate over the CCMs
+	 * and note what CCDs (if any) are present and enabled.
+	 */
+	for (uint8_t ccmno = 0; ccmno < ZEN_MAX_CCMS_PER_IODIE; ccmno++) {
+		uint32_t val;
+		uint32_t ccden;
+		bool wide;
+		uint32_t ccminst = ZEN_DF_FIRST_CCM_ID + ccmno;
+
+		/*
+		 * The CCM is part of the IO die, not the CCD itself. If it is
+		 * disabled, we skip this CCD index as even if it exists nothing
+		 * can reach it.
+		 */
+		val = zen_df_read32(iodie, ccminst, DF_FBIINFO0);
+		VERIFY3U(DF_FBIINFO0_GET_TYPE(val), ==, DF_TYPE_CCM);
+		if (DF_FBIINFO0_V3_GET_ENABLED(val) == 0)
+			continue;
+
+		/*
+		 * XXX: Is this really just DF rev dependent or should be a
+		 * per-uarch hook?
+		 */
+		switch (df_rev) {
+		case DF_REV_3:
+			/*
+			 * With DFv3, we assume a 1-1 mapping of CCDs to CCMs.
+			 */
+			ccdmap |= (1 << ccmno);
+			break;
+		case DF_REV_4:
+		case DF_REV_4D2:
+			/*
+			 * DFv4+ allows for up to 2 CCDs per CCM, depending on
+			 * if wide mode is enabled.
+			 */
+			ccden = zen_df_read32(iodie, ccminst, DF_CCD_EN_V4);
+
+			/*
+			 * Note if first possible CCD is enabled.
+			 */
+			ccdmap |= ((DF_CCD_EN_V4_GET_CCD_EN(ccden) & 1) <<
+			    ccmno);
+
+			/*
+			 * For a second CCD, we need to check if wide mode is
+			 * disabled. The actual bit to check is unfortunately
+			 * slightly different between DFv4 and DFv4D2.
+			 */
+			if (df_rev == DF_REV_4D2) {
+				wide = DF_CCD_EN_V4D2_GET_WIDE_EN(ccden);
+			} else {
+				val = zen_df_read32(iodie, ccminst,
+				    DF_CCMCFG4_V4);
+				wide = DF_CCMCFG4_V4_GET_WIDE_EN(val);
+			}
+			/*
+			 * If wide mode is disabled, and DF::CCDEnable says the
+			 * second CCD on this CCM is enabled, note that in the
+			 * upper half of the ccd map.
+			 */
+			if (!wide)
+				ccdmap |= ((DF_CCD_EN_V4_GET_CCD_EN(ccden) >> 1)
+				    & 1) << ZEN_MAX_CCMS_PER_IODIE << ccmno;
+			break;
+		default:
+			cmn_err(CE_PANIC, "Unsupported DF revision %d", df_rev);
+		}
+	}
+
+	/*
+	 * Now we can iterate over `ccdmap`, which corresponds to our physical
+	 * CCD numbers, and assign logical numbers to each enabled CCD.
+	 */
+	for (uint8_t ccdpno = 0, lccd = 0; ccdmap != 0;
+	    ccdmap &= ~(1 << ccdpno), ccdpno++) {
+		uint32_t cores_enabled;
+		zen_ccd_t *ccd = &iodie->zi_ccds[lccd];
+		zen_ccx_t *ccx = &ccd->zcd_ccxs[0];
+
+		ccx->zcx_ccd = ccd;
+
+		/*
+		 * Either this CCD or the CCM itself is disabled - skip it.
+		 */
+		if ((ccdmap & (1 << ccdpno)) == 0)
+			continue;
+
+		VERIFY3U(ccdpno, <,
+		    ZEN_MAX_CCMS_PER_IODIE * DF_MAX_CCDS_PER_CCM);
+
+		/*
+		 * The CCM may have been enabled but at least for DFv3, there's
+		 * a possibility the corresponding CCD is disabled. So let's
+		 * double check whether any core is enabled on this CCD.
+		 */
+		cores_enabled = zen_ccd_cores_enabled(iodie, ccdpno);
+
+		if (cores_enabled == 0)
+			continue;
+
+		VERIFY3U(lccd, <, consts->zpc_ccds_per_iodie);
+		ccd->zcd_iodie = iodie;
+		ccd->zcd_logical_dieno = lccd++;
+		ccd->zcd_physical_dieno = ccdpno;
+
+		/*
+		 * The exact SMN registers needed to initialize the CCX are
+		 * microarchitecturally specific.
+		 */
+		fops->zfo_ccx_init(ccd, ccx, cores_enabled);
+
+		if (ccd->zcd_nccxs == 0) {
+			cmn_err(CE_NOTE, "CCD 0x%x: no CCXs reported",
+			    ccd->zcd_physical_dieno);
+			continue;
+		}
+	}
+}
+
 /*
  * Right now we're running on the boot CPU. We know that a single socket has to
  * be populated. Our job is to go through and determine what the rest of the
@@ -405,10 +594,11 @@ zen_iodie_flags(const zen_iodie_t *const iodie)
  * actual SoC has discovered here rather than trying to fill that in ourselves.
  */
 void
-zen_fabric_topo_init_common(void)
+zen_fabric_topo_init(void)
 {
 	zen_fabric_t *fabric = &zen_fabric;
 	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 	const df_rev_t df_rev = consts->zpc_df_rev;
 	uint8_t nsocs = 0;
 	uint32_t syscfg, syscomp;
@@ -481,6 +671,7 @@ zen_fabric_topo_init_common(void)
 
 		soc->zs_socno = socno;
 		soc->zs_fabric = fabric;
+		soc->zs_niodies = ZEN_FABRIC_MAX_DIES_PER_SOC;
 
 		iodie->zi_devno = AMDZEN_DF_FIRST_DEVICE + socno;
 		iodie->zi_node_id = zen_fabric_iodie_node_id(iodie);
@@ -523,8 +714,30 @@ zen_fabric_topo_init_common(void)
 			if (ioms->zio_dest_id == fch_ios_fid) {
 				ioms->zio_flags |= ZEN_IOMS_F_HAS_FCH;
 			}
+
+			/*
+			 * uarch-specific IOMS init hook.
+			 */
+			fops->zfo_ioms_init(ioms);
 		}
+
+		/*
+		 * Initialize the CCXs for this SOC/IOD.
+		 */
+		zen_fabric_ccx_init_soc(soc);
+
+		/*
+		 * Generic SoC & IO die initialization is complete but let
+		 * the uarch-specific code do any additional setup needed.
+		 */
+		fops->zfo_soc_init(soc, iodie);
 	}
+
+	/*
+	 * We're done with the basic fabric init, let the uarch-specific code
+	 * do any additional setup needed.
+	 */
+	fops->zfo_topo_init(fabric);
 }
 
 /*
@@ -1091,7 +1304,6 @@ zen_fabric_rsrc_subsume(zen_ioms_t *ioms, zen_ioms_rsrc_t rsrc)
 struct memlist *
 zen_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
 {
-	extern zen_fabric_t zen_fabric;
 	zen_ioms_t *ioms;
 	zen_ioms_rsrc_t ir;
 

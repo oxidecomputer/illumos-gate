@@ -23,15 +23,6 @@
 #include <sys/io/milan/hacks.h>
 #include <milan/milan_apob.h>
 
-/*
- * XXX: To keep milan working, we still make use of the existing milan_* ccx &
- * fabric routines. But this should all be migrated to the common Zen routines
- * (with any Milan-specific bits kept as needed). Some are already done, like
- * milan_ccx_{physmem,mmio}_init => zen_ccx_{physmem,mmio}_init which had no
- * Milan-specific code and no other dependencies.
- */
-extern void milan_fabric_topo_init(void);
-
 
 /*
  * This is the number of IOMS instances that we know are supposed to exist per
@@ -57,10 +48,14 @@ static const zen_ccx_ops_t milan_ccx_ops = {
 };
 
 static const zen_fabric_ops_t milan_fabric_ops = {
-	.zfo_topo_init = milan_fabric_topo_init,
 	.zfo_fabric_init = milan_fabric_init,
 	.zfo_enable_nmi = milan_fabric_enable_nmi,
 	.zfo_nmi_eoi = milan_fabric_nmi_eoi,
+
+	.zfo_topo_init = milan_fabric_topo_init,
+	.zfo_soc_init = milan_fabric_soc_init,
+	.zfo_ccx_init = milan_fabric_ccx_init,
+	.zfo_ioms_init = milan_fabric_ioms_init,
 };
 
 static const zen_hack_ops_t milan_hack_ops = {
@@ -84,6 +79,8 @@ zen_platform_t milan_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_3,
 		.zpc_ioms_per_iodie = MILAN_IOMS_PER_IODIE,
+		.zpc_ccds_per_iodie = MILAN_MAX_CCDS_PER_IODIE,
+		.zpc_cores_per_ccx = MILAN_MAX_CORES_PER_CCX,
 		/*
 		 * Milan has a single IOMS component hence these are the same.
 		 */

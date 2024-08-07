@@ -47,8 +47,6 @@ extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
 
 extern void zen_fabric_dma_attr(ddi_dma_attr_t *attr);
 
-extern void zen_fabric_topo_init_common(void);
-
 /*
  * These are platform maximums, and are sized to accommodate
  * the largest number used by any supported microarchitecture.

@@ -22,6 +22,8 @@
 #include <sys/ddidmareq.h>
 #include <sys/plat/pci_prd.h>
 
+#include <sys/io/zen/ccx.h>
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -36,7 +38,6 @@ typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;
-typedef struct zen_thread zen_thread_t;
 
 /*
  * Generic resource types that can be routed via an IOMS.
@@ -128,10 +129,18 @@ extern void zen_iodie_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
  * Externally visible operations called from common code.
  */
 typedef struct zen_fabric_ops {
-	void		(*zfo_topo_init)(void);
 	void		(*zfo_fabric_init)(void);
 	void		(*zfo_enable_nmi)(void);
 	void		(*zfo_nmi_eoi)(void);
+
+	/*
+	 * The following functions are uarch-specific and are called from
+	 * zen_fabric_topo_init() to initialize the fabric topology.
+	 */
+	void		(*zfo_topo_init)(zen_fabric_t *);
+	void		(*zfo_soc_init)(zen_soc_t *, zen_iodie_t *);
+	void		(*zfo_ccx_init)(zen_ccd_t *, zen_ccx_t *, uint32_t);
+	void		(*zfo_ioms_init)(zen_ioms_t *);
 } zen_fabric_ops_t;
 
 #ifdef	__cplusplus
