@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_SMU_IMPL_H
@@ -40,15 +40,20 @@ extern "C" {
  * node, so unit numbers aren't meaningful.  All registers have a single
  * instance only.
  */
-AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg, SMU_RPC,
+AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg_unit, SMU_RPC,
     0x3b10000, 0xfffff000, 1, 0);
+static inline smn_reg_t
+milan_smu_smn_reg(const smn_reg_def_t def, const uint16_t reginst)
+{
+	return (milan_smu_smn_reg_unit(0, def, reginst));
+}
 
 /*CSTYLED*/
 #define	D_MILAN_SMU_RPC_REQ	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x530,		\
 }
-#define	MILAN_SMU_RPC_REQ()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_REQ, 0)
+#define	MILAN_SMU_RPC_REQ()	milan_smu_smn_reg(D_MILAN_SMU_RPC_REQ, 0)
 
 /*
  * SMU RPC Operation Codes. Note, these are tied to firmware and therefore may
@@ -95,7 +100,7 @@ AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg, SMU_RPC,
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x57c,		\
 }
-#define	MILAN_SMU_RPC_RESP()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_RESP, 0)
+#define	MILAN_SMU_RPC_RESP()	milan_smu_smn_reg(D_MILAN_SMU_RPC_RESP, 0)
 
 /*
  * SMU RPC Response codes
@@ -112,42 +117,42 @@ AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg, SMU_RPC,
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9c4,		\
 }
-#define	MILAN_SMU_RPC_ARG0()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG0, 0)
+#define	MILAN_SMU_RPC_ARG0()	milan_smu_smn_reg(D_MILAN_SMU_RPC_ARG0, 0)
 
 /*CSTYLED*/
 #define	D_MILAN_SMU_RPC_ARG1	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9c8,		\
 }
-#define	MILAN_SMU_RPC_ARG1()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG1, 0)
+#define	MILAN_SMU_RPC_ARG1()	milan_smu_smn_reg(D_MILAN_SMU_RPC_ARG1, 0)
 
 /*CSTYLED*/
 #define	D_MILAN_SMU_RPC_ARG2	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9cc,		\
 }
-#define	MILAN_SMU_RPC_ARG2()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG2, 0)
+#define	MILAN_SMU_RPC_ARG2()	milan_smu_smn_reg(D_MILAN_SMU_RPC_ARG2, 0)
 
 /*CSTYLED*/
 #define	D_MILAN_SMU_RPC_ARG3	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9d0,		\
 }
-#define	MILAN_SMU_RPC_ARG3()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG3, 0)
+#define	MILAN_SMU_RPC_ARG3()	milan_smu_smn_reg(D_MILAN_SMU_RPC_ARG3, 0)
 
 /*CSTYLED*/
 #define	D_MILAN_SMU_RPC_ARG4	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9d4,		\
 }
-#define	MILAN_SMU_RPC_ARG4()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG4, 0)
+#define	MILAN_SMU_RPC_ARG4()	milan_smu_smn_reg(D_MILAN_SMU_RPC_ARG4, 0)
 
 /*CSTYLED*/
 #define	D_MILAN_SMU_RPC_ARG5	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9d8,		\
 }
-#define	MILAN_SMU_RPC_ARG5()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG5, 0)
+#define	MILAN_SMU_RPC_ARG5()	milan_smu_smn_reg(D_MILAN_SMU_RPC_ARG5, 0)
 
 /*
  * For unknown reasons we have multiple ways to give the SMU an address, and

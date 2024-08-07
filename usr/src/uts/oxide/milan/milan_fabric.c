@@ -1239,7 +1239,7 @@ milan_smn_iodie_reg(const zen_iodie_t *const iodie, const smn_reg_def_t def,
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_SMU_RPC:
-		reg = milan_smu_smn_reg(0, def, reginst);
+		reg = milan_smu_smn_reg(def, reginst);
 		break;
 	case SMN_UNIT_FCH_SMI:
 		reg = fch_smi_smn_reg(def, reginst);
