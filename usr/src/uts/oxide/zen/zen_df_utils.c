@@ -28,7 +28,8 @@
 uint32_t
 zen_df_early_read32(const df_reg_def_t def)
 {
-	ASSERT0(def.drd_reg & oxide_zen_platform_consts()->zpc_df_rev);
+	const df_rev_t df_rev = oxide_zen_platform_consts()->zpc_df_rev;
+	ASSERT3U(def.drd_gens & df_rev, ==, df_rev);
 	return (pci_getl_func(AMDZEN_DF_BUSNO, AMDZEN_DF_FIRST_DEVICE,
 	    def.drd_func, def.drd_reg));
 }
@@ -36,7 +37,8 @@ zen_df_early_read32(const df_reg_def_t def)
 uint32_t
 zen_df_bcast_read32(zen_iodie_t *iodie, const df_reg_def_t def)
 {
-	ASSERT0(def.drd_reg & oxide_zen_platform_consts()->zpc_df_rev);
+	const df_rev_t df_rev = oxide_zen_platform_consts()->zpc_df_rev;
+	ASSERT3U(def.drd_gens & df_rev, ==, df_rev);
 	return (pci_getl_func(AMDZEN_DF_BUSNO, iodie->zi_devno, def.drd_func,
 	    def.drd_reg));
 }
@@ -45,7 +47,8 @@ void
 zen_df_bcast_write32(zen_iodie_t *iodie, const df_reg_def_t def,
     uint32_t val)
 {
-	ASSERT0(def.drd_reg & oxide_zen_platform_consts()->zpc_df_rev);
+	const df_rev_t df_rev = oxide_zen_platform_consts()->zpc_df_rev;
+	ASSERT3U(def.drd_gens & df_rev, ==, df_rev);
 	pci_putl_func(AMDZEN_DF_BUSNO, iodie->zi_devno, def.drd_func,
 	    def.drd_reg, val);
 }
