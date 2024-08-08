@@ -29,6 +29,28 @@ typedef struct zen_core zen_core_t;
 typedef struct zen_ccx zen_ccx_t;
 typedef struct zen_ccd zen_ccd_t;
 
+/*
+ * Initialize the current CPU's (hwthread) thread-, core-, and CCX-specific
+ * registers.
+ */
+extern void zen_ccx_init(void);
+
+/*
+ * Early physical memory initialization.
+ */
+extern void zen_ccx_physmem_init(void);
+
+/*
+ * Enable PCIe ECAM access at the given address.
+ */
+extern void zen_ccx_mmio_init(uint64_t, bool);
+
+/*
+ * Start a (non-BSP) CPU/hwthread aka AP.
+ * Returns false if the thread was already booted.
+ */
+extern bool zen_ccx_start_thread(const zen_thread_t *);
+
 /* Walker callback function types */
 typedef int (*zen_thread_cb_f)(zen_thread_t *, void *);
 
@@ -41,7 +63,6 @@ extern apicid_t zen_thread_apicid(const zen_thread_t *);
 typedef struct zen_ccx_ops {
 	void	(*zco_init)(void);
 	void	(*zco_physmem_init)(void);
-	void	(*zco_mmio_init)(uint64_t, bool);
 	bool	(*zco_start_thread)(const zen_thread_t *);
 } zen_ccx_ops_t;
 

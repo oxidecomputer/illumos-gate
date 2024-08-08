@@ -41,7 +41,6 @@
 
 static const zen_ccx_ops_t turin_ccx_ops = {
 	.zco_physmem_init = turin_ccx_physmem_init,
-	.zco_mmio_init = zen_ccx_mmio_init,
 };
 
 static const zen_fabric_ops_t turin_fabric_ops = {

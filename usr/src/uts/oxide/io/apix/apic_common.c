@@ -1074,7 +1074,7 @@ apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 	thread = zen_fabric_find_thread_by_cpuid(cpun);
 	VERIFY(thread != NULL);
 
-	if (!oxide_zen_ccx_ops()->zco_start_thread(thread)) {
+	if (!zen_ccx_start_thread(thread)) {
 		cmn_err(CE_WARN, "attempt to start already-running CPU 0x%x",
 		    cpun);
 	}

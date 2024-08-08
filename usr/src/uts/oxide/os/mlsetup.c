@@ -178,7 +178,7 @@ mlsetup(struct regs *rp)
 	 * so it must be done before the BASIC cpuid pass.  This will be run on
 	 * APs later on.
 	 */
-	oxide_zen_ccx_ops()->zco_init();
+	zen_ccx_init();
 
 	/*
 	 * Initialize the BSP's MCA banks.

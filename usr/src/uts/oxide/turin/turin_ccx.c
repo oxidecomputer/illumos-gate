@@ -35,7 +35,7 @@ turin_ccx_physmem_init(void)
 	/*
 	 * We still want to do all the common Zen init.
 	 */
-	zen_ccx_physmem_init();
+	zen_ccx_physmem_init_common();
 
 	/*
 	 * Now for the Turin-specific bits.

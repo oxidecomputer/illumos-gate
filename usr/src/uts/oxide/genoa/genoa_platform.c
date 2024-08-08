@@ -40,8 +40,7 @@
 #define	GENOA_DF_FIRST_IOS_ID	0x24
 
 static const zen_ccx_ops_t genoa_ccx_ops = {
-	.zco_physmem_init = zen_ccx_physmem_init,
-	.zco_mmio_init = zen_ccx_mmio_init,
+	.zco_physmem_init = zen_ccx_physmem_init_common,
 };
 
 static const zen_fabric_ops_t genoa_fabric_ops = {

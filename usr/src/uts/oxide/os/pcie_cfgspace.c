@@ -51,7 +51,8 @@
 #include <sys/pci_cfgspace_impl.h>
 #include <sys/machsystm.h>
 #include <sys/sysmacros.h>
-#include <sys/io/zen/platform.h>
+#include <sys/io/zen/ccx.h>
+#include <sys/io/zen/fabric.h>
 
 /*
  * XXX This section contains variables that the rest of the system expects to
@@ -387,7 +388,7 @@ pcie_cfgspace_init(void)
 	 * This ensures that the boot CPU will be programmed with everything
 	 * needed to access PCIe configuration space.
 	 */
-	oxide_zen_ccx_ops()->zco_mmio_init(ecam_base, B_TRUE);
+	zen_ccx_mmio_init(ecam_base, B_TRUE);
 
 	/*
 	 * This is a temporary VA range that we'll use during bootstrapping.

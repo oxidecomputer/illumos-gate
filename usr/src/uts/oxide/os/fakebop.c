@@ -74,7 +74,7 @@
 #include <sys/memlist_impl.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
-#include <sys/io/zen/platform.h>
+#include <sys/io/zen/ccx.h>
 
 /*
  * Comes from fs/ufsops.c.  For debugging the ramdisk/root fs operations.  Set
@@ -689,7 +689,7 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 		boot_prop_display(bufpage);
 	}
 
-	oxide_zen_ccx_ops()->zco_physmem_init();
+	zen_ccx_physmem_init();
 	protect_ramdisk();
 
 	/*

@@ -160,8 +160,7 @@ typedef int (*zen_ccd_cb_f)(zen_ccd_t *, void *);
 typedef int (*zen_ccx_cb_f)(zen_ccx_t *, void *);
 typedef int (*zen_core_cb_f)(zen_core_t *, void *);
 
-extern void zen_ccx_physmem_init(void);
-extern void zen_ccx_mmio_init(uint64_t, bool);
+extern void zen_ccx_physmem_init_common(void);
 
 #ifdef	__cplusplus
 }
