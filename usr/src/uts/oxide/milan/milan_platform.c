@@ -66,7 +66,7 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 
 	.zfo_topo_init = milan_fabric_topo_init,
 	.zfo_soc_init = milan_fabric_soc_init,
-	.zfo_ccx_init = milan_fabric_ccx_init,
+	.zfo_thread_apicid = milan_fabric_thread_apicid,
 	.zfo_ioms_init = milan_fabric_ioms_init,
 };
 

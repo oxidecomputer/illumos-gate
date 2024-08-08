@@ -123,7 +123,7 @@ typedef struct zen_fabric_ops {
 	 */
 	void		(*zfo_topo_init)(zen_fabric_t *);
 	void		(*zfo_soc_init)(zen_soc_t *, zen_iodie_t *);
-	void		(*zfo_ccx_init)(zen_ccd_t *, zen_ccx_t *, uint32_t);
+	apicid_t	(*zfo_thread_apicid)(zen_thread_t *thread);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
 } zen_fabric_ops_t;
 

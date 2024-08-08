@@ -866,7 +866,6 @@ static bool milan_smu_rpc_read_brand_string(zen_iodie_t *,
  * Our primary global data. This is the reason that we exist.
  */
 static milan_fabric_t milan_fabric;
-static uint_t nthreads;
 
 /*
  * buf, len, and return value semantics match those of snprintf(9f).
@@ -2029,160 +2028,52 @@ milan_dump_versions(zen_iodie_t *iodie, void *arg)
 	return (0);
 }
 
-static void
-milan_ccx_init_core(zen_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
+apicid_t
+milan_fabric_thread_apicid(zen_thread_t *thread)
 {
-	smn_reg_t reg;
-	uint32_t val;
-	zen_core_t *core = &ccx->zcx_cores[lidx];
+	zen_core_t *core = thread->zt_core;
+	zen_ccx_t *ccx = core->zc_ccx;
 	zen_ccd_t *ccd = ccx->zcx_ccd;
 	zen_iodie_t *iodie = ccd->zcd_iodie;
-
-	core->zc_ccx = ccx;
-	core->zc_physical_coreno = pidx;
-
-	reg = zen_core_reg(core, D_SCFCTP_PMREG_INITPKG0);
-	val = zen_core_read(core, reg);
-	VERIFY3U(val, !=, 0xffffffffU);
-
-	core->zc_logical_coreno = SCFCTP_PMREG_INITPKG0_GET_LOG_CORE(val);
-
-	VERIFY3U(SCFCTP_PMREG_INITPKG0_GET_PHYS_CORE(val), ==, pidx);
-	VERIFY3U(SCFCTP_PMREG_INITPKG0_GET_PHYS_CCX(val), ==,
-	    ccx->zcx_physical_cxno);
-	VERIFY3U(SCFCTP_PMREG_INITPKG0_GET_PHYS_DIE(val), ==,
-	    ccd->zcd_physical_dieno);
-
-	core->zc_nthreads = SCFCTP_PMREG_INITPKG0_GET_SMTEN(val) + 1;
-	VERIFY3U(core->zc_nthreads, <=, MILAN_MAX_THREADS_PER_CORE);
-
-	for (uint8_t thr = 0; thr < core->zc_nthreads; thr++) {
-		uint32_t apicid = 0;
-		zen_thread_t *thread = &core->zc_threads[thr];
-
-		thread->zt_threadno = thr;
-		thread->zt_core = core;
-		nthreads++;
-
-		/*
-		 * You may be wondering why we don't use the contents of
-		 * DF::CcdUnitIdMask here to determine the number of bits at
-		 * each level.  There are two reasons, one simple and one not:
-		 *
-		 * - First, it's not correct.  The UnitId masks describe (*)
-		 *   the physical ID spaces, which are distinct from how APIC
-		 *   IDs are computed.  APIC IDs depend on the number of each
-		 *   component that are *actually present*, rounded up to the
-		 *   next power of 2 at each component.  For example, if there
-		 *   are 4 CCDs, there will be 2 bits in the APIC ID for the
-		 *   logical CCD number, even though representing the UnitId
-		 *   on Milan requires 3 bits for the CCD.  No, we don't know
-		 *   why this is so; it would certainly have been simpler to
-		 *   always use the physical ID to compute the initial APIC ID.
-		 * - Second, not only are APIC IDs not UnitIds, there is nothing
-		 *   documented that does consume UnitIds.  We are given a nice
-		 *   discussion of what they are and this lovingly detailed way
-		 *   to discover how to compute them, but so far as I have been
-		 *   able to tell, neither UnitIds nor the closely related
-		 *   CpuIds are ever used.  If we later find that we do need
-		 *   these identifiers, additional code to construct them based
-		 *   on this discovery mechanism should be added.
-		 */
-		apicid = iodie->zi_soc->zs_socno;
-		apicid <<= highbit(iodie->zi_soc->zs_niodies - 1);
-		apicid |= 0;	/* XXX multi-die SOCs not supported here */
-		apicid <<= highbit(iodie->zi_nccds - 1);
-		apicid |= ccd->zcd_logical_dieno;
-		apicid <<= highbit(ccd->zcd_nccxs - 1);
-		apicid |= ccx->zcx_logical_cxno;
-		apicid <<= highbit(ccx->zcx_ncores - 1);
-		apicid |= core->zc_logical_coreno;
-		apicid <<= highbit(core->zc_nthreads - 1);
-		apicid |= thr;
-
-		thread->zt_apicid = (apicid_t)apicid;
-	}
-}
-
-void
-milan_fabric_ccx_init(zen_ccd_t *ccd, zen_ccx_t *ccx, uint32_t cores_enabled)
-{
-	zen_iodie_t *iodie = ccd->zcd_iodie;
-	smn_reg_t reg;
-	uint8_t pcore, lcore, pccx;
-	uint8_t ccdpno = ccd->zcd_physical_dieno;
-	uint32_t val;
-
-	/* XXX avoid panicking on bad data from firmware */
-	reg = zen_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
-	val = zen_ccd_read(ccd, reg);
-	VERIFY3U(val, ==, ccdpno);
-
-	reg = zen_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
-	val = zen_ccd_read(ccd, reg);
-	ccd->zcd_nccxs = SMUPWR_THREAD_CFG_GET_COMPLEX_COUNT(val) + 1;
-	VERIFY3U(ccd->zcd_nccxs, <=, MILAN_MAX_CCXS_PER_CCD);
-
-	if (ccd->zcd_nccxs == 0)
-		return;
+	apicid_t apicid = 0;
 
 	/*
-	 * Make sure that the CCD's local understanding of
-	 * enabled cores matches what we found earlier through
-	 * the DF.  A mismatch here is a firmware bug; XXX and
-	 * if that happens?
+	 * You may be wondering why we don't use the contents of
+	 * DF::CcdUnitIdMask here to determine the number of bits at
+	 * each level.  There are two reasons, one simple and one not:
+	 *
+	 * - First, it's not correct.  The UnitId masks describe (*)
+	 *   the physical ID spaces, which are distinct from how APIC
+	 *   IDs are computed.  APIC IDs depend on the number of each
+	 *   component that are *actually present*, rounded up to the
+	 *   next power of 2 at each component.  For example, if there
+	 *   are 4 CCDs, there will be 2 bits in the APIC ID for the
+	 *   logical CCD number, even though representing the UnitId
+	 *   on Milan requires 3 bits for the CCD.  No, we don't know
+	 *   why this is so; it would certainly have been simpler to
+	 *   always use the physical ID to compute the initial APIC ID.
+	 * - Second, not only are APIC IDs not UnitIds, there is nothing
+	 *   documented that does consume UnitIds.  We are given a nice
+	 *   discussion of what they are and this lovingly detailed way
+	 *   to discover how to compute them, but so far as I have been
+	 *   able to tell, neither UnitIds nor the closely related
+	 *   CpuIds are ever used.  If we later find that we do need
+	 *   these identifiers, additional code to construct them based
+	 *   on this discovery mechanism should be added.
 	 */
-	reg = zen_ccd_reg(ccd, D_SMUPWR_CORE_EN);
-	val = zen_ccd_read(ccd, reg);
-	VERIFY3U(SMUPWR_CORE_EN_GET(val), ==, cores_enabled);
+	apicid = iodie->zi_soc->zs_socno;
+	apicid <<= highbit(iodie->zi_soc->zs_niodies - 1);
+	apicid |= 0;	/* XXX multi-die SOCs not supported here */
+	apicid <<= highbit(iodie->zi_nccds - 1);
+	apicid |= ccd->zcd_logical_dieno;
+	apicid <<= highbit(ccd->zcd_nccxs - 1);
+	apicid |= ccx->zcx_logical_cxno;
+	apicid <<= highbit(ccx->zcx_ncores - 1);
+	apicid |= core->zc_logical_coreno;
+	apicid <<= highbit(core->zc_nthreads - 1);
+	apicid |= thread->zt_threadno;
 
-	/*
-	 * XXX While we know there is only ever 1 CCX per Milan CCD,
-	 * DF::CCXEnable allows for 2 because the DFv3 implementation
-	 * is shared with Rome, which has up to 2 CCXs per CCD.
-	 * Although we know we only ever have 1 CCX, we don't,
-	 * strictly, know that the CCX is always physical index 0.
-	 * Here we assume it, but we probably want to change the
-	 * MILAN_MAX_xxx_PER_yyy so that they reflect the size of the
-	 * physical ID spaces rather than the maximum logical entity
-	 * counts.  Doing so would accommodate a part that has a single
-	 * CCX per CCD, but at index 1.
-	 */
-	ccx->zcx_logical_cxno = 0;
-	ccx->zcx_physical_cxno = pccx = 0;
-
-	/*
-	 * All the cores on the CCD will (should) return the
-	 * same values in PMREG_INITPKG0 and PMREG_INITPKG7.
-	 * The catch is that we have to read them from a core
-	 * that exists or we get all-1s.  Use the mask of
-	 * cores enabled on this die that we already computed
-	 * to find one to read from, then bootstrap into the
-	 * core enumeration.  XXX At some point we probably
-	 * should do away with all this cross-checking and
-	 * choose something to trust.
-	 */
-	for (pcore = 0; (cores_enabled & (1 << pcore)) == 0 &&
-	    pcore < MILAN_MAX_CORES_PER_CCX; pcore++)
-		;
-	VERIFY3U(pcore, <, MILAN_MAX_CORES_PER_CCX);
-
-	reg = SCFCTP_PMREG_INITPKG7(ccdpno, pccx, pcore);
-	val = zen_smn_read(iodie, reg);
-	VERIFY3U(val, !=, 0xffffffffU);
-
-	ccx->zcx_ncores = SCFCTP_PMREG_INITPKG7_GET_N_CORES(val) + 1;
-	/* XXX: overwriting this? */
-	iodie->zi_nccds = SCFCTP_PMREG_INITPKG7_GET_N_DIES(val) + 1;
-
-	for (pcore = 0, lcore = 0; pcore < MILAN_MAX_CORES_PER_CCX; pcore++) {
-		if ((cores_enabled & (1 << pcore)) == 0)
-			continue;
-		milan_ccx_init_core(ccx, lcore, pcore);
-		++lcore;
-	}
-
-	VERIFY3U(lcore, ==, ccx->zcx_ncores);
+	return (apicid);
 }
 
 static bool
@@ -2237,13 +2128,6 @@ void
 milan_fabric_topo_init(zen_fabric_t *fabric)
 {
 	fabric->zf_uarch_fabric = &milan_fabric;
-
-	if (nthreads > NCPU) {
-		cmn_err(CE_WARN, "%d CPUs found but only %d supported",
-		    nthreads, NCPU);
-		nthreads = NCPU;
-	}
-	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads;
 }
 
 void

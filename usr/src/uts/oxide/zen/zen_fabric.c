@@ -26,6 +26,7 @@
 
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/df.h>
+#include <sys/amdzen/ccd.h>
 #include <sys/io/zen/ccx_impl.h>
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
@@ -443,13 +444,57 @@ zen_ccd_cores_enabled(zen_iodie_t *iodie, uint8_t ccdpno)
 	return (cores_enabled);
 }
 
-static void
+static uint_t
+zen_fabric_ccx_init_core(zen_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	smn_reg_t reg;
+	uint32_t val;
+	zen_core_t *core = &ccx->zcx_cores[lidx];
+	zen_ccd_t *ccd = ccx->zcx_ccd;
+	uint_t nthreads = 0;
+
+	core->zc_ccx = ccx;
+	core->zc_physical_coreno = pidx;
+
+	reg = zen_core_reg(core, D_SCFCTP_PMREG_INITPKG0);
+	val = zen_core_read(core, reg);
+	VERIFY3U(val, !=, 0xffffffffU);
+
+	core->zc_logical_coreno = SCFCTP_PMREG_INITPKG0_GET_LOG_CORE(val);
+
+	VERIFY3U(SCFCTP_PMREG_INITPKG0_GET_PHYS_CORE(val), ==, pidx);
+	VERIFY3U(SCFCTP_PMREG_INITPKG0_GET_PHYS_CCX(val), ==,
+	    ccx->zcx_physical_cxno);
+	VERIFY3U(SCFCTP_PMREG_INITPKG0_GET_PHYS_DIE(val), ==,
+	    ccd->zcd_physical_dieno);
+
+	core->zc_nthreads = SCFCTP_PMREG_INITPKG0_GET_SMTEN(val) + 1;
+	VERIFY3U(core->zc_nthreads, <=, ZEN_MAX_THREADS_PER_CORE);
+
+	for (uint8_t thr = 0; thr < core->zc_nthreads; thr++) {
+		zen_thread_t *thread = &core->zc_threads[thr];
+
+		thread->zt_threadno = thr;
+		thread->zt_core = core;
+		nthreads++;
+
+		thread->zt_apicid = fops->zfo_thread_apicid(thread);
+	}
+
+	return (nthreads);
+}
+
+static uint32_t
 zen_fabric_ccx_init_soc(zen_soc_t *soc)
 {
+	const x86_uarchrev_t uarch = oxide_board_data->obd_cpuinfo.obc_uarchrev;
 	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
-	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 	const df_rev_t df_rev = consts->zpc_df_rev;
 	zen_iodie_t *iodie = &soc->zs_iodies[0];
+	uint32_t nthreads = 0;
+	uint32_t val;
+	bool zen5;
 
 	/*
 	 * A 1-bit corresponds to an enabled CCD with the physical number being
@@ -462,11 +507,23 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
 	uint16_t ccdmap = 0;
 
 	/*
+	 * Zen 5 moved a couple of registers from SMU::PWR to L3::SOC.
+	 */
+	if (uarchrev_matches(uarch, X86_UARCHREV_AMD_ZEN3_ANY) ||
+	    uarchrev_matches(uarch, X86_UARCHREV_AMD_ZEN4_ANY)) {
+		zen5 = false;
+	} else if (uarchrev_matches(uarch, X86_UARCHREV_AMD_ZEN5_ANY)) {
+		zen5 = true;
+	} else {
+		cmn_err(CE_PANIC, "Unsupported uarch %x", uarch);
+		return (-1);
+	}
+
+	/*
 	 * To determine the physical CCD numbers, we iterate over the CCMs
 	 * and note what CCDs (if any) are present and enabled.
 	 */
 	for (uint8_t ccmno = 0; ccmno < ZEN_MAX_CCMS_PER_IODIE; ccmno++) {
-		uint32_t val;
 		uint32_t ccden;
 		bool wide;
 		uint32_t ccminst = ZEN_DF_FIRST_CCM_ID + ccmno;
@@ -538,11 +595,11 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
 	 */
 	for (uint8_t ccdpno = 0, lccd = 0; ccdmap != 0;
 	    ccdmap &= ~(1 << ccdpno), ccdpno++) {
+		uint8_t pcore, lcore, pccx;
 		uint32_t cores_enabled;
 		zen_ccd_t *ccd = &iodie->zi_ccds[lccd];
 		zen_ccx_t *ccx = &ccd->zcd_ccxs[0];
-
-		ccx->zcx_ccd = ccd;
+		smn_reg_t reg;
 
 		/*
 		 * Either this CCD or the CCM itself is disabled - skip it.
@@ -569,17 +626,101 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
 		ccd->zcd_physical_dieno = ccdpno;
 
 		/*
-		 * The exact SMN registers needed to initialize the CCX are
-		 * microarchitecturally specific.
+		 * The firmware should've set this correctly -- let's validate
+		 * our assumption.
+		 * XXX: Avoid panicking on bad data from firmware
 		 */
-		fops->zfo_ccx_init(ccd, ccx, cores_enabled);
+		reg = zen_ccd_reg(ccd, D_SMUPWR_CCD_DIE_ID);
+		val = zen_ccd_read(ccd, reg);
+		VERIFY3U(val, ==, ccdpno);
+
+		if (!zen5) {
+			reg = zen_ccd_reg(ccd, D_SMUPWR_THREAD_CFG);
+			val = zen_ccd_read(ccd, reg);
+			ccd->zcd_nccxs = 1 +
+			    SMUPWR_THREAD_CFG_GET_COMPLEX_COUNT(val);
+		} else {
+			reg = zen_ccd_reg(ccd, D_L3SOC_THREAD_CFG);
+			val = zen_ccd_read(ccd, reg);
+			ccd->zcd_nccxs = 1 +
+			    L3SOC_THREAD_CFG_GET_COMPLEX_COUNT(val);
+		}
+		VERIFY3U(ccd->zcd_nccxs, <=, ZEN_MAX_CCXS_PER_CCD);
 
 		if (ccd->zcd_nccxs == 0) {
 			cmn_err(CE_NOTE, "CCD 0x%x: no CCXs reported",
 			    ccd->zcd_physical_dieno);
 			continue;
 		}
+
+		/*
+		 * Make sure that the CCD's local understanding of
+		 * enabled cores matches what we found earlier through
+		 * the DF. A mismatch here is a firmware bug.
+		 * XXX: Avoid panicking on bad data from firmware
+		 */
+		if (!zen5) {
+			reg = zen_ccd_reg(ccd, D_SMUPWR_CORE_EN);
+			val = zen_ccd_read(ccd, reg);
+			VERIFY3U(SMUPWR_CORE_EN_GET(val), ==, cores_enabled);
+		} else {
+			reg = zen_ccd_reg(ccd, D_L3SOC_CORE_EN);
+			val = zen_ccd_read(ccd, reg);
+			VERIFY3U(L3SOC_CORE_EN_GET(val), ==, cores_enabled);
+		}
+
+		/*
+		 * XXX While we know there is only ever 1 CCX per CCD on the
+		 * platforms we support (Milan, Genoa, Turin), DF::CCXEnable
+		 * allows for 2 because the DFv3 implementation is shared with
+		 * Rome, which has up to 2 CCXs per CCD. Although we know we
+		 * only ever have 1 CCX, we don't, strictly, know that the CCX
+		 * is always physical index 0. Here we assume it, but we
+		 * probably want to change the ZEN_MAX_xxx_PER_yyy so that they
+		 * reflect the size of the physical ID spaces rather than the
+		 * maximum logical entity counts.  Doing so would accommodate a
+		 * part that has a single CCX per CCD, but at index 1.
+		 */
+		ccx->zcx_ccd = ccd;
+		ccx->zcx_logical_cxno = 0;
+		ccx->zcx_physical_cxno = pccx = 0;
+
+		/*
+		 * All the cores on the CCD will (should) return the
+		 * same values in PMREG_INITPKG0 and PMREG_INITPKG7.
+		 * The catch is that we have to read them from a core
+		 * that exists or we get all-1s.  Use the mask of
+		 * cores enabled on this die that we already computed
+		 * to find one to read from, then bootstrap into the
+		 * core enumeration.  XXX At some point we probably
+		 * should do away with all this cross-checking and
+		 * choose something to trust.
+		 */
+		for (pcore = 0; (cores_enabled & (1 << pcore)) == 0 &&
+		    pcore < consts->zpc_cores_per_ccx; pcore++)
+			;
+		VERIFY3U(pcore, <, consts->zpc_cores_per_ccx);
+
+		reg = SCFCTP_PMREG_INITPKG7(ccdpno, pccx, pcore);
+		val = zen_smn_read(iodie, reg);
+		VERIFY3U(val, !=, 0xffffffffU);
+
+		ccx->zcx_ncores = SCFCTP_PMREG_INITPKG7_GET_N_CORES(val) + 1;
+		/* XXX: overwriting this? */
+		iodie->zi_nccds = SCFCTP_PMREG_INITPKG7_GET_N_DIES(val) + 1;
+
+		for (pcore = 0, lcore = 0; pcore < consts->zpc_cores_per_ccx;
+		    pcore++) {
+			if ((cores_enabled & (1 << pcore)) == 0)
+				continue;
+			nthreads += zen_fabric_ccx_init_core(ccx, lcore, pcore);
+			++lcore;
+		}
+
+		VERIFY3U(lcore, ==, ccx->zcx_ncores);
 	}
+
+	return (nthreads);
 }
 
 /*
@@ -603,6 +744,14 @@ zen_fabric_topo_init(void)
 	uint8_t nsocs = 0;
 	uint32_t syscfg, syscomp;
 	uint32_t fch_ios_fid;
+	uint32_t nthreads = 0;
+
+	/*
+	 * Make sure the platform specific constants are valid.
+	 */
+	VERIFY3U(consts->zpc_ioms_per_iodie, <=, ZEN_IODIE_MAX_IOMS);
+	VERIFY3U(consts->zpc_ccds_per_iodie, <=, ZEN_MAX_CCDS_PER_IODIE);
+	VERIFY3U(consts->zpc_cores_per_ccx, <=, ZEN_MAX_CORES_PER_CCX);
 
 	PRM_POINT("zen_fabric_topo_init_common() starting...");
 
@@ -717,27 +866,39 @@ zen_fabric_topo_init(void)
 
 			/*
 			 * uarch-specific IOMS init hook.
+			 * XXX: actually most of the functionality is still
+			 * in the milan impl.
 			 */
-			fops->zfo_ioms_init(ioms);
+			if (fops->zfo_ioms_init != NULL)
+				fops->zfo_ioms_init(ioms);
 		}
 
 		/*
 		 * Initialize the CCXs for this SOC/IOD.
 		 */
-		zen_fabric_ccx_init_soc(soc);
+		nthreads += zen_fabric_ccx_init_soc(soc);
 
 		/*
 		 * Generic SoC & IO die initialization is complete but let
 		 * the uarch-specific code do any additional setup needed.
 		 */
-		fops->zfo_soc_init(soc, iodie);
+		if (fops->zfo_soc_init != NULL)
+			fops->zfo_soc_init(soc, iodie);
 	}
 
 	/*
 	 * We're done with the basic fabric init, let the uarch-specific code
 	 * do any additional setup needed.
 	 */
-	fops->zfo_topo_init(fabric);
+	if (fops->zfo_topo_init != NULL)
+		fops->zfo_topo_init(fabric);
+
+	if (nthreads > NCPU) {
+		cmn_err(CE_WARN, "%d CPUs found but only %d supported",
+		    nthreads, NCPU);
+		nthreads = NCPU;
+	}
+	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads;
 }
 
 /*
