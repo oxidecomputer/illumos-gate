@@ -20,6 +20,7 @@
 
 #include <sys/boot_physmem.h>
 #include <sys/types.h>
+#include <sys/cmn_err.h>
 #include <sys/x86_archext.h>
 
 #include <sys/io/zen/ccx_impl.h>
@@ -28,6 +29,12 @@
 #define	TURIN_PHYSADDR_4G_64K_HOLE	0x100000000UL
 #define	TURIN_PHYSADDR_4G_64K_HOLE_END	0x100010000UL
 
+
+void
+turin_ccx_init(void)
+{
+	cmn_err(CE_WARN, "Turin CCX initialization not yet implemented");
+}
 
 void
 turin_ccx_physmem_init(void)

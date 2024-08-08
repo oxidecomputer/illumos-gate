@@ -649,8 +649,10 @@ oxide_derive_platform(void)
 				data->obd_zen_platform = &genoa_platform;
 				break;
 			case X86_PF_AMD_TURIN:
-			case X86_PF_AMD_DENSE_TURIN:
 				data->obd_zen_platform = &turin_platform;
+				break;
+			case X86_PF_AMD_DENSE_TURIN:
+				data->obd_zen_platform = &dense_turin_platform;
 				break;
 			default:
 				bop_printf(NULL, "Oxide board %s -- %s\n",
@@ -702,6 +704,7 @@ oxide_report_platform(void)
 	switch (_X86_CHIPREV_FAMILY(
 	    oxide_board_data->obd_cpuinfo.obc_chiprev)) {
 	case X86_PF_AMD_MILAN:
+	case X86_PF_AMD_TURIN:
 		break;
 	default:
 		if (!allow_unsupported_processor)

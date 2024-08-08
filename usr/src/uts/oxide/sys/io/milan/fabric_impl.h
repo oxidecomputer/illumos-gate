@@ -120,7 +120,6 @@ struct milan_fabric {
  */
 extern void milan_fabric_topo_init(zen_fabric_t *);
 extern void milan_fabric_soc_init(zen_soc_t *, zen_iodie_t *);
-extern apicid_t milan_fabric_thread_apicid(zen_thread_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);
 
 /*

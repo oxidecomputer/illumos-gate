@@ -13,18 +13,20 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef	_SYS_IO_TURIN_CCX_H
-#define	_SYS_IO_TURIN_CCX_H
+#ifndef	_SYS_IO_TURIN_CCX_IMPL_H
+#define	_SYS_IO_TURIN_CCX_IMPL_H
 
+#include <sys/io/zen/ccx_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
 extern void turin_ccx_physmem_init(void);
+extern void turin_ccx_init(void);
 
 #ifdef	__cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_TURIN_CCX_H */
+#endif /* _SYS_IO_TURIN_CCX_IMPL_H */

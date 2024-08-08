@@ -2028,54 +2028,6 @@ milan_dump_versions(zen_iodie_t *iodie, void *arg)
 	return (0);
 }
 
-apicid_t
-milan_fabric_thread_apicid(zen_thread_t *thread)
-{
-	zen_core_t *core = thread->zt_core;
-	zen_ccx_t *ccx = core->zc_ccx;
-	zen_ccd_t *ccd = ccx->zcx_ccd;
-	zen_iodie_t *iodie = ccd->zcd_iodie;
-	apicid_t apicid = 0;
-
-	/*
-	 * You may be wondering why we don't use the contents of
-	 * DF::CcdUnitIdMask here to determine the number of bits at
-	 * each level.  There are two reasons, one simple and one not:
-	 *
-	 * - First, it's not correct.  The UnitId masks describe (*)
-	 *   the physical ID spaces, which are distinct from how APIC
-	 *   IDs are computed.  APIC IDs depend on the number of each
-	 *   component that are *actually present*, rounded up to the
-	 *   next power of 2 at each component.  For example, if there
-	 *   are 4 CCDs, there will be 2 bits in the APIC ID for the
-	 *   logical CCD number, even though representing the UnitId
-	 *   on Milan requires 3 bits for the CCD.  No, we don't know
-	 *   why this is so; it would certainly have been simpler to
-	 *   always use the physical ID to compute the initial APIC ID.
-	 * - Second, not only are APIC IDs not UnitIds, there is nothing
-	 *   documented that does consume UnitIds.  We are given a nice
-	 *   discussion of what they are and this lovingly detailed way
-	 *   to discover how to compute them, but so far as I have been
-	 *   able to tell, neither UnitIds nor the closely related
-	 *   CpuIds are ever used.  If we later find that we do need
-	 *   these identifiers, additional code to construct them based
-	 *   on this discovery mechanism should be added.
-	 */
-	apicid = iodie->zi_soc->zs_socno;
-	apicid <<= highbit(iodie->zi_soc->zs_niodies - 1);
-	apicid |= 0;	/* XXX multi-die SOCs not supported here */
-	apicid <<= highbit(iodie->zi_nccds - 1);
-	apicid |= ccd->zcd_logical_dieno;
-	apicid <<= highbit(ccd->zcd_nccxs - 1);
-	apicid |= ccx->zcx_logical_cxno;
-	apicid <<= highbit(ccx->zcx_ncores - 1);
-	apicid |= core->zc_logical_coreno;
-	apicid <<= highbit(core->zc_nthreads - 1);
-	apicid |= thread->zt_threadno;
-
-	return (apicid);
-}
-
 static bool
 milan_smu_features_init(zen_iodie_t *iodie)
 {

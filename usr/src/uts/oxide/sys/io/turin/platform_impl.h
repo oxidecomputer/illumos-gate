@@ -23,6 +23,7 @@ extern "C" {
 #endif
 
 extern zen_platform_t turin_platform;
+extern zen_platform_t dense_turin_platform;
 
 #ifdef	__cplusplus
 }

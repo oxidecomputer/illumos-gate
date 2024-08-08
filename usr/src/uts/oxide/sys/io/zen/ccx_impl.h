@@ -27,14 +27,12 @@ extern "C" {
 #endif
 
 /*
- * Current architectural limits.
- *
- * XXX: This currently reflects Milan.  We know that this
- * expand in Genoa and Turin, but we're proceeding incrementally.
+ * Current architectural limits -- these are the maximum across all Zen SoCs
+ * supported on the Oxide platform.
  */
-#define	ZEN_MAX_CCDS_PER_IODIE		8
+#define	ZEN_MAX_CCDS_PER_IODIE		16
 #define	ZEN_MAX_CCXS_PER_CCD		1
-#define	ZEN_MAX_CORES_PER_CCX		8
+#define	ZEN_MAX_CORES_PER_CCX		16
 #define	ZEN_MAX_THREADS_PER_CORE	2
 
 /*

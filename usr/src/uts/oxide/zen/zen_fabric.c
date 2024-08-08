@@ -444,10 +444,63 @@ zen_ccd_cores_enabled(zen_iodie_t *iodie, uint8_t ccdpno)
 	return (cores_enabled);
 }
 
+static apicid_t
+zen_fabric_thread_apicid(zen_thread_t *thread)
+{
+	zen_core_t *core = thread->zt_core;
+	zen_ccx_t *ccx = core->zc_ccx;
+	zen_ccd_t *ccd = ccx->zcx_ccd;
+	zen_iodie_t *iodie = ccd->zcd_iodie;
+	apicid_t apicid = 0;
+
+	/*
+	 * XXX: This was copied from Milan and seemingly worked fine for Genoa.
+	 * The same seems to be true of Turin so far but AGESA instead makes
+	 * use of some Extended CPUID leaves to determine the necessary shifts.
+	 */
+
+	/*
+	 * You may be wondering why we don't use the contents of
+	 * DF::CcdUnitIdMask here to determine the number of bits at
+	 * each level.  There are two reasons, one simple and one not:
+	 *
+	 * - First, it's not correct.  The UnitId masks describe (*)
+	 *   the physical ID spaces, which are distinct from how APIC
+	 *   IDs are computed.  APIC IDs depend on the number of each
+	 *   component that are *actually present*, rounded up to the
+	 *   next power of 2 at each component.  For example, if there
+	 *   are 4 CCDs, there will be 2 bits in the APIC ID for the
+	 *   logical CCD number, even though representing the UnitId
+	 *   on Milan requires 3 bits for the CCD.  No, we don't know
+	 *   why this is so; it would certainly have been simpler to
+	 *   always use the physical ID to compute the initial APIC ID.
+	 * - Second, not only are APIC IDs not UnitIds, there is nothing
+	 *   documented that does consume UnitIds.  We are given a nice
+	 *   discussion of what they are and this lovingly detailed way
+	 *   to discover how to compute them, but so far as I have been
+	 *   able to tell, neither UnitIds nor the closely related
+	 *   CpuIds are ever used.  If we later find that we do need
+	 *   these identifiers, additional code to construct them based
+	 *   on this discovery mechanism should be added.
+	 */
+	apicid = iodie->zi_soc->zs_socno;
+	apicid <<= highbit(iodie->zi_soc->zs_niodies - 1);
+	apicid |= 0;	/* XXX multi-die SOCs not supported here */
+	apicid <<= highbit(iodie->zi_nccds - 1);
+	apicid |= ccd->zcd_logical_dieno;
+	apicid <<= highbit(ccd->zcd_nccxs - 1);
+	apicid |= ccx->zcx_logical_cxno;
+	apicid <<= highbit(ccx->zcx_ncores - 1);
+	apicid |= core->zc_logical_coreno;
+	apicid <<= highbit(core->zc_nthreads - 1);
+	apicid |= thread->zt_threadno;
+
+	return (apicid);
+}
+
 static uint_t
 zen_fabric_ccx_init_core(zen_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 {
-	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 	smn_reg_t reg;
 	uint32_t val;
 	zen_core_t *core = &ccx->zcx_cores[lidx];
@@ -479,7 +532,7 @@ zen_fabric_ccx_init_core(zen_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 		thread->zt_core = core;
 		nthreads++;
 
-		thread->zt_apicid = fops->zfo_thread_apicid(thread);
+		thread->zt_apicid = zen_fabric_thread_apicid(thread);
 	}
 
 	return (nthreads);
@@ -747,13 +800,22 @@ zen_fabric_topo_init(void)
 	uint32_t nthreads = 0;
 
 	/*
-	 * Make sure the platform specific constants are valid.
+	 * Make sure the platform specific constants are actually set.
+	 */
+	VERIFY3U(consts->zpc_df_rev, !=, DF_REV_UNKNOWN);
+	VERIFY3U(consts->zpc_ioms_per_iodie, !=, 0);
+	VERIFY3U(consts->zpc_ccds_per_iodie, !=, 0);
+	VERIFY3U(consts->zpc_cores_per_ccx, !=, 0);
+	VERIFY3U(consts->zpc_df_first_iom_id, !=, 0);
+	VERIFY3U(consts->zpc_df_first_ios_id, !=, 0);
+	/*
+	 * And that they're within the limits we support.
 	 */
 	VERIFY3U(consts->zpc_ioms_per_iodie, <=, ZEN_IODIE_MAX_IOMS);
 	VERIFY3U(consts->zpc_ccds_per_iodie, <=, ZEN_MAX_CCDS_PER_IODIE);
 	VERIFY3U(consts->zpc_cores_per_ccx, <=, ZEN_MAX_CORES_PER_CCX);
 
-	PRM_POINT("zen_fabric_topo_init_common() starting...");
+	PRM_POINT("zen_fabric_topo_init() starting...");
 
 	/*
 	 * Before we can do anything else, we must set up PCIe ECAM.  We locate
