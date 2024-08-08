@@ -13,24 +13,23 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef	_SYS_IO_ZEN_RAS_H
-#define	_SYS_IO_ZEN_RAS_H
+#include <sys/cmn_err.h>
+#include <sys/cpuvar.h>
 
-#ifdef	__cplusplus
-extern "C" {
-#endif
+#include <sys/io/zen/platform.h>
+#include <sys/io/zen/ras.h>
 
-/*
- * Initialize the current CPU's MCA banks.
- */
-extern void zen_ras_init(void);
 
-typedef struct zen_ras_ops {
-	void	(*zro_ras_init)(void);
-} zen_ras_ops_t;
+void
+zen_ras_init(void)
+{
+	const zen_ras_ops_t *rops = oxide_zen_ras_ops();
 
-#ifdef	__cplusplus
+	if (rops->zro_ras_init == NULL) {
+		cmn_err(CE_WARN, "cpu%d: skipping RAS initialization",
+		    CPU->cpu_id);
+		return;
+	}
+
+	(rops->zro_ras_init)();
 }
-#endif
-
-#endif /* _SYS_IO_ZEN_RAS_H */

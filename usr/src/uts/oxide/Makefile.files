@@ -146,6 +146,7 @@ ZEN_OBJS +=			\
 	zen_fabric.o		\
 	zen_hacks.o		\
 	zen_platform.o		\
+	zen_ras.o		\
 	zen_smn.o
 
 CORE_OBJS += $(ZEN_OBJS) $(MILAN_OBJS) $(GENOA_OBJS) $(TURIN_OBJS)

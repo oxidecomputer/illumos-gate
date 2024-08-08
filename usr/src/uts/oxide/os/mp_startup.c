@@ -1653,7 +1653,7 @@ mp_startup(void)
 	cpuid_execpass(cp, CPUID_PASS_IDENT, NULL);
 	oxide_zen_ccx_ops()->zco_init();
 	cpuid_execpass(cp, CPUID_PASS_BASIC, new_x86_featureset);
-	oxide_zen_ras_ops()->zro_ras_init();
+	zen_ras_init();
 
 	/*
 	 * We need to get TSC on this proc synced (i.e., any delta
