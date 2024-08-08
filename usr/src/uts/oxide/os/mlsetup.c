@@ -170,7 +170,7 @@ mlsetup(struct regs *rp)
 	 * configuration in the FCH to assure that a core shutdown will
 	 * correctly induce an observable reset.
 	 */
-	oxide_zen_hack_ops()->zho_shutdown_detect_init();
+	zen_shutdown_detect_init();
 
 	/*
 	 * Now go through and set up the BSP's thread-, core-, and CCX-specific

@@ -23,10 +23,15 @@
 extern "C" {
 #endif
 
+/*
+ * Setup the SoC so that a single core shutdown (e.g., due to a triple fault)
+ * results in a machine reset through A2.
+ */
+extern void zen_shutdown_detect_init(void);
+
 typedef struct zen_hack_ops {
 	void	(*zho_check_furtive_reset)(void);
 	bool	(*zho_cgpll_set_ssc)(bool);
-	void	(*zho_shutdown_detect_init)(void);
 } zen_hack_ops_t;
 
 #ifdef	__cplusplus

@@ -25,7 +25,6 @@ extern "C" {
 
 extern bool milan_fixup_i2c_clock(void);
 extern bool milan_cgpll_set_ssc(bool);
-extern void milan_shutdown_detect_init(void);
 extern void milan_check_furtive_reset(void);
 
 /*
