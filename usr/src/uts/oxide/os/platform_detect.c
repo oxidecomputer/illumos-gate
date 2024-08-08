@@ -704,6 +704,7 @@ oxide_report_platform(void)
 	switch (_X86_CHIPREV_FAMILY(
 	    oxide_board_data->obd_cpuinfo.obc_chiprev)) {
 	case X86_PF_AMD_MILAN:
+	case X86_PF_AMD_GENOA:
 	case X86_PF_AMD_TURIN:
 		break;
 	default:

@@ -134,6 +134,7 @@ MILAN_OBJS +=			\
 MILAN_OBJS +=			\
 	milan_platform.o
 GENOA_OBJS +=			\
+	genoa_ccx.o		\
 	genoa_platform.o
 TURIN_OBJS +=			\
 	turin_ccx.o		\
