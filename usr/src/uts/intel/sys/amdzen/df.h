@@ -183,6 +183,13 @@ typedef enum {
 	DF_NCM_SUBTYPE_IOMMU = 4
 } df_ncm_subtype_t;
 
+typedef enum {
+	/*
+	 * For just DFv4 (not DFv4D2 or pre-DFv4), IOS instances are DF_TYPE_NCS
+	 * with a new subtype.
+	 */
+	DF_NCS_SUBTYPE_IOS_V4 = 2
+} df_ncs_subtype_t;
 
 #define	DF_FBIINFO0_GET_HAS_MCA(r)	bitx32(r, 23, 23)
 #define	DF_FBIINFO0_GET_FTI_DCNT(r)	bitx32(r, 21, 20)
@@ -255,6 +262,7 @@ typedef enum {
 #define	DF_FBIINFO3_V3_GET_BLOCKID(r)	bitx32(r, 13, 8)
 #define	DF_FBIINFO3_V3P5_GET_BLOCKID(r)	bitx32(r, 11, 8)
 #define	DF_FBIINFO3_V4_GET_BLOCKID(r)	bitx32(r, 19, 8)
+#define	DF_FBIINFO3_V4D2_GET_BLOCKID(r)	bitx32(r, 15, 8)
 #define	DF_FBIINFO3_GET_INSTID(r)	bitx32(r, 7, 0)
 
 /*
@@ -896,6 +904,7 @@ typedef enum {
 				.drd_func = 4, \
 				.drd_reg = 0x180 }
 #define	DF_SYSCFG_V4_GET_NODE_ID(r)	bitx32(r, 27, 16)
+#define	DF_SYSCFG_V4D2_GET_NODE_ID(r)	bitx32(r, 23, 16)
 #define	DF_SYSCFG_V4_GET_OTHER_SOCK(r)	bitx32(r, 8, 8)
 #define	DF_SYSCFG_V4_GET_NODE_MAP(r)	bitx32(r, 4, 4)
 #define	DF_SYSCFG_V4_GET_OTHER_TYPE(r)	bitx32(r, 3, 2)
@@ -1160,6 +1169,23 @@ typedef enum {
 				.drd_reg = 0xbc}
 
 /*
+ * DF::CoreMasterAccessCtrl --  This register contains bits to control the
+ * behavior of CFC/CF8 accesses.
+ */
+/*CSTYLED*/
+#define	DF_CORE_ACCESS_CTRL_V2	(df_reg_def_t){ .drd_gens = DF_REV_ALL_23, \
+				.drd_func = 4, \
+				.drd_reg = 0x44 }
+/*CSTYLED*/
+#define	DF_CORE_ACCESS_CTRL_V4	(df_reg_def_t){ .drd_gens = DF_REV_ALL_4, \
+				.drd_func = 0, \
+				.drd_reg = 0xc00 }
+#define	DF_CORE_ACCESS_CTRL_GET_DIS_PCI_CFG(r)		bitx32(r, 1, 1)
+#define	DF_CORE_ACCESS_CTRL_SET_DIS_PCI_CFG(r, v)	bitset32(r, 1, 1, v)
+#define	DF_CORE_ACCESS_CTRL_GET_CF8_EXT_EN(r)		bitx32(r, 0, 0)
+#define	DF_CORE_ACCESS_CTRL_SET_CF8_EXT_EN(r, v)	bitset32(r, 0, 0, v)
+
+/*
  * Check whether a given register definition is valid for the given DF revision.
  */
 static inline boolean_t
@@ -1219,6 +1245,30 @@ df_reg_valid(const df_rev_t rev, const df_reg_def_t def)
 				.drd_reg = 0x194 }
 #define	DF_SYS_FUN_FID2_V4_GET_FCH_IOS_FID(r)		bitx32(r, 27, 16)
 #define	DF_SYS_FUN_FID2_V4D2_GET_FCH_IOS_FID(r)		bitx32(r, 23, 16)
+
+/*
+ * DF::DieComponentMapD -- This register provides the count of IOM and IOS
+ * components along with the Component ID of the lowest numbered component for
+ * each. Note that this register does not exist in all components and even for
+ * the ones in which it does, some fields may be reserved (e.g., IOMCount is
+ * reserved for CCM/ACM instances and the IOS fields don't exist for
+ * IOS/ICNG/PIE instances). Thankfully, the same value is programmed into all
+ * instances in which the register exists so a broadcast read provides the
+ * right semantics.
+ */
+/*CSTYLED*/
+#define	DF_DIE_COMP_MAPD_V3	(df_reg_def_t){ .drd_gens = DF_REV_ALL_3, \
+				.drd_func = 1, \
+				.drd_reg = 0x228 }
+/*CSTYLED*/
+#define	DF_DIE_COMP_MAPD_V4	(df_reg_def_t){ .drd_gens = DF_REV_ALL_4, \
+				.drd_func = 4, \
+				.drd_reg = 0xb18 }
+
+#define	DF_DIE_COMP_MAPD_GET_IOM_COUNT(r)	bitx32(r, 31, 24)
+#define	DF_DIE_COMP_MAPD_GET_IOM_COMP_ID(r)	bitx32(r, 23, 16)
+#define	DF_DIE_COMP_MAPD_GET_IOS_COUNT(r)	bitx32(r, 15, 8)
+#define	DF_DIE_COMP_MAPD_GET_IOS_COMP_ID(r)	bitx32(r, 7, 0)
 
 #ifdef __cplusplus
 }

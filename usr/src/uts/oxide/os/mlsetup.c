@@ -24,7 +24,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 by Delphix. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -54,11 +54,11 @@
 #include <sys/bootvfs.h>
 #include <sys/tsc.h>
 #include <sys/boot_data.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
-#include <sys/io/milan/hacks.h>
-#include <sys/io/milan/ras.h>
-#include <milan/milan_apob.h>
+#include <sys/io/zen/apob.h>
+#include <sys/io/zen/ccx.h>
+#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/hacks.h>
+#include <sys/io/zen/ras.h>
 
 /*
  * Setup routine called right before main(), which is common code.  We have much
@@ -152,14 +152,12 @@ mlsetup(struct regs *rp)
 	 * PCI config space access is required for fabric setup, and depends on
 	 * a few addresses the early fabric initialisation code will retrieve.
 	 * After setting up config space, this will then set up all our data
-	 * structures for tracking the Milan topology so we can use the at later
+	 * structures for tracking the Zen topology so we can use them at later
 	 * parts of the build.  We need to probe out the CCXs before we can set
-	 * mcpu_hwthread, and we need mcpu_hwthread to set up brand strings for
-	 * cpuid in a later pass.
+	 * mcpu_hwthread and to set up brand strings for cpuid in a later pass.
 	 */
-	milan_fabric_topo_init();
-	CPU->cpu_m.mcpu_hwthread =
-	    milan_fabric_find_thread_by_cpuid(CPU->cpu_id);
+	zen_fabric_topo_init();
+	CPU->cpu_m.mcpu_hwthread = zen_fabric_find_thread_by_cpuid(CPU->cpu_id);
 
 	/*
 	 * Figure out what kind of CPU this is via pass 0.  We need this before
@@ -176,7 +174,7 @@ mlsetup(struct regs *rp)
 	 * configuration in the FCH to assure that a core shutdown will
 	 * correctly induce an observable reset.
 	 */
-	milan_shutdown_detect_init();
+	zen_shutdown_detect_init();
 
 	/*
 	 * Now go through and set up the BSP's thread-, core-, and CCX-specific
@@ -184,12 +182,12 @@ mlsetup(struct regs *rp)
 	 * so it must be done before the BASIC cpuid pass.  This will be run on
 	 * APs later on.
 	 */
-	milan_ccx_init();
+	zen_ccx_init();
 
 	/*
 	 * Initialize the BSP's MCA banks.
 	 */
-	milan_ras_init();
+	zen_ras_init();
 
 	/*
 	 * The x86_featureset is initialized here based on the capabilities
@@ -277,7 +275,7 @@ mlsetup(struct regs *rp)
 	if (boothowto & RB_DEBUGENTER)
 		kmdb_enter();
 
-	milan_apob_reserve_phys();
+	zen_apob_reserve_phys();
 
 	cpu_vm_data_init(CPU);
 
@@ -293,7 +291,7 @@ mlsetup(struct regs *rp)
 	/*
 	 * Before we get too much further along, check for a furtive reset.
 	 */
-	milan_check_furtive_reset();
+	zen_check_furtive_reset();
 
 	ASSERT_STACK_ALIGNED();
 

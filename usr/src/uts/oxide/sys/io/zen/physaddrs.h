@@ -10,23 +10,18 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef _MILAN_MILAN_PHYSADDRS_H
-#define	_MILAN_MILAN_PHYSADDRS_H
+#ifndef	_SYS_IO_ZEN_PHYSADDRS_H
+#define	_SYS_IO_ZEN_PHYSADDRS_H
 
 /*
- * This header contains a bunch of information about physical addresses in the
- * system, what exists, and related.
- */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/*
- * XXX This memory map is definitely incomplete. Please expand it.
+ * Defines physical addresses common across microarchitectures, in both the
+ * physical memory and IO port address spaces.
+ *
+ * XXX This memory map is definitely incomplete and based on a Milan system.
+ * Need to compare with Genoa/Turin and update as necessary.
  *
  * The following diagram describes how physical memory is allocated on this
  * system. There are a couple of things to note. First, there are two major
@@ -148,21 +143,25 @@ extern "C" {
  * +---------------------+ 0x0000_0000 - 0
  */
 
+#ifdef	__cplusplus
+extern "C" {
+#endif
+
 /*
  * This address represents the beginning of a compatibility MMIO range. This
  * range is accessed using subtractive decoding somehow, which means that if we
  * program an address range into the DF that overlaps this we will lose access
  * to these compatibility devices which generally speaking contain the FCH.
  */
-#define	MILAN_PHYSADDR_COMPAT_MMIO	0xfec00000UL
-#define	MILAN_COMPAT_MMIO_SIZE		0x01400000UL
-#define	MILAN_PHYSADDR_MMIO32_END	0x100000000UL
+#define	ZEN_PHYSADDR_COMPAT_MMIO	0xfec00000UL
+#define	ZEN_COMPAT_MMIO_SIZE		0x01400000UL
+#define	ZEN_PHYSADDR_MMIO32_END		0x100000000UL
 
 /*
  * The FCH also has a compatibility range for legacy I/O ports.
  */
-#define	MILAN_IOPORT_COMPAT_BASE	0U
-#define	MILAN_IOPORT_COMPAT_SIZE	0x1000U
+#define	ZEN_IOPORT_COMPAT_BASE	0U
+#define	ZEN_IOPORT_COMPAT_SIZE	0x1000U
 
 /*
  * This 12 GiB range below 1 TiB can't be accessed as DRAM and is not supposed
@@ -170,28 +169,25 @@ extern "C" {
  * aperture from the SPI controller.  The exact reason for this hole is not well
  * documented but it is known to be an artefact of the IOMMU implementation.
  */
-#define	MILAN_PHYSADDR_IOMMU_HOLE	0xfd00000000UL
-#define	MILAN_PHYSADDR_IOMMU_HOLE_END	0x10000000000UL
+#define	ZEN_PHYSADDR_IOMMU_HOLE		0xfd00000000UL
+#define	ZEN_PHYSADDR_IOMMU_HOLE_END	0x10000000000UL
 
 /*
- * This is the final address that we can use for MMIO. Beyond this is an
- * explicitly reserved area that we're not supposed to touch.
+ * These are the MMIO Addresses for the IOAPICs.  One of them is in the FCH and
+ * cannot be moved, the other is in an IOH/NBIO.  The physical address of the
+ * latter is set by us, not architecturally defined, and can be put almost
+ * anywhere, as long as it is part of the non-PCI range routed to an IOMS
+ * attached to the FCH, as that link is needed for the NBIO<->FCH connection.
+ *
+ * This address is fairly arbitrary, but AGESA puts it here by default.  If we
+ * ever need to adjust them based on a new microarchitecture, we can do so then,
+ * but for now these are the most common addresses used.
  */
-#define	MILAN_PHYSADDR_MMIO_END		0xfffd00000000UL
+#define	ZEN_PHYSADDR_FCH_IOAPIC		0xfec00000UL
+#define	ZEN_PHYSADDR_IOHC_IOAPIC	0xfec01000UL
 
-/*
- * These are the MMIO Addresses for the IOAPICs.  One of them is in the FCH
- * and cannot be moved, the other is in the IOH/NBIO3.  The latter can be put
- * almost anywhere, as long as it is part of the non-PCI range routed to IOMS3.
- * That link is necessitated by the connection between NBIO3 and the FCH. This
- * address is fairly arbitrary; AGESA on Ethanol-X puts it here by default; we
- * may wish to change it to something else.
- */
-#define	MILAN_PHYSADDR_FCH_IOAPIC	0xfec00000UL
-#define	MILAN_PHYSADDR_IOHC_IOAPIC	0xfec01000UL
-
-#ifdef __cplusplus
+#ifdef	__cplusplus
 }
 #endif
 
-#endif /* _MILAN_MILAN_PHYSADDRS_H */
+#endif /* _SYS_IO_ZEN_PHYSADDRS_H */

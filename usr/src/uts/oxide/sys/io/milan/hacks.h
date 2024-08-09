@@ -10,22 +10,21 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_HACKS_H
 #define	_SYS_IO_MILAN_HACKS_H
 
 #include <sys/types.h>
-#include <sys/io/milan/fabric.h>
+#include <sys/stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern boolean_t milan_fixup_i2c_clock(void);
-extern boolean_t milan_cgpll_set_ssc(boolean_t);
-extern void milan_shutdown_detect_init(void);
+extern bool milan_fixup_i2c_clock(void);
+extern bool milan_cgpll_set_ssc(bool);
 extern void milan_check_furtive_reset(void);
 
 /*

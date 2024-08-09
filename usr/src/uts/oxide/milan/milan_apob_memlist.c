@@ -23,7 +23,6 @@
 #include <sys/kapob.h>
 
 #include "milan_apob.h"
-#include "milan_physaddrs.h"
 
 void
 milan_apob_reserve_phys(void)

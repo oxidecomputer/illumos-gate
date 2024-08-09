@@ -24,7 +24,7 @@
  */
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef	_SYS_MACHCPUVAR_H
@@ -229,7 +229,7 @@ struct	machcpu {
 	void			*mcpu_pm_mach_state;
 	struct cmi_hdl		*mcpu_cmi_hdl;
 	void			*mcpu_mach_ctx_ptr;
-	struct milan_thread	*mcpu_hwthread;
+	struct zen_thread	*mcpu_hwthread;
 
 	/*
 	 * A stamp that is unique per processor and changes

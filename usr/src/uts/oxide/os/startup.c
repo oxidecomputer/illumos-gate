@@ -132,8 +132,8 @@
 #include <sys/boot_data.h>
 #include <sys/memlist_impl.h>
 #include <sys/smm.h>
-#include <sys/io/milan/fabric.h>
-#include <sys/io/milan/hacks.h>
+#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/hacks.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
@@ -646,7 +646,7 @@ startup(void)
 	 * enable SSC, and possibly how, should one day be both board- and
 	 * SOC-specific.
 	 */
-	if (!milan_cgpll_set_ssc(B_TRUE)) {
+	if (!zen_cgpll_set_ssc(true)) {
 		cmn_err(CE_WARN,
 		    "CGPLL: spread-spectrum clocking could not be enabled");
 	}
@@ -654,10 +654,10 @@ startup(void)
 	startup_tsc();
 
 	/*
-	 * At this point in time, go through and initialize the Milan SoC's I/O
+	 * At this point in time, go through and initialize the SoC's I/O
 	 * fabric. This includes the SMU, DXIO, NBIO, etc.
 	 */
-	milan_fabric_init();
+	zen_fabric_init();
 	if (smm_init() != 0)
 		cmn_err(CE_WARN, "SMI handler initialisation failed");
 

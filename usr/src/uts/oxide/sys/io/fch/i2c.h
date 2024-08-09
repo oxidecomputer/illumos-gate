@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_FCH_I2C_H
@@ -169,6 +169,7 @@ MAKE_MMIO_FCH_REG_FN(I2C, i2c, 4);
 /*
  * FCH::I2C::IC_CON.  Main configuration register for each I2C peripheral.
  */
+/*CSTYLED*/
 #define	D_FCH_I2C_IC_CON	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_FCH_I2C,	\
 	.srd_reg = 0x00			\

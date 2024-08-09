@@ -26,7 +26,7 @@
  * Copyright 2019 Joshua M. Clulow <josh@sysmgr.org>
  * Copyright 2020 RackTop Systems, Inc.
  * Copyright 2021 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -81,10 +81,12 @@
 #include <sys/amdzen/fch.h>
 #include <sys/io/fch/pmio.h>
 #include <sys/amdzen/mmioreg.h>
-#include <sys/io/milan/iohc.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
-#include <milan/milan_physaddrs.h>
+#include <sys/io/zen/ccx.h>
+#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/physaddrs.h>
+
+#define	ZEN_FCH_IOAPIC_APICID		0xf0
+#define	ZEN_IOHC_IOAPIC_APICID		0xf1
 
 static void	apic_record_ioapic_rdt(void *intrmap_private,
 		    ioapic_rdt_t *irdt);
@@ -370,7 +372,7 @@ apic_probe_common(char *modname)
 }
 
 static int
-apic_count_thread(milan_thread_t *mtp, void *arg)
+apic_count_thread(zen_thread_t *thread, void *arg)
 {
 	int *nthreadp = arg;
 
@@ -380,12 +382,12 @@ apic_count_thread(milan_thread_t *mtp, void *arg)
 }
 
 static int
-apic_enumerate_one(milan_thread_t *mtp, void *arg)
+apic_enumerate_one(zen_thread_t *thread, void *arg)
 {
 	uint32_t *idxp = arg;
 	apic_cpus_info_t *acip = &apic_cpus[*idxp];
 
-	acip->aci_local_id = milan_thread_apicid(mtp);
+	acip->aci_local_id = zen_thread_apicid(thread);
 	acip->aci_processor_id = acip->aci_local_id;
 	acip->aci_local_ver = 0;
 	acip->aci_status = 0;
@@ -409,7 +411,7 @@ apic_probe_raw(const char *modname)
 	mmio_reg_t reg;
 	uint64_t val;
 
-	(void) milan_walk_thread(apic_count_thread, &apic_nproc);
+	(void) zen_walk_thread(apic_count_thread, &apic_nproc);
 	apic_cpus_size = max(apic_nproc, max_ncpus) * sizeof (*apic_cpus);
 	if ((apic_cpus = kmem_zalloc(apic_cpus_size, KM_NOSLEEP)) == NULL) {
 		apic_max_nproc = -1;
@@ -420,7 +422,7 @@ apic_probe_raw(const char *modname)
 	apic_enable_x2apic();
 
 	CPUSET_ZERO(apic_cpumask);
-	(void) milan_walk_thread(apic_enumerate_one, &apic_index);
+	(void) zen_walk_thread(apic_enumerate_one, &apic_index);
 
 	reg = FCH_PMIO_DECODEEN_MMIO(fch_pmio);
 	val = mmio_reg_read(reg);
@@ -430,13 +432,13 @@ apic_probe_raw(const char *modname)
 	mmio_reg_write(reg, val);
 	mmio_reg_block_unmap(&fch_pmio);
 
-	apic_io_id[0] = 0xf0;
-	apic_physaddr[0] = MILAN_PHYSADDR_FCH_IOAPIC;
+	apic_io_id[0] = ZEN_FCH_IOAPIC_APICID;
+	apic_physaddr[0] = ZEN_PHYSADDR_FCH_IOAPIC;
 	apicioadr[0] = (void *)mapin_ioapic(apic_physaddr[0], APIC_IO_MEMLEN,
 	    PROT_READ | PROT_WRITE);
 
-	apic_io_id[1] = 0xf1;
-	apic_physaddr[1] = MILAN_PHYSADDR_IOHC_IOAPIC;
+	apic_io_id[1] = ZEN_IOHC_IOAPIC_APICID;
+	apic_physaddr[1] = ZEN_PHYSADDR_IOHC_IOAPIC;
 	apicioadr[1] = (void *)mapin_ioapic(apic_physaddr[1], APIC_IO_MEMLEN,
 	    PROT_READ | PROT_WRITE);
 
@@ -1040,7 +1042,7 @@ apic_cmci_setup(processorid_t cpuid, boolean_t enable)
 int
 apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 {
-	milan_thread_t *mtp;
+	zen_thread_t *thread;
 
 	ASSERT(MUTEX_HELD(&cpu_lock));
 
@@ -1070,10 +1072,10 @@ apic_cpu_start(processorid_t cpun, caddr_t arg __unused)
 	 * PSM as conceived for i86pc is not factored correctly for this
 	 * machine.
 	 */
-	mtp = milan_fabric_find_thread_by_cpuid(cpun);
-	VERIFY(mtp != NULL);
+	thread = zen_fabric_find_thread_by_cpuid(cpun);
+	VERIFY(thread != NULL);
 
-	if (!milan_ccx_start_thread(mtp)) {
+	if (!zen_ccx_start_thread(thread)) {
 		cmn_err(CE_WARN, "attempt to start already-running CPU 0x%x",
 		    cpun);
 	}
@@ -1316,30 +1318,6 @@ gethrtime_again:
 	return (temp);
 }
 
-static int
-apic_iohc_nmi_eoi(milan_ioms_t *ioms, void *arg __unused)
-{
-	smn_reg_t reg;
-	uint32_t v;
-
-	reg = milan_ioms_reg(ioms, D_IOHC_FCTL2, 0);
-	v = milan_ioms_read(ioms, reg);
-	v = IOHC_FCTL2_GET_NMI(v);
-	if (v != 0) {
-		/*
-		 * We have no ability to handle the other bits here, as
-		 * those conditions may not have resulted in an NMI.  Clear only
-		 * the bit whose condition we have handled.
-		 */
-		milan_ioms_write(ioms, reg, v);
-		reg = milan_ioms_reg(ioms, D_IOHC_INTR_EOI, 0);
-		v = IOHC_INTR_EOI_SET_NMI(0);
-		milan_ioms_write(ioms, reg, v);
-	}
-
-	return (0);
-}
-
 /* apic NMI handler */
 uint_t
 apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
@@ -1402,11 +1380,11 @@ apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
 
 	/*
 	 * We must check whether this NMI may have originated from the IOHC in
-	 * response to an external assertion of NMI_SYNCFLOOD_L.  If so, we must
-	 * clear the indicator flag and signal EOI to the IOHC in order to
-	 * receive subsequent such NMIs.
+	 * response to an external assertion of a pin like NMI_SYNCFLOOD_L.  If
+	 * so, we must clear the indicator flag and signal EOI to the fabric in
+	 * order to receive subsequent such NMIs.
 	 */
-	(void) milan_walk_ioms(apic_iohc_nmi_eoi, NULL);
+	zen_fabric_nmi_eoi();
 
 	lock_clear(&apic_nmi_lock);
 	return (DDI_INTR_CLAIMED);

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_NBIF_H
@@ -29,16 +29,6 @@ extern "C" {
 #endif
 
 /*
- * The implementation of these types is exposed to implementers but not to
- * consumers; therefore we forward-declare them here and provide the actual
- * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
- * pointers to these types only as opaque handles.
- */
-struct milan_nbif;
-
-typedef struct milan_nbif milan_nbif_t;
-
-/*
  * There are always three primary NBIFs in each NBIO unit, but only two of the
  * SYSHUB NBIFs in alternate space.  These definitions live here because they
  * are consumed by the register calculations below.
@@ -47,11 +37,6 @@ typedef struct milan_nbif milan_nbif_t;
 #define	MILAN_IOMS_MAX_NBIF_ALT		2
 #define	MILAN_NBIF_MAX_DEVS	3
 #define	MILAN_NBIF_MAX_FUNCS	7
-
-/*
- * Function callback signatures for making operating on a given unit simpler.
- */
-typedef int (*milan_nbif_cb_f)(milan_nbif_t *, void *);
 
 /*
  * nBIF SMN Addresses. These have multiple different shifts that we need to

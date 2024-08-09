@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_CCX_IMPL_H
@@ -26,8 +26,7 @@
 #include <sys/bitext.h>
 #include <sys/stdint.h>
 #include <sys/types.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
+#include <sys/io/zen/ccx_impl.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -70,42 +69,13 @@ extern "C" {
 #define	MILAN_MAX_CORES_PER_CCX		8
 #define	MILAN_MAX_THREADS_PER_CORE	2
 
-struct milan_thread {
-	uint8_t			mt_threadno;
-	apicid_t		mt_apicid;
-	milan_core_t		*mt_core;
-};
-
-struct milan_core {
-	uint8_t			mc_logical_coreno;
-	uint8_t			mc_physical_coreno;
-	uint8_t			mc_nthreads;
-	milan_thread_t		mc_threads[MILAN_MAX_THREADS_PER_CORE];
-	milan_ccx_t		*mc_ccx;
-};
-
-struct milan_ccx {
-	uint8_t			mcx_logical_cxno;
-	uint8_t			mcx_physical_cxno;
-	uint8_t			mcx_ncores;
-	milan_core_t		mcx_cores[MILAN_MAX_CORES_PER_CCX];
-	milan_ccd_t		*mcx_ccd;
-};
-
-struct milan_ccd {
-	uint8_t			mcd_logical_dieno;
-	uint8_t			mcd_physical_dieno;
-	uint8_t			mcd_ccm_fabric_id;
-	uint8_t			mcd_ccm_comp_id;
-	uint8_t			mcd_nccxs;
-	milan_ccx_t		mcd_ccxs[MILAN_MAX_CCXS_PER_CCD];
-	milan_iodie_t		*mcd_iodie;
-};
-
-extern size_t milan_fabric_thread_get_brandstr(const milan_thread_t *,
+extern size_t milan_fabric_thread_get_brandstr(const zen_thread_t *,
     char *, size_t);
-extern void milan_fabric_thread_get_dpm_weights(const milan_thread_t *,
+extern void milan_fabric_thread_get_dpm_weights(const zen_thread_t *,
     const uint64_t **, uint32_t *);
+
+extern bool milan_ccx_start_thread(const zen_thread_t *);
+extern void milan_ccx_init(void);
 
 #ifdef __cplusplus
 }

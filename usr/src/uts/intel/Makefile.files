@@ -24,7 +24,7 @@
 # Copyright 2019 Joyent, Inc.
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2019 Peter Tribble.
-# Copyright 2023 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 #
 
 #
@@ -122,6 +122,11 @@ CORE_OBJS += decompress.o
 #	Microcode
 #
 CORE_OBJS += microcode.o
+
+#
+#	Shared AMD Zen data fabric functionality
+#
+CORE_OBJS += zen_fabric_utils.o
 
 #
 #	Driver modules
@@ -338,7 +343,7 @@ AMDNBTEMP_OBJS = amdnbtemp.o
 #
 # AMD Zen Nexus Driver
 #
-AMDZEN_OBJS = amdzen.o zen_fabric_utils.o
+AMDZEN_OBJS = amdzen.o
 AMDZEN_STUB_OBJS = amdzen_stub.o
 SMNTEMP_OBJS = smntemp.o
 USMN_OBJS = usmn.o

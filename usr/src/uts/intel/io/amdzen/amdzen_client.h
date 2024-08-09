@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _AMDZEN_CLIENT_H
@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <sys/amdzen/df.h>
 #include <sys/amdzen/smn.h>
+#include <sys/x86_archext.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,6 +85,9 @@ extern void zen_apic_id_compose(const amdzen_apic_decomp_t *, const uint32_t,
     const uint32_t, const uint32_t, const uint32_t, const uint32_t,
     const uint32_t, uint32_t *);
 
+extern void zen_initpkg_to_apic(const uint32_t, const uint32_t,
+    const x86_uarch_t, amdzen_apic_decomp_t *);
+
 #ifdef	_KERNEL
 
 extern uint_t amdzen_c_df_count(void);
@@ -116,6 +120,14 @@ typedef enum {
 
 typedef int (*amdzen_c_iter_f)(uint_t, uint32_t, uint32_t, void *);
 extern int amdzen_c_df_iter(uint_t, zen_df_type_t, amdzen_c_iter_f, void *);
+
+/*
+ * Given a callback for performing the actual DF register reads, this returns
+ * the major, minor and overall revision of the data fabric.
+ */
+typedef uint32_t (*zen_df_read32_f)(const df_reg_def_t, const void *);
+extern void zen_determine_df_vers(const zen_df_read32_f, const void *,
+    uint8_t *, uint8_t *, df_rev_t *);
 
 #endif	/* _KERNEL */
 

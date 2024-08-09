@@ -838,75 +838,17 @@ amdzen_dfe_is_ccm(const amdzen_df_t *df, const amdzen_df_ent_t *ent)
 }
 
 /*
- * To be able to do most other things we want to do, we must first determine
- * what revision of the DF (data fabric) that we're using.
- *
- * Snapshot the df version. This was added explicitly in DFv4.0, around the Zen
- * 4 timeframe and allows us to tell apart different version of the DF register
- * set, most usefully when various subtypes were added.
- *
- * Older versions can theoretically be told apart based on usage of reserved
- * registers. We walk these in the following order, starting with the newest rev
- * and walking backwards to tell things apart:
- *
- *   o v3.5 -> Check function 1, register 0x150. This was reserved prior
- *             to this point. This is actually DF_FIDMASK0_V3P5. We are supposed
- *             to check bits [7:0].
- *
- *   o v3.0 -> Check function 1, register 0x208. The low byte (7:0) was
- *             changed to indicate a component mask. This is non-zero
- *             in the 3.0 generation. This is actually DF_FIDMASK_V2.
- *
- *   o v2.0 -> This is just the not that case. Presumably v1 wasn't part
- *             of the Zen generation.
- *
+ * The callback zen_determine_df_vers uses to actually read a given register.
  * Because we don't know what version we are yet, we do not use the normal
  * versioned register accesses which would check what DF version we are and
  * would want to use the normal indirect register accesses (which also require
  * us to know the version). We instead do direct broadcast reads.
  */
-static void
-amdzen_determine_df_vers(amdzen_t *azn, amdzen_df_t *df)
+static uint32_t
+amdzen_determine_df_vers_cb(const df_reg_def_t rd, const void *arg)
 {
-	uint32_t val;
-	df_reg_def_t rd = DF_FBICNT;
-
-	val = amdzen_stub_get32(df->adf_funcs[rd.drd_func], rd.drd_reg);
-	df->adf_major = DF_FBICNT_V4_GET_MAJOR(val);
-	df->adf_minor = DF_FBICNT_V4_GET_MINOR(val);
-	if (df->adf_major == 0 && df->adf_minor == 0) {
-		rd = DF_FIDMASK0_V3P5;
-		val = amdzen_stub_get32(df->adf_funcs[rd.drd_func], rd.drd_reg);
-		if (bitx32(val, 7, 0) != 0) {
-			df->adf_major = 3;
-			df->adf_minor = 5;
-			df->adf_rev = DF_REV_3P5;
-		} else {
-			rd = DF_FIDMASK_V2;
-			val = amdzen_stub_get32(df->adf_funcs[rd.drd_func],
-			    rd.drd_reg);
-			if (bitx32(val, 7, 0) != 0) {
-				df->adf_major = 3;
-				df->adf_minor = 0;
-				df->adf_rev = DF_REV_3;
-			} else {
-				df->adf_major = 2;
-				df->adf_minor = 0;
-				df->adf_rev = DF_REV_2;
-			}
-		}
-	} else if (df->adf_major == 4 && df->adf_minor >= 2) {
-		/*
-		 * These are devices that have the newer memory layout that
-		 * moves the DF::DramBaseAddress to 0x200. Please see the df.h
-		 * theory statement for more information.
-		 */
-		df->adf_rev = DF_REV_4D2;
-	} else if (df->adf_major == 4) {
-		df->adf_rev = DF_REV_4;
-	} else {
-		df->adf_rev = DF_REV_UNKNOWN;
-	}
+	const amdzen_df_t *df = arg;
+	return (amdzen_stub_get32(df->adf_funcs[rd.drd_func], rd.drd_reg));
 }
 
 /*
@@ -1162,7 +1104,12 @@ amdzen_setup_df(amdzen_t *azn, amdzen_df_t *df)
 	uint_t i;
 	uint32_t val, ccmno;
 
-	amdzen_determine_df_vers(azn, df);
+	/*
+	 * To be able to do most other things we want to do, we must first
+	 * determine what revision of the DF (data fabric) that we're using.
+	 */
+	zen_determine_df_vers(amdzen_determine_df_vers_cb, df, &df->adf_major,
+	    &df->adf_minor, &df->adf_rev);
 
 	switch (df->adf_rev) {
 	case DF_REV_2:
@@ -1415,88 +1362,6 @@ amdzen_ccd_info(amdzen_t *azn, amdzen_df_t *df, uint32_t ccdno, uint32_t *nccxp,
 	}
 }
 
-static void
-amdzen_initpkg_to_apic(amdzen_t *azn, const uint32_t pkg0, const uint32_t pkg7)
-{
-	uint32_t nsock, nccd, nccx, ncore, nthr, extccx;
-	uint32_t nsock_bits, nccd_bits, nccx_bits, ncore_bits, nthr_bits;
-	amdzen_apic_decomp_t *apic = &azn->azn_apic_decomp;
-
-	/*
-	 * These are all 0 based values, meaning that we need to add one to each
-	 * of them. However, we skip this because to calculate the number of
-	 * bits to cover an entity we would subtract one.
-	 */
-	nthr = SCFCTP_PMREG_INITPKG0_GET_SMTEN(pkg0);
-	ncore = SCFCTP_PMREG_INITPKG7_GET_N_CORES(pkg7);
-	nccx = SCFCTP_PMREG_INITPKG7_GET_N_CCXS(pkg7);
-	nccd = SCFCTP_PMREG_INITPKG7_GET_N_DIES(pkg7);
-	nsock = SCFCTP_PMREG_INITPKG7_GET_N_SOCKETS(pkg7);
-
-	if (uarchrev_uarch(azn->azn_uarchrev) >= X86_UARCH_AMD_ZEN4) {
-		extccx = SCFCTP_PMREG_INITPKG7_ZEN4_GET_16TAPIC(pkg7);
-	} else {
-		extccx = 0;
-	}
-
-	nthr_bits = highbit(nthr);
-	ncore_bits = highbit(ncore);
-	nccx_bits = highbit(nccx);
-	nccd_bits = highbit(nccd);
-	nsock_bits = highbit(nsock);
-
-	apic->aad_thread_shift = 0;
-	apic->aad_thread_mask = (1 << nthr_bits) - 1;
-
-	apic->aad_core_shift = nthr_bits;
-	if (ncore_bits > 0) {
-		apic->aad_core_mask = (1 << ncore_bits) - 1;
-		apic->aad_core_mask <<= apic->aad_core_shift;
-	} else {
-		apic->aad_core_mask = 0;
-	}
-
-	/*
-	 * The APIC_16T_MODE bit indicates that the total shift to start the CCX
-	 * should be at 4 bits if it's not. It doesn't mean that the CCX portion
-	 * of the value should take up four bits. In the common Genoa case,
-	 * nccx_bits will be zero.
-	 */
-	apic->aad_ccx_shift = apic->aad_core_shift + ncore_bits;
-	if (extccx != 0 && apic->aad_ccx_shift < 4) {
-		apic->aad_ccx_shift = 4;
-	}
-	if (nccx_bits > 0) {
-		apic->aad_ccx_mask = (1 << nccx_bits) - 1;
-		apic->aad_ccx_mask <<= apic->aad_ccx_shift;
-	} else {
-		apic->aad_ccx_mask = 0;
-	}
-
-	apic->aad_ccd_shift = apic->aad_ccx_shift + nccx_bits;
-	if (nccd_bits > 0) {
-		apic->aad_ccd_mask = (1 << nccd_bits) - 1;
-		apic->aad_ccd_mask <<= apic->aad_ccd_shift;
-	} else {
-		apic->aad_ccd_mask = 0;
-	}
-
-	apic->aad_sock_shift = apic->aad_ccd_shift + nccd_bits;
-	if (nsock_bits > 0) {
-		apic->aad_sock_mask = (1 << nsock_bits) - 1;
-		apic->aad_sock_mask <<= apic->aad_sock_shift;
-	} else {
-		apic->aad_sock_mask = 0;
-	}
-
-	/*
-	 * Currently all supported Zen 2+ platforms only have a single die per
-	 * socket as compared to Zen 1. So this is always kept at zero.
-	 */
-	apic->aad_die_mask = 0;
-	apic->aad_die_shift = 0;
-}
-
 /*
  * We would like to determine what the logical APIC decomposition is on Zen 3
  * and newer family parts. While there is information added to CPUID in the form
@@ -1589,7 +1454,8 @@ amdzen_determine_apic_decomp_initpkg(amdzen_t *azn)
 			pkg0_reg = SCFCTP_PMREG_INITPKG0(ccdno, pccxno,
 			    pcoreno);
 			pkg0 = amdzen_smn_read(azn, df, pkg0_reg);
-			amdzen_initpkg_to_apic(azn, pkg0, pkg7);
+			zen_initpkg_to_apic(pkg0, pkg7, uarchrev_uarch(
+			    azn->azn_uarchrev), &azn->azn_apic_decomp);
 			return (B_TRUE);
 		}
 	}

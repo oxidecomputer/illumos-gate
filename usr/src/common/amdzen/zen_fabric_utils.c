@@ -10,14 +10,18 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
- * A collection of utility functions for interacting with fabric IDs.
+ * A collection of utility functions for interacting with AMD Zen fabric and
+ * APIC IDs.
  */
 
-#include <amdzen_client.h>
+#include <asm/bitmap.h>
+#include <sys/amdzen/ccd.h>
+
+#include <io/amdzen/amdzen_client.h>
 
 /*
  * Validate whether a fabric ID actually represents a valid ID for a given data
@@ -158,3 +162,168 @@ zen_apic_id_compose(const amdzen_apic_decomp_t *decomp, const uint32_t sock,
 
 	*apicid = id;
 }
+
+/*
+ * Given a specific Zen3+ uarch and values from the INITPKG registers, calculate
+ * the shift and mask values necessary to compose an APIC ID.
+ */
+void
+zen_initpkg_to_apic(const uint32_t pkg0, const uint32_t pkg7,
+    const x86_uarch_t uarch, amdzen_apic_decomp_t *apic)
+{
+	uint32_t nsock, nccd, nccx, ncore, nthr, extccx;
+	uint32_t nsock_bits, nccd_bits, nccx_bits, ncore_bits, nthr_bits;
+
+	ASSERT3U(uarch, >=, X86_UARCH_AMD_ZEN3);
+
+	/*
+	 * These are all 0 based values, meaning that we need to add one to each
+	 * of them. However, we skip this because to calculate the number of
+	 * bits to cover an entity we would subtract one.
+	 */
+	nthr = SCFCTP_PMREG_INITPKG0_GET_SMTEN(pkg0);
+	ncore = SCFCTP_PMREG_INITPKG7_GET_N_CORES(pkg7);
+	nccx = SCFCTP_PMREG_INITPKG7_GET_N_CCXS(pkg7);
+	nccd = SCFCTP_PMREG_INITPKG7_GET_N_DIES(pkg7);
+	nsock = SCFCTP_PMREG_INITPKG7_GET_N_SOCKETS(pkg7);
+
+	if (uarch >= X86_UARCH_AMD_ZEN4) {
+		extccx = SCFCTP_PMREG_INITPKG7_ZEN4_GET_16TAPIC(pkg7);
+	} else {
+		extccx = 0;
+	}
+
+	nthr_bits = highbit(nthr);
+	ncore_bits = highbit(ncore);
+	nccx_bits = highbit(nccx);
+	nccd_bits = highbit(nccd);
+	nsock_bits = highbit(nsock);
+
+	apic->aad_thread_shift = 0;
+	apic->aad_thread_mask = (1 << nthr_bits) - 1;
+
+	apic->aad_core_shift = nthr_bits;
+	if (ncore_bits > 0) {
+		apic->aad_core_mask = (1 << ncore_bits) - 1;
+		apic->aad_core_mask <<= apic->aad_core_shift;
+	} else {
+		apic->aad_core_mask = 0;
+	}
+
+	/*
+	 * The APIC_16T_MODE bit indicates that the total shift to start the CCX
+	 * should be at 4 bits if it's not. It doesn't mean that the CCX portion
+	 * of the value should take up four bits. In the common Genoa case,
+	 * nccx_bits will be zero.
+	 */
+	apic->aad_ccx_shift = apic->aad_core_shift + ncore_bits;
+	if (extccx != 0 && apic->aad_ccx_shift < 4) {
+		apic->aad_ccx_shift = 4;
+	}
+	if (nccx_bits > 0) {
+		apic->aad_ccx_mask = (1 << nccx_bits) - 1;
+		apic->aad_ccx_mask <<= apic->aad_ccx_shift;
+	} else {
+		apic->aad_ccx_mask = 0;
+	}
+
+	apic->aad_ccd_shift = apic->aad_ccx_shift + nccx_bits;
+	if (nccd_bits > 0) {
+		apic->aad_ccd_mask = (1 << nccd_bits) - 1;
+		apic->aad_ccd_mask <<= apic->aad_ccd_shift;
+	} else {
+		apic->aad_ccd_mask = 0;
+	}
+
+	apic->aad_sock_shift = apic->aad_ccd_shift + nccd_bits;
+	if (nsock_bits > 0) {
+		apic->aad_sock_mask = (1 << nsock_bits) - 1;
+		apic->aad_sock_mask <<= apic->aad_sock_shift;
+	} else {
+		apic->aad_sock_mask = 0;
+	}
+
+	/*
+	 * Currently all supported Zen 2+ platforms only have a single die per
+	 * socket as compared to Zen 1. So this is always kept at zero.
+	 */
+	apic->aad_die_mask = 0;
+	apic->aad_die_shift = 0;
+}
+
+#ifdef	_KERNEL
+/*
+ * Attempt to determine what (supported) version of the data fabric we're on.
+ *
+ * An explicit version field was only added in DFv4.0, around the Zen 4
+ * timeframe. That allows us to tell apart different versions of the DF register
+ * set, most usefully when various subtypes were added.
+ *
+ * Older versions can theoretically be told apart based on usage of reserved
+ * registers. We walk these in the following order, starting with the newest rev
+ * and walking backwards to tell things apart:
+ *
+ *   o v3.5 -> Check function 1, register 0x150. This was reserved prior
+ *             to this point. This is actually DF_FIDMASK0_V3P5. We are supposed
+ *             to check bits [7:0].
+ *
+ *   o v3.0 -> Check function 1, register 0x208. The low byte (7:0) was
+ *             changed to indicate a component mask. This is non-zero
+ *             in the 3.0 generation. This is actually DF_FIDMASK_V2.
+ *
+ *   o v2.0 -> This is just the not that case. Presumably v1 wasn't part
+ *             of the Zen generation.
+ *
+ * To support consumers with different register access constraints, the caller
+ * is expected to provide a callback able to read the necessary DF registers.
+ */
+void
+zen_determine_df_vers(const zen_df_read32_f df_read_f, const void *arg,
+    uint8_t *df_major, uint8_t *df_minor, df_rev_t *df_rev)
+{
+	uint32_t val;
+	uint8_t major, minor;
+	df_rev_t rev;
+
+	val = df_read_f(DF_FBICNT, arg);
+	major = DF_FBICNT_V4_GET_MAJOR(val);
+	minor = DF_FBICNT_V4_GET_MINOR(val);
+	if (major == 0 && minor == 0) {
+		val = df_read_f(DF_FIDMASK0_V3P5, arg);
+		if (bitx32(val, 7, 0) != 0) {
+			major = 3;
+			minor = 5;
+			rev = DF_REV_3P5;
+		} else {
+			val = df_read_f(DF_FIDMASK_V2, arg);
+			if (bitx32(val, 7, 0) != 0) {
+				major = 3;
+				minor = 0;
+				rev = DF_REV_3;
+			} else {
+				major = 2;
+				minor = 0;
+				rev = DF_REV_2;
+			}
+		}
+	} else if (major == 4 && minor >= 2) {
+		/*
+		 * These are devices that have the newer memory layout that
+		 * moves the DF::DramBaseAddress to 0x200. Please see the df.h
+		 * theory statement for more information.
+		 */
+		rev = DF_REV_4D2;
+	} else if (major == 4) {
+		rev = DF_REV_4;
+	} else {
+		rev = DF_REV_UNKNOWN;
+	}
+
+	if (df_major != NULL)
+		*df_major = major;
+	if (df_minor != NULL)
+		*df_minor = minor;
+	if (df_rev != NULL)
+		*df_rev = rev;
+}
+#endif	/* _KERNEL */

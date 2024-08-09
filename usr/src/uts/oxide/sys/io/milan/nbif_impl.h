@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_NBIF_IMPL_H
@@ -23,8 +23,9 @@
  * supported by this machine architecture.
  */
 
-#include <sys/io/milan/fabric.h>
+#include <sys/io/milan/fabric_impl.h>
 #include <sys/io/milan/nbif.h>
+#include <sys/io/zen/nbif_impl.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,8 +44,6 @@ extern "C" {
  * dependency cycle so we can have both the child types and a pointer to the
  * parent.
  */
-struct milan_nbif_func;
-typedef struct milan_nbif_func milan_nbif_func_t;
 
 typedef enum milan_nbif_func_type {
 	MILAN_NBIF_T_DUMMY,
@@ -57,32 +56,13 @@ typedef enum milan_nbif_func_type {
 	MILAN_NBIF_T_SATA
 } milan_nbif_func_type_t;
 
-typedef enum milan_nbif_func_flag {
-	/*
-	 * This NBIF function should be enabled.
-	 */
-	MILAN_NBIF_F_ENABLED	= 1 << 0,
-	/*
-	 * This NBIF does not need any configuration or manipulation. This
-	 * generally is the case because we have a dummy function.
-	 */
-	MILAN_NBIF_F_NO_CONFIG	= 1 << 1
-} milan_nbif_func_flag_t;
-
-struct milan_nbif_func {
+typedef struct milan_nbif_func {
 	milan_nbif_func_type_t	mne_type;
-	milan_nbif_func_flag_t	mne_flags;
-	uint8_t			mne_dev;
-	uint8_t			mne_func;
-	milan_nbif_t		*mne_nbif;
-};
+} milan_nbif_func_t;
 
-struct milan_nbif {
-	uint8_t			mn_nbifno;
-	uint8_t			mn_nfuncs;
+typedef struct milan_nbif {
 	milan_nbif_func_t	mn_funcs[MILAN_NBIF_MAX_FUNCS];
-	milan_ioms_t		*mn_ioms;
-};
+} milan_nbif_t;
 
 #ifdef __cplusplus
 }

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -18,16 +18,16 @@
  * various aspects of the Milan CPU cores.
  */
 
-#include <milan/milan_physaddrs.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/fabric_impl.h>
-#include <sys/io/milan/ccx.h>
 #include <sys/io/milan/ccx_impl.h>
+#include <sys/amdzen/ccd.h>
 #include <sys/amdzen/ccx.h>
 #include <sys/amdzen/smn.h>
 #include <sys/boot_physmem.h>
 #include <sys/x86_archext.h>
 #include <sys/types.h>
+
+#include <sys/io/zen/smn.h>
 
 /*
  * We run before kmdb loads, so these chicken switches are static consts.
@@ -48,123 +48,6 @@ static const boolean_t milan_ccx_set_undoc_regs = B_TRUE;
  */
 static const boolean_t milan_ccx_set_undoc_fields = B_TRUE;
 
-void
-milan_ccx_mmio_init(uint64_t pa, boolean_t reserve)
-{
-	uint64_t val;
-
-	val = AMD_MMIO_CFG_BASE_ADDR_SET_EN(0, 1);
-	val = AMD_MMIO_CFG_BASE_ADDR_SET_BUS_RANGE(val,
-	    AMD_MMIO_CFG_BASE_ADDR_BUS_RANGE_256);
-	val = AMD_MMIO_CFG_BASE_ADDR_SET_ADDR(val,
-	    pa >> AMD_MMIO_CFG_BASE_ADDR_ADDR_SHIFT);
-	wrmsr(MSR_AMD_MMIO_CFG_BASE_ADDR, val);
-
-	if (reserve) {
-		eb_physmem_reserve_range(pa,
-		    256UL << AMD_MMIO_CFG_BASE_ADDR_ADDR_SHIFT, EBPR_NOT_RAM);
-	}
-}
-
-void
-milan_ccx_physmem_init(void)
-{
-	/*
-	 * Due to undocumented, unspecified, and unknown bugs in the IOMMU
-	 * (supposedly), there is a hole in RAM below 1 TiB.  It may or may not
-	 * be usable as MMIO space but regardless we need to not treat it as
-	 * RAM.
-	 */
-	eb_physmem_reserve_range(MILAN_PHYSADDR_IOMMU_HOLE,
-	    MILAN_PHYSADDR_IOMMU_HOLE_END - MILAN_PHYSADDR_IOMMU_HOLE,
-	    EBPR_NOT_RAM);
-}
-
-smn_reg_t
-milan_core_reg(const milan_core_t *const core, const smn_reg_def_t def)
-{
-	milan_ccx_t *ccx = core->mc_ccx;
-	milan_ccd_t *ccd = ccx->mcx_ccd;
-	smn_reg_t reg;
-
-	switch (def.srd_unit) {
-	case SMN_UNIT_SCFCTP:
-		reg = amdzen_scfctp_smn_reg(ccd->mcd_physical_dieno,
-		    ccx->mcx_physical_cxno, def, core->mc_physical_coreno);
-		break;
-	default:
-		cmn_err(CE_PANIC, "invalid SMN register type %d for core",
-		    def.srd_unit);
-	}
-
-	return (reg);
-}
-
-smn_reg_t
-milan_ccd_reg(const milan_ccd_t *const ccd, const smn_reg_def_t def)
-{
-	smn_reg_t reg;
-
-	switch (def.srd_unit) {
-	case SMN_UNIT_SMUPWR:
-		reg = amdzen_smupwr_smn_reg(ccd->mcd_physical_dieno, def, 0);
-		break;
-	default:
-		cmn_err(CE_PANIC, "invalid SMN register type %d for CCD",
-		    def.srd_unit);
-	}
-
-	return (reg);
-}
-
-uint32_t
-milan_ccd_read(milan_ccd_t *ccd, const smn_reg_t reg)
-{
-	milan_iodie_t *iodie = ccd->mcd_iodie;
-
-	return (milan_smn_read(iodie, reg));
-}
-
-void
-milan_ccd_write(milan_ccd_t *ccd, const smn_reg_t reg, const uint32_t val)
-{
-	milan_iodie_t *iodie = ccd->mcd_iodie;
-
-	milan_smn_write(iodie, reg, val);
-}
-
-uint32_t
-milan_ccx_read(milan_ccx_t *ccx, const smn_reg_t reg)
-{
-	milan_iodie_t *iodie = ccx->mcx_ccd->mcd_iodie;
-
-	return (milan_smn_read(iodie, reg));
-}
-
-void
-milan_ccx_write(milan_ccx_t *ccx, const smn_reg_t reg, const uint32_t val)
-{
-	milan_iodie_t *iodie = ccx->mcx_ccd->mcd_iodie;
-
-	milan_smn_write(iodie, reg, val);
-}
-
-uint32_t
-milan_core_read(milan_core_t *core, const smn_reg_t reg)
-{
-	milan_iodie_t *iodie = core->mc_ccx->mcx_ccd->mcd_iodie;
-
-	return (milan_smn_read(iodie, reg));
-}
-
-void
-milan_core_write(milan_core_t *core, const smn_reg_t reg, const uint32_t val)
-{
-	milan_iodie_t *iodie = core->mc_ccx->mcx_ccd->mcd_iodie;
-
-	milan_smn_write(iodie, reg, val);
-}
-
 /*
  * In this context, "thread" == AP.  SMT may or may not be enabled (by HW, FW,
  * or our own controls).  That may affect the number of threads per core, but
@@ -174,47 +57,42 @@ milan_core_write(milan_core_t *core, const smn_reg_t reg, const uint32_t val)
  * we must never clear this bit.  What happens if we do, I do not know.  If the
  * thread was already booted, this function does nothing and returns B_FALSE;
  * otherwise it returns B_TRUE and the AP will be started.  There is no way to
- * fail; we don't construct a milan_thread_t for hardware that doesn't exist, so
+ * fail; we don't construct a zen_thread_t for hardware that doesn't exist, so
  * it's always possible to perform this operation if what we are handed points
  * to genuine data.
  *
  * See MP boot theory in os/mp_startup.c
  */
-boolean_t
-milan_ccx_start_thread(const milan_thread_t *thread)
+bool
+milan_ccx_start_thread(const zen_thread_t *thread)
 {
-	milan_core_t *core = thread->mt_core;
-	milan_ccx_t *ccx = core->mc_ccx;
-	milan_ccd_t *ccd = ccx->mcx_ccd;
+	zen_core_t *core = thread->zt_core;
+	zen_ccx_t *ccx = core->zc_ccx;
+	zen_ccd_t *ccd = ccx->zcx_ccd;
 	smn_reg_t reg;
 	uint8_t thr_ccd_idx;
 	uint32_t en;
 
 	VERIFY3U(CPU->cpu_id, ==, 0);
 
-	thr_ccd_idx = ccx->mcx_logical_cxno;
-	thr_ccd_idx *= ccx->mcx_ncores;
-	thr_ccd_idx += core->mc_logical_coreno;
-	thr_ccd_idx *= core->mc_nthreads;
-	thr_ccd_idx += thread->mt_threadno;
+	thr_ccd_idx = ccx->zcx_logical_cxno;
+	thr_ccd_idx *= ccx->zcx_ncores;
+	thr_ccd_idx += core->zc_logical_coreno;
+	thr_ccd_idx *= core->zc_nthreads;
+	thr_ccd_idx += thread->zt_threadno;
 
 	VERIFY3U(thr_ccd_idx, <, MILAN_MAX_CCXS_PER_CCD *
 	    MILAN_MAX_CORES_PER_CCX * MILAN_MAX_THREADS_PER_CORE);
 
-	reg = milan_ccd_reg(ccd, D_SMUPWR_THREAD_EN);
-	en = milan_ccd_read(ccd, reg);
+	reg = amdzen_smupwr_smn_reg(ccd->zcd_physical_dieno, D_SMUPWR_THREAD_EN,
+	    0);
+	en = zen_ccd_read(ccd, reg);
 	if (SMUPWR_THREAD_EN_GET_T(en, thr_ccd_idx) != 0)
 		return (B_FALSE);
 
 	en = SMUPWR_THREAD_EN_SET_T(en, thr_ccd_idx);
-	milan_ccd_write(ccd, reg, en);
+	zen_ccd_write(ccd, reg, en);
 	return (B_TRUE);
-}
-
-apicid_t
-milan_thread_apicid(const milan_thread_t *thread)
-{
-	return (thread->mt_apicid);
 }
 
 boolean_t
@@ -649,7 +527,7 @@ milan_core_undoc_init(void)
 static void
 milan_core_dpm_init(void)
 {
-	const milan_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
+	const zen_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
 	const uint64_t *weights;
 	uint32_t nweights;
 	uint64_t cfg;
@@ -672,7 +550,7 @@ milan_core_dpm_init(void)
 void
 milan_ccx_init(void)
 {
-	const milan_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
+	const zen_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
 	char str[CPUID_BRANDSTR_STRLEN + 1];
 
 	/*
@@ -736,16 +614,16 @@ milan_ccx_init(void)
 	 */
 	milan_thread_feature_init();
 	milan_thread_uc_init();
-	if (thread->mt_threadno == 1) {
+	if (thread->zt_threadno == 1) {
 		milan_core_tw_init();
 	}
-	if (thread->mt_threadno == 0) {
+	if (thread->zt_threadno == 0) {
 		milan_core_ls_init();
 		milan_core_ic_init();
 		milan_core_dc_init();
 		milan_core_de_init();
 		milan_core_l2_init();
-		if (thread->mt_core->mc_logical_coreno == 0)
+		if (thread->zt_core->zc_logical_coreno == 0)
 			milan_ccx_l3_init();
 		milan_core_undoc_init();
 		milan_core_dpm_init();

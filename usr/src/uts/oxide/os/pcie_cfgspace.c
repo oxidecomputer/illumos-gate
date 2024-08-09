@@ -22,7 +22,7 @@
  * we will unmap that and leverage addresses from the device arena once that has
  * been set up.
  *
- * Configuration space is accessed by constructing and addresss that has the
+ * Configuration space is accessed by constructing an address that has the
  * bits arranged in the following pattern to indicate what the bus, device,
  * function, and register is:
  *
@@ -49,9 +49,9 @@
 #include <sys/pci_cfgacc.h>
 #include <sys/pci_cfgspace_impl.h>
 #include <sys/machsystm.h>
-#include <sys/io/milan/ccx.h>
-#include <sys/io/milan/fabric.h>
-#include <milan/milan_physaddrs.h>
+#include <sys/sysmacros.h>
+#include <sys/io/zen/ccx.h>
+#include <sys/io/zen/fabric.h>
 
 /*
  * XXX This section contains variables that the rest of the system expects to
@@ -162,8 +162,8 @@ pcie_bdfr_to_addr(int bus, int dev, int func, int reg)
  * requirements result in undefined behavior."
  *
  * These requirements, or substantially identical phrasings of them, have been
- * carried into all known subsequent PPRs, including those for Rome, Milan, and
- * Genoa processor families.
+ * carried into all known subsequent PPRs, including those for Rome, Milan,
+ * Genoa, and Turin processor families.
  *
  * The first of these is guaranteed here by our device mapping (in
  * pcie_cfgspace_{init,remap}() and by hat_devload()) and in the KDI by
@@ -381,13 +381,13 @@ pcie_cfgspace_acc(pci_cfgacc_req_t *req)
 void
 pcie_cfgspace_init(void)
 {
-	uint64_t ecam_base = milan_fabric_ecam_base();
+	const uint64_t ecam_base = zen_fabric_ecam_base();
 
 	/*
 	 * This ensures that the boot CPU will be programmed with everything
 	 * needed to access PCIe configuration space.
 	 */
-	milan_ccx_mmio_init(ecam_base, B_TRUE);
+	zen_ccx_mmio_init(ecam_base, true);
 
 	/*
 	 * This is a temporary VA range that we'll use during bootstrapping.
@@ -427,7 +427,7 @@ pcie_cfgspace_init(void)
 void
 pcie_cfgspace_remap(void)
 {
-	uint64_t ecam_base = milan_fabric_ecam_base();
+	const uint64_t ecam_base = zen_fabric_ecam_base();
 	void *new_va = device_arena_alloc(PCIE_CFGSPACE_SIZE, VM_SLEEP);
 	pfn_t pfn = mmu_btop(ecam_base);
 

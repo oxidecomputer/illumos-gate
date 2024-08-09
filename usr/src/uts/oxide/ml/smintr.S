@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #include <sys/apic.h>
@@ -51,8 +51,8 @@
  * problem (we can still panic just fine), except that we really need to
  * understand how we got here so we can make sure it never happens again. So
  * we waste the customer's valuable resources (DRAM) and replicate this
- * handler 128 times (or more!) all to detect the abuse of a feature that we
- * neither need nor use.
+ * handler for each CPU all to detect the abuse of a feature that we neither
+ * need nor use.
  *
  * The first thing to understand, and the one thing to keep in mind always, is
  * that we have but a single mission here: to induce a panic.  Under no
@@ -61,13 +61,13 @@
  * Arriving here means that one of three things has gone horribly wrong:
  *
  * 1. We've encountered a hardware bug allowing an SMI to be generated when
- * none was configured.
+ *    none was configured.
  *
  * 2. There is an undocumented, enabled by default, SMI source that we don't
- * know how to disable, and its trigger condition somehow occurred.
+ *    know how to disable, and its trigger condition somehow occurred.
  *
  * 3. A serious kernel bug, either on its own or with help from a malicious
- * actor, has caused one or more sources of SMIs to be enabled and triggered.
+ *    actor, has caused one or more sources of SMIs to be enabled and triggered.
  *
  * Regardless of how we got here, if no one else has yet done so we want to
  * copy the state save area to the kernel's buffer along with a few MSRs and
@@ -100,7 +100,7 @@
  * are:
  *
  * * Pretty much everything is accessible via SMN.  If we want to enter 64-bit
- * mode, we can use the kernel's milan_smn_{read,write}32() functions.  These
+ * mode, we can use the kernel's SMN 32-bit read and write functions.  These
  * rely on PCI config space access having been set up, which isn't a problem
  * since this handler isn't installed until after that's done.  This approach
  * also, obviously, relies on the kernel's pagetables and executing kernel
@@ -192,9 +192,11 @@
  * need something more.
  *
  * Our initial state and the state-save area are documented in AMD64 4.03 vol.
- * 2 chapter 10 and the Milan B1 PPR 2.1.19.1.  Our implementation of the
- * state-save area and SMM-related core registers can be found in
- * uts/intel/sys/smm_amd64.h.  A discussion of that state will not be
+ * 2 chapter 10 and the public Milan B1 PPR 2.1.14.1 ("System Management Mode
+ * (SMM)"); we assume this applies to other microarchitectures subsequent to
+ * Milan as well, and so far this is true for both Genoa and Turin.  Our
+ * implementation of the state-save area and SMM-related core registers can be
+ * found in uts/intel/sys/smm_amd64.h.  A discussion of that state will not be
  * replicated here as those sources are adequate.
  *
  * Rules of the road:

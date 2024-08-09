@@ -26,7 +26,7 @@
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 /*
@@ -81,8 +81,7 @@
 #include <sys/apix.h>
 #include <sys/apix_irm_impl.h>
 #include <sys/smm.h>
-#include <sys/io/milan/fabric.h>
-#include <sys/io/milan/iohc.h>
+#include <sys/io/zen/fabric.h>
 
 static int apix_probe();
 static void apix_init();
@@ -490,50 +489,6 @@ apix_init_intr()
 	apic_reg_ops->apic_write_task_reg(0);
 }
 
-static int
-ioms_enable_nmi_cb(milan_ioms_t *ioms, void *arg __unused)
-{
-	smn_reg_t reg;
-	uint32_t v;
-
-	/*
-	 * On reset, the NMI destination in IOHC::IOHC_INTR_CNTL is set to
-	 * 0xff.  We (emphatically) do not want any AP to get an NMI when we
-	 * first power it on, so we deliberately set all NMI destinations to
-	 * be the BSP.  Note that we do will not change this, even after APs
-	 * are up (that is, NMIs will always go to the BSP):  changing it has
-	 * non-zero runtime risk (see the comment above our actual enabling
-	 * of NMI, below) and does not provide any value for our use case of
-	 * NMI.
-	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_INTR_CNTL, 0);
-	v = milan_ioms_read(ioms, reg);
-	v = IOHC_INTR_CNTL_SET_NMI_DEST_CTRL(v, 0);
-	milan_ioms_write(ioms, reg, v);
-
-	if ((milan_ioms_flags(ioms) & MILAN_IOMS_F_HAS_FCH) != 0) {
-		reg = milan_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
-		v = IOHC_PIN_CTL_SET_MODE_NMI(0);
-		milan_ioms_write(ioms, reg, v);
-	}
-
-	/*
-	 * Once we enable this, we can immediately take an NMI if it's
-	 * currently asserted.  We want to do this last and clear out of here
-	 * as quickly as possible:  this is all a bit dodgy, but the NMI
-	 * handler itself needs to issue an SMN write to indicate EOI -- and
-	 * if it finds that SMN-related locks are held, we will panic.  To
-	 * reduce the likelihood of that, we are going to enable NMI and
-	 * skedaddle...
-	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_MISC_RAS_CTL, 0);
-	v = milan_ioms_read(ioms, reg);
-	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(v, 1);
-	milan_ioms_write(ioms, reg, v);
-
-	return (0);
-}
-
 static void
 apix_picinit(void)
 {
@@ -568,7 +523,7 @@ apix_picinit(void)
 	 * (i.e., the SP) to signal an NMI via the dedicated NMI_SYNCFLOOD_L
 	 * pin.
 	 */
-	(void) milan_walk_ioms(ioms_enable_nmi_cb, NULL);
+	zen_fabric_enable_nmi();
 
 	apix_init_intr();
 

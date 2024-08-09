@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_RSMU_H
@@ -113,7 +113,6 @@
 
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
-#include <sys/io/milan/fabric.h>
 #include <sys/io/milan/pcie.h>
 
 #ifdef __cplusplus

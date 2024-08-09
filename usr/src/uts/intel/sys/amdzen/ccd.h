@@ -44,6 +44,7 @@
 
 #include <sys/bitext.h>
 #include <sys/debug.h>
+#include <sys/inttypes.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
 
@@ -84,8 +85,10 @@ amdzen_smupwr_smn_reg(const uint8_t ccdno, const smn_reg_def_t def,
 	    (const uint32_t)def.srd_size;
 
 	const uint32_t stride = (def.srd_stride == 0) ? size32 : def.srd_stride;
+#ifdef	DEBUG
 	const uint32_t nents = (def.srd_nents == 0) ? 1 :
 	    (const uint32_t)def.srd_nents;
+#endif	/* DEBUG */
 
 	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_SMUPWR);
@@ -230,8 +233,10 @@ amdzen_l3soc_smn_reg(const uint8_t ccdno, const smn_reg_def_t def,
 	    (const uint32_t)def.srd_size;
 
 	const uint32_t stride = (def.srd_stride == 0) ? size32 : def.srd_stride;
+#ifdef	DEBUG
 	const uint32_t nents = (def.srd_nents == 0) ? 1 :
 	    (const uint32_t)def.srd_nents;
+#endif	/* DEBUG */
 
 	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_L3SOC);
@@ -341,14 +346,18 @@ amdzen_scfctp_smn_reg(const uint8_t ccdno, const uint8_t ccxno,
 	CTASSERT((APERTURE_BASE & ~APERTURE_MASK) == 0);
 
 	const uint32_t ccdno32 = (const uint32_t)ccdno;
+#ifdef	DEBUG
 	const uint32_t ccxno32 = (const uint32_t)ccxno;
+#endif	/* DEBUG */
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t size32 = (def.srd_size == 0) ? 4 :
 	    (const uint32_t)def.srd_size;
 
 	const uint32_t stride = (def.srd_stride == 0) ? 4 : def.srd_stride;
+#ifdef	DEBUG
 	const uint32_t nents = (def.srd_nents == 0) ? 1 :
 	    (const uint32_t)def.srd_nents;
+#endif	/* DEBUG */
 
 	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_SCFCTP);

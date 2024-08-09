@@ -21,6 +21,7 @@
 #include <sys/dw_apb_uart.h>
 #include <sys/x86_archext.h>
 #include <sys/amdzen/fch.h>
+#include <sys/io/zen/platform.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -50,6 +51,7 @@ typedef enum {
 typedef struct oxide_board_cpuinfo {
 	x86_chiprev_t		obc_chiprev;
 	const char		*obc_chiprevstr;
+	x86_uarchrev_t		obc_uarchrev;
 	uint32_t		obc_socket;
 	fch_kind_t		obc_fchkind;
 } oxide_board_cpuinfo_t;
@@ -91,12 +93,25 @@ typedef struct oxide_board_data {
 	 * it has successfully identified the board.
 	 */
 	oxide_board_cpuinfo_t	obd_cpuinfo;
+
+	/*
+	 * Similarly, oxide_derive_platform() will set this pointer to the
+	 * appropriate Zen platform structure.
+	 */
+	const zen_platform_t	*obd_zen_platform;
 } oxide_board_data_t;
 
 extern const oxide_board_data_t *oxide_board_data;
 
 extern void oxide_derive_platform(void);
 extern void oxide_report_platform(void);
+
+static inline const zen_platform_t *
+oxide_zen_platform(void)
+{
+	ASSERT3P(oxide_board_data, !=, NULL);
+	return (oxide_board_data->obd_zen_platform);
+}
 
 #ifdef	__cplusplus
 }

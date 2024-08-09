@@ -31,9 +31,19 @@
 #include <sys/io/milan/iomux.h>
 #include <sys/io/genoa/iomux.h>
 #include <sys/io/turin/iomux.h>
+#include <sys/io/zen/platform.h>
+
+/*
+ * A chicken switch to skip the early supported processor check for bringup.
+ *
+ * Note: this is static const as it is used before kmdb is available, so
+ * cannot be changed at runtime, only compile time.
+ */
+static const bool allow_unsupported_processor = false;
 
 extern x86_chiprev_t _cpuid_chiprev(uint_t, uint_t, uint_t, uint_t);
 extern const char *_cpuid_chiprevstr(uint_t, uint_t, uint_t, uint_t);
+extern x86_uarchrev_t _cpuid_uarchrev(uint_t, uint_t, uint_t, uint_t);
 extern uint32_t _cpuid_skt(uint_t, uint_t, uint_t, uint_t);
 
 const oxide_board_data_t *oxide_board_data = NULL;
@@ -584,6 +594,26 @@ oxide_board_iomux_setup(oxide_board_def_t *b)
 	mmio_reg_block_unmap(&block);
 }
 
+static const char *
+oxide_board_name(oxide_board_t board)
+{
+	switch (board) {
+	case OXIDE_BOARD_GIMLET:
+		return ("Gimlet");
+	case OXIDE_BOARD_ETHANOLX:
+		return ("Ethanol-X");
+	case OXIDE_BOARD_COSMO:
+		return ("Cosmo");
+	case OXIDE_BOARD_RUBY:
+		return ("Ruby");
+	case OXIDE_BOARD_RUBYRED:
+		return ("RubyRed");
+	case OXIDE_BOARD_UNKNOWN:
+	default:
+		return ("Unknown");
+	}
+}
+
 void
 oxide_derive_platform(void)
 {
@@ -602,6 +632,8 @@ oxide_derive_platform(void)
 	cpuinfo.obc_chiprev = early_cpuid_ident(&family, &model, &stepping);
 	cpuinfo.obc_chiprevstr = _cpuid_chiprevstr(
 	    X86_VENDOR_AMD, family, model, stepping);
+	cpuinfo.obc_uarchrev = _cpuid_uarchrev(X86_VENDOR_AMD, family, model,
+	    stepping);
 	cpuinfo.obc_socket = _cpuid_skt(X86_VENDOR_AMD, family, model,
 	    stepping);
 	cpuinfo.obc_fchkind = chiprev_fch_kind(cpuinfo.obc_chiprev);
@@ -626,6 +658,26 @@ oxide_derive_platform(void)
 			data->obd_cpuinfo = cpuinfo;
 			oxide_board_iomux_setup(b);
 
+			switch (_X86_CHIPREV_FAMILY(cpuinfo.obc_chiprev)) {
+			case X86_PF_AMD_MILAN:
+				data->obd_zen_platform = &milan_platform;
+				break;
+			case X86_PF_AMD_GENOA:
+				data->obd_zen_platform = &genoa_platform;
+				break;
+			case X86_PF_AMD_TURIN:
+				data->obd_zen_platform = &turin_platform;
+				break;
+			case X86_PF_AMD_DENSE_TURIN:
+				data->obd_zen_platform = &dense_turin_platform;
+				break;
+			default:
+				bop_printf(NULL, "Oxide board %s -- %s\n",
+				    oxide_board_name(data->obd_board),
+				    data->obd_cpuinfo.obc_chiprevstr);
+				bop_panic("Unsupported processor family");
+			}
+
 			oxide_board_data = data;
 			break;
 		}
@@ -635,30 +687,26 @@ oxide_derive_platform(void)
 		bop_panic("Could not derive Oxide board type");
 }
 
-static const char *
-oxide_board_name(oxide_board_t board)
-{
-	switch (board) {
-	case OXIDE_BOARD_GIMLET:
-		return ("Gimlet");
-	case OXIDE_BOARD_ETHANOLX:
-		return ("Ethanol-X");
-	case OXIDE_BOARD_COSMO:
-		return ("Cosmo");
-	case OXIDE_BOARD_RUBY:
-		return ("Ruby");
-	case OXIDE_BOARD_RUBYRED:
-		return ("RubyRed");
-	case OXIDE_BOARD_UNKNOWN:
-	default:
-		return ("Unknown");
-	}
-}
-
 void
 oxide_report_platform(void)
 {
 	bop_printf(NULL, "Oxide board %s -- %s\n",
 	    oxide_board_name(oxide_board_data->obd_board),
 	    oxide_board_data->obd_cpuinfo.obc_chiprevstr);
+
+	/*
+	 * We currently detect more platforms than are fully supported and so
+	 * let's be conservative unless otherwise explicitly requested.
+	 */
+	switch (_X86_CHIPREV_FAMILY(
+	    oxide_board_data->obd_cpuinfo.obc_chiprev)) {
+	case X86_PF_AMD_MILAN:
+	case X86_PF_AMD_GENOA:
+	case X86_PF_AMD_TURIN:
+	case X86_PF_AMD_DENSE_TURIN:
+		break;
+	default:
+		if (!allow_unsupported_processor)
+			bop_panic("Unsupported processor family");
+	}
 }
