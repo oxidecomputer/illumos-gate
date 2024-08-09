@@ -145,6 +145,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_HW_DBG(n, p, b)	\
     genoa_pcie_port_smn_reg(n, D_PCIE_PORT_HW_DBG, p, b)
 #define	PCIE_PORT_HW_DBG_SET_DBG15(r, v)	bitset32(r, 15, 15, v)
+#define	PCIE_PORT_HW_DBG_SET_DBG13(r, v)	bitset32(r, 13, 13, v)
 
 /*
  * PCIEPORT::PCIEP_HW_DEBUG_LC - unused but captured for debugging.
@@ -998,7 +999,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_EQ_CTL_8GT(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_8GT, (p), (b))
-#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(r, v) bitset32(r, 3, 2, v)
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 
 /*
  * PCIEPORT::PCIE_LC_EQ_CNTL_16GT - Used to set equalization
@@ -1011,7 +1013,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_EQ_CTL_16GT(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_16GT, (p), (b))
-#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(r, v) bitset32(r, 3, 2, v)
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 
 /*
  * PCIEPORT::PCIE_LC_EQ_CNTL_32GT - Used to set equalization
@@ -1024,7 +1027,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_EQ_CTL_32GT(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_32GT, (p), (b))
-#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(r, v) bitset32(r, 3, 2, v)
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 
 /*
  * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL - Used to control

@@ -3825,10 +3825,6 @@ genoa_mpio_ubm_hfc_init(genoa_iodie_t *iodie, int i)
 		ask->zma_link.zml_attrs.zmla_dfc_idx = j;
 		ask->zma_link.zml_attrs.zmla_port_present = 1;
 
-		ask->zma_link.zml_attrs.zmla_max_link_speed_cap =
-		    d.zmudd_data.zmudt_gen_speed;
-		ask->zma_link.zml_attrs.zmla_target_link_speed =
-		    d.zmudd_data.zmudt_gen_speed;
 		switch (d.zmudd_data.zmudt_type) {
 		case ZEN_MPIO_UBM_DFC_TYPE_QUAD_PCI:
 			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE;
@@ -4011,11 +4007,6 @@ genoa_mpio_init_data(genoa_iodie_t *iodie, void *arg)
 	const zen_mpio_ubm_hfc_port_t *source_ubm_data;
 	zen_mpio_ask_port_t *ask;
 	int i;
-#if 0
-	const genoa_apob_phyovr_t *phy_override;
-	size_t phy_len;
-	int err;
-#endif
 
 	/*
 	 * XXX Figure out how to best not hardcode Ruby. This should
@@ -4517,7 +4508,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_EQ_US_TX_PRESET,
-		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_7,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4531,7 +4522,7 @@ static const genoa_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
-		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_5,
+		.strap_data = GENOA_STRAP_PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
@@ -4672,14 +4663,6 @@ static const genoa_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_16GT,
 		.strap_data = 0x2,
-		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
-		.strap_corematch = PCIE_COREMATCH_ANY,
-		.strap_portmatch = PCIE_PORTMATCH_ANY
-	},
-	{
-		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_32GT,
-		.strap_data = 0x0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
@@ -5681,16 +5664,6 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	val = genoa_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(val,
 	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
-	/*
-	 * This is supposed to be set as part of some workaround for ports that
-	 * support at least PCIe Gen 4.0 speeds. As all supported platforms
-	 * (Ruby, Cosmo, etc.) always support that on the port unless this
-	 * is one of the WAFL related lanes, we always set this.
-	 */
-	if (pc->gpc_coreno != GENOA_IOMS_WAFL_PCIE_CORENO) {
-		val = PCIE_PORT_LC_CTL2_SET_TS2_CHANGE_REQ(val,
-		    PCIE_PORT_LC_CTL2_TS2_CHANGE_128);
-	}
 	genoa_pcie_port_write(port, reg, val);
 
 	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL3);
@@ -5699,13 +5672,13 @@ genoa_fabric_init_bridges(genoa_pcie_port_t *port, void *arg)
 	genoa_pcie_port_write(port, reg, val);
 
 	/*
-	 * Lucky Hardware Debug 15. Why is it lucky? Because all we know is
-	 * we've been told to set it.
+	 * AMD's current default is to disable certain classes of receiver
+	 * errors. XXX We need to understand why.
 	 */
-	// reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
-	// val = genoa_pcie_port_read(port, reg);
-	// val = PCIE_PORT_HW_DBG_SET_DBG15(val, 1);
-	// genoa_pcie_port_write(port, reg, val);
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
+	val = genoa_pcie_port_read(port, reg);
+	val = PCIE_PORT_HW_DBG_SET_DBG13(val, 1);
+	genoa_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the 8 GT/s symbols per clock is set to 2.
