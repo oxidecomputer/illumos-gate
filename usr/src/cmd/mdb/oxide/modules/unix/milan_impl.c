@@ -102,7 +102,6 @@ static const df_comp_t milan_comps[] = {
 
 df_props_t df_props_milan = {
 	.dfp_rev = DF_REV_3,
-	.dfp_reg_mask = 0x3fc,
 	.dfp_max_cfgmap = DF_MAX_CFGMAP,
 	/*
 	 * For DRAM, default to CCM0 (we don't use a UMC because it has very few

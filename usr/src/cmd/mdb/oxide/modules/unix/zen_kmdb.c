@@ -603,10 +603,12 @@ df_dcmd_check(uintptr_t addr, uint_t flags, boolean_t inst_set, uintptr_t inst,
     boolean_t func_set, uintptr_t func, boolean_t sock_set, uintptr_t *sock,
     uint_t broadcast)
 {
+	uintptr_t reg_mask = (df_props->dfp_rev >= DF_REV_4) ?
+	    DF_FICAA_V4_REG_MASK : DF_FICAA_V2_REG_MASK;
 	if (!(flags & DCMD_ADDRSPEC)) {
 		mdb_warn("a register must be specified via an address\n");
 		return (DCMD_USAGE);
-	} else if ((addr & ~(uintptr_t)df_props->dfp_reg_mask) != 0) {
+	} else if ((addr & ~reg_mask) != 0) {
 		mdb_warn("invalid register: 0x%x, must be 4-byte aligned and "
 		    "in-range\n", addr);
 		return (DCMD_ERR);
@@ -680,13 +682,13 @@ df_write32_indirect_raw(uint8_t sock, uint16_t inst, uint8_t func,
 	case DF_REV_3P5:
 		ficaa = DF_FICAA_V2;
 		ficad = DF_FICAD_LO_V2;
-		rval = DF_FICAA_V2_SET_REG(rval, reg >> 2);
+		rval = DF_FICAA_V2_SET_REG(rval, reg >> DF_FICAA_REG_SHIFT);
 		break;
 	case DF_REV_4:
 	case DF_REV_4D2:
 		ficaa = DF_FICAA_V4;
 		ficad = DF_FICAD_LO_V4;
-		rval = DF_FICAA_V4_SET_REG(rval, reg >> 2);
+		rval = DF_FICAA_V4_SET_REG(rval, reg >> DF_FICAA_REG_SHIFT);
 		break;
 	default:
 		mdb_warn("unsupported DF revision: %u\n", df_props->dfp_rev);
@@ -722,13 +724,13 @@ df_read32_indirect_raw(uint8_t sock, uint16_t inst, uint8_t func, uint16_t reg,
 	case DF_REV_3P5:
 		ficaa = DF_FICAA_V2;
 		ficad = DF_FICAD_LO_V2;
-		val = DF_FICAA_V2_SET_REG(val, reg >> 2);
+		val = DF_FICAA_V2_SET_REG(val, reg >> DF_FICAA_REG_SHIFT);
 		break;
 	case DF_REV_4:
 	case DF_REV_4D2:
 		ficaa = DF_FICAA_V4;
 		ficad = DF_FICAD_LO_V4;
-		val = DF_FICAA_V4_SET_REG(val, reg >> 2);
+		val = DF_FICAA_V4_SET_REG(val, reg >> DF_FICAA_REG_SHIFT);
 		break;
 	default:
 		mdb_warn("unsupported DF revision: %u\n", df_props->dfp_rev);
@@ -751,15 +753,16 @@ static boolean_t
 df_read32_indirect(uint8_t sock, uint16_t inst, const df_reg_def_t def,
     uint32_t *valp)
 {
-	if ((def.drd_gens & df_props->dfp_rev) == 0) {
-		mdb_warn("asked to read DF reg with unsupported Gen: "
+	if (!df_reg_valid(df_props->dfp_rev, def)) {
+		mdb_warn("asked to read invalid DF reg: "
 		    "func/reg: %u/0x%x, gens: 0x%x, dfp_rev: 0x%\n",
 		    def.drd_func, def.drd_reg, def.drd_gens,
 		    df_props->dfp_rev);
 		return (B_FALSE);
 	}
 
-	return (df_read32_indirect_raw(sock, inst, def.drd_func, def.drd_reg, valp));
+	return (df_read32_indirect_raw(sock, inst, def.drd_func, def.drd_reg,
+	    valp));
 }
 
 int
@@ -795,8 +798,8 @@ rddf_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			return (DCMD_ERR);
 		}
 	} else {
-		if (!df_read32_indirect_raw((uint8_t)sock, (uint16_t)inst, func, addr,
-		    &val)) {
+		if (!df_read32_indirect_raw((uint8_t)sock, (uint16_t)inst, func,
+		    addr, &val)) {
 			return (DCMD_ERR);
 		}
 	}
@@ -844,8 +847,8 @@ wrdf_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			return (DCMD_ERR);
 		}
 	} else {
-		if (!df_write32_indirect_raw((uint8_t)sock, (uint16_t)inst, func, addr,
-		    val)) {
+		if (!df_write32_indirect_raw((uint8_t)sock, (uint16_t)inst,
+		    func, addr, val)) {
 			return (DCMD_ERR);
 		}
 	}

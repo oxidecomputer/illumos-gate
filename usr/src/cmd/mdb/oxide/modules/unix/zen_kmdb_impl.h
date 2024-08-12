@@ -83,11 +83,6 @@ typedef struct df_props {
 	const df_rev_t dfp_rev;
 
 	/*
-	 * Mask for valid registers for use with ::rddf/::wrdf dcmds.
-	 */
-	const uint16_t dfp_reg_mask;
-
-	/*
 	 * The maximum number of PCI Bus configuration address maps.
 	 */
 	const uint_t dfp_max_cfgmap;

@@ -185,7 +185,6 @@ static const df_comp_t turin_comps[] = {
 
 df_props_t df_props_turin = {
 	.dfp_rev = DF_REV_4D2,
-	.dfp_reg_mask = 0xffc,
 	.dfp_max_cfgmap = DF_MAX_CFGMAP_TURIN,
 	/*
 	 * For DRAM, default to CCM0 (we don't use a UMC because it has very few
