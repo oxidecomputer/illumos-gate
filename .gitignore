@@ -9115,6 +9115,10 @@ usr/src/test/os-tests/tests/uccid/yk-poll
 usr/src/test/os-tests/tests/uccid/yk-readonly
 usr/src/test/os-tests/tests/ucontext.32
 usr/src/test/os-tests/tests/ucontext.64
+usr/src/test/os-tests/tests/vfs/statvfs.32
+usr/src/test/os-tests/tests/vfs/statvfs.64
+usr/src/test/os-tests/tests/vfs/syncfs.32
+usr/src/test/os-tests/tests/vfs/syncfs.64
 usr/src/test/os-tests/tests/writev.32
 usr/src/test/os-tests/tests/writev.64
 usr/src/test/os-tests/tests/xsave/bad_xregs.32
@@ -9208,7 +9212,8 @@ usr/src/test/util-tests/tests/libsff/libsff_wave
 usr/src/test/util-tests/tests/mdb/progs/bitfields
 usr/src/test/util-tests/tests/mdb/progs/number_symbol
 usr/src/test/util-tests/tests/mergeq/mqt
-usr/src/test/util-tests/tests/smbios/smbios
+usr/src/test/util-tests/tests/smbios/smbios.32
+usr/src/test/util-tests/tests/smbios/smbios.64
 usr/src/test/util-tests/tests/workq/wqt
 usr/src/test/zfs-tests/cmd/btree_test/btree_test
 usr/src/test/zfs-tests/cmd/chg_usr_exec/chg_usr_exec
