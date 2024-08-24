@@ -483,7 +483,7 @@ xhci_root_hub_handle_port_get_status(xhci_t *xhcip, usb_ctrl_req_t *ucrp)
 	ps |= XHCI_PS_PLS_SET(XHCI_PS_PLS_GET(reg));
 
 	if (reg & XHCI_PS_PP)
-		ps |= PORT_STATUS_PPS;
+		ps |= PORT_STATUS_SS_PPS;
 
 	/*
 	 * While this isn't a defined part of the status, because we're not a
@@ -493,13 +493,13 @@ xhci_root_hub_handle_port_get_status(xhci_t *xhcip, usb_ctrl_req_t *ucrp)
 	 */
 	switch (XHCI_PS_SPEED_GET(reg)) {
 	case XHCI_SPEED_FULL:
-		ps |= USBA_FULL_SPEED_DEV << PORT_STATUS_SPSHIFT_SS;
+		ps |= USBA_FULL_SPEED_DEV << PORT_STATUS_SS_SPSHIFT;
 		break;
 	case XHCI_SPEED_LOW:
-		ps |= USBA_LOW_SPEED_DEV << PORT_STATUS_SPSHIFT_SS;
+		ps |= USBA_LOW_SPEED_DEV << PORT_STATUS_SS_SPSHIFT;
 		break;
 	case XHCI_SPEED_HIGH:
-		ps |= USBA_HIGH_SPEED_DEV << PORT_STATUS_SPSHIFT_SS;
+		ps |= USBA_HIGH_SPEED_DEV << PORT_STATUS_SS_SPSHIFT;
 		break;
 	case XHCI_SPEED_SUPER:
 	default:
@@ -509,7 +509,7 @@ xhci_root_hub_handle_port_get_status(xhci_t *xhcip, usb_ctrl_req_t *ucrp)
 		 * been purely faster than SuperSpeed and have the same external
 		 * behavior.
 		 */
-		ps |= USBA_SUPER_SPEED_DEV << PORT_STATUS_SPSHIFT_SS;
+		ps |= USBA_SUPER_SPEED_DEV << PORT_STATUS_SS_SPSHIFT;
 		break;
 	}
 
