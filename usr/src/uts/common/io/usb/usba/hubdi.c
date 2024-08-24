@@ -767,6 +767,18 @@ hubd_can_suspend(hubd_t *hubd)
 
 
 /*
+ * Determine whether this is a SuperSpeed hub or not.  Returns B_TRUE for USB
+ * 3.0 or greater, or B_FALSE for USB 2.0 and earlier.
+ */
+static boolean_t
+hubd_hub_is_super_speed(hubd_t *hubd)
+{
+	return (hubd->h_usba_device->usb_port_status >= USBA_SUPER_SPEED_DEV ?
+	    B_TRUE : B_FALSE);
+}
+
+
+/*
  * resume port depending on current device state
  */
 static int
@@ -3164,7 +3176,7 @@ hubd_get_hub_descriptor(hubd_t *hubd)
 	 * USB 3 device. SuperSpeed Hubs have different descriptors and you
 	 * cannot ask them for the traditional USB 2 descriptor.
 	 */
-	if (hubd->h_usba_device->usb_port_status >= USBA_SUPER_SPEED_DEV) {
+	if (hubd_hub_is_super_speed(hubd)) {
 		wValue = USB_DESCR_TYPE_SS_HUB << 8 | HUBD_DEFAULT_DESC_INDEX;
 	} else {
 		wValue = USB_DESCR_TYPE_HUB << 8 | HUBD_DEFAULT_DESC_INDEX;
@@ -3237,7 +3249,7 @@ hubd_get_hub_descriptor(hubd_t *hubd)
 	 */
 
 	ASSERT(*(data->b_rptr + 2) <= (MAX_PORTS + 1));
-	if (hubd->h_usba_device->usb_port_status >= USBA_SUPER_SPEED_DEV) {
+	if (hubd_hub_is_super_speed(hubd)) {
 		usb_ss_hub_descr_t hub_descr;
 		char *desc = "cccscccs";
 		ASSERT(*(data->b_rptr + 1) == ROOT_HUB_SS_DESCRIPTOR_TYPE);
@@ -3310,9 +3322,9 @@ hubd_set_hub_depth(hubd_t *hubd)
 	 * SuperSpeed devices. This didn't exist for USB 2.0 and older hubs.
 	 * There's also no need to call this on the root hub.
 	 */
-	if (hubd->h_usba_device->usb_port_status < USBA_SUPER_SPEED_DEV ||
-	    usba_is_root_hub(hubd->h_dip))
+	if (!hubd_hub_is_super_speed(hubd) || usba_is_root_hub(hubd->h_dip)) {
 		return (USB_SUCCESS);
+	}
 
 	depth = 0;
 	ud = hubd->h_usba_device;
@@ -4737,7 +4749,7 @@ hubd_status_uniform(hubd_t *hubd, usb_port_t port, uint16_t *status,
 
 	hubd->h_port_raw[port] = os;
 
-	if (hubd->h_usba_device->usb_port_status >= USBA_SUPER_SPEED_DEV) {
+	if (hubd_hub_is_super_speed(hubd)) {
 		/*
 		 * USB 3 devices are always at super speed when plugged into a
 		 * super speed hub. However, this is only true if we're talking
@@ -4747,21 +4759,36 @@ hubd_status_uniform(hubd_t *hubd, usb_port_t port, uint16_t *status,
 		 * (xhci) uses some of the extra status bits to stash the
 		 * current device's detected speed.
 		 */
-		if (usba_is_root_hub(hubd->h_dip)) {
-			if (speed != NULL) {
-				*speed = (os & PORT_STATUS_SPMASK_SS) >>
-				    PORT_STATUS_SPSHIFT_SS;
-			}
-		} else {
-			if (speed != NULL)
+		if (speed != NULL) {
+			if (usba_is_root_hub(hubd->h_dip)) {
+				*speed = (os & PORT_STATUS_SS_SPMASK) >>
+				    PORT_STATUS_SS_SPSHIFT;
+			} else {
 				*speed = USBA_SUPER_SPEED_DEV;
+			}
 		}
 
-		if (os & PORT_STATUS_PPS_SS) {
-			os &= ~PORT_STATUS_PPS_SS;
+		/*
+		 * Clear out the USB 3.x PLS bits.  These bits overlap with the
+		 * USB 2.x PPS bit, so this must be done first.
+		 */
+		os &= ~PORT_STATUS_SS_PLSMASK;
+
+		/*
+		 * Translate the USB 3.x port power status bit:
+		 */
+		if (os & PORT_STATUS_SS_PPS) {
+			os &= ~PORT_STATUS_SS_PPS;
 			os |= PORT_STATUS_PPS;
-			*status = os;
+		} else {
+			os &= ~PORT_STATUS_PPS;
 		}
+
+		/*
+		 * Make sure we only allow valid USB 2.0 bits through the
+		 * translation:
+		 */
+		*status = os & PORT_STATUS_MASK;
 	} else {
 		/*
 		 * For USB 2, the only thing we need to do is transform the

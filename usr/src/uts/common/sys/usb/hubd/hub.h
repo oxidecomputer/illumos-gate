@@ -156,16 +156,31 @@ typedef struct usb_ss_hub_descr {
 /*
  * The USB 2.0 and USB 3.0 port status bits are almost identical; however, the
  * location of the port's power indicator is different for hubs. To deal with
- * this, we have logic, hubd_status_unifornm, that transforms the USB 3 status
+ * this, we have logic, hubd_status_uniform(), that transforms the USB 3 status
  * to USB 2, hence why we only have one version of these macros below.
  */
-#define	PORT_STATUS_MASK	0x171f
-#define	PORT_STATUS_OK		0x103	/* connected, enabled, power */
+#define	PORT_STATUS_MASK	(PORT_STATUS_CCS \
+				|PORT_STATUS_PES \
+				|PORT_STATUS_PSS \
+				|PORT_STATUS_POCI \
+				|PORT_STATUS_PRS \
+				|PORT_STATUS_PPS \
+				|PORT_STATUS_LSDA \
+				|PORT_STATUS_HSDA \
+				|PORT_STATUS_PIC)
+#define	PORT_STATUS_OK		(PORT_STATUS_CCS \
+				|PORT_STATUS_PES \
+				|PORT_STATUS_PPS)
 
-/* USB 3 Specific bits */
-#define	PORT_STATUS_PPS_SS	0x0200	/* USB 3.0 port power status */
-#define	PORT_STATUS_SPMASK_SS	0x1c00
-#define	PORT_STATUS_SPSHIFT_SS	10
+/*
+ * USB 3 specific bits; these are cleared by hubd_status_uniform() during
+ * translation to the uniform USB 2 style PORT_STATUS.
+ */
+#define	PORT_STATUS_SS_PPS	0x0200	/* USB 3.0 port power status */
+#define	PORT_STATUS_SS_SPMASK	0x1c00
+#define	PORT_STATUS_SS_SPSHIFT	10
+#define	PORT_STATUS_SS_PLSMASK	0x01e0
+#define	PORT_STATUS_SS_PLSSHIFT	5
 
 /* Port Change Field Bits - Table 11-16 */
 #define	PORT_CHANGE_CSC		0x0001	/* connect status change */
