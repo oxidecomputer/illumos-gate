@@ -11,7 +11,7 @@
 
 /*
  * Copyright (c) 2019, Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -778,9 +778,9 @@ void *xhci_soft_state;
 /*
  * This is the time in us that we wait after a controller resets before we
  * consider reading any register. There are some controllers that want at least
- * 1 ms, therefore we default to 10 ms.
+ * 1 ms, therefore we default to 25 ms.
  */
-clock_t xhci_reset_delay = 10000;
+clock_t xhci_reset_delay = 25000;
 
 void
 xhci_error(xhci_t *xhcip, const char *fmt, ...)
@@ -1801,6 +1801,230 @@ xhci_controller_start(xhci_t *xhcip)
 	    XHCI_STS_HCH, 0, 500, 10));
 }
 
+static int
+xhci_port_status(xhci_t *xhcip, uint_t port, uint_t *status)
+{
+	uint32_t reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(port));
+	if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
+		xhci_error(xhcip, "failed to read port state: "
+		    "encountered FM register error");
+		ddi_fm_service_impact(xhcip->xhci_dip,
+		    DDI_SERVICE_LOST);
+		return (EIO);
+	}
+
+	*status= reg;
+	/* *pls = XHCI_PS_PLS_GET(reg); */
+	return (0);
+}
+
+static int
+xhci_port_warm_reset(xhci_t *xhcip, uint_t port)
+{
+	int r;
+	uint32_t reg;
+	if ((r = xhci_port_status(xhcip, port, &reg)) != 0) {
+		return (r);
+	}
+
+	if (reg & XHCI_PS_CCS) {
+		xhci_error(xhcip, "port %u has CCS set", port);
+	}
+	if (reg & XHCI_PS_CAS) {
+		xhci_error(xhcip, "port %u has CAS set", port);
+	}
+
+	/*
+	 * Trigger a warm reset of the port:
+	 */
+	reg &= ~XHCI_PS_CLEAR;
+	reg |= XHCI_PS_WPR;
+	xhci_put32(xhcip, XHCI_R_OPER, XHCI_PORTSC(port), reg);
+	if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
+		xhci_error(xhcip, "failed to reset port: "
+		    "encountered FM register error");
+		ddi_fm_service_impact(xhcip->xhci_dip,
+		    DDI_SERVICE_LOST);
+		return (EIO);
+	}
+
+	return (0);
+}
+
+/*
+ * Some Intel Chipsets appear to exhibit a race condition with devices that
+ * have been connected since before power was applied to the system.  Devices
+ * can come to rest in the Polling link state, ostensibly forever or until the
+ * port is explicitly reset.  Empirical study of systems as they boot up has
+ * shown that the port status register can move through several different and
+ * seemingly valid states before arriving in the stuck state after an
+ * indeterminate amount of time.
+ *
+ * The Intel 100/C230 Series PCH specification update lists a similar
+ * presentation of symptoms as Errata 8, but it is not clear that this
+ * describes the full extent of the issue: it has also been seen on other
+ * controllers of different vintages.
+ *
+ * We will check all ports for 25 millseconds after the controller is started
+ * to see if any arrive in a potential stuck state.  For any ports found in the
+ * stuck state during that initiial window, we'll wait to see if they come out
+ * of it for 400 milliseconds before issuing the reset, in case they come back
+ * on their own.  The longer wait time is informed by the tPollingLFPSTimeout
+ * of 360 milliseconds in the "Link Training and Status State Machine" section
+ * of the USB 3 specification.
+ */
+uint32_t xhci_stuck_port_detect_msec = 25;
+uint32_t xhci_stuck_port_wait_msec = 400;
+
+static int
+xhci_check_stuck_port(xhci_t *xhcip, uint_t port, boolean_t *stuck)
+{
+	int r;
+	uint_t ps;
+
+	if ((r = xhci_port_status(xhcip, port, &ps)) != 0) {
+		return (r);
+	}
+
+	/*
+	 * To be stuck, a port must have the Polling link
+	 * state:
+	 */
+	boolean_t polling = XHCI_PS_PLS_GET(ps) == XHCI_PLS_POLLING;
+
+	/*
+	 * If either the Current Connect Status (CCS) or Cold
+	 * Attach Status (CAS) bits are set, we don't consider
+	 * this port to be stuck, even if it is currently in
+	 * the Polling link state.
+	 */
+	boolean_t attached = (ps & (XHCI_PS_CCS | XHCI_PS_CAS)) != 0;
+
+	*stuck = polling && !attached;
+	return (0);
+}
+
+/*
+ * Check for ports that have arrived in the stuck state.  If we find any, wait
+ * long enough to confirm that the port(s) are indeed stuck and then trigger a
+ * warm reset for those ports.
+ */
+static int
+xhci_check_stuck_ports(xhci_t *xhcip)
+{
+	hrtime_t detect = MSEC2NSEC(xhci_stuck_port_detect_msec);
+	hrtime_t wait = MSEC2NSEC(xhci_stuck_port_wait_msec);
+
+	hrtime_t stuck_time[MAX_PORTS] = { 0 };
+	hrtime_t unstuck_time[MAX_PORTS] = { 0 };
+
+	hrtime_t start = gethrtime();
+
+	/*
+	 * Wait to see if any ports enter a potential stuck state during the
+	 * detection window:
+	 */
+	while (gethrtime() - start < detect) {
+		int r;
+
+		/*
+		 * First, check to see if we have detected any ports in the
+		 * polling state:
+		 */
+		for (uint_t i = 0; i < xhcip->xhci_caps.xcap_max_ports; i++) {
+			boolean_t stuck;
+			if ((r = xhci_check_stuck_port(xhcip, i,
+			    &stuck)) != 0) {
+				return (r);
+			}
+
+			if (stuck) {
+				if (stuck_time[i] == 0) {
+					hrtime_t now = gethrtime();
+
+					stuck_time[i] = now;
+
+					xhci_error(xhcip, "port %u stuck "
+					    "at %u msec (detect)", i,
+					    (uint_t)NSEC2MSEC(now - start));
+				}
+			} else {
+				if (stuck_time[i] != 0 &&
+				    unstuck_time[i] == 0) {
+					hrtime_t now = gethrtime();
+
+					unstuck_time[i] = now;
+
+					xhci_error(xhcip, "port %u unstuck "
+					    "at %u msec (detect)", i,
+					    (uint_t)NSEC2MSEC(now - start));
+				}
+			}
+		}
+
+		delay(drv_usectohz(100));
+	}
+
+	for (;;) {
+		boolean_t outstanding = B_FALSE;
+
+		/*
+		 * Check to see if any ports that we found to be stuck are
+		 * still stuck during the wait window:
+		 */
+		for (uint_t i = 0; i < xhcip->xhci_caps.xcap_max_ports; i++) {
+			int r;
+
+			if (stuck_time[i] == 0 || unstuck_time[i] != 0) {
+				/*
+				 * This port was either never stuck, or it came
+				 * unstuck.
+				 */
+				continue;
+			}
+
+			outstanding = B_TRUE;
+
+			boolean_t stuck;
+			if ((r = xhci_check_stuck_port(xhcip, i,
+			    &stuck)) != 0) {
+				return (r);
+			}
+
+			hrtime_t now = gethrtime();
+			if (!stuck) {
+				/*
+				 * The port came unstuck while we waited.
+				 */
+				unstuck_time[i] = now;
+				xhci_error(xhcip, "port %u unstuck "
+				    "at %u msec (wait)", i,
+				    (uint_t)NSEC2MSEC(now - start));
+				continue;
+			}
+
+			if (now - stuck_time[i] < wait) {
+				/*
+				 * Continue to wait for this port.
+				 */
+				continue;
+			}
+
+			xhci_error(xhcip, "port %u stuck: resetting!", i);
+			unstuck_time[i] = now;
+			if ((r = xhci_port_warm_reset(xhcip, i)) != 0) {
+				return (r);
+			}
+		}
+
+		if (!outstanding) {
+			return (0);
+		}
+
+		delay(drv_usectohz(100));
+	}
+}
+
 /* ARGSUSED */
 static void
 xhci_reset_task(void *arg)
@@ -1916,6 +2140,35 @@ xhci_ioctl_setpls(xhci_t *xhcip, intptr_t arg)
 }
 
 static int
+xhci_ioctl_port_reset(xhci_t *xhcip, intptr_t arg)
+{
+	uint32_t reg;
+	xhci_ioctl_port_reset_t xipr;
+
+	if (ddi_copyin((const void *)(uintptr_t)arg, &xipr, sizeof (xipr),
+	    0) != 0) {
+		return (EFAULT);
+	}
+
+	if (xipr.xipr_port == 0 || xipr.xipr_port >
+	    xhcip->xhci_caps.xcap_max_ports) {
+		return (EINVAL);
+	}
+
+	if (xipr.xipr_reset_type != XHCI_PS_WPR &&
+	    xipr.xipr_reset_type != XHCI_PS_PR) {
+		return (EINVAL);
+	}
+
+	reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(xipr.xipr_port));
+	reg &= ~XHCI_PS_CLEAR;
+	reg |= xipr.xipr_reset_type;
+	xhci_put32(xhcip, XHCI_R_OPER, XHCI_PORTSC(xipr.xipr_port), reg);
+
+	return (0);
+}
+
+static int
 xhci_open(dev_t *devp, int flags, int otyp, cred_t *credp)
 {
 	dev_info_t *dip = xhci_get_dip(*devp);
@@ -1929,31 +2182,44 @@ xhci_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 {
 	dev_info_t *dip = xhci_get_dip(dev);
 
-	if (cmd == XHCI_IOCTL_PORTSC ||
-	    cmd == XHCI_IOCTL_CLEAR ||
-	    cmd == XHCI_IOCTL_SETPLS) {
-		xhci_t *xhcip = ddi_get_soft_state(xhci_soft_state,
-		    getminor(dev) & ~HUBD_IS_ROOT_HUB);
+	switch (cmd) {
+	case XHCI_IOCTL_PORTSC:
+	case XHCI_IOCTL_CLEAR:
+	case XHCI_IOCTL_SETPLS:
+	case XHCI_IOCTL_PORT_RESET:
+		break;
 
-		if (secpolicy_hwmanip(credp) != 0 ||
-		    crgetzoneid(credp) != GLOBAL_ZONEID)
-			return (EPERM);
-
-		if (mode & FKIOCTL)
-			return (ENOTSUP);
-
-		if (!(mode & FWRITE))
-			return (EBADF);
-
-		if (cmd == XHCI_IOCTL_PORTSC)
-			return (xhci_ioctl_portsc(xhcip, arg));
-		else if (cmd == XHCI_IOCTL_CLEAR)
-			return (xhci_ioctl_clear(xhcip, arg));
-		else
-			return (xhci_ioctl_setpls(xhcip, arg));
+	default:
+		return (usba_hubdi_ioctl(dip, dev, cmd, arg, mode, credp,
+		    rvalp));
 	}
 
-	return (usba_hubdi_ioctl(dip, dev, cmd, arg, mode, credp, rvalp));
+	xhci_t *xhcip = ddi_get_soft_state(xhci_soft_state,
+	    getminor(dev) & ~HUBD_IS_ROOT_HUB);
+
+	if (secpolicy_hwmanip(credp) != 0 ||
+	    crgetzoneid(credp) != GLOBAL_ZONEID) {
+		return (EPERM);
+	}
+
+	if (mode & FKIOCTL)
+		return (ENOTSUP);
+
+	if (!(mode & FWRITE))
+		return (EBADF);
+
+	switch (cmd) {
+	case XHCI_IOCTL_PORTSC:
+		return (xhci_ioctl_portsc(xhcip, arg));
+	case XHCI_IOCTL_CLEAR:
+		return (xhci_ioctl_clear(xhcip, arg));
+	case XHCI_IOCTL_SETPLS:
+		return (xhci_ioctl_setpls(xhcip, arg));
+	case XHCI_IOCTL_PORT_RESET:
+		return (xhci_ioctl_port_reset(xhcip, arg));
+	default:
+		panic("unexpected command %u", cmd);
+	}
 }
 
 static int
@@ -2159,6 +2425,11 @@ xhci_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto err;
 	}
 	xhcip->xhci_seq |= XHCI_ATTACH_STARTED;
+
+	if ((ret = xhci_check_stuck_ports(xhcip)) != 0) {
+		xhci_error(xhcip, "failed to reset ports: %d", ret);
+		goto err;
+	}
 
 	/*
 	 * Finally, register ourselves with the USB framework itself.
