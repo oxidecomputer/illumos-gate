@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2016 Joyent, Inc.
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_USB_XHCI_XHCI_IOCTL_H
@@ -32,9 +33,10 @@ extern "C" {
 #define	XHCI_IOCTL_PORTSC	(XHCI_IOCTL | 0x01)
 #define	XHCI_IOCTL_SETPLS	(XHCI_IOCTL | 0x02)
 #define	XHCI_IOCTL_CLEAR	(XHCI_IOCTL | 0x03)
+#define	XHCI_IOCTL_PORT_RESET	(XHCI_IOCTL | 0x04)
 
 typedef struct xhci_ioctl_portsc {
-	uint32_t 	xhi_nports;
+	uint32_t	xhi_nports;
 	uint32_t	xhi_pad;
 	uint32_t	xhi_portsc[XHCI_PORTSC_NPORTS];
 } xhci_ioctl_portsc_t;
@@ -46,8 +48,13 @@ typedef struct xhci_ioctl_setpls {
 
 typedef struct xhci_ioctl_clear {
 	uint32_t	xic_port;
-	uint32_t 	xic_pad;
+	uint32_t	xic_pad;
 } xhci_ioctl_clear_t;
+
+typedef struct xhci_ioctl_port_reset {
+	uint32_t	xipr_port;
+	uint32_t	xipr_pad;
+} xhci_ioctl_port_reset_t;
 
 #ifdef __cplusplus
 }
