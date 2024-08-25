@@ -2,6 +2,7 @@
  * Copyright (c) 2014 Martin Pieuchot. All rights reserved.
  * Copyright (c) 2010 Hans Petter Selasky. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2024 Oxide Computer Company
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -185,6 +186,24 @@ extern "C" {
 #define	XHCI_PS_CLEAR	0x80FF01FFU	/* command bits */
 #define	XHCI_PS_INDPORT(x)	((x) & 0xFF)
 #define	XHCI_PS_INDVAL(x)	(((x) & 0xFF00) >> 8)
+
+/*
+ * xHCI Port Link State (PLS) values.  See xHCI 1.1 / 5.4.8.
+ */
+#define	XHCI_PLS_U0		0	/* U0 */
+#define	XHCI_PLS_U1		1	/* U1 */
+#define	XHCI_PLS_U2		2	/* U2 */
+#define	XHCI_PLS_U3		3	/* U3 (suspended) */
+#define	XHCI_PLS_DISABLED	4	/* Disabled */
+#define	XHCI_PLS_RX_DETECT	5	/* RxDetect */
+#define	XHCI_PLS_INACTIVE	6	/* Inactive */
+#define	XHCI_PLS_POLLING	7	/* Polling */
+#define	XHCI_PLS_RECOVERY	8	/* Recovery */
+#define	XHCI_PLS_HOT_RESET	9	/* Hot Reset */
+#define	XHCI_PLS_COMPLIANCE	10	/* Compliance Mode */
+#define	XHCI_PLS_TEST		11	/* Test Mode */
+					/* Reserved (12-14) */
+#define	XHCI_PLS_RESUME		15	/* Resume */
 
 /*
  * xHCI Port Power Management and Control Register. See xHCI 1.1 / 5.4.9.

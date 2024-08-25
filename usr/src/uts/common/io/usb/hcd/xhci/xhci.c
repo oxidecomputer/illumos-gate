@@ -1801,6 +1801,37 @@ xhci_controller_start(xhci_t *xhcip)
 	    XHCI_STS_HCH, 0, 500, 10));
 }
 
+static int
+xhci_reset_ports(xhci_t *xhcip)
+{
+	for (uint_t i = 0; i < xhcip->xhci_caps.xcap_max_ports; i++) {
+		uint32_t reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(i));
+		if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
+			xhci_error(xhcip, "failed to read port state: "
+			    "encountered FM register error");
+			ddi_fm_service_impact(xhcip->xhci_dip,
+			    DDI_SERVICE_LOST);
+			return (EIO);
+		}
+
+		/*
+		 * Trigger a reset of the port:
+		 */
+		reg &= ~XHCI_PS_CLEAR;
+		reg |= XHCI_PS_PR;
+		xhci_put32(xhcip, XHCI_R_OPER, XHCI_PORTSC(i), reg);
+		if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
+			xhci_error(xhcip, "failed to reset port: "
+			    "encountered FM register error");
+			ddi_fm_service_impact(xhcip->xhci_dip,
+			    DDI_SERVICE_LOST);
+			return (EIO);
+		}
+	}
+
+	return (0);
+}
+
 /* ARGSUSED */
 static void
 xhci_reset_task(void *arg)
@@ -1916,6 +1947,30 @@ xhci_ioctl_setpls(xhci_t *xhcip, intptr_t arg)
 }
 
 static int
+xhci_ioctl_port_reset(xhci_t *xhcip, intptr_t arg)
+{
+	uint32_t reg;
+	xhci_ioctl_port_reset_t xipr;
+
+	if (ddi_copyin((const void *)(uintptr_t)arg, &xipr, sizeof (xipr),
+	    0) != 0) {
+		return (EFAULT);
+	}
+
+	if (xipr.xipr_port == 0 || xipr.xipr_port >
+	    xhcip->xhci_caps.xcap_max_ports) {
+		return (EINVAL);
+	}
+
+	reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(xipr.xipr_port));
+	reg &= ~XHCI_PS_CLEAR;
+	reg |= XHCI_PS_PR;
+	xhci_put32(xhcip, XHCI_R_OPER, XHCI_PORTSC(xipr.xipr_port), reg);
+
+	return (0);
+}
+
+static int
 xhci_open(dev_t *devp, int flags, int otyp, cred_t *credp)
 {
 	dev_info_t *dip = xhci_get_dip(*devp);
@@ -1929,31 +1984,44 @@ xhci_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 {
 	dev_info_t *dip = xhci_get_dip(dev);
 
-	if (cmd == XHCI_IOCTL_PORTSC ||
-	    cmd == XHCI_IOCTL_CLEAR ||
-	    cmd == XHCI_IOCTL_SETPLS) {
-		xhci_t *xhcip = ddi_get_soft_state(xhci_soft_state,
-		    getminor(dev) & ~HUBD_IS_ROOT_HUB);
+	switch (cmd) {
+	case XHCI_IOCTL_PORTSC:
+	case XHCI_IOCTL_CLEAR:
+	case XHCI_IOCTL_SETPLS:
+	case XHCI_IOCTL_PORT_RESET:
+		break;
 
-		if (secpolicy_hwmanip(credp) != 0 ||
-		    crgetzoneid(credp) != GLOBAL_ZONEID)
-			return (EPERM);
-
-		if (mode & FKIOCTL)
-			return (ENOTSUP);
-
-		if (!(mode & FWRITE))
-			return (EBADF);
-
-		if (cmd == XHCI_IOCTL_PORTSC)
-			return (xhci_ioctl_portsc(xhcip, arg));
-		else if (cmd == XHCI_IOCTL_CLEAR)
-			return (xhci_ioctl_clear(xhcip, arg));
-		else
-			return (xhci_ioctl_setpls(xhcip, arg));
+	default:
+		return (usba_hubdi_ioctl(dip, dev, cmd, arg, mode, credp,
+		    rvalp));
 	}
 
-	return (usba_hubdi_ioctl(dip, dev, cmd, arg, mode, credp, rvalp));
+	xhci_t *xhcip = ddi_get_soft_state(xhci_soft_state,
+	    getminor(dev) & ~HUBD_IS_ROOT_HUB);
+
+	if (secpolicy_hwmanip(credp) != 0 ||
+	    crgetzoneid(credp) != GLOBAL_ZONEID) {
+		return (EPERM);
+	}
+
+	if (mode & FKIOCTL)
+		return (ENOTSUP);
+
+	if (!(mode & FWRITE))
+		return (EBADF);
+
+	switch (cmd) {
+	case XHCI_IOCTL_PORTSC:
+		return (xhci_ioctl_portsc(xhcip, arg));
+	case XHCI_IOCTL_CLEAR:
+		return (xhci_ioctl_clear(xhcip, arg));
+	case XHCI_IOCTL_SETPLS:
+		return (xhci_ioctl_setpls(xhcip, arg));
+	case XHCI_IOCTL_PORT_RESET:
+		return (xhci_ioctl_port_reset(xhcip, arg));
+	default:
+		panic("unexpected command %u", cmd);
+	}
 }
 
 static int
@@ -2159,6 +2227,30 @@ xhci_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto err;
 	}
 	xhcip->xhci_seq |= XHCI_ATTACH_STARTED;
+
+	/*
+	 * Some Intel Chipsets appear to exhibit a race condition with devices
+	 * that have been connected since before power was applied to the
+	 * system.  Devices can come to rest in the Polling link state,
+	 * ostensibly forever or until the port is explicitly reset.  It is
+	 * tempting to try to detect and report on this condition, but
+	 * empirical study of systems as they boot up has shown that the port
+	 * status register moves through several different and seemingly valid
+	 * states before arriving in the stuck state after an indeterminate
+	 * amount of time.
+	 *
+	 * The Intel 100/C230 Series PCH specification update lists a similar
+	 * presentation of symptoms as Errata 8, but it is not clear that this
+	 * describes the full extent of the issue: it has also been seen on
+	 * other controllers of different vintages.  The workaround implemented
+	 * by Intel for another platform does not appear sufficient to solve
+	 * the full extent of the problem we've witnessed, so we just reset all
+	 * the ports immediately after starting the controller:
+	 */
+	if ((ret = xhci_reset_ports(xhcip)) != 0) {
+		xhci_error(xhcip, "failed to reset ports: %d", ret);
+		goto err;
+	}
 
 	/*
 	 * Finally, register ourselves with the USB framework itself.
