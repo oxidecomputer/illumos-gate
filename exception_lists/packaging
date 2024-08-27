@@ -856,3 +856,9 @@ usr/include/sys/tofino.h
 #
 usr/include/sys/apob.h
 usr/include/sys/apob_impl.h
+
+#
+# Private ktest definitions which are only needed by the ktest
+# implementation -- which is fully controlled by gate.
+#
+usr/include/sys/ktest_impl.h
