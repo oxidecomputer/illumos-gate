@@ -3451,42 +3451,42 @@ static const uint32_t milan_pcie_strap_disable[] = {
 static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
-		.strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
-		.strap_data = MILAN_STRAP_PCIE_RX_PRESET_9DB,
+		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_7,
+		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
-		.strap_data = MILAN_STRAP_PCIE_TX_PRESET_5,
+		.strap_data = PCIE_TX_PRESET_5,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY

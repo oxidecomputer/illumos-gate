@@ -1086,7 +1086,9 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 
 /*
  * We have no idea what this controls, if anything. It is 8 bits wide,
- * supposedly defaults to 0xff, and AMD never uses it.
+ * supposedly defaults to 0xff, and AMD never uses it. The size appears to
+ * correspond to the number of ports that exist in the core given the increase
+ * from 8 to 9 bits wide from SP3 to SP5.
  */
 #define	MILAN_STRAP_PCIE_CHIP_MODE		0x9d
 
@@ -1095,33 +1097,22 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  */
 
 /*
- * Downstream and upstream lane equalization control preset hint. While this is
- * a lane setting, the same preset is used for all lanes in the core. This
+ * Downstream and upstream RX lane equalization control preset hint. While this
+ * is a lane setting, the same preset is used for all lanes in the core. This
  * applies to gen 3 and defaults to 0x3 for downstream, 0x0 for upstream, 3 bits
  * wide.  See PCIe4 7.7.3.4, and note that these apply only to the 8 GT/s EQ
- * procedure; hints don't apply to the 16 GT/s EQ scheme.
+ * procedure; hints don't apply to the 16 GT/s EQ scheme. See the
+ * PCIE_GEN3_RX_PRESET_* definitions in <sys/pcie.h> for actual values.
  */
 #define	MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT	0x9f
 #define	MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT	0xa0
 
 /*
- * Gen3 (8 GT/s) reciever preset hint encodings; these match PCIe3 4.2.3.2.
- */
-#define	MILAN_STRAP_PCIE_RX_PRESET_6DB	0
-#define	MILAN_STRAP_PCIE_RX_PRESET_7DB	1
-#define	MILAN_STRAP_PCIE_RX_PRESET_8DB	2
-#define	MILAN_STRAP_PCIE_RX_PRESET_9DB	3
-#define	MILAN_STRAP_PCIE_RX_PRESET_10DB	4
-#define	MILAN_STRAP_PCIE_RX_PRESET_11DB	5
-#define	MILAN_STRAP_PCIE_RX_PRESET_12DB	6
-#define	MILAN_STRAP_PCIE_RX_PRESET_RSVD	7
-
-/*
  * Gen3 (8 GT/s) transmitter EQ settings for ports used as DS and US
- * respectively. These are 4 bits wide and use the encodings below that are
- * shared with gen4.  Defaults to 0x3 for US and 0x4 for DS.  These establish
- * the values in the Lane Equalization Control registers for all lanes in this
- * core; see PCIe4 7.7.3.4.
+ * respectively. These are 4 bits wide and use the PCIE_TX_PRESET_* encodings in
+ * <sys/pcie.h> that are shared with gen4.  Defaults to 0x1 for US and 0x3 for
+ * DS.  These establish the values in the Lane Equalization Control registers
+ * for all lanes in this core; see PCIe4 7.7.3.4.
  */
 #define	MILAN_STRAP_PCIE_EQ_DS_TX_PRESET	0xa1
 #define	MILAN_STRAP_PCIE_EQ_US_TX_PRESET	0xa2
@@ -1141,24 +1132,6 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  */
 #define	MILAN_STRAP_PCIE_25GT_EQ_DS_TX_PRESET	0xa5
 #define	MILAN_STRAP_PCIE_25GT_EQ_US_TX_PRESET	0xa6
-
-/*
- * The transmitter preset encodings, which can be found in the PCIe 4.0 base
- * specification 8.3.3.3. Values for each preset can be found at Table 8-1 Tx
- * Preset Ratios and Corresponding Coefficient Values.  These are used for all 6
- * of the preceding transmitter preset straps.
- */
-#define	MILAN_STRAP_PCIE_TX_PRESET_0	0
-#define	MILAN_STRAP_PCIE_TX_PRESET_1	1
-#define	MILAN_STRAP_PCIE_TX_PRESET_2	2
-#define	MILAN_STRAP_PCIE_TX_PRESET_3	3
-#define	MILAN_STRAP_PCIE_TX_PRESET_4	4
-#define	MILAN_STRAP_PCIE_TX_PRESET_5	5
-#define	MILAN_STRAP_PCIE_TX_PRESET_6	6
-#define	MILAN_STRAP_PCIE_TX_PRESET_7	7
-#define	MILAN_STRAP_PCIE_TX_PRESET_8	8
-#define	MILAN_STRAP_PCIE_TX_PRESET_9	9
-#define	MILAN_STRAP_PCIE_TX_PRESET_10	10
 
 /*
  * 0xa7 is reserved.
@@ -1496,7 +1469,7 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * The next two straps are part of SRIS (separate reference clocks with
  * independent spread spectrum) support on the device. The first controls
  * whether SRIS is force-enabled and the second enables one of several
- * autodetection modes.  Enabling these is mutally exclusive, and both are off
+ * autodetection modes.  Enabling these is mutually exclusive, and both are off
  * by default.  See PCIEPORT::PCIE_LC_CNTL6[LC_SRIS_AUTODETECT_EN, LC_SRIS_EN]
  * and related fields that seemingly need to be set directly by software.  It's
  * possible that this is strappable so that links requiring SRIS can avoid
