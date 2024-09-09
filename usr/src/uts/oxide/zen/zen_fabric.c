@@ -392,78 +392,116 @@ zen_fabric_smn_busno(zen_iodie_t *iodie)
 }
 
 /*
- * Returns the total number of IOMS instances present on the given I/O die.
- * Also returns the Instance ID of the first IOM and IOS components.
- * Depending on the specific DF version, the IOM and IOS instances may be
- * treated as separate (IOM/IOS) components or as a single (IOMS) component
+ * Returns the total number of CCMs and IOM/IOS instances present on the given
+ * I/O die, as well as the base (lowest) Instance IDs for each.
+ *
+ * The number of certain components as well as their base (lowest) Instance IDs
+ * may vary between microarchitectures / products and rather than hardcode these
+ * values for every chip we'd like to support, we discover them dynamically.
+ *
+ * Note that depending on the specific DF version, the IOM and IOS instances may
+ * be treated as separate (IOM/IOS) components or as a single (IOMS) component
  * when it comes to accessing the per-instance registers we need. Regardless, we
  * always expect a 1-1 relationship and in the latter case, the returned
  * Instance IDs will be the same.
  */
-static uint8_t
-zen_fabric_discover_ioms(zen_iodie_t *iodie, uint8_t *first_iom_id,
-    uint8_t *first_ios_id)
+static void
+zen_fabric_discover_iodie_components(zen_iodie_t *iodie)
 {
 	const df_rev_t df_rev = iodie->zi_df_rev;
 	const df_fabric_decomp_t *decomp = &iodie->zi_soc->zs_fabric->zf_decomp;
 	df_reg_def_t reg;
 	uint32_t val;
-	uint8_t niom, nios;
-	uint8_t iom_comp_id, ios_comp_id;
+	uint8_t ccm_comp_id, iom_comp_id, ios_comp_id;
+	bool found_ccm = false, found_iom = false, found_ios = false;
 
 	/*
-	 * Grab the count of IOM and IOS components on this I/O die and verify
-	 * the 1-1 relationship between IOM and IOS instances as we expect.
-	 * Note we use DF::DieComponentMapD rather than DF::SystemComponentCnt
+	 * Note we use DF::DieComponentMapC/D rather than DF::SystemComponentCnt
 	 * which holds system-wide counts and hence might be inaccurate, e.g.,
 	 * on a 2P system since we specifically are only interested in just the
 	 * given I/O die.
 	 */
+
+	reg = (df_rev >= DF_REV_4) ? DF_DIE_COMP_MAPC_V4 :
+	    DF_DIE_COMP_MAPC_V3;
+	val = zen_df_bcast_read32(iodie, reg);
+	iodie->zi_nccms = DF_DIE_COMP_MAPC_GET_CCM_COUNT(val);
+	ccm_comp_id = DF_DIE_COMP_MAPC_GET_CCM_COMP_ID(val);
+
+	/*
+	 * Grab the count of IOM and IOS components on this I/O die and verify
+	 * the 1-1 relationship between IOM and IOS instances as we expect.
+	 * We also need to verify the count doesn't exceed the maximum number of
+	 * zen_ioms_t instances we've statically allocated.
+	 */
 	reg = (df_rev >= DF_REV_4) ? DF_DIE_COMP_MAPD_V4 :
 	    DF_DIE_COMP_MAPD_V3;
 	val = zen_df_bcast_read32(iodie, reg);
-	niom = DF_DIE_COMP_MAPD_GET_IOM_COUNT(val);
-	nios = DF_DIE_COMP_MAPD_GET_IOS_COUNT(val);
-	VERIFY3U(niom, ==, nios);
-
-	/*
-	 * Unfortunately, DF::DieComponentMapD gives us the Component ID of the
-	 * lowest numbered IOM & IOS but we need the Instance ID to access the
-	 * per-instance registers.  To find those, we'll just loop over the
-	 * instances until we find the matching component.
-	 */
+	VERIFY3U(DF_DIE_COMP_MAPD_GET_IOM_COUNT(val), ==,
+	    DF_DIE_COMP_MAPD_GET_IOS_COUNT(val));
+	iodie->zi_nioms = DF_DIE_COMP_MAPD_GET_IOM_COUNT(val);
+	VERIFY3U(iodie->zi_nioms, <=, ZEN_IODIE_MAX_IOMS);
 	iom_comp_id = DF_DIE_COMP_MAPD_GET_IOM_COMP_ID(val);
 	ios_comp_id = DF_DIE_COMP_MAPD_GET_IOS_COMP_ID(val);
 
+	/*
+	 * Unfortunately, DF::DieComponentMapC/D give us the Component ID of the
+	 * lowest numbered component but we need the Instance ID to access the
+	 * per-instance registers.  To find those, we'll just loop over the
+	 * instances until we find the matching component.
+	 */
+
+	val = zen_df_bcast_read32(iodie, DF_FBICNT);
+	iodie->zi_nents = DF_FBICNT_GET_COUNT(val);
 	for (uint8_t inst = 0; inst < iodie->zi_nents; inst++) {
 		uint32_t fabric_id, sock, die, comp_id;
-		bool is_iom, is_ios;
 
 		val = zen_df_read32(iodie, inst, DF_FBIINFO0);
 		if (DF_FBIINFO0_V3_GET_ENABLED(val) == 0)
 			continue;
 
 		/*
-		 * DFv4 specifically (and not DFv4D2) classifies IOS instances
-		 * differently. IOM instances are handled the same across all
-		 * DF versions. DFv3 doesn't expose a separate IOS instance.
+		 * We're only interested in CCM, IOM, and IOS instances.
 		 */
-		is_iom = DF_FBIINFO0_GET_TYPE(val) == DF_TYPE_IOMS;
-		is_ios = (df_rev != DF_REV_4) ?
-		    (DF_FBIINFO0_GET_TYPE(val) == DF_TYPE_IOMS) :
-		    (DF_FBIINFO0_GET_TYPE(val) == DF_TYPE_NCS &&
-		    DF_FBIINFO0_GET_SUBTYPE(val) == DF_NCS_SUBTYPE_IOS_V4);
-		if (!is_iom && !is_ios)
+		switch (DF_FBIINFO0_GET_TYPE(val)) {
+		case DF_TYPE_CCM:
+			break;
+		case DF_TYPE_IOMS:
+			break;
+		case DF_TYPE_NCS:
+			/*
+			 * DFv4 specifically (and not DFv4D2) classifies IOS
+			 * instances differently. IOM instances are handled the
+			 * same across all DF versions. DFv3 doesn't expose a
+			 * separate IOS instance.
+			 */
+			if (df_rev == DF_REV_4 &&
+			    DF_FBIINFO0_GET_SUBTYPE(val) ==
+			    DF_NCS_SUBTYPE_IOS_V4) {
+				break;
+			}
+		default:
 			continue;
+		}
 
 		/*
 		 * To find this instance's Component ID, we must extract it
 		 * from its Fabric ID.
 		 */
 		val = zen_df_read32(iodie, inst, DF_FBIINFO3);
-		fabric_id = (df_rev >= DF_REV_4) ?
-		    DF_FBIINFO3_V4_GET_BLOCKID(val) :
-		    DF_FBIINFO3_V3_GET_BLOCKID(val);
+		switch (df_rev) {
+		case DF_REV_3:
+			fabric_id = DF_FBIINFO3_V3_GET_BLOCKID(val);
+			break;
+		case DF_REV_4:
+			fabric_id = DF_FBIINFO3_V4_GET_BLOCKID(val);
+			break;
+		case DF_REV_4D2:
+			fabric_id = DF_FBIINFO3_V4D2_GET_BLOCKID(val);
+			break;
+		default:
+			panic("Unsupported DF revision %d", df_rev);
+		}
 		zen_fabric_id_decompose(decomp, fabric_id, &sock, &die,
 		    &comp_id);
 		ASSERT3U(sock, ==, iodie->zi_soc->zs_socno);
@@ -471,33 +509,39 @@ zen_fabric_discover_ioms(zen_iodie_t *iodie, uint8_t *first_iom_id,
 
 		/*
 		 * With that we can check if we've got the right instance.
-		 * Note, they may be actually be the same instance as was the
-		 * case prior to DFv4.
+		 * Note, the IOM & IOS may be actually be the same instance as
+		 * was the case prior to DFv4.
 		 */
 
+		if (comp_id == ccm_comp_id) {
+			VERIFY3B(found_ccm, ==, false);
+			iodie->zi_base_ccm_id = inst;
+			found_ccm = true;
+		}
+
 		if (comp_id == iom_comp_id) {
-			VERIFY3P(first_iom_id, !=, NULL);
-			*first_iom_id = inst;
-			first_iom_id = NULL;
+			VERIFY3B(found_iom, ==, false);
+			iodie->zi_base_iom_id = inst;
+			found_iom = true;
 		}
 
 		if (comp_id == ios_comp_id) {
-			VERIFY3P(first_ios_id, !=, NULL);
-			*first_ios_id = inst;
-			first_ios_id = NULL;
+			VERIFY3B(found_ios, ==, false);
+			iodie->zi_base_ios_id = inst;
+			found_ios = true;
 		}
 
-		if (first_iom_id == NULL && first_ios_id == NULL)
+		if (found_ccm && found_iom && found_ios)
 			break;
 	}
 
-	if (first_iom_id != NULL || first_ios_id != NULL) {
-		cmn_err(CE_PANIC, "Failed to find IOMS and/or IOS instance. "
-		    "IOM Component ID: %u, IOS Component ID: %u", iom_comp_id,
+	if (!found_ccm || !found_iom || !found_ios) {
+		cmn_err(CE_PANIC,
+		    "Failed to find CCM, IOMS and/or IOS instance. "
+		    "CCM Component ID: %u, IOM Component ID: %u, "
+		    "IOS Component ID: %u", ccm_comp_id, iom_comp_id,
 		    ios_comp_id);
 	}
-
-	return (niom);
 }
 
 /*
@@ -700,20 +744,29 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
 	uint32_t nthreads = 0;
 	uint32_t val;
 	uint8_t nccds = 0;
+	const uint8_t nccms = iodie->zi_nccms;
 	bool zen5;
 	uint8_t ccm_subtype;
 
 	/*
-	 * A 1-bit corresponds to an enabled CCD with the physical number being
-	 * the bit position. The logical numbers are assigned sequentially for
-	 * each enabled CCD.
+	 * With each CCM possibly connected to up to 2 CCDs, each bit position
+	 * corresponds to one of 2 ports (SDPs) on each CCM and whether there's
+	 * a CCD connected to it:
 	 *
-	 * Bits x=0-7 : First port on CCM[x] has CCD enabled.
-	 * Bits x=8-15: Second port on CCM[x-8] has CCD enabled.
+	 *	Bit Position (X)		CCM Mapping
+	 *	----------------		-----------
+	 *		  N-1:0			CCM X, SDP 0
+	 *		2*N-1:N			CCM X-N, SDP 1
+	 *
+	 * Where N is the number of CCMs. This implies our bit map must be at
+	 * least N * 2 (DF_MAX_CCDS_PER_CCM) bits wide.
+	 *
+	 * Thus, a 1-bit at position X means the CCD with physical number X is
+	 * enabled and connected to CCM (X%N) via port (X/N). The logical
+	 * numbers are then assigned sequentially for each enabled CCD.
 	 */
 	uint16_t ccdmap = 0;
-	VERIFY3U(sizeof (ccdmap) * 8, ==, ZEN_MAX_CCMS_PER_IODIE *
-	    DF_MAX_CCDS_PER_CCM);
+	VERIFY3U(sizeof (ccdmap) * NBBY, >=, nccms * DF_MAX_CCDS_PER_CCM);
 
 	/*
 	 * Zen 5 moved a couple of registers from SMU::PWR to L3::SOC.
@@ -738,8 +791,8 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
 	 * To determine the physical CCD numbers, we iterate over the CCMs
 	 * and note what CCDs (if any) are present and enabled.
 	 */
-	for (uint8_t ccmno = 0; ccmno < ZEN_MAX_CCMS_PER_IODIE; ccmno++) {
-		uint32_t ccminst = ZEN_DF_FIRST_CCM_ID + ccmno;
+	for (uint8_t ccmno = 0; ccmno < nccms; ccmno++) {
+		uint32_t ccminst = iodie->zi_base_ccm_id + ccmno;
 
 		/*
 		 * The CCM is part of the IO die, not the CCD itself. If it is
@@ -800,8 +853,7 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
 				 * says the second CCD on this CCM is enabled,
 				 * note that in the upper half of the ccd map.
 				 */
-				ccdmap |= ccd1en << ZEN_MAX_CCMS_PER_IODIE <<
-				    ccmno;
+				ccdmap |= ccd1en << nccms << ccmno;
 			} else if (DF_CCD_EN_V4_GET_CCD_EN(ccden) != 0) {
 				/*
 				 * But if wide mode is enabled (and thus both
@@ -1082,7 +1134,6 @@ zen_fabric_topo_init(void)
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
 		zen_soc_t *soc = &fabric->zf_socs[socno];
 		zen_iodie_t *iodie = &soc->zs_iodies[0];
-		uint8_t first_iom_id, first_ios_id;
 
 		soc->zs_socno = socno;
 		soc->zs_fabric = fabric;
@@ -1138,11 +1189,8 @@ zen_fabric_topo_init(void)
 
 		iodie->zi_smn_busno = zen_fabric_smn_busno(iodie);
 
-		iodie->zi_nents = DF_FBICNT_GET_COUNT(zen_df_bcast_read32(
-		    iodie, DF_FBICNT));
+		zen_fabric_discover_iodie_components(iodie);
 
-		iodie->zi_nioms = zen_fabric_discover_ioms(iodie, &first_iom_id,
-		    &first_ios_id);
 		fabric->zf_total_ioms += iodie->zi_nioms;
 		for (uint8_t iomsno = 0; iomsno < iodie->zi_nioms; iomsno++) {
 			zen_ioms_t *ioms = &iodie->zi_ioms[iomsno];
@@ -1150,8 +1198,8 @@ zen_fabric_topo_init(void)
 			ioms->zio_num = iomsno;
 			ioms->zio_iodie = iodie;
 
-			ioms->zio_iom_inst_id = first_iom_id + iomsno;
-			ioms->zio_ios_inst_id = first_ios_id + iomsno;
+			ioms->zio_iom_inst_id = iodie->zi_base_iom_id + iomsno;
+			ioms->zio_ios_inst_id = iodie->zi_base_ios_id + iomsno;
 
 			ioms->zio_dest_id = zen_ios_fabric_id(ioms);
 			ioms->zio_pci_busno = zen_fabric_ios_busno(iodie, ioms);

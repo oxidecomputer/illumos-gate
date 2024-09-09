@@ -49,8 +49,6 @@ extern "C" {
  */
 #define	MILAN_FABRIC_MAX_DIES_PER_SOC	1
 
-#define	MILAN_DF_FIRST_CCM_ID	16
-
 /*
  * This is the number of IOMS instances that we know are supposed to exist per
  * die.
@@ -63,17 +61,6 @@ extern "C" {
  */
 #define	MILAN_IOMS_MAX_PCIE_CORES	3
 #define	MILAN_IOMS_WAFL_PCIE_CORENO	2
-
-/*
- * Per the PPR, the following defines the first enry for the Milan IOMS.
- */
-#define	MILAN_DF_FIRST_IOMS_ID	24
-
-/*
- * This indicates the ID number of the IOMS instance that happens to have the
- * FCH present.
- */
-#define	MILAN_IOMS_HAS_FCH	3
 
 /*
  * Similarly, the IOMS instance with the WAFL port.

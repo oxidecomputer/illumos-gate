@@ -40,17 +40,6 @@ extern "C" {
 #define	ZEN_MAX_CORES_PER_CCX		16
 #define	ZEN_MAX_THREADS_PER_CORE	2
 
-/*
- * All Zen SoCs supported on the Oxide platform have at most 8 CCMs.
- */
-#define	ZEN_MAX_CCMS_PER_IODIE		8
-
-/*
- * All Zen SoCs supported on the Oxide platform have the same Instance ID for
- * the first CCM.
- */
-#define	ZEN_DF_FIRST_CCM_ID		0x10
-
 struct zen_thread {
 	/*
 	 * The thread number of this hardware thread.  This is always a small

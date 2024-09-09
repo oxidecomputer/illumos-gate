@@ -1247,6 +1247,29 @@ df_reg_valid(const df_rev_t rev, const df_reg_def_t def)
 #define	DF_SYS_FUN_FID2_V4D2_GET_FCH_IOS_FID(r)		bitx32(r, 23, 16)
 
 /*
+ * DF::DieComponentMapC -- This register provides the count of CCM and GCM
+ * components along with the Component ID of the lowest numbered component for
+ * each. Note that this register does not exist in all components and even for
+ * the ones in which it does, some fields may be reserved, e.g., GCMCount is
+ * reserved for IOS instances. Thankfully, the same value is programmed into all
+ * instances in which the register exists so a broadcast read provides the
+ * right semantics.
+ */
+/*CSTYLED*/
+#define	DF_DIE_COMP_MAPC_V3	(df_reg_def_t){ .drd_gens = DF_REV_ALL_3, \
+				.drd_func = 1, \
+				.drd_reg = 0x220 }
+/*CSTYLED*/
+#define	DF_DIE_COMP_MAPC_V4	(df_reg_def_t){ .drd_gens = DF_REV_ALL_4, \
+				.drd_func = 4, \
+				.drd_reg = 0xb10 }
+
+#define	DF_DIE_COMP_MAPC_GET_GCM_COUNT(r)	bitx32(r, 31, 24)
+#define	DF_DIE_COMP_MAPC_GET_GCM_COMP_ID(r)	bitx32(r, 23, 16)
+#define	DF_DIE_COMP_MAPC_GET_CCM_COUNT(r)	bitx32(r, 15, 8)
+#define	DF_DIE_COMP_MAPC_GET_CCM_COMP_ID(r)	bitx32(r, 7, 0)
+
+/*
  * DF::DieComponentMapD -- This register provides the count of IOM and IOS
  * components along with the Component ID of the lowest numbered component for
  * each. Note that this register does not exist in all components and even for

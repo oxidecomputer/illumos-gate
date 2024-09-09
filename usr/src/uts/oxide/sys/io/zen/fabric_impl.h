@@ -72,8 +72,9 @@ extern void zen_fabric_dma_attr(ddi_dma_attr_t *attr);
 #define	ZEN_FABRIC_MAX_SOCS		2
 
 /*
- * The exact number of IOMS per IO Die is platform-specific and is determined
- * determined by the platform's `zpc_ioms_per_iodie`.
+ * The exact number of IOM/S per I/O Die is platform-specific and is determined
+ * determined dynamically during fabric topology initialization. This is the
+ * maximum supported on the Oxide platform.
  */
 #define	ZEN_IODIE_MAX_IOMS		8
 
@@ -187,6 +188,21 @@ struct zen_iodie {
 
 	uint8_t			zi_nents;
 
+	/*
+	 * The number of CCMs present on this I/O die and the base (lowest)
+	 * Instance ID may vary between microarchitectures / products so we
+	 * cache those values here once discovered during fabric topology
+	 * initialization.
+	 */
+	uint8_t			zi_nccms;
+	uint8_t			zi_base_ccm_id;
+
+	/*
+	 * Like the CCMs, the number and base Instance ID of the IOM/IOS
+	 * components also varies and is similarly cached here.
+	 */
+	uint8_t			zi_base_iom_id;
+	uint8_t			zi_base_ios_id;
 	uint8_t			zi_nioms;
 	zen_ioms_t		zi_ioms[ZEN_IODIE_MAX_IOMS];
 
