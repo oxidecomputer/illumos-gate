@@ -129,13 +129,13 @@ MILAN_OBJS +=			\
 	milan_fabric.o		\
 	milan_hacks.o		\
 	milan_pcie_dbg.o	\
+	milan_platform.o	\
 	milan_ras.o
 
-MILAN_OBJS +=			\
-	milan_platform.o
 GENOA_OBJS +=			\
 	genoa_ccx.o		\
 	genoa_platform.o
+
 TURIN_OBJS +=			\
 	turin_ccx.o		\
 	turin_platform.o
@@ -146,9 +146,11 @@ ZEN_OBJS +=			\
 	zen_df_utils.o		\
 	zen_fabric.o		\
 	zen_hacks.o		\
+	zen_mpio.o		\
 	zen_platform.o		\
 	zen_ras.o		\
-	zen_smn.o
+	zen_smn.o		\
+	zen_smu.o
 
 CORE_OBJS += $(ZEN_OBJS) $(MILAN_OBJS) $(GENOA_OBJS) $(TURIN_OBJS)
 

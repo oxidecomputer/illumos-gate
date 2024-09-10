@@ -635,6 +635,7 @@
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
+#include <sys/io/zen/smu.h>
 
 #include <asm/bitmap.h>
 
@@ -1528,11 +1529,10 @@ static bool
 milan_smu_version_at_least(const zen_iodie_t *iodie,
     const uint8_t major, const uint8_t minor, const uint8_t patch)
 {
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
-	return (miodie->mi_smu_fw[0] > major ||
-	    (miodie->mi_smu_fw[0] == major && miodie->mi_smu_fw[1] > minor) ||
-	    (miodie->mi_smu_fw[0] == major && miodie->mi_smu_fw[1] == minor &&
-	    miodie->mi_smu_fw[2] >= patch));
+	return (iodie->zi_smu_fw[0] > major ||
+	    (iodie->zi_smu_fw[0] == major && iodie->zi_smu_fw[1] > minor) ||
+	    (iodie->zi_smu_fw[0] == major && iodie->zi_smu_fw[1] == minor &&
+	    iodie->zi_smu_fw[2] >= patch));
 }
 
 static void
@@ -1571,25 +1571,6 @@ milan_smu_rpc(zen_iodie_t *iodie, milan_smu_rpc_t *rpc)
 		rpc->msr_arg5 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG5());
 	}
 	mutex_exit(&iodie->zi_smu_lock);
-}
-
-static bool
-milan_smu_rpc_get_version(zen_iodie_t *iodie, uint8_t *major, uint8_t *minor,
-    uint8_t *patch)
-{
-	milan_smu_rpc_t rpc = { 0 };
-
-	rpc.msr_req = MILAN_SMU_OP_GET_VERSION;
-	milan_smu_rpc(iodie, &rpc);
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
-		return (false);
-	}
-
-	*major = MILAN_SMU_OP_GET_VERSION_MAJOR(rpc.msr_arg0);
-	*minor = MILAN_SMU_OP_GET_VERSION_MINOR(rpc.msr_arg0);
-	*patch = MILAN_SMU_OP_GET_VERSION_PATCH(rpc.msr_arg0);
-
-	return (true);
 }
 
 static bool
@@ -1751,9 +1732,8 @@ static bool
 milan_dxio_version_at_least(const zen_iodie_t *iodie,
     const uint32_t major, const uint32_t minor)
 {
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
-	return (miodie->mi_dxio_fw[0] > major ||
-	    (miodie->mi_dxio_fw[0] == major && miodie->mi_dxio_fw[1] >= minor));
+	return (iodie->zi_dxio_fw[0] > major ||
+	    (iodie->zi_dxio_fw[0] == major && iodie->zi_dxio_fw[1] >= minor));
 }
 
 static void
@@ -1780,27 +1760,6 @@ milan_dxio_rpc(zen_iodie_t *iodie, milan_dxio_rpc_t *dxio_rpc)
 		dxio_rpc->mdr_arg2 = smu_rpc.msr_arg4;
 		dxio_rpc->mdr_arg3 = smu_rpc.msr_arg5;
 	}
-}
-
-static bool
-milan_dxio_rpc_get_version(zen_iodie_t *iodie, uint32_t *major, uint32_t *minor)
-{
-	milan_dxio_rpc_t rpc = { 0 };
-
-	rpc.mdr_req = MILAN_DXIO_OP_GET_VERSION;
-
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
-		return (false);
-	}
-
-	*major = rpc.mdr_arg0;
-	*minor = rpc.mdr_arg1;
-
-	return (true);
 }
 
 static bool
@@ -2106,36 +2065,36 @@ milan_dxio_rpc_retrieve_engine(zen_iodie_t *iodie)
 	return (true);
 }
 
-static int
-milan_dump_versions(zen_iodie_t *iodie, void *arg)
+bool
+milan_get_dxio_fw_version(zen_iodie_t *iodie)
 {
-	uint8_t maj, min, patch;
-	uint32_t dxmaj, dxmin;
-	zen_soc_t *soc = iodie->zi_soc;
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
+	milan_dxio_rpc_t rpc = { 0 };
 
-	if (milan_smu_rpc_get_version(iodie, &maj, &min, &patch)) {
-		cmn_err(CE_CONT, "?Socket %u SMU Version: %u.%u.%u\n",
-		    soc->zs_socno, maj, min, patch);
-		miodie->mi_smu_fw[0] = maj;
-		miodie->mi_smu_fw[1] = min;
-		miodie->mi_smu_fw[2] = patch;
-	} else {
-		cmn_err(CE_NOTE, "Socket %u: failed to read SMU version",
-		    soc->zs_socno);
+	rpc.mdr_req = MILAN_DXIO_OP_GET_VERSION;
+
+	milan_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
+	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: SMU 0x%x, "
+		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		return (false);
 	}
 
-	if (milan_dxio_rpc_get_version(iodie, &dxmaj, &dxmin)) {
-		cmn_err(CE_CONT, "?Socket %u DXIO Version: %u.%u\n",
-		    soc->zs_socno, dxmaj, dxmin);
-		miodie->mi_dxio_fw[0] = dxmaj;
-		miodie->mi_dxio_fw[1] = dxmin;
-	} else {
-		cmn_err(CE_NOTE, "Socket %u: failed to read DXIO version",
-		    soc->zs_socno);
-	}
+	iodie->zi_ndxio_fw = 2;
+	iodie->zi_dxio_fw[0] = rpc.mdr_arg0;
+	iodie->zi_dxio_fw[1] = rpc.mdr_arg1;
+	iodie->zi_dxio_fw[2] = 0;
+	iodie->zi_dxio_fw[3] = 0;
 
-	return (0);
+	return (true);
+}
+
+void
+milan_report_dxio_fw_version(const zen_iodie_t *iodie)
+{
+	const uint8_t socno = iodie->zi_soc->zs_socno;
+	cmn_err(CE_CONT, "?Socket %u DXIO Version: %u.%u\n",
+	    socno, iodie->zi_dxio_fw[0], iodie->zi_dxio_fw[1]);
 }
 
 static bool
@@ -2202,13 +2161,15 @@ milan_fabric_topo_init(zen_fabric_t *fabric)
  * This is called from the common code, via an entry in the Milan version of Zen
  * fabric ops vector.  The common code is responsible for the bulk of
  * initialization; we merely fill in those bits that are microarchitecture
- * specific.
+ * specific.  Note that, on Milan, there is exactly one IO die per SOC.
  */
 void
-milan_fabric_soc_init(zen_soc_t *soc, zen_iodie_t *iodie)
+milan_fabric_soc_init(zen_soc_t *soc)
 {
 	ASSERT3U(soc->zs_niodies, ==, MILAN_FABRIC_MAX_DIES_PER_SOC);
+	ASSERT3U(soc->zs_niodies, ==, 1);
 
+	zen_iodie_t *iodie = &soc->zs_iodies[0];
 	milan_fabric_t *mfabric = &milan_fabric;
 	milan_soc_t *msoc = &mfabric->mf_socs[soc->zs_socno];
 	milan_iodie_t *miodie = &msoc->ms_iodies[0];
@@ -2217,13 +2178,8 @@ milan_fabric_soc_init(zen_soc_t *soc, zen_iodie_t *iodie)
 	iodie->zi_uarch_iodie = miodie;
 
 	/*
-	 * In order to guarantee that we can safely perform SMU and DXIO
-	 * functions once we have returned (and when we go to read the
-	 * brand string for the CCXs even before then), we go through
-	 * now and capture firmware versions.
+	 * Read the brand string for the CCXs.
 	 */
-	VERIFY0(milan_dump_versions(iodie, NULL));
-
 	if (!milan_smu_rpc_read_brand_string(iodie,
 	    soc->zs_brandstr, sizeof (soc->zs_brandstr))) {
 		soc->zs_brandstr[0] = '\0';

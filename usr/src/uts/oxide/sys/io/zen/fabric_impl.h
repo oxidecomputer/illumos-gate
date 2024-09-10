@@ -170,6 +170,7 @@ struct zen_iodie {
 	kmutex_t		zi_df_ficaa_lock;
 	kmutex_t		zi_smn_lock;
 	kmutex_t		zi_smu_lock;
+	kmutex_t		zi_mpio_lock;
 
 	uint16_t		zi_node_id;
 
@@ -208,6 +209,20 @@ struct zen_iodie {
 
 	uint8_t			zi_nccds;
 	zen_ccd_t		zi_ccds[ZEN_MAX_CCDS_PER_IODIE];
+
+	/*
+	 * The version of the SMU firmware.
+	 */
+	uint32_t		zi_smu_fw[3];
+	/*
+	 * The version of the firmware of the component responsible for
+	 * interfacing with the DXIO crossbar.  That is, the version reported by
+	 * either MPIO (on Genoa or later) or the SMU-DXIO interface.
+	 * zi_ndxio_fw denotes the number of elements actually used for the
+	 * firmware version.
+	 */
+	uint8_t			zi_ndxio_fw;
+	uint32_t		zi_dxio_fw[4];
 
 	zen_soc_t		*zi_soc;
 	void			*zi_uarch_iodie;

@@ -25,6 +25,7 @@
 #include <sys/types.h>
 
 #include <sys/amdzen/df.h>
+#include <sys/amdzen/smn.h>
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric.h>
 
@@ -67,8 +68,16 @@ typedef struct zen_fabric_ops {
 	 * void pointers in the given topology structures.
 	 */
 	void		(*zfo_topo_init)(zen_fabric_t *);
-	void		(*zfo_soc_init)(zen_soc_t *, zen_iodie_t *);
+	void		(*zfo_soc_init)(zen_soc_t *);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
+
+	/*
+	 * Retrieves and reports the version of the firmware for the component
+	 * responsible for interfacing with the DXIO crossbar (either the SMU or
+	 * MPIO).
+	 */
+	bool		(*zfo_get_dxio_fw_version)(zen_iodie_t *);
+	void		(*zfo_report_dxio_fw_version)(const zen_iodie_t *);
 } zen_fabric_ops_t;
 
 typedef struct zen_hack_ops {
@@ -88,6 +97,66 @@ typedef struct zen_ras_ops {
 } zen_ras_ops_t;
 
 /*
+ * These are register constants for accessing SMU RPC registers via SMN.
+ */
+typedef struct zen_smu_smn_addrs {
+	/*
+	 * The RPC request register holds the RPC request operation number.
+	 */
+	const smn_reg_def_t	zssa_req;
+
+	/*
+	 * The response register holds the SMU response to an RPC, as well as
+	 * the specific request type.
+	 */
+	const smn_reg_def_t	zssa_resp;
+
+	/*
+	 * There are six argument registers that are dual purposed for both
+	 * input to and output from the RPC.
+	 */
+	const smn_reg_def_t	zssa_arg0;
+	const smn_reg_def_t	zssa_arg1;
+	const smn_reg_def_t	zssa_arg2;
+	const smn_reg_def_t	zssa_arg3;
+	const smn_reg_def_t	zssa_arg4;
+	const smn_reg_def_t	zssa_arg5;
+} zen_smu_smn_addrs_t;
+
+/*
+ * These are register constants for accessing MPIO RPC registers via SMN.
+ */
+typedef struct zen_mpio_smn_addrs {
+	/*
+	 * There are six argument registers that are dual purposed for both
+	 * input to and output from the RPC.
+	 */
+	const smn_reg_def_t	zmsa_arg0;
+	const smn_reg_def_t	zmsa_arg1;
+	const smn_reg_def_t	zmsa_arg2;
+	const smn_reg_def_t	zmsa_arg3;
+	const smn_reg_def_t	zmsa_arg4;
+	const smn_reg_def_t	zmsa_arg5;
+
+	/*
+	 * The response register.  The RPC mechanism writes the requested
+	 * operation to this register, then rings the doorbell by strobing the
+	 * doorbell register.  The response will be in this register.
+	 *
+	 * To recover the response, a caller polls this register until the high
+	 * bit (ZEN_MPIO_RESP_READY) is set.  Finally, the response is extracted
+	 * from the low bits.
+	 */
+	const smn_reg_def_t	zmsa_resp;
+
+	/*
+	 * The RPC mechanism strobes the doorbell register to initiate the RPC
+	 * after filling in the arguments and request type.
+	 */
+	const smn_reg_def_t	zmsa_doorbell;
+} zen_mpio_smn_addrs_t;
+
+/*
  * These are constants specific to a given platform.  These are as distinct from
  * the maximum architectural constants across all platforms implemented in the
  * Oxide arhcitecture.
@@ -99,14 +168,24 @@ typedef struct zen_platform_consts {
 	 * is initialized and compared against the version discovered dynmically
 	 * on each I/O die.
 	 */
-	const df_rev_t		zpc_df_rev;
+	const df_rev_t			zpc_df_rev;
 
 	/*
 	 * These represent the microarchitecture-specific max counts of various
 	 * components on a Zen SoC.
 	 */
-	const uint8_t		zpc_ccds_per_iodie;
-	const uint8_t		zpc_cores_per_ccx;
+	const uint8_t			zpc_ccds_per_iodie;
+	const uint8_t			zpc_cores_per_ccx;
+
+	/*
+	 * The platform-specific SMN addresses of the SMU RPC registers.
+	 */
+	const zen_smu_smn_addrs_t	zpc_smu_smn_addrs;
+
+	/*
+	 * The platform-specific SMN addresses of the MPIO RPC registers.
+	 */
+	const zen_mpio_smn_addrs_t	zpc_mpio_smn_addrs;
 } zen_platform_consts_t;
 
 #ifdef	__cplusplus

@@ -32,6 +32,7 @@
 #include <sys/io/zen/platform.h>
 #include <sys/io/zen/platform_impl.h>
 
+#include <sys/io/milan/dxio.h>
 #include <sys/io/milan/fabric_impl.h>
 #include <sys/io/milan/ioapic.h>
 #include <sys/io/milan/iohc.h>
@@ -59,6 +60,9 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_topo_init = milan_fabric_topo_init,
 	.zfo_soc_init = milan_fabric_soc_init,
 	.zfo_ioms_init = milan_fabric_ioms_init,
+
+	.zfo_get_dxio_fw_version = milan_get_dxio_fw_version,
+	.zfo_report_dxio_fw_version = milan_report_dxio_fw_version,
 };
 
 static const zen_hack_ops_t milan_hack_ops = {
@@ -75,6 +79,16 @@ const zen_platform_t milan_platform = {
 		.zpc_df_rev = DF_REV_3,
 		.zpc_ccds_per_iodie = MILAN_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = MILAN_MAX_CORES_PER_CCX,
+		.zpc_smu_smn_addrs = {
+			.zssa_req = D_MILAN_SMU_RPC_REQ,
+			.zssa_resp = D_MILAN_SMU_RPC_RESP,
+			.zssa_arg0 = D_MILAN_SMU_RPC_ARG0,
+			.zssa_arg1 = D_MILAN_SMU_RPC_ARG1,
+			.zssa_arg2 = D_MILAN_SMU_RPC_ARG2,
+			.zssa_arg3 = D_MILAN_SMU_RPC_ARG3,
+			.zssa_arg4 = D_MILAN_SMU_RPC_ARG4,
+			.zssa_arg5 = D_MILAN_SMU_RPC_ARG5,
+		},
 	},
 	.zp_apob_ops = &milan_apob_ops,
 	.zp_ccx_ops = &milan_ccx_ops,

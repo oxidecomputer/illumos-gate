@@ -85,8 +85,6 @@ struct milan_ioms {
 };
 
 struct milan_iodie {
-	uint8_t			mi_smu_fw[3];
-	uint32_t		mi_dxio_fw[2];
 	milan_dxio_sm_state_t	mi_state;
 	milan_dxio_config_t	mi_dxio_conf;
 	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
@@ -106,7 +104,7 @@ struct milan_fabric {
  * The Milan uarch-specific hooks for initial fabric topology initialization.
  */
 extern void milan_fabric_topo_init(zen_fabric_t *);
-extern void milan_fabric_soc_init(zen_soc_t *, zen_iodie_t *);
+extern void milan_fabric_soc_init(zen_soc_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);
 
 /*

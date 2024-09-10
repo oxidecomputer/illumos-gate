@@ -22,6 +22,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/plat/pci_prd.h>
 
 #ifdef	__cplusplus
@@ -38,6 +39,7 @@ typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;
+struct memlist;
 
 /*
  * Generic resource types that can be routed via an IOMS.
@@ -51,9 +53,6 @@ typedef enum zen_ioms_rsrc {
 	ZIR_GEN_LEGACY,
 	ZIR_GEN_MMIO
 } zen_ioms_rsrc_t;
-
-
-struct memlist;
 
 /*
  * Walks IOMSes and applies a callback.  While most walkers are hidden as part

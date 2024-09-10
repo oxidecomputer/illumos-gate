@@ -25,7 +25,9 @@
 #include <sys/io/zen/platform_impl.h>
 
 #include <sys/io/genoa/ccx_impl.h>
-
+#include <sys/io/genoa/mpio.h>
+#include <sys/io/genoa/smu.h>
+#include <sys/io/zen/mpio.h>
 
 /*
  * Genoa has up to 12 CCDs per IODIE.
@@ -45,6 +47,8 @@ static const zen_ccx_ops_t genoa_ccx_ops = {
 };
 
 static const zen_fabric_ops_t genoa_fabric_ops = {
+	.zfo_get_dxio_fw_version = zen_mpio_get_fw_version,
+	.zfo_report_dxio_fw_version = zen_mpio_report_fw_version,
 };
 
 static const zen_hack_ops_t genoa_hack_ops = {
@@ -60,6 +64,26 @@ const zen_platform_t genoa_platform = {
 		.zpc_df_rev = DF_REV_4,
 		.zpc_ccds_per_iodie = GENOA_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = GENOA_MAX_CORES_PER_CCX,
+		.zpc_smu_smn_addrs = {
+			.zssa_req = D_GENOA_SMU_RPC_REQ,
+			.zssa_resp = D_GENOA_SMU_RPC_RESP,
+			.zssa_arg0 = D_GENOA_SMU_RPC_ARG0,
+			.zssa_arg1 = D_GENOA_SMU_RPC_ARG1,
+			.zssa_arg2 = D_GENOA_SMU_RPC_ARG2,
+			.zssa_arg3 = D_GENOA_SMU_RPC_ARG3,
+			.zssa_arg4 = D_GENOA_SMU_RPC_ARG4,
+			.zssa_arg5 = D_GENOA_SMU_RPC_ARG5,
+		},
+		.zpc_mpio_smn_addrs = {
+			.zmsa_arg0 = D_GENOA_MPIO_RPC_ARG0,
+			.zmsa_arg1 = D_GENOA_MPIO_RPC_ARG1,
+			.zmsa_arg2 = D_GENOA_MPIO_RPC_ARG2,
+			.zmsa_arg3 = D_GENOA_MPIO_RPC_ARG3,
+			.zmsa_arg4 = D_GENOA_MPIO_RPC_ARG4,
+			.zmsa_arg5 = D_GENOA_MPIO_RPC_ARG5,
+			.zmsa_resp = D_GENOA_MPIO_RPC_RESP,
+			.zmsa_doorbell = D_GENOA_MPIO_RPC_DOORBELL,
+		},
 	},
 	.zp_apob_ops = &genoa_apob_ops,
 	.zp_ccx_ops = &genoa_ccx_ops,

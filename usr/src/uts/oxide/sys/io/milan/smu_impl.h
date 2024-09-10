@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_SMU_IMPL_H
@@ -55,10 +55,6 @@ AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg, SMU_RPC,
  * not be portable between Rome, Milan, or other processors.
  */
 #define	MILAN_SMU_OP_TEST		0x01
-#define	MILAN_SMU_OP_GET_VERSION	0x02
-#define	MILAN_SMU_OP_GET_VERSION_MAJOR(x)	bitx32(x, 23, 16)
-#define	MILAN_SMU_OP_GET_VERSION_MINOR(x)	bitx32(x, 15, 8)
-#define	MILAN_SMU_OP_GET_VERSION_PATCH(x)	bitx32(x, 7, 0)
 #define	MILAN_SMU_OP_ENABLE_FEATURE	0x03
 #define	MILAN_SMU_OP_DISABLE_FEATURE	0x04
 #define	MILAN_SMU_OP_HAVE_AN_ADDRESS	0x05

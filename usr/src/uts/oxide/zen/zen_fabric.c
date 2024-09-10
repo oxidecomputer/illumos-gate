@@ -35,6 +35,7 @@
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/platform_impl.h>
 #include <sys/io/zen/smn.h>
+#include <sys/io/zen/smu.h>
 
 /*
  * --------------------------------------
@@ -125,6 +126,44 @@
  */
 
 /*
+ * Retrieves and reports the firmware version numbers for the SMU and DXIO/MPIO
+ * on the given IO die.
+ */
+int
+zen_fabric_dump_soc_iodie_fw_versions_cb(zen_iodie_t *iodie, void *arg __unused)
+{
+	const zen_fabric_ops_t *zfos = oxide_zen_fabric_ops();
+	const uint8_t socno = iodie->zi_soc->zs_socno;
+
+	if (zen_smu_get_fw_version(iodie)) {
+		zen_smu_report_fw_version(iodie);
+	} else {
+		cmn_err(CE_NOTE, "Socket %u: failed to read SMU version",
+		    socno);
+	}
+
+	if (zfos->zfo_get_dxio_fw_version(iodie)) {
+		zfos->zfo_report_dxio_fw_version(iodie);
+	} else {
+		cmn_err(CE_NOTE, "Socket %u: failed to read DXIO FW version",
+		    socno);
+	}
+
+	return (0);
+}
+
+/*
+ * Retrieves and reports the version numbers of SMU and DXIO/MPIO firmware
+ * versions for all IO dies on the given SoC.
+ */
+static void
+zen_fabric_dump_soc_fw_versions(zen_soc_t *soc)
+{
+	zen_fabric_walk_iodie(soc->zs_fabric,
+	    zen_fabric_dump_soc_iodie_fw_versions_cb, NULL);
+}
+
+/*
  * The global fabric object describing the system topology.
  *
  * XXX: Make static once old milan code is migrated fully
@@ -208,8 +247,8 @@ zen_fabric_disable_io_pci_cfg(zen_fabric_t *fabric)
 {
 	for (uint8_t socno = 0; socno < fabric->zf_nsocs; socno++) {
 		zen_soc_t *soc = &fabric->zf_socs[socno];
-		for (uint8_t dfno = 0; dfno < soc->zs_niodies; dfno++) {
-			zen_iodie_t *iodie = &soc->zs_iodies[dfno];
+		for (uint8_t iono = 0; iono < soc->zs_niodies; iono++) {
+			zen_iodie_t *iodie = &soc->zs_iodies[iono];
 			const df_rev_t df_rev = iodie->zi_df_rev;
 			df_reg_def_t reg;
 			uint32_t val;
@@ -735,12 +774,12 @@ zen_fabric_ccx_init_core(zen_ccx_t *ccx, uint8_t lidx, uint8_t pidx)
 	return (core->zc_nthreads);
 }
 
-static uint32_t
-zen_fabric_ccx_init_soc(zen_soc_t *soc)
+static int
+zen_fabric_ccx_init_soc_iodie_cb(zen_iodie_t *iodie, void *arg)
 {
 	const x86_uarchrev_t uarch = oxide_board_data->obd_cpuinfo.obc_uarchrev;
 	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
-	zen_iodie_t *iodie = &soc->zs_iodies[0];
+	uint32_t *nthreadsp = arg;
 	const df_rev_t df_rev = iodie->zi_df_rev;
 	uint32_t nthreads = 0;
 	uint32_t val;
@@ -1004,6 +1043,19 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
 	}
 
 	VERIFY3U(iodie->zi_nccds, ==, nccds);
+	*nthreadsp += nthreads;
+
+	return (0);
+}
+
+static uint32_t
+zen_fabric_ccx_init_soc(zen_soc_t *soc)
+{
+	uint32_t nthreads;
+
+	nthreads = 0;
+	VERIFY0(zen_fabric_walk_iodie(soc->zs_fabric,
+	    zen_fabric_ccx_init_soc_iodie_cb, &nthreads));
 
 	return (nthreads);
 }
@@ -1033,6 +1085,89 @@ zen_fabric_determine_df_vers_cb(const df_reg_def_t rd, const void *arg)
 	    rd.drd_reg));
 }
 
+typedef struct zen_iodie_cb_arg_data {
+	zen_soc_t *zicad_soc;
+	const zen_fabric_ops_t *zicad_fops;
+	const df_rev_t zicad_df_rev;
+	const uint32_t zicad_fch_ios_fid;
+} zen_iodie_cb_arg_data_t;
+
+static int
+zen_fabric_topo_init_iodie_cb(zen_iodie_t *iodie, void *arg)
+{
+	zen_iodie_cb_arg_data_t *args = arg;
+	zen_soc_t *soc = args->zicad_soc;
+	zen_fabric_t *fabric = soc->zs_fabric;
+	const zen_fabric_ops_t *fops = args->zicad_fops;
+	const df_rev_t df_rev = args->zicad_df_rev;
+	const uint32_t fch_ios_fid = args->zicad_fch_ios_fid;
+	uint8_t socno = soc->zs_socno;
+
+	iodie->zi_devno = AMDZEN_DF_FIRST_DEVICE + socno;
+
+	/*
+	 * Populate the major, minor, and revision fields of the given I/O die.
+	 */
+	zen_determine_df_vers(zen_fabric_determine_df_vers_cb, iodie,
+	    &iodie->zi_df_major, &iodie->zi_df_minor, &iodie->zi_df_rev);
+	if (iodie->zi_df_rev != df_rev) {
+		cmn_err(CE_PANIC,
+		    "DF rev mismatch: expected %d, found %d (SoC/DF: %d/0)",
+		    df_rev, iodie->zi_df_rev, socno);
+	}
+
+	iodie->zi_node_id = zen_fabric_iodie_node_id(iodie);
+	iodie->zi_soc = soc;
+
+	if (iodie->zi_node_id == 0) {
+		iodie->zi_flags = ZEN_IODIE_F_PRIMARY;
+	}
+
+	/*
+	 * Because we do not know the circumstances all these locks will be used
+	 * during early initialization, set these to be spin locks for the
+	 * moment.
+	 */
+	mutex_init(&iodie->zi_df_ficaa_lock, NULL, MUTEX_SPIN,
+	    (ddi_iblock_cookie_t)ipltospl(15));
+	mutex_init(&iodie->zi_smn_lock, NULL, MUTEX_SPIN,
+	    (ddi_iblock_cookie_t)ipltospl(15));
+	mutex_init(&iodie->zi_smu_lock, NULL, MUTEX_SPIN,
+	    (ddi_iblock_cookie_t)ipltospl(15));
+	mutex_init(&iodie->zi_mpio_lock, NULL, MUTEX_SPIN,
+	    (ddi_iblock_cookie_t)ipltospl(15));
+
+	iodie->zi_smn_busno = zen_fabric_smn_busno(iodie);
+
+	zen_fabric_discover_iodie_components(iodie);
+
+	fabric->zf_total_ioms += iodie->zi_nioms;
+	for (uint8_t iomsno = 0; iomsno < iodie->zi_nioms; iomsno++) {
+		zen_ioms_t *ioms = &iodie->zi_ioms[iomsno];
+
+		ioms->zio_num = iomsno;
+		ioms->zio_iodie = iodie;
+
+		ioms->zio_iom_inst_id = iodie->zi_base_iom_id + iomsno;
+		ioms->zio_ios_inst_id = iodie->zi_base_ios_id + iomsno;
+
+		ioms->zio_dest_id = zen_ios_fabric_id(ioms);
+		ioms->zio_pci_busno = zen_fabric_ios_busno(iodie, ioms);
+
+		if (ioms->zio_dest_id == fch_ios_fid) {
+			ioms->zio_flags |= ZEN_IOMS_F_HAS_FCH;
+		}
+
+		/*
+		 * uarch-specific IOMS init hook.  XXX: actually most of the
+		 * functionality is still in the milan impl.
+		 */
+		if (fops->zfo_ioms_init != NULL)
+			fops->zfo_ioms_init(ioms);
+	}
+
+	return (0);
+}
 /*
  * Right now we're running on the boot CPU. We know that a single socket has to
  * be populated. Our job is to go through and determine what the rest of the
@@ -1134,7 +1269,12 @@ zen_fabric_topo_init(void)
 	fabric->zf_nsocs = nsocs;
 	for (uint8_t socno = 0; socno < nsocs; socno++) {
 		zen_soc_t *soc = &fabric->zf_socs[socno];
-		zen_iodie_t *iodie = &soc->zs_iodies[0];
+		zen_iodie_cb_arg_data_t iodie_args = {
+		    .zicad_soc = soc,
+		    .zicad_fops = fops,
+		    .zicad_fch_ios_fid = fch_ios_fid,
+		    .zicad_df_rev = df_rev,
+		};
 
 		soc->zs_socno = socno;
 		soc->zs_fabric = fabric;
@@ -1146,7 +1286,7 @@ zen_fabric_topo_init(void)
 		 */
 		if (socno != 0) {
 			/*
-			 * We assume single-die SoCs hence socno == dfno but
+			 * We assume single-die SoCs hence socno == iono but
 			 * let's be explicit about it.
 			 */
 			VERIFY3U(ZEN_FABRIC_MAX_DIES_PER_SOC, ==, 1);
@@ -1154,69 +1294,8 @@ zen_fabric_topo_init(void)
 			    fabric->zf_ecam_base);
 		}
 
-		iodie->zi_devno = AMDZEN_DF_FIRST_DEVICE + socno;
-
-		/*
-		 * Populate the major, minor, and revision fields of the given
-		 * I/O die.
-		 */
-		zen_determine_df_vers(zen_fabric_determine_df_vers_cb, iodie,
-		    &iodie->zi_df_major, &iodie->zi_df_minor,
-		    &iodie->zi_df_rev);
-		if (iodie->zi_df_rev != df_rev) {
-			cmn_err(CE_PANIC, "DF revision mismatch: expected %d, "
-			    "found %d (SoC/DF: %d/0)", df_rev, iodie->zi_df_rev,
-			    socno);
-		}
-
-		iodie->zi_node_id = zen_fabric_iodie_node_id(iodie);
-		iodie->zi_soc = soc;
-
-		if (iodie->zi_node_id == 0) {
-			iodie->zi_flags = ZEN_IODIE_F_PRIMARY;
-		}
-
-		/*
-		 * Because we do not know the circumstances all these locks will
-		 * be used during early initialization, set these to be spin
-		 * locks for the moment.
-		 */
-		mutex_init(&iodie->zi_df_ficaa_lock, NULL, MUTEX_SPIN,
-		    (ddi_iblock_cookie_t)ipltospl(15));
-		mutex_init(&iodie->zi_smn_lock, NULL, MUTEX_SPIN,
-		    (ddi_iblock_cookie_t)ipltospl(15));
-		mutex_init(&iodie->zi_smu_lock, NULL, MUTEX_SPIN,
-		    (ddi_iblock_cookie_t)ipltospl(15));
-
-		iodie->zi_smn_busno = zen_fabric_smn_busno(iodie);
-
-		zen_fabric_discover_iodie_components(iodie);
-
-		fabric->zf_total_ioms += iodie->zi_nioms;
-		for (uint8_t iomsno = 0; iomsno < iodie->zi_nioms; iomsno++) {
-			zen_ioms_t *ioms = &iodie->zi_ioms[iomsno];
-
-			ioms->zio_num = iomsno;
-			ioms->zio_iodie = iodie;
-
-			ioms->zio_iom_inst_id = iodie->zi_base_iom_id + iomsno;
-			ioms->zio_ios_inst_id = iodie->zi_base_ios_id + iomsno;
-
-			ioms->zio_dest_id = zen_ios_fabric_id(ioms);
-			ioms->zio_pci_busno = zen_fabric_ios_busno(iodie, ioms);
-
-			if (ioms->zio_dest_id == fch_ios_fid) {
-				ioms->zio_flags |= ZEN_IOMS_F_HAS_FCH;
-			}
-
-			/*
-			 * uarch-specific IOMS init hook.
-			 * XXX: actually most of the functionality is still
-			 * in the milan impl.
-			 */
-			if (fops->zfo_ioms_init != NULL)
-				fops->zfo_ioms_init(ioms);
-		}
+		zen_fabric_walk_iodie(fabric, zen_fabric_topo_init_iodie_cb,
+		    &iodie_args);
 
 		/*
 		 * Initialize the CCXs for this SOC/IOD.
@@ -1224,11 +1303,17 @@ zen_fabric_topo_init(void)
 		nthreads += zen_fabric_ccx_init_soc(soc);
 
 		/*
+		 * In order to guarantee that we can safely perform SMU and DXIO
+		 * functions, retrieve, store, and print firmware revisions.
+		 */
+		zen_fabric_dump_soc_fw_versions(soc);
+
+		/*
 		 * Generic SoC & IO die initialization is complete but let
 		 * the uarch-specific code do any additional setup needed.
 		 */
 		if (fops->zfo_soc_init != NULL)
-			fops->zfo_soc_init(soc, iodie);
+			fops->zfo_soc_init(soc);
 	}
 
 	/*
