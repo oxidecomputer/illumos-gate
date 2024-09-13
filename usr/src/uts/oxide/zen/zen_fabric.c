@@ -480,6 +480,7 @@ zen_fabric_discover_iodie_components(zen_iodie_t *iodie)
 			    DF_NCS_SUBTYPE_IOS_V4) {
 				break;
 			}
+			continue;
 		default:
 			continue;
 		}
