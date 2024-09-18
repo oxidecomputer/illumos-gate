@@ -27,10 +27,40 @@
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  * Copyright 2024 Hans Rosenfeld
  */
 
+#ifdef OXIDE_DWU
+/*
+ * The OXIDE_DWU-wrapped parts of this driver are a gross hack! This really
+ * should be replaced wholesale with a new serdev-based driver. In the interim,
+ * this source is used for both `asy` and the Oxide `dwu`. We can get away with
+ * that as the DesignWare APB UARTs are compatibile enough with a 16550 that we
+ * can get away without major changes to the device-specific parts of the
+ * driver. Using the same source allows automatically benefitting from upstream
+ * improvements to this code.
+ *
+ * These temporary modifications are preferable over stock asy only because it
+ * avoids the need to set up an even more vile fake ISA bus and legacy IO
+ * mapping for the DesignWare APB UARTs we have. There are features we could
+ * use that 16550s don't have and this driver doesn't support, but they aren't
+ * terribly important for basic functionality.
+ *
+ * The major changes made here for dwu are:
+ *
+ * - support for memory-mapped registers 4 bytes wide
+ * - replacement of all the PC-specific stuff like the notion of COM ports and
+ *   special device node names
+ * - Skipping bus type detection, which our parent nexus is supposed to
+ *   abstract away from us regardless
+ * - addition of mostly proper support for a higher baud clock, selection of
+ *   which is unfortunately NOT transparent because the hardware upstream of us
+ *   doesn't permit it (all UARTs supported by the FCH share a single clock
+ *   selection register located not even in the UART but in the SMBus controller
+ *   because of course that's where it belongs)
+ */
+#endif /* OXIDE_DWU */
 
 /*
  * Serial I/O driver for 8250/16450/16550A/16650/16750/16950 chips.
@@ -264,7 +294,57 @@ static uint_t num_com_ports;
 boolean_t	asy_nosuspend = B_FALSE;
 #endif
 
-
+#ifdef OXIDE_DWU
+/*
+ * Baud rate table. Indexed by #defines found in sys/termios.h
+ *
+ * For now we support only the fast baud clock of 48MHz.
+ *
+ * As in the standard asy table below, not all baud rates have exact divisors.
+ * Those that are inexact have their errors noted in parentheses below. Baud
+ * rates that would have errors > 1% are not supported, though possibly a few
+ * could be.
+ */
+#define	UNSUPPORTED	0x00, 0x00, 0x00
+static struct {
+	uint8_t asy_dlh;
+	uint8_t asy_dll;
+	uint8_t asy_tcr;
+} asy_baud_tab[] = {
+	[B0] =		{ UNSUPPORTED },	/* 0 baud */
+	[B50] =		{ 0xea, 0x60, 0x00 },	/* 50 baud */
+	[B75] =		{ 0x9c, 0x40, 0x00 },	/* 75 baud */
+	[B110] =	{ 0x6a, 0x89, 0x00 },	/* 110 baud (0.001%) */
+	[B134] =	{ 0x57, 0x74, 0x00 },	/* 134 baud (<0.0001%) */
+	[B150] =	{ 0x4e, 0x20, 0x00 },	/* 150 baud */
+	[B200] =	{ 0x3a, 0x98, 0x00 },	/* 200 baud */
+	[B300] =	{ 0x27, 0x10, 0x00 },	/* 300 baud */
+	[B600] =	{ 0x13, 0x88, 0x00 },	/* 600 baud */
+	[B1200] =	{ 0x09, 0xc4, 0x00 },	/* 1200 baud */
+	[B1800] =	{ 0x06, 0x83, 0x00 },	/* 1800 baud */
+	[B2400] =	{ 0x04, 0xe2, 0x00 },	/* 2400 baud */
+	[B4800] =	{ 0x02, 0x71, 0x00 },	/* 4800 baud */
+	[B9600] =	{ 0x01, 0x38, 0x00 },	/* 9600 baud (0.16%) */
+	[B19200] =	{ 0x00, 0x9c, 0x00 },	/* 19200 baud (0.16%) */
+	[B38400] =	{ 0x00, 0x4e, 0x00 },	/* 38400 baud (0.16%) */
+	[B57600] =	{ 0x00, 0x34, 0x00 },	/* 57600 baud (0.16%) */
+	[B76800] =	{ 0x00, 0x27, 0x00 },	/* 76800 baud (0.16%) */
+	[B115200] =	{ 0x00, 0x1a, 0x00 },	/* 115200 baud (0.16%) */
+	[B153600] =	{ UNSUPPORTED },	/* 153600 baud (16950) */
+	[B230400] =	{ UNSUPPORTED },	/* 230400 baud (16950) */
+	[B307200] =	{ UNSUPPORTED },	/* 307200 baud (16950) */
+	[B460800] =	{ UNSUPPORTED },	/* 460800 baud (16950) */
+	[B921600] =	{ UNSUPPORTED },	/* 921600 baud (16950) */
+	[B1000000] =	{ 0x00, 0x03, 0x00 },	/* 1000000 baud */
+	[B1152000] =	{ UNSUPPORTED },	/* 1152000 baud */
+	[B1500000] =	{ 0x00, 0x02, 0x00 },	/* 1500000 baud */
+	[B2000000] =	{ UNSUPPORTED },	/* 2000000 baud */
+	[B2500000] =	{ UNSUPPORTED },	/* 2500000 baud */
+	[B3000000] =	{ 0x00, 0x01, 0x00 },	/* 3000000 baud */
+	[B3500000] =	{ UNSUPPORTED },	/* 3500000 baud */
+	[B4000000] =	{ UNSUPPORTED },	/* 4000000 baud */
+};
+#else /* OXIDE_DWU */
 /*
  * Baud rate table. Indexed by #defines found in sys/termios.h
  *
@@ -317,6 +397,7 @@ static struct {
 	[B3500000] =	{ UNSUPPORTED },	/* 3500000 baud */
 	[B4000000] =	{ UNSUPPORTED },	/* 4000000 baud */
 };
+#endif /* OXIDE_DWU */
 
 /*
  * Register table. For each logical register, we define the minimum hwtype, the
@@ -382,7 +463,11 @@ static int asywput(queue_t *q, mblk_t *mp);
 
 struct module_info asy_info = {
 	0,
+#ifdef OXIDE_DWU
+	"dwu",
+#else
 	"asy",
+#endif
 	0,
 	INFPSZ,
 	4096,
@@ -467,7 +552,11 @@ struct dev_ops asy_ops = {
 
 static struct modldrv modldrv = {
 	&mod_driverops, /* Type of module.  This one is a driver */
+#ifdef OXIDE_DWU
+	"DesignWare APB UART driver",
+#else
 	"ASY driver",
+#endif
 	&asy_ops,	/* driver ops */
 };
 
@@ -697,8 +786,13 @@ asy_put_reg(const struct asycom *asy, asy_reg_t reg, uint8_t val)
 {
 	ASSERT(asy->asy_hwtype >= asy_reg_table[reg].asy_min_hwtype);
 
+#ifdef OXIDE_DWU
+	ddi_put32(asy->asy_iohandle,
+	    asy->asy_ioaddr + asy_reg_table[reg].asy_reg_off, val);
+#else
 	ddi_put8(asy->asy_iohandle,
 	    asy->asy_ioaddr + asy_reg_table[reg].asy_reg_off, val);
+#endif
 }
 
 static uint8_t
@@ -706,8 +800,13 @@ asy_get_reg(const struct asycom *asy, asy_reg_t reg)
 {
 	ASSERT(asy->asy_hwtype >= asy_reg_table[reg].asy_min_hwtype);
 
+#ifdef OXIDE_DWU
+	return (ddi_get32(asy->asy_iohandle,
+	    asy->asy_ioaddr + asy_reg_table[reg].asy_reg_off));
+#else
 	return (ddi_get8(asy->asy_iohandle,
 	    asy->asy_ioaddr + asy_reg_table[reg].asy_reg_off));
+#endif
 }
 
 static void
@@ -903,6 +1002,26 @@ async_process_suspq(struct asycom *asy)
 	cv_broadcast(&async->async_flags_cv);
 }
 
+#ifdef OXIDE_DWU
+
+/*
+ * Always claiming an unknown bus type prevents callers from attempting ISA or
+ * PCI-specific operations which are not applicable to DWU.
+ */
+static int
+asy_get_bus_type(dev_info_t *devinfo)
+{
+	return (ASY_BUS_UNKNOWN);
+}
+
+static int
+asy_get_io_regnum(dev_info_t *devinfo, struct asycom *asy)
+{
+	return (0);
+}
+
+#else /* OXIDE_DWU */
+
 static int
 asy_get_bus_type(dev_info_t *devinfo)
 {
@@ -1023,6 +1142,8 @@ asy_get_io_regnum(dev_info_t *devinfo, struct asycom *asy)
 		return (-1);
 	}
 }
+
+#endif /* OXIDE_DWU */
 
 static void
 asy_intr_free(struct asycom *asy)
@@ -1353,9 +1474,20 @@ asydetach(dev_info_t *devi, ddi_detach_cmd_t cmd)
 
 	ASY_DPRINTF(asy, ASY_DEBUG_INIT, "%s shutdown", asy_hw_name(asy));
 
+	/*
+	 * Ensure that interrupts are disabled prior to destroying data and
+	 * mutexes that they depend on.
+	 */
+	if ((asy->asy_progress & ASY_PROGRESS_INT) != 0)
+		asy_intr_free(asy);
+
+	if ((asy->asy_progress & ASY_PROGRESS_SOFTINT) != 0)
+		asy_softintr_free(asy);
+
 	if ((asy->asy_progress & ASY_PROGRESS_ASYNC) != 0) {
 		struct asyncline *async = asy->asy_priv;
 
+		asy->asy_priv = NULL;
 		/* cancel DTR hold timeout */
 		if (async->async_dtrtid != 0) {
 			(void) untimeout(async->async_dtrtid);
@@ -1363,7 +1495,6 @@ asydetach(dev_info_t *devi, ddi_detach_cmd_t cmd)
 		}
 		cv_destroy(&async->async_flags_cv);
 		kmem_free(async, sizeof (struct asyncline));
-		asy->asy_priv = NULL;
 	}
 
 	if ((asy->asy_progress & ASY_PROGRESS_MINOR) != 0)
@@ -1374,12 +1505,6 @@ asydetach(dev_info_t *devi, ddi_detach_cmd_t cmd)
 		mutex_destroy(&asy->asy_excl_hi);
 		mutex_destroy(&asy->asy_soft_lock);
 	}
-
-	if ((asy->asy_progress & ASY_PROGRESS_INT) != 0)
-		asy_intr_free(asy);
-
-	if ((asy->asy_progress & ASY_PROGRESS_SOFTINT) != 0)
-		asy_softintr_free(asy);
 
 	if ((asy->asy_progress & ASY_PROGRESS_REGS) != 0)
 		ddi_regs_map_free(&asy->asy_iohandle);
@@ -1413,14 +1538,17 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	int mcr;
 	int ret;
 	int regnum = 0;
+#ifndef OXIDE_DWU
 	int i;
+#endif
 	struct asycom *asy;
 	char name[ASY_MINOR_LEN];
 	int status;
 	static ddi_device_acc_attr_t ioattr = {
-		DDI_DEVICE_ATTR_V0,
-		DDI_NEVERSWAP_ACC,
-		DDI_STRICTORDER_ACC,
+		.devacc_attr_version = DDI_DEVICE_ATTR_V1,
+		.devacc_attr_endian_flags = DDI_NEVERSWAP_ACC,
+		.devacc_attr_dataorder = DDI_STRICTORDER_ACC,
+		.devacc_attr_access = DDI_DEFAULT_ACC
 	};
 
 	switch (cmd) {
@@ -1434,6 +1562,9 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		return (DDI_FAILURE);
 	}
 
+#ifdef OXIDE_DWU
+	num_com_ports = 0;
+#else /* OXIDE_DWU */
 	mutex_enter(&asy_glob_lock);
 	if (com_ports == NULL) {	/* need to initialize com_ports */
 		if (ddi_prop_lookup_int_array(DDI_DEV_T_ANY, devi, 0,
@@ -1453,6 +1584,7 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		}
 	}
 	mutex_exit(&asy_glob_lock);
+#endif /* OXIDE_DWU */
 
 	instance = ddi_get_instance(devi);	/* find out which unit */
 	ret = ddi_soft_state_zalloc(asy_soft_state, instance);
@@ -1481,6 +1613,7 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 
 	ASY_DPRINTF(asy, ASY_DEBUG_INIT, "UART @ %p", (void *)asy->asy_ioaddr);
 
+#ifndef OXIDE_DWU
 	/*
 	 * Lookup the i/o address to see if this is a standard COM port
 	 * in which case we assign it the correct tty[a-d] to match the
@@ -1494,6 +1627,7 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 			break;
 		}
 	}
+#endif /* OXIDE_DWU */
 
 	/*
 	 * It appears that there was async hardware that on reset did not clear
@@ -1503,8 +1637,13 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	 * Don't use asy_disable_interrupts() as the mutexes haven't been
 	 * initialized yet.
 	 */
-	ddi_put8(asy->asy_iohandle, asy->asy_ioaddr + ASY_IER, 0);
-
+#ifdef OXIDE_DWU
+	ddi_put32(asy->asy_iohandle, asy->asy_ioaddr +
+	    asy_reg_table[ASY_IER].asy_reg_off, 0);
+#else
+	ddi_put8(asy->asy_iohandle, asy->asy_ioaddr +
+	    asy_reg_table[ASY_IER].asy_reg_off, 0);
+#endif
 
 	/*
 	 * Establish default settings:
@@ -1517,6 +1656,19 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	asy->asy_bidx = B115200;
 	asy->asy_fifo_buf = 1;
 	asy->asy_use_fifo = ASY_FCR_FIFO_OFF;
+#ifdef OXIDE_DWU
+	/*
+	 * Enable automatic flow control and increase the default baud rate.
+	 */
+	asy->asy_mcr |= ASY_MCR_AFCE;
+	asy->asy_bidx = B3000000;
+	/*
+	 * XXX This probably isn't needed but it's handy to force everything to
+	 * be exactly as we want it.
+	 */
+	asy->asy_cflag = CREAD | CS8 | CRTSCTS | CBAUDEXT;
+	asy->asy_cflag |= (asy->asy_bidx - CBAUD - 1);
+#endif /* OXIDE_DWU */
 
 #ifdef DEBUG
 	asy->asy_msint_cnt = 0;			/* # of times in async_msint */
@@ -1567,8 +1719,21 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		/* Parse property for tty modes */
 		asy_parse_mode(devi, asy);
 	} else {
+#ifdef OXIDE_DWU
+		/*
+		 * Always use automatic flow control (AFC). When AFC is
+		 * enabled, the RTS bit is in the MCR is still used but is also
+		 * gated with the receiver FIFO threshold trigger. Both have
+		 * to be asserted for RTS to be low. For dwu, we always leave
+		 * the RTS bit set in the MCR and leave it all to AFC.
+		 */
+		mcr |= ASY_MCR_AFCE | ASY_MCR_RTS;
+		ASY_DPRINTF(asy, ASY_DEBUG_MODEM,
+		    "clear ASY_IGNORE_CD, clear DTR");
+#else /* OXIDE_DWU */
 		ASY_DPRINTF(asy, ASY_DEBUG_MODEM,
 		    "clear ASY_IGNORE_CD, clear RTS & DTR");
+#endif /* OXIDE_DWU */
 		asy->asy_flags &= ~ASY_IGNORE_CD;	/* wait for cd */
 	}
 
@@ -1629,6 +1794,16 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	asy->asy_progress |= ASY_PROGRESS_ASYNC;
 
 	/* create minor device nodes for this device */
+#ifdef OXIDE_DWU
+	/*
+	 * We always have a deterministic name set by our parent nexus and each
+	 * driver instance supports only a single port, so there is no need for
+	 * funky minor names to distinguish among ports.
+	 */
+	name[0] = '0';
+	name[1] = '\0';
+	asy->asy_com_port = 0;
+#else /* OXIDE_DWU */
 	if (asy->asy_com_port != 0) {
 		/*
 		 * For DOS COM ports, add letter suffix so
@@ -1643,6 +1818,7 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		 */
 		(void) snprintf(name, ASY_MINOR_LEN, "%d", instance);
 	}
+#endif /* OXIDE_DWU */
 	status = ddi_create_minor_node(devi, name, S_IFCHR, instance,
 	    asy->asy_com_port != 0 ? DDI_NT_SERIAL_MB : DDI_NT_SERIAL, 0);
 	if (status == DDI_SUCCESS) {
@@ -1774,6 +1950,10 @@ asy_hw_name(struct asycom *asy)
 		return ("16750");
 	case ASY_16950:
 		return ("16950");
+#ifdef OXIDE_DWU
+	case ASY_DWAPB:
+		return ("DWAPB");
+#endif
 	}
 
 	ASY_DPRINTF(asy, ASY_DEBUG_INIT, "unknown asy_hwtype: %d",
@@ -1815,7 +1995,6 @@ static int
 asy_identify_chip(dev_info_t *devi, struct asycom *asy)
 {
 	int isr, lsr, mcr, spr;
-	dev_t dev;
 	uint_t hwtype;
 
 	/*
@@ -1902,6 +2081,20 @@ asy_identify_chip(dev_info_t *devi, struct asycom *asy)
 	    "probe fifo FIFOR=0x%02x ISR=0x%02x MCR=0x%02x",
 	    asy->asy_fifor | ASY_FCR_THR_FL | ASY_FCR_RHR_FL, isr, mcr);
 
+#ifdef OXIDE_DWU
+	hwtype = ASY_DWAPB;
+	asy->asy_use_fifo = ASY_FCR_FIFO_EN;
+	/*
+	 * While the reset value of FCH::UART::CPR[FIFO_MODE] should provide a
+	 * 256 byte FIFO, and experimentation shows that it does, we elect to
+	 * keep to a size of 16. IPCC relies on hardware flow control and
+	 * FIFOs filling up when the channel is idle and it's unnecessary
+	 * to cause either the host or SP to have to drain up to 256 frame
+	 * terminator bytes every time the channel wakes up.
+	 */
+	asy->asy_fifo_buf = 16;
+	asy_reset_fifo(asy, 0);
+#else /* OXIDE_DWU */
 	/*
 	 * Detect the chip type by comparing ISR[7,6] and ISR[5].
 	 *
@@ -2091,6 +2284,7 @@ asy_identify_chip(dev_info_t *devi, struct asycom *asy)
 
 		}
 	}
+#endif /* OXIDE_DWU */
 
 	asy->asy_hwtype = hwtype;
 
@@ -2154,6 +2348,20 @@ asy_identify_chip(dev_info_t *devi, struct asycom *asy)
 		    asy->asy_fifo_buf, i);
 
 		hwtype = asy->asy_hwtype;
+#ifdef OXIDE_DWU
+		if (i < asy->asy_fifo_buf) {
+			/*
+			 * Fall back to no FIFO at all, but leave the hardware
+			 * type alone.
+			 */
+			asy->asy_fifo_buf = 1;
+			asy->asy_use_fifo = ASY_FCR_FIFO_OFF;
+			asy->asy_fifor = 0;
+			asyerror(asy, CE_NOTE,
+			    "FIFO size measured at %d, disabling FIFO",
+			    i);
+		}
+#else /* OXIDE_DWU */
 		if (i < asy->asy_fifo_buf) {
 			/*
 			 * FIFO is somewhat smaller than we anticipated.
@@ -2184,6 +2392,7 @@ asy_identify_chip(dev_info_t *devi, struct asycom *asy)
 			if (ISP2(i))
 				asy->asy_fifo_buf = i;
 		}
+#endif /* OXIDE_DWU */
 
 		/*
 		 * We will need to reprogram the FIFO if we changed
@@ -2207,9 +2416,11 @@ asy_identify_chip(dev_info_t *devi, struct asycom *asy)
 	ASY_DPRINTF(asy, ASY_DEBUG_CHIP, "%s @ %p",
 	    asy_hw_name(asy), (void *)asy->asy_ioaddr);
 
+#ifndef OXIDE_DWU
 	/* Make UART type visible in device tree for prtconf, etc */
-	dev = makedevice(DDI_MAJOR_T_UNKNOWN, asy->asy_unit);
+	dev_t dev = makedevice(DDI_MAJOR_T_UNKNOWN, asy->asy_unit);
 	(void) ddi_prop_update_string(dev, devi, "uart", asy_hw_name(asy));
+#endif
 
 	if (asy->asy_hwtype == ASY_16550)	/* for broken 16550's, */
 		asy->asy_hwtype = ASY_8250A;	/* drive them as 8250A */
@@ -2247,7 +2458,7 @@ asyopen(queue_t *rq, dev_t *dev, int flag, int sflag __unused, cred_t *cr)
 	asy = ddi_get_soft_state(asy_soft_state, unit);
 	if (asy == NULL)
 		return (ENXIO);		/* unit not configured */
-	ASY_DPRINTF(asy, ASY_DEBUG_CLOSE, "enter");
+	ASY_DPRINTF(asy, ASY_DEBUG_INIT, "enter");
 	async = asy->asy_priv;
 	mutex_enter(&asy->asy_excl);
 
@@ -2331,9 +2542,9 @@ again:
 		ASY_DPRINTF(asy, ASY_DEBUG_MODEM,
 		    "ASY_IGNORE_CD set, set TS_SOFTCAR");
 		async->async_ttycommon.t_flags |= TS_SOFTCAR;
-	}
-	else
+	} else {
 		async->async_ttycommon.t_flags &= ~TS_SOFTCAR;
+	}
 
 	/*
 	 * Check carrier.
@@ -2574,9 +2785,23 @@ nodrain:
 
 			asy_put(asy, ASY_MCR, asy->asy_mcr | ASY_MCR_OUT2);
 		} else {
+#ifdef OXIDE_DWU
+			/*
+			 * Automatic flow control is enabled and so we want to
+			 * leave RTS asserted as it is combined (ANDed) with
+			 * the state of the receive FIFO. We leave it all to
+			 * AFC.
+			 */
+			ASY_DPRINTF(asy, ASY_DEBUG_MODEM,
+			    "Dropping DTR");
+			asy_put(asy, ASY_MCR,
+			    (asy->asy_mcr & (ASY_MCR_AFCE | ASY_MCR_RTS)) |
+			    ASY_MCR_OUT2);
+#else
 			ASY_DPRINTF(asy, ASY_DEBUG_MODEM,
 			    "Dropping DTR and RTS");
 			asy_put(asy, ASY_MCR, ASY_MCR_OUT2);
+#endif
 		}
 		async->async_dtrtid =
 		    timeout((void (*)())async_dtr_free,
@@ -2805,11 +3030,20 @@ asy_program(struct asycom *asy, int mode)
 		asy->asy_ocflag = c_flag & ~CLOCAL;
 	}
 
-	if (baudrate == 0)
+	if (baudrate == 0) {
+#ifdef OXIDE_DWU
+		/*
+		 * Leave automatic flow control enabled in MCR if it should be.
+		 */
+		asy_put(asy, ASY_MCR,
+		    (asy->asy_mcr & (ASY_MCR_AFCE|ASY_MCR_RTS)) | ASY_MCR_OUT2);
+#else
 		asy_put(asy, ASY_MCR,
 		    (asy->asy_mcr & ASY_MCR_RTS) | ASY_MCR_OUT2);
-	else
+#endif
+	} else {
 		asy_put(asy, ASY_MCR, asy->asy_mcr | ASY_MCR_OUT2);
+	}
 
 	/*
 	 * Call the modem status interrupt handler to check for the carrier
@@ -2874,13 +3108,18 @@ uint_t
 asyintr(caddr_t argasy, caddr_t argunused __unused)
 {
 	struct asycom		*asy = (struct asycom *)argasy;
-	struct asyncline	*async = asy->asy_priv;
+	struct asyncline	*async;
 	int			ret_status = DDI_INTR_UNCLAIMED;
 
 	mutex_enter(&asy->asy_excl_hi);
-	if ((async == NULL) ||
-	    !(async->async_flags & (ASYNC_ISOPEN|ASYNC_WOPEN))) {
+	async = asy->asy_priv;
+	if (async == NULL ||
+	    (async->async_flags & (ASYNC_ISOPEN|ASYNC_WOPEN)) == 0) {
 		const uint8_t intr_id = asy_get(asy, ASY_ISR);
+
+		ASY_DPRINTF(asy, ASY_DEBUG_INTR,
+		    "not open async=%p flags=0x%x interrupt_id=0x%x",
+		    async, async == NULL ? 0 : async->async_flags, intr_id);
 
 		if ((intr_id & ASY_ISR_NOINTR) == 0) {
 			/*
@@ -2917,13 +3156,23 @@ asyintr(caddr_t argasy, caddr_t argunused __unused)
 	for (;;) {
 		const uint8_t intr_id = asy_get(asy, ASY_ISR);
 
+		/*
+		 * Reading LSR will clear any error bits (ASY_LSR_ERRORS) which
+		 * are set which is why the value is passed through to
+		 * async_rxint() and not re-read there. In the unexpected event
+		 * that we've ended up here without a pending interrupt, the
+		 * ASY_ISR_NOINTR case, it should do no harm to have cleared
+		 * the error bits, and it means we can get some additional
+		 * information in the debug message if it's enabled.
+		 */
+		const uint8_t lsr = asy_get(asy, ASY_LSR);
+
+		ASY_DPRINTF(asy, ASY_DEBUG_INTR,
+		    "interrupt_id=0x%x LSR=0x%x",
+		    intr_id, lsr);
+
 		if (intr_id & ASY_ISR_NOINTR)
 			break;
-
-		ASY_DPRINTF(asy, ASY_DEBUG_INTR, "interrupt_id = 0x%x",
-		    intr_id);
-
-		const uint8_t lsr = asy_get(asy, ASY_LSR);
 
 		switch (intr_id & ASY_ISR_MASK) {
 		case ASY_ISR_ID_RLST:
@@ -2964,8 +3213,9 @@ asyintr(caddr_t argasy, caddr_t argunused __unused)
 
 		/* Refill the output FIFO if it has gone empty */
 		if ((lsr & ASY_LSR_THRE) && (async->async_flags & ASYNC_BUSY) &&
-		    (async->async_ocnt > 0))
+		    async->async_ocnt > 0) {
 			async_txint(asy);
+		}
 	}
 
 	mutex_exit(&asy->asy_excl_hi);
@@ -4897,6 +5147,11 @@ asymctl(struct asycom *asy, int bits, int how)
 		    asytodm(mcr_r, msr_r));
 		return (asytodm(mcr_r, msr_r));
 	}
+
+#ifdef OXIDE_DWU
+	/* Keep AFC enabled. */
+	mcr_r |= (asy->asy_mcr & ASY_MCR_AFCE);
+#endif
 
 	asy_put(asy, ASY_MCR, mcr_r);
 
