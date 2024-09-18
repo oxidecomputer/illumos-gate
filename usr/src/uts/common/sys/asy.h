@@ -24,7 +24,7 @@
 
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  * Copyright 2024 Hans Rosenfeld
  */
 
@@ -62,6 +62,9 @@ extern "C" {
 #define	ASY_8250A	0x00008250	/* 8250A or 16450 */
 #define	ASY_16550	0x10016550	/* broken FIFO which must not be used */
 #define	ASY_16550A	0x20016551	/* usable FIFO */
+#ifdef OXIDE_DWU
+#define	ASY_DWAPB	0x30016550	/* DesignWare APB */
+#endif
 #define	ASY_16750	0x30016750	/* 64 byte FIFO, auto flow control */
 #define	ASY_16650	0x40016650	/* 32 byte FIFO, auto flow control */
 #define	ASY_16950	0x50016950	/* 128 byte FIFO, auto flow control */
@@ -201,6 +204,9 @@ typedef enum {
 #define	ASY_MCR_OUT1	0x04	/* Aux output - not used */
 #define	ASY_MCR_OUT2	0x08	/* turns intr to 386 on/off */
 #define	ASY_MCR_LOOP	0x10	/* loopback for diagnostics */
+#ifdef OXIDE_DWU
+#define	ASY_MCR_AFCE	0x20	/* Automatic flow control enable */
+#endif
 
 #define	ASY_MCR_LOOPBACK	\
 	(ASY_MCR_DTR | ASY_MCR_RTS | ASY_MCR_OUT1 | ASY_MCR_OUT2 | ASY_MCR_LOOP)
@@ -344,7 +350,11 @@ struct asycom {
 	uint_t		asy_use_fifo;	/* HW FIFO use it or not ?? */
 	uint_t		asy_fifo_buf;	/* With FIFO = 16, otherwise = 1 */
 	uint_t		asy_flags2;	/* flags which don't change, no lock */
+#ifdef OXIDE_DWU
+	uint32_t	*asy_ioaddr;	/* i/o address of ASY port */
+#else
 	uint8_t		*asy_ioaddr;	/* i/o address of ASY port */
+#endif
 	struct asyncline *asy_priv;	/* protocol private data -- asyncline */
 	dev_info_t	*asy_dip;	/* dev_info */
 	int		asy_unit;	/* which port */

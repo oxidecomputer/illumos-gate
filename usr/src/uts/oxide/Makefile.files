@@ -188,7 +188,7 @@ PCI_PRD_OBJS += pci_prd_oxide.o
 
 FCH_OBJS += fch.o ixbar.o
 
-DWU_OBJS += dwu.o
+DWU_OBJS += asy.o
 
 BOOT_IMAGE_OBJS += oxide_boot.o oxide_boot_disk.o oxide_boot_net.o \
 	oxide_boot_sp.o oxide_boot_log.o

@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Co.
+# Copyright 2024 Oxide Computer Co.
 #
 
 UTSBASE	= ../..
@@ -24,6 +24,8 @@ include $(UTSBASE)/oxide/Makefile.oxide
 
 ALL_TARGET	= $(BINARY) $(SRC_CONFFILE)
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
+
+CPPFLAGS += -DOXIDE_DWU
 
 .KEEP_STATE:
 
