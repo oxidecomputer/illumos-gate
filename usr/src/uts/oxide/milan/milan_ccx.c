@@ -49,52 +49,6 @@ static const boolean_t milan_ccx_set_undoc_regs = B_TRUE;
  */
 static const boolean_t milan_ccx_set_undoc_fields = B_TRUE;
 
-/*
- * In this context, "thread" == AP.  SMT may or may not be enabled (by HW, FW,
- * or our own controls).  That may affect the number of threads per core, but
- * doesn't otherwise change anything here.
- *
- * This function is one-way; once a thread has been enabled, we are told that
- * we must never clear this bit.  What happens if we do, I do not know.  If the
- * thread was already booted, this function does nothing and returns B_FALSE;
- * otherwise it returns B_TRUE and the AP will be started.  There is no way to
- * fail; we don't construct a zen_thread_t for hardware that doesn't exist, so
- * it's always possible to perform this operation if what we are handed points
- * to genuine data.
- *
- * See MP boot theory in os/mp_startup.c
- */
-bool
-milan_ccx_start_thread(const zen_thread_t *thread)
-{
-	zen_core_t *core = thread->zt_core;
-	zen_ccx_t *ccx = core->zc_ccx;
-	zen_ccd_t *ccd = ccx->zcx_ccd;
-	smn_reg_t reg;
-	uint8_t thr_ccd_idx;
-	uint32_t en;
-
-	VERIFY3U(CPU->cpu_id, ==, 0);
-
-	thr_ccd_idx = ccx->zcx_logical_cxno;
-	thr_ccd_idx *= ccx->zcx_ncores;
-	thr_ccd_idx += core->zc_logical_coreno;
-	thr_ccd_idx *= core->zc_nthreads;
-	thr_ccd_idx += thread->zt_threadno;
-
-	VERIFY3U(thr_ccd_idx, <, MILAN_MAX_CCXS_PER_CCD *
-	    MILAN_MAX_CORES_PER_CCX * MILAN_MAX_THREADS_PER_CORE);
-
-	reg = amdzen_smupwr_smn_reg(ccd->zcd_physical_dieno, D_SMUPWR_THREAD_EN,
-	    0);
-	en = zen_ccd_read(ccd, reg);
-	if (SMUPWR_THREAD_EN_GET_T(en, thr_ccd_idx) != 0)
-		return (B_FALSE);
-
-	en = SMUPWR_THREAD_EN_SET_T(en, thr_ccd_idx);
-	zen_ccd_write(ccd, reg, en);
-	return (B_TRUE);
-}
 
 boolean_t
 milan_ccx_is_supported(void)

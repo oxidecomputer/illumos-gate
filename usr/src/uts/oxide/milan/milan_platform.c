@@ -60,7 +60,6 @@ static const zen_apob_ops_t milan_apob_ops = {
 
 static const zen_ccx_ops_t milan_ccx_ops = {
 	.zco_init = milan_ccx_init,
-	.zco_start_thread = milan_ccx_start_thread,
 };
 
 static const zen_fabric_ops_t milan_fabric_ops = {

@@ -40,7 +40,6 @@ typedef struct zen_apob_ops {
 
 typedef struct zen_ccx_ops {
 	void	(*zco_init)(void);
-	bool	(*zco_start_thread)(const zen_thread_t *);
 
 	/*
 	 * Optional hook for any further microachitecture-specific physical

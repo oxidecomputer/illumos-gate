@@ -65,14 +65,11 @@ extern "C" {
  * set by firmware before boot.
  */
 #define	MILAN_MAX_CCDS_PER_IODIE	8
-#define	MILAN_MAX_CCXS_PER_CCD		1
 #define	MILAN_MAX_CORES_PER_CCX		8
-#define	MILAN_MAX_THREADS_PER_CORE	2
 
 extern void milan_fabric_thread_get_dpm_weights(const zen_thread_t *,
     const uint64_t **, uint32_t *);
 
-extern bool milan_ccx_start_thread(const zen_thread_t *);
 extern void milan_ccx_init(void);
 
 #ifdef __cplusplus
