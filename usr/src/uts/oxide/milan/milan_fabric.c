@@ -920,7 +920,7 @@ milan_fabric_thread_get_dpm_weights(const zen_thread_t *thread,
  * model in the fabric.
  */
 
-static smn_reg_t
+smn_reg_t
 milan_pcie_port_reg(const zen_pcie_port_t *const port,
     const smn_reg_def_t def)
 {
@@ -945,24 +945,7 @@ milan_pcie_port_reg(const zen_pcie_port_t *const port,
 	return (reg);
 }
 
-static uint32_t
-milan_pcie_port_read(zen_pcie_port_t *port, const smn_reg_t reg)
-{
-	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
-
-	return (zen_smn_read(iodie, reg));
-}
-
-static void
-milan_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
-    const uint32_t val)
-{
-	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
-
-	zen_smn_write(iodie, reg, val);
-}
-
-static smn_reg_t
+smn_reg_t
 milan_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 {
 	zen_ioms_t *ioms = pc->zpc_ioms;
@@ -987,23 +970,6 @@ milan_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 	}
 
 	return (reg);
-}
-
-static uint32_t
-milan_pcie_core_read(zen_pcie_core_t *pc, const smn_reg_t reg)
-{
-	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
-
-	return (zen_smn_read(iodie, reg));
-}
-
-static void
-milan_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
-    const uint32_t val)
-{
-	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
-
-	zen_smn_write(iodie, reg, val);
 }
 
 /*
@@ -1271,109 +1237,10 @@ milan_fabric_nmi_eoi(void)
 	(void) zen_walk_ioms(milan_iohc_nmi_eoi_cb, NULL);
 }
 
-/*
- * We pass these functions 64 bits of debug data consisting of 32 bits of stage
- * number and 8 bits containing the I/O die index for which to capture register
- * values.  A value of 0xff, which is never valid for any I/O die, means capture
- * all of them.  These inline functions encode and decode this argument; we use
- * functions so they are typed.
- */
-#define	MILAN_IODIE_MATCH_ANY	0xff
-
-static inline void *
-milan_pcie_dbg_cookie(milan_pcie_config_stage_t stage, uint8_t iodie)
-{
-	uintptr_t rv;
-
-	rv = (uintptr_t)stage;
-	rv |= ((uintptr_t)iodie) << 32;
-
-	return ((void *)rv);
-}
-
-static inline milan_pcie_config_stage_t
-milan_pcie_dbg_cookie_to_stage(void *arg)
-{
-	uintptr_t av = (uintptr_t)arg;
-
-	return ((milan_pcie_config_stage_t)(av & UINT32_MAX));
-}
-
-static inline uint8_t
-milan_pcie_dbg_cookie_to_iodie(void *arg)
-{
-	uintptr_t av = (uintptr_t)arg;
-
-	return ((uint8_t)(av >> 32));
-}
-
-static int
-milan_pcie_populate_core_dbg(zen_pcie_core_t *pc, void *arg)
-{
-	milan_pcie_config_stage_t stage = milan_pcie_dbg_cookie_to_stage(arg);
-	uint8_t iodie_match = milan_pcie_dbg_cookie_to_iodie(arg);
-	milan_pcie_core_t *mpc = pc->zpc_uarch_pcie_core;
-	milan_pcie_dbg_t *dp = mpc->mpc_dbg;
-
-	if (dp == NULL)
-		return (0);
-
-	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
-	    iodie_match != zen_iodie_node_id(pc->zpc_ioms->zio_iodie)) {
-		return (0);
-	}
-
-	for (uint_t rn = 0; rn < dp->mpd_nregs; rn++) {
-		smn_reg_t reg;
-
-		reg = milan_pcie_core_reg(pc, dp->mpd_regs[rn].mprd_def);
-		dp->mpd_regs[rn].mprd_val[stage] =
-		    milan_pcie_core_read(pc, reg);
-		dp->mpd_regs[rn].mprd_ts[stage] = gethrtime();
-	}
-
-	dp->mpd_last_stage = stage;
-
-	return (0);
-}
-
-static int
-milan_pcie_populate_port_dbg(zen_pcie_port_t *port, void *arg)
-{
-	milan_pcie_port_t *mport = port->zpp_uarch_pcie_port;
-	milan_pcie_config_stage_t stage = milan_pcie_dbg_cookie_to_stage(arg);
-	uint8_t iodie_match = milan_pcie_dbg_cookie_to_iodie(arg);
-	milan_pcie_dbg_t *dp = mport->mpp_dbg;
-
-	if (dp == NULL)
-		return (0);
-
-	if (iodie_match != MILAN_IODIE_MATCH_ANY &&
-	    iodie_match !=
-	    zen_iodie_node_id(port->zpp_core->zpc_ioms->zio_iodie)) {
-		return (0);
-	}
-
-	for (uint_t rn = 0; rn < dp->mpd_nregs; rn++) {
-		smn_reg_t reg;
-
-		reg = milan_pcie_port_reg(port, dp->mpd_regs[rn].mprd_def);
-		dp->mpd_regs[rn].mprd_val[stage] =
-		    milan_pcie_port_read(port, reg);
-		dp->mpd_regs[rn].mprd_ts[stage] = gethrtime();
-	}
-
-	dp->mpd_last_stage = stage;
-
-	return (0);
-}
-
-static void
-milan_pcie_populate_dbg(zen_fabric_t *fabric, milan_pcie_config_stage_t stage,
-    uint8_t iodie_match)
+void
+milan_pcie_dbg_signal(void)
 {
 	static bool gpio_configured;
-	void *cookie = milan_pcie_dbg_cookie(stage, iodie_match);
 
 	/*
 	 * On Gimlet, we want to signal via GPIO that we're collecting register
@@ -1403,11 +1270,6 @@ milan_pcie_populate_dbg(zen_fabric_t *fabric, milan_pcie_config_stage_t stage,
 		}
 		milan_hack_gpio(MHGOP_TOGGLE, 129);
 	}
-
-	(void) zen_fabric_walk_pcie_core(fabric, milan_pcie_populate_core_dbg,
-	    cookie);
-	(void) zen_fabric_walk_pcie_port(fabric, milan_pcie_populate_port_dbg,
-	    cookie);
 }
 
 static void
@@ -2166,7 +2028,7 @@ milan_fabric_topo_init(zen_fabric_t *fabric)
 void
 milan_fabric_soc_init(zen_soc_t *soc)
 {
-	ASSERT3U(soc->zs_niodies, ==, MILAN_FABRIC_MAX_DIES_PER_SOC);
+	ASSERT3U(soc->zs_niodies, ==, MILAN_IODIE_PER_SOC);
 	ASSERT3U(soc->zs_niodies, ==, 1);
 
 	zen_iodie_t *iodie = &soc->zs_iodies[0];
@@ -3642,8 +3504,8 @@ milan_fabric_write_pcie_strap(zen_pcie_core_t *pc,
 	d_reg = milan_pcie_core_reg(pc, D_PCIE_RSMU_STRAP_DATA);
 
 	mutex_enter(&pc->zpc_strap_lock);
-	milan_pcie_core_write(pc, a_reg, MILAN_STRAP_PCIE_ADDR_UPPER + reg);
-	milan_pcie_core_write(pc, d_reg, data);
+	zen_pcie_core_write(pc, a_reg, MILAN_STRAP_PCIE_ADDR_UPPER + reg);
+	zen_pcie_core_write(pc, d_reg, data);
 	mutex_exit(&pc->zpc_strap_lock);
 }
 
@@ -3727,9 +3589,9 @@ milan_fabric_setup_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
 			 * this port.
 			 */
 			reg = milan_pcie_core_reg(pc, D_PCIE_CORE_DBG_CTL);
-			val = milan_pcie_core_read(pc, reg);
+			val = zen_pcie_core_read(pc, reg);
 			val = PCIE_CORE_DBG_CTL_SET_PORT_EN(val, 1U << portno);
-			milan_pcie_core_write(pc, reg, val);
+			zen_pcie_core_write(pc, reg, val);
 
 			/*
 			 * Find the lowest-numbered core lane index in this port
@@ -3759,10 +3621,10 @@ milan_fabric_setup_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
 			laneno = mport->mpp_engine->zde_start_lane -
 			    pc->zpc_dxio_lane_start;
 			reg = milan_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
-			val = milan_pcie_core_read(pc, reg);
+			val = zen_pcie_core_read(pc, reg);
 			val = PCIE_CORE_LC_DBG_CTL_SET_LANE_MASK(val,
 			    1U << laneno);
-			milan_pcie_core_write(pc, reg, val);
+			zen_pcie_core_write(pc, reg, val);
 
 			break;
 		}
@@ -3810,7 +3672,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 			 * being used by devices or not.
 			 */
 			case MILAN_DXIO_SM_MAPPED:
-				milan_pcie_populate_dbg(fabric,
+				zen_pcie_populate_dbg(fabric,
 				    MPCS_DXIO_SM_MAPPED, iodie->zi_node_id);
 
 				if (!milan_dxio_rpc_retrieve_engine(iodie)) {
@@ -3848,12 +3710,12 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				(void) zen_fabric_walk_pcie_core(fabric,
 				    milan_fabric_setup_pcie_core_dbg, NULL);
 
-				milan_pcie_populate_dbg(fabric,
+				zen_pcie_populate_dbg(fabric,
 				    MPCS_DXIO_SM_MAPPED_RESUME,
 				    iodie->zi_node_id);
 				break;
 			case MILAN_DXIO_SM_CONFIGURED:
-				milan_pcie_populate_dbg(fabric,
+				zen_pcie_populate_dbg(fabric,
 				    MPCS_DXIO_SM_CONFIGURED,
 				    iodie->zi_node_id);
 
@@ -3863,7 +3725,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				 * is needed.
 				 */
 
-				milan_pcie_populate_dbg(fabric,
+				zen_pcie_populate_dbg(fabric,
 				    MPCS_DXIO_SM_CONFIGURED_RESUME,
 				    iodie->zi_node_id);
 				break;
@@ -3885,7 +3747,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 			}
 			break;
 		case MILAN_DXIO_DATA_TYPE_RESET:
-			milan_pcie_populate_dbg(fabric,
+			zen_pcie_populate_dbg(fabric,
 			    MPCS_DXIO_SM_PERST, iodie->zi_node_id);
 			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
 			    soc->zs_socno, reply.mds_arg0, reply.mds_arg1);
@@ -3932,7 +3794,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				}
 			}
 
-			milan_pcie_populate_dbg(fabric,
+			zen_pcie_populate_dbg(fabric,
 			    MPCS_DXIO_SM_PERST_RESUME,
 			    iodie->zi_node_id);
 
@@ -3954,7 +3816,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 	}
 
 done:
-	milan_pcie_populate_dbg(fabric, MPCS_DXIO_SM_DONE,
+	zen_pcie_populate_dbg(fabric, MPCS_DXIO_SM_DONE,
 	    iodie->zi_node_id);
 
 	if (!milan_dxio_rpc_retrieve_engine(iodie)) {
@@ -4495,7 +4357,7 @@ milan_fabric_init_bridges(zen_pcie_port_t *port, void *arg)
 	}
 
 	reg = milan_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
 	if (hide) {
 		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
@@ -4506,22 +4368,22 @@ milan_fabric_init_bridges(zen_pcie_port_t *port, void *arg)
 		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
 		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
 	}
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_TX_CTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_TX_CTL_SET_TLP_FLUSH_DOWN_DIS(val, 0);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the hardware knows the corresponding b/d/f for this bridge.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_TX_ID);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_TX_ID_SET_BUS(val, ioms->zio_pci_busno);
 	val = PCIE_PORT_TX_ID_SET_DEV(val, port->zpp_device);
 	val = PCIE_PORT_TX_ID_SET_FUNC(val, port->zpp_func);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * Next, we have to go through and set up a bunch of the lane controller
@@ -4530,23 +4392,23 @@ milan_fabric_init_bridges(zen_pcie_port_t *port, void *arg)
 	 * certain messages, and related.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL_SET_L1_IMM_ACK(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_TRAIN_CTL_SET_L0S_L1_TRAIN(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(val, 1);
 	val = PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL2);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(val,
 	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
 	/*
@@ -4559,30 +4421,30 @@ milan_fabric_init_bridges(zen_pcie_port_t *port, void *arg)
 		val = PCIE_PORT_LC_CTL2_SET_TS2_CHANGE_REQ(val,
 		    PCIE_PORT_LC_CTL2_TS2_CHANGE_128);
 	}
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL3);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL3_SET_DOWN_SPEED_CHANGE(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * Lucky Hardware Debug 15. Why is it lucky? Because all we know is
 	 * we've been told to set it.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_HW_DBG_SET_DBG15(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure the 8 GT/s symbols per clock is set to 2.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL6);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
 	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * Software expects to see the PCIe slot implemented bit when a slot
@@ -4618,19 +4480,19 @@ milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 	uint32_t val;
 
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_CI_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_CI_CTL_SET_LINK_DOWN_CTO_EN(val, 1);
 	val = PCIE_CORE_CI_CTL_SET_IGN_LINK_DOWN_CTO_ERR(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Program the unit ID for this device's SDP port.
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SDP_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_SDP_CTL_SET_PORT_ID(val, mpc->mpc_sdp_port);
 	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID(val, mpc->mpc_sdp_unit);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Program values required for receiver margining to work. These are
@@ -4652,45 +4514,45 @@ milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 	 * 0xf).
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN_CTL_CAP);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_TIME(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x32);
 	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x17);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN2_SET_NLANES(val, 0xf);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Ensure that RCB checking is what's seemingly expected.
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_ATTR_DIS(val, 1);
 	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_SIZE_DIS(val, 0);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Enabling atomics in the RC requires a few different registers. Both
 	 * a strap has to be overridden and then corresponding control bits.
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_STRAP_F0);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_ROUTE(val, 1);
 	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL2);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_ORD_DIS(val, 1);
 	val = PCIE_CORE_PCIE_CTL2_TX_ATOMIC_OPS_DIS(val, 0);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	/*
 	 * Ensure the correct electrical idle mode detection is set. In
@@ -4698,11 +4560,11 @@ milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 	 * special symbol errors.
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PCIE_P_CTL_SET_ELEC_IDLE(val,
 	    PCIE_CORE_PCIE_P_CTL_ELEC_IDLE_M1);
 	val = PCIE_CORE_PCIE_P_CTL_SET_IGN_EDB_ERR(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	/*
 	 * The IOMMUL1 does not have an instance for the on-the side WAFL lanes.
@@ -4712,9 +4574,9 @@ milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 		return (0);
 
 	reg = milan_pcie_core_reg(pc, D_IOMMUL1_CTL1);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = IOMMUL1_CTL1_SET_ORDERING(val, 1);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
@@ -5076,19 +4938,19 @@ milan_hotplug_port_init(zen_pcie_port_t *port, void *arg)
 	 * it'll do something useful for the SMU.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_HP_CTL_SET_SLOT(val, mport->mpp_hp_slotno);
 	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * This register is apparently set to ensure that we don't remain in the
 	 * detect state machine state.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL5);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(val, 0);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * This bit is documented to cause the LC to disregard most training
@@ -5113,17 +4975,17 @@ milan_hotplug_port_init(zen_pcie_port_t *port, void *arg)
 	 * downstream device that might set some of these bits.
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_TRAIN_CTL_SET_TRAINBITS_DIS(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * Make sure that power faults can actually work (in theory).
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_PCTL);
-	val = milan_pcie_port_read(port, reg);
+	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_PCTL_SET_PWRFLT_EN(val, 1);
-	milan_pcie_port_write(port, reg, val);
+	zen_pcie_port_write(port, reg, val);
 
 	/*
 	 * Go through and set up the slot capabilities register. In our case
@@ -5157,9 +5019,9 @@ milan_hotplug_port_init(zen_pcie_port_t *port, void *arg)
 	 * boards where that's under GPIO network control.
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SWRST_CTL6);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = bitset32(val, port->zpp_portno, port->zpp_portno, 0);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
@@ -5185,9 +5047,9 @@ milan_hotplug_core_init(zen_pcie_core_t *pc, void *arg)
 	}
 
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_PRES);
-	val = milan_pcie_core_read(pc, reg);
+	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_PRES_SET_MODE(val, PCIE_CORE_PRES_MODE_OR);
-	milan_pcie_core_write(pc, reg, val);
+	zen_pcie_core_write(pc, reg, val);
 
 	return (0);
 }
@@ -5288,72 +5150,19 @@ milan_hotplug_init(zen_fabric_t *fabric)
 	return (true);
 }
 
-#ifdef	DEBUG
-static int
-milan_fabric_init_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
-{
-	milan_pcie_core_t *mpc = pc->zpc_uarch_pcie_core;
-	mpc->mpc_dbg = kmem_zalloc(
-	    MILAN_PCIE_DBG_SIZE(milan_pcie_core_dbg_nregs), KM_SLEEP);
-	mpc->mpc_dbg->mpd_nregs = milan_pcie_core_dbg_nregs;
-
-	for (uint_t rn = 0; rn < mpc->mpc_dbg->mpd_nregs; rn++) {
-		milan_pcie_reg_dbg_t *rd = &mpc->mpc_dbg->mpd_regs[rn];
-
-		rd->mprd_name = milan_pcie_core_dbg_regs[rn].mprd_name;
-		rd->mprd_def = milan_pcie_core_dbg_regs[rn].mprd_def;
-	}
-
-	return (0);
-}
-
-static int
-milan_fabric_init_pcie_port_dbg(zen_pcie_port_t *port, void *arg)
-{
-	milan_pcie_port_t *mport = port->zpp_uarch_pcie_port;
-
-	mport->mpp_dbg = kmem_zalloc(
-	    MILAN_PCIE_DBG_SIZE(milan_pcie_port_dbg_nregs), KM_SLEEP);
-	mport->mpp_dbg->mpd_nregs = milan_pcie_port_dbg_nregs;
-
-	for (uint_t rn = 0; rn < mport->mpp_dbg->mpd_nregs; rn++) {
-		milan_pcie_reg_dbg_t *rd = &mport->mpp_dbg->mpd_regs[rn];
-
-		rd->mprd_name = milan_pcie_port_dbg_regs[rn].mprd_name;
-		rd->mprd_def = milan_pcie_port_dbg_regs[rn].mprd_def;
-	}
-
-	return (0);
-}
-#endif	/* DEBUG */
-
 /*
  * This is the main place where we basically do everything that we need to do to
  * get the PCIe engine up and running.
  */
 void
-milan_fabric_init(void)
+milan_fabric_init(zen_fabric_t *fabric)
 {
-	extern zen_fabric_t zen_fabric;
-	zen_fabric_t *fabric = &zen_fabric;
-
 	/*
 	 * XXX We're missing initialization of some different pieces of the data
 	 * fabric here. While some of it like scrubbing should be done as part
 	 * of the memory controller driver and broader policy rather than all
 	 * here right now.
 	 */
-
-	/*
-	 * These register debugging facilities are costly in both space and
-	 * time, and are enabled only on DEBUG kernels.
-	 */
-#ifdef	DEBUG
-	(void) zen_fabric_walk_pcie_core(fabric,
-	    milan_fabric_init_pcie_core_dbg, NULL);
-	(void) zen_fabric_walk_pcie_port(fabric,
-	    milan_fabric_init_pcie_port_dbg, NULL);
-#endif
 
 	/*
 	 * When we come out of reset, the PSP and/or SMU have set up our DRAM
@@ -5473,8 +5282,8 @@ milan_fabric_init(void)
 	 *
 	 * XXX htf do we want to handle errors
 	 */
-	milan_pcie_populate_dbg(fabric, MPCS_PRE_DXIO_INIT,
-	    MILAN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, MPCS_PRE_DXIO_INIT,
+	    ZEN_IODIE_MATCH_ANY);
 	if (zen_fabric_walk_iodie(fabric, milan_dxio_init, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
@@ -5499,8 +5308,8 @@ milan_fabric_init(void)
 		return;
 	}
 
-	milan_pcie_populate_dbg(fabric, MPCS_DXIO_SM_START,
-	    MILAN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, MPCS_DXIO_SM_START,
+	    ZEN_IODIE_MATCH_ANY);
 	if (zen_fabric_walk_iodie(fabric, milan_dxio_state_machine, NULL) !=
 	    0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to walk "
@@ -5528,15 +5337,13 @@ milan_fabric_init(void)
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
 	 */
-	milan_pcie_populate_dbg(fabric, MPCS_PRE_HOTPLUG,
-	    MILAN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, MPCS_PRE_HOTPLUG, ZEN_IODIE_MATCH_ANY);
 	if (!milan_hotplug_init(fabric)) {
 		cmn_err(CE_WARN, "SMUHP: initialisation failed; PCIe hotplug "
 		    "may not function properly");
 	}
 
-	milan_pcie_populate_dbg(fabric, MPCS_POST_HOTPLUG,
-	    MILAN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, MPCS_POST_HOTPLUG, ZEN_IODIE_MATCH_ANY);
 
 	/*
 	 * XXX At some point, maybe not here, but before we really go too much

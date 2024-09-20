@@ -1,0 +1,94 @@
+/*
+ * This file and its contents are supplied under the terms of the
+ * Common Development and Distribution License ("CDDL"), version 1.0.
+ * You may only use this file in accordance with the terms of version
+ * 1.0 of the CDDL.
+ *
+ * A full copy of the text of the CDDL should have accompanied this
+ * source.  A copy of the CDDL is also available via the Internet at
+ * http://www.illumos.org/license/CDDL.
+ */
+
+/*
+ * Copyright 2024 Oxide Computer Company
+ */
+
+#ifndef _SYS_IO_GENOA_FABRIC_IMPL_H
+#define	_SYS_IO_GENOA_FABRIC_IMPL_H
+
+/*
+ * Private I/O fabric types.  This file should not be included outside the
+ * implementation.
+ */
+
+#include <sys/types.h>
+#include <sys/stdint.h>
+#include <sys/x86_archext.h>
+#include <sys/io/zen/fabric_impl.h>
+#include <sys/io/genoa/ccx_impl.h>
+#include <sys/io/genoa/pcie_impl.h>
+#include <sys/amdzen/smn.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * This defines what the maximum number of SoCs that are supported in Genoa.
+ */
+#define	GENOA_MAX_SOCS			2
+
+/*
+ * This is the maximum number of I/O dies that can exist in a given SoC.
+ */
+#define	GENOA_IODIE_PER_SOC		1
+
+/*
+ * This is the number of NBIO instances that we know are supposed to exist per
+ * die.
+ */
+#define	GENOA_NBIO_PER_IODIE		2
+
+/*
+ * This is the number of IO[MS] (IOHUB[MS]) instances that we know are supposed
+ * to exist per NBIO.
+ */
+#define	GENOA_IOMS_PER_NBIO		2
+
+/*
+ * This is the number of IO[MS] instances that we know are supposed to exist per
+ * die.
+ */
+#define	GENOA_IOMS_PER_IODIE	(GENOA_IOMS_PER_NBIO * GENOA_NBIO_PER_IODIE)
+
+/*
+ * Each NBIO has 4 x16 PCIe Gen5 cores, split across two IOHUBs. Additionally,
+ * each NBIO has a bonus x4 PCIe Gen3 core linked to the first IOHUB. This all
+ * means that the first IOHUB in each NBIO has three cores while the second has
+ * two.
+ */
+#define	GENOA_IOMS_MAX_PCIE_CORES	3
+#define	GENOA_NBIO_BONUS_IOHUB		0
+#define	GENOA_IOMS_BONUS_PCIE_CORENO	2
+
+/*
+ * Convenience macro to convert an IOMS number to the corresponding IOHUB.
+ */
+#define	GENOA_IOMS_IOHUB_NUM(num)	((num) % GENOA_IOMS_PER_NBIO)
+
+/*
+ * This is the primary initialization point for the Genoa Data Fabric,
+ * Northbridges, PCIe, and related.
+ */
+extern void genoa_fabric_init(zen_fabric_t *);
+
+extern smn_reg_t genoa_pcie_port_reg(const zen_pcie_port_t *const,
+    const smn_reg_def_t);
+extern smn_reg_t genoa_pcie_core_reg(const zen_pcie_core_t *const,
+    const smn_reg_def_t);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* _SYS_IO_GENOA_FABRIC_IMPL_H */

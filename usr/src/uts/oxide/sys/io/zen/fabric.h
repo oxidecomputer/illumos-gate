@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/plat/pci_prd.h>
+#include <sys/io/zen/smn.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -40,6 +41,10 @@ typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;
 struct memlist;
+typedef struct zen_pcie_core zen_pcie_core_t;
+typedef struct zen_pcie_port zen_pcie_port_t;
+typedef struct zen_pcie_dbg zen_pcie_dbg_t;
+typedef struct zen_pcie_reg_dbg zen_pcie_reg_dbg_t;
 
 /*
  * Generic resource types that can be routed via an IOMS.
@@ -135,6 +140,16 @@ extern void zen_fabric_enable_nmi(void);
  * subsequent NMIs.
  */
 extern void zen_fabric_nmi_eoi(void);
+
+extern uint32_t zen_pcie_core_read(zen_pcie_core_t *, const smn_reg_t);
+extern void zen_pcie_core_write(zen_pcie_core_t *, const smn_reg_t,
+    const uint32_t);
+extern uint32_t zen_pcie_port_read(zen_pcie_port_t *, const smn_reg_t);
+extern void zen_pcie_port_write(zen_pcie_port_t *, const smn_reg_t,
+    const uint32_t);
+
+#define	ZEN_IODIE_MATCH_ANY	UINT8_MAX
+extern void zen_pcie_populate_dbg(zen_fabric_t *, uint32_t, uint8_t);
 
 #ifdef	__cplusplus
 }

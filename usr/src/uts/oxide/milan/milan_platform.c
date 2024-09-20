@@ -21,6 +21,8 @@
  * functionality and constants.
  */
 
+#include <sys/sysmacros.h>
+
 #include <sys/amdzen/ccd.h>
 #include <sys/amdzen/fch/iomux.h>
 #include <sys/amdzen/fch/gpio.h>
@@ -34,6 +36,7 @@
 
 #include <sys/io/milan/dxio.h>
 #include <sys/io/milan/fabric_impl.h>
+#include <sys/io/milan/pcie_impl.h>
 #include <sys/io/milan/ioapic.h>
 #include <sys/io/milan/iohc.h>
 #include <sys/io/milan/iommu.h>
@@ -42,6 +45,14 @@
 #include <sys/io/milan/hacks.h>
 #include <milan/milan_apob.h>
 
+/*
+ * The milan_pcie_dbg.c is file is included here so that we have access to the
+ * constant initialisers for the core and port debug registers declared within,
+ * and can compute their size. The alternative would be to link it into the
+ * final object but we would lose the ability to declare all of the platform
+ * data as const below.
+ */
+#include "milan_pcie_dbg.c"
 
 static const zen_apob_ops_t milan_apob_ops = {
 	.zao_reserve_phys = milan_apob_reserve_phys,
@@ -63,6 +74,10 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 
 	.zfo_get_dxio_fw_version = milan_get_dxio_fw_version,
 	.zfo_report_dxio_fw_version = milan_report_dxio_fw_version,
+
+	.zfo_pcie_core_reg = milan_pcie_core_reg,
+	.zfo_pcie_port_reg = milan_pcie_port_reg,
+	.zfo_pcie_dbg_signal = milan_pcie_dbg_signal,
 };
 
 static const zen_hack_ops_t milan_hack_ops = {
@@ -89,6 +104,12 @@ const zen_platform_t milan_platform = {
 			.zssa_arg4 = D_MILAN_SMU_RPC_ARG4,
 			.zssa_arg5 = D_MILAN_SMU_RPC_ARG5,
 		},
+#ifdef DEBUG
+		.zpc_pcie_core_dbg_regs = milan_pcie_core_dbg_regs,
+		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(milan_pcie_core_dbg_regs),
+		.zpc_pcie_port_dbg_regs = milan_pcie_port_dbg_regs,
+		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(milan_pcie_port_dbg_regs),
+#endif
 	},
 	.zp_apob_ops = &milan_apob_ops,
 	.zp_ccx_ops = &milan_ccx_ops,

@@ -2241,7 +2241,7 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIECORE::SMU_PCIE_DF_Address - unused but captured for debugging.
+ * PCIECORE::SMU_PCIE_DF_ADDRESS - unused but captured for debugging.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_SMU_DF_ADDR	(const smn_reg_def_t){	\

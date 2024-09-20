@@ -55,28 +55,7 @@ typedef enum milan_pcie_config_stage {
 	MPCS_NUM_STAGES
 } milan_pcie_config_stage_t;
 
-typedef struct milan_pcie_reg_dbg {
-	const char		*mprd_name;
-	smn_reg_def_t		mprd_def;
-	uint32_t		mprd_val[MPCS_NUM_STAGES];
-	hrtime_t		mprd_ts[MPCS_NUM_STAGES];
-} milan_pcie_reg_dbg_t;
-
-typedef struct milan_pcie_dbg {
-	milan_pcie_config_stage_t	mpd_last_stage;
-	uint32_t			mpd_nregs;
-	milan_pcie_reg_dbg_t		mpd_regs[];
-} milan_pcie_dbg_t;
-
-#define	MILAN_PCIE_DBG_SIZE(_nr)	\
-	(sizeof (milan_pcie_dbg_t) + (_nr) * sizeof (milan_pcie_reg_dbg_t))
-
-#ifdef	DEBUG
-extern const milan_pcie_reg_dbg_t milan_pcie_core_dbg_regs[];
-extern const size_t milan_pcie_core_dbg_nregs;
-extern const milan_pcie_reg_dbg_t milan_pcie_port_dbg_regs[];
-extern const size_t milan_pcie_port_dbg_nregs;
-#endif	/* DEBUG */
+CTASSERT(MPCS_NUM_STAGES <= ZPCS_MAX_STAGES);
 
 /*
  * The PCIe port data specific to the Milan microarchitecture.
@@ -86,13 +65,11 @@ struct milan_pcie_port {
 	smu_hotplug_type_t	mpp_hp_type;
 	uint16_t		mpp_hp_slotno;
 	uint32_t		mpp_hp_smu_mask;
-	milan_pcie_dbg_t	*mpp_dbg;
 };
 
 struct milan_pcie_core {
 	uint8_t			mpc_sdp_unit;
 	uint8_t			mpc_sdp_port;
-	milan_pcie_dbg_t	*mpc_dbg;
 	milan_pcie_port_t	mpc_ports[MILAN_PCIE_CORE_MAX_PORTS];
 };
 

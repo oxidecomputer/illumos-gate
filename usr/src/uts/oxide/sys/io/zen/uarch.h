@@ -52,7 +52,20 @@ typedef struct zen_fabric_ops {
 	/*
 	 * Initialize the SoC's I/O fabric, including the SMU, DXIO, NBIO, etc.
 	 */
-	void		(*zfo_fabric_init)(void);
+	void		(*zfo_fabric_init)(zen_fabric_t *);
+
+	/*
+	 * Retrieve register handles for PCIe core and port registers.
+	 */
+	smn_reg_t	(*zfo_pcie_port_reg)(const zen_pcie_port_t *const,
+	    const smn_reg_def_t);
+	smn_reg_t	(*zfo_pcie_core_reg)(const zen_pcie_core_t *const,
+	    const smn_reg_def_t);
+
+	/*
+	 * Signal that we're collecting register data.
+	 */
+	void		(*zfo_pcie_dbg_signal)(void);
 
 	/*
 	 * Enables and EOIs NMIs generated through the IO fabric, for instance
@@ -159,7 +172,7 @@ typedef struct zen_mpio_smn_addrs {
 /*
  * These are constants specific to a given platform.  These are as distinct from
  * the maximum architectural constants across all platforms implemented in the
- * Oxide arhcitecture.
+ * Oxide architecture.
  */
 typedef struct zen_platform_consts {
 	/*
@@ -186,6 +199,16 @@ typedef struct zen_platform_consts {
 	 * The platform-specific SMN addresses of the MPIO RPC registers.
 	 */
 	const zen_mpio_smn_addrs_t	zpc_mpio_smn_addrs;
+
+	/*
+	 * These are pointers to tables of PCIe core and port registers which
+	 * should be sampled at various points during initialization. This is
+	 * only done in DEBUG kernels.
+	 */
+	const zen_pcie_reg_dbg_t	*zpc_pcie_core_dbg_regs;
+	const size_t			zpc_pcie_core_dbg_nregs;
+	const zen_pcie_reg_dbg_t	*zpc_pcie_port_dbg_regs;
+	const size_t			zpc_pcie_port_dbg_nregs;
 } zen_platform_consts_t;
 
 #ifdef	__cplusplus

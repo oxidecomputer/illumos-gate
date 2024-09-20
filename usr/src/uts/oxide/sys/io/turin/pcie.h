@@ -28,6 +28,9 @@
 extern "C" {
 #endif
 
+extern uint8_t turin_ioms_n_pcie_cores(const uint8_t);
+extern uint8_t turin_pcie_core_n_ports(const uint8_t);
+
 /*
  * PCIe related SMN addresses. This is determined based on a combination of
  * which IOMS we're on, which PCIe port we're on on the IOMS, and then finally
@@ -3982,10 +3985,10 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIECORE::SMU_PCIE_DF_Address - unused but captured for debugging.
+ * PCIECORE::SMU_PCIE_DF_ADDRESS - unused but captured for debugging.
  */
 /*CSTYLED*/
-#define	D_PCIE_CORE_SMU_PCIE_DF_Address	(const smn_reg_def_t){	\
+#define	D_PCIE_CORE_SMU_PCIE_DF_ADDRESS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x6c0	\
 }

@@ -35,6 +35,15 @@ extern "C" {
 #endif
 
 /*
+ * The implementation of these types is exposed to implementers but not to
+ * consumers; therefore we forward-declare them here and provide the actual
+ * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
+ * pointers to these types only as opaque handles.
+ */
+typedef struct zen_ioms zen_ioms_t;
+typedef struct zen_iodie zen_iodie_t;
+
+/*
  * Issue reads and writes on the network associated with the given IO die.
  */
 extern uint32_t zen_smn_read(zen_iodie_t *, const smn_reg_t);

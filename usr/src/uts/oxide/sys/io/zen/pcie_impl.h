@@ -84,6 +84,30 @@ typedef enum zen_pcie_core_flag {
 } zen_pcie_core_flag_t;
 
 /*
+ * In order to aid PCIe debugging, core and port registers are captured at
+ * various stages of PCIe programming and initialization and stored in the
+ * corresponding zen_pcie_port_t and zen_pcie_core_t structures. This is costly
+ * in both space and time, and is only done on DEBUG kernels.
+ */
+#define	ZPCS_MAX_STAGES	15
+
+typedef struct zen_pcie_reg_dbg {
+	const char		*zprd_name;
+	smn_reg_def_t		zprd_def;
+	uint32_t		zprd_val[ZPCS_MAX_STAGES];
+	hrtime_t		zprd_ts[ZPCS_MAX_STAGES];
+} zen_pcie_reg_dbg_t;
+
+typedef struct zen_pcie_dbg {
+	uint32_t		zpd_last_stage;
+	size_t			zpd_nregs;
+	zen_pcie_reg_dbg_t	zpd_regs[];
+} zen_pcie_dbg_t;
+
+#define	ZEN_PCIE_DBG_SIZE(_nr)	\
+	(sizeof (zen_pcie_dbg_t) + (_nr) * sizeof (zen_pcie_reg_dbg_t))
+
+/*
  * A PCIe port attached to a PCIe core.
  */
 struct zen_pcie_port {
@@ -111,6 +135,11 @@ struct zen_pcie_port {
 
 	zen_pcie_core_t		*zpp_core;
 	void			*zpp_uarch_pcie_port;
+
+	/*
+	 * PCIe port registers captured at various stages.
+	 */
+	zen_pcie_dbg_t		*zpp_dbg;
 };
 
 struct zen_pcie_core {
@@ -120,6 +149,11 @@ struct zen_pcie_core {
 
 	uint8_t			zpc_nports;
 	zen_pcie_port_t		zpc_ports[ZEN_PCIE_CORE_MAX_PORTS];
+
+	/*
+	 * PCIe core registers captured at various stages.
+	 */
+	zen_pcie_dbg_t		*zpc_dbg;
 
 	/*
 	 * Lane start and end constants, both physical and logical (DXIO).  Note
@@ -141,7 +175,6 @@ struct zen_pcie_core {
 	zen_ioms_t		*zpc_ioms;
 	void			*zpc_uarch_pcie_core;
 };
-
 
 #ifdef	__cplusplus
 }

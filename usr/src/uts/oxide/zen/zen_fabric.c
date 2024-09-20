@@ -1333,12 +1333,170 @@ zen_fabric_topo_init(void)
 	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads;
 }
 
+static int
+zen_fabric_init_pcie_dbg(zen_pcie_dbg_t **dbg,
+    const zen_pcie_reg_dbg_t *regs, const size_t nregs)
+{
+	if (nregs == 0)
+		return (0);
+
+	*dbg = kmem_zalloc(ZEN_PCIE_DBG_SIZE(nregs), KM_SLEEP);
+	(*dbg)->zpd_nregs = nregs;
+
+	for (size_t rn = 0; rn < nregs; rn++) {
+		zen_pcie_reg_dbg_t *rd = &(*dbg)->zpd_regs[rn];
+
+		rd->zprd_name = regs[rn].zprd_name;
+		rd->zprd_def = regs[rn].zprd_def;
+	}
+
+	return (0);
+}
+
+static int
+zen_fabric_init_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
+{
+	const zen_platform_consts_t *platform_consts =
+	    oxide_zen_platform_consts();
+
+	return (zen_fabric_init_pcie_dbg(&pc->zpc_dbg,
+	    platform_consts->zpc_pcie_core_dbg_regs,
+	    platform_consts->zpc_pcie_core_dbg_nregs));
+}
+
+static int
+zen_fabric_init_pcie_port_dbg(zen_pcie_port_t *port, void *arg)
+{
+	const zen_platform_consts_t *platform_consts =
+	    oxide_zen_platform_consts();
+
+	return (zen_fabric_init_pcie_dbg(&port->zpp_dbg,
+	    platform_consts->zpc_pcie_port_dbg_regs,
+	    platform_consts->zpc_pcie_port_dbg_nregs));
+}
+
+static inline void *
+zen_pcie_dbg_cookie(uint32_t stage, uint8_t iodie)
+{
+	uintptr_t rv;
+
+	rv = (uintptr_t)stage;
+	rv |= ((uintptr_t)iodie) << 32;
+
+	return ((void *)rv);
+}
+
+static inline uint32_t
+zen_pcie_dbg_cookie_to_stage(void *arg)
+{
+	uintptr_t av = (uintptr_t)arg;
+
+	return ((uint32_t)(av & UINT32_MAX));
+}
+
+static inline uint8_t
+zen_pcie_dbg_cookie_to_iodie(void *arg)
+{
+	uintptr_t av = (uintptr_t)arg;
+
+	return ((uint8_t)(av >> 32));
+}
+
+static int
+zen_pcie_populate_core_dbg(zen_pcie_core_t *pc, void *arg)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+	uint32_t stage = zen_pcie_dbg_cookie_to_stage(arg);
+	uint8_t iodie_match = zen_pcie_dbg_cookie_to_iodie(arg);
+	zen_pcie_dbg_t *dbg = pc->zpc_dbg;
+
+	if (dbg == NULL)
+		return (0);
+
+	if (iodie_match != ZEN_IODIE_MATCH_ANY &&
+	    iodie_match != zen_iodie_node_id(pc->zpc_ioms->zio_iodie)) {
+		return (0);
+	}
+
+	for (size_t rn = 0; rn < dbg->zpd_nregs; rn++) {
+		smn_reg_t reg;
+
+		reg = fabric_ops->zfo_pcie_core_reg(pc,
+		    dbg->zpd_regs[rn].zprd_def);
+		dbg->zpd_regs[rn].zprd_val[stage] =
+		    zen_pcie_core_read(pc, reg);
+		dbg->zpd_regs[rn].zprd_ts[stage] = gethrtime();
+	}
+
+	dbg->zpd_last_stage = stage;
+
+	return (0);
+}
+
+static int
+zen_pcie_populate_port_dbg(zen_pcie_port_t *port, void *arg)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+	uint32_t stage = zen_pcie_dbg_cookie_to_stage(arg);
+	uint8_t iodie_match = zen_pcie_dbg_cookie_to_iodie(arg);
+	zen_pcie_dbg_t *dbg = port->zpp_dbg;
+
+	if (dbg == NULL)
+		return (0);
+
+	if (iodie_match != ZEN_IODIE_MATCH_ANY &&
+	    iodie_match !=
+	    zen_iodie_node_id(port->zpp_core->zpc_ioms->zio_iodie)) {
+		return (0);
+	}
+
+	for (size_t rn = 0; rn < dbg->zpd_nregs; rn++) {
+		smn_reg_t reg;
+
+		reg = fabric_ops->zfo_pcie_port_reg(port,
+		    dbg->zpd_regs[rn].zprd_def);
+		dbg->zpd_regs[rn].zprd_val[stage] =
+		    zen_pcie_port_read(port, reg);
+		dbg->zpd_regs[rn].zprd_ts[stage] = gethrtime();
+	}
+
+	dbg->zpd_last_stage = stage;
+
+	return (0);
+}
+
+void
+zen_pcie_populate_dbg(zen_fabric_t *fabric, uint32_t stage, uint8_t iodie_match)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+	void *cookie = zen_pcie_dbg_cookie(stage, iodie_match);
+
+	if (fabric_ops->zfo_pcie_dbg_signal != NULL)
+		(fabric_ops->zfo_pcie_dbg_signal)();
+
+	(void) zen_fabric_walk_pcie_core(fabric, zen_pcie_populate_core_dbg,
+	    cookie);
+	(void) zen_fabric_walk_pcie_port(fabric, zen_pcie_populate_port_dbg,
+	    cookie);
+}
+
 void
 zen_fabric_init(void)
 {
 	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+	zen_fabric_t *fabric = &zen_fabric;
+
+	/*
+	 * These register debugging facilities are costly in both space and
+	 * time, and are performed only on DEBUG kernels.
+	 */
+	(void) zen_fabric_walk_pcie_core(fabric,
+	    zen_fabric_init_pcie_core_dbg, NULL);
+	(void) zen_fabric_walk_pcie_port(fabric,
+	    zen_fabric_init_pcie_port_dbg, NULL);
+
 	VERIFY3P(fabric_ops->zfo_fabric_init, !=, NULL);
-	(fabric_ops->zfo_fabric_init)();
+	(fabric_ops->zfo_fabric_init)(fabric);
 }
 
 void
@@ -1956,4 +2114,38 @@ struct memlist *
 zen_fabric_gen_subsume(zen_ioms_t *ioms, zen_ioms_rsrc_t ir)
 {
 	return (zen_fabric_rsrc_subsume(ioms, ir));
+}
+
+uint32_t
+zen_pcie_core_read(zen_pcie_core_t *pc, const smn_reg_t reg)
+{
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+
+	return (zen_smn_read(iodie, reg));
+}
+
+void
+zen_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
+    const uint32_t val)
+{
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+
+	zen_smn_write(iodie, reg, val);
+}
+
+uint32_t
+zen_pcie_port_read(zen_pcie_port_t *port, const smn_reg_t reg)
+{
+	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+
+	return (zen_smn_read(iodie, reg));
+}
+
+void
+zen_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
+    const uint32_t val)
+{
+	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+
+	zen_smn_write(iodie, reg, val);
 }

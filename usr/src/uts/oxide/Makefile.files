@@ -128,16 +128,17 @@ MILAN_OBJS +=			\
 	milan_dxio_data.o	\
 	milan_fabric.o		\
 	milan_hacks.o		\
-	milan_pcie_dbg.o	\
 	milan_platform.o	\
 	milan_ras.o
 
 GENOA_OBJS +=			\
 	genoa_ccx.o		\
+	genoa_fabric.o		\
 	genoa_platform.o
 
 TURIN_OBJS +=			\
 	turin_ccx.o		\
+	turin_fabric.o		\
 	turin_platform.o
 
 ZEN_OBJS +=			\

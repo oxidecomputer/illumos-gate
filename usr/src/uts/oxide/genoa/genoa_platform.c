@@ -21,13 +21,27 @@
  * functionality and constants.
  */
 
+#include <sys/sysmacros.h>
+
 #include <sys/amdzen/df.h>
+#include <sys/io/zen/platform.h>
 #include <sys/io/zen/platform_impl.h>
 
+#include <sys/io/genoa/fabric_impl.h>
+#include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/ccx_impl.h>
 #include <sys/io/genoa/mpio.h>
 #include <sys/io/genoa/smu.h>
 #include <sys/io/zen/mpio.h>
+
+/*
+ * The genoa_pcie_dbg.c is file is included here so that we have access to the
+ * constant initialisers for the core and port debug registers declared within,
+ * and can compute their size. The alternative would be to link it into the
+ * final object but we would lose the ability to declare all of the platform
+ * data as const below.
+ */
+#include "genoa_pcie_dbg.c"
 
 /*
  * Genoa has up to 12 CCDs per IODIE.
@@ -49,6 +63,11 @@ static const zen_ccx_ops_t genoa_ccx_ops = {
 static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_get_dxio_fw_version = zen_mpio_get_fw_version,
 	.zfo_report_dxio_fw_version = zen_mpio_report_fw_version,
+
+	.zfo_fabric_init = genoa_fabric_init,
+
+	.zfo_pcie_core_reg = genoa_pcie_core_reg,
+	.zfo_pcie_port_reg = genoa_pcie_port_reg,
 };
 
 static const zen_hack_ops_t genoa_hack_ops = {
@@ -84,6 +103,12 @@ const zen_platform_t genoa_platform = {
 			.zmsa_resp = D_GENOA_MPIO_RPC_RESP,
 			.zmsa_doorbell = D_GENOA_MPIO_RPC_DOORBELL,
 		},
+#ifdef DEBUG
+		.zpc_pcie_core_dbg_regs = genoa_pcie_core_dbg_regs,
+		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(genoa_pcie_core_dbg_regs),
+		.zpc_pcie_port_dbg_regs = genoa_pcie_port_dbg_regs,
+		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(genoa_pcie_port_dbg_regs),
+#endif
 	},
 	.zp_apob_ops = &genoa_apob_ops,
 	.zp_ccx_ops = &genoa_ccx_ops,

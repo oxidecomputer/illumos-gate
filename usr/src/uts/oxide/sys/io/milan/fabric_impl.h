@@ -47,13 +47,13 @@ extern "C" {
  * on Naples based platforms, this is kept low (unlike the more general amdzen
  * nexus driver).
  */
-#define	MILAN_FABRIC_MAX_DIES_PER_SOC	1
+#define	MILAN_IODIE_PER_SOC		1
 
 /*
  * This is the number of IOMS instances that we know are supposed to exist per
  * die.
  */
-#define	MILAN_IOMS_PER_IODIE	4
+#define	MILAN_IOMS_PER_IODIE		4
 
 /*
  * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to three
@@ -92,7 +92,7 @@ struct milan_iodie {
 };
 
 struct milan_soc {
-	milan_iodie_t		ms_iodies[MILAN_FABRIC_MAX_DIES_PER_SOC];
+	milan_iodie_t		ms_iodies[MILAN_IODIE_PER_SOC];
 };
 
 struct milan_fabric {
@@ -111,10 +111,16 @@ extern void milan_fabric_ioms_init(zen_ioms_t *);
  * This is the primary initialization point for the Milan Data Fabric,
  * Northbridges, PCIe, and related.
  */
-extern void milan_fabric_init(void);
+extern void milan_fabric_init(zen_fabric_t *);
 
 extern void milan_fabric_enable_nmi(void);
 extern void milan_fabric_nmi_eoi(void);
+
+extern smn_reg_t milan_pcie_port_reg(const zen_pcie_port_t *const,
+    const smn_reg_def_t);
+extern smn_reg_t milan_pcie_core_reg(const zen_pcie_core_t *const,
+    const smn_reg_def_t);
+extern void milan_pcie_dbg_signal(void);
 
 #ifdef __cplusplus
 }
