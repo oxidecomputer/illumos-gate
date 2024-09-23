@@ -8951,6 +8951,10 @@ usr/src/test/nvme-tests/tests/libnvme/ns-info.32
 usr/src/test/nvme-tests/tests/libnvme/ns-info.64
 usr/src/test/nvme-tests/tests/libnvme/ns-info.o.32
 usr/src/test/nvme-tests/tests/libnvme/ns-info.o.64
+usr/src/test/nvme-tests/tests/libnvme/pev.32
+usr/src/test/nvme-tests/tests/libnvme/pev.64
+usr/src/test/nvme-tests/tests/libnvme/pev.o.32
+usr/src/test/nvme-tests/tests/libnvme/pev.o.64
 usr/src/test/nvme-tests/tests/libnvme/sctostr.32
 usr/src/test/nvme-tests/tests/libnvme/sctostr.64
 usr/src/test/nvme-tests/tests/libnvme/sctostr.o.32
@@ -9203,12 +9207,14 @@ usr/src/test/util-tests/tests/demangle/rust
 usr/src/test/util-tests/tests/iconv/iconv_test
 usr/src/test/util-tests/tests/libcustr/custr_remove
 usr/src/test/util-tests/tests/libcustr/custr_trunc
+usr/src/test/util-tests/tests/libjedec/hex2spd/libjedec_hex2spd.32
+usr/src/test/util-tests/tests/libjedec/hex2spd/libjedec_hex2spd.64
 usr/src/test/util-tests/tests/libjedec/libjedec_spd.32
 usr/src/test/util-tests/tests/libjedec/libjedec_spd.64
 usr/src/test/util-tests/tests/libjedec/libjedec_temp.32
 usr/src/test/util-tests/tests/libjedec/libjedec_temp.64
-usr/src/test/util-tests/tests/libjedec/libjedec_test.32
-usr/src/test/util-tests/tests/libjedec/libjedec_test.64
+usr/src/test/util-tests/tests/libjedec/libjedec_vendors.32
+usr/src/test/util-tests/tests/libjedec/libjedec_vendors.64
 usr/src/test/util-tests/tests/libnvpair_json/print_json
 usr/src/test/util-tests/tests/libsff/libsff_8472
 usr/src/test/util-tests/tests/libsff/libsff_8636_diag
