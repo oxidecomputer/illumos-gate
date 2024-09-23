@@ -84,10 +84,18 @@ extern void zen_fabric_dma_attr(ddi_dma_attr_t *attr);
 #define	ZEN_IOMS_MAX_PCIE_CORES		3
 
 /*
- * The maximum numer of NBIFs (Northbridge Interfaces, though possible
+ * The maximum number of NBIFs (Northbridge Interfaces, though possible
  * Northbridge interconnect functions; definitions vary) per IOMS.
  */
 #define	ZEN_IOMS_MAX_NBIF		3
+
+/*
+ * The maximum number of PCI bus, I/O and MMIO routing rules supported on the
+ * Oxide platform. Of the supported processors, Turin supports the most rules.
+ */
+#define	ZEN_MAX_CFGMAP			DF_MAX_CFGMAP_TURIN
+#define	ZEN_MAX_IO_RULES		DF_MAX_IO_RULES_TURIN
+#define	ZEN_MAX_MMIO_RULES		DF_MAX_MMIO_RULES_TURIN
 
 /*
  * Warning: These memlists cannot be given directly to PCI. They expect to be

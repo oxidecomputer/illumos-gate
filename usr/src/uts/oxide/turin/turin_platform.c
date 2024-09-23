@@ -34,6 +34,7 @@
 #include <sys/io/turin/mpio.h>
 #include <sys/io/turin/smu.h>
 #include <sys/io/zen/mpio.h>
+#include <sys/io/zen/apob.h>
 
 /*
  * The turin_pcie_dbg.c is file is included here so that we have access to the
@@ -62,6 +63,7 @@
 
 
 static const zen_apob_ops_t turin_apob_ops = {
+	.zao_reserve_phys = zen_null_apob_reserve_phys,
 };
 
 static const zen_ccx_ops_t turin_ccx_ops = {
@@ -90,6 +92,9 @@ static const zen_ras_ops_t turin_ras_ops = {
 const zen_platform_t turin_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4D2,
+		.zpc_max_cfgmap = DF_MAX_CFGMAP_TURIN,
+		.zpc_max_iorr = DF_MAX_IO_RULES_TURIN,
+		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,
 		.zpc_ccds_per_iodie = CLASSIC_TURIN_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = CLASSIC_TURIN_MAX_CORES_PER_CCX,
 		.zpc_smu_smn_addrs = {
@@ -129,6 +134,9 @@ const zen_platform_t turin_platform = {
 const zen_platform_t dense_turin_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4D2,
+		.zpc_max_cfgmap = DF_MAX_CFGMAP_TURIN,
+		.zpc_max_iorr = DF_MAX_IO_RULES_TURIN,
+		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,
 		.zpc_ccds_per_iodie = DENSE_TURIN_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = DENSE_TURIN_MAX_CORES_PER_CCX,
 		.zpc_smu_smn_addrs = {

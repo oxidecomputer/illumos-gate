@@ -1370,7 +1370,7 @@ df_route_ioports(uint_t flags, uint8_t sock, uint16_t inst)
 		    "DESTINATION");
 	}
 
-	for (uint_t i = 0; i < DF_MAX_IO_RULES; i++) {
+	for (uint_t i = 0; i < df_props->dfp_max_iorr; i++) {
 		df_reg_def_t bdef, ldef;
 		uint32_t breg, lreg, base, limit;
 		uint32_t dest;
@@ -1448,7 +1448,7 @@ df_route_mmio(uint_t flags, uint8_t sock, uint16_t inst)
 		    "DESTINATION");
 	}
 
-	for (uint_t i = 0; i < DF_MAX_MMIO_RULES; i++) {
+	for (uint_t i = 0; i < df_props->dfp_max_mmiorr; i++) {
 		df_reg_def_t bdef, ldef, cdef;
 		uint32_t breg, lreg, creg, ereg;
 		uint64_t base, limit;

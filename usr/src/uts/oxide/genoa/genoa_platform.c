@@ -33,6 +33,7 @@
 #include <sys/io/genoa/mpio.h>
 #include <sys/io/genoa/smu.h>
 #include <sys/io/zen/mpio.h>
+#include <sys/io/zen/apob.h>
 
 /*
  * The genoa_pcie_dbg.c is file is included here so that we have access to the
@@ -54,6 +55,7 @@
 #define	GENOA_MAX_CORES_PER_CCX		8
 
 static const zen_apob_ops_t genoa_apob_ops = {
+	.zao_reserve_phys = zen_null_apob_reserve_phys,
 };
 
 static const zen_ccx_ops_t genoa_ccx_ops = {
@@ -81,6 +83,9 @@ static const zen_ras_ops_t genoa_ras_ops = {
 const zen_platform_t genoa_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4,
+		.zpc_max_cfgmap = DF_MAX_CFGMAP,
+		.zpc_max_iorr = DF_MAX_IO_RULES,
+		.zpc_max_mmiorr = DF_MAX_MMIO_RULES,
 		.zpc_ccds_per_iodie = GENOA_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = GENOA_MAX_CORES_PER_CCX,
 		.zpc_smu_smn_addrs = {

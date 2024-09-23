@@ -184,6 +184,21 @@ typedef struct zen_platform_consts {
 	const df_rev_t			zpc_df_rev;
 
 	/*
+	 * The maximum number of PCI Bus configuration address maps.
+	 */
+	const size_t			zpc_max_cfgmap;
+
+	/*
+	 * The maximum number of I/O routing rules.
+	 */
+	const size_t			zpc_max_iorr;
+
+	/*
+	 * The maximum number of MMIO routing rules.
+	 */
+	const size_t			zpc_max_mmiorr;
+
+	/*
 	 * These represent the microarchitecture-specific max counts of various
 	 * components on a Zen SoC.
 	 */

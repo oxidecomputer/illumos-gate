@@ -31,6 +31,7 @@ extern "C" {
  * in the physical address space as reserved.
  */
 extern void zen_apob_reserve_phys(void);
+extern void zen_null_apob_reserve_phys(void);
 
 #ifdef	__cplusplus
 }

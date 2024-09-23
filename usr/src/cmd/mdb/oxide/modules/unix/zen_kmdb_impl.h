@@ -88,6 +88,16 @@ typedef struct df_props {
 	const uint_t dfp_max_cfgmap;
 
 	/*
+	 * The maximum number of I/O routing rules.
+	 */
+	const uint_t dfp_max_iorr;
+
+	/*
+	 * The maximum number of MMIO routing rules.
+	 */
+	const uint_t dfp_max_mmiorr;
+
+	/*
 	 * The default instance to use for DRAM & I/O ports when not specified.
 	 */
 	const uint16_t dfp_dram_io_inst;

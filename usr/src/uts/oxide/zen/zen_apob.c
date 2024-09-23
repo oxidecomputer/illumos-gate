@@ -38,3 +38,12 @@ zen_apob_reserve_phys(void)
 	VERIFY3P(apob_ops->zao_reserve_phys, !=, NULL);
 	(apob_ops->zao_reserve_phys)();
 }
+
+/*
+ * A no-op for apob reservations for microarchitectures that have no special
+ * handling needs.
+ */
+void
+zen_null_apob_reserve_phys(void)
+{
+}
