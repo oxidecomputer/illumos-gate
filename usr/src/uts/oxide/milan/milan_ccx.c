@@ -18,15 +18,16 @@
  * various aspects of the Milan CPU cores.
  */
 
-#include <sys/io/milan/fabric_impl.h>
-#include <sys/io/milan/ccx_impl.h>
+#include <sys/types.h>
 #include <sys/amdzen/ccd.h>
 #include <sys/amdzen/ccx.h>
 #include <sys/amdzen/smn.h>
 #include <sys/boot_physmem.h>
 #include <sys/x86_archext.h>
-#include <sys/types.h>
 
+#include <sys/io/milan/fabric_impl.h>
+#include <sys/io/milan/ccx_impl.h>
+#include <sys/io/zen/fabric.h>
 #include <sys/io/zen/smn.h>
 
 /*
@@ -581,7 +582,7 @@ milan_ccx_init(void)
 	 * passes can retrieve it.  We fetched it from the SMU during earlyboot
 	 * fabric initialisation.
 	 */
-	if (milan_fabric_thread_get_brandstr(thread, str, sizeof (str)) <=
+	if (zen_fabric_thread_get_brandstr(thread, str, sizeof (str)) <=
 	    CPUID_BRANDSTR_STRLEN && str[0] != '\0') {
 		for (uint_t n = 0; n < sizeof (str) / sizeof (uint64_t); n++) {
 			uint64_t sv = *(uint64_t *)&str[n * sizeof (uint64_t)];

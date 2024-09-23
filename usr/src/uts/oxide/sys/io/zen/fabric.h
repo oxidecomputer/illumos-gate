@@ -141,6 +141,16 @@ extern void zen_fabric_enable_nmi(void);
  */
 extern void zen_fabric_nmi_eoi(void);
 
+/*
+ * Copies the brand string into the given output buffer.  The argument and
+ * return value semantics match those of snprintf(9F).
+ */
+extern size_t zen_fabric_thread_get_brandstr(const zen_thread_t *, char *,
+    size_t);
+
+/*
+ * Read and write PCIe core and port registers.
+ */
 extern uint32_t zen_pcie_core_read(zen_pcie_core_t *, const smn_reg_t);
 extern void zen_pcie_core_write(zen_pcie_core_t *, const smn_reg_t,
     const uint32_t);

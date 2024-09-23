@@ -30,14 +30,16 @@
 
 /*
  * SMU RPC Operation Codes. Note, these are tied to firmware and therefore may
- * not be portable between Rome, Milan, or other processors.
+ * not be portable beyond Milan, Genoa, and Turin processors.  However, we have
+ * verified that these match the supported SMU firmware running on on those
+ * three microarchitectures.
  */
 #define	ZEN_SMU_OP_TEST			0x01
 #define	ZEN_SMU_OP_GET_VERSION		0x02
 #define	ZEN_SMU_OP_GET_VERSION_MAJOR(x)	bitx32(x, 23, 16)
 #define	ZEN_SMU_OP_GET_VERSION_MINOR(x)	bitx32(x, 15, 8)
 #define	ZEN_SMU_OP_GET_VERSION_PATCH(x)	bitx32(x, 7, 0)
-
+#define	ZEN_SMU_OP_GET_BRAND_STRING	0x0d
 
 typedef enum zen_smu_rpc_res {
 	/*
@@ -80,6 +82,18 @@ typedef struct zen_smu_rpc {
 	uint32_t			zsr_resp;
 	uint32_t			zsr_args[6];
 } zen_smu_rpc_t;
+
+/*
+ * Synchronously invoke an RPC on the SMU.  Returns the RPC status.
+ * Overwrites rpc->zsr_args with data returned by the RPC on success; zsr_args
+ * is unmodified if the RPC fails.
+ */
+extern zen_smu_rpc_res_t zen_smu_rpc(zen_iodie_t *, zen_smu_rpc_t *);
+
+/*
+ * Returns the string representation of a SMU RPC response.
+ */
+extern const char *zen_smu_rpc_res_str(const zen_smu_rpc_res_t);
 
 /*
  * The base of the SMU SMN register space.  This is common across Genoa and

@@ -30,25 +30,11 @@
 #include <sys/bitext.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
+#include <sys/io/milan/smu.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/*
- * SMN addresses to reach the SMU for RPCs.  There is only ever one SMU per
- * node, so unit numbers aren't meaningful.  All registers have a single
- * instance only.
- */
-AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg, SMU_RPC,
-    0x3b10000, 0xfffff000, 1, 0);
-
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_REQ	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x530,		\
-}
-#define	MILAN_SMU_RPC_REQ()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_REQ, 0)
 
 /*
  * SMU RPC Operation Codes. Note, these are tied to firmware and therefore may
@@ -86,92 +72,6 @@ AMDZEN_MAKE_SMN_REG_FN(milan_smu_smn_reg, SMU_RPC,
 #define	MILAN_SMU_OP_SET_DF_IRRITATOR	0x46
 #define	MILAN_SMU_OP_HAVE_A_HP_ADDRESS	0x47
 
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_RESP	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x57c,		\
-}
-#define	MILAN_SMU_RPC_RESP()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_RESP, 0)
-
-/*
- * SMU RPC Response codes
- */
-#define	MILAN_SMU_RPC_NOTDONE	0x00
-#define	MILAN_SMU_RPC_OK	0x01
-#define	MILAN_SMU_RPC_EBUSY	0xfc
-#define	MILAN_SMU_RPC_EPREREQ	0xfd
-#define	MILAN_SMU_RPC_EUNKNOWN	0xfe
-#define	MILAN_SMU_RPC_ERROR	0xff
-
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_ARG0	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x9c4,		\
-}
-#define	MILAN_SMU_RPC_ARG0()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG0, 0)
-
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_ARG1	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x9c8,		\
-}
-#define	MILAN_SMU_RPC_ARG1()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG1, 0)
-
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_ARG2	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x9cc,		\
-}
-#define	MILAN_SMU_RPC_ARG2()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG2, 0)
-
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_ARG3	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x9d0,		\
-}
-#define	MILAN_SMU_RPC_ARG3()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG3, 0)
-
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_ARG4	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x9d4,		\
-}
-#define	MILAN_SMU_RPC_ARG4()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG4, 0)
-
-/*CSTYLED*/
-#define	D_MILAN_SMU_RPC_ARG5	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_SMU_RPC,	\
-	.srd_reg = 0x9d8,		\
-}
-#define	MILAN_SMU_RPC_ARG5()	milan_smu_smn_reg(0, D_MILAN_SMU_RPC_ARG5, 0)
-
-/*
- * For unknown reasons we have multiple ways to give the SMU an address, and
- * they're apparently operation-specific.  Distinguish them with this.
- */
-typedef enum milan_smu_addr_kind {
-	MSAK_GENERIC,
-	MSAK_HOTPLUG
-} milan_smu_addr_kind_t;
-
-/*
- * A structure that can be used to pass around a SMU RPC request.
- */
-typedef struct milan_smu_rpc {
-	uint32_t	msr_req;
-	uint32_t	msr_resp;
-	uint32_t	msr_arg0;
-	uint32_t	msr_arg1;
-	uint32_t	msr_arg2;
-	uint32_t	msr_arg3;
-	uint32_t	msr_arg4;
-	uint32_t	msr_arg5;
-} milan_smu_rpc_t;
-
-#ifdef __cplusplus
-}
-#endif
-
 /*
  * SMU features, as enabled via MILAN_SMU_OP_ENABLE_FEATURE. Note that not
  * all combinations of features will result in correct system behavior!
@@ -202,5 +102,18 @@ typedef struct milan_smu_rpc {
 #define	MILAN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER			(1 << 25)
 #define	MILAN_SMU_FEATURE_AGE					(1 << 26)
 #define	MILAN_SMU_FEATURE_DIAGNOSTIC_MODE			(1 << 27)
+
+/*
+ * For unknown reasons we have multiple ways to give the SMU an address, and
+ * they're apparently operation-specific.  Distinguish them with this.
+ */
+typedef enum milan_smu_addr_kind {
+	MSAK_GENERIC,
+	MSAK_HOTPLUG
+} milan_smu_addr_kind_t;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _SYS_IO_MILAN_SMU_IMPL_H */

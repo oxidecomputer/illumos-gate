@@ -232,6 +232,11 @@ struct zen_iodie {
 	uint8_t			zi_ndxio_fw;
 	uint32_t		zi_dxio_fw[4];
 
+	/*
+	 * The cached brand string fetched from the SMU during early boot.
+	 */
+	char			zi_brandstr[CPUID_BRANDSTR_STRLEN + 1];
+
 	zen_soc_t		*zi_soc;
 	void			*zi_uarch_iodie;
 };
@@ -244,11 +249,6 @@ struct zen_soc {
 	 * The index of the SOC within the fabric.
 	 */
 	uint8_t			zs_socno;
-
-	/*
-	 * The cached brand string fetched from the SMU during early boot.
-	 */
-	char			zs_brandstr[CPUID_BRANDSTR_STRLEN + 1];
 
 	/*
 	 * While earlier generations of EPYC supported more (Naples had 4),

@@ -69,8 +69,6 @@ extern "C" {
 #define	MILAN_MAX_CORES_PER_CCX		8
 #define	MILAN_MAX_THREADS_PER_CORE	2
 
-extern size_t milan_fabric_thread_get_brandstr(const zen_thread_t *,
-    char *, size_t);
 extern void milan_fabric_thread_get_dpm_weights(const zen_thread_t *,
     const uint64_t **, uint32_t *);
 

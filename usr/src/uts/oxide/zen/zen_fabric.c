@@ -126,6 +126,18 @@
  */
 
 /*
+ * Copies the brand string into the given output buffer.  The buf and len
+ * argument and return value semantics match those of snprintf(9f).
+ */
+size_t
+zen_fabric_thread_get_brandstr(const zen_thread_t *thread,
+    char *buf, size_t len)
+{
+	const zen_iodie_t *iodie = thread->zt_core->zc_ccx->zcx_ccd->zcd_iodie;
+	return (snprintf(buf, len, "%s", iodie->zi_brandstr));
+}
+
+/*
  * Retrieves and reports the firmware version numbers for the SMU and DXIO/MPIO
  * on the given IO die.
  */
@@ -1166,8 +1178,33 @@ zen_fabric_topo_init_iodie_cb(zen_iodie_t *iodie, void *arg)
 			fops->zfo_ioms_init(ioms);
 	}
 
+	/*
+	 * Read the brand string from the SMU.
+	 */
+	if (!zen_smu_get_brand_string(iodie,
+	    iodie->zi_brandstr, sizeof (iodie->zi_brandstr))) {
+		iodie->zi_brandstr[0] = '\0';
+	}
+
+	/*
+	 * We compare the brand string against that from first IO die, to verify
+	 * the assumption that they match.  If they do not, we warn and
+	 * overwrite  what we got from our SMU with what die 0 got from its SMU.
+	 */
+	if (strcmp(iodie->zi_brandstr,
+	    iodie->zi_soc->zs_iodies[0].zi_brandstr) != 0) {
+		cmn_err(CE_WARN,
+		    "Brand string on IO die differs first die; overwriting: "
+		    "'%s' versus '%s'",
+		    iodie->zi_brandstr,
+		    iodie->zi_soc->zs_iodies[0].zi_brandstr);
+		bcopy(iodie->zi_soc->zs_iodies[0].zi_brandstr,
+		    iodie->zi_brandstr, sizeof (iodie->zi_brandstr));
+	}
+
 	return (0);
 }
+
 /*
  * Right now we're running on the boot CPU. We know that a single socket has to
  * be populated. Our job is to go through and determine what the rest of the

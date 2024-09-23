@@ -635,7 +635,7 @@
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
-#include <sys/io/zen/smu.h>
+#include <sys/io/zen/smu_impl.h>
 
 #include <asm/bitmap.h>
 
@@ -655,14 +655,14 @@
  * request.
  */
 typedef struct milan_dxio_rpc {
-	uint32_t	mdr_req;
-	uint32_t	mdr_dxio_resp;
-	uint32_t	mdr_smu_resp;
-	uint32_t	mdr_engine;
-	uint32_t	mdr_arg0;
-	uint32_t	mdr_arg1;
-	uint32_t	mdr_arg2;
-	uint32_t	mdr_arg3;
+	uint32_t		mdr_req;
+	uint32_t		mdr_dxio_resp;
+	zen_smu_rpc_res_t	mdr_smu_resp;
+	uint32_t		mdr_engine;
+	uint32_t		mdr_arg0;
+	uint32_t		mdr_arg1;
+	uint32_t		mdr_arg2;
+	uint32_t		mdr_arg3;
 } milan_dxio_rpc_t;
 
 typedef struct milan_pcie_port_info {
@@ -864,25 +864,10 @@ typedef enum milan_iommul1_subunit {
 extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
 extern void contig_free(void *, size_t);
 
-static bool milan_smu_rpc_read_brand_string(zen_iodie_t *,
-    char *, size_t);
-
 /*
  * Our primary global data. This is the reason that we exist.
  */
 static milan_fabric_t milan_fabric;
-
-/*
- * buf, len, and return value semantics match those of snprintf(9f).
- */
-size_t
-milan_fabric_thread_get_brandstr(const zen_thread_t *thread,
-    char *buf, size_t len)
-{
-	zen_ccd_t *ccd = thread->zt_core->zc_ccx->zcx_ccd;
-	zen_soc_t *soc = ccd->zcd_iodie->zi_soc;
-	return (snprintf(buf, len, "%s", soc->zs_brandstr));
-}
 
 void
 milan_fabric_thread_get_dpm_weights(const zen_thread_t *thread,
@@ -1110,7 +1095,7 @@ milan_iodie_reg(const smn_reg_def_t def, const uint16_t reginst)
 	smn_reg_t reg;
 	switch (def.srd_unit) {
 	case SMN_UNIT_SMU_RPC:
-		reg = milan_smu_smn_reg(0, def, reginst);
+		reg = zen_smu_smn_reg(0, def, reginst);
 		break;
 	case SMN_UNIT_FCH_SMI:
 		reg = fch_smi_smn_reg(def, reginst);
@@ -1388,79 +1373,34 @@ milan_fabric_ioms_nbif_init(zen_ioms_t *ioms)
 }
 
 static bool
-milan_smu_version_at_least(const zen_iodie_t *iodie,
-    const uint8_t major, const uint8_t minor, const uint8_t patch)
-{
-	return (iodie->zi_smu_fw[0] > major ||
-	    (iodie->zi_smu_fw[0] == major && iodie->zi_smu_fw[1] > minor) ||
-	    (iodie->zi_smu_fw[0] == major && iodie->zi_smu_fw[1] == minor &&
-	    iodie->zi_smu_fw[2] >= patch));
-}
-
-static void
-milan_smu_rpc(zen_iodie_t *iodie, milan_smu_rpc_t *rpc)
-{
-	uint32_t resp;
-
-	mutex_enter(&iodie->zi_smu_lock);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_RESP(), MILAN_SMU_RPC_NOTDONE);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG0(), rpc->msr_arg0);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG1(), rpc->msr_arg1);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG2(), rpc->msr_arg2);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG3(), rpc->msr_arg3);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG4(), rpc->msr_arg4);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_ARG5(), rpc->msr_arg5);
-	zen_iodie_write(iodie, MILAN_SMU_RPC_REQ(), rpc->msr_req);
-
-	/*
-	 * XXX Infinite spins are bad, but we don't even have drv_usecwait yet.
-	 * When we add a timeout this should then return an int.
-	 */
-	for (;;) {
-		resp = zen_iodie_read(iodie, MILAN_SMU_RPC_RESP());
-		if (resp != MILAN_SMU_RPC_NOTDONE) {
-			break;
-		}
-	}
-
-	rpc->msr_resp = resp;
-	if (rpc->msr_resp == MILAN_SMU_RPC_OK) {
-		rpc->msr_arg0 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG0());
-		rpc->msr_arg1 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG1());
-		rpc->msr_arg2 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG2());
-		rpc->msr_arg3 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG3());
-		rpc->msr_arg4 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG4());
-		rpc->msr_arg5 = zen_iodie_read(iodie, MILAN_SMU_RPC_ARG5());
-	}
-	mutex_exit(&iodie->zi_smu_lock);
-}
-
-static bool
 milan_smu_rpc_i2c_switch(zen_iodie_t *iodie, uint32_t addr)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
-	rpc.msr_req = MILAN_SMU_OP_I2C_SWITCH_ADDR;
-	rpc.msr_arg0 = addr;
-	milan_smu_rpc(iodie, &rpc);
+	rpc.zsr_req = MILAN_SMU_OP_I2C_SWITCH_ADDR;
+	rpc.zsr_args[0] = addr;
+	res = zen_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU Set i2c address RPC Failed: addr: 0x%x, "
-		    "SMU 0x%x", addr, rpc.msr_resp);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "SMU Set i2c address RPC Failed for Address "
+		    "0x%x: %s (SMU 0x%x)", addr, zen_smu_rpc_res_str(res),
+		    rpc.zsr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (res == ZEN_SMU_RPC_OK);
 }
 
 static bool
 milan_smu_rpc_give_address(zen_iodie_t *iodie, milan_smu_addr_kind_t kind,
     uint64_t addr)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
 	switch (kind) {
 	case MSAK_GENERIC:
-		rpc.msr_req = MILAN_SMU_OP_HAVE_AN_ADDRESS;
+		rpc.zsr_req = MILAN_SMU_OP_HAVE_AN_ADDRESS;
 		break;
 	case MSAK_HOTPLUG:
 		/*
@@ -1468,123 +1408,102 @@ milan_smu_rpc_give_address(zen_iodie_t *iodie, milan_smu_addr_kind_t kind,
 		 * SMU in the same manner as any others; however, in recent
 		 * versions there is a separate RPC for that.
 		 */
-		rpc.msr_req = milan_smu_version_at_least(iodie, 45, 90, 0) ?
+		rpc.zsr_req = zen_smu_version_at_least(iodie, 45, 90, 0) ?
 		    MILAN_SMU_OP_HAVE_A_HP_ADDRESS :
 		    MILAN_SMU_OP_HAVE_AN_ADDRESS;
 		break;
 	default:
 		panic("invalid SMU address kind %d", (int)kind);
 	}
-	rpc.msr_arg0 = bitx64(addr, 31, 0);
-	rpc.msr_arg1 = bitx64(addr, 63, 32);
-	milan_smu_rpc(iodie, &rpc);
+	rpc.zsr_args[0] = bitx64(addr, 31, 0);
+	rpc.zsr_args[1] = bitx64(addr, 63, 32);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
 		cmn_err(CE_WARN, "SMU Have an Address RPC Failed: addr: 0x%lx, "
-		    "SMU req 0x%x resp 0x%x", addr, rpc.msr_req, rpc.msr_resp);
+		    "SMU req 0x%x resp %s (SMU 0x%x)", addr, rpc.zsr_req,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (res == ZEN_SMU_RPC_OK);
 
 }
 
 static bool
 milan_smu_rpc_send_hotplug_table(zen_iodie_t *iodie)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
-	rpc.msr_req = MILAN_SMU_OP_TX_PCIE_HP_TABLE;
-	milan_smu_rpc(iodie, &rpc);
-
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU TX Hotplug Table Failed: SMU 0x%x",
-		    rpc.msr_resp);
+	rpc.zsr_req = MILAN_SMU_OP_TX_PCIE_HP_TABLE;
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "SMU TX Hotplug Table Failed: %s (SMU 0x%x)",
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (res == ZEN_SMU_RPC_OK);
 }
 
 static bool
 milan_smu_rpc_hotplug_flags(zen_iodie_t *iodie, uint32_t flags)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
-	rpc.msr_req = MILAN_SMU_OP_SET_HOPTLUG_FLAGS;
-	rpc.msr_arg0 = flags;
-	milan_smu_rpc(iodie, &rpc);
-
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU Set Hotplug Flags failed: SMU 0x%x",
-		    rpc.msr_resp);
+	rpc.zsr_req = MILAN_SMU_OP_SET_HOPTLUG_FLAGS;
+	rpc.zsr_args[0] = flags;
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "SMU Set Hotplug Flags failed: %s (SMU 0x%x)",
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (res == ZEN_SMU_RPC_OK);
 }
 static bool
 milan_smu_rpc_start_hotplug(zen_iodie_t *iodie, bool one_based, uint8_t flags)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
-	rpc.msr_req = MILAN_SMU_OP_START_HOTPLUG;
+	rpc.zsr_req = MILAN_SMU_OP_START_HOTPLUG;
 	if (one_based) {
-		rpc.msr_arg0 = 1;
+		rpc.zsr_args[0] = 1;
 	}
-	rpc.msr_arg0 |= flags;
-	milan_smu_rpc(iodie, &rpc);
-
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "SMU Start Yer Hotplug Failed: SMU 0x%x",
-		    rpc.msr_resp);
-	}
-
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
-}
-
-/*
- * buf and len semantics here match those of snprintf
- */
-static bool
-milan_smu_rpc_read_brand_string(zen_iodie_t *iodie, char *buf, size_t len)
-{
-	milan_smu_rpc_t rpc = { 0 };
-	uint_t off;
-
-	len = MIN(len, CPUID_BRANDSTR_STRLEN + 1);
-	buf[len - 1] = '\0';
-	rpc.msr_req = MILAN_SMU_OP_GET_BRAND_STRING;
-
-	for (off = 0; off * 4 < len - 1; off++) {
-		rpc.msr_arg0 = off;
-		milan_smu_rpc(iodie, &rpc);
-
-		if (rpc.msr_resp != MILAN_SMU_RPC_OK)
-			return (false);
-
-		bcopy(&rpc.msr_arg0, buf + off * 4, len - off * 4);
+	rpc.zsr_args[0] |= flags;
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "SMU Start Hotplug Failed: %s (SMU 0x%x)",
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 	}
 
-	return (true);
+	return (res == ZEN_SMU_RPC_OK);
 }
 
 static bool
 milan_smu_rpc_read_dpm_weights(zen_iodie_t *iodie, uint64_t *buf, size_t len)
 {
-	milan_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
 	len = MIN(len, MILAN_MAX_DPM_WEIGHTS * sizeof (uint64_t));
 	bzero(buf, len);
-	rpc.msr_req = MILAN_SMU_OP_READ_DPM_WEIGHT;
+	rpc.zsr_req = MILAN_SMU_OP_READ_DPM_WEIGHT;
 
-	for (uint32_t idx = 0; idx < len / sizeof (uint64_t); idx++) {
-		rpc.msr_arg0 = idx;
-		milan_smu_rpc(iodie, &rpc);
-
-		if (rpc.msr_resp != MILAN_SMU_RPC_OK)
+	for (size_t idx = 0; idx < len / sizeof (uint64_t); idx++) {
+		rpc.zsr_args[0] = (uint32_t)idx;
+		res = zen_smu_rpc(iodie, &rpc);
+		if (res != ZEN_SMU_RPC_OK) {
+			cmn_err(CE_WARN, "SMU Read DPM Weights Failed: %s "
+			    "(index %lu, SMU 0x%x)", zen_smu_rpc_res_str(res),
+			    idx, rpc.zsr_resp);
 			return (false);
+		}
 
-		buf[idx] = rpc.msr_arg1;
+		buf[idx] = rpc.zsr_args[1];
 		buf[idx] <<= 32;
-		buf[idx] |= rpc.msr_arg0;
+		buf[idx] |= rpc.zsr_args[0];
 	}
 
 	return (true);
@@ -1598,30 +1517,33 @@ milan_dxio_version_at_least(const zen_iodie_t *iodie,
 	    (iodie->zi_dxio_fw[0] == major && iodie->zi_dxio_fw[1] >= minor));
 }
 
-static void
+static bool
 milan_dxio_rpc(zen_iodie_t *iodie, milan_dxio_rpc_t *dxio_rpc)
 {
-	milan_smu_rpc_t smu_rpc = { 0 };
+	zen_smu_rpc_t smu_rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
-	smu_rpc.msr_req = MILAN_SMU_OP_DXIO;
-	smu_rpc.msr_arg0 = dxio_rpc->mdr_req;
-	smu_rpc.msr_arg1 = dxio_rpc->mdr_engine;
-	smu_rpc.msr_arg2 = dxio_rpc->mdr_arg0;
-	smu_rpc.msr_arg3 = dxio_rpc->mdr_arg1;
-	smu_rpc.msr_arg4 = dxio_rpc->mdr_arg2;
-	smu_rpc.msr_arg5 = dxio_rpc->mdr_arg3;
+	smu_rpc.zsr_req = MILAN_SMU_OP_DXIO;
+	smu_rpc.zsr_args[0] = dxio_rpc->mdr_req;
+	smu_rpc.zsr_args[1] = dxio_rpc->mdr_engine;
+	smu_rpc.zsr_args[2] = dxio_rpc->mdr_arg0;
+	smu_rpc.zsr_args[3] = dxio_rpc->mdr_arg1;
+	smu_rpc.zsr_args[4] = dxio_rpc->mdr_arg2;
+	smu_rpc.zsr_args[5] = dxio_rpc->mdr_arg3;
 
-	milan_smu_rpc(iodie, &smu_rpc);
-
-	dxio_rpc->mdr_smu_resp = smu_rpc.msr_resp;
-	if (smu_rpc.msr_resp == MILAN_SMU_RPC_OK) {
-		dxio_rpc->mdr_dxio_resp = smu_rpc.msr_arg0;
-		dxio_rpc->mdr_engine = smu_rpc.msr_arg1;
-		dxio_rpc->mdr_arg0 = smu_rpc.msr_arg2;
-		dxio_rpc->mdr_arg1 = smu_rpc.msr_arg3;
-		dxio_rpc->mdr_arg2 = smu_rpc.msr_arg4;
-		dxio_rpc->mdr_arg3 = smu_rpc.msr_arg5;
+	res = zen_smu_rpc(iodie, &smu_rpc);
+	dxio_rpc->mdr_smu_resp = res;
+	if (res == ZEN_SMU_RPC_OK) {
+		dxio_rpc->mdr_dxio_resp = smu_rpc.zsr_args[0];
+		dxio_rpc->mdr_engine = smu_rpc.zsr_args[1];
+		dxio_rpc->mdr_arg0 = smu_rpc.zsr_args[2];
+		dxio_rpc->mdr_arg1 = smu_rpc.zsr_args[3];
+		dxio_rpc->mdr_arg2 = smu_rpc.zsr_args[4];
+		dxio_rpc->mdr_arg3 = smu_rpc.zsr_args[5];
 	}
+
+	return (res == ZEN_SMU_RPC_OK &&
+	    dxio_rpc->mdr_dxio_resp == MILAN_DXIO_RPC_OK);
 }
 
 static bool
@@ -1631,11 +1553,9 @@ milan_dxio_rpc_init(zen_iodie_t *iodie)
 
 	rpc.mdr_req = MILAN_DXIO_OP_INIT;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Init RPC Failed: SMU 0x%x, DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO Init RPC Failed: SMU %s, DXIO: 0x%x",
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1651,13 +1571,13 @@ milan_dxio_rpc_set_var(zen_iodie_t *iodie, uint32_t var, uint32_t val)
 	rpc.mdr_engine = var;
 	rpc.mdr_arg0 = val;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == MILAN_DXIO_RPC_MBOX_IDLE)) {
+	(void) milan_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != ZEN_SMU_RPC_OK ||
+	    (rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK &&
+	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set Variable Failed: Var: 0x%x, "
-		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", var, val,
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "Val: 0x%x, SMU %s, DXIO: 0x%x", var, val,
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1675,13 +1595,14 @@ milan_dxio_rpc_pcie_poweroff_config(zen_iodie_t *iodie, uint8_t delay,
 	rpc.mdr_arg0 = delay;
 	rpc.mdr_arg1 = disable_prep ? 1 : 0;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    !(rpc.mdr_dxio_resp == MILAN_DXIO_RPC_OK ||
-	    rpc.mdr_dxio_resp == MILAN_DXIO_RPC_MBOX_IDLE)) {
+	(void) milan_dxio_rpc(iodie, &rpc);
+	if (rpc.mdr_smu_resp != ZEN_SMU_RPC_OK ||
+	    (rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK &&
+	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_MBOX_IDLE)) {
 		cmn_err(CE_WARN, "DXIO Set PCIe Power Off Config Failed: "
-		    "Delay: 0x%x, Disable Prep: 0x%x, SMU 0x%x, DXIO: 0x%x",
-		    delay, disable_prep, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "Delay: 0x%x, Disable Prep: 0x%x, SMU %s, DXIO: 0x%x",
+		    delay, disable_prep, zen_smu_rpc_res_str(rpc.mdr_smu_resp),
+		    rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1704,11 +1625,10 @@ milan_dxio_rpc_clock_gating(zen_iodie_t *iodie, uint8_t mask, uint8_t val)
 	rpc.mdr_arg1 = mask;
 	rpc.mdr_arg2 = val;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Clock Gating Failed: SMU 0x%x, "
-		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO Clock Gating Failed: SMU %s, "
+		    "DXIO: 0x%x", zen_smu_rpc_res_str(rpc.mdr_smu_resp),
+		    rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1728,11 +1648,9 @@ milan_dxio_rpc_load_caps(zen_iodie_t *iodie)
 
 	rpc.mdr_req = MILAN_DXIO_OP_LOAD_CAPS;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Load Caps Failed: SMU 0x%x, DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO Load Caps Failed: SMU %s, DXIO: 0x%x",
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1752,12 +1670,11 @@ milan_dxio_rpc_load_data(zen_iodie_t *iodie, uint32_t type,
 	rpc.mdr_arg2 = mystery;
 	rpc.mdr_arg3 = type;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	if (!milan_dxio_rpc(iodie, &rpc)) {
 		cmn_err(CE_WARN, "DXIO Load Data Failed: Heap: 0x%x, PA: "
-		    "0x%lx, Len: 0x%x, SMU 0x%x, DXIO: 0x%x", type, phys_addr,
-		    len, rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "0x%lx, Len: 0x%x, SMU %s, DXIO: 0x%x", type, phys_addr,
+		    len, zen_smu_rpc_res_str(rpc.mdr_smu_resp),
+		    rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1777,11 +1694,9 @@ milan_dxio_rpc_conf_training(zen_iodie_t *iodie, uint32_t reset_time,
 	rpc.mdr_arg2 = rx_poll;
 	rpc.mdr_arg3 = l0_poll;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	if (!milan_dxio_rpc(iodie, &rpc)) {
 		cmn_err(CE_WARN, "DXIO Conf. PCIe Training RPC Failed: "
-		    "SMU 0x%x, DXIO: 0x%x", rpc.mdr_smu_resp,
+		    "SMU %s, DXIO: 0x%x", zen_smu_rpc_res_str(rpc.mdr_smu_resp),
 		    rpc.mdr_dxio_resp);
 		return (false);
 	}
@@ -1805,12 +1720,10 @@ milan_dxio_rpc_misc_rt_conf(zen_iodie_t *iodie, uint32_t code,
 	rpc.mdr_arg1 = code;
 	rpc.mdr_arg2 = state ? 1 : 0;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
+	if (!milan_dxio_rpc(iodie, &rpc)) {
 		cmn_err(CE_WARN, "DXIO Set Misc. rt conf failed: Code: 0x%x, "
-		    "Val: 0x%x, SMU 0x%x, DXIO: 0x%x", code, state,
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    "Val: 0x%x, SMU %s, DXIO: 0x%x", code, state,
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1824,12 +1737,10 @@ milan_dxio_rpc_sm_start(zen_iodie_t *iodie)
 
 	rpc.mdr_req = MILAN_DXIO_OP_START_SM;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU %s, "
 		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1843,12 +1754,10 @@ milan_dxio_rpc_sm_resume(zen_iodie_t *iodie)
 
 	rpc.mdr_req = MILAN_DXIO_OP_RESUME_SM;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU %s, "
 		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1862,12 +1771,10 @@ milan_dxio_rpc_sm_reload(zen_iodie_t *iodie)
 
 	rpc.mdr_req = MILAN_DXIO_OP_RELOAD_SM;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Reload RPC Failed: SMU 0x%x, "
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO SM Reload RPC Failed: SMU %s, "
 		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1882,12 +1789,9 @@ milan_dxio_rpc_sm_getstate(zen_iodie_t *iodie, milan_dxio_reply_t *smp)
 
 	rpc.mdr_req = MILAN_DXIO_OP_GET_SM_STATE;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x",
-		    rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO SM Start RPC Failed: SMU %s, DXIO: 0x%x",
+		    zen_smu_rpc_res_str(rpc.mdr_smu_resp), rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1916,11 +1820,10 @@ milan_dxio_rpc_retrieve_engine(zen_iodie_t *iodie)
 	rpc.mdr_arg0 = conf->mdc_pa & 0xffffffff;
 	rpc.mdr_arg1 = conf->mdc_alloc_len / 4;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: SMU 0x%x, "
-		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: SMU %s, "
+		    "DXIO: 0x%x", zen_smu_rpc_res_str(rpc.mdr_smu_resp),
+		    rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1934,11 +1837,10 @@ milan_get_dxio_fw_version(zen_iodie_t *iodie)
 
 	rpc.mdr_req = MILAN_DXIO_OP_GET_VERSION;
 
-	milan_dxio_rpc(iodie, &rpc);
-	if (rpc.mdr_smu_resp != MILAN_SMU_RPC_OK ||
-	    rpc.mdr_dxio_resp != MILAN_DXIO_RPC_OK) {
-		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: SMU 0x%x, "
-		    "DXIO: 0x%x", rpc.mdr_smu_resp, rpc.mdr_dxio_resp);
+	if (!milan_dxio_rpc(iodie, &rpc)) {
+		cmn_err(CE_WARN, "DXIO Get Version RPC Failed: SMU %s, "
+		    "DXIO: 0x%x", zen_smu_rpc_res_str(rpc.mdr_smu_resp),
+		    rpc.mdr_dxio_resp);
 		return (false);
 	}
 
@@ -1962,8 +1864,9 @@ milan_report_dxio_fw_version(const zen_iodie_t *iodie)
 static bool
 milan_smu_features_init(zen_iodie_t *iodie)
 {
-	milan_smu_rpc_t rpc = { 0 };
 	zen_soc_t *soc = iodie->zi_soc;
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
 
 	/*
 	 * Not all combinations of SMU features will result in correct system
@@ -1990,21 +1893,22 @@ milan_smu_features_init(zen_iodie_t *iodie)
 	    MILAN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
 	    MILAN_SMU_FEATURE_AGE;
 
-	rpc.msr_req = MILAN_SMU_OP_ENABLE_FEATURE;
-	rpc.msr_arg0 = features;
+	rpc.zsr_req = MILAN_SMU_OP_ENABLE_FEATURE;
+	rpc.zsr_args[0] = features;
 
-	milan_smu_rpc(iodie, &rpc);
+	res = zen_smu_rpc(iodie, &rpc);
 
-	if (rpc.msr_resp != MILAN_SMU_RPC_OK) {
+	if (res != ZEN_SMU_RPC_OK) {
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Features RPC Failed: features: "
-		    "0x%x, SMU 0x%x", soc->zs_socno, features, rpc.msr_resp);
+		    "0x%x, SMU %s (0x%x)", soc->zs_socno, features,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 	} else {
 		cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
 		    soc->zs_socno, features);
 	}
 
-	return (rpc.msr_resp == MILAN_SMU_RPC_OK);
+	return (res == ZEN_SMU_RPC_OK);
 }
 
 /*
@@ -2038,14 +1942,6 @@ milan_fabric_soc_init(zen_soc_t *soc)
 
 	soc->zs_uarch_soc = msoc;
 	iodie->zi_uarch_iodie = miodie;
-
-	/*
-	 * Read the brand string for the CCXs.
-	 */
-	if (!milan_smu_rpc_read_brand_string(iodie,
-	    soc->zs_brandstr, sizeof (soc->zs_brandstr))) {
-		soc->zs_brandstr[0] = '\0';
-	}
 
 	if (!milan_smu_rpc_read_dpm_weights(iodie,
 	    miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights))) {

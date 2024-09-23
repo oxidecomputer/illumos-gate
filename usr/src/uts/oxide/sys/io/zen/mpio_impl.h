@@ -90,12 +90,9 @@ typedef struct zen_mpio_rpc {
 } zen_mpio_rpc_t;
 
 /*
- * Synchronously calls the given MPIO RPC.  Overwrites rpc->zmr_args with data
- * returned by the RPC.  Returns the RPC status.  This is extern because, while
- * the structure of making an RPC is common across microarchitectures so far, it
- * is conceivable that specific data such as the request number could change
- * between uarchs, or that RPCs are added in uarchs, so we may want to call into
- * the general RPC machinery from more than one place.
+ * Synchronously calls the given MPIO RPC.  Returns the RPC status.  Overwrites
+ * rpc->zmr_args with data returned by the RPC on success; zmr_args is
+ * unmodified if the RPC fails.
  */
 extern zen_mpio_rpc_res_t zen_mpio_rpc(zen_iodie_t *iodie, zen_mpio_rpc_t *rpc);
 

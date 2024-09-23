@@ -102,7 +102,7 @@ zen_smu_rpc_res_str(const zen_smu_rpc_res_t res)
  */
 #define	RPC_NOTDONE		0x00
 
-static zen_smu_rpc_res_t
+zen_smu_rpc_res_t
 zen_smu_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
 {
 	const zen_platform_consts_t *zpcs = oxide_zen_platform_consts();
@@ -207,4 +207,65 @@ zen_smu_report_fw_version(const zen_iodie_t *iodie)
 	cmn_err(CE_CONT, "?Socket %u SMU Version: %u.%u.%u\n",
 	    soc->zs_socno, iodie->zi_smu_fw[0], iodie->zi_smu_fw[1],
 	    iodie->zi_smu_fw[2]);
+}
+
+/*
+ * Returns true if the firmware version running on the SMU for the given IO die
+ * is greater than or equal to the given major, minor, and patch versions.
+ */
+bool
+zen_smu_version_at_least(const zen_iodie_t *iodie,
+    const uint8_t major, const uint8_t minor, const uint8_t patch)
+{
+	return (iodie->zi_smu_fw[0] > major ||
+	    (iodie->zi_smu_fw[0] == major && iodie->zi_smu_fw[1] > minor) ||
+	    (iodie->zi_smu_fw[0] == major && iodie->zi_smu_fw[1] == minor &&
+	    iodie->zi_smu_fw[2] >= patch));
+}
+
+/*
+ * buf and len semantics here match those of snprintf
+ */
+bool
+zen_smu_get_brand_string(zen_iodie_t *iodie, char *buf, size_t len)
+{
+	zen_smu_rpc_t rpc = { 0 };
+
+	ASSERT(len > 0);
+
+	len = MIN(len - 1, CPUID_BRANDSTR_STRLEN);
+	rpc.zsr_req = ZEN_SMU_OP_GET_BRAND_STRING;
+
+	/*
+	 * Read the brand string by repeatedly calling the SMU, retrieving
+	 * "chunks" of the string that are packed into 32-bit integers, and
+	 * copying those into `buf`; the argument to the SMU RPC is the index of
+	 * the 4-byte chunk we want to read.  Note that the last chunk, as
+	 * counted by the `len` argument, may have fewer than the 4 bytes
+	 * required for a 32-bit value, so we take care to handle it specially.
+	 */
+	for (size_t off = 0; off < len; off += sizeof (uint32_t)) {
+		zen_smu_rpc_res_t res;
+		size_t chunk_size, chunkno;
+
+		chunkno = off / sizeof (uint32_t);
+		ASSERT3U(chunkno, <=, UINT32_MAX);
+		rpc.zsr_args[0] = (uint32_t)chunkno;
+		res = zen_smu_rpc(iodie, &rpc);
+		if (res != ZEN_SMU_RPC_OK) {
+			cmn_err(CE_WARN, "SMU Read Brand String Failed: %s "
+			    "(offset %lu, SMU 0x%x)", zen_smu_rpc_res_str(res),
+			    off, rpc.zsr_resp);
+			return (false);
+		}
+		/*
+		 * The `MIN` here accounts for the possibility that the last
+		 * chunk may have fewer than `sizeof (uint32_t)` bytes.
+		 */
+		chunk_size = MIN(sizeof (uint32_t), len - off);
+		bcopy(&rpc.zsr_args[0], buf + off, chunk_size);
+	}
+	buf[len] = '\0';
+
+	return (true);
 }

@@ -38,4 +38,16 @@ typedef struct zen_iodie zen_iodie_t;
 extern bool zen_smu_get_fw_version(zen_iodie_t *iodie);
 extern void zen_smu_report_fw_version(const zen_iodie_t *iodie);
 
+/*
+ * Returns true if the firmware version running on the SMU for the given IO die
+ * is greater than or equal to the given major, minor, and patch versions.
+ */
+extern bool zen_smu_version_at_least(const zen_iodie_t *, uint8_t, uint8_t,
+    uint8_t);
+
+/*
+ * Reads the CPU "name" string from the SMU.
+ */
+extern bool zen_smu_get_brand_string(zen_iodie_t *, char *, size_t);
+
 #endif	/* _ZEN_SMU_H */
