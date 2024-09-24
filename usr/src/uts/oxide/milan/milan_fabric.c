@@ -1153,9 +1153,9 @@ milan_ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
 	 * of NMI, below) and does not provide any value for our use case of
 	 * NMI.
 	 */
-	reg = milan_ioms_reg(ioms, D_IOHC_INTR_CNTL, 0);
+	reg = milan_ioms_reg(ioms, D_IOHC_INTR_CTL, 0);
 	v = zen_ioms_read(ioms, reg);
-	v = IOHC_INTR_CNTL_SET_NMI_DEST_CTRL(v, 0);
+	v = IOHC_INTR_CTL_SET_NMI_DEST_CTL(v, 0);
 	zen_ioms_write(ioms, reg, v);
 
 	if ((zen_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) != 0) {

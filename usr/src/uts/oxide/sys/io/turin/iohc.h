@@ -5,25 +5,24 @@
  * 1.0 of the CDDL.
  *
  * A full copy of the text of the CDDL should have accompanied this
- * source.  A copy of the CDDL is also available via the Internet at
+ * source. A copy of the CDDL is also available via the Internet at
  * http://www.illumos.org/license/CDDL.
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_MILAN_IOHC_H
-#define	_SYS_IO_MILAN_IOHC_H
+#ifndef _SYS_IO_TURIN_IOHC_H
+#define	_SYS_IO_TURIN_IOHC_H
 
 /*
- * Addresses and register definitions for the I/O hub core (IOHC) found in Milan
- * processors. The IOHC is part of the NBIO block, which comes from the legacy
- * "north bridge" designation, and connects the internal HT-based fabric with
- * PCIe, the FCH, and other I/O devices and fabrics. While there is nominally
- * but one IOHC per I/O die (of which Milan has but one per SOC), in practice
- * there are four instances on that die, each of which is connected to the DF
- * via an I/O master/slave (IOMS) component, has its own independent set of
+ * Addresses and register definitions for the I/O hub core (IOHC) found in
+ * Turin processors. The IOHC is part of the NBIO block, which comes from the
+ * legacy "north bridge" designation, and connects the internal HT-based fabric
+ * with PCIe, the FCH, and other I/O devices and fabrics. Turin has are eight
+ * IOHC instances (4 per NBIO), each of which is connected to the DF via I/O
+ * master (IOM) and I/O slave (IOS) components, has its own independent set of
  * registers, and connects its own collection of downstream resources (root
  * ports, NBIFs, etc.) to the DF. There are several sub-blocks in the IOHC
  * including the IOAGR and SDP mux, and their registers are defined here.
@@ -39,24 +38,99 @@
 extern "C" {
 #endif
 
-AMDZEN_MAKE_SMN_REG_FN(milan_iohc_smn_reg, IOHC, 0x13b00000,
-    SMN_APERTURE_MASK, 4, 20);
-AMDZEN_MAKE_SMN_REG_FN(milan_ioagr_smn_reg, IOAGR, 0x15b00000,
-    SMN_APERTURE_MASK, 4, 20);
-
 /*
- * The SDPMUX SMN addresses are a bit weird. There is one per IOMS instance;
- * however, the SMN addresses are very different. The aperture number of the
- * first SDPMUX is found where we would expect; however, after that we not only
- * skip the next aperture but also add (1 << 23) to the base address for all
- * SDPMUX instances beyond 0.  It's unclear why this is so.  All registers are
- * 32 bits wide; we check for violations.
+ * The IOHC and IOAGR SMN addresses each have a gap between the first four
+ * units and the last four. We therefore can't take advantage of
+ * AMDZEN_MAKE_SMN_REG_FN to generate these for us as we need to account for
+ * this.
  */
 static inline smn_reg_t
-milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
+turin_iohc_smn_reg(const uint8_t unitno, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	const uint32_t MILAN_SDPMUX_COUNT = 4;
+	const uint32_t unit32 = (const uint32_t)unitno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t size32 = (def.srd_size == 0) ? 4 :
+	    (const uint32_t)def.srd_size;
+	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);
+	const uint32_t stride = (def.srd_stride == 0) ? size32 :
+	    def.srd_stride;
+	ASSERT3U(stride, >=, size32);
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t)def.srd_nents;
+
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHC);
+	ASSERT3U(unit32, <, 8);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
+
+	/*
+	 * For some reason, there is a gap between the first four and second
+	 * four IOHC instances that we need to account for here. We model them
+	 * as two separate banks with their own aperture base.
+	 */
+	const uint32_t aperture_base = unit32 < 4 ? 0x13b00000 : 0x1d400000;
+
+	const uint32_t aperture_off = ((unit32 % 4) << 20);
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & ~SMN_APERTURE_MASK);
+
+	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	ASSERT0(reg & SMN_APERTURE_MASK);
+
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
+}
+
+static inline smn_reg_t
+turin_ioagr_smn_reg(const uint8_t unitno, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	const uint32_t unit32 = (const uint32_t)unitno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t size32 = (def.srd_size == 0) ? 4 :
+	    (const uint32_t)def.srd_size;
+	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);
+	const uint32_t stride = (def.srd_stride == 0) ? size32 :
+	    def.srd_stride;
+	ASSERT3U(stride, >=, size32);
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t)def.srd_nents;
+
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOAGR);
+	ASSERT3U(unit32, <, 8);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
+
+	const uint32_t aperture_base = 0x15b00000;
+
+	const uint32_t aperture_off = (unit32 << 20) +
+	    (unit32 > 3 ? 0x8100000 : 0);
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & ~SMN_APERTURE_MASK);
+
+	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	ASSERT0(reg & SMN_APERTURE_MASK);
+
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
+}
+
+/*
+ * The SDPMUX SMN addresses are a bit weird. Unlike IOHC and IOAGR units, there
+ * are only 2 SDPMUX units (one per IOHUB0 in each NBIO). The aperture number
+ * of the first SDPMUX is found where we would expect; however, after that we
+ * not only skip the next aperture but also add (1 << 23) to the base address to
+ * get the second SDPMUX instance. It's unclear why this is so. All registers
+ * are 32 bits wide; we check for violations.
+ */
+static inline smn_reg_t
+turin_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	const uint32_t TURIN_SDPMUX_COUNT = 2;
 	const uint32_t sdpmux32 = (const uint32_t)sdpmuxno;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t stride = (def.srd_stride == 0) ? 4 :
@@ -66,7 +140,7 @@ milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_SDPMUX);
-	ASSERT3U(sdpmux32, <, MILAN_SDPMUX_COUNT);
+	ASSERT3U(sdpmux32, <, TURIN_SDPMUX_COUNT);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
@@ -85,14 +159,98 @@ milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 	return (SMN_MAKE_REG(aperture + reg));
 }
 
-ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, PCIE, pcie, 0x13b31000, 0xffff8000,
-    3, 10, 8);
+ZEN_MAKE_SMN_IOHCDEV_REG_FN(turin, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
+
 /*
- * For reasons not understood, NBIF2 doesn't have an IOHCDEV group.
+ * The IOHC::IOHC_Bridge_CNTL register contains blocks for several other
+ * devices including three PCIe cores. The first such PCIe core contains 9
+ * registers, the second contains 8 and the third contains 3. Since we need to
+ * account for the varying widths the common generator macro cannot be used.
+ * When calling the following function, the desired PCIe core is specified as
+ * the unit number and the port as the register instance.
  */
-ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, NBIF, nbif, 0x13b38000, 0xffffc000,
-    2, 12, 1);
-ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
+static inline smn_reg_t
+turin_iohcdev_pcie_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
+    const uint8_t unitno, const uint8_t reginst)
+{
+	const uint32_t SMN_IOHCDEV_REG_MASK = 0x3ff;
+	const uint32_t iohc32 = (const uint32_t)iohcno;
+	const uint32_t unit32 = (const uint32_t)unitno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t stride = (def.srd_stride == 0) ? 4 :
+	    (const uint32_t)def.srd_stride;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t) def.srd_nents;
+
+	ASSERT0(def.srd_size);
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHCDEV_PCIE);
+	ASSERT3U(iohc32, <, 8);
+	ASSERT3U(unit32, <, 3);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);
+
+	const uint32_t aperture_base = 0x13b31000;
+	const uint32_t aperture_offsets[] = {
+		[0] = 0,
+		[1] = 9,
+		[2] = 17,
+	};
+
+	uint32_t aperture_off = (iohc32 << 20) +
+	    (aperture_offsets[unit32] << 10);
+
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & SMN_IOHCDEV_REG_MASK);
+
+	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	const uint32_t apmask = 0xffff8000;
+	ASSERT0(reg & apmask);
+
+	return (SMN_MAKE_REG(aperture + reg));
+}
+
+/*
+ * For reasons not understood, NBIF0 & NBIF2 don't have an IOHCDEV group.
+ * For consistency, accept unit numbers for NBIF0 & NBIF2 but assert that
+ * they are not used.
+ */
+static inline smn_reg_t
+turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
+    const uint8_t unitno, const uint8_t reginst)
+{
+	const uint32_t SMN_IOHCDEV_REG_MASK = 0x3ff;
+	const uint32_t iohc32 = (const uint32_t)iohcno;
+	const uint32_t unit32 = (const uint32_t)unitno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t stride = (def.srd_stride == 0) ? 4 :
+	    (const uint32_t)def.srd_stride;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t) def.srd_nents;
+
+	ASSERT0(def.srd_size);
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHCDEV_NBIF);
+	ASSERT3U(iohc32, <, 4);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);
+
+	/* This is the base for NBIF1, the only one that we accept. */
+	const uint32_t aperture_base = 0x13b38000;
+	VERIFY3U(unit32, ==, 1);
+
+	const uint32_t aperture_off = (iohc32 << 20);
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & SMN_IOHCDEV_REG_MASK);
+
+	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	const uint32_t apmask = 0xffffc000;
+	ASSERT0(reg & apmask);
+
+	return (SMN_MAKE_REG(aperture + reg));
+}
 
 /*
  * IOHC Registers of Interest. The SMN based addresses are all relative to the
@@ -100,10 +258,10 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
  */
 
 /*
- * IOHC::NB_ADAPTER_ID_W.  This allows us to override the default subsystem
- * vendor and device ID for the IOHC's PCI device.  By default, this is
- * 1022,1450 which is the Naples pDID; AMD recommends setting it to the same
- * value as the Milan pDID: 1022,1480.  This is in config space, not SMN!
+ * IOHC::NB_ADAPTER_ID_W. This allows us to override the default subsystem
+ * vendor and device ID for the IOHC's PCI device. By default, this is
+ * 1022,153A which is the Turin pDID and can be left as-is. This is in config
+ * space, not SMN!
  */
 #define	IOHC_NB_ADAPTER_ID_W	0x50
 #define	IOHC_NB_ADAPTER_ID_W_GET_SDID(r)	bitx32(r, 31, 16)
@@ -111,13 +269,11 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 #define	IOHC_NB_ADAPTER_ID_W_GET_SVID(r)	bitx32(r, 15, 0)
 #define	IOHC_NB_ADAPTER_ID_W_SET_SVID(r, v)	bitset32(r, 15, 0, v)
 
-#define	IOHC_NB_ADAPTER_ID_W_AMD_MILAN_IOHC	0x1480
-
 /*
- * IOHC::NB_PCI_ARB.  Most of this register is occupied by PME functionality
+ * IOHC::NB_PCI_ARB. Most of this register is occupied by PME functionality
  * that we don't use; however, for no obvious reason it also contains the
  * VGA_HOLE bit that controls how accesses to the legacy VGA address range at
- * memory [0xA_0000, 0xC_0000) from downstream devices are handled.  NOTE: This
+ * memory [0xA_0000, 0xC_0000) from downstream devices are handled. NOTE: This
  * register is in PCI space, not SMN!
  */
 #define	IOHC_NB_PCI_ARB	0x84
@@ -129,7 +285,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 /*
  * IOHC::NB_TOP_OF_DRAM_SLOT1. This indicates where the top of DRAM below (or
  * at) 4 GiB is. Note, bit 32 for getting to 4 GiB is actually in bit 0.
- * Otherwise it's all bits 31:23.  NOTE: This register is in PCI space, not SMN!
+ * Otherwise it's all bits 31:23. NOTE: This register is in PCI space, not SMN!
  */
 #define	IOHC_TOM	0x90
 #define	IOHC_TOM_SET_TOM(r, v)		bitset32(r, 31, 23, v)
@@ -145,7 +301,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10020	\
 }
 #define	IOHC_REFCLK_MODE(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_REFCLK_MODE, 0)
+	turin_iohc_smn_reg(h, D_IOHC_REFCLK_MODE, 0)
 #define	IOHC_REFCLK_MODE_SET_27MHZ(r, v)	bitset32(r, 2, 2, v)
 #define	IOHC_REFCLK_MODE_SET_25MHZ(r, v)	bitset32(r, 1, 1, v)
 #define	IOHC_REFCLK_MODE_SET_100MHZ(r, v)	bitset32(r, 0, 0, v)
@@ -162,7 +318,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10028	\
 }
 #define	IOHC_PCIE_CRS_COUNT(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_PCIE_CRS_COUNT, 0)
+	turin_iohc_smn_reg(h, D_IOHC_PCIE_CRS_COUNT, 0)
 #define	IOHC_PCIE_CRS_COUNT_SET_LIMIT(r, v)	bitset32(r, 27, 16, v)
 #define	IOHC_PCIE_CRS_COUNT_SET_DELAY(r, v)	bitset32(r, 15, 0, v)
 
@@ -175,12 +331,13 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10044	\
 }
 #define	IOHC_BUS_NUM_CTL(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_BUS_NUM_CTL, 0)
+	turin_iohc_smn_reg(h, D_IOHC_BUS_NUM_CTL, 0)
+#define	IOHC_BUS_NUM_CTL_SET_SEGMENT(r, v)	bitset32(r, 23, 16, v)
 #define	IOHC_BUS_NUM_CTL_SET_EN(r, v)		bitset32(r, 8, 8, v)
 #define	IOHC_BUS_NUM_CTL_SET_BUS(r, v)		bitset32(r, 7, 0, v)
 
 /*
- * IOHC::NB_LOWER_TOP_OF_DRAM2.  Indicates to the NB where DRAM above 4 GiB goes
+ * IOHC::NB_LOWER_TOP_OF_DRAM2. Indicates to the NB where DRAM above 4 GiB goes
  * up to. Note, that due to the wholes where there are system reserved ranges of
  * memory near 1 TiB, this may be split into two values.
  */
@@ -190,7 +347,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10064	\
 }
 #define	IOHC_DRAM_TOM2_LOW(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_DRAM_TOM2_LOW, 0)
+	turin_iohc_smn_reg(h, D_IOHC_DRAM_TOM2_LOW, 0)
 #define	IOHC_DRAM_TOM2_LOW_SET_TOM2(r, v)	bitset32(r, 31, 23, v)
 #define	IOHC_DRAM_TOM2_LOW_SET_EN(r, v)		bitset32(r, 0, 0, v)
 
@@ -203,7 +360,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10068	\
 }
 #define	IOHC_DRAM_TOM2_HI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_DRAM_TOM2_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_DRAM_TOM2_HI, 0)
 #define	IOHC_DRAM_TOM2_HI_SET_TOM2(r, v)	bitset32(r, 8, 0, v)
 
 /*
@@ -218,7 +375,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x1006c	\
 }
 #define	IOHC_DRAM_BASE2_LOW(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_DRAM_BASE2_LOW, 0)
+	turin_iohc_smn_reg(h, D_IOHC_DRAM_BASE2_LOW, 0)
 #define	IOHC_DRAM_BASE2_LOW_SET_BASE(x)		bitset32(r, 31, 23, v)
 
 /*
@@ -233,7 +390,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10070	\
 }
 #define	IOHC_DRAM_BASE2_HI	\
-	milan_iohc_smn_reg(h, D_IOHC_DRAM_BASE2_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_DRAM_BASE2_HI, 0)
 #define	IOHC_DRAM_BASE2_HI_SET_BASE(r, v)	bitset32(r, 8, 0, v)
 
 /*
@@ -246,7 +403,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x1007c	\
 }
 #define	IOHC_SB_LOCATION(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_SB_LOCATION, 0)
+	turin_iohc_smn_reg(h, D_IOHC_SB_LOCATION, 0)
 #define	IOHC_SB_LOCATION_SET_CORE(r, v)		bitset32(r, 31, 16, v)
 #define	IOHC_SB_LOCATION_SET_PORT(r, v)		bitset32(r, 15, 0, v)
 
@@ -260,10 +417,17 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10118	\
 }
 #define	IOHC_FCTL(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_FCTL, 0)
+	turin_iohc_smn_reg(h, D_IOHC_FCTL, 0)
 #define	IOHC_FCTL_GET_DGPU(r)		bitx32(r, 28, 28)
+#define	IOHC_FCTL_DGPU_CPU		0
+#define	IOHC_FCTL_DGPU_DGPU		1
+#define	IOHC_FCTL_GET_TRAP_DGPU(r)	bitx32(r, 27, 27)
+#define	IOHC_FCTL_TRAP_DGPU_CPU		0
+#define	IOHC_FCTL_TRAP_DGPU_DGPU	1
+#define	IOHC_FCTL_GET_RAS_DGPU(r)	bitx32(r, 26, 26)
+#define	IOHC_FCTL_RAS_DGPU_CPU		0
+#define	IOHC_FCTL_RAS_DGPU_DGPU		1
 #define	IOHC_FCTL_SET_ARI(r, v)		bitset32(r, 22, 22, v)
-#define	IOHC_FCTL_GET_ARCH(r)		bitx32(r, 3, 3)
 #define	IOHC_FCTL_SET_P2P(r, v)		bitset32(r, 2, 1, v)
 #define	IOHC_FCTL_P2P_DROP_NMATCH	0
 #define	IOHC_FCTL_P2P_FWD_NMATCH	1
@@ -272,8 +436,8 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 #define	IOHC_FCTL_GET_HP_DEVID_EN(x)	bitx32(r, 0, 0)
 
 /*
- * IOHC::IOHC_INTERRUPT_EOI.  Used to indicate that an SCI, NMI, or SMI
- * originating from this (or possibly any) IOHC has been serviced.  All fields
+ * IOHC::IOHC_INTERRUPT_EOI. Used to indicate that an SCI, NMI, or SMI
+ * originating from this (or possibly any) IOHC has been serviced. All fields
  * in this register are write-only and can only meaningfully be set, not
  * cleared.
  */
@@ -283,15 +447,15 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10120	\
 }
 #define	IOHC_INTR_EOI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_INTR_EOI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_INTR_EOI, 0)
 #define	IOHC_INTR_EOI_SET_NMI(r)	bitset32(r, 2, 2, 1)
 #define	IOHC_INTR_EOI_SET_SCI(r)	bitset32(r, 1, 1, 1)
 #define	IOHC_INTR_EOI_SET_SMI(r)	bitset32(r, 0, 0, 1)
 
 /*
- * IOHC::IOHC_PIN_CNTL.  This register has only a single field, which defines
+ * IOHC::IOHC_PIN_CNTL. This register has only a single field, which defines
  * whether external assertion of the NMI_SYNCFLOOD_L pin causes an NMI or a SYNC
- * FLOOD.  This register is defined only for the IOHC which shares an IOMS with
+ * FLOOD. This register is defined only for the IOHC which shares an IOMS with
  * the FCH.
  */
 /*CSTYLED*/
@@ -300,13 +464,13 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10128	\
 }
 #define	IOHC_PIN_CTL(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_PIN_CTL, 0)
+	turin_iohc_smn_reg(h, D_IOHC_PIN_CTL, 0)
 #define	IOHC_PIN_CTL_GET_MODE(r)		bitx32(r, 0, 0)
 #define	IOHC_PIN_CTL_SET_MODE_SYNCFLOOD(r)	bitset32(r, 0, 0, 0)
 #define	IOHC_PIN_CTL_SET_MODE_NMI(r)		bitset32(r, 0, 0, 1)
 
 /*
- * IOHC::IOHC_INTR_CNTL.  Used to indicate where NMIs should be directed.
+ * IOHC::IOHC_INTR_CNTL. Used to indicate where NMIs should be directed.
  * Amazingly, if this is set to the default (0xff), NMIs sent *before* an
  * AP is up appear to be latched -- and then delivered to the AP upon being
  * powered up! (If it needs to be said: this results in an undebuggable
@@ -318,13 +482,13 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x1012c	\
 }
 #define	IOHC_INTR_CTL(h, nbio)	\
-	milan_iohc_smn_reg(h, D_IOHC_INTR_CTL, nbio)
-#define	IOHC_INTR_CTL_SET_NMI_DEST_CTL(r, v)	bitset32(r, 15, 8, v)
+	turin_iohc_smn_reg(h, D_IOHC_INTR_CNTL, nbio)
+#define	IOHC_INTR_CTL_SET_NMI_DEST_CTRL(r, v)	bitset32(r, 15, 8, v)
 
 /*
- * IOHC::IOHC_FEATURE_CNTL2.  Status register that indicates whether certain
+ * IOHC::IOHC_FEATURE_CNTL2. Status register that indicates whether certain
  * error events have occurred, including NMI drops, CRS retries, SErrs, and NMI
- * generation.  All fields are RW1c except for SErr which is RO.
+ * generation. All fields are RW1c except for SErr which is RO.
  */
 /*CSTYLED*/
 #define	D_IOHC_FCTL2	(const smn_reg_def_t){	\
@@ -332,7 +496,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10130	\
 }
 #define	IOHC_FCTL2(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_FCTL2, 0)
+	turin_iohc_smn_reg(h, D_IOHC_FCTL2, 0)
 #define	IOHC_FCTL2_GET_NP_DMA_DROP(r)	bitx32(r, 18, 18)
 #define	IOHC_FCTL2_SET_NP_DMA_DROP(r)	bitset32(r, 18, 18, 1)
 #define	IOHC_FCTL2_GET_P_DMA_DROP(r)	bitx32(r, 17, 17)
@@ -355,7 +519,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10138	\
 }
 #define	IOHC_DRAM_TOM3(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_DRAM_TOM3, 0)
+	turin_iohc_smn_reg(h, D_IOHC_DRAM_TOM3, 0)
 #define	IOHC_DRAM_TOM3_SET_EN(r, v)	bitset32(r, 31, 31, v)
 #define	IOHC_DRAM_TOM3_SET_LIMIT(r, v)	bitset32(r, 29, 0, v)
 
@@ -369,7 +533,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102e0	\
 }
 #define	IOHC_PSP_ADDR_LO(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_PSP_ADDR_LO, 0)
+	turin_iohc_smn_reg(h, D_IOHC_PSP_ADDR_LO, 0)
 #define	IOHC_PSP_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 20, v)
 #define	IOHC_PSP_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 8, 8, v)
 #define	IOHC_PSP_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
@@ -384,7 +548,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102e4	\
 }
 #define	IOHC_PSP_ADDR_HI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_PSP_ADDR_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_PSP_ADDR_HI, 0)
 #define	IOHC_PSP_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
 
 /*
@@ -397,7 +561,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102e8	\
 }
 #define	IOHC_SMU_ADDR_LO(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_SMU_ADDR_LO, 0)
+	turin_iohc_smn_reg(h, D_IOHC_SMU_ADDR_LO, 0)
 #define	IOHC_SMU_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 20, v)
 #define	IOHC_SMU_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 1, 1, v)
 #define	IOHC_SMU_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
@@ -412,7 +576,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102ec	\
 }
 #define	IOHC_SMU_ADDR_HI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_SMU_ADDR_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_SMU_ADDR_HI, 0)
 #define	IOHC_SMU_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
 
 /*
@@ -425,7 +589,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102f0	\
 }
 #define	IOHC_IOAPIC_ADDR_LO(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_IOAPIC_ADDR_LO, 0)
+	turin_iohc_smn_reg(h, D_IOHC_IOAPIC_ADDR_LO, 0)
 #define	IOHC_IOAPIC_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 8, v)
 #define	IOHC_IOAPIC_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 1, 1, v)
 #define	IOHC_IOAPIC_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
@@ -440,7 +604,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102f4	\
 }
 #define	IOHC_IOAPIC_ADDR_HI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_IOAPIC_ADDR_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_IOAPIC_ADDR_HI, 0)
 #define	IOHC_IOAPIC_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
 
 /*
@@ -453,7 +617,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102f8	\
 }
 #define	IOHC_DBG_ADDR_LO(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_DBG_ADDR_LO, 0)
+	turin_iohc_smn_reg(h, D_IOHC_DBG_ADDR_LO, 0)
 #define	IOHC_DBG_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 20, v)
 #define	IOHC_DBG_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 1, 1, v)
 #define	IOHC_DBG_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
@@ -468,7 +632,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x102fc	\
 }
 #define	IOHC_DBG_ADDR_HI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_DBG_ADDR_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_DBG_ADDR_HI, 0)
 #define	IOHC_DBG_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
 
 /*
@@ -481,7 +645,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10300	\
 }
 #define	IOHC_FASTREG_ADDR_LO(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_FASTREG_ADDR_LO, 0)
+	turin_iohc_smn_reg(h, D_IOHC_FASTREG_ADDR_LO, 0)
 #define	IOHC_FASTREG_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 20, v)
 #define	IOHC_FASTREG_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 1, 1, v)
 #define	IOHC_FASTREG_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
@@ -496,7 +660,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10304	\
 }
 #define	IOHC_FASTREG_ADDR_HI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_FASTREG_ADDR_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_FASTREG_ADDR_HI, 0)
 #define	IOHC_FASTREG_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
 
 /*
@@ -509,7 +673,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10308	\
 }
 #define	IOHC_FASTREGCTL_ADDR_LO(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_FASTREGCTL_ADDR_LO, 0)
+	turin_iohc_smn_reg(h, D_IOHC_FASTREGCTL_ADDR_LO, 0)
 #define	IOHC_FASTREGCTL_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 12, v)
 #define	IOHC_FASTREGCTL_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 1, 1, v)
 #define	IOHC_FASTREGCTL_ADDR_LO_SET_EN(r, v)	bitset32(r, 0, 0, v)
@@ -524,8 +688,89 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x1030c	\
 }
 #define	IOHC_FASTREGCTL_ADDR_HI(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_FASTREGCTL_ADDR_HI, 0)
+	turin_iohc_smn_reg(h, D_IOHC_FASTREGCTL_ADDR_HI, 0)
 #define	IOHC_FASTREGCTL_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
+
+/*
+ * IOHC::MPIO_BASE_ADDR_LO. This contains the MMIO address that is used
+ * by MPIO.
+ */
+/*CSTYLED*/
+#define	D_IOHC_MPIO_ADDR_LO	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x10310	\
+}
+#define	IOHC_MPIO_ADDR_LO(h)	\
+	turin_iohc_smn_reg(h, D_IOHC_MPIO_ADDR_LO, 0)
+#define	IOHC_MPIO_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 20, v)
+#define	IOHC_MPIO_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 8, 8, v)
+#define	IOHC_MPIO_ADDR_LO_SET_EN(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * IOHC::MPIO_BASE_ADDR_HI. This contains the upper bits of the MPIO page.
+ */
+/*CSTYLED*/
+#define	D_IOHC_MPIO_ADDR_HI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x10314	\
+}
+#define	IOHC_MPIO_ADDR_HI(h)	\
+	turin_iohc_smn_reg(h, D_IOHC_MPIO_ADDR_HI, 0)
+#define	IOHC_MPIO_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
+
+/*
+ * IOHC::SMMU_BASE_ADDR_LO. This contains the MMIO address that is used
+ * by the SMMU.
+ */
+/*CSTYLED*/
+#define	D_IOHC_SMMU_ADDR_LO	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x10318	\
+}
+#define	IOHC_SMMU_ADDR_LO(h)	\
+	turin_iohc_smn_reg(h, D_IOHC_SMMU_ADDR_LO, 0)
+#define	IOHC_SMMU_ADDR_LO_SET_ADDR(r, v)	bitset32(r, 31, 19, v)
+#define	IOHC_SMMU_ADDR_LO_SET_LOCK(r, v)	bitset32(r, 1, 1, v)
+#define	IOHC_SMMU_ADDR_LO_SET_EN(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * IOHC::SMMU_BASE_ADDR_HI. This contains the upper bits of the SMMU page.
+ */
+/*CSTYLED*/
+#define	D_IOHC_SMMU_ADDR_HI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x1031c	\
+}
+#define	IOHC_SMMU_ADDR_HI(h)	\
+	turin_iohc_smn_reg(h, D_IOHC_SMMU_ADDR_HI, 0)
+#define	IOHC_SMMU_ADDR_HI_SET_ADDR(r, v)	bitset32(r, 15, 0, v)
+
+/*
+ * IOHC::MPM_BASE_ADDR_LO. This contains the MMIO address that is used
+ * by the MPM.
+ */
+/*CSTYLED*/
+#define	D_IOHC_MPM_ADDR_LO	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x10338	\
+}
+#define	IOHC_MPM_ADDR_LO(h)	\
+	turin_iohc_smn_reg(h, D_IOHC_MPM_ADDR_LO, 0)
+#define	IOHC_MPM_ADDR_LO_SET_ADDR(r, v)		bitset32(r, 31, 20, v)
+#define	IOHC_MPM_ADDR_LO_SET_LOCK(r, v)		bitset32(r, 1, 1, v)
+#define	IOHC_MPM_ADDR_LO_SET_EN(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * IOHC::MPM_BASE_ADDR_HI. This contains the upper bits of the MPM page.
+ */
+/*CSTYLED*/
+#define	D_IOHC_MPM_ADDR_HI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x1033c	\
+}
+#define	IOHC_MPM_ADDR_HI(h)	\
+	turin_iohc_smn_reg(h, D_IOHC_MPM_ADDR_HI, 0)
+#define	IOHC_MPM_ADDR_HI_SET_ADDR(r, v)		bitset32(r, 15, 0, v)
 
 /*
  * IOHC::IOHC_SDP_PORT_CONTROL. This is used to control how the port disconnect
@@ -537,25 +782,10 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x10344	\
 }
 #define	IOHC_SDP_PORT_CTL(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_SDP_PORT_CTL, 0)
-#define	IOHC_SDP_PORT_CTL_SET_SDF_RT_HYSTERESIS(r, v)	bitset32(r, 15, 8, v)
-#define	IOHC_SDP_PORT_CTL_SET_PORT_HYSTERESIS(r, v)	bitset32(r, 7, 0, v)
-
-/*
- * IOHC::IOHC_EARLY_WAKE_UP_EN. This is seemingly used to control how the SDP
- * port and DMA work with clock requests.
- */
-/*CSTYLED*/
-#define	D_IOHC_SDP_EARLY_WAKE_UP	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_IOHC,	\
-	.srd_reg = 0x10348	\
-}
-#define	IOHC_SDP_EARLY_WAKE_UP(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_SDP_EARLY_WAKE_UP, 0)
-#define	IOHC_SDP_EARLY_WAKE_UP_SET_HOST_ENABLE(r, v)	\
-    bitset32(r, 31, 16, v)
-#define	IOHC_SDP_EARLY_WAKE_UP_SET_DMA_ENABLE(r, v)	\
-    bitset32(r, 0, 0, v)
+	turin_iohc_smn_reg(h, D_IOHC_SDP_PORT_CTL, 0)
+#define	IOHC_SDP_PORT_CTL_SET_IOS_RT_HYSTERESIS(r, v)	bitset32(r, 27, 20, v)
+#define	IOHC_SDP_PORT_CTL_SET_IOM_RT_HYSTERESIS(r, v)	bitset32(r, 19, 12, v)
+#define	IOHC_SDP_PORT_CTL_SET_PORT_HYSTERESIS(r, v)	bitset32(r, 11, 0, v)
 
 /*
  * IOHC::USB_QoS_CNTL. This controls the USB data fabric priority.
@@ -566,7 +796,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x14044	\
 }
 #define	IOHC_USB_QOS_CTL(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_USB_QOS_CTL, 0)
+	turin_iohc_smn_reg(h, D_IOHC_USB_QOS_CTL, 0)
 #define	IOHC_USB_QOS_CTL_SET_UNID1_EN(r, v)	bitset32(r, 28, 28, v)
 #define	IOHC_USB_QOS_CTL_SET_UNID1_PRI(r, v)	bitset32(r, 27, 24, v)
 #define	IOHC_USB_QOS_CTL_SET_UNID1_ID(r, v)	bitset32(r, 22, 16, v)
@@ -583,7 +813,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
  * are set. Not all instances of these are always set with values. I'm sorry, I
  * can only speculate as to why.
  */
-#define	IOHC_SION_MAX_ENTS	7
+#define	IOHC_SION_MAX_ENTS	6
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_CLIREQ_BURST_LOW	(const smn_reg_def_t){	\
@@ -593,7 +823,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_CLIREQ_BURST_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_CLIREQ_BURST_HI	(const smn_reg_def_t){	\
@@ -603,7 +833,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_CLIREQ_BURST_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_BURST_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_CLIREQ_TIME_LOW	(const smn_reg_def_t){	\
@@ -613,7 +843,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_CLIREQ_TIME_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_TIME_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_CLIREQ_TIME_HI	(const smn_reg_def_t){	\
@@ -623,7 +853,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_CLIREQ_TIME_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_TIME_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_CLIREQ_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_RDRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -633,7 +863,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_RDRSP_BURST_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_BURST_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_RDRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -643,7 +873,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_RDRSP_BURST_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_BURST_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_RDRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -653,7 +883,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_RDRSP_TIME_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_TIME_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_RDRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -663,7 +893,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_RDRSP_TIME_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_TIME_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_RDRSP_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_WRRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -673,7 +903,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_WRRSP_BURST_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_BURST_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_WRRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -683,7 +913,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_WRRSP_BURST_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_BURST_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_WRRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -693,7 +923,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_WRRSP_TIME_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_TIME_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_WRRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -703,7 +933,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S0_WRRSP_TIME_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_TIME_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_CLIREQ_BURST_LOW	(const smn_reg_def_t){	\
@@ -713,7 +943,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_CLIREQ_BURST_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_BURST_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_CLIREQ_BURST_HI	(const smn_reg_def_t){	\
@@ -723,7 +953,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_CLIREQ_BURST_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_BURST_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_CLIREQ_TIME_LOW	(const smn_reg_def_t){	\
@@ -733,7 +963,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_CLIREQ_TIME_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_TIME_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_CLIREQ_TIME_HI	(const smn_reg_def_t){	\
@@ -743,7 +973,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_CLIREQ_TIME_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_TIME_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_CLIREQ_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_RDRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -753,7 +983,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_RDRSP_BURST_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_BURST_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_RDRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -763,7 +993,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_RDRSP_BURST_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_BURST_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_RDRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -773,7 +1003,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_RDRSP_TIME_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_TIME_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_RDRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -783,7 +1013,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_RDRSP_TIME_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_TIME_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_RDRSP_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_WRRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -793,7 +1023,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_WRRSP_BURST_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_BURST_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_WRRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -803,7 +1033,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_WRRSP_BURST_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_BURST_HI, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_WRRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -813,7 +1043,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_WRRSP_TIME_LOW(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_TIME_LOW, i)
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_WRRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -823,59 +1053,45 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x404	\
 }
 #define	IOHC_SION_S1_WRRSP_TIME_HI(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_TIME_HI, i)
-
-#define	IOHC_SION_CLIREQ_BURST_VAL	0x08080808
-#define	IOHC_SION_CLIREQ_TIME_0_2_VAL	0x21212121
-#define	IOHC_SION_CLIREQ_TIME_3_4_VAL	0x84218421
-#define	IOHC_SION_CLIREQ_TIME_5_VAL	0x85218521
-#define	IOHC_SION_RDRSP_BURST_VAL	0x02020202
-
-/*
- * IOHC::IOHC_SION_S1_CLIENT_NP_ReqDeficitThreshold only has a single instance
- * and IOHC::IOHC_SION_S0_CLIENT_NP_ReqDeficitThreshold actually starts at
- * instance 1, there is no instance 0.  For simplicity's sake, we model these
- * two nominally distinct registers as if they were a single register with 7
- * instances [6:0], with instance 0 belonging to S1 and the others to S0.
- */
-/*CSTYLED*/
-#define	D_IOHC_SION_Sn_CLI_NP_DEFICIT	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_IOHC,	\
-	.srd_reg = 0x14480,	\
-	.srd_nents = 7,	\
-	.srd_stride = 0x404	\
-}
-#define	IOHC_SION_Sn_CLI_NP_DEFICIT(h, i)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_Sn_CLI_NP_DEFICIT, i)
-#define	IOHC_SION_CLI_NP_DEFICIT_SET(r, v)	bitset32(r, 7, 0, v)
-#define	IOHC_SION_CLI_NP_DEFICIT_VAL	0x40
+	turin_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_TIME_HI, i)
 
 /*
  * IOHC::IOHC_SION_LiveLock_WatchDog_Threshold. This is used to set an
  * arbitration threshold for the overall bus.
  */
 /*CSTYLED*/
-#define	D_IOHC_SION_LLWD_THRESH	(const smn_reg_def_t){	\
+#define	D_IOHC_SION_LLWD_THRESH_A	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOHC,	\
-	.srd_reg = 0x15c9c,	\
+	.srd_reg = 0x158b8,	\
+}
+/*CSTYLED*/
+#define	D_IOHC_SION_LLWD_THRESH_B	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x14cac,	\
 }
 #define	IOHC_SION_LLWD_THRESH(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_SION_LLWD_THRESH, 0)
+	turin_iohc_smn_reg(h, \
+	    h < 4 ? D_IOHC_SION_LLWD_THRESH_A : D_IOHC_SION_LLWD_THRESH_B, 0)
 #define	IOHC_SION_LLWD_THRESH_SET(r, v)	bitset32(r, 7, 0, v)
-#define	IOHC_SION_LLWD_THRESH_VAL	0x11
 
 /*
- * IOHC::MISC_RAS_CONTROL.  Controls the effects of RAS events, including
- * interrupt generation and PCIe link disable.  Also controls whether the
+ * IOHC::MISC_RAS_CONTROL. Controls the effects of RAS events, including
+ * interrupt generation and PCIe link disable. Also controls whether the
  * NMI_SYNCFLOOD_L pin is enabled at all.
  */
 /*CSTYLED*/
-#define	D_IOHC_MISC_RAS_CTL	(const smn_reg_def_t){	\
+#define	D_IOHC_MISC_RAS_CTL_A	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOHC,	\
-	.srd_reg = 0x201d0,	\
+	.srd_reg = 0x20244,	\
+}
+/*CSTYLED*/
+#define	D_IOHC_MISC_RAS_CTL_B	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x200ec,	\
 }
 #define	IOHC_MISC_RAS_CTL(h)	\
-	milan_iohc_smn_reg(h, D_IOHC_MISC_RAS_CTL, 0)
+	turin_iohc_smn_reg(h, \
+	    h < 4 ? D_IOHC_MISC_RAS_CTL_A : D_IOHC_MISC_RAS_CTL_B, 0)
 #define	IOHC_MISC_RAS_CTL_GET_SW_NMI_EN(r)	bitx32(r, 17, 17)
 #define	IOHC_MISC_RAS_CTL_SET_SW_NMI_EN(r, v)	bitset32(r, 17, 17, v)
 #define	IOHC_MISC_RAS_CTL_GET_SW_SMI_EN(r)	bitx32(r, 16, 16)
@@ -907,29 +1123,29 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 
 /*
  * IOHC::IOHC_Bridge_CNTL. This register controls several internal properties of
- * the various bridges.  The address of this register is confusing because it
+ * the various bridges. The address of this register is confusing because it
  * shows up in different locations with a large number of instances at different
- * bases; see ZEN_MAKE_SMN_IOHCDEV_REG_FN() and its notes above for details.
+ * bases; see TURIN_MAKE_SMN_IOHCDEV_REG_FN() and its notes above for details.
  */
 /*CSTYLED*/
 #define	D_IOHCDEV_PCIE_BRIDGE_CTL	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOHCDEV_PCIE,	\
 	.srd_reg = 0x4,	\
-	.srd_nents = 8,	\
+	.srd_nents = 9,	\
 	.srd_stride = 0x400	\
 }
 #define	IOHCDEV_PCIE_BRIDGE_CTL(h, p, i)	\
-	milan_iohcdev_pcie_smn_reg(h, D_IOHCDEV_PCIE_BRIDGE_CTL, p, i)
+	turin_iohcdev_pcie_smn_reg(h, D_IOHCDEV_PCIE_BRIDGE_CTL, p, i)
 
 /*CSTYLED*/
 #define	D_IOHCDEV_NBIF_BRIDGE_CTL	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOHCDEV_NBIF,	\
 	.srd_reg = 0x4,	\
-	.srd_nents = 3,	\
+	.srd_nents = 2,	\
 	.srd_stride = 0x400	\
 }
 #define	IOHCDEV_NBIF_BRIDGE_CTL(h, n, i)	\
-	milan_iohcdev_nbif_smn_reg(h, D_IOHCDEV_NBIF_BRIDGE_CTL, n, i)
+	turin_iohcdev_nbif_smn_reg(h, D_IOHCDEV_NBIF_BRIDGE_CTL, n, i)
 
 /*CSTYLED*/
 #define	D_IOHCDEV_SB_BRIDGE_CTL	(const smn_reg_def_t){	\
@@ -937,7 +1153,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x4	\
 }
 #define	IOHCDEV_SB_BRIDGE_CTL(h)	\
-	milan_iohcdev_sb_smn_reg(h, D_IOHCDEV_SB_BRIDGE_CTL, 0, 0)
+	turin_iohcdev_sb_smn_reg(h, D_IOHCDEV_SB_BRIDGE_CTL, 0, 0)
 
 #define	IOHCDEV_BRIDGE_CTL_GET_APIC_RANGE(r)		bitx32(r, 31, 24)
 #define	IOHCDEV_BRIDGE_CTL_GET_APIC_ENABLE(r)		bitx32(r, 23, 23)
@@ -960,25 +1176,11 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
  */
 
 /*
- * IOAGR::IOAGR_EARLY_WAKE_UP_EN. This register controls the ability to interact
- * with the clocks and DMA. Specifics unclear. Companion to the IOHC variant.
- */
-/*CSTYLED*/
-#define	D_IOAGR_EARLY_WAKE_UP	(const smn_reg_def_t){	\
-	.srd_unit = SMN_UNIT_IOAGR,	\
-	.srd_reg = 0x00090	\
-}
-#define	IOAGR_EARLY_WAKE_UP(h)	\
-	milan_ioagr_smn_reg(h, D_IOAGR_EARLY_WAKE_UP, 0)
-#define	IOAGR_EARLY_WAKE_UP_SET_HOST_ENABLE(r, v)	bitset32(r, 31, 16, v)
-#define	IOAGR_EARLY_WAKE_UP_SET_DMA_ENABLE(r, v)	bitset32(r, 0, 0, v)
-
-/*
  * IOAGR::IOAGR_SION_S0_Client_Req_BurstTarget_Lower. While the case has
  * changed and the number of entries from our friends in the IOHC, everything
  * said above is still true.
  */
-#define	IOAGR_SION_MAX_ENTS	5
+#define	IOAGR_SION_MAX_ENTS	6
 
 /*CSTYLED*/
 #define	D_IOAGR_SION_S0_CLIREQ_BURST_LOW	(const smn_reg_def_t){	\
@@ -1172,24 +1374,24 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 
-#define	IOAGR_SION_CLIREQ_BURST_VAL	0x08080808
-#define	IOAGR_SION_CLIREQ_TIME_0_2_VAL	0x21212121
-#define	IOAGR_SION_CLIREQ_TIME_3_VAL	0x84218421
-#define	IOAGR_SION_RDRSP_BURST_VAL	0x02020202
-
 /*
  * IOAGR::IOAGR_SION_LiveLock_WatchDog_Threshold. This is used to set an
  * arbitration threshold for the IOAGR. Companion to the IOHC variant.
  */
 /*CSTYLED*/
-#define	D_IOAGR_SION_LLWD_THRESH	(const smn_reg_def_t){	\
+#define	D_IOAGR_SION_LLWD_THRESH_A	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOAGR,	\
-	.srd_reg = 0x01498	\
+	.srd_reg = 0x018a4	\
+}
+/*CSTYLED*/
+#define	D_IOAGR_SION_LLWD_THRESH_B	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOAGR,	\
+	.srd_reg = 0x00ca4	\
 }
 #define	IOAGR_SION_LLWD_THRESH(a)	\
-	milan_ioagr_smn_reg(a, D_IOAGR_SION_LLWD_THRESH, 0)
+	turin_ioagr_smn_reg(a, \
+	    a < 4 ? D_IOAGR_SION_LLWD_THRESH_A : D_IOAGR_SION_LLWD_THRESH_B, 0)
 #define	IOAGR_SION_LLWD_THRESH_SET(r, v)	bitset32(r, 7, 0, v)
-#define	IOAGR_SION_LLWD_THRESH_VAL		0x11
 
 /*
  * SDPMUX registers of interest.
@@ -1205,10 +1407,8 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_reg = 0x00008	\
 }
 #define	SDPMUX_SDP_PORT_CTL(m)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SDP_PORT_CTL, 0)
-#define	SDPMUX_SDP_PORT_CTL_SET_HOST_ENABLE(r, v)	bitset32(r, 31, 16, v)
-#define	SDPMUX_SDP_PORT_CTL_SET_DMA_ENABLE(r, v)	bitset32(r, 15, 15, v)
-#define	SDPMUX_SDP_PORT_CTL_SET_PORT_HYSTERESIS(r, v)	bitset32(r, 7, 0, v)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SDP_PORT_CTL, 0)
+#define	SDPMUX_SDP_PORT_CTL_SET_PORT_HYSTERESIS(r, v)	bitset32(r, 11, 0, v)
 
 /*
  * SDPMUX::SDPMUX_SION_LiveLock_WatchDog_Threshold. This is used to set an
@@ -1217,19 +1417,18 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 /*CSTYLED*/
 #define	D_SDPMUX_SION_LLWD_THRESH	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SDPMUX,	\
-	.srd_reg = 0x01498	\
+	.srd_reg = 0xca0	\
 }
 #define	SDPMUX_SION_LLWD_THRESH(m)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_LLWD_THRESH, 0)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_LLWD_THRESH, 0)
 #define	SDPMUX_SION_LLWD_THRESH_SET(r, v)	bitset32(r, 7, 0, v)
-#define	SDPMUX_SION_LLWD_THRESH_VAL		0x11
 
 /*
  * SDPMUX::SDPMUX_SION_S0_Client_Req_BurstTarget_Lower. While the case has
  * changed and the number of entries from our friends in the IOHC, everything
  * said above is still true.
  */
-#define	SDPMUX_SION_MAX_ENTS	5
+#define	SDPMUX_SION_MAX_ENTS	3
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_CLIREQ_BURST_LOW	(const smn_reg_def_t){	\
@@ -1239,7 +1438,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_CLIREQ_BURST_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_BURST_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_CLIREQ_BURST_HI	(const smn_reg_def_t){	\
@@ -1249,7 +1448,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_CLIREQ_BURST_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_BURST_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_CLIREQ_TIME_LOW	(const smn_reg_def_t){	\
@@ -1259,7 +1458,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_CLIREQ_TIME_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_TIME_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_CLIREQ_TIME_HI	(const smn_reg_def_t){	\
@@ -1269,7 +1468,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_CLIREQ_TIME_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_TIME_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_CLIREQ_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_RDRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -1279,7 +1478,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_RDRSP_BURST_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_BURST_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_RDRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -1289,7 +1488,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_RDRSP_BURST_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_BURST_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_RDRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -1299,7 +1498,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_RDRSP_TIME_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_TIME_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_RDRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -1309,7 +1508,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_RDRSP_TIME_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_TIME_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_RDRSP_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_WRRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -1319,7 +1518,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_WRRSP_BURST_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_BURST_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_WRRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -1329,7 +1528,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_WRRSP_BURST_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_BURST_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_WRRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -1339,7 +1538,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_WRRSP_TIME_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_TIME_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S0_WRRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -1349,7 +1548,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S0_WRRSP_TIME_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_TIME_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S0_WRRSP_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_CLIREQ_BURST_LOW	(const smn_reg_def_t){	\
@@ -1359,7 +1558,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_CLIREQ_BURST_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_BURST_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_CLIREQ_BURST_HI	(const smn_reg_def_t){	\
@@ -1369,7 +1568,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_CLIREQ_BURST_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_BURST_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_CLIREQ_TIME_LOW	(const smn_reg_def_t){	\
@@ -1379,7 +1578,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_CLIREQ_TIME_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_TIME_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_CLIREQ_TIME_HI	(const smn_reg_def_t){	\
@@ -1389,7 +1588,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_CLIREQ_TIME_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_TIME_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_CLIREQ_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_RDRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -1399,7 +1598,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_RDRSP_BURST_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_BURST_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_RDRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -1409,7 +1608,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_RDRSP_BURST_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_BURST_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_RDRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -1419,7 +1618,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_RDRSP_TIME_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_TIME_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_RDRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -1429,7 +1628,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_RDRSP_TIME_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_TIME_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_RDRSP_TIME_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_WRRSP_BURST_LOW	(const smn_reg_def_t){	\
@@ -1439,7 +1638,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_WRRSP_BURST_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_BURST_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_BURST_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_WRRSP_BURST_HI	(const smn_reg_def_t){	\
@@ -1449,7 +1648,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_WRRSP_BURST_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_BURST_HI, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_BURST_HI, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_WRRSP_TIME_LOW	(const smn_reg_def_t){	\
@@ -1459,7 +1658,7 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_WRRSP_TIME_LOW(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_TIME_LOW, i)
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_TIME_LOW, i)
 
 /*CSTYLED*/
 #define	D_SDPMUX_SION_S1_WRRSP_TIME_HI	(const smn_reg_def_t){	\
@@ -1469,14 +1668,10 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
 	.srd_stride = 0x400	\
 }
 #define	SDPMUX_SION_S1_WRRSP_TIME_HI(m, i)	\
-	milan_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_TIME_HI, i)
-
-#define	SDPMUX_SION_CLIREQ_BURST_VAL	0x08080808
-#define	SDPMUX_SION_CLIREQ_TIME_VAL	0x21212121
-#define	SDPMUX_SION_RDRSP_BURST_VAL	0x02020202
+	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_TIME_HI, i)
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_MILAN_IOHC_H */
+#endif /* _SYS_IO_TURIN_IOHC_H */
