@@ -252,6 +252,19 @@ genoa_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 	return (reg);
 }
 
+void
+genoa_fabric_thread_get_dpm_weights(const zen_thread_t *thread __unused,
+    const uint64_t **wp, uint32_t *nentp)
+{
+	/*
+	 * Genoa no longer reads the DPM weights from the SMU so we just return
+	 * a non-zero count with a NULL pointer to indicate the corresponding
+	 * indices should be zeroed out.
+	 */
+	*nentp = GENOA_MAX_DPM_WEIGHTS;
+	*wp = NULL;
+}
+
 /*
  * We consider the IOAGR to be part of the NBIO/IOHC/IOMS, so the IOMMUL1's
  * IOAGR block falls under the IOMS; the IOAPIC and IOMMUL2 are similar as they

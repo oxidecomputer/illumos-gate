@@ -30,6 +30,8 @@ extern "C" {
  */
 extern void zen_ras_init(void);
 
+extern void zen_null_ras_init(void);
+
 #ifdef	__cplusplus
 }
 #endif

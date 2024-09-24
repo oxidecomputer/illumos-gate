@@ -151,6 +151,12 @@ extern size_t zen_fabric_thread_get_brandstr(const zen_thread_t *, char *,
     size_t);
 
 /*
+ * No-op routine for platforms that do not support DPM weights.
+ */
+extern void zen_fabric_thread_get_dpm_weights_noop(const zen_thread_t *,
+    const uint64_t **, uint32_t *);
+
+/*
  * Read and write PCIe core and port registers.
  */
 extern uint32_t zen_pcie_core_read(zen_pcie_core_t *, const smn_reg_t);

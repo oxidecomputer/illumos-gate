@@ -54,12 +54,35 @@
  */
 #include "milan_pcie_dbg.c"
 
+/*
+ * Milan has up to 8 CCDs per I/O die.
+ */
+#define	MILAN_MAX_CCDS_PER_IODIE	8
+
+/*
+ * Milan has up to 8 cores per CCX.
+ */
+#define	MILAN_MAX_CORES_PER_CCX		8
+
+
 static const zen_apob_ops_t milan_apob_ops = {
 	.zao_reserve_phys = milan_apob_reserve_phys,
 };
 
 static const zen_ccx_ops_t milan_ccx_ops = {
-	.zco_init = milan_ccx_init,
+	.zco_get_dpm_weights = milan_fabric_thread_get_dpm_weights,
+
+	.zco_thread_feature_init = milan_thread_feature_init,
+	.zco_thread_uc_init = milan_thread_uc_init,
+	.zco_core_ls_init = milan_core_ls_init,
+	.zco_core_ic_init = milan_core_ic_init,
+	.zco_core_dc_init = milan_core_dc_init,
+	.zco_core_tw_init = zen_ccx_init_noop,
+	.zco_core_de_init = milan_core_de_init,
+	.zco_core_fp_init = zen_ccx_init_noop,
+	.zco_core_l2_init = milan_core_l2_init,
+	.zco_ccx_l3_init = milan_ccx_l3_init,
+	.zco_core_undoc_init = milan_core_undoc_init,
 };
 
 static const zen_fabric_ops_t milan_fabric_ops = {
@@ -107,6 +130,8 @@ static const zen_ras_ops_t milan_ras_ops = {
 const zen_platform_t milan_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_3,
+		.zpc_chiprev = X86_CHIPREV_AMD_MILAN_B0 |
+		    X86_CHIPREV_AMD_MILAN_B1,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP,
 		.zpc_max_iorr = DF_MAX_IO_RULES,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES,

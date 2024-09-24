@@ -138,6 +138,17 @@ zen_fabric_thread_get_brandstr(const zen_thread_t *thread,
 }
 
 /*
+ * No-op routine for platforms that do not support DPM weights.
+ */
+void
+zen_fabric_thread_get_dpm_weights_noop(const zen_thread_t *thread __unused,
+    const uint64_t **wp, uint32_t *nentp)
+{
+	*nentp = 0;
+	*wp = NULL;
+}
+
+/*
  * Retrieves and reports the firmware version numbers for the SMU and DXIO/MPIO
  * on the given IO die.
  */

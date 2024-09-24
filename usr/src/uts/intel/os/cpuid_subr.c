@@ -748,10 +748,16 @@ static const struct amd_rev_mapent {
 	/* RS-A0 & RS-A1 both map to Zen 4 uarch A0 */
 	{ 0x19, 0x10, 0x10, 0x1, 0x1, X86_CHIPREV_AMD_GENOA_A1, "RS-A1",
 	    X86_UARCHREV_AMD_ZEN4_A0, A_SKTS_GENOA },
+	/* RS-AB & RS-B0 both map to Zen 4 uarch B0 */
+	{ 0x19, 0x10, 0x10, 0xB, 0xB, X86_CHIPREV_AMD_GENOA_AB, "RS-AB",
+	    X86_UARCHREV_AMD_ZEN4_B0, A_SKTS_GENOA },
 	{ 0x19, 0x11, 0x11, 0x0, 0x0, X86_CHIPREV_AMD_GENOA_B0, "RS-B0",
 	    X86_UARCHREV_AMD_ZEN4_B0, A_SKTS_GENOA },
 	{ 0x19, 0x11, 0x11, 0x1, 0x1, X86_CHIPREV_AMD_GENOA_B1, "RS-B1",
 	    X86_UARCHREV_AMD_ZEN4_B1, A_SKTS_GENOA },
+	/* Marketed as Genoa-X but still RS */
+	{ 0x19, 0x11, 0x11, 0x2, 0x2, X86_CHIPREV_AMD_GENOA_B2, "RS-B2",
+	    X86_UARCHREV_AMD_ZEN4_B2, A_SKTS_GENOA },
 	{ 0x19, 0x10, 0x1f, 0x0, 0xf, X86_CHIPREV_AMD_GENOA_UNKNOWN, "RS-??",
 	    X86_UARCHREV_AMD_ZEN4_UNKNOWN, A_SKTS_GENOA },
 

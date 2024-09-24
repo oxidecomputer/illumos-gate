@@ -25,85 +25,12 @@
 #include <sys/boot_physmem.h>
 #include <sys/x86_archext.h>
 
-#include <sys/io/milan/fabric_impl.h>
 #include <sys/io/milan/ccx_impl.h>
-#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/ccx_impl.h>
 #include <sys/io/zen/smn.h>
 
-/*
- * We run before kmdb loads, so these chicken switches are static consts.
- */
-static const boolean_t milan_ccx_allow_unsupported_processor = B_FALSE;
 
-/*
- * Set the contents of undocumented registers to what we imagine they should be.
- * This chicken switch and the next exist mainly to debug total mysteries, but
- * it's also entirely possible that our sketchy information about what these
- * should hold is just wrong (for this machine, or entirely).
- */
-static const boolean_t milan_ccx_set_undoc_regs = B_TRUE;
-
-/*
- * Set the contents of undocumented fields in otherwise documented registers to
- * what we imagine they should be.
- */
-static const boolean_t milan_ccx_set_undoc_fields = B_TRUE;
-
-
-boolean_t
-milan_ccx_is_supported(void)
-{
-	x86_chiprev_t chiprev;
-
-	if (milan_ccx_allow_unsupported_processor)
-		return (B_TRUE);
-
-	chiprev = cpuid_getchiprev(CPU);
-	return (chiprev_matches(chiprev, X86_CHIPREV_AMD_MILAN_ANY));
-}
-
-/*
- * This series of CCX subsystem initialisation routines is intended to
- * eventually be generalised out of Milan to support arbitrary future
- * collections of processors.  Each sets up a particular functional unit within
- * the thread/core/core complex.  For reference, these are:
- *
- * LS: load-store, the gateway to the thread
- * IC: (L1) instruction cache
- * DC: (L1) data cache
- * TW: table walker (part of the MMU)
- * DE: instruction decode(/execute?)
- * L2, L3: caches
- * UC: microcode -- this is not microcode patch/upgrade
- *
- * Feature initialisation refers to setting up the internal registers that are
- * reflected into cpuid leaf values.
- *
- * All of these routines are infallible; we purposely avoid using on_trap() or
- * similar as we want to panic if any of these registers does not exist or
- * cannot be accessed.  Additionally, when building with DEBUG enabled, we will
- * panic if writing the bits we intend to change is ineffective.  None of these
- * outcomes should ever be possible on a supported processor; indeed,
- * understanding what to do here is a critical element of adding support for a
- * new processor family or revision.
- */
-
-static inline void
-wrmsr_and_test(uint32_t msr, uint64_t v)
-{
-	wrmsr(msr, v);
-
-#ifdef	DEBUG
-	uint64_t rv = rdmsr(msr);
-
-	if (rv != v) {
-		cmn_err(CE_PANIC, "MSR 0x%x written with value 0x%lx "
-		    "has value 0x%lx\n", msr, v, rv);
-	}
-#endif
-}
-
-static void
+void
 milan_thread_feature_init(void)
 {
 	uint64_t v;
@@ -133,11 +60,8 @@ milan_thread_feature_init(void)
 	wrmsr_and_test(MSR_AMD_CPUID_7_FEATURES, v);
 
 	v = rdmsr(MSR_AMD_FEATURE_EXT_ID);
-	/*
-	 * XXX Is IBS enable/disable an immutable boot-time policy?  If so, and
-	 * if we want to allow controlling it, change this to reflect policy.
-	 */
-	if (milan_ccx_set_undoc_fields) {
+	if (zen_ccx_set_undoc_fields) {
+		/* Possible policy option: IBS. */
 		v = AMD_FEATURE_EXT_ID_SET_UNKNOWN_IBS_31(v, 0);
 		v = AMD_FEATURE_EXT_ID_SET_UNKNOWN_22(v, 0);
 	}
@@ -146,7 +70,7 @@ milan_thread_feature_init(void)
 
 	v = rdmsr(MSR_AMD_FEATURE_EXT2_EAX);
 	v = AMD_FEATURE_EXT2_EAX_SET_NULL_SELECTOR_CLEARS_BASE(v, 1);
-	if (milan_ccx_set_undoc_fields &&
+	if (zen_ccx_set_undoc_fields &&
 	    (uarchrev_matches(uarchrev, X86_UARCHREV_AMD_ZEN3_B0) ||
 	    chiprev_at_least(chiprev, X86_CHIPREV_AMD_MILAN_B0))) {
 		v = AMD_FEATURE_EXT2_EAX_U_ZEN3_B0_SET_UNKNOWN_4(v, 0);
@@ -162,7 +86,7 @@ milan_thread_feature_init(void)
 	}
 }
 
-static void
+void
 milan_thread_uc_init(void)
 {
 	uint64_t v;
@@ -183,7 +107,7 @@ milan_thread_uc_init(void)
 	wrmsr_and_test(MSR_AMD_MCODE_CTL, v);
 }
 
-static void
+void
 milan_core_ls_init(void)
 {
 	uint64_t v;
@@ -196,9 +120,7 @@ milan_core_ls_init(void)
 	if (chiprev_matches(chiprev, X86_CHIPREV_AMD_MILAN_A0)) {
 		v = AMD_LS_CFG_SET_SPEC_LOCK_MAP_DIS(v, 1);
 	}
-	/*
-	 * XXX Possible boot-time or per-thread/guest policy option.
-	 */
+	/* Possible policy option: Streaming Stores. */
 	v = AMD_LS_CFG_SET_DIS_STREAM_ST(v, 0);
 
 	wrmsr_and_test(MSR_AMD_LS_CFG, v);
@@ -218,20 +140,20 @@ milan_core_ls_init(void)
 
 	v = rdmsr(MSR_AMD_LS_CFG3);
 	if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_MILAN_B0) &&
-	    milan_ccx_set_undoc_fields) {
+	    zen_ccx_set_undoc_fields) {
 		v = AMD_LS_CFG3_SET_UNKNOWN_62(v, 0);
 		v = AMD_LS_CFG3_SET_UNKNOWN_56(v, 0);
 		v = AMD_LS_CFG3_SET_DIS_NC_FILLWITH_LTLI(v, 0);
-		/* XXX Possible policy option on B0+ only. */
+		/* Possible policy option: Speculation (B0+ only). */
 		v = AMD_LS_CFG3_SET_EN_SPEC_ST_FILL(v, 1);
 		v = AMD_LS_CFG3_SET_DIS_FAST_LD_BARRIER(v, 0);
-	} else if (milan_ccx_set_undoc_fields) {
+	} else if (zen_ccx_set_undoc_fields) {
 		v = AMD_LS_CFG3_SET_UNKNOWN_62(v, 1);
 		v = AMD_LS_CFG3_SET_UNKNOWN_56(v, 1);
 		v = AMD_LS_CFG3_SET_DIS_NC_FILLWITH_LTLI(v, 1);
 		v = AMD_LS_CFG3_SET_EN_SPEC_ST_FILL(v, 0);
 	}
-	if (milan_ccx_set_undoc_fields) {
+	if (zen_ccx_set_undoc_fields) {
 		v = AMD_LS_CFG3_SET_UNKNOWN_60(v, 1);
 		v = AMD_LS_CFG3_SET_UNKNOWN_57(v, 1);
 	}
@@ -250,14 +172,14 @@ milan_core_ls_init(void)
 	}
 }
 
-static void
+void
 milan_core_ic_init(void)
 {
 	uint64_t v;
 	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
 
 	v = rdmsr(MSR_AMD_IC_CFG);
-	if (milan_ccx_set_undoc_fields) {
+	if (zen_ccx_set_undoc_fields) {
 		if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_MILAN_B0)) {
 			v = AMD_IC_CFG_SET_UNKNOWN_48(v, 0);
 		} else {
@@ -270,19 +192,19 @@ milan_core_ic_init(void)
 		v = AMD_IC_CFG_SET_UNKNOWN_51(v, 1);
 		v = AMD_IC_CFG_SET_UNKNOWN_50(v, 0);
 	}
-	/* XXX Possible policy option. */
+	/* Possible policy option: Opcache. */
 	v = AMD_IC_CFG_SET_OPCACHE_DIS(v, 0);
 
 	wrmsr_and_test(MSR_AMD_IC_CFG, v);
 }
 
-static void
+void
 milan_core_dc_init(void)
 {
 	uint64_t v;
 	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
 
-	/* XXX All of the prefetch controls may become policy options. */
+	/* Possible policy option: Prefetch. */
 	v = rdmsr(MSR_AMD_DC_CFG);
 	v = AMD_DC_CFG_SET_DIS_REGION_HW_PF(v, 0);
 	v = AMD_DC_CFG_SET_DIS_STRIDE_HW_PF(v, 0);
@@ -303,18 +225,7 @@ milan_core_dc_init(void)
 	wrmsr_and_test(MSR_AMD_DC_CFG2, v);
 }
 
-static void
-milan_core_tw_init(void)
-{
-	uint64_t v;
-
-	v = rdmsr(MSR_AMD_TW_CFG);
-	v = AMD_TW_CFG_SET_COMBINE_CR0_CD(v, 1);
-
-	wrmsr_and_test(MSR_AMD_TW_CFG, v);
-}
-
-static void
+void
 milan_core_de_init(void)
 {
 	uint64_t v;
@@ -322,18 +233,18 @@ milan_core_de_init(void)
 
 	v = rdmsr(MSR_AMD_DE_CFG);
 	if (chiprev_matches(chiprev, X86_CHIPREV_AMD_MILAN_B0) &&
-	    milan_ccx_set_undoc_fields) {
+	    zen_ccx_set_undoc_fields) {
 		v = AMD_DE_CFG_SET_UNKNOWN_60(v, 0);
 		v = AMD_DE_CFG_SET_UNKNOWN_59(v, 0);
 	} else if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_MILAN_B1) &&
-	    milan_ccx_set_undoc_fields) {
+	    zen_ccx_set_undoc_fields) {
 		v = AMD_DE_CFG_SET_UNKNOWN_48(v, 1);
-	} else if (milan_ccx_set_undoc_fields) {
+	} else if (zen_ccx_set_undoc_fields) {
 		/* Older than B0 */
 		v = AMD_DE_CFG_SET_UNKNOWN_60(v, 1);
 		v = AMD_DE_CFG_SET_UNKNOWN_59(v, 1);
 	}
-	if (milan_ccx_set_undoc_fields) {
+	if (zen_ccx_set_undoc_fields) {
 		v = AMD_DE_CFG_SET_UNKNOWN_33(v, 1);
 		v = AMD_DE_CFG_SET_UNKNOWN_32(v, 1);
 		v = AMD_DE_CFG_SET_UNKNOWN_28(v, 1);
@@ -342,7 +253,7 @@ milan_core_de_init(void)
 	wrmsr_and_test(MSR_AMD_DE_CFG, v);
 }
 
-static void
+void
 milan_core_l2_init(void)
 {
 	uint64_t v;
@@ -356,7 +267,7 @@ milan_core_l2_init(void)
 
 	wrmsr_and_test(MSR_AMD_L2_CFG, v);
 
-	/* XXX Prefetch policy options. */
+	/* Possible policy option: Prefetch. */
 	v = rdmsr(MSR_AMD_CH_L2_PF_CFG);
 	v = AMD_CH_L2_PF_CFG_SET_EN_UP_DOWN_PF(v, 1);
 	v = AMD_CH_L2_PF_CFG_SET_EN_STREAM_PF(v, 1);
@@ -397,7 +308,7 @@ milan_core_l2_init(void)
 	wrmsr_and_test(MSR_AMD_CH_L2_AA_PAIR_CFG1, v);
 }
 
-static void
+void
 milan_ccx_l3_init(void)
 {
 	uint64_t v;
@@ -443,14 +354,11 @@ milan_ccx_l3_init(void)
 	wrmsr_and_test(MSR_AMD_CH_L3_XI_CFG0, v);
 }
 
-static void
+void
 milan_core_undoc_init(void)
 {
 	uint64_t v;
 	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
-
-	if (!milan_ccx_set_undoc_regs)
-		return;
 
 	if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_MILAN_B0)) {
 		v = rdmsr(MSR_AMD_UNKNOWN_C001_102C);
@@ -477,110 +385,4 @@ milan_core_undoc_init(void)
 	v = AMD_BP_CFG_SET_UNKNOWN_4_2(v, 0);
 
 	wrmsr_and_test(MSR_AMD_BP_CFG, v);
-}
-
-static void
-milan_core_dpm_init(void)
-{
-	const zen_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
-	const uint64_t *weights;
-	uint32_t nweights;
-	uint64_t cfg;
-
-	milan_fabric_thread_get_dpm_weights(thread, &weights, &nweights);
-
-	cfg = rdmsr(MSR_AMD_DPM_CFG);
-	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 0);
-	wrmsr_and_test(MSR_AMD_DPM_CFG, cfg);
-
-	for (uint32_t idx = 0; idx < nweights; idx++) {
-		wrmsr_and_test(MSR_AMD_DPM_WAC_ACC_INDEX, idx);
-		wrmsr_and_test(MSR_AMD_DPM_WAC_DATA, weights[idx]);
-	}
-
-	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 1);
-	wrmsr_and_test(MSR_AMD_DPM_CFG, cfg);
-}
-
-void
-milan_ccx_init(void)
-{
-	const zen_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
-	char str[CPUID_BRANDSTR_STRLEN + 1];
-
-	/*
-	 * First things first: it shouldn't be (and generally isn't) possible to
-	 * get here on a completely bogus CPU; e.g., Intel or a pre-Zen part.
-	 * But the remainder of this function, and our overall body of code,
-	 * support only a limited subset of processors that exist.  Eventually
-	 * this will include processors that are not Milan, and at that time
-	 * this set of checks will need to be factored out; even so, we also
-	 * want to make sure we're on a supported revision.  A chicken switch is
-	 * available to ease future porting work.
-	 */
-
-	if (!milan_ccx_is_supported()) {
-		uint_t vendor, family, model, step;
-
-		vendor = cpuid_getvendor(CPU);
-		family = cpuid_getfamily(CPU);
-		model = cpuid_getmodel(CPU);
-		step = cpuid_getstep(CPU);
-		panic("cpu%d is unsupported: vendor 0x%x family 0x%x "
-		    "model 0x%x step 0x%x\n", CPU->cpu_id,
-		    vendor, family, model, step);
-	}
-
-	/*
-	 * Set the MSRs that control the brand string so that subsequent cpuid
-	 * passes can retrieve it.  We fetched it from the SMU during earlyboot
-	 * fabric initialisation.
-	 */
-	if (zen_fabric_thread_get_brandstr(thread, str, sizeof (str)) <=
-	    CPUID_BRANDSTR_STRLEN && str[0] != '\0') {
-		for (uint_t n = 0; n < sizeof (str) / sizeof (uint64_t); n++) {
-			uint64_t sv = *(uint64_t *)&str[n * sizeof (uint64_t)];
-
-			wrmsr(MSR_AMD_PROC_NAME_STRING0 + n, sv);
-		}
-	} else {
-		cmn_err(CE_WARN, "cpu%d: SMU provided invalid brand string\n",
-		    CPU->cpu_id);
-	}
-
-	/*
-	 * We're called here from every thread, but the CCX doesn't have an
-	 * instance of every functional unit for each thread.  As an
-	 * optimisation, we set up what's shared only once.  One would imagine
-	 * that the sensible way to go about that is to always perform the
-	 * initialisation on the first thread that shares the functional unit,
-	 * but other implementations do it only on the last.  It's possible that
-	 * this is a bug, or that the internal process of starting a thread
-	 * clobbers (some of?) the changes we might make to the shared register
-	 * instances before doing so.  On the processors we support, doing this
-	 * on the first sharing thread to start seems to have the intended
-	 * result, so that's what we do.  Functions are named for their scope.
-	 * The exception to the rule is the table walker configuration, which
-	 * causes CR0.CD to be effectively set on both threads if either thread
-	 * has it set; since by default, a thread1 that hasn't started yet has
-	 * this bit set, setting it on thread0 will cause everything to grind to
-	 * a near halt.  Since the TW config bit has no effect without SMT, we
-	 * don't need to worry about setting it on thread0 if SMT is off.
-	 */
-	milan_thread_feature_init();
-	milan_thread_uc_init();
-	if (thread->zt_threadno == 1) {
-		milan_core_tw_init();
-	}
-	if (thread->zt_threadno == 0) {
-		milan_core_ls_init();
-		milan_core_ic_init();
-		milan_core_dc_init();
-		milan_core_de_init();
-		milan_core_l2_init();
-		if (thread->zt_core->zc_logical_coreno == 0)
-			milan_ccx_l3_init();
-		milan_core_undoc_init();
-		milan_core_dpm_init();
-	}
 }

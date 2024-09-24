@@ -34,6 +34,7 @@
 #include <sys/io/genoa/smu.h>
 #include <sys/io/zen/mpio.h>
 #include <sys/io/zen/apob.h>
+#include <sys/io/zen/ras.h>
 
 /*
  * The genoa_pcie_dbg.c is file is included here so that we have access to the
@@ -45,7 +46,7 @@
 #include "genoa_pcie_dbg.c"
 
 /*
- * Genoa has up to 12 CCDs per IODIE.
+ * Genoa has up to 12 CCDs per I/O die.
  */
 #define	GENOA_MAX_CCDS_PER_IODIE	12
 
@@ -59,7 +60,19 @@ static const zen_apob_ops_t genoa_apob_ops = {
 };
 
 static const zen_ccx_ops_t genoa_ccx_ops = {
-	.zco_init = genoa_ccx_init,
+	.zco_get_dpm_weights = genoa_fabric_thread_get_dpm_weights,
+
+	.zco_thread_feature_init = genoa_thread_feature_init,
+	.zco_thread_uc_init = genoa_thread_uc_init,
+	.zco_core_ls_init = genoa_core_ls_init,
+	.zco_core_ic_init = genoa_core_ic_init,
+	.zco_core_dc_init = genoa_core_dc_init,
+	.zco_core_tw_init = zen_ccx_init_noop,
+	.zco_core_de_init = zen_ccx_init_noop,
+	.zco_core_fp_init = genoa_core_fp_init,
+	.zco_core_l2_init = genoa_core_l2_init,
+	.zco_ccx_l3_init = genoa_ccx_l3_init,
+	.zco_core_undoc_init = genoa_core_undoc_init,
 };
 
 static const zen_fabric_ops_t genoa_fabric_ops = {
@@ -96,11 +109,16 @@ static const zen_hack_ops_t genoa_hack_ops = {
 };
 
 static const zen_ras_ops_t genoa_ras_ops = {
+	.zro_ras_init = zen_null_ras_init,
 };
 
 const zen_platform_t genoa_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4,
+		.zpc_chiprev = X86_CHIPREV_AMD_GENOA_A0 |
+		    X86_CHIPREV_AMD_GENOA_A1 | X86_CHIPREV_AMD_GENOA_AB |
+		    X86_CHIPREV_AMD_GENOA_B0 | X86_CHIPREV_AMD_GENOA_B1 |
+		    X86_CHIPREV_AMD_GENOA_B2,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP,
 		.zpc_max_iorr = DF_MAX_IO_RULES,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES,

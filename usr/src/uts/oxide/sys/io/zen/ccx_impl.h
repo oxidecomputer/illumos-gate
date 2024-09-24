@@ -34,11 +34,39 @@ extern "C" {
 /*
  * Current architectural limits -- these are the maximum across all Zen SoCs
  * supported on the Oxide platform.
+ *
+ * Namespaces
+ *
+ * Each CCD, CCX, and core shares two distinct integer namespaces with its
+ * siblings: a compact logical one and a possibly sparse physical one.  These
+ * names are unique among siblings but not across e.g. cousins.  Both names are
+ * provided to us for each object by the DF and APOB, and which name is used
+ * to compute a register or bit address varies from one register to the next.
+ * Therefore we need, and keep, both of them.  The logical name should always
+ * correspond to the index into the parent's array.
+ *
+ * Threads are different: each core has some number of threads which in current
+ * implementations is either 1 or 2.  There is no separate physical thread
+ * identifier as there is no way for some discontiguous subset of threads to
+ * exist.  Therefore each thread has but a single logical identifier, also its
+ * index within its parent core's array of them.  However, the thread also has
+ * an APIC ID, which unlike the other identifiers is globally unique across the
+ * entire fabric.  The APIC ID namespace is sparse when any of a thread's
+ * containing entities is one of a collection of siblings whose number is not
+ * a power of 2.
+ *
+ * One last note on APIC IDs: while we compute the APIC ID that is assigned to
+ * each thread by firmware prior to boot, that ID can be changed by writing to
+ * the thread's APIC ID MSR (or, in xAPIC mode which we never use, the
+ * analogous MMIO register).  The one we compute and store here is the one
+ * set by firmware before boot.
  */
 #define	ZEN_MAX_CCDS_PER_IODIE		16
 #define	ZEN_MAX_CCXS_PER_CCD		1
 #define	ZEN_MAX_CORES_PER_CCX		16
 #define	ZEN_MAX_THREADS_PER_CORE	2
+
+extern const bool zen_ccx_set_undoc_fields;
 
 struct zen_thread {
 	/*
@@ -116,6 +144,27 @@ struct zen_ccd {
 typedef int (*zen_ccd_cb_f)(zen_ccd_t *, void *);
 typedef int (*zen_ccx_cb_f)(zen_ccx_t *, void *);
 typedef int (*zen_core_cb_f)(zen_core_t *, void *);
+
+/*
+ * A no-op callback for use when a particular CCX initialization hook is not
+ * required for a given microarchitecture.
+ */
+extern void zen_ccx_init_noop(void);
+
+static inline void
+wrmsr_and_test(uint32_t msr, uint64_t v)
+{
+	wrmsr(msr, v);
+
+#ifdef	DEBUG
+	uint64_t rv = rdmsr(msr);
+
+	if (rv != v) {
+		cmn_err(CE_PANIC, "MSR 0x%x written with value 0x%lx "
+		    "has value 0x%lx\n", msr, v, rv);
+	}
+#endif
+}
 
 #ifdef	__cplusplus
 }

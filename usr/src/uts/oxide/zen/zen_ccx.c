@@ -21,24 +21,180 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/boot_physmem.h>
+#include <sys/cmn_err.h>
 #include <sys/platform_detect.h>
 #include <sys/x86_archext.h>
 
 #include <sys/amdzen/ccd.h>
 #include <sys/amdzen/ccx.h>
 
+#include <sys/io/zen/fabric.h>
 #include <sys/io/zen/ccx_impl.h>
 #include <sys/io/zen/platform_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
 
 
+#define	ZEN_CCX_INIT(ops, func)						\
+	do {								\
+		VERIFY3P((ops)->zco_ ## func ## _init, !=, NULL);	\
+		((ops)->zco_ ## func ## _init)();			\
+	} while (0)
+
+
+/*
+ * The early platform detect logic should prevent us from running on a
+ * completely bogus CPU (e.g., Intel/non-AMD or a pre-Zen AMD CPU). However, we
+ * still want to be conservative as there are still some differences even within
+ * a supported processor family. As such, each Zen platform declares its own
+ * supported chip rev/steppings we'll check against during CCX init.
+ *
+ * To ease future porting, we provide this chicken switch (as a static const
+ * since we run before kmdb loads).
+ */
+static const bool zen_ccx_allow_unsupported_processor = false;
+
+/*
+ * Set the contents of undocumented registers to what we imagine they should be.
+ * This chicken switch and the next exist mainly to debug total mysteries, but
+ * it's also entirely possible that our sketchy information about what these
+ * should hold is just wrong (for this machine, or entirely).
+ */
+static const bool zen_ccx_set_undoc_regs = true;
+
+/*
+ * Set the contents of undocumented fields in otherwise documented registers to
+ * what we imagine they should be.
+ */
+const bool zen_ccx_set_undoc_fields = true;
+
+
+static bool
+zen_ccx_is_supported(void)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
+	return (chiprev_matches(chiprev, consts->zpc_chiprev));
+}
+
+static void
+zen_core_dpm_init(void)
+{
+	const zen_ccx_ops_t *ccx_ops = oxide_zen_ccx_ops();
+	const zen_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
+	const uint64_t *weights;
+	uint32_t nweights;
+	uint64_t cfg;
+
+	VERIFY3P(ccx_ops->zco_get_dpm_weights, !=, NULL);
+	(ccx_ops->zco_get_dpm_weights)(thread, &weights, &nweights);
+
+	if (nweights == 0 && weights == NULL)
+		return;
+
+	cfg = rdmsr(MSR_AMD_DPM_CFG);
+	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 0);
+	wrmsr_and_test(MSR_AMD_DPM_CFG, cfg);
+
+	for (uint32_t idx = 0; idx < nweights; idx++) {
+		wrmsr_and_test(MSR_AMD_DPM_WAC_ACC_INDEX, idx);
+		wrmsr_and_test(MSR_AMD_DPM_WAC_DATA, weights == NULL ? 0 :
+		    weights[idx]);
+	}
+
+	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 1);
+	wrmsr_and_test(MSR_AMD_DPM_CFG, cfg);
+}
+
+static void
+zen_core_tw_init(void)
+{
+	uint64_t v;
+
+	v = rdmsr(MSR_AMD_TW_CFG);
+	v = AMD_TW_CFG_SET_COMBINE_CR0_CD(v, 1);
+	wrmsr_and_test(MSR_AMD_TW_CFG, v);
+}
+
 void
 zen_ccx_init(void)
 {
 	const zen_ccx_ops_t *ccx_ops = oxide_zen_ccx_ops();
-	VERIFY3P(ccx_ops->zco_init, !=, NULL);
-	(ccx_ops->zco_init)();
+	const zen_thread_t *thread = CPU->cpu_m.mcpu_hwthread;
+	char str[CPUID_BRANDSTR_STRLEN + 1];
+
+	if (!zen_ccx_is_supported()) {
+		const char *vendor;
+		uint_t family, model, step;
+
+		vendor = cpuid_getvendorstr(CPU);
+		family = cpuid_getfamily(CPU);
+		model = cpuid_getmodel(CPU);
+		step = cpuid_getstep(CPU);
+
+		cmn_err(zen_ccx_allow_unsupported_processor ?
+		    CE_WARN : CE_PANIC,
+		    "cpu%d is unsupported: vendor %s family 0x%x model 0x%x "
+		    "step 0x%x", CPU->cpu_id, vendor, family, model, step);
+	}
+
+	/*
+	 * Set the MSRs that control the brand string so that subsequent cpuid
+	 * passes can retrieve it.  We fetched it during earlyboot fabric
+	 * initialisation.
+	 */
+	if (zen_fabric_thread_get_brandstr(thread, str, sizeof (str)) <=
+	    CPUID_BRANDSTR_STRLEN && str[0] != '\0') {
+		for (uint_t n = 0; n < sizeof (str) / sizeof (uint64_t); n++) {
+			uint64_t sv = *(uint64_t *)&str[n * sizeof (uint64_t)];
+
+			wrmsr(MSR_AMD_PROC_NAME_STRING0 + n, sv);
+		}
+	} else {
+		cmn_err(CE_WARN, "cpu%d: invalid brand string", CPU->cpu_id);
+	}
+
+	/*
+	 * We're called here from every thread, but the CCX doesn't have an
+	 * instance of every functional unit for each thread.  As an
+	 * optimisation, we set up what's shared only once.  One would imagine
+	 * that the sensible way to go about that is to always perform the
+	 * initialisation on the first thread that shares the functional unit,
+	 * but other implementations do it only on the last.  It's possible that
+	 * this is a bug, or that the internal process of starting a thread
+	 * clobbers (some of?) the changes we might make to the shared register
+	 * instances before doing so.  On the processors we support, doing this
+	 * on the first sharing thread to start seems to have the intended
+	 * result, so that's what we do.  Callbacks are named for their scope.
+	 *
+	 * Note there's both a table walker configuration callback that is
+	 * follows the above pattern and invoked on just the first thread and a
+	 * common table walker configuration routine that applies to all
+	 * supported Zen processors, zen_core_tw_init().  The latter when called
+	 * causes CR0.CD to be effectively set on both threads if either thread
+	 * has it set; since by default, a thread1 that hasn't started yet has
+	 * this bit set, setting it on thread0 will cause everything to grind to
+	 * a near halt.  Since the TW config bit has no effect without SMT, we
+	 * don't need to worry about setting it on thread0 if SMT is off.
+	 */
+	ZEN_CCX_INIT(ccx_ops, thread_feature);
+	ZEN_CCX_INIT(ccx_ops, thread_uc);
+	if (thread->zt_threadno == 1)
+		zen_core_tw_init();
+	if (thread->zt_threadno == 0) {
+		ZEN_CCX_INIT(ccx_ops, core_ls);
+		ZEN_CCX_INIT(ccx_ops, core_ic);
+		ZEN_CCX_INIT(ccx_ops, core_dc);
+		ZEN_CCX_INIT(ccx_ops, core_de);
+		ZEN_CCX_INIT(ccx_ops, core_fp);
+		ZEN_CCX_INIT(ccx_ops, core_l2);
+		ZEN_CCX_INIT(ccx_ops, core_tw);
+		if (thread->zt_core->zc_logical_coreno == 0)
+			ZEN_CCX_INIT(ccx_ops, ccx_l3);
+		if (zen_ccx_set_undoc_regs)
+			ZEN_CCX_INIT(ccx_ops, core_undoc);
+		zen_core_dpm_init();
+	}
 }
 
 void
@@ -154,4 +310,13 @@ apicid_t
 zen_thread_apicid(const zen_thread_t *thread)
 {
 	return (thread->zt_apicid);
+}
+
+/*
+ * A no-op callback for use when a particular CCX initialization hook is not
+ * required for a given microarchitecture.
+ */
+void
+zen_ccx_init_noop(void)
+{
 }

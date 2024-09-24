@@ -19,9 +19,6 @@
  * direct dependency on any specific microarchitecture.
  */
 
-#include <sys/cmn_err.h>
-#include <sys/cpuvar.h>
-
 #include <sys/io/zen/platform_impl.h>
 #include <sys/io/zen/ras.h>
 
@@ -30,12 +27,11 @@ void
 zen_ras_init(void)
 {
 	const zen_ras_ops_t *rops = oxide_zen_ras_ops();
-
-	if (rops->zro_ras_init == NULL) {
-		cmn_err(CE_WARN, "cpu%d: skipping RAS initialization",
-		    CPU->cpu_id);
-		return;
-	}
-
+	VERIFY3P(rops->zro_ras_init, !=, NULL);
 	(rops->zro_ras_init)();
+}
+
+void
+zen_null_ras_init(void)
+{
 }

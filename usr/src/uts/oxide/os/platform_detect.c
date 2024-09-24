@@ -33,13 +33,6 @@
 #include <sys/io/turin/iomux.h>
 #include <sys/io/zen/platform.h>
 
-/*
- * A chicken switch to skip the early supported processor check for bringup.
- *
- * Note: this is static const as it is used before kmdb is available, so
- * cannot be changed at runtime, only compile time.
- */
-static const bool allow_unsupported_processor = false;
 
 extern x86_chiprev_t _cpuid_chiprev(uint_t, uint_t, uint_t, uint_t);
 extern const char *_cpuid_chiprevstr(uint_t, uint_t, uint_t, uint_t);
@@ -693,20 +686,4 @@ oxide_report_platform(void)
 	bop_printf(NULL, "Oxide board %s -- %s\n",
 	    oxide_board_name(oxide_board_data->obd_board),
 	    oxide_board_data->obd_cpuinfo.obc_chiprevstr);
-
-	/*
-	 * We currently detect more platforms than are fully supported and so
-	 * let's be conservative unless otherwise explicitly requested.
-	 */
-	switch (_X86_CHIPREV_FAMILY(
-	    oxide_board_data->obd_cpuinfo.obc_chiprev)) {
-	case X86_PF_AMD_MILAN:
-	case X86_PF_AMD_GENOA:
-	case X86_PF_AMD_TURIN:
-	case X86_PF_AMD_DENSE_TURIN:
-		break;
-	default:
-		if (!allow_unsupported_processor)
-			bop_panic("Unsupported processor family");
-	}
 }

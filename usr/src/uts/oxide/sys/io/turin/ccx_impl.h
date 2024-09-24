@@ -28,7 +28,15 @@ extern "C" {
 #endif
 
 extern void turin_ccx_physmem_init(void);
-extern void turin_ccx_init(void);
+
+extern void turin_thread_feature_init(void);
+extern void turin_thread_uc_init(void);
+extern void turin_core_ls_init(void);
+extern void turin_core_ic_init(void);
+extern void turin_core_dc_init(void);
+extern void turin_core_tw_init(void);
+extern void turin_core_l2_init(void);
+extern void turin_core_undoc_init(void);
 
 #ifdef	__cplusplus
 }

@@ -310,18 +310,19 @@ DECL_FIELD_RW(MCODE_CTL, REP_STRING_ST_DIS, 15, 15);
  * to which they refer.
  */
 DECL_REG(CPUID_7_FEATURES, 0xC0011002);
-DECL_FIELD_R(CPUID_7_FEATURES_U_ZEN4, AVX512VL, 31, 31);
-DECL_FIELD_R(CPUID_7_FEATURES_U_ZEN4, AVX512BW, 30, 30);
+/* All the AVX512 related bits exist on Zen4 and Zen5. */
+DECL_FIELD_RW(CPUID_7_FEATURES_U_ZEN4, AVX512VL, 31, 31);
+DECL_FIELD_RW(CPUID_7_FEATURES_U_ZEN4, AVX512BW, 30, 30);
 DECL_FIELD_RW(CPUID_7_FEATURES, SHA, 29, 29);
-DECL_FIELD_R(CPUID_7_FEATURES_U_ZEN4, AVC512CD, 28, 28);
+DECL_FIELD_RW(CPUID_7_FEATURES_U_ZEN4, AVC512CD, 28, 28);
 DECL_FIELD_RW(CPUID_7_FEATURES, CLWB, 24, 24);
 DECL_FIELD_RW(CPUID_7_FEATURES, CLFSHOPT, 23, 23);
-DECL_FIELD_R(CPUID_7_FEATURES_U_ZEN4, AVX512_IFMA, 21, 21);
+DECL_FIELD_RW(CPUID_7_FEATURES_U_ZEN4, AVX512_IFMA, 21, 21);
 DECL_FIELD_RW(CPUID_7_FEATURES, SMAP, 20, 20);
 DECL_FIELD_RW(CPUID_7_FEATURES, ADX, 19, 19);
 DECL_FIELD_RW(CPUID_7_FEATURES, RDSEED, 18, 18);
-DECL_FIELD_R(CPUID_7_FEATURES_U_ZEN4, AVX512DQ, 17, 17);
-DECL_FIELD_R(CPUID_7_FEATURES_U_ZEN4, AVX512F, 16, 16);
+DECL_FIELD_RW(CPUID_7_FEATURES_U_ZEN4, AVX512DQ, 17, 17);
+DECL_FIELD_RW(CPUID_7_FEATURES_U_ZEN4, AVX512F, 16, 16);
 DECL_FIELD_RW(CPUID_7_FEATURES, PQE, 15, 15);
 DECL_FIELD_RW(CPUID_7_FEATURES, PQM, 12, 12);
 /* Undocumented */
@@ -340,9 +341,10 @@ DECL_FIELD_RW(CPUID_7_FEATURES, FSGSBASE, 0, 0);
 /*
  * Core::X86::Msr::LS_CFG.  Load-store unit configuration parameters.  This
  * register is semi-documented only on Zen3, but it seems it still exists on
- * at least some Zen4 processors.  Only used fields are declared.
+ * at least some Zen4 and Zen5 processors.  Only used fields are declared.
  */
 DECL_REG(LS_CFG, 0xC0011020);
+DECL_FIELD_RW(LS_CFG_F_TURIN, UNKNOWN_62, 62, 62);
 DECL_FIELD_RW(LS_CFG, SPEC_LOCK_MAP_DIS, 54, 54);
 DECL_FIELD_RW(LS_CFG_U_ZEN4, DIS_SPEC_WC_REQ, 53, 53);
 DECL_FIELD_RW(LS_CFG, TEMP_LOCK_CONT_THRESH, 52, 50);
@@ -353,8 +355,8 @@ DECL_FIELD_RW(LS_CFG, DIS_STREAM_ST, 28, 28);
 
 /*
  * Core::X86::Msr::IC_CFG.  Presumably controls the I-cache; this register may
- * have been documented long ago but is no longer documented for Zen3 or Zen4
- * although it appears to exist on both.  The purpose of most of its contents is
+ * have been documented long ago but is no longer documented for Zen3-Zen5
+ * although it appears to exist on all.  The purpose of most of its contents is
  * completely unknown and cannot be derived even from context, except for
  * OPCACHE_DIS, which is associated with a very lightly-documented PCD on both
  * Zen3 and Zen4, and DIS_SPEC_TLB_RLD which was described for family 0x15
@@ -378,6 +380,8 @@ DECL_FIELD_RW(IC_CFG, OPCACHE_DIS, 5, 5);
  */
 DECL_REG(DC_CFG, 0xC0011022);
 DECL_FIELD_RW(DC_CFG, EN_BURST_PFS, 63, 63);
+/* Prefetch related bit known to exist on Zen4. */
+DECL_FIELD_RW(DC_CFG_U_ZEN4, UNKNOWN_59_PF, 59, 59);
 DECL_FIELD_RW(DC_CFG, NUM_MABS_RSVD_HW_PF_L2, 58, 57);
 DECL_FIELD_RW(DC_CFG, EN_PF_HIST_STREAM_HIT, 55, 55);
 DECL_FIELD_RW(DC_CFG, DIS_REGION_HW_PF, 18, 18);
@@ -385,21 +389,27 @@ DECL_FIELD_RW(DC_CFG, DIS_STRIDE_HW_PF, 17, 17);
 DECL_FIELD_RW(DC_CFG, DIS_STREAM_HW_PF, 16, 16);
 DECL_FIELD_RW(DC_CFG, DIS_PF_HW_FOR_SW_PF, 15, 15);
 DECL_FIELD_RW(DC_CFG, DIS_HW_PF, 13, 13);
+/* Prefetch related bit known to exist on Zen4. */
+DECL_FIELD_RW(DC_CFG_U_ZEN4, UNKNOWN_12_PF, 12, 12);
 
 /*
  * Core::X86::Msr::TW_CFG.  Controls miscellaneous table-walker parameters.
- * Known to exist on at least Zen2-Zen4 although it is no longer documented in
- * Zen4.  The only field we use is declared here but others exist; see PPRs.
+ * Known to exist on at least Zen2-Zen5 although it is no longer documented on
+ * Zen4 and Zen5.  Only the fields we use are declared here but others exist,
+ * see PPRs.
  */
 DECL_REG(TW_CFG, 0xC0011023);
 DECL_FIELD_RW(TW_CFG, COMBINE_CR0_CD, 49, 49);
+DECL_FIELD_RW(TW_CFG_U_ZEN5, TLBI_BACK_TO_BACK_CNT_ALWAYS, 46, 46);
 
 /*
- * Core::X86::Msr::FP_CFG. Undocumented.
+ * Core::X86::Msr::FP_CFG.  FP configuration; this register is known to exist on
+ * at least Zen3 and Zen4 but is only documented for Zen3.  Only used fields are
+ * declared here.
  */
 DECL_REG(FP_CFG, 0xC0011028);
-DECL_FIELD_RW(FP_CFG, UNKNOWN_52, 52, 52);
-DECL_FIELD_RW(FP_CFG, UNKNOWN_43, 43, 43);
+DECL_FIELD_RW(FP_CFG_F_GENOA, UNKNOWN_52, 52, 52);
+DECL_FIELD_RW(FP_CFG_F_GENOA, UNKNOWN_43, 43, 43);
 
 /*
  * Core::X86::Msr::DE_CFG.  Controls the instruction-decode unit.  This register
@@ -430,7 +440,7 @@ DECL_FIELD_RW(DE_CFG, LFENCE_DISPATCH, 1, 1);
  * Core::X86::Msr::L2_CFG.  L2 cache configuration; this register has had
  * different names in the past, including CU_CFG (Combined Unit) prior to Zen1;
  * it's unknown whether it had a similar function.  This particular register
- * appears to be Zen2-Zen4 only, though it is no longer documented on Zen4.
+ * appears to be Zen2-Zen5 only, though it is no longer documented beyond Zen3.
  * Only used fields are declared here; see PPRs.
  */
 DECL_REG(L2_CFG, 0xC001102A);
@@ -441,9 +451,11 @@ DECL_FIELD_RW(L2_CFG, EXPLICIT_TAG_L3_PROBE_LOOKUP, 7, 7);
 
 /*
  * Core::X86::Msr::ChL2PfCfg.  Additional L2 prefetch configuration bits.  Known
- * to exist at least on Zen2-Zen4; only used fields are declared here.
+ * to exist at least on Zen2-Zen5; only used fields are declared here.
  */
 DECL_REG(CH_L2_PF_CFG, 0xC001102B);
+/* Prefetch related bit known to exist on Zen4 and Zen5. */
+DECL_FIELD_RW(CH_L2_PF_CFG_U_ZEN4, UNKNOWN_22_PF, 22, 22);
 DECL_FIELD_RW(CH_L2_PF_CFG, EN_UP_DOWN_PF, 2, 2);
 DECL_FIELD_RW(CH_L2_PF_CFG, EN_STREAM_PF, 0, 0);
 
@@ -456,15 +468,17 @@ DECL_FIELD_RW(UNKNOWN_C001_102C, UNKNOWN_58, 58, 58);
 
 /*
  * Core::X86::Msr::LS_CFG2.  Additional load-store unit configuration.  This
- * register is known to exist on at least Zen2 and Zen3, but is no longer
- * documented for Zen4 and may no longer exist there.  Only used fields are
+ * register is known to exist on at least Zen2 and Zen3, and is no longer
+ * documented on Zen4 and Zen5 but still seems to exist.  Only used fields are
  * declared here.
  */
 DECL_REG(LS_CFG2, 0xC001102D);
 DECL_FIELD_RW(LS_CFG2, DIS_ST_PIPE_COMP_BYP, 57, 57);
+DECL_FIELD_RW(LS_CFG2_F_TURIN, UNKNOWN_56, 56, 56);
 DECL_FIELD_RW(LS_CFG2, LIVE_LOCK_WIDGET_CNT_SEL, 52, 51);
 DECL_FIELD_RW(LS_CFG2, DIS_FAST_TPR_OPT, 47, 47);
 DECL_FIELD_RW(LS_CFG2, HW_PF_ST_PIPE_PRIO_SEL, 36, 35);
+DECL_FIELD_RW(LS_CFG2_F_TURIN, UNKNOWN_34, 34, 34);
 
 /*
  * This register is undocumented; in Zen4 it may be named BP_CFG, presumably
@@ -716,11 +730,12 @@ DECL_FIELD_RW(FEATURE_EXT_ID, CLZERO, 0, 0);
  * Core::X86::Msr::SvmRevFeatId.  Controls feature bits in the %edx value
  * provided by the SVM revision and feature ID cpuid leaf (0x8000000A).  As with
  * other similar registers, it's not known whether these bits control anything
- * beyond that.  This exists on Zen3 and Zen4 (at least) and each thread has its
+ * beyond that.  This exists on Zen3 - Zen5 (at least) and each thread has its
  * own instance.  Only used fields are declared here.
  */
 DECL_REG(SVM_REV_FEAT_ID, 0xC00110DD);
-/* XXX Determine whether this field needs to be modified. */
+/* Known to exist on Zen4 and Zen5. */
+DECL_FIELD_RW(SVM_REV_FEAT_ID_U_ZEN4, X2AVIC, 18, 18);
 DECL_FIELD_RW(SVM_REV_FEAT_ID, AVIC, 13, 13);
 
 /*
@@ -737,21 +752,27 @@ DECL_FIELD_RW(FEATURE_EXT2_EAX_U_ZEN4, UNKNOWN_4, 4, 4);
 /*
  * Core::X86::Msr::StructExtFeatIdEdx0Ecx0.  More cpuid control bits, standard
  * disclaimer applies.  This is for %ecx and %edx for leaf 7.  Known to exist on
- * at least Zen3 B0+ and Zen4.  Only used fields declared here.
+ * at least Zen3 B0+, Zen4 and Zen5.  Only used fields declared here.
  */
 DECL_REG(STRUCT_EXT_FEAT_ID_EDX0_ECX0, 0xC00110DF);
 DECL_FIELD_RW(STRUCT_EXT_FEAT_ID_EDX0_ECX0, FSRM, 36, 36);
 
 /*
  * Core::X86::Msr::ChL2Cfg1.  More L2 cache controller configuration bits.  This
- * exists on Zen2-Zen4 and is per-core, but is undocumented on Zen4.  Only used
- * fields are declared here.
+ * exists on Zen2-Zen5 and is per-core, but is undocumented past Zen3.  Only
+ * used fields are declared here.
  */
 DECL_REG(CH_L2_CFG1, 0xC00110E2);
 DECL_FIELD_RW(CH_L2_CFG1_U_ZEN3_B0, EN_BUSLOCK_IFETCH, 55, 55);
 DECL_FIELD_RW(CH_L2_CFG1, EN_WCB_CONTEXT_DELAY, 49, 49);
 DECL_FIELD_RW(CH_L2_CFG1, CBB_LS_TIMEOUT_VALUE, 47, 45);
 DECL_FIELD_RW(CH_L2_CFG1, CBB_PROBE_TIMEOUT_VALUE, 44, 42);
+/*
+ * These are likely to be subsets of the above CBB_{LS,PROBE}_TIMEOUT_VALUE
+ * fields, but we don't know for sure.  Also applies to Zen5.
+ */
+DECL_FIELD_RW(CH_L2_CFG1_U_ZEN4, UNKNOWN_46_45, 46, 45);
+DECL_FIELD_RW(CH_L2_CFG1_U_ZEN4, UNKNOWN_44, 44, 44);
 DECL_CONST(CH_L2_CFG1, CBB_TIMEOUT_VALUE, 32, 0);
 DECL_CONST(CH_L2_CFG1, CBB_TIMEOUT_VALUE, 64, 1);
 DECL_CONST(CH_L2_CFG1, CBB_TIMEOUT_VALUE, 96, 2);
@@ -768,6 +789,8 @@ DECL_FIELD_RW(CH_L2_CFG1, CBB_BLOCK_PRB_INV, 36, 36);
 DECL_FIELD_RW(CH_L2_CFG1, CBB_ALLOC_FOR_CHG_TO_X, 35, 35);
 DECL_FIELD_RW(CH_L2_CFG1, CBB_ALLOC_FOR_EXCLUSIVE, 33, 33);
 DECL_FIELD_RW(CH_L2_CFG1, CBB_MASTER_EN, 32, 32);
+/* Speculation related bit known to exist on Zen4 and Zen5. */
+DECL_FIELD_RW(CH_L2_CFG1_U_ZEN4, UNKNOWN_30_SPEC, 30, 30);
 DECL_FIELD_RW(CH_L2_CFG1, EN_PROBE_INTERRUPT, 19, 19);
 DECL_FIELD_RW(CH_L2_CFG1, EN_MIB_TOKEN_DELAY, 4, 4);
 DECL_FIELD_RW(CH_L2_CFG1, EN_MIB_THROTTLING, 3, 3);
@@ -791,8 +814,8 @@ DECL_FIELD_RW(UNKNOWN_C001_10E4, UNKNOWN_31_30, 31, 30);
 DECL_FIELD_RW(UNKNOWN_C001_10E4, UNKNOWN_23, 23, 23);
 
 /*
- * Core::X86::Msr::LS_CFG3.  Yet more load-store config bits.  Exists on Zen3
- * and Zen4 but undocumented on Zen4; only used fields declared here.
+ * Core::X86::Msr::LS_CFG3.  Yet more load-store config bits.  Exists on Zen3,
+ * Zen4, and Zen5 but documented only on Zen3; only used fields declared here.
  */
 DECL_REG(LS_CFG3, 0xC00110E5);
 /* Undocumented fields, purpose(s) unknown. */
@@ -801,6 +824,7 @@ DECL_FIELD_RW(LS_CFG3, UNKNOWN_60, 60, 60);
 DECL_FIELD_RW(LS_CFG3, UNKNOWN_57, 57, 57);
 DECL_FIELD_RW(LS_CFG3, UNKNOWN_56, 56, 56);
 DECL_FIELD_RW(LS_CFG3, DIS_NC_FILLWITH_LTLI, 42, 42);
+DECL_FIELD_RW(LS_CFG3_U_ZEN4, UNKNOWN_33_SPEC, 33, 33);
 /*
  * As the name implies, disables speculatively fetching from WC regions when the
  * load is not part of a stream.  We are told that for this to work (and we do
@@ -810,16 +834,20 @@ DECL_FIELD_RW(LS_CFG3, DIS_NC_FILLWITH_LTLI, 42, 42);
  */
 DECL_FIELD_RW(LS_CFG3, DIS_SPEC_WC_NON_STRM_LD, 30, 30);
 DECL_FIELD_RW(LS_CFG3, EN_SPEC_ST_FILL, 26, 26);
+/* Speculation related bit known to exist on Zen5. */
+DECL_FIELD_RW(LS_CFG3_U_ZEN5, UNKNOWN_23_SPEC, 23, 23);
 DECL_FIELD_RW(LS_CFG3, DIS_FAST_LD_BARRIER, 19, 19);
 DECL_FIELD_RW(LS_CFG3, DIS_MAB_FULL_SLEEP, 13, 13);
 DECL_FIELD_RW(LS_CFG3, DVM_SYNC_ONLY_ON_TLBI, 8, 8);
 
 /*
- * Core::X86::Msr::LS_CFG4.  Yet more load-store config bits.  Exists on Zen3
- * and Zen4 but undocumented on Zen4; only used fields declared here
+ * Core::X86::Msr::LS_CFG4.  Yet more load-store config bits.  Exists on Zen3,
+ * Zen4 and Zen5 but documented only on Zen3; only used fields declared here
  */
 DECL_REG(LS_CFG4, 0xC00110E6);
+DECL_FIELD_RW(LS_CFG4_U_ZEN4, UNKNOWN_38, 38, 38);
 DECL_FIELD_RW(LS_CFG4, DIS_LIVE_LOCK_CNT_FST_BUSLOCK, 12, 12);
+DECL_FIELD_RW(LS_CFG4_F_TURIN, UNKNOWN_6, 6, 6);
 DECL_FIELD_RW(LS_CFG4, LIVE_LOCK_DET_FORCE_SBEX, 0, 0);
 
 /*
@@ -831,8 +859,27 @@ DECL_FIELD_RW(DC_CFG2, DIS_SCB_NTA_L1, 7, 7);
 DECL_FIELD_RW(DC_CFG2, DIS_DMB_STORE_LOCK, 3, 3);
 
 /*
+ * Core::X86::Msr::DC_PF_CFG.  D-cache prefetch configuration bits. This
+ * register exists on Zen5 at the same address as DC_CFG2 on prior generations.
+ * It also seemingly contains bits previously found in DC_CFG.  Only used fields
+ * declared here.
+ */
+DECL_REG(DC_PF_CFG_U_ZEN5, 0xC00110E7);
+DECL_FIELD_RW(DC_PF_CFG_U_ZEN5_F_TURIN, UNKNOWN_32_30, 32, 30);
+DECL_FIELD_RW(DC_PF_CFG_U_ZEN5, DIS_REGION_HW_PF, 18, 18);
+DECL_FIELD_RW(DC_PF_CFG_U_ZEN5, DIS_STRIDE_HW_PF, 17, 17);
+DECL_FIELD_RW(DC_PF_CFG_U_ZEN5, DIS_STREAM_HW_PF, 16, 16);
+/*
+ * We know bits 12 and 6 are EnableBurstPfs and EnPfHistoryOnEveryStreamHit, but
+ * not which is which.
+ */
+DECL_FIELD_RW(DC_PF_CFG_U_ZEN5, EN_BURST_PFS_OR_PF_HIST_STREAM_HIT_12, 12, 12);
+DECL_FIELD_RW(DC_PF_CFG_U_ZEN5, EN_LOW_CONF_BURST_PFS, 10, 10);
+DECL_FIELD_RW(DC_PF_CFG_U_ZEN5, EN_BURST_PFS_OR_PF_HIST_STREAM_HIT_6, 6, 6);
+
+/*
  * Core::X86::Msr::ChL2AaCfg.  L2 adaptive allocation configuration bits.
- * Present on Zen3 and Zen4 only and undocumented on Zen4; only used fields
+ * Present on Zen3-Zen5 and documented only on Zen3; only used fields
  * declared here.
  */
 DECL_REG(CH_L2_AA_CFG, 0xC00110E8);
@@ -847,20 +894,52 @@ DECL_CONST(CH_L2_AA_CFG, SCALE, MUL4, 3);
 
 /*
  * Core::X86::Msr::ChL2AaPairCfg0.  L2 adaptive allocation configuration for
- * dueling pairs.  Present on Zen3 and Zen4 only and undocumented on Zen4.  Only
- * used fields are declared here.
+ * dueling pairs.  Present and documented on Zen3.  Only used fields are
+ * declared here.
  */
 DECL_REG(CH_L2_AA_PAIR_CFG0, 0xC00110E9);
 DECL_FIELD_RW(CH_L2_AA_PAIR_CFG0, SUPPRESS_DIFF_VICT, 24, 24);
 
 /*
+ * Undocumented register, known to be present on Zen5 processors.  Note this
+ * exists at the same address as Core::X86::Msr::ChL2AaPairCfg0 but unknown if
+ * it's the same register.
+ */
+DECL_REG(UNKNOWN_C001_10E9, 0xC00110E9);
+DECL_FIELD_RW(UNKNOWN_C001_10E9_F_TURIN, UNKNOWN_7_4, 7, 4);
+DECL_FIELD_RW(UNKNOWN_C001_10E9_F_TURIN, UNKNOWN_3_0, 3, 0);
+
+/*
  * Core::X86::Msr::ChL2AaPairCfg1.  L2 adaptive allocation configuration for
- * dueling pairs.  This register is present and documented on Zen3 and one would
- * expect it to exist on Zen4 but it is undocumented there and may not exist.
+ * dueling pairs.  Present and documented on Zen3.  Only used fields are
+ * declared here.
  */
 DECL_REG(CH_L2_AA_PAIR_CFG1, 0xC00110EA);
 DECL_FIELD_RW(CH_L2_AA_PAIR_CFG1, NOT_UNUSED_PF_RRIP_LVL_B4_L1V, 23, 22);
 DECL_FIELD_RW(CH_L2_AA_PAIR_CFG1, DEMAND_HIT_PF_RRIP, 7, 4);
+
+/*
+ * Undocumented register, known to be present on Zen5 processors.  Note this
+ * exists at the same address as Core::X86::Msr::ChL2AaPairCfg1 but unknown if
+ * it's the same register.
+ */
+DECL_REG(UNKNOWN_C001_10EA, 0xC00110EA);
+DECL_FIELD_RW(UNKNOWN_C001_10EA_F_TURIN, UNKNOWN_7_4, 7, 4);
+DECL_FIELD_RW(UNKNOWN_C001_10EA_F_TURIN, UNKNOWN_3_0, 3, 0);
+
+/*
+ * Undocumented register, known to be present on Zen5 processors.
+ */
+DECL_REG(UNKNOWN_C001_10EB, 0xC00110EB);
+DECL_FIELD_RW(UNKNOWN_C001_10EB_F_TURIN, UNKNOWN_18, 18, 18);
+
+/*
+ * Undocumented register, known to be present on Zen4 and Zen5 processors.
+ */
+DECL_REG(UNKNOWN_C001_10EC, 0xC00110EC);
+DECL_FIELD_RW(UNKNOWN_C001_10EC_F_TURIN, UNKNOWN_9_5, 9, 5);
+/* Speculation related bit known to exist on Zen4 and Zen5. */
+DECL_FIELD_RW(UNKNOWN_C001_10EC, UNKNOWN_0_SPEC, 0, 0);
 
 #ifdef __cplusplus
 }

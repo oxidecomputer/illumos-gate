@@ -35,6 +35,7 @@
 #include <sys/io/turin/smu.h>
 #include <sys/io/zen/mpio.h>
 #include <sys/io/zen/apob.h>
+#include <sys/io/zen/ras.h>
 
 /*
  * The turin_pcie_dbg.c is file is included here so that we have access to the
@@ -46,19 +47,17 @@
 #include "turin_pcie_dbg.c"
 
 /*
- * Classic Turin has up to 16 CCDs per IODIE, whereas
- * Dense Turin only has up to 12 CCDs per IODIE.
+ * Classic Turin has up to 16 CCDs per I/O die, whereas
+ * Dense Turin only has up to 12 CCDs per I/O die.
  */
 #define	CLASSIC_TURIN_MAX_CCDS_PER_IODIE	16
 #define	DENSE_TURIN_MAX_CCDS_PER_IODIE		12
 
 /*
- * Classic Turin has up to 8 cores per CCX.
+ * Classic Turin has up to 8 cores per CCX. whereas
+ * Dense Turin has up to 16 cores per CCX.
  */
 #define	CLASSIC_TURIN_MAX_CORES_PER_CCX		8
-/*
- * Whereas Dense Turin has up to 16 cores per CCX.
- */
 #define	DENSE_TURIN_MAX_CORES_PER_CCX		16
 
 
@@ -68,7 +67,24 @@ static const zen_apob_ops_t turin_apob_ops = {
 
 static const zen_ccx_ops_t turin_ccx_ops = {
 	.zco_physmem_init = turin_ccx_physmem_init,
-	.zco_init = turin_ccx_init,
+
+	/*
+	 * Turin doesn't read DPM weights from the SMU nor do we need to
+	 * explicitly zero them as we do for Genoa.
+	 */
+	.zco_get_dpm_weights = zen_fabric_thread_get_dpm_weights_noop,
+
+	.zco_thread_feature_init = turin_thread_feature_init,
+	.zco_thread_uc_init = turin_thread_uc_init,
+	.zco_core_ls_init = turin_core_ls_init,
+	.zco_core_ic_init = turin_core_ic_init,
+	.zco_core_dc_init = turin_core_dc_init,
+	.zco_core_tw_init = turin_core_tw_init,
+	.zco_core_de_init = zen_ccx_init_noop,
+	.zco_core_fp_init = zen_ccx_init_noop,
+	.zco_core_l2_init = turin_core_l2_init,
+	.zco_ccx_l3_init = zen_ccx_init_noop,
+	.zco_core_undoc_init = turin_core_undoc_init,
 };
 
 static const zen_fabric_ops_t turin_fabric_ops = {
@@ -105,11 +121,15 @@ static const zen_hack_ops_t turin_hack_ops = {
 };
 
 static const zen_ras_ops_t turin_ras_ops = {
+	.zro_ras_init = zen_null_ras_init,
 };
 
 const zen_platform_t turin_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4D2,
+		.zpc_chiprev = X86_CHIPREV_AMD_TURIN_A0 |
+		    X86_CHIPREV_AMD_TURIN_B0 | X86_CHIPREV_AMD_TURIN_B1 |
+		    X86_CHIPREV_AMD_TURIN_C0 | X86_CHIPREV_AMD_TURIN_C1,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP_TURIN,
 		.zpc_max_iorr = DF_MAX_IO_RULES_TURIN,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,
@@ -155,6 +175,9 @@ const zen_platform_t turin_platform = {
 const zen_platform_t dense_turin_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4D2,
+		.zpc_chiprev = X86_CHIPREV_AMD_DENSE_TURIN_A0 |
+		    X86_CHIPREV_AMD_DENSE_TURIN_B0 |
+		    X86_CHIPREV_AMD_DENSE_TURIN_B1,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP_TURIN,
 		.zpc_max_iorr = DF_MAX_IO_RULES_TURIN,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,

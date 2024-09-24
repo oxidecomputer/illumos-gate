@@ -23,6 +23,7 @@
 
 #include <sys/stdbool.h>
 #include <sys/types.h>
+#include <sys/x86_archext.h>
 
 #include <sys/amdzen/df.h>
 #include <sys/amdzen/smn.h>
@@ -39,13 +40,60 @@ typedef struct zen_apob_ops {
 } zen_apob_ops_t;
 
 typedef struct zen_ccx_ops {
-	void	(*zco_init)(void);
-
 	/*
 	 * Optional hook for any further microachitecture-specific physical
 	 * memory initialization.
 	 */
 	void	(*zco_physmem_init)(void);
+
+	/*
+	 * Platform-specific hook to provide the digital power management (DPM)
+	 * weights to set at ccx initialization.  An implementation may return
+	 * a NULL weight array and non-zero count to indicate all weights should
+	 * be zeroed out.  For platforms that do not support MSR-based
+	 * configuration, the returned weight array and count should be NULL and
+	 * 0, respectively (i.e., zen_fabric_thread_get_dpm_weights_noop()).
+	 */
+	void	(*zco_get_dpm_weights)(const zen_thread_t *, const uint64_t **,
+	    uint32_t *);
+
+	/*
+	 * The microarchitecture specific hooks called during CCX initialization
+	 * to setup various functional units within a thread/core/core complex.
+	 *
+	 * LS: load-store, the gateway to the thread
+	 * IC: (L1) instruction cache
+	 * DC: (L1) data cache
+	 * TW: table walker (part of the MMU)
+	 * DE: instruction decode(/execute?)
+	 * FP: floating point
+	 * L2, L3: caches
+	 * UC: microcode -- this is not microcode patch/upgrade
+	 *
+	 * Feature initialization refers to setting up the internal registers
+	 * that are reflected into cpuid leaf values.
+	 *
+	 * All of these routines must be infallible; avoid using on_trap() or
+	 * similar as we want to panic if any of the necessary registers do not
+	 * exist or cannot be accessed. Implementations should use
+	 * wrmsr_and_test() which, when building with DEBUG enabled, will panic
+	 * if writing the bits we intend to change is ineffective. None of these
+	 * outcomes should ever be possible on a supported processor; indeed,
+	 * understanding what to do here is a critical element of adding support
+	 * for a new processor family or revision.
+	 */
+	void	(*zco_thread_feature_init)(void);
+	void	(*zco_thread_uc_init)(void);
+	void	(*zco_core_ls_init)(void);
+	void	(*zco_core_ic_init)(void);
+	void	(*zco_core_dc_init)(void);
+	void	(*zco_core_tw_init)(void);
+	void	(*zco_core_de_init)(void);
+	void	(*zco_core_fp_init)(void);
+	void	(*zco_core_l2_init)(void);
+	void	(*zco_ccx_l3_init)(void);
+	void	(*zco_core_undoc_init)(void);
+
 } zen_ccx_ops_t;
 
 typedef struct zen_fabric_ops {
@@ -250,6 +298,13 @@ typedef struct zen_platform_consts {
 	 * on each I/O die.
 	 */
 	const df_rev_t			zpc_df_rev;
+
+	/*
+	 * The specific chip revisions supported by this platform -- used to
+	 * guard against, e.g., running on later revisions of a chip which
+	 * require different CCX initialization.
+	 */
+	const x86_chiprev_t		zpc_chiprev;
 
 	/*
 	 * The maximum number of PCI Bus configuration address maps.

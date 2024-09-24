@@ -27,7 +27,15 @@
 extern "C" {
 #endif
 
-extern void genoa_ccx_init(void);
+extern void genoa_thread_feature_init(void);
+extern void genoa_thread_uc_init(void);
+extern void genoa_core_ls_init(void);
+extern void genoa_core_ic_init(void);
+extern void genoa_core_dc_init(void);
+extern void genoa_core_fp_init(void);
+extern void genoa_core_l2_init(void);
+extern void genoa_ccx_l3_init(void);
+extern void genoa_core_undoc_init(void);
 
 #ifdef	__cplusplus
 }
