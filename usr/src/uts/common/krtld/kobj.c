@@ -26,6 +26,7 @@
  * Copyright 2011 Bayard G. Bell <buffer.g.overflow@gmail.com>.
  * All rights reserved. Use is subject to license terms.
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -667,7 +668,7 @@ attr_val(val_t *bootaux)
 #endif
 		} else {
 #ifdef	oxide		/* XXX we set this properly so can't use PF_W */
-			if (phdr->p_vaddr == 0xFFFFFFFFFBE00000UL) {
+			if (phdr->p_vaddr == 0xFFFFFFFFFC000000UL) {
 #else
 			if (phdr->p_flags & PF_W) {
 #endif

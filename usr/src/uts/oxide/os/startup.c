@@ -336,8 +336,10 @@ static pgcnt_t kphysm_init(page_t *, pgcnt_t);
  *			|      unused		|
  *			+-----------------------+
  *			|      Kernel Data	|
- * 0xFFFFFFFF.FBE00000  |-----------------------|
+ *			|			|
+ * 0xFFFFFFFF.FC000000  |-----------------------|
  *			|      Kernel Text	|
+ *			|			|
  * 0xFFFFFFFF.FBC00000  |-----------------------|- KERNEL_TEXT
  *			|---    debug info   ---|- debug info (DEBUG_INFO_VA)
  *			|---       GDT       ---|- GDT page (GDT_VA)

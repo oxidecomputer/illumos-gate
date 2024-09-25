@@ -322,7 +322,12 @@ eb_physmem_init(struct bsys_mem *bmp)
 	memlist_t *mlp;
 	memlist_t bsml_usable;
 
-	bsml_usable.ml_address = 0x600000UL;	/* sync with Mapfile.amd64 */
+	/*
+	 * This must be set to some value beyond the end of the
+	 * data segment, which is 4MiB long, with starting address
+	 * as denoted in Mapfile.amd64
+	 */
+	bsml_usable.ml_address = 0xa00000UL;
 	__asm__ __volatile__("movq %%rsp, %0" : "=r" (rsp) : :);
 	rsp = P2ALIGN(rsp - 8 * MMU_PAGESIZE, MMU_PAGESIZE);
 	bsml_usable.ml_size = rsp - bsml_usable.ml_address;

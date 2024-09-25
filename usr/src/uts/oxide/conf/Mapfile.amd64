@@ -1,6 +1,6 @@
 #
 # Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2022 Oxide Computer Company
+# Copyright (c) 2024 Oxide Computer Company
 #
 # CDDL HEADER START
 #
@@ -41,8 +41,8 @@ LOAD_SEGMENT text {
 #
 LOAD_SEGMENT data {
 	FLAGS = READ WRITE EXECUTE;
-	PADDR = 0x400000;
-	VADDR = 0xFFFFFFFFFBE00000;
+	PADDR = 0x600000;
+	VADDR = 0xFFFFFFFFFC000000;
 	OS_ORDER = .data;
 	ASSIGN_SECTION {
 		TYPE = PROGBITS;
