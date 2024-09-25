@@ -557,7 +557,7 @@ static struct {
 static void
 ipcc_keylookup_usage(FILE *f)
 {
-	(void) fprintf(f, "\tkeylookup <key> [-c] [-b <buflen>]\n");
+	(void) fprintf(f, "\tkeylookup [-c] [-b <buflen>] <key>\n");
 }
 
 static int
@@ -660,24 +660,28 @@ static void
 ipcc_keyset_usage(FILE *f)
 {
 	(void) fprintf(f, "\tkeyset [-c] <key> <filename>\n");
+	(void) fprintf(f, "\tkeyset -z <key>\n");
 }
 
 static int
 ipcc_keyset(int argc, char *argv[])
 {
 	libipcc_key_flag_t flags = 0;
-	const char *errstr;
-	const char *filename;
+	const char *errstr, *keyname;
 	bool keyfound = false;
+	bool blank = false;
 	size_t len;
 	uint8_t key;
 	uint8_t *data;
 	int c;
 
-	while ((c = getopt(argc, argv, ":c")) != -1) {
+	while ((c = getopt(argc, argv, ":cz")) != -1) {
 		switch (c) {
 		case 'c':
 			flags |= LIBIPCC_KEYF_COMPRESSED;
+			break;
+		case 'z':
+			blank = true;
 			break;
 		case '?':
 			fprintf(stderr, "Unknown option: -%c\n", optopt);
@@ -689,7 +693,7 @@ ipcc_keyset(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc != 2) {
+	if ((blank && argc != 1) || (!blank && argc != 2)) {
 		fprintf(stderr, "%s: missing parameter:\n", progname);
 		ipcc_keyset_usage(stderr);
 		fprintf(stderr, "Keys may be specified by name or number:\n");
@@ -700,32 +704,39 @@ ipcc_keyset(int argc, char *argv[])
 		return (EXIT_USAGE);
 	}
 
+	keyname = argv[0];
+
 	for (uint_t i = 0; i < ARRAY_SIZE(ipcc_keys); i++) {
-		if (strcmp(argv[0], ipcc_keys[i].key) == 0) {
+		if (strcmp(keyname, ipcc_keys[i].key) == 0) {
 			key = ipcc_keys[i].val;
 			keyfound = true;
 			break;
 		}
 	}
 
-	filename = argv[1];
-
 	if (!keyfound) {
-		key = strtonumx(argv[0], 0, 255, &errstr, 0);
+		key = strtonumx(keyname, 0, 255, &errstr, 0);
 		if (errstr != NULL) {
 			errx(EXIT_FAILURE, "key is %s (range 0-255): %s",
-			    errstr, argv[0]);
+			    errstr, keyname);
 		}
 	}
 
-	data = ipcc_mapfile(filename, &len);
+	if (blank) {
+		if (!libipcc_keyset(ipcc_handle, key, NULL, 0, 0))
+			libipcc_fatal("Failed to perform key blank operation");
+		printf("Successfully cleared '%s'\n", keyname);
+	} else {
+		const char *filename = argv[1];
+		data = ipcc_mapfile(filename, &len);
 
-	if (!libipcc_keyset(ipcc_handle, key, data, len, flags))
-		libipcc_fatal("Failed to perform key set operation");
+		if (!libipcc_keyset(ipcc_handle, key, data, len, flags))
+			libipcc_fatal("Failed to perform key set operation");
 
-	printf("Success\n");
+		printf("Successfully set '%s'\n", keyname);
 
-	VERIFY0(munmap(data, len));
+		VERIFY0(munmap(data, len));
+	}
 	return (0);
 }
 
