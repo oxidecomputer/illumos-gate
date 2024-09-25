@@ -75,12 +75,21 @@ extern "C" {
  * Convenience macro to convert an IOMS number to the corresponding IOHUB.
  */
 #define	GENOA_IOMS_IOHUB_NUM(num)	((num) % GENOA_IOMS_PER_NBIO)
+#define	GENOA_NBIO_NUM(num)		((num) / GENOA_IOMS_PER_NBIO)
 
 /*
- * This is the primary initialization point for the Genoa Data Fabric,
- * Northbridges, PCIe, and related.
+ * These are the initialization points for the Genoa Data Fabric, Northbridges,
+ * PCIe, and related.
  */
-extern void genoa_fabric_init(zen_fabric_t *);
+extern void genoa_fabric_init_tom(zen_ioms_t *, uint64_t, uint64_t, uint64_t);
+extern void genoa_fabric_disable_vga(zen_ioms_t *);
+extern void genoa_fabric_pcie_refclk(zen_ioms_t *);
+extern void genoa_fabric_set_pci_to(zen_ioms_t *, uint16_t, uint16_t);
+extern void genoa_fabric_iohc_features(zen_ioms_t *);
+extern void genoa_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
+extern void genoa_fabric_iohc_fch_link(zen_ioms_t *, bool);
+extern void genoa_fabric_iohc_arbitration(zen_ioms_t *);
+extern void genoa_fabric_pcie(zen_fabric_t *);
 
 extern smn_reg_t genoa_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);

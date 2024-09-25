@@ -41,6 +41,7 @@ extern "C" {
  * pointers to these types only as opaque handles.
  */
 typedef struct zen_ioms zen_ioms_t;
+typedef struct zen_nbif zen_nbif_t;
 typedef struct zen_iodie zen_iodie_t;
 
 /*
@@ -66,6 +67,12 @@ extern void zen_ccd_write(zen_ccd_t *, const smn_reg_t, const uint32_t);
  */
 extern uint32_t zen_ioms_read(zen_ioms_t *, const smn_reg_t);
 extern void zen_ioms_write(zen_ioms_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Accessors for nBIF registers.
+ */
+extern uint32_t zen_nbif_read(zen_nbif_t *, const smn_reg_t);
+extern void zen_nbif_write(zen_nbif_t *, const smn_reg_t, const uint32_t);
 
 /*
  * Accessors for IO die registers.

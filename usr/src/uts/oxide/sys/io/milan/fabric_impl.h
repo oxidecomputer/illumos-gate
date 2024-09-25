@@ -108,10 +108,23 @@ extern void milan_fabric_soc_init(zen_soc_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);
 
 /*
- * This is the primary initialization point for the Milan Data Fabric,
- * Northbridges, PCIe, and related.
+ * These are the initialization points for the Milan Data Fabric, Northbridges,
+ * PCIe, and related.
  */
-extern void milan_fabric_init(zen_fabric_t *);
+extern void milan_fabric_init_tom(zen_ioms_t *, uint64_t, uint64_t, uint64_t);
+extern void milan_fabric_disable_vga(zen_ioms_t *);
+extern void milan_fabric_iohc_pci_ids(zen_ioms_t *);
+extern void milan_fabric_pcie_refclk(zen_ioms_t *);
+extern void milan_fabric_set_pci_to(zen_ioms_t *, uint16_t, uint16_t);
+extern void milan_fabric_iohc_features(zen_ioms_t *);
+extern void milan_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
+extern void milan_fabric_iohc_fch_link(zen_ioms_t *, bool);
+extern void milan_fabric_iohc_arbitration(zen_ioms_t *);
+extern void milan_fabric_nbif_arbitration(zen_nbif_t *);
+extern void milan_fabric_sdp_control(zen_ioms_t *);
+extern void milan_fabric_nbif_syshub_dma(zen_nbif_t *);
+extern void milan_fabric_ioapic(zen_ioms_t *);
+extern void milan_fabric_pcie(zen_fabric_t *);
 
 extern void milan_fabric_enable_nmi(void);
 extern void milan_fabric_nmi_eoi(void);

@@ -64,7 +64,21 @@ static const zen_ccx_ops_t milan_ccx_ops = {
 };
 
 static const zen_fabric_ops_t milan_fabric_ops = {
-	.zfo_fabric_init = milan_fabric_init,
+	.zfo_init_tom = milan_fabric_init_tom,
+	.zfo_disable_vga = milan_fabric_disable_vga,
+	.zfo_iohc_pci_ids = milan_fabric_iohc_pci_ids,
+	.zfo_pcie_refclk = milan_fabric_pcie_refclk,
+	.zfo_pci_crs_to = milan_fabric_set_pci_to,
+	.zfo_iohc_features = milan_fabric_iohc_features,
+	.zfo_iohc_bus_num = milan_fabric_iohc_bus_num,
+	.zfo_iohc_fch_link = milan_fabric_iohc_fch_link,
+	.zfo_iohc_arbitration = milan_fabric_iohc_arbitration,
+	.zfo_nbif_arbitration = milan_fabric_nbif_arbitration,
+	.zfo_sdp_control = milan_fabric_sdp_control,
+	.zfo_nbif_syshub_dma = milan_fabric_nbif_syshub_dma,
+	.zfo_ioapic = milan_fabric_ioapic,
+	.zfo_pcie = milan_fabric_pcie,
+
 	.zfo_enable_nmi = milan_fabric_enable_nmi,
 	.zfo_nmi_eoi = milan_fabric_nmi_eoi,
 

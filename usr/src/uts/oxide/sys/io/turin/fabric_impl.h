@@ -75,12 +75,25 @@ extern "C" {
  * Convenience macro to convert an IOMS number to the corresponding IOHUB.
  */
 #define	TURIN_IOMS_IOHUB_NUM(num)	((num) % TURIN_IOMS_PER_NBIO)
+#define	TURIN_NBIO_NUM(num)		((num) / TURIN_IOMS_PER_NBIO)
 
 /*
  * This is the primary initialization point for the Turin Data Fabric,
  * Northbridges, PCIe, and related.
  */
-extern void turin_fabric_init(zen_fabric_t *);
+/*
+ * These are the initialization points for the Genoa Data Fabric, Northbridges,
+ * PCIe, and related.
+ */
+extern void turin_fabric_init_tom(zen_ioms_t *, uint64_t, uint64_t, uint64_t);
+extern void turin_fabric_disable_vga(zen_ioms_t *);
+extern void turin_fabric_pcie_refclk(zen_ioms_t *);
+extern void turin_fabric_set_pci_to(zen_ioms_t *, uint16_t, uint16_t);
+extern void turin_fabric_iohc_features(zen_ioms_t *);
+extern void turin_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
+extern void turin_fabric_iohc_fch_link(zen_ioms_t *, bool);
+extern void turin_fabric_iohc_arbitration(zen_ioms_t *);
+extern void turin_fabric_pcie(zen_fabric_t *);
 
 extern smn_reg_t turin_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);

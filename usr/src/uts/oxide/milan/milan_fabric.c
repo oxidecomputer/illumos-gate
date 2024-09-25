@@ -1039,18 +1039,6 @@ milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 	return (reg);
 }
 
-static uint32_t
-milan_nbif_read(zen_nbif_t *nbif, const smn_reg_t reg)
-{
-	return (zen_smn_read(nbif->zn_ioms->zio_iodie, reg));
-}
-
-static void
-milan_nbif_write(zen_nbif_t *nbif, const smn_reg_t reg, const uint32_t val)
-{
-	zen_smn_write(nbif->zn_ioms->zio_iodie, reg, val);
-}
-
 static smn_reg_t
 milan_nbif_func_reg(const zen_nbif_func_t *const func,
     const smn_reg_def_t def)
@@ -1994,44 +1982,26 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 	milan_fabric_ioms_nbif_init(ioms);
 }
 
-/*
- * The IOHC needs our help to know where the top of memory is. This is
- * complicated for a few reasons. Right now we're relying on where TOM and TOM2
- * have been programmed by the PSP to determine that. The biggest gotcha here is
- * the secondary MMIO hole that leads to us needing to actually have a 3rd
- * register in the IOHC for indicating DRAM/MMIO splits.
- */
-static int
-milan_fabric_init_tom(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_init_tom(zen_ioms_t *ioms, uint64_t tom, uint64_t tom2,
+    uint64_t tom3)
 {
 	smn_reg_t reg;
 	uint32_t val;
-	uint64_t tom2, tom3;
-	zen_fabric_t *fabric = ioms->zio_iodie->zi_soc->zs_fabric;
 
 	/*
 	 * This register is a little funky. Bit 32 of the address has to be
 	 * specified in bit 0. Otherwise, bits 31:23 are the limit.
 	 */
 	val = pci_getl_func(ioms->zio_pci_busno, 0, 0, IOHC_TOM);
-	if (bitx64(fabric->zf_tom, 32, 32) != 0) {
+	if (bitx64(tom, 32, 32) != 0)
 		val = IOHC_TOM_SET_BIT32(val, 1);
-	}
 
-	val = IOHC_TOM_SET_TOM(val, bitx64(fabric->zf_tom, 31, 23));
+	val = IOHC_TOM_SET_TOM(val, bitx64(tom, 31, 23));
 	pci_putl_func(ioms->zio_pci_busno, 0, 0, IOHC_TOM, val);
 
-	if (fabric->zf_tom2 == 0) {
-		return (0);
-	}
-
-	if (fabric->zf_tom2 > ZEN_PHYSADDR_IOMMU_HOLE_END) {
-		tom2 = ZEN_PHYSADDR_IOMMU_HOLE;
-		tom3 = fabric->zf_tom2 - 1;
-	} else {
-		tom2 = fabric->zf_tom2;
-		tom3 = 0;
-	}
+	if (tom2 == 0)
+		return;
 
 	/*
 	 * Write the upper register before the lower so we don't accidentally
@@ -2048,17 +2018,14 @@ milan_fabric_init_tom(zen_ioms_t *ioms, void *arg)
 	val = IOHC_DRAM_TOM2_LOW_SET_TOM2(val, bitx64(tom2, 31, 23));
 	zen_ioms_write(ioms, reg, val);
 
-	if (tom3 == 0) {
-		return (0);
-	}
+	if (tom3 == 0)
+		return;
 
 	reg = milan_ioms_reg(ioms, D_IOHC_DRAM_TOM3, 0);
 	val = zen_ioms_read(ioms, reg);
 	val = IOHC_DRAM_TOM3_SET_EN(val, 1);
 	val = IOHC_DRAM_TOM3_SET_LIMIT(val, bitx64(tom3, 51, 22));
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
 /*
@@ -2069,16 +2036,14 @@ milan_fabric_init_tom(zen_ioms_t *ioms, void *arg)
  * rest of this register has nothing to do with decoding and we leave its
  * contents alone.
  */
-static int
-milan_fabric_disable_iohc_vga(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_disable_vga(zen_ioms_t *ioms)
 {
 	uint32_t val;
 
 	val = pci_getl_func(ioms->zio_pci_busno, 0, 0, IOHC_NB_PCI_ARB);
 	val = IOHC_NB_PCI_ARB_SET_VGA_HOLE(val, IOHC_NB_PCI_ARB_VGA_HOLE_RAM);
 	pci_putl_func(ioms->zio_pci_busno, 0, 0, IOHC_NB_PCI_ARB, val);
-
-	return (0);
 }
 
 /*
@@ -2088,8 +2053,8 @@ milan_fabric_disable_iohc_vga(zen_ioms_t *ioms, void *arg)
  * that the POR default value is not the one AMD recommends, for whatever
  * reason.
  */
-static int
-milan_fabric_init_iohc_pci(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_iohc_pci_ids(zen_ioms_t *ioms)
 {
 	uint32_t val;
 
@@ -2098,24 +2063,15 @@ milan_fabric_init_iohc_pci(zen_ioms_t *ioms, void *arg)
 	val = IOHC_NB_ADAPTER_ID_W_SET_SDID(val,
 	    IOHC_NB_ADAPTER_ID_W_AMD_MILAN_IOHC);
 	pci_putl_func(ioms->zio_pci_busno, 0, 0, IOHC_NB_ADAPTER_ID_W, val);
-
-	return (0);
 }
 
-/*
- * Different parts of the IOMS need to be programmed such that they can figure
- * out if they have a corresponding FCH present on them. The FCH is only present
- * on IOMS 3. Therefore if we're on IOMS 3 we need to update various other bis
- * of the IOAGR and related; however, if we're not on IOMS 3 then we just need
- * to zero out some of this.
- */
-static int
-milan_fabric_init_iohc_fch_link(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 {
 	smn_reg_t reg;
 
 	reg = milan_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
-	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
+	if (has_fch) {
 		smn_reg_t iommureg;
 		uint32_t val;
 
@@ -2128,16 +2084,10 @@ milan_fabric_init_iohc_fch_link(zen_ioms_t *ioms, void *arg)
 	} else {
 		zen_ioms_write(ioms, reg, 0);
 	}
-
-	return (0);
 }
 
-/*
- * For some reason the PCIe reference clock does not default to 100 MHz. We need
- * to do this ourselves. If we don't do this, PCIe will not be very happy.
- */
-static int
-milan_fabric_init_pcie_refclk(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_pcie_refclk(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -2148,40 +2098,31 @@ milan_fabric_init_pcie_refclk(zen_ioms_t *ioms, void *arg)
 	val = IOHC_REFCLK_MODE_SET_25MHZ(val, 0);
 	val = IOHC_REFCLK_MODE_SET_100MHZ(val, 1);
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
-/*
- * While the value for the delay comes from the PPR, the value for the limit
- * comes from other AMD sources.
- */
-static int
-milan_fabric_init_pci_to(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_set_pci_to(zen_ioms_t *ioms, uint16_t limit, uint16_t delay)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
 	reg = milan_ioms_reg(ioms, D_IOHC_PCIE_CRS_COUNT, 0);
 	val = zen_ioms_read(ioms, reg);
-	val = IOHC_PCIE_CRS_COUNT_SET_LIMIT(val, 0x262);
-	val = IOHC_PCIE_CRS_COUNT_SET_DELAY(val, 0x6);
+	val = IOHC_PCIE_CRS_COUNT_SET_LIMIT(val, limit);
+	val = IOHC_PCIE_CRS_COUNT_SET_DELAY(val, delay);
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
 /*
- * Here we initialize several of the IOHC features and related vendor-specific
- * messages are all set up correctly. XXX We're using lazy defaults of what the
- * system default has historically been here for some of these. We should test
- * and forcibly disable in hardware. Probably want to manipulate
- * IOHC::PCIE_VDM_CNTL2 at some point to better figure out the VDM story. XXX
- * Also, ARI entablement is being done earlier than otherwise because we want to
+ * XXX We're using lazy defaults of what the system default has historically
+ * been here for some of these. We should test and forcibly disable in
+ * hardware. Probably want to manipulate IOHC::PCIE_VDM_CNTL2 at some point to
+ * better figure out the VDM story. XXX
+ * Also, ARI enablement is being done earlier than otherwise because we want to
  * only touch this reg in one place if we can.
  */
-static int
-milan_fabric_init_iohc_features(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_iohc_features(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -2192,12 +2133,10 @@ milan_fabric_init_iohc_features(zen_ioms_t *ioms, void *arg)
 	/* XXX Wants to be IOHC_FCTL_P2P_DISABLE? */
 	val = IOHC_FCTL_SET_P2P(val, IOHC_FCTL_P2P_DROP_NMATCH);
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
-static int
-milan_fabric_init_arbitration_ioms(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_iohc_arbitration(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -2377,39 +2316,32 @@ milan_fabric_init_arbitration_ioms(zen_ioms_t *ioms, void *arg)
 	val = IOHC_USB_QOS_CTL_SET_UNID0_PRI(val, 0x0);
 	val = IOHC_USB_QOS_CTL_SET_UNID0_ID(val, 0x2f);
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
-static int
-milan_fabric_init_arbitration_nbif(zen_nbif_t *nbif, void *arg)
+void
+milan_fabric_nbif_arbitration(zen_nbif_t *nbif)
 {
 	smn_reg_t reg;
 	uint32_t val;
 
 	reg = milan_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT2, 0);
-	milan_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
+	zen_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
 	reg = milan_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT3, 0);
-	milan_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
+	zen_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
 
 	reg = milan_nbif_reg(nbif, D_NBIF_BIFC_MISC_CTL0, 0);
-	val = milan_nbif_read(nbif, reg);
+	val = zen_nbif_read(nbif, reg);
 	val = NBIF_BIFC_MISC_CTL0_SET_PME_TURNOFF(val,
 	    NBIF_BIFC_MISC_CTL0_PME_TURNOFF_FW);
-	milan_nbif_write(nbif, reg, val);
-
-	return (0);
+	zen_nbif_write(nbif, reg, val);
 }
 
 /*
- * This sets up a bunch of hysteresis and port controls around the SDP, DMA
- * actions, and ClkReq. In general, these values are what we're told to set them
- * to in the PPR. Note, there is no need to change
- * IOAGR::IOAGR_SDP_PORT_CONTROL, which is why it is missing. The SDPMUX does
- * not have an early wake up register.
+ * Note, there is no need to change IOAGR::IOAGR_SDP_PORT_CONTROL, which is why
+ * it is missing. The SDPMUX does not have an early wake up register.
  */
-static int
-milan_fabric_init_sdp_control(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_sdp_control(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -2436,20 +2368,18 @@ milan_fabric_init_sdp_control(zen_ioms_t *ioms, void *arg)
 	val = SDPMUX_SDP_PORT_CTL_SET_DMA_ENABLE(val, 0x1);
 	val = SDPMUX_SDP_PORT_CTL_SET_PORT_HYSTERESIS(val, 0xff);
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
 /*
  * XXX This bit of initialization is both strange and not very well documented.
- * This is a bit weird where by we always set this on nbif0 across all IOMS
+ * This is a bit weird whereby we always set this on nbif0 across all IOMS
  * instances; however, we only do it on NBIF1 for IOMS 0/1. Not clear why that
  * is. There are a bunch of things that don't quite make sense about being
  * specific to the syshub when generally we expect the one we care about to
  * actually be on IOMS 3.
  */
-static int
-milan_fabric_init_nbif_syshub_dma(zen_nbif_t *nbif, void *arg)
+void
+milan_fabric_nbif_syshub_dma(zen_nbif_t *nbif)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -2459,13 +2389,12 @@ milan_fabric_init_nbif_syshub_dma(zen_nbif_t *nbif, void *arg)
 	 */
 	if (nbif->zn_nbifno > 1 ||
 	    (nbif->zn_nbifno > 0 && nbif->zn_ioms->zio_num > 1)) {
-		return (0);
+		return;
 	}
 	reg = milan_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SOC, 0);
-	val = milan_nbif_read(nbif, reg);
+	val = zen_nbif_read(nbif, reg);
 	val = NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(val, 1);
-	milan_nbif_write(nbif, reg, val);
-	return (0);
+	zen_nbif_write(nbif, reg, val);
 }
 
 /*
@@ -2479,8 +2408,8 @@ milan_fabric_init_nbif_syshub_dma(zen_nbif_t *nbif, void *arg)
  * elected the primary and the rest, secondary. This is done based on which IOMS
  * has the FCH.
  */
-static int
-milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_ioapic(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -2547,17 +2476,10 @@ milan_fabric_init_ioapic(zen_ioms_t *ioms, void *arg)
 	val = IOAPIC_FEATURES_SET_FCH(val, 1);
 	val = IOAPIC_FEATURES_SET_ID_EXT(val, 1);
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
-/*
- * Each IOHC has registers that can further constraion what type of PCI bus
- * numbers the IOHC itself is expecting to reply to. As such, we program each
- * IOHC with its primary bus number and enable this.
- */
-static int
-milan_fabric_init_bus_num(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_iohc_bus_num(zen_ioms_t *ioms, uint8_t busno)
 {
 	smn_reg_t reg;
 	uint32_t val;
@@ -2565,10 +2487,8 @@ milan_fabric_init_bus_num(zen_ioms_t *ioms, void *arg)
 	reg = milan_ioms_reg(ioms, D_IOHC_BUS_NUM_CTL, 0);
 	val = zen_ioms_read(ioms, reg);
 	val = IOHC_BUS_NUM_CTL_SET_EN(val, 1);
-	val = IOHC_BUS_NUM_CTL_SET_BUS(val, ioms->zio_pci_busno);
+	val = IOHC_BUS_NUM_CTL_SET_BUS(val, busno);
 	zen_ioms_write(ioms, reg, val);
-
-	return (0);
 }
 
 /*
@@ -2591,7 +2511,7 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 	uint32_t intr;
 
 	reg = milan_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
-	intr = milan_nbif_read(nbif, reg);
+	intr = zen_nbif_read(nbif, reg);
 	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
 		smn_reg_t strapreg;
 		uint32_t strap;
@@ -2632,7 +2552,7 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 		milan_nbif_func_write(func, strapreg, strap);
 	}
 
-	milan_nbif_write(nbif, reg, intr);
+	zen_nbif_write(nbif, reg, intr);
 
 	/*
 	 * Each nBIF has up to three devices on them, though not all of them
@@ -2644,9 +2564,9 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 		uint32_t val;
 
 		reg = milan_nbif_reg(nbif, D_NBIF_PORT_STRAP3, devno);
-		val = milan_nbif_read(nbif, reg);
+		val = zen_nbif_read(nbif, reg);
 		val = NBIF_PORT_STRAP3_SET_COMP_TO(val, 1);
-		milan_nbif_write(nbif, reg, val);
+		zen_nbif_write(nbif, reg, val);
 	}
 
 	return (0);
@@ -4579,77 +4499,12 @@ milan_hotplug_init(zen_fabric_t *fabric)
 }
 
 /*
- * This is the main place where we basically do everything that we need to do to
- * get the PCIe engine up and running.
+ * Do everything else required to finish configuring the nBIF and get the PCIe
+ * engine up and running.
  */
 void
-milan_fabric_init(zen_fabric_t *fabric)
+milan_fabric_pcie(zen_fabric_t *fabric)
 {
-	/*
-	 * XXX We're missing initialization of some different pieces of the data
-	 * fabric here. While some of it like scrubbing should be done as part
-	 * of the memory controller driver and broader policy rather than all
-	 * here right now.
-	 */
-
-	/*
-	 * While DRAM training seems to have programmed the initial memory
-	 * settings our boot CPU and the DF, it is not done on the various IOMS
-	 * instances. It is up to us to program that across them all.  With MMIO
-	 * routed and the IOHC's understanding of TOM set up, we also want to
-	 * disable the VGA MMIO hole so that the entire low memory region goes
-	 * to DRAM for downstream requests just as it does from the cores.  We
-	 * don't use VGA and we don't use ASeg, so there's no reason to hide
-	 * this RAM from anyone.
-	 */
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_tom, NULL);
-	zen_fabric_walk_ioms(fabric, milan_fabric_disable_iohc_vga, NULL);
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_iohc_pci, NULL);
-
-	/*
-	 * Let's set up PCIe. To lead off, let's make sure the system uses the
-	 * right clock and let's start the process of dealing with the how
-	 * configuration space retries should work, though this isn't sufficient
-	 * for them to work.
-	 */
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_pcie_refclk, NULL);
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_pci_to, NULL);
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_iohc_features, NULL);
-
-	/*
-	 * There is a lot of different things that we have to do here. But first
-	 * let me apologize in advance. The what here is weird and the why is
-	 * non-existent. Effectively this is being done because either we were
-	 * explicitly told to in the PPR or through other means. This is going
-	 * to be weird and you have every right to complain.
-	 */
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_iohc_fch_link, NULL);
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_arbitration_ioms, NULL);
-	zen_fabric_walk_nbif(fabric, milan_fabric_init_arbitration_nbif,
-	    NULL);
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_sdp_control, NULL);
-	zen_fabric_walk_nbif(fabric, milan_fabric_init_nbif_syshub_dma,
-	    NULL);
-
-	/*
-	 * XXX IOHC and friends clock gating.
-	 */
-
-	/*
-	 * With that done, proceed to initialize the IOAPIC in each IOMS. While
-	 * the FCH contains what the OS generally thinks of as the IOAPIC, we
-	 * need to go through and deal with interrupt routing and how that
-	 * interface with each of the northbridges here.
-	 */
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_ioapic, NULL);
-
-	/*
-	 * XXX For some reason programming IOHC::NB_BUS_NUM_CNTL is lopped in
-	 * with the IOAPIC initialization. We may want to do this, but it can at
-	 * least be its own function.
-	 */
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_bus_num, NULL);
-
 	/*
 	 * Go through and configure all of the straps for NBIF devices before
 	 * they end up starting up.

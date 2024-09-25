@@ -1748,9 +1748,9 @@ zen_io_ports_assign(zen_iodie_t *iodie, void *arg)
 
 			limit = df_rev == DF_REV_4 ?
 			    DF_IO_LIMIT_V4_SET_DEST_ID(limit,
-				zri->zri_dests[i]) :
+			    zri->zri_dests[i]) :
 			    DF_IO_LIMIT_V4D2_SET_DEST_ID(limit,
-				zri->zri_dests[i]);
+			    zri->zri_dests[i]);
 			limit = DF_IO_LIMIT_V4_SET_LIMIT(limit,
 			    zri->zri_limits[i] >> DF_IO_LIMIT_SHIFT);
 
@@ -2076,11 +2076,187 @@ zen_route_mmio(zen_fabric_t *fabric)
 	(void) zen_fabric_walk_iodie(fabric, zen_mmio_assign, &zrm);
 }
 
+/*
+ * The IOHC needs our help to know where the top of memory is. This is
+ * complicated for a few reasons. Right now we're relying on where TOM and TOM2
+ * have been programmed by the PSP to determine that. The biggest gotcha here
+ * is the secondary MMIO hole that leads to us needing to actually have a 3rd
+ * register in the IOHC for indicating DRAM/MMIO splits.
+ */
+static int
+zen_fabric_init_tom(zen_ioms_t *ioms, void *arg __unused)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+	uint64_t tom, tom2, tom3;
+	zen_fabric_t *fabric = ioms->zio_iodie->zi_soc->zs_fabric;
+
+	tom = fabric->zf_tom;
+
+	if (fabric->zf_tom2 == 0) {
+		tom2 = 0;
+		tom3 = 0;
+	} else if (fabric->zf_tom2 > ZEN_PHYSADDR_IOMMU_HOLE_END) {
+		tom2 = ZEN_PHYSADDR_IOMMU_HOLE;
+		tom3 = fabric->zf_tom2 - 1;
+	} else {
+		tom2 = fabric->zf_tom2;
+		tom3 = 0;
+	}
+
+	VERIFY3P(fabric_ops->zfo_init_tom, !=, NULL);
+	(fabric_ops->zfo_init_tom)(ioms, tom, tom2, tom3);
+
+	return (0);
+}
+
+static int
+zen_fabric_disable_vga(zen_ioms_t *ioms, void *arg __unused)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+
+	VERIFY3P(fabric_ops->zfo_disable_vga, !=, NULL);
+	(fabric_ops->zfo_disable_vga)(ioms);
+
+	return (0);
+}
+
+/*
+ * For some reason the PCIe reference clock does not default to 100 MHz. We
+ * need to do this ourselves. If we don't do this, PCIe will not be very happy.
+ */
+static int
+zen_fabric_pcie_refclk(zen_ioms_t *ioms, void *arg __unused)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+
+	VERIFY3P(fabric_ops->zfo_pcie_refclk, !=, NULL);
+	(fabric_ops->zfo_pcie_refclk)(ioms);
+
+	return (0);
+}
+
+/*
+ * While the value for the delay comes from the PPR, the value for the limit
+ * comes from other AMD sources. At present, these values are consistent across
+ * all microarchitectures supported by this arch. If that changes in future,
+ * the values should be moved to platform-specific constants or overridden in
+ * the uarch-specific vector.
+ */
+#define	ZEN_PCI_TO_LIMIT	0x262
+#define	ZEN_PCI_TO_DELAY	0x6
+static int
+zen_fabric_pci_crs_to(zen_ioms_t *ioms, void *arg __unused)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+
+	VERIFY3P(fabric_ops->zfo_pci_crs_to, !=, NULL);
+	(fabric_ops->zfo_pci_crs_to)(ioms, ZEN_PCI_TO_LIMIT, ZEN_PCI_TO_DELAY);
+
+	return (0);
+}
+
+/*
+ * Each IOHC has registers that can further constraion what type of PCI bus
+ * numbers the IOHC itself is expecting to reply to. As such, we program each
+ * IOHC with its primary bus number and enable this.
+ */
+static int
+zen_fabric_iohc_bus_num(zen_ioms_t *ioms, void *arg __unused)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+
+	VERIFY3P(fabric_ops->zfo_iohc_bus_num, !=, NULL);
+	(fabric_ops->zfo_iohc_bus_num)(ioms, ioms->zio_pci_busno);
+
+	return (0);
+}
+
+/*
+ * Different parts of the IOMS need to be programmed such that they can figure
+ * out if they have a corresponding FCH present on them. If we're on an IOMS
+ * which has an FCH then we need to update various other bis of the IOAGR and
+ * related; however, if not then we just need to zero out some of this.
+ */
+static int
+zen_fabric_iohc_fch_link(zen_ioms_t *ioms, void *arg __unused)
+{
+	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
+
+	VERIFY3P(fabric_ops->zfo_iohc_fch_link, !=, NULL);
+	(fabric_ops->zfo_iohc_fch_link)(ioms,
+	    (ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0);
+
+	return (0);
+}
+
+/*
+ * For simple fabric ops that just take a single ioms or nbif argument, these
+ * common callbacks can be used for despatch.
+ */
+static int
+zen_fabric_ioms_op(zen_ioms_t *ioms, void *arg)
+{
+	void (*callback)(zen_ioms_t *) = arg;
+
+	VERIFY3P(callback, !=, NULL);
+	(callback)(ioms);
+
+	return (0);
+}
+
+static int
+zen_fabric_nbif_op(zen_nbif_t *nbif, void *arg)
+{
+	void (*callback)(zen_nbif_t *) = arg;
+
+	VERIFY3P(callback, !=, NULL);
+	(callback)(nbif);
+
+	return (0);
+}
+
+/*
+ * Some microarchitectures don't need all callbacks. We provide null
+ * implementations for the ones that are optional and require that there are
+ * no uninitialised/null members of the fabric ops vector.
+ */
+void
+zen_null_fabric_iohc_pci_ids(zen_ioms_t *ioms __unused)
+{
+}
+
+void
+zen_null_fabric_nbif_arbitration(zen_nbif_t *nbif __unused)
+{
+}
+
+void
+zen_null_fabric_sdp_control(zen_ioms_t *nbif __unused)
+{
+}
+
+void
+zen_null_fabric_nbif_syshub_dma(zen_nbif_t *nbif __unused)
+{
+}
+
+void
+zen_null_fabric_ioapic(zen_ioms_t *ioms __unused)
+{
+}
+
 void
 zen_fabric_init(void)
 {
 	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
 	zen_fabric_t *fabric = &zen_fabric;
+
+	/*
+	 * XXX We're missing initialization of some different pieces of the
+	 * data fabric here. While some of it like scrubbing should be done as
+	 * part of the memory controller driver and broader policy rather than
+	 * all here right now.
+	 */
 
 	/*
 	 * These register debugging facilities are costly in both space and
@@ -2104,8 +2280,79 @@ zen_fabric_init(void)
 	zen_route_io_ports(fabric);
 	zen_route_mmio(fabric);
 
-	VERIFY3P(fabric_ops->zfo_fabric_init, !=, NULL);
-	(fabric_ops->zfo_fabric_init)(fabric);
+	/*
+	 * While DRAM training seems to have programmed the initial memory
+	 * settings our boot CPU and the DF, it is not done on the various IOMS
+	 * instances. It is up to us to program that across them all.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_init_tom, NULL);
+
+	/*
+	 * With MMIO routed and the IOHC's understanding of TOM set up, we also
+	 * want to disable the VGA MMIO hole so that the entire low memory
+	 * region goes to DRAM for downstream requests just as it does from the
+	 * cores.  We don't use VGA and we don't use ASeg, so there's no reason
+	 * to hide this RAM from anyone.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_disable_vga, NULL);
+
+	/*
+	 * Let's set up PCIe. To lead off, let's make sure the system uses the
+	 * right subsystem IDs for IOHC devices and the correct clock, and
+	 * let's start the process of dealing with the how configuration space
+	 * retries should work, though this isn't sufficient for them to work.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_iohc_pci_ids);
+	zen_fabric_walk_ioms(fabric, zen_fabric_pcie_refclk, NULL);
+	zen_fabric_walk_ioms(fabric, zen_fabric_pci_crs_to, NULL);
+
+	/*
+	 * Here we initialize several of the IOHC features and related
+	 * vendor-specific messages are all set up correctly.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_iohc_features);
+
+	zen_fabric_walk_ioms(fabric, zen_fabric_iohc_fch_link, NULL);
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_iohc_arbitration);
+
+	zen_fabric_walk_nbif(fabric, zen_fabric_nbif_op,
+	    fabric_ops->zfo_nbif_arbitration);
+
+	/*
+	 * This sets up a bunch of hysteresis and port controls around the SDP,
+	 * DMA actions, and ClkReq. In general, these values are what we're
+	 * told to set them to in the PPR.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_sdp_control);
+
+	zen_fabric_walk_nbif(fabric, zen_fabric_nbif_op,
+	    fabric_ops->zfo_nbif_syshub_dma);
+
+	/*
+	 * XXX IOHC and friends clock gating.
+	 */
+
+	/*
+	 * With that done, proceed to initialize the IOAPIC in each IOMS. While
+	 * the FCH contains what the OS generally thinks of as the IOAPIC, we
+	 * need to go through and deal with interrupt routing and how that
+	 * interface with each of the northbridges here.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_ioapic);
+
+	/*
+	 * For some reason programming IOHC::NB_BUS_NUM_CNTL is lopped in with
+	 * the IOAPIC initialization.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_iohc_bus_num, NULL);
+
+	VERIFY3P(fabric_ops->zfo_pcie, !=, NULL);
+	(fabric_ops->zfo_pcie)(fabric);
 }
 
 void

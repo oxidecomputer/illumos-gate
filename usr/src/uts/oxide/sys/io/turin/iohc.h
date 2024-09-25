@@ -788,6 +788,25 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	IOHC_SDP_PORT_CTL_SET_PORT_HYSTERESIS(r, v)	bitset32(r, 11, 0, v)
 
 /*
+ * IOHC::IOHC_QOS_CONTROL. This controls the data fabric DMA priority.
+ */
+/*CSTYLED*/
+#define	D_IOHC_QOS_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x14040	\
+}
+#define	IOHC_QOS_CTL(h)	\
+	genoa_iohc_smn_reg(h, D_IOHC_QOS_CTL, 0)
+#define	IOHC_QOS_CTL_SET_VC7_PRI(r, v)		bitset32(r, 31, 28, v)
+#define	IOHC_QOS_CTL_SET_VC6_PRI(r, v)		bitset32(r, 27, 24, v)
+#define	IOHC_QOS_CTL_SET_VC5_PRI(r, v)		bitset32(r, 23, 20, v)
+#define	IOHC_QOS_CTL_SET_VC4_PRI(r, v)		bitset32(r, 19, 16, v)
+#define	IOHC_QOS_CTL_SET_VC3_PRI(r, v)		bitset32(r, 15, 12, v)
+#define	IOHC_QOS_CTL_SET_VC2_PRI(r, v)		bitset32(r, 11, 8, v)
+#define	IOHC_QOS_CTL_SET_VC1_PRI(r, v)		bitset32(r, 7, 4, v)
+#define	IOHC_QOS_CTL_SET_VC0_PRI(r, v)		bitset32(r, 3, 0, v)
+
+/*
  * IOHC::USB_QoS_CNTL. This controls the USB data fabric priority.
  */
 /*CSTYLED*/
@@ -814,6 +833,7 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
  * can only speculate as to why.
  */
 #define	IOHC_SION_MAX_ENTS	6
+#define	IOHC_SION_ENTS(h)	((h) < 4 ? 6 : 3)
 
 /*CSTYLED*/
 #define	D_IOHC_SION_S0_CLIREQ_BURST_LOW	(const smn_reg_def_t){	\
@@ -935,6 +955,9 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	IOHC_SION_S0_WRRSP_TIME_HI(h, i)	\
 	turin_iohc_smn_reg(h, D_IOHC_SION_S0_WRRSP_TIME_HI, i)
 
+#define	IOHC_SION_CLIREQ_BURST_VAL	0x04040404
+#define	IOHC_SION_RDRSP_BURST_VAL	0x02020202
+
 /*CSTYLED*/
 #define	D_IOHC_SION_S1_CLIREQ_BURST_LOW	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOHC,	\
@@ -1054,6 +1077,8 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 #define	IOHC_SION_S1_WRRSP_TIME_HI(h, i)	\
 	turin_iohc_smn_reg(h, D_IOHC_SION_S1_WRRSP_TIME_HI, i)
+
+#define	IOAGR_SION_CLIREQ_BURST_VAL	0x04040404
 
 /*
  * IOHC::IOHC_SION_LiveLock_WatchDog_Threshold. This is used to set an
@@ -1669,6 +1694,8 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 #define	SDPMUX_SION_S1_WRRSP_TIME_HI(m, i)	\
 	turin_sdpmux_smn_reg(m, D_SDPMUX_SION_S1_WRRSP_TIME_HI, i)
+
+#define	SDPMUX_SION_CLIREQ_BURST_VAL	0x04040404
 
 #ifdef __cplusplus
 }

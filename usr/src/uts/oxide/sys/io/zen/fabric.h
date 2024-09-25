@@ -37,6 +37,7 @@ extern "C" {
  * pointers to these types only as opaque handles.
  */
 typedef struct zen_ioms zen_ioms_t;
+typedef struct zen_nbif zen_nbif_t;
 typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
 typedef struct zen_fabric zen_fabric_t;

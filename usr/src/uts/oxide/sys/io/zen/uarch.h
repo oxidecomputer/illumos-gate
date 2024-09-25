@@ -50,9 +50,75 @@ typedef struct zen_ccx_ops {
 
 typedef struct zen_fabric_ops {
 	/*
-	 * Initialize the SoC's I/O fabric, including the SMU, DXIO, NBIO, etc.
+	 * Program the IOHC registers relating to where the top of memory is.
 	 */
-	void		(*zfo_fabric_init)(zen_fabric_t *);
+	void		(*zfo_init_tom)(zen_ioms_t *, uint64_t, uint64_t,
+	    uint64_t);
+
+	/*
+	 * Disable the VGA MMIO hole.
+	 */
+	void		(*zfo_disable_vga)(zen_ioms_t *);
+
+	/*
+	 * Configure the IOHC PCI device's subsystem identifiers.
+	 */
+	void		(*zfo_iohc_pci_ids)(zen_ioms_t *);
+
+	/*
+	 * Configure the PCIe reference clock.
+	 */
+	void		(*zfo_pcie_refclk)(zen_ioms_t *);
+
+	/*
+	 * Configure PCI configuration space timeouts.
+	 */
+	void		(*zfo_pci_crs_to)(zen_ioms_t *, uint16_t, uint16_t);
+
+	/*
+	 * Initialize IOHC features
+	 */
+	void		(*zfo_iohc_features)(zen_ioms_t *);
+
+	/*
+	 * Program each IOHC with its primary bus number
+	 */
+	void		(*zfo_iohc_bus_num)(zen_ioms_t *, uint8_t);
+
+	/*
+	 * Program each IOMS' knowledge of whether they have an FCH.
+	 */
+	void		(*zfo_iohc_fch_link)(zen_ioms_t *, bool);
+
+	/*
+	 * IOHC arbitration control.
+	 */
+	void		(*zfo_iohc_arbitration)(zen_ioms_t *);
+
+	/*
+	 * nBIF DMA arbitration control.
+	 */
+	void		(*zfo_nbif_arbitration)(zen_nbif_t *);
+
+	/*
+	 * SDP port control register setup.
+	 */
+	void		(*zfo_sdp_control)(zen_ioms_t *);
+
+	/*
+	 * SYSHUB DMA tweaks.
+	 */
+	void		(*zfo_nbif_syshub_dma)(zen_nbif_t *);
+
+	/*
+	 * IOAPIC initialization.
+	 */
+	void		(*zfo_ioapic)(zen_ioms_t *);
+
+	/*
+	 * Finalize setting up the PCIe fabric.
+	 */
+	void		(*zfo_pcie)(zen_fabric_t *);
 
 	/*
 	 * Retrieve register handles for PCIe core and port registers.
@@ -99,11 +165,16 @@ typedef struct zen_hack_ops {
 } zen_hack_ops_t;
 
 /*
- * These null operations are no-ops, for hacks that are unnecessary on a given
- * microarchitecture.
+ * These null operations are no-ops, for operations that are unnecessary on a
+ * given microarchitecture.
  */
 extern void zen_null_check_furtive_reset(void);
 extern bool zen_null_cgpll_set_ssc(bool);
+extern void zen_null_fabric_iohc_pci_ids(zen_ioms_t *);
+extern void zen_null_fabric_nbif_arbitration(zen_nbif_t *);
+extern void zen_null_fabric_sdp_control(zen_ioms_t *);
+extern void zen_null_fabric_nbif_syshub_dma(zen_nbif_t *);
+extern void zen_null_fabric_ioapic(zen_ioms_t *);
 
 typedef struct zen_ras_ops {
 	void	(*zro_ras_init)(void);
