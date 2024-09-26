@@ -36,6 +36,7 @@ typedef struct zen_platform {
 	const zen_fabric_ops_t		*zp_fabric_ops;
 	const zen_hack_ops_t		*zp_hack_ops;
 	const zen_ras_ops_t		*zp_ras_ops;
+	const zen_smu_ops_t		*zp_smu_ops;
 } zen_platform_t;
 
 extern const zen_platform_consts_t *oxide_zen_platform_consts(void);
@@ -43,6 +44,7 @@ extern const zen_ccx_ops_t *oxide_zen_ccx_ops(void);
 extern const zen_fabric_ops_t *oxide_zen_fabric_ops(void);
 extern const zen_hack_ops_t *oxide_zen_hack_ops(void);
 extern const zen_ras_ops_t *oxide_zen_ras_ops(void);
+extern const zen_smu_ops_t *oxide_zen_smu_ops(void);
 
 #ifdef	__cplusplus
 }

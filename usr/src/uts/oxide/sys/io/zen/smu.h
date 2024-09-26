@@ -50,4 +50,14 @@ extern bool zen_smu_version_at_least(const zen_iodie_t *, uint8_t, uint8_t,
  */
 extern bool zen_smu_get_brand_string(zen_iodie_t *, char *, size_t);
 
+/*
+ * Initializes "early" SMU features.
+ */
+extern bool zen_smu_early_features_init(zen_iodie_t *);
+
+/*
+ * Sets mid-point SMU features.
+ */
+extern bool zen_smu_features_init(zen_iodie_t *);
+
 #endif	/* _ZEN_SMU_H */

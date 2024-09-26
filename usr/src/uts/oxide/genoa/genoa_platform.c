@@ -128,6 +128,11 @@ static const zen_ras_ops_t genoa_ras_ops = {
 	.zro_ras_init = zen_null_ras_init,
 };
 
+static const zen_smu_ops_t genoa_smu_ops = {
+	.zsmuo_early_features_init = genoa_smu_early_features_init,
+	.zsmuo_features_init = genoa_smu_features_init,
+};
+
 const zen_platform_t genoa_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4,
@@ -176,4 +181,5 @@ const zen_platform_t genoa_platform = {
 	.zp_fabric_ops = &genoa_fabric_ops,
 	.zp_hack_ops = &genoa_hack_ops,
 	.zp_ras_ops = &genoa_ras_ops,
+	.zp_smu_ops = &genoa_smu_ops,
 };

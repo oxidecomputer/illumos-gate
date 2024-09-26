@@ -30,6 +30,7 @@
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
+#include <sys/io/zen/smu_impl.h>
 
 #include <sys/io/turin/fabric_impl.h>
 #include <sys/io/turin/pcie.h>
@@ -37,6 +38,7 @@
 #include <sys/io/turin/iohc.h>
 #include <sys/io/turin/iommu.h>
 #include <sys/io/turin/nbif_impl.h>
+#include <sys/io/turin/smu_impl.h>
 #include <sys/io/turin/ioapic.h>
 
 /*
@@ -1115,4 +1117,84 @@ turin_iohc_nmi_eoi(zen_ioms_t *ioms)
 		v = IOHC_INTR_EOI_SET_NMI(0);
 		zen_ioms_write(ioms, reg, v);
 	}
+}
+
+static bool
+turin_smu_set_features(zen_iodie_t *iodie,
+    uint32_t features, uint32_t features_ext, uint32_t features64)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	/*
+	 * Early features in PEI are zeroed, but issuing this RPC
+	 * seem to be important to enabling subsequent MPIO RPCs
+	 * to succeed.
+	 */
+	rpc.zsr_req = ZEN_SMU_OP_ENABLE_FEATURE;
+	rpc.zsr_args[0] = features;
+	rpc.zsr_args[1] = features_ext;
+	rpc.zsr_args[2] = features64;
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "Socket %u: SMU Enable Features RPC failed: %s (SMU 0x%x)",
+		    iodie->zi_soc->zs_num, zen_smu_rpc_res_str(res),
+		    rpc.zsr_resp);
+		return (false);
+	}
+	cmn_err(CE_CONT,
+	    "?Socket %u SMU features (0x%08x, 0x%08x, 0x%08x) enabled\n",
+	    iodie->zi_soc->zs_num, features, features_ext, features64);
+
+	return (true);
+}
+
+/*
+ * Early features are zeroed.
+ */
+bool
+turin_smu_early_features_init(zen_iodie_t *iodie)
+{
+	return (turin_smu_set_features(iodie, 0, 0, 0));
+}
+
+/*
+ * Not all combinations of SMU features will result in correct system
+ * behavior, so we therefore err on the side of matching stock platform
+ * enablement -- even where that means enabling features with unknown
+ * functionality.
+ */
+
+bool
+turin_smu_features_init(zen_iodie_t *iodie)
+{
+	const uint32_t TURIN_FEATURES =
+	    TURIN_SMU_FEATURE_DATA_CALCULATION |
+	    TURIN_SMU_FEATURE_PPT |
+	    TURIN_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
+	    TURIN_SMU_FEATURE_THERMAL |
+	    TURIN_SMU_FEATURE_FIT |
+	    TURIN_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
+	    TURIN_SMU_FEATURE_CSTATE_BOOST |
+	    TURIN_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
+	    TURIN_SMU_FEATURE_CORE_CLOCK_DPM |
+	    TURIN_SMU_FEATURE_FABRIC_CLOCK_DPM |
+	    TURIN_SMU_FEATURE_LCLK_DPM |
+	    TURIN_SMU_FEATURE_PSI7 |
+	    TURIN_SMU_FEATURE_LCLK_DEEP_SLEEP |
+	    TURIN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
+	    TURIN_SMU_FEATURE_CORE_C6 |
+	    TURIN_SMU_FEATURE_DF_CSTATES |
+	    TURIN_SMU_FEATURE_CLOCK_GATING |
+	    TURIN_SMU_FEATURE_CPPC |
+	    TURIN_SMU_FEATURE_GMI_FOLDING |
+	    TURIN_SMU_FEATURE_XGMI_DLWM |
+	    TURIN_SMU_FEATURE_PCC |
+	    TURIN_SMU_FEATURE_FP_DIDT |
+	    TURIN_SMU_FEATURE_MPDMA_TF_CLK_DEEP_SLEEP |
+	    TURIN_SMU_FEATURE_MPDMA_PM_CLK_DEEP_SLEEP;
+	const uint32_t FEATURES_EXT = TURIN_SMU_EXT_FEATURE_SOC_XVMIN;
+
+	return (turin_smu_set_features(iodie, TURIN_FEATURES, FEATURES_EXT, 0));
 }

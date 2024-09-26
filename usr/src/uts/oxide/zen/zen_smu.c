@@ -269,3 +269,25 @@ zen_smu_get_brand_string(zen_iodie_t *iodie, char *buf, size_t len)
 
 	return (true);
 }
+
+bool
+zen_null_smu_features_init(zen_iodie_t *iodie __unused)
+{
+	return (true);
+}
+
+bool
+zen_smu_early_features_init(zen_iodie_t *iodie)
+{
+	const zen_smu_ops_t *ops = oxide_zen_smu_ops();
+	VERIFY3P(ops->zsmuo_early_features_init, !=, NULL);
+	return (ops->zsmuo_early_features_init(iodie));
+}
+
+bool
+zen_smu_features_init(zen_iodie_t *iodie)
+{
+	const zen_smu_ops_t *ops = oxide_zen_smu_ops();
+	VERIFY3P(ops->zsmuo_features_init, !=, NULL);
+	return (ops->zsmuo_features_init(iodie));
+}

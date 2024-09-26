@@ -36,6 +36,7 @@
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
+#include <sys/io/zen/smu_impl.h>
 
 #include <sys/io/genoa/fabric_impl.h>
 #include <sys/io/genoa/hacks.h>
@@ -45,6 +46,7 @@
 #include <sys/io/genoa/nbif_impl.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/pcie_rsmu.h>
+#include <sys/io/genoa/smu_impl.h>
 
 /*
  * These come from common code in the DDI.  They really ought to be in a header.
@@ -2015,6 +2017,30 @@ genoa_hotplug_data_init(zen_fabric_t *fabric)
 	return (cont);
 }
 
+static bool
+genoa_smu_set_features(zen_iodie_t *iodie, uint32_t features,
+    uint32_t features_ext)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	rpc.zsr_req = ZEN_SMU_OP_ENABLE_FEATURE;
+	rpc.zsr_args[0] = features;
+	rpc.zsr_args[1] = features_ext;
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "Socket %u: SMU Enable Features RPC Failed: %s "
+		    "(features: 0x%x, SMU 0x%x)", iodie->zi_soc->zs_num,
+		    zen_smu_rpc_res_str(res), features, rpc.zsr_resp);
+		return (false);
+	}
+	cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x and 0x%08x enabled\n",
+	    iodie->zi_soc->zs_num, features, features_ext);
+
+	return (true);
+}
+
 /*
  * Determine the set of feature bits that should be enabled. If this is Ethanol,
  * use our hacky static versions for a moment.
@@ -2459,4 +2485,48 @@ genoa_hotplug_init(zen_fabric_t *fabric)
 	    genoa_hotplug_bridge_post_start, NULL);
 
 	return (true);
+}
+
+/*
+ * Early features are zeroed.
+ */
+bool
+genoa_smu_early_features_init(zen_iodie_t *iodie)
+{
+	return (genoa_smu_set_features(iodie, 0, 0));
+}
+
+bool
+genoa_smu_features_init(zen_iodie_t *iodie)
+{
+	/*
+	 * Not all combinations of SMU features will result in correct system
+	 * behavior, so we therefore err on the side of matching stock platform
+	 * enablement for Genoa rev B1 -- even where that means enabling
+	 * features with unknown functionality.
+	 */
+	const uint32_t FEATURES = GENOA_SMU_FEATURE_DATA_CALCULATION |
+	    GENOA_SMU_FEATURE_PPT |
+	    GENOA_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
+	    GENOA_SMU_FEATURE_THERMAL |
+	    GENOA_SMU_FEATURE_FIT |
+	    GENOA_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
+	    GENOA_SMU_FEATURE_CSTATE_BOOST |
+	    GENOA_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
+	    GENOA_SMU_FEATURE_CORE_CLOCK_DPM |
+	    GENOA_SMU_FEATURE_FABRIC_CLOCK_DPM |
+	    GENOA_SMU_FEATURE_LCLK_DPM |
+	    GENOA_SMU_FEATURE_LCLK_DEEP_SLEEP |
+	    GENOA_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
+	    GENOA_SMU_FEATURE_CORE_C6 |
+	    GENOA_SMU_FEATURE_DF_CSTATES |
+	    GENOA_SMU_FEATURE_CLOCK_GATING |
+	    GENOA_SMU_FEATURE_CPPC |
+	    GENOA_SMU_FEATURE_GMI_DLWM |
+	    GENOA_SMU_FEATURE_XGMI_DLWM;
+	const uint32_t FEATURES_EXT = GENOA_SMU_EXT_FEATURE_PCC |
+	    GENOA_SMU_EXT_FEATURE_MPDMA_TF_CLK_DEEP_SLEEP |
+	    GENOA_SMU_EXT_FEATURE_MPDMA_PM_CLK_DEEP_SLEEP;
+
+	return (genoa_smu_set_features(iodie, FEATURES, FEATURES_EXT));
 }

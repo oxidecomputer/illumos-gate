@@ -284,6 +284,17 @@ typedef struct zen_ras_ops {
 } zen_ras_ops_t;
 
 /*
+ * The null operation is a no-op, for operations where setting SMU operations in
+ * a particular stage is unnecessary on a given microarchitecture.
+ */
+extern bool zen_null_smu_features_init(zen_iodie_t *);
+
+typedef struct zen_smu_ops {
+	bool	(*zsmuo_early_features_init)(zen_iodie_t *);
+	bool	(*zsmuo_features_init)(zen_iodie_t *);
+} zen_smu_ops_t;
+
+/*
  * These are register constants for accessing SMU RPC registers via SMN.
  */
 typedef struct zen_smu_smn_addrs {

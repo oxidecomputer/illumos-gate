@@ -32,7 +32,7 @@
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/io/turin/ccx_impl.h>
 #include <sys/io/turin/mpio.h>
-#include <sys/io/turin/smu.h>
+#include <sys/io/turin/smu_impl.h>
 #include <sys/io/zen/mpio.h>
 #include <sys/io/zen/ras.h>
 
@@ -131,6 +131,11 @@ static const zen_ras_ops_t turin_ras_ops = {
 	.zro_ras_init = zen_null_ras_init,
 };
 
+static const zen_smu_ops_t turin_smu_ops = {
+	.zsmuo_early_features_init = turin_smu_early_features_init,
+	.zsmuo_features_init = turin_smu_features_init,
+};
+
 const zen_platform_t turin_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4D2,
@@ -178,6 +183,7 @@ const zen_platform_t turin_platform = {
 	.zp_fabric_ops = &turin_fabric_ops,
 	.zp_hack_ops = &turin_hack_ops,
 	.zp_ras_ops = &turin_ras_ops,
+	.zp_smu_ops = &turin_smu_ops,
 };
 
 const zen_platform_t dense_turin_platform = {
@@ -227,4 +233,5 @@ const zen_platform_t dense_turin_platform = {
 	.zp_fabric_ops = &turin_fabric_ops,
 	.zp_hack_ops = &turin_hack_ops,
 	.zp_ras_ops = &turin_ras_ops,
+	.zp_smu_ops = &turin_smu_ops,
 };

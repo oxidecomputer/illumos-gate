@@ -1700,7 +1700,7 @@ milan_report_dxio_fw_version(const zen_iodie_t *iodie)
 	    socno, iodie->zi_dxio_fw[0], iodie->zi_dxio_fw[1]);
 }
 
-static bool
+bool
 milan_smu_features_init(zen_iodie_t *iodie)
 {
 	zen_soc_t *soc = iodie->zi_soc;
@@ -1713,7 +1713,7 @@ milan_smu_features_init(zen_iodie_t *iodie)
 	 * enablement -- even where that means enabling features with unknown
 	 * functionality.
 	 */
-	uint32_t features = MILAN_SMU_FEATURE_DATA_CALCULATION |
+	const uint32_t FEATURES = MILAN_SMU_FEATURE_DATA_CALCULATION |
 	    MILAN_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
 	    MILAN_SMU_FEATURE_THERMAL |
 	    MILAN_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
@@ -1732,19 +1732,19 @@ milan_smu_features_init(zen_iodie_t *iodie)
 	    MILAN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
 	    MILAN_SMU_FEATURE_AGE;
 
-	rpc.zsr_req = MILAN_SMU_OP_ENABLE_FEATURE;
-	rpc.zsr_args[0] = features;
+	rpc.zsr_req = ZEN_SMU_OP_ENABLE_FEATURE;
+	rpc.zsr_args[0] = FEATURES;
 
 	res = zen_smu_rpc(iodie, &rpc);
 
 	if (res != ZEN_SMU_RPC_OK) {
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Features RPC Failed: features: "
-		    "0x%x, SMU %s (0x%x)", soc->zs_num, features,
+		    "0x%x, SMU %s (0x%x)", soc->zs_num, FEATURES,
 		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 	} else {
 		cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
-		    soc->zs_num, features);
+		    soc->zs_num, FEATURES);
 	}
 
 	return (res == ZEN_SMU_RPC_OK);
@@ -1799,13 +1799,6 @@ milan_fabric_smu_misc_init(zen_iodie_t *iodie)
 		cmn_err(CE_WARN, "SMU: failed to retrieve DPM weights");
 		bzero(miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights));
 	}
-
-	/*
-	 * We want to enable SMU features now because it will enable
-	 * dynamic frequency scaling -- which in turn makes the rest
-	 * of the boot much, much faster.
-	 */
-	VERIFY(milan_smu_features_init(iodie));
 }
 
 void

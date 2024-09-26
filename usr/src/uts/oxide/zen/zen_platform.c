@@ -91,3 +91,16 @@ oxide_zen_ras_ops(void)
 
 	return (ras_ops);
 }
+
+const zen_smu_ops_t *
+oxide_zen_smu_ops(void)
+{
+	const zen_platform_t *platform = oxide_zen_platform();
+	const zen_smu_ops_t *smu_ops;
+
+	ASSERT3P(platform, !=, NULL);
+	smu_ops = platform->zp_smu_ops;
+	ASSERT3P(smu_ops, !=, NULL);
+
+	return (smu_ops);
+}

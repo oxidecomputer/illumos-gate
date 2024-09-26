@@ -135,6 +135,11 @@ static const zen_ras_ops_t milan_ras_ops = {
 	.zro_ras_init = milan_ras_init,
 };
 
+static const zen_smu_ops_t milan_smu_ops = {
+	.zsmuo_early_features_init = zen_null_smu_features_init,
+	.zsmuo_features_init = milan_smu_features_init,
+};
+
 const zen_platform_t milan_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_3,
@@ -171,4 +176,5 @@ const zen_platform_t milan_platform = {
 	.zp_fabric_ops = &milan_fabric_ops,
 	.zp_hack_ops = &milan_hack_ops,
 	.zp_ras_ops = &milan_ras_ops,
+	.zp_smu_ops = &milan_smu_ops,
 };
