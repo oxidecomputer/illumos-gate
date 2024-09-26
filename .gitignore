@@ -9180,6 +9180,8 @@ usr/src/test/smbclient-tests/cmd/rw_mmap/rw_mmap
 usr/src/test/smbsrv-tests/tests/smb_sid/large_sids_kern
 usr/src/test/smbsrv-tests/tests/smb_sid/large_sids_lib
 usr/src/test/smbsrv-tests/tests/smb_sid/smb_sid.c
+usr/src/test/util-tests/tests/cpmvln/checker
+usr/src/test/util-tests/tests/cpmvln/mkobj
 usr/src/test/util-tests/tests/ctf/check-array
 usr/src/test/util-tests/tests/ctf/check-enum
 usr/src/test/util-tests/tests/ctf/check-float-32
