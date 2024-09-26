@@ -755,6 +755,12 @@ extern "C" {
 #define	IA32_TSX_CTRL_CPUID_CLEAR	0x02
 
 /*
+ * MSRs shared by Intel and AMD for the effective frequency interface
+ */
+#define	MSR_MPERF			0xe7
+#define	MSR_APERF			0xe8
+
+/*
  * Intel Thermal MSRs
  */
 #define	MSR_IA32_THERM_INTERRUPT	0x19b
@@ -1062,6 +1068,7 @@ extern "C" {
 #define	X86FSET_PBRSB_NO	111
 #define	X86FSET_BHI_NO		112
 #define	X86FSET_BHI_CTRL	113
+#define	X86FSET_EFF_FREQ_IF	114
 
 /*
  * Intel Deep C-State invariant TSC in leaf 0x80000007.
@@ -1761,7 +1768,7 @@ typedef enum x86_uarchrev {
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 
-#define	NUM_X86_FEATURES	114
+#define	NUM_X86_FEATURES	115
 extern uchar_t x86_featureset[];
 
 extern void free_x86_featureset(void *featureset);

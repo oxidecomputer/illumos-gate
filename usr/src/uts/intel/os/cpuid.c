@@ -1718,7 +1718,8 @@ static char *x86_feature_names[NUM_X86_FEATURES] = {
 	"rfds_clear",
 	"pbrsb_no",
 	"bhi_no",
-	"bhi_clear"
+	"bhi_clear",
+	"effi"
 };
 
 boolean_t
@@ -1943,6 +1944,7 @@ static struct cpuid_info cpuid_info0;
 #define	CPI_FEATURES_ECX(cpi)		((cpi)->cpi_std[1].cp_ecx)
 #define	CPI_FEATURES_XTD_EDX(cpi)	((cpi)->cpi_extd[1].cp_edx)
 #define	CPI_FEATURES_XTD_ECX(cpi)	((cpi)->cpi_extd[1].cp_ecx)
+#define	CPI_FEATURES_6_0_ECX(cpi)	((cpi)->cpi_std[6].cp_ecx)
 #define	CPI_FEATURES_7_0_EBX(cpi)	((cpi)->cpi_std[7].cp_ebx)
 #define	CPI_FEATURES_7_0_ECX(cpi)	((cpi)->cpi_std[7].cp_ecx)
 #define	CPI_FEATURES_7_0_EDX(cpi)	((cpi)->cpi_std[7].cp_edx)
@@ -3709,9 +3711,7 @@ cpuid_basic_topology(cpu_t *cpu, uchar_t *featureset)
 
 /*
  * Gather relevant CPU features from leaf 6 which covers thermal information. We
- * always gather leaf 6 if it's supported; however, we only look for features on
- * Intel systems as AMD does not currently define any of the features we look
- * for below.
+ * always gather leaf 6 if it's supported.
  */
 static void
 cpuid_basic_thermal(cpu_t *cpu, uchar_t *featureset)
@@ -3728,6 +3728,14 @@ cpuid_basic_thermal(cpu_t *cpu, uchar_t *featureset)
 	cp->cp_ebx = cp->cp_ecx = cp->cp_edx = 0;
 	(void) __cpuid_insn(cp);
 	platform_cpuid_mangle(cpi->cpi_vendor, 6, cp);
+
+	if ((cp->cp_ecx & CPUID_INTC_ECX_MAPERF) != 0)
+		add_x86_feature(featureset, X86FSET_EFF_FREQ_IF);
+
+	/*
+	 * We only look for the following features on Intel systems as AMD does
+	 * not currently define them.
+	 */
 
 	if (cpi->cpi_vendor != X86_VENDOR_Intel) {
 		return;

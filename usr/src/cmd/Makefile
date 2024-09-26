@@ -30,7 +30,7 @@
 # Copyright 2018 Gary Mills
 # Copyright 2019 Peter Tribble
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
-# Copyright 2023 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 #
 
 include ../Makefile.master
@@ -499,6 +499,7 @@ i386_SUBDIRS=		\
 	ficl		\
 	nvmeadm		\
 	pptadm		\
+	rdfreq		\
 	rdmsr		\
 	rsrvrctl	\
 	rtc		\
