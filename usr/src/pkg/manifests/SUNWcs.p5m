@@ -1432,6 +1432,7 @@ link path=usr/sbin/quotaon target=../lib/fs/ufs/quotaon
 file path=usr/sbin/raidctl mode=0555
 file path=usr/sbin/ramdiskadm mode=0555
 file path=usr/sbin/rctladm mode=0555
+$(i386_ONLY)file path=usr/sbin/rdfreq mode=0555 variant.opensolaris.zone=global
 $(i386_ONLY)file path=usr/sbin/rdmsr mode=0555 variant.opensolaris.zone=global
 hardlink path=usr/sbin/reboot target=./halt
 file path=usr/sbin/rem_drv group=sys mode=0555

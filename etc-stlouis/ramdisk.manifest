@@ -1301,6 +1301,7 @@ f usr/sbin/prtconf 2555 root sys
 f usr/sbin/psradm 0555 root sys
 f usr/sbin/psrinfo 0555 root sys
 f usr/sbin/psrset 0555 root sys
+f usr/sbin/rdfreq 0555 root sys
 f usr/sbin/svcadm 0555 root bin
 f usr/sbin/svccfg 0555 root bin
 f usr/sbin/syslogd 0555 root sys
