@@ -23,7 +23,7 @@
  */
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 
@@ -48,6 +48,7 @@
 
 #if defined(__x86)
 #include <sys/x86_archext.h>
+#include <sys/archsystm.h>
 #endif
 
 static dev_info_t *cpuid_devi;
@@ -189,6 +190,7 @@ cpuid_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cr, int *rval)
 
 #ifdef __x86
 	case CPUID_RDMSR: {
+		ASSERT(is_x86_feature(x86_featureset, X86FSET_MSR));
 		struct cpuid_rdmsr crm = { 0, };
 		label_t label;
 
@@ -212,6 +214,66 @@ cpuid_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *cr, int *rval)
 
 		if (ddi_copyout(&crm, (void *)arg, sizeof (crm), mode))
 			return (EFAULT);
+		return (0);
+	}
+
+	case CPUID_EFFI: {
+		struct cpuid_effi effi = { 0 };
+		label_t label;
+		ulong_t iflag;
+		int ret;
+
+		if (secpolicy_sys_config(cr, B_FALSE) != 0)
+			return (EPERM);
+
+		if (!is_x86_feature(x86_featureset, X86FSET_EFF_FREQ_IF))
+			return (ENOTSUP);
+
+		kpreempt_disable();
+		if (on_fault(&label)) {
+			kpreempt_enable();
+			return (ENOENT);
+		}
+
+		iflag = intr_clear();
+		wrmsr(MSR_MPERF, 0);
+		wrmsr(MSR_APERF, 0);
+		intr_restore(iflag);
+
+		no_fault();
+		kpreempt_enable();
+
+		if ((ret = delay_sig(drv_usectohz(MICROSEC / 10))) != 0)
+			return (ret);
+
+		kpreempt_disable();
+		if (on_fault(&label)) {
+			kpreempt_enable();
+			return (ENOENT);
+		}
+
+		iflag = intr_clear();
+		effi.ce_mperf = rdmsr(MSR_MPERF);
+		effi.ce_aperf = rdmsr(MSR_APERF);
+		intr_restore(iflag);
+
+		no_fault();
+		kpreempt_enable();
+
+		if (CPU->cpu_supp_freqs != NULL) {
+			u_longlong_t freq;
+
+			if (ddi_strtoull(CPU->cpu_supp_freqs, NULL, 10,
+			    &freq) == 0) {
+				effi.ce_p0freq = freq;
+			}
+		} else {
+			effi.ce_p0freq = CPU->cpu_curr_clock;
+		}
+
+		if (ddi_copyout(&effi, (void *)arg, sizeof (effi), mode))
+			return (EFAULT);
+
 		return (0);
 	}
 #endif

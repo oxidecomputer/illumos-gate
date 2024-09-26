@@ -25,7 +25,7 @@
  */
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef	_SYS_CPUID_DRV_H
@@ -66,6 +66,7 @@ extern "C" {
 
 #define	CPUID_GET_HWCAP		(CPUID_IOC|0)
 #define	CPUID_RDMSR		(CPUID_IOC|1)
+#define	CPUID_EFFI		(CPUID_IOC|2)
 
 struct cpuid_get_hwcap {
 	char *cgh_archname;
@@ -75,6 +76,12 @@ struct cpuid_get_hwcap {
 struct cpuid_rdmsr {
 	uint64_t cr_msr_nr;
 	uint64_t cr_msr_val;
+};
+
+struct cpuid_effi {
+	uint64_t ce_mperf;
+	uint64_t ce_aperf;
+	uint64_t ce_p0freq;
 };
 
 #if defined(_SYSCALL32_IMPL)
