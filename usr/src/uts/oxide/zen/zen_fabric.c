@@ -2386,6 +2386,14 @@ zen_null_fabric_sdp_control(zen_ioms_t *nbif __unused)
 {
 }
 
+static int
+zen_fabric_iodie_smu_features_init_cb(zen_iodie_t *iodie, void *arg __unused)
+{
+	if (!zen_smu_features_init(iodie))
+		return (1);
+	return (0);
+}
+
 void
 zen_null_fabric_nbif_bridges(zen_ioms_t *ioms __unused)
 {
@@ -2533,6 +2541,9 @@ zen_fabric_init(void)
 	 */
 	VERIFY3P(fabric_ops->zfo_pcie, !=, NULL);
 	(fabric_ops->zfo_pcie)(fabric);
+
+	VERIFY0(zen_fabric_walk_iodie(fabric,
+	    zen_fabric_iodie_smu_features_init_cb, NULL));
 }
 
 static int
