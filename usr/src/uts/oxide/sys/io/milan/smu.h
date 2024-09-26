@@ -29,6 +29,14 @@
 extern "C" {
 #endif
 
+/*
+ * The implementation of these types is exposed to implementers but not to
+ * consumers; therefore we forward-declare them here and provide the actual
+ * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
+ * pointers to these types only as opaque handles.
+ */
+typedef struct zen_iodie zen_iodie_t;
+
 /*CSTYLED*/
 #define	D_MILAN_SMU_RPC_REQ	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
@@ -76,6 +84,11 @@ extern "C" {
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9d8,		\
 }
+
+/*
+ * Entry point for setting SMU features on Milan.
+ */
+extern bool milan_smu_features_init(zen_iodie_t *);
 
 #ifdef __cplusplus
 }

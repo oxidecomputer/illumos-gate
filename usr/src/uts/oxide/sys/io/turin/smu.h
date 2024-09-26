@@ -13,9 +13,6 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_TURIN_SMU_H
-#define	_SYS_IO_TURIN_SMU_H
-
 /*
  * Defines Turin-specific SMN register addresses for SMU RPCs.  These are stored
  * in the microarchitecture-specific platform constants, and consumed in by the
@@ -23,6 +20,18 @@
  * called from the SMU RPC code zen_smu.c.
  */
 
+#ifndef _SYS_IO_TURIN_SMU_H
+#define	_SYS_IO_TURIN_SMU_H
+
+/*
+ * The implementation of these types is exposed to implementers but not to
+ * consumers; therefore we forward-declare them here and provide the actual
+ * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
+ * pointers to these types only as opaque handles.
+ */
+typedef struct zen_iodie zen_iodie_t;
+
+#include <sys/stdbool.h>
 #include <sys/amdzen/smn.h>
 
 #ifdef __cplusplus
@@ -76,6 +85,12 @@ extern "C" {
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9d8,		\
 }
+
+/*
+ * Entry points for setting SMU features on Turin.
+ */
+extern bool turin_smu_early_features_init(zen_iodie_t *);
+extern bool turin_smu_features_init(zen_iodie_t *);
 
 #ifdef __cplusplus
 }

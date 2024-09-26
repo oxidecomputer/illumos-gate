@@ -39,6 +39,7 @@
 #define	ZEN_SMU_OP_GET_VERSION_MAJOR(x)	bitx32(x, 23, 16)
 #define	ZEN_SMU_OP_GET_VERSION_MINOR(x)	bitx32(x, 15, 8)
 #define	ZEN_SMU_OP_GET_VERSION_PATCH(x)	bitx32(x, 7, 0)
+#define	ZEN_SMU_OP_ENABLE_FEATURE	0x03
 #define	ZEN_SMU_OP_GET_BRAND_STRING	0x0d
 
 typedef enum zen_smu_rpc_res {
