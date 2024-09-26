@@ -28,6 +28,10 @@
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/smu.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * SMU RPC Operation Codes. Note, these are tied to firmware and therefore may
  * not be portable beyond Milan, Genoa, and Turin processors.  However, we have
@@ -39,6 +43,7 @@
 #define	ZEN_SMU_OP_GET_VERSION_MAJOR(x)	bitx32(x, 23, 16)
 #define	ZEN_SMU_OP_GET_VERSION_MINOR(x)	bitx32(x, 15, 8)
 #define	ZEN_SMU_OP_GET_VERSION_PATCH(x)	bitx32(x, 7, 0)
+#define	ZEN_SMU_OP_ENABLE_FEATURE	0x03
 #define	ZEN_SMU_OP_HAVE_AN_ADDRESS	0x05
 #define	ZEN_SMU_OP_GET_BRAND_STRING	0x0d
 #define	ZEN_SMU_OP_TX_PP_TABLE		0x10
@@ -110,5 +115,9 @@ extern const char *zen_smu_rpc_res_str(const zen_smu_rpc_res_t);
  */
 AMDZEN_MAKE_SMN_REG_FN(zen_smu_smn_reg, SMU_RPC,
     ZEN_SMU_SMN_REG_BASE, 0xfffff000, 1, 0);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif	/* _ZEN_SMU_IMPL_H */

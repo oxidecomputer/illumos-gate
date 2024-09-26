@@ -34,6 +34,7 @@
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
+#include <sys/io/zen/smu_impl.h>
 
 #include <sys/io/turin/fabric_impl.h>
 #include <sys/io/turin/pcie_impl.h>
@@ -41,6 +42,7 @@
 #include <sys/io/turin/iohc.h>
 #include <sys/io/turin/iommu.h>
 #include <sys/io/turin/nbif_impl.h>
+#include <sys/io/turin/smu.h>
 #include <sys/io/turin/ioapic.h>
 #include <sys/io/turin/pptable.h>
 
@@ -1210,6 +1212,50 @@ turin_iohc_nmi_eoi(zen_ioms_t *ioms)
 		v = IOHC_INTR_EOI_SET_NMI(0);
 		zen_ioms_write(ioms, reg, v);
 	}
+}
+
+/*
+ * Not all combinations of SMU features will result in correct system
+ * behavior, so we therefore err on the side of matching stock platform
+ * enablement -- even where that means enabling features with unknown
+ * functionality.
+ */
+void
+turin_smu_features_init(zen_iodie_t *iodie)
+{
+	/*
+	 * We keep close to the default bits set by AGESA 1.0.0.0.  Note that
+	 * CPPC is optional, but is explicitly set by AGESA, so we do that here
+	 * as well.
+	 */
+	const uint32_t features =
+	    TURIN_SMU_FEATURE_DATA_CALCULATION |
+	    TURIN_SMU_FEATURE_PPT |
+	    TURIN_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
+	    TURIN_SMU_FEATURE_THERMAL |
+	    TURIN_SMU_FEATURE_FIT |
+	    TURIN_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
+	    TURIN_SMU_FEATURE_CSTATE_BOOST |
+	    TURIN_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
+	    TURIN_SMU_FEATURE_CORE_CLOCK_DPM |
+	    TURIN_SMU_FEATURE_FABRIC_CLOCK_DPM |
+	    TURIN_SMU_FEATURE_LCLK_DPM |
+	    TURIN_SMU_FEATURE_PSI7 |
+	    TURIN_SMU_FEATURE_LCLK_DEEP_SLEEP |
+	    TURIN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
+	    TURIN_SMU_FEATURE_CORE_C6 |
+	    TURIN_SMU_FEATURE_DF_CSTATES |
+	    TURIN_SMU_FEATURE_CLOCK_GATING |
+	    TURIN_SMU_FEATURE_CPPC |
+	    TURIN_SMU_FEATURE_GMI_FOLDING |
+	    TURIN_SMU_FEATURE_XGMI_DLWM |
+	    TURIN_SMU_FEATURE_PCC |
+	    TURIN_SMU_FEATURE_FP_DIDT |
+	    TURIN_SMU_FEATURE_MPDMA_TF_CLK_DEEP_SLEEP |
+	    TURIN_SMU_FEATURE_MPDMA_PM_CLK_DEEP_SLEEP;
+	const uint32_t features_ext = TURIN_SMU_EXT_FEATURE_SOC_XVMIN;
+
+	VERIFY(zen_smu_set_features(iodie, features, features_ext));
 }
 
 /*

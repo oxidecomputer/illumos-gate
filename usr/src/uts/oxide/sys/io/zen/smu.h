@@ -24,6 +24,10 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * The implementation of these types is exposed to implementers but not to
  * consumers; therefore we forward-declare them here and provide the actual
@@ -59,5 +63,14 @@ extern bool zen_smu_rpc_give_address(zen_iodie_t *, uint64_t);
  * Transmits the Power and Performance table to the SMU.
  */
 extern bool zen_smu_rpc_send_pptable(zen_iodie_t *, zen_pptable_t *);
+
+/*
+ * Sets SMU features.
+ */
+extern bool zen_smu_set_features(zen_iodie_t *, uint32_t, uint32_t);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif	/* _ZEN_SMU_H */

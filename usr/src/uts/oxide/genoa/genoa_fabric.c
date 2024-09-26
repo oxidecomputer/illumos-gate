@@ -34,6 +34,7 @@
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
+#include <sys/io/zen/smu_impl.h>
 
 #include <sys/io/genoa/fabric_impl.h>
 #include <sys/io/genoa/ioapic.h>
@@ -43,6 +44,7 @@
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/pcie_rsmu.h>
 #include <sys/io/genoa/pptable.h>
+#include <sys/io/genoa/smu.h>
 
 /*
  * This table encodes knowledge about how the SoC assigns devices and functions
@@ -1934,4 +1936,60 @@ genoa_fabric_hack_bridges(zen_fabric_t *fabric)
 	bzero(&c, sizeof (c));
 
 	zen_fabric_walk_pcie_port(fabric, genoa_fabric_hack_bridges_cb, &c);
+}
+
+void
+genoa_smu_features_init(zen_iodie_t *iodie)
+{
+	/*
+	 * Not all combinations of SMU features will result in correct system
+	 * behavior, so we therefore err on the side of matching stock platform
+	 * enablement for Genoa rev Bx -- even where that means enabling
+	 * features with unknown functionality.
+	 *
+	 * Note, CPPC is optional and this is the default; we set it here
+	 * because AGESA does.
+	 */
+	uint32_t features = GENOA_SMU_FEATURE_DATA_CALCULATION |
+	    GENOA_SMU_FEATURE_PPT |
+	    GENOA_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
+	    GENOA_SMU_FEATURE_THERMAL |
+	    GENOA_SMU_FEATURE_FIT |
+	    GENOA_SMU_FEATURE_ELECTRICAL_DESIGN_CURRENT |
+	    GENOA_SMU_FEATURE_CSTATE_BOOST |
+	    GENOA_SMU_FEATURE_PROCESSOR_THROTTLING_TEMPERATURE |
+	    GENOA_SMU_FEATURE_CORE_CLOCK_DPM |
+	    GENOA_SMU_FEATURE_FABRIC_CLOCK_DPM |
+	    GENOA_SMU_FEATURE_LCLK_DPM |
+	    GENOA_SMU_FEATURE_LCLK_DEEP_SLEEP |
+	    GENOA_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
+	    GENOA_SMU_FEATURE_CORE_C6 |
+	    GENOA_SMU_FEATURE_DF_CSTATES |
+	    GENOA_SMU_FEATURE_CLOCK_GATING |
+	    GENOA_SMU_FEATURE_CPPC |
+	    GENOA_SMU_FEATURE_GMI_DLWM |
+	    GENOA_SMU_FEATURE_XGMI_DLWM;
+
+	/*
+	 * Some features are disabled on Ax and AB silicon spins.  Note that we
+	 * never explicitly set GENOA_SMU_FEATURE_GMI_FOLDING, so disabling it
+	 * here is a no-op, but we include it in the disabled set anyway as
+	 * documentation.  Note that we are too early in boot to use
+	 * `cpuid_getchiprev(CPU)` here.
+	 */
+	if (!chiprev_at_least(oxide_board_data->obd_cpuinfo.obc_chiprev,
+	    X86_CHIPREV_AMD_GENOA_B0)) {
+		const uint32_t disabled_ax = GENOA_SMU_FEATURE_DF_CSTATES |
+		    GENOA_SMU_FEATURE_FABRIC_CLOCK_DPM |
+		    GENOA_SMU_FEATURE_XGMI_DLWM |
+		    GENOA_SMU_FEATURE_GMI_DLWM |
+		    GENOA_SMU_FEATURE_GMI_FOLDING;
+		features &= ~disabled_ax;
+	}
+
+	const uint32_t features_ext = GENOA_SMU_EXT_FEATURE_PCC |
+	    GENOA_SMU_EXT_FEATURE_MPDMA_TF_CLK_DEEP_SLEEP |
+	    GENOA_SMU_EXT_FEATURE_MPDMA_PM_CLK_DEEP_SLEEP;
+
+	VERIFY(zen_smu_set_features(iodie, features, features_ext));
 }

@@ -141,9 +141,10 @@ zen_smu_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
 	/* Check for timeout. */
 	if (resp == RPC_NOTDONE) {
 		mutex_exit(&iodie->zi_smu_lock);
-		cmn_err(CE_WARN,
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
 		    "SMU RPC timed out and failed to complete "
-		    "(request: 0x%x, MPIO response: 0x%x)", rpc->zsr_req, resp);
+		    "(request: 0x%x, MPIO response: 0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num, rpc->zsr_req, resp);
 		return (ZEN_SMU_RPC_ETIMEOUT);
 	}
 
@@ -151,8 +152,9 @@ zen_smu_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
 	res = zen_smu_rpc_resp_to_res(rpc);
 	if (res != ZEN_SMU_RPC_OK) {
 		mutex_exit(&iodie->zi_smu_lock);
-		cmn_err(CE_WARN,
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
 		    "SMU RPC failed (request: 0x%x: %s, SMU response: 0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num,
 		    rpc->zsr_req, zen_smu_rpc_res_str(res), resp);
 		return (res);
 	}
@@ -182,9 +184,10 @@ zen_smu_get_fw_version(zen_iodie_t *iodie)
 	rpc.zsr_req = ZEN_SMU_OP_GET_VERSION;
 	res = zen_smu_rpc(iodie, &rpc);
 	if (res != ZEN_SMU_RPC_OK) {
-		cmn_err(CE_WARN,
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
 		    "Failed to retrieve SMU firmware version: %s "
 		    "(SMU response 0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num,
 		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 		return (false);
 	}
@@ -205,9 +208,9 @@ zen_smu_report_fw_version(const zen_iodie_t *iodie)
 {
 	zen_soc_t *soc = iodie->zi_soc;
 
-	cmn_err(CE_CONT, "?Socket %u SMU Version: %u.%u.%u\n",
-	    soc->zs_num, iodie->zi_smu_fw[0], iodie->zi_smu_fw[1],
-	    iodie->zi_smu_fw[2]);
+	cmn_err(CE_CONT, "?Socket %u IO die %u: SMU Version: %u.%u.%u\n",
+	    soc->zs_num, iodie->zi_num, iodie->zi_smu_fw[0],
+	    iodie->zi_smu_fw[1], iodie->zi_smu_fw[2]);
 }
 
 /*
@@ -254,9 +257,11 @@ zen_smu_get_brand_string(zen_iodie_t *iodie, char *buf, size_t len)
 		rpc.zsr_args[0] = (uint32_t)chunkno;
 		res = zen_smu_rpc(iodie, &rpc);
 		if (res != ZEN_SMU_RPC_OK) {
-			cmn_err(CE_WARN, "SMU Read Brand String Failed: %s "
-			    "(offset %lu, SMU 0x%x)", zen_smu_rpc_res_str(res),
-			    off, rpc.zsr_resp);
+			cmn_err(CE_WARN, "Socket %u IO die %u: "
+			    "SMU Read Brand String Failed: %s "
+			    "(offset %lu, SMU 0x%x)",
+			    iodie->zi_soc->zs_num, iodie->zi_num,
+			    zen_smu_rpc_res_str(res), off, rpc.zsr_resp);
 			return (false);
 		}
 		/*
@@ -283,9 +288,10 @@ zen_smu_rpc_give_address(zen_iodie_t *iodie, uint64_t addr)
 
 	res = zen_smu_rpc(iodie, &rpc);
 	if (res != ZEN_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "IO die: %u: SMU Have an Address RPC Failed: "
+		cmn_err(CE_WARN, "Socket %u IO die: %u: "
+		    "SMU Have an Address RPC Failed: "
 		    "addr: 0x%lx, SMU req 0x%x resp %s (SMU 0x%x)",
-		    iodie->zi_num, addr, rpc.zsr_req,
+		    iodie->zi_soc->zs_num, iodie->zi_num, addr, rpc.zsr_req,
 		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 		return (false);
 	}
@@ -307,12 +313,51 @@ zen_smu_rpc_send_pptable(zen_iodie_t *iodie, zen_pptable_t *pptable)
 
 	res = zen_smu_rpc(iodie, &rpc);
 	if (res != ZEN_SMU_RPC_OK) {
-		cmn_err(CE_WARN, "IO die %u: SMU TX PP Table RPC Failed: "
-		    "SMU req 0x%x resp %s (0x%x)",
-		    iodie->zi_num, rpc.zsr_req, zen_smu_rpc_res_str(res),
-		    rpc.zsr_resp);
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
+		    "SMU TX PP Table RPC Failed: SMU req 0x%x resp %s (0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num, rpc.zsr_req,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 		return (false);
 	}
+
+	return (true);
+}
+
+bool
+zen_smu_set_features(zen_iodie_t *iodie, uint32_t features,
+    uint32_t features_ext)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	/*
+	 * Note that recent AGESA on e.g. Turin defines a third argument for
+	 * 64-bit extended features, but nothing presently uses it.  Regardless,
+	 * we acknowledge this by explicitly passing a zero here.
+	 */
+	const uint32_t features64 = 0;
+
+	/*
+	 * Not all mircoarchitectures support extended features, but the general
+	 * RPC mechanism will write zeros to unused argument registers, so it
+	 * appears safe to pass explicit zeros in those cases.
+	 */
+	rpc.zsr_req = ZEN_SMU_OP_ENABLE_FEATURE;
+	rpc.zsr_args[0] = features;
+	rpc.zsr_args[1] = features_ext;
+	rpc.zsr_args[2] = features64;
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
+		    "SMU Enable Features RPC failed: %s (SMU 0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
+		return (false);
+	}
+	cmn_err(CE_CONT, "?Socket %u IO die %u: "
+	    "SMU features (0x%08x, 0x%08x, 0x%08x) enabled\n",
+	    iodie->zi_soc->zs_num, iodie->zi_num, features, features_ext,
+	    features64);
 
 	return (true);
 }

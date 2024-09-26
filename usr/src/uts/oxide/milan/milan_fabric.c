@@ -1699,17 +1699,18 @@ milan_report_dxio_fw_version(const zen_iodie_t *iodie)
 static bool
 milan_smu_features_init(zen_iodie_t *iodie)
 {
-	zen_soc_t *soc = iodie->zi_soc;
-	zen_smu_rpc_t rpc = { 0 };
-	zen_smu_rpc_res_t res;
-
 	/*
 	 * Not all combinations of SMU features will result in correct system
 	 * behavior, so we therefore err on the side of matching stock platform
 	 * enablement -- even where that means enabling features with unknown
 	 * functionality.
+	 *
+	 * Note: it is possible to send time calibration messages to the SMU at
+	 * boot time, but we do not currently do that.  Should we decide to send
+	 * those messages, however, we would have to remove the core C6 feature
+	 * from the set here, and then enable it after.
 	 */
-	uint32_t features = MILAN_SMU_FEATURE_DATA_CALCULATION |
+	const uint32_t features = MILAN_SMU_FEATURE_DATA_CALCULATION |
 	    MILAN_SMU_FEATURE_THERMAL_DESIGN_CURRENT |
 	    MILAN_SMU_FEATURE_THERMAL |
 	    MILAN_SMU_FEATURE_PRECISION_BOOST_OVERDRIVE |
@@ -1723,27 +1724,14 @@ milan_smu_features_init(zen_iodie_t *iodie)
 	    MILAN_SMU_FEATURE_SOCCLK_DEEP_SLEEP |
 	    MILAN_SMU_FEATURE_LCLK_DEEP_SLEEP |
 	    MILAN_SMU_FEATURE_SYSHUBCLK_DEEP_SLEEP |
+	    MILAN_SMU_FEATURE_CORE_C6 |
+	    MILAN_SMU_FEATURE_DF_CSTATES |
 	    MILAN_SMU_FEATURE_CLOCK_GATING |
 	    MILAN_SMU_FEATURE_DYNAMIC_LDO_DROPOUT_LIMITER |
 	    MILAN_SMU_FEATURE_DYNAMIC_VID_OPTIMIZER |
 	    MILAN_SMU_FEATURE_AGE;
 
-	rpc.zsr_req = MILAN_SMU_OP_ENABLE_FEATURE;
-	rpc.zsr_args[0] = features;
-
-	res = zen_smu_rpc(iodie, &rpc);
-
-	if (res != ZEN_SMU_RPC_OK) {
-		cmn_err(CE_WARN,
-		    "Socket %u: SMU Enable Features RPC Failed: features: "
-		    "0x%x, SMU %s (0x%x)", soc->zs_num, features,
-		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
-	} else {
-		cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
-		    soc->zs_num, features);
-	}
-
-	return (res == ZEN_SMU_RPC_OK);
+	return (zen_smu_set_features(iodie, features, 0));
 }
 
 /*
