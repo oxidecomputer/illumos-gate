@@ -899,6 +899,8 @@ GPIOHDRS=			\
 
 NVMEHDRS=		\
 	discovery.h		\
+	kioxia.h		\
+	kioxia_cd8.h		\
 	micron.h		\
 	micron_7300.h		\
 	micron_74x0.h		\
