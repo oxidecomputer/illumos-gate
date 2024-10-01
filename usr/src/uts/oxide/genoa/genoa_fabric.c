@@ -36,6 +36,63 @@
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/iohc.h>
 #include <sys/io/genoa/iommu.h>
+#include <sys/io/genoa/nbif_impl.h>
+
+const uint8_t genoa_nbif_nfunc[] = {
+	[0] = GENOA_NBIF0_NFUNCS,
+	[1] = GENOA_NBIF1_NFUNCS,
+	[2] = GENOA_NBIF2_NFUNCS
+};
+
+const zen_nbif_info_t genoa_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
+	[0] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_MPDMATF, .zni_dev = 0, .zni_func = 1 },
+		{ .zni_type = ZEN_NBIF_T_NTB, .zni_dev = 0, .zni_func = 2 },
+		{ .zni_type = ZEN_NBIF_T_SVNTB, .zni_dev = 0, .zni_func = 3 },
+		{ .zni_type = ZEN_NBIF_T_USB, .zni_dev = 0, .zni_func = 4 },
+		{ .zni_type = ZEN_NBIF_T_PSPCCP, .zni_dev = 0, .zni_func = 5 },
+		{ .zni_type = ZEN_NBIF_T_ACP, .zni_dev = 0, .zni_func = 6 },
+		{ .zni_type = ZEN_NBIF_T_AZ, .zni_dev = 0, .zni_func = 7 },
+
+		{ .zni_type = ZEN_NBIF_T_SATA, .zni_dev = 1, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_SATA, .zni_dev = 1, .zni_func = 1 }
+	},
+	[1] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_MPDMATF, .zni_dev = 0, .zni_func = 1 },
+		{ .zni_type = ZEN_NBIF_T_PVNTB, .zni_dev = 0, .zni_func = 2 },
+		{ .zni_type = ZEN_NBIF_T_SVNTB, .zni_dev = 0, .zni_func = 3 }
+	},
+	[2] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_NTB, .zni_dev = 0, .zni_func = 1 },
+		{ .zni_type = ZEN_NBIF_T_NVME, .zni_dev = 0, .zni_func = 2 }
+	}
+};
+
+/*
+ * This is called from the common code, via an entry in the Genoa version of
+ * Zen fabric ops vector. The common code is responsible for the bulk of
+ * initialization; we merely fill in those bits that are microarchitecture
+ * specific.
+ */
+void
+genoa_fabric_ioms_init(zen_ioms_t *ioms)
+{
+	const uint8_t iomsno = ioms->zio_num;
+
+	ioms->zio_npcie_cores = genoa_ioms_n_pcie_cores(iomsno);
+	ioms->zio_nbionum = GENOA_NBIO_NUM(iomsno);
+
+	/*
+	 * nBIFs are actually associated with the NBIO instance but we have no
+	 * representation in the fabric for NBIOs yet. Mark the first IOMS in
+	 * each NBIO as holding the nBIFs.
+	 */
+	if (GENOA_IOMS_IOHUB_NUM(iomsno) == 0)
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
+}
 
 /*
  * How many PCIe cores does this IOMS instance have?

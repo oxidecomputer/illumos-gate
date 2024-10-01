@@ -36,6 +36,57 @@
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/io/turin/iohc.h>
 #include <sys/io/turin/iommu.h>
+#include <sys/io/turin/nbif_impl.h>
+
+const uint8_t turin_nbif_nfunc[] = {
+	[0] = TURIN_NBIF0_NFUNCS,
+	[1] = TURIN_NBIF1_NFUNCS,
+	[2] = TURIN_NBIF2_NFUNCS
+};
+
+const zen_nbif_info_t turin_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
+	[0] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_MPDMATF, .zni_dev = 0, .zni_func = 1 },
+		{ .zni_type = ZEN_NBIF_T_NTB, .zni_dev = 0, .zni_func = 2 },
+		{ .zni_type = ZEN_NBIF_T_SVNTB, .zni_dev = 0, .zni_func = 3 },
+		{ .zni_type = ZEN_NBIF_T_USB, .zni_dev = 0, .zni_func = 4 },
+		{ .zni_type = ZEN_NBIF_T_PSPCCP, .zni_dev = 0, .zni_func = 5 },
+		{ .zni_type = ZEN_NBIF_T_ACP, .zni_dev = 0, .zni_func = 6 },
+		{ .zni_type = ZEN_NBIF_T_AZ, .zni_dev = 0, .zni_func = 7 },
+
+		{ .zni_type = ZEN_NBIF_T_SATA, .zni_dev = 1, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_SATA, .zni_dev = 1, .zni_func = 1 }
+	},
+	[1] = {},
+	[2] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_NTB, .zni_dev = 0, .zni_func = 1 }
+	}
+};
+
+/*
+ * This is called from the common code, via an entry in the Turin version of
+ * Zen fabric ops vector. The common code is responsible for the bulk of
+ * initialization; we merely fill in those bits that are microarchitecture
+ * specific.
+ */
+void
+turin_fabric_ioms_init(zen_ioms_t *ioms)
+{
+	const uint8_t iomsno = ioms->zio_num;
+
+	ioms->zio_npcie_cores = turin_ioms_n_pcie_cores(iomsno);
+	ioms->zio_nbionum = TURIN_NBIO_NUM(iomsno);
+
+	/*
+	 * nBIFs are actually associated with the NBIO instance but we have no
+	 * representation in the fabric for NBIOs yet. Mark the first IOMS in
+	 * each NBIO as holding the nBIFs.
+	 */
+	if (TURIN_IOMS_IOHUB_NUM(iomsno) == 0)
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
+}
 
 /*
  * How many PCIe cores does this IOMS instance have?

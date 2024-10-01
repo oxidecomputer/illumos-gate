@@ -26,6 +26,7 @@
 #include <sys/x86_archext.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/genoa/ccx_impl.h>
+#include <sys/io/genoa/nbif_impl.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/amdzen/smn.h>
 
@@ -76,6 +77,18 @@ extern "C" {
  */
 #define	GENOA_IOMS_IOHUB_NUM(num)	((num) % GENOA_IOMS_PER_NBIO)
 #define	GENOA_NBIO_NUM(num)		((num) / GENOA_IOMS_PER_NBIO)
+
+/*
+ * The Genoa uarch-specific hooks for initial fabric topology initialization.
+ */
+extern void genoa_fabric_ioms_init(zen_ioms_t *);
+
+/*
+ * Genoa uarch-specific initialization data for consumption by common Zen code.
+ */
+extern const uint8_t genoa_nbif_nfunc[];
+extern const zen_nbif_info_t
+    genoa_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS];
 
 /*
  * These are the initialization points for the Genoa Data Fabric, Northbridges,

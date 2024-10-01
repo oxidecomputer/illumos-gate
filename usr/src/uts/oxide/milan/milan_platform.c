@@ -121,6 +121,9 @@ const zen_platform_t milan_platform = {
 			.zssa_arg4 = D_MILAN_SMU_RPC_ARG4,
 			.zssa_arg5 = D_MILAN_SMU_RPC_ARG5,
 		},
+		.zpc_nnbif = MILAN_IOMS_MAX_NBIF,
+		.zpc_nbif_nfunc = milan_nbif_nfunc,
+		.zpc_nbif_data = milan_nbif_data,
 #ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = milan_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(milan_pcie_core_dbg_regs),

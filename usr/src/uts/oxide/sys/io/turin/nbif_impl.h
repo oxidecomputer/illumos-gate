@@ -10,21 +10,21 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_MILAN_NBIF_IMPL_H
-#define	_SYS_IO_MILAN_NBIF_IMPL_H
+#ifndef _SYS_IO_TURIN_NBIF_IMPL_H
+#define	_SYS_IO_TURIN_NBIF_IMPL_H
 
 /*
- * Milan-specific register and bookkeeping definitions for the north bridge
+ * Turin-specific register and bookkeeping definitions for the north bridge
  * interface (nBIF or NBIF). This subsystem provides a PCIe-ish interface to a
  * variety of components like USB and SATA that are not supported by this
  * machine architecture.
  */
 
-#include <sys/io/milan/fabric_impl.h>
-#include <sys/io/milan/nbif.h>
+#include <sys/io/turin/fabric_impl.h>
+#include <sys/io/turin/nbif.h>
 #include <sys/io/zen/nbif_impl.h>
 
 #ifdef __cplusplus
@@ -35,13 +35,13 @@ extern "C" {
  * The maximum number of functions is based on the hardware design here. Each
  * NBIF has potentially one or more root complexes and endpoints.
  */
-#define	MILAN_NBIF0_NFUNCS	3
-#define	MILAN_NBIF1_NFUNCS	7
-#define	MILAN_NBIF2_NFUNCS	3
-#define	MILAN_NBIF_MAX_NFUNCS	MILAN_NBIF1_NFUNCS
+#define	TURIN_NBIF0_NFUNCS	10
+#define	TURIN_NBIF1_NFUNCS	0
+#define	TURIN_NBIF2_NFUNCS	2
+#define	TURIN_NBIF_MAX_NFUNCS	TURIN_NBIF0_NFUNCS
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_MILAN_NBIF_IMPL_H */
+#endif /* _SYS_IO_TURIN_NBIF_IMPL_H */

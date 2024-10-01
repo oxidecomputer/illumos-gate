@@ -71,7 +71,8 @@ extern int zen_walk_ioms(zen_ioms_cb_f, void *);
 
 typedef enum zen_ioms_flag {
 	ZEN_IOMS_F_HAS_FCH	= 1 << 0,
-	ZEN_IOMS_F_HAS_WAFL	= 1 << 1
+	ZEN_IOMS_F_HAS_WAFL	= 1 << 1,
+	ZEN_IOMS_F_HAS_NBIF	= 1 << 2
 } zen_ioms_flag_t;
 
 typedef enum zen_iodie_flag {

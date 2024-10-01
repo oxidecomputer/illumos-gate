@@ -81,7 +81,6 @@ typedef struct milan_soc milan_soc_t;
 
 struct milan_ioms {
 	milan_pcie_core_t	mio_pcie_cores[MILAN_IOMS_MAX_PCIE_CORES];
-	milan_nbif_t		mio_nbifs[MILAN_IOMS_MAX_NBIF];
 };
 
 struct milan_iodie {
@@ -106,6 +105,13 @@ struct milan_fabric {
 extern void milan_fabric_topo_init(zen_fabric_t *);
 extern void milan_fabric_soc_init(zen_soc_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);
+
+/*
+ * Milan uarch-specific initialization data for consumption by common Zen code.
+ */
+extern const uint8_t milan_nbif_nfunc[];
+extern const zen_nbif_info_t
+    milan_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS];
 
 /*
  * These are the initialization points for the Milan Data Fabric, Northbridges,

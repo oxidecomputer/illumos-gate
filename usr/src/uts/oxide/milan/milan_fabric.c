@@ -769,33 +769,32 @@ static const milan_ioapic_info_t milan_ioapic_routes[IOAPIC_NROUTES] = {
 	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC }
 };
 
-/* XXX Track platform default presence */
-typedef struct milan_nbif_info {
-	milan_nbif_func_type_t	mni_type;
-	uint8_t			mni_dev;
-	uint8_t			mni_func;
-} milan_nbif_info_t;
-
-static const milan_nbif_info_t milan_nbif0[MILAN_NBIF0_NFUNCS] = {
-	{ .mni_type = MILAN_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_NTB, .mni_dev = 0, .mni_func = 1 },
-	{ .mni_type = MILAN_NBIF_T_PTDMA, .mni_dev = 0, .mni_func = 2 }
+const uint8_t milan_nbif_nfunc[] = {
+	[0] = MILAN_NBIF0_NFUNCS,
+	[1] = MILAN_NBIF1_NFUNCS,
+	[2] = MILAN_NBIF2_NFUNCS
 };
 
-static const milan_nbif_info_t milan_nbif1[MILAN_NBIF1_NFUNCS] = {
-	{ .mni_type = MILAN_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_PSPCCP, .mni_dev = 0, .mni_func = 1 },
-	{ .mni_type = MILAN_NBIF_T_PTDMA, .mni_dev = 0, .mni_func = 2 },
-	{ .mni_type = MILAN_NBIF_T_USB, .mni_dev = 0, .mni_func = 3 },
-	{ .mni_type = MILAN_NBIF_T_AZ, .mni_dev = 0, .mni_func = 4 },
-	{ .mni_type = MILAN_NBIF_T_SATA, .mni_dev = 1, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_SATA, .mni_dev = 2, .mni_func = 0 }
-};
-
-static const milan_nbif_info_t milan_nbif2[MILAN_NBIF2_NFUNCS] = {
-	{ .mni_type = MILAN_NBIF_T_DUMMY, .mni_dev = 0, .mni_func = 0 },
-	{ .mni_type = MILAN_NBIF_T_NTB, .mni_dev = 0, .mni_func = 1 },
-	{ .mni_type = MILAN_NBIF_T_NVME, .mni_dev = 0, .mni_func = 2 }
+const zen_nbif_info_t milan_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
+	[0] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_NTB, .zni_dev = 0, .zni_func = 1 },
+		{ .zni_type = ZEN_NBIF_T_PTDMA, .zni_dev = 0, .zni_func = 2 }
+	},
+	[1] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_PSPCCP, .zni_dev = 0, .zni_func = 1 },
+		{ .zni_type = ZEN_NBIF_T_PTDMA, .zni_dev = 0, .zni_func = 2 },
+		{ .zni_type = ZEN_NBIF_T_USB, .zni_dev = 0, .zni_func = 3 },
+		{ .zni_type = ZEN_NBIF_T_AZ, .zni_dev = 0, .zni_func = 4 },
+		{ .zni_type = ZEN_NBIF_T_SATA, .zni_dev = 1, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_SATA, .zni_dev = 2, .zni_func = 0 }
+	},
+	[2] = {
+		{ .zni_type = ZEN_NBIF_T_DUMMY, .zni_dev = 0, .zni_func = 0 },
+		{ .zni_type = ZEN_NBIF_T_NTB, .zni_dev = 0, .zni_func = 1 },
+		{ .zni_type = ZEN_NBIF_T_NVME, .zni_dev = 0, .zni_func = 2 }
+	}
 };
 
 /*
@@ -1024,11 +1023,11 @@ milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF:
-		reg = milan_nbif_smn_reg(ioms->zio_num, def, nbif->zn_nbifno,
-		    reginst);
+		reg = milan_nbif_smn_reg(ioms->zio_nbionum, def,
+		    nbif->zn_nbifno, reginst);
 		break;
 	case SMN_UNIT_NBIF_ALT:
-		reg = milan_nbif_alt_smn_reg(ioms->zio_num, def,
+		reg = milan_nbif_alt_smn_reg(ioms->zio_nbionum, def,
 		    nbif->zn_nbifno, reginst);
 		break;
 	default:
@@ -1049,7 +1048,7 @@ milan_nbif_func_reg(const zen_nbif_func_t *const func,
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF_FUNC:
-		reg = milan_nbif_func_smn_reg(ioms->zio_num, def,
+		reg = milan_nbif_func_smn_reg(ioms->zio_nbionum, def,
 		    nbif->zn_nbifno, func->znf_dev, func->znf_func);
 		break;
 	default:
@@ -1058,23 +1057,6 @@ milan_nbif_func_reg(const zen_nbif_func_t *const func,
 	}
 
 	return (reg);
-}
-
-static uint32_t
-milan_nbif_func_read(zen_nbif_func_t *func, const smn_reg_t reg)
-{
-	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
-
-	return (zen_smn_read(iodie, reg));
-}
-
-static void
-milan_nbif_func_write(zen_nbif_func_t *func, const smn_reg_t reg,
-    const uint32_t val)
-{
-	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
-
-	zen_smn_write(iodie, reg, val);
 }
 
 smn_reg_t
@@ -1306,56 +1288,6 @@ milan_fabric_ioms_pcie_init(zen_ioms_t *ioms)
 			port->zpp_device = pinfop[portno].mppi_dev;
 			port->zpp_func = pinfop[portno].mppi_func;
 			mport->mpp_hp_type = SMU_HP_INVALID;
-		}
-	}
-}
-
-static void
-milan_fabric_ioms_nbif_init(zen_ioms_t *ioms)
-{
-	uint8_t zio_nnbifs = ioms->zio_nnbifs;
-	milan_ioms_t *mioms = ioms->zio_uarch_ioms;
-
-	for (uint_t nbifno = 0; nbifno < zio_nnbifs; nbifno++) {
-		const milan_nbif_info_t *ninfo = NULL;
-		zen_nbif_t *nbif = &ioms->zio_nbifs[nbifno];
-		milan_nbif_t *mnbif = &mioms->mio_nbifs[nbifno];
-
-		nbif->zn_nbifno = nbifno;
-		nbif->zn_ioms = ioms;
-		VERIFY3U(nbifno, <, MILAN_IOMS_MAX_NBIF);
-		switch (nbifno) {
-		case 0:
-			nbif->zn_nfuncs = MILAN_NBIF0_NFUNCS;
-			ninfo = milan_nbif0;
-			break;
-		case 1:
-			nbif->zn_nfuncs = MILAN_NBIF1_NFUNCS;
-			ninfo = milan_nbif1;
-			break;
-		case 2:
-			nbif->zn_nfuncs = MILAN_NBIF2_NFUNCS;
-			ninfo = milan_nbif2;
-			break;
-		}
-
-		for (uint_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
-			zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
-			milan_nbif_func_t *mfunc = &mnbif->mn_funcs[funcno];
-
-			mfunc->mne_type = ninfo[funcno].mni_type;
-			func->znf_uarch_nbif_func = mfunc;
-			func->znf_nbif = nbif;
-			func->znf_dev = ninfo[funcno].mni_dev;
-			func->znf_func = ninfo[funcno].mni_func;
-
-			/*
-			 * As there is a dummy device on each of these, this in
-			 * theory doesn't need any explicit configuration.
-			 */
-			if (mfunc->mne_type == MILAN_NBIF_T_DUMMY) {
-				func->znf_flags |= ZEN_NBIF_F_NO_CONFIG;
-			}
 		}
 	}
 }
@@ -1976,10 +1908,17 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 	if (iomsno == MILAN_IOMS_HAS_WAFL) {
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_WAFL;
 	}
-	ioms->zio_nnbifs = MILAN_IOMS_MAX_NBIF;
+
+	/*
+	 * nBIFs are actually associated with the NBIO instance but we have no
+	 * representation in the fabric for NBIOs. In Milan there is a 1:1
+	 * correspondence between NBIOs and nBIFs so we flag each IOMS as also
+	 * having nBIFs.
+	 */
+	ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
+	ioms->zio_nbionum = iomsno;
 
 	milan_fabric_ioms_pcie_init(ioms);
-	milan_fabric_ioms_nbif_init(ioms);
 }
 
 void
@@ -2516,7 +2455,6 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 		smn_reg_t strapreg;
 		uint32_t strap;
 		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
-		milan_nbif_func_t *mfunc = func->znf_uarch_nbif_func;
 
 		/*
 		 * This indicates that we have a dummy function or similar. In
@@ -2529,7 +2467,7 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 		}
 
 		strapreg = milan_nbif_func_reg(func, D_NBIF_FUNC_STRAP0);
-		strap = milan_nbif_func_read(func, strapreg);
+		strap = zen_nbif_func_read(func, strapreg);
 
 		if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
 			strap = NBIF_FUNC_STRAP0_SET_EXIST(strap, 1);
@@ -2539,7 +2477,7 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 			/*
 			 * Strap enabled SATA devices to what AMD asks for.
 			 */
-			if (mfunc->mne_type == MILAN_NBIF_T_SATA) {
+			if (func->znf_type == ZEN_NBIF_T_SATA) {
 				strap = NBIF_FUNC_STRAP0_SET_MAJ_REV(strap, 7);
 				strap = NBIF_FUNC_STRAP0_SET_MIN_REV(strap, 1);
 			}
@@ -2549,7 +2487,7 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 			    func->znf_dev, func->znf_func, 0);
 		}
 
-		milan_nbif_func_write(func, strapreg, strap);
+		zen_nbif_func_write(func, strapreg, strap);
 	}
 
 	zen_nbif_write(nbif, reg, intr);

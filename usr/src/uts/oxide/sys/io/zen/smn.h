@@ -42,6 +42,7 @@ extern "C" {
  */
 typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_nbif zen_nbif_t;
+typedef struct zen_nbif_func zen_nbif_func_t;
 typedef struct zen_iodie zen_iodie_t;
 
 /*
@@ -73,6 +74,9 @@ extern void zen_ioms_write(zen_ioms_t *, const smn_reg_t, const uint32_t);
  */
 extern uint32_t zen_nbif_read(zen_nbif_t *, const smn_reg_t);
 extern void zen_nbif_write(zen_nbif_t *, const smn_reg_t, const uint32_t);
+extern uint32_t zen_nbif_func_read(zen_nbif_func_t *, const smn_reg_t);
+extern void zen_nbif_func_write(zen_nbif_func_t *, const smn_reg_t,
+    const uint32_t);
 
 /*
  * Accessors for IO die registers.

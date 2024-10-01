@@ -66,6 +66,8 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_get_dxio_fw_version = zen_mpio_get_fw_version,
 	.zfo_report_dxio_fw_version = zen_mpio_report_fw_version,
 
+	.zfo_ioms_init = genoa_fabric_ioms_init,
+
 	.zfo_init_tom = genoa_fabric_init_tom,
 	.zfo_disable_vga = genoa_fabric_disable_vga,
 	.zfo_iohc_pci_ids = zen_null_fabric_iohc_pci_ids,
@@ -121,6 +123,9 @@ const zen_platform_t genoa_platform = {
 			.zmsa_resp = D_GENOA_MPIO_RPC_RESP,
 			.zmsa_doorbell = D_GENOA_MPIO_RPC_DOORBELL,
 		},
+		.zpc_nnbif = GENOA_NBIO_MAX_NBIF,
+		.zpc_nbif_nfunc = genoa_nbif_nfunc,
+		.zpc_nbif_data = genoa_nbif_data,
 #ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = genoa_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(genoa_pcie_core_dbg_regs),

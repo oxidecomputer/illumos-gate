@@ -1097,6 +1097,44 @@ zen_fabric_determine_df_vers_cb(const df_reg_def_t rd, const void *arg)
 	    rd.drd_reg));
 }
 
+static void
+zen_fabric_ioms_nbif_init(zen_ioms_t *ioms)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+
+	ioms->zio_nnbifs = consts->zpc_nnbif;
+
+	for (uint8_t nbifno = 0; nbifno < ioms->zio_nnbifs; nbifno++) {
+		zen_nbif_t *nbif = &ioms->zio_nbifs[nbifno];
+		const zen_nbif_info_t *ninfo;
+
+		nbif->zn_nbifno = nbifno;
+		nbif->zn_ioms = ioms;
+		nbif->zn_nfuncs = consts->zpc_nbif_nfunc[nbifno];
+		ninfo = consts->zpc_nbif_data[nbifno];
+
+		for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
+			zen_nbif_func_t *func;
+
+			ASSERT3U(funcno, <, ZEN_NBIF_MAX_FUNCS);
+			func = &nbif->zn_funcs[funcno];
+
+			func->znf_type = ninfo[funcno].zni_type;
+			func->znf_uarch_nbif_func = NULL;
+			func->znf_nbif = nbif;
+			func->znf_dev = ninfo[funcno].zni_dev;
+			func->znf_func = ninfo[funcno].zni_func;
+
+			/*
+			 * Dummy devices in theory need no explicit
+			 * configuration.
+			 */
+			if (func->znf_type == ZEN_NBIF_T_DUMMY)
+				func->znf_flags |= ZEN_NBIF_F_NO_CONFIG;
+		}
+	}
+}
+
 typedef struct zen_iodie_cb_arg_data {
 	zen_soc_t *zicad_soc;
 	const zen_fabric_ops_t *zicad_fops;
@@ -1171,11 +1209,13 @@ zen_fabric_topo_init_iodie_cb(zen_iodie_t *iodie, void *arg)
 		}
 
 		/*
-		 * uarch-specific IOMS init hook.  XXX: actually most of the
-		 * functionality is still in the milan impl.
+		 * uarch-specific IOMS init hook.
 		 */
 		if (fops->zfo_ioms_init != NULL)
 			fops->zfo_ioms_init(ioms);
+
+		if ((ioms->zio_flags & ZEN_IOMS_F_HAS_NBIF) != 0)
+			zen_fabric_ioms_nbif_init(ioms);
 	}
 
 	/*

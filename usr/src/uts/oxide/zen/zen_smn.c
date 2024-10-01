@@ -86,6 +86,23 @@ zen_nbif_write(zen_nbif_t *nbif, const smn_reg_t reg, const uint32_t val)
 }
 
 uint32_t
+zen_nbif_func_read(zen_nbif_func_t *func, const smn_reg_t reg)
+{
+	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
+
+	return (zen_smn_read(iodie, reg));
+}
+
+void
+zen_nbif_func_write(zen_nbif_func_t *func, const smn_reg_t reg,
+    const uint32_t val)
+{
+	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
+
+	zen_smn_write(iodie, reg, val);
+}
+
+uint32_t
 zen_iodie_read(zen_iodie_t *iodie, const smn_reg_t reg)
 {
 	return (zen_smn_read(iodie, reg));

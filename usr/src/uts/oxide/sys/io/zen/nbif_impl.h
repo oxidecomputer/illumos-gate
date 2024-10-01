@@ -26,7 +26,7 @@
 
 #include <sys/io/zen/fabric.h>
 
-#define	ZEN_NBIF_MAX_FUNCS	7
+#define	ZEN_NBIF_MAX_FUNCS	10
 
 typedef struct zen_nbif zen_nbif_t;
 typedef struct zen_nbif_func zen_nbif_func_t;
@@ -46,7 +46,33 @@ typedef enum zen_nbif_func_flag {
 	ZEN_NBIF_F_NO_CONFIG	= 1 << 1
 } zen_nbif_func_flag_t;
 
+typedef enum zen_nbif_func_type {
+	ZEN_NBIF_T_DUMMY,
+	ZEN_NBIF_T_ACP,
+	ZEN_NBIF_T_AZ,
+	ZEN_NBIF_T_MPDMATF,
+	ZEN_NBIF_T_NTB,
+	ZEN_NBIF_T_NVME,
+	ZEN_NBIF_T_PSPCCP,
+	ZEN_NBIF_T_PTDMA,
+	ZEN_NBIF_T_PVNTB,
+	ZEN_NBIF_T_SATA,
+	ZEN_NBIF_T_SVNTB,
+	ZEN_NBIF_T_USB,
+} zen_nbif_func_type_t;
+
+typedef struct zen_nbif_info {
+	zen_nbif_func_type_t	zni_type;
+	uint8_t			zni_dev;
+	uint8_t			zni_func;
+} zen_nbif_info_t;
+
 struct zen_nbif_func {
+	/*
+	 * The type of this function.
+	 */
+	zen_nbif_func_type_t	znf_type;
+
 	/*
 	 * Software-defined flags for this function.
 	 */

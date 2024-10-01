@@ -139,9 +139,15 @@ struct zen_ioms {
 
 	/*
 	 * The index of this IOMS relative to its associated die.  Used when
-	 * accessing SNM registers, straps, etc.
+	 * accessing SMN registers, straps, etc.
 	 */
 	uint8_t			zio_num;
+
+	/*
+	 * The NBIO number that contains this IOMS. Used when accessing SMN
+	 * registers for NBIO components such as the nBIFs.
+	 */
+	uint8_t			zio_nbionum;
 
 	/*
 	 * The instance ID of the IOMS and IOS components used for accessing

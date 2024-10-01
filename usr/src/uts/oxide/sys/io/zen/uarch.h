@@ -27,7 +27,8 @@
 #include <sys/amdzen/df.h>
 #include <sys/amdzen/smn.h>
 #include <sys/io/zen/ccx.h>
-#include <sys/io/zen/fabric.h>
+#include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/nbif_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -285,6 +286,14 @@ typedef struct zen_platform_consts {
 	 * The platform-specific SMN addresses of the MPIO RPC registers.
 	 */
 	const zen_mpio_smn_addrs_t	zpc_mpio_smn_addrs;
+
+	/*
+	 * Platform-specific data for configuring the nBIF devices and
+	 * functions.
+	 */
+	const uint8_t			zpc_nnbif;
+	const uint8_t			*zpc_nbif_nfunc;
+	const zen_nbif_info_t		(*zpc_nbif_data)[ZEN_NBIF_MAX_FUNCS];
 
 	/*
 	 * These are pointers to tables of PCIe core and port registers which
