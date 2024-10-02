@@ -8519,6 +8519,7 @@ usr/src/man/man9f/va_copy.9f
 usr/src/man/man9f/va_end.9f
 usr/src/man/man9f/va_start.9f
 usr/src/man/man9f/vcmn_err.9f
+usr/src/man/man9f/vdev_err.9f
 usr/src/man/man9f/vmem_destroy.9f
 usr/src/man/man9f/vmem_free.9f
 usr/src/man/man9f/vmem_size.9f
