@@ -3998,7 +3998,7 @@ milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 	 * The IOMMUL1 does not have an instance for the on-the side WAFL lanes.
 	 * Skip the WAFL port if we're that.
 	 */
-	if (pc->zpc_coreno >= IOMMUL1_N_PCIE_PORTS)
+	if (pc->zpc_coreno >= IOMMUL1_N_PCIE_CORES)
 		return (0);
 
 	reg = milan_pcie_core_reg(pc, D_IOMMUL1_CTL1);
