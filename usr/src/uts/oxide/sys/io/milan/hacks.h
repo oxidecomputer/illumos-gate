@@ -19,6 +19,8 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 
+#include <sys/io/zen/hacks.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,17 +29,7 @@ extern bool milan_fixup_i2c_clock(void);
 extern bool milan_cgpll_set_ssc(bool);
 extern void milan_check_furtive_reset(void);
 
-/*
- * Used internally by milan_hack_gpio().  Do not use outside this code.
- */
-typedef enum milan_hack_gpio_op {
-	MHGOP_CONFIGURE,
-	MHGOP_RESET,
-	MHGOP_SET,
-	MHGOP_TOGGLE
-} milan_hack_gpio_op_t;
-
-extern void milan_hack_gpio(milan_hack_gpio_op_t, uint16_t);
+extern void milan_hack_gpio(zen_hack_gpio_op_t, uint16_t);
 
 #ifdef __cplusplus
 }

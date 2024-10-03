@@ -14,8 +14,8 @@
  */
 
 /*
- * Type, structure, and function definitions for for interacting with MPIO,
- * the post-Milan AMD Zen "MicroProcessor for IO", which is the component that
+ * Type, structure, and function definitions for interacting with MPIO, the
+ * post-Milan AMD Zen "MicroProcessor for IO", which is the component that
  * handles things like driving the DXIO crossbar to train PCIe lanes, etc.
  */
 
@@ -63,7 +63,33 @@ typedef enum zen_mpio_rpc_res {
 /*
  * MPIO message codes.  These are specific to firmware revision 3.
  */
-#define	ZEN_MPIO_OP_GET_VERSION		0x00
+#define	ZEN_MPIO_OP_GET_VERSION			0x00
+#define	ZEN_MPIO_OP_GET_STATUS			0x01
+#define	ZEN_MPIO_OP_SET_GLOBAL_CONFIG		0x02
+#define	ZEN_MPIO_OP_GET_ASK_RESULT		0x03
+#define	ZEN_MPIO_OP_SETUP_LINK			0x04
+#define	ZEN_MPIO_OP_EN_CLK_GATING		0x05
+#define	ZEN_MPIO_OP_RECOVER_ASK			0x06
+#define	ZEN_MPIO_OP_XFER_ASK			0x07
+#define	ZEN_MPIO_OP_XFER_EXT_ATTRS		0x08
+#define	ZEN_MPIO_OP_PCIE_SET_SPEED		0x09
+#define	ZEN_MPIO_OP_PCIE_INIT_ESM		0x0a
+#define	ZEN_MPIO_OP_PCIE_RST_CTLR		0x0b
+#define	ZEN_MPIO_OP_PCIE_WRITE_STRAP		0x0c
+#define	ZEN_MPIO_OP_CXL_INIT			0x0d
+#define	ZEN_MPIO_OP_GET_DELI_INFO		0x0e
+#define	ZEN_MPIO_OP_ENUMERATE_I2C		0x10
+#define	ZEN_MPIO_OP_GET_I2C_DEV			0x11
+#define	ZEN_MPIO_OP_GET_I2C_DEV_CHG		0x12
+#define	ZEN_MPIO_OP_SEND_HP_CFG_TBL		0x13
+#define	ZEN_MPIO_OP_HOTPLUG_EN			0x14
+#define	ZEN_MPIO_OP_HOTPLUG_DIS			0x15
+#define	ZEN_MPIO_OP_SET_HP_I2C_SW_ADDR		0x16
+#define	ZEN_MPIO_OP_SET_HP_BLINK_IVAL		0x17
+#define	ZEN_MPIO_OP_SET_HP_POLL_IVAL		0x18
+#define	ZEN_MPIO_OP_SET_HP_FLAGS		0x19
+
+#define	ZEN_MPIO_OP_POSTED			(3 << 8)
 
 /*
  * MPIO RPC response codes defined by firmware that may appear in the response
@@ -74,6 +100,13 @@ typedef enum zen_mpio_rpc_res {
 #define	ZEN_MPIO_RPC_FW_RESP_REJ_PREREQ		0xfd
 #define	ZEN_MPIO_RPC_FW_RESP_UNKNOWN_CMD	0xfe
 #define	ZEN_MPIO_RPC_FW_RESP_FAILED		0xff
+
+/*
+ * On a successful ASK and extended attribute DMA transfers, the result field in
+ * the respective response structures is set to one of these.
+ */
+#define	ZEN_MPIO_FW_ASK_XFER_RES_OK		1
+#define	ZEN_MPIO_FW_EXT_ATTR_XFER_RES_OK	1
 
 /*
  * The "ready" bit in the response register is set when MPIO is done processing
@@ -100,6 +133,12 @@ typedef struct zen_mpio_rpc {
  */
 extern zen_mpio_rpc_res_t zen_mpio_rpc(zen_iodie_t *iodie, zen_mpio_rpc_t *rpc);
 
+#define	ZEN_MPIO_XFER_TO_RAM			0
+#define	ZEN_MPIO_XFER_FROM_RAM			1
+
+#define	ZEN_MPIO_LINK_ALL			0
+#define	ZEN_MPIO_LINK_SELECTED			1
+
 /*
  * These are the speed parameters understood by firmware on the
  * microarchitectures that we currently support.
@@ -113,10 +152,78 @@ typedef enum zen_mpio_link_speed {
 	ZEN_MPIO_LINK_SPEED_GEN5,
 } zen_mpio_link_speed_t;
 
+typedef enum zen_mpio_hotplug_type {
+	ZEN_MPIO_HOTPLUG_T_DISABLED		= 0,
+	ZEN_MPIO_HOTPLUG_T_BASIC,
+	ZEN_MPIO_HOTPLUG_T_EXPRESS_MODULE,
+	ZEN_MPIO_HOTPLUG_T_ENHANCED,
+	ZEN_MPIO_HOTPLUG_T_INBOARD,
+	ZEN_MPIO_HOTPLUG_T_ENT_SSD,
+	ZEN_MPIO_HOTPLUG_T_UBM,
+	ZEN_MPIO_HOTPLUG_T_OCP,
+} zen_mpio_hotplug_type_t;
+
 /*
  * Structures defined here are expected to be packed by firmware.
  */
 #pragma	pack(1)
+
+/*
+ * Global MPIO configuration, which is sent with a ZEN_MPIO_OP_SET_GLOBAL_CONFIG
+ * RPC.
+ */
+typedef struct zen_mpio_global_config {
+	/* uint32_t mpio_global_cfg_args[0]: General settings */
+	uint32_t		zmgc_skip_vet:1;
+	uint32_t		zmgc_ntb_hp_ival:1;
+	uint32_t		zmgc_save_restore_mode:2;
+	uint32_t		zmgc_exact_match_port_size:1;
+	uint32_t		zmgc_skip_disable_link_on_fail:1;
+	uint32_t		zmgc_use_phy_sram:1;
+	uint32_t		zmgc_valid_phy_firmware:1;
+	uint32_t		zmgc_enable_loopback_support:1;
+	uint32_t		zmgc_stb_verbosity:2;
+	uint32_t		zmgc_en_pcie_noncomp_wa:1;
+	uint32_t		zmgc_active_slt_mode:1;
+	uint32_t		zmgc_legacy_dev_boot_fail_wa:1;
+	uint32_t		zmgc_deferred_msg_supt:1;
+	uint32_t		zmgc_cxl_gpf_phase2_timeout:4;
+	uint32_t		zmgc_run_xgmi_safe_recov_odt:1;
+	uint32_t		zmgc_run_z_cal:1;
+	uint32_t		zmgc_pad0:11;
+	/* uint32_t mpio_global_cfg_args[1]: Power settings */
+	uint32_t		zmgc_pwr_mgmt_clk_gating:1;
+	uint32_t		zmgc_pwr_mgmt_static_pwr_gating:1;
+	uint32_t		zmgc_pwr_mgmt_refclk_shutdown:1;
+	uint32_t		zmgc_cbs_opts_en_pwr_mgmt:1;
+	uint32_t		zmgc_pwr_mgmt_pma_pwr_gating:1;
+	uint32_t		zmgc_pwr_mgmt_pma_clk_gating:1;
+	uint32_t		zmgc_pad1:26;
+	/* uint32_t mpio_global_cfg_args[2]: Link timeouts */
+	uint16_t		zmgc_link_rcvr_det_poll_timeout_ms;
+	uint16_t		zmgc_link_l0_poll_timeout_ms;
+	/* uint32_t mpio_global_cfg_args[3]: Protocol settings */
+	uint16_t		zmgc_link_reset_to_training_time_ms;
+	uint16_t		zmgc_pcie_allow_completion_pass:1;
+	uint16_t		zmgc_cbs_opts_allow_ptr_slip_ival:1;
+	uint16_t		zmgc_link_dis_at_pwr_off_delay:4;
+	uint16_t		zmgc_en_2spc_gen4:1;
+	uint16_t		zmgc_pad2:9;
+	/* uint32_t mpio_global_cfg_args[4]: Trap control */
+	uint32_t		zmgc_dis_sbr_trap:1;
+	uint32_t		zmgc_dis_lane_margining_trap:1;
+	uint32_t		zmgc_pad3:30;
+	/* uint32_t mpio_global_cfg_args[5]: Reserved */
+	uint32_t		zmgc_resv;
+} zen_mpio_global_config_t;
+
+typedef struct zen_mpio_status {
+	uint32_t		zms_cmd_stat;
+	uint32_t		zms_cycle_stat;
+	uint32_t		zms_fw_post_code;
+	uint32_t		zms_fw_status;
+	uint32_t		zms_resv[2];
+} zen_mpio_status_t;
 
 /*
  * Link attributes are part of the ASK, which is sent to and received from
@@ -189,6 +296,7 @@ typedef struct zen_mpio_link_attr {
 } zen_mpio_link_attr_t;
 
 CTASSERT(sizeof (zen_mpio_link_attr_t) == 24);
+CTASSERT(offsetof(zen_mpio_link_attr_t, zmla_resv1) == 20);
 
 /*
  * This describes the link in the ASK, its start and number of lanes, what type
@@ -251,15 +359,6 @@ typedef struct zen_mpio_ask_port {
 CTASSERT(sizeof (zen_mpio_ask_port_t) == 52);
 
 /*
- * We size the maximum number of ports in the ask roughly based on the SP5
- * design and I/O die constraints as a rough swag. P0 and G3 can each support up
- * to 16 PCIe devices, while the remaining 6 groups cans upport up to 8-9
- * devices and P4/P5 can support up to 4 devices. That gives us 88 devices. We
- * currently require this to be a page size which can only fit up to 78 devices.
- */
-#define	ZEN_MPIO_ASK_MAX_PORTS	78
-
-/*
  * The ASK itself is fairly straight-forward at this point: it is simply an
  * array of port structures describing the partitioning of the various lanes in
  * the system that MPIO will train.  This is the basic structure that is sent
@@ -268,6 +367,44 @@ CTASSERT(sizeof (zen_mpio_ask_port_t) == 52);
 typedef struct zen_mpio_ask {
 	zen_mpio_ask_port_t	zma_ports[ZEN_MPIO_ASK_MAX_PORTS];
 } zen_mpio_ask_t;
+
+typedef struct zen_mpio_ext_attrs {
+	uint8_t			zmad_type;
+	uint8_t			zmad_id;
+	uint8_t			zmad_nu32s;
+	uint8_t			zmad_rsvd1;
+} zen_mpio_ext_attrs_t;
+
+typedef struct zen_mpio_xfer_ask_args {
+	uint32_t		zmxaa_paddr_hi;
+	uint32_t		zmxaa_paddr_lo;
+	uint32_t		zmxaa_links:1;
+	uint32_t		zmxaa_dir:1;
+	uint32_t		zmxaa_resv0:30;
+	uint32_t		zmxaa_link_start;
+	uint32_t		zmxaa_link_count;
+	uint32_t		zmxaa_resv1;
+} zen_mpio_xfer_ask_args_t;
+
+typedef struct zen_mpio_xfer_ask_resp {
+	uint32_t		zmxar_res;
+	uint32_t		zmxar_nbytes;
+	uint32_t		zmxar_resv[4];
+} zen_mpio_xfer_ask_resp_t;
+
+typedef struct zen_mpio_xfer_ext_attrs_args {
+	uint32_t		zmxeaa_paddr_hi;
+	uint32_t		zmxeaa_paddr_lo;
+	uint32_t		zmxeaa_nwords;
+	uint32_t		zmxeaa_resv[3];
+} zen_mpio_xfer_ext_attrs_args_t;
+
+typedef struct zen_mpio_xfer_ext_attrs_resp {
+	uint32_t		zxear_res;
+	uint32_t		zxear_nbytes;
+	uint32_t		zxear_resv[4];
+} zen_mpio_xfer_ext_attrs_resp_t;
+
 
 /*
  * Instances of the link setup args type are sent to MPIO as part of driving the
@@ -290,6 +427,9 @@ typedef struct zen_mpio_link_setup_args {
 
 CTASSERT(sizeof (zen_mpio_link_setup_args_t) == 24);
 
+/*
+ * This is the response for each stage of link setup.
+ */
 typedef struct zen_mpio_link_setup_resp {
 	uint32_t		zmlsr_result;
 	uint32_t		zmlsr_map:1;

@@ -13,31 +13,25 @@
  * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_GENOA_PCIE_IMPL_H
-#define	_SYS_IO_GENOA_PCIE_IMPL_H
+#ifndef _SYS_IO_TURIN_HACKS_H
+#define	_SYS_IO_TURIN_HACKS_H
 
 #include <sys/types.h>
-#include <sys/io/zen/pcie_impl.h>
-#include <sys/io/genoa/pcie.h>
+
+#include <sys/io/zen/hacks.h>
+
+/*
+ * Turin-specific hacks.
+ */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * Each of the normal PCIe cores is an RC9x16: up to 9 ports across 16 lanes.
- * Each bonus PCIe core is an RC4x4.
- */
-#define	GENOA_PCIE_CORE_MAX_PORTS	9
-#define	GENOA_PCIE_CORE_BONUS_PORTS	4
-
-/*
- * This is the SDP unit ID for PCIe core 0 in each IOMS.
- */
-#define	GENOA_PCIE_CORE0_UNITID		16
+extern void turin_hack_gpio(zen_hack_gpio_op_t, uint16_t);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_GENOA_PCIE_IMPL_H */
+#endif /* _SYS_IO_TURIN_HACKS_H */

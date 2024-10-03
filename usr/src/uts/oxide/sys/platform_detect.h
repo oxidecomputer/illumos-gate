@@ -48,6 +48,8 @@ typedef enum {
 
 #define	OXIDE_BOARD_BSU_NUM	2
 
+#define	OXIDE_MAX_PERST_GPIOS	4
+
 typedef struct oxide_board_cpuinfo {
 	x86_chiprev_t		obc_chiprev;
 	const char		*obc_chiprevstr;
@@ -95,6 +97,29 @@ typedef struct oxide_board_data {
 	oxide_board_cpuinfo_t	obd_cpuinfo;
 
 	/*
+	 * oxide_derive_platform() sets this pointer to a read-only copy of the
+	 * source DXIO initialization data (and its length, which is accessed
+	 * via a pointer function because that can be const, while an extern
+	 * size_t is not) used by this board during e.g. PCIe device training.
+	 */
+	const void		*obd_dxio_source_data;
+	size_t			(*obd_dxio_source_data_len)(void);
+
+	/*
+	 * oxide_derive_platform() similarly sets this pointer to a read-only
+	 * copy of the source UBM HFC data, on boards that support UBM.
+	 */
+	const void		*obd_ubm_source_hfc_data;
+	size_t			(*obd_ubm_source_hfc_data_len)(void);
+
+	/*
+	 * If we have to wiggle a GPIO pin to release devices from PERST,
+	 * the specific pins will be listed here.
+	 */
+	const uint16_t		obd_perst_gpios[OXIDE_MAX_PERST_GPIOS];
+	size_t			obd_perst_gpios_len;
+
+	/*
 	 * Similarly, oxide_derive_platform() will set this pointer to the
 	 * appropriate Zen platform structure.
 	 */
@@ -105,6 +130,7 @@ extern const oxide_board_data_t *oxide_board_data;
 
 extern void oxide_derive_platform(void);
 extern void oxide_report_platform(void);
+extern bool oxide_board_is_ruby(void);
 
 static inline const zen_platform_t *
 oxide_zen_platform(void)

@@ -65,29 +65,44 @@ extern uint8_t turin_pcie_core_n_ports(const uint8_t);
  */
 
 static inline smn_reg_t
-turin_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+turin_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno)
 {
 	const uint32_t PCIE_CORE_SMN_REG_MASK = 0x7ffff;
-	const uint32_t ioms32 = (const uint32_t)iomsno;
-	const uint32_t core32 = (const uint32_t)coreno;
+	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t size32 = (def.srd_size == 0) ? 4 :
 	    (const uint32_t)def.srd_size;
+	uint32_t inst = iohc32;
+
+	/*
+	 * Note: We'd like to use the macros TURIN_IOMS_BONUS_PCIE_CORENO and
+	 * TURIN_NBIO_BONUS_IOHC here, but those are defined in
+	 * turin/fabric_impl.h, which we can't include here, so we use local
+	 * constants.
+	 */
+	const uint32_t ioms_bonus_pcie_coreno = 1;
+	const uint32_t nbio_bonus_iohc = 1;
+
+	/*
+	 * The instance number is usually the IOHC number, as above, but note
+	 * that if we are on the single bonus core, we need register instance
+	 * 8, as per the PPR.
+	 */
+	ASSERT3U(coreno, <=, ioms_bonus_pcie_coreno);
+	if (coreno == ioms_bonus_pcie_coreno) {
+		ASSERT3U(iohc32, ==, nbio_bonus_iohc);
+		inst = 8;
+	}
 
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_CORE);
 	ASSERT0(def.srd_nents);
 	ASSERT0(def.srd_stride);
-	ASSERT3U(ioms32, <, 8);
+	ASSERT3U(inst, <=, 8);
 	ASSERT0(def.srd_reg & ~PCIE_CORE_SMN_REG_MASK);
-
-#ifdef	DEBUG
-	const uint32_t nents = turin_ioms_n_pcie_cores(iomsno);
-	ASSERT3U(nents, >, core32);
-#endif	/* DEBUG */
 
 	const uint32_t aperture_base = 0x1A380000;
 
-	const uint32_t aperture_off = (ioms32 << 20) + (core32 << 22);
+	const uint32_t aperture_off = inst << 20;
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
 	const uint32_t aperture = aperture_base + aperture_off;
@@ -97,33 +112,49 @@ turin_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 static inline smn_reg_t
-turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno, const uint8_t portno)
 {
 	const uint32_t PCIE_PORT_SMN_REG_MASK = 0xfff;
-	const uint32_t ioms32 = (const uint32_t)iomsno;
-	const uint32_t core32 = (const uint32_t)coreno;
+	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t port32 = (const uint32_t)portno;
 	const uint32_t size32 = (def.srd_size == 0) ? 4 :
 	    (const uint32_t)def.srd_size;
+	uint32_t inst = iohc32;
+
+	/*
+	 * Note: We'd like to use the macros TURIN_IOMS_BONUS_PCIE_CORENO and
+	 * TURIN_NBIO_BONUS_IOHC here, but those are defined in
+	 * turin/fabric_impl.h, which we can't include here, so we use local
+	 * constants.
+	 */
+	const uint32_t ioms_bonus_pcie_coreno = 1;
+	const uint32_t nbio_bonus_iohc = 1;
+
+	/*
+	 * The instance number is usually the IOHC number, as above, but note
+	 * that if we are on the single bonus core, we need register instance
+	 * 8, as per the PPR.
+	 */
+	ASSERT3U(coreno, <=, ioms_bonus_pcie_coreno);
+	if (coreno == ioms_bonus_pcie_coreno) {
+		ASSERT3U(iohc32, ==, nbio_bonus_iohc);
+		inst = 8;
+	}
 
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_PORT);
 	ASSERT0(def.srd_nents);
 	ASSERT0(def.srd_stride);
-	ASSERT3U(ioms32, <, 8);
+	ASSERT3U(inst, <=, 8);
 	ASSERT0(def.srd_reg & ~PCIE_PORT_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t ncores = (const uint32_t)turin_ioms_n_pcie_cores(iomsno);
-	ASSERT3U(ncores, >, core32);
-	const uint32_t nents = (const uint32_t)turin_pcie_core_n_ports(coreno);
-	ASSERT3U(nents, >, port32);
+	ASSERT3U(turin_pcie_core_n_ports(coreno), >, port32);
 #endif	/* DEBUG */
 
 	const uint32_t aperture_base = 0x1A340000;
 
-	const uint32_t aperture_off = (ioms32 << 20) + (core32 << 22) +
-	    (port32 << 12);
+	const uint32_t aperture_off = (inst << 20) + (port32 << 12);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
 	const uint32_t aperture = aperture_base + aperture_off;
@@ -141,19 +172,22 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x08	\
 }
-#define	PCIE_PORT_HW_DBG(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_HW_DBG, (p), (b))
 #define	PCIE_PORT_HW_DBG_SET_DBG15(r, v)		bitset32(r, 15, 15, v)
 #define	PCIE_PORT_HW_DBG_SET_DBG13(r, v)		bitset32(r, 13, 13, v)
 
 /*
- * PCIEPORT::PCIEP_HW_DEBUG_LC - unused but captured for debugging.
+ * PCIEPORT::PCIEP_HW_DEBUG_LC.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_HW_DBG_LC	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x0c	\
 }
+#define	PCIE_PORT_HW_DBG_LC_SET_DBG15(r, v)		bitset32(r, 15, 15, v)
+#define	PCIE_PORT_HW_DBG_LC_SET_DBG11(r, v)		bitset32(r, 11, 11, v)
+#define	PCIE_PORT_HW_DBG_LC_SET_DBG10(r, v)		bitset32(r, 10, 10, v)
+#define	PCIE_PORT_HW_DBG_LC_SET_DBG09(r, v)		bitset32(r, 9, 9, v)
+#define	PCIE_PORT_HW_DBG_LC_SET_DBG05(r, v)		bitset32(r, 5, 5, v)
 
 /*
  * PCIEPORT::PCIEP_HW_DEBUG_TX - unused but captured for debugging.
@@ -173,8 +207,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x40	\
 }
-#define	PCIE_PORT_PCTL(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_PCTL, (p), (b))
 #define	PCIE_PORT_PCTL_SET_PWRFLT_EN(r, v)		bitset32(r, 4, 4, v)
 
 /*
@@ -214,8 +246,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x84	\
 }
-#define	PCIE_PORT_TX_ID(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_TX_ID, (p), (b))
 #define	PCIE_PORT_TX_ID_SET_BUS(r, v)			bitset32(r, 15, 8, v)
 #define	PCIE_PORT_TX_ID_SET_DEV(r, v)			bitset32(r, 7, 3, v)
 #define	PCIE_PORT_TX_ID_SET_FUNC(r, v)			bitset32(r, 2, 0, v)
@@ -530,8 +560,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x280	\
 }
-#define	PCIE_PORT_LC_CTL(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL, (p), (b))
 #define	PCIE_PORT_LC_CTL_SET_L1_IMM_ACK(r, v)		bitset32(r, 23, 23, v)
 
 /*
@@ -543,8 +571,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x284	\
 }
-#define	PCIE_PORT_LC_TRAIN_CTL(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_TRAIN_CTL, (p), (b))
 #define	PCIE_PORT_LC_TRAIN_CTL_SET_TRAINBITS_DIS(r, v)	bitset32(r, 13, 13, v)
 #define	PCIE_PORT_LC_TRAIN_CTL_SET_L0S_L1_TRAIN(r, v)	bitset32(r, 6, 6, v)
 
@@ -557,11 +583,10 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x288	\
 }
-#define	PCIE_PORT_LC_WIDTH_CTL(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_WIDTH_CTL, (p), (b))
 #define	PCIE_PORT_LC_WIDTH_CTL_SET_TURN_OFF_UNUSED_LANES(r, v) \
     bitset32(r, 30, 30, v)
 #define	PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(r, v)	bitset32(r, 19, 19, v)
+#define	PCIE_PORT_LC_WIDTH_CTL_SET_L1_RECONFIG_EN(r, v)	bitset32(r, 17, 17, v)
 #define	PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(r, v)	bitset32(r, 10, 10, v)
 
 /*
@@ -583,8 +608,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x290	\
 }
-#define	PCIE_PORT_LC_SPEED_CTL(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_SPEED_CTL, (p), (b))
 #define	PCIE_PORT_LC_SPEED_CTL_GET_REM_SUP_GEN5(r)	bitx32(r, 29, 29)
 #define	PCIE_PORT_LC_SPEED_CTL_GET_REM_SENT_GEN5(r)	bitx32(r, 28, 28)
 #define	PCIE_PORT_LC_SPEED_CTL_GET_REM_SUP_GEN4(r)	bitx32(r, 27, 27)
@@ -633,8 +656,7 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x294	\
 }
-#define	PCIE_PORT_LC_STATE0(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_STATE0, (p), (b))
+
 /*
  * These macros are generic for use across all PCIEPORT::PCIE_LC_STATE[11:0]
  */
@@ -651,8 +673,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x298	\
 }
-#define	PCIE_PORT_LC_STATE1(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_STATE1, (p), (b))
 
 /*
  * PCIEPORT::PCIE_LC_STATE2 - Link Controller State 2 register.
@@ -662,8 +682,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x29c	\
 }
-#define	PCIE_PORT_LC_STATE2(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_STATE2, (p), (b))
 
 /*
  * PCIEPORT::PCIE_LC_STATE3 - Link Controller State 3 register.
@@ -673,8 +691,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2a0	\
 }
-#define	PCIE_PORT_LC_STATE3(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_STATE3, (p), (b))
 
 /*
  * PCIEPORT::PCIE_LC_STATE4 - Link Controller State 4 register.
@@ -684,8 +700,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2a4	\
 }
-#define	PCIE_PORT_LC_STATE4(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_STATE4, (p), (b))
 
 /*
  * PCIEPORT::PCIE_LC_STATE5 - Link Controller State 5 register.
@@ -695,8 +709,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2a8	\
 }
-#define	PCIE_PORT_LC_STATE5(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_STATE5, (p), (b))
 
 /*
  * PCIEPORT::PCIE_LC_LINK_MANAGEMENT_CNTL2 - unused but captured for debugging.
@@ -715,8 +727,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2c4	\
 }
-#define	PCIE_PORT_LC_CTL2(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL2, (p), (b))
 #define	PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(r, v)		bitset32(r, 15, 14, v)
 /*
  * These all have the same values as the corresponding
@@ -726,6 +736,7 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL2_ELEC_IDLE_M1					1
 #define	PCIE_PORT_LC_CTL2_ELEC_IDLE_M2					2
 #define	PCIE_PORT_LC_CTL2_ELEC_IDLE_M3					3
+#define	PCIE_PORT_LC_CTL2_WAIT_OTHER_LANES_MODE(r, v)	bitset32(r, 13, 13, v)
 #define	PCIE_PORT_LC_CTL2_SET_TS2_CHANGE_REQ(r, v)	bitset32(r, 8, 8, v)
 #define	PCIE_PORT_LC_CTL2_TS2_CHANGE_16					0
 #define	PCIE_PORT_LC_CTL2_TS2_CHANGE_128				1
@@ -766,8 +777,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2d4	\
 }
-#define	PCIE_PORT_LC_CTL3(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL3, (p), (b))
 #define	PCIE_PORT_LC_CTL3_SET_DOWN_SPEED_CHANGE(r, v)	bitset32(r, 12, 12, v)
 #define	PCIE_PORT_LC_CTL3_SET_RCVR_DET_OVR(r, v)	bitset32(r, 11, 11, v)
 #define	PCIE_PORT_LC_CTL3_SET_ENH_HP_EN(r, v)		bitset32(r, 10, 10, v)
@@ -792,8 +801,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2dc	\
 }
-#define	PCIE_PORT_LC_CTL5(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL5, (p), (b))
 #define	PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(r, v)		bitset32(r, 28, 28, v)
 
 /*
@@ -837,8 +844,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2ec	\
 }
-#define	PCIE_PORT_LC_CTL6(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL6, (p), (b))
 #define	PCIE_PORT_LC_CTL6_GET_SRIS_AUTODET_MODE(r)	bitx32(r, 24, 23)
 #define	PCIE_PORT_LC_CTL6_SET_SRIS_AUTODET_MODE(r, v)	bitset32(r, 24, 23, v)
 #define	PCIE_PORT_LC_CTL6_SRIS_AUTODET_MODE_SKP_OS_INT_LK		0
@@ -1021,8 +1026,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x36c	\
 }
-#define	PCIE_PORT_HP_CTL(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_HP_CTL, (p), (b))
 #define	PCIE_PORT_HP_CTL_SET_ACTIVE(r, v)		bitset32(r, 31, 31, v)
 #define	PCIE_PORT_HP_CTL_SET_SLOT(r, v)			bitset32(r, 12, 0, v)
 
@@ -1109,14 +1112,12 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x390	\
 }
-#define	PCIE_PORT_LC_EQ_CTL_8GT(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_8GT, (p), (b))
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE3X3			2
-#define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_PRESET			3
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_PRST			3
 
 /*
  * PCIEPORT::PCIE_LC_EQ_CNTL_16GT - Used to set equalization search modes etc.
@@ -1126,14 +1127,12 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x394	\
 }
-#define	PCIE_PORT_LC_EQ_CTL_16GT(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_16GT, (p), (b))
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE3X3			2
-#define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_PRESET			3
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_PRST			3
 
 /*
  * PCIEPORT::PCIE_LC_SAVE_RESTORE_1 - unused but captured for debugging.
@@ -1170,14 +1169,12 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x400	\
 }
-#define	PCIE_PORT_LC_EQ_CTL_32GT(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_32GT, (p), (b))
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE3X3			2
-#define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_PRESET			3
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_PRST			3
 
 /*
  * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL - Used to control preset masks.
@@ -1187,14 +1184,16 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x404	\
 }
-#define	PCIE_PORT_LC_PRST_MASK_CTL(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_LC_PRST_MASK_CTL, (p), (b))
-#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_32GT(r, v) \
+#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_32GT(r, v) \
     bitset32(r, 29, 20, v)
-#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_16GT(r, v) \
+#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_16GT(r, v) \
     bitset32(r, 19, 10, v)
-#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_8GT(r, v) \
+#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_8GT(r, v) \
     bitset32(r, 9, 0, v)
+
+#define	PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL	0x78
+#define	PCIE_PORT_LC_PRST_MASK_CTL_16GT_VAL	0x38
+#define	PCIE_PORT_LC_PRST_MASK_CTL_8GT_VAL	0x38
 
 /*
  * PCIEPORT::PCIE_LC_RXRECOVER_RXSTANDBY_CNTL - unused but captured for
@@ -1447,31 +1446,34 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIEPORT::PCIE_LC_FAPE_CNTL_8GT - unused but captured for debugging.
+ * PCIEPORT::PCIE_LC_FAPE_CNTL_8GT.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_FAPE_CTL_8GT	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x4d4	\
 }
+#define	PCIE_PORT_LC_FAPE_CTL_8GT_SET_EN(r, v)	bitset32(r, 31, 31, v)
 
 /*
- * PCIEPORT::PCIE_LC_FAPE_CNTL_16GT - unused but captured for debugging.
+ * PCIEPORT::PCIE_LC_FAPE_CNTL_16GT.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_FAPE_CTL_16GT	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x4d8	\
 }
+#define	PCIE_PORT_LC_FAPE_CTL_16GT_SET_EN(r, v)	bitset32(r, 31, 31, v)
 
 /*
- * PCIEPORT::PCIE_LC_FAPE_CNTL_32GT - unused but captured for debugging.
+ * PCIEPORT::PCIE_LC_FAPE_CNTL_32GT.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_FAPE_CTL_32GT	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x4dc	\
 }
+#define	PCIE_PORT_LC_FAPE_CTL_32GT_SET_EN(r, v)	bitset32(r, 31, 31, v)
 
 /*
  * PCIEPORT::PCIE_LC_FAPE_SETTINGS_GROUP_0 - unused but captured for debugging.
@@ -1619,8 +1621,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x600	\
 }
-#define	PCIE_PORT_TX_PORT_CTL1(n, p, b)	\
-    turin_pcie_port_smn_reg((n), D_PCIE_PORT_TX_PORT_CTL1, (p), (b))
 #define	PCIE_PORT_TX_PORT_CTL1_SET_CPL_PASS(r, v)	bitset32(r, 20, 20, v)
 #define	PCIE_PORT_TX_PORT_CTL1_SET_TLP_FLUSH_DOWN_DIS(r, v) \
     bitset32(r, 15, 15, v)
@@ -2076,8 +2076,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x40	\
 }
-#define	PCIE_CORE_PCIE_CTL(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_PCIE_CTL, (p))
 #define	PCIE_CORE_PCIE_CTL_SET_HW_LOCK(r, v)		bitset32(r, 0, 0, v)
 
 /*
@@ -2110,13 +2108,14 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIECORE::PCIE_RX_CNTL4 - unused but captured for debugging.
+ * PCIECORE::PCIE_RX_CNTL4.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_RX_CTL4	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x64	\
 }
+#define	PCIE_CORE_RX_CTL4_SET_7BIT_ST_TAG_EN(r, v)	bitset32(r, 4, 4, v)
 
 /*
  * PCIECORE::PCIE_COMMON_AER_MASK - unused but captured for debugging.
@@ -2155,13 +2154,17 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIECORE::PCIE_SLV_CTRL_1 - unused but captured for debugging.
+ * PCIECORE::PCIE_SLV_CTRL_1.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_SLV_CTL1	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x7c	\
 }
+#define	PCIE_CORE_SLV_CTL1_SET_PDAT_CREDITS_RSVD(r, v)	bitset32(r, 31, 24, v)
+#define	PCIE_CORE_SLV_CTL1_SET_PHDR_CREDITS_RSVD(r, v)	bitset32(r, 15, 8, v)
+
+#define	PCIE_CORE_SLV_CTL1_VC1_POOL_CREDS_VAL		9
 
 /*
  * PCIECORE::PCIE_CI_CNTL - PCIe Port level TX controls. Note, this register is
@@ -2173,8 +2176,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x80	\
 }
-#define	PCIE_CORE_CI_CTL(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_CI_CTL, (p))
 #define	PCIE_CORE_CI_CTL_SET_SLV_CMENT_MODE(r, v)	bitset32(r, 31, 31, v)
 #define	PCIE_CORE_CI_CTL_SET_ARB_WIDTH_WEIGHTED_RR(r, v) \
     bitset32(r, 30, 30, v)
@@ -2436,9 +2437,11 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x100	\
 }
-#define	PCIE_CORE_PCIE_P_CTL(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_PCIE_P_CTL, (p))
 #define	PCIE_CORE_PCIE_P_CTL_SET_ELEC_IDLE(r, v)	bitset32(r, 15, 14, v)
+#define	PCIE_CORE_PCIE_P_CTL_SET_ALWAYS_USE_FAST_TXCLK(r, v)	\
+    bitset32(r, 13, 13, v)
+
+
 /*
  * 2.5G Entry uses phy detector.
  * 5.0+ Entry uses inference logic
@@ -2518,8 +2521,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x18c	\
 }
-#define	PCIE_CORE_SDP_CTL(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_SDP_CTL, (p))
 #define	PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(r, v)		bitset32(r, 28, 26, v)
 #define	PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(r, v)		bitset32(r, 3, 0, v)
 
@@ -2594,8 +2595,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x1b0	\
 }
-#define	PCIE_CORE_RCB_CTL(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_RCB_CTL, (p))
 #define	PCIE_CORE_RCB_CTL_SET_SWUS_CA_CTO_EN(r, v)	bitset32(r, 30, 30, v)
 #define	PCIE_CORE_RCB_CTL_SET_RC_CA_CTO_EN(r, v)	bitset32(r, 29, 29, v)
 #define	PCIE_CORE_RCB_CTL_SET_SWUS_UR_CTO_EN(r, v)	bitset32(r, 28, 28, v)
@@ -2605,6 +2604,7 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_RCB_CTL_SET_RX_DPC_RPIO_TO_CA_EN(r, v) \
     bitset32(r, 26, 26, v)
 #define	PCIE_CORE_RCB_CTL_SET_IGN_SFI_CAM_DIS(r, v)	bitset32(r, 25, 25, v)
+#define	PCIE_CORE_RCB_CTL_SET_IGN_LINK_DOWN_ERR(r, v)	bitset32(r, 24, 24, v)
 #define	PCIE_CORE_RCB_CTL_SET_LINK_DOWN_CTO_EN(r, v)	bitset32(r, 23, 23, v)
 #define	PCIE_CORE_RCB_CTL_SET_RX_ALL_CTO_TO_UR_EN(r, v)	bitset32(r, 22, 22, v)
 #define	PCIE_CORE_RCB_CTL_SET_BAD_PREFIX_DIS(r, v)	bitset32(r, 4, 4, v)
@@ -2732,8 +2732,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x2c0	\
 }
-#define	PCIE_CORE_STRAP_F0(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_STRAP_F0, (p))
 #define	PCIE_CORE_STRAP_F0_SET_ATOMIC_ROUTE(r, v)	bitset32(r, 20, 20, v)
 #define	PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(r, v)		bitset32(r, 18, 18, v)
 
@@ -3089,8 +3087,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x428	\
 }
-#define	PCIE_CORE_SWRST_CTL6(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_SWRST_CTL6, (p))
 #define	PCIE_CORE_SWRST_CTL6_SET_HOLD_K(r, v)		bitset32(r, 10, 10, v)
 #define	PCIE_CORE_SWRST_CTL6_SET_HOLD_J(r, v)		bitset32(r, 9, 9, v)
 #define	PCIE_CORE_SWRST_CTL6_SET_HOLD_I(r, v)		bitset32(r, 8, 8, v)
@@ -3323,8 +3319,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x4d4	\
 }
-#define	PCIE_CORE_RX_MARGIN_CTL_CAP(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_RX_MARGIN_CTL_CAP, (p))
 #define	PCIE_CORE_RX_MARGIN_CTL_CAP_SET_ERRORS(r, v)	bitset32(r, 4, 4, v)
 #define	PCIE_CORE_RX_MARGIN_CTL_CAP_ERRORS_EN				0
 #define	PCIE_CORE_RX_MARGIN_CTL_CAP_ERRORS_DIS				1
@@ -3345,8 +3339,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x4d8	\
 }
-#define	PCIE_CORE_RX_MARGIN1(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_RX_MARGIN1, (p))
 #define	PCIE_CORE_RX_MARGIN1_SET_MAX_VOLT_OFF(r, v)	bitset32(r, 26, 20, v)
 #define	PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(r, v)	bitset32(r, 19, 13, v)
 #define	PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(r, v)	bitset32(r, 12, 7, v)
@@ -3365,8 +3357,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x4dc	\
 }
-#define	PCIE_CORE_RX_MARGIN2(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_RX_MARGIN2, (p))
 #define	PCIE_CORE_RX_MARGIN2_SET_PRECODING_EN(r, v)	bitset32(r, 30, 30, v)
 #define	PCIE_CORE_RX_MARGIN2_SET_ERR_LIM(r, v)		bitset32(r, 29, 24, v)
 #define	PCIE_CORE_RX_MARGIN2_SET_NLANES(r, v)		bitset32(r, 23, 19, v)
@@ -3385,8 +3375,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x4e0	\
 }
-#define	PCIE_CORE_PRES(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_PRES, (p))
 #define	PCIE_CORE_PRES_SET_TL_MODE(r, v)		bitset32(r, 27, 26, v)
 #define	PCIE_CORE_PRES_TL_MODE_IN_BAND					0
 #define	PCIE_CORE_PRES_TL_MODE_AND					1
@@ -3872,8 +3860,6 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x620	\
 }
-#define	PCIE_CORE_PCIE_TX_CTL1(n, p)	\
-    turin_pcie_core_smn_reg((n), D_PCIE_CORE_PCIE_TX_CTL1, (p))
 #define	PCIE_CORE_PCIE_TX_CTL1_SET_TX_ATOMIC_ORD_DIS(r, v) \
     bitset32(r, 25, 25, v)
 #define	PCIE_CORE_PCIE_TX_CTL1_SET_TX_ATOMIC_OPS_DIS(r, v) \
@@ -3889,13 +3875,17 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIECORE::PCIE_TX_CTRL_3 - unused but captured for debugging.
+ * PCIECORE::PCIE_TX_CTRL_3.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_PCIE_TX_CTL3	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x628	\
 }
+#define	PCIE_CORE_PCIE_TX_CTL3_SET_ENCMSG_DST_ID_FROM_SDP_REQ_EN(r, v) \
+    bitset32(r, 26, 26, v)
+#define	PCIE_CORE_PCIE_TX_CTL3_SET_ENCMSG_HDR_FROM_SDP_REQ_EN(r, v) \
+    bitset32(r, 19, 19, v)
 
 /*
  * PCIECORE::PCIE_TX_CTRL_4 - unused but captured for debugging.
@@ -4096,13 +4086,14 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
- * PCIECORE::PCIE_MST_CTRL_2 - unused but captured for debugging.
+ * PCIECORE::PCIE_MST_CTRL_2.
  */
 /*CSTYLED*/
 #define	D_PCIE_CORE_MST_CTL2	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x714	\
 }
+#define	PCIE_CORE_MSG_CTL2_SET_CI_7BIT_ST_TAG_EN(r, v)	bitset32(r, 22, 22, v)
 
 /*
  * PCIECORE::PCIE_MST_CTRL_3 - unused but captured for debugging.

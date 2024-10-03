@@ -27,47 +27,22 @@ extern "C" {
 /*
  * IOMMU Registers. The IOMMU is broken into an L1 and L2. The IOMMU L1
  * registers work a lot like the IOHCDEV registers in that there is a block for
- * each of several other devices: four PCIe ports and an IOAGR. The L2 register
- * set only exists on a per-IOMS basis and looks like a standard SMN functional
- * unit. All these registers are 32 bits wide; we check for violations.
+ * each of several other devices: 8 directly connected PCIe cores, and 4 more
+ * behind an IO aggregator (IOAGR).  Note that the latter are only on the large
+ * IOHCs.  The L2 register sets only exist on the larger IOHCs.
  */
-#define	IOMMUL1_N_IOAGR_UNITS	4
-#define	IOMMUL1_N_PCIE_UNITS	8
-#define	IOMMUL1_N_PCIE_CORES	4
+#define	IOMMUL1_N_IOAGR_PCIE_CORES	4
+#define	IOMMUL1_N_PCIE_CORES		8
+#define	IOMMUL2_N_UNITS			4
 
-static inline smn_reg_t
-turin_iommul1_pcie_smn_reg(const uint8_t iommuno,
-    const smn_reg_def_t def, const uint8_t unitno)
-{
-	const uint32_t iommu32 = (const uint32_t)iommuno;
-	const uint32_t unit32 = (const uint32_t)unitno;
+AMDZEN_MAKE_SMN_REG_FN(turin_iommul1_pcie_smn_reg, IOMMUL1, 0x14700000,
+    SMN_APERTURE_MASK, IOMMUL1_N_PCIE_CORES, 20);
 
-	ASSERT0(def.srd_size);
-	ASSERT0(def.srd_nents);
-	ASSERT0(def.srd_stride);
-	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOMMUL1);
-	ASSERT3U(iommu32, <, IOMMUL1_N_PCIE_UNITS);
-	ASSERT3U(unit32, <, IOMMUL1_N_PCIE_CORES);
-	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
-
-	const uint32_t aperture_base = unitno < 2 ?
-	    0x14700000 : 0x14B0000;
-
-	const uint32_t aperture_off = (iommu32 << 20) +
-	    ((unit32 % 2) << 22);
-	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
-
-	const uint32_t aperture = aperture_base + aperture_off;
-	ASSERT0(aperture & ~SMN_APERTURE_MASK);
-
-	return (SMN_MAKE_REG(aperture + def.srd_reg));
-}
-
-ZEN_MAKE_SMN_IOMMUL1_REG_FN(turin, IOAGR, ioagr, 0x15300000, 1, 0,
-    IOMMUL1_N_IOAGR_UNITS);
+AMDZEN_MAKE_SMN_REG_FN(turin_iommul1_ioagr_pcie_smn_reg, IOMMUL1_IOAGR,
+    0x15300000, SMN_APERTURE_MASK, IOMMUL1_N_IOAGR_PCIE_CORES, 20);
 
 AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
-    SMN_APERTURE_MASK, 4, 20);
+    SMN_APERTURE_MASK, IOMMUL2_N_UNITS, 20);
 
 /*
  * Unlike IOHCDEV, all the registers in IOMMUL1 space exist for each functional
@@ -86,10 +61,12 @@ AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 	.srd_unit = SMN_UNIT_IOMMUL1,	\
 	.srd_reg = 0x1c	\
 }
-#define	IOMMUL1_PCIE_CTL1(i, p)	\
-    turin_iommul1_pcie_smn_reg(i, D_IOMMUL1_CTL1, p)
-#define	IOMMUL1_IOAGR_CTL1(i)	\
-    turin_iommul1_ioagr_smn_reg(i, D_IOMMUL1_CTL1, 0)
+
+/*CSTYLED*/
+#define	D_IOMMUL1_IOAGR_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOMMUL1_IOAGR,	\
+	.srd_reg = 0x1c	\
+}
 #define	IOMMUL1_CTL1_SET_ORDERING(r, v)	bitset32(r, 0, 0, v)
 
 /*
@@ -100,10 +77,12 @@ AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 	.srd_unit = SMN_UNIT_IOMMUL1,	\
 	.srd_reg = 0x24	\
 }
-#define	IOMMUL1_PCIE_SB_LOCATION(i, p)	\
-    turin_iommul1_pcie_smn_reg(i, IOMMUL1_PCIE_SB_LOCATION, p)
-#define	IOMMUL1_IOAGR_SB_LOCATION(i)	\
-    turin_iommul1_ioagr_smn_reg(i, IOMMUL1_IOAGR_SB_LOCATION, 0)
+
+/*CSTYLED*/
+#define	D_IOMMUL1_IOAGR_SB_LOCATION	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOMMUL1_IOAGR,	\
+	.srd_reg = 0x24	\
+}
 
 /* These macros are common across SB_LOCATION in IOMMUL1 and IOMMUL2 */
 #define	IOMMUL_SB_LOCATION_SET_CORE(r, v)	bitset32(r, 31, 16, v)

@@ -31,7 +31,9 @@
 #include <sys/io/milan/iomux.h>
 #include <sys/io/genoa/iomux.h>
 #include <sys/io/turin/iomux.h>
+#include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/platform.h>
+#include <sys/io/zen/ruby_dxio_data.h>
 
 
 extern x86_chiprev_t _cpuid_chiprev(uint_t, uint_t, uint_t, uint_t);
@@ -231,7 +233,9 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_rootnexus = "Oxide,Ethanol-X",
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
-			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM
+			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
+			.obd_perst_gpios = { 26, 27, 266, 267 },
+			.obd_perst_gpios_len = 4,
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -258,6 +262,12 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
+			.obd_dxio_source_data = ruby_mpio_pcie_s0,
+			.obd_dxio_source_data_len = ruby_mpio_pcie_s0_len,
+			.obd_ubm_source_hfc_data = ruby_mpio_hfc_ports,
+			.obd_ubm_source_hfc_data_len = ruby_mpio_hfc_ports_len,
+			.obd_perst_gpios = { 26, 266 },
+			.obd_perst_gpios_len = 2,
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -302,7 +312,13 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_rootnexus = "Oxide,Ruby",
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
-			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM
+			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
+			.obd_dxio_source_data = ruby_mpio_pcie_s0,
+			.obd_dxio_source_data_len = ruby_mpio_pcie_s0_len,
+			.obd_ubm_source_hfc_data = ruby_mpio_hfc_ports,
+			.obd_ubm_source_hfc_data_len = ruby_mpio_hfc_ports_len,
+			.obd_perst_gpios = { 26, 266 },
+			.obd_perst_gpios_len = 2,
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -328,7 +344,13 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_rootnexus = "Oxide,Ruby",
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
-			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM
+			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
+			.obd_dxio_source_data = ruby_mpio_pcie_s0,
+			.obd_dxio_source_data_len = ruby_mpio_pcie_s0_len,
+			.obd_ubm_source_hfc_data = ruby_mpio_hfc_ports,
+			.obd_ubm_source_hfc_data_len = ruby_mpio_hfc_ports_len,
+			.obd_perst_gpios = { 26, 266 },
+			.obd_perst_gpios_len = 2,
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -678,6 +700,13 @@ oxide_derive_platform(void)
 
 	if (oxide_board_data == NULL)
 		bop_panic("Could not derive Oxide board type");
+}
+
+bool
+oxide_board_is_ruby(void)
+{
+	VERIFY(oxide_board_data != NULL);
+	return (oxide_board_data->obd_board == OXIDE_BOARD_RUBY);
 }
 
 void

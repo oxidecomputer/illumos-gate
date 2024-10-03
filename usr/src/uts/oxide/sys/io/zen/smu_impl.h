@@ -14,7 +14,7 @@
  */
 
 /*
- * Type, structure, and function definitions for for interacting with the System
+ * Type, structure, and function definitions for interacting with the System
  * Management Unit (SMU).
  */
 

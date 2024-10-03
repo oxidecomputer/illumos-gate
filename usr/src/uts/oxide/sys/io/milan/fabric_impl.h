@@ -29,6 +29,7 @@
 #include <sys/io/milan/dxio_impl.h>
 #include <sys/io/milan/nbif_impl.h>
 #include <sys/io/milan/pcie_impl.h>
+#include <sys/io/zen/dxio_impl.h>
 #include <sys/amdzen/smn.h>
 
 #ifdef __cplusplus
@@ -84,8 +85,6 @@ struct milan_ioms {
 };
 
 struct milan_iodie {
-	milan_dxio_sm_state_t	mi_state;
-	milan_dxio_config_t	mi_dxio_conf;
 	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
 	milan_ioms_t		mi_ioms[MILAN_IOMS_PER_IODIE];
 };

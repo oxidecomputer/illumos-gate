@@ -22,11 +22,13 @@
 #include <sys/types.h>
 #include <sys/ddi.h>
 #include <sys/pci.h>
+#include <sys/pcie.h>
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_cfgspace_impl.h>
 
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/mpio.h>
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
@@ -195,6 +197,46 @@ static const zen_pcie_port_info_t
 		{  .zppi_dev = 0x3, .zppi_func = 0x7 },
 		{  .zppi_dev = 0x4, .zppi_func = 0x1 },
 	}
+};
+
+typedef struct turin_ioms_pcie_port_info {
+	uint8_t tippi_count;
+	zen_pcie_port_info_t tippi_info[4];
+} turin_ioms_pcie_port_info_t;
+
+/*
+ * These are internal bridges.  They are modeled as ports but there is no
+ * physical port brought out of the package.  Indexed by IOHC number, on
+ * large IOHC's only (note that the large IOHCs have indices 0..3).
+ */
+static const turin_ioms_pcie_port_info_t turin_int_ports[4] =
+{
+	[0] = {
+		.tippi_count = 2,
+		.tippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
+		},
+	},
+	[1] = {
+		.tippi_count = 1,
+		.tippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+		},
+	},
+	[2] = {
+		.tippi_count = 1,
+		.tippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+		},
+	},
+	[3] = {
+		.tippi_count = 2,
+		.tippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
+		},
+	},
 };
 
 /*
@@ -387,10 +429,6 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
 }
 
-typedef enum turin_iommul1_subunit {
-	TIL1SU_IOAGR
-} turin_iommul1_subunit_t;
-
 /*
  * Convenience functions for accessing SMN registers pertaining to a bridge.
  * These are candidates for making public if/when other code needs to manipulate
@@ -425,8 +463,12 @@ turin_pcie_port_reg(const zen_pcie_port_t *const port,
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
+	case SMN_UNIT_IOHCDEV_PCIE:
+		reg = turin_iohcdev_pcie_smn_reg(ioms->zio_iohcnum, def,
+		    pc->zpc_coreno, port->zpp_portno);
+		break;
 	case SMN_UNIT_PCIE_PORT:
-		reg = turin_pcie_port_smn_reg(ioms->zio_num, def,
+		reg = turin_pcie_port_smn_reg(ioms->zio_iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	default:
@@ -445,8 +487,22 @@ turin_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_PCIE_CORE:
-		reg = turin_pcie_core_smn_reg(ioms->zio_num, def,
+		reg = turin_pcie_core_smn_reg(ioms->zio_iohcnum, def,
 		    pc->zpc_coreno);
+		break;
+	case SMN_UNIT_IOMMUL1:
+		VERIFY3U(pc->zpc_coreno, ==, 0);
+		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def, 0);
+		break;
+	case SMN_UNIT_IOMMUL1_IOAGR:
+		/*
+		 * The only ports accessed through the IOMMUL1's IO aggregator
+		 * are on the (unused) bonus PCIe6 cores, which correspond to
+		 * unit ID 0.  We don't use these, but AGESA sets them, so we do
+		 * as well.
+		 */
+		VERIFY3U(pc->zpc_coreno, ==, TURIN_IOMS_BONUS_PCIE6_CORENO);
+		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def, 0);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe RC",
@@ -477,42 +533,21 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	case SMN_UNIT_IOAGR:
 		reg = turin_ioagr_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
-	case SMN_UNIT_IOMMUL1: {
-		/*
-		 * Confusingly, this pertains to the IOMS, not the NBIF; there
-		 * is only one unit per IOMS, not one per NBIF.  Because.  To
-		 * accommodate this, we need to treat the reginst as an
-		 * enumerated type to distinguish the sub-units.  As gross as
-		 * this is, it greatly reduces triplication of register
-		 * definitions.  There is no way to win here.
-		 */
-		const turin_iommul1_subunit_t su =
-		    (const turin_iommul1_subunit_t)reginst;
-		switch (su) {
-		case TIL1SU_IOAGR: {
-			/*
-			 * The IOAGR registers on IOMMUL1 are only instanced
-			 * on the larger IOHCs.
-			 */
-			VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
-			reg = turin_iommul1_ioagr_smn_reg(ioms->zio_iohcnum,
-			    def, 0);
-			break;
-		}
-		default:
-			cmn_err(CE_PANIC, "invalid IOMMUL1 subunit %d", su);
-			break;
-		}
+	case SMN_UNIT_IOMMUL1:
+		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def, 0);
 		break;
-	}
-	case SMN_UNIT_IOMMUL2: {
+	case SMN_UNIT_IOMMUL1_IOAGR:
+		VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
+		reg = turin_iommul1_ioagr_pcie_smn_reg(ioms->zio_iohcnum, def,
+		    0);
+		break;
+	case SMN_UNIT_IOMMUL2:
 		/*
 		 * The L2IOMMU is only present in the larger IOHC instances.
 		 */
 		VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
 		reg = turin_iommul2_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
-	}
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
 		    def.srd_unit);
@@ -695,7 +730,7 @@ void
 turin_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 {
 	smn_reg_t reg;
-	uint32_t val = 0;
+	uint32_t val;
 
 	reg = turin_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
 
@@ -708,22 +743,28 @@ turin_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 		return;
 	}
 
+	/*
+	 * If we do not have an FCH, we zero the IOHC SB location, otherwise, we
+	 * do not touch it.
+	 */
+	if (!has_fch)
+		zen_ioms_write(ioms, reg, 0);
+
+	/*
+	 * Unlike with earlier platforms where the value in IOHC::SB_LOCATION
+	 * was copied across, on Turin we must explicitly set both the IOMMUL1
+	 * IOAGR and IOMMUL2 registers to the same provided value.  Note that we
+	 * do not set D_IOMMUL1_SB_LOCATION; neither does AGESA.
+	 */
+	val = 0;
 	if (has_fch) {
-		/*
-		 * Unlike with earlier platforms where the value in
-		 * IOHC::SB_LOCATION was copied across, on Turin we must
-		 * explicitly set both the IOMMUL1 and IOMMUL2 registers to the
-		 * same provided value.
-		 */
-		val = IOMMUL_SB_LOCATION_SET_CORE(val,
+		val = IOMMUL_SB_LOCATION_SET_CORE(0,
 		    IOMMUL_SB_LOCATION_CORE_GPP2);
 		val = IOMMUL_SB_LOCATION_SET_PORT(val,
 		    IOMMUL_SB_LOCATION_PORT_A);
-	} else {
-		zen_ioms_write(ioms, reg, 0);
 	}
 
-	reg = turin_ioms_reg(ioms, D_IOMMUL1_SB_LOCATION, TIL1SU_IOAGR);
+	reg = turin_ioms_reg(ioms, D_IOMMUL1_IOAGR_SB_LOCATION, 0);
 	zen_ioms_write(ioms, reg, val);
 
 	reg = turin_ioms_reg(ioms, D_IOMMUL2_SB_LOCATION, 0);
@@ -1021,14 +1062,14 @@ turin_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 	zen_nbif_write(nbif, reg, intr);
 
 	/*
-	 * Each nBIF has up to three devices on them, though not all of them
-	 * seem to be used. However, it's suggested that we enable completion
-	 * timeouts on all three device straps for NBIF0, and the same for
-	 * NBIF2 on the IOMS which are connected to a larger IOHC type.
+	 * Each nBIF has up to three ports on it, though not all of them seem to
+	 * be used. However, it's suggested that we enable completion timeouts
+	 * on all three port straps for NBIF0, and the same for NBIF2 on the
+	 * IOMS which are connected to a larger IOHC type.
 	 */
 	if (nbif->zn_num == 0 ||
 	    (iohctype == ZEN_IOHCT_LARGE && nbif->zn_num == 2)) {
-		for (uint8_t devno = 0; devno < TURIN_NBIF_MAX_DEVS; devno++) {
+		for (uint8_t devno = 0; devno < TURIN_NBIF_MAX_PORTS; devno++) {
 			smn_reg_t reg;
 			uint32_t val;
 
@@ -1047,7 +1088,8 @@ turin_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 void
 turin_fabric_pcie(zen_fabric_t *fabric)
 {
-	zen_pcie_populate_dbg(fabric, TPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, ZPCS_PRE_DXIO_INIT, ZEN_IODIE_MATCH_ANY);
+	zen_mpio_pcie_init(fabric);
 }
 
 void
@@ -1115,4 +1157,627 @@ turin_iohc_nmi_eoi(zen_ioms_t *ioms)
 		v = IOHC_INTR_EOI_SET_NMI(0);
 		zen_ioms_write(ioms, reg, v);
 	}
+}
+
+void
+turin_fabric_init_pcie_port(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * Turn off unused lanes.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_WIDTH_CTL_SET_TURN_OFF_UNUSED_LANES(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Ensure the FAPE registers are zeroed.  This is the reset value, but
+	 * AGESA is explicit about initializing them and so are we.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_FAPE_CTL_8GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_FAPE_CTL_8GT_SET_EN(val, 0);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_FAPE_CTL_16GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_FAPE_CTL_16GT_SET_EN(val, 0);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_FAPE_CTL_32GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_FAPE_CTL_32GT_SET_EN(val, 0);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Disable TLP flushes on data-link down, and allow the completion pass.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_TX_PORT_CTL1);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_TX_PORT_CTL1_SET_TLP_FLUSH_DOWN_DIS(val, 0);
+	val = PCIE_PORT_TX_PORT_CTL1_SET_CPL_PASS(val, 1);
+	zen_pcie_port_write(port, reg, val);
+}
+
+void
+turin_fabric_init_pcie_port_after_reconfig(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * Set search equalization modes.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_8GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(val,
+	    PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_PRST);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_16GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(val,
+	    PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_PRST);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_32GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(val,
+	    PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_PRST);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set preset masks.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_PRST_MASK_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_8GT(val,
+	    PCIE_PORT_LC_PRST_MASK_CTL_8GT_VAL);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_16GT(val,
+	    PCIE_PORT_LC_PRST_MASK_CTL_16GT_VAL);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_32GT(val,
+	    PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Fixups that are specific to Turin Cx parts.  These are undocumented.
+	 */
+	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
+	if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_C0) &&
+	    port->zpp_core->zpc_coreno != TURIN_IOMS_BONUS_PCIE_CORENO) {
+		reg = turin_pcie_port_reg(port, D_PCIE_PORT_HW_DBG_LC);
+		val = zen_pcie_port_read(port, reg);
+		switch (port->zpp_portno) {
+		case 0:
+			/*
+			 * AGESA sets these bits seprately, in two RMW cycles,
+			 * but we just do it in one.
+			 */
+			val = PCIE_PORT_HW_DBG_LC_SET_DBG09(val, 1);
+			val = PCIE_PORT_HW_DBG_LC_SET_DBG05(val, 1);
+			break;
+		case 1:
+			/*
+			 * As above, AGESA does these separately, but we combine
+			 * them.
+			 */
+			val = PCIE_PORT_HW_DBG_LC_SET_DBG10(val, 1);
+			val = PCIE_PORT_HW_DBG_LC_SET_DBG05(val, 1);
+			break;
+		case 2:
+			val = PCIE_PORT_HW_DBG_LC_SET_DBG10(val, 1);
+			break;
+		case 3:
+			val = PCIE_PORT_HW_DBG_LC_SET_DBG11(val, 1);
+		}
+		zen_pcie_port_write(port, reg, val);
+	}
+}
+
+static void
+turin_hide_nbif_bridge(zen_ioms_t *ioms, uint8_t portno)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = turin_iohcdev_nbif_smn_reg(ioms->zio_iohcnum,
+	    D_IOHCDEV_NBIF_BRIDGE_CTL, 0, portno);
+	val = zen_ioms_read(ioms, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	zen_ioms_write(ioms, reg, val);
+}
+
+static void
+turin_hide_pci_bridge(zen_ioms_t *ioms, uint8_t coreno, uint8_t portno)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = turin_iohcdev_pcie_smn_reg(ioms->zio_iohcnum,
+	    D_IOHCDEV_PCIE_BRIDGE_CTL, coreno, portno);
+	val = zen_ioms_read(ioms, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
+	zen_ioms_write(ioms, reg, val);
+}
+
+void
+turin_fabric_hide_bridge(zen_pcie_port_t *port)
+{
+	const zen_pcie_core_t *pc = port->zpp_core;
+
+	turin_hide_pci_bridge(pc->zpc_ioms, pc->zpc_coreno, port->zpp_portno);
+}
+
+void
+turin_fabric_unhide_bridge(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * All bridges need to be visible before we attempt to
+	 * configure MPIO.
+	 */
+	reg = turin_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
+	zen_pcie_port_write(port, reg, val);
+}
+
+/*
+ * Here we are going through bridges and need to start setting them up with the
+ * various features that we care about. Most of these are an attempt to have
+ * things set up so PCIe enumeration can meaningfully actually use these. The
+ * exact set of things required is ill-defined. Right now this means enabl¡ing
+ * the bridges such that they can actually allow software to use them.
+ *
+ * XXX: We really should disable DMA until the rest of the system is set up and
+ * ready to use it.
+ *
+ * Note that AGESA makes some adjustments to PCIEPORT::PCIE_LC_CNTL4 related to
+ * L1, L1.1 and L1.2 states, which we are not using and do not touch.
+ */
+void
+turin_fabric_init_bridge(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+	bool hide;
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
+
+	/*
+	 * We need to determine whether or not this bridge should be considered
+	 * visible. This is messy. Ideally, we'd just have every bridge be
+	 * visible; however, life isn't that simple because convincing the PCIe
+	 * engine that it should actually allow for completion timeouts to
+	 * function as expected. In addition, having bridges that have no
+	 * devices present and never can due to the platform definition can end
+	 * up being rather wasteful of precious 32-bit non-prefetchable memory.
+	 * The current masking rules are based on what we have learned from
+	 * trial and error works.
+	 *
+	 * Strictly speaking, a bridge will work from a completion timeout
+	 * perspective if the SMU thinks it belongs to a PCIe port that has any
+	 * hotpluggable elements or otherwise has a device present.
+	 * Unfortunately the case you really want to work, a non-hotpluggable,
+	 * but defined device that does not have a device present should be
+	 * visible does not work.
+	 *
+	 * Ultimately, what we have implemented here is to basically say if a
+	 * bridge is not mapped to an endpoint, then it is not shown. If it is,
+	 * and it belongs to a hot-pluggable port then we always show it.
+	 * Otherwise we only show it if there's a device present.
+	 */
+	hide = true;
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
+		zen_mpio_ict_link_status_t *lp =
+		    &port->zpp_ask_port->zma_status;
+		bool hotplug, trained;
+
+		hotplug = (pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
+		trained = lp->zmils_state == ZEN_MPIO_LINK_STATE_TRAINED;
+		hide = !hotplug && !trained;
+	}
+
+	if (hide) {
+		port->zpp_flags |= ZEN_PCIE_PORT_F_BRIDGE_HIDDEN;
+		turin_fabric_hide_bridge(port);
+	} else {
+		turin_fabric_unhide_bridge(port);
+	}
+
+	/*
+	 * Make sure the hardware knows the corresponding b/d/f for this bridge.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_TX_ID);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_TX_ID_SET_BUS(val, ioms->zio_pci_busno);
+	val = PCIE_PORT_TX_ID_SET_DEV(val, port->zpp_device);
+	val = PCIE_PORT_TX_ID_SET_FUNC(val, port->zpp_func);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Next, we have to go through and set up a bunch of the lane controller
+	 * configuration controls for the individual port. These include
+	 * various settings around how idle transitions occur, how it replies to
+	 * certain messages, and related.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL_SET_L1_IMM_ACK(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_TRAIN_CTL_SET_L0S_L1_TRAIN(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(val, 1);
+	val = PCIE_PORT_LC_WIDTH_CTL_SET_L1_RECONFIG_EN(val, 1);
+	val = PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_CTL2);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(val,
+	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
+	val = PCIE_PORT_LC_CTL2_WAIT_OTHER_LANES_MODE(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_CTL3);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL3_SET_DOWN_SPEED_CHANGE(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * AMD's current default is to disable certain classes of receiver
+	 * errors. XXX We need to understand why.
+	 */
+	reg = turin_pcie_port_reg(port, D_PCIE_PORT_HW_DBG_LC);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_HW_DBG_LC_SET_DBG15(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Software expects to see the PCIe slot implemented bit when a slot
+	 * actually exists. For us, this is basically anything that actually is
+	 * considered MAPPED. Set that now on the port.
+	 */
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
+		uint16_t reg;
+
+		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, TURIN_BRIDGE_R_PCI_PCIE_CAP);
+		reg |= PCIE_PCIECAP_SLOT_IMPL;
+		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, TURIN_BRIDGE_R_PCI_PCIE_CAP, reg);
+	}
+}
+
+/*
+ * On Turin, we have to hide unused bridges on the "large" IOHCs.
+ *
+ * There are two internal ports on each large IOHC for nBIF: device 7, functions
+ * 1 and 2, correspondiing to nBIF0 Ports 0 and 1.  The second port is used for
+ * SATA but is not present, and thus needs hiding on IOHC 1 and 2 (aka. IOMS 2
+ * and 4, aka. NBIO0/IOHUB2 and NBIO1/IOHUB0).  Note that these happen to be the
+ * IOHCs which have the bonus core and FCH respectively, which is perhaps not a
+ * coincidence.
+ *
+ * The way we model IOHC::IOHC_Bridge_CNTL is as a set of units like this, from
+ * right to left:
+ *
+ * Unit 0 - IOHC0PCIE0DEVINDCFG[8:0] - PCIe core with 9 ports
+ * Unit 1 - IOHC0PCIE5DEVINDCFG[7:0] - Bonus PCIe core with 8 ports
+ * Unit 2 - IOHC0PCIE6DEVINDCFG[2:0] - Unused PCIe core with 3 ports
+ * Unit 3 - IOHC0NBIF1DEVINDCFG[1:0] - nBIF device with 2 ports
+ * Unit 4 - IOHC0INTSBDEVINDCFG0
+ *
+ * This is why we always select unit 0 in turin_hide_nbif_bridge above: there is
+ * only one nBIF unit in the bridge control register and
+ * turin_iohcdev_nbif_smn_reg indexes from 0.
+ */
+void
+turin_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms)
+{
+	if (ioms->zio_iohctype != ZEN_IOHCT_LARGE)
+		return;
+
+	/*
+	 * Hide bridges on the unused PCIE6.
+	 */
+	for (uint8_t i = 0; i < TURIN_PCIE6_CORE_BONUS_PORTS; i++)
+		turin_hide_pci_bridge(ioms, TURIN_IOMS_BONUS_PCIE6_CORENO, i);
+
+	/*
+	 * The description of the bridge control register says to disable the
+	 * unused internal bridges on init.
+	 */
+	ASSERT3U(ioms->zio_iohcnum, <, ARRAY_SIZE(turin_int_ports));
+	for (uint8_t i = turin_int_ports[ioms->zio_iohcnum].tippi_count;
+	    i < TURIN_NBIF_MAX_PORTS; i++) {
+		turin_hide_nbif_bridge(ioms, i);
+	}
+
+	/*
+	 * Where we don't have bonus cores, hide the bridges that would exist if
+	 * we had bonus cores.
+	 */
+	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_BONUS) == 0) {
+		for (uint8_t i = 0; i < TURIN_PCIE_CORE_BONUS_PORTS; i++) {
+			turin_hide_pci_bridge(ioms,
+			    TURIN_IOMS_BONUS_PCIE_CORENO, i);
+		}
+	}
+}
+
+/*
+ * This is a companion to turin_fabric_init_bridge, that operates on the PCIe
+ * core level before we get to the individual bridge. This initialization
+ * generally is required to ensure that each port (regardless of whether it's
+ * hidden or not) is able to properly generate an all 1s response. In addition
+ * we have to take care of things like atomics, idling defaults, certain
+ * receiver completion buffer checks, etc.
+ */
+void
+turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_RCB_CTL);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RCB_CTL_SET_IGN_LINK_DOWN_ERR(val, 1);
+	val = PCIE_CORE_RCB_CTL_SET_LINK_DOWN_CTO_EN(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Program the unit ID for this device's SDP port.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_SDP_CTL);
+	val = zen_pcie_core_read(pc, reg);
+	/*
+	 * The unit ID is split into two parts, and written to different
+	 * fields in this register.
+	 */
+	ASSERT0(pc->zpc_sdp_unit >> 7);
+	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(val,
+	    bitx8(pc->zpc_sdp_unit, 6, 3));
+	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(val,
+	    bitx8(pc->zpc_sdp_unit, 2, 0));
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Program values required for receiver margining to work. These are
+	 * hidden in the core. Voltage margining was made mandatory in Gen 5.
+	 * There are three registers involved.
+	 */
+
+	/*
+	 * The first register (D_PCIE_CORE_RX_MARGIN_CTL_CAP) sets up the
+	 * margining support.  We set things up to support voltage margining,
+	 * and make left/right timing and up/down voltage independent.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN_CTL_CAP);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_TIME(val, 1);
+	val = PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_VOLT(val, 1);
+	val = PCIE_CORE_RX_MARGIN_CTL_CAP_SET_VOLT_SUP(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * The second register (D_PCIE_CORE_RX_MARGIN1) sets the maximum
+	 * supported offsets and steps, but the values actually used may be
+	 * smaller, depending on the characteristics of the device on the
+	 * distant end. These values are recommended by AMD.
+	 *
+	 * The maximum voltage offset controls the maximum swing at the maximum
+	 * stepped value, relative to the default setting, as a percentage of
+	 * 1V; our value of 0xD is this 0.14V.
+	 *
+	 * The maximum timing offset value is the maximum offset from default
+	 * setting at the maximum stepped value as a percentage of a nominal UI
+	 * (Unit Interval) at 16 GT/s.  0x19 is thus 25%.
+	 *
+	 * The maximum number of time steps is the timing steps, to the right or
+	 * left, that can be taken from the default setting; it must be at least
+	 * +/- 20% of the UI.  Our value of 0x10 is 16.
+	 *
+	 * Finally, the number of voltage steps is the number of steps either up
+	 * or down from the default setting.  The PPR says that steps have a
+	 * minimum of +/- 50mV as measured by the 16 GT/s reference equalizer.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN1_SET_MAX_VOLT_OFF(val, 0xd);
+	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x19);
+	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x10);
+	val = PCIE_CORE_RX_MARGIN1_SET_NUM_VOLT_STEPS(val, 0x3f);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * The third register (D_PCIE_CORE_RX_MARGIN2) sets the number of lanes
+	 * that can be margined at the same time.  We've been led to believe the
+	 * entire core supports margining at once, or 16 lanes, but note that
+	 * the register is encoded as a zeros based value, so we write 0xf.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN2_SET_NLANES(val, 0xf);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Enabling atomics in the RC requires a few different registers. Both
+	 * a strap has to be overridden and then corresponding control bits.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_STRAP_F0);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_ROUTE(val, 1);
+	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Enable 7-bit TPH steering logic in PCIECORE::PCIE_MST_CTRL_2 and
+	 * PCIECORE::PCIE_RX_CNTL4.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_MST_CTL2);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_MSG_CTL2_SET_CI_7BIT_ST_TAG_EN(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_RX_CTL4);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_CTL4_SET_7BIT_ST_TAG_EN(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Set atomic operation ordering behavior in PCIECORE::PCIE_TX_CTRL_1.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_PCIE_TX_CTL1);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PCIE_TX_CTL1_SET_TX_ATOMIC_ORD_DIS(val, 1);
+	val = PCIE_CORE_PCIE_TX_CTL1_SET_TX_ATOMIC_OPS_DIS(val, 0);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Disable extracting destination ID and message headers from the
+	 * request channel, rather than encapsulated data fields.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_PCIE_TX_CTL3);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PCIE_TX_CTL3_SET_ENCMSG_DST_ID_FROM_SDP_REQ_EN(val, 0);
+	val = PCIE_CORE_PCIE_TX_CTL3_SET_ENCMSG_HDR_FROM_SDP_REQ_EN(val, 0);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Ensure the correct electrical idle mode detection is set. In
+	 * addition, it's been recommended we ignore the K30.7 EDB (EnD Bad)
+	 * special symbol errors.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PCIE_P_CTL_SET_ELEC_IDLE(val,
+	    PCIE_CORE_PCIE_P_CTL_ELEC_IDLE_M1);
+	val = PCIE_CORE_PCIE_P_CTL_SET_IGN_EDB_ERR(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Adjust pool credits reserved for PCIe SLV OrigData and Req VC1.
+	 */
+	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_SLV_CTL1);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_SLV_CTL1_SET_PHDR_CREDITS_RSVD(val,
+	    PCIE_CORE_SLV_CTL1_VC1_POOL_CREDS_VAL);
+	val = PCIE_CORE_SLV_CTL1_SET_PDAT_CREDITS_RSVD(val,
+	    PCIE_CORE_SLV_CTL1_VC1_POOL_CREDS_VAL);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * The IOMMUL1 does not have an instance for the bonus core, and we
+	 * ignore the unused PCIe6 here.
+	 */
+	if (pc->zpc_coreno == 0) {
+		reg = turin_pcie_core_reg(pc, D_IOMMUL1_CTL1);
+		val = zen_pcie_core_read(pc, reg);
+		val = IOMMUL1_CTL1_SET_ORDERING(val, 1);
+		zen_pcie_core_write(pc, reg, val);
+	}
+
+	/*
+	 * Fixups that are specific to Turin Cx parts.
+	 *
+	 * AGESA does this in a callback after reconfig.  We do it here, as this
+	 * is where we handle the rest of the core state set up.
+	 */
+	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
+	if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_C0) &&
+	    pc->zpc_coreno != TURIN_IOMS_BONUS_PCIE_CORENO) {
+		reg = turin_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
+		val = zen_pcie_core_read(pc, reg);
+		val = PCIE_CORE_PCIE_P_CTL_SET_ALWAYS_USE_FAST_TXCLK(val, 1);
+		zen_pcie_core_write(pc, reg, val);
+	}
+}
+
+typedef struct {
+	zen_ioms_t *pbc_ioms;
+	uint8_t pbc_busoff;
+} pci_bus_counter_t;
+
+static int
+turin_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
+{
+	uint8_t bus, secbus;
+	pci_bus_counter_t *pbc = arg;
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
+	uint_t i;
+
+	bus = ioms->zio_pci_busno;
+	if (pbc->pbc_ioms != ioms &&
+	    ioms->zio_iohctype == ZEN_IOHCT_LARGE &&
+	    pc->zpc_coreno == 0) {
+		const turin_ioms_pcie_port_info_t *int_ports =
+		    &turin_int_ports[ioms->zio_iohcnum];
+		pbc->pbc_busoff = 1 + int_ports->tippi_count;
+		pbc->pbc_ioms = ioms;
+		for (i = 0; i < int_ports->tippi_count; i++) {
+			const zen_pcie_port_info_t *info =
+			    &int_ports->tippi_info[i];
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_PRIBUS, bus);
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_SECBUS, bus + 1 + i);
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_SUBBUS, bus + 1 + i);
+		}
+	}
+
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0)
+		return (0);
+
+	secbus = bus + pbc->pbc_busoff;
+
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_PRIBUS, bus);
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_SECBUS, secbus);
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_SUBBUS, secbus);
+	pbc->pbc_busoff++;
+
+	return (0);
+}
+
+/*
+ * XXX This whole function exists to workaround deficiencies in software and
+ * basically try to ape parts of the PCI firmware spec. The OS should natively
+ * handle this. In particular, we currently do the following:
+ *
+ *   * Program a single downstream bus onto each root port. We can only get away
+ *     with this because we know there are no other bridges right now. This
+ *     cannot be a long term solution, though I know we will be temped to make
+ *     it one. I'm sorry future us.
+ */
+void
+turin_fabric_hack_bridges(zen_fabric_t *fabric)
+{
+	pci_bus_counter_t c;
+	bzero(&c, sizeof (c));
+
+	zen_fabric_walk_pcie_port(fabric, turin_fabric_hack_bridges_cb, &c);
 }

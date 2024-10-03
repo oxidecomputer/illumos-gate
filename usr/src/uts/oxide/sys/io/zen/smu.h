@@ -14,8 +14,8 @@
  */
 
 /*
- * Type, structure, and function definitions for for interacting with the
- * System Management Unit, or SMU.
+ * Type, structure, and function definitions for interacting with the System
+ * Management Unit, or SMU.
  */
 
 #ifndef	_ZEN_SMU_H

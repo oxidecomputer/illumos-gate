@@ -102,7 +102,7 @@
 #include <sys/debug.h>
 #include <sys/pcie.h>
 #include <sys/sysmacros.h>
-#include <sys/io/zen/dxio_data.h>
+#include <sys/io/zen/hotplug_impl.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/ruby_dxio_data.h>
 
@@ -230,7 +230,11 @@ const zen_mpio_ask_port_t ruby_mpio_pcie_s0[] = {
 };
 /* END CSTYLED */
 
-size_t RUBY_MPIO_PCIE_S0_LEN = ARRAY_SIZE(ruby_mpio_pcie_s0);
+size_t
+ruby_mpio_pcie_s0_len(void)
+{
+	return (ARRAY_SIZE(ruby_mpio_pcie_s0));
+}
 
 /* BEGIN CSTYLED */
 const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports_full_nvme[] = {
@@ -714,4 +718,8 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports_full_sata[] = {
 };
 /* END CSTYLED */
 
-const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = ARRAY_SIZE(ruby_mpio_hfc_ports);
+size_t
+ruby_mpio_hfc_ports_len(void)
+{
+	return (ARRAY_SIZE(ruby_mpio_hfc_ports));
+}

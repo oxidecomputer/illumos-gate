@@ -41,13 +41,13 @@ typedef struct zen_mpio_ubm_hfc_port zen_mpio_ubm_hfc_port_t;
  * Ruby port definitions and length.
  */
 extern const zen_mpio_ask_port_t ruby_mpio_pcie_s0[];
-extern size_t RUBY_MPIO_PCIE_S0_LEN;
+extern size_t ruby_mpio_pcie_s0_len(void);
 
 /*
  * Ruby UBM data.  Not used by Oxide hardware.
  */
 extern const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[];
-extern const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
+extern size_t ruby_mpio_hfc_ports_len(void);
 
 #ifdef __cplusplus
 }

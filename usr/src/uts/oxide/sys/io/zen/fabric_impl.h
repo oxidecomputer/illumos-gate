@@ -31,6 +31,8 @@
 
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/ccx_impl.h>
+#include <sys/io/zen/dxio_impl.h>
+#include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/nbif_impl.h>
 #include <sys/io/zen/pcie_impl.h>
 
@@ -253,6 +255,22 @@ struct zen_iodie {
 	 */
 	uint8_t			zi_ndxio_fw;
 	uint32_t		zi_dxio_fw[4];
+
+	/*
+	 * The DXIO crossbar configuration we're using, either programming it
+	 * via the SMU or via MPIO.  Note that on Milan, we will always only use
+	 * zi_dxio_conf while on Genoa and later we will always zi_mpio_conf.
+	 */
+	union {
+		zen_mpio_config_t	zi_mpio_conf;
+		zen_dxio_config_t	zi_dxio_conf;
+	};
+
+	/*
+	 * When programming DXIO via the SMU, this is the current state of the
+	 * link training state machine.
+	 */
+	zen_dxio_sm_state_t		zi_dxio_sm_state;
 
 	/*
 	 * The cached brand string fetched from the SMU during early boot.

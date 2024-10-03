@@ -43,7 +43,7 @@ extern "C" {
  * turin_nbif_data structure which lays out the individual functions on each
  * device.
  */
-#define	TURIN_NBIF_MAX_DEVS		2
+#define	TURIN_NBIF_MAX_PORTS		2
 #define	TURIN_NBIF_MAX_FUNCS		8
 
 /*
@@ -77,7 +77,7 @@ turin_nbif_func_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 	 */
 #ifdef	DEBUG
 	const uint8_t TURIN_NBIF_FNVALID[TURIN_NBIO_MAX_NBIF]
-	    [TURIN_NBIF_MAX_DEVS] = {
+	    [TURIN_NBIF_MAX_PORTS] = {
 		{ 0xff, 0x03 },
 		{ 0x00, 0x00 },
 		{ 0x03, 0x00 }
@@ -96,7 +96,7 @@ turin_nbif_func_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 
 	ASSERT3U(nbio32, <, TURIN_MAX_NBIO);
 	ASSERT3U(nbif32, <, TURIN_NBIO_MAX_NBIF);
-	ASSERT3U(dev32, <, TURIN_NBIF_MAX_DEVS);
+	ASSERT3U(dev32, <, TURIN_NBIF_MAX_PORTS);
 	ASSERT3U(func32, <, TURIN_NBIF_MAX_FUNCS);
 
 	ASSERT3U(bitx8(TURIN_NBIF_FNVALID[nbifno][devno], funcno, funcno), !=,
@@ -261,7 +261,7 @@ turin_nbif_alt_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 #define	D_NBIF_PORT_STRAP3	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_NBIF,	\
 	.srd_reg = 0x3100c,	\
-	.srd_nents = TURIN_NBIF_MAX_DEVS,	\
+	.srd_nents = TURIN_NBIF_MAX_PORTS,	\
 	.srd_stride = 0x200	\
 }
 #define	NBIF_PORT_STRAP3(i, n, d)	\

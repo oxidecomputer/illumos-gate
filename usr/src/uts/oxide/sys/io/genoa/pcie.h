@@ -1036,7 +1036,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE3X3			2
-#define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_PRESET			3
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_PRST			3
 
 /*
  * PCIEPORT::PCIE_LC_EQ_CNTL_16GT - Used to set equalization search modes etc.
@@ -1053,7 +1053,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE3X3			2
-#define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_PRESET			3
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_PRST			3
 
 /*
  * PCIEPORT::PCIE_LC_SAVE_RESTORE_1 - unused but captured for debugging.
@@ -1097,7 +1097,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE3X3			2
-#define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_PRESET			3
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_PRST			3
 
 /*
  * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL - Used to control preset masks.
@@ -1109,12 +1109,16 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_PRST_MASK_CTL(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_PRST_MASK_CTL, (p), (b))
-#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_32GT(r, v) \
+#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_32GT(r, v) \
     bitset32(r, 29, 20, v)
-#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_16GT(r, v) \
+#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_16GT(r, v) \
     bitset32(r, 19, 10, v)
-#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_8GT(r, v) \
+#define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_8GT(r, v) \
     bitset32(r, 9, 0, v)
+
+#define	PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL	0x78
+#define	PCIE_PORT_LC_PRST_MASK_CTL_16GT_VAL	0x370
+#define	PCIE_PORT_LC_PRST_MASK_CTL_8GT_VAL	0x370
 
 /*
  * PCIEPORT::PCIE_LC_RXRECOVER_RXSTANDBY_CNTL - unused but captured for

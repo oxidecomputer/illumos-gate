@@ -36,20 +36,6 @@ extern "C" {
  */
 #define	TURIN_PCIE_CORE0_UNITID		16
 
-/*
- * These stages of configuration are referred to in the per-port and per-RC
- * register storage structures, which provide a debugging facility to help
- * understand what both firmware and software have done to these registers over
- * time.  They do not control any software behaviour other than in mdb.  See the
- * theory statement in turin_fabric.c for the definitions of these stages.
- */
-typedef enum turin_pcie_config_stage {
-	TPCS_PRE_INIT,
-	TPCS_NUM_STAGES
-} turin_pcie_config_stage_t;
-
-CTASSERT(TPCS_NUM_STAGES <= ZPCS_MAX_STAGES);
-
 #ifdef __cplusplus
 }
 #endif

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_GENOA_IOMUX_H
@@ -52,9 +52,7 @@ extern "C" {
 #define	GENOA_FCH_IOMUX_26_PCIE_RST1_L		0
 #define	GENOA_FCH_IOMUX_26_AGPIO26		1
 
-#define	GENOA_FCH_IOMUX_129_ESPI_RSTIN_L	0
-#define	GENOA_FCH_IOMUX_129_KBRST_L		1
-#define	GENOA_FCH_IOMUX_129_AGPIO129		2
+#define	GENOA_FCH_IOMUX_27_PCIE_RST3_L		0
 
 #define	GENOA_FCH_IOMUX_135_UART0_CTS_L		0
 #define	GENOA_FCH_IOMUX_136_UART0_RXD		0
@@ -64,6 +62,9 @@ extern "C" {
 
 #define	GENOA_FCH_IOMUX_141_UART1_RXD		0
 #define	GENOA_FCH_IOMUX_142_UART1_TXD		0
+
+#define	GENOA_FCH_RMTMUX_10_PCIE_RST1_L		0
+#define	GENOA_FCH_RMTMUX_10_AGPIO266		1
 
 #ifdef __cplusplus
 }

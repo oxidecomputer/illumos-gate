@@ -50,11 +50,21 @@
 
 #include <sys/types.h>
 #include <sys/stdbool.h>
+#include <sys/platform_detect.h>
 
+#include <sys/io/zen/hacks.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/hotplug_impl.h>
 #include <sys/io/zen/platform_impl.h>
+#include <sys/io/zen/ruby_dxio_data.h>
 #include <sys/io/zen/smn.h>
+
+/*
+ * These come from common code in the DDI.  They really ought to be in a header.
+ */
+extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
+extern void contig_free(void *, size_t);
 
 #define	ZEN_MPIO_RPC_ARG0(ZPCS) \
     zen_mpio_smn_reg(0, (ZPCS)->zpc_mpio_smn_addrs.zmsa_arg0, 0)
@@ -126,8 +136,30 @@ zen_mpio_rpc_res_str(const zen_mpio_rpc_res_t res)
  *
  * Empirically, this number takes enough time on every system that we've tried
  * that it should account for any reasonable amount of time required by any RPC.
+ * Note that this has evolved over time during the development process: early
+ * on, we started with a sufficiently high number that the timeout was
+ * effectively infinite, but not useful; as we got further and implemented
+ * simple RPCs that completed quickly, we used a lower timeout, but as training
+ * and related processes started to actually work, we found it was too small.
+ * What we have now seems about right, but it is not a number derived from a
+ * serious mathematical analysis of average case times, or anything similar.
  */
-#define	RPC_READY_MAX_SPIN	(1U << 20)
+#define	RPC_READY_MAX_SPIN	(1U << 24)
+
+/*
+ * Similarly, this constant is the maximum number of times that we will spin
+ * waiting for MPIO to indicate that it is ready to begin processing some
+ * asynchronous operation (such as a posted operation, or DMA transfer).  That
+ * is, this is the number of times we will invoke the status retrieval RPC and
+ * test its response to see whether MPIO is ready to being a new (async)
+ * operation; this is distinct from whether MPIO is in a position to receive
+ * another RPC, as indicated by the READY bit being set in the RPC response
+ * register.
+ *
+ * This value was chosen arbitrarily and has never been adjusted, but probably
+ * could be smaller.
+ */
+#define	RPC_MAX_WAIT_READY	(1U << 30)
 
 zen_mpio_rpc_res_t
 zen_mpio_rpc(zen_iodie_t *iodie, zen_mpio_rpc_t *rpc)
@@ -226,8 +258,7 @@ zen_mpio_get_fw_version(zen_iodie_t *iodie)
 	rpc.zmr_req = ZEN_MPIO_OP_GET_VERSION;
 	res = zen_mpio_rpc(iodie, &rpc);
 	if (res != ZEN_MPIO_RPC_OK) {
-		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: %s "
-		    "(MPIO response 0x%x)",
+		cmn_err(CE_WARN, "MPIO Get Version RPC Failed: %s (MPIO: 0x%x)",
 		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
 		return (false);
 	}
@@ -249,4 +280,774 @@ zen_mpio_report_fw_version(const zen_iodie_t *iodie)
 	    "?MPIO Firmware Version: 0x%02x.0x%02x.0x%02x.0x%02x\n",
 	    iodie->zi_dxio_fw[0], iodie->zi_dxio_fw[1], iodie->zi_dxio_fw[2],
 	    iodie->zi_dxio_fw[3]);
+}
+
+bool
+zen_mpio_rpc_get_status(zen_iodie_t *iodie, zen_mpio_status_t *status)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_GET_STATUS;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO Get Status Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+	CTASSERT(sizeof (rpc.zmr_args) == sizeof (*status));
+	bcopy(rpc.zmr_args, status, sizeof (*status));
+
+	return (true);
+}
+
+static bool
+zen_mpio_wait_ready(zen_iodie_t *iodie)
+{
+	zen_mpio_status_t status = { 0 };
+
+	for (uint_t k = 0; k < RPC_MAX_WAIT_READY; k++) {
+		if (!zen_mpio_rpc_get_status(iodie, &status)) {
+			cmn_err(CE_WARN, "MPIO wait ready RPC failed");
+			return (false);
+		}
+		if (status.zms_cmd_stat == 0)
+			return (true);
+	}
+	cmn_err(CE_WARN, "MPIO wait ready timed out, cmd status: 0x%x",
+	    status.zms_cmd_stat);
+
+	return (false);
+}
+
+/*
+ * Note this is specific to UBM, which is only used on development boards during
+ * software bringup.
+ */
+static bool
+zen_mpio_rpc_ubm_enumerate_i2c(zen_iodie_t *iodie)
+{
+	zen_mpio_config_t *conf;
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	ASSERT3P(iodie, !=, NULL);
+	conf = &iodie->zi_mpio_conf;
+	ASSERT3P(conf->zmc_ubm_hfc_ports, !=, NULL);
+	VERIFY3U(conf->zmc_ubm_hfc_ports_pa, !=, 0);
+	VERIFY3U(conf->zmc_ubm_hfc_ports_pa, <, 0xFFFFFFFFU);
+
+	/*
+	 * Sadly, this RPC can only accept 32-bits worth of a
+	 * physical address.  Thus, the data is artificially
+	 * constrained to be in the first 4GiB of address space
+	 * by DMA attributes.
+	 */
+	rpc.zmr_args[0] = (uint32_t)conf->zmc_ubm_hfc_ports_pa;
+	rpc.zmr_args[1] = conf->zmc_ubm_hfc_nports;
+	rpc.zmr_req = ZEN_MPIO_OP_ENUMERATE_I2C;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO I2C Enumerate RPC Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+zen_mpio_rpc_ubm_get_i2c_device(zen_iodie_t *iodie, uint32_t hfc, uint32_t dfc,
+    zen_mpio_ubm_dfc_descr_t *descr)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_args[0] = hfc;
+	rpc.zmr_args[1] = dfc;
+	rpc.zmr_args[2] = 0;  /* Only used for OCP, which we don't handle. */
+	rpc.zmr_req = ZEN_MPIO_OP_GET_I2C_DEV;
+	res = zen_mpio_rpc(iodie, &rpc);
+	/*
+	 * This oddly-different method of testing for success mirrors AGESA,
+	 * which appears to allow non-zero return values for this RPC.
+	 */
+	if (res != ZEN_MPIO_RPC_OK && (rpc.zmr_resp & 0xFF) != 0) {
+		return (false);
+	}
+	CTASSERT(sizeof (*descr) <=
+	    (sizeof (rpc.zmr_args) - sizeof (rpc.zmr_args[0])));
+	bcopy(&rpc.zmr_args[1], descr, sizeof (*descr));
+
+	return (true);
+}
+
+/*
+ * Address here is a 7-bit I2C address (8 bits with the R/W bit).
+ */
+static bool
+zen_mpio_rpc_set_i2c_switch_addr(zen_iodie_t *iodie, uint8_t i2addr)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+	uint32_t addr = i2addr * 0x100;
+
+	rpc.zmr_req = ZEN_MPIO_OP_SET_HP_I2C_SW_ADDR;
+	rpc.zmr_args[0] = addr;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO Set i2c address RPC Failed: %s "
+		    "(addr: 0x%x, MPIO 0x%x)",
+		    zen_mpio_rpc_res_str(res), addr, rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+/*
+ * Do MPIO global configuration initialization.  Unlike earlier systems that did
+ * this via DXIO and discrete RPCs, MPIO takes a single global configuration
+ * parameter in an RPC.
+ *
+ * The specific values we use here are taken from AMD's recommendations.
+ * TODO: Add clock gating back in.
+ */
+static bool
+zen_mpio_init_global_config(zen_iodie_t *iodie)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_global_config_t *args;
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_SET_GLOBAL_CONFIG;
+	args = (zen_mpio_global_config_t *)rpc.zmr_args;
+	args->zmgc_skip_vet = 1;
+	args->zmgc_use_phy_sram = 1;
+	args->zmgc_valid_phy_firmware = 1;
+	args->zmgc_en_pcie_noncomp_wa = 1;
+	args->zmgc_pwr_mgmt_clk_gating = 1;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO set global config RPC Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static void
+zen_mpio_ubm_hfc_init(zen_iodie_t *iodie, uint32_t hfcno)
+{
+	zen_mpio_config_t *conf = &iodie->zi_mpio_conf;
+	zen_mpio_ask_port_t *ask;
+	zen_mpio_ubm_dfc_descr_t d;
+	zen_mpio_ubm_hfc_port_t *hfc_port;
+	uint_t dfcno, ndfc;
+
+	/*
+	 * The number of DFCs changes for each HFC, and is discovered when
+	 * requesting I2C information for the first DFC.
+	 */
+	hfc_port = &conf->zmc_ubm_hfc_ports[hfcno];
+	dfcno = 0;
+	do {
+		VERIFY3U(conf->zmc_ask_nports, <, ZEN_MPIO_ASK_MAX_PORTS);
+		if (!zen_mpio_rpc_ubm_get_i2c_device(iodie, hfcno, dfcno, &d)) {
+			cmn_err(CE_PANIC, "get i2c device failed (%u/%u)",
+			    hfcno, dfcno);
+		}
+		if (dfcno == 0)
+			ndfc = d.zmudd_ndfcs;
+		if (ndfc == 0)
+			return;
+
+		/*
+		 * Note that AGESA does not consider lane reversal in UBM cases
+		 * here, so we don't either.
+		 */
+		ask = &conf->zmc_ask->zma_ports[conf->zmc_ask_nports++];
+		ask->zma_link.zml_lane_start =
+		    hfc_port->zmuhp_start_lane + d.zmudd_lane_start;
+		ask->zma_link.zml_num_lanes = d.zmudd_lane_width;
+		ask->zma_link.zml_gpio_id = 1;
+
+		ask->zma_link.zml_attrs.zmla_link_hp_type =
+		    ZEN_MPIO_HOTPLUG_T_UBM;
+		ask->zma_link.zml_attrs.zmla_hfc_idx = hfcno;
+		ask->zma_link.zml_attrs.zmla_dfc_idx = dfcno;
+		ask->zma_link.zml_attrs.zmla_port_present = 1;
+
+		switch (d.zmudd_data.zmudt_type) {
+		case ZEN_MPIO_UBM_DFC_TYPE_QUAD_PCI:
+			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE;
+			break;
+		case ZEN_MPIO_UBM_DFC_TYPE_SATA_SAS:
+			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_SATA;
+			break;
+		case ZEN_MPIO_UBM_DFC_TYPE_EMPTY:
+			ask->zma_link.zml_attrs.zmla_port_present = 0;
+			break;
+		}
+		++dfcno;
+	} while (dfcno < ndfc);
+}
+
+static int
+zen_mpio_init_ubm(zen_iodie_t *iodie, void *arg)
+{
+	zen_mpio_config_t *conf;
+
+	if (iodie->zi_mpio_conf.zmc_ubm_hfc_ports == NULL)
+		return (0);
+
+	if (!zen_mpio_rpc_ubm_enumerate_i2c(iodie)) {
+		return (1);
+	}
+	conf = &iodie->zi_mpio_conf;
+	for (uint32_t i = 0; i < conf->zmc_ubm_hfc_nports; i++) {
+		zen_mpio_ubm_hfc_init(iodie, i);
+	}
+
+	return (0);
+}
+
+static bool
+zen_mpio_send_ext_attrs(zen_iodie_t *iodie, void *arg)
+{
+	zen_mpio_config_t *conf;
+	zen_mpio_xfer_ext_attrs_args_t *args;
+	zen_mpio_xfer_ext_attrs_resp_t *resp;
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	ASSERT3P(iodie, !=, NULL);
+	conf = &iodie->zi_mpio_conf;
+	ASSERT(conf->zmc_ext_attrs != NULL);
+	ASSERT3U(conf->zmc_ext_attrs_pa, !=, 0);
+
+	rpc.zmr_req = ZEN_MPIO_OP_XFER_EXT_ATTRS;
+	args = (zen_mpio_xfer_ext_attrs_args_t *)rpc.zmr_args;
+	args->zmxeaa_paddr_hi = conf->zmc_ext_attrs_pa >> 32;
+	args->zmxeaa_paddr_lo = conf->zmc_ext_attrs_pa & 0xFFFFFFFFU;
+	VERIFY0(conf->zmc_ext_attrs_len % 4);
+	args->zmxeaa_nwords = conf->zmc_ext_attrs_len / 4;
+	res = zen_mpio_rpc(iodie, &rpc);
+	resp = (zen_mpio_xfer_ext_attrs_resp_t *)rpc.zmr_args;
+	if (res != ZEN_MPIO_RPC_OK ||
+	    resp->zxear_res != ZEN_MPIO_FW_EXT_ATTR_XFER_RES_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO transfer ext attrs RPC Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+zen_mpio_send_ask(zen_iodie_t *iodie)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_config_t *conf;
+	zen_mpio_xfer_ask_args_t *args;
+	zen_mpio_xfer_ask_resp_t *resp;
+	zen_mpio_rpc_res_t res;
+
+	ASSERT3P(iodie, !=, NULL);
+	conf = &iodie->zi_mpio_conf;
+	ASSERT3P(conf, !=, NULL);
+	ASSERT3P(conf->zmc_ask, !=, NULL);
+	ASSERT3U(conf->zmc_ask_pa, !=, 0);
+
+	if (!zen_mpio_wait_ready(iodie)) {
+		cmn_err(CE_WARN, "MPIO wait for ready to send ASK failed");
+		return (false);
+	}
+
+	rpc.zmr_req = ZEN_MPIO_OP_XFER_ASK;
+	args = (zen_mpio_xfer_ask_args_t *)rpc.zmr_args;
+	args->zmxaa_paddr_hi = conf->zmc_ask_pa >> 32;
+	args->zmxaa_paddr_lo = conf->zmc_ask_pa & 0xFFFFFFFFU;
+	args->zmxaa_link_count = conf->zmc_ask_nports;
+	/*
+	 * Transfer the ASK from RAM to MPIO via DMA.  We are asking MPIO to
+	 * look at the links we have "selected" by inclusion in the ASK.  AGESA
+	 * sets this unconditionally.
+	 */
+	args->zmxaa_links = ZEN_MPIO_LINK_SELECTED;
+	args->zmxaa_dir = ZEN_MPIO_XFER_FROM_RAM;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO transfer ASK RPC Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+	resp = (zen_mpio_xfer_ask_resp_t *)rpc.zmr_args;
+	if (resp->zmxar_res != ZEN_MPIO_FW_ASK_XFER_RES_OK) {
+		cmn_err(CE_WARN, "ASK rejected by MPIO: MPIO Resp: 0x%x",
+		    rpc.zmr_args[0]);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+zen_mpio_recv_ask(zen_iodie_t *iodie)
+{
+	zen_mpio_config_t *conf;
+	zen_mpio_xfer_ask_args_t *args;
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	ASSERT3P(iodie, !=, NULL);
+	conf = &iodie->zi_mpio_conf;
+	ASSERT3P(conf, !=, NULL);
+	ASSERT3P(conf->zmc_ask, !=, NULL);
+	ASSERT3U(conf->zmc_ask_pa, !=, 0);
+
+	if (!zen_mpio_wait_ready(iodie)) {
+		cmn_err(CE_WARN, "MPIO wait for ready to receive ASK failed");
+		return (false);
+	}
+
+	rpc.zmr_req = ZEN_MPIO_OP_GET_ASK_RESULT;
+	args = (zen_mpio_xfer_ask_args_t *)rpc.zmr_args;
+	args->zmxaa_paddr_hi = conf->zmc_ask_pa >> 32;
+	args->zmxaa_paddr_lo = conf->zmc_ask_pa & 0xFFFFFFFFU;
+	/*
+	 * Retrieve a copy of the ASK from MPIO; here, we ask MPIO to send us
+	 * information about all links that it knows about (e.g., from previous
+	 * ASKs that we sent it).  AGESA sets this unconditionally.
+	 */
+	args->zmxaa_links = ZEN_MPIO_LINK_ALL;
+	args->zmxaa_dir = ZEN_MPIO_XFER_TO_RAM;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO recveive ASK RPC Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+zen_mpio_setup_link_post_map(zen_iodie_t *iodie)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_link_setup_args_t *args;
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
+	args->zmlsa_map = 1;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link RPC failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+zen_mpio_setup_link_post_config_reconfig(zen_iodie_t *iodie)
+{
+	zen_mpio_link_setup_args_t *args;
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
+	args->zmlsa_configure = 1;
+	args->zmlsa_reconfigure = 1;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link RPC failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+zen_mpio_setup_link_post_perst_req(zen_iodie_t *iodie)
+{
+	zen_mpio_link_setup_args_t *args;
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
+	args->zmlsa_perst_req = 1;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link RPC failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+zen_mpio_setup_link_train_enumerate(zen_iodie_t *iodie)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_link_setup_args_t *args;
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
+	args->zmlsa_training = 1;
+	args->zmlsa_enumerate = 1;
+	args->zmlsa_early = 0;  /* We do not early train. */
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO setup link train/enum failed: "
+		    "%s (MPIO: 0x%x)", zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+static int
+zen_mpio_send_data(zen_iodie_t *iodie, void *arg __unused)
+{
+	if (!zen_mpio_send_ask(iodie)) {
+		cmn_err(CE_WARN, "MPIO send ASK failed");
+		return (1);
+	}
+
+	return (0);
+}
+
+/*
+ * Here we need to assemble data for the system we're actually on.
+ */
+static int
+zen_mpio_init_data(zen_iodie_t *iodie, void *arg)
+{
+	ddi_dma_attr_t attr;
+	size_t size;
+	pfn_t pfn;
+	zen_mpio_config_t *conf = &iodie->zi_mpio_conf;
+	const zen_mpio_ask_port_t *source_ask_data =
+	    oxide_board_data->obd_dxio_source_data;
+	const zen_mpio_ubm_hfc_port_t *source_ubm_data =
+	    oxide_board_data->obd_ubm_source_hfc_data;
+	zen_mpio_ask_port_t *ask;
+
+	if (iodie->zi_soc->zs_num != 0)
+		return (0);
+
+	VERIFY3P(source_ask_data, !=, NULL);
+	VERIFY3P(oxide_board_data->obd_dxio_source_data_len, !=, NULL);
+	conf->zmc_ask_nports = oxide_board_data->obd_dxio_source_data_len();
+	VERIFY3U(conf->zmc_ask_nports, <=, ZEN_MPIO_ASK_MAX_PORTS);
+
+	size = conf->zmc_ask_nports * sizeof (zen_mpio_ask_port_t);
+	VERIFY3U(size, <=, MMU_PAGESIZE);
+
+	zen_fabric_dma_attr(&attr);
+	conf->zmc_ask_alloc_len = MMU_PAGESIZE;
+	conf->zmc_ask = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->zmc_ask, MMU_PAGESIZE);
+	ask = conf->zmc_ask->zma_ports;
+	bcopy(source_ask_data, ask, size);
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zmc_ask);
+	conf->zmc_ask_pa = mmu_ptob((uint64_t)pfn);
+
+	conf->zmc_ext_attrs_alloc_len = MMU_PAGESIZE;
+	conf->zmc_ext_attrs =
+	    contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->zmc_ext_attrs, MMU_PAGESIZE);
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zmc_ext_attrs);
+	conf->zmc_ext_attrs_pa = mmu_ptob((uint64_t)pfn);
+
+	/*
+	 * We only do the rest if we're on a system that uses UBM.
+	 */
+	if (source_ubm_data == NULL)
+		return (0);
+
+	VERIFY3P(oxide_board_data->obd_ubm_source_hfc_data_len, !=, NULL);
+	conf->zmc_ubm_hfc_nports =
+	    oxide_board_data->obd_ubm_source_hfc_data_len();
+
+	/*
+	 * Note that we explicitly set attr.dma_attr_addr_hi here to emphasize
+	 * that RPC to DMA zmc_ubm_hfc_ports to MPIO requires that a 32-bit
+	 * address (the RPC only accepts a single uint32_t for the DMA address).
+	 */
+	size = sizeof (zen_mpio_ubm_hfc_port_t) * conf->zmc_ubm_hfc_nports;
+	VERIFY3U(size, <=, MMU_PAGESIZE);
+
+	attr.dma_attr_addr_hi = UINT32_MAX;
+	conf->zmc_ubm_hfc_ports_alloc_len = MMU_PAGESIZE;
+	conf->zmc_ubm_hfc_ports =
+	    contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->zmc_ubm_hfc_ports, MMU_PAGESIZE);
+
+	bcopy(source_ubm_data, conf->zmc_ubm_hfc_ports, size);
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zmc_ubm_hfc_ports);
+	conf->zmc_ubm_hfc_ports_pa = mmu_ptob((uint64_t)pfn);
+
+	return (0);
+}
+
+/*
+ * Given all of the engines on an I/O die, try and map each one to a
+ * corresponding IOMS and bridge. We only care about an engine if it is a PCIe
+ * engine. Note, because each I/O die is processed independently, this only
+ * operates on a single I/O die.
+ */
+static bool
+zen_mpio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
+{
+	bool ret = true;
+	zen_mpio_config_t *conf = &iodie->zi_mpio_conf;
+
+	for (uint32_t i = 0; i < conf->zmc_ask_nports; i++) {
+		zen_mpio_ask_port_t *ap = &conf->zmc_ask->zma_ports[i];
+		zen_mpio_link_t *lp = &ap->zma_link;
+		zen_pcie_core_t *pc;
+		zen_pcie_port_t *port;
+		uint32_t start_lane, end_lane;
+		uint8_t portno;
+
+		if (lp->zml_ctlr_type != ZEN_MPIO_ASK_LINK_PCIE)
+			continue;
+
+		start_lane = lp->zml_lane_start;
+		end_lane = start_lane + lp->zml_num_lanes - 1;
+
+		pc = zen_fabric_find_pcie_core_by_lanes(iodie,
+		    start_lane, end_lane);
+		if (pc == NULL) {
+			cmn_err(CE_WARN,
+			    "failed to map engine %u [%u, %u] to a PCIe core",
+			    i, start_lane, end_lane);
+			ret = false;
+			continue;
+		}
+
+		portno = ap->zma_status.zmils_port;
+		if (portno >= pc->zpc_nports) {
+			cmn_err(CE_WARN,
+			    "failed to map engine %u [%u, %u] to a PCIe port: "
+			    "found nports %u, but mapped to port %u",
+			    i, start_lane, end_lane,
+			    pc->zpc_nports, portno);
+			ret = false;
+			continue;
+		}
+
+		port = &pc->zpc_ports[portno];
+		if (port->zpp_ask_port != NULL) {
+			zen_mpio_link_t *l = &port->zpp_ask_port->zma_link;
+			cmn_err(CE_WARN, "engine %u [%u, %u] mapped to "
+			    "port %u, which already has an engine [%u, %u]",
+			    i, start_lane, end_lane, pc->zpc_nports,
+			    l->zml_lane_start,
+			    l->zml_lane_start + l->zml_num_lanes - 1);
+			ret = false;
+			continue;
+		}
+
+		port->zpp_flags |= ZEN_PCIE_PORT_F_MAPPED;
+		port->zpp_ask_port = ap;
+		pc->zpc_flags |= ZEN_PCIE_CORE_F_USED;
+		if (lp->zml_attrs.zmla_link_hp_type !=
+		    ZEN_MPIO_HOTPLUG_T_DISABLED) {
+			pc->zpc_flags |= ZEN_PCIE_CORE_F_HAS_HOTPLUG;
+		}
+	}
+
+	return (ret);
+}
+
+static int
+zen_mpio_init_mapping(zen_iodie_t *iodie, void *arg)
+{
+	if (!zen_mpio_setup_link_post_map(iodie) || !zen_mpio_recv_ask(iodie)) {
+		cmn_err(CE_WARN, "MPIO map failed");
+		return (1);
+	}
+
+	if (!zen_mpio_map_engines(iodie->zi_soc->zs_fabric, iodie)) {
+		cmn_err(CE_WARN, "Socket %u failed to map all DXIO engines "
+		    "to devices.  PCIe will not function",
+		    iodie->zi_soc->zs_num);
+		return (1);
+	}
+
+	return (0);
+}
+
+static int
+zen_mpio_pcie_core_op(zen_pcie_core_t *port, void *arg)
+{
+	void (*callback)(zen_pcie_core_t *) = arg;
+
+	VERIFY3P(callback, !=, NULL);
+	(callback)(port);
+
+	return (0);
+}
+
+static int
+zen_mpio_iodie_op(zen_iodie_t *iodie, void *arg)
+{
+	void (*callback)(zen_iodie_t *) = arg;
+
+	VERIFY3P(callback, !=, NULL);
+	(callback)(iodie);
+
+	return (0);
+}
+
+static int
+zen_mpio_pcie_port_op(zen_pcie_port_t *port, void *arg)
+{
+	void (*callback)(zen_pcie_port_t *) = arg;
+
+	VERIFY3P(callback, !=, NULL);
+	(callback)(port);
+
+	return (0);
+}
+
+static int
+zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+
+	(void) zen_fabric_walk_pcie_port(iodie->zi_soc->zs_fabric,
+	    zen_mpio_pcie_port_op, fops->zfo_init_pcie_port);
+	cmn_err(CE_CONT, "?Socket %u MPIO: Init PCIe port registers\n",
+	    iodie->zi_soc->zs_num);
+
+	if (!zen_mpio_setup_link_post_config_reconfig(iodie) ||
+	    !zen_mpio_recv_ask(iodie)) {
+		cmn_err(CE_WARN, "MPIO config/reconfig failed");
+		return (1);
+	}
+
+	(void) zen_fabric_walk_pcie_port(iodie->zi_soc->zs_fabric,
+	    zen_mpio_pcie_port_op, fops->zfo_init_pcie_port_after_reconfig);
+	cmn_err(CE_CONT,
+	    "?Socket %u MPIO: Init PCIe port registers post reconfig\n",
+	    iodie->zi_soc->zs_num);
+
+	if (!zen_mpio_setup_link_post_perst_req(iodie) ||
+	    !zen_mpio_recv_ask(iodie)) {
+		cmn_err(CE_WARN, "MPIO PERST request failed");
+		return (1);
+	}
+
+	if (iodie->zi_node_id == 0) {
+		for (size_t i = 0;
+		    i < oxide_board_data->obd_perst_gpios_len;
+		    i++) {
+			zen_hack_gpio(ZHGOP_SET,
+			    oxide_board_data->obd_perst_gpios[i]);
+		}
+	}
+
+	if (!zen_mpio_setup_link_train_enumerate(iodie) ||
+	    !zen_mpio_recv_ask(iodie)) {
+		cmn_err(CE_WARN, "MPIO train and enumerate request failed");
+		return (1);
+	}
+
+	return (0);
+}
+
+/*
+ * MPIO-level PCIe initialization: training links and mapping bridges and so on.
+ */
+void
+zen_mpio_pcie_init(zen_fabric_t *fabric)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	const zen_hack_ops_t *hops = oxide_zen_hack_ops();
+
+	zen_pcie_populate_dbg(fabric, ZPCS_PRE_DXIO_INIT, ZEN_IODIE_MATCH_ANY);
+
+	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_data, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO ASK Initialization failed");
+		return;
+	}
+
+	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
+	    fops->zfo_pcie_port_unhide_bridge);
+
+	if (zen_fabric_walk_iodie(fabric, zen_mpio_iodie_op,
+	    zen_mpio_init_global_config) != 0) {
+		cmn_err(CE_WARN, "MPIO Initialization failed: lasciate ogni "
+		    "speranza voi che pcie");
+		return;
+	}
+
+	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_ubm, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO UBM enumeration failed");
+		return;
+	}
+
+	if (zen_fabric_walk_iodie(fabric, zen_mpio_send_data, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO Initialization failed: failed to load "
+		    "data into mpio");
+		return;
+	}
+
+	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_mapping, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO Initialize mapping failed");
+		return;
+	}
+
+	if (zen_fabric_walk_iodie(fabric, zen_mpio_more_conf, NULL) != 0) {
+		cmn_err(CE_WARN, "MPIO Initialization failed: failed to do yet "
+		    "more configuration");
+		return;
+	}
+
+	cmn_err(CE_CONT, "?MPIO initialization completed successfully\n");
+
+	/*
+	 * Now that training is complete, hide all PCIe bridges that do not
+	 * have an attached device and are not hotplug capable.
+	 */
+	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
+	    fops->zfo_pcie_port_hide_bridge);
+
+	/*
+	 * Now that we have successfully trained devices, it's time to go
+	 * through and set up the bridges so that way we can actual handle them
+	 * aborting transactions and related.
+	 */
+	zen_fabric_walk_pcie_core(fabric, zen_mpio_pcie_core_op,
+	    fops->zfo_init_pcie_core);
+	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
+	    fops->zfo_init_bridge);
+
+	/*
+	 * XXX This is a terrible hack. We should really fix pci_boot.c.
+	 */
+	if (hops->zho_fabric_hack_bridges != NULL)
+		hops->zho_fabric_hack_bridges(fabric);
 }

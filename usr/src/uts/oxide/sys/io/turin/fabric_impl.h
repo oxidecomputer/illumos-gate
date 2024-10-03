@@ -64,13 +64,17 @@ extern "C" {
 
 /*
  * Each NBIO has 4 x16 PCIe Gen5 cores, one on each of four IOHUBs.
- * Additionally, NBIO0/IOHUB2 (IOMS2) has a bonus x8 PCIe Gen3 core.
- * This all means that most IOHUBs across both NBIOs have one core, while
- * NBIO0/IOHUB2 has two.
+ * Additionally, NBIO0/IOHUB2 (IOMS2) has a bonus x8 PCIe Gen3 core (PCIe5) and
+ * there is also an extra bonus core (PCIe6) on all the larger IOHC types.
+ * PCIe6 is unused everywhere on Turin, so we pretend that it does not exist,
+ * which is why TURIN_IOMS_MAX_PCIE_CORES is 2, not 3.
  */
-#define	TURIN_IOMS_MAX_PCIE_CORES	2
-#define	TURIN_NBIO_BONUS_IOMS		2
+#define	TURIN_IOMS_MAX_PCIE_CORES		2
+#define	TURIN_NBIO_BONUS_IOMS			2
+#define	TURIN_NBIO_BONUS_IOHC			1
 #define	TURIN_IOMS_BONUS_PCIE_CORENO	1
+#define	TURIN_PCIE6_CORE_BONUS_PORTS	3
+#define	TURIN_IOMS_BONUS_PCIE6_CORENO	2
 
 /*
  * Convenience macro to convert an IOMS number to the corresponding NBIO.
@@ -113,9 +117,16 @@ extern void turin_fabric_ioapic(zen_ioms_t *);
 extern void turin_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void turin_fabric_nbif_bridges(zen_ioms_t *);
 extern void turin_fabric_pcie(zen_fabric_t *);
-
+extern void turin_fabric_hide_bridge(zen_pcie_port_t *);
+extern void turin_fabric_unhide_bridge(zen_pcie_port_t *);
+extern void turin_fabric_init_pcie_port(zen_pcie_port_t *);
+extern void turin_fabric_init_pcie_port_after_reconfig(zen_pcie_port_t *);
+extern void turin_fabric_init_bridge(zen_pcie_port_t *);
+extern void turin_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *);
+extern void turin_fabric_init_pcie_core(zen_pcie_core_t *);
 extern void turin_iohc_enable_nmi(zen_ioms_t *);
 extern void turin_iohc_nmi_eoi(zen_ioms_t *);
+extern void turin_fabric_hack_bridges(zen_fabric_t *);
 
 extern smn_reg_t turin_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);

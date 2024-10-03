@@ -31,11 +31,47 @@
  * pointers to these types only as opaque handles.
  */
 typedef struct zen_iodie zen_iodie_t;
+typedef struct zen_mpio_ask_port zen_mpio_ask_port_t;
+typedef struct zen_mpio_ask zen_mpio_ask_t;
+typedef struct zen_mpio_ubm_hfc_port zen_mpio_ubm_hfc_port_t;
+typedef struct zen_mpio_ext_attrs zen_mpio_ext_attrs_t;
+
+
+/*
+ * We size the maximum number of ports in the ask roughly based on the SP5
+ * design and I/O die constraints as a rough swag. P0 and G3 can each support up
+ * to 16 PCIe devices, while the remaining 6 groups cans upport up to 8-9
+ * devices and P4/P5 can support up to 4 devices. That gives us 88 devices. We
+ * currently require this to be a page size which can only fit up to 78 devices.
+ */
+#define	ZEN_MPIO_ASK_MAX_PORTS	78
+
+typedef struct zen_mpio_config {
+	zen_mpio_ask_t			*zmc_ask;
+	zen_mpio_ubm_hfc_port_t		*zmc_ubm_hfc_ports;
+	zen_mpio_ext_attrs_t		*zmc_ext_attrs;
+	uint64_t			zmc_ask_pa;
+	uint64_t			zmc_ext_attrs_pa;
+	uint64_t			zmc_ubm_hfc_ports_pa;
+	uint32_t			zmc_ask_nports;
+	uint32_t			zmc_ubm_hfc_nports;
+	uint32_t			zmc_ask_alloc_len;
+	uint32_t			zmc_ext_attrs_alloc_len;
+	uint32_t			zmc_ext_attrs_len;
+	uint32_t			zmc_ubm_hfc_ports_alloc_len;
+} zen_mpio_config_t;
 
 /*
  * Retrieves and reports the MPIO firmware version.
  */
 extern bool zen_mpio_get_fw_version(zen_iodie_t *iodie);
 extern void zen_mpio_report_fw_version(const zen_iodie_t *iodie);
+
+/*
+ * Initialize MPIO-level PCIe components: this trains links, maps bridges, and
+ * so on.
+ */
+extern void zen_mpio_pcie_init(zen_fabric_t *);
+
 
 #endif	/* _SYS_IO_ZEN_MPIO_H */

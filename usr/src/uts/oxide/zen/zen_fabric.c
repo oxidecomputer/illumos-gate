@@ -2350,6 +2350,19 @@ zen_null_fabric_nbif_bridges(zen_ioms_t *ioms __unused)
 {
 }
 
+
+static int
+zen_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms,
+    void *arg __unused)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+
+	if (fops->zfo_iohc_disable_unused_pcie_bridges != NULL)
+		fops->zfo_iohc_disable_unused_pcie_bridges(ioms);
+
+	return (0);
+}
+
 void
 zen_fabric_init(void)
 {
@@ -2365,7 +2378,8 @@ zen_fabric_init(void)
 
 	/*
 	 * These register debugging facilities are costly in both space and
-	 * time, and are performed only on DEBUG kernels.
+	 * time, so the source data used to populate them are only non-empty on
+	 * DEBUG kernels.
 	 */
 	(void) zen_fabric_walk_pcie_core(fabric,
 	    zen_fabric_init_pcie_core_dbg, NULL);
@@ -2400,6 +2414,12 @@ zen_fabric_init(void)
 	 * to hide this RAM from anyone.
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_disable_vga, NULL);
+
+	/*
+	 * Walk IOMS and disable unused PCIe bridges on each IOHC.
+	 */
+	zen_fabric_walk_ioms(fabric,
+	    zen_fabric_ioms_iohc_disable_unused_pcie_bridges, NULL);
 
 	/*
 	 * Let's set up PCIe. To lead off, let's make sure the system uses the

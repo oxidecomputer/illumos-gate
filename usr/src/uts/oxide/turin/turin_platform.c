@@ -29,6 +29,7 @@
 #include <sys/io/zen/platform_impl.h>
 
 #include <sys/io/turin/fabric_impl.h>
+#include <sys/io/turin/hacks.h>
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/io/turin/ccx_impl.h>
 #include <sys/io/turin/mpio.h>
@@ -110,6 +111,16 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_nbif_dev_straps = turin_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for turin */
 	.zfo_pcie = turin_fabric_pcie,
+	.zfo_pcie_port_unhide_bridge = turin_fabric_unhide_bridge,
+	.zfo_pcie_port_hide_bridge = turin_fabric_hide_bridge,
+	.zfo_init_pcie_port = turin_fabric_init_pcie_port,
+	.zfo_init_pcie_port_after_reconfig =
+	    turin_fabric_init_pcie_port_after_reconfig,
+	.zfo_init_pcie_core = turin_fabric_init_pcie_core,
+	.zfo_init_bridge = turin_fabric_init_bridge,
+	.zfo_iohc_disable_unused_pcie_bridges =
+	    turin_fabric_ioms_iohc_disable_unused_pcie_bridges,
+
 
 	.zfo_iohc_enable_nmi = turin_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = turin_iohc_nmi_eoi,
@@ -125,6 +136,8 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 static const zen_hack_ops_t turin_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
+	.zho_hack_gpio = turin_hack_gpio,
+	.zho_fabric_hack_bridges = turin_fabric_hack_bridges,
 };
 
 static const zen_ras_ops_t turin_ras_ops = {

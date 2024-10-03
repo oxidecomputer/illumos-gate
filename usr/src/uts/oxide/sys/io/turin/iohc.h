@@ -212,9 +212,11 @@ turin_iohcdev_pcie_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 
 /*
- * For reasons not understood, NBIF0 & NBIF2 don't have an IOHCDEV group.
- * For consistency, accept unit numbers for NBIF0 & NBIF2 but assert that
- * they are not used.
+ * This is the base for unit 0, which as indicated above is the only
+ * unit in the bridge control register, and therefore the only one that
+ * we accept.  We believe this pertains to nBIF0 ports 0 and 1, but note
+ * that the register is named IOHC0NBIF1DEVINDCFG[1:0]; NBIF1 in that
+ * name is a misnomer.
  */
 static inline smn_reg_t
 turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
@@ -236,9 +238,13 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);
 
-	/* This is the base for nBIF1, the only one that we accept. */
+	/*
+	 * This is the base for unit 0, which as indicated above is the only
+	 * unit in the bridge control register, and therefore the only one that
+	 * we accept.
+	 */
 	const uint32_t aperture_base = 0x13b38000;
-	VERIFY3U(unit32, ==, 1);
+	VERIFY3U(unit32, ==, 0);
 
 	const uint32_t aperture_off = (iohc32 << 20);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
