@@ -23,6 +23,7 @@
 
 #include <sys/amdzen/mmioreg.h>
 #include <sys/io/fch/pmio.h>
+#include <sys/io/zen/hacks.h>
 #include <sys/io/zen/uarch.h>
 #include <sys/io/zen/platform.h>
 #include <sys/io/zen/platform_impl.h>
@@ -152,4 +153,15 @@ zen_check_furtive_reset(void)
 void
 zen_null_check_furtive_reset(void)
 {
+}
+
+/*
+ * Hack the GPIO!
+ */
+void
+zen_hack_gpio(zen_hack_gpio_op_t op, uint16_t gpio)
+{
+	const zen_hack_ops_t *ops = oxide_zen_hack_ops();
+	VERIFY3P(ops->zho_hack_gpio, !=, NULL);
+	ops->zho_hack_gpio(op, gpio);
 }

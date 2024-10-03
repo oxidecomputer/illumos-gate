@@ -2187,7 +2187,7 @@ impl_bus_initialprobe(void)
 	case X86_PF_AMD_TURIN:
 	case X86_PF_AMD_DENSE_TURIN:
 		/*
-		 * XXX: genoa/turin pcie support incomplete
+		 * XXX: turin pcie support incomplete
 		 */
 		cmn_err(CE_WARN, "PCIe support in progress");
 		skip_pci = true;
