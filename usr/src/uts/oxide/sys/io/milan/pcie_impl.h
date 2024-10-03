@@ -66,7 +66,6 @@ CTASSERT(MPCS_NUM_STAGES <= ZPCS_MAX_STAGES);
  * The PCIe port data specific to the Milan microarchitecture.
  */
 struct milan_pcie_port {
-	zen_dxio_engine_t	*mpp_engine;
 	uint16_t		mpp_hp_slotno;
 	uint32_t		mpp_hp_smu_mask;
 };

@@ -1001,6 +1001,7 @@ f usr/lib/amd64/liblzma.so.5 0755 root bin
 f usr/lib/amd64/libpcidb.so.1 0755 root bin
 f usr/lib/amd64/libpctx.so.1 0755 root bin
 f usr/lib/amd64/libpkcs11.so.1 0755 root bin
+f usr/lib/amd64/libnvme.so.1 0755 root bin
 f usr/lib/amd64/libpool.so.1 0755 root bin
 f usr/lib/amd64/libproject.so.1 0755 root bin
 f usr/lib/amd64/libsaveargs.so.1 0755 root bin
@@ -1103,6 +1104,7 @@ f usr/lib/libkrb5.so.1 0755 root bin
 f usr/lib/liblzma.so.5 0755 root bin
 f usr/lib/libpcidb.so.1 0755 root bin
 f usr/lib/libpkcs11.so.1 0755 root bin
+f usr/lib/libnvme.so.1 0755 root bin
 f usr/lib/libkvm.so.1 0755 root bin
 f usr/lib/libl.so.1 0755 root bin
 f usr/lib/libpctx.so.1 0755 root bin

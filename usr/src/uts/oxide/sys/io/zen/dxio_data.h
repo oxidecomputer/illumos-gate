@@ -10,29 +10,33 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_MILAN_HACKS_H
-#define	_SYS_IO_MILAN_HACKS_H
+#ifndef _SYS_IO_ZEN_DXIO_DATA_H
+#define	_SYS_IO_ZEN_DXIO_DATA_H
 
-#include <sys/types.h>
-#include <sys/stdbool.h>
-
-#include <sys/io/zen/hacks.h>
+/*
+ * Definitions used in DXIO data common across MPIO and DXIO via the SMU.
+ */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern bool milan_fixup_i2c_clock(void);
-extern bool milan_cgpll_set_ssc(bool);
-extern void milan_check_furtive_reset(void);
+typedef enum smu_exp_type {
+	SMU_I2C_PCA9539 = 0,
+	SMU_I2C_PCA9535 = 1,
+	SMU_I2C_PCA9506 = 2
+} smu_exp_type_t;
 
-extern void milan_hack_gpio(zen_hack_gpio_op_t, uint16_t);
+typedef enum smu_gpio_sw_type {
+	SMU_GPIO_SW_9545 = 0,
+	SMU_GPIO_SW_9546_48 = 1,
+} smu_gpio_sw_type_t;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_MILAN_HACKS_H */
+#endif /* _SYS_IO_ZEN_DXIO_DATA_H */
