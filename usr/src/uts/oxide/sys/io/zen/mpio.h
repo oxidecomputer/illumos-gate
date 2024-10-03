@@ -38,4 +38,11 @@ typedef struct zen_iodie zen_iodie_t;
 extern bool zen_mpio_get_fw_version(zen_iodie_t *iodie);
 extern void zen_mpio_report_fw_version(const zen_iodie_t *iodie);
 
+/*
+ * Initialize MPIO-level PCIe components: this trains links, maps bridges, and
+ * so on.
+ */
+extern void zen_mpio_pcie_init(zen_fabric_t *);
+
+
 #endif	/* _SYS_IO_ZEN_MPIO_H */

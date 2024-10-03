@@ -1201,12 +1201,12 @@ milan_pcie_dbg_signal(void)
 	 */
 	if (oxide_board_data->obd_board == OXIDE_BOARD_GIMLET) {
 		if (!gpio_configured) {
-			milan_hack_gpio(MHGOP_CONFIGURE, 129);
-			milan_hack_gpio(MHGOP_TOGGLE, 129);
+			milan_hack_gpio(ZHGOP_CONFIGURE, 129);
+			milan_hack_gpio(ZHGOP_TOGGLE, 129);
 			drv_usecwait(1);
 			gpio_configured = true;
 		}
-		milan_hack_gpio(MHGOP_TOGGLE, 129);
+		milan_hack_gpio(ZHGOP_TOGGLE, 129);
 	}
 }
 
@@ -1649,14 +1649,13 @@ milan_dxio_rpc_sm_getstate(zen_iodie_t *iodie, milan_dxio_reply_t *smp)
 static bool
 milan_dxio_rpc_retrieve_engine(zen_iodie_t *iodie)
 {
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
-	milan_dxio_config_t *conf = &miodie->mi_dxio_conf;
+	zen_dxio_config_t *conf = &iodie->zi_dxio_conf;
 	milan_dxio_rpc_t rpc = { 0 };
 
 	rpc.mdr_req = MILAN_DXIO_OP_GET_ENGINE_CFG;
-	rpc.mdr_engine = (uint32_t)(conf->mdc_pa >> 32);
-	rpc.mdr_arg0 = conf->mdc_pa & 0xffffffff;
-	rpc.mdr_arg1 = conf->mdc_alloc_len / 4;
+	rpc.mdr_engine = (uint32_t)(conf->zdc_pa >> 32);
+	rpc.mdr_arg0 = conf->zdc_pa & 0xffffffff;
+	rpc.mdr_arg1 = conf->zdc_alloc_len / 4;
 
 	if (!milan_dxio_rpc(iodie, &rpc)) {
 		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: SMU %s, "
@@ -2610,10 +2609,9 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 	size_t engn_size;
 	pfn_t pfn;
 	zen_soc_t *soc = iodie->zi_soc;
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
-	milan_dxio_config_t *conf = &miodie->mi_dxio_conf;
-	const zen_dxio_platform_t *source_data;
-	zen_dxio_anc_data_t *anc;
+	zen_dxio_config_t *conf = &iodie->zi_dxio_conf;
+	const zen_dxio_fw_platform_t *source_data;
+	zen_dxio_fw_anc_data_t *anc;
 	const milan_apob_phyovr_t *phy_override;
 	size_t phy_len;
 	int err;
@@ -2629,20 +2627,20 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 		source_data = &gimlet_engine;
 	}
 
-	engn_size = sizeof (zen_dxio_platform_t) +
-	    source_data->zdp_nengines * sizeof (zen_dxio_engine_t);
+	engn_size = sizeof (zen_dxio_fw_platform_t) +
+	    source_data->zdp_nengines * sizeof (zen_dxio_fw_engine_t);
 	VERIFY3U(engn_size, <=, MMU_PAGESIZE);
-	conf->mdc_conf_len = engn_size;
+	conf->zdc_conf_len = engn_size;
 
 	zen_fabric_dma_attr(&attr);
-	conf->mdc_alloc_len = MMU_PAGESIZE;
-	conf->mdc_conf = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->mdc_conf, MMU_PAGESIZE);
+	conf->zdc_alloc_len = MMU_PAGESIZE;
+	conf->zdc_conf = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->zdc_conf, MMU_PAGESIZE);
 
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->mdc_conf);
-	conf->mdc_pa = mmu_ptob((uint64_t)pfn);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zdc_conf);
+	conf->zdc_pa = mmu_ptob((uint64_t)pfn);
 
-	bcopy(source_data, conf->mdc_conf, engn_size);
+	bcopy(source_data, conf->zdc_conf, engn_size);
 
 	/*
 	 * We need to account for an extra 8 bytes, surprisingly. It's a good
@@ -2650,8 +2648,8 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 	 * that when we make the RPC call. Finally, we want to make sure that if
 	 * we're in an incomplete word, that we account for that in the length.
 	 */
-	conf->mdc_conf_len += 8;
-	conf->mdc_conf_len = P2ROUNDUP(conf->mdc_conf_len, 4);
+	conf->zdc_conf_len += 8;
+	conf->zdc_conf_len = P2ROUNDUP(conf->zdc_conf_len, 4);
 
 	phy_override = kapob_find(APOB_GROUP_FABRIC,
 	    MILAN_APOB_FABRIC_PHY_OVERRIDE, 0, &phy_len, &err);
@@ -2687,13 +2685,13 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 	 * The headers for the ancillary heap and payload must be 4 bytes in
 	 * size.
 	 */
-	CTASSERT(sizeof (zen_dxio_anc_data_t) == 4);
+	CTASSERT(sizeof (zen_dxio_fw_anc_data_t) == 4);
 
-	conf->mdc_anc = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->mdc_anc, MMU_PAGESIZE);
+	conf->zdc_anc = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(conf->zdc_anc, MMU_PAGESIZE);
 
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->mdc_anc);
-	conf->mdc_anc_pa = mmu_ptob((uint64_t)pfn);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zdc_anc);
+	conf->zdc_anc_pa = mmu_ptob((uint64_t)pfn);
 
 	/*
 	 * First we need to program the initial descriptor. Its type is one of
@@ -2703,20 +2701,20 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 	 * up. Confusingly, it seems that the top entry does not include the
 	 * space its header takes up. However, the subsequent payloads do.
 	 */
-	anc = conf->mdc_anc;
+	anc = conf->zdc_anc;
 	anc->zdad_type = MILAN_DXIO_HEAP_ANCILLARY;
-	anc->zdad_vers = DXIO_ANCILLARY_VERSION;
-	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
+	anc->zdad_vers = ZEN_DXIO_FW_ANCILLARY_VERSION;
+	anc->zdad_nu32s = (sizeof (zen_dxio_fw_anc_data_t) +
 	    phy_override->map_datalen) >> 2;
 	anc++;
-	anc->zdad_type = ZEN_DXIO_ANCILLARY_T_PHY;
-	anc->zdad_vers = DXIO_ANCILLARY_PAYLOAD_VERSION;
-	anc->zdad_nu32s = (sizeof (zen_dxio_anc_data_t) +
+	anc->zdad_type = ZEN_DXIO_FW_ANCILLARY_T_PHY;
+	anc->zdad_vers = ZEN_DXIO_FW_ANCILLARY_PAYLOAD_VERSION;
+	anc->zdad_nu32s = (sizeof (zen_dxio_fw_anc_data_t) +
 	    phy_override->map_datalen) >> 2;
 	anc++;
 	bcopy(phy_override->map_data, anc, phy_override->map_datalen);
-	conf->mdc_anc_len = phy_override->map_datalen +
-	    2 * sizeof (zen_dxio_anc_data_t);
+	conf->zdc_anc_len = phy_override->map_datalen +
+	    2 * sizeof (zen_dxio_fw_anc_data_t);
 
 	return (0);
 }
@@ -2724,8 +2722,7 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 static int
 milan_dxio_load_data(zen_iodie_t *iodie, void *arg)
 {
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
-	milan_dxio_config_t *conf = &miodie->mi_dxio_conf;
+	zen_dxio_config_t *conf = &iodie->zi_dxio_conf;
 
 	/*
 	 * Begin by loading the NULL capabilities before we load any data heaps.
@@ -2734,8 +2731,8 @@ milan_dxio_load_data(zen_iodie_t *iodie, void *arg)
 		return (1);
 	}
 
-	if (conf->mdc_anc != NULL && !milan_dxio_rpc_load_data(iodie,
-	    MILAN_DXIO_HEAP_ANCILLARY, conf->mdc_anc_pa, conf->mdc_anc_len,
+	if (conf->zdc_anc != NULL && !milan_dxio_rpc_load_data(iodie,
+	    MILAN_DXIO_HEAP_ANCILLARY, conf->zdc_anc_pa, conf->zdc_anc_len,
 	    0)) {
 		return (1);
 	}
@@ -2746,8 +2743,7 @@ milan_dxio_load_data(zen_iodie_t *iodie, void *arg)
 	 * it does; however, these heaps are always loaded with no data, even
 	 * though ancillary is skipped if there is none.
 	 */
-	if (!milan_dxio_rpc_load_data(iodie, MILAN_DXIO_HEAP_MACPCS,
-	    0, 0, 1) ||
+	if (!milan_dxio_rpc_load_data(iodie, MILAN_DXIO_HEAP_MACPCS, 0, 0, 1) ||
 	    !milan_dxio_rpc_load_data(iodie, MILAN_DXIO_HEAP_GPIO, 0, 0, 1)) {
 		return (1);
 	}
@@ -2756,7 +2752,7 @@ milan_dxio_load_data(zen_iodie_t *iodie, void *arg)
 	 * Load our real data!
 	 */
 	if (!milan_dxio_rpc_load_data(iodie, MILAN_DXIO_HEAP_ENGINE_CONFIG,
-	    conf->mdc_pa, conf->mdc_conf_len, 0)) {
+	    conf->zdc_pa, conf->zdc_conf_len, 0)) {
 		return (1);
 	}
 
@@ -2808,17 +2804,15 @@ static bool
 milan_dxio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
 {
 	bool ret = true;
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
-	zen_dxio_platform_t *plat = miodie->mi_dxio_conf.mdc_conf;
+	zen_dxio_fw_platform_t *plat = iodie->zi_dxio_conf.zdc_conf;
 
 	for (uint_t i = 0; i < plat->zdp_nengines; i++) {
-		zen_dxio_engine_t *en = &plat->zdp_engines[i];
+		zen_dxio_fw_engine_t *en = &plat->zdp_engines[i];
 		zen_pcie_core_t *pc;
 		zen_pcie_port_t *port;
-		milan_pcie_port_t *mport;
 		uint8_t portno;
 
-		if (en->zde_type != DXIO_ENGINE_PCIE)
+		if (en->zde_type != ZEN_DXIO_FW_ENGINE_PCIE)
 			continue;
 
 		pc = zen_fabric_find_pcie_core_by_lanes(iodie,
@@ -2842,23 +2836,22 @@ milan_dxio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
 		}
 
 		port = &pc->zpc_ports[portno];
-		mport = port->zpp_uarch_pcie_port;
-		if (mport->mpp_engine != NULL) {
+		if (port->zpp_dxio_engine != NULL) {
 			cmn_err(CE_WARN, "engine %u [%u, %u] mapped to "
 			    "port %u, which already has an engine [%u, %u]",
 			    i, en->zde_start_lane, en->zde_end_lane,
 			    pc->zpc_nports,
-			    mport->mpp_engine->zde_start_lane,
-			    mport->mpp_engine->zde_end_lane);
+			    port->zpp_dxio_engine->zde_start_lane,
+			    port->zpp_dxio_engine->zde_end_lane);
 			ret = false;
 			continue;
 		}
 
 		port->zpp_flags |= ZEN_PCIE_PORT_F_MAPPED;
-		mport->mpp_engine = en;
+		port->zpp_dxio_engine = en;
 		pc->zpc_flags |= ZEN_PCIE_CORE_F_USED;
 		if (en->zde_config.zdc_pcie.zdcp_caps.zdlc_hp !=
-		    DXIO_HOTPLUG_T_DISABLED) {
+		    ZEN_DXIO_FW_HOTPLUG_T_DISABLED) {
 			pc->zpc_flags |= ZEN_PCIE_CORE_F_HAS_HOTPLUG;
 		}
 	}
@@ -3279,7 +3272,6 @@ milan_fabric_setup_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
 {
 	for (uint16_t portno = 0; portno < pc->zpc_nports; portno++) {
 		zen_pcie_port_t *port = &pc->zpc_ports[portno];
-		milan_pcie_port_t *mport = port->zpp_uarch_pcie_port;
 
 		if (port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) {
 			smn_reg_t reg;
@@ -3321,7 +3313,7 @@ milan_fabric_setup_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
 			 * additional knob to select a specific lane of
 			 * interest.
 			 */
-			laneno = mport->mpp_engine->zde_start_lane -
+			laneno = port->zpp_dxio_engine->zde_start_lane -
 			    pc->zpc_dxio_lane_start;
 			reg = milan_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
 			val = zen_pcie_core_read(pc, reg);
@@ -3482,7 +3474,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				 * the PCIe reset itself.  We assume the mux is
 				 * passing the GPIO function at this point: if
 				 * it's not, this will do nothing unless we
-				 * invoke MHGOP_CONFIGURE first.  This also
+				 * invoke ZHGOP_CONFIGURE first.  This also
 				 * works only for socket 0; we can't access the
 				 * FCH on socket 1 because won't let us use SMN
 				 * and we haven't set up the secondary FCH
@@ -3490,10 +3482,10 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				 * NVMe sockets won't work.
 				 */
 				if (iodie->zi_node_id == 0) {
-					milan_hack_gpio(MHGOP_SET, 26);
-					milan_hack_gpio(MHGOP_SET, 27);
-					milan_hack_gpio(MHGOP_SET, 266);
-					milan_hack_gpio(MHGOP_SET, 267);
+					milan_hack_gpio(ZHGOP_SET, 26);
+					milan_hack_gpio(ZHGOP_SET, 27);
+					milan_hack_gpio(ZHGOP_SET, 266);
+					milan_hack_gpio(ZHGOP_SET, 267);
 				}
 			}
 
@@ -3575,12 +3567,11 @@ milan_fabric_init_bridges(zen_pcie_port_t *port, void *arg)
 	 * Otherwise we only show it if there's a device present.
 	 */
 	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
-		const milan_pcie_port_t *mport = port->zpp_uarch_pcie_port;
 		bool hotplug, trained;
 		uint8_t lt;
 
 		hotplug = (pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		lt = mport->mpp_engine->zde_config.zdc_pcie.zdcp_link_train;
+		lt = port->zpp_dxio_engine->zde_config.zdc_pcie.zdcp_link_train;
 		trained = lt == MILAN_DXIO_PCIE_SUCCESS;
 		hide = !hotplug && !trained;
 	} else {

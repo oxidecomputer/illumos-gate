@@ -221,6 +221,37 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_ioms_pcie_init)(zen_ioms_t *);
 
 	/*
+	 * Performs very early DXIO initialization for either MPIO or DXIO via
+	 * the SMU.
+	 */
+	void		(*zfo_dxio_init)(zen_iodie_t *);
+
+	/*
+	 * Sets PCIe bridges so that they are not hidden in the IOHC.
+	 */
+	void		(*zfo_pcie_port_unhide_bridges)(zen_pcie_port_t *);
+
+	/*
+	 * Initializes the given PCIe core.
+	 */
+	void		(*zfo_init_pcie_core)(zen_pcie_core_t *);
+
+	/*
+	 * Initializes the bridges attached to the given PCIe port.
+	 */
+	void		(*zfo_init_bridges)(zen_pcie_port_t *);
+
+	/*
+	 * Initializes SMN register state for the given PCIe port.
+	 */
+	void		(*zfo_init_smn_port_state)(zen_pcie_port_t *);
+
+	/*
+	 * Initializes PCIe straps.
+	 */
+	void		(*zfo_init_pcie_straps)(zen_core_t *);
+
+	/*
 	 * Retrieves and reports the version of the firmware for the component
 	 * responsible for interfacing with the DXIO crossbar (either the SMU or
 	 * MPIO).
@@ -229,9 +260,13 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_report_dxio_fw_version)(const zen_iodie_t *);
 } zen_fabric_ops_t;
 
+typedef enum zen_hack_gpio_op zen_hack_gpio_op_t;
+
 typedef struct zen_hack_ops {
 	void	(*zho_check_furtive_reset)(void);
 	bool	(*zho_cgpll_set_ssc)(bool);
+	void	(*zho_fabric_hack_bridges)(zen_fabric_t *);
+	void	(*zho_hack_gpio)(zen_hack_gpio_op_t, uint16_t);
 } zen_hack_ops_t;
 
 /*

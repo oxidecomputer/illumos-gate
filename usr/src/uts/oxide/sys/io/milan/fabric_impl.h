@@ -85,7 +85,6 @@ struct milan_ioms {
 
 struct milan_iodie {
 	milan_dxio_sm_state_t	mi_state;
-	milan_dxio_config_t	mi_dxio_conf;
 	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
 	milan_ioms_t		mi_ioms[MILAN_IOMS_PER_IODIE];
 };

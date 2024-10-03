@@ -28,6 +28,7 @@
 #include <sys/io/zen/platform_impl.h>
 
 #include <sys/io/genoa/fabric_impl.h>
+#include <sys/io/genoa/hacks.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/ccx_impl.h>
 #include <sys/io/genoa/mpio.h>
@@ -98,6 +99,10 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_nbif_dev_straps = genoa_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for genoa */
 	.zfo_pcie = genoa_fabric_pcie,
+	.zfo_pcie_port_unhide_bridges = genoa_fabric_unhide_bridges,
+	.zfo_init_smn_port_state = genoa_fabric_init_smn_port_state,
+	.zfo_init_pcie_core = genoa_fabric_init_pcie_core,
+	.zfo_init_bridges = genoa_fabric_init_bridges,
 
 	.zfo_iohc_enable_nmi = genoa_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = genoa_iohc_nmi_eoi,
@@ -113,6 +118,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 static const zen_hack_ops_t genoa_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
+	.zho_hack_gpio = genoa_hack_gpio,
 };
 
 static const zen_ras_ops_t genoa_ras_ops = {

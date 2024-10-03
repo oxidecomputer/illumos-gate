@@ -1011,6 +1011,7 @@ f usr/lib/amd64/libnvme.so.1 0755 root bin
 f usr/lib/amd64/libpcidb.so.1 0755 root bin
 f usr/lib/amd64/libpctx.so.1 0755 root bin
 f usr/lib/amd64/libpkcs11.so.1 0755 root bin
+f usr/lib/amd64/libnvme.so.1 0755 root bin
 f usr/lib/amd64/libpool.so.1 0755 root bin
 f usr/lib/amd64/libproject.so.1 0755 root bin
 f usr/lib/amd64/libsaveargs.so.1 0755 root bin

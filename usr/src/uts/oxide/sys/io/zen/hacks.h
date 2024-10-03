@@ -47,6 +47,32 @@ extern bool zen_cgpll_set_ssc(bool);
  */
 extern void zen_check_furtive_reset(void);
 
+/*
+ * We'd like to open the GPIO driver and do this properly, but we need to
+ * manipulate GPIOs before the DDI is fully set up.  So we have this handy
+ * function to do it for us directly.  GPIO hacks. This is used to release PERST
+ * during the LISM on Ethanol-X, Ruby, etc (but not Gimlet or Cosmo, which uses
+ *ß the GPIO expanders for PERST) and to signal register capture for PCIe
+ * debugging via a logic analyzer.  The CONFIGURE op claims the GPIO via the
+ * IOMUX and configures it as an output with internal pulls disabled.  We allow
+ * setup of only those pins we know can/should be used by this code; others will
+ * panic.  The other operations are all straightforward and will work on any
+ * GPIO that has been configured, whether by us, by firmware, or at power-on
+ * reset.  If the mux has not been configured, this will still work but there
+ * will be no visible effect outside the processor.
+ *
+ * We use MMIO here to accommodate broken firmware that blocks SMN access to
+ * these blocks.
+ */
+typedef enum zen_hack_gpio_op {
+	ZHGOP_CONFIGURE,
+	ZHGOP_RESET,
+	ZHGOP_SET,
+	ZHGOP_TOGGLE
+} zen_hack_gpio_op_t;
+
+extern void zen_hack_gpio(zen_hack_gpio_op_t, uint16_t);
+
 #ifdef	__cplusplus
 }
 #endif

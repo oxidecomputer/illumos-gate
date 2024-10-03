@@ -10,29 +10,28 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Company
  */
 
-#ifndef _SYS_IO_MILAN_HACKS_H
-#define	_SYS_IO_MILAN_HACKS_H
+#ifndef _SYS_IO_GENOA_HACKS_H
+#define	_SYS_IO_GENOA_HACKS_H
 
 #include <sys/types.h>
-#include <sys/stdbool.h>
 
 #include <sys/io/zen/hacks.h>
+
+/*
+ * Genoa-specific hacks.
+ */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern bool milan_fixup_i2c_clock(void);
-extern bool milan_cgpll_set_ssc(bool);
-extern void milan_check_furtive_reset(void);
-
-extern void milan_hack_gpio(zen_hack_gpio_op_t, uint16_t);
+extern void genoa_hack_gpio(zen_hack_gpio_op_t, uint16_t);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _SYS_IO_MILAN_HACKS_H */
+#endif /* _SYS_IO_GENOA_HACKS_H */

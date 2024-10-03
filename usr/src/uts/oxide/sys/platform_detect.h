@@ -105,6 +105,7 @@ extern const oxide_board_data_t *oxide_board_data;
 
 extern void oxide_derive_platform(void);
 extern void oxide_report_platform(void);
+extern bool oxide_board_is_ruby(void);
 
 static inline const zen_platform_t *
 oxide_zen_platform(void)

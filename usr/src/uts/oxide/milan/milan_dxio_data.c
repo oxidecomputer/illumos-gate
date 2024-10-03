@@ -100,16 +100,18 @@
 #include <sys/stddef.h>
 #include <sys/debug.h>
 #include <sys/pcie.h>
+#include <sys/io/zen/dxio_data.h>
+#include <sys/io/zen/dxio_impl.h>
 #include <sys/io/milan/dxio_impl.h>
 
-CTASSERT(sizeof (zen_dxio_link_cap_t) == 0x8);
-CTASSERT(sizeof (zen_dxio_config_base_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_config_net_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_config_pcie_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_config_t) == 0x18);
-CTASSERT(sizeof (zen_dxio_engine_t) == 0x28);
-CTASSERT(offsetof(zen_dxio_engine_t, zde_config) == 0x8);
-CTASSERT(sizeof (zen_dxio_platform_t) == 0x10);
+CTASSERT(sizeof (zen_dxio_fw_link_cap_t) == 0x8);
+CTASSERT(sizeof (zen_dxio_fw_config_base_t) == 0x18);
+CTASSERT(sizeof (zen_dxio_fw_config_net_t) == 0x18);
+CTASSERT(sizeof (zen_dxio_fw_config_pcie_t) == 0x18);
+CTASSERT(sizeof (zen_dxio_fw_config_t) == 0x18);
+CTASSERT(sizeof (zen_dxio_fw_engine_t) == 0x28);
+CTASSERT(offsetof(zen_dxio_fw_engine_t, zde_config) == 0x8);
+CTASSERT(sizeof (zen_dxio_fw_platform_t) == 0x10);
 
 CTASSERT(offsetof(milan_pptable_t, ppt_plat_tdp_lim) == 0x14);
 CTASSERT(offsetof(milan_pptable_t, ppt_fan_override) == 0x24);
@@ -137,17 +139,17 @@ CTASSERT(sizeof (smu_hotplug_table_t) == 0x480);
  * for an AMD Ethanol-X platform. Each socket has its own chunk of data because
  * they are totally different.
  */
-const zen_dxio_platform_t ethanolx_engine_s0 = {
-    .zdp_type = DXIO_PLATFORM_EPYC, .zdp_nengines = 4, .zdp_engines = {
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+const zen_dxio_fw_platform_t ethanolx_engine_s0 = {
+    .zdp_type = ZEN_DXIO_FW_PLATFORM_EPYC, .zdp_nengines = 4, .zdp_engines = {
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x2a, .zde_end_lane = 0x39, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -158,15 +160,15 @@ const zen_dxio_platform_t ethanolx_engine_s0 = {
 		.zdlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x3a, .zde_end_lane = 0x49, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -177,17 +179,17 @@ const zen_dxio_platform_t ethanolx_engine_s0 = {
 		.zdlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x4a, .zde_end_lane = 0x59, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		/* No reversing here */
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -198,16 +200,16 @@ const zen_dxio_platform_t ethanolx_engine_s0 = {
 		.zdlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x5a, .zde_end_lane = 0x69, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		/* No reversing here */
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -225,26 +227,26 @@ const zen_dxio_platform_t ethanolx_engine_s0 = {
  * laser focused on the objective and thus skipping it since we don't really
  * care about SATA.
  */
-const zen_dxio_platform_t ethanolx_engine_s1 = {
-    .zdp_type = DXIO_PLATFORM_EPYC, .zdp_nengines = 5, .zdp_engines = {
-	{ .zde_type = DXIO_ENGINE_SATA, .zde_hp = 0,
+const zen_dxio_fw_platform_t ethanolx_engine_s1 = {
+    .zdp_type = ZEN_DXIO_FW_PLATFORM_EPYC, .zdp_nengines = 5, .zdp_engines = {
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_SATA, .zde_hp = 0,
 	    .zde_start_lane = 0x3a, .zde_end_lane = 0x41, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_base = { .zdcb_chan_type = 0, .zdcb_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x2a, .zde_end_lane = 0x2d, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		/* This socket isn't reversing. Don't ask me why. */
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_ENT_SSD,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_ENT_SSD,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -255,17 +257,17 @@ const zen_dxio_platform_t ethanolx_engine_s1 = {
 		.zdlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x2e, .zde_end_lane = 0x31, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		/* This socket isn't reversing. Don't ask me why. */
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_ENT_SSD,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_ENT_SSD,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -276,17 +278,17 @@ const zen_dxio_platform_t ethanolx_engine_s1 = {
 		.zdlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x32, .zde_end_lane = 0x35, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		/* This socket isn't reversing. Don't ask me why. */
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_ENT_SSD,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_ENT_SSD,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -297,17 +299,17 @@ const zen_dxio_platform_t ethanolx_engine_s1 = {
 		.zdlc_invert_rx_pol = 0x1,
 	    } } }
 	},
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x36, .zde_end_lane = 0x39, .zde_gpio_group = 1,
 	    .zde_reset_group = 1, .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		/* This socket isn't reversing. Don't ask me why. */
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_ENT_SSD,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_ENT_SSD,
 		/* XXX Next two always seems to be set */
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
@@ -515,21 +517,21 @@ const uint32_t ethanolx_pcie_slot_cap_express =
  * A few additional notes, it seems that the expectation is that we set the
  * default equalization override.
  */
-const zen_dxio_platform_t gimlet_engine = {
-    .zdp_type = DXIO_PLATFORM_EPYC, .zdp_nengines = 14, .zdp_engines = {
+const zen_dxio_fw_platform_t gimlet_engine = {
+    .zdp_type = ZEN_DXIO_FW_PLATFORM_EPYC, .zdp_nengines = 14, .zdp_engines = {
 	/* NIC x16 */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x3a, .zde_end_lane = 0x49,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -539,18 +541,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* M.2 A */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x56, .zde_end_lane = 0x59,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -560,18 +562,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* M.2 B */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x66, .zde_end_lane = 0x69,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -581,18 +583,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 0 (A) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x10, .zde_end_lane = 0x13,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -603,18 +605,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	},
 
 	/* U.2 1 (B) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x14, .zde_end_lane = 0x17,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -624,18 +626,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 2 (C) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x18, .zde_end_lane = 0x1b,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -645,18 +647,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 3 (D) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x1c, .zde_end_lane = 0x1f,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -666,18 +668,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 4 (E) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x8e, .zde_end_lane = 0x91,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -687,18 +689,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 5 (F) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x8a, .zde_end_lane = 0x8d,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -708,18 +710,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 6 (G) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x86, .zde_end_lane = 0x89,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -729,18 +731,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 7 (H) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x7a, .zde_end_lane = 0x7d,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -750,18 +752,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 8 (I) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x76, .zde_end_lane = 0x79,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -771,18 +773,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* U.2 9 (J) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x72, .zde_end_lane = 0x75,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 1,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,
@@ -792,18 +794,18 @@ const zen_dxio_platform_t gimlet_engine = {
 	    } } }
 	},
 	/* Sidecar (x4) */
-	{ .zde_type = DXIO_ENGINE_PCIE, .zde_hp = 0,
+	{ .zde_type = ZEN_DXIO_FW_ENGINE_PCIE, .zde_hp = 0,
 	    .zde_start_lane = 0x2a, .zde_end_lane = 0x2d,
-	    .zde_gpio_group = DXIO_GROUP_UNUSED,
-	    .zde_reset_group = DXIO_GROUP_UNUSED,
+	    .zde_gpio_group = ZEN_DXIO_FW_GROUP_UNUSED,
+	    .zde_reset_group = ZEN_DXIO_FW_GROUP_UNUSED,
 	    .zde_search_depth = 0, .zde_kpnp_reset = 0,
 	    .zde_config = { .zdc_pcie = { .zdcp_caps = {
-		.zdlc_present = DXIO_PORT_PRESENT,
+		.zdlc_present = ZEN_DXIO_PORT_PRESENT,
 		.zdlc_early_train = 0,
 		.zdlc_comp_mode = 0,
 		.zdlc_reverse = 0,
-		.zdlc_max_speed = DXIO_LINK_SPEED_MAX,
-		.zdlc_hp = DXIO_HOTPLUG_T_EXPRESS_MODULE,
+		.zdlc_max_speed = ZEN_DXIO_FW_LINK_SPEED_MAX,
+		.zdlc_hp = ZEN_DXIO_FW_HOTPLUG_T_EXPRESS_MODULE,
 		.zdlc_en_off_config = 1,
 		.zdlc_off_unused = 1,
 		.zdlc_eq_mode = 3,

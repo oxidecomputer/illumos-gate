@@ -22,11 +22,13 @@
 #include <sys/types.h>
 #include <sys/ddi.h>
 #include <sys/pci.h>
+#include <sys/pcie.h>
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_cfgspace_impl.h>
 
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/mpio.h>
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/smn.h>
@@ -307,6 +309,10 @@ genoa_pcie_port_reg(const zen_pcie_port_t *const port,
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
+	case SMN_UNIT_IOHCDEV_PCIE:
+		reg = genoa_iohcdev_pcie_smn_reg(ioms->zio_num, def,
+		    pc->zpc_coreno, port->zpp_portno);
+		break;
 	case SMN_UNIT_PCIE_PORT:
 		reg = genoa_pcie_port_smn_reg(ioms->zio_num, def,
 		    pc->zpc_coreno, port->zpp_portno);
@@ -328,6 +334,10 @@ genoa_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 	switch (def.srd_unit) {
 	case SMN_UNIT_PCIE_CORE:
 		reg = genoa_pcie_core_smn_reg(ioms->zio_num, def,
+		    pc->zpc_coreno);
+		break;
+	case SMN_UNIT_IOMMUL1:
+		reg = genoa_iommul1_pcie_smn_reg(ioms->zio_num, def,
 		    pc->zpc_coreno);
 		break;
 	default:
@@ -860,6 +870,25 @@ genoa_fabric_ioapic(zen_ioms_t *ioms)
 	zen_ioms_write(ioms, reg, val);
 }
 
+void
+genoa_fabric_unhide_bridges(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * All bridges need to be visible before we attempt to
+	 * configure MPIO.
+	 */
+	reg = genoa_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
+	zen_pcie_port_write(port, reg, val);
+}
+
 /*
  * Go through and configure and set up devices and functions. In particular we
  * need to go through and set up the following:
@@ -946,6 +975,7 @@ void
 genoa_fabric_pcie(zen_fabric_t *fabric)
 {
 	zen_pcie_populate_dbg(fabric, GPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
+	zen_mpio_pcie_init(fabric);
 }
 
 void
@@ -1011,4 +1041,460 @@ genoa_iohc_nmi_eoi(zen_ioms_t *ioms)
 		v = IOHC_INTR_EOI_SET_NMI(0);
 		zen_ioms_write(ioms, reg, v);
 	}
+}
+
+void
+genoa_fabric_init_smn_port_state(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * Turn off unused lanes.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_WIDTH_CTL_SET_TURN_OFF_UNUSED_LANES(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set search equalization modes.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_8GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(val, 3);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_16GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(val, 3);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_32GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(val, 3);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set preset masks.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_PRST_MASK_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_8GT(val, 0x370);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_16GT(val, 0x370);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_32GT(val, 0x78);
+	zen_pcie_port_write(port, reg, val);
+}
+
+/*
+ * Here we are going through bridges and need to start setting them up with the
+ * various features that we care about. Most of these are an attempt to have
+ * things set up so PCIe enumeration can meaningfully actually use these. The
+ * exact set of things required is ill-defined. Right now this includes:
+ *
+ *   * Enabling the bridges such that they can actually allow software to use
+ *     them. XXX Though really we should disable DMA until such a time as we're
+ *     OK with that.
+ *
+ *   * Changing settings that will allow the links to actually flush TLPs when
+ *     the link goes down.
+ */
+void
+genoa_fabric_init_bridges(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+	bool hide;
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
+
+	/*
+	 * We need to determine whether or not this bridge should be considered
+	 * visible. This is messy. Ideally, we'd just have every bridge be
+	 * visible; however, life isn't that simple because convincing the PCIe
+	 * engine that it should actually allow for completion timeouts to
+	 * function as expected. In addition, having bridges that have no
+	 * devices present and never can due to the platform definition can end
+	 * up being rather wasteful of precious 32-bit non-prefetchable memory.
+	 * The current masking rules are based on what we have learned from
+	 * trial and error works.
+	 *
+	 * Strictly speaking, a bridge will work from a completion timeout
+	 * perspective if the SMU thinks it belongs to a PCIe port that has any
+	 * hotpluggable elements or otherwise has a device present.
+	 * Unfortunately the case you really want to work, a non-hotpluggable,
+	 * but defined device that does not have a device present should be
+	 * visible does not work.
+	 *
+	 * Ultimately, what we have implemented here is to basically say if a
+	 * bridge is not mapped to an endpoint, then it is not shown. If it is,
+	 * and it belongs to a hot-pluggable port then we always show it.
+	 * Otherwise we only show it if there's a device present.
+	 */
+	hide = true;
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
+		zen_mpio_ict_link_status_t *lp =
+		    &port->zpp_ask_port->zma_status;
+		bool hotplug, trained;
+
+		hotplug = (pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
+		trained = lp->zmils_state == ZEN_MPIO_LINK_STATE_TRAINED;
+		hide = !hotplug && !trained;
+	}
+
+	if (hide) {
+		port->zpp_flags |= ZEN_PCIE_PORT_F_BRIDGE_HIDDEN;
+	}
+
+	reg = genoa_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	if (hide) {
+		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
+		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+	} else {
+		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 0);
+		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
+		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
+	}
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_TX_PORT_CTL1);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_TX_PORT_CTL1_SET_TLP_FLUSH_DOWN_DIS(val, 0);
+	val = PCIE_PORT_TX_PORT_CTL1_SET_CPL_PASS(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set search equalization modes.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_8GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(val, 3);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_16GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(val, 3);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_EQ_CTL_32GT);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(val, 3);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Set preset masks.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_PRST_MASK_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_8GT(val, 0x370);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_16GT(val, 0x370);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_32GT(val, 0x78);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Make sure the hardware knows the corresponding b/d/f for this bridge.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_TX_ID);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_TX_ID_SET_BUS(val, ioms->zio_pci_busno);
+	val = PCIE_PORT_TX_ID_SET_DEV(val, port->zpp_device);
+	val = PCIE_PORT_TX_ID_SET_FUNC(val, port->zpp_func);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Next, we have to go through and set up a bunch of the lane controller
+	 * configuration controls for the individual port. These include
+	 * various settings around how idle transitions occur, how it replies to
+	 * certain messages, and related.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL_SET_L1_IMM_ACK(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_TRAIN_CTL_SET_L0S_L1_TRAIN(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_WIDTH_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_WIDTH_CTL_SET_DUAL_RECONFIG(val, 1);
+	val = PCIE_PORT_LC_WIDTH_CTL_SET_RENEG_EN(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL2);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(val,
+	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
+	zen_pcie_port_write(port, reg, val);
+
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL3);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL3_SET_DOWN_SPEED_CHANGE(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * AMD's current default is to disable certain classes of receiver
+	 * errors. XXX We need to understand why.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HW_DBG);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_HW_DBG_SET_DBG13(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Make sure the 8 GT/s symbols per clock is set to 2.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL6);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
+	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Software expects to see the PCIe slot implemented bit when a slot
+	 * actually exists. For us, this is basically anything that actually is
+	 * considered MAPPED. Set that now on the port.
+	 */
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
+		uint16_t reg;
+
+		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, GENOA_BRIDGE_R_PCI_PCIE_CAP);
+		reg |= PCIE_PCIECAP_SLOT_IMPL;
+		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, GENOA_BRIDGE_R_PCI_PCIE_CAP, reg);
+	}
+}
+
+/*
+ * This is a companion to genoa_fabric_init_bridges, that operates on the PCIe
+ * core level before we get to the individual bridge. This initialization
+ * generally is required to ensure that each port (regardless of whether it's
+ * hidden or not) is able to properly generate an all 1s response. In addition
+ * we have to take care of things like atomics, idling defaults, certain
+ * receiver completion buffer checks, etc.
+ */
+void
+genoa_fabric_init_pcie_core(zen_pcie_core_t *pc)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_CI_CTL);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_CI_CTL_SET_LINK_DOWN_CTO_EN(val, 1);
+	val = PCIE_CORE_CI_CTL_SET_IGN_LINK_DOWN_CTO_ERR(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Program the unit ID for this device's SDP port.
+	 */
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_SDP_CTL);
+	val = zen_pcie_core_read(pc, reg);
+	/*
+	 * The unit ID is split into two parts, and written to different
+	 * fields in this register.
+	 */
+	ASSERT0(pc->zpc_sdp_unit & 0x8000000);
+	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(val,
+	    bitx8(pc->zpc_sdp_unit, 6, 3));
+	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(val,
+	    bitx8(pc->zpc_sdp_unit, 2, 0));
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Program values required for receiver margining to work. These are
+	 * hidden in the core. Genoa processors generally only support timing
+	 * margining as that's what's required by PCIe Gen 4. Voltage margining
+	 * was made mandatory in Gen 5.
+	 *
+	 * The first register (D_PCIE_CORE_RX_MARGIN_CTL_CAP) sets up the
+	 * supported margining. The second register (D_PCIE_CORE_RX_MARGIN1)
+	 * sets the supported offsets and steps. These values are given us by
+	 * AMD in a roundabout fashion. These values translate into allowing the
+	 * maximum timing offset to be 50% of a UI (unit interval) and taking up
+	 * to 23 steps in either direction. Because we've set the maximum offset
+	 * to be 50%, each step takes 50%/23 or ~2.17%. The third register
+	 * (D_PCIE_CORE_RX_MARGIN2) is used to set how many lanes can be
+	 * margined at the same time. Similarly we've been led to believe the
+	 * entire core supports margining at once, so that's 16 lanes and the
+	 * register is encoded as a zeros based value (so that's why we write
+	 * 0xf).
+	 */
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN_CTL_CAP);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN_CTL_CAP_SET_IND_TIME(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x19);
+	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x10);
+	zen_pcie_core_write(pc, reg, val);
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_RX_MARGIN2_SET_NLANES(val, 0xf);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Ensure that RCB checking is what's seemingly expected.
+	 */
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_CTL);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_ATTR_DIS(val, 1);
+	val = PCIE_CORE_PCIE_CTL_SET_RCB_BAD_SIZE_DIS(val, 0);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Enabling atomics in the RC requires a few different registers. Both
+	 * a strap has to be overridden and then corresponding control bits.
+	 */
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_STRAP_F0);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_ROUTE(val, 1);
+	val = PCIE_CORE_STRAP_F0_SET_ATOMIC_EN(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_TX_CTL1);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PCIE_TX_CTL1_SET_TX_ATOMIC_ORD_DIS(val, 1);
+	val = PCIE_CORE_PCIE_TX_CTL1_SET_TX_ATOMIC_OPS_DIS(val, 0);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * Ensure the correct electrical idle mode detection is set. In
+	 * addition, it's been recommended we ignore the K30.7 EDB (EnD Bad)
+	 * special symbol errors.
+	 */
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PCIE_P_CTL_SET_ELEC_IDLE(val,
+	    PCIE_CORE_PCIE_P_CTL_ELEC_IDLE_M1);
+	val = PCIE_CORE_PCIE_P_CTL_SET_IGN_EDB_ERR(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+
+	/*
+	 * The IOMMUL1 does not have an instance for the on-the side WAFL lanes.
+	 * Skip the WAFL port if we're that.
+	 */
+	if (pc->zpc_coreno >= IOMMUL1_N_PCIE_CORES)
+		return;
+
+	reg = genoa_pcie_core_reg(pc, D_IOMMUL1_CTL1);
+	val = zen_pcie_core_read(pc, reg);
+	val = IOMMUL1_CTL1_SET_ORDERING(val, 1);
+	zen_pcie_core_write(pc, reg, val);
+}
+
+typedef struct genoa_ioms_pcie_port_info {
+	uint8_t gippi_count;
+	zen_pcie_port_info_t gippi_info[4];
+} genoa_ioms_pcie_port_info_t;
+
+/*
+ * These are internal bridges that correspond to NBIFs; they are modeled as
+ * ports but there is no physical port brought out of the package.
+ */
+static const genoa_ioms_pcie_port_info_t genoa_int_ports[GENOA_IOMS_PER_IODIE] =
+{
+	[0] = {
+		.gippi_count = 2,
+		.gippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
+		},
+	},
+	[1] = {
+		.gippi_count = 1,
+		.gippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+		},
+	},
+	[2] = {
+		.gippi_count = 2,
+		.gippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
+		},
+	},
+	[3] = {
+		.gippi_count = 1,
+		.gippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+		},
+	},
+};
+
+typedef struct {
+	zen_ioms_t *pbc_ioms;
+	uint8_t pbc_busoff;
+} pci_bus_counter_t;
+
+static int
+genoa_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
+{
+	uint8_t bus, secbus;
+	pci_bus_counter_t *pbc = arg;
+	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
+
+	bus = ioms->zio_pci_busno;
+	if (pbc->pbc_ioms != ioms) {
+		pbc->pbc_ioms = ioms;
+		const genoa_ioms_pcie_port_info_t *int_ports =
+		    &genoa_int_ports[ioms->zio_num];
+		pbc->pbc_busoff = 1 + int_ports->gippi_count;
+		for (uint_t i = 0; i < int_ports->gippi_count; i++) {
+			const zen_pcie_port_info_t *info =
+			    &int_ports->gippi_info[i];
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_PRIBUS, bus);
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_SECBUS, bus + 1 + i);
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_SUBBUS, bus + 1 + i);
+
+		}
+	}
+
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0) {
+		return (0);
+	}
+
+	secbus = bus + pbc->pbc_busoff;
+
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_PRIBUS, bus);
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_SECBUS, secbus);
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_SUBBUS, secbus);
+	pbc->pbc_busoff++;
+
+	return (0);
+}
+
+/*
+ * XXX This whole function exists to workaround deficiencies in software and
+ * basically try to ape parts of the PCI firmware spec. The OS should natively
+ * handle this. In particular, we currently do the following:
+ *
+ *   * Program a single downstream bus onto each root port. We can only get away
+ *     with this because we know there are no other bridges right now. This
+ *     cannot be a long term solution, though I know we will be temped to make
+ *     it one. I'm sorry future us.
+ */
+static bool genoa_hotplug_init(zen_fabric_t *);
+void
+genoa_fabric_hack_bridges(zen_fabric_t *fabric)
+{
+	pci_bus_counter_t c;
+	bzero(&c, sizeof (c));
+
+	zen_fabric_walk_pcie_port(fabric, genoa_fabric_hack_bridges_cb, &c);
 }

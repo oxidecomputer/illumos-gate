@@ -31,6 +31,8 @@
 
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/ccx_impl.h>
+#include <sys/io/zen/dxio_impl.h>
+#include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/nbif_impl.h>
 #include <sys/io/zen/pcie_impl.h>
 
@@ -253,6 +255,21 @@ struct zen_iodie {
 	 */
 	uint8_t			zi_ndxio_fw;
 	uint32_t		zi_dxio_fw[4];
+
+	/*
+	 * If we're using MPIO, then the configuration lives here.
+	 * XXX(cross): this feels kind of hacky. @rm please comment.
+	 * Alternatives may be to make this be a `void *` pointer,
+	 * and have it set up to point to either a DXIO config for
+	 * Milan, or MPIO for Genoa/Turin, with the actual config
+	 * living in the uarch-data (as is done presently for the
+	 * `milan_dxio_config_t` on Milan), or have a dedicated uarch-specific
+	 * accessor for the config.
+	 */
+	union {
+		zen_mpio_config_t	zi_mpio_conf;
+		zen_dxio_config_t	zi_dxio_conf;
+	};
 
 	/*
 	 * The cached brand string fetched from the SMU during early boot.

@@ -680,6 +680,13 @@ oxide_derive_platform(void)
 		bop_panic("Could not derive Oxide board type");
 }
 
+bool
+oxide_board_is_ruby(void)
+{
+	VERIFY(oxide_board_data != NULL);
+	return (oxide_board_data->obd_board == OXIDE_BOARD_RUBY);
+}
+
 void
 oxide_report_platform(void)
 {
