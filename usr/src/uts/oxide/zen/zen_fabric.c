@@ -2367,10 +2367,12 @@ zen_fabric_init(void)
 	 * These register debugging facilities are costly in both space and
 	 * time, and are performed only on DEBUG kernels.
 	 */
+#ifdef	DEBUG
 	(void) zen_fabric_walk_pcie_core(fabric,
 	    zen_fabric_init_pcie_core_dbg, NULL);
 	(void) zen_fabric_walk_pcie_port(fabric,
 	    zen_fabric_init_pcie_port_dbg, NULL);
+#endif
 
 	zen_fabric_walk_ioms(fabric, zen_fabric_init_memlists, NULL);
 

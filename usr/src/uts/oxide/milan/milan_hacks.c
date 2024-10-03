@@ -23,6 +23,7 @@
 #include <sys/io/fch/pmio.h>
 #include <sys/io/milan/hacks.h>
 #include <sys/io/milan/iomux.h>
+#include <sys/io/zen/hacks.h>
 
 /*
  * Various regrettable hacks that are unfortunate but necessary -- and don't
@@ -179,7 +180,7 @@ milan_check_furtive_reset()
  * these blocks.
  */
 void
-milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
+milan_hack_gpio(zen_hack_gpio_op_t op, uint16_t gpio)
 {
 	mmio_reg_block_t gpio_block;
 	mmio_reg_t gpio_reg;
@@ -194,7 +195,7 @@ milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
 	}
 
 	switch (op) {
-	case MHGOP_CONFIGURE: {
+	case ZHGOP_CONFIGURE: {
 		mmio_reg_block_t iomux_block;
 		mmio_reg_t iomux_reg;
 		uint8_t mux_val = 0;
@@ -274,17 +275,17 @@ milan_hack_gpio(milan_hack_gpio_op_t op, uint16_t gpio)
 		mmio_reg_block_unmap(&iomux_block);
 	}
 		break;
-	case MHGOP_RESET:
+	case ZHGOP_RESET:
 		val = mmio_reg_read(gpio_reg);
 		val = FCH_GPIO_GPIO_SET_OUTPUT(val, 0);
 		mmio_reg_write(gpio_reg, val);
 		break;
-	case MHGOP_SET:
+	case ZHGOP_SET:
 		val = mmio_reg_read(gpio_reg);
 		val = FCH_GPIO_GPIO_SET_OUTPUT(val, 1);
 		mmio_reg_write(gpio_reg, val);
 		break;
-	case MHGOP_TOGGLE: {
+	case ZHGOP_TOGGLE: {
 		uint32_t output;
 
 		val = mmio_reg_read(gpio_reg);

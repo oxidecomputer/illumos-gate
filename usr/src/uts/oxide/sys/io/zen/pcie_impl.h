@@ -28,11 +28,23 @@
 #include <sys/bitext.h>
 
 #include <sys/io/zen/fabric.h>
+#include <sys/io/zen/dxio_impl.h>
 #include <sys/io/zen/hotplug_impl.h>
+#include <sys/io/zen/pcie_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+/*
+ * The implementation of these types is exposed to implementers but not to
+ * consumers; therefore we forward-declare them here and provide the actual
+ * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
+ * pointers to these types only as opaque handles.
+ */
+typedef struct zen_dxio_fw_engine zen_dxio_fw_engine_t;
+typedef struct zen_mpio_ask_port zen_mpio_ask_port_t;
+typedef struct zen_mpio_ubm_extra zen_mpio_ubm_extra_t;
 
 /*
  * The current maximum number of ports that can be attached to any
@@ -104,6 +116,11 @@ typedef enum zen_pcie_core_flag {
  * corresponding zen_pcie_port_t and zen_pcie_core_t structures. This is costly
  * in both space and time, and is only done on DEBUG kernels.
  */
+enum {
+	ZPCS_PRE_DXIO_INIT,
+	ZPCS_PRE_HOTPLUG,
+	ZPCS_POST_HOTPLUG,
+};
 #define	ZPCS_MAX_STAGES	15
 
 typedef struct zen_pcie_reg_dbg {
@@ -149,6 +166,14 @@ struct zen_pcie_port {
 	uint8_t			zpp_func;
 
 	zen_hotplug_type_t	zpp_hp_type;
+
+	union {
+		zen_dxio_fw_engine_t		*zpp_dxio_engine;
+		struct {
+			zen_mpio_ask_port_t	*zpp_ask_port;
+			zen_mpio_ubm_extra_t	*zpp_ubm_extra;
+		};
+	};
 
 	zen_pcie_core_t		*zpp_core;
 	void			*zpp_uarch_pcie_port;
