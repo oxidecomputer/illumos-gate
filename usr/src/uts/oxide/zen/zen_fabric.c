@@ -142,10 +142,10 @@ zen_fabric_thread_get_brandstr(const zen_thread_t *thread,
  * on the given IO die.
  */
 int
-zen_fabric_dump_soc_iodie_fw_versions_cb(zen_iodie_t *iodie, void *arg __unused)
+zen_fabric_dump_iodie_fw_versions(zen_iodie_t *iodie)
 {
 	const zen_fabric_ops_t *zfos = oxide_zen_fabric_ops();
-	const uint8_t socno = iodie->zi_soc->zs_socno;
+	const uint8_t socno = iodie->zi_soc->zs_num;
 
 	if (zen_smu_get_fw_version(iodie)) {
 		zen_smu_report_fw_version(iodie);
@@ -162,17 +162,6 @@ zen_fabric_dump_soc_iodie_fw_versions_cb(zen_iodie_t *iodie, void *arg __unused)
 	}
 
 	return (0);
-}
-
-/*
- * Retrieves and reports the version numbers of SMU and DXIO/MPIO firmware
- * versions for all IO dies on the given SoC.
- */
-static void
-zen_fabric_dump_soc_fw_versions(zen_soc_t *soc)
-{
-	zen_fabric_walk_iodie(soc->zs_fabric,
-	    zen_fabric_dump_soc_iodie_fw_versions_cb, NULL);
 }
 
 /*
@@ -556,7 +545,7 @@ zen_fabric_discover_iodie_components(zen_iodie_t *iodie)
 		}
 		zen_fabric_id_decompose(decomp, fabric_id, &sock, &die,
 		    &comp_id);
-		ASSERT3U(sock, ==, iodie->zi_soc->zs_socno);
+		ASSERT3U(sock, ==, iodie->zi_soc->zs_num);
 		ASSERT3U(die, ==, 0);
 
 		/*
@@ -739,7 +728,7 @@ zen_fabric_thread_apicid(zen_thread_t *thread)
 	pkg7 = zen_smn_read(iodie, reg);
 
 	zen_initpkg_to_apic(pkg0, pkg7, uarch, &apic_decomp);
-	zen_apic_id_compose(&apic_decomp, iodie->zi_soc->zs_socno,
+	zen_apic_id_compose(&apic_decomp, iodie->zi_soc->zs_num,
 	    0, ccd->zcd_logical_dieno, ccx->zcx_logical_cxno,
 	    core->zc_logical_coreno, thread->zt_threadno, &apicid);
 
@@ -1098,62 +1087,93 @@ zen_fabric_determine_df_vers_cb(const df_reg_def_t rd, const void *arg)
 }
 
 static void
-zen_fabric_ioms_nbif_init(zen_ioms_t *ioms)
+zen_fabric_nbif_func_init(zen_nbif_t *nbif, uint8_t funcno)
 {
 	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const zen_nbif_info_t *ninfo = consts->zpc_nbif_data[nbif->zn_num];
+	zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
 
-	ioms->zio_nnbifs = consts->zpc_nnbif;
+	func->znf_num = funcno;
+	func->znf_type = ninfo[funcno].zni_type;
+	func->znf_uarch_nbif_func = NULL;
+	func->znf_nbif = nbif;
+	func->znf_dev = ninfo[funcno].zni_dev;
+	func->znf_func = ninfo[funcno].zni_func;
 
-	for (uint8_t nbifno = 0; nbifno < ioms->zio_nnbifs; nbifno++) {
-		zen_nbif_t *nbif = &ioms->zio_nbifs[nbifno];
-		const zen_nbif_info_t *ninfo;
+	/*
+	 * Dummy devices in theory need no explicit
+	 * configuration.
+	 */
+	if (func->znf_type == ZEN_NBIF_T_DUMMY)
+		func->znf_flags |= ZEN_NBIF_F_NO_CONFIG;
+}
 
-		nbif->zn_nbifno = nbifno;
-		nbif->zn_ioms = ioms;
-		nbif->zn_nfuncs = consts->zpc_nbif_nfunc[nbifno];
-		ninfo = consts->zpc_nbif_data[nbifno];
+static void
+zen_fabric_ioms_nbif_init(zen_ioms_t *ioms, uint8_t nbifno)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	zen_nbif_t *nbif = &ioms->zio_nbifs[nbifno];
 
-		for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
-			zen_nbif_func_t *func;
+	nbif->zn_num = nbifno;
+	nbif->zn_ioms = ioms;
+	nbif->zn_nfuncs = consts->zpc_nbif_nfunc[nbifno];
+	ASSERT3U(nbif->zn_nfuncs, <=, ZEN_NBIF_MAX_FUNCS);
 
-			ASSERT3U(funcno, <, ZEN_NBIF_MAX_FUNCS);
-			func = &nbif->zn_funcs[funcno];
+	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++)
+		zen_fabric_nbif_func_init(nbif, funcno);
+}
 
-			func->znf_type = ninfo[funcno].zni_type;
-			func->znf_uarch_nbif_func = NULL;
-			func->znf_nbif = nbif;
-			func->znf_dev = ninfo[funcno].zni_dev;
-			func->znf_func = ninfo[funcno].zni_func;
+void
+zen_fabric_topo_init_ioms(zen_iodie_t *iodie, uint8_t iomsno)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	const df_rev_t df_rev = consts->zpc_df_rev;
+	const uint32_t fch_ios_fid = zen_fch_ios_fabric_id(df_rev);
 
-			/*
-			 * Dummy devices in theory need no explicit
-			 * configuration.
-			 */
-			if (func->znf_type == ZEN_NBIF_T_DUMMY)
-				func->znf_flags |= ZEN_NBIF_F_NO_CONFIG;
-		}
+	zen_ioms_t *ioms = &iodie->zi_ioms[iomsno];
+
+	ioms->zio_num = iomsno;
+	ioms->zio_iodie = iodie;
+
+	ioms->zio_iom_inst_id = iodie->zi_base_iom_id + iomsno;
+	ioms->zio_ios_inst_id = iodie->zi_base_ios_id + iomsno;
+
+	ioms->zio_dest_id = zen_ios_fabric_id(ioms);
+	ioms->zio_pci_busno = zen_fabric_ios_busno(iodie, ioms);
+
+	if (ioms->zio_dest_id == fch_ios_fid) {
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_FCH;
+	}
+
+	/*
+	 * uarch-specific IOMS init hook.
+	 */
+	if (fops->zfo_ioms_init != NULL)
+		fops->zfo_ioms_init(ioms);
+
+	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_NBIF) != 0) {
+		ioms->zio_nnbifs = consts->zpc_nnbif;
+		for (uint8_t nbifno = 0; nbifno < ioms->zio_nnbifs; nbifno++)
+			zen_fabric_ioms_nbif_init(ioms, nbifno);
 	}
 }
 
-typedef struct zen_iodie_cb_arg_data {
-	zen_soc_t *zicad_soc;
-	const zen_fabric_ops_t *zicad_fops;
-	const df_rev_t zicad_df_rev;
-	const uint32_t zicad_fch_ios_fid;
-} zen_iodie_cb_arg_data_t;
-
-static int
-zen_fabric_topo_init_iodie_cb(zen_iodie_t *iodie, void *arg)
+static void
+zen_fabric_topo_init_iodie(zen_soc_t *soc, uint8_t dieno)
 {
-	zen_iodie_cb_arg_data_t *args = arg;
-	zen_soc_t *soc = args->zicad_soc;
+	zen_iodie_t *iodie = &soc->zs_iodies[dieno];
 	zen_fabric_t *fabric = soc->zs_fabric;
-	const zen_fabric_ops_t *fops = args->zicad_fops;
-	const df_rev_t df_rev = args->zicad_df_rev;
-	const uint32_t fch_ios_fid = args->zicad_fch_ios_fid;
-	uint8_t socno = soc->zs_socno;
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	const df_rev_t df_rev = consts->zpc_df_rev;
+	uint8_t socno = soc->zs_num;
 
+	iodie->zi_num = dieno;
 	iodie->zi_devno = AMDZEN_DF_FIRST_DEVICE + socno;
+	iodie->zi_soc = soc;
+	if (fops->zfo_iodie_init != NULL)
+		fops->zfo_iodie_init(iodie);
 
 	/*
 	 * Populate the major, minor, and revision fields of the given I/O die.
@@ -1167,7 +1187,6 @@ zen_fabric_topo_init_iodie_cb(zen_iodie_t *iodie, void *arg)
 	}
 
 	iodie->zi_node_id = zen_fabric_iodie_node_id(iodie);
-	iodie->zi_soc = soc;
 
 	if (iodie->zi_node_id == 0) {
 		iodie->zi_flags = ZEN_IODIE_F_PRIMARY;
@@ -1192,31 +1211,16 @@ zen_fabric_topo_init_iodie_cb(zen_iodie_t *iodie, void *arg)
 	zen_fabric_discover_iodie_components(iodie);
 
 	fabric->zf_total_ioms += iodie->zi_nioms;
-	for (uint8_t iomsno = 0; iomsno < iodie->zi_nioms; iomsno++) {
-		zen_ioms_t *ioms = &iodie->zi_ioms[iomsno];
+	for (uint8_t iomsno = 0; iomsno < iodie->zi_nioms; iomsno++)
+		zen_fabric_topo_init_ioms(iodie, iomsno);
 
-		ioms->zio_num = iomsno;
-		ioms->zio_iodie = iodie;
-
-		ioms->zio_iom_inst_id = iodie->zi_base_iom_id + iomsno;
-		ioms->zio_ios_inst_id = iodie->zi_base_ios_id + iomsno;
-
-		ioms->zio_dest_id = zen_ios_fabric_id(ioms);
-		ioms->zio_pci_busno = zen_fabric_ios_busno(iodie, ioms);
-
-		if (ioms->zio_dest_id == fch_ios_fid) {
-			ioms->zio_flags |= ZEN_IOMS_F_HAS_FCH;
-		}
-
-		/*
-		 * uarch-specific IOMS init hook.
-		 */
-		if (fops->zfo_ioms_init != NULL)
-			fops->zfo_ioms_init(ioms);
-
-		if ((ioms->zio_flags & ZEN_IOMS_F_HAS_NBIF) != 0)
-			zen_fabric_ioms_nbif_init(ioms);
-	}
+	/*
+	 * In order to guarantee that we can safely perform SMU and DXIO
+	 * functions, retrieve, store, and print firmware revisions.  We
+	 * do this here after setting the SMN bus number and other
+	 * initialization.
+	 */
+	zen_fabric_dump_iodie_fw_versions(iodie);
 
 	/*
 	 * Read the brand string from the SMU.
@@ -1242,7 +1246,53 @@ zen_fabric_topo_init_iodie_cb(zen_iodie_t *iodie, void *arg)
 		    iodie->zi_brandstr, sizeof (iodie->zi_brandstr));
 	}
 
-	return (0);
+	/*
+	 * Invoke miscellaneous uarch-specific SMU initialization.
+	 */
+	if (fops->zfo_smu_misc_init != NULL)
+		fops->zfo_smu_misc_init(iodie);
+}
+
+uint32_t
+zen_fabric_topo_init_soc(zen_fabric_t *fabric, uint8_t socno)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	zen_soc_t *soc = &fabric->zf_socs[socno];
+	uint32_t nthreads;
+
+	soc->zs_num = socno;
+	soc->zs_fabric = fabric;
+	soc->zs_niodies = ZEN_FABRIC_MAX_DIES_PER_SOC;
+
+	/*
+	 * Generic SoC & IO die initialization is complete but let
+	 * the uarch-specific code do any additional setup needed.
+	 */
+	if (fops->zfo_soc_init != NULL)
+		fops->zfo_soc_init(soc);
+
+	/*
+	 * We've already programmed the ECAM base for the first DF above
+	 * but we need to do the same for any subsequent I/O dies.
+	 */
+	if (socno != 0) {
+		/*
+		 * We assume single-die SoCs hence socno == iono but
+		 * let's be explicit about it.
+		 */
+		VERIFY3U(ZEN_FABRIC_MAX_DIES_PER_SOC, ==, 1);
+		zen_fabric_set_mmio_pci_cfg_space(socno, fabric->zf_ecam_base);
+	}
+
+	for (uint8_t dieno = 0; dieno < soc->zs_niodies; dieno++)
+		zen_fabric_topo_init_iodie(soc, dieno);
+
+	/*
+	 * Initialize the CCXs for this SOC/IOD.
+	 */
+	nthreads = zen_fabric_ccx_init_soc(soc);
+
+	return (nthreads);
 }
 
 /*
@@ -1265,9 +1315,8 @@ zen_fabric_topo_init(void)
 	const df_rev_t df_rev = consts->zpc_df_rev;
 	uint8_t nsocs = 0;
 	uint32_t syscfg, syscomp;
-	uint32_t fch_ios_fid;
 	uint32_t nthreads = 0;
-	uint64_t mmio64_end;
+	uint64_t mmio64_end, phys_end;
 
 	/*
 	 * Make sure the platform specific constants are actually set.
@@ -1275,6 +1324,7 @@ zen_fabric_topo_init(void)
 	VERIFY3U(consts->zpc_df_rev, !=, DF_REV_UNKNOWN);
 	VERIFY3U(consts->zpc_ccds_per_iodie, !=, 0);
 	VERIFY3U(consts->zpc_cores_per_ccx, !=, 0);
+
 	/*
 	 * And that they're within the limits we support.
 	 */
@@ -1282,6 +1332,13 @@ zen_fabric_topo_init(void)
 	VERIFY3U(consts->zpc_cores_per_ccx, <=, ZEN_MAX_CORES_PER_CCX);
 
 	PRM_POINT("zen_fabric_topo_init() starting...");
+
+	/*
+	 * We're done with the basic fabric init, let the uarch-specific code
+	 * do any additional setup needed.
+	 */
+	if (fops->zfo_topo_init != NULL)
+		fops->zfo_topo_init(fabric);
 
 	/*
 	 * Before we can do anything else, we must set up PCIe ECAM.  We locate
@@ -1299,10 +1356,11 @@ zen_fabric_topo_init(void)
 	/*
 	 * The last 12 GiB of the physical address space is inaccessible and
 	 * will fault on any CPU accesses and abort I/O attempts so we must
-	 * stop short of it for our 64-bit MMIO allocation.
+	 * stop short of it for
 	 */
-	mmio64_end = (1UL << zen_fabric_physaddr_size()) -
-	    (12UL * 1024 * 1024 * 1024);
+	const uint64_t GIB = 1024UL * 1024UL * 1024UL;
+	phys_end = 1UL << zen_fabric_physaddr_size();
+	mmio64_end = phys_end - 12UL * GIB;
 	VERIFY3U(mmio64_end, >, fabric->zf_mmio64_base);
 	fabric->zf_mmio64_size = mmio64_end - fabric->zf_mmio64_base;
 
@@ -1341,64 +1399,9 @@ zen_fabric_topo_init(void)
 		cmn_err(CE_PANIC, "Unsupported DF revision %d", df_rev);
 	}
 
-	fch_ios_fid = zen_fch_ios_fabric_id(df_rev);
-
 	fabric->zf_nsocs = nsocs;
-	for (uint8_t socno = 0; socno < nsocs; socno++) {
-		zen_soc_t *soc = &fabric->zf_socs[socno];
-		zen_iodie_cb_arg_data_t iodie_args = {
-		    .zicad_soc = soc,
-		    .zicad_fops = fops,
-		    .zicad_fch_ios_fid = fch_ios_fid,
-		    .zicad_df_rev = df_rev,
-		};
-
-		soc->zs_socno = socno;
-		soc->zs_fabric = fabric;
-		soc->zs_niodies = ZEN_FABRIC_MAX_DIES_PER_SOC;
-
-		/*
-		 * We've already programmed the ECAM base for the first DF above
-		 * but we need to do the same for any subsequent I/O dies.
-		 */
-		if (socno != 0) {
-			/*
-			 * We assume single-die SoCs hence socno == iono but
-			 * let's be explicit about it.
-			 */
-			VERIFY3U(ZEN_FABRIC_MAX_DIES_PER_SOC, ==, 1);
-			zen_fabric_set_mmio_pci_cfg_space(socno,
-			    fabric->zf_ecam_base);
-		}
-
-		zen_fabric_walk_iodie(fabric, zen_fabric_topo_init_iodie_cb,
-		    &iodie_args);
-
-		/*
-		 * Initialize the CCXs for this SOC/IOD.
-		 */
-		nthreads += zen_fabric_ccx_init_soc(soc);
-
-		/*
-		 * In order to guarantee that we can safely perform SMU and DXIO
-		 * functions, retrieve, store, and print firmware revisions.
-		 */
-		zen_fabric_dump_soc_fw_versions(soc);
-
-		/*
-		 * Generic SoC & IO die initialization is complete but let
-		 * the uarch-specific code do any additional setup needed.
-		 */
-		if (fops->zfo_soc_init != NULL)
-			fops->zfo_soc_init(soc);
-	}
-
-	/*
-	 * We're done with the basic fabric init, let the uarch-specific code
-	 * do any additional setup needed.
-	 */
-	if (fops->zfo_topo_init != NULL)
-		fops->zfo_topo_init(fabric);
+	for (uint8_t socno = 0; socno < nsocs; socno++)
+		nthreads += zen_fabric_topo_init_soc(fabric, socno);
 
 	zen_fabric_disable_io_pci_cfg(fabric);
 

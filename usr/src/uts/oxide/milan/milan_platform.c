@@ -84,6 +84,8 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 
 	.zfo_topo_init = milan_fabric_topo_init,
 	.zfo_soc_init = milan_fabric_soc_init,
+	.zfo_iodie_init = milan_fabric_iodie_init,
+	.zfo_smu_misc_init = milan_fabric_smu_misc_init,
 	.zfo_ioms_init = milan_fabric_ioms_init,
 
 	.zfo_get_dxio_fw_version = milan_get_dxio_fw_version,

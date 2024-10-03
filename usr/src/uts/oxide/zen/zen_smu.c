@@ -205,7 +205,7 @@ zen_smu_report_fw_version(const zen_iodie_t *iodie)
 	zen_soc_t *soc = iodie->zi_soc;
 
 	cmn_err(CE_CONT, "?Socket %u SMU Version: %u.%u.%u\n",
-	    soc->zs_socno, iodie->zi_smu_fw[0], iodie->zi_smu_fw[1],
+	    soc->zs_num, iodie->zi_smu_fw[0], iodie->zi_smu_fw[1],
 	    iodie->zi_smu_fw[2]);
 }
 

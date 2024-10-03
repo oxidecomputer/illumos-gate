@@ -1024,11 +1024,11 @@ milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF:
 		reg = milan_nbif_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_nbifno, reginst);
+		    nbif->zn_num, reginst);
 		break;
 	case SMN_UNIT_NBIF_ALT:
 		reg = milan_nbif_alt_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_nbifno, reginst);
+		    nbif->zn_num, reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIF",
@@ -1049,7 +1049,7 @@ milan_nbif_func_reg(const zen_nbif_func_t *const func,
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF_FUNC:
 		reg = milan_nbif_func_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_nbifno, func->znf_dev, func->znf_func);
+		    nbif->zn_num, func->znf_dev, func->znf_func);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIF func",
@@ -1776,7 +1776,7 @@ milan_get_dxio_fw_version(zen_iodie_t *iodie)
 void
 milan_report_dxio_fw_version(const zen_iodie_t *iodie)
 {
-	const uint8_t socno = iodie->zi_soc->zs_socno;
+	const uint8_t socno = iodie->zi_soc->zs_num;
 	cmn_err(CE_CONT, "?Socket %u DXIO Version: %u.%u\n",
 	    socno, iodie->zi_dxio_fw[0], iodie->zi_dxio_fw[1]);
 }
@@ -1821,21 +1821,21 @@ milan_smu_features_init(zen_iodie_t *iodie)
 	if (res != ZEN_SMU_RPC_OK) {
 		cmn_err(CE_WARN,
 		    "Socket %u: SMU Enable Features RPC Failed: features: "
-		    "0x%x, SMU %s (0x%x)", soc->zs_socno, features,
+		    "0x%x, SMU %s (0x%x)", soc->zs_num, features,
 		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
 	} else {
 		cmn_err(CE_CONT, "?Socket %u SMU features 0x%08x enabled\n",
-		    soc->zs_socno, features);
+		    soc->zs_num, features);
 	}
 
 	return (res == ZEN_SMU_RPC_OK);
 }
 
 /*
- * This is called from the common code, via an entry in the Milan version of Zen
- * fabric ops vector.  The common code is responsible for the bulk of
+ * These are called from the common code, via an entry in the Milan version of
+ * Zen fabric ops vector.  The common code is responsible for the bulk of
  * initialization; we merely fill in those bits that are microarchitecture
- * specific.
+ * specific.  Note that Milan is defined to have exactly one IO die per SoC.
  */
 void
 milan_fabric_topo_init(zen_fabric_t *fabric)
@@ -1843,26 +1843,35 @@ milan_fabric_topo_init(zen_fabric_t *fabric)
 	fabric->zf_uarch_fabric = &milan_fabric;
 }
 
-/*
- * This is called from the common code, via an entry in the Milan version of Zen
- * fabric ops vector.  The common code is responsible for the bulk of
- * initialization; we merely fill in those bits that are microarchitecture
- * specific.  Note that, on Milan, there is exactly one IO die per SOC.
- */
 void
 milan_fabric_soc_init(zen_soc_t *soc)
 {
-	ASSERT3U(soc->zs_niodies, ==, MILAN_IODIE_PER_SOC);
-	ASSERT3U(soc->zs_niodies, ==, 1);
-
-	zen_iodie_t *iodie = &soc->zs_iodies[0];
-	milan_fabric_t *mfabric = &milan_fabric;
-	milan_soc_t *msoc = &mfabric->mf_socs[soc->zs_socno];
-	milan_iodie_t *miodie = &msoc->ms_iodies[0];
+	ASSERT3P(soc->zs_fabric, !=, NULL);
+	milan_fabric_t *mfabric = soc->zs_fabric->zf_uarch_fabric;
+	ASSERT3P(mfabric, !=, NULL);
+	milan_soc_t *msoc = &mfabric->mf_socs[soc->zs_num];
 
 	soc->zs_uarch_soc = msoc;
-	iodie->zi_uarch_iodie = miodie;
+}
 
+void
+milan_fabric_iodie_init(zen_iodie_t *iodie)
+{
+	ASSERT3P(iodie->zi_soc, !=, NULL);
+	milan_soc_t *msoc = iodie->zi_soc->zs_uarch_soc;
+	ASSERT3P(msoc, !=, NULL);
+	ASSERT3U(iodie->zi_num, ==, 0);
+	milan_iodie_t *miodie = &msoc->ms_iodies[iodie->zi_num];
+
+	iodie->zi_uarch_iodie = miodie;
+}
+
+void
+milan_fabric_smu_misc_init(zen_iodie_t *iodie)
+{
+	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
+
+	ASSERT3P(miodie, !=, NULL);
 	if (!milan_smu_rpc_read_dpm_weights(iodie,
 	    miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights))) {
 		/*
@@ -1880,25 +1889,16 @@ milan_fabric_soc_init(zen_soc_t *soc)
 	VERIFY(milan_smu_features_init(iodie));
 }
 
-/*
- * This is called from the common code, via an entry in the Milan version of Zen
- * fabric ops vector.  The common code is responsible for the bulk of
- * initialization; we merely fill in those bits that are microarchitecture
- * specific.
- */
 void
 milan_fabric_ioms_init(zen_ioms_t *ioms)
 {
+	ASSERT3P(ioms->zio_iodie, !=, NULL);
+	milan_iodie_t *miodie = ioms->zio_iodie->zi_uarch_iodie;
+	ASSERT3P(miodie, !=, NULL);
 	const uint8_t iomsno = ioms->zio_num;
-	zen_iodie_t *iodie = ioms->zio_iodie;
-	zen_soc_t *soc = iodie->zi_soc;
-	milan_fabric_t *mfabric = &milan_fabric;
-	milan_soc_t *msoc = &mfabric->mf_socs[soc->zs_socno];
-	milan_iodie_t *miodie = &msoc->ms_iodies[0];
-	milan_ioms_t *mioms;
-
 	ASSERT3U(iomsno, <, MILAN_IOMS_PER_IODIE);
-	mioms = &miodie->mi_ioms[iomsno];
+	milan_ioms_t *mioms = &miodie->mi_ioms[iomsno];
+
 	ioms->zio_uarch_ioms = mioms;
 
 	/*
@@ -2326,8 +2326,8 @@ milan_fabric_nbif_syshub_dma(zen_nbif_t *nbif)
 	/*
 	 * This register, like all SYSHUBMM registers, has no instance on NBIF2.
 	 */
-	if (nbif->zn_nbifno > 1 ||
-	    (nbif->zn_nbifno > 0 && nbif->zn_ioms->zio_num > 1)) {
+	if (nbif->zn_num > 1 ||
+	    (nbif->zn_num > 0 && nbif->zn_ioms->zio_num > 1)) {
 		return;
 	}
 	reg = milan_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SOC, 0);
@@ -2570,7 +2570,7 @@ milan_dxio_init(zen_iodie_t *iodie, void *arg)
 	 * this is needed on socket 0, 1, or neither.
 	 */
 	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
-		if (soc->zs_socno == 0 && !milan_dxio_rpc_sm_reload(iodie)) {
+		if (soc->zs_num == 0 && !milan_dxio_rpc_sm_reload(iodie)) {
 			return (1);
 		}
 	}
@@ -2670,13 +2670,13 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 	int err;
 
 	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
-		if (soc->zs_socno == 0) {
+		if (soc->zs_num == 0) {
 			source_data = &ethanolx_engine_s0;
 		} else {
 			source_data = &ethanolx_engine_s1;
 		}
 	} else {
-		VERIFY3U(soc->zs_socno, ==, 0);
+		VERIFY3U(soc->zs_num, ==, 0);
 		source_data = &gimlet_engine;
 	}
 
@@ -3412,7 +3412,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 		switch (reply.mds_type) {
 		case MILAN_DXIO_DATA_TYPE_SM:
 			cmn_err(CE_CONT, "?Socket %u LISM 0x%x->0x%x\n",
-			    soc->zs_socno, miodie->mi_state, reply.mds_arg0);
+			    soc->zs_num, miodie->mi_state, reply.mds_arg0);
 			miodie->mi_state = reply.mds_arg0;
 			switch (miodie->mi_state) {
 			/*
@@ -3437,7 +3437,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 					cmn_err(CE_WARN, "Socket %u LISM: "
 					    "failed to map all DXIO engines to "
 					    "devices.  PCIe will not function",
-					    soc->zs_socno);
+					    soc->zs_num);
 					return (1);
 				}
 
@@ -3454,7 +3454,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				(void) zen_fabric_walk_pcie_core(fabric,
 				    milan_fabric_init_pcie_straps, iodie);
 				cmn_err(CE_CONT, "?Socket %u LISM: Finished "
-				    "writing PCIe straps\n", soc->zs_socno);
+				    "writing PCIe straps\n", soc->zs_num);
 
 				/*
 				 * Set up the core-level debugging controls so
@@ -3488,7 +3488,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				 * We made it. Somehow we're done!
 				 */
 				cmn_err(CE_CONT, "?Socket %u LISM: done\n",
-				    soc->zs_socno);
+				    soc->zs_num);
 				goto done;
 			default:
 				/*
@@ -3504,11 +3504,11 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 			zen_pcie_populate_dbg(fabric,
 			    MPCS_DXIO_SM_PERST, iodie->zi_node_id);
 			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
-			    soc->zs_socno, reply.mds_arg0, reply.mds_arg1);
+			    soc->zs_num, reply.mds_arg0, reply.mds_arg1);
 			if (reply.mds_arg0 == 0) {
 				cmn_err(CE_NOTE, "Socket %u LISM: disregarding "
 				    "request to assert PERST at index 0x%x",
-				    soc->zs_socno, reply.mds_arg1);
+				    soc->zs_num, reply.mds_arg1);
 				break;
 			}
 
@@ -3555,12 +3555,12 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 			break;
 		case MILAN_DXIO_DATA_TYPE_NONE:
 			cmn_err(CE_WARN, "Socket %u LISM: Got the none data "
-			    "type... are we actually done?", soc->zs_socno);
+			    "type... are we actually done?", soc->zs_num);
 			goto done;
 		default:
 			cmn_err(CE_WARN, "Socket %u LISM: Got unexpected DXIO "
 			    "return type 0x%x. PCIe will not function.",
-			    soc->zs_socno, reply.mds_type);
+			    soc->zs_num, reply.mds_type);
 			return (1);
 		}
 

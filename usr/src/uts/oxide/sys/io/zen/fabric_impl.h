@@ -170,6 +170,11 @@ struct zen_ioms {
 
 struct zen_iodie {
 	/*
+	 * The index of this die relative to its associated soc.
+	 */
+	uint8_t			zi_num;
+
+	/*
 	 * The DF version as implemented by this I/O die. In contrast to
 	 * zen_platform_consts_t.zpc_df_rev, we determine this dynamically.
 	 */
@@ -254,7 +259,7 @@ struct zen_soc {
 	/*
 	 * The index of the SOC within the fabric.
 	 */
-	uint8_t			zs_socno;
+	uint8_t			zs_num;
 
 	/*
 	 * While earlier generations of EPYC supported more (Naples had 4),

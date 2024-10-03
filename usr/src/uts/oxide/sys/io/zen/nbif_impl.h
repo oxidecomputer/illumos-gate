@@ -68,6 +68,8 @@ typedef struct zen_nbif_info {
 } zen_nbif_info_t;
 
 struct zen_nbif_func {
+	uint8_t			znf_num;
+
 	/*
 	 * The type of this function.
 	 */
@@ -89,7 +91,7 @@ struct zen_nbif_func {
 };
 
 struct zen_nbif {
-	uint8_t			zn_nbifno;
+	uint8_t			zn_num;
 	uint8_t			zn_nfuncs;
 	zen_nbif_func_t		zn_funcs[ZEN_NBIF_MAX_FUNCS];
 	zen_ioms_t		*zn_ioms;
