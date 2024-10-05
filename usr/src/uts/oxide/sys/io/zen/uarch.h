@@ -172,9 +172,7 @@ typedef struct zen_hack_ops {
 extern void zen_null_check_furtive_reset(void);
 extern bool zen_null_cgpll_set_ssc(bool);
 extern void zen_null_fabric_iohc_pci_ids(zen_ioms_t *);
-extern void zen_null_fabric_nbif_arbitration(zen_nbif_t *);
 extern void zen_null_fabric_sdp_control(zen_ioms_t *);
-extern void zen_null_fabric_nbif_syshub_dma(zen_nbif_t *);
 
 typedef struct zen_ras_ops {
 	void	(*zro_ras_init)(void);

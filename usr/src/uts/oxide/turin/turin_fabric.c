@@ -332,6 +332,50 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	return (reg);
 }
 
+static smn_reg_t
+turin_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	zen_ioms_t *ioms = nbif->zn_ioms;
+	smn_reg_t reg;
+
+	switch (def.srd_unit) {
+	case SMN_UNIT_NBIF:
+		reg = turin_nbif_smn_reg(ioms->zio_nbionum, def,
+		    nbif->zn_num, reginst);
+		break;
+	case SMN_UNIT_NBIF_ALT:
+		reg = turin_nbif_alt_smn_reg(ioms->zio_nbionum, def,
+		    nbif->zn_num, reginst);
+		break;
+	default:
+		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIF",
+		    def.srd_unit);
+	}
+
+	return (reg);
+}
+
+static smn_reg_t
+turin_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
+{
+	zen_nbif_t *nbif = func->znf_nbif;
+	zen_ioms_t *ioms = nbif->zn_ioms;
+	smn_reg_t reg;
+
+	switch (def.srd_unit) {
+	case SMN_UNIT_NBIF_FUNC:
+		reg = turin_nbif_func_smn_reg(ioms->zio_nbionum, def,
+		    nbif->zn_num, func->znf_dev, func->znf_func);
+		break;
+	default:
+		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIF func",
+		    def.srd_unit);
+	}
+
+	return (reg);
+}
+
 void
 turin_fabric_init_tom(zen_ioms_t *ioms, uint64_t tom, uint64_t tom2,
     uint64_t tom3)
@@ -596,6 +640,49 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	val = IOHC_QOS_CTL_SET_VC1_PRI(val, 0);
 	val = IOHC_QOS_CTL_SET_VC0_PRI(val, 0);
 	zen_ioms_write(ioms, reg, val);
+}
+
+void
+turin_fabric_nbif_arbitration(zen_nbif_t *nbif)
+{
+	smn_reg_t reg;
+
+	/*
+	 * These registers are programmed for NBIF0 on all IOMS and for NBIF2
+	 * on the IOMS which are instanced on the larger IOHCs. There are no
+	 * devices on NBIF1.
+	 */
+	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(nbif->zn_ioms->zio_num);
+
+	if (nbif->zn_num == 0 || (iohcsz == IOHC_SZ_L && nbif->zn_num == 2)) {
+		reg = turin_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT2, 0);
+		zen_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
+		reg = turin_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT3, 0);
+		zen_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
+	}
+}
+
+/*
+ * This bit of initialization is both strange and not very well documented.
+ */
+void
+turin_fabric_nbif_syshub_dma(zen_nbif_t *nbif)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * This register, like all SYSHUBMM registers, has no instance on
+	 * NBIF2, and NBIF1 has no devices.
+	 */
+	if (nbif->zn_num > 0)
+		return;
+
+	reg = turin_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SOC, 0);
+	val = zen_nbif_read(nbif, reg);
+	val = NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(val, 1);
+	val = NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW1(val, 1);
+	zen_nbif_write(nbif, reg, val);
 }
 
 /*

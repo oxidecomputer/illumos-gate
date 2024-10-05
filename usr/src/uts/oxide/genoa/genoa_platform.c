@@ -70,16 +70,16 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 
 	.zfo_init_tom = genoa_fabric_init_tom,
 	.zfo_disable_vga = genoa_fabric_disable_vga,
-	.zfo_iohc_pci_ids = zen_null_fabric_iohc_pci_ids,
+	.zfo_iohc_pci_ids = zen_null_fabric_iohc_pci_ids, /* skip for genoa */
 	.zfo_pcie_refclk = genoa_fabric_pcie_refclk,
 	.zfo_pci_crs_to = genoa_fabric_set_pci_to,
 	.zfo_iohc_features = genoa_fabric_iohc_features,
 	.zfo_iohc_bus_num = genoa_fabric_iohc_bus_num,
 	.zfo_iohc_fch_link = genoa_fabric_iohc_fch_link,
 	.zfo_iohc_arbitration = genoa_fabric_iohc_arbitration,
-	.zfo_nbif_arbitration = zen_null_fabric_nbif_arbitration,    /* XXX */
-	.zfo_sdp_control = zen_null_fabric_sdp_control,		     /* XXX */
-	.zfo_nbif_syshub_dma = zen_null_fabric_nbif_syshub_dma,	     /* XXX */
+	.zfo_nbif_arbitration = genoa_fabric_nbif_arbitration,
+	.zfo_sdp_control = zen_null_fabric_sdp_control, /* skip for genoa */
+	.zfo_nbif_syshub_dma = genoa_fabric_nbif_syshub_dma,
 	.zfo_ioapic = genoa_fabric_ioapic,
 	.zfo_pcie = genoa_fabric_pcie,
 

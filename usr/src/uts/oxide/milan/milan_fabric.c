@@ -1035,8 +1035,7 @@ milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 }
 
 static smn_reg_t
-milan_nbif_func_reg(const zen_nbif_func_t *const func,
-    const smn_reg_def_t def)
+milan_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 {
 	zen_nbif_t *nbif = func->znf_nbif;
 	zen_ioms_t *ioms = nbif->zn_ioms;
@@ -2306,12 +2305,7 @@ milan_fabric_sdp_control(zen_ioms_t *ioms)
 }
 
 /*
- * XXX This bit of initialization is both strange and not very well documented.
- * This is a bit weird whereby we always set this on nbif0 across all IOMS
- * instances; however, we only do it on NBIF1 for IOMS 0/1. Not clear why that
- * is. There are a bunch of things that don't quite make sense about being
- * specific to the syshub when generally we expect the one we care about to
- * actually be on IOMS 3.
+ * This bit of initialization is both strange and not very well documented.
  */
 void
 milan_fabric_nbif_syshub_dma(zen_nbif_t *nbif)
@@ -2320,16 +2314,32 @@ milan_fabric_nbif_syshub_dma(zen_nbif_t *nbif)
 	uint32_t val;
 
 	/*
-	 * This register, like all SYSHUBMM registers, has no instance on NBIF2.
+	 * These registers, like all SYSHUBMM registers, have no instance on
+	 * nBIF2.
 	 */
-	if (nbif->zn_num > 1 ||
-	    (nbif->zn_num > 0 && nbif->zn_ioms->zio_num > 1)) {
+	if (nbif->zn_num > 1)
 		return;
+
+	/*
+	 * This is only set on nBIF0.
+	 */
+	if (nbif->zn_num == 0) {
+		reg = milan_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SOC, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(val, 1);
+		zen_nbif_write(nbif, reg, val);
 	}
-	reg = milan_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SOC, 0);
-	val = zen_nbif_read(nbif, reg);
-	val = NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(val, 1);
-	zen_nbif_write(nbif, reg, val);
+
+	/*
+	 * This is a bit weird whereby we only set this on nBIF1 on IOMS 0/1.
+	 * Not clear why that is.
+	 */
+	if (nbif->zn_num == 1 && nbif->zn_ioms->zio_num <= 1) {
+		reg = milan_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SHUB, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_ALT_BGEN_BYP_SHUB_SET_DMA_SW0(val, 1);
+		zen_nbif_write(nbif, reg, val);
+	}
 }
 
 /*

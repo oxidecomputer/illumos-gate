@@ -2269,17 +2269,7 @@ zen_null_fabric_iohc_pci_ids(zen_ioms_t *ioms __unused)
 }
 
 void
-zen_null_fabric_nbif_arbitration(zen_nbif_t *nbif __unused)
-{
-}
-
-void
 zen_null_fabric_sdp_control(zen_ioms_t *nbif __unused)
-{
-}
-
-void
-zen_null_fabric_nbif_syshub_dma(zen_nbif_t *nbif __unused)
 {
 }
 

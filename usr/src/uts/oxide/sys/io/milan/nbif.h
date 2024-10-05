@@ -275,6 +275,21 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW1(r, v)	bitset32(r, 17, 17, v)
 #define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(r, v)	bitset32(r, 16, 16, v)
 
+/*
+ * SYSHUBMM::SYSHUB_BGEN_ENHANCEMENT_BYPASS_EN_SHUBCLK. As the previous
+ * register, this register is a weird SYSHUB and NBIF crossover that is in the
+ * alternate space.
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_BGEN_BYP_SHUB	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x11008	\
+}
+#define	NBIF_ALT_BGEN_BYP_SHUB(i, n)	\
+    milan_nbif_alt_smn_reg(i, D_NBIF_ALT_BGEN_BYP_SHUB, n, 0)
+#define	NBIF_ALT_BGEN_BYP_SHUB_SET_DMA_SW1(r, v)	bitset32(r, 17, 17, v)
+#define	NBIF_ALT_BGEN_BYP_SHUB_SET_DMA_SW0(r, v)	bitset32(r, 16, 16, v)
+
 #ifdef __cplusplus
 }
 #endif

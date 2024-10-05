@@ -79,16 +79,16 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 
 	.zfo_init_tom = turin_fabric_init_tom,
 	.zfo_disable_vga = turin_fabric_disable_vga,
-	.zfo_iohc_pci_ids = zen_null_fabric_iohc_pci_ids,
+	.zfo_iohc_pci_ids = zen_null_fabric_iohc_pci_ids, /* skip for turin */
 	.zfo_pcie_refclk = turin_fabric_pcie_refclk,
 	.zfo_pci_crs_to = turin_fabric_set_pci_to,
 	.zfo_iohc_features = turin_fabric_iohc_features,
 	.zfo_iohc_bus_num = turin_fabric_iohc_bus_num,
 	.zfo_iohc_fch_link = turin_fabric_iohc_fch_link,
 	.zfo_iohc_arbitration = turin_fabric_iohc_arbitration,
-	.zfo_nbif_arbitration = zen_null_fabric_nbif_arbitration,    /* XXX */
-	.zfo_sdp_control = zen_null_fabric_sdp_control,		     /* XXX */
-	.zfo_nbif_syshub_dma = zen_null_fabric_nbif_syshub_dma,	     /* XXX */
+	.zfo_nbif_arbitration = turin_fabric_nbif_arbitration,
+	.zfo_sdp_control = zen_null_fabric_sdp_control, /* skip for turin */
+	.zfo_nbif_syshub_dma = turin_fabric_nbif_syshub_dma,
 	.zfo_ioapic = turin_fabric_ioapic,
 	.zfo_pcie = turin_fabric_pcie,
 
