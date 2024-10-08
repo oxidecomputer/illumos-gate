@@ -2284,11 +2284,6 @@ zen_null_fabric_nbif_syshub_dma(zen_nbif_t *nbif __unused)
 }
 
 void
-zen_null_fabric_ioapic(zen_ioms_t *ioms __unused)
-{
-}
-
-void
 zen_fabric_init(void)
 {
 	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();

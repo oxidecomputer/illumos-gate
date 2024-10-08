@@ -175,7 +175,6 @@ extern void zen_null_fabric_iohc_pci_ids(zen_ioms_t *);
 extern void zen_null_fabric_nbif_arbitration(zen_nbif_t *);
 extern void zen_null_fabric_sdp_control(zen_ioms_t *);
 extern void zen_null_fabric_nbif_syshub_dma(zen_nbif_t *);
-extern void zen_null_fabric_ioapic(zen_ioms_t *);
 
 typedef struct zen_ras_ops {
 	void	(*zro_ras_init)(void);

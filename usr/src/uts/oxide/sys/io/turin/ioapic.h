@@ -27,6 +27,7 @@
 #include <sys/bitext.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
+#include <sys/io/zen/ioapic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -94,25 +95,21 @@ turin_ioapic_smn_reg(const uint8_t unitno, const smn_reg_def_t def,
 /*
  * IOAPIC::IOAPIC_BR_INTERRUPT_ROUTING. There are several instances of this
  * register and they determine how a given logical bridge on the IOMS maps to
- * the IOAPIC pins, hence the number of routes.
+ * the IOAPIC pins, hence the number of routes. The IOAPICs on the larger IOHC
+ * instances have a different number of routes to those on the smaller ones.
  */
-#define	IOAPIC_NROUTES		22
-/* IOAPIC[7:4] have fewer routes */
-#define	IOAPIC_NROUTES_UPPER	9
+#define	IOAPIC_NROUTES_L		22
+#define	IOAPIC_NROUTES_S		9
 /*CSTYLED*/
 #define	D_IOAPIC_ROUTE	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_IOAPIC,	\
 	.srd_reg = 0x40,	\
-	.srd_nents = IOAPIC_NROUTES	\
+	.srd_nents = IOAPIC_NROUTES_L	\
 }
 #define	IOAPIC_ROUTE(a, i)	\
 	turin_ioapic_smn_reg(a, D_IOAPIC_ROUTE, i)
 #define	IOAPIC_ROUTE_SET_BRIDGE_MAP(r, v)	bitset32(r, 20, 16, v)
 #define	IOAPIC_ROUTE_SET_INTX_SWIZZLE(r, v)	bitset32(r, 5, 4, v)
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_ABCD	0
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_BCDA	1
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_CDAB	2
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_DABC	3
 #define	IOAPIC_ROUTE_SET_INTX_GROUP(r, v)	bitset32(r, 2, 0, v)
 
 #ifdef __cplusplus

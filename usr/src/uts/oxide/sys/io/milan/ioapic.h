@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_IOAPIC_H
@@ -27,6 +27,7 @@
 #include <sys/bitext.h>
 #include <sys/types.h>
 #include <sys/amdzen/smn.h>
+#include <sys/io/zen/ioapic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -75,10 +76,6 @@ AMDZEN_MAKE_SMN_REG_FN(milan_ioapic_smn_reg, IOAPIC, 0x14300000,
 	milan_ioapic_smn_reg(a, D_IOAPIC_ROUTE, i)
 #define	IOAPIC_ROUTE_SET_BRIDGE_MAP(r, v)	bitset32(r, 20, 16, v)
 #define	IOAPIC_ROUTE_SET_INTX_SWIZZLE(r, v)	bitset32(r, 5, 4, v)
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_ABCD	0
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_BCDA	1
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_CDAB	2
-#define	IOAPIC_ROUTE_INTX_SWIZZLE_DABC	3
 #define	IOAPIC_ROUTE_SET_INTX_GROUP(r, v)	bitset32(r, 2, 0, v)
 
 #ifdef __cplusplus

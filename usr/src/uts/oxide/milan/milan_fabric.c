@@ -714,60 +714,56 @@ static const milan_pcie_port_info_t milan_int_ports[4] = {
 
 /*
  * The following table encodes the per-bridge IOAPIC initialization routing. We
- * currently following the recommendation of the PPR.
+ * currently follow the recommendation of the PPR.
  */
-typedef struct milan_ioapic_info {
-	uint8_t mii_group;
-	uint8_t mii_swiz;
-	uint8_t mii_map;
-} milan_ioapic_info_t;
-
-static const milan_ioapic_info_t milan_ioapic_routes[IOAPIC_NROUTES] = {
-	{ .mii_group = 0x0, .mii_map = 0x10,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x1, .mii_map = 0x11,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x2, .mii_map = 0x12,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x3, .mii_map = 0x13,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x4, .mii_map = 0x10,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x5, .mii_map = 0x11,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x6, .mii_map = 0x12,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x7, .mii_map = 0x13,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
-	{ .mii_group = 0x7, .mii_map = 0x0c,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x6, .mii_map = 0x0d,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x5, .mii_map = 0x0e,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x4, .mii_map = 0x0f,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x3, .mii_map = 0x0c,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x2, .mii_map = 0x0d,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x1, .mii_map = 0x0e,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x0, .mii_map = 0x0f,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
-	{ .mii_group = 0x0, .mii_map = 0x08,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
-	{ .mii_group = 0x1, .mii_map = 0x09,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
-	{ .mii_group = 0x2, .mii_map = 0x0a,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
-	{ .mii_group = 0x3, .mii_map = 0x0b,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
-	{ .mii_group = 0x4, .mii_map = 0x08,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
-	{ .mii_group = 0x5, .mii_map = 0x09,
-	    .mii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC }
+static const zen_ioapic_info_t milan_ioapic_routes[IOAPIC_NROUTES] = {
+	[0] = { .zii_group = 0x0, .zii_map = 0x10,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[1] = { .zii_group = 0x1, .zii_map = 0x11,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[2] = { .zii_group = 0x2, .zii_map = 0x12,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[3] = { .zii_group = 0x3, .zii_map = 0x13,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[4] = { .zii_group = 0x4, .zii_map = 0x10,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[5] = { .zii_group = 0x5, .zii_map = 0x11,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[6] = { .zii_group = 0x6, .zii_map = 0x12,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[7] = { .zii_group = 0x7, .zii_map = 0x13,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[8] = { .zii_group = 0x7, .zii_map = 0x0c,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[9] = { .zii_group = 0x6, .zii_map = 0x0d,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[10] = { .zii_group = 0x5, .zii_map = 0x0e,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[11] = { .zii_group = 0x4, .zii_map = 0x0f,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[12] = { .zii_group = 0x3, .zii_map = 0x0c,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[13] = { .zii_group = 0x2, .zii_map = 0x0d,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[14] = { .zii_group = 0x1, .zii_map = 0x0e,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[15] = { .zii_group = 0x0, .zii_map = 0x0f,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[16] = { .zii_group = 0x0, .zii_map = 0x08,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[17] = { .zii_group = 0x1, .zii_map = 0x09,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[18] = { .zii_group = 0x2, .zii_map = 0x0a,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[19] = { .zii_group = 0x3, .zii_map = 0x0b,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[20] = { .zii_group = 0x4, .zii_map = 0x08,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[21] = { .zii_group = 0x5, .zii_map = 0x09,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC }
 };
+
+CTASSERT(ARRAY_SIZE(milan_ioapic_routes) == IOAPIC_NROUTES);
 
 const uint8_t milan_nbif_nfunc[] = {
 	[0] = MILAN_NBIF0_NFUNCS,
@@ -2353,18 +2349,16 @@ milan_fabric_ioapic(zen_ioms_t *ioms)
 	smn_reg_t reg;
 	uint32_t val;
 
-	ASSERT3U(ARRAY_SIZE(milan_ioapic_routes), ==, IOAPIC_NROUTES);
-
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_ioapic_routes); i++) {
 		smn_reg_t reg = milan_ioms_reg(ioms, D_IOAPIC_ROUTE, i);
 		uint32_t route = zen_ioms_read(ioms, reg);
 
 		route = IOAPIC_ROUTE_SET_BRIDGE_MAP(route,
-		    milan_ioapic_routes[i].mii_map);
+		    milan_ioapic_routes[i].zii_map);
 		route = IOAPIC_ROUTE_SET_INTX_SWIZZLE(route,
-		    milan_ioapic_routes[i].mii_swiz);
+		    milan_ioapic_routes[i].zii_swiz);
 		route = IOAPIC_ROUTE_SET_INTX_GROUP(route,
-		    milan_ioapic_routes[i].mii_group);
+		    milan_ioapic_routes[i].zii_group);
 
 		zen_ioms_write(ioms, reg, route);
 	}

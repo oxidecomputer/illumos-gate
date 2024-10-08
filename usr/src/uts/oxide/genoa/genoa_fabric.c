@@ -37,6 +37,64 @@
 #include <sys/io/genoa/iohc.h>
 #include <sys/io/genoa/iommu.h>
 #include <sys/io/genoa/nbif_impl.h>
+#include <sys/io/genoa/ioapic.h>
+
+/*
+ * The following table encodes the per-bridge IOAPIC initialization routing. We
+ * currently follow the recommendation of the PPR.
+ */
+static const zen_ioapic_info_t genoa_ioapic_routes[IOAPIC_NROUTES] = {
+	[0] = { .zii_group = 0x0, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[1] = { .zii_group = 0x1, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[2] = { .zii_group = 0x2, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[3] = { .zii_group = 0x3, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[4] = { .zii_group = 0x4, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[5] = { .zii_group = 0x4, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[6] = { .zii_group = 0x3, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[7] = { .zii_group = 0x2, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[8] = { .zii_group = 0x1, .zii_map = 0x0,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[9] = { .zii_group = 0x0, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_CDAB },
+	[10] = { .zii_group = 0x0, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[11] = { .zii_group = 0x1, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[12] = { .zii_group = 0x2, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[13] = { .zii_group = 0x3, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[14] = { .zii_group = 0x4, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_DABC },
+	[15] = { .zii_group = 0x4, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_BCDA },
+	[16] = { .zii_group = 0x3, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_BCDA },
+	[17] = { .zii_group = 0x2, .zii_map = 0x1,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_BCDA },
+	[18] = { .zii_group = 0x1, .zii_map = 0x2,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_BCDA },
+	[19] = { .zii_group = 0x0, .zii_map = 0x2,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_BCDA },
+	[20] = { .zii_group = 0x0, .zii_map = 0x2,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[21] = { .zii_group = 0x1, .zii_map = 0x2,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[22] = { .zii_group = 0x2, .zii_map = 0x3,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+	[23] = { .zii_group = 0x3, .zii_map = 0x3,
+	    .zii_swiz = IOAPIC_ROUTE_INTX_SWIZZLE_ABCD },
+};
+
+CTASSERT(ARRAY_SIZE(genoa_ioapic_routes) == IOAPIC_NROUTES);
 
 const uint8_t genoa_nbif_nfunc[] = {
 	[0] = GENOA_NBIF0_NFUNCS,
@@ -202,6 +260,9 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 {
 	smn_reg_t reg;
 	switch (def.srd_unit) {
+	case SMN_UNIT_IOAPIC:
+		reg = genoa_ioapic_smn_reg(ioms->zio_num, def, reginst);
+		break;
 	case SMN_UNIT_IOHC:
 		reg = genoa_iohc_smn_reg(ioms->zio_num, def, reginst);
 		break;
@@ -538,6 +599,85 @@ genoa_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	val = IOHC_QOS_CTL_SET_VC2_PRI(val, 0);
 	val = IOHC_QOS_CTL_SET_VC1_PRI(val, 0);
 	val = IOHC_QOS_CTL_SET_VC0_PRI(val, 0);
+	zen_ioms_write(ioms, reg, val);
+}
+
+/*
+ * We need to initialize each IOAPIC as there is one per IOMS. First we
+ * initialize the interrupt routing table. This is used to mux the various
+ * legacy INTx interrupts and the bridge's interrupt to a given location. This
+ * follows from the PPR.
+ *
+ * After that we need to go through and program the feature register for the
+ * IOAPIC and its address. Because there is one IOAPIC per IOMS, one has to be
+ * elected the primary and the rest, secondary. This is done based on which
+ * IOMS has the FCH.
+ */
+void
+genoa_fabric_ioapic(zen_ioms_t *ioms)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	for (uint_t i = 0; i < ARRAY_SIZE(genoa_ioapic_routes); i++) {
+		reg = genoa_ioms_reg(ioms, D_IOAPIC_ROUTE, i);
+		val = zen_ioms_read(ioms, reg);
+
+		val = IOAPIC_ROUTE_SET_BRIDGE_MAP(val,
+		    genoa_ioapic_routes[i].zii_map);
+		val = IOAPIC_ROUTE_SET_INTX_SWIZZLE(val,
+		    genoa_ioapic_routes[i].zii_swiz);
+		val = IOAPIC_ROUTE_SET_INTX_GROUP(val,
+		    genoa_ioapic_routes[i].zii_group);
+
+		zen_ioms_write(ioms, reg, val);
+	}
+
+	/*
+	 * The address registers are in the IOHC while the feature registers
+	 * are in the IOAPIC SMN space. To ensure that the other IOAPICs can't
+	 * be enabled with reset addresses, we instead lock them.
+	 * XXX Should we lock primary?
+	 */
+	reg = genoa_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_HI, 0);
+	val = zen_ioms_read(ioms, reg);
+	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
+		val = IOHC_IOAPIC_ADDR_HI_SET_ADDR(val,
+		    bitx64(ZEN_PHYSADDR_IOHC_IOAPIC, 47, 32));
+	} else {
+		val = IOHC_IOAPIC_ADDR_HI_SET_ADDR(val, 0);
+	}
+	zen_ioms_write(ioms, reg, val);
+
+	reg = genoa_ioms_reg(ioms, D_IOHC_IOAPIC_ADDR_LO, 0);
+	val = zen_ioms_read(ioms, reg);
+	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
+		val = IOHC_IOAPIC_ADDR_LO_SET_ADDR(val,
+		    bitx64(ZEN_PHYSADDR_IOHC_IOAPIC, 31, 8));
+		val = IOHC_IOAPIC_ADDR_LO_SET_LOCK(val, 0);
+		val = IOHC_IOAPIC_ADDR_LO_SET_EN(val, 1);
+	} else {
+		val = IOHC_IOAPIC_ADDR_LO_SET_ADDR(val, 0);
+		val = IOHC_IOAPIC_ADDR_LO_SET_LOCK(val, 1);
+		val = IOHC_IOAPIC_ADDR_LO_SET_EN(val, 0);
+	}
+	zen_ioms_write(ioms, reg, val);
+
+	/*
+	 * Every IOAPIC requires that we enable 8-bit addressing and that it be
+	 * able to generate interrupts to the FCH. The most important bit here
+	 * is the secondary bit which determines whether or not this IOAPIC is
+	 * subordinate to another.
+	 */
+	reg = genoa_ioms_reg(ioms, D_IOAPIC_FEATURES, 0);
+	val = zen_ioms_read(ioms, reg);
+	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
+		val = IOAPIC_FEATURES_SET_SECONDARY(val, 0);
+	} else {
+		val = IOAPIC_FEATURES_SET_SECONDARY(val, 1);
+	}
+	val = IOAPIC_FEATURES_SET_FCH(val, 1);
+	val = IOAPIC_FEATURES_SET_ID_EXT(val, 1);
 	zen_ioms_write(ioms, reg, val);
 }
 

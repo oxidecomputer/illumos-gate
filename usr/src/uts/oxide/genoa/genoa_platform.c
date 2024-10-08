@@ -80,7 +80,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_nbif_arbitration = zen_null_fabric_nbif_arbitration,    /* XXX */
 	.zfo_sdp_control = zen_null_fabric_sdp_control,		     /* XXX */
 	.zfo_nbif_syshub_dma = zen_null_fabric_nbif_syshub_dma,	     /* XXX */
-	.zfo_ioapic = zen_null_fabric_ioapic,			     /* XXX */
+	.zfo_ioapic = genoa_fabric_ioapic,
 	.zfo_pcie = genoa_fabric_pcie,
 
 	.zfo_pcie_core_reg = genoa_pcie_core_reg,

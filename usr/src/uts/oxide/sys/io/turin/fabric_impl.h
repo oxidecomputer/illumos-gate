@@ -122,6 +122,7 @@ extern void turin_fabric_iohc_features(zen_ioms_t *);
 extern void turin_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
 extern void turin_fabric_iohc_fch_link(zen_ioms_t *, bool);
 extern void turin_fabric_iohc_arbitration(zen_ioms_t *);
+extern void turin_fabric_ioapic(zen_ioms_t *);
 extern void turin_fabric_pcie(zen_fabric_t *);
 
 extern smn_reg_t turin_pcie_port_reg(const zen_pcie_port_t *const,

@@ -102,6 +102,7 @@ extern void genoa_fabric_iohc_features(zen_ioms_t *);
 extern void genoa_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
 extern void genoa_fabric_iohc_fch_link(zen_ioms_t *, bool);
 extern void genoa_fabric_iohc_arbitration(zen_ioms_t *);
+extern void genoa_fabric_ioapic(zen_ioms_t *);
 extern void genoa_fabric_pcie(zen_fabric_t *);
 
 extern smn_reg_t genoa_pcie_port_reg(const zen_pcie_port_t *const,
