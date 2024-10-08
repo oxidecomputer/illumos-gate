@@ -25,8 +25,10 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/mutex.h>
+#include <sys/bitext.h>
 
 #include <sys/io/zen/fabric.h>
+#include <sys/io/zen/dxio_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -36,10 +38,29 @@ extern "C" {
  * The current maximum number of ports that can be attached to any
  * PCIe core in our supported Zen microarchitectures.
  */
-#define	ZEN_PCIE_CORE_MAX_PORTS		8
+#define	ZEN_PCIE_CORE_MAX_PORTS		9
+
+/*
+ * Macros to split an SDP interface Unit ID into the unit and port components.
+ */
+#define	ZEN_PCIE_UNITID_SDP_UNIT(u)	bitx8((u), 6, 3)
+#define	ZEN_PCIE_UNITID_SDP_PORT(u)	bitx8((u), 2, 0)
 
 typedef struct zen_pcie_port zen_pcie_port_t;
 typedef struct zen_pcie_core zen_pcie_core_t;
+
+typedef struct zen_pcie_port_info {
+	uint8_t zppi_dev;
+	uint8_t zppi_func;
+} zen_pcie_port_info_t;
+
+typedef struct zen_pcie_core_info {
+	const char	*zpci_name;
+	uint16_t	zpci_dxio_start;
+	uint16_t	zpci_dxio_end;
+	uint16_t	zpci_phy_start;
+	uint16_t	zpci_phy_end;
+} zen_pcie_core_info_t;
 
 typedef int (*zen_pcie_core_cb_f)(zen_pcie_core_t *, void *);
 typedef int (*zen_pcie_port_cb_f)(zen_pcie_port_t *, void *);
@@ -133,6 +154,8 @@ struct zen_pcie_port {
 	 */
 	uint8_t			zpp_func;
 
+	smu_hotplug_type_t	zpp_hp_type;
+
 	zen_pcie_core_t		*zpp_core;
 	void			*zpp_uarch_pcie_port;
 
@@ -149,6 +172,12 @@ struct zen_pcie_core {
 
 	uint8_t			zpc_nports;
 	zen_pcie_port_t		zpc_ports[ZEN_PCIE_CORE_MAX_PORTS];
+
+	/*
+	 * The unit and port components of the associated SDP unitid.
+	 */
+	uint8_t			zpc_sdp_unit;
+	uint8_t			zpc_sdp_port;
 
 	/*
 	 * PCIe core registers captured at various stages.

@@ -24,6 +24,7 @@
 #include <sys/pci.h>
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_cfgspace_impl.h>
+#include <sys/spl.h>
 
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
@@ -38,6 +39,56 @@
 #include <sys/io/turin/iommu.h>
 #include <sys/io/turin/nbif_impl.h>
 #include <sys/io/turin/ioapic.h>
+
+/*
+ * This table encodes knowledge about how the SoC assigns devices and functions
+ * to root ports.
+ */
+static const zen_pcie_port_info_t turin_pcie[][TURIN_PCIE_CORE_MAX_PORTS] = {
+	[0] = {
+		{  .zppi_dev = 0x1, .zppi_func = 0x1 },
+		{  .zppi_dev = 0x1, .zppi_func = 0x2 },
+		{  .zppi_dev = 0x1, .zppi_func = 0x3 },
+		{  .zppi_dev = 0x1, .zppi_func = 0x4 },
+		{  .zppi_dev = 0x1, .zppi_func = 0x5 },
+		{  .zppi_dev = 0x1, .zppi_func = 0x6 },
+		{  .zppi_dev = 0x1, .zppi_func = 0x7 },
+		{  .zppi_dev = 0x2, .zppi_func = 0x1 },
+		{  .zppi_dev = 0x2, .zppi_func = 0x2 }
+	},
+	[1] = {
+		{  .zppi_dev = 0x3, .zppi_func = 0x1 },
+		{  .zppi_dev = 0x3, .zppi_func = 0x2 },
+		{  .zppi_dev = 0x3, .zppi_func = 0x3 },
+		{  .zppi_dev = 0x3, .zppi_func = 0x4 },
+		{  .zppi_dev = 0x3, .zppi_func = 0x5 },
+		{  .zppi_dev = 0x3, .zppi_func = 0x6 },
+		{  .zppi_dev = 0x3, .zppi_func = 0x7 },
+		{  .zppi_dev = 0x4, .zppi_func = 0x1 },
+	}
+};
+
+/*
+ * This table encodes the mapping of the set of dxio lanes to a given PCIe core
+ * on an IOMS. The dxio engine uses different lane numbers than the phys. Note,
+ * that all lanes here are inclusive. e.g. [start, end].
+ * The subsequent tables encode mappings for the bonus cores.
+ */
+static const zen_pcie_core_info_t turin_lane_maps[8] = {
+	/* name, DXIO start, DXIO end, PHY start, PHY end */
+	{ "P0", 0x00, 0x0f, 0x00, 0x0f },	/* IOMS0, core 0 */
+	{ "P1", 0x20, 0x2f, 0x20, 0x2f },	/* IOMS1, core 0 */
+	{ "G0", 0x60, 0x6f, 0x60, 0x6f },	/* IOMS2, core 0 */
+	{ "G1", 0x40, 0x4f, 0x40, 0x4f },	/* IOMS3, core 0 */
+	{ "P2", 0x30, 0x3f, 0x30, 0x3f },	/* IOMS4, core 0 */
+	{ "P3", 0x10, 0x1f, 0x10, 0x1f },	/* IOMS5, core 0 */
+	{ "G2", 0x70, 0x7f, 0x70, 0x7f },	/* IOMS6, core 0 */
+	{ "G3", 0x50, 0x5f, 0x50, 0x5f }	/* IOMS7, core 0 */
+};
+
+static const zen_pcie_core_info_t turin_bonus_map = {
+	"P4", 0x80, 0x87, 0x80, 0x87		/* IOMS2, core 1 */
+};
 
 /*
  * The following table encodes the per-bridge IOAPIC initialization routing. We
@@ -123,6 +174,50 @@ const zen_nbif_info_t turin_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
 };
 
 /*
+ * How many PCIe cores does this IOMS instance have?
+ * If it's an IOHUB that has a bonus core then it will have the maximum
+ * number, otherwise one fewer.
+ */
+uint8_t
+turin_ioms_n_pcie_cores(const uint8_t iomsno)
+{
+	if (iomsno == TURIN_NBIO_BONUS_IOMS)
+		return (TURIN_IOMS_MAX_PCIE_CORES);
+	return (TURIN_IOMS_MAX_PCIE_CORES - 1);
+}
+
+/*
+ * How many PCIe ports does this core instance have?
+ * The bonus cores have a lower number of ports than the others.
+ * Not all ports are necessarily enabled, and ports that are disabled may have
+ * their associated bridges hidden; this is used to compute the locations of
+ * register blocks that pertain to the port that may exist.
+ */
+uint8_t
+turin_pcie_core_n_ports(const uint8_t pcno)
+{
+	if (pcno == TURIN_IOMS_BONUS_PCIE_CORENO)
+		return (TURIN_PCIE_CORE_BONUS_PORTS);
+	return (TURIN_PCIE_CORE_MAX_PORTS);
+}
+
+const zen_pcie_core_info_t *
+turin_pcie_core_info(const uint8_t iomsno, const uint8_t coreno)
+{
+	if (coreno == TURIN_IOMS_BONUS_PCIE_CORENO)
+		return (&turin_bonus_map);
+
+	VERIFY3U(iomsno, <, ARRAY_SIZE(turin_lane_maps));
+	return (&turin_lane_maps[iomsno]);
+}
+
+const zen_pcie_port_info_t *
+turin_pcie_port_info(const uint8_t coreno, const uint8_t portno)
+{
+	return (&turin_pcie[coreno][portno]);
+}
+
+/*
  * This is called from the common code, via an entry in the Turin version of
  * Zen fabric ops vector. The common code is responsible for the bulk of
  * initialization; we merely fill in those bits that are microarchitecture
@@ -132,11 +227,6 @@ void
 turin_fabric_ioms_init(zen_ioms_t *ioms)
 {
 	const uint8_t iomsno = ioms->zio_num;
-
-	/*
-	 * XXX don't set this without initializing the actual pcie structures.
-	 */
-	// ioms->zio_npcie_cores = turin_ioms_n_pcie_cores(iomsno);
 
 	ioms->zio_nbionum = TURIN_NBIO_NUM(iomsno);
 
@@ -172,34 +262,6 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 	 */
 	if (TURIN_IOMS_IOHUB_NUM(iomsno) == 0)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
-}
-
-/*
- * How many PCIe cores does this IOMS instance have?
- * If it's an IOHUB that has a bonus core then it will have the maximum
- * number, otherwise one fewer.
- */
-uint8_t
-turin_ioms_n_pcie_cores(const uint8_t iomsno)
-{
-	if (iomsno == TURIN_NBIO_BONUS_IOMS)
-		return (TURIN_IOMS_MAX_PCIE_CORES);
-	return (TURIN_IOMS_MAX_PCIE_CORES - 1);
-}
-
-/*
- * How many PCIe ports does this core instance have?
- * The bonus cores have a lower number of ports than the others.
- * Not all ports are necessarily enabled, and ports that are disabled may have
- * their associated bridges hidden; this is used to compute the locations of
- * register blocks that pertain to the port that may exist.
- */
-uint8_t
-turin_pcie_core_n_ports(const uint8_t pcno)
-{
-	if (pcno == TURIN_IOMS_BONUS_PCIE_CORENO)
-		return (TURIN_PCIE_CORE_BONUS_PORTS);
-	return (TURIN_PCIE_CORE_MAX_PORTS);
 }
 
 typedef enum turin_iommul1_subunit {

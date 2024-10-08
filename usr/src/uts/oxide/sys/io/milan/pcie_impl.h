@@ -33,6 +33,11 @@ extern "C" {
 #define	MILAN_PCIE_CORE_WAFL_NPORTS	2
 
 /*
+ * This is the SDP unit ID for PCIe core 0 in each IOMS.
+ */
+#define	MILAN_PCIE_CORE0_UNITID		16
+
+/*
  * These stages of configuration are referred to in the per-port and per-RC
  * register storage structures, which provide a debugging facility to help
  * understand what both firmware and software have done to these registers over
@@ -62,14 +67,11 @@ CTASSERT(MPCS_NUM_STAGES <= ZPCS_MAX_STAGES);
  */
 struct milan_pcie_port {
 	zen_dxio_engine_t	*mpp_engine;
-	smu_hotplug_type_t	mpp_hp_type;
 	uint16_t		mpp_hp_slotno;
 	uint32_t		mpp_hp_smu_mask;
 };
 
 struct milan_pcie_core {
-	uint8_t			mpc_sdp_unit;
-	uint8_t			mpc_sdp_port;
 	milan_pcie_port_t	mpc_ports[MILAN_PCIE_CORE_MAX_PORTS];
 };
 

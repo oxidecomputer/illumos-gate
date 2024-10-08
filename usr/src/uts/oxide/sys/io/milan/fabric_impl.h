@@ -107,6 +107,7 @@ extern void milan_fabric_soc_init(zen_soc_t *);
 extern void milan_fabric_iodie_init(zen_iodie_t *);
 extern void milan_fabric_smu_misc_init(zen_iodie_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);
+extern void milan_fabric_ioms_pcie_init(zen_ioms_t *);
 
 /*
  * Milan uarch-specific initialization data for consumption by common Zen code.
@@ -141,6 +142,10 @@ extern smn_reg_t milan_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);
 extern smn_reg_t milan_pcie_core_reg(const zen_pcie_core_t *const,
     const smn_reg_def_t);
+extern const zen_pcie_core_info_t *milan_pcie_core_info(const uint8_t, const
+    uint8_t);
+extern const zen_pcie_port_info_t *milan_pcie_port_info(const uint8_t, const
+    uint8_t);
 extern void milan_pcie_dbg_signal(void);
 
 #ifdef __cplusplus
