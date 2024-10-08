@@ -22,6 +22,7 @@
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/io/zen/dxio_impl.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -342,18 +343,6 @@ typedef struct milan_pptable {
 
 	uint32_t	ppt_reserved[28];
 } milan_pptable_t;
-
-typedef enum smu_hotplug_type {
-	SMU_HP_PRESENCE_DETECT	= 0,
-	SMU_HP_EXPRESS_MODULE_A,
-	SMU_HP_ENTERPRISE_SSD,
-	SMU_HP_EXPRESS_MODULE_B,
-	/*
-	 * This value must not be sent to the SMU. It's an internal value to us.
-	 * The other values are actually meaningful.
-	 */
-	SMU_HP_INVALID = INT32_MAX
-} smu_hotplug_type_t;
 
 typedef enum smu_pci_tileid {
 	SMU_TILE_G0 = 0,
