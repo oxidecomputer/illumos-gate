@@ -111,6 +111,10 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_iohc_enable_nmi = turin_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = turin_iohc_nmi_eoi,
 
+	.zfo_ioms_n_pcie_cores = turin_ioms_n_pcie_cores,
+	.zfo_pcie_core_n_ports = turin_pcie_core_n_ports,
+	.zfo_pcie_core_info = turin_pcie_core_info,
+	.zfo_pcie_port_info = turin_pcie_port_info,
 	.zfo_pcie_core_reg = turin_pcie_core_reg,
 	.zfo_pcie_port_reg = turin_pcie_port_reg,
 };
@@ -158,6 +162,7 @@ const zen_platform_t turin_platform = {
 		.zpc_nnbif = TURIN_NBIO_MAX_NBIF,
 		.zpc_nbif_nfunc = turin_nbif_nfunc,
 		.zpc_nbif_data = turin_nbif_data,
+		.zpc_pcie_core0_unitid = TURIN_PCIE_CORE0_UNITID,
 #ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = turin_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(turin_pcie_core_dbg_regs),
@@ -206,6 +211,7 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_nnbif = TURIN_NBIO_MAX_NBIF,
 		.zpc_nbif_nfunc = turin_nbif_nfunc,
 		.zpc_nbif_data = turin_nbif_data,
+		.zpc_pcie_core0_unitid = TURIN_PCIE_CORE0_UNITID,
 #ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = turin_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(turin_pcie_core_dbg_regs),

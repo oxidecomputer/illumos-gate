@@ -665,47 +665,43 @@ typedef struct milan_dxio_rpc {
 	uint32_t		mdr_arg3;
 } milan_dxio_rpc_t;
 
-typedef struct milan_pcie_port_info {
-	uint8_t	mppi_dev;
-	uint8_t	mppi_func;
-} milan_pcie_port_info_t;
-
 /*
  * These three tables encode knowledge about how the SoC assigns devices and
  * functions to root ports.
  */
-static const milan_pcie_port_info_t milan_pcie0[MILAN_PCIE_CORE_MAX_PORTS] = {
-	{ 0x1, 0x1 },
-	{ 0x1, 0x2 },
-	{ 0x1, 0x3 },
-	{ 0x1, 0x4 },
-	{ 0x1, 0x5 },
-	{ 0x1, 0x6 },
-	{ 0x1, 0x7 },
-	{ 0x2, 0x1 }
-};
-
-static const milan_pcie_port_info_t milan_pcie1[MILAN_PCIE_CORE_MAX_PORTS] = {
-	{ 0x3, 0x1 },
-	{ 0x3, 0x2 },
-	{ 0x3, 0x3 },
-	{ 0x3, 0x4 },
-	{ 0x3, 0x5 },
-	{ 0x3, 0x6 },
-	{ 0x3, 0x7 },
-	{ 0x4, 0x1 }
-};
-
-static const milan_pcie_port_info_t milan_pcie2[MILAN_PCIE_CORE_WAFL_NPORTS] = {
-	{ 0x5, 0x1 },
-	{ 0x5, 0x2 }
+static const zen_pcie_port_info_t
+    milan_pcie[MILAN_IOMS_MAX_PCIE_CORES][MILAN_PCIE_CORE_MAX_PORTS] = {
+	[0] = {
+		{ .zppi_dev = 0x1, .zppi_func = 0x1 },
+		{ .zppi_dev = 0x1, .zppi_func = 0x2 },
+		{ .zppi_dev = 0x1, .zppi_func = 0x3 },
+		{ .zppi_dev = 0x1, .zppi_func = 0x4 },
+		{ .zppi_dev = 0x1, .zppi_func = 0x5 },
+		{ .zppi_dev = 0x1, .zppi_func = 0x6 },
+		{ .zppi_dev = 0x1, .zppi_func = 0x7 },
+		{ .zppi_dev = 0x2, .zppi_func = 0x1 }
+	},
+	[1] = {
+		{ .zppi_dev = 0x3, .zppi_func = 0x1 },
+		{ .zppi_dev = 0x3, .zppi_func = 0x2 },
+		{ .zppi_dev = 0x3, .zppi_func = 0x3 },
+		{ .zppi_dev = 0x3, .zppi_func = 0x4 },
+		{ .zppi_dev = 0x3, .zppi_func = 0x5 },
+		{ .zppi_dev = 0x3, .zppi_func = 0x6 },
+		{ .zppi_dev = 0x3, .zppi_func = 0x7 },
+		{ .zppi_dev = 0x4, .zppi_func = 0x1 }
+	},
+	[2] = {
+		{ .zppi_dev = 0x5, .zppi_func = 0x1 },
+		{ .zppi_dev = 0x5, .zppi_func = 0x2 }
+	}
 };
 
 /*
  * These are internal bridges that correspond to NBIFs; they are modeled as
  * ports but there is no physical port brought out of the package.
  */
-static const milan_pcie_port_info_t milan_int_ports[4] = {
+static const zen_pcie_port_info_t milan_int_ports[4] = {
 	{ 0x7, 0x1 },
 	{ 0x8, 0x1 },
 	{ 0x8, 0x2 },
@@ -794,21 +790,14 @@ const zen_nbif_info_t milan_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
 };
 
 /*
- * This structure and the following table encodes the mapping of the set of dxio
- * lanes to a given PCIe core on an IOMS. This is ordered such that all of the
- * normal engines are present; however, the wafl core, being special is not
- * here. The dxio engine uses different lane numbers than the phys. Note, that
- * all lanes here are inclusive. e.g. [start, end].
+ * This table encodes the mapping of the set of dxio lanes to a given PCIe core
+ * on an IOMS. This is ordered such that all of the normal engines are present;
+ * however, the wafl core, being special is not here. The dxio engine uses
+ * different lane numbers than the phys. Note, that all lanes here are
+ * inclusive. e.g. [start, end].
  */
-typedef struct milan_pcie_core_info {
-	const char	*mpci_name;
-	uint16_t	mpci_dxio_start;
-	uint16_t	mpci_dxio_end;
-	uint16_t	mpci_phy_start;
-	uint16_t	mpci_phy_end;
-} milan_pcie_core_info_t;
-
-static const milan_pcie_core_info_t milan_lane_maps[8] = {
+static const zen_pcie_core_info_t milan_lane_maps[8] = {
+	/* name, DXIO start, DXIO end, PHY start, PHY end */
 	{ "G0", 0x10, 0x1f, 0x10, 0x1f },
 	{ "P0", 0x2a, 0x39, 0x00, 0x0f },
 	{ "P1", 0x3a, 0x49, 0x20, 0x2f },
@@ -819,17 +808,17 @@ static const milan_pcie_core_info_t milan_lane_maps[8] = {
 	{ "G2", 0x82, 0x91, 0x40, 0x4f }
 };
 
-static const milan_pcie_core_info_t milan_wafl_map = {
+static const zen_pcie_core_info_t milan_wafl_map = {
 	"WAFL", 0x24, 0x25, 0x80, 0x81
 };
 
 /*
- * How many PCIe cores does this NBIO instance have?
+ * How many PCIe cores does this IOMS instance have?
  */
 uint8_t
-milan_nbio_n_pcie_cores(const uint8_t nbno)
+milan_ioms_n_pcie_cores(const uint8_t iomsno)
 {
-	if (nbno == MILAN_IOMS_HAS_WAFL)
+	if (iomsno == MILAN_IOMS_HAS_WAFL)
 		return (MILAN_IOMS_MAX_PCIE_CORES);
 	return (MILAN_IOMS_MAX_PCIE_CORES - 1);
 }
@@ -846,6 +835,25 @@ milan_pcie_core_n_ports(const uint8_t pcno)
 	if (pcno == MILAN_IOMS_WAFL_PCIE_CORENO)
 		return (MILAN_PCIE_CORE_WAFL_NPORTS);
 	return (MILAN_PCIE_CORE_MAX_PORTS);
+}
+
+const zen_pcie_core_info_t *
+milan_pcie_core_info(const uint8_t iomsno, const uint8_t coreno)
+{
+	uint8_t index;
+
+	if (coreno == MILAN_IOMS_WAFL_PCIE_CORENO)
+		return (&milan_wafl_map);
+
+	index = iomsno * 2 + coreno;
+	VERIFY3U(index, <, ARRAY_SIZE(milan_lane_maps));
+	return (&milan_lane_maps[index]);
+}
+
+const zen_pcie_port_info_t *
+milan_pcie_port_info(const uint8_t coreno, const uint8_t portno)
+{
+	return (&milan_pcie[coreno][portno]);
 }
 
 typedef enum milan_iommul1_subunit {
@@ -1199,71 +1207,6 @@ milan_pcie_dbg_signal(void)
 			gpio_configured = true;
 		}
 		milan_hack_gpio(MHGOP_TOGGLE, 129);
-	}
-}
-
-static void
-milan_fabric_ioms_pcie_init(zen_ioms_t *ioms)
-{
-	uint8_t npcie_cores = ioms->zio_npcie_cores;
-	milan_ioms_t *mioms = ioms->zio_uarch_ioms;
-
-	for (uint_t pcno = 0; pcno < npcie_cores; pcno++) {
-		zen_pcie_core_t *pc = &ioms->zio_pcie_cores[pcno];
-		milan_pcie_core_t *mpc = &mioms->mio_pcie_cores[pcno];
-		const milan_pcie_port_info_t *pinfop = NULL;
-		const milan_pcie_core_info_t *cinfop;
-
-		pc->zpc_uarch_pcie_core = mpc;
-		pc->zpc_coreno = pcno;
-		pc->zpc_ioms = ioms;
-		pc->zpc_nports = milan_pcie_core_n_ports(pcno);
-		mutex_init(&pc->zpc_strap_lock, NULL, MUTEX_SPIN,
-		    (ddi_iblock_cookie_t)ipltospl(15));
-
-		VERIFY3U(pcno, <=, MILAN_IOMS_WAFL_PCIE_CORENO);
-		switch (pcno) {
-		case 0:
-			/* XXX Macros */
-			mpc->mpc_sdp_unit = 2;
-			mpc->mpc_sdp_port = 0;
-			pinfop = milan_pcie0;
-			break;
-		case 1:
-			mpc->mpc_sdp_unit = 3;
-			mpc->mpc_sdp_port = 0;
-			pinfop = milan_pcie1;
-			break;
-		case MILAN_IOMS_WAFL_PCIE_CORENO:
-			mpc->mpc_sdp_unit = 4;
-			mpc->mpc_sdp_port = 5;
-			pinfop = milan_pcie2;
-			break;
-		}
-
-		if (pcno == MILAN_IOMS_WAFL_PCIE_CORENO) {
-			cinfop = &milan_wafl_map;
-		} else {
-			cinfop = &milan_lane_maps[
-			    ioms->zio_num * 2 + pcno];
-		}
-
-		pc->zpc_dxio_lane_start = cinfop->mpci_dxio_start;
-		pc->zpc_dxio_lane_end = cinfop->mpci_dxio_end;
-		pc->zpc_phys_lane_start = cinfop->mpci_phy_start;
-		pc->zpc_phys_lane_end = cinfop->mpci_phy_end;
-
-		for (uint_t portno = 0; portno < pc->zpc_nports; portno++) {
-			zen_pcie_port_t *port = &pc->zpc_ports[portno];
-			milan_pcie_port_t *mport = &mpc->mpc_ports[portno];
-
-			port->zpp_uarch_pcie_port = mport;
-			port->zpp_portno = portno;
-			port->zpp_core = pc;
-			port->zpp_device = pinfop[portno].mppi_dev;
-			port->zpp_func = pinfop[portno].mppi_func;
-			mport->mpp_hp_type = SMU_HP_INVALID;
-		}
 	}
 }
 
@@ -1879,7 +1822,6 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 	/*
 	 * Only IOMS 0 has a WAFL port.
 	 */
-	ioms->zio_npcie_cores = milan_nbio_n_pcie_cores(iomsno);
 	if (iomsno == MILAN_IOMS_HAS_WAFL) {
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_WAFL;
 	}
@@ -1899,8 +1841,26 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 	 * nBIFs.
 	 */
 	ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
+}
 
-	milan_fabric_ioms_pcie_init(ioms);
+void
+milan_fabric_ioms_pcie_init(zen_ioms_t *ioms)
+{
+	milan_ioms_t *mioms = ioms->zio_uarch_ioms;
+
+	for (uint8_t coreno = 0; coreno < ioms->zio_npcie_cores; coreno++) {
+		zen_pcie_core_t *zpc = &ioms->zio_pcie_cores[coreno];
+		milan_pcie_core_t *mpc = &mioms->mio_pcie_cores[coreno];
+
+		zpc->zpc_uarch_pcie_core = mpc;
+
+		for (uint8_t portno = 0; portno < zpc->zpc_nports; portno++) {
+			zen_pcie_port_t *port = &zpc->zpc_ports[portno];
+			milan_pcie_port_t *mport = &mpc->mpc_ports[portno];
+
+			port->zpp_uarch_pcie_port = mport;
+		}
+	}
 }
 
 void
@@ -3752,7 +3712,6 @@ milan_fabric_init_bridges(zen_pcie_port_t *port, void *arg)
 static int
 milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 {
-	milan_pcie_core_t *mpc = pc->zpc_uarch_pcie_core;
 	smn_reg_t reg;
 	uint32_t val;
 
@@ -3763,12 +3722,20 @@ milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 	zen_pcie_core_write(pc, reg, val);
 
 	/*
-	 * Program the unit ID for this device's SDP port.
+	 * Program the base SDP unit ID for this core. The unit ID for each
+	 * port within the core is the base ID plus the port number.
 	 */
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_SDP_CTL);
 	val = zen_pcie_core_read(pc, reg);
-	val = PCIE_CORE_SDP_CTL_SET_PORT_ID(val, mpc->mpc_sdp_port);
-	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID(val, mpc->mpc_sdp_unit);
+	/*
+	 * The unit ID is split into two parts, and written to different
+	 * fields in this register.
+	 */
+	ASSERT0(pc->zpc_sdp_unit & 0x8000000);
+	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(val,
+	    bitx8(pc->zpc_sdp_unit, 6, 3));
+	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(val,
+	    bitx8(pc->zpc_sdp_unit, 2, 0));
 	zen_pcie_core_write(pc, reg, val);
 
 	/*
@@ -3875,13 +3842,13 @@ milan_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
 		pbc->pbc_ioms = ioms;
 		pbc->pbc_busoff = 1 + ARRAY_SIZE(milan_int_ports);
 		for (uint_t i = 0; i < ARRAY_SIZE(milan_int_ports); i++) {
-			const milan_pcie_port_info_t *info =
+			const zen_pcie_port_info_t *info =
 			    &milan_int_ports[i];
-			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
 			    PCI_BCNF_PRIBUS, bus);
-			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
 			    PCI_BCNF_SECBUS, bus + 1 + i);
-			pci_putb_func(bus, info->mppi_dev, info->mppi_func,
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
 			    PCI_BCNF_SUBBUS, bus + 1 + i);
 
 		}
@@ -3994,7 +3961,7 @@ milan_smu_hotplug_data_init(zen_fabric_t *fabric)
 		VERIFY((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0);
 		VERIFY0(port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN);
 		port->zpp_flags |= ZEN_PCIE_PORT_F_HOTPLUG;
-		mport->mpp_hp_type = map->shm_format;
+		port->zpp_hp_type = map->shm_format;
 		mport->mpp_hp_slotno = slot;
 		mport->mpp_hp_smu_mask = entry[i].se_func.shf_mask;
 
@@ -4020,7 +3987,7 @@ milan_hotplug_bridge_features(zen_pcie_port_t *port)
 	uint32_t feats;
 
 	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
-		if (mport->mpp_hp_type == SMU_HP_ENTERPRISE_SSD) {
+		if (port->zpp_hp_type == ZEN_HP_ENTERPRISE_SSD) {
 			return (ethanolx_pcie_slot_cap_entssd);
 		} else {
 			return (ethanolx_pcie_slot_cap_express);
@@ -4038,8 +4005,8 @@ milan_hotplug_bridge_features(zen_pcie_port_t *port)
 	 * turn off features in the SMU, we check for the absence of it (e.g. ==
 	 * 0) to indicate that we should enable the feature.
 	 */
-	switch (mport->mpp_hp_type) {
-	case SMU_HP_ENTERPRISE_SSD:
+	switch (port->zpp_hp_type) {
+	case ZEN_HP_ENTERPRISE_SSD:
 		/*
 		 * For Enterprise SSD the set of features that are supported are
 		 * considered a constant and this doesn't really vary based on
@@ -4048,7 +4015,7 @@ milan_hotplug_bridge_features(zen_pcie_port_t *port)
 		 * completion.
 		 */
 		return (feats | PCIE_SLOTCAP_NO_CMD_COMP_SUPP);
-	case SMU_HP_EXPRESS_MODULE_A:
+	case ZEN_HP_EXPRESS_MODULE_A:
 		if ((mport->mpp_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
@@ -4070,7 +4037,7 @@ milan_hotplug_bridge_features(zen_pcie_port_t *port)
 			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
 		}
 		break;
-	case SMU_HP_EXPRESS_MODULE_B:
+	case ZEN_HP_EXPRESS_MODULE_B:
 		if ((mport->mpp_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
 			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 		}
@@ -4206,7 +4173,7 @@ milan_hotplug_port_init(zen_pcie_port_t *port, void *arg)
 	 * simple presence mode.
 	 */
 	if ((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) == 0 ||
-	    mport->mpp_hp_type == SMU_HP_PRESENCE_DETECT) {
+	    port->zpp_hp_type == ZEN_HP_PRESENCE_DETECT) {
 		return (0);
 	}
 

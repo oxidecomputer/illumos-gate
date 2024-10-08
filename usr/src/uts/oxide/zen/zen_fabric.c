@@ -1134,6 +1134,65 @@ zen_fabric_ioms_nbif_init(zen_ioms_t *ioms, uint8_t nbifno)
 		zen_fabric_nbif_func_init(nbif, funcno);
 }
 
+static void
+zen_fabric_ioms_pcie_init(zen_ioms_t *ioms)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+
+	ioms->zio_npcie_cores = fops->zfo_ioms_n_pcie_cores(ioms->zio_num);
+
+	for (uint8_t coreno = 0; coreno < ioms->zio_npcie_cores; coreno++) {
+		zen_pcie_core_t *zpc = &ioms->zio_pcie_cores[coreno];
+		const zen_pcie_core_info_t *cinfop;
+		uint8_t uid = 0;
+
+		zpc->zpc_coreno = coreno;
+		zpc->zpc_ioms = ioms;
+		zpc->zpc_nports = fops->zfo_pcie_core_n_ports(coreno);
+
+		mutex_init(&zpc->zpc_strap_lock, NULL, MUTEX_SPIN,
+		    (ddi_iblock_cookie_t)ipltospl(15));
+
+		/*
+		 * Calculate the unit ID for this core's first SDP port, which
+		 * will later be programmed into PCIECORE::PCIE_SDP_CTRL. In
+		 * all supported microarchitectures, PCIe ports are assigned
+		 * contiguously across SDP ports. To determine the base unit ID
+		 * for a specific core, we start with the base unit ID for core
+		 * 0 and add the number of ports in each preceding core.
+		 */
+		uid = consts->zpc_pcie_core0_unitid;
+		for (uint8_t i = 0; i < coreno; i++)
+			uid += fops->zfo_pcie_core_n_ports(i);
+		zpc->zpc_sdp_unit = uid;
+
+		cinfop = fops->zfo_pcie_core_info(ioms->zio_num, coreno);
+		zpc->zpc_dxio_lane_start = cinfop->zpci_dxio_start;
+		zpc->zpc_dxio_lane_end = cinfop->zpci_dxio_end;
+		zpc->zpc_phys_lane_start = cinfop->zpci_phy_start;
+		zpc->zpc_phys_lane_end = cinfop->zpci_phy_end;
+
+		for (uint8_t portno = 0; portno < zpc->zpc_nports; portno++) {
+			zen_pcie_port_t *port = &zpc->zpc_ports[portno];
+			const zen_pcie_port_info_t *pinfop =
+			    fops->zfo_pcie_port_info(coreno, portno);
+
+			port->zpp_portno = portno;
+			port->zpp_core = zpc;
+			port->zpp_device = pinfop->zppi_dev;
+			port->zpp_func = pinfop->zppi_func;
+			port->zpp_hp_type = ZEN_HP_INVALID;
+		}
+	}
+
+	/*
+	 * uarch-specific IOMS PCIe init hook.
+	 */
+	if (fops->zfo_ioms_pcie_init != NULL)
+		fops->zfo_ioms_pcie_init(ioms);
+}
+
 void
 zen_fabric_topo_init_ioms(zen_iodie_t *iodie, uint8_t iomsno)
 {
@@ -1162,6 +1221,8 @@ zen_fabric_topo_init_ioms(zen_iodie_t *iodie, uint8_t iomsno)
 	 */
 	if (fops->zfo_ioms_init != NULL)
 		fops->zfo_ioms_init(ioms);
+
+	zen_fabric_ioms_pcie_init(ioms);
 
 	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_NBIF) != 0) {
 		ioms->zio_nnbifs = consts->zpc_nnbif;

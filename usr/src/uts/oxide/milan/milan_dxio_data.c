@@ -328,7 +328,7 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 	{
 	    .se_slotno = 8,
 	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
+		.shm_format = ZEN_HP_ENTERPRISE_SSD,
 		.shm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
@@ -352,7 +352,7 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 	{
 	    .se_slotno = 9,
 	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
+		.shm_format = ZEN_HP_ENTERPRISE_SSD,
 		.shm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
@@ -376,7 +376,7 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 	{
 	    .se_slotno = 10,
 	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
+		.shm_format = ZEN_HP_ENTERPRISE_SSD,
 		.shm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
@@ -400,7 +400,7 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 	{
 	    .se_slotno = 11,
 	    .se_map = {
-		.shm_format = SMU_HP_ENTERPRISE_SSD,
+		.shm_format = ZEN_HP_ENTERPRISE_SSD,
 		.shm_active = 1,
 		/*
 		 * XXX They claim this is Die ID 0, though it's on P1, roll with
@@ -424,7 +424,7 @@ const smu_hotplug_entry_t ethanolx_hotplug_ents[] = {
 	{
 	    .se_slotno = 4,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_active = 1,
 		/*
 		 * XXX Other sources suggest this should be apu/die 1, but it's
@@ -845,7 +845,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x10,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -874,7 +874,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x11,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -903,7 +903,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x12,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -932,7 +932,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x0,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -960,7 +960,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x1,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -988,7 +988,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x2,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1016,7 +1016,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x3,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1044,7 +1044,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x4,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1072,7 +1072,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x5,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1100,7 +1100,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x6,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1128,7 +1128,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x7,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1156,7 +1156,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x8,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1184,7 +1184,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x9,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,
@@ -1212,7 +1212,7 @@ const smu_hotplug_entry_t gimlet_hotplug_ents[] = {
 	{
 	    .se_slotno = 0x13,
 	    .se_map = {
-		.shm_format = SMU_HP_EXPRESS_MODULE_A,
+		.shm_format = ZEN_HP_EXPRESS_MODULE_A,
 		.shm_rst_valid = 1,
 		.shm_active = 1,
 		.shm_apu = 0,

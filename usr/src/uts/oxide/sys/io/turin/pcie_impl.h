@@ -32,6 +32,11 @@ extern "C" {
 #define	TURIN_PCIE_CORE_BONUS_PORTS	8
 
 /*
+ * This is the SDP unit ID for PCIe core 0 in each IOMS.
+ */
+#define	TURIN_PCIE_CORE0_UNITID		16
+
+/*
  * These stages of configuration are referred to in the per-port and per-RC
  * register storage structures, which provide a debugging facility to help
  * understand what both firmware and software have done to these registers over

@@ -2422,8 +2422,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	PCIE_CORE_SDP_CTL(n, p)	\
     genoa_pcie_core_smn_reg((n), D_PCIE_CORE_SDP_CTL, (p))
-#define	PCIE_CORE_SDP_CTL_SET_PORT_ID(r, v)		bitset32(r, 28, 26, v)
-#define	PCIE_CORE_SDP_CTL_SET_UNIT_ID(r, v)		bitset32(r, 3, 0, v)
+#define	PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(r, v)		bitset32(r, 28, 26, v)
+#define	PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(r, v)		bitset32(r, 3, 0, v)
 
 /*
  * PCIECORE::PCIE_NBIO_CLKREQb_MAP_CNTL - unused but captured for debugging.

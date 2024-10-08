@@ -169,6 +169,21 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_pcie)(zen_fabric_t *);
 
 	/*
+	 * Determine the number of PCIe cores on a given IOMS, and the number
+	 * of ports on a given core.
+	 */
+	uint8_t		(*zfo_ioms_n_pcie_cores)(const uint8_t);
+	uint8_t		(*zfo_pcie_core_n_ports)(const uint8_t);
+
+	/*
+	 * Retrieve information about the configuration of a PCIe core of port.
+	 */
+	const zen_pcie_core_info_t *(*zfo_pcie_core_info)(const uint8_t,
+	    const uint8_t);
+	const zen_pcie_port_info_t *(*zfo_pcie_port_info)(const uint8_t,
+	    const uint8_t);
+
+	/*
 	 * Retrieve register handles for PCIe core and port registers.
 	 */
 	smn_reg_t	(*zfo_pcie_port_reg)(const zen_pcie_port_t *const,
@@ -197,6 +212,7 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_iodie_init)(zen_iodie_t *);
 	void		(*zfo_smu_misc_init)(zen_iodie_t *);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
+	void		(*zfo_ioms_pcie_init)(zen_ioms_t *);
 
 	/*
 	 * Retrieves and reports the version of the firmware for the component
@@ -345,6 +361,11 @@ typedef struct zen_platform_consts {
 	const uint8_t			zpc_nnbif;
 	const uint8_t			*zpc_nbif_nfunc;
 	const zen_nbif_info_t		(*zpc_nbif_data)[ZEN_NBIF_MAX_FUNCS];
+
+	/*
+	 * The base SDP unit ID for the first PCIe core in each IOMS.
+	 */
+	const uint8_t			zpc_pcie_core0_unitid;
 
 	/*
 	 * These are pointers to tables of PCIe core and port registers which

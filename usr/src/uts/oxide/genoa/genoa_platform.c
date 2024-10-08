@@ -99,6 +99,10 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_iohc_enable_nmi = genoa_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = genoa_iohc_nmi_eoi,
 
+	.zfo_ioms_n_pcie_cores = genoa_ioms_n_pcie_cores,
+	.zfo_pcie_core_n_ports = genoa_pcie_core_n_ports,
+	.zfo_pcie_core_info = genoa_pcie_core_info,
+	.zfo_pcie_port_info = genoa_pcie_port_info,
 	.zfo_pcie_core_reg = genoa_pcie_core_reg,
 	.zfo_pcie_port_reg = genoa_pcie_port_reg,
 };
@@ -147,6 +151,7 @@ const zen_platform_t genoa_platform = {
 		.zpc_nnbif = GENOA_NBIO_MAX_NBIF,
 		.zpc_nbif_nfunc = genoa_nbif_nfunc,
 		.zpc_nbif_data = genoa_nbif_data,
+		.zpc_pcie_core0_unitid = GENOA_PCIE_CORE0_UNITID,
 #ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = genoa_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(genoa_pcie_core_dbg_regs),

@@ -144,7 +144,7 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_RSMU_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t nents = (const uint32_t)milan_nbio_n_pcie_cores(iomsno);
+	const uint32_t nents = (const uint32_t)milan_ioms_n_pcie_cores(iomsno);
 	ASSERT3U(nents, >, reginst32);
 #endif	/* DEBUG */
 

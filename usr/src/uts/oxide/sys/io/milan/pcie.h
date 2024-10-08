@@ -43,7 +43,7 @@ typedef struct milan_pcie_port milan_pcie_port_t;
 typedef int (*milan_pcie_core_cb_f)(milan_pcie_core_t *, void *);
 typedef int (*milan_pcie_port_cb_f)(milan_pcie_port_t *, void *);
 
-extern uint8_t milan_nbio_n_pcie_cores(const uint8_t);
+extern uint8_t milan_ioms_n_pcie_cores(const uint8_t);
 extern uint8_t milan_pcie_core_n_ports(const uint8_t);
 
 /*
@@ -83,7 +83,7 @@ milan_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_CORE_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t nents = milan_nbio_n_pcie_cores(iomsno);
+	const uint32_t nents = milan_ioms_n_pcie_cores(iomsno);
 	ASSERT3U(nents, >, core32);
 #endif	/* DEBUG */
 
@@ -115,7 +115,7 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_reg & ~PCIE_PORT_SMN_REG_MASK);
 
 #ifdef	DEBUG
-	const uint32_t ncores = (const uint32_t)milan_nbio_n_pcie_cores(iomsno);
+	const uint32_t ncores = (const uint32_t)milan_ioms_n_pcie_cores(iomsno);
 	ASSERT3U(ncores, >, core32);
 	const uint32_t nents = (const uint32_t)milan_pcie_core_n_ports(coreno);
 	ASSERT3U(nents, >, port32);
@@ -1665,8 +1665,8 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	PCIE_CORE_SDP_CTL(n, p)	\
     milan_pcie_core_smn_reg((n), D_PCIE_CORE_SDP_CTL, (p))
-#define	PCIE_CORE_SDP_CTL_SET_PORT_ID(r, v)	bitset32(r, 28, 26, v)
-#define	PCIE_CORE_SDP_CTL_SET_UNIT_ID(r, v)	bitset32(r, 3, 0, v)
+#define	PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(r, v)	bitset32(r, 28, 26, v)
+#define	PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(r, v)	bitset32(r, 3, 0, v)
 
 /*
  * PCIECORE::PCIE_NBIO_CLKREQb_MAP_CNTL - unused but captured for debugging.
