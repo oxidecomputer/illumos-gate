@@ -72,8 +72,9 @@ genoa_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t PCIE_CORE_SMN_REG_MASK = 0x7ffff;
 	const uint32_t ioms32 = (const uint32_t)iomsno;
 	const uint32_t core32 = (const uint32_t)coreno;
+	const uint32_t size32 = (def.srd_size == 0) ? 4 :
+	    (const uint32_t)def.srd_size;
 
-	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_CORE);
 	ASSERT0(def.srd_nents);
 	ASSERT0(def.srd_stride);
@@ -93,7 +94,7 @@ genoa_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t aperture = aperture_base + aperture_off;
 	ASSERT0(aperture & PCIE_CORE_SMN_REG_MASK);
 
-	return (SMN_MAKE_REG(aperture + def.srd_reg));
+	return (SMN_MAKE_REG_SIZED(aperture + def.srd_reg, size32));
 }
 
 static inline smn_reg_t
@@ -104,8 +105,9 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t ioms32 = (const uint32_t)iomsno;
 	const uint32_t core32 = (const uint32_t)coreno;
 	const uint32_t port32 = (const uint32_t)portno;
+	const uint32_t size32 = (def.srd_size == 0) ? 4 :
+	    (const uint32_t)def.srd_size;
 
-	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_PORT);
 	ASSERT0(def.srd_nents);
 	ASSERT0(def.srd_stride);
@@ -128,7 +130,7 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t aperture = aperture_base + aperture_off;
 	ASSERT0(aperture & PCIE_PORT_SMN_REG_MASK);
 
-	return (SMN_MAKE_REG(aperture + def.srd_reg));
+	return (SMN_MAKE_REG_SIZED(aperture + def.srd_reg, size32));
 }
 
 /*
@@ -200,7 +202,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_PORT_PRIV_MSI_CTL	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
-	.srd_reg = 0x52	\
+	.srd_reg = 0x52,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -1470,7 +1473,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_FAAE_SET_CTL_1_LANE	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
-	.srd_reg = 0x5f4	\
+	.srd_reg = 0x5f4,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -1480,7 +1484,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_FAAE_SET_CTL_2_LANE	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
-	.srd_reg = 0x5f6	\
+	.srd_reg = 0x5f6,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -1490,7 +1495,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_FAAE_SET_CTL_FINAL_LANE	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
-	.srd_reg = 0x5f8	\
+	.srd_reg = 0x5f8,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -1500,7 +1506,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_FAAE_SET_RSVD_A_LANE	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
-	.srd_reg = 0x5fa	\
+	.srd_reg = 0x5fa,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3226,7 +3233,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE0_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x500	\
+	.srd_reg = 0x500,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3235,7 +3243,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE1_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x502	\
+	.srd_reg = 0x502,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3244,7 +3253,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE2_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x504	\
+	.srd_reg = 0x504,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3253,7 +3263,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE3_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x506	\
+	.srd_reg = 0x506,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3262,7 +3273,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE4_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x508	\
+	.srd_reg = 0x508,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3271,7 +3283,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE5_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x50a	\
+	.srd_reg = 0x50a,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3280,7 +3293,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE6_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x50c	\
+	.srd_reg = 0x50c,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3289,7 +3303,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE7_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x50e	\
+	.srd_reg = 0x50e,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3298,7 +3313,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE8_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x510	\
+	.srd_reg = 0x510,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3307,7 +3323,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE9_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x512	\
+	.srd_reg = 0x512,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3316,7 +3333,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE10_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x514	\
+	.srd_reg = 0x514,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3325,7 +3343,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE11_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x516	\
+	.srd_reg = 0x516,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3334,7 +3353,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE12_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x518	\
+	.srd_reg = 0x518,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3343,7 +3363,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE13_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x51a	\
+	.srd_reg = 0x51a,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3352,7 +3373,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE14_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x51c	\
+	.srd_reg = 0x51c,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3361,7 +3383,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE15_MAP	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x51e	\
+	.srd_reg = 0x51e,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3371,7 +3394,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE0_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x520	\
+	.srd_reg = 0x520,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3381,7 +3405,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE1_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x522	\
+	.srd_reg = 0x522,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3391,7 +3416,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE2_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x524	\
+	.srd_reg = 0x524,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3401,7 +3427,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE3_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x526	\
+	.srd_reg = 0x526,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3411,7 +3438,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE4_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x528	\
+	.srd_reg = 0x528,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3421,7 +3449,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE5_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x52a	\
+	.srd_reg = 0x52a,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3431,7 +3460,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE6_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x52c	\
+	.srd_reg = 0x52c,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3441,7 +3471,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE7_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x52e	\
+	.srd_reg = 0x52e,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3451,7 +3482,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE8_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x530	\
+	.srd_reg = 0x530,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3461,7 +3493,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE9_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x532	\
+	.srd_reg = 0x532,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3471,7 +3504,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE10_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x534	\
+	.srd_reg = 0x534,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3481,7 +3515,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE11_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x536	\
+	.srd_reg = 0x536,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3491,7 +3526,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE12_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x538	\
+	.srd_reg = 0x538,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3501,7 +3537,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE13_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x53a	\
+	.srd_reg = 0x53a,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3511,7 +3548,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE14_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x53c	\
+	.srd_reg = 0x53c,	\
+	.srd_size = 2		\
 }
 
 /*
@@ -3521,7 +3559,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 /*CSTYLED*/
 #define	D_PCIE_CORE_PHYS_LANE15_MAPSTS	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
-	.srd_reg = 0x53e	\
+	.srd_reg = 0x53e,	\
+	.srd_size = 2		\
 }
 
 /*
