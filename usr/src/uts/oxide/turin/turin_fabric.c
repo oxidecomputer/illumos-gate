@@ -195,12 +195,40 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	smn_reg_t reg;
+
+	/*
+	 * The way that these map to different register blocks is not
+	 * straightforward. Because of the interleaving, the instances of units
+	 * in the larger IOHC occurs before the smaller IOHC. The following
+	 * table maps the IOMS number to which NBIO, IOHUB, and IOHC kind is
+	 * present.
+	 *
+	 * 	IOMS	NBIO	IOHUB	IOHC	UNIT
+	 * 	----	----	-----	----	----
+	 * 	0	0	0	L	0
+	 * 	1	0	1	S	4
+	 * 	2	0	2	L	1
+	 * 	3	0	3	S	5
+	 * 	4	1	0	L	2
+	 * 	5	1	1	S	6
+	 * 	6	1	2	L	3
+	 * 	7	1	3	S	7
+	 *
+	 * NB: There is sometimes an aperture gap between IOHC0 and IOHC1 and
+	 * there can even be (more rarely) a change in the register offset such
+	 * as in IOHC::MISC_RAS_CONTROL. If registers in the latter category
+	 * are ever used via this function then it will need extending.
+	 */
+	const uint8_t iomsno = ioms->zio_num;
+	const turin_iohc_sz iohcsz = TURIN_IOHC_SZ(iomsno);
+	const uint8_t unit = iomsno / 2 + (iohcsz == IOHC_SZ_L ? 0 : 4);
+
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOHC:
-		reg = turin_iohc_smn_reg(ioms->zio_num, def, reginst);
+		reg = turin_iohc_smn_reg(unit, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = turin_ioagr_smn_reg(ioms->zio_num, def, reginst);
+		reg = turin_ioagr_smn_reg(unit, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -214,19 +242,29 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		const turin_iommul1_subunit_t su =
 		    (const turin_iommul1_subunit_t)reginst;
 		switch (su) {
-		case TIL1SU_IOAGR:
-			reg = turin_iommul1_ioagr_smn_reg(ioms->zio_num, def,
-			    0);
+		case TIL1SU_IOAGR: {
+			/*
+			 * The IOAGR registers on IOMMUL1 are only instanced
+			 * on the larger IOHCs.
+			 */
+			ASSERT3U(iohcsz, ==, IOHC_SZ_L);
+			reg = turin_iommul1_ioagr_smn_reg(unit, def, 0);
 			break;
+		}
 		default:
 			cmn_err(CE_PANIC, "invalid IOMMUL1 subunit %d", su);
 			break;
 		}
 		break;
 	}
-	case SMN_UNIT_IOMMUL2:
-		reg = turin_iommul2_smn_reg(ioms->zio_num, def, reginst);
+	case SMN_UNIT_IOMMUL2: {
+		/*
+		 * The L2IOMMU is only present in the larger IOHC instances.
+		 */
+		ASSERT3U(iohcsz, ==, IOHC_SZ_L);
+		reg = turin_iommul2_smn_reg(unit, def, reginst);
 		break;
+	}
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
 		    def.srd_unit);
@@ -364,22 +402,41 @@ turin_fabric_iohc_bus_num(zen_ioms_t *ioms, uint8_t busno)
 void
 turin_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 {
+	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(ioms->zio_num);
 	smn_reg_t reg;
+	uint32_t val = 0;
 
 	reg = turin_ioms_reg(ioms, D_IOHC_SB_LOCATION, 0);
-	if (has_fch) {
-		smn_reg_t iommureg;
-		uint32_t val;
 
-		val = zen_ioms_read(ioms, reg);
-		iommureg = turin_ioms_reg(ioms, D_IOMMUL1_SB_LOCATION,
-		    TIL1SU_IOAGR);
-		zen_ioms_write(ioms, iommureg, val);
-		iommureg = turin_ioms_reg(ioms, D_IOMMUL2_SB_LOCATION, 0);
-		zen_ioms_write(ioms, iommureg, val);
+	/*
+	 * On the smaller IOHC instances, zero out IOHC::SB_LOCATION and we're
+	 * done.
+	 */
+	if (iohcsz != IOHC_SZ_L) {
+		zen_ioms_write(ioms, reg, 0);
+		return;
+	}
+
+	if (has_fch) {
+		/*
+		 * Unlike with earlier platforms where the value in
+		 * IOHC::SB_LOCATION was copied across, on Turin we must
+		 * explicitly set both the IOMMUL1 and IOMMUL2 registers to the
+		 * same provided value.
+		 */
+		val = IOMMUL_SB_LOCATION_SET_CORE(val,
+		    IOMMUL_SB_LOCATION_CORE_GPP2);
+		val = IOMMUL_SB_LOCATION_SET_PORT(val,
+		    IOMMUL_SB_LOCATION_PORT_A);
 	} else {
 		zen_ioms_write(ioms, reg, 0);
 	}
+
+	reg = turin_ioms_reg(ioms, D_IOMMUL1_SB_LOCATION, TIL1SU_IOAGR);
+	zen_ioms_write(ioms, reg, val);
+
+	reg = turin_ioms_reg(ioms, D_IOMMUL2_SB_LOCATION, 0);
+	zen_ioms_write(ioms, reg, val);
 }
 
 void

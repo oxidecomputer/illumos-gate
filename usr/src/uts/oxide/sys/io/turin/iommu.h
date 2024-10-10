@@ -31,7 +31,8 @@ extern "C" {
  * set only exists on a per-IOMS basis and looks like a standard SMN functional
  * unit. All these registers are 32 bits wide; we check for violations.
  */
-#define	IOMMUL1_N_UNITS		8
+#define	IOMMUL1_N_IOAGR_UNITS	4
+#define	IOMMUL1_N_PCIE_UNITS	8
 #define	IOMMUL1_N_PCIE_CORES	4
 
 static inline smn_reg_t
@@ -45,7 +46,7 @@ turin_iommul1_pcie_smn_reg(const uint8_t iommuno,
 	ASSERT0(def.srd_nents);
 	ASSERT0(def.srd_stride);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOMMUL1);
-	ASSERT3U(iommu32, <, IOMMUL1_N_UNITS);
+	ASSERT3U(iommu32, <, IOMMUL1_N_PCIE_UNITS);
 	ASSERT3U(unit32, <, IOMMUL1_N_PCIE_CORES);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
@@ -62,8 +63,8 @@ turin_iommul1_pcie_smn_reg(const uint8_t iommuno,
 	return (SMN_MAKE_REG(aperture + def.srd_reg));
 }
 
-ZEN_MAKE_SMN_IOMMUL1_REG_FN(turin, IOAGR, ioagr, 0x15300000, 2, 20,
-    IOMMUL1_N_UNITS);
+ZEN_MAKE_SMN_IOMMUL1_REG_FN(turin, IOAGR, ioagr, 0x15300000, 1, 0,
+    IOMMUL1_N_IOAGR_UNITS);
 
 AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
     SMN_APERTURE_MASK, 4, 20);
@@ -103,6 +104,17 @@ AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
     turin_iommul1_pcie_smn_reg(i, IOMMUL1_PCIE_SB_LOCATION, p)
 #define	IOMMUL1_IOAGR_SB_LOCATION(i)	\
     turin_iommul1_ioagr_smn_reg(i, IOMMUL1_IOAGR_SB_LOCATION, 0)
+
+/* These macros are common across SB_LOCATION in IOMMUL1 and IOMMUL2 */
+#define	IOMMUL_SB_LOCATION_SET_CORE(r, v)	bitset32(r, 31, 16, v)
+#define	IOMMUL_SB_LOCATION_CORE_GPP0	1
+#define	IOMMUL_SB_LOCATION_CORE_GPP1	2
+#define	IOMMUL_SB_LOCATION_CORE_GPP2	4
+#define	IOMMUL_SB_LOCATION_SET_PORT(r, v)	bitset32(r, 15, 0, v)
+#define	IOMMUL_SB_LOCATION_PORT_A	1
+#define	IOMMUL_SB_LOCATION_PORT_B	2
+#define	IOMMUL_SB_LOCATION_PORT_C	4
+#define	IOMMUL_SB_LOCATION_PORT_D	8
 
 /*
  * IOMMUL2::L2_SB_LOCATION. Yet another place we program the FCH information.
