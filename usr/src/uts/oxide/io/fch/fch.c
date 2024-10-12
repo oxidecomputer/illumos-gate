@@ -122,7 +122,7 @@
  * peripherals in secondary FCHs generate interrupts.  However, it is possible
  * to access a single 8 KiB region of each secondary FCH if
  * FCH::PM::ALTMMIO{BASE,EN} have been set up.  This region corresponds to the
- * peripherals at [0xfed80_0000, 0xfed8_1fff] on the primary FCH.  This region
+ * peripherals at [0xfed8_0000, 0xfed8_1fff] on the primary FCH.  This region
  * actually contains many disparate peripherals sharing just 2 pages of
  * registers.
  *
@@ -629,8 +629,8 @@
  * doesn't allow any secondary FCH peripherals to be used that can ever generate
  * interrupts, which makes sense as it's not at all clear where they go or how
  * they get there.  This isn't necessarily the case on processors containing
- * Songshan, but we don't know whether these peripherals (I2C and I3C in
- * particular) can actually generate interrupts or would have to be used in
+ * Songshan or Kunlun, but we don't know whether these peripherals (I2C and I3C
+ * in particular) can actually generate interrupts or would have to be used in
  * polled mode on secondary sockets.  We do know that GPIO pins, even AGPIOs,
  * cannot generate interrupts from the second socket, so it's likely that this
  * simply doesn't work and we will end up never exposing any of these children
@@ -922,8 +922,8 @@ typedef struct fch_child {
  * clear from the documentation what address space these DMA engines are
  * intended to access and they may just be internal implementation details.
  * Nevertheless they are used address space and even AMD's ACPI tables declare
- * them.  These are all the same on Huashan and Songshan, except that Songshan
- * has only 3 UARTs while Huashan has 4.
+ * them.  These are all the same on Huashan, Songshan and Kunlun, except that
+ * Huashan has 4 while the latter two have only 3 UARTs.
  */
 static const fch_rangespec_t uart0_regs[] = {
 	{
@@ -1007,7 +1007,7 @@ DECL_UART(3, 0x79);
  * "remote" GPIO registers.  Additionally, however, the remote GPIO region also
  * contains its own collection of I/O pinmuxing registers in [0xc0, 0xef] which
  * we want to exclude because they belong to the pinmuxing leaf driver.  All of
- * these are the same on Huashan and Songshan.
+ * these are the same on Huashan, Songshan and Kunlun.
  */
 static const fch_rangespec_t kczgp_regs[] = {
 	/* FCH::GPIO */
@@ -1078,9 +1078,9 @@ static const fch_child_def_t kczmux_def = {
 };
 
 /*
- * I2C controllers: both Huashan and Songshan have 6 of these, and they're in
- * the same place.  The I2C and I3C peripherals in Songshan share pins but are
- * separate.
+ * I2C controllers: Huashan, Songshan and Kunlun all have 6 of these, and
+ * they're in the same place.  The I2C and I3C peripherals in Songshan and
+ * Kunlun share pins but are separate.
  */
 static const fch_rangespec_t i2c0_regs[] = {
 	{
@@ -1163,41 +1163,41 @@ DECL_I2C(5, 0x77);
  * contains a few control registers that include pad controls and one called
  * FCH::I3C (of course!) that contains the peripheral itself.  It's not clear
  * whether we want to present these as two separate regspecs, but each pair does
- * at least share a page of its own.  These are present only on Songshan.
+ * at least share a page of its own.  These are present on Songshan and Kunlun.
  */
 static const fch_rangespec_t i3c0_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
-		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(0) -
+		.fr_physlo = FCH_I3C_MMIO_APERTURE(0) -
 		    ZEN_PHYSADDR_COMPAT_MMIO,
-		.fr_sizelo = SONGSHAN_I3C_SIZE
+		.fr_sizelo = FCH_I3C_SIZE
 	}
 };
 
 static const fch_rangespec_t i3c1_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
-		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(1) -
+		.fr_physlo = FCH_I3C_MMIO_APERTURE(1) -
 		    ZEN_PHYSADDR_COMPAT_MMIO,
-		.fr_sizelo = SONGSHAN_I3C_SIZE
+		.fr_sizelo = FCH_I3C_SIZE
 	}
 };
 
 static const fch_rangespec_t i3c2_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
-		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(2) -
+		.fr_physlo = FCH_I3C_MMIO_APERTURE(2) -
 		    ZEN_PHYSADDR_COMPAT_MMIO,
-		.fr_sizelo = SONGSHAN_I3C_SIZE
+		.fr_sizelo = FCH_I3C_SIZE
 	}
 };
 
 static const fch_rangespec_t i3c3_regs[] = {
 	{
 		.fr_addrsp = FA_MMIO,
-		.fr_physlo = SONGSHAN_I3C_MMIO_APERTURE(3) -
+		.fr_physlo = FCH_I3C_MMIO_APERTURE(3) -
 		    ZEN_PHYSADDR_COMPAT_MMIO,
-		.fr_sizelo = SONGSHAN_I3C_SIZE
+		.fr_sizelo = FCH_I3C_SIZE
 	}
 };
 
@@ -1274,6 +1274,24 @@ static const fch_child_def_t *const songshan_children[] = {
 	&i3c3_def
 };
 
+static const fch_child_def_t *const kunlun_children[] = {
+	&uart0_def,
+	&uart1_def,
+	&uart2_def,
+	&kczgp_def,
+	&kczmux_def,
+	&i2c0_def,
+	&i2c1_def,
+	&i2c2_def,
+	&i2c3_def,
+	&i2c4_def,
+	&i2c5_def,
+	&i3c0_def,
+	&i3c1_def,
+	&i3c2_def,
+	&i3c3_def
+};
+
 static const fch_def_t fch_defs[] = {
 	{
 		.fd_nodename = "huashan",
@@ -1312,6 +1330,25 @@ static const fch_def_t fch_defs[] = {
 		    FCH_RELOCATABLE_PHYS_BASE - ZEN_PHYSADDR_COMPAT_MMIO,
 		.fd_nchildren = ARRAY_SIZE(songshan_children),
 		.fd_children = songshan_children
+	},
+	{
+		.fd_nodename = "kunlun",
+		.fd_desc = "AMD Kunlun Fusion Controller Hub",
+		.fd_kind = FK_KUNLUN,
+		.fd_range_bases = {
+			{
+				.fr_addrsp = FA_LEGACY,
+				.fr_physlo = ZEN_IOPORT_COMPAT_BASE
+			},
+			{
+				.fr_addrsp = FA_MMIO,
+				.fr_physlo = ZEN_PHYSADDR_COMPAT_MMIO
+			}
+		},
+		.fd_sec_bar_off =
+		    FCH_RELOCATABLE_PHYS_BASE - ZEN_PHYSADDR_COMPAT_MMIO,
+		.fd_nchildren = ARRAY_SIZE(kunlun_children),
+		.fd_children = kunlun_children
 	}
 };
 
@@ -2585,12 +2622,16 @@ memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
  * XXX We're going to want to abstract this away so that this driver can be
  * generic, first by having a parent representing either the IOMS on the oxide
  * arch or something else if we want this on i86pc.  That parent can eliminate
- * the need for the milan-specific walk here.  We also would need to add another
+ * the need for the Zen-specific walk here.  We also would need to add another
  * layer to the subsume logic as in the PCI PRD or have that parent supply our
  * address space.  There are other ways of figuring this out but they require
- * reaching into a lot of private data.  So for now we practically support only
- * Milan, just like the rest of this architecture, even though this driver
- * itself is mostly capable of supporting many other families.
+ * reaching into a lot of private data.  This driver is mostly capable of
+ * supporting many other families, but we only support the same subset of
+ * Zen-based processors as the rest of the oxide architecture.  Note, this
+ * relies upon the fact we can access the FCH registers we care about uniformly
+ * (i.e., fch_pmio_smn_reg() calls rather than per-family functions).  If adding
+ * a new FCH-kind/processor family, one must ensure that continues to be the
+ * case for this approach.
  *
  * This function is best thought of as a hacked-in parent's bus_config_one().
  * The dip we will operate on is the FCH's itself; the parent is rootnex because
@@ -2659,6 +2700,9 @@ fch_ioms_cb(zen_ioms_t *ioms, void *arg)
 		break;
 	case FK_SONGSHAN:
 		ident = "songshan";
+		break;
+	case FK_KUNLUN:
+		ident = "kunlun";
 		break;
 	default:
 		/* There may be an FCH but we don't know what it is. */

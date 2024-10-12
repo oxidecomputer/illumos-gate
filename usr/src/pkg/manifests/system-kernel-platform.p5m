@@ -226,6 +226,7 @@ $(i386_ONLY)driver name=dwu perms="* 0666 root sys" perms="*,cu 0600 uucp uucp"
 $(i386_ONLY)driver name=evtchn perms="* 0666 root sys"
 $(i386_ONLY)driver name=fch \
     alias=huashan \
+    alias=kunlun \
     alias=songshan
 $(i386_ONLY)driver name=ipcc perms="* 0666 root sys"
 $(i386_ONLY)driver name=isa class=sysbus alias=pciclass,060100

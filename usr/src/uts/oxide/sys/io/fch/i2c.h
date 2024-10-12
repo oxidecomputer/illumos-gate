@@ -18,8 +18,8 @@
 
 /*
  * FCH::I2C contains a collection of DesignWare I2C peripherals.  Each of
- * Taishan, Huashan, and Songshan have 6 of these, each of which we model as a
- * functional sub-unit.
+ * Taishan, Huashan, Songshan, and Kunlun have 6 of these, each of which we
+ * model as a functional sub-unit.
  */
 
 #ifndef	_ASM
@@ -37,12 +37,15 @@ extern "C" {
 #endif
 
 /*
- * Huashan and Songshan both have 6 I2C peripherals.  They are found at the same
- * MMIO locations on both, and the first 2 are found at the same SMN locations.
- * They also share a common register set, except that Songshan's includes 3
- * additional registers.  However, instances 2 through 5 are not accessible via
- * SMN on Huashan.  Taishan and Huashan are the same in all I2C respects.  All
- * I2C registers are 32 bits wide.
+ * Huashan, Songshan, and Kunlun all have 6 I2C peripherals.  They are found at
+ * the same MMIO locations. The first 2 peripherals are also found at the same
+ * SMN location across all 3 but only Songshan and Kunlun further provide SMN
+ * access at the same locations for the last 4 peripherals.  They also share a
+ * common register set, with minor differences:
+ *  - Songshan and Kunlun include 3 additional registers (xAC, xB0, xB4).
+ *  - Songshan is possibly missing 1 register (xFC) or at least undocumented.
+ * Taishan and Huashan are the same in all I2C respects.  All I2C registers are
+ * 32 bits wide.
  */
 
 #define	FCH_MAX_I2C		6
@@ -112,6 +115,12 @@ songshan_i2c_smn_aperture(const uint8_t unit)
 	return (__common_i2c_smn_aperture(unit, FCH_MAX_I2C));
 }
 
+static inline uint32_t
+kunlun_i2c_smn_aperture(const uint8_t unit)
+{
+	return (__common_i2c_smn_aperture(unit, FCH_MAX_I2C));
+}
+
 static inline smn_reg_t
 huashan_i2c_smn_reg(const uint8_t unit, const smn_reg_def_t def)
 {
@@ -120,6 +129,12 @@ huashan_i2c_smn_reg(const uint8_t unit, const smn_reg_def_t def)
 
 static inline smn_reg_t
 songshan_i2c_smn_reg(const uint8_t unit, const smn_reg_def_t def)
+{
+	return (__common_i2c_smn_reg(unit, def, FCH_MAX_I2C));
+}
+
+static inline smn_reg_t
+kunlun_i2c_smn_reg(const uint8_t unit, const smn_reg_def_t def)
 {
 	return (__common_i2c_smn_reg(unit, def, FCH_MAX_I2C));
 }
