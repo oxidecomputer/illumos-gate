@@ -277,7 +277,7 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	 * are ever used via this function then it will need extending.
 	 */
 	const uint8_t iomsno = ioms->zio_num;
-	const turin_iohc_sz iohcsz = TURIN_IOHC_SZ(iomsno);
+	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(iomsno);
 	const uint8_t unit = iomsno / 2 + (iohcsz == IOHC_SZ_L ? 0 : 4);
 
 	switch (def.srd_unit) {
