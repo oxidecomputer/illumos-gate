@@ -99,6 +99,8 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_sdp_control = milan_fabric_sdp_control,
 	.zfo_nbif_syshub_dma = milan_fabric_nbif_syshub_dma,
 	.zfo_ioapic = milan_fabric_ioapic,
+	.zfo_nbif_dev_straps = milan_fabric_nbif_dev_straps,
+	.zfo_nbif_bridges = milan_fabric_nbif_bridges,
 	.zfo_pcie = milan_fabric_pcie,
 
 	.zfo_iohc_enable_nmi = milan_iohc_enable_nmi,

@@ -110,6 +110,8 @@ extern void turin_fabric_iohc_arbitration(zen_ioms_t *);
 extern void turin_fabric_nbif_arbitration(zen_nbif_t *);
 extern void turin_fabric_nbif_syshub_dma(zen_nbif_t *);
 extern void turin_fabric_ioapic(zen_ioms_t *);
+extern void turin_fabric_nbif_dev_straps(zen_nbif_t *);
+extern void turin_fabric_nbif_bridges(zen_ioms_t *);
 extern void turin_fabric_pcie(zen_fabric_t *);
 
 extern void turin_iohc_enable_nmi(zen_ioms_t *);

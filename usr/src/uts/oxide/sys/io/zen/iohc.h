@@ -40,7 +40,7 @@ extern "C" {
  */
 
 #define	ZEN_MAKE_SMN_IOHCDEV_REG_FN(_platform, _unit, _unitlc, _base, _apmask, \
-    _nunits, _unitshift, _unitmult)	\
+    _niohc, _nunits, _unitshift, _unitmult)	\
 static inline smn_reg_t							\
 _platform ## _iohcdev_ ## _unitlc ## _smn_reg(const uint8_t iohcno,	\
     const smn_reg_def_t def, const uint8_t unitno, const uint8_t reginst) \
@@ -56,7 +56,7 @@ _platform ## _iohcdev_ ## _unitlc ## _smn_reg(const uint8_t iohcno,	\
 									\
 	ASSERT0(def.srd_size);						\
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHCDEV_ ## _unit);		\
-	ASSERT3U(iohc32, <, 4);						\
+	ASSERT3U(iohc32, <, _niohc);					\
 	ASSERT3U(unit32, <, _nunits);					\
 	ASSERT3U(nents, >, reginst32);					\
 	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);			\
