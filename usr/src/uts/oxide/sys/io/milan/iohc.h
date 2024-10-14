@@ -86,13 +86,13 @@ milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 }
 
 ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, PCIE, pcie, 0x13b31000, 0xffff8000,
-    3, 10, 8);
+    4, 3, 10, 8);
 /*
  * For reasons not understood, NBIF2 doesn't have an IOHCDEV group.
  */
 ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, NBIF, nbif, 0x13b38000, 0xffffc000,
-    2, 12, 1);
-ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
+    4, 2, 12, 1);
+ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 4, 1, 0, 1);
 
 /*
  * IOHC Registers of Interest. The SMN based addresses are all relative to the

@@ -39,84 +39,51 @@ extern "C" {
 #endif
 
 /*
- * The IOHC and IOAGR SMN addresses each have a gap between the first four
- * units and the last four. We therefore can't take advantage of
- * AMDZEN_MAKE_SMN_REG_FN to generate these for us as we need to account for
- * this.
+ * This is a variant of ZEN_MAKE_SMN_REG_FN() for Turin that handles the
+ * registers that have an aperture gap between the larger and smaller IOHC
+ * units.
  */
-static inline smn_reg_t
-turin_iohc_smn_reg(const uint8_t unitno, const smn_reg_def_t def,
-    const uint16_t reginst)
-{
-	const uint32_t unit32 = (const uint32_t)unitno;
-	const uint32_t reginst32 = (const uint32_t)reginst;
-	const uint32_t size32 = (def.srd_size == 0) ? 4 :
-	    (const uint32_t)def.srd_size;
-	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);
-	const uint32_t stride = (def.srd_stride == 0) ? size32 :
-	    def.srd_stride;
-	ASSERT3U(stride, >=, size32);
-	const uint32_t nents = (def.srd_nents == 0) ? 1 :
-	    (const uint32_t)def.srd_nents;
-
-	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHC);
-	ASSERT3U(unit32, <, 8);
-	ASSERT3U(nents, >, reginst32);
-	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
-
-	/*
-	 * For some reason, there is a gap between the first four and second
-	 * four IOHC instances that we need to account for here. We model them
-	 * as two separate banks with their own aperture base.
-	 */
-	const uint32_t aperture_base = unit32 < 4 ? 0x13b00000 : 0x1d400000;
-
-	const uint32_t aperture_off = ((unit32 % 4) << 20);
-	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
-
-	const uint32_t aperture = aperture_base + aperture_off;
-	ASSERT0(aperture & ~SMN_APERTURE_MASK);
-
-	const uint32_t reg = def.srd_reg + reginst32 * stride;
-	ASSERT0(reg & SMN_APERTURE_MASK);
-
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
+#define	TURIN_MAKE_SMN_REG_FN(_fn, _unit, _base1, _base2, _mask, _unitshift) \
+CTASSERT(((_base1) & ~(_mask)) == 0);					\
+CTASSERT(((_base2) & ~(_mask)) == 0);					\
+static inline smn_reg_t							\
+_fn(const uint8_t unitno, const smn_reg_def_t def, const uint16_t reginst) \
+{									\
+	const uint32_t unit32 = (const uint32_t)unitno;			\
+	const uint32_t reginst32 = (const uint32_t)reginst;		\
+	const uint32_t size32 = (def.srd_size == 0) ? 4 :		\
+	    (const uint32_t)def.srd_size;				\
+	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);		\
+	const uint32_t stride = (def.srd_stride == 0) ? size32 :	\
+	    def.srd_stride;						\
+	ASSERT3U(stride, >=, size32);					\
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :		\
+	    (const uint32_t)def.srd_nents;				\
+									\
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_ ## _unit);			\
+	ASSERT3U(unit32, <, 8);						\
+	ASSERT3U(nents, >, reginst32);					\
+	ASSERT0(def.srd_reg & (_mask));					\
+									\
+	const uint32_t aperture_base = unit32 < 4 ? (_base1) : (_base2); \
+									\
+	const uint32_t aperture_off = ((unit32 % 4) << (_unitshift));	\
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);		\
+									\
+	const uint32_t aperture = aperture_base + aperture_off;		\
+	ASSERT0(aperture & ~(_mask));					\
+									\
+	const uint32_t reg = def.srd_reg + reginst32 * stride;		\
+	ASSERT0(reg & (_mask));						\
+									\
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));		\
 }
 
-static inline smn_reg_t
-turin_ioagr_smn_reg(const uint8_t unitno, const smn_reg_def_t def,
-    const uint16_t reginst)
-{
-	const uint32_t unit32 = (const uint32_t)unitno;
-	const uint32_t reginst32 = (const uint32_t)reginst;
-	const uint32_t size32 = (def.srd_size == 0) ? 4 :
-	    (const uint32_t)def.srd_size;
-	ASSERT(size32 == 1 || size32 == 2 || size32 == 4);
-	const uint32_t stride = (def.srd_stride == 0) ? size32 :
-	    def.srd_stride;
-	ASSERT3U(stride, >=, size32);
-	const uint32_t nents = (def.srd_nents == 0) ? 1 :
-	    (const uint32_t)def.srd_nents;
+TURIN_MAKE_SMN_REG_FN(turin_iohc_smn_reg, IOHC, 0x13b00000, 0x1d400000,
+    SMN_APERTURE_MASK, 20);
 
-	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOAGR);
-	ASSERT3U(unit32, <, 8);
-	ASSERT3U(nents, >, reginst32);
-	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
-
-	const uint32_t aperture_base = 0x15b00000;
-
-	const uint32_t aperture_off = (unit32 << 20) +
-	    (unit32 > 3 ? 0x8100000 : 0);
-	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
-
-	const uint32_t aperture = aperture_base + aperture_off;
-	ASSERT0(aperture & ~SMN_APERTURE_MASK);
-
-	const uint32_t reg = def.srd_reg + reginst32 * stride;
-	ASSERT0(reg & SMN_APERTURE_MASK);
-
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
-}
+TURIN_MAKE_SMN_REG_FN(turin_ioagr_smn_reg, IOAGR, 0x15b00000, 0x1e000000,
+    SMN_APERTURE_MASK, 20);
 
 /*
  * The SDPMUX SMN addresses are a bit weird. Unlike IOHC and IOAGR units, there
@@ -159,7 +126,38 @@ turin_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 	return (SMN_MAKE_REG(aperture + reg));
 }
 
-ZEN_MAKE_SMN_IOHCDEV_REG_FN(turin, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
+static inline smn_reg_t
+turin_iohcdev_sb_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
+    const uint8_t unitno, const uint8_t reginst)
+{
+	const uint32_t SMN_IOHCDEV_REG_MASK = 0x3ff;
+	const uint32_t iohc32 = (const uint32_t)iohcno;
+	const uint32_t unit32 = (const uint32_t)unitno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t stride = (def.srd_stride == 0) ? 4 :
+	    (const uint32_t)def.srd_stride;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t) def.srd_nents;
+
+	ASSERT0(def.srd_size);
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHCDEV_SB);
+	ASSERT3U(iohc32, <, 8);
+	ASSERT3U(unit32, <, 1);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);
+
+	const uint32_t aperture_base = iohc32 < 4 ? 0x13b3c000 : 0x1d43c000;
+	const uint32_t aperture_off = ((iohc32 % 4) << 20);
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & SMN_IOHCDEV_REG_MASK);
+
+	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	ASSERT0(reg & 0xffffc000);
+
+	return (SMN_MAKE_REG(aperture + reg));
+}
 
 /*
  * The IOHC::IOHC_Bridge_CNTL register contains blocks for several other
@@ -186,17 +184,19 @@ turin_iohcdev_pcie_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHCDEV_PCIE);
 	ASSERT3U(iohc32, <, 8);
 	ASSERT3U(unit32, <, 3);
+	/* There is only a single PCIe unit on the smaller IOHC types */
+	ASSERT(iohc32 < 4 || unit32 < 1);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);
 
-	const uint32_t aperture_base = 0x13b31000;
+	const uint32_t aperture_base = iohc32 < 4 ? 0x13b31000 : 0x1d431000;
 	const uint32_t aperture_offsets[] = {
 		[0] = 0,
 		[1] = 9,
 		[2] = 17,
 	};
 
-	uint32_t aperture_off = (iohc32 << 20) +
+	uint32_t aperture_off = ((iohc32 % 4) << 20) +
 	    (aperture_offsets[unit32] << 10);
 
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
@@ -231,11 +231,12 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOHCDEV_NBIF);
-	ASSERT3U(iohc32, <, 4);
+	/* Not present on smaller IOHC types. */
+	VERIFY3U(iohc32, <, 4);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & ~SMN_IOHCDEV_REG_MASK);
 
-	/* This is the base for NBIF1, the only one that we accept. */
+	/* This is the base for nBIF1, the only one that we accept. */
 	const uint32_t aperture_base = 0x13b38000;
 	VERIFY3U(unit32, ==, 1);
 

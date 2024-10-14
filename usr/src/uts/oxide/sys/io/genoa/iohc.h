@@ -93,9 +93,9 @@ genoa_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
  * specified as the unit number.
  */
 ZEN_MAKE_SMN_IOHCDEV_REG_FN(genoa, PCIE, pcie, 0x13b31000, 0xffff8000,
-    3, 10, 9);
+    4, 3, 10, 9);
 /* Similarly for the SB, where there is a single SB unit */
-ZEN_MAKE_SMN_IOHCDEV_REG_FN(genoa, SB, sb, 0x13b3c000, 0xffffc000, 1, 0, 1);
+ZEN_MAKE_SMN_IOHCDEV_REG_FN(genoa, SB, sb, 0x13b3c000, 0xffffc000, 4, 1, 0, 1);
 
 /*
  * For reasons not understood, NBIF0 & NBIF2 don't have an IOHCDEV group.

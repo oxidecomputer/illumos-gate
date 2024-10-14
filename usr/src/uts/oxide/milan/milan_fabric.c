@@ -2394,8 +2394,8 @@ milan_fabric_iohc_bus_num(zen_ioms_t *ioms, uint8_t busno)
  * they're all disabled, for the moment we just ignore the straps that aren't
  * related to interrupts, enables, and cfg comps.
  */
-static int
-milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
+void
+milan_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 {
 	smn_reg_t reg;
 	uint32_t intr;
@@ -2457,8 +2457,6 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
 		val = NBIF_PORT_STRAP3_SET_COMP_TO(val, 1);
 		zen_nbif_write(nbif, reg, val);
 	}
-
-	return (0);
 }
 
 /*
@@ -2468,8 +2466,8 @@ milan_fabric_init_nbif_dev_straps(zen_nbif_t *nbif, void *arg)
  * default expectation of the system is that the CRS bit is set. XXX these have
  * all been left enabled for now.
  */
-static int
-milan_fabric_init_nbif_bridge(zen_ioms_t *ioms, void *arg)
+void
+milan_fabric_nbif_bridges(zen_ioms_t *ioms)
 {
 	uint32_t val;
 	const smn_reg_t smn_regs[5] = {
@@ -2485,7 +2483,6 @@ milan_fabric_init_nbif_bridge(zen_ioms_t *ioms, void *arg)
 		val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
 		zen_ioms_write(ioms, smn_regs[i], val);
 	}
-	return (0);
 }
 
 static int
@@ -4401,33 +4398,6 @@ milan_hotplug_init(zen_fabric_t *fabric)
 void
 milan_fabric_pcie(zen_fabric_t *fabric)
 {
-	/*
-	 * Go through and configure all of the straps for NBIF devices before
-	 * they end up starting up.
-	 *
-	 * XXX There's a bunch we're punting on here and we'll want to make sure
-	 * that we actually have the platform's config for this. But this
-	 * includes doing things like:
-	 *
-	 *  o Enabling and Disabling devices visibility through straps and their
-	 *    interrupt lines.
-	 *  o Device multi-function enable, related PCI config space straps.
-	 *  o Lots of clock gating
-	 *  o Subsystem IDs
-	 *  o GMI round robin
-	 *  o BIFC stuff
-	 */
-
-	/* XXX Need a way to know which devs to enable on the board */
-	zen_fabric_walk_nbif(fabric, milan_fabric_init_nbif_dev_straps, NULL);
-
-	/*
-	 * To wrap up the nBIF devices, go through and update the bridges here.
-	 * We do two passes, one to get the NBIF instances and another to deal
-	 * with the special instance that we believe is for the southbridge.
-	 */
-	zen_fabric_walk_ioms(fabric, milan_fabric_init_nbif_bridge, NULL);
-
 	/*
 	 * Currently we do all of our initial DXIO training for PCIe before we
 	 * enable features that have to do with the SMU. XXX Cargo Culting.

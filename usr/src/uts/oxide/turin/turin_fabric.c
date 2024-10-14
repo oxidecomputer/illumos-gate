@@ -952,6 +952,92 @@ turin_fabric_ioapic(zen_ioms_t *ioms)
 }
 
 /*
+ * Go through and configure and set up devices and functions. In particular we
+ * need to go through and set up the following:
+ *
+ *  o Strap bits that determine whether or not the function is enabled
+ *  o Enabling the interrupts of corresponding functions
+ *  o Setting up specific PCI device straps around multi-function, FLR, poison
+ *    control, TPH settings, etc.
+ *
+ * XXX For getting to PCIe faster and since we're not going to use these, and
+ * they're all disabled, for the moment we just ignore the straps that aren't
+ * related to interrupts, enables, and cfg comps.
+ */
+void
+turin_fabric_nbif_dev_straps(zen_nbif_t *nbif)
+{
+	const zen_iohc_type_t iohctype = nbif->zn_ioms->zio_iohctype;
+	smn_reg_t reg;
+	uint32_t intr;
+
+	reg = turin_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
+	intr = zen_nbif_read(nbif, reg);
+	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
+		smn_reg_t strapreg;
+		uint32_t strap;
+		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
+
+		/*
+		 * This indicates that we have a dummy function or similar. In
+		 * which case there's not much to do here, the system defaults
+		 * are generally what we want. XXX Kind of sort of. Not true
+		 * over time.
+		 */
+		if ((func->znf_flags & ZEN_NBIF_F_NO_CONFIG) != 0) {
+			continue;
+		}
+
+		strapreg = turin_nbif_func_reg(func, D_NBIF_FUNC_STRAP0);
+		strap = zen_nbif_func_read(func, strapreg);
+
+		if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
+			strap = NBIF_FUNC_STRAP0_SET_EXIST(strap, 1);
+			intr = NBIF_INTR_LINE_EN_SET_I(intr,
+			    func->znf_dev, func->znf_func, 1);
+
+			/*
+			 * Although the PPR suggests using 0x71 here, other AMD
+			 * sources use 0x0, and experimentally the device
+			 * actually ends up with a revision of 0x93 from
+			 * somewhere.
+			 */
+			if (func->znf_type == ZEN_NBIF_T_SATA) {
+				strap = NBIF_FUNC_STRAP0_SET_MAJ_REV(strap, 0);
+				strap = NBIF_FUNC_STRAP0_SET_MIN_REV(strap, 0);
+			}
+		} else {
+			strap = NBIF_FUNC_STRAP0_SET_EXIST(strap, 0);
+			intr = NBIF_INTR_LINE_EN_SET_I(intr,
+			    func->znf_dev, func->znf_func, 0);
+		}
+
+		zen_nbif_func_write(func, strapreg, strap);
+	}
+
+	zen_nbif_write(nbif, reg, intr);
+
+	/*
+	 * Each nBIF has up to three devices on them, though not all of them
+	 * seem to be used. However, it's suggested that we enable completion
+	 * timeouts on all three device straps for NBIF0, and the same for
+	 * NBIF2 on the IOMS which are connected to a larger IOHC type.
+	 */
+	if (nbif->zn_num == 0 ||
+	    (iohctype == ZEN_IOHCT_LARGE && nbif->zn_num == 2)) {
+		for (uint8_t devno = 0; devno < TURIN_NBIF_MAX_DEVS; devno++) {
+			smn_reg_t reg;
+			uint32_t val;
+
+			reg = turin_nbif_reg(nbif, D_NBIF_PORT_STRAP3, devno);
+			val = zen_nbif_read(nbif, reg);
+			val = NBIF_PORT_STRAP3_SET_COMP_TO(val, 1);
+			zen_nbif_write(nbif, reg, val);
+		}
+	}
+}
+
+/*
  * Do everything else required to finish configuring the nBIF and get the PCIe
  * engine up and running.
  */

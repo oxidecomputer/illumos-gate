@@ -2346,6 +2346,11 @@ zen_null_fabric_sdp_control(zen_ioms_t *nbif __unused)
 }
 
 void
+zen_null_fabric_nbif_bridges(zen_ioms_t *ioms __unused)
+{
+}
+
+void
 zen_fabric_init(void)
 {
 	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
@@ -2451,6 +2456,38 @@ zen_fabric_init(void)
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_iohc_bus_num, NULL);
 
+	/*
+	 * Go through and configure all of the straps for NBIF devices before
+	 * they end up starting up.
+	 *
+	 * XXX There's a bunch we're punting on here and we'll want to make sure
+	 * that we actually have the platform's config for this. But this
+	 * includes doing things like:
+	 *
+	 *  o Enabling and Disabling devices visibility through straps and their
+	 *    interrupt lines.
+	 *  o Device multi-function enable, related PCI config space straps.
+	 *  o Lots of clock gating
+	 *  o Subsystem IDs
+	 *  o GMI round robin
+	 *  o BIFC stuff
+	 */
+
+	/* XXX Need a way to know which devs to enable on the board */
+	zen_fabric_walk_nbif(fabric, zen_fabric_nbif_op,
+	    fabric_ops->zfo_nbif_dev_straps);
+
+	/*
+	 * To wrap up the nBIF devices, go through and update the bridges here.
+	 * We do two passes, one to get the NBIF instances and another to deal
+	 * with the special instance that we believe is for the southbridge.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_nbif_bridges);
+
+	/*
+	 * Move on to PCIe training.
+	 */
 	VERIFY3P(fabric_ops->zfo_pcie, !=, NULL);
 	(fabric_ops->zfo_pcie)(fabric);
 }
