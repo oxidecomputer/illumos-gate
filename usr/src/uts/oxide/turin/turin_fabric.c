@@ -133,7 +133,10 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 {
 	const uint8_t iomsno = ioms->zio_num;
 
-	ioms->zio_npcie_cores = turin_ioms_n_pcie_cores(iomsno);
+	/*
+	 * XXX don't set this without initializing the actual pcie structures.
+	 */
+	// ioms->zio_npcie_cores = turin_ioms_n_pcie_cores(iomsno);
 	ioms->zio_nbionum = TURIN_NBIO_NUM(iomsno);
 
 	/*
@@ -260,16 +263,16 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	 * table maps the IOMS number to which NBIO, IOHUB, and IOHC kind is
 	 * present.
 	 *
-	 * 	IOMS	NBIO	IOHUB	IOHC	UNIT
-	 * 	----	----	-----	----	----
-	 * 	0	0	0	L	0
-	 * 	1	0	1	S	4
-	 * 	2	0	2	L	1
-	 * 	3	0	3	S	5
-	 * 	4	1	0	L	2
-	 * 	5	1	1	S	6
-	 * 	6	1	2	L	3
-	 * 	7	1	3	S	7
+	 *	IOMS	NBIO	IOHUB	IOHC	UNIT
+	 *	----	----	-----	----	----
+	 *	0	0	0	L	0
+	 *	1	0	1	S	4
+	 *	2	0	2	L	1
+	 *	3	0	3	S	5
+	 *	4	1	0	L	2
+	 *	5	1	1	S	6
+	 *	6	1	2	L	3
+	 *	7	1	3	S	7
 	 *
 	 * NB: There is sometimes an aperture gap between IOHC0 and IOHC1 and
 	 * there can even be (more rarely) a change in the register offset such

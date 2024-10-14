@@ -140,7 +140,10 @@ genoa_fabric_ioms_init(zen_ioms_t *ioms)
 {
 	const uint8_t iomsno = ioms->zio_num;
 
-	ioms->zio_npcie_cores = genoa_ioms_n_pcie_cores(iomsno);
+	/*
+	 * XXX don't set this without initializing the actual pcie structures.
+	 */
+	// ioms->zio_npcie_cores = genoa_ioms_n_pcie_cores(iomsno);
 	ioms->zio_nbionum = GENOA_NBIO_NUM(iomsno);
 
 	/*

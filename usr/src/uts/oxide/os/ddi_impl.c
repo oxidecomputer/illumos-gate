@@ -25,7 +25,7 @@
  * Copyright 2014 Pluribus Networks, Inc.
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 /*
@@ -47,6 +47,7 @@
 #include <sys/modctl.h>
 #include <sys/promif.h>
 #include <sys/prom_plat.h>
+#include <sys/stdbool.h>
 #include <sys/sunndi.h>
 #include <sys/ndi_impldefs.h>
 #include <sys/ddi_impldefs.h>
@@ -2179,6 +2180,21 @@ static void
 impl_bus_initialprobe(void)
 {
 	struct bus_probe *probe;
+	bool skip_pci = false;
+
+	switch (chiprev_family(cpuid_getchiprev(CPU))) {
+	case X86_PF_AMD_GENOA:
+	case X86_PF_AMD_TURIN:
+	case X86_PF_AMD_DENSE_TURIN:
+		/*
+		 * XXX: genoa/turin pcie support incomplete
+		 */
+		cmn_err(CE_WARN, "PCIe support in progress");
+		skip_pci = true;
+		break;
+	default:
+		break;
+	}
 
 	/*
 	 * XXX It seems like this really ought to be done by a parent's
@@ -2197,7 +2213,7 @@ impl_bus_initialprobe(void)
 		panic("failed to load drv/fch");
 	}
 
-	if (modload("misc", "pci_autoconfig") < 0) {
+	if (!skip_pci && modload("misc", "pci_autoconfig") < 0) {
 		panic("failed to load misc/pci_autoconfig");
 	}
 
