@@ -94,6 +94,8 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_sdp_control = zen_null_fabric_sdp_control, /* skip for genoa */
 	.zfo_nbif_syshub_dma = genoa_fabric_nbif_syshub_dma,
 	.zfo_ioapic = genoa_fabric_ioapic,
+	.zfo_nbif_dev_straps = genoa_fabric_nbif_dev_straps,
+	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for genoa */
 	.zfo_pcie = genoa_fabric_pcie,
 
 	.zfo_iohc_enable_nmi = genoa_iohc_enable_nmi,

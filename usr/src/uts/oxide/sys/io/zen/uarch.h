@@ -164,6 +164,16 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_ioapic)(zen_ioms_t *);
 
 	/*
+	 * Configure nBIF straps.
+	 */
+	void		(*zfo_nbif_dev_straps)(zen_nbif_t *);
+
+	/*
+	 * Update nBIF bridges.
+	 */
+	void		(*zfo_nbif_bridges)(zen_ioms_t *);
+
+	/*
 	 * Finalize setting up the PCIe fabric.
 	 */
 	void		(*zfo_pcie)(zen_fabric_t *);
@@ -236,6 +246,7 @@ extern void zen_null_check_furtive_reset(void);
 extern bool zen_null_cgpll_set_ssc(bool);
 extern void zen_null_fabric_iohc_pci_ids(zen_ioms_t *);
 extern void zen_null_fabric_sdp_control(zen_ioms_t *);
+extern void zen_null_fabric_nbif_bridges(zen_ioms_t *);
 
 typedef struct zen_ras_ops {
 	void	(*zro_ras_init)(void);
