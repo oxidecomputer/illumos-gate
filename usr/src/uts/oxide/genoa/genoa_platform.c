@@ -104,6 +104,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_init_pcie_port = genoa_fabric_init_pcie_port,
 	.zfo_init_pcie_port_after_reconfig =
 	    genoa_fabric_init_pcie_port_after_reconfig,
+	.zfo_init_pcie_straps = genoa_fabric_init_pcie_straps,
 	.zfo_init_pcie_core = genoa_fabric_init_pcie_core,
 	.zfo_init_bridge = genoa_fabric_init_bridge,
 	.zfo_iohc_disable_unused_pcie_bridges =

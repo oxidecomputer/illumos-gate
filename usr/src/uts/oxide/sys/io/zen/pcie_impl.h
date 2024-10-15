@@ -26,6 +26,7 @@
 #include <sys/stdbool.h>
 #include <sys/mutex.h>
 #include <sys/bitext.h>
+#include <sys/platform_detect.h>
 
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/dxio_impl.h>
@@ -220,6 +221,41 @@ struct zen_pcie_core {
 	zen_ioms_t		*zpc_ioms;
 	void			*zpc_uarch_pcie_core;
 };
+
+/*
+ * Straps can be matched on a combination of board identifier, IO die, DF node
+ * ID, NBIO/IOMS number, PCIe core number (root complex number;
+ * zen_pcie_core_t.zpc_coreno), and PCIe port number
+ * (zen_pcie_port_t.zpp_portno).
+ *
+ * The board sentinel value is 0 and may be omitted.  The others require nonzero
+ * sentinels as 0 is a valid index for all of them.
+ *
+ * The sentinel values of 0xFF here cannot match any real NBIO, core, or port:
+ * this value is well above the architectural limits.
+ *
+ * The core and port filters are meaningful only if the corresponding strap
+ * exists at the corresponding level.
+ *
+ * The node ID, which incorporates both socket and die number is 8 bits and in
+ * principle it could be 0xFF, so we use 32 bits there instead: AMD have
+ * reserved another 8 bits that are likely to be used in future families so we
+ * expand to 32 bits.
+ */
+typedef struct zen_pcie_strap_setting {
+	uint32_t		strap_reg;
+	uint32_t		strap_data;
+	oxide_board_t		strap_boardmatch;
+	uint32_t		strap_nodematch;
+	uint8_t			strap_nbiomatch;
+	uint8_t			strap_corematch;
+	uint8_t			strap_portmatch;
+} zen_pcie_strap_setting_t;
+
+#define	PCIE_NODEMATCH_ANY	0xFFFFFFFF
+#define	PCIE_NBIOMATCH_ANY	0xFF
+#define	PCIE_COREMATCH_ANY	0xFF
+#define	PCIE_PORTMATCH_ANY	0xFF
 
 #ifdef	__cplusplus
 }

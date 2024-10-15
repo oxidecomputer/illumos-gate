@@ -733,6 +733,28 @@ zen_mpio_send_data(zen_iodie_t *iodie, void *arg __unused)
 	return (0);
 }
 
+bool
+zen_mpio_write_pcie_strap(zen_pcie_core_t *pc,
+    const uint32_t addr, const uint32_t data)
+{
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_PCIE_WRITE_STRAP;
+	rpc.zmr_args[0] = addr;
+	rpc.zmr_args[1] = data;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "writing strap (addr 0x%x data 0x%x) failed: "
+		    " %s (MPIO 0x%x)", addr, data, zen_mpio_rpc_res_str(res),
+		    rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
 /*
  * Here we need to assemble data for the system we're actually on.
  */
@@ -936,6 +958,11 @@ static int
 zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
 {
 	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+
+	(void) zen_fabric_walk_pcie_core(iodie->zi_soc->zs_fabric,
+	    zen_mpio_pcie_core_op, fops->zfo_init_pcie_straps);
+	cmn_err(CE_CONT, "?Socket %u MPIO: Wrote PCIe straps\n",
+	    iodie->zi_soc->zs_num);
 
 	(void) zen_fabric_walk_pcie_port(iodie->zi_soc->zs_fabric,
 	    zen_mpio_pcie_port_op, fops->zfo_init_pcie_port);

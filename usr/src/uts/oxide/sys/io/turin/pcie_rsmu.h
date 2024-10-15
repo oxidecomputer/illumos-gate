@@ -1117,6 +1117,8 @@ extern "C" {
 #define	TURIN_STRAP_PCIE_CXL_SMN_BASE		0xc1
 #define	TURIN_STRAP_PCIE_PCIE_SMN_BASE		0xc2
 
+#define	TURIN_STRAP_PCIE_CXL_SMN_BASE_OFFSET	0x800
+
 /*
  * This seems to to change something about where the above SMN Apertures come
  * from. In particular, the default value (0x1) is to use something other than
@@ -1842,7 +1844,7 @@ extern "C" {
  * LC_CNLI_FREQ_ADJ_ACK_RLOCK_TIMEOUT]. 3 bit strap defaults to 0, meaning no
  * timeout.
  */
-#define	TURIN_STRAP_PCIE_P_CNLI_ACK_TO		0x166
+#define	TURIN_STRAP_PCIE_P_CNLI_ACK_RLOCK_TO	0x166
 
 /*
  * See PCIEPORT::PCIE_LC_ALTERNATE_PROTOCOL_CNTL6[
@@ -1929,7 +1931,7 @@ extern "C" {
  * See PCIEPORT::PCIE_LC_CNTL11[LC_CHECK_TS1_EC_ON_EQ_EXIT]. 1 bit strap
  * defaults to 1.
  */
-#define	TURIN_STRAP_PCIE_P_EQ_WAIT_FOR_TS1	0x174
+#define	TURIN_STRAP_PCIE_P_EQ_CHECK_TS1_EC_ON_EQ_EXIT	0x174
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL10[LC_USE_PENDING_FOM_SKIP_SECOND_RXEQEVAL]. 1 bit

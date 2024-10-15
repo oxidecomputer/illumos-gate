@@ -1067,9 +1067,6 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	MILAN_STRAP_PCIE_SUBVID			0x99
 #define	MILAN_STRAP_PCIE_SUBDID			0x9a
 
-#define	PCI_VENDOR_ID_OXIDE			0x1de
-#define	PCI_SDID_OXIDE_GIMLET_BASE		0xfff9
-
 /*
  * See PPR 13.5.4.3.1.  This defines the port bifurcation (set of ports to be
  * created and the number of lanes in each) from the 16 lanes available to this

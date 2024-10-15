@@ -248,6 +248,11 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_init_pcie_port_after_reconfig)(zen_pcie_port_t *);
 
 	/*
+	 * Initializes PCIe straps on the given PCIe core and its ports.
+	 */
+	void		(*zfo_init_pcie_straps)(zen_pcie_core_t *);
+
+	/*
 	 * Retrieves and reports the version of the firmware for the component
 	 * responsible for interfacing with the DXIO crossbar (either the SMU or
 	 * MPIO).

@@ -122,6 +122,7 @@ extern void genoa_fabric_hide_bridge(zen_pcie_port_t *);
 extern void genoa_fabric_unhide_bridge(zen_pcie_port_t *);
 extern void genoa_fabric_init_pcie_port(zen_pcie_port_t *);
 extern void genoa_fabric_init_pcie_port_after_reconfig(zen_pcie_port_t *);
+extern void genoa_fabric_init_pcie_straps(zen_pcie_core_t *);
 extern void genoa_fabric_init_bridge(zen_pcie_port_t *);
 extern void genoa_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *);
 extern void genoa_fabric_init_pcie_core(zen_pcie_core_t *);

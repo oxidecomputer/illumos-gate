@@ -116,11 +116,11 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_init_pcie_port = turin_fabric_init_pcie_port,
 	.zfo_init_pcie_port_after_reconfig =
 	    turin_fabric_init_pcie_port_after_reconfig,
+	.zfo_init_pcie_straps = turin_fabric_init_pcie_straps,
 	.zfo_init_pcie_core = turin_fabric_init_pcie_core,
 	.zfo_init_bridge = turin_fabric_init_bridge,
 	.zfo_iohc_disable_unused_pcie_bridges =
 	    turin_fabric_ioms_iohc_disable_unused_pcie_bridges,
-
 
 	.zfo_iohc_enable_nmi = turin_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = turin_iohc_nmi_eoi,
