@@ -702,6 +702,28 @@ zen_mpio_is_ruby(void)
 	return (oxide_board_data->obd_board == OXIDE_BOARD_RUBY);
 }
 
+bool
+zen_mpio_write_pcie_strap(zen_pcie_core_t *pc,
+    const uint32_t reg, const uint32_t data)
+{
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_PCIE_WRITE_STRAP;
+	rpc.zmr_args[0] = reg;
+	rpc.zmr_args[1] = data;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "writing strap (reg 0x%x data 0x%x) failed: "
+		    " %s (MPIO 0x%x)", reg, data, zen_mpio_rpc_res_str(res),
+		    rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
 /*
  * Here we need to assemble data for the system we're actually on.
  */
@@ -1019,7 +1041,6 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	 */
 	if (hops->zho_fabric_hack_bridges != NULL)
 		hops->zho_fabric_hack_bridges(fabric);
-
 #if 0
 	/*
 	 * At this point, go talk to the SMU to actually initialize our hotplug
