@@ -52,7 +52,7 @@ extern void zen_check_furtive_reset(void);
  * manipulate GPIOs before the DDI is fully set up.  So we have this handy
  * function to do it for us directly.  GPIO hacks. This is used to release PERST
  * during the LISM on Ethanol-X, Ruby, etc (but not Gimlet or Cosmo, which uses
- *ß the GPIO expanders for PERST) and to signal register capture for PCIe
+ * the GPIO expanders for PERST) and to signal register capture for PCIe
  * debugging via a logic analyzer.  The CONFIGURE op claims the GPIO via the
  * IOMUX and configures it as an output with internal pulls disabled.  We allow
  * setup of only those pins we know can/should be used by this code; others will
