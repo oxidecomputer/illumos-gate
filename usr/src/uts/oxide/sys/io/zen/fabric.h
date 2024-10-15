@@ -46,6 +46,7 @@ typedef struct zen_pcie_core zen_pcie_core_t;
 typedef struct zen_pcie_port zen_pcie_port_t;
 typedef struct zen_pcie_dbg zen_pcie_dbg_t;
 typedef struct zen_pcie_reg_dbg zen_pcie_reg_dbg_t;
+typedef struct zen_pcie_strap_setting zen_pcie_strap_setting_t;
 
 /*
  * Generic resource types that can be routed via an IOMS.
@@ -179,6 +180,9 @@ extern void zen_pcie_port_write(zen_pcie_port_t *, const smn_reg_t,
 
 #define	ZEN_IODIE_MATCH_ANY	UINT8_MAX
 extern void zen_pcie_populate_dbg(zen_fabric_t *, uint32_t, uint8_t);
+
+extern bool zen_fabric_pcie_strap_matches(const zen_pcie_core_t *, uint8_t,
+    const zen_pcie_strap_setting_t *);
 
 #ifdef	__cplusplus
 }

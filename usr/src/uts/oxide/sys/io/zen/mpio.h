@@ -44,5 +44,7 @@ extern void zen_mpio_report_fw_version(const zen_iodie_t *iodie);
  */
 extern void zen_mpio_pcie_init(zen_fabric_t *);
 
+extern bool zen_mpio_write_pcie_strap(zen_pcie_core_t *, uint32_t, uint32_t);
+
 
 #endif	/* _SYS_IO_ZEN_MPIO_H */

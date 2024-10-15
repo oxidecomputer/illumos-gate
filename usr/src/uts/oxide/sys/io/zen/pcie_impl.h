@@ -26,6 +26,7 @@
 #include <sys/stdbool.h>
 #include <sys/mutex.h>
 #include <sys/bitext.h>
+#include <sys/platform_detect.h>
 
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/dxio_impl.h>
@@ -223,6 +224,22 @@ struct zen_pcie_core {
 	zen_ioms_t		*zpc_ioms;
 	void			*zpc_uarch_pcie_core;
 };
+
+#define	PCIE_NODEMATCH_ANY	0xFFFFFFFF
+#define	PCIE_NBIOMATCH_ANY	0xFF
+#define	PCIE_COREMATCH_ANY	0xFF
+#define	PCIE_PORTMATCH_ANY	0xFF
+
+typedef struct zen_pcie_strap_setting {
+	uint32_t		strap_reg;
+	uint32_t		strap_data;
+	oxide_board_t		strap_boardmatch;
+	uint32_t		strap_nodematch;
+	uint8_t			strap_nbiomatch;
+	uint8_t			strap_corematch;
+	uint8_t			strap_portmatch;
+} zen_pcie_strap_setting_t;
+
 
 #ifdef	__cplusplus
 }

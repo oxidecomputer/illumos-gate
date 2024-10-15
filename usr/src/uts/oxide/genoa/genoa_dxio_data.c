@@ -107,7 +107,6 @@
 
 CTASSERT(sizeof (zen_mpio_ask_t) < MMU_PAGESIZE);
 
-
 #define	SP5_PHY_OFFSET_P0	0
 #define	SP5_PHY_OFFSET_G0	96
 #define	SP5_PHY_OFFSET_P1	32

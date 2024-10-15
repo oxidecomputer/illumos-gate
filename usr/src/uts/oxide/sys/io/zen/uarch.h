@@ -247,9 +247,9 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_init_smn_port_state)(zen_pcie_port_t *);
 
 	/*
-	 * Initializes PCIe straps.
+	 * Initializes PCIe straps on the given PCIe core and its ports.
 	 */
-	void		(*zfo_init_pcie_straps)(zen_core_t *);
+	void		(*zfo_init_pcie_straps)(zen_pcie_core_t *);
 
 	/*
 	 * Retrieves and reports the version of the firmware for the component

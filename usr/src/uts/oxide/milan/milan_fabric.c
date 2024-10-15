@@ -595,6 +595,7 @@
 #include <sys/pci.h>
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_cfgspace_impl.h>
+#include <sys/pci_ident.h>
 #include <sys/pcie.h>
 #include <sys/spl.h>
 #include <sys/debug.h>
@@ -2895,21 +2896,6 @@ milan_dxio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
  * when this is refactored to support multiple families.
  */
 
-#define	PCIE_NODEMATCH_ANY	0xFFFFFFFF
-#define	PCIE_NBIOMATCH_ANY	0xFF
-#define	PCIE_COREMATCH_ANY	0xFF
-#define	PCIE_PORTMATCH_ANY	0xFF
-
-typedef struct milan_pcie_strap_setting {
-	uint32_t		strap_reg;
-	uint32_t		strap_data;
-	oxide_board_t		strap_boardmatch;
-	uint32_t		strap_nodematch;
-	uint8_t			strap_nbiomatch;
-	uint8_t			strap_corematch;
-	uint8_t			strap_portmatch;
-} milan_pcie_strap_setting_t;
-
 /*
  * PCIe Straps that we unconditionally set to 1
  */
@@ -2962,7 +2948,7 @@ static const uint32_t milan_pcie_strap_disable[] = {
 /*
  * PCIe Straps that have other values.
  */
-static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
+static const zen_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
@@ -3027,7 +3013,7 @@ static const milan_pcie_strap_setting_t milan_pcie_strap_settings[] = {
  * PCIe Straps that exist on a per-port level.  Most pertain to the port itself;
  * others pertain to features exposed via the associated bridge.
  */
-static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
+static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 	{
 		.strap_reg = MILAN_STRAP_PCIE_P_EXT_FMT_SUP,
 		.strap_data = 0x1,
@@ -3153,43 +3139,6 @@ static const milan_pcie_strap_setting_t milan_pcie_port_settings[] = {
 	}
 };
 
-static bool
-milan_pcie_strap_matches(const zen_pcie_core_t *pc, uint8_t portno,
-    const milan_pcie_strap_setting_t *strap)
-{
-	const zen_ioms_t *ioms = pc->zpc_ioms;
-	const zen_iodie_t *iodie = ioms->zio_iodie;
-	const oxide_board_t board = oxide_board_data->obd_board;
-
-	if (strap->strap_boardmatch != 0 &&
-	    strap->strap_boardmatch != board) {
-		return (false);
-	}
-
-	if (strap->strap_nodematch != PCIE_NODEMATCH_ANY &&
-	    strap->strap_nodematch != (uint32_t)iodie->zi_node_id) {
-		return (false);
-	}
-
-	if (strap->strap_nbiomatch != PCIE_NBIOMATCH_ANY &&
-	    strap->strap_nbiomatch != ioms->zio_num) {
-		return (false);
-	}
-
-	if (strap->strap_corematch != PCIE_COREMATCH_ANY &&
-	    strap->strap_corematch != pc->zpc_coreno) {
-		return (false);
-	}
-
-	if (portno != PCIE_PORTMATCH_ANY &&
-	    strap->strap_portmatch != PCIE_PORTMATCH_ANY &&
-	    strap->strap_portmatch != portno) {
-		return (false);
-	}
-
-	return (true);
-}
-
 static void
 milan_fabric_write_pcie_strap(zen_pcie_core_t *pc,
     const uint32_t reg, const uint32_t data)
@@ -3236,10 +3185,11 @@ milan_fabric_init_pcie_straps(zen_pcie_core_t *pc, void *arg)
 		    milan_pcie_strap_disable[i], 0x0);
 	}
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_settings); i++) {
-		const milan_pcie_strap_setting_t *strap =
+		const zen_pcie_strap_setting_t *strap =
 		    &milan_pcie_strap_settings[i];
 
-		if (milan_pcie_strap_matches(pc, PCIE_PORTMATCH_ANY, strap)) {
+		if (zen_fabric_pcie_strap_matches(pc, PCIE_PORTMATCH_ANY,
+		    strap)) {
 			milan_fabric_write_pcie_strap(pc,
 			    strap->strap_reg, strap->strap_data);
 		}
@@ -3252,10 +3202,10 @@ milan_fabric_init_pcie_straps(zen_pcie_core_t *pc, void *arg)
 
 	/* Handle per bridge initialization */
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_port_settings); i++) {
-		const milan_pcie_strap_setting_t *strap =
+		const zen_pcie_strap_setting_t *strap =
 		    &milan_pcie_port_settings[i];
 		for (uint_t j = 0; j < pc->zpc_nports; j++) {
-			if (milan_pcie_strap_matches(pc, j, strap)) {
+			if (zen_fabric_pcie_strap_matches(pc, j, strap)) {
 				milan_fabric_write_pcie_strap(pc,
 				    strap->strap_reg +
 				    (j * MILAN_STRAP_PCIE_NUM_PER_PORT),
