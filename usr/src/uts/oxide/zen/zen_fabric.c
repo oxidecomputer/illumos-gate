@@ -2271,6 +2271,47 @@ zen_fabric_pci_crs_to(zen_ioms_t *ioms, void *arg __unused)
 }
 
 /*
+ * Determines whether a strap setting applies for the given PCIe core and port
+ * number.
+ */
+bool
+zen_fabric_pcie_strap_matches(const zen_pcie_core_t *pc, uint8_t portno,
+    const zen_pcie_strap_setting_t *strap)
+{
+	const zen_ioms_t *ioms = pc->zpc_ioms;
+	const zen_iodie_t *iodie = ioms->zio_iodie;
+	const oxide_board_t board = oxide_board_data->obd_board;
+
+	if (strap->strap_boardmatch != 0 &&
+	    strap->strap_boardmatch != board) {
+		return (false);
+	}
+
+	if (strap->strap_nodematch != PCIE_NODEMATCH_ANY &&
+	    strap->strap_nodematch != (uint32_t)iodie->zi_node_id) {
+		return (false);
+	}
+
+	if (strap->strap_nbiomatch != PCIE_NBIOMATCH_ANY &&
+	    strap->strap_nbiomatch != ioms->zio_num) {
+		return (false);
+	}
+
+	if (strap->strap_corematch != PCIE_COREMATCH_ANY &&
+	    strap->strap_corematch != pc->zpc_coreno) {
+		return (false);
+	}
+
+	if (portno != PCIE_PORTMATCH_ANY &&
+	    strap->strap_portmatch != PCIE_PORTMATCH_ANY &&
+	    strap->strap_portmatch != portno) {
+		return (false);
+	}
+
+	return (true);
+}
+
+/*
  * Each IOHC has registers that can further constraion what type of PCI bus
  * numbers the IOHC itself is expecting to reply to. As such, we program each
  * IOHC with its primary bus number and enable this.

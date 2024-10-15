@@ -119,10 +119,10 @@ extern void genoa_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void genoa_fabric_nbif_bridges(zen_ioms_t *);
 extern void genoa_fabric_pcie(zen_fabric_t *);
 extern void genoa_fabric_unhide_bridges(zen_pcie_port_t *);
+extern void genoa_fabric_init_pcie_straps(zen_pcie_core_t *);
 extern void genoa_fabric_init_smn_port_state(zen_pcie_port_t *);
 extern void genoa_fabric_init_bridges(zen_pcie_port_t *);
 extern void genoa_fabric_init_pcie_core(zen_pcie_core_t *);
-
 extern void genoa_iohc_enable_nmi(zen_ioms_t *);
 extern void genoa_iohc_nmi_eoi(zen_ioms_t *);
 
