@@ -127,6 +127,9 @@ extern void turin_fabric_nbif_syshub_dma(zen_nbif_t *);
 extern void turin_fabric_ioapic(zen_ioms_t *);
 extern void turin_fabric_pcie(zen_fabric_t *);
 
+extern void turin_iohc_enable_nmi(zen_ioms_t *);
+extern void turin_iohc_nmi_eoi(zen_ioms_t *);
+
 extern smn_reg_t turin_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);
 extern smn_reg_t turin_pcie_core_reg(const zen_pcie_core_t *const,

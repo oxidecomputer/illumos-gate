@@ -134,8 +134,8 @@ extern void milan_fabric_nbif_syshub_dma(zen_nbif_t *);
 extern void milan_fabric_ioapic(zen_ioms_t *);
 extern void milan_fabric_pcie(zen_fabric_t *);
 
-extern void milan_fabric_enable_nmi(void);
-extern void milan_fabric_nmi_eoi(void);
+extern void milan_iohc_enable_nmi(zen_ioms_t *);
+extern void milan_iohc_nmi_eoi(zen_ioms_t *);
 
 extern smn_reg_t milan_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);

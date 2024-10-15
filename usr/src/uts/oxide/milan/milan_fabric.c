@@ -1102,8 +1102,8 @@ milan_iodie_reg(const smn_reg_def_t def, const uint16_t reginst)
 	return (reg);
 }
 
-static int
-milan_ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
+void
+milan_iohc_enable_nmi(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t v;
@@ -1125,7 +1125,8 @@ milan_ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
 
 	if ((zen_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) != 0) {
 		reg = milan_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
-		v = IOHC_PIN_CTL_SET_MODE_NMI(0);
+		v = zen_ioms_read(ioms, reg);
+		v = IOHC_PIN_CTL_SET_MODE_NMI(v);
 		zen_ioms_write(ioms, reg, v);
 	}
 
@@ -1142,18 +1143,10 @@ milan_ioms_enable_nmi_cb(zen_ioms_t *ioms, void *arg __unused)
 	v = zen_ioms_read(ioms, reg);
 	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(v, 1);
 	zen_ioms_write(ioms, reg, v);
-
-	return (0);
 }
 
 void
-milan_fabric_enable_nmi(void)
-{
-	(void) zen_walk_ioms(milan_ioms_enable_nmi_cb, NULL);
-}
-
-static int
-milan_iohc_nmi_eoi_cb(zen_ioms_t *ioms, void *arg __unused)
+milan_iohc_nmi_eoi(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t v;
@@ -1172,19 +1165,6 @@ milan_iohc_nmi_eoi_cb(zen_ioms_t *ioms, void *arg __unused)
 		v = IOHC_INTR_EOI_SET_NMI(0);
 		zen_ioms_write(ioms, reg, v);
 	}
-
-	return (0);
-}
-
-/*
- * Called for NMIs that originated from the IOHC in response to an external
- * assertion of NMI_SYNCFLOOD_L.  We must clear the indicator flag and signal
- * EOI to the fabric in order to receive subsequent such NMIs.
- */
-void
-milan_fabric_nmi_eoi(void)
-{
-	(void) zen_walk_ioms(milan_iohc_nmi_eoi_cb, NULL);
 }
 
 void

@@ -83,6 +83,9 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_ioapic = genoa_fabric_ioapic,
 	.zfo_pcie = genoa_fabric_pcie,
 
+	.zfo_iohc_enable_nmi = genoa_iohc_enable_nmi,
+	.zfo_iohc_nmi_eoi = genoa_iohc_nmi_eoi,
+
 	.zfo_pcie_core_reg = genoa_pcie_core_reg,
 	.zfo_pcie_port_reg = genoa_pcie_port_reg,
 };

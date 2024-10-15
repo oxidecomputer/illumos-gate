@@ -138,8 +138,8 @@ typedef struct zen_fabric_ops {
 	 * Enables and EOIs NMIs generated through the IO fabric, for instance
 	 * via an external pin.
 	 */
-	void		(*zfo_enable_nmi)(void);
-	void		(*zfo_nmi_eoi)(void);
+	void		(*zfo_iohc_enable_nmi)(zen_ioms_t *);
+	void		(*zfo_iohc_nmi_eoi)(zen_ioms_t *);
 
 	/*
 	 * The following (optional) functions provide callbacks for any

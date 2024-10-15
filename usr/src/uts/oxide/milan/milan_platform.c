@@ -79,8 +79,8 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_ioapic = milan_fabric_ioapic,
 	.zfo_pcie = milan_fabric_pcie,
 
-	.zfo_enable_nmi = milan_fabric_enable_nmi,
-	.zfo_nmi_eoi = milan_fabric_nmi_eoi,
+	.zfo_iohc_enable_nmi = milan_iohc_enable_nmi,
+	.zfo_iohc_nmi_eoi = milan_iohc_nmi_eoi,
 
 	.zfo_topo_init = milan_fabric_topo_init,
 	.zfo_soc_init = milan_fabric_soc_init,

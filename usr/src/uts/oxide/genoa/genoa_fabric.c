@@ -770,3 +770,68 @@ genoa_fabric_pcie(zen_fabric_t *fabric)
 {
 	zen_pcie_populate_dbg(fabric, GPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
 }
+
+void
+genoa_iohc_enable_nmi(zen_ioms_t *ioms)
+{
+	smn_reg_t reg;
+	uint32_t v;
+
+	/*
+	 * On reset, the NMI destination in IOHC::IOHC_INTR_CNTL is set to
+	 * 0xff.  We (emphatically) do not want any AP to get an NMI when we
+	 * first power it on, so we deliberately set all NMI destinations to
+	 * be the BSP.  Note that we do will not change this, even after APs
+	 * are up (that is, NMIs will always go to the BSP):  changing it has
+	 * non-zero runtime risk (see the comment above our actual enabling
+	 * of NMI, below) and does not provide any value for our use case of
+	 * NMI.
+	 */
+	reg = genoa_ioms_reg(ioms, D_IOHC_INTR_CTL, 0);
+	v = zen_ioms_read(ioms, reg);
+	v = IOHC_INTR_CTL_SET_NMI_DEST_CTRL(v, 0);
+	zen_ioms_write(ioms, reg, v);
+
+	if ((zen_ioms_flags(ioms) & ZEN_IOMS_F_HAS_FCH) != 0) {
+		reg = genoa_ioms_reg(ioms, D_IOHC_PIN_CTL, 0);
+		v = zen_ioms_read(ioms, reg);
+		v = IOHC_PIN_CTL_SET_MODE_NMI(v);
+		zen_ioms_write(ioms, reg, v);
+	}
+
+	/*
+	 * Once we enable this, we can immediately take an NMI if it's
+	 * currently asserted.  We want to do this last and clear out of here
+	 * as quickly as possible:  this is all a bit dodgy, but the NMI
+	 * handler itself needs to issue an SMN write to indicate EOI -- and
+	 * if it finds that SMN-related locks are held, we will panic.  To
+	 * reduce the likelihood of that, we are going to enable NMI and
+	 * skedaddle...
+	 */
+	reg = genoa_ioms_reg(ioms, D_IOHC_MISC_RAS_CTL, 0);
+	v = zen_ioms_read(ioms, reg);
+	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(v, 1);
+	zen_ioms_write(ioms, reg, v);
+}
+
+void
+genoa_iohc_nmi_eoi(zen_ioms_t *ioms)
+{
+	smn_reg_t reg;
+	uint32_t v;
+
+	reg = genoa_ioms_reg(ioms, D_IOHC_FCTL2, 0);
+	v = zen_ioms_read(ioms, reg);
+	v = IOHC_FCTL2_GET_NMI(v);
+	if (v != 0) {
+		/*
+		 * We have no ability to handle the other bits here, as
+		 * those conditions may not have resulted in an NMI.  Clear only
+		 * the bit whose condition we have handled.
+		 */
+		zen_ioms_write(ioms, reg, v);
+		reg = genoa_ioms_reg(ioms, D_IOHC_INTR_EOI, 0);
+		v = IOHC_INTR_EOI_SET_NMI(0);
+		zen_ioms_write(ioms, reg, v);
+	}
+}

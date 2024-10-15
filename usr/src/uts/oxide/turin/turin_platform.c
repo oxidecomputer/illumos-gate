@@ -92,6 +92,9 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_ioapic = turin_fabric_ioapic,
 	.zfo_pcie = turin_fabric_pcie,
 
+	.zfo_iohc_enable_nmi = turin_iohc_enable_nmi,
+	.zfo_iohc_nmi_eoi = turin_iohc_nmi_eoi,
+
 	.zfo_pcie_core_reg = turin_pcie_core_reg,
 	.zfo_pcie_port_reg = turin_pcie_port_reg,
 };

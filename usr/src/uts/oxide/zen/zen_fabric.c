@@ -2383,20 +2383,37 @@ zen_fabric_init(void)
 	(fabric_ops->zfo_pcie)(fabric);
 }
 
+static int
+zen_fabric_nmi_cb(zen_ioms_t *ioms, void *arg)
+{
+	void (*uarch_nmi_func)(zen_ioms_t *) = arg;
+	uarch_nmi_func(ioms);
+	return (0);
+}
+
+/*
+ * Enable NMIs and make sure we only ever receive them on the BSP.
+ */
 void
 zen_fabric_enable_nmi(void)
 {
 	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
-	VERIFY3P(fabric_ops->zfo_enable_nmi, !=, NULL);
-	(fabric_ops->zfo_enable_nmi)();
+	VERIFY3P(fabric_ops->zfo_iohc_enable_nmi, !=, NULL);
+	(void) zen_walk_ioms(zen_fabric_nmi_cb,
+	    fabric_ops->zfo_iohc_enable_nmi);
 }
 
+/*
+ * Called for NMIs that originated from the IOHC in response to an external
+ * assertion of NMI_SYNCFLOOD_L.  We must clear the indicator flag and signal
+ * EOI to the fabric in order to receive subsequent such NMIs.
+ */
 void
 zen_fabric_nmi_eoi(void)
 {
 	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
-	VERIFY3P(fabric_ops->zfo_nmi_eoi, !=, NULL);
-	(fabric_ops->zfo_nmi_eoi)();
+	VERIFY3P(fabric_ops->zfo_iohc_nmi_eoi, !=, NULL);
+	(void) zen_walk_ioms(zen_fabric_nmi_cb, fabric_ops->zfo_iohc_nmi_eoi);
 }
 
 /*
