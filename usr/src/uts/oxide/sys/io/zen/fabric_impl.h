@@ -150,6 +150,17 @@ struct zen_ioms {
 	uint8_t			zio_nbionum;
 
 	/*
+	 * The index of the IOHC associated with this IOMS. Used when accessing
+	 * IOHC SMN registers.
+	 */
+	uint8_t			zio_iohcnum;
+
+	/*
+	 * The type of IOHC associated with this IOMS.
+	 */
+	zen_iohc_type_t		zio_iohctype;
+
+	/*
 	 * The instance ID of the IOMS and IOS components used for accessing
 	 * instance specific registers. On Milan, both values are the same.
 	 */

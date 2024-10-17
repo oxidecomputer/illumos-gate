@@ -40,6 +40,135 @@
 #include <sys/io/turin/ioapic.h>
 
 /*
+ * Various routines and things to access, initialize, understand, and manage
+ * Turin's I/O fabric. This consists of both the data fabric and the
+ * northbridges.
+ *
+ * --------------------------------------
+ * Physical Organization and Nomenclature
+ * --------------------------------------
+ *
+ * In AMD's Zen 5 designs, the CPU socket is organized as a series of
+ * chiplets with a series of compute complexes and then a central I/O die.
+ * Critically, this I/O die is the major device that we are concerned with here
+ * as it bridges the cores to basically the outside world through a combination
+ * of different devices and I/O paths. The part of the I/O die that we will
+ * spend most of our time dealing with is the IOM (I/O master) and IOS (I/O
+ * slave) units. These are represented together in our fabric data structures
+ * as combined IOMS units subordinate to an I/O die. On Turin processors, each
+ * I/O die has 8 IOMS that are grouped together into higher level NBIO
+ * (northbridge I/O) units. There are two NBIOs per I/O die which results in
+ * each having 4 IOMS.
+ *
+ *                                 data fabric
+ *                                     |
+ *         +---------------------------|---------------------------+
+ *         |  I/O Die                  |                           |
+ *         |                           |                      +-------+
+ *         |                           |                   +--+  FCH  |
+ *         |                           |                   |  +-------+
+ *         |  +-------------------+    |    +--------------|----+  |
+ *         |  |       NBIO0       |    |    |       NBIO1  |    |  |
+ *         |  |                   |    |    |              |    |  |
+ *         |  |  +-------------+  |    |    |  +-----------+-+  |  |
+ *         |  |  |  IOMS0      |-------+    |  |  IOMS4      |  |  |
+ *     P0 PPPPPPP|  IOHUB0     |  |    |    |  |  IOHUB0     |PPPPPPP P2
+ *         |  |  |  IOHC0(L)   |  |    +-------|  IOHC2(L)   |  |  |
+ *         |  |  +-------------+  |    |    |  +-------------+  |  |
+ *         |  |                   |    |    |                   |  |
+ *         |  |  +-------------+  |    |    |  +-------------+  |  |
+ *         |  |  |  IOMS3      |-------+    |  |  IOMS7      |  |  |
+ *     G1 PPPPPPP|  IOHUB1     |  |    |    |  |  IOHUB1     |PPPPPPP G3
+ *         |  |  |  IOHC4(S)   |  |    +-------|  IOHC6(S)   |  |  |
+ *         |  |  +-------------+  |    |    |  +-------------+  |  |
+ *         |  |                   |    |    |                   |  |
+ *         |  |  +-------------+  |    |    |  +-------------+  |  |
+ *     G0 PPPPPPP|  IOMS2      |-------+    |  |  IOMS6      |  |  |
+ *         |  |  |  IOHUB2     |  |    |    |  |  IOHUB2     |PPPPPPP G2
+ *   P4/5 PPPPPPP|  IOHC1(L)   |  |    +-------|  IOHC3(L)   |  |  |
+ *         |  |  +-------------+  |    |    |  +-------------+  |  |
+ *         |  |                   |    |    |                   |  |
+ *         |  |  +-------------+  |    |    |  +-------------+  |  |
+ *         |  |  |  IOMS1      |-------+    |  |  IOMS5      |  |  |
+ *     P1 PPPPPPP|  IOHUB3     |  |    |    |  |  IOHUB3     |PPPPPPP P3
+ *         |  |  |  IOHC5(S)   |  |    +-------|  IOHC7(S)   |  |  |
+ *         |  |  +-------------+  |    |    |  +-------------+  |  |
+ *         |  +-------------------+    |    +-------------------+  |
+ *         |                           |                           |
+ *         +---------------------------|---------------------------+
+ *                                     |
+ *                                     |
+ *
+ * Each IOMS instance implements, among other things, a PCIe root complex (RC),
+ * consisting of two major components: an I/O hub core (IOHC) that implements
+ * the host side of the RC, and one or two I/O hubs and PCIe cores that
+ * implement the PCIe side. These components are accessible via the system
+ * management network (SMN, also called the scalable control fabric) and that
+ * is the primary way in which they are configured. The IOHC also appears in
+ * PCI configuration space as a root complex and is the attachment point for
+ * npe(4D). The PCIe cores do not themselves appear in config space; however,
+ * each implements up to 9 PCIe root ports, and each root port has an
+ * associated host bridge that appears in configuration space.
+ * Externally-attached PCIe devices are enumerated under these bridges, and the
+ * bridge provides the standard PCIe interface to the downstream port including
+ * link status and control.
+ *
+ * Turin has two different types of IOHCs which the PPR calls IOHC0 and IOHC1.
+ * IOHC0 is larger than IOHC1 and is connected to an L2IOMMU, while IOHC1 is
+ * not. IOHC0 has multiple L1IOMMUs, IOHC1 only has a single one. Each IOHC is
+ * separately connected to the data fabric and there is a 1:1 mapping between
+ * IOHCs and IOMS instances in the system, leading to there being a total of 8
+ * IOHCs (4 instances of the larger IOHC0 and 4 instances of the smaller IOHC1).
+ * The even-numbered IOMS[0;2;4;6] contain the larger IOHC type while the
+ * odd-numbered IOMS[1;3;5;7] contain the smaller type. The size of the IOHC
+ * for each IOMS is indicated in the diagram above as (L) or (S).
+ *
+ * Two of the IOMS instances are somewhat special and merit brief additional
+ * discussion. Instance 2 has a second PCIe core, which is associated with the
+ * 8 bonus PCIe Gen3 ports. These are sometimes referred to as P4 and P5, two
+ * 4-lane entities, but there is just a single bonus core. Instance 4 has the
+ * Fusion Controller Hub (FCH) attached to it; the FCH doesn't contain any real
+ * PCIe devices, but it does contain some fake ones and from what we can tell
+ * the IOMS is the DF endpoint where MMIO transactions targeting the FCH are
+ * directed.
+ *
+ * -----------------------
+ * IOHC Instance Numbering
+ * -----------------------
+ *
+ * Although there is a 1:1 correspondence between IOMS, IOHCs and IOHUBs, they
+ * are not identically numbered. This is most easily seen in the diagram
+ * above where the IOHUBs are shown numbered sequentially within each NBIO,
+ * but the odd numbered IOMS (1,3) are reversed in order. The IOHCs are
+ * numbered sequentially across the larger instances before the smaller, and
+ * within that, NBIO0 before NBIO1.
+ *
+ * When accessing IOHC registers, the correct IOHC instance number pertaining
+ * to the IOMS of interest must be used. This is calculated once for each IOMS
+ * and saved in the zen_ioms_t structure for ease of use. Additionally, since
+ * the different sized IOHCs have different characteristics, the IOHC type is
+ * also stored for each IOMS.
+ *
+ * --------------
+ * Representation
+ * --------------
+ *
+ * We represent the IOMS entities described above in a hierarchical fashion:
+ *
+ * zen_fabric_t (DF -- root)
+ * |
+ * \-- zen_soc_t (qty 1 or 2)
+ *     |
+ *     \-- zen_iodie_t (qty 1)
+ *         |
+ *         \-- zen_ioms_t (qty 8, four per NBIO)
+ *             |
+ *             \-- zen_pcie_core_t (qty 1, except 2 for IOMS2)
+ *                 |
+ *                 \-- zen_pcie_port_t (qty 9, except 8 for IOMS2 RC 1)
+ */
+
+ /*
  * The following table encodes the per-bridge IOAPIC initialization routing. We
  * currently follow the recommendation of the PPR. Although IOAPIC instances on
  * the larger IOHC instances have 22 bridges and the others have 9, the
@@ -137,14 +266,31 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 	 * XXX don't set this without initializing the actual pcie structures.
 	 */
 	// ioms->zio_npcie_cores = turin_ioms_n_pcie_cores(iomsno);
+
 	ioms->zio_nbionum = TURIN_NBIO_NUM(iomsno);
+
+	/*
+	 * The even numbered IOMS instances are connected to the larger IOHC
+	 * type.
+	 */
+	ioms->zio_iohctype = iomsno % 2 == 0 ? ZEN_IOHCT_LARGE :
+	    ZEN_IOHCT_SMALL;
+
+	/*
+	 * The mapping between the IOMS instance number and the corresponding
+	 * IOHC index is not straightforward. See "IOHC Instance Numbering"
+	 * in the theory statement at the top of this file.
+	 */
+	const uint8_t iohcmap[] = {0, 5, 1, 4, 2, 7, 3, 6};
+	VERIFY3U(iomsno, <, ARRAY_SIZE(iohcmap));
+	ioms->zio_iohcnum = iohcmap[iomsno];
 
 	/*
 	 * nBIFs are actually associated with the NBIO instance but we have no
 	 * representation in the fabric for NBIOs yet. Mark the first IOMS in
 	 * each NBIO as holding the nBIFs.
 	 */
-	if (TURIN_IOMS_IOHUB_NUM(iomsno) == 0)
+	if (TURIN_NBIO_IOMS_NUM(iomsno) == 0)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
 }
 
@@ -256,42 +402,15 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 {
 	smn_reg_t reg;
 
-	/*
-	 * The way that these map to different register blocks is not
-	 * straightforward. Because of the interleaving, the instances of units
-	 * in the larger IOHC occurs before the smaller IOHC. The following
-	 * table maps the IOMS number to which NBIO, IOHUB, and IOHC kind is
-	 * present.
-	 *
-	 *	IOMS	NBIO	IOHUB	IOHC	UNIT
-	 *	----	----	-----	----	----
-	 *	0	0	0	L	0
-	 *	1	0	1	S	4
-	 *	2	0	2	L	1
-	 *	3	0	3	S	5
-	 *	4	1	0	L	2
-	 *	5	1	1	S	6
-	 *	6	1	2	L	3
-	 *	7	1	3	S	7
-	 *
-	 * NB: There is sometimes an aperture gap between IOHC0 and IOHC1 and
-	 * there can even be (more rarely) a change in the register offset such
-	 * as in IOHC::MISC_RAS_CONTROL. If registers in the latter category
-	 * are ever used via this function then it will need extending.
-	 */
-	const uint8_t iomsno = ioms->zio_num;
-	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(iomsno);
-	const uint8_t unit = iomsno / 2 + (iohcsz == IOHC_SZ_L ? 0 : 4);
-
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOAPIC:
-		reg = turin_ioapic_smn_reg(unit, def, reginst);
+		reg = turin_ioapic_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOHC:
-		reg = turin_iohc_smn_reg(unit, def, reginst);
+		reg = turin_iohc_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = turin_ioagr_smn_reg(unit, def, reginst);
+		reg = turin_ioagr_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -310,8 +429,9 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 			 * The IOAGR registers on IOMMUL1 are only instanced
 			 * on the larger IOHCs.
 			 */
-			ASSERT3U(iohcsz, ==, IOHC_SZ_L);
-			reg = turin_iommul1_ioagr_smn_reg(unit, def, 0);
+			VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
+			reg = turin_iommul1_ioagr_smn_reg(ioms->zio_iohcnum,
+			    def, 0);
 			break;
 		}
 		default:
@@ -324,8 +444,8 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		/*
 		 * The L2IOMMU is only present in the larger IOHC instances.
 		 */
-		ASSERT3U(iohcsz, ==, IOHC_SZ_L);
-		reg = turin_iommul2_smn_reg(unit, def, reginst);
+		VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
+		reg = turin_iommul2_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	}
 	default:
@@ -509,7 +629,6 @@ turin_fabric_iohc_bus_num(zen_ioms_t *ioms, uint8_t busno)
 void
 turin_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 {
-	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(ioms->zio_num);
 	smn_reg_t reg;
 	uint32_t val = 0;
 
@@ -519,7 +638,7 @@ turin_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 	 * On the smaller IOHC instances, zero out IOHC::SB_LOCATION and we're
 	 * done.
 	 */
-	if (iohcsz != IOHC_SZ_L) {
+	if (ioms->zio_iohctype != ZEN_IOHCT_LARGE) {
 		zen_ioms_write(ioms, reg, 0);
 		return;
 	}
@@ -599,9 +718,9 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 
 	/*
 	 * Finally, the SDPMUX variant. There are two SDPMUX instances,
-	 * one on IOHUB0 in each NBIO.
+	 * one on the first IOHUB in each NBIO.
 	 */
-	if (TURIN_IOMS_IOHUB_NUM(ioms->zio_num) == 0) {
+	if (TURIN_NBIO_IOMS_NUM(ioms->zio_num) == 0) {
 		const uint_t sdpmux = TURIN_NBIO_NUM(ioms->zio_num);
 
 		for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
@@ -655,9 +774,10 @@ turin_fabric_nbif_arbitration(zen_nbif_t *nbif)
 	 * on the IOMS which are instanced on the larger IOHCs. There are no
 	 * devices on NBIF1.
 	 */
-	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(nbif->zn_ioms->zio_num);
+	const zen_iohc_type_t iohctype = nbif->zn_ioms->zio_iohctype;
 
-	if (nbif->zn_num == 0 || (iohcsz == IOHC_SZ_L && nbif->zn_num == 2)) {
+	if (nbif->zn_num == 0 ||
+	    (iohctype == ZEN_IOHCT_LARGE && nbif->zn_num == 2)) {
 		reg = turin_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT2, 0);
 		zen_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
 		reg = turin_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT3, 0);
@@ -704,7 +824,7 @@ turin_fabric_ioapic(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t val;
-	const uint_t nroutes = TURIN_IOHC_SZ(ioms->zio_num) == IOHC_SZ_L ?
+	const uint_t nroutes = ioms->zio_iohctype == ZEN_IOHCT_LARGE ?
 	    IOAPIC_NROUTES_L : IOAPIC_NROUTES_S;
 
 	for (uint_t i = 0; i < nroutes; i++) {
@@ -816,7 +936,8 @@ turin_iohc_enable_nmi(zen_ioms_t *ioms)
 	 * reduce the likelihood of that, we are going to enable NMI and
 	 * skedaddle...
 	 */
-	reg = turin_ioms_reg(ioms, (TURIN_IOHC_SZ(ioms->zio_num) == IOHC_SZ_L) ?
+	reg = turin_ioms_reg(ioms,
+	    ioms->zio_iohctype == ZEN_IOHCT_LARGE ?
 	    D_IOHC_MISC_RAS_CTL_L : D_IOHC_MISC_RAS_CTL_S, 0);
 	v = zen_ioms_read(ioms, reg);
 	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(v, 1);

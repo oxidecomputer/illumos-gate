@@ -144,12 +144,19 @@ genoa_fabric_ioms_init(zen_ioms_t *ioms)
 	 * XXX don't set this without initializing the actual pcie structures.
 	 */
 	// ioms->zio_npcie_cores = genoa_ioms_n_pcie_cores(iomsno);
+
+	/*
+	 * Genoa has a 1:1 mapping between IOHCs and IOMSs, and all IOHCs are
+	 * the same type.
+	 */
 	ioms->zio_nbionum = GENOA_NBIO_NUM(iomsno);
+	ioms->zio_iohcnum = iomsno;
+	ioms->zio_iohctype = ZEN_IOHCT_LARGE;
 
 	/*
 	 * nBIFs are actually associated with the NBIO instance but we have no
-	 * representation in the fabric for NBIOs yet. Mark the first IOMS in
-	 * each NBIO as holding the nBIFs.
+	 * representation in the fabric for NBIOs. Mark the first IOMS in each
+	 * NBIO as holding the nBIFs.
 	 */
 	if (GENOA_IOMS_IOHUB_NUM(iomsno) == 0)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
@@ -277,13 +284,13 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	smn_reg_t reg;
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOAPIC:
-		reg = genoa_ioapic_smn_reg(ioms->zio_num, def, reginst);
+		reg = genoa_ioapic_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOHC:
-		reg = genoa_iohc_smn_reg(ioms->zio_num, def, reginst);
+		reg = genoa_iohc_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = genoa_ioagr_smn_reg(ioms->zio_num, def, reginst);
+		reg = genoa_ioagr_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -298,8 +305,8 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		    (const genoa_iommul1_subunit_t)reginst;
 		switch (su) {
 		case GIL1SU_IOAGR:
-			reg = genoa_iommul1_ioagr_smn_reg(ioms->zio_num, def,
-			    0);
+			reg = genoa_iommul1_ioagr_smn_reg(ioms->zio_iohcnum,
+			    def, 0);
 			break;
 		default:
 			cmn_err(CE_PANIC, "invalid IOMMUL1 subunit %d", su);
@@ -308,7 +315,7 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	}
 	case SMN_UNIT_IOMMUL2:
-		reg = genoa_iommul2_smn_reg(ioms->zio_num, def, reginst);
+		reg = genoa_iommul2_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",

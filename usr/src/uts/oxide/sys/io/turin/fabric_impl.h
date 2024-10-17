@@ -65,7 +65,7 @@ extern "C" {
 /*
  * Each NBIO has 4 x16 PCIe Gen5 cores, one on each of four IOHUBs.
  * Additionally, NBIO0/IOHUB2 (IOMS2) has a bonus x8 PCIe Gen3 core.
- * This all means that the most IOHUBs across both NBIOs has one core, while
+ * This all means that the most IOHUBs across both NBIOs have one core, while
  * NBIO0/IOHUB2 has two.
  */
 #define	TURIN_IOMS_MAX_PCIE_CORES	2
@@ -73,30 +73,15 @@ extern "C" {
 #define	TURIN_IOMS_BONUS_PCIE_CORENO	1
 
 /*
- * Convenience macros to convert an IOMS number to the corresponding IOHUB and
- * NBIO.
+ * Convenience macro to convert an IOMS number to the corresponding NBIO.
  */
-#define	TURIN_IOMS_IOHUB_NUM(num)	((num) % TURIN_IOMS_PER_NBIO)
 #define	TURIN_NBIO_NUM(num)		((num) / TURIN_IOMS_PER_NBIO)
 
 /*
- * Turin has two different kinds of IOHCs which the PPR calls IOHC0 and IOHC1.
- * IOHC0 is larger than IOHC1 and is connected to an L2IOMMU, while IOHC1 is
- * not. IOHC0 has multiple L1IOMMUs, IOHC1 only has a single one. Each IOHC is
- * separately connected to the data fabric and there is a 1:1 mapping between
- * IOHCs and IOMS instances in the system, leading to there being a total of 8
- * IOHCs (4 instances of the larger IOHC0 and 4 instances of the smaller
- * IOHC1). To avoid overloading of terminology, we refer to what that PPR
- * refers to as IOHC0 as a "large" IOHC, and the other as a "small" one.
- *
- * The following enumeration and macro are used to obtain the size of the IOHC
- * corresponding to a particular IOMS instance.
+ * Convenience macro to to convert an absolute IOMS index into a relative one
+ * within an NBIO.
  */
-typedef enum {
-	IOHC_SZ_L,
-	IOHC_SZ_S
-} turin_iohc_sz_t;
-#define	TURIN_IOHC_SZ(num)	((num) % 2 == 0 ? IOHC_SZ_L : IOHC_SZ_S)
+#define	TURIN_NBIO_IOMS_NUM(num)	((num) % TURIN_IOMS_PER_NBIO)
 
 /*
  * The Turin uarch-specific hooks for initial fabric topology initialization.
