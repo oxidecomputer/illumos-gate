@@ -144,12 +144,19 @@ genoa_fabric_ioms_init(zen_ioms_t *ioms)
 	 * XXX don't set this without initializing the actual pcie structures.
 	 */
 	// ioms->zio_npcie_cores = genoa_ioms_n_pcie_cores(iomsno);
+
+	/*
+	 * Genoa has a 1:1 mapping between IOHCs and IOMSs, and all IOHCs are
+	 * the same type.
+	 */
 	ioms->zio_nbionum = GENOA_NBIO_NUM(iomsno);
+	ioms->zio_iohcnum = iomsno;
+	ioms->zio_iohctype = ZEN_IOHCT_LARGE;
 
 	/*
 	 * nBIFs are actually associated with the NBIO instance but we have no
-	 * representation in the fabric for NBIOs yet. Mark the first IOMS in
-	 * each NBIO as holding the nBIFs.
+	 * representation in the fabric for NBIOs. Mark the first IOMS in each
+	 * NBIO as holding the nBIFs.
 	 */
 	if (GENOA_IOMS_IOHUB_NUM(iomsno) == 0)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;

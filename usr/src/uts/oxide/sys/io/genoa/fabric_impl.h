@@ -73,7 +73,8 @@ extern "C" {
 #define	GENOA_IOMS_BONUS_PCIE_CORENO	2
 
 /*
- * Convenience macro to convert an IOMS number to the corresponding IOHUB.
+ * Convenience macro to convert an IOMS number to the corresponding relative
+ * IOHUB, and to the containing NBIO.
  */
 #define	GENOA_IOMS_IOHUB_NUM(num)	((num) % GENOA_IOMS_PER_NBIO)
 #define	GENOA_NBIO_NUM(num)		((num) / GENOA_IOMS_PER_NBIO)

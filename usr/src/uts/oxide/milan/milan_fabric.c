@@ -1885,13 +1885,20 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 	}
 
 	/*
+	 * Milan has a 1:1 mapping between NBIOs, IOHCs and IOMSs, and all
+	 * IOHCs are the same type.
+	 */
+	ioms->zio_nbionum = iomsno;
+	ioms->zio_iohcnum = iomsno;
+	ioms->zio_iohctype = ZEN_IOHCT_LARGE;
+
+	/*
 	 * nBIFs are actually associated with the NBIO instance but we have no
 	 * representation in the fabric for NBIOs. In Milan there is a 1:1
-	 * correspondence between NBIOs and nBIFs so we flag each IOMS as also
-	 * having nBIFs.
+	 * mapping between NBIOs and nBIFs so we flag each IOMS as also having
+	 * nBIFs.
 	 */
 	ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
-	ioms->zio_nbionum = iomsno;
 
 	milan_fabric_ioms_pcie_init(ioms);
 }

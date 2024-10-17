@@ -137,7 +137,33 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 	 * XXX don't set this without initializing the actual pcie structures.
 	 */
 	// ioms->zio_npcie_cores = turin_ioms_n_pcie_cores(iomsno);
+
 	ioms->zio_nbionum = TURIN_NBIO_NUM(iomsno);
+
+	/*
+	 * Turin has two different kinds of IOHCs which the PPR calls IOHC0 and
+	 * IOHC1. IOHC0 is larger than IOHC1 and is connected to an L2IOMMU,
+	 * while IOHC1 is not. IOHC0 has multiple L1IOMMUs, IOHC1 only has a
+	 * single one. Each IOHC is separately connected to the data fabric and
+	 * there is a 1:1 mapping between IOHCs and IOMS instances in the
+	 * system, leading to there being a total of 8 IOHCs (4 instances of
+	 * the larger IOHC0 and 4 instances of the smaller IOHC1). To avoid
+	 * overloading of terminology, we refer to what that PPR refers to as
+	 * IOHC0 as a "large" IOHC, and the other as a "small" one.
+	 *
+	 * The even numbered IOMS instances are connected to the larger IOHC
+	 * type.
+	 */
+	ioms->zio_iohctype = iomsno % 2 == 0 ? ZEN_IOHCT_LARGE :
+	    ZEN_IOHCT_SMALL;
+
+	/*
+	 * The mapping between the IOMS instance number and the corresponding
+	 * IOHC index is not straightforward.
+	 */
+	const uint8_t iohcmap[] = {0, 5, 1, 4, 2, 7, 3, 6};
+	VERIFY3U(iomsno, <, ARRAY_SIZE(iohcmap));
+	ioms->zio_iohcnum = iohcmap[iomsno];
 
 	/*
 	 * nBIFs are actually associated with the NBIO instance but we have no
@@ -256,42 +282,15 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 {
 	smn_reg_t reg;
 
-	/*
-	 * The way that these map to different register blocks is not
-	 * straightforward. Because of the interleaving, the instances of units
-	 * in the larger IOHC occurs before the smaller IOHC. The following
-	 * table maps the IOMS number to which NBIO, IOHUB, and IOHC kind is
-	 * present.
-	 *
-	 *	IOMS	NBIO	IOHUB	IOHC	UNIT
-	 *	----	----	-----	----	----
-	 *	0	0	0	L	0
-	 *	1	0	1	S	4
-	 *	2	0	2	L	1
-	 *	3	0	3	S	5
-	 *	4	1	0	L	2
-	 *	5	1	1	S	6
-	 *	6	1	2	L	3
-	 *	7	1	3	S	7
-	 *
-	 * NB: There is sometimes an aperture gap between IOHC0 and IOHC1 and
-	 * there can even be (more rarely) a change in the register offset such
-	 * as in IOHC::MISC_RAS_CONTROL. If registers in the latter category
-	 * are ever used via this function then it will need extending.
-	 */
-	const uint8_t iomsno = ioms->zio_num;
-	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(iomsno);
-	const uint8_t unit = iomsno / 2 + (iohcsz == IOHC_SZ_L ? 0 : 4);
-
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOAPIC:
-		reg = turin_ioapic_smn_reg(unit, def, reginst);
+		reg = turin_ioapic_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOHC:
-		reg = turin_iohc_smn_reg(unit, def, reginst);
+		reg = turin_iohc_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = turin_ioagr_smn_reg(unit, def, reginst);
+		reg = turin_ioagr_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -310,8 +309,9 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 			 * The IOAGR registers on IOMMUL1 are only instanced
 			 * on the larger IOHCs.
 			 */
-			ASSERT3U(iohcsz, ==, IOHC_SZ_L);
-			reg = turin_iommul1_ioagr_smn_reg(unit, def, 0);
+			VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
+			reg = turin_iommul1_ioagr_smn_reg(ioms->zio_iohcnum,
+			    def, 0);
 			break;
 		}
 		default:
@@ -324,8 +324,8 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		/*
 		 * The L2IOMMU is only present in the larger IOHC instances.
 		 */
-		ASSERT3U(iohcsz, ==, IOHC_SZ_L);
-		reg = turin_iommul2_smn_reg(unit, def, reginst);
+		VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
+		reg = turin_iommul2_smn_reg(ioms->zio_iohcnum, def, reginst);
 		break;
 	}
 	default:
@@ -509,7 +509,6 @@ turin_fabric_iohc_bus_num(zen_ioms_t *ioms, uint8_t busno)
 void
 turin_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 {
-	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(ioms->zio_num);
 	smn_reg_t reg;
 	uint32_t val = 0;
 
@@ -519,7 +518,7 @@ turin_fabric_iohc_fch_link(zen_ioms_t *ioms, bool has_fch)
 	 * On the smaller IOHC instances, zero out IOHC::SB_LOCATION and we're
 	 * done.
 	 */
-	if (iohcsz != IOHC_SZ_L) {
+	if (ioms->zio_iohctype != ZEN_IOHCT_LARGE) {
 		zen_ioms_write(ioms, reg, 0);
 		return;
 	}
@@ -655,9 +654,10 @@ turin_fabric_nbif_arbitration(zen_nbif_t *nbif)
 	 * on the IOMS which are instanced on the larger IOHCs. There are no
 	 * devices on NBIF1.
 	 */
-	const turin_iohc_sz_t iohcsz = TURIN_IOHC_SZ(nbif->zn_ioms->zio_num);
+	const zen_iohc_type_t iohctype = nbif->zn_ioms->zio_iohctype;
 
-	if (nbif->zn_num == 0 || (iohcsz == IOHC_SZ_L && nbif->zn_num == 2)) {
+	if (nbif->zn_num == 0 ||
+	    (iohctype == ZEN_IOHCT_LARGE && nbif->zn_num == 2)) {
 		reg = turin_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT2, 0);
 		zen_nbif_write(nbif, reg, NBIF_GMI_WRR_WEIGHTn_VAL);
 		reg = turin_nbif_reg(nbif, D_NBIF_GMI_WRR_WEIGHT3, 0);
@@ -704,7 +704,7 @@ turin_fabric_ioapic(zen_ioms_t *ioms)
 {
 	smn_reg_t reg;
 	uint32_t val;
-	const uint_t nroutes = TURIN_IOHC_SZ(ioms->zio_num) == IOHC_SZ_L ?
+	const uint_t nroutes = ioms->zio_iohctype == ZEN_IOHCT_LARGE ?
 	    IOAPIC_NROUTES_L : IOAPIC_NROUTES_S;
 
 	for (uint_t i = 0; i < nroutes; i++) {
@@ -816,7 +816,8 @@ turin_iohc_enable_nmi(zen_ioms_t *ioms)
 	 * reduce the likelihood of that, we are going to enable NMI and
 	 * skedaddle...
 	 */
-	reg = turin_ioms_reg(ioms, (TURIN_IOHC_SZ(ioms->zio_num) == IOHC_SZ_L) ?
+	reg = turin_ioms_reg(ioms,
+	    ioms->zio_iohctype == ZEN_IOHCT_LARGE ?
 	    D_IOHC_MISC_RAS_CTL_L : D_IOHC_MISC_RAS_CTL_S, 0);
 	v = zen_ioms_read(ioms, reg);
 	v = IOHC_MISC_RAS_CTL_SET_NMI_SYNCFLOOD_EN(v, 1);

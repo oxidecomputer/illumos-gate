@@ -80,6 +80,17 @@ typedef enum zen_iodie_flag {
 } zen_iodie_flag_t;
 
 /*
+ * Some platforms have more than one type of IOHC with differences in
+ * connectivity, downstream components, available register instances or
+ * even register offsets. Turin is the first platform that has this split and
+ * one of its IOHC kinds is larger than the other, hence the naming below.
+ */
+typedef enum {
+	ZEN_IOHCT_LARGE		= 0,
+	ZEN_IOHCT_SMALL
+} zen_iohc_type_t;
+
+/*
  * Returns the set of flags set on the given IOMS.
  */
 extern zen_ioms_flag_t zen_ioms_flags(const zen_ioms_t *const);
