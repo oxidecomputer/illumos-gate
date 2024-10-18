@@ -303,9 +303,9 @@ usr/src/cmd/bc/bc.xpg6
 usr/src/cmd/bc/lib.b
 usr/src/cmd/bdiff/bdiff
 usr/src/cmd/beadm/beadm
-usr/src/cmd/bhyve/bhyve
-usr/src/cmd/bhyve/mevent_test
+usr/src/cmd/bhyve/amd64/bhyve
 usr/src/cmd/bhyve/test/tests/mevent/lists_delete
+usr/src/cmd/bhyve/test/tests/mevent/mevent_test
 usr/src/cmd/bhyve/test/tests/mevent/read_disable
 usr/src/cmd/bhyve/test/tests/mevent/read_pause
 usr/src/cmd/bhyve/test/tests/mevent/read_requeue
