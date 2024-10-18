@@ -1484,7 +1484,7 @@ zen_fabric_topo_init(void)
 		    nthreads, NCPU);
 		nthreads = NCPU;
 	}
-	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads;
+	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads = 1;
 }
 
 static int
