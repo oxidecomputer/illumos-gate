@@ -632,6 +632,7 @@
 #include <sys/io/milan/smu_impl.h>
 
 #include <sys/io/zen/df_utils.h>
+#include <sys/io/zen/dxio_data.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/pcie_impl.h>
 #include <sys/io/zen/physaddrs.h>

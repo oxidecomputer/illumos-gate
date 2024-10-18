@@ -167,6 +167,8 @@ struct zen_pcie_port {
 	uint8_t			zpp_func;
 
 	zen_hotplug_type_t	zpp_hp_type;
+	uint16_t		zpp_hp_slotno;
+	uint32_t		zpp_hp_mpio_mask;
 
 	union {
 		zen_dxio_fw_engine_t		*zpp_dxio_engine;
