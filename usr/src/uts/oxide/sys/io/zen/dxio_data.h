@@ -35,6 +35,34 @@ typedef enum smu_gpio_sw_type {
 	SMU_GPIO_SW_9546_48 = 1,
 } smu_gpio_sw_type_t;
 
+/*
+ * XXX it may be nicer for us to define our own semantic set of bits here that
+ * don't change based on verison and then we change it.
+ */
+typedef enum smu_enta_bits {
+	SMU_ENTA_PRSNT		= 1 << 0,
+	SMU_ENTA_PWRFLT		= 1 << 1,
+	SMU_ENTA_ATTNSW		= 1 << 2,
+	SMU_ENTA_EMILS		= 1 << 3,
+	SMU_ENTA_PWREN		= 1 << 4,
+	SMU_ENTA_ATTNLED	= 1 << 5,
+	SMU_ENTA_PWRLED		= 1 << 6,
+	SMU_ENTA_EMIL		= 1 << 7
+} smu_enta_bits_t;
+
+typedef enum smu_entb_bits {
+	SMU_ENTB_ATTNLED	= 1 << 0,
+	SMU_ENTB_PWRLED		= 1 << 1,
+	SMU_ENTB_PWREN		= 1 << 2,
+	SMU_ENTB_ATTNSW		= 1 << 3,
+	SMU_ENTB_PRSNT		= 1 << 4,
+	SMU_ENTB_PWRFLT		= 1 << 5,
+	SMU_ENTB_EMILS		= 1 << 6,
+	SMU_ENTB_EMIL		= 1 << 7
+} smu_entb_bits_t;
+
+#define	SMU_I2C_DIRECT	0x7
+
 #ifdef __cplusplus
 }
 #endif

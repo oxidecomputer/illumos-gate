@@ -1826,6 +1826,30 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 /*
+ * PCIERCCFG::NPEM_CAP, PCIERCCFG::NPEM_CNTL, PCIERCCFG::NPEM_STATUS.
+ * These are the PCIe NPEM registers.
+ */
+/*CSTYLED*/
+#define D_PCIE_PORT_NPEM_CAP (const smn_reg_def_t) {	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x4d4	\
+}
+#define PCIE_PORT_NPEM_CAP_SET_CAPS(r, v)	bitset32(r, 11, 0, v)
+
+/*CSTYLED*/
+#define D_PCIE_PORT_NPEM_CTL (const smn_reg_def_t) {    \
+	.srd_unit = SMN_UNIT_PCIE_PORT, \
+	.srd_reg = 0x4d8        \
+}
+#define PCIE_PORT_NPEM_CTL_SET_NPEM_EN(r, v)	bitset32(r, 0, 0, v)
+
+/*CSTYLED*/
+#define D_PCIE_PORT_NPEM_STS (const smn_reg_def_t) {	\
+	.srd_unit = SMN_UNIT_PCIE_PORT,	\
+	.srd_reg = 0x4dc	\
+}
+
+/*
  * PCIECORE::PCIE_HW_DEBUG - unused but captured for debugging.
  */
 /*CSTYLED*/

@@ -730,6 +730,14 @@ const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports_full_sata[] = {
 const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS = ARRAY_SIZE(ruby_mpio_hfc_ports);
 
 /*
+ * Ruby does not use "legacy" hotplug, but rather,
+ * uses the UBM version.
+ */
+const zen_mpio_hotplug_entry_t ruby_hotplug_ents[] = {
+	{ .me_slotno = MPIO_HOTPLUG_ENT_LAST }
+};
+
+/*
  * PCIe slot capabilities that determine what features the slot actually
  * supports.
  */
