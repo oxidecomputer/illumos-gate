@@ -2183,7 +2183,7 @@ impl_bus_initialprobe(void)
 	bool skip_pci = false;
 
 	switch (chiprev_family(cpuid_getchiprev(CPU))) {
-	case X86_PF_AMD_GENOA:
+	// case X86_PF_AMD_GENOA:
 	case X86_PF_AMD_TURIN:
 	case X86_PF_AMD_DENSE_TURIN:
 		/*

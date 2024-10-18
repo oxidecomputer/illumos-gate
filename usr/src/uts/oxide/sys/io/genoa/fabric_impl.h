@@ -125,6 +125,8 @@ extern void genoa_fabric_init_bridges(zen_pcie_port_t *);
 extern void genoa_fabric_init_pcie_core(zen_pcie_core_t *);
 extern void genoa_iohc_enable_nmi(zen_ioms_t *);
 extern void genoa_iohc_nmi_eoi(zen_ioms_t *);
+extern void genoa_fabric_hack_bridges(zen_fabric_t *);
+
 
 extern smn_reg_t genoa_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);
