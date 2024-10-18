@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 extern void genoa_hack_gpio(zen_hack_gpio_op_t, uint16_t);
+extern void genoa_fixup_i2c_clock(void);
 
 #ifdef __cplusplus
 }

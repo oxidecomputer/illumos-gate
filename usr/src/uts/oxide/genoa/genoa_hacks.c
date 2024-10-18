@@ -165,3 +165,32 @@ genoa_hack_gpio(zen_hack_gpio_op_t op, uint16_t gpio)
 
 	mmio_reg_block_unmap(&gpio_block);
 }
+
+/*
+ * This is a total hack. Unfortunately the SMU relies on x86 software to
+ * actually set the i2c clock up to something expected for it. Temporarily do
+ * this the max power way.  We set all the defined fields of the control
+ * register, preserving only those that are reserved.
+ */
+void
+genoa_fixup_i2c_clock(void)
+{
+	mmio_reg_block_t fch_i2c0 = fch_i2c_mmio_block(0);
+	mmio_reg_t reg;
+	uint32_t val;
+
+	reg = FCH_I2C_IC_CON_MMIO(fch_i2c0);
+	val = mmio_reg_read(reg);
+	val = FCH_I2C_IC_CON_SET_HOLD_ON_RX_FULL(val, 0);
+	val = FCH_I2C_IC_CON_SET_TXE_INTR_EN(val, 0);
+	val = FCH_I2C_IC_CON_SET_SD_INTR_ADDRONLY(val, 0);
+	val = FCH_I2C_IC_CON_SET_SLAVE_DIS(val, 1);
+	val = FCH_I2C_IC_CON_SET_RESTART_EN(val, 1);
+	val = FCH_I2C_IC_CON_SET_MA_ADDRWIDTH(val, FCH_I2C_IC_CON_ADDRWIDTH_7);
+	val = FCH_I2C_IC_CON_SET_SL_ADDRWIDTH(val, FCH_I2C_IC_CON_ADDRWIDTH_7);
+	val = FCH_I2C_IC_CON_SET_SPEED(val, FCH_I2C_IC_CON_SPEED_STD);
+	val = FCH_I2C_IC_CON_SET_MASTER_EN(val, 1);
+	mmio_reg_write(reg, val);
+
+	mmio_reg_block_unmap(&fch_i2c0);
+}

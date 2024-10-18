@@ -120,6 +120,8 @@ static const zen_hack_ops_t genoa_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
 	.zho_hack_gpio = genoa_hack_gpio,
+	.zho_fabric_hack_bridges = genoa_fabric_hack_bridges,
+
 };
 
 static const zen_ras_ops_t genoa_ras_ops = {

@@ -348,7 +348,7 @@ zen_mpio_rpc_get_i2c_device(zen_iodie_t *iodie, uint32_t hfc, uint32_t dfc,
 	return (true);
 }
 
-static bool
+bool
 zen_mpio_rpc_set_i2c_switch_addr(zen_iodie_t *iodie, uint32_t addr)
 {
 	zen_mpio_rpc_t rpc = { 0 };
@@ -697,6 +697,67 @@ zen_mpio_send_data(zen_iodie_t *iodie, void *arg __unused)
 }
 
 bool
+zen_mpio_send_hotplug_table(zen_iodie_t *iodie, uint64_t paddr)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_SET_HP_CFG_TBL;
+	rpc.zmr_args[0] = bitx64(paddr, 31, 0);
+	rpc.zmr_args[1] = bitx64(paddr, 63, 32);
+	rpc.zmr_args[2] = sizeof(zen_mpio_hotplug_table_t);
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO TX Hotplug Table Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+bool
+zen_mpio_rpc_hotplug_flags(zen_iodie_t *iodie, uint32_t flags)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_SET_HP_FLAGS;
+	rpc.zmr_args[0] = flags;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN,
+		    "MPIO Set Hotplug Flags failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+bool
+zen_mpio_rpc_start_hotplug(zen_iodie_t *iodie, bool one_based, uint32_t flags)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	rpc.zmr_req = ZEN_MPIO_OP_HOTPLUG_EN;
+	if (one_based) {
+		rpc.zmr_args[0] = 1;
+	}
+	rpc.zmr_args[0] |= flags;
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO Start Hotplug Failed: %s (MPIO: 0x%x)",
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+bool
 zen_mpio_write_pcie_strap(zen_pcie_core_t *pc,
     const uint32_t reg, const uint32_t data)
 {
@@ -1035,17 +1096,17 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	 */
 	if (hops->zho_fabric_hack_bridges != NULL)
 		hops->zho_fabric_hack_bridges(fabric);
-#if 0
+
 	/*
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
 	 */
 	zen_pcie_populate_dbg(fabric, ZPCS_PRE_HOTPLUG, ZEN_IODIE_MATCH_ANY);
+#if 0
 	if (!zen_hotplug_init(fabric)) {
 		cmn_err(CE_WARN, "SMUHP: initialization failed; PCIe hotplug "
 		    "may not function properly");
 	}
-
-	zen_pcie_populate_dbg(fabric, ZPCS_POST_HOTPLUG, ZEN_IODIE_MATCH_ANY);
 #endif
+	zen_pcie_populate_dbg(fabric, ZPCS_POST_HOTPLUG, ZEN_IODIE_MATCH_ANY);
 }

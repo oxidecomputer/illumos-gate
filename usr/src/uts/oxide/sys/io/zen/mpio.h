@@ -46,5 +46,9 @@ extern void zen_mpio_pcie_init(zen_fabric_t *);
 
 extern bool zen_mpio_write_pcie_strap(zen_pcie_core_t *, uint32_t, uint32_t);
 
+extern bool zen_mpio_send_hotplug_table(zen_iodie_t *, uint64_t);
+extern bool zen_mpio_rpc_hotplug_flags(zen_iodie_t *, uint32_t);
+extern bool zen_mpio_rpc_start_hotplug(zen_iodie_t *, bool, uint32_t);
+extern bool zen_mpio_rpc_set_i2c_switch_addr(zen_iodie_t *, uint32_t);
 
 #endif	/* _SYS_IO_ZEN_MPIO_H */

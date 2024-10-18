@@ -507,6 +507,61 @@ typedef struct zen_mpio_ubm_extra {
 	uint16_t		zmue_npem_cap;
 } zen_mpio_ubm_extra_t;
 
+/*
+ * PCIe Hotplug mapping.
+ */
+typedef struct zen_mpio_hotplug_map {
+	uint32_t	mhm_format:3;
+	uint32_t	mhm_rst_valid:1;
+	uint32_t	mhm_active:1;
+	uint32_t	mhm_apu:1;
+	uint32_t	mhm_die_id:1;
+	uint32_t	mhm_port_id:4;
+	uint32_t	mhm_tile_id:4;
+	uint32_t	mhm_bridge:5;
+	uint32_t	mhm_rsvd0:4;
+	uint32_t	mhm_alt_slot_no:6;
+	uint32_t	mhm_sec:1;
+	uint32_t	mhm_rsvsd1:1;
+} zen_mpio_hotplug_map_t;
+
+typedef struct zen_mpio_hotplug_function {
+	uint32_t	mhf_i2c_bit:3;
+	uint32_t	mhf_i2c_byte:3;
+	uint32_t	mhf_i2c_daddr:5;
+	uint32_t	mhf_i2c_dtype:2;
+	uint32_t	mhf_i2c_bus:5;
+	uint32_t	mhf_mask:8;
+	uint32_t	mhf_i2c_bus2:6;
+} zen_mpio_hotplug_function_t;
+
+typedef struct zen_mpio_hotplug_reset {
+	uint32_t	mhr_rsvd0:3;
+	uint32_t	mhr_i2c_gpio_byte:3;
+	uint32_t	mhr_i2c_daddr:5;
+	uint32_t	mhr_i2c_dtype:2;
+	uint32_t	mhr_i2c_bus:5;
+	uint32_t	mhr_i2c_reset:8;
+	uint32_t	mhr_rsvd1:6;
+} zen_mpio_hotplug_reset_t;
+
+#define	ZEN_HOTPLUG_MAX_PORTS	160
+
+typedef struct zen_mpio_hotplug_table {
+	zen_mpio_hotplug_map_t		mmt_map[ZEN_HOTPLUG_MAX_PORTS];
+	zen_mpio_hotplug_function_t	mmt_func[ZEN_HOTPLUG_MAX_PORTS];
+	zen_mpio_hotplug_reset_t	mmt_reset[ZEN_HOTPLUG_MAX_PORTS];
+} zen_mpio_hotplug_table_t;
+
+typedef struct zen_mpio_hotplug_entry {
+	uint_t				me_slotno;
+	zen_mpio_hotplug_map_t		me_map;
+	zen_mpio_hotplug_function_t	me_func;
+	zen_mpio_hotplug_reset_t	me_reset;
+} zen_mpio_hotplug_entry_t;
+
+#define	MPIO_HOTPLUG_ENT_LAST	UINT_MAX
+
 #pragma	pack()	/* pragma pack(1) */
 
 typedef struct zen_mpio_config {
@@ -527,14 +582,25 @@ typedef struct zen_mpio_config {
 	uint32_t			zmc_ubm_hfc_ports_alloc_len;
 } zen_mpio_config_t;
 
+typedef struct zen_mpio_hotplug {
+	zen_mpio_hotplug_table_t	*zh_table;
+	uint64_t			zh_pa;
+	uint32_t			zh_alloc_len;
+} zen_mpio_hotplug_t;
+
 /*
  * Data definitions for Ruby.
  */
 extern const zen_mpio_port_conf_t ruby_mpio_pcie_s0[];
 extern size_t RUBY_MPIO_PCIE_S0_LEN;
 
+extern const zen_mpio_hotplug_entry_t ruby_hotplug_ents[];
+
 extern const zen_mpio_ubm_hfc_port_t ruby_mpio_hfc_ports[];
 extern const size_t RUBY_MPIO_UBM_HFC_DESCR_NPORTS;
+
+extern const uint32_t ruby_pcie_slot_cap_entssd;
+extern const uint32_t ruby_pcie_slot_cap_express;
 
 /*
  * The base of the MPIO SMN register space.  This is common across Genoa and

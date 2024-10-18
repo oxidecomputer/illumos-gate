@@ -30,6 +30,7 @@
 #include <sys/spl.h>
 
 #include <sys/io/zen/df_utils.h>
+#include <sys/io/zen/dxio_data.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/mpio.h>
 #include <sys/io/zen/pcie_impl.h>
@@ -37,12 +38,19 @@
 #include <sys/io/zen/smn.h>
 
 #include <sys/io/genoa/fabric_impl.h>
-#include <sys/io/genoa/pcie_impl.h>
-#include <sys/io/genoa/pcie_rsmu.h>
+#include <sys/io/genoa/hacks.h>
+#include <sys/io/genoa/ioapic.h>
 #include <sys/io/genoa/iohc.h>
 #include <sys/io/genoa/iommu.h>
 #include <sys/io/genoa/nbif_impl.h>
-#include <sys/io/genoa/ioapic.h>
+#include <sys/io/genoa/pcie_impl.h>
+#include <sys/io/genoa/pcie_rsmu.h>
+
+/*
+ * These come from common code in the DDI.  They really ought to be in a header.
+ */
+extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
+extern void contig_free(void *, size_t);
 
 /*
  * This table encodes knowledge about how the SoC assigns devices and functions
@@ -1069,7 +1077,7 @@ genoa_iohc_nmi_eoi(zen_ioms_t *ioms)
  *
  * These can be matched to a board identifier, I/O die DF node ID, NBIO/IOMS
  * number, PCIe core number (pcie_core_t.zpc_coreno), and PCIe port number
- * (pcie_port_t.gpp_portno).  The board sentinel value MBT_ANY is 0 and may be
+ * (pcie_port_t.zpp_portno).  The board sentinel value MBT_ANY is 0 and may be
  * omitted, but the others require nonzero sentinels as 0 is a valid index.  The
  * sentinel values of 0xFF here cannot match any real NBIO, RC, or port: there
  * are at most 4 NBIOs per die, 3 RC per NBIO, and 8 ports (bridges) per RC.
@@ -1925,4 +1933,530 @@ genoa_fabric_hack_bridges(zen_fabric_t *fabric)
 	bzero(&c, sizeof (c));
 
 	zen_fabric_walk_pcie_port(fabric, genoa_fabric_hack_bridges_cb, &c);
+	genoa_hotplug_init(fabric);
+}
+
+/*
+ * Allocate and initialize the hotplug table. The return value here is used to
+ * indicate whether or not the platform has hotplug and thus should continue or
+ * not with actual set up.
+ *
+ * Note that this does not include UBM data: that is discovered (and added to
+ * the ASK) before PCIe training.  Thus, the relevant ports have already been
+ * mapped as necessary.
+ */
+zen_mpio_hotplug_t genoa_hotplug;
+
+static bool
+genoa_hotplug_data_init(zen_fabric_t *fabric)
+{
+	ddi_dma_attr_t attr;
+	zen_mpio_hotplug_t *hp = &genoa_hotplug; //&fabric->zf_hotplug;
+	const zen_mpio_hotplug_entry_t *entry;
+	pfn_t pfn;
+	bool cont;
+
+	zen_fabric_dma_attr(&attr);
+	hp->zh_alloc_len = MMU_PAGESIZE;
+	hp->zh_table = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	bzero(hp->zh_table, MMU_PAGESIZE);
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)hp->zh_table);
+	hp->zh_pa = mmu_ptob((uint64_t)pfn);
+
+	if (!oxide_board_is_ruby()) {
+		cmn_err(CE_WARN,
+		    "Skipping hotplug data init on unsupported uarch");
+		return (true);
+	}
+	entry = ruby_hotplug_ents;
+
+	cont = entry[0].me_slotno != MPIO_HOTPLUG_ENT_LAST;
+
+	/*
+	 * The way the SMU takes this data table is that entries are indexed by
+	 * physical slot number. We basically use an interim structure that's
+	 * different so we can have a sparse table. In addition, if we find a
+	 * device, update that info on its port.
+	 */
+	for (uint_t i = 0; entry[i].me_slotno != MPIO_HOTPLUG_ENT_LAST; i++) {
+		uint_t slot = entry[i].me_slotno;
+		const zen_mpio_hotplug_map_t *map;
+		zen_iodie_t *iodie;
+		zen_ioms_t *ioms;
+		zen_pcie_core_t *pc;
+		zen_pcie_port_t *port;
+
+		hp->zh_table->mmt_map[slot] = entry[i].me_map;
+		hp->zh_table->mmt_func[slot] = entry[i].me_func;
+		hp->zh_table->mmt_reset[slot] = entry[i].me_reset;
+
+		/*
+		 * Attempt to find the port this corresponds to. It should
+		 * already have been mapped.
+		 */
+		map = &entry[i].me_map;
+		iodie = &fabric->zf_socs[map->mhm_die_id].zs_iodies[0];
+		ioms = &iodie->zi_ioms[map->mhm_tile_id % 4];
+		pc = &ioms->zio_pcie_cores[map->mhm_tile_id / 4];
+		port = &pc->zpc_ports[map->mhm_port_id];
+
+		if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) == 0)
+			continue;
+		cmn_err(CE_CONT, "?MPIOHP: mapped entry %u to port %p\n",
+		    i, port);
+		VERIFY((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0);
+		VERIFY0(port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN);
+		port->zpp_flags |= ZEN_PCIE_PORT_F_HOTPLUG;
+		port->zpp_hp_type = map->mhm_format;
+		port->zpp_hp_slotno = slot;
+		port->zpp_hp_mpio_mask = entry[i].me_func.mhf_mask;
+	}
+
+	return (cont);
+}
+
+/*
+ * Determine the set of feature bits that should be enabled. If this is Ethanol,
+ * use our hacky static versions for a moment.
+ */
+static uint32_t
+genoa_hotplug_bridge_features(zen_pcie_port_t *port)
+{
+	uint32_t feats = 0;
+
+	//if (genoa_is_ruby()) {
+		if (port->zpp_hp_type == ZEN_HP_ENTERPRISE_SSD) {
+			return (ruby_pcie_slot_cap_entssd);
+		} else {
+			return (ruby_pcie_slot_cap_express);
+		}
+	//}
+
+	feats = PCIE_SLOTCAP_HP_SURPRISE | PCIE_SLOTCAP_HP_CAPABLE;
+
+	/*
+	 * The set of features we enable changes based on the type of hotplug
+	 * mode. While Enterprise SSD uses a static set of features, the various
+	 * ExpressModule modes have a mask register that is used to tell the SMU
+	 * that it doesn't support a given feature. As such, we check for these
+	 * masks to determine what to enable. Because these bits are used to
+	 * turn off features in the SMU, we check for the absence of it (e.g. ==
+	 * 0) to indicate that we should enable the feature.
+	 */
+	switch (port->zpp_hp_type) {
+	case ZEN_HP_ENTERPRISE_SSD:
+		/*
+		 * For Enterprise SSD the set of features that are supported are
+		 * considered a constant and this doesn't really vary based on
+		 * the board. There is no power control, just surprise hotplug
+		 * capabilities. Apparently in this mode there is no SMU command
+		 * completion.
+		 */
+		return (feats | PCIE_SLOTCAP_NO_CMD_COMP_SUPP);
+	case ZEN_HP_EXPRESS_MODULE_A:
+		if ((port->zpp_hp_mpio_mask & SMU_ENTA_ATTNSW) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTA_EMILS) == 0 ||
+		    (port->zpp_hp_mpio_mask & SMU_ENTA_EMIL) == 0) {
+			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTA_PWREN) == 0) {
+			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTA_ATTNLED) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTA_PWRLED) == 0) {
+			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
+		}
+		break;
+	case ZEN_HP_EXPRESS_MODULE_B:
+		if ((port->zpp_hp_mpio_mask & SMU_ENTB_ATTNSW) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTB_EMILS) == 0 ||
+		    (port->zpp_hp_mpio_mask & SMU_ENTB_EMIL) == 0) {
+			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTB_PWREN) == 0) {
+			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTB_ATTNLED) == 0) {
+			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
+		}
+
+		if ((port->zpp_hp_mpio_mask & SMU_ENTB_PWRLED) == 0) {
+			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
+		}
+		break;
+	default:
+		return (0);
+	}
+
+	return (feats);
+}
+
+/*
+ * At this point we have finished telling the SMU and its hotplug system to get
+ * started. In particular, there are a few things that we do to try and
+ * synchronize the PCIe slot and the SMU state, because they are not the same.
+ * In particular, we have reason to believe that without a write to the slot
+ * control register, the SMU will not write to the GPIO expander and therefore
+ * all the outputs will remain at their hardware device's default. The most
+ * important part of this is to ensure that we put the slot's power into a
+ * defined state.
+ */
+static int
+genoa_hotplug_bridge_post_start(zen_pcie_port_t *port, void *arg)
+{
+	uint16_t ctl, sts;
+	uint32_t cap;
+	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
+
+	/*
+	 * If there is no hotplug support we don't do anything here today. We
+	 * assume that if we're in the simple presence mode then we still need
+	 * to come through here because in theory the presence changed
+	 * indicators should work.
+	 */
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) == 0) {
+		return (0);
+	}
+
+	sts = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_STS);
+	cap = pci_getl_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP);
+
+	/*
+	 * At this point, surprisingly enough, it is expected that all the
+	 * notification and fault detection bits be turned on at the SMU as part
+	 * of turning on and off the slot. This is a little surprising. Power
+	 * was one thing, but at this point it expects to have hotplug
+	 * interrupts enabled and all the rest of the features that the hardware
+	 * supports (e.g. no MRL sensor changed). Note, we have explicitly left
+	 * out turning on the power indicator for present devices.
+	 *
+	 * Some of the flags need to be conditionally set based on whether or
+	 * not they are actually present. We can't turn on the attention button
+	 * if there is none. However, others there is no means for software to
+	 * discover if they are present or not. So even though we know more and
+	 * that say the power fault detection will never work if you've used
+	 * Enterprise SSD (or even ExpressModule based on our masks), we set
+	 * them anyways, because software will anyways and it helps get the SMU
+	 * into a "reasonable" state.
+	 */
+	ctl = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL);
+	if ((cap & PCIE_SLOTCAP_ATTN_BUTTON) != 0) {
+		ctl |= PCIE_SLOTCTL_ATTN_BTN_EN;
+	}
+
+	ctl |= PCIE_SLOTCTL_PWR_FAULT_EN;
+	ctl |= PCIE_SLOTCTL_PRESENCE_CHANGE_EN;
+	ctl |= PCIE_SLOTCTL_HP_INTR_EN;
+
+	/*
+	 * Finally we need to initialize the power state based on slot presence
+	 * at this time. Reminder: slot power is enabled when the bit is zero.
+	 * It is possible that this may still be creating a race downstream of
+	 * this, but in that case, that'll be on the pcieb hotplug logic rather
+	 * than us to set up that world here. Only do this if there actually is
+	 * a power controller.
+	 */
+	if ((cap & PCIE_SLOTCAP_POWER_CONTROLLER) != 0) {
+		if ((sts & PCIE_SLOTSTS_PRESENCE_DETECTED) != 0) {
+			ctl &= ~PCIE_SLOTCTL_PWR_CONTROL;
+		} else {
+			ctl |= PCIE_SLOTCTL_PWR_CONTROL;
+		}
+	}
+	pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL, ctl);
+
+	/*
+	 * For whatever reason, AGESA reads and writes this again.
+	 */
+	ctl = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL);
+	pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_CTL, ctl);
+
+	return (0);
+}
+
+/*
+ * At this point we need to go through and prep all hotplug-capable bridges.
+ * This means setting up the following:
+ *
+ *   o Setting the appropriate slot capabilities.
+ *   o Setting the slot's actual number in PCIe and in a secondary SMN location.
+ *   o Setting control bits in the PCIe IP to ensure we don't enter loopback
+ *     mode and some amount of other state machine control.
+ *   o Making sure that power faults work.
+ */
+static int
+genoa_hotplug_port_init(zen_pcie_port_t *port, void *arg)
+{
+	smn_reg_t reg;
+	uint32_t val;
+	uint32_t slot_mask;
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
+
+	if (port->zpp_ubm_extra != NULL && port->zpp_ubm_extra->zmue_ubm) {
+		port->zpp_hp_slotno = port->zpp_ubm_extra->zmue_slot;
+		// port->zpp_hp_type = ZEN_MPIO_HOTPLUG_T_UBM;
+	}
+
+	/*
+	 * Skip over all non-hotplug slots and the simple presence mode. Though
+	 * one has to ask oneself, why have hotplug if you're going to use the
+	 * simple presence mode.
+	 */
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) == 0 ||
+	    port->zpp_hp_type == ZEN_HP_PRESENCE_DETECT) {
+		cmn_err(CE_WARN, "Skipping a port.");
+		return (0);
+	}
+
+	/*
+	 * Set the hotplug slot information in the PCIe IP, presumably so that
+	 * it'll do something useful for the SMU.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->zpp_hp_slotno);
+	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * This register is apparently set to ensure that we don't remain in the
+	 * detect state machine state.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL5);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(val, 0);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * This bit is documented to cause the LC to disregard most training
+	 * control bits in received TS1 and TS2 ordered sets.  Training control
+	 * bits include Compliance Receive, Hot Reset, Link Disable, Loopback,
+	 * and Disable Scrambling.  As all our ports are Downstream Ports, we
+	 * are required to ignore most of these; the PCIe standard still
+	 * requires us to act on Compliance Receive and the PPR implies that we
+	 * do even if this bit is set (the other four are listed as being
+	 * ignored).
+	 *
+	 * However... an AMD firmware bug for which we have no additional
+	 * information implies that this does more than merely ignore training
+	 * bits in received TSx, and also makes the Secondary Bus Reset bit in
+	 * the Bridge Control register not work or work incorrectly.  That is,
+	 * there may be a hardware bug that causes this bit to have unintended
+	 * and undocumented side effects that also violate the standard.  In our
+	 * case, we're going to set this anyway, because there is nothing
+	 * anywhere in illumos that uses the Secondary Bus Reset feature and it
+	 * seems much more important to be sure that our downstream ports can't
+	 * be disabled or otherwise affected by a misbehaving or malicious
+	 * downstream device that might set some of these bits.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_TRAIN_CTL_SET_TRAINBITS_DIS(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Make sure that power faults can actually work (in theory).
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_PCTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_PCTL_SET_PWRFLT_EN(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Go through and set up the slot capabilities register. In our case
+	 * we've already filtered out the non-hotplug capable bridges. To
+	 * determine the set of hotplug features that should be set here we
+	 * derive that from the actual hoptlug entities. Because one is required
+	 * to give the SMU a list of functions to mask, the unmasked bits tells
+	 * us what to enable as features here.
+	 */
+	slot_mask =
+	    PCIE_SLOTCAP_ATTN_BUTTON |
+	    PCIE_SLOTCAP_POWER_CONTROLLER |
+	    PCIE_SLOTCAP_MRL_SENSOR |
+	    PCIE_SLOTCAP_ATTN_INDICATOR |
+	    PCIE_SLOTCAP_PWR_INDICATOR |
+	    PCIE_SLOTCAP_HP_SURPRISE |
+	    PCIE_SLOTCAP_HP_CAPABLE |
+	    PCIE_SLOTCAP_EMI_LOCK_PRESENT |
+	    PCIE_SLOTCAP_NO_CMD_COMP_SUPP;
+
+	val = pci_getl_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP);
+	val &= ~slot_mask;
+	val |= genoa_hotplug_bridge_features(port);
+	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
+	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
+	val |= port->zpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
+	pci_putl_func(ioms->zio_pci_busno, port->zpp_device,
+	    port->zpp_func, GENOA_BRIDGE_R_PCI_SLOT_CAP, val);
+
+	/*
+	 * If applicable for this port, set up NPEM for UBM hotplug.
+	 */
+	if (port->zpp_ubm_extra != NULL) {
+		reg = genoa_pcie_port_reg(port, D_PCIE_PORT_NPEM_CAP);
+		val = zen_pcie_port_read(port, reg);
+		val = PCIE_PORT_NPEM_CAP_SET_CAPS(val,
+		    port->zpp_ubm_extra->zmue_npem_cap);
+		zen_pcie_port_write(port, reg, val);
+
+		reg = genoa_pcie_port_reg(port, D_PCIE_PORT_NPEM_CTL);
+		val = zen_pcie_port_read(port, reg);
+		val = PCIE_PORT_NPEM_CTL_SET_NPEM_EN(val,
+		    port->zpp_ubm_extra->zmue_npem_en);
+		zen_pcie_port_write(port, reg, val);
+	}
+
+	/*
+	 * Finally we need to go through and unblock training now that we've set
+	 * everything else on the slot. Note, this is done before we tell the
+	 * SMU about hotplug configuration, so strictly speaking devices will
+	 * unlikely start suddenly training: PERST is still asserted to them on
+	 * boards where that's under GPIO network control.
+	 */
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_SWRST_CTL6);
+	val = zen_pcie_core_read(pc, reg);
+	val = bitset32(val, port->zpp_portno, port->zpp_portno, 0);
+	zen_pcie_core_write(pc, reg, val);
+
+	return (0);
+}
+
+/*
+ * This is an analogue to the above functions; however, it operates on the PCIe
+ * core basis rather than the individual port or bridge. This mostly includes:
+ *
+ *   o Making sure that there are no holds on link training on any port.
+ *   o Ensuring that presence detection is based on an 'OR'
+ */
+static int
+genoa_hotplug_core_init(zen_pcie_core_t *pc, void *arg)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * Nothing to do if there's no hotplug.
+	 */
+	if ((pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) == 0) {
+		return (0);
+	}
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PRES);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PRES_SET_MODE(val, PCIE_CORE_PRES_MODE_OR);
+	zen_pcie_core_write(pc, reg, val);
+
+	return (0);
+}
+
+/*
+ * Begin the process of initializing the hotplug subsystem with the SMU. In
+ * particular we need to do the following steps:
+ *
+ *  * Send a series of commands to set up the i2c switches in general. These
+ *    correspond to the various bit patterns that we program in the function
+ *    payload.
+ *
+ *  * Set up and send across our hotplug table.
+ *
+ *  * Finish setting up the bridges to be ready for hotplug.
+ *
+ *  * Actually tell it to start.
+ *
+ * Unlike with DXIO initialization, it appears that hotplug initialization only
+ * takes place on the primary SMU. In some ways, this makes some sense because
+ * the hotplug table has information about which dies and sockets are used for
+ * what and further, only the first socket ever is connected to the hotplug i2c
+ * bus; however, it is still also a bit mysterious.
+ */
+static bool
+genoa_hotplug_init(zen_fabric_t *fabric)
+{
+	zen_mpio_hotplug_t *hp = &genoa_hotplug;
+	zen_iodie_t *iodie = &fabric->zf_socs[0].zs_iodies[0];
+
+	/*
+	 * These represent the addresses that we need to program in the MPIO.
+	 * Strictly speaking, the lower 8-bits represents the addresses that
+	 * MPIO seems to expect. The upper byte is a bit more of a mystery;
+	 * however, it does correspond to the expected values that AMD roughly
+	 * documents for 5-bit bus segment value which is the shf_i2c_bus member
+	 * of the mpio_hotplug_function_t.
+	 */
+	const uint32_t i2c_addrs[4] = { 0x70, 0x171, 0x272, 0x373 };
+
+	if (!genoa_hotplug_data_init(fabric)) {
+		/*
+		 * This case is used to indicate that there was nothing in
+		 * particular that needed hotplug. Therefore, we don't bother
+		 * trying to tell the SMU about it.
+		 */
+		return (true);
+	}
+
+	for (uint_t i = 0; i < ARRAY_SIZE(i2c_addrs); i++) {
+		if (!zen_mpio_rpc_set_i2c_switch_addr(iodie, i2c_addrs[i])) {
+			return (false);
+		}
+	}
+
+	cmn_err(CE_WARN, "Sending hotplug table");
+	if (!zen_mpio_send_hotplug_table(iodie, hp->zh_pa)) {
+		return (false);
+	}
+
+	/*
+	 * Go through now and set up bridges for hotplug data. Honor the spirit
+	 * of the old world by doing this after we send the hotplug table, but
+	 * before we enable things. It's unclear if the order is load bearing or
+	 * not.
+	 */
+	(void) zen_fabric_walk_pcie_core(fabric, genoa_hotplug_core_init, NULL);
+	(void) zen_fabric_walk_pcie_port(fabric, genoa_hotplug_port_init, NULL);
+
+	if (!zen_mpio_rpc_hotplug_flags(iodie, 0)) {
+		return (false);
+	}
+
+	/*
+	 * This is an unfortunate bit. The SMU relies on someone else to have
+	 * set the actual state of the i2c clock.
+	 */
+	genoa_fixup_i2c_clock();
+
+	if (!zen_mpio_rpc_start_hotplug(iodie, false, 0x0000FF00)) {
+		return (false);
+	}
+
+	/*
+	 * Now that this is done, we need to go back through and do some final
+	 * pieces of slot initialization which are probably necessary to get the
+	 * SMU into the same place as we are with everything else.
+	 */
+	(void) zen_fabric_walk_pcie_port(fabric,
+	    genoa_hotplug_bridge_post_start, NULL);
+
+	return (true);
 }
