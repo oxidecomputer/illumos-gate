@@ -1482,7 +1482,7 @@ zen_fabric_topo_init(void)
 		    nthreads, NCPU);
 		nthreads = NCPU;
 	}
-	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads = 1;
+	boot_max_ncpus = max_ncpus = boot_ncpus = nthreads;
 }
 
 static int
@@ -2389,8 +2389,8 @@ zen_null_fabric_sdp_control(zen_ioms_t *nbif __unused)
 static int
 zen_fabric_iodie_smu_features_init_cb(zen_iodie_t *iodie, void *arg __unused)
 {
-	if (!zen_smu_features_init(iodie))
-		return (1);
+	//if (!zen_smu_features_init(iodie))
+	//	return (1);
 	return (0);
 }
 
