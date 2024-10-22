@@ -91,7 +91,7 @@ void
 turin_core_ls_init(void)
 {
 	uint64_t v;
-	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
+	x86_chiprev_t cr = cpuid_getchiprev(CPU);
 
 	v = rdmsr(MSR_AMD_LS_CFG);
 	if (zen_ccx_set_undoc_fields) {
@@ -109,9 +109,9 @@ turin_core_ls_init(void)
 	v = rdmsr(MSR_AMD_LS_CFG2);
 	v = AMD_LS_CFG2_SET_HW_PF_ST_PIPE_PRIO_SEL(v, 1);
 	if (zen_ccx_set_undoc_fields) {
-		/* BRHD Ax, BRH Ax, BRH Bx */
-		if (!chiprev_at_least(chiprev, X86_CHIPREV_AMD_DENSE_TURIN_B0)||
-		    !chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_C0)) {
+		/* BRH Ax, BRH Bx, BRHD Ax */
+		if (chiprev_less_than(cr, X86_CHIPREV_AMD_TURIN_C0) ||
+		    chiprev_less_than(cr, X86_CHIPREV_AMD_DENSE_TURIN_B0)) {
 			v = AMD_LS_CFG2_F_TURIN_SET_UNKNOWN_56(v, 1);
 		}
 		v = AMD_LS_CFG2_F_TURIN_SET_UNKNOWN_34(v, 1);
@@ -153,7 +153,7 @@ turin_core_dc_init(void)
 	v = rdmsr(MSR_AMD_DC_PF_CFG_U_ZEN5);
 	/* BRH Ax, BRH Bx */
 	if (zen_ccx_set_undoc_fields &&
-	    !chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_C0)) {
+	    chiprev_less_than(chiprev, X86_CHIPREV_AMD_TURIN_C0)) {
 		v = AMD_DC_PF_CFG_U_ZEN5_F_TURIN_SET_UNKNOWN_32_30(v, 1);
 	}
 
@@ -176,8 +176,8 @@ turin_core_tw_init(void)
 	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
 
 	/* BRH Ax, BRH B0, BRHD Ax */
-	if (!chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_B1) ||
-	    !chiprev_at_least(chiprev, X86_CHIPREV_AMD_DENSE_TURIN_B0)) {
+	if (chiprev_less_than(chiprev, X86_CHIPREV_AMD_TURIN_B1) ||
+	    chiprev_less_than(chiprev, X86_CHIPREV_AMD_DENSE_TURIN_B0)) {
 		v = rdmsr(MSR_AMD_TW_CFG);
 		v = AMD_TW_CFG_U_ZEN5_SET_TLBI_BACK_TO_BACK_CNT_ALWAYS(v, 1);
 		wrmsr_and_test(MSR_AMD_TW_CFG, v);
@@ -235,11 +235,7 @@ turin_core_undoc_init(void)
 		v = AMD_UNKNOWN_C001_10E9_F_TURIN_SET_UNKNOWN_7_4(v, 0);
 		v = AMD_UNKNOWN_C001_10E9_F_TURIN_SET_UNKNOWN_3_0(v, 0);
 		wrmsr_and_test(MSR_AMD_UNKNOWN_C001_10E9, v);
-	}
 
-	/* BRH Bx, BRH Cx, BRHD */
-	if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_B0) ||
-	    chiprev_matches(chiprev, X86_CHIPREV_AMD_DENSE_TURIN_ANY)) {
 		v = rdmsr(MSR_AMD_UNKNOWN_C001_10EA);
 		v = AMD_UNKNOWN_C001_10EA_F_TURIN_SET_UNKNOWN_7_4(v, 3);
 		v = AMD_UNKNOWN_C001_10EA_F_TURIN_SET_UNKNOWN_3_0(v, 2);

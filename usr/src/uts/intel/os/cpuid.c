@@ -8324,8 +8324,11 @@ chiprev_matches(const x86_chiprev_t cr, const x86_chiprev_t template)
  * Note that this function operates on processor families, not cpuid families.
  * Use of the _ANY chiprev variant with this function is not useful; it will
  * always return B_FALSE if the _ANY variant is supplied as the minimum
- * revision.  To determine only whether a chiprev is of a given processor
- * family, test the return value of chiprev_family() instead.
+ * revision.  Also note that simply negating the result returned by this
+ * function is not equivalent to the inverse -- instead use chiprev_less_than()
+ * which will properly handle mismatched vendors and families.  To determine
+ * only whether a chiprev is of a given processor family, test the return value
+ * of chiprev_family() instead.
  */
 boolean_t
 chiprev_at_least(const x86_chiprev_t cr, const x86_chiprev_t min)
@@ -8333,6 +8336,20 @@ chiprev_at_least(const x86_chiprev_t cr, const x86_chiprev_t min)
 	return (_X86_CHIPREV_VENDOR(cr) == _X86_CHIPREV_VENDOR(min) &&
 	    _X86_CHIPREV_FAMILY(cr) == _X86_CHIPREV_FAMILY(min) &&
 	    _X86_CHIPREV_REV(cr) >= _X86_CHIPREV_REV(min));
+}
+
+/*
+ * A chiprev is less than max if the vendor and family are identical and the
+ * revision of the chiprev is less recent than that of max.  Note that a chiprev
+ * of max itself will always return B_FALSE.  As with chiprev_at_least, use of
+ * the _ANY chiprev variant is not useful and will always return B_TRUE.
+ */
+boolean_t
+chiprev_less_than(const x86_chiprev_t cr, const x86_chiprev_t max)
+{
+	return (_X86_CHIPREV_VENDOR(cr) == _X86_CHIPREV_VENDOR(max) &&
+	    _X86_CHIPREV_FAMILY(cr) == _X86_CHIPREV_FAMILY(max) &&
+	    _X86_CHIPREV_REV(cr) < _X86_CHIPREV_REV(max));
 }
 
 /*
@@ -8363,6 +8380,14 @@ uarchrev_at_least(const x86_uarchrev_t ur, const x86_uarchrev_t min)
 	return (_X86_UARCHREV_VENDOR(ur) == _X86_UARCHREV_VENDOR(min) &&
 	    _X86_UARCHREV_UARCH(ur) == _X86_UARCHREV_UARCH(min) &&
 	    _X86_UARCHREV_REV(ur) >= _X86_UARCHREV_REV(min));
+}
+
+boolean_t
+uarchrev_less_than(const x86_uarchrev_t ur, const x86_uarchrev_t max)
+{
+	return (_X86_UARCHREV_VENDOR(ur) == _X86_UARCHREV_VENDOR(max) &&
+	    _X86_UARCHREV_UARCH(ur) == _X86_UARCHREV_UARCH(max) &&
+	    _X86_UARCHREV_REV(ur) < _X86_UARCHREV_REV(max));
 }
 
 /*

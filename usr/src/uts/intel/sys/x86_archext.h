@@ -1812,10 +1812,12 @@ extern void vmware_port(int, uint32_t *);
 extern x86_processor_family_t chiprev_family(const x86_chiprev_t);
 extern boolean_t chiprev_matches(const x86_chiprev_t, const x86_chiprev_t);
 extern boolean_t chiprev_at_least(const x86_chiprev_t, const x86_chiprev_t);
+extern boolean_t chiprev_less_than(const x86_chiprev_t, const x86_chiprev_t);
 
 extern x86_uarch_t uarchrev_uarch(const x86_uarchrev_t);
 extern boolean_t uarchrev_matches(const x86_uarchrev_t, const x86_uarchrev_t);
 extern boolean_t uarchrev_at_least(const x86_uarchrev_t, const x86_uarchrev_t);
+extern boolean_t uarchrev_less_than(const x86_uarchrev_t, const x86_uarchrev_t);
 
 /*
  * Cache information intended for topology and wider use.
