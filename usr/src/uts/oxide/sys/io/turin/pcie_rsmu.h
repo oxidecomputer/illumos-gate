@@ -1763,7 +1763,7 @@ extern "C" {
  * See PCIEPORT::PCIE_LC_CNTL12[LC_EQ_REQ_PHASE_WAIT_FOR_FINAL_TS1]. This strap
  * likely corresponds to the above register. 1 bit value that defaults to 1.
  */
-#define	TURIN_STRAP_PCIE_P_EQ_WAIT_FOR_TS1	0x155
+#define	TURIN_STRAP_PCIE_P_EQ_WAIT_FOR_FINAL_TS1	0x155
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL12[LC_RESET_TSX_CNT_ON_RXEQEVAL]. 1 bit strap that
@@ -1827,7 +1827,7 @@ extern "C" {
  * The other values control whether an ack is issued after 2us (1), 10 us (2),
  * or 1 ms (3).
  */
-#define	TURIN_STRAP_PCIE_P_CNLI_ACK_TO		0x163
+#define	TURIN_STRAP_PCIE_P_CNLI_FREQ_ADJ_ACK_TO	0x163
 
 /*
  * See PCIEPORT::PCIEP_STRAP_LC[STRAP_LC_TRANSMIT_MUX_PAD_SMALL_SKID_ENTRIES]
@@ -1842,7 +1842,7 @@ extern "C" {
  * LC_CNLI_FREQ_ADJ_ACK_RLOCK_TIMEOUT]. 3 bit strap defaults to 0, meaning no
  * timeout.
  */
-#define	TURIN_STRAP_PCIE_P_CNLI_ACK_TO		0x166
+#define	TURIN_STRAP_PCIE_P_CNLI_FREQ_ADJ_ACK_RLOCK_TO	0x166
 
 /*
  * See PCIEPORT::PCIE_LC_ALTERNATE_PROTOCOL_CNTL6[
@@ -1929,7 +1929,7 @@ extern "C" {
  * See PCIEPORT::PCIE_LC_CNTL11[LC_CHECK_TS1_EC_ON_EQ_EXIT]. 1 bit strap
  * defaults to 1.
  */
-#define	TURIN_STRAP_PCIE_P_EQ_WAIT_FOR_TS1	0x174
+#define	TURIN_STRAP_PCIE_P_EQ_WAIT_FOR_TS1_EQ_EXIT_EC	0x174
 
 /*
  * See PCIEPORT::PCIE_LC_CNTL10[LC_USE_PENDING_FOM_SKIP_SECOND_RXEQEVAL]. 1 bit
