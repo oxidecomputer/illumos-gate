@@ -36,24 +36,24 @@ extern "C" {
 #define	IOMMUL1_N_PCIE_CORES	4
 
 static inline smn_reg_t
-turin_iommul1_pcie_smn_reg(const uint8_t iommuno,
+turin_iommul1_pcie_smn_reg(const uint8_t iohcno,
     const smn_reg_def_t def, const uint8_t unitno)
 {
-	const uint32_t iommu32 = (const uint32_t)iommuno;
+	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t unit32 = (const uint32_t)unitno;
 
 	ASSERT0(def.srd_size);
 	ASSERT0(def.srd_nents);
 	ASSERT0(def.srd_stride);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_IOMMUL1);
-	ASSERT3U(iommu32, <, IOMMUL1_N_PCIE_UNITS);
+	ASSERT3U(iohc32, <, IOMMUL1_N_PCIE_UNITS);
 	ASSERT3U(unit32, <, IOMMUL1_N_PCIE_CORES);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
 	const uint32_t aperture_base = unitno < 2 ?
 	    0x14700000 : 0x14B0000;
 
-	const uint32_t aperture_off = (iommu32 << 20) +
+	const uint32_t aperture_off = (iohc32 << 20) +
 	    ((unit32 % 2) << 22);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
@@ -86,10 +86,6 @@ AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 	.srd_unit = SMN_UNIT_IOMMUL1,	\
 	.srd_reg = 0x1c	\
 }
-#define	IOMMUL1_PCIE_CTL1(i, p)	\
-    turin_iommul1_pcie_smn_reg(i, D_IOMMUL1_CTL1, p)
-#define	IOMMUL1_IOAGR_CTL1(i)	\
-    turin_iommul1_ioagr_smn_reg(i, D_IOMMUL1_CTL1, 0)
 #define	IOMMUL1_CTL1_SET_ORDERING(r, v)	bitset32(r, 0, 0, v)
 
 /*

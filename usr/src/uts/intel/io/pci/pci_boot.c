@@ -273,7 +273,7 @@ extern int apic_nvidia_io_max;
 static uchar_t max_dev_pci = 32;	/* PCI standard */
 int pci_boot_maxbus;
 
-int pci_boot_debug = 0;
+int pci_boot_debug = 1;
 int pci_debug_bus_start = -1;
 int pci_debug_bus_end = -1;
 

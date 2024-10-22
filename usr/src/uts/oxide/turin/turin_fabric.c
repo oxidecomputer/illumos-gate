@@ -433,11 +433,11 @@ turin_pcie_port_reg(const zen_pcie_port_t *const port,
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOHCDEV_PCIE:
-		reg = turin_iohcdev_pcie_smn_reg(ioms->zio_num, def,
+		reg = turin_iohcdev_pcie_smn_reg(ioms->zio_iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	case SMN_UNIT_PCIE_PORT:
-		reg = turin_pcie_port_smn_reg(ioms->zio_num, def,
+		reg = turin_pcie_port_smn_reg(ioms->zio_iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	default:
@@ -456,11 +456,11 @@ turin_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_PCIE_CORE:
-		reg = turin_pcie_core_smn_reg(ioms->zio_num, def,
+		reg = turin_pcie_core_smn_reg(ioms->zio_iohcnum, def,
 		    pc->zpc_coreno);
 		break;
 	case SMN_UNIT_IOMMUL1:
-		reg = turin_iommul1_pcie_smn_reg(ioms->zio_num, def,
+		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def,
 		    pc->zpc_coreno);
 		break;
 	default:
@@ -1577,8 +1577,9 @@ turin_fabric_write_pcie_strap(zen_pcie_core_t *pc,
 	const zen_ioms_t *ioms = pc->zpc_ioms;
 	uint32_t addr, inst;
 
-	/* XXX FIX ME */
-	inst = ioms->zio_num + 4 * pc->zpc_coreno;
+	inst = ioms->zio_iohcnum;
+	if (pc->zpc_coreno == TURIN_IOMS_BONUS_PCIE_CORENO)
+		inst = 8;
 	addr = reg;
 
 	zen_mpio_write_pcie_strap(pc, addr + (inst << 16), data);
@@ -1746,6 +1747,7 @@ turin_fabric_init_bridges(zen_pcie_port_t *port)
 	}
 
 	if (hide) {
+		cmn_err(CE_WARN, "Hiding a bridge.");
 		port->zpp_flags |= ZEN_PCIE_PORT_F_BRIDGE_HIDDEN;
 	}
 
@@ -2001,8 +2003,8 @@ typedef struct turin_ioms_pcie_port_info {
 } turin_ioms_pcie_port_info_t;
 
 /*
- * These are internal bridges that correspond to NBIFs; they are modeled as
- * ports but there is no physical port brought out of the package.
+ * These are internal bridges.  They are modeled as ports but there is no
+ * physical port brought out of the package.
  */
 static const turin_ioms_pcie_port_info_t turin_int_ports[TURIN_IOMS_PER_IODIE] =
 {
@@ -2020,16 +2022,16 @@ static const turin_ioms_pcie_port_info_t turin_int_ports[TURIN_IOMS_PER_IODIE] =
 		},
 	},
 	[2] = {
+		.gippi_count = 1,
+		.gippi_info = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+		},
+	},
+	[3] = {
 		.gippi_count = 2,
 		.gippi_info = {
 			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
 			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
-		},
-	},
-	[3] = {
-		.gippi_count = 1,
-		.gippi_info = {
-			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
 		},
 	},
 };
@@ -2044,14 +2046,20 @@ turin_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
 {
 	uint8_t bus, secbus;
 	pci_bus_counter_t *pbc = arg;
-	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
 
+	cmn_err(CE_CONT, "[%x/%x/%x] ioms=%x, core=%x, port=%x",
+	    ioms->zio_pci_busno, port->zpp_device, port->zpp_func,
+	    ioms->zio_num, pc->zpc_coreno, port->zpp_portno);
 	bus = ioms->zio_pci_busno;
-	if (pbc->pbc_ioms != ioms) {
-		pbc->pbc_ioms = ioms;
+	if (pbc->pbc_ioms != ioms &&
+	    ioms->zio_iohctype == ZEN_IOHCT_LARGE &&
+	    pc->zpc_coreno == 0) {
 		const turin_ioms_pcie_port_info_t *int_ports =
-		    &turin_int_ports[ioms->zio_num];
+		    &turin_int_ports[ioms->zio_iohcnum];
 		pbc->pbc_busoff = 1 + int_ports->gippi_count;
+		pbc->pbc_ioms = ioms;
 		for (uint_t i = 0; i < int_ports->gippi_count; i++) {
 			const zen_pcie_port_info_t *info =
 			    &int_ports->gippi_info[i];
@@ -2066,10 +2074,12 @@ turin_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
 	}
 
 	if ((port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0) {
+		cmn_err(CE_WARN, " bridge hidden");
 		return (0);
 	}
 
 	secbus = bus + pbc->pbc_busoff;
+	cmn_err(CE_WARN, " secbus = %x", secbus);
 
 	pci_putb_func(bus, port->zpp_device, port->zpp_func,
 	    PCI_BCNF_PRIBUS, bus);
