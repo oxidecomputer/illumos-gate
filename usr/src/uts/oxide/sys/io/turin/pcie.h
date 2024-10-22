@@ -2605,6 +2605,7 @@ turin_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	PCIE_CORE_RCB_CTL_SET_RX_DPC_RPIO_TO_CA_EN(r, v) \
     bitset32(r, 26, 26, v)
 #define	PCIE_CORE_RCB_CTL_SET_IGN_SFI_CAM_DIS(r, v)	bitset32(r, 25, 25, v)
+#define	PCIE_CORE_RCB_CTL_SET_IGN_LINK_DOWN_ERR(r, v)	bitset32(r, 24, 24, v)
 #define	PCIE_CORE_RCB_CTL_SET_LINK_DOWN_CTO_EN(r, v)	bitset32(r, 23, 23, v)
 #define	PCIE_CORE_RCB_CTL_SET_RX_ALL_CTO_TO_UR_EN(r, v)	bitset32(r, 22, 22, v)
 #define	PCIE_CORE_RCB_CTL_SET_BAD_PREFIX_DIS(r, v)	bitset32(r, 4, 4, v)
