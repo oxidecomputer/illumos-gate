@@ -25,6 +25,9 @@
 #include <sys/pcie.h>
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_cfgspace_impl.h>
+#include <sys/pci_ident.h>
+#include <sys/platform_detect.h>
+#include <sys/spl.h>
 
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
@@ -35,8 +38,8 @@
 #include <sys/io/zen/smu_impl.h>
 
 #include <sys/io/turin/fabric_impl.h>
-#include <sys/io/turin/pcie.h>
 #include <sys/io/turin/pcie_impl.h>
+#include <sys/io/turin/pcie_rsmu.h>
 #include <sys/io/turin/iohc.h>
 #include <sys/io/turin/iommu.h>
 #include <sys/io/turin/nbif_impl.h>
@@ -1227,6 +1230,420 @@ turin_smu_features_init(zen_iodie_t *iodie)
 	const uint32_t FEATURES_EXT = TURIN_SMU_EXT_FEATURE_SOC_XVMIN;
 
 	return (turin_smu_set_features(iodie, TURIN_FEATURES, FEATURES_EXT, 0));
+}
+
+/*
+ * These PCIe straps need to be set after mapping is done, but before link
+ * training has started. While we do not understand in detail what all of these
+ * registers do, we've split this broadly into 2 categories:
+ * 1) Straps where:
+ *     a) the defaults in hardware seem to be reasonable given our (sometimes
+ *     limited) understanding of their function
+ *     b) are not features/parameters that we currently care specifically about
+ *     one way or the other
+ *     c) and we are currently ok with the defaults changing out from underneath
+ *     us on different hardware revisions unless proven otherwise.
+ * or 2) where:
+ *     a) We care specifically about a feature enough to ensure that it is set
+ *     (e.g. AERs) or purposefully disabled (e.g. I2C_DBG_EN)
+ *     b) We are not ok with these changing based on potentially different
+ *     defaults set in different hardware revisions
+ * For 1), we've chosen to leave them based on whatever the hardware has chosen
+ * as the default, while all the straps detailed underneath fall into category
+ * 2. Note that this list is by no means definitive, and will almost certainly
+ * change as our understanding of what we require from the hardware evolves.
+ *
+ * These can be matched to a board identifier, I/O die DF node ID, NBIO/IOMS
+ * number, PCIe core number (pcie_core_t.zpc_coreno), and PCIe port number
+ * (pcie_port_t.gpp_portno).  The board sentinel value MBT_ANY is 0 and may be
+ * omitted, but the others require nonzero sentinels as 0 is a valid index.  The
+ * sentinel values of 0xFF here cannot match any real NBIO, RC, or port: there
+ * are at most 4 NBIOs per die, 3 RC per NBIO, and 8 ports (bridges) per RC.
+ * The RC and port filters are meaningful only if the corresponding strap exists
+ * at the corresponding level.  The node ID, which incorporates both socket and
+ * die number (die number is always 0 for Genoa), is 8 bits so in principle it
+ * could be 0xFF and we use 32 bits there instead.  While it's still 8 bits in
+ * Genoa, AMD have reserved another 8 bits that are likely to be used in future
+ * families so we opt to go all the way to 32 here.  This can be reevaluated
+ * when this is refactored to support multiple families.
+ */
+
+/*
+ * PCIe Straps that we unconditionally set to 1
+ */
+static const uint32_t turin_pcie_strap_enable[] = {
+	TURIN_STRAP_PCIE_MSI_EN,
+	TURIN_STRAP_PCIE_AER_EN,
+	TURIN_STRAP_PCIE_GEN2_FEAT_EN,
+	TURIN_STRAP_PCIE_NPEM_EN,
+	TURIN_STRAP_PCIE_CPL_TO_EN,	/* We want completion timeouts */
+	TURIN_STRAP_PCIE_TPH_EN,
+	TURIN_STRAP_PCIE_MULTI_FUNC_EN,
+	TURIN_STRAP_PCIE_DPC_EN,
+	TURIN_STRAP_PCIE_ARI_EN,
+	TURIN_STRAP_PCIE_PL_16G_EN,
+	TURIN_STRAP_PCIE_LANE_MARGIN_EN,
+	TURIN_STRAP_PCIE_LTR_SUP,
+	TURIN_STRAP_PCIE_LINK_BW_NOTIF_SUP,
+	TURIN_STRAP_PCIE_GEN3_1_FEAT_EN,
+	TURIN_STRAP_PCIE_GEN4_FEAT_EN,
+	TURIN_STRAP_PCIE_GEN5_FEAT_EN,
+	TURIN_STRAP_PCIE_ECRC_GEN_EN,
+	TURIN_STRAP_PCIE_SWUS_ECRC_GEN_EN,
+	TURIN_STRAP_PCIE_ECRC_CHECK_EN,
+	TURIN_STRAP_PCIE_SWUS_ECRC_CHECK_EN,
+	TURIN_STRAP_PCIE_SWUS_ARI_EN,
+	TURIN_STRAP_PCIE_CPL_ABORT_ERR_EN,
+	TURIN_STRAP_PCIE_INT_ERR_EN,
+	TURIN_STRAP_PCIE_MARGIN_IGN_C_SKP,
+	TURIN_STRAP_SURPRISE_DOWN_ERR_EN,
+
+	/* ACS straps */
+	TURIN_STRAP_PCIE_ACS_EN,
+	TURIN_STRAP_PCIE_ACS_SRC_VALID,
+	TURIN_STRAP_PCIE_ACS_TRANS_BLOCK,
+	TURIN_STRAP_PCIE_ACS_DIRECT_TRANS_P2P,
+	TURIN_STRAP_PCIE_ACS_P2P_CPL_REDIR,
+	TURIN_STRAP_PCIE_ACS_P2P_REQ_RDIR,
+	TURIN_STRAP_PCIE_ACS_UPSTREAM_FWD,
+};
+
+/*
+ * PCIe Straps that we unconditionally set to 0
+ * These are generally debug and test settings that are usually not a good idea
+ * in my experience to allow accidental enablement.
+ */
+static const uint32_t turin_pcie_strap_disable[] = {
+	TURIN_STRAP_PCIE_I2C_DBG_EN,
+	TURIN_STRAP_PCIE_DEBUG_RXP,
+	TURIN_STRAP_PCIE_NO_DEASSERT_RX_EN_TEST,
+	TURIN_STRAP_PCIE_ERR_REPORT_DIS,
+	TURIN_STRAP_PCIE_TX_TEST_ALL,
+	TURIN_STRAP_PCIE_MCAST_EN,
+	TURIN_STRAP_PCIE_DESKEW_EMPTY,
+	TURIN_STRAP_PCIE_SWUS_AER_EN,
+};
+
+/*
+ * PCIe Straps that have other values.
+ */
+static const zen_pcie_strap_setting_t turin_pcie_strap_settings[] = {
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_MAX_PAYLOAD_SUP,
+		.strap_data = 0x2,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_PLL_FREQ_MODE,
+		.strap_data = 2,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
+		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
+		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_EQ_DS_TX_PRESET,
+		.strap_data = PCIE_TX_PRESET_7,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_EQ_US_TX_PRESET,
+		.strap_data = PCIE_TX_PRESET_4,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
+		.strap_data = PCIE_TX_PRESET_7,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
+		.strap_data = PCIE_TX_PRESET_4,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_32GT_EQ_DS_TX_PRESET,
+		.strap_data = PCIE_TX_PRESET_7,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_32GT_EQ_US_TX_PRESET,
+		.strap_data = PCIE_TX_PRESET_4,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_SUBVID,
+		.strap_data = PCI_VENDOR_ID_OXIDE,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_SUBDID,
+		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+};
+
+/*
+ * PCIe Straps that exist on a per-port level.  Most pertain to the port itself;
+ * others pertain to features exposed via the associated bridge.
+ */
+static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_EXT_FMT_SUP,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_TCOMMONMODE_TIME,
+		.strap_data = 0xa,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_TPON_SCALE,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_TPON_VALUE,
+		.strap_data = 0xf,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_DLF_SUP,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_WRP_MISC,
+		.strap_data = 0x1 << 9,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_FOM_TIME,
+		.strap_data = TURIN_STRAP_PCIE_P_FOM_300US,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_8GT,
+		.strap_data = 0x1,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_16GT,
+		.strap_data = 0x2,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_32GT_PRECODE_REQ,
+		.strap_data = 0x0,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY,
+		.strap_portmatch = PCIE_PORTMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_SRIS_EN,
+		.strap_data = 1,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = 0,
+		.strap_nbiomatch = 0,
+		.strap_corematch = 1,
+		.strap_portmatch = 1
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
+		.strap_data = 0,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = 0,
+		.strap_nbiomatch = 0,
+		.strap_corematch = 1,
+		.strap_portmatch = 1
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
+		.strap_data = 0,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = 0,
+		.strap_nbiomatch = 0,
+		.strap_corematch = 1,
+		.strap_portmatch = 1
+	},
+	// {
+	// 	.strap_reg = TURIN_STRAP_PCIE_P_L0s_EXIT_LAT,
+	// 	.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
+	// 	.strap_nodematch = PCIE_NODEMATCH_ANY,
+	// 	.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+	// 	.strap_corematch = PCIE_COREMATCH_ANY,
+	// 	.strap_portmatch = PCIE_PORTMATCH_ANY
+	// }
+};
+
+static void
+turin_fabric_write_pcie_strap(zen_pcie_core_t *pc,
+    const uint32_t reg, const uint32_t data)
+{
+	const zen_ioms_t *ioms = pc->zpc_ioms;
+	uint32_t addr, inst;
+
+	/* XXX FIX ME */
+	inst = ioms->zio_num + 4 * pc->zpc_coreno;
+	addr = reg;
+
+	zen_mpio_write_pcie_strap(pc, addr + (inst << 16), data);
+}
+
+/*
+ * Here we set up all the straps for PCIe features that we care about and want
+ * advertised as capabilities. Note that we do not enforce any order between the
+ * straps. It is our understanding that the straps themselves do not kick off
+ * any change, but instead another stage (presumably before link training)
+ * initializes the read of all these straps in one go.
+ * Currently, we set these straps on all cores and all ports regardless of
+ * whether they are used, though this may be changed if it proves problematic.
+ * We do however operate on a single I/O die at a time, because we are called
+ * out of the DXIO state machine which also operates on a single I/O die at a
+ * time, unless our argument is NULL.  This allows us to avoid changing strap
+ * values on 2S machines for entities that were already configured completely
+ * during socket 0's DXIO SM.
+ */
+void
+turin_fabric_init_pcie_straps(zen_pcie_core_t *pc)
+{
+	const zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+
+	if (iodie != NULL && pc->zpc_ioms->zio_iodie != iodie)
+		return;
+
+	for (uint_t i = 0; i < ARRAY_SIZE(turin_pcie_strap_enable); i++) {
+		turin_fabric_write_pcie_strap(pc,
+		    turin_pcie_strap_enable[i], 0x1);
+	}
+	for (uint_t i = 0; i < ARRAY_SIZE(turin_pcie_strap_disable); i++) {
+		turin_fabric_write_pcie_strap(pc,
+		    turin_pcie_strap_disable[i], 0x0);
+	}
+	for (uint_t i = 0; i < ARRAY_SIZE(turin_pcie_strap_settings); i++) {
+		const zen_pcie_strap_setting_t *strap =
+		    &turin_pcie_strap_settings[i];
+
+		if (zen_fabric_pcie_strap_matches(pc, PCIE_PORTMATCH_ANY,
+		    strap)) {
+			turin_fabric_write_pcie_strap(pc,
+			    strap->strap_reg, strap->strap_data);
+		}
+	}
+
+	/* Handle Special case for DLF which needs to be set on non WAFL */
+	/* Does not appear to be used on Genoa. */
+	if (pc->zpc_coreno != TURIN_IOMS_BONUS_PCIE_CORENO) {
+		turin_fabric_write_pcie_strap(pc, TURIN_STRAP_PCIE_DLF_EN, 1);
+	}
+
+	/* Handle per bridge initialization */
+	for (uint_t i = 0; i < ARRAY_SIZE(turin_pcie_port_settings); i++) {
+		const zen_pcie_strap_setting_t *strap =
+		    &turin_pcie_port_settings[i];
+		for (uint_t j = 0; j < pc->zpc_nports; j++) {
+			if (zen_fabric_pcie_strap_matches(pc, j, strap)) {
+				turin_fabric_write_pcie_strap(pc,
+				    strap->strap_reg +
+				    (j * TURIN_STRAP_PCIE_NUM_PER_PORT),
+				    strap->strap_data);
+			}
+		}
+	}
 }
 
 void
