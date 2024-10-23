@@ -1876,6 +1876,55 @@ turin_fabric_init_bridges(zen_pcie_port_t *port)
 	}
 }
 
+static void
+turin_hide_pci_bridge(zen_ioms_t *ioms, uint8_t coreno, uint8_t portno)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = turin_iohcdev_pcie_smn_reg(ioms->zio_iohcnum,
+	    D_IOHCDEV_PCIE_BRIDGE_CTL, coreno, portno);
+	val = zen_ioms_read(ioms, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	zen_ioms_write(ioms, reg, val);
+}
+
+static void
+turin_hide_nbif_bridge(zen_ioms_t *ioms, uint8_t portno)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = turin_iohcdev_nbif_smn_reg(ioms->zio_iohcnum,
+	    D_IOHCDEV_NBIF_BRIDGE_CTL, 0, portno);
+	val = zen_ioms_read(ioms, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	zen_ioms_write(ioms, reg, val);
+}
+
+int
+zen_fabric_init_iohc_pci(zen_ioms_t *ioms, void *arg __unused)
+{
+	if (ioms->zio_iohctype != ZEN_IOHCT_LARGE)
+		return (0);
+
+	for (int i = 0; i < 3; i++)
+		turin_hide_pci_bridge(ioms, 2, i);
+
+	if (ioms->zio_iohcnum == 1 || ioms->zio_iohcnum == 2)
+		turin_hide_nbif_bridge(ioms, 1);
+
+	if (ioms->zio_num == TURIN_NBIO_BONUS_IOMS)
+		return (0);
+
+	for (int i = 0; i < 8; i++)
+		turin_hide_pci_bridge(ioms, 1, i);
+
+	return (0);
+}
+
 /*
  * This is a companion to turin_fabric_init_bridges, that operates on the PCIe
  * core level before we get to the individual bridge. This initialization
@@ -2048,6 +2097,7 @@ turin_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
 	pci_bus_counter_t *pbc = arg;
 	zen_pcie_core_t *pc = port->zpp_core;
 	zen_ioms_t *ioms = pc->zpc_ioms;
+	uint_t i;
 
 	cmn_err(CE_CONT, "[%x/%x/%x] ioms=%x, core=%x, port=%x",
 	    ioms->zio_pci_busno, port->zpp_device, port->zpp_func,
@@ -2060,7 +2110,7 @@ turin_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
 		    &turin_int_ports[ioms->zio_iohcnum];
 		pbc->pbc_busoff = 1 + int_ports->gippi_count;
 		pbc->pbc_ioms = ioms;
-		for (uint_t i = 0; i < int_ports->gippi_count; i++) {
+		for (i = 0; i < int_ports->gippi_count; i++) {
 			const zen_pcie_port_info_t *info =
 			    &int_ports->gippi_info[i];
 			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
@@ -2069,17 +2119,16 @@ turin_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
 			    PCI_BCNF_SECBUS, bus + 1 + i);
 			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
 			    PCI_BCNF_SUBBUS, bus + 1 + i);
-
 		}
 	}
 
 	if ((port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0) {
-		cmn_err(CE_WARN, " bridge hidden");
+		cmn_err(CE_CONT, " bridge hidden\n");
 		return (0);
 	}
 
 	secbus = bus + pbc->pbc_busoff;
-	cmn_err(CE_WARN, " secbus = %x", secbus);
+	cmn_err(CE_CONT, " secbus = %x\n", secbus);
 
 	pci_putb_func(bus, port->zpp_device, port->zpp_func,
 	    PCI_BCNF_PRIBUS, bus);

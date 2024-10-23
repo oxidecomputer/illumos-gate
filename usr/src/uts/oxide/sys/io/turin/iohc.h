@@ -238,7 +238,7 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 
 	/* This is the base for nBIF1, the only one that we accept. */
 	const uint32_t aperture_base = 0x13b38000;
-	VERIFY3U(unit32, ==, 1);
+	VERIFY3U(unit32, ==, 0);
 
 	const uint32_t aperture_off = (iohc32 << 20);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);

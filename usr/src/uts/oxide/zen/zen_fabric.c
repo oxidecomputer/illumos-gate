@@ -2399,6 +2399,9 @@ zen_null_fabric_nbif_bridges(zen_ioms_t *ioms __unused)
 {
 }
 
+
+extern int zen_fabric_init_iohc_pci(zen_ioms_t *, void *);
+
 void
 zen_fabric_init(void)
 {
@@ -2451,6 +2454,11 @@ zen_fabric_init(void)
 	 * to hide this RAM from anyone.
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_disable_vga, NULL);
+
+	/*
+	 * Walk IOMS and disable unused PCIe bridges on each IOHC.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_init_iohc_pci, NULL);
 
 	/*
 	 * Let's set up PCIe. To lead off, let's make sure the system uses the
