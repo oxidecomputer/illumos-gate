@@ -248,6 +248,9 @@ genoa_fabric_ioms_init(zen_ioms_t *ioms)
 {
 	const uint8_t iomsno = ioms->zio_num;
 
+	if (GENOA_IOMS_IOHUB_NUM(iomsno) == GENOA_NBIO_BONUS_IOHUB)
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
+
 	/*
 	 * Genoa has a 1:1 mapping between IOHCs and IOMSs, and all IOHCs are
 	 * the same type.

@@ -359,6 +359,9 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 
 	ioms->zio_nbionum = TURIN_NBIO_NUM(iomsno);
 
+	if (iomsno == TURIN_NBIO_BONUS_IOMS)
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
+
 	/*
 	 * The even numbered IOMS instances are connected to the larger IOHC
 	 * type.

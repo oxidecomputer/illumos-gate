@@ -808,7 +808,7 @@ static const zen_pcie_core_info_t milan_lane_maps[8] = {
 	{ "G2", 0x82, 0x91, 0x40, 0x4f }
 };
 
-static const zen_pcie_core_info_t milan_wafl_map = {
+static const zen_pcie_core_info_t milan_bonus_map = {
 	"WAFL", 0x24, 0x25, 0x80, 0x81
 };
 
@@ -818,7 +818,7 @@ static const zen_pcie_core_info_t milan_wafl_map = {
 uint8_t
 milan_ioms_n_pcie_cores(const uint8_t iomsno)
 {
-	if (iomsno == MILAN_IOMS_HAS_WAFL)
+	if (iomsno == MILAN_NBIO_BONUS_IOMS)
 		return (MILAN_IOMS_MAX_PCIE_CORES);
 	return (MILAN_IOMS_MAX_PCIE_CORES - 1);
 }
@@ -832,7 +832,7 @@ milan_ioms_n_pcie_cores(const uint8_t iomsno)
 uint8_t
 milan_pcie_core_n_ports(const uint8_t pcno)
 {
-	if (pcno == MILAN_IOMS_WAFL_PCIE_CORENO)
+	if (pcno == MILAN_IOMS_BONUS_PCIE_CORENO)
 		return (MILAN_PCIE_CORE_WAFL_NPORTS);
 	return (MILAN_PCIE_CORE_MAX_PORTS);
 }
@@ -842,8 +842,8 @@ milan_pcie_core_info(const uint8_t iomsno, const uint8_t coreno)
 {
 	uint8_t index;
 
-	if (coreno == MILAN_IOMS_WAFL_PCIE_CORENO)
-		return (&milan_wafl_map);
+	if (coreno == MILAN_IOMS_BONUS_PCIE_CORENO)
+		return (&milan_bonus_map);
 
 	index = iomsno * 2 + coreno;
 	VERIFY3U(index, <, ARRAY_SIZE(milan_lane_maps));
@@ -1820,10 +1820,11 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 	ioms->zio_uarch_ioms = mioms;
 
 	/*
-	 * Only IOMS 0 has a WAFL port.
+	 * IOMS 0 has a bonus two lane PCIe Gen2 core which is used for the
+	 * WAFL link, or can be used as two x1 interfaces on a 1P system.
 	 */
-	if (iomsno == MILAN_IOMS_HAS_WAFL) {
-		ioms->zio_flags |= ZEN_IOMS_F_HAS_WAFL;
+	if (iomsno == MILAN_NBIO_BONUS_IOMS) {
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
 	}
 
 	/*
@@ -3252,7 +3253,7 @@ milan_fabric_init_pcie_straps(zen_pcie_core_t *pc, void *arg)
 	}
 
 	/* Handle Special case for DLF which needs to be set on non WAFL */
-	if (pc->zpc_coreno != MILAN_IOMS_WAFL_PCIE_CORENO) {
+	if (pc->zpc_coreno != MILAN_IOMS_BONUS_PCIE_CORENO) {
 		milan_fabric_write_pcie_strap(pc, MILAN_STRAP_PCIE_DLF_EN, 1);
 	}
 
@@ -3651,7 +3652,7 @@ milan_fabric_init_bridges(zen_pcie_port_t *port, void *arg)
 	 * (gimlet, Ethanol-X, etc.) always support that on the port unless this
 	 * is one of the WAFL related lanes, we always set this.
 	 */
-	if (pc->zpc_coreno != MILAN_IOMS_WAFL_PCIE_CORENO) {
+	if (pc->zpc_coreno != MILAN_IOMS_BONUS_PCIE_CORENO) {
 		val = PCIE_PORT_LC_CTL2_SET_TS2_CHANGE_REQ(val,
 		    PCIE_PORT_LC_CTL2_TS2_CHANGE_128);
 	}

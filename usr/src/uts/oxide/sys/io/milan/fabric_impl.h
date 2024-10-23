@@ -57,15 +57,15 @@ extern "C" {
 
 /*
  * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to three
- * cores, but only the one with the WAFL link has core number 2.
+ * cores, but only the one with the bonus links has core number 2.
  */
 #define	MILAN_IOMS_MAX_PCIE_CORES	3
-#define	MILAN_IOMS_WAFL_PCIE_CORENO	2
+#define	MILAN_IOMS_BONUS_PCIE_CORENO	2
 
 /*
- * Similarly, the IOMS instance with the WAFL port.
+ * The IOMS instance with the bonus PCIe core.
  */
-#define	MILAN_IOMS_HAS_WAFL	0
+#define	MILAN_NBIO_BONUS_IOMS	0
 
 /*
  * There are supposed to be 23 digital power management (DPM) weights provided
