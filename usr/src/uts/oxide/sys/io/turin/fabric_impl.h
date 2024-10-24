@@ -114,6 +114,7 @@ extern void turin_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void turin_fabric_nbif_bridges(zen_ioms_t *);
 extern void turin_fabric_pcie(zen_fabric_t *);
 extern void turin_fabric_unhide_bridges(zen_pcie_port_t *);
+extern void turin_fabric_hide_bridges(zen_pcie_port_t *);
 extern void turin_fabric_init_pcie_straps(zen_pcie_core_t *);
 extern void turin_fabric_init_smn_port_state(zen_pcie_port_t *);
 extern void turin_fabric_init_bridges(zen_pcie_port_t *);
