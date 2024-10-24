@@ -1064,6 +1064,8 @@ f usr/lib/dtrace/sysevent.d 0644 root bin
 f usr/lib/dtrace/tcp.d 0644 root bin
 f usr/lib/dtrace/udp.d 0644 root bin
 f usr/lib/dtrace/unistd.d 0644 root bin
+f usr/lib/dumpregcap.sh 0755 root bin
+f usr/lib/dumpregs.sh 0755 root bin
 d usr/lib/fm 0755 root bin
 d usr/lib/fm/amd64 0755 root bin
 s usr/lib/fm/amd64/libtopo.so=libtopo.so.1

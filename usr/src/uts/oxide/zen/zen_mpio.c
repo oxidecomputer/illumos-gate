@@ -1080,6 +1080,14 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	}
 
 	cmn_err(CE_CONT, "?MPIO initialization completed successfully\n");
+
+	/*
+	 * Now that training is complete, re-hide all bridges; we will
+	 * selectively expose, given training and hotplug.
+	 */
+	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
+	    fops->zfo_pcie_port_hide_bridges);
+
 	/*
 	 * Now that we have successfully trained devices, it's time to go
 	 * through and set up the bridges so that way we can actual handle them

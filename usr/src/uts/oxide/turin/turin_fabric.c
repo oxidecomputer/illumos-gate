@@ -988,6 +988,25 @@ turin_fabric_unhide_bridges(zen_pcie_port_t *port)
 	zen_pcie_port_write(port, reg, val);
 }
 
+void
+turin_fabric_hide_bridges(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	/*
+	 * All bridges need to be visible before we attempt to
+	 * configure MPIO.
+	 */
+	reg = turin_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+	zen_pcie_port_write(port, reg, val);
+}
+
 /*
  * Go through and configure and set up devices and functions. In particular we
  * need to go through and set up the following:
@@ -1684,8 +1703,8 @@ turin_fabric_init_smn_port_state(zen_pcie_port_t *port)
 	 */
 	reg = turin_pcie_port_reg(port, D_PCIE_PORT_LC_PRST_MASK_CTL);
 	val = zen_pcie_port_read(port, reg);
-	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_8GT(val, 0x370);
-	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_16GT(val, 0x370);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_8GT(val, 0x38);
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_16GT(val, 0x38);
 	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_PRESET_MASK_32GT(val, 0x78);
 	zen_pcie_port_write(port, reg, val);
 }
@@ -1885,8 +1904,10 @@ turin_hide_pci_bridge(zen_ioms_t *ioms, uint8_t coreno, uint8_t portno)
 	reg = turin_iohcdev_pcie_smn_reg(ioms->zio_iohcnum,
 	    D_IOHCDEV_PCIE_BRIDGE_CTL, coreno, portno);
 	val = zen_ioms_read(ioms, reg);
+	//val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 0);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
 	zen_ioms_write(ioms, reg, val);
 }
 
@@ -1945,6 +1966,16 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	val = PCIE_CORE_RCB_CTL_SET_LINK_DOWN_CTO_EN(val, 1);
 	zen_pcie_core_write(pc, reg, val);
 
+	if (pc->zpc_coreno == 1) {
+		for (int i = 0; i < pc->zpc_nports; i++) {
+			zen_pcie_port_t *port = &pc->zpc_ports[i];
+			reg = turin_pcie_port_reg(port, D_PCIE_PORT_SDP_CTL);
+			val = zen_pcie_port_read(port, reg);
+			val = bitset32(val, 6, 0, pc->zpc_sdp_unit + i);
+			zen_pcie_port_write(port, reg, val);
+		}
+	}
+
 	/*
 	 * Program the unit ID for this device's SDP port.
 	 */
@@ -1955,10 +1986,15 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	 * fields in this register.
 	 */
 	ASSERT0(pc->zpc_sdp_unit & 0x8000000);
-	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(val,
-	    bitx8(pc->zpc_sdp_unit, 6, 3));
-	val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(val,
-	    bitx8(pc->zpc_sdp_unit, 2, 0));
+	if (pc->zpc_coreno == 1) {
+		val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(val, 0xF);
+		val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(val, 0);
+	} else {
+		val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_HI(val,
+		    bitx8(pc->zpc_sdp_unit, 6, 3));
+		val = PCIE_CORE_SDP_CTL_SET_UNIT_ID_LO(val,
+		    bitx8(pc->zpc_sdp_unit, 2, 0));
+	}
 	zen_pcie_core_write(pc, reg, val);
 
 	/*

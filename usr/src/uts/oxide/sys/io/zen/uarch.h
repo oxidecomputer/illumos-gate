@@ -227,9 +227,10 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_dxio_init)(zen_iodie_t *);
 
 	/*
-	 * Sets PCIe bridges so that they are not hidden in the IOHC.
+	 * Sets PCIe bridges so that they are hidden or not hidden in the IOHC.
 	 */
 	void		(*zfo_pcie_port_unhide_bridges)(zen_pcie_port_t *);
+	void		(*zfo_pcie_port_hide_bridges)(zen_pcie_port_t *);
 
 	/*
 	 * Initializes the given PCIe core.
