@@ -307,6 +307,8 @@ d kernel/dacf/amd64 0755 root sys
 f kernel/dacf/amd64/net_dacf 0755 root sys
 d kernel/drv 0755 root sys
 d kernel/drv/amd64 0755 root sys
+f kernel/drv/amd64/amdzen 0755 root sys
+f kernel/drv/amd64/amdzen_stub 0755 root sys
 f kernel/drv/amd64/arp 0755 root sys
 f kernel/drv/amd64/bge 0755 root sys
 f kernel/drv/amd64/blkdev 0755 root sys
@@ -360,7 +362,11 @@ f kernel/drv/amd64/tcp6 0755 root sys
 f kernel/drv/amd64/tl 0755 root sys
 f kernel/drv/amd64/udp 0755 root sys
 f kernel/drv/amd64/udp6 0755 root sys
+f kernel/drv/amd64/usmn 0755 root sys
+f kernel/drv/amd64/zen_udf 0755 root sys
+f kernel/drv/amd64/zen_umc 0755 root sys
 f kernel/drv/amd64/zfs 0755 root sys
+f kernel/drv/amdzen.conf 0644 root sys
 f kernel/drv/arp.conf 0644 root sys
 f kernel/drv/bge.conf 0644 root sys
 f kernel/drv/clone.conf 0644 root sys
@@ -877,6 +883,7 @@ h usr/bin/cut=usr/bin/alias
 f usr/bin/date 0555 root bin
 s usr/bin/df=../sbin/df
 f usr/bin/echo 0555 root bin
+f usr/bin/ed 0555 root bin
 h usr/bin/fc=usr/bin/alias
 h usr/bin/fg=usr/bin/alias
 h usr/bin/getopts=usr/bin/alias
@@ -1089,6 +1096,7 @@ f usr/lib/libbe.so.1 0755 root bin
 f usr/lib/libbrand.so.1 0755 root bin
 f usr/lib/libcfgadm.so.1 0755 root bin
 f usr/lib/libcmd.so.1 0755 root bin
+f usr/lib/libcrypt.so.1 0755 root bin
 f usr/lib/libcpc.so.1 0755 root bin
 f usr/lib/libdisasm.so.1 0755 root bin
 f usr/lib/libdll.so.1 0755 root bin
@@ -1103,6 +1111,7 @@ f usr/lib/libinstzones.so.1 0755 root bin
 f usr/lib/libipmi.so.1 0755 root bin
 f usr/lib/libkrb5.so.1 0755 root bin
 f usr/lib/liblzma.so.5 0755 root bin
+f usr/lib/libmapmalloc.so.1 0755 root bin
 f usr/lib/libpcidb.so.1 0755 root bin
 f usr/lib/libpkcs11.so.1 0755 root bin
 f usr/lib/libkvm.so.1 0755 root bin
@@ -1224,6 +1233,8 @@ f usr/lib/sysevent/modules/sysevent_conf_mod.so 0755 root bin
 f usr/lib/sysevent/modules/sysevent_reg_mod.so 0755 root bin
 f usr/lib/sysevent/syseventconfd 0555 root bin
 f usr/lib/sysevent/syseventd 0555 root bin
+f usr/lib/usmn 0555 root bin
+f usr/lib/udf 0555 root bin
 f usr/lib/utmpd 0555 root bin
 d usr/platform 0755 root sys
 d usr/platform/oxide 0755 root sys
