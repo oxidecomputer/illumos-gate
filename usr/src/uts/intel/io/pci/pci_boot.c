@@ -274,8 +274,8 @@ static uchar_t max_dev_pci = 32;	/* PCI standard */
 int pci_boot_maxbus;
 
 int pci_boot_debug = 1;
-int pci_debug_bus_start = -1;
-int pci_debug_bus_end = -1;
+int pci_debug_bus_start = 0xa0;
+int pci_debug_bus_end = 0xbf;
 
 static struct pci_fixundo *undolist = NULL;
 static int num_root_bus = 0;	/* count of root buses */
