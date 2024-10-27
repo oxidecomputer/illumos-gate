@@ -2050,13 +2050,13 @@ genoa_hotplug_bridge_features(zen_pcie_port_t *port)
 {
 	uint32_t feats = 0;
 
-	//if (genoa_is_ruby()) {
+	if (1) {
 		if (port->zpp_hp_type == ZEN_HP_ENTERPRISE_SSD) {
 			return (ruby_pcie_slot_cap_entssd);
 		} else {
 			return (ruby_pcie_slot_cap_express);
 		}
-	//}
+	}
 
 	feats = PCIE_SLOTCAP_HP_SURPRISE | PCIE_SLOTCAP_HP_CAPABLE;
 
