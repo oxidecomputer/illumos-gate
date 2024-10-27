@@ -66,7 +66,6 @@
  */
 #define	TURIN_MAX_APOB_MEM_MAP_HOLES	51
 
-
 static const zen_ccx_ops_t turin_ccx_ops = {
 	.zco_physmem_init = turin_ccx_physmem_init,
 
