@@ -1431,7 +1431,7 @@ zen_fabric_topo_init(void)
 	 * stop short of it for
 	 */
 	const uint64_t GIB = 1024UL * 1024UL * 1024UL;
-	phys_end = 1UL << MIN(48, zen_fabric_physaddr_size());
+	phys_end = 1UL << MIN(45, zen_fabric_physaddr_size());
 	mmio64_end = phys_end - 12UL * GIB;
 	VERIFY3U(mmio64_end, >, fabric->zf_mmio64_base);
 	fabric->zf_mmio64_size = mmio64_end - fabric->zf_mmio64_base;
