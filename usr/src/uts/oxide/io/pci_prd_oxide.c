@@ -74,6 +74,17 @@ pci_prd_multi_root_ok(void)
 	return (B_TRUE);
 }
 
+/*
+ * We expect all PCI(e) devices to be in their reset state. If any of them do
+ * happen to have been programmed (or not been properly reset from the last
+ * boot), we always want to ignore that and lay things out ourselves.
+ */
+boolean_t
+pci_prd_ignore_firmware(void)
+{
+	return (B_TRUE);
+}
+
 int
 pci_prd_init(pci_prd_upcalls_t *upcalls)
 {

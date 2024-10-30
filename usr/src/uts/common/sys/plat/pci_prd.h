@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_PLAT_PCI_PRD_H
@@ -104,6 +104,14 @@ extern struct memlist *pci_prd_find_resource(uint32_t, pci_prd_rsrc_t);
  * actually valid.
  */
 extern boolean_t pci_prd_multi_root_ok(void);
+
+/*
+ * Determines whether this platform should ignore any memory ranges which may
+ * have been programmed by the system firmware into PCI(e) bridges or devices.
+ * When this returns B_TRUE, the system will not take these into account when
+ * laying out BARs.
+ */
+extern boolean_t pci_prd_ignore_firmware(void);
 
 /*
  * This is used to allow the PCI enumeration code to ask the platform about any

@@ -201,7 +201,8 @@
 	    (bus) <= pci_debug_bus_end)
 #define	dump_memlists(tag, bus) \
 	if (bus_debug((bus))) dump_memlists_impl((tag), (bus))
-#define	MSGHDR		"!%s[%02x/%02x/%x]: "
+#define	MSGHDR		"%s[%02x/%02x/%x]: "
+#define	LMSGHDR		"!" MSGHDR
 
 #define	CONFIG_INFO	0
 #define	CONFIG_UPDATE	1
@@ -1053,11 +1054,11 @@ set_ppb_res(uchar_t bus, uchar_t dev, uchar_t func, mem_res_t type,
 	}
 
 	if (base > limit) {
-		cmn_err(CE_NOTE, MSGHDR "DISABLE %4s range",
+		cmn_err(CE_NOTE, LMSGHDR "DISABLE %4s range",
 		    "ppb", bus, dev, func, tag);
 	} else {
 		cmn_err(CE_NOTE,
-		    MSGHDR "PROGRAM %4s range 0x%lx ~ 0x%lx",
+		    LMSGHDR "PROGRAM %4s range 0x%lx ~ 0x%lx",
 		    "ppb", bus, dev, func, tag, base, limit);
 	}
 }
@@ -1181,7 +1182,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 		uint16_t reg = pci_getw(bus, dev, func,
 		    (uint16_t)cap_ptr + PCIE_LINKCTL);
 		if ((reg & PCIE_LINKCTL_LINK_DISABLE) != 0) {
-			dcmn_err(CE_NOTE, MSGHDR "link is disabled",
+			dcmn_err(CE_NOTE, LMSGHDR "link is disabled",
 			    "ppb", bus, dev, func);
 			return;
 		}
@@ -1222,14 +1223,14 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 			add_bus_range_prop(secbus);
 
 			cmn_err(CE_NOTE,
-			    MSGHDR "PROGRAM cardbus buses 0x%x ~ 0x%x",
+			    LMSGHDR "PROGRAM cardbus buses 0x%x ~ 0x%x",
 			    "cbb", bus, dev, func, secbus, subbus);
 		}
 	}
 
 	buscount = subbus - secbus + 1;
 
-	dcmn_err(CE_NOTE, MSGHDR
+	dcmn_err(CE_NOTE, LMSGHDR
 	    "secbus 0x%x existing sizes I/O 0x%x, MEM 0x%lx, PMEM 0x%lx",
 	    "ppb", bus, dev, func, secbus,
 	    pci_bus_res[secbus].io_size, pci_bus_res[secbus].mem_size,
@@ -1265,7 +1266,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 		for (uint_t i = 32; i > 0; i >>= 1) {
 			if (avail >= buscount * PPB_MEM_ALIGNMENT * i) {
 				mem.size = buscount * PPB_MEM_ALIGNMENT * i;
-				dcmn_err(CE_NOTE, MSGHDR
+				dcmn_err(CE_NOTE, LMSGHDR
 				    "Allocating %uMiB",
 				    "ppb", bus, dev, func, i);
 				break;
@@ -1350,7 +1351,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 				    pci_bus_res[parbus].io_reprogram;
 
 				cmn_err(CE_NOTE,
-				    MSGHDR "PROGRAM  I/O range 0x%lx ~ 0x%lx "
+				    LMSGHDR "PROGRAM  I/O range 0x%lx ~ 0x%lx "
 				    "(subtractive bridge)",
 				    "ppb", bus, dev, func,
 				    addr, addr + io.size - 1);
@@ -1368,7 +1369,7 @@ fix_ppb_res(uchar_t secbus, boolean_t prog_sub)
 				    pci_bus_res[parbus].mem_reprogram;
 
 				cmn_err(CE_NOTE,
-				    MSGHDR "PROGRAM  MEM range 0x%lx ~ 0x%lx "
+				    LMSGHDR "PROGRAM  MEM range 0x%lx ~ 0x%lx "
 				    "(subtractive bridge)",
 				    "ppb", bus, dev, func,
 				    addr, addr + mem.size - 1);
@@ -2242,7 +2243,7 @@ process_devfunc(uchar_t bus, uchar_t dev, uchar_t func, int config_op)
 
 	prop_ret = pci_prop_data_fill(NULL, bus, dev, func, &prop_data);
 	if (prop_ret != PCI_PROP_OK) {
-		cmn_err(CE_WARN, MSGHDR "failed to get basic PCI data: 0x%x",
+		cmn_err(CE_WARN, LMSGHDR "failed to get basic PCI data: 0x%x",
 		    "pci", bus, dev, func, prop_ret);
 		return;
 	}
@@ -2269,7 +2270,7 @@ process_devfunc(uchar_t bus, uchar_t dev, uchar_t func, int config_op)
 	    DEVI_SID_NODEID, &dip);
 	prop_ret = pci_prop_name_node(dip, &prop_data);
 	if (prop_ret != PCI_PROP_OK) {
-		cmn_err(CE_WARN, MSGHDR "failed to set node name: 0x%x; "
+		cmn_err(CE_WARN, LMSGHDR "failed to set node name: 0x%x; "
 		    "devinfo node not created", "pci", bus, dev, func,
 		    prop_ret);
 		(void) ndi_devi_free(dip);
@@ -2308,7 +2309,7 @@ process_devfunc(uchar_t bus, uchar_t dev, uchar_t func, int config_op)
 	 */
 	prop_ret = pci_prop_set_common_props(dip, &prop_data);
 	if (prop_ret != PCI_PROP_OK) {
-		cmn_err(CE_WARN, MSGHDR "failed to set properties: 0x%x; "
+		cmn_err(CE_WARN, LMSGHDR "failed to set properties: 0x%x; "
 		    "devinfo node not created", "pci", bus, dev, func,
 		    prop_ret);
 		if (pcie_get_rc_dip(dip) != NULL) {
@@ -2359,7 +2360,7 @@ process_devfunc(uchar_t bus, uchar_t dev, uchar_t func, int config_op)
 
 	prop_ret = pci_prop_set_compatible(dip, &prop_data);
 	if (prop_ret != PCI_PROP_OK) {
-		cmn_err(CE_WARN, MSGHDR "failed to set compatible property: "
+		cmn_err(CE_WARN, LMSGHDR "failed to set compatible property: "
 		    "0x%x;  device may not bind to a driver", "pci", bus, dev,
 		    func, prop_ret);
 	}
@@ -2599,6 +2600,22 @@ add_bar_reg_props(int op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
 		}
 
 		if (op == CONFIG_INFO) {	/* first pass */
+			boolean_t fwignore =
+			    pci_prd_ignore_firmware() && base > 0;
+
+			if (pci_boot_debug != 0 || fwignore) {
+				cmn_err(CE_NOTE,
+				    MSGHDR "BAR%u  I/O FWINIT 0x%x ~ 0x%x",
+				    "pci", bus, dev, func, bar, base, len);
+			}
+
+			if (fwignore) {
+				cmn_err(CE_NOTE, MSGHDR
+				    "BAR%u ignoring programmed I/O address",
+				    "pci", bus, dev, func, bar);
+				base = 0;
+			}
+
 			/* take out of the resource map of the bus */
 			if (base != 0) {
 				(void) pci_memlist_remove(io_avail, base, len);
@@ -2606,21 +2623,18 @@ add_bar_reg_props(int op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
 			} else {
 				reprogram = 1;
 			}
-			dcmn_err(CE_NOTE,
-			    MSGHDR "BAR%u  I/O FWINIT 0x%x ~ 0x%x",
-			    "pci", bus, dev, func, bar, base, len);
 			pci_bus_res[bus].io_size += len;
 		} else if ((*io_avail != NULL && base == 0) ||
 		    pci_bus_res[bus].io_reprogram) {
 			base = pci_memlist_find(io_avail, len, len);
 			if (base == 0) {
-				cmn_err(CE_WARN, MSGHDR "BAR%u I/O "
+				cmn_err(CE_WARN, LMSGHDR "BAR%u I/O "
 				    "failed to find length 0x%x",
 				    "pci", bus, dev, func, bar, len);
 			} else {
 				uint32_t nbase;
 
-				cmn_err(CE_NOTE, "!" MSGHDR "BAR%u  "
+				cmn_err(CE_NOTE, LMSGHDR "BAR%u  "
 				    "I/O REPROG 0x%x ~ 0x%x",
 				    "pci", bus, dev, func,
 				    bar, base, len);
@@ -2629,7 +2643,7 @@ add_bar_reg_props(int op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
 				nbase &= PCI_BASE_IO_ADDR_M;
 
 				if (base != nbase) {
-					cmn_err(CE_NOTE, "!" MSGHDR "BAR%u  "
+					cmn_err(CE_NOTE, LMSGHDR "BAR%u  "
 					    "I/O REPROG 0x%x ~ 0x%x "
 					    "FAILED READBACK 0x%x",
 					    "pci", bus, dev, func,
@@ -2722,13 +2736,26 @@ add_bar_reg_props(int op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
 		fbase = (((uint64_t)base_hi) << 32) | base;
 
 		if (op == CONFIG_INFO) {
+			boolean_t fwignore =
+			    pci_prd_ignore_firmware() && fbase > 0;
 
-			dcmn_err(CE_NOTE,
-			    MSGHDR "BAR%u %sMEM FWINIT 0x%lx ~ 0x%lx%s",
-			    "pci", bus, dev, func, bar,
-			    (phys_hi & PCI_PREFETCH_B) ? "P" : " ",
-			    fbase, len,
-			    *bar_sz == PCI_BAR_SZ_64 ? " (64-bit)" : "");
+			if (pci_boot_debug != 0 || fwignore) {
+				cmn_err(CE_NOTE,
+				    MSGHDR "BAR%u %sMEM FWINIT 0x%lx ~ 0x%lx%s",
+				    "pci", bus, dev, func, bar,
+				    (phys_hi & PCI_PREFETCH_B) ? "P" : " ",
+				    fbase, len,
+				    *bar_sz == PCI_BAR_SZ_64 ?
+				    " (64-bit)" : "");
+			}
+
+			if (fwignore) {
+				cmn_err(CE_NOTE, MSGHDR
+				    "BAR%u ignoring programmed %sMEM address",
+				    "pci", bus, dev, func, bar,
+				    (phys_hi & PCI_PREFETCH_B) ? "P" : " ");
+				fbase = 0;
+			}
 
 			/* take out of the resource map of the bus */
 			if (fbase != 0) {
@@ -2791,13 +2818,13 @@ add_bar_reg_props(int op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
 			base = fbase & 0xffffffff;
 
 			if (fbase == 0) {
-				cmn_err(CE_WARN, MSGHDR "BAR%u MEM "
+				cmn_err(CE_WARN, LMSGHDR "BAR%u MEM "
 				    "failed to find length 0x%lx",
 				    "pci", bus, dev, func, bar, len);
 			} else {
 				uint64_t nbase, nbase_hi = 0;
 
-				cmn_err(CE_NOTE, "!" MSGHDR "BAR%u "
+				cmn_err(CE_NOTE, LMSGHDR "BAR%u "
 				    "%s%s REPROG 0x%lx ~ 0x%lx",
 				    "pci", bus, dev, func, bar,
 				    pf ? "PMEM" : "MEM",
@@ -2816,7 +2843,7 @@ add_bar_reg_props(int op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
 				nbase &= PCI_BASE_M_ADDR_M;
 
 				if (base != nbase || base_hi != nbase_hi) {
-					cmn_err(CE_NOTE, "!" MSGHDR "BAR%u "
+					cmn_err(CE_NOTE, LMSGHDR "BAR%u "
 					    "%s%s REPROG 0x%lx ~ 0x%lx "
 					    "FAILED READBACK 0x%lx",
 					    "pci", bus, dev, func, bar,
@@ -2865,7 +2892,7 @@ add_bar_reg_props(int op, uchar_t bus, uchar_t dev, uchar_t func, uint_t bar,
 		assigned->pci_phys_low = base;
 	}
 
-	dcmn_err(CE_NOTE, MSGHDR "BAR%u ---- %08x.%x.%x.%x.%x",
+	dcmn_err(CE_NOTE, LMSGHDR "BAR%u ---- %08x.%x.%x.%x.%x",
 	    "pci", bus, dev, func, bar,
 	    assigned->pci_phys_hi,
 	    assigned->pci_phys_mid,
@@ -3174,16 +3201,34 @@ add_ppb_props(dev_info_t *dip, uchar_t bus, uchar_t dev, uchar_t func,
 	fetch_ppb_res(bus, dev, func, RES_MEM, &mem.base, &mem.limit);
 	fetch_ppb_res(bus, dev, func, RES_PMEM, &pmem.base, &pmem.limit);
 
-	if (pci_boot_debug != 0) {
-		dcmn_err(CE_NOTE, MSGHDR " I/O FWINIT 0x%lx ~ 0x%lx%s",
+	boolean_t fwignore = pci_prd_ignore_firmware() &&
+	    (cmd_reg & (PCI_COMM_IO | PCI_COMM_MAE)) != 0;
+
+	if (pci_boot_debug != 0 || fwignore) {
+		cmn_err(CE_NOTE, MSGHDR " I/O FWINIT 0x%lx ~ 0x%lx%s",
 		    "ppb", bus, dev, func, io.base, io.limit,
 		    io.base > io.limit ? " (disabled)" : "");
-		dcmn_err(CE_NOTE, MSGHDR " MEM FWINIT 0x%lx ~ 0x%lx%s",
+		cmn_err(CE_NOTE, MSGHDR " MEM FWINIT 0x%lx ~ 0x%lx%s",
 		    "ppb", bus, dev, func, mem.base, mem.limit,
 		    mem.base > mem.limit ? " (disabled)" : "");
-		dcmn_err(CE_NOTE, MSGHDR "PMEM FWINIT 0x%lx ~ 0x%lx%s",
+		cmn_err(CE_NOTE, MSGHDR "PMEM FWINIT 0x%lx ~ 0x%lx%s",
 		    "ppb", bus, dev, func, pmem.base, pmem.limit,
 		    pmem.base > pmem.limit ? " (disabled)" : "");
+	}
+
+	if (fwignore) {
+		if ((cmd_reg & PCI_COMM_IO) != 0) {
+			cmn_err(CE_NOTE, MSGHDR
+			    "ignoring programmed I/O address",
+			    "ppb", bus, dev, func);
+			cmd_reg &= ~PCI_COMM_IO;
+		}
+		if ((cmd_reg & PCI_COMM_MAE) != 0) {
+			cmn_err(CE_NOTE, MSGHDR
+			    "ignoring programmed memory address(es)",
+			    "ppb", bus, dev, func);
+			cmd_reg &= ~PCI_COMM_MAE;
+		}
 	}
 
 	/*
