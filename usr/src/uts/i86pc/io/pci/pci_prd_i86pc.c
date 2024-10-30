@@ -836,6 +836,17 @@ pci_prd_ignore_firmware(void)
 }
 
 /*
+ * We generally expect that the system firmware will have set up bridges and
+ * programmed BARs into devices before we get here, and we should honour those
+ * settings.
+ */
+boolean_t
+pci_prd_ignore_firmware(void)
+{
+	return (B_FALSE);
+}
+
+/*
  * These compatibility flags generally exist for i86pc. We need to still
  * enumerate ISA bridges and the naming of device nodes and aliases must be kept
  * consistent lest we break boot. See uts/common/io/pciex/pci_props.c theory
