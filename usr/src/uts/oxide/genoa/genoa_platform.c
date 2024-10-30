@@ -33,7 +33,6 @@
 #include <sys/io/genoa/mpio.h>
 #include <sys/io/genoa/smu.h>
 #include <sys/io/zen/mpio.h>
-#include <sys/io/zen/apob.h>
 #include <sys/io/zen/ras.h>
 
 /*
@@ -55,9 +54,11 @@
  */
 #define	GENOA_MAX_CORES_PER_CCX		8
 
-static const zen_apob_ops_t genoa_apob_ops = {
-	.zao_reserve_phys = zen_null_apob_reserve_phys,
-};
+/*
+ * The APOB may provide up to 49 holes in the memory map on Genoa.
+ */
+#define	GENOA_MAX_APOB_MEM_MAP_HOLES	49
+
 
 static const zen_ccx_ops_t genoa_ccx_ops = {
 	.zco_get_dpm_weights = genoa_fabric_thread_get_dpm_weights,
@@ -125,6 +126,7 @@ const zen_platform_t genoa_platform = {
 		    X86_CHIPREV_AMD_GENOA_A1 | X86_CHIPREV_AMD_GENOA_AB |
 		    X86_CHIPREV_AMD_GENOA_B0 | X86_CHIPREV_AMD_GENOA_B1 |
 		    X86_CHIPREV_AMD_GENOA_B2,
+		.zpc_max_apob_mem_map_holes = GENOA_MAX_APOB_MEM_MAP_HOLES,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP,
 		.zpc_max_iorr = DF_MAX_IO_RULES,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES,
@@ -161,7 +163,6 @@ const zen_platform_t genoa_platform = {
 		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(genoa_pcie_port_dbg_regs),
 #endif
 	},
-	.zp_apob_ops = &genoa_apob_ops,
 	.zp_ccx_ops = &genoa_ccx_ops,
 	.zp_fabric_ops = &genoa_fabric_ops,
 	.zp_hack_ops = &genoa_hack_ops,

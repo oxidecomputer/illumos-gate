@@ -53,23 +53,6 @@ extern "C" {
  */
 #pragma pack(1)
 
-typedef struct milan_apob_sysmap_ram_hole {
-	uint64_t masmrh_base;
-	uint64_t masmrh_size;
-	uint32_t masmrh_reason;
-	uint32_t _pad;
-} milan_apob_sysmap_ram_hole_t;
-
-/*
- * What we get back (if anything) from GROUP_FABRIC type 9 instance 0
- */
-typedef struct milan_apob_sysmap {
-	uint64_t masm_high_phys;
-	uint32_t masm_hole_count;
-	uint32_t _pad;
-	milan_apob_sysmap_ram_hole_t masm_holes[18];
-} milan_apob_sysmap_t;
-
 #define	MILAN_APOB_CCX_MAX_THREADS	2
 
 typedef struct milan_apob_core {

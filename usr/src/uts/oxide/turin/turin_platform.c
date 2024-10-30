@@ -34,7 +34,6 @@
 #include <sys/io/turin/mpio.h>
 #include <sys/io/turin/smu.h>
 #include <sys/io/zen/mpio.h>
-#include <sys/io/zen/apob.h>
 #include <sys/io/zen/ras.h>
 
 /*
@@ -60,10 +59,12 @@
 #define	CLASSIC_TURIN_MAX_CORES_PER_CCX		8
 #define	DENSE_TURIN_MAX_CORES_PER_CCX		16
 
+/*
+ * The APOB may provide up to 51 holes in the memory map on both Classic and
+ * Dense Turin.
+ */
+#define	TURIN_MAX_APOB_MEM_MAP_HOLES	51
 
-static const zen_apob_ops_t turin_apob_ops = {
-	.zao_reserve_phys = zen_null_apob_reserve_phys,
-};
 
 static const zen_ccx_ops_t turin_ccx_ops = {
 	.zco_physmem_init = turin_ccx_physmem_init,
@@ -136,6 +137,7 @@ const zen_platform_t turin_platform = {
 		.zpc_chiprev = X86_CHIPREV_AMD_TURIN_A0 |
 		    X86_CHIPREV_AMD_TURIN_B0 | X86_CHIPREV_AMD_TURIN_B1 |
 		    X86_CHIPREV_AMD_TURIN_C0 | X86_CHIPREV_AMD_TURIN_C1,
+		.zpc_max_apob_mem_map_holes = TURIN_MAX_APOB_MEM_MAP_HOLES,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP_TURIN,
 		.zpc_max_iorr = DF_MAX_IO_RULES_TURIN,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,
@@ -172,7 +174,6 @@ const zen_platform_t turin_platform = {
 		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(turin_pcie_port_dbg_regs),
 #endif
 	},
-	.zp_apob_ops = &turin_apob_ops,
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,
 	.zp_hack_ops = &turin_hack_ops,
@@ -185,6 +186,7 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_chiprev = X86_CHIPREV_AMD_DENSE_TURIN_A0 |
 		    X86_CHIPREV_AMD_DENSE_TURIN_B0 |
 		    X86_CHIPREV_AMD_DENSE_TURIN_B1,
+		.zpc_max_apob_mem_map_holes = TURIN_MAX_APOB_MEM_MAP_HOLES,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP_TURIN,
 		.zpc_max_iorr = DF_MAX_IO_RULES_TURIN,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,
@@ -221,7 +223,6 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(turin_pcie_port_dbg_regs),
 #endif
 	},
-	.zp_apob_ops = &turin_apob_ops,
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,
 	.zp_hack_ops = &turin_hack_ops,

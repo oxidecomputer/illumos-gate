@@ -35,10 +35,6 @@
 extern "C" {
 #endif
 
-typedef struct zen_apob_ops {
-	void	(*zao_reserve_phys)(void);
-} zen_apob_ops_t;
-
 typedef struct zen_ccx_ops {
 	/*
 	 * Optional hook for any further microachitecture-specific physical
@@ -332,6 +328,11 @@ typedef struct zen_platform_consts {
 	 * require different CCX initialization.
 	 */
 	const x86_chiprev_t		zpc_chiprev;
+
+	/*
+	 * The maximum number of hole entries expected in the APOB memory map.
+	 */
+	const uint32_t			zpc_max_apob_mem_map_holes;
 
 	/*
 	 * The maximum number of PCI Bus configuration address maps.

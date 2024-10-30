@@ -123,7 +123,6 @@ CORE_OBJS +=			\
 	x_call.o
 
 MILAN_OBJS +=			\
-	milan_apob_memlist.o	\
 	milan_ccx.o		\
 	milan_dxio_data.o	\
 	milan_fabric.o		\

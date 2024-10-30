@@ -40,19 +40,6 @@ oxide_zen_platform_consts(void)
 	return (&platform->zp_consts);
 }
 
-const zen_apob_ops_t *
-oxide_zen_apob_ops(void)
-{
-	const zen_platform_t *platform = oxide_zen_platform();
-	const zen_apob_ops_t *apob_ops;
-
-	ASSERT3P(platform, !=, NULL);
-	apob_ops = platform->zp_apob_ops;
-	ASSERT3P(apob_ops, !=, NULL);
-
-	return (apob_ops);
-}
-
 const zen_ccx_ops_t *
 oxide_zen_ccx_ops(void)
 {

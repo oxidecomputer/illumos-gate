@@ -43,7 +43,6 @@
 #include <sys/io/milan/smu_impl.h>
 #include <sys/io/milan/ras.h>
 #include <sys/io/milan/hacks.h>
-#include <milan/milan_apob.h>
 
 /*
  * The milan_pcie_dbg.c is file is included here so that we have access to the
@@ -64,10 +63,11 @@
  */
 #define	MILAN_MAX_CORES_PER_CCX		8
 
+/*
+ * The APOB may provide up to 18 holes in the memory map on Milan.
+ */
+#define	MILAN_MAX_APOB_MEM_MAP_HOLES	18
 
-static const zen_apob_ops_t milan_apob_ops = {
-	.zao_reserve_phys = milan_apob_reserve_phys,
-};
 
 static const zen_ccx_ops_t milan_ccx_ops = {
 	.zco_get_dpm_weights = milan_fabric_thread_get_dpm_weights,
@@ -139,6 +139,7 @@ const zen_platform_t milan_platform = {
 		.zpc_df_rev = DF_REV_3,
 		.zpc_chiprev = X86_CHIPREV_AMD_MILAN_B0 |
 		    X86_CHIPREV_AMD_MILAN_B1,
+		.zpc_max_apob_mem_map_holes = MILAN_MAX_APOB_MEM_MAP_HOLES,
 		.zpc_max_cfgmap = DF_MAX_CFGMAP,
 		.zpc_max_iorr = DF_MAX_IO_RULES,
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES,
@@ -165,7 +166,6 @@ const zen_platform_t milan_platform = {
 		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(milan_pcie_port_dbg_regs),
 #endif
 	},
-	.zp_apob_ops = &milan_apob_ops,
 	.zp_ccx_ops = &milan_ccx_ops,
 	.zp_fabric_ops = &milan_fabric_ops,
 	.zp_hack_ops = &milan_hack_ops,

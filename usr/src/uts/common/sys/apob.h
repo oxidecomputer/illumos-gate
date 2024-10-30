@@ -30,6 +30,8 @@
 extern "C" {
 #endif
 
+#define	APOB_MIN_LEN	16
+
 struct apob_hdl;
 typedef struct apob_hdl apob_hdl_t;
 
@@ -46,7 +48,58 @@ typedef enum apob_group {
 	APOB_GROUP_APCB
 } apob_group_t;
 
-#define	APOB_MIN_LEN	16
+typedef enum apob_fabric_type {
+	APOB_FABRIC_TYPE_SYS_MEM_MAP = 9,
+} apob_fabric_type_t;
+
+#pragma pack(1)
+
+/*
+ * Describes a region of physical address space which may not be used as RAM.
+ */
+typedef struct apob_sys_mem_map_hole {
+	/*
+	 * Base physical address of this hole.
+	 */
+	uint64_t		asmmh_base;
+	/*
+	 * The size in bytes of this hole.
+	 */
+	uint64_t		asmmh_size;
+	/*
+	 * A tag indicating the purpose of this hole -- the specific values
+	 * may vary between different microarchitectures and/or firmware.
+	 */
+	uint32_t		asmmh_type;
+	uint32_t		asmmh_padding;
+} apob_sys_mem_map_hole_t;
+
+/*
+ * The structure returned for (group, type, instance) = (APOB_GROUP_FABRIC,
+ * APOB_FABRIC_TYPE_SYS_MEM_MAP, 0) which describes the upper bound of available
+ * memory and what ranges to explicitly avoid.
+ */
+typedef struct apob_sys_mem_map {
+	/*
+	 * The physical address representing the upper limit (exclusive) of
+	 * available RAM.
+	 */
+	uint64_t		asmm_high_phys;
+	/*
+	 * The number of apob_sys_mem_map_hole entries laid out after the end of
+	 * this structure in the APOB. There should always be at least one entry
+	 * but the maximum possible number of entries is variable.
+	 */
+	uint32_t		asmm_hole_count;
+	uint32_t		asmm_padding;
+	/*
+	 * The collection of asmm_hole_count address ranges that should be
+	 * reserved and otherwise not treated as RAM.
+	 */
+	apob_sys_mem_map_hole_t	asmm_holes[];
+} apob_sys_mem_map_t;
+
+#pragma pack()	/* pack(1) */
 
 /*
  * These functions are implemented in code that is common to the kernel and

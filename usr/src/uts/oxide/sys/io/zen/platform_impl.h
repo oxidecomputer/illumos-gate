@@ -32,7 +32,6 @@ extern "C" {
 
 typedef struct zen_platform {
 	const zen_platform_consts_t	zp_consts;
-	const zen_apob_ops_t		*zp_apob_ops;
 	const zen_ccx_ops_t		*zp_ccx_ops;
 	const zen_fabric_ops_t		*zp_fabric_ops;
 	const zen_hack_ops_t		*zp_hack_ops;
@@ -40,7 +39,6 @@ typedef struct zen_platform {
 } zen_platform_t;
 
 extern const zen_platform_consts_t *oxide_zen_platform_consts(void);
-extern const zen_apob_ops_t *oxide_zen_apob_ops(void);
 extern const zen_ccx_ops_t *oxide_zen_ccx_ops(void);
 extern const zen_fabric_ops_t *oxide_zen_fabric_ops(void);
 extern const zen_hack_ops_t *oxide_zen_hack_ops(void);
