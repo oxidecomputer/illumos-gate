@@ -833,7 +833,7 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 
 	reg = turin_ioms_reg(ioms, D_IOHC_QOS_CTL, 0);
 	val = zen_ioms_read(ioms, reg);
-	val = IOHC_QOS_CTL_SET_VC7_PRI(val, 0);
+	val = IOHC_QOS_CTL_SET_VC7_PRI(val, 0xe);
 	val = IOHC_QOS_CTL_SET_VC6_PRI(val, 0);
 	val = IOHC_QOS_CTL_SET_VC5_PRI(val, 0);
 	val = IOHC_QOS_CTL_SET_VC4_PRI(val, 0);
@@ -981,7 +981,7 @@ turin_fabric_unhide_bridges(zen_pcie_port_t *port)
 	 */
 	reg = turin_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
 	val = zen_pcie_port_read(port, reg);
-	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 0);
 	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 0);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
@@ -1000,7 +1000,7 @@ turin_fabric_hide_bridges(zen_pcie_port_t *port)
 	 */
 	reg = turin_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
 	val = zen_pcie_port_read(port, reg);
-	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
@@ -1904,7 +1904,7 @@ turin_hide_pci_bridge(zen_ioms_t *ioms, uint8_t coreno, uint8_t portno)
 	reg = turin_iohcdev_pcie_smn_reg(ioms->zio_iohcnum,
 	    D_IOHCDEV_PCIE_BRIDGE_CTL, coreno, portno);
 	val = zen_ioms_read(ioms, reg);
-	//val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
@@ -1920,8 +1920,10 @@ turin_hide_nbif_bridge(zen_ioms_t *ioms, uint8_t portno)
 	reg = turin_iohcdev_nbif_smn_reg(ioms->zio_iohcnum,
 	    D_IOHCDEV_NBIF_BRIDGE_CTL, 0, portno);
 	val = zen_ioms_read(ioms, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
 	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
 	zen_ioms_write(ioms, reg, val);
 }
 
