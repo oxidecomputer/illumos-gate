@@ -25,6 +25,7 @@
 /*
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -878,7 +879,6 @@ lgrp_plat_cpu_to_hand(processorid_t id)
 	hand = (lgrp_handle_t)lgrp_plat_cpu_to_node(cpu[id],
 	    lgrp_plat_cpu_node, lgrp_plat_cpu_node_nentries);
 
-	ASSERT(hand != (lgrp_handle_t)-1);
 	if (hand == (lgrp_handle_t)-1)
 		return (LGRP_NULL_HANDLE);
 
@@ -981,7 +981,9 @@ lgrp_plat_latency(lgrp_handle_t from, lgrp_handle_t to)
 		 */
 		node = lgrp_plat_cpu_to_node(CPU, lgrp_plat_cpu_node,
 		    lgrp_plat_cpu_node_nentries);
-		ASSERT(node >= 0 && node < lgrp_plat_node_cnt);
+		ASSERT3U(node, <, lgrp_plat_node_cnt);
+		if (node == (lgrp_handle_t)-1)
+			return (0);
 		if (node == src)
 			lgrp_plat_probe();
 	}
@@ -1134,7 +1136,9 @@ lgrp_plat_probe(void)
 	 */
 	from = lgrp_plat_cpu_to_node(CPU, lgrp_plat_cpu_node,
 	    lgrp_plat_cpu_node_nentries);
-	ASSERT(from >= 0 && from < lgrp_plat_node_cnt);
+	ASSERT3U(from, <, lgrp_plat_node_cnt);
+	if (from == (lgrp_handle_t)-1)
+		return;
 
 	/*
 	 * Don't need to probe if got times already
@@ -1841,7 +1845,9 @@ lgrp_plat_main_init(void)
 		 */
 		curnode = lgrp_plat_cpu_to_node(CPU, lgrp_plat_cpu_node,
 		    lgrp_plat_cpu_node_nentries);
-		ASSERT(curnode >= 0 && curnode < lgrp_plat_node_cnt);
+		ASSERT3U(curnode, <, lgrp_plat_node_cnt);
+		if (curnode == (lgrp_handle_t)-1)
+			return;
 		if (lgrp_plat_lat_stats.latencies[curnode][curnode] == 0)
 			lgrp_plat_probe();
 
@@ -2207,7 +2213,9 @@ lgrp_plat_probe_time(int to, cpu_node_map_t *cpu_node, int cpu_node_nentries,
 	 * Determine ID of node containing current CPU
 	 */
 	from = lgrp_plat_cpu_to_node(CPU, cpu_node, cpu_node_nentries);
-	ASSERT(from >= 0 && from < lgrp_plat_node_cnt);
+	ASSERT3U(from, <, lgrp_plat_node_cnt);
+	if (from == (lgrp_handle_t)-1)
+		return (0);
 
 	/*
 	 * Do common work for probing main memory
