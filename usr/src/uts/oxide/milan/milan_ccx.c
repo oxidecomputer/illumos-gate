@@ -84,6 +84,12 @@ milan_thread_feature_init(void)
 
 		wrmsr_and_test(MSR_AMD_STRUCT_EXT_FEAT_ID_EDX0_ECX0, v);
 	}
+
+	v = rdmsr(MSR_AMD_CSTATE_CFG);
+	v = AMD_CSTATE_CFG_SET_CCR2_CC6EN(v, 1);
+	v = AMD_CSTATE_CFG_SET_CCR1_CC6EN(v, 1);
+	v = AMD_CSTATE_CFG_SET_CCR0_CC6EN(v, 1);
+	wrmsr_and_test(MSR_AMD_CSTATE_CFG, v);
 }
 
 void
