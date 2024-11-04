@@ -202,7 +202,7 @@ int	idle_cpu_use_hlt = 1;
 /*
  * If non-zero, idle cpus will use mwait if available to halt instead of hlt.
  */
-int	idle_cpu_prefer_mwait = 1;
+int	idle_cpu_prefer_mwait = 0;
 /*
  * Set to 0 to avoid MONITOR+CLFLUSH assertion.
  */
