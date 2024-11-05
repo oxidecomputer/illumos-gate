@@ -41,6 +41,7 @@ typedef enum {
 typedef enum {
 	IPCC_MODE_DISABLED = 0,
 	IPCC_MODE_UART1,
+	IPCC_MODE_ESPI0,
 } oxide_ipcc_mode_t;
 
 typedef enum {

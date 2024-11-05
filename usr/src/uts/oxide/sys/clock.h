@@ -23,6 +23,10 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2025 Oxide Computer Company
+ */
+
 #ifndef _SYS_CLOCK_H
 #define	_SYS_CLOCK_H
 
@@ -34,6 +38,7 @@ extern "C" {
 
 #ifndef	_ASM
 
+#include <sys/types.h>
 #include <sys/psw.h>
 #include <sys/time.h>
 #include <sys/processor.h>
@@ -53,6 +58,8 @@ extern void (*hrtime_tick)(void);
 extern void tsc_hrtimeinit(uint64_t cpu_freq_hz);
 extern void tsc_sync_master(processorid_t);
 extern void tsc_sync_slave(void);
+
+extern void eb_pausems(uint64_t);
 
 /*
  * Careful: this can always return zero on some systems.  Use the system hrtime

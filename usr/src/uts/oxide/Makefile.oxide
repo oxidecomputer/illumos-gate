@@ -26,7 +26,7 @@
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2019 Joyent, Inc.
-# Copyright 2024 Oxide Computer Co.
+# Copyright 2025 Oxide Computer Company
 #
 #
 #	This makefile contains the common definitions for the oxide unix
@@ -277,7 +277,7 @@ SYS_KMODS	+=
 #
 #	'Misc' Modules (/kernel/misc):
 #
-MISC_KMODS	+= pcie pci_prd boot_image
+MISC_KMODS	+= pcie pci_prd boot_image espi_test
 
 #
 #	'Dacf' modules (/kernel/dacf)

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_SMN_H
@@ -471,7 +471,8 @@ typedef enum smn_unit {
 	SMN_UNIT_FCH_RMTGPIO,
 	SMN_UNIT_FCH_RMTMUX,
 	SMN_UNIT_FCH_RMTGPIO_AGG,
-	SMN_UNIT_FCH_I3C
+	SMN_UNIT_FCH_I3C,
+	SMN_UNIT_FCH_ESPI
 } smn_unit_t;
 
 /*

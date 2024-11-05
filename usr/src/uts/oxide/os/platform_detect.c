@@ -263,7 +263,14 @@ static oxide_board_def_t oxide_board_defs[] = {
 		.obdef_board_data = {
 			.obd_board = OXIDE_BOARD_RUBYRED,
 			.obd_rootnexus = "Oxide,RubyRed",
-			.obd_ipccmode = IPCC_MODE_DISABLED,
+			.obd_ipccmode = IPCC_MODE_ESPI0,
+			/*
+			 * The SP's SP_TO_SP5_INT_L line runs to the grapefruit
+			 * FPGA but does not continue on to the SP5. There
+			 * isn't an obvious pin on the DC-SCM connector for
+			 * onward routing.
+			 */
+			.obd_ipccspintr = IPCC_SPINTR_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_ruby },

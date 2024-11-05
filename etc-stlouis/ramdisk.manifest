@@ -332,6 +332,7 @@ f kernel/drv/amd64/ip 0755 root sys
 f kernel/drv/amd64/ip6 0755 root sys
 f kernel/drv/amd64/ipnet 0755 root sys
 f kernel/drv/amd64/kmdb 0755 root sys
+f kernel/drv/amd64/ktest 0755 root sys
 h kernel/drv/amd64/lockstat=kernel/dtrace/amd64/lockstat
 f kernel/drv/amd64/lofi 0755 root sys
 f kernel/drv/amd64/log 0755 root sys
@@ -388,6 +389,7 @@ f kernel/drv/ip.conf 0644 root sys
 f kernel/drv/ip6.conf 0644 root sys
 f kernel/drv/ipnet.conf 0644 root sys
 f kernel/drv/kmdb.conf 0644 root sys
+f kernel/drv/ktest.conf 0644 root sys
 f kernel/drv/lockstat.conf 0644 root sys
 f kernel/drv/lofi.conf 0644 root sys
 f kernel/drv/log.conf 0644 root sys
@@ -903,6 +905,7 @@ h usr/bin/kill=usr/bin/alias
 h usr/bin/ksh=usr/lib/isaexec
 h usr/bin/ksh93=usr/lib/isaexec
 f usr/bin/kstat 0555 root bin
+f usr/bin/ktest 0555 root bin
 f usr/bin/ldd 0555 root bin
 h usr/bin/ln=usr/bin/cp
 f usr/bin/login 4555 root bin
@@ -991,6 +994,10 @@ f usr/kernel/drv/pts.conf 0644 root sys
 d usr/kernel/fs 0755 root sys
 d usr/kernel/fs/amd64 0755 root sys
 f usr/kernel/fs/amd64/fdfs 0755 root sys
+d usr/kernel/misc 0755 root sys
+d usr/kernel/misc/ktest 0755 root sys
+d usr/kernel/misc/ktest/amd64 0755 root sys
+f usr/kernel/misc/ktest/amd64/espi_test 0755 root sys
 d usr/lib 0755 root bin
 s usr/lib/32=.
 s usr/lib/64=amd64
@@ -1241,7 +1248,12 @@ f usr/lib/udf 0555 root bin
 f usr/lib/utmpd 0555 root bin
 d usr/platform 0755 root sys
 d usr/platform/oxide 0755 root sys
+d usr/platform/oxide/bin 0755 root sys
+f usr/platform/oxide/bin/ipcc 0555 root sys
+f usr/platform/oxide/bin/dtrace_ipcc 0555 root sys
 d usr/platform/oxide/lib 0755 root sys
+d usr/platform/oxide/lib/amd64 0755 root sys
+f usr/platform/oxide/lib/amd64/libipcc.so.1 0555 root sys
 d usr/platform/oxide/lib/mdb 0755 root sys
 d usr/platform/oxide/lib/mdb/kvm 0755 root sys
 d usr/platform/oxide/lib/mdb/kvm/amd64 0755 root sys

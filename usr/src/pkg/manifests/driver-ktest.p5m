@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 # Copyright 2024 Ryan Zezeski
 #
 
@@ -34,6 +34,7 @@ file path=usr/include/sys/ktest.h mode=0644
 dir  path=usr/kernel/misc group=sys
 dir  path=usr/kernel/misc/ktest group=sys
 dir  path=usr/kernel/misc/ktest/$(ARCH64) group=sys
+file path=usr/kernel/misc/ktest/$(ARCH64)/espi_test group=sys mode=0755
 file path=usr/kernel/misc/ktest/$(ARCH64)/ktest_selftest group=sys mode=0755
 file path=usr/kernel/misc/ktest/$(ARCH64)/mac_test group=sys mode=0755
 file path=usr/kernel/misc/ktest/$(ARCH64)/stream_test group=sys mode=0755

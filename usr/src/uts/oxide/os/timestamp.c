@@ -26,7 +26,7 @@
  * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2020 Joyent, Inc.
- * Copyright 2023 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -1022,4 +1022,27 @@ tsc_get_freq(void)
 {
 	VERIFY(tsc_freq > 0);
 	return (tsc_freq);
+}
+
+void
+eb_pausems(uint64_t delay_ms)
+{
+	const hrtime_t delay_ns = MSEC2NSEC(delay_ms);
+	extern int gethrtime_hires;
+
+	if (gethrtime_hires != 0) {
+		/* The TSC is calibrated, we can use drv_usecwait() */
+		drv_usecwait(NSEC2USEC(delay_ns));
+	} else {
+		/*
+		 * The TSC has not yet been calibrated so assume its frequency
+		 * is 2GHz (2 ticks per nanosecond). This is approximately
+		 * correct for Gimlet and should be the right order of magnitude
+		 * for future platforms. This delay does not have be accurate
+		 * and is only used very early in boot.
+		 */
+		const hrtime_t start = tsc_read();
+		while (tsc_read() < start + (delay_ns << 1))
+			SMT_PAUSE();
+	}
 }

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -753,6 +753,7 @@ ipcc_pkt_recv(uint8_t *pkt, size_t len, uint8_t **endp,
     const ipcc_ops_t *ops, void *arg)
 {
 	ipcc_pollevent_t ev;
+	uint8_t *frame = pkt;
 
 	*endp = NULL;
 
@@ -781,22 +782,35 @@ ipcc_pkt_recv(uint8_t *pkt, size_t len, uint8_t **endp,
 			return (ESPINTR);
 		ASSERT((rev & IPCC_POLLIN) != 0);
 
-		n = 1;
-		err = ops->io_read(arg, pkt, &n);
+		n = len;
+		err = ops->io_read(arg, frame, &n);
 		if (err != 0)
 			return (err);
+
+		VERIFY3U(n, <=, len);
 
 		if (n == 0)
 			continue;
 
-		VERIFY3U(n, ==, 1);
-
-		if (*pkt == 0) {
-			*endp = pkt;
+		/*
+		 * If the accumulated frame now ends with a terminator, return
+		 * it to the caller;
+		 */
+		uint8_t *end = frame + n - 1;
+		if (*end == '\0') {
+			/*
+			 * Strip off any extra frame terminators which may have
+			 * been accumulated. The SP will send terminators
+			 * whenever it considers the channel idle, including
+			 * just after it has delivered a response.
+			 */
+			while (end > pkt && end[-1] == '\0')
+				end--;
+			*endp = end;
 			return (0);
 		}
 
-		pkt += n;
+		frame += n;
 		len -= n;
 	} while (len > 0);
 
@@ -852,6 +866,48 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
 	ops->io_log(arg, IPCC_LOG_DEBUG, __VA_ARGS__)
 #define	LOGHEX(tag, buf, len) \
 	if (ops->io_log != NULL) ipcc_loghex((tag), (buf), (len), ops, arg)
+
+static const char *
+ipcc_cmd_str(ipcc_hss_cmd_t cmd)
+{
+	switch (cmd) {
+	case IPCC_HSS_REBOOT:
+		return ("REBOOT");
+	case IPCC_HSS_POWEROFF:
+		return ("POWEROFF");
+	case IPCC_HSS_BSU:
+		return ("BSU");
+	case IPCC_HSS_IDENT:
+		return ("IDENT");
+	case IPCC_HSS_MACS:
+		return ("MACS");
+	case IPCC_HSS_BOOTFAIL:
+		return ("BOOTFAIL");
+	case IPCC_HSS_PANIC:
+		return ("PANIC");
+	case IPCC_HSS_STATUS:
+		return ("STATUS");
+	case IPCC_HSS_ACKSTART:
+		return ("ACKSTART");
+	case IPCC_HSS_ALERT:
+		return ("ALERT");
+	case IPCC_HSS_ROT:
+		return ("ROT");
+	case IPCC_HSS_ADD_MEASUREMENTS:
+		return ("ADD_MEASUREMENTS");
+	case IPCC_HSS_IMAGEBLOCK:
+		return ("IMAGEBLOCK");
+	case IPCC_HSS_KEYLOOKUP:
+		return ("KEYLOOKUP");
+	case IPCC_HSS_INVENTORY:
+		return ("INVENTORY");
+	case IPCC_HSS_KEYSET:
+		return ("KEYSET");
+	default:
+		break;
+	}
+	return ("<UNKNOWN>");
+}
 
 /*
  * This is the main interface for sending a command to the SP via the IPCC.
@@ -918,7 +974,7 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 	uint64_t send_seq, rcvd_seq;
 	uint32_t rcvd_magic, rcvd_version;
 	uint16_t rcvd_crc, crc;
-	uint8_t rcvd_cmd, *end;
+	uint8_t rcvd_cmd, *frame, *end;
 	uint8_t attempt = 0;
 	int err = 0;
 
@@ -942,8 +998,8 @@ resend:
 		return (ETIMEDOUT);
 	}
 
-	LOG("\n-----------> Sending IPCC command 0x%x, attempt %u/%u\n",
-	    cmd, attempt, IPCC_MAX_ATTEMPTS);
+	LOG("\n------> Sending IPCC command 0x%x (%s), attempt %u/%u\n",
+	    cmd, ipcc_cmd_str(cmd), attempt, IPCC_MAX_ATTEMPTS);
 
 	off = 0;
 	err = ipcc_msg_init(ipcc_msg, sizeof (ipcc_msg), send_seq, &off, cmd);
@@ -1013,14 +1069,20 @@ reread:
 	if (err != 0)
 		return (err);
 
-	if (end == ipcc_pkt) {
+	frame = ipcc_pkt;
+
+	/* Skip any leading frame terminators */
+	while (*frame == '\0' && end > frame)
+		frame++;
+
+	if (end == frame) {
 		LOG("Received empty frame\n");
 		goto reread;
 	}
 
 	/* Decode the frame */
-	LOGHEX(" COBS IN", ipcc_pkt, end - ipcc_pkt);
-	if (!ipcc_cobs_decode(ipcc_pkt, end - ipcc_pkt,
+	LOGHEX(" COBS IN", frame, end - frame);
+	if (!ipcc_cobs_decode(frame, end - frame,
 	    ipcc_msg, sizeof (ipcc_msg), &pktl)) {
 		LOG("Error decoding COBS frame\n");
 		goto resend;
@@ -1184,18 +1246,14 @@ ipcc_handle_alerts(const ipcc_ops_t *ops, void *arg)
 			break;	/* No more alerts */
 
 		/*
-		 * XXX - no alerts are currently defined by the SP.
-		 *	 Once they are, it may make sense to add an additional
-		 *	 callback vector to the ops array rather than just
-		 *	 calling cmn_err().
-		 *	 Possible future actions here could include asking for
-		 *	 an alert message to be delivered to sled agent in some
-		 *	 way.
+		 * No alerts are currently defined by the SP.
+		 * Once they are, it may make sense to add an additional
+		 * callback vector to the ops array rather than just calling
+		 * cmn_err(). Possible future actions here could include asking
+		 * for an alert message to be delivered to sled agent in some
+		 * way.
 		 */
 		LOG("ALERT %u '%-.*s\n", action, (int)datal, data);
-		/*
-		 * For now, use cmn_err to display/log any alerts received.
-		 */
 		cmn_err(CE_NOTE, "SP ALERT %u '%-.*s", action,
 		    (int)datal, data);
 	}

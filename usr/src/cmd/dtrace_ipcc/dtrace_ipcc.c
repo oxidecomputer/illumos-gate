@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -55,7 +55,8 @@ static struct {
 };
 
 static const char *platforms[] = {
-	"Oxide,Gimlet"
+	"Oxide,Gimlet",
+	"Oxide,RubyRed"
 };
 
 static bool

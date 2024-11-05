@@ -20,8 +20,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co
- * All rights reserved.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -245,6 +244,8 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len,
 
 	if ((spstartup & IPCC_STARTUP_PROM) != 0)
 		prom_debug = 1;
+
+	EB_DBGMSG("spstartup flags 0x%lx\n", spstartup);
 
 	/*
 	 * The APOB address and reset vector are stored in, or computed

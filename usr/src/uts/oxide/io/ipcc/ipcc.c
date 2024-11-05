@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -30,7 +30,9 @@
 #include <sys/ddi.h>
 #include <sys/debug.h>
 #include <sys/errno.h>
+#include <sys/espi_impl.h>
 #include <sys/file.h>
+#include <sys/platform_detect.h>
 #include <sys/policy.h>
 #include <sys/sdt.h>
 #include <sys/stat.h>
@@ -64,6 +66,12 @@ static ipcc_stats_t *ipcc_stat;
 #define	BUMP_STAT(_s) atomic_inc_64(&(ipcc_stat->_s.value.ui64))
 
 static int
+ipcc_pausems(uint64_t delay_ms)
+{
+	return (delay_sig(drv_usectohz(delay_ms * (MICROSEC / MILLISEC))));
+}
+
+static int
 ipcc_ldi_read(const ipcc_state_t *ipcc, ldi_handle_t ldih, uint8_t *buf,
     size_t *len)
 {
@@ -85,89 +93,6 @@ ipcc_ldi_read(const ipcc_state_t *ipcc, ldi_handle_t ldih, uint8_t *buf,
 
 	*len -= uio.uio_resid;
 	return (0);
-}
-
-static int
-ipcc_cb_read(void *arg, uint8_t *buf, size_t *len)
-{
-	const ipcc_state_t *ipcc = arg;
-
-	return (ipcc_ldi_read(ipcc, ipcc->is_ldih, buf, len));
-}
-
-static int
-ipcc_cb_write(void *arg, uint8_t *buf, size_t *len)
-{
-	const ipcc_state_t *ipcc = arg;
-	struct uio uio;
-	struct iovec iov;
-	int err;
-
-	bzero(&uio, sizeof (uio));
-	bzero(&iov, sizeof (iov));
-	iov.iov_base = (int8_t *)buf;
-	iov.iov_len = *len;
-	uio.uio_iov = &iov;
-	uio.uio_iovcnt = 1;
-	uio.uio_loffset = 0;
-	uio.uio_segflg = UIO_SYSSPACE;
-	uio.uio_resid = *len;
-
-	err = ldi_write(ipcc->is_ldih, &uio, ipcc->is_cred);
-	if (err != 0)
-		return (err);
-
-	*len -= uio.uio_resid;
-	return (0);
-}
-
-static void
-ipcc_cb_flush(void *arg)
-{
-	const ipcc_state_t *ipcc = arg;
-
-	(void) ldi_ioctl(ipcc->is_ldih, I_FLUSH, FLUSHRW, FKIOCTL,
-	    ipcc->is_cred, NULL);
-}
-
-static int
-ipcc_pause(uint64_t delay_ms)
-{
-	return (delay_sig(drv_usectohz(delay_ms * (MICROSEC / MILLISEC))));
-}
-
-static bool
-ipcc_readable(void *arg)
-{
-	const ipcc_state_t *ipcc = arg;
-	int err, rval;
-
-	err = ldi_ioctl(ipcc->is_ldih, FIORDCHK, (intptr_t)NULL, FKIOCTL,
-	    ipcc->is_cred, &rval);
-	if (err != 0) {
-		dev_err(ipcc_dip, CE_WARN,
-		    "ioctl(FIORDCHK) failed, error %d", err);
-		return (false);
-	}
-
-	return (rval > 0);
-}
-
-static bool
-ipcc_writable(void *arg)
-{
-	const ipcc_state_t *ipcc = arg;
-	int err, rval;
-
-	err = ldi_ioctl(ipcc->is_ldih, I_CANPUT, 0, FKIOCTL, ipcc->is_cred,
-	    &rval);
-	if (err != 0 || rval == -1) {
-		dev_err(ipcc_dip, CE_WARN,
-		    "ioctl(I_CANPUT) failed, error %d, rval=%d", err, rval);
-		return (false);
-	}
-
-	return (rval == 1);
 }
 
 static bool
@@ -199,8 +124,8 @@ ipcc_cb_readintr(void *arg)
 }
 
 static int
-ipcc_cb_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
-    uint64_t timeout_ms)
+ipcc_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
+    uint64_t timeout_ms, bool (*readable)(void *), bool (*writable)(void *))
 {
 	ipcc_pollevent_t rev = 0;
 	uint64_t elapsed = 0;
@@ -212,14 +137,14 @@ ipcc_cb_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
 
 		if ((ev & IPCC_INTR) != 0 && ipcc_cb_readintr(arg))
 			rev |= IPCC_INTR;
-		if ((ev & IPCC_POLLIN) != 0 && ipcc_readable(arg))
+		if ((ev & IPCC_POLLIN) != 0 && readable(arg))
 			rev |= IPCC_POLLIN;
-		if ((ev & IPCC_POLLOUT) != 0 && ipcc_writable(arg))
+		if ((ev & IPCC_POLLOUT) != 0 && writable(arg))
 			rev |= IPCC_POLLOUT;
 		if (rev != 0)
 			break;
 
-		if ((ret = ipcc_pause(delay)) != 0)
+		if ((ret = ipcc_pausems(delay)) != 0)
 			return (ret);
 		elapsed += delay;
 		if (timeout_ms > 0 && elapsed >= timeout_ms)
@@ -245,54 +170,15 @@ ipcc_cb_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
 	return (0);
 }
 
-static int
-ipcc_cb_open(void *arg)
+static void
+ipcc_open_dpio(ipcc_state_t *ipcc)
 {
-	ipcc_state_t *ipcc = arg;
-	char mbuf[FMNAMESZ + 1];
-	int err;
-
-	VERIFY0(ipcc->is_open);
-
-	VERIFY0(ldi_ident_from_dev(ipcc->is_dev, &ipcc->is_ldiid));
-
-	err = ldi_open_by_name(ipcc_path, LDI_FLAGS,
-	    ipcc->is_cred, &ipcc->is_ldih, ipcc->is_ldiid);
-	if (err != 0) {
-		ldi_ident_release(ipcc->is_ldiid);
-		dev_err(ipcc_dip, CE_WARN,
-		    "ldi open of '%s' failed", ipcc_path);
-		return (err);
-	}
-
 	/*
-	 * Whilst there is nothing expected to be autopushed on the DWU UART,
-	 * check and pop anything that is. This also allows easier testing on
-	 * commodity hardware.
-	 */
-	while (ldi_ioctl(ipcc->is_ldih, I_LOOK, (intptr_t)mbuf, FKIOCTL,
-	    ipcc->is_cred, NULL) == 0) {
-		ipcc_dbgmsg(NULL, 0, "Popping module %s", mbuf);
-		err = ldi_ioctl(ipcc->is_ldih, I_POP, 0, FKIOCTL,
-		    ipcc->is_cred, NULL);
-		if (err != 0) {
-			dev_err(ipcc_dip, CE_WARN, "Failed to pop module %s",
-			    mbuf);
-			VERIFY0(ldi_close(ipcc->is_ldih, LDI_FLAGS,
-			    ipcc->is_cred));
-			ldi_ident_release(ipcc->is_ldiid);
-			return (err);
-		}
-	}
-
-	ipcc->is_open = true;
-
-	/*
-	 * Currently failure to open the interrupt DPIO is not fatal.
+	 * Failure to open the interrupt DPIO is not fatal.
 	 */
 	ipcc->is_sp_intr = false;
 	if (ipcc_sp_intr_path != NULL) {
-		err = ldi_open_by_name(ipcc_sp_intr_path, LDI_SP_INTR_FLAGS,
+		int err = ldi_open_by_name(ipcc_sp_intr_path, LDI_SP_INTR_FLAGS,
 		    ipcc->is_cred, &ipcc->is_sp_intr_ldih, ipcc->is_ldiid);
 		if (err != 0) {
 			dev_err(ipcc_dip, CE_WARN,
@@ -301,36 +187,280 @@ ipcc_cb_open(void *arg)
 			ipcc->is_sp_intr = true;
 		}
 	}
+}
+
+static void
+ipcc_close_dpio(ipcc_state_t *ipcc)
+{
+	if (ipcc->is_sp_intr) {
+		VERIFY0(ldi_close(ipcc->is_sp_intr_ldih, LDI_SP_INTR_FLAGS,
+		    ipcc->is_cred));
+	}
+	ipcc->is_sp_intr = false;
+}
+
+/*
+ * UART-specific callbacks.
+ */
+
+static int
+ipcc_cb_read_uart(void *arg, uint8_t *buf, size_t *len)
+{
+	const ipcc_state_t *ipcc = arg;
+
+	return (ipcc_ldi_read(ipcc, ipcc->is_ldih, buf, len));
+}
+
+static int
+ipcc_cb_write_uart(void *arg, uint8_t *buf, size_t *len)
+{
+	const ipcc_state_t *ipcc = arg;
+	struct uio uio;
+	struct iovec iov;
+	int err;
+
+	bzero(&uio, sizeof (uio));
+	bzero(&iov, sizeof (iov));
+	iov.iov_base = (int8_t *)buf;
+	iov.iov_len = *len;
+	uio.uio_iov = &iov;
+	uio.uio_iovcnt = 1;
+	uio.uio_loffset = 0;
+	uio.uio_segflg = UIO_SYSSPACE;
+	uio.uio_resid = *len;
+
+	err = ldi_write(ipcc->is_ldih, &uio, ipcc->is_cred);
+	if (err != 0)
+		return (err);
+
+	*len -= uio.uio_resid;
+	return (0);
+}
+
+static void
+ipcc_cb_flush_uart(void *arg)
+{
+	const ipcc_state_t *ipcc = arg;
+
+	(void) ldi_ioctl(ipcc->is_ldih, I_FLUSH, FLUSHRW, FKIOCTL,
+	    ipcc->is_cred, NULL);
+}
+
+static bool
+ipcc_readable_uart(void *arg)
+{
+	const ipcc_state_t *ipcc = arg;
+	int err, rval;
+
+	err = ldi_ioctl(ipcc->is_ldih, FIORDCHK, (intptr_t)NULL, FKIOCTL,
+	    ipcc->is_cred, &rval);
+	if (err != 0) {
+		dev_err(ipcc_dip, CE_WARN,
+		    "ioctl(FIORDCHK) failed, error %d", err);
+		return (false);
+	}
+
+	return (rval > 0);
+}
+
+static bool
+ipcc_writable_uart(void *arg)
+{
+	const ipcc_state_t *ipcc = arg;
+	int err, rval;
+
+	err = ldi_ioctl(ipcc->is_ldih, I_CANPUT, 0, FKIOCTL, ipcc->is_cred,
+	    &rval);
+	if (err != 0 || rval == -1) {
+		dev_err(ipcc_dip, CE_WARN,
+		    "ioctl(I_CANPUT) failed, error %d, rval=%d", err, rval);
+		return (false);
+	}
+
+	return (rval == 1);
+}
+
+static int
+ipcc_cb_poll_uart(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
+    uint64_t timeout_ms)
+{
+	return (ipcc_poll(arg, ev, revp, timeout_ms,
+	    ipcc_readable_uart, ipcc_writable_uart));
+}
+
+static int
+ipcc_cb_open_uart(void *arg)
+{
+	ipcc_state_t *ipcc = arg;
+	char mbuf[FMNAMESZ + 1];
+	int err;
+
+	VERIFY0(ipcc->is_open);
+	VERIFY0(ldi_ident_from_dev(ipcc->is_dev, &ipcc->is_ldiid));
+
+	err = ldi_open_by_name(ipcc_path, LDI_FLAGS, ipcc->is_cred,
+	    &ipcc->is_ldih, ipcc->is_ldiid);
+	if (err != 0) {
+		ldi_ident_release(ipcc->is_ldiid);
+		dev_err(ipcc_dip, CE_WARN, "ldi open of '%s' failed, error %d",
+		    ipcc_path, err);
+		return (err);
+	}
+
+	/*
+	 * Pop any modules which have been autopushed onto the DWU UART.
+	 */
+	while (ldi_ioctl(ipcc->is_ldih, I_LOOK, (intptr_t)mbuf, FKIOCTL,
+	    ipcc->is_cred, NULL) == 0) {
+		ipcc_dbgmsg(NULL, 0, "Popping module %s", mbuf);
+		err = ldi_ioctl(ipcc->is_ldih, I_POP, 0, FKIOCTL,
+		    ipcc->is_cred, NULL);
+		if (err != 0) {
+			dev_err(ipcc_dip, CE_WARN,
+			    "Failed to pop module %s, error %d",
+			    mbuf, err);
+			VERIFY0(ldi_close(ipcc->is_ldih, LDI_FLAGS,
+			    ipcc->is_cred));
+			ldi_ident_release(ipcc->is_ldiid);
+			return (err);
+		}
+	}
+
+	ipcc->is_open = true;
+	ipcc_open_dpio(ipcc);
 
 	return (0);
 }
 
 static void
-ipcc_cb_close(void *arg)
+ipcc_cb_close_uart(void *arg)
 {
 	ipcc_state_t *ipcc = arg;
+
 	VERIFY(ipcc->is_open);
 
-	if (ipcc->is_sp_intr) {
-		VERIFY0(ldi_close(ipcc->is_sp_intr_ldih, LDI_SP_INTR_FLAGS,
-		    ipcc->is_cred));
-	}
+	ipcc_close_dpio(ipcc);
 
-	ipcc->is_sp_intr = ipcc->is_open = false;
 	VERIFY0(ldi_close(ipcc->is_ldih, LDI_FLAGS, ipcc->is_cred));
+	ipcc->is_open = false;
+
 	ldi_ident_release(ipcc->is_ldiid);
 }
 
-static const ipcc_ops_t ipcc_ops = {
-	.io_open	= ipcc_cb_open,
-	.io_close	= ipcc_cb_close,
+/*
+ * eSPI-specific callbacks.
+ */
+
+static int
+ipcc_cb_read_espi(void *arg, uint8_t *buf, size_t *len)
+{
+	const ipcc_state_t *ipcc = arg;
+
+	return (espi_oob_rx(ipcc->is_espi_block, buf, len));
+}
+
+static int
+ipcc_cb_write_espi(void *arg, uint8_t *buf, size_t *len)
+{
+	const ipcc_state_t *ipcc = arg;
+
+	return (espi_oob_tx(ipcc->is_espi_block, buf, len));
+}
+
+static void
+ipcc_cb_flush_espi(void *arg)
+{
+	const ipcc_state_t *ipcc = arg;
+
+	espi_oob_flush(ipcc->is_espi_block);
+}
+
+static bool
+ipcc_readable_espi(void *arg)
+{
+	const ipcc_state_t *ipcc = arg;
+
+	return (espi_oob_readable(ipcc->is_espi_block));
+}
+
+static bool
+ipcc_writable_espi(void *arg)
+{
+	const ipcc_state_t *ipcc = arg;
+
+	return (espi_oob_writable(ipcc->is_espi_block));
+}
+
+static int
+ipcc_cb_poll_espi(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
+    uint64_t timeout_ms)
+{
+	return (ipcc_poll(arg, ev, revp, timeout_ms,
+	    ipcc_readable_espi, ipcc_writable_espi));
+}
+
+static int
+ipcc_cb_open_espi(void *arg)
+{
+	ipcc_state_t *ipcc = arg;
+	int err;
+
+	VERIFY0(ipcc->is_open);
+
+	ipcc->is_espi_block = fch_espi_mmio_block(0);
+	err = espi_acquire(ipcc->is_espi_block);
+	if (err != 0) {
+		dev_err(ipcc_dip, CE_WARN, "Failed to acquire eSPI semaphore");
+		return (err);
+	}
+
+	ipcc->is_open = true;
+
+	VERIFY0(ldi_ident_from_dev(ipcc->is_dev, &ipcc->is_ldiid));
+	ipcc_open_dpio(ipcc);
+
+	return (0);
+}
+
+static void
+ipcc_cb_close_espi(void *arg)
+{
+	ipcc_state_t *ipcc = arg;
+
+	VERIFY(ipcc->is_open);
+
+	ipcc_close_dpio(ipcc);
+
+	espi_release(ipcc->is_espi_block);
+	mmio_reg_block_unmap(&ipcc->is_espi_block);
+	ipcc->is_open = false;
+
+	ldi_ident_release(ipcc->is_ldiid);
+}
+
+static const ipcc_ops_t ipcc_ops_uart = {
+	.io_open	= ipcc_cb_open_uart,
+	.io_close	= ipcc_cb_close_uart,
 	.io_readintr	= ipcc_cb_readintr,
-	.io_poll	= ipcc_cb_poll,
-	.io_flush	= ipcc_cb_flush,
-	.io_read	= ipcc_cb_read,
-	.io_write	= ipcc_cb_write,
+	.io_poll	= ipcc_cb_poll_uart,
+	.io_flush	= ipcc_cb_flush_uart,
+	.io_read	= ipcc_cb_read_uart,
+	.io_write	= ipcc_cb_write_uart,
 	.io_log		= ipcc_dbgmsg,
 };
+
+static const ipcc_ops_t ipcc_ops_espi = {
+	.io_open	= ipcc_cb_open_espi,
+	.io_close	= ipcc_cb_close_espi,
+	.io_readintr	= ipcc_cb_readintr,
+	.io_poll	= ipcc_cb_poll_espi,
+	.io_flush	= ipcc_cb_flush_espi,
+	.io_read	= ipcc_cb_read_espi,
+	.io_write	= ipcc_cb_write_espi,
+	.io_log		= ipcc_dbgmsg,
+};
+
+static const ipcc_ops_t *ipcc_ops;
 
 static int
 ipcc_open(dev_t *devp, int flag, int otyp, cred_t *cr)
@@ -360,7 +490,7 @@ ipcc_open(dev_t *devp, int flag, int otyp, cred_t *cr)
 	}
 
 	/*
-	 * XXX For now we require that the caller has the SYS_CONFIG privilege.
+	 * The caller must have the SYS_CONFIG privilege.
 	 */
 	if ((err = secpolicy_sys_config(cr, B_FALSE)) != 0) {
 		BUMP_STAT(opens_fail);
@@ -415,7 +545,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 		ipcc_status_t status;
 
 		BUMP_STAT(ioctl_status);
-		err = ipcc_status(&ipcc_ops, &ipcc,
+		err = ipcc_status(ipcc_ops, &ipcc,
 		    &status.is_status, &status.is_startup);
 		if (err != 0)
 			break;
@@ -429,7 +559,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 		ipcc_ident_t ident;
 
 		BUMP_STAT(ioctl_ident);
-		err = ipcc_ident(&ipcc_ops, &ipcc, &ident);
+		err = ipcc_ident(ipcc_ops, &ipcc, &ident);
 		if (err != 0)
 			break;
 
@@ -443,7 +573,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 
 		BUMP_STAT(ioctl_macs);
 
-		err = ipcc_macs(&ipcc_ops, &ipcc, &mac);
+		err = ipcc_macs(ipcc_ops, &ipcc, &mac);
 		if (err != 0)
 			break;
 
@@ -489,7 +619,7 @@ ipcc_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *cr, int *rv)
 
 		buf = kmem_zalloc(kl.ik_buflen, KM_SLEEP);
 
-		err = ipcc_keylookup(&ipcc_ops, &ipcc, &kl, buf);
+		err = ipcc_keylookup(ipcc_ops, &ipcc, &kl, buf);
 		if (err != 0)
 			goto keylookup_done;
 
@@ -537,7 +667,7 @@ keylookup_done:
 			goto rot_done;
 		}
 
-		err = ipcc_rot(&ipcc_ops, &ipcc, rot);
+		err = ipcc_rot(ipcc_ops, &ipcc, rot);
 		if (err != 0)
 			goto rot_done;
 
@@ -582,10 +712,10 @@ rot_done:
 			break;
 		}
 
-		err = ipcc_acquire_channel(&ipcc_ops, &ipcc);
+		err = ipcc_acquire_channel(ipcc_ops, &ipcc);
 		if (err != 0)
 			break;
-		err = ipcc_imageblock(&ipcc_ops, &ipcc, ib.ii_hash,
+		err = ipcc_imageblock(ipcc_ops, &ipcc, ib.ii_hash,
 		    ib.ii_offset, &data, &datal);
 		if (err != 0)
 			goto imageblock_done;
@@ -620,7 +750,7 @@ rot_done:
 		}
 
 imageblock_done:
-		ipcc_release_channel(&ipcc_ops, &ipcc, true);
+		ipcc_release_channel(ipcc_ops, &ipcc, true);
 		break;
 	}
 	case IPCC_INVENTORY: {
@@ -640,7 +770,7 @@ imageblock_done:
 			goto inventory_done;
 		}
 
-		err = ipcc_inventory(&ipcc_ops, &ipcc, inv);
+		err = ipcc_inventory(ipcc_ops, &ipcc, inv);
 		if (err != 0)
 			goto inventory_done;
 
@@ -666,7 +796,7 @@ inventory_done:
 			goto keyset_done;
 		}
 
-		err = ipcc_keyset(&ipcc_ops, &ipcc, kset);
+		err = ipcc_keyset(ipcc_ops, &ipcc, kset);
 		if (err != 0)
 			goto keyset_done;
 
@@ -715,6 +845,7 @@ ipcc_cleanup(dev_info_t *dip)
 static int
 ipcc_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
+	char *path;
 	const struct {
 		const char *impl;
 		const char *path;
@@ -787,26 +918,46 @@ ipcc_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	    KSTAT_DATA_UINT64);
 	kstat_install(ipcc_kstat);
 
-	/* Check if there is an override path defined in the driver conf */
-	char *path;
-	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
-	    IPCC_PROP_PATH, &path) == DDI_PROP_SUCCESS) {
-		ipcc_path = ddi_strdup(path, KM_SLEEP);
-		ddi_prop_free(path);
-	} else {
-		const char *impl = ddi_node_name(ddi_root_node());
+	switch (oxide_board_data->obd_ipccmode) {
+	case IPCC_MODE_DISABLED:
+		dev_err(dip, CE_WARN, "IPCC is disabled in platform config");
+		goto fail;
+	case IPCC_MODE_ESPI0:
+		ipcc_ops = &ipcc_ops_espi;
+		ipcc_path = ddi_strdup("ESPI0", KM_SLEEP);
+		break;
+	case IPCC_MODE_UART1:
+		/*
+		 * Check if there is an override path defined in the driver conf
+		 */
+		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, IPCC_PROP_PATH, &path) ==
+		    DDI_PROP_SUCCESS) {
+			ipcc_path = ddi_strdup(path, KM_SLEEP);
+			ddi_prop_free(path);
+		} else {
+			const char *impl = ddi_node_name(ddi_root_node());
 
-		for (uint_t i = 0; i < ARRAY_SIZE(path_lookup); i++) {
-			if (strcmp(impl, path_lookup[i].impl) == 0) {
-				ipcc_path = ddi_strdup(path_lookup[i].path,
-				    KM_SLEEP);
-				break;
+			for (uint_t i = 0; i < ARRAY_SIZE(path_lookup); i++) {
+				if (strcmp(impl, path_lookup[i].impl) == 0) {
+					ipcc_path =
+					    ddi_strdup(path_lookup[i].path,
+					    KM_SLEEP);
+					break;
+				}
+			}
+			if (ipcc_path == NULL) {
+				dev_err(dip, CE_WARN,
+				    "Could not determine uart path");
+				goto fail;
 			}
 		}
-		if (ipcc_path == NULL) {
-			dev_err(dip, CE_WARN, "Could not determine uart path");
-			goto fail;
-		}
+		ipcc_ops = &ipcc_ops_uart;
+		break;
+	default:
+		dev_err(dip, CE_PANIC, "Unknown IPCC mode %d",
+		    oxide_board_data->obd_ipccmode);
+		/* NOTREACHED */
 	}
 
 	if ((ddi_prop_lookup_string(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
@@ -822,7 +973,8 @@ ipcc_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	ipcc_dbgmsg_init();
 	ddi_report_dev(dip);
 
-	ipcc_dbgmsg(NULL, 0, "Using UART device '%s'", ipcc_path);
+	ipcc_dbgmsg(NULL, 0, "Using device '%s'",
+	    ipcc_path != NULL ? ipcc_path : "NONE");
 	ipcc_dbgmsg(NULL, 0, "Using SP interrupt DPIO '%s'",
 	    ipcc_sp_intr_path != NULL ? ipcc_sp_intr_path : "NONE");
 

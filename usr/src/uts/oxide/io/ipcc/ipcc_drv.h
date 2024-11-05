@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _IPCC_DRV_H
@@ -34,6 +34,7 @@ extern "C" {
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
 #include <sys/ipcc.h>
+#include <sys/io/fch/espi.h>
 
 #define	IPCC_DRIVER_NAME	"ipcc"
 #define	IPCC_NODE_NAME		"ipcc"
@@ -50,7 +51,9 @@ typedef struct ipcc_state {
 
 	ldi_ident_t	is_ldiid;
 
-	ldi_handle_t	is_ldih;
+	/* Only one or other of the following two will end up being used */
+	ldi_handle_t		is_ldih;
+	mmio_reg_block_t	is_espi_block;
 
 	bool		is_sp_intr;
 	ldi_handle_t	is_sp_intr_ldih;
