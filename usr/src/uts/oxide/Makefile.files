@@ -133,6 +133,7 @@ MILAN_OBJS +=			\
 GENOA_OBJS +=			\
 	genoa_ccx.o		\
 	genoa_fabric.o		\
+	genoa_hacks.o		\
 	genoa_platform.o
 
 TURIN_OBJS +=			\
@@ -149,6 +150,7 @@ ZEN_OBJS +=			\
 	zen_mpio.o		\
 	zen_platform.o		\
 	zen_ras.o		\
+	zen_ruby_dxio_data.o	\
 	zen_smn.o		\
 	zen_smu.o
 
