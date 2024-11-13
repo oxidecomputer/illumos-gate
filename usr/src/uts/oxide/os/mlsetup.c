@@ -160,11 +160,11 @@ mlsetup(struct regs *rp)
 	CPU->cpu_m.mcpu_hwthread = zen_fabric_find_thread_by_cpuid(CPU->cpu_id);
 
 	/*
-	 * Figure out what kind of CPU this is via pass 0.  We need this before
-	 * subsequent passes so that we can perform CCX setup properly; this is
-	 * also the end of the line for any unsupported CPU that has somehow
-	 * gotten this far. Note that determine_platform() also needs to be run
-	 * before pass 0, but that was taken care of earlier in
+	 * Figure out what kind of CPU this is via the IDENT pass.  We need this
+	 * before subsequent passes so that we can perform CCX setup properly;
+	 * this is also the end of the line for any unsupported CPU that has
+	 * somehow gotten this far. Note that determine_platform() also needs to
+	 * be run before this pass, but that was taken care of earlier in
 	 * oxide_derive_platform().
 	 */
 	cpuid_execpass(cpu[0], CPUID_PASS_IDENT, NULL);
@@ -175,6 +175,15 @@ mlsetup(struct regs *rp)
 	 * correctly induce an observable reset.
 	 */
 	zen_shutdown_detect_init();
+
+	/*
+	 * Updating the microcode may result in architecturally visible changes
+	 * (e.g., changed MSR or CPUID bits) which we want to have in place
+	 * before we move on to CCX initialization and the BASIC cpuid pass.
+	 * Fill out cpu_ucode_info.  Update microcode if necessary.
+	 */
+	ucode_init();
+	ucode_check_boot();
 
 	/*
 	 * Now go through and set up the BSP's thread-, core-, and CCX-specific
@@ -294,13 +303,6 @@ mlsetup(struct regs *rp)
 	zen_check_furtive_reset();
 
 	ASSERT_STACK_ALIGNED();
-
-	/*
-	 * Fill out cpu_ucode_info.  Update microcode if necessary.
-	 */
-	ucode_init();
-	ucode_check(CPU);
-	cpuid_pass_ucode(CPU, x86_featureset);
 
 	if (workaround_errata(CPU) != 0)
 		panic("critical workaround(s) missing for boot cpu");

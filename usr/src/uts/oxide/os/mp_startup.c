@@ -1405,6 +1405,17 @@ mp_start_cpu_common(cpu_t *cp)
 	if (tsc_gethrtime_enable)
 		tsc_sync_master(cpuid);
 
+	/*
+	 * At this point, the CPU in question is past the IDENT cpuid phase and
+	 * grabbed the current microcode revision so we can now look for any
+	 * relevant microcode updates it should load.  We'll fill out
+	 * cpu_ucode_info for it along with the microcode to load, if any,
+	 * before signaling back to the CPU to continue startup.
+	 */
+	mp_startup_wait(&procset_slave, cpuid);
+	ucode_locate(cp);
+	mp_startup_signal(&procset_master, cpuid);
+
 	if (dtrace_cpu_init != NULL) {
 		(*dtrace_cpu_init)(cpuid);
 	}
@@ -1650,13 +1661,11 @@ mp_startup(void)
 	uchar_t new_x86_featureset[BT_SIZEOFMAP(NUM_X86_FEATURES)];
 	extern void cpu_event_init_cpu(cpu_t *);
 	const uint64_t ecam_base = zen_fabric_ecam_base();
+
 	zen_ccx_mmio_init(ecam_base, false);
 	bzero(new_x86_featureset, BT_SIZEOFMAP(NUM_X86_FEATURES));
 	cpuid_execpass(cp, CPUID_PASS_PRELUDE, new_x86_featureset);
 	cpuid_execpass(cp, CPUID_PASS_IDENT, NULL);
-	zen_ccx_init();
-	cpuid_execpass(cp, CPUID_PASS_BASIC, new_x86_featureset);
-	zen_ras_init();
 
 	/*
 	 * We need to get TSC on this proc synced (i.e., any delta
@@ -1670,6 +1679,29 @@ mp_startup(void)
 
 	if (tsc_gethrtime_enable)
 		tsc_sync_slave();
+
+	/*
+	 * As with the boot CPU, we may have a more recent update compared to
+	 * whatever the BIOS may have already applied.  If so, we want to apply
+	 * it here before CCX initialization and the BASIC cpuid pass so that
+	 * any architecturally visible changes (e.g., changed MSR or CPUID bits)
+	 * happen before we start querying the CPU for its capabilities.
+	 *
+	 * Since we're still in the early stages of bringing up this CPU, we're
+	 * limited in what we can do (e.g., no kmem_alloc/free), so after
+	 * reading the current microcode revision we have the control CPU do the
+	 * work of locating the microcode file and setting up the cpu_ucode_info
+	 * structure via ucode_locate().  With that done, we can apply the
+	 * microcode to this CPU (if any) and proceed with CCX init and the
+	 * BASIC cpuid pass.
+	 */
+	ucode_read_rev(cp);
+	mp_startup_signal(&procset_slave, cp->cpu_id);
+	mp_startup_wait(&procset_master, cp->cpu_id);
+	ucode_apply(cp);
+	zen_ccx_init();
+	cpuid_execpass(cp, CPUID_PASS_BASIC, new_x86_featureset);
+	zen_ras_init();
 
 	/*
 	 * Once this was done from assembly, but it's safer here; if
@@ -1688,7 +1720,7 @@ mp_startup(void)
 	 * Set up TSC_AUX to contain the cpuid for this processor
 	 * for the rdtscp instruction.
 	 */
-	if (is_x86_feature(x86_featureset, X86FSET_TSCP))
+	if (is_x86_feature(new_x86_featureset, X86FSET_TSCP))
 		(void) wrmsr(MSR_AMD_TSCAUX, cp->cpu_id);
 
 	/*
@@ -1807,12 +1839,10 @@ mp_startup(void)
 	(void) spl0();
 
 	/*
-	 * Fill out cpu_ucode_info.  Update microcode if necessary. Note that
-	 * this is done after pass1 on the boot CPU, but it needs to be later on
-	 * for the other CPUs.
+	 * Clear the microcode update buffer allocated via ucode_locate(), if
+	 * any, for this CPU.
 	 */
-	ucode_check(cp);
-	cpuid_pass_ucode(cp, new_x86_featureset);
+	ucode_finish(cp);
 
 	/*
 	 * Do a sanity check to make sure this new CPU is a sane thing
