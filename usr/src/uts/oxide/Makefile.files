@@ -133,7 +133,6 @@ MILAN_OBJS +=			\
 GENOA_OBJS +=			\
 	genoa_ccx.o		\
 	genoa_fabric.o		\
-	genoa_hacks.o		\
 	genoa_platform.o
 
 TURIN_OBJS +=			\
