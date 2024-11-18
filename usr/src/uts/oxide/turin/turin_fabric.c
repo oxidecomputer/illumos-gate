@@ -460,8 +460,8 @@ turin_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 		    pc->zpc_coreno);
 		break;
 	case SMN_UNIT_IOMMUL1:
-		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def,
-		    pc->zpc_coreno);
+		VERIFY0(pc->zpc_coreno);
+		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def, 0);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe RC",
@@ -2075,7 +2075,7 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	 * The IOMMUL1 does not have an instance for the on-the side WAFL lanes.
 	 * Skip the WAFL port if we're that.
 	 */
-	if (pc->zpc_coreno >= IOMMUL1_N_PCIE_CORES)
+	if (pc->zpc_coreno > 0)
 		return;
 
 	reg = turin_pcie_core_reg(pc, D_IOMMUL1_CTL1);
