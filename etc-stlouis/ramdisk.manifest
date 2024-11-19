@@ -228,6 +228,7 @@ f etc/profile 0644 root sys
 f etc/project 0644 root sys
 s etc/protocols=inet/protocols
 f etc/resolv.conf 0644 root sys
+f bartest 0755 root sys
 d etc/saf 0755 root bin
 f etc/saf/_sactab 0644 root sys
 f etc/saf/_sysconfig 0644 root sys
@@ -533,6 +534,8 @@ s lib/32=.
 s lib/64=amd64
 d lib/amd64 0755 root bin
 f lib/amd64/ld.so.1 0755 root bin
+f lib/amd64/libgcc_s.so.1 0755 root bin
+f lib/amd64/librt.so.1 0755 root bin
 f lib/amd64/libadm.so.1 0755 root bin
 f lib/amd64/libavl.so.1 0755 root bin
 f lib/amd64/libc.so.1 0755 root bin

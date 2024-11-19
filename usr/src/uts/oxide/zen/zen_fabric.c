@@ -1431,7 +1431,7 @@ zen_fabric_topo_init(void)
 	 * stop short of it for
 	 */
 	const uint64_t GIB = 1024UL * 1024UL * 1024UL;
-	phys_end = 1UL << MIN(45, zen_fabric_physaddr_size());
+	phys_end = 1UL << MIN(48, zen_fabric_physaddr_size());
 	mmio64_end = phys_end - 12UL * GIB;
 	VERIFY3U(mmio64_end, >, fabric->zf_mmio64_base);
 	fabric->zf_mmio64_size = mmio64_end - fabric->zf_mmio64_base;
@@ -2099,6 +2099,15 @@ zen_mmio_assign(zen_iodie_t *iodie, void *arg)
 		case DF_REV_4:
 		case DF_REV_4D2: {
 			uint32_t ext = 0;
+
+			// XXX Disable read/write prior to changing
+			ctrl = zen_df_read32(iodie, 0, DF_MMIO_CTL_V4(i));
+			ctrl = DF_MMIO_CTL_SET_RE(ctrl, 0);
+			ctrl = DF_MMIO_CTL_SET_WE(ctrl, 0);
+			zen_df_bcast_write32(iodie, DF_MMIO_CTL_V4(i), ctrl);
+
+			ctrl = DF_MMIO_CTL_SET_RE(ctrl, 1);
+			ctrl = DF_MMIO_CTL_SET_WE(ctrl, 1);
 
 			ctrl = df_rev == DF_REV_4 ?
 			    DF_MMIO_CTL_V4_SET_DEST_ID(ctrl,
