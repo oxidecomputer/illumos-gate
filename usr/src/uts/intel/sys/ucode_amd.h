@@ -65,7 +65,7 @@ typedef struct ucode_file_amd {
 	uint8_t uf_resv[896];
 	uint8_t uf_code_present;
 	uint8_t uf_code[191];
-	uint8_t uf_encr[6144];
+	uint8_t uf_encr[6144 + 8192];
 } ucode_file_amd_t;
 
 typedef struct ucode_eqtbl_amd {
