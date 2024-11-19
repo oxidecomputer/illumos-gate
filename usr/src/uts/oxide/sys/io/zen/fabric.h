@@ -23,6 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/stdbool.h>
+#include <sys/bitext.h>
 #include <sys/plat/pci_prd.h>
 #include <sys/io/zen/smn.h>
 
@@ -91,6 +92,12 @@ typedef enum {
 	ZEN_IOHCT_LARGE		= 0,
 	ZEN_IOHCT_SMALL
 } zen_iohc_type_t;
+
+
+/*
+ * Retrieve the size (in bits) of the physical address space.
+ */
+extern uint8_t zen_fabric_physaddr_size(void);
 
 /*
  * Returns the set of flags set on the given IOMS.

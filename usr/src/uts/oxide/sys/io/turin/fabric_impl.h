@@ -105,6 +105,7 @@ extern const zen_nbif_info_t
  * These are the initialization points for the Genoa Data Fabric, Northbridges,
  * PCIe, and related.
  */
+extern uint8_t turin_fabric_physaddr_size(void);
 extern void turin_fabric_init_tom(zen_ioms_t *, uint64_t, uint64_t, uint64_t);
 extern void turin_fabric_disable_vga(zen_ioms_t *);
 extern void turin_fabric_pcie_refclk(zen_ioms_t *);

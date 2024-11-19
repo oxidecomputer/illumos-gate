@@ -20,6 +20,7 @@
 #include <sys/sysmacros.h>
 #include <sys/archsystm.h>
 #include <sys/machsystm.h>
+#include <sys/bitext.h>
 #include <sys/spl.h>
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_cfgspace_impl.h>
@@ -1077,12 +1078,12 @@ zen_fabric_ccx_init_soc(zen_soc_t *soc)
  * Unfortunately, we're too early in the boot process (pre CPUID_PASS_BASIC) to
  * use cpuid_get_addrsize so we just read the appropriate CPUID leaf directly.
  */
-static uint8_t
+uint8_t
 zen_fabric_physaddr_size(void)
 {
 	struct cpuid_regs cp = { .cp_eax = 0x80000008 };
 	(void) __cpuid_insn(&cp);
-	return (BITX(cp.cp_eax, 7, 0));
+	return (CPUID_AMD_EAX_PABITS(cp.cp_eax));
 }
 
 /*
@@ -1432,7 +1433,9 @@ zen_fabric_topo_init(void)
 	 * stop short of it for
 	 */
 	const uint64_t GIB = 1024UL * 1024UL * 1024UL;
-	phys_end = 1UL << zen_fabric_physaddr_size();
+	uint8_t physaddr_size = fops->zfo_physaddr_size();
+
+	phys_end = 1UL << physaddr_size;
 	mmio64_end = phys_end - 12UL * GIB;
 	VERIFY3U(mmio64_end, >, fabric->zf_mmio64_base);
 	fabric->zf_mmio64_size = mmio64_end - fabric->zf_mmio64_base;

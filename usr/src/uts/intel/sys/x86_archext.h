@@ -220,6 +220,12 @@ extern "C" {
 #define	CPUID_BRANDSTR_STRLEN	48
 
 /*
+ * AMD uses %eax for address size identifiers (extended function 0x80000008).
+ */
+#define	CPUID_AMD_EAX_VABITS(eax)		BITX((eax), 15, 8)
+#define	CPUID_AMD_EAX_PABITS(eax)		BITX((eax), 7, 0)
+
+/*
  * AMD uses %ebx for some of their features (extended function 0x80000008).
  */
 #define	CPUID_AMD_EBX_CLZERO		0x000000001 /* AMD: CLZERO instr */

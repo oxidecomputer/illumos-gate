@@ -98,6 +98,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_smu_misc_init = turin_smu_features_init,
 	.zfo_ioms_init = turin_fabric_ioms_init,
 
+	.zfo_physaddr_size = turin_fabric_physaddr_size,
 	.zfo_init_tom = turin_fabric_init_tom,
 	.zfo_disable_vga = turin_fabric_disable_vga,
 	.zfo_iohc_pci_ids = zen_null_fabric_iohc_pci_ids, /* skip for turin */

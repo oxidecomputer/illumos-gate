@@ -657,6 +657,21 @@ turin_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 	return (reg);
 }
 
+/*
+ * XXX - stlouis#661 - Using addresses larger than 44-bits results in the
+ * 64-bit BARs being unusable on Turin for reasons not yet understood.
+ * Temporarily clamp the physical address size until this is resolved.
+ */
+uint8_t
+turin_fabric_physaddr_size(void)
+{
+	uint8_t width = zen_fabric_physaddr_size();
+
+	width = MIN(width, 44);
+
+	return (width);
+}
+
 void
 turin_fabric_init_tom(zen_ioms_t *ioms, uint64_t tom, uint64_t tom2,
     uint64_t tom3)

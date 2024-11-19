@@ -97,6 +97,14 @@ typedef struct zen_fabric_ops {
 	 */
 	void		(*zfo_set_mpio_global_config)(
 	    zen_mpio_global_config_t *);
+
+	/*
+	 * Determine the physical address width (in bits). This is used early
+	 * in boot, pre CPUID_PASS_BASIC and therefore before we can use
+	 * cpuid_get_addrsize().
+	 */
+	uint8_t		(*zfo_physaddr_size)(void);
+
 	/*
 	 * Program the IOHC registers relating to where the top of memory is.
 	 */

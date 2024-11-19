@@ -1877,8 +1877,8 @@ struct cpuid_info {
 	 */
 	uint_t cpi_xmaxeax;		/* fn 0x80000000: %eax */
 	char cpi_brandstr[CPUID_BRANDSTR_STRLEN + 1];	/* fn 0x8000000[2..] */
-	uint8_t cpi_pabits;		/* fn 0x80000006: %eax */
-	uint8_t	cpi_vabits;		/* fn 0x80000006: %eax */
+	uint8_t cpi_pabits;		/* fn 0x80000008: %eax */
+	uint8_t	cpi_vabits;		/* fn 0x80000008: %eax */
 	uint8_t cpi_fp_amd_save;	/* AMD: FP error pointer save rqd. */
 	struct	cpuid_regs cpi_extd[NMAX_CPI_EXTD];	/* 0x800000XX */
 
@@ -4730,8 +4730,8 @@ cpuid_pass_basic(cpu_t *cpu, void *arg)
 			 * Virtual and physical address limits from
 			 * cpuid override previously guessed values.
 			 */
-			cpi->cpi_pabits = BITX(cp->cp_eax, 7, 0);
-			cpi->cpi_vabits = BITX(cp->cp_eax, 15, 8);
+			cpi->cpi_pabits = CPUID_AMD_EAX_PABITS(cp->cp_eax);
+			cpi->cpi_vabits = CPUID_AMD_EAX_VABITS(cp->cp_eax);
 			break;
 		default:
 			break;
