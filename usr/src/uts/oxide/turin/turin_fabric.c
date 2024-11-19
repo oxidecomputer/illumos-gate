@@ -579,6 +579,25 @@ turin_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 	return (reg);
 }
 
+/*
+ * stlouis#661 - Using addresses much larger than 43-bits results in the 64-bit
+ * BARs being unusable on Turin for as-yet unknown reasons. With the image
+ * configuration we currently use, AGESA always appears to reduce the address
+ * space for SMEE.
+ */
+uint8_t
+turin_fabric_physaddr_size(void)
+{
+	uint8_t width = zen_fabric_physaddr_size();
+
+	struct cpuid_regs cp = { .cp_eax = CPUID_AMD_SECURE_ENCRYPTION };
+	(void) __cpuid_insn(&cp);
+
+	width -= CPUID_AMD_MEMENC_PHYSADDRWIDTH(cp.cp_ebx);
+
+	return (width);
+}
+
 void
 turin_fabric_init_tom(zen_ioms_t *ioms, uint64_t tom, uint64_t tom2,
     uint64_t tom3)

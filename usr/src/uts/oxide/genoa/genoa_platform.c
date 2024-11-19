@@ -83,6 +83,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 
 	.zfo_ioms_init = genoa_fabric_ioms_init,
 
+	.zfo_physaddr_size = zen_fabric_physaddr_size,
 	.zfo_init_tom = genoa_fabric_init_tom,
 	.zfo_disable_vga = genoa_fabric_disable_vga,
 	.zfo_iohc_pci_ids = zen_null_fabric_iohc_pci_ids, /* skip for genoa */

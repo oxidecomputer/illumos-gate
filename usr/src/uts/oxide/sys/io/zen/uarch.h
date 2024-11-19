@@ -94,6 +94,11 @@ typedef struct zen_ccx_ops {
 
 typedef struct zen_fabric_ops {
 	/*
+	 * Determine the address width (in bits) to use for 64-bit MMIO space.
+	 */
+	uint8_t		(*zfo_physaddr_size)(void);
+
+	/*
 	 * Program the IOHC registers relating to where the top of memory is.
 	 */
 	void		(*zfo_init_tom)(zen_ioms_t *, uint64_t, uint64_t,

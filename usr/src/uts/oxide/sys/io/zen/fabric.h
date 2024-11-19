@@ -23,6 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/stdbool.h>
+#include <sys/bitext.h>
 #include <sys/plat/pci_prd.h>
 #include <sys/io/zen/smn.h>
 
@@ -47,6 +48,12 @@ typedef struct zen_pcie_port zen_pcie_port_t;
 typedef struct zen_pcie_dbg zen_pcie_dbg_t;
 typedef struct zen_pcie_reg_dbg zen_pcie_reg_dbg_t;
 typedef struct zen_pcie_strap_setting zen_pcie_strap_setting_t;
+
+#define	CPUID_AMD_LEAF_EXT_8		0x80000008
+#define	CPUID_AMD_SECURE_ENCRYPTION	0x8000001f
+
+#define	CPUID_AMD_LONGMODEINFO_PHYSADDRSIZE(v)	bitx32((v), 7, 0)
+#define	CPUID_AMD_MEMENC_PHYSADDRWIDTH(v)	bitx32((v), 11, 6)
 
 /*
  * Generic resource types that can be routed via an IOMS.
@@ -90,6 +97,12 @@ typedef enum {
 	ZEN_IOHCT_LARGE		= 0,
 	ZEN_IOHCT_SMALL
 } zen_iohc_type_t;
+
+
+/*
+ * Retrieve the size (in bits) of the physical address space.
+ */
+extern uint8_t zen_fabric_physaddr_size(void);
 
 /*
  * Returns the set of flags set on the given IOMS.

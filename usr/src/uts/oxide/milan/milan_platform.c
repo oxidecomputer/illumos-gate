@@ -86,6 +86,7 @@ static const zen_ccx_ops_t milan_ccx_ops = {
 };
 
 static const zen_fabric_ops_t milan_fabric_ops = {
+	.zfo_physaddr_size = zen_fabric_physaddr_size,
 	.zfo_init_tom = milan_fabric_init_tom,
 	.zfo_disable_vga = milan_fabric_disable_vga,
 	.zfo_iohc_pci_ids = milan_fabric_iohc_pci_ids,
