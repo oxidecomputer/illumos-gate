@@ -25,6 +25,7 @@
 /*
  * Copyright (c) 2009,  Intel Corporation.
  * All Rights Reserved.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -71,11 +72,11 @@ cpudrv_change_speed(cpudrv_devstate_t *cpudsp, cpudrv_pm_spd_t *new_spd)
 
 	if (!(mach_state->ms_caps & CPUPM_P_STATES))
 		return (DDI_FAILURE);
-	ASSERT(mach_state->ms_pstate.cma_ops != NULL);
+	ASSERT(mach_state->ms_pstate.cmp_ops != NULL);
 	cpupm = &(cpudsp->cpudrv_pm);
 	plat_level = PM_2_PLAT_LEVEL(cpupm, new_spd->pm_level);
 	CPUSET_ONLY(set, cp->cpu_id);
-	mach_state->ms_pstate.cma_ops->cpus_change(set, plat_level);
+	mach_state->ms_pstate.cmp_ops->cpus_change(set, plat_level);
 
 	return (DDI_SUCCESS);
 }
@@ -129,6 +130,10 @@ cpudrv_is_governor_thread(cpudrv_pm_t *cpupm)
  *   to point to the new top speed.
  * - Updating the framework with a new "normal" (maximum power) for this
  *   device.
+ *
+ * It primarily exists for the ppm driver to call back into cpudrv, though it's
+ * also used when cpudrv is initialized, so even though the ppm driver will
+ * never be redefining top speeds this function still is productively used.
  */
 void
 cpudrv_set_topspeed(void *ctx, int plat_level)
@@ -176,8 +181,9 @@ cpudrv_set_topspeed(void *ctx, int plat_level)
 }
 
 /*
- * This routine reads the ACPI _PPC object. It's accessed as a callback
- * by the ppm driver whenever a _PPC change notification is received.
+ * This routine returns the P-state index which provides the highest performance
+ * level. It is primarily used as a callback by the ppm driver to redefine the
+ * top speed, though that callback is only ever invoked by a "test" ioctl.
  */
 int
 cpudrv_get_topspeed(void *ctx)
@@ -196,98 +202,6 @@ cpudrv_get_topspeed(void *ctx)
 	plat_level = cpupm_get_top_speed(cp);
 
 	return (plat_level);
-}
-
-
-/*
- * This notification handler is called whenever the ACPI _PPC
- * object changes. The _PPC is a sort of governor on power levels.
- * It sets an upper threshold on which, _PSS defined, power levels
- * are usuable. The _PPC value is dynamic and may change as properties
- * (i.e., thermal or AC source) of the system change.
- */
-/* ARGSUSED */
-static void
-cpudrv_notify_handler(ACPI_HANDLE obj, UINT32 val, void *ctx)
-{
-	cpu_t			*cp;
-	cpupm_mach_state_t	*mach_state;
-	cpudrv_devstate_t	*cpudsp;
-	dev_info_t		*dip;
-	int			instance;
-	extern pm_cpupm_t	cpupm;
-
-	dip = ctx;
-	instance = ddi_get_instance(dip);
-	cpudsp = ddi_get_soft_state(cpudrv_state, instance);
-	if (cpudsp == NULL)
-		return;
-	cp = cpudsp->cp;
-	mach_state = (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	if (mach_state == NULL)
-		return;
-
-	/*
-	 * We only handle _PPC change notifications.
-	 */
-	if (!PM_EVENT_CPUPM && val == CPUPM_PPC_CHANGE_NOTIFICATION &&
-	    mach_state->ms_caps & CPUPM_P_STATES)
-		cpudrv_redefine_topspeed(ctx);
-}
-
-void
-cpudrv_install_notify_handler(cpudrv_devstate_t *cpudsp)
-{
-	cpu_t *cp = cpudsp->cp;
-	cpupm_add_notify_handler(cp, cpudrv_notify_handler,
-	    cpudsp->dip);
-}
-
-void
-cpudrv_uninstall_notify_handler(cpudrv_devstate_t *cpudsp)
-{
-	cpu_t *cp = cpudsp->cp;
-	cpupm_notification_t *entry, **next;
-
-	ASSERT(cp != NULL);
-	cpupm_mach_state_t *mach_state =
-	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-
-	mutex_enter(&mach_state->ms_lock);
-	if (mach_state->ms_handlers == NULL) {
-		mutex_exit(&mach_state->ms_lock);
-		return;
-	}
-
-	for (next = &mach_state->ms_handlers; (entry = *next) != NULL; ) {
-		if (entry->nq_handler != cpudrv_notify_handler) {
-			next = &entry->nq_next;
-			continue;
-		}
-		*next = entry->nq_next;
-		kmem_free(entry, sizeof (cpupm_notification_t));
-	}
-	mutex_exit(&mach_state->ms_lock);
-}
-
-void
-cpudrv_redefine_topspeed(void *ctx)
-{
-	/*
-	 * This should never happen, unless ppm does not get loaded.
-	 */
-	if (cpupm_redefine_topspeed == NULL) {
-		cmn_err(CE_WARN, "cpudrv_redefine_topspeed: "
-		    "cpupm_redefine_topspeed has not been initialized - "
-		    "ignoring notification");
-		return;
-	}
-
-	/*
-	 * ppm callback needs to handle redefinition for all CPUs in
-	 * the domain.
-	 */
-	(*cpupm_redefine_topspeed)(ctx);
 }
 
 boolean_t

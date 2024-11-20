@@ -26,7 +26,7 @@
  * Copyright (c) 2009-2010, Intel Corporation.
  * All rights reserved.
  * Copyright 2020 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #define	PSMI_1_7
@@ -45,6 +45,7 @@
 #include <sys/cpu_event.h>
 #include <sys/cmt.h>
 #include <sys/cpu.h>
+#include <sys/cpupm_oxide.h>
 #include <sys/disp.h>
 #include <sys/archsystm.h>
 #include <sys/machsystm.h>
@@ -57,7 +58,6 @@
 #include <vm/hat_i86.h>
 #include <sys/kdi_machimpl.h>
 #include <sys/sdt.h>
-#include <sys/hpet.h>
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
 #include <sys/cpc_pcbe.h>
@@ -218,11 +218,6 @@ int	idle_cpu_no_deep_c = 0;
  */
 void	(*non_deep_idle_cpu)() = cpu_idle;
 void	(*non_deep_idle_disp_enq_thread)(cpu_t *, int);
-
-/*
- * Object for the kernel to access the HPET.
- */
-hpet_t hpet;
 
 uint_t cp_haltset_fanout = 0;
 
@@ -542,7 +537,15 @@ cpu_idle(void)
 		return;
 	}
 
-	if (cpu_idle_enter(IDLE_STATE_C1, 0,
+	/*
+	 * We're idling the processor, but without deeper C-states.
+	 * cpu_idle_enter requires a state to report in a D probe about
+	 * processor idling. The exact power state mach_cpu_idle will get us to
+	 * depends on a few factors, but it will be at least the shallowest
+	 * power-saving state. So provide C1 as a minimal guess of where we'll
+	 * end up.
+	 */
+	if (cpu_idle_enter(CPU_CSTATE_C1, 0,
 	    cpu_idle_check_wakeup, NULL) == 0) {
 		mach_cpu_idle();
 		cpu_idle_exit(CPU_IDLE_CB_FLAG_IDLE);
@@ -724,7 +727,15 @@ cpu_idle_mwait(void)
 	 */
 	i86_monitor(mcpu_mwait, 0, 0);
 	if (*mcpu_mwait == MWAIT_HALTED) {
-		if (cpu_idle_enter(IDLE_STATE_C1, 0,
+		/*
+		 * We're idling the processor, but without deeper C-states.
+		 * cpu_idle_enter requires a state to report in a D probe about
+		 * processor idling. The exact power state mach_cpu_idle will
+		 * get us to depends on a few factors, but it will be at least
+		 * the shallowest power-saving state. So provide C1 as a minimal
+		 * guess of where we'll end up.
+		 */
+		if (cpu_idle_enter(CPU_CSTATE_C1, 0,
 		    cpu_idle_mwait_check_wakeup, (void *)mcpu_mwait) == 0) {
 			if (*mcpu_mwait == MWAIT_HALTED) {
 				i86_mwait(0, 0);

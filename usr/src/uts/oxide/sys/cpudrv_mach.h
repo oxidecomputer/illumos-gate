@@ -22,13 +22,16 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2025 Oxide Computer Company
+ */
 
 #ifndef _SYS_CPUDRV_MACH_H
 #define	_SYS_CPUDRV_MACH_H
 
 #include <sys/cpuvar.h>
 #include <sys/cpupm.h>
-#include <sys/cpu_acpi.h>
+#include <sys/cpupm_oxide.h>
 #include <sys/cpudrv.h>
 #include <sys/ksynch.h>
 
@@ -82,19 +85,13 @@ extern cpuset_t cpu_ready_set;
 	cpupm_set_topspeed_callb = cpudrv_set_topspeed; \
 }
 
-/*
- * ACPI provides the supported speeds.
- */
 #define	CPUDRV_GET_SPEEDS(cpudsp, speeds, nspeeds) \
 	nspeeds = cpudrv_get_speeds(cpudsp, &speeds);
 #define	CPUDRV_FREE_SPEEDS(speeds, nspeeds) \
 	cpudrv_free_speeds(speeds, nspeeds);
 
-/*
- * ACPI provides the supported C-states.
- */
 #define	CPUDRV_GET_MAX_CSTATES(handle) \
-	cpu_acpi_get_max_cstates(handle);
+	cpu_get_max_cstates(handle);
 
 /*
  * Compute the idle cnt percentage for a given speed.
@@ -119,7 +116,7 @@ extern cpuset_t cpu_ready_set;
  * pmc[2] = "2=3200MHz"
  *
  * The amount of memory needed for each string is:
- * 	digits for power level + '=' +  digits for freq + 'MHz' + '\0'
+ *      digits for power level + '=' +  digits for freq + 'MHz' + '\0'
  */
 #define	CPUDRV_COMP_SIZE() \
 	(CPUDRV_COMP_MAX_DIG + 1 + CPUDRV_COMP_MAX_DIG + 3 + 1);

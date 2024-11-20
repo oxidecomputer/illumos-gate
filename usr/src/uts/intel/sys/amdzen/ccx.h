@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_CCX_H
@@ -209,6 +209,21 @@ DECL_FIELD_RW(PSTATE_DEF, CPU_FID, 7, 0);
 DECL_CONST(PSTATE_DEF, CPU_FID, DIVISOR, 25);
 
 /*
+ * Core::X86::Msr::CStateBaseAddr. This MSR specifies the I/O port range for
+ * which reads are interpreted as C-state entry requests.
+ *
+ * There are eight ports trapped in this manner, starting at CstateAddr, ending
+ * at CstateAddr+7. In practice only the first three are semantically
+ * interesting, any accesses later in the range are documented to be interpreted
+ * as if they were to CstateAddr+2.
+ *
+ * If this MSR is set to 0, no I/O port access is interpreted as a C-state
+ * request.
+ */
+DECL_REG(CSTATE_BASE_ADDR, 0xC0010073);
+DECL_FIELD_RW(CSTATE_BASE_ADDR, CSTATE_ADDR, 15, 0);
+
+/*
  * Core::X86::Msr::OSVW_ID_Length.
  */
 DECL_REG(OSVW_ID_LENGTH, 0xC0010140);
@@ -260,6 +275,21 @@ DECL_CONST(CSTATE_POLICY, CC1_TMRSEL, MUL1000, 3);
 /*
  * Core::X86::Msr::CSTATE_CONFIG, also accessible via SMN as
  * L3::SCFCTP::PMC_CCR[2:0].  Does what its name suggests.
+ *
+ * "CCR<n>" should be read like "C-state Request <n>", possibly "Core C-state
+ * Request <n>". The CCR<n> bits together describe the permissible state change
+ * for a C-state request made through an I/O access to CSTATE_BASE_ADDR+<n>.
+ * While CSTATE_CFG must be set to the same value on all processors, the value
+ * across different CCR<n> seem to be able to differ.
+ *
+ * For each of the requests, there are three settings that can be configured:
+ * * CC6En controls if that CCR<n> can bring a core to CC6.
+ * * CC1DfsId controls the DfsId used for clock divisor selection when entering
+ *   CC1. This generally is 08h at reset, picking a 1:1 clock divider. It's not
+ *   clear what the value of changing this divider would be.
+ * * CFOHTMR_LEN controls a timer for how long a core lingers in CC1 before
+ *   entering CC6. This is generally 0h at reset, or disabled. The unit is
+ *   probably some multiple of cycles, but not documented or tested.
  */
 DECL_REG(CSTATE_CFG, 0xC0010296);
 DECL_FIELD_RW(CSTATE_CFG_U_ZEN4, CCR2_CC1E_EN, 55, 55);

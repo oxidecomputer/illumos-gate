@@ -26,7 +26,7 @@
  * Copyright 2019 Joshua M. Clulow <josh@sysmgr.org>
  * Copyright 2020 RackTop Systems, Inc.
  * Copyright 2021 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -66,7 +66,6 @@
 #include <sys/pci_intr_lib.h>
 #include <sys/sunndi.h>
 #include <sys/prom_debug.h>
-#include <sys/hpet.h>
 #include <sys/clock.h>
 #include <sys/sysmacros.h>
 #include <sys/spl.h>

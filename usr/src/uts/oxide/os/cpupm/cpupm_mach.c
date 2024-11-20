@@ -25,6 +25,7 @@
 /*
  * Copyright (c) 2009, Intel Corporation.
  * All rights reserved.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/cpu_pm.h>
@@ -33,13 +34,9 @@
 #include <sys/spl.h>
 #include <sys/machsystm.h>
 #include <sys/archsystm.h>
-#include <sys/hpet.h>
-#include <sys/acpi/acpi.h>
-#include <sys/acpica.h>
 #include <sys/cpupm.h>
 #include <sys/cpu_idle.h>
-#include <sys/cpu_acpi.h>
-#include <sys/cpupm_throttle.h>
+#include <sys/cpupm_oxide.h>
 #include <sys/dtrace.h>
 #include <sys/note.h>
 
@@ -64,26 +61,25 @@ void (*cpupm_ppm_free_pstate_domains)(cpu_t *);
  * Since all CPUs in a domain should have identical properties, this
  * callback is initialized by the PPM driver to point to a routine
  * that will redefine the topspeed for all devices in a CPU domain.
- * This callback is exercised whenever an ACPI _PPC change notification
- * is received by the CPU driver.
+ *
+ * This callback will never actually be executed on Oxide, since we don't have
+ * ACPI let alone _PPC notifications, but it's included to satisfy the PPM
+ * driver's symbol reference.
  */
 void (*cpupm_redefine_topspeed)(void *);
 
 /*
- * This callback is used by the PPM driver to call into the CPU driver
- * to find a CPU's current topspeed (i.e., it's current ACPI _PPC value).
+ * These callbacks are used by the PPM driver to call into the CPU driver. It is
+ * unlikely these are actually ever used, as on Oxide they are only reachable
+ * through ppm_ioctl with PPM{GET,SET}_NORMAL "for test purposes".
+ *
+ * Regardless, the interface exists, so these need to exist. Whether they need
+ * to do what they say is another question.
  */
 void (*cpupm_set_topspeed_callb)(void *, int);
-
-/*
- * This callback is used by the PPM driver to call into the CPU driver
- * to set a new topspeed for a CPU.
- */
 int (*cpupm_get_topspeed_callb)(void *);
 
-static void cpupm_event_notify_handler(ACPI_HANDLE, UINT32, void *);
-static void cpupm_free_notify_handlers(cpu_t *);
-static void cpupm_power_manage_notifications(void *);
+static void cpupm_init_top_speed(void *);
 
 /*
  * Until proven otherwise, all power states are manageable.
@@ -91,7 +87,6 @@ static void cpupm_power_manage_notifications(void *);
 static uint32_t cpupm_enabled = CPUPM_ALL_STATES;
 
 cpupm_state_domains_t *cpupm_pstate_domains = NULL;
-cpupm_state_domains_t *cpupm_tstate_domains = NULL;
 cpupm_state_domains_t *cpupm_cstate_domains = NULL;
 
 /*
@@ -110,12 +105,19 @@ cpupm_state_domains_t *cpupm_cstate_domains = NULL;
  *
  * cpupm_cs_idle_save_tunable is how long we must stay in a deeper C-state
  * before it is worth going there.  Expressed as a multiple of latency.
+ *
+ * cpupm_C6_idle_pct_tunable the minimum percentage of the last
+ * cpupm_cs_sample_interval that must be idle to consider C6 or deeper idle
+ * states. This is inherited from i86pc's C2 threshold, since ACPI C2 and the
+ * current (default) configuration for Zen C6 are similar. When picking a value
+ * for this tunable, one consideration is that the cost and save tunables do not
+ * account for other effects like L1/L2/L3 cache flushes that come with deeper
+ * power states.
  */
 uint32_t cpupm_cs_sample_interval = 100*1000*1000;	/* 100 milliseconds */
 uint32_t cpupm_cs_idle_cost_tunable = 10;	/* work time / latency cost */
 uint32_t cpupm_cs_idle_save_tunable = 2;	/* idle power savings */
-uint16_t cpupm_C2_idle_pct_tunable = 70;
-uint16_t cpupm_C3_idle_pct_tunable = 80;
+uint16_t cpupm_C6_idle_pct_tunable = 70;
 
 extern boolean_t cpupm_intel_init(cpu_t *);
 extern boolean_t cpupm_amd_init(cpu_t *);
@@ -142,8 +144,8 @@ cpupm_init(cpu_t *cp)
 {
 	cpupm_vendor_t *vendors;
 	cpupm_mach_state_t *mach_state;
+	cpu_pm_state_t *handle;
 	struct machcpu *mcpu = &(cp->cpu_m);
-	static boolean_t first = B_TRUE;
 	int *speeds;
 	uint_t nspeeds;
 	int ret;
@@ -153,16 +155,17 @@ cpupm_init(cpu_t *cp)
 	mach_state->ms_caps = CPUPM_NO_STATES;
 	mutex_init(&mach_state->ms_lock, NULL, MUTEX_DRIVER, NULL);
 
-	mach_state->ms_acpi_handle = cpu_acpi_init(cp);
-	if (mach_state->ms_acpi_handle == NULL) {
+	handle = cpupm_oxide_init(cp);
+	if (handle == NULL) {
 		cpupm_fini(cp);
 		cmn_err(CE_WARN, "!cpupm_init: processor %d: "
 		    "unable to get ACPI handle", cp->cpu_id);
 		cmn_err(CE_NOTE, "!CPU power management will not function.");
 		CPUPM_DISABLE();
-		first = B_FALSE;
 		return;
 	}
+
+	mach_state->ms_pm_handle = handle;
 
 	/*
 	 * Loop through the CPU management module table and see if
@@ -180,17 +183,16 @@ cpupm_init(cpu_t *cp)
 	if (vendors == NULL) {
 		cpupm_fini(cp);
 		CPUPM_DISABLE();
-		first = B_FALSE;
 		return;
 	}
 
 	/*
 	 * If P-state support exists for this system, then initialize it.
 	 */
-	if (mach_state->ms_pstate.cma_ops != NULL) {
-		ret = mach_state->ms_pstate.cma_ops->cpus_init(cp);
+	if (mach_state->ms_pstate.cmp_ops != NULL) {
+		ret = mach_state->ms_pstate.cmp_ops->cpus_init(cp);
 		if (ret != 0) {
-			mach_state->ms_pstate.cma_ops = NULL;
+			mach_state->ms_pstate.cmp_ops = NULL;
 			cpupm_disable(CPUPM_P_STATES);
 		} else {
 			nspeeds = cpupm_get_speeds(cp, &speeds);
@@ -207,45 +209,35 @@ cpupm_init(cpu_t *cp)
 		cpupm_disable(CPUPM_P_STATES);
 	}
 
-	if (mach_state->ms_tstate.cma_ops != NULL) {
-		ret = mach_state->ms_tstate.cma_ops->cpus_init(cp);
-		if (ret != 0) {
-			mach_state->ms_tstate.cma_ops = NULL;
-			cpupm_disable(CPUPM_T_STATES);
-		} else {
-			mach_state->ms_caps |= CPUPM_T_STATES;
-		}
-	} else {
-		cpupm_disable(CPUPM_T_STATES);
-	}
-
 	/*
 	 * If C-states support exists for this system, then initialize it.
 	 */
-	if (mach_state->ms_cstate.cma_ops != NULL) {
-		ret = mach_state->ms_cstate.cma_ops->cpus_init(cp);
+	if (mach_state->ms_cstate.cmp_ops != NULL) {
+		ret = mach_state->ms_cstate.cmp_ops->cpus_init(cp);
 		if (ret != 0) {
-			mach_state->ms_cstate.cma_ops = NULL;
-			mcpu->max_cstates = CPU_ACPI_C1;
+			mach_state->ms_cstate.cmp_ops = NULL;
+			mcpu->max_cstates = CPU_CSTATE_C1;
 			cpupm_disable(CPUPM_C_STATES);
+			/*
+			 * We've determined we can't manage C-states, so make
+			 * sure the idle/wakeup routines are set to something
+			 * safe before proceeding. "non-deep" idle should always
+			 * be safe, so use it.
+			 */
 			idle_cpu = non_deep_idle_cpu;
 			disp_enq_thread = non_deep_idle_disp_enq_thread;
 		} else if (cpu_deep_cstates_supported()) {
-			mcpu->max_cstates = cpu_acpi_get_max_cstates(
-			    mach_state->ms_acpi_handle);
-			if (mcpu->max_cstates > CPU_ACPI_C1) {
-				(void) cstate_timer_callback(
-				    CST_EVENT_MULTIPLE_CSTATES);
-				cp->cpu_m.mcpu_idle_cpu = cpu_acpi_idle;
-				mcpu->mcpu_idle_type = CPU_ACPI_C1;
-				disp_enq_thread = cstate_wakeup;
-			} else {
-				(void) cstate_timer_callback(
-				    CST_EVENT_ONE_CSTATE);
-			}
+			mcpu->max_cstates = handle->cps_ncstates;
+			cp->cpu_m.mcpu_idle_cpu = cpu_cstate_idle;
+			disp_enq_thread = cstate_wakeup;
 			mach_state->ms_caps |= CPUPM_C_STATES;
 		} else {
-			mcpu->max_cstates = CPU_ACPI_C1;
+			/*
+			 * Similar to failing to initialize C-state support, we
+			 * can't handle deep C-states on this system. Fall back
+			 * to known-safe idle/wakeup options.
+			 */
+			mcpu->max_cstates = CPU_CSTATE_C1;
 			idle_cpu = non_deep_idle_cpu;
 			disp_enq_thread = non_deep_idle_disp_enq_thread;
 		}
@@ -257,30 +249,12 @@ cpupm_init(cpu_t *cp)
 	if (mach_state->ms_caps == CPUPM_NO_STATES) {
 		cpupm_fini(cp);
 		CPUPM_DISABLE();
-		first = B_FALSE;
 		return;
 	}
 
-	if ((mach_state->ms_caps & CPUPM_T_STATES) ||
-	    (mach_state->ms_caps & CPUPM_P_STATES) ||
-	    (mach_state->ms_caps & CPUPM_C_STATES)) {
-		if (first) {
-			acpica_write_cpupm_capabilities(
-			    mach_state->ms_caps & CPUPM_P_STATES,
-			    mach_state->ms_caps & CPUPM_C_STATES);
-		}
-		if (mach_state->ms_caps & CPUPM_T_STATES) {
-			cpupm_throttle_manage_notification(cp);
-		}
-		if (mach_state->ms_caps & CPUPM_C_STATES) {
-			cpuidle_manage_cstates(cp);
-		}
-		if (mach_state->ms_caps & CPUPM_P_STATES) {
-			cpupm_power_manage_notifications(cp);
-		}
-		cpupm_add_notify_handler(cp, cpupm_event_notify_handler, cp);
+	if (mach_state->ms_caps & CPUPM_P_STATES) {
+		cpupm_init_top_speed(cp);
 	}
-	first = B_FALSE;
 }
 
 /*
@@ -296,36 +270,26 @@ cpupm_free(cpu_t *cp, boolean_t cpupm_stop)
 	if (mach_state == NULL)
 		return;
 
-	if (mach_state->ms_pstate.cma_ops != NULL) {
+	if (mach_state->ms_pstate.cmp_ops != NULL) {
 		if (cpupm_stop)
-			mach_state->ms_pstate.cma_ops->cpus_stop(cp);
+			mach_state->ms_pstate.cmp_ops->cpus_stop(cp);
 		else
-			mach_state->ms_pstate.cma_ops->cpus_fini(cp);
-		mach_state->ms_pstate.cma_ops = NULL;
+			mach_state->ms_pstate.cmp_ops->cpus_fini(cp);
+		mach_state->ms_pstate.cmp_ops = NULL;
 	}
 
-	if (mach_state->ms_tstate.cma_ops != NULL) {
+	if (mach_state->ms_cstate.cmp_ops != NULL) {
 		if (cpupm_stop)
-			mach_state->ms_tstate.cma_ops->cpus_stop(cp);
+			mach_state->ms_cstate.cmp_ops->cpus_stop(cp);
 		else
-			mach_state->ms_tstate.cma_ops->cpus_fini(cp);
-		mach_state->ms_tstate.cma_ops = NULL;
+			mach_state->ms_cstate.cmp_ops->cpus_fini(cp);
+
+		mach_state->ms_cstate.cmp_ops = NULL;
 	}
 
-	if (mach_state->ms_cstate.cma_ops != NULL) {
-		if (cpupm_stop)
-			mach_state->ms_cstate.cma_ops->cpus_stop(cp);
-		else
-			mach_state->ms_cstate.cma_ops->cpus_fini(cp);
-
-		mach_state->ms_cstate.cma_ops = NULL;
-	}
-
-	cpupm_free_notify_handlers(cp);
-
-	if (mach_state->ms_acpi_handle != NULL) {
-		cpu_acpi_fini(mach_state->ms_acpi_handle);
-		mach_state->ms_acpi_handle = NULL;
+	if (mach_state->ms_pm_handle != NULL) {
+		cpupm_oxide_fini(mach_state->ms_pm_handle);
+		mach_state->ms_pm_handle = NULL;
 	}
 
 	mutex_destroy(&mach_state->ms_lock);
@@ -338,7 +302,7 @@ cpupm_fini(cpu_t *cp)
 {
 	/*
 	 * call (*cpus_fini)() ops to release the cpupm resource
-	 * in the P/C/T-state driver
+	 * in the P/C-state driver
 	 */
 	cpupm_free(cp, B_FALSE);
 }
@@ -354,7 +318,7 @@ cpupm_stop(cpu_t *cp)
 {
 	/*
 	 * call (*cpus_stop)() ops to reclaim the cpupm resource
-	 * in the P/C/T-state driver
+	 * in the P/C-state driver
 	 */
 	cpupm_free(cp, B_TRUE);
 }
@@ -370,14 +334,13 @@ cpupm_is_ready(cpu_t *cp)
 	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
 	uint32_t cpupm_caps = mach_state->ms_caps;
 
-	if (cpupm_enabled == CPUPM_NO_STATES)
+	if (cpupm_enabled == CPUPM_NO_STATES) {
 		return (B_FALSE);
+	}
 
-	if ((cpupm_caps & CPUPM_T_STATES) ||
-	    (cpupm_caps & CPUPM_P_STATES) ||
-	    (cpupm_caps & CPUPM_C_STATES))
-
+	if ((cpupm_caps & CPUPM_P_STATES) || (cpupm_caps & CPUPM_C_STATES)) {
 		return (B_TRUE);
+	}
 	return (B_FALSE);
 }
 
@@ -397,9 +360,6 @@ cpupm_disable(uint32_t state)
 	if (state & CPUPM_P_STATES) {
 		cpupm_free_domains(&cpupm_pstate_domains);
 	}
-	if (state & CPUPM_T_STATES) {
-		cpupm_free_domains(&cpupm_tstate_domains);
-	}
 	if (state & CPUPM_C_STATES) {
 		cpupm_free_domains(&cpupm_cstate_domains);
 	}
@@ -407,14 +367,18 @@ cpupm_disable(uint32_t state)
 }
 
 /*
- * Allocate power domains for C,P and T States
+ * Allocate power domains for P- and C-states.
+ *
+ * `cpupm_alloc_domains` requires the corresponding state type's tables have
+ * been fully described: individual P-/C-states are enumerated and information
+ * describing the domains this logical processor lie in must have been set.
  */
 void
 cpupm_alloc_domains(cpu_t *cp, int state)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
 	cpupm_state_domains_t **dom_ptr;
 	cpupm_state_domains_t *dptr;
 	cpupm_state_domains_t **mach_dom_state_ptr;
@@ -423,55 +387,16 @@ cpupm_alloc_domains(cpu_t *cp, int state)
 
 	switch (state) {
 	case CPUPM_P_STATES:
-		if (CPU_ACPI_IS_OBJ_CACHED(handle, CPU_ACPI_PSD_CACHED)) {
-			domain = CPU_ACPI_PSD(handle).sd_domain;
-			type = CPU_ACPI_PSD(handle).sd_type;
-		} else {
-			if (MUTEX_HELD(&cpu_lock)) {
-				domain = cpuid_get_chipid(cp);
-			} else {
-				mutex_enter(&cpu_lock);
-				domain = cpuid_get_chipid(cp);
-				mutex_exit(&cpu_lock);
-			}
-			type = CPU_ACPI_HW_ALL;
-		}
+		domain = handle->cps_pstate_domain.sd_domain;
+		type = handle->cps_pstate_domain.sd_type;
 		dom_ptr = &cpupm_pstate_domains;
-		mach_dom_state_ptr = &mach_state->ms_pstate.cma_domain;
-		break;
-	case CPUPM_T_STATES:
-		if (CPU_ACPI_IS_OBJ_CACHED(handle, CPU_ACPI_TSD_CACHED)) {
-			domain = CPU_ACPI_TSD(handle).sd_domain;
-			type = CPU_ACPI_TSD(handle).sd_type;
-		} else {
-			if (MUTEX_HELD(&cpu_lock)) {
-				domain = cpuid_get_chipid(cp);
-			} else {
-				mutex_enter(&cpu_lock);
-				domain = cpuid_get_chipid(cp);
-				mutex_exit(&cpu_lock);
-			}
-			type = CPU_ACPI_HW_ALL;
-		}
-		dom_ptr = &cpupm_tstate_domains;
-		mach_dom_state_ptr = &mach_state->ms_tstate.cma_domain;
+		mach_dom_state_ptr = &mach_state->ms_pstate.cmp_domain;
 		break;
 	case CPUPM_C_STATES:
-		if (CPU_ACPI_IS_OBJ_CACHED(handle, CPU_ACPI_CSD_CACHED)) {
-			domain = CPU_ACPI_CSD(handle).sd_domain;
-			type = CPU_ACPI_CSD(handle).sd_type;
-		} else {
-			if (MUTEX_HELD(&cpu_lock)) {
-				domain = cpuid_get_coreid(cp);
-			} else {
-				mutex_enter(&cpu_lock);
-				domain = cpuid_get_coreid(cp);
-				mutex_exit(&cpu_lock);
-			}
-			type = CPU_ACPI_HW_ALL;
-		}
+		domain = handle->cps_cstate_domain.sd_domain;
+		type = handle->cps_cstate_domain.sd_type;
 		dom_ptr = &cpupm_cstate_domains;
-		mach_dom_state_ptr = &mach_state->ms_cstate.cma_domain;
+		mach_dom_state_ptr = &mach_state->ms_cstate.cmp_domain;
 		break;
 	default:
 		return;
@@ -531,13 +456,10 @@ cpupm_remove_domains(cpu_t *cp, int state, cpupm_state_domains_t **dom_ptr)
 
 	switch (state) {
 	case CPUPM_P_STATES:
-		pm_domain = mach_state->ms_pstate.cma_domain->pm_domain;
-		break;
-	case CPUPM_T_STATES:
-		pm_domain = mach_state->ms_tstate.cma_domain->pm_domain;
+		pm_domain = mach_state->ms_pstate.cmp_domain->pm_domain;
 		break;
 	case CPUPM_C_STATES:
-		pm_domain = mach_state->ms_cstate.cma_domain->pm_domain;
+		pm_domain = mach_state->ms_cstate.cmp_domain->pm_domain;
 		break;
 	default:
 		return;
@@ -572,14 +494,14 @@ void
 cpupm_alloc_ms_cstate(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state;
-	cpupm_mach_acpi_state_t *ms_cstate;
+	cpupm_mach_power_state_t *ms_cstate;
 
 	mach_state = (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
 	ms_cstate = &mach_state->ms_cstate;
-	ASSERT(ms_cstate->cma_state.cstate == NULL);
-	ms_cstate->cma_state.cstate = kmem_zalloc(sizeof (cma_c_state_t),
+	ASSERT(ms_cstate->cmp_state.cstate == NULL);
+	ms_cstate->cmp_state.cstate = kmem_zalloc(sizeof (cmp_c_state_t),
 	    KM_SLEEP);
-	ms_cstate->cma_state.cstate->cs_next_cstate = CPU_ACPI_C1;
+	ms_cstate->cmp_state.cstate->cs_next_cstate = CPU_CSTATE_C1;
 }
 
 void
@@ -587,11 +509,11 @@ cpupm_free_ms_cstate(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-	cpupm_mach_acpi_state_t *ms_cstate = &mach_state->ms_cstate;
+	cpupm_mach_power_state_t *ms_cstate = &mach_state->ms_cstate;
 
-	if (ms_cstate->cma_state.cstate != NULL) {
-		kmem_free(ms_cstate->cma_state.cstate, sizeof (cma_c_state_t));
-		ms_cstate->cma_state.cstate = NULL;
+	if (ms_cstate->cmp_state.cstate != NULL) {
+		kmem_free(ms_cstate->cmp_state.cstate, sizeof (cmp_c_state_t));
+		ms_cstate->cmp_state.cstate = NULL;
 	}
 }
 
@@ -612,32 +534,28 @@ cpupm_state_change(cpu_t *cp, int level, int state)
 
 	switch (state) {
 	case CPUPM_P_STATES:
-		state_ops = mach_state->ms_pstate.cma_ops;
-		state_domain = mach_state->ms_pstate.cma_domain;
-		break;
-	case CPUPM_T_STATES:
-		state_ops = mach_state->ms_tstate.cma_ops;
-		state_domain = mach_state->ms_tstate.cma_domain;
+		state_ops = mach_state->ms_pstate.cmp_ops;
+		state_domain = mach_state->ms_pstate.cmp_domain;
 		break;
 	default:
 		return;
 	}
 
 	switch (state_domain->pm_type) {
-	case CPU_ACPI_SW_ANY:
+	case CPU_PM_SW_ANY:
 		/*
 		 * A request on any CPU in the domain transitions the domain
 		 */
 		CPUSET_ONLY(set, cp->cpu_id);
 		state_ops->cpus_change(set, level);
 		break;
-	case CPU_ACPI_SW_ALL:
+	case CPU_PM_SW_ALL:
 		/*
 		 * All CPUs in the domain must request the transition
 		 */
-	case CPU_ACPI_HW_ALL:
+	case CPU_PM_HW_ALL:
 		/*
-		 * P/T-state transitions are coordinated by the hardware
+		 * P-state transitions are coordinated by the hardware
 		 * For now, request the transition on all CPUs in the domain,
 		 * but looking ahead we can probably be smarter about this.
 		 */
@@ -669,15 +587,15 @@ cpupm_plat_domain_id(cpu_t *cp, cpupm_dtype_t type)
 		/*
 		 * Return P-State domain for the specified CPU
 		 */
-		if (mach_state->ms_pstate.cma_domain) {
-			return (mach_state->ms_pstate.cma_domain->pm_domain);
+		if (mach_state->ms_pstate.cmp_domain) {
+			return (mach_state->ms_pstate.cmp_domain->pm_domain);
 		}
 	} else if (type == CPUPM_DTYPE_IDLE) {
 		/*
 		 * Return C-State domain for the specified CPU
 		 */
-		if (mach_state->ms_cstate.cma_domain) {
-			return (mach_state->ms_cstate.cma_domain->pm_domain);
+		if (mach_state->ms_cstate.cmp_domain) {
+			return (mach_state->ms_cstate.cmp_domain->pm_domain);
 		}
 	}
 	return (CPUPM_NO_DOMAIN);
@@ -735,14 +653,14 @@ cpupm_get_speeds(cpu_t *cp, int **speeds)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	return (cpu_acpi_get_speeds(mach_state->ms_acpi_handle, speeds));
+	return (cpu_get_speeds(mach_state->ms_pm_handle, speeds));
 }
 
 /*ARGSUSED*/
 void
 cpupm_free_speeds(int *speeds, uint_t nspeeds)
 {
-	cpu_acpi_free_speeds(speeds, nspeeds);
+	cpu_free_speeds(speeds, nspeeds);
 }
 
 /*
@@ -758,131 +676,46 @@ cpupm_power_ready(cpu_t *cp)
  * All CPU instances have been initialized successfully.
  */
 boolean_t
-cpupm_throttle_ready(cpu_t *cp)
-{
-	return (cpupm_is_enabled(CPUPM_T_STATES) && cpupm_is_ready(cp));
-}
-
-/*
- * All CPU instances have been initialized successfully.
- */
-boolean_t
 cpupm_cstate_ready(cpu_t *cp)
 {
 	return (cpupm_is_enabled(CPUPM_C_STATES) && cpupm_is_ready(cp));
 }
 
-void
-cpupm_notify_handler(ACPI_HANDLE obj, UINT32 val, void *ctx)
-{
-	cpu_t *cp = ctx;
-	cpupm_mach_state_t *mach_state =
-	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-	cpupm_notification_t *entry;
-
-	mutex_enter(&mach_state->ms_lock);
-	for (entry =  mach_state->ms_handlers; entry != NULL;
-	    entry = entry->nq_next) {
-		entry->nq_handler(obj, val, entry->nq_ctx);
-	}
-	mutex_exit(&mach_state->ms_lock);
-}
-
-/*ARGSUSED*/
-void
-cpupm_add_notify_handler(cpu_t *cp, CPUPM_NOTIFY_HANDLER handler, void *ctx)
-{
-	cpupm_mach_state_t *mach_state =
-	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	cpupm_notification_t *entry;
-
-	entry = kmem_zalloc(sizeof (cpupm_notification_t), KM_SLEEP);
-	entry->nq_handler = handler;
-	entry->nq_ctx = ctx;
-	mutex_enter(&mach_state->ms_lock);
-	if (mach_state->ms_handlers == NULL) {
-		entry->nq_next = NULL;
-		mach_state->ms_handlers = entry;
-		cpu_acpi_install_notify_handler(mach_state->ms_acpi_handle,
-		    cpupm_notify_handler, cp);
-
-	} else {
-		entry->nq_next = mach_state->ms_handlers;
-		mach_state->ms_handlers = entry;
-	}
-	mutex_exit(&mach_state->ms_lock);
-}
-
-/*ARGSUSED*/
-static void
-cpupm_free_notify_handlers(cpu_t *cp)
-{
-	cpupm_mach_state_t *mach_state =
-	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	cpupm_notification_t *entry;
-	cpupm_notification_t *next;
-
-	mutex_enter(&mach_state->ms_lock);
-	if (mach_state->ms_handlers == NULL) {
-		mutex_exit(&mach_state->ms_lock);
-		return;
-	}
-	if (mach_state->ms_acpi_handle != NULL) {
-		cpu_acpi_remove_notify_handler(mach_state->ms_acpi_handle,
-		    cpupm_notify_handler);
-	}
-	entry = mach_state->ms_handlers;
-	while (entry != NULL) {
-		next = entry->nq_next;
-		kmem_free(entry, sizeof (cpupm_notification_t));
-		entry = next;
-	}
-	mach_state->ms_handlers = NULL;
-	mutex_exit(&mach_state->ms_lock);
-}
-
 /*
- * Get the current max speed from the ACPI _PPC object
+ * Get the highest-performance P-state.
+ *
+ * This is almost certainly P0. This is called from cpudrv as well used below,
+ * though, so it still exists for now. This function made more sense on i86pc
+ * where system firmware could artificially limit (hide) high-performance
+ * P-states in certain circumstances.
  */
-/*ARGSUSED*/
 int
 cpupm_get_top_speed(cpu_t *cp)
 {
 	cpupm_mach_state_t	*mach_state;
-	cpu_acpi_handle_t	handle;
-	int			plat_level;
-	uint_t			nspeeds;
-	int			max_level;
+	cpu_pm_state_t		*handle;
 
 	mach_state =
 	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	handle = mach_state->ms_acpi_handle;
+	handle = mach_state->ms_pm_handle;
 
-	cpu_acpi_cache_ppc(handle);
-	plat_level = CPU_ACPI_PPC(handle);
+	ASSERT3U(handle->cps_pstate_max, <, handle->cps_npstates);
 
-	nspeeds = CPU_ACPI_PSTATES_COUNT(handle);
-
-	max_level = nspeeds - 1;
-	if ((plat_level < 0) || (plat_level > max_level)) {
-		cmn_err(CE_NOTE, "!cpupm_get_top_speed: CPU %d: "
-		    "_PPC out of range %d", cp->cpu_id, plat_level);
-		plat_level = 0;
-	}
-
-	return (plat_level);
+	return (handle->cps_pstate_max);
 }
 
 /*
- * This notification handler is called whenever the ACPI _PPC
- * object changes. The _PPC is a sort of governor on power levels.
- * It sets an upper threshold on which, _PSS defined, power levels
- * are usuable. The _PPC value is dynamic and may change as properties
- * (i.e., thermal or AC source) of the system change.
+ * Set the maximum power state to the highest-performance P-state.
+ *
+ * Practically speaking, this will find P0 is the highest-performance state,
+ * then set P0 as the highest-performance state as a no-op.
+ * cpupm_redefine_max_activepwr_state gets into the common bits of power
+ * management, though, and it's not immediately clear if this defaults the right
+ * way if we *don't* call it. Side-step the question by just plumbing our zero
+ * over there for now.
  */
-
 static void
-cpupm_power_manage_notifications(void *ctx)
+cpupm_init_top_speed(void *ctx)
 {
 	cpu_t			*cp = ctx;
 	int			top_speed;
@@ -891,37 +724,11 @@ cpupm_power_manage_notifications(void *ctx)
 	cpupm_redefine_max_activepwr_state(cp, top_speed);
 }
 
-/* ARGSUSED */
-static void
-cpupm_event_notify_handler(ACPI_HANDLE obj, UINT32 val, void *ctx)
-{
-	cpu_t *cp = ctx;
-	cpupm_mach_state_t *mach_state =
-	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-
-	if (mach_state == NULL)
-		return;
-
-	/*
-	 * Currently, we handle _TPC,_CST and _PPC change notifications.
-	 */
-	if (val == CPUPM_TPC_CHANGE_NOTIFICATION &&
-	    mach_state->ms_caps & CPUPM_T_STATES) {
-		cpupm_throttle_manage_notification(ctx);
-	} else if (val == CPUPM_CST_CHANGE_NOTIFICATION &&
-	    mach_state->ms_caps & CPUPM_C_STATES) {
-		cpuidle_manage_cstates(ctx);
-	} else if (val == CPUPM_PPC_CHANGE_NOTIFICATION &&
-	    mach_state->ms_caps & CPUPM_P_STATES) {
-		cpupm_power_manage_notifications(ctx);
-	}
-}
-
 /*
  * Update cpupm cstate data each time CPU exits idle.
  */
 void
-cpupm_wakeup_cstate_data(cma_c_state_t *cs_data, hrtime_t end)
+cpupm_wakeup_cstate_data(cmp_c_state_t *cs_data, hrtime_t end)
 {
 	cs_data->cs_idle_exit = end;
 }
@@ -934,13 +741,20 @@ cpupm_wakeup_cstate_data(cma_c_state_t *cs_data, hrtime_t end)
  * when there is real work to do.
  */
 uint32_t
-cpupm_next_cstate(cma_c_state_t *cs_data, cpu_acpi_cstate_t *cstates,
-    uint32_t cs_count, hrtime_t start)
+cpupm_next_cstate(cmp_c_state_t *cs_data, cpu_pm_state_t *pm_state,
+    hrtime_t start)
 {
 	hrtime_t duration;
 	hrtime_t ave_interval;
 	hrtime_t ave_idle_time;
 	uint32_t i, smpl_cnt;
+	cpu_cstate_t *cstates = pm_state->cps_cstates;
+	/*
+	 * C-states are ordered by decreasing power. Assume we can sleep in the
+	 * deepest manner, and the rest of the checks here will determine if the
+	 * minimum acceptable power state is actually more shallow.
+	 */
+	uint32_t deepest_cstate = pm_state->cps_ncstates;
 
 	duration = cs_data->cs_idle_exit - cs_data->cs_idle_enter;
 	scalehrtime(&duration);
@@ -960,25 +774,17 @@ cpupm_next_cstate(cma_c_state_t *cs_data, cpu_acpi_cstate_t *cstates,
 		cs_data->cs_cnt = 0;
 
 		/*
-		 * Strand level C-state policy
-		 * The cpu_acpi_cstate_t *cstates array is not required to
-		 * have an entry for both CPU_ACPI_C2 and CPU_ACPI_C3.
-		 * There are cs_count entries in the cstates array.
-		 * cs_data->cs_next_cstate contains the index of the next
-		 * C-state this CPU should enter.
-		 */
-		ASSERT(cstates[0].cs_type == CPU_ACPI_C1);
-
-		/*
 		 * Will CPU be idle long enough to save power?
 		 */
 		ave_idle_time = (cs_data->cs_smpl_idle / smpl_cnt) / 1000;
-		for (i = 1; i < cs_count; ++i) {
+		for (i = 1; i < deepest_cstate; ++i) {
 			if (ave_idle_time < (cstates[i].cs_latency *
 			    cpupm_cs_idle_save_tunable)) {
-				cs_count = i;
-				DTRACE_PROBE2(cpupm__next__cstate, cpu_t *,
-				    CPU, int, i);
+				deepest_cstate = i;
+				DTRACE_PROBE3(cpupm__next__cstate, cpu_t *,
+				    CPU, uint32_t, i,
+				    cpupm_cstate_reason_t,
+				    CSTATE_REASON_IDLE_THRESHOLD);
 			}
 		}
 
@@ -987,43 +793,50 @@ cpupm_next_cstate(cma_c_state_t *cs_data, cpu_acpi_cstate_t *cstates,
 		 * Some producer/consumer type loads fall into this category.
 		 */
 		ave_interval = (cs_data->cs_smpl_len / smpl_cnt) / 1000;
-		for (i = 1; i < cs_count; ++i) {
+		for (i = 1; i < deepest_cstate; ++i) {
 			if (ave_interval <= (cstates[i].cs_latency *
 			    cpupm_cs_idle_cost_tunable)) {
-				cs_count = i;
-				DTRACE_PROBE2(cpupm__next__cstate, cpu_t *,
-				    CPU, int, (CPU_MAX_CSTATES + i));
+				deepest_cstate = i;
+				DTRACE_PROBE3(cpupm__next__cstate, cpu_t *,
+				    CPU, uint32_t, i,
+				    cpupm_cstate_reason_t,
+				    CSTATE_REASON_WAKEUP_THRESHOLD);
 			}
 		}
 
 		/*
 		 * Idle percent
 		 */
-		for (i = 1; i < cs_count; ++i) {
+		for (i = 1; i < deepest_cstate; ++i) {
 			switch (cstates[i].cs_type) {
-			case CPU_ACPI_C2:
-				if (cs_data->cs_smpl_idle_pct <
-				    cpupm_C2_idle_pct_tunable) {
-					cs_count = i;
-					DTRACE_PROBE2(cpupm__next__cstate,
-					    cpu_t *, CPU, int,
-					    ((2 * CPU_MAX_CSTATES) + i));
-				}
+			case CPU_CSTATE_C0:
+				/*
+				 * We don't "enter" C0, it's just the absence
+				 * of being in C1-or-deeper. So there's no
+				 * tunable to stay "out" of C0.
+				 */
 				break;
-
-			case CPU_ACPI_C3:
+			case CPU_CSTATE_C1:
+				/*
+				 * C1 is cheap enough (both in latency and
+				 * cache effects) that we don't have a tunable
+				 * to stay out of it purely based on idleness.
+				 */
+				break;
+			case CPU_CSTATE_C6:
 				if (cs_data->cs_smpl_idle_pct <
-				    cpupm_C3_idle_pct_tunable) {
-					cs_count = i;
-					DTRACE_PROBE2(cpupm__next__cstate,
-					    cpu_t *, CPU, int,
-					    ((2 * CPU_MAX_CSTATES) + i));
+				    cpupm_C6_idle_pct_tunable) {
+					deepest_cstate = i;
+					DTRACE_PROBE3(cpupm__next__cstate,
+					    cpu_t *, CPU, uint32_t, i,
+					    cpupm_cstate_reason_t,
+					    CSTATE_REASON_IDLE_TUNABLE);
 				}
 				break;
 			}
 		}
 
-		cs_data->cs_next_cstate = cs_count - 1;
+		cs_data->cs_next_cstate = deepest_cstate - 1;
 	}
 
 	return (cs_data->cs_next_cstate);

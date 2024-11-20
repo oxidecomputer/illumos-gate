@@ -46,14 +46,12 @@ CORE_OBJS +=			\
 	cms.o			\
 	comm_page.o		\
 	confunix.o		\
-	cpu_acpi.o		\
 	cpu_idle.o		\
 	cpuid.o			\
 	cpuid_subr.o		\
 	cpupm.o			\
-	cpupm_amd.o		\
 	cpupm_mach.o		\
-	cpupm_throttle.o	\
+	cpupm_oxide.o		\
 	ddi_impl.o		\
 	dis_tables.o		\
 	dtrace_subr.o		\

@@ -28,53 +28,41 @@
  */
 /*
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/x86_archext.h>
 #include <sys/machsystm.h>
 #include <sys/x_call.h>
 #include <sys/stat.h>
-#include <sys/cpu_acpi.h>
+#include <sys/cpupm_oxide.h>
 #include <sys/cpu_idle.h>
-#include <sys/cpupm.h>
 #include <sys/cpu_event.h>
-#include <sys/hpet.h>
 #include <sys/archsystm.h>
 #include <vm/hat_i86.h>
 #include <sys/dtrace.h>
+#include <sys/platform_detect.h>
 #include <sys/sdt.h>
 #include <sys/callb.h>
-
-#define	CSTATE_USING_HPET		1
-#define	CSTATE_USING_LAT		2
 
 #define	CPU_IDLE_STOP_TIMEOUT		1000
 
 extern void cpu_idle_adaptive(void);
-extern uint32_t cpupm_next_cstate(cma_c_state_t *cs_data,
-    cpu_acpi_cstate_t *cstates, uint32_t cs_count, hrtime_t start);
+extern uint32_t cpupm_next_cstate(cmp_c_state_t *cs_data,
+    cpu_pm_state_t *pm_state, hrtime_t start);
 
 static int cpu_idle_init(cpu_t *);
 static void cpu_idle_fini(cpu_t *);
 static void cpu_idle_stop(cpu_t *);
 static boolean_t cpu_deep_idle_callb(void *arg, int code);
 static boolean_t cpu_idle_cpr_callb(void *arg, int code);
-static void acpi_cpu_cstate(cpu_acpi_cstate_t *cstate);
-
-static boolean_t cstate_use_timer(hrtime_t *lapic_expire, int timer);
+static void cpu_deep_idle(cpu_cstate_t *cstate);
 
 /*
- * the flag of always-running local APIC timer.
- * the flag of HPET Timer use in deep cstate.
- */
-static boolean_t cpu_cstate_arat = B_FALSE;
-static boolean_t cpu_cstate_hpet = B_FALSE;
-
-/*
- * Interfaces for modules implementing Intel's deep c-state.
+ * Interfaces for modules implementing AMD's deep c-state.
  */
 cpupm_state_ops_t cpu_idle_ops = {
-	"Generic ACPI C-state Support",
+	"Generic AMD C-state Support",
 	cpu_idle_init,
 	cpu_idle_fini,
 	NULL,
@@ -91,7 +79,6 @@ static kmutex_t cpu_idle_mutex;
 cpu_idle_kstat_t cpu_idle_kstat = {
 	{ "address_space_id",	KSTAT_DATA_STRING },
 	{ "latency",		KSTAT_DATA_UINT32 },
-	{ "power",		KSTAT_DATA_UINT32 },
 };
 
 /*
@@ -100,71 +87,26 @@ cpu_idle_kstat_t cpu_idle_kstat = {
 static int
 cpu_idle_kstat_update(kstat_t *ksp, int flag)
 {
-	cpu_acpi_cstate_t *cstate = ksp->ks_private;
+	cpu_cstate_t *cstate = ksp->ks_private;
 
 	if (flag == KSTAT_WRITE) {
 		return (EACCES);
 	}
 
-	if (cstate->cs_addrspace_id == ACPI_ADR_SPACE_FIXED_HARDWARE) {
+	if (cstate->cs_mechanism == CSTATE_MECHANISM_INSTRUCTION) {
 		kstat_named_setstr(&cpu_idle_kstat.addr_space_id,
-		"FFixedHW");
-	} else if (cstate->cs_addrspace_id == ACPI_ADR_SPACE_SYSTEM_IO) {
+		"FixedInstruction");
+	} else if (cstate->cs_mechanism == CSTATE_MECHANISM_IOPORT) {
 		kstat_named_setstr(&cpu_idle_kstat.addr_space_id,
-		"SystemIO");
+		"IOPort");
 	} else {
 		kstat_named_setstr(&cpu_idle_kstat.addr_space_id,
 		"Unsupported");
 	}
 
 	cpu_idle_kstat.cs_latency.value.ui32 = cstate->cs_latency;
-	cpu_idle_kstat.cs_power.value.ui32 = cstate->cs_power;
 
 	return (0);
-}
-
-/*
- * Used during configuration callbacks to manage implementation specific
- * details of the hardware timer used during Deep C-state.
- */
-boolean_t
-cstate_timer_callback(int code)
-{
-	if (cpu_cstate_arat) {
-		return (B_TRUE);
-	} else if (cpu_cstate_hpet) {
-		return (hpet.callback(code));
-	}
-	return (B_FALSE);
-}
-
-/*
- * Some Local APIC Timers do not work during Deep C-states.
- * The Deep C-state idle function uses this function to ensure it is using a
- * hardware timer that works during Deep C-states.  This function also
- * switches the timer back to the LACPI Timer after Deep C-state.
- */
-static boolean_t
-cstate_use_timer(hrtime_t *lapic_expire, int timer)
-{
-	if (cpu_cstate_arat)
-		return (B_TRUE);
-
-	/*
-	 * We have to return B_FALSE if no arat or hpet support
-	 */
-	if (!cpu_cstate_hpet)
-		return (B_FALSE);
-
-	switch (timer) {
-	case CSTATE_USING_HPET:
-		return (hpet.use_hpet_timer(lapic_expire));
-	case CSTATE_USING_LAT:
-		hpet.use_lapic_timer(*lapic_expire);
-		return (B_TRUE);
-	default:
-		return (B_FALSE);
-	}
 }
 
 /*
@@ -265,7 +207,7 @@ cstate_wakeup(cpu_t *cp, int bound)
  * notification framework.
  */
 static void
-acpi_cpu_mwait_check_wakeup(void *arg)
+cpu_mwait_check_wakeup(void *arg)
 {
 	volatile uint32_t *mcpu_mwait = (volatile uint32_t *)arg;
 
@@ -289,7 +231,7 @@ acpi_cpu_mwait_check_wakeup(void *arg)
 }
 
 static void
-acpi_cpu_mwait_ipi_check_wakeup(void *arg)
+cpu_mwait_ipi_check_wakeup(void *arg)
 {
 	volatile uint32_t *mcpu_mwait = (volatile uint32_t *)arg;
 
@@ -312,9 +254,8 @@ acpi_cpu_mwait_ipi_check_wakeup(void *arg)
 	}
 }
 
-/*ARGSUSED*/
 static void
-acpi_cpu_check_wakeup(void *arg)
+cpu_check_wakeup(void *arg)
 {
 	/*
 	 * Toggle interrupt flag to detect pending interrupts.
@@ -327,35 +268,47 @@ acpi_cpu_check_wakeup(void *arg)
 }
 
 /*
- * enter deep c-state handler
+ * Handler to enter CPU C-states beyond 0. Meaning, execution is paused and some
+ * amount of powered down.
  */
 static void
-acpi_cpu_cstate(cpu_acpi_cstate_t *cstate)
+cpu_cstate_enter(cpu_cstate_t *cstate)
 {
+	/*
+	 * mcpu_mwait will be NULL if we are not actually using mwait. This
+	 * function must be careful to function correctly with or without mwait.
+	 */
 	volatile uint32_t	*mcpu_mwait = CPU->cpu_m.mcpu_mwait;
+	uint32_t		mwait_idle_state;
 	cpu_t			*cpup = CPU;
 	processorid_t		cpu_sid = cpup->cpu_seqid;
 	cpupart_t		*cp = cpup->cpu_part;
-	hrtime_t		lapic_expire;
-	uint8_t			type = cstate->cs_addrspace_id;
+	cstate_mechanism_t	type = cstate->cs_mechanism;
 	uint32_t		cs_type = cstate->cs_type;
 	int			hset_update = 1;
-	boolean_t		using_timer;
-	cpu_idle_check_wakeup_t check_func = &acpi_cpu_check_wakeup;
+	cpu_idle_check_wakeup_t check_func = &cpu_check_wakeup;
 
 	/*
 	 * Set our mcpu_mwait here, so we can tell if anyone tries to
-	 * wake us between now and when we call mwait.  No other cpu will
+	 * wake us between now and when we actually idle.  No other cpu will
 	 * attempt to set our mcpu_mwait until we add ourself to the haltset.
 	 */
-	if (mcpu_mwait) {
-		if (type == ACPI_ADR_SPACE_SYSTEM_IO) {
-			*mcpu_mwait = MWAIT_WAKEUP_IPI;
-			check_func = &acpi_cpu_mwait_ipi_check_wakeup;
+	if (mcpu_mwait != NULL) {
+		if (type == CSTATE_MECHANISM_IOPORT) {
+			mwait_idle_state = MWAIT_WAKEUP_IPI;
+			check_func = &cpu_mwait_ipi_check_wakeup;
 		} else {
-			*mcpu_mwait = MWAIT_HALTED;
-			check_func = &acpi_cpu_mwait_check_wakeup;
+			mwait_idle_state = MWAIT_HALTED;
+			check_func = &cpu_mwait_check_wakeup;
 		}
+		*mcpu_mwait = mwait_idle_state;
+	} else {
+		/*
+		 * Initialize mwait_idle_state, but with mcpu_mwait NULL we'll
+		 * never actually use it here. "MWAIT_RUNNING" just
+		 * distinguishes from the "WAKEUP_IPI" and "HALTED" cases above.
+		 */
+		mwait_idle_state = MWAIT_RUNNING;
 	}
 
 	/*
@@ -389,10 +342,12 @@ acpi_cpu_cstate(cpu_acpi_cstate_t *cstate)
 	}
 
 	/*
-	 * Check to make sure there's really nothing to do.
-	 * Work destined for this CPU may become available after
-	 * this check. We'll be notified through the clearing of our
-	 * bit in the halted CPU bitmask, and a write to our mcpu_mwait.
+	 * Check to make sure there's really nothing to do.  Work destined for
+	 * this CPU may become available after this check. If we're
+	 * mwait-halting we'll be notified through the clearing of our bit in
+	 * the halted CPU bitmask, and a write to our mcpu_mwait.  Otherwise,
+	 * we're hlt-based halting, and we'll be immediately woken by the
+	 * pending interrupt.
 	 *
 	 * disp_anywork() checks disp_nrunnable, so we do not have to later.
 	 */
@@ -407,18 +362,11 @@ acpi_cpu_cstate(cpu_acpi_cstate_t *cstate)
 	/*
 	 * We're on our way to being halted.
 	 *
-	 * The local APIC timer can stop in ACPI C2 and deeper c-states.
-	 * Try to program the HPET hardware to substitute for this CPU's
-	 * LAPIC timer.
-	 * cstate_use_timer() could disable the LAPIC Timer.  Make sure
-	 * to start the LAPIC Timer again before leaving this function.
-	 *
 	 * Disable interrupts here so we will awaken immediately after halting
 	 * if someone tries to poke us between now and the time we actually
 	 * halt.
 	 */
 	cli();
-	using_timer = cstate_use_timer(&lapic_expire, CSTATE_USING_HPET);
 
 	/*
 	 * We check for the presence of our bit after disabling interrupts.
@@ -430,11 +378,9 @@ acpi_cpu_cstate(cpu_acpi_cstate_t *cstate)
 	 * of the bit by cpu_wakeup is important.
 	 * cpu_wakeup() must clear our mc_haltset bit, and then call
 	 * cstate_wakeup().
-	 * acpi_cpu_cstate() must disable interrupts, then check for the bit.
+	 * cpu_deep_idle() must disable interrupts, then check for the bit.
 	 */
 	if (hset_update && bitset_in_set(&cp->cp_haltset, cpu_sid) == 0) {
-		(void) cstate_use_timer(&lapic_expire,
-		    CSTATE_USING_LAT);
 		sti();
 		cpup->cpu_disp_flags &= ~CPU_DISP_HALTED;
 		return;
@@ -447,108 +393,78 @@ acpi_cpu_cstate(cpu_acpi_cstate_t *cstate)
 	 * is anything runnable we won't have to wait for the poke.
 	 */
 	if (cpup->cpu_disp->disp_nrunnable != 0) {
-		(void) cstate_use_timer(&lapic_expire,
-		    CSTATE_USING_LAT);
 		sti();
 		if (hset_update) {
 			cpup->cpu_disp_flags &= ~CPU_DISP_HALTED;
 			bitset_atomic_del(&cp->cp_haltset, cpu_sid);
 		}
 		return;
-	}
-
-	if (using_timer == B_FALSE) {
-
-		(void) cstate_use_timer(&lapic_expire,
-		    CSTATE_USING_LAT);
-		sti();
-
-		/*
-		 * We are currently unable to program the HPET to act as this
-		 * CPU's proxy LAPIC timer.  This CPU cannot enter C2 or deeper
-		 * because no timer is set to wake it up while its LAPIC timer
-		 * stalls in deep C-States.
-		 * Enter C1 instead.
-		 *
-		 * cstate_wake_cpu() will wake this CPU with an IPI which
-		 * works with MWAIT.
-		 */
-		i86_monitor(mcpu_mwait, 0, 0);
-		if ((*mcpu_mwait & ~MWAIT_WAKEUP_IPI) == MWAIT_HALTED) {
-			if (cpu_idle_enter(IDLE_STATE_C1, 0,
-			    check_func, (void *)mcpu_mwait) == 0) {
-				if ((*mcpu_mwait & ~MWAIT_WAKEUP_IPI) ==
-				    MWAIT_HALTED) {
-					i86_mwait(0, 0);
-				}
-				cpu_idle_exit(CPU_IDLE_CB_FLAG_IDLE);
-			}
-		}
-
-		/*
-		 * We're no longer halted
-		 */
-		if (hset_update) {
-			cpup->cpu_disp_flags &= ~CPU_DISP_HALTED;
-			bitset_atomic_del(&cp->cp_haltset, cpu_sid);
-		}
-		return;
-	}
-
-	if (type == ACPI_ADR_SPACE_FIXED_HARDWARE) {
-		/*
-		 * We're on our way to being halted.
-		 * To avoid a lost wakeup, arm the monitor before checking
-		 * if another cpu wrote to mcpu_mwait to wake us up.
-		 */
-		i86_monitor(mcpu_mwait, 0, 0);
-		if (*mcpu_mwait == MWAIT_HALTED) {
-			if (cpu_idle_enter((uint_t)cs_type, 0,
-			    check_func, (void *)mcpu_mwait) == 0) {
-				if (*mcpu_mwait == MWAIT_HALTED) {
-					i86_mwait(cstate->cs_address, 1);
-				}
-				cpu_idle_exit(CPU_IDLE_CB_FLAG_IDLE);
-			}
-		}
-	} else if (type == ACPI_ADR_SPACE_SYSTEM_IO) {
-		uint32_t value;
-		ACPI_TABLE_FADT *gbl_FADT;
-
-		if (*mcpu_mwait == MWAIT_WAKEUP_IPI) {
-			if (cpu_idle_enter((uint_t)cs_type, 0,
-			    check_func, (void *)mcpu_mwait) == 0) {
-				if (*mcpu_mwait == MWAIT_WAKEUP_IPI) {
-					/*
-					 * The following calls will cause us to
-					 * halt which will cause the store
-					 * buffer to be repartitioned,
-					 * potentially exposing us to the Intel
-					 * CPU vulnerability MDS. As such, we
-					 * need to explicitly call that here.
-					 * The other idle methods in this
-					 * function do this automatically as
-					 * part of the implementation of
-					 * i86_mwait().
-					 */
-					x86_md_clear();
-					(void) cpu_acpi_read_port(
-					    cstate->cs_address, &value, 8);
-					acpica_get_global_FADT(&gbl_FADT);
-					(void) cpu_acpi_read_port(
-					    gbl_FADT->XPmTimerBlock.Address,
-					    &value, 32);
-				}
-				cpu_idle_exit(CPU_IDLE_CB_FLAG_IDLE);
-			}
-		}
 	}
 
 	/*
-	 * The LAPIC timer may have stopped in deep c-state.
-	 * Reprogram this CPU's LAPIC here before enabling interrupts.
+	 * Tell the cpu idle framework we're going to try idling.
+	 *
+	 * If cpu_idle_enter returns nonzero, we've found out at the last minute
+	 * that we don't actually want to idle.
 	 */
-	(void) cstate_use_timer(&lapic_expire, CSTATE_USING_LAT);
+	boolean_t idle_ok = cpu_idle_enter(cs_type, 0, check_func,
+	    (void *)mcpu_mwait) == 0;
+
+	if (idle_ok) {
+		if (type == CSTATE_MECHANISM_INSTRUCTION) {
+			if (mcpu_mwait != NULL) {
+				/*
+				 * We're on our way to being halted.
+				 * To avoid a lost wakeup, arm the monitor
+				 * before checking if another cpu wrote to
+				 * mcpu_mwait to wake us up.
+				 */
+				i86_monitor(mcpu_mwait, 0, 0);
+				if (*mcpu_mwait == mwait_idle_state) {
+					i86_mwait(cstate->cs_address, 1);
+				}
+			} else {
+				mach_cpu_idle();
+			}
+		} else if (type == CSTATE_MECHANISM_IOPORT) {
+			/*
+			 * mcpu_mwait is not directly part of idling or wakeup
+			 * in the I/O port case, but if available it can hint
+			 * that we shouldn't actually try to idle because we're
+			 * about to be woken up anyway.
+			 *
+			 * A trip through idle/wakeup can be upwards of a few
+			 * microseconds, so avoiding that makes this a helpful
+			 * optimization, but consulting mcpu_mwait is still not
+			 * necessary for correctness here.
+			 */
+			if (mcpu_mwait == NULL ||
+			    *mcpu_mwait == mwait_idle_state) {
+				/*
+				 * The idle call will cause us to
+				 * halt which will cause the store
+				 * buffer to be repartitioned,
+				 * potentially exposing us to the Intel
+				 * CPU vulnerability MDS. As such, we
+				 * need to explicitly call that here.
+				 * The other idle methods in this
+				 * function do this automatically as
+				 * part of the implementation of
+				 * i86_mwait().
+				 */
+				x86_md_clear();
+				(void) inl(cstate->cs_address);
+			}
+		}
+
+		/*
+		 * We've either idled and woken up, or decided not to idle.
+		 * Either way, tell the cpu idle framework that we're not trying
+		 * to idle anymore.
+		 */
+		cpu_idle_exit(CPU_IDLE_CB_FLAG_IDLE);
+	}
+
 	sti();
 
 	/*
@@ -561,67 +477,29 @@ acpi_cpu_cstate(cpu_acpi_cstate_t *cstate)
 }
 
 /*
- * Idle the present CPU, deep c-state is supported
+ * Idle the present CPU, explicitly using hardware-supported C-states.
  */
 void
-cpu_acpi_idle(void)
+cpu_cstate_idle(void)
 {
 	cpu_t *cp = CPU;
-	cpu_acpi_handle_t handle;
-	cma_c_state_t *cs_data;
-	cpu_acpi_cstate_t *cstates;
-	hrtime_t start, end;
-	int cpu_max_cstates;
-	uint32_t cs_indx;
-	uint16_t cs_type;
-
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	handle = mach_state->ms_acpi_handle;
-	ASSERT(CPU_ACPI_CSTATES(handle) != NULL);
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
+	cmp_c_state_t *cs_data;
+	hrtime_t start, end;
+	uint32_t cs_indx;
 
-	cs_data = mach_state->ms_cstate.cma_state.cstate;
-	cstates = (cpu_acpi_cstate_t *)CPU_ACPI_CSTATES(handle);
-	ASSERT(cstates != NULL);
-	cpu_max_cstates = cpu_acpi_get_max_cstates(handle);
-	if (cpu_max_cstates > CPU_MAX_CSTATES)
-		cpu_max_cstates = CPU_MAX_CSTATES;
-	if (cpu_max_cstates == 1) {	/* no ACPI c-state data */
-		(*non_deep_idle_cpu)();
-		return;
-	}
+	ASSERT(handle->cps_cstates != NULL);
+
+	cs_data = mach_state->ms_cstate.cmp_state.cstate;
+	ASSERT(cs_data != NULL);
 
 	start = gethrtime_unscaled();
 
-	cs_indx = cpupm_next_cstate(cs_data, cstates, cpu_max_cstates, start);
+	cs_indx = cpupm_next_cstate(cs_data, handle, start);
 
-	cs_type = cstates[cs_indx].cs_type;
-
-	switch (cs_type) {
-	default:
-		/* FALLTHROUGH */
-	case CPU_ACPI_C1:
-		(*non_deep_idle_cpu)();
-		break;
-
-	case CPU_ACPI_C2:
-		acpi_cpu_cstate(&cstates[cs_indx]);
-		break;
-
-	case CPU_ACPI_C3:
-		/*
-		 * All supported Intel processors maintain cache coherency
-		 * during C3.  Currently when entering C3 processors flush
-		 * core caches to higher level shared cache. The shared cache
-		 * maintains state and supports probes during C3.
-		 * Consequently there is no need to handle cache coherency
-		 * and Bus Master activity here with the cache flush, BM_RLD
-		 * bit, BM_STS bit, nor PM2_CNT.ARB_DIS mechanisms described
-		 * in section 8.1.4 of the ACPI Specification 4.0.
-		 */
-		acpi_cpu_cstate(&cstates[cs_indx]);
-		break;
-	}
+	cpu_cstate_enter(&handle->cps_cstates[cs_indx]);
 
 	end = gethrtime_unscaled();
 
@@ -642,53 +520,95 @@ cpu_deep_cstates_supported(void)
 	if (!cpuid_deep_cstates_supported())
 		return (B_FALSE);
 
-	if (cpuid_arat_supported()) {
-		cpu_cstate_arat = B_TRUE;
-		return (B_TRUE);
-	}
+	if (!cpuid_arat_supported())
+		return (B_FALSE);
 
-	if ((hpet.supported == HPET_FULL_SUPPORT) &&
-	    hpet.install_proxy()) {
-		cpu_cstate_hpet = B_TRUE;
-		return (B_TRUE);
-	}
-
-	return (B_FALSE);
+	return (B_TRUE);
 }
 
 /*
- * Validate that this processor supports deep cstate and if so,
- * get the c-state data from ACPI and cache it.
+ * Configure and collect C-state information based on the current processor's
+ * model/family.
+ */
+static bool
+cpu_idle_prepare_cstates(cpu_pm_state_t *handle)
+{
+	/*
+	 * The current processor is not the one power management is being
+	 * initialized for, but the family should be the same as the current
+	 * processor. This is true even in a multi-socket configuration;
+	 * to date x86 multi-socket configurations still require the same family
+	 * if not the same model of processor in all sockets.
+	 *
+	 * Note that even if power management is initialized on the processor to
+	 * be power managed, this code will still be correct. It will just be
+	 * correct for the more obvious reason that it's discovering itself!
+	 */
+	switch (chiprev_family(cpuid_getchiprev(CPU))) {
+		case X86_PF_AMD_MILAN:
+		case X86_PF_AMD_GENOA:
+		case X86_PF_AMD_TURIN:
+		case X86_PF_AMD_DENSE_TURIN:
+			cpupm_amd_cstates_zen(handle);
+			break;
+		default:
+			/*
+			 * Unknown processor type, we have no C-state
+			 * information.
+			 */
+			return (false);
+	}
+
+	return (true);
+}
+
+static void
+cpu_idle_free_cstate_data(cpu_pm_state_t *handle)
+{
+	if (handle != NULL) {
+		if (handle->cps_cstates != NULL) {
+			kmem_free(handle->cps_cstates,
+			    handle->cps_ncstates * sizeof (cpu_cstate_t));
+			handle->cps_cstates = NULL;
+			handle->cps_ncstates = 0;
+		}
+	}
+}
+
+/*
+ * Validate that this processor supports deep cstates and if so,
+ * pick data tables to drive low-power idle management on this processor.
+ *
+ * We require ARAT on Oxide, which is a higher minimum functionality for
+ * C-states than on i86pc but is present on all processors we support. Idle
+ * routines on Oxide are somewhat simpler than their i86pc counterparts as a
+ * result.
  */
 static int
 cpu_idle_init(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
-	cpu_acpi_cstate_t *cstate;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
 	char name[KSTAT_STRLEN];
-	int cpu_max_cstates, i;
-	int ret;
 
-	/*
-	 * Cache the C-state specific ACPI data.
-	 */
-	if ((ret = cpu_acpi_cache_cstate_data(handle)) != 0) {
-		if (ret < 0)
-			cmn_err(CE_NOTE,
-			    "!Support for CPU deep idle states is being "
-			    "disabled due to errors parsing ACPI C-state "
-			    "objects exported by BIOS.");
+	if (!cpu_idle_prepare_cstates(handle)) {
+		cmn_err(CE_NOTE,
+		    "Support for CPU deep idle states is being disabled due "
+		    "to unknown processor type.");
 		cpu_idle_fini(cp);
 		return (-1);
 	}
 
-	cstate = (cpu_acpi_cstate_t *)CPU_ACPI_CSTATES(handle);
+	/*
+	 * There should be at least one C-state. If not,
+	 * cpu_idle_prepare_cstates should have bailed us
+	 * out of idle management..
+	 */
+	ASSERT3U(handle->cps_ncstates, >=, 1);
 
-	cpu_max_cstates = cpu_acpi_get_max_cstates(handle);
-
-	for (i = CPU_ACPI_C1; i <= cpu_max_cstates; i++) {
+	for (uint_t i = 0; i < handle->cps_ncstates; i++) {
+		cpu_cstate_t *cstate = &handle->cps_cstates[i];
 		(void) snprintf(name, KSTAT_STRLEN - 1, "c%d", cstate->cs_type);
 		/*
 		 * Allocate, initialize and install cstate kstat
@@ -709,15 +629,12 @@ cpu_idle_init(cpu_t *cp)
 			cstate->cs_ksp->ks_private = cstate;
 			kstat_install(cstate->cs_ksp);
 		}
-		cstate++;
 	}
 
 	cpupm_alloc_domains(cp, CPUPM_C_STATES);
 	cpupm_alloc_ms_cstate(cp);
 
 	if (cpu_deep_cstates_supported()) {
-		uint32_t value;
-
 		mutex_enter(&cpu_idle_callb_mutex);
 		if (cpu_deep_idle_callb_id == (callb_id_t)0)
 			cpu_deep_idle_callb_id = callb_add(&cpu_deep_idle_callb,
@@ -727,16 +644,11 @@ cpu_idle_init(cpu_t *cp)
 			    (void *)NULL, CB_CL_CPR_PM, "cpu_idle_cpr");
 		mutex_exit(&cpu_idle_callb_mutex);
 
-
 		/*
-		 * All supported CPUs (Nehalem and later) will remain in C3
-		 * during Bus Master activity.
-		 * All CPUs set ACPI_BITREG_BUS_MASTER_RLD to 0 here if it
-		 * is not already 0 before enabling Deeper C-states.
+		 * Unlike i86pc, no need to mess with ACPI_BITREG_BUS_MASTER_RLD
+		 * here; supported processors maintain cache coherency even in
+		 * low-power states.
 		 */
-		cpu_acpi_get_register(ACPI_BITREG_BUS_MASTER_RLD, &value);
-		if (value & 1)
-			cpu_acpi_set_register(ACPI_BITREG_BUS_MASTER_RLD, 0);
 	}
 
 	return (0);
@@ -750,9 +662,7 @@ cpu_idle_fini(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
-	cpu_acpi_cstate_t *cstate;
-	uint_t	cpu_max_cstates, i;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
 
 	/*
 	 * idle cpu points back to the generic one
@@ -760,20 +670,18 @@ cpu_idle_fini(cpu_t *cp)
 	idle_cpu = cp->cpu_m.mcpu_idle_cpu = non_deep_idle_cpu;
 	disp_enq_thread = non_deep_idle_disp_enq_thread;
 
-	cstate = (cpu_acpi_cstate_t *)CPU_ACPI_CSTATES(handle);
-	if (cstate) {
-		cpu_max_cstates = cpu_acpi_get_max_cstates(handle);
+	if (handle->cps_cstates != NULL) {
+		for (uint_t i = 0; i < handle->cps_ncstates; i++) {
+			cpu_cstate_t *cstate = &handle->cps_cstates[i];
 
-		for (i = CPU_ACPI_C1; i <= cpu_max_cstates; i++) {
 			if (cstate->cs_ksp != NULL)
 				kstat_delete(cstate->cs_ksp);
-			cstate++;
 		}
 	}
 
 	cpupm_free_ms_cstate(cp);
 	cpupm_free_domains(&cpupm_cstate_domains);
-	cpu_acpi_free_cstate_data(handle);
+	cpu_idle_free_cstate_data(handle);
 
 	mutex_enter(&cpu_idle_callb_mutex);
 	if (cpu_deep_idle_callb_id != (callb_id_t)0) {
@@ -805,9 +713,8 @@ cpu_idle_stop(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
-	cpu_acpi_cstate_t *cstate;
-	uint_t cpu_max_cstates, i = 0;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
+	uint_t i = 0;
 
 	mutex_enter(&cpu_idle_callb_mutex);
 	if (idle_cpu == cpu_idle_adaptive) {
@@ -830,22 +737,20 @@ cpu_idle_stop(cpu_t *cp)
 	}
 	mutex_exit(&cpu_idle_callb_mutex);
 
-	cstate = (cpu_acpi_cstate_t *)CPU_ACPI_CSTATES(handle);
-	if (cstate) {
-		cpu_max_cstates = cpu_acpi_get_max_cstates(handle);
+	if (handle->cps_cstates != NULL) {
+		for (uint_t i = 0; i < handle->cps_ncstates; i++) {
+			cpu_cstate_t *cstate = &handle->cps_cstates[i];
 
-		for (i = CPU_ACPI_C1; i <= cpu_max_cstates; i++) {
 			if (cstate->cs_ksp != NULL)
 				kstat_delete(cstate->cs_ksp);
-			cstate++;
 		}
 	}
+
 	cpupm_free_ms_cstate(cp);
 	cpupm_remove_domains(cp, CPUPM_C_STATES, &cpupm_cstate_domains);
-	cpu_acpi_free_cstate_data(handle);
+	cpu_idle_free_cstate_data(handle);
 }
 
-/*ARGSUSED*/
 static boolean_t
 cpu_deep_idle_callb(void *arg, int code)
 {
@@ -862,13 +767,9 @@ cpu_deep_idle_callb(void *arg, int code)
 		if ((cpu_idle_cfg_state & CPU_IDLE_DEEP_CFG) == 0)
 			break;
 
-		if (cstate_timer_callback(PM_ENABLE_CPU_DEEP_IDLE)) {
-			disp_enq_thread = cstate_wakeup;
-			idle_cpu = cpu_idle_adaptive;
-			cpu_idle_cfg_state &= ~CPU_IDLE_DEEP_CFG;
-		} else {
-			rslt = B_FALSE;
-		}
+		disp_enq_thread = cstate_wakeup;
+		idle_cpu = cpu_idle_adaptive;
+		cpu_idle_cfg_state &= ~CPU_IDLE_DEEP_CFG;
 		break;
 
 	case PM_DISABLE_CPU_DEEP_IDLE:
@@ -876,10 +777,8 @@ cpu_deep_idle_callb(void *arg, int code)
 			break;
 
 		idle_cpu = non_deep_idle_cpu;
-		if (cstate_timer_callback(PM_DISABLE_CPU_DEEP_IDLE)) {
-			disp_enq_thread = non_deep_idle_disp_enq_thread;
-			cpu_idle_cfg_state |= CPU_IDLE_DEEP_CFG;
-		}
+		disp_enq_thread = non_deep_idle_disp_enq_thread;
+		cpu_idle_cfg_state |= CPU_IDLE_DEEP_CFG;
 		break;
 
 	default:
@@ -891,7 +790,6 @@ cpu_deep_idle_callb(void *arg, int code)
 	return (rslt);
 }
 
-/*ARGSUSED*/
 static boolean_t
 cpu_idle_cpr_callb(void *arg, int code)
 {
@@ -900,24 +798,19 @@ cpu_idle_cpr_callb(void *arg, int code)
 	mutex_enter(&cpu_idle_callb_mutex);
 	switch (code) {
 	case CB_CODE_CPR_RESUME:
-		if (cstate_timer_callback(CB_CODE_CPR_RESUME)) {
-			/*
-			 * Do not enable dispatcher hooks if disabled by user.
-			 */
-			if (cpu_idle_cfg_state & CPU_IDLE_DEEP_CFG)
-				break;
+		/*
+		 * Do not enable dispatcher hooks if disabled by user.
+		 */
+		if (cpu_idle_cfg_state & CPU_IDLE_DEEP_CFG)
+			break;
 
-			disp_enq_thread = cstate_wakeup;
-			idle_cpu = cpu_idle_adaptive;
-		} else {
-			rslt = B_FALSE;
-		}
+		disp_enq_thread = cstate_wakeup;
+		idle_cpu = cpu_idle_adaptive;
 		break;
 
 	case CB_CODE_CPR_CHKPT:
 		idle_cpu = non_deep_idle_cpu;
 		disp_enq_thread = non_deep_idle_disp_enq_thread;
-		(void) cstate_timer_callback(CB_CODE_CPR_CHKPT);
 		break;
 
 	default:
@@ -926,102 +819,4 @@ cpu_idle_cpr_callb(void *arg, int code)
 	}
 	mutex_exit(&cpu_idle_callb_mutex);
 	return (rslt);
-}
-
-/*
- * handle _CST notification
- */
-void
-cpuidle_cstate_instance(cpu_t *cp)
-{
-	cpupm_mach_state_t	*mach_state =
-	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	cpu_acpi_handle_t	handle;
-	struct machcpu		*mcpu;
-	cpuset_t 		dom_cpu_set;
-	kmutex_t		*pm_lock;
-	int			result = 0;
-	processorid_t		cpu_id;
-
-	if (mach_state == NULL) {
-		return;
-	}
-
-	ASSERT(mach_state->ms_cstate.cma_domain != NULL);
-	dom_cpu_set = mach_state->ms_cstate.cma_domain->pm_cpus;
-	pm_lock = &mach_state->ms_cstate.cma_domain->pm_lock;
-
-	/*
-	 * Do for all the CPU's in the domain
-	 */
-	mutex_enter(pm_lock);
-	do {
-		CPUSET_FIND(dom_cpu_set, cpu_id);
-		if (cpu_id == CPUSET_NOTINSET)
-			break;
-
-		ASSERT(cpu_id >= 0 && cpu_id < NCPU);
-		cp = cpu[cpu_id];
-		mach_state = (cpupm_mach_state_t *)
-		    cp->cpu_m.mcpu_pm_mach_state;
-		if (!(mach_state->ms_caps & CPUPM_C_STATES)) {
-			mutex_exit(pm_lock);
-			return;
-		}
-		handle = mach_state->ms_acpi_handle;
-		ASSERT(handle != NULL);
-
-		/*
-		 * re-evaluate cstate object
-		 */
-		if (cpu_acpi_cache_cstate_data(handle) != 0) {
-			cmn_err(CE_WARN, "Cannot re-evaluate the cpu c-state"
-			    " object Instance: %d", cpu_id);
-		}
-		mcpu = &(cp->cpu_m);
-		mcpu->max_cstates = cpu_acpi_get_max_cstates(handle);
-		if (mcpu->max_cstates > CPU_ACPI_C1) {
-			(void) cstate_timer_callback(
-			    CST_EVENT_MULTIPLE_CSTATES);
-			disp_enq_thread = cstate_wakeup;
-			cp->cpu_m.mcpu_idle_cpu = cpu_acpi_idle;
-		} else if (mcpu->max_cstates == CPU_ACPI_C1) {
-			disp_enq_thread = non_deep_idle_disp_enq_thread;
-			cp->cpu_m.mcpu_idle_cpu = non_deep_idle_cpu;
-			(void) cstate_timer_callback(CST_EVENT_ONE_CSTATE);
-		}
-
-		CPUSET_ATOMIC_XDEL(dom_cpu_set, cpu_id, result);
-	} while (result < 0);
-	mutex_exit(pm_lock);
-}
-
-/*
- * handle the number or the type of available processor power states change
- */
-void
-cpuidle_manage_cstates(void *ctx)
-{
-	cpu_t			*cp = ctx;
-	cpupm_mach_state_t	*mach_state =
-	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	boolean_t		is_ready;
-
-	if (mach_state == NULL) {
-		return;
-	}
-
-	/*
-	 * We currently refuse to power manage if the CPU is not ready to
-	 * take cross calls (cross calls fail silently if CPU is not ready
-	 * for it).
-	 *
-	 * Additionally, for x86 platforms we cannot power manage an instance,
-	 * until it has been initialized.
-	 */
-	is_ready = (cp->cpu_flags & CPU_READY) && cpupm_cstate_ready(cp);
-	if (!is_ready)
-		return;
-
-	cpuidle_cstate_instance(cp);
 }

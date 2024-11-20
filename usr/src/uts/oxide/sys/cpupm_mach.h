@@ -25,6 +25,7 @@
 /*
  * Copyright (c) 2009,  Intel Corporation.
  * All Rights Reserved.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_CPUPM_MACH_H
@@ -80,11 +81,10 @@ typedef struct cpupm_state_ops {
 /*
  * Data kept for each C-state power-domain.
  */
-typedef struct cma_c_state {
+typedef struct cmp_c_state {
 	uint32_t	cs_next_cstate;	/* computed best C-state */
 
 	uint32_t	cs_cnt;		/* times accessed */
-	uint32_t	cs_type;	/* current ACPI idle type */
 
 	hrtime_t	cs_idle_enter;	/* entered idle */
 	hrtime_t	cs_idle_exit;	/* left idle */
@@ -94,18 +94,18 @@ typedef struct cma_c_state {
 	hrtime_t	cs_smpl_len;	/* sample duration */
 	hrtime_t	cs_smpl_idle;	/* idle time in last sample */
 	uint64_t	cs_smpl_idle_pct;	/* % idle time in last smpl */
-} cma_c_state_t;
+} cmp_c_state_t;
 
-typedef union cma_state {
-	cma_c_state_t	*cstate;
+typedef union cmp_state {
+	cmp_c_state_t	*cstate;
 	uint32_t	pstate;
-} cma_state_t;
+} cmp_state_t;
 
-typedef struct cpupm_mach_acpi_state {
-	cpupm_state_ops_t	*cma_ops;
-	cpupm_state_domains_t   *cma_domain;
-	cma_state_t		cma_state;
-} cpupm_mach_acpi_state_t;
+typedef struct cpupm_mach_power_state {
+	cpupm_state_ops_t	*cmp_ops;
+	cpupm_state_domains_t	*cmp_domain;
+	cmp_state_t		cmp_state;
+} cpupm_mach_power_state_t;
 
 typedef struct cpupm_mach_turbo_info {
 	kstat_t		*turbo_ksp;		/* turbo kstat */
@@ -116,15 +116,14 @@ typedef struct cpupm_mach_turbo_info {
 } cpupm_mach_turbo_info_t;
 
 typedef struct cpupm_mach_state {
-	void			*ms_acpi_handle;
-	cpupm_mach_acpi_state_t	ms_pstate;
-	cpupm_mach_acpi_state_t	ms_cstate;
-	cpupm_mach_acpi_state_t	ms_tstate;
-	uint32_t		ms_caps;
-	dev_info_t		*ms_dip;
-	kmutex_t		ms_lock;
-	cpupm_mach_turbo_info_t	*ms_turbo;
-	struct cpupm_notification *ms_handlers;
+	void				*ms_pm_handle;
+	cpupm_mach_power_state_t	ms_pstate;
+	cpupm_mach_power_state_t	ms_cstate;
+	uint32_t			ms_caps;
+	dev_info_t			*ms_dip;
+	kmutex_t			ms_lock;
+	cpupm_mach_turbo_info_t		*ms_turbo;
+	struct cpupm_notification	*ms_handlers;
 } cpupm_mach_state_t;
 
 /*
@@ -145,15 +144,25 @@ typedef struct cpupm_notification {
 } cpupm_notification_t;
 
 /*
+ * Tags for D probes to indicate why a C-state is selected for idling.
+ */
+typedef enum cpupm_cstate_reason {
+	CSTATE_REASON_IDLE_THRESHOLD,
+	CSTATE_REASON_WAKEUP_THRESHOLD,
+	CSTATE_REASON_IDLE_TUNABLE,
+} cpupm_cstate_reason_t;
+
+/*
  * If any states are added, then make sure to add them to
  * CPUPM_ALL_STATES.
  */
 #define	CPUPM_NO_STATES		0x00
 #define	CPUPM_P_STATES		0x01
-#define	CPUPM_T_STATES		0x02
+/*
+ * Skip T-states as our supported processors do not have them.
+ */
 #define	CPUPM_C_STATES		0x04
 #define	CPUPM_ALL_STATES	(CPUPM_P_STATES \
-				| CPUPM_T_STATES \
 				| CPUPM_C_STATES)
 
 /*
@@ -193,12 +202,11 @@ extern int cpupm_plat_change_state(cpu_t *, cpupm_state_t *);
 extern uint_t cpupm_get_speeds(cpu_t *, int **);
 extern void cpupm_free_speeds(int *, uint_t);
 extern boolean_t cpupm_power_ready(cpu_t *);
-extern boolean_t cpupm_throttle_ready(cpu_t *);
 extern boolean_t cpupm_cstate_ready(cpu_t *);
 extern void cpupm_add_notify_handler(cpu_t *, CPUPM_NOTIFY_HANDLER, void *);
 extern int cpupm_get_top_speed(cpu_t *);
-extern void cpupm_idle_cstate_data(cma_c_state_t *, int);
-extern void cpupm_wakeup_cstate_data(cma_c_state_t *, hrtime_t);
+extern void cpupm_idle_cstate_data(cmp_c_state_t *, int);
+extern void cpupm_wakeup_cstate_data(cmp_c_state_t *, hrtime_t);
 extern void cpupm_record_turbo_info(cpupm_mach_turbo_info_t *, uint32_t,
     uint32_t);
 extern cpupm_mach_turbo_info_t *cpupm_turbo_init(cpu_t *);

@@ -20,19 +20,18 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/x86_archext.h>
 #include <sys/machsystm.h>
 #include <sys/x_call.h>
-#include <sys/acpi/acpi.h>
-#include <sys/acpica.h>
 #include <sys/pwrnow.h>
-#include <sys/cpu_acpi.h>
+#include <sys/cpupm_oxide.h>
 #include <sys/cpupm.h>
 #include <sys/dtrace.h>
 #include <sys/sdt.h>
+#include <sys/stdbool.h>
 
 static int pwrnow_init(cpu_t *);
 static void pwrnow_fini(cpu_t *);
@@ -57,20 +56,6 @@ cpupm_state_ops_t pwrnow_ops = {
  */
 #define	PWRNOW_RET_SUCCESS		0x00
 #define	PWRNOW_RET_NO_PM		0x01
-#define	PWRNOW_RET_UNSUP_STATE		0x02
-#define	PWRNOW_RET_TRANS_INCOMPLETE	0x03
-
-#define	PWRNOW_LATENCY_WAIT		10
-
-/*
- * MSR registers for changing and reading processor power state.
- */
-#define	PWRNOW_PERF_CTL_MSR		0xC0010062
-#define	PWRNOW_PERF_STATUS_MSR		0xC0010063
-
-#define	AMD_CPUID_PSTATE_HARDWARE	(1<<7)
-#define	AMD_CPUID_TSC_CONSTANT		(1<<8)
-#define	AMD_CPUID_CPB			(1<<9)
 
 /*
  * Debugging support
@@ -83,29 +68,30 @@ volatile int pwrnow_debug = 0;
 #endif
 
 /*
- * Write the ctrl register.
+ * Detect the current CPU's P-states and prepare structures describing them.
  */
-static void
-write_ctrl(cpu_acpi_handle_t handle, uint32_t ctrl)
+static bool
+pwrnow_pstate_prepare(cpu_pm_state_t *handle)
 {
-	cpu_acpi_pct_t *pct_ctrl;
-	uint64_t reg;
+	/*
+	 * We're not actually handling P-states yet. Error out in this stub
+	 * function as there is nothing to manage and callers should not even
+	 * try.
+	 */
+	return (false);
+}
 
-	pct_ctrl = CPU_ACPI_PCT_CTRL(handle);
-
-	switch (pct_ctrl->cr_addrspace_id) {
-	case ACPI_ADR_SPACE_FIXED_HARDWARE:
-		reg = ctrl;
-		wrmsr(PWRNOW_PERF_CTL_MSR, reg);
-		break;
-
-	default:
-		DTRACE_PROBE1(pwrnow_ctrl_unsupported_type, uint8_t,
-		    pct_ctrl->cr_addrspace_id);
-		return;
+void
+pwrnow_free_pstate_data(cpu_pm_state_t *handle)
+{
+	if (handle != NULL) {
+		if (handle->cps_pstates != NULL) {
+			kmem_free(handle->cps_pstates,
+			    handle->cps_npstates * sizeof (cpu_pstate_t));
+			handle->cps_pstates = NULL;
+			handle->cps_npstates = 0;
+		}
 	}
-
-	DTRACE_PROBE1(pwrnow_ctrl_write, uint32_t, ctrl);
 }
 
 /*
@@ -118,28 +104,26 @@ pwrnow_pstate_transition(xc_arg_t arg1, xc_arg_t arg2 __unused,
 	uint32_t req_state = (uint32_t)arg1;
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)CPU->cpu_m.mcpu_pm_mach_state;
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
-	cpu_acpi_pstate_t *req_pstate;
-	uint32_t ctrl;
-
-	req_pstate = (cpu_acpi_pstate_t *)CPU_ACPI_PSTATES(handle);
-	req_pstate += req_state;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
+	cpu_pstate_t *req_pstate = &handle->cps_pstates[req_state];
+	uint32_t state_nr = req_pstate->ps_state;
 
 	DTRACE_PROBE1(pwrnow_transition_freq, uint32_t,
-	    CPU_ACPI_FREQ(req_pstate));
+	    req_pstate->ps_freq);
 
 	/*
 	 * Initiate the processor p-state change.
 	 */
-	ctrl = CPU_ACPI_PSTATE_CTRL(req_pstate);
-	write_ctrl(handle, ctrl);
+	wrmsr(MSR_AMD_PSTATE_CTL, state_nr);
+
+	DTRACE_PROBE1(pwrnow_ctrl_write, uint32_t, state_nr);
 
 	if (mach_state->ms_turbo != NULL)
 		cpupm_record_turbo_info(mach_state->ms_turbo,
-		    mach_state->ms_pstate.cma_state.pstate, req_state);
+		    mach_state->ms_pstate.cmp_state.pstate, req_state);
 
-	mach_state->ms_pstate.cma_state.pstate = req_state;
-	cpu_set_curr_clock((uint64_t)CPU_ACPI_FREQ(req_pstate) * 1000000);
+	mach_state->ms_pstate.cmp_state.pstate = req_state;
+	cpu_set_curr_clock((uint64_t)req_pstate->ps_freq * 1000000UL);
 	return (0);
 }
 
@@ -165,42 +149,27 @@ pwrnow_power(cpuset_t set, uint32_t req_state)
 
 /*
  * Validate that this processor supports PowerNow! and if so,
- * get the P-state data from ACPI and cache it.
+ * get its P-state data and cache it.
  */
 static int
 pwrnow_init(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)cp->cpu_m.mcpu_pm_mach_state;
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
-	cpu_acpi_pct_t *pct_stat;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
 	static int logged = 0;
 
 	PWRNOW_DEBUG(("pwrnow_init: processor %d\n", cp->cpu_id));
 
 	/*
-	 * Cache the P-state specific ACPI data.
+	 * Cache (and potentially configure) hardware P-states.
 	 */
-	if (cpu_acpi_cache_pstate_data(handle) != 0) {
+	if (!pwrnow_pstate_prepare(handle)) {
 		if (!logged) {
 			cmn_err(CE_NOTE, "!PowerNow! support is being "
-			    "disabled due to errors parsing ACPI P-state "
-			    "objects exported by BIOS.");
+			    "disabled due to not detecting P-state support.");
 			logged = 1;
 		}
-		pwrnow_fini(cp);
-		return (PWRNOW_RET_NO_PM);
-	}
-
-	pct_stat = CPU_ACPI_PCT_STATUS(handle);
-	switch (pct_stat->cr_addrspace_id) {
-	case ACPI_ADR_SPACE_FIXED_HARDWARE:
-		PWRNOW_DEBUG(("Transitions will use fixed hardware\n"));
-		break;
-	default:
-		cmn_err(CE_WARN, "!_PCT configured for unsupported "
-		    "addrspace = %d.", pct_stat->cr_addrspace_id);
-		cmn_err(CE_NOTE, "!CPU power management will not function.");
 		pwrnow_fini(cp);
 		return (PWRNOW_RET_NO_PM);
 	}
@@ -225,10 +194,10 @@ pwrnow_fini(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
 
 	cpupm_free_domains(&cpupm_pstate_domains);
-	cpu_acpi_free_pstate_data(handle);
+	pwrnow_free_pstate_data(handle);
 
 	if (mach_state->ms_turbo != NULL)
 		cpupm_turbo_fini(mach_state->ms_turbo);
@@ -257,7 +226,7 @@ pwrnow_supported()
 	 * We currently only support CPU power management of
 	 * processors that are P-state TSC invariant
 	 */
-	if (!(cpu_regs.cp_edx & AMD_CPUID_TSC_CONSTANT)) {
+	if (!(cpu_regs.cp_edx & CPUID_AMD_8X07_EDX_TSC_INV)) {
 		PWRNOW_DEBUG(("No support for CPUs that are not P-state "
 		    "TSC invariant.\n"));
 		return (B_FALSE);
@@ -267,7 +236,7 @@ pwrnow_supported()
 	 * We only support the "Fire and Forget" style of PowerNow! (i.e.,
 	 * single MSR write to change speed).
 	 */
-	if (!(cpu_regs.cp_edx & AMD_CPUID_PSTATE_HARDWARE)) {
+	if (!(cpu_regs.cp_edx & CPUID_AMD_8X07_EDX_PSTATE_HW)) {
 		PWRNOW_DEBUG(("Hardware P-State control is not supported.\n"));
 		return (B_FALSE);
 	}
@@ -292,7 +261,7 @@ pwrnow_cpb_supported(void)
 	cpu_regs.cp_eax = 0x80000007;
 	(void) __cpuid_insn(&cpu_regs);
 
-	if (!(cpu_regs.cp_edx & AMD_CPUID_CPB))
+	if (!(cpu_regs.cp_edx & CPUID_AMD_8X07_EDX_CPB))
 		return (B_FALSE);
 
 	return (B_TRUE);
@@ -303,10 +272,10 @@ pwrnow_stop(cpu_t *cp)
 {
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
-	cpu_acpi_handle_t handle = mach_state->ms_acpi_handle;
+	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
 
 	cpupm_remove_domains(cp, CPUPM_P_STATES, &cpupm_pstate_domains);
-	cpu_acpi_free_pstate_data(handle);
+	pwrnow_free_pstate_data(handle);
 
 	if (mach_state->ms_turbo != NULL)
 		cpupm_turbo_fini(mach_state->ms_turbo);

@@ -25,6 +25,7 @@
 /*
  * Copyright (c) 2009, Intel Corporation.
  * All rights reserved.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_CPUIDLE_H
@@ -36,16 +37,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define	CPU_MAX_CSTATES	8
-
-#define	CPU_ACPI_C0	IDLE_STATE_C0
-#define	CPU_ACPI_C1	IDLE_STATE_C1
-#define	CPU_ACPI_C2	IDLE_STATE_C2
-#define	CPU_ACPI_C3	IDLE_STATE_C3
-
-#define	BM_CTL		0x1
-#define	BM_RLD		0x2
-#define	BM_ARB_DIS	0x4
 
 #define	CPUID_TSC_INVARIANCE	0x100
 
@@ -55,12 +46,11 @@ extern "C" {
 typedef struct cpu_idle_kstat_s {
 	struct kstat_named	addr_space_id;	/* register address space id */
 	struct kstat_named	cs_latency;	/* worst latency */
-	struct kstat_named	cs_power;	/* average power consumption */
 } cpu_idle_kstat_t;
 
 extern cpupm_state_ops_t cpu_idle_ops;
 
-extern void cpu_acpi_idle(void);
+extern void cpu_cstate_idle(void);
 extern void cstate_wakeup(cpu_t *, int);
 extern boolean_t cpu_deep_cstates_supported(void);
 extern void cpu_wakeup(cpu_t *, int);

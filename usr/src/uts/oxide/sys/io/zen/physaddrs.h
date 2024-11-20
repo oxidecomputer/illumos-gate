@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_PHYSADDRS_H
@@ -160,8 +160,18 @@ extern "C" {
 /*
  * The FCH also has a compatibility range for legacy I/O ports.
  */
-#define	ZEN_IOPORT_COMPAT_BASE	0U
-#define	ZEN_IOPORT_COMPAT_SIZE	0x1000U
+#define	ZEN_IOPORT_COMPAT_BASE		0U
+#define	ZEN_IOPORT_COMPAT_SIZE		0x1000U
+
+/*
+ * The value to set Core::X86::Msr::CStateBaseAddr to when initializing power
+ * management. This is the start of an 8-port region, so this really describes
+ * the range [0x413, 0x41a].
+ *
+ * The choice of 0x413 is purely because of convention. AGESA puts it here by
+ * default, and there's no particular benefit to picking a different address.
+ */
+#define	ZEN_IOPORT_CSTATE_BASE_ADDR	0x413U
 
 /*
  * This 12 GiB range below 1 TiB can't be accessed as DRAM and is not supposed

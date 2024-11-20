@@ -215,9 +215,22 @@ extern "C" {
 				/* 0x80000000 - reserved */
 
 /*
- * Brand string (extended function 0x8000000[234567]).
+ * Brand string (extended function 0x8000000[234]).
  */
 #define	CPUID_BRANDSTR_STRLEN	48
+
+/*
+ * AMD power management, reporting, RAS features (extended function 0x80000007).
+ *
+ * Some additional features may be declared in this leaf depending on procesor
+ * model. Consult relevant BKDG or PPRs.
+ */
+#define	CPUID_AMD_8X07_EDX_PSTATE_HW	(1 << 7)  /* AMD: HwPstate */
+#define	CPUID_AMD_8X07_EDX_TSC_INV	(1 << 8)  /* AMD: TscInvariant */
+#define	CPUID_AMD_8X07_EDX_CPB		(1 << 9)  /* AMD: CPB */
+#define	CPUID_AMD_8X07_EDX_RO_APMP	(1 << 10) /* AMD: EffFreqRO */
+#define	CPUID_AMD_8X07_EDX_PROC_FB	(1 << 11) /* AMD: ProcFeedbackIface. */
+#define	CPUID_AMD_8X07_EDX_PWR_RPT	(1 << 12) /* AMD: ProcPowerReporting */
 
 /*
  * AMD uses %eax for address size identifiers (extended function 0x80000008).
@@ -869,6 +882,22 @@ extern "C" {
 #define	MSR_AMD_PROC_NAME_STRING3	0xc0010033
 #define	MSR_AMD_PROC_NAME_STRING4	0xc0010034
 #define	MSR_AMD_PROC_NAME_STRING5	0xc0010035
+
+/*
+ * AMD MSRs for CPU P-state information (formerly known as PowerNow!)
+ *
+ * These MSRs are present if HwPstate is set in CPUID leaf 0x80000007.
+ * Practically, this should be set in AMD processors from K10 and later.
+ *
+ * These MSRs are typically not intended for direct consumption by OSes;
+ * system firmware, like ACPI, may hide P-states or present additional P-states,
+ * intercept CPU P-state changes to mange other hardware components, etc. These
+ * MSRs should be considered read-only unless you are able to coordinate their
+ * usage with relevant system firmware.
+ */
+#define	MSR_AMD_PSTATE_CUR_LIM	0xc0010061
+#define	MSR_AMD_PSTATE_CTL	0xc0010062
+#define	MSR_AMD_PSTATE_STAT	0xc0010063
 
 #define	X86FSET_LARGEPAGE	0
 #define	X86FSET_TSC		1

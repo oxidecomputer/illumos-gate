@@ -25,6 +25,7 @@
 /*
  * Copyright (c) 2009, Intel Corporation.
  * All rights reserved.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -185,7 +186,7 @@ ppm_alloc_pstate_domains(cpu_t *cp)
 
 	mach_state = (cpupm_mach_state_t *)(cp->cpu_m.mcpu_pm_mach_state);
 	ASSERT(mach_state);
-	pm_domain = mach_state->ms_pstate.cma_domain->pm_domain;
+	pm_domain = mach_state->ms_pstate.cmp_domain->pm_domain;
 
 	/*
 	 * There are two purposes of sub_domain:

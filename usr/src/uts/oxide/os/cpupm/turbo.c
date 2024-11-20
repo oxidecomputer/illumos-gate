@@ -24,16 +24,14 @@
 /*
  * Copyright (c) 2009,  Intel Corporation.
  * All Rights Reserved.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/x86_archext.h>
 #include <sys/machsystm.h>
 #include <sys/archsystm.h>
 #include <sys/x_call.h>
-#include <sys/acpi/acpi.h>
-#include <sys/acpica.h>
 #include <sys/speedstep.h>
-#include <sys/cpu_acpi.h>
 #include <sys/cpupm.h>
 #include <sys/dtrace.h>
 #include <sys/sdt.h>
@@ -58,7 +56,7 @@ turbo_kstat_t turbo_kstat = {
 	{ "turbo_acnt",		KSTAT_DATA_UINT64 },
 };
 
-#define	CPU_ACPI_P0			0
+#define	CPU_P0				0
 #define	CPU_IN_TURBO			1
 
 /*
@@ -147,7 +145,7 @@ reset_turbo_info(void)
 }
 
 /*
- * sum up the count of one CPU_ACPI_P0 transition
+ * sum up the count of one CPU_P0 transition
  */
 void
 cpupm_record_turbo_info(cpupm_mach_turbo_info_t *turbo_info,
@@ -158,14 +156,14 @@ cpupm_record_turbo_info(cpupm_mach_turbo_info_t *turbo_info,
 	/*
 	 * enter P0 state
 	 */
-	if (req_state == CPU_ACPI_P0) {
+	if (req_state == CPU_P0) {
 		reset_turbo_info();
 		turbo_info->in_turbo = CPU_IN_TURBO;
 	}
 	/*
 	 * Leave P0 state
 	 */
-	else if (cur_state == CPU_ACPI_P0) {
+	else if (cur_state == CPU_P0) {
 		turbo_info->in_turbo = 0;
 		get_turbo_info(turbo_info);
 	}
