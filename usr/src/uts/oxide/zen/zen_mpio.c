@@ -50,6 +50,7 @@
 
 #include <sys/types.h>
 #include <sys/stdbool.h>
+#include <sys/ddi_subrdefs.h>
 #include <sys/platform_detect.h>
 
 #include <sys/io/zen/hacks.h>
@@ -59,12 +60,6 @@
 #include <sys/io/zen/platform_impl.h>
 #include <sys/io/zen/ruby_dxio_data.h>
 #include <sys/io/zen/smn.h>
-
-/*
- * These come from common code in the DDI.  They really ought to be in a header.
- */
-extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
-extern void contig_free(void *, size_t);
 
 #define	ZEN_MPIO_RPC_ARG0(ZPCS) \
     zen_mpio_smn_reg(0, (ZPCS)->zpc_mpio_smn_addrs.zmsa_arg0, 0)

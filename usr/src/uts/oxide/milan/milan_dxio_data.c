@@ -113,22 +113,6 @@ CTASSERT(sizeof (zen_dxio_fw_engine_t) == 0x28);
 CTASSERT(offsetof(zen_dxio_fw_engine_t, zde_config) == 0x8);
 CTASSERT(sizeof (zen_dxio_fw_platform_t) == 0x10);
 
-CTASSERT(offsetof(milan_pptable_t, ppt_plat_tdp_lim) == 0x14);
-CTASSERT(offsetof(milan_pptable_t, ppt_fan_override) == 0x24);
-CTASSERT(offsetof(milan_pptable_t, ppt_core_dldo_margin) == 0x30);
-CTASSERT(offsetof(milan_pptable_t, ppt_df_override) == 0x48);
-CTASSERT(offsetof(milan_pptable_t, ppt_xgmi_max_width_en) == 0x50);
-CTASSERT(offsetof(milan_pptable_t, ppt_cpu_full_scale) == 0x58);
-CTASSERT(offsetof(milan_pptable_t, ppt_oc_dis) == 0x68);
-CTASSERT(offsetof(milan_pptable_t, ppt_cclk_freq) == 0x6c);
-CTASSERT(offsetof(milan_pptable_t, ppt_htf_temp_max) == 0x74);
-CTASSERT(offsetof(milan_pptable_t, ppt_ccp_override) == 0x7c);
-CTASSERT(offsetof(milan_pptable_t, ppt_ccp_thr_apic_size) == 0x80);
-CTASSERT(offsetof(milan_pptable_t, ppt_ccp_thr_map) == 0x84);
-CTASSERT(offsetof(milan_pptable_t, ppt_vddcr_cpu_force) == 0x284);
-CTASSERT(offsetof(milan_pptable_t, ppt_reserved) == 0x294);
-CTASSERT(sizeof (milan_pptable_t) == 0x304);
-
 CTASSERT(sizeof (smu_hotplug_map_t) == 4);
 CTASSERT(sizeof (smu_hotplug_function_t) == 4);
 CTASSERT(sizeof (smu_hotplug_reset_t) == 4);

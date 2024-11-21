@@ -23,6 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/stdint.h>
+#include <sys/stdbool.h>
 #include <sys/x86_archext.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/milan/ccx_impl.h>
@@ -104,6 +105,7 @@ struct milan_fabric {
 extern void milan_fabric_topo_init(zen_fabric_t *);
 extern void milan_fabric_soc_init(zen_soc_t *);
 extern void milan_fabric_iodie_init(zen_iodie_t *);
+extern bool milan_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void milan_fabric_smu_misc_init(zen_iodie_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);
 extern void milan_fabric_ioms_pcie_init(zen_ioms_t *);

@@ -23,6 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/stdint.h>
+#include <sys/stdbool.h>
 #include <sys/x86_archext.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/genoa/ccx_impl.h>
@@ -91,6 +92,7 @@ extern void genoa_fabric_thread_get_dpm_weights(const zen_thread_t *,
 /*
  * The Genoa uarch-specific hooks for initial fabric topology initialization.
  */
+extern bool genoa_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void genoa_fabric_ioms_init(zen_ioms_t *);
 
 /*

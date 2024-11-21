@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2024 Oxide Computer Co.
  */
 
 #include <sys/limits.h>
@@ -33,6 +33,7 @@
 #include <sys/cmn_err.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
+#include <sys/ddi_subrdefs.h>
 #include <sys/controlregs.h>
 #include <sys/archsystm.h>
 #include <sys/prom_debug.h>
@@ -42,10 +43,6 @@
 
 extern void smintr(void);
 extern void smintr_end(void);
-
-/* XXX Really need a header */
-extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
-extern void contig_free(void *, size_t);
 
 static uint32_t tseg_pa;
 static uint32_t tseg_len;

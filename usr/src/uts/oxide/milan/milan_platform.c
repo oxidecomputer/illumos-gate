@@ -110,6 +110,7 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_soc_init = milan_fabric_soc_init,
 	.zfo_iodie_init = milan_fabric_iodie_init,
 	.zfo_smu_misc_init = milan_fabric_smu_misc_init,
+	.zfo_smu_pptable_init = milan_fabric_smu_pptable_init,
 	.zfo_ioms_init = milan_fabric_ioms_init,
 	.zfo_ioms_pcie_init = milan_fabric_ioms_pcie_init,
 

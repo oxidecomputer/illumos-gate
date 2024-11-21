@@ -42,6 +42,7 @@
 #include <sys/io/genoa/nbif_impl.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/pcie_rsmu.h>
+#include <sys/io/genoa/pptable.h>
 
 /*
  * This table encodes knowledge about how the SoC assigns devices and functions
@@ -239,6 +240,42 @@ const zen_pcie_port_info_t *
 genoa_pcie_port_info(const uint8_t coreno, const uint8_t portno)
 {
 	return (&genoa_pcie[coreno][portno]);
+}
+
+bool
+genoa_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
+{
+	const zen_iodie_t *iodie = &fabric->zf_socs[0].zs_iodies[0];
+	const uint8_t maj = iodie->zi_smu_fw[0];
+	const uint8_t min = iodie->zi_smu_fw[1];
+
+	/*
+	 * The format of the PP table is consistent across several SMU
+	 * versions. If we encounter a version we have not verified then we
+	 * move on without sending a table.
+	 */
+	if (maj != 71 || min < 111 || min > 124) {
+		cmn_err(CE_WARN,
+		    "The PP table layout for SMU version %u.%u is unknown",
+		    maj, min);
+		return (false);
+	}
+
+	genoa_pptable_v71_111_t *gpp = pptable;
+	CTASSERT(sizeof (*gpp) <= MMU_PAGESIZE);
+	VERIFY3U(sizeof (*gpp), <=, *len);
+
+	memset(&gpp->gpp_cppc.gppc_thr_map, 0xff,
+	    sizeof (gpp->gpp_cppc.gppc_thr_map));
+
+	/*
+	 * Explicitly disable the overclocking part of the table.
+	 */
+	gpp->gpp_overclock.gppo_oc_dis = 1;
+
+	*len = sizeof (*gpp);
+
+	return (true);
 }
 
 /*

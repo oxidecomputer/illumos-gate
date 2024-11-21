@@ -42,6 +42,7 @@
 #include <sys/io/turin/iommu.h>
 #include <sys/io/turin/nbif_impl.h>
 #include <sys/io/turin/ioapic.h>
+#include <sys/io/turin/pptable.h>
 
 /*
  * Various routines and things to access, initialize, understand, and manage
@@ -388,6 +389,57 @@ const zen_pcie_port_info_t *
 turin_pcie_port_info(const uint8_t coreno, const uint8_t portno)
 {
 	return (&turin_pcie[coreno][portno]);
+}
+
+bool
+turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
+{
+	const zen_iodie_t *iodie = &fabric->zf_socs[0].zs_iodies[0];
+	const uint8_t maj = iodie->zi_smu_fw[0];
+	const uint8_t min = iodie->zi_smu_fw[1];
+	const x86_processor_family_t family =
+	    chiprev_family(cpuid_getchiprev(CPU));
+
+	/*
+	 * The format of the PP table is consistent across several SMU
+	 * versions. If we encounter a version we have not verified then we
+	 * move on without sending a table.
+	 */
+	bool valid = true;
+
+	switch (family) {
+	case X86_PF_AMD_TURIN:
+		if (maj != 94 || min < 91 || min > 111)
+			valid = false;
+		break;
+	case X86_PF_AMD_DENSE_TURIN:
+		if (maj != 99 || min < 91 || min > 111)
+			valid = false;
+		break;
+	default:
+		valid = false;
+		break;
+	}
+
+	if (!valid) {
+		cmn_err(CE_WARN,
+		    "The PP table layout for SMU version %u.%u is unknown",
+		    maj, min);
+		return (false);
+	}
+
+	turin_pptable_v94_91_t *tpp = pptable;
+	CTASSERT(sizeof (*tpp) <= MMU_PAGESIZE);
+	VERIFY3U(sizeof (*tpp), <=, *len);
+
+	/*
+	 * Explicitly disable the overclocking part of the table.
+	 */
+	tpp->tpp_overclock.tppo_oc_dis = 1;
+
+	*len = sizeof (*tpp);
+
+	return (true);
 }
 
 /*

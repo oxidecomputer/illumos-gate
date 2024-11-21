@@ -20,6 +20,7 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/cmn_err.h>
+#include <sys/bitext.h>
 
 #include <sys/io/zen/smu_impl.h>
 #include <sys/io/zen/fabric_impl.h>
@@ -266,6 +267,52 @@ zen_smu_get_brand_string(zen_iodie_t *iodie, char *buf, size_t len)
 		bcopy(&rpc.zsr_args[0], buf + off, chunk_size);
 	}
 	buf[len] = '\0';
+
+	return (true);
+}
+
+bool
+zen_smu_rpc_give_address(zen_iodie_t *iodie, uint64_t addr)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	rpc.zsr_req = ZEN_SMU_OP_HAVE_AN_ADDRESS;
+	rpc.zsr_args[0] = bitx64(addr, 31, 0);
+	rpc.zsr_args[1] = bitx64(addr, 63, 32);
+
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "IO die: %u: SMU Have an Address RPC Failed: "
+		    "addr: 0x%lx, SMU req 0x%x resp %s (SMU 0x%x)",
+		    iodie->zi_num, addr, rpc.zsr_req,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+bool
+zen_smu_rpc_send_pptable(zen_iodie_t *iodie, zen_pptable_t *pptable)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	if (!zen_smu_rpc_give_address(iodie, pptable->zpp_pa))
+		return (false);
+
+	rpc.zsr_req = ZEN_SMU_OP_TX_PP_TABLE;
+	rpc.zsr_args[0] = (uint32_t)pptable->zpp_size;
+
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "IO die %u: SMU TX PP Table RPC Failed: "
+		    "SMU req 0x%x resp %s (0x%x)",
+		    iodie->zi_num, rpc.zsr_req, zen_smu_rpc_res_str(res),
+		    rpc.zsr_resp);
+		return (false);
+	}
 
 	return (true);
 }

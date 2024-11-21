@@ -50,4 +50,14 @@ extern bool zen_smu_version_at_least(const zen_iodie_t *, uint8_t, uint8_t,
  */
 extern bool zen_smu_get_brand_string(zen_iodie_t *, char *, size_t);
 
+/*
+ * Provides an address to the SMU pertaining to the subsequent operation.
+ */
+extern bool zen_smu_rpc_give_address(zen_iodie_t *, uint64_t);
+
+/*
+ * Transmits the Power and Performance table to the SMU.
+ */
+extern bool zen_smu_rpc_send_pptable(zen_iodie_t *, zen_pptable_t *);
+
 #endif	/* _ZEN_SMU_H */

@@ -81,6 +81,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_get_dxio_fw_version = zen_mpio_get_fw_version,
 	.zfo_report_dxio_fw_version = zen_mpio_report_fw_version,
 
+	.zfo_smu_pptable_init = genoa_fabric_smu_pptable_init,
 	.zfo_ioms_init = genoa_fabric_ioms_init,
 
 	.zfo_init_tom = genoa_fabric_init_tom,

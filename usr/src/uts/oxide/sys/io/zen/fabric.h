@@ -40,6 +40,7 @@ typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_nbif zen_nbif_t;
 typedef struct zen_iodie zen_iodie_t;
 typedef struct zen_soc zen_soc_t;
+typedef struct zen_pptable zen_pptable_t;
 typedef struct zen_fabric zen_fabric_t;
 struct memlist;
 typedef struct zen_pcie_core zen_pcie_core_t;

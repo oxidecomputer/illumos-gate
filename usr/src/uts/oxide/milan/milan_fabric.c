@@ -591,6 +591,7 @@
 
 #include <sys/types.h>
 #include <sys/ddi.h>
+#include <sys/ddi_subrdefs.h>
 #include <sys/ksynch.h>
 #include <sys/pci.h>
 #include <sys/pci_cfgspace.h>
@@ -630,6 +631,7 @@
 #include <sys/io/milan/pcie_impl.h>
 #include <sys/io/milan/pcie_rsmu.h>
 #include <sys/io/milan/smu_impl.h>
+#include <sys/io/milan/pptable.h>
 
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
@@ -862,12 +864,6 @@ typedef enum milan_iommul1_subunit {
 	MIL1SU_NBIF,
 	MIL1SU_IOAGR
 } milan_iommul1_subunit_t;
-
-/*
- * XXX Belongs in a header.
- */
-extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
-extern void contig_free(void *, size_t);
 
 /*
  * Our primary global data. This is the reason that we exist.
@@ -1291,7 +1287,7 @@ milan_smu_rpc_hotplug_flags(zen_iodie_t *iodie, uint32_t flags)
 	zen_smu_rpc_t rpc = { 0 };
 	zen_smu_rpc_res_t res;
 
-	rpc.zsr_req = MILAN_SMU_OP_SET_HOPTLUG_FLAGS;
+	rpc.zsr_req = MILAN_SMU_OP_SET_HOTPLUG_FLAGS;
 	rpc.zsr_args[0] = flags;
 	res = zen_smu_rpc(iodie, &rpc);
 	if (res != ZEN_SMU_RPC_OK) {
@@ -1783,6 +1779,47 @@ milan_fabric_iodie_init(zen_iodie_t *iodie)
 	milan_iodie_t *miodie = &msoc->ms_iodies[iodie->zi_num];
 
 	iodie->zi_uarch_iodie = miodie;
+}
+
+bool
+milan_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
+{
+	const zen_iodie_t *iodie = &fabric->zf_socs[0].zs_iodies[0];
+	const uint8_t maj = iodie->zi_smu_fw[0];
+	const uint8_t min = iodie->zi_smu_fw[1];
+
+	/*
+	 * The format of the PP table is consistent across several SMU
+	 * versions. If we encounter a version we have not verified then we
+	 * move on without sending a table.
+	 */
+	if (maj != 45 || min < 65 || min > 101) {
+		cmn_err(CE_WARN,
+		    "The PP table layout for SMU version %u.%u is unknown",
+		    maj, min);
+		return (false);
+	}
+
+	milan_pptable_v45_65_t *mpp = pptable;
+	CTASSERT(sizeof (*mpp) <= MMU_PAGESIZE);
+	VERIFY3U(sizeof (*mpp), <=, *len);
+
+	memset(&mpp->mpp_cppc.mppc_thr_map, 0xff,
+	    sizeof (mpp->mpp_cppc.mppc_thr_map));
+
+	/*
+	 * Explicitly disable the overclocking part of the table.
+	 */
+	mpp->mpp_overclock.mppo_oc_dis = 1;
+
+	/*
+	 * CCA is enabled by default. XXX anyone know what it stands for?
+	 */
+	mpp->mpp_cca_en = 1;
+
+	*len = sizeof (*mpp);
+
+	return (true);
 }
 
 void

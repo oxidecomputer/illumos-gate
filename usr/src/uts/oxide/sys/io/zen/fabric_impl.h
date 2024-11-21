@@ -303,6 +303,13 @@ struct zen_soc {
 	void			*zs_uarch_soc;
 };
 
+struct zen_pptable {
+	void			*zpp_table;
+	uint64_t		zpp_pa;
+	size_t			zpp_size;
+	size_t			zpp_alloc_len;
+};
+
 /*
  * The top-level description of various components contained within the Zen
  * fabric.
@@ -348,6 +355,11 @@ struct zen_fabric {
 	 * space size.
 	 */
 	uint64_t		zf_mmio64_size;
+
+	/*
+	 * The power and performance table that is sent to the SMU.
+	 */
+	zen_pptable_t		zf_pptable;
 
 	uint8_t			zf_nsocs;
 	zen_soc_t		zf_socs[ZEN_FABRIC_MAX_SOCS];

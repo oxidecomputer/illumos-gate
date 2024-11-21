@@ -16,6 +16,7 @@
 #include <sys/types.h>
 #include <sys/prom_debug.h>
 #include <sys/x86_archext.h>
+#include <sys/ddi_subrdefs.h>
 #include <sys/sysmacros.h>
 #include <sys/archsystm.h>
 #include <sys/machsystm.h>
@@ -2391,7 +2392,6 @@ zen_null_fabric_nbif_bridges(zen_ioms_t *ioms __unused)
 {
 }
 
-
 static int
 zen_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms,
     void *arg __unused)
@@ -2402,6 +2402,53 @@ zen_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms,
 		fops->zfo_iohc_disable_unused_pcie_bridges(ioms);
 
 	return (0);
+}
+
+static int
+zen_fabric_send_pptable(zen_iodie_t *iodie, void *pptable)
+{
+	if (zen_smu_rpc_send_pptable(iodie, (zen_pptable_t *)pptable)) {
+		/*
+		 * A warning will already have been emitted in the case of a
+		 * failure.
+		 */
+		cmn_err(CE_CONT, "?IO die %u: Sent PP Table to SMU\n",
+		    iodie->zi_num);
+	}
+
+	return (0);
+}
+
+static void
+zen_fabric_init_pptable(zen_fabric_t *fabric)
+{
+	zen_pptable_t *pptable = &fabric->zf_pptable;
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	ddi_dma_attr_t attr;
+	pfn_t pfn;
+	size_t len;
+
+	if (fops->zfo_smu_pptable_init == NULL)
+		return;
+
+	zen_fabric_dma_attr(&attr);
+	pptable->zpp_alloc_len = len = MMU_PAGESIZE;
+	pptable->zpp_table = contig_alloc(len, &attr, MMU_PAGESIZE, 1);
+	bzero(pptable->zpp_table, len);
+
+	if (!fops->zfo_smu_pptable_init(fabric, pptable->zpp_table, &len)) {
+		contig_free(pptable->zpp_table, pptable->zpp_alloc_len);
+		pptable->zpp_table = NULL;
+		pptable->zpp_alloc_len = 0;
+		return;
+	}
+
+	pptable->zpp_size = len;
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)pptable->zpp_table);
+	pptable->zpp_pa = mmu_ptob((uint64_t)pfn);
+
+	(void) zen_fabric_walk_iodie(fabric, zen_fabric_send_pptable, pptable);
 }
 
 void
@@ -2442,8 +2489,8 @@ zen_fabric_init(void)
 
 	/*
 	 * While DRAM training seems to have programmed the initial memory
-	 * settings our boot CPU and the DF, it is not done on the various IOMS
-	 * instances. It is up to us to program that across them all.
+	 * settings for our boot CPU and the DF, it is not done on the various
+	 * IOMS instances. It is up to us to program that across them all.
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_init_tom, NULL);
 
@@ -2455,6 +2502,11 @@ zen_fabric_init(void)
 	 * to hide this RAM from anyone.
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_disable_vga, NULL);
+
+	/*
+	 * Send the Power and Performance table to the SMU.
+	 */
+	zen_fabric_init_pptable(fabric);
 
 	/*
 	 * Walk IOMS and disable unused PCIe bridges on each IOHC.

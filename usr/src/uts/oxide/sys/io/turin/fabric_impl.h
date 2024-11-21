@@ -23,6 +23,7 @@
 
 #include <sys/types.h>
 #include <sys/stdint.h>
+#include <sys/stdbool.h>
 #include <sys/x86_archext.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/turin/ccx_impl.h>
@@ -90,6 +91,7 @@ extern "C" {
 /*
  * The Turin uarch-specific hooks for initial fabric topology initialization.
  */
+extern bool turin_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void turin_fabric_ioms_init(zen_ioms_t *);
 
 /*
