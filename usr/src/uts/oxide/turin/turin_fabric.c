@@ -1142,7 +1142,6 @@ turin_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 void
 turin_fabric_pcie(zen_fabric_t *fabric)
 {
-	zen_pcie_populate_dbg(fabric, ZPCS_PRE_DXIO_INIT, ZEN_IODIE_MATCH_ANY);
 	zen_mpio_pcie_init(fabric);
 }
 

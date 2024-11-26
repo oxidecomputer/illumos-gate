@@ -38,31 +38,6 @@ extern "C" {
 #define	MILAN_PCIE_CORE0_UNITID		16
 
 /*
- * These stages of configuration are referred to in the per-port and per-RC
- * register storage structures, which provide a debugging facility to help
- * understand what both firmware and software have done to these registers over
- * time.  They do not control any software behaviour other than in mdb.  See the
- * theory statement in milan_fabric.c for the definitions of these stages.
- */
-typedef enum milan_pcie_config_stage {
-	MPCS_PRE_DXIO_INIT,
-	MPCS_DXIO_SM_START,
-	MPCS_DXIO_SM_MAPPED,
-	MPCS_DXIO_SM_MAPPED_RESUME,
-	MPCS_DXIO_SM_CONFIGURED,
-	MPCS_DXIO_SM_CONFIGURED_RESUME,
-	MPCS_DXIO_SM_PERST,
-	MPCS_DXIO_SM_PERST_RESUME,
-	MPCS_DXIO_SM_DONE,
-	MPCS_PRE_HOTPLUG,
-	MPCS_POST_HOTPLUG,
-	MPCS_USER_DIRECTED,
-	MPCS_NUM_STAGES
-} milan_pcie_config_stage_t;
-
-CTASSERT(MPCS_NUM_STAGES <= ZPCS_MAX_STAGES);
-
-/*
  * The PCIe port data specific to the Milan microarchitecture.
  */
 struct milan_pcie_port {

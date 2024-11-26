@@ -3342,7 +3342,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 			 */
 			case ZEN_DXIO_SM_MAPPED:
 				zen_pcie_populate_dbg(fabric,
-				    MPCS_DXIO_SM_MAPPED, iodie->zi_node_id);
+				    ZPCS_SM_MAPPED, iodie->zi_node_id);
 
 				if (!milan_dxio_rpc_retrieve_engine(iodie)) {
 					return (1);
@@ -3380,13 +3380,11 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				    milan_fabric_setup_pcie_core_dbg, NULL);
 
 				zen_pcie_populate_dbg(fabric,
-				    MPCS_DXIO_SM_MAPPED_RESUME,
-				    iodie->zi_node_id);
+				    ZPCS_SM_MAPPED_POST, iodie->zi_node_id);
 				break;
 			case ZEN_DXIO_SM_CONFIGURED:
 				zen_pcie_populate_dbg(fabric,
-				    MPCS_DXIO_SM_CONFIGURED,
-				    iodie->zi_node_id);
+				    ZPCS_SM_CONFIGURED, iodie->zi_node_id);
 
 				/*
 				 * XXX There is a substantial body of additional
@@ -3395,8 +3393,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 				 */
 
 				zen_pcie_populate_dbg(fabric,
-				    MPCS_DXIO_SM_CONFIGURED_RESUME,
-				    iodie->zi_node_id);
+				    ZPCS_SM_CONFIGURED_POST, iodie->zi_node_id);
 				break;
 			case ZEN_DXIO_SM_DONE:
 				/*
@@ -3417,7 +3414,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 			break;
 		case MILAN_DXIO_DATA_TYPE_RESET:
 			zen_pcie_populate_dbg(fabric,
-			    MPCS_DXIO_SM_PERST, iodie->zi_node_id);
+			    ZPCS_SM_PERST, iodie->zi_node_id);
 			cmn_err(CE_CONT, "?Socket %u LISM: PERST %x, %x\n",
 			    soc->zs_num, reply.mds_arg0, reply.mds_arg1);
 			if (reply.mds_arg0 == 0) {
@@ -3462,8 +3459,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 			}
 
 			zen_pcie_populate_dbg(fabric,
-			    MPCS_DXIO_SM_PERST_RESUME,
-			    iodie->zi_node_id);
+			    ZPCS_SM_PERST_POST, iodie->zi_node_id);
 
 			break;
 		case MILAN_DXIO_DATA_TYPE_NONE:
@@ -3483,8 +3479,7 @@ milan_dxio_state_machine(zen_iodie_t *iodie, void *arg)
 	}
 
 done:
-	zen_pcie_populate_dbg(fabric, MPCS_DXIO_SM_DONE,
-	    iodie->zi_node_id);
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_DONE, iodie->zi_node_id);
 
 	if (!milan_dxio_rpc_retrieve_engine(iodie)) {
 		return (1);
@@ -4383,8 +4378,8 @@ milan_fabric_pcie(zen_fabric_t *fabric)
 	 *
 	 * XXX htf do we want to handle errors
 	 */
-	zen_pcie_populate_dbg(fabric, MPCS_PRE_DXIO_INIT,
-	    ZEN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, ZPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
+
 	if (zen_fabric_walk_iodie(fabric, milan_dxio_init, NULL) != 0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
@@ -4409,8 +4404,8 @@ milan_fabric_pcie(zen_fabric_t *fabric)
 		return;
 	}
 
-	zen_pcie_populate_dbg(fabric, MPCS_DXIO_SM_START,
-	    ZEN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_START, ZEN_IODIE_MATCH_ANY);
+
 	if (zen_fabric_walk_iodie(fabric, milan_dxio_state_machine, NULL) !=
 	    0) {
 		cmn_err(CE_WARN, "DXIO Initialization failed: failed to walk "
@@ -4438,13 +4433,14 @@ milan_fabric_pcie(zen_fabric_t *fabric)
 	 * At this point, go talk to the SMU to actually initialize our hotplug
 	 * support.
 	 */
-	zen_pcie_populate_dbg(fabric, MPCS_PRE_HOTPLUG, ZEN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, ZPCS_PRE_HOTPLUG, ZEN_IODIE_MATCH_ANY);
+
 	if (!milan_hotplug_init(fabric)) {
 		cmn_err(CE_WARN, "SMUHP: initialisation failed; PCIe hotplug "
 		    "may not function properly");
 	}
 
-	zen_pcie_populate_dbg(fabric, MPCS_POST_HOTPLUG, ZEN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, ZPCS_POST_HOTPLUG, ZEN_IODIE_MATCH_ANY);
 
 	/*
 	 * XXX At some point, maybe not here, but before we really go too much

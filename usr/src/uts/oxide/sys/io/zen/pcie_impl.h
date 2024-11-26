@@ -114,21 +114,30 @@ typedef enum zen_pcie_core_flag {
  * In order to aid PCIe debugging, core and port registers are captured at
  * various stages of PCIe programming and initialization and stored in the
  * corresponding zen_pcie_port_t and zen_pcie_core_t structures. This is costly
- * in both space and time, and is only done on DEBUG kernels.
+ * in both space and time, and is only done on DEBUG kernels. They do not
+ * control any software behaviour other than in mdb.
  */
 typedef enum zen_pcie_config_stage {
-	ZPCS_PRE_DXIO_INIT,
+	ZPCS_PRE_INIT,
+	ZPCS_SM_START,
+	ZPCS_SM_MAPPED,
+	ZPCS_SM_MAPPED_POST,
+	ZPCS_SM_CONFIGURED,
+	ZPCS_SM_CONFIGURED_POST,
+	ZPCS_SM_PERST,
+	ZPCS_SM_PERST_POST,
+	ZPCS_SM_DONE,
 	ZPCS_PRE_HOTPLUG,
 	ZPCS_POST_HOTPLUG,
+	ZPCS_USER_DIRECTED,
+	ZPCS_NUM_STAGES
 } zen_pcie_config_stage_t;
-
-#define	ZPCS_MAX_STAGES	15
 
 typedef struct zen_pcie_reg_dbg {
 	const char		*zprd_name;
 	smn_reg_def_t		zprd_def;
-	uint32_t		zprd_val[ZPCS_MAX_STAGES];
-	hrtime_t		zprd_ts[ZPCS_MAX_STAGES];
+	uint32_t		zprd_val[ZPCS_NUM_STAGES];
+	hrtime_t		zprd_ts[ZPCS_NUM_STAGES];
 } zen_pcie_reg_dbg_t;
 
 typedef struct zen_pcie_dbg {

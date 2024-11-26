@@ -901,10 +901,14 @@ zen_mpio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
 static int
 zen_mpio_init_mapping(zen_iodie_t *iodie, void *arg)
 {
+	zen_fabric_t *fabric = iodie->zi_soc->zs_fabric;
+
 	if (!zen_mpio_setup_link_post_map(iodie) || !zen_mpio_recv_ask(iodie)) {
 		cmn_err(CE_WARN, "MPIO map failed");
 		return (1);
 	}
+
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_MAPPED, iodie->zi_node_id);
 
 	if (!zen_mpio_map_engines(iodie->zi_soc->zs_fabric, iodie)) {
 		cmn_err(CE_WARN, "Socket %u failed to map all DXIO engines "
@@ -912,6 +916,8 @@ zen_mpio_init_mapping(zen_iodie_t *iodie, void *arg)
 		    iodie->zi_soc->zs_num);
 		return (1);
 	}
+
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_MAPPED_POST, iodie->zi_node_id);
 
 	return (0);
 }
@@ -953,6 +959,7 @@ static int
 zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
 {
 	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	zen_fabric_t *fabric = iodie->zi_soc->zs_fabric;
 
 	(void) zen_fabric_walk_pcie_core(iodie->zi_soc->zs_fabric,
 	    zen_mpio_pcie_core_op, fops->zfo_init_pcie_straps);
@@ -970,17 +977,24 @@ zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
 		return (1);
 	}
 
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_CONFIGURED, iodie->zi_node_id);
+
 	(void) zen_fabric_walk_pcie_port(iodie->zi_soc->zs_fabric,
 	    zen_mpio_pcie_port_op, fops->zfo_init_pcie_port_after_reconfig);
 	cmn_err(CE_CONT,
 	    "?Socket %u MPIO: Init PCIe port registers post reconfig\n",
 	    iodie->zi_soc->zs_num);
 
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_CONFIGURED_POST,
+	    iodie->zi_node_id);
+
 	if (!zen_mpio_setup_link_post_perst_req(iodie) ||
 	    !zen_mpio_recv_ask(iodie)) {
 		cmn_err(CE_WARN, "MPIO PERST request failed");
 		return (1);
 	}
+
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_PERST, iodie->zi_node_id);
 
 	if (iodie->zi_node_id == 0) {
 		for (size_t i = 0;
@@ -991,11 +1005,15 @@ zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
 		}
 	}
 
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_PERST_POST, iodie->zi_node_id);
+
 	if (!zen_mpio_setup_link_train_enumerate(iodie) ||
 	    !zen_mpio_recv_ask(iodie)) {
 		cmn_err(CE_WARN, "MPIO train and enumerate request failed");
 		return (1);
 	}
+
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_DONE, iodie->zi_node_id);
 
 	return (0);
 }
@@ -1009,7 +1027,7 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 	const zen_hack_ops_t *hops = oxide_zen_hack_ops();
 
-	zen_pcie_populate_dbg(fabric, ZPCS_PRE_DXIO_INIT, ZEN_IODIE_MATCH_ANY);
+	zen_pcie_populate_dbg(fabric, ZPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
 
 	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_data, NULL) != 0) {
 		cmn_err(CE_WARN, "MPIO ASK Initialization failed");
@@ -1036,6 +1054,8 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 		    "data into mpio");
 		return;
 	}
+
+	zen_pcie_populate_dbg(fabric, ZPCS_SM_START, ZEN_IODIE_MATCH_ANY);
 
 	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_mapping, NULL) != 0) {
 		cmn_err(CE_WARN, "MPIO Initialize mapping failed");
