@@ -1354,7 +1354,7 @@ adjmsg(mblk_t *mp, ssize_t len)
  * get number of data bytes in message
  */
 size_t
-msgdsize(mblk_t *bp)
+msgdsize(const mblk_t *bp)
 {
 	size_t count = 0;
 

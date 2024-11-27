@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+#define	VXLAN_UDP_PORT	4789
+
 /* Sizes in bytes */
 #define	VXLAN_HDR_LEN	8
 #define	VXLAN_ID_LEN	3
