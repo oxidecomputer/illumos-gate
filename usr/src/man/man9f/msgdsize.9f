@@ -14,7 +14,7 @@ msgdsize \- return the number of bytes in a message
 
 
 
-\fBsize_t\fR \fBmsgdsize\fR(\fBmblk_t *\fR\fImp\fR);
+\fBsize_t\fR \fBmsgdsize\fR(\fBconst mblk_t *\fR\fImp\fR);
 .fi
 
 .SH INTERFACE LEVEL

@@ -24,7 +24,7 @@
  *
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -59,6 +59,7 @@
 #include <sys/isa_defs.h>
 #include <sys/mac.h>
 #include <sys/mac_client.h>
+#include <sys/mac_provider.h>
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <net/route.h>
@@ -161,6 +162,15 @@ void
 ip_input(ill_t *ill, ill_rx_ring_t *ip_ring, mblk_t *mp_chain,
     struct mac_header_info_s *mhip)
 {
+	/*
+	 * There are currently several places in IP liable to reuse `mblk_t`s,
+	 * which have not been audited to ensure that existing packet header
+	 * information is cleared.
+	 * Strip this information here before delivery to a client.
+	 */
+	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next)
+		mac_ether_clear_pktinfo(mp);
+
 	(void) ip_input_common_v4(ill, ip_ring, mp_chain, mhip, NULL, NULL,
 	    NULL);
 }

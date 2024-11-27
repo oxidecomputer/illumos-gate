@@ -35,7 +35,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 
@@ -407,7 +407,7 @@ viona_tx_offloads(viona_vring_t *ring, const struct virtio_net_mrgrxhdr *hdr,
     const mac_ether_offload_info_t *meoi, mblk_t *mp, uint32_t len)
 {
 	viona_link_t *link = ring->vr_link;
-	const uint32_t cap_csum = link->l_cap_csum;
+	const uint32_t cap_csum = link->l_cap_csum.cso_flags;
 
 	/*
 	 * Since viona is a "legacy device", the data stored by the driver will

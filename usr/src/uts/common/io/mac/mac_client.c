@@ -3479,6 +3479,99 @@ mac_promisc_remove(mac_promisc_handle_t mph)
 }
 
 /*
+ * Compute the HCKSUM flags attached to a given packet which cannot be
+ * offered by the target MAC provider.
+ */
+static uint16_t
+mac_tx_needed_offloads(const mac_impl_t *mip, const mblk_t *mp)
+{
+	const mac_capab_lso_t *lso = &mip->mi_tx_lso_capab;
+	const mac_capab_cso_t *cso = &mip->mi_tx_cksum_capab;
+	const mac_ether_tun_type_t tun_type = mac_ether_tun_type(mp);
+	const uint16_t original = DB_CKSUMFLAGS(mp);
+	uint16_t needed = original;
+	mac_ether_offload_info_t inner;
+	uint32_t tun_flag = 0;
+
+	switch (tun_type) {
+	case METT_NONE:
+		ASSERT3U(needed & HCK_INNER_TX_FLAGS, ==, 0);
+		return ((needed ^ mip->mi_tx_cksum_flags) & needed);
+	case METT_GENEVE:
+		tun_flag = MAC_CAPAB_TUN_TYPE_GENEVE;
+		break;
+	case METT_VXLAN:
+		tun_flag = MAC_CAPAB_TUN_TYPE_VXLAN;
+		break;
+	default:
+		return (needed);
+	}
+
+	/*
+	 * All cases from thsi point are tunnelled.
+	 * We need to know the inner L4 protocol to map to the correct flags.
+	 * If this is isn't prefilled and we cannot parse, then assume that all
+	 * offloads must be emulated.
+	 */
+	unpack_pktinfo(mp->b_datap, &inner);
+	if ((inner.meoi_flags & MEOI_L3INFO_SET) == 0)
+		(void) mac_ether_fullpktinfo(mp, NULL, &inner);
+
+	if ((inner.meoi_flags & MEOI_L3INFO_SET) == 0)
+		return (needed);
+
+	if ((needed & HCK_TX_FLAGS) && (cso->cso_flags & HCKSUM_TUN) &&
+	    (cso->cso_tunnel.ct_types & tun_flag)) {
+		const uint32_t csof = cso->cso_tunnel.ct_flags;
+		uint16_t can_remove = 0;
+
+		switch (inner.meoi_l4proto) {
+		case IPPROTO_TCP:
+			if (csof & MAC_CSO_TUN_INNER_TCP_PARTIAL)
+				can_remove |= HCK_INNER_PARTIAL;
+			if (csof & MAC_CSO_TUN_INNER_TCP_FULL)
+				can_remove |= HCK_INNER_FULL;
+			break;
+		case IPPROTO_UDP:
+			if (csof & MAC_CSO_TUN_INNER_UDP_PARTIAL)
+				can_remove |= HCK_INNER_PARTIAL;
+			if (csof & MAC_CSO_TUN_INNER_UDP_FULL)
+				can_remove |= HCK_INNER_FULL;
+			break;
+		default:
+			break;
+		}
+		if (csof & MAC_CSO_TUN_INNER_IPHDR)
+			can_remove |= HCK_INNER_V4CKSUM;
+		if (csof & MAC_CSO_TUN_OUTER_IPHDR)
+			can_remove |= HCK_IPV4_HDRCKSUM;
+		if (csof & MAC_CSO_TUN_OUTER_UDP_PARTIAL)
+			can_remove |= HCK_PARTIALCKSUM;
+		if (csof & MAC_CSO_TUN_OUTER_UDP_FULL)
+			can_remove |= HCK_FULLCKSUM;
+
+		needed = (needed ^ can_remove) & needed;
+	}
+
+	if ((needed & HW_LSO_FLAGS) && (lso->lso_flags & LSO_TX_TUNNEL_TCP)) {
+		boolean_t outer_cso_invalid = (lso->lso_tunnel_tcp.tun_flags &
+		    LSO_TX_TUNNEL_OUTER_CSUM) == 0;
+
+		/*
+		 * if outer UDP checksum is required but unsupported, we *must*
+		 * emulate LSO and re-add the outer flags.
+		 */
+		if ((original & (HCK_PARTIALCKSUM | HCK_FULLCKSUM)) != 0
+		    && outer_cso_invalid)
+			needed |= original & HCK_OUTER_TX_FLAGS;
+		else if (lso->lso_tunnel_tcp.tun_types & tun_flag)
+			needed &= ~HW_LSO;
+	}
+
+	return (needed);
+}
+
+/*
  * Reference count the number of active Tx threads. MCI_TX_QUIESCE indicates
  * that a control operation wants to quiesce the Tx data flow in which case
  * we return an error. Holding any of the per cpu locks ensures that the
@@ -3668,21 +3761,21 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		while (mp != NULL) {
 			mblk_t *next = mp->b_next;
 			mblk_t *tail = NULL;
-			const uint16_t needed =
-			    (DB_CKSUMFLAGS(mp) ^ mip->mi_tx_cksum_flags) &
-			    DB_CKSUMFLAGS(mp);
+			const uint16_t needed = mac_tx_needed_offloads(mip, mp);
 
 			mp->b_next = NULL;
 
 			if ((needed & (HCK_TX_FLAGS | HW_LSO_FLAGS)) != 0) {
 				mac_emul_t emul = 0;
 
-				if (needed & HCK_IPV4_HDRCKSUM)
+				if (needed & (HCK_IPV4_HDRCKSUM |
+				    HCK_INNER_V4CKSUM))
 					emul |= MAC_IPCKSUM_EMUL;
-				if (needed & (HCK_PARTIALCKSUM | HCK_FULLCKSUM))
+				if (needed & (HCK_PARTIALCKSUM | HCK_FULLCKSUM |
+				    HCK_INNER_PARTIAL | HCK_INNER_FULL))
 					emul |= MAC_HWCKSUM_EMUL;
 				if (needed & HW_LSO)
-					emul = MAC_LSO_EMUL;
+					emul |= MAC_LSO_EMUL;
 
 				mac_hw_emul(&mp, &tail, NULL, emul);
 

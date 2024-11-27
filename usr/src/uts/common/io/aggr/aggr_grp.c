@@ -23,6 +23,7 @@
  * Copyright 2020 Joyent, Inc.
  * Copyright 2020 RackTop Systems, Inc.
  * Copyright 2024 MNX Cloud, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -2469,6 +2470,11 @@ aggr_m_capab_get(void *arg, mac_capab_t cap, void *cap_data)
 
 	switch (cap) {
 	case MAC_CAPAB_HCKSUM: {
+		/*
+		 * Aggr cannot yet forward tunnel-aware checksum offload
+		 * capabilities from its underlying NICs. See the comments in
+		 * aggr_grp_capab_check.
+		 */
 		uint32_t *hcksum_txflags = cap_data;
 		*hcksum_txflags = grp->lg_hcksum_txflags;
 		break;
@@ -3036,8 +3042,8 @@ aggr_m_unicst(void *arg, const uint8_t *macaddr)
 static void
 aggr_grp_capab_set(aggr_grp_t *grp)
 {
-	uint32_t cksum;
 	aggr_port_t *port;
+	mac_capab_cso_t cksum;
 	mac_capab_lso_t cap_lso;
 
 	ASSERT(grp->lg_mh == NULL);
@@ -3053,8 +3059,8 @@ aggr_grp_capab_set(aggr_grp_t *grp)
 
 	for (port = grp->lg_ports; port != NULL; port = port->lp_next) {
 		if (!mac_capab_get(port->lp_mh, MAC_CAPAB_HCKSUM, &cksum))
-			cksum = 0;
-		grp->lg_hcksum_txflags &= cksum;
+			cksum.cso_flags = 0;
+		grp->lg_hcksum_txflags &= cksum.cso_flags;
 
 		grp->lg_vlan &=
 		    !mac_capab_get(port->lp_mh, MAC_CAPAB_NO_NATIVEVLAN, NULL);
@@ -3081,7 +3087,7 @@ aggr_grp_capab_set(aggr_grp_t *grp)
 static boolean_t
 aggr_grp_capab_check(aggr_grp_t *grp, aggr_port_t *port)
 {
-	uint32_t hcksum_txflags;
+	mac_capab_cso_t hcksum;
 
 	ASSERT(grp->lg_ports != NULL);
 
@@ -3095,10 +3101,16 @@ aggr_grp_capab_check(aggr_grp_t *grp, aggr_port_t *port)
 		return (B_FALSE);
 	}
 
-	if (!mac_capab_get(port->lp_mh, MAC_CAPAB_HCKSUM, &hcksum_txflags)) {
+	/*
+	 * We aren't yet forwarding tunneled checksum offload or LSO
+	 * capabilities. This will require deeper comparison of stored state --
+	 * namely, that all devices agree on the supported tunnel types,
+	 * encapsulation size limits, and any per-tunnel information.
+	 */
+	if (!mac_capab_get(port->lp_mh, MAC_CAPAB_HCKSUM, &hcksum)) {
 		if (grp->lg_hcksum_txflags != 0)
 			return (B_FALSE);
-	} else if ((hcksum_txflags & grp->lg_hcksum_txflags) !=
+	} else if ((hcksum.cso_flags & grp->lg_hcksum_txflags) !=
 	    grp->lg_hcksum_txflags) {
 		return (B_FALSE);
 	}

@@ -4722,6 +4722,15 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 		mp_chain = mac_strip_vlan_tag_chain(mp_chain);
 	}
 
+	/*
+	 * There are currently several places in IP liable to reuse `mblk_t`s,
+	 * which have not been audited to ensure that existing packet header
+	 * information is cleared.
+	 * Strip this information here before delivery to a client.
+	 */
+	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next)
+		mac_ether_clear_pktinfo(mp);
+
 	mcip->mci_rx_fn(mcip->mci_rx_arg, mrh, mp_chain, B_FALSE);
 }
 

@@ -87,6 +87,8 @@ struct ether_vlan_extinfo {
 #define	ETHERTYPE_IP		(0x0800)	/* IP protocol */
 #define	ETHERTYPE_ARP		(0x0806)	/* Addr. resolution protocol */
 #define	ETHERTYPE_SIDECAR	(0x0901)	/* Sidecar metadata */
+#define	ETHERTYPE_TRANSETHER	(0x6558)	/* Trans Ether Bridging */
+						/* (RFC1701) */
 #define	ETHERTYPE_REVARP	(0x8035)	/* Reverse ARP */
 #define	ETHERTYPE_AT		(0x809b)	/* AppleTalk protocol */
 #define	ETHERTYPE_AARP		(0x80f3)	/* AppleTalk ARP */

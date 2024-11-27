@@ -439,8 +439,15 @@ struct mac_impl_s {
 	mac_led_mode_t		mi_led_modes;
 	mac_capab_led_t		mi_led;
 
-	/* Cache of the Tx DB_CKSUMFLAGS that this MAC supports. */
+	/*
+	 * Cache of the Tx DB_CKSUMFLAGS that this MAC supports.
+	 * This allows us to cheaply verify all `HCK_OUTER_TX_FLAGS`, however
+	 * any `HCK_INNER_TX_FLAGS` must be checked against ground truth using
+	 * the tunnel type configured on the packet.
+	 */
 	uint16_t		mi_tx_cksum_flags; /* SL */
+	mac_capab_cso_t		mi_tx_cksum_capab; /* SL */
+	mac_capab_lso_t		mi_tx_lso_capab; /* SL */
 
 	/*
 	 * MAC address and VLAN lists. SL protected.
