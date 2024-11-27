@@ -22,6 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef _SYS_PATTR_H
@@ -96,10 +97,18 @@ typedef struct pattr_hcksum_s {
 					/* checksum value to determine if */
 					/* checksum was bad */
 
+#define	HCK_FULLOUTERCKSUM	0x20	/* On Transmit: Compute full checksum */
+					/* for this packet's tunnel layer. */
+					/* Filling this is optional for most */
+					/* tunnelled transports, including */
+					/* IPv6 packets. */
+					/* On Receive: N/A */
+
 #define	HCK_FLAGS		(HCK_IPV4_HDRCKSUM | HCK_PARTIALCKSUM |	\
-				HCK_FULLCKSUM | HCK_FULLCKSUM_OK)
+				HCK_FULLCKSUM | HCK_FULLCKSUM_OK | \
+				HCK_FULLOUTERCKSUM)
 #define	HCK_TX_FLAGS		(HCK_IPV4_HDRCKSUM | HCK_PARTIALCKSUM | \
-				HCK_FULLCKSUM)
+				HCK_FULLCKSUM | HCK_FULLOUTERCKSUM)
 /*
  * Extended hardware offloading flags that also use hcksum_flags
  */

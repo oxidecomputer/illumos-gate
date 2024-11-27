@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef	_SYS_MAC_PROVIDER_H
@@ -74,7 +74,7 @@ extern "C" {
  */
 /*
  * MAC layer capabilities.  These capabilities are handled by the drivers'
- * mc_capab_get() callbacks.  Some capabilities require the driver to fill
+ * mc_getcapab() callbacks.  Some capabilities require the driver to fill
  * in a given data structure, and others are simply boolean capabilities.
  * Note that capability values must be powers of 2 so that consumers and
  * providers of this interface can keep track of which capabilities they
@@ -116,6 +116,30 @@ typedef enum {
 } mac_capab_t;
 
 /*
+ * Flagset of currently supported tunnel classes for tunnelled CSO/LSO offload.
+ */
+#define	MAC_CAPAB_TUN_TYPE_GENEVE	0x01
+#define	MAC_CAPAB_TUN_TYPE_VXLAN	0x02
+
+/*
+ * CSO capability
+ */
+typedef struct cso_tunnel_s {
+	uint32_t	ct_flags;
+	uint32_t	ct_encap_max;	/* maximum encap size */
+	uint32_t	ct_types;	/* supported encapsulation families */
+} cso_tunnel_t;
+
+typedef struct mac_capab_cso_s {
+	/*
+	 * This flags member must come first -- the majority of providers do not
+	 * handle the full mac_capab_cso_t, and expect the flags-only interface.
+	 */
+	uint32_t	cso_flags;
+	cso_tunnel_t	cso_tunnel;
+} mac_capab_cso_t;
+
+/*
  * LSO capability
  */
 typedef struct lso_basic_tcp_ipv4_s {
@@ -126,11 +150,27 @@ typedef struct lso_basic_tcp_ipv6_s {
 	t_uscalar_t	lso_max;		/* maximum payload */
 } lso_basic_tcp_ipv6_t;
 
+typedef struct lso_tunnel_tcp_s {
+	uint32_t tun_pay_max;		/* maximum payload */
+	uint32_t tun_encap_max;		/* maximum encap size */
+	uint32_t tun_flags;		/* supported operations */
+	uint32_t tun_types;	/* supported encapsulation families */
+	uint32_t tun_pad[2];
+} lso_tunnel_tcp_t;
+
 /*
  * Currently supported flags for LSO.
  */
 #define	LSO_TX_BASIC_TCP_IPV4	0x01		/* TCPv4 LSO capability */
 #define	LSO_TX_BASIC_TCP_IPV6	0x02		/* TCPv6 LSO capability */
+#define	LSO_TX_TUNNEL_TCP	0x04		/* Tun-TCP LSO capability */
+
+/*
+ * Currently supported tunnel classes for tunnelled LSO offload.
+ */
+#define	LSO_TX_TUNNEL_OUTER_CSUM	0x01	/* hardware can fill outer */
+						/* UDP or GRE checksum */
+						/* information */
 
 /*
  * Future LSO capabilities can be added at the end of the mac_capab_lso_t.
@@ -144,6 +184,8 @@ typedef	struct mac_capab_lso_s {
 	t_uscalar_t		lso_flags;
 	lso_basic_tcp_ipv4_t	lso_basic_tcp_ipv4;
 	lso_basic_tcp_ipv6_t	lso_basic_tcp_ipv6;
+
+	lso_tunnel_tcp_t	lso_tunnel_tcp;
 	/* Add future lso capabilities here */
 } mac_capab_lso_t;
 
@@ -662,27 +704,85 @@ extern void			mac_transceiver_info_set_usable(
 /*
  * This represents a provisional set of currently illumos-private APIs to get
  * information about a mblk_t chain's type. This is an evolving interface.
+ *
+ * Mac clients can store two classes of information to be used by providers.
+ * These allow us to capture various facts about a packet -- which protocols are
+ * in use for the inner frame, whether a packet is encapsulated in some kind of
+ * tunnel, and the lengths which all their constituent layers consume.
+ *
+ * - mac_ether_offload_info_t.
+ *   This struct contains the length of the inner frame itself, as well as its
+ *   L2/L3/L4 lengths. Lengths must include all extensions and options. Mac
+ *   clients are under no obligation to fill any part of the MEOI -- a provider
+ *   can always reparse a packet using `mac_ether_offload_info` or
+ *   `mac_ether_offload_info_from` from the relevant offset to allow offloads.
+ *
+ * - mac_ether_tun_info_t.
+ *   This struct is necessary to inform mac clients that a packet is, in fact,
+ *   tunnelled (without propagating knowledge of all tunnels bound to given
+ *   5-tuples to providers). Any tunnelled packet must set the flag
+ *   `MEOI_TUNINFO_SET` and set its `mett_tuntype`, otherwise providers
+ *   cannot differentiate the mblk from an unencapsulated packet (and tunnel-
+ *   aware offloads cannot be used).
+ *
+ * If a packet is tunnelled, we have both a tunnel layer and an inner frame.
+ * Otherwise, we only have an inner frame. Mac providers may assume that any
+ * information filled in is correct. Clients which alter any previously valid
+ * field in a packet *must* ensure that lengths and protocol types are fixed up
+ * accordingly or unset the relevant `MEOI_XXINFO_SET` flag.
+ *
+ * When clients fill this information in, mac providers are able to make use of
+ * this information to correctly request offloads from underlying NICs without
+ * needing to reparse the packet, increasing performance.
  */
 typedef enum mac_ether_offload_flags {
 	MEOI_L2INFO_SET		= 1 << 0,
 	MEOI_VLAN_TAGGED	= 1 << 1,
 	MEOI_L3INFO_SET		= 1 << 2,
-	MEOI_L4INFO_SET		= 1 << 3
+	MEOI_L4INFO_SET		= 1 << 3,
+
+	/* Overload between meoi and mett */
+	MEOI_TUNINFO_SET	= 1 << 4
 } mac_ether_offload_flags_t;
 
+#define	MEOI_FULL	(MEOI_L2INFO_SET | MEOI_L3INFO_SET | MEOI_L4INFO_SET)
+#define	MEOI_FULLTUN	(MEOI_L2INFO_SET | MEOI_L3INFO_SET | MEOI_TUNINFO_SET)
+
 typedef struct mac_ether_offload_info {
-	mac_ether_offload_flags_t	meoi_flags;	/* What's valid? */
-	size_t		meoi_len;	/* Total message length */
+	uint8_t		meoi_flags;	/* What's valid? */
 	uint8_t		meoi_l2hlen;	/* How long is the Ethernet header? */
 	uint16_t	meoi_l3proto;	/* What's the Ethertype */
 	uint16_t	meoi_l3hlen;	/* How long is the header? */
 	uint8_t		meoi_l4proto;	/* What is the payload type? */
 	uint8_t		meoi_l4hlen;	/* How long is the L4 header */
+	uint32_t	meoi_len;	/* Total message length of the inner */
+					/* frame (exclusing any bytes covered */
+					/* by mac_ether_tun_info_t */
 } mac_ether_offload_info_t;
+
+typedef enum mac_ether_tun_type {
+	METT_NONE	= 0,
+	METT_GENEVE,
+	METT_VXLAN
+} mac_ether_tun_type_t;
+
+typedef struct mac_ether_tun_info {
+	uint8_t		mett_flags;
+	uint8_t		mett_tuntype;	/* Type of tunnel in use */
+	uint8_t		mett_l2hlen;	/* How long is the Ethernet header? */
+	uint16_t	mett_l3proto;	/* What's the Ethertype */
+	uint16_t	mett_l3hlen;	/* How long is the header? */
+} mac_ether_tun_info_t;
 
 extern int			mac_ether_offload_info(mblk_t *,
 				    mac_ether_offload_info_t *);
+extern int			mac_ether_offload_info_from(mblk_t *,
+				    mac_ether_offload_info_t *, size_t);
+extern int			mac_ether_tun_info(mblk_t *, uint32_t *);
 
+/* Accessors for packets' parse information and tunnel state. */
+#define	DB_MEOI(mp)	((mac_ether_offload_info_t *)(mp)->b_datap->db_meoi)
+#define	DB_METT(mp)	((mac_ether_tun_info_t *)(mp)->b_datap->db_mett)
 
 #endif	/* _KERNEL */
 

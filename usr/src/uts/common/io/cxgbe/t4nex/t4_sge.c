@@ -61,11 +61,12 @@ struct txinfo {
 	uint32_t len;		/* Total length of frame */
 	uint32_t flags;		/* Checksum and LSO flags */
 	uint32_t mss;		/* MSS for LSO */
+	uint8_t encaplen;	/* Total length of tunnel layer */
 	uint8_t nsegs;		/* # of segments in the SGL, 0 means imm. tx */
 	uint8_t nflits;		/* # of flits needed for the SGL */
 	uint8_t hdls_used;	/* # of DMA handles used */
 	uint32_t txb_used;	/* txb_space used */
-	mac_ether_offload_info_t meoi;	/* pkt hdr info for offloads */
+	mac_ether_offload_info_t *meoi;	/* pkt hdr info for offloads */
 	struct ulptx_sgl sgl __attribute__((aligned(8)));
 	struct ulptx_sge_pair reserved[TX_SGL_SEGS / 2];
 };
@@ -1119,7 +1120,13 @@ t4_wrq_tx_locked(struct adapter *sc, struct sge_wrq *wrq, mblk_t *m0)
 /* Header of a tx LSO WR, before SGL of first packet (in flits) */
 #define	TXPKT_LSO_WR_HDR ((\
 	sizeof (struct fw_eth_tx_pkt_wr) + \
-	sizeof(struct cpl_tx_pkt_lso_core) + \
+	sizeof (struct cpl_tx_pkt_lso_core) + \
+	sizeof (struct cpl_tx_pkt_core)) / 8)
+
+/* Header of a tunneled tx LSO WR, before SGL of first packet (in flits) */
+#define	TXPKT_TNL_LSO_WR_HDR ((\
+	sizeof (struct fw_eth_tx_pkt_wr) + \
+	sizeof (struct cpl_tx_tnl_lso) + \
 	sizeof (struct cpl_tx_pkt_core)) / 8)
 
 mblk_t *
@@ -2460,6 +2467,7 @@ get_frame_txinfo(struct sge_txq *txq, mblk_t **fp, struct txinfo *txinfo,
 {
 	uint32_t flags = 0, len, n;
 	mblk_t *m = *fp;
+	mac_ether_offload_info_t *pkt_info = DB_MEOI(m);
 	int rc;
 
 	TXQ_LOCK_ASSERT_OWNED(txq);	/* will manipulate txb and dma_hdls */
@@ -2478,14 +2486,41 @@ get_frame_txinfo(struct sge_txq *txq, mblk_t **fp, struct txinfo *txinfo,
 	 * information about the sizes and types of headers in the packet.
 	 */
 	if (txinfo->flags != 0) {
+		mac_ether_tun_info_t *tun_info = DB_METT(m);
+		boolean_t meoi_prefilled = (pkt_info->meoi_flags & MEOI_FULL) ==
+		    MEOI_FULL;
+		boolean_t tuninfo_prefilled = (tun_info->mett_flags &
+		    MEOI_FULLTUN) == MEOI_FULLTUN;
+		uint32_t encap_len = 0;
+
+		if (tun_info->mett_flags & MEOI_TUNINFO_SET) {
+			/*
+			 * If both layers of packet meta are filled, we can
+			 * quickly derive encap length. Otherwise,
+			 * mac_ether_tun_info will reuse what fields are set.
+			 */
+			if (tuninfo_prefilled && meoi_prefilled)
+				encap_len = (uint32_t)(msgsize(m) -
+				    pkt_info->meoi_len);
+			else
+				(void) mac_ether_tun_info(m, &encap_len);
+		}
+
 		/*
 		 * Even if this fails, the meoi_flags field will be capable of
 		 * communicating the lack of useful packet information.
 		 */
-		(void) mac_ether_offload_info(m, &txinfo->meoi);
+		if (!meoi_prefilled)
+			(void) mac_ether_offload_info_from(m, pkt_info,
+			    (size_t)encap_len);
+
+		txinfo->encaplen = (uint8_t)encap_len;
 	} else {
-		bzero(&txinfo->meoi, sizeof (txinfo->meoi));
+		bzero(pkt_info, sizeof (*pkt_info));
+		txinfo->encaplen = 0;
 	}
+
+	txinfo->meoi = pkt_info;
 
 start:	txinfo->nsegs = 0;
 	txinfo->hdls_used = 0;
@@ -2886,8 +2921,9 @@ static csum_offload_status_t
 csum_to_ctrl(const struct txinfo *txinfo, uint32_t chip_version,
     uint64_t *ctrlp)
 {
-	const mac_ether_offload_info_t *meoi = &txinfo->meoi;
+	const mac_ether_offload_info_t *meoi = txinfo->meoi;
 	const uint32_t tx_flags = txinfo->flags;
+	const uint8_t encap_len = txinfo->encaplen;
 	const boolean_t needs_l3_csum = ((tx_flags & HW_LSO) != 0 || (tx_flags &
 	    HCK_IPV4_HDRCKSUM) != 0) && meoi->meoi_l3proto == ETHERTYPE_IP;
 	const boolean_t needs_l4_csum = (tx_flags & HW_LSO) != 0 ||
@@ -2968,9 +3004,11 @@ csum_to_ctrl(const struct txinfo *txinfo, uint32_t chip_version,
 	/*
 	 * Fill in the requisite L2/L3 header length data.
 	 *
-	 * The Ethernet header length is recorded as 'size - 14 bytes'
+	 * The Ethernet header length is recorded as 'size - 14 bytes'.
+	 * If we have an outer encap header, that is also treated as opaque
+	 * ethernet bytes.
 	 */
-	const uint8_t eth_len = meoi->meoi_l2hlen - 14;
+	const uint8_t eth_len = meoi->meoi_l2hlen - 14 + (uint8_t)encap_len;
 	if (chip_version >= CHELSIO_T6) {
 		ctrl |= V_T6_TXPKT_ETHHDR_LEN(eth_len);
 	} else {
@@ -2994,7 +3032,13 @@ write_txpkt_wr(struct port_info *pi, struct sge_txq *txq, mblk_t *m,
 	int nflits, ndesc;
 	struct tx_sdesc *txsd;
 	caddr_t dst;
-	const mac_ether_offload_info_t *meoi = &txinfo->meoi;
+	const mac_ether_offload_info_t *ulp_meoi = txinfo->meoi;
+	const mac_ether_tun_info_t *tun_info = DB_METT(m);
+	const boolean_t is_tunneled = (tun_info->mett_flags &
+	    MEOI_TUNINFO_SET) != 0;
+	boolean_t do_tso = txinfo->flags & HW_LSO &&
+	    ulp_meoi->meoi_flags & MEOI_L4INFO_SET &&
+	    ulp_meoi->meoi_l4proto == IPPROTO_TCP;
 
 	TXQ_LOCK_ASSERT_OWNED(txq);	/* pidx, avail */
 
@@ -3002,17 +3046,22 @@ write_txpkt_wr(struct port_info *pi, struct sge_txq *txq, mblk_t *m,
 	 * Do we have enough flits to send this frame out?
 	 */
 	ctrl = sizeof (struct cpl_tx_pkt_core);
-	if (txinfo->flags & HW_LSO) {
+	if (do_tso && is_tunneled) {
+		nflits = TXPKT_TNL_LSO_WR_HDR;
+		ctrl += sizeof(struct cpl_tx_tnl_lso);
+	} else if (do_tso) {
 		nflits = TXPKT_LSO_WR_HDR;
 		ctrl += sizeof(struct cpl_tx_pkt_lso_core);
 	} else
 		nflits = TXPKT_WR_HDR;
+
 	if (txinfo->nsegs > 0)
 		nflits += txinfo->nflits;
 	else {
 		nflits += howmany(txinfo->len, 8);
 		ctrl += txinfo->len;
 	}
+
 	ndesc = howmany(nflits, 8);
 	if (ndesc > eq->avail)
 		return (ENOMEM);
@@ -3027,15 +3076,97 @@ write_txpkt_wr(struct port_info *pi, struct sge_txq *txq, mblk_t *m,
 	wr->equiq_to_len16 = cpu_to_be32(ctrl);
 	wr->r3 = 0;
 
-	if (txinfo->flags & HW_LSO &&
-	    (meoi->meoi_flags & MEOI_L4INFO_SET) != 0 &&
-	    meoi->meoi_l4proto == IPPROTO_TCP) {
-		struct cpl_tx_pkt_lso_core *lso = (void *)(wr + 1);
+	if (do_tso) {
+		struct cpl_tx_pkt_lso_core *lso;
 
-		ctrl = V_LSO_OPCODE((u32)CPL_TX_PKT_LSO) | F_LSO_FIRST_SLICE |
-		    F_LSO_LAST_SLICE;
+		if (is_tunneled) {
+			struct cpl_tx_tnl_lso *tnl_lso = (void *)(wr + 1);
 
-		if (meoi->meoi_l2hlen > sizeof (struct ether_header)) {
+			uint32_t op_to_IpIdSplitOut =
+			    V_CPL_TX_TNL_LSO_OPCODE((u32)CPL_TX_TNL_LSO) |
+			    F_CPL_TX_TNL_LSO_FIRST |
+			    F_CPL_TX_TNL_LSO_LAST;
+
+			enum cpl_tx_tnl_lso_type tuntype;
+			switch (tun_info->mett_tuntype) {
+			case (METT_GENEVE):
+				tuntype = TX_TNL_TYPE_GENEVE;
+				break;
+			case (METT_VXLAN):
+				tuntype = TX_TNL_TYPE_VXLAN;
+				break;
+			default:
+				tuntype = TX_TNL_TYPE_OPAQUE;
+				break;
+			}
+
+			/*
+			 * both flags are necessary for vxlan/geneve, not opaque
+			 * or nvgre (lenset, chkclr).
+			 */
+			const uint32_t UdpLenSetOut_to_TnlHdrLen =
+			    F_CPL_TX_TNL_LSO_UDPLENSETOUT |
+			    F_CPL_TX_TNL_LSO_UDPCHKCLROUT |
+			    V_CPL_TX_TNL_LSO_TNLTYPE(tuntype) |
+			    V_CPL_TX_TNL_LSO_TNLHDRLEN(
+			        (uint32_t)txinfo->encaplen);
+
+			switch (tun_info->mett_l3proto) {
+			case ETHERTYPE_IPV6:
+				op_to_IpIdSplitOut |= F_CPL_TX_TNL_LSO_IPV6OUT;
+				/* FALLTHROUGH */
+			case ETHERTYPE_IP:
+				op_to_IpIdSplitOut |=
+				    V_CPL_TX_TNL_LSO_IPHDRLENOUT(
+				    (tun_info->mett_l3hlen / 4) &
+				    M_CPL_TX_TNL_LSO_IPHDRLENOUT) |
+				    F_CPL_TX_TNL_LSO_IPLENSETOUT;
+				break;
+			default:
+				break;
+			}
+
+			/* IPv4 only. */
+			if (tun_info->mett_l3proto == ETHERTYPE_IP) {
+				op_to_IpIdSplitOut |=
+				    F_CPL_TX_TNL_LSO_IPHDRCHKOUT |
+				    F_CPL_TX_TNL_LSO_IPIDINCOUT;
+			}
+
+			if (tun_info->mett_l2hlen >
+			    sizeof (struct ether_header))
+			{
+				/*
+				 * This presently assumes a standard VLAN header
+				 * without support for Q-in-Q.
+				 */
+				op_to_IpIdSplitOut |=
+				    V_CPL_TX_TNL_LSO_ETHHDRLENOUT(1);
+			}
+
+			tnl_lso->op_to_IpIdSplitOut =
+			    cpu_to_be32(op_to_IpIdSplitOut);
+			tnl_lso->IpIdOffsetOut = cpu_to_be16(0);
+			tnl_lso->UdpLenSetOut_to_TnlHdrLen =
+			    cpu_to_be16(UdpLenSetOut_to_TnlHdrLen);
+
+			/*
+			 * Above struct contains flits for standard lso. We'll
+			 * set those using the standard def'n.
+			 */
+			lso = ((void *)tnl_lso) +
+			    offsetof(struct cpl_tx_tnl_lso, Flow_to_TcpHdrLen);
+			ctrl = 0;
+		} else {
+			lso = (void *)(wr + 1);
+
+			/* only set opcode if we're the top-level CPL */
+			ctrl = V_LSO_OPCODE((u32)CPL_TX_PKT_LSO) |
+			    F_LSO_FIRST_SLICE |
+			    F_LSO_LAST_SLICE;
+		}
+
+		if (ulp_meoi->meoi_l2hlen > sizeof (struct ether_header)) {
 			/*
 			 * This presently assumes a standard VLAN header,
 			 * without support for Q-in-Q.
@@ -3043,22 +3174,24 @@ write_txpkt_wr(struct port_info *pi, struct sge_txq *txq, mblk_t *m,
 			ctrl |= V_LSO_ETHHDR_LEN(1);
 		}
 
-		switch (meoi->meoi_l3proto) {
+		switch (ulp_meoi->meoi_l3proto) {
 		case ETHERTYPE_IPV6:
 			ctrl |= F_LSO_IPV6;
 			/* FALLTHROUGH */
 		case ETHERTYPE_IP:
-			ctrl |= V_LSO_IPHDR_LEN(meoi->meoi_l3hlen / 4);
+			ctrl |= V_LSO_IPHDR_LEN((ulp_meoi->meoi_l3hlen / 4) &
+			    M_LSO_IPHDR_LEN);
 			break;
 		default:
 			break;
 		}
 
-		ctrl |= V_LSO_TCPHDR_LEN(meoi->meoi_l4hlen / 4);
+		ctrl |= V_LSO_TCPHDR_LEN((ulp_meoi->meoi_l4hlen / 4)
+		    & M_LSO_TCPHDR_LEN);
 
 		lso->lso_ctrl = cpu_to_be32(ctrl);
 		lso->ipid_ofst = cpu_to_be16(0);
-		lso->mss = cpu_to_be16(txinfo->mss);
+		lso->mss = cpu_to_be16(txinfo->mss & M_LSO_MSS);
 		lso->seqno_offset = cpu_to_be32(0);
 		if (is_t4(pi->adapter->params.chip))
 			lso->len = cpu_to_be32(txinfo->len);
