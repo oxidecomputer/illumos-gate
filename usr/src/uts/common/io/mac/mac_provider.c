@@ -125,16 +125,17 @@ static uint16_t
 mac_features_to_flags(mac_handle_t mh)
 {
 	uint16_t flags = 0;
-	uint32_t cap_sum = 0;
+	mac_capab_cso_t cap_cso;
 	mac_capab_lso_t cap_lso;
 
-	if (mac_capab_get(mh, MAC_CAPAB_HCKSUM, &cap_sum)) {
-		if (cap_sum & HCKSUM_IPHDRCKSUM)
+	if (mac_capab_get(mh, MAC_CAPAB_HCKSUM, &cap_cso)) {
+		if (cap_cso.cso_flags & HCKSUM_IPHDRCKSUM)
 			flags |= HCK_IPV4_HDRCKSUM;
 
-		if (cap_sum & HCKSUM_INET_PARTIAL)
+		if (cap_cso.cso_flags & HCKSUM_INET_PARTIAL)
 			flags |= HCK_PARTIALCKSUM;
-		else if (cap_sum & (HCKSUM_INET_FULL_V4 | HCKSUM_INET_FULL_V6))
+		else if (cap_cso.cso_flags & (HCKSUM_INET_FULL_V4 |
+		    HCKSUM_INET_FULL_V6))
 			flags |= HCK_FULLCKSUM;
 	}
 
@@ -1784,56 +1785,70 @@ mac_meoi_ip6eh_proto(uint8_t id)
 	}
 }
 
-int
-mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
+static int
+mac_meoi_parse_l2(mblk_t *mp, const size_t pktlen, const size_t base,
+    uint8_t *l2hlen, uint16_t *l3proto, uint8_t *flags)
 {
-	size_t off;
-	uint16_t ether, iplen;
-	uint8_t ipproto, ip4verlen, l4len, maclen;
+	size_t off = offsetof(struct ether_header, ether_type) + base;
+	uint8_t maclen;
+	uint16_t ether;
 
-	bzero(meoi, sizeof (mac_ether_offload_info_t));
+	if (*flags & MEOI_L2INFO_SET)
+		return (0);
 
-	const size_t pktlen = msgsize(mp);
-	meoi->meoi_len = pktlen;
-	off = offsetof(struct ether_header, ether_type);
 	if (mac_meoi_get_uint16(mp, off, &ether) != 0)
 		return (-1);
 
 	if (ether == ETHERTYPE_VLAN) {
-		off = offsetof(struct ether_vlan_header, ether_type);
+		off = offsetof(struct ether_vlan_header, ether_type) + base;
 		if (mac_meoi_get_uint16(mp, off, &ether) != 0)
 			return (-1);
-		meoi->meoi_flags |= MEOI_VLAN_TAGGED;
+		*flags |= MEOI_VLAN_TAGGED;
 		maclen = sizeof (struct ether_vlan_header);
 	} else {
 		maclen = sizeof (struct ether_header);
 	}
-	if (maclen > pktlen)
+	if ((base + (size_t)maclen) > pktlen)
 		return (-1);
-	meoi->meoi_flags |= MEOI_L2INFO_SET;
-	meoi->meoi_l2hlen = maclen;
-	meoi->meoi_l3proto = ether;
 
-	switch (ether) {
+	*flags |= MEOI_L2INFO_SET;
+	*l2hlen = maclen;
+	*l3proto = ether;
+
+	return (0);
+}
+
+static int
+mac_meoi_parse_l3(mblk_t *mp, const size_t pktlen, const size_t base,
+    uint16_t *l3hlen, const uint16_t l3proto, uint8_t *l4proto, uint8_t *flags)
+{
+	size_t off;
+	uint8_t ipproto, ip4verlen;
+	uint16_t iplen;
+
+	if (*flags & MEOI_L3INFO_SET)
+		return (0);
+
+	switch (l3proto) {
 	case ETHERTYPE_IP:
 		/*
 		 * For IPv4 we need to get the length of the header, as it can
 		 * be variable.
 		 */
-		off = offsetof(ipha_t, ipha_version_and_hdr_length) + maclen;
+		off = offsetof(ipha_t, ipha_version_and_hdr_length) + base;
 		if (mac_meoi_get_uint8(mp, off, &ip4verlen) != 0)
 			return (-1);
 		ip4verlen &= 0x0f;
 		if (ip4verlen < 5 || ip4verlen > 0x0f)
 			return (-1);
 		iplen = ip4verlen * 4;
-		off = offsetof(ipha_t, ipha_protocol) + maclen;
+		off = offsetof(ipha_t, ipha_protocol) + base;
 		if (mac_meoi_get_uint8(mp, off, &ipproto) == -1)
 			return (-1);
 		break;
 	case ETHERTYPE_IPV6:
 		iplen = sizeof (ip6_t);
-		off = offsetof(ip6_t, ip6_nxt) + maclen;
+		off = offsetof(ip6_t, ip6_nxt) + base;
 		if (mac_meoi_get_uint8(mp, off, &ipproto) == -1)
 			return (-1);
 		/* Chase any extension headers present in packet */
@@ -1841,7 +1856,7 @@ mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
 			uint8_t len_val, next_proto;
 			uint16_t eh_len;
 
-			off = maclen + iplen;
+			off = base + iplen;
 			if (mac_meoi_get_uint8(mp, off, &next_proto) == -1)
 				return (-1);
 			if (ipproto == IPPROTO_FRAGMENT) {
@@ -1887,15 +1902,59 @@ mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
 	default:
 		return (0);
 	}
-	if (((size_t)maclen + (size_t)iplen) > pktlen)
+	if ((base + (size_t)iplen) > pktlen)
 		return (-1);
-	meoi->meoi_l3hlen = iplen;
-	meoi->meoi_l4proto = ipproto;
-	meoi->meoi_flags |= MEOI_L3INFO_SET;
+	*l3hlen = iplen;
+	*l4proto = ipproto;
+	*flags |= MEOI_L3INFO_SET;
 
-	switch (ipproto) {
+	return (0);
+}
+
+int
+mac_ether_offload_info_from(mblk_t *mp, mac_ether_offload_info_t *meoi,
+    const size_t base)
+{
+	int err;
+	size_t off, seen = base;
+	uint16_t dport;
+	uint8_t l4len;
+
+	bzero(meoi, sizeof (mac_ether_offload_info_t));
+
+	/*
+	 * We're parsing out an ethernet frame from a given offset,
+	 * so inner length should be relative to this point.
+	 */
+	const size_t pktlen = msgsize(mp);
+	meoi->meoi_len = pktlen - base;
+
+	err = mac_meoi_parse_l2(mp, pktlen, seen, &meoi->meoi_l2hlen,
+	    &meoi->meoi_l3proto, &meoi->meoi_flags);
+	if (err)
+		return (-1);
+
+	seen += meoi->meoi_l2hlen;
+
+	err = mac_meoi_parse_l3(mp, pktlen, seen, &meoi->meoi_l3hlen,
+	    meoi->meoi_l3proto, &meoi->meoi_l4proto, &meoi->meoi_flags);
+	if (err)
+		return (-1);
+
+	/* We can't extract next-layer info if the l3proto is unrecognised */
+	switch (meoi->meoi_l3proto) {
+	case ETHERTYPE_IP:
+	case ETHERTYPE_IPV6:
+		break;
+	default:
+		return (0);
+	}
+
+	seen += meoi->meoi_l3hlen;
+
+	switch (meoi->meoi_l4proto) {
 	case IPPROTO_TCP:
-		off = offsetof(tcph_t, th_offset_and_rsrvd) + maclen + iplen;
+		off = offsetof(tcph_t, th_offset_and_rsrvd) + seen;
 		if (mac_meoi_get_uint8(mp, off, &l4len) == -1)
 			return (-1);
 		l4len = (l4len & 0xf0) >> 4;
@@ -1913,9 +1972,97 @@ mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
 		return (0);
 	}
 
-	if (((size_t)maclen + (size_t)iplen + (size_t)l4len) > pktlen)
+	if ((seen + (size_t)l4len) > pktlen)
 		return (-1);
 	meoi->meoi_l4hlen = l4len;
 	meoi->meoi_flags |= MEOI_L4INFO_SET;
+
+	return (0);
+}
+
+int
+mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
+{
+	return (mac_ether_offload_info_from(mp, meoi, 0));
+}
+
+int
+mac_ether_tun_info(mblk_t *mp, uint32_t *encap_len)
+{
+	size_t off, seen = 0;
+	int err;
+	uint16_t tunlen;
+	uint8_t l4len, tunlen_raw, l4proto;
+	mac_ether_tun_info_t *mett = DB_METT(mp);
+
+	const size_t pktlen = msgsize(mp);
+	*encap_len = 0;
+	seen = 0;
+
+	if ((mett->mett_flags & MEOI_TUNINFO_SET) == 0 ||
+	    mett->mett_tuntype == METT_NONE) {
+		mett->mett_flags = mett->mett_flags & MEOI_TUNINFO_SET;
+		mett->mett_flags = mett->mett_tuntype = METT_NONE;
+		return (0);
+	}
+
+	err = mac_meoi_parse_l2(mp, pktlen, 0, &mett->mett_l2hlen,
+	    &mett->mett_l3proto, &mett->mett_flags);
+	if (err)
+		return (-1);
+
+	seen += mett->mett_l2hlen;
+
+	/* All supported tunnels are sent over IP. */
+	switch (mett->mett_l3proto) {
+	case ETHERTYPE_IP:
+	case ETHERTYPE_IPV6:
+		break;
+	default:
+		return (-1);
+	}
+
+	err = mac_meoi_parse_l3(mp, pktlen, seen, &mett->mett_l3hlen,
+	    mett->mett_l3proto, &l4proto, &mett->mett_flags);
+	if (err)
+		return (-1);
+
+	seen += mett->mett_l3hlen;
+
+	switch (mett->mett_tuntype) {
+	case METT_GENEVE:
+		/* Carried over UDP. */
+		l4len = 8;
+		tunlen = 8;
+
+		off = seen + (size_t)l4len + (size_t)tunlen;
+		if (off > pktlen)
+			return (-1);
+
+		/* Read options length. */
+		if (mac_meoi_get_uint8(mp, off - (size_t)tunlen, &tunlen_raw) ==
+		    -1)
+			return (-1);
+		tunlen_raw <<= 2;
+		tunlen += (uint16_t)tunlen_raw;
+
+		break;
+	case METT_VXLAN:
+		/* Carried over UDP. */
+		/* Fixed length, no options */
+		l4len = 8;
+		tunlen = 8;
+		break;
+	default:
+		return (-1);
+	}
+
+	off = seen + (size_t)l4len + (size_t)tunlen;
+
+	if (off > pktlen) {
+		return (-1);
+	}
+
+	*encap_len = (uint32_t)off;
 	return (0);
 }

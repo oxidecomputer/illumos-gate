@@ -63,7 +63,7 @@ typedef struct vnic_s {
 	datalink_id_t		vn_link_id;
 	mac_notify_handle_t	vn_mnh;
 
-	uint32_t		vn_hcksum_txflags;
+	mac_capab_cso_t		vn_cap_cso;
 	mac_capab_lso_t		vn_cap_lso;
 	uint32_t		vn_mtu;
 	link_state_t		vn_ls;

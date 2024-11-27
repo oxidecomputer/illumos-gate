@@ -810,8 +810,9 @@ This structure has the following members which are used to indicate
 various types of LSO support.
 .Bd -literal -offset indent
 t_uscalar_t		lso_flags;
-lso_basic_tcp_ivr4_t	lso_basic_tcp_ipv4;
+lso_basic_tcp_ipv4_t	lso_basic_tcp_ipv4;
 lso_basic_tcp_ipv6_t	lso_basic_tcp_ipv6;
+lso_tunnel_tcp_t	lso_tunnel_tcp;
 .Ed
 .Pp
 The

@@ -24,6 +24,7 @@
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2015 Joyent, Inc.  All rights reserved.
  * Copyright 2022 Garrett D'Amore
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -46,6 +47,7 @@
 #include <sys/cred.h>
 #include <sys/t_lock.h>
 #include <sys/model.h>
+#include <sys/types.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -355,7 +357,7 @@ typedef struct datab {
 				uint16_t u16;
 			} cksum_val;    /* used to store calculated cksum */
 			uint16_t flags;
-			uint16_t pad;
+			uint16_t pad; /* GLDv2 TCI, and TCP LSO MSS */
 		} cksum;
 		/*
 		 * Union used for future extensions (pointer to data ?).
@@ -363,6 +365,9 @@ typedef struct datab {
 	} db_struioun;
 	struct fthdr	*db_fthdr;
 	cred_t		*db_credp;	/* credential */
+
+	uint32_t	db_meoi[3];
+	uint32_t	db_mett[2];
 } dblk_t;
 
 #define	db_cksum16	db_struioun.cksum.cksum_val.u16

@@ -24,6 +24,7 @@
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 RackTop Systems.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -4337,7 +4338,9 @@ i_mac_capab_get(mac_handle_t mh, mac_capab_t cap, void *cap_data)
 		/*
 		 * Until we have suppport for TSOv6 emulation in the MAC
 		 * loopback path, do not allow the TSOv6 capability to be
-		 * advertised to consumers.
+		 * advertised to consumers (direct and/or tunnelled).
+		 * Note that LSO_TX_TUNNEL_TCP_IPV4/6 refer to *outer* IP,
+		 * which is trivially emulated.
 		 */
 		if (res && cap == MAC_CAPAB_LSO) {
 			mac_capab_lso_t *cap_lso = cap_data;
