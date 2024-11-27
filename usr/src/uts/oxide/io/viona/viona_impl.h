@@ -35,7 +35,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_VIONA_IMPL_H
@@ -148,7 +148,7 @@ struct viona_link {
 
 	uint32_t		l_features;
 	uint32_t		l_features_hw;
-	uint32_t		l_cap_csum;
+	mac_capab_cso_t		l_cap_csum;
 
 	uint16_t		l_notify_ioport;
 	void			*l_notify_cookie;

@@ -22,6 +22,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -270,6 +271,7 @@ xnbo_open_mac(xnb_t *xnbp, char *mac)
 	struct ether_addr ea;
 	uint_t max_sdu;
 	mac_diag_t diag;
+	mac_capab_cso_t cso;
 
 	if ((err = mac_open_by_linkname(mac, &xnbop->o_mh)) != 0) {
 		cmn_err(CE_WARN, "xnbo_open_mac: "
@@ -361,8 +363,13 @@ xnbo_open_mac(xnb_t *xnbp, char *mac)
 		}
 	}
 
-	if (!mac_capab_get(xnbop->o_mh, MAC_CAPAB_HCKSUM,
-	    &xnbop->o_hcksum_capab))
+	/*
+	 * We do not currently store or forward tunnel-aware
+	 * checksum offload information.
+	 */
+	if (mac_capab_get(xnbop->o_mh, MAC_CAPAB_HCKSUM, &cso))
+		xnbop->o_hcksum_capab = cso.cso_flags & ~HCKSUM_TUN;
+	else
 		xnbop->o_hcksum_capab = 0;
 
 	xnbop->o_running = B_TRUE;

@@ -22,6 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_PATTR_H
@@ -66,27 +67,27 @@ typedef struct pattr_hcksum_s {
 /*
  * Values for hcksum_flags
  */
-#define	HCK_IPV4_HDRCKSUM	0x01	/* On Transmit: Compute IP header */
+#define	HCK_IPV4_HDRCKSUM	0x0001	/* On Transmit: Compute IP header */
 					/* checksum in hardware. */
 
-#define	HCK_IPV4_HDRCKSUM_OK	0x01	/* On Receive: IP header checksum */
+#define	HCK_IPV4_HDRCKSUM_OK	0x0001	/* On Receive: IP header checksum */
 					/* was verified by h/w and is */
 					/* correct. */
 
-#define	HCK_PARTIALCKSUM	0x02	/* On Transmit: Compute partial 1's */
+#define	HCK_PARTIALCKSUM	0x0002	/* On Transmit: Compute partial 1's */
 					/* complement checksum based on */
 					/* start, stuff and end offsets. */
 					/* On Receive : Partial checksum */
 					/* computed and attached. */
 
-#define	HCK_FULLCKSUM		0x04	/* On Transmit: Compute full(in case */
+#define	HCK_FULLCKSUM		0x0004	/* On Transmit: Compute full(in case */
 					/* of TCP/UDP, full is pseudo-header */
 					/* + header + payload) checksum for */
 					/* this packet. */
 					/* On Receive : Full checksum  */
 					/* computed in h/w and is attached */
 
-#define	HCK_FULLCKSUM_OK	0x08	/* On Transmit: N/A */
+#define	HCK_FULLCKSUM_OK	0x0008	/* On Transmit: N/A */
 					/* On Receive: Full checksum status */
 					/* If set, implies full checksum */
 					/* computation was successful */
@@ -96,14 +97,48 @@ typedef struct pattr_hcksum_s {
 					/* checksum value to determine if */
 					/* checksum was bad */
 
+#define	HCK_INNER_V4CKSUM	0x0020	/* On Transmit: Compute inner IPv4 */
+					/* header checksum in hardware. */
+
+#define	HCK_INNER_V4CKSUM_OK	0x0040	/* On Receive: inner IPv4 header */
+					/* checksum was verified by h/w */
+
+#define	HCK_INNER_PARTIAL	0x0080	/* On Transmit: Compute partial 1's */
+					/* complement checksum for inner */
+					/* frame TCP/UDP */
+
+#define	HCK_INNER_FULL		0x0100	/* On Transmit: Compute full checksum */
+					/* for this packet's inner TCP/UDP */
+					/* layer. */
+					/* On Receive: N/A */
+
+#define	HCK_INNER_FULL_OK	0x0200	/* On Transmit: N/A */
+					/* On Receive: L4 checksum status */
+					/* If set, implies full checksum */
+					/* computation was successful */
+					/* i.e. checksum was correct on */
+					/* inner TCP/UDP layer. */
+					/* If it is not set, IP will also */
+					/* check the attached h/w computed */
+					/* checksum value to determine if */
+					/* checksum was bad */
+
 #define	HCK_FLAGS		(HCK_IPV4_HDRCKSUM | HCK_PARTIALCKSUM |	\
-				HCK_FULLCKSUM | HCK_FULLCKSUM_OK)
+				HCK_FULLCKSUM | HCK_FULLCKSUM_OK | \
+				HCK_INNER_V4CKSUM | HCK_INNER_V4CKSUM_OK | \
+				HCK_INNER_PARTIAL | HCK_INNER_FULL | \
+				HCK_INNER_FULL_OK)
 #define	HCK_TX_FLAGS		(HCK_IPV4_HDRCKSUM | HCK_PARTIALCKSUM | \
+				HCK_FULLCKSUM | HCK_INNER_V4CKSUM | \
+				HCK_INNER_PARTIAL | HCK_INNER_FULL)
+#define	HCK_OUTER_TX_FLAGS	(HCK_IPV4_HDRCKSUM | HCK_PARTIALCKSUM | \
 				HCK_FULLCKSUM)
+#define	HCK_INNER_TX_FLAGS	(HCK_INNER_V4CKSUM | HCK_INNER_PARTIAL | \
+				HCK_INNER_FULL)
 /*
  * Extended hardware offloading flags that also use hcksum_flags
  */
-#define	HW_LSO			0x10	/* On Transmit: hardware does LSO */
+#define	HW_LSO			0x0010	/* On Transmit: hardware does LSO */
 					/* On Receive: N/A */
 
 #define	HW_LSO_FLAGS		HW_LSO	/* All LSO flags, currently only one */

@@ -35,7 +35,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 
@@ -407,7 +407,7 @@ viona_tx_offloads(viona_vring_t *ring, const struct virtio_net_mrgrxhdr *hdr,
     const mac_ether_offload_info_t *meoi, mblk_t *mp, uint32_t len)
 {
 	viona_link_t *link = ring->vr_link;
-	const uint32_t cap_csum = link->l_cap_csum;
+	const uint32_t cap_csum = link->l_cap_csum.cso_flags;
 
 	/*
 	 * Since viona is a "legacy device", the data stored by the driver will
@@ -626,7 +626,7 @@ viona_tx_copy_headers(viona_vring_t *ring, iov_bunch_t *iob, mblk_t *mp,
 		VERIFY(MBLKTAIL(mp) >= pkt_size);
 		VERIFY(iov_bunch_copy(iob, mp->b_wptr, pkt_size));
 		mp->b_wptr += pkt_size;
-		mac_ether_offload_info(mp, meoi);
+		mac_ether_offload_info(mp, meoi, NULL);
 		return (B_TRUE);
 	}
 
@@ -641,16 +641,16 @@ viona_tx_copy_headers(viona_vring_t *ring, iov_bunch_t *iob, mblk_t *mp,
 	mp->b_wptr += copy_sz;
 
 	if (iob->ib_remain == 0) {
-		mac_ether_offload_info(mp, meoi);
+		mac_ether_offload_info(mp, meoi, NULL);
 		return (B_TRUE);
 	}
 
-	mac_ether_offload_info(mp, meoi);
+	mac_ether_offload_info(mp, meoi, NULL);
 	if ((meoi->meoi_flags & MEOI_L2INFO_SET) == 0) {
 		/* If the L2 header cannot be parsed, give up now */
 		return (B_FALSE);
 	}
-	if ((meoi->meoi_flags & MEOI_L4INFO_SET) != 0) {
+	if (mac_meoi_is_full(meoi)) {
 		const uint32_t full_hdr_sz =
 		    meoi->meoi_l2hlen + meoi->meoi_l3hlen + meoi->meoi_l4hlen;
 		if (copy_sz >= full_hdr_sz) {
@@ -673,7 +673,7 @@ viona_tx_copy_headers(viona_vring_t *ring, iov_bunch_t *iob, mblk_t *mp,
 	remain_mp->b_wptr += remain_sz;
 	mp->b_cont = remain_mp;
 	/* Refresh header info now that we have copied the rest */
-	mac_ether_offload_info(mp, meoi);
+	mac_ether_offload_info(mp, meoi, NULL);
 
 	return (B_TRUE);
 }
