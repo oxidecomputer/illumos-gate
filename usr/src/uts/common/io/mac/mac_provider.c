@@ -24,7 +24,7 @@
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -125,16 +125,17 @@ static uint16_t
 mac_features_to_flags(mac_handle_t mh)
 {
 	uint16_t flags = 0;
-	uint32_t cap_sum = 0;
+	mac_capab_cso_t cap_cso;
 	mac_capab_lso_t cap_lso;
 
-	if (mac_capab_get(mh, MAC_CAPAB_HCKSUM, &cap_sum)) {
-		if (cap_sum & HCKSUM_IPHDRCKSUM)
+	if (mac_capab_get(mh, MAC_CAPAB_HCKSUM, &cap_cso)) {
+		if (cap_cso.cso_flags & HCKSUM_IPHDRCKSUM)
 			flags |= HCK_IPV4_HDRCKSUM;
 
-		if (cap_sum & HCKSUM_INET_PARTIAL)
+		if (cap_cso.cso_flags & HCKSUM_INET_PARTIAL)
 			flags |= HCK_PARTIALCKSUM;
-		else if (cap_sum & (HCKSUM_INET_FULL_V4 | HCKSUM_INET_FULL_V6))
+		else if (cap_cso.cso_flags & (HCKSUM_INET_FULL_V4 |
+		    HCKSUM_INET_FULL_V6))
 			flags |= HCK_FULLCKSUM;
 	}
 
@@ -1784,23 +1785,22 @@ mac_meoi_ip6eh_proto(uint8_t id)
 	}
 }
 
-int
-mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
+static int
+mac_meoi_parse_l2(mblk_t *mp, const size_t pktlen, const size_t base,
+    mac_ether_offload_info_t *meoi)
 {
-	size_t off;
-	uint16_t ether, iplen;
-	uint8_t ipproto, ip4verlen, l4len, maclen;
+	size_t off = offsetof(struct ether_header, ether_type) + base;
+	uint8_t maclen;
+	uint16_t ether;
 
-	bzero(meoi, sizeof (mac_ether_offload_info_t));
+	if (meoi->meoi_flags & MEOI_L2INFO_SET)
+		return (0);
 
-	const size_t pktlen = msgsize(mp);
-	meoi->meoi_len = pktlen;
-	off = offsetof(struct ether_header, ether_type);
 	if (mac_meoi_get_uint16(mp, off, &ether) != 0)
 		return (-1);
 
 	if (ether == ETHERTYPE_VLAN) {
-		off = offsetof(struct ether_vlan_header, ether_type);
+		off = offsetof(struct ether_vlan_header, ether_type) + base;
 		if (mac_meoi_get_uint16(mp, off, &ether) != 0)
 			return (-1);
 		meoi->meoi_flags |= MEOI_VLAN_TAGGED;
@@ -1808,32 +1808,47 @@ mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
 	} else {
 		maclen = sizeof (struct ether_header);
 	}
-	if (maclen > pktlen)
+	if ((base + (size_t)maclen) > pktlen)
 		return (-1);
+
 	meoi->meoi_flags |= MEOI_L2INFO_SET;
 	meoi->meoi_l2hlen = maclen;
 	meoi->meoi_l3proto = ether;
 
-	switch (ether) {
+	return (0);
+}
+
+static int
+mac_meoi_parse_l3(mblk_t *mp, const size_t pktlen, const size_t base,
+    mac_ether_offload_info_t *meoi)
+{
+	size_t off;
+	uint8_t ipproto, ip4verlen;
+	uint16_t iplen;
+
+	if (meoi->meoi_flags & MEOI_L3INFO_SET)
+		return (0);
+
+	switch (meoi->meoi_l3proto) {
 	case ETHERTYPE_IP:
 		/*
 		 * For IPv4 we need to get the length of the header, as it can
 		 * be variable.
 		 */
-		off = offsetof(ipha_t, ipha_version_and_hdr_length) + maclen;
+		off = offsetof(ipha_t, ipha_version_and_hdr_length) + base;
 		if (mac_meoi_get_uint8(mp, off, &ip4verlen) != 0)
 			return (-1);
 		ip4verlen &= 0x0f;
 		if (ip4verlen < 5 || ip4verlen > 0x0f)
 			return (-1);
 		iplen = ip4verlen * 4;
-		off = offsetof(ipha_t, ipha_protocol) + maclen;
+		off = offsetof(ipha_t, ipha_protocol) + base;
 		if (mac_meoi_get_uint8(mp, off, &ipproto) == -1)
 			return (-1);
 		break;
 	case ETHERTYPE_IPV6:
 		iplen = sizeof (ip6_t);
-		off = offsetof(ip6_t, ip6_nxt) + maclen;
+		off = offsetof(ip6_t, ip6_nxt) + base;
 		if (mac_meoi_get_uint8(mp, off, &ipproto) == -1)
 			return (-1);
 		/* Chase any extension headers present in packet */
@@ -1841,7 +1856,7 @@ mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
 			uint8_t len_val, next_proto;
 			uint16_t eh_len;
 
-			off = maclen + iplen;
+			off = base + iplen;
 			if (mac_meoi_get_uint8(mp, off, &next_proto) == -1)
 				return (-1);
 			if (ipproto == IPPROTO_FRAGMENT) {
@@ -1887,15 +1902,60 @@ mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
 	default:
 		return (0);
 	}
-	if (((size_t)maclen + (size_t)iplen) > pktlen)
+	if ((base + (size_t)iplen) > pktlen)
 		return (-1);
+	meoi->meoi_flags |= MEOI_L3INFO_SET;
 	meoi->meoi_l3hlen = iplen;
 	meoi->meoi_l4proto = ipproto;
-	meoi->meoi_flags |= MEOI_L3INFO_SET;
 
-	switch (ipproto) {
+	return (0);
+}
+
+int
+mac_ether_offload_info_from(mblk_t *mp, mac_ether_offload_info_t *meoi,
+    const size_t base)
+{
+	int err;
+	size_t off, seen = base;
+	uint16_t dport;
+	uint8_t l4len;
+
+	bzero(meoi, sizeof (mac_ether_offload_info_t));
+
+	/*
+	 * We're parsing out an ethernet frame from a given offset,
+	 * so inner length should be relative to this point.
+	 */
+	const size_t pktlen = msgsize(mp);
+	meoi->meoi_len = pktlen - base;
+
+	err = mac_meoi_parse_l2(mp, pktlen, seen, meoi);
+	if (err)
+		return (-1);
+
+	seen += meoi->meoi_l2hlen;
+
+	err = mac_meoi_parse_l3(mp, pktlen, seen, meoi);
+	if (err)
+		return (-1);
+
+	/* We can't extract next-layer info if the l3proto is unrecognised */
+	switch (meoi->meoi_l3proto) {
+	case ETHERTYPE_IP:
+	case ETHERTYPE_IPV6:
+		break;
+	default:
+		return (0);
+	}
+
+	seen += meoi->meoi_l3hlen;
+
+	if (meoi->meoi_flags & MEOI_L4INFO_SET)
+		return (0);
+
+	switch (meoi->meoi_l4proto) {
 	case IPPROTO_TCP:
-		off = offsetof(tcph_t, th_offset_and_rsrvd) + maclen + iplen;
+		off = offsetof(tcph_t, th_offset_and_rsrvd) + seen;
 		if (mac_meoi_get_uint8(mp, off, &l4len) == -1)
 			return (-1);
 		l4len = (l4len & 0xf0) >> 4;
@@ -1913,9 +1973,457 @@ mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
 		return (0);
 	}
 
-	if (((size_t)maclen + (size_t)iplen + (size_t)l4len) > pktlen)
+	if ((seen + (size_t)l4len) > pktlen)
 		return (-1);
 	meoi->meoi_l4hlen = l4len;
 	meoi->meoi_flags |= MEOI_L4INFO_SET;
+
 	return (0);
+}
+
+int
+mac_ether_offload_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
+{
+	return (mac_ether_offload_info_from(mp, meoi, 0));
+}
+
+int
+mac_ether_tun_info(mblk_t *mp, mac_ether_offload_info_t *meoi)
+{
+	size_t off, seen = 0;
+	int err;
+	uint16_t tunlen;
+	uint8_t l4len, tunlen_raw, l4proto;
+
+	const size_t pktlen = msgsize(mp);
+	meoi->meoi_len = pktlen;
+	seen = 0;
+
+	if (meoi->meoi_tuntype == METT_NONE) {
+		meoi->meoi_flags = meoi->meoi_flags & MEOI_TUNINFO_SET;
+		meoi->meoi_tuntype = METT_NONE;
+		return (0);
+	}
+
+	err = mac_meoi_parse_l2(mp, pktlen, 0, meoi);
+	if (err)
+		return (-1);
+
+	seen += meoi->meoi_l2hlen;
+
+	/* All supported tunnels are sent over IP. */
+	switch (meoi->meoi_l3proto) {
+	case ETHERTYPE_IP:
+	case ETHERTYPE_IPV6:
+		break;
+	default:
+		return (-1);
+	}
+
+	err = mac_meoi_parse_l3(mp, pktlen, seen, meoi);
+	if (err)
+		return (-1);
+
+	seen += meoi->meoi_l3hlen;
+
+	if ((meoi->meoi_flags & (MEOI_L4INFO_SET | MEOI_TUNINFO_SET)) ==
+	    (MEOI_L4INFO_SET | MEOI_TUNINFO_SET))
+		return (0);
+
+	switch (meoi->meoi_tuntype) {
+	case METT_GENEVE:
+		/* Carried over UDP. */
+		l4len = sizeof (struct udphdr);
+		tunlen = 8;
+
+		off = seen + (size_t)l4len + (size_t)tunlen;
+		if (off > pktlen)
+			return (-1);
+
+		/* Read options length. */
+		if (mac_meoi_get_uint8(mp, off - (size_t)tunlen, &tunlen_raw) ==
+		    -1)
+			return (-1);
+		tunlen_raw <<= 2;
+		tunlen += (uint16_t)tunlen_raw;
+
+		break;
+	case METT_VXLAN:
+		/* Carried over UDP. */
+		/* Fixed length, no options */
+		l4len = sizeof (struct udphdr);
+		tunlen = 8;
+		break;
+	default:
+		return (-1);
+	}
+
+	off = seen + (size_t)l4len + (size_t)tunlen;
+
+	if (off > pktlen) {
+		return (-1);
+	}
+
+	meoi->meoi_flags |= MEOI_L4INFO_SET | MEOI_TUNINFO_SET;
+	meoi->meoi_l4hlen = l4len;
+	meoi->meoi_tunhlen = tunlen;
+
+	return (0);
+}
+
+static inline void
+unpack_pktinfo(dblk_t *db, mac_ether_offload_info_t *info)
+{
+	info->meoi_flags = db->db_pktinfo.p_flags;
+	info->meoi_tuntype = METT_NONE;
+	info->meoi_l2hlen = db->db_pktinfo.p_l2hlen;
+	info->meoi_l3proto = db->db_pktinfo.p_l3proto;
+	info->meoi_l3hlen = db->db_pktinfo.p_l3hlen;
+	info->meoi_l4proto = db->db_pktinfo.p_l4proto;
+	info->meoi_l4hlen = db->db_pktinfo.p_l4hlen;
+	info->meoi_tunhlen = 0;
+}
+
+static inline int
+pack_pktinfo(dblk_t *db, mac_ether_offload_info_t *info)
+{
+	if (info->meoi_flags & MEOI_TUNINFO_SET)
+		return (-1);
+	db->db_pktinfo.p_flags = info->meoi_flags;
+	db->db_pktinfo.p_l2hlen = info->meoi_l2hlen;
+	db->db_pktinfo.p_l3proto = info->meoi_l3proto;
+	db->db_pktinfo.p_l3hlen = info->meoi_l3hlen;
+	db->db_pktinfo.p_l4proto = info->meoi_l4proto;
+	db->db_pktinfo.p_l4hlen = info->meoi_l4hlen;
+
+	return (0);
+}
+
+static inline void
+unpack_tunpktinfo(dblk_t *db, mac_ether_offload_info_t *info)
+{
+	/* Synthesise L4 info from tuninfo */
+	info->meoi_flags = db->db_pktinfo.t_flags | MEOI_L4INFO_SET;
+	info->meoi_tuntype = db->db_pktinfo.t_tuntype;
+	info->meoi_l2hlen = db->db_pktinfo.t_l2hlen;
+	info->meoi_l3proto = db->db_pktinfo.t_l3proto;
+	info->meoi_l3hlen = db->db_pktinfo.t_l3hlen;
+
+	/* This asumption holds true for Geneve/VXLAN. */
+	info->meoi_l4proto = IPPROTO_UDP;
+	info->meoi_l4hlen = sizeof (struct udphdr);
+	info->meoi_tunhlen = db->db_pktinfo.t_tunhlen - info->meoi_l4hlen;
+}
+
+static inline int
+pack_tunpktinfo(dblk_t *db, mac_ether_offload_info_t *info)
+{
+	db->db_pktinfo.t_flags = (info->meoi_flags & !MEOI_L4INFO_SET) |
+	    ((info->meoi_flags & MEOI_TUNINFO_SET) << 1);
+
+	db->db_pktinfo.t_l2hlen = info->meoi_l2hlen;
+	db->db_pktinfo.t_l3proto = info->meoi_l3proto;
+	db->db_pktinfo.t_l3hlen = info->meoi_l3hlen;
+	db->db_pktinfo.t_tunhlen = info->meoi_l4hlen + info->meoi_tunhlen;
+	db->db_pktinfo.t_tuntype = info->meoi_tuntype;
+
+	return (0);
+}
+
+/*
+ * Retrieve the lengths/types of a packet's outermost header layers, parsing the
+ * packet to fill any missing values.
+ */
+int
+mac_ether_pktinfo(mblk_t *pkt, mac_ether_offload_info_t *info)
+{
+	int err = 0;
+	dblk_t *db = pkt->b_datap;
+
+	if (db->db_pktinfo.t_tuntype == METT_NONE) {
+		unpack_pktinfo(db, info);
+		err = mac_ether_offload_info(pkt, info);
+		if (!err)
+			err = pack_pktinfo(db, info);
+	} else {
+		unpack_tunpktinfo(db, info);
+		err = mac_ether_tun_info(pkt, info);
+		if (!err)
+			err = pack_tunpktinfo(db, info);
+	}
+
+	return (err);
+}
+
+/*
+ * Retrieve the lengths/types of a packet's outermost header layers, exactly as
+ * recorded by previous MAC clients.
+ */
+void
+mac_ether_pktinfo_verbatim(mblk_t *pkt, mac_ether_offload_info_t *info)
+{
+	dblk_t *db = pkt->b_datap;
+
+	if (db->db_pktinfo.t_tuntype == METT_NONE)
+		unpack_pktinfo(db, info);
+	else
+		unpack_tunpktinfo(db, info);
+}
+
+/*
+ * Set the lengths/state of a packet's outermost header layers.
+ *
+ * This is considered authoratitive:
+ * - if meoi_tuntype is NONE, existing tunnel state will be invalidated.
+ * - else, existing inner packet state will be invalidated.
+ */
+int
+mac_ether_set_pktinfo(mblk_t *pkt, mac_ether_offload_info_t *info)
+{
+	int err = 0;
+	dblk_t *db = pkt->b_datap;
+
+	if (info->meoi_tuntype == METT_NONE) {
+		db->db_pktinfo.t_flags = 0;
+		db->db_pktinfo.t_tuntype = METT_NONE;
+		err = pack_pktinfo(db, info);
+	} else {
+		db->db_pktinfo.p_flags = 0;
+		err = pack_tunpktinfo(db, info);
+	}
+
+	return (err);
+}
+
+/*
+ * Retrieve the lengths/types of a packet's header layers, parsing the packet to
+ * fill any missing values. Both inner_info and outer_info are optional
+ * parameters.
+ *
+ * - outer_info will have valid contents.
+ * - inner_info will have valid contents iff. outer info has a valid tunnel
+ *   specification.
+ */
+int
+mac_ether_fullpktinfo(mblk_t *pkt, mac_ether_offload_info_t *outer_info,
+    mac_ether_offload_info_t *inner_info)
+{
+	int err = 0;
+	dblk_t *db = pkt->b_datap;
+	boolean_t is_tun = db->db_pktinfo.t_tuntype != METT_NONE;
+	mac_ether_offload_info_t tmp = {
+		.meoi_flags = 0,
+		.meoi_tuntype = METT_NONE,
+	};
+	mac_ether_offload_info_t *outer_target = outer_info ? outer_info : &tmp;
+
+	/*
+	 * If outer is a tunnel, then we need it fully parsed to derive the
+	 * offset for inner parsing.
+	 */
+	if (outer_target != NULL || (is_tun && inner_info != NULL)) {
+		outer_target->meoi_flags = 0;
+		err = mac_ether_pktinfo(pkt, outer_target);
+		if (err != 0)
+			return (err);
+	}
+
+	if (inner_info != NULL) {
+		inner_info->meoi_flags = 0;
+		inner_info->meoi_tuntype = METT_NONE;
+
+		if (is_tun) {
+			size_t inner_offset = outer_target->meoi_l2hlen +
+			    outer_target->meoi_l3hlen +
+			    outer_target->meoi_l4hlen +
+			    outer_target->meoi_tunhlen;
+
+			if ((outer_target->meoi_flags & MEOI_FULLTUN) !=
+			    MEOI_FULLTUN)
+				return (-1);
+
+			unpack_pktinfo(db, inner_info);
+			err = mac_ether_offload_info_from(pkt, inner_info,
+			    inner_offset);
+			if (err != 0)
+				err = pack_pktinfo(db, inner_info);
+		}
+	}
+
+	return (err);
+}
+
+/*
+ * Retrieve the lengths/types of a packet's header layers, exactly as recorded
+ * by previous MAC clients. Both inner_info and outer_info are optional
+ * parameters.
+ *
+ * - outer_info will have valid contents.
+ * - inner_info will have valid contents iff. outer info has a valid tunnel
+ *   specification.
+ */
+void
+mac_ether_fullpktinfo_verbatim(mblk_t *pkt,
+    mac_ether_offload_info_t *outer_info, mac_ether_offload_info_t *inner_info)
+{
+	dblk_t *db = pkt->b_datap;
+
+	if (outer_info != NULL) {
+		mac_ether_pktinfo_verbatim(pkt, outer_info);
+	}
+
+	if (inner_info != NULL) {
+		inner_info->meoi_flags = 0;
+		inner_info->meoi_tuntype = METT_NONE;
+
+		if (db->db_pktinfo.t_tuntype != METT_NONE)
+			unpack_pktinfo(db, inner_info);
+	}
+
+}
+
+/*
+ * Set the lengths/state of a packet's header layers.
+ *
+ * This is considered authoratitive, and overwrites existing state. However:
+ * - outer_info is a mandatory parameter.
+ * - if inner_info is provided it must have a tunnel type of METT_NONE, and
+ *   outer_info must have a valid (non-NONE) tunnel type.
+ */
+int
+mac_ether_set_fullpktinfo(mblk_t *pkt, mac_ether_offload_info_t *outer_info,
+    mac_ether_offload_info_t *inner_info)
+{
+	int err = 0;
+	dblk_t *db = pkt->b_datap;
+
+	ASSERT3P(outer_info, !=, NULL);
+
+	/* if both, outer must have tuntype. inner must not. */
+	if (inner_info != NULL && (outer_info->meoi_tuntype == METT_NONE ||
+	    inner_info->meoi_tuntype != METT_NONE))
+		return (-1);
+
+	err = mac_ether_set_pktinfo(pkt, outer_info);
+	if (err != 0 || inner_info == NULL)
+		return (err);
+
+	return (pack_pktinfo(db, inner_info));
+}
+
+/*
+ * Unset all packet info (inner and outer) on a given mblk.
+ */
+void
+mac_ether_clear_pktinfo(mblk_t *pkt)
+{
+	pkt->b_datap->db_meoi.valid = 0;
+}
+
+/*
+ * Push an (unparsed) tunnel layer in front of existing packet facts.
+ * Preserves the current packet info.
+ *
+ * Fails if the packet is already tunneled.
+ */
+int
+mac_ether_push_tun(mblk_t *pkt, mac_ether_tun_type_t ty)
+{
+	dblk_t *db = pkt->b_datap;
+
+	if (db->db_pktinfo.t_tuntype != METT_NONE)
+		return (-1);
+
+	db->db_pktinfo.t_tuntype = ty;
+	db->db_pktinfo.t_flags = 0;
+
+	return (0);
+}
+
+/* Convert current packet info into tunnel info, when the type is known. */
+int
+mac_ether_shift_tun(mblk_t *pkt, mac_ether_tun_type_t ty)
+{
+	dblk_t *db = pkt->b_datap;
+	mac_ether_offload_info_t tmp;
+
+	if (ty == METT_NONE)
+		return (-1);
+
+	DB_CKSUMFLAGS(pkt) = mac_hcksum_flags_shift_out(DB_CKSUMFLAGS(pkt));
+
+	unpack_pktinfo(db, &tmp);
+	tmp.meoi_tuntype = ty;
+	return (pack_tunpktinfo(db, &tmp));
+}
+
+/*
+ * Push a parsed tunnel layer in front of existing packet facts.
+ * Preserves the current packet info.
+ *
+ * Fails if the packet is already tunneled.
+ */
+int
+mac_ether_push_tuninfo(mblk_t *pkt, mac_ether_offload_info_t *info)
+{
+	dblk_t *db = pkt->b_datap;
+
+	if (db->db_pktinfo.t_tuntype != METT_NONE ||
+	    info->meoi_tuntype == METT_NONE)
+		return (-1);
+
+	return (pack_tunpktinfo(db, info));
+}
+
+/* Removes all tunnel info from this mblk. */
+int
+mac_ether_pop_tun(mblk_t *pkt)
+{
+	dblk_t *db = pkt->b_datap;
+	db->db_pktinfo.t_flags = 0;
+	db->db_pktinfo.t_tuntype = METT_NONE;
+
+	DB_CKSUMFLAGS(pkt) = mac_hcksum_flags_shift_in(DB_CKSUMFLAGS(pkt));
+
+	return (0);
+}
+
+/* Moves a set of checksum flags from the inner layer to the outer. */
+uint32_t
+mac_hcksum_flags_shift_out(uint32_t flags)
+{
+	uint32_t out = flags & ~HCK_FLAGS;
+
+	if (flags & HCK_INNER_V4CKSUM)
+		out |= HCK_IPV4_HDRCKSUM;
+	if (flags & HCK_INNER_V4CKSUM_OK)
+		out |= HCK_IPV4_HDRCKSUM_OK;
+	if (flags & HCK_INNER_PARTIAL)
+		out |= HCK_PARTIALCKSUM;
+	if (flags & HCK_INNER_FULL)
+		out |= HCK_FULLCKSUM;
+	if (flags & HCK_INNER_FULL_OK)
+		out |= HCK_FULLCKSUM_OK;
+
+	return (out);
+}
+
+/* Moves a set of checksum flags from the outer layer to the inner. */
+uint32_t
+mac_hcksum_flags_shift_in(uint32_t flags)
+{
+	uint32_t out = flags & ~HCK_FLAGS;
+
+	if (flags & HCK_IPV4_HDRCKSUM)
+		out |= HCK_INNER_V4CKSUM;
+	if (flags & HCK_IPV4_HDRCKSUM_OK)
+		out |= HCK_INNER_V4CKSUM_OK;
+	if (flags & HCK_PARTIALCKSUM)
+		out |= HCK_INNER_PARTIAL;
+	if (flags & HCK_FULLCKSUM)
+		out |= HCK_INNER_FULL;
+	if (flags & HCK_FULLCKSUM_OK)
+		out |= HCK_INNER_FULL_OK;
+
+	return (out);
 }

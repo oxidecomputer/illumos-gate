@@ -136,6 +136,20 @@ argument.
 This flag indicates that the hardware has calculated the full L4 header
 checksum and verified that it is correct.
 The networking stack does not need to verify it.
+.It Sy HCK_INNER_V4CKSUM_OK
+This flag indicates that the hardware has verified the inner IPv4 header of an
+encapsulated packet is correct and that the networking stack does not need to
+verify it.
+.It Sy HCK_INNER_PARTIAL
+This flag indicates that the hardware has computed a partial checksum for the
+ULP of the inner encapsulated frame.
+.It Sy HCK_INNER_FULL
+This flag indicates that the hardware has calculated the full L4 header
+checksum of the inner frame; however, it wants the system to verify it.
+.It Sy HCK_INNER_FULL_OK
+This flag indicates that the hardware has calculated the full L4 header
+checksum of the inner frame and verified that it is correct.
+The networking stack does not need to verify it.
 .El
 .Pp
 The
@@ -150,6 +164,19 @@ If one of the arguments is not required based on the specified value of
 .Fa flags ,
 then the device driver should set any remaining arguments to
 .Sy 0 .
+.Pp
+The
+.Sy HCK_INNER_PARTIAL ,
+.Sy HCK_INNER_FULL ,
+and
+.Sy HCK_INNER_FULL_OK
+flags are similarly mutually exclusive.
+The device driver must only set these flags when it is known that a packet is
+encapsulated, and the
+.Sy mblk_t
+must have a valid tunnel type configured via the
+.Fa mac_ether_offload_info
+internal interfaces.
 .Ss Transmitting Data
 When a device driver is transmitting data and it has advertised that it
 supports the
@@ -187,12 +214,33 @@ driver has advertised that it supports in response to the
 query for the
 .Sy MAC_CAPAB_HCKSUM
 capability.
+If the driver has indicated support for tunnel-aware checksum offloads, then it
+may also observe the below values for encapsulated packets in
+.Fa flags :
+.Bl -tag -width Sy
+.It Sy HCK_INNER_V4CKSUM
+The device driver must compute the inner frame's IPv4 header checksum.
+.It Sy HCK_INNER_PARTIAL
+The device driver needs to compute the partial ones' complement of the
+checksum.
+.It Sy HCK_INNER_FULL
+The device driver should compute the full L4 checksum for the inner frame.
+.El
+.Pp
+In these cases, no additional offsets are provided for the driver.
+Offsets should be computed via the
+.Fa mac_ether_offload_info
+internal interfaces.
 .Pp
 The
 .Sy HCK_PARTIALCKSUM
 and
 .Sy HCK_FULLCKSUM
-flags are mutually exclusive.
+flags are mutually exclusive, as are the
+.Sy HCK_INNER_PARTIAL
+and
+.Sy HCK_INNER_FULL
+flags.
 .Sh CONTEXT
 The
 .Fn mac_hcksum_get
