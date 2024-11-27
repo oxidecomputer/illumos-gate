@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -1637,7 +1637,7 @@ igc_ring_tx(void *arg, mblk_t *mp)
 
 	ASSERT3P(mp->b_next, ==, NULL);
 
-	if (mac_ether_offload_info(mp, &tx.itx_meoi) != 0) {
+	if (mac_ether_offload_info(mp, &tx.itx_meoi, NULL) != 0) {
 		freemsg(mp);
 		ring->itr_stat.its_bad_meo.value.ui64++;
 		return (NULL);

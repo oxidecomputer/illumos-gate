@@ -24,6 +24,7 @@
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2015 Joyent, Inc.  All rights reserved.
  * Copyright 2022 Garrett D'Amore
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -46,6 +47,7 @@
 #include <sys/cred.h>
 #include <sys/t_lock.h>
 #include <sys/model.h>
+#include <sys/types.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -330,6 +332,42 @@ typedef struct free_rtn {
 
 #define	DBLK_REFMAX	255U
 
+#ifdef	_STREAM_DBLK_INTERNALS
+typedef struct packed_meoi {
+	/*
+	 * The flags here contain values of type
+	 * mac_ether_offload_flags. Currently, this runs up to
+	 * (1 << 5) -- 6 flags. Not all are needed, however:
+	 * - Tunnel: MEOI_L4INFO_SET is omitted, and is implied
+	 *   by the tuntype and valid tuninfo.
+	 * - Packet: MEOI_TUNINFO_SET cannot be part of this
+	 *   flagset.
+	 * The values stored here contain the rightward shift of
+	 * all flags following an omitted entry.
+	 */
+	uint16_t t_flags: 5;
+	uint16_t p_flags: 5;
+	uint16_t t_tuntype: 6;
+
+	/* Ethernet Q-in-Q pulls us to 22B. */
+	uint16_t t_l2hlen: 5;
+	uint16_t p_l2hlen: 5;
+	/* Max L4 is TCP -- 60B (TCP). */
+	uint16_t p_l4hlen: 6;
+
+	/* L3 len may be unbounded, thanks to v6EHs */
+	uint16_t t_l3hlen;
+	uint16_t p_l3hlen;
+
+	uint16_t t_l3proto;
+	uint16_t p_l3proto;
+
+	uint16_t t_tunhlen;
+	uint8_t p_l4proto;
+	/* t_l4proto can be derived from t_tuntype */
+} packed_meoi_t;
+#endif	/* _STREAM_DBLK_INTERNALS */
+
 typedef struct datab {
 	frtn_t		*db_frtnp;
 	unsigned char	*db_base;
@@ -355,7 +393,7 @@ typedef struct datab {
 				uint16_t u16;
 			} cksum_val;    /* used to store calculated cksum */
 			uint16_t flags;
-			uint16_t pad;
+			uint16_t pad; /* GLDv2 TCI, and TCP LSO MSS */
 		} cksum;
 		/*
 		 * Union used for future extensions (pointer to data ?).
@@ -363,7 +401,30 @@ typedef struct datab {
 	} db_struioun;
 	struct fthdr	*db_fthdr;
 	cred_t		*db_credp;	/* credential */
+
+	/*
+	 * This union is deliberately used for type punning, making it easier
+	 * to check 'any valid info' and to unset all fields' validity on
+	 * cleanup.
+	 */
+	union {
+#ifdef	_STREAM_DBLK_INTERNALS
+		uint16_t valid;
+		packed_meoi_t pktinfo;
+#endif	/* _STREAM_DBLK_INTERNALS */
+		uint16_t content[8];
+	} db_meoi;
 } dblk_t;
+
+#ifdef	_STREAM_DBLK_INTERNALS
+
+_Static_assert(
+    sizeof (packed_meoi_t) == sizeof (((dblk_t *)0)->db_meoi.content),
+    "dblk_t.db_meoi.content has the wrong size");
+
+#define	db_pktinfo	db_meoi.pktinfo
+
+#endif	/* _STREAM_DBLK_INTERNALS */
 
 #define	db_cksum16	db_struioun.cksum.cksum_val.u16
 #define	db_cksum32	db_struioun.cksum.cksum_val.u32
@@ -799,7 +860,7 @@ extern mblk_t *rmvb(mblk_t *, mblk_t *);
 extern int pullupmsg(struct msgb *, ssize_t);
 extern mblk_t *msgpullup(struct msgb *, ssize_t);
 extern int adjmsg(struct msgb *, ssize_t);
-extern size_t msgdsize(struct msgb *);
+extern size_t msgdsize(const struct msgb *);
 extern mblk_t *getq(queue_t *);
 extern void rmvq(queue_t *, mblk_t *);
 extern void flushq(queue_t *, int);
