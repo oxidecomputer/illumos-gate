@@ -13,6 +13,7 @@
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include "i40e_sw.h"
@@ -2735,7 +2736,7 @@ i40e_ring_tx(void *arg, mblk_t *mp)
 		return (NULL);
 	}
 
-	if (mac_ether_offload_info(mp, &meo) != 0) {
+	if (mac_ether_offload_info(mp, &meo, NULL) != 0) {
 		freemsg(mp);
 		itrq->itrq_txstat.itxs_hck_meoifail.value.ui64++;
 		i40e_ring_tx_exit(itrq);

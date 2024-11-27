@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include "ena.h"
@@ -427,7 +427,7 @@ ena_ring_tx(void *arg, mblk_t *mp)
 		return (NULL);
 	}
 
-	if (mac_ether_offload_info(mp, &meo) != 0) {
+	if (mac_ether_offload_info(mp, &meo, NULL) != 0) {
 		freemsg(mp);
 		mutex_enter(&txq->et_stat_lock);
 		txq->et_stat.ets_hck_meoifail.value.ui64++;

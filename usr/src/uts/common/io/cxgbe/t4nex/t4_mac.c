@@ -22,7 +22,7 @@
 
 /*
  * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/ddi.h>
@@ -1112,6 +1112,12 @@ t4_port_led_set(void *arg, mac_led_mode_t mode, uint_t flags)
 	return (rc);
 }
 
+/*
+ * CPL_TX_PKT_XT considers inner L2 to be part of encap, and fields for
+ * 'ethernet header' length used to store encap len are 8 bits wide.
+ */
+#define	ENCAP_MAX	(UINT8_MAX - sizeof (struct ether_vlan_header))
+
 static boolean_t
 t4_mc_getcapab(void *arg, mac_capab_t cap, void *data)
 {
@@ -1123,11 +1129,25 @@ t4_mc_getcapab(void *arg, mac_capab_t cap, void *data)
 	switch (cap) {
 	case MAC_CAPAB_HCKSUM:
 		if (pi->features & CXGBE_HW_CSUM) {
-			uint32_t *d = data;
-			*d = HCKSUM_INET_FULL_V4 | HCKSUM_IPHDRCKSUM |
+			mac_capab_cso_t *d = data;
+			d->cso_flags = HCKSUM_INET_FULL_V4 | HCKSUM_IPHDRCKSUM |
 			    HCKSUM_INET_FULL_V6;
-		} else
+
+			if (CHELSIO_CHIP_VERSION(pi->adapter->params.chip) >=
+			    CHELSIO_T5) {
+				d->cso_flags |= HCKSUM_TUN;
+				d->cso_tunnel.ct_flags =
+				    MAC_CSO_TUN_INNER_IPHDR |
+				    MAC_CSO_TUN_INNER_TCP_FULL |
+				    MAC_CSO_TUN_INNER_UDP_FULL;
+				d->cso_tunnel.ct_encap_max = ENCAP_MAX;
+				d->cso_tunnel.ct_types =
+				    MAC_CAPAB_TUN_TYPE_GENEVE |
+				    MAC_CAPAB_TUN_TYPE_VXLAN;
+			}
+		} else {
 			status = B_FALSE;
+		}
 		break;
 
 	case MAC_CAPAB_LSO:
@@ -1140,8 +1160,20 @@ t4_mc_getcapab(void *arg, mac_capab_t cap, void *data)
 			    LSO_TX_BASIC_TCP_IPV6;
 			d->lso_basic_tcp_ipv4.lso_max = 65535;
 			d->lso_basic_tcp_ipv6.lso_max = 65535;
-		} else
+
+			if (CHELSIO_CHIP_VERSION(pi->adapter->params.chip) >=
+			    CHELSIO_T5) {
+				d->lso_flags |= LSO_TX_TUNNEL_TCP;
+				d->lso_tunnel_tcp.tun_pay_max = 65535;
+				d->lso_tunnel_tcp.tun_encap_max = ENCAP_MAX;
+				d->lso_tunnel_tcp.tun_types =
+				    MAC_CAPAB_TUN_TYPE_GENEVE |
+				    MAC_CAPAB_TUN_TYPE_VXLAN;
+				d->lso_tunnel_tcp.tun_flags = 0;
+			}
+		} else {
 			status = B_FALSE;
+		}
 		break;
 
 	case MAC_CAPAB_RINGS: {

@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2015 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_VXLAN_H
@@ -25,6 +26,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define	VXLAN_UDP_PORT	4789
 
 /* Sizes in bytes */
 #define	VXLAN_HDR_LEN	8
