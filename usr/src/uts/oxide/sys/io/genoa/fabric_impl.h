@@ -81,15 +81,6 @@ extern "C" {
 #define	GENOA_NBIO_NUM(num)		((num) / GENOA_IOMS_PER_NBIO)
 
 /*
- * We no longer grab the digital power management (DPM) weights from the SMU
- * on Genoa but instead just zero them out.
- */
-#define	GENOA_MAX_DPM_WEIGHTS	23
-
-extern void genoa_fabric_thread_get_dpm_weights(const zen_thread_t *,
-    const uint64_t **, uint32_t *);
-
-/*
  * The Genoa uarch-specific hooks for initial fabric topology initialization.
  */
 extern bool genoa_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);

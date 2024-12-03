@@ -71,8 +71,8 @@ static const zen_ccx_ops_t turin_ccx_ops = {
 	.zco_physmem_init = turin_ccx_physmem_init,
 
 	/*
-	 * Turin doesn't read DPM weights from the SMU nor do we need to
-	 * explicitly zero them as we do for Genoa.
+	 * Turin does not read weights from the SMU and set them explicitly.
+	 * Instead, they seem to be set indirectly via enabling SMU features.
 	 */
 	.zco_get_dpm_weights = zen_fabric_thread_get_dpm_weights_noop,
 

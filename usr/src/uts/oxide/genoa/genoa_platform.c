@@ -62,7 +62,11 @@
 
 
 static const zen_ccx_ops_t genoa_ccx_ops = {
-	.zco_get_dpm_weights = genoa_fabric_thread_get_dpm_weights,
+	/*
+	 * Genoa does not read weights from the SMU and set them explicitly.
+	 * Instead, they seem to be set indirectly via enabling SMU features.
+	 */
+	.zco_get_dpm_weights = zen_fabric_thread_get_dpm_weights_noop,
 
 	.zco_thread_feature_init = genoa_thread_feature_init,
 	.zco_thread_uc_init = genoa_thread_uc_init,

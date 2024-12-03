@@ -45,10 +45,9 @@ typedef struct zen_ccx_ops {
 	/*
 	 * Platform-specific hook to provide the digital power management (DPM)
 	 * weights to set at ccx initialization.  An implementation may return
-	 * a NULL weight array and non-zero count to indicate all weights should
-	 * be zeroed out.  For platforms that do not support MSR-based
-	 * configuration, the returned weight array and count should be NULL and
-	 * 0, respectively (i.e., zen_fabric_thread_get_dpm_weights_noop()).
+	 * a length of 0 to indicate that DPM weights should not be explicitly
+	 * set from the host.  zen_fabric_thread_get_dpm_weights_noop does this
+	 * and has the correct signature for use here.
 	 */
 	void	(*zco_get_dpm_weights)(const zen_thread_t *, const uint64_t **,
 	    uint32_t *);

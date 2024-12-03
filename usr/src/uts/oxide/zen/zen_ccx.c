@@ -89,8 +89,10 @@ zen_core_dpm_init(void)
 	VERIFY3P(ccx_ops->zco_get_dpm_weights, !=, NULL);
 	(ccx_ops->zco_get_dpm_weights)(thread, &weights, &nweights);
 
-	if (nweights == 0 && weights == NULL)
+	if (nweights == 0)
 		return;
+
+	VERIFY3P(weights, !=, NULL);
 
 	cfg = rdmsr(MSR_AMD_DPM_CFG);
 	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 0);
@@ -98,8 +100,7 @@ zen_core_dpm_init(void)
 
 	for (uint32_t idx = 0; idx < nweights; idx++) {
 		wrmsr_and_test(MSR_AMD_DPM_WAC_ACC_INDEX, idx);
-		wrmsr_and_test(MSR_AMD_DPM_WAC_DATA, weights == NULL ? 0 :
-		    weights[idx]);
+		wrmsr_and_test(MSR_AMD_DPM_WAC_DATA, weights[idx]);
 	}
 
 	cfg = AMD_DPM_CFG_SET_CFG_LOCKED(cfg, 1);
