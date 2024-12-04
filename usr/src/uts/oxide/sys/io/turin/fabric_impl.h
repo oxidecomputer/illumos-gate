@@ -25,7 +25,7 @@
 #include <sys/stdint.h>
 #include <sys/stdbool.h>
 #include <sys/x86_archext.h>
-#include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/mpio_impl.h>
 #include <sys/io/turin/ccx_impl.h>
 #include <sys/io/turin/nbif_impl.h>
 #include <sys/io/turin/pcie_impl.h>

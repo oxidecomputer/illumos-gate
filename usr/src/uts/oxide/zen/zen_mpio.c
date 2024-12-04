@@ -416,14 +416,12 @@ zen_mpio_init_global_config(zen_iodie_t *iodie)
 	zen_mpio_rpc_t rpc = { 0 };
 	zen_mpio_global_config_t *args;
 	zen_mpio_rpc_res_t res;
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 
+	VERIFY3P(fops->zfo_set_mpio_global_config, !=, NULL);
 	rpc.zmr_req = ZEN_MPIO_OP_SET_GLOBAL_CONFIG;
 	args = (zen_mpio_global_config_t *)rpc.zmr_args;
-	args->zmgc_skip_vet = 1;
-	args->zmgc_use_phy_sram = 1;
-	args->zmgc_valid_phy_firmware = 1;
-	args->zmgc_en_pcie_noncomp_wa = 1;
-	args->zmgc_pwr_mgmt_clk_gating = 1;
+	fops->zfo_set_mpio_global_config(args);
 	res = zen_mpio_rpc(iodie, &rpc);
 	if (res != ZEN_MPIO_RPC_OK) {
 		cmn_err(CE_WARN,

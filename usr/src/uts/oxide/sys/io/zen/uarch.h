@@ -93,6 +93,11 @@ typedef struct zen_ccx_ops {
 
 typedef struct zen_fabric_ops {
 	/*
+	 * Sets microarchitecture-specific MPIO global configuration options.
+	 */
+	void		(*zfo_set_mpio_global_config)(
+	    zen_mpio_global_config_t *);
+	/*
 	 * Program the IOHC registers relating to where the top of memory is.
 	 */
 	void		(*zfo_init_tom)(zen_ioms_t *, uint64_t, uint64_t,

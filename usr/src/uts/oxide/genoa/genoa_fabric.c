@@ -40,6 +40,7 @@
 #include <sys/io/genoa/ioapic.h>
 #include <sys/io/genoa/iohc.h>
 #include <sys/io/genoa/iommu.h>
+#include <sys/io/genoa/mpio_impl.h>
 #include <sys/io/genoa/nbif_impl.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/pcie_rsmu.h>
@@ -1936,6 +1937,25 @@ genoa_fabric_hack_bridges(zen_fabric_t *fabric)
 	bzero(&c, sizeof (c));
 
 	zen_fabric_walk_pcie_port(fabric, genoa_fabric_hack_bridges_cb, &c);
+}
+
+void
+genoa_set_mpio_global_config(zen_mpio_global_config_t *zconfig)
+{
+	/*
+	 * Note: This CTASSERT is not in genoa/mpio.h because
+	 * zen_mpio_global_config_t is not visible there.
+	 */
+	CTASSERT(sizeof (genoa_mpio_global_config_t) ==
+	    sizeof (zen_mpio_global_config_t));
+
+	genoa_mpio_global_config_t *config =
+	    (genoa_mpio_global_config_t *)zconfig;
+	config->gmgc_skip_vet = 1;
+	config->gmgc_use_phy_sram = 1;
+	config->gmgc_valid_phy_firmware = 1;
+	config->gmgc_en_pcie_noncomp_wa = 1;
+	config->gmgc_pwr_mgmt_clk_gating = 1;
 }
 
 void

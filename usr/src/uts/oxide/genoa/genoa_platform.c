@@ -31,7 +31,7 @@
 #include <sys/io/genoa/hacks.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/ccx_impl.h>
-#include <sys/io/genoa/mpio.h>
+#include <sys/io/genoa/mpio_impl.h>
 #include <sys/io/genoa/smu.h>
 #include <sys/io/zen/mpio.h>
 #include <sys/io/zen/ras.h>
@@ -85,6 +85,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_get_dxio_fw_version = zen_mpio_get_fw_version,
 	.zfo_report_dxio_fw_version = zen_mpio_report_fw_version,
 
+	.zfo_set_mpio_global_config = genoa_set_mpio_global_config,
 	.zfo_smu_pptable_init = genoa_fabric_smu_pptable_init,
 	.zfo_smu_misc_init = genoa_smu_features_init,
 	.zfo_ioms_init = genoa_fabric_ioms_init,

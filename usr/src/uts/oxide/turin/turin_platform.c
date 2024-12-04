@@ -32,7 +32,7 @@
 #include <sys/io/turin/hacks.h>
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/io/turin/ccx_impl.h>
-#include <sys/io/turin/mpio.h>
+#include <sys/io/turin/mpio_impl.h>
 #include <sys/io/turin/smu.h>
 #include <sys/io/zen/mpio.h>
 #include <sys/io/zen/ras.h>
@@ -93,6 +93,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_get_dxio_fw_version = zen_mpio_get_fw_version,
 	.zfo_report_dxio_fw_version = zen_mpio_report_fw_version,
 
+	.zfo_set_mpio_global_config = turin_set_mpio_global_config,
 	.zfo_smu_pptable_init = turin_fabric_smu_pptable_init,
 	.zfo_smu_misc_init = turin_smu_features_init,
 	.zfo_ioms_init = turin_fabric_ioms_init,

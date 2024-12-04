@@ -27,6 +27,7 @@
 #include <sys/pci_cfgspace_impl.h>
 #include <sys/pci_ident.h>
 #include <sys/platform_detect.h>
+#include <sys/stdbool.h>
 
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
@@ -41,6 +42,7 @@
 #include <sys/io/turin/pcie_rsmu.h>
 #include <sys/io/turin/iohc.h>
 #include <sys/io/turin/iommu.h>
+#include <sys/io/turin/mpio_impl.h>
 #include <sys/io/turin/nbif_impl.h>
 #include <sys/io/turin/smu.h>
 #include <sys/io/turin/ioapic.h>
@@ -1212,6 +1214,28 @@ turin_iohc_nmi_eoi(zen_ioms_t *ioms)
 		v = IOHC_INTR_EOI_SET_NMI(0);
 		zen_ioms_write(ioms, reg, v);
 	}
+}
+
+void
+turin_set_mpio_global_config(zen_mpio_global_config_t *zconfig)
+{
+	/*
+	 * Note: This CTASSERT is not in genoa/mpio.h because
+	 * zen_mpio_global_config_t is not visible there.
+	 */
+	CTASSERT(sizeof (turin_mpio_global_config_t) ==
+	    sizeof (zen_mpio_global_config_t));
+
+	turin_mpio_global_config_t *config =
+	    (turin_mpio_global_config_t *)zconfig;
+	config->tmgc_skip_vet = 1;
+	config->tmgc_use_phy_sram = 1;
+	config->tmgc_valid_phy_firmware = 1;
+	config->tmgc_en_pcie_noncomp_wa = 1;
+	config->tmgc_pwr_mgmt_clk_gating = 1;
+	config->tmgc_2spc_gen4_en = 1;
+	config->tmgc_2spc_gen5_en = 1;
+	config->tmgc_tx_fifo_rd_ptr_offset = TURIN_TX_FIFO_READ_PTR_VAL;
 }
 
 /*
