@@ -21,6 +21,10 @@
 
 #include <sys/stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * The implementation of these types is exposed to implementers but not to
  * consumers; therefore we forward-declare them here and provide the actual
@@ -34,5 +38,9 @@ typedef struct zen_iodie zen_iodie_t;
  */
 extern bool milan_get_dxio_fw_version(zen_iodie_t *iodie);
 extern void milan_report_dxio_fw_version(const zen_iodie_t *iodie);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif	/* _SYS_IO_MILAN_DXIO_H */

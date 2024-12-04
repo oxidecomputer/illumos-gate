@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_MILAN_RAS_H
@@ -19,6 +19,10 @@
 #include <sys/debug.h>
 #include <sys/int_types.h>
 #include <sys/types.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * MCAX registers are organized into 64 banks of 16 MSRs, starting at MSR
@@ -172,5 +176,9 @@ static const uint_t MILAN_RAS_MASK_NBIO_PCIE_ERR_EVT = 2;
  * Entry point for initialization.
  */
 void milan_ras_init(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif	/* _SYS_IO_MILAN_RAS_H */

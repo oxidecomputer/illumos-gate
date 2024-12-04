@@ -24,6 +24,10 @@
 
 #include <sys/stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * The implementation of these types is exposed to implementers but not to
  * consumers; therefore we forward-declare them here and provide the actual
@@ -75,5 +79,8 @@ extern void zen_mpio_pcie_init(zen_fabric_t *);
 
 extern bool zen_mpio_write_pcie_strap(zen_pcie_core_t *, uint32_t, uint32_t);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif	/* _SYS_IO_ZEN_MPIO_H */
