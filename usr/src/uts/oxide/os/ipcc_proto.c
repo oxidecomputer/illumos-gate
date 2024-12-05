@@ -429,6 +429,7 @@
 #include <sys/systm.h>
 #include <sys/types.h>
 #include <sys/platform_detect.h>
+#include <sys/hexdump.h>
 
 #include <sys/ipcc.h>
 #include <sys/ipcc_proto.h>
@@ -802,27 +803,49 @@ ipcc_pkt_recv(uint8_t *pkt, size_t len, uint8_t **endp,
 	return (ENOBUFS);
 }
 
-#define	IPCC_HEXCH(x) ((x) < 0xa ? (x) + '0' : (x) - 0xa + 'a')
-#define	MAX_HEXCHARS 64
+typedef struct {
+	const ipcc_ops_t	*lhcb_ops;
+	const char		*lhcb_tag;
+	void			*lhcb_arg;
+} loghex_cb_t;
+
+static int
+ipcc_loghex_cb(void *arg, uint64_t addr, const char *str,
+    size_t len __unused)
+{
+	const loghex_cb_t *cb = arg;
+
+	cb->lhcb_ops->io_log(cb->lhcb_arg, IPCC_LOG_HEX, "%s  %s\n",
+	    cb->lhcb_tag, str);
+	return (0);
+}
 
 static void
 ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
     const ipcc_ops_t *ops, void *arg)
 {
-	char obuf[MAX_HEXCHARS * 3 + 1];
-	uint_t oi = 0;
+	loghex_cb_t cb = {
+		.lhcb_ops = ops,
+		.lhcb_tag = tag,
+		.lhcb_arg = arg
+	};
+	/*
+	 * A line of hexdump output with the default width of 16 bytes per line
+	 * and a grouping of 4, in conjunction with the address and ascii
+	 * options will not exceed 80 characters, even if the address becomes
+	 * large enough to use additional columns.
+	 */
+	uint8_t scratchbuf[80];
+	hexdump_t h;
 
-	bufl = MIN(bufl, MAX_HEXCHARS);
+	hexdump_init(&h);
+	hexdump_set_grouping(&h, 4);
+	hexdump_set_buf(&h, scratchbuf, sizeof (scratchbuf));
 
-	/* In early boot we do not have many string functions */
-	for (uint_t i = 0; i < bufl; i++) {
-		obuf[oi++] = IPCC_HEXCH(buf[i] >> 4);
-		obuf[oi++] = IPCC_HEXCH(buf[i] & 0xf);
-		obuf[oi++] = ' ';
-	}
-	obuf[oi] = '\0';
+	(void) hexdumph(&h, buf, bufl, HDF_ADDRESS | HDF_ASCII,
+	    ipcc_loghex_cb, (void *)&cb);
 
-	ops->io_log(arg, IPCC_LOG_HEX, "%s: %s\n", tag, obuf);
+	hexdump_fini(&h);
 }
 
 #define	LOG(...) if (ops->io_log != NULL) \

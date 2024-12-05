@@ -14,13 +14,14 @@
 #
 
 PROG= ipcc
-OBJS= ipcc_cmd.o
+OBJS= ipcc_cmd.o  $(HEXDUMP_OBJS)
 MANIFEST= ipcc.xml
 SVCMETHOD= svc-ipcc
 
 include ../Makefile.cmd
 include ../Makefile.cmd.64
 include ../Makefile.ctf
+include $(SRC)/common/hexdump/Makefile.com
 
 PLATFORM = /usr/platform/oxide
 ROOTPLATFORM = $(ROOT)$(PLATFORM)
@@ -54,4 +55,5 @@ $(PROG): $(OBJS)
 	$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
 	$(POST_PROCESS)
 
+include $(SRC)/common/hexdump/Makefile.targ
 include ../Makefile.targ

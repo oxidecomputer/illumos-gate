@@ -30,6 +30,7 @@
 #include <unistd.h>
 #include <sys/ccompile.h>
 #include <sys/debug.h>
+#include <sys/hexdump.h>
 #include <sys/ipcc.h>
 #include <sys/param.h>
 #include <sys/sha2.h>
@@ -47,41 +48,9 @@ static bool ipcc_istty;
 static libipcc_handle_t *ipcc_handle;
 
 static void
-hexdump(const void *ptr, size_t length)
+ipcc_hexdump(const uint8_t *buf, size_t len)
 {
-	const unsigned char *cp;
-	const char delim = ' ';
-	const int cols = 16;
-
-	if (length == 0) {
-		printf("hexdump: no data\n");
-		return;
-	}
-
-	cp = ptr;
-	for (uint_t i = 0; i < length; i += cols) {
-		printf("%04x  ", i);
-
-		for (uint_t j = 0; j < cols; j++) {
-			uint_t k = i + j;
-			if (k < length)
-				printf("%c%02x", delim, cp[k]);
-			else
-				printf("   ");
-		}
-
-		printf("  |");
-		for (uint_t j = 0; j < cols; j++) {
-			uint_t k = i + j;
-			if (k >= length)
-				printf(" ");
-			else if (cp[k] >= ' ' && cp[k] <= '~')
-				printf("%c", cp[k]);
-			else
-				printf(".");
-		}
-		printf("|\n");
-	}
+	(void) hexdump_file(buf, len, HDF_DEFAULT, stdout);
 }
 
 static void
@@ -535,7 +504,7 @@ ipcc_inventory(int argc, char *argv[])
 	(void) printf("Type %u, Payload: 0x%zx bytes\n",
 	    libipcc_inv_type(inv), datalen);
 	if (datalen > 0)
-		hexdump(data, datalen);
+		ipcc_hexdump(data, datalen);
 
 out:
 	libipcc_inv_free(inv);
@@ -646,7 +615,7 @@ ipcc_keylookup(int argc, char *argv[])
 		libipcc_fatal("Failed to perform key lookup");
 
 	(void) printf("(length %u)\n", buflen);
-	hexdump(buf, buflen);
+	ipcc_hexdump(buf, buflen);
 
 	if (alloced)
 		free(buf);
@@ -769,7 +738,7 @@ ipcc_rot(int argc, char *argv[])
 	printf("Success\n");
 
 	data = libipcc_rot_resp_get(response, &len);
-	hexdump(data, len);
+	ipcc_hexdump(data, len);
 	libipcc_rot_resp_free(response);
 
 	return (0);
