@@ -3272,3 +3272,78 @@ zen_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
 
 	zen_smn_write(iodie, reg, val);
 }
+
+/*
+ * XXX Debug hack. We're called here because a port has been turned off.
+ * Populate the corresponding debug entry for this if it's something that
+ * belongs to us. The underlying hotplug code doesn't check if this is a root
+ * port or not. The last boolean here indicates whether this was an explicitly
+ * directed failure or one that indicates a power on failed.
+ */
+#include <sys/pcie_impl.h>
+
+typedef struct {
+	uint16_t zpb_bus;
+	uint8_t zpb_dev;
+	uint8_t zpb_func;
+	zen_pcie_port_t *zpb_port;
+} zen_port_bdf_t;
+
+static int
+zen_fabric_find_pcie_port_by_bdf_cb(zen_pcie_port_t *port, void *arg)
+{
+	zen_port_bdf_t *bdf = arg;
+	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
+
+	if (ioms->zio_pci_busno == bdf->zpb_bus &&
+	    port->zpp_device == bdf->zpb_dev &&
+	    port->zpp_func == bdf->zpb_func) {
+		bdf->zpb_port = port;
+		return (1);
+	}
+
+	return (0);
+}
+
+static zen_pcie_port_t *
+zen_fabric_find_pcie_port_by_bdf(zen_fabric_t *fabric, uint16_t bus,
+    uint8_t dev, uint8_t func)
+{
+	zen_port_bdf_t bdf;
+	bdf.zpb_bus = bus;
+	bdf.zpb_dev = dev;
+	bdf.zpb_func = func;
+	bdf.zpb_port = NULL;
+
+	(void) zen_fabric_walk_pcie_port(fabric,
+	    zen_fabric_find_pcie_port_by_bdf_cb, &bdf);
+
+	return (bdf.zpb_port);
+}
+
+void
+pcie_hp_dbg_cb(dev_info_t *dip, pcie_bus_t *bus_p, boolean_t fail)
+{
+	uint8_t bus, dev, func;
+	zen_fabric_t *fabric = &zen_fabric;
+	zen_pcie_port_t *port;
+	zen_pcie_core_t *core;
+	void *cookie;
+	uint32_t stage;
+
+	bus = (bus_p->bus_rp_bdf & PCIE_REQ_ID_BUS_MASK) >>
+	    PCIE_REQ_ID_BUS_SHIFT;
+	dev = (bus_p->bus_rp_bdf & PCIE_REQ_ID_DEV_MASK) >>
+	    PCIE_REQ_ID_DEV_SHIFT;
+	func = (bus_p->bus_rp_bdf & PCIE_REQ_ID_FUNC_MASK) >>
+	    PCIE_REQ_ID_FUNC_SHIFT;
+
+	port = zen_fabric_find_pcie_port_by_bdf(fabric, bus, dev, func);
+	if (port == NULL)
+		return;
+	core = port->zpp_core;
+	stage = fail ? ZPCS_CB_HOTPLUG_FAIL : ZPCS_CB_HOTPLUG_OFF,
+	cookie = zen_pcie_dbg_cookie(stage, ZEN_IODIE_MATCH_ANY);
+	(void) zen_pcie_populate_port_dbg(port, cookie);
+	(void) zen_pcie_populate_core_dbg(core, cookie);
+}

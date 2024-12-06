@@ -129,6 +129,8 @@ typedef enum zen_pcie_config_stage {
 	ZPCS_SM_DONE,
 	ZPCS_PRE_HOTPLUG,
 	ZPCS_POST_HOTPLUG,
+	ZPCS_CB_HOTPLUG_OFF,
+	ZPCS_CB_HOTPLUG_FAIL,
 	ZPCS_USER_DIRECTED,
 	ZPCS_NUM_STAGES
 } zen_pcie_config_stage_t;

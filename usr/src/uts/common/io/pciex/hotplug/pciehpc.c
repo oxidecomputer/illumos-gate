@@ -380,6 +380,11 @@
 int pcie_auto_online = 1;
 
 /*
+ * XXX temproary Debug interface
+ */
+extern void pcie_hp_dbg_cb(dev_info_t *, pcie_bus_t *, boolean_t);
+
+/*
  * Ideally, it would be possible to represent the state of a slot with a single
  * ddi_hp_cn_state_t; after all, that's the purpose of that data type.
  * Unfortunately it wasn't designed very well and cannot even represent the
@@ -2410,6 +2415,12 @@ alreadyon:
 	return (DDI_SUCCESS);
 
 cleanup:
+	/*
+	 * XXX We failed to bring this on for some reason. Give the platform a
+	 * chance to hook and grab any extra debugging information it needs.
+	 */
+	pcie_hp_dbg_cb(ctrl_p->hc_dip, bus_p, B_TRUE);
+
 	control = pciehpc_reg_get16(ctrl_p,
 	    bus_p->bus_pcie_off + PCIE_SLOTCTL);
 
@@ -2465,6 +2476,12 @@ pciehpc_slot_poweroff(pcie_hp_slot_t *slot_p, ddi_hp_cn_state_t *result)
 
 	control = pciehpc_reg_get16(ctrl_p, bus_p->bus_pcie_off + PCIE_SLOTCTL);
 	status = pciehpc_reg_get16(ctrl_p, bus_p->bus_pcie_off + PCIE_SLOTSTS);
+
+	/*
+	 * XXX We failed to bring this on for some reason. Give the platform a
+	 * chance to hook and grab any extra debugging information it needs.
+	 */
+	pcie_hp_dbg_cb(ctrl_p->hc_dip, bus_p, B_FALSE);
 
 	/*
 	 * The power controller has been turned off (which doesn't mean it *is*
