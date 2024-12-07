@@ -655,6 +655,12 @@
 #include <io/amdzen/amdzen.h>
 
 /*
+ * XXX smn snitch 
+ */
+extern void smn_snitch_init(void);
+extern void smn_snitch_thread(void);
+
+/*
  * This is a structure that we can use internally to pass around a DXIO RPC
  * request.
  */
@@ -4422,6 +4428,7 @@ milan_fabric_pcie(zen_fabric_t *fabric)
 	 * support.
 	 */
 	zen_pcie_populate_dbg(fabric, ZPCS_PRE_HOTPLUG, ZEN_IODIE_MATCH_ANY);
+	smn_snitch_init();
 
 	if (!milan_hotplug_init(fabric)) {
 		cmn_err(CE_WARN, "SMUHP: initialisation failed; PCIe hotplug "
@@ -4429,6 +4436,10 @@ milan_fabric_pcie(zen_fabric_t *fabric)
 	}
 
 	zen_pcie_populate_dbg(fabric, ZPCS_POST_HOTPLUG, ZEN_IODIE_MATCH_ANY);
+	hrtime_t start = gethrtime();
+	smn_snitch_thread();
+	hrtime_t end = gethrtime();
+	cmn_err(CE_WARN, "elapsed ms: %lld", (end - start) / 1000 / 1000);
 
 	/*
 	 * XXX At some point, maybe not here, but before we really go too much

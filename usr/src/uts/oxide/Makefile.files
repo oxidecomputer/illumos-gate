@@ -110,6 +110,7 @@ CORE_OBJS +=			\
 	pwrnow.o		\
 	smintr.o		\
 	smm.o			\
+	smn_snitch.o		\
 	ssp.o			\
 	startup.o		\
 	stubs.o			\
