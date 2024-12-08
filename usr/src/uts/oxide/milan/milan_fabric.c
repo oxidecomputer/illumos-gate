@@ -3841,6 +3841,23 @@ milan_fabric_hack_bridges(zen_fabric_t *fabric)
 }
 
 /*
+ * A desparate hack to try to get the T6 to train at Gen 1 initially to see if
+ * that works around speed issues. XXX we should make this a general thing that
+ * the platform can describe a limit and we will set it in common code as we'll
+ * realistically need this in Cosmo.
+ */
+static void
+milan_fabric_hack_t6(zen_fabric_t *fabric)
+{
+	uint16_t ctl2;
+
+	ctl2 = pci_getw_func(0x80, 1, 1, 0x88);
+	ctl2 &= ~PCIE_LINKCTL2_TARGET_SPEED_MASK;
+	ctl2 |= PCIE_LINKCTL2_TARGET_SPEED_2_5;
+	pci_putw_func(0x80, 1, 1, 0x88, ctl2);
+}
+
+/*
  * If this assertion fails, fix the definition in dxio_impl.h or increase the
  * size of the contiguous mapping below.
  */
@@ -4422,6 +4439,7 @@ milan_fabric_pcie(zen_fabric_t *fabric)
 	 * better before we go to market.
 	 */
 	milan_fabric_hack_bridges(fabric);
+	milan_fabric_hack_t6(fabric);
 
 	/*
 	 * At this point, go talk to the SMU to actually initialize our hotplug

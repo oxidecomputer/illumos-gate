@@ -53,7 +53,7 @@ typedef struct smn_snitch_rec {
 uint8_t snitch_socno = 0;
 uint8_t snitch_iodieno = 0;
 uint64_t snitch_pause_us = 100;
-uint32_t snitch_nrecs = 20000;
+uint32_t snitch_nrecs = 2000;
 void *snitch_data;
 zen_iodie_t *snitch_iodie;
 

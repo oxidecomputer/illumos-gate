@@ -44,6 +44,8 @@
 
 #include "t6init.h"
 
+#include <pcieb_ioctl.h>
+
 static const char *progname;
 static bool verbose;
 static char dpiopath[sizeof ("/dev/dpio/") + DPIO_NAMELEN];
@@ -143,6 +145,40 @@ t6_fatal(t6_mfg_t *t6mfg, const char *fmt, ...)
 	va_end(va);
 
 	exit(EXIT_FAILURE);
+}
+
+/*
+ * To deal with a series of Gen 2 related training failures that we've seen, we
+ * purposefully try to limit the bridge to only operate at Gen 1 speeds during
+ * manufacturing mode. This is something that can be cleared through the pcieb
+ * driver logic on the T6's bridge.
+ */
+static bool
+t6init_bridge_limit(uint32_t speed)
+{
+	/*
+	 * XXX discover based on pcie16 mapping and don't hardcode /devices path
+	 */
+	const char *bridge = "/devices/pci@70,0/pci1de,fff9@1,1:devctl";
+	int fd;
+	pcieb_ioctl_target_speed_t ioc;
+	bool ret = true;
+
+	fd = open(bridge, O_RDWR);
+	if (fd < 0) {
+		warn("failed to open bridge %s", bridge);
+		return (false);
+	}
+
+	(void) memset(&ioc, 0, sizeof (pcieb_ioctl_target_speed_t));
+	ioc.pits_speed = speed;
+	if (ioctl(fd, PCIEB_IOCTL_SET_TARGET_SPEED, &ioc) != 0) {
+		warn("ioctl to set target speed to PCIe Gen %u failed", speed);
+		ret = false;
+	}
+
+	(void) close(fd);
+	return (ret);
 }
 
 /*
@@ -584,6 +620,7 @@ start_mode(const char *ap, t6init_mode_t mode)
 	};
 	char * const aplist[] = { (char *)ap };
 	char *errstr;
+	uint32_t speed;
 
 	t6init_verbose("Switching to %s mode", t6init_modename(mode));
 
@@ -603,6 +640,14 @@ start_mode(const char *ap, t6init_mode_t mode)
 	 */
 	t6init_verbose("    sleeping for 1s or so");
 	(void) sleep(1);
+
+	speed = mode == T6INIT_MODE_MISSION ? PCIEB_LINK_SPEED_GEN3 :
+	    PCIEB_LINK_SPEED_GEN1;
+	t6init_verbose("    setting bridge limit to PCIe Gen %u", speed);
+	if (!t6init_bridge_limit(speed)) {
+		return (false);
+	}
+
 	t6init_verbose("    configuring %s", ap);
 	cfgerr = config_change_state(CFGA_CMD_CONFIGURE, 1, aplist, NULL,
 	    &conf, &msg, &errstr, CFGA_FLAG_FORCE | CFGA_FLAG_VERBOSE);
