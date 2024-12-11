@@ -101,6 +101,15 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_nbif_arbitration = turin_fabric_nbif_arbitration,
 	.zfo_sdp_control = zen_null_fabric_sdp_control, /* skip for turin */
 	.zfo_nbif_syshub_dma = turin_fabric_nbif_syshub_dma,
+	/*
+	 * Unlike prior SoCs, the Turin family automatically enables clock
+	 * gating for the IOHC and IOAPIC, but not the nBIFs. We need to enable
+	 * clock gating for the nBIFs and we opt to do so for the others so a
+	 * change in surrounding firmware doesn't change our desired settings.
+	 */
+	.zfo_iohc_clock_gating = turin_fabric_iohc_clock_gating,
+	.zfo_nbif_clock_gating = turin_fabric_nbif_clock_gating,
+	.zfo_ioapic_clock_gating = turin_fabric_ioapic_clock_gating,
 	.zfo_ioapic = turin_fabric_ioapic,
 	.zfo_nbif_dev_straps = turin_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for turin */

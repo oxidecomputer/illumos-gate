@@ -1015,6 +1015,9 @@ milan_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	case SMN_UNIT_SDPMUX:
 		reg = milan_sdpmux_smn_reg(ioms->zio_num, def, reginst);
 		break;
+	case SMN_UNIT_SST:
+		reg = milan_sst_smn_reg(ioms->zio_num, def, reginst);
+		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
 		 * Confusingly, this pertains to the IOMS, not the NBIF; there
@@ -2323,6 +2326,180 @@ milan_fabric_nbif_syshub_dma(zen_nbif_t *nbif)
 		val = NBIF_ALT_BGEN_BYP_SHUB_SET_DMA_SW0(val, 1);
 		zen_nbif_write(nbif, reg, val);
 	}
+}
+
+void
+milan_fabric_iohc_clock_gating(zen_ioms_t *ioms)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	const smn_reg_def_t iohc_regs[] = {
+		D_IOHC_GCG_LCLK_CTL0,
+		D_IOHC_GCG_LCLK_CTL1,
+		D_IOHC_GCG_LCLK_CTL2
+	};
+
+	for (uint_t i = 0; i < ARRAY_SIZE(iohc_regs); i++) {
+		reg = milan_ioms_reg(ioms, iohc_regs[i], 0);
+		val = zen_ioms_read(ioms, reg);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK9(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK8(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK7(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK6(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK5(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK4(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK3(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK2(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK1(val, 0);
+		val = IOHC_GCG_LCLK_CTL_SET_SOCLK0(val, 0);
+		zen_ioms_write(ioms, reg, val);
+	}
+
+	reg = milan_ioms_reg(ioms, D_IOAGR_GCG_LCLK_CTL0, 0);
+	val = zen_ioms_read(ioms, reg);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK9(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK8(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK7(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK6(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK5(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK4(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK3(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK2(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK1(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK0(val, 0);
+	zen_ioms_write(ioms, reg, val);
+
+	reg = milan_ioms_reg(ioms, D_IOAGR_GCG_LCLK_CTL1, 0);
+	val = zen_ioms_read(ioms, reg);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK3(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK2(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK1(val, 0);
+	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK0(val, 0);
+	zen_ioms_write(ioms, reg, val);
+
+	const smn_reg_def_t sdpmux_regs[] = {
+		D_SDPMUX_GCG_LCLK_CTL0,
+		D_SDPMUX_GCG_LCLK_CTL1
+	};
+
+	for (uint_t i = 0; i < ARRAY_SIZE(sdpmux_regs); i++) {
+		reg = milan_ioms_reg(ioms, sdpmux_regs[i], 0);
+		val = zen_ioms_read(ioms, reg);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK9(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK8(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK7(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK6(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK5(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK4(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK3(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK2(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK1(val, 0);
+		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK0(val, 0);
+		zen_ioms_write(ioms, reg, val);
+	}
+
+	/* Only IOMS3 has a bonus SST instance */
+	const uint16_t sstcnt = (ioms->zio_num == MILAN_IOMS_BONUS_SST) ? 2 : 1;
+
+	for (uint16_t i = 0; i < sstcnt; i++) {
+		reg = milan_ioms_reg(ioms, D_SST_CLOCK_CTL, i);
+		val = zen_ioms_read(ioms, reg);
+		val = SST_CLOCK_CTL_SET_RXCLKGATE_EN(val, 1);
+		val = SST_CLOCK_CTL_SET_TXCLKGATE_EN(val, 1);
+		val = SST_CLOCK_CTL_SET_PCTRL_IDLE_TIME(val,
+		    SST_CLOCK_CTL_PCTRL_IDLE_TIME);
+		zen_ioms_write(ioms, reg, val);
+
+		reg = milan_ioms_reg(ioms, D_SST_SION_WRAP_CFG_GCG_LCLK_CTL, i);
+		val = zen_ioms_read(ioms, reg);
+		val = SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK4(val, 1);
+		zen_ioms_write(ioms, reg, val);
+	}
+}
+
+void
+milan_fabric_nbif_clock_gating(zen_nbif_t *nbif)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = milan_nbif_reg(nbif, D_NBIF_MGCG_CTL_LCLK, 0);
+	val = zen_nbif_read(nbif, reg);
+	val = NBIF_MGCG_CTL_LCLK_SET_EN(val, 1);
+	val = NBIF_MGCG_CTL_LCLK_SET_MODE(val, 1);
+	val = NBIF_MGCG_CTL_LCLK_SET_HYST(val, NBIF_MGCG_CTL_LCLK_HYST);
+	zen_nbif_write(nbif, reg, val);
+
+	/*
+	 * There is only one of these register instances per NBIO.
+	 */
+	if (nbif->zn_num == 0) {
+		reg = milan_nbif_reg(nbif, D_NBIF_ALT_SION_CTL, 0);
+		val = zen_nbif_read(nbif, reg);
+
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK9(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK8(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK7(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK6(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK5(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK4(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK3(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK2(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK1(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL0_SOCLK0(val, 0);
+
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK9(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK8(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK7(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK6(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK5(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK4(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK3(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK2(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK1(val, 0);
+		val = NBIF_ALT_SION_CTL_SET_CTL1_SOCLK0(val, 0);
+
+		zen_nbif_write(nbif, reg, val);
+	}
+
+	/*
+	 * These registers are weird SYSHUB and nBIF crossovers in the
+	 * alternate space, where there are only two nBIF instances.
+	 */
+	if (nbif->zn_num < 2) {
+		reg = milan_nbif_reg(nbif, D_NBIF_ALT_NGDC_MGCG_CTL, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_ALT_NGDC_MGCG_CTL_SET_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		if (nbif->zn_num == 1) {
+			reg = milan_nbif_reg(
+			    nbif, D_NBIF_ALT_MGCG_CTL_SHCLK, 0);
+			val = zen_nbif_read(nbif, reg);
+			val = NBIF_ALT_MGCG_CTL_SHCLK_SET_EN(val, 1);
+			zen_nbif_write(nbif, reg, val);
+		}
+
+		reg = milan_nbif_reg(nbif, D_NBIF_ALT_MGCG_CTL_SCLK, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_ALT_MGCG_CTL_SCLK_SET_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+	}
+}
+
+void
+milan_fabric_ioapic_clock_gating(zen_ioms_t *ioms)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = milan_ioms_reg(ioms, D_IOAPIC_GCG_LCLK_CTL0, 0);
+	val = zen_ioms_read(ioms, reg);
+	val = IOAPIC_GCG_LCLK_CTL0_SET_SOCLK2(val, 0);
+	val = IOAPIC_GCG_LCLK_CTL0_SET_SOCLK1(val, 0);
+	val = IOAPIC_GCG_LCLK_CTL0_SET_SOCLK0(val, 0);
+	zen_ioms_write(ioms, reg, val);
 }
 
 /*

@@ -186,6 +186,40 @@ turin_nbif_alt_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 	return (SMN_MAKE_REG(aperture + reg));
 }
 
+static inline smn_reg_t
+turin_nbif_alt2_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
+    const uint8_t nbifno, const uint16_t reginst)
+{
+	const uint32_t NBIF_ALT2_SMN_REG_MASK = 0xfff;
+	const uint32_t nbio32 = (const uint32_t)nbiono;
+	const uint32_t nbif32 = (const uint32_t)nbifno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t stride = (def.srd_stride == 0) ? 4 :
+	    (const uint32_t)def.srd_stride;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t)def.srd_nents;
+
+	ASSERT0(def.srd_size);
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_NBIF_ALT2);
+	ASSERT3U(nbio32, <, TURIN_MAX_NBIO);
+	ASSERT3U(nbif32, <, TURIN_NBIO_MAX_NBIF_ALT);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & ~NBIF_ALT2_SMN_REG_MASK);
+
+	const uint32_t aperture_base = 0x1013a000;
+
+	const uint32_t aperture_off = (nbio32 << 21) + (nbif32 << 20);
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & NBIF_ALT2_SMN_REG_MASK);
+
+	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	ASSERT0(reg & ~NBIF_ALT2_SMN_REG_MASK);
+
+	return (SMN_MAKE_REG(aperture + reg));
+}
+
 /*
  * NBIFMM::RCC_DEVn_EPFn_STRAP0. NBIF Function strap 0. This SMN address is
  * relative to the actual function space.
@@ -254,6 +288,16 @@ turin_nbif_alt_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 #define	NBIF_GMI_WRR_WEIGHTn_VAL	0x04040404
 
 /*
+ * NBIFMM::NBIF_MGCG_CTRL_LCLK
+ */
+/*CSTYLED*/
+#define	D_NBIF_MGCG_CTL_LCLK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF,	\
+	.srd_reg = 0x3a21c	\
+}
+#define	NBIF_MGCG_CTL_LCLK_SET_EN(r, v)			bitset32(r, 0, 0, v)
+
+/*
  * NBIFMM::RCC_DEVn_PORT_STRAP3. Straps for the NBIF port. These are relative
  * to the main NBIF base aperture.
  */
@@ -267,6 +311,16 @@ turin_nbif_alt_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 #define	NBIF_PORT_STRAP3(i, n, d)	\
     turin_nbif_smn_reg(i, D_NBIF_PORT_STRAP3, n, d)
 #define	NBIF_PORT_STRAP3_SET_COMP_TO(r, v)	bitset32(r, 7, 7, v)
+
+/*
+ * SYSHUBMM::NGDC_MGCG_CTRL
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_NGDC_MGCG_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x3ba8	\
+}
+#define	NBIF_ALT_NGDC_MGCG_CTL_SET_EN(r, v)		bitset32(r, 0, 0, v)
 
 /*
  * SYSHUBMM::SYSHUB_BGEN_ENHANCEMENT_BYPASS_EN_SOCCLK. Yes, really. This
@@ -284,6 +338,119 @@ turin_nbif_alt_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 #define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW1(r, v)	bitset32(r, 17, 17, v)
 #define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(r, v)	bitset32(r, 16, 16, v)
 #define	NBIF_ALT_BGEN_BYP_SOC_SET_HST_SW0(r, v)	bitset32(r, 0, 0, v)
+
+/*
+ * SYSHUBMM::SYSHUB_MGCG_CTRL_SOCCLK
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_MGCG_CTL_SCLK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x10020	\
+}
+#define	NBIF_ALT_MGCG_CTL_SCLK_SET_EN(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * SYSHUBMM::SYSHUB_MGCG_CTRL_SHUBCLK
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_MGCG_CTL_SHCLK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x11020	\
+}
+#define	NBIF_ALT_MGCG_CTL_SHCLK_SET_EN(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * SYSHUBMM::GDC_HST_SION_CNTL_REG0
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_GDC_HST_SION_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x1e8f0	\
+}
+
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL9(r, v)		bitset32(r, 19, 19, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL8(r, v)		bitset32(r, 18, 18, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL7(r, v)		bitset32(r, 17, 17, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL6(r, v)		bitset32(r, 16, 16, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL5(r, v)		bitset32(r, 15, 15, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL4(r, v)		bitset32(r, 14, 14, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL3(r, v)		bitset32(r, 13, 13, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL2(r, v)		bitset32(r, 12, 12, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL1(r, v)		bitset32(r, 11, 11, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL1_SOCKL0(r, v)		bitset32(r, 10, 10, v)
+
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL9(r, v)		bitset32(r, 9, 9, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL8(r, v)		bitset32(r, 8, 8, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL7(r, v)		bitset32(r, 7, 7, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL6(r, v)		bitset32(r, 6, 6, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL5(r, v)		bitset32(r, 5, 5, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL4(r, v)		bitset32(r, 4, 4, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL3(r, v)		bitset32(r, 3, 3, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL2(r, v)		bitset32(r, 2, 2, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL1(r, v)		bitset32(r, 1, 1, v)
+#define	NBIF_ALT_GDC_HST_SION_CTL0_SOCKL0(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * SYSHUBMM::GDC_DMA_SION_CNTL_REG0
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_GDC_DMA_SION_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x1e190	\
+}
+
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL9(r, v)		bitset32(r, 19, 19, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL8(r, v)		bitset32(r, 18, 18, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL7(r, v)		bitset32(r, 17, 17, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL6(r, v)		bitset32(r, 16, 16, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL5(r, v)		bitset32(r, 15, 15, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL4(r, v)		bitset32(r, 14, 14, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL3(r, v)		bitset32(r, 13, 13, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL2(r, v)		bitset32(r, 12, 12, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL1(r, v)		bitset32(r, 11, 11, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL1_SOCKL0(r, v)		bitset32(r, 10, 10, v)
+
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL9(r, v)		bitset32(r, 9, 9, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL8(r, v)		bitset32(r, 8, 8, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL7(r, v)		bitset32(r, 7, 7, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL6(r, v)		bitset32(r, 6, 6, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL5(r, v)		bitset32(r, 5, 5, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL4(r, v)		bitset32(r, 4, 4, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL3(r, v)		bitset32(r, 3, 3, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL2(r, v)		bitset32(r, 2, 2, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL1(r, v)		bitset32(r, 1, 1, v)
+#define	NBIF_ALT_GDC_DMA_SION_CTL0_SOCKL0(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * SYSHUBMM::NBIF_HST_SION_CNTL_REG0
+ */
+/*CSTYLED*/
+#define	D_NBIF_HST_SION_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT2,	\
+	.srd_reg = 0x8f0	\
+}
+
+#define	NBIF_HST_SION_CTL1_SOCKL9(r, v)			bitset32(r, 19, 19, v)
+#define	NBIF_HST_SION_CTL1_SOCKL8(r, v)			bitset32(r, 18, 18, v)
+#define	NBIF_HST_SION_CTL1_SOCKL7(r, v)			bitset32(r, 17, 17, v)
+#define	NBIF_HST_SION_CTL1_SOCKL6(r, v)			bitset32(r, 16, 16, v)
+#define	NBIF_HST_SION_CTL1_SOCKL5(r, v)			bitset32(r, 15, 15, v)
+#define	NBIF_HST_SION_CTL1_SOCKL4(r, v)			bitset32(r, 14, 14, v)
+#define	NBIF_HST_SION_CTL1_SOCKL3(r, v)			bitset32(r, 13, 13, v)
+#define	NBIF_HST_SION_CTL1_SOCKL2(r, v)			bitset32(r, 12, 12, v)
+#define	NBIF_HST_SION_CTL1_SOCKL1(r, v)			bitset32(r, 11, 11, v)
+#define	NBIF_HST_SION_CTL1_SOCKL0(r, v)			bitset32(r, 10, 10, v)
+
+#define	NBIF_HST_SION_CTL0_SOCKL9(r, v)			bitset32(r, 9, 9, v)
+#define	NBIF_HST_SION_CTL0_SOCKL8(r, v)			bitset32(r, 8, 8, v)
+#define	NBIF_HST_SION_CTL0_SOCKL7(r, v)			bitset32(r, 7, 7, v)
+#define	NBIF_HST_SION_CTL0_SOCKL6(r, v)			bitset32(r, 6, 6, v)
+#define	NBIF_HST_SION_CTL0_SOCKL5(r, v)			bitset32(r, 5, 5, v)
+#define	NBIF_HST_SION_CTL0_SOCKL4(r, v)			bitset32(r, 4, 4, v)
+#define	NBIF_HST_SION_CTL0_SOCKL3(r, v)			bitset32(r, 3, 3, v)
+#define	NBIF_HST_SION_CTL0_SOCKL2(r, v)			bitset32(r, 2, 2, v)
+#define	NBIF_HST_SION_CTL0_SOCKL1(r, v)			bitset32(r, 1, 1, v)
+#define	NBIF_HST_SION_CTL0_SOCKL0(r, v)			bitset32(r, 0, 0, v)
 
 #ifdef __cplusplus
 }

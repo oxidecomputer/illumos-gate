@@ -39,10 +39,20 @@
 extern "C" {
 #endif
 
+#define	MILAN_IOMS_COUNT	4
+#define	MILAN_IOAGR_COUNT	4
+#define	MILAN_SDPMUX_COUNT	4
+
+/*
+ * Only IOMS/NBIO3 has an extra SST instance, SST1.
+ */
+#define	MILAN_IOMS_BONUS_SST		3
+#define	MILAN_IOMS_BONUS_SST_INST	1
+
 AMDZEN_MAKE_SMN_REG_FN(milan_iohc_smn_reg, IOHC, 0x13b00000,
-    SMN_APERTURE_MASK, 4, 20);
+    SMN_APERTURE_MASK, MILAN_IOMS_COUNT, 20);
 AMDZEN_MAKE_SMN_REG_FN(milan_ioagr_smn_reg, IOAGR, 0x15b00000,
-    SMN_APERTURE_MASK, 4, 20);
+    SMN_APERTURE_MASK, MILAN_IOAGR_COUNT, 20);
 
 /*
  * The SDPMUX SMN addresses are a bit weird. There is one per IOMS instance;
@@ -56,7 +66,6 @@ static inline smn_reg_t
 milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	const uint32_t MILAN_SDPMUX_COUNT = 4;
 	const uint32_t sdpmux32 = (const uint32_t)sdpmuxno;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t stride = (def.srd_stride == 0) ? 4 :
@@ -80,6 +89,56 @@ milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 	ASSERT0(aperture & ~SMN_APERTURE_MASK);
 
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	ASSERT0(reg & SMN_APERTURE_MASK);
+
+	return (SMN_MAKE_REG(aperture + reg));
+}
+
+/*
+ * The SST SMN addresses are a bit weird. Each IOMS has an SST0 and then
+ * IOMS3 also has a second instance, SST1. The addresses are as follows:
+ *
+ *	IOMS		SST		Address
+ *	0		0		1750_0000
+ *	1		0		1760_0000
+ *	2		0		1770_0000
+ *	3		0		1780_0000
+ *	3		1		1740_0000
+ *
+ * Sequentially, in terms of addresses, SST1 on IOMS3 comes first so we use
+ * that as the aperture base address and only allow instance 1 on IOMS3, and
+ * then offset the SST0 instances by one.
+ */
+static inline smn_reg_t
+milan_sst_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	const uint32_t ioms32 = (const uint32_t)iomsno;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t) def.srd_nents;
+	uint32_t inst;
+
+	ASSERT0(def.srd_size);
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_SST);
+	ASSERT3U(ioms32, <, MILAN_IOMS_COUNT);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
+	if (reginst32 == MILAN_IOMS_BONUS_SST_INST) {
+		ASSERT3U(ioms32, ==, MILAN_IOMS_BONUS_SST);
+		inst = 0;
+	} else {
+		inst = ioms32 + 1;
+	}
+
+	const uint32_t aperture_base = 0x17400000;
+	const uint32_t aperture_off = inst << 20;
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & ~SMN_APERTURE_MASK);
+
+	const uint32_t reg = def.srd_reg;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
 	return (SMN_MAKE_REG(aperture + reg));
@@ -249,6 +308,47 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 4, 1, 0, 1);
 	milan_iohc_smn_reg(h, D_IOHC_SB_LOCATION, 0)
 #define	IOHC_SB_LOCATION_SET_CORE(r, v)		bitset32(r, 31, 16, v)
 #define	IOHC_SB_LOCATION_SET_PORT(r, v)		bitset32(r, 15, 0, v)
+
+/*
+ * IOHC::IOHC_GLUE_CG_LCLK_CTRL_0. IOHC clock gating control.
+ */
+/*CSTYLED*/
+#define	D_IOHC_GCG_LCLK_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x10088	\
+}
+
+/*
+ * These setters are common across the IOHC::IOHC_GLUE_CG_LCLK_CTRL_ registers.
+ */
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK0(r, v)	bitset32(r, 31, 31, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK1(r, v)	bitset32(r, 30, 30, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK2(r, v)	bitset32(r, 29, 29, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK3(r, v)	bitset32(r, 28, 28, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK4(r, v)	bitset32(r, 27, 27, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK5(r, v)	bitset32(r, 26, 26, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK6(r, v)	bitset32(r, 25, 25, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK7(r, v)	bitset32(r, 24, 24, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK8(r, v)	bitset32(r, 23, 23, v)
+#define	IOHC_GCG_LCLK_CTL_SET_SOCLK9(r, v)	bitset32(r, 22, 22, v)
+
+/*
+ * IOHC::IOHC_GLUE_CG_LCLK_CTRL_1. IOHC clock gating control.
+ */
+/*CSTYLED*/
+#define	D_IOHC_GCG_LCLK_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x1008c	\
+}
+
+/*
+ * IOHC::IOHC_GLUE_CG_LCLK_CTRL_2. IOHC clock gating control.
+ */
+/*CSTYLED*/
+#define	D_IOHC_GCG_LCLK_CTL2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x10090	\
+}
 
 /*
  * IOHC::IOHC_FEATURE_CNTL. As it says on the tin, controls some various feature
@@ -960,6 +1060,39 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 4, 1, 0, 1);
  */
 
 /*
+ * IOAGR::IOAGR_GLUE_CG_LCLK_CTRL_0. IOAGR clock gating control.
+ */
+/*CSTYLED*/
+#define	D_IOAGR_GCG_LCLK_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOAGR,	\
+	.srd_reg = 0x0		\
+}
+
+/*
+ * These setters are common across the IOAGR::IOAGR_GLUE_CG_LCLK_CTRL_
+ * registers.
+ */
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK0(r, v)	bitset32(r, 31, 31, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK1(r, v)	bitset32(r, 30, 30, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK2(r, v)	bitset32(r, 29, 29, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK3(r, v)	bitset32(r, 28, 28, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK4(r, v)	bitset32(r, 27, 27, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK5(r, v)	bitset32(r, 26, 26, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK6(r, v)	bitset32(r, 25, 25, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK7(r, v)	bitset32(r, 24, 24, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK8(r, v)	bitset32(r, 23, 23, v)
+#define	IOAGR_GCG_LCLK_CTL_SET_SOCLK9(r, v)	bitset32(r, 22, 22, v)
+
+/*
+ * IOAGR::IOAGR_GLUE_CG_LCLK_CTRL_1. IOAGR clock gating control.
+ */
+/*CSTYLED*/
+#define	D_IOAGR_GCG_LCLK_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOAGR,	\
+	.srd_reg = 0x4		\
+}
+
+/*
  * IOAGR::IOAGR_EARLY_WAKE_UP_EN. This register controls the ability to interact
  * with the clocks and DMA. Specifics unclear. Companion to the IOHC variant.
  */
@@ -1194,6 +1327,39 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 4, 1, 0, 1);
 /*
  * SDPMUX registers of interest.
  */
+
+/*
+ * SDPMUX::SDPMUX_GLUE_CG_LCLK_CTRL_0. SDPMUX clock gating control.
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_GCG_LCLK_CTL0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x0		\
+}
+
+/*
+ * These setters are common across the SDPMUX::SDPMUX_GLUE_CG_LCLK_CTRL_
+ * registers.
+ */
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK0(r, v)	bitset32(r, 31, 31, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK1(r, v)	bitset32(r, 30, 30, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK2(r, v)	bitset32(r, 29, 29, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK3(r, v)	bitset32(r, 28, 28, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK4(r, v)	bitset32(r, 27, 27, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK5(r, v)	bitset32(r, 26, 26, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK6(r, v)	bitset32(r, 25, 25, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK7(r, v)	bitset32(r, 24, 24, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK8(r, v)	bitset32(r, 23, 23, v)
+#define	SDPMUX_GCG_LCLK_CTL_SET_SOCLK9(r, v)	bitset32(r, 22, 22, v)
+
+/*
+ * SDPMUX::SDPMUX_GLUE_CG_LCLK_CTRL_1. SDPMUX clock gating control.
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_GCG_LCLK_CTL1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x4		\
+}
 
 /*
  * SDPMUX::SDPMUX_SDP_PORT_CONTROL. More Clock request bits in the spirit of
@@ -1474,6 +1640,46 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 4, 1, 0, 1);
 #define	SDPMUX_SION_CLIREQ_BURST_VAL	0x08080808
 #define	SDPMUX_SION_CLIREQ_TIME_VAL	0x21212121
 #define	SDPMUX_SION_RDRSP_BURST_VAL	0x02020202
+
+/*
+ * SST (Source Synchronous Tunnel) registers of interest.
+ */
+
+/*
+ * SST::SST_CLOCK_CTRL.
+ */
+/*CSTYLED*/
+#define	D_SST_CLOCK_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SST,	\
+	.srd_reg = 0x4,			\
+	.srd_nents = 2			\
+}
+#define	SST_CLOCK_CTL_SET_RXCLKGATE_EN(r, v)		bitset32(r, 16, 16, v)
+#define	SST_CLOCK_CTL_SET_PCTRL_IDLE_TIME(r, v)		bitset32(r, 15, 8, v)
+#define	SST_CLOCK_CTL_SET_TXCLKGATE_EN(r, v)		bitset32(r, 0, 0, v)
+
+/* This is the PPR-specified init value, and differs from the reset value */
+#define	SST_CLOCK_CTL_PCTRL_IDLE_TIME			0xf0
+
+/*
+ * SST::SION_WRAPPER_CFG_SSTSION_GLUE_CG_LCLK_CTRL_SOFT_OVERRIDE_CLK
+ */
+/*CSTYLED*/
+#define	D_SST_SION_WRAP_CFG_GCG_LCLK_CTL (const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SST,	\
+	.srd_reg = 0x404,		\
+	.srd_nents = 2			\
+}
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK9(r, v)	bitset32(r, 9, 9, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK8(r, v)	bitset32(r, 8, 8, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK7(r, v)	bitset32(r, 7, 7, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK6(r, v)	bitset32(r, 6, 6, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK5(r, v)	bitset32(r, 5, 5, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK4(r, v)	bitset32(r, 4, 4, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK3(r, v)	bitset32(r, 3, 3, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK2(r, v)	bitset32(r, 2, 2, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK1(r, v)	bitset32(r, 1, 1, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK0(r, v)	bitset32(r, 0, 0, v)
 
 #ifdef __cplusplus
 }

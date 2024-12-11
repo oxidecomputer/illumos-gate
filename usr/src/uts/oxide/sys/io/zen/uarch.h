@@ -170,6 +170,21 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_nbif_syshub_dma)(zen_nbif_t *);
 
 	/*
+	 * IOHC and friends clock gating.
+	 */
+	void		(*zfo_iohc_clock_gating)(zen_ioms_t *);
+
+	/*
+	 * nBIF clock gating.
+	 */
+	void		(*zfo_nbif_clock_gating)(zen_nbif_t *);
+
+	/*
+	 * IOAPIC clock gating.
+	 */
+	void		(*zfo_ioapic_clock_gating)(zen_ioms_t *);
+
+	/*
 	 * IOAPIC initialization.
 	 */
 	void		(*zfo_ioapic)(zen_ioms_t *);
@@ -289,7 +304,7 @@ typedef struct zen_hack_ops {
 } zen_hack_ops_t;
 
 /*
- * These null operations are no-ops, for operations that are unnecessary on a
+ * These null operations are no-ops for operations that are unnecessary on a
  * given microarchitecture.
  */
 extern void zen_null_check_furtive_reset(void);

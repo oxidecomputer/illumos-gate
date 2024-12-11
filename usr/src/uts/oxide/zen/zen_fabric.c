@@ -2563,8 +2563,22 @@ zen_fabric_init(void)
 	    fabric_ops->zfo_nbif_syshub_dma);
 
 	/*
-	 * XXX IOHC and friends clock gating.
+	 * IOHC and friends clock gating.
 	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_iohc_clock_gating);
+
+	/*
+	 * nBIF clock gating.
+	 */
+	zen_fabric_walk_nbif(fabric, zen_fabric_nbif_op,
+	    fabric_ops->zfo_nbif_clock_gating);
+
+	/*
+	 * IOAPIC clock gating.
+	 */
+	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
+	    fabric_ops->zfo_ioapic_clock_gating);
 
 	/*
 	 * With that done, proceed to initialize the IOAPIC in each IOMS. While

@@ -38,10 +38,21 @@
 extern "C" {
 #endif
 
+#define	GENOA_IOMS_COUNT	4
+#define	GENOA_NBIO_COUNT	2
+#define	GENOA_IOAGR_COUNT	4
+#define	GENOA_SDPMUX_COUNT	2
+
+/*
+ * Only NBIO1 has an extra SST instance.
+ */
+#define	GENOA_NBIO_BONUS_SST		1
+#define	GENOA_NBIO_BONUS_SST_INST	1
+
 AMDZEN_MAKE_SMN_REG_FN(genoa_iohc_smn_reg, IOHC, 0x13b00000,
-    SMN_APERTURE_MASK, 4, 20);
+    SMN_APERTURE_MASK, GENOA_IOMS_COUNT, 20);
 AMDZEN_MAKE_SMN_REG_FN(genoa_ioagr_smn_reg, IOAGR, 0x15b00000,
-    SMN_APERTURE_MASK, 4, 20);
+    SMN_APERTURE_MASK, GENOA_IOAGR_COUNT, 20);
 
 /*
  * The SDPMUX SMN addresses are a bit weird. Unlike IOHC and IOAGR units, there
@@ -55,7 +66,6 @@ static inline smn_reg_t
 genoa_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	const uint32_t GENOA_SDPMUX_COUNT = 2;
 	const uint32_t sdpmux32 = (const uint32_t)sdpmuxno;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t stride = (def.srd_stride == 0) ? 4 :
@@ -79,6 +89,54 @@ genoa_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 	ASSERT0(aperture & ~SMN_APERTURE_MASK);
 
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
+	ASSERT0(reg & SMN_APERTURE_MASK);
+
+	return (SMN_MAKE_REG(aperture + reg));
+}
+
+/*
+ * The SST SMN addresses are a bit weird. Each NBIO has an SST0 and then
+ * NBIO1 also has a second instance, SST1. The addresses are as follows:
+ *
+ *	NBIO		SST		Address
+ *	0		0		1750_0000
+ *	1		0		1760_0000
+ *	1		1		1740_0000
+ *
+ * Sequentially, in terms of addresses, SST1 on NBIO1 comes first so we use
+ * that as the aperture base address and only allow instance 1 on NBIO1, and
+ * then offset the SST0 instances by one.
+ */
+static inline smn_reg_t
+genoa_sst_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	const uint32_t nbio32 = (const uint32_t)nbiono;
+	const uint32_t reginst32 = (const uint32_t)reginst;
+	const uint32_t nents = (def.srd_nents == 0) ? 1 :
+	    (const uint32_t) def.srd_nents;
+	uint32_t inst;
+
+	ASSERT0(def.srd_size);
+	ASSERT3S(def.srd_unit, ==, SMN_UNIT_SST);
+	ASSERT3U(nbio32, <, GENOA_NBIO_COUNT);
+	ASSERT3U(nents, >, reginst32);
+	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
+	if (reginst32 == GENOA_NBIO_BONUS_SST_INST) {
+		ASSERT3U(nbio32, ==, GENOA_NBIO_BONUS_SST);
+		inst = 0;
+	} else {
+		inst = nbio32 + 1;
+	}
+
+	const uint32_t aperture_base = 0x17400000;
+	const uint32_t aperture_off = inst << 20;
+	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
+
+	const uint32_t aperture = aperture_base + aperture_off;
+	ASSERT0(aperture & ~SMN_APERTURE_MASK);
+
+	const uint32_t reg = def.srd_reg;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
 	return (SMN_MAKE_REG(aperture + reg));
@@ -301,8 +359,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_IOHC,	\
 	.srd_reg = 0x10088	\
 }
-#define	IOHC_GCG_LCLK_CTL0(h)	\
-	genoa_iohc_smn_reg(h, D_IOHC_GCG_LCLK_CTL0, 0)
+
 /*
  * These setters are common across the IOHC::IOHC_GLUE_CG_LCLK_CTRL_ registers.
  */
@@ -325,8 +382,6 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_IOHC,	\
 	.srd_reg = 0x1008c	\
 }
-#define	IOHC_GCG_LCLK_CTL1(h)	\
-	genoa_iohc_smn_reg(h, D_IOHC_GCG_LCLK_CTL1, 0)
 
 /*
  * IOHC::IOHC_GLUE_CG_LCLK_CTRL_2. IOHC clock gating control.
@@ -336,8 +391,6 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_IOHC,	\
 	.srd_reg = 0x10090	\
 }
-#define	IOHC_GCG_LCLK_CTL2(h)	\
-	genoa_iohc_smn_reg(h, D_IOHC_GCG_LCLK_CTL2, 0)
 
 /*
  * IOHC::IOHC_FEATURE_CNTL. As it says on the tin, controls some various feature
@@ -1119,8 +1172,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_IOAGR,	\
 	.srd_reg = 0x0		\
 }
-#define	IOAGR_GCG_LCLK_CTL0(h)	\
-	genoa_iohc_smn_reg(h, D_IOAGR_GCG_LCLK_CTL0, 0)
+
 /*
  * These setters are common across the IOAGR::IOAGR_GLUE_CG_LCLK_CTRL_
  * registers.
@@ -1376,8 +1428,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_SDPMUX,	\
 	.srd_reg = 0x0		\
 }
-#define	SDPMUX_GCG_LCLK_CTL0(h)	\
-	genoa_iohc_smn_reg(h, D_SDPMUX_GCG_LCLK_CTL0, 0)
+
 /*
  * These setters are common across the SDPMUX::SDPMUX_GLUE_CG_LCLK_CTRL_
  * registers.
@@ -1401,8 +1452,6 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_SDPMUX,	\
 	.srd_reg = 0x4		\
 }
-#define	SDPMUX_GCG_LCLK_CTL1(h)	\
-	genoa_iohc_smn_reg(h, D_SDPMUX_GCG_LCLK_CTL1, 0)
 
 /*
  * SDPMUX::SDPMUX_SDP_PORT_CONTROL. More Clock request bits in the spirit of
@@ -1680,6 +1729,46 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	SDPMUX_SION_CLIREQ_BURST_VAL	0x08080808
 #define	SDPMUX_SION_CLIREQ_TIME_VAL	0x21212121
 #define	SDPMUX_SION_RDRSP_BURST_VAL	0x02020202
+
+/*
+ * SST (Source Synchronous Tunnel) registers of interest.
+ */
+
+/*
+ * SST::SST_CLOCK_CTRL.
+ */
+/*CSTYLED*/
+#define	D_SST_CLOCK_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SST,	\
+	.srd_reg = 0x4,			\
+	.srd_nents = 2			\
+}
+#define	SST_CLOCK_CTL_SET_RXCLKGATE_EN(r, v)		bitset32(r, 16, 16, v)
+#define	SST_CLOCK_CTL_SET_PCTRL_IDLE_TIME(r, v)		bitset32(r, 15, 8, v)
+#define	SST_CLOCK_CTL_SET_TXCLKGATE_EN(r, v)		bitset32(r, 0, 0, v)
+
+/* This is the PPR-specified init value, and differs from the reset value */
+#define	SST_CLOCK_CTL_PCTRL_IDLE_TIME			0xf0
+
+/*
+ * SST::SION_WRAPPER_CFG_SSTSION_GLUE_CG_LCLK_CTRL_SOFT_OVERRIDE_CLK
+ */
+/*CSTYLED*/
+#define	D_SST_SION_WRAP_CFG_GCG_LCLK_CTL (const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SST,	\
+	.srd_reg = 0x404,		\
+	.srd_nents = 2			\
+}
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK9(r, v)	bitset32(r, 9, 9, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK8(r, v)	bitset32(r, 8, 8, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK7(r, v)	bitset32(r, 7, 7, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK6(r, v)	bitset32(r, 6, 6, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK5(r, v)	bitset32(r, 5, 5, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK4(r, v)	bitset32(r, 4, 4, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK3(r, v)	bitset32(r, 3, 3, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK2(r, v)	bitset32(r, 2, 2, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK1(r, v)	bitset32(r, 1, 1, v)
+#define	SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK0(r, v)	bitset32(r, 0, 0, v)
 
 #ifdef __cplusplus
 }

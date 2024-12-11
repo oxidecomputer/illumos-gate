@@ -67,7 +67,7 @@ extern "C" {
 /*
  * The IOMS instance with the bonus PCIe core.
  */
-#define	MILAN_NBIO_BONUS_IOMS	0
+#define	MILAN_NBIO_BONUS_IOMS		0
 
 /*
  * There are supposed to be 23 digital power management (DPM) weights provided
@@ -133,6 +133,9 @@ extern void milan_fabric_iohc_arbitration(zen_ioms_t *);
 extern void milan_fabric_nbif_arbitration(zen_nbif_t *);
 extern void milan_fabric_sdp_control(zen_ioms_t *);
 extern void milan_fabric_nbif_syshub_dma(zen_nbif_t *);
+extern void milan_fabric_iohc_clock_gating(zen_ioms_t *);
+extern void milan_fabric_nbif_clock_gating(zen_nbif_t *);
+extern void milan_fabric_ioapic_clock_gating(zen_ioms_t *);
 extern void milan_fabric_ioapic(zen_ioms_t *);
 extern void milan_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void milan_fabric_nbif_bridges(zen_ioms_t *);

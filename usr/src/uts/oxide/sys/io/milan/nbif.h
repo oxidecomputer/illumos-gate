@@ -247,6 +247,23 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 #define	NBIF_GMI_WRR_WEIGHTn_VAL	0x04040404
 
 /*
+ * NBIFMM::NBIF_MGCG_CTRL_LCLK
+ */
+/*CSTYLED*/
+#define	D_NBIF_MGCG_CTL_LCLK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF,	\
+	.srd_reg = 0x3a21c	\
+}
+#define	NBIF_MGCG_CTL_LCLK_SET_HYST(r, v)		bitset32(r, 9, 2, v)
+/*
+ * The reset value for this hysteresis setting according to the PPR is 0x40,
+ * but AGESA explicitly sets 0x20. We do the same.
+ */
+#define	NBIF_MGCG_CTL_LCLK_HYST		0x20
+#define	NBIF_MGCG_CTL_LCLK_SET_MODE(r, v)		bitset32(r, 1, 1, v)
+#define	NBIF_MGCG_CTL_LCLK_SET_EN(r, v)			bitset32(r, 0, 0, v)
+
+/*
  * NBIFMM::RCC_DEVn_PORT_STRAP3.  Straps for the NBIF port. These are relative
  * to the main NBIF base aperture.
  */
@@ -259,7 +276,17 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	NBIF_PORT_STRAP3(i, n, d)	\
     milan_nbif_smn_reg(i, D_NBIF_PORT_STRAP3, n, d)
-#define	NBIF_PORT_STRAP3_SET_COMP_TO(r, v)	bitset32(r, 7, 7, v)
+#define	NBIF_PORT_STRAP3_SET_COMP_TO(r, v)		bitset32(r, 7, 7, v)
+
+/*
+ * SYSHUBMM::NGDC_MGCG_CTRL
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_NGDC_MGCG_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x3ba8	\
+}
+#define	NBIF_ALT_NGDC_MGCG_CTL_SET_EN(r, v)		bitset32(r, 0, 0, v)
 
 /*
  * SYSHUBMM::SYSHUB_BGEN_ENHANCEMENT_BYPASS_EN_SOCCLK.  Yes, really.  This
@@ -272,8 +299,28 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 #define	NBIF_ALT_BGEN_BYP_SOC(i, n)	\
     milan_nbif_alt_smn_reg(i, D_NBIF_ALT_BGEN_BYP_SOC, n, 0)
-#define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW1(r, v)	bitset32(r, 17, 17, v)
-#define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(r, v)	bitset32(r, 16, 16, v)
+#define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW1(r, v)		bitset32(r, 17, 17, v)
+#define	NBIF_ALT_BGEN_BYP_SOC_SET_DMA_SW0(r, v)		bitset32(r, 16, 16, v)
+
+/*
+ * SYSHUBMM::SYSHUB_MGCG_CTRL_SOCCLK
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_MGCG_CTL_SCLK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x10020	\
+}
+#define	NBIF_ALT_MGCG_CTL_SCLK_SET_EN(r, v)		bitset32(r, 0, 0, v)
+
+/*
+ * SYSHUBMM::SYSHUB_MGCG_CTRL_SHUBCLK
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_MGCG_CTL_SHCLK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x11020	\
+}
+#define	NBIF_ALT_MGCG_CTL_SHCLK_SET_EN(r, v)		bitset32(r, 0, 0, v)
 
 /*
  * SYSHUBMM::SYSHUB_BGEN_ENHANCEMENT_BYPASS_EN_SHUBCLK. As the previous
@@ -289,6 +336,35 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
     milan_nbif_alt_smn_reg(i, D_NBIF_ALT_BGEN_BYP_SHUB, n, 0)
 #define	NBIF_ALT_BGEN_BYP_SHUB_SET_DMA_SW1(r, v)	bitset32(r, 17, 17, v)
 #define	NBIF_ALT_BGEN_BYP_SHUB_SET_DMA_SW0(r, v)	bitset32(r, 16, 16, v)
+
+/*
+ * SYSHUBMM::SION_CNTL_REG0
+ */
+/*CSTYLED*/
+#define	D_NBIF_ALT_SION_CTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_NBIF_ALT,	\
+	.srd_reg = 0x1e140	\
+}
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK9(r, v)		bitset32(r, 19, 19, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK8(r, v)		bitset32(r, 18, 18, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK7(r, v)		bitset32(r, 17, 17, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK6(r, v)		bitset32(r, 16, 16, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK5(r, v)		bitset32(r, 15, 15, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK4(r, v)		bitset32(r, 14, 14, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK3(r, v)		bitset32(r, 13, 13, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK2(r, v)		bitset32(r, 12, 12, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK1(r, v)		bitset32(r, 11, 11, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL1_SOCLK0(r, v)		bitset32(r, 10, 10, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK9(r, v)		bitset32(r, 9, 9, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK8(r, v)		bitset32(r, 8, 8, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK7(r, v)		bitset32(r, 7, 7, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK6(r, v)		bitset32(r, 6, 6, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK5(r, v)		bitset32(r, 5, 5, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK4(r, v)		bitset32(r, 4, 4, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK3(r, v)		bitset32(r, 3, 3, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK2(r, v)		bitset32(r, 2, 2, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK1(r, v)		bitset32(r, 1, 1, v)
+#define	NBIF_ALT_SION_CTL_SET_CTL0_SOCLK0(r, v)		bitset32(r, 0, 0, v)
 
 #ifdef __cplusplus
 }
