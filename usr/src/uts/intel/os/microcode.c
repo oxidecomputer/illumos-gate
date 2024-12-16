@@ -52,6 +52,14 @@ static char *ucodepath;
 static kmutex_t ucode_lock;
 static bool ucode_cleanup_done = false;
 
+/*
+ * Flag for use by microcode impls to determine if they can use kmem.  Note this
+ * is meant primarily for gating use of functions like kobj_open_file() which
+ * allocate internally with kmem.  ucode_zalloc() and ucode_free() should
+ * otherwise be used.
+ */
+bool ucode_use_kmem = false;
+
 static const char ucode_failure_fmt[] =
 	"cpu%d: failed to update microcode from version 0x%x to 0x%x";
 static const char ucode_success_fmt[] =
@@ -134,7 +142,7 @@ ucode_path(void)
 void *
 ucode_zalloc(size_t size)
 {
-	if (kmem_avail() > 0)
+	if (ucode_use_kmem)
 		return (kmem_zalloc(size, KM_NOSLEEP));
 
 	/* BOP_ALLOC() failure results in panic */
@@ -144,7 +152,7 @@ ucode_zalloc(size_t size)
 void
 ucode_free(void *buf, size_t size)
 {
-	if (kmem_avail() > 0 && buf != NULL)
+	if (ucode_use_kmem && buf != NULL)
 		kmem_free(buf, size);
 }
 
@@ -350,7 +358,7 @@ ucode_locate(cpu_t *cp)
 	size_t sz;
 
 	ASSERT3P(cp, !=, NULL);
-	ASSERT3U(kmem_avail(), >, 0);
+	ASSERT(ucode_use_kmem);
 
 	mutex_enter(&ucode_lock);
 
@@ -486,6 +494,7 @@ ucode_check_boot(void)
 	size_t path_len;
 
 	ASSERT3U(cp->cpu_id, ==, 0);
+	ASSERT(!ucode_use_kmem);
 
 	mutex_enter(&ucode_lock);
 
@@ -516,7 +525,7 @@ ucode_check_boot(void)
 		/*
 		 * If we can't determine the architecture name,
 		 * we cannot find microcode files for it.
-		 * Return without setting 'ucode'.
+		 * Return without setting 'ucodepath'.
 		 */
 		cmn_err(CE_WARN, "ucode: could not determine arch");
 		goto out;
@@ -567,10 +576,11 @@ ucode_check_boot(void)
 out:
 	/*
 	 * Discard the memory that came from BOP_ALLOC and was used to build the
-	 * ucode path.  Subsequent CPUs will come through ucode_locate() and
-	 * persist it with kmem.
+	 * ucode path.  Subsequent CPUs will be handled via ucode_locate() at
+	 * which point kmem is available and we can cache the path.
 	 */
 	ucodepath = NULL;
+	ucode_use_kmem = true;
 
 	mutex_exit(&ucode_lock);
 }

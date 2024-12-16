@@ -47,6 +47,7 @@ extern void *ucode_zalloc(size_t);
 extern void ucode_free(void *, size_t);
 extern const char *ucode_path(void);
 extern int ucode_force_update;
+extern bool ucode_use_kmem;
 
 static ucode_file_amd_t *amd_ucodef;
 static ucode_eqtbl_amd_t *ucode_eqtbl_amd;
@@ -111,7 +112,7 @@ ucode_equiv_cpu_amd(cpu_t *cp, uint16_t *eq_sig)
 		    UCODE_AMD_EQUIVALENCE_TABLE_NAME);
 	}
 
-	if (kmem_avail() == 0) {
+	if (!ucode_use_kmem) {
 		/*
 		 * No kmem_zalloc() etc. available yet.
 		 */
