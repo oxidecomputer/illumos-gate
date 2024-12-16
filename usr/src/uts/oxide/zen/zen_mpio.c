@@ -639,7 +639,7 @@ zen_mpio_setup_link_post_map(zen_iodie_t *iodie)
 	zen_mpio_link_setup_args_t *args;
 	zen_mpio_rpc_res_t res;
 
-	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED_SETUP_LINK;
 	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
 	args->zmlsa_map = 1;
 	res = zen_mpio_rpc(iodie, &rpc);
@@ -659,7 +659,7 @@ zen_mpio_setup_link_post_config_reconfig(zen_iodie_t *iodie)
 	zen_mpio_rpc_t rpc = { 0 };
 	zen_mpio_rpc_res_t res;
 
-	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED_SETUP_LINK;
 	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
 	args->zmlsa_configure = 1;
 	args->zmlsa_reconfigure = 1;
@@ -680,7 +680,7 @@ zen_mpio_setup_link_post_perst_req(zen_iodie_t *iodie)
 	zen_mpio_rpc_t rpc = { 0 };
 	zen_mpio_rpc_res_t res;
 
-	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED_SETUP_LINK;
 	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
 	args->zmlsa_perst_req = 1;
 	res = zen_mpio_rpc(iodie, &rpc);
@@ -700,7 +700,7 @@ zen_mpio_setup_link_train_enumerate(zen_iodie_t *iodie)
 	zen_mpio_link_setup_args_t *args;
 	zen_mpio_rpc_res_t res;
 
-	rpc.zmr_req = ZEN_MPIO_OP_POSTED | ZEN_MPIO_OP_SETUP_LINK;
+	rpc.zmr_req = ZEN_MPIO_OP_POSTED_SETUP_LINK;
 	args = (zen_mpio_link_setup_args_t *)rpc.zmr_args;
 	args->zmlsa_training = 1;
 	args->zmlsa_enumerate = 1;

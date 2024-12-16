@@ -62,12 +62,23 @@ typedef enum zen_mpio_rpc_res {
 
 /*
  * MPIO message codes.  These are specific to firmware revision 3.
+ *
+ * Note that AGESA defines a "message count" symbol that differs across
+ * microarchitectures, and that we do not include here.  It is unclear what
+ * exactly that message refers to: an interpretation is that it is an operation
+ * that returns a total count of messages to sent (or received from?) MPIO or
+ * something of that nature, but we believe it is just a count of the total
+ * number of operation messages.  Making things less clear in this latter case
+ * is that the ZEN_MPIO_OP_GET_XGMI_FREQ_ALL_LINKS message is numerically
+ * greater than message count.
  */
+#define	ZEN_MPIO_OP_POSTED			(3 << 8)
+
 #define	ZEN_MPIO_OP_GET_VERSION			0x00
 #define	ZEN_MPIO_OP_GET_STATUS			0x01
 #define	ZEN_MPIO_OP_SET_GLOBAL_CONFIG		0x02
 #define	ZEN_MPIO_OP_GET_ASK_RESULT		0x03
-#define	ZEN_MPIO_OP_SETUP_LINK			0x04
+#define	ZEN_MPIO_OP_POSTED_SETUP_LINK		(0x04 | ZEN_MPIO_OP_POSTED)
 #define	ZEN_MPIO_OP_EN_CLK_GATING		0x05
 #define	ZEN_MPIO_OP_RECOVER_ASK			0x06
 #define	ZEN_MPIO_OP_XFER_ASK			0x07
@@ -78,6 +89,7 @@ typedef enum zen_mpio_rpc_res {
 #define	ZEN_MPIO_OP_PCIE_WRITE_STRAP		0x0c
 #define	ZEN_MPIO_OP_CXL_INIT			0x0d
 #define	ZEN_MPIO_OP_GET_DELI_INFO		0x0e
+/* 0x0f unused on Turin and Genoa */
 #define	ZEN_MPIO_OP_ENUMERATE_I2C		0x10
 #define	ZEN_MPIO_OP_GET_I2C_DEV			0x11
 #define	ZEN_MPIO_OP_GET_I2C_DEV_CHG		0x12
@@ -88,8 +100,29 @@ typedef enum zen_mpio_rpc_res {
 #define	ZEN_MPIO_OP_SET_HP_BLINK_IVAL		0x17
 #define	ZEN_MPIO_OP_SET_HP_POLL_IVAL		0x18
 #define	ZEN_MPIO_OP_SET_HP_FLAGS		0x19
-
-#define	ZEN_MPIO_OP_POSTED			(3 << 8)
+#define	ZEN_MPIO_OP_SET_HP_GPIO_INT_CMD		0x1a
+#define	ZEN_MPIO_OP_GET_HP_GPIO_INT_STATUS	0x1b
+#define	ZEN_MPIO_OP_RDWR_HP_GPIO		0x1c
+#define	ZEN_MPIO_OP_UNBLOCK_HP_PORT		0x1d
+#define	ZEN_MPIO_OP_ADD_HP_CANCEL		0x1e
+#define	ZEN_MPIO_OP_AUTH_CHIPSET		0x1f
+#define	ZEN_MPIO_OP_TRAP_NVME_RAID		0x20
+#define	ZEN_MPIO_OP_TRAP_NBIF_CFG0		0x21
+#define	ZEN_MPIO_OP_POSTED_UPDATE_LINK		(0x22 | ZEN_MPIO_OP_POSTED)
+#define	ZEN_MPIO_OP_RST_PCIE_GPIO		0x23
+#define	ZEN_MPIO_OP_PORT_TRAINING		0x24	/* Turin only */
+#define	ZEN_MPIO_OP_SET_EXT_PCIE_BUSES		0x25
+#define	ZEN_MPIO_OP_RDWR_PCIE_PROXY		0x26
+/* 0x27 unused on Turin and Genoa */
+#define	ZEN_MPIO_OP_SET_PCIE_PSPP_SETTINGS	0x28
+#define	ZEN_MPIO_OP_INIT_FRAME_BUF_TRAP		0x29
+#define	ZEN_MPIO_OP_RELEASE_UBM_PERST		0x2a
+#define	ZEN_MPIO_OP_SET_PCIE_LINK_SETTINGS	0x2b
+#define	ZEN_MPIO_OP_INIT_CNLI			0x2c
+#define	ZEN_MPIO_OP_DEASSERT_PERST		0x2d
+#define	ZEN_MPIO_OP_CXL_ERR_FW_FIRST_EN		0x2e
+/* 0x30 unused on Turin and Genoa */
+#define	ZEN_MPIO_OP_GET_XGMI_FREQ_ALL_LINKS	0x31
 
 /*
  * MPIO RPC response codes defined by firmware that may appear in the response
