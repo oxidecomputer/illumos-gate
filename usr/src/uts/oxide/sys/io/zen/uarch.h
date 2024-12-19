@@ -22,6 +22,7 @@
  */
 
 #include <sys/stdbool.h>
+#include <sys/stdint.h>
 #include <sys/types.h>
 #include <sys/x86_archext.h>
 
@@ -287,7 +288,6 @@ typedef enum zen_hack_gpio_op zen_hack_gpio_op_t;
 typedef struct zen_hack_ops {
 	void	(*zho_check_furtive_reset)(void);
 	bool	(*zho_cgpll_set_ssc)(bool);
-	void	(*zho_fabric_hack_bridges)(zen_fabric_t *);
 	void	(*zho_hack_gpio)(zen_hack_gpio_op_t, uint16_t);
 } zen_hack_ops_t;
 
@@ -445,6 +445,12 @@ typedef struct zen_platform_consts {
 	const size_t *const		zpc_pcie_core_dbg_nregs;
 	const zen_pcie_reg_dbg_t	*zpc_pcie_port_dbg_regs;
 	const size_t *const		zpc_pcie_port_dbg_nregs;
+
+	/*
+	 * Internal ports that are modeled as PCIe devices, though not exposed
+	 * outside of the package.  These are indexed by IOHC number.
+	 */
+	const zen_iohc_nbif_ports_t	*zpc_pcie_int_ports;
 
 	/*
 	 * This is the maximum PCIe Generation Supported.

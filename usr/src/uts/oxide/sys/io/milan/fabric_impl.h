@@ -95,6 +95,11 @@ struct milan_fabric {
 };
 
 /*
+ * Milan uarch-specific initialization data for consumption by common Zen code.
+ */
+extern const zen_iohc_nbif_ports_t milan_pcie_int_ports[MILAN_IOMS_PER_IODIE];
+
+/*
  * The Milan uarch-specific hooks for initial fabric topology initialization.
  */
 extern void milan_fabric_topo_init(zen_fabric_t *);

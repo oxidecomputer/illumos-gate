@@ -206,43 +206,49 @@ static const zen_pcie_port_info_t
 	}
 };
 
-typedef struct turin_ioms_pcie_port_info {
-	uint8_t tippi_count;
-	zen_pcie_port_info_t tippi_info[4];
-} turin_ioms_pcie_port_info_t;
-
 /*
  * These are internal bridges.  They are modeled as ports but there is no
  * physical port brought out of the package.  Indexed by IOHC number, on
  * large IOHC's only (note that the large IOHCs have indices 0..3).
  */
-static const turin_ioms_pcie_port_info_t turin_int_ports[4] =
-{
+const zen_iohc_nbif_ports_t turin_pcie_int_ports[TURIN_IOMS_PER_IODIE] = {
 	[0] = {
-		.tippi_count = 2,
-		.tippi_info = {
+		.zinp_count = 2,
+		.zinp_ports = {
 			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
 			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
 		},
 	},
 	[1] = {
-		.tippi_count = 1,
-		.tippi_info = {
+		.zinp_count = 1,
+		.zinp_ports = {
 			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
 		},
 	},
 	[2] = {
-		.tippi_count = 1,
-		.tippi_info = {
+		.zinp_count = 1,
+		.zinp_ports = {
 			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
 		},
 	},
 	[3] = {
-		.tippi_count = 2,
-		.tippi_info = {
+		.zinp_count = 2,
+		.zinp_ports = {
 			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
 			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
 		},
+	},
+	[4] = {
+		.zinp_count = 0,
+	},
+	[5] = {
+		.zinp_count = 0,
+	},
+	[6] = {
+		.zinp_count = 0,
+	},
+	[7] = {
+		.zinp_count = 0,
 	},
 };
 
@@ -2082,8 +2088,9 @@ turin_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms)
 	 * The description of the bridge control register says to disable the
 	 * unused internal bridges on init.
 	 */
-	ASSERT3U(ioms->zio_iohcnum, <, ARRAY_SIZE(turin_int_ports));
-	for (uint8_t i = turin_int_ports[ioms->zio_iohcnum].tippi_count;
+	ASSERT3U(ioms->zio_iohcnum, <, ARRAY_SIZE(turin_pcie_int_ports));
+	for (uint8_t i =
+	    turin_pcie_int_ports[ioms->zio_iohcnum].zinp_count;
 	    i < TURIN_NBIF_MAX_PORTS; i++) {
 		turin_hide_nbif_bridge(ioms, i);
 	}
@@ -2286,73 +2293,4 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 		val = PCIE_CORE_PCIE_P_CTL_SET_ALWAYS_USE_FAST_TXCLK(val, 1);
 		zen_pcie_core_write(pc, reg, val);
 	}
-}
-
-typedef struct {
-	zen_ioms_t *pbc_ioms;
-	uint8_t pbc_busoff;
-} pci_bus_counter_t;
-
-static int
-turin_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
-{
-	uint8_t bus, secbus;
-	pci_bus_counter_t *pbc = arg;
-	zen_pcie_core_t *pc = port->zpp_core;
-	zen_ioms_t *ioms = pc->zpc_ioms;
-	uint_t i;
-
-	bus = ioms->zio_pci_busno;
-	if (pbc->pbc_ioms != ioms &&
-	    ioms->zio_iohctype == ZEN_IOHCT_LARGE &&
-	    pc->zpc_coreno == 0) {
-		const turin_ioms_pcie_port_info_t *int_ports =
-		    &turin_int_ports[ioms->zio_iohcnum];
-		pbc->pbc_busoff = 1 + int_ports->tippi_count;
-		pbc->pbc_ioms = ioms;
-		for (i = 0; i < int_ports->tippi_count; i++) {
-			const zen_pcie_port_info_t *info =
-			    &int_ports->tippi_info[i];
-			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
-			    PCI_BCNF_PRIBUS, bus);
-			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
-			    PCI_BCNF_SECBUS, bus + 1 + i);
-			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
-			    PCI_BCNF_SUBBUS, bus + 1 + i);
-		}
-	}
-
-	if ((port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0)
-		return (0);
-
-	secbus = bus + pbc->pbc_busoff;
-
-	pci_putb_func(bus, port->zpp_device, port->zpp_func,
-	    PCI_BCNF_PRIBUS, bus);
-	pci_putb_func(bus, port->zpp_device, port->zpp_func,
-	    PCI_BCNF_SECBUS, secbus);
-	pci_putb_func(bus, port->zpp_device, port->zpp_func,
-	    PCI_BCNF_SUBBUS, secbus);
-	pbc->pbc_busoff++;
-
-	return (0);
-}
-
-/*
- * XXX This whole function exists to workaround deficiencies in software and
- * basically try to ape parts of the PCI firmware spec. The OS should natively
- * handle this. In particular, we currently do the following:
- *
- *   * Program a single downstream bus onto each root port. We can only get away
- *     with this because we know there are no other bridges right now. This
- *     cannot be a long term solution, though I know we will be temped to make
- *     it one. I'm sorry future us.
- */
-void
-turin_fabric_hack_bridges(zen_fabric_t *fabric)
-{
-	pci_bus_counter_t c;
-	bzero(&c, sizeof (c));
-
-	zen_fabric_walk_pcie_port(fabric, turin_fabric_hack_bridges_cb, &c);
 }

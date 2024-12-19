@@ -100,6 +100,7 @@ extern void turin_fabric_ioms_init(zen_ioms_t *);
 extern const uint8_t turin_nbif_nfunc[];
 extern const zen_nbif_info_t
     turin_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS];
+extern const zen_iohc_nbif_ports_t turin_pcie_int_ports[TURIN_IOMS_PER_IODIE];
 
 /*
  * These are the initialization points for the Genoa Data Fabric, Northbridges,
@@ -130,7 +131,6 @@ extern void turin_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *);
 extern void turin_fabric_init_pcie_core(zen_pcie_core_t *);
 extern void turin_iohc_enable_nmi(zen_ioms_t *);
 extern void turin_iohc_nmi_eoi(zen_ioms_t *);
-extern void turin_fabric_hack_bridges(zen_fabric_t *);
 
 extern smn_reg_t turin_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);

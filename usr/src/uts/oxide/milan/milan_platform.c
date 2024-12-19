@@ -154,6 +154,7 @@ const zen_platform_t milan_platform = {
 		.zpc_nbif_nfunc = milan_nbif_nfunc,
 		.zpc_nbif_data = milan_nbif_data,
 		.zpc_pcie_core0_unitid = MILAN_PCIE_CORE0_UNITID,
+		.zpc_pcie_int_ports = milan_pcie_int_ports,
 		.zpc_pcie_core_dbg_regs = milan_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = &milan_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = milan_pcie_port_dbg_regs,

@@ -92,6 +92,8 @@ extern void genoa_fabric_ioms_init(zen_ioms_t *);
 extern const uint8_t genoa_nbif_nfunc[];
 extern const zen_nbif_info_t
     genoa_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS];
+extern const zen_iohc_nbif_ports_t genoa_pcie_int_ports[GENOA_IOMS_PER_IODIE];
+
 
 /*
  * These are the initialization points for the Genoa Data Fabric, Northbridges,

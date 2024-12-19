@@ -132,7 +132,6 @@ static const zen_hack_ops_t turin_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
 	.zho_hack_gpio = turin_hack_gpio,
-	.zho_fabric_hack_bridges = turin_fabric_hack_bridges,
 };
 
 static const zen_ras_ops_t turin_ras_ops = {
@@ -175,6 +174,7 @@ const zen_platform_t turin_platform = {
 		.zpc_nbif_nfunc = turin_nbif_nfunc,
 		.zpc_nbif_data = turin_nbif_data,
 		.zpc_pcie_core0_unitid = TURIN_PCIE_CORE0_UNITID,
+		.zpc_pcie_int_ports = turin_pcie_int_ports,
 		.zpc_pcie_core_dbg_regs = turin_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = &turin_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,
@@ -224,6 +224,7 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_nbif_nfunc = turin_nbif_nfunc,
 		.zpc_nbif_data = turin_nbif_data,
 		.zpc_pcie_core0_unitid = TURIN_PCIE_CORE0_UNITID,
+		.zpc_pcie_int_ports = turin_pcie_int_ports,
 		.zpc_pcie_core_dbg_regs = turin_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = &turin_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,

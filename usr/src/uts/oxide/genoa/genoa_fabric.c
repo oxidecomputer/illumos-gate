@@ -84,6 +84,40 @@ static const zen_pcie_port_info_t
 };
 
 /*
+ * These are internal bridges that correspond to NBIFs; they are modeled as
+ * ports but there is no physical port brought out of the package.
+ */
+const zen_iohc_nbif_ports_t
+    genoa_pcie_int_ports[GENOA_IOMS_PER_IODIE] = {
+	[0] = {
+		.zinp_count = 2,
+		.zinp_ports = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
+		},
+	},
+	[1] = {
+		.zinp_count = 1,
+		.zinp_ports = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+		},
+	},
+	[2] = {
+		.zinp_count = 2,
+		.zinp_ports = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
+		},
+	},
+	[3] = {
+		.zinp_count = 1,
+		.zinp_ports = {
+			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
+		},
+	},
+};
+
+/*
  * This table encodes the mapping of the set of dxio lanes to a given PCIe core
  * on an IOMS. Note, that all lanes here are inclusive. e.g. [start, end].
  * The subsequent table encodes mappings for the bonus cores.
@@ -1847,113 +1881,6 @@ genoa_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	val = zen_pcie_core_read(pc, reg);
 	val = IOMMUL1_CTL1_SET_ORDERING(val, 1);
 	zen_pcie_core_write(pc, reg, val);
-}
-
-typedef struct genoa_ioms_pcie_port_info {
-	uint8_t gippi_count;
-	zen_pcie_port_info_t gippi_info[4];
-} genoa_ioms_pcie_port_info_t;
-
-/*
- * These are internal bridges that correspond to NBIFs; they are modeled as
- * ports but there is no physical port brought out of the package.
- */
-static const genoa_ioms_pcie_port_info_t genoa_int_ports[GENOA_IOMS_PER_IODIE] =
-{
-	[0] = {
-		.gippi_count = 2,
-		.gippi_info = {
-			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
-			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
-		},
-	},
-	[1] = {
-		.gippi_count = 1,
-		.gippi_info = {
-			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
-		},
-	},
-	[2] = {
-		.gippi_count = 2,
-		.gippi_info = {
-			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
-			{ .zppi_dev = 0x7, .zppi_func = 0x2, },
-		},
-	},
-	[3] = {
-		.gippi_count = 1,
-		.gippi_info = {
-			{ .zppi_dev = 0x7, .zppi_func = 0x1, },
-		},
-	},
-};
-
-typedef struct {
-	zen_ioms_t *pbc_ioms;
-	uint8_t pbc_busoff;
-} pci_bus_counter_t;
-
-static int
-genoa_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
-{
-	uint8_t bus, secbus;
-	pci_bus_counter_t *pbc = arg;
-	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
-
-	bus = ioms->zio_pci_busno;
-	if (pbc->pbc_ioms != ioms) {
-		pbc->pbc_ioms = ioms;
-		const genoa_ioms_pcie_port_info_t *int_ports =
-		    &genoa_int_ports[ioms->zio_num];
-		pbc->pbc_busoff = 1 + int_ports->gippi_count;
-		for (uint_t i = 0; i < int_ports->gippi_count; i++) {
-			const zen_pcie_port_info_t *info =
-			    &int_ports->gippi_info[i];
-			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
-			    PCI_BCNF_PRIBUS, bus);
-			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
-			    PCI_BCNF_SECBUS, bus + 1 + i);
-			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
-			    PCI_BCNF_SUBBUS, bus + 1 + i);
-
-		}
-	}
-
-	if ((port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0) {
-		return (0);
-	}
-
-	secbus = bus + pbc->pbc_busoff;
-
-	pci_putb_func(bus, port->zpp_device, port->zpp_func,
-	    PCI_BCNF_PRIBUS, bus);
-	pci_putb_func(bus, port->zpp_device, port->zpp_func,
-	    PCI_BCNF_SECBUS, secbus);
-	pci_putb_func(bus, port->zpp_device, port->zpp_func,
-	    PCI_BCNF_SUBBUS, secbus);
-	pbc->pbc_busoff++;
-
-	return (0);
-}
-
-/*
- * XXX This whole function exists to workaround deficiencies in software and
- * basically try to ape parts of the PCI firmware spec. The OS should natively
- * handle this. In particular, we currently do the following:
- *
- *   * Program a single downstream bus onto each root port. We can only get away
- *     with this because we know there are no other bridges right now. This
- *     cannot be a long term solution, though I know we will be temped to make
- *     it one. I'm sorry future us.
- */
-static bool genoa_hotplug_init(zen_fabric_t *);
-void
-genoa_fabric_hack_bridges(zen_fabric_t *fabric)
-{
-	pci_bus_counter_t c;
-	bzero(&c, sizeof (c));
-
-	zen_fabric_walk_pcie_port(fabric, genoa_fabric_hack_bridges_cb, &c);
 }
 
 void

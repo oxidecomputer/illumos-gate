@@ -16,6 +16,7 @@
 #ifndef	_SYS_IO_ZEN_HACKS_H
 #define	_SYS_IO_ZEN_HACKS_H
 
+#include <sys/stdint.h>
 #include <sys/io/zen/platform_impl.h>
 
 /*
@@ -26,6 +27,15 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+/*
+ * The implementation of these types is exposed to implementers but not to
+ * consumers; therefore we forward-declare them here and provide the actual
+ * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
+ * pointers to these types only as opaque handles.
+ */
+typedef struct zen_fabric zen_fabric_t;
+typedef struct zen_pcie_port_info zen_pcie_port_info_t;
 
 /*
  * Setup the SoC so that a single core shutdown (e.g., due to a triple fault)
@@ -72,6 +82,8 @@ typedef enum zen_hack_gpio_op {
 } zen_hack_gpio_op_t;
 
 extern void zen_hack_gpio(zen_hack_gpio_op_t, uint16_t);
+
+extern void zen_fabric_hack_bridges(zen_fabric_t *);
 
 #ifdef	__cplusplus
 }

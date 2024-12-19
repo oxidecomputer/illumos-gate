@@ -63,6 +63,22 @@ typedef struct zen_pcie_port_info {
 	uint8_t zppi_func;
 } zen_pcie_port_info_t;
 
+/*
+ * The maximum number of internal PCIe ports found on an IOHC. There is
+ * generally one of these for each nBIF present.
+ */
+#define	ZEN_IOHC_MAX_NBIFS		4
+
+/*
+ * This structure tells us, for a single IOHC, the PCIe devices and functions
+ * where the internal nBIF ports are found.
+ */
+typedef struct zen_iohc_nbif_ports {
+	const uint8_t			zinp_count;
+	const zen_pcie_port_info_t	zinp_ports[ZEN_IOHC_MAX_NBIFS];
+} zen_iohc_nbif_ports_t;
+
+
 typedef struct zen_pcie_core_info {
 	const char	*zpci_name;
 	uint16_t	zpci_dxio_start;

@@ -27,6 +27,8 @@
 #include <sys/io/zen/uarch.h>
 #include <sys/io/zen/platform.h>
 #include <sys/io/zen/platform_impl.h>
+#include <sys/pci_cfgspace.h>
+#include <sys/pci_cfgspace_impl.h>
 
 /*
  * It is an unfortunate reality that the reset and shutdown conditions of an
@@ -164,4 +166,75 @@ zen_hack_gpio(zen_hack_gpio_op_t op, uint16_t gpio)
 	const zen_hack_ops_t *ops = oxide_zen_hack_ops();
 	VERIFY3P(ops->zho_hack_gpio, !=, NULL);
 	ops->zho_hack_gpio(op, gpio);
+}
+
+typedef struct zen_pci_bus_counter {
+	zen_ioms_t *zpbc_ioms;
+	uint8_t zpbc_busoff;
+} zen_pci_bus_counter_t;
+
+static int
+zen_fabric_hack_bridges_cb(zen_pcie_port_t *port, void *arg)
+{
+	uint8_t bus, secbus;
+	zen_pci_bus_counter_t *zpbc = arg;
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+
+	/*
+	 * Assign bus numbers for the internal NBIF bridges.  This only happens
+	 * on the large IOHC types, as those are the only ones that have NBIFs.
+	 * We only want to do this once per IOMS, and the check below implies
+	 * that this always happens on PCIe core 0.
+	 */
+	bus = ioms->zio_pci_busno;
+	if (zpbc->zpbc_ioms != ioms) {
+		const zen_iohc_nbif_ports_t *int_ports =
+		    &consts->zpc_pcie_int_ports[ioms->zio_iohcnum];
+		zpbc->zpbc_busoff = 1 + int_ports->zinp_count;
+		zpbc->zpbc_ioms = ioms;
+		for (uint_t i = 0; i < int_ports->zinp_count; i++) {
+			const zen_pcie_port_info_t *info =
+			    &int_ports->zinp_ports[i];
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_PRIBUS, bus);
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_SECBUS, bus + 1 + i);
+			pci_putb_func(bus, info->zppi_dev, info->zppi_func,
+			    PCI_BCNF_SUBBUS, bus + 1 + i);
+		}
+	}
+
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN) != 0)
+		return (0);
+
+	secbus = bus + zpbc->zpbc_busoff;
+
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_PRIBUS, bus);
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_SECBUS, secbus);
+	pci_putb_func(bus, port->zpp_device, port->zpp_func,
+	    PCI_BCNF_SUBBUS, secbus);
+	zpbc->zpbc_busoff++;
+
+	return (0);
+}
+
+/*
+ * Work around deficiencies in software and emulate parts of the PCI firmware
+ * spec. The OS should natively handle this.
+ *
+ * We program a single downstream bus onto each root port. We can only get away
+ * with this because we know there are no other bridges right now.
+ *
+ * The logic in pci_boot.c really ought to take care of this.
+ */
+void
+zen_fabric_hack_bridges(zen_fabric_t *fabric)
+{
+	zen_pci_bus_counter_t c;
+	bzero(&c, sizeof (c));
+	zen_fabric_walk_pcie_port(fabric, zen_fabric_hack_bridges_cb, &c);
 }

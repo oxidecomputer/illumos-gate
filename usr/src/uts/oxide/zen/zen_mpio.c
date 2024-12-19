@@ -1104,7 +1104,6 @@ void
 zen_mpio_pcie_init(zen_fabric_t *fabric)
 {
 	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
-	const zen_hack_ops_t *hops = oxide_zen_hack_ops();
 
 	zen_pcie_populate_dbg(fabric, ZPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
 
@@ -1169,6 +1168,5 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	/*
 	 * XXX This is a terrible hack. We should really fix pci_boot.c.
 	 */
-	if (hops->zho_fabric_hack_bridges != NULL)
-		hops->zho_fabric_hack_bridges(fabric);
+	zen_fabric_hack_bridges(fabric);
 }

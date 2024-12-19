@@ -124,7 +124,6 @@ static const zen_hack_ops_t genoa_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
 	.zho_hack_gpio = genoa_hack_gpio,
-	.zho_fabric_hack_bridges = genoa_fabric_hack_bridges,
 };
 
 static const zen_ras_ops_t genoa_ras_ops = {
@@ -168,6 +167,7 @@ const zen_platform_t genoa_platform = {
 		.zpc_nbif_nfunc = genoa_nbif_nfunc,
 		.zpc_nbif_data = genoa_nbif_data,
 		.zpc_pcie_core0_unitid = GENOA_PCIE_CORE0_UNITID,
+		.zpc_pcie_int_ports = genoa_pcie_int_ports,
 		.zpc_pcie_core_dbg_regs = genoa_pcie_core_dbg_regs,
 		.zpc_pcie_core_dbg_nregs = &genoa_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = genoa_pcie_port_dbg_regs,
