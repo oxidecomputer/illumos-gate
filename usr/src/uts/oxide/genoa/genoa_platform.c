@@ -28,7 +28,6 @@
 #include <sys/io/zen/platform_impl.h>
 
 #include <sys/io/genoa/fabric_impl.h>
-#include <sys/io/genoa/hacks.h>
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/ccx_impl.h>
 #include <sys/io/genoa/mpio_impl.h>
@@ -123,7 +122,6 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 static const zen_hack_ops_t genoa_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
-	.zho_hack_gpio = genoa_hack_gpio,
 };
 
 static const zen_ras_ops_t genoa_ras_ops = {

@@ -283,12 +283,9 @@ typedef struct zen_fabric_ops {
 	uint8_t		(*zfo_tile_smu_hp_id)(const oxio_engine_t *);
 } zen_fabric_ops_t;
 
-typedef enum zen_hack_gpio_op zen_hack_gpio_op_t;
-
 typedef struct zen_hack_ops {
 	void	(*zho_check_furtive_reset)(void);
 	bool	(*zho_cgpll_set_ssc)(bool);
-	void	(*zho_hack_gpio)(zen_hack_gpio_op_t, uint16_t);
 } zen_hack_ops_t;
 
 /*

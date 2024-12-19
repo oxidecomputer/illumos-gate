@@ -134,14 +134,12 @@ MILAN_OBJS +=			\
 GENOA_OBJS +=			\
 	genoa_ccx.o		\
 	genoa_fabric.o		\
-	genoa_hacks.o		\
 	genoa_pcie_dbg.o	\
 	genoa_platform.o
 
 TURIN_OBJS +=			\
 	turin_ccx.o		\
 	turin_fabric.o		\
-	turin_hacks.o		\
 	turin_pcie_dbg.o	\
 	turin_platform.o
 

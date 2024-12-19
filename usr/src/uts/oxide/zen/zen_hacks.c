@@ -21,6 +21,8 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 
+#include <sys/amdzen/fch/iomux.h>
+#include <sys/amdzen/fch/gpio.h>
 #include <sys/amdzen/mmioreg.h>
 #include <sys/io/fch/pmio.h>
 #include <sys/io/zen/hacks.h>
@@ -158,14 +160,114 @@ zen_null_check_furtive_reset(void)
 }
 
 /*
- * Hack the GPIO!
+ * Configures a GPIO pin in the IO mux to the given function, and configure the
+ * pin to output with internal pulls (both up and down) disabled.
+ *
+ * We use MMIO here to accommodate broken firmware that blocks SMN access to
+ * these blocks.
+ */
+void
+zen_hack_gpio_config(uint16_t gpio, uint8_t func)
+{
+	mmio_reg_block_t gpio_block;
+	mmio_reg_block_t iomux_block;
+	mmio_reg_t gpio_reg;
+	mmio_reg_t iomux_reg;
+	uint32_t val;
+
+	/*
+	 * Select the register block and register within the block for the given
+	 * GPIO.  Note that this will automatically map the register block.
+	 */
+	if (gpio < 256) {
+		gpio_block = fch_gpio_mmio_block();
+		gpio_reg = FCH_GPIO_GPIO_MMIO(gpio_block, gpio);
+		iomux_block = fch_iomux_mmio_block();
+		iomux_reg = FCH_IOMUX_IOMUX_MMIO(iomux_block, gpio);
+	} else {
+		gpio_block = fch_rmtgpio_mmio_block();
+		gpio_reg = FCH_RMTGPIO_GPIO_MMIO(gpio_block, gpio - 256);
+		iomux_block = fch_rmtmux_mmio_block();
+		iomux_reg = FCH_RMTMUX_IOMUX_MMIO(iomux_block, gpio - 256);
+	}
+
+	/*
+	 * Before muxing in the GPIO, we want to set it up in a known
+	 * initial state.
+	 */
+	val = mmio_reg_read(gpio_reg);
+	val = FCH_GPIO_GPIO_SET_OUT_EN(val, 1);
+	val = FCH_GPIO_GPIO_SET_OUTPUT(val, 0);
+	val = FCH_GPIO_GPIO_SET_PD_EN(val, 0);
+	val = FCH_GPIO_GPIO_SET_PU_EN(val, 0);
+	val = FCH_GPIO_GPIO_SET_WAKE_S5(val, 0);
+	val = FCH_GPIO_GPIO_SET_WAKE_S3(val, 0);
+	val = FCH_GPIO_GPIO_SET_WAKE_S0I3(val, 0);
+	val = FCH_GPIO_GPIO_SET_INT_EN(val, 0);
+	val = FCH_GPIO_GPIO_SET_INT_STS_EN(val, 0);
+	mmio_reg_write(gpio_reg, val);
+
+	/*
+	 * Now set the function in the IO mux.
+	 */
+	mmio_reg_write(iomux_reg, func);
+
+	/*
+	 * The register blocks are automatically mapped when we retrieve them,
+	 * above; unmap them here.
+	 */
+	mmio_reg_block_unmap(&iomux_block);
+	mmio_reg_block_unmap(&gpio_block);
+}
+
+/*
+ * Manipulate the state of a GPIO.  We'd like to use a proper GPIO driver for
+ * this, but we need to manipulate GPIO states early enough in the boot sequence
+ * that the DDI is not fully available yet.  This is used to do things like
+ * release PCIe devices from PERST on development boards, etc.
+ *
+ * Note that configuration is a separate operation.
  */
 void
 zen_hack_gpio(zen_hack_gpio_op_t op, uint16_t gpio)
 {
-	const zen_hack_ops_t *ops = oxide_zen_hack_ops();
-	VERIFY3P(ops->zho_hack_gpio, !=, NULL);
-	ops->zho_hack_gpio(op, gpio);
+	mmio_reg_block_t gpio_block;
+	mmio_reg_t gpio_reg;
+	uint32_t val;
+
+	if (gpio < 256) {
+		gpio_block = fch_gpio_mmio_block();
+		gpio_reg = FCH_GPIO_GPIO_MMIO(gpio_block, gpio);
+	} else {
+		gpio_block = fch_rmtgpio_mmio_block();
+		gpio_reg = FCH_RMTGPIO_GPIO_MMIO(gpio_block, gpio - 256);
+	}
+
+	switch (op) {
+	case ZHGOP_RESET:
+		val = mmio_reg_read(gpio_reg);
+		val = FCH_GPIO_GPIO_SET_OUTPUT(val, 0);
+		mmio_reg_write(gpio_reg, val);
+		break;
+	case ZHGOP_SET:
+		val = mmio_reg_read(gpio_reg);
+		val = FCH_GPIO_GPIO_SET_OUTPUT(val, 1);
+		mmio_reg_write(gpio_reg, val);
+		break;
+	case ZHGOP_TOGGLE: {
+		uint32_t output;
+
+		val = mmio_reg_read(gpio_reg);
+		output = FCH_GPIO_GPIO_GET_OUTPUT(val);
+		val = FCH_GPIO_GPIO_SET_OUTPUT(val, !output);
+		mmio_reg_write(gpio_reg, val);
+		break;
+	}
+	default:
+		cmn_err(CE_PANIC, "invalid milan GPIO hack op %d", op);
+	}
+
+	mmio_reg_block_unmap(&gpio_block);
 }
 
 typedef struct zen_pci_bus_counter {

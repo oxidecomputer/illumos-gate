@@ -29,7 +29,6 @@
 #include <sys/io/zen/platform_impl.h>
 
 #include <sys/io/turin/fabric_impl.h>
-#include <sys/io/turin/hacks.h>
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/io/turin/ccx_impl.h>
 #include <sys/io/turin/mpio_impl.h>
@@ -131,7 +130,6 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 static const zen_hack_ops_t turin_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
-	.zho_hack_gpio = turin_hack_gpio,
 };
 
 static const zen_ras_ops_t turin_ras_ops = {

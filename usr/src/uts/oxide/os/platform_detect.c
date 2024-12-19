@@ -28,6 +28,7 @@
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/iomux.h>
 #include <sys/amdzen/fch/gpio.h>
+#include <sys/io/milan/hacks.h>
 #include <sys/io/milan/iomux.h>
 #include <sys/io/genoa/iomux.h>
 #include <sys/io/turin/iomux.h>
@@ -132,9 +133,9 @@ static bool eb_eval_gpio_tristate(const oxide_board_cpuinfo_t *, const
 static bool eb_eval_romtype(const oxide_board_cpuinfo_t *, const
     oxide_board_test_t *, oxide_board_testresult_t *);
 
-static void eb_disable_kbrst(const oxide_board_cpuinfo_t *,
+static void eb_milan_disable_kbrst(const oxide_board_cpuinfo_t *,
     const oxide_board_test_t *);
-static void eb_enable_kbrst(const oxide_board_cpuinfo_t *,
+static void eb_milan_enable_kbrst(const oxide_board_cpuinfo_t *,
     const oxide_board_test_t *);
 
 /*
@@ -215,8 +216,8 @@ static oxide_board_def_t oxide_board_defs[] = {
 					 * FCH::PM::RESETCONTROL1[kbrsten] to
 					 * avoid resetting ourselves.
 					 */
-					.otgt_init = eb_disable_kbrst,
-					.otgt_fini = eb_enable_kbrst,
+					.otgt_init = eb_milan_disable_kbrst,
+					.otgt_fini = eb_milan_enable_kbrst,
 					.otgt_iomux = IOMUX_CFG_ENTRY(129,
 					    MILAN_FCH_IOMUX_129_AGPIO129),
 					.otgt_expect = {
@@ -527,30 +528,17 @@ eb_eval_romtype(const oxide_board_cpuinfo_t *cpuinfo,
 }
 
 static void
-eb_set_kbrst(bool state)
+eb_milan_disable_kbrst(const oxide_board_cpuinfo_t *cpuinfo __unused,
+    const oxide_board_test_t *test __unused)
 {
-	mmio_reg_block_t fch_pmio = fch_pmio_mmio_block();
-	mmio_reg_t rstctl_reg = FCH_PMIO_RESETCONTROL1_MMIO(fch_pmio);
-	uint32_t rstctl_val = mmio_reg_read(rstctl_reg);
-
-	rstctl_val = FCH_PMIO_RESETCONTROL1_SET_KBRSTEN(rstctl_val,
-	    state ? 1 : 0);
-	mmio_reg_write(rstctl_reg, rstctl_val);
-	mmio_reg_block_unmap(&fch_pmio);
+	milan_hack_set_kbrst_en(false);
 }
 
 static void
-eb_disable_kbrst(const oxide_board_cpuinfo_t *cpuinfo __unused,
+eb_milan_enable_kbrst(const oxide_board_cpuinfo_t *cpuinfo __unused,
     const oxide_board_test_t *test __unused)
 {
-	eb_set_kbrst(false);
-}
-
-static void
-eb_enable_kbrst(const oxide_board_cpuinfo_t *cpuinfo __unused,
-    const oxide_board_test_t *test __unused)
-{
-	eb_set_kbrst(true);
+	milan_hack_set_kbrst_en(true);
 }
 
 static x86_chiprev_t

@@ -29,7 +29,7 @@ extern bool milan_fixup_i2c_clock(void);
 extern bool milan_cgpll_set_ssc(bool);
 extern void milan_check_furtive_reset(void);
 
-extern void milan_hack_gpio(zen_hack_gpio_op_t, uint16_t);
+extern void milan_hack_set_kbrst_en(bool);
 
 #ifdef __cplusplus
 }

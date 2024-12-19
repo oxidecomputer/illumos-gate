@@ -626,6 +626,7 @@
 #include <sys/io/milan/ioapic.h>
 #include <sys/io/milan/iohc.h>
 #include <sys/io/milan/iommu.h>
+#include <sys/io/milan/iomux.h>
 #include <sys/io/milan/nbif_impl.h>
 #include <sys/io/milan/pcie.h>
 #include <sys/io/milan/pcie_impl.h>
@@ -1232,12 +1233,13 @@ milan_pcie_dbg_signal(void)
 	 */
 	if (oxide_board_data->obd_board == OXIDE_BOARD_GIMLET) {
 		if (!gpio_configured) {
-			milan_hack_gpio(ZHGOP_CONFIGURE, 129);
-			milan_hack_gpio(ZHGOP_TOGGLE, 129);
+			milan_hack_set_kbrst_en(false);
+			zen_hack_gpio_config(129, MILAN_FCH_IOMUX_129_AGPIO129);
+			zen_hack_gpio(ZHGOP_TOGGLE, 129);
 			drv_usecwait(1);
 			gpio_configured = true;
 		}
-		milan_hack_gpio(ZHGOP_TOGGLE, 129);
+		zen_hack_gpio(ZHGOP_TOGGLE, 129);
 	}
 }
 
