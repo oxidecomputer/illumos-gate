@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -188,6 +188,8 @@ const zen_platform_t turin_platform = {
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,
 		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(turin_pcie_port_dbg_regs),
 #endif
+		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
+		.zpc_hp_vers = ZEN_HP_VERS_3
 	},
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,
@@ -237,6 +239,8 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,
 		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(turin_pcie_port_dbg_regs),
 #endif
+		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
+		.zpc_hp_vers = ZEN_HP_VERS_3
 	},
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -112,7 +112,6 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_smu_misc_init = milan_fabric_smu_misc_init,
 	.zfo_smu_pptable_init = milan_fabric_smu_pptable_init,
 	.zfo_ioms_init = milan_fabric_ioms_init,
-	.zfo_ioms_pcie_init = milan_fabric_ioms_pcie_init,
 
 	.zfo_get_dxio_fw_version = milan_get_dxio_fw_version,
 	.zfo_report_dxio_fw_version = milan_report_dxio_fw_version,
@@ -124,6 +123,8 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_pcie_core_reg = milan_pcie_core_reg,
 	.zfo_pcie_port_reg = milan_pcie_port_reg,
 	.zfo_pcie_dbg_signal = milan_pcie_dbg_signal,
+
+	.zfo_tile_smu_hp_id = milan_tile_smu_hp_id
 };
 
 static const zen_hack_ops_t milan_hack_ops = {
@@ -167,6 +168,8 @@ const zen_platform_t milan_platform = {
 		.zpc_pcie_port_dbg_regs = milan_pcie_port_dbg_regs,
 		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(milan_pcie_port_dbg_regs),
 #endif
+		.zpc_pcie_max_speed = OXIO_SPEED_GEN_4,
+		.zpc_hp_vers = ZEN_HP_VERS_2
 	},
 	.zp_ccx_ops = &milan_ccx_ops,
 	.zp_fabric_ops = &milan_fabric_ops,

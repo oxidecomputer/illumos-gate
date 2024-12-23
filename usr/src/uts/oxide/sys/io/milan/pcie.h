@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_H
@@ -27,21 +27,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/*
- * The implementation of these types is exposed to implementers but not to
- * consumers; therefore we forward-declare them here and provide the actual
- * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
- * pointers to these types only as opaque handles.
- */
-struct milan_pcie_core;
-struct milan_pcie_port;
-
-typedef struct milan_pcie_core milan_pcie_core_t;
-typedef struct milan_pcie_port milan_pcie_port_t;
-
-typedef int (*milan_pcie_core_cb_f)(milan_pcie_core_t *, void *);
-typedef int (*milan_pcie_port_cb_f)(milan_pcie_port_t *, void *);
 
 extern uint8_t milan_ioms_n_pcie_cores(const uint8_t);
 extern uint8_t milan_pcie_core_n_ports(const uint8_t);
@@ -853,6 +838,11 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2d8	\
 }
+
+#define	LC_CTL4_EQ_8GT_MODE_COEFF_BASIC		0x00
+#define	LC_CTL4_EQ_8GT_MODE_COEFF_EX		0x01
+#define	LC_CTL4_EQ_8GT_MODE_COEFF_EX_3X3	0x02
+#define	LC_CTL4_EQ_8GT_MODE_COEFF_PRESET	0x03
 
 /*
  * PCIEPORT::PCIE_LC_CNTL5 - Port Link Control Register 5. There are several

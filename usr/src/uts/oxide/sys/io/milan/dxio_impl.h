@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_DXIO_IMPL_H
@@ -102,6 +102,10 @@ typedef struct smu_hotplug_function {
 	uint32_t	shf_i2c_dtype:2;
 	uint32_t	shf_i2c_bus:5;
 	uint32_t	shf_mask:8;
+	/*
+	 * Starting in Genoa with the v3 format, this is now used to represent a
+	 * second I2C switch that can be in the topology.
+	 */
 	uint32_t	shf_rsvd0:6;
 } smu_hotplug_function_t;
 

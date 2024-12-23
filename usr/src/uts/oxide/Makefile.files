@@ -25,7 +25,7 @@
 # Copyright (c) 2010, Intel Corporation.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2019 Joyent, Inc.
-# Copyright 2024 Oxide Computer Co.
+# Copyright 2025 Oxide Computer Co.
 #
 #	This Makefile defines file modules in the directory uts/oxide
 #	and its children. These are the source files which are oxide
@@ -124,10 +124,10 @@ CORE_OBJS +=			\
 
 MILAN_OBJS +=			\
 	milan_ccx.o		\
-	milan_dxio_data.o	\
 	milan_fabric.o		\
 	milan_hacks.o		\
 	milan_platform.o	\
+	milan_oxio.o		\
 	milan_ras.o
 
 GENOA_OBJS +=			\
@@ -149,13 +149,19 @@ ZEN_OBJS +=			\
 	zen_fabric.o		\
 	zen_hacks.o		\
 	zen_mpio.o		\
+	zen_oxio.o		\
 	zen_platform.o		\
 	zen_ras.o		\
-	zen_ruby_dxio_data.o	\
 	zen_smn.o		\
 	zen_smu.o
 
+BOARD_OBJS +=			\
+	oxio_ethanolx.o		\
+	oxio_gimlet.o		\
+	oxio_ruby.o
+
 CORE_OBJS += $(ZEN_OBJS) $(MILAN_OBJS) $(GENOA_OBJS) $(TURIN_OBJS)
+CORE_OBJS += $(BOARD_OBJS)
 
 # Required by genunix
 CORE_OBJS += $(SMBIOS_OBJS)

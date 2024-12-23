@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_IMPL_H
@@ -36,18 +36,6 @@ extern "C" {
  * This is the SDP unit ID for PCIe core 0 in each IOMS.
  */
 #define	MILAN_PCIE_CORE0_UNITID		16
-
-/*
- * The PCIe port data specific to the Milan microarchitecture.
- */
-struct milan_pcie_port {
-	uint16_t		mpp_hp_slotno;
-	uint32_t		mpp_hp_smu_mask;
-};
-
-struct milan_pcie_core {
-	milan_pcie_port_t	mpc_ports[MILAN_PCIE_CORE_MAX_PORTS];
-};
 
 #ifdef __cplusplus
 }

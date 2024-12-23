@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_UARCH_H
@@ -30,6 +30,8 @@
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/nbif_impl.h>
+#include <sys/io/zen/oxio.h>
+#include <sys/io/zen/hotplug_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -219,7 +221,6 @@ typedef struct zen_fabric_ops {
 	bool		(*zfo_smu_pptable_init)(zen_fabric_t *, void *,
 	    size_t *);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
-	void		(*zfo_ioms_pcie_init)(zen_ioms_t *);
 
 	/*
 	 * Sets PCIe bridges so that they are hidden or not hidden in the IOHC.
@@ -260,6 +261,12 @@ typedef struct zen_fabric_ops {
 	 */
 	bool		(*zfo_get_dxio_fw_version)(zen_iodie_t *);
 	void		(*zfo_report_dxio_fw_version)(const zen_iodie_t *);
+
+	/*
+	 * Determine the numeric value that the SMU uses to identify this tile
+	 * for the purposes of traditional hotplug.
+	 */
+	uint8_t		(*zfo_tile_smu_hp_id)(const oxio_engine_t *);
 } zen_fabric_ops_t;
 
 typedef enum zen_hack_gpio_op zen_hack_gpio_op_t;
@@ -425,6 +432,17 @@ typedef struct zen_platform_consts {
 	const size_t			zpc_pcie_core_dbg_nregs;
 	const zen_pcie_reg_dbg_t	*zpc_pcie_port_dbg_regs;
 	const size_t			zpc_pcie_port_dbg_nregs;
+
+	/*
+	 * This is the maximum PCIe Generation Supported.
+	 */
+	const oxio_speed_t		zpc_pcie_max_speed;
+
+	/*
+	 * This indicates what revision of the traditional hotplug data
+	 * structures the SMU leverages.
+	 */
+	const zen_hotplug_vers_t	zpc_hp_vers;
 } zen_platform_consts_t;
 
 #ifdef	__cplusplus

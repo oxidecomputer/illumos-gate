@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_FABRIC_IMPL_H
@@ -29,12 +29,14 @@
 #include <sys/x86_archext.h>
 #include <io/amdzen/amdzen_client.h>
 
+#include <sys/io/zen/fabric_limits.h>
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/ccx_impl.h>
 #include <sys/io/zen/dxio_impl.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/nbif_impl.h>
 #include <sys/io/zen/pcie_impl.h>
+#include <sys/io/zen/oxio.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -56,48 +58,15 @@ extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
 extern void zen_fabric_dma_attr(ddi_dma_attr_t *attr);
 
 /*
- * These are platform maximums, and are sized to accommodate
- * the largest number used by any supported microarchitecture.
+ * OXIO routines that various platforms can utilize.
  */
-
-/*
- * This is the maximum number of I/O dies that can exist in a given SoC. Since
- * Rome this has been 1. Previously on Naples this was 4. Because we do not work
- * on Naples based platforms, this is kept low (unlike the more general amdzen
- * nexus driver).
- */
-#define	ZEN_FABRIC_MAX_DIES_PER_SOC	1
-
-/*
- * The Oxide platform supports a maximum of 2 SOCs.
- */
-#define	ZEN_FABRIC_MAX_SOCS		2
-
-/*
- * The exact number of IOM/S per I/O Die is platform-specific and is determined
- * determined dynamically during fabric topology initialization. This is the
- * maximum supported on the Oxide platform.
- */
-#define	ZEN_IODIE_MAX_IOMS		8
-
-/*
- * The maximum number of PCIe cores per IOMS.
- */
-#define	ZEN_IOMS_MAX_PCIE_CORES		3
-
-/*
- * The maximum number of NBIFs (Northbridge Interfaces, though possible
- * Northbridge interconnect functions; definitions vary) per IOMS.
- */
-#define	ZEN_IOMS_MAX_NBIF		3
-
-/*
- * The maximum number of PCI bus, I/O and MMIO routing rules supported on the
- * Oxide platform. Of the supported processors, Turin supports the most rules.
- */
-#define	ZEN_MAX_CFGMAP			DF_MAX_CFGMAP_TURIN
-#define	ZEN_MAX_IO_RULES		DF_MAX_IO_RULES_TURIN
-#define	ZEN_MAX_MMIO_RULES		DF_MAX_MMIO_RULES_TURIN
+extern void oxio_eng_to_dxio(const oxio_engine_t *, zen_dxio_fw_engine_t *);
+extern void oxio_eng_to_ask(const oxio_engine_t *, zen_mpio_ask_port_t *);
+extern void oxio_eng_to_ubm(const oxio_engine_t *, zen_mpio_ubm_hfc_port_t *);
+extern void oxio_ubm_to_ask(zen_ubm_hfc_t *, const zen_mpio_ubm_dfc_descr_t *,
+    uint32_t, zen_mpio_ask_port_t *);
+extern void oxio_dxio_to_eng(zen_pcie_port_t *);
+extern void oxio_mpio_to_eng(zen_pcie_port_t *);
 
 /*
  * Warning: These memlists cannot be given directly to PCI. They expect to be
@@ -178,7 +147,6 @@ struct zen_ioms {
 	zen_ioms_memlists_t	zio_memlists;
 
 	zen_iodie_t		*zio_iodie;
-	void			*zio_uarch_ioms;
 };
 
 struct zen_iodie {
@@ -257,6 +225,12 @@ struct zen_iodie {
 	uint32_t		zi_dxio_fw[4];
 
 	/*
+	 * The OXIO engines that correspond to this I/O die.
+	 */
+	const oxio_engine_t	*zi_engines;
+	size_t			zi_nengines;
+
+	/*
 	 * The DXIO crossbar configuration we're using, either programming it
 	 * via the SMU or via MPIO.  Note that on Milan, we will always only use
 	 * zi_dxio_conf while on Genoa and later we will always zi_mpio_conf.
@@ -310,6 +284,19 @@ struct zen_pptable {
 	size_t			zpp_alloc_len;
 };
 
+typedef enum {
+	/*
+	 * Indicates that we have found a port that has traditional hotplug and
+	 * therefore need to send information to the SMU.
+	 */
+	ZEN_FABRIC_F_TRAD_HOTPLUG	= 1 << 0,
+	/*
+	 * Indicates that we have found an OXIO engine that supports UBM based
+	 * hotplug and therefore need to talk to MPIO.
+	 */
+	ZEN_FABRIC_F_UBM_HOTPLUG	= 1 << 1
+} zen_fabric_flags_t;
+
 /*
  * The top-level description of various components contained within the Zen
  * fabric.
@@ -360,6 +347,13 @@ struct zen_fabric {
 	 * The power and performance table that is sent to the SMU.
 	 */
 	zen_pptable_t		zf_pptable;
+
+	/*
+	 * Global hotplug information. Note, UBM based information is only used
+	 * on MPIO based platforms (e.g. Genoa and newer).
+	 */
+	zen_fabric_flags_t	zf_flags;
+	zen_ubm_config_t	zf_ubm;
 
 	uint8_t			zf_nsocs;
 	zen_soc_t		zf_socs[ZEN_FABRIC_MAX_SOCS];

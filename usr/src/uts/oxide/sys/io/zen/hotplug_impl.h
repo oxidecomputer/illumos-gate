@@ -10,14 +10,16 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_ZEN_HOTPLUG_IMPL_H
 #define	_SYS_IO_ZEN_HOTPLUG_IMPL_H
 
 /*
- * Centralised definitions for the hotplug scheme in use.
+ * Centralized definitions for traditional (non-UBM) PCIe hotplug. This header
+ * contains common constants that are synced with their values in SMU firmware
+ * and are the same across Milan through Turin.
  */
 
 #include <sys/types.h>
@@ -26,6 +28,20 @@
 extern "C" {
 #endif
 
+/*
+ * This enumeration describes the data layout of the traditional hotplug
+ * descriptors that are sent to the SMU. As we don't support microarchitectures
+ * prior to Milan and Milan supports version 2, we don't list version 1 here.
+ */
+
+typedef enum {
+	ZEN_HP_VERS_2 = 2,
+	ZEN_HP_VERS_3
+} zen_hotplug_vers_t;
+
+/*
+ * Note, Express Module B is no longer supported starting in Genoa.
+ */
 typedef enum {
 	ZEN_HP_PRESENCE_DETECT	= 0,
 	ZEN_HP_EXPRESS_MODULE_A,
@@ -45,36 +61,32 @@ typedef enum smu_exp_type {
 	SMU_I2C_PCA9506 = 2
 } smu_exp_type_t;
 
-typedef enum smu_gpio_sw_type {
-	SMU_GPIO_SW_9545 = 0,
-	SMU_GPIO_SW_9546_48 = 1,
-} smu_gpio_sw_type_t;
+typedef enum smu_i2c_sw_type {
+	SMU_I2C_SW_9545 = 0,
+	SMU_I2C_SW_9546_48 = 1,
+} smu_i2c_sw_type_t;
 
-/*
- * XXX it may be nicer for us to define our own semantic set of bits here that
- * don't change based on version and then we change it.
- */
 typedef enum smu_enta_bits {
-	SMU_ENTA_PRSNT		= 1 << 0,
-	SMU_ENTA_PWRFLT		= 1 << 1,
-	SMU_ENTA_ATTNSW		= 1 << 2,
-	SMU_ENTA_EMILS		= 1 << 3,
-	SMU_ENTA_PWREN		= 1 << 4,
-	SMU_ENTA_ATTNLED	= 1 << 5,
-	SMU_ENTA_PWRLED		= 1 << 6,
-	SMU_ENTA_EMIL		= 1 << 7
-} smu_enta_bits_t;
+	SMU_EXPA_PRSNT		= 1 << 0,
+	SMU_EXPA_PWRFLT		= 1 << 1,
+	SMU_EXPA_ATTNSW		= 1 << 2,
+	SMU_EXPA_EMILS		= 1 << 3,
+	SMU_EXPA_PWREN		= 1 << 4,
+	SMU_EXPA_ATTNLED	= 1 << 5,
+	SMU_EXPA_PWRLED		= 1 << 6,
+	SMU_EXPA_EMIL		= 1 << 7
+} smu_expa_bits_t;
 
 typedef enum smu_entb_bits {
-	SMU_ENTB_ATTNLED	= 1 << 0,
-	SMU_ENTB_PWRLED		= 1 << 1,
-	SMU_ENTB_PWREN		= 1 << 2,
-	SMU_ENTB_ATTNSW		= 1 << 3,
-	SMU_ENTB_PRSNT		= 1 << 4,
-	SMU_ENTB_PWRFLT		= 1 << 5,
-	SMU_ENTB_EMILS		= 1 << 6,
-	SMU_ENTB_EMIL		= 1 << 7
-} smu_entb_bits_t;
+	SMU_EXPB_ATTNLED	= 1 << 0,
+	SMU_EXPB_PWRLED		= 1 << 1,
+	SMU_EXPB_PWREN		= 1 << 2,
+	SMU_EXPB_ATTNSW		= 1 << 3,
+	SMU_EXPB_PRSNT		= 1 << 4,
+	SMU_EXPB_PWRFLT		= 1 << 5,
+	SMU_EXPB_EMILS		= 1 << 6,
+	SMU_EXPB_EMIL		= 1 << 7
+} smu_expb_bits_t;
 
 #define	SMU_I2C_DIRECT	0x7
 

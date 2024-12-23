@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_PLATFORM_DETECT_H
@@ -22,6 +22,8 @@
 #include <sys/x86_archext.h>
 #include <sys/amdzen/fch.h>
 #include <sys/io/zen/platform.h>
+#include <sys/io/zen/oxio.h>
+#include <sys/io/zen/fabric_limits.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -91,26 +93,22 @@ typedef struct oxide_board_data {
 	const uint64_t		obd_startupopts;
 
 	/*
+	 * Oxide DXIO (oxio) data. These define the I/O structures that are then
+	 * transformed into the corresponding form that firmware can understand.
+	 * There is one set of engines per I/O die. Effectively this is per
+	 * socket as we only support single I/O die platforms. This information
+	 * will be transformed into the I/O die structures and should not be
+	 * accessed directly outside of the code that sets that up.
+	 */
+	const oxio_engine_t	*const obd_engines[ZEN_FABRIC_MAX_IO_DIES];
+	const size_t		*const obd_nengines[ZEN_FABRIC_MAX_IO_DIES];
+
+
+	/*
 	 * The following structure is populated by oxide_derive_platform() once
 	 * it has successfully identified the board.
 	 */
 	oxide_board_cpuinfo_t	obd_cpuinfo;
-
-	/*
-	 * oxide_derive_platform() sets this pointer to a read-only copy of the
-	 * source DXIO initialization data (and its length, which is accessed
-	 * via a pointer function because that can be const, while an extern
-	 * size_t is not) used by this board during e.g. PCIe device training.
-	 */
-	const void		*obd_dxio_source_data;
-	size_t			(*obd_dxio_source_data_len)(void);
-
-	/*
-	 * oxide_derive_platform() similarly sets this pointer to a read-only
-	 * copy of the source UBM HFC data, on boards that support UBM.
-	 */
-	const void		*obd_ubm_source_hfc_data;
-	size_t			(*obd_ubm_source_hfc_data_len)(void);
 
 	/*
 	 * If we have to wiggle a GPIO pin to release devices from PERST,
