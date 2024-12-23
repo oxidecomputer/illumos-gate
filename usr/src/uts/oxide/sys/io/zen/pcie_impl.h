@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_PCIE_IMPL_H
@@ -32,6 +32,7 @@
 #include <sys/io/zen/dxio_impl.h>
 #include <sys/io/zen/hotplug_impl.h>
 #include <sys/io/zen/pcie_impl.h>
+#include <sys/io/zen/oxio.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -45,6 +46,8 @@ extern "C" {
  */
 typedef struct zen_dxio_fw_engine zen_dxio_fw_engine_t;
 typedef struct zen_mpio_ask_port zen_mpio_ask_port_t;
+typedef struct zen_ubm_hfc zen_ubm_hfc_t;
+typedef struct zen_ubm_dfc zen_ubm_dfc_t;
 
 /*
  * The current maximum number of ports that can be attached to any
@@ -175,15 +178,26 @@ struct zen_pcie_port {
 	 */
 	uint8_t			zpp_func;
 
-	zen_hotplug_type_t	zpp_hp_type;
-
+	/*
+	 * All PCIe ports will have a corresponding OXIO engine that they were
+	 * derived from. We cache a pointer to the corresponding structure that
+	 * we pass to AMD firmware. If the port corresponds to a UBM based
+	 * engine, then its corresponding HFC and DFC will be filled in.
+	 */
+	const oxio_engine_t	*zpp_oxio;
 	union {
 		zen_dxio_fw_engine_t		*zpp_dxio_engine;
 		zen_mpio_ask_port_t		*zpp_ask_port;
 	};
+	const zen_ubm_hfc_t	*zpp_hfc;
+	const zen_ubm_dfc_t	*zpp_dfc;
 
 	zen_pcie_core_t		*zpp_core;
-	void			*zpp_uarch_pcie_port;
+
+	/*
+	 * The following represents the synthesized slot information for this.
+	 */
+	uint16_t		zpp_hp_slotno;
 
 	/*
 	 * PCIe port registers captured at various stages.
@@ -228,7 +242,6 @@ struct zen_pcie_core {
 	kmutex_t		zpc_strap_lock;
 
 	zen_ioms_t		*zpc_ioms;
-	void			*zpc_uarch_pcie_core;
 };
 
 /*

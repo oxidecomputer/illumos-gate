@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_FABRIC_IMPL_H
@@ -81,13 +81,8 @@ typedef struct milan_ioms milan_ioms_t;
 typedef struct milan_iodie milan_iodie_t;
 typedef struct milan_soc milan_soc_t;
 
-struct milan_ioms {
-	milan_pcie_core_t	mio_pcie_cores[MILAN_IOMS_MAX_PCIE_CORES];
-};
-
 struct milan_iodie {
 	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
-	milan_ioms_t		mi_ioms[MILAN_IOMS_PER_IODIE];
 };
 
 struct milan_soc {
@@ -150,6 +145,16 @@ extern const zen_pcie_core_info_t *milan_pcie_core_info(const uint8_t, const
 extern const zen_pcie_port_info_t *milan_pcie_port_info(const uint8_t, const
     uint8_t);
 extern void milan_pcie_dbg_signal(void);
+
+extern uint8_t milan_tile_smu_hp_id(const oxio_engine_t *);
+
+/*
+ * OXIO translations that are still Milan specific or rely on what are currently
+ * Milan-specific data structures ala the smu_hotplug_table_t.
+ */
+extern const oxio_engine_t *milan_dxio_to_engine(zen_iodie_t *,
+    const zen_dxio_fw_engine_t *);
+extern void oxio_port_to_smu_hp(zen_pcie_port_t *, smu_hotplug_table_t *);
 
 #ifdef __cplusplus
 }

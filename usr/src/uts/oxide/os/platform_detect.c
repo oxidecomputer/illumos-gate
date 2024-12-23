@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -33,8 +33,6 @@
 #include <sys/io/turin/iomux.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/platform.h>
-#include <sys/io/zen/ruby_dxio_data.h>
-
 
 extern x86_chiprev_t _cpuid_chiprev(uint_t, uint_t, uint_t, uint_t);
 extern const char *_cpuid_chiprevstr(uint_t, uint_t, uint_t, uint_t);
@@ -169,6 +167,8 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_bsu_slot = { 17, 18 },
 			.obd_ipccmode = IPCC_MODE_UART1,
 			.obd_ipccspintr = IPCC_SPINTR_SP3_AGPIO139,
+			.obd_engines = { oxio_gimlet },
+			.obd_nengines = { &oxio_gimlet_nengines }
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -234,6 +234,9 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
+			.obd_engines = { oxio_ethanolx_s0, oxio_ethanolx_s1 },
+			.obd_nengines = { &oxio_ethanolx_s0_nengines,
+			    &oxio_ethanolx_s1_nengines },
 			.obd_perst_gpios = { 26, 27, 266, 267 },
 			.obd_perst_gpios_len = 4,
 		},
@@ -262,10 +265,8 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
-			.obd_dxio_source_data = ruby_mpio_pcie_s0,
-			.obd_dxio_source_data_len = ruby_mpio_pcie_s0_len,
-			.obd_ubm_source_hfc_data = ruby_mpio_hfc_ports,
-			.obd_ubm_source_hfc_data_len = ruby_mpio_hfc_ports_len,
+			.obd_engines = { oxio_ruby },
+			.obd_nengines = { &oxio_ruby_nengines },
 			.obd_perst_gpios = { 26, 266 },
 			.obd_perst_gpios_len = 2,
 		},
@@ -313,10 +314,8 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
-			.obd_dxio_source_data = ruby_mpio_pcie_s0,
-			.obd_dxio_source_data_len = ruby_mpio_pcie_s0_len,
-			.obd_ubm_source_hfc_data = ruby_mpio_hfc_ports,
-			.obd_ubm_source_hfc_data_len = ruby_mpio_hfc_ports_len,
+			.obd_engines = { oxio_ruby },
+			.obd_nengines = { &oxio_ruby_nengines },
 			.obd_perst_gpios = { 26, 266 },
 			.obd_perst_gpios_len = 2,
 		},
@@ -345,10 +344,8 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
-			.obd_dxio_source_data = ruby_mpio_pcie_s0,
-			.obd_dxio_source_data_len = ruby_mpio_pcie_s0_len,
-			.obd_ubm_source_hfc_data = ruby_mpio_hfc_ports,
-			.obd_ubm_source_hfc_data_len = ruby_mpio_hfc_ports_len,
+			.obd_engines = { oxio_ruby },
+			.obd_nengines = { &oxio_ruby_nengines },
 			.obd_perst_gpios = { 26, 266 },
 			.obd_perst_gpios_len = 2,
 		},

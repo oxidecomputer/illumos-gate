@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -1836,14 +1836,8 @@ milan_fabric_smu_misc_init(zen_iodie_t *iodie)
 void
 milan_fabric_ioms_init(zen_ioms_t *ioms)
 {
-	ASSERT3P(ioms->zio_iodie, !=, NULL);
-	milan_iodie_t *miodie = ioms->zio_iodie->zi_uarch_iodie;
-	ASSERT3P(miodie, !=, NULL);
 	const uint8_t iomsno = ioms->zio_num;
 	ASSERT3U(iomsno, <, MILAN_IOMS_PER_IODIE);
-	milan_ioms_t *mioms = &miodie->mi_ioms[iomsno];
-
-	ioms->zio_uarch_ioms = mioms;
 
 	/*
 	 * IOMS 0 has a bonus two lane PCIe Gen2 core which is used for the
@@ -1868,26 +1862,6 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 	 * nBIFs.
 	 */
 	ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
-}
-
-void
-milan_fabric_ioms_pcie_init(zen_ioms_t *ioms)
-{
-	milan_ioms_t *mioms = ioms->zio_uarch_ioms;
-
-	for (uint8_t coreno = 0; coreno < ioms->zio_npcie_cores; coreno++) {
-		zen_pcie_core_t *zpc = &ioms->zio_pcie_cores[coreno];
-		milan_pcie_core_t *mpc = &mioms->mio_pcie_cores[coreno];
-
-		zpc->zpc_uarch_pcie_core = mpc;
-
-		for (uint8_t portno = 0; portno < zpc->zpc_nports; portno++) {
-			zen_pcie_port_t *port = &zpc->zpc_ports[portno];
-			milan_pcie_port_t *mport = &mpc->mpc_ports[portno];
-
-			port->zpp_uarch_pcie_port = mport;
-		}
-	}
 }
 
 void
@@ -2408,6 +2382,33 @@ milan_fabric_iohc_bus_num(zen_ioms_t *ioms, uint8_t busno)
 	zen_ioms_write(ioms, reg, val);
 }
 
+uint8_t
+milan_tile_smu_hp_id(const oxio_engine_t *oxio)
+{
+	VERIFY3P(oxio->oe_type, ==, OXIO_ENGINE_T_PCIE);
+
+	switch (oxio->oe_tile) {
+	case OXIO_TILE_G0:
+		return (SMU_TILE_G0);
+	case OXIO_TILE_P0:
+		return (SMU_TILE_P0);
+	case OXIO_TILE_G1:
+		return (SMU_TILE_G1);
+	case OXIO_TILE_P1:
+		return (SMU_TILE_P1);
+	case OXIO_TILE_G2:
+		return (SMU_TILE_G2);
+	case OXIO_TILE_P2:
+		return (SMU_TILE_P2);
+	case OXIO_TILE_G3:
+		return (SMU_TILE_G3);
+	case OXIO_TILE_P3:
+		return (SMU_TILE_P3);
+	default:
+		panic("cannot map invalid PCIe Tile ID 0x%x", oxio->oe_tile);
+	}
+}
+
 /*
  * Go through and configure and set up devices and functions. In particular we
  * need to go through and set up the following:
@@ -2625,9 +2626,9 @@ milan_dxio_init(zen_iodie_t *iodie, void *arg)
 }
 
 /*
- * Here we need to assemble data for the system we're actually on. XXX Right now
- * we're just assuming we're Ethanol-X and only leveraging ancillary data from
- * the PSP.
+ * Here we need to take the board specific data that we've been given and
+ * translate it into the corresponding format for the SMU DXIO firmware. It'll
+ * be sent later on.
  */
 static int
 milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
@@ -2635,27 +2636,14 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 	ddi_dma_attr_t attr;
 	size_t engn_size;
 	pfn_t pfn;
-	zen_soc_t *soc = iodie->zi_soc;
 	zen_dxio_config_t *conf = &iodie->zi_dxio_conf;
-	const zen_dxio_fw_platform_t *source_data;
 	zen_dxio_fw_anc_data_t *anc;
 	const milan_apob_phyovr_t *phy_override;
 	size_t phy_len;
 	int err;
 
-	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
-		if (soc->zs_num == 0) {
-			source_data = &ethanolx_engine_s0;
-		} else {
-			source_data = &ethanolx_engine_s1;
-		}
-	} else {
-		VERIFY3U(soc->zs_num, ==, 0);
-		source_data = &gimlet_engine;
-	}
-
 	engn_size = sizeof (zen_dxio_fw_platform_t) +
-	    source_data->zdp_nengines * sizeof (zen_dxio_fw_engine_t);
+	    iodie->zi_nengines * sizeof (zen_dxio_fw_engine_t);
 	VERIFY3U(engn_size, <=, MMU_PAGESIZE);
 	conf->zdc_conf_len = engn_size;
 
@@ -2667,7 +2655,13 @@ milan_dxio_plat_data(zen_iodie_t *iodie, void *arg)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zdc_conf);
 	conf->zdc_pa = mmu_ptob((uint64_t)pfn);
 
-	bcopy(source_data, conf->zdc_conf, engn_size);
+	conf->zdc_conf->zdp_type = ZEN_DXIO_FW_PLATFORM_EPYC;
+	conf->zdc_conf->zdp_nengines = iodie->zi_nengines;
+
+	for (size_t i = 0; i < iodie->zi_nengines; i++) {
+		oxio_eng_to_dxio(&iodie->zi_engines[i],
+		    &conf->zdc_conf->zdp_engines[i]);
+	}
 
 	/*
 	 * We need to account for an extra 8 bytes, surprisingly. It's a good
@@ -2823,9 +2817,9 @@ milan_dxio_more_conf(zen_iodie_t *iodie, void *arg)
 
 /*
  * Given all of the engines on an I/O die, try and map each one to a
- * corresponding IOMS and bridge. We only care about an engine if it is a PCIe
- * engine. Note, because each I/O die is processed independently, this only
- * operates on a single I/O die.
+ * corresponding IOMS, PCIe core, and PCIe port. As part of this, we will also
+ * map this back to the corresponding OXIO engine information. This runs only on
+ * a single I/O die at a time.
  */
 static bool
 milan_dxio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
@@ -2874,9 +2868,27 @@ milan_dxio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
 			continue;
 		}
 
+		if (port->zpp_oxio != NULL) {
+			cmn_err(CE_WARN, "engine %u [%u, %u] mapped to "
+			    "port %u, already has an oxio engine: %s",
+			    i, en->zde_start_lane, en->zde_end_lane,
+			    pc->zpc_nports, port->zpp_oxio->oe_name);
+			ret = false;
+			continue;
+		}
+
 		port->zpp_flags |= ZEN_PCIE_PORT_F_MAPPED;
 		port->zpp_dxio_engine = en;
 		pc->zpc_flags |= ZEN_PCIE_CORE_F_USED;
+
+		/*
+		 * Now that we've found the port and the DXIO engine, map it
+		 * back to the original OXIO engine that spawned this. This will
+		 * also set any relevant PCIe port flags, capabilities, and
+		 * more.
+		 */
+		oxio_dxio_to_eng(port);
+
 		if (en->zde_config.zdc_pcie.zdcp_caps.zdlc_hp !=
 		    ZEN_DXIO_FW_HOTPLUG_T_DISABLED) {
 			pc->zpc_flags |= ZEN_PCIE_CORE_F_HAS_HOTPLUG;
@@ -3840,20 +3852,32 @@ milan_fabric_hack_bridges(zen_fabric_t *fabric)
  */
 CTASSERT(sizeof (smu_hotplug_table_t) <= MMU_PAGESIZE);
 
+static int
+milan_smu_hotplug_data_cb(zen_pcie_port_t *port, void *arg)
+{
+	smu_hotplug_table_t *smu = arg;
+
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) == 0) {
+		return (0);
+	}
+
+	oxio_port_to_smu_hp(port, smu);
+
+	return (0);
+}
+
 /*
  * Allocate and initialize the hotplug table. The return value here is used to
  * indicate whether or not the platform has hotplug and thus should continue or
  * not with actual set up.
  */
-static bool
+static void
 milan_smu_hotplug_data_init(zen_fabric_t *fabric)
 {
 	ddi_dma_attr_t attr;
 	milan_fabric_t *mfabric = fabric->zf_uarch_fabric;
 	milan_hotplug_t *hp = &mfabric->mf_hotplug;
-	const smu_hotplug_entry_t *entry;
 	pfn_t pfn;
-	bool cont;
 
 	zen_fabric_dma_attr(&attr);
 	hp->mh_alloc_len = MMU_PAGESIZE;
@@ -3862,149 +3886,71 @@ milan_smu_hotplug_data_init(zen_fabric_t *fabric)
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)hp->mh_table);
 	hp->mh_pa = mmu_ptob((uint64_t)pfn);
 
-	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
-		entry = ethanolx_hotplug_ents;
-	} else {
-		entry = gimlet_hotplug_ents;
-	}
-
-	cont = entry[0].se_slotno != SMU_HOTPLUG_ENT_LAST;
-
-	/*
-	 * The way the SMU takes this data table is that entries are indexed by
-	 * physical slot number. We basically use an interim structure that's
-	 * different so we can have a sparse table. In addition, if we find a
-	 * device, update that info on its port.
-	 */
-	for (uint_t i = 0; entry[i].se_slotno != SMU_HOTPLUG_ENT_LAST; i++) {
-		uint_t slot = entry[i].se_slotno;
-		const smu_hotplug_map_t *map;
-		zen_iodie_t *iodie;
-		zen_ioms_t *ioms;
-		zen_pcie_core_t *pc;
-		zen_pcie_port_t *port;
-		milan_pcie_port_t *mport;
-
-		hp->mh_table->smt_map[slot] = entry[i].se_map;
-		hp->mh_table->smt_func[slot] = entry[i].se_func;
-		hp->mh_table->smt_reset[slot] = entry[i].se_reset;
-
-		/*
-		 * Attempt to find the port this corresponds to. It should
-		 * already have been mapped.
-		 */
-		map = &entry[i].se_map;
-		iodie = &fabric->zf_socs[map->shm_die_id].zs_iodies[0];
-		ioms = &iodie->zi_ioms[map->shm_tile_id % 4];
-		pc = &ioms->zio_pcie_cores[map->shm_tile_id / 4];
-		port = &pc->zpc_ports[map->shm_port_id];
-		mport = port->zpp_uarch_pcie_port;
-
-		cmn_err(CE_CONT, "?SMUHP: mapped entry %u to port %p\n",
-		    i, port);
-		VERIFY((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0);
-		VERIFY0(port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN);
-		port->zpp_flags |= ZEN_PCIE_PORT_F_HOTPLUG;
-		port->zpp_hp_type = map->shm_format;
-		mport->mpp_hp_slotno = slot;
-		mport->mpp_hp_smu_mask = entry[i].se_func.shf_mask;
-
-		/*
-		 * Calculate any information that can be derived from the port
-		 * information.
-		 */
-		hp->mh_table->smt_map[slot].shm_bridge = pc->zpc_coreno *
-		    MILAN_PCIE_CORE_MAX_PORTS + port->zpp_portno;
-	}
-
-	return (cont);
+	zen_fabric_walk_pcie_port(fabric, milan_smu_hotplug_data_cb,
+	    hp->mh_table);
 }
 
 /*
- * Determine the set of feature bits that should be enabled. If this is Ethanol,
- * use our hacky static versions for a moment.
+ * Based on the OXIO features and the hotplug type that are present, map these
+ * to the corresponding PCIe Slot Capabilities.
  */
 static uint32_t
 milan_hotplug_bridge_features(zen_pcie_port_t *port)
 {
-	milan_pcie_port_t *mport = port->zpp_uarch_pcie_port;
 	uint32_t feats;
-
-	if (oxide_board_data->obd_board == OXIDE_BOARD_ETHANOLX) {
-		if (port->zpp_hp_type == ZEN_HP_ENTERPRISE_SSD) {
-			return (ethanolx_pcie_slot_cap_entssd);
-		} else {
-			return (ethanolx_pcie_slot_cap_express);
-		}
-	}
+	oxio_pcie_slot_cap_t cap;
 
 	feats = PCIE_SLOTCAP_HP_SURPRISE | PCIE_SLOTCAP_HP_CAPABLE;
 
 	/*
-	 * The set of features we enable changes based on the type of hotplug
-	 * mode. While Enterprise SSD uses a static set of features, the various
-	 * ExpressModule modes have a mask register that is used to tell the SMU
-	 * that it doesn't support a given feature. As such, we check for these
-	 * masks to determine what to enable. Because these bits are used to
-	 * turn off features in the SMU, we check for the absence of it (e.g. ==
-	 * 0) to indicate that we should enable the feature.
+	 * Determine the set of features to advertise in the PCIe Slot
+	 * Capabilities register.
+	 *
+	 * By default, Enterprise SSD based devices don't advertise any
+	 * additional features and have no bits set in the OXIO traditional
+	 * hotplug capabilities structure. The only additional setting that is
+	 * required is that there is no command completion support.
+	 *
+	 * Otherwise we need to map features that are set into the PCIe Slot
+	 * Capabilities register. These generally map somewhat directly. The
+	 * main exceptions are out-of-band presence and power fault detection.
+	 * The Slot presence indicator is always a combination of in-band and
+	 * out-of-band presence features. Milan does not support changing the
+	 * slot to only rely on out-of-band presence, so it is not checked here.
+	 *
+	 * Power fault detection is not advertised here. It is only used for
+	 * controlling the SMU's behavior of forwarding them. We always enable
+	 * power fault detection in the PCIe Port SMN registers in
+	 * milan_hotplug_port_init().
 	 */
-	switch (port->zpp_hp_type) {
-	case ZEN_HP_ENTERPRISE_SSD:
-		/*
-		 * For Enterprise SSD the set of features that are supported are
-		 * considered a constant and this doesn't really vary based on
-		 * the board. There is no power control, just surprise hotplug
-		 * capabilities. Apparently in this mode there is no SMU command
-		 * completion.
-		 */
-		return (feats | PCIE_SLOTCAP_NO_CMD_COMP_SUPP);
-	case ZEN_HP_EXPRESS_MODULE_A:
-		if ((mport->mpp_hp_smu_mask & SMU_ENTA_ATTNSW) == 0) {
-			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
-		}
+	ASSERT3U(port->zpp_oxio->oe_type, ==, OXIO_ENGINE_T_PCIE);
+	ASSERT3U(port->zpp_oxio->oe_hp_type, !=, OXIO_HOTPLUG_T_NONE);
 
-		if ((mport->mpp_hp_smu_mask & SMU_ENTA_EMILS) == 0 ||
-		    (mport->mpp_hp_smu_mask & SMU_ENTA_EMIL) == 0) {
-			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
-		}
+	cap = port->zpp_oxio->oe_hp_trad.ohp_cap;
+	if (port->zpp_oxio->oe_hp_type == OXIO_HOTPLUG_T_ENTSSD) {
+		ASSERT0(cap);
+		feats |= PCIE_SLOTCAP_NO_CMD_COMP_SUPP;
+	}
 
-		if ((mport->mpp_hp_smu_mask & SMU_ENTA_PWREN) == 0) {
-			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
-		}
+	if ((cap & OXIO_PCIE_CAP_PWREN) != 0) {
+		feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
+	}
 
-		if ((mport->mpp_hp_smu_mask & SMU_ENTA_ATTNLED) == 0) {
-			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
-		}
+	if ((cap & OXIO_PCIE_CAP_ATTNLED) != 0) {
+		feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
+	}
 
-		if ((mport->mpp_hp_smu_mask & SMU_ENTA_PWRLED) == 0) {
-			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
-		}
-		break;
-	case ZEN_HP_EXPRESS_MODULE_B:
-		if ((mport->mpp_hp_smu_mask & SMU_ENTB_ATTNSW) == 0) {
-			feats |= PCIE_SLOTCAP_ATTN_BUTTON;
-		}
+	if ((cap & OXIO_PCIE_CAP_PWRLED) != 0) {
+		feats |= PCIE_SLOTCAP_PWR_INDICATOR;
+	}
 
-		if ((mport->mpp_hp_smu_mask & SMU_ENTB_EMILS) == 0 ||
-		    (mport->mpp_hp_smu_mask & SMU_ENTB_EMIL) == 0) {
-			feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
-		}
+	if ((cap & OXIO_PCIE_CAP_EMIL) != 0 ||
+	    (cap & OXIO_PCIE_CAP_EMILS) != 0) {
+		feats |= PCIE_SLOTCAP_EMI_LOCK_PRESENT;
+	}
 
-		if ((mport->mpp_hp_smu_mask & SMU_ENTB_PWREN) == 0) {
-			feats |= PCIE_SLOTCAP_POWER_CONTROLLER;
-		}
-
-		if ((mport->mpp_hp_smu_mask & SMU_ENTB_ATTNLED) == 0) {
-			feats |= PCIE_SLOTCAP_ATTN_INDICATOR;
-		}
-
-		if ((mport->mpp_hp_smu_mask & SMU_ENTB_PWRLED) == 0) {
-			feats |= PCIE_SLOTCAP_PWR_INDICATOR;
-		}
-		break;
-	default:
-		return (0);
+	if ((cap & OXIO_PCIE_CAP_ATTNSW) != 0) {
+		feats |= PCIE_SLOTCAP_ATTN_BUTTON;
 	}
 
 	return (feats);
@@ -4107,17 +4053,16 @@ milan_hotplug_port_init(zen_pcie_port_t *port, void *arg)
 	smn_reg_t reg;
 	uint32_t val;
 	uint32_t slot_mask;
-	milan_pcie_port_t *mport = port->zpp_uarch_pcie_port;
 	zen_pcie_core_t *pc = port->zpp_core;
 	zen_ioms_t *ioms = pc->zpc_ioms;
 
 	/*
-	 * Skip over all non-hotplug slots and the simple presence mode. Though
-	 * one has to ask oneself, why have hotplug if you're going to use the
-	 * simple presence mode.
+	 * Skip over all non-hotplug slots. If we supported simple presence
+	 * mode, then we would also skip this here. Though one has to ask
+	 * oneself, why have hotplug if you're going to use the simple presence
+	 * mode.
 	 */
-	if ((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) == 0 ||
-	    port->zpp_hp_type == ZEN_HP_PRESENCE_DETECT) {
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) == 0) {
 		return (0);
 	}
 
@@ -4127,7 +4072,7 @@ milan_hotplug_port_init(zen_pcie_port_t *port, void *arg)
 	 */
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
 	val = zen_pcie_port_read(port, reg);
-	val = PCIE_PORT_HP_CTL_SET_SLOT(val, mport->mpp_hp_slotno);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->zpp_hp_slotno);
 	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
 	zen_pcie_port_write(port, reg, val);
 
@@ -4193,7 +4138,7 @@ milan_hotplug_port_init(zen_pcie_port_t *port, void *arg)
 	    port->zpp_func, MILAN_BRIDGE_R_PCI_SLOT_CAP);
 	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
 	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
-	val |= mport->mpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
+	val |= port->zpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	val &= ~slot_mask;
 	val |= milan_hotplug_bridge_features(port);
 	pci_putl_func(ioms->zio_pci_busno, port->zpp_device,
@@ -4279,14 +4224,15 @@ milan_hotplug_init(zen_fabric_t *fabric)
 	 */
 	const uint32_t i2c_addrs[4] = { 0x70, 0x171, 0x272, 0x373 };
 
-	if (!milan_smu_hotplug_data_init(fabric)) {
-		/*
-		 * This case is used to indicate that there was nothing in
-		 * particular that needed hotplug. Therefore, we don't bother
-		 * trying to tell the SMU about it.
-		 */
+	/*
+	 * If there is no traditional hotplug devices present, there is nothing
+	 * to actually do.
+	 */
+	if ((fabric->zf_flags & ZEN_FABRIC_F_TRAD_HOTPLUG) == 0) {
 		return (true);
 	}
+
+	milan_smu_hotplug_data_init(fabric);
 
 	for (uint_t i = 0; i < ARRAY_SIZE(i2c_addrs); i++) {
 		if (!milan_smu_rpc_i2c_switch(iodie, i2c_addrs[i])) {

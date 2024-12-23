@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -46,6 +46,34 @@
  * MPIO will write whatever data the operation specified to the argument
  * registers and then set the status and completion bit in the request register
  * for transfer back to the host CPU.
+ *
+ * -----------
+ * UBM Hotplug
+ * -----------
+ *
+ * In addition to the traditional SMU based hotplug (e.g. ExpressModule,
+ * Enterprise SSD, etc.), MPIO adds support for the SFF-TA-1005 Universal
+ * Backplane Module (UBM) based hotplug. UBM consists of a series of 'Host
+ * Facing Connectors' (HFCs) which are basically root ports on the AMD SoC and
+ * 'Downstream Facing Connectors' (DFCs) which are basically U.2 (SFF-8639)
+ * style connectors or something entirely different.
+ *
+ * A UBM based system has a series of UBM controllers that may embed static
+ * EEPROMs and optional control interfaces. These EEPROMs allow a system to
+ * dynamically discover the configuration of the downstream connectors and
+ * allows for even changing the PHY type at run-time between PCIe and SATA. This
+ * information is all transited over I2C.
+ *
+ * When dealing with a UBM system, we have to ask MPIO to enumerate all of the
+ * HFC and DFC information over I2C for us. Based on this information, we
+ * transform it into data in the initial ASK. There is a small wrinkle here.
+ * There is an instance of MPIO in each I/O die, which is why we have to have a
+ * per-I/O die ASK. However, like with traditional hotplug, only socket 0 is
+ * actually connected to the I2C bus. This means that we must specifically send
+ * the I2C enumeration and DFC information request RPCs to I/O die 0's MPIO
+ * instance, but come back and put the actual ASK information in each I/O die's
+ * corresponding buffer. This is because the actual underlying SoC's DXIO
+ * crossbar can only be manipulated by the local MPIO service.
  */
 
 #include <sys/types.h>
@@ -317,20 +345,24 @@ zen_mpio_wait_ready(zen_iodie_t *iodie)
 
 /*
  * Note this is specific to UBM, which is only used on development boards during
- * software bringup.
+ * software bringup. Note, the UBM RPCs only truly having meaning on the primary
+ * socket as the I2C interface is only allowed to be connected there. We require
+ * that this RPC be sent only to that instance of MPIO.
  */
 static bool
 zen_mpio_rpc_ubm_enumerate_i2c(zen_iodie_t *iodie)
 {
-	zen_mpio_config_t *conf;
+	zen_ubm_config_t *conf;
 	zen_mpio_rpc_t rpc = { 0 };
 	zen_mpio_rpc_res_t res;
 
-	ASSERT3P(iodie, !=, NULL);
-	conf = &iodie->zi_mpio_conf;
-	ASSERT3P(conf->zmc_ubm_hfc_ports, !=, NULL);
-	VERIFY3U(conf->zmc_ubm_hfc_ports_pa, !=, 0);
-	VERIFY3U(conf->zmc_ubm_hfc_ports_pa, <, 0xFFFFFFFFU);
+	VERIFY3P(iodie, !=, NULL);
+	VERIFY0(iodie->zi_soc->zs_num);
+
+	conf = &iodie->zi_soc->zs_fabric->zf_ubm;
+	ASSERT3P(conf->zuc_hfc_ports, !=, NULL);
+	VERIFY3U(conf->zuc_hfc_ports_pa, !=, 0);
+	VERIFY3U(conf->zuc_hfc_ports_pa, <, 0xFFFFFFFFU);
 
 	/*
 	 * Sadly, this RPC can only accept 32-bits worth of a
@@ -338,8 +370,8 @@ zen_mpio_rpc_ubm_enumerate_i2c(zen_iodie_t *iodie)
 	 * constrained to be in the first 4GiB of address space
 	 * by DMA attributes.
 	 */
-	rpc.zmr_args[0] = (uint32_t)conf->zmc_ubm_hfc_ports_pa;
-	rpc.zmr_args[1] = conf->zmc_ubm_hfc_nports;
+	rpc.zmr_args[0] = (uint32_t)conf->zuc_hfc_ports_pa;
+	rpc.zmr_args[1] = conf->zuc_hfc_nports;
 	rpc.zmr_req = ZEN_MPIO_OP_ENUMERATE_I2C;
 	res = zen_mpio_rpc(iodie, &rpc);
 	if (res != ZEN_MPIO_RPC_OK) {
@@ -433,82 +465,6 @@ zen_mpio_init_global_config(zen_iodie_t *iodie)
 	return (true);
 }
 
-static void
-zen_mpio_ubm_hfc_init(zen_iodie_t *iodie, uint32_t hfcno)
-{
-	zen_mpio_config_t *conf = &iodie->zi_mpio_conf;
-	zen_mpio_ask_port_t *ask;
-	zen_mpio_ubm_dfc_descr_t d;
-	zen_mpio_ubm_hfc_port_t *hfc_port;
-	uint_t dfcno, ndfc;
-
-	/*
-	 * The number of DFCs changes for each HFC, and is discovered when
-	 * requesting I2C information for the first DFC.
-	 */
-	hfc_port = &conf->zmc_ubm_hfc_ports[hfcno];
-	dfcno = 0;
-	do {
-		VERIFY3U(conf->zmc_ask_nports, <, ZEN_MPIO_ASK_MAX_PORTS);
-		if (!zen_mpio_rpc_ubm_get_i2c_device(iodie, hfcno, dfcno, &d)) {
-			cmn_err(CE_PANIC, "get i2c device failed (%u/%u)",
-			    hfcno, dfcno);
-		}
-		if (dfcno == 0)
-			ndfc = d.zmudd_ndfcs;
-		if (ndfc == 0)
-			return;
-
-		/*
-		 * Note that AGESA does not consider lane reversal in UBM cases
-		 * here, so we don't either.
-		 */
-		ask = &conf->zmc_ask->zma_ports[conf->zmc_ask_nports++];
-		ask->zma_link.zml_lane_start =
-		    hfc_port->zmuhp_start_lane + d.zmudd_lane_start;
-		ask->zma_link.zml_num_lanes = d.zmudd_lane_width;
-		ask->zma_link.zml_gpio_id = 1;
-
-		ask->zma_link.zml_attrs.zmla_link_hp_type =
-		    ZEN_MPIO_HOTPLUG_T_UBM;
-		ask->zma_link.zml_attrs.zmla_hfc_idx = hfcno;
-		ask->zma_link.zml_attrs.zmla_dfc_idx = dfcno;
-		ask->zma_link.zml_attrs.zmla_port_present = 1;
-
-		switch (d.zmudd_data.zmudt_type) {
-		case ZEN_MPIO_UBM_DFC_TYPE_QUAD_PCI:
-			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_PCIE;
-			break;
-		case ZEN_MPIO_UBM_DFC_TYPE_SATA_SAS:
-			ask->zma_link.zml_ctlr_type = ZEN_MPIO_ASK_LINK_SATA;
-			break;
-		case ZEN_MPIO_UBM_DFC_TYPE_EMPTY:
-			ask->zma_link.zml_attrs.zmla_port_present = 0;
-			break;
-		}
-		++dfcno;
-	} while (dfcno < ndfc);
-}
-
-static int
-zen_mpio_init_ubm(zen_iodie_t *iodie, void *arg)
-{
-	zen_mpio_config_t *conf;
-
-	if (iodie->zi_mpio_conf.zmc_ubm_hfc_ports == NULL)
-		return (0);
-
-	if (!zen_mpio_rpc_ubm_enumerate_i2c(iodie)) {
-		return (1);
-	}
-	conf = &iodie->zi_mpio_conf;
-	for (uint32_t i = 0; i < conf->zmc_ubm_hfc_nports; i++) {
-		zen_mpio_ubm_hfc_init(iodie, i);
-	}
-
-	return (0);
-}
-
 static bool
 zen_mpio_send_ext_attrs(zen_iodie_t *iodie, void *arg)
 {
@@ -536,6 +492,98 @@ zen_mpio_send_ext_attrs(zen_iodie_t *iodie, void *arg)
 		cmn_err(CE_WARN,
 		    "MPIO transfer ext attrs RPC Failed: %s (MPIO: 0x%x)",
 		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+uint32_t
+zen_mpio_ubm_idx(const zen_iodie_t *iodie)
+{
+	return (iodie->zi_soc->zs_num * ZEN_FABRIC_MAX_DIES_PER_SOC +
+	    iodie->zi_num);
+}
+
+static void
+zen_mpio_ubm_hfc_init(zen_iodie_t *iodie, zen_ubm_hfc_t *hfc)
+{
+	zen_mpio_config_t *conf = &iodie->zi_mpio_conf;
+	uint32_t dfcno = 0;
+	zen_mpio_ubm_dfc_descr_t dfc;
+
+	/*
+	 * The number of DFCs changes for each HFC, and is discovered when
+	 * requesting I2C information for the first DFC.
+	 */
+	do {
+		zen_mpio_ask_port_t *ask;
+
+		VERIFY3U(conf->zmc_ask_nports, <, ZEN_MPIO_ASK_MAX_PORTS);
+		if (!zen_mpio_rpc_ubm_get_i2c_device(iodie, hfc->zuh_num, dfcno,
+		    &dfc)) {
+			cmn_err(CE_PANIC, "%s: failed to get DFC information "
+			    "for DFC %u", hfc->zuh_oxio->oe_name, dfcno);
+		}
+		if (dfcno == 0)
+			hfc->zuh_ndfcs = dfc.zmudd_ndfcs;
+		if (hfc->zuh_ndfcs == 0)
+			return;
+
+		ask = &conf->zmc_ask->zma_ports[conf->zmc_ask_nports++];
+		oxio_ubm_to_ask(hfc, &dfc, dfcno, ask);
+
+		++dfcno;
+	} while (dfcno < hfc->zuh_ndfcs);
+}
+
+/*
+ * This is the per-I/O die callback to transform the generated UBM data into the
+ * corresponding form for our ASK.
+ */
+static int
+zen_mpio_init_ubm_iodie(zen_iodie_t *iodie, void *arg)
+{
+	zen_fabric_t *fabric = iodie->zi_soc->zs_fabric;
+	zen_ubm_config_t *ubm = &fabric->zf_ubm;
+	const uint32_t ubm_idx = zen_mpio_ubm_idx(iodie);
+
+	for (uint32_t i = 0; i < ubm->zuc_die_nports[ubm_idx]; i++) {
+		zen_ubm_hfc_t *hfc;
+		uint32_t hfcno = ubm->zuc_die_idx[ubm_idx] + i;
+		hfc = &ubm->zuc_hfc[hfcno];
+		ASSERT3U(hfcno, ==, hfc->zuh_num);
+
+		zen_mpio_ubm_hfc_init(iodie, hfc);
+	}
+
+	return (0);
+}
+
+/*
+ * We need to transform the UBM data that we've gathered and perform initial
+ * enumeration. This is a little nuanced. While DFCs PCIe and SATA lanes may be
+ * connected to both processors in a dual socket system, the I2C network is only
+ * ever connected to processor zero, like in traditional hotplug. As such, we
+ * have to ask the MPIO instance on I/O die 0 to perform all of the RPCs, but
+ * then translate the results back into each socket's ASK as the ASK is per-I/O
+ * die.
+ */
+static bool
+zen_mpio_init_ubm(zen_fabric_t *fabric)
+{
+	zen_iodie_t *iodie;
+
+	if ((fabric->zf_flags & ZEN_FABRIC_F_UBM_HOTPLUG) == 0) {
+		return (true);
+	}
+
+	iodie = &fabric->zf_socs[0].zs_iodies[0];
+	if (!zen_mpio_rpc_ubm_enumerate_i2c(iodie)) {
+		return (false);
+	}
+
+	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_ubm_iodie, NULL) != 0) {
 		return (false);
 	}
 
@@ -749,78 +797,107 @@ zen_mpio_write_pcie_strap(zen_pcie_core_t *pc,
 }
 
 /*
- * Here we need to assemble data for the system we're actually on.
+ * Transform all of the per-socket OXIO data into the appropriate form for the
+ * MPIO subsystem. We will place all standard devices into the ASK first, while
+ * assembling UBM related devices into the UBM data if required.
  */
 static int
 zen_mpio_init_data(zen_iodie_t *iodie, void *arg)
 {
-	ddi_dma_attr_t attr;
-	size_t size;
-	pfn_t pfn;
 	zen_mpio_config_t *conf = &iodie->zi_mpio_conf;
-	const zen_mpio_ask_port_t *source_ask_data =
-	    oxide_board_data->obd_dxio_source_data;
-	const zen_mpio_ubm_hfc_port_t *source_ubm_data =
-	    oxide_board_data->obd_ubm_source_hfc_data;
-	zen_mpio_ask_port_t *ask;
+	zen_fabric_t *fabric = iodie->zi_soc->zs_fabric;
+	zen_ubm_config_t *ubm = &fabric->zf_ubm;
+	const uint32_t ubm_idx = zen_mpio_ubm_idx(iodie);
+	ddi_dma_attr_t attr;
+	pfn_t pfn;
+	bool has_ubm;
 
-	if (iodie->zi_soc->zs_num != 0)
+	if (iodie->zi_nengines == 0)
 		return (0);
 
-	VERIFY3P(source_ask_data, !=, NULL);
-	VERIFY3P(oxide_board_data->obd_dxio_source_data_len, !=, NULL);
-	conf->zmc_ask_nports = oxide_board_data->obd_dxio_source_data_len();
-	VERIFY3U(conf->zmc_ask_nports, <=, ZEN_MPIO_ASK_MAX_PORTS);
-
-	size = conf->zmc_ask_nports * sizeof (zen_mpio_ask_port_t);
-	VERIFY3U(size, <=, MMU_PAGESIZE);
-
+	/*
+	 * Always create the DMA region for the ASK and the extra attributes. If
+	 * we encounter UBM data, then we'll create it on demand.
+	 */
 	zen_fabric_dma_attr(&attr);
 	conf->zmc_ask_alloc_len = MMU_PAGESIZE;
 	conf->zmc_ask = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
 	bzero(conf->zmc_ask, MMU_PAGESIZE);
-	ask = conf->zmc_ask->zma_ports;
-	bcopy(source_ask_data, ask, size);
-
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zmc_ask);
 	conf->zmc_ask_pa = mmu_ptob((uint64_t)pfn);
 
 	conf->zmc_ext_attrs_alloc_len = MMU_PAGESIZE;
-	conf->zmc_ext_attrs =
-	    contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
+	conf->zmc_ext_attrs = contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE,
+	    1);
 	bzero(conf->zmc_ext_attrs, MMU_PAGESIZE);
-
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zmc_ext_attrs);
 	conf->zmc_ext_attrs_pa = mmu_ptob((uint64_t)pfn);
 
+
 	/*
-	 * We only do the rest if we're on a system that uses UBM.
+	 * Walk each engine and determine whether we should append it to the ASK
+	 * now (PCIe) or if we need to allocate and map it to UBM.
 	 */
-	if (source_ubm_data == NULL)
+	for (size_t i = 0; i < iodie->zi_nengines; i++) {
+		const oxio_engine_t *oxio = &iodie->zi_engines[i];
+
+		if (oxio->oe_type == OXIO_ENGINE_T_PCIE) {
+			oxio_eng_to_ask(oxio,
+			    &conf->zmc_ask->zma_ports[conf->zmc_ask_nports]);
+			conf->zmc_ask_nports++;
+		} else if (oxio->oe_type == OXIO_ENGINE_T_UBM) {
+			has_ubm = true;
+		} else {
+			panic("%s: encountered invalid OXIO engine type 0x%x",
+			    oxio->oe_name, oxio->oe_type);
+		}
+
+	}
+
+	if (!has_ubm) {
 		return (0);
+	}
 
-	VERIFY3P(oxide_board_data->obd_ubm_source_hfc_data_len, !=, NULL);
-	conf->zmc_ubm_hfc_nports =
-	    oxide_board_data->obd_ubm_source_hfc_data_len();
+	if (ubm->zuc_hfc_ports == NULL) {
+		/*
+		 * Note that we explicitly set attr.dma_attr_addr_hi
+		 * here to emphasize that RPC to DMA zmc_ubm_hfc_ports
+		 * to MPIO requires that a 32-bit address (the RPC only
+		 * accepts a single uint32_t for the DMA address).
+		 */
+		zen_fabric_dma_attr(&attr);
+		attr.dma_attr_addr_hi = UINT32_MAX;
+		ubm->zuc_hfc_ports_alloc_len = MMU_PAGESIZE;
+		ubm->zuc_hfc_ports = contig_alloc(MMU_PAGESIZE,
+		    &attr, MMU_PAGESIZE, 1);
+		bzero(ubm->zuc_hfc_ports, MMU_PAGESIZE);
+		pfn = hat_getpfnum(kas.a_hat, (caddr_t)ubm->zuc_hfc_ports);
+		ubm->zuc_hfc_ports_pa = mmu_ptob((uint64_t)pfn);
+		fabric->zf_flags |= ZEN_FABRIC_F_UBM_HOTPLUG;
+	}
 
 	/*
-	 * Note that we explicitly set attr.dma_attr_addr_hi here to emphasize
-	 * that RPC to DMA zmc_ubm_hfc_ports to MPIO requires that a 32-bit
-	 * address (the RPC only accepts a single uint32_t for the DMA address).
+	 * Snapshot the starting HFC number for this I/O die.
 	 */
-	size = sizeof (zen_mpio_ubm_hfc_port_t) * conf->zmc_ubm_hfc_nports;
-	VERIFY3U(size, <=, MMU_PAGESIZE);
+	ubm->zuc_die_idx[ubm_idx] = ubm->zuc_hfc_nports;
 
-	attr.dma_attr_addr_hi = UINT32_MAX;
-	conf->zmc_ubm_hfc_ports_alloc_len = MMU_PAGESIZE;
-	conf->zmc_ubm_hfc_ports =
-	    contig_alloc(MMU_PAGESIZE, &attr, MMU_PAGESIZE, 1);
-	bzero(conf->zmc_ubm_hfc_ports, MMU_PAGESIZE);
+	for (size_t i = 0; i < iodie->zi_nengines; i++) {
+		const oxio_engine_t *oxio = &iodie->zi_engines[i];
 
-	bcopy(source_ubm_data, conf->zmc_ubm_hfc_ports, size);
+		if (oxio->oe_type != OXIO_ENGINE_T_UBM) {
+			continue;
+		}
 
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)conf->zmc_ubm_hfc_ports);
-	conf->zmc_ubm_hfc_ports_pa = mmu_ptob((uint64_t)pfn);
+		VERIFY3U(ubm->zuc_hfc_nports, <, ZEN_MAX_UBM_HFC);
+		ubm->zuc_hfc[ubm->zuc_hfc_nports].zuh_oxio = oxio;
+		ubm->zuc_hfc[ubm->zuc_hfc_nports].zuh_num = ubm->zuc_hfc_nports;
+		ubm->zuc_hfc[ubm->zuc_hfc_nports].zuh_hfc =
+		    &ubm->zuc_hfc_ports[ubm->zuc_hfc_nports];
+
+		oxio_eng_to_ubm(oxio, &ubm->zuc_hfc_ports[ubm->zuc_hfc_nports]);
+		ubm->zuc_hfc_nports++;
+		ubm->zuc_die_nports[ubm_idx]++;
+	}
 
 	return (0);
 }
@@ -829,7 +906,8 @@ zen_mpio_init_data(zen_iodie_t *iodie, void *arg)
  * Given all of the engines on an I/O die, try and map each one to a
  * corresponding IOMS and bridge. We only care about an engine if it is a PCIe
  * engine. Note, because each I/O die is processed independently, this only
- * operates on a single I/O die.
+ * operates on a single I/O die. As part of this we map this back to the
+ * corresponding OXIO engine information and fill in common information.
  */
 static bool
 zen_mpio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
@@ -887,10 +965,13 @@ zen_mpio_map_engines(zen_fabric_t *fabric, zen_iodie_t *iodie)
 		port->zpp_flags |= ZEN_PCIE_PORT_F_MAPPED;
 		port->zpp_ask_port = ap;
 		pc->zpc_flags |= ZEN_PCIE_CORE_F_USED;
-		if (lp->zml_attrs.zmla_link_hp_type !=
-		    ZEN_MPIO_HOTPLUG_T_DISABLED) {
-			pc->zpc_flags |= ZEN_PCIE_CORE_F_HAS_HOTPLUG;
-		}
+
+		/*
+		 * Now that we've found the port and the MPIO engine, map it
+		 * back to the original OXIO engine that spawned this. This will
+		 * also take care of any HFC / DFC mapping that needs to occur.
+		 */
+		oxio_mpio_to_eng(port);
 	}
 
 	return (ret);
@@ -1027,13 +1108,13 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 
 	zen_pcie_populate_dbg(fabric, ZPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
 
+	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
+	    fops->zfo_pcie_port_unhide_bridge);
+
 	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_data, NULL) != 0) {
 		cmn_err(CE_WARN, "MPIO ASK Initialization failed");
 		return;
 	}
-
-	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
-	    fops->zfo_pcie_port_unhide_bridge);
 
 	if (zen_fabric_walk_iodie(fabric, zen_mpio_iodie_op,
 	    zen_mpio_init_global_config) != 0) {
@@ -1042,8 +1123,8 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 		return;
 	}
 
-	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_ubm, NULL) != 0) {
-		cmn_err(CE_WARN, "MPIO UBM enumeration failed");
+	if (!zen_mpio_init_ubm(fabric)) {
+		cmn_err(CE_WARN, "MPIO UBM Initialization failed");
 		return;
 	}
 

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -1184,15 +1184,8 @@ zen_fabric_ioms_pcie_init(zen_ioms_t *ioms)
 			port->zpp_core = zpc;
 			port->zpp_device = pinfop->zppi_dev;
 			port->zpp_func = pinfop->zppi_func;
-			port->zpp_hp_type = ZEN_HP_INVALID;
 		}
 	}
-
-	/*
-	 * uarch-specific IOMS PCIe init hook.
-	 */
-	if (fops->zfo_ioms_pcie_init != NULL)
-		fops->zfo_ioms_pcie_init(ioms);
 }
 
 void
@@ -2454,6 +2447,22 @@ zen_fabric_init_pptable(zen_fabric_t *fabric)
 	(void) zen_fabric_walk_iodie(fabric, zen_fabric_send_pptable, pptable);
 }
 
+static int
+zen_fabric_init_oxio(zen_iodie_t *iodie, void *arg __unused)
+{
+	zen_soc_t *soc = iodie->zi_soc;
+	size_t idx = iodie->zi_num + soc->zs_num * ZEN_FABRIC_MAX_DIES_PER_SOC;
+
+	VERIFY3U(idx, <, ZEN_FABRIC_MAX_IO_DIES);
+	VERIFY3P(oxide_board_data->obd_engines[idx], !=, NULL);
+	VERIFY3P(oxide_board_data->obd_nengines[idx], !=, NULL);
+	VERIFY3U(*oxide_board_data->obd_nengines[idx], >, 0);
+	iodie->zi_engines = oxide_board_data->obd_engines[idx];
+	iodie->zi_nengines = *oxide_board_data->obd_nengines[idx];
+
+	return (0);
+}
+
 void
 zen_fabric_init(void)
 {
@@ -2600,6 +2609,15 @@ zen_fabric_init(void)
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
 	    fabric_ops->zfo_nbif_bridges);
+
+	/*
+	 * At this time, walk the I/O dies and assign each one the set of
+	 * corresponding engine data that they will need to utilize and
+	 * transform into AMD firmware appropriate versions. Do this before we
+	 * go onto begin training. Translation will be done as part of the
+	 * zfo_pcie() op below.
+	 */
+	zen_fabric_walk_iodie(fabric, zen_fabric_init_oxio, NULL);
 
 	/*
 	 * Move on to PCIe training.

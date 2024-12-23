@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -23,6 +23,8 @@
 #define	_SYS_IO_ZEN_MPIO_H
 
 #include <sys/stdbool.h>
+#include <sys/io/zen/fabric_limits.h>
+#include <sys/io/zen/oxio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,18 +54,48 @@ typedef struct zen_mpio_ext_attrs zen_mpio_ext_attrs_t;
 
 typedef struct zen_mpio_config {
 	zen_mpio_ask_t			*zmc_ask;
-	zen_mpio_ubm_hfc_port_t		*zmc_ubm_hfc_ports;
 	zen_mpio_ext_attrs_t		*zmc_ext_attrs;
 	uint64_t			zmc_ask_pa;
 	uint64_t			zmc_ext_attrs_pa;
-	uint64_t			zmc_ubm_hfc_ports_pa;
 	uint32_t			zmc_ask_nports;
-	uint32_t			zmc_ubm_hfc_nports;
 	uint32_t			zmc_ask_alloc_len;
 	uint32_t			zmc_ext_attrs_alloc_len;
 	uint32_t			zmc_ext_attrs_len;
-	uint32_t			zmc_ubm_hfc_ports_alloc_len;
 } zen_mpio_config_t;
+
+/*
+ * Discovered and Synthesized Information for a given UBM DFC.
+ */
+typedef struct zen_ubm_dfc {
+	const zen_mpio_ask_port_t	*zud_ask;
+	uint16_t			zud_slot;
+} zen_ubm_dfc_t;
+
+typedef struct zen_ubm_hfc {
+	const oxio_engine_t		*zuh_oxio;
+	const zen_mpio_ubm_hfc_port_t	*zuh_hfc;
+	uint32_t			zuh_num;
+	uint32_t			zuh_ndfcs;
+	zen_ubm_dfc_t			zuh_dfcs[ZEN_MAX_UBM_DFC_PER_HFC];
+} zen_ubm_hfc_t;
+
+typedef struct zen_ubm_config {
+	zen_mpio_ubm_hfc_port_t		*zuc_hfc_ports;
+	uint64_t			zuc_hfc_ports_pa;
+	uint32_t			zuc_hfc_nports;
+	uint32_t			zuc_hfc_ports_alloc_len;
+	/*
+	 * These members allow us to map the global UBM config back to the
+	 * corresponding per-I/O die information.
+	 */
+	uint32_t			zuc_die_idx[ZEN_FABRIC_MAX_IO_DIES];
+	uint32_t			zuc_die_nports[ZEN_FABRIC_MAX_IO_DIES];
+	/*
+	 * These structures allow us to map a given UBM HFC and DFC
+	 * configuration information back to the corresponding oxio engine.
+	 */
+	zen_ubm_hfc_t			zuc_hfc[ZEN_MAX_UBM_HFC];
+} zen_ubm_config_t;
 
 /*
  * Retrieves and reports the MPIO firmware version.
@@ -78,6 +110,7 @@ extern void zen_mpio_report_fw_version(const zen_iodie_t *iodie);
 extern void zen_mpio_pcie_init(zen_fabric_t *);
 
 extern bool zen_mpio_write_pcie_strap(zen_pcie_core_t *, uint32_t, uint32_t);
+extern uint32_t zen_mpio_ubm_idx(const zen_iodie_t *);
 
 #ifdef __cplusplus
 }

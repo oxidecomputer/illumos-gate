@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -27,6 +27,7 @@
 
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/mpio.h>
+#include <sys/io/zen/oxio.h>
 
 #ifdef __cplusplus
 extern "C" {
