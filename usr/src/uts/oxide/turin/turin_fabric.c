@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -1984,6 +1984,23 @@ turin_fabric_init_bridge(zen_pcie_port_t *port)
 		reg |= PCIE_PCIECAP_SLOT_IMPL;
 		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
 		    port->zpp_func, TURIN_BRIDGE_R_PCI_PCIE_CAP, reg);
+	}
+
+	/*
+	 * Take this opportunity to apply any requested OXIO tuning to the
+	 * bridge. See the version in milan_fabric_init_bridge() for notes on
+	 * the placement of this operation.
+	 */
+	if (port->zpp_oxio != NULL &&
+	    port->zpp_oxio->oe_tuning.ot_log_limit != OXIO_SPEED_GEN_MAX) {
+		uint16_t reg;
+
+		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, TURIN_BRIDGE_R_PCI_LINK_CTL2);
+		reg &= ~PCIE_LINKCTL2_TARGET_SPEED_MASK;
+		reg |= oxio_loglim_to_pcie(port->zpp_oxio);
+		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, TURIN_BRIDGE_R_PCI_LINK_CTL2, reg);
 	}
 }
 

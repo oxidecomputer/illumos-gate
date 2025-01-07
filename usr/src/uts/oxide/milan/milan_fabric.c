@@ -3500,6 +3500,8 @@ done:
  *
  *   o Changing settings that will allow the links to actually flush TLPs when
  *     the link goes down.
+ *
+ *   o Applying any logical limits that have been asked for by the OXIO engine.
  */
 static int
 milan_fabric_init_bridge(zen_pcie_port_t *port, void *arg)
@@ -3652,6 +3654,27 @@ milan_fabric_init_bridge(zen_pcie_port_t *port, void *arg)
 		reg |= PCIE_PCIECAP_SLOT_IMPL;
 		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
 		    port->zpp_func, MILAN_BRIDGE_R_PCI_PCIE_CAP, reg);
+	}
+
+	/*
+	 * Take this opportunity to apply any requested OXIO tuning to the
+	 * bridge. While in an ideal world we would apply this after the MAPPED
+	 * stage in the DXIO state machine, experimentally it seems to get
+	 * clobbered by something else. As the majority of the things we're
+	 * worried about are gated behind hotplug and this isn't something we
+	 * generally want to use, we will survive this being a bit later than
+	 * we'd like.
+	 */
+	if (port->zpp_oxio != NULL &&
+	    port->zpp_oxio->oe_tuning.ot_log_limit != OXIO_SPEED_GEN_MAX) {
+		uint16_t reg;
+
+		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, MILAN_BRIDGE_R_PCI_LINK_CTL2);
+		reg &= ~PCIE_LINKCTL2_TARGET_SPEED_MASK;
+		reg |= oxio_loglim_to_pcie(port->zpp_oxio);
+		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, MILAN_BRIDGE_R_PCI_LINK_CTL2, reg);
 	}
 
 	return (0);
@@ -4378,7 +4401,7 @@ milan_fabric_pcie(zen_fabric_t *fabric)
 
 	/*
 	 * XXX At some point, maybe not here, but before we really go too much
-	 * futher we should lock all the various MMIO assignment registers,
+	 * further we should lock all the various MMIO assignment registers,
 	 * especially ones we don't intend to use.
 	 */
 }

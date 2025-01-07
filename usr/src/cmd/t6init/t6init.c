@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -41,6 +41,7 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
+#include <pcieb_ioctl.h>
 
 #include "t6init.h"
 
@@ -143,6 +144,85 @@ t6_fatal(t6_mfg_t *t6mfg, const char *fmt, ...)
 	va_end(va);
 
 	exit(EXIT_FAILURE);
+}
+
+/*
+ * To deal with a series of Gen 2 related training failures that we've seen, we
+ * purposefully try to limit the bridge to only operate at Gen 1 speeds during
+ * manufacturing mode. This is something that can be cleared through the pcieb
+ * driver logic on the T6's bridge. The attachment point minor node will point
+ * to the same bridge whose devctl we need to open. As such, we find it through
+ * that.
+ */
+static bool
+t6init_bridge_limit(const char *ap, uint32_t speed)
+{
+	char bridge[PATH_MAX];
+	int fd;
+	pcieb_ioctl_target_speed_t ioc;
+	di_node_t dnroot, dn;
+	bool ret = true, found = false;
+
+	dnroot = di_init("/", DINFOCPYALL);
+	if (dnroot == DI_NODE_NIL) {
+		warn("failed to take devinfo snapshot");
+		return (false);
+	}
+
+	for (dn = di_drv_first_node(T6_PCIEB_DRIVER, dnroot); !found &&
+	    dn != DI_NODE_NIL; dn = di_drv_next_node(dn)) {
+		di_minor_t minor = DI_MINOR_NIL;
+
+		while ((minor = di_minor_next(dn, minor)) != DI_MINOR_NIL) {
+			char *path;
+
+			if (strcmp(di_minor_name(minor), ap) != 0) {
+				continue;
+			}
+
+			found = true;
+			path = di_devfs_path(dn);
+			if (path == NULL) {
+				warn("failed to get devfs path for bridge that "
+				    "corresponds to ap %s", ap);
+				di_fini(dnroot);
+				return (false);
+			}
+
+			if (snprintf(bridge, sizeof (bridge), "/devices%s:%s",
+			    path, T6_PCIEB_MINOR) >= sizeof (bridge)) {
+				warnx("failed to construct devfs path: would "
+				    "overflow internal buffer");
+				di_fini(dnroot);
+				return (false);
+			}
+
+			di_devfs_path_free(path);
+			break;
+		}
+	}
+
+	di_fini(dnroot);
+	if (!found) {
+		warnx("failed to map ap %s to a PCIe bridge devctl", ap);
+		return (false);
+	}
+
+	fd = open(bridge, O_RDWR);
+	if (fd < 0) {
+		warn("failed to open ap %s bridge %s", ap, bridge);
+		return (false);
+	}
+
+	(void) memset(&ioc, 0, sizeof (pcieb_ioctl_target_speed_t));
+	ioc.pits_speed = speed;
+	if (ioctl(fd, PCIEB_IOCTL_SET_TARGET_SPEED, &ioc) != 0) {
+		warn("ioctl to set target speed to PCIe Gen %u failed", speed);
+		ret = false;
+	}
+
+	(void) close(fd);
+	return (ret);
 }
 
 /*
@@ -584,6 +664,7 @@ start_mode(const char *ap, t6init_mode_t mode)
 	};
 	char * const aplist[] = { (char *)ap };
 	char *errstr;
+	uint32_t speed;
 
 	t6init_verbose("Switching to %s mode", t6init_modename(mode));
 
@@ -603,6 +684,14 @@ start_mode(const char *ap, t6init_mode_t mode)
 	 */
 	t6init_verbose("    sleeping for 1s or so");
 	(void) sleep(1);
+
+	speed = mode == T6INIT_MODE_MISSION ? PCIEB_LINK_SPEED_GEN3 :
+	    PCIEB_LINK_SPEED_GEN1;
+	t6init_verbose("    setting bridge limit to PCIe Gen %u", speed);
+	if (!t6init_bridge_limit(ap, speed)) {
+		return (false);
+	}
+
 	t6init_verbose("    configuring %s", ap);
 	cfgerr = config_change_state(CFGA_CMD_CONFIGURE, 1, aplist, NULL,
 	    &conf, &msg, &errstr, CFGA_FLAG_FORCE | CFGA_FLAG_VERBOSE);

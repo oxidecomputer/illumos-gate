@@ -21,6 +21,7 @@
  */
 
 #include <sys/stdbool.h>
+#include <sys/pcie.h>
 #include <sys/io/zen/oxio.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/platform_impl.h>
@@ -605,4 +606,45 @@ oxio_mpio_to_eng(zen_pcie_port_t *port)
 	}
 
 	panic("failed to map PCIe port to OXIO engine!");
+}
+
+/*
+ * We've been given a speed to set as the logical limit on a PCIe bridge.
+ * Validate that this is valid for the platform and return the corresponding
+ * value that makes sense for PCIe, generally in the context of the Link Control
+ * register target speed register.
+ */
+uint16_t
+oxio_loglim_to_pcie(const oxio_engine_t *oxio)
+{
+	oxio_speed_t max = oxide_zen_platform_consts()->zpc_pcie_max_speed;
+	oxio_speed_t limit = oxio->oe_tuning.ot_log_limit;
+
+	if (limit == OXIO_SPEED_GEN_MAX) {
+		limit = max;
+	}
+
+	if (limit > max) {
+		cmn_err(CE_WARN, "%s: requested logical limit speed (0x%x) "
+		    "is greater than the maximum the hardware can support "
+		    "(0x%x): using OXIO_SPEED_GEN_MAX instead", oxio->oe_name,
+		    oxio->oe_tuning.ot_hw_limit, max);
+		limit = max;
+	}
+
+	switch (limit) {
+	case OXIO_SPEED_GEN_1:
+		return (PCIE_LINKCTL2_TARGET_SPEED_2_5);
+	case OXIO_SPEED_GEN_2:
+		return (PCIE_LINKCTL2_TARGET_SPEED_5);
+	case OXIO_SPEED_GEN_3:
+		return (PCIE_LINKCTL2_TARGET_SPEED_8);
+	case OXIO_SPEED_GEN_4:
+		return (PCIE_LINKCTL2_TARGET_SPEED_16);
+	case OXIO_SPEED_GEN_5:
+		return (PCIE_LINKCTL2_TARGET_SPEED_32);
+	default:
+		panic("%s: unmappable OXIO logical limit speed: 0x%x",
+		    oxio->oe_name, limit);
+	}
 }

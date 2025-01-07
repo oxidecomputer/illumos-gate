@@ -120,6 +120,27 @@ const oxio_engine_t oxio_gimlet[] = { {
 		 */
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT
+	},
+	.oe_tuning = {
+		/*
+		 * On Gimlet, we control whether the T6 enters manufacturing
+		 * mode or mission mode (what one would normally expect) based
+		 * on a GPIO. This GPIO is strapped on the board to enter
+		 * manufacturing mode by default, which limits the device to
+		 * PCIe Gen 2 operation.
+		 *
+		 * For various reasons, we have seen issues while trying to
+		 * perform initial training to PCIe Gen 2. In particular, while
+		 * this is successfully negotiated and we see the SoC enter a
+		 * Recovery.Speed in the PCIe LTSSM, it fails to leave the
+		 * subsequent Recovery.Config and then enters Compliance mode.
+		 * We've observed that by limiting the bridge to PCIe Gen 1
+		 * behavior, that we will always successfully train the link
+		 * initially. This setting applies an initial constraint on the
+		 * bridge that will be lifted by the t6init service when it
+		 * transitions to mission mode via a pcieb driver ioctl.
+		 */
+		.ot_log_limit = OXIO_SPEED_GEN_1
 	}
 }, {
 	.oe_name = "M.2 East",

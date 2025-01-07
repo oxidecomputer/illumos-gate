@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 PROG= t6init
@@ -30,6 +30,7 @@ ROOTMANIFESTDIR = $(ROOTSVCSYSTEM)
 
 CSTD= $(CSTD_GNU99)
 CPPFLAGS += -I$(SRC)/uts/oxide -I$(ROOTPLATFORM)/include
+CPPFLAGS += -I$(SRC)/uts/common/io/pciex/
 LDFLAGS += -L$(ROOTPLATFORM)/lib/$(MACH64) -R$(PLATFORM)/lib/$(MACH64)
 LDLIBS += -lt6mfg -lcfgadm -ldevinfo -lsocket -lumem -lipcc
 

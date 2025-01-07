@@ -156,7 +156,7 @@ case "$1" in
 start)
 	create_dpio
 
-	check_link t6mfg 0x2 0x8
+	check_link t6mfg 0x1 0x8
 
 	echo "Attempting to transition to mission mode"
 	$T6INIT \
