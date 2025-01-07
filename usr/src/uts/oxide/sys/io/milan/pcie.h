@@ -2384,10 +2384,10 @@ milan_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
  * respectively.  This is the illumos PCIE_SLOTCAP, PCIE_SLOTCTL, and
  * PCIE_SLOTSTS, but already adjusted for the capability offset.
  */
-
 #define	MILAN_BRIDGE_R_PCI_SLOT_CAP	0x6c
 #define	MILAN_BRIDGE_R_PCI_SLOT_CTL	0x70
 #define	MILAN_BRIDGE_R_PCI_SLOT_STS	0x72
+#define	MILAN_BRIDGE_R_PCI_LINK_CTL2	0x88
 
 #ifdef __cplusplus
 }

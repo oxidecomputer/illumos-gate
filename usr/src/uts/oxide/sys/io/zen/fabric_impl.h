@@ -67,6 +67,7 @@ extern void oxio_ubm_to_ask(zen_ubm_hfc_t *, const zen_mpio_ubm_dfc_descr_t *,
     uint32_t, zen_mpio_ask_port_t *);
 extern void oxio_dxio_to_eng(zen_pcie_port_t *);
 extern void oxio_mpio_to_eng(zen_pcie_port_t *);
+extern uint16_t oxio_loglim_to_pcie(const oxio_engine_t *);
 
 /*
  * Warning: These memlists cannot be given directly to PCI. They expect to be

@@ -286,6 +286,14 @@ typedef struct oxio_tuning {
 	 */
 	oxio_speed_t	ot_hw_limit;
 	oxio_speed_t	ot_hw_target;
+	/*
+	 * This is a logical limit that we would like to apply to a device in a
+	 * way that the OS can see. For PCIe devices, this will set a value in
+	 * the PCIe Link Control 2 register. There are a few gotchas on the
+	 * timing of this being applied. Please see the consumers of this for
+	 * more information.
+	 */
+	oxio_speed_t	ot_log_limit;
 } oxio_tuning_t;
 
 typedef struct {

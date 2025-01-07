@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_PCIE_H
@@ -4354,10 +4354,10 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
  * respectively.  This is the illumos PCIE_SLOTCAP, PCIE_SLOTCTL, and
  * PCIE_SLOTSTS, but already adjusted for the capability offset.
  */
-
 #define	TURIN_BRIDGE_R_PCI_SLOT_CAP	0x6c
 #define	TURIN_BRIDGE_R_PCI_SLOT_CTL	0x70
 #define	TURIN_BRIDGE_R_PCI_SLOT_STS	0x72
+#define	TURIN_BRIDGE_R_PCI_LINK_CTL2	0x88
 
 #ifdef __cplusplus
 }

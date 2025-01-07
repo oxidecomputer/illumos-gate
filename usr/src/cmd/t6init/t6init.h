@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _T6INIT_H
@@ -33,6 +33,8 @@ extern "C" {
 
 #define	T6_MFG_DRIVER			"t6mfg"
 #define	T6_MISSION_DRIVER		"t4nex"
+#define	T6_PCIEB_DRIVER			"pcieb"
+#define	T6_PCIEB_MINOR			"devctl"
 
 #ifdef __cplusplus
 }
