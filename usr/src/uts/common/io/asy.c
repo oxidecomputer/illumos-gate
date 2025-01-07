@@ -27,7 +27,7 @@
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  * Copyright 2024 Hans Rosenfeld
  */
 
@@ -3155,7 +3155,6 @@ asyintr(caddr_t argasy, caddr_t argunused __unused)
 	 */
 	for (;;) {
 		const uint8_t intr_id = asy_get(asy, ASY_ISR);
-
 		/*
 		 * Reading LSR will clear any error bits (ASY_LSR_ERRORS) which
 		 * are set which is why the value is passed through to
