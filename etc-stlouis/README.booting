@@ -203,11 +203,11 @@ Next, instruct nanobl-rs to receive unix in the same manner, and to begin
 executing the kernel once the transfer completes.  If you compressed your
 kernel in step 4, utter:
 
-	> 110000000::recv -m | ::inflate 100000000 | ::load | ::call 101000000 4c00000
+	> 110000000::recv -m | ::inflate 111000000 | ::load | ::call 101000000 4c00000
 
 If you did not compress your kernel:
 
-	> 100000000::recv -m | ::load | ::call 101000000 4c00000
+	> 110000000::recv -m | ::load | ::call 101000000 4c00000
 
 Again, as soon as nanobl-rs blocks, use Xmodem to send unix.z (or unix) to the
 target machine (picocom: C-a C-s).
@@ -216,6 +216,10 @@ The addresses used for unix in the above example are almost entirely
 arbitrary, but should work on any machine we have.  When the file reception
 completes, ::load and ::call will interpret the kernel and an ELF object and
 transfer control to its entry point, booting the OS.
+
+Note that due to a hardware erratum involving physical address aliasing on
+Turin, there is a 64KiB hole at 0x1_0000_0000 that always reads as zeroes.
+Beware trying to receive or inflate anything into that range.
 
 11. Upon reaching userland, if you have a NIC you can plumb up your network by
 uttering '/root/start-network <IPv4 address>/<IPv4 CIDR>'.  This will also
