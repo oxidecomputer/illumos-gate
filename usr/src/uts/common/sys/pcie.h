@@ -24,7 +24,7 @@
  */
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_PCIE_H
@@ -34,6 +34,7 @@
 extern "C" {
 #endif
 
+#include <sys/stdint.h>
 #include <sys/pci.h>
 
 /*
