@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_IMPL_H
@@ -36,6 +36,11 @@ extern "C" {
  * This is the SDP unit ID for PCIe core 0 in each IOMS.
  */
 #define	MILAN_PCIE_CORE0_UNITID		16
+
+extern const zen_pcie_reg_dbg_t milan_pcie_core_dbg_regs[];
+extern const zen_pcie_reg_dbg_t milan_pcie_port_dbg_regs[];
+extern const size_t milan_pcie_core_dbg_nregs;
+extern const size_t milan_pcie_port_dbg_nregs;
 
 #ifdef __cplusplus
 }

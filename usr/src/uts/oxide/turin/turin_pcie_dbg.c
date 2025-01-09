@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -23,9 +23,8 @@
 #include <sys/io/turin/pcie.h>
 #include <sys/io/turin/pcie_impl.h>
 
-#ifdef	DEBUG
-
 const zen_pcie_reg_dbg_t turin_pcie_core_dbg_regs[] = {
+#ifdef DEBUG
 	{
 		.zprd_name = "PCIECORE::PCIE_HW_DEBUG",
 		.zprd_def = D_PCIE_CORE_HW_DBG
@@ -987,9 +986,11 @@ const zen_pcie_reg_dbg_t turin_pcie_core_dbg_regs[] = {
 		.zprd_name = "PCIECORE::SMU_PCIE_FENCED2_REG",
 		.zprd_def = D_PCIE_CORE_SMU_FENCED2
 	},
+#endif /* DEBUG */
 };
 
 const zen_pcie_reg_dbg_t turin_pcie_port_dbg_regs[] = {
+#ifdef DEBUG
 	{
 		.zprd_name = "PCIEPORT::PCIEP_HW_DEBUG",
 		.zprd_def = D_PCIE_PORT_HW_DBG
@@ -1695,6 +1696,8 @@ const zen_pcie_reg_dbg_t turin_pcie_port_dbg_regs[] = {
 		.zprd_name = "PCIEPORT::PCIEP_RCB_CNTL",
 		.zprd_def = D_PCIE_PORT_RCB_CTL
 	},
+#endif /* DEBUG */
 };
 
-#endif	/* DEBUG */
+const size_t turin_pcie_core_dbg_nregs = ARRAY_SIZE(turin_pcie_core_dbg_regs);
+const size_t turin_pcie_port_dbg_nregs = ARRAY_SIZE(turin_pcie_port_dbg_regs);

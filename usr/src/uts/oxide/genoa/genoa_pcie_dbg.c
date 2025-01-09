@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -23,9 +23,8 @@
 #include <sys/io/genoa/pcie.h>
 #include <sys/io/genoa/pcie_impl.h>
 
-#ifdef	DEBUG
-
 const zen_pcie_reg_dbg_t genoa_pcie_core_dbg_regs[] = {
+#ifdef	DEBUG
 	{
 		.zprd_name = "PCIECORE::PCIE_HW_DEBUG",
 		.zprd_def = D_PCIE_CORE_HW_DBG
@@ -888,9 +887,11 @@ const zen_pcie_reg_dbg_t genoa_pcie_core_dbg_regs[] = {
 		    "PCIECORE::SMU_INT_PIN_SHARING_PORT_INDICATOR_THREE",
 		.zprd_def = D_PCIE_CORE_SMU_INT_PIN_SHARING3
 	},
+#endif /* DEBUG */
 };
 
 const zen_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
+#ifdef DEBUG
 	{
 		.zprd_name = "PCIEPORT::PCIEP_HW_DEBUG",
 		.zprd_def = D_PCIE_PORT_HW_DBG
@@ -1540,6 +1541,8 @@ const zen_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 		.zprd_name = "PCIEPORT::PCIE_BW_MONITOR_COUNT2",
 		.zprd_def = D_PCIE_PORT_BW_MONITOR_COUNT2
 	},
+#endif /* DEBUG */
 };
 
-#endif	/* DEBUG */
+const size_t genoa_pcie_core_dbg_nregs = ARRAY_SIZE(genoa_pcie_core_dbg_regs);
+const size_t genoa_pcie_port_dbg_nregs = ARRAY_SIZE(genoa_pcie_port_dbg_regs);

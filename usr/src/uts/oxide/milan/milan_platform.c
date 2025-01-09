@@ -45,15 +45,6 @@
 #include <sys/io/milan/hacks.h>
 
 /*
- * The milan_pcie_dbg.c is file is included here so that we have access to the
- * constant initialisers for the core and port debug registers declared within,
- * and can compute their size. The alternative would be to link it into the
- * final object but we would lose the ability to declare all of the platform
- * data as const below.
- */
-#include "milan_pcie_dbg.c"
-
-/*
  * Milan has up to 8 CCDs per I/O die.
  */
 #define	MILAN_MAX_CCDS_PER_IODIE	8
@@ -163,12 +154,10 @@ const zen_platform_t milan_platform = {
 		.zpc_nbif_nfunc = milan_nbif_nfunc,
 		.zpc_nbif_data = milan_nbif_data,
 		.zpc_pcie_core0_unitid = MILAN_PCIE_CORE0_UNITID,
-#ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = milan_pcie_core_dbg_regs,
-		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(milan_pcie_core_dbg_regs),
+		.zpc_pcie_core_dbg_nregs = &milan_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = milan_pcie_port_dbg_regs,
-		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(milan_pcie_port_dbg_regs),
-#endif
+		.zpc_pcie_port_dbg_nregs = &milan_pcie_port_dbg_nregs,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_4,
 		.zpc_hp_vers = ZEN_HP_VERS_2
 	},

@@ -1510,7 +1510,7 @@ zen_fabric_init_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
 
 	return (zen_fabric_init_pcie_dbg(&pc->zpc_dbg,
 	    platform_consts->zpc_pcie_core_dbg_regs,
-	    platform_consts->zpc_pcie_core_dbg_nregs));
+	    *platform_consts->zpc_pcie_core_dbg_nregs));
 }
 
 static int
@@ -1521,7 +1521,7 @@ zen_fabric_init_pcie_port_dbg(zen_pcie_port_t *port, void *arg)
 
 	return (zen_fabric_init_pcie_dbg(&port->zpp_dbg,
 	    platform_consts->zpc_pcie_port_dbg_regs,
-	    platform_consts->zpc_pcie_port_dbg_nregs));
+	    *platform_consts->zpc_pcie_port_dbg_nregs));
 }
 
 static inline void *

@@ -37,15 +37,6 @@
 #include <sys/io/zen/ras.h>
 
 /*
- * The genoa_pcie_dbg.c is file is included here so that we have access to the
- * constant initialisers for the core and port debug registers declared within,
- * and can compute their size. The alternative would be to link it into the
- * final object but we would lose the ability to declare all of the platform
- * data as const below.
- */
-#include "genoa_pcie_dbg.c"
-
-/*
  * Genoa has up to 12 CCDs per I/O die.
  */
 #define	GENOA_MAX_CCDS_PER_IODIE	12
@@ -177,12 +168,10 @@ const zen_platform_t genoa_platform = {
 		.zpc_nbif_nfunc = genoa_nbif_nfunc,
 		.zpc_nbif_data = genoa_nbif_data,
 		.zpc_pcie_core0_unitid = GENOA_PCIE_CORE0_UNITID,
-#ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = genoa_pcie_core_dbg_regs,
-		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(genoa_pcie_core_dbg_regs),
+		.zpc_pcie_core_dbg_nregs = &genoa_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = genoa_pcie_port_dbg_regs,
-		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(genoa_pcie_port_dbg_regs),
-#endif
+		.zpc_pcie_port_dbg_nregs = &genoa_pcie_port_dbg_nregs,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
 		.zpc_hp_vers = ZEN_HP_VERS_3
 	},

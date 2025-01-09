@@ -442,9 +442,9 @@ typedef struct zen_platform_consts {
 	 * only done in DEBUG kernels.
 	 */
 	const zen_pcie_reg_dbg_t	*zpc_pcie_core_dbg_regs;
-	const size_t			zpc_pcie_core_dbg_nregs;
+	const size_t *const		zpc_pcie_core_dbg_nregs;
 	const zen_pcie_reg_dbg_t	*zpc_pcie_port_dbg_regs;
-	const size_t			zpc_pcie_port_dbg_nregs;
+	const size_t *const		zpc_pcie_port_dbg_nregs;
 
 	/*
 	 * This is the maximum PCIe Generation Supported.

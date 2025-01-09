@@ -38,15 +38,6 @@
 #include <sys/io/zen/ras.h>
 
 /*
- * The turin_pcie_dbg.c is file is included here so that we have access to the
- * constant initialisers for the core and port debug registers declared within,
- * and can compute their size. The alternative would be to link it into the
- * final object but we would lose the ability to declare all of the platform
- * data as const below.
- */
-#include "turin_pcie_dbg.c"
-
-/*
  * Classic Turin has up to 16 CCDs per I/O die, whereas
  * Dense Turin only has up to 12 CCDs per I/O die.
  */
@@ -184,12 +175,10 @@ const zen_platform_t turin_platform = {
 		.zpc_nbif_nfunc = turin_nbif_nfunc,
 		.zpc_nbif_data = turin_nbif_data,
 		.zpc_pcie_core0_unitid = TURIN_PCIE_CORE0_UNITID,
-#ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = turin_pcie_core_dbg_regs,
-		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(turin_pcie_core_dbg_regs),
+		.zpc_pcie_core_dbg_nregs = &turin_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,
-		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(turin_pcie_port_dbg_regs),
-#endif
+		.zpc_pcie_port_dbg_nregs = &turin_pcie_port_dbg_nregs,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
 		.zpc_hp_vers = ZEN_HP_VERS_3
 	},
@@ -235,12 +224,10 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_nbif_nfunc = turin_nbif_nfunc,
 		.zpc_nbif_data = turin_nbif_data,
 		.zpc_pcie_core0_unitid = TURIN_PCIE_CORE0_UNITID,
-#ifdef DEBUG
 		.zpc_pcie_core_dbg_regs = turin_pcie_core_dbg_regs,
-		.zpc_pcie_core_dbg_nregs = ARRAY_SIZE(turin_pcie_core_dbg_regs),
+		.zpc_pcie_core_dbg_nregs = &turin_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,
-		.zpc_pcie_port_dbg_nregs = ARRAY_SIZE(turin_pcie_port_dbg_regs),
-#endif
+		.zpc_pcie_port_dbg_nregs = &turin_pcie_port_dbg_nregs,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
 		.zpc_hp_vers = ZEN_HP_VERS_3
 	},

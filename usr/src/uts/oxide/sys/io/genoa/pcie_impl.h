@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_GENOA_PCIE_IMPL_H
@@ -35,6 +35,11 @@ extern "C" {
  * This is the SDP unit ID for PCIe core 0 in each IOMS.
  */
 #define	GENOA_PCIE_CORE0_UNITID		16
+
+extern const zen_pcie_reg_dbg_t genoa_pcie_core_dbg_regs[];
+extern const zen_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[];
+extern const size_t genoa_pcie_core_dbg_nregs;
+extern const size_t genoa_pcie_port_dbg_nregs;
 
 #ifdef __cplusplus
 }
