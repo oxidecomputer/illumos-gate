@@ -413,17 +413,17 @@ turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	/*
 	 * The format of the PP table is consistent across several SMU
 	 * versions. If we encounter a version we have not verified then we
-	 * move on without sending a table.
+	 * panic.
 	 */
 	bool valid = true;
 
 	switch (family) {
 	case X86_PF_AMD_TURIN:
-		if (maj != 94 || min < 91 || min > 111)
+		if (maj != 94 || min < 91 || min > 115)
 			valid = false;
 		break;
 	case X86_PF_AMD_DENSE_TURIN:
-		if (maj != 99 || min < 91 || min > 111)
+		if (maj != 99 || min < 91 || min > 115)
 			valid = false;
 		break;
 	default:
@@ -432,10 +432,10 @@ turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	}
 
 	if (!valid) {
-		cmn_err(CE_WARN,
+		cmn_err(CE_PANIC,
 		    "The PP table layout for SMU version %u.%u is unknown",
 		    maj, min);
-		return (false);
+		/* NOTREACHED */
 	}
 
 	turin_pptable_v94_91_t *tpp = pptable;

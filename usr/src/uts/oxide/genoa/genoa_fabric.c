@@ -289,13 +289,13 @@ genoa_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	/*
 	 * The format of the PP table is consistent across several SMU
 	 * versions. If we encounter a version we have not verified then we
-	 * move on without sending a table.
+	 * panic.
 	 */
 	if (maj != 71 || min < 111 || min > 124) {
-		cmn_err(CE_WARN,
+		cmn_err(CE_PANIC,
 		    "The PP table layout for SMU version %u.%u is unknown",
 		    maj, min);
-		return (false);
+		/* NOTREACHED */
 	}
 
 	genoa_pptable_v71_111_t *gpp = pptable;
