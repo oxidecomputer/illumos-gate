@@ -151,21 +151,6 @@ typedef int (*zen_core_cb_f)(zen_core_t *, void *);
  */
 extern void zen_ccx_init_noop(void);
 
-static inline void
-wrmsr_and_test(uint32_t msr, uint64_t v)
-{
-	wrmsr(msr, v);
-
-#ifdef	DEBUG
-	uint64_t rv = rdmsr(msr);
-
-	if (rv != v) {
-		cmn_err(CE_PANIC, "MSR 0x%x written with value 0x%lx "
-		    "has value 0x%lx\n", msr, v, rv);
-	}
-#endif
-}
-
 #ifdef	__cplusplus
 }
 #endif
