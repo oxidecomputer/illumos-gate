@@ -31,9 +31,9 @@
 #include <sys/io/genoa/pcie_impl.h>
 #include <sys/io/genoa/ccx_impl.h>
 #include <sys/io/genoa/mpio_impl.h>
+#include <sys/io/genoa/ras_impl.h>
 #include <sys/io/genoa/smu.h>
 #include <sys/io/zen/mpio.h>
-#include <sys/io/zen/ras.h>
 
 /*
  * Genoa has up to 12 CCDs per I/O die.
@@ -127,10 +127,6 @@ static const zen_hack_ops_t genoa_hack_ops = {
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
 };
 
-static const zen_ras_ops_t genoa_ras_ops = {
-	.zro_ras_init = zen_null_ras_init,
-};
-
 const zen_platform_t genoa_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4,
@@ -144,6 +140,7 @@ const zen_platform_t genoa_platform = {
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES,
 		.zpc_ccds_per_iodie = GENOA_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = GENOA_MAX_CORES_PER_CCX,
+		.zpc_ras_init_data = &genoa_ras_init_data,
 		.zpc_smu_smn_addrs = {
 			.zssa_req = D_GENOA_SMU_RPC_REQ,
 			.zssa_resp = D_GENOA_SMU_RPC_RESP,
@@ -179,5 +176,4 @@ const zen_platform_t genoa_platform = {
 	.zp_ccx_ops = &genoa_ccx_ops,
 	.zp_fabric_ops = &genoa_fabric_ops,
 	.zp_hack_ops = &genoa_hack_ops,
-	.zp_ras_ops = &genoa_ras_ops,
 };

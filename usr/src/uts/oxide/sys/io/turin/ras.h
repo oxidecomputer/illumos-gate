@@ -13,11 +13,11 @@
  * Copyright 2025 Oxide Computer Company
  */
 
-#ifndef	_SYS_IO_MILAN_RAS_H
-#define	_SYS_IO_MILAN_RAS_H
+#ifndef	_SYS_IO_TURIN_RAS_H
+#define	_SYS_IO_TURIN_RAS_H
 
 /*
- * Milan-specific constants for RAS, primarily bits in MCA mask MSRs.
+ * Turin-specific constants for RAS, primarily bits in MCA mask MSRs.
  */
 
 #ifdef __cplusplus
@@ -36,44 +36,32 @@ extern "C" {
 /*
  * LS (load-store) mask bits.
  */
-#define	MILAN_RAS_MASK_LS_SYS_RD_DATA_WCB	21
-#define	MILAN_RAS_MASK_LS_SYS_RD_DATA_SCB	20
-#define	MILAN_RAS_MASK_LS_SYS_RD_DATA_LD	19
+#define	TURIN_RAS_MASK_LS_SYS_RD_DATA_WCB	25
+#define	TURIN_RAS_MASK_LS_SYS_RD_DATA_MAB	10
+#define	TURIN_RAS_MASK_LS_SYS_RD_DATA_UCODE	9
 
 /*
  * IF (instruction fetch) mask bits.
  */
-#define	MILAN_RAS_MASK_IF_L2_TLB_MULTI		16
-#define	MILAN_RAS_MASK_IF_L2_BTB_MULTI		11
+#define	TURIN_RAS_MASK_IF_L2_SYS_DATA_RD_ERR	13
 
 /*
  * L2 mask bits.
  */
-#define	MILAN_RAS_MASK_L2_HWA			3
+#define	TURIN_RAS_MASK_L2_HWA			3
 
 /*
  * FP (floating-point) mask bits.
  */
-#define	MILAN_RAS_MASK_FP_HWA			6
-
-/*
- * CS (coherent slave - DF) mask bits.
- */
-#define	MILAN_RAS_MASK_CS_FTI_ADDR_VIOL		1
-
-/*
- * L3 mask bits.
- */
-#define	MILAN_RAS_MASK_L3_HWA			7
-
+#define	TURIN_RAS_MASK_FP_HWA			6
 /*
  * NBIO (northbridge I/O) mask bits.
  */
-#define	MILAN_RAS_MASK_NBIO_PCIE_ERR_EVT	2
-#define	MILAN_RAS_MASK_NBIO_PCIE_SB		1
+#define	TURIN_RAS_MASK_NBIO_EXT_SDP_ERR_EVT	2
+#define	TURIN_RAS_MASK_NBIO_PCIE_SB		1
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif	/* _SYS_IO_MILAN_RAS_H */
+#endif	/* _SYS_IO_TURIN_RAS_H */

@@ -32,9 +32,9 @@
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/io/turin/ccx_impl.h>
 #include <sys/io/turin/mpio_impl.h>
+#include <sys/io/turin/ras_impl.h>
 #include <sys/io/turin/smu.h>
 #include <sys/io/zen/mpio.h>
-#include <sys/io/zen/ras.h>
 
 /*
  * Classic Turin has up to 16 CCDs per I/O die, whereas
@@ -141,10 +141,6 @@ static const zen_hack_ops_t turin_hack_ops = {
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
 };
 
-static const zen_ras_ops_t turin_ras_ops = {
-	.zro_ras_init = zen_null_ras_init,
-};
-
 const zen_platform_t turin_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_4D2,
@@ -157,6 +153,7 @@ const zen_platform_t turin_platform = {
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,
 		.zpc_ccds_per_iodie = CLASSIC_TURIN_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = CLASSIC_TURIN_MAX_CORES_PER_CCX,
+		.zpc_ras_init_data = &turin_ras_init_data,
 		.zpc_smu_smn_addrs = {
 			.zssa_req = D_TURIN_SMU_RPC_REQ,
 			.zssa_resp = D_TURIN_SMU_RPC_RESP,
@@ -192,7 +189,6 @@ const zen_platform_t turin_platform = {
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,
 	.zp_hack_ops = &turin_hack_ops,
-	.zp_ras_ops = &turin_ras_ops,
 };
 
 const zen_platform_t dense_turin_platform = {
@@ -207,6 +203,7 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,
 		.zpc_ccds_per_iodie = DENSE_TURIN_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = DENSE_TURIN_MAX_CORES_PER_CCX,
+		.zpc_ras_init_data = &turin_ras_init_data,
 		.zpc_smu_smn_addrs = {
 			.zssa_req = D_TURIN_SMU_RPC_REQ,
 			.zssa_resp = D_TURIN_SMU_RPC_RESP,
@@ -242,5 +239,4 @@ const zen_platform_t dense_turin_platform = {
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,
 	.zp_hack_ops = &turin_hack_ops,
-	.zp_ras_ops = &turin_ras_ops,
 };

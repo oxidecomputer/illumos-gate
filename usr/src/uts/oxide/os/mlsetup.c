@@ -24,7 +24,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 by Delphix. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -58,7 +58,7 @@
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/hacks.h>
-#include <sys/io/zen/ras.h>
+#include <sys/io/zen/ras_impl.h>
 
 /*
  * Setup routine called right before main(), which is common code.  We have much

@@ -30,7 +30,7 @@
  * Copyright 2020 Joyent, Inc.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 /*
@@ -147,7 +147,7 @@
 #include <sys/ontrap.h>
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric.h>
-#include <sys/io/zen/ras.h>
+#include <sys/io/zen/ras_impl.h>
 
 struct cpu	cpus[1] __aligned(MMU_PAGESIZE);
 struct cpu	*cpu[NCPU] = {&cpus[0]};

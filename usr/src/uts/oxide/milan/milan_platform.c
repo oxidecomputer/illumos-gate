@@ -41,7 +41,7 @@
 #include <sys/io/milan/iohc.h>
 #include <sys/io/milan/iommu.h>
 #include <sys/io/milan/smu_impl.h>
-#include <sys/io/milan/ras.h>
+#include <sys/io/milan/ras_impl.h>
 #include <sys/io/milan/hacks.h>
 
 /*
@@ -127,10 +127,6 @@ static const zen_hack_ops_t milan_hack_ops = {
 	.zho_cgpll_set_ssc = milan_cgpll_set_ssc,
 };
 
-static const zen_ras_ops_t milan_ras_ops = {
-	.zro_ras_init = milan_ras_init,
-};
-
 const zen_platform_t milan_platform = {
 	.zp_consts = {
 		.zpc_df_rev = DF_REV_3,
@@ -142,6 +138,7 @@ const zen_platform_t milan_platform = {
 		.zpc_max_mmiorr = DF_MAX_MMIO_RULES,
 		.zpc_ccds_per_iodie = MILAN_MAX_CCDS_PER_IODIE,
 		.zpc_cores_per_ccx = MILAN_MAX_CORES_PER_CCX,
+		.zpc_ras_init_data = &milan_ras_init_data,
 		.zpc_smu_smn_addrs = {
 			.zssa_req = D_MILAN_SMU_RPC_REQ,
 			.zssa_resp = D_MILAN_SMU_RPC_RESP,
@@ -167,5 +164,4 @@ const zen_platform_t milan_platform = {
 	.zp_ccx_ops = &milan_ccx_ops,
 	.zp_fabric_ops = &milan_fabric_ops,
 	.zp_hack_ops = &milan_hack_ops,
-	.zp_ras_ops = &milan_ras_ops,
 };

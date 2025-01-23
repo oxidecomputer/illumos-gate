@@ -30,9 +30,10 @@
 #include <sys/amdzen/smn.h>
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric_impl.h>
+#include <sys/io/zen/hotplug_impl.h>
 #include <sys/io/zen/nbif_impl.h>
 #include <sys/io/zen/oxio.h>
-#include <sys/io/zen/hotplug_impl.h>
+#include <sys/io/zen/ras_impl.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -313,10 +314,6 @@ extern void zen_null_fabric_iohc_pci_ids(zen_ioms_t *);
 extern void zen_null_fabric_sdp_control(zen_ioms_t *);
 extern void zen_null_fabric_nbif_bridges(zen_ioms_t *);
 
-typedef struct zen_ras_ops {
-	void	(*zro_ras_init)(void);
-} zen_ras_ops_t;
-
 /*
  * These are register constants for accessing SMU RPC registers via SMN.
  */
@@ -424,6 +421,12 @@ typedef struct zen_platform_consts {
 	 */
 	const uint8_t			zpc_ccds_per_iodie;
 	const uint8_t			zpc_cores_per_ccx;
+
+	/*
+	 * These correspond to the MCA(X) per-bank mask registers that we must
+	 * initialize when setting up RAS.
+	 */
+	const zen_ras_init_data_t	*zpc_ras_init_data;
 
 	/*
 	 * The platform-specific SMN addresses of the SMU RPC registers.
