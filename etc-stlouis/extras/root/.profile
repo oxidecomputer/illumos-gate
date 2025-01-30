@@ -1,6 +1,10 @@
-export PATH=/usr/bin:/usr/sbin:/sbin:/tmp/bin:/tmp/usr/bin:/tmp/usr/sbin:/tmp/sbin:/tmp/usr/xpg6/bin:/opt/local/bin:/usr/lib/pci
+PATH=/usr/bin:/usr/sbin:/sbin
+PATH+=:/usr/lib/pci:/usr/platform/oxide/bin
+PATH+=:/tmp/bin:/tmp/usr/bin:/tmp/usr/sbin:/tmp/sbin:/tmp/usr/xpg6/bin
 
 # Work around missing terminfo
-if [ "$TERM" = "alacritty" ]; then
-	TERM=xterm-256color
-fi
+case "$TERM" in
+	alacritty|xterm-ghostty)	TERM=xterm-256color ;;
+	*)
+esac
+
