@@ -72,6 +72,7 @@ typedef struct ipcc_stats {
 	struct kstat_named	ioctl_inventory;
 	struct kstat_named	ioctl_keyset;
 	struct kstat_named	ioctl_unknown;
+	struct kstat_named	ioctl_apob;
 } ipcc_stats_t;
 
 #define	IPCC_PROP_PATH			"path"

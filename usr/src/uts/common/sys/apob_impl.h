@@ -78,8 +78,46 @@ typedef struct apob_header {
 	uint8_t			ah_sig[4];
 	uint32_t		ah_vers;
 	uint32_t		ah_size;
-	uint32_t		ah_off;
+	uint32_t		ah_off;		/* Offset of first entry */
 } apob_header_t;
+
+/*
+ * This is the full APOB version 0x18 header
+ */
+#define	APOB_V18_MAX_DIES	2
+typedef struct apob_header_v18 {
+	uint8_t		ahv_sig[4];
+	uint32_t	ahv_vers;
+	uint32_t	ahv_size;
+	uint32_t	ahv_off;
+
+	uint32_t	ahv_sysmap_off;
+	uint32_t	ahv_smbios_off;
+	uint32_t	ahv_nvdimm_off;
+	uint32_t	ahv_bootinfo_off;
+	uint32_t	ahv_nps_off;
+	uint32_t	ahv_slink_off;
+	uint32_t	ahv_dxiofw_ovr_off;
+	uint32_t	ahv_rsvd1;
+
+	uint32_t	MemConfigOffset[2];
+	uint32_t	MemErrorOffset[2];
+	uint32_t	GenConfigOffset[2];
+	uint32_t	ReplayBuffOffset[2];
+	uint32_t	MemPmuSmbOffset[2][12];
+	uint32_t	CcxLogToPhysMapOffset[2];
+	uint32_t	CcxEdcThrottleThreshOffset[2];
+	uint32_t	CcdLogToPhysMapOffset[2];
+	uint32_t	EventLogOffset[2];
+	uint32_t	MemSpdDataOffset[2];
+	uint32_t	DdrPhyReplayBuffPhaseOffset[2][10];
+	uint32_t	ApobMbistTestResultsOffset[2];
+	uint32_t	MemPmuTrainingFailureOffset[2];
+	uint32_t	MemDdr5DimmHubRegOffset[2];
+	uint32_t	MemSocInitConfigOffset[2];
+	uint32_t	MopArrayReplayBuffChannelOffset[2][12];
+	uint8_t		ahv_header_hmac[32];
+} apob_header_v18_t;
 
 #pragma pack()	/* pack(1) */
 

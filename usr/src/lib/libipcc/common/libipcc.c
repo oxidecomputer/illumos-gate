@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -133,6 +133,8 @@ libipcc_strerror(libipcc_err_t err)
 		return ("LIBIPCC_ERR_KEY_ZERR");
 	case LIBIPCC_ERR_INSUFFMACS:
 		return ("LIBIPCC_ERR_INSUFFMACS");
+	case LIBIPCC_ERR_APOB_BADOFFSET:
+		return ("LIBIPCC_ERR_APOB_BADOFFSET");
 	default:
 		break;
 	}
@@ -871,6 +873,63 @@ libipcc_keyset(libipcc_handle_t *lih, uint8_t key, const uint8_t *buf,
 		    "value too long for key 0x%x", key));
 	}
 
+	return (libipcc_success(lih));
+}
+
+bool
+libipcc_apob(libipcc_handle_t *lih, const uint8_t *buf, size_t len)
+{
+	ipcc_apob_t *apob;
+	uint8_t result;
+
+	apob = calloc(1, sizeof (*apob));
+	if (apob == NULL) {
+		return (libipcc_error(lih, LIBIPCC_ERR_NO_MEM, errno,
+		    "failed to allocate memory for APOB structure"));
+	}
+
+	/*
+	 * We need to chunk up the APOB data into blocks that can fit into a
+	 * single IPCC message.
+	 */
+	apob->ia_offset = 0;
+	while (len > 0) {
+		size_t sendlen = MIN(len, sizeof (apob->ia_data));
+
+		bcopy(buf + apob->ia_offset, apob->ia_data, sendlen);
+		apob->ia_datalen = sendlen;
+
+		if (libipcc_ioctl(lih, IPCC_APOB, apob) != 0) {
+			(void) libipcc_error(lih, LIBIPCC_ERR_INTERNAL, errno,
+			    "ioctl(IPCC_APOB) failed after transmitting 0x%"
+			    PRIx64 " bytes, 0x%zx remaining: %s",
+			    apob->ia_offset, len, strerror(errno));
+			free(apob);
+			return (false);
+		}
+
+		result = apob->ia_result;
+
+		switch (result) {
+		case IPCC_APOB_SUCCESS:
+			break;
+		case IPCC_APOB_BAD_OFFSET:
+			(void) libipcc_error(lih, LIBIPCC_ERR_APOB_BADOFFSET,
+			    0, "SP reports offset 0x%" PRIx64 " is invalid",
+			    apob->ia_offset);
+			free(apob);
+			return (false);
+		default:
+			free(apob);
+			return (libipcc_error(lih, LIBIPCC_ERR_INTERNAL, 0,
+			    "unknown APOB result from SP: 0x%x", result));
+		}
+
+		len -= sendlen;
+		apob->ia_offset += sendlen;
+	}
+
+	free(apob);
 	return (libipcc_success(lih));
 }
 

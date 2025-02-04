@@ -266,6 +266,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_bsu_slot = { 17, 18 },
 			.obd_ipccmode = IPCC_MODE_ESPI0,
 			.obd_ipccspintr = IPCC_SPINTR_SP5_AGPIO2,
+			.obd_ipccapob = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_cosmo },
@@ -338,6 +339,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			 * onward routing so we have to disable the interrupt.
 			 */
 			.obd_ipccspintr = IPCC_SPINTR_DISABLED,
+			.obd_ipccapob = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_ruby },

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IPCC_PROTO_H
@@ -34,7 +34,8 @@ extern "C" {
 
 #define	IPCC_COBS_SIZE(x)	(1 + (x) + (x) / 0xfe)
 #define	IPCC_MIN_PACKET_SIZE	IPCC_COBS_SIZE(IPCC_MIN_MESSAGE_SIZE)
-#define	IPCC_MAX_PACKET_SIZE	IPCC_COBS_SIZE(IPCC_MAX_MESSAGE_SIZE)
+/* Add one more to allow for the frame terminator */
+#define	IPCC_MAX_PACKET_SIZE	(IPCC_COBS_SIZE(IPCC_MAX_MESSAGE_SIZE) + 1)
 
 #define	IPCC_SEQ_MASK		0x7fffffffffffffffull
 #define	IPCC_SEQ_REPLY		0x8000000000000000ull
@@ -55,7 +56,8 @@ typedef enum ipcc_hss_cmd {
 	IPCC_HSS_IMAGEBLOCK,
 	IPCC_HSS_KEYLOOKUP,
 	IPCC_HSS_INVENTORY,
-	IPCC_HSS_KEYSET
+	IPCC_HSS_KEYSET,
+	IPCC_HSS_APOB
 } ipcc_hss_cmd_t;
 
 typedef enum ipcc_sp_cmd {
@@ -71,7 +73,8 @@ typedef enum ipcc_sp_cmd {
 	IPCC_SP_IMAGEBLOCK,
 	IPCC_SP_KEYLOOKUP,
 	IPCC_SP_INVENTORY,
-	IPCC_SP_KEYSET
+	IPCC_SP_KEYSET,
+	IPCC_SP_APOB
 } ipcc_sp_cmd_t;
 
 typedef enum ipcc_sp_decode_failure {
@@ -115,12 +118,14 @@ typedef enum ipcc_sp_startup {
 #define	IPCC_MAC_DATALEN		9
 #define	IPCC_STATUS_DATALEN		16
 #define	IPCC_KEYSET_DATALEN		1
+#define	IPCC_APOB_DATALEN		1
 #define	IPCC_BOOTFAIL_MAX_PAYLOAD	\
 	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
 
 typedef enum ipcc_log_type {
 	IPCC_LOG_DEBUG,
-	IPCC_LOG_HEX
+	IPCC_LOG_HEX,
+	IPCC_LOG_WARNING
 } ipcc_log_type_t;
 
 typedef enum ipcc_pollevent {
@@ -154,6 +159,7 @@ extern int ipcc_keylookup(const ipcc_ops_t *, void *, ipcc_keylookup_t *,
     uint8_t *);
 extern int ipcc_keyset(const ipcc_ops_t *, void *, ipcc_keyset_t *);
 extern int ipcc_rot(const ipcc_ops_t *, void *, ipcc_rot_t *);
+extern int ipcc_apob(const ipcc_ops_t *, void *, ipcc_apob_t *);
 extern int ipcc_bootfail(const ipcc_ops_t *, void *, ipcc_host_boot_failure_t,
     const uint8_t *, size_t);
 extern int ipcc_status(const ipcc_ops_t *, void *, uint64_t *, uint64_t *);

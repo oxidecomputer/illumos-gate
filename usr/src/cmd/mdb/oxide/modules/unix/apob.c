@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -30,6 +30,7 @@
 #include <io/amdzen/amdzen.h>
 #include <sys/apob.h>
 #include <sys/apob_impl.h>
+#include <sys/io/zen/apob.h>
 #include <milan_apob.h>
 
 #include "apob_mod.h"
@@ -146,12 +147,12 @@ apob_walk_step(mdb_walk_state_t *wsp)
 }
 
 static const char *apobhelp =
-"Walk the APOB and print all entries that match the specified group and\n"
-"type IDs. Both of these are required and will print all instances that\n"
-"match right now. The following options are supported:\n"
+"Walk the APOB and print all entries. The entries can be filtered by\n"
+"group and type IDs.\n"
+"The following options are supported:\n"
 "\n"
-"  -g group	Search for items that match the specified group\n"
-"  -t type	Search for items that match the specified type\n";
+"  -g group	Filter the output to items that match the specified group\n"
+"  -t type	Filter the output to items that match the specified type\n";
 
 void
 apob_dcmd_help(void)
@@ -170,8 +171,8 @@ apob_dcmd_cb(uintptr_t addr, const void *apob, void *arg)
 	const apob_entry_t *ent = apob;
 	const apob_dcmd_data_t *data = arg;
 
-	if (ent->ae_group == data->add_group &&
-	    ent->ae_type == data->add_type) {
+	if ((data->add_group == 0 || ent->ae_group == data->add_group) &&
+	    (data->add_type == 0 || ent->ae_type == data->add_type)) {
 		mdb_printf("0x%lx\n", addr);
 	}
 
@@ -188,11 +189,6 @@ apob_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	    'g', MDB_OPT_UINTPTR_SET, &group_set, &data.add_group,
 	    't', MDB_OPT_UINTPTR_SET, &type_set, &data.add_type, NULL) !=
 	    argc) {
-		return (DCMD_USAGE);
-	}
-
-	if (!group_set || !type_set) {
-		mdb_warn("both -g and -t must be specified\n");
 		return (DCMD_USAGE);
 	}
 
@@ -295,15 +291,15 @@ static const char *
 apob_event_class_to_name(uint32_t class)
 {
 	switch (class) {
-	case MILAN_APOB_EVC_ALERT:
+	case APOB_EVC_ALERT:
 		return ("alert");
-	case MILAN_APOB_EVC_WARN:
+	case APOB_EVC_WARN:
 		return ("warning");
-	case MILAN_APOB_EVC_ERROR:
+	case APOB_EVC_ERROR:
 		return ("error");
-	case MILAN_APOB_EVC_CRIT:
+	case APOB_EVC_CRIT:
 		return ("critical");
-	case MILAN_APOB_EVC_FATAL:
+	case APOB_EVC_FATAL:
 		return ("fatal");
 	default:
 		return ("unknown");
@@ -371,39 +367,39 @@ int
 apob_event_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 {
 	int ret;
-	milan_apob_event_log_t log;
+	apob_gen_event_log_t log;
 
 	if (!(flags & DCMD_ADDRSPEC))
 		return (DCMD_USAGE);
 
 	if ((ret = apob_read_entry(addr, APOB_GROUP_GENERAL,
-	    MILAN_APOB_GEN_EVENT_LOG, &log, sizeof (log))) != DCMD_OK) {
+	    APOB_GENERAL_TYPE_EVENT_LOG, &log, sizeof (log))) != DCMD_OK) {
 		return (DCMD_ERR);
 	}
 
-	if (log.mevl_count > ARRAY_SIZE(log.mevl_events)) {
+	if (log.agevl_count > ARRAY_SIZE(log.agevl_events)) {
 		mdb_warn("structure claims %u valid events, but only "
-		    "%u are possible, limiting to %u\n", log.mevl_count,
-		    ARRAY_SIZE(log.mevl_events), ARRAY_SIZE(log.mevl_events));
-		log.mevl_count = ARRAY_SIZE(log.mevl_events);
+		    "%u are possible, limiting to %u\n", log.agevl_count,
+		    ARRAY_SIZE(log.agevl_events), ARRAY_SIZE(log.agevl_events));
+		log.agevl_count = ARRAY_SIZE(log.agevl_events);
 	}
 
-	for (uint16_t i = 0; i < log.mevl_count; i++) {
-		const milan_apob_event_t *event = &log.mevl_events[i];
+	for (uint16_t i = 0; i < log.agevl_count; i++) {
+		const apob_event_t *event = &log.agevl_events[i];
 
 		mdb_printf("EVENT %u\n", i);
 		mdb_printf("  CLASS: %s (0x%x)\n",
-		    apob_event_class_to_name(event->mev_class),
+		    mpob_event_class_to_name(event->aev_class),
 		    event->mev_class);
 		mdb_printf("  EVENT: %s (0x%x)\n",
-		    apob_event_info_to_name(event->mev_info), event->mev_info);
-		mdb_printf("  DATA:  0x%x 0x%x\n", event->mev_data0,
-		    event->mev_data1);
+		    apob_event_info_to_name(event->aev_info), event->aev_info);
+		mdb_printf("  DATA:  0x%x 0x%x\n", event->aev_data0,
+		    event->aev_data1);
 
-		switch (event->mev_info) {
+		switch (event->aev_info) {
 		case APOB_EVENT_TRAIN_ERROR:
-			apob_event_dcmd_print_train(event->mev_data0,
-			    event->mev_data1);
+			apob_event_dcmd_print_train(event->aev_data0,
+			    event->aev_data1);
 			break;
 		default:
 			break;

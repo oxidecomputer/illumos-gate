@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _LIBIPCC_H
@@ -88,7 +88,12 @@ typedef enum {
 	/*
 	 * The SP provided insufficient MAC addresses to satisfy the request.
 	 */
-	LIBIPCC_ERR_INSUFFMACS
+	LIBIPCC_ERR_INSUFFMACS,
+	/*
+	 * The APOB transmission failed because the SP reported a bad offset
+	 * was passed.
+	 */
+	LIBIPCC_ERR_APOB_BADOFFSET
 } libipcc_err_t;
 
 extern libipcc_err_t libipcc_err(libipcc_handle_t *);
@@ -184,6 +189,11 @@ extern void libipcc_keylookup_free(uint8_t *, size_t);
  */
 extern bool libipcc_keyset(libipcc_handle_t *, uint8_t, const uint8_t *, size_t,
     libipcc_key_flag_t);
+
+/*
+ * Sending APOB data to the SP.
+ */
+extern bool libipcc_apob(libipcc_handle_t *, const uint8_t *, size_t);
 
 /*
  * Retrieval of system inventory data from the SP. Initialise an inventory

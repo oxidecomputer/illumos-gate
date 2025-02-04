@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -512,6 +512,35 @@ out:
 	return (0);
 }
 
+static void
+ipcc_apob_usage(FILE *f)
+{
+	(void) fprintf(f, "\tapob <filename>\n");
+}
+
+static int
+ipcc_apob(int argc, char *argv[])
+{
+	uint8_t *data;
+	size_t len;
+
+	if (argc != 1) {
+		fprintf(stderr, "%s: missing parameter:\n", progname);
+		ipcc_apob_usage(stderr);
+		return (EXIT_USAGE);
+	}
+
+	const char *filename = argv[0];
+	data = ipcc_mapfile(filename, &len);
+
+	if (!libipcc_apob(ipcc_handle, data, len))
+		libipcc_fatal("Failed to send APOB data");
+
+	printf("Successfully sent APOB data\n");
+	VERIFY0(munmap(data, len));
+	return (0);
+}
+
 static struct {
 	const char *key;
 	uint8_t val;
@@ -829,6 +858,7 @@ static const ipcc_cmdtab_t ipcc_cmds[] = {
 	{ "ident", ipcc_ident, NULL },
 	{ "image", ipcc_image, ipcc_image_usage },
 	{ "inventory", ipcc_inventory, ipcc_inventory_usage },
+	{ "apob", ipcc_apob, ipcc_apob_usage },
 	{ "keylookup", ipcc_keylookup, ipcc_keylookup_usage },
 	{ "keyset", ipcc_keyset, ipcc_keyset_usage },
 	{ "macs", ipcc_macs, ipcc_macs_usage },

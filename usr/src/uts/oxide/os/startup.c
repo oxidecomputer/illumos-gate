@@ -137,6 +137,7 @@
 #include <sys/kernel_ipcc.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
+#include <sys/io/zen/apob.h>
 
 extern void mem_config_init(void);
 
@@ -654,6 +655,18 @@ startup(void)
 	}
 
 	startup_tsc();
+
+	/*
+	 * On some platforms we send the APOB data down to the SP so that it
+	 * can be cached for the PMU Enhanced Memory Context Restore (eMCR)
+	 * firmware to use. This allows portions of memory training to be
+	 * skipped on subsequent boots, as long as things like the APCB or DIMM
+	 * configuration have not changed.
+	 * This is deliberately done after TSC calibration so that we can use
+	 * IPCC's fast poll mode, since that relies on tenmicrosec().
+	 */
+	if (oxide_board_data->obd_ipccapob)
+		zen_apob_preserve();
 
 	/*
 	 * At this point in time, go through and initialize the SoC's I/O

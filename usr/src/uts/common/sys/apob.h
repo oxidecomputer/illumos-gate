@@ -48,6 +48,11 @@ typedef enum apob_group {
 	APOB_GROUP_APCB
 } apob_group_t;
 
+typedef enum apob_general_type {
+	APOB_GENERAL_TYPE_CFG_INFO = 3,
+	APOB_GENERAL_TYPE_EVENT_LOG = 6,
+} apob_general_type;
+
 typedef enum apob_fabric_type {
 	APOB_FABRIC_TYPE_SYS_MEM_MAP = 9,
 } apob_fabric_type_t;

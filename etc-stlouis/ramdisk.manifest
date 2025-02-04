@@ -764,12 +764,14 @@ d platform/oxide/kernel/dacf/amd64 0755 root sys
 f platform/oxide/kernel/dacf/amd64/consconfig_dacf 0755 root sys
 d platform/oxide/kernel/drv 0755 root sys
 d platform/oxide/kernel/drv/amd64 0755 root sys
+f platform/oxide/kernel/drv/amd64/apob 0755 root sys
 f platform/oxide/kernel/drv/amd64/cpc 0755 root sys
 f platform/oxide/kernel/drv/amd64/dwu 0755 root sys
 f platform/oxide/kernel/drv/amd64/fch 0755 root sys
 f platform/oxide/kernel/drv/amd64/ipcc 0755 root sys
 f platform/oxide/kernel/drv/amd64/npe 0755 root sys
 f platform/oxide/kernel/drv/amd64/rootnex 0755 root sys
+f platform/oxide/kernel/drv/apob.conf 0644 root sys
 f platform/oxide/kernel/drv/cpc.conf 0644 root sys
 f platform/oxide/kernel/drv/dwu.conf 0755 root sys
 f platform/oxide/kernel/drv/ipcc.conf 0755 root sys
@@ -1039,6 +1041,7 @@ f usr/lib/amd64/libzfsbootenv.so.1 0755 root bin
 r usr/lib/amd64/libzfs.so.1=lib/amd64/libzfs.so.1 0755 root bin
 f usr/lib/amd64/libzfs_core.so.1 0755 root bin
 f usr/lib/amd64/libzpool.so.1 0755 root bin
+f usr/lib/apobdump 0755 root bin
 d usr/lib/cfgadm 0755 root sys
 s usr/lib/cfgadm/pci.so=pci.so.1
 f usr/lib/cfgadm/pci.so.1 0755 root sys

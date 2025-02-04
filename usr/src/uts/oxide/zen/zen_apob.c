@@ -27,6 +27,8 @@
 #include <sys/apob.h>
 #include <sys/kapob.h>
 #include <sys/sysmacros.h>
+#include <sys/kernel_ipcc.h>
+#include <sys/stdbool.h>
 
 #include <sys/amdzen/bdat.h>
 #include <sys/io/zen/apob.h>
@@ -102,4 +104,106 @@ zen_apob_reserve_phys(void)
 			bt_set_prop_u64(BTPROP_NAME_BDAT_END, end);
 		}
 	}
+}
+
+void
+zen_apob_preserve(void)
+{
+	const size_t alloclen = apob_handle_size();
+	apob_hdl_t *apob_hdl;
+	const apob_gen_cfg_info_t *cfg;
+	const apob_gen_event_log_t *elog;
+	uint16_t limit;
+	size_t len;
+	int err;
+
+	/*
+	 * We take a clone of the kernel's APOB handle here so that we can
+	 * directly access its data and size for transmission to the SP via
+	 * IPCC if we decide to save it.
+	 */
+	apob_hdl = kmem_zalloc(alloclen, KM_SLEEP);
+	if (!kapob_clone_handle(apob_hdl, NULL)) {
+		cmn_err(CE_WARN,
+		    "eMCR: Failed to acquire clone of KAPOB handle");
+		goto out;
+	}
+
+	cfg = apob_find(apob_hdl,
+	    APOB_GROUP_GENERAL, APOB_GENERAL_TYPE_CFG_INFO, 0, &len);
+	if (cfg == NULL) {
+		cmn_err(CE_NOTE,
+		    "APOB general configuration: %s (errno = %d)",
+		    apob_errmsg(apob_hdl), apob_errno(apob_hdl));
+		goto out;
+	}
+	if (len < sizeof (*cfg)) {
+		cmn_err(CE_NOTE, "APOB general configuration area too small "
+		    "(0x%lx < 0x%lx bytes)", len, sizeof (*cfg));
+		goto out;
+	}
+
+	if (!cfg->agci_apob_restore) {
+		cmn_err(CE_NOTE, "eMCR: restoration disabled in APOB");
+		goto out;
+	}
+
+	elog = apob_find(apob_hdl,
+	    APOB_GROUP_GENERAL, APOB_GENERAL_TYPE_EVENT_LOG, 0, &len);
+
+	limit = MIN(elog->agevl_count, ARRAY_SIZE(elog->agevl_events));
+
+	bool save_apob = true;
+	for (uint16_t i = 0; i < limit; i++) {
+		const apob_event_t *event = &elog->agevl_events[i];
+
+		if (event->aev_info == ABL_EVENT_PMU_MBIST) {
+			cmn_err(CE_NOTE,
+			    "eMCR: PMU MBIST enabled, not saving APOB");
+			save_apob = false;
+			break;
+		}
+
+		if (event->aev_class != APOB_EVC_FATAL)
+			continue;
+
+		switch (event->aev_info) {
+		case APOB_EVENT_TRAIN_ERROR:
+		case APOB_EVENT_MEMTEST_ERROR:
+		case APOB_EVENT_MEM_RRW_ERROR:
+		case APOB_EVENT_PCMIC_RT_ERROR:
+			cmn_err(CE_NOTE,
+			    "eMCR: Fatal event 0x%x detected, not saving APOB",
+			    event->aev_info);
+			save_apob = false;
+			break;
+		}
+		if (!save_apob)
+			break;
+	}
+
+	// XXX - we should do something to determine if an update is required
+	// rather than writing to flash on every boot. AGESA compares HMACs of
+	// selected entries between the old and new.
+
+	if (!save_apob) {
+		const uint8_t disable[] = "!APOB-DISABLE";
+		err = kernel_ipcc_apob(disable, sizeof (disable));
+	} else {
+		err = kernel_ipcc_apob(apob_get_raw(apob_hdl),
+		    apob_get_len(apob_hdl));
+	}
+
+	if (err == 0) {
+		if (save_apob) {
+			cmn_err(CE_NOTE,
+			    "eMCR: Successfully transmitted APOB data to SP");
+		}
+	} else {
+		cmn_err(CE_WARN,
+		    "eMCR: Failed to send APOB data to SP, error %d", err);
+	}
+
+out:
+	kmem_free(apob_hdl, alloclen);
 }

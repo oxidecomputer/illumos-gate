@@ -812,6 +812,42 @@ keyset_done:
 		kmem_free(kset, sizeof (*kset));
 		break;
 	}
+	case IPCC_APOB: {
+		ipcc_apob_t *apob;
+
+		BUMP_STAT(ioctl_apob);
+
+		apob = kmem_zalloc(sizeof (*apob), KM_NOSLEEP_LAZY);
+		if (apob == NULL) {
+			err = ENOMEM;
+			break;
+		}
+
+		if (ddi_copyin(datap, apob, sizeof (*apob), cflag) != 0) {
+			err = EFAULT;
+			goto apob_done;
+		}
+
+		err = ipcc_acquire_channel(ipcc_ops, &ipcc);
+		if (err != 0)
+			goto apob_done;
+		err = ipcc_apob(ipcc_ops, &ipcc, apob);
+		ipcc_release_channel(ipcc_ops, &ipcc, true);
+		if (err != 0)
+			goto apob_done;
+
+		/*
+		 * We only need to copy out the result, which is the first
+		 * field of the struct, placed before ia_offset.
+		 */
+		if (ddi_copyout(apob, datap, offsetof(ipcc_apob_t, ia_offset),
+		    cflag) != 0) {
+			err = EFAULT;
+		}
+apob_done:
+		kmem_free(apob, sizeof (*apob));
+		break;
+	}
 	default:
 		BUMP_STAT(ioctl_unknown);
 		err = ENOTTY;
@@ -913,6 +949,8 @@ ipcc_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	kstat_named_init(&ipcc_stat->ioctl_inventory, "total_inventory_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_keyset, "total_keyset_req",
+	    KSTAT_DATA_UINT64);
+	kstat_named_init(&ipcc_stat->ioctl_apob, "total_apob_req",
 	    KSTAT_DATA_UINT64);
 	kstat_named_init(&ipcc_stat->ioctl_unknown, "total_unknown_req",
 	    KSTAT_DATA_UINT64);

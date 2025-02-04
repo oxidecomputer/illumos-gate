@@ -31,7 +31,6 @@ extern "C" {
 
 #define	MILAN_APOB_FABRIC_PHY_OVERRIDE		21
 #define	MILAN_APOB_MEMORY_PMU_TRAIN_FAIL	22
-#define	MILAN_APOB_GEN_EVENT_LOG		6
 
 #define	MILAN_APOB_CCX_NONE			0xffU
 
@@ -126,57 +125,6 @@ typedef struct milan_apob_pmu_tfi {
 	 */
 	milan_apob_tfi_ent_t mapt_ents[40];
 } milan_apob_pmu_tfi_t;
-
-/*
- * The following structures and definitions relate to event log entries that can
- * enter the APOB.
- */
-typedef struct milan_apob_event {
-	uint32_t mev_class;
-	uint32_t mev_info;
-	uint32_t mev_data0;
-	uint32_t mev_data1;
-} milan_apob_event_t;
-
-typedef struct milan_apob_event_log {
-	uint16_t mevl_count;
-	uint16_t mevl_pad;
-	milan_apob_event_t mevl_events[64];
-} milan_apob_event_log_t;
-
-/*
- * This enumeration represents some of the event classes that are defined. There
- * are other event classes apparently, but they cannot show up in logs that we
- * can read via this mechanism (i.e. they halt boot).
- */
-typedef enum {
-	MILAN_APOB_EVC_ALERT	= 5,
-	MILAN_APOB_EVC_WARN	= 6,
-	MILAN_APOB_EVC_ERROR	= 7,
-	MILAN_APOB_EVC_CRIT	= 8,
-	MILAN_APOB_EVC_FATAL	= 9
-} milan_apob_event_class_t;
-
-/*
- * Known events documented below.
- */
-
-/*
- * ABL_MEM_PMU_TRAIN_ERROR - Indicates that the PMU failed to train DRAM. Data 0
- * contains information about where (the first bit of defines below). Data 1
- * contains information about why the error occurred.
- */
-#define	APOB_EVENT_TRAIN_ERROR	0x4001
-#define	APOB_EVENT_TRAIN_ERROR_GET_SOCK(x)	bitx32(x, 7, 0)
-#define	APOB_EVENT_TRAIN_ERROR_GET_CHAN(x)	bitx32(x, 15, 8)
-#define	APOB_EVENT_TRAIN_ERROR_GET_DIMM0(x)	bitx32(x, 16, 16)
-#define	APOB_EVENT_TRAIN_ERROR_GET_DIMM1(x)	bitx32(x, 17, 17)
-#define	APOB_EVENT_TRAIN_ERROR_GET_RANK0(x)	bitx32(x, 24, 24)
-#define	APOB_EVENT_TRAIN_ERROR_GET_RANK1(x)	bitx32(x, 25, 25)
-#define	APOB_EVENT_TRAIN_ERROR_GET_RANK2(x)	bitx32(x, 26, 26)
-#define	APOB_EVENT_TRAIN_ERROR_GET_RANK3(x)	bitx32(x, 27, 27)
-#define	APOB_EVENT_TRAIN_ERROR_GET_PMULOAD(x)	bitx32(x, 0, 0)
-#define	APOB_EVENT_TRAIN_ERROR_GET_PMUTRAIN(x)	bitx32(x, 1, 1)
 
 #pragma pack()
 

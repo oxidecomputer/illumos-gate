@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_KERNEL_IPCC_H
@@ -48,6 +48,7 @@ extern int kernel_ipcc_bootfailv(ipcc_host_boot_failure_t, const char *,
     va_list);
 extern int kernel_ipcc_bootfail(ipcc_host_boot_failure_t, const char *, ...);
 extern int kernel_ipcc_keylookup(uint8_t, uint8_t *, size_t *);
+extern int kernel_ipcc_apob(const uint8_t *, size_t);
 extern int kernel_ipcc_imageblock(uint8_t *, uint64_t, uint8_t **, size_t *);
 
 /*

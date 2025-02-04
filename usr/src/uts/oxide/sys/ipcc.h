@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IPCC_H
@@ -18,6 +18,7 @@
 
 #include <sys/ethernet.h>
 #include <sys/types.h>
+#include <sys/debug.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +40,7 @@ extern "C" {
 #define	IPCC_IMAGEBLOCK		(IPCC_IOC|6)
 #define	IPCC_INVENTORY		(IPCC_IOC|7)
 #define	IPCC_KEYSET		(IPCC_IOC|8)
+#define	IPCC_APOB		(IPCC_IOC|9)
 
 /*
  * The minimum message size is a protocol detail that should be in
@@ -114,6 +116,21 @@ typedef struct ipcc_keyset {
 #define	IPCC_KEY_ETC_SYSTEM		3
 #define	IPCC_KEY_DTRACE_CONF		4
 
+/*
+ * We wish to send APOB data in 4KiB chunks. An APOB message is prefixed by a
+ * uint64_t that specifies the offset of the data in the payload and we assert
+ * that there is room for this.
+ */
+#define	IPCC_APOB_MAX_PAYLOAD 0x1000
+CTASSERT(IPCC_APOB_MAX_PAYLOAD <= IPCC_MAX_DATA_SIZE - sizeof (uint64_t));
+
+typedef struct ipcc_apob {
+	uint8_t		ia_result;
+	uint64_t	ia_offset;
+	uint16_t	ia_datalen;
+	uint8_t		ia_data[IPCC_APOB_MAX_PAYLOAD];
+} ipcc_apob_t;
+
 typedef struct ipcc_imageblock {
 	uint8_t		ii_hash[IPCC_IMAGE_HASHLEN];
 	uint64_t	ii_offset;
@@ -149,6 +166,9 @@ typedef struct ipcc_imageblock32 {
 #define	IPCC_KEYSET_UNKNOWN_KEY		1
 #define	IPCC_KEYSET_READONLY		2
 #define	IPCC_KEYSET_TOO_LONG		3
+
+#define	IPCC_APOB_SUCCESS		0
+#define	IPCC_APOB_BAD_OFFSET		1
 
 typedef struct ipcc_rot {
 	uint64_t	ir_len;

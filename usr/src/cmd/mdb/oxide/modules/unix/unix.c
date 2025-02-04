@@ -995,7 +995,7 @@ extern void xcall_help(void);
 extern int xcall_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 static const mdb_dcmd_t dcmds[] = {
-	{ "apob", "?-g group -t type", "find APOB entry", apob_dcmd,
+	{ "apob", "?[-g group] [-t type]", "find APOB entries", apob_dcmd,
 	    apob_dcmd_help },
 	{ "apob_entry", ":[-r|-x]", "display an APOB entry", apob_entry_dcmd,
 	    apob_entry_dcmd_help },
