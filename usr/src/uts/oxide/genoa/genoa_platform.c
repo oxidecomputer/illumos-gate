@@ -143,6 +143,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 static const zen_hack_ops_t genoa_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
+	.zho_apob_emcr_save = zen_null_apob_emcr_save,
 };
 
 const zen_platform_t genoa_platform = {

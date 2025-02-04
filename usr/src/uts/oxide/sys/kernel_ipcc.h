@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_KERNEL_IPCC_H
@@ -21,6 +21,7 @@
 #include <sys/privregs.h>
 #include <sys/varargs.h>
 #include <sys/debug.h>
+#include <sys/apob.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,6 +49,9 @@ extern int kernel_ipcc_bootfailv(ipcc_host_boot_failure_t, const char *,
     va_list);
 extern int kernel_ipcc_bootfail(ipcc_host_boot_failure_t, const char *, ...);
 extern int kernel_ipcc_keylookup(uint8_t, uint8_t *, size_t *);
+extern apob_hdl_t *kernel_ipcc_apobread(void);
+extern void kernel_ipcc_apobfree(apob_hdl_t *);
+extern int kernel_ipcc_apobwrite(const apob_hdl_t *);
 extern int kernel_ipcc_imageblock(uint8_t *, uint64_t, uint8_t **, size_t *);
 
 /*

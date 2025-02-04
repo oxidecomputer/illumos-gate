@@ -161,6 +161,27 @@ zen_null_check_furtive_reset(void)
 }
 
 /*
+ * Calls the microarchitecture-specific routine for sending a copy of the APOB
+ * data down to the SP for use by eMCR on subsequent boots.
+ */
+void
+zen_apob_emcr_save(void)
+{
+	const zen_hack_ops_t *ops = oxide_zen_hack_ops();
+	VERIFY3P(ops->zho_apob_emcr_save, !=, NULL);
+	ops->zho_apob_emcr_save();
+}
+
+/*
+ * A no-op for microarchitectures that have no mechanism for sending the APOB
+ * to the SP, or no support for eMCR.
+ */
+void
+zen_null_apob_emcr_save(void)
+{
+}
+
+/*
  * Configures a GPIO pin in the IO mux to the given function, and configure the
  * pin to output with internal pulls (both up and down) disabled.
  *

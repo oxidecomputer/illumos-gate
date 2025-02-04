@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -39,7 +39,7 @@ static const char *genoa_chan_ileaves[32] = {
 	[23] = "NPS1 10CH",
 };
 
-static const char *genoa_chan_map[] = {
+const char *genoa_chan_map[] = {
 	[0] = "C",
 	[1] = "E",
 	[2] = "F",

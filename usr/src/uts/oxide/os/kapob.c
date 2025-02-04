@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -280,7 +280,8 @@ kapob_clone_handle(apob_hdl_t *clone, ddi_umem_cookie_t *cp)
 
 	VERIFY3U(len, ==, clone_len);
 
-	*cp = kapob_umem_cookie;
+	if (cp != NULL)
+		*cp = kapob_umem_cookie;
 
 	return (true);
 }

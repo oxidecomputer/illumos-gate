@@ -94,6 +94,12 @@ typedef struct oxide_board_data {
 	 */
 	oxide_ipcc_spintr_t	obd_ipccspintr;
 	/*
+	 * Specifies whether the APOB blob should be sent down to the SP over
+	 * IPCC. These data can be used for Enhanced Memory Context Restore
+	 * (eMCR) to speed up memory training on subsequent boots.
+	 */
+	bool			obd_ipccemcr;
+	/*
 	 * The set of system startup options that should be used. This is for
 	 * systems that do not support IPCC and replaces the startup options
 	 * that would usually be retrieved over that channel.

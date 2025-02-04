@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -47,6 +47,7 @@
 
 #include <sys/stdint.h>
 #include <sys/sysmacros.h>
+#include <sys/stdbool.h>
 #include <sys/apob_impl.h>
 #include <sys/apob.h>
 #include <sys/debug.h>
@@ -183,7 +184,7 @@ apob_init_handle(apob_hdl_t *apob, const uint8_t *ap, const size_t limit_len)
 	const apob_header_t *ahp = (const apob_header_t *)ap;
 
 	if (limit_len < APOB_MIN_LEN) {
-		apob_error(apob, EINVAL, "programmer error: length limit 0x%lx "
+		apob_error(apob, EINVAL, "programmer error: length limit 0x%zx "
 		    "is smaller than required minimum 0x%x", limit_len,
 		    APOB_MIN_LEN);
 		return (0);
@@ -238,24 +239,18 @@ apob_get_raw(const apob_hdl_t *apob)
 }
 
 /*
- * Walk through entries attempting to find the first entry that matches the
- * requested group, type, and instance. Entries have their size embedded in them
- * with pointers to the next one. This leads to lots of uintptr_t arithmetic.
- * Sorry.  The size we return in *lenp is the number of bytes in the data
- * portion of the entry; it can in principle be 0 so the caller must not assume
- * that the entry actually contains a specific data structure without checking.
- * It may also be less than the total size of the entry if the entry extends
- * beyond the available part of the APOB (i.e., if the APOB is not entirely
- * mapped).
+ * Walk through entries returning each to the caller in turn. Entries have
+ * their size embedded in them with pointers to the next one. This leads to
+ * lots of uintptr_t arithmetic. Sorry.
  */
-const void *
-apob_find(apob_hdl_t *apob, const apob_group_t group, const uint32_t type,
-    const uint32_t inst, size_t *lenp)
+static const apob_entry_t *
+apob_iter(apob_hdl_t *apob, const apob_entry_t *last)
 {
-	uintptr_t curaddr;
 	const uintptr_t base = (const uintptr_t)apob->ah_header;
 	const uintptr_t limit = base + apob->ah_len;
 	const uintptr_t hdr_limit = base + apob->ah_header->ah_size;
+	const apob_entry_t *entry;
+	uintptr_t curaddr;
 
 	/*
 	 * Guaranteed by handle construction: we won't examine memory beyond the
@@ -263,38 +258,66 @@ apob_find(apob_hdl_t *apob, const apob_group_t group, const uint32_t type,
 	 */
 	VERIFY3U(limit, <=, hdr_limit);
 
-	curaddr = base + apob->ah_header->ah_off;
-	while (curaddr + sizeof (apob_entry_t) <= limit) {
-		const apob_entry_t *entry = (const apob_entry_t *)curaddr;
+	if (last == NULL)
+		curaddr = base + apob->ah_header->ah_off;
+	else
+		curaddr = (uintptr_t)(void *)last + last->ae_size;
 
-		/*
-		 * First ensure that this item's size actually all fits within
-		 * our bound. If not, then we're sol.
-		 */
-		if (entry->ae_size < sizeof (apob_entry_t)) {
-			apob_error(apob, EIO,
-			    "encountered entry at offset 0x%lx with too small "
-			    "size 0x%x", curaddr - base, entry->ae_size);
-			return (NULL);
-		}
+	if (curaddr + sizeof (apob_entry_t) > limit)
+		return (NULL);
 
-		/*
-		 * We distinguish the case in which the entry extends beyond the
-		 * self-reported end of the APOB (an error in the construction
-		 * of the APOB) from the case in which it extends beyond the
-		 * part of the APOB we actually have (not an error to us and the
-		 * caller can handle it).
-		 */
-		if (curaddr + entry->ae_size > hdr_limit) {
-			apob_error(apob, EIO,
-			    "encountered entry at offset 0x%lx with size 0x%x "
-			    "that extends beyond self-reported limit 0x%lx",
-			    curaddr - base, entry->ae_size, hdr_limit);
-			return (NULL);
-		}
+	entry = (const apob_entry_t *)curaddr;
 
+	/*
+	 * First ensure that this item's size actually all fits within
+	 * our bound. If not, then we're sol.
+	 */
+	if (entry->ae_size < sizeof (apob_entry_t)) {
+		apob_error(apob, EIO,
+		    "encountered entry at offset 0x%lx with too small "
+		    "size 0x%x", curaddr - base, entry->ae_size);
+		return (NULL);
+	}
+
+	/*
+	 * We distinguish the case in which the entry extends beyond the
+	 * self-reported end of the APOB (an error in the construction
+	 * of the APOB) from the case in which it extends beyond the
+	 * part of the APOB we actually have (not an error to us and the
+	 * caller can handle it).
+	 */
+	if (curaddr + entry->ae_size > hdr_limit) {
+		apob_error(apob, EIO,
+		    "encountered entry at offset 0x%lx with size 0x%x "
+		    "that extends beyond self-reported limit 0x%lx",
+		    curaddr - base, entry->ae_size, hdr_limit);
+		return (NULL);
+	}
+
+	return (entry);
+}
+
+/*
+ * Walk through entries attempting to find the first entry that matches the
+ * requested group, type, and instance. The size we return in *lenp is the
+ * number of bytes in the data portion of the entry; it can in principle be 0
+ * so the caller must not assume that the entry actually contains a specific
+ * data structure without checking. It may also be less than the total size of
+ * the entry if the entry extends beyond the available part of the APOB (i.e.,
+ * if the APOB is not entirely mapped).
+ */
+const void *
+apob_find(apob_hdl_t *apob, const apob_group_t group, const uint32_t type,
+    const uint32_t inst, size_t *lenp)
+{
+	const uintptr_t base = (const uintptr_t)apob->ah_header;
+	const uintptr_t limit = base + apob->ah_len;
+	const apob_entry_t *entry = NULL;
+
+	while ((entry = apob_iter(apob, entry)) != NULL) {
 		if (entry->ae_group == (const uint32_t)group &&
 		    entry->ae_type == type && entry->ae_inst == inst) {
+			uintptr_t curaddr = (uintptr_t)(void *)entry;
 			size_t len = MIN(entry->ae_size, limit - curaddr);
 
 			/*
@@ -309,11 +332,47 @@ apob_find(apob_hdl_t *apob, const apob_group_t group, const uint32_t type,
 			apob_ok(apob);
 			return (&entry->ae_data);
 		}
-
-		curaddr += entry->ae_size;
 	}
 
 	apob_error(apob, ENOENT, "no entry found matching (%u, %u, %u) in "
 	    "[0x%lx, 0x%lx)", (const uint32_t)group, type, inst, base, limit);
 	return (NULL);
+}
+
+uint8_t *
+apob_entry_hmac(const apob_entry_hdl_t *hdl)
+{
+	apob_entry_t *ae = (apob_entry_t *)hdl;
+
+	return (ae->ae_hmac);
+}
+
+/*
+ * Walk through entries collecting pointers to those which match the
+ * requested group and type. If no entries are found this function still
+ * returns successfully but with *nump (the number of entries found) set to 0.
+ */
+bool
+apob_gather(apob_hdl_t *apob, const apob_group_t group, const uint32_t type,
+    apob_entry_hdl_t *entries[], size_t *nump)
+{
+	const apob_entry_t *entry = NULL;
+	const size_t entry_limit = *nump;
+	size_t index = 0;
+
+	while ((entry = apob_iter(apob, entry)) != NULL) {
+		if (entry->ae_group == (const uint32_t)group &&
+		    entry->ae_type == type) {
+			if (index >= entry_limit) {
+				apob_error(apob, EOVERFLOW,
+				    "found more than 0x%zx entries",
+				    entry_limit);
+				return (false);
+			}
+			entries[index++] = (apob_entry_hdl_t *)entry;
+		}
+	}
+
+	*nump = index;
+	return (true);
 }

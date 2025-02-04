@@ -465,6 +465,7 @@ static bool ipcc_multithreaded;
 static kmutex_t ipcc_mutex;
 static kcondvar_t ipcc_cv;
 static bool ipcc_channel_active = false;
+static ipcc_channel_flag_t ipcc_channel_flags;
 static kthread_t *ipcc_channel_owner;
 
 static int ipcc_sp_interrupt(const ipcc_ops_t *, void *);
@@ -509,11 +510,13 @@ ipcc_release_channel(const ipcc_ops_t *ops, void *arg, bool doclose)
 	if (!ipcc_multithreaded) {
 		VERIFY(ipcc_channel_held());
 		ipcc_channel_active = false;
+		ipcc_channel_flags = 0;
 	} else {
 		mutex_enter(&ipcc_mutex);
 		VERIFY(ipcc_channel_held());
 		ipcc_channel_active = false;
 		ipcc_channel_owner = NULL;
+		ipcc_channel_flags = 0;
 		cv_broadcast(&ipcc_cv);
 		mutex_exit(&ipcc_mutex);
 	}
@@ -548,6 +551,13 @@ ipcc_acquire_channel(const ipcc_ops_t *ops, void *arg)
 	}
 
 	return (ret);
+}
+
+void
+ipcc_channel_setflags(ipcc_channel_flag_t flags)
+{
+	VERIFY(ipcc_channel_held());
+	ipcc_channel_flags |= flags;
 }
 
 static uint16_t
@@ -855,6 +865,11 @@ ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
 	hexdump_init(&h);
 	hexdump_set_grouping(&h, 4);
 	hexdump_set_buf(&h, scratchbuf, sizeof (scratchbuf));
+	/*
+	 * Limit the amount of hex shown for large messages to the initial
+	 * portion.
+	 */
+	bufl = MIN(bufl, 0x100);
 
 	(void) hexdumph(&h, buf, bufl, HDF_ADDRESS | HDF_ASCII,
 	    ipcc_loghex_cb, (void *)&cb);
@@ -903,6 +918,14 @@ ipcc_cmd_str(ipcc_hss_cmd_t cmd)
 		return ("INVENTORY");
 	case IPCC_HSS_KEYSET:
 		return ("KEYSET");
+	case IPCC_HSS_APOBBEGIN:
+		return ("APOBBEGIN");
+	case IPCC_HSS_APOBCOMMIT:
+		return ("APOBCOMMIT");
+	case IPCC_HSS_APOBDATA:
+		return ("APOBDATA");
+	case IPCC_HSS_APOBREAD:
+		return ("APOBREAD");
 	default:
 		break;
 	}
@@ -998,8 +1021,10 @@ resend:
 		return (ETIMEDOUT);
 	}
 
-	LOG("\n------> Sending IPCC command 0x%x (%s), attempt %u/%u\n",
-	    cmd, ipcc_cmd_str(cmd), attempt, IPCC_MAX_ATTEMPTS);
+	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
+		LOG("\n------> Sending IPCC command 0x%x (%s), attempt %u/%u\n",
+		    cmd, ipcc_cmd_str(cmd), attempt, IPCC_MAX_ATTEMPTS);
+	}
 
 	off = 0;
 	err = ipcc_msg_init(ipcc_msg, sizeof (ipcc_msg), send_seq, &off, cmd);
@@ -1010,8 +1035,10 @@ resend:
 		if (sizeof (ipcc_msg) - off < dataoutl)
 			return (ENOBUFS);
 		ipcc_encode_bytes(dataout, dataoutl, ipcc_msg, &off);
-		LOG("Additional data length: 0x%lx\n", dataoutl);
-		LOGHEX("DATA OUT", dataout, dataoutl);
+		if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
+			LOG("Additional data length: 0x%lx\n", dataoutl);
+			LOGHEX("DATA OUT", dataout, dataoutl);
+		}
 	}
 
 	if ((err = ipcc_msg_fini(ipcc_msg, sizeof (ipcc_msg), &off)) != 0)
@@ -1020,7 +1047,9 @@ resend:
 	if (IPCC_COBS_SIZE(off) > sizeof (ipcc_pkt) - 1)
 		return (ENOBUFS);
 
-	LOGHEX("     OUT", ipcc_msg, off);
+	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
+		LOGHEX("     OUT", ipcc_msg, off);
+	}
 	if (!ipcc_cobs_encode(ipcc_msg, off,
 	    ipcc_pkt, sizeof (ipcc_pkt), &pktl)) {
 		/*
@@ -1029,7 +1058,9 @@ resend:
 		 */
 		return (ENOBUFS);
 	}
-	LOGHEX("COBS OUT", ipcc_pkt, pktl);
+	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
+		LOGHEX("COBS OUT", ipcc_pkt, pktl);
+	}
 	/* Add frame terminator. */
 	ipcc_pkt[pktl++] = 0;
 
@@ -1081,7 +1112,9 @@ reread:
 	}
 
 	/* Decode the frame */
-	LOGHEX(" COBS IN", frame, end - frame);
+	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
+		LOGHEX(" COBS IN", frame, end - frame);
+	}
 	if (!ipcc_cobs_decode(frame, end - frame,
 	    ipcc_msg, sizeof (ipcc_msg), &pktl)) {
 		LOG("Error decoding COBS frame\n");
@@ -1094,7 +1127,9 @@ reread:
 	}
 
 	rcvd_datal = pktl - IPCC_MIN_MESSAGE_SIZE;
-	LOG("Additional data length: 0x%lx\n", rcvd_datal);
+	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
+		LOG("Additional data length: 0x%lx\n", rcvd_datal);
+	}
 
 	/* Validate checksum */
 	off = pktl - 2;
@@ -1179,7 +1214,9 @@ reread:
 	}
 
 	if (rcvd_datal > 0) {
-		LOGHEX(" DATA IN", ipcc_msg + off, rcvd_datal);
+		if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
+			LOGHEX(" DATA IN", ipcc_msg + off, rcvd_datal);
+		}
 
 		if (datain == NULL || datainl == NULL) {
 			LOG("No storage provided for incoming data - "
@@ -1609,6 +1646,245 @@ out:
 	ipcc_release_channel(ops, arg, true);
 	return (err);
 }
+
+const char *
+ipcc_apob_begin_errstr(ipcc_apob_begin_t err)
+{
+	switch (err) {
+	case IPCC_APOB_BEGIN_SUCCESS:
+		return ("success");
+	case IPCC_APOB_BEGIN_NOTSUP:
+		return ("unsupported");
+	case IPCC_APOB_BEGIN_INVALID_STATE:
+		return ("invalid state");
+	case IPCC_APOB_BEGIN_INVALID_ALG:
+		return ("invalid algorithm");
+	case IPCC_APOB_BEGIN_INVALID_HASHLEN:
+		return ("invalid hash length for algorithm");
+	case IPCC_APOB_BEGIN_INVALID_LEN:
+		return ("invalid data length");
+	default:
+		break;
+	}
+	return ("???");
+}
+
+const char *
+ipcc_apob_commit_errstr(ipcc_apob_commit_t err)
+{
+	switch (err) {
+	case IPCC_APOB_COMMIT_SUCCESS:
+		return ("success");
+	case IPCC_APOB_COMMIT_NOTSUP:
+		return ("unsupported");
+	case IPCC_APOB_COMMIT_INVALID_STATE:
+		return ("invalid state");
+	case IPCC_APOB_COMMIT_INVALID_DATA:
+		return ("invalid data");
+	case IPCC_APOB_COMMIT_FAILED:
+		return ("failed");
+	default:
+		break;
+	}
+	return ("???");
+}
+
+const char *
+ipcc_apob_data_errstr(ipcc_apob_data_t err)
+{
+	switch (err) {
+	case IPCC_APOB_DATA_SUCCESS:
+		return ("success");
+	case IPCC_APOB_DATA_NOTSUP:
+		return ("unsupported");
+	case IPCC_APOB_DATA_INVALID_STATE:
+		return ("invalid state");
+	case IPCC_APOB_DATA_INVALID_OFFSET:
+		return ("invalid offset");
+	case IPCC_APOB_DATA_INVALID_SIZE:
+		return ("invalid size");
+	case IPCC_APOB_DATA_FAILED:
+		return ("failed");
+	case IPCC_APOB_DATA_NOT_ERASED:
+		return ("data not erased");
+	default:
+		break;
+	}
+	return ("???");
+}
+
+const char *
+ipcc_apob_read_errstr(ipcc_apob_read_t err)
+{
+	switch (err) {
+	case IPCC_APOB_READ_SUCCESS:
+		return ("success");
+	case IPCC_APOB_READ_NOTSUP:
+		return ("unsupported");
+	case IPCC_APOB_READ_INVALID_STATE:
+		return ("invalid state");
+	case IPCC_APOB_READ_NODATA:
+		return ("no APOB data");
+	case IPCC_APOB_READ_INVALID_OFFSET:
+		return ("invalid offset");
+	case IPCC_APOB_READ_INVALID_SIZE:
+		return ("invalid size");
+	case IPCC_APOB_READ_FAILED:
+		return ("failed");
+	default:
+		break;
+	}
+	return ("???");
+}
+
+int
+ipcc_apob_begin(const ipcc_ops_t *ops, void *arg, size_t len,
+    ipcc_apob_alg_t alg, uint8_t *hash, size_t hashlen,
+    ipcc_apob_begin_t *response)
+{
+	size_t inputl, outputl, off;
+	uint8_t *input, *output, result;
+	uint8_t alg8 = (uint8_t)alg;
+	uint64_t datal = (uint64_t)len;
+	int err = 0;
+
+	/* length:algorithm:hash */
+	inputl = sizeof (uint64_t) + sizeof (uint8_t) + hashlen;
+	if (inputl > IPCC_MAX_DATA_SIZE)
+		return (EINVAL);
+
+	input = kmem_alloc(inputl, KM_SLEEP);
+	off = 0;
+	ipcc_encode_bytes((uint8_t *)&datal, sizeof (datal), input, &off);
+	ipcc_encode_bytes(&alg8, sizeof (alg8), input, &off);
+	ipcc_encode_bytes(hash, hashlen, input, &off);
+
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0) {
+		kmem_free(input, inputl);
+		return (err);
+	}
+
+	outputl = sizeof (result);
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_APOBBEGIN,
+	    IPCC_SP_APOBBEGIN, input, off, &output, &outputl);
+	if (err != 0)
+		goto out;
+
+	off = 0;
+	ipcc_decode_bytes(&result, sizeof (result), output, &off);
+	*response = result;
+
+out:
+	ipcc_release_channel(ops, arg, true);
+
+	kmem_free(input, inputl);
+	return (err);
+}
+
+int
+ipcc_apob_commit(const ipcc_ops_t *ops, void *arg, ipcc_apob_commit_t *response)
+{
+	uint8_t *output, result;
+	size_t outputl, off;
+	int err;
+
+	if ((err = ipcc_acquire_channel(ops, arg)) != 0)
+		return (err);
+	outputl = sizeof (result);
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_APOBCOMMIT,
+	    IPCC_SP_APOBCOMMIT, NULL, 0, &output, &outputl);
+	if (err != 0)
+		goto out;
+
+	off = 0;
+	ipcc_decode_bytes(&result, sizeof (result), output, &off);
+	*response = result;
+
+out:
+	ipcc_release_channel(ops, arg, true);
+	return (err);
+}
+
+int
+ipcc_apob_data(const ipcc_ops_t *ops, void *arg, uint64_t offset,
+    const uint8_t *data, size_t len, ipcc_apob_data_t *response)
+{
+	size_t inputl, outputl, off;
+	uint8_t *input, *output, result;
+	int err = 0;
+
+	VERIFY(ipcc_channel_held());
+
+	/* offset:<data> */
+	inputl = sizeof (uint64_t) + len;
+	if (inputl > IPCC_MAX_DATA_SIZE)
+		return (EINVAL);
+
+	input = kmem_alloc(inputl, KM_SLEEP);
+	off = 0;
+	ipcc_encode_bytes((uint8_t *)&offset, sizeof (offset), input, &off);
+	ipcc_encode_bytes(data, len, input, &off);
+
+	outputl = sizeof(result);
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_APOBDATA,
+	    IPCC_SP_APOBDATA, input, off, &output, &outputl);
+	if (err != 0)
+		goto out;
+
+	off = 0;
+	ipcc_decode_bytes(&result, sizeof (result), output, &off);
+	*response = result;
+
+out:
+	kmem_free(input, inputl);
+	return (err);
+}
+
+int
+ipcc_apob_read(const ipcc_ops_t *ops, void *arg, uint64_t offset, uint8_t *buf,
+    size_t *lenp, ipcc_apob_read_t *response)
+{
+	uint8_t outbuf[2 * sizeof (uint64_t)];
+	size_t off, datal = 0;
+	uint8_t *data, result;
+	uint64_t len = *lenp;
+	int err = 0;
+
+	VERIFY(ipcc_channel_held());
+
+	off = 0;
+	ipcc_encode_bytes((uint8_t *)&offset, sizeof (offset), outbuf, &off);
+	ipcc_encode_bytes((uint8_t *)&len, sizeof (len), outbuf, &off);
+
+	err = ipcc_command_locked(ops, arg, IPCC_HSS_APOBREAD,
+	    IPCC_SP_APOBREAD, outbuf, off, &data, &datal);
+	if (err != 0)
+		goto out;
+
+	if (datal < sizeof (result)) {
+		LOG("Short APOB read reply - got 0x%zx bytes\n", datal);
+		err = EIO;
+		goto out;
+	}
+
+	off = 0;
+	ipcc_decode_bytes(&result, sizeof (result), data, &off);
+	*response = result;
+
+	if (datal - off > len) {
+		LOG("Too much data in APOB response - "
+		    "got 0x%zx bytes (buffer 0x%lx)\n", datal, len);
+		err = EOVERFLOW;
+		goto out;
+	}
+
+	bcopy(data + off, buf, datal - off);
+	*lenp = datal - off;
+
+out:
+	return (err);
+}
+
 
 int
 ipcc_bootfail(const ipcc_ops_t *ops, void *arg, ipcc_host_boot_failure_t type,

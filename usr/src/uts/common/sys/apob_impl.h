@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_APOB_IMPL_H
@@ -43,12 +43,6 @@ extern "C" {
 #endif
 
 /*
- * This is the length of the HMAC for a given APOB entry. XXX What is the format
- * of this HMAC.
- */
-#define	APOB_HMAC_LEN	32
-
-/*
  * AMD defines all of these structures as packed structures. Hence why we note
  * them as packed here.
  */
@@ -78,7 +72,7 @@ typedef struct apob_header {
 	uint8_t			ah_sig[4];
 	uint32_t		ah_vers;
 	uint32_t		ah_size;
-	uint32_t		ah_off;
+	uint32_t		ah_off;		/* Offset of first entry */
 } apob_header_t;
 
 #pragma pack()	/* pack(1) */

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -46,7 +46,7 @@ static const char *turin_chan_ileaves[64] = {
 	[41] = "NPS2 10CH 2K",
 };
 
-static const char *turin_chan_map[] = {
+const char *turin_chan_map[] = {
 	[0] = "C",
 	[1] = "E",
 	[2] = "F",
