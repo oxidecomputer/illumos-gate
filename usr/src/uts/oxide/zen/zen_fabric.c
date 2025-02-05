@@ -37,7 +37,7 @@
 #include <sys/io/zen/physaddrs.h>
 #include <sys/io/zen/platform_impl.h>
 #include <sys/io/zen/smn.h>
-#include <sys/io/zen/smu.h>
+#include <sys/io/zen/smu_impl.h>
 
 /*
  * --------------------------------------
