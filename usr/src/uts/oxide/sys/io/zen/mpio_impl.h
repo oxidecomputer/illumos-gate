@@ -547,6 +547,78 @@ typedef struct zen_mpio_ubm_dfc_descr {
 	zen_mpio_ubm_dfc_data_t	zmudd_data;
 } zen_mpio_ubm_dfc_descr_t;
 
+/*
+ * PCIe Hotplug types.  Note that these are nearly identical to the
+ * corresponding types used for SMU-driven hotplug, as in Milan.  We point out
+ * specific differences for each type below.
+ */
+
+/*
+ * PCIe Hotplug mapping (describes how a hot-plug "slot" maps onto device
+ * capabilities).
+ *
+ * Differences from he SMU type include:
+ * - The first reserved field has been eliminated
+ * - The reset valid bit has moved from bit position 6 to 4
+ * - Port ID has expanded from 3 bits to 4
+ * - Tile ID has expanded from 3 bits to 4
+ * Other fields have shifted to accommodate these changes.
+ */
+typedef struct zen_mpio_hotplug_map {
+	uint32_t		zmhm_format:3;
+	uint32_t		zmhm_rst_valid:1;
+	uint32_t		zmhm_active:1;
+	uint32_t		zmhm_apu:1;
+	uint32_t		zmhm_die_id:1;
+	uint32_t		zmhm_port_id:4;
+	uint32_t		zmhm_tile_id:4;
+	uint32_t		zmhm_bridge:5;
+	uint32_t		zmhm_rsvd0:4;
+	uint32_t		zmhm_alt_slot_no:6;
+	uint32_t		zmhm_sec:1;
+	uint32_t		zmhm_rsvsd1:1;
+} zen_mpio_hotplug_map_t;
+
+/*
+ * PCIe Hotplug Function (I2C identifier for the corresponding map).
+ *
+ * Differences from the SMU-driven version include:
+ * - The 6-bit reserved field in the SMU version becomes zmhf_i2c_bus2.
+ */
+typedef struct zen_mpio_hotplug_function {
+	uint32_t		zmhf_i2c_bit:3;
+	uint32_t		zmhf_i2c_byte:3;
+	uint32_t		zmhf_i2c_daddr:5;
+	uint32_t		zmhf_i2c_dtype:2;
+	uint32_t		zmhf_i2c_bus:5;
+	uint32_t		zmhf_mask:8;
+	uint32_t		zmhf_i2c_bus2:6;
+} zen_mpio_hotplug_function_t;
+
+/*
+ * PCIe Hotplug Reset.  Identifies the I2C address of the pin used to reset the
+ * corresponding device.
+ *
+ * Currently, there are no differences from the SMU-driven version.
+ */
+typedef struct zen_mpio_hotplug_reset {
+	uint32_t		zmhr_rsvd0:3;
+	uint32_t		zmhr_i2c_gpio_byte:3;
+	uint32_t		zmhr_i2c_daddr:5;
+	uint32_t		zmhr_i2c_dtype:2;
+	uint32_t		zmhr_i2c_bus:5;
+	uint32_t		zmhr_i2c_reset:8;
+	uint32_t		zmhr_rsvd1:6;
+} zen_mpio_hotplug_reset_t;
+
+#define	ZEN_HOTPLUG_MAX_PCIE_PORTS	160
+
+typedef struct zen_mpio_hotplug_table {
+	zen_mpio_hotplug_map_t		zmht_map[ZEN_HOTPLUG_MAX_PCIE_PORTS];
+	zen_mpio_hotplug_function_t	zmht_func[ZEN_HOTPLUG_MAX_PCIE_PORTS];
+	zen_mpio_hotplug_reset_t	zmht_reset[ZEN_HOTPLUG_MAX_PCIE_PORTS];
+} zen_mpio_hotplug_table_t;
+
 #pragma	pack()	/* pragma pack(1) */
 
 /*
