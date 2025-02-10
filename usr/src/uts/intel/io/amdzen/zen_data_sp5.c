@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -26,7 +26,7 @@
 	SP5_SIGNAL_ ## m2, SP5_SIGNAL_ ## m3 }
 
 /*
- * This currently covers Genoa / Bergamo CPUs.
+ * This currently covers Genoa / Bergamo / Turin / Dense-Turin CPUs.
  */
 const zen_gpio_pindata_t zen_gpio_sp5_data[] = { {
 	.zg_name = "AGPIO0",
@@ -121,7 +121,11 @@ const zen_gpio_pindata_t zen_gpio_sp5_data[] = { {
 	/*
 	 * The second entry here is a clock output that it is hard to find docs
 	 * for and isn't listed in the FDS or mobo guide, but is in the ppr. For
-	 * now we assume it is invalid.
+	 * now we assume it is invalid. Starting in Turin this is listed again
+	 * as a GPIO. For now we leave it as invalid out of safety. In Turin
+	 * this clock output was moved to AGPIO28; however, that GPIO is not
+	 * bonded out in the socket as far as we can tell based on the SP5
+	 * functional data sheet, so it remains a mystery.
 	 */
 	.zg_name = "AGPIO13",
 	.zg_signal = "BP_I2C4_SCL_HP",
@@ -137,7 +141,9 @@ const zen_gpio_pindata_t zen_gpio_sp5_data[] = { {
 	 * S0A3 block. It is unclear how we actually leverage and utilize this.
 	 * Thus we mark this entry as invalid for the time being until
 	 * additional clarity in terms of what it actually maps to and if it
-	 * actually exists becomes clear.
+	 * actually exists becomes clear. Similar to the case of I2C4_SCL_HP
+	 * above, the invalid entry is now listed as a GPIO in Turin; however,
+	 * we leave it as invalid.
 	 */
 	.zg_name = "AGPIO14",
 	.zg_signal = "BP_I2C4_SDA_HP",
@@ -191,7 +197,7 @@ const zen_gpio_pindata_t zen_gpio_sp5_data[] = { {
 	.zg_cap = ZEN_GPIO_C_AGPIO,
 	.zg_pad = ZEN_GPIO_PAD_TYPE_GPIO,
 	.zg_voltage = ZEN_GPIO_V_1P8_S5,
-	SP5_MUX_ENTRY(AGPIO21, AGPIO21, AGPIO21, SD0_CMD)
+	SP5_MUX_ENTRY(AGPIO21, AGPIO21, AGPIO21, INVALID)
 }, {
 	.zg_name = "AGPIO22",
 	.zg_signal = "BP_AGPIO22",
@@ -371,7 +377,7 @@ const zen_gpio_pindata_t zen_gpio_sp5_data[] = { {
 }, {
 	/*
 	 * This pin has the same constraints as the one above with respect to
-	 * CLK_REQ12_l not actually existing.
+	 * CLK_REQ12_L not actually existing.
 	 */
 	.zg_name = "AGPIO116",
 	.zg_signal = "BP_AGPIO116",

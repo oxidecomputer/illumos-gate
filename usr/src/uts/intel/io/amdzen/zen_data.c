@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -45,6 +45,9 @@ amdzen_data_pininfo(size_t *npins)
 		return (zen_gpio_sp3_data);
 		break;
 	case X86_PF_AMD_GENOA:
+	case X86_PF_AMD_BERGAMO:
+	case X86_PF_AMD_TURIN:
+	case X86_PF_AMD_DENSE_TURIN:
 		switch (sock) {
 		case X86_SOCKET_SP5:
 			*npins = zen_gpio_sp5_nents;

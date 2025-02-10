@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -1102,10 +1102,18 @@ zen_gpio_identify(zen_gpio_t *zg)
 	case X86_PF_AMD_VAN_GOGH:
 	case X86_PF_AMD_MENDOCINO:
 	case X86_PF_AMD_GENOA:
+	case X86_PF_AMD_BERGAMO:
 	case X86_PF_AMD_VERMEER:
 	case X86_PF_AMD_REMBRANDT:
 	case X86_PF_AMD_CEZANNE:
 	case X86_PF_AMD_RAPHAEL:
+	case X86_PF_AMD_GRANITE_RIDGE:
+	case X86_PF_AMD_PHOENIX:
+	case X86_PF_AMD_STRIX:
+	case X86_PF_AMD_STRIX_HALO:
+	case X86_PF_AMD_KRACKAN:
+	case X86_PF_AMD_TURIN:
+	case X86_PF_AMD_DENSE_TURIN:
 		break;
 	default:
 		dev_err(zg->zg_dip, CE_WARN, "!chiprev family 0x%x is not "
