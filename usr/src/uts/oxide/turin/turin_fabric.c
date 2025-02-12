@@ -484,12 +484,8 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 	VERIFY3U(iomsno, <, ARRAY_SIZE(iohcmap));
 	ioms->zio_iohcnum = iohcmap[iomsno];
 
-	/*
-	 * nBIFs are actually associated with the NBIO instance but we have no
-	 * representation in the fabric for NBIOs yet. Mark the first IOMS in
-	 * each NBIO as holding the nBIFs.
-	 */
-	if (TURIN_NBIO_IOMS_NUM(iomsno) == 0)
+	/* Only the large IOHC types have nBIFs */
+	if (ioms->zio_iohctype == ZEN_IOHCT_LARGE)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
 }
 
@@ -629,7 +625,7 @@ static smn_reg_t
 turin_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	zen_ioms_t *ioms = nbif->zn_ioms;
+	const zen_ioms_t *ioms = nbif->zn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -656,8 +652,8 @@ turin_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 static smn_reg_t
 turin_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 {
-	zen_nbif_t *nbif = func->znf_nbif;
-	zen_ioms_t *ioms = nbif->zn_ioms;
+	const zen_nbif_t *nbif = func->znf_nbif;
+	const zen_ioms_t *ioms = nbif->zn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -1102,12 +1098,25 @@ turin_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 void
 turin_fabric_nbif_clock_gating(zen_nbif_t *nbif)
 {
+	const zen_iohc_type_t iohctype = nbif->zn_ioms->zio_iohctype;
 	smn_reg_t reg;
 	uint32_t val;
 
 	reg = turin_nbif_reg(nbif, D_NBIF_MGCG_CTL_LCLK, 0);
 	val = zen_nbif_read(nbif, reg);
 	val = NBIF_MGCG_CTL_LCLK_SET_EN(val, 1);
+	zen_nbif_write(nbif, reg, val);
+
+	/*
+	 * LCLK deep sleep must be enabled in order for IOAGR to go idle.
+	 * This kind of makes sense since the LCLK is the internal clock that's
+	 * driving all of these devices. If the LCLK can't enter a deep sleep
+	 * then there's no reason the IOAGR and other devices driven from it
+	 * will be able to.
+	 */
+	reg = turin_nbif_reg(nbif, D_NBIF_DS_CTL_LCLK, 0);
+	val = zen_nbif_read(nbif, reg);
+	val = NBIF_DS_CTL_LCLK_SET_EN(val, 1);
 	zen_nbif_write(nbif, reg, val);
 
 	/*
@@ -1209,6 +1218,29 @@ turin_fabric_nbif_clock_gating(zen_nbif_t *nbif)
 		reg = turin_nbif_reg(nbif, D_NBIF_ALT_MGCG_CTL_SCLK, 0);
 		val = zen_nbif_read(nbif, reg);
 		val = NBIF_ALT_MGCG_CTL_SCLK_SET_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		/*
+		 * Enable SOCCLK and SHUBCLK deep sleep on large IOHCs.
+		 */
+		if (iohctype == ZEN_IOHCT_LARGE) {
+			reg = turin_nbif_reg(nbif, D_NBIF_ALT_DS_CTL_SOCCLK, 0);
+			val = zen_nbif_read(nbif, reg);
+			val = NBIF_ALT_DS_CTL_SOCCLK_SET_EN(val, 1);
+			zen_nbif_write(nbif, reg, val);
+
+			reg = turin_nbif_reg(nbif,
+			    D_NBIF_ALT_DS_CTL_SHUBCLK, 0);
+			val = zen_nbif_read(nbif, reg);
+			val = NBIF_ALT_DS_CTL_SHUBCLK_SET_EN(val, 1);
+			zen_nbif_write(nbif, reg, val);
+		}
+	}
+
+	if (nbif->zn_num == 2) {
+		reg = turin_nbif_reg(nbif, D_NBIF_PG_MISC_CTL0, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PG_MISC_CTL0_SET_LDMASK(val, 0);
 		zen_nbif_write(nbif, reg, val);
 	}
 }
@@ -1315,6 +1347,39 @@ turin_fabric_ioapic(zen_ioms_t *ioms)
 	zen_ioms_write(ioms, reg, val);
 }
 
+void
+turin_fabric_nbif_init(zen_nbif_t *nbif)
+{
+	const uint8_t iohcno = nbif->zn_ioms->zio_iohcnum;
+	const uint8_t iohubno = TURIN_IOHC_IOHUB_NUM(iohcno);
+
+	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
+		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
+
+		/*
+		 * On Turin, nBIF2 and nBIF0's PSPCCP and ACP functions are
+		 * only present on the first IOHC in each NBIO - that is the
+		 * one which contains IOHUB0.
+		 */
+		if (iohubno != 0 && (nbif->zn_num > 1 ||
+		    func->znf_type == ZEN_NBIF_T_PSPCCP ||
+		    func->znf_type == ZEN_NBIF_T_ACP)) {
+			func->znf_type = ZEN_NBIF_T_ABSENT;
+			func->znf_flags = 0;
+		}
+
+		/* AER is enabled on USB and SATA devices */
+		if (func->znf_type == ZEN_NBIF_T_USB ||
+		    func->znf_type == ZEN_NBIF_T_SATA) {
+			func->znf_flags |= ZEN_NBIF_F_AER_EN;
+		}
+
+		/* PM_STATUS is enabled for USB devices */
+		if (func->znf_type == ZEN_NBIF_T_USB)
+			func->znf_flags |= ZEN_NBIF_F_PMSTATUS_EN;
+	}
+}
+
 /*
  * Go through and configure and set up devices and functions. In particular we
  * need to go through and set up the following:
@@ -1323,39 +1388,36 @@ turin_fabric_ioapic(zen_ioms_t *ioms)
  *  o Enabling the interrupts of corresponding functions
  *  o Setting up specific PCI device straps around multi-function, FLR, poison
  *    control, TPH settings, etc.
- *
- * XXX For getting to PCIe faster and since we're not going to use these, and
- * they're all disabled, for the moment we just ignore the straps that aren't
- * related to interrupts, enables, and cfg comps.
  */
 void
 turin_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 {
-	const zen_iohc_type_t iohctype = nbif->zn_ioms->zio_iohctype;
-	smn_reg_t reg;
-	uint32_t intr;
+	const uint8_t iohcno = nbif->zn_ioms->zio_iohcnum;
+	const uint8_t iohubno = TURIN_IOHC_IOHUB_NUM(iohcno);
+	smn_reg_t intrreg, reg;
+	uint32_t intr, val;
 
-	reg = turin_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
-	intr = zen_nbif_read(nbif, reg);
+	intrreg = turin_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
+	intr = zen_nbif_read(nbif, intrreg);
 	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
 		smn_reg_t strapreg;
 		uint32_t strap;
 		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
 
-		/*
-		 * This indicates that we have a dummy function or similar. In
-		 * which case there's not much to do here, the system defaults
-		 * are generally what we want. XXX Kind of sort of. Not true
-		 * over time.
-		 */
-		if ((func->znf_flags & ZEN_NBIF_F_NO_CONFIG) != 0) {
-			continue;
-		}
-
 		strapreg = turin_nbif_func_reg(func, D_NBIF_FUNC_STRAP0);
 		strap = zen_nbif_func_read(func, strapreg);
 
-		if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
+		if (func->znf_type == ZEN_NBIF_T_DUMMY) {
+			/*
+			 * AMD sources suggest that the device ID for the dummy
+			 * device should be changed from the reset values of
+			 * 0x1556 (nBIF0) and 0x1559 (nBIF2) to 0x14dc which is
+			 * the ID for SDXI. This doesn't seem to make sense
+			 * (and doesn't take even if we try) so we just skip
+			 * any additional configuration for the dummy device.
+			 */
+			continue;
+		} else if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
 			strap = NBIF_FUNC_STRAP0_SET_EXIST(strap, 1);
 			intr = NBIF_INTR_LINE_EN_SET_I(intr,
 			    func->znf_dev, func->znf_func, 1);
@@ -1377,28 +1439,98 @@ turin_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 		}
 
 		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = turin_nbif_func_reg(func, D_NBIF_FUNC_STRAP2);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP2_SET_ACS_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_ACS_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP2_SET_AER_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_AER_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = turin_nbif_func_reg(func, D_NBIF_FUNC_STRAP3);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP3_SET_PM_STATUS_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_PMSTATUS_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP3_SET_PANF_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_PANF_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = turin_nbif_func_reg(func, D_NBIF_FUNC_STRAP4);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP4_SET_FLR_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_FLR_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = turin_nbif_func_reg(func, D_NBIF_FUNC_STRAP7);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP7_SET_TPH_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_TPH_CPLR_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP7_SET_TPH_CPLR_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_TPH_CPLR_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
 	}
 
-	zen_nbif_write(nbif, reg, intr);
+	zen_nbif_write(nbif, intrreg, intr);
 
 	/*
-	 * Each nBIF has up to three ports on it, though not all of them seem to
-	 * be used. However, it's suggested that we enable completion timeouts
-	 * on all three port straps for NBIF0, and the same for NBIF2 on the
-	 * IOMS which are connected to a larger IOHC type.
+	 * Each nBIF has up to two ports on it, though not all of them seem to
+	 * be used. It's suggested that we enable completion timeouts on all
+	 * port straps for nBIF0, and the same for nBIF2 where it exists.
 	 */
-	if (nbif->zn_num == 0 ||
-	    (iohctype == ZEN_IOHCT_LARGE && nbif->zn_num == 2)) {
+	if (nbif->zn_num == 0 || nbif->zn_num == 2) {
 		for (uint8_t devno = 0; devno < TURIN_NBIF_MAX_PORTS; devno++) {
-			smn_reg_t reg;
-			uint32_t val;
-
 			reg = turin_nbif_reg(nbif, D_NBIF_PORT_STRAP3, devno);
 			val = zen_nbif_read(nbif, reg);
 			val = NBIF_PORT_STRAP3_SET_COMP_TO(val, 1);
 			zen_nbif_write(nbif, reg, val);
 		}
 	}
+
+	/*
+	 * Configure TLP processing hints completer support strap.
+	 */
+	for (uint8_t devno = 0; devno < TURIN_NBIF_MAX_PORTS; devno++) {
+		reg = turin_nbif_reg(nbif, D_NBIF_PORT_STRAP6, devno);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP6_SET_TPH_CPLR_EN(val,
+		    NBIF_PORT_STRAP6_TPH_CPLR_SUP);
+		zen_nbif_write(nbif, reg, val);
+	}
+
+	/*
+	 * For the root port functions within nBIF, program the B/D/F values
+	 * and port number.
+	 */
+	ASSERT3U(iohcno, <, ARRAY_SIZE(turin_pcie_int_ports));
+	const zen_iohc_nbif_ports_t *ports = &turin_pcie_int_ports[iohcno];
+	for (uint8_t i = 0; i < ports->zinp_count; i++) {
+		const zen_pcie_port_info_t *port = &ports->zinp_ports[i];
+
+		reg = turin_nbif_reg(nbif, D_NBIF_PORT_STRAP7, i);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP7_SET_BUS(val,
+		    nbif->zn_ioms->zio_pci_busno);
+		val = NBIF_PORT_STRAP7_SET_DEV(val, port->zppi_dev);
+		val = NBIF_PORT_STRAP7_SET_FUNC(val, port->zppi_func);
+		val = NBIF_PORT_STRAP7_SET_PORT(val,
+		    (port->zppi_dev << 4) | port->zppi_func);
+		zen_nbif_write(nbif, reg, val);
+	}
+
+	reg = turin_nbif_reg(nbif, D_NBIF_BIFC_GMI_SDP_REQ_PCRED, 0);
+	val = zen_nbif_read(nbif, reg);
+	val = NBIF_BIFC_GMI_SDP_REQ_PCRED_SET_VC5(val, 1);
+	if (iohubno == 2)
+		val = NBIF_BIFC_GMI_SDP_REQ_PCRED_SET_VC4(val, 1);
+	zen_nbif_write(nbif, reg, val);
+
+	reg = turin_nbif_reg(nbif, D_NBIF_BIFC_GMI_SDP_DAT_PCRED, 0);
+	val = zen_nbif_read(nbif, reg);
+	val = NBIF_BIFC_GMI_SDP_DAT_PCRED_SET_VC5(val, 1);
+	if (iohubno == 2)
+		val = NBIF_BIFC_GMI_SDP_DAT_PCRED_SET_VC4(val, 1);
+	zen_nbif_write(nbif, reg, val);
 }
 
 /*

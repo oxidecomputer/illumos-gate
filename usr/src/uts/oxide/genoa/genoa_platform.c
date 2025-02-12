@@ -97,6 +97,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_nbif_clock_gating = genoa_fabric_nbif_clock_gating,
 	.zfo_ioapic_clock_gating = genoa_fabric_ioapic_clock_gating,
 	.zfo_ioapic = genoa_fabric_ioapic,
+	.zfo_nbif_init = genoa_fabric_nbif_init,
 	.zfo_nbif_dev_straps = genoa_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for genoa */
 	.zfo_pcie = genoa_fabric_pcie,

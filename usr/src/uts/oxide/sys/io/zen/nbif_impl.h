@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_NBIF_IMPL_H
@@ -33,7 +33,7 @@ typedef struct zen_nbif_func zen_nbif_func_t;
 
 typedef int (*zen_nbif_cb_f)(zen_nbif_t *, void *);
 
-typedef enum zen_nbif_func_flag {
+typedef enum {
 	/*
 	 * This NBIF function should be enabled.
 	 */
@@ -43,10 +43,41 @@ typedef enum zen_nbif_func_flag {
 	 * This NBIF does not need any configuration or manipulation. This
 	 * generally is the case because we have a dummy function.
 	 */
-	ZEN_NBIF_F_NO_CONFIG	= 1 << 1
+	ZEN_NBIF_F_NO_CONFIG	= 1 << 1,
+
+	/*
+	 * Enable FLR support.
+	 */
+	ZEN_NBIF_F_FLR_EN	= 1 << 2,
+
+	/*
+	 * Enable the ACS capability.
+	 */
+	ZEN_NBIF_F_ACS_EN	= 1 << 3,
+
+	/*
+	 * Enable the AER capability.
+	 */
+	ZEN_NBIF_F_AER_EN	= 1 << 4,
+
+	/*
+	 * Enable communication of Dx state change.
+	 */
+	ZEN_NBIF_F_PMSTATUS_EN	= 1 << 5,
+
+	/*
+	 * Expose TPH Requester Capability.
+	 */
+	ZEN_NBIF_F_TPH_CPLR_EN	= 1 << 6,
+
+	/*
+	 * Enable Poisoned Error log as Advisory NonFatal Error.
+	 */
+	ZEN_NBIF_F_PANF_EN	= 1 << 7
 } zen_nbif_func_flag_t;
 
-typedef enum zen_nbif_func_type {
+typedef enum {
+	ZEN_NBIF_T_ABSENT = 0,
 	ZEN_NBIF_T_DUMMY,
 	ZEN_NBIF_T_ACP,
 	ZEN_NBIF_T_AZ,
@@ -63,6 +94,7 @@ typedef enum zen_nbif_func_type {
 
 typedef struct zen_nbif_info {
 	zen_nbif_func_type_t	zni_type;
+	bool			zni_enabled;
 	uint8_t			zni_dev;
 	uint8_t			zni_func;
 } zen_nbif_info_t;
@@ -87,7 +119,6 @@ struct zen_nbif_func {
 	uint8_t			znf_func;
 
 	zen_nbif_t		*znf_nbif;
-	void			*znf_uarch_nbif_func;
 };
 
 struct zen_nbif {

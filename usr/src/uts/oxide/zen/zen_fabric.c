@@ -1105,20 +1105,64 @@ zen_fabric_nbif_func_init(zen_nbif_t *nbif, uint8_t funcno)
 	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
 	const zen_nbif_info_t *ninfo = consts->zpc_nbif_data[nbif->zn_num];
 	zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	const zen_ioms_t *ioms = nbif->zn_ioms;
+	const uint8_t numports =
+	    consts->zpc_pcie_int_ports[ioms->zio_iohcnum].zinp_count;
 
-	func->znf_num = funcno;
-	func->znf_type = ninfo[funcno].zni_type;
-	func->znf_uarch_nbif_func = NULL;
 	func->znf_nbif = nbif;
-	func->znf_dev = ninfo[funcno].zni_dev;
-	func->znf_func = ninfo[funcno].zni_func;
+	func->znf_num = funcno;
+	func->znf_flags = 0;
+	if (ninfo[funcno].zni_dev >= numports) {
+		func->znf_type = ZEN_NBIF_T_ABSENT;
+	} else {
+		func->znf_type = ninfo[funcno].zni_type;
+		func->znf_dev = ninfo[funcno].zni_dev;
+		func->znf_func = ninfo[funcno].zni_func;
+		if (ninfo[funcno].zni_enabled)
+			func->znf_flags |= ZEN_NBIF_F_ENABLED;
 
+		/* Dummy devices in theory need no explicit configuration */
+		if (func->znf_type == ZEN_NBIF_T_DUMMY) {
+			func->znf_flags |= ZEN_NBIF_F_NO_CONFIG;
+			goto out;
+		}
+
+		/*
+		 * FLR is enabled on all device types apart from AZ. However,
+		 * for SATA devices, only for the first function.
+		 */
+		if (func->znf_type != ZEN_NBIF_T_AZ &&
+		    (func->znf_type != ZEN_NBIF_T_SATA || func->znf_func < 1)) {
+			func->znf_flags |= ZEN_NBIF_F_FLR_EN;
+		}
+
+		/*
+		 * TPH CPLR is enabled for bridges and some other types. Some
+		 * uarches extend this list via the nBIF init hook.
+		 */
+		if (func->znf_type == ZEN_NBIF_T_MPDMATF ||
+		    func->znf_type == ZEN_NBIF_T_NTB ||
+		    func->znf_type == ZEN_NBIF_T_SVNTB ||
+		    func->znf_type == ZEN_NBIF_T_PVNTB ||
+		    func->znf_type == ZEN_NBIF_T_NVME) {
+			func->znf_flags |= ZEN_NBIF_F_TPH_CPLR_EN;
+		}
+
+		/*
+		 * All functions are configured to use advisory non-fatal
+		 * errors for poisoned error log by default. Some uarches
+		 * selectively override this.
+		 */
+		func->znf_flags |= ZEN_NBIF_F_PANF_EN;
+	}
+
+out:
 	/*
-	 * Dummy devices in theory need no explicit
-	 * configuration.
+	 * uarch-specific nBIF init hook.
 	 */
-	if (func->znf_type == ZEN_NBIF_T_DUMMY)
-		func->znf_flags |= ZEN_NBIF_F_NO_CONFIG;
+	if (fops->zfo_nbif_init != NULL)
+		fops->zfo_nbif_init(nbif);
 }
 
 static void
@@ -1126,10 +1170,16 @@ zen_fabric_ioms_nbif_init(zen_ioms_t *ioms, uint8_t nbifno)
 {
 	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
 	zen_nbif_t *nbif = &ioms->zio_nbifs[nbifno];
+	const uint8_t numports =
+	    consts->zpc_pcie_int_ports[ioms->zio_iohcnum].zinp_count;
 
 	nbif->zn_num = nbifno;
 	nbif->zn_ioms = ioms;
-	nbif->zn_nfuncs = consts->zpc_nbif_nfunc[nbifno];
+	if (numports == 0)
+		nbif->zn_nfuncs = 0;
+	else
+		nbif->zn_nfuncs = consts->zpc_nbif_nfunc[nbifno];
+
 	ASSERT3U(nbif->zn_nfuncs, <=, ZEN_NBIF_MAX_FUNCS);
 
 	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++)
@@ -2597,22 +2647,15 @@ zen_fabric_init(void)
 
 	/*
 	 * Go through and configure all of the straps for NBIF devices before
-	 * they end up starting up.
-	 *
-	 * XXX There's a bunch we're punting on here and we'll want to make sure
-	 * that we actually have the platform's config for this. But this
-	 * includes doing things like:
+	 * they end up starting up. This includes doing things like:
 	 *
 	 *  o Enabling and Disabling devices visibility through straps and their
 	 *    interrupt lines.
 	 *  o Device multi-function enable, related PCI config space straps.
-	 *  o Lots of clock gating
-	 *  o Subsystem IDs
-	 *  o GMI round robin
-	 *  o BIFC stuff
+	 *  o Subsystem IDs.
+	 *  o GMI round robin.
+	 *  o BIFC.
 	 */
-
-	/* XXX Need a way to know which devs to enable on the board */
 	zen_fabric_walk_nbif(fabric, zen_fabric_nbif_op,
 	    fabric_ops->zfo_nbif_dev_straps);
 

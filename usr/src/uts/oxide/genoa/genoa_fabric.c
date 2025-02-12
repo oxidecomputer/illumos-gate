@@ -486,7 +486,7 @@ static smn_reg_t
 genoa_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	zen_ioms_t *ioms = nbif->zn_ioms;
+	const zen_ioms_t *ioms = nbif->zn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -509,8 +509,8 @@ genoa_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 static smn_reg_t
 genoa_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 {
-	zen_nbif_t *nbif = func->znf_nbif;
-	zen_ioms_t *ioms = nbif->zn_ioms;
+	const zen_nbif_t *nbif = func->znf_nbif;
+	const zen_ioms_t *ioms = nbif->zn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -985,6 +985,12 @@ genoa_fabric_nbif_clock_gating(zen_nbif_t *nbif)
 	val = NBIF_MGCG_CTL_LCLK_SET_EN(val, 1);
 	zen_nbif_write(nbif, reg, val);
 
+	/* LCLK deep sleep must be enabled in order for IOAGR to go idle. */
+	reg = genoa_nbif_reg(nbif, D_NBIF_DS_CTL_LCLK, 0);
+	val = zen_nbif_read(nbif, reg);
+	val = NBIF_DS_CTL_LCLK_SET_EN(val, 1);
+	zen_nbif_write(nbif, reg, val);
+
 	/*
 	 * There is only one of these register instances per NBIO.
 	 */
@@ -1027,17 +1033,36 @@ genoa_fabric_nbif_clock_gating(zen_nbif_t *nbif)
 		val = NBIF_ALT_NGDC_MGCG_CTL_SET_EN(val, 1);
 		zen_nbif_write(nbif, reg, val);
 
+		reg = genoa_nbif_reg(nbif, D_NBIF_ALT_MGCG_CTL_SCLK, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_ALT_MGCG_CTL_SCLK_SET_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		reg = genoa_nbif_reg(nbif, D_NBIF_ALT_DS_CTL_SOCCLK, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_ALT_DS_CTL_SOCCLK_SET_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		/* The SHUBCLK registers only exist on nBIF0 */
 		if (nbif->zn_num == 0) {
 			reg = genoa_nbif_reg(
 			    nbif, D_NBIF_ALT_MGCG_CTL_SHCLK, 0);
 			val = zen_nbif_read(nbif, reg);
 			val = NBIF_ALT_MGCG_CTL_SHCLK_SET_EN(val, 1);
 			zen_nbif_write(nbif, reg, val);
-		}
 
-		reg = genoa_nbif_reg(nbif, D_NBIF_ALT_MGCG_CTL_SCLK, 0);
+			reg = genoa_nbif_reg(nbif,
+			    D_NBIF_ALT_DS_CTL_SHUBCLK, 0);
+			val = zen_nbif_read(nbif, reg);
+			val = NBIF_ALT_DS_CTL_SHUBCLK_SET_EN(val, 1);
+			zen_nbif_write(nbif, reg, val);
+		}
+	}
+
+	if (nbif->zn_num == 2) {
+		reg = genoa_nbif_reg(nbif, D_NBIF_PG_MISC_CTL0, 0);
 		val = zen_nbif_read(nbif, reg);
-		val = NBIF_ALT_MGCG_CTL_SCLK_SET_EN(val, 1);
+		val = NBIF_PG_MISC_CTL0_SET_LDMASK(val, 0);
 		zen_nbif_write(nbif, reg, val);
 	}
 }
@@ -1173,6 +1198,30 @@ genoa_fabric_unhide_bridge(zen_pcie_port_t *port)
 	zen_pcie_port_write(port, reg, val);
 }
 
+void
+genoa_fabric_nbif_init(zen_nbif_t *nbif)
+{
+	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
+		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
+
+		/* PM_STATUS is enabled for USB devices, SATA, etc. */
+		if (func->znf_type == ZEN_NBIF_T_USB ||
+		    func->znf_type == ZEN_NBIF_T_SATA ||
+		    func->znf_type == ZEN_NBIF_T_MPDMATF) {
+			func->znf_flags |= ZEN_NBIF_F_PMSTATUS_EN;
+		}
+
+		/*
+		 * TPH CPLR is additionally enabled for USB devices and for the
+		 * first SATA function.
+		 */
+		if (func->znf_type == ZEN_NBIF_T_USB ||
+		    (func->znf_type == ZEN_NBIF_T_SATA && func->znf_func < 1)) {
+			func->znf_flags |= ZEN_NBIF_F_TPH_CPLR_EN;
+		}
+	}
+}
+
 /*
  * Go through and configure and set up devices and functions. In particular we
  * need to go through and set up the following:
@@ -1181,38 +1230,35 @@ genoa_fabric_unhide_bridge(zen_pcie_port_t *port)
  *  o Enabling the interrupts of corresponding functions
  *  o Setting up specific PCI device straps around multi-function, FLR, poison
  *    control, TPH settings, etc.
- *
- * XXX For getting to PCIe faster and since we're not going to use these, and
- * they're all disabled, for the moment we just ignore the straps that aren't
- * related to interrupts, enables, and cfg comps.
  */
 void
 genoa_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 {
-	smn_reg_t reg;
-	uint32_t intr;
+	const uint8_t iohcno = nbif->zn_ioms->zio_iohcnum;
+	smn_reg_t intrreg, reg;
+	uint32_t intr, val;
 
-	reg = genoa_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
-	intr = zen_nbif_read(nbif, reg);
+	intrreg = genoa_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
+	intr = zen_nbif_read(nbif, intrreg);
 	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
 		smn_reg_t strapreg;
 		uint32_t strap;
 		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
 
-		/*
-		 * This indicates that we have a dummy function or similar. In
-		 * which case there's not much to do here, the system defaults
-		 * are generally what we want. XXX Kind of sort of. Not true
-		 * over time.
-		 */
-		if ((func->znf_flags & ZEN_NBIF_F_NO_CONFIG) != 0) {
-			continue;
-		}
-
 		strapreg = genoa_nbif_func_reg(func, D_NBIF_FUNC_STRAP0);
 		strap = zen_nbif_func_read(func, strapreg);
 
-		if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
+		if (func->znf_type == ZEN_NBIF_T_DUMMY) {
+			/*
+			 * AMD sources suggest that the device ID for the dummy
+			 * device should be changed from the reset values of
+			 * 0x14ac (nBIF0) and 0x14c2 (nBIF2) to 0x14dc which is
+			 * the ID for SDXI. This doesn't seem to make sense
+			 * (and doesn't take even if we try) so we just skip
+			 * any additional configuration for the dummy device.
+			 */
+			continue;
+		} else if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
 			strap = NBIF_FUNC_STRAP0_SET_EXIST(strap, 1);
 			intr = NBIF_INTR_LINE_EN_SET_I(intr,
 			    func->znf_dev, func->znf_func, 1);
@@ -1231,22 +1277,72 @@ genoa_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 		}
 
 		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = genoa_nbif_func_reg(func, D_NBIF_FUNC_STRAP2);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP2_SET_ACS_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_ACS_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP2_SET_AER_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_AER_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = genoa_nbif_func_reg(func, D_NBIF_FUNC_STRAP3);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP3_SET_PM_STATUS_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_PMSTATUS_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP3_SET_PANF_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_PANF_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = genoa_nbif_func_reg(func, D_NBIF_FUNC_STRAP4);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP4_SET_FLR_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_FLR_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = genoa_nbif_func_reg(func, D_NBIF_FUNC_STRAP7);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP7_SET_TPH_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_TPH_CPLR_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP7_SET_TPH_CPLR_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_TPH_CPLR_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
 	}
 
-	zen_nbif_write(nbif, reg, intr);
+	zen_nbif_write(nbif, intrreg, intr);
 
 	/*
-	 * Each nBIF has up to three devices on them, though not all of them
-	 * seem to be used. However, it's suggested that we enable completion
-	 * timeouts on all three device straps.
+	 * Each nBIF has up to two devices on them, though not all of them
+	 * seem to be used. It's suggested that we enable completion timeouts
+	 * and TLP processing hints completer support on all of them.
 	 */
-	for (uint8_t devno = 0; devno < GENOA_NBIF_MAX_DEVS; devno++) {
-		smn_reg_t reg;
-		uint32_t val;
-
+	for (uint8_t devno = 0; devno < GENOA_NBIF_MAX_PORTS; devno++) {
 		reg = genoa_nbif_reg(nbif, D_NBIF_PORT_STRAP3, devno);
 		val = zen_nbif_read(nbif, reg);
 		val = NBIF_PORT_STRAP3_SET_COMP_TO(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		reg = genoa_nbif_reg(nbif, D_NBIF_PORT_STRAP6, devno);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP6_SET_TPH_CPLR_EN(val,
+		    NBIF_PORT_STRAP6_TPH_CPLR_SUP);
+		zen_nbif_write(nbif, reg, val);
+	}
+
+	/*
+	 * For the root port functions within nBIF, program the B/D/F values.
+	 */
+	ASSERT3U(iohcno, <, ARRAY_SIZE(genoa_pcie_int_ports));
+	const zen_iohc_nbif_ports_t *ports = &genoa_pcie_int_ports[iohcno];
+	for (uint8_t i = 0; i < ports->zinp_count; i++) {
+		const zen_pcie_port_info_t *port = &ports->zinp_ports[i];
+
+		reg = genoa_nbif_reg(nbif, D_NBIF_PORT_STRAP7, i);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP7_SET_BUS(val,
+		    nbif->zn_ioms->zio_pci_busno);
+		val = NBIF_PORT_STRAP7_SET_DEV(val, port->zppi_dev);
+		val = NBIF_PORT_STRAP7_SET_FUNC(val, port->zppi_func);
 		zen_nbif_write(nbif, reg, val);
 	}
 }

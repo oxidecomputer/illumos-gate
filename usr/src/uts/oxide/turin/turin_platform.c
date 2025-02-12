@@ -111,6 +111,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_nbif_clock_gating = turin_fabric_nbif_clock_gating,
 	.zfo_ioapic_clock_gating = turin_fabric_ioapic_clock_gating,
 	.zfo_ioapic = turin_fabric_ioapic,
+	.zfo_nbif_init = turin_fabric_nbif_init,
 	.zfo_nbif_dev_straps = turin_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for turin */
 	.zfo_pcie = turin_fabric_pcie,

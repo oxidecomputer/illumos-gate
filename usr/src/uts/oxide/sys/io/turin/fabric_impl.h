@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_FABRIC_IMPL_H
@@ -89,6 +89,16 @@ extern "C" {
 #define	TURIN_NBIO_IOMS_NUM(num)	((num) % TURIN_IOMS_PER_NBIO)
 
 /*
+ * Convenience macro to convert an absolute IOHC index (within an IO die) into
+ * an NBIO-relative IOHUB number. Each NBIO contains four logical IOHC
+ * instances, two large and two small. The large ones have the even numbered
+ * IOHUBs. The theory statement in turin_fabric.c has some more details on
+ * IOHC mappings.
+ */
+#define	TURIN_IOHC_IOHUB_NUM(num)	\
+	(((num) / TURIN_IOMS_PER_NBIO) + (((num) & 1) ? 2 : 0))
+
+/*
  * The Turin uarch-specific hooks for initial fabric topology initialization.
  */
 extern bool turin_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
@@ -121,6 +131,7 @@ extern void turin_fabric_iohc_clock_gating(zen_ioms_t *);
 extern void turin_fabric_nbif_clock_gating(zen_nbif_t *);
 extern void turin_fabric_ioapic_clock_gating(zen_ioms_t *);
 extern void turin_fabric_ioapic(zen_ioms_t *);
+extern void turin_fabric_nbif_init(zen_nbif_t *);
 extern void turin_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void turin_fabric_nbif_bridges(zen_ioms_t *);
 extern void turin_fabric_pcie(zen_fabric_t *);

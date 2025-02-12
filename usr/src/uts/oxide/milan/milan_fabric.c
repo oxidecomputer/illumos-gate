@@ -1057,7 +1057,7 @@ static smn_reg_t
 milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	zen_ioms_t *ioms = nbif->zn_ioms;
+	const zen_ioms_t *ioms = nbif->zn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -1080,8 +1080,8 @@ milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
 static smn_reg_t
 milan_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 {
-	zen_nbif_t *nbif = func->znf_nbif;
-	zen_ioms_t *ioms = nbif->zn_ioms;
+	const zen_nbif_t *nbif = func->znf_nbif;
+	const zen_ioms_t *ioms = nbif->zn_ioms;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -2621,6 +2621,43 @@ milan_tile_smu_hp_id(const oxio_engine_t *oxio)
 	}
 }
 
+void
+milan_fabric_nbif_init(zen_nbif_t *nbif)
+{
+	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
+		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
+
+		/*
+		 * TPH CPLR is additionally enabled for USB devices and for the
+		 * first SATA function.
+		 */
+		if (func->znf_type == ZEN_NBIF_T_USB ||
+		    (func->znf_type == ZEN_NBIF_T_SATA && func->znf_func < 1)) {
+			func->znf_flags |= ZEN_NBIF_F_TPH_CPLR_EN;
+		}
+
+		/*
+		 * PANF is explicitly disabled for some function types on
+		 * Milan.
+		 */
+		if (func->znf_type == ZEN_NBIF_T_DUMMY ||
+		    func->znf_type == ZEN_NBIF_T_MPDMATF ||
+		    func->znf_type == ZEN_NBIF_T_NTB) {
+			func->znf_flags &= ~ZEN_NBIF_F_PANF_EN;
+		}
+
+		/*
+		 * AER and ACS are enabled on all device types apart from AZ.
+		 * However, for SATA devices, only for the first function.
+		 */
+		if (func->znf_type != ZEN_NBIF_T_AZ &&
+		    (func->znf_type != ZEN_NBIF_T_SATA || func->znf_func < 1)) {
+			func->znf_flags |= ZEN_NBIF_F_ACS_EN;
+			func->znf_flags |= ZEN_NBIF_F_AER_EN;
+		}
+	}
+}
+
 /*
  * Go through and configure and set up devices and functions. In particular we
  * need to go through and set up the following:
@@ -2629,38 +2666,28 @@ milan_tile_smu_hp_id(const oxio_engine_t *oxio)
  *  o Enabling the interrupts of corresponding functions
  *  o Setting up specific PCI device straps around multi-function, FLR, poison
  *    control, TPH settings, etc.
- *
- * XXX For getting to PCIe faster and since we're not going to use these, and
- * they're all disabled, for the moment we just ignore the straps that aren't
- * related to interrupts, enables, and cfg comps.
  */
 void
 milan_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 {
-	smn_reg_t reg;
-	uint32_t intr;
+	const uint8_t iohcno = nbif->zn_ioms->zio_iohcnum;
+	smn_reg_t intrreg, reg;
+	uint32_t intr, val;
 
-	reg = milan_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
-	intr = zen_nbif_read(nbif, reg);
+	intrreg = milan_nbif_reg(nbif, D_NBIF_INTR_LINE_EN, 0);
+	intr = zen_nbif_read(nbif, intrreg);
+
 	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
 		smn_reg_t strapreg;
 		uint32_t strap;
 		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
 
-		/*
-		 * This indicates that we have a dummy function or similar. In
-		 * which case there's not much to do here, the system defaults
-		 * are generally what we want. XXX Kind of sort of. Not true
-		 * over time.
-		 */
-		if ((func->znf_flags & ZEN_NBIF_F_NO_CONFIG) != 0) {
-			continue;
-		}
-
 		strapreg = milan_nbif_func_reg(func, D_NBIF_FUNC_STRAP0);
 		strap = zen_nbif_func_read(func, strapreg);
 
-		if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
+		if (func->znf_type == ZEN_NBIF_T_DUMMY) {
+			continue;
+		} else if ((func->znf_flags & ZEN_NBIF_F_ENABLED) != 0) {
 			strap = NBIF_FUNC_STRAP0_SET_EXIST(strap, 1);
 			intr = NBIF_INTR_LINE_EN_SET_I(intr,
 			    func->znf_dev, func->znf_func, 1);
@@ -2679,22 +2706,113 @@ milan_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 		}
 
 		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = milan_nbif_func_reg(func, D_NBIF_FUNC_STRAP2);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP2_SET_ACS_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_ACS_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP2_SET_AER_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_AER_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = milan_nbif_func_reg(func, D_NBIF_FUNC_STRAP3);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP3_SET_PANF_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_PANF_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = milan_nbif_func_reg(func, D_NBIF_FUNC_STRAP4);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP4_SET_FLR_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_FLR_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
+
+		strapreg = milan_nbif_func_reg(func, D_NBIF_FUNC_STRAP7);
+		strap = zen_nbif_func_read(func, strapreg);
+		strap = NBIF_FUNC_STRAP7_SET_TPH_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_TPH_CPLR_EN) ? 1 : 0);
+		strap = NBIF_FUNC_STRAP7_SET_TPH_CPLR_EN(strap,
+		    (func->znf_flags & ZEN_NBIF_F_TPH_CPLR_EN) ? 1 : 0);
+		zen_nbif_func_write(func, strapreg, strap);
 	}
 
-	zen_nbif_write(nbif, reg, intr);
+	zen_nbif_write(nbif, intrreg, intr);
 
 	/*
 	 * Each nBIF has up to three devices on them, though not all of them
 	 * seem to be used. However, it's suggested that we enable completion
-	 * timeouts on all three device straps.
+	 * timeouts and TLP processing hints completer support on all of them,
+	 * and disable poisoned error log as non-fatal advisory.
 	 */
-	for (uint8_t devno = 0; devno < MILAN_NBIF_MAX_DEVS; devno++) {
-		smn_reg_t reg;
-		uint32_t val;
+	for (uint8_t devno = 0; devno < MILAN_NBIF_MAX_PORTS; devno++) {
+		reg = milan_nbif_reg(nbif, D_NBIF_PORT_STRAP0, devno);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP0_SET_AER_EN(val, 0);
+		val = NBIF_PORT_STRAP0_SET_ACS_EN(val, 0);
+		zen_nbif_write(nbif, reg, val);
+
+		reg = milan_nbif_reg(nbif, D_NBIF_PORT_STRAP2, devno);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP2_SET_PANF_EN(val, 0);
+		zen_nbif_write(nbif, reg, val);
 
 		reg = milan_nbif_reg(nbif, D_NBIF_PORT_STRAP3, devno);
 		val = zen_nbif_read(nbif, reg);
 		val = NBIF_PORT_STRAP3_SET_COMP_TO(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		reg = milan_nbif_reg(nbif, D_NBIF_PORT_STRAP6, devno);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP6_SET_TPH_CPLR_EN(val,
+		    NBIF_PORT_STRAP6_TPH_CPLR_SUP);
+		zen_nbif_write(nbif, reg, val);
+	}
+
+	/*
+	 * For the root port functions within nBIF, program the B/D/F values.
+	 */
+	ASSERT3U(iohcno, <, ARRAY_SIZE(milan_pcie_int_ports));
+	const zen_iohc_nbif_ports_t *ports = &milan_pcie_int_ports[iohcno];
+	for (uint8_t i = 0; i < MIN(ports->zinp_count, MILAN_NBIF_MAX_PORTS);
+	    i++) {
+		const zen_pcie_port_info_t *port = &ports->zinp_ports[i];
+
+		reg = milan_nbif_reg(nbif, D_NBIF_PORT_STRAP7, i);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PORT_STRAP7_SET_BUS(val,
+		    nbif->zn_ioms->zio_pci_busno);
+		val = NBIF_PORT_STRAP7_SET_DEV(val, port->zppi_dev);
+		val = NBIF_PORT_STRAP7_SET_FUNC(val, port->zppi_func);
+		zen_nbif_write(nbif, reg, val);
+	}
+
+	/*
+	 * One might expect that the multi-function enable should be set for
+	 * each multi-function device on an nBIF. The PPR is silent on the
+	 * subject however other AMD sources suggest that we enable this for
+	 * device 0 on nBIF 0, and for devices 0-3 on nBIF1, and so we do.
+	 */
+	if (nbif->zn_num < 2) {
+		reg = milan_nbif_reg(nbif, D_NBIF_PCIEP_STRAP_MISC, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PCIP_STRAP_MISC_MULTIFUN_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		reg = milan_nbif_reg(nbif, D_NBIF_PCIEP_STRAP_MISC_PORT, 0);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PCIP_STRAP_MISC_MULTIFUN_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+	}
+
+	if (nbif->zn_num == 1) {
+		reg = milan_nbif_reg(nbif, D_NBIF_PCIEP_STRAP_MISC_PORT, 1);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PCIP_STRAP_MISC_MULTIFUN_EN(val, 1);
+		zen_nbif_write(nbif, reg, val);
+
+		reg = milan_nbif_reg(nbif, D_NBIF_PCIEP_STRAP_MISC_PORT, 2);
+		val = zen_nbif_read(nbif, reg);
+		val = NBIF_PCIP_STRAP_MISC_MULTIFUN_EN(val, 1);
 		zen_nbif_write(nbif, reg, val);
 	}
 }

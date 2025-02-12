@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_GENOA_FABRIC_IMPL_H
@@ -113,6 +113,7 @@ extern void genoa_fabric_iohc_clock_gating(zen_ioms_t *);
 extern void genoa_fabric_nbif_clock_gating(zen_nbif_t *);
 extern void genoa_fabric_ioapic_clock_gating(zen_ioms_t *);
 extern void genoa_fabric_ioapic(zen_ioms_t *);
+extern void genoa_fabric_nbif_init(zen_nbif_t *);
 extern void genoa_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void genoa_fabric_nbif_bridges(zen_ioms_t *);
 extern void genoa_fabric_pcie(zen_fabric_t *);

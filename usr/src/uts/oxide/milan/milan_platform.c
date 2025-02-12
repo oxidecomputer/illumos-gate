@@ -94,6 +94,7 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_nbif_clock_gating = milan_fabric_nbif_clock_gating,
 	.zfo_ioapic_clock_gating = milan_fabric_ioapic_clock_gating,
 	.zfo_ioapic = milan_fabric_ioapic,
+	.zfo_nbif_init = milan_fabric_nbif_init,
 	.zfo_nbif_dev_straps = milan_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = milan_fabric_nbif_bridges,
 	.zfo_pcie = milan_fabric_pcie,
