@@ -106,14 +106,14 @@ typedef enum {
 
 /*
  * This next two enumerations indicate the kind of i2c devices that might be
- * downstream. The first is for gpio expanders and the second is for I2C
+ * downstream. The first is for I2C GPIO expanders and the second is for I2C
  * switches.
  */
 typedef enum {
-	OXIO_I2C_GPIO_T_PCA9539,
-	OXIO_I2C_GPIO_T_PCA9535,
-	OXIO_I2C_GPIO_T_PCA9506
-} oxio_i2c_gpio_type_t;
+	OXIO_I2C_GPIO_EXP_T_PCA9539,
+	OXIO_I2C_GPIO_EXP_T_PCA9535,
+	OXIO_I2C_GPIO_EXP_T_PCA9506
+} oxio_i2c_gpio_expander_type_t;
 
 typedef enum {
 	OXIO_I2C_SWITCH_T_NONE,
@@ -201,7 +201,7 @@ typedef struct {
  * indexed.
  */
 typedef struct {
-	oxio_i2c_gpio_type_t oug_type;
+	oxio_i2c_gpio_expander_type_t oug_type;
 	uint8_t oug_addr;
 	uint8_t oug_ifdet_byte;
 	uint8_t oug_ifdet_bit;
@@ -246,7 +246,7 @@ typedef struct {
 	 * form to make it easier to map to a schematic.
 	 */
 	oxio_i2c_switch_t otg_switch;
-	oxio_i2c_gpio_type_t otg_exp_type;
+	oxio_i2c_gpio_expander_type_t otg_exp_type;
 	/*
 	 * This is the full 7-bit i2c address of the gpio expander. Note,
 	 * traditional hotplug generally only allows for a few of the address

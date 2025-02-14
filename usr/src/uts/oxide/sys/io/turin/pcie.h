@@ -2127,6 +2127,30 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 
 /*
+ * The following are setters for the individual bit fields in the
+ * PRIV_SURP_DIS_VEC (bits 0..7) field of the common AER mask register.
+ *
+ * These bits specifiy conditions where surprise down detection is masked.  The
+ * masking conditions for when these bits are set are:
+ *
+ * Bit 7: (reserved; no setter provided)
+ * Bit 6: (reserved; no setter provided)
+ * Bit 5: Presence Detect state is set, meaning "present".
+ * Bit 4: DPC is triggered
+ * Bit 3: Both Hotplug Capable and Power Controller Control are set.
+ *        Note that Power Controller Control set means "off".
+ * Bit 2: both Hotplug Capable and Hotplug Surprise are set.
+ * Bit 1: PME_TURN_OFF or PME_TO_ACK handshake did not complete.
+ * Bit 0: PME_TURN_OFF was sent.
+ */
+#define	PCIE_CORE_COMMON_AER_MASK_SET_SD_PD(r, v)	bitset32(r, 5, 5, v)
+#define	PCIE_CORE_COMMON_AER_MASK_SET_SD_DPC(r, v)	bitset32(r, 4, 4, v)
+#define	PCIE_CORE_COMMON_AER_MASK_SET_SD_HP_OFF(r, v)	bitset32(r, 3, 3, v)
+#define	PCIE_CORE_COMMON_AER_MASK_SET_SD_HP_SURP(r, v)	bitset32(r, 2, 2, v)
+#define	PCIE_CORE_COMMON_AER_MASK_SET_SD_PME_HS(r, v)	bitset32(r, 1, 1, v)
+#define	PCIE_CORE_COMMON_AER_MASK_SET_SD_PME_OFF(r, v)	bitset32(r, 0, 0, v)
+
+/*
  * PCIECORE::PCIE_CNTL2 - unused but captured for debugging.
  */
 /*CSTYLED*/
@@ -4331,33 +4355,6 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x3ffc	\
 }
-
-/*
- * The following definitions are all in normal PCI configuration space. These
- * represent the fixed offsets into capabilities that normally would be
- * something that one has to walk and find in the device. We opt to use the
- * fixed offsets here because we only care about one specific device, the
- * bridges here. Note, the actual bit definitions are not included here as they
- * are already present in sys/pcie.h.
- */
-
-/*
- * PCIERCCFG::PCIE_CAP. This is the core PCIe capability register offset. This
- * is related to the PCIE_PCIECAP, but already adjusted for the fixed capability
- * offset.
- */
-#define	TURIN_BRIDGE_R_PCI_PCIE_CAP	0x5a
-
-/*
- * PCIERCCFG::SLOT_CAP, PCIERCCFG::SLOT_CNTL, PCIERCCFG::SLOT_STATUS. This is
- * the PCIe capability's slot capability, control, and status registers
- * respectively.  This is the illumos PCIE_SLOTCAP, PCIE_SLOTCTL, and
- * PCIE_SLOTSTS, but already adjusted for the capability offset.
- */
-#define	TURIN_BRIDGE_R_PCI_SLOT_CAP	0x6c
-#define	TURIN_BRIDGE_R_PCI_SLOT_CTL	0x70
-#define	TURIN_BRIDGE_R_PCI_SLOT_STS	0x72
-#define	TURIN_BRIDGE_R_PCI_LINK_CTL2	0x88
 
 #ifdef __cplusplus
 }

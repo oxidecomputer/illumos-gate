@@ -26,18 +26,6 @@
 #include <sys/io/zen/platform_impl.h>
 
 /*
- * These OXIO routines are for the OXIO subsystem implementations and can be
- * removed from this header once we finish implementing hotplug logic and
- * determining how we want to deal with Milan-specific PCIe values in the DXIO
- * structures. We leave them out of a header file to discourage additional
- * proliferation of their use.
- */
-extern void oxio_eng_to_lanes(const oxio_engine_t *, uint8_t *, uint8_t *,
-    bool *);
-extern smu_exp_type_t oxio_gpio_to_smu(oxio_i2c_gpio_type_t);
-
-
-/*
  * Perform a translation between an Oxide DXIO engine to the Milan-specific DXIO
  * firmware structure.
  */
@@ -178,112 +166,12 @@ oxio_eng_to_dxio(const oxio_engine_t *oxio, zen_dxio_fw_engine_t *dxio)
 }
 
 /*
- * The remaining routines in this file are related to hotplug. AS such, when we
- * add traditional hotplug support beyond Milan and move the hotplug structures
- * out of a Milan-specific directory, this logic will all move to zen_oxio.c.
- */
-
-/*
- * The SMU uses a 5-bit index to determine the meaning of an i2c switch in the
- * system. There are values defined in the range [0, 16]. This table encodes the
- * corresponding values in the oxio_i2c_switch_t to the SMU version.
- */
-static const oxio_i2c_switch_t oxio_i2c_switch_map[17] = {
-	[0] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x0 },
-	[1] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x1 },
-	[2] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x2 },
-	[3] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x3 },
-	[4] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x0 },
-	[5] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x0 },
-	[6] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x0 },
-	[7] = { OXIO_I2C_SWITCH_T_NONE, 0x00, 0x0 },
-	[8] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x3 },
-	[9] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x0 },
-	[10] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x1 },
-	[11] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x2 },
-	[12] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x3 },
-	[13] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x0 },
-	[14] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x1 },
-	[15] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x2 },
-	[16] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x3 },
-};
-
-static uint8_t
-oxio_switch_to_smu(const oxio_i2c_switch_t *i2c)
-{
-	for (size_t i = 0; i < ARRAY_SIZE(oxio_i2c_switch_map); i++) {
-		const oxio_i2c_switch_t *comp = &oxio_i2c_switch_map[i];
-		if (i2c->ois_type == comp->ois_type &&
-		    i2c->ois_addr == comp->ois_addr &&
-		    i2c->ois_select == comp->ois_select) {
-			return (i);
-		}
-	}
-
-	panic("encountered unmappable i2c i2c configuration: "
-	    "type/address/select: 0x%x/0x%x/0x%x", i2c->ois_type,
-	    i2c->ois_addr, i2c->ois_select);
-}
-
-typedef struct {
-	oxio_pcie_slot_cap_t	ops_oxio;
-	smu_expa_bits_t		ops_expa;
-	smu_expb_bits_t		ops_expb;
-} oxio_pcie_smu_map_t;
-
-static const oxio_pcie_smu_map_t oxio_pcie_cap_map[] = {
-	{ OXIO_PCIE_CAP_OOB_PRSNT, SMU_EXPA_PRSNT, SMU_EXPB_PRSNT },
-	{ OXIO_PCIE_CAP_PWREN, SMU_EXPA_PWREN, SMU_EXPB_PWREN },
-	{ OXIO_PCIE_CAP_PWRFLT, SMU_EXPA_PWRFLT, SMU_EXPB_PWRFLT },
-	{ OXIO_PCIE_CAP_ATTNLED, SMU_EXPA_ATTNLED, SMU_EXPB_ATTNLED },
-	{ OXIO_PCIE_CAP_PWRLED, SMU_EXPA_PWRLED, SMU_EXPB_PWRLED },
-	{ OXIO_PCIE_CAP_EMIL, SMU_EXPA_EMIL, SMU_EXPB_EMIL },
-	{ OXIO_PCIE_CAP_EMILS, SMU_EXPA_EMILS, SMU_EXPB_EMILS },
-	{ OXIO_PCIE_CAP_ATTNSW, SMU_EXPA_ATTNSW, SMU_EXPB_ATTNSW },
-};
-
-/*
- * Translate the corresponding capabilities format to one that is used by the
- * SMU. Note, that Enterprise SSD based devices have a mask that doesn't
- * correspond to standard functions and instead is related to things like
- * DualPortEn# and IfDet#. There are no features that are allowed to be set by
- * Enterprise SSD devices, therefore we ensure that this is set to 0.
- */
-static uint8_t
-oxio_pcie_cap_to_mask(const oxio_engine_t *oxio)
-{
-	const oxio_pcie_slot_cap_t cap = oxio->oe_hp_trad.ohp_cap;
-	uint8_t mask = 0;
-
-	VERIFY3U(oxio->oe_type, ==, OXIO_ENGINE_T_PCIE);
-	if (oxio->oe_hp_type == OXIO_HOTPLUG_T_ENTSSD) {
-		VERIFY0(oxio->oe_hp_trad.ohp_cap);
-		return (mask);
-	}
-
-	for (size_t i = 0; i < ARRAY_SIZE(oxio_pcie_cap_map); i++) {
-		if ((cap & oxio_pcie_cap_map[i].ops_oxio) != 0)
-			continue;
-
-		if (oxio->oe_hp_type == OXIO_HOTPLUG_T_EXP_A) {
-			mask |= oxio_pcie_cap_map[i].ops_expa;
-		} else {
-			ASSERT3U(oxio->oe_hp_type, ==, OXIO_HOTPLUG_T_EXP_B);
-			mask |= oxio_pcie_cap_map[i].ops_expb;
-		}
-	}
-
-	return (mask);
-}
-
-/*
  * We have been given an engine that supports PCIe hotplug that we need to
  * transform into a form that the SMU can consume.
  */
 void
 oxio_port_to_smu_hp(const zen_pcie_port_t *port, smu_hotplug_table_t *smu)
 {
-	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
 	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	const oxio_engine_t *oxio = port->zpp_oxio;
 	const zen_pcie_core_t *core = port->zpp_core;
@@ -297,27 +185,15 @@ oxio_port_to_smu_hp(const zen_pcie_port_t *port, smu_hotplug_table_t *smu)
 	VERIFY((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) != 0);
 	VERIFY0(port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN);
 
-	/*
-	 * Version 3 has a slightly differet data layout than the current
-	 * supported version 2 format. While the reset descriptor is the same
-	 * and the field meanings are generally the same, the actual order of
-	 * the fields changed slightly in the map structue. The function
-	 * descriptor added a new field.
-	 */
-	if (consts->zpc_hp_vers != ZEN_HP_VERS_2) {
-		panic("cannot translate OXIO engine to unsupported SMU "
-		    "hotplug version %u", consts->zpc_hp_vers);
-	}
-
 	switch (oxio->oe_hp_type) {
 	case OXIO_HOTPLUG_T_EXP_A:
-		map->shm_format = ZEN_HP_EXPRESS_MODULE_A;
+		map->shm_format = ZEN_HP_FW_EXPRESS_MODULE_A;
 		break;
 	case OXIO_HOTPLUG_T_EXP_B:
-		map->shm_format = ZEN_HP_EXPRESS_MODULE_B;
+		map->shm_format = ZEN_HP_FW_EXPRESS_MODULE_B;
 		break;
 	case OXIO_HOTPLUG_T_ENTSSD:
-		map->shm_format = ZEN_HP_ENTERPRISE_SSD;
+		map->shm_format = ZEN_HP_FW_ENTERPRISE_SSD;
 		break;
 	default:
 		panic("cannot map unsupported hotplug type 0x%x on %s",
@@ -328,7 +204,7 @@ oxio_port_to_smu_hp(const zen_pcie_port_t *port, smu_hotplug_table_t *smu)
 	map->shm_apu = 0;
 	map->shm_die_id = core->zpc_ioms->zio_iodie->zi_soc->zs_num;
 	map->shm_port_id = port->zpp_portno;
-	map->shm_tile_id = ops->zfo_tile_smu_hp_id(oxio);
+	map->shm_tile_id = ops->zfo_tile_fw_hp_id(oxio);
 	map->shm_bridge = core->zpc_coreno * MILAN_PCIE_CORE_MAX_PORTS +
 	    port->zpp_portno;
 
@@ -348,8 +224,8 @@ oxio_port_to_smu_hp(const zen_pcie_port_t *port, smu_hotplug_table_t *smu)
 	VERIFY0(bitx8(gpio->otg_addr, 7, 7));
 	VERIFY3U(bitx8(gpio->otg_addr, 6, 5), ==, 1);
 	func->shf_i2c_daddr = bitx8(gpio->otg_addr, 4, 0);
-	func->shf_i2c_dtype = oxio_gpio_to_smu(gpio->otg_exp_type);
-	func->shf_i2c_bus = oxio_switch_to_smu(&gpio->otg_switch);
+	func->shf_i2c_dtype = oxio_gpio_expander_to_fw(gpio->otg_exp_type);
+	func->shf_i2c_bus = oxio_switch_to_fw(&gpio->otg_switch);
 	func->shf_mask = oxio_pcie_cap_to_mask(oxio);
 
 	if ((oxio->oe_hp_flags & OXIO_HP_F_RESET_VALID) == 0) {
@@ -366,7 +242,6 @@ oxio_port_to_smu_hp(const zen_pcie_port_t *port, smu_hotplug_table_t *smu)
 	VERIFY0(bitx8(gpio->otg_addr, 7, 7));
 	VERIFY3U(bitx8(gpio->otg_addr, 6, 5), ==, 1);
 	reset->shr_i2c_daddr = bitx8(gpio->otg_addr, 4, 0);
-	reset->shr_i2c_dtype = oxio_gpio_to_smu(gpio->otg_exp_type);
-	reset->shr_i2c_bus = oxio_switch_to_smu(&gpio->otg_switch);
-
+	reset->shr_i2c_dtype = oxio_gpio_expander_to_fw(gpio->otg_exp_type);
+	reset->shr_i2c_bus = oxio_switch_to_fw(&gpio->otg_switch);
 }

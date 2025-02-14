@@ -90,7 +90,6 @@ struct milan_soc {
 };
 
 struct milan_fabric {
-	milan_hotplug_t	mf_hotplug;
 	milan_soc_t	mf_socs[MILAN_FABRIC_MAX_SOCS];
 };
 
@@ -141,6 +140,19 @@ extern void milan_fabric_nbif_init(zen_nbif_t *);
 extern void milan_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void milan_fabric_nbif_bridges(zen_ioms_t *);
 extern void milan_fabric_pcie(zen_fabric_t *);
+extern void milan_fabric_init_pcie_core(zen_pcie_core_t *);
+extern void milan_fabric_init_bridge(zen_pcie_port_t *);
+
+extern void milan_smu_hotplug_port_data_init(zen_pcie_port_t *,
+    zen_hotplug_table_t *);
+extern bool milan_fabric_hotplug_smu_init(zen_iodie_t *);
+extern void milan_fabric_hotplug_core_init(zen_pcie_core_t *);
+extern void milan_fabric_hotplug_port_init(zen_pcie_port_t *);
+extern void milan_fabric_hotplug_port_unblock_training(zen_pcie_port_t *);
+extern bool milan_fabric_set_hotplug_flags(zen_iodie_t *);
+extern bool milan_fabric_hotplug_start(zen_iodie_t *);
+
+extern bool milan_fabric_pcie_hotplug_init(zen_fabric_t *);
 
 extern void milan_iohc_enable_nmi(zen_ioms_t *);
 extern void milan_iohc_nmi_eoi(zen_ioms_t *);

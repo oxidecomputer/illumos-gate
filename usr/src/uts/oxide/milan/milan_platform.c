@@ -98,6 +98,16 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_nbif_dev_straps = milan_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = milan_fabric_nbif_bridges,
 	.zfo_pcie = milan_fabric_pcie,
+	.zfo_init_pcie_core = milan_fabric_init_pcie_core,
+	.zfo_init_bridge = milan_fabric_init_bridge,
+	.zfo_pcie_hotplug_port_data_init = milan_smu_hotplug_port_data_init,
+	.zfo_pcie_hotplug_fw_init = milan_fabric_hotplug_smu_init,
+	.zfo_pcie_hotplug_core_init = milan_fabric_hotplug_core_init,
+	.zfo_pcie_hotplug_port_init = milan_fabric_hotplug_port_init,
+	.zfo_pcie_hotplug_port_unblock_training =
+	    milan_fabric_hotplug_port_unblock_training,
+	.zfo_pcie_hotplug_set_flags = milan_fabric_set_hotplug_flags,
+	.zfo_pcie_hotplug_start = milan_fabric_hotplug_start,
 
 	.zfo_iohc_enable_nmi = milan_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = milan_iohc_nmi_eoi,
@@ -120,7 +130,7 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_pcie_port_reg = milan_pcie_port_reg,
 	.zfo_pcie_dbg_signal = milan_pcie_dbg_signal,
 
-	.zfo_tile_smu_hp_id = milan_tile_smu_hp_id
+	.zfo_tile_fw_hp_id = milan_tile_smu_hp_id
 };
 
 static const zen_hack_ops_t milan_hack_ops = {
@@ -159,8 +169,8 @@ const zen_platform_t milan_platform = {
 		.zpc_pcie_core_dbg_nregs = &milan_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = milan_pcie_port_dbg_regs,
 		.zpc_pcie_port_dbg_nregs = &milan_pcie_port_dbg_nregs,
+		.zpc_pcie_core_max_ports = MILAN_PCIE_CORE_MAX_PORTS,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_4,
-		.zpc_hp_vers = ZEN_HP_VERS_2
 	},
 	.zp_ccx_ops = &milan_ccx_ops,
 	.zp_fabric_ops = &milan_fabric_ops,

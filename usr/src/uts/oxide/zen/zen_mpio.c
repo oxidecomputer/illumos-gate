@@ -84,7 +84,7 @@
 #include <sys/io/zen/hacks.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/fabric_impl.h>
-#include <sys/io/zen/hotplug_impl.h>
+#include <sys/io/zen/hotplug.h>
 #include <sys/io/zen/platform_impl.h>
 #include <sys/io/zen/ruby_dxio_data.h>
 #include <sys/io/zen/smn.h>
@@ -1060,51 +1060,18 @@ zen_mpio_init_mapping(zen_iodie_t *iodie, void *arg)
 }
 
 static int
-zen_mpio_pcie_core_op(zen_pcie_core_t *port, void *arg)
-{
-	void (*callback)(zen_pcie_core_t *) = arg;
-
-	VERIFY3P(callback, !=, NULL);
-	(callback)(port);
-
-	return (0);
-}
-
-static int
-zen_mpio_iodie_op(zen_iodie_t *iodie, void *arg)
-{
-	void (*callback)(zen_iodie_t *) = arg;
-
-	VERIFY3P(callback, !=, NULL);
-	(callback)(iodie);
-
-	return (0);
-}
-
-static int
-zen_mpio_pcie_port_op(zen_pcie_port_t *port, void *arg)
-{
-	void (*callback)(zen_pcie_port_t *) = arg;
-
-	VERIFY3P(callback, !=, NULL);
-	(callback)(port);
-
-	return (0);
-}
-
-static int
 zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
 {
 	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 	zen_fabric_t *fabric = iodie->zi_soc->zs_fabric;
 
 	(void) zen_fabric_walk_pcie_core(iodie->zi_soc->zs_fabric,
-	    zen_mpio_pcie_core_op, fops->zfo_init_pcie_straps);
+	    zen_fabric_pcie_core_op, fops->zfo_init_pcie_straps);
 	cmn_err(CE_CONT, "?Socket %u MPIO: Wrote PCIe straps\n",
 	    iodie->zi_soc->zs_num);
 
 	(void) zen_fabric_walk_pcie_port(iodie->zi_soc->zs_fabric,
-	    zen_mpio_pcie_port_op, fops->zfo_init_pcie_port);
+	    zen_fabric_pcie_port_op, fops->zfo_init_pcie_port);
 	cmn_err(CE_CONT, "?Socket %u MPIO: Init PCIe port registers\n",
 	    iodie->zi_soc->zs_num);
 
@@ -1117,7 +1084,7 @@ zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
 	zen_pcie_populate_dbg(fabric, ZPCS_SM_CONFIGURED, iodie->zi_node_id);
 
 	(void) zen_fabric_walk_pcie_port(iodie->zi_soc->zs_fabric,
-	    zen_mpio_pcie_port_op, fops->zfo_init_pcie_port_after_reconfig);
+	    zen_fabric_pcie_port_op, fops->zfo_init_pcie_port_after_reconfig);
 	cmn_err(CE_CONT,
 	    "?Socket %u MPIO: Init PCIe port registers post reconfig\n",
 	    iodie->zi_soc->zs_num);
@@ -1163,9 +1130,7 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 {
 	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 
-	zen_pcie_populate_dbg(fabric, ZPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
-
-	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
+	zen_fabric_walk_pcie_port(fabric, zen_fabric_pcie_port_op,
 	    fops->zfo_pcie_port_unhide_bridge);
 
 	if (zen_fabric_walk_iodie(fabric, zen_mpio_init_data, NULL) != 0) {
@@ -1173,7 +1138,7 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 		return;
 	}
 
-	if (zen_fabric_walk_iodie(fabric, zen_mpio_iodie_op,
+	if (zen_fabric_walk_iodie(fabric, zen_fabric_iodie_op,
 	    zen_mpio_init_global_config) != 0) {
 		cmn_err(CE_WARN, "MPIO Initialization failed: lasciate ogni "
 		    "speranza voi che pcie");
@@ -1210,21 +1175,133 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	 * Now that training is complete, hide all PCIe bridges that do not
 	 * have an attached device and are not hotplug capable.
 	 */
-	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
+	zen_fabric_walk_pcie_port(fabric, zen_fabric_pcie_port_op,
 	    fops->zfo_pcie_port_hide_bridge);
+}
+
+/*
+ * We have been given a zen_pcie_port_t for a port that supports PCIe hotplug.
+ * The zen_pcie_port_t contains a pointer to the Oxide-generic OXIO engine data
+ * needed to configure PCIe hotplug for the port.  This function translates that
+ * into the internal format expected by MPIO.
+ *
+ * Note that there is some unfortunate duplication in the pre-MPIO, SMU-centric
+ * code used for Milan.  Here, the structures sent to MPIO are almost exactly
+ * the same as the structures sent to the SMU; the mapping structure is slightly
+ * different, function is the same as far as the bits we fill in, and reset is
+ * exactly the same.  We should find some better way to combine these to
+ * eliminate duplication wherever we can.
+ */
+static void
+zen_mpio_oxio_to_port_hp(const zen_pcie_port_t *port,
+    zen_mpio_hotplug_table_t *hp)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
+	const oxio_engine_t *oxio = port->zpp_oxio;
+	const zen_pcie_core_t *core = port->zpp_core;
+	uint8_t slot = port->zpp_hp_slotno;
+	zen_mpio_hotplug_map_t *map = &hp->zmht_map[slot];
+	zen_mpio_hotplug_function_t *func = &hp->zmht_func[slot];
+	zen_mpio_hotplug_reset_t *reset = &hp->zmht_reset[slot];
+	const oxio_trad_gpio_t *gpio;
+
+	VERIFY((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0);
+	VERIFY((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) != 0);
+	VERIFY0(port->zpp_flags & ZEN_PCIE_PORT_F_BRIDGE_HIDDEN);
+
+	switch (oxio->oe_hp_type) {
+	case OXIO_HOTPLUG_T_EXP_A:
+		map->zmhm_format = ZEN_HP_FW_EXPRESS_MODULE_A;
+		break;
+	case OXIO_HOTPLUG_T_EXP_B:
+		map->zmhm_format = ZEN_HP_FW_EXPRESS_MODULE_B;
+		break;
+	case OXIO_HOTPLUG_T_ENTSSD:
+		map->zmhm_format = ZEN_HP_FW_ENTERPRISE_SSD;
+		break;
+	default:
+		panic("cannot map unsupported hotplug type 0x%x on %s",
+		    oxio->oe_hp_type, oxio->oe_name);
+	}
+	map->zmhm_active = 1;
+
+	map->zmhm_apu = 0;
+	map->zmhm_die_id = core->zpc_ioms->zio_iodie->zi_soc->zs_num;
+	map->zmhm_port_id = port->zpp_portno;
+	map->zmhm_tile_id = ops->zfo_tile_fw_hp_id(oxio);
+	map->zmhm_bridge = consts->zpc_pcie_core_max_ports * core->zpc_coreno +
+	    port->zpp_portno;
+
+	gpio = &oxio->oe_hp_trad.ohp_dev;
+	VERIFY3U(gpio->otg_byte, <, 8);
+	VERIFY3U(gpio->otg_bit, <, 8);
+	func->zmhf_i2c_bit = gpio->otg_bit;
+	func->zmhf_i2c_byte = gpio->otg_byte;
 
 	/*
-	 * Now that we have successfully trained devices, it's time to go
-	 * through and set up the bridges so that way we can actual handle them
-	 * aborting transactions and related.
+	 * The SMU only accepts a 5-bit address and assumes that the upper two
+	 * bits are fixed based upon the device type. The most significant bit
+	 * cannot be used. For the various supported PCA devices, the upper two
+	 * bits must be 0b01 (7-bit 0x20).
 	 */
-	zen_fabric_walk_pcie_core(fabric, zen_mpio_pcie_core_op,
-	    fops->zfo_init_pcie_core);
-	zen_fabric_walk_pcie_port(fabric, zen_mpio_pcie_port_op,
-	    fops->zfo_init_bridge);
+	VERIFY0(bitx8(gpio->otg_addr, 7, 7));
+	VERIFY3U(bitx8(gpio->otg_addr, 6, 5), ==, 1);
+	func->zmhf_i2c_daddr = bitx8(gpio->otg_addr, 4, 0);
+	func->zmhf_i2c_dtype = oxio_gpio_expander_to_fw(gpio->otg_exp_type);
+	func->zmhf_i2c_bus = oxio_switch_to_fw(&gpio->otg_switch);
+	func->zmhf_mask = oxio_pcie_cap_to_mask(oxio);
 
+	if ((oxio->oe_hp_flags & OXIO_HP_F_RESET_VALID) == 0) {
+		map->zmhm_rst_valid = 0;
+		return;
+	}
+
+	map->zmhm_rst_valid = 1;
+	gpio = &oxio->oe_hp_trad.ohp_reset;
+	VERIFY3U(gpio->otg_byte, <, 8);
+	VERIFY3U(gpio->otg_bit, <, 8);
+	reset->zmhr_i2c_gpio_byte = gpio->otg_byte;
+	reset->zmhr_i2c_reset = 1 << gpio->otg_bit;
+	VERIFY0(bitx8(gpio->otg_addr, 7, 7));
+	VERIFY3U(bitx8(gpio->otg_addr, 6, 5), ==, 1);
+	reset->zmhr_i2c_daddr = bitx8(gpio->otg_addr, 4, 0);
+	reset->zmhr_i2c_dtype = oxio_gpio_expander_to_fw(gpio->otg_exp_type);
+	reset->zmhr_i2c_bus = oxio_switch_to_fw(&gpio->otg_switch);
+}
+
+void
+zen_mpio_hotplug_port_data_init(zen_pcie_port_t *port, zen_hotplug_table_t *arg)
+{
+	ASSERT3U(port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG, !=, 0);
+	zen_mpio_oxio_to_port_hp(port, (zen_mpio_hotplug_table_t *)arg);
+}
+
+bool
+zen_mpio_init_hotplug_fw(zen_iodie_t *iodie)
+{
 	/*
-	 * XXX This is a terrible hack. We should really fix pci_boot.c.
+	 * These represent the addresses that we need to program in MPIO.
+	 * Strictly speaking, the lower 8-bits represents the addresses that the
+	 * firmware seems to expect. The upper byte is a bit more of a mystery;
+	 * however, it does correspond to the expected values that AMD roughly
+	 * documents for 5-bit bus segment value which is the zmhf_i2c_bus
+	 * member of the zen_mpio_hotplug_function_t.
 	 */
-	zen_fabric_hack_bridges(fabric);
+	const uint32_t i2c_addrs[4] = { 0x70, 0x171, 0x272, 0x373 };
+
+	for (uint_t i = 0; i < ARRAY_SIZE(i2c_addrs); i++) {
+		if (!zen_mpio_rpc_set_i2c_switch_addr(iodie, i2c_addrs[i])) {
+			return (false);
+		}
+	}
+
+	return (zen_mpio_send_hotplug_table(iodie,
+	    iodie->zi_soc->zs_fabric->zf_hp_pa));
+}
+
+bool
+zen_mpio_null_set_hotplug_flags(zen_iodie_t *iodie)
+{
+	return (true);
 }

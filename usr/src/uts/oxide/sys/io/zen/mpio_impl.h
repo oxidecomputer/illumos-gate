@@ -23,9 +23,9 @@
 #define	_SYS_IO_ZEN_MPIO_IMPL_H
 
 #include <sys/types.h>
-#include <sys/amdzen/smn.h>
+#include <sys/debug.h>
+#include <sys/stddef.h>
 
-#include <sys/io/zen/fabric.h>
 #include <sys/io/zen/fabric_limits.h>
 #include <sys/io/zen/mpio.h>
 #include <sys/io/zen/oxio.h>
@@ -41,10 +41,14 @@ extern "C" {
  * pointers to these types only as opaque handles.
  */
 typedef struct zen_iodie zen_iodie_t;
+typedef struct zen_fabric zen_fabric_t;
+typedef union zen_hotplug_table zen_hotplug_table_t;
 typedef struct zen_mpio_ask_port zen_mpio_ask_port_t;
 typedef struct zen_mpio_ask zen_mpio_ask_t;
 typedef struct zen_mpio_ubm_hfc_port zen_mpio_ubm_hfc_port_t;
 typedef struct zen_mpio_ext_attrs zen_mpio_ext_attrs_t;
+typedef struct zen_pcie_core zen_pcie_core_t;
+typedef struct zen_pcie_port zen_pcie_port_t;
 
 /*
  * MPIO RPC result codes.  These incorporate both the responses returned from
@@ -145,7 +149,7 @@ typedef struct zen_mpio_ask {
 } zen_mpio_ask_t;
 #pragma	pack()	/* pragma pack(1) */
 
-CTASSERT(sizeof (zen_mpio_ask_t) == \
+CTASSERT(sizeof (zen_mpio_ask_t) ==
     (sizeof (zen_mpio_ask_port_t) * ZEN_MPIO_ASK_MAX_PORTS));
 
 /*
@@ -174,6 +178,10 @@ extern bool zen_mpio_send_hotplug_table(zen_iodie_t *, uint64_t);
 extern bool zen_mpio_rpc_hotplug_flags(zen_iodie_t *, uint32_t);
 extern bool zen_mpio_rpc_start_hotplug(zen_iodie_t *, uint32_t);
 extern bool zen_mpio_rpc_set_i2c_switch_addr(zen_iodie_t *, uint8_t);
+extern bool zen_mpio_init_hotplug_fw(zen_iodie_t *);
+extern bool zen_mpio_null_set_hotplug_flags(zen_iodie_t *);
+extern void zen_mpio_hotplug_port_data_init(zen_pcie_port_t *,
+    zen_hotplug_table_t *);
 
 #ifdef __cplusplus
 }

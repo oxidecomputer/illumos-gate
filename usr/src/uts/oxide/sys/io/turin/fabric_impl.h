@@ -26,6 +26,7 @@
 #include <sys/stdbool.h>
 #include <sys/x86_archext.h>
 #include <sys/io/zen/mpio_impl.h>
+#include <sys/io/zen/oxio.h>
 #include <sys/io/turin/ccx_impl.h>
 #include <sys/io/turin/nbif_impl.h>
 #include <sys/io/turin/pcie_impl.h>
@@ -134,6 +135,11 @@ extern void turin_fabric_ioapic(zen_ioms_t *);
 extern void turin_fabric_nbif_init(zen_nbif_t *);
 extern void turin_fabric_nbif_dev_straps(zen_nbif_t *);
 extern void turin_fabric_nbif_bridges(zen_ioms_t *);
+extern uint8_t turin_fabric_hotplug_tile_id(const oxio_engine_t *);
+extern void turin_fabric_hotplug_core_init(zen_pcie_core_t *);
+extern void turin_fabric_hotplug_port_init(zen_pcie_port_t *);
+extern void turin_fabric_hotplug_port_unblock_training(zen_pcie_port_t *);
+extern bool turin_fabric_hotplug_start(zen_iodie_t *);
 extern void turin_fabric_pcie(zen_fabric_t *);
 extern void turin_fabric_hide_bridge(zen_pcie_port_t *);
 extern void turin_fabric_unhide_bridge(zen_pcie_port_t *);

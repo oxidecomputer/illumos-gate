@@ -30,8 +30,8 @@
 
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/dxio_impl.h>
-#include <sys/io/zen/hotplug_impl.h>
-#include <sys/io/zen/pcie_impl.h>
+#include <sys/io/zen/hotplug.h>
+#include <sys/io/zen/pcie.h>
 #include <sys/io/zen/oxio.h>
 
 #ifdef	__cplusplus

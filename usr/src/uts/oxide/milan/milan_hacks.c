@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -34,12 +34,11 @@
  */
 
 /*
- * This is a total hack. Unfortunately the SMU relies on x86 software to
- * actually set the i2c clock up to something expected for it. Temporarily do
- * this the max power way.  We set all the defined fields of the control
- * register, preserving only those that are reserved.
+ * Unfortunately the SMU relies on x86 software to set up the i2c clock.  Do
+ * this the max power way: we set all the fields that are defined to be set at
+ * reset on any of our uarchs to the values that we expect.
  */
-bool
+void
 milan_fixup_i2c_clock(void)
 {
 	mmio_reg_block_t fch_i2c0 = fch_i2c_mmio_block(0);
@@ -60,8 +59,6 @@ milan_fixup_i2c_clock(void)
 	mmio_reg_write(reg, val);
 
 	mmio_reg_block_unmap(&fch_i2c0);
-
-	return (true);
 }
 
 /*

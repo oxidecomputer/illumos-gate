@@ -30,7 +30,6 @@
 #include <sys/amdzen/smn.h>
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric_impl.h>
-#include <sys/io/zen/hotplug_impl.h>
 #include <sys/io/zen/nbif_impl.h>
 #include <sys/io/zen/oxio.h>
 #include <sys/io/zen/ras_impl.h>
@@ -281,6 +280,20 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_init_pcie_port_after_reconfig)(zen_pcie_port_t *);
 
 	/*
+	 * Microarchitecture specific entries for hotplug initialization and
+	 * start.
+	 */
+	void		(*zfo_pcie_hotplug_port_data_init)(zen_pcie_port_t *,
+	    zen_hotplug_table_t *);
+	bool		(*zfo_pcie_hotplug_fw_init)(zen_iodie_t *);
+	void		(*zfo_pcie_hotplug_core_init)(zen_pcie_core_t *);
+	void		(*zfo_pcie_hotplug_port_init)(zen_pcie_port_t *);
+	void		(*zfo_pcie_hotplug_port_unblock_training)(
+	    zen_pcie_port_t *);
+	bool		(*zfo_pcie_hotplug_set_flags)(zen_iodie_t *);
+	bool		(*zfo_pcie_hotplug_start)(zen_iodie_t *);
+
+	/*
 	 * Initializes PCIe straps on the given PCIe core and its ports.
 	 */
 	void		(*zfo_init_pcie_straps)(zen_pcie_core_t *);
@@ -294,10 +307,10 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_report_dxio_fw_version)(const zen_iodie_t *);
 
 	/*
-	 * Determine the numeric value that the SMU uses to identify this tile
-	 * for the purposes of traditional hotplug.
+	 * Maps the OXIO tile ID identifying this tile to the value used by
+	 * firmware for traditional hotplug.
 	 */
-	uint8_t		(*zfo_tile_smu_hp_id)(const oxio_engine_t *);
+	uint8_t		(*zfo_tile_fw_hp_id)(const oxio_engine_t *);
 } zen_fabric_ops_t;
 
 typedef struct zen_hack_ops {
@@ -463,6 +476,11 @@ typedef struct zen_platform_consts {
 	const size_t *const		zpc_pcie_port_dbg_nregs;
 
 	/*
+	 * The microarchitectural maximum number of ports per PCIe core.
+	 */
+	const uint8_t			zpc_pcie_core_max_ports;
+
+	/*
 	 * Internal ports that are modeled as PCIe devices, though not exposed
 	 * outside of the package.  These are indexed by IOHC number.
 	 */
@@ -472,12 +490,6 @@ typedef struct zen_platform_consts {
 	 * This is the maximum PCIe Generation Supported.
 	 */
 	const oxio_speed_t		zpc_pcie_max_speed;
-
-	/*
-	 * This indicates what revision of the traditional hotplug data
-	 * structures the SMU leverages.
-	 */
-	const zen_hotplug_vers_t	zpc_hp_vers;
 } zen_platform_consts_t;
 
 #ifdef	__cplusplus

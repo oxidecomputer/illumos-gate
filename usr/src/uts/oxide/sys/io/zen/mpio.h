@@ -24,6 +24,7 @@
 
 #include <sys/stdbool.h>
 #include <sys/stdint.h>
+#include <sys/amdzen/smn.h>
 #include <sys/io/zen/oxio.h>
 
 #ifdef __cplusplus

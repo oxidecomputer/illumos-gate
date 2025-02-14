@@ -1347,6 +1347,198 @@ genoa_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 	}
 }
 
+
+/*
+ * These are the tile ID mappings that firmware uses specifically for hotplug.
+ */
+typedef enum genoa_pci_hotplug_tile_id {
+	GENOA_HOTPLUG_TILE_P0 = 0,
+	GENOA_HOTPLUG_TILE_P1,
+	GENOA_HOTPLUG_TILE_P2,
+	GENOA_HOTPLUG_TILE_P3,
+	GENOA_HOTPLUG_TILE_G0,
+	GENOA_HOTPLUG_TILE_G1,
+	GENOA_HOTPLUG_TILE_G2,
+	GENOA_HOTPLUG_TILE_G3,
+} genoa_pci_hotplug_tile_id_t;
+
+/*
+ * Translates from our internal OXIO tile identifier to an integer understood by
+ * Genoa's hotplug firmware.
+ */
+uint8_t
+genoa_fabric_hotplug_tile_id(const oxio_engine_t *oxio)
+{
+	VERIFY3P(oxio->oe_type, ==, OXIO_ENGINE_T_PCIE);
+	ASSERT3U(oxio->oe_tile, <=, GENOA_HOTPLUG_TILE_G3);
+
+	switch (oxio->oe_tile) {
+	case OXIO_TILE_G0:
+		return (GENOA_HOTPLUG_TILE_G0);
+	case OXIO_TILE_P0:
+		return (GENOA_HOTPLUG_TILE_P0);
+	case OXIO_TILE_G1:
+		return (GENOA_HOTPLUG_TILE_G1);
+	case OXIO_TILE_P1:
+		return (GENOA_HOTPLUG_TILE_P1);
+	case OXIO_TILE_G2:
+		return (GENOA_HOTPLUG_TILE_G2);
+	case OXIO_TILE_P2:
+		return (GENOA_HOTPLUG_TILE_P2);
+	case OXIO_TILE_G3:
+		return (GENOA_HOTPLUG_TILE_G3);
+	case OXIO_TILE_P3:
+		return (GENOA_HOTPLUG_TILE_P3);
+	case OXIO_TILE_P4:
+	case OXIO_TILE_P5:
+		panic("PCIe Tile ID 0x%x (%s) cannot be used with hotplug",
+		    oxio->oe_tile, oxio->oe_tile == OXIO_TILE_P4 ? "P4": "P5");
+	default:
+		panic("cannot map invalid PCIe Tile ID 0x%x", oxio->oe_tile);
+	}
+}
+
+/*
+ * Prepares a hotplug-capable bridge by,
+ *
+ * - Setting the slot's actual number in PCIe and in a secondary SMN location.
+ * - Setting state machine control bits in the PCIe IP to ensure we don't
+ *   enter loopback mode or other degenerate cases
+ * - Enabling support for power faults
+ */
+void
+genoa_fabric_hotplug_port_init(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	ASSERT3U(port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG, !=, 0);
+
+	/*
+	 * Set the hotplug slot information in the PCIe IP, presumably so that
+	 * it'll do something useful for the SMU/MPIO.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->zpp_hp_slotno);
+	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * This register appears to ensure that we don't remain in the detect
+	 * state machine state.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_CTL5);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(val, 0);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * This bit is documented to cause the LC to disregard most training
+	 * control bits in received TS1 and TS2 ordered sets.  Training control
+	 * bits include Compliance Receive, Hot Reset, Link Disable, Loopback,
+	 * and Disable Scrambling.  As all our ports are Downstream Ports, we
+	 * are required to ignore most of these; the PCIe standard still
+	 * requires us to act on Compliance Receive and the PPR implies that we
+	 * do even if this bit is set (the other four are listed as being
+	 * ignored).
+	 *
+	 * However... an AMD firmware bug for which we have no additional
+	 * information implies that this does more than merely ignore training
+	 * bits in received TSx, and also makes the Secondary Bus Reset bit in
+	 * the Bridge Control register not work or work incorrectly.  That is,
+	 * there may be a hardware bug that causes this bit to have unintended
+	 * and undocumented side effects that also violate the standard.  In our
+	 * case, we're going to set this anyway, because there is nothing
+	 * anywhere in illumos that uses the Secondary Bus Reset feature and it
+	 * seems much more important to be sure that our downstream ports can't
+	 * be disabled or otherwise affected by a misbehaving or malicious
+	 * downstream device that might set some of these bits.
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_LC_TRAIN_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_LC_TRAIN_CTL_SET_TRAINBITS_DIS(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Make sure that power faults can actually work (in theory).
+	 */
+	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_PCTL);
+	val = zen_pcie_port_read(port, reg);
+	val = PCIE_PORT_PCTL_SET_PWRFLT_EN(val, 1);
+	zen_pcie_port_write(port, reg, val);
+
+	/*
+	 * Indicate that the slot supports disabling of in-band presence for
+	 * determining PD state/component presence.
+	 */
+	val = pci_getl_func(port->zpp_core->zpc_ioms->zio_pci_busno,
+	    port->zpp_device, port->zpp_func, ZEN_BRIDGE_R_PCI_SLOT_CAP2);
+	val |= PCIE_SLOTCAP2_INB_PRES_DET_DIS_SUP;
+	pci_putl_func(port->zpp_core->zpc_ioms->zio_pci_busno,
+	    port->zpp_device, port->zpp_func, ZEN_BRIDGE_R_PCI_SLOT_CAP2, val);
+}
+
+/*
+ * Unblocks training on the given port by clearing the corresponding
+ * HOLD_TRAINING bit in the associated PCIe core's PCIECORE::SWRST_CONTROL_6.
+ */
+void
+genoa_fabric_hotplug_port_unblock_training(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+	zen_pcie_core_t *pc = port->zpp_core;
+
+	ASSERT3U(port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG, !=, 0);
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_SWRST_CTL6);
+	val = zen_pcie_core_read(pc, reg);
+	val = bitset32(val, port->zpp_portno, port->zpp_portno, 0);
+	zen_pcie_core_write(pc, reg, val);
+}
+
+/*
+ * Prepares the PCIe core for hotplug by ensuring that presence detect mux
+ * select is set to a logical "OR" of in-band and out-of-band PD signals.
+ */
+void
+genoa_fabric_hotplug_core_init(zen_pcie_core_t *pc)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	ASSERT3U(pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG, !=, 0);
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_PRES);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_PRES_SET_MODE(val, PCIE_CORE_PRES_MODE_OR);
+	zen_pcie_core_write(pc, reg, val);
+
+	reg = genoa_pcie_core_reg(pc, D_PCIE_CORE_COMMON_AER_MASK);
+	val = zen_pcie_core_read(pc, reg);
+	val = PCIE_CORE_COMMON_AER_MASK_SET_SD_PD(val, 1);
+	val = PCIE_CORE_COMMON_AER_MASK_SET_SD_DPC(val, 0);
+	val = PCIE_CORE_COMMON_AER_MASK_SET_SD_HP_OFF(val, 0);
+	val = PCIE_CORE_COMMON_AER_MASK_SET_SD_HP_SURP(val, 0);
+	val = PCIE_CORE_COMMON_AER_MASK_SET_SD_PME_HS(val, 0);
+	val = PCIE_CORE_COMMON_AER_MASK_SET_SD_PME_OFF(val, 0);
+	zen_pcie_core_write(pc, reg, val);
+}
+
+/*
+ * The Turin version of flags sent in the hotplug start RPC includes more data
+ * than for either Milan or Genoa; for both of the other two, we mostly punt
+ * since, in the Oxide architecture, the arguments are always zero.  Here, we
+ * try to provide a type that encodes some of the semantics of the various bits.
+ * The widths of these fields are mostly deduced from examination of AGESA.
+ */
+bool
+genoa_fabric_hotplug_start(zen_iodie_t *iodie)
+{
+	return (zen_mpio_rpc_start_hotplug(iodie, 0));
+}
+
 /*
  * Do everything else required to finish configuring the nBIF and get the PCIe
  * engine up and running.
@@ -2013,10 +2205,10 @@ genoa_fabric_init_bridge(zen_pcie_port_t *port)
 		uint16_t reg;
 
 		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, GENOA_BRIDGE_R_PCI_PCIE_CAP);
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_PCIE_CAP);
 		reg |= PCIE_PCIECAP_SLOT_IMPL;
 		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, GENOA_BRIDGE_R_PCI_PCIE_CAP, reg);
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_PCIE_CAP, reg);
 	}
 
 	/*
@@ -2029,11 +2221,11 @@ genoa_fabric_init_bridge(zen_pcie_port_t *port)
 		uint16_t reg;
 
 		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, GENOA_BRIDGE_R_PCI_LINK_CTL2);
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_LINK_CTL2);
 		reg &= ~PCIE_LINKCTL2_TARGET_SPEED_MASK;
 		reg |= oxio_loglim_to_pcie(port->zpp_oxio);
 		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, GENOA_BRIDGE_R_PCI_LINK_CTL2, reg);
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_LINK_CTL2, reg);
 	}
 }
 

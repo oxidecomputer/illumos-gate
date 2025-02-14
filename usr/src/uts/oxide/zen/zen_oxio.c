@@ -22,6 +22,7 @@
 
 #include <sys/stdbool.h>
 #include <sys/pcie.h>
+#include <sys/io/zen/hotplug.h>
 #include <sys/io/zen/oxio.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/platform_impl.h>
@@ -214,22 +215,19 @@ oxio_eng_to_lanes(const oxio_engine_t *oxio, uint8_t *startp, uint8_t *endp,
  * Translate the OXIO GPIO expander type to one that is understood by AMD
  * firmware. AMD uses the same values for both traditional SMU hotplug and MPIO
  * UBM information.
- *
- * This can become static once we implement traditional hotplug for MPIO based
- * systems.
  */
-smu_exp_type_t
-oxio_gpio_to_smu(oxio_i2c_gpio_type_t type)
+zen_hotplug_fw_i2c_expander_type_t
+oxio_gpio_expander_to_fw(oxio_i2c_gpio_expander_type_t type)
 {
 	switch (type) {
-	case OXIO_I2C_GPIO_T_PCA9539:
-		return (SMU_I2C_PCA9539);
-	case OXIO_I2C_GPIO_T_PCA9535:
-		return (SMU_I2C_PCA9535);
-	case OXIO_I2C_GPIO_T_PCA9506:
-		return (SMU_I2C_PCA9506);
+	case OXIO_I2C_GPIO_EXP_T_PCA9539:
+		return (ZEN_HP_FW_I2C_EXP_PCA9539);
+	case OXIO_I2C_GPIO_EXP_T_PCA9535:
+		return (ZEN_HP_FW_I2C_EXP_PCA9535);
+	case OXIO_I2C_GPIO_EXP_T_PCA9506:
+		return (ZEN_HP_FW_I2C_EXP_PCA9506);
 	default:
-		panic("unmappable OXIO GPIO expander type: 0x%x", type);
+		panic("unmappable OXIO i2c GPIO expander type: 0x%x", type);
 	}
 }
 
@@ -405,7 +403,8 @@ oxio_eng_to_ubm(const oxio_engine_t *oxio, zen_mpio_ubm_hfc_port_t *ubm)
 
 	ubm->zmuhp_node_type = ZEN_MPIO_I2C_NODE_TYPE_UBM;
 	ubm->zmuhp_expander.zmie_addr = gpio->oug_addr;
-	ubm->zmuhp_expander.zmie_type = oxio_gpio_to_smu(gpio->oug_type);
+	ubm->zmuhp_expander.zmie_type =
+	    oxio_gpio_expander_to_fw(gpio->oug_type);
 	ubm->zmuhp_expander.zmie_clear_intrs = 0;
 
 	oxio_eng_to_lanes(oxio, &ubm->zmuhp_start_lane, NULL, NULL);
@@ -435,10 +434,10 @@ oxio_eng_to_ubm(const oxio_engine_t *oxio, zen_mpio_ubm_hfc_port_t *ubm)
 			VERIFY0(src->ois_select);
 			continue;
 		case OXIO_I2C_SWITCH_T_9545:
-			dst->zmis_type = SMU_I2C_SW_9545;
+			dst->zmis_type = ZEN_HP_FW_I2C_SW_9545;
 			break;
 		case OXIO_I2C_SWITCH_T_9546_48:
-			dst->zmis_type = SMU_I2C_SW_9546_48;
+			dst->zmis_type = ZEN_HP_FW_I2C_SW_9546_48;
 			break;
 		default:
 			panic("%s: encountered invalid I2C switch type 0x%x in "
@@ -647,4 +646,100 @@ oxio_loglim_to_pcie(const oxio_engine_t *oxio)
 		panic("%s: unmappable OXIO logical limit speed: 0x%x",
 		    oxio->oe_name, limit);
 	}
+}
+
+/*
+ * Both the SMU and MPIO use a 5-bit index to determine the meaning of an i2c
+ * switch in the system, with values defined in the range [0, 16]. This table
+ * maps the index values in the oxio_i2c_switch_t to corresponding values
+ * expected by SMU/MPIO firmware.
+ */
+static const oxio_i2c_switch_t oxio_i2c_switch_map[17] = {
+	[0] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x0 },
+	[1] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x1 },
+	[2] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x2 },
+	[3] = { OXIO_I2C_SWITCH_T_9545, 0x70, 0x3 },
+	[4] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x0 },
+	[5] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x0 },
+	[6] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x0 },
+	[7] = { OXIO_I2C_SWITCH_T_NONE, 0x00, 0x0 },
+	[8] = { OXIO_I2C_SWITCH_T_9545, 0x71, 0x3 },
+	[9] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x0 },
+	[10] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x1 },
+	[11] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x2 },
+	[12] = { OXIO_I2C_SWITCH_T_9545, 0x72, 0x3 },
+	[13] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x0 },
+	[14] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x1 },
+	[15] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x2 },
+	[16] = { OXIO_I2C_SWITCH_T_9545, 0x73, 0x3 },
+};
+
+uint8_t
+oxio_switch_to_fw(const oxio_i2c_switch_t *i2c)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(oxio_i2c_switch_map); i++) {
+		const oxio_i2c_switch_t *comp = &oxio_i2c_switch_map[i];
+		if (i2c->ois_type == comp->ois_type &&
+		    i2c->ois_addr == comp->ois_addr &&
+		    i2c->ois_select == comp->ois_select) {
+			return (i);
+		}
+	}
+
+	panic("encountered unmappable i2c switch config: type/addr/select: "
+	    "0x%x/0x%x/0x%x", i2c->ois_type, i2c->ois_addr, i2c->ois_select);
+}
+
+typedef struct oxio_pcie_fw_map {
+	oxio_pcie_slot_cap_t		ops_oxio;
+	zen_hotplug_fw_expa_bits_t	ops_expa;
+	zen_hotplug_fw_expb_bits_t	ops_expb;
+} oxio_pcie_fw_map_t;
+
+static const oxio_pcie_fw_map_t oxio_pcie_cap_map[] = {
+	{ OXIO_PCIE_CAP_OOB_PRSNT, ZEN_HP_FW_EXPA_PRSNT, ZEN_HP_FW_EXPB_PRSNT },
+	{ OXIO_PCIE_CAP_PWREN, ZEN_HP_FW_EXPA_PWREN, ZEN_HP_FW_EXPB_PWREN },
+	{ OXIO_PCIE_CAP_PWRFLT, ZEN_HP_FW_EXPA_PWRFLT, ZEN_HP_FW_EXPB_PWRFLT },
+	{ OXIO_PCIE_CAP_ATTNLED, ZEN_HP_FW_EXPA_ATTNLED,
+	    ZEN_HP_FW_EXPB_ATTNLED },
+	{ OXIO_PCIE_CAP_PWRLED, ZEN_HP_FW_EXPA_PWRLED, ZEN_HP_FW_EXPB_PWRLED },
+	{ OXIO_PCIE_CAP_EMIL, ZEN_HP_FW_EXPA_EMIL, ZEN_HP_FW_EXPB_EMIL },
+	{ OXIO_PCIE_CAP_EMILS, ZEN_HP_FW_EXPA_EMILS, ZEN_HP_FW_EXPB_EMILS },
+	{ OXIO_PCIE_CAP_ATTNSW, ZEN_HP_FW_EXPA_ATTNSW, ZEN_HP_FW_EXPB_ATTNSW },
+};
+
+/*
+ * Translate the corresponding capabilities format to one that is used by the
+ * SMU/MPIO firmware.
+ *
+ * Note that Enterprise SSD based devices have a mask that doesn't correspond to
+ * standard functions and instead is related to things like DualPortEn# and
+ * IfDet#. There are no features that are allowed to be set by Enterprise SSD
+ * devices, therefore we ensure that this is set to 0.
+ */
+uint8_t
+oxio_pcie_cap_to_mask(const oxio_engine_t *oxio)
+{
+	const oxio_pcie_slot_cap_t cap = oxio->oe_hp_trad.ohp_cap;
+	uint8_t mask = 0;
+
+	VERIFY3U(oxio->oe_type, ==, OXIO_ENGINE_T_PCIE);
+	if (oxio->oe_hp_type == OXIO_HOTPLUG_T_ENTSSD) {
+		VERIFY0(oxio->oe_hp_trad.ohp_cap);
+		return (mask);
+	}
+
+	for (size_t i = 0; i < ARRAY_SIZE(oxio_pcie_cap_map); i++) {
+		if ((cap & oxio_pcie_cap_map[i].ops_oxio) != 0)
+			continue;
+
+		if (oxio->oe_hp_type == OXIO_HOTPLUG_T_EXP_A) {
+			mask |= oxio_pcie_cap_map[i].ops_expa;
+		} else {
+			ASSERT3U(oxio->oe_hp_type, ==, OXIO_HOTPLUG_T_EXP_B);
+			mask |= oxio_pcie_cap_map[i].ops_expb;
+		}
+	}
+
+	return (mask);
 }

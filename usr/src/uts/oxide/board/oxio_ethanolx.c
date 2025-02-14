@@ -50,7 +50,7 @@ const oxio_engine_t oxio_ethanolx_s0[] = { {
 	.oe_flags = OXIO_ENGINE_F_REVERSE,
 	.oe_hp_trad = {
 		.ohp_dev = {
-			.otg_exp_type = OXIO_I2C_GPIO_T_PCA9535,
+			.otg_exp_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.otg_addr = 0x23,
 			.otg_byte = 0
 		},
@@ -95,7 +95,7 @@ const oxio_engine_t oxio_ethanolx_s1[] = { {
 				.ois_addr = 0x70,
 				.ois_select = 1
 			},
-			.otg_exp_type = OXIO_I2C_GPIO_T_PCA9535,
+			.otg_exp_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.otg_addr = 0x20,
 			.otg_byte = 0,
 			.otg_bit = 0
@@ -119,7 +119,7 @@ const oxio_engine_t oxio_ethanolx_s1[] = { {
 				.ois_addr = 0x70,
 				.ois_select = 1
 			},
-			.otg_exp_type = OXIO_I2C_GPIO_T_PCA9535,
+			.otg_exp_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.otg_addr = 0x20,
 			.otg_byte = 1,
 			.otg_bit = 0
@@ -142,7 +142,7 @@ const oxio_engine_t oxio_ethanolx_s1[] = { {
 				.ois_addr = 0x70,
 				.ois_select = 1
 			},
-			.otg_exp_type = OXIO_I2C_GPIO_T_PCA9535,
+			.otg_exp_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.otg_addr = 0x21,
 			.otg_byte = 0,
 			.otg_bit = 0
@@ -165,7 +165,7 @@ const oxio_engine_t oxio_ethanolx_s1[] = { {
 				.ois_addr = 0x70,
 				.ois_select = 1
 			},
-			.otg_exp_type = OXIO_I2C_GPIO_T_PCA9535,
+			.otg_exp_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.otg_addr = 0x21,
 			.otg_byte = 1,
 			.otg_bit = 0

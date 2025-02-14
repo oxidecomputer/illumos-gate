@@ -22,7 +22,6 @@
 
 #include <sys/param.h>
 #include <sys/types.h>
-#include <sys/io/zen/hotplug_impl.h>
 
 #include <sys/io/zen/dxio_impl.h>
 
@@ -37,116 +36,17 @@ extern "C" {
  */
 #pragma	pack(4)
 
-typedef enum smu_pci_tileid {
-	SMU_TILE_G0 = 0,
-	SMU_TILE_P1,
-	SMU_TILE_G3,
-	SMU_TILE_P2,
-	SMU_TILE_P0,
-	SMU_TILE_G1,
-	SMU_TILE_P3,
-	SMU_TILE_G2
-} smu_pci_tileid_t;
-
-typedef struct smu_hotplug_map {
-	/*
-	 * Indicates what kind of hotplug entity this is. One of the
-	 * zen_hotplug_type_t values.
-	 */
-	uint32_t	shm_format:3;
-	uint32_t	shm_rsvd0:2;
-	/*
-	 * If set to 1, indicates that the corresponding reset entry in the
-	 * hotplug table should be looked at.
-	 */
-	uint32_t	shm_rst_valid:1;
-	/*
-	 * We believe this indicates whether or not this entry should be
-	 * evaluated.
-	 */
-	uint32_t	shm_active:1;
-	/*
-	 * These next two are used to indicate which device to talk to. As far
-	 * as we know, the die_id corresponds to the socket ID and apu should be
-	 * left as 0 in SP3 systems we support.
-	 */
-	uint32_t	shm_apu:1;
-	uint32_t	shm_die_id:1;
-	/*
-	 * The port ID indicates the PCIe port that was chosen by DXIO. This
-	 * value is specific to the core.
-	 */
-	uint32_t	shm_port_id:3;
-	/*
-	 * This indicates which of the cores is in use. Valid values are in
-	 * smu_pci_tileid_t.
-	 */
-	uint32_t	shm_tile_id:3;
-	/*
-	 * This indicates the logical bridge ID with the NBIO instance. That is,
-	 * it is not specific to the PCIe core. Phrased differently, this
-	 * corresponds to the bridge's index in the IOHC::IOHC_Bridge_CNTL
-	 * register. Note, this is calculated from other parameters.
-	 */
-	uint32_t	shm_bridge:5;
-	uint32_t	shm_rsvd1:4;
-	uint32_t	shm_alt_slot_no:6;
-	uint32_t	shm_sec:1;
-	uint32_t	shm_rsvsd2:1;
-} smu_hotplug_map_t;
-
-typedef struct smu_hotplug_function {
-	uint32_t	shf_i2c_bit:3;
-	uint32_t	shf_i2c_byte:3;
-	uint32_t	shf_i2c_daddr:5;
-	uint32_t	shf_i2c_dtype:2;
-	uint32_t	shf_i2c_bus:5;
-	uint32_t	shf_mask:8;
-	/*
-	 * Starting in Genoa with the v3 format, this is now used to represent a
-	 * second I2C switch that can be in the topology.
-	 */
-	uint32_t	shf_rsvd0:6;
-} smu_hotplug_function_t;
-
-typedef struct smu_hotpug_reset {
-	uint32_t	shr_rsvd0:3;
-	uint32_t	shr_i2c_gpio_byte:3;
-	uint32_t	shr_i2c_daddr:5;
-	uint32_t	shr_i2c_dtype:2;
-	uint32_t	shr_i2c_bus:5;
-	uint32_t	shr_i2c_reset:8;
-	uint32_t	shr_rsvd1:6;
-} smu_hotplug_reset_t;
-
-#define	MILAN_HOTPLUG_MAX_PORTS	96
-
-typedef struct smu_hotplug_table {
-	smu_hotplug_map_t	smt_map[MILAN_HOTPLUG_MAX_PORTS];
-	smu_hotplug_function_t	smt_func[MILAN_HOTPLUG_MAX_PORTS];
-	smu_hotplug_reset_t	smt_reset[MILAN_HOTPLUG_MAX_PORTS];
-} smu_hotplug_table_t;
-
-typedef struct smu_hotplug_entry {
-	uint_t			se_slotno;
-	smu_hotplug_map_t	se_map;
-	smu_hotplug_function_t	se_func;
-	smu_hotplug_reset_t	se_reset;
-} smu_hotplug_entry_t;
-
 #define	SMU_HOTPLUG_ENT_LAST	UINT_MAX
 
 #pragma	pack()	/* pragma pack(4) */
 
 extern const zen_dxio_fw_platform_t ethanolx_engine_s0;
 extern const zen_dxio_fw_platform_t ethanolx_engine_s1;
-extern const smu_hotplug_entry_t ethanolx_hotplug_ents[];
 
 extern const uint32_t ethanolx_pcie_slot_cap_entssd;
 extern const uint32_t ethanolx_pcie_slot_cap_express;
 
 extern const zen_dxio_fw_platform_t gimlet_engine;
-extern const smu_hotplug_entry_t gimlet_hotplug_ents[];
 
 /*
  * DXIO message codes. These are also specific to firmware.
@@ -295,12 +195,6 @@ typedef struct milan_dxio_reply {
  * Types of DXIO Link speed updates. These must be ORed in with the base code.
  */
 #define	MILAN_DXIO_LINK_SPEED_SINGLE	0x800
-
-typedef struct milan_hotplug {
-	smu_hotplug_table_t	*mh_table;
-	uint64_t		mh_pa;
-	uint32_t		mh_alloc_len;
-} milan_hotplug_t;
 
 #ifdef __cplusplus
 }

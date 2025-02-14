@@ -103,7 +103,7 @@ const oxio_engine_t oxio_ruby[] = { {
 			.ois_select = 0
 		} },
 		.ohu_gpio = {
-			.oug_type = OXIO_I2C_GPIO_T_PCA9535,
+			.oug_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.oug_addr = 0x21,
 			.oug_ifdet_byte = 0,
 			.oug_ifdet_bit = 0,
@@ -129,7 +129,7 @@ const oxio_engine_t oxio_ruby[] = { {
 			.ois_select = 0
 		} },
 		.ohu_gpio = {
-			.oug_type = OXIO_I2C_GPIO_T_PCA9535,
+			.oug_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.oug_addr = 0x20,
 			.oug_ifdet_byte = 0,
 			.oug_ifdet_bit = 0,
@@ -155,7 +155,7 @@ const oxio_engine_t oxio_ruby[] = { {
 			.ois_select = 1
 		} },
 		.ohu_gpio = {
-			.oug_type = OXIO_I2C_GPIO_T_PCA9535,
+			.oug_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.oug_addr = 0x20,
 			.oug_ifdet_byte = 0,
 			.oug_ifdet_bit = 2,
@@ -181,7 +181,7 @@ const oxio_engine_t oxio_ruby[] = { {
 			.ois_select = 2
 		} },
 		.ohu_gpio = {
-			.oug_type = OXIO_I2C_GPIO_T_PCA9535,
+			.oug_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.oug_addr = 0x20,
 			.oug_ifdet_byte = 0,
 			.oug_ifdet_bit = 4,
@@ -207,7 +207,7 @@ const oxio_engine_t oxio_ruby[] = { {
 			.ois_select = 3
 		} },
 		.ohu_gpio = {
-			.oug_type = OXIO_I2C_GPIO_T_PCA9535,
+			.oug_type = OXIO_I2C_GPIO_EXP_T_PCA9535,
 			.oug_addr = 0x20,
 			.oug_ifdet_byte = 0,
 			.oug_ifdet_bit = 6,

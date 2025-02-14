@@ -32,7 +32,9 @@
 #include <sys/io/zen/fabric_limits.h>
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/ccx_impl.h>
+#include <sys/io/zen/dxio.h>
 #include <sys/io/zen/dxio_impl.h>
+#include <sys/io/zen/hotplug.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/nbif_impl.h>
 #include <sys/io/zen/pcie_impl.h>
@@ -41,33 +43,6 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
-
-typedef int (*zen_iodie_cb_f)(zen_iodie_t *, void *);
-
-extern int zen_fabric_walk_ioms(zen_fabric_t *, zen_ioms_cb_f, void *);
-extern int zen_fabric_walk_iodie(zen_fabric_t *, zen_iodie_cb_f, void *);
-extern int zen_fabric_walk_pcie_core(zen_fabric_t *, zen_pcie_core_cb_f,
-    void *);
-extern int zen_fabric_walk_pcie_port(zen_fabric_t *, zen_pcie_port_cb_f,
-    void *);
-extern int zen_fabric_walk_nbif(zen_fabric_t *, zen_nbif_cb_f, void *);
-
-extern zen_ioms_t *zen_fabric_find_ioms(zen_fabric_t *, uint32_t);
-extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
-
-extern void zen_fabric_dma_attr(ddi_dma_attr_t *attr);
-
-/*
- * OXIO routines that various platforms can utilize.
- */
-extern void oxio_eng_to_dxio(const oxio_engine_t *, zen_dxio_fw_engine_t *);
-extern void oxio_eng_to_ask(const oxio_engine_t *, zen_mpio_ask_port_t *);
-extern void oxio_eng_to_ubm(const oxio_engine_t *, zen_mpio_ubm_hfc_port_t *);
-extern void oxio_ubm_to_ask(zen_ubm_hfc_t *, const zen_mpio_ubm_dfc_descr_t *,
-    uint32_t, zen_mpio_ask_port_t *);
-extern void oxio_dxio_to_eng(zen_pcie_port_t *);
-extern void oxio_mpio_to_eng(zen_pcie_port_t *);
-extern uint16_t oxio_loglim_to_pcie(const oxio_engine_t *);
 
 /*
  * Warning: These memlists cannot be given directly to PCI. They expect to be
@@ -285,6 +260,11 @@ struct zen_pptable {
 	size_t			zpp_alloc_len;
 };
 
+typedef union zen_hotplug_table {
+	smu_hotplug_table_t		zht_smu_hotplug_table;
+	zen_mpio_hotplug_table_t	zht_mpio_hotplug_table;
+} zen_hotplug_table_t;
+
 typedef enum {
 	/*
 	 * Indicates that we have found a port that has traditional hotplug and
@@ -356,11 +336,55 @@ struct zen_fabric {
 	zen_fabric_flags_t	zf_flags;
 	zen_ubm_config_t	zf_ubm;
 
+	zen_hotplug_table_t	*zf_hotplug_table;
+	uint64_t		zf_hp_pa;
+	uint32_t		zf_hp_alloc_len;
+
 	uint8_t			zf_nsocs;
 	zen_soc_t		zf_socs[ZEN_FABRIC_MAX_SOCS];
 
 	void			*zf_uarch_fabric;
 };
+
+typedef int (*zen_iodie_cb_f)(zen_iodie_t *, void *);
+
+extern int zen_fabric_walk_ioms(zen_fabric_t *, zen_ioms_cb_f, void *);
+extern int zen_fabric_walk_iodie(zen_fabric_t *, zen_iodie_cb_f, void *);
+extern int zen_fabric_walk_pcie_core(zen_fabric_t *, zen_pcie_core_cb_f,
+    void *);
+extern int zen_fabric_walk_pcie_port(zen_fabric_t *, zen_pcie_port_cb_f,
+    void *);
+extern int zen_fabric_walk_nbif(zen_fabric_t *, zen_nbif_cb_f, void *);
+
+extern zen_ioms_t *zen_fabric_find_ioms(zen_fabric_t *, uint32_t);
+extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
+
+extern int zen_fabric_iodie_op(zen_iodie_t *, void *);
+extern int zen_fabric_ioms_op(zen_ioms_t *, void *);
+extern int zen_fabric_nbif_op(zen_nbif_t *, void *);
+extern int zen_fabric_pcie_core_op(zen_pcie_core_t *, void *);
+extern int zen_fabric_pcie_port_op(zen_pcie_port_t *, void *);
+
+extern void zen_fabric_dma_attr(ddi_dma_attr_t *attr);
+
+/*
+ * OXIO routines that various platforms can utilize.
+ */
+extern void oxio_eng_to_dxio(const oxio_engine_t *, zen_dxio_fw_engine_t *);
+extern void oxio_eng_to_ask(const oxio_engine_t *, zen_mpio_ask_port_t *);
+extern void oxio_eng_to_ubm(const oxio_engine_t *, zen_mpio_ubm_hfc_port_t *);
+extern void oxio_ubm_to_ask(zen_ubm_hfc_t *, const zen_mpio_ubm_dfc_descr_t *,
+    uint32_t, zen_mpio_ask_port_t *);
+extern void oxio_dxio_to_eng(zen_pcie_port_t *);
+extern void oxio_mpio_to_eng(zen_pcie_port_t *);
+extern uint16_t oxio_loglim_to_pcie(const oxio_engine_t *);
+extern uint8_t oxio_switch_to_fw(const oxio_i2c_switch_t *);
+extern uint8_t oxio_pcie_cap_to_mask(const oxio_engine_t *);
+extern void oxio_eng_to_lanes(const oxio_engine_t *, uint8_t *, uint8_t *,
+    bool *);
+extern zen_hotplug_fw_i2c_expander_type_t oxio_gpio_expander_to_fw(
+    oxio_i2c_gpio_expander_type_t);
+extern uint8_t oxio_tile_fw_hp_id(const oxio_engine_t *);
 
 #ifdef	__cplusplus
 }

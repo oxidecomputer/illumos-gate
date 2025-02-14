@@ -123,6 +123,14 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_init_pcie_straps = turin_fabric_init_pcie_straps,
 	.zfo_init_pcie_core = turin_fabric_init_pcie_core,
 	.zfo_init_bridge = turin_fabric_init_bridge,
+	.zfo_pcie_hotplug_port_data_init = zen_mpio_hotplug_port_data_init,
+	.zfo_pcie_hotplug_fw_init = zen_mpio_init_hotplug_fw,
+	.zfo_pcie_hotplug_core_init = turin_fabric_hotplug_core_init,
+	.zfo_pcie_hotplug_port_init = turin_fabric_hotplug_port_init,
+	.zfo_pcie_hotplug_port_unblock_training =
+	    turin_fabric_hotplug_port_unblock_training,
+	.zfo_pcie_hotplug_set_flags = zen_mpio_null_set_hotplug_flags,
+	.zfo_pcie_hotplug_start = turin_fabric_hotplug_start,
 	.zfo_iohc_disable_unused_pcie_bridges =
 	    turin_fabric_ioms_iohc_disable_unused_pcie_bridges,
 
@@ -135,6 +143,8 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_pcie_port_info = turin_pcie_port_info,
 	.zfo_pcie_core_reg = turin_pcie_core_reg,
 	.zfo_pcie_port_reg = turin_pcie_port_reg,
+
+	.zfo_tile_fw_hp_id = turin_fabric_hotplug_tile_id,
 };
 
 static const zen_hack_ops_t turin_hack_ops = {
@@ -184,8 +194,8 @@ const zen_platform_t turin_platform = {
 		.zpc_pcie_core_dbg_nregs = &turin_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,
 		.zpc_pcie_port_dbg_nregs = &turin_pcie_port_dbg_nregs,
+		.zpc_pcie_core_max_ports = TURIN_PCIE_CORE_MAX_PORTS,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
-		.zpc_hp_vers = ZEN_HP_VERS_3
 	},
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,
@@ -234,8 +244,8 @@ const zen_platform_t dense_turin_platform = {
 		.zpc_pcie_core_dbg_nregs = &turin_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = turin_pcie_port_dbg_regs,
 		.zpc_pcie_port_dbg_nregs = &turin_pcie_port_dbg_nregs,
+		.zpc_pcie_core_max_ports = TURIN_PCIE_CORE_MAX_PORTS,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
-		.zpc_hp_vers = ZEN_HP_VERS_3
 	},
 	.zp_ccx_ops = &turin_ccx_ops,
 	.zp_fabric_ops = &turin_fabric_ops,

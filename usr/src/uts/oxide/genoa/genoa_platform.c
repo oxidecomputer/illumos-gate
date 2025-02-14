@@ -109,6 +109,14 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_init_pcie_straps = genoa_fabric_init_pcie_straps,
 	.zfo_init_pcie_core = genoa_fabric_init_pcie_core,
 	.zfo_init_bridge = genoa_fabric_init_bridge,
+	.zfo_pcie_hotplug_port_data_init = zen_mpio_hotplug_port_data_init,
+	.zfo_pcie_hotplug_fw_init = zen_mpio_init_hotplug_fw,
+	.zfo_pcie_hotplug_core_init = genoa_fabric_hotplug_core_init,
+	.zfo_pcie_hotplug_port_init = genoa_fabric_hotplug_port_init,
+	.zfo_pcie_hotplug_port_unblock_training =
+	    genoa_fabric_hotplug_port_unblock_training,
+	.zfo_pcie_hotplug_set_flags = zen_mpio_null_set_hotplug_flags,
+	.zfo_pcie_hotplug_start = genoa_fabric_hotplug_start,
 	.zfo_iohc_disable_unused_pcie_bridges =
 	    genoa_fabric_ioms_iohc_disable_unused_pcie_bridges,
 
@@ -121,6 +129,8 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_pcie_port_info = genoa_pcie_port_info,
 	.zfo_pcie_core_reg = genoa_pcie_core_reg,
 	.zfo_pcie_port_reg = genoa_pcie_port_reg,
+
+	.zfo_tile_fw_hp_id = genoa_fabric_hotplug_tile_id,
 };
 
 static const zen_hack_ops_t genoa_hack_ops = {
@@ -171,8 +181,8 @@ const zen_platform_t genoa_platform = {
 		.zpc_pcie_core_dbg_nregs = &genoa_pcie_core_dbg_nregs,
 		.zpc_pcie_port_dbg_regs = genoa_pcie_port_dbg_regs,
 		.zpc_pcie_port_dbg_nregs = &genoa_pcie_port_dbg_nregs,
+		.zpc_pcie_core_max_ports = GENOA_PCIE_CORE_MAX_PORTS,
 		.zpc_pcie_max_speed = OXIO_SPEED_GEN_5,
-		.zpc_hp_vers = ZEN_HP_VERS_3
 	},
 	.zp_ccx_ops = &genoa_ccx_ops,
 	.zp_fabric_ops = &genoa_fabric_ops,
