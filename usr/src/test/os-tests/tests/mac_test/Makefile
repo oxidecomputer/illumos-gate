@@ -15,41 +15,36 @@
 
 include $(SRC)/Makefile.master
 
-ROOTOPTPKG = $(ROOT)/opt/util-tests
-TESTDIR = $(ROOTOPTPKG)/tests/mdb/progs
-PROGS = \
-	anon		\
-	bitfields	\
-	number_symbol
+ROOTOPTPKG = $(ROOT)/opt/os-tests
+TESTDIR = $(ROOTOPTPKG)/tests
+
+PROGS = mac_test
 
 include $(SRC)/cmd/Makefile.cmd
-include $(SRC)/cmd/Makefile.cmd.64
-include $(SRC)/cmd/Makefile.ctf
 include $(SRC)/test/Makefile.com
 
-CTF_MODE = link
+LDLIBS += -lnvpair
+CSTD= $(CSTD_GNU17)
 
 CMDS = $(PROGS:%=$(TESTDIR)/%)
 $(CMDS) := FILEMODE = 0555
-CSTD = $(CSTD_GNU17)
 
 all: $(PROGS)
 
-install: all $(CMDS) $(OUTFILES)
+install: all $(CMDS)
+
+lint:
 
 clobber: clean
 	-$(RM) $(PROGS)
 
 clean:
+	-$(RM) *.o
 
-$(CMDS): $(TESTDIR) $(PROG)
+$(CMDS): $(TESTDIR) $(PROGS)
 
 $(TESTDIR):
 	$(INS.dir)
 
 $(TESTDIR)/%: %
 	$(INS.file)
-
-%: %.c
-	$(LINK.c) -o $@ $< $(LDLIBS)
-	$(POST_PROCESS)

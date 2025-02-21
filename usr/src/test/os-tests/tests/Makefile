@@ -30,12 +30,13 @@ SUBDIRS =       \
 		definit \
 		execvpe \
 		file-locking \
+		gpio \
 		hexdump \
 		ilstr \
 		ksensor \
 		ksid \
 		libtopo \
-		gpio \
+		mac_test \
 		minttl \
 		oclo \
 		pf_key \
