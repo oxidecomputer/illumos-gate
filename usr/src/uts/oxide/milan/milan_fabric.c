@@ -3962,6 +3962,7 @@ milan_fabric_init_pcie_core(zen_pcie_core_t *pc, void *arg)
 	reg = milan_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
 	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN2_SET_NLANES(val, 0xf);
+	val = PCIE_CORE_RX_MARGIN2_SET_TIME_RATIO(val, 0x3f);
 	zen_pcie_core_write(pc, reg, val);
 
 	/*

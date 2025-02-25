@@ -2406,11 +2406,15 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	 * The second register (D_PCIE_CORE_RX_MARGIN1) sets the maximum
 	 * supported offsets and steps, but the values actually used may be
 	 * smaller, depending on the characteristics of the device on the
-	 * distant end. These values are recommended by AMD.
+	 * distant end.
 	 *
 	 * The maximum voltage offset controls the maximum swing at the maximum
 	 * stepped value, relative to the default setting, as a percentage of
-	 * 1V; our value of 0xD is this 0.14V.
+	 * 1V; our value of 0xD is thus 0.13V. This is the value in the
+	 * register at reset, and presumably recommended by AMD. This 130mV
+	 * range is more than enough to prove a link against published
+	 * acceptance criteria, but we may want to increase this in the future
+	 * in order to find the extremes of the available margin.
 	 *
 	 * The maximum timing offset value is the maximum offset from default
 	 * setting at the maximum stepped value as a percentage of a nominal UI
@@ -2423,24 +2427,32 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	 * Finally, the number of voltage steps is the number of steps either up
 	 * or down from the default setting.  The PPR says that steps have a
 	 * minimum of +/- 50mV as measured by the 16 GT/s reference equalizer.
+	 * It appears that 0x1D is the maximum supported value which equates to
+	 * 29 steps in each direction.  Setting it any higher results in
+	 * margining failing completely, and the port losing margining
+	 * capabilities entirely until the CPU is reset.
 	 */
 	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN1);
 	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN1_SET_MAX_VOLT_OFF(val, 0xd);
 	val = PCIE_CORE_RX_MARGIN1_SET_MAX_TIME_OFF(val, 0x19);
 	val = PCIE_CORE_RX_MARGIN1_SET_NUM_TIME_STEPS(val, 0x10);
-	val = PCIE_CORE_RX_MARGIN1_SET_NUM_VOLT_STEPS(val, 0x3f);
+	val = PCIE_CORE_RX_MARGIN1_SET_NUM_VOLT_STEPS(val, 0x1d);
 	zen_pcie_core_write(pc, reg, val);
 
 	/*
-	 * The third register (D_PCIE_CORE_RX_MARGIN2) sets the number of lanes
-	 * that can be margined at the same time.  We've been led to believe the
-	 * entire core supports margining at once, or 16 lanes, but note that
-	 * the register is encoded as a zeros based value, so we write 0xf.
+	 * The third register (D_PCIE_CORE_RX_MARGIN2) sets sampling parameters
+	 * and the number of lanes that can be margined at the same time.
+	 * We've been led to believe the entire core supports margining at
+	 * once, or 16 lanes, but note that the register is encoded as a zeros
+	 * based value, so we write 0xf. We program the ratios to sample all
+	 * bits received during margining.
 	 */
 	reg = turin_pcie_core_reg(pc, D_PCIE_CORE_RX_MARGIN2);
 	val = zen_pcie_core_read(pc, reg);
 	val = PCIE_CORE_RX_MARGIN2_SET_NLANES(val, 0xf);
+	val = PCIE_CORE_RX_MARGIN2_SET_TIME_RATIO(val, 0x3f);
+	val = PCIE_CORE_RX_MARGIN2_SET_VOLT_RATIO(val, 0x3f);
 	zen_pcie_core_write(pc, reg, val);
 
 	/*
