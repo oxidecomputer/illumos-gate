@@ -26,6 +26,7 @@ extern "C" {
 #include <sys/sunddi.h>
 #include <sys/pci_cap.h>
 #include <sys/sysmacros.h>
+#include <sys/stdbool.h>
 
 #define	DEBUGOUT(S)				i40e_debug(NULL, 0, S)
 #define	DEBUGOUT1(S, A)				i40e_debug(NULL, 0, S, A)
@@ -57,10 +58,8 @@ extern "C" {
  * the shared code will be upset.
  */
 #ifndef _I40E_MDB_DMOD
-#define	FALSE	B_FALSE
-#define	false	B_FALSE
-#define	TRUE	B_TRUE
-#define	true	B_TRUE
+#define	FALSE	false
+#define	TRUE	true
 #endif /* _I40E_MDB_DMOD */
 
 
@@ -86,8 +85,6 @@ extern "C" {
 
 #define	BIT(a) 		(1UL << (a))
 #define	BIT_ULL(a) 	(1ULL << (a))
-
-typedef boolean_t	bool;
 
 typedef uint8_t		u8;
 typedef int8_t		s8;

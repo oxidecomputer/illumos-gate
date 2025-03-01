@@ -50,6 +50,7 @@ extern "C" {
 #include <sys/note.h>
 #include <sys/mutex.h>
 #include <sys/pci_cap.h>
+#include <sys/stdbool.h>
 #include "e1000g_debug.h"
 
 #define	usec_delay(x)		drv_usecwait(x)
@@ -78,8 +79,6 @@ extern "C" {
 
 #define	OS_DEP(hw)		((struct e1000g_osdep *)((hw)->back))
 
-#define	false		0
-#define	true		1
 #define	FALSE		false
 #define	TRUE		true
 
@@ -203,7 +202,6 @@ typedef	uint8_t		u8;
 typedef	uint16_t	u16;
 typedef	uint32_t	u32;
 typedef	uint64_t	u64;
-typedef boolean_t	bool;
 
 #define	__le16 u16
 #define	__le32 u32
