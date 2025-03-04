@@ -88,6 +88,7 @@ CORE_OBJS +=			\
 	mem_config_stubs.o	\
 	memlist_new.o		\
 	memnode.o		\
+	memstr.o		\
 	memscrub.o		\
 	microcode_amd.o		\
 	mlsetup.o		\
