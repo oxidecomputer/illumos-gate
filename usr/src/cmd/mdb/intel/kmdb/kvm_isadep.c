@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  *
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*

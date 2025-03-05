@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004-2011 Emulex. All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #define	DUMP_SUPPORT

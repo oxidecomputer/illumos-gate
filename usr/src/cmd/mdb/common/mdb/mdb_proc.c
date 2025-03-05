@@ -26,7 +26,7 @@
 /*
  * Copyright 2018 Joyent, Inc.
  * Copyright (c) 2014 by Delphix. All rights reserved.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*

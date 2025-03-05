@@ -25,6 +25,7 @@
 /*
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 

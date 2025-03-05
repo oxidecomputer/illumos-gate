@@ -26,7 +26,7 @@
  * Copyright 2022 Oxide Computer Co.
  * Copyright 2023 RackTop Systems, Inc.
  * Copyright 2023 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_MDB_MODAPI_H

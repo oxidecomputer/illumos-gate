@@ -22,6 +22,7 @@
 /*
  * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <mdb/mdb_modapi.h>

@@ -22,7 +22,7 @@
 /*
  * Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <mdb/mdb_types.h>
@@ -378,10 +378,16 @@ mdb_getopts(int argc, const mdb_arg_t *argv, ...)
 u_longlong_t
 mdb_argtoull(const mdb_arg_t *arg)
 {
-	if (arg->a_type == MDB_TYPE_STRING)
+	switch (arg->a_type) {
+	case MDB_TYPE_STRING:
 		return (mdb_strtoull(arg->a_un.a_str));
-	else
+	case MDB_TYPE_IMMEDIATE:
 		return (arg->a_un.a_val);
+	case MDB_TYPE_CHAR:
+		return (arg->a_un.a_char);
+	}
+	/* NOTREACHED */
+	return (0);
 }
 
 /*

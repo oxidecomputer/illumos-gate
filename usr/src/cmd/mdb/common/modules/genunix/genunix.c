@@ -25,6 +25,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright 2022 Garrett D'Amore
  * Copyright 2023 RackTop Systems, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <mdb/mdb_param.h>
