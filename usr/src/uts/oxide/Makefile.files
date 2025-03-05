@@ -206,7 +206,7 @@ BOOT_IMAGE_OBJS += oxide_boot.o oxide_boot_disk.o oxide_boot_net.o \
 
 IPCC_OBJS += ipcc.o ipcc_debug.o
 
-ESPI_TEST_OBJS += espi_test.o
+ESPI_KTEST_OBJS += espi_ktest.o
 
 ZEN_GPIO_OBJS += zen_gpio.o
 

@@ -15,8 +15,8 @@
 
 UTSBASE	= ../..
 
-MODULE		= espi_test
-OBJECTS		= $(ESPI_TEST_OBJS:%=$(OBJS_DIR)/%)
+MODULE		= espi_ktest
+OBJECTS		= $(ESPI_KTEST_OBJS:%=$(OBJS_DIR)/%)
 ROOTMODULE	= $(USR_KTEST_DIR)/$(MODULE)
 
 include $(UTSBASE)/oxide/Makefile.oxide
