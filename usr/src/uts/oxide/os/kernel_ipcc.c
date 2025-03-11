@@ -286,6 +286,9 @@ eb_ipcc_init_gpio(kernel_ipcc_data_t *data)
 	case IPCC_SPINTR_SP3_AGPIO139:
 		data->kid_agpio = 139;
 		break;
+	case IPCC_SPINTR_SP5_AGPIO2:
+		data->kid_agpio = 2;
+		break;
 	default:
 		bop_panic("Unknown SPINTR mode");
 	}

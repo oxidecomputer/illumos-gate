@@ -160,6 +160,7 @@ ZEN_OBJS +=			\
 
 BOARD_OBJS +=			\
 	oxio_ethanolx.o		\
+	oxio_cosmo.o		\
 	oxio_gimlet.o		\
 	oxio_ruby.o
 

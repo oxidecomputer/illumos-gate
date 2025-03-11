@@ -46,7 +46,8 @@ typedef enum {
 
 typedef enum {
 	IPCC_SPINTR_DISABLED = 0,
-	IPCC_SPINTR_SP3_AGPIO139,
+	IPCC_SPINTR_SP3_AGPIO139,	/* Gimlet */
+	IPCC_SPINTR_SP5_AGPIO2,		/* Cosmo */
 } oxide_ipcc_spintr_t;
 
 #define	OXIDE_BOARD_BSU_NUM	2

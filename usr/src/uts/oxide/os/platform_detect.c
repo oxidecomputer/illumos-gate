@@ -92,7 +92,7 @@ typedef struct oxide_test_gpio_tristate {
  * when adding new entries.
  */
 #define	OXIDE_BOARD_CHIPREVS	3
-#define	OXIDE_BOARD_TESTS	3
+#define	OXIDE_BOARD_TESTS	4
 #define	OXIDE_BOARD_IOMUX	10
 
 typedef bool (*oxide_board_test_f)(const oxide_board_cpuinfo_t *cpuinfo,
@@ -261,6 +261,67 @@ static oxide_board_def_t oxide_board_defs[] = {
 		}
 	}, {
 		.obdef_board_data = {
+			.obd_board = OXIDE_BOARD_COSMO,
+			.obd_rootnexus = "Oxide,Cosmo",
+			.obd_bsu_slot = { 17, 18 },
+			.obd_ipccmode = IPCC_MODE_ESPI0,
+			.obd_ipccspintr = IPCC_SPINTR_SP5_AGPIO2,
+			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
+			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
+			.obd_engines = { oxio_cosmo },
+			.obd_nengines = { &oxio_cosmo_nengines },
+		},
+		.obdef_iomux = {
+			/* UART0 - Console */
+			IOMUX_CFG_ENTRY(135, TURIN_FCH_IOMUX_135_UART0_CTS_L),
+			IOMUX_CFG_ENTRY(136, TURIN_FCH_IOMUX_136_UART0_RXD),
+			IOMUX_CFG_ENTRY(137, TURIN_FCH_IOMUX_137_UART0_RTS_L),
+			IOMUX_CFG_ENTRY(138, TURIN_FCH_IOMUX_138_UART0_TXD),
+		},
+		.obdef_tests = {
+			{
+				.obt_func = eb_eval_socket,
+				.obt_socket = X86_SOCKET_SP5
+			}, {
+				.obt_func = eb_eval_chiprev,
+				.obt_chiprev = {
+					X86_CHIPREV_AMD_TURIN_ANY,
+					X86_CHIPREV_AMD_DENSE_TURIN_ANY
+				}
+			}, {
+				.obt_func = eb_eval_romtype,
+				.obt_romtype =
+				    FCH_MISC_A_STRAPSTATUS_ROMTYPE_ESPI_SAFS
+			}, {
+				/*
+				 * We determine if this is a Cosmo versus a
+				 * RubyRed by inspecting the state of AGPIO21.
+				 * On Ruby this GPIO is connected to a test
+				 * point so will follow the pulls, whereas
+				 * on Cosmo the FPGA drives this high once the
+				 * rails are up, at least until the first IPCC
+				 * message has been seen.
+				 *
+				 * The tests are run in order so by the time
+				 * we are here we know this is a Turin chip in
+				 * an SP5 socket which has been booted via
+				 * eSPI.
+				 */
+				.obt_func = eb_eval_gpio_tristate,
+				.obt_tristate = {
+					.otgt_gpionum = 21,
+					.otgt_iomux = IOMUX_CFG_ENTRY(21,
+					    TURIN_FCH_IOMUX_21_AGPIO21),
+					.otgt_expect = {
+						.ogt_floating = OGS_HIGH,
+						.ogt_pulledup = OGS_HIGH,
+						.ogt_pulleddown = OGS_HIGH
+					}
+				}
+			}
+		}
+	}, {
+		.obdef_board_data = {
 			.obd_board = OXIDE_BOARD_RUBYRED,
 			.obd_rootnexus = "Oxide,RubyRed",
 			.obd_ipccmode = IPCC_MODE_ESPI0,
@@ -268,7 +329,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			 * The SP's SP_TO_SP5_INT_L line runs to the grapefruit
 			 * FPGA but does not continue on to the SP5. There
 			 * isn't an obvious pin on the DC-SCM connector for
-			 * onward routing.
+			 * onward routing so we have to disable the interrupt.
 			 */
 			.obd_ipccspintr = IPCC_SPINTR_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |

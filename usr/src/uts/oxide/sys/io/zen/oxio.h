@@ -361,6 +361,9 @@ extern const size_t oxio_ethanolx_s1_nengines;
 extern const oxio_engine_t oxio_ruby[];
 extern const size_t oxio_ruby_nengines;
 
+extern const oxio_engine_t oxio_cosmo[];
+extern const size_t oxio_cosmo_nengines;
+
 #ifdef __cplusplus
 }
 #endif
