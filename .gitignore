@@ -4222,6 +4222,11 @@ usr/src/man/man3c/stdc_bit_floor_ui.3c
 usr/src/man/man3c/stdc_bit_floor_ul.3c
 usr/src/man/man3c/stdc_bit_floor_ull.3c
 usr/src/man/man3c/stdc_bit_floor_us.3c
+usr/src/man/man3c/stdc_bit_width_uc.3c
+usr/src/man/man3c/stdc_bit_width_ui.3c
+usr/src/man/man3c/stdc_bit_width_ul.3c
+usr/src/man/man3c/stdc_bit_width_ull.3c
+usr/src/man/man3c/stdc_bit_width_us.3c
 usr/src/man/man3c/stdc_count_ones_uc.3c
 usr/src/man/man3c/stdc_count_ones_ui.3c
 usr/src/man/man3c/stdc_count_ones_ul.3c
@@ -8542,6 +8547,11 @@ usr/src/man/man9f/stdc_bit_floor_ui.9f
 usr/src/man/man9f/stdc_bit_floor_ul.9f
 usr/src/man/man9f/stdc_bit_floor_ull.9f
 usr/src/man/man9f/stdc_bit_floor_us.9f
+usr/src/man/man9f/stdc_bit_width_uc.9f
+usr/src/man/man9f/stdc_bit_width_ui.9f
+usr/src/man/man9f/stdc_bit_width_ul.9f
+usr/src/man/man9f/stdc_bit_width_ull.9f
+usr/src/man/man9f/stdc_bit_width_us.9f
 usr/src/man/man9f/stdc_count_ones_uc.9f
 usr/src/man/man9f/stdc_count_ones_ui.9f
 usr/src/man/man9f/stdc_count_ones_ul.9f
@@ -8933,6 +8943,9 @@ usr/src/test/libc-tests/tests/printf-15294.64
 usr/src/test/libc-tests/tests/printf-6961.64
 usr/src/test/libc-tests/tests/printf-9511.32
 usr/src/test/libc-tests/tests/printf-9511.64
+usr/src/test/libc-tests/tests/printf-intmax/printf-intmax.32
+usr/src/test/libc-tests/tests/printf-intmax/printf-intmax.64
+usr/src/test/libc-tests/tests/printf-intmax/printf-intmax.c89
 usr/src/test/libc-tests/tests/priv_gettext/priv_gettext
 usr/src/test/libc-tests/tests/psignal-5097.32
 usr/src/test/libc-tests/tests/psignal-5097.64
