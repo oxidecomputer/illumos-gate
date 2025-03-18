@@ -13,19 +13,39 @@
 # Copyright 2025 Oxide Computer Company
 #
 
-UTSBASE = ../..
+#
+# Path to the base of the uts directory tree (usually /usr/src/uts).
+#
+UTSBASE	= ../..
 
-MODULE		= zen_umc
-OBJECTS		= $(ZEN_UMC_OBJS:%=$(OBJS_DIR)/%)
-ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
+#
+# Define the module and object file sets.
+#
+MODULE		= bdat_prd
+OBJECTS		= $(BDAT_PRD_OBJS:%=$(OBJS_DIR)/%)
+ROOTMODULE	= $(ROOT_PSM_MISC_DIR)/$(MODULE)
 
-include $(UTSBASE)/intel/Makefile.intel
+#
+# Include common rules.
+#
+include $(UTSBASE)/oxide/Makefile.oxide
 
+#
+# Define targets
+#
 ALL_TARGET	= $(BINARY)
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
-CPPFLAGS	+= -I$(UTSBASE)/intel/io/amdzen
-LDFLAGS		+= -Ndrv/amdzen -Nmisc/bdat_prd
 
+#
+# Overrides
+#
+
+ALL_BUILDS	= $(ALL_BUILDSONLY64)
+DEF_BUILDS	= $(DEF_BUILDSONLY64)
+
+#
+#	Default build targets.
+#
 .KEEP_STATE:
 
 def:		$(DEF_DEPS)
@@ -38,4 +58,7 @@ clobber:	$(CLOBBER_DEPS)
 
 install:	$(INSTALL_DEPS)
 
-include $(UTSBASE)/intel/Makefile.targ
+#
+#	Include common targets.
+#
+include $(UTSBASE)/oxide/Makefile.targ

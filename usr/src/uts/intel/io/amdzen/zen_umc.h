@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _ZEN_UMC_H
@@ -25,11 +25,14 @@
 extern "C" {
 #endif
 
+#include <sys/stdbool.h>
 #include <sys/stdint.h>
 #include <sys/sunddi.h>
 #include <sys/nvpair.h>
 #include <sys/x86_archext.h>
-#include <amdzen_client.h>
+#include <sys/amdzen/bdat.h>
+
+#include "amdzen_client.h"
 
 /*
  * This is the maximum number of DRAM rules that we expect any supported device
@@ -81,6 +84,7 @@ extern "C" {
  */
 #define	ZEN_UMC_MAX_DIMMS		2
 #define	ZEN_UMC_MAX_CS_PER_DIMM		2
+#define	ZEN_UMC_MAX_SUBCHANS_PER_CS	2
 #define	ZEN_UMC_MAX_CS_BITS		2
 #define	ZEN_UMC_MAX_CHAN_BASE		2
 #define	ZEN_UMC_MAX_CHAN_MASK		2
@@ -335,6 +339,17 @@ typedef struct umc_cs {
 	uint8_t			ucs_inv_msbs_sec;
 	uint8_t			ucs_rm_bits_sec[ZEN_UMC_MAX_RM_BITS];
 	uint8_t			ucs_subchan;
+	/*
+	 * If we went through memory margining and the system firmware has been
+	 * appropriately configured to provide that data, then we'll have the
+	 * per-rank margining data here.
+	 */
+	zen_bdat_margin_t	ucs_margin;
+	/*
+	 * Similarly, if we have per-DQ margining data, we'll have that here.
+	 */
+	zen_bdat_margin_t	*ucs_dq_margins[ZEN_UMC_MAX_SUBCHANS_PER_CS];
+	uint8_t			ucs_ndq_margins[ZEN_UMC_MAX_SUBCHANS_PER_CS];
 } umc_cs_t;
 
 /*
@@ -356,6 +371,8 @@ typedef struct umc_dimm {
 	uint32_t		ud_dimmcfg_raw;
 	uint64_t		ud_dimm_size;
 	umc_cs_t		ud_cs[ZEN_UMC_MAX_CS_PER_DIMM];
+	size_t			ud_spd_size;
+	uint8_t			*ud_spd_data;
 } umc_dimm_t;
 
 typedef enum umc_chan_flags {
@@ -411,7 +428,7 @@ typedef struct umc_chan_hash {
 
 /*
  * This structure represents the overall memory channel. There is a 1:1
- * relationship between these structures and discover UMC hardware entities on
+ * relationship between these structures and discovered UMC hardware entities on
  * the data fabric. Note, these always exist regardless of whether the channels
  * are actually implemented on a PCB or not.
  */
@@ -469,6 +486,7 @@ typedef enum zen_umc_df_flags {
 typedef struct zen_umc_df {
 	zen_umc_df_flags_t	zud_flags;
 	uint_t			zud_dfno;
+	uint32_t		zud_sockno;
 	uint_t			zud_ccm_inst;
 	uint_t			zud_dram_nrules;
 	uint_t			zud_nchan;

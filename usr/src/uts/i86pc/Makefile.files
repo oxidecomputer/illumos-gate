@@ -25,7 +25,7 @@
 # Copyright (c) 2010, Intel Corporation.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2020 Joyent, Inc.
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 # Copyright 2021 Jason King
 #
 #	This Makefile defines file modules in the directory uts/i86pc
@@ -230,6 +230,8 @@ ACPIDEV_OBJS += acpidev_drv.o \
 	acpidev_resource.o \
 	acpidev_usbport.o \
 	acpidev_util.o
+
+BDAT_PRD_OBJS += bdat_prd_acpi.o
 
 DRMACH_ACPI_OBJS += drmach_acpi.o dr_util.o drmach_err.o
 

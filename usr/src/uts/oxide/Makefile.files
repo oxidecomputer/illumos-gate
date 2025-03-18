@@ -188,6 +188,7 @@ PCI_E_NEXUS_OBJS += pci_common.o pci_kstats.o pci_tools.o
 APIX_OBJS += apix.o apic_regops.o psm_common.o apix_intr.o apix_utils.o \
 		apix_irm.o apic_common.o apic_timer.o apix_regops.o
 
+BDAT_PRD_OBJS += bdat_prd_amdzen_direct.o
 
 CPUDRV_OBJS	+= \
 	cpudrv.o \

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -20,6 +20,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/boot_data.h>
 #include <sys/boot_debug.h>
 #include <sys/boot_physmem.h>
 #include <sys/debug.h>
@@ -27,6 +28,7 @@
 #include <sys/kapob.h>
 #include <sys/sysmacros.h>
 
+#include <sys/amdzen/bdat.h>
 #include <sys/io/zen/apob.h>
 #include <sys/io/zen/platform_impl.h>
 
@@ -90,5 +92,14 @@ zen_apob_reserve_phys(void)
 		    smp->asmm_holes[i].asmmh_size, MMU_PAGESIZE);
 
 		eb_physmem_reserve_range(start, end - start, EBPR_NOT_RAM);
+
+		if (smp->asmm_holes[i].asmmh_type == APOB_MEM_HOLE_TYPE_BDAT) {
+			/*
+			 * Save the BDAT address as a property for the bdat_prd
+			 * module to find.
+			 */
+			bt_set_prop_u64(BTPROP_NAME_BDAT_START, start);
+			bt_set_prop_u64(BTPROP_NAME_BDAT_END, end);
+		}
 	}
 }

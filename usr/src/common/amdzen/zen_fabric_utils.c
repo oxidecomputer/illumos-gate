@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -77,10 +77,17 @@ zen_fabric_id_decompose(const df_fabric_decomp_t *decomp, const uint32_t fabid,
 
 	ASSERT(zen_fabric_id_valid_fabid(decomp, fabid));
 
-	*compp = (fabid & decomp->dfd_comp_mask) >> decomp->dfd_comp_shift;
+	if (compp != NULL)
+		*compp = (fabid & decomp->dfd_comp_mask) >>
+		    decomp->dfd_comp_shift;
+
 	node = (fabid & decomp->dfd_node_mask) >> decomp->dfd_node_shift;
-	*diep = (node & decomp->dfd_die_mask) >> decomp->dfd_die_shift;
-	*sockp = (node & decomp->dfd_sock_mask) >> decomp->dfd_sock_shift;
+
+	if (diep != NULL)
+		*diep = (node & decomp->dfd_die_mask) >> decomp->dfd_die_shift;
+	if (sockp != NULL)
+		*sockp = (node & decomp->dfd_sock_mask) >>
+		    decomp->dfd_sock_shift;
 }
 
 /*

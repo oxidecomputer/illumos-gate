@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_APOB_H
@@ -51,6 +51,10 @@ typedef enum apob_group {
 typedef enum apob_fabric_type {
 	APOB_FABRIC_TYPE_SYS_MEM_MAP = 9,
 } apob_fabric_type_t;
+
+typedef enum apob_mem_hole_type {
+	APOB_MEM_HOLE_TYPE_BDAT = 18,
+} apob_mem_hole_type_t;
 
 #pragma pack(1)
 

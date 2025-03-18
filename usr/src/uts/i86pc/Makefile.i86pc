@@ -26,6 +26,7 @@
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2019 Joyent, Inc.
+# Copyright 2025 Oxide Computer Company
 #
 #
 #	This makefile contains the common definitions for the i86pc unix
@@ -292,6 +293,7 @@ MISC_KMODS	+= gfx_private pcie pci_prd
 MISC_KMODS	+= acpidev
 MISC_KMODS	+= drmach_acpi
 MISC_KMODS	+= tem
+MISC_KMODS	+= bdat_prd
 
 #
 #	'Dacf' modules (/kernel/dacf)

@@ -898,7 +898,6 @@ typedef struct acpi_table_xenv
 
 } ACPI_TABLE_XENV;
 
-
 /* Reset to default packing */
 
 #pragma pack()

@@ -199,7 +199,7 @@ bt_set_prop_u32(const char *name, uint32_t value)
 	    (void *)&value, sizeof (value));
 }
 
-static void
+void
 bt_set_prop_u64(const char *name, uint64_t value)
 {
 	bt_set_prop(DDI_PROP_TYPE_INT64, name, strlen(name),

@@ -1273,7 +1273,7 @@
  * As described in the definitions section, DDR5 has the notion of a
  * sub-channel. Here, a single bit is used to determine which of the
  * sub-channels to actually operate and utilize. Importantly the same
- * chip-select seems to apply to both halves of a given sub-channel.
+ * chip-select seems to apply to both halves of a given channel.
  *
  * There is also a hash that is used here. The hash here utilizes the calculated
  * bank, column, and row and follows the same pattern used in the bank
@@ -1353,6 +1353,7 @@
 #include <sys/x86_archext.h>
 #include <sys/sysmacros.h>
 #include <sys/mc.h>
+#include <sys/plat/bdat_prd.h>
 
 #include <zen_umc.h>
 #include <sys/amdzen/df.h>
@@ -2358,6 +2359,44 @@ zen_umc_fill_ccm_cb(const uint_t dfno, const uint32_t fabid,
 	}
 
 	/*
+	 * Read the DF::FabricBlockInstanceInformation3 register to get the
+	 * Fabric ID -- the same register across all platforms but slightly
+	 * different layouts.
+	 */
+	if ((ret = amdzen_c_df_read32(dfno, instid, DF_FBIINFO3, &val)) != 0) {
+		dev_err(umc->umc_dip, CE_WARN, "!failed to read DF FBIINFO3 "
+		    "register: %d", ret);
+		return (-1);
+	}
+	switch (umc->umc_df_rev) {
+	case DF_REV_2:
+		val = DF_FBIINFO3_V2_GET_BLOCKID(val);
+		break;
+	case DF_REV_3:
+		val = DF_FBIINFO3_V3_GET_BLOCKID(val);
+		break;
+	case DF_REV_3P5:
+		val = DF_FBIINFO3_V3P5_GET_BLOCKID(val);
+		break;
+	case DF_REV_4:
+		val = DF_FBIINFO3_V4_GET_BLOCKID(val);
+		break;
+	case DF_REV_4D2:
+		val = DF_FBIINFO3_V4D2_GET_BLOCKID(val);
+		break;
+	default:
+		dev_err(umc->umc_dip, CE_WARN, "!encountered unsupported "
+		    "DF version: 0x%x", umc->umc_df_rev);
+		return (-1);
+	}
+	/*
+	 * With the Fabric ID, we can now determine the socket ID. Note that
+	 * past Naples, there is only a single DF per socket.
+	 */
+	zen_fabric_id_decompose(&umc->umc_decomp, val, &df->zud_sockno, NULL,
+	    NULL);
+
+	/*
 	 * Next get the DRAM hole. This has the same layout, albeit different
 	 * registers across our different platforms.
 	 */
@@ -2493,6 +2532,118 @@ zen_umc_calc_dimm_size(umc_dimm_t *dimm)
 }
 
 /*
+ * Once we have a valid DIMM, we can attempt to fill in its SPD data if we have
+ * it available.  That may be via ACPI tables or directly from the BDAT, but
+ * either way this is a best effort operation.
+ */
+static void
+zen_umc_fill_spd(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
+    umc_dimm_t *dimm)
+{
+	bdat_prd_errno_t ret;
+	uint8_t *spd_data;
+	size_t spd_size;
+	bdat_prd_mem_select_t bdat_spd_sel = {
+		.bdat_sock = df->zud_sockno,
+		.bdat_chan = chan->chan_instid,
+		.bdat_dimm = dimm->ud_dimmno,
+	};
+
+	if (bdat_prd_mem_present(BDAT_PRD_MEM_SPD, &bdat_spd_sel, &spd_size)) {
+		spd_data = kmem_zalloc(spd_size, KM_SLEEP);
+		ret = bdat_prd_mem_read(BDAT_PRD_MEM_SPD, &bdat_spd_sel,
+		    spd_data, spd_size);
+		if (ret != BPE_OK) {
+			dev_err(umc->umc_dip, CE_WARN,
+			    "failed to read SPD data for DIMM %u/%u/%u: %d",
+			    df->zud_sockno, chan->chan_instid, dimm->ud_dimmno,
+			    ret);
+			kmem_free(spd_data, spd_size);
+		} else {
+			dimm->ud_spd_size = spd_size;
+			dimm->ud_spd_data = spd_data;
+		}
+	}
+}
+
+/*
+ * Fill in the margining data for a DIMM if we have it available.
+ */
+static void
+zen_umc_fill_margin_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
+    umc_dimm_t *dimm, boolean_t ddr4_style)
+{
+	bdat_prd_errno_t ret;
+
+	for (uint_t r = 0; r < ZEN_UMC_MAX_CS_PER_DIMM; r++) {
+		umc_cs_t *cs = &dimm->ud_cs[r];
+		bdat_prd_mem_select_t sel = {
+			.bdat_sock = df->zud_sockno,
+			.bdat_chan = chan->chan_instid,
+			.bdat_dimm = dimm->ud_dimmno,
+			.bdat_rank = r,
+		};
+		size_t size;
+		uint8_t nscs;
+
+		if (bdat_prd_mem_present(BDAT_PRD_MEM_AMD_RANK_MARGIN, &sel,
+		    &size)) {
+			ret = bdat_prd_mem_read(BDAT_PRD_MEM_AMD_RANK_MARGIN,
+			    &sel, &cs->ucs_margin, size);
+			if (ret != BPE_OK) {
+				dev_err(umc->umc_dip, CE_WARN,
+				    "failed to read rank margin data for DIMM "
+				    "%u/%u/%u/%u: %d", df->zud_sockno,
+				    chan->chan_instid, dimm->ud_dimmno,
+				    r, ret);
+			}
+		}
+
+		/*
+		 * Note there's currently no DDR4 platform that provides any
+		 * BDAT data so we don't expect to get a hit.  But on the off
+		 * chance we do, we treat DDR4 as if it has one "sub-channel".
+		 */
+		nscs = ddr4_style ? 1 : ZEN_UMC_MAX_SUBCHANS_PER_CS;
+		for (uint8_t sc = 0; sc < nscs; sc++) {
+			zen_bdat_margin_t *dq_margins;
+
+			sel.bdat_subchan = sc;
+			if (!bdat_prd_mem_present(BDAT_PRD_MEM_AMD_DQ_MARGIN,
+			    &sel, &size)) {
+				if (sc > 0) {
+					dev_err(umc->umc_dip, CE_WARN,
+					    "only found half the DQ margin data"
+					    " for DIMM %u/%u/%u/%u",
+					    df->zud_sockno, chan->chan_instid,
+					    dimm->ud_dimmno, r);
+				}
+				break;
+			}
+
+			ASSERT0(size % sizeof (zen_bdat_margin_t));
+			dq_margins = kmem_zalloc(size, KM_SLEEP);
+
+			ret = bdat_prd_mem_read(BDAT_PRD_MEM_AMD_DQ_MARGIN,
+			    &sel, dq_margins, size);
+			if (ret != BPE_OK) {
+				dev_err(umc->umc_dip, CE_WARN,
+				    "failed to read DQ margin data for DIMM "
+				    "%u/%u/%u/%u/%u: %d", df->zud_sockno,
+				    chan->chan_instid, dimm->ud_dimmno, r, sc,
+				    ret);
+				kmem_free(dq_margins, size);
+				break;
+			}
+
+			cs->ucs_dq_margins[sc] = dq_margins;
+			cs->ucs_ndq_margins[sc] = size /
+			    sizeof (zen_bdat_margin_t);
+		}
+	}
+}
+
+/*
  * This is used to fill in the common properties about a DIMM. This should occur
  * after the rank information has been filled out. The information used is the
  * same between DDR4 and DDR5 DIMMs. The only major difference is the register
@@ -2546,13 +2697,16 @@ zen_umc_fill_dimm_common(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 	 * a number of non-zero reset values that are here. Flag whether or not
 	 * we think this entry should be usable based on enabled chip-selects.
 	 */
-	for (uint_t i = 0; i < ZEN_UMC_MAX_CHAN_BASE; i++) {
+	for (uint_t i = 0; i < ZEN_UMC_MAX_CS_PER_DIMM; i++) {
 		if (dimm->ud_cs[i].ucs_base.udb_valid ||
 		    dimm->ud_cs[i].ucs_sec.udb_valid) {
 			dimm->ud_flags |= UMC_DIMM_F_VALID;
 			break;
 		}
 	}
+
+	zen_umc_fill_spd(umc, df, chan, dimm);
+	zen_umc_fill_margin_data(umc, df, chan, dimm, ddr4_style);
 
 	/*
 	 * The remaining calculations we only want to perform if we have actual
@@ -2997,7 +3151,7 @@ zen_umc_fill_chan_rank_ddr5(zen_umc_t *umc, zen_umc_df_t *df,
 	bcopy(cs->ucs_rm_bits, cs->ucs_rm_bits_sec,
 	    sizeof (cs->ucs_rm_bits));
 
-	return (zen_umc_fill_dimm_common(umc, df, chan, dimmno, B_FALSE));
+	return (B_TRUE);
 }
 
 static void
@@ -3595,6 +3749,10 @@ zen_umc_fill_umc_cb(const uint_t dfno, const uint32_t fabid,
 					return (-1);
 				}
 			}
+			if (!zen_umc_fill_dimm_common(umc, df, chan, i,
+			    B_FALSE)) {
+				return (-1);
+			}
 		}
 		break;
 	default:
@@ -3800,8 +3958,45 @@ zen_umc_close(dev_t dev, int flag, int otyp, cred_t *credp)
 }
 
 static void
+zen_umc_chan_cleanup(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
+{
+	for (uint_t i = 0; i < ZEN_UMC_MAX_DIMMS; i++) {
+		umc_dimm_t *dimm = &chan->chan_dimms[i];
+		if (dimm->ud_spd_data != NULL) {
+			kmem_free(dimm->ud_spd_data, dimm->ud_spd_size);
+			dimm->ud_spd_data = NULL;
+			dimm->ud_spd_size = 0;
+		}
+		for (uint_t r = 0; r < ZEN_UMC_MAX_CS_PER_DIMM; r++) {
+			umc_cs_t *cs = &dimm->ud_cs[r];
+			for (uint_t sc = 0; sc < ZEN_UMC_MAX_SUBCHANS_PER_CS;
+			    sc++) {
+				if (cs->ucs_dq_margins[sc] != NULL) {
+					kmem_free(cs->ucs_dq_margins[sc],
+					    cs->ucs_ndq_margins[sc] *
+					    sizeof (zen_bdat_margin_t));
+					cs->ucs_dq_margins[sc] = NULL;
+					cs->ucs_ndq_margins[sc] = 0;
+				}
+			}
+		}
+	}
+}
+
+static void
+zen_umc_df_cleanup(zen_umc_t *umc, zen_umc_df_t *df)
+{
+	for (uint_t i = 0; i < df->zud_nchan; i++) {
+		zen_umc_chan_cleanup(umc, df, &df->zud_chan[i]);
+	}
+}
+
+static void
 zen_umc_cleanup(zen_umc_t *umc)
 {
+	for (uint_t i = 0; i < umc->umc_ndfs; i++) {
+		zen_umc_df_cleanup(umc, &umc->umc_dfs[i]);
+	}
 	nvlist_free(umc->umc_decoder_nvl);
 	umc->umc_decoder_nvl = NULL;
 	if (umc->umc_decoder_buf != NULL) {

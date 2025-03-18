@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co
+ * Copyright 2025 Oxide Computer Co
  * All rights reserved.
  */
 
@@ -49,6 +49,8 @@ typedef struct bt_prop {
  * while others are fixed.
  */
 #define	BTPROP_NAME_APOB_ADDRESS	"apob-address"
+#define	BTPROP_NAME_BDAT_START		"bdat-start"
+#define	BTPROP_NAME_BDAT_END		"bdat-end"
 #define	BTPROP_NAME_BOARD_IDENT		"baseboard-identifier"
 #define	BTPROP_NAME_BOARD_MODEL		"baseboard-model"
 #define	BTPROP_NAME_BOARD_REVISION	"baseboard-revision"
@@ -66,6 +68,7 @@ typedef struct bt_prop {
 extern const bt_prop_t *bt_props;
 extern const bt_prop_t * const bt_fallback_props;
 
+extern void bt_set_prop_u64(const char *, uint64_t);
 extern void bt_set_prop(uint32_t, const char *, size_t, const void *, size_t);
 extern void eb_create_properties(uint64_t, size_t);
 extern void eb_set_tunables(void);

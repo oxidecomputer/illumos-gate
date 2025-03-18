@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_APOB_H
@@ -31,7 +31,6 @@ extern "C" {
  * in the physical address space as reserved.
  */
 extern void zen_apob_reserve_phys(void);
-extern void zen_null_apob_reserve_phys(void);
 
 #ifdef	__cplusplus
 }

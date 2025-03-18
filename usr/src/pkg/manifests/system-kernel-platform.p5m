@@ -26,7 +26,7 @@
 # Copyright 2020 Peter Tribble.
 # Copyright 2019 Joyent, Inc.
 # Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
-# Copyright 2024 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 #
@@ -97,6 +97,8 @@ $(i386_ONLY)file path=platform/i86pc/kernel/mach/$(ARCH64)/uppc group=sys \
 $(i386_ONLY)dir path=platform/i86pc/kernel/misc group=sys
 $(i386_ONLY)dir path=platform/i86pc/kernel/misc/$(ARCH64) group=sys
 $(i386_ONLY)file path=platform/i86pc/kernel/misc/$(ARCH64)/acpidev group=sys \
+    mode=0755
+$(i386_ONLY)file path=platform/i86pc/kernel/misc/$(ARCH64)/bdat_prd group=sys \
     mode=0755
 $(i386_ONLY)file path=platform/i86pc/kernel/misc/$(ARCH64)/gfx_private \
     group=sys mode=0755
@@ -200,6 +202,8 @@ $(i386_ONLY)file path=platform/oxide/kernel/mach/$(ARCH64)/apix group=sys \
     mode=0755
 $(i386_ONLY)dir path=platform/oxide/kernel/misc group=sys
 $(i386_ONLY)dir path=platform/oxide/kernel/misc/$(ARCH64) group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/misc/$(ARCH64)/bdat_prd group=sys \
+    mode=0755
 $(i386_ONLY)file path=platform/oxide/kernel/misc/$(ARCH64)/boot_image \
     group=sys mode=0755
 $(i386_ONLY)file path=platform/oxide/kernel/misc/$(ARCH64)/pci_prd group=sys \
