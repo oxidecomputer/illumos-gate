@@ -1010,8 +1010,8 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		}
 
 		/*
-		 * Pullup copies all encap and initial header state, but the
-		 * output is connected to odatamp via `dupmsg`. Discard the ref.
+		 * Pullup copies all initial header state, but the output is
+		 * connected to odatamp via `dupmsg`. Discard the ref.
 		 */
 		if (nhdrmp->b_cont != NULL) {
 			freemsg(nhdrmp->b_cont);
