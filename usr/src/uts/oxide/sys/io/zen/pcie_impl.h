@@ -213,7 +213,7 @@ struct zen_pcie_port {
 	/*
 	 * The following represents the synthesized slot information for this.
 	 */
-	uint16_t		zpp_hp_slotno;
+	uint16_t		zpp_slotno;
 
 	/*
 	 * PCIe port registers captured at various stages.

@@ -175,7 +175,7 @@ oxio_port_to_smu_hp(const zen_pcie_port_t *port, smu_hotplug_table_t *smu)
 	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	const oxio_engine_t *oxio = port->zpp_oxio;
 	const zen_pcie_core_t *core = port->zpp_core;
-	uint8_t slot = port->zpp_hp_slotno;
+	uint8_t slot = port->zpp_slotno;
 	smu_hotplug_map_t *map = &smu->smt_map[slot];
 	smu_hotplug_function_t *func = &smu->smt_func[slot];
 	smu_hotplug_reset_t *reset = &smu->smt_reset[slot];

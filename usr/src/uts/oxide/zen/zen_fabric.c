@@ -2707,12 +2707,13 @@ zen_fabric_init_pcie_hotplug_slot_caps(zen_pcie_port_t *port)
 	uint32_t val;
 
 	/*
-	 * Go through and set up the slot capabilities register. In our case
-	 * we've already filtered out the non-hotplug capable bridges. To
-	 * determine the set of hotplug features that should be set here we
-	 * derive that from the actual hoptlug entities. Because one is required
-	 * to give the SMU a list of functions to mask, the unmasked bits tells
-	 * us what to enable as features here.
+	 * Go through and set up the slot capabilities register.  In our case
+	 * we've already filtered out the non-hotplug capable bridges, and the
+	 * physical slot number has already been programmed by non-hotplug
+	 * bridge initialization.  To determine the set of hotplug features that
+	 * should be set here we derive that from the actual hoptlug entities.
+	 * Because one is required to give the SMU a list of functions to mask,
+	 * the unmasked bits tells us what to enable as features here.
 	 */
 	slot_mask = PCIE_SLOTCAP_ATTN_BUTTON | PCIE_SLOTCAP_POWER_CONTROLLER |
 	    PCIE_SLOTCAP_MRL_SENSOR | PCIE_SLOTCAP_ATTN_INDICATOR |
@@ -2722,9 +2723,6 @@ zen_fabric_init_pcie_hotplug_slot_caps(zen_pcie_port_t *port)
 
 	val = pci_getl_func(ioms->zio_pci_busno, port->zpp_device,
 	    port->zpp_func, ZEN_BRIDGE_R_PCI_SLOT_CAP);
-	val &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
-	    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
-	val |= port->zpp_hp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
 	val &= ~slot_mask;
 	val |= zen_fabric_hotplug_bridge_features(port);
 	pci_putl_func(ioms->zio_pci_busno, port->zpp_device,
@@ -2850,6 +2848,65 @@ zen_fabric_pcie_hotplug_init(zen_fabric_t *fabric)
 	    zen_hotplug_bridge_post_start, NULL);
 
 	return (true);
+}
+
+static void
+zen_fabric_init_pcie_port(zen_pcie_port_t *port)
+{
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
+	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
+	uint32_t reg32;
+	uint16_t reg16;
+
+	/* Perform uarch-specific bridge initialization. */
+	VERIFY3P(ops->zfo_init_bridge, !=, NULL);
+	(ops->zfo_init_bridge)(port);
+
+	/*
+	 * Software expects to see the PCIe slot implemented bit when a slot
+	 * actually exists. For us, this is basically anything that actually is
+	 * considered MAPPED.  Set that now on the port.
+	 *
+	 * We also set the physical slot number into the slot capabilities
+	 * register.  Again, this only applies to MAPPED ports.
+	 */
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
+		reg16 = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_PCIE_CAP);
+		reg16 |= PCIE_PCIECAP_SLOT_IMPL;
+		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_PCIE_CAP, reg16);
+
+		reg32 = pci_getl_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_SLOT_CAP);
+		reg32 &= ~(PCIE_SLOTCAP_PHY_SLOT_NUM_MASK <<
+		    PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT);
+		reg32 |= port->zpp_slotno << PCIE_SLOTCAP_PHY_SLOT_NUM_SHIFT;
+		pci_putl_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_SLOT_CAP, reg32);
+	}
+
+	/*
+	 * Take this opportunity to apply any requested OXIO tuning to the
+	 * bridge.
+	 *
+	 * While in an ideal world we would apply this after mapping, either
+	 * after the mapping RPC completes in MPIO initialization or after the
+	 * MAPPED stage in the DXIO state machine via the SMU, experimentally it
+	 * seems to get clobbered by something else (at least on Milan).  As the
+	 * majority of the things we're worried about are gated behind hotplug
+	 * and this isn't something we generally want to use, we will survive
+	 * setting this a bit later than we'd like.
+	 */
+	if (port->zpp_oxio != NULL &&
+	    port->zpp_oxio->oe_tuning.ot_log_limit != OXIO_SPEED_GEN_MAX) {
+		reg16 = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_LINK_CTL2);
+		reg16 &= ~PCIE_LINKCTL2_TARGET_SPEED_MASK;
+		reg16 |= oxio_loglim_to_pcie(port->zpp_oxio);
+		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
+		    port->zpp_func, ZEN_BRIDGE_R_PCI_LINK_CTL2, reg16);
+	}
 }
 
 void
@@ -3031,7 +3088,7 @@ zen_fabric_init(void)
 	zen_fabric_walk_pcie_core(fabric, zen_fabric_pcie_core_op,
 	    fabric_ops->zfo_init_pcie_core);
 	zen_fabric_walk_pcie_port(fabric, zen_fabric_pcie_port_op,
-	    fabric_ops->zfo_init_bridge);
+	    zen_fabric_init_pcie_port);
 
 	/*
 	 * XXX This is a terrible hack. We should really fix pci_boot.c.

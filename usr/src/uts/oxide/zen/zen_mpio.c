@@ -1200,7 +1200,7 @@ zen_mpio_oxio_to_port_hp(const zen_pcie_port_t *port,
 	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	const oxio_engine_t *oxio = port->zpp_oxio;
 	const zen_pcie_core_t *core = port->zpp_core;
-	uint8_t slot = port->zpp_hp_slotno;
+	uint8_t slot = port->zpp_slotno;
 	zen_mpio_hotplug_map_t *map = &hp->zmht_map[slot];
 	zen_mpio_hotplug_function_t *func = &hp->zmht_func[slot];
 	zen_mpio_hotplug_reset_t *reset = &hp->zmht_reset[slot];

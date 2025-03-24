@@ -481,9 +481,9 @@ oxio_port_info_fill(zen_pcie_port_t *port)
 	 * information only has the base slot.
 	 */
 	if (oxio->oe_type == OXIO_ENGINE_T_UBM) {
-		port->zpp_hp_slotno = port->zpp_dfc->zud_slot;
+		port->zpp_slotno = port->zpp_dfc->zud_slot;
 	} else {
-		port->zpp_hp_slotno = oxio->oe_slot;
+		port->zpp_slotno = oxio->oe_slot;
 	}
 
 	/*

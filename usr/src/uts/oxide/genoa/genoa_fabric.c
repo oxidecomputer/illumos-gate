@@ -1420,7 +1420,7 @@ genoa_fabric_hotplug_port_init(zen_pcie_port_t *port)
 	 */
 	reg = genoa_pcie_port_reg(port, D_PCIE_PORT_HP_CTL);
 	val = zen_pcie_port_read(port, reg);
-	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->zpp_hp_slotno);
+	val = PCIE_PORT_HP_CTL_SET_SLOT(val, port->zpp_slotno);
 	val = PCIE_PORT_HP_CTL_SET_ACTIVE(val, 1);
 	zen_pcie_port_write(port, reg, val);
 
@@ -2195,38 +2195,6 @@ genoa_fabric_init_bridge(zen_pcie_port_t *port)
 	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
 	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
 	zen_pcie_port_write(port, reg, val);
-
-	/*
-	 * Software expects to see the PCIe slot implemented bit when a slot
-	 * actually exists. For us, this is basically anything that actually is
-	 * considered MAPPED. Set that now on the port.
-	 */
-	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
-		uint16_t reg;
-
-		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, ZEN_BRIDGE_R_PCI_PCIE_CAP);
-		reg |= PCIE_PCIECAP_SLOT_IMPL;
-		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, ZEN_BRIDGE_R_PCI_PCIE_CAP, reg);
-	}
-
-	/*
-	 * Take this opportunity to apply any requested OXIO tuning to the
-	 * bridge. See the version in milan_fabric_init_bridge() for notes on
-	 * the placement of this operation.
-	 */
-	if (port->zpp_oxio != NULL &&
-	    port->zpp_oxio->oe_tuning.ot_log_limit != OXIO_SPEED_GEN_MAX) {
-		uint16_t reg;
-
-		reg = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, ZEN_BRIDGE_R_PCI_LINK_CTL2);
-		reg &= ~PCIE_LINKCTL2_TARGET_SPEED_MASK;
-		reg |= oxio_loglim_to_pcie(port->zpp_oxio);
-		pci_putw_func(ioms->zio_pci_busno, port->zpp_device,
-		    port->zpp_func, ZEN_BRIDGE_R_PCI_LINK_CTL2, reg);
-	}
 }
 
 /*
