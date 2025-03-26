@@ -122,6 +122,9 @@ extern void milan_fabric_nbif_bridges(zen_ioms_t *);
 extern void milan_fabric_pcie(zen_fabric_t *);
 extern void milan_fabric_init_pcie_core(zen_pcie_core_t *);
 extern void milan_fabric_init_bridge(zen_pcie_port_t *);
+extern bool milan_fabric_pcie_port_is_trained(const zen_pcie_port_t *);
+extern void milan_fabric_hide_bridge(zen_pcie_port_t *);
+extern void milan_fabric_unhide_bridge(zen_pcie_port_t *);
 
 extern void milan_smu_hotplug_port_data_init(zen_pcie_port_t *,
     zen_hotplug_table_t *);

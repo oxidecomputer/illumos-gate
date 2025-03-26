@@ -1179,6 +1179,13 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	    fops->zfo_pcie_port_hide_bridge);
 }
 
+bool
+zen_mpio_pcie_port_is_trained(const zen_pcie_port_t *port)
+{
+	zen_mpio_ict_link_status_t *lp = &port->zpp_ask_port->zma_status;
+	return (lp->zmils_state == ZEN_MPIO_LINK_STATE_TRAINED);
+}
+
 /*
  * We have been given a zen_pcie_port_t for a port that supports PCIe hotplug.
  * The zen_pcie_port_t contains a pointer to the Oxide-generic OXIO engine data

@@ -2837,9 +2837,53 @@ static void
 zen_fabric_init_pcie_port(zen_pcie_port_t *port)
 {
 	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
-	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
 	uint32_t reg32;
 	uint16_t reg16;
+	bool hide;
+
+	/*
+	 * We need to determine whether or not this bridge should be considered
+	 * visible. This is messy. Ideally, we'd just have every bridge be
+	 * visible; however, life isn't that simple because convincing the PCIe
+	 * engine that it should actually allow for completion timeouts to
+	 * function as expected isn't easy. In addition, having bridges that
+	 * have no devices present and never can due to the platform definition
+	 * can end up wasting precious 32-bit non-prefetchable memory.  The
+	 * current masking rules are based on what we have learned works from
+	 * trial and error.
+	 *
+	 * Strictly speaking, a bridge will work from a completion timeout
+	 * perspective if the SMU thinks it belongs to a PCIe port that has any
+	 * hotpluggable elements or otherwise has a device present.
+	 * Unfortunately the case you really want to work, a non-hotpluggable,
+	 * but defined device that does not have a device present should be
+	 * visible does not work.
+	 *
+	 * Ultimately, what we have implemented here is to basically say if a
+	 * bridge is not mapped to an endpoint, then it is not shown. If it is,
+	 * and it belongs to a hot-pluggable port then we always show it.
+	 * Otherwise we only show it if there's a device present.
+	 */
+	hide = true;
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
+		bool hotplug, trained;
+
+		hotplug = (pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
+		VERIFY3P(ops->zfo_pcie_port_is_trained, !=, NULL);
+		trained = (ops->zfo_pcie_port_is_trained)(port);
+		hide = !hotplug && !trained;
+	}
+
+	if (hide) {
+		port->zpp_flags |= ZEN_PCIE_PORT_F_BRIDGE_HIDDEN;
+		VERIFY3P(ops->zfo_pcie_port_hide_bridge, !=, NULL);
+		(ops->zfo_pcie_port_hide_bridge)(port);
+	} else {
+		VERIFY3P(ops->zfo_pcie_port_unhide_bridge, !=, NULL);
+		(ops->zfo_pcie_port_unhide_bridge)(port);
+	}
 
 	/* Perform uarch-specific bridge initialization. */
 	VERIFY3P(ops->zfo_init_bridge, !=, NULL);

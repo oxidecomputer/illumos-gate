@@ -171,6 +171,12 @@ extern void zen_mpio_report_fw_version(const zen_iodie_t *iodie);
  */
 extern void zen_mpio_pcie_init(zen_fabric_t *);
 
+/*
+ * Returns true iff the given port's link state status in the ASK indicates that
+ * it was successfully trained.
+ */
+extern bool zen_mpio_pcie_port_is_trained(const zen_pcie_port_t *);
+
 extern bool zen_mpio_write_pcie_strap(zen_pcie_core_t *, uint32_t, uint32_t);
 extern uint32_t zen_mpio_ubm_idx(const zen_iodie_t *);
 

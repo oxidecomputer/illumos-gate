@@ -250,6 +250,11 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_nbif_init)(zen_nbif_t *);
 
 	/*
+	 * Returns true iff a port is trained.
+	 */
+	bool		(*zfo_pcie_port_is_trained)(const zen_pcie_port_t *);
+
+	/*
 	 * Sets PCIe bridges so that they are hidden or not hidden in the IOHC.
 	 */
 	void		(*zfo_pcie_port_unhide_bridge)(zen_pcie_port_t *);

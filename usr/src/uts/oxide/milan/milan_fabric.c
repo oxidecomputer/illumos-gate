@@ -3822,64 +3822,10 @@ done:
 void
 milan_fabric_init_bridge(zen_pcie_port_t *port)
 {
+	zen_pcie_core_t *pc = port->zpp_core;
+	zen_ioms_t *ioms = pc->zpc_ioms;
 	smn_reg_t reg;
 	uint32_t val;
-	bool hide;
-	const zen_pcie_core_t *pc = port->zpp_core;
-	const zen_ioms_t *ioms = pc->zpc_ioms;
-
-	/*
-	 * We need to determine whether or not this bridge should be considered
-	 * visible. This is messy. Ideally, we'd just have every bridge be
-	 * visible; however, life isn't that simple because convincing the PCIe
-	 * engine that it should actually allow for completion timeouts to
-	 * function as expected. In addition, having bridges that have no
-	 * devices present and never can due to the platform definition can end
-	 * up being rather wasteful of precious 32-bit non-prefetchable memory.
-	 * The current masking rules are based on what we have learned from
-	 * trial and error works.
-	 *
-	 * Strictly speaking, a bridge will work from a completion timeout
-	 * perspective if the SMU thinks it belongs to a PCIe port that has any
-	 * hotpluggable elements or otherwise has a device present.
-	 * Unfortunately the case you really want to work, a non-hotpluggable,
-	 * but defined device that does not have a device present should be
-	 * visible does not work.
-	 *
-	 * Ultimately, what we have implemented here is to basically say if a
-	 * bridge is not mapped to an endpoint, then it is not shown. If it is,
-	 * and it belongs to a hot-pluggable port then we always show it.
-	 * Otherwise we only show it if there's a device present.
-	 */
-	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0) {
-		bool hotplug, trained;
-		uint8_t lt;
-
-		hotplug = (pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		lt = port->zpp_dxio_engine->zde_config.zdc_pcie.zdcp_link_train;
-		trained = lt == MILAN_DXIO_PCIE_SUCCESS;
-		hide = !hotplug && !trained;
-	} else {
-		hide = true;
-	}
-
-	if (hide) {
-		port->zpp_flags |= ZEN_PCIE_PORT_F_BRIDGE_HIDDEN;
-	}
-
-	reg = milan_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
-	val = zen_pcie_port_read(port, reg);
-	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
-	if (hide) {
-		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
-		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
-		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
-	} else {
-		val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 0);
-		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
-		val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
-	}
-	zen_pcie_port_write(port, reg, val);
 
 	reg = milan_pcie_port_reg(port, D_PCIE_PORT_TX_CTL);
 	val = zen_pcie_port_read(port, reg);
@@ -3922,6 +3868,7 @@ milan_fabric_init_bridge(zen_pcie_port_t *port)
 	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL2_SET_ELEC_IDLE(val,
 	    PCIE_PORT_LC_CTL2_ELEC_IDLE_M1);
+
 	/*
 	 * This is supposed to be set as part of some workaround for ports that
 	 * support at least PCIe Gen 3.0 speeds. As all supported platforms
@@ -3955,6 +3902,43 @@ milan_fabric_init_bridge(zen_pcie_port_t *port)
 	val = zen_pcie_port_read(port, reg);
 	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
 	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
+	zen_pcie_port_write(port, reg, val);
+}
+
+bool
+milan_fabric_pcie_port_is_trained(const zen_pcie_port_t *port)
+{
+	uint8_t lt = port->zpp_dxio_engine->zde_config.zdc_pcie.zdcp_link_train;
+	return (lt == MILAN_DXIO_PCIE_SUCCESS);
+}
+
+void
+milan_fabric_hide_bridge(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = milan_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 1);
+	zen_pcie_port_write(port, reg, val);
+}
+
+void
+milan_fabric_unhide_bridge(zen_pcie_port_t *port)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	reg = milan_pcie_port_reg(port, D_IOHCDEV_PCIE_BRIDGE_CTL);
+	val = zen_pcie_port_read(port, reg);
+	val = IOHCDEV_BRIDGE_CTL_SET_CRS_ENABLE(val, 1);
+	val = IOHCDEV_BRIDGE_CTL_SET_BRIDGE_DISABLE(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_BUS_MASTER(val, 0);
+	val = IOHCDEV_BRIDGE_CTL_SET_DISABLE_CFG(val, 0);
 	zen_pcie_port_write(port, reg, val);
 }
 

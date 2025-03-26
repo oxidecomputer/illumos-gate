@@ -115,6 +115,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_nbif_dev_straps = turin_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for turin */
 	.zfo_pcie = turin_fabric_pcie,
+	.zfo_pcie_port_is_trained = zen_mpio_pcie_port_is_trained,
 	.zfo_pcie_port_unhide_bridge = turin_fabric_unhide_bridge,
 	.zfo_pcie_port_hide_bridge = turin_fabric_hide_bridge,
 	.zfo_init_pcie_port = turin_fabric_init_pcie_port,
