@@ -35,7 +35,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 
@@ -355,7 +355,7 @@ viona_tx_csum(viona_vring_t *ring, const struct virtio_net_hdr *hdr,
 	 * trusted. Besides, our own stack will determine the header
 	 * boundary.
 	 */
-	if ((link->l_cap_csum & HCKSUM_INET_PARTIAL) != 0 &&
+	if ((link->l_cap_csum.cso_flags & HCKSUM_INET_PARTIAL) != 0 &&
 	    (hdr->vrh_gso_type & VIRTIO_NET_HDR_GSO_TCPV4) != 0 &&
 	    ftype == ETHERTYPE_IP) {
 		uint16_t	*cksump;
@@ -418,7 +418,7 @@ viona_tx_csum(viona_vring_t *ring, const struct virtio_net_hdr *hdr,
 	 * Partial checksum support from the NIC is ideal, since it most
 	 * closely maps to the interface defined by virtio.
 	 */
-	if ((link->l_cap_csum & HCKSUM_INET_PARTIAL) != 0 &&
+	if ((link->l_cap_csum.cso_flags & HCKSUM_INET_PARTIAL) != 0 &&
 	    (ipproto == IPPROTO_TCP || ipproto == IPPROTO_UDP)) {
 		/*
 		 * MAC expects these offsets to be relative to the
@@ -436,7 +436,7 @@ viona_tx_csum(viona_vring_t *ring, const struct virtio_net_hdr *hdr,
 	 * checksum will need to calculated inline.
 	 */
 	if (ftype == ETHERTYPE_IP) {
-		if ((link->l_cap_csum & HCKSUM_INET_FULL_V4) != 0 &&
+		if ((link->l_cap_csum.cso_flags & HCKSUM_INET_FULL_V4) != 0 &&
 		    (ipproto == IPPROTO_TCP || ipproto == IPPROTO_UDP)) {
 			uint16_t *csump = (uint16_t *)(mp->b_rptr + csum_stuff);
 			*csump = 0;
@@ -450,7 +450,7 @@ viona_tx_csum(viona_vring_t *ring, const struct virtio_net_hdr *hdr,
 		VIONA_RING_STAT_INCR(ring, fail_hcksum);
 		return (B_FALSE);
 	} else if (ftype == ETHERTYPE_IPV6) {
-		if ((link->l_cap_csum & HCKSUM_INET_FULL_V6) != 0 &&
+		if ((link->l_cap_csum.cso_flags & HCKSUM_INET_FULL_V6) != 0 &&
 		    (ipproto == IPPROTO_TCP || ipproto == IPPROTO_UDP)) {
 			uint16_t *csump = (uint16_t *)(mp->b_rptr + csum_stuff);
 			*csump = 0;

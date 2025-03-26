@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -1631,7 +1631,7 @@ igc_tx_ring_write_descs(igc_t *igc, igc_tx_ring_t *ring, mblk_t *mp,
 static bool
 igc_meoi_checks(mblk_t *mp, igc_tx_state_t *tx)
 {
-	mac_ether_offload_info(mp, &tx->itx_meoi);
+	mac_ether_offload_info(mp, &tx->itx_meoi, NULL);
 
 	const mac_ether_offload_info_t *meoi = &tx->itx_meoi;
 	if ((tx->itx_cksum & HCK_IPV4_HDRCKSUM) != 0) {

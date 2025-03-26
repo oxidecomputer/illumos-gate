@@ -213,7 +213,7 @@ struct viona_link {
 
 	uint32_t		l_features;
 	uint32_t		l_features_hw;
-	uint32_t		l_cap_csum;
+	mac_capab_cso_t		l_cap_csum;
 	viona_link_params_t	l_params;
 	uint16_t		l_mtu;
 

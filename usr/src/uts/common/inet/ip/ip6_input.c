@@ -24,7 +24,7 @@
  *
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -58,6 +58,7 @@
 #include <sys/vtrace.h>
 #include <sys/isa_defs.h>
 #include <sys/mac.h>
+#include <sys/mac_provider.h>
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <net/route.h>
@@ -287,6 +288,14 @@ ip_input_common_v6(ill_t *ill, ill_rx_ring_t *ip_ring, mblk_t *mp_chain,
 			if ((mp = ip_fix_dbref(mp, &iras)) == NULL)
 				continue;
 		}
+
+		/*
+		 * Today, we strip pktinfo at the mac->client boundary in the Rx
+		 * path. For the rationale, please see the 'Packet Metadata in
+		 * MAC' in mac_sched.c,
+		 * This will not fail -- we have ensured db_ref <= 1 above.
+		 */
+		mac_ether_clear_pktinfo(mp);
 
 		/*
 		 * IP header ptr not aligned?
