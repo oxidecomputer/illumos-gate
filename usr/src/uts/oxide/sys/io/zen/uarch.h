@@ -243,9 +243,6 @@ typedef struct zen_fabric_ops {
 	 * The following (optional) functions provide callbacks for any
 	 * uarch-specific logic during fabric topology initialization.
 	 */
-	void		(*zfo_topo_init)(zen_fabric_t *);
-	void		(*zfo_soc_init)(zen_soc_t *);
-	void		(*zfo_iodie_init)(zen_iodie_t *);
 	void		(*zfo_smu_misc_init)(zen_iodie_t *);
 	bool		(*zfo_smu_pptable_init)(zen_fabric_t *, void *,
 	    size_t *);

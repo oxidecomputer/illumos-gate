@@ -1291,8 +1291,6 @@ zen_fabric_topo_init_iodie(zen_soc_t *soc, uint8_t dieno)
 	iodie->zi_num = dieno;
 	iodie->zi_devno = AMDZEN_DF_FIRST_DEVICE + socno;
 	iodie->zi_soc = soc;
-	if (fops->zfo_iodie_init != NULL)
-		fops->zfo_iodie_init(iodie);
 
 	/*
 	 * Populate the major, minor, and revision fields of the given I/O die.
@@ -1375,20 +1373,12 @@ zen_fabric_topo_init_iodie(zen_soc_t *soc, uint8_t dieno)
 uint32_t
 zen_fabric_topo_init_soc(zen_fabric_t *fabric, uint8_t socno)
 {
-	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 	zen_soc_t *soc = &fabric->zf_socs[socno];
 	uint32_t nthreads;
 
 	soc->zs_num = socno;
 	soc->zs_fabric = fabric;
 	soc->zs_niodies = ZEN_FABRIC_MAX_DIES_PER_SOC;
-
-	/*
-	 * Generic SoC & IO die initialization is complete but let
-	 * the uarch-specific code do any additional setup needed.
-	 */
-	if (fops->zfo_soc_init != NULL)
-		fops->zfo_soc_init(soc);
 
 	/*
 	 * We've already programmed the ECAM base for the first DF above
@@ -1451,13 +1441,6 @@ zen_fabric_topo_init(void)
 	VERIFY3U(consts->zpc_cores_per_ccx, <=, ZEN_MAX_CORES_PER_CCX);
 
 	PRM_POINT("zen_fabric_topo_init() starting...");
-
-	/*
-	 * We're done with the basic fabric init, let the uarch-specific code
-	 * do any additional setup needed.
-	 */
-	if (fops->zfo_topo_init != NULL)
-		fops->zfo_topo_init(fabric);
 
 	/*
 	 * Before we can do anything else, we must set up PCIe ECAM.  We locate

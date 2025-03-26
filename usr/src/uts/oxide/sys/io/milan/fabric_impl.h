@@ -76,23 +76,6 @@ extern "C" {
  */
 #define	MILAN_MAX_DPM_WEIGHTS	23
 
-typedef struct milan_fabric milan_fabric_t;
-typedef struct milan_ioms milan_ioms_t;
-typedef struct milan_iodie milan_iodie_t;
-typedef struct milan_soc milan_soc_t;
-
-struct milan_iodie {
-	uint64_t		mi_dpm_weights[MILAN_MAX_DPM_WEIGHTS];
-};
-
-struct milan_soc {
-	milan_iodie_t		ms_iodies[MILAN_IODIE_PER_SOC];
-};
-
-struct milan_fabric {
-	milan_soc_t	mf_socs[MILAN_FABRIC_MAX_SOCS];
-};
-
 /*
  * Milan uarch-specific initialization data for consumption by common Zen code.
  */
@@ -101,9 +84,6 @@ extern const zen_iohc_nbif_ports_t milan_pcie_int_ports[MILAN_IOMS_PER_IODIE];
 /*
  * The Milan uarch-specific hooks for initial fabric topology initialization.
  */
-extern void milan_fabric_topo_init(zen_fabric_t *);
-extern void milan_fabric_soc_init(zen_soc_t *);
-extern void milan_fabric_iodie_init(zen_iodie_t *);
 extern bool milan_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void milan_fabric_smu_misc_init(zen_iodie_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);

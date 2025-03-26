@@ -900,18 +900,22 @@ typedef enum milan_iommul1_subunit {
 } milan_iommul1_subunit_t;
 
 /*
- * Our primary global data. This is the reason that we exist.
+ * DPM weights for each SoC.
+ *
+ * Even though these are passed to the SMU for each IO die, this is specific
+ * to Milan where we know that there is only one IO die per SoC, so we do not
+ * include singleton arrays indexed by the (always 0) IO die number in the
+ * multidimensional weights vector.
  */
-static milan_fabric_t milan_fabric;
+static uint64_t milan_dpm_weights[MILAN_FABRIC_MAX_SOCS][MILAN_MAX_DPM_WEIGHTS];
 
 void
 milan_fabric_thread_get_dpm_weights(const zen_thread_t *thread,
     const uint64_t **wp, uint32_t *nentp)
 {
-	zen_ccd_t *ccd = thread->zt_core->zc_ccx->zcx_ccd;
-	zen_iodie_t *ziodie = ccd->zcd_iodie;
-	milan_iodie_t *iodie = ziodie->zi_uarch_iodie;
-	*wp = iodie->mi_dpm_weights;
+	const zen_iodie_t *iodie = thread->zt_core->zc_ccx->zcx_ccd->zcd_iodie;
+	const zen_soc_t *soc = iodie->zi_soc;
+	*wp = milan_dpm_weights[soc->zs_num];
 	*nentp = MILAN_MAX_DPM_WEIGHTS;
 }
 
@@ -1773,41 +1777,6 @@ milan_smu_features_init(zen_iodie_t *iodie)
 	return (zen_smu_set_features(iodie, features, 0));
 }
 
-/*
- * These are called from the common code, via an entry in the Milan version of
- * Zen fabric ops vector.  The common code is responsible for the bulk of
- * initialization; we merely fill in those bits that are microarchitecture
- * specific.  Note that Milan is defined to have exactly one IO die per SoC.
- */
-void
-milan_fabric_topo_init(zen_fabric_t *fabric)
-{
-	fabric->zf_uarch_fabric = &milan_fabric;
-}
-
-void
-milan_fabric_soc_init(zen_soc_t *soc)
-{
-	ASSERT3P(soc->zs_fabric, !=, NULL);
-	milan_fabric_t *mfabric = soc->zs_fabric->zf_uarch_fabric;
-	ASSERT3P(mfabric, !=, NULL);
-	milan_soc_t *msoc = &mfabric->mf_socs[soc->zs_num];
-
-	soc->zs_uarch_soc = msoc;
-}
-
-void
-milan_fabric_iodie_init(zen_iodie_t *iodie)
-{
-	ASSERT3P(iodie->zi_soc, !=, NULL);
-	milan_soc_t *msoc = iodie->zi_soc->zs_uarch_soc;
-	ASSERT3P(msoc, !=, NULL);
-	ASSERT3U(iodie->zi_num, ==, 0);
-	milan_iodie_t *miodie = &msoc->ms_iodies[iodie->zi_num];
-
-	iodie->zi_uarch_iodie = miodie;
-}
-
 bool
 milan_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 {
@@ -1852,16 +1821,18 @@ milan_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 void
 milan_fabric_smu_misc_init(zen_iodie_t *iodie)
 {
-	milan_iodie_t *miodie = iodie->zi_uarch_iodie;
+	ASSERT3P(iodie, !=, NULL);
+	const zen_soc_t *soc = iodie->zi_soc;
+	ASSERT3P(soc, !=, NULL);
+	uint64_t *dpm_weights = milan_dpm_weights[soc->zs_num];
+	const size_t dpm_size = sizeof (milan_dpm_weights[soc->zs_num]);
 
-	ASSERT3P(miodie, !=, NULL);
-	if (!milan_smu_rpc_read_dpm_weights(iodie,
-	    miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights))) {
+	if (!milan_smu_rpc_read_dpm_weights(iodie, dpm_weights, dpm_size)) {
 		/*
 		 * XXX It's unclear whether continuing is wise.
 		 */
 		cmn_err(CE_WARN, "SMU: failed to retrieve DPM weights");
-		bzero(miodie->mi_dpm_weights, sizeof (miodie->mi_dpm_weights));
+		bzero(dpm_weights, sizeof (dpm_size));
 	}
 
 	/*

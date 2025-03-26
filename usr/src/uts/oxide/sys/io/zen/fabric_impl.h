@@ -228,7 +228,6 @@ struct zen_iodie {
 	char			zi_brandstr[CPUID_BRANDSTR_STRLEN + 1];
 
 	zen_soc_t		*zi_soc;
-	void			*zi_uarch_iodie;
 };
 
 /*
@@ -250,7 +249,6 @@ struct zen_soc {
 	zen_iodie_t		zs_iodies[ZEN_FABRIC_MAX_DIES_PER_SOC];
 
 	zen_fabric_t		*zs_fabric;
-	void			*zs_uarch_soc;
 };
 
 struct zen_pptable {
@@ -342,8 +340,6 @@ struct zen_fabric {
 
 	uint8_t			zf_nsocs;
 	zen_soc_t		zf_socs[ZEN_FABRIC_MAX_SOCS];
-
-	void			*zf_uarch_fabric;
 };
 
 typedef int (*zen_iodie_cb_f)(zen_iodie_t *, void *);
