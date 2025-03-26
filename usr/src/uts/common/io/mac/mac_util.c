@@ -50,6 +50,7 @@
 #include <inet/ipsecesp.h>
 #include <inet/ipsecah.h>
 #include <inet/tcp.h>
+#include <inet/udp_impl.h>
 #include <inet/sctp_ip.h>
 
 /*
@@ -158,16 +159,32 @@ mac_copymsgchain_cksum(mblk_t *mp)
 	return (nmp);
 }
 
-/*
- * Perform software checksum on a single message, if needed. The emulation
- * performed is determined by an intersection of the mblk's flags and the emul
- * flags requested. The emul flags are documented in mac.h.
- */
-static mblk_t *
-mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
+/* Moves a set of checksum flags from the inner layer to the outer. */
+static uint32_t
+mac_hcksum_flags_shift_out(uint32_t flags)
 {
-	mac_ether_offload_info_t meoi = { 0 };
+	uint32_t out = flags & ~HCK_FLAGS;
+
+	if (flags & HCK_INNER_V4CKSUM)
+		out |= HCK_IPV4_HDRCKSUM;
+	if (flags & HCK_INNER_V4CKSUM_OK)
+		out |= HCK_IPV4_HDRCKSUM_OK;
+	if (flags & HCK_INNER_PARTIAL)
+		out |= HCK_PARTIALCKSUM;
+	if (flags & HCK_INNER_FULL)
+		out |= HCK_FULLCKSUM;
+	if (flags & HCK_INNER_FULL_OK)
+		out |= HCK_FULLCKSUM_OK;
+
+	return (out);
+}
+
+static mblk_t *
+mac_sw_cksum_impl(mblk_t *mp, mac_emul_t emul, const uint32_t encap_len,
+    const mac_ether_offload_info_t *meoi)
+{
 	const char *err = "";
+	const boolean_t is_outer = encap_len == 0;
 
 	/*
 	 * The only current caller is mac_hw_emul(), which handles any chaining
@@ -176,25 +193,26 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 	VERIFY3P(mp->b_next, ==, NULL);
 
 	uint32_t flags = DB_CKSUMFLAGS(mp);
+	uint32_t layer_flags = is_outer ? flags :
+	    mac_hcksum_flags_shift_out(flags);
 
-	/* Why call this if checksum emulation isn't needed? */
-	ASSERT3U(flags & (HCK_FLAGS), !=, 0);
-	/* But also, requesting both ULP cksum types is improper */
-	if ((flags & HCK_FULLCKSUM) != 0 && (flags & HCK_PARTIALCKSUM) != 0) {
+	/* Requesting both ULP cksum types is improper */
+	if ((layer_flags & HCK_FULLCKSUM) != 0 &&
+	    (layer_flags & HCK_PARTIALCKSUM) != 0) {
 		err = "full and partial ULP cksum requested";
 		goto bail;
 	}
 
 	const boolean_t do_v4_cksum = (emul & MAC_IPCKSUM_EMUL) != 0 &&
-	    (flags & HCK_IPV4_HDRCKSUM) != 0;
+	    (layer_flags & HCK_IPV4_HDRCKSUM) != 0;
 	const boolean_t do_ulp_cksum = (emul & MAC_HWCKSUM_EMUL) != 0 &&
-	    (flags & (HCK_FULLCKSUM | HCK_PARTIALCKSUM)) != 0;
-	const boolean_t ulp_prefer_partial = (flags & HCK_PARTIALCKSUM) != 0;
+	    (layer_flags & (HCK_FULLCKSUM | HCK_PARTIALCKSUM)) != 0;
+	const boolean_t ulp_prefer_partial =
+	    (layer_flags & HCK_PARTIALCKSUM) != 0;
 
-	mac_ether_offload_info(mp, &meoi);
-	if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0 ||
-	    (meoi.meoi_l3proto != ETHERTYPE_IP &&
-	    meoi.meoi_l3proto != ETHERTYPE_IPV6)) {
+	if ((meoi->meoi_flags & MEOI_L2INFO_SET) == 0 ||
+	    (meoi->meoi_l3proto != ETHERTYPE_IP &&
+	    meoi->meoi_l3proto != ETHERTYPE_IPV6)) {
 		/* Non-IP traffic (like ARP) is left alone */
 		return (mp);
 	}
@@ -204,17 +222,17 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 	 * protocols encoded in the packet headers.
 	 */
 	if (do_v4_cksum) {
-		if (meoi.meoi_l3proto != ETHERTYPE_IP) {
+		if (meoi->meoi_l3proto != ETHERTYPE_IP) {
 			err = "IPv4 csum requested on non-IPv4 packet";
 			goto bail;
 		}
 	}
 	if (do_ulp_cksum) {
-		if ((meoi.meoi_flags & MEOI_L4INFO_SET) == 0) {
+		if (!mac_meoi_is_full(meoi)) {
 			err = "missing ULP header";
 			goto bail;
 		}
-		switch (meoi.meoi_l4proto) {
+		switch (meoi->meoi_l4proto) {
 		case IPPROTO_TCP:
 		case IPPROTO_UDP:
 		case IPPROTO_ICMP:
@@ -228,43 +246,55 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 	}
 
 	/*
-	 * If the first mblk of this packet contains only the Ethernet header,
-	 * skip past it for now. Packets with their data contained in only a
-	 * single mblk can then use the fastpaths tuned to that possibility.
+	 * Walk past encapsulation and this frame's L2 to reach the inner frame
+	 * (may just be mp).
 	 */
-	mblk_t *skipped_hdr = NULL;
-	if (MBLKL(mp) == meoi.meoi_l2hlen) {
-		meoi.meoi_len -= meoi.meoi_l2hlen;
-		meoi.meoi_l2hlen = 0;
-		skipped_hdr = mp;
-		mp = mp->b_cont;
+	mblk_t *parent = NULL, *target_mp = mp;
+	uint_t l3_off = encap_len + meoi->meoi_l2hlen;
+	while (target_mp != NULL && l3_off >= MBLKL(target_mp)) {
+		size_t seglen = MBLKL(target_mp);
+		size_t n = MIN(seglen, l3_off);
 
-		ASSERT(mp != NULL);
+		l3_off -= n;
+		if (n == seglen) {
+			parent = target_mp;
+			target_mp = target_mp->b_cont;
+		}
+	}
+	const uint_t l4_off = l3_off + meoi->meoi_l3hlen;
+
+	if (target_mp == NULL) {
+		err = "no mblks after encapsulation + L2";
+		goto bail;
 	}
 
 	/*
 	 * Ensure that all of the headers we need to access are:
-	 * 1. Collected in the first mblk
+	 * 1. Collected in the first mblk after (optional) encap + l2
 	 * 2. Held in a data-block which is safe for us to modify
 	 *    (It must have a refcount of 1)
+	 * To simplify mblk management, also copy any preceding bytes in
+	 * target_mp.
 	 */
-	const size_t hdr_len_reqd = (meoi.meoi_l2hlen + meoi.meoi_l3hlen) +
-	    (do_ulp_cksum ? meoi.meoi_l4hlen : 0);
-	if (MBLKL(mp) < hdr_len_reqd || DB_REF(mp) > 1) {
-		mblk_t *hdrmp = msgpullup(mp, hdr_len_reqd);
+	const size_t hdr_len_reqd = l4_off +
+	    (do_ulp_cksum ? meoi->meoi_l4hlen : 0);
+	if (MBLKL(target_mp) < hdr_len_reqd || DB_REF(target_mp) > 1) {
+		mblk_t *hdrmp = msgpullup(target_mp, hdr_len_reqd);
 
 		if (hdrmp == NULL) {
 			err = "could not pullup msg headers";
 			goto bail;
 		}
 
-		mac_hcksum_clone(mp, hdrmp);
-		if (skipped_hdr != NULL) {
-			ASSERT3P(skipped_hdr->b_cont, ==, mp);
-			skipped_hdr->b_cont = hdrmp;
+		if (parent == NULL) {
+			mac_hcksum_clone(mp, hdrmp);
+			mp = hdrmp;
+		} else {
+			parent->b_cont = hdrmp;
 		}
-		freemsg(mp);
-		mp = hdrmp;
+
+		freemsg(target_mp);
+		target_mp = hdrmp;
 	}
 
 	/* Calculate IPv4 header checksum, if requested */
@@ -284,31 +314,41 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 		 * this reason, we zero out the the checksum first. In the
 		 * future, we should fix the HCK_* flags.
 		 */
-		ipha_t *ipha = (ipha_t *)(mp->b_rptr + meoi.meoi_l2hlen);
+		ipha_t *ipha = (ipha_t *)(target_mp->b_rptr + l3_off);
 		ipha->ipha_hdr_checksum = 0;
 		ipha->ipha_hdr_checksum = (uint16_t)ip_csum_hdr(ipha);
-		flags &= ~HCK_IPV4_HDRCKSUM;
-		flags |= HCK_IPV4_HDRCKSUM_OK;
+		if (is_outer) {
+			flags &= ~HCK_IPV4_HDRCKSUM;
+			flags |= HCK_IPV4_HDRCKSUM_OK;
+		} else {
+			flags &= ~HCK_INNER_V4CKSUM;
+			flags |= HCK_INNER_V4CKSUM_OK;
+		}
 	}
 
 	/*
 	 * The SCTP is different from all the other protocols in that it uses
 	 * CRC32 for its checksum, rather than ones' complement.
 	 */
-	if (do_ulp_cksum && meoi.meoi_l4proto == IPPROTO_SCTP) {
+	if (do_ulp_cksum && meoi->meoi_l4proto == IPPROTO_SCTP) {
 		if (ulp_prefer_partial) {
 			err = "SCTP does not support partial checksum";
 			goto bail;
 		}
 
-		const uint_t ulp_off = meoi.meoi_l2hlen + meoi.meoi_l3hlen;
-		sctp_hdr_t *sctph = (sctp_hdr_t *)(mp->b_rptr + ulp_off);
+		sctp_hdr_t *sctph = (sctp_hdr_t *)(target_mp->b_rptr + l4_off);
 
 		sctph->sh_chksum = 0;
-		sctph->sh_chksum = sctp_cksum(mp, ulp_off);
+		sctph->sh_chksum = sctp_cksum(target_mp, l4_off);
 
-		flags &= ~HCK_FULLCKSUM;
-		flags |= HCK_FULLCKSUM_OK;
+		if (is_outer) {
+			flags &= ~HCK_FULLCKSUM;
+			flags |= HCK_FULLCKSUM_OK;
+		} else {
+			flags &= ~HCK_INNER_FULL;
+			flags |= HCK_INNER_FULL_OK;
+		}
+
 		goto success;
 	}
 
@@ -318,38 +358,43 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 		 * Calculate address and length portions of pseudo-header csum
 		 */
 		uint32_t cksum = 0;
-		if (meoi.meoi_l3proto == ETHERTYPE_IP) {
+		if (meoi->meoi_l3proto == ETHERTYPE_IP) {
 			const ipha_t *ipha =
-			    (const ipha_t *)(mp->b_rptr + meoi.meoi_l2hlen);
-			const uint16_t *ipp =
+			    (const ipha_t *)(target_mp->b_rptr + l3_off);
+			const uint16_t *saddr =
 			    (const uint16_t *)(&ipha->ipha_src);
+			const uint16_t *daddr =
+			    (const uint16_t *)(&ipha->ipha_dst);
 
-			cksum += ipp[0] + ipp[1] + ipp[2] + ipp[3];
+			cksum += saddr[0] + saddr[1] + daddr[0] + daddr[1];
 
 			/*
 			 * While it is tempting to calculate the payload length
-			 * solely from `meoi`, like as done below for IPv6,
-			 * doing so is a trap.  Packets shorter than 60 bytes
-			 * will get padded out to that length in order to meet
-			 * the minimums for Ethernet.  Instead, we pull the
-			 * length from the IP header.
+			 * solely from `meoi`, doing so is a trap.  Packets
+			 * shorter than 60 bytes will get padded out to that
+			 * length in order to meet the minimums for Ethernet.
+			 * Additionally, in the LSO case `meoi->meoi_len` refers
+			 * to the *input frame* (i.e., far larger than MTU).
+			 * Instead, we pull the length from the IP header.
 			 */
 			const uint16_t payload_len =
-			    ntohs(ipha->ipha_length) - meoi.meoi_l3hlen;
+			    ntohs(ipha->ipha_length) - meoi->meoi_l3hlen;
 			cksum += htons(payload_len);
-		} else if (meoi.meoi_l3proto == ETHERTYPE_IPV6) {
+		} else if (meoi->meoi_l3proto == ETHERTYPE_IPV6) {
 			const ip6_t *ip6h =
-			    (const ip6_t *)(mp->b_rptr + meoi.meoi_l2hlen);
-			const uint16_t *ipp =
-			    (const uint16_t *)(&ip6h->ip6_src);
+			    (const ip6_t *)(target_mp->b_rptr + l3_off);
+			const uint16_t *saddr =
+			    ip6h->ip6_src.s6_addr16;
+			const uint16_t *daddr =
+			    ip6h->ip6_dst.s6_addr16;
 
-			cksum += ipp[0] + ipp[1] + ipp[2] + ipp[3] +
-			    ipp[4] + ipp[5] + ipp[6] + ipp[7];
-			cksum += ipp[8] + ipp[9] + ipp[10] + ipp[11] +
-			    ipp[12] + ipp[13] + ipp[14] + ipp[15];
+			cksum += saddr[0] + saddr[1] + saddr[2] + saddr[3] +
+			    saddr[4] + saddr[5] + saddr[6] + saddr[7];
+			cksum += daddr[0] + daddr[1] + daddr[2] + daddr[3] +
+			    daddr[4] + daddr[5] + daddr[6] + daddr[7];
 
-			const uint16_t payload_len = meoi.meoi_len -
-			    ((uint16_t)meoi.meoi_l2hlen + meoi.meoi_l3hlen);
+			const uint16_t payload_len = ntohs(ip6h->ip6_plen) +
+			    sizeof (*ip6h) - meoi->meoi_l3hlen;
 			cksum += htons(payload_len);
 		} else {
 			/*
@@ -361,7 +406,7 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 
 		/* protocol portion of pseudo-header */
 		uint_t cksum_off;
-		switch (meoi.meoi_l4proto) {
+		switch (meoi->meoi_l4proto) {
 		case IPPROTO_TCP:
 			cksum += IP_TCP_CSUM_COMP;
 			cksum_off = TCP_CHECKSUM_OFFSET;
@@ -389,12 +434,12 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 		 * checksum, make sure the ULP checksum field is zeroed before
 		 * computing the rest;
 		 */
-		const uint_t l4_off = meoi.meoi_l3hlen + meoi.meoi_l2hlen;
-		uint16_t *up = (uint16_t *)(mp->b_rptr + l4_off + cksum_off);
+		uint16_t *up = (uint16_t *)(target_mp->b_rptr + l4_off +
+		    cksum_off);
 		*up = 0;
-		cksum = IP_CSUM(mp, l4_off, cksum);
+		cksum = IP_CSUM(target_mp, l4_off, cksum);
 
-		if (meoi.meoi_l4proto == IPPROTO_UDP && cksum == 0) {
+		if (meoi->meoi_l4proto == IPPROTO_UDP && cksum == 0) {
 			/*
 			 * A zero checksum is not allowed on UDPv6, and on UDPv4
 			 * implies no checksum.  In either case, invert to a
@@ -405,8 +450,14 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 			*up = cksum;
 		}
 
-		flags &= ~HCK_FULLCKSUM;
-		flags |= HCK_FULLCKSUM_OK;
+		if (is_outer) {
+			flags &= ~HCK_FULLCKSUM;
+			flags |= HCK_FULLCKSUM_OK;
+		} else {
+			flags &= ~HCK_INNER_FULL;
+			flags |= HCK_INNER_FULL_OK;
+		}
+
 		goto success;
 	}
 
@@ -415,7 +466,36 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 		uint32_t start, stuff, end, value;
 		mac_hcksum_get(mp, &start, &stuff, &end, &value, NULL);
 
-		ASSERT3S(end, >, start);
+		/*
+		 * For tunneled packets, the above should not be set (and would
+		 * be tricky to disambiguate with two partial checksums on the
+		 * scene. Derive them in this case, and always convert to
+		 * positions inclusive of ethernet/encap.
+		 */
+		if (encap_len != 0 || meoi->meoi_tuntype != METT_NONE) {
+			stuff = start = l4_off;
+			switch (meoi->meoi_l4proto) {
+			case IPPROTO_TCP:
+				stuff += TCP_CHECKSUM_OFFSET;
+				break;
+			case IPPROTO_UDP:
+				stuff += UDP_CHECKSUM_OFFSET;
+				break;
+			case IPPROTO_ICMP:
+				stuff += ICMP_CHECKSUM_OFFSET;
+				break;
+			case IPPROTO_ICMPV6:
+				stuff += ICMPV6_CHECKSUM_OFFSET;
+				break;
+			default:
+				err = "unrecognized L4 protocol";
+				goto bail;
+			}
+		} else {
+			ASSERT3U(end, >, start);
+			start += l3_off;
+			stuff += l3_off;
+		}
 
 		/*
 		 * The prior size checks against the header length data ensure
@@ -423,22 +503,26 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul)
 		 * header, but if the partial checksum (unexpectedly) requests
 		 * its result be stored past that, we cannot continue.
 		 */
-		if (stuff + sizeof (uint16_t) > MBLKL(mp)) {
+		if (stuff + sizeof (uint16_t) > MBLKL(target_mp)) {
 			err = "partial csum request is out of bounds";
 			goto bail;
 		}
 
-		uchar_t *ipp = (uchar_t *)(mp->b_rptr + meoi.meoi_l2hlen);
-		uint16_t *up = (uint16_t *)(ipp + stuff);
+		uint16_t *up = (uint16_t *)(target_mp->b_rptr + stuff);
 
 		const uint16_t partial = *up;
 		*up = 0;
 		const uint16_t cksum =
-		    ~IP_CSUM_PARTIAL(mp, start + meoi.meoi_l2hlen, partial);
-		*up = cksum != 0 ? cksum : ~cksum;
+		    ~IP_CSUM_PARTIAL(target_mp, start, partial);
+		*up = (cksum != 0) ? cksum : ~cksum;
 
-		flags &= ~HCK_PARTIALCKSUM;
-		flags |= HCK_FULLCKSUM_OK;
+		if (is_outer) {
+			flags &= ~HCK_PARTIALCKSUM;
+			flags |= HCK_FULLCKSUM_OK;
+		} else {
+			flags &= ~HCK_INNER_PARTIAL;
+			flags |= HCK_INNER_FULL_OK;
+		}
 	}
 
 success:
@@ -449,9 +533,8 @@ success:
 	 */
 	mac_hcksum_set(mp, 0, 0, 0, 0, flags);
 
-	/* Don't forget to reattach the header. */
-	if (skipped_hdr != NULL) {
-		ASSERT3P(skipped_hdr->b_cont, ==, mp);
+	if (parent != NULL && mp != target_mp) {
+		ASSERT3P(parent->b_cont, ==, target_mp);
 
 		/*
 		 * Duplicate the HCKSUM data into the header mblk.
@@ -462,19 +545,49 @@ success:
 		 * the ether_header mblk, so for now, it is important that the
 		 * data be available in both places.
 		 */
-		mac_hcksum_clone(mp, skipped_hdr);
-		mp = skipped_hdr;
+		mac_hcksum_clone(mp, target_mp);
 	}
+
 	return (mp);
 
 bail:
-	if (skipped_hdr != NULL) {
-		ASSERT3P(skipped_hdr->b_cont, ==, mp);
-		mp = skipped_hdr;
-	}
-
 	mac_drop_pkt(mp, err);
 	return (NULL);
+}
+
+/*
+ * Perform software checksum on a single message, if needed. The emulation
+ * performed is determined by an intersection of the mblk's flags and the emul
+ * flags requested. The emul flags are documented in mac.h.
+ *
+ * To correctly handle tunneled packets, frames are processed from the inside
+ * out (i.e., any outer L4 packet checksums are reliant on correct inner
+ * checksums). A non-zero encap_len is treated as entering from the tunneled
+ * case.
+ */
+static mblk_t *
+mac_sw_cksum(mblk_t *mp, mac_emul_t emul,
+    const mac_ether_offload_info_t *outer_info, const uint32_t encap_len,
+    const mac_ether_offload_info_t *inner_info)
+{
+	uint32_t flags = DB_CKSUMFLAGS(mp) & (HCK_FLAGS);
+
+	/* Why call this if checksum emulation isn't needed? */
+	ASSERT3U(flags, !=, 0);
+
+	/* process inner before outer */
+	if (encap_len != 0 && (flags & HCK_INNER_TX_FLAGS) != 0) {
+		mp = mac_sw_cksum_impl(mp, emul, encap_len, inner_info);
+		if (mp == NULL) {
+			return (mp);
+		}
+	}
+
+	if ((DB_CKSUMFLAGS(mp) & HCK_OUTER_TX_FLAGS) != 0) {
+		mp = mac_sw_cksum_impl(mp, emul, 0, outer_info);
+	}
+
+	return (mp);
 }
 
 /*
@@ -693,10 +806,20 @@ last_mblk:
  * completion of this function the original mblk (omp) is freed,
  * leaving the newely created segment chain as the only remaining
  * reference to the data.
+ *
+ * The types used to point into and manipulate packet headers currently
+ * assume alignment which we don't set up here in our `msgpullup`s. This
+ * will be a problem for non-x86 architectures, but also results in our
+ * output packets taking slower paths through IP.
+ * One difficulty is that when packets are tunneled and in a single
+ * mblk, 4B-alignment of outer and inner (non-Eth) headers are in direct
+ * tension with one another. Offsetting the outermost layers by 2
+ * ensures the inner TCP etc. cannot be 4B aligned, and vice-versa.
  */
 static void
 mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
-    uint_t *count)
+    uint_t *count, const mac_ether_offload_info_t *outer_info,
+    const uint32_t encap_len, const mac_ether_offload_info_t *inner_info)
 {
 	uint32_t ocsum_flags, ocsum_start, ocsum_stuff;
 	uint32_t mss;
@@ -715,78 +838,99 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	boolean_t is_v6 = B_FALSE;
 	ip6_t *niph6;
 
-	uint32_t offset = 0;
 	mblk_t *odatamp;
 	mblk_t *seg_chain, *prev_nhdrmp, *next_nhdrmp, *nhdrmp, *ndatamp;
 	mblk_t *tmptail;
 
-	mac_ether_offload_info_t meoi = { 0 };
+	const boolean_t is_tun = outer_info->meoi_tuntype != METT_NONE;
+	const mac_ether_offload_info_t *ulp_info = is_tun ?
+	    inner_info : outer_info;
 
 	ASSERT3P(head, !=, NULL);
 	ASSERT3P(tail, !=, NULL);
 	ASSERT3P(count, !=, NULL);
 	ASSERT3U((DB_CKSUMFLAGS(omp) & HW_LSO), !=, 0);
+	ASSERT(encap_len == 0 || outer_info->meoi_tuntype != METT_NONE);
 
 	/* Assume we are dealing with a single LSO message. */
 	ASSERT3P(omp->b_next, ==, NULL);
 
-	mac_ether_offload_info(omp, &meoi);
-	opktlen = meoi.meoi_len;
-	oehlen = meoi.meoi_l2hlen;
-	oiphlen = meoi.meoi_l3hlen;
-	otcphlen = meoi.meoi_l4hlen;
+	opktlen = outer_info->meoi_len;
+	oehlen = ulp_info->meoi_l2hlen;
+	oiphlen = ulp_info->meoi_l3hlen;
+	otcphlen = ulp_info->meoi_l4hlen;
 	ohdrslen = oehlen + oiphlen + otcphlen;
 
+	if (encap_len > opktlen) {
+		mac_drop_pkt(omp, "encap longer than packet");
+		goto fail;
+	}
+
 	/* Performing LSO requires that we successfully read fully up to L4 */
-	if ((MEOI_L4INFO_SET & meoi.meoi_flags) == 0) {
+	if (!mac_meoi_is_full(ulp_info)) {
 		mac_drop_pkt(omp, "unable to fully parse packet to L4");
 		goto fail;
 	}
 
-	if (meoi.meoi_l3proto != ETHERTYPE_IP &&
-	    meoi.meoi_l3proto != ETHERTYPE_IPV6) {
+	/* mac_hw_emul() must have filled out tuninfo if one was specified */
+	if (is_tun && !mac_tun_meoi_is_full(outer_info)) {
+		mac_drop_pkt(omp, "tunneled packet has incomplete tuninfo");
+		goto fail;
+	}
+
+	if (ulp_info->meoi_l3proto != ETHERTYPE_IP &&
+	    ulp_info->meoi_l3proto != ETHERTYPE_IPV6) {
 		mac_drop_pkt(omp, "LSO'd packet has non-IP L3 header: %x",
-		    meoi.meoi_l3proto);
+		    ulp_info->meoi_l3proto);
 		goto fail;
 	}
 
-	if (meoi.meoi_l4proto != IPPROTO_TCP) {
+	if (ulp_info->meoi_l4proto != IPPROTO_TCP) {
 		mac_drop_pkt(omp, "LSO unsupported protocol: %x",
-		    meoi.meoi_l4proto);
+		    ulp_info->meoi_l4proto);
 		goto fail;
 	}
 
-	is_v6 = meoi.meoi_l3proto == ETHERTYPE_IPV6;
+	is_v6 = ulp_info->meoi_l3proto == ETHERTYPE_IPV6;
 
 	mss = DB_LSOMSS(omp);
 	if (mss == 0) {
 		mac_drop_pkt(omp, "packet misconfigured for LSO (MSS == 0)");
 		goto fail;
 	}
-	ASSERT3U(opktlen, <=, IP_MAXPACKET + oehlen);
+	ASSERT3U(opktlen, <=, IP_MAXPACKET + encap_len + oehlen);
 
 	/*
-	 * Ensure the headers are contiguous. The IP header is used only for the
-	 * benefit of DTrace SDTs, whereas the TCP header is actively read.
-	 * This small pullup should only practically happen when
-	 * mac_add_vlan_tag is in play, which prepends a new mblk in front
-	 * containing the amended Ethernet header.
+	 * Pullup all encapsulation and innermost headers here, if these are not
+	 * contiguous. While we only require that the innermost L3/L4 headers
+	 * are contiguous at this stage, we'd need to perform at least one
+	 * pullup later to safely modify outer lengths/checksums. In particular,
+	 * the IP header is used for the benefit of DTrace SDTs, and the TCP
+	 * header is actively read.
+	 *
+	 * Most clients (IP, viona) will setup well-behaved mblks. This small
+	 * pullup should only practically happen when mac_add_vlan_tag is in
+	 * play, which prepends a new mblk in front containing the amended
+	 * Ethernet header, or the encapsulation is pushed on as a separate
+	 * mblk. This causes at most one more (header-sized) copy.
 	 */
-	if (MBLKL(omp) < ohdrslen) {
-		mblk_t *tmp = msgpullup(omp, ohdrslen);
-
+	const size_t hdr_len_reqd = encap_len + ohdrslen;
+	if (MBLKL(omp) < hdr_len_reqd) {
+		mblk_t *tmp = msgpullup(omp, hdr_len_reqd);
 		if (tmp == NULL) {
 			mac_drop_pkt(omp, "failed to pull up");
 			goto fail;
 		}
-
 		mac_hcksum_clone(omp, tmp);
 		freemsg(omp);
 		omp = tmp;
 	}
 
-	oiph = (void *)(omp->b_rptr + oehlen);
-	otcph = (tcph_t *)(omp->b_rptr + oehlen + oiphlen);
+	const uint32_t l3_off = encap_len + oehlen;
+	const uint32_t l4_off = l3_off + oiphlen;
+	uint32_t data_off = l4_off + otcphlen;
+	oiph = (void *)(omp->b_rptr + l3_off);
+	otcph = (tcph_t *)(omp->b_rptr + l4_off);
 
 	if (otcph->th_flags[0] & (TH_SYN | TH_RST | TH_URG)) {
 		mac_drop_pkt(omp, "LSO packet has SYN|RST|URG set");
@@ -796,21 +940,19 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	len = MBLKL(omp);
 
 	/*
-	 * Either we have data in the first mblk or it's just the
-	 * header. In either case, we need to set rptr to the start of
-	 * the TCP data.
+	 * Either we have data in the current mblk or it's just the headers.
+	 * Record the start of the TCP data.
 	 */
-	if (len > ohdrslen) {
+	if (len > data_off) {
 		odatamp = omp;
-		offset = ohdrslen;
 	} else {
-		ASSERT3U(len, ==, ohdrslen);
+		ASSERT3U(len, ==, data_off);
 		odatamp = omp->b_cont;
-		offset = 0;
+		data_off = 0;
 	}
 
 	/* Make sure we still have enough data. */
-	odatalen = opktlen - ohdrslen;
+	odatalen = opktlen - ohdrslen - encap_len;
 	ASSERT3U(msgsize(odatamp), >=, odatalen);
 
 	/*
@@ -834,7 +976,8 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 */
 	ASSERT3S(DB_TYPE(omp), ==, M_DATA);
 	ocsum_flags = DB_CKSUMFLAGS(omp);
-	ASSERT3U(ocsum_flags & (HCK_PARTIALCKSUM | HCK_FULLCKSUM), !=, 0);
+	ASSERT3U(ocsum_flags & (is_tun ? (HCK_INNER_PARTIAL | HCK_INNER_FULL) :
+	    (HCK_PARTIALCKSUM | HCK_FULLCKSUM)), !=, 0);
 
 	/*
 	 * If hardware only provides partial checksum then software
@@ -858,7 +1001,11 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 *  to redo all the checksum work. So IP should never do LSO
 	 *  if HW doesn't support both IP and TCP checksum.
 	 */
-	if (ocsum_flags & HCK_PARTIALCKSUM) {
+	const boolean_t tcp_csum_partial = is_tun ?
+	    (ocsum_flags & HCK_INNER_PARTIAL) != 0 :
+	    (ocsum_flags & HCK_PARTIALCKSUM) != 0;
+
+	if (!is_tun && tcp_csum_partial) {
 		ocsum_start = (uint32_t)DB_CKSUMSTART(omp);
 		ocsum_stuff = (uint32_t)DB_CKSUMSTUFF(omp);
 	}
@@ -875,16 +1022,16 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		goto fail;
 	}
 
-	DTRACE_PROBE6(sw__lso__start, mblk_t *, omp, void_ip_t *, oiph,
-	    __dtrace_tcp_tcph_t *, otcph, uint_t, odatalen, uint_t, mss,
-	    uint_t, nsegs);
+	DTRACE_PROBE7(sw__lso__start, mblk_t *, omp, uint32_t, encap_len,
+	    void_ip_t *, oiph, __dtrace_tcp_tcph_t *, otcph, uint_t, odatalen,
+	    uint_t, mss, uint_t, nsegs);
 
 	seg_chain = NULL;
 	tmptail = seg_chain;
 	oleft = odatalen;
 
 	for (uint_t i = 0; i < nsegs; i++) {
-		boolean_t last_seg = ((i + 1) == nsegs);
+		boolean_t last_seg = (i + 1) == nsegs;
 		uint32_t seg_len;
 
 		/*
@@ -892,7 +1039,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		 * allocated chain as well as the LSO packet. Let the
 		 * sender deal with the fallout.
 		 */
-		if ((nhdrmp = allocb(ohdrslen, 0)) == NULL) {
+		if ((nhdrmp = allocb(hdr_len_reqd, 0)) == NULL) {
 			freemsgchain(seg_chain);
 			mac_drop_pkt(omp, "failed to alloc segment header");
 			goto fail;
@@ -900,8 +1047,8 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		ASSERT3P(nhdrmp->b_cont, ==, NULL);
 
 		/* Copy over the header stack. */
-		bcopy(omp->b_rptr, nhdrmp->b_rptr, ohdrslen);
-		nhdrmp->b_wptr += ohdrslen;
+		bcopy(omp->b_rptr, nhdrmp->b_rptr, hdr_len_reqd);
+		nhdrmp->b_wptr += hdr_len_reqd;
 
 		if (seg_chain == NULL) {
 			seg_chain = nhdrmp;
@@ -918,7 +1065,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		 */
 		seg_len = last_seg ? oleft : mss;
 		ASSERT3U(seg_len, <=, mss);
-		ndatamp = build_data_seg(&odatamp, &offset, seg_len);
+		ndatamp = build_data_seg(&odatamp, &data_off, seg_len);
 
 		if (ndatamp == NULL) {
 			freemsgchain(seg_chain);
@@ -932,11 +1079,80 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		ASSERT3U(seg_len, <=, oleft);
 		oleft -= seg_len;
 
-		/* Setup partial checksum offsets. */
-		if (ocsum_flags & HCK_PARTIALCKSUM) {
+		/*
+		 * Setup partial checksum offsets for non-tunneled packets.
+		 * mac_sw_cksum will figure precise offsets out for tunneled
+		 * packets, as we may have two partial checksums (thus need to
+		 * rely upon parsing from MEOI).
+		 */
+		if (!is_tun && tcp_csum_partial) {
 			DB_CKSUMSTART(nhdrmp) = ocsum_start;
 			DB_CKSUMEND(nhdrmp) = oiphlen + otcphlen + seg_len;
 			DB_CKSUMSTUFF(nhdrmp) = ocsum_stuff;
+		}
+
+		/* Fixup lengths/idents in outer headers */
+		if (is_tun) {
+			uint32_t diff = odatalen - seg_len;
+
+			switch (outer_info->meoi_l3proto) {
+			case ETHERTYPE_IP: {
+				ipha_t *tun_ip4h = (ipha_t *)(nhdrmp->b_rptr +
+				    outer_info->meoi_l2hlen);
+				tun_ip4h->ipha_length = htons(
+				    ntohs(tun_ip4h->ipha_length) - diff);
+				tun_ip4h->ipha_ident = htons(
+				    ntohs(tun_ip4h->ipha_ident) + i);
+				/*
+				 * The NIC used for making offload determination
+				 * would have filled the V4 csum when doing LSO.
+				 * However, it may be unable to fill this and
+				 * also perform, e.g., inner csum offload on a
+				 * normal send. This is cheap enough compared to
+				 * e.g. full outer cksum to proactively fill in
+				 * here.
+				 */
+				tun_ip4h->ipha_hdr_checksum = 0;
+				tun_ip4h->ipha_hdr_checksum =
+				    (uint16_t)ip_csum_hdr(tun_ip4h);
+				break;
+			}
+			case ETHERTYPE_IPV6: {
+				ip6_t *tun_ip6h = (ip6_t *)(nhdrmp->b_rptr +
+				    outer_info->meoi_l2hlen);
+				tun_ip6h->ip6_plen = htons(
+				    ntohs(tun_ip6h->ip6_plen) - diff);
+				break;
+			}
+			default:
+				break;
+			}
+
+			switch (outer_info->meoi_tuntype) {
+			case METT_GENEVE:
+			case METT_VXLAN: {
+				udpha_t *tun_udph = (udpha_t *)(nhdrmp->b_rptr +
+				    outer_info->meoi_l2hlen +
+				    outer_info->meoi_l3hlen);
+				tun_udph->uha_length = htons(
+				    ntohs(tun_udph->uha_length) - diff);
+
+				/*
+				 * If the control plane for the tunnel requires
+				 * an outer UDP checksum (e.g., cautious use of
+				 * IPv6 + UDP in spite of RFC 6935/6936), then
+				 * we need to recompute those checksums if they
+				 * have been filled in.
+				 */
+				if (tun_udph->uha_checksum != 0) {
+					emul |= MAC_HWCKSUM_EMUL;
+					ocsum_flags |= HCK_FULLCKSUM;
+				}
+				break;
+			}
+			default:
+				break;
+			}
 		}
 	}
 
@@ -957,12 +1173,13 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	ASSERT3U(msgsize(nhdrmp->b_cont), ==, mss);
 
 	if (is_v6) {
-		niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen);
+		niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen + encap_len);
 		niph6->ip6_plen = htons(
 		    (oiphlen - IPV6_HDR_LEN) + otcphlen + mss);
 	} else {
-		niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
+		niph = (ipha_t *)(nhdrmp->b_rptr + oehlen + encap_len);
 		niph->ipha_length = htons(oiphlen + otcphlen + mss);
+
 		/*
 		 * If the v4 checksum was filled, we won't have a v4 offload
 		 * flag. We can't write zero checksums without inserting said
@@ -972,13 +1189,14 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		 */
 		if (niph->ipha_hdr_checksum != 0) {
 			emul |= MAC_IPCKSUM_EMUL;
-			ocsum_flags |= HCK_IPV4_HDRCKSUM;
+			ocsum_flags |= is_tun ?
+			    HCK_INNER_V4CKSUM : HCK_IPV4_HDRCKSUM;
 		}
 		niph->ipha_hdr_checksum = 0;
 		ip_id = ntohs(niph->ipha_ident);
 	}
 
-	ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen);
+	ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen + encap_len);
 	tcp_seq = BE32_TO_U32(ntcph->th_seq);
 	tcp_seq += mss;
 
@@ -998,7 +1216,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 * length field in the pseudo header when LSO is in play -- so
 	 * we need to calculate it here.
 	 */
-	if (ocsum_flags & HCK_PARTIALCKSUM) {
+	if (tcp_csum_partial) {
 		tcp_sum = BE16_TO_U16(ntcph->th_sum);
 		otcp_sum = tcp_sum;
 		tcp_sum += mss + otcphlen;
@@ -1009,7 +1227,8 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	if ((ocsum_flags & HCK_TX_FLAGS) && (emul & MAC_HWCKSUM_EMULS)) {
 		next_nhdrmp = nhdrmp->b_next;
 		nhdrmp->b_next = NULL;
-		nhdrmp = mac_sw_cksum(nhdrmp, emul);
+		nhdrmp = mac_sw_cksum(nhdrmp, emul, outer_info, encap_len,
+		    inner_info);
 		nhdrmp->b_next = next_nhdrmp;
 		next_nhdrmp = NULL;
 
@@ -1055,18 +1274,19 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		 * their original to make sure we produce the correct
 		 * value.
 		 */
-		ASSERT3P(msgsize(nhdrmp->b_cont), ==, mss);
+		ASSERT3U(msgsize(nhdrmp->b_cont), ==, mss);
 		if (is_v6) {
-			niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen);
+			niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen + encap_len);
 			niph6->ip6_plen = htons(
 			    (oiphlen - IPV6_HDR_LEN) + otcphlen + mss);
 		} else {
-			niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
+			niph = (ipha_t *)(nhdrmp->b_rptr + oehlen + encap_len);
 			niph->ipha_ident = htons(++ip_id);
 			niph->ipha_length = htons(oiphlen + otcphlen + mss);
 			niph->ipha_hdr_checksum = 0;
 		}
-		ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen);
+		ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen +
+		    encap_len);
 		U32_TO_BE32(tcp_seq, ntcph->th_seq);
 		tcp_seq += mss;
 		/*
@@ -1076,18 +1296,16 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		ntcph->th_flags[0] &= ~(TH_FIN | TH_PUSH);
 		DB_CKSUMFLAGS(nhdrmp) = (uint16_t)(ocsum_flags & ~HW_LSO);
 
-		/*
-		 * First and middle segs have same
-		 * pseudo-header checksum.
-		 */
-		if (ocsum_flags & HCK_PARTIALCKSUM)
+		/* First and middle segs have same pseudo-header checksum. */
+		if (tcp_csum_partial)
 			U16_TO_BE16(tcp_sum, ntcph->th_sum);
 
 		if ((ocsum_flags & HCK_TX_FLAGS) &&
 		    (emul & MAC_HWCKSUM_EMULS)) {
 			next_nhdrmp = nhdrmp->b_next;
 			nhdrmp->b_next = NULL;
-			nhdrmp = mac_sw_cksum(nhdrmp, emul);
+			nhdrmp = mac_sw_cksum(nhdrmp, emul, outer_info,
+			    encap_len, inner_info);
 			nhdrmp->b_next = next_nhdrmp;
 			next_nhdrmp = NULL;
 			/* We may have freed the original nhdrmp. */
@@ -1114,20 +1332,20 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	len = msgsize(nhdrmp->b_cont);
 	ASSERT3S(len, >, 0);
 	if (is_v6) {
-		niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen);
+		niph6 = (ip6_t *)(nhdrmp->b_rptr + oehlen + encap_len);
 		niph6->ip6_plen = htons(
 		    (oiphlen - IPV6_HDR_LEN) + otcphlen + len);
 	} else {
-		niph = (ipha_t *)(nhdrmp->b_rptr + oehlen);
+		niph = (ipha_t *)(nhdrmp->b_rptr + oehlen + encap_len);
 		niph->ipha_ident = htons(++ip_id);
 		niph->ipha_length = htons(oiphlen + otcphlen + len);
 		niph->ipha_hdr_checksum = 0;
 	}
-	ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen);
+	ntcph = (tcph_t *)(nhdrmp->b_rptr + oehlen + oiphlen + encap_len);
 	U32_TO_BE32(tcp_seq, ntcph->th_seq);
 
 	DB_CKSUMFLAGS(nhdrmp) = (uint16_t)(ocsum_flags & ~HW_LSO);
-	if (ocsum_flags & HCK_PARTIALCKSUM) {
+	if (tcp_csum_partial) {
 		tcp_sum = otcp_sum;
 		tcp_sum += len + otcphlen;
 		tcp_sum = (tcp_sum >> 16) + (tcp_sum & 0xFFFF);
@@ -1137,7 +1355,8 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	if ((ocsum_flags & HCK_TX_FLAGS) && (emul & MAC_HWCKSUM_EMULS)) {
 		/* This should be the last mblk. */
 		ASSERT3P(nhdrmp->b_next, ==, NULL);
-		nhdrmp = mac_sw_cksum(nhdrmp, emul);
+		nhdrmp = mac_sw_cksum(nhdrmp, emul, outer_info, encap_len,
+		    inner_info);
 		prev_nhdrmp->b_next = nhdrmp;
 	}
 
@@ -1147,7 +1366,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 
 	/*
 	 * Free the reference to the original LSO message as it is
-	 * being replaced by seg_cahin.
+	 * being replaced by seg_chain.
 	 */
 	freemsg(omp);
 	*head = seg_chain;
@@ -1160,8 +1379,6 @@ fail:
 	*tail = NULL;
 	*count = 0;
 }
-
-#define	HCK_NEEDED	(HCK_IPV4_HDRCKSUM | HCK_PARTIALCKSUM | HCK_FULLCKSUM)
 
 /*
  * Emulate various hardware offload features in software. Take a chain
@@ -1204,38 +1421,100 @@ mac_hw_emul(mblk_t **mp_chain, mblk_t **otail, uint_t *ocount, mac_emul_t emul)
 
 	for (mblk_t *mp = *mp_chain; mp != NULL; ) {
 		mblk_t *tmp, *next, *tmphead, *tmptail;
-		struct ether_header *ehp;
+		mblk_t *inner_frame = mp;
+		size_t inner_frame_offset = 0;
 		uint32_t flags;
-		uint_t len = MBLKL(mp), l2len;
+		uint_t len, l2len;
 
-		/* Perform LSO/cksum one message at a time. */
+		mac_ether_offload_info_t outer_info, inner_info;
+		mac_ether_offload_info_t *ulp_info = NULL;
+		uint32_t encap_len = 0;
+
+		/* Perform LSO/checksum one message at a time. */
 		next = mp->b_next;
 		mp->b_next = NULL;
+
+		/*
+		 * Parse failure can occur in several cases we need to support,
+		 * e.g., v4 checksum offload on ICMP packets, or tunneled
+		 * ARP/ICMP. We require, at a minimum, that encapsulation parses
+		 * successfully and that we can read L2 on the innermost frame.
+		 */
+		mac_ether_offload_info(mp, &outer_info, &inner_info);
+
+		/*
+		 * Compute offset to inner packet if tunneled.
+		 * Enforce that each layer is contiguous and not split
+		 * over b_cont boundaries.
+		 */
+		if (outer_info.meoi_tuntype != METT_NONE) {
+			if (!mac_tun_meoi_is_full(&outer_info)) {
+				mac_drop_pkt(mp, "tunnel headers unparseable");
+				goto nextpkt;
+			}
+			const size_t sizes[3] = {
+				outer_info.meoi_l2hlen,
+				outer_info.meoi_l3hlen,
+				outer_info.meoi_l4hlen + outer_info.meoi_tunhlen
+			};
+			encap_len = sizes[0] + sizes[1] + sizes[2];
+
+			for (uint_t i = 0; i < 3; ++i) {
+				const size_t cur_l = MBLKL(inner_frame);
+
+				if (cur_l - inner_frame_offset < sizes[i]) {
+					mac_drop_pkt(mp,
+					    "packet tunnel layer split over "
+					    "mblk_t boundary");
+					goto nextpkt;
+				}
+
+				inner_frame_offset += sizes[i];
+				if (inner_frame_offset == cur_l) {
+					inner_frame_offset = 0;
+					inner_frame = mp->b_cont;
+				}
+
+				/*
+				 * Ensure both subsequent tunnel layers *and*
+				 * inner frame have available bytes for reading.
+				 */
+				if (inner_frame == NULL) {
+					mac_drop_pkt(mp,
+					    "packet tunnel layer truncated");
+					goto nextpkt;
+				}
+			}
+			ulp_info = &inner_info;
+		} else {
+			ulp_info = &outer_info;
+		}
+
+		if ((ulp_info->meoi_flags & MEOI_L2INFO_SET) == 0) {
+			mac_drop_pkt(mp, "innermost ethernet unparsable");
+			goto nextpkt;
+		}
+		l2len = ulp_info->meoi_l2hlen;
+
+		len = MBLKL(inner_frame);
 
 		/*
 		 * For our sanity the first mblk should contain at
 		 * least the full L2 header.
 		 */
-		if (len < sizeof (struct ether_header)) {
+		if (len < (l2len + inner_frame_offset)) {
 			mac_drop_pkt(mp, "packet too short (A): %u", len);
-			mp = next;
-			continue;
+			goto nextpkt;
 		}
-
-		ehp = (struct ether_header *)mp->b_rptr;
-		if (ntohs(ehp->ether_type) == VLAN_TPID)
-			l2len = sizeof (struct ether_vlan_header);
-		else
-			l2len = sizeof (struct ether_header);
 
 		/*
 		 * If the first mblk is solely the L2 header, then
 		 * there better be more data.
 		 */
-		if (len < l2len || (len == l2len && mp->b_cont == NULL)) {
+		if ((len == (l2len + inner_frame_offset) &&
+		    mp->b_cont == NULL)) {
 			mac_drop_pkt(mp, "packet too short (C): %u", len);
-			mp = next;
-			continue;
+			goto nextpkt;
 		}
 
 		DTRACE_PROBE2(mac__emul, mblk_t *, mp, mac_emul_t, emul);
@@ -1254,19 +1533,19 @@ mac_hw_emul(mblk_t **mp_chain, mblk_t **otail, uint_t *ocount, mac_emul_t emul)
 			 * inline (if requested). It also frees mp.
 			 */
 			mac_sw_lso(mp, emul, &tmphead, &tmptail,
-			    &tmpcount);
+			    &tmpcount, &outer_info, encap_len, &inner_info);
 			if (tmphead == NULL) {
 				/* mac_sw_lso() freed the mp. */
-				mp = next;
-				continue;
+				goto nextpkt;
 			}
 			count += tmpcount;
-		} else if ((flags & HCK_NEEDED) && (emul & MAC_HWCKSUM_EMULS)) {
-			tmp = mac_sw_cksum(mp, emul);
+		} else if ((flags & HCK_TX_FLAGS) &&
+		    (emul & MAC_HWCKSUM_EMULS)) {
+			tmp = mac_sw_cksum(mp, emul, &outer_info, encap_len,
+			    &inner_info);
 			if (tmp == NULL) {
 				/* mac_sw_cksum() freed the mp. */
-				mp = next;
-				continue;
+				goto nextpkt;
 			}
 			tmphead = tmp;
 			tmptail = tmp;
@@ -1292,6 +1571,7 @@ mac_hw_emul(mblk_t **mp_chain, mblk_t **otail, uint_t *ocount, mac_emul_t emul)
 			tail = tmptail;
 		}
 
+nextpkt:
 		mp = next;
 	}
 
@@ -1313,6 +1593,7 @@ mac_add_vlan_tag(mblk_t *mp, uint_t pri, uint16_t vid)
 	mblk_t *hmp;
 	struct ether_vlan_header *evhp;
 	struct ether_header *ehp;
+	mac_ether_offload_info_t meoi;
 
 	ASSERT(pri != 0 || vid != 0);
 
@@ -1334,6 +1615,21 @@ mac_add_vlan_tag(mblk_t *mp, uint_t pri, uint16_t vid)
 	bcopy(ehp, evhp, (ETHERADDRL * 2));
 	evhp->ether_type = ehp->ether_type;
 	evhp->ether_tpid = htons(ETHERTYPE_VLAN);
+
+	/*
+	 * Copy over any existing header length state, fixing up any L2 info
+	 * which has already been filled in. Note that inner_info is
+	 * unchanged and copied verbatim.
+	 */
+	if (mac_ether_any_set_pktinfo(mp)) {
+		mac_ether_offload_info(mp, &meoi, NULL);
+		hmp->b_datap->db_meoi = mp->b_datap->db_meoi;
+		VERIFY3U(meoi.meoi_flags & MEOI_L2INFO_SET, !=, 0);
+		meoi.meoi_flags |= MEOI_VLAN_TAGGED;
+		meoi.meoi_l2hlen += VLAN_TAGSZ;
+		meoi.meoi_len += VLAN_TAGSZ;
+		mac_ether_set_pktinfo(hmp, &meoi, NULL);
+	}
 
 	hmp->b_wptr += sizeof (struct ether_vlan_header);
 	mp->b_rptr += sizeof (struct ether_header);

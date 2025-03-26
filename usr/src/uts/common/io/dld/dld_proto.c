@@ -1576,6 +1576,7 @@ proto_capability_advertise(dld_str_t *dsp, mblk_t *mp)
 	dl_capability_sub_t	*dlsp;
 	size_t			subsize;
 	dl_capab_dld_t		dld;
+	mac_capab_cso_t		mac_hcksum;
 	dl_capab_hcksum_t	hcksum;
 	dl_capab_zerocopy_t	zcopy;
 	dl_capab_vrrp_t		vrrp;
@@ -1597,8 +1598,8 @@ proto_capability_advertise(dld_str_t *dsp, mblk_t *mp)
 	 * Check if checksum offload is supported on this MAC.
 	 */
 	bzero(&hcksum, sizeof (dl_capab_hcksum_t));
-	if (mac_capab_get(dsp->ds_mh, MAC_CAPAB_HCKSUM,
-	    &hcksum.hcksum_txflags)) {
+	if (mac_capab_get(dsp->ds_mh, MAC_CAPAB_HCKSUM, &mac_hcksum)) {
+		hcksum.hcksum_txflags = mac_hcksum.cso_flags;
 		if (hcksum.hcksum_txflags != 0) {
 			hcksum_capable = B_TRUE;
 			subsize += sizeof (dl_capability_sub_t) +

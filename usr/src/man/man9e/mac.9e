@@ -11,11 +11,11 @@
 .\"
 .\" Copyright 2019 Joyent, Inc.
 .\" Copyright 2020 RackTop Systems, Inc.
-.\" Copyright 2023 Oxide Computer Company
+.\" Copyright 2025 Oxide Computer Company
 .\" Copyright 2023 Jason King
 .\" Copyright 2023 Peter Tribble
 .\"
-.Dd July 17, 2023
+.Dd February 24, 2025
 .Dt MAC 9E
 .Os
 .Sh NAME
@@ -709,10 +709,18 @@ The
 capability indicates to the system that the device driver supports some
 amount of checksumming.
 The specific data for this capability is a pointer to a
+.Vt mac_capab_cso_t .
+.Bd -literal -offset indent
+uint32_t	cso_flags;
+cso_tunnel_t	cso_tunnel;
+.Ed
+.Pp
+Legacy providers may treat this as a pointer to the initial
 .Vt uint32_t .
 To indicate no support for any kind of checksumming, the driver should
-either set this value to zero or simply return that it doesn't support
-the capability.
+either set the
+.Fa cso_flags
+value to zero or simply return that it doesn't support the capability.
 .Pp
 Note, the values that the driver declares in this capability indicate
 what it can do when it transmits data.
@@ -747,7 +755,72 @@ checksum for any other L4 protocols.
 .It Dv HCKSUM_IPHDRCKSUM
 This indicates that the hardware supports calculating the checksum for
 the IPv4 header itself.
+.It Dv HCKSUM_TUN
+This indicates that the hardware supports tunnel-aware checksum offloads, and
+that the
+.Fa cso_tunnel
+field has been filled.
+Tunnel-aware offloads are assumed to support IPv4 and IPv6 equally for both the
+inner and outer frame.
 .El
+.Pp
+When tunnel-aware offloads are supported, these are expressed using the struct
+.Vt cso_tunnel_t :
+.Bd -literal -offset indent
+uint32_t	ct_flags;
+uint32_t	ct_encap_max;
+uint32_t	ct_types;
+.Ed
+.Pp
+Checksums which can be computed by the hardware are indicated by the
+.Fa ct_flags
+field, containing the below flags combined through a bitwise inclusive OR:
+.Bl -tag -width Ds
+.It Dv MAC_CSO_TUN_INNER_IPHDR
+This indicates that the hardware supports calculating the checksum for
+the IPv4 header itself for the inner packet.
+.It Dv MAC_CSO_TUN_INNER_TCP_PARTIAL
+This indicates that the hardware can finalise the TCP checksum for the inner
+packet, given that it is initialised as a partial checksum of the pseudo-header.
+.It Dv MAC_CSO_TUN_INNER_TCP_FULL
+This indicates that the hardware can compute the TCP checksum for the inner
+packet from scratch.
+.It Dv MAC_CSO_TUN_INNER_UDP_PARTIAL
+This indicates that the hardware can finalise the UDP checksum for the inner
+packet, given that it is initialised as a partial checksum of the pseudo-header.
+.It Dv MAC_CSO_TUN_INNER_UDP_FULL
+This indicates that the hardware can compute the UDP checksum for the inner
+packet from scratch.
+.It Dv MAC_CSO_TUN_OUTER_IPHDR
+This indicates that the hardware supports calculating the checksum for
+the IPv4 header itself for the packet's encapsulation.
+.It Dv MAC_CSO_TUN_OUTER_UDP_PARTIAL
+This indicates that the hardware can finalise the UDP checksum for the packet's
+encapsulation
+.Pq e.g., in Geneve/VXLAN
+given that it is initialised as a partial checksum of the pseudo-header.
+.It Dv MAC_CSO_TUN_OUTER_UDP_FULL
+This indicates that the hardware can compute the UDP checksum for the packet's
+encapsulation
+.Pq e.g., in Geneve/VXLAN
+from scratch.
+.El
+.Pp
+Note that, due to RFC 6935/6936, drivers will often receive UDP/IPv6
+encapsulated packets with a zero checksum regardless of support for outer
+checksum offload.
+.Fa ct_encap_max
+signals to MAC clients and tunnel devices the maximum number of bytes that the
+encapsulation of a packet can occupy, where IPv6 extensions and tunnel options
+are concerned.
+.Fa cso_tunnel
+is the bitwise inclusive OR of supported tunnel types from
+.Dv MAC_CAPAB_TUN_TYPE_GENEVE
+(RFC 8926) and
+.Dv MAC_CAPAB_TUN_TYPE_VXLAN
+.Po RFC 7348,
+.Xr VXLAN 4P
+.Pc .
 .Pp
 When in a driver's transmit function, the driver will be processing a
 single frame.
@@ -810,8 +883,9 @@ This structure has the following members which are used to indicate
 various types of LSO support.
 .Bd -literal -offset indent
 t_uscalar_t		lso_flags;
-lso_basic_tcp_ivr4_t	lso_basic_tcp_ipv4;
+lso_basic_tcp_ipv4_t	lso_basic_tcp_ipv4;
 lso_basic_tcp_ipv6_t	lso_basic_tcp_ipv6;
+lso_tunnel_tcp_t	lso_tunnel_tcp;
 .Ed
 .Pp
 The
@@ -833,6 +907,12 @@ offloading over IPv6.
 The IPv6 packet will have no extension headers present.
 When this flag is set, the
 .Fa lso_basic_tcp_ipv6
+member must be filled in.
+.It Dv LSO_TX_TUNNEL_TCP
+This indicates hardware support for performing TCP segmentation offloading of
+tunneled packets.
+When this flag is set, the
+.Fa lso_tunnel_tcp
 member must be filled in.
 .El
 .Pp
@@ -860,6 +940,42 @@ The
 .Fa lso_max
 member should be set to the maximum size of the TCP data
 payload that can be offloaded to the hardware.
+.Ed
+.Pp
+The
+.Fa lso_tunnel_tcp_t
+member is a structure with the following members:
+.Bd -literal -offset indent
+uint32_t	tun_pay_max;
+uint32_t	tun_encap_max;
+uint32_t	tun_flags;
+uint32_t	tun_types;
+.Ed
+.Bd -filled -offset indent
+The
+.Fa tun_pay_max
+member should be set to the maximum size of the TCP data payload that can be
+offloaded to the hardware.
+The
+.Fa tun_encap_max
+member should be set to the maximum size of the encapsulation layer's headers
+that can be offloaded to the hardware.
+The
+.Fa tun_flags
+member must be set to zero or
+.Dv LSO_TX_TUNNEL_OUTER_CSUM ,
+which indicates that the hardware can compute both the IPv4 (if used) and outer
+L4 (UDP) checksum for each segmented packet.
+This requires that equivalent outer checksum flags are set in
+.Vt cso_tunnel_t .
+.Fa tun_types
+member should be set to the bitwise inclusive OR of supported tunnel types from
+.Dv MAC_CAPAB_TUN_TYPE_GENEVE
+(RFC 8926) and
+.Dv MAC_CAPAB_TUN_TYPE_VXLAN
+.Po RFC 7348,
+.Xr VXLAN 4P
+.Pc .
 .Ed
 .Pp
 Like with checksumming, it is recommended that driver writers provide a

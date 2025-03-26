@@ -53,22 +53,34 @@ static bool print_raw_pkts = false;
  * N.B. These must be kept in sync with those in mac_provider.h
  */
 typedef enum mac_ether_offload_flags {
-	MEOI_L2INFO_SET		= 1 << 0,
-	MEOI_L3INFO_SET		= 1 << 1,
-	MEOI_L4INFO_SET		= 1 << 2,
-	MEOI_VLAN_TAGGED	= 1 << 3,
-	MEOI_L3_FRAG_MORE	= 1 << 4,
-	MEOI_L3_FRAG_OFFSET	= 1 << 5
+	MEOI_L2INFO_SET		= 1 << 0, /* l2hlen and l3proto valid */
+	MEOI_L3INFO_SET		= 1 << 1, /* l3hlen and l4proto valid */
+	MEOI_L4INFO_SET		= 1 << 2, /* l4hlen valid */
+	MEOI_TUNINFO_SET	= 1 << 3, /* tunhlen valid */
+	MEOI_VLAN_TAGGED	= 1 << 4,
+	MEOI_L3_FRAG_MORE	= 1 << 5,
+	MEOI_L3_FRAG_OFFSET	= 1 << 6
 } mac_ether_offload_flags_t;
+
+typedef enum mac_ether_tun_type {
+	METT_NONE	= 0,
+	METT_GENEVE,
+	METT_VXLAN
+} mac_ether_tun_type_t;
 
 typedef struct mac_ether_offload_info {
 	mac_ether_offload_flags_t	meoi_flags;	/* What's valid? */
-	size_t		meoi_len;	/* Total message length */
+	mac_ether_tun_type_t	meoi_tuntype;	/* Type of tunnel in use */
+	uint32_t	meoi_len;	/* Number of bytes covered by the */
+					/* header stack parsed here and its */
+					/* payload. */
+
 	uint8_t		meoi_l2hlen;	/* How long is the Ethernet header? */
 	uint16_t	meoi_l3proto;	/* What's the Ethertype */
 	uint16_t	meoi_l3hlen;	/* How long is the header? */
 	uint8_t		meoi_l4proto;	/* What is the payload type? */
-	uint8_t		meoi_l4hlen;	/* How long is the L4 header */
+	uint8_t		meoi_l4hlen;	/* How long is the L4 header? */
+	uint16_t	meoi_tunhlen;	/* How long is the tunnel header? */
 } mac_ether_offload_info_t;
 
 

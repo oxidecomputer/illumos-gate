@@ -3479,6 +3479,116 @@ mac_promisc_remove(mac_promisc_handle_t mph)
 }
 
 /*
+ * Compute the HCKSUM flags attached to a given packet which cannot be
+ * offered by the target MAC provider.
+ */
+static uint16_t
+mac_tx_needed_offloads(const mac_impl_t *mip, mblk_t **mpp)
+{
+	mblk_t *mp = *mpp;
+	const mac_capab_lso_t *lso = &mip->mi_tx_lso_raw_capab;
+	const mac_capab_cso_t *cso = &mip->mi_tx_cksum_raw_capab;
+	const mac_ether_tun_type_t tun_type = mac_ether_tun_type(mp);
+	const uint16_t original = DB_CKSUMFLAGS(mp);
+	uint16_t needed = original;
+	mac_ether_offload_info_t inner;
+	uint32_t tun_flag = 0;
+
+	switch (tun_type) {
+	case METT_NONE:
+		ASSERT3U(needed & HCK_INNER_TX_FLAGS, ==, 0);
+		return ((needed ^ mip->mi_tx_cksum_pkt_flags) & needed);
+	case METT_GENEVE:
+		tun_flag = MAC_CAPAB_TUN_TYPE_GENEVE;
+		break;
+	case METT_VXLAN:
+		tun_flag = MAC_CAPAB_TUN_TYPE_VXLAN;
+		break;
+	default:
+		mac_drop_pkt(mp, "unrecognised tunnel type %d", tun_type);
+		*mpp = NULL;
+		return (0);
+	}
+
+	/*
+	 * All cases from this point are tunneled. If no offloads are
+	 * requested, avoid any attempt to extract/parse inner protocols.
+	 */
+	if (needed == 0)
+		return (0);
+
+	/*
+	 * We need to know the inner L4 protocol to map to the correct flags.
+	 * If this is isn't prefilled and we cannot parse the tunnel, then drop
+	 * the packet. *Any* emulation has this as a prerequisite.
+	 *
+	 * mac_ether_offload_info will rely on existing packet facts where
+	 * possible.
+	 */
+	mac_ether_offload_info(mp, NULL, &inner);
+
+	/* Setting inner's L2 info implies a successful tunnel parse. */
+	if ((inner.meoi_flags & MEOI_L2INFO_SET) == 0) {
+		mac_drop_pkt(mp, "tunnel headers unparseable");
+		*mpp = NULL;
+		return (needed);
+	}
+
+	if ((needed & HCK_TX_FLAGS) && (cso->cso_flags & HCKSUM_TUN) &&
+	    (cso->cso_tunnel.ct_types & tun_flag)) {
+		const uint32_t csof = cso->cso_tunnel.ct_flags;
+		uint16_t can_remove = 0;
+
+		if ((inner.meoi_flags & MEOI_L3INFO_SET) != 0) {
+			switch (inner.meoi_l4proto) {
+			case IPPROTO_TCP:
+				if (csof & MAC_CSO_TUN_INNER_TCP_PARTIAL)
+					can_remove |= HCK_INNER_PARTIAL;
+				if (csof & MAC_CSO_TUN_INNER_TCP_FULL)
+					can_remove |= HCK_INNER_FULL;
+				break;
+			case IPPROTO_UDP:
+				if (csof & MAC_CSO_TUN_INNER_UDP_PARTIAL)
+					can_remove |= HCK_INNER_PARTIAL;
+				if (csof & MAC_CSO_TUN_INNER_UDP_FULL)
+					can_remove |= HCK_INNER_FULL;
+				break;
+			default:
+				break;
+			}
+		}
+		if (csof & MAC_CSO_TUN_INNER_IPHDR)
+			can_remove |= HCK_INNER_V4CKSUM;
+		if (csof & MAC_CSO_TUN_OUTER_IPHDR)
+			can_remove |= HCK_IPV4_HDRCKSUM;
+		if (csof & MAC_CSO_TUN_OUTER_UDP_PARTIAL)
+			can_remove |= HCK_PARTIALCKSUM;
+		if (csof & MAC_CSO_TUN_OUTER_UDP_FULL)
+			can_remove |= HCK_FULLCKSUM;
+
+		needed = (needed ^ can_remove) & needed;
+	}
+
+	if ((needed & HW_LSO_FLAGS) && (lso->lso_flags & LSO_TX_TUNNEL_TCP)) {
+		boolean_t outer_cso_unsup = (lso->lso_tunnel_tcp.tun_flags &
+		    LSO_TX_TUNNEL_OUTER_CSUM) == 0;
+
+		/*
+		 * If outer UDP checksum is required but unsupported, we *must*
+		 * emulate LSO and re-add the outer flags.
+		 */
+		if ((original & (HCK_PARTIALCKSUM | HCK_FULLCKSUM)) != 0 &&
+		    outer_cso_unsup) {
+			needed |= original & HCK_OUTER_TX_FLAGS;
+		} else if (lso->lso_tunnel_tcp.tun_types & tun_flag) {
+			needed &= ~HW_LSO;
+		}
+	}
+
+	return (needed);
+}
+
+/*
  * Reference count the number of active Tx threads. MCI_TX_QUIESCE indicates
  * that a control operation wants to quiesce the Tx data flow in which case
  * we return an error. Holding any of the per cpu locks ensures that the
@@ -3537,6 +3647,9 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 	mac_srs_tx_t		*srs_tx;
+	mblk_t			*mp = mp_chain;
+	mblk_t			*new_head = NULL;
+	mblk_t			*new_tail = NULL;
 
 	/*
 	 * Check whether the active Tx threads count is bumped already.
@@ -3586,12 +3699,78 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		goto done;
 	}
 
+	/*
+	 * There are occasions where the packets arriving here
+	 * may request hardware offloads that are not
+	 * available from the underlying MAC provider. This
+	 * currently only happens when a packet is sent across
+	 * the MAC-loopback path of one MAC and then forwarded
+	 * (via IP) to another MAC that lacks one or more of
+	 * the hardware offloads provided by the first one.
+	 * However, in the future, we may choose to pretend
+	 * all MAC providers support all offloads, performing
+	 * emulation on Tx as needed.
+	 *
+	 * We iterate each mblk in-turn, emulating hardware
+	 * offloads as required. From this process, we create
+	 * a new chain. The new chain may be the same as the
+	 * original chain (no hardware emulation needed), a
+	 * collection of new mblks (hardware emulation
+	 * needed), or a mix. At this point, the chain is safe
+	 * for consumption by the underlying MAC provider and
+	 * is passed down to the SRS.
+	 */
+	while (mp != NULL) {
+		mblk_t *next = mp->b_next;
+		mblk_t *tail = NULL;
+		mp->b_next = NULL;
+
+		const uint16_t needed = mac_tx_needed_offloads(mip, &mp);
+		if (mp == NULL) {
+			mp = next;
+			continue;
+		}
+
+		if ((needed & (HCK_TX_FLAGS | HW_LSO_FLAGS)) != 0) {
+			mac_emul_t emul = 0;
+
+			if (needed & (HCK_IPV4_HDRCKSUM | HCK_INNER_V4CKSUM))
+				emul |= MAC_IPCKSUM_EMUL;
+			if (needed & (HCK_PARTIALCKSUM | HCK_FULLCKSUM |
+			    HCK_INNER_PARTIAL | HCK_INNER_FULL)) {
+				emul |= MAC_HWCKSUM_EMUL;
+			}
+			if (needed & HW_LSO)
+				emul |= MAC_LSO_EMUL;
+
+			mac_hw_emul(&mp, &tail, NULL, emul);
+
+			if (mp == NULL) {
+				mp = next;
+				continue;
+			}
+		}
+
+		if (new_head == NULL) {
+			new_head = mp;
+		} else {
+			new_tail->b_next = mp;
+		}
+
+		new_tail = (tail == NULL) ? mp : tail;
+		mp = next;
+	}
+
+	if (new_head == NULL) {
+		cookie = 0;
+		goto done;
+	}
+
 	srs_tx = &srs->srs_tx;
 	if (srs_tx->st_mode == SRS_TX_DEFAULT &&
 	    (srs->srs_state & SRS_ENQUEUED) == 0 &&
 	    mip->mi_nactiveclients == 1 &&
-	    mp_chain->b_next == NULL &&
-	    (DB_CKSUMFLAGS(mp_chain) & HW_LSO) == 0) {
+	    new_head->b_next == NULL) {
 		uint64_t	obytes;
 
 		/*
@@ -3606,107 +3785,40 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 			if (MAC_VID_CHECK_NEEDED(mcip)) {
 				int	err = 0;
 
-				MAC_VID_CHECK(mcip, mp_chain, err);
+				MAC_VID_CHECK(mcip, new_head, err);
 				if (err != 0) {
-					freemsg(mp_chain);
+					freemsg(new_head);
 					mcip->mci_misc_stat.mms_txerrors++;
 					goto done;
 				}
 			}
 			if (MAC_TAG_NEEDED(mcip)) {
-				mp_chain = mac_add_vlan_tag(mp_chain, 0,
+				new_head = mac_add_vlan_tag(new_head, 0,
 				    mac_client_vid(mch));
-				if (mp_chain == NULL) {
+				if (new_head == NULL) {
 					mcip->mci_misc_stat.mms_txerrors++;
 					goto done;
 				}
 			}
 		}
 
-		obytes = (mp_chain->b_cont == NULL ? MBLKL(mp_chain) :
-		    msgdsize(mp_chain));
+		obytes = (new_head->b_cont == NULL ? MBLKL(new_head) :
+		    msgdsize(new_head));
 
-		mp_chain = mac_provider_tx(mip, srs_tx->st_arg2, mp_chain,
+		new_head = mac_provider_tx(mip, srs_tx->st_arg2, new_head,
 		    mcip);
 
-		if (mp_chain == NULL) {
+		if (new_head == NULL) {
 			cookie = 0;
 			SRS_TX_STAT_UPDATE(srs, opackets, 1);
 			SRS_TX_STAT_UPDATE(srs, obytes, obytes);
 		} else {
 			mutex_enter(&srs->srs_lock);
-			cookie = mac_tx_srs_no_desc(srs, mp_chain,
+			cookie = mac_tx_srs_no_desc(srs, new_head,
 			    flag, ret_mp);
 			mutex_exit(&srs->srs_lock);
 		}
 	} else {
-		mblk_t *mp = mp_chain;
-		mblk_t *new_head = NULL;
-		mblk_t *new_tail = NULL;
-
-		/*
-		 * There are occasions where the packets arriving here
-		 * may request hardware offloads that are not
-		 * available from the underlying MAC provider. This
-		 * currently only happens when a packet is sent across
-		 * the MAC-loopback path of one MAC and then forwarded
-		 * (via IP) to another MAC that lacks one or more of
-		 * the hardware offloads provided by the first one.
-		 * However, in the future, we may choose to pretend
-		 * all MAC providers support all offloads, performing
-		 * emulation on Tx as needed.
-		 *
-		 * We iterate each mblk in-turn, emulating hardware
-		 * offloads as required. From this process, we create
-		 * a new chain. The new chain may be the same as the
-		 * original chain (no hardware emulation needed), a
-		 * collection of new mblks (hardware emulation
-		 * needed), or a mix. At this point, the chain is safe
-		 * for consumption by the underlying MAC provider and
-		 * is passed down to the SRS.
-		 */
-		while (mp != NULL) {
-			mblk_t *next = mp->b_next;
-			mblk_t *tail = NULL;
-			const uint16_t needed =
-			    (DB_CKSUMFLAGS(mp) ^ mip->mi_tx_cksum_flags) &
-			    DB_CKSUMFLAGS(mp);
-
-			mp->b_next = NULL;
-
-			if ((needed & (HCK_TX_FLAGS | HW_LSO_FLAGS)) != 0) {
-				mac_emul_t emul = 0;
-
-				if (needed & HCK_IPV4_HDRCKSUM)
-					emul |= MAC_IPCKSUM_EMUL;
-				if (needed & (HCK_PARTIALCKSUM | HCK_FULLCKSUM))
-					emul |= MAC_HWCKSUM_EMUL;
-				if (needed & HW_LSO)
-					emul = MAC_LSO_EMUL;
-
-				mac_hw_emul(&mp, &tail, NULL, emul);
-
-				if (mp == NULL) {
-					mp = next;
-					continue;
-				}
-			}
-
-			if (new_head == NULL) {
-				new_head = mp;
-			} else {
-				new_tail->b_next = mp;
-			}
-
-			new_tail = (tail == NULL) ? mp : tail;
-			mp = next;
-		}
-
-		if (new_head == NULL) {
-			cookie = 0;
-			goto done;
-		}
-
 		cookie = srs_tx->st_func(srs, new_head, hint, flag, ret_mp);
 	}
 

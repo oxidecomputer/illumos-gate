@@ -14,6 +14,7 @@
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2021 Joyent, Inc.
  * Copyright 2019 Joshua M. Clulow <josh@sysmgr.org>
+ * Copyright 2025 Oxide Computer Company
  */
 
 /* Based on the NetBSD virtio driver by Minoura Makoto. */
@@ -1311,16 +1312,14 @@ vioif_send(vioif_t *vif, mblk_t *mp)
 	 * Setup LSO fields if required.
 	 */
 	if (lso_required) {
-		mac_ether_offload_flags_t needed;
 		mac_ether_offload_info_t meo;
 		uint32_t cksum;
 		size_t len;
 		mblk_t *pullmp = NULL;
 		tcpha_t *tcpha;
 
-		mac_ether_offload_info(mp, &meo);
-		needed = MEOI_L2INFO_SET | MEOI_L3INFO_SET | MEOI_L4INFO_SET;
-		if ((meo.meoi_flags & needed) != needed) {
+		mac_ether_offload_info(mp, &meo, NULL);
+		if (!mac_meoi_is_full(&meo)) {
 			goto fail;
 		}
 

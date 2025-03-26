@@ -965,6 +965,64 @@
  *                                     | cookie and |<------+
  *                                     |    mblk_t  |
  *                                     +------------+
+ *
+ * ----------------------
+ * Packet Metadata in MAC
+ * ----------------------
+ *
+ * MAC aims to support the plumbing of various kinds of packet offloads, such as
+ * hardware checksum offloading and large segment offloads. MAC providers
+ * (device drivers) often need to explicitly use the offsets and types of each
+ * header in play to program a device to provide this functionality. These can
+ * often be easily parsed. Tunnel-aware offloads (e.g., those targeting an inner
+ * frame) cannot do so. Though protocols like Geneve and VXLAN are associated
+ * with well-known ports, we need some signalling with upstream clients to know
+ * that they are in use at all, or are not bound by a user to another port.
+ *
+ * One of the mechanisms supporting this functionality is that the leading
+ * `mblk_t` of each packet can be used to access the tunnel type, as well as the
+ * lengths of these headers if they have been set. This information is stored in
+ * the message's backing `dblk_t`, and providers have a consistent API via
+ * mac_ether_offload_info to read this info or parse a packet before Tx, if
+ * needed. This is a minimally intrusive means of signalling tunnels in use, but
+ * also allows MAC clients to prevent drivers from wasting time parsing packets.
+ *
+ * Aside from MAC providers, this parsing/storage is used today in the Rx and Tx
+ * paths for softring handling, fanout, fastpath selection, and offload
+ * emulation. This serves to standardise parsing logic.
+ *
+ * More of the detail around what information we store and how to access it is
+ * contained in mac_provider.h (in the block comment attached to
+ * mac_ether_offload_flags_t) and in stream.h (packed_meoi_t).
+ *
+ * FUTURE USAGE
+ *
+ * None of MAC's clients today (DLS, IP via fastpath) fill in this information
+ * on transmit. Doing so would benefit MAC providers by reducing per-packet
+ * parse cost for offloaded frames.
+ *
+ * A caveat in the stack today is that there are currently several places in IP
+ * liable to reuse `mblk_t`s, which have not all been audited to ensure that
+ * existing packet header information is cleared. ICMP and ARP are known
+ * examples. As a result, these clients could end up ultimately transmitting
+ * packets which would be dropped/corrupted on Tx by incorrect application of
+ * offloads (hardware or emulated). This is most problematic when packets are
+ * forwarded between MACs in the loopback path.
+ * As a mitigation, there are a few places we currently strip this information
+ * before delivery to a client:
+ *  - mac_rx_deliver     (up to DLS).
+ *  - ip_input_common_v4 (IP via fastpath, TCP/IP via squeue)
+ *  - ip_input_common_v6 (IP via fastpath, TCP/IP via squeue)
+ * This limits how this information can propagate (only MAC and mac providers
+ * can read stored metadata today), even if it would (in theory) be useful to
+ * clients in processing packets.
+ *
+ * Related to this is the idea that we might consider having a successful parse
+ * in `mac_ether_offload_info` update the stored metadata. There are some
+ * complicating factors here around db_ref usage, as in TCP/IP frames always
+ * have a ref count of 2 to simplify retransmits. Since IP could and should fill
+ * this out, the main value in doing so would be in the Rx pathway (which is
+ * blocked as above).
  */
 
 #include <sys/types.h>
@@ -1548,7 +1606,7 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		if (is_ether) {
 			uint32_t vlan_tci;
 
-			mac_ether_offload_info(mp, &meoi);
+			mac_ether_offload_info(mp, &meoi, NULL);
 			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0 ||
 			    !mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
 				mac_rx_drop_pkt(mac_srs, mp);
@@ -1993,7 +2051,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			 * At this point we can be sure the packet at least
 			 * has an ether header.
 			 */
-			mac_ether_offload_info(mp, &meoi);
+			mac_ether_offload_info(mp, &meoi, NULL);
 			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0 ||
 			    !mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
 				mac_rx_drop_pkt(mac_srs, mp);
@@ -4722,6 +4780,16 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 		 */
 		mp_chain = mac_strip_vlan_tag_chain(mp_chain);
 	}
+
+	/*
+	 * Today, we strip pktinfo at the mac->client boundary in the Rx
+	 * path. For the rationale, please see the 'Packet Metadata in
+	 * MAC' in mac_sched.c,
+	 * Strip this information here before delivery to a client, if possible.
+	 */
+	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next)
+		if (DB_REF(mp) < 2)
+			mac_ether_clear_pktinfo(mp);
 
 	mcip->mci_rx_fn(mcip->mci_rx_arg, mrh, mp_chain, B_FALSE);
 }

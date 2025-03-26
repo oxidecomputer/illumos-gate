@@ -74,7 +74,7 @@ extern "C" {
  */
 /*
  * MAC layer capabilities.  These capabilities are handled by the drivers'
- * mc_capab_get() callbacks.  Some capabilities require the driver to fill
+ * mc_getcapab() callbacks.  Some capabilities require the driver to fill
  * in a given data structure, and others are simply boolean capabilities.
  * Note that capability values must be powers of 2 so that consumers and
  * providers of this interface can keep track of which capabilities they
@@ -84,7 +84,7 @@ typedef enum {
 	/*
 	 * Public Capabilities (MAC_VERSION_V1)
 	 */
-	MAC_CAPAB_HCKSUM	= 0x00000001, /* data is a uint32_t */
+	MAC_CAPAB_HCKSUM	= 0x00000001, /* data is a mac_capab_cso_t */
 	MAC_CAPAB_LSO		= 0x00000008, /* data is mac_capab_lso_t */
 
 	/*
@@ -116,6 +116,71 @@ typedef enum {
 } mac_capab_t;
 
 /*
+ * Flagset of currently supported tunnel classes for tunneled CSO/LSO offload.
+ */
+#define	MAC_CAPAB_TUN_TYPE_GENEVE	0x01	/* RFC 8926 */
+#define	MAC_CAPAB_TUN_TYPE_VXLAN	0x02	/* RFC 7348 */
+
+/*
+ * Checksum/HCKSUM offload (CSO) capability
+ */
+
+/*
+ * Conditions on tunneled checksum offload eligibility.
+ *
+ * A provider can express different levels of support for inner/outer headers,
+ * given tunnel types, as well as the checksums which the hardware can compute
+ * on a protocol-by-protocol basis. Aside from UDP/IPv4, inner checksums are all
+ * required.
+ *
+ * - MAC_CSO_TUN_INNER_IPHDR:
+ *    The inner IPv4 checksum can be entirely computed in hardware.
+ * - MAC_CSO_TUN_INNER_TCP_PARTIAL:
+ *    The inner TCP checksum must contain the IPv4/v6 pseudoheader.
+ * - MAC_CSO_TUN_INNER_TCP_FULL:
+ *    The inner TCP checksum can be entirely computed in hardware.
+ * - MAC_CSO_TUN_INNER_UDP_PARTIAL:
+ *    The inner UDP checksum must contain the IPv4/v6 pseudoheader.
+ * - MAC_CSO_TUN_INNER_UDP_FULL:
+ *    The inner TCP checksum can be entirely computed in hardware.
+ *
+ * Outer checksums are more eligible for omission. Outer IPv4 is the only
+ * required checksum on a tunneled packet, even over IPv6 -- see RFC 6935/6936.
+ *
+ * - MAC_CSO_TUN_OUTER_IPHDR:
+ *    The outer IPv4 checksum can be entirely computed in hardware.
+ * - MAC_CSO_TUN_OUTER_UDP_PARTIAL:
+ *    When requested, the outer UDP checksum (e.g., in Geneve/VXLAN) must
+ *    contain the IPv4/v6 pseudoheader
+ * - MAC_CSO_TUN_OUTER_UDP_FULL:
+ *    When requested, the outer UDP checksum (e.g., in Geneve/VXLAN) can be
+ *    entirely computed in hardware.
+ */
+#define	MAC_CSO_TUN_INNER_IPHDR		0x0001
+#define	MAC_CSO_TUN_INNER_TCP_PARTIAL	0x0002
+#define	MAC_CSO_TUN_INNER_TCP_FULL	0x0004
+#define	MAC_CSO_TUN_INNER_UDP_PARTIAL	0x0008
+#define	MAC_CSO_TUN_INNER_UDP_FULL	0x0010
+#define	MAC_CSO_TUN_OUTER_IPHDR		0x0020
+#define	MAC_CSO_TUN_OUTER_UDP_PARTIAL	0x0040
+#define	MAC_CSO_TUN_OUTER_UDP_FULL	0x0080
+
+typedef struct cso_tunnel_s {
+	uint32_t	ct_flags;	/* MAC_CSO_TUN_* flags. */
+	uint32_t	ct_encap_max;	/* maximum encap size */
+	uint32_t	ct_types;	/* supported encapsulation families */
+} cso_tunnel_t;
+
+typedef struct mac_capab_cso_s {
+	/*
+	 * This flags member must come first -- the majority of providers do not
+	 * handle the full mac_capab_cso_t, and expect the flags-only interface.
+	 */
+	uint32_t	cso_flags;	/* HCKSUM_* flags (dlpi.h) */
+	cso_tunnel_t	cso_tunnel;
+} mac_capab_cso_t;
+
+/*
  * LSO capability
  */
 typedef struct lso_basic_tcp_ipv4_s {
@@ -126,11 +191,26 @@ typedef struct lso_basic_tcp_ipv6_s {
 	t_uscalar_t	lso_max;		/* maximum payload */
 } lso_basic_tcp_ipv6_t;
 
+typedef struct lso_tunnel_tcp_s {
+	uint32_t tun_pay_max;	/* maximum payload */
+	uint32_t tun_encap_max;	/* maximum encap size */
+	uint32_t tun_flags;	/* supported operations */
+	uint32_t tun_types;	/* supported encapsulation families */
+	uint32_t tun_pad[2];	/* future expansion */
+} lso_tunnel_tcp_t;
+
 /*
  * Currently supported flags for LSO.
  */
 #define	LSO_TX_BASIC_TCP_IPV4	0x01		/* TCPv4 LSO capability */
 #define	LSO_TX_BASIC_TCP_IPV6	0x02		/* TCPv6 LSO capability */
+#define	LSO_TX_TUNNEL_TCP	0x04		/* Tun-TCP LSO capability */
+
+/*
+ * Currently supported tunnel classes for tunneled LSO offload.
+ */
+#define	LSO_TX_TUNNEL_OUTER_CSUM	0x01	/* hardware can fill outer */
+						/* UDP checksum information */
 
 /*
  * Future LSO capabilities can be added at the end of the mac_capab_lso_t.
@@ -144,6 +224,8 @@ typedef	struct mac_capab_lso_s {
 	t_uscalar_t		lso_flags;
 	lso_basic_tcp_ipv4_t	lso_basic_tcp_ipv4;
 	lso_basic_tcp_ipv6_t	lso_basic_tcp_ipv6;
+
+	lso_tunnel_tcp_t	lso_tunnel_tcp;
 	/* Add future lso capabilities here */
 } mac_capab_lso_t;
 
@@ -663,27 +745,88 @@ extern void			mac_transceiver_info_set_usable(
  * This represents a provisional set of currently illumos-private APIs to get
  * information about a mblk_t chain's type. This is an evolving interface.
  *
+ * Mac clients can store two layers of packet information to be used by
+ * providers -- the outermost frame, and an inner frame iff. the outermost frame
+ * is an encapsulation layer. These allow us to capture various facts about a
+ * packet -- which protocols are in use for a frame, whether a packet is
+ * encapsulated in some kind of tunnel, and the lengths which all their
+ * constituent headers consume. These can be useful for programming certain
+ * checksum and segmentation offloads.
+ *
+ * Facts concerning both layers are stored within the first dblk_t of a packet,
+ * and can each be read out into a `mac_ether_offload_info_t`. This struct
+ * contains the length of a frame beginning at the headers' offset, as well as
+ * its L2/L3/L4 lengths/types. Lengths must include all extensions and options.
+ * Mac clients are under no obligation to fill any part of a packet's stored
+ * MEOI -- a provider can always fill any gaps by parsing the packet with the
+ * below APIs. Two fields are always considered valid -- `meoi_tuntype` and
+ * `meoi_flags`. The meoi_flags field denotes which length and proto values in
+ * the remainder of the struct have been successfully parsed or prefilled.
+ * `MEOI_TUNINFO_SET` must only be set when `meoi_tuntype` is not `METT_NONE`.
+ *
+ * A provider can request a packet's MEOI, parsing the packet to fill any
+ * missing values, using the `mac_ether_offload_info` (outer and/or inner)
+ * function. NIC drivers which do not expose tunnel aware offloads may request
+ * only that the outer information be filled.
+ *
+ * If a packet is tunneled, we have both a tunnel layer and an inner frame.
+ * Otherwise, we only have an outer frame. Mac providers may assume that any
+ * information filled in is correct. Clients which alter any previously valid
+ * field in a packet *must* ensure that lengths and protocol types are fixed up
+ * accordingly or unset the relevant `MEOI_XXINFO_SET` flag.
+ *
+ * When clients *do* fill this information in, providers are able to make use of
+ * this information to correctly request offloads from underlying NICs without
+ * needing to reparse the packet, increasing performance.
+ */
+
+/*
  * These flags and mac_ether_offload_info struct below are currently duplicated
  * by the userspace mac_test program, which should be kept in sync if changes to
  * either are made here.
  */
 typedef enum mac_ether_offload_flags {
-	MEOI_L2INFO_SET		= 1 << 0,
-	MEOI_L3INFO_SET		= 1 << 1,
-	MEOI_L4INFO_SET		= 1 << 2,
-	MEOI_VLAN_TAGGED	= 1 << 3,
-	MEOI_L3_FRAG_MORE	= 1 << 4,
-	MEOI_L3_FRAG_OFFSET	= 1 << 5
+	MEOI_L2INFO_SET		= 1 << 0, /* l2hlen and l3proto valid */
+	MEOI_L3INFO_SET		= 1 << 1, /* l3hlen and l4proto valid */
+	MEOI_L4INFO_SET		= 1 << 2, /* l4hlen valid */
+	MEOI_TUNINFO_SET	= 1 << 3, /* tunhlen valid */
+	MEOI_VLAN_TAGGED	= 1 << 4,
+	MEOI_L3_FRAG_MORE	= 1 << 5,
+	MEOI_L3_FRAG_OFFSET	= 1 << 6
 } mac_ether_offload_flags_t;
 
+#define	MEOI_FULL	(MEOI_L2INFO_SET | MEOI_L3INFO_SET | MEOI_L4INFO_SET)
+#define	MEOI_FULLTUN	(MEOI_FULL | MEOI_TUNINFO_SET)
+
+typedef enum mac_ether_tun_type {
+	METT_NONE	= 0,
+	METT_GENEVE,
+	METT_VXLAN
+} mac_ether_tun_type_t;
+
 typedef struct mac_ether_offload_info {
-	mac_ether_offload_flags_t	meoi_flags;	/* What's valid? */
-	size_t		meoi_len;	/* Total message length */
-	uint8_t		meoi_l2hlen;	/* How long is the Ethernet header? */
-	uint16_t	meoi_l3proto;	/* What's the Ethertype */
-	uint16_t	meoi_l3hlen;	/* How long is the header? */
-	uint8_t		meoi_l4proto;	/* What is the payload type? */
-	uint8_t		meoi_l4hlen;	/* How long is the L4 header */
+	/* What's valid? */
+	mac_ether_offload_flags_t	meoi_flags;
+	/* Type of tunnel in use */
+	mac_ether_tun_type_t	meoi_tuntype;
+	/*
+	 * Number of bytes covered by the header stack parsed here and its
+	 * payload.
+	 */
+	uint32_t	meoi_len;
+
+	/* How long is the Ethernet header? */
+	uint8_t		meoi_l2hlen;
+	/* What's the Ethertype */
+	uint16_t	meoi_l3proto;
+	/* How long is the header? */
+	uint16_t	meoi_l3hlen;
+	/* What is the payload type? */
+	uint8_t		meoi_l4proto;
+	/* How long is the L4 header? */
+	uint8_t		meoi_l4hlen;
+	/* How long is the tunnel header? */
+	uint16_t	meoi_tunhlen;
 } mac_ether_offload_info_t;
 
 /*
@@ -695,11 +838,17 @@ typedef struct mac_ether_offload_info {
  */
 #define	MEOI_VLAN_TCI_INVALID	UINT32_MAX
 
-extern boolean_t mac_ether_l2_info(mblk_t *, uint8_t *, uint32_t *);
-extern void mac_ether_offload_info(mblk_t *, mac_ether_offload_info_t *);
-extern void mac_partial_offload_info(mblk_t *, size_t,
-    mac_ether_offload_info_t *);
+extern boolean_t mac_meoi_is_full(const mac_ether_offload_info_t *);
+extern boolean_t mac_tun_meoi_is_full(const mac_ether_offload_info_t *);
 
+extern boolean_t mac_ether_l2_info(const mblk_t *, uint8_t *, uint32_t *);
+extern void mac_ether_offload_info(const mblk_t *, mac_ether_offload_info_t *,
+    mac_ether_offload_info_t *);
+extern void mac_ether_set_pktinfo(mblk_t *, const mac_ether_offload_info_t *,
+    const mac_ether_offload_info_t *);
+extern void mac_ether_clear_pktinfo(mblk_t *);
+extern boolean_t mac_ether_any_set_pktinfo(const mblk_t *mp);
+extern mac_ether_tun_type_t mac_ether_tun_type(const mblk_t *);
 
 #endif	/* _KERNEL */
 

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -944,6 +944,7 @@ i_dld_ether_header_update_tag(mblk_t *mp, uint_t pri, uint16_t vid,
 		evhp = (struct ether_vlan_header *)mp->b_rptr;
 		old_tci = ntohs(evhp->ether_tci);
 	} else {
+		mac_ether_offload_info_t meoi;
 		/*
 		 * Untagged packet.  Two factors will cause us to insert a
 		 * VLAN header:
@@ -968,6 +969,21 @@ i_dld_ether_header_update_tag(mblk_t *mp, uint_t pri, uint16_t vid,
 		evhp->ether_type = ehp->ether_type;
 		evhp->ether_tpid = htons(ETHERTYPE_VLAN);
 
+		/*
+		 * Copy over any existing header length state, fixing up any L2
+		 * info which has already been filled in. Note that inner_info
+		 * is unchanged and copied verbatim.
+		 */
+		if (mac_ether_any_set_pktinfo(mp)) {
+			mac_ether_offload_info(mp, &meoi, NULL);
+			hmp->b_datap->db_meoi = mp->b_datap->db_meoi;
+			VERIFY3U(meoi.meoi_flags & MEOI_L2INFO_SET, !=, 0);
+			meoi.meoi_flags |= MEOI_VLAN_TAGGED;
+			meoi.meoi_l2hlen += VLAN_TAGSZ;
+			meoi.meoi_len += VLAN_TAGSZ;
+			mac_ether_set_pktinfo(hmp, &meoi, NULL);
+		}
+
 		hmp->b_wptr += sizeof (struct ether_vlan_header);
 		mp->b_rptr += sizeof (struct ether_header);
 
@@ -975,6 +991,7 @@ i_dld_ether_header_update_tag(mblk_t *mp, uint_t pri, uint16_t vid,
 		 * Free the original message if it's now empty. Link the
 		 * rest of the messages to the header message.
 		 */
+		mac_hcksum_clone(mp, hmp);
 		if (MBLKL(mp) == 0) {
 			hmp->b_cont = mp->b_cont;
 			freeb(mp);

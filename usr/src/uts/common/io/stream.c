@@ -27,7 +27,7 @@
  *
  * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2022 Garrett D'Amore
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -148,16 +148,21 @@
 #define	DBLK_RTFU_WORD(dbp)	(*((uint32_t *)&(dbp)->db_ref))
 #define	MBLK_BAND_FLAG_WORD(mp)	(*((uint32_t *)&(mp)->b_band))
 
+/* Maintain page size alignment for an adjacently allocated buffer and dblk_t */
+#define	DBSZ(len) ((len) - sizeof (dblk_t))
+/* ...and two cache lines for kmem_slab_t, if we're a page multiple. */
+#define	DBSZSB(len) (DBSZ(len) - (DBLK_CACHE_ALIGN * 2))
+
 static size_t dblk_sizes[] = {
-#ifdef _LP64
-	16, 80, 144, 208, 272, 336, 528, 1040, 1488, 1936, 2576, 3856,
-	8192, 12048, 16384, 20240, 24576, 28432, 32768, 36624,
-	40960, 44816, 49152, 53008, 57344, 61200, 65536, 69392,
-#else
-	64, 128, 320, 576, 1088, 1536, 1984, 2624, 3904,
-	8192, 12096, 16384, 20288, 24576, 28480, 32768, 36672,
-	40960, 44864, 49152, 53056, 57344, 61248, 65536, 69440,
-#endif
+	DBSZ(192), DBSZ(256), DBSZ(320), DBSZ(384), DBSZ(448),
+	DBSZ(640), DBSZ(1152), DBSZ(1600), DBSZ(2048), DBSZ(2688),
+	/*
+	 * The following entries are all page multiples -- odd multiples
+	 * adjacently store their dblk_t and kmem_slab_t.
+	 */
+	DBSZSB(4096), 8192, DBSZSB(12288), 16384, DBSZSB(20480), 24576,
+	DBSZSB(28672), 32768, DBSZSB(36864), 40960, DBSZSB(45056), 49152,
+	DBSZSB(53248), 57344, DBSZSB(61440), 65536, DBSZSB(69504),
 	DBLK_MAX_CACHE, 0
 };
 
@@ -218,6 +223,9 @@ dblk_constructor(void *buf, void *cdrarg, int kmflags)
 	dbp->db_cpid = -1;
 	dbp->db_struioflag = 0;
 	dbp->db_struioun.cksum.flags = 0;
+
+	bzero(&dbp->db_meoi, sizeof (dbp->db_meoi));
+
 	return (0);
 }
 
@@ -236,6 +244,9 @@ dblk_esb_constructor(void *buf, void *cdrarg, int kmflags)
 	dbp->db_cpid = -1;
 	dbp->db_struioflag = 0;
 	dbp->db_struioun.cksum.flags = 0;
+
+	bzero(&dbp->db_meoi, sizeof (dbp->db_meoi));
+
 	return (0);
 }
 
@@ -264,6 +275,9 @@ bcache_dblk_constructor(void *buf, void *cdrarg, int kmflags)
 	dbp->db_cpid = -1;
 	dbp->db_struioflag = 0;
 	dbp->db_struioun.cksum.flags = 0;
+
+	bzero(&dbp->db_meoi, sizeof (dbp->db_meoi));
+
 	return (0);
 }
 
@@ -717,6 +731,17 @@ reallocb(mblk_t *mp, size_t size, uint_t copy)
 }
 
 static void
+dblk_unset_mac_state(dblk_t *dbp)
+{
+	/*
+	 * This field contains the flags for a packet's tunnel type and
+	 * the validity of any cached header lengths. This marks any existing
+	 * values as garbage.
+	 */
+	dbp->db_meoi.valid = 0;
+}
+
+static void
 dblk_lastfree(mblk_t *mp, dblk_t *dbp)
 {
 	ASSERT(dbp->db_mblk == mp);
@@ -733,6 +758,8 @@ dblk_lastfree(mblk_t *mp, dblk_t *dbp)
 	/* Reset the struioflag and the checksum flag fields */
 	dbp->db_struioflag = 0;
 	dbp->db_struioun.cksum.flags = 0;
+
+	dblk_unset_mac_state(dbp);
 
 	/* and the COOKED and/or UIOA flag(s) */
 	dbp->db_flags &= ~(DBLK_COOKED | DBLK_UIOA);
@@ -823,6 +850,8 @@ dblk_lastfree_desb(mblk_t *mp, dblk_t *dbp)
 	dbp->db_cpid = -1;
 	dbp->db_struioflag = 0;
 	dbp->db_struioun.cksum.flags = 0;
+
+	dblk_unset_mac_state(dbp);
 
 	kmem_cache_free(dbp->db_cache, dbp);
 }
@@ -1045,6 +1074,8 @@ bcache_dblk_lastfree(mblk_t *mp, dblk_t *dbp)
 	dbp->db_struioflag = 0;
 	dbp->db_struioun.cksum.flags = 0;
 
+	dblk_unset_mac_state(dbp);
+
 	mutex_enter(&bcp->mutex);
 	kmem_cache_free(bcp->dblk_cache, dbp);
 	bcp->alloc--;
@@ -1159,6 +1190,8 @@ dblk_lastfree_oversize(mblk_t *mp, dblk_t *dbp)
 	dbp->db_cpid = -1;
 	dbp->db_struioflag = 0;
 	dbp->db_struioun.cksum.flags = 0;
+
+	dblk_unset_mac_state(dbp);
 
 	kmem_free(dbp->db_base, dbp->db_lim - dbp->db_base);
 	kmem_cache_free(dbp->db_cache, dbp);
@@ -1662,6 +1695,7 @@ msgpullup(mblk_t *mp, ssize_t len)
 
 	newmp->b_flag = mp->b_flag;
 	newmp->b_band = mp->b_band;
+	newmp->b_datap->db_meoi = mp->b_datap->db_meoi;
 
 	while (len > 0) {
 		ssize_t seglen = MBLKL(mp);
@@ -1789,7 +1823,7 @@ adjmsg(mblk_t *mp, ssize_t len)
  * get number of data bytes in message
  */
 size_t
-msgdsize(mblk_t *bp)
+msgdsize(const mblk_t *bp)
 {
 	size_t count = 0;
 

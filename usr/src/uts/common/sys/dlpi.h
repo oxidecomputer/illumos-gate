@@ -22,6 +22,7 @@
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 Joyent, Inc.
  * Copyright 2022 Garrett D'Amore
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -658,6 +659,8 @@ typedef struct {
 					/* ability for IPv6 TCP/UDP packets. */
 #define	HCKSUM_IPHDRCKSUM	0x10	/* IPv4 Header checksum offload */
 					/* capability */
+#define	HCKSUM_TUN		0x20	/* Tunnel-related fields of */
+					/* mac_capab_cso_t are filled/valid */
 #ifdef _KERNEL
 
 /*

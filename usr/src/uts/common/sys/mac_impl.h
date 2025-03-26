@@ -439,8 +439,18 @@ struct mac_impl_s {
 	mac_led_mode_t		mi_led_modes;
 	mac_capab_led_t		mi_led;
 
-	/* Cache of the Tx DB_CKSUMFLAGS that this MAC supports. */
-	uint16_t		mi_tx_cksum_flags; /* SL */
+	/*
+	 * Cache of the Tx DB_CKSUMFLAGS that this MAC supports.
+	 * MAC providers report supported checksums in terms of the flags
+	 * described in dlpi.h, whereas packets carry flags in pattr.h's
+	 * terminology.
+	 * This flag cache us to cheaply verify all offloads on untunneled
+	 * packets, however any inner frame offloads must be checked against the
+	 * raw capabilities using the tunnel type configured on the packet.
+	 */
+	uint16_t		mi_tx_cksum_pkt_flags; /* SL */
+	mac_capab_cso_t		mi_tx_cksum_raw_capab; /* SL */
+	mac_capab_lso_t		mi_tx_lso_raw_capab; /* SL */
 
 	/*
 	 * MAC address and VLAN lists. SL protected.
@@ -914,6 +924,12 @@ typedef struct mac_direct_rxs_s {
 	void		*mdrx_arg_v4;
 	void		*mdrx_arg_v6;
 } mac_direct_rxs_t;
+
+/*
+ * Functions related to packet parsing, and manipulation of stored packet facts.
+ */
+extern void mac_partial_offload_info(const mblk_t *, size_t,
+    mac_ether_offload_info_t *);
 
 #ifdef	__cplusplus
 }

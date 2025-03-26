@@ -4,7 +4,8 @@
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
 .\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
 .\" When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH MSGDSIZE 9F "Jan 16, 2006"
+.\"  Copyright 2025 Oxide Computer Company
+.TH MSGDSIZE 9F "February 24, 2025"
 .SH NAME
 msgdsize \- return the number of bytes in a message
 .SH SYNOPSIS
@@ -14,7 +15,7 @@ msgdsize \- return the number of bytes in a message
 
 
 
-\fBsize_t\fR \fBmsgdsize\fR(\fBmblk_t *\fR\fImp\fR);
+\fBsize_t\fR \fBmsgdsize\fR(\fBconst mblk_t *\fR\fImp\fR);
 .fi
 
 .SH INTERFACE LEVEL
