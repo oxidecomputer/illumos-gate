@@ -7828,6 +7828,7 @@ usr/src/man/man9e/ddi_ufm_op_fill_image.9e
 usr/src/man/man9e/ddi_ufm_op_fill_slot.9e
 usr/src/man/man9e/ddi_ufm_op_getcaps.9e
 usr/src/man/man9e/ddi_ufm_op_nimages.9e
+usr/src/man/man9e/ddi_ufm_op_readimg.9e
 usr/src/man/man9e/gldm_get_stats.9e
 usr/src/man/man9e/gldm_intr.9e
 usr/src/man/man9e/gldm_ioctl.9e
@@ -8626,6 +8627,7 @@ usr/src/man/man9f/strncpy.9f
 usr/src/man/man9f/strnlen.9f
 usr/src/man/man9f/strrchr.9f
 usr/src/man/man9f/strspn.9f
+usr/src/man/man9f/strtok_r.9f
 usr/src/man/man9f/uconv_u16tou8.9f
 usr/src/man/man9f/uconv_u32tou16.9f
 usr/src/man/man9f/uconv_u32tou8.9f
@@ -9219,7 +9221,8 @@ usr/src/test/os-tests/tests/ksensor/ksensor_sread.64
 usr/src/test/os-tests/tests/ksid/ksid.32
 usr/src/test/os-tests/tests/ksid/ksid.64
 usr/src/test/os-tests/tests/libtopo/digraph-test
-usr/src/test/os-tests/tests/mac_test/mac_test
+usr/src/test/os-tests/tests/mac/mac_cksum
+usr/src/test/os-tests/tests/mac/mac_parsing
 usr/src/test/os-tests/tests/minttl/minttl
 usr/src/test/os-tests/tests/minttl/minttl_err
 usr/src/test/os-tests/tests/oclo/oclo
