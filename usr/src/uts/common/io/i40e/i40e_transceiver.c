@@ -13,6 +13,7 @@
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include "i40e_sw.h"
@@ -2742,7 +2743,7 @@ i40e_ring_tx(void *arg, mblk_t *mp)
 	 * Parse packet headers for use by any requested offloads.  That offload
 	 * logic will later determine if the results here were adequate.
 	 */
-	mac_ether_offload_info(mp, &meo);
+	mac_ether_offload_info(mp, &meo, NULL);
 
 	/*
 	 * Figure out the relevant context about this frame that we might need

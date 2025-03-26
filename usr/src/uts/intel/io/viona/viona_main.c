@@ -717,19 +717,18 @@ static void
 viona_get_mac_capab(viona_link_t *link)
 {
 	mac_handle_t mh = link->l_mh;
-	uint32_t cap = 0;
-	mac_capab_lso_t lso_cap;
+	mac_capab_cso_t cso_cap = { 0 };
+	mac_capab_lso_t lso_cap = { 0 };
 
 	link->l_features_hw = 0;
-	if (mac_capab_get(mh, MAC_CAPAB_HCKSUM, &cap)) {
+	if (mac_capab_get(mh, MAC_CAPAB_HCKSUM, &cso_cap)) {
 		/*
 		 * Only report HW checksum ability if the underlying MAC
 		 * resource is capable of populating the L4 header.
 		 */
-		if ((cap & VIONA_CAP_HCKSUM_INTEREST) != 0) {
+		if ((cso_cap.cso_flags & VIONA_CAP_HCKSUM_INTEREST) != 0)
 			link->l_features_hw |= VIRTIO_NET_F_CSUM;
-		}
-		link->l_cap_csum = cap;
+		link->l_cap_csum = cso_cap;
 	}
 
 	if ((link->l_features_hw & VIRTIO_NET_F_CSUM) &&

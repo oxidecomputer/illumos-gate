@@ -24,6 +24,7 @@
  * Copyright 2016 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2022 RackTop Systems, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -453,10 +454,10 @@ vnic_dev_create(datalink_id_t vnic_id, datalink_id_t linkid,
 		if (vid == 0 || !mac_capab_get(vnic->vn_lower_mh,
 		    MAC_CAPAB_NO_NATIVEVLAN, NULL)) {
 			if (!mac_capab_get(vnic->vn_lower_mh, MAC_CAPAB_HCKSUM,
-			    &vnic->vn_hcksum_txflags))
-				vnic->vn_hcksum_txflags = 0;
+			    &vnic->vn_cap_cso))
+				vnic->vn_cap_cso.cso_flags = 0;
 		} else {
-			vnic->vn_hcksum_txflags = 0;
+			vnic->vn_cap_cso.cso_flags = 0;
 		}
 
 		/*
@@ -464,7 +465,7 @@ vnic_dev_create(datalink_id_t vnic_id, datalink_id_t linkid,
 		 * depend on hardware checksumming, so the same
 		 * requirement is enforced here.
 		 */
-		if (vnic->vn_hcksum_txflags != 0) {
+		if (vnic->vn_cap_cso.cso_flags != 0) {
 			if (!mac_capab_get(vnic->vn_lower_mh, MAC_CAPAB_LSO,
 			    &vnic->vn_cap_lso)) {
 				vnic->vn_cap_lso.lso_flags = 0;
@@ -833,11 +834,10 @@ vnic_m_capab_get(void *arg, mac_capab_t cap, void *cap_data)
 
 	switch (cap) {
 	case MAC_CAPAB_HCKSUM: {
-		uint32_t *hcksum_txflags = cap_data;
+		mac_capab_cso_t *cap_cso = cap_data;
 
-		*hcksum_txflags = vnic->vn_hcksum_txflags &
-		    (HCKSUM_INET_FULL_V4 | HCKSUM_INET_FULL_V6 |
-		    HCKSUM_IPHDRCKSUM | HCKSUM_INET_PARTIAL);
+		*cap_cso = vnic->vn_cap_cso;
+		cap_cso->cso_flags &= ~HCKSUM_ENABLE;
 		break;
 	}
 	case MAC_CAPAB_LSO: {
