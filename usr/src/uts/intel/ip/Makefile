@@ -23,6 +23,7 @@
 # Use is subject to license terms.
 #
 # Copyright 2019 Joyent, Inc.
+# Copyright 2025 Oxide Computer Company
 #
 #	This makefile drives the production of the ip driver
 #	kernel module.
@@ -91,6 +92,12 @@ LDFLAGS		+= -Nmisc/md5 -Ncrypto/swrand -Nmisc/hook -Nmisc/neti
 # We make several different algorithms available by default.
 #
 LDFLAGS		+= -N misc/cc -N cc/cc_sunreno -N cc/cc_newreno -N cc/cc_cubic
+
+#
+# Depends on utility methods in mac_provider for manipulating mblk/dblk
+# state and header length info for drivers.
+#
+LDFLAGS		+= -N misc/mac
 
 #
 # For now, disable these warnings; maintainers should endeavor
