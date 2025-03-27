@@ -786,6 +786,10 @@ d platform/oxide/ucode 0755 root sys
 d platform/oxide/ucode/AuthenticAMD 0755 root sys
 f platform/oxide/ucode/AuthenticAMD/A011-00 0444 root sys
 f platform/oxide/ucode/AuthenticAMD/A111-00 0444 root sys
+f platform/oxide/ucode/AuthenticAMD/B020-00 0444 root sys
+f platform/oxide/ucode/AuthenticAMD/B021-00 0444 root sys
+f platform/oxide/ucode/AuthenticAMD/B100-00 0444 root sys
+f platform/oxide/ucode/AuthenticAMD/B110-00 0444 root sys
 f platform/oxide/ucode/AuthenticAMD/equivalence-table 0444 root sys
 d proc 0755 root root
 d root 0755 root root
