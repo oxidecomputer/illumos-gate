@@ -33,6 +33,7 @@
 #include <sys/io/turin/ccx_impl.h>
 #include <sys/io/turin/mpio_impl.h>
 #include <sys/io/turin/ras_impl.h>
+#include <sys/io/turin/hacks.h>
 #include <sys/io/turin/smu.h>
 #include <sys/io/zen/mpio.h>
 
@@ -150,7 +151,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 
 static const zen_hack_ops_t turin_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
-	.zho_cgpll_set_ssc = zen_null_cgpll_set_ssc,
+	.zho_cgpll_set_ssc = turin_cgpll_set_ssc,
 };
 
 const zen_platform_t turin_platform = {

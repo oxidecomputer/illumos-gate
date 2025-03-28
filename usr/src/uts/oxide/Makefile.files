@@ -141,6 +141,7 @@ GENOA_OBJS +=			\
 TURIN_OBJS +=			\
 	turin_ccx.o		\
 	turin_fabric.o		\
+	turin_hacks.o		\
 	turin_pcie_dbg.o	\
 	turin_platform.o	\
 	turin_ras.o

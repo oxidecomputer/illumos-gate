@@ -1983,70 +1983,70 @@ static const zen_pcie_strap_setting_t turin_pcie_strap_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_PLL_FREQ_MODE,
 		.strap_data = 3,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_32GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_32GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_DLF_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2061,7 +2061,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_EXT_FMT_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2069,7 +2069,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2077,7 +2077,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2085,7 +2085,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2093,7 +2093,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_TCOMMONMODE_TIME,
 		.strap_data = 0xa,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2101,7 +2101,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_TPON_SCALE,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2109,7 +2109,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_TPON_VALUE,
 		.strap_data = 0xf,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2117,7 +2117,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_DLF_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2125,7 +2125,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2133,7 +2133,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_WRP_MISC,
 		.strap_data = TURIN_STRAP_PCIE_WRP_MISC_SSID_EN,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2141,7 +2141,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_FOM_TIME,
 		.strap_data = TURIN_STRAP_PCIE_P_FOM_300US,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2149,7 +2149,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_8GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2157,7 +2157,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_16GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2165,7 +2165,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_32GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2173,7 +2173,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_32GT_PRECODE_REQ,
 		.strap_data = 0x0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2181,7 +2181,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_L0s_EXIT_LAT,
 		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2189,7 +2189,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_L0_TO_L0s_DIS,
 		.strap_data = 1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
@@ -2197,7 +2197,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_EQ_BYPASS_TO_HR_ADV,
 		.strap_data = 0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = TURIN_IOMS_BONUS_PCIE_CORENO,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
@@ -2205,10 +2205,41 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_PM_SUB_SUP,
 		.strap_data = 0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
+	/*
+	 * Enable SRIS and associated parameters on the sidecar port which
+	 * is node 0, P0 (IOMS 0, Core 0 and port 0).
+	 */
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_SRIS_EN,
+		.strap_data = 0x1,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = 0,
+		.strap_iomsmatch = 0,
+		.strap_corematch = 0,
+		.strap_portmatch = 0
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
+		.strap_data = 0,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = 0,
+		.strap_iomsmatch = 0,
+		.strap_corematch = 0,
+		.strap_portmatch = 0
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
+		.strap_data = 0,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = 0,
+		.strap_iomsmatch = 0,
+		.strap_corematch = 0,
+		.strap_portmatch = 0
+	}
 };
 
 static void

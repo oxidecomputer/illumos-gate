@@ -3293,42 +3293,42 @@ static const zen_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_5,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
@@ -3336,7 +3336,7 @@ static const zen_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 		.strap_data = PCI_VENDOR_ID_OXIDE,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
@@ -3344,7 +3344,7 @@ static const zen_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 };
@@ -3358,7 +3358,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_EXT_FMT_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3366,7 +3366,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3374,7 +3374,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3382,7 +3382,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3390,7 +3390,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_TCOMMONMODE_TIME,
 		.strap_data = 0xa,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3398,7 +3398,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_TPON_SCALE,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3406,7 +3406,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_TPON_VALUE,
 		.strap_data = 0xf,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3414,7 +3414,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_DLF_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3422,7 +3422,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3430,7 +3430,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_FOM_TIME,
 		.strap_data = MILAN_STRAP_PCIE_P_FOM_300US,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3438,7 +3438,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_SPC_MODE_8GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3447,7 +3447,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_data = 1,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
-		.strap_nbiomatch = 0,
+		.strap_iomsmatch = 0,
 		.strap_corematch = 1,
 		.strap_portmatch = 1
 	},
@@ -3456,7 +3456,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_data = 0,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
-		.strap_nbiomatch = 0,
+		.strap_iomsmatch = 0,
 		.strap_corematch = 1,
 		.strap_portmatch = 1
 	},
@@ -3465,7 +3465,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_data = 0,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
-		.strap_nbiomatch = 0,
+		.strap_iomsmatch = 0,
 		.strap_corematch = 1,
 		.strap_portmatch = 1
 	},
@@ -3473,7 +3473,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_L0s_EXIT_LAT,
 		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_nbiomatch = PCIE_NBIOMATCH_ANY,
+		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	}

@@ -13,6 +13,14 @@
  * Copyright 2025 Oxide Computer Company
  */
 
+/*
+ * Various regrettable hacks that are unfortunate but necessary -- and don't
+ * seem to fit anywhere else.  This file could also be called milan_misc.c or
+ * milan_subr.c, but it seems that being slightly pejorative with respect to its
+ * name may make it a little less likely to grow appendages that in fact belong
+ * elsewhere...
+ */
+
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/amdzen/mmioreg.h>
@@ -24,14 +32,6 @@
 #include <sys/io/milan/hacks.h>
 #include <sys/io/milan/iomux.h>
 #include <sys/io/zen/hacks.h>
-
-/*
- * Various regrettable hacks that are unfortunate but necessary -- and don't
- * seem to fit anywhere else.  This file could also be called milan_misc.c or
- * milan_subr.c, but it seems that being slightly pejorative with respect to its
- * name may make it a little less likely to grow appendages that in fact belong
- * elsewhere...
- */
 
 /*
  * Unfortunately the SMU relies on x86 software to set up the i2c clock.  Do

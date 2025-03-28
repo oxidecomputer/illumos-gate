@@ -285,13 +285,13 @@ typedef struct zen_pcie_strap_setting {
 	uint32_t		strap_data;
 	oxide_board_t		strap_boardmatch;
 	uint32_t		strap_nodematch;
-	uint8_t			strap_nbiomatch;
+	uint8_t			strap_iomsmatch;
 	uint8_t			strap_corematch;
 	uint8_t			strap_portmatch;
 } zen_pcie_strap_setting_t;
 
 #define	PCIE_NODEMATCH_ANY	0xFFFFFFFF
-#define	PCIE_NBIOMATCH_ANY	0xFF
+#define	PCIE_IOMSMATCH_ANY	0xFF
 #define	PCIE_COREMATCH_ANY	0xFF
 #define	PCIE_PORTMATCH_ANY	0xFF
 

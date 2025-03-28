@@ -2324,8 +2324,8 @@ zen_fabric_pcie_strap_matches(const zen_pcie_core_t *pc, uint8_t portno,
 		return (false);
 	}
 
-	if (strap->strap_nbiomatch != PCIE_NBIOMATCH_ANY &&
-	    strap->strap_nbiomatch != ioms->zio_num) {
+	if (strap->strap_iomsmatch != PCIE_IOMSMATCH_ANY &&
+	    strap->strap_iomsmatch != ioms->zio_num) {
 		return (false);
 	}
 
