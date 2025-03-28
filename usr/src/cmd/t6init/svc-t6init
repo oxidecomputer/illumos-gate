@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 . /lib/svc/share/smf_include.sh
@@ -31,6 +31,12 @@ typeset -rA GPIOMAP=(
 		[gpio]=EGPIO9_3
 		[attachment]=pcie16
 		[pci_subsystem_device_id]=0xfff9
+	)
+	[Oxide,Cosmo]=(
+		[controller]=zen_gpio0
+		[gpio]=AGPIO087
+		[attachment]=pcie16
+		[pci_subsystem_device_id]=0xfff8
 	)
 )
 
