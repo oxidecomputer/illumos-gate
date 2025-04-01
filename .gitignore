@@ -8931,6 +8931,8 @@ usr/src/test/libc-tests/tests/memset_s.32
 usr/src/test/libc-tests/tests/memset_s.64
 usr/src/test/libc-tests/tests/mutex-16200.32
 usr/src/test/libc-tests/tests/mutex-16200.64
+usr/src/test/libc-tests/tests/mutex_attr.32
+usr/src/test/libc-tests/tests/mutex_attr.64
 usr/src/test/libc-tests/tests/newlocale/newlocale_test
 usr/src/test/libc-tests/tests/newlocale/newlocale_test.amd64
 usr/src/test/libc-tests/tests/newlocale/newlocale_test.i386
@@ -9222,6 +9224,7 @@ usr/src/test/os-tests/tests/ksid/ksid.32
 usr/src/test/os-tests/tests/ksid/ksid.64
 usr/src/test/os-tests/tests/libtopo/digraph-test
 usr/src/test/os-tests/tests/mac/mac_cksum
+usr/src/test/os-tests/tests/mac/mac_lso
 usr/src/test/os-tests/tests/mac/mac_parsing
 usr/src/test/os-tests/tests/minttl/minttl
 usr/src/test/os-tests/tests/minttl/minttl_err
