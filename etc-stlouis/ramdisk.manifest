@@ -361,6 +361,7 @@ h kernel/drv/amd64/systrace=kernel/dtrace/amd64/systrace
 f kernel/drv/amd64/tcp 0755 root sys
 f kernel/drv/amd64/tcp6 0755 root sys
 f kernel/drv/amd64/tl 0755 root sys
+f kernel/drv/amd64/ucode 0755 root sys
 f kernel/drv/amd64/udp 0755 root sys
 f kernel/drv/amd64/udp6 0755 root sys
 f kernel/drv/amd64/usmn 0755 root sys
@@ -417,6 +418,7 @@ f kernel/drv/systrace.conf 0644 root sys
 f kernel/drv/tcp.conf 0644 root sys
 f kernel/drv/tcp6.conf 0644 root sys
 f kernel/drv/tl.conf 0644 root sys
+f kernel/drv/ucode.conf 0644 root sys
 f kernel/drv/udp.conf 0644 root sys
 f kernel/drv/udp6.conf 0644 root sys
 f kernel/drv/zfs.conf 0644 root sys
@@ -1296,6 +1298,7 @@ f usr/sbin/psrset 0555 root sys
 f usr/sbin/svcadm 0555 root bin
 f usr/sbin/svccfg 0555 root bin
 f usr/sbin/syslogd 0555 root sys
+f usr/sbin/ucodeadm 0555 root sys
 f usr/sbin/update_drv 0555 root sys
 r usr/sbin/zfs=sbin/zfs 0555 root sys
 r usr/sbin/zpool=sbin/zpool 0555 root sys

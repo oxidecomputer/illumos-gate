@@ -24,7 +24,7 @@
  *
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2022 Joyent, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_UCODE_AMD_H
@@ -56,7 +56,7 @@ typedef struct ucode_header_amd {
 
 typedef struct ucode_file_amd {
 	/*
-	 * The combined size of these fields adds up to 8KiB (8192 bytes).
+	 * The combined size of these fields adds up to 16KiB (16384 bytes).
 	 * If support is needed for larger update files, increase the size of
 	 * the uf_encr element.
 	 */
@@ -65,7 +65,7 @@ typedef struct ucode_file_amd {
 	uint8_t uf_resv[896];
 	uint8_t uf_code_present;
 	uint8_t uf_code[191];
-	uint8_t uf_encr[6144];
+	uint8_t uf_encr[14336];
 } ucode_file_amd_t;
 
 typedef struct ucode_eqtbl_amd {
