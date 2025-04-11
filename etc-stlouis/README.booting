@@ -12,10 +12,10 @@ Boot Methods
 There are currently three ways being regularly used to boot these bits on a
 Gimlet:
 
-- nanobl-rs loader + UFS ramdisk + optional phase2 via the network;
-- nanobl-rs loader + CPIO miniroot + ZFS root loaded via the network or from an
+- bldb loader + UFS ramdisk + optional phase2 via the network;
+- bldb loader + cpio miniroot + ZFS root loaded via the network or from an
   M.2 device;
-- Stage 1 (phbl loader + CPIO miniroot) flashed into SPI + ZFS root loaded from
+- Stage 1 (phbl loader + cpio miniroot) flashed into SPI + ZFS root loaded from
   an M.2 device (the intended boot path - see RFD241).
 
 This isn't an exhaustive list, other combinations are possible with a bit of
@@ -75,16 +75,18 @@ with SP software cooperation but is strongly discouraged; boot hangs should be
 debugged completely and eliminated prior to shipping, and once in userland,
 support bundles are more appropriate to investigating other problems.
 
-nanobl-rs loader + UFS ramdisk + optional phase2 via the network
------------------------------------------------------------------
+bldb loader + UFS ramdisk + optional phase2 via the network
+-----------------------------------------------------------
 
 You will need:
 
-- A supportable Gimlet, or an Ethanol-X (for now), with Milan processor(s)
-- illumos-gate stlouis a368956d97835cacf0266ab9ff2fe7b7944afa09 or later
-- nanobl-rs 0.5.0 or later (0.4.1 and later will work but will require manual
-  steps and will not provide compressed image support; check out older
-  versions of this file for instructions on old loaders)
+- A supportable Gimlet, Ruby, or an Ethanol-X, with Milan, Genoa, or
+  Turin processor(s)
+- The `stlouis` branch of illumos from
+  [oxidecomputer/illumos-gate](https://github.com/oxidecomputer/illumos-gate)
+- [bldb](https://github.com/oxidecomputer/bldb)
+- [pinprick](https://github.com/oxidecomputer/pinprick) to compress your
+  ramdisk
 - A built stlouis workspace
 - The tools in this directory
 
@@ -102,67 +104,51 @@ that interfere with reproducible builds.  You don't need this patch if you are
 not doing a reproducible build (again, if you aren't sure, just follow
 https://github.com/oxidecomputer/stlouis/blob/main/dev.adoc).
 
-2. Build a ramdisk.  The size in mkrd.bash must match the end address property
-value in usr/src/uts/oxide/os/boot_data.c; if you need to grow the ramdisk,
-change both of these!  This program outputs the name of the ramdisk image; it
-uses a temporary name because even though these are internal build machines
-and basically single-user we try to avoid glaring security holes; if you want
-to use a fixed name you can do something like:
+2. Build a compressed ramdisk.  This program outputs the name of the ramdisk
+image; it uses a temporary name because even though these are internal build
+machines and basically single-user we try to avoid glaring security holes.  If
+you want to use a fixed name you can do something like:
 
-	$ mv $(./mkrd.bash) /path/to/ramdisk.ufs
+	$ pinprick $(./mkrd.bash) > /path/to/ramdisk.ufs.z
 
 3. The collection of available phase-1 system software in the ramdisk is very
 limited and heavily skewed toward debugging tools.  If you want a more
 functional (RFD 241 "phase-2") system, you will need to unpack additional
 software.  You can build a phase-2 software bundle by doing:
 
-	$ mv $(./mkphase2.bash) /path/to/phase2.tar
+	$ xz $(./mkphase2.bash) > /path/to/phase2.tar.xz
 
 This step is optional and requires either a NIC or some other way to get these
 bits onto the machine after booting into phase-1.
 
-4. Compress your ramdisk (optionally, you may also compress your kernel).
-Unfortunately, gzip is not appropriate; instead use
-https://github.com/oxidecomputer/pinprick or the python code in
-https://github.com/oxidecomputer/nanobl-rs/pull/89#issue-1301450517:
-
-	$ pinprick /path/to/ramdisk.ufs > /path/to/ramdisk.ufs.z
-
-5. Start your terminal emulator and attach it to the target machine's UART0.
+4. Start your terminal emulator and attach it to the target machine's UART0.
 The examples here assume you use picocom, but you can use whatever you like.
 
 	// For lab systems:
 	$ pfexec humility -t <target> exec console
 	// In general:
-	$ picocom -s "sx -Xk" --flow h -b 3000000 --imap lfcrlf --omap \
-	crlf,delbs /dev/my/local/uart
+	$ picocom -s 'sz -w1024 -b' -f h -b 3000000 /dev/my/local/uart
 
-6. If you haven't done so already, build nanobl-rs and burn it to your test
-machine's boot flash.  See the instructions in that repo's README.  Put the
-test machine into A0:
+5. If you haven't done so already, build an image with `bldb` as the payload
+and burn it to your test machine's boot flash.  See the instructions in the
+[bldb README.md](https://github.com/oxidecomputer/bldb/blob/main/README.md)
+for instructions.
+
+6. Put the test machine into A0:
 
 	// Image burn if needed; lab systems need pfexec + -t <target>
 	$ humility qspi -D ~/src/amd-host-image-builder/milan-gimlet-b.img
 	// Power up; lab systems need pfexec + -t <target>
 	$ humility hiffy -c Sequencer.set_state -a state=A0
 
-Note that you need to be in A2 first to burn the flash.  If you are using
-Ethanol-X, see the manual for your workstation's IPMI client tools and the
-Ethanol-X BMC firmware.
+If you are using Ethanol-X or a Ruby, see the manual for your workstation's IPMI
+client tools and the Ethanol-X/Ruby BMC firmware.
 
-7. At this point you should have:
-	- A box sitting at the throbber or > prompt in your terminal emulator
-	(see nanobl-rs repo for notes on configuring it)
-	- A copy of unix from $ROOT/platform/kernel/oxide/amd64/unix
-	- A copy of ramdisk.ufs or whatever you called it
-	- Optionally, a copy of phase2.tar or whatever you called it
-
-Note that we currently need unix in the ramdisk and outside it; this
-requirement can eventually be relaxed because we actually have the ELF image
-in memory and the loader could tell krtld where to find it to look up symbols.
-That will save about 2 MiB in the image, but for now you need it twice, and
-the file in the ramdisk MUST MATCH the kernel you boot; otherwise krtld will
-complain and you will not get very far.
+7. At this point, the machine should come up (it can take a few minutes!)
+and you should have:
+	- A box sitting at the `@` prompt in your terminal emulator
+	- A copy of ramdisk.ufs.z or whatever you called it
+	- Optionally, a copy of phase2.tar.xz or whatever you called it
 
 8. If you are using a rev A Gimlet and want a NIC and/or SSD(s), you must now
 power on any sharkfin power controllers you need, then release PERST# for each
@@ -178,48 +164,50 @@ For example:
     % pfexec humility -t sn6 hiffy -c ControlPlaneAgent.set_startup_options \
         -a startup_options=0x58
 
-10. Now issue the following sequence of loader commands.  First, instruct
-nanobl-rs to receive the ramdisk:
+10. Now issue the `zoxboot` command to `bldb` and send the compressed ramdisk
+via ZMODEM.  If the transfer is successful, the machine should automatically
+boot the host operating system.
 
-	> 110000000::recv -m | ::inflate 101000000
+Note that `zoxboot` is an alias that expands to the following sequence of loader
+commands, instructing `bldb` to receive the ramdisk via ZMODEM, decompress it,
+mount it, load the kernel from it, and call the kernel's entry point with the
+ramdisk address and size as parameters:
 
-nanobl-rs will block, silently waiting for data to arrive.  You should now use
-your terminal emulator's Xmodem send command to transfer the compressed
-ramdisk you built in step 2.  On picocom, this is C-a C-s.
+    call . load /platform/oxide/kernel/amd64/unix . mount . @inflate . rz
 
-This command places the ramdisk into memory at 1_0100_0000.  Note that if you
-build a ramdisk larger than 128 MiB, you will also need to map memory manually
-or specify the size in bytes on the loader command line.  See the help for
-::recv's -m option and ::inflate.
+`bldb` will begin the ZMODEM handshake.  You should now use your terminal
+emulator's ZMODEM send command to transfer the compressed ramdisk you built
+in step 2.  On picocom, this is C-a C-s.
 
-When this transfer completes, the address and size of the uncompressed image
-will be displayed, separated with a comma.  These values should be used as
-the parameters of the ::call command in the next step.
+The `rz` command causes `bldb` to receive the compressed ramdisk and copy
+it into a reserved region of memory owned by the loader.  The `@inflate`
+command uncompresses the received ramdisk and writes the inflated contents
+into a similarly reserved internal region; the `@` prefix causes the loader
+to store an extra copy of the inflated data's location and size.  The `mount`
+command makes the UFS filesystem in the inflated ramdisk accessible to `bldb`.
+The `load` command reads the named ELF file from the ramdisk and loads and
+maps its loadable segments into memory, returning the ELF entry point of the
+loaded object.  The `call` command invokes that entry point via an x86 `CALL`
+instruction, passing the address and location of the ramdisk saved earlier.
 
-	*** exit status: 0 ***
-	101000000,4c00000
+If the expanded ramdisk is larger than 128 MiB, you will also need to map
+memory manually and inflate into that.  See the online help for the `map`
+and `inflate` commands.
 
-Next, instruct nanobl-rs to receive unix in the same manner, and to begin
-executing the kernel once the transfer completes.  If you compressed your
-kernel in step 4, utter:
+If all goes well, you should wind up with `unix` running.  Note, if you
+prefer the "pipe" syntax, you can type the above as:
 
-	> 110000000::recv -m | ::inflate 111000000 | ::load | ::call 101000000 4c00000
-
-If you did not compress your kernel:
-
-	> 110000000::recv -m | ::load | ::call 101000000 4c00000
-
-Again, as soon as nanobl-rs blocks, use Xmodem to send unix.z (or unix) to the
-target machine (picocom: C-a C-s).
-
-The addresses used for unix in the above example are almost entirely
-arbitrary, but should work on any machine we have.  When the file reception
-completes, ::load and ::call will interpret the kernel and an ELF object and
-transfer control to its entry point, booting the OS.
+    rz | @inflate | mount | load /platform/oxide/kernel/amd64/unix | call
 
 Note that due to a hardware erratum involving physical address aliasing on
-Turin, there is a 64KiB hole at 0x1_0000_0000 that always reads as zeroes.
-Beware trying to receive or inflate anything into that range.
+Turin, there is a 64KiB hole at 0x1_0000_0000 that always reads as all-bits
+1.  Beware trying to receive or inflate anything into that range.  The default
+regions built into `bldb` for receive and the inflated ramdisk avoid this area
+and are known to work on all of our machines.
+
+Also, if ZMODEM is not sufficiently reliable, `bldb` supports XMODEM.  See the
+[README.md](https://github.com/oxidecomputer/bldb/blob/main/README.md) in the
+`bldb` repository for details on how to use it.
 
 11. Upon reaching userland, if you have a NIC you can plumb up your network by
 uttering '/root/start-network <IPv4 address>/<IPv4 CIDR>'.  This will also
@@ -229,8 +217,7 @@ add routes as appropriate at this time.
 12. If you want the additional phase-2 software you build in step 3, copy it
 onto the test machine now and run the included script to get it mounted:
 
-	$ scp phase2.tar root@gimlet:/tmp
-	gimlet:~# cd /tmp && tar xpf phase2.tar
+    $ xzcat phase2.tar.xz | ssh -C root@gimlet 'tar xpf - -C /tmp'
 	gimlet:~# /root/post-phase2
 
 The root user's environment is set up so that the stuff in /tmp/bin and so
@@ -244,7 +231,7 @@ One thing you can do from here is partition the M.2 SSD in slot 17 and copy
 the contents of an IPS-style phase-2 image ("zfs.img") into the first
 partition.  This will allow you to boot using either of the alternate methods
 described in subsequent sections without needing an Ethernet boot server.
-Note that the phase-2 image you copy onto the SSD needs to match the CPIO
+Note that the phase-2 image you copy onto the SSD needs to match the cpio
 archive you boot; see subsequent sections for more details if you wish to try
 either of these approaches to booting.
 
@@ -254,14 +241,14 @@ the illumos lab machines does not work and will do nothing.  The 'reboot'
 command should do what you'd expect; if not, use humility to cycle through A2
 on Gimlet.  On Eth-X, ipmitool or the web UI may be used to reboot.
 
-nanobl-rs loader + CPIO miniroot + ZFS root loaded via the network
-------------------------------------------------------------------
+bldb loader + cpio miniroot + ZFS root loaded via the network
+-------------------------------------------------------------
 
 You will need most of the same things as for the previous method, including a
-system which has been flashed with nanobl-rs and a machine in A0 sitting at
-nanobl-rs' throbber or > prompt in your terminal emulator.
+system which has been flashed with `bldb` and a machine in A0 sitting at
+bldb's `@` prompt in your terminal emulator.
 
-You will also need a CPIO miniroot archive and ZFS root image built with
+You will also need a cpio miniroot archive and ZFS root image built with
 the helios-build tool - https://github.com/oxidecomputer/helios - see below.
 
 The following steps show how to build DEBUG pieces, as should generally be used
@@ -270,8 +257,8 @@ during development:
 Steps:
 
 1. Check out the helios repository and follow the Getting Started guide
-   in that repository's README.md to build the tools and set up additional
-   workspaces.
+in that repository's README.md to build the tools and set up additional
+workspaces.
 
 2. Build a stlouis workspace using helios-build.
 
@@ -279,58 +266,55 @@ Steps:
 
 3. Build the installation image files:
 
-	./helios-build experiment-image -d
+	./helios-build image -d
 
-  This will produce a set of output files under image/output:
+This will produce a set of output files under image/output:
 
-	cpio	- CPIO miniroot archive
+	cpio	- cpio miniroot archive (not needed for this boot method)
 	cpio.z	- pinprick-compressed version of above
 	rom	- SPI flash image (not needed for this boot method)
-	unix.z	- pinprick-compressed kernel
+	unix.z	- pinprick-compressed kernel (not needed for this boot method)
 	zfs.img	- ZFS root image
 
 4. Start up a network bootserver on a lab machine which will serve the ZFS
-   root image.
+root image.
 
 	./projects/bootserver/target/release/bootserver \
 	    e1000g0 image/output/zfs.img 18:c0:4d:11:22:33
 
-   In this example, e1000g0 is the name of the NIC on the lab machine and
-   18:c0:4d:11:22:33 is the MAC address of the NIC in the Gimlet which will
-   be used for booting. The NIC in the Gimlet is usually connected directly
-   via a sharkfin slot or via a U.2 slot in the front of the machine.
+In this example, e1000g0 is the name of the NIC on the lab machine and
+18:c0:4d:11:22:33 is the MAC address of the NIC in the Gimlet which will
+be used for booting. The NIC in the Gimlet is usually connected directly
+via a sharkfin slot or via a U.2 slot in the front of the machine.
 
 5. Configure the Host startup options to boot using the network.
-   See "Startup Options" above.
+See "Startup Options" above.
 
     % pfexec humility -t sn6 hiffy -c ControlPlaneAgent.set_startup_options \
         -a startup_options=0x98
 
 6. Boot
 
-   Instruct nanobl-rs to receive the initial CPIO miniroot image:
+Use `zoxboot` as before and send the compressed cpio archive via ZMODEM.
 
-	> 110000000::recv -m | ::inflate 101000000
+Or instruct `bldb` to receive and decompress the initial cpio miniroot image,
+locate the copy of `unix` in it, load that, and call into the kernel by issuing
+the following commands explicitly.  Note that this is the exact same sequence of
+commands as with the UFS root:
 
-   nanobl-rs will block, silently waiting for data to arrive.  You should now
-   use your terminal emulator's Xmodem send command to transfer the compressed
-   CPIO image from the earlier step, image/output/cpio.z.  On picocom, this is
-   C-a C-s.
+	call . load /platform/oxide/kernel/amd64/unix . mount . @inflate . rz
 
-   When this transfer completes, the address and size of the uncompressed image
-   will be displayed, separated with a comma. These values should be used as
-   the parameters of the ::call command in the next step.
+`bldb` will begin the ZMODEM transfer and wait for you to send the
+compressed cpio miniroot.  You should now use your terminal emulator's
+ZMODEM send command to transfer that image, image/output/cpio.z, created
+in an earlier step.  With picocom, this is C-a C-s.
 
-	*** exit status: 0 ***
-	101000000,1f00000
+Again, if you prefer the pipe syntax, this is the same as:
 
-   Next, instruct nanobl-rs to receive unix in the same manner, and to begin
-   executing the kernel once the transfer completes.
+	rz | @inflate | mount | load /platform/oxide/kernel/amd64/unix | call
 
-        > 110000000::recv -m | ::inflate 100000000 | ::load | ::call 101000000 1f00000
-
-   Again, as soon as nanobl-rs blocks, use Xmodem to send image/output/unix.z
-   to the target machine (picocom: C-a C-s).
+When this transfer completes, unix should start automatically, in a manner
+similar to the method with a UFS ramdisk, mentioned above.
 
 Once the kernel boots, you will see it try to find the ZFS image on an
 M.2 drive, and then falling back to network boot and loading the image from
@@ -356,18 +340,13 @@ you should expect to see:
 
 At this point the system should complete booting and provide a login prompt.
 
-The oxide_boot module actually tries to boot from the first EFI partition on
-each M.2 disk in turn and then falls back to network boot if it does not find a
-matching phase2 image. See M.2 setup below; note that the image must still
-match the CPIO archive used in phase1.
-
-Stage 1 (phbl loader + CPIO miniroot) flashed into SPI + ZFS root...
+Stage 1 (phbl loader + cpio miniroot) flashed into SPI + ZFS root...
 --------------------------------------------------------------------
 
 This boot method is very similar to the previous one except that the
 image/output/rom file is written to the SPI flash in place of the image
-containing nanobl-rs. This image includes the phbl boot loader and the
-CPIO miniroot image.
+containing `bldb`. This image includes the `phbl` boot loader and the
+cpio miniroot image.
 
 	$ pfexec humility -t sn6 qspi -D image/output/rom
 
@@ -376,7 +355,7 @@ start up and look for a phase 2 image on the M.2 disk that corresponds to the
 boot storage unit in use. If you wish to load from the network then the
 corresponding bit needs to be set in the SP's startup options - See "Startup
 Options" above. Note that the hash of the ZFS image must match the value
-embedded in the CPIO archive, which is part of the ROM, and so this method is
+embedded in the cpio archive, which is part of the ROM, and so this method is
 not particularly suited for iterative work on stlouis.
 
 M.2 setup
@@ -520,3 +499,84 @@ To undo this, you can set the file to `/dev/null`:
 If changes to this file render the system unbootable, it can be cleared by
 restarting the SP's `host_sp_comms` task or resetting the SP as described in
 the section on Anonymous DTrace above.
+
+Using nanobl-rs
+---------------
+
+The `nanobl-rs` loader is another loader that you may encounter on some
+machines.  Using it is substantially similar to `bldb`, but the command syntax
+is slightly different and it doesn't support loading kernels from ramdisks; to
+load and boot a host OS, you must therefore transfer the ramdisk as well as the
+matching kernel image.
+
+Also, `nanobl-rs` only supports XMODEM, not ZMODEM, and does not support the
+`bldb` trick of reading a single byte before starting the transfer on the
+receive side: instead, it uses a timeout.  You must initiate the transfer within
+a few seconds or you will miss the opportunity and will have to power cycle the
+machine you want to boot: there is no way to abort receiving once you've
+started.
+
+You can boot with the same configurations of ramdisk types (UFS, cpio miniroot,
+and so on) as with `bldb`.  Also as with `bldb`, if you just want to see if the
+kernel runs at all, even if it panics very early on, you can eschew transferring
+a ramdisk entirely.
+
+The steps to build images and prepare artifacts for boot are the same as with
+`bldb`, save that you must also have a copy of the compressed kernel, which is
+contained in the `unix.z` file mentioned above, and is separate from the
+ramdisk.  Like `bldb`, `nanobl-rs` supports compression, which greatly reduces
+the amount of time to send artifacts over the UART, though it is optional.
+
+To boot a machine with `nanobl-rs`, you will use two separate commands.  First,
+to transfer the compressed ramdisk, issue the following:
+
+    > 110000000::recv -m | ::inflate 101000000
+
+nanobl-rs will block, silently waiting for data to arrive.  You should now use
+your terminal emulator's XMODEM send command to transfer the compressed ramdisk
+you built in step 2.  With picocom, the key sequence to initiate transfer is C-a
+C-s, but you must use `sx`, not `sz`.
+
+This command places the ramdisk into memory at 1_0100_0000.  Note that if you
+build a ramdisk larger than 128 MiB, you will also need to map memory manually
+or specify the size in bytes on the loader command line.  See the help for
+::recv's -m option and ::inflate.
+
+A suitable invocation of picocom that configures it for use with XMODEM and the
+correct options is:
+
+    picocom -s 'sx -Xk' -f h -b 3000000
+
+If you did not compress the ramdisk, then the following suffices to receive the
+ramdisk:
+
+    > 10100000::recv -m
+
+Transfers of an uncompressed ramdisk take significantly longer, however, so this
+is rare.
+
+When the ramdisk transfer completes, the address and size of the uncompressed
+image will be displayed, separated with a comma.  These values should be used as
+the parameters of the ::call command in the next step.  Unlike with `bldb`, you
+must manually pass these parameters to `::call`.
+
+    *** exit status: 0 ***
+    101000000,4c00000
+
+Next, instruct nanobl-rs to receive `unix.z` in the same manner, and to begin
+executing the kernel once the transfer completes.  If you transfer the
+compressed kernel, utter:
+
+    > 110000000::recv -m | ::inflate 111000000 | ::load | ::call 101000000 4c00000
+
+If you did not compress your kernel, you can simply omit the `::inflate`
+command; the default receive address in this case is fine.
+
+Again, as soon as nanobl-rs blocks, use XMODEM to send unix.z (or unix) to the
+target machine.
+
+The addresses used for `unix.z` and the ramdisk in the above examples are almost
+entirely arbitrary, but should work on any machine we have.  When the file
+receiption completes, `::load` and `::call` will interpret the kernel as an ELF
+object and call its entry point, booting the OS, passing it the address and size
+of the ramdisk as arguments.
