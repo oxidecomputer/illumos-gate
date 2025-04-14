@@ -692,6 +692,49 @@ t4_ring_rx(struct sge_rxq *rxq, int budget)
 				rxq->rxbytes += pkt_len;
 				received_bytes += pkt_len;
 
+				mac_ether_offload_info_t meoi = { 0 };
+				uint32_t l2info = be32_to_cpu(cpl->l2info);
+				uint8_t l2hlen = G_RX_T6_ETHHDR_LEN(l2info);
+				bool is_ip = (l2info & (F_RXF_IP | F_RXF_IP6)) != 0;
+
+				if (l2hlen != 0 && l2hlen <= 18 && is_ip) {
+					meoi.meoi_l2hlen = l2hlen;
+					meoi.meoi_l3proto =
+						((l2info & F_RXF_IP) != 0) ?
+						ETHERTYPE_IP : ETHERTYPE_IPV6;
+					meoi.meoi_flags |= MEOI_L2INFO_SET;
+					if (cpl->vlan_ex)
+						meoi.meoi_flags |= MEOI_VLAN_TAGGED;
+				} else if (l2hlen > 18) {
+					/* Has cxgbe seen that we're running encap? */
+					DTRACE_PROBE2(t4__big__l2, uint8_t, l2hlen, mblk_t *, m);
+				}
+
+				uint16_t hdr_len = be16_to_cpu(cpl->hdr_len);
+				uint8_t l3hlen = G_RX_IPHDR_LEN(hdr_len);
+				uint8_t tcphlen = G_RX_TCPHDR_LEN(hdr_len);
+
+				if ((l2info & (F_RXF_TCP | F_RXF_UDP)) != 0 &&
+				    l3hlen != 0 && (!cpl->ip_frag)) {
+					meoi.meoi_flags |= MEOI_L3INFO_SET;
+					meoi.meoi_l3hlen = l3hlen;
+					meoi.meoi_l4proto =
+					    (l2info & F_RXF_TCP) ? IPPROTO_TCP :
+					    IPPROTO_UDP;
+
+					if ((l2info & F_RXF_TCP) != 0 && tcphlen != 0) {
+						meoi.meoi_flags |= MEOI_L4INFO_SET;
+						meoi.meoi_l4hlen = tcphlen;
+					} else {
+						/* UDP */
+						DTRACE_PROBE2(t4__udp__len, uint8_t, tcphlen, mblk_t *, m);
+						meoi.meoi_flags |= MEOI_L4INFO_SET;
+						meoi.meoi_l4hlen = 8;
+					}
+				}
+
+				mac_ether_set_pktinfo(m, &meoi, NULL);
+
 				*mblk_tail = m;
 				mblk_tail = &m->b_next;
 
