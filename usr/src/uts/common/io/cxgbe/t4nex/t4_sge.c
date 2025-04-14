@@ -35,6 +35,7 @@
 #include <sys/strsun.h>
 #include <inet/ip.h>
 #include <inet/tcp.h>
+#include <inet/udp_impl.h>
 
 #include "common/common.h"
 #include "common/t4_msg.h"
@@ -683,6 +684,79 @@ t4_intr_err(caddr_t arg1, caddr_t arg2)
 }
 
 /*
+ * Fill an mblk_t's inbuilt packet information using preparsed fields from a
+ * CPL_RX_PKT command.
+ */
+static inline void
+t4_rx_fill_meoi(mblk_t *mp, const struct cpl_rx_pkt *cpl, uint32_t chip_version)
+{
+	mac_ether_offload_info_t meoi = { 0 };
+	const uint32_t l2info = be32_to_cpu(cpl->l2info);
+	uint8_t l2hlen = 0;
+	if (chip_version >= CHELSIO_T6) {
+		l2hlen = G_RX_T6_ETHHDR_LEN(l2info);
+	} else if (chip_version >= CHELSIO_T5) {
+		l2hlen = G_RX_T5_ETHHDR_LEN(l2info);
+	} else {
+		l2hlen = G_RX_ETHHDR_LEN(l2info);
+	}
+	const bool is_ip = (l2info & (F_RXF_IP | F_RXF_IP6)) != 0;
+
+	/*
+	 * For encapsulated frames (identified as such by the device), l2hlen
+	 * includes the full length of encapsulation in play (VXLAN/Geneve).
+	 * Unpacking these would require that we enable the compressed error
+	 * vector or CPL_RX_PKT_XT in TP_OUT_CONFIG, so we bail quickly if L2 is
+	 * far too large.
+	 * The NIC will only recognise frames as encapped when the
+	 * MPS_RX_VXLAN_TYPE / MPS_RX_GENEVE_TYPE / MPS_RX_GRE_PROT_TYPE
+	 * registers are configured.
+	 */
+	if (l2hlen == 0 || l2hlen > sizeof (struct ether_vlan_header) || !is_ip)
+		return;
+
+	meoi.meoi_l2hlen = l2hlen;
+	meoi.meoi_l3proto = ((l2info & F_RXF_IP) != 0) ?
+	    ETHERTYPE_IP : ETHERTYPE_IPV6;
+	meoi.meoi_flags |= MEOI_L2INFO_SET;
+	if (cpl->vlan_ex) {
+		meoi.meoi_flags |= MEOI_VLAN_TAGGED;
+	}
+
+	const uint16_t hdr_len = be16_to_cpu(cpl->hdr_len);
+	const uint8_t l3hlen = G_RX_IPHDR_LEN(hdr_len);
+	const uint8_t tcphlen = G_RX_TCPHDR_LEN(hdr_len);
+
+	if ((l2info & (F_RXF_TCP | F_RXF_UDP)) != 0 && l3hlen != 0) {
+		/*
+		 * ip_frag is set when either we have more fragments, or a
+		 * nonzero fragment offset. To correctly infer the
+		 * MEOI_L3_FRAG_MORE or MEOI_L3_FRAG_OFFSET flags, we need to
+		 * reparse ourselves.
+		 */
+		if (!cpl->ip_frag) {
+			meoi.meoi_flags |= MEOI_L3INFO_SET;
+			meoi.meoi_l3hlen = l3hlen;
+			meoi.meoi_l4proto = (l2info & F_RXF_TCP) ?
+			    IPPROTO_TCP : IPPROTO_UDP;
+
+			if ((l2info & F_RXF_TCP) != 0 && tcphlen != 0) {
+				meoi.meoi_flags |= MEOI_L4INFO_SET;
+				meoi.meoi_l4hlen = tcphlen;
+			} else {
+				/* UDP */
+				meoi.meoi_flags |= MEOI_L4INFO_SET;
+				meoi.meoi_l4hlen = sizeof (udpha_t);
+			}
+		} else {
+			mac_partial_offload_info(mp, 0, &meoi);
+		}
+	}
+
+	mac_ether_set_pktinfo(mp, &meoi, NULL);
+}
+
+/*
  * t4_ring_rx - Process responses from an SGE response queue.
  *
  * This function processes responses from an SGE response queue up to the
@@ -761,6 +835,9 @@ t4_ring_rx(struct sge_rxq *rxq, int budget)
 				rxq->rxpkts++;
 				rxq->rxbytes += pkt_len;
 				received_bytes += pkt_len;
+
+				t4_rx_fill_meoi(m, cpl, CHELSIO_CHIP_VERSION(
+				    rxq->port->adapter->params.chip));
 
 				*mblk_tail = m;
 				mblk_tail = &m->b_next;
