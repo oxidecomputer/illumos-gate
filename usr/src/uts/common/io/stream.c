@@ -739,6 +739,7 @@ dblk_unset_mac_state(dblk_t *dbp)
 	 * values as garbage.
 	 */
 	dbp->db_meoi.valid = 0;
+	dbp->db_pktinfo.is_unicast = 0;
 }
 
 static void

@@ -364,6 +364,8 @@ typedef struct packed_meoi {
 	uint16_t t_tunhlen;
 	uint8_t p_l4proto;
 	/* t_l4proto can be derived from t_tuntype */
+
+	uint8_t is_unicast;
 } packed_meoi_t;
 
 typedef struct datab {

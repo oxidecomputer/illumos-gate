@@ -733,6 +733,10 @@ t4_ring_rx(struct sge_rxq *rxq, int budget)
 					}
 				}
 
+				m->b_datap->db_pktinfo.is_unicast =
+				    G_RX_T5_PKTYPE(l2info) == PKTYPE_XACT_UCAST ||
+				    G_RX_T5_PKTYPE(l2info) == PKTYPE_HASH_UCAST;
+
 				mac_ether_set_pktinfo(m, &meoi, NULL);
 
 				*mblk_tail = m;

@@ -1572,6 +1572,8 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	 */
 	const boolean_t hw_classified = mac_srs->srs_ring != NULL &&
 	    mac_srs->srs_ring->mr_classify_type == MAC_HW_CLASSIFIER;
+	const boolean_t excess_promisc = hw_classified &&
+	    mcip->mci_promisc_list != NULL;
 
 	/*
 	 * Some clients, such as non-ethernet, need DLS processing in
@@ -1595,7 +1597,6 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		uint8_t ether_addr[ETHERADDRL];
 		const uint8_t *dstaddr = ether_addr;
 		mac_header_info_t non_ether_mhi;
-		boolean_t is_unicast = B_FALSE;
 
 		mblk_t *mp = head;
 		head = head->b_next;
@@ -1603,12 +1604,13 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		const size_t sz1 =
 		    (mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp);
 
+		boolean_t is_unicast = mp->b_datap->db_pktinfo.is_unicast == 1;
+
 		if (is_ether) {
-			uint32_t vlan_tci;
+			uint32_t vlan_tci = MEOI_VLAN_TCI_INVALID;
 
 			mac_ether_offload_info(mp, &meoi, NULL);
-			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0 ||
-			    !mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
+			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0) {
 				mac_rx_drop_pkt(mac_srs, mp);
 				continue;
 			}
@@ -1617,6 +1619,15 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			    uint8_t, meoi.meoi_l3proto,
 			    mblk_t *, mp,
 			    mac_soft_ring_set_t *, mac_srs);
+
+			if (excess_promisc || (!is_unicast) ||
+			    (meoi.meoi_flags & MEOI_VLAN_TAGGED) != 0) {
+				if (!mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
+					mac_rx_drop_pkt(mac_srs, mp);
+					continue;
+				}
+				is_unicast = (ether_addr[0] & 0x01) == 0;
+			}
 
 			/*
 			 * Check if the VID of the packet, if any, belongs to
@@ -1635,8 +1646,6 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 					continue;
 				}
 			}
-
-			is_unicast = (ether_addr[0] & 0x01) == 0;
 		} else {
 			if (mac_header_info((mac_handle_t)mcip->mci_mip,
 			    mp, &non_ether_mhi) != 0) {
@@ -1664,14 +1673,13 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		ASSERT((meoi.meoi_flags & MEOI_L2INFO_SET) != 0);
 
 		boolean_t is_fastpath = B_FALSE;
-
 		if (meoi.meoi_l3proto == ETHERTYPE_IP ||
 		    meoi.meoi_l3proto == ETHERTYPE_IPV6) {
 			/*
 			 * If we are H/W classified, but we have promisc
 			 * on, then we need to check for the unicast address.
 			 */
-			if (hw_classified && mcip->mci_promisc_list != NULL) {
+			if (excess_promisc) {
 				mac_address_t		*map;
 
 				rw_enter(&mcip->mci_rw_lock, RW_READER);
@@ -1996,6 +2004,8 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	 */
 	const boolean_t hw_classified = mac_srs->srs_ring != NULL &&
 	    mac_srs->srs_ring->mr_classify_type == MAC_HW_CLASSIFIER;
+	const boolean_t excess_promisc = hw_classified &&
+	    mcip->mci_promisc_list != NULL;
 
 	/*
 	 * Some clients, such as non Ethernet, need DLS processing in
@@ -2036,7 +2046,6 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		mac_header_info_t non_ether_mhi;
 		enum pkt_type type;
 		uint_t indx;
-		boolean_t is_unicast = B_FALSE;
 
 		mblk_t *mp = head;
 		head = head->b_next;
@@ -2044,16 +2053,17 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		const size_t sz1 =
 		    (mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp);
 
+		boolean_t is_unicast = mp->b_datap->db_pktinfo.is_unicast == 1;
+
 		if (is_ether) {
-			uint32_t vlan_tci;
+			uint32_t vlan_tci = MEOI_VLAN_TCI_INVALID;
 
 			/*
 			 * At this point we can be sure the packet at least
 			 * has an ether header.
 			 */
 			mac_ether_offload_info(mp, &meoi, NULL);
-			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0 ||
-			    !mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
+			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0) {
 				mac_rx_drop_pkt(mac_srs, mp);
 				continue;
 			}
@@ -2063,6 +2073,14 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			    mblk_t *, mp,
 			    mac_soft_ring_set_t *, mac_srs);
 
+			if (excess_promisc || (!is_unicast) ||
+			    (meoi.meoi_flags & MEOI_VLAN_TAGGED) != 0) {
+				if (!mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
+					mac_rx_drop_pkt(mac_srs, mp);
+					continue;
+				}
+				is_unicast = (ether_addr[0] & 0x01) == 0;
+			}
 
 			/*
 			 * Check if the VID of the packet, if any, belongs to
@@ -2081,8 +2099,6 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 					continue;
 				}
 			}
-
-			is_unicast = (ether_addr[0] & 0x01) == 0;
 		} else {
 			if (mac_header_info((mac_handle_t)mcip->mci_mip,
 			    mp, &non_ether_mhi) != 0) {
@@ -2142,7 +2158,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			 * If we are H/W classified, but we have promisc
 			 * on, then we need to check for the unicast address.
 			 */
-			if (hw_classified && mcip->mci_promisc_list != NULL) {
+			if (excess_promisc) {
 				mac_address_t		*map;
 
 				rw_enter(&mcip->mci_rw_lock, RW_READER);
