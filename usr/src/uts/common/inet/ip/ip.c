@@ -12146,6 +12146,8 @@ ip_xmit_attach_llhdr(mblk_t *mp, nce_t *nce)
 
 	ASSERT(nce != NULL);
 	if ((mp1 = nce->nce_fp_mp) != NULL) {
+		mac_ether_offload_info_t meoi = { 0 };
+
 		hlen = MBLKL(mp1);
 		/*
 		 * Check if we have enough room to prepend fastpath
@@ -12159,6 +12161,11 @@ ip_xmit_attach_llhdr(mblk_t *mp, nce_t *nce)
 			 * header
 			 */
 			mp->b_rptr = rptr;
+
+			/* Read existing, set L2 and flags */
+			mac_ether_offload_info(mp, &meoi, NULL);
+			mac_ether_set_pktinfo(mp, &meoi, NULL);
+
 			return (mp);
 		}
 		mp1 = copyb(mp1);
@@ -12178,6 +12185,12 @@ ip_xmit_attach_llhdr(mblk_t *mp, nce_t *nce)
 		DB_CKSUMFLAGS(mp1) = DB_CKSUMFLAGS(mp);
 		DB_LSOMSS(mp1) = DB_LSOMSS(mp);
 		DTRACE_PROBE1(ip__xmit__copyb, (mblk_t *), mp1);
+
+		/* Copy existing, set L2 and flags */
+		mp1->b_datap->db_pktinfo = mp->b_datap->db_pktinfo;
+		mac_ether_offload_info(mp1, &meoi, NULL);
+		mac_ether_set_pktinfo(mp1, &meoi, NULL);
+
 		/*
 		 * XXX disable ICK_VALID and compute checksum
 		 * here; can happen if nce_fp_mp changes and

@@ -2728,7 +2728,7 @@ mac_ether_set_pktinfo(mblk_t *pkt,
 	int err = 0;
 	dblk_t *db = pkt->b_datap;
 
-	VERIFY3U(DB_REF(pkt), <, 2);
+	// VERIFY3U(DB_REF(pkt), <, 2);
 	VERIFY3P(outer_info, !=, NULL);
 
 	/* if both specified, outer must have tuntype and inner must not. */

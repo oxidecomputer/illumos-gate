@@ -45,6 +45,8 @@
 #include <sys/sockio.h>
 #include <sys/tsol/tnet.h>
 
+#include <sys/mac_provider.h>
+
 #include <inet/common.h>
 #include <inet/ip.h>
 #include <inet/tcp.h>
@@ -2212,6 +2214,15 @@ tcp_send(tcp_t *tcp, const int mss, const int total_hdr_len,
 		} else {
 			ixa->ixa_flags &= ~IXAF_REACH_CONF;
 		}
+
+		mac_ether_offload_info_t meoi = {
+			.meoi_flags = MEOI_L3INFO_SET | MEOI_L4INFO_SET,
+			.meoi_l3hlen = total_hdr_len - tcp_hdr_len,
+			.meoi_l4proto = IPPROTO_TCP,
+			.meoi_l4hlen = tcp_hdr_len
+		};
+
+		mac_ether_set_pktinfo(mp, &meoi, NULL);
 
 		if (do_lso_send) {
 			/* Append LSO information to the mp. */

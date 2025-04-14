@@ -1505,6 +1505,7 @@ copyb(mblk_t *bp)
 	ndp->db_cksumstuff = dp->db_cksumstuff;
 	bcopy(dp->db_struioun.data, ndp->db_struioun.data,
 	    sizeof (dp->db_struioun.data));
+	ndp->db_meoi = dp->db_meoi;
 
 	/*
 	 * Well, here is a potential issue.  If we are trying to
