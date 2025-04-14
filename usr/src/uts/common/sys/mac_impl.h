@@ -925,12 +925,6 @@ typedef struct mac_direct_rxs_s {
 	void		*mdrx_arg_v6;
 } mac_direct_rxs_t;
 
-/*
- * Functions related to packet parsing, and manipulation of stored packet facts.
- */
-extern void mac_partial_offload_info(const mblk_t *, size_t,
-    mac_ether_offload_info_t *);
-
 #ifdef	__cplusplus
 }
 #endif
