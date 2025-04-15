@@ -24,6 +24,7 @@
  * Copyright 2018 Joyent, Inc.
  * Copyright (c) 2015 Garrett D'Amore <garrett@damore.org>
  * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_MAC_H
@@ -422,6 +423,19 @@ typedef void		(*mac_notify_t)(void *, mac_notify_type_t);
 typedef void		(*mac_rx_t)(void *, mac_resource_handle_t, mblk_t *,
 			    boolean_t);
 typedef	mblk_t		*(*mac_receive_t)(void *, size_t);
+
+/*
+ * Callback for mac_siphon_set. This function takes packets from an input mblk_t
+ * chain, returning the chain of all packets not of interest to the callback.
+ *
+ * The caller may provide three pointers to optional arguments (tail, count,
+ * byte_length). If not NULL the callback should not assume the referenced
+ * values are valid, but MUST fill them out correctly for the contents of the
+ * returned mblk_t chain. The callback must correctly fill these values even
+ * where the input packet is NULL.
+ */
+typedef mblk_t		*(*mac_siphon_t)(void *, mblk_t *, mblk_t **, uint_t *,
+			    size_t *);
 
 /*
  * MAC resource types
