@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_TFPKT_IMPL_H
@@ -241,10 +241,11 @@ typedef struct tfpkt_buf_list {
  * State managed by the tofino tbus handler
  */
 struct tfpkt_tbus {
-	tfpkt_t			*ttb_tfp;
-	dev_info_t		*ttb_dip;
-	tf_tbus_hdl_t		ttb_tbus_hdl;	/* tofino driver handle */
-	tofino_gen_t		ttb_gen;
+	tfpkt_t		*ttb_tfp;
+	dev_info_t	*ttb_tfpkt_dip;		/* cached for dev_err logging */
+	dev_info_t	*ttb_tofino_dip;	/* tofino asic device */
+	tf_tbus_hdl_t	ttb_tbus_hdl;		/* tofino driver handle */
+	tofino_gen_t	ttb_gen;
 
 	/*
 	 * DR management.

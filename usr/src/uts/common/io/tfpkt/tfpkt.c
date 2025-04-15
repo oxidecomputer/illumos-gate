@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -539,10 +539,12 @@ tfpkt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 		ASSERT(tfp->tfp_mac_refcnt == 0);
 
-		if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPED &&
-		    tfpkt_tbus_monitor_halt(tfp) == 0) {
-			tfpkt_cleanup(tfp);
-			return (DDI_SUCCESS);
+		if (tfp->tfp_runstate == TFPKT_RUNSTATE_STOPPED) {
+			if (tfpkt_tbus_monitor_halt(tfp) == 0) {
+				tfpkt_cleanup(tfp);
+				return (DDI_SUCCESS);
+			}
+			tfpkt_err(tfp, "failed to halt monitor");
 		}
 
 		mutex_enter(&tfp->tfp_mutex);

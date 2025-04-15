@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_TOFINO_H
@@ -105,6 +105,7 @@ typedef enum {
 
 typedef enum {
 	TF_TBUS_UNINITIALIZED,
+	TF_TBUS_REMOVED,
 	TF_TBUS_RESETTING,
 	TF_TBUS_RESET,
 	TF_TBUS_READY,
@@ -112,19 +113,18 @@ typedef enum {
 
 typedef int (*tofino_intr_hdlr)(void *);
 
-int tofino_tbus_register(tf_tbus_hdl_t *);
-int tofino_tbus_unregister(tf_tbus_hdl_t);
-int tofino_tbus_register_intr(tf_tbus_hdl_t, tofino_intr_hdlr, void *);
-int tofino_tbus_unregister_intr(tf_tbus_hdl_t);
-tofino_tbus_state_t tofino_tbus_state(tf_tbus_hdl_t);
-tofino_gen_t tofino_get_generation(tf_tbus_hdl_t);
+int tofino_tbus_ready(dev_info_t *);
+int tofino_tbus_register(dev_info_t *);
+int tofino_tbus_unregister(dev_info_t *);
+int tofino_tbus_register_intr(dev_info_t *, tofino_intr_hdlr, void *);
+void tofino_tbus_unregister_intr(dev_info_t *);
+tofino_tbus_state_t tofino_tbus_state(dev_info_t *);
+const char *tofino_state_name(tofino_tbus_state_t);
+tofino_gen_t tofino_get_generation(dev_info_t *);
 
-int tofino_tbus_read_reg(tf_tbus_hdl_t, size_t offset, uint32_t *val);
-int tofino_tbus_write_reg(tf_tbus_hdl_t, size_t offset, uint32_t val);
-int tofino_tbus_clear_reg(tf_tbus_hdl_t, size_t offset);
-
-int tofino_tbus_dma_alloc(tf_tbus_hdl_t, tf_tbus_dma_t *, size_t, int);
-void tofino_tbus_dma_free(tf_tbus_dma_t *);
+int tofino_tbus_read_reg(dev_info_t *, size_t offset, uint32_t *val);
+int tofino_tbus_write_reg(dev_info_t *, size_t offset, uint32_t val);
+int tofino_tbus_clear_reg(dev_info_t *, size_t offset);
 
 #endif /* _KERNEL */
 

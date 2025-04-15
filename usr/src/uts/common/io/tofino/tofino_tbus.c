@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -39,17 +39,11 @@
  * network device.
  */
 tofino_gen_t
-tofino_get_generation(tf_tbus_hdl_t tf_hdl)
+tofino_get_generation(dev_info_t *dip)
 {
-	return (tf_hdl->tbc_tofino->tf_gen);
+	tofino_t *tf = ddi_get_driver_private(dip);
+	return (tf->tf_gen);
 }
-
-static ddi_device_acc_attr_t tf_tbus_acc_attr = {
-	.devacc_attr_version =		DDI_DEVICE_ATTR_V1,
-	.devacc_attr_endian_flags =	DDI_STRUCTURE_LE_ACC,
-	.devacc_attr_dataorder =	DDI_STRICTORDER_ACC,
-	.devacc_attr_access =		DDI_DEFAULT_ACC,
-};
 
 /*
  * Enable or disable all of the tbus interrupts.
@@ -115,151 +109,75 @@ tofino_tbus_intr_set(tofino_t *tf, bool enable)
 	tofino_dlog(tf, "!%s interrupts", enable ? "enabled" : "disabled");
 }
 
-/*
- * Allocate a single buffer capable of DMA to/from the Tofino ASIC.
- *
- * The caller is responsible for providing an unused tf_tbus_dma_t structure,
- * which is used for tracking and managing a DMA buffer.  This routine will
- * populate that structure with all the necessary state.  Having the caller
- * provide the state structure lets us allocate them in bulk, rather than one
- * per buffer.
- */
 int
-tofino_tbus_dma_alloc(tf_tbus_hdl_t tf_hdl, tf_tbus_dma_t *dmap, size_t size,
-    int flags)
+tofino_tbus_register_intr(dev_info_t *dip, tofino_intr_hdlr hdlr, void *arg)
 {
-	tofino_t *tf = tf_hdl->tbc_tofino;
-	unsigned int count;
-	int err;
-
-	err = ddi_dma_alloc_handle(tf->tf_dip, &tofino_dma_attr,
-	    DDI_DMA_SLEEP, NULL, &dmap->tpd_handle);
-	if (err != DDI_SUCCESS) {
-		tofino_err(tf, "!%s: alloc_handle failed: %d", __func__, err);
-		goto fail0;
-	}
-
-	err = ddi_dma_mem_alloc(dmap->tpd_handle, size, &tf_tbus_acc_attr,
-	    DDI_DMA_STREAMING, DDI_DMA_SLEEP, NULL, &dmap->tpd_addr,
-	    &dmap->tpd_len, &dmap->tpd_acchdl);
-	if (err != DDI_SUCCESS) {
-		tofino_err(tf, "!%s: mem_alloc failed", __func__);
-		goto fail1;
-	}
-
-	err = ddi_dma_addr_bind_handle(dmap->tpd_handle, NULL, dmap->tpd_addr,
-	    dmap->tpd_len, flags, DDI_DMA_SLEEP, NULL, &dmap->tpd_cookie,
-	    &count);
-	if (err != DDI_DMA_MAPPED) {
-		tofino_err(tf, "!%s: bind_handle failed", __func__);
-		goto fail2;
-	}
-
-	if (count > 1) {
-		tofino_err(tf, "!%s: more than one DMA cookie", __func__);
-		goto fail2;
-	}
-
-	return (0);
-fail2:
-	ddi_dma_mem_free(&dmap->tpd_acchdl);
-fail1:
-	ddi_dma_free_handle(&dmap->tpd_handle);
-fail0:
-	return (-1);
-}
-
-/*
- * This routine frees a DMA buffer and its state, but does not free the
- * tf_tbus_dma_t structure itself.
- */
-void
-tofino_tbus_dma_free(tf_tbus_dma_t *dmap)
-{
-	VERIFY3S(ddi_dma_unbind_handle(dmap->tpd_handle), ==, DDI_SUCCESS);
-	ddi_dma_mem_free(&dmap->tpd_acchdl);
-	ddi_dma_free_handle(&dmap->tpd_handle);
-}
-
-int
-tofino_tbus_register_intr(tf_tbus_hdl_t tf_hdl, tofino_intr_hdlr hdlr,
-    void *arg)
-{
-	tofino_tbus_client_t *tbc = tf_hdl;
-	tofino_t *tf = tbc->tbc_tofino;
+	tofino_t *tf = ddi_get_driver_private(dip);
 
 	mutex_enter(&tf->tf_mutex);
-	if (tbc->tbc_intr != NULL) {
+	if (tf->tf_tbus_intr != NULL) {
+		tofino_err(tf, "interupt already registered");
 		mutex_exit(&tf->tf_mutex);
 		return (EEXIST);
 	}
 
-	ASSERT(!tbc->tbc_intr_busy);
-	tbc->tbc_intr = hdlr;
-	tbc->tbc_intr_arg = arg;
+	ASSERT(!tf->tf_tbus_intr_busy);
+	tf->tf_tbus_intr = hdlr;
+	tf->tf_tbus_intr_arg = arg;
 	tofino_tbus_intr_set(tf, true);
 	mutex_exit(&tf->tf_mutex);
 
 	return (0);
 }
 
-int
-tofino_tbus_unregister_intr(tf_tbus_hdl_t tf_hdl)
+void
+tofino_tbus_unregister_intr(dev_info_t *dip)
 {
-	tofino_tbus_client_t *tbc = tf_hdl;
-	tofino_t *tf = tbc->tbc_tofino;
+	tofino_t *tf = ddi_get_driver_private(dip);
 
 	mutex_enter(&tf->tf_mutex);
-	if (tbc->tbc_intr == NULL) {
-		mutex_exit(&tf->tf_mutex);
-		return (EINVAL);
+	if (tf->tf_tbus_intr != NULL) {
+		while (tf->tf_tbus_intr_busy)
+			cv_wait(&tf->tf_cv, &tf->tf_mutex);
+
+		tf->tf_tbus_intr = NULL;
+		tf->tf_tbus_intr_arg = NULL;
 	}
-
-	while (tbc->tbc_intr_busy)
-		cv_wait(&tf->tf_cv, &tf->tf_mutex);
-
-	tbc->tbc_intr = NULL;
-	tbc->tbc_intr_arg = NULL;
 	mutex_exit(&tf->tf_mutex);
-
-	return (0);
 }
 
 static int
-tofino_tbus_reg_op(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t *val,
-    boolean_t rd)
+tofino_tbus_reg_op(dev_info_t *dip, size_t offset, uint32_t *val, boolean_t rd)
 {
-	tofino_t *tf = tf_hdl->tbc_tofino;
+	tofino_t *tf = ddi_get_driver_private(dip);
 	int rval;
 
 	if (tf->tf_tbus_state != TF_TBUS_READY)
 		rval = EAGAIN;
 	else if (rd)
-		rval = tofino_read_reg(tf->tf_dip, offset, val);
+		rval = tofino_read_reg(dip, offset, val);
 	else
-		rval = tofino_write_reg(tf->tf_dip, offset, *val);
+		rval = tofino_write_reg(dip, offset, *val);
 
 	return (rval);
 }
 
 int
-tofino_tbus_read_reg(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t *val)
+tofino_tbus_read_reg(dev_info_t *dip, size_t offset, uint32_t *val)
 {
-	return (tofino_tbus_reg_op(tf_hdl, offset, val, true));
+	return (tofino_tbus_reg_op(dip, offset, val, true));
 }
 
 int
-tofino_tbus_write_reg(tf_tbus_hdl_t tf_hdl, size_t offset, uint32_t val)
+tofino_tbus_write_reg(dev_info_t *dip, size_t offset, uint32_t val)
 {
-	return (tofino_tbus_reg_op(tf_hdl, offset, &val, false));
+	return (tofino_tbus_reg_op(dip, offset, &val, false));
 }
 
 int
-tofino_tbus_clear_reg(tf_tbus_hdl_t tf_hdl, size_t offset)
+tofino_tbus_clear_reg(dev_info_t *dip, size_t offset)
 {
-	tofino_t *tf = tf_hdl->tbc_tofino;
-
-	return (tofino_write_reg(tf->tf_dip, offset, 0));
+	return (tofino_write_reg(dip, offset, 0));
 }
 
 const char *
@@ -267,6 +185,7 @@ tofino_state_name(tofino_tbus_state_t s)
 {
 	switch (s) {
 		case TF_TBUS_UNINITIALIZED: return ("Uninitialized");
+		case TF_TBUS_REMOVED: return ("Removed");
 		case TF_TBUS_RESETTING: return ("Resetting");
 		case TF_TBUS_RESET: return ("Reset");
 		case TF_TBUS_READY: return ("Ready");
@@ -288,13 +207,39 @@ tofino_tbus_state_update(tofino_t *tf, tofino_tbus_state_t new_state)
 }
 
 tofino_tbus_state_t
-tofino_tbus_state(tf_tbus_hdl_t tf_hdl)
+tofino_tbus_state(dev_info_t *dip)
 {
-	tofino_t *tf = tf_hdl->tbc_tofino;
+	tofino_t *tf = ddi_get_driver_private(dip);
 	int rval;
 
 	mutex_enter(&tf->tf_mutex);
 	rval = tf->tf_tbus_state;
+	mutex_exit(&tf->tf_mutex);
+
+	return (rval);
+}
+
+static int
+tofino_tbus_ready_locked(tofino_t *tf)
+{
+	switch (tf->tf_tbus_state) {
+	case TF_TBUS_REMOVED:
+		return (ENXIO);
+	case TF_TBUS_RESET:
+		return (0);
+	default:
+		return (EAGAIN);
+	}
+}
+
+int
+tofino_tbus_ready(dev_info_t *dip)
+{
+	tofino_t *tf = ddi_get_driver_private(dip);
+	int rval;
+
+	mutex_enter(&tf->tf_mutex);
+	rval = tofino_tbus_ready_locked(tf);
 	mutex_exit(&tf->tf_mutex);
 
 	return (rval);
@@ -305,28 +250,14 @@ tofino_tbus_state(tf_tbus_hdl_t tf_hdl)
  * will need to indicate for which ASIC the caller is registering.
  */
 int
-tofino_tbus_register(tf_tbus_hdl_t *tf_hdl)
+tofino_tbus_register(dev_info_t *dip)
 {
-	tofino_t *tf;
-	tofino_tbus_client_t *tbc;
-	int rval = 0;
+	tofino_t *tf = ddi_get_driver_private(dip);
+	int rval;
 
-	if ((tf = tofino_get_phys()) == NULL) {
-		return (ENXIO);
-	}
-	ASSERT(MUTEX_HELD(&tf->tf_mutex));
-
-	if (tf->tf_tbus_state != TF_TBUS_RESET) {
-		rval = EAGAIN;
-	} else if (tf->tf_tbus_client != NULL) {
-		/* someone else is already handling the packets */
-		rval = EBUSY;
-	} else {
+	mutex_enter(&tf->tf_mutex);
+	if ((rval = tofino_tbus_ready_locked(tf)) == 0) {
 		tofino_tbus_state_update(tf, TF_TBUS_READY);
-		tbc = kmem_zalloc(sizeof (*tbc), KM_SLEEP);
-		tbc->tbc_tofino = tf;
-		tf->tf_tbus_client = tbc;
-		*tf_hdl = (tf_tbus_hdl_t)tbc;
 	}
 	mutex_exit(&tf->tf_mutex);
 
@@ -334,23 +265,20 @@ tofino_tbus_register(tf_tbus_hdl_t *tf_hdl)
 }
 
 int
-tofino_tbus_unregister(tf_tbus_hdl_t tf_hdl)
+tofino_tbus_unregister(dev_info_t *dip)
 {
-	tofino_tbus_client_t *tbc = tf_hdl;
-	tofino_t *tf = tbc->tbc_tofino;
+	tofino_t *tf = ddi_get_driver_private(dip);
 	int rval;
 
 	mutex_enter(&tf->tf_mutex);
-	if (tbc != tf->tf_tbus_client) {
-		rval = ENXIO;
-	} else if (tbc->tbc_intr != NULL) {
+	/*
+	 * The client is required to unregister its interrupt handler first
+	 */
+	if (tf->tf_tbus_intr != NULL) {
 		rval = EBUSY;
 	} else {
 		if (tf->tf_tbus_state == TF_TBUS_READY)
 			tofino_tbus_state_update(tf, TF_TBUS_RESET);
-
-		kmem_free(tf->tf_tbus_client, sizeof (tofino_tbus_client_t));
-		tf->tf_tbus_client = NULL;
 		rval = 0;
 	}
 	mutex_exit(&tf->tf_mutex);
