@@ -540,6 +540,7 @@ i_mac_constructor(void *buf, void *arg, int kmflag)
 	mutex_init(&mip->mi_notify_lock, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&mip->mi_promisc_lock, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&mip->mi_ring_lock, NULL, MUTEX_DEFAULT, NULL);
+	rw_init(&mip->mi_siphon_lock, NULL, RW_DRIVER, NULL);
 
 	mip->mi_notify_cb_info.mcbi_lockp = &mip->mi_notify_lock;
 	cv_init(&mip->mi_notify_cb_info.mcbi_cv, NULL, CV_DRIVER, NULL);
@@ -595,6 +596,8 @@ i_mac_destructor(void *buf, void *arg)
 	mutex_destroy(&mip->mi_notify_lock);
 	cv_destroy(&mip->mi_notify_cb_info.mcbi_cv);
 	mutex_destroy(&mip->mi_ring_lock);
+
+	rw_destroy(&mip->mi_siphon_lock);
 
 	ASSERT(mip->mi_bridge_link == NULL);
 }

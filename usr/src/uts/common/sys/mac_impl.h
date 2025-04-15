@@ -495,6 +495,11 @@ struct mac_impl_s {
 	mac_cb_t		*mi_promisc_list;	/* mi_promisc_lock */
 	mac_cb_info_t		mi_promisc_cb_info;	/* mi_promisc_lock */
 
+	/* for packet siphon handlers */
+	krwlock_t		mi_siphon_lock;
+	mac_siphon_t		mi_siphon;		/* mi_siphon_lock */
+	void			*mi_siphon_arg;		/* mi_siphon_lock */
+
 	/* cache of rings over this mac_impl */
 	kmutex_t		mi_ring_lock;
 	mac_ring_t		*mi_ring_freelist;	/* mi_ring_lock */

@@ -756,6 +756,16 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 	if (mip->mi_promisc_list != NULL)
 		mac_promisc_dispatch(mip, mp_chain, NULL, B_FALSE);
 
+	/*
+	 * If there's a packet siphon defined, give it first dibs over mp_chain.
+	 */
+	rw_enter(&mip->mi_siphon_lock, RW_READER);
+	if (mip->mi_siphon != NULL) {
+		mp_chain = mip->mi_siphon(mip->mi_siphon_arg, mp_chain,
+		    B_FALSE);
+	}
+	rw_exit(&mip->mi_siphon_lock);
+
 	if (mr != NULL) {
 		/*
 		 * If the SRS teardown has started, just return. The 'mr'

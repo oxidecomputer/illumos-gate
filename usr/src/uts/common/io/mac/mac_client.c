@@ -1643,6 +1643,45 @@ mac_rx_clear(mac_client_handle_t mch)
 	mac_rx_set(mch, mac_rx_def, NULL);
 }
 
+/*
+ * Set the siphon callback for the specified MAC underlying this client. There
+ * can be at most one such callback per MAC -- this function returns an
+ * error if one is already set.
+ */
+int
+mac_siphon_set(mac_client_handle_t mch, mac_siphon_t rx_fn, void *arg)
+{
+	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
+	mac_impl_t	*mip = mcip->mci_mip;
+	int		err = 0;
+
+	i_mac_perim_enter(mip);
+	mac_rx_client_quiesce(mch);
+
+	rw_enter(&mip->mi_siphon_lock, RW_WRITER);
+	if (rx_fn == NULL || mip->mi_siphon == NULL) {
+		mip->mi_siphon = rx_fn;
+		mip->mi_siphon_arg = arg;
+	} else if (mip->mi_siphon != NULL) {
+		err = 1;
+	}
+	rw_exit(&mip->mi_siphon_lock);
+
+	mac_rx_client_restart(mch);
+	i_mac_perim_exit(mip);
+
+	return (err);
+}
+
+/*
+ * Reset the siphon callback for the specified MAC client.
+ */
+void
+mac_siphon_clear(mac_client_handle_t mch)
+{
+	VERIFY(mac_siphon_set(mch, NULL, NULL) == 0);
+}
+
 void
 mac_rx_barrier(mac_client_handle_t mch)
 {

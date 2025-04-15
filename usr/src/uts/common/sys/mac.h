@@ -422,6 +422,7 @@ typedef void		(*mac_notify_t)(void *, mac_notify_type_t);
 typedef void		(*mac_rx_t)(void *, mac_resource_handle_t, mblk_t *,
 			    boolean_t);
 typedef	mblk_t		*(*mac_receive_t)(void *, size_t);
+typedef mblk_t		*(*mac_siphon_t)(void *, mblk_t *, boolean_t);
 
 /*
  * MAC resource types

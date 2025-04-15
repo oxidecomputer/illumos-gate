@@ -2444,26 +2444,52 @@ check_again:
 			SRS_RX_STAT_UPDATE(mac_srs, pollbytes, sz);
 			SRS_RX_STAT_UPDATE(mac_srs, pollcnt, count);
 
+			if (mac_srs->srs_type & SRST_BW_CONTROL) {
+				mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
+				mac_srs->srs_bw->mac_bw_polled += sz;
+				mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
+			}
+
 			/*
 			 * If there are any promiscuous mode callbacks
 			 * defined for this MAC client, pass them a copy
 			 * if appropriate and also update the counters.
 			 */
 			if (smcip != NULL) {
-				if (smcip->mci_mip->mi_promisc_list != NULL) {
+				mac_impl_t *smip = smcip->mci_mip;
+				if (smip->mi_promisc_list != NULL) {
 					mutex_exit(lock);
-					mac_promisc_dispatch(smcip->mci_mip,
+					mac_promisc_dispatch(smip,
 					    head, NULL, B_FALSE);
 					mutex_enter(lock);
 				}
+
+				/*
+				 * If there's a packet siphon defined, give it
+				 * first dibs over [head..tail]. Rederive tail.
+				 */
+				rw_enter(&smip->mi_siphon_lock, RW_READER);
+				if (smip->mi_siphon != NULL) {
+					head = smip->mi_siphon(
+					    smip->mi_siphon_arg, head, B_FALSE);
+
+					sz = 0;
+					count = 0;
+					mp = tail = head;
+					while (mp != NULL) {
+						tail = mp;
+						mp = mp->b_next;
+						sz += msgdsize(mp);
+						count++;
+					}
+				}
+				rw_exit(&smip->mi_siphon_lock);
 			}
-			if (mac_srs->srs_type & SRST_BW_CONTROL) {
-				mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
-				mac_srs->srs_bw->mac_bw_polled += sz;
-				mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
+
+			if (head != NULL) {
+				MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, head, tail,
+				    count, sz);
 			}
-			MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, head, tail,
-			    count, sz);
 			if (count <= 10)
 				srs_rx->sr_stat.mrs_chaincntundr10++;
 			else if (count > 10 && count <= 50)
