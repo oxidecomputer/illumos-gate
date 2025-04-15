@@ -2385,3 +2385,8 @@ KTEST_OBJS += ktest.o
 MAC_KTEST_OBJS += mac_ktest.o
 KTEST_KTEST_OBJS += ktest_selftest.o
 STREAM_KTEST_OBJS += stream_ktest.o
+#
+# x2(4D)
+#
+X2_OBJS += x2.o
+

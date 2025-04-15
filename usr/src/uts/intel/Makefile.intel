@@ -765,6 +765,11 @@ DRV_KMODS	+= vmm_vtd
 DRV_KMODS	+= tofino tfpkt tfport
 
 #
+#	X2 related
+#
+DRV_KMODS	+= x2
+
+#
 # bhyve drv test interface
 #
 DRV_KMODS	+= vmm_drv_test
