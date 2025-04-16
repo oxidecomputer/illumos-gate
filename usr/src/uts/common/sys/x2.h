@@ -25,6 +25,20 @@ extern "C" {
 #define	X2_IOC_PREFIX	0x1e6c
 #define	X2_IOC(x) ((X2_IOC_PREFIX << 16) | x)
 
+#define X2_GET_VERSION	X2_IOC(0)
+#define X2_REG_READ	X2_IOC(1)
+#define X2_REG_WRITE	X2_IOC(2)
+
+/*
+ * Used to pass register information between userspace and the kernel.  The
+ * address is an offset into the MMIO register space and the value contains
+ * the contents of a 64-bit register.
+ */
+typedef struct x2_reg_op {
+	uint32_t xro_address;
+	uint64_t xro_value;
+} x2_reg_op_t;
+
 /*
  * Used to communicate the x2 driver version number to the userspace daemon.
  */

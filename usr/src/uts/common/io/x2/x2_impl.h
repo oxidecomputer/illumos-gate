@@ -34,9 +34,9 @@ extern "C" {
 #define	X2_VENDID	0x1e6c
 
 /*
- * The device is organized as three 64-bit BARs.
+ * The device has 2 64-bit BARs (0 and 2).
  */
-#define	X2_NBARS		3
+#define	X2_NBARS		2
 
 typedef struct x2 {
 	list_node_t		x2_link;
@@ -63,10 +63,10 @@ typedef struct x2_instance_data_t {
 	x2_t		*xid_x2;
 } x2_instance_data_t;
 
-void x2_dlog(x2_t *tf, const char *fmt, ...);
-void x2_err(x2_t *tf, const char *fmt, ...);
-int x2_read_reg(dev_info_t *dip, size_t offset, uint32_t *val);
-int x2_write_reg(dev_info_t *dip, size_t offset, uint32_t val);
+void x2_dlog(x2_t *x2, const char *fmt, ...);
+void x2_err(x2_t *x2, const char *fmt, ...);
+int x2_read_reg(dev_info_t *dip, size_t offset, uint64_t *val);
+int x2_write_reg(dev_info_t *dip, size_t offset, uint64_t val);
 
 #ifdef	__cplusplus
 }

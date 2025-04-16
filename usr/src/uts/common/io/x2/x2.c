@@ -43,7 +43,7 @@ static list_t x2_devices;	/* all x2 devices attached to the system */
 
 static void		*x2_soft_state = NULL;
 static id_space_t	*x2_minors = NULL;
-int			x2_debug = 0;
+int			x2_debug = 1;
 
 static int x2_instance_init(x2_t *x2, minor_t minor);
 static void x2_instance_fini(x2_t *x2, minor_t minor);
@@ -87,28 +87,32 @@ x2_err(x2_t *x2, const char *fmt, ...)
 }
 
 /*
- * Read a single 32-bit register from the device's MMIO space.  The offset is
+ * Read a single 64-bit register from the device's MMIO space.  The offset is
  * provided in bytes.
  */
 int
-x2_read_reg(dev_info_t *dip, size_t offset, uint32_t *val)
+x2_read_reg(dev_info_t *dip, size_t offset, uint64_t *val)
 {
 	x2_t *x2 = ddi_get_driver_private(dip);
 	ddi_acc_handle_t hdl = x2->x2_regs_hdls[0];
 	caddr_t base = x2->x2_regs_bases[0];
 
-	if (offset > x2->x2_regs_lens[0])
+	if (offset > x2->x2_regs_lens[0]) {
+		x2_dlog(x2, "out of range.  Offset: %lx  limit: %lx",
+			offset, x2->x2_regs_lens[0]);
+
 		return (EINVAL);
-	*val = ddi_get32(hdl, (uint32_t *)(base + offset));
+	}
+	*val = ddi_get64(hdl, (uint64_t *)(base + offset));
 	return (0);
 }
 
 /*
- * Write to a single 32-bit register in the device's MMIO space.  The offset is
+ * Write to a single 64-bit register in the device's MMIO space.  The offset is
  * provided in bytes.
  */
 int
-x2_write_reg(dev_info_t *dip, size_t offset, uint32_t val)
+x2_write_reg(dev_info_t *dip, size_t offset, uint64_t val)
 {
 	x2_t *x2 = ddi_get_driver_private(dip);
 	ddi_acc_handle_t hdl = x2->x2_regs_hdls[0];
@@ -117,7 +121,7 @@ x2_write_reg(dev_info_t *dip, size_t offset, uint32_t val)
 	if (offset > x2->x2_regs_lens[0])
 		return (EINVAL);
 
-	ddi_put32(hdl, (uint32_t *)(base + offset), val);
+	ddi_put64(hdl, (uint64_t *)(base + offset), val);
 	return (0);
 }
 
@@ -197,7 +201,6 @@ x2_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		.x2_patch = X2_DRIVER_PATCH,
 	};
 
-	uint32_t resetting;
 	x2_instance_data_t *xid;
 	x2_t *x2;
 
@@ -206,9 +209,44 @@ x2_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	x2 = xid->xid_x2;
 
 	switch (cmd) {
-	case 0:
-		x2_dlog(x2, "ioctl");
-		return (0);
+		case X2_GET_VERSION: {
+			if (ddi_copyout(&x2_version, (void *)arg,
+			    sizeof (x2_version), mode)) {
+				return (EFAULT);
+			} else {
+				return (0);
+			}
+		}
+		case X2_REG_READ: {
+			x2_reg_op_t op;
+			uint64_t value;
+			int rval;
+
+			if (ddi_copyin((void *)(uintptr_t)arg, &op,
+			    sizeof (op), mode) != 0) {
+				return (EFAULT);
+			}
+			rval = x2_read_reg(x2->x2_dip, op.xro_address, &value);
+			if (rval == 0) {
+				op.xro_value = value;
+				if (ddi_copyout(&op, (void *)arg, sizeof (op),
+				    mode) != 0) {
+					    rval = EFAULT;
+				}
+			}
+			return (rval);
+		}
+		case X2_REG_WRITE: {
+			x2_reg_op_t op;
+			int rval;
+
+			if (ddi_copyin((void *)(uintptr_t)arg, &op,
+			    sizeof (op), mode) != 0) {
+				return (EFAULT);
+			}
+			return (x2_write_reg(x2->x2_dip, op.xro_address,
+			    op.xro_value));
+		}
 	}
 
 	return (ENOTTY);
@@ -254,6 +292,7 @@ x2_regs_map(x2_t *x2)
 		if (ddi_dev_regsize(x2->x2_dip, regno, &memsize) != 0) {
 			x2_err(x2, "!failed to get register set size for "
 			    "regs[%u]", i + 1);
+			continue;
 			return (-1);
 		}
 
@@ -263,6 +302,7 @@ x2_regs_map(x2_t *x2)
 		if (ret != DDI_SUCCESS) {
 			x2_err(x2, "!failed to map register set %u: %d",
 			    i, ret);
+			continue;
 			return (-1);
 		}
 
@@ -359,6 +399,10 @@ x2_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	if (pci_config_setup(dip, &x2->x2_cfgspace) != DDI_SUCCESS) {
 		x2_err(x2, "!failed to set up pci config space");
+		goto cleanup;
+	}
+
+	if (x2_regs_map(x2) != 0) {
 		goto cleanup;
 	}
 
