@@ -3269,6 +3269,7 @@ usr/src/man/man1/false.1
 usr/src/man/man1/fc.1
 usr/src/man/man1/fg.1
 usr/src/man/man1/fgrep.1
+usr/src/man/man1/file.1
 usr/src/man/man1/for.1
 usr/src/man/man1/foreach.1
 usr/src/man/man1/function.1
