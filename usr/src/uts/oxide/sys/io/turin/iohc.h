@@ -1458,6 +1458,90 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	SDPMUX_SDP_PORT_CTL_SET_PORT_HYSTERESIS(r, v)	bitset32(r, 11, 0, v)
 
 /*
+ * SDPMUX::SDPMUX_HST_ORIG_EARLY_WAKE_UP_EN
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_HST_OEWAKE_EN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x00014	\
+}
+#define	SDPMUX_HST_OEWAKE_EN_SET_EGR(r, v)	bitset32(r, 31, 16, v)
+#define	SDPMUX_HST_OEWAKE_EN_SET_INGR(r, v)	bitset32(r, 15, 0, v)
+
+#define	SDPMUX_HST_OEWAKE_EN_EGR_VAL	0x2
+#define	SDPMUX_HST_OEWAKE_EN_INGR_VAL	0x1
+
+/*
+ * SDPMUX::SDPMUX_DMA_ORIG_EARLY_WAKE_UP_EN
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_DMA_OEWAKE_EN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x00018	\
+}
+#define	SDPMUX_DMA_OEWAKE_EN_SET_EGR(r, v)	bitset32(r, 31, 16, v)
+#define	SDPMUX_DMA_OEWAKE_EN_SET_INGR(r, v)	bitset32(r, 15, 0, v)
+
+#define	SDPMUX_DMA_OEWAKE_EN_EGR_VAL	0x1
+#define	SDPMUX_DMA_OEWAKE_EN_INGR_VAL	0x2
+
+/*
+ * SDPMUX::SDPMUX_NTB_ORIG_EARLY_WAKE_UP_EN
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_NTB_OEWAKE_EN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x0001c	\
+}
+#define	SDPMUX_NTB_OEWAKE_EN_SET_EGR(r, v)	bitset32(r, 31, 16, v)
+#define	SDPMUX_NTB_OEWAKE_EN_SET_INGR(r, v)	bitset32(r, 15, 0, v)
+
+#define	SDPMUX_NTB_OEWAKE_EN_EGR_VAL	0x2
+#define	SDPMUX_NTB_OEWAKE_EN_INGR_VAL	0x4
+
+/*
+ * SDPMUX::SDPMUX_HST_COMP_EARLY_WAKE_UP_EN
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_HST_CEWAKE_EN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x00020	\
+}
+#define	SDPMUX_HST_CEWAKE_EN_SET_EGR(r, v)	bitset32(r, 31, 16, v)
+#define	SDPMUX_HST_CEWAKE_EN_SET_INGR(r, v)	bitset32(r, 15, 0, v)
+
+#define	SDPMUX_HST_CEWAKE_EN_EGR_VAL	0x1
+#define	SDPMUX_HST_CEWAKE_EN_INGR_VAL	0x2
+
+/*
+ * SDPMUX::SDPMUX_DMA_COMP_EARLY_WAKE_UP_EN
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_DMA_CEWAKE_EN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x00024	\
+}
+#define	SDPMUX_DMA_CEWAKE_EN_SET_EGR(r, v)	bitset32(r, 31, 16, v)
+#define	SDPMUX_DMA_CEWAKE_EN_SET_INGR(r, v)	bitset32(r, 15, 0, v)
+
+#define	SDPMUX_DMA_CEWAKE_EN_EGR_VAL	0x2
+#define	SDPMUX_DMA_CEWAKE_EN_INGR_VAL	0x1
+
+/*
+ * SDPMUX::SDPMUX_NTB_COMP_EARLY_WAKE_UP_EN
+ */
+/*CSTYLED*/
+#define	D_SDPMUX_NTB_CEWAKE_EN	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SDPMUX,	\
+	.srd_reg = 0x00028	\
+}
+#define	SDPMUX_NTB_CEWAKE_EN_SET_EGR(r, v)	bitset32(r, 31, 16, v)
+#define	SDPMUX_NTB_CEWAKE_EN_SET_INGR(r, v)	bitset32(r, 15, 0, v)
+
+#define	SDPMUX_NTB_CEWAKE_EN_EGR_VAL	0x0
+#define	SDPMUX_NTB_CEWAKE_EN_INGR_VAL	0x0
+
+/*
  * SDPMUX::SDPMUX_SION_LiveLock_WatchDog_Threshold. This is used to set an
  * arbitration threshold for the SDPMUX. Companion to the IOHC variant.
  */
