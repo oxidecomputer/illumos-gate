@@ -103,6 +103,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_pcie_refclk = turin_fabric_pcie_refclk,
 	.zfo_pci_crs_to = turin_fabric_set_pci_to,
 	.zfo_iohc_features = turin_fabric_iohc_features,
+	.zfo_nbio_features = turin_fabric_nbio_features,
 	.zfo_iohc_bus_num = turin_fabric_iohc_bus_num,
 	.zfo_iohc_fch_link = turin_fabric_iohc_fch_link,
 	.zfo_iohc_arbitration = turin_fabric_iohc_arbitration,

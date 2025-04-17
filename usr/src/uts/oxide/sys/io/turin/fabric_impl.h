@@ -119,6 +119,7 @@ extern void turin_fabric_disable_vga(zen_ioms_t *);
 extern void turin_fabric_pcie_refclk(zen_ioms_t *);
 extern void turin_fabric_set_pci_to(zen_ioms_t *, uint16_t, uint16_t);
 extern void turin_fabric_iohc_features(zen_ioms_t *);
+extern void turin_fabric_nbio_features(zen_nbio_t *);
 extern void turin_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
 extern void turin_fabric_iohc_fch_link(zen_ioms_t *, bool);
 extern void turin_fabric_iohc_arbitration(zen_ioms_t *);

@@ -677,6 +677,26 @@ genoa_fabric_iohc_features(zen_ioms_t *ioms)
 	/* XXX Wants to be IOHC_FCTL_P2P_DISABLE? */
 	val = IOHC_FCTL_SET_P2P(val, IOHC_FCTL_P2P_DROP_NMATCH);
 	zen_ioms_write(ioms, reg, val);
+
+	reg = genoa_ioms_reg(ioms, D_IOHC_DBG0, 0);
+	val = zen_ioms_read(ioms, reg);
+	val = IOHC_DBG0_SET_ROOT_STRMID(val, 1);
+	zen_ioms_write(ioms, reg, val);
+}
+
+void
+genoa_fabric_nbio_features(zen_nbio_t *nbio)
+{
+	smn_reg_t reg;
+	uint32_t val;
+
+	for (uint16_t i = nbio->zn_sst_start;
+	    i < nbio->zn_sst_start + nbio->zn_sst_count; i++) {
+		reg = genoa_nbio_reg(nbio, D_SST_DBG0, i);
+		val = zen_nbio_read(nbio, reg);
+		val = SST_DBG0_SET_LCLK_CTL_NBIO_DIS(val, 1);
+		zen_nbio_write(nbio, reg, val);
+	}
 }
 
 void

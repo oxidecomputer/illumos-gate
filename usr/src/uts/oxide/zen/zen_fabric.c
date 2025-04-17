@@ -3116,6 +3116,8 @@ zen_fabric_init(void)
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
 	    fabric_ops->zfo_iohc_features);
+	zen_fabric_walk_nbio(fabric, zen_fabric_nbio_op,
+	    fabric_ops->zfo_nbio_features);
 
 	zen_fabric_walk_ioms(fabric, zen_fabric_iohc_fch_link, NULL);
 	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,

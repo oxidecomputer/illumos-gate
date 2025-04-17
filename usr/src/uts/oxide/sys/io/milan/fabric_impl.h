@@ -120,6 +120,7 @@ extern void milan_fabric_iohc_pci_ids(zen_ioms_t *);
 extern void milan_fabric_pcie_refclk(zen_ioms_t *);
 extern void milan_fabric_set_pci_to(zen_ioms_t *, uint16_t, uint16_t);
 extern void milan_fabric_iohc_features(zen_ioms_t *);
+extern void milan_fabric_nbio_features(zen_nbio_t *);
 extern void milan_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
 extern void milan_fabric_iohc_fch_link(zen_ioms_t *, bool);
 extern void milan_fabric_iohc_arbitration(zen_ioms_t *);

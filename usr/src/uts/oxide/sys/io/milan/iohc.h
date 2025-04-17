@@ -1663,6 +1663,17 @@ ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, SB, sb, 0x13b3c000, 0xffffc000, 4, 1, 0, 1);
 #define	SST_CLOCK_CTL_PCTRL_IDLE_TIME			0xf0
 
 /*
+ * SST::SST_DEBUG0.
+ */
+/*CSTYLED*/
+#define	D_SST_DBG0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SST,	\
+	.srd_reg = 0x18,		\
+	.srd_nents = 2			\
+}
+#define	SST_DBG0_SET_LCLK_CTL_NBIO_DIS(r, v)		bitset32(r, 5, 5, v)
+
+/*
  * SST::SION_WRAPPER_CFG_SSTSION_GLUE_CG_LCLK_CTRL_SOFT_OVERRIDE_CLK
  */
 /*CSTYLED*/

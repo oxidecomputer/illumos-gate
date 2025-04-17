@@ -138,6 +138,7 @@ typedef struct zen_fabric_ops {
 	 * Initialize IOHC features
 	 */
 	void		(*zfo_iohc_features)(zen_ioms_t *);
+	void		(*zfo_nbio_features)(zen_nbio_t *);
 
 	/*
 	 * Program each IOHC with its primary bus number

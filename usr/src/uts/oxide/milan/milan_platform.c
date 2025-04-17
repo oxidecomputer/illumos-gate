@@ -84,6 +84,7 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_pcie_refclk = milan_fabric_pcie_refclk,
 	.zfo_pci_crs_to = milan_fabric_set_pci_to,
 	.zfo_iohc_features = milan_fabric_iohc_features,
+	.zfo_nbio_features = milan_fabric_nbio_features,
 	.zfo_iohc_bus_num = milan_fabric_iohc_bus_num,
 	.zfo_iohc_fch_link = milan_fabric_iohc_fch_link,
 	.zfo_iohc_arbitration = milan_fabric_iohc_arbitration,
