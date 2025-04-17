@@ -373,6 +373,16 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	IOHC_REFCLK_MODE_SET_100MHZ(r, v)	bitset32(r, 0, 0, v)
 
 /*
+ * IOHC::NBIO_LCLK_DS_MASK. Seemingly controls masking of the LCLK deep sleep.
+ */
+/*CSTYLED*/
+#define	D_IOHC_NBIO_LCLK_DS_MASK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOHC,	\
+	.srd_reg = 0x10024	\
+}
+#define	IOHC_NBIO_LCLK_DS_MASK_SET(r, v)	bitset32(r, 31, 0, v)
+
+/*
  * IOHC::IOHC_PCIE_CRS_Count. Controls configuration space retries. The limit
  * indicates the length of time that retries can be issued for. Apparently in
  * 1.6ms units. The delay is the amount of time that is used between retries,
