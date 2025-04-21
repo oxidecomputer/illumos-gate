@@ -49,6 +49,8 @@ extern "C" {
  * IOMUX function values.
  */
 
+#define	TURIN_FCH_IOMUX_2_AGPIO2		1
+
 #define	TURIN_FCH_IOMUX_21_AGPIO21		0
 #define	TURIN_FCH_IOMUX_22_AGPIO22		0
 
