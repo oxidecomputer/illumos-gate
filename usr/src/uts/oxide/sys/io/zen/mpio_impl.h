@@ -177,6 +177,16 @@ extern void zen_mpio_pcie_init(zen_fabric_t *);
  */
 extern bool zen_mpio_pcie_port_is_trained(const zen_pcie_port_t *);
 
+/*
+ * Accessors for PCIe core/port registers via MPIO proxy.
+ */
+extern uint32_t zen_mpio_pcie_core_read(zen_pcie_core_t *, const smn_reg_t);
+extern void zen_mpio_pcie_core_write(zen_pcie_core_t *, const smn_reg_t,
+    const uint32_t);
+extern uint32_t zen_mpio_pcie_port_read(zen_pcie_port_t *, const smn_reg_t);
+extern void zen_mpio_pcie_port_write(zen_pcie_port_t *, const smn_reg_t,
+    const uint32_t);
+
 extern bool zen_mpio_write_pcie_strap(zen_pcie_core_t *, uint32_t, uint32_t);
 extern uint32_t zen_mpio_ubm_idx(const zen_iodie_t *);
 

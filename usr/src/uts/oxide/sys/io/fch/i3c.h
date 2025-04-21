@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_FCH_I3C_H
@@ -71,7 +71,7 @@ fch_i3c_smn_reg(const uint8_t unit, const smn_reg_def_t def)
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_FCH_I3C);
 	ASSERT0(def.srd_reg & ~REG_MASK);
 
-	return (SMN_MAKE_REG(aperture + def.srd_reg));
+	return (SMN_MAKE_REG(aperture + def.srd_reg, SMN_UNIT_FCH_I3C));
 }
 
 /*

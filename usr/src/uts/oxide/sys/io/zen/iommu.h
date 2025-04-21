@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_ZEN_IOMMU_H
@@ -54,7 +54,7 @@ _platform ## _iommul1_ ## _unitlc ## _smn_reg(const uint8_t iommuno,	\
 	const uint32_t aperture = aperture_base + aperture_off;		\
 	ASSERT0(aperture & ~SMN_APERTURE_MASK);				\
 									\
-	return (SMN_MAKE_REG(aperture + def.srd_reg));			\
+	return (SMN_MAKE_REG(aperture + def.srd_reg, SMN_UNIT_IOMMUL1));\
 }
 
 #ifdef __cplusplus

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_UMC_H
@@ -111,7 +111,7 @@ amdzen_umc_smn_reg(const uint8_t umcno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_UMC));
 }
 
 /*

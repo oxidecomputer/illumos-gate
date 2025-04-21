@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_ZEN_IOHC_H
@@ -72,7 +72,7 @@ _platform ## _iohcdev_ ## _unitlc ## _smn_reg(const uint8_t iohcno,	\
 	const uint32_t reg = def.srd_reg + reginst32 * stride;		\
 	ASSERT0(reg & (_apmask));					\
 									\
-	return (SMN_MAKE_REG(aperture + reg));				\
+	return (SMN_MAKE_REG(aperture + reg, def.srd_unit));		\
 }
 
 #ifdef __cplusplus

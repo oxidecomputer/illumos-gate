@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -989,7 +989,7 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 		return (DCMD_ERR);
 	}
 
-	const smn_reg_t reg = SMN_MAKE_REG_SIZED(addr, len);
+	const smn_reg_t reg = SMN_MAKE_REG_SIZED(addr, len, SMN_UNIT_UNKNOWN);
 
 	ret = smn_rw_regdef(reg, (uint8_t)sock, rw, &smn_val);
 	if (ret != DCMD_OK) {

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_CCD_H
@@ -111,7 +111,7 @@ amdzen_smupwr_smn_reg(const uint8_t ccdno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & APERTURE_MASK);
 
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32, SMN_UNIT_SMUPWR));
 }
 
 /*
@@ -254,7 +254,7 @@ amdzen_l3soc_smn_reg(const uint8_t ccdno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & APERTURE_MASK);
 
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32, SMN_UNIT_L3SOC));
 
 }
 
@@ -376,7 +376,7 @@ amdzen_scfctp_smn_reg(const uint8_t ccdno, const uint8_t ccxno,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & APERTURE_MASK);
 
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32, SMN_UNIT_SCFCTP));
 }
 
 /*

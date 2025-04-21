@@ -145,6 +145,10 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_pcie_port_info = turin_pcie_port_info,
 	.zfo_pcie_core_reg = turin_pcie_core_reg,
 	.zfo_pcie_port_reg = turin_pcie_port_reg,
+	.zfo_pcie_core_read = zen_mpio_pcie_core_read,
+	.zfo_pcie_core_write = zen_mpio_pcie_core_write,
+	.zfo_pcie_port_read = zen_mpio_pcie_port_read,
+	.zfo_pcie_port_write = zen_mpio_pcie_port_write,
 
 	.zfo_tile_fw_hp_id = turin_fabric_hotplug_tile_id,
 };

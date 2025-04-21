@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_IOHC_H
@@ -79,7 +79,8 @@ _fn(const uint8_t unitno, const smn_reg_def_t def, const uint16_t reginst) \
 	const uint32_t reg = def.srd_reg + reginst32 * stride;		\
 	ASSERT0(reg & (_mask));						\
 									\
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));		\
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32,		\
+	    def.srd_unit));						\
 }
 
 TURIN_MAKE_SMN_REG_FN(turin_iohc_smn_reg, IOHC, 0x13b00000, 0x1d400000,
@@ -125,7 +126,7 @@ turin_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_SDPMUX));
 }
 
 /*
@@ -167,7 +168,7 @@ turin_sst_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_SST));
 }
 
 static inline smn_reg_t
@@ -200,7 +201,7 @@ turin_iohcdev_sb_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & 0xffffc000);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_IOHCDEV_SB));
 }
 
 /*
@@ -252,7 +253,7 @@ turin_iohcdev_pcie_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	const uint32_t apmask = 0xffff8000;
 	ASSERT0(reg & apmask);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_IOHCDEV_PCIE));
 }
 
 /*
@@ -300,7 +301,7 @@ turin_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	const uint32_t apmask = 0xffffc000;
 	ASSERT0(reg & apmask);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_IOHCDEV_NBIF));
 }
 
 /*

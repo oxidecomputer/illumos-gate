@@ -832,6 +832,113 @@ zen_mpio_send_data(zen_iodie_t *iodie, void *arg __unused)
 	return (0);
 }
 
+/*
+ * Depending on the platform and fused secure state of the processor, we may not
+ * be able to access the PCIe core and port registers via the normal SMN
+ * routines and instead must proxy through MPIO.
+ */
+
+static bool
+zen_mpio_read_pcie_reg(zen_iodie_t *iodie, const smn_reg_t reg, uint32_t *val)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+
+	VERIFY(SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_CORE ||
+	    SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_PORT);
+	VERIFY(SMN_REG_IS_NATURALLY_ALIGNED(reg));
+	VERIFY(SMN_REG_SIZE_IS_VALID(reg));
+
+	rpc.zmr_req = ZEN_MPIO_OP_RDWR_PCIE_PROXY;
+	rpc.zmr_args[0] = SMN_REG_ADDR_BASE(reg);
+
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO PCIe reg 0x%x read failed: %s "
+		    "(MPIO: 0x%x)", SMN_REG_ADDR(reg),
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+	*val = (rpc.zmr_args[0] >> (SMN_REG_ADDR_OFF(reg) << 3)) &
+	    SMN_REG_SIZE_MASK(reg);
+
+	return (true);
+}
+
+static bool
+zen_mpio_write_pcie_reg(zen_iodie_t *iodie, const smn_reg_t reg,
+    uint32_t val)
+{
+	zen_mpio_rpc_t rpc = { 0 };
+	zen_mpio_rpc_res_t res;
+	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+
+	VERIFY(SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_CORE ||
+	    SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_PORT);
+	VERIFY(SMN_REG_IS_NATURALLY_ALIGNED(reg));
+	VERIFY(SMN_REG_SIZE_IS_VALID(reg));
+	VERIFY(SMN_REG_VALUE_FITS(reg, val));
+
+	rpc.zmr_req = ZEN_MPIO_OP_RDWR_PCIE_PROXY;
+	rpc.zmr_args[0] = SMN_REG_ADDR_BASE(reg);
+	rpc.zmr_args[1] = SMN_REG_SIZE_MASK(reg) << (addr_off << 3);
+	rpc.zmr_args[2] = val << (addr_off << 3);
+
+	res = zen_mpio_rpc(iodie, &rpc);
+	if (res != ZEN_MPIO_RPC_OK) {
+		cmn_err(CE_WARN, "MPIO PCIe reg 0x%x write failed: %s "
+		    "(MPIO: 0x%x)", SMN_REG_ADDR(reg),
+		    zen_mpio_rpc_res_str(res), rpc.zmr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+uint32_t
+zen_mpio_pcie_core_read(zen_pcie_core_t *pc, const smn_reg_t reg)
+{
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+	uint32_t val;
+
+	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_CORE);
+	VERIFY(zen_mpio_read_pcie_reg(iodie, reg, &val));
+
+	return (val);
+}
+
+void
+zen_mpio_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
+    const uint32_t val)
+{
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+
+	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_CORE);
+	VERIFY(zen_mpio_write_pcie_reg(iodie, reg, val));
+}
+
+uint32_t
+zen_mpio_pcie_port_read(zen_pcie_port_t *port, const smn_reg_t reg)
+{
+	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+	uint32_t val;
+
+	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_PORT);
+	VERIFY(zen_mpio_read_pcie_reg(iodie, reg, &val));
+
+	return (val);
+}
+
+void
+zen_mpio_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
+    const uint32_t val)
+{
+	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+
+	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_PORT);
+	VERIFY(zen_mpio_write_pcie_reg(iodie, reg, val));
+}
+
 bool
 zen_mpio_write_pcie_strap(zen_pcie_core_t *pc,
     const uint32_t addr, const uint32_t data)

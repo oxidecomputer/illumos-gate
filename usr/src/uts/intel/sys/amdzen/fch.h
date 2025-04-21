@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_FCH_H
@@ -295,7 +295,7 @@ fch_ ## _unitlc ## _smn_reg(const smn_reg_def_t def, const uint16_t reginst) \
 	ASSERT3U(reg, <=, APERTURE_LEN - size);				\
 									\
 	return (SMN_MAKE_REG_SIZED(APERTURE_BASE + reg,			\
-	    (const uint8_t)size));					\
+	    (const uint8_t)size, def.srd_unit));			\
 }
 
 /*

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_IOAPIC_H
@@ -71,7 +71,7 @@ turin_ioapic_smn_reg(const uint8_t unitno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32, SMN_UNIT_IOAPIC));
 }
 
 /*

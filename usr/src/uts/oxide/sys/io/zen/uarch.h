@@ -212,7 +212,7 @@ typedef struct zen_fabric_ops {
 	uint8_t		(*zfo_pcie_core_n_ports)(const uint8_t);
 
 	/*
-	 * Retrieve information about the configuration of a PCIe core of port.
+	 * Retrieve information about the configuration of a PCIe core or port.
 	 */
 	const zen_pcie_core_info_t *(*zfo_pcie_core_info)(const uint8_t,
 	    const uint8_t);
@@ -226,6 +226,19 @@ typedef struct zen_fabric_ops {
 	    const smn_reg_def_t);
 	smn_reg_t	(*zfo_pcie_core_reg)(const zen_pcie_core_t *const,
 	    const smn_reg_def_t);
+
+	/*
+	 * Optional microarchitecture-specific overrides for PCIe core and port
+	 * register access if the default SMN accessors are not appropriate.
+	 */
+	uint32_t	(*zfo_pcie_core_read)(zen_pcie_core_t *,
+	    const smn_reg_t);
+	void		(*zfo_pcie_core_write)(zen_pcie_core_t *,
+	    const smn_reg_t, const uint32_t);
+	uint32_t	(*zfo_pcie_port_read)(zen_pcie_port_t *,
+	    const smn_reg_t);
+	void		(*zfo_pcie_port_write)(zen_pcie_port_t *,
+	    const smn_reg_t, const uint32_t);
 
 	/*
 	 * Signal that we're collecting register data.

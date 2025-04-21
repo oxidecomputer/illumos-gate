@@ -180,9 +180,9 @@
  * const uint32_t reg = def.srd_reg + threadinst * def.srd_stride;
  *
  * Finally, we convert the aperture address and register offset into the
- * appropriate type and return it:
+ * appropriate type (retaining the unit type) and return it:
  *
- * return (SMN_MAKE_REG(aperture + reg));
+ * return (SMN_MAKE_REG(aperture + reg, def.srd_unit));
  *
  * As you can see, other registers in THREADREGS would be defined with the same
  * number entries and stride but a different offset (srd_reg member), while
@@ -349,78 +349,6 @@ extern "C" {
 #define	SMN_APERTURE_MASK	0xfff00000
 
 /*
- * An instance of an SMN-accessible register.
- */
-typedef struct smn_reg {
-	uint32_t sr_addr;
-	uint8_t sr_size;	/* Not size_t: can't ever be that big. */
-} smn_reg_t;
-
-/*
- * These are intended to be macro-like (and indeed some used to be macros) but
- * are implemented as inline functions so that we can use compound statements
- * without extensions and don't have to worry about multiple evaluation.  Hence
- * their capitalised names.
- */
-static inline smn_reg_t
-SMN_MAKE_REG_SIZED(const uint32_t addr, const uint8_t size)
-{
-	const uint8_t size_always = (size == 0) ? 4 : size;
-	const smn_reg_t rv = {
-	    .sr_addr = addr,
-	    .sr_size = size_always
-	};
-
-	return (rv);
-}
-
-#define	SMN_MAKE_REG(x)		SMN_MAKE_REG_SIZED(x, 4)
-#define	SMN_REG_ADDR(x)		((x).sr_addr)
-#define	SMN_REG_SIZE(x)		((x).sr_size)
-
-static inline boolean_t
-SMN_REG_SIZE_IS_VALID(const smn_reg_t reg)
-{
-	return (reg.sr_size == 1 || reg.sr_size == 2 || reg.sr_size == 4);
-}
-
-/* Is this register suitably aligned for access of <size> bytes? */
-#define	SMN_REG_IS_ALIGNED(x, size)	IS_P2ALIGNED(SMN_REG_ADDR(x), size)
-
-/* Is this register naturally aligned with respect to its own width? */
-static inline boolean_t
-SMN_REG_IS_NATURALLY_ALIGNED(const smn_reg_t reg)
-{
-	return (SMN_REG_IS_ALIGNED(reg, reg.sr_size));
-}
-
-/* Does <val> fit into SMN register <x>? */
-#define	SMN_REG_VALUE_FITS(x, val)	\
-	(((val) & ~(0xffffffffU >> ((4 - SMN_REG_SIZE(x)) << 3))) == 0)
-
-/*
- * Retrieve the base address of the register.  This is the address that will
- * actually be set in the index register when performing a read or write of the
- * underlying register via SMN.  It must always be 32-bit aligned.
- */
-static inline uint32_t
-SMN_REG_ADDR_BASE(const smn_reg_t reg)
-{
-	return (reg.sr_addr & ~3);
-}
-
-/*
- * The offset address is the byte offset into the 32-bit-wide data register that
- * will be returned by a read or set by a write, if the register is smaller than
- * 32 bits wide.  For registers that are 32 bits wide, this is always 0.
- */
-static inline uint32_t
-SMN_REG_ADDR_OFF(const smn_reg_t reg)
-{
-	return (reg.sr_addr & 3);
-}
-
-/*
  * This exists so that address calculation functions can check that the register
  * definitions they're passed are something they understand how to use.  While
  * many address calculation functions are similar, some functional units define
@@ -474,6 +402,84 @@ typedef enum smn_unit {
 	SMN_UNIT_FCH_I3C,
 	SMN_UNIT_FCH_ESPI
 } smn_unit_t;
+
+/*
+ * An instance of an SMN-accessible register.
+ */
+typedef struct smn_reg {
+	uint32_t	sr_addr;
+	uint8_t		sr_size;	/* Not size_t: can't ever be that big */
+	smn_unit_t	sr_unit;
+} smn_reg_t;
+
+/*
+ * These are intended to be macro-like (and indeed some used to be macros) but
+ * are implemented as inline functions so that we can use compound statements
+ * without extensions and don't have to worry about multiple evaluation.  Hence
+ * their capitalised names.
+ */
+static inline smn_reg_t
+SMN_MAKE_REG_SIZED(const uint32_t addr, const uint8_t size,
+    const smn_unit_t unit)
+{
+	const uint8_t size_always = (size == 0) ? 4 : size;
+	const smn_reg_t rv = {
+	    .sr_addr = addr,
+	    .sr_size = size_always,
+	    .sr_unit = unit
+	};
+
+	return (rv);
+}
+
+#define	SMN_MAKE_REG(x, u)	SMN_MAKE_REG_SIZED(x, 4, u)
+#define	SMN_REG_ADDR(x)		((x).sr_addr)
+#define	SMN_REG_SIZE(x)		((x).sr_size)
+#define	SMN_REG_UNIT(x)		((x).sr_unit)
+
+#define	SMN_REG_SIZE_MASK(x)	(0xffffffffU >> ((4 - SMN_REG_SIZE(x)) << 3))
+
+static inline boolean_t
+SMN_REG_SIZE_IS_VALID(const smn_reg_t reg)
+{
+	return (reg.sr_size == 1 || reg.sr_size == 2 || reg.sr_size == 4);
+}
+
+/* Is this register suitably aligned for access of <size> bytes? */
+#define	SMN_REG_IS_ALIGNED(x, size)	IS_P2ALIGNED(SMN_REG_ADDR(x), size)
+
+/* Is this register naturally aligned with respect to its own width? */
+static inline boolean_t
+SMN_REG_IS_NATURALLY_ALIGNED(const smn_reg_t reg)
+{
+	return (SMN_REG_IS_ALIGNED(reg, reg.sr_size));
+}
+
+/* Does <val> fit into SMN register <x>? */
+#define	SMN_REG_VALUE_FITS(x, val)	\
+	(((val) & ~(0xffffffffU >> ((4 - SMN_REG_SIZE(x)) << 3))) == 0)
+
+/*
+ * Retrieve the base address of the register.  This is the address that will
+ * actually be set in the index register when performing a read or write of the
+ * underlying register via SMN.  It must always be 32-bit aligned.
+ */
+static inline uint32_t
+SMN_REG_ADDR_BASE(const smn_reg_t reg)
+{
+	return (reg.sr_addr & ~3);
+}
+
+/*
+ * The offset address is the byte offset into the 32-bit-wide data register that
+ * will be returned by a read or set by a write, if the register is smaller than
+ * 32 bits wide.  For registers that are 32 bits wide, this is always 0.
+ */
+static inline uint32_t
+SMN_REG_ADDR_OFF(const smn_reg_t reg)
+{
+	return (reg.sr_addr & 3);
+}
 
 /*
  * srd_unit and srd_reg are required; they describe the functional unit and the
@@ -544,7 +550,8 @@ _fn(const uint8_t unitno, const smn_reg_def_t def, const uint16_t reginst) \
 	const uint32_t reg = def.srd_reg + reginst32 * stride;		\
 	ASSERT0(reg & (_mask));						\
 									\
-	return (SMN_MAKE_REG_SIZED(aperture + reg, size32));		\
+	return (SMN_MAKE_REG_SIZED(aperture + reg, size32,		\
+	    def.srd_unit));						\
 }
 
 /*

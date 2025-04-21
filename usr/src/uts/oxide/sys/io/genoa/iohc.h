@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_GENOA_IOHC_H
@@ -91,7 +91,7 @@ genoa_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_SDPMUX));
 }
 
 /*
@@ -139,7 +139,7 @@ genoa_sst_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_SST));
 }
 
 /*
@@ -193,7 +193,7 @@ genoa_iohcdev_nbif_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	const uint32_t apmask = 0xffffc000;
 	ASSERT0(reg & apmask);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_IOHCDEV_NBIF));
 }
 
 /*

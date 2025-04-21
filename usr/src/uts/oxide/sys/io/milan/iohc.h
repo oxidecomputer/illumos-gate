@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_IOHC_H
@@ -91,7 +91,7 @@ milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_SDPMUX));
 }
 
 /*
@@ -141,7 +141,7 @@ milan_sst_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_SST));
 }
 
 ZEN_MAKE_SMN_IOHCDEV_REG_FN(milan, PCIE, pcie, 0x13b31000, 0xffff8000,

@@ -83,7 +83,7 @@ extern "C" {
 #define	ZEN_MPIO_OP_RST_PCIE_GPIO		0x23
 #define	ZEN_MPIO_OP_PORT_TRAINING		0x24	/* Turin only */
 #define	ZEN_MPIO_OP_SET_EXT_PCIE_BUSES		0x25
-#define	ZEN_MPIO_OP_RDWR_PCIE_PROXY		0x26
+#define	ZEN_MPIO_OP_RDWR_PCIE_PROXY		0x26	/* Turin only */
 /* 0x27 unused on Turin and Genoa */
 #define	ZEN_MPIO_OP_SET_PCIE_PSPP_SETTINGS	0x28
 #define	ZEN_MPIO_OP_INIT_FRAME_BUF_TRAP		0x29

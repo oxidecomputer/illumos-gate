@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_RSMU_H
@@ -156,7 +156,7 @@ milan_pcie_rsmu_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t aperture = aperture_base + aperture_off;
 	ASSERT0(aperture & PCIE_RSMU_SMN_REG_MASK);
 
-	return (SMN_MAKE_REG(aperture + def.srd_reg));
+	return (SMN_MAKE_REG(aperture + def.srd_reg, SMN_UNIT_PCIE_RSMU));
 }
 
 /*

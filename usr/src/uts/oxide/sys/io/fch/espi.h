@@ -80,7 +80,7 @@ fch_espi_smn_reg(const uint8_t unit, const smn_reg_def_t def,
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_FCH_ESPI);
 
-	return (SMN_MAKE_REG(aperture + def.srd_reg));
+	return (SMN_MAKE_REG(aperture + def.srd_reg, SMN_UNIT_FCH_ESPI));
 }
 
 MAKE_MMIO_FCH_REG_FN(ESPI, espi, 4);

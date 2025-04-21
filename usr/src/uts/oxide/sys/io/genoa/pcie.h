@@ -94,7 +94,8 @@ genoa_pcie_core_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t aperture = aperture_base + aperture_off;
 	ASSERT0(aperture & PCIE_CORE_SMN_REG_MASK);
 
-	return (SMN_MAKE_REG_SIZED(aperture + def.srd_reg, size32));
+	return (SMN_MAKE_REG_SIZED(aperture + def.srd_reg, size32,
+	    SMN_UNIT_PCIE_CORE));
 }
 
 static inline smn_reg_t
@@ -130,7 +131,8 @@ genoa_pcie_port_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	const uint32_t aperture = aperture_base + aperture_off;
 	ASSERT0(aperture & PCIE_PORT_SMN_REG_MASK);
 
-	return (SMN_MAKE_REG_SIZED(aperture + def.srd_reg, size32));
+	return (SMN_MAKE_REG_SIZED(aperture + def.srd_reg, size32,
+	    SMN_UNIT_PCIE_PORT));
 }
 
 /*

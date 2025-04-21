@@ -3832,36 +3832,69 @@ zen_fabric_gen_subsume(zen_ioms_t *ioms, zen_ioms_rsrc_t ir)
 	return (zen_fabric_rsrc_subsume(ioms, ir));
 }
 
+/*
+ * PCIe core and port register accessors.
+ *
+ * Unlike the other zen_*_{read,write}() routines (e.g., zen_ccd_read(),
+ * zen_ioms_write()) which all boil down to the usual indirect SMN-based access,
+ * we may have to use a separate platform-specific mechanism for the PCIe core
+ * and port registers (see zen_mpio_pcie_{core,port}_{read,write}()).
+ *
+ * Note the explicit SMN_REG_UNIT() checks to exclude SMN_UNIT_IOHCDEV_PCIE,
+ * SMN_UNIT_IOMMUL1, etc, which are returned from the *_pcie_{core,port}_reg()
+ * convenience functions but should otherwise always be accessed via SMN.
+ */
+
 uint32_t
 zen_pcie_core_read(zen_pcie_core_t *pc, const smn_reg_t reg)
 {
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
 
-	return (zen_smn_read(iodie, reg));
+	if (SMN_REG_UNIT(reg) != SMN_UNIT_PCIE_CORE ||
+	    ops->zfo_pcie_core_read == NULL) {
+		return (zen_smn_read(iodie, reg));
+	}
+	return (ops->zfo_pcie_core_read(pc, reg));
 }
 
 void
 zen_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
     const uint32_t val)
 {
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
 
-	zen_smn_write(iodie, reg, val);
+	if (SMN_REG_UNIT(reg) != SMN_UNIT_PCIE_CORE ||
+	    ops->zfo_pcie_core_write == NULL) {
+		return (zen_smn_write(iodie, reg, val));
+	}
+	return (ops->zfo_pcie_core_write(pc, reg, val));
 }
 
 uint32_t
 zen_pcie_port_read(zen_pcie_port_t *port, const smn_reg_t reg)
 {
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
 
-	return (zen_smn_read(iodie, reg));
+	if (SMN_REG_UNIT(reg) != SMN_UNIT_PCIE_PORT ||
+	    ops->zfo_pcie_port_read == NULL) {
+		return (zen_smn_read(iodie, reg));
+	}
+	return (ops->zfo_pcie_port_read(port, reg));
 }
 
 void
 zen_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
     const uint32_t val)
 {
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
 
-	zen_smn_write(iodie, reg, val);
+	if (SMN_REG_UNIT(reg) != SMN_UNIT_PCIE_PORT ||
+	    ops->zfo_pcie_port_write == NULL) {
+		return (zen_smn_write(iodie, reg, val));
+	}
+	return (ops->zfo_pcie_port_write(port, reg, val));
 }

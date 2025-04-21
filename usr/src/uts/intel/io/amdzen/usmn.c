@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -99,7 +99,8 @@ usmn_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	 * routines do so for us and return EINVAL if violated.  The same goes
 	 * for the value to be written in the USMN_WRITE case below.
 	 */
-	const smn_reg_t reg = SMN_MAKE_REG_SIZED(usr.usr_addr, usr.usr_size);
+	const smn_reg_t reg = SMN_MAKE_REG_SIZED(usr.usr_addr, usr.usr_size,
+	    SMN_UNIT_UNKNOWN);
 
 	if (cmd == USMN_READ) {
 		int ret;

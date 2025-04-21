@@ -55,7 +55,7 @@ AMDZEN_MAKE_SMN_REG_FN(amdzen_smuthm_smn_reg, SMU_THM, 0x59800,
  * Tj, the value is measured in 0.125 steps, hence a granularity of 8. The three
  * lower bits of the temperature are to the right of the decimal.
  */
-#define	THM_CURTEMP		SMN_MAKE_REG(0x59800)
+#define	THM_CURTEMP		SMN_MAKE_REG(0x59800, SMN_UNIT_SMU_THM)
 #define	THM_CURTEMP_GET_TEMP(r)		bitx32(r, 31, 21)
 #define	THM_CURTEMP_TEMP_DEC_BITS	3
 #define	THM_CURTEMP_TEMP_DEC_MASK	0x7

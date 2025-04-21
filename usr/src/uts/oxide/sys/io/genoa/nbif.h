@@ -111,7 +111,7 @@ genoa_nbif_func_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 	const uint32_t aperture = aperture_base + aperture_off;
 	ASSERT0(aperture & NBIF_FUNC_SMN_REG_MASK);
 
-	return (SMN_MAKE_REG(aperture + def.srd_reg));
+	return (SMN_MAKE_REG(aperture + def.srd_reg, SMN_UNIT_NBIF_FUNC));
 }
 
 static inline smn_reg_t
@@ -150,7 +150,7 @@ genoa_nbif_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_NBIF));
 }
 
 static inline smn_reg_t
@@ -183,7 +183,7 @@ genoa_nbif_alt_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
 	const uint32_t reg = def.srd_reg + reginst32 * stride;
 	ASSERT0(reg & SMN_APERTURE_MASK);
 
-	return (SMN_MAKE_REG(aperture + reg));
+	return (SMN_MAKE_REG(aperture + reg, SMN_UNIT_NBIF_ALT));
 }
 
 /*
