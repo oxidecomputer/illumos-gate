@@ -416,7 +416,6 @@ bdat_prd_amdzen_direct_init(void)
 	end = ddi_prop_get_int64(DDI_DEV_T_ANY, ddi_root_node(),
 	    DDI_PROP_DONTPASS, BTPROP_NAME_BDAT_END, 0);
 	if (start == 0 || end == 0) {
-		cmn_err(CE_NOTE, "?bdat_prd: BDAT not found");
 		return;
 	}
 
