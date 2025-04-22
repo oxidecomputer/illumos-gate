@@ -2119,7 +2119,8 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 				is_fastpath = B_FALSE;
 			}
 
-			if ((meoi.meoi_flags & MEOI_L3_FRAGMENT) != 0) {
+			if ((meoi.meoi_flags &
+			    (MEOI_L3_FRAG_MORE|MEOI_L3_FRAG_OFFSET)) != 0) {
 				is_fastpath = B_FALSE;
 			}
 		}
