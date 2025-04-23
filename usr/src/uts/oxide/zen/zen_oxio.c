@@ -474,7 +474,8 @@ oxio_port_info_fill(zen_pcie_port_t *port)
 {
 	const oxio_engine_t *oxio = port->zpp_oxio;
 	zen_pcie_core_t *core = port->zpp_core;
-	zen_fabric_t *fabric = core->zpc_ioms->zio_iodie->zi_soc->zs_fabric;
+	zen_fabric_t *fabric =
+	    core->zpc_ioms->zio_nbio->zn_iodie->zi_soc->zs_fabric;
 
 	/*
 	 * UBM based devices have the slot on the DFC itself. The OXIO
@@ -515,7 +516,7 @@ oxio_port_info_fill(zen_pcie_port_t *port)
 void
 oxio_dxio_to_eng(zen_pcie_port_t *port)
 {
-	const zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+	const zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_nbio->zn_iodie;
 	const zen_dxio_fw_engine_t *en = port->zpp_dxio_engine;
 
 	for (size_t i = 0; i < iodie->zi_nengines; i++) {
@@ -541,7 +542,7 @@ static void
 oxio_mpio_to_eng_ubm(zen_pcie_port_t *port)
 {
 	const zen_mpio_ask_port_t *ask = port->zpp_ask_port;
-	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_nbio->zn_iodie;
 	zen_fabric_t *fabric = iodie->zi_soc->zs_fabric;
 	zen_ubm_config_t *ubm = &fabric->zf_ubm;
 	const uint32_t ubm_idx = zen_mpio_ubm_idx(iodie);
@@ -575,7 +576,7 @@ oxio_mpio_to_eng_ubm(zen_pcie_port_t *port)
 void
 oxio_mpio_to_eng(zen_pcie_port_t *port)
 {
-	const zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+	const zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_nbio->zn_iodie;
 	const zen_mpio_ask_port_t *ask = port->zpp_ask_port;
 	uint8_t eng_start, eng_end;
 

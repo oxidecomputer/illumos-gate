@@ -53,41 +53,34 @@ extern "C" {
 #define	TURIN_NBIO_PER_IODIE		2
 
 /*
- * This is the number of IO[MS] (IOHUB[MS]) instances that we know are supposed
- * to exist per NBIO.
+ * This is the number of IOHC (and IO[MS] / IOHUB[MS]) instances that we know
+ * are supposed to exist per NBIO.
  */
-#define	TURIN_IOMS_PER_NBIO		4
+#define	TURIN_IOHC_PER_NBIO		4
 
 /*
- * This is the number of IO[MS] instances that we know are supposed to exist per
- * die.
+ * This is the number of IOHC (and IO[MS]) instances that we know are supposed
+ * to exist per die.
  */
-#define	TURIN_IOMS_PER_IODIE	(TURIN_IOMS_PER_NBIO * TURIN_NBIO_PER_IODIE)
+#define	TURIN_IOHC_PER_IODIE	(TURIN_IOHC_PER_NBIO * TURIN_NBIO_PER_IODIE)
 
 /*
  * Each NBIO has 4 x16 PCIe Gen5 cores, one on each of four IOHUBs.
  * Additionally, NBIO0/IOHUB2 (IOMS2) has a bonus x8 PCIe Gen3 core (PCIe5) and
  * there is also an extra bonus core (PCIe6) on all the larger IOHC types.
  * PCIe6 is unused everywhere on Turin, so we pretend that it does not exist,
- * which is why TURIN_IOMS_MAX_PCIE_CORES is 2, not 3.
+ * which is why TURIN_IOHC_MAX_PCIE_CORES is 2, not 3.
  */
-#define	TURIN_IOMS_MAX_PCIE_CORES		2
-#define	TURIN_NBIO_BONUS_IOMS			2
+#define	TURIN_IOHC_MAX_PCIE_CORES		2
 #define	TURIN_NBIO_BONUS_IOHC			1
-#define	TURIN_IOMS_BONUS_PCIE_CORENO	1
+#define	TURIN_IOHC_BONUS_PCIE_CORENO	1
 #define	TURIN_PCIE6_CORE_BONUS_PORTS	3
-#define	TURIN_IOMS_BONUS_PCIE6_CORENO	2
+#define	TURIN_IOHC_BONUS_PCIE6_CORENO	2
 
 /*
  * Convenience macro to convert an IOMS number to the corresponding NBIO.
  */
-#define	TURIN_NBIO_NUM(num)		((num) / TURIN_IOMS_PER_NBIO)
-
-/*
- * Convenience macro to to convert an absolute IOMS index into a relative one
- * within an NBIO.
- */
-#define	TURIN_NBIO_IOMS_NUM(num)	((num) % TURIN_IOMS_PER_NBIO)
+#define	TURIN_NBIO_NUM(num)		((num) / TURIN_IOHC_PER_NBIO)
 
 /*
  * Convenience macro to convert an absolute IOHC index (within an IO die) into
@@ -97,11 +90,12 @@ extern "C" {
  * IOHC mappings.
  */
 #define	TURIN_IOHC_IOHUB_NUM(num)	\
-	(((num) / TURIN_IOMS_PER_NBIO) + (((num) & 1) ? 2 : 0))
+	(((num) / TURIN_IOHC_PER_NBIO) + (((num) & 1) ? 2 : 0))
 
 /*
  * The Turin uarch-specific hooks for initial fabric topology initialization.
  */
+extern uint8_t turin_fabric_ioms_nbio_num(uint8_t);
 extern bool turin_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void turin_fabric_smu_pptable_post(zen_iodie_t *);
 extern void turin_fabric_ioms_init(zen_ioms_t *);
@@ -112,7 +106,7 @@ extern void turin_fabric_ioms_init(zen_ioms_t *);
 extern const uint8_t turin_nbif_nfunc[];
 extern const zen_nbif_info_t
     turin_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS];
-extern const zen_iohc_nbif_ports_t turin_pcie_int_ports[TURIN_IOMS_PER_IODIE];
+extern const zen_iohc_nbif_ports_t turin_pcie_int_ports[TURIN_IOHC_PER_IODIE];
 
 /*
  * These are the initialization points for the Genoa Data Fabric, Northbridges,

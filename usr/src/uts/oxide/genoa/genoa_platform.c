@@ -100,6 +100,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_nbif_init = genoa_fabric_nbif_init,
 	.zfo_nbif_dev_straps = genoa_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for genoa */
+	.zfo_ioms_nbio_num = genoa_fabric_ioms_nbio_num,
 	.zfo_pcie = genoa_fabric_pcie,
 	.zfo_pcie_port_is_trained = zen_mpio_pcie_port_is_trained,
 	.zfo_pcie_port_hide_bridge = genoa_fabric_hide_bridge,
@@ -124,7 +125,7 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_iohc_enable_nmi = genoa_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = genoa_iohc_nmi_eoi,
 
-	.zfo_ioms_n_pcie_cores = genoa_ioms_n_pcie_cores,
+	.zfo_iohc_n_pcie_cores = genoa_iohc_n_pcie_cores,
 	.zfo_pcie_core_n_ports = genoa_pcie_core_n_ports,
 	.zfo_pcie_core_info = genoa_pcie_core_info,
 	.zfo_pcie_port_info = genoa_pcie_port_info,

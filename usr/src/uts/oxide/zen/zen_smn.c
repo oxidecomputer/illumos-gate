@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -64,31 +64,31 @@ zen_ccd_write(zen_ccd_t *ccd, const smn_reg_t reg, const uint32_t val)
 uint32_t
 zen_ioms_read(zen_ioms_t *ioms, const smn_reg_t reg)
 {
-	return (zen_smn_read(ioms->zio_iodie, reg));
+	return (zen_smn_read(ioms->zio_nbio->zn_iodie, reg));
 }
 
 void
 zen_ioms_write(zen_ioms_t *ioms, const smn_reg_t reg, const uint32_t val)
 {
-	zen_smn_write(ioms->zio_iodie, reg, val);
+	zen_smn_write(ioms->zio_nbio->zn_iodie, reg, val);
 }
 
 uint32_t
 zen_nbif_read(zen_nbif_t *nbif, const smn_reg_t reg)
 {
-	return (zen_smn_read(nbif->zn_ioms->zio_iodie, reg));
+	return (zen_smn_read(nbif->zn_ioms->zio_nbio->zn_iodie, reg));
 }
 
 void
 zen_nbif_write(zen_nbif_t *nbif, const smn_reg_t reg, const uint32_t val)
 {
-	zen_smn_write(nbif->zn_ioms->zio_iodie, reg, val);
+	zen_smn_write(nbif->zn_ioms->zio_nbio->zn_iodie, reg, val);
 }
 
 uint32_t
 zen_nbif_func_read(zen_nbif_func_t *func, const smn_reg_t reg)
 {
-	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
+	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_nbio->zn_iodie;
 
 	return (zen_smn_read(iodie, reg));
 }
@@ -97,7 +97,7 @@ void
 zen_nbif_func_write(zen_nbif_func_t *func, const smn_reg_t reg,
     const uint32_t val)
 {
-	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_iodie;
+	zen_iodie_t *iodie = func->znf_nbif->zn_ioms->zio_nbio->zn_iodie;
 
 	zen_smn_write(iodie, reg, val);
 }

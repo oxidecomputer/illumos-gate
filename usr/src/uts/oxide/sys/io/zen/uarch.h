@@ -205,10 +205,15 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_pcie)(zen_fabric_t *);
 
 	/*
-	 * Determine the number of PCIe cores on a given IOMS, and the number
+	 * Determine the NBIO that contains a given IOMS.
+	 */
+	uint8_t		(*zfo_ioms_nbio_num)(const uint8_t);
+
+	/*
+	 * Determine the number of PCIe cores on a given IOHC, and the number
 	 * of ports on a given core.
 	 */
-	uint8_t		(*zfo_ioms_n_pcie_cores)(const uint8_t);
+	uint8_t		(*zfo_iohc_n_pcie_cores)(const uint8_t);
 	uint8_t		(*zfo_pcie_core_n_ports)(const uint8_t);
 
 	/*

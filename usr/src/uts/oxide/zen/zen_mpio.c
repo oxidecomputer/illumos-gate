@@ -898,7 +898,7 @@ zen_mpio_write_pcie_reg(zen_iodie_t *iodie, const smn_reg_t reg,
 uint32_t
 zen_mpio_pcie_core_read(zen_pcie_core_t *pc, const smn_reg_t reg)
 {
-	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_nbio->zn_iodie;
 	uint32_t val;
 
 	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_CORE);
@@ -911,7 +911,7 @@ void
 zen_mpio_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
     const uint32_t val)
 {
-	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_nbio->zn_iodie;
 
 	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_CORE);
 	VERIFY(zen_mpio_write_pcie_reg(iodie, reg, val));
@@ -920,7 +920,7 @@ zen_mpio_pcie_core_write(zen_pcie_core_t *pc, const smn_reg_t reg,
 uint32_t
 zen_mpio_pcie_port_read(zen_pcie_port_t *port, const smn_reg_t reg)
 {
-	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_nbio->zn_iodie;
 	uint32_t val;
 
 	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_PORT);
@@ -933,7 +933,7 @@ void
 zen_mpio_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
     const uint32_t val)
 {
-	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_iodie;
+	zen_iodie_t *iodie = port->zpp_core->zpc_ioms->zio_nbio->zn_iodie;
 
 	ASSERT3U(SMN_REG_UNIT(reg), ==, SMN_UNIT_PCIE_PORT);
 	VERIFY(zen_mpio_write_pcie_reg(iodie, reg, val));
@@ -943,7 +943,7 @@ bool
 zen_mpio_write_pcie_strap(zen_pcie_core_t *pc,
     const uint32_t addr, const uint32_t data)
 {
-	zen_iodie_t *iodie = pc->zpc_ioms->zio_iodie;
+	zen_iodie_t *iodie = pc->zpc_ioms->zio_nbio->zn_iodie;
 	zen_mpio_rpc_t rpc = { 0 };
 	zen_mpio_rpc_res_t res;
 
@@ -1341,7 +1341,7 @@ zen_mpio_oxio_to_port_hp(const zen_pcie_port_t *port,
 	map->zmhm_active = 1;
 
 	map->zmhm_apu = 0;
-	map->zmhm_die_id = core->zpc_ioms->zio_iodie->zi_soc->zs_num;
+	map->zmhm_die_id = core->zpc_ioms->zio_nbio->zn_iodie->zi_soc->zs_num;
 	map->zmhm_port_id = port->zpp_portno;
 	map->zmhm_tile_id = ops->zfo_tile_fw_hp_id(oxio);
 	map->zmhm_bridge = consts->zpc_pcie_core_max_ports * core->zpc_coreno +

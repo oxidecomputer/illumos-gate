@@ -28,12 +28,12 @@
 extern "C" {
 #endif
 
-extern uint8_t turin_ioms_n_pcie_cores(const uint8_t);
+extern uint8_t turin_iohc_n_pcie_cores(const uint8_t);
 extern uint8_t turin_pcie_core_n_ports(const uint8_t);
 
 /*
  * PCIe related SMN addresses. This is determined based on a combination of
- * which IOMS we're on, which PCIe port we're on on the IOMS, and then finally
+ * which IOHC we're on, which PCIe port we're on on the IOHC, and then finally
  * which PCIe bridge it is itself. We have broken this up into two separate
  * sub-units, one for per-port registers (the "core space") and one for
  * per-bridge registers ("port space").  There is a third sub-unit we don't
@@ -43,7 +43,7 @@ extern uint8_t turin_pcie_core_n_ports(const uint8_t);
  * model this so that in each unit the number of register (and sub-unit)
  * instances is fixed for a given sub-unit (unit). There are two reasons for
  * this: first, the number of register (sub-unit) instances varies depending on
- * the sub-unit (unit) instance number; second, the ioms and port instance
+ * the sub-unit (unit) instance number; second, the iohc and port instance
  * numbers are both used to compute the aperture base address.  To simplify our
  * implementation, we consider the bridge instance number to also form part of
  * the aperture base rather than treating the size of each port space as the
@@ -52,7 +52,7 @@ extern uint8_t turin_pcie_core_n_ports(const uint8_t);
  * registers are 32 bits wide, so srd_size must be 0.
  *
  *       DXIO/COUNT            PPR         DEF    IOHC  IOHUB
- *       DXIO=PHY   IOMS CORE  NBIO/CORE   BUS    IDX   CLIENT BRIDGE
+ *       DXIO=PHY   IOHC CORE  NBIO/CORE   BUS    IDX   CLIENT BRIDGE
  * P0      0/16     0    0     0/0         0x00   0     PCIE0  1/[7:1], 2/[2:1]
  * G0 R   96/16     1    0     0/3         0x20   2     PCIE1  1/[7:1], 2/[2:1]
  * P2 R   48/16     2    0     1/0         0x40   0     PCIE0  1/[7:1], 2/[2:1]
@@ -75,12 +75,12 @@ turin_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	uint32_t inst = iohc32;
 
 	/*
-	 * Note: We'd like to use the macros TURIN_IOMS_BONUS_PCIE_CORENO and
+	 * Note: We'd like to use the macros TURIN_IOHC_BONUS_PCIE_CORENO and
 	 * TURIN_NBIO_BONUS_IOHC here, but those are defined in
 	 * turin/fabric_impl.h, which we can't include here, so we use local
 	 * constants.
 	 */
-	const uint32_t ioms_bonus_pcie_coreno = 1;
+	const uint32_t iohc_bonus_pcie_coreno = 1;
 	const uint32_t nbio_bonus_iohc = 1;
 
 	/*
@@ -88,8 +88,8 @@ turin_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	 * that if we are on the single bonus core, we need register instance
 	 * 8, as per the PPR.
 	 */
-	ASSERT3U(coreno, <=, ioms_bonus_pcie_coreno);
-	if (coreno == ioms_bonus_pcie_coreno) {
+	ASSERT3U(coreno, <=, iohc_bonus_pcie_coreno);
+	if (coreno == iohc_bonus_pcie_coreno) {
 		ASSERT3U(iohc32, ==, nbio_bonus_iohc);
 		inst = 8;
 	}
@@ -124,12 +124,12 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	uint32_t inst = iohc32;
 
 	/*
-	 * Note: We'd like to use the macros TURIN_IOMS_BONUS_PCIE_CORENO and
+	 * Note: We'd like to use the macros TURIN_IOHC_BONUS_PCIE_CORENO and
 	 * TURIN_NBIO_BONUS_IOHC here, but those are defined in
 	 * turin/fabric_impl.h, which we can't include here, so we use local
 	 * constants.
 	 */
-	const uint32_t ioms_bonus_pcie_coreno = 1;
+	const uint32_t iohc_bonus_pcie_coreno = 1;
 	const uint32_t nbio_bonus_iohc = 1;
 
 	/*
@@ -137,8 +137,8 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	 * that if we are on the single bonus core, we need register instance
 	 * 8, as per the PPR.
 	 */
-	ASSERT3U(coreno, <=, ioms_bonus_pcie_coreno);
-	if (coreno == ioms_bonus_pcie_coreno) {
+	ASSERT3U(coreno, <=, iohc_bonus_pcie_coreno);
+	if (coreno == iohc_bonus_pcie_coreno) {
 		ASSERT3U(iohc32, ==, nbio_bonus_iohc);
 		inst = 8;
 	}

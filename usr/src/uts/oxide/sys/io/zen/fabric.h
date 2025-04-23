@@ -37,6 +37,7 @@ extern "C" {
  * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
  * pointers to these types only as opaque handles.
  */
+typedef struct zen_nbio zen_nbio_t;
 typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_nbif zen_nbif_t;
 typedef struct zen_iodie zen_iodie_t;
@@ -67,7 +68,6 @@ typedef enum zen_ioms_rsrc {
  * Walks IOMSes and applies a callback.  While most walkers are hidden as part
  * of an implementation, this is called from common code.  A callback that
  * returns a non-zero value terminates the walk.
- *
  */
 typedef int (*zen_ioms_cb_f)(zen_ioms_t *, void *);
 extern int zen_walk_ioms(zen_ioms_cb_f, void *);

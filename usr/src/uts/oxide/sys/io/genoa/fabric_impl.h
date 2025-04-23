@@ -53,16 +53,16 @@ extern "C" {
 #define	GENOA_NBIO_PER_IODIE		2
 
 /*
- * This is the number of IO[MS] (IOHUB[MS]) instances that we know are supposed
- * to exist per NBIO.
+ * This is the number of IOHC instances that we know are supposed to exist per
+ * NBIO.
  */
-#define	GENOA_IOMS_PER_NBIO		2
+#define	GENOA_IOHC_PER_NBIO		2
 
 /*
- * This is the number of IO[MS] instances that we know are supposed to exist per
+ * This is the number of IOHC instances that we know are supposed to exist per
  * die.
  */
-#define	GENOA_IOMS_PER_IODIE	(GENOA_IOMS_PER_NBIO * GENOA_NBIO_PER_IODIE)
+#define	GENOA_IOHC_PER_IODIE	(GENOA_IOHC_PER_NBIO * GENOA_NBIO_PER_IODIE)
 
 /*
  * Each NBIO has 4 x16 PCIe Gen5 cores, split across two IOHUBs. Additionally,
@@ -70,20 +70,27 @@ extern "C" {
  * means that the first IOHUB in each NBIO has three cores while the second has
  * two.
  */
-#define	GENOA_IOMS_MAX_PCIE_CORES	3
+#define	GENOA_IOHC_MAX_PCIE_CORES	3
 #define	GENOA_NBIO_BONUS_IOHUB		0
-#define	GENOA_IOMS_BONUS_PCIE_CORENO	2
+#define	GENOA_IOHC_BONUS_PCIE_CORENO	2
 
 /*
- * Convenience macro to convert an IOMS number to the corresponding relative
+ * Convenience macro to convert an IOHC number to the corresponding relative
  * IOHUB, and to the containing NBIO.
  */
-#define	GENOA_IOMS_IOHUB_NUM(num)	((num) % GENOA_IOMS_PER_NBIO)
-#define	GENOA_NBIO_NUM(num)		((num) / GENOA_IOMS_PER_NBIO)
+#define	GENOA_IOHC_IOHUB_NUM(num)	((num) % GENOA_IOHC_PER_NBIO)
+#define	GENOA_NBIO_NUM(num)		((num) / GENOA_IOHC_PER_NBIO)
+
+/*
+ * Convenience macro to convert an IOHC number to the corresponding relative
+ * IOHUB. IOMS and IOHUBs have a 1:1 mapping on Genoa.
+ */
+#define	GENOA_IOHC_IOHUB_NUM(num)	((num) % GENOA_IOHC_PER_NBIO)
 
 /*
  * The Genoa uarch-specific hooks for initial fabric topology initialization.
  */
+extern uint8_t genoa_fabric_ioms_nbio_num(uint8_t);
 extern bool genoa_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void genoa_fabric_ioms_init(zen_ioms_t *);
 
@@ -93,8 +100,7 @@ extern void genoa_fabric_ioms_init(zen_ioms_t *);
 extern const uint8_t genoa_nbif_nfunc[];
 extern const zen_nbif_info_t
     genoa_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS];
-extern const zen_iohc_nbif_ports_t genoa_pcie_int_ports[GENOA_IOMS_PER_IODIE];
-
+extern const zen_iohc_nbif_ports_t genoa_pcie_int_ports[GENOA_IOHC_PER_IODIE];
 
 /*
  * These are the initialization points for the Genoa Data Fabric, Northbridges,

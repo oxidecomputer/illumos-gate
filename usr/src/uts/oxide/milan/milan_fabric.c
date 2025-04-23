@@ -675,7 +675,7 @@ typedef struct milan_dxio_rpc {
  * functions to root ports.
  */
 static const zen_pcie_port_info_t
-    milan_pcie[MILAN_IOMS_MAX_PCIE_CORES][MILAN_PCIE_CORE_MAX_PORTS] = {
+    milan_pcie[MILAN_IOHC_MAX_PCIE_CORES][MILAN_PCIE_CORE_MAX_PORTS] = {
 	[0] = {
 		{ .zppi_dev = 0x1, .zppi_func = 0x1 },
 		{ .zppi_dev = 0x1, .zppi_func = 0x2 },
@@ -707,7 +707,7 @@ static const zen_pcie_port_info_t
  * ports but there is no physical port brought out of the package.
  */
 const zen_iohc_nbif_ports_t
-    milan_pcie_int_ports[MILAN_IOMS_PER_IODIE] = {
+    milan_pcie_int_ports[MILAN_IOHC_PER_IODIE] = {
 	[0] = {
 		.zinp_count = 4,
 		.zinp_ports = {
@@ -836,29 +836,35 @@ const zen_nbif_info_t milan_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
  */
 static const zen_pcie_core_info_t milan_lane_maps[8] = {
 	/* name, DXIO start, DXIO end, PHY start, PHY end */
-	{ "G0", 0x10, 0x1f, 0x10, 0x1f },
-	{ "P0", 0x2a, 0x39, 0x00, 0x0f },
-	{ "P1", 0x3a, 0x49, 0x20, 0x2f },
-	{ "G1", 0x00, 0x0f, 0x30, 0x3f },
-	{ "G3", 0x72, 0x81, 0x60, 0x6f },
-	{ "P3", 0x5a, 0x69, 0x70, 0x7f },
-	{ "P2", 0x4a, 0x59, 0x50, 0x5f },
-	{ "G2", 0x82, 0x91, 0x40, 0x4f }
+	{ "G0", 0x10, 0x1f, 0x10, 0x1f },	/* IOHC0, IOMS0, core 0 */
+	{ "P0", 0x2a, 0x39, 0x00, 0x0f },	/* IOHC0, IOMS0, core 1 */
+	{ "P1", 0x3a, 0x49, 0x20, 0x2f },	/* IOHC1, IOMS1, core 0 */
+	{ "G1", 0x00, 0x0f, 0x30, 0x3f },	/* IOHC1, IOMS1, core 1 */
+	{ "G3", 0x72, 0x81, 0x60, 0x6f },	/* IOHC2, IOMS2, core 0 */
+	{ "P3", 0x5a, 0x69, 0x70, 0x7f },	/* IOHC2, IOMS2, core 1 */
+	{ "P2", 0x4a, 0x59, 0x50, 0x5f },	/* IOHC3, IOMS3, core 0 */
+	{ "G2", 0x82, 0x91, 0x40, 0x4f }	/* IOHC3, IOMS3, core 1 */
 };
 
 static const zen_pcie_core_info_t milan_bonus_map = {
-	"WAFL", 0x24, 0x25, 0x80, 0x81
+	"WAFL", 0x24, 0x25, 0x80, 0x81		/* IOHC0, IOMS0, core 2 */
 };
 
+uint8_t
+milan_fabric_ioms_nbio_num(uint8_t iomsno)
+{
+	return (MILAN_NBIO_NUM(iomsno));
+}
+
 /*
- * How many PCIe cores does this IOMS instance have?
+ * How many PCIe cores does this IOHC instance have?
  */
 uint8_t
-milan_ioms_n_pcie_cores(const uint8_t iomsno)
+milan_iohc_n_pcie_cores(const uint8_t iohcno)
 {
-	if (iomsno == MILAN_NBIO_BONUS_IOMS)
-		return (MILAN_IOMS_MAX_PCIE_CORES);
-	return (MILAN_IOMS_MAX_PCIE_CORES - 1);
+	if (iohcno == MILAN_NBIO_BONUS_IOHC)
+		return (MILAN_IOHC_MAX_PCIE_CORES);
+	return (MILAN_IOHC_MAX_PCIE_CORES - 1);
 }
 
 /*
@@ -870,20 +876,20 @@ milan_ioms_n_pcie_cores(const uint8_t iomsno)
 uint8_t
 milan_pcie_core_n_ports(const uint8_t pcno)
 {
-	if (pcno == MILAN_IOMS_BONUS_PCIE_CORENO)
+	if (pcno == MILAN_IOHC_BONUS_PCIE_CORENO)
 		return (MILAN_PCIE_CORE_WAFL_NPORTS);
 	return (MILAN_PCIE_CORE_MAX_PORTS);
 }
 
 const zen_pcie_core_info_t *
-milan_pcie_core_info(const uint8_t iomsno, const uint8_t coreno)
+milan_pcie_core_info(const uint8_t iohcno, const uint8_t coreno)
 {
 	uint8_t index;
 
-	if (coreno == MILAN_IOMS_BONUS_PCIE_CORENO)
+	if (coreno == MILAN_IOHC_BONUS_PCIE_CORENO)
 		return (&milan_bonus_map);
 
-	index = iomsno * 2 + coreno;
+	index = iohcno * 2 + coreno;
 	VERIFY3U(index, <, ARRAY_SIZE(milan_lane_maps));
 	return (&milan_lane_maps[index]);
 }
@@ -949,16 +955,16 @@ milan_pcie_port_reg(const zen_pcie_port_t *const port,
     const smn_reg_def_t def)
 {
 	zen_pcie_core_t *pc = port->zpp_core;
-	zen_ioms_t *ioms = pc->zpc_ioms;
+	const uint8_t iohcnum = pc->zpc_ioms->zio_iohcnum;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOHCDEV_PCIE:
-		reg = milan_iohcdev_pcie_smn_reg(ioms->zio_num, def,
+		reg = milan_iohcdev_pcie_smn_reg(iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	case SMN_UNIT_PCIE_PORT:
-		reg = milan_pcie_port_smn_reg(ioms->zio_num, def,
+		reg = milan_pcie_port_smn_reg(iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	default:
@@ -972,21 +978,18 @@ milan_pcie_port_reg(const zen_pcie_port_t *const port,
 smn_reg_t
 milan_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 {
-	zen_ioms_t *ioms = pc->zpc_ioms;
+	const uint8_t iohcnum = pc->zpc_ioms->zio_iohcnum;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_PCIE_CORE:
-		reg = milan_pcie_core_smn_reg(ioms->zio_num, def,
-		    pc->zpc_coreno);
+		reg = milan_pcie_core_smn_reg(iohcnum, def, pc->zpc_coreno);
 		break;
 	case SMN_UNIT_PCIE_RSMU:
-		reg = milan_pcie_rsmu_smn_reg(ioms->zio_num, def,
-		    pc->zpc_coreno);
+		reg = milan_pcie_rsmu_smn_reg(iohcnum, def, pc->zpc_coreno);
 		break;
 	case SMN_UNIT_IOMMUL1:
-		reg = milan_iommul1_pcie_smn_reg(ioms->zio_num, def,
-		    pc->zpc_coreno);
+		reg = milan_iommul1_pcie_smn_reg(iohcnum, def, pc->zpc_coreno);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe RC",
@@ -1005,22 +1008,25 @@ static smn_reg_t
 milan_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
+	const uint8_t iohcnum = ioms->zio_iohcnum;
+	const uint8_t nbionum = ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
+
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOAPIC:
-		reg = milan_ioapic_smn_reg(ioms->zio_num, def, reginst);
+		reg = milan_ioapic_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOHC:
-		reg = milan_iohc_smn_reg(ioms->zio_num, def, reginst);
+		reg = milan_iohc_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = milan_ioagr_smn_reg(ioms->zio_num, def, reginst);
+		reg = milan_ioagr_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_SDPMUX:
-		reg = milan_sdpmux_smn_reg(ioms->zio_num, def, reginst);
+		reg = milan_sdpmux_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_SST:
-		reg = milan_sst_smn_reg(ioms->zio_num, def, reginst);
+		reg = milan_sst_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -1035,11 +1041,10 @@ milan_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		    (const milan_iommul1_subunit_t)reginst;
 		switch (su) {
 		case MIL1SU_NBIF:
-			reg = milan_iommul1_nbif_smn_reg(ioms->zio_num, def, 0);
+			reg = milan_iommul1_nbif_smn_reg(nbionum, def, 0);
 			break;
 		case MIL1SU_IOAGR:
-			reg = milan_iommul1_ioagr_smn_reg(ioms->zio_num, def,
-			    0);
+			reg = milan_iommul1_ioagr_smn_reg(iohcnum, def, 0);
 			break;
 		default:
 			cmn_err(CE_PANIC, "invalid IOMMUL1 subunit %d", su);
@@ -1048,7 +1053,7 @@ milan_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	}
 	case SMN_UNIT_IOMMUL2:
-		reg = milan_iommul2_smn_reg(ioms->zio_num, def, reginst);
+		reg = milan_iommul2_smn_reg(iohcnum, def, reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
@@ -1061,17 +1066,16 @@ static smn_reg_t
 milan_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	const zen_ioms_t *ioms = nbif->zn_ioms;
+	const uint8_t nbionum = nbif->zn_ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF:
-		reg = milan_nbif_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_num, reginst);
+		reg = milan_nbif_smn_reg(nbionum, def, nbif->zn_num, reginst);
 		break;
 	case SMN_UNIT_NBIF_ALT:
-		reg = milan_nbif_alt_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_num, reginst);
+		reg = milan_nbif_alt_smn_reg(nbionum, def, nbif->zn_num,
+		    reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIF",
@@ -1085,12 +1089,12 @@ static smn_reg_t
 milan_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 {
 	const zen_nbif_t *nbif = func->znf_nbif;
-	const zen_ioms_t *ioms = nbif->zn_ioms;
+	const uint8_t nbionum = nbif->zn_ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF_FUNC:
-		reg = milan_nbif_func_smn_reg(ioms->zio_nbionum, def,
+		reg = milan_nbif_func_smn_reg(nbionum, def,
 		    nbif->zn_num, func->znf_dev, func->znf_func);
 		break;
 	default:
@@ -1854,30 +1858,24 @@ milan_fabric_smu_misc_init(zen_iodie_t *iodie)
 void
 milan_fabric_ioms_init(zen_ioms_t *ioms)
 {
-	const uint8_t iomsno = ioms->zio_num;
-	ASSERT3U(iomsno, <, MILAN_IOMS_PER_IODIE);
-
-	/*
-	 * IOMS 0 has a bonus two lane PCIe Gen2 core which is used for the
-	 * WAFL link, or can be used as two x1 interfaces on a 1P system.
-	 */
-	if (iomsno == MILAN_NBIO_BONUS_IOMS) {
-		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
-	}
-
 	/*
 	 * Milan has a 1:1 mapping between NBIOs, IOHCs and IOMSs, and all
 	 * IOHCs are the same type.
 	 */
-	ioms->zio_nbionum = iomsno;
-	ioms->zio_iohcnum = iomsno;
+	ioms->zio_iohcnum = ioms->zio_num;
 	ioms->zio_iohctype = ZEN_IOHCT_LARGE;
 
 	/*
-	 * nBIFs are actually associated with the NBIO instance but we have no
-	 * representation in the fabric for NBIOs. In Milan there is a 1:1
-	 * mapping between NBIOs and nBIFs so we flag each IOMS as also having
-	 * nBIFs.
+	 * IOHC 0 has a bonus two lane PCIe Gen2 core which is used for the
+	 * WAFL link, or can be used as two x1 interfaces on a 1P system.
+	 */
+	if (ioms->zio_iohcnum == MILAN_NBIO_BONUS_IOHC) {
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
+	}
+
+	/*
+	 * In Milan, each IOHC has an nBIF. Since there is a 1:1 mapping
+	 * between IOHCs and nBIFs so we flag each IOMS as having nBIFs.
 	 */
 	ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
 }
@@ -2297,10 +2295,10 @@ milan_fabric_nbif_syshub_dma(zen_nbif_t *nbif)
 	}
 
 	/*
-	 * This is a bit weird whereby we only set this on nBIF1 on IOMS 0/1.
+	 * This is a bit weird whereby we only set this on nBIF1 on NBIO 0/1.
 	 * Not clear why that is.
 	 */
-	if (nbif->zn_num == 1 && nbif->zn_ioms->zio_num <= 1) {
+	if (nbif->zn_num == 1 && nbif->zn_ioms->zio_nbio->zn_num <= 1) {
 		reg = milan_nbif_reg(nbif, D_NBIF_ALT_BGEN_BYP_SHUB, 0);
 		val = zen_nbif_read(nbif, reg);
 		val = NBIF_ALT_BGEN_BYP_SHUB_SET_DMA_SW0(val, 1);
@@ -2379,8 +2377,9 @@ milan_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 		zen_ioms_write(ioms, reg, val);
 	}
 
-	/* Only IOMS3 has a bonus SST instance */
-	const uint16_t sstcnt = (ioms->zio_num == MILAN_IOMS_BONUS_SST) ? 2 : 1;
+	/* Only NBIO3 has a bonus SST instance */
+	const uint16_t sstcnt =
+	    (ioms->zio_nbio->zn_num == MILAN_NBIO_BONUS_SST) ? 2 : 1;
 
 	for (uint16_t i = 0; i < sstcnt; i++) {
 		reg = milan_ioms_reg(ioms, D_SST_CLOCK_CTL, i);
@@ -2823,11 +2822,11 @@ milan_fabric_nbif_bridges(zen_ioms_t *ioms)
 {
 	uint32_t val;
 	const smn_reg_t smn_regs[5] = {
-		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_num, 0, 0),
-		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_num, 1, 0),
-		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_num, 1, 1),
-		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_num, 1, 2),
-		IOHCDEV_SB_BRIDGE_CTL(ioms->zio_num)
+		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_iohcnum, 0, 0),
+		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_iohcnum, 1, 0),
+		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_iohcnum, 1, 1),
+		IOHCDEV_NBIF_BRIDGE_CTL(ioms->zio_iohcnum, 1, 2),
+		IOHCDEV_SB_BRIDGE_CTL(ioms->zio_iohcnum)
 	};
 
 	for (uint_t i = 0; i < ARRAY_SIZE(smn_regs); i++) {
@@ -3301,42 +3300,42 @@ static const zen_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = MILAN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_5,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
@@ -3344,7 +3343,7 @@ static const zen_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 		.strap_data = PCI_VENDOR_ID_OXIDE,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
@@ -3352,7 +3351,7 @@ static const zen_pcie_strap_setting_t milan_pcie_strap_settings[] = {
 		.strap_data = PCI_SDID_OXIDE_GIMLET_BASE,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 };
@@ -3366,7 +3365,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_EXT_FMT_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3374,7 +3373,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3382,7 +3381,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3390,7 +3389,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3398,7 +3397,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_TCOMMONMODE_TIME,
 		.strap_data = 0xa,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3406,7 +3405,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_TPON_SCALE,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3414,7 +3413,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_TPON_VALUE,
 		.strap_data = 0xf,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3422,7 +3421,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_DLF_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3430,7 +3429,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3438,7 +3437,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_FOM_TIME,
 		.strap_data = MILAN_STRAP_PCIE_P_FOM_300US,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3446,7 +3445,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_SPC_MODE_8GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -3455,7 +3454,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_data = 1,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
-		.strap_iomsmatch = 0,
+		.strap_iohcmatch = 0,
 		.strap_corematch = 1,
 		.strap_portmatch = 1
 	},
@@ -3464,7 +3463,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_data = 0,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
-		.strap_iomsmatch = 0,
+		.strap_iohcmatch = 0,
 		.strap_corematch = 1,
 		.strap_portmatch = 1
 	},
@@ -3473,7 +3472,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_data = 0,
 		.strap_boardmatch = OXIDE_BOARD_GIMLET,
 		.strap_nodematch = 0,
-		.strap_iomsmatch = 0,
+		.strap_iohcmatch = 0,
 		.strap_corematch = 1,
 		.strap_portmatch = 1
 	},
@@ -3481,7 +3480,7 @@ static const zen_pcie_strap_setting_t milan_pcie_port_settings[] = {
 		.strap_reg = MILAN_STRAP_PCIE_P_L0s_EXIT_LAT,
 		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	}
@@ -3521,7 +3520,7 @@ milan_fabric_init_pcie_straps(zen_pcie_core_t *pc, void *arg)
 {
 	const zen_iodie_t *iodie = (const zen_iodie_t *)arg;
 
-	if (iodie != NULL && pc->zpc_ioms->zio_iodie != iodie)
+	if (iodie != NULL && pc->zpc_ioms->zio_nbio->zn_iodie != iodie)
 		return (0);
 
 	for (uint_t i = 0; i < ARRAY_SIZE(milan_pcie_strap_enable); i++) {
@@ -3544,7 +3543,7 @@ milan_fabric_init_pcie_straps(zen_pcie_core_t *pc, void *arg)
 	}
 
 	/* Handle Special case for DLF which needs to be set on non WAFL */
-	if (pc->zpc_coreno != MILAN_IOMS_BONUS_PCIE_CORENO) {
+	if (pc->zpc_coreno != MILAN_IOHC_BONUS_PCIE_CORENO) {
 		milan_fabric_write_pcie_strap(pc, MILAN_STRAP_PCIE_DLF_EN, 1);
 	}
 
@@ -3883,7 +3882,7 @@ milan_fabric_init_bridge(zen_pcie_port_t *port)
 	 * (gimlet, Ethanol-X, etc.) always support that on the port unless this
 	 * is one of the WAFL related lanes, we always set this.
 	 */
-	if (pc->zpc_coreno != MILAN_IOMS_BONUS_PCIE_CORENO) {
+	if (pc->zpc_coreno != MILAN_IOHC_BONUS_PCIE_CORENO) {
 		val = PCIE_PORT_LC_CTL2_SET_TS2_CHANGE_REQ(val,
 		    PCIE_PORT_LC_CTL2_TS2_CHANGE_128);
 	}

@@ -91,12 +91,6 @@ struct zen_ioms {
 	uint8_t			zio_num;
 
 	/*
-	 * The NBIO number that contains this IOMS. Used when accessing SMN
-	 * registers for NBIO components such as the nBIFs.
-	 */
-	uint8_t			zio_nbionum;
-
-	/*
 	 * The index of the IOHC associated with this IOMS. Used when accessing
 	 * IOHC SMN registers.
 	 */
@@ -115,14 +109,26 @@ struct zen_ioms {
 	uint8_t			zio_ios_inst_id;
 
 	uint8_t			zio_npcie_cores;
-	zen_pcie_core_t		zio_pcie_cores[ZEN_IOMS_MAX_PCIE_CORES];
+	zen_pcie_core_t		zio_pcie_cores[ZEN_IOHC_MAX_PCIE_CORES];
 
 	uint8_t			zio_nnbifs;
 	zen_nbif_t		zio_nbifs[ZEN_IOMS_MAX_NBIF];
 
 	zen_ioms_memlists_t	zio_memlists;
 
-	zen_iodie_t		*zio_iodie;
+	zen_nbio_t		*zio_nbio;
+};
+
+struct zen_nbio {
+	/*
+	 * The index of this NBIO relative to its associated IO Die.
+	 */
+	uint8_t			zn_num;
+
+	uint8_t			zn_nioms;
+	zen_ioms_t		zn_ioms[ZEN_NBIO_MAX_IOMS];
+
+	zen_iodie_t		*zn_iodie;
 };
 
 struct zen_iodie {
@@ -178,10 +184,12 @@ struct zen_iodie {
 	 * Like the CCMs, the number and base Instance ID of the IOM/IOS
 	 * components also varies and is similarly cached here.
 	 */
+	uint8_t			zi_nioms;
 	uint8_t			zi_base_iom_id;
 	uint8_t			zi_base_ios_id;
-	uint8_t			zi_nioms;
-	zen_ioms_t		zi_ioms[ZEN_IODIE_MAX_IOMS];
+
+	uint8_t			zi_nnbio;
+	zen_nbio_t		zi_nbio[ZEN_IODIE_MAX_NBIO];
 
 	uint8_t			zi_nccds;
 	zen_ccd_t		zi_ccds[ZEN_MAX_CCDS_PER_IODIE];
@@ -356,8 +364,10 @@ struct zen_fabric {
 };
 
 typedef int (*zen_iodie_cb_f)(zen_iodie_t *, void *);
+typedef int (*zen_nbio_cb_f)(zen_nbio_t *, void *);
 
 extern int zen_fabric_walk_ioms(zen_fabric_t *, zen_ioms_cb_f, void *);
+extern int zen_fabric_walk_nbio(zen_fabric_t *, zen_nbio_cb_f, void *);
 extern int zen_fabric_walk_iodie(zen_fabric_t *, zen_iodie_cb_f, void *);
 extern int zen_fabric_walk_pcie_core(zen_fabric_t *, zen_pcie_core_cb_f,
     void *);

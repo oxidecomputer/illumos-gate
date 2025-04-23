@@ -202,7 +202,7 @@ oxio_port_to_smu_hp(const zen_pcie_port_t *port, smu_hotplug_table_t *smu)
 	map->shm_active = 1;
 
 	map->shm_apu = 0;
-	map->shm_die_id = core->zpc_ioms->zio_iodie->zi_soc->zs_num;
+	map->shm_die_id = core->zpc_ioms->zio_nbio->zn_iodie->zi_num;
 	map->shm_port_id = port->zpp_portno;
 	map->shm_tile_id = ops->zfo_tile_fw_hp_id(oxio);
 	map->shm_bridge = core->zpc_coreno * MILAN_PCIE_CORE_MAX_PORTS +

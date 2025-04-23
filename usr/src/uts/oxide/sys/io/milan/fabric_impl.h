@@ -52,22 +52,34 @@ extern "C" {
 #define	MILAN_IODIE_PER_SOC		1
 
 /*
- * This is the number of IOMS instances that we know are supposed to exist per
+ * This is the number of IOHC instances that we know are supposed to exist per
  * die.
  */
-#define	MILAN_IOMS_PER_IODIE		4
+#define	MILAN_IOHC_PER_IODIE		4
 
 /*
- * The maximum number of PCIe cores in an NBIO IOMS. The IOMS has up to three
- * cores, but only the one with the bonus links has core number 2.
+ * This is the number of IOHC instances that we know are supposed to exist per
+ * NBIO.
  */
-#define	MILAN_IOMS_MAX_PCIE_CORES	3
-#define	MILAN_IOMS_BONUS_PCIE_CORENO	2
+#define	MILAN_IOHC_PER_NBIO		1
 
 /*
- * The IOMS instance with the bonus PCIe core.
+ * Convenience macro to convert an IOHC number to the corresponding NBIO.
+ * This is an identity mapping in Milan.
  */
-#define	MILAN_NBIO_BONUS_IOMS		0
+#define	MILAN_NBIO_NUM(num)		((num) / MILAN_IOHC_PER_NBIO)
+
+/*
+ * The maximum number of PCIe cores in an IOHC. The IOHC has up to three cores,
+ * but only the one with the bonus links has the third (core number 2).
+ */
+#define	MILAN_IOHC_MAX_PCIE_CORES	3
+#define	MILAN_IOHC_BONUS_PCIE_CORENO	2
+
+/*
+ * The IOHC instance with the bonus PCIe core.
+ */
+#define	MILAN_NBIO_BONUS_IOHC		0
 
 /*
  * There are supposed to be 23 digital power management (DPM) weights provided
@@ -79,11 +91,12 @@ extern "C" {
 /*
  * Milan uarch-specific initialization data for consumption by common Zen code.
  */
-extern const zen_iohc_nbif_ports_t milan_pcie_int_ports[MILAN_IOMS_PER_IODIE];
+extern const zen_iohc_nbif_ports_t milan_pcie_int_ports[MILAN_IOHC_PER_IODIE];
 
 /*
  * The Milan uarch-specific hooks for initial fabric topology initialization.
  */
+extern uint8_t milan_fabric_ioms_nbio_num(uint8_t);
 extern bool milan_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void milan_fabric_smu_misc_init(zen_iodie_t *);
 extern void milan_fabric_ioms_init(zen_ioms_t *);

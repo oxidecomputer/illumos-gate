@@ -121,6 +121,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_nbif_init = turin_fabric_nbif_init,
 	.zfo_nbif_dev_straps = turin_fabric_nbif_dev_straps,
 	.zfo_nbif_bridges = zen_null_fabric_nbif_bridges, /* skip for turin */
+	.zfo_ioms_nbio_num = turin_fabric_ioms_nbio_num,
 	.zfo_pcie = turin_fabric_pcie,
 	.zfo_pcie_port_is_trained = zen_mpio_pcie_port_is_trained,
 	.zfo_pcie_port_unhide_bridge = turin_fabric_unhide_bridge,
@@ -145,7 +146,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_iohc_enable_nmi = turin_iohc_enable_nmi,
 	.zfo_iohc_nmi_eoi = turin_iohc_nmi_eoi,
 
-	.zfo_ioms_n_pcie_cores = turin_ioms_n_pcie_cores,
+	.zfo_iohc_n_pcie_cores = turin_iohc_n_pcie_cores,
 	.zfo_pcie_core_n_ports = turin_pcie_core_n_ports,
 	.zfo_pcie_core_info = turin_pcie_core_info,
 	.zfo_pcie_port_info = turin_pcie_port_info,

@@ -52,7 +52,7 @@
  * to root ports.
  */
 static const zen_pcie_port_info_t
-    genoa_pcie[GENOA_IOMS_MAX_PCIE_CORES][GENOA_PCIE_CORE_MAX_PORTS] = {
+    genoa_pcie[GENOA_IOHC_MAX_PCIE_CORES][GENOA_PCIE_CORE_MAX_PORTS] = {
 	[0] = {
 		{  .zppi_dev = 0x1, .zppi_func = 0x1 },
 		{  .zppi_dev = 0x1, .zppi_func = 0x2 },
@@ -88,7 +88,7 @@ static const zen_pcie_port_info_t
  * ports but there is no physical port brought out of the package.
  */
 const zen_iohc_nbif_ports_t
-    genoa_pcie_int_ports[GENOA_IOMS_PER_IODIE] = {
+    genoa_pcie_int_ports[GENOA_IOHC_PER_IODIE] = {
 	[0] = {
 		.zinp_count = 2,
 		.zinp_ports = {
@@ -124,19 +124,19 @@ const zen_iohc_nbif_ports_t
  */
 static const zen_pcie_core_info_t genoa_lane_maps[8] = {
 	/* name, DXIO start, DXIO end, PHY start, PHY end */
-	{ "P0", 0x00, 0x0f, 0x00, 0x0f },	/* IOMS0, core 0 */
-	{ "G0", 0x60, 0x6f, 0x60, 0x6f },	/* IOMS0, core 1 */
-	{ "P1", 0x20, 0x2f, 0x20, 0x2f },	/* IOMS1, core 0 */
-	{ "G1", 0x40, 0x4f, 0x40, 0x4f },	/* IOMS1, core 1 */
-	{ "P2", 0x30, 0x3f, 0x30, 0x3f },	/* IOMS2, core 0 */
-	{ "G2", 0x70, 0x7f, 0x70, 0x7f },	/* IOMS2, core 1 */
-	{ "P3", 0x10, 0x1f, 0x10, 0x1f },	/* IOMS3, core 0 */
-	{ "G3", 0x50, 0x5f, 0x50, 0x5f }	/* IOMS3, core 1 */
+	{ "P0", 0x00, 0x0f, 0x00, 0x0f },	/* IOHC0, IOMS0, core 0 */
+	{ "G0", 0x60, 0x6f, 0x60, 0x6f },	/* IOHC0, IOMS0, core 1 */
+	{ "P1", 0x20, 0x2f, 0x20, 0x2f },	/* IOHC1, IOMS1, core 0 */
+	{ "G1", 0x40, 0x4f, 0x40, 0x4f },	/* IOHC1, IOMS1, core 1 */
+	{ "P2", 0x30, 0x3f, 0x30, 0x3f },	/* IOHC2, IOMS2, core 0 */
+	{ "G2", 0x70, 0x7f, 0x70, 0x7f },	/* IOHC2, IOMS2, core 1 */
+	{ "P3", 0x10, 0x1f, 0x10, 0x1f },	/* IOHC3, IOMS3, core 0 */
+	{ "G3", 0x50, 0x5f, 0x50, 0x5f }	/* IOHC3, IOMS3, core 1 */
 };
 
 static const zen_pcie_core_info_t genoa_bonus_maps[2] = {
-	{ "P5", 0x84, 0x87, 0x84, 0x87 },	/* IOMS 0, core 2 */
-	{ "P4", 0x80, 0x83, 0x80, 0x83 }	/* IOMS 2, core 2 */
+	{ "P5", 0x84, 0x87, 0x84, 0x87 },	/* IOHC0, IOMS0, core 2 */
+	{ "P4", 0x80, 0x83, 0x80, 0x83 }	/* IOHC2, IOMS2, core 2 */
 };
 
 /*
@@ -229,17 +229,23 @@ const zen_nbif_info_t genoa_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
 	}
 };
 
+uint8_t
+genoa_fabric_ioms_nbio_num(uint8_t iomsno)
+{
+	return (GENOA_NBIO_NUM(iomsno));
+}
+
 /*
- * How many PCIe cores does this IOMS instance have?
+ * How many PCIe cores does this IOHC instance have?
  * If it's an IOHUB that has a bonus core then it will have the maximum
  * number, otherwise one fewer.
  */
 uint8_t
-genoa_ioms_n_pcie_cores(const uint8_t iomsno)
+genoa_iohc_n_pcie_cores(const uint8_t iohcno)
 {
-	if (GENOA_IOMS_IOHUB_NUM(iomsno) == GENOA_NBIO_BONUS_IOHUB)
-		return (GENOA_IOMS_MAX_PCIE_CORES);
-	return (GENOA_IOMS_MAX_PCIE_CORES - 1);
+	if (GENOA_IOHC_IOHUB_NUM(iohcno) == GENOA_NBIO_BONUS_IOHUB)
+		return (GENOA_IOHC_MAX_PCIE_CORES);
+	return (GENOA_IOHC_MAX_PCIE_CORES - 1);
 }
 
 /*
@@ -252,23 +258,23 @@ genoa_ioms_n_pcie_cores(const uint8_t iomsno)
 uint8_t
 genoa_pcie_core_n_ports(const uint8_t pcno)
 {
-	if (pcno == GENOA_IOMS_BONUS_PCIE_CORENO)
+	if (pcno == GENOA_IOHC_BONUS_PCIE_CORENO)
 		return (GENOA_PCIE_CORE_BONUS_PORTS);
 	return (GENOA_PCIE_CORE_MAX_PORTS);
 }
 
 const zen_pcie_core_info_t *
-genoa_pcie_core_info(const uint8_t iomsno, const uint8_t coreno)
+genoa_pcie_core_info(const uint8_t iohcno, const uint8_t coreno)
 {
 	uint8_t index;
 
-	if (coreno == GENOA_IOMS_BONUS_PCIE_CORENO) {
-		index = GENOA_NBIO_NUM(iomsno);
+	if (coreno == GENOA_IOHC_BONUS_PCIE_CORENO) {
+		index = GENOA_NBIO_NUM(iohcno);
 		VERIFY3U(index, <, ARRAY_SIZE(genoa_bonus_maps));
 		return (&genoa_bonus_maps[index]);
 	}
 
-	index = iomsno * 2 + coreno;
+	index = iohcno * 2 + coreno;
 	VERIFY3U(index, <, ARRAY_SIZE(genoa_lane_maps));
 	return (&genoa_lane_maps[index]);
 }
@@ -332,25 +338,21 @@ genoa_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 void
 genoa_fabric_ioms_init(zen_ioms_t *ioms)
 {
-	const uint8_t iomsno = ioms->zio_num;
-
-	if (GENOA_IOMS_IOHUB_NUM(iomsno) == GENOA_NBIO_BONUS_IOHUB)
-		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
-
 	/*
 	 * Genoa has a 1:1 mapping between IOHCs and IOMSs, and all IOHCs are
 	 * the same type.
 	 */
-	ioms->zio_nbionum = GENOA_NBIO_NUM(iomsno);
-	ioms->zio_iohcnum = iomsno;
+	ioms->zio_iohcnum = ioms->zio_num;
 	ioms->zio_iohctype = ZEN_IOHCT_LARGE;
 
+	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == GENOA_NBIO_BONUS_IOHUB)
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
+
 	/*
-	 * nBIFs are actually associated with the NBIO instance but we have no
-	 * representation in the fabric for NBIOs. Mark the first IOMS in each
-	 * NBIO as holding the nBIFs.
+	 * There is one set of nBIFs per NBIO. Mark the first IOMS in each NBIO
+	 * as holding the nBIFs.
 	 */
-	if (GENOA_IOMS_IOHUB_NUM(iomsno) == 0)
+	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == 0)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
 }
 
@@ -389,16 +391,16 @@ genoa_pcie_port_reg(const zen_pcie_port_t *const port,
     const smn_reg_def_t def)
 {
 	zen_pcie_core_t *pc = port->zpp_core;
-	zen_ioms_t *ioms = pc->zpc_ioms;
+	const uint8_t iohcnum = pc->zpc_ioms->zio_iohcnum;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOHCDEV_PCIE:
-		reg = genoa_iohcdev_pcie_smn_reg(ioms->zio_num, def,
+		reg = genoa_iohcdev_pcie_smn_reg(iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	case SMN_UNIT_PCIE_PORT:
-		reg = genoa_pcie_port_smn_reg(ioms->zio_num, def,
+		reg = genoa_pcie_port_smn_reg(iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	default:
@@ -412,17 +414,15 @@ genoa_pcie_port_reg(const zen_pcie_port_t *const port,
 smn_reg_t
 genoa_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 {
-	zen_ioms_t *ioms = pc->zpc_ioms;
+	const uint8_t iohcnum = pc->zpc_ioms->zio_iohcnum;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_PCIE_CORE:
-		reg = genoa_pcie_core_smn_reg(ioms->zio_num, def,
-		    pc->zpc_coreno);
+		reg = genoa_pcie_core_smn_reg(iohcnum, def, pc->zpc_coreno);
 		break;
 	case SMN_UNIT_IOMMUL1:
-		reg = genoa_iommul1_pcie_smn_reg(ioms->zio_num, def,
-		    pc->zpc_coreno);
+		reg = genoa_iommul1_pcie_smn_reg(iohcnum, def, pc->zpc_coreno);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe RC",
@@ -441,22 +441,25 @@ static smn_reg_t
 genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
+	const uint8_t iohcnum = ioms->zio_iohcnum;
+	const uint8_t nbionum = ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
+
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOAPIC:
-		reg = genoa_ioapic_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = genoa_ioapic_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOHC:
-		reg = genoa_iohc_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = genoa_iohc_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = genoa_ioagr_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = genoa_ioagr_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_SDPMUX:
-		reg = genoa_sdpmux_smn_reg(ioms->zio_nbionum, def, reginst);
+		reg = genoa_sdpmux_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_SST:
-		reg = genoa_sst_smn_reg(ioms->zio_nbionum, def, reginst);
+		reg = genoa_sst_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -471,8 +474,7 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		    (const genoa_iommul1_subunit_t)reginst;
 		switch (su) {
 		case GIL1SU_IOAGR:
-			reg = genoa_iommul1_ioagr_smn_reg(ioms->zio_iohcnum,
-			    def, 0);
+			reg = genoa_iommul1_ioagr_smn_reg(iohcnum, def, 0);
 			break;
 		default:
 			cmn_err(CE_PANIC, "invalid IOMMUL1 subunit %d", su);
@@ -481,7 +483,7 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	}
 	case SMN_UNIT_IOMMUL2:
-		reg = genoa_iommul2_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = genoa_iommul2_smn_reg(iohcnum, def, reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
@@ -494,17 +496,16 @@ static smn_reg_t
 genoa_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	const zen_ioms_t *ioms = nbif->zn_ioms;
+	const uint8_t nbionum = nbif->zn_ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF:
-		reg = genoa_nbif_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_num, reginst);
+		reg = genoa_nbif_smn_reg(nbionum, def, nbif->zn_num, reginst);
 		break;
 	case SMN_UNIT_NBIF_ALT:
-		reg = genoa_nbif_alt_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_num, reginst);
+		reg = genoa_nbif_alt_smn_reg(nbionum, def, nbif->zn_num,
+		    reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIF",
@@ -518,12 +519,12 @@ static smn_reg_t
 genoa_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 {
 	const zen_nbif_t *nbif = func->znf_nbif;
-	const zen_ioms_t *ioms = nbif->zn_ioms;
+	const uint8_t nbionum = nbif->zn_ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF_FUNC:
-		reg = genoa_nbif_func_smn_reg(ioms->zio_nbionum, def,
+		reg = genoa_nbif_func_smn_reg(nbionum, def,
 		    nbif->zn_num, func->znf_dev, func->znf_func);
 		break;
 	default:
@@ -666,14 +667,14 @@ genoa_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms)
 {
 	uint32_t val;
 
-	if (GENOA_IOMS_IOHUB_NUM(ioms->zio_num) == GENOA_NBIO_BONUS_IOHUB)
+	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == GENOA_NBIO_BONUS_IOHUB)
 		return;
 
 	const smn_reg_t smn_regs[4] = {
-		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_num, 2, 0),
-		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_num, 2, 1),
-		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_num, 2, 2),
-		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_num, 2, 3),
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_iohcnum, 2, 0),
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_iohcnum, 2, 1),
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_iohcnum, 2, 2),
+		IOHCDEV_PCIE_BRIDGE_CTL(ioms->zio_iohcnum, 2, 3),
 	};
 
 	for (uint_t i = 0; i < ARRAY_SIZE(smn_regs); i++) {
@@ -793,8 +794,8 @@ genoa_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	 * Finally, the SDPMUX variant. There are only two SDPMUX instances,
 	 * one on IOHUB0 in each NBIO.
 	 */
-	if (GENOA_IOMS_IOHUB_NUM(ioms->zio_num) == 0) {
-		const uint_t sdpmux = GENOA_NBIO_NUM(ioms->zio_num);
+	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == 0) {
+		const uint_t sdpmux = ioms->zio_nbio->zn_num;
 
 		for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
 			reg = SDPMUX_SION_S0_CLIREQ_BURST_LOW(sdpmux, i);
@@ -964,7 +965,7 @@ genoa_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 
 	/* Only NBIO1 has a bonus SST instance */
 	const uint16_t sstcnt =
-	    (ioms->zio_nbionum == GENOA_NBIO_BONUS_SST) ? 2 : 1;
+	    (ioms->zio_nbio->zn_num == GENOA_NBIO_BONUS_SST) ? 2 : 1;
 
 	for (uint16_t i = 0; i < sstcnt; i++) {
 		reg = genoa_ioms_reg(ioms, D_SST_CLOCK_CTL, i);
@@ -1715,77 +1716,77 @@ static const zen_pcie_strap_setting_t genoa_pcie_strap_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_MAX_PAYLOAD_SUP,
 		.strap_data = 0x2,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_PLL_FREQ_MODE,
 		.strap_data = 2,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_32GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_32GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_DLF_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1800,7 +1801,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_EXT_FMT_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1808,7 +1809,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1816,7 +1817,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1824,7 +1825,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1832,7 +1833,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_TCOMMONMODE_TIME,
 		.strap_data = 0xa,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1840,7 +1841,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_TPON_SCALE,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1848,7 +1849,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_TPON_VALUE,
 		.strap_data = 0xf,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1856,7 +1857,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_DLF_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1864,7 +1865,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1872,7 +1873,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_WRP_MISC,
 		.strap_data = GENOA_STRAP_PCIE_WRP_MISC_SSID_EN,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1880,7 +1881,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_FOM_TIME,
 		.strap_data = GENOA_STRAP_PCIE_P_FOM_300US,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1888,7 +1889,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_8GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1896,7 +1897,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_SPC_MODE_16GT,
 		.strap_data = 0x2,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1904,7 +1905,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_32GT_PRECODE_REQ,
 		.strap_data = 0x2,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1912,7 +1913,7 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_L0s_EXIT_LAT,
 		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -1920,15 +1921,15 @@ static const zen_pcie_strap_setting_t genoa_pcie_port_settings[] = {
 		.strap_reg = GENOA_STRAP_PCIE_P_EQ_BYPASS_TO_HR_ADV,
 		.strap_data = 0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
-		.strap_corematch = GENOA_IOMS_BONUS_PCIE_CORENO,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
+		.strap_corematch = GENOA_IOHC_BONUS_PCIE_CORENO,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
 	{
 		.strap_reg = GENOA_STRAP_PCIE_P_PM_SUB_SUP,
 		.strap_data = 0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
@@ -1942,7 +1943,7 @@ genoa_fabric_write_pcie_strap(zen_pcie_core_t *pc,
 	uint32_t addr, inst;
 
 	inst = ioms->zio_iohcnum + 4 * pc->zpc_coreno;
-	if (pc->zpc_coreno == GENOA_IOMS_BONUS_PCIE_CORENO)
+	if (pc->zpc_coreno == GENOA_IOHC_BONUS_PCIE_CORENO)
 		inst = 9;
 
 	/*

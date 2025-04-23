@@ -182,7 +182,7 @@
  * to root ports.
  */
 static const zen_pcie_port_info_t
-    turin_pcie[TURIN_IOMS_MAX_PCIE_CORES][TURIN_PCIE_CORE_MAX_PORTS] = {
+    turin_pcie[TURIN_IOHC_MAX_PCIE_CORES][TURIN_PCIE_CORE_MAX_PORTS] = {
 	[0] = {
 		{  .zppi_dev = 0x1, .zppi_func = 0x1 },
 		{  .zppi_dev = 0x1, .zppi_func = 0x2 },
@@ -211,7 +211,7 @@ static const zen_pcie_port_info_t
  * physical port brought out of the package.  Indexed by IOHC number, on
  * large IOHC's only (note that the large IOHCs have indices 0..3).
  */
-const zen_iohc_nbif_ports_t turin_pcie_int_ports[TURIN_IOMS_PER_IODIE] = {
+const zen_iohc_nbif_ports_t turin_pcie_int_ports[TURIN_IOHC_PER_IODIE] = {
 	[0] = {
 		.zinp_count = 2,
 		.zinp_ports = {
@@ -260,18 +260,18 @@ const zen_iohc_nbif_ports_t turin_pcie_int_ports[TURIN_IOMS_PER_IODIE] = {
  */
 static const zen_pcie_core_info_t turin_lane_maps[8] = {
 	/* name, DXIO start, DXIO end, PHY start, PHY end */
-	{ "P0", 0x00, 0x0f, 0x00, 0x0f },	/* IOMS0, core 0 */
-	{ "P1", 0x20, 0x2f, 0x20, 0x2f },	/* IOMS1, core 0 */
-	{ "G0", 0x60, 0x6f, 0x60, 0x6f },	/* IOMS2, core 0 */
-	{ "G1", 0x40, 0x4f, 0x40, 0x4f },	/* IOMS3, core 0 */
-	{ "P2", 0x30, 0x3f, 0x30, 0x3f },	/* IOMS4, core 0 */
-	{ "P3", 0x10, 0x1f, 0x10, 0x1f },	/* IOMS5, core 0 */
-	{ "G2", 0x70, 0x7f, 0x70, 0x7f },	/* IOMS6, core 0 */
-	{ "G3", 0x50, 0x5f, 0x50, 0x5f }	/* IOMS7, core 0 */
+	{ "P0", 0x00, 0x0f, 0x00, 0x0f },	/* IOHC0, IOMS0, core 0 */
+	{ "G0", 0x60, 0x6f, 0x60, 0x6f },	/* IOHC1, IOMS2, core 0 */
+	{ "P2", 0x30, 0x3f, 0x30, 0x3f },	/* IOHC2, IOMS4, core 0 */
+	{ "G2", 0x70, 0x7f, 0x70, 0x7f },	/* IOHC3, IOMS6, core 0 */
+	{ "G1", 0x40, 0x4f, 0x40, 0x4f },	/* IOHC4, IOMS3, core 0 */
+	{ "P1", 0x20, 0x2f, 0x20, 0x2f },	/* IOHC5, IOMS1, core 0 */
+	{ "G3", 0x50, 0x5f, 0x50, 0x5f },	/* IOHC6, IOMS7, core 0 */
+	{ "P3", 0x10, 0x1f, 0x10, 0x1f },	/* IOHC7, IOMS5, core 0 */
 };
 
 static const zen_pcie_core_info_t turin_bonus_map = {
-	"P4", 0x80, 0x87, 0x80, 0x87		/* IOMS2, core 1 */
+	"P4", 0x80, 0x87, 0x80, 0x87		/* IOHC1, IOMS2, core 1 */
 };
 
 /*
@@ -357,17 +357,23 @@ const zen_nbif_info_t turin_nbif_data[ZEN_IOMS_MAX_NBIF][ZEN_NBIF_MAX_FUNCS] = {
 	}
 };
 
+uint8_t
+turin_fabric_ioms_nbio_num(uint8_t iomsno)
+{
+	return (TURIN_NBIO_NUM(iomsno));
+}
+
 /*
- * How many PCIe cores does this IOMS instance have?
+ * How many PCIe cores does this IOHC instance have?
  * If it's an IOHUB that has a bonus core then it will have the maximum
  * number, otherwise one fewer.
  */
 uint8_t
-turin_ioms_n_pcie_cores(const uint8_t iomsno)
+turin_iohc_n_pcie_cores(const uint8_t iohcno)
 {
-	if (iomsno == TURIN_NBIO_BONUS_IOMS)
-		return (TURIN_IOMS_MAX_PCIE_CORES);
-	return (TURIN_IOMS_MAX_PCIE_CORES - 1);
+	if (iohcno == TURIN_NBIO_BONUS_IOHC)
+		return (TURIN_IOHC_MAX_PCIE_CORES);
+	return (TURIN_IOHC_MAX_PCIE_CORES - 1);
 }
 
 /*
@@ -380,19 +386,19 @@ turin_ioms_n_pcie_cores(const uint8_t iomsno)
 uint8_t
 turin_pcie_core_n_ports(const uint8_t pcno)
 {
-	if (pcno == TURIN_IOMS_BONUS_PCIE_CORENO)
+	if (pcno == TURIN_IOHC_BONUS_PCIE_CORENO)
 		return (TURIN_PCIE_CORE_BONUS_PORTS);
 	return (TURIN_PCIE_CORE_MAX_PORTS);
 }
 
 const zen_pcie_core_info_t *
-turin_pcie_core_info(const uint8_t iomsno, const uint8_t coreno)
+turin_pcie_core_info(const uint8_t iohcno, const uint8_t coreno)
 {
-	if (coreno == TURIN_IOMS_BONUS_PCIE_CORENO)
+	if (coreno == TURIN_IOHC_BONUS_PCIE_CORENO)
 		return (&turin_bonus_map);
 
-	VERIFY3U(iomsno, <, ARRAY_SIZE(turin_lane_maps));
-	return (&turin_lane_maps[iomsno]);
+	VERIFY3U(iohcno, <, ARRAY_SIZE(turin_lane_maps));
+	return (&turin_lane_maps[iohcno]);
 }
 
 const zen_pcie_port_info_t *
@@ -508,28 +514,27 @@ turin_fabric_smu_pptable_post(zen_iodie_t *iodie)
 void
 turin_fabric_ioms_init(zen_ioms_t *ioms)
 {
-	const uint8_t iomsno = ioms->zio_num;
-
-	ioms->zio_nbionum = TURIN_NBIO_NUM(iomsno);
-
-	if (iomsno == TURIN_NBIO_BONUS_IOMS)
-		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
-
-	/*
-	 * The even numbered IOMS instances are connected to the larger IOHC
-	 * type.
-	 */
-	ioms->zio_iohctype = iomsno % 2 == 0 ? ZEN_IOHCT_LARGE :
-	    ZEN_IOHCT_SMALL;
-
 	/*
 	 * The mapping between the IOMS instance number and the corresponding
 	 * IOHC index is not straightforward. See "IOHC Instance Numbering"
 	 * in the theory statement at the top of this file.
 	 */
 	const uint8_t iohcmap[] = { 0, 5, 1, 4, 2, 7, 3, 6 };
-	VERIFY3U(iomsno, <, ARRAY_SIZE(iohcmap));
-	ioms->zio_iohcnum = iohcmap[iomsno];
+	const uint8_t index = ioms->zio_num;
+
+	VERIFY3U(index, <, ARRAY_SIZE(iohcmap));
+	ioms->zio_iohcnum = iohcmap[index];
+
+	if (ioms->zio_iohcnum == TURIN_NBIO_BONUS_IOHC)
+		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
+
+	/*
+	 * The even numbered IOMS instances are connected to the larger IOHC
+	 * type.
+	 */
+	ioms->zio_iohctype = ioms->zio_num % 2 == 0 ? ZEN_IOHCT_LARGE :
+	    ZEN_IOHCT_SMALL;
+
 
 	/* Only the large IOHC types have nBIFs */
 	if (ioms->zio_iohctype == ZEN_IOHCT_LARGE)
@@ -566,16 +571,16 @@ turin_pcie_port_reg(const zen_pcie_port_t *const port,
     const smn_reg_def_t def)
 {
 	zen_pcie_core_t *pc = port->zpp_core;
-	zen_ioms_t *ioms = pc->zpc_ioms;
+	const uint8_t iohcnum = pc->zpc_ioms->zio_iohcnum;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOHCDEV_PCIE:
-		reg = turin_iohcdev_pcie_smn_reg(ioms->zio_iohcnum, def,
+		reg = turin_iohcdev_pcie_smn_reg(iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	case SMN_UNIT_PCIE_PORT:
-		reg = turin_pcie_port_smn_reg(ioms->zio_iohcnum, def,
+		reg = turin_pcie_port_smn_reg(iohcnum, def,
 		    pc->zpc_coreno, port->zpp_portno);
 		break;
 	default:
@@ -589,17 +594,16 @@ turin_pcie_port_reg(const zen_pcie_port_t *const port,
 smn_reg_t
 turin_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 {
-	zen_ioms_t *ioms = pc->zpc_ioms;
+	const uint8_t iohcnum = pc->zpc_ioms->zio_iohcnum;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_PCIE_CORE:
-		reg = turin_pcie_core_smn_reg(ioms->zio_iohcnum, def,
-		    pc->zpc_coreno);
+		reg = turin_pcie_core_smn_reg(iohcnum, def, pc->zpc_coreno);
 		break;
 	case SMN_UNIT_IOMMUL1:
 		VERIFY3U(pc->zpc_coreno, ==, 0);
-		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def, 0);
+		reg = turin_iommul1_pcie_smn_reg(iohcnum, def, 0);
 		break;
 	case SMN_UNIT_IOMMUL1_IOAGR:
 		/*
@@ -608,9 +612,8 @@ turin_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 		 * unit ID 0.  We don't use these, but AGESA sets them, so we do
 		 * as well.
 		 */
-		VERIFY3U(pc->zpc_coreno, ==, TURIN_IOMS_BONUS_PCIE6_CORENO);
-		reg = turin_iommul1_ioagr_pcie_smn_reg(ioms->zio_iohcnum, def,
-		    0);
+		VERIFY3U(pc->zpc_coreno, ==, TURIN_IOHC_BONUS_PCIE6_CORENO);
+		reg = turin_iommul1_ioagr_pcie_smn_reg(iohcnum, def, 0);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for PCIe RC",
@@ -629,38 +632,39 @@ static smn_reg_t
 turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
+	const uint8_t iohcnum = ioms->zio_iohcnum;
+	const uint8_t nbionum = ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_IOAPIC:
-		reg = turin_ioapic_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = turin_ioapic_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOHC:
-		reg = turin_iohc_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = turin_iohc_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_IOAGR:
-		reg = turin_ioagr_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = turin_ioagr_smn_reg(iohcnum, def, reginst);
 		break;
 	case SMN_UNIT_SDPMUX:
-		reg = turin_sdpmux_smn_reg(ioms->zio_nbionum, def, reginst);
+		reg = turin_sdpmux_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_SST:
-		reg = turin_sst_smn_reg(ioms->zio_nbionum, def, reginst);
+		reg = turin_sst_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1:
-		reg = turin_iommul1_pcie_smn_reg(ioms->zio_iohcnum, def, 0);
+		reg = turin_iommul1_pcie_smn_reg(iohcnum, def, 0);
 		break;
 	case SMN_UNIT_IOMMUL1_IOAGR:
 		VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
-		reg = turin_iommul1_ioagr_pcie_smn_reg(ioms->zio_iohcnum, def,
-		    0);
+		reg = turin_iommul1_ioagr_pcie_smn_reg(iohcnum, def, 0);
 		break;
 	case SMN_UNIT_IOMMUL2:
 		/*
 		 * The L2IOMMU is only present in the larger IOHC instances.
 		 */
 		VERIFY3U(ioms->zio_iohctype, ==, ZEN_IOHCT_LARGE);
-		reg = turin_iommul2_smn_reg(ioms->zio_iohcnum, def, reginst);
+		reg = turin_iommul2_smn_reg(iohcnum, def, reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
@@ -673,21 +677,20 @@ static smn_reg_t
 turin_nbif_reg(const zen_nbif_t *const nbif, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	const zen_ioms_t *ioms = nbif->zn_ioms;
+	const uint8_t nbionum = nbif->zn_ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF:
-		reg = turin_nbif_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_num, reginst);
+		reg = turin_nbif_smn_reg(nbionum, def, nbif->zn_num, reginst);
 		break;
 	case SMN_UNIT_NBIF_ALT:
-		reg = turin_nbif_alt_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_num, reginst);
+		reg = turin_nbif_alt_smn_reg(nbionum, def, nbif->zn_num,
+		    reginst);
 		break;
 	case SMN_UNIT_NBIF_ALT2:
-		reg = turin_nbif_alt2_smn_reg(ioms->zio_nbionum, def,
-		    nbif->zn_num, reginst);
+		reg = turin_nbif_alt2_smn_reg(nbionum, def, nbif->zn_num,
+		    reginst);
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIF",
@@ -701,12 +704,12 @@ static smn_reg_t
 turin_nbif_func_reg(const zen_nbif_func_t *const func, const smn_reg_def_t def)
 {
 	const zen_nbif_t *nbif = func->znf_nbif;
-	const zen_ioms_t *ioms = nbif->zn_ioms;
+	const uint8_t nbionum = nbif->zn_ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
 	case SMN_UNIT_NBIF_FUNC:
-		reg = turin_nbif_func_smn_reg(ioms->zio_nbionum, def,
+		reg = turin_nbif_func_smn_reg(nbionum, def,
 		    nbif->zn_num, func->znf_dev, func->znf_func);
 		break;
 	default:
@@ -915,7 +918,7 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	 * across every entity. The value used for the actual time entries just
 	 * varies.
 	 */
-	for (uint_t i = 0; i < IOHC_SION_ENTS(ioms->zio_num); i++) {
+	for (uint_t i = 0; i < IOHC_SION_ENTS(ioms->zio_iohcnum); i++) {
 		reg = turin_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_LOW, i);
 		zen_ioms_write(ioms, reg, IOHC_SION_CLIREQ_BURST_VAL);
 		reg = turin_ioms_reg(ioms, D_IOHC_SION_S0_CLIREQ_BURST_HI, i);
@@ -948,7 +951,7 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	 * Next on our list is the IOAGR. While there are 6 entries, only 4 are
 	 * ever set it seems.
 	 */
-	for (uint_t i = 0; i < IOHC_SION_ENTS(ioms->zio_num); i++) {
+	for (uint_t i = 0; i < IOHC_SION_ENTS(ioms->zio_iohcnum); i++) {
 		reg = turin_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_LOW, i);
 		zen_ioms_write(ioms, reg, IOAGR_SION_CLIREQ_BURST_VAL);
 		reg = turin_ioms_reg(ioms, D_IOAGR_SION_S0_CLIREQ_BURST_HI, i);
@@ -959,8 +962,8 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	 * Finally, the SDPMUX variant. There are two SDPMUX instances,
 	 * one on the first IOHUB in each NBIO.
 	 */
-	if (TURIN_NBIO_IOMS_NUM(ioms->zio_num) == 0) {
-		const uint_t sdpmux = TURIN_NBIO_NUM(ioms->zio_num);
+	if (TURIN_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == 0) {
+		const uint_t sdpmux = ioms->zio_nbio->zn_num;
 
 		for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
 			reg = SDPMUX_SION_S0_CLIREQ_BURST_LOW(sdpmux, i);
@@ -1127,7 +1130,7 @@ turin_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 
 	for (uint16_t i = 0; i < 2; i++) {
 		/* There is no SST instance 0 on NBIO1 */
-		if (ioms->zio_nbionum == 1 && i == 0)
+		if (ioms->zio_nbio->zn_num == 1 && i == 0)
 			continue;
 
 		reg = turin_ioms_reg(ioms, D_SST_CLOCK_CTL, i);
@@ -2030,70 +2033,70 @@ static const zen_pcie_strap_setting_t turin_pcie_strap_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_PLL_FREQ_MODE,
 		.strap_data = 3,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_DS_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_US_RX_PRESET_HINT,
 		.strap_data = PCIE_GEN3_RX_PRESET_9DB,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_16GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_16GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_32GT_EQ_DS_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_7,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_32GT_EQ_US_TX_PRESET,
 		.strap_data = PCIE_TX_PRESET_4,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_DLF_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2108,7 +2111,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_EXT_FMT_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2116,7 +2119,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_E2E_TLP_PREFIX_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2124,7 +2127,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_10B_TAG_CMPL_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2132,7 +2135,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_10B_TAG_REQ_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2140,7 +2143,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_TCOMMONMODE_TIME,
 		.strap_data = 0xa,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2148,7 +2151,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_TPON_SCALE,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2156,7 +2159,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_TPON_VALUE,
 		.strap_data = 0xf,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2164,7 +2167,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_DLF_SUP,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2172,7 +2175,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_DLF_EXCHANGE_EN,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2180,7 +2183,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_WRP_MISC,
 		.strap_data = TURIN_STRAP_PCIE_WRP_MISC_SSID_EN,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2188,7 +2191,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_FOM_TIME,
 		.strap_data = TURIN_STRAP_PCIE_P_FOM_300US,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2196,7 +2199,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_8GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2204,7 +2207,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_16GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2212,7 +2215,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_SPC_MODE_32GT,
 		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2220,7 +2223,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_32GT_PRECODE_REQ,
 		.strap_data = 0x0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2228,7 +2231,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_L0s_EXIT_LAT,
 		.strap_data = PCIE_LINKCAP_L0S_EXIT_LAT_MAX >> 12,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
@@ -2236,7 +2239,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_L0_TO_L0s_DIS,
 		.strap_data = 1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
@@ -2244,28 +2247,28 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_EQ_BYPASS_TO_HR_ADV,
 		.strap_data = 0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
-		.strap_corematch = TURIN_IOMS_BONUS_PCIE_CORENO,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
+		.strap_corematch = TURIN_IOHC_BONUS_PCIE_CORENO,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_PM_SUB_SUP,
 		.strap_data = 0,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
-		.strap_iomsmatch = PCIE_IOMSMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
 	/*
 	 * Enable SRIS and associated parameters on the sidecar port which
-	 * is node 0, P0 (IOMS 0, Core 0 and port 0).
+	 * is node 0, P0 (IOHC 0, Core 0 and port 0).
 	 */
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_SRIS_EN,
 		.strap_data = 0x1,
 		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = 0,
-		.strap_iomsmatch = 0,
+		.strap_iohcmatch = 0,
 		.strap_corematch = 0,
 		.strap_portmatch = 0
 	},
@@ -2274,7 +2277,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_data = 0,
 		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = 0,
-		.strap_iomsmatch = 0,
+		.strap_iohcmatch = 0,
 		.strap_corematch = 0,
 		.strap_portmatch = 0
 	},
@@ -2283,7 +2286,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_data = 0,
 		.strap_boardmatch = OXIDE_BOARD_COSMO,
 		.strap_nodematch = 0,
-		.strap_iomsmatch = 0,
+		.strap_iohcmatch = 0,
 		.strap_corematch = 0,
 		.strap_portmatch = 0
 	}
@@ -2297,7 +2300,7 @@ turin_fabric_write_pcie_strap(zen_pcie_core_t *pc,
 	uint32_t inst;
 
 	inst = ioms->zio_iohcnum;
-	if (pc->zpc_coreno == TURIN_IOMS_BONUS_PCIE_CORENO)
+	if (pc->zpc_coreno == TURIN_IOHC_BONUS_PCIE_CORENO)
 		inst = 8;
 
 	zen_mpio_write_pcie_strap(pc, reg + (inst << 16), data);
@@ -2471,7 +2474,7 @@ turin_fabric_init_pcie_port_after_reconfig(zen_pcie_port_t *port)
 	 */
 	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
 	if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_C0) &&
-	    port->zpp_core->zpc_coreno != TURIN_IOMS_BONUS_PCIE_CORENO) {
+	    port->zpp_core->zpc_coreno != TURIN_IOHC_BONUS_PCIE_CORENO) {
 		reg = turin_pcie_port_reg(port, D_PCIE_PORT_HW_DBG_LC);
 		val = zen_pcie_port_read(port, reg);
 		switch (port->zpp_portno) {
@@ -2667,7 +2670,7 @@ turin_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms)
 	 * Hide bridges on the unused PCIE6.
 	 */
 	for (uint8_t i = 0; i < TURIN_PCIE6_CORE_BONUS_PORTS; i++)
-		turin_hide_pci_bridge(ioms, TURIN_IOMS_BONUS_PCIE6_CORENO, i);
+		turin_hide_pci_bridge(ioms, TURIN_IOHC_BONUS_PCIE6_CORENO, i);
 
 	/*
 	 * The description of the bridge control register says to disable the
@@ -2687,7 +2690,7 @@ turin_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms)
 	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_BONUS) == 0) {
 		for (uint8_t i = 0; i < TURIN_PCIE_CORE_BONUS_PORTS; i++) {
 			turin_hide_pci_bridge(ioms,
-			    TURIN_IOMS_BONUS_PCIE_CORENO, i);
+			    TURIN_IOHC_BONUS_PCIE_CORENO, i);
 		}
 	}
 }
@@ -2874,7 +2877,7 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	 * represented in our taxonomy of fabric objects.  Thus, this code can
 	 * never visit such a core, so we don't try to set the ordering bit on
 	 * the IOAGR register instance.  See the comment in turin/fabric_impl.h
-	 * on TURIN_IOMS_MAX_PCIE_CORES for more details.
+	 * on TURIN_IOHC_MAX_PCIE_CORES for more details.
 	 */
 	if (pc->zpc_coreno == 0) {
 		reg = turin_pcie_core_reg(pc, D_IOMMUL1_CTL1);
@@ -2891,7 +2894,7 @@ turin_fabric_init_pcie_core(zen_pcie_core_t *pc)
 	 */
 	x86_chiprev_t chiprev = cpuid_getchiprev(CPU);
 	if (chiprev_at_least(chiprev, X86_CHIPREV_AMD_TURIN_C0) &&
-	    pc->zpc_coreno != TURIN_IOMS_BONUS_PCIE_CORENO) {
+	    pc->zpc_coreno != TURIN_IOHC_BONUS_PCIE_CORENO) {
 		reg = turin_pcie_core_reg(pc, D_PCIE_CORE_PCIE_P_CTL);
 		val = zen_pcie_core_read(pc, reg);
 		val = PCIE_CORE_PCIE_P_CTL_SET_ALWAYS_USE_FAST_TXCLK(val, 1);

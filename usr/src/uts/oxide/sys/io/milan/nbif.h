@@ -34,8 +34,8 @@ extern "C" {
  * SYSHUB nBIFs in alternate space. These definitions live here because they
  * are consumed by the register calculations below.
  */
-#define	MILAN_IOMS_MAX_NBIF		3
-#define	MILAN_IOMS_MAX_NBIF_ALT		2
+#define	MILAN_NBIO_MAX_NBIF		3
+#define	MILAN_NBIO_MAX_NBIF_ALT		2
 /*
  * These are the maximum number of devices and functions on any nBIF instance
  * according to the PPR. This must be kept synchronized with the
@@ -47,7 +47,7 @@ extern "C" {
 
 /*
  * nBIF SMN Addresses. These have multiple different shifts that we need to
- * account for. There are different bases based on which IOMS, which NBIF, and
+ * account for. There are different bases based on which NBIO, which NBIF, and
  * which downstream device and function as well. There is a second SMN aperture
  * ID that seems to be used that deals with the nBIF's clock gating, DMA
  * enhancements with the syshub, and related.
@@ -60,28 +60,28 @@ extern "C" {
  */
 
 static inline smn_reg_t
-milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+milan_nbif_func_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
     const uint8_t nbifno, const uint8_t devno, const uint8_t funcno)
 {
 	const uint32_t NBIF_FUNC_SMN_REG_MASK = 0x1ff;
 
 	/*
 	 * Each entry in this matrix is a bitmask of valid function numbers for
-	 * each device on each NBIF (on all IOMSs).  This is used only for
+	 * each device on each NBIF (on all nbios).  This is used only for
 	 * checking the device and function numbers passed to us when built with
 	 * DEBUG enabled.  This must be in sync with milan_nbif_data in
 	 * milan_fabric.c, though these describe hardware so no changes are
 	 * forseen.
 	 */
 #ifdef	DEBUG
-	const uint8_t MILAN_NBIF_FNVALID[MILAN_IOMS_MAX_NBIF]
+	const uint8_t MILAN_NBIF_FNVALID[MILAN_NBIO_MAX_NBIF]
 	    [MILAN_NBIF_MAX_PORTS] = {
 		{ 0x07, 0x00, 0x00 },
 		{ 0x1f, 0x01, 0x01 },
 		{ 0x07, 0x00, 0x00 }
 	};
 #endif
-	const uint32_t ioms32 = (const uint32_t)iomsno;
+	const uint32_t nbio32 = (const uint32_t)nbiono;
 	const uint32_t nbif32 = (const uint32_t)nbifno;
 	const uint32_t dev32 = (const uint32_t)devno;
 	const uint32_t func32 = (const uint32_t)funcno;
@@ -92,8 +92,8 @@ milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 	ASSERT0(def.srd_stride);
 	ASSERT0(def.srd_reg & ~NBIF_FUNC_SMN_REG_MASK);
 
-	ASSERT3U(ioms32, <, 4);
-	ASSERT3U(nbif32, <, MILAN_IOMS_MAX_NBIF);
+	ASSERT3U(nbio32, <, 4);
+	ASSERT3U(nbif32, <, MILAN_NBIO_MAX_NBIF);
 	ASSERT3U(dev32, <, MILAN_NBIF_MAX_PORTS);
 	ASSERT3U(func32, <, MILAN_NBIF_MAX_FUNCS);
 
@@ -102,7 +102,7 @@ milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 
 	const uint32_t aperture_base = 0x10134000;
 
-	const uint32_t aperture_off = (ioms32 << 20) + (nbif32 << 22) +
+	const uint32_t aperture_off = (nbio32 << 20) + (nbif32 << 22) +
 	    (dev32 << 12) + (func32 << 9);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
@@ -113,10 +113,10 @@ milan_nbif_func_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 static inline smn_reg_t
-milan_nbif_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+milan_nbif_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
     const uint8_t nbifno, const uint16_t reginst)
 {
-	const uint32_t ioms32 = (const uint32_t)iomsno;
+	const uint32_t nbio32 = (const uint32_t)nbiono;
 	const uint32_t nbif32 = (const uint32_t)nbifno;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t stride = (def.srd_stride == 0) ? 4 :
@@ -126,14 +126,14 @@ milan_nbif_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_NBIF);
-	ASSERT3U(ioms32, <, 4);
-	ASSERT3U(nbif32, <, MILAN_IOMS_MAX_NBIF);
+	ASSERT3U(nbio32, <, 4);
+	ASSERT3U(nbif32, <, MILAN_NBIO_MAX_NBIF);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
 	const uint32_t aperture_base = 0x10100000;
 
-	const uint32_t aperture_off = (ioms32 << 20) + (nbif32 << 22);
+	const uint32_t aperture_off = (nbio32 << 20) + (nbif32 << 22);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
 	const uint32_t aperture = aperture_base + aperture_off;
@@ -146,10 +146,10 @@ milan_nbif_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 }
 
 static inline smn_reg_t
-milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+milan_nbif_alt_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
     const uint8_t nbifno, const uint16_t reginst)
 {
-	const uint32_t ioms32 = (const uint32_t)iomsno;
+	const uint32_t nbio32 = (const uint32_t)nbiono;
 	const uint32_t nbif32 = (const uint32_t)nbifno;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t stride = (def.srd_stride == 0) ? 4 :
@@ -159,14 +159,14 @@ milan_nbif_alt_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_NBIF_ALT);
-	ASSERT3U(ioms32, <, 4);
-	ASSERT3U(nbif32, <, MILAN_IOMS_MAX_NBIF_ALT);
+	ASSERT3U(nbio32, <, 4);
+	ASSERT3U(nbif32, <, MILAN_NBIO_MAX_NBIF_ALT);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
 
 	const uint32_t aperture_base = 0x01400000;
 
-	const uint32_t aperture_off = (ioms32 << 20) + (nbif32 << 22);
+	const uint32_t aperture_off = (nbio32 << 20) + (nbif32 << 22);
 	ASSERT3U(aperture_off, <=, UINT32_MAX - aperture_base);
 
 	const uint32_t aperture = aperture_base + aperture_off;

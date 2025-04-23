@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_IOHC_H
@@ -39,23 +39,24 @@
 extern "C" {
 #endif
 
-#define	MILAN_IOMS_COUNT	4
+#define	MILAN_NBIO_COUNT	4
+#define	MILAN_IOHC_COUNT	4
 #define	MILAN_IOAGR_COUNT	4
 #define	MILAN_SDPMUX_COUNT	4
 
 /*
- * Only IOMS/NBIO3 has an extra SST instance, SST1.
+ * Only IOHC/IOMS/NBIO3 has an extra SST instance, SST1.
  */
-#define	MILAN_IOMS_BONUS_SST		3
-#define	MILAN_IOMS_BONUS_SST_INST	1
+#define	MILAN_NBIO_BONUS_SST		3
+#define	MILAN_NBIO_BONUS_SST_INST	1
 
 AMDZEN_MAKE_SMN_REG_FN(milan_iohc_smn_reg, IOHC, 0x13b00000,
-    SMN_APERTURE_MASK, MILAN_IOMS_COUNT, 20);
+    SMN_APERTURE_MASK, MILAN_IOHC_COUNT, 20);
 AMDZEN_MAKE_SMN_REG_FN(milan_ioagr_smn_reg, IOAGR, 0x15b00000,
     SMN_APERTURE_MASK, MILAN_IOAGR_COUNT, 20);
 
 /*
- * The SDPMUX SMN addresses are a bit weird. There is one per IOMS instance;
+ * The SDPMUX SMN addresses are a bit weird. There is one per NBIO instance;
  * however, the SMN addresses are very different. The aperture number of the
  * first SDPMUX is found where we would expect; however, after that we not only
  * skip the next aperture but also add (1 << 23) to the base address for all
@@ -95,25 +96,25 @@ milan_sdpmux_smn_reg(const uint8_t sdpmuxno, const smn_reg_def_t def,
 }
 
 /*
- * The SST SMN addresses are a bit weird. Each IOMS has an SST0 and then
- * IOMS3 also has a second instance, SST1. The addresses are as follows:
+ * The SST SMN addresses are a bit weird. Each NBIO has an SST0 and then
+ * NBIO3 also has a second instance, SST1. The addresses are as follows:
  *
- *	IOMS		SST		Address
+ *	NBIO		SST		Address
  *	0		0		1750_0000
  *	1		0		1760_0000
  *	2		0		1770_0000
  *	3		0		1780_0000
  *	3		1		1740_0000
  *
- * Sequentially, in terms of addresses, SST1 on IOMS3 comes first so we use
- * that as the aperture base address and only allow instance 1 on IOMS3, and
+ * Sequentially, in terms of addresses, SST1 on NBIO3 comes first so we use
+ * that as the aperture base address and only allow instance 1 on NBIO3, and
  * then offset the SST0 instances by one.
  */
 static inline smn_reg_t
-milan_sst_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
+milan_sst_smn_reg(const uint8_t nbiono, const smn_reg_def_t def,
     const uint16_t reginst)
 {
-	const uint32_t ioms32 = (const uint32_t)iomsno;
+	const uint32_t nbio32 = (const uint32_t)nbiono;
 	const uint32_t reginst32 = (const uint32_t)reginst;
 	const uint32_t nents = (def.srd_nents == 0) ? 1 :
 	    (const uint32_t) def.srd_nents;
@@ -121,14 +122,14 @@ milan_sst_smn_reg(const uint8_t iomsno, const smn_reg_def_t def,
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_SST);
-	ASSERT3U(ioms32, <, MILAN_IOMS_COUNT);
+	ASSERT3U(nbio32, <, MILAN_NBIO_COUNT);
 	ASSERT3U(nents, >, reginst32);
 	ASSERT0(def.srd_reg & SMN_APERTURE_MASK);
-	if (reginst32 == MILAN_IOMS_BONUS_SST_INST) {
-		ASSERT3U(ioms32, ==, MILAN_IOMS_BONUS_SST);
+	if (reginst32 == MILAN_NBIO_BONUS_SST_INST) {
+		ASSERT3U(nbio32, ==, MILAN_NBIO_BONUS_SST);
 		inst = 0;
 	} else {
-		inst = ioms32 + 1;
+		inst = nbio32 + 1;
 	}
 
 	const uint32_t aperture_base = 0x17400000;

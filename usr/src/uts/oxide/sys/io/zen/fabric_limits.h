@@ -46,16 +46,18 @@ extern "C" {
 					    ZEN_FABRIC_MAX_DIES_PER_SOC)
 
 /*
- * The exact number of IOM/S per I/O Die is platform-specific and is determined
- * determined dynamically during fabric topology initialization. This is the
- * maximum supported on the Oxide platform.
+ * The exact number of NBIO and IOM/S is platform-specific and determined
+ * determined dynamically during fabric topology initialization. These are the
+ * maximums supported on the Oxide platform.
  */
+#define	ZEN_IODIE_MAX_NBIO		4
 #define	ZEN_IODIE_MAX_IOMS		8
+#define	ZEN_NBIO_MAX_IOMS		4
 
 /*
  * The maximum number of PCIe cores per IOMS.
  */
-#define	ZEN_IOMS_MAX_PCIE_CORES		3
+#define	ZEN_IOHC_MAX_PCIE_CORES		3
 
 /*
  * The maximum number of NBIFs (Northbridge Interfaces, though possible
