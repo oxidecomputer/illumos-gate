@@ -55,6 +55,7 @@ static struct {
 };
 
 static const char *platforms[] = {
+	"Oxide,Cosmo",
 	"Oxide,Gimlet",
 	"Oxide,RubyRed"
 };
