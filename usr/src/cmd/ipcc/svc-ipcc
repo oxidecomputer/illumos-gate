@@ -29,6 +29,10 @@ typeset -rA GPIOMAP=(
 		[controller]=zen_gpio0
 		[gpio]=AGPIO139
 	)
+	[Oxide,Cosmo]=(
+		[controller]=zen_gpio0
+		[gpio]=AGPIO2
+	)
 )
 
 if [[ -z "$SMF_FMRI" ]]; then
