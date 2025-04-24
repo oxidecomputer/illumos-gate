@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_SMN_H
@@ -40,6 +40,7 @@ extern "C" {
  * definitions only in the corresponding *_impl.h.  Consumers are allowed to use
  * pointers to these types only as opaque handles.
  */
+typedef struct zen_nbio zen_nbio_t;
 typedef struct zen_ioms zen_ioms_t;
 typedef struct zen_nbif zen_nbif_t;
 typedef struct zen_nbif_func zen_nbif_func_t;
@@ -62,6 +63,12 @@ extern void zen_core_write(zen_core_t *, const smn_reg_t, const uint32_t);
  */
 extern uint32_t zen_ccd_read(zen_ccd_t *, const smn_reg_t);
 extern void zen_ccd_write(zen_ccd_t *, const smn_reg_t, const uint32_t);
+
+/*
+ * Accessors for NBIO registers.
+ */
+extern uint32_t zen_nbio_read(zen_nbio_t *, const smn_reg_t);
+extern void zen_nbio_write(zen_nbio_t *, const smn_reg_t, const uint32_t);
 
 /*
  * Accessors for IOMS registers.

@@ -336,6 +336,22 @@ genoa_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
  * specific.
  */
 void
+genoa_fabric_nbio_init(zen_nbio_t *nbio)
+{
+	nbio->zn_sst_start = 0;
+	nbio->zn_sst_count = 1;
+	/* NBIO1 has a bonus SST instance */
+	if (nbio->zn_num == GENOA_NBIO_BONUS_SST)
+		nbio->zn_sst_count++;
+}
+
+/*
+ * This is called from the common code, via an entry in the Genoa version of
+ * Zen fabric ops vector. The common code is responsible for the bulk of
+ * initialization; we merely fill in those bits that are microarchitecture
+ * specific.
+ */
+void
 genoa_fabric_ioms_init(zen_ioms_t *ioms)
 {
 	/*
@@ -442,7 +458,6 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	const uint8_t iohcnum = ioms->zio_iohcnum;
-	const uint8_t nbionum = ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -454,12 +469,6 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	case SMN_UNIT_IOAGR:
 		reg = genoa_ioagr_smn_reg(iohcnum, def, reginst);
-		break;
-	case SMN_UNIT_SDPMUX:
-		reg = genoa_sdpmux_smn_reg(nbionum, def, reginst);
-		break;
-	case SMN_UNIT_SST:
-		reg = genoa_sst_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1: {
 		/*
@@ -487,6 +496,27 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
+		    def.srd_unit);
+	}
+	return (reg);
+}
+
+static smn_reg_t
+genoa_nbio_reg(const zen_nbio_t *const nbio, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	const uint8_t nbionum = nbio->zn_num;
+	smn_reg_t reg;
+
+	switch (def.srd_unit) {
+	case SMN_UNIT_SDPMUX:
+		reg = genoa_sdpmux_smn_reg(nbionum, def, reginst);
+		break;
+	case SMN_UNIT_SST:
+		reg = genoa_sst_smn_reg(nbionum, def, reginst);
+		break;
+	default:
+		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIO",
 		    def.srd_unit);
 	}
 	return (reg);
@@ -791,46 +821,6 @@ genoa_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	}
 
 	/*
-	 * Finally, the SDPMUX variant. There are only two SDPMUX instances,
-	 * one on IOHUB0 in each NBIO.
-	 */
-	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == 0) {
-		const uint_t sdpmux = ioms->zio_nbio->zn_num;
-
-		for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
-			reg = SDPMUX_SION_S0_CLIREQ_BURST_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-			reg = SDPMUX_SION_S0_CLIREQ_BURST_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-
-			reg = SDPMUX_SION_S1_CLIREQ_BURST_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-			reg = SDPMUX_SION_S1_CLIREQ_BURST_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-
-			reg = SDPMUX_SION_S0_RDRSP_BURST_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-			reg = SDPMUX_SION_S0_RDRSP_BURST_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-
-			reg = SDPMUX_SION_S1_RDRSP_BURST_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-			reg = SDPMUX_SION_S1_RDRSP_BURST_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_RDRSP_BURST_VAL);
-
-			reg = SDPMUX_SION_S0_CLIREQ_TIME_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
-			reg = SDPMUX_SION_S0_CLIREQ_TIME_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
-
-			reg = SDPMUX_SION_S1_CLIREQ_TIME_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, 0);
-			reg = SDPMUX_SION_S1_CLIREQ_TIME_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, 0);
-		}
-	}
-
-	/*
 	 * XXX We probably don't need this since we don't have USB. But
 	 * until we have things working and can experiment, hard to
 	 * say. If someone were to use the bus, probably something we
@@ -857,6 +847,46 @@ genoa_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	val = IOHC_QOS_CTL_SET_VC1_PRI(val, 0);
 	val = IOHC_QOS_CTL_SET_VC0_PRI(val, 0);
 	zen_ioms_write(ioms, reg, val);
+}
+
+void
+genoa_fabric_nbio_arbitration(zen_nbio_t *nbio)
+{
+	smn_reg_t reg;
+
+	const uint_t sdpmux = nbio->zn_num;
+
+	for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
+		reg = SDPMUX_SION_S0_CLIREQ_BURST_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = SDPMUX_SION_S0_CLIREQ_BURST_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+
+		reg = SDPMUX_SION_S1_CLIREQ_BURST_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = SDPMUX_SION_S1_CLIREQ_BURST_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+
+		reg = SDPMUX_SION_S0_RDRSP_BURST_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = SDPMUX_SION_S0_RDRSP_BURST_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+
+		reg = SDPMUX_SION_S1_RDRSP_BURST_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+		reg = SDPMUX_SION_S1_RDRSP_BURST_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_RDRSP_BURST_VAL);
+
+		reg = SDPMUX_SION_S0_CLIREQ_TIME_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
+		reg = SDPMUX_SION_S0_CLIREQ_TIME_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_TIME_VAL);
+
+		reg = SDPMUX_SION_S1_CLIREQ_TIME_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, 0);
+		reg = SDPMUX_SION_S1_CLIREQ_TIME_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, 0);
+	}
 }
 
 void
@@ -941,6 +971,13 @@ genoa_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK1(val, 0);
 	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK0(val, 0);
 	zen_ioms_write(ioms, reg, val);
+}
+
+void
+genoa_fabric_nbio_clock_gating(zen_nbio_t *nbio)
+{
+	smn_reg_t reg;
+	uint32_t val;
 
 	const smn_reg_def_t sdpmux_regs[] = {
 		D_SDPMUX_GCG_LCLK_CTL0,
@@ -948,8 +985,8 @@ genoa_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 	};
 
 	for (uint_t i = 0; i < ARRAY_SIZE(sdpmux_regs); i++) {
-		reg = genoa_ioms_reg(ioms, sdpmux_regs[i], 0);
-		val = zen_ioms_read(ioms, reg);
+		reg = genoa_nbio_reg(nbio, sdpmux_regs[i], 0);
+		val = zen_nbio_read(nbio, reg);
 		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK9(val, 0);
 		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK8(val, 0);
 		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK7(val, 0);
@@ -960,26 +997,23 @@ genoa_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK2(val, 0);
 		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK1(val, 0);
 		val = SDPMUX_GCG_LCLK_CTL_SET_SOCLK0(val, 0);
-		zen_ioms_write(ioms, reg, val);
+		zen_nbio_write(nbio, reg, val);
 	}
 
-	/* Only NBIO1 has a bonus SST instance */
-	const uint16_t sstcnt =
-	    (ioms->zio_nbio->zn_num == GENOA_NBIO_BONUS_SST) ? 2 : 1;
-
-	for (uint16_t i = 0; i < sstcnt; i++) {
-		reg = genoa_ioms_reg(ioms, D_SST_CLOCK_CTL, i);
-		val = zen_ioms_read(ioms, reg);
+	for (uint16_t i = nbio->zn_sst_start;
+	    i < nbio->zn_sst_start + nbio->zn_sst_count; i++) {
+		reg = genoa_nbio_reg(nbio, D_SST_CLOCK_CTL, i);
+		val = zen_nbio_read(nbio, reg);
 		val = SST_CLOCK_CTL_SET_RXCLKGATE_EN(val, 1);
 		val = SST_CLOCK_CTL_SET_TXCLKGATE_EN(val, 1);
 		val = SST_CLOCK_CTL_SET_PCTRL_IDLE_TIME(val,
 		    SST_CLOCK_CTL_PCTRL_IDLE_TIME);
-		zen_ioms_write(ioms, reg, val);
+		zen_nbio_write(nbio, reg, val);
 
-		reg = genoa_ioms_reg(ioms, D_SST_SION_WRAP_CFG_GCG_LCLK_CTL, i);
-		val = zen_ioms_read(ioms, reg);
+		reg = genoa_nbio_reg(nbio, D_SST_SION_WRAP_CFG_GCG_LCLK_CTL, i);
+		val = zen_nbio_read(nbio, reg);
 		val = SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK4(val, 1);
-		zen_ioms_write(ioms, reg, val);
+		zen_nbio_write(nbio, reg, val);
 	}
 }
 

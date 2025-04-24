@@ -98,6 +98,7 @@ extern "C" {
 extern uint8_t turin_fabric_ioms_nbio_num(uint8_t);
 extern bool turin_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void turin_fabric_smu_pptable_post(zen_iodie_t *);
+extern void turin_fabric_nbio_init(zen_nbio_t *);
 extern void turin_fabric_ioms_init(zen_ioms_t *);
 
 /*
@@ -121,9 +122,11 @@ extern void turin_fabric_iohc_features(zen_ioms_t *);
 extern void turin_fabric_iohc_bus_num(zen_ioms_t *, uint8_t);
 extern void turin_fabric_iohc_fch_link(zen_ioms_t *, bool);
 extern void turin_fabric_iohc_arbitration(zen_ioms_t *);
+extern void turin_fabric_nbio_arbitration(zen_nbio_t *);
 extern void turin_fabric_nbif_arbitration(zen_nbif_t *);
 extern void turin_fabric_nbif_syshub_dma(zen_nbif_t *);
 extern void turin_fabric_iohc_clock_gating(zen_ioms_t *);
+extern void turin_fabric_nbio_clock_gating(zen_nbio_t *);
 extern void turin_fabric_nbif_clock_gating(zen_nbif_t *);
 extern void turin_fabric_ioapic_clock_gating(zen_ioms_t *);
 extern void turin_fabric_ioapic(zen_ioms_t *);

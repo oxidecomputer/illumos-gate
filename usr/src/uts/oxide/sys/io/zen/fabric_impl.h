@@ -128,6 +128,13 @@ struct zen_nbio {
 	uint8_t			zn_nioms;
 	zen_ioms_t		zn_ioms[ZEN_NBIO_MAX_IOMS];
 
+	/*
+	 * The index of the first SST instance in this NBIO, and the number of
+	 * instances.
+	 */
+	uint8_t			zn_sst_start;
+	uint8_t			zn_sst_count;
+
 	zen_iodie_t		*zn_iodie;
 };
 
@@ -379,6 +386,7 @@ extern zen_ioms_t *zen_fabric_find_ioms(zen_fabric_t *, uint32_t);
 extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
 
 extern int zen_fabric_iodie_op(zen_iodie_t *, void *);
+extern int zen_fabric_nbio_op(zen_nbio_t *, void *);
 extern int zen_fabric_ioms_op(zen_ioms_t *, void *);
 extern int zen_fabric_nbif_op(zen_nbif_t *, void *);
 extern int zen_fabric_pcie_core_op(zen_pcie_core_t *, void *);

@@ -153,6 +153,7 @@ typedef struct zen_fabric_ops {
 	 * IOHC arbitration control.
 	 */
 	void		(*zfo_iohc_arbitration)(zen_ioms_t *);
+	void		(*zfo_nbio_arbitration)(zen_nbio_t *);
 
 	/*
 	 * nBIF DMA arbitration control.
@@ -163,6 +164,7 @@ typedef struct zen_fabric_ops {
 	 * SDP port control register setup.
 	 */
 	void		(*zfo_sdp_control)(zen_ioms_t *);
+	void		(*zfo_nbio_sdp_control)(zen_nbio_t *);
 
 	/*
 	 * SYSHUB DMA tweaks.
@@ -173,6 +175,7 @@ typedef struct zen_fabric_ops {
 	 * IOHC and friends clock gating.
 	 */
 	void		(*zfo_iohc_clock_gating)(zen_ioms_t *);
+	void		(*zfo_nbio_clock_gating)(zen_nbio_t *);
 
 	/*
 	 * nBIF clock gating.
@@ -271,6 +274,7 @@ typedef struct zen_fabric_ops {
 	bool		(*zfo_smu_pptable_init)(zen_fabric_t *, void *,
 	    size_t *);
 	void		(*zfo_smu_pptable_post)(zen_iodie_t *);
+	void		(*zfo_nbio_init)(zen_nbio_t *);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
 	void		(*zfo_nbif_init)(zen_nbif_t *);
 
@@ -353,6 +357,7 @@ extern void zen_null_check_furtive_reset(void);
 extern bool zen_null_cgpll_set_ssc(bool);
 extern void zen_null_fabric_iohc_pci_ids(zen_ioms_t *);
 extern void zen_null_fabric_sdp_control(zen_ioms_t *);
+extern void zen_null_fabric_nbio_sdp_control(zen_nbio_t *);
 extern void zen_null_fabric_nbif_bridges(zen_ioms_t *);
 
 /*

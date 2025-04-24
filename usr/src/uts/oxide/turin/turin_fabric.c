@@ -512,6 +512,25 @@ turin_fabric_smu_pptable_post(zen_iodie_t *iodie)
  * specific.
  */
 void
+turin_fabric_nbio_init(zen_nbio_t *nbio)
+{
+	nbio->zn_sst_start = 0;
+	nbio->zn_sst_count = TURIN_NBIO_SST_COUNT;
+
+	/* There is no SST instance 0 on NBIO1 */
+	if (nbio->zn_num == 1) {
+		nbio->zn_sst_start++;
+		nbio->zn_sst_count--;
+	}
+}
+
+/*
+ * This is called from the common code, via an entry in the Turin version of
+ * Zen fabric ops vector. The common code is responsible for the bulk of
+ * initialization; we merely fill in those bits that are microarchitecture
+ * specific.
+ */
+void
 turin_fabric_ioms_init(zen_ioms_t *ioms)
 {
 	/*
@@ -633,7 +652,6 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
     const uint16_t reginst)
 {
 	const uint8_t iohcnum = ioms->zio_iohcnum;
-	const uint8_t nbionum = ioms->zio_nbio->zn_num;
 	smn_reg_t reg;
 
 	switch (def.srd_unit) {
@@ -645,12 +663,6 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	case SMN_UNIT_IOAGR:
 		reg = turin_ioagr_smn_reg(iohcnum, def, reginst);
-		break;
-	case SMN_UNIT_SDPMUX:
-		reg = turin_sdpmux_smn_reg(nbionum, def, reginst);
-		break;
-	case SMN_UNIT_SST:
-		reg = turin_sst_smn_reg(nbionum, def, reginst);
 		break;
 	case SMN_UNIT_IOMMUL1:
 		reg = turin_iommul1_pcie_smn_reg(iohcnum, def, 0);
@@ -668,6 +680,27 @@ turin_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
+		    def.srd_unit);
+	}
+	return (reg);
+}
+
+static smn_reg_t
+turin_nbio_reg(const zen_nbio_t *const nbio, const smn_reg_def_t def,
+    const uint16_t reginst)
+{
+	const uint8_t nbionum = nbio->zn_num;
+	smn_reg_t reg;
+
+	switch (def.srd_unit) {
+	case SMN_UNIT_SDPMUX:
+		reg = turin_sdpmux_smn_reg(nbionum, def, reginst);
+		break;
+	case SMN_UNIT_SST:
+		reg = turin_sst_smn_reg(nbionum, def, reginst);
+		break;
+	default:
+		cmn_err(CE_PANIC, "invalid SMN register type %d for NBIO",
 		    def.srd_unit);
 	}
 	return (reg);
@@ -959,26 +992,6 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	}
 
 	/*
-	 * Finally, the SDPMUX variant. There are two SDPMUX instances,
-	 * one on the first IOHUB in each NBIO.
-	 */
-	if (TURIN_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == 0) {
-		const uint_t sdpmux = ioms->zio_nbio->zn_num;
-
-		for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
-			reg = SDPMUX_SION_S0_CLIREQ_BURST_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-			reg = SDPMUX_SION_S0_CLIREQ_BURST_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-
-			reg = SDPMUX_SION_S1_CLIREQ_BURST_LOW(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-			reg = SDPMUX_SION_S1_CLIREQ_BURST_HI(sdpmux, i);
-			zen_ioms_write(ioms, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
-		}
-	}
-
-	/*
 	 * XXX We probably don't need this since we don't have USB. But until
 	 * we have things working and can experiment, hard to say. If someone
 	 * were to use the bus, probably something we need to consider.
@@ -1004,6 +1017,26 @@ turin_fabric_iohc_arbitration(zen_ioms_t *ioms)
 	val = IOHC_QOS_CTL_SET_VC1_PRI(val, 0);
 	val = IOHC_QOS_CTL_SET_VC0_PRI(val, 0);
 	zen_ioms_write(ioms, reg, val);
+}
+
+void
+turin_fabric_nbio_arbitration(zen_nbio_t *nbio)
+{
+	smn_reg_t reg;
+
+	const uint_t sdpmux = nbio->zn_num;
+
+	for (uint_t i = 0; i < SDPMUX_SION_MAX_ENTS; i++) {
+		reg = SDPMUX_SION_S0_CLIREQ_BURST_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = SDPMUX_SION_S0_CLIREQ_BURST_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+
+		reg = SDPMUX_SION_S1_CLIREQ_BURST_LOW(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+		reg = SDPMUX_SION_S1_CLIREQ_BURST_HI(sdpmux, i);
+		zen_nbio_write(nbio, reg, SDPMUX_SION_CLIREQ_BURST_VAL);
+	}
 }
 
 void
@@ -1127,22 +1160,26 @@ turin_fabric_iohc_clock_gating(zen_ioms_t *ioms)
 	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK1(val, 0);
 	val = IOAGR_GCG_LCLK_CTL_SET_SOCLK0(val, 0);
 	zen_ioms_write(ioms, reg, val);
+}
 
-	for (uint16_t i = 0; i < 2; i++) {
-		/* There is no SST instance 0 on NBIO1 */
-		if (ioms->zio_nbio->zn_num == 1 && i == 0)
-			continue;
+void
+turin_fabric_nbio_clock_gating(zen_nbio_t *nbio)
+{
+	smn_reg_t reg;
+	uint32_t val;
 
-		reg = turin_ioms_reg(ioms, D_SST_CLOCK_CTL, i);
-		val = zen_ioms_read(ioms, reg);
+	for (uint16_t i = nbio->zn_sst_start;
+	    i < nbio->zn_sst_start + nbio->zn_sst_count; i++) {
+		reg = turin_nbio_reg(nbio, D_SST_CLOCK_CTL, i);
+		val = zen_nbio_read(nbio, reg);
 		val = SST_CLOCK_CTL_SET_RXCLKGATE_EN(val, 1);
 		val = SST_CLOCK_CTL_SET_TXCLKGATE_EN(val, 1);
-		zen_ioms_write(ioms, reg, val);
+		zen_nbio_write(nbio, reg, val);
 
-		reg = turin_ioms_reg(ioms, D_SST_SION_WRAP_CFG_GCG_LCLK_CTL, i);
-		val = zen_ioms_read(ioms, reg);
+		reg = turin_nbio_reg(nbio, D_SST_SION_WRAP_CFG_GCG_LCLK_CTL, i);
+		val = zen_nbio_read(nbio, reg);
 		val = SST_SION_WRAP_CFG_GCG_LCLK_CTL_SET_SOCLK4(val, 1);
-		zen_ioms_write(ioms, reg, val);
+		zen_nbio_write(nbio, reg, val);
 	}
 }
 

@@ -93,6 +93,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	 * frequency collapses to Fmin and stays there.
 	 */
 	.zfo_smu_misc_late_init = turin_smu_features_init,
+	.zfo_nbio_init = turin_fabric_nbio_init,
 	.zfo_ioms_init = turin_fabric_ioms_init,
 
 	.zfo_physaddr_size = turin_fabric_physaddr_size,
@@ -105,8 +106,10 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_iohc_bus_num = turin_fabric_iohc_bus_num,
 	.zfo_iohc_fch_link = turin_fabric_iohc_fch_link,
 	.zfo_iohc_arbitration = turin_fabric_iohc_arbitration,
+	.zfo_nbio_arbitration = turin_fabric_nbio_arbitration,
 	.zfo_nbif_arbitration = turin_fabric_nbif_arbitration,
 	.zfo_sdp_control = zen_null_fabric_sdp_control, /* skip for turin */
+	.zfo_nbio_sdp_control = zen_null_fabric_nbio_sdp_control, /* skip */
 	.zfo_nbif_syshub_dma = turin_fabric_nbif_syshub_dma,
 	/*
 	 * Unlike prior SoCs, the Turin family automatically enables clock
@@ -115,6 +118,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	 * change in surrounding firmware doesn't change our desired settings.
 	 */
 	.zfo_iohc_clock_gating = turin_fabric_iohc_clock_gating,
+	.zfo_nbio_clock_gating = turin_fabric_nbio_clock_gating,
 	.zfo_nbif_clock_gating = turin_fabric_nbif_clock_gating,
 	.zfo_ioapic_clock_gating = turin_fabric_ioapic_clock_gating,
 	.zfo_ioapic = turin_fabric_ioapic,

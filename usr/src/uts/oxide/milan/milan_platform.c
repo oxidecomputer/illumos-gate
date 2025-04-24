@@ -87,10 +87,13 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_iohc_bus_num = milan_fabric_iohc_bus_num,
 	.zfo_iohc_fch_link = milan_fabric_iohc_fch_link,
 	.zfo_iohc_arbitration = milan_fabric_iohc_arbitration,
+	.zfo_nbio_arbitration = milan_fabric_nbio_arbitration,
 	.zfo_nbif_arbitration = milan_fabric_nbif_arbitration,
 	.zfo_sdp_control = milan_fabric_sdp_control,
+	.zfo_nbio_sdp_control = milan_fabric_nbio_sdp_control,
 	.zfo_nbif_syshub_dma = milan_fabric_nbif_syshub_dma,
 	.zfo_iohc_clock_gating = milan_fabric_iohc_clock_gating,
+	.zfo_nbio_clock_gating = milan_fabric_nbio_clock_gating,
 	.zfo_nbif_clock_gating = milan_fabric_nbif_clock_gating,
 	.zfo_ioapic_clock_gating = milan_fabric_ioapic_clock_gating,
 	.zfo_ioapic = milan_fabric_ioapic,
@@ -118,6 +121,7 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 
 	.zfo_smu_misc_init = milan_fabric_smu_misc_init,
 	.zfo_smu_pptable_init = milan_fabric_smu_pptable_init,
+	.zfo_nbio_init = milan_fabric_nbio_init,
 	.zfo_ioms_init = milan_fabric_ioms_init,
 
 	.zfo_get_dxio_fw_version = milan_get_dxio_fw_version,

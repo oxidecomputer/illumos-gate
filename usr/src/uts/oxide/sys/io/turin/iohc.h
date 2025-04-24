@@ -40,6 +40,7 @@ extern "C" {
 
 #define	TURIN_SDPMUX_COUNT	2
 #define	TURIN_NBIO_COUNT	2
+#define	TURIN_NBIO_SST_COUNT	2
 
 /*
  * This is a variant of ZEN_MAKE_SMN_REG_FN() for Turin that handles the
