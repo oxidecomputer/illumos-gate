@@ -34,7 +34,7 @@ typeset -rA GPIOMAP=(
 	)
 	[Oxide,Cosmo]=(
 		[controller]=zen_gpio0
-		[gpio]=AGPIO087
+		[gpio]=AGPIO87
 		[attachment]=pcie16
 		[pci_subsystem_device_id]=0xfff8
 	)
