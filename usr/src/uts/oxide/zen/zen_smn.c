@@ -23,6 +23,7 @@
 #include <sys/cmn_err.h>
 #include <sys/mutex.h>
 #include <sys/pci_cfgspace.h>
+#include <sys/clock.h>
 
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/smn.h>
@@ -197,4 +198,57 @@ zen_smn_write(zen_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
 	}
 
 	mutex_exit(&iodie->zi_smn_lock);
+}
+
+void
+zen_hsmp_test(zen_iodie_t *iodie)
+{
+	const smn_reg_t id = SMN_MAKE_REG(0x3b10934, SMN_UNIT_IOHC);
+	const smn_reg_t resp = SMN_MAKE_REG(0x3b10980, SMN_UNIT_IOHC);
+	const smn_reg_t arg0 = SMN_MAKE_REG(0x3b109e0, SMN_UNIT_IOHC);
+#if 0
+	const smn_reg_t arg1 = SMN_MAKE_REG(0x3b109e4, SMN_UNIT_IOHC);
+	const smn_reg_t arg2 = SMN_MAKE_REG(0x3b109e8, SMN_UNIT_IOHC);
+	const smn_reg_t arg3 = SMN_MAKE_REG(0x3b109ec, SMN_UNIT_IOHC);
+	const smn_reg_t arg4 = SMN_MAKE_REG(0x3b109f0, SMN_UNIT_IOHC);
+	const smn_reg_t arg5 = SMN_MAKE_REG(0x3b109f4, SMN_UNIT_IOHC);
+	const smn_reg_t arg6 = SMN_MAKE_REG(0x3b109f8, SMN_UNIT_IOHC);
+	const smn_reg_t arg7 = SMN_MAKE_REG(0x3b109fc, SMN_UNIT_IOHC);
+#endif
+	uint32_t r;
+
+#if 0
+	// Test Message
+	zen_smn_write(iodie, resp, 0);
+	zen_smn_write(iodie, arg0, 0x1234);
+	zen_smn_write(iodie, id, 1);
+	for (uint_t i = 0; i < 100; i++) {
+		for (uint_t j = 0; j < 10; j++) {
+			r = zen_smn_read(iodie, resp);
+			if (r != 0)
+				goto testout;
+		}
+		eb_pausems(1);
+	}
+testout:
+	cmn_err(CE_NOTE, "HSMP Test result: response 0x%x value 0x%x", r,
+	    zen_smn_read(iodie, arg0));
+#endif
+
+	// Current freq limit
+	zen_smn_write(iodie, resp, 0);
+	zen_smn_write(iodie, arg0, 0);
+	zen_smn_write(iodie, id, 0x19);
+	for (uint_t i = 0; i < 1000; i++) {
+		for (uint_t j = 0; j < 10; j++) {
+			r = zen_smn_read(iodie, resp);
+			if (r != 0)
+				goto freqout;
+		}
+		eb_pausems(1);
+	}
+
+freqout:
+	cmn_err(CE_NOTE, "HSMP Freq result: response 0x%x value 0x%x", r,
+	    zen_smn_read(iodie, arg0));
 }

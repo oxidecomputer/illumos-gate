@@ -1457,6 +1457,7 @@ start_cpu(processorid_t who)
 	int error = 0;
 	cpuset_t tempset;
 	hrtime_t spin = 2 * drv_hztousec(1) * (NANOSEC / MICROSEC), start;
+	extern void zen_hsmp_get(void);
 
 	ASSERT(who != 0);
 
@@ -1476,17 +1477,25 @@ start_cpu(processorid_t who)
 	/*
 	 * First configure cpu.
 	 */
+
+	zen_hsmp_get();
 	cp = mp_cpu_configure_common(who);
 	ASSERT(cp != NULL);
+
+	zen_hsmp_get();
 
 	/*
 	 * Then start cpu.
 	 */
+
+	zen_hsmp_get();
 	error = mp_start_cpu_common(cp);
 	if (error != 0) {
 		mp_cpu_unconfigure_common(cp, error);
 		return (error);
 	}
+
+	zen_hsmp_get();
 
 	start = gethrtime();
 
@@ -1523,6 +1532,9 @@ void
 start_other_cpus(int cprboot)
 {
 	_NOTE(ARGUNUSED(cprboot));
+	extern void zen_hsmp_get(void);
+
+	zen_hsmp_get();
 
 	uint_t who;
 	uint_t bootcpuid = 0;
@@ -1532,10 +1544,14 @@ start_other_cpus(int cprboot)
 	 */
 	init_cpu_info(CPU);
 
+	zen_hsmp_get();
+
 	init_cpu_id_gdt(CPU);
 
 	cmn_err(CE_CONT, "?cpu%d: %s\n", CPU->cpu_id, CPU->cpu_idstr);
 	cmn_err(CE_CONT, "?cpu%d: %s\n", CPU->cpu_id, CPU->cpu_brandstr);
+
+	zen_hsmp_get();
 
 	/*
 	 * KPTI initialisation happens very early in boot, before logging is
@@ -1554,6 +1570,8 @@ start_other_cpus(int cprboot)
 	 * Initialize our syscall handlers
 	 */
 	init_cpu_syscall(CPU);
+
+	zen_hsmp_get();
 
 	/*
 	 * Take the boot cpu out of the mp_cpus set because we know
@@ -1580,6 +1598,8 @@ start_other_cpus(int cprboot)
 	 */
 	cpu_pause_init();
 
+	zen_hsmp_get();
+
 	xc_init_cpu(CPU);		/* initialize processor crosscalls */
 
 	if (mach_cpucontext_init() != 0)
@@ -1592,6 +1612,8 @@ start_other_cpus(int cprboot)
 	 * do their TSC syncs with the same CPU.
 	 */
 	affinity_set(CPU_CURRENT);
+
+	zen_hsmp_get();
 
 	for (who = 0; who < NCPU; who++) {
 		if (!CPU_IN_SET(mp_cpus, who))
@@ -1613,9 +1635,13 @@ start_other_cpus(int cprboot)
 	mach_cpucontext_fini();
 
 done:
+	zen_hsmp_get();
+
 	if (get_hwenv() == HW_NATIVE)
 		workaround_errata_end();
 	cmi_post_mpstartup();
+
+	zen_hsmp_get();
 
 	/*
 	 * Once other CPUs have completed startup procedures, perform
@@ -1632,6 +1658,8 @@ done:
 		    "Use \"boot-ncpus\" parameter to enable more CPU(s). "
 		    "See eeprom(1M).");
 	}
+
+	zen_hsmp_get();
 }
 
 int
