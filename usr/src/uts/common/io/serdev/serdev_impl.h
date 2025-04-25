@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SERDEV_IMPL_H
@@ -164,6 +164,17 @@ typedef enum serdev_bufcall {
 
 #define	SERDEV_NBUFCALLS		(SERDEV_BUFCALL_READ + 1)
 
+typedef struct serdev_stats {
+	kstat_named_t			srds_wput_fail;
+	kstat_named_t			srds_wsrv_fail;
+	kstat_named_t			srds_rsrv_fail;
+} serdev_stats_t;
+
+#define	SERDEV_STAT_INIT(sd, stat)	\
+    kstat_named_init(&(sd)->srd_stats.srds_##stat, #stat, KSTAT_DATA_UINT64)
+#define	SERDEV_STAT_INCR(sd, stat)	\
+    atomic_inc_64(&(sd)->srd_stats.srds_##stat.value.ui64)
+
 struct serdev {
 	kmutex_t			srd_mutex;
 	kcondvar_t			srd_cv;
@@ -201,6 +212,9 @@ struct serdev {
 	serdev_stop_rx_t		srd_stop_rx_why;
 	uint_t				srd_last_modem_status;
 	tty_common_t			srd_tty;
+
+	kstat_t				*srd_kstat;
+	serdev_stats_t			srd_stats;
 };
 
 extern void serdev_taskq_dispatch(serdev_t *);
