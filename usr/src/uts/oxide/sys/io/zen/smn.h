@@ -60,6 +60,7 @@ uint32_t zen_smn_early_read(const smn_reg_t);
  */
 extern uint32_t zen_smn_read(zen_iodie_t *, const smn_reg_t);
 extern void zen_smn_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
+extern void zen_hsmp_test(zen_iodie_t *);
 
 /*
  * Accessors for Core registers.
