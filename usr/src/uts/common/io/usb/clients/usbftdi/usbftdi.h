@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _USBSER_USBFTDI_USBFTDI_H
@@ -146,6 +146,23 @@ typedef struct uftdi {
 	usb_client_dev_data_t		*uf_usb_dev;
 } uftdi_t;
 
+typedef struct uftdi_if_stats {
+	kstat_named_t			uis_program_fail;
+	kstat_named_t			uis_allocb_fail;
+	kstat_named_t			uis_in_error;
+	kstat_named_t			uis_rx_fail;
+	kstat_named_t			uis_out_error;
+	kstat_named_t			uis_tx_fail;
+	kstat_named_t			uis_tx_overlap;
+	kstat_named_t			uis_tx_max_size;
+	kstat_named_t			uis_tx_max_count;
+} uftdi_if_stats_t;
+
+#define	UFTDI_STAT_INIT(ui, stat)	\
+    kstat_named_init(&(ui)->ui_stats.uis_##stat, #stat, KSTAT_DATA_UINT64)
+#define	UFTDI_STAT_INCR(ui, stat)	\
+    atomic_inc_64(&(ui)->ui_stats.uis_##stat.value.ui64)
+
 struct uftdi_if {
 	uftdi_t				*ui_parent;
 
@@ -175,6 +192,9 @@ struct uftdi_if {
 	uint8_t				ui_last_msr; /* Modem Status Register */
 	uint8_t				ui_last_lsr; /* Line Status Register */
 	uint8_t				ui_last_rxerr; /* LSR RX errors */
+
+	kstat_t				*ui_kstat;
+	uftdi_if_stats_t		ui_stats;
 };
 
 #ifdef	__cplusplus

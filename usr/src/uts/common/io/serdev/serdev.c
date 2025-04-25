@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include "serdev_impl.h"
@@ -520,6 +520,10 @@ serdev_teardown(serdev_t *srd)
 	cv_destroy(&srd->srd_cv);
 	mutex_destroy(&srd->srd_mutex);
 
+	if (srd->srd_kstat != NULL) {
+		kstat_delete(srd->srd_kstat);
+	}
+
 	ddi_set_driver_private(srd->srd_dip, NULL);
 	ddi_soft_state_free(serdev_state, ddi_get_instance(srd->srd_dip));
 }
@@ -556,6 +560,22 @@ serdev_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	    0, 0, 0);
 	mutex_init(&srd->srd_mutex, NULL, MUTEX_DRIVER, NULL);
 	cv_init(&srd->srd_cv, NULL, CV_DEFAULT, NULL);
+
+	if ((srd->srd_kstat = kstat_create("serdev", inst, "stats", "misc",
+	    KSTAT_TYPE_NAMED, sizeof (serdev_stats_t) / sizeof (kstat_named_t),
+	    KSTAT_FLAG_VIRTUAL)) == NULL) {
+		dev_err(dip, CE_WARN, "could not create kstats");
+		mutex_enter(&srd->srd_mutex);
+		serdev_teardown(srd);
+		return (DDI_FAILURE);
+	}
+
+	SERDEV_STAT_INIT(srd, wput_fail);
+	SERDEV_STAT_INIT(srd, wsrv_fail);
+	SERDEV_STAT_INIT(srd, rsrv_fail);
+	srd->srd_kstat->ks_data = &srd->srd_stats;
+
+	kstat_install(srd->srd_kstat);
 
 	/*
 	 * Create the minor nodes for this serial port.  Each port on a
@@ -1711,6 +1731,7 @@ serdev_wput(queue_t *q, mblk_t *mp)
 			/*
 			 * XXX record error?
 			 */
+			SERDEV_STAT_INCR(srd, wput_fail);
 			break;
 		}
 		return (0);
@@ -1827,6 +1848,7 @@ serdev_wsrv(queue_t *q)
 				/*
 				 * XXX report failure?
 				 */
+				SERDEV_STAT_INCR(srd, wsrv_fail);
 				freemsg(mp);
 			}
 
@@ -1969,6 +1991,7 @@ hangup:
 					/*
 					 * XXX record failure?
 					 */
+					SERDEV_STAT_INCR(srd, rsrv_fail);
 					freemsg(mp);
 				}
 
