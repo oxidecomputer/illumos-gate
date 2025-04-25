@@ -50,6 +50,7 @@ typedef struct zen_iodie zen_iodie_t;
  */
 extern uint32_t zen_smn_read(zen_iodie_t *, const smn_reg_t);
 extern void zen_smn_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
+extern void zen_hsmp_test(zen_iodie_t *);
 
 /*
  * Accessors for Core registers.
