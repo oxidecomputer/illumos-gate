@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/conf.h>
@@ -390,6 +390,8 @@ uftdi_program(uftdi_if_t *ui, const uftdi_regs_t *ur)
 	mutex_exit(&uf->uf_mutex);
 
 	if (!uftdi_program_try(uf, port, ur)) {
+		UFTDI_STAT_INCR(ui, program_fail);
+
 		/*
 		 * If any command failed, we attempt to undo the entire state
 		 * change by reprogramming the device to our original values.
@@ -536,6 +538,7 @@ uftdi_rx_error(uftdi_if_t *ui, mblk_t *mp, uint8_t lsr)
 			 * cached LSR error bits value so that if the error is
 			 * still asserted in future we can try again.
 			 */
+			UFTDI_STAT_INCR(ui, allocb_fail);
 			break;
 		}
 
@@ -582,6 +585,7 @@ uftdi_pipe_in_err(usb_pipe_handle_t pipe, usb_bulk_req_t *req)
 	/*
 	 * If there was an error, just free the request and try again.
 	 */
+	UFTDI_STAT_INCR(ui, in_error);
 	usb_free_bulk_req(req);
 
 	uftdi_pipe_in_complete(ui->ui_parent, ui);
@@ -725,6 +729,7 @@ uftdi_rx_start(uftdi_t *uf, uftdi_if_t *ui)
 
 	int r = usb_pipe_bulk_xfer(ui->ui_pipe_in.up_pipe, br, 0);
 	if (r != USB_SUCCESS) {
+		UFTDI_STAT_INCR(ui, rx_fail);
 		usb_free_bulk_req(br);
 	}
 
@@ -767,6 +772,8 @@ uftdi_pipe_out_err(usb_pipe_handle_t pipe, usb_bulk_req_t *req)
 	mblk_t *mp = req->bulk_data;
 
 	if (mp != NULL && MBLKL(mp) > 0) {
+		UFTDI_STAT_INCR(ui, out_error);
+
 		/*
 		 * There was an exception sending this data.  Put it back on
 		 * the front of the transmit queue so we can try to send it
@@ -868,6 +875,8 @@ uftdi_tx_start(uftdi_t *uf, uftdi_if_t *ui)
 	int r = usb_pipe_bulk_xfer(ui->ui_pipe_out.up_pipe, br, 0);
 
 	if (r != USB_SUCCESS) {
+		UFTDI_STAT_INCR(ui, tx_fail);
+
 		br->bulk_data = NULL;
 		usb_free_bulk_req(br);
 	}
@@ -1223,8 +1232,31 @@ uftdi_serdev_tx(void *arg, mblk_t *mp)
 		 * XXX I don't think we expect overlapping transmission
 		 * requests from serdev?
 		 */
-		VERIFY3P(ui->ui_tx_mp, ==, NULL);
-		ui->ui_tx_mp = mp;
+		if (ui->ui_tx_mp != NULL) {
+			UFTDI_STAT_INCR(ui, tx_overlap);
+			linkb(ui->ui_tx_mp, mp);
+		} else {
+			ui->ui_tx_mp = mp;
+		}
+
+		/*
+		 * Measure the size of queued data so that we can record the
+		 * maximum value:
+		 */
+		size_t sz = 0;
+		uint64_t count = 0;
+
+		for (mblk_t *b = ui->ui_tx_mp; b != NULL; b = b->b_cont) {
+			sz += MBLKL(b);
+			count++;
+		}
+
+		if (sz > ui->ui_stats.uis_tx_max_size.value.ui64) {
+			ui->ui_stats.uis_tx_max_size.value.ui64 = sz;
+		}
+		if (count > ui->ui_stats.uis_tx_max_count.value.ui64) {
+			ui->ui_stats.uis_tx_max_count.value.ui64 = count;
+		}
 	}
 
 	/*
@@ -1461,6 +1493,10 @@ uftdi_teardown(uftdi_t *uf)
 			serdev_handle_free(ui->ui_serdev);
 		}
 
+		if (ui->ui_kstat != NULL) {
+			kstat_delete(ui->ui_kstat);
+		}
+
 		kmem_free(ui, sizeof (*ui));
 		uf->uf_if[i] = NULL;
 	}
@@ -1601,6 +1637,33 @@ uftdi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 			dev_err(dip, CE_WARN, "serdev allocation failure");
 			goto bail;
 		}
+
+		/*
+		 * Per-port statistics need a unique name:
+		 */
+		char name[KSTAT_STRLEN];
+		(void) snprintf(name, sizeof (name), "port%u", ui->ui_port);
+
+		if ((ui->ui_kstat = kstat_create("usbftdi", inst, name, "misc",
+		    KSTAT_TYPE_NAMED,
+		    sizeof (ui->ui_stats) / sizeof (kstat_named_t),
+		    KSTAT_FLAG_VIRTUAL)) == NULL) {
+			dev_err(dip, CE_WARN, "could not create kstat");
+			goto bail;
+		}
+
+		UFTDI_STAT_INIT(ui, program_fail);
+		UFTDI_STAT_INIT(ui, allocb_fail);
+		UFTDI_STAT_INIT(ui, in_error);
+		UFTDI_STAT_INIT(ui, rx_fail);
+		UFTDI_STAT_INIT(ui, out_error);
+		UFTDI_STAT_INIT(ui, tx_fail);
+		UFTDI_STAT_INIT(ui, tx_overlap);
+		UFTDI_STAT_INIT(ui, tx_max_size);
+		UFTDI_STAT_INIT(ui, tx_max_count);
+		ui->ui_kstat->ks_data = &ui->ui_stats;
+
+		kstat_install(ui->ui_kstat);
 	}
 
 	if (usb_register_hotplug_cbs(dip, uftdi_usb_disconnect,
