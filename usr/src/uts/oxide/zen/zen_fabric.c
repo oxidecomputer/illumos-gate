@@ -2547,6 +2547,8 @@ zen_fabric_init_oxio(zen_iodie_t *iodie, void *arg __unused)
 	iodie->zi_engines = oxide_board_data->obd_engines[idx];
 	iodie->zi_nengines = *oxide_board_data->obd_nengines[idx];
 
+	zen_hsmp_test(iodie);
+
 	return (0);
 }
 
@@ -4053,4 +4055,18 @@ zen_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
 		return (zen_smn_write(iodie, reg, val));
 	}
 	return (ops->zfo_pcie_port_write(port, reg, val));
+}
+
+static int
+zen_hsmp_cb(zen_iodie_t *iodie, void *arg)
+{
+	zen_hsmp_test(iodie);
+
+	return (0);
+}
+
+void
+zen_hsmp_get(void)
+{
+	(void) zen_fabric_walk_iodie(&zen_fabric, zen_hsmp_cb, NULL);
 }
