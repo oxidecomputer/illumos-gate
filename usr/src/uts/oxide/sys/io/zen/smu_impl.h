@@ -98,6 +98,11 @@ extern bool zen_smu_rpc_send_pptable(zen_iodie_t *, zen_pptable_t *);
  */
 extern bool zen_smu_set_features(zen_iodie_t *, uint32_t, uint32_t);
 
+/*
+ * Enables HSMP interrupts.
+ */
+extern bool zen_smu_rpc_enable_hsmp_int(zen_iodie_t *);
+
 #ifdef __cplusplus
 }
 #endif

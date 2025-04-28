@@ -2457,6 +2457,23 @@ zen_fabric_init_pptable(zen_fabric_t *fabric)
 }
 
 static int
+zen_fabric_enable_hsmp_int(zen_iodie_t *iodie, void *arg __unused)
+{
+	if (zen_smu_rpc_enable_hsmp_int(iodie)) {
+		cmn_err(CE_CONT, "?IO die %u: Enabled HSMP interrupts\n",
+		    iodie->zi_num);
+	}
+
+	return (0);
+}
+
+static void
+zen_fabric_init_smu(zen_fabric_t *fabric)
+{
+	(void) zen_fabric_walk_iodie(fabric, zen_fabric_enable_hsmp_int, NULL);
+}
+
+static int
 zen_fabric_init_oxio(zen_iodie_t *iodie, void *arg __unused)
 {
 	zen_soc_t *soc = iodie->zi_soc;
@@ -2992,6 +3009,11 @@ zen_fabric_init(void)
 	 * Send the Power and Performance table to the SMU.
 	 */
 	zen_fabric_init_pptable(fabric);
+
+	/*
+	 * Miscellaneous SMU configuration.
+	 */
+	zen_fabric_init_smu(fabric);
 
 	/*
 	 * Walk IOMS and disable unused PCIe bridges on each IOHC.

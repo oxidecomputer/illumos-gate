@@ -43,6 +43,7 @@ extern "C" {
 #define	ZEN_SMU_OP_HAVE_AN_ADDRESS	0x05
 #define	ZEN_SMU_OP_GET_BRAND_STRING	0x0d
 #define	ZEN_SMU_OP_TX_PP_TABLE		0x10
+#define	ZEN_SMU_OP_ENABLE_HSMP_INT	0x41
 
 typedef enum zen_smu_rpc_res {
 	/*

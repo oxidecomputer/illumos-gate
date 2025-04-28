@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -358,6 +358,27 @@ zen_smu_set_features(zen_iodie_t *iodie, uint32_t features,
 	    "SMU features (0x%08x, 0x%08x, 0x%08x) enabled\n",
 	    iodie->zi_soc->zs_num, iodie->zi_num, features, features_ext,
 	    features64);
+
+	return (true);
+}
+
+bool
+zen_smu_rpc_enable_hsmp_int(zen_iodie_t *iodie)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	rpc.zsr_req = ZEN_SMU_OP_ENABLE_HSMP_INT;
+
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
+		    "SMU enable HSMP interrupts RPC Failed: "
+		    "SMU req 0x%x resp %s (0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num, rpc.zsr_req,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
+		return (false);
+	}
 
 	return (true);
 }
