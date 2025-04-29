@@ -365,6 +365,7 @@ f kernel/drv/amd64/ucode 0755 root sys
 f kernel/drv/amd64/udp 0755 root sys
 f kernel/drv/amd64/udp6 0755 root sys
 f kernel/drv/amd64/usmn 0755 root sys
+f kernel/drv/amd64/uhsmp 0755 root sys
 f kernel/drv/amd64/zen_udf 0755 root sys
 f kernel/drv/amd64/zen_umc 0755 root sys
 f kernel/drv/amd64/zfs 0755 root sys
@@ -1252,6 +1253,7 @@ f usr/lib/sysevent/modules/sysevent_reg_mod.so 0755 root bin
 f usr/lib/sysevent/syseventconfd 0555 root bin
 f usr/lib/sysevent/syseventd 0555 root bin
 f usr/lib/usmn 0555 root bin
+f usr/lib/uhsmp 0555 root bin
 f usr/lib/udf 0555 root bin
 f usr/lib/utmpd 0555 root bin
 d usr/platform 0755 root sys

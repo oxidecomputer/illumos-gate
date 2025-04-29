@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _AMDZEN_H
@@ -191,7 +191,8 @@ typedef enum {
 	AMDZEN_C_SMNTEMP = 1,
 	AMDZEN_C_USMN,
 	AMDZEN_C_ZEN_UDF,
-	AMDZEN_C_ZEN_UMC
+	AMDZEN_C_ZEN_UMC,
+	AMDZEN_C_UHSMP
 } amdzen_child_t;
 
 /*

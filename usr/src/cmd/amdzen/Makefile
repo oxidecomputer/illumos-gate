@@ -10,10 +10,10 @@
 #
 
 #
-# Copyright 2024 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
-PROG= usmn udf apobdump
+PROG= usmn udf apobdump uhsmp
 
 include ../Makefile.cmd
 
@@ -24,6 +24,7 @@ CSTD = $(CSTD_GNU99)
 COMMON_OBJS = apob_common.o
 
 apobdump := EXTRA_OBJS += apob_common.o
+uhsmp := CPPFLAGS += -I$(SRC)/uts/intel
 
 .KEEP_STATE:
 

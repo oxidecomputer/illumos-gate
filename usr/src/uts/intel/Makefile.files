@@ -24,7 +24,7 @@
 # Copyright 2019 Joyent, Inc.
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2019 Peter Tribble.
-# Copyright 2024 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 #
@@ -348,6 +348,7 @@ AMDZEN_OBJS = amdzen.o
 AMDZEN_STUB_OBJS = amdzen_stub.o
 SMNTEMP_OBJS = smntemp.o
 USMN_OBJS = usmn.o
+UHSMP_OBJS = uhsmp.o
 ZEN_UDF_OBJS = zen_udf.o
 ZEN_UMC_OBJS = zen_umc.o zen_umc_decode.o zen_umc_dump.o
 ZEN_DATA_OBJS = zen_data.o zen_data_sp3.o zen_data_sp5.o

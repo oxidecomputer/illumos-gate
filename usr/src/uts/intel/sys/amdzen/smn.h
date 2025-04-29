@@ -16,6 +16,7 @@
 #ifndef _SYS_AMDZEN_SMN_H
 #define	_SYS_AMDZEN_SMN_H
 
+#include <sys/ccompile.h>
 #include <sys/debug.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
@@ -400,7 +401,8 @@ typedef enum smn_unit {
 	SMN_UNIT_FCH_RMTMUX,
 	SMN_UNIT_FCH_RMTGPIO_AGG,
 	SMN_UNIT_FCH_I3C,
-	SMN_UNIT_FCH_ESPI
+	SMN_UNIT_FCH_ESPI,
+	SMN_UNIT_HSMP
 } smn_unit_t;
 
 /*
@@ -531,7 +533,7 @@ _fn(const uint8_t unitno, const smn_reg_def_t def, const uint16_t reginst) \
 	const uint32_t stride = (def.srd_stride == 0) ? size32 :	\
 	    def.srd_stride;						\
 	ASSERT3U(stride, >=, size32);					\
-	const uint32_t nents = (def.srd_nents == 0) ? 1 :		\
+	const uint32_t nents __maybe_unused = (def.srd_nents == 0) ? 1 :\
 	    (const uint32_t)def.srd_nents;				\
 									\
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_ ## _unit);			\

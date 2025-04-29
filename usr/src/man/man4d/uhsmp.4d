@@ -1,0 +1,35 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2025 Oxide Computer Company
+.\"
+.Dd April 29, 2025
+.Dt UHSMP 4D
+.Os
+.Sh NAME
+.Nm uhsmp
+.Nd AMD HSMP user access driver
+.Sh SYNOPSIS
+.Pa /devices/pseudo/amdzen@0/uhsmp@5:uhsmp.*
+.Sh DESCRIPTION
+The
+.Nm
+driver provides the ability to issue commands to the Host System Management
+Port
+.Pq HSMP
+on AMD Family 19h
+.Pq Zen 3 and Zen 4 ,
+and AMD Family 1ah
+.Pq Zen 5
+processors.
+.Sh SEE ALSO
+.Xr amdzen 4D ,
+.Xr zen_udf 4D
