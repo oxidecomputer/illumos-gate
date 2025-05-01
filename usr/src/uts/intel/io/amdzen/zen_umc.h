@@ -84,7 +84,7 @@ extern "C" {
  */
 #define	ZEN_UMC_MAX_DIMMS		2
 #define	ZEN_UMC_MAX_CS_PER_DIMM		2
-#define	ZEN_UMC_MAX_SUBCHANS_PER_CS	2
+#define	ZEN_UMC_MAX_SUBCHAN_PER_CHAN	2
 #define	ZEN_UMC_MAX_CS_BITS		2
 #define	ZEN_UMC_MAX_CHAN_BASE		2
 #define	ZEN_UMC_MAX_CHAN_MASK		2
@@ -94,6 +94,36 @@ extern "C" {
 #define	ZEN_UMC_MAX_COLSEL_PER_REG	8
 
 #define	ZEN_UMC_DDR4_CHAN_NMASKS	1
+
+/*
+ * The max bus width for a single channel.
+ *	DDR4: 64 (non-ECC), 72 (ECC)
+ *	DDR5: 32 (non-ECC), 36 or 40 (ECC) [per-Subchannel]
+ *		=> 64 (non-ECC), 72, or 80
+ */
+#define	ZEN_UMC_MAX_BITS		80
+#define	ZEN_UMC_MAX_NIBS		(ZEN_UMC_MAX_BITS / (NBBY / 2))
+#define	ZEN_UMC_MAX_BYTES		(ZEN_UMC_MAX_BITS / NBBY)
+
+/*
+ * The internal Reference Voltage (Vref) Digital-to-Analog Converters (DAC)
+ * (UMC::Phy::VrefDAC0-3).
+ */
+#define	ZEN_UMC_NVREF_DACS		4
+
+/*
+ * For every data byte, each VrefDAC is configured per bit plus an additional
+ * control for Data Bus Inversion (DBI). Note that DBI is not used on DDR5 with
+ * the corresponding control bits reserved and always zero.
+ */
+#define	ZEN_UMC_VREF_DAC_CTLS		(NBBY + 1)
+#define	ZEN_UMC_VREF_DAC_BITS	\
+	(ZEN_UMC_MAX_BYTES * ZEN_UMC_VREF_DAC_CTLS)
+
+/*
+ * Decision Feedback Equalization (DFE) - 2, 3 or 4-tap.
+ */
+#define	ZEN_UMC_NDFE_TAPS		3
 
 /*
  * DRAM Channel hash maximums. Surprisingly enough, the DDR4 and DDR5 maximums
@@ -298,6 +328,10 @@ typedef enum umc_dimm_flags {
 	 * This flag indicates we have the SPD data present for this DIMM.
 	 */
 	UMC_DIMM_F_SPD		= 1 << 1,
+	/*
+	 * Indicates we have the per-DIMM training data from the DDR PHY.
+	 */
+	UMC_DIMM_F_PHY_DATA	= 1 << 2,
 } umc_dimm_flags_t;
 
 typedef enum umc_cs_flags {
@@ -314,7 +348,82 @@ typedef enum umc_cs_flags {
 	 * This flag indicates that we have valid per-DQ margin data present.
 	 */
 	UMC_CS_F_DQ_MARGINS	= 1 << 2,
+	/*
+	 * Indicates we have the per-rank training data from the DDR PHY.
+	 */
+	UMC_CS_F_PHY_DATA	= 1 << 3,
 } umc_cs_flags_t;
+
+/*
+ * The following structures represent the training data from the DDR PHY (for
+ * a particular P-state), as provided by the system firmware (if present),
+ * organized into the applicable logical items.
+ */
+
+typedef struct umc_rank_phy_data {
+	/*
+	 * Chip-Select (CS) delay.
+	 */
+	uint8_t		urp_cs_delay[ZEN_UMC_MAX_SUBCHAN_PER_CHAN];
+	/*
+	 * Per-bit Rx delay (UMC::Phy::RxPBDlyTg0-3).
+	 *
+	 * Represents the trained delay between the read DQ and DQS.
+	 * Note that the same delay applies to all P-states.
+	 */
+	uint8_t		urp_rx_delay[ZEN_UMC_MAX_BITS];
+	/*
+	 * Per-nibble receive enable delay (UMC::Phy::RxEnDlyTg0-3).
+	 *
+	 * Represents the trained delay between the actual read command and
+	 * signaling read DQS.
+	 */
+	uint16_t	urp_rx_en_delay[ZEN_UMC_MAX_NIBS];
+	/*
+	 * Per-nibble read DQS to Rx clock delay (UMC::Phy::RxClkDlyTg0-3).
+	 */
+	uint8_t		urp_rx_clk_delay[ZEN_UMC_MAX_NIBS];
+	/*
+	 * Per-bit write DQ delay (UMC::Phy::TxDqDlyTg0-3).
+	 *
+	 * Represents the trained delay between the write DQ and DQS.
+	 */
+	uint16_t	urp_tx_dq_delay[ZEN_UMC_MAX_BITS];
+	/*
+	 * Per-nibble write DQS delay (UMC::Phy::TxDqsDlyTg0-3).
+	 *
+	 * Represents the trained delay between the actual write command and
+	 * signaling write DQS.
+	 */
+	uint16_t	urp_tx_dqs_delay[ZEN_UMC_MAX_NIBS];
+} umc_rank_phy_data_t;
+
+typedef struct umc_dimm_phy_data {
+	/*
+	 * SDRAM clock delay.
+	 */
+	uint8_t		udp_clk_delay;
+} umc_dimm_phy_data_t;
+
+typedef struct umc_chan_phy_data {
+	/*
+	 * Per-bit Command/Address (CA) delay.
+	 */
+	uint8_t		ucp_ca_delay[ZEN_UMC_MAX_SUBCHAN_PER_CHAN][NBBY];
+	/*
+	 * Per-bit Vref DAC values (UMC::Phy::VrefDac0-3).
+	 */
+	uint8_t		ucp_vref_dac[ZEN_UMC_NVREF_DACS][ZEN_UMC_VREF_DAC_BITS];
+	/*
+	 * Per-bit Decision Feedback Equalization (DFE) tap values
+	 * (UMC::Phy::RxDFETapCtrl).
+	 */
+	uint8_t		ucp_dfe_tap[ZEN_UMC_NDFE_TAPS][ZEN_UMC_MAX_BITS];
+	/*
+	 * Per-byte DDR PHY Interface (DFI) max read latency (UMC::Phy::DFIMRL).
+	 */
+	uint8_t		ucp_max_read_latency[ZEN_UMC_MAX_BYTES];
+} umc_chan_phy_data_t;
 
 /*
  * A DIMM may have one or more ranks, which is an independent logical item that
@@ -369,8 +478,14 @@ typedef struct umc_cs {
 	/*
 	 * Similarly, if we have per-DQ margining data, we'll have that here.
 	 */
-	zen_bdat_margin_t	*ucs_dq_margins[ZEN_UMC_MAX_SUBCHANS_PER_CS];
-	uint8_t			ucs_ndq_margins[ZEN_UMC_MAX_SUBCHANS_PER_CS];
+	zen_bdat_margin_t	*ucs_dq_margins[ZEN_UMC_MAX_SUBCHAN_PER_CHAN];
+	uint8_t			ucs_ndq_margins[ZEN_UMC_MAX_SUBCHAN_PER_CHAN];
+	/*
+	 * If provided by the system firmware, this holds the per-rank DDR PHY
+	 * training data at each P-state.
+	 */
+	umc_rank_phy_data_t	*ucs_phy_data;
+	size_t			ucs_nphy_data;
 } umc_cs_t;
 
 /*
@@ -394,6 +509,12 @@ typedef struct umc_dimm {
 	umc_cs_t		ud_cs[ZEN_UMC_MAX_CS_PER_DIMM];
 	size_t			ud_spd_size;
 	uint8_t			*ud_spd_data;
+	/*
+	 * If provided by the system firmware, this holds the DDR PHY training
+	 * data for this DIMM at each P-state.
+	 */
+	umc_dimm_phy_data_t	*ud_phy_data;
+	size_t			ud_nphy_data;
 } umc_dimm_t;
 
 typedef enum umc_chan_flags {
@@ -411,7 +532,11 @@ typedef enum umc_chan_flags {
 	 * basically what folks have called Transparent Shared Memory
 	 * Encryption.
 	 */
-	UMC_CHAN_F_SCRAMBLE_EN	= 1 << 2
+	UMC_CHAN_F_SCRAMBLE_EN	= 1 << 2,
+	/*
+	 * Indicates we have the per-channel training data from the DDR PHY.
+	 */
+	UMC_CHAN_F_PHY_DATA	= 1 << 3,
 } umc_chan_flags_t;
 
 typedef struct umc_bank_hash {
@@ -482,6 +607,12 @@ typedef struct zen_umc_chan {
 	chan_offset_t		chan_offsets[ZEN_UMC_MAX_DRAM_OFFSET];
 	umc_dimm_t		chan_dimms[ZEN_UMC_MAX_DIMMS];
 	umc_chan_hash_t		chan_hash;
+	/*
+	 * If provided by the system firmware, this holds the DDR PHY training
+	 * data for this channel at each P-state.
+	 */
+	umc_chan_phy_data_t	*chan_phy_data;
+	size_t			chan_nphy_data;
 } zen_umc_chan_t;
 
 typedef struct zen_umc_cs_remap {

@@ -163,6 +163,10 @@ typedef enum mc_data_type {
 	 *	    as a single `mc_zen_margin_t` record.
 	 */
 	MDT_MARGINS,
+	/*
+	 * (AMD Zen) The training PHY data for a given Channel, DIMM or Rank.
+	 */
+	MDT_PHY_DATA,
 } mc_data_type_t;
 
 typedef enum mc_get_data_error {

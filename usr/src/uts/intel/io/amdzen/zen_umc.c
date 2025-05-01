@@ -2629,7 +2629,7 @@ zen_umc_fill_margin_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 		 * BDAT data so we don't expect to get a hit.  But on the off
 		 * chance we do, we treat DDR4 as if it has one "sub-channel".
 		 */
-		nscs = ddr4_style ? 1 : ZEN_UMC_MAX_SUBCHANS_PER_CS;
+		nscs = ddr4_style ? 1 : ZEN_UMC_MAX_SUBCHAN_PER_CHAN;
 		for (uint8_t sc = 0; sc < nscs; sc++) {
 			zen_bdat_margin_t *dq_margins;
 
@@ -3520,6 +3520,155 @@ zen_umc_fill_chan_hash(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 }
 
 /*
+ * This fills in any DDR PHY training data we may have available.
+ */
+static void
+zen_umc_fill_phy_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
+{
+	bdat_prd_errno_t ret;
+	bdat_prd_mem_select_t sel = {
+		.bdat_sock = df->zud_sockno,
+		.bdat_chan = chan->chan_logid,
+	};
+	size_t size;
+	zen_bdat_phy_data_t *pdata;
+	size_t npstates;
+
+	if (!bdat_prd_mem_present(BDAT_PRD_MEM_AMD_PHY_DATA, &sel, &size))
+		return;
+
+	VERIFY3U(size % sizeof (zen_bdat_phy_data_t), ==, 0);
+	VERIFY3U(size / sizeof (zen_bdat_phy_data_t), <=, ZEN_UMC_NMEM_PSTATES);
+	npstates = size / sizeof (zen_bdat_phy_data_t);
+
+	pdata = kmem_zalloc(size, KM_SLEEP);
+	ret = bdat_prd_mem_read(BDAT_PRD_MEM_AMD_PHY_DATA, &sel, pdata, size);
+	if (ret != BPE_OK) {
+		dev_err(umc->umc_dip, CE_WARN, "failed to read PHY data for "
+		    "Socket %u Channel %u: %d", df->zud_sockno,
+		    chan->chan_logid, ret);
+		kmem_free(pdata, size);
+		return;
+	}
+
+	/*
+	 * We found PHY data for this channel. But we don't keep the blob as-is,
+	 * instead we want to fill in the data at the appropriate logical
+	 * level (channel wide vs per DIMM/rank). We start off by allocating the
+	 * necessary space at each level.
+	 */
+
+	chan->chan_flags |= UMC_CHAN_F_PHY_DATA;
+	chan->chan_nphy_data = npstates;
+	chan->chan_phy_data = kmem_zalloc(npstates *
+	    sizeof (umc_chan_phy_data_t), KM_SLEEP);
+
+	for (uint_t d = 0; d < ZEN_UMC_MAX_DIMMS; d++) {
+		umc_dimm_t *dimm = &chan->chan_dimms[d];
+
+		if ((dimm->ud_flags & UMC_DIMM_F_VALID) == 0)
+			continue;
+
+		dimm->ud_flags |= UMC_DIMM_F_PHY_DATA;
+		dimm->ud_nphy_data = npstates;
+		dimm->ud_phy_data = kmem_zalloc(npstates *
+		    sizeof (umc_dimm_phy_data_t), KM_SLEEP);
+
+		for (uint_t r = 0; r < ZEN_UMC_MAX_CS_PER_DIMM; r++) {
+			umc_cs_t *cs = &dimm->ud_cs[r];
+
+			if ((cs->ucs_flags & UMC_CS_F_DECODE_EN) == 0)
+				continue;
+
+			cs->ucs_flags |= UMC_CS_F_PHY_DATA;
+			cs->ucs_nphy_data = npstates;
+			cs->ucs_phy_data = kmem_zalloc(npstates *
+			    sizeof (umc_rank_phy_data_t), KM_SLEEP);
+		}
+	}
+
+#define	VERIFY_AND_COPY(src, dst) \
+	do { \
+		CTASSERT(sizeof (src) == sizeof (dst)); \
+		bcopy(src, dst, sizeof (src)); \
+	} while (0)
+
+	/*
+	 * Now we can go ahead and fill in the data.
+	 */
+	for (size_t i = 0; i < npstates; i++) {
+		zen_bdat_phy_data_t *pd = &pdata[i];
+		umc_chan_phy_data_t *chan_pdata;
+
+		VERIFY3U(pd->zbpd_sock, ==, df->zud_sockno);
+		VERIFY3U(pd->zbpd_chan, ==, chan->chan_logid);
+		VERIFY3U(pd->zbpd_pstate, <, npstates);
+
+		/*
+		 * Fill in the channel-wide data,...
+		 */
+		chan_pdata = &chan->chan_phy_data[pd->zbpd_pstate];
+		VERIFY_AND_COPY(pd->zbpd_cadly, chan_pdata->ucp_ca_delay);
+		VERIFY_AND_COPY(pd->zbpd_vrefdac, chan_pdata->ucp_vref_dac);
+		VERIFY_AND_COPY(pd->zbpd_dfetap, chan_pdata->ucp_dfe_tap);
+		VERIFY_AND_COPY(pd->zbpd_dfimrl,
+		    chan_pdata->ucp_max_read_latency);
+
+		for (size_t di = 0; di < ZEN_UMC_MAX_DIMMS; di++) {
+			umc_dimm_t *dimm = &chan->chan_dimms[di];
+			uint32_t d = dimm->ud_dimmno;
+			umc_dimm_phy_data_t *dimm_pdata;
+
+			if ((dimm->ud_flags & UMC_DIMM_F_VALID) == 0)
+				continue;
+
+			/*
+			 * ...the per-DIMM data...
+			 */
+			dimm_pdata = &dimm->ud_phy_data[pd->zbpd_pstate];
+			dimm_pdata->udp_clk_delay = pd->zbpd_clkdly[d];
+
+			for (size_t r = 0; r < ZEN_UMC_MAX_CS_PER_DIMM; r++) {
+				umc_cs_t *cs = &dimm->ud_cs[r];
+				umc_rank_phy_data_t *rank_pdata;
+
+				if ((cs->ucs_flags & UMC_CS_F_DECODE_EN) == 0)
+					continue;
+
+				/*
+				 * ...and finally the per-rank data.
+				 *
+				 * Note a device may have more ranks than
+				 * chip-selects (e.g., 3DS RDIMMs) but we don't
+				 * support those right now.
+				 */
+				rank_pdata = &cs->ucs_phy_data[pd->zbpd_pstate];
+				VERIFY_AND_COPY(pd->zbpd_rxpbdly[d][r],
+				    rank_pdata->urp_rx_delay);
+				VERIFY_AND_COPY(pd->zbpd_rxendly[d][r],
+				    rank_pdata->urp_rx_en_delay);
+				VERIFY_AND_COPY(pd->zbpd_rxclkdly[d][r],
+				    rank_pdata->urp_rx_clk_delay);
+				VERIFY_AND_COPY(pd->zbpd_txdqdly[d][r],
+				    rank_pdata->urp_tx_dq_delay);
+				VERIFY_AND_COPY(pd->zbpd_txdqsdly[d][r],
+				    rank_pdata->urp_tx_dqs_delay);
+
+				for (size_t sc = 0;
+				    sc < ZEN_UMC_MAX_SUBCHAN_PER_CHAN;
+				    sc++) {
+					rank_pdata->urp_cs_delay[sc] =
+					    pd->zbpd_csdly[sc][d][r];
+				}
+			}
+		}
+	}
+#undef	VERIFY_AND_COPY
+
+	kmem_free(pdata, size);
+}
+
+/*
  * This fills in settings that we care about which are valid for the entire
  * channel and are the same between DDR4/5 capable devices.
  */
@@ -3643,6 +3792,8 @@ zen_umc_fill_chan(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
 		return (B_FALSE);
 	}
 	chan->chan_umccap_hi_raw = val;
+
+	zen_umc_fill_phy_data(umc, df, chan);
 
 	return (B_TRUE);
 }
@@ -3927,7 +4078,8 @@ zen_umc_get_chan_dimm(const zen_umc_df_t *df, mc_get_data_t *data,
 	const umc_dimm_t *dimm;
 
 	*chanp = NULL;
-	*dimmp = NULL;
+	if (dimmp != NULL)
+		*dimmp = NULL;
 
 	/*
 	 * Note we compare here against the maximum possible channels rather
@@ -3954,18 +4106,21 @@ zen_umc_get_chan_dimm(const zen_umc_df_t *df, mc_get_data_t *data,
 		return (false);
 	}
 
-	if (data->mgd_dimm >= ZEN_UMC_MAX_DIMMS) {
-		data->mgd_error = MGD_INVALID_DIMM;
-		return (false);
-	}
-	dimm = &chan->chan_dimms[data->mgd_dimm];
-	if ((dimm->ud_flags & UMC_DIMM_F_VALID) == 0) {
-		data->mgd_error = MGD_DIMM_NOT_PRESENT;
-		return (false);
+	if (dimmp != NULL) {
+		if (data->mgd_dimm >= ZEN_UMC_MAX_DIMMS) {
+			data->mgd_error = MGD_INVALID_DIMM;
+			return (false);
+		}
+		dimm = &chan->chan_dimms[data->mgd_dimm];
+		if ((dimm->ud_flags & UMC_DIMM_F_VALID) == 0) {
+			data->mgd_error = MGD_DIMM_NOT_PRESENT;
+			return (false);
+		}
+
+		*dimmp = dimm;
 	}
 
 	*chanp = chan;
-	*dimmp = dimm;
 
 	return (true);
 }
@@ -4036,7 +4191,7 @@ zen_umc_get_margin_data(const zen_umc_df_t *df, mc_get_data_t *data)
 		}
 		nmargins = 1;
 		margins = &cs->ucs_margin;
-	} else if (data->mgd_subchan >= ZEN_UMC_MAX_SUBCHANS_PER_CS) {
+	} else if (data->mgd_subchan >= ZEN_UMC_MAX_SUBCHAN_PER_CHAN) {
 		data->mgd_error = MGD_INVALID_SUBCHAN;
 		return (NULL);
 	} else if ((chan->chan_type == UMC_DIMM_T_DDR4 ||
@@ -4062,6 +4217,71 @@ zen_umc_get_margin_data(const zen_umc_df_t *df, mc_get_data_t *data)
 	}
 
 	return (margins);
+}
+
+/*
+ * Returns a pointer to the PHY data requested per the selectors in `data`.
+ * On error (including no PHY data present), returns `NULL` and updates
+ * `mgd_error` in `data`.
+ */
+static const void *
+zen_umc_get_phy_data(const zen_umc_df_t *df, mc_get_data_t *data)
+{
+	const zen_umc_chan_t *chan;
+	const umc_dimm_t *dimm = NULL;
+	const umc_cs_t *cs;
+	void *phy_data;
+	size_t phy_data_sz;
+	bool phy_data_avail;
+
+	if (!zen_umc_get_chan_dimm(df, data, &chan, (data->mgd_dimm == 0xFF) ?
+	    NULL : &dimm))
+		return (NULL);
+
+	if (dimm == NULL) {
+		/* Per-channel PHY data */
+		phy_data_avail = (chan->chan_flags & UMC_CHAN_F_PHY_DATA) != 0;
+		phy_data = chan->chan_phy_data;
+		phy_data_sz = chan->chan_nphy_data *
+		    sizeof (umc_chan_phy_data_t);
+	} else if (data->mgd_rank == 0xFF) {
+		/* Per-DIMM PHY data */
+		phy_data_avail = (dimm->ud_flags & UMC_DIMM_F_PHY_DATA) != 0;
+		phy_data = dimm->ud_phy_data;
+		phy_data_sz = dimm->ud_nphy_data * sizeof (umc_dimm_phy_data_t);
+	} else {
+		/* Per-Rank PHY data */
+		if (data->mgd_rank >= ZEN_UMC_MAX_CS_PER_DIMM) {
+			data->mgd_error = MGD_INVALID_RANK;
+			return (NULL);
+		}
+
+		cs = &dimm->ud_cs[data->mgd_rank];
+		if ((cs->ucs_flags & UMC_CS_F_DECODE_EN) == 0) {
+			data->mgd_error = MGD_RANK_NOT_ENABLED;
+			return (NULL);
+		}
+
+		phy_data_avail = (cs->ucs_flags & UMC_CS_F_PHY_DATA) != 0;
+		phy_data = cs->ucs_phy_data;
+		phy_data_sz = cs->ucs_nphy_data * sizeof (umc_rank_phy_data_t);
+	}
+
+	if (!phy_data_avail) {
+		data->mgd_error = MGD_NO_DATA;
+		return (NULL);
+	}
+
+	VERIFY3P(phy_data, !=, NULL);
+	VERIFY3U(phy_data_sz, >, 0);
+
+	if (data->mgd_size != phy_data_sz) {
+		data->mgd_size = phy_data_sz;
+		data->mgd_error = MGD_INVALID_SIZE;
+		return (NULL);
+	}
+
+	return (phy_data);
 }
 
 static int
@@ -4194,6 +4414,9 @@ zen_umc_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		case MDT_MARGINS:
 			datap = zen_umc_get_margin_data(df, &data);
 			break;
+		case MDT_PHY_DATA:
+			datap = zen_umc_get_phy_data(df, &data);
+			break;
 		default:
 			data.mgd_error = MGD_INVALID_TYPE;
 			datap = NULL;
@@ -4253,6 +4476,12 @@ zen_umc_close(dev_t dev, int flag, int otyp, cred_t *credp)
 static void
 zen_umc_chan_cleanup(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
 {
+	if (chan->chan_phy_data != NULL) {
+		kmem_free(chan->chan_phy_data, chan->chan_nphy_data *
+		    sizeof (umc_chan_phy_data_t));
+		chan->chan_phy_data = NULL;
+		chan->chan_nphy_data = 0;
+	}
 	for (uint_t i = 0; i < ZEN_UMC_MAX_DIMMS; i++) {
 		umc_dimm_t *dimm = &chan->chan_dimms[i];
 		if (dimm->ud_spd_data != NULL) {
@@ -4260,9 +4489,15 @@ zen_umc_chan_cleanup(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
 			dimm->ud_spd_data = NULL;
 			dimm->ud_spd_size = 0;
 		}
+		if (dimm->ud_phy_data != NULL) {
+			kmem_free(dimm->ud_phy_data, dimm->ud_nphy_data *
+			    sizeof (umc_dimm_phy_data_t));
+			dimm->ud_phy_data = NULL;
+			dimm->ud_nphy_data = 0;
+		}
 		for (uint_t r = 0; r < ZEN_UMC_MAX_CS_PER_DIMM; r++) {
 			umc_cs_t *cs = &dimm->ud_cs[r];
-			for (uint_t sc = 0; sc < ZEN_UMC_MAX_SUBCHANS_PER_CS;
+			for (uint_t sc = 0; sc < ZEN_UMC_MAX_SUBCHAN_PER_CHAN;
 			    sc++) {
 				if (cs->ucs_dq_margins[sc] != NULL) {
 					kmem_free(cs->ucs_dq_margins[sc],
@@ -4271,6 +4506,12 @@ zen_umc_chan_cleanup(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
 					cs->ucs_dq_margins[sc] = NULL;
 					cs->ucs_ndq_margins[sc] = 0;
 				}
+			}
+			if (cs->ucs_phy_data != NULL) {
+				kmem_free(cs->ucs_phy_data, cs->ucs_nphy_data *
+				    sizeof (umc_rank_phy_data_t));
+				cs->ucs_phy_data = NULL;
+				cs->ucs_nphy_data = 0;
 			}
 		}
 	}

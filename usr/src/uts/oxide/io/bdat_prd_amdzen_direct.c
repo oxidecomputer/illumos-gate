@@ -30,6 +30,24 @@
 #include <sys/cpuvar.h>
 #include <sys/x86_archext.h>
 
+
+/*
+ * Though the raw BDAT data provided by AMD's firmware is not necessarily a
+ * stable interface, the overall shape has remained the same. Even still, there
+ * are some backwards incompatible changes we try to paper over. These flags
+ * represent when such a change has been detected.
+ */
+typedef enum {
+	/*
+	 * The PDT_VREF_DAC2 and PDT_VREF_DAC3 types did not exist in earlier
+	 * versions and were added right after PDT_VREF_DAC1. Unfortunately,
+	 * that ended up shifting the previous set of types that came after.
+	 * This flag indicates we're on an older version and should thus adjust
+	 * the `zen_bdat_phy_data_type_t` values appropriately.
+	 */
+	BFQ_F_SKIP_VREFDAC23	= (1 << 0),
+} bdat_phy_data_quirks_t;
+
 /*
  * We only care for a subset of the data that the BDAT provides which we
  * bundle together here.
@@ -42,7 +60,8 @@ typedef struct {
 	size_t				zbr_ndmargin_rsrcs;
 	const zen_bdat_entry_header_t	**zbr_dmargin_rsrcs;
 	size_t				zbr_nphy_rsrcs;
-	const zen_bdat_entry_header_t	**zbr_phy_rsrcs;
+	zen_bdat_phy_data_t		*zbr_phy_rsrcs;
+	bdat_phy_data_quirks_t		zbr_quirks;
 } zen_bdat_rsrcs_t;
 
 typedef void (*zen_bdat_cb_f)(const zen_bdat_entry_header_t *, void *);
@@ -86,9 +105,41 @@ zen_bdat_rsc_matches(bdat_prd_mem_rsrc_t rtype,
 		    dm->zbedm_loc.zbml_sub_channel == rsel->bdat_subchan &&
 		    dm->zbedm_loc.zbml_dimm == rsel->bdat_dimm &&
 		    dm->zbedm_loc.zbml_rank == rsel->bdat_rank);
+	case BDAT_PRD_MEM_AMD_PHY_DATA:
+		cmn_err(CE_PANIC, "bdat_prd: unexpected type");
 	}
 
 	return (false);
+}
+
+static bool
+bdat_prd_mem_phy_data_present(const bdat_prd_mem_select_t *rsel, size_t *rsize,
+    size_t pstate_idx[PDP_MAX])
+{
+	const zen_bdat_rsrcs_t *rsrcs = &bdat_prd_amdzen_rsrcs;
+	const zen_bdat_phy_data_t *pdata = rsrcs->zbr_phy_rsrcs;
+	size_t count = 0;
+
+	for (size_t i = 0; i < rsrcs->zbr_nphy_rsrcs; i++) {
+		const zen_bdat_phy_data_t *pd = &pdata[i];
+		if (rsel->bdat_sock != pd->zbpd_sock ||
+		    rsel->bdat_chan != pd->zbpd_chan) {
+			continue;
+		}
+
+		VERIFY3U(pd->zbpd_pstate, <, PDP_MAX);
+		if (pstate_idx != NULL) {
+			pstate_idx[pd->zbpd_pstate] = i;
+		}
+		count++;
+	}
+	VERIFY3U(count, <, PDP_MAX);
+
+	if (count == 0)
+		return (false);
+
+	*rsize = count * sizeof (zen_bdat_phy_data_t);
+	return (true);
 }
 
 bool
@@ -114,6 +165,8 @@ bdat_prd_mem_present(bdat_prd_mem_rsrc_t rtype,
 		ents = rsrcs->zbr_dmargin_rsrcs;
 		nents = rsrcs->zbr_ndmargin_rsrcs;
 		break;
+	case BDAT_PRD_MEM_AMD_PHY_DATA:
+		return (bdat_prd_mem_phy_data_present(rsel, rsize, NULL));
 	default:
 		return (false);
 	}
@@ -140,10 +193,60 @@ bdat_prd_mem_present(bdat_prd_mem_rsrc_t rtype,
 			    sizeof (zen_bdat_entry_header_t) -
 			    sizeof (zen_bdat_entry_dq_margin_t);
 			return (true);
+		case BDAT_PRD_MEM_AMD_PHY_DATA:
+			cmn_err(CE_PANIC, "bdat_prd: unexpected type");
 		}
 	}
 
 	return (false);
+}
+
+static bdat_prd_errno_t
+bdat_prd_mem_phy_data_read(const bdat_prd_mem_select_t *rsel, void *rsrc,
+    size_t rsize)
+{
+	const zen_bdat_rsrcs_t *rsrcs = &bdat_prd_amdzen_rsrcs;
+	const zen_bdat_phy_data_t *pdata = rsrcs->zbr_phy_rsrcs;
+	const zen_bdat_phy_data_t *pd0 = NULL;
+
+	size_t pstate_idx[PDP_MAX] = { SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX };
+	size_t size = 0;
+
+	if (!bdat_prd_mem_phy_data_present(rsel, &size, pstate_idx))
+		return (BPE_NORES);
+
+	if (rsize < size)
+		return (BPE_SIZE);
+
+	for (size_t i = 0; i < PDP_MAX; i++) {
+		const zen_bdat_phy_data_t *pd;
+
+		if (pstate_idx[i] == SIZE_MAX)
+			continue;
+
+		pd = &pdata[pstate_idx[i]];
+		VERIFY3U(pd->zbpd_pstate, ==, i);
+		if (i == 0)
+			pd0 = pd;
+
+		VERIFY3U(rsize, >=, sizeof (*pd));
+		bcopy(pd, rsrc, sizeof (*pd));
+
+		/*
+		 * Duplicate the non-P-state specific data stored on P0.
+		 */
+		if (i > 0) {
+			VERIFY3P(pd0, !=, NULL);
+			bcopy(pd0->zbpd_rxpbdly,
+			    ((zen_bdat_phy_data_t *)rsrc)->zbpd_rxpbdly,
+			    sizeof (pd0->zbpd_rxpbdly));
+		}
+
+		rsrc += sizeof (*pd);
+		rsize -= sizeof (*pd);
+	}
+
+	return (BPE_OK);
 }
 
 bdat_prd_errno_t
@@ -167,6 +270,8 @@ bdat_prd_mem_read(bdat_prd_mem_rsrc_t rtype,
 		ents = rsrcs->zbr_dmargin_rsrcs;
 		nents = rsrcs->zbr_ndmargin_rsrcs;
 		break;
+	case BDAT_PRD_MEM_AMD_PHY_DATA:
+		return (bdat_prd_mem_phy_data_read(rsel, rsrc, rsize));
 	default:
 		return (BPE_NORES);
 	}
@@ -205,6 +310,9 @@ bdat_prd_mem_read(bdat_prd_mem_rsrc_t rtype,
 				return (BPE_SIZE);
 			bcopy(dm->zbedm_margin, rsrc, rsize);
 			return (BPE_OK);
+
+		case BDAT_PRD_MEM_AMD_PHY_DATA:
+			cmn_err(CE_PANIC, "bdat_prd: unexpected type");
 		}
 	}
 
@@ -219,8 +327,9 @@ typedef enum {
 } zen_bdat_entry_valid_t;
 
 static zen_bdat_entry_valid_t
-zen_bdat_entry_size_valid(const zen_bdat_entry_header_t *ent)
+zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 {
+	const zen_bdat_entry_phy_data_t *pd;
 	size_t ent_size = ent->zbe_size;
 
 	if (ent_size < sizeof (zen_bdat_entry_header_t))
@@ -250,9 +359,37 @@ zen_bdat_entry_size_valid(const zen_bdat_entry_header_t *ent)
 		case BDAT_MEM_TRAINING_DATA_DQ_MARGIN_TYPE:
 			if (ent_size < sizeof (zen_bdat_entry_dq_margin_t))
 				return (ENT_INVALID_VARIANT);
+			/*
+			 * The remaining space should be a positive multiple of
+			 * `zen_bdat_margin_t` corresponding to an entry per DQ.
+			 */
 			ent_size -= sizeof (zen_bdat_entry_dq_margin_t);
 			if (ent_size == 0 ||
 			    (ent_size % sizeof (zen_bdat_margin_t) != 0)) {
+				return (ENT_INVALID_VARIANT);
+			}
+			break;
+		case BDAT_MEM_TRAINING_DATA_PHY_TYPE:
+			if (ent_size < sizeof (zen_bdat_entry_phy_data_t))
+				return (ENT_INVALID_VARIANT);
+			/*
+			 * Validate fields match our expectation and if so,
+			 * the remaining space should match the stated number of
+			 * elements multiplied by the per-element size.
+			 */
+			pd = (const zen_bdat_entry_phy_data_t *)ent->zbe_data;
+			if (pd->zbepd_type >= PDT_MAX ||
+			    pd->zbepd_scope >= PDS_MAX ||
+			    (pd->zbepd_pstate >= PDP_MAX &&
+			    pd->zbepd_pstate != PDP_NA) ||
+			    (pd->zbepd_elems_size != 1 &&
+			    pd->zbepd_elems_size != 2 &&
+			    pd->zbepd_elems_size != 4)) {
+				return (ENT_INVALID_VARIANT);
+			}
+			ent_size -= sizeof (zen_bdat_entry_phy_data_t);
+			if ((pd->zbepd_nelems * pd->zbepd_elems_size) !=
+			    ent_size) {
 				return (ENT_INVALID_VARIANT);
 			}
 			break;
@@ -296,7 +433,7 @@ zen_bdat_walk_entries(const zen_bdat_header_t *bdat_base, zen_bdat_cb_f func,
 				if ((uintptr_t)ent + ent->zbe_size >= end)
 					break;
 
-				ent_valid = zen_bdat_entry_size_valid(ent);
+				ent_valid = zen_bdat_entry_valid(ent);
 				if (ent_valid == ENT_INVALID_SIZE) {
 					/*
 					 * We can't trust the size field so we
@@ -307,7 +444,7 @@ zen_bdat_walk_entries(const zen_bdat_header_t *bdat_base, zen_bdat_cb_f func,
 
 				/*
 				 * We'll only invoke the callback for entries we
-				 * recognize and whose size invariants hold.
+				 * recognize and whose invariants hold.
 				 */
 				if (ent_valid == ENT_OK) {
 					func(ent, arg);
@@ -333,7 +470,11 @@ zen_bdat_walk_entries(const zen_bdat_header_t *bdat_base, zen_bdat_cb_f func,
 static void
 zen_bdat_ent_counts_cb(const zen_bdat_entry_header_t *ent, void *arg)
 {
+	static bool phy_ents_seen[BDAT_SOC_COUNT][BDAT_NCHANS][PDP_MAX];
+
 	zen_bdat_rsrcs_t *rs = arg;
+	const zen_bdat_entry_phy_data_t *pde;
+	uint8_t sock, chan, pstate;
 
 	switch (ent->zbe_schema) {
 	case BDAT_DIMM_SPD_SCHEMA:
@@ -349,11 +490,147 @@ zen_bdat_ent_counts_cb(const zen_bdat_entry_header_t *ent, void *arg)
 			rs->zbr_ndmargin_rsrcs++;
 			break;
 		case BDAT_MEM_TRAINING_DATA_PHY_TYPE:
+			/*
+			 * Since the PHY data is spread across multiple entries,
+			 * we do a little more to consolidate them into
+			 * per-channel + p-state synthetic entries.
+			 */
+			pde = (const zen_bdat_entry_phy_data_t *)ent->zbe_data;
+			sock = pde->zbepd_loc.zbml_socket;
+			chan = pde->zbepd_loc.zbml_channel;
+			/*
+			 * Some entries are not P-state specific, but for
+			 * the purpose of counting how many synthetic entries to
+			 * make here we'll treat it as P0. P0 is the default
+			 * with any additional P-states assigned sequentially.
+			 * We'll go ahead duplicate those values across all
+			 * P-states as part of returning those entries to a
+			 * consumer.
+			 */
+			pstate = (pde->zbepd_pstate == PDP_NA) ? 0 :
+			    pde->zbepd_pstate;
+
+			/*
+			 * The VrefDAC2/3 types were added in a backwards
+			 * incompatible way unfortunately. Try to detect if
+			 * we're on a previous version by looking at the
+			 * type 13: on earlier versions that would be DFIMRL
+			 * instead of RX_EN_DLY which have different scopes
+			 * and data size.
+			 */
+			if (pde->zbepd_type == PDT_RX_EN_DLY &&
+			    pde->zbepd_scope == PDS_PER_BYTE &&
+			    pde->zbepd_elems_size == 1 &&
+			    pde->zbepd_nelems == BDAT_NBYTES) {
+				rs->zbr_quirks |= BFQ_F_SKIP_VREFDAC23;
+			}
+
+			if (phy_ents_seen[sock][chan][pstate])
+				break;
+
+			phy_ents_seen[sock][chan][pstate] = true;
 			rs->zbr_nphy_rsrcs++;
 			break;
 		}
 		break;
 	}
+}
+
+static void
+zen_bdat_fill_phy_ent(zen_bdat_rsrcs_t *rs,
+    const zen_bdat_entry_phy_data_t *pde)
+{
+	zen_bdat_phy_data_t *pd = NULL;
+	uint8_t sock, chan, subchan, dimm, rank, pstate;
+	uint8_t *dst = NULL;
+	size_t size, max_size;
+	zen_bdat_phy_data_type_t type;
+	zen_bdat_phy_data_scope_t scope;
+
+	sock = pde->zbepd_loc.zbml_socket;
+	chan = pde->zbepd_loc.zbml_channel;
+	subchan = pde->zbepd_loc.zbml_sub_channel;
+	dimm = pde->zbepd_loc.zbml_dimm;
+	rank = pde->zbepd_loc.zbml_rank;
+	pstate = (pde->zbepd_pstate == PDP_NA) ? 0 : pde->zbepd_pstate;
+	size = pde->zbepd_nelems * pde->zbepd_elems_size;
+
+	if ((rs->zbr_quirks & BFQ_F_SKIP_VREFDAC23) != 0 &&
+	    pde->zbepd_type >= PDT_VREF_DAC2) {
+		type = pde->zbepd_type + 2;
+	} else {
+		type = pde->zbepd_type;
+	}
+
+	/*
+	 * Find a matching consolidated entry...
+	 */
+	for (size_t i = 0; i < rs->zbr_nphy_rsrcs; i++) {
+		if (rs->zbr_phy_rsrcs[i].zbpd_sock == sock &&
+		    rs->zbr_phy_rsrcs[i].zbpd_chan == chan &&
+		    rs->zbr_phy_rsrcs[i].zbpd_pstate == pstate)
+			pd = &rs->zbr_phy_rsrcs[i];
+	}
+	/*
+	 * ... or use a new one.
+	 */
+	if (pd == NULL) {
+		pd = &rs->zbr_phy_rsrcs[rs->zbr_nphy_rsrcs++];
+		pd->zbpd_sock = sock;
+		pd->zbpd_chan = chan;
+		pd->zbpd_pstate = pstate;
+	}
+
+	/*
+	 * Find the right spot to fill in this data type (noting the expected
+	 * size and scope).
+	 */
+	switch (type) {
+#define	PHY_DATA_ENTRY(t, d, sc) \
+	case PDT_##t: \
+		dst = (uint8_t *)&pd->zbpd_##d; \
+		max_size = sizeof (pd->zbpd_##d); \
+		scope = PDS_PER_##sc; \
+		break;
+	PHY_DATA_ENTRY(CS_DLY, csdly[subchan], STROBE)
+	PHY_DATA_ENTRY(CLK_DLY, clkdly, DIMM)
+	PHY_DATA_ENTRY(CA_DLY, cadly[subchan], BIT)
+	PHY_DATA_ENTRY(RX_PB_DLY, rxpbdly[dimm][rank], BIT)
+	PHY_DATA_ENTRY(VREF_DAC0, vrefdac[0], BIT)
+	PHY_DATA_ENTRY(VREF_DAC1, vrefdac[1], BIT)
+	PHY_DATA_ENTRY(VREF_DAC2, vrefdac[2], BIT)
+	PHY_DATA_ENTRY(VREF_DAC3, vrefdac[3], BIT)
+	PHY_DATA_ENTRY(DFE_TAP2, dfetap[0], BIT)
+	PHY_DATA_ENTRY(DFE_TAP3, dfetap[1], BIT)
+	PHY_DATA_ENTRY(DFE_TAP4, dfetap[2], BIT)
+	PHY_DATA_ENTRY(TX_DQ_DLY, txdqdly[dimm][rank], BIT)
+	PHY_DATA_ENTRY(TX_DQS_DLY, txdqsdly[dimm][rank], NIBBLE)
+	PHY_DATA_ENTRY(RX_EN_DLY, rxendly[dimm][rank], NIBBLE)
+	PHY_DATA_ENTRY(RX_CLK_DLY, rxclkdly[dimm][rank], NIBBLE)
+	PHY_DATA_ENTRY(DFIMRL, dfimrl, BYTE)
+#undef	PHY_DATA_ENTRY
+	default:
+		cmn_err(CE_WARN, "?bdat_prd: unknown PHY data type: %u (%u)",
+		    type, pde->zbepd_type);
+		return;
+	}
+	VERIFY3P(dst, !=, NULL);
+
+	if (scope != pde->zbepd_scope) {
+		cmn_err(CE_WARN, "?bdat_prd: unexpected scope for PHY data "
+		    "type %u (%u): %u vs %u", type, pde->zbepd_type,
+		    pde->zbepd_scope, scope);
+		return;
+	}
+
+	if (size > max_size) {
+		cmn_err(CE_WARN, "?bdat_prd: unexpected size for PHY data "
+		    "type %u (%u): %u x %u = %lu > %lu", type, pde->zbepd_type,
+		    pde->zbepd_nelems, pde->zbepd_elems_size, size, max_size);
+		return;
+	}
+
+	bcopy(pde->zbepd_data, dst, size);
 }
 
 static void
@@ -384,7 +661,8 @@ zen_bdat_ent_preserve_cb(const zen_bdat_entry_header_t *ent, void *arg)
 			rs->zbr_dmargin_rsrcs[rs->zbr_ndmargin_rsrcs++] = ent;
 			break;
 		case BDAT_MEM_TRAINING_DATA_PHY_TYPE:
-			rs->zbr_phy_rsrcs[rs->zbr_nphy_rsrcs++] = ent;
+			zen_bdat_fill_phy_ent(rs,
+			    (const zen_bdat_entry_phy_data_t *)ent->zbe_data);
 			break;
 		default:
 			goto unknown;
@@ -445,7 +723,7 @@ bdat_prd_amdzen_direct_init(void)
 	rsrcs->zbr_dmargin_rsrcs = kmem_zalloc(rsrcs->zbr_ndmargin_rsrcs *
 	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
 	rsrcs->zbr_phy_rsrcs = kmem_zalloc(rsrcs->zbr_nphy_rsrcs *
-	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
+	    sizeof (zen_bdat_phy_data_t), KM_SLEEP);
 
 	rsrcs->zbr_nspd_rsrcs = rsrcs->zbr_nrmargin_rsrcs =
 	    rsrcs->zbr_ndmargin_rsrcs = rsrcs->zbr_nphy_rsrcs = 0;
@@ -508,10 +786,11 @@ _fini(void)
 		}
 		if (rsrcs->zbr_phy_rsrcs != NULL) {
 			kmem_free(rsrcs->zbr_phy_rsrcs, rsrcs->zbr_nphy_rsrcs *
-			    sizeof (zen_bdat_entry_header_t *));
+			    sizeof (zen_bdat_phy_data_t));
 		}
 		bzero(rsrcs, sizeof (*rsrcs));
 		psm_unmap((caddr_t)bdat_prd_amdzen_raw, BDAT_AREA_SIZE);
+		bdat_prd_amdzen_raw = NULL;
 	}
 
 	return (mod_remove(&bdat_prd_modlinkage_amdzen_direct));

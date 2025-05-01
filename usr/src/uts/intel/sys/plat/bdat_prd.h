@@ -65,7 +65,12 @@ typedef enum bdat_prd_mem_rsrc {
 	 * The training margin data per DQ/lane (AMD-specific extension).
 	 * Selectors: Socket, Channel, Sub Channel, DIMM, & Rank.
 	 */
-	BDAT_PRD_MEM_AMD_DQ_MARGIN
+	BDAT_PRD_MEM_AMD_DQ_MARGIN,
+	/*
+	 * The training PHY data (AMD-specific extension).
+	 * Selectors: Socket, Channel, Sub Channel, DIMM, & Rank.
+	 */
+	BDAT_PRD_MEM_AMD_PHY_DATA,
 } bdat_prd_mem_rsrc_t;
 
 /*
