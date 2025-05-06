@@ -23,7 +23,7 @@
  */
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_MC_H
@@ -68,6 +68,7 @@ typedef struct mc_unum {
 #define	MC_IOC_DECODE_PA	(MC_IOC | 5)
 #define	MC_IOC_DECODE_SNAPSHOT_INFO	(MC_IOC | 6)
 #define	MC_IOC_DECODE_SNAPSHOT	(MC_IOC | 7)
+#define	MC_IOC_GET_DATA		(MC_IOC | 8)
 
 /*
  * Prior to requesting a copy of the snapshot, consumers are advised to request
@@ -145,6 +146,82 @@ typedef struct mc_encode_ioc {
 	uint8_t		mcei_subchan;
 	uint8_t		mcei_pad[6];
 } mc_encode_ioc_t;
+
+typedef enum mc_data_type {
+	/*
+	 * The raw SPD data for a given channel's DIMM.
+	 * The returned binary payload may be further inspected with
+	 * `LIBJEDEC_SPD(3JEDEC)` or similar.
+	 */
+	MDT_SPD,
+	/*
+	 * (AMD Zen) The training margin data for the given Channel:DIMM:Rank is
+	 * returned:
+	 *	- per-DQ/lane	(if `mgd_subchan` is specified)
+	 *	    as a `mc_zen_margin_t` for each lane.
+	 *	- per-rank	(if `mgd_subchan` is 0xFF)
+	 *	    as a single `mc_zen_margin_t` record.
+	 */
+	MDT_MARGINS,
+} mc_data_type_t;
+
+typedef enum mc_get_data_error {
+	MGD_OK,			/* No error */
+	MGD_NO_DATA,		/* Requested data not present */
+	MGD_INVALID_TYPE,	/* Invalid data type requested */
+	MGD_INVALID_SIZE,	/* Invalid size for the requested data */
+	MGD_INVALID_CHAN,	/* Invalid channel */
+	MGD_INVALID_SUBCHAN,	/* Invalid sub-channel */
+	MGD_INVALID_DIMM,	/* Invalid DIMM */
+	MGD_INVALID_RANK,	/* Invalid rank */
+	MGD_CHAN_EMPTY,		/* Possibly valid channel but not detected */
+	MGD_DIMM_NOT_PRESENT,	/* Valid DIMM but not present */
+	MGD_RANK_NOT_ENABLED,	/* Valid rank but not enabled */
+} mc_get_data_error_t;
+
+typedef struct mc_get_data {
+	/*
+	 * The specific type of data being requested for this memory controller,
+	 * see `mc_data_type_t`.
+	 */
+	uint8_t		mgd_type;
+	/*
+	 * This is set to `MGD_OK` if the request was successful otherwise it
+	 * will be set to one of the other `mc_get_data_error_t` values.
+	 */
+	uint8_t		mgd_error;
+
+	/*
+	 * The next set of fields indicates the specific channel, sub-channel,
+	 * DIMM and rank that the data is being requested for. Depending
+	 * on the type of data requested, some of these may be ignored.
+	 */
+	uint8_t		mgd_chan;
+	uint8_t		mgd_subchan;
+	uint8_t		mgd_dimm;
+	uint8_t		mgd_rank;
+
+	uint8_t		mgd_pad[2];
+
+	/*
+	 * User-provided buffer to store the requested data.
+	 */
+	union {
+		uintptr_t	mgd_addr;
+		uint32_t	mgd_addr32;
+		uint64_t	mgd_addr64;
+	};
+	/*
+	 * Size of the above user-provided buffer. If `mgd_error` is
+	 * `MGD_INVALID_SIZE`, this field is updated to reflect the size
+	 * necessary to hold the requested data.
+	 */
+	union {
+		size_t		mgd_size;
+		uint32_t	mgd_size32;
+		uint64_t	mgd_size64;
+	};
+} mc_get_data_t;
 
 #ifdef __cplusplus
 }

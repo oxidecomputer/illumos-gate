@@ -1353,6 +1353,7 @@
 #include <sys/x86_archext.h>
 #include <sys/sysmacros.h>
 #include <sys/mc.h>
+#include <sys/mc_amdzen.h>
 #include <sys/plat/bdat_prd.h>
 
 #include <zen_umc.h>
@@ -2543,7 +2544,7 @@ zen_umc_calc_dimm_size(umc_dimm_t *dimm)
 		uint64_t nrc;
 		const umc_cs_t *cs = &dimm->ud_cs[i];
 
-		if (!cs->ucs_base.udb_valid && !cs->ucs_sec.udb_valid) {
+		if ((cs->ucs_flags & UMC_CS_F_DECODE_EN) == 0) {
 			continue;
 		}
 
@@ -2567,7 +2568,7 @@ zen_umc_fill_spd(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 	size_t spd_size;
 	bdat_prd_mem_select_t bdat_spd_sel = {
 		.bdat_sock = df->zud_sockno,
-		.bdat_chan = chan->chan_instid,
+		.bdat_chan = chan->chan_logid,
 		.bdat_dimm = dimm->ud_dimmno,
 	};
 
@@ -2578,12 +2579,13 @@ zen_umc_fill_spd(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 		if (ret != BPE_OK) {
 			dev_err(umc->umc_dip, CE_WARN,
 			    "failed to read SPD data for DIMM %u/%u/%u: %d",
-			    df->zud_sockno, chan->chan_instid, dimm->ud_dimmno,
+			    df->zud_sockno, chan->chan_logid, dimm->ud_dimmno,
 			    ret);
 			kmem_free(spd_data, spd_size);
 		} else {
 			dimm->ud_spd_size = spd_size;
 			dimm->ud_spd_data = spd_data;
+			dimm->ud_flags |= UMC_DIMM_F_SPD;
 		}
 	}
 }
@@ -2601,7 +2603,7 @@ zen_umc_fill_margin_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 		umc_cs_t *cs = &dimm->ud_cs[r];
 		bdat_prd_mem_select_t sel = {
 			.bdat_sock = df->zud_sockno,
-			.bdat_chan = chan->chan_instid,
+			.bdat_chan = chan->chan_logid,
 			.bdat_dimm = dimm->ud_dimmno,
 			.bdat_rank = r,
 		};
@@ -2616,9 +2618,10 @@ zen_umc_fill_margin_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 				dev_err(umc->umc_dip, CE_WARN,
 				    "failed to read rank margin data for DIMM "
 				    "%u/%u/%u/%u: %d", df->zud_sockno,
-				    chan->chan_instid, dimm->ud_dimmno,
+				    chan->chan_logid, dimm->ud_dimmno,
 				    r, ret);
 			}
+			cs->ucs_flags |= UMC_CS_F_RANK_MARGIN;
 		}
 
 		/*
@@ -2637,7 +2640,7 @@ zen_umc_fill_margin_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 					dev_err(umc->umc_dip, CE_WARN,
 					    "only found half the DQ margin data"
 					    " for DIMM %u/%u/%u/%u",
-					    df->zud_sockno, chan->chan_instid,
+					    df->zud_sockno, chan->chan_logid,
 					    dimm->ud_dimmno, r);
 				}
 				break;
@@ -2652,7 +2655,7 @@ zen_umc_fill_margin_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 				dev_err(umc->umc_dip, CE_WARN,
 				    "failed to read DQ margin data for DIMM "
 				    "%u/%u/%u/%u/%u: %d", df->zud_sockno,
-				    chan->chan_instid, dimm->ud_dimmno, r, sc,
+				    chan->chan_logid, dimm->ud_dimmno, r, sc,
 				    ret);
 				kmem_free(dq_margins, size);
 				break;
@@ -2661,6 +2664,7 @@ zen_umc_fill_margin_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 			cs->ucs_dq_margins[sc] = dq_margins;
 			cs->ucs_ndq_margins[sc] = size /
 			    sizeof (zen_bdat_margin_t);
+			cs->ucs_flags |= UMC_CS_F_DQ_MARGINS;
 		}
 	}
 }
@@ -2720,8 +2724,7 @@ zen_umc_fill_dimm_common(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 	 * we think this entry should be usable based on enabled chip-selects.
 	 */
 	for (uint_t i = 0; i < ZEN_UMC_MAX_CS_PER_DIMM; i++) {
-		if (dimm->ud_cs[i].ucs_base.udb_valid ||
-		    dimm->ud_cs[i].ucs_sec.udb_valid) {
+		if (dimm->ud_cs[i].ucs_flags & UMC_CS_F_DECODE_EN) {
 			dimm->ud_flags |= UMC_DIMM_F_VALID;
 			break;
 		}
@@ -2799,6 +2802,11 @@ zen_umc_fill_chan_dimm_ddr4(zen_umc_t *umc, zen_umc_df_t *df,
 		addr = (uint64_t)UMC_BASE_GET_ADDR(val) << UMC_BASE_ADDR_SHIFT;
 		dimm->ud_cs[i].ucs_sec.udb_base = addr;
 		dimm->ud_cs[i].ucs_sec.udb_valid = UMC_BASE_GET_EN(val);
+
+		if (dimm->ud_cs[i].ucs_base.udb_valid ||
+		    dimm->ud_cs[i].ucs_sec.udb_valid) {
+			dimm->ud_cs[i].ucs_flags |= UMC_CS_F_DECODE_EN;
+		}
 	}
 
 	reg = UMC_MASK_DDR4(id, dimmno);
@@ -3025,6 +3033,10 @@ zen_umc_fill_chan_rank_ddr5(zen_umc_t *umc, zen_umc_df_t *df,
 		addr = (uint64_t)UMC_BASE_EXT_GET_ADDR(val) <<
 		    UMC_BASE_EXT_ADDR_SHIFT;
 		cs->ucs_sec.udb_base |= addr;
+	}
+
+	if (cs->ucs_base.udb_valid || cs->ucs_sec.udb_valid) {
+		cs->ucs_flags |= UMC_CS_F_DECODE_EN;
 	}
 
 	reg = UMC_MASK_DDR5(id, regno);
@@ -3902,14 +3914,168 @@ umc_decoder_pack(zen_umc_t *umc)
 	umc->umc_decoder_len = len;
 }
 
+/*
+ * Helper to find the Channel and DIMM requested by the given mc_get_data_t.
+ * The return indicates whether we successfully found them and if not found,
+ * `mgd_error` in `data` is updated with the corresponding error.
+ */
+static bool
+zen_umc_get_chan_dimm(const zen_umc_df_t *df, mc_get_data_t *data,
+    const zen_umc_chan_t **chanp, const umc_dimm_t **dimmp)
+{
+	const zen_umc_chan_t *chan = NULL;
+	const umc_dimm_t *dimm;
+
+	*chanp = NULL;
+	*dimmp = NULL;
+
+	/*
+	 * Note we compare here against the maximum possible channels rather
+	 * than zud_nchan as the chan_logid may be sparsely assigned (i.e.,
+	 * we have zud_nchan = 2 with chan_logid's of 3 and 9). See comment in
+	 * zen_umc_fill_umc_cb for more details.
+	 */
+	if (data->mgd_chan >= ZEN_UMC_MAX_UMCS) {
+		data->mgd_error = MGD_INVALID_CHAN;
+		return (false);
+	}
+	for (uint_t i = 0; i < df->zud_nchan; i++) {
+		if (df->zud_chan[i].chan_logid == data->mgd_chan) {
+			chan = &df->zud_chan[i];
+			break;
+		}
+	}
+	/*
+	 * We don't yet have an expected number of channels per-platform so
+	 * we treat this as distinct from MGD_INVALID_CHAN for now.
+	 */
+	if (chan == NULL) {
+		data->mgd_error = MGD_CHAN_EMPTY;
+		return (false);
+	}
+
+	if (data->mgd_dimm >= ZEN_UMC_MAX_DIMMS) {
+		data->mgd_error = MGD_INVALID_DIMM;
+		return (false);
+	}
+	dimm = &chan->chan_dimms[data->mgd_dimm];
+	if ((dimm->ud_flags & UMC_DIMM_F_VALID) == 0) {
+		data->mgd_error = MGD_DIMM_NOT_PRESENT;
+		return (false);
+	}
+
+	*chanp = chan;
+	*dimmp = dimm;
+
+	return (true);
+}
+
+static const void *
+zen_umc_get_spd_data(const zen_umc_df_t *df, mc_get_data_t *data)
+{
+	const zen_umc_chan_t *chan;
+	const umc_dimm_t *dimm;
+
+	if (!zen_umc_get_chan_dimm(df, data, &chan, &dimm))
+		return (NULL);
+
+	if ((dimm->ud_flags & UMC_DIMM_F_SPD) == 0) {
+		data->mgd_error = MGD_NO_DATA;
+		return (NULL);
+	}
+	VERIFY3U(dimm->ud_spd_size, >, 0);
+
+	if (data->mgd_size != dimm->ud_spd_size) {
+		data->mgd_size = dimm->ud_spd_size;
+		data->mgd_error = MGD_INVALID_SIZE;
+		return (NULL);
+	}
+
+	return (dimm->ud_spd_data);
+}
+
+/*
+ * Returns a pointer to the margin data requested per the selectors in `data`.
+ * On error (including no margin data present), returns `NULL` and updates
+ * `mgd_error` in `data`.
+ */
+static const void *
+zen_umc_get_margin_data(const zen_umc_df_t *df, mc_get_data_t *data)
+{
+	const zen_umc_chan_t *chan;
+	const umc_dimm_t *dimm;
+	const umc_cs_t *cs;
+	const zen_bdat_margin_t *margins;
+	size_t nmargins;
+
+	if (!zen_umc_get_chan_dimm(df, data, &chan, &dimm))
+		return (NULL);
+
+	/*
+	 * Note a device can actually have more ranks than chip-selects
+	 * (e.g., 3DS RDIMMs) but we don't support those right now.
+	 */
+	if (data->mgd_rank >= ZEN_UMC_MAX_CS_PER_DIMM) {
+		data->mgd_error = MGD_INVALID_RANK;
+		return (NULL);
+	}
+
+	cs = &dimm->ud_cs[data->mgd_rank];
+	if ((cs->ucs_flags & UMC_CS_F_DECODE_EN) == 0) {
+		data->mgd_error = MGD_RANK_NOT_ENABLED;
+		return (NULL);
+	}
+
+	if (data->mgd_subchan == 0xFF) {
+		/*
+		 * Return the per-rank margin data, if present.
+		 */
+		if ((cs->ucs_flags & UMC_CS_F_RANK_MARGIN) == 0) {
+			data->mgd_error = MGD_NO_DATA;
+			return (NULL);
+		}
+		nmargins = 1;
+		margins = &cs->ucs_margin;
+	} else if (data->mgd_subchan >= ZEN_UMC_MAX_SUBCHANS_PER_CS) {
+		data->mgd_error = MGD_INVALID_SUBCHAN;
+		return (NULL);
+	} else if ((chan->chan_type == UMC_DIMM_T_DDR4 ||
+	    chan->chan_type == UMC_DIMM_T_LPDDR4) && data->mgd_subchan > 0) {
+		data->mgd_error = MGD_INVALID_SUBCHAN;
+		return (NULL);
+	} else {
+		if ((cs->ucs_flags & UMC_CS_F_DQ_MARGINS) == 0) {
+			data->mgd_error = MGD_NO_DATA;
+			return (NULL);
+		}
+		margins = cs->ucs_dq_margins[data->mgd_subchan];
+		nmargins = cs->ucs_ndq_margins[data->mgd_subchan];
+	}
+
+	VERIFY3P(margins, !=, NULL);
+	VERIFY3U(nmargins, >, 0);
+
+	if (data->mgd_size != (nmargins * sizeof (mc_zen_margin_t))) {
+		data->mgd_size = nmargins * sizeof (mc_zen_margin_t);
+		data->mgd_error = MGD_INVALID_SIZE;
+		return (NULL);
+	}
+
+	return (margins);
+}
+
 static int
 zen_umc_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
     int *rvalp)
 {
 	int ret;
+	uint_t model;
 	zen_umc_t *umc = zen_umc;
+	zen_umc_df_t *df;
 	mc_encode_ioc_t encode;
 	mc_snapshot_info_t info;
+	mc_get_data_t data;
+	const void *datap;
 
 	if (getminor(dev) >= umc->umc_ndfs) {
 		return (ENXIO);
@@ -3984,6 +4150,90 @@ zen_umc_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		}
 
 		mutex_exit(&umc->umc_nvl_lock);
+		ret = 0;
+		break;
+	case MC_IOC_GET_DATA:
+		df = &umc->umc_dfs[getminor(dev)];
+
+		model = ddi_model_convert_from(mode);
+#ifndef	_MULTI_DATAMODEL
+		if (model != DDI_MODEL_NONE) {
+			ret = ENOTSUP;
+			break;
+		}
+#endif
+
+		if (ddi_copyin((void *)arg, &data, sizeof (data),
+		    mode & FKIOCTL) != 0) {
+			ret = EFAULT;
+			break;
+		}
+
+		data.mgd_error = MGD_OK;
+
+#ifdef	_MULTI_DATAMODEL
+		if (model == DDI_MODEL_ILP32) {
+			/*
+			 * Outside of this function both the caller and driver
+			 * will be using the uintptr_t/size_t variants of
+			 * `mgd_addr`/`mgd_size`. With a 64-bit kernel but
+			 * 32-bit caller, the upper bits may be garbage so we'll
+			 * explicitly set things here.
+			 */
+			const uint32_t addr = data.mgd_addr32;
+			const uint32_t size = data.mgd_size32;
+			data.mgd_addr = addr;
+			data.mgd_size = size;
+		}
+#endif
+
+		switch (data.mgd_type) {
+		case MDT_SPD:
+			datap = zen_umc_get_spd_data(df, &data);
+			break;
+		case MDT_MARGINS:
+			datap = zen_umc_get_margin_data(df, &data);
+			break;
+		default:
+			data.mgd_error = MGD_INVALID_TYPE;
+			datap = NULL;
+			break;
+		}
+
+#ifdef	_MULTI_DATAMODEL
+		if (data.mgd_error == MGD_INVALID_SIZE &&
+		    model == DDI_MODEL_ILP32 &&
+		    data.mgd_size64 > UINT32_MAX) {
+			ret = EOVERFLOW;
+			break;
+		}
+#endif
+
+		if (datap != NULL && ddi_copyout(datap, (void *)data.mgd_addr,
+		    data.mgd_size, 0) != 0) {
+			ret = EFAULT;
+			break;
+		}
+
+#ifdef	_MULTI_DATAMODEL
+		if (model == DDI_MODEL_ILP32) {
+			/*
+			 * Explicitly set the 32-bit variants before returning.
+			 * We've already validated the size doesn't overflow
+			 * above.
+			 */
+			const uint32_t addr32 = data.mgd_addr;
+			const uint32_t size32 = data.mgd_size;
+			data.mgd_addr32 = addr32;
+			data.mgd_size32 = size32;
+		}
+#endif
+
+		if (ddi_copyout(&data, (void *)arg, sizeof (data),
+		    mode & FKIOCTL) != 0) {
+			ret = EFAULT;
+			break;
+		}
 		ret = 0;
 		break;
 	default:

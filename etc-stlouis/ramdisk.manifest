@@ -1157,6 +1157,8 @@ f usr/lib/libzfs_core.so.1 0755 root bin
 f usr/lib/libzonecfg.so.1 0755 root bin
 f usr/lib/libzpool.so.1 0755 root bin
 f usr/lib/lddstub 0555 root bin
+d usr/lib/mc 0755 root bin
+f usr/lib/mc/mcmargins 0555 root bin
 d usr/lib/mdb 0755 root sys
 d usr/lib/mdb/kvm 0755 root sys
 d usr/lib/mdb/kvm/amd64 0755 root sys

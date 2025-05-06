@@ -294,7 +294,27 @@ typedef enum umc_dimm_flags {
 	 * out of the clock disable logic.
 	 */
 	UMC_DIMM_F_VALID	= 1 << 0,
+	/*
+	 * This flag indicates we have the SPD data present for this DIMM.
+	 */
+	UMC_DIMM_F_SPD		= 1 << 1,
 } umc_dimm_flags_t;
+
+typedef enum umc_cs_flags {
+	/*
+	 * This flag indicates that at least one of the base or secondary
+	 * chip-select decoding register is enabled.
+	 */
+	UMC_CS_F_DECODE_EN	= 1 << 0,
+	/*
+	 * This flag indicates that we have valid per-rank margin data present.
+	 */
+	UMC_CS_F_RANK_MARGIN	= 1 << 1,
+	/*
+	 * This flag indicates that we have valid per-DQ margin data present.
+	 */
+	UMC_CS_F_DQ_MARGINS	= 1 << 2,
+} umc_cs_flags_t;
 
 /*
  * A DIMM may have one or more ranks, which is an independent logical item that
@@ -319,6 +339,7 @@ typedef enum umc_dimm_flags {
  * represented that way in the UMC.
  */
 typedef struct umc_cs {
+	umc_cs_flags_t		ucs_flags;
 	umc_dimm_base_t		ucs_base;
 	umc_dimm_base_t		ucs_sec;
 	uint64_t		ucs_base_mask;
