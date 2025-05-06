@@ -447,9 +447,56 @@ turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	 */
 	tpp->tpp_overclock.tppo_oc_dis = 1;
 
+	/*
+	 * Set platform-specific power and current limits.
+	 */
+	tpp->tpp_platform_limits.tppp_tdp = oxide_board_data->obd_tdp;
+	tpp->tpp_platform_limits.tppp_ppt = oxide_board_data->obd_ppt;
+	tpp->tpp_platform_limits.tppp_tdc = oxide_board_data->obd_tdc;
+	tpp->tpp_platform_limits.tppp_edc = oxide_board_data->obd_edc;
+
+#ifdef DEBUG
+	cmn_err(CE_CONT, "?Set Platform TDP = 0x%x (%uW)\n",
+	    tpp->tpp_platform_limits.tppp_tdp,
+	    tpp->tpp_platform_limits.tppp_tdp);
+	cmn_err(CE_CONT, "?Set Platform PPT = 0x%x (%uW)\n",
+	    tpp->tpp_platform_limits.tppp_ppt,
+	    tpp->tpp_platform_limits.tppp_ppt);
+	cmn_err(CE_CONT, "?Set Platform TDC = 0x%x (%uA)\n",
+	    tpp->tpp_platform_limits.tppp_tdc,
+	    tpp->tpp_platform_limits.tppp_tdc);
+	cmn_err(CE_CONT, "?Set Platform EDC = 0x%x (%uA)\n",
+	    tpp->tpp_platform_limits.tppp_edc,
+	    tpp->tpp_platform_limits.tppp_edc);
+#endif
+
 	*len = sizeof (*tpp);
 
 	return (true);
+}
+
+void
+turin_fabric_smu_pptable_post(zen_iodie_t *iodie)
+{
+	zen_platform_limits_t limits;
+
+	if (zen_smu_rpc_get_platform_limits(iodie, &limits)) {
+#ifdef DEBUG
+		cmn_err(CE_CONT, "?TDP 0x%x [0x%x,0x%x]\n",
+		    limits.zpl_tdp, limits.zpl_tdp_min, limits.zpl_tdp_max);
+		cmn_err(CE_CONT, "?PPT 0x%x [,0x%x]\n",
+		    limits.zpl_ppt, limits.zpl_ppt_max);
+		cmn_err(CE_CONT, "?EDC 0x%x [,0x%x]\n",
+		    limits.zpl_edc, limits.zpl_edc_max);
+#endif
+		iodie->zi_tdp = limits.zpl_tdp;
+		iodie->zi_tdp_min = limits.zpl_tdp_min;
+		iodie->zi_tdp_max = limits.zpl_tdp_max;
+		iodie->zi_ppt = limits.zpl_ppt;
+		iodie->zi_ppt_max = limits.zpl_ppt_max;
+		iodie->zi_edc = limits.zpl_edc;
+		iodie->zi_edc_max = limits.zpl_edc_max;
+	}
 }
 
 /*

@@ -223,6 +223,19 @@ struct zen_iodie {
 	zen_dxio_sm_state_t		zi_dxio_sm_state;
 
 	/*
+	 * The power and current limits cached from just after sending the
+	 * power and performance table to the SMU. Retrieving these values it
+	 * Not supported on all platforms so they may be zero.
+	 */
+	uint16_t			zi_tdp;
+	uint16_t			zi_tdp_min;
+	uint16_t			zi_tdp_max;
+	uint16_t			zi_ppt;
+	uint16_t			zi_ppt_max;
+	uint16_t			zi_edc;
+	uint16_t			zi_edc_max;
+
+	/*
 	 * The cached brand string fetched from the SMU during early boot.
 	 */
 	char			zi_brandstr[CPUID_BRANDSTR_STRLEN + 1];

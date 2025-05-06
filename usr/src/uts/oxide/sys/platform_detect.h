@@ -124,6 +124,15 @@ typedef struct oxide_board_data {
 	 * appropriate Zen platform structure.
 	 */
 	const zen_platform_t	*obd_zen_platform;
+
+	/*
+	 * Platform-specific power and current limits. If a platform does not
+	 * fill these in then the CPU's fused default is used.
+	 */
+	const uint32_t		obd_tdp;	/* Thermal design power (W) */
+	const uint32_t		obd_ppt;	/* Package Power Tracking (W) */
+	const uint32_t		obd_edc;	/* Electrical Design curr (A) */
+	const uint32_t		obd_tdc;	/* Thermal design current (A) */
 } oxide_board_data_t;
 
 extern const oxide_board_data_t *oxide_board_data;

@@ -103,6 +103,22 @@ extern bool zen_smu_set_features(zen_iodie_t *, uint32_t, uint32_t);
  */
 extern bool zen_smu_rpc_enable_hsmp_int(zen_iodie_t *);
 
+/*
+ * Retrieve current platform power limits.
+ */
+typedef struct {
+	uint16_t	zpl_tdp;
+	uint16_t	zpl_tdp_min;
+	uint16_t	zpl_tdp_max;
+	uint16_t	zpl_ppt;
+	uint16_t	zpl_ppt_max;
+	uint16_t	zpl_edc;
+	uint16_t	zpl_edc_max;
+} zen_platform_limits_t;
+
+extern bool zen_smu_rpc_get_platform_limits(zen_iodie_t *,
+    zen_platform_limits_t *);
+
 #ifdef __cplusplus
 }
 #endif

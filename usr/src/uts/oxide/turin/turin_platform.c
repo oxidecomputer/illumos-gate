@@ -86,6 +86,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 
 	.zfo_set_mpio_global_config = turin_set_mpio_global_config,
 	.zfo_smu_pptable_init = turin_fabric_smu_pptable_init,
+	.zfo_smu_pptable_post = turin_fabric_smu_pptable_post,
 	.zfo_smu_misc_init = turin_smu_features_init,
 	.zfo_ioms_init = turin_fabric_ioms_init,
 

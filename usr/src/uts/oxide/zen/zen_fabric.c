@@ -2412,6 +2412,8 @@ zen_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms,
 static int
 zen_fabric_send_pptable(zen_iodie_t *iodie, void *pptable)
 {
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+
 	if (zen_smu_rpc_send_pptable(iodie, (zen_pptable_t *)pptable)) {
 		/*
 		 * A warning will already have been emitted in the case of a
@@ -2420,6 +2422,9 @@ zen_fabric_send_pptable(zen_iodie_t *iodie, void *pptable)
 		cmn_err(CE_CONT, "?IO die %u: Sent PP Table to SMU\n",
 		    iodie->zi_num);
 	}
+
+	if (fops->zfo_smu_pptable_post != NULL)
+		fops->zfo_smu_pptable_post(iodie);
 
 	return (0);
 }

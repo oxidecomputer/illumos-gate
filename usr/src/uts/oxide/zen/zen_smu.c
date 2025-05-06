@@ -382,3 +382,37 @@ zen_smu_rpc_enable_hsmp_int(zen_iodie_t *iodie)
 
 	return (true);
 }
+
+bool
+zen_smu_rpc_get_platform_limits(zen_iodie_t *iodie,
+    zen_platform_limits_t *limitsp)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	rpc.zsr_req = ZEN_SMU_OP_GET_POWER_MFUSE;
+
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
+		    "SMU get platform limits RPC Failed: "
+		    "SMU req 0x%x resp %s (0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num, rpc.zsr_req,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
+		return (false);
+	}
+
+	const uint32_t tdp = rpc.zsr_args[0];
+	const uint32_t ppt = rpc.zsr_args[1];
+	const uint32_t edc = rpc.zsr_args[2];
+
+	limitsp->zpl_tdp = bitx32(tdp, 9, 0);
+	limitsp->zpl_tdp_min = bitx32(tdp, 19, 10);
+	limitsp->zpl_tdp_max = bitx32(tdp, 29, 20);
+	limitsp->zpl_ppt = bitx32(ppt, 9, 0);
+	limitsp->zpl_ppt_max = bitx32(ppt, 29, 20);
+	limitsp->zpl_edc = bitx32(edc, 9, 0);
+	limitsp->zpl_edc_max = bitx32(edc, 29, 20);
+
+	return (true);
+}
