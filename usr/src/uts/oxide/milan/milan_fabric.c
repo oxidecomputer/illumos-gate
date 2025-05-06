@@ -1813,6 +1813,14 @@ milan_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	 */
 	mpp->mpp_cca_en = 1;
 
+	/*
+	 * Set platform-specific power and current limits.
+	 */
+	mpp->mpp_platform_limits.mppp_tdp = oxide_board_data->obd_tdp;
+	mpp->mpp_platform_limits.mppp_ppt = oxide_board_data->obd_ppt;
+	mpp->mpp_platform_limits.mppp_tdc = oxide_board_data->obd_tdc;
+	mpp->mpp_platform_limits.mppp_edc = oxide_board_data->obd_edc;
+
 	*len = sizeof (*mpp);
 
 	return (true);

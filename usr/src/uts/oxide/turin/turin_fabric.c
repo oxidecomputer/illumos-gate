@@ -404,7 +404,7 @@ turin_pcie_port_info(const uint8_t coreno, const uint8_t portno)
 bool
 turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 {
-	const zen_iodie_t *iodie = &fabric->zf_socs[0].zs_iodies[0];
+	zen_iodie_t *iodie = &fabric->zf_socs[0].zs_iodies[0];
 	const uint8_t maj = iodie->zi_smu_fw[0];
 	const uint8_t min = iodie->zi_smu_fw[1];
 	const x86_processor_family_t family =
@@ -446,6 +446,40 @@ turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	 * Explicitly disable the overclocking part of the table.
 	 */
 	tpp->tpp_overclock.tppo_oc_dis = 1;
+
+	/*
+	 * Set platform-specific power and current limits.
+	 */
+	zen_platform_limits_t limits;
+
+	tpp->tpp_platform_limits.tppp_tdp = oxide_board_data->obd_tdp;
+	tpp->tpp_platform_limits.tppp_ppt = oxide_board_data->obd_ppt;
+	tpp->tpp_platform_limits.tppp_tdc = oxide_board_data->obd_tdc;
+	tpp->tpp_platform_limits.tppp_edc = oxide_board_data->obd_edc;
+
+	if (zen_smu_rpc_get_platform_limits(iodie, &limits)) {
+		tpp->tpp_platform_limits.tppp_tdp =
+		    MIN(tpp->tpp_platform_limits.tppp_tdp, limits.zpl_tdp_max);
+		tpp->tpp_platform_limits.tppp_ppt =
+		    MIN(tpp->tpp_platform_limits.tppp_ppt, limits.zpl_ppt_max);
+		tpp->tpp_platform_limits.tppp_edc =
+		    MIN(tpp->tpp_platform_limits.tppp_edc, limits.zpl_edc_max);
+	}
+
+#ifdef DEBUG
+	cmn_err(CE_CONT, "?Set TDP = 0x%x (%uW)\n",
+	    tpp->tpp_platform_limits.tppp_tdp,
+	    tpp->tpp_platform_limits.tppp_tdp);
+	cmn_err(CE_CONT, "?Set PPT = 0x%x (%uW)\n",
+	    tpp->tpp_platform_limits.tppp_ppt,
+	    tpp->tpp_platform_limits.tppp_ppt);
+	cmn_err(CE_CONT, "?Set TDC = 0x%x (%uA)\n",
+	    tpp->tpp_platform_limits.tppp_tdc,
+	    tpp->tpp_platform_limits.tppp_tdc);
+	cmn_err(CE_CONT, "?Set EDC = 0x%x (%uA)\n",
+	    tpp->tpp_platform_limits.tppp_edc,
+	    tpp->tpp_platform_limits.tppp_edc);
+#endif
 
 	*len = sizeof (*tpp);
 

@@ -270,6 +270,10 @@ static oxide_board_def_t oxide_board_defs[] = {
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_cosmo },
 			.obd_nengines = { &oxio_cosmo_nengines },
+			.obd_tdp = 500, /* W */
+			.obd_ppt = 500, /* W */
+			.obd_edc = 330, /* A */
+			.obd_tdc = 235	/* A */
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -340,6 +344,10 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_nengines = { &oxio_ruby_nengines },
 			.obd_perst_gpios = { 26, 266 },
 			.obd_perst_gpios_len = 2,
+			.obd_tdp = 400, /* W */
+			.obd_ppt = 400, /* W */
+			.obd_edc = 230, /* A */
+			.obd_tdc = 175	/* A */
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -373,10 +381,8 @@ static oxide_board_def_t oxide_board_defs[] = {
 	/*
 	 * Although we could combine the following two Ruby entries into one --
 	 * covering Genoa, Turin and Dense Turin -- they are currently separate
-	 * so that the appropriate FCH_IOMUX definitions are used for each
-	 * processor type since these are currently defined per CPU type.
-	 * Future consolidation may change that and we should revisit this
-	 * then.
+	 * so that the appropriate FCH_IOMUX definitions and parameters such as
+	 * the TDP are used for each processor type.
 	 */
 	{
 		.obdef_board_data = {
@@ -419,6 +425,10 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_nengines = { &oxio_ruby_nengines },
 			.obd_perst_gpios = { 26, 266 },
 			.obd_perst_gpios_len = 2,
+			.obd_tdp = 400, /* W */
+			.obd_ppt = 400, /* W */
+			.obd_edc = 230, /* A */
+			.obd_tdc = 175	/* A */
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */

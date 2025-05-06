@@ -310,6 +310,14 @@ genoa_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	 */
 	gpp->gpp_overclock.gppo_oc_dis = 1;
 
+	/*
+	 * Set platform-specific power and current limits.
+	 */
+	gpp->gpp_platform_limits.gppp_tdp = oxide_board_data->obd_tdp;
+	gpp->gpp_platform_limits.gppp_ppt = oxide_board_data->obd_ppt;
+	gpp->gpp_platform_limits.gppp_tdc = oxide_board_data->obd_tdc;
+	gpp->gpp_platform_limits.gppp_edc = oxide_board_data->obd_edc;
+
 	*len = sizeof (*gpp);
 
 	return (true);
