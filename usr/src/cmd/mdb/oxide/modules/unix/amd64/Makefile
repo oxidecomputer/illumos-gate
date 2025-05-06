@@ -23,12 +23,12 @@
 # Use is subject to license terms.
 #
 # Copyright 2019 Joyent, Inc.
-# Copyright 2024 Oxide Computer Co.
+# Copyright 2025 Oxide Computer Co.
 
 MODULE = unix.so
 MDBTGT = kvm
 
-MODSRCS = unix.c i86mmu.c xcall.c apob.c
+MODSRCS = unix.c i86mmu.c xcall.c apob.c fabric.c
 MODSRCS += genoa_impl.c milan_impl.c turin_impl.c zen_fabric_utils.c
 MODASMSRCS = unix_sup.S
 
@@ -49,6 +49,7 @@ CPPFLAGS += -DMP -D_MACHDEP
 CPPFLAGS += -I../../../../common
 CPPFLAGS += -I../../../../intel
 CPPFLAGS += -I$(SRC)/uts/oxide
+CPPFLAGS += -I$(SRC)/uts/oxide/sys/io
 CPPFLAGS += -I$(SRC)/uts/oxide/milan
 CPPFLAGS += -I$(SRC)/uts/intel
 CPPFLAGS += -I$(SRC)/uts/intel/io/amdzen

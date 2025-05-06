@@ -97,6 +97,11 @@ struct zen_ioms {
 	uint8_t			zio_iohcnum;
 
 	/*
+	 * The IOHUB number relative to the containing NBIO.
+	 */
+	uint8_t			zio_iohubnum;
+
+	/*
 	 * The type of IOHC associated with this IOMS.
 	 */
 	zen_iohc_type_t		zio_iohctype;

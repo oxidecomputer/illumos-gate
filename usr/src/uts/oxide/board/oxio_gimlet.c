@@ -463,7 +463,7 @@ const oxio_engine_t oxio_gimlet[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	}
 }, {
-	.oe_name = "Backplane x4 (Sidecar)",
+	.oe_name = "Backplane (Switch)",
 	.oe_type = OXIO_ENGINE_T_PCIE,
 	.oe_hp_type = OXIO_HOTPLUG_T_EXP_A,
 	.oe_tile = OXIO_TILE_P0,

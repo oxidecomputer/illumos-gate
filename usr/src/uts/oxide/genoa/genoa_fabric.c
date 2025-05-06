@@ -360,15 +360,16 @@ genoa_fabric_ioms_init(zen_ioms_t *ioms)
 	 */
 	ioms->zio_iohcnum = ioms->zio_num;
 	ioms->zio_iohctype = ZEN_IOHCT_LARGE;
+	ioms->zio_iohubnum = GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum);
 
-	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == GENOA_NBIO_BONUS_IOHUB)
+	if (ioms->zio_iohubnum == GENOA_NBIO_BONUS_IOHUB)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
 
 	/*
-	 * There is one set of nBIFs per NBIO. Mark the first IOMS in each NBIO
+	 * There is one set of nBIFs per NBIO. Mark the first IOHUB in each NBIO
 	 * as holding the nBIFs.
 	 */
-	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == 0)
+	if (ioms->zio_iohubnum == 0)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_NBIF;
 }
 
@@ -697,7 +698,7 @@ genoa_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms)
 {
 	uint32_t val;
 
-	if (GENOA_IOHC_IOHUB_NUM(ioms->zio_iohcnum) == GENOA_NBIO_BONUS_IOHUB)
+	if (ioms->zio_iohubnum == GENOA_NBIO_BONUS_IOHUB)
 		return;
 
 	const smn_reg_t smn_regs[4] = {

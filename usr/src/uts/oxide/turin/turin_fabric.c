@@ -543,6 +543,7 @@ turin_fabric_ioms_init(zen_ioms_t *ioms)
 
 	VERIFY3U(index, <, ARRAY_SIZE(iohcmap));
 	ioms->zio_iohcnum = iohcmap[index];
+	ioms->zio_iohubnum = TURIN_IOHC_IOHUB_NUM(ioms->zio_iohcnum);
 
 	if (ioms->zio_iohcnum == TURIN_NBIO_BONUS_IOHC)
 		ioms->zio_flags |= ZEN_IOMS_F_HAS_BONUS;
@@ -1438,8 +1439,7 @@ turin_fabric_ioapic(zen_ioms_t *ioms)
 void
 turin_fabric_nbif_init(zen_nbif_t *nbif)
 {
-	const uint8_t iohcno = nbif->zn_ioms->zio_iohcnum;
-	const uint8_t iohubno = TURIN_IOHC_IOHUB_NUM(iohcno);
+	const uint8_t iohubno = nbif->zn_ioms->zio_iohubnum;
 
 	for (uint8_t funcno = 0; funcno < nbif->zn_nfuncs; funcno++) {
 		zen_nbif_func_t *func = &nbif->zn_funcs[funcno];
@@ -1481,7 +1481,7 @@ void
 turin_fabric_nbif_dev_straps(zen_nbif_t *nbif)
 {
 	const uint8_t iohcno = nbif->zn_ioms->zio_iohcnum;
-	const uint8_t iohubno = TURIN_IOHC_IOHUB_NUM(iohcno);
+	const uint8_t iohubno = nbif->zn_ioms->zio_iohubnum;
 	smn_reg_t intrreg, reg;
 	uint32_t intr, val;
 

@@ -76,16 +76,11 @@ extern "C" {
 
 /*
  * Convenience macro to convert an IOHC number to the corresponding relative
- * IOHUB, and to the containing NBIO.
+ * IOHUB, and to the containing NBIO. IOMS and IOHUBs have a 1:1 mapping on
+ * Genoa.
  */
 #define	GENOA_IOHC_IOHUB_NUM(num)	((num) % GENOA_IOHC_PER_NBIO)
 #define	GENOA_NBIO_NUM(num)		((num) / GENOA_IOHC_PER_NBIO)
-
-/*
- * Convenience macro to convert an IOHC number to the corresponding relative
- * IOHUB. IOMS and IOHUBs have a 1:1 mapping on Genoa.
- */
-#define	GENOA_IOHC_IOHUB_NUM(num)	((num) % GENOA_IOHC_PER_NBIO)
 
 /*
  * The Genoa uarch-specific hooks for initial fabric topology initialization.

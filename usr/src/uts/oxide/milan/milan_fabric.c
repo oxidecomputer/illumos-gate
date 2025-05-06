@@ -1880,10 +1880,11 @@ milan_fabric_ioms_init(zen_ioms_t *ioms)
 {
 	/*
 	 * Milan has a 1:1 mapping between NBIOs, IOHCs and IOMSs, and all
-	 * IOHCs are the same type.
+	 * IOHCs are the same type. There is only a single IOHUB per NBIO.
 	 */
 	ioms->zio_iohcnum = ioms->zio_num;
 	ioms->zio_iohctype = ZEN_IOHCT_LARGE;
+	ioms->zio_iohubnum = 0;
 
 	/*
 	 * IOHC 0 has a bonus two lane PCIe Gen2 core which is used for the

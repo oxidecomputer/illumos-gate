@@ -22,7 +22,7 @@
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <mdb/mdb_modapi.h>
@@ -42,6 +42,7 @@
 #include "i86mmu.h"
 #include "unix_sup.h"
 #include "zen_kmdb.h"
+#include "fabric.h"
 #include <sys/apix.h>
 #include <sys/x86_archext.h>
 #include <sys/bitmap.h>
@@ -1000,6 +1001,10 @@ static const mdb_dcmd_t dcmds[] = {
 	    apob_entry_dcmd_help },
 	{ "apob_event", ":", "decode the APOB event log", apob_event_dcmd,
 	    apob_event_dcmd_help },
+	{ "fabric", "[-cnv]", "summarise the fabric", fabric_dcmd,
+	    fabric_dcmd_help },
+	{ "ioms", "[-n num] [-N nbionum] [-i iohcnum] [-b bus]", "show IOMS",
+	    fabric_ioms_dcmd, fabric_ioms_dcmd_help },
 	{ "gate_desc", ":", "dump a gate descriptor", gate_desc },
 	{ "idt", ":[-v]", "dump an IDT", idt },
 	{ "ttrace", "[-x] [-t kthread]", "dump trap trace buffers", ttrace },
@@ -1057,6 +1062,10 @@ static const mdb_walker_t walkers[] = {
 		mutex_owner_init, mutex_owner_step },
 	{ "memseg", "walk the memseg structures",
 		memseg_walk_init, memseg_walk_step, memseg_walk_fini },
+	{ "soc", "walk SOCs", fabric_walk_init, fabric_walk_soc_step },
+	{ "iodie", "walk IODIEs", fabric_walk_init, fabric_walk_iodie_step },
+	{ "nbio", "walk NBIOs", fabric_walk_init, fabric_walk_nbio_step },
+	{ "ioms", "walk IOMS", fabric_walk_init, fabric_walk_ioms_step },
 	{ NULL }
 };
 
