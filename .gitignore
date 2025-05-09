@@ -202,6 +202,7 @@ usr/src/cmd/allocate/st1
 usr/src/cmd/allocate/st_clean
 usr/src/cmd/amdzen/apobdump
 usr/src/cmd/amdzen/udf
+usr/src/cmd/amdzen/uhsmp
 usr/src/cmd/amdzen/usmn
 usr/src/cmd/amt/amd64/amt
 usr/src/cmd/amt/amt
@@ -8815,6 +8816,7 @@ usr/src/test/bhyve-tests/tests/vmm/interface_version
 usr/src/test/bhyve-tests/tests/vmm/legacy_destruct
 usr/src/test/bhyve-tests/tests/vmm/maxcpu
 usr/src/test/bhyve-tests/tests/vmm/mem_devmem
+usr/src/test/bhyve-tests/tests/vmm/mem_high
 usr/src/test/bhyve-tests/tests/vmm/mem_partial
 usr/src/test/bhyve-tests/tests/vmm/mem_seg_map
 usr/src/test/bhyve-tests/tests/vmm/npt_ops
