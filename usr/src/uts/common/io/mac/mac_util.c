@@ -555,6 +555,12 @@ bail:
 	return (NULL);
 }
 
+typedef struct mac_emul_ctx {
+	const uint32_t encap_len;
+	const mac_ether_offload_info_t *outer_info;
+	const mac_ether_offload_info_t *inner_info;
+} mac_emul_ctx_t;
+
 /*
  * Perform software checksum on a single message, if needed. The emulation
  * performed is determined by an intersection of the mblk's flags and the emul
@@ -566,9 +572,7 @@ bail:
  * case.
  */
 static mblk_t *
-mac_sw_cksum(mblk_t *mp, mac_emul_t emul,
-    const mac_ether_offload_info_t *outer_info, const uint32_t encap_len,
-    const mac_ether_offload_info_t *inner_info)
+mac_sw_cksum(mblk_t *mp, mac_emul_t emul, const mac_emul_ctx_t *ctx)
 {
 	uint32_t flags = DB_CKSUMFLAGS(mp) & (HCK_FLAGS);
 
@@ -576,15 +580,16 @@ mac_sw_cksum(mblk_t *mp, mac_emul_t emul,
 	ASSERT3U(flags, !=, 0);
 
 	/* process inner before outer */
-	if (encap_len != 0 && (flags & HCK_INNER_TX_FLAGS) != 0) {
-		mp = mac_sw_cksum_impl(mp, emul, encap_len, inner_info);
+	if (ctx->encap_len != 0 && (flags & HCK_INNER_TX_FLAGS) != 0) {
+		mp = mac_sw_cksum_impl(mp, emul, ctx->encap_len,
+		    ctx->inner_info);
 		if (mp == NULL) {
 			return (mp);
 		}
 	}
 
 	if ((DB_CKSUMFLAGS(mp) & HCK_OUTER_TX_FLAGS) != 0) {
-		mp = mac_sw_cksum_impl(mp, emul, 0, outer_info);
+		mp = mac_sw_cksum_impl(mp, emul, 0, ctx->outer_info);
 	}
 
 	return (mp);
@@ -818,8 +823,7 @@ last_mblk:
  */
 static void
 mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
-    uint_t *count, const mac_ether_offload_info_t *outer_info,
-    const uint32_t encap_len, const mac_ether_offload_info_t *inner_info)
+    uint_t *count, const mac_emul_ctx_t *ctx)
 {
 	uint32_t ocsum_flags, ocsum_start, ocsum_stuff;
 	uint32_t mss;
@@ -842,20 +846,21 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	mblk_t *seg_chain, *prev_nhdrmp, *next_nhdrmp, *nhdrmp, *ndatamp;
 	mblk_t *tmptail;
 
-	const boolean_t is_tun = outer_info->meoi_tuntype != METT_NONE;
+	const uint32_t encap_len = ctx->encap_len;
+	const boolean_t is_tun = ctx->outer_info->meoi_tuntype != METT_NONE;
 	const mac_ether_offload_info_t *ulp_info = is_tun ?
-	    inner_info : outer_info;
+	    ctx->inner_info : ctx->outer_info;
 
 	ASSERT3P(head, !=, NULL);
 	ASSERT3P(tail, !=, NULL);
 	ASSERT3P(count, !=, NULL);
 	ASSERT3U((DB_CKSUMFLAGS(omp) & HW_LSO), !=, 0);
-	ASSERT(encap_len == 0 || outer_info->meoi_tuntype != METT_NONE);
+	ASSERT(encap_len == 0 || ctx->outer_info->meoi_tuntype != METT_NONE);
 
 	/* Assume we are dealing with a single LSO message. */
 	ASSERT3P(omp->b_next, ==, NULL);
 
-	opktlen = outer_info->meoi_len;
+	opktlen = ctx->outer_info->meoi_len;
 	oehlen = ulp_info->meoi_l2hlen;
 	oiphlen = ulp_info->meoi_l3hlen;
 	otcphlen = ulp_info->meoi_l4hlen;
@@ -873,7 +878,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	}
 
 	/* mac_hw_emul() must have filled out tuninfo if one was specified */
-	if (is_tun && !mac_tun_meoi_is_full(outer_info)) {
+	if (is_tun && !mac_tun_meoi_is_full(ctx->outer_info)) {
 		mac_drop_pkt(omp, "tunneled packet has incomplete tuninfo");
 		goto fail;
 	}
@@ -1095,10 +1100,10 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		if (is_tun) {
 			uint32_t diff = odatalen - seg_len;
 
-			switch (outer_info->meoi_l3proto) {
+			switch (ctx->outer_info->meoi_l3proto) {
 			case ETHERTYPE_IP: {
 				ipha_t *tun_ip4h = (ipha_t *)(nhdrmp->b_rptr +
-				    outer_info->meoi_l2hlen);
+				    ctx->outer_info->meoi_l2hlen);
 				tun_ip4h->ipha_length = htons(
 				    ntohs(tun_ip4h->ipha_length) - diff);
 				tun_ip4h->ipha_ident = htons(
@@ -1119,7 +1124,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 			}
 			case ETHERTYPE_IPV6: {
 				ip6_t *tun_ip6h = (ip6_t *)(nhdrmp->b_rptr +
-				    outer_info->meoi_l2hlen);
+				    ctx->outer_info->meoi_l2hlen);
 				tun_ip6h->ip6_plen = htons(
 				    ntohs(tun_ip6h->ip6_plen) - diff);
 				break;
@@ -1128,12 +1133,12 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 				break;
 			}
 
-			switch (outer_info->meoi_tuntype) {
+			switch (ctx->outer_info->meoi_tuntype) {
 			case METT_GENEVE:
 			case METT_VXLAN: {
 				udpha_t *tun_udph = (udpha_t *)(nhdrmp->b_rptr +
-				    outer_info->meoi_l2hlen +
-				    outer_info->meoi_l3hlen);
+				    ctx->outer_info->meoi_l2hlen +
+				    ctx->outer_info->meoi_l3hlen);
 				tun_udph->uha_length = htons(
 				    ntohs(tun_udph->uha_length) - diff);
 
@@ -1227,8 +1232,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	if ((ocsum_flags & HCK_TX_FLAGS) && (emul & MAC_HWCKSUM_EMULS)) {
 		next_nhdrmp = nhdrmp->b_next;
 		nhdrmp->b_next = NULL;
-		nhdrmp = mac_sw_cksum(nhdrmp, emul, outer_info, encap_len,
-		    inner_info);
+		nhdrmp = mac_sw_cksum(nhdrmp, emul, ctx);
 		nhdrmp->b_next = next_nhdrmp;
 		next_nhdrmp = NULL;
 
@@ -1304,8 +1308,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		    (emul & MAC_HWCKSUM_EMULS)) {
 			next_nhdrmp = nhdrmp->b_next;
 			nhdrmp->b_next = NULL;
-			nhdrmp = mac_sw_cksum(nhdrmp, emul, outer_info,
-			    encap_len, inner_info);
+			nhdrmp = mac_sw_cksum(nhdrmp, emul, ctx);
 			nhdrmp->b_next = next_nhdrmp;
 			next_nhdrmp = NULL;
 			/* We may have freed the original nhdrmp. */
@@ -1355,8 +1358,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	if ((ocsum_flags & HCK_TX_FLAGS) && (emul & MAC_HWCKSUM_EMULS)) {
 		/* This should be the last mblk. */
 		ASSERT3P(nhdrmp->b_next, ==, NULL);
-		nhdrmp = mac_sw_cksum(nhdrmp, emul, outer_info, encap_len,
-		    inner_info);
+		nhdrmp = mac_sw_cksum(nhdrmp, emul, ctx);
 		prev_nhdrmp->b_next = nhdrmp;
 	}
 
@@ -1525,6 +1527,12 @@ mac_hw_emul(mblk_t **mp_chain, mblk_t **otail, uint_t *ocount, mac_emul_t emul)
 		 */
 		flags = DB_CKSUMFLAGS(mp);
 
+		const mac_emul_ctx_t ctx = {
+			.encap_len = encap_len,
+			.outer_info = &outer_info,
+			.inner_info = &inner_info,
+		};
+
 		if ((flags & HW_LSO) && (emul & MAC_LSO_EMUL)) {
 			uint_t tmpcount = 0;
 
@@ -1532,8 +1540,8 @@ mac_hw_emul(mblk_t **mp_chain, mblk_t **otail, uint_t *ocount, mac_emul_t emul)
 			 * LSO fix-up handles checksum emulation
 			 * inline (if requested). It also frees mp.
 			 */
-			mac_sw_lso(mp, emul, &tmphead, &tmptail,
-			    &tmpcount, &outer_info, encap_len, &inner_info);
+			mac_sw_lso(mp, emul, &tmphead, &tmptail, &tmpcount,
+			    &ctx);
 			if (tmphead == NULL) {
 				/* mac_sw_lso() freed the mp. */
 				goto nextpkt;
@@ -1541,8 +1549,7 @@ mac_hw_emul(mblk_t **mp_chain, mblk_t **otail, uint_t *ocount, mac_emul_t emul)
 			count += tmpcount;
 		} else if ((flags & HCK_TX_FLAGS) &&
 		    (emul & MAC_HWCKSUM_EMULS)) {
-			tmp = mac_sw_cksum(mp, emul, &outer_info, encap_len,
-			    &inner_info);
+			tmp = mac_sw_cksum(mp, emul, &ctx);
 			if (tmp == NULL) {
 				/* mac_sw_cksum() freed the mp. */
 				goto nextpkt;
