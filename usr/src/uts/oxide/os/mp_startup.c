@@ -1623,6 +1623,12 @@ done:
 	 */
 	hma_init();
 
+	/*
+	 * At this point, do any late fabric initialization that may be
+	 * required.
+	 */
+	zen_fabric_init_post_mpstartup();
+
 	if (use_mp && ncpus != boot_max_ncpus) {
 		cmn_err(CE_NOTE,
 		    "System detected %d cpus, but "

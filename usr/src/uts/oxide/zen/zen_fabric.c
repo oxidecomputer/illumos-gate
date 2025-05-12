@@ -3165,6 +3165,28 @@ zen_fabric_init(void)
 }
 
 static int
+zen_fabric_init_smu_late(zen_iodie_t *iodie, void *arg __unused)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+
+	/*
+	 * Invoke miscellaneous uarch-specific SMU late initialization.
+	 */
+	if (fops->zfo_smu_misc_late_init != NULL)
+		fops->zfo_smu_misc_late_init(iodie);
+
+	return (0);
+}
+
+void
+zen_fabric_init_post_mpstartup(void)
+{
+	zen_fabric_t *fabric = &zen_fabric;
+
+	zen_fabric_walk_iodie(fabric, zen_fabric_init_smu_late, NULL);
+}
+
+static int
 zen_fabric_nmi_cb(zen_ioms_t *ioms, void *arg)
 {
 	void (*uarch_nmi_func)(zen_ioms_t *) = arg;

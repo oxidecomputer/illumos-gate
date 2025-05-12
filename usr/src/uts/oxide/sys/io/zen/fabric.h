@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_FABRIC_H
@@ -129,6 +129,12 @@ extern void zen_fabric_topo_init(void);
  * Called from startup() to initialize the fabric up to getting PCIe ready.
  */
 extern void zen_fabric_init(void);
+
+/*
+ * Called from start_other_cpus() to perform any other fabric initialization
+ * required after APs are started.
+ */
+extern void zen_fabric_init_post_mpstartup(void);
 
 /*
  * Retrieve the base physical address of the PCIe ECAM region.

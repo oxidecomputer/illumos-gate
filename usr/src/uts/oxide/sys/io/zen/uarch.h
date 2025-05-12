@@ -257,6 +257,12 @@ typedef struct zen_fabric_ops {
 	 * uarch-specific logic during fabric topology initialization.
 	 */
 	void		(*zfo_smu_misc_init)(zen_iodie_t *);
+	/*
+	 * This hook for late SMU init is called after all CPUs are online and
+	 * should only be used to work around specific platform problems. In
+	 * general prefer zfo_smu_misc_init.
+	 */
+	void		(*zfo_smu_misc_late_init)(zen_iodie_t *);
 	bool		(*zfo_smu_pptable_init)(zen_fabric_t *, void *,
 	    size_t *);
 	void		(*zfo_smu_pptable_post)(zen_iodie_t *);
