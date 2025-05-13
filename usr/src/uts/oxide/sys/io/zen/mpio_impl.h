@@ -186,6 +186,8 @@ extern void zen_mpio_pcie_core_write(zen_pcie_core_t *, const smn_reg_t,
 extern uint32_t zen_mpio_pcie_port_read(zen_pcie_port_t *, const smn_reg_t);
 extern void zen_mpio_pcie_port_write(zen_pcie_port_t *, const smn_reg_t,
     const uint32_t);
+extern bool zen_mpio_read_pcie_reg(zen_iodie_t *, const smn_reg_t, uint32_t *);
+extern bool zen_mpio_write_pcie_reg(zen_iodie_t *, const smn_reg_t, uint32_t);
 
 extern bool zen_mpio_write_pcie_strap(zen_pcie_core_t *, uint32_t, uint32_t);
 extern uint32_t zen_mpio_ubm_idx(const zen_iodie_t *);

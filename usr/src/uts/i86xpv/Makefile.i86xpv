@@ -26,6 +26,7 @@
 # Use is subject to license terms.
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
 # Copyright 2019 Joyent, Inc.
+# Copyright 2026 Oxide Computer Company
 #
 
 #
@@ -280,7 +281,7 @@ SYS_KMODS	+=
 #
 #	'Misc' Modules (/kernel/misc):
 #
-MISC_KMODS	+= xpv_autoconfig gfx_private xnb pcie pci_prd
+MISC_KMODS	+= xpv_autoconfig gfx_private xnb pcie pci_prd amdzen_plat
 
 #	'Dacf' modules (/kernel/dacf)
 #

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _USMN_H
@@ -33,6 +33,7 @@ typedef struct usmn_reg {
 	uint32_t usr_addr;
 	uint32_t usr_data;
 	uint32_t usr_size;
+	uint32_t usr_unit;
 } usmn_reg_t;
 
 #ifdef __cplusplus
