@@ -24,6 +24,7 @@
  * Copyright (c) 1983, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright 2022 Garrett D'Amore <garrett@damore.org>
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -120,6 +121,7 @@ const int		_ncpu_log2	= (int)NCPU_LOG2;
 const int		_ncpu_p2	= (int)NCPU_P2;
 const unsigned long	_defaultstksz	= (unsigned long)DEFAULTSTKSZ;
 const unsigned int	_nbpg		= (unsigned int)MMU_PAGESIZE;
+const int		_ncpu_intr	= (int)NCPU_INTR;
 
 /*
  * System parameter formulae.

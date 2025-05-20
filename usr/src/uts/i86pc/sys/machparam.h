@@ -22,6 +22,7 @@
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*	Copyright (c) 1988 AT&T	*/
@@ -55,12 +56,10 @@ extern "C" {
  * Machine dependent parameters and limits.
  */
 
-/*
- * If NCPU grows beyond 256, sizing for the x86 comm page will require
- * adjustment.
- */
-#define	NCPU	256
+#define	NCPU		256
 #define	NCPU_LOG2	8
+
+#define	NCPU_INTR	255
 
 /* NCPU_P2 is NCPU rounded to a power of 2 */
 #define	NCPU_P2	(1 << NCPU_LOG2)

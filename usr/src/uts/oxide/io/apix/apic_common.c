@@ -26,7 +26,7 @@
  * Copyright 2019 Joshua M. Clulow <josh@sysmgr.org>
  * Copyright 2020 RackTop Systems, Inc.
  * Copyright 2021 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -286,6 +286,11 @@ int	apic_max_nproc = -1;
 int	apic_nproc = 0;
 size_t	apic_cpus_size = 0;
 
+/*
+ * Maximum number of CPUs that can take interrupts (IPIs excluded).
+ */
+int	apic_intr_max_proc_id = NCPU_INTR;
+
 uchar_t apic_io_id[MAX_IO_APIC];
 volatile uint32_t *apicioadr[MAX_IO_APIC];
 uchar_t	apic_io_ver[MAX_IO_APIC];
@@ -465,23 +470,29 @@ apic_probe_raw(const char *modname)
 	return (PSM_SUCCESS);
 }
 
-boolean_t
-apic_cpu_in_range(int cpu)
+bool
+apic_cpu_in_range(processorid_t cpu)
 {
 	cpu &= ~IRQ_USER_BOUND;
 	/* Check whether cpu id is in valid range. */
 	if (cpu < 0 || cpu >= apic_nproc) {
-		return (B_FALSE);
+		return (false);
 	} else if (apic_max_nproc != -1 && cpu >= apic_max_nproc) {
 		/*
 		 * Check whether cpuid is in valid range if CPU DR is enabled.
 		 */
-		return (B_FALSE);
+		return (false);
 	} else if (!CPU_IN_SET(apic_cpumask, cpu)) {
-		return (B_FALSE);
+		return (false);
 	}
 
-	return (B_TRUE);
+	return (true);
+}
+
+bool
+apic_cpu_in_bind_range(processorid_t cpu)
+{
+	return (apic_cpu_in_range(cpu) && cpu < apic_intr_max_proc_id);
 }
 
 processorid_t
@@ -489,13 +500,16 @@ apic_get_next_bind_cpu(void)
 {
 	int i, count;
 	processorid_t cpuid = 0;
+	processorid_t nproc = max(apic_nproc, apic_max_nproc);
 
-	for (count = 0; count < apic_nproc; count++) {
-		if (apic_next_bind_cpu >= apic_nproc) {
+	nproc = min(nproc, apic_intr_max_proc_id);
+
+	for (count = 0; count < nproc; count++) {
+		if (apic_next_bind_cpu >= nproc) {
 			apic_next_bind_cpu = 0;
 		}
 		i = apic_next_bind_cpu++;
-		if (apic_cpu_in_range(i)) {
+		if (apic_cpu_in_bind_range(i)) {
 			cpuid = i;
 			break;
 		}
@@ -510,10 +524,10 @@ apic_get_apic_version(void)
 	int i;
 	uchar_t min_io_apic_ver = 0;
 	static uint16_t version;		/* Cache as value is constant */
-	static boolean_t found = B_FALSE;	/* Accomodate zero version */
+	static bool found = false;	/* Accomodate zero version */
 
-	if (found == B_FALSE) {
-		found = B_TRUE;
+	if (found == false) {
+		found = true;
 
 		/*
 		 * Don't assume all IO APICs in the system are the same.
@@ -1022,7 +1036,7 @@ apic_cmci_disable(xc_arg_t arg1 __unused, xc_arg_t arg2 __unused,
 }
 
 void
-apic_cmci_setup(processorid_t cpuid, boolean_t enable)
+apic_cmci_setup(processorid_t cpuid, bool enable)
 {
 	cpuset_t	cpu_set;
 
@@ -1322,7 +1336,7 @@ uint_t
 apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
 {
 	nmi_action_t action = nmi_action;
-	boolean_t is_smi;
+	bool is_smi;
 
 	apic_error |= APIC_ERR_NMI;
 
@@ -1393,12 +1407,10 @@ processorid_t
 apic_get_next_processorid(processorid_t cpu_id)
 {
 
-	int i;
-
 	if (cpu_id == -1)
 		return ((processorid_t)0);
 
-	for (i = cpu_id + 1; i < NCPU; i++) {
+	for (processorid_t i = cpu_id + 1; i < NCPU; i++) {
 		if (apic_cpu_in_range(i))
 			return (i);
 	}
@@ -1782,7 +1794,7 @@ apic_find_cpu(int flag)
 		if (++acid >= apic_nproc) {
 			acid = 0;
 		}
-		if (apic_cpu_in_range(acid) &&
+		if (apic_cpu_in_bind_range(acid) &&
 		    (apic_cpus[acid].aci_status & flag)) {
 			break;
 		}

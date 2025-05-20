@@ -24,12 +24,13 @@
  */
 /*
  * Copyright 2019, Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 #ifndef _SYS_APIC_COMMON_H
 #define	_SYS_APIC_COMMON_H
 
+#include <sys/stdbool.h>
 #include <sys/apic.h>
 #include <sys/psm_types.h>
 #include <sys/avintr.h>
@@ -171,7 +172,7 @@ extern int	apic_cpu_start(processorid_t cpuid, caddr_t ctx);
 extern int	apic_cpu_add(psm_cpu_request_t *reqp);
 extern int	apic_cpu_remove(psm_cpu_request_t *reqp);
 extern int	apic_cpu_ops(psm_cpu_request_t *reqp);
-extern void	apic_switch_ipi_callback(boolean_t enter);
+extern void	apic_switch_ipi_callback(bool enter);
 extern void	apic_send_ipi(int cpun, int ipl);
 extern void	apic_set_idlecpu(processorid_t cpun);
 extern void	apic_unset_idlecpu(processorid_t cpun);
@@ -183,7 +184,7 @@ extern void	apic_send_pir_ipi(processorid_t);
 
 extern int apic_error_intr();
 extern void apic_cpcovf_mask_clear(void);
-extern void apic_cmci_setup(processorid_t, boolean_t);
+extern void apic_cmci_setup(processorid_t, bool);
 extern void apic_intrmap_init(int apic_mode);
 extern processorid_t apic_find_cpu(int flag);
 extern processorid_t apic_get_next_bind_cpu(void);

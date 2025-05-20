@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -1052,10 +1052,10 @@ gcpu_cmci_cpu_setup(cpu_setup_t what, int cpuid, void *arg)
 	 */
 	switch (what) {
 	case CPU_ON:
-		psm_cmci_setup(cpuid, B_TRUE);
+		psm_cmci_setup(cpuid, true);
 		break;
 	case CPU_OFF:
-		psm_cmci_setup(cpuid, B_FALSE);
+		psm_cmci_setup(cpuid, false);
 		break;
 	default:
 		break;
@@ -1106,7 +1106,7 @@ gcpu_mca_cmci_enable(cmi_hdl_t hdl)
 	 * Call the PSM op to make sure that we initialize things on
 	 * this CPU.
 	 */
-	psm_cmci_setup(cmi_hdl_logical_id(hdl), B_TRUE);
+	psm_cmci_setup(cmi_hdl_logical_id(hdl), true);
 }
 
 void

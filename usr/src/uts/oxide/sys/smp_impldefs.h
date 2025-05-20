@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_SMP_IMPLDEFS_H
@@ -34,6 +35,7 @@
 #include <sys/pic.h>
 #include <sys/xc_levels.h>
 #include <sys/psm_types.h>
+#include <sys/stdbool.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -76,7 +78,7 @@ extern uint32_t (*psm_get_localapicid)(uint32_t);	/* get local-apic id */
 extern uchar_t (*psm_xlate_vector_by_irq)(uchar_t); /* get vector for an irq */
 extern int (*psm_get_pir_ipivect)(void); /* get PIR (for VMM) ipi vect	*/
 extern void (*psm_send_pir_ipi)(processorid_t);	/* send PIR ipi		*/
-extern void (*psm_cmci_setup)(processorid_t, boolean_t); /* Control CPU CMCI */
+extern void (*psm_cmci_setup)(processorid_t, bool); /* Control CPU CMCI */
 
 extern int (*slvltovect)(int);	/* ipl interrupt priority level		*/
 extern int (*setlvl)(int, int *); /* set intr pri represented by vect	*/

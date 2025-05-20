@@ -22,7 +22,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 Joyent, Inc.
  * Copyright (c) 2017 by Delphix. All rights reserved.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -38,9 +38,11 @@ extern "C" {
 
 #ifndef	_ASM
 
+#include <sys/stdbool.h>
 #include <sys/psm_types.h>
 #include <sys/avintr.h>
 #include <sys/pci.h>
+#include <sys/processor.h>
 #include <sys/psm_common.h>
 #include <sys/acpi/acpi.h>	/* XXX needed by following */
 #include <sys/acpica.h>		/* XXX iflag_t */
@@ -608,7 +610,8 @@ extern int apic_probe_common(char *);
 extern void ioapic_disable_redirection(void);
 extern int apic_allocate_irq(int);
 extern int apic_state(psm_state_request_t *);
-extern boolean_t apic_cpu_in_range(int);
+extern bool apic_cpu_in_range(processorid_t);
+extern bool apic_cpu_in_bind_range(processorid_t);
 extern int apic_check_msi_support(void);
 extern uint32_t *mapin_apic(uint32_t, size_t, int);
 extern uint32_t *mapin_ioapic(uint32_t, size_t, int);

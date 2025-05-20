@@ -27,6 +27,7 @@
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_PSM_TYPES_H
@@ -39,6 +40,7 @@
 #include <sys/types.h>
 #include <sys/cpuvar.h>
 #include <sys/time.h>
+#include <sys/stdbool.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -165,7 +167,7 @@ struct	psm_ops {
 	int	(*psm_cpu_ops)(psm_cpu_request_t *reqp);
 	int	(*psm_get_pir_ipivect)(void);
 	void	(*psm_send_pir_ipi)(processorid_t cpu);
-	void	(*psm_cmci_setup)(processorid_t cpu, boolean_t);
+	void	(*psm_cmci_setup)(processorid_t cpu, bool);
 };
 
 

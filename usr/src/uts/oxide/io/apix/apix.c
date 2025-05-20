@@ -26,7 +26,7 @@
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 /*
@@ -63,6 +63,7 @@
 #include <sys/debug.h>
 #include <sys/archsystm.h>
 #include <sys/trap.h>
+#include <sys/param.h>
 #include <sys/machsystm.h>
 #include <sys/sysmacros.h>
 #include <sys/cpuvar.h>
@@ -833,7 +834,6 @@ apix_enable_intr(processorid_t cpun)
 {
 	apix_vector_t *vecp;
 	int i, ret;
-	processorid_t n;
 
 	lock_set(&apix_lock);
 
@@ -851,7 +851,7 @@ apix_enable_intr(processorid_t cpun)
 		apic_cpus[cpun].aci_status &= ~APIC_CPU_SUSPEND;
 	}
 
-	for (n = 0; n < apic_nproc; n++) {
+	for (processorid_t n = 0; n < apic_nproc; n++) {
 		if (!apic_cpu_in_range(n) || n == cpun ||
 		    (apic_cpus[n].aci_status & APIC_CPU_INTR_ENABLE) == 0)
 			continue;
@@ -932,7 +932,7 @@ apix_post_cpu_start()
 	 * CPU has entered x2apic mode.
 	 */
 	if (apic_mode == LOCAL_X2APIC) {
-		apic_switch_ipi_callback(B_FALSE);
+		apic_switch_ipi_callback(false);
 	}
 
 	splx(ipltospl(LOCK_LEVEL));
@@ -2295,7 +2295,7 @@ apix_intx_alloc_vector(dev_info_t *dip, int inum, struct intrspec *ispec)
  * unpredictable time.
  */
 void
-apic_switch_ipi_callback(boolean_t enter)
+apic_switch_ipi_callback(bool enter)
 {
 	ulong_t iflag;
 	struct psm_ops *pops = psmops;
