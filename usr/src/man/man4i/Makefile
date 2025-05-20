@@ -46,4 +46,4 @@ MANFILES=	audio.4i	\
 
 include		$(SRC)/man/Makefile.man
 
-install:	$(ROOTMANFILES) $(ROOTMANLINKS)
+install:	$(ROOTMANFILES)

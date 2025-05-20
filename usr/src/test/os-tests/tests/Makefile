@@ -32,6 +32,7 @@ SUBDIRS =       \
 		file-locking \
 		gpio \
 		hexdump \
+		idmap \
 		ilstr \
 		ksensor \
 		ksid \
