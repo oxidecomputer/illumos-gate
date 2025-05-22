@@ -395,6 +395,7 @@ typedef struct zen_mpio_smn_addrs {
 	 * There are six argument registers that are dual purposed for both
 	 * input to and output from the RPC.
 	 */
+	const uint32_t zmsa_reg_base;
 	const smn_reg_def_t	zmsa_arg0;
 	const smn_reg_def_t	zmsa_arg1;
 	const smn_reg_def_t	zmsa_arg2;

@@ -1037,6 +1037,8 @@ static const mdb_dcmd_t dcmds[] = {
 	    dimm_report_dcmd, dimm_report_dcmd_help },
 	{ "df_route", "-b | -d | -I | -m  [-i inst] [-s socket]", "print df "
 	    "route tables", df_route_dcmd, df_route_dcmd_help },
+	{ "mpiorpc", ":[-s socket] [arg]...", "Invoke an MPIO RPC",
+	    mpiorpc_dcmd, mpiorpc_dcmd_help },
 	{ "rddf", ":[-b | -i inst] [-f func] [-s socket]", "read df register",
 	    rddf_dcmd, rddf_dcmd_help },
 	{ "rdpcicfg", ":[-L len] bus dev func",

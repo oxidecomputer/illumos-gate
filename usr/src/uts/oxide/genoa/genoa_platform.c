@@ -169,6 +169,7 @@ const zen_platform_t genoa_platform = {
 			.zssa_arg5 = D_GENOA_SMU_RPC_ARG5,
 		},
 		.zpc_mpio_smn_addrs = {
+			.zmsa_reg_base = ZEN_MPIO_SMN_REG_BASE,
 			.zmsa_arg0 = D_GENOA_MPIO_RPC_ARG0,
 			.zmsa_arg1 = D_GENOA_MPIO_RPC_ARG1,
 			.zmsa_arg2 = D_GENOA_MPIO_RPC_ARG2,

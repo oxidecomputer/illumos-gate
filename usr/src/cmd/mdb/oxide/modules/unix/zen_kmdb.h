@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _ZEN_KMDB_H
@@ -46,6 +46,9 @@ extern int df_route_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 extern void dimm_report_dcmd_help(void);
 extern int dimm_report_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+
+extern int mpiorpc_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void mpiorpc_dcmd_help(void);
 
 #endif	/* _KMDB */
 

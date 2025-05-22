@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _ZEN_KMDB_IMPL_H
@@ -31,16 +31,37 @@
 
 
 /*
- * We define just enough of the board data to be able to identify what kind of
- * system we're running on.
- *
+ * Shadow structures for bits that we care about in the debugger.
  * Must be kept in sync with the definitions in oxide/sys/platform_detect.h
  */
-typedef struct mdb_oxide_board_cpuinfo {
+
+typedef struct {
+	const uint32_t		zmsa_reg_base;
+	const smn_reg_def_t	zmsa_arg0;
+	const smn_reg_def_t	zmsa_arg1;
+	const smn_reg_def_t	zmsa_arg2;
+	const smn_reg_def_t	zmsa_arg3;
+	const smn_reg_def_t	zmsa_arg4;
+	const smn_reg_def_t	zmsa_arg5;
+	const smn_reg_def_t	zmsa_resp;
+	const smn_reg_def_t	zmsa_doorbell;
+} mdb_zen_mpio_smn_addrs_t;
+
+typedef struct {
+	mdb_zen_mpio_smn_addrs_t zpc_mpio_smn_addrs;
+} mdb_zen_platform_consts_t;
+
+typedef struct {
+	mdb_zen_platform_consts_t zp_consts;
+} mdb_zen_platform_t;
+
+typedef struct {
 	x86_chiprev_t			obc_chiprev;
 } mdb_oxide_board_cpuinfo_t;
-typedef struct mdb_oxide_board_data {
+
+typedef struct {
 	mdb_oxide_board_cpuinfo_t	obd_cpuinfo;
+	const mdb_zen_platform_t    *obd_zen_platform;
 } mdb_oxide_board_data_t;
 
 /*

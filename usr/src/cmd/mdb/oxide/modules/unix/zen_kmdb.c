@@ -30,6 +30,7 @@
 #include <sys/amdzen/ccx.h>
 #include <sys/amdzen/umc.h>
 #include <io/amdzen/amdzen.h>
+#include <sys/io/zen/mpio.h>
 
 #include "zen_kmdb_impl.h"
 
@@ -108,24 +109,11 @@ df_discover_comp_ids(uint8_t dfno)
 	return (B_TRUE);
 }
 
-/*
- * Called on module initialization to initialize `df_props`.
- */
-boolean_t
-df_props_init(void)
+static boolean_t
+get_board_data(mdb_oxide_board_data_t *board_data)
 {
 	GElf_Sym board_data_sym;
-	uintptr_t board_data_addr;
-	mdb_oxide_board_data_t board_data;
-	x86_chiprev_t chiprev;
-	df_reg_def_t fid0def, fid1def, fid2def;
-	uint32_t fid0, fid1, fid2;
-	df_fabric_decomp_t *decomp;
-
-	if (df_props != NULL) {
-		mdb_warn("df_props already initialized\n");
-		return (B_TRUE);
-	}
+	uintptr_t board_data_addr = 0;
 
 	/*
 	 * We need to know what kind of system we're running on to figure out
@@ -159,9 +147,33 @@ df_props_init(void)
 		return (B_FALSE);
 	}
 
-	if (mdb_ctf_vread(&board_data, "oxide_board_data_t",
+	if (mdb_ctf_vread(board_data, "oxide_board_data_t",
 	    "mdb_oxide_board_data_t", board_data_addr, 0) != 0) {
 		mdb_warn("failed to read oxide_board_data from target");
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
+}
+
+/*
+ * Called on module initialization to initialize `df_props`.
+ */
+boolean_t
+df_props_init(void)
+{
+	mdb_oxide_board_data_t board_data;
+	x86_chiprev_t chiprev;
+	df_reg_def_t fid0def, fid1def, fid2def;
+	uint32_t fid0, fid1, fid2;
+	df_fabric_decomp_t *decomp;
+
+	if (df_props != NULL) {
+		mdb_warn("df_props already initialized\n");
+		return (B_TRUE);
+	}
+
+	if (!get_board_data(&board_data)) {
 		return (B_FALSE);
 	}
 
@@ -884,7 +896,7 @@ typedef enum smn_rw {
 } smn_rw_t;
 
 static int
-smn_rw_regdef(const smn_reg_t reg, uint8_t sock, smn_rw_t rw,
+smn_rw_reg(const smn_reg_t reg, uint8_t sock, smn_rw_t rw,
     uint32_t *smn_val)
 {
 	uint8_t smn_busno;
@@ -991,7 +1003,7 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 
 	const smn_reg_t reg = SMN_MAKE_REG_SIZED(addr, len, SMN_UNIT_UNKNOWN);
 
-	ret = smn_rw_regdef(reg, (uint8_t)sock, rw, &smn_val);
+	ret = smn_rw_reg(reg, (uint8_t)sock, rw, &smn_val);
 	if (ret != DCMD_OK) {
 		return (ret);
 	}
@@ -1004,9 +1016,15 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 }
 
 static int
-rdmsn_regdef(const smn_reg_t reg, uint8_t sock, uint32_t *val)
+rdsmn_reg(const smn_reg_t reg, uint8_t sock, uint32_t *val)
 {
-	return (smn_rw_regdef(reg, sock, SMN_RD, val));
+	return (smn_rw_reg(reg, sock, SMN_RD, val));
+}
+
+static int
+wrsmn_reg(const smn_reg_t reg, uint8_t sock, uint32_t val)
+{
+	return (smn_rw_reg(reg, sock, SMN_WR, &val));
 }
 
 int
@@ -1654,10 +1672,10 @@ dimm_report_dimm_present(uint8_t sock, uint8_t umcno, uint8_t dimm,
 	smn_reg_t sec0_reg = UMC_BASE_SEC(umcno, cs0);
 	smn_reg_t sec1_reg = UMC_BASE_SEC(umcno, cs1);
 
-	if ((ret = rdmsn_regdef(base0_reg, sock, &base0)) != DCMD_OK ||
-	    (ret = rdmsn_regdef(base1_reg, sock, &base1)) != DCMD_OK ||
-	    (ret = rdmsn_regdef(sec0_reg, sock, &sec0)) != DCMD_OK ||
-	    (ret = rdmsn_regdef(sec1_reg, sock, &sec1)) != DCMD_OK) {
+	if ((ret = rdsmn_reg(base0_reg, sock, &base0)) != DCMD_OK ||
+	    (ret = rdsmn_reg(base1_reg, sock, &base1)) != DCMD_OK ||
+	    (ret = rdsmn_reg(sec0_reg, sock, &sec0)) != DCMD_OK ||
+	    (ret = rdsmn_reg(sec1_reg, sock, &sec1)) != DCMD_OK) {
 		return (ret);
 	}
 
@@ -1682,7 +1700,7 @@ dimm_report_dcmd_sock(uint8_t sock)
 		smn_reg_t umccfg_reg = UMC_UMCCFG(umcno);
 		uint32_t umccfg;
 
-		ret = rdmsn_regdef(umccfg_reg, sock, &umccfg);
+		ret = rdsmn_reg(umccfg_reg, sock, &umccfg);
 		if (ret != DCMD_OK) {
 			return (ret);
 		}
@@ -1749,4 +1767,236 @@ dimm_report_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	}
 
 	return (ret);
+}
+
+static boolean_t
+get_platform(mdb_zen_platform_t *platform)
+{
+	mdb_oxide_board_data_t board_data = { 0 };
+
+	if (!get_board_data(&board_data)) {
+		return (B_FALSE);
+	}
+
+	if (mdb_ctf_vread(platform, "zen_platform_t", "mdb_zen_platform_t",
+	    (uintptr_t)(void *)board_data.obd_zen_platform, 0) != 0) {
+		mdb_warn("failed to read zen_platform from target");
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
+}
+
+/*
+ * See the comments in `zen_mpio.c` for explanations of the meanings and
+ * choices for these constants.
+ */
+#define	RPC_READY_MAX_SPIN	(1U << 24)
+
+/*
+ * The mask for the actual RPC return value in the data read from MPIO.
+ */
+#define	RPC_FW_RESP_MASK	0xff
+
+typedef struct {
+	uint32_t	req, resp;
+	uint32_t	args[6];
+} mdb_mpio_rpc_t;
+
+static smn_reg_t
+mpio_regdef_to_reg(uint32_t smn_reg_base, smn_reg_def_t reg_def)
+{
+	ASSERT3U(reg_def.srd_nents, <=, 1);
+	uint32_t raw = smn_reg_base + reg_def.srd_reg;
+	smn_reg_t reg = SMN_MAKE_REG_SIZED(raw, reg_def.srd_size,
+	    reg_def.srd_unit);
+
+	return (reg);
+}
+
+static boolean_t
+mpio_rpc(uint8_t sock, mdb_mpio_rpc_t *rpc, const mdb_zen_platform_consts_t *cp)
+{
+	uint32_t req, resp;
+	const mdb_zen_mpio_smn_addrs_t *mpio = &cp->zpc_mpio_smn_addrs;
+
+	if (mpio->zmsa_resp.srd_unit != SMN_UNIT_MPIO_RPC) {
+		mdb_warn("MPIO RPCs unsupported on this platform.\n");
+		return (B_FALSE);
+	}
+	const uint32_t reg_base = mpio->zmsa_reg_base;
+	const smn_reg_t response =
+	    mpio_regdef_to_reg(reg_base, mpio->zmsa_resp);
+	const smn_reg_t doorbell =
+	    mpio_regdef_to_reg(reg_base, mpio->zmsa_doorbell);
+	const smn_reg_t arg0 = mpio_regdef_to_reg(reg_base, mpio->zmsa_arg0);
+	const smn_reg_t arg1 = mpio_regdef_to_reg(reg_base, mpio->zmsa_arg1);
+	const smn_reg_t arg2 = mpio_regdef_to_reg(reg_base, mpio->zmsa_arg2);
+	const smn_reg_t arg3 = mpio_regdef_to_reg(reg_base, mpio->zmsa_arg3);
+	const smn_reg_t arg4 = mpio_regdef_to_reg(reg_base, mpio->zmsa_arg4);
+	const smn_reg_t arg5 = mpio_regdef_to_reg(reg_base, mpio->zmsa_arg5);
+
+	/* Wait for MPIO to become ready to accept an RPC. */
+	for (uint_t i = 0; i < RPC_READY_MAX_SPIN; i++) {
+		int ret = rdsmn_reg(response, sock, &resp);
+		if (ret != DCMD_OK) {
+			mdb_warn(
+			    "failed to read MPIO response register while "
+			    "waiting for ready-for-RPC state (req %r)\n", req);
+			return (B_FALSE);
+		}
+		if ((resp & ZEN_MPIO_RPC_FW_RESP_READY) != 0) {
+			break;
+		}
+	}
+	if ((resp & ZEN_MPIO_RPC_FW_RESP_READY) == 0) {
+		mdb_warn("MPIO never became ready for RPC (resp %r)\n",
+		    resp);
+		return (B_FALSE);
+	}
+
+	/* Write arguments. */
+	if (wrsmn_reg(arg0, sock, rpc->args[0]) != DCMD_OK ||
+	    wrsmn_reg(arg1, sock, rpc->args[1]) != DCMD_OK ||
+	    wrsmn_reg(arg2, sock, rpc->args[2]) != DCMD_OK ||
+	    wrsmn_reg(arg3, sock, rpc->args[3]) != DCMD_OK ||
+	    wrsmn_reg(arg4, sock, rpc->args[4]) != DCMD_OK ||
+	    wrsmn_reg(arg5, sock, rpc->args[5])) {
+		mdb_warn("failed to write arguments to MPIO (req %r)\n",
+		    rpc->req);
+		return (B_FALSE);
+	}
+
+	/* Write the request number. */
+	req = rpc->req;
+	if (wrsmn_reg(response, sock, req << 8) != DCMD_OK) {
+		mdb_warn("failed to write RPC request to MPIO (req %r)\n", req);
+		return (B_FALSE);
+	}
+
+	/* Ring the MPIO doorbell. */
+	if (wrsmn_reg(doorbell, sock, UINT32_MAX) != DCMD_OK) {
+		mdb_warn("failed to write to MPIO doorbell register (req %r)\n",
+		    req);
+	}
+
+	/* Wait for the RPC to complete. */
+	for (uint_t i = 0; i < RPC_READY_MAX_SPIN; i++) {
+		int ret = rdsmn_reg(response, sock, &resp);
+		if (ret != DCMD_OK) {
+			mdb_warn("failed to read MPIO response waiting for RPC "
+			    "completion (req %r)\n", req);
+			return (B_FALSE);
+		}
+		if ((resp & ZEN_MPIO_RPC_FW_RESP_READY) != 0) {
+			break;
+		}
+	}
+	rpc->resp = resp;
+
+	if ((resp & ZEN_MPIO_RPC_FW_RESP_READY) == 0) {
+		mdb_warn("MPIO RPC did not complete (req %r, resp %r)\n",
+		    req, resp);
+		return (B_FALSE);
+	}
+	if (rdsmn_reg(arg0, sock, &rpc->args[0]) != DCMD_OK ||
+	    rdsmn_reg(arg1, sock, &rpc->args[1]) != DCMD_OK ||
+	    rdsmn_reg(arg2, sock, &rpc->args[2]) != DCMD_OK ||
+	    rdsmn_reg(arg3, sock, &rpc->args[3]) != DCMD_OK ||
+	    rdsmn_reg(arg4, sock, &rpc->args[4]) != DCMD_OK ||
+	    rdsmn_reg(arg5, sock, &rpc->args[5])) {
+		mdb_warn(
+		    "Failed reading RPC result values from MPIO "
+		    "(req %r, resp %r)\n", req, resp);
+		return (B_FALSE);
+	}
+
+	return (B_TRUE);
+}
+
+static const mdb_bitmask_t mpio_resp_flags[] = {
+	{ "READY", ZEN_MPIO_RPC_FW_RESP_READY, ZEN_MPIO_RPC_FW_RESP_READY },
+	{ "OK", RPC_FW_RESP_MASK, ZEN_MPIO_RPC_FW_RESP_OK },
+	{ "BUSY", RPC_FW_RESP_MASK, ZEN_MPIO_RPC_FW_RESP_REJ_BUSY },
+	{ "PREREQ", RPC_FW_RESP_MASK, ZEN_MPIO_RPC_FW_RESP_REJ_PREREQ },
+	{ "UNK CMD", RPC_FW_RESP_MASK, ZEN_MPIO_RPC_FW_RESP_UNKNOWN_CMD },
+	{ "FAILED", RPC_FW_RESP_MASK, ZEN_MPIO_RPC_FW_RESP_FAILED },
+	{ NULL, 0, 0 },
+};
+
+int
+mpiorpc_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	uint64_t sock = 0;
+	int nopts;
+	mdb_mpio_rpc_t rpc = { 0 };
+	mdb_zen_platform_t platform;
+
+	if ((flags & DCMD_ADDRSPEC) == 0)
+		return (DCMD_USAGE);
+
+	nopts = mdb_getopts(argc, argv,
+	    's', MDB_OPT_UINT64, &sock,
+	    NULL);
+	argc -= nopts;
+	argv += nopts;
+
+	if ((flags & DCMD_PIPE_OUT) != 0) {
+		mdb_warn("MPIO RPC cannot output to pipeline\n");
+		return (DCMD_ABORT);
+	}
+	if (addr > 0xFFF) {
+		mdb_warn("MPIO operation number out of range\n");
+		return (DCMD_USAGE);
+	}
+	if (argc < 0 || argc > ARRAY_SIZE(rpc.args)) {
+		mdb_warn("invalid number of arguments for MPIO RPC\n");
+		return (DCMD_USAGE);
+	}
+	for (int i = 0; i < argc; i++) {
+		unsigned long long arg = mdb_argtoull(&argv[i]);
+		if (arg > UINT32_MAX) {
+			mdb_warn("MPIO RPC argument overflows uint32_t "
+			    "(%llu)\n", arg);
+			return (DCMD_USAGE);
+		}
+		rpc.args[i] = arg;
+	}
+	if (!get_platform(&platform)) {
+		mdb_warn("cannot read platform setting up for for MPIO RPC\n");
+		return (DCMD_ERR);
+	}
+	rpc.req = (uint32_t)addr;
+	if (!mpio_rpc(sock, &rpc, &platform.zp_consts)) {
+		mdb_warn("mpio: RPC failed\n");
+		return (DCMD_ERR);
+	}
+	mdb_printf("req %r resp %r<%b> [%r, %r, %r, %r, %r, %r]\n",
+	    rpc.req, rpc.resp, rpc.resp, mpio_resp_flags,
+	    rpc.args[0], rpc.args[1], rpc.args[2],
+	    rpc.args[3], rpc.args[4], rpc.args[5]);
+
+	return (DCMD_OK);
+}
+
+static const char *mpiorpc_help =
+"Invoke an MPIO RPC, taking up to six arguments, and displaying the results.\n"
+"The address is interpreted as the RPC number.\n"
+"\n"
+"The following option may be used, to control which socket we wish to query:\n"
+"  -s socket	Send RPCs to MPIO on the given I/O die, generally a socket\n"
+"\n"
+"Example:\n"
+"  0::mpiorpc\n  # Issues the GET_VERSION operation, taking no arguments.\n"
+"\n"
+"Note that the output of ::mpiorpc cannot be used in a pipeline.  Also,\n"
+"be aware that it is possible to enter the debugger when the system is in the\n"
+"process of making an MPIO RPC: we make no explicit interlock there, so take\n"
+"care to ensure the state of the system is well understood when invoking this\n"
+"command\n";
+
+void
+mpiorpc_dcmd_help(void)
+{
+	mdb_printf(mpiorpc_help);
 }
