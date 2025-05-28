@@ -42,6 +42,8 @@ illumos*.sh
 # BEGIN AUTO-GENERATED SECTION
 # To refresh this section, do a release stlouis build and run:
 #     ./etc-stlouis/tools/update_gitignore
+etc-stlouis/tools/builder/builder
+etc-stlouis/tools/builder/users.c
 usr/src/boot/efi/libefi/amd64/machine
 usr/src/boot/efi/libefi/amd64/x86
 usr/src/boot/efi/libefi/i386/machine
@@ -1275,6 +1277,7 @@ usr/src/cmd/make/bin/make
 usr/src/cmd/makekey/makekey
 usr/src/cmd/man/man
 usr/src/cmd/mandoc/mandoc
+usr/src/cmd/mcmargins/mcmargins
 usr/src/cmd/mdb/i86pc/modules/apix/amd64/kmod/
 usr/src/cmd/mdb/i86pc/modules/pcplusmp/amd64/kmod/
 usr/src/cmd/mdb/i86pc/modules/unix/amd64/kmod/
