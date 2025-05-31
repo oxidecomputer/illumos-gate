@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copright 2022 Jason King
  */
 
 #include <sys/acpica.h>
@@ -70,6 +71,8 @@ static const isapnp_desc_t isapnp_descs[] = {
 	{ "IFX0102", B_FALSE, "tpm", NULL, "Generic Trusted Platform Module" },
 	{ "BCM0101", B_FALSE, "tpm", NULL, "Generic Trusted Platform Module" },
 	{ "NSC1200", B_FALSE, "tpm", NULL, "Generic Trusted Platform Module" },
+	{ "MSFT0101", B_FALSE, "tpm", NULL,
+	    "Generic Trusted Platform Module 2.0 Module" },
 
 	/*
 	 * This wildcard entry catches anything in the PNP mouse class, and

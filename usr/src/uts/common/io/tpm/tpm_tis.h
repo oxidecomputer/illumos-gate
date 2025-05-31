@@ -34,7 +34,7 @@
  * (TIS 1.2 pg 27)
  */
 #define	TIS_MEM_BASE	0xFED40000
-#define	TIS_MEM_LEN    	0x5000
+#define	TIS_MEM_LEN	0x5000
 
 #define	TPM_LOCALITY_OFFSET(x)	((x) << 12)
 
@@ -48,10 +48,19 @@
 #define	TPM_INT_STATUS		0x0010
 /* Supported Interrupts */
 #define	TPM_INTF_CAP		0x0014
+#define	TPM_INTF_CAP_CMD_READY		0x0080
+#define	TPM_INTF_CAP_LOC_CHANGED	0x0004
+#define	TPM_INTF_CAP_STS_VALID		0x0002
+#define	TPM_INTF_CAP_DATA_AVAIL		0x0001
 /* Status Register */
 #define	TPM_STS			0x0018
+#define	TPM_STS_BURSTCOUNT(x)	(((x) >> 8) & 0xffff)
 /* I/O FIFO */
-#define	TPM_DATA_FIFO   	0x0024
+#define	TPM_DATA_FIFO		0x0024
+/* Interface Id (1.3) */
+#define	TPM_INTERFACE_ID	0x0030
+/* I/O XFIFO (1.3) */
+#define	TPM_XDATA_FIFO		0x0080
 /* Vendor and Device ID */
 #define	TPM_DID_VID		0x0F00
 /* Revision ID */
@@ -93,6 +102,10 @@ enum tis_status {
 	TPM_STS_CMD_READY	= 0x40, /* bit 6 */
 	TPM_STS_VALID		= 0x80  /* bit 7 */
 };
+#define	TIS_STATUS_MASK		0x7f
+
+#define	TIS_STATUS_CANCEL	(1 << 24)
+#define	TIS_STATUS_RESET_EST	(1 << 25)
 
 /* Possible TPM_INTF_CAPABILITY register values (TIS 1.2 pg.55) */
 enum tis_intf_cap {
@@ -107,6 +120,28 @@ enum tis_intf_cap {
 	TPM_INTF_INT_DATA_AVAIL_INT = 0x001
 };
 
+enum tis_intf_ver {
+	TPM_INTF_VERSION_1_21,
+	TPM_INTF_VERSION_1_3,
+	TPM_INTF_VERSION_1_3_TPM20
+};
+#define	TIS_INTF_VER_VAL(x)		(((x) >> 28) & 0x7)
+
+/*
+ * Because of the gaps, we can't just cast the masked value of the
+ * interface capability register to the enum, instead we must
+ * translate.
+ */
+#define	TIS_INTF_VER_VAL_1_21		0
+				/*	1 reserved */
+#define	TIS_INTF_VER_VAL_1_3		2
+#define	TIS_INTF_VER_VAL_1_3_TPM	3
+				/*	4-7 reserved */
+#define	TIS_INTF_XFER_VAL(x)	(((x) >> 9) & 0x3)
+
+/* Valid bits in TPM_INTF_CAP */
+#define	TPM_INTF_MASK	0x700007ff
+
 /* Possible TPM_INT_ENABLE register values (TIS 1.2 pg.62-63) */
 /* Interrupt enable bit for TPM_INT_ENABLE_x register */
 /* Too big to fit in enum... */
@@ -118,4 +153,10 @@ enum tis_int_enable {
 	TPM_INT_STS_DATA_AVAIL_EN = 0x01
 };
 
+enum tis_int_mask {
+	TPM_TIS_INT_CMD_READY =		0x80,
+	TPM_TIS_INT_LOCALITY_CHANGED =	0x04,
+	TPM_TIS_INT_STATUS_VALID =	0x02,
+	TPM_TIS_INT_DATA_AVAIL =	0x01,
+};
 #endif	/* _TPM_TIS_H */

@@ -19,6 +19,7 @@
 # CDDL HEADER END
 #
 # Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2022 Jason King
 #
 
 include ../Makefile.cmd
@@ -30,7 +31,8 @@ SUBDIRS1 = \
 	elfsign \
 	kmfcfg \
 	pktool \
-	tpmadm
+	tpmadm \
+	tpm_version
 
 SUBDIRS2 = \
 	etc \

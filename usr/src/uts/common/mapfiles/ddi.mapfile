@@ -13,6 +13,7 @@
 # Copyright 2020 Joyent, Inc.
 # Copyright 2020-2024 RackTop Systems, Inc.
 # Copyright 2024 Oxide Computer Company
+# Copyright 2023 Jason King
 #
 
 #
@@ -72,12 +73,16 @@ SYMBOL_SCOPE {
 	cv_init				{ FLAGS = EXTERN };
 	cv_reltimedwait			{ FLAGS = EXTERN };
 	cv_signal			{ FLAGS = EXTERN };
+	cv_timedwait			{ FLAGS = EXTERN };
 	cv_wait				{ FLAGS = EXTERN };
+	cv_wait_sig			{ FLAGS = EXTERN };
+	ddi_can_receive_sig		{ FLAGS = EXTERN };
 	ddi_cb_register			{ FLAGS = EXTERN };
 	ddi_cb_unregister		{ FLAGS = EXTERN };
 	ddi_create_minor_node		{ FLAGS = EXTERN };
 	ddi_copyin			{ FLAGS = EXTERN };
 	ddi_copyout			{ FLAGS = EXTERN };
+	ddi_dev_nregs			{ FLAGS = EXTERN };
 	ddi_dev_regsize			{ FLAGS = EXTERN };
 	ddi_dma_addr_bind_handle	{ FLAGS = EXTERN };
 	ddi_dma_alloc_handle		{ FLAGS = EXTERN };
@@ -108,6 +113,7 @@ SYMBOL_SCOPE {
 	ddi_get_parent			{ FLAGS = EXTERN };
 	ddi_get_pid			{ FLAGS = EXTERN };
 	ddi_get_soft_state		{ FLAGS = EXTERN };
+	ddi_get8			{ FLAGS = EXTERN };
 	ddi_get16			{ FLAGS = EXTERN };
 	ddi_get32			{ FLAGS = EXTERN };
 	ddi_get64			{ FLAGS = EXTERN };
@@ -134,9 +140,11 @@ SYMBOL_SCOPE {
 	ddi_prop_lookup_string		{ FLAGS = EXTERN };
 	ddi_prop_op			{ FLAGS = EXTERN };
 	ddi_prop_remove_all		{ FLAGS = EXTERN };
+	ddi_prop_update_int		{ FLAGS = EXTERN };
 	ddi_prop_update_int_array	{ FLAGS = EXTERN };
 	ddi_prop_update_string		{ FLAGS = EXTERN };
 	ddi_ptob			{ FLAGS = EXTERN };
+	ddi_put8			{ FLAGS = EXTERN };
 	ddi_put16			{ FLAGS = EXTERN };
 	ddi_put32			{ FLAGS = EXTERN };
 	ddi_quiesce_not_needed		{ FLAGS = EXTERN };
@@ -145,6 +153,8 @@ SYMBOL_SCOPE {
 	ddi_regs_map_setup		{ FLAGS = EXTERN };
 	ddi_remove_minor_node		{ FLAGS = EXTERN };
 	ddi_report_dev			{ FLAGS = EXTERN };
+	ddi_rep_get8			{ FLAGS = EXTERN };
+	ddi_rep_put8			{ FLAGS = EXTERN };
 	ddi_set_driver_private		{ FLAGS = EXTERN };
 	ddi_soft_state_fini		{ FLAGS = EXTERN };
 	ddi_soft_state_free		{ FLAGS = EXTERN };
@@ -167,6 +177,8 @@ SYMBOL_SCOPE {
 	delay				{ FLAGS = EXTERN };
 	desballoc			{ FLAGS = EXTERN };
 	dev_err				{ FLAGS = EXTERN };
+	drv_priv			{ FLAGS = EXTERN };
+        drv_hztousec                    { FLAGS = EXTERN };
 	drv_usectohz			{ FLAGS = EXTERN };
 	drv_usecwait			{ FLAGS = EXTERN };
 	ffs				{ FLAGS = EXTERN };
@@ -187,10 +199,13 @@ SYMBOL_SCOPE {
 	list_head			{ FLAGS = EXTERN };
 	list_insert_head		{ FLAGS = EXTERN };
 	list_insert_tail		{ FLAGS = EXTERN };
+	list_is_empty			{ FLAGS = EXTERN };
+	list_link_active		{ FLAGS = EXTERN };
 	list_next			{ FLAGS = EXTERN };
 	list_remove			{ FLAGS = EXTERN };
 	list_remove_head		{ FLAGS = EXTERN };
 	memcpy				{ FLAGS = EXTERN };
+	memmove				{ FLAGS = EXTERN };
 	memset				{ FLAGS = EXTERN };
 	miocack				{ FLAGS = EXTERN };
 	miocnak				{ FLAGS = EXTERN };
@@ -227,6 +242,8 @@ SYMBOL_SCOPE {
 	pci_ereport_setup		{ FLAGS = EXTERN };
 	pci_ereport_teardown		{ FLAGS = EXTERN };
 	pci_lcap_locate			{ FLAGS = EXTERN };
+	pollhead_clean			{ FLAGS = EXTERN };
+	pollwakeup			{ FLAGS = EXTERN };
 	qreply				{ FLAGS = EXTERN };
 	rw_destroy			{ FLAGS = EXTERN };
 	rw_enter			{ FLAGS = EXTERN };
@@ -309,7 +326,9 @@ SYMBOL_SCOPE {
 	strcpy				{ FLAGS = EXTERN };
 	strlcpy				{ FLAGS = EXTERN };
 	strlen				{ FLAGS = EXTERN };
+	strncpy				{ FLAGS = EXTERN };
 	timeout				{ FLAGS = EXTERN };
+	uiomove				{ FLAGS = EXTERN };
 	untimeout			{ FLAGS = EXTERN };
 	vcmn_err			{ FLAGS = EXTERN };
 	vdev_err			{ FLAGS = EXTERN };

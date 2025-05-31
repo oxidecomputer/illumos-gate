@@ -30,6 +30,7 @@
 # Copyright 2019 Peter Tribble.
 # Copyright 2015, Joyent, Inc. All rights reserved.
 # Copyright 2025 Oxide Computer Company
+# Copyright 2022 Jason King
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -630,6 +631,7 @@ CHKHDRS=			\
 	todio.h			\
 	tofino.h		\
 	tpicommon.h		\
+	tpm.h			\
 	ts.h			\
 	tspriocntl.h		\
 	ttcompat.h		\
@@ -1225,7 +1227,8 @@ CHECKHDRS=						\
 	$(RSMHDRS:%.h=rsm/%.check)			\
 	$(TSOLHDRS:%.h=tsol/%.check)			\
 	$(NXGEHDRS:%.h=nxge/%.check)			\
-	$(PLATHDRS:%.h=plat/%.check)
+	$(PLATHDRS:%.h=plat/%.check)			\
+	$(TPMHDRS:%.h=%.check)
 
 
 .KEEP_STATE:

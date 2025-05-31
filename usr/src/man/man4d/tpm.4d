@@ -1,0 +1,236 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2022 Jason King
+.\" Copyright 2025 RackTop Systems, Inc.
+.\"
+.Dd May 30, 2025
+.Dt TPM 4D
+.Os
+.\"
+.\" ----
+.Sh NAME
+.\" ----
+.Nm tpm
+.Nd Trusted Platform Module
+.\"
+.\" --------
+.Sh SYNOPSIS
+.\" --------
+.In sys/tpm.h
+.Pp
+.Pa /dev/tpm
+.\"
+.\" -----------
+.Sh DESCRIPTION
+.\" -----------
+The
+.Nm
+driver provides support for both TPM 1.2 and TPM 2.0 modules.
+.Sh APPLICATION PROGRAMMING INTERFACE
+Applications wishing to interact with a
+.Nm
+device do so by writing commands to
+.Pa /dev/tpm
+and then reading the results.
+Each TPM command contains a 10 byte header that includes the command to
+execute as well as the total size of the command to send to the
+.Nm
+device
+.Po
+as described by the respective TPM specification
+.Pc .
+Any command specific parameters follow the fixed size TPM header.
+.\" ----
+.Pp
+Applications should
+.Xr open 2
+.Pa /dev/tpm
+for reading and writing
+.Po
+using the
+.Dv O_RDWR
+flag
+.Pc .
+Optionally, an application may specify
+.Dv O_NONBLOCK
+or
+.Dv O_NDELAY
+to obtain non-blocking semantics.
+An application may open
+.Pa /dev/tpm
+read only
+.Po
+.Dv O_RDONLY
+.Pc
+for the purposes of obtaining the type of TPM device
+.Po
+TPM1.2 or TPM2.0
+.Pc
+is present on the system.
+.\" ----
+.Pp
+Only a single client is allowed to
+.Xr open 2
+a TPM device for reading and writing
+.Po
+.Dv O_RDWR
+.Pc
+at a time.
+Additional attempts to
+.Xr open 2
+a TPM device for reading and write will result in
+.Xr open 2
+failing with an
+.Er EBUSY
+error.
+.\" ----
+.Pp
+Once open, an application will typically issue a sequence of
+.Xr write 2
+and
+.Xr read 2
+calls to issue commands to the
+.Nm
+device and then obtain the results of the command.
+It is permissible to use multiple calls to
+.Xr write 2
+to send a single command to the
+.Nm
+device.
+Likewise, it is also permissible to use multiple
+.Xr read 2
+calls to read the results from a command.
+.\" ----
+.Pp
+Once an entire command has been written to the
+.Nm
+device, subsequent calls to
+.Xr write 2
+will block
+.Po
+or return
+.Er EAGAIN
+if non-blocking semantics were requested
+.Pc
+until any pending results from a previous command have been
+.Xr read 2
+from the
+.Nm
+device or the request has been canceled.
+Attempting to
+.Xr write 2
+more than one command in a single
+.Xr write 2
+call will result in
+.Xr write 2
+processing only enough data to execute the first command present in the
+.Xr write 2
+call.
+The return value from
+.Xr write 2
+will reflect the actual number of bytes accepted by the driver.
+.\" ----
+.Pp
+Similarly, attempting to
+.Xr read 2
+from a
+.Nm
+device when no results are pending will result in the
+.Xr read 2
+call blocking
+.Po
+or returning
+.Er EAGAIN
+if non-blocking semantics were requested
+.Pc
+until a command result is available.
+.\" ----
+.Pp
+In process commands may be aborted by using the
+.Dv TPMIOC_CANCEL
+.Xr ioctl 2
+as described in
+.Sx IOCTLS .
+.\" ----
+.Pp
+Optionally, an application may use
+.Xr poll 2
+or
+.Xr port_associate 3C
+and
+.Xr port_get 3C
+to determine when the
+.Nm
+device is ready to accept a command or has results available from a command.
+.\"
+.\" ------
+.Sh IOCTLS
+.\" ------
+.Bl -tag -width TPMIOC_SETLOCALITY
+.It Dv TPMIOC_GETVERSION
+Return the version of the TPM module on the system.
+The value will be one of:
+.Pp
+.Bl -tag -width TPMDEV_VERSION_2_0 -compact
+.It Dv TPMDEV_VERSION_1_2
+Device is a TPM1.2 device
+.It Dv TPMDEV_VERSION_2_0
+Device is a TPM2.0 device
+.El
+.It Dv TPMIOC_SETLOCALITY
+Set the locality for the current session.
+While TPM devices support locality values of 0-4, currently only locality 0
+is supported.
+.It Dv TPMIOC_CANCEL
+Cancel an in-process command.
+Since a command can be cancelled at any time during execution, no guarantees
+can be made about the resulting state of the TPM.
+That is, an in-process command may have been cancelled after submission but
+prior to execution by the
+.Nm
+device, mid-execution by the
+.Nm
+device, after the command has completed executing but prior to reading the
+command output, or in the middle of reading the command output.
+.\" ----
+.Pp
+Callers are expected to issue additional commands as appropriate after
+cancellation to determine the relevant state of the
+.Nm
+device.
+.\" ----
+.Pp
+If
+.Dv TPMIOC_CANCEL
+is called while no command is pending, it has no effect.
+TODO.
+.El
+.Sh FILES
+.Bl -tag -width "/kernel/drv/sparcv9/tpm"
+.It Pa /kernel/drv/amd64/tpm
+Device driver (x86)
+.It Pa /kernel/drv/sparcv9/tpm
+Device driver (sparc)
+.It Pa /kernel/drv/tpm.conf
+Driver configuration file
+.El
+.\"
+.\" --------
+.Sh SEE ALSO
+.\" --------
+.Xr close 2 ,
+.Xr ioctl 2 ,
+.Xr poll 2 ,
+.Xr read 2 ,
+.Xr write 2 ,
+.Xr port_associate 3C ,
+.Xr port_get 3C

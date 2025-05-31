@@ -1,0 +1,82 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2023 Jason King
+#
+
+#
+# MAPFILE HEADER START
+#
+# WARNING:  STOP NOW.  DO NOT MODIFY THIS FILE.
+# Object versioning must comply with the rules detailed in
+#
+#	usr/src/lib/README.mapfiles
+#
+# You should not be making modifications here until you've read the most current
+# copy of that file. If you need help, contact a gatekeeper for guidance.
+#
+# MAPFILE HEADER END
+#
+
+$mapfile_version 2
+
+SYMBOL_VERSION ILLUMOSprivate {
+    global:
+	# Some of these might make sense to move into something like
+	# ddi.mapfile or kernel.mapfile. For now, we define the external
+	# stuff we need here and can move entries as appropriate later.
+
+	AcpiGetTable			{ FLAGS = EXTERN };
+	AcpiWalkResources		{ FLAGS = EXTERN };
+	acpica_get_handle		{ FLAGS = EXTERN };
+
+	# The crypto ones in particular seem like creating a
+	# crypto.mapfile for crypto providers would be very appropriate.
+	crypto_load_dev_disabled	{ FLAGS = EXTERN };
+	crypto_provider_notification	{ FLAGS = EXTERN };
+	crypto_register_provider	{ FLAGS = EXTERN };
+	crypto_unregister_provider	{ FLAGS = EXTERN };
+	
+	id_alloc			{ FLAGS = EXTERN };
+	id_alloc_nosleep		{ FLAGS = EXTERN };
+	id_free				{ FLAGS = EXTERN };
+	id_space_create			{ FLAGS = EXTERN };
+	id_space_destroy		{ FLAGS = EXTERN };
+
+	p0				{ FLAGS = EXTERN };
+	minclsyspri			{ FLAGS = EXTERN };
+
+	membar_producer			{ FLAGS = EXTERN };
+
+	ndi_prop_update_int		{ FLAGS = EXTERN };
+	ndi_prop_update_string		{ FLAGS = EXTERN };
+
+	refhash_create			{ FLAGS = EXTERN };
+	refhash_destroy			{ FLAGS = EXTERN };
+	refhash_hold			{ FLAGS = EXTERN };
+	refhash_insert			{ FLAGS = EXTERN };
+	refhash_lookup			{ FLAGS = EXTERN };
+	refhash_remove			{ FLAGS = EXTERN };
+	refhash_rele			{ FLAGS = EXTERN };
+
+	thread_create			{ FLAGS = EXTERN };
+	thread_create			{ FLAGS = EXTERN };
+	thread_join			{ FLAGS = EXTERN };
+
+	# DDI Interfaces
+	_fini;
+	_init;
+	_info;
+
+    local:
+	*;
+};

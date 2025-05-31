@@ -29,7 +29,8 @@
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2025 Oxide Computer Company
-# Copyright 2023 RackTop Systems, Inc.
+# Copyright 2025 RackTop Systems, Inc.
+# Copyright 2023 Jason King
 #
 
 #
@@ -2230,7 +2231,17 @@ MYRI10GE_OBJS =	myri10ge.o myri10ge_lro.o
 #
 NULLDRIVER_OBJS =	nulldriver.o
 
-TPM_OBJS =	tpm.o tpm_hcall.o
+#
+# Trusted Platform Module driver
+#
+TPM_OBJS =	tpm.o \
+		tpm_cmd.o \
+		tpm_crb.o \
+		tpm_ddi.o \
+		tpm_fifo.o \
+		tpm_kcf.o \
+		tpm12.o \
+		tpm20.o
 
 #
 # USB Fast ethernet drivers
