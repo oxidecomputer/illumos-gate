@@ -13,6 +13,7 @@
  * Copyright 2025 Oxide Computer Company
  */
 
+#include <sys/clock.h>
 #include <sys/types.h>
 #include <sys/prom_debug.h>
 #include <sys/x86_archext.h>
@@ -2669,6 +2670,7 @@ zen_fabric_hotplug_bridge_features(zen_pcie_port_t *port)
 static int
 zen_hotplug_bridge_post_start(zen_pcie_port_t *port, void *arg)
 {
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
 	uint16_t ctl, sts;
 	uint32_t cap;
 	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
@@ -2682,6 +2684,16 @@ zen_hotplug_bridge_post_start(zen_pcie_port_t *port, void *arg)
 	if ((port->zpp_flags & ZEN_PCIE_PORT_F_HOTPLUG) == 0) {
 		return (0);
 	}
+
+	/*
+	 * We need to ensure that mapped bridges are not hidden before
+	 * accessing configuration space. The SMU can sometimes set
+	 * IOHC::IOHC_Bridge_CNTL[BridgeDis] during, or shortly after,
+	 * hotplug start. It's unclear what causes this; we've only ever seen
+	 * it on the bridges above the M.2s on gimlet.
+	 */
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) != 0)
+		ops->zfo_pcie_port_unhide_bridge(port);
 
 	sts = pci_getw_func(ioms->zio_pci_busno, port->zpp_device,
 	    port->zpp_func, ZEN_BRIDGE_R_PCI_SLOT_STS);
@@ -2904,7 +2916,12 @@ zen_fabric_pcie_hotplug_init(zen_fabric_t *fabric)
 	 * Now that this is done, we need to go back through and do some final
 	 * pieces of slot initialization which are probably necessary to get
 	 * MPIO/the SMU into the same place as we are with everything else.
+	 * We've found that the hotplug start can sometimes asynchronously hide
+	 * bridges that are mapped to ports. We pause briefly to allow time for
+	 * this to occur before moving on. Experimentally 10ms has proven long
+	 * enough; we wait longer to be sure.
 	 */
+	eb_pausems(100);
 	(void) zen_fabric_walk_pcie_port(fabric,
 	    zen_hotplug_bridge_post_start, NULL);
 
