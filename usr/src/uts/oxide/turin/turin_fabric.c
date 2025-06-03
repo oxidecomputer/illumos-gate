@@ -2137,6 +2137,23 @@ static const zen_pcie_strap_setting_t turin_pcie_strap_settings[] = {
 		.strap_corematch = PCIE_COREMATCH_ANY,
 		.strap_portmatch = PCIE_PORTMATCH_ANY
 	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_SUBVID,
+		.strap_data = PCI_VENDOR_ID_OXIDE,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_SUBDID,
+		.strap_data = PCI_SDID_OXIDE_COSMO_BASE,
+		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+
 };
 
 /*

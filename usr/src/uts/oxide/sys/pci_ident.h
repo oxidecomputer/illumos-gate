@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_PCI_IDENT_H
@@ -26,6 +26,7 @@ extern "C" {
 
 #define	PCI_VENDOR_ID_OXIDE		0x1de
 #define	PCI_SDID_OXIDE_GIMLET_BASE	0xfff9
+#define	PCI_SDID_OXIDE_COSMO_BASE	0xfff8
 
 #ifdef __cplusplus
 }

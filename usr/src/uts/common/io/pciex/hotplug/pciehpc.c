@@ -420,10 +420,11 @@ static const pciehpc_led_plat_state_t pciehpc_std_leds[PCIEHPC_LED_NSTATES] = {
 };
 
 /*
- * The Gimlet hardware platform only has a single attention LED that is used for
- * multiple purposes.
+ * The Gimlet and Cosmo hardware platforms only have a single attention LED that
+ * is used for multiple purposes.
  */
-static const pciehpc_led_plat_state_t pciehpc_gimlet_leds[PCIEHPC_LED_NSTATES] =
+static const pciehpc_led_plat_state_t
+    pciehpc_oxide_sharkfin_leds[PCIEHPC_LED_NSTATES] =
 {
 	[PCIE_LL_BASE] = { PCIE_HLA_OFF, PCIE_HLA_OFF },
 	[PCIE_LL_POWER_TRANSITION] = { PCIE_HLA_PASS, PCIE_HLA_PASS },
@@ -446,8 +447,12 @@ typedef struct pciehpc_led_plat_map {
  * PCIe LED usage that should be applied.
  */
 static const pciehpc_led_plat_map_t pciehpc_led_plat_map[] = {
+	/* Oxide Gimlet (SP3) platform */
 	{ .plpm_vid = 0x1022, .plpm_did = 0x1483, .plpm_svid = 0x1de,
-	    .plpm_ssys = 0xfff9, .plpm_map = pciehpc_gimlet_leds }
+	    .plpm_ssys = 0xfff9, .plpm_map = pciehpc_oxide_sharkfin_leds },
+	/* Oxide Cosmo (SP5) platform */
+	{ .plpm_vid = 0x1022, .plpm_did = 0x153e, .plpm_svid = 0x1de,
+	    .plpm_ssys = 0xfff8, .plpm_map = pciehpc_oxide_sharkfin_leds }
 };
 
 /* Local functions prototype */
