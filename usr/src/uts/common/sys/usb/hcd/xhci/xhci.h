@@ -664,6 +664,7 @@ typedef struct xhci {
 	kcondvar_t		xhci_statecv;
 	xhci_state_flags_t	xhci_state;
 	xhci_usba_t		xhci_usba;
+	hrtime_t		xhci_stuck_time[MAX_PORTS];
 } xhci_t;
 
 /*
