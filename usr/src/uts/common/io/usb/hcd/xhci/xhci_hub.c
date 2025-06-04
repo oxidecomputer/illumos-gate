@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2016 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -195,6 +196,74 @@ xhci_root_hub_get_device_status(xhci_t *xhcip, usb_ctrl_req_t *ucrp)
 	return (USB_CR_OK);
 }
 
+static int
+xhci_port_status(xhci_t *xhcip, uint_t port, uint32_t *status)
+{
+	uint32_t reg;
+
+again:
+	reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(port));
+	if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
+		xhci_error(xhcip, "failed to read port status register for "
+		    "port %u: encountered fatal FM error, resetting device",
+		    port);
+		xhci_fm_runtime_reset(xhcip);
+		return (EIO);
+	}
+
+	/*
+	 * Some Intel Chipsets appear to exhibit a race condition with devices
+	 * that have been connected since before power was applied to the
+	 * system. Devices can come to rest in the Polling link state,
+	 * ostensibly forever unless the port is explicitly reset. Empirical
+	 * study of systems as they boot up has shown that the port status
+	 * register can move through several different and seemingly valid
+	 * states before arriving in the stuck state after an indeterminate
+	 * amount of time or series of port configuration actions.
+	 *
+	 * The Intel 100/C230 Series PCH specification update lists a similar
+	 * presentation of symptoms as Errata 8, but it is not clear that this
+	 * describes the full extent of the issue: it has also been seen on
+	 * other controllers of different vintages.
+	 *
+	 * We'll attempt to detect this stuck condition whenever we are
+	 * otherwise looking at the port status register. At most one warm
+	 * reset will be issued per stuck port.
+	 */
+	if (xhcip->xhci_stuck_time[port] == 0 &&
+	    XHCI_PS_PLS_GET(reg) == XHCI_PLS_POLLING &&
+	    (reg & (XHCI_PS_CCS | XHCI_PS_CAS)) == 0) {
+		xhci_log(xhcip, "!port %u detected as stuck (0x%x); "
+		    "performing warm reset", port, reg);
+		xhcip->xhci_stuck_time[port] = gethrtime();
+
+		/*
+		 * Trigger a warm reset of the port:
+		 */
+		reg &= ~XHCI_PS_CLEAR;
+		reg |= XHCI_PS_WPR;
+		xhci_put32(xhcip, XHCI_R_OPER, XHCI_PORTSC(port), reg);
+
+		if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
+			xhci_error(xhcip, "failed to write port status "
+			    "register for stuck port %u: "
+			    "encountered fatal FM error, resetting device",
+			    port);
+			xhci_fm_runtime_reset(xhcip);
+			return (EIO);
+		}
+
+		/*
+		 * Wait for things to settle and read the port value again.
+		 */
+		delay(drv_usectohz(10 * 1000));
+		goto again;
+	}
+
+	*status = reg;
+	return (0);
+}
+
 /*
  * This is a hub class specific device request as defined in USB 3.1 /
  * 11.24.2.6.
@@ -254,12 +323,7 @@ xhci_root_hub_handle_port_clear_feature(xhci_t *xhcip, usb_ctrl_req_t *ucrp)
 	if (ucrp->ctrl_wLength != 0)
 		return (USB_CR_UNSPECIFIED_ERR);
 
-	reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(port));
-	if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
-		xhci_error(xhcip, "failed to read port status register for "
-		    "port %d: encountered fatal FM error, resetting device",
-		    port);
-		xhci_fm_runtime_reset(xhcip);
+	if (xhci_port_status(xhcip, port, &reg) != 0) {
 		return (USB_CR_HC_HARDWARE_ERR);
 	}
 
@@ -461,12 +525,7 @@ xhci_root_hub_handle_port_get_status(xhci_t *xhcip, usb_ctrl_req_t *ucrp)
 	if (ucrp->ctrl_wLength != PORT_GET_STATUS_PORT_LEN)
 		return (USB_CR_UNSPECIFIED_ERR);
 
-	reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(port));
-	if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
-		xhci_error(xhcip, "failed to read port status register for "
-		    "port %d: encountered fatal FM error, resetting device",
-		    port);
-		xhci_fm_runtime_reset(xhcip);
+	if (xhci_port_status(xhcip, port, &reg) != 0) {
 		return (USB_CR_HC_HARDWARE_ERR);
 	}
 
@@ -623,17 +682,14 @@ xhci_root_hub_psc_callback(xhci_t *xhcip)
 	for (i = 0; i <= xhcip->xhci_caps.xcap_max_ports; i++) {
 		uint32_t reg;
 
-		reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(i));
+		if (xhci_port_status(xhcip, i, &reg) != 0) {
+			return;
+		}
+
 		if ((reg & XHCI_HUB_INTR_CHANGE_MASK) != 0)
 			mask |= 1UL << i;
 	}
 
-	if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
-		xhci_error(xhcip, "failed to read port status registers: "
-		    "encountered fatal FM error, resetting device");
-		xhci_fm_runtime_reset(xhcip);
-		return;
-	}
 	if (mask == 0)
 		return;
 
@@ -779,12 +835,7 @@ xhci_root_hub_fill_hub_desc(xhci_t *xhcip)
 	for (i = 1; i < xhcip->xhci_caps.xcap_max_ports; i++) {
 		uint32_t reg;
 
-		reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(i));
-		if (xhci_check_regs_acc(xhcip) != DDI_FM_OK) {
-			xhci_error(xhcip, "encountered fatal FM error while "
-			    "reading port status register %d", i);
-			ddi_fm_service_impact(xhcip->xhci_dip,
-			    DDI_SERVICE_LOST);
+		if (xhci_port_status(xhcip, i, &reg) != 0) {
 			return (EIO);
 		}
 

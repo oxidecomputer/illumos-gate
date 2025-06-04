@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2016 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -39,6 +40,8 @@ static uint32_t xp_port;
 static boolean_t xp_verbose = B_FALSE;
 static boolean_t xp_clear = B_FALSE;
 static boolean_t xp_list = B_FALSE;
+static boolean_t xp_port_reset = B_FALSE;
+static boolean_t xp_port_warm_reset = B_FALSE;
 extern const char *__progname;
 
 static int
@@ -52,8 +55,8 @@ xp_usage(const char *format, ...)
 		va_end(alist);
 	}
 
-	(void) fprintf(stderr, "usage:  %s [-l] [-v] [-c] [-d path] [-p port] "
-	    "[-s state]\n", __progname);
+	(void) fprintf(stderr, "usage:  %s [-l] [-v] [-c] [-r] [-R] [-d path] "
+	    "[-p port] [-s state]\n", __progname);
 	return (2);
 }
 
@@ -229,6 +232,27 @@ xp_clear_change(const char *path, uint32_t port)
 	(void) close(fd);
 }
 
+static void
+xp_do_port_reset(const char *path, uint32_t port, boolean_t warm)
+{
+	int fd;
+	xhci_ioctl_port_reset_t xipr;
+
+	fd = open(path, O_RDWR);
+	if (fd < 0) {
+		err(EXIT_FAILURE, "failed to open %s", path);
+	}
+
+	xipr.xipr_port = port;
+	xipr.xipr_reset_type = warm ? XHCI_PS_WPR : XHCI_PS_PR;
+	(void) printf("setting port %sreset bit on port %d\n",
+	    warm ? "warm " : "", port);
+	if (ioctl(fd, XHCI_IOCTL_PORT_RESET, &xipr) != 0)
+		err(EXIT_FAILURE, "failed to set port status");
+
+	(void) close(fd);
+}
+
 /* ARGSUSED */
 static int
 xp_devinfo_cb(di_node_t node, void *arg)
@@ -298,7 +322,7 @@ main(int argc, char *argv[])
 	int c;
 	char devpath[PATH_MAX];
 
-	while ((c = getopt(argc, argv, ":d:vlcp:s:")) != -1) {
+	while ((c = getopt(argc, argv, ":d:vlcp:rRs:")) != -1) {
 		switch (c) {
 		case 'c':
 			xp_clear = B_TRUE;
@@ -318,6 +342,12 @@ main(int argc, char *argv[])
 				return (xp_usage("invalid port for -p: %d\n",
 				    optarg));
 			break;
+		case 'r':
+			xp_port_reset = B_TRUE;
+			break;
+		case 'R':
+			xp_port_warm_reset = B_TRUE;
+			break;
 		case 's':
 			xp_state = optarg;
 			break;
@@ -331,7 +361,8 @@ main(int argc, char *argv[])
 	}
 
 	if (xp_list == B_TRUE && (xp_path != NULL || xp_clear == B_TRUE ||
-	    xp_port > 0 || xp_state != NULL)) {
+	    xp_port > 0 || xp_state != NULL || xp_port_reset == B_TRUE ||
+	    xp_port_warm_reset == B_TRUE)) {
 		return (xp_usage("-l cannot be used with other options\n"));
 	}
 
@@ -357,14 +388,33 @@ main(int argc, char *argv[])
 		xp_path = devpath;
 	}
 
-	if (xp_clear == B_TRUE && xp_state != NULL) {
-		return (xp_usage("-c and -s can't be used together\n"));
+	uint_t actions = 0;
+	if (xp_clear) {
+		actions++;
+	}
+	if (xp_state != NULL) {
+		actions++;
+	}
+	if (xp_port_reset) {
+		actions++;
+	}
+	if (xp_port_warm_reset) {
+		actions++;
+	}
+
+	if (actions > 1) {
+		return (xp_usage("-c, -s, -r, and -R can't be used "
+		    "together\n"));
 	}
 
 	if (xp_state != NULL) {
 		xp_set_pls(xp_path, xp_port, xp_state);
 	} else if (xp_clear == B_TRUE) {
 		xp_clear_change(xp_path, xp_port);
+	} else if (xp_port_reset == B_TRUE) {
+		xp_do_port_reset(xp_path, xp_port, B_FALSE);
+	} else if (xp_port_warm_reset == B_TRUE) {
+		xp_do_port_reset(xp_path, xp_port, B_TRUE);
 	} else {
 		xp_dump(xp_path);
 	}

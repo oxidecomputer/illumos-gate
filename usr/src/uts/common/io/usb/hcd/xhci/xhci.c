@@ -11,7 +11,7 @@
 
 /*
  * Copyright (c) 2019, Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -777,10 +777,11 @@ void *xhci_soft_state;
 
 /*
  * This is the time in us that we wait after a controller resets before we
- * consider reading any register. There are some controllers that want at least
- * 1 ms, therefore we default to 10 ms.
+ * consider reading any register. We have tried shorter reset delays in the
+ * past, but 25 milliseconds appears to avoid the post-boot stuck port issue on
+ * at least some Intel controllers.
  */
-clock_t xhci_reset_delay = 10000;
+clock_t xhci_reset_delay = 25000;
 
 void
 xhci_error(xhci_t *xhcip, const char *fmt, ...)
@@ -1916,6 +1917,35 @@ xhci_ioctl_setpls(xhci_t *xhcip, intptr_t arg)
 }
 
 static int
+xhci_ioctl_port_reset(xhci_t *xhcip, intptr_t arg)
+{
+	uint32_t reg;
+	xhci_ioctl_port_reset_t xipr;
+
+	if (ddi_copyin((const void *)(uintptr_t)arg, &xipr, sizeof (xipr),
+	    0) != 0) {
+		return (EFAULT);
+	}
+
+	if (xipr.xipr_port == 0 || xipr.xipr_port >
+	    xhcip->xhci_caps.xcap_max_ports) {
+		return (EINVAL);
+	}
+
+	if (xipr.xipr_reset_type != XHCI_PS_WPR &&
+	    xipr.xipr_reset_type != XHCI_PS_PR) {
+		return (EINVAL);
+	}
+
+	reg = xhci_get32(xhcip, XHCI_R_OPER, XHCI_PORTSC(xipr.xipr_port));
+	reg &= ~XHCI_PS_CLEAR;
+	reg |= xipr.xipr_reset_type;
+	xhci_put32(xhcip, XHCI_R_OPER, XHCI_PORTSC(xipr.xipr_port), reg);
+
+	return (0);
+}
+
+static int
 xhci_open(dev_t *devp, int flags, int otyp, cred_t *credp)
 {
 	dev_info_t *dip = xhci_get_dip(*devp);
@@ -1929,31 +1959,44 @@ xhci_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 {
 	dev_info_t *dip = xhci_get_dip(dev);
 
-	if (cmd == XHCI_IOCTL_PORTSC ||
-	    cmd == XHCI_IOCTL_CLEAR ||
-	    cmd == XHCI_IOCTL_SETPLS) {
-		xhci_t *xhcip = ddi_get_soft_state(xhci_soft_state,
-		    getminor(dev) & ~HUBD_IS_ROOT_HUB);
+	switch (cmd) {
+	case XHCI_IOCTL_PORTSC:
+	case XHCI_IOCTL_CLEAR:
+	case XHCI_IOCTL_SETPLS:
+	case XHCI_IOCTL_PORT_RESET:
+		break;
 
-		if (secpolicy_hwmanip(credp) != 0 ||
-		    crgetzoneid(credp) != GLOBAL_ZONEID)
-			return (EPERM);
-
-		if (mode & FKIOCTL)
-			return (ENOTSUP);
-
-		if (!(mode & FWRITE))
-			return (EBADF);
-
-		if (cmd == XHCI_IOCTL_PORTSC)
-			return (xhci_ioctl_portsc(xhcip, arg));
-		else if (cmd == XHCI_IOCTL_CLEAR)
-			return (xhci_ioctl_clear(xhcip, arg));
-		else
-			return (xhci_ioctl_setpls(xhcip, arg));
+	default:
+		return (usba_hubdi_ioctl(dip, dev, cmd, arg, mode, credp,
+		    rvalp));
 	}
 
-	return (usba_hubdi_ioctl(dip, dev, cmd, arg, mode, credp, rvalp));
+	xhci_t *xhcip = ddi_get_soft_state(xhci_soft_state,
+	    getminor(dev) & ~HUBD_IS_ROOT_HUB);
+
+	if (secpolicy_hwmanip(credp) != 0 ||
+	    crgetzoneid(credp) != GLOBAL_ZONEID) {
+		return (EPERM);
+	}
+
+	if (mode & FKIOCTL)
+		return (ENOTSUP);
+
+	if (!(mode & FWRITE))
+		return (EBADF);
+
+	switch (cmd) {
+	case XHCI_IOCTL_PORTSC:
+		return (xhci_ioctl_portsc(xhcip, arg));
+	case XHCI_IOCTL_CLEAR:
+		return (xhci_ioctl_clear(xhcip, arg));
+	case XHCI_IOCTL_SETPLS:
+		return (xhci_ioctl_setpls(xhcip, arg));
+	case XHCI_IOCTL_PORT_RESET:
+		return (xhci_ioctl_port_reset(xhcip, arg));
+	default:
+		panic("unexpected command %u", cmd);
+	}
 }
 
 static int

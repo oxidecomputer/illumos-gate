@@ -12,7 +12,7 @@
 /*
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright (c) 2019 by Western Digital Corporation
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_USB_XHCI_XHCI_H
@@ -664,6 +664,7 @@ typedef struct xhci {
 	kcondvar_t		xhci_statecv;
 	xhci_state_flags_t	xhci_state;
 	xhci_usba_t		xhci_usba;
+	hrtime_t		xhci_stuck_time[MAX_PORTS];
 } xhci_t;
 
 /*
