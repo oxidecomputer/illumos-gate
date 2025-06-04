@@ -420,11 +420,13 @@ fabric_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		cbd.fd_printing = false;
 	}
 
-	(void) mdb_getopts(argc, argv,
+	if (mdb_getopts(argc, argv,
 	    'c', MDB_OPT_SETBITS, true, &cbd.fd_ccd,
 	    'n', MDB_OPT_SETBITS, true, &cbd.fd_nbif,
 	    'v', MDB_OPT_SETBITS, true, &cbd.fd_verbose,
-	    NULL);
+	    NULL) != argc) {
+		return (DCMD_USAGE);
+	}
 
 	if (mdb_lookup_by_name("zen_fabric", &sym) == -1) {
 		mdb_warn("failed to find 'zen_fabric'");
