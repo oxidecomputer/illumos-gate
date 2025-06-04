@@ -10,12 +10,12 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
- * Logic to create and manage the fan-tray in Gimlet or a fan module in another
- * chassis.
+ * Logic to create and manage the fan-tray in Gimlet and Cosmo. The two are
+ * designed the same, but have different part numbers.
  *
  * The Gimlet fan tray consists of a single enclosure with three fans each. Each
  * of the fans in turn has two rotors, which are independent and can fail. This
@@ -44,33 +44,70 @@
 #include "oxhc.h"
 
 #define	OXHC_MAX_ROTORS	2
+#define	OXHC_MAX_FANS	3
 
-#define	OXHC_GIMLET_TRAY_VPD	"J180"
-#define	OXHC_GIMLET_TRAY_REFDES	"J180/ID"
-#define	OXHC_GIMLET_TRAY_CPN	"991-0000084"
-#define	OXHC_GIMLET_MAX31790_REFDES	"U321"
-#define	OXHC_GIMLET_NFANS		3
+typedef struct {
+	/*
+	 * The RefDes upon which we'll find the VPD for the fan tray.
+	 */
+	const char *ft_vpd;
+	/*
+	 * The RefDes that has the actual VPD information for the tray overall.
+	 */
+	const char *ft_refdes;
+	/*
+	 * The CPN of this platform's fan tray.
+	 */
+	const char *ft_cpn;
+	/*
+	 * The RefDes of the Fan Controller.
+	 */
+	const char *ft_ctrl;
+	/*
+	 * The number of fans present in the tray.
+	 */
+	uint32_t ft_nfans;
+	/*
+	 * These two tables are used for the fans labeling in the tree and
+	 * relate to the compass rose usage. The first table is the label for
+	 * the fan itself, the second is used as part of the rotor's label and
+	 * combined with the actual rotor information contained in the of_labels
+	 * member of the oxhc_fan_t.
+	 */
+	const char *ft_labels[OXHC_MAX_FANS];
+	const char *ft_dirs[OXHC_MAX_FANS];
+	/*
+	 * The relationship between the sensor entries and the fans.
+	 */
+	uint32_t ft_sensors[OXHC_MAX_FANS];
+} fan_tray_info_t;
 
-/*
- * These two tables are used for the fans labeling in the tree and relate to the
- * compass rose usage. The first table is the label for the fan itself, the
- * second is used as part of the rotor's label and combined with the actual
- * rotor information contained in the of_labels member of the oxhc_fan_t.
- */
-static const char *oxhc_gimlet_fan_labels[OXHC_GIMLET_NFANS] = {
-	"West", "Center", "East"
+static const fan_tray_info_t gimlet_tray_info = {
+	.ft_vpd = "J180",
+	.ft_refdes = "J180/ID",
+	.ft_cpn = "991-0000084",
+	.ft_ctrl = "U321",
+	.ft_nfans = 3,
+	.ft_labels = { "West", "Center", "East" },
+	.ft_dirs = { "west", "", "east" },
+	/*
+	 * We enumerate fans from West to East, the sensors are from East to
+	 * West. This gives the starting index for a sensor for those three
+	 * entries.
+	 */
+	.ft_sensors = { 4, 2, 0 }
 };
 
-static const char *oxhc_gimlet_fan_dirs[OXHC_GIMLET_NFANS] = {
-	"west", "", "east"
-};
-
-/*
- * We enumerate fans from West to East, the sensors are from east to west. This
- * gives the starting index for a sensor for those three entries.
- */
-static uint32_t oxhc_gimlet_fan_sensors[OXHC_GIMLET_NFANS] = {
-	4, 2, 0
+static const fan_tray_info_t cosmo_tray_info = {
+	.ft_vpd = "J34",
+	.ft_refdes = "J34/ID",
+	.ft_cpn = "991-0000151",
+	.ft_ctrl = "U58",
+	.ft_nfans = 3,
+	.ft_labels = { "West", "Center", "East" },
+	.ft_dirs = { "west", "", "east" },
+	/* The same direction reversal happens in Cosmo as well. */
+	.ft_sensors = { 4, 2, 0 }
 };
 
 typedef struct oxhc_fan {
@@ -80,7 +117,8 @@ typedef struct oxhc_fan {
 } oxhc_fan_t;
 
 static const oxhc_fan_t oxhc_fans[] = {
-	{ "991-0000094", 2, { "South", "North" } }
+	{ "991-0000094", 2, { "South", "North" } },
+	{ "418-0000005", 2, { "South", "North" } }
 };
 
 static int
@@ -165,10 +203,10 @@ out:
 	return (ret);
 }
 
-int
-topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
+static int
+topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
     const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
-    topo_instance_t max)
+    topo_instance_t max, const fan_tray_info_t *info)
 {
 	int ret;
 	libipcc_inv_t *inv, *sense_inv;
@@ -180,10 +218,9 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 	tnode_t *tray_tn, *board_tn;
 	nvlist_t *auth = NULL;
 
-	if ((inv = topo_oxhc_inventory_find(oxhc, OXHC_GIMLET_TRAY_REFDES)) ==
-	    NULL) {
+	if ((inv = topo_oxhc_inventory_find(oxhc, info->ft_refdes)) == NULL) {
 		topo_mod_dprintf(mod, "failed to find IPCC inventory entry "
-		    "%s\n", OXHC_GIMLET_TRAY_REFDES);
+		    "%s\n", info->ft_refdes);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
 		goto out;
 	}
@@ -191,7 +228,7 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_FANTRAY, &tray,
 	    sizeof (tray), sizeof (tray))) {
 		topo_mod_dprintf(mod, "IPCC information for %s is not "
-		    "copyable\n", OXHC_GIMLET_TRAY_REFDES);
+		    "copyable\n", info->ft_refdes);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
 		goto out;
 	}
@@ -215,7 +252,7 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 
 	(void) snprintf(tray_rev, sizeof (tray_rev), "%u", tinv->vpdid_rev);
 
-	if (strcmp(tray_pn, OXHC_GIMLET_TRAY_CPN) != 0) {
+	if (strcmp(tray_pn, info->ft_cpn) != 0) {
 		topo_mod_dprintf(mod, "found unexpected CPN for fan tray: %s, "
 		    "not creating\n", tray_pn);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
@@ -257,7 +294,7 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 	 * non-failure and set the sensor IDs to UINT32_MAX, which the fan
 	 * enum will take as a cue not to do anything here.
 	 */
-	sense_inv = topo_oxhc_inventory_find(oxhc, OXHC_GIMLET_MAX31790_REFDES);
+	sense_inv = topo_oxhc_inventory_find(oxhc, info->ft_ctrl);
 	if (sense_inv == NULL || !topo_oxhc_inventory_bcopy(sense_inv,
 	    IPCC_INVENTORY_T_MAX31790, &max31790, sizeof (max31790),
 	    sizeof (max31790))) {
@@ -268,8 +305,8 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 		const ipcc_inv_vpdid_t *fan_vpd = &tray.ft_fans[i];
 
 		if ((ret = topo_oxhc_enum_fan(mod, fan_vpd, tray_tn, i, auth,
-		    oxhc_gimlet_fan_labels[i], oxhc_gimlet_fan_dirs[i],
-		    max31790.max_tach, oxhc_gimlet_fan_sensors[i])) != 0) {
+		    info->ft_labels[i], info->ft_dirs[i],
+		    max31790.max_tach, info->ft_sensors[i])) != 0) {
 			goto out;
 		}
 	}
@@ -290,8 +327,8 @@ topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	ret = topo_oxhc_enum_ic_fanvpd(mod, oxhc, board_tn,
-	    OXHC_GIMLET_TRAY_VPD, binv->vpdid_rev);
+	ret = topo_oxhc_enum_ic(mod, oxhc, board_tn, info->ft_vpd,
+	    binv->vpdid_rev, oxhc_ic_fanvpd, oxhc_ic_fanvpd_nents);
 
 out:
 	nvlist_free(auth);
@@ -300,4 +337,22 @@ out:
 	topo_mod_strfree(mod, tray_pn);
 	topo_mod_strfree(mod, tray_sn);
 	return (ret);
+}
+
+int
+topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	return (topo_oxhc_enum_fan_tray(mod, oxhc, oe, pn, tn, min, max,
+	    &gimlet_tray_info));
+}
+
+int
+topo_oxhc_enum_cosmo_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	return (topo_oxhc_enum_fan_tray(mod, oxhc, oe, pn, tn, min, max,
+	    &cosmo_tray_info));
 }

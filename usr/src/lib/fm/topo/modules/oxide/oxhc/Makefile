@@ -17,7 +17,8 @@ MODULE = oxhc
 ARCH = oxide
 CLASS = arch
 
-MODULESRCS = oxhc.c oxhc_ipcc.c oxhc_ic.c bitext.o oxhc_fan.o
+MODULESRCS = oxhc.c oxhc_ipcc.c oxhc_ic.c bitext.c oxhc_fan.c \
+		oxhc_sharkfin.c
 
 include ../../Makefile.plugin
 

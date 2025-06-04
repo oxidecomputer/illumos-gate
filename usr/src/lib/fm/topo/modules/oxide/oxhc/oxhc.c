@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -70,7 +70,20 @@ static const oxhc_slot_info_t oxhc_slots_gimlet[] = {
 	{ OXHC_SLOT_TEMP, 28, 33, "215-0000092" }
 };
 
+static const oxhc_slot_info_t oxhc_slots_cosmo[] = {
+	{ OXHC_SLOT_CEM, 0, 9, "215-0000175" },
+	{ OXHC_SLOT_DIMM, 10, 21, "215-0000166" },
+	{ OXHC_SLOT_M2, 22, 23, "215-0000172" },
+	{ OXHC_SLOT_TEMP, 24, 29, "215-0000092" },
+	{ OXHC_SLOT_MCIO, 30, 30, "215-0000162" }
+};
+
 static const oxhc_port_info_t oxhc_ports_gimlet[] = {
+	{ OXHC_PORT_EXAMAX_4X8, 0, 2, "215-0000082" },
+	{ OXHC_PORT_PWRBLADE, 3, 3, "215-0000114" }
+};
+
+static const oxhc_port_info_t oxhc_ports_cosmo[] = {
 	{ OXHC_PORT_EXAMAX_4X8, 0, 2, "215-0000082" },
 	{ OXHC_PORT_PWRBLADE, 3, 3, "215-0000114" }
 };
@@ -318,13 +331,6 @@ topo_oxhc_enum_range_slot(topo_mod_t *mod, const oxhc_t *oxhc,
     const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
     topo_instance_t max)
 {
-	/*
-	 * When we add support for a second system board, then these verify
-	 * statements should go away and be folded into the board-specific data.
-	 */
-	VERIFY3U(min, ==, 0);
-	VERIFY3U(max, ==, 33);
-
 	for (size_t i = 0; i < oxhc->oxhc_nslots; i++) {
 		const oxhc_slot_info_t *slot = &oxhc->oxhc_slots[i];
 		int ret;
@@ -574,8 +580,9 @@ topo_oxhc_enum_pcie_child(topo_mod_t *mod, const oxhc_t *oxhc,
 		 * If we didn't find anything, that's OK. It may not be present.
 		 * Our methods will help fill that in later.
 		 */
-		topo_mod_dprintf(mod, "failed to map %s[%" PRIu64 "] to a "
-		    "pcieb instance\n", tname, topo_node_instance(tn));
+		topo_mod_dprintf(mod, "failed to map %s[%" PRIu64 "] (slot %u) "
+		    "to a pcieb instance\n", tname, topo_node_instance(tn),
+		    slot);
 		return (0);
 	}
 
@@ -708,7 +715,8 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	ret = topo_oxhc_enum_ic_temp(mod, oxhc, board, slot_refdes);
+	ret = topo_oxhc_enum_ic(mod, oxhc, board, slot_refdes, 0,
+	    oxhc_ic_temp_board, oxhc_ic_temp_board_nents);
 out:
 	nvlist_free(auth);
 	topo_mod_strfree(mod, slot_refdes);
@@ -716,113 +724,39 @@ out:
 }
 
 /*
- * This indicates that we've found a CEM slot that should have a sharkfin. We
- * will look for an IPCC entry of the form JXXX/U7/ID. This will tell us what
- * board we actually have.
+ * Extract DDR4 SPD data. DDR4 data uses a different type from DDR5.
  */
 static int
-topo_oxhc_enum_sharkfin(topo_mod_t *mod, const oxhc_t *oxhc,
-    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
-    topo_instance_t max)
+topo_oxhc_ddr4_info(topo_mod_t *mod, libipcc_inv_t *inv, const char *refdes,
+    oxhc_dimm_info_t *info)
 {
-	int err, ret;
-	const char *tname = topo_node_name(tn);
-	char *slot_refdes = NULL, *part = NULL, *serial = NULL;
-	char ipcc[IPCC_INVENTORY_NAMELEN], rev[16];
-	libipcc_inv_t *inv;
-	ipcc_inv_vpdid_t vpd;
-	tnode_t *board;
-	nvlist_t *auth = NULL;
+	ipcc_inv_ddr4_t ddr4;
 
-	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n", tname,
-	    topo_node_instance(tn));
-
-	if (topo_prop_get_string(tn, TOPO_PGROUP_OXHC, TOPO_PGROUP_OXHC_REFDES,
-	    &slot_refdes, &err) != 0) {
-		topo_mod_dprintf(mod, "%s[%" PRIu64 "] missing required refdes "
-		    "property: %s, cannot enumerate further", tname,
-		    topo_node_instance(tn), topo_strerror(err));
-		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
-		goto out;
-	}
-
-	if (snprintf(ipcc, sizeof (ipcc), "%s/U7/ID", slot_refdes) >=
-	    sizeof (ipcc)) {
-		topo_mod_dprintf(mod, "constructing expected temp sensor "
-		    "refdes for %s[%" PRIu64 "] based on found refdes '%s' "
-		    "is larger than the IPCC inventory name length", tname,
-		    topo_node_instance(tn), slot_refdes);
-		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
-		goto out;
-	}
-
-	if ((inv = topo_oxhc_inventory_find(oxhc, ipcc)) == NULL) {
-		topo_mod_dprintf(mod, "failed to find IPCC inventory entry %s",
-		    ipcc);
-		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
-		goto out;
-	}
-
-	/*
-	 * If we don't have valid ID information then we should not create a
-	 * sharkfin. This is slightly different from the temp sensor board only
-	 * because the temp sensor board does not have a FRU ID ROM.
-	 */
-	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_VPDID, &vpd,
-	    sizeof (vpd), sizeof (vpd))) {
+	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_DDR4, &ddr4,
+	    sizeof (ddr4), sizeof (ddr4))) {
 		topo_mod_dprintf(mod, "IPCC information for %s is not "
-		    "copyable\n", ipcc);
-		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
-		goto out;
+		    "copyable\n", refdes);
+		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
 	}
 
-	if ((part = topo_mod_clean_strn(mod, (const char *)vpd.vpdid_pn,
-	    sizeof (vpd.vpdid_pn))) == NULL ||
-	    (serial = topo_mod_clean_strn(mod, (const char *)vpd.vpdid_sn,
-	    sizeof (vpd.vpdid_sn))) == NULL) {
-		topo_mod_dprintf(mod, "failed to clean up strings for %s\n",
-		    ipcc);
-		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
-		goto out;
-	}
+	(void) memcpy(info->di_spd, ddr4.ddr4_spd, sizeof (ddr4.ddr4_spd));
+	info->di_nspd = sizeof (ddr4.ddr4_spd);
+	info->di_temp[0] = ddr4.ddr4_temp;
+	info->di_ntemp = 1;
 
-	(void) snprintf(rev, sizeof (rev), "%u", vpd.vpdid_rev);
+	return (0);
+}
 
-	if (topo_node_range_create(mod, tn, BOARD, 0, 0) != 0) {
-		topo_mod_dprintf(mod, "failed to create BOARD range: %s\n",
-		    topo_mod_errmsg(mod));
-		ret = -1;
-		goto out;
-	}
-
-	auth = topo_oxhc_auth(mod, oxhc, oe, tn);
-	if (auth == NULL) {
-		topo_mod_dprintf(mod, "failed to get auth data for %s[%" PRIu64
-		    "]: %s\n", tname, topo_node_instance(tn),
-		    topo_mod_errmsg(mod));
-		ret = -1;
-		goto out;
-	}
-
-	/*
-	 * The FRU for the sharkfin is itself. Inherit the label from
-	 * our parent which will name the temp sensor according to the silk.
-	 */
-	if (topo_oxhc_tn_create(mod, tn, &board, BOARD, min, auth,
-	    part, rev, serial, TOPO_OXHC_TN_F_FRU_SELF |
-	    TOPO_OXHC_TN_F_SET_LABEL, NULL) != 0) {
-		ret = -1;
-		goto out;
-	}
-
-	ret = topo_oxhc_enum_ic_sharkfin(mod, oxhc, board, slot_refdes,
-	    vpd.vpdid_rev);
-out:
-	topo_mod_strfree(mod, slot_refdes);
-	topo_mod_strfree(mod, part);
-	topo_mod_strfree(mod, serial);
-	nvlist_free(auth);
-	return (ret);
+/*
+ * Extract DDR5 SPD data. This will be filled in once SP support has landed.
+ * Setting no data present guarantees that we don't block enumeration.
+ */
+static int
+topo_oxhc_ddr5_info(topo_mod_t *mod, libipcc_inv_t *inv, const char *refdes,
+    oxhc_dimm_info_t *info)
+{
+	info->di_nspd = 0;
+	return (0);
 }
 
 /*
@@ -838,10 +772,9 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 	int ret, err;
 	char *slot_refdes = NULL;
 	libipcc_inv_t *inv;
-	ipcc_inv_ddr4_t ddr4;
 	topo_dimm_t dimm;
 	tnode_t *dtn;
-	ipcc_sensor_id_t temp;
+	oxhc_dimm_info_t info;
 
 	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n",
 	    topo_node_name(tn), topo_node_instance(tn));
@@ -864,15 +797,28 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 	}
 
 	/*
-	 * If we can't get IPCC information on a DIMM, it's definitely not
-	 * there. Though we should really cross reference presence with the zen
-	 * UMC information when available.
+	 * If the device is present, there is nothing else for us to do and no
+	 * need to create a DIMM.
 	 */
-	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_DDR4, &ddr4,
-	    sizeof (ddr4), offsetof(ipcc_inv_ddr4_t, ddr4_temp))) {
-		topo_mod_dprintf(mod, "IPCC information for %s is not "
-		    "copyable\n", slot_refdes);
-		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+	if (libipcc_inv_status(inv) == LIBIPCC_INV_STATUS_IO_DEV_MISSING) {
+		topo_mod_dprintf(mod, "IPCC thinks %s is not present",
+		    slot_refdes);
+		ret = 0;
+		goto out;
+	}
+
+	bzero(&info, sizeof (info));
+	if (oxhc->oxhc_dimm_info(mod, inv, slot_refdes, &info) != 0) {
+		ret = -1;
+		goto out;
+	}
+
+	/*
+	 * If there is no SPD information for some reason and we didn't error
+	 * above, then we treat this as the state of things and return here.
+	 */
+	if (info.di_nspd == 0) {
+		ret = 0;
 		goto out;
 	}
 
@@ -881,8 +827,8 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 	 * of this.
 	 */
 	(void) memset(&dimm, 0, sizeof (dimm));
-	dimm.td_nspd = ARRAY_SIZE(ddr4.ddr4_spd);
-	dimm.td_spd = ddr4.ddr4_spd;
+	dimm.td_nspd = info.di_nspd;
+	dimm.td_spd = info.di_spd;
 
 	if (topo_mod_load(mod, DIMM, TOPO_VERSION) == NULL) {
 		topo_mod_dprintf(mod, "failed to load DIMM enum: %s\n",
@@ -891,6 +837,15 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 	}
 
 	if ((ret = topo_mod_enumerate(mod, tn, DIMM, DIMM, 0, 0, &dimm)) != 0) {
+		goto out;
+	}
+
+	/*
+	 * Look to see if we have any temp sensors from the SP. If not, we go
+	 * ahead and jump out.
+	 */
+	if (info.di_ntemp == 0) {
+		ret = 0;
 		goto out;
 	}
 
@@ -907,16 +862,20 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	if (!topo_oxhc_inventory_bcopyoff(inv, &temp, sizeof (temp),
-	    offsetof(ipcc_inv_ddr4_t, ddr4_temp))) {
-		ret = 0;
-		goto out;
-	}
+	for (uint32_t i = 0; i < info.di_ntemp; i++) {
+		char name[32];
 
-	if (!topo_oxhc_mgs_sensor(mod, dtn, "temp", TOPO_SENSOR_TYPE_TEMP,
-	    TOPO_SENSOR_UNITS_DEGREES_C, temp)) {
-		ret = -1;
-		goto out;
+		if (info.di_ntemp > 1) {
+			(void) snprintf(name, sizeof (name), "temp%u", i);
+		} else {
+			(void) strlcpy(name, "temp", sizeof (name));
+		}
+
+		if (!topo_oxhc_mgs_sensor(mod, dtn, name, TOPO_SENSOR_TYPE_TEMP,
+		    TOPO_SENSOR_UNITS_DEGREES_C, info.di_temp[i])) {
+			ret = -1;
+			goto out;
+		}
 	}
 
 	ret = 0;
@@ -1084,13 +1043,22 @@ topo_oxhc_enum_gimlet_port(topo_mod_t *mod, const oxhc_t *oxhc,
 	return (topo_oxhc_enum_pcie(mod, ic, child));
 }
 
-
 static int
 topo_oxhc_enum_gimlet_board(topo_mod_t *mod, const oxhc_t *oxhc,
     const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
     topo_instance_t max)
 {
-	return (topo_oxhc_enum_ic_gimlet(mod, oxhc, tn));
+	return (topo_oxhc_enum_ic(mod, oxhc, tn, NULL, oxhc->oxhc_rev,
+	    oxhc_ic_gimlet_main, oxhci_ic_gimlet_main_nents));
+}
+
+static int
+topo_oxhc_enum_cosmo_board(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	return (topo_oxhc_enum_ic(mod, oxhc, tn, NULL, oxhc->oxhc_rev,
+	    oxhc_ic_cosmo_main, oxhc_ic_cosmo_main_nents));
 }
 
 /*
@@ -1134,6 +1102,37 @@ static const oxhc_enum_t oxhc_enum_gimlet[] = {
 	    .oe_range_enum = topo_oxhc_enum_gimlet_fan_tray },
 };
 
+static const oxhc_enum_t oxhc_enum_cosmo[] = {
+	{ .oe_name = CHASSIS, .oe_parent = "hc", .oe_cpn = "992-0000043",
+	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN | OXHC_ENUM_F_MAKE_AUTH |
+	    OXHC_ENUM_F_FRU_SELF, .oe_range_enum = topo_oxhc_enum_range },
+	{ .oe_name = BAY, .oe_parent = CHASSIS,
+	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_pcie_child },
+	{ .oe_name = SYSTEMBOARD, .oe_parent = CHASSIS,
+	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN |
+	    OXHC_ENUM_F_USE_IPCC_PN | OXHC_ENUM_F_USE_IPCC_REV |
+	    OXHC_ENUM_F_FRU_SELF,
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_cosmo_board },
+	{ .oe_name = SOCKET, .oe_parent = SYSTEMBOARD, .oe_cpn = "215-0000156",
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_cpu },
+	{ .oe_name = SLOT, .oe_parent = SYSTEMBOARD,
+	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
+	    .oe_range_enum = topo_oxhc_enum_range_slot,
+	    .oe_post_enum = topo_oxhc_enum_slot },
+	{ .oe_name = PORT, .oe_parent = SYSTEMBOARD,
+	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
+	    .oe_range_enum = topo_oxhc_enum_range_port,
+	    .oe_post_enum = topo_oxhc_enum_gimlet_port },
+
+	{ .oe_name = FANTRAY, .oe_parent = CHASSIS,
+	    .oe_flags = OXHC_ENUM_F_FRU_SELF,
+	    .oe_range_enum = topo_oxhc_enum_cosmo_fan_tray },
+};
+
 typedef struct {
 	const char *oem_pn;
 	const oxhc_enum_t *oem_enum;
@@ -1142,12 +1141,29 @@ typedef struct {
 	size_t oem_nslots;
 	const oxhc_port_info_t *oem_ports;
 	size_t oem_nports;
+	oxhc_dimm_info_f oem_dimm_info;
 } oxhc_enum_map_t;
 
 static const oxhc_enum_map_t oxhc_enum_map[] = {
-	{ "913-0000019", oxhc_enum_gimlet, ARRAY_SIZE(oxhc_enum_gimlet),
-	    oxhc_slots_gimlet, ARRAY_SIZE(oxhc_slots_gimlet),
-	    oxhc_ports_gimlet, ARRAY_SIZE(oxhc_ports_gimlet) }
+	{
+		.oem_pn = "913-0000019",
+		.oem_enum = oxhc_enum_gimlet,
+		.oem_nenum = ARRAY_SIZE(oxhc_enum_gimlet),
+		.oem_slots = oxhc_slots_gimlet,
+		.oem_nslots = ARRAY_SIZE(oxhc_slots_gimlet),
+		.oem_ports = oxhc_ports_gimlet,
+		.oem_nports = ARRAY_SIZE(oxhc_ports_gimlet),
+		.oem_dimm_info = topo_oxhc_ddr4_info
+	}, {
+		.oem_pn = "913-0000023",
+		.oem_enum = oxhc_enum_cosmo,
+		.oem_nenum = ARRAY_SIZE(oxhc_enum_cosmo),
+		.oem_slots = oxhc_slots_cosmo,
+		.oem_nslots = ARRAY_SIZE(oxhc_slots_cosmo),
+		.oem_ports = oxhc_ports_cosmo,
+		.oem_nports = ARRAY_SIZE(oxhc_ports_cosmo),
+		.oem_dimm_info = topo_oxhc_ddr5_info
+	}
 };
 
 /*
@@ -1331,6 +1347,7 @@ topo_oxhc_init(topo_mod_t *mod, oxhc_t *oxhc)
 			oxhc->oxhc_nslots = oxhc_enum_map[i].oem_nslots;
 			oxhc->oxhc_ports = oxhc_enum_map[i].oem_ports;
 			oxhc->oxhc_nports = oxhc_enum_map[i].oem_nports;
+			oxhc->oxhc_dimm_info = oxhc_enum_map[i].oem_dimm_info;
 			break;
 		}
 	}

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IPCC_INVENTORY_H
@@ -75,7 +75,11 @@ typedef enum {
 	IPCC_INVENTORY_T_KSZ8463,
 	IPCC_INVENTORY_T_MAX5970,
 	/* Added in SP release v1.0.13 */
-	IPCC_INVENTORY_T_MAX31790
+	IPCC_INVENTORY_T_MAX31790,
+	/* Added in SP release v1.0.37 (Cosmo) */
+	IPCC_INVENTORY_T_RAA229620,
+	IPCC_INVENTORY_T_LTC4282,
+	IPCC_INVENTORY_T_LM5066I
 } ipcc_inv_type_t;
 
 #pragma pack(1)
@@ -125,6 +129,11 @@ typedef struct {
 	ipcc_sensor_id_t isl_rail_iout[3];
 } ipcc_inv_isl68224_t;
 
+/*
+ * This structure is shared currently between the RAA229618 and the RAA229620.
+ * Currently the SP outputs the same information between the two, though there
+ * are two different tags so they might diverge someday.
+ */
 typedef struct {
 	uint8_t raa_mfr_id[4];
 	uint8_t raa_mfr_model[4];
@@ -140,7 +149,7 @@ typedef struct {
 	ipcc_sensor_id_t raa_rail_pout[2];
 	ipcc_sensor_id_t raa_rail_vout[2];
 	ipcc_sensor_id_t raa_rail_iout[2];
-} ipcc_inv_raa229618_t;
+} ipcc_inv_raa2296xx_t;
 
 typedef struct {
 	uint8_t tps_mfr_id[3];
@@ -206,6 +215,24 @@ typedef struct {
 typedef struct {
 	ipcc_sensor_id_t max_tach[6];
 } ipcc_inv_max31790_t;
+
+/*
+ * Added in SP release 1.0.37.
+ */
+typedef struct {
+	ipcc_sensor_id_t ltc_vout;
+	ipcc_sensor_id_t ltc_iout;
+} ipcc_inv_ltc4282_t;
+
+typedef struct {
+	uint8_t lm_mfr_id[3];
+	uint8_t lm_mfr_model[8];
+	uint8_t lm_mfr_rev[2];
+	ipcc_sensor_id_t lm_temp;
+	ipcc_sensor_id_t lm_pin;
+	ipcc_sensor_id_t lm_vout;
+	ipcc_sensor_id_t lm_iin;
+} ipcc_inv_lm5066_t;
 
 #pragma pack() /* pack(1) */
 

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _OXHC_H
@@ -26,6 +26,8 @@
 #include <fm/topo_hc.h>
 #include <libipcc.h>
 #include <sys/ipcc_inventory.h>
+
+#include "oxhc_ic.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -100,7 +102,8 @@ typedef enum oxhc_slot {
 	OXHC_SLOT_DIMM,
 	OXHC_SLOT_CEM,
 	OXHC_SLOT_M2,
-	OXHC_SLOT_TEMP
+	OXHC_SLOT_TEMP,
+	OXHC_SLOT_MCIO
 } oxhc_slot_type_t;
 
 typedef struct oxhc_slot_info {
@@ -122,6 +125,16 @@ typedef struct oxhc_port_info {
 	const char *opi_cpn;
 } oxhc_port_info_t;
 
+typedef struct oxhc_dimm_info {
+	uint8_t di_spd[1024];
+	uint32_t di_nspd;
+	ipcc_sensor_id_t di_temp[2];
+	uint32_t di_ntemp;
+} oxhc_dimm_info_t;
+
+typedef int (*oxhc_dimm_info_f)(topo_mod_t *, libipcc_inv_t *inv, const char *,
+    oxhc_dimm_info_t *);
+
 /*
  * Misc. data that we want to keep around during the module's lifetime.
  */
@@ -138,6 +151,8 @@ typedef struct oxhc {
 	size_t oxhc_nports;
 	uint32_t oxhc_ninv;
 	libipcc_inv_t **oxhc_inv;
+	oxhc_dimm_info_f oxhc_dimm_info;
+	const char *oxhc_dram;
 } oxhc_t;
 
 /*
@@ -164,7 +179,6 @@ extern bool topo_oxhc_mgs_sensor(topo_mod_t *, tnode_t *, const char *,
 extern void topo_oxhc_libipcc_error(topo_mod_t *, libipcc_handle_t *,
     const char *);
 
-
 /*
  * Inventory related setup.
  */
@@ -180,18 +194,23 @@ extern bool topo_oxhc_inventory_bcopyoff(libipcc_inv_t *, void *, size_t,
 /*
  * IC related functions.
  */
-extern int topo_oxhc_enum_ic_gimlet(topo_mod_t *, const oxhc_t *, tnode_t *);
-extern int topo_oxhc_enum_ic_temp(topo_mod_t *, const oxhc_t *, tnode_t *,
-    const char *);
-extern int topo_oxhc_enum_ic_sharkfin(topo_mod_t *, const oxhc_t *, tnode_t *,
-    const char *, uint32_t);
-extern int topo_oxhc_enum_ic_fanvpd(topo_mod_t *, const oxhc_t *, tnode_t *,
-    const char *, uint32_t);
+extern int topo_oxhc_enum_ic(topo_mod_t *, const oxhc_t *, tnode_t *,
+    const char *, uint32_t, const oxhc_ic_board_t *, size_t);
 
 /*
  * Fan related functions.
  */
 extern int topo_oxhc_enum_gimlet_fan_tray(topo_mod_t *, const oxhc_t *,
+    const oxhc_enum_t *, tnode_t *, tnode_t *, topo_instance_t,
+    topo_instance_t);
+extern int topo_oxhc_enum_cosmo_fan_tray(topo_mod_t *, const oxhc_t *,
+    const oxhc_enum_t *, tnode_t *, tnode_t *, topo_instance_t,
+    topo_instance_t);
+
+/*
+ * Sharkfin related functions.
+ */
+extern int topo_oxhc_enum_sharkfin(topo_mod_t *, const oxhc_t *,
     const oxhc_enum_t *, tnode_t *, tnode_t *, topo_instance_t,
     topo_instance_t);
 
