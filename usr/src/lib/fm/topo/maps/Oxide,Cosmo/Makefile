@@ -16,7 +16,7 @@
 ARCH = oxide
 CLASS = arch
 DTDFILE = topology.dtd.1
-TOPOFILE = Cosmo-hc-topology.xml
+TOPOFILE = Cosmo-hc-topology.xml Cosmo-pcie-topology.xml
 SRCFILE = ../Oxide,Cosmo
 
 include ../Makefile.map

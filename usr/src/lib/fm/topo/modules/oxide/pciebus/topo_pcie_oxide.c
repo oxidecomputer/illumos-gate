@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -39,58 +39,52 @@ typedef struct {
 
 #define	SS_SIZE	2	/* Max number of additional substrate entries */
 #define	SS_CLEN	2	/* Max number of each substrate's components */
-static substrate_t substrate0[][SS_CLEN] = {
-	{ { SLOT, 0 } },
-	{ { SLOT, 0 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate1[][SS_CLEN] = {
-	{ { SLOT, 1 } },
-	{ { SLOT, 1 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate2[][SS_CLEN] = {
-	{ { SLOT, 2 } },
-	{ { SLOT, 2 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate3[][SS_CLEN] = {
-	{ { SLOT, 3 } },
-	{ { SLOT, 3 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate4[][SS_CLEN] = {
-	{ { SLOT, 4 } },
-	{ { SLOT, 4 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate5[][SS_CLEN] = {
-	{ { SLOT, 5 } },
-	{ { SLOT, 5 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate6[][SS_CLEN] = {
-	{ { SLOT, 6 } },
-	{ { SLOT, 6 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate7[][SS_CLEN] = {
-	{ { SLOT, 7 } },
-	{ { SLOT, 7 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate8[][SS_CLEN] = {
-	{ { SLOT, 8 } },
-	{ { SLOT, 8 }, { BOARD, 0 } },
-	{ 0 },
-};
-static substrate_t substrate9[][SS_CLEN] = {
-	{ { SLOT, 9 } },
-	{ { SLOT, 9 }, { BOARD, 0 } },
-	{ 0 },
-};
-static const substrate_t substrate19[][SS_CLEN]= {
+
+/*
+ * A macro to create the substrate for a slot which consists of the slot itself
+ * and the system board.
+ */
+#define	MKSLOTSUB(name, slot) \
+	static substrate_t (name)[][SS_CLEN] = { \
+		{ { SLOT, (slot) } }, \
+		{ { SLOT, (slot) }, { BOARD, 0 } }, \
+		{ 0 }, \
+	}
+
+MKSLOTSUB(slot0_substrate, 0x0);
+MKSLOTSUB(slot1_substrate, 0x1);
+MKSLOTSUB(slot2_substrate, 0x2);
+MKSLOTSUB(slot3_substrate, 0x3);
+MKSLOTSUB(slot4_substrate, 0x4);
+MKSLOTSUB(slot5_substrate, 0x5);
+MKSLOTSUB(slot6_substrate, 0x6);
+MKSLOTSUB(slot7_substrate, 0x7);
+MKSLOTSUB(slot8_substrate, 0x8);
+MKSLOTSUB(slot9_substrate, 0x9);
+MKSLOTSUB(slot20_substrate, 0x20);
+MKSLOTSUB(slot21_substrate, 0x21);
+MKSLOTSUB(slot22_substrate, 0x22);
+MKSLOTSUB(slot23_substrate, 0x23);
+MKSLOTSUB(slot24_substrate, 0x24);
+MKSLOTSUB(slot25_substrate, 0x25);
+MKSLOTSUB(slot26_substrate, 0x26);
+MKSLOTSUB(slot27_substrate, 0x27);
+MKSLOTSUB(slot28_substrate, 0x28);
+MKSLOTSUB(slot29_substrate, 0x29);
+
+/*
+ * There is no notion of a slot for the backplane connector, although there is
+ * a slot property. The substrate is modelled as a port directly on the system
+ * board.
+ */
+static const substrate_t slot13_substrate[][SS_CLEN]= {
 	{ { PORT, 0 } },
+	{ { PORT, 0 }, { BOARD, 0 } },
+	{ 0 },
+};
+
+static const substrate_t board_substrate[][SS_CLEN]= {
+	{ { BOARD, 0 } },
 	{ 0 },
 };
 
@@ -101,20 +95,37 @@ typedef struct {
 } slotmap_t;
 
 static slotmap_t gimlet_slotmap[] = {
-	{ 0,	"N0",		substrate0 },
-	{ 1,	"N1",		substrate1 },
-	{ 2,	"N2",		substrate2 },
-	{ 3,	"N3",		substrate3 },
-	{ 4,	"N4",		substrate4 },
-	{ 5,	"N5",		substrate5 },
-	{ 6,	"N6",		substrate6 },
-	{ 7,	"N7",		substrate7 },
-	{ 8,	"N8",		substrate8 },
-	{ 9,	"N9",		substrate9 },
-	{ 16,	"U477",		NULL },		/* Chip-down Chelsio T6 */
-	{ 17,	"M.2 (East)",	NULL },
-	{ 18,	"M.2 (West)",	NULL },
-	{ 19,	"J3",		substrate19 },	/* ExaMax connector */
+	{ 0x0,	"N0",		slot0_substrate },
+	{ 0x1,	"N1",		slot1_substrate },
+	{ 0x2,	"N2",		slot2_substrate },
+	{ 0x3,	"N3",		slot3_substrate },
+	{ 0x4,	"N4",		slot4_substrate },
+	{ 0x5,	"N5",		slot5_substrate },
+	{ 0x6,	"N6",		slot6_substrate },
+	{ 0x7,	"N7",		slot7_substrate },
+	{ 0x8,	"N8",		slot8_substrate },
+	{ 0x9,	"N9",		slot9_substrate },
+	{ 0x10,	"U477",		board_substrate }, /* Chip-down Chelsio T6 */
+	{ 0x11,	"M.2 (East)",	board_substrate },
+	{ 0x12,	"M.2 (West)",	board_substrate },
+	{ 0x13,	"J3",		slot13_substrate }, /* ExaMax connector */
+};
+
+static slotmap_t cosmo_slotmap[] = {
+	{ 0x20,	"N0",		slot20_substrate },
+	{ 0x21,	"N1",		slot21_substrate },
+	{ 0x22,	"N2",		slot22_substrate },
+	{ 0x23,	"N3",		slot23_substrate },
+	{ 0x24,	"N4",		slot24_substrate },
+	{ 0x25,	"N5",		slot25_substrate },
+	{ 0x26,	"N6",		slot26_substrate },
+	{ 0x27,	"N7",		slot27_substrate },
+	{ 0x28,	"N8",		slot28_substrate },
+	{ 0x29,	"N9",		slot29_substrate },
+	{ 0x10,	"U17",		board_substrate }, /* Chip-down Chelsio T6 */
+	{ 0x11,	"M.2 (East)",	board_substrate },
+	{ 0x12,	"M.2 (West)",	board_substrate },
+	{ 0x13,	"J3",		slot13_substrate }, /* ExaMax connector */
 };
 
 typedef struct {
@@ -124,7 +135,8 @@ typedef struct {
 } enum_map_t;
 
 static const enum_map_t enum_map[] = {
-	{ "Oxide,Gimlet", gimlet_slotmap, ARRAY_SIZE(gimlet_slotmap) }
+	{ "Oxide,Gimlet", gimlet_slotmap, ARRAY_SIZE(gimlet_slotmap) },
+	{ "Oxide,Cosmo", cosmo_slotmap, ARRAY_SIZE(cosmo_slotmap) }
 };
 
 typedef struct {

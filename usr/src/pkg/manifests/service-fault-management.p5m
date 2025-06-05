@@ -651,6 +651,8 @@ $(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/maps
 $(i386_ONLY)file \
     path=usr/platform/oxide/lib/fm/topo/maps/Cosmo-hc-topology.xml mode=0444
 $(i386_ONLY)file \
+    path=usr/platform/oxide/lib/fm/topo/maps/Cosmo-pcie-topology.xml mode=0444
+$(i386_ONLY)file \
     path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-hc-topology.xml mode=0444
 $(i386_ONLY)file \
     path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-pcie-topology.xml mode=0444
