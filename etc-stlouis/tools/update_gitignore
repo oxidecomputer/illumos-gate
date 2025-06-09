@@ -39,9 +39,6 @@ sed -i '/BEGIN AUTO-GENERATED/,$d' .gitignore
 	    grep '^?? ' | cut -d\  -f2-
 } >> .gitignore
 
-(( $(wc -l < .gitignore) < 4000 )) && \
-    fatal "WARNING, new .gitignore may be too short"
-
 print
 print "Complete. Now run 'git diff' to verify things look as you expect."
 
