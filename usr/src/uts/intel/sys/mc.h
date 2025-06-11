@@ -167,6 +167,11 @@ typedef enum mc_data_type {
 	 * (AMD Zen) The training PHY data for a given Channel, DIMM or Rank.
 	 */
 	MDT_PHY_DATA,
+	/*
+	 * The DRAM Mode Registers for the given Channel:DIMM:Rank:SubChannel
+	 * returned as a `mc_dram_mode_regs_t`.
+	 */
+	MDT_DRAM_MODE_REGS,
 } mc_data_type_t;
 
 typedef enum mc_get_data_error {
@@ -226,6 +231,23 @@ typedef struct mc_get_data {
 		uint64_t	mgd_size64;
 	};
 } mc_get_data_t;
+
+/*
+ * During memory training, a number of configurable options are programmed into
+ * the DIMM by way of "Mode Registers". Each individual DRAM die has its own
+ * set of registers. This structure represents such a set of mode registers for
+ * an entire sub-channel, if provided by the system firmware.
+ */
+typedef struct mc_dram_mode_regs {
+	uint8_t			mdmr_nregs;
+	uint8_t			mdmr_ndies;
+	/*
+	 * The actual mode registers indexed as [Mode Register][DRAM Die].
+	 * The corresponding DDR version specification should be consulted for
+	 * the specific definitions of each register.
+	 */
+	uint8_t			mdmr_moderegs[];
+} mc_dram_mode_regs_t;
 
 #ifdef __cplusplus
 }

@@ -28,6 +28,7 @@
 #include <sys/plat/bdat_prd.h>
 #include <sys/psm.h>
 #include <sys/cpuvar.h>
+#include <sys/mc.h>
 #include <sys/x86_archext.h>
 
 
@@ -55,6 +56,8 @@ typedef enum {
 typedef struct {
 	size_t				zbr_nspd_rsrcs;
 	const zen_bdat_entry_header_t	**zbr_spd_rsrcs;
+	size_t				zbr_ndmr_rsrcs;
+	const zen_bdat_entry_header_t	**zbr_dmr_rsrcs;
 	size_t				zbr_nrmargin_rsrcs;
 	const zen_bdat_entry_header_t	**zbr_rmargin_rsrcs;
 	size_t				zbr_ndmargin_rsrcs;
@@ -83,6 +86,7 @@ zen_bdat_rsc_matches(bdat_prd_mem_rsrc_t rtype,
     const zen_bdat_entry_header_t *ent)
 {
 	const zen_bdat_entry_spd_t *spd;
+	const zen_bdat_entry_dram_mode_regs_t *dmr;
 	const zen_bdat_entry_rank_margin_t *rm;
 	const zen_bdat_entry_dq_margin_t *dm;
 
@@ -92,6 +96,13 @@ zen_bdat_rsc_matches(bdat_prd_mem_rsrc_t rtype,
 		return (spd->zbes_socket == rsel->bdat_sock &&
 		    spd->zbes_channel == rsel->bdat_chan &&
 		    spd->zbes_dimm == rsel->bdat_dimm);
+	case BDAT_PRD_MEM_DRAM_MODE_REGS:
+		dmr = (const zen_bdat_entry_dram_mode_regs_t *)ent->zbe_data;
+		return (dmr->zbedmr_loc.zbml_socket == rsel->bdat_sock &&
+		    dmr->zbedmr_loc.zbml_channel == rsel->bdat_chan &&
+		    dmr->zbedmr_loc.zbml_sub_channel == rsel->bdat_subchan &&
+		    dmr->zbedmr_loc.zbml_dimm == rsel->bdat_dimm &&
+		    dmr->zbedmr_loc.zbml_rank == rsel->bdat_rank);
 	case BDAT_PRD_MEM_AMD_RANK_MARGIN:
 		rm = (const zen_bdat_entry_rank_margin_t *)ent->zbe_data;
 		return (rm->zberm_loc.zbml_socket == rsel->bdat_sock &&
@@ -157,6 +168,10 @@ bdat_prd_mem_present(bdat_prd_mem_rsrc_t rtype,
 		ents = rsrcs->zbr_spd_rsrcs;
 		nents = rsrcs->zbr_nspd_rsrcs;
 		break;
+	case BDAT_PRD_MEM_DRAM_MODE_REGS:
+		ents = rsrcs->zbr_dmr_rsrcs;
+		nents = rsrcs->zbr_ndmr_rsrcs;
+		break;
 	case BDAT_PRD_MEM_AMD_RANK_MARGIN:
 		ents = rsrcs->zbr_rmargin_rsrcs;
 		nents = rsrcs->zbr_nrmargin_rsrcs;
@@ -174,6 +189,7 @@ bdat_prd_mem_present(bdat_prd_mem_rsrc_t rtype,
 	for (size_t i = 0; i < nents; i++) {
 		const zen_bdat_entry_header_t *ent = ents[i];
 		const zen_bdat_entry_spd_t *spd;
+		const zen_bdat_entry_dram_mode_regs_t *dmr;
 
 		if (!zen_bdat_rsc_matches(rtype, rsel, ent))
 			continue;
@@ -182,6 +198,14 @@ bdat_prd_mem_present(bdat_prd_mem_rsrc_t rtype,
 		case BDAT_PRD_MEM_SPD:
 			spd = (const zen_bdat_entry_spd_t *)ent->zbe_data;
 			*rsize = spd->zbes_size;
+			return (true);
+
+		case BDAT_PRD_MEM_DRAM_MODE_REGS:
+			dmr = (const zen_bdat_entry_dram_mode_regs_t *)
+			    ent->zbe_data;
+			*rsize = sizeof (mc_dram_mode_regs_t) +
+			    ((size_t)dmr->zbedmr_nregs *
+			    (size_t)dmr->zbedmr_ndrams);
 			return (true);
 
 		case BDAT_PRD_MEM_AMD_RANK_MARGIN:
@@ -262,6 +286,10 @@ bdat_prd_mem_read(bdat_prd_mem_rsrc_t rtype,
 		ents = rsrcs->zbr_spd_rsrcs;
 		nents = rsrcs->zbr_nspd_rsrcs;
 		break;
+	case BDAT_PRD_MEM_DRAM_MODE_REGS:
+		ents = rsrcs->zbr_dmr_rsrcs;
+		nents = rsrcs->zbr_ndmr_rsrcs;
+		break;
 	case BDAT_PRD_MEM_AMD_RANK_MARGIN:
 		ents = rsrcs->zbr_rmargin_rsrcs;
 		nents = rsrcs->zbr_nrmargin_rsrcs;
@@ -279,8 +307,10 @@ bdat_prd_mem_read(bdat_prd_mem_rsrc_t rtype,
 	for (size_t i = 0; i < nents; i++) {
 		const zen_bdat_entry_header_t *ent = ents[i];
 		const zen_bdat_entry_spd_t *spd;
+		const zen_bdat_entry_dram_mode_regs_t *dmr;
 		const zen_bdat_entry_rank_margin_t *rm;
 		const zen_bdat_entry_dq_margin_t *dm;
+		mc_dram_mode_regs_t *moderegs;
 
 		if (!zen_bdat_rsc_matches(rtype, rsel, ent))
 			continue;
@@ -291,6 +321,20 @@ bdat_prd_mem_read(bdat_prd_mem_rsrc_t rtype,
 			if (rsize < spd->zbes_size)
 				return (BPE_SIZE);
 			bcopy(spd->zbes_data, rsrc, spd->zbes_size);
+			return (BPE_OK);
+
+		case BDAT_PRD_MEM_DRAM_MODE_REGS:
+			dmr = (const zen_bdat_entry_dram_mode_regs_t *)
+			    ent->zbe_data;
+			if (rsize != (sizeof (mc_dram_mode_regs_t) +
+			    ((size_t)dmr->zbedmr_nregs *
+			    (size_t)dmr->zbedmr_ndrams)))
+				return (BPE_SIZE);
+			moderegs = (mc_dram_mode_regs_t *)rsrc;
+			moderegs->mdmr_nregs = dmr->zbedmr_nregs;
+			moderegs->mdmr_ndies = dmr->zbedmr_ndrams;
+			rsize -= sizeof (mc_dram_mode_regs_t);
+			bcopy(dmr->zbedmr_data, moderegs->mdmr_moderegs, rsize);
 			return (BPE_OK);
 
 		case BDAT_PRD_MEM_AMD_RANK_MARGIN:
@@ -330,6 +374,7 @@ static zen_bdat_entry_valid_t
 zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 {
 	const zen_bdat_entry_phy_data_t *pd;
+	const zen_bdat_entry_dram_mode_regs_t *dmr;
 	size_t ent_size = ent->zbe_size;
 
 	if (ent_size < sizeof (zen_bdat_entry_header_t))
@@ -352,6 +397,19 @@ zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 		break;
 	case BDAT_MEM_TRAINING_DATA_SCHEMA:
 		switch (ent->zbe_type) {
+		case BDAT_MEM_TRAINING_DATA_MODE_REGS_TYPE:
+			if (ent_size < sizeof (zen_bdat_entry_dram_mode_regs_t))
+				return (ENT_INVALID_VARIANT);
+
+			dmr = (const zen_bdat_entry_dram_mode_regs_t *)
+			    ent->zbe_data;
+
+			ent_size -= sizeof (zen_bdat_entry_dram_mode_regs_t);
+			if (ent_size != ((size_t)dmr->zbedmr_ndrams *
+			    (size_t)dmr->zbedmr_nregs)) {
+				return (ENT_INVALID_VARIANT);
+			}
+			break;
 		case BDAT_MEM_TRAINING_DATA_RANK_MARGIN_TYPE:
 			if (ent_size != sizeof (zen_bdat_entry_rank_margin_t))
 				return (ENT_INVALID_VARIANT);
@@ -483,6 +541,9 @@ zen_bdat_ent_counts_cb(const zen_bdat_entry_header_t *ent, void *arg)
 		break;
 	case BDAT_MEM_TRAINING_DATA_SCHEMA:
 		switch (ent->zbe_type) {
+		case BDAT_MEM_TRAINING_DATA_MODE_REGS_TYPE:
+			rs->zbr_ndmr_rsrcs++;
+			break;
 		case BDAT_MEM_TRAINING_DATA_RANK_MARGIN_TYPE:
 			rs->zbr_nrmargin_rsrcs++;
 			break;
@@ -651,8 +712,10 @@ zen_bdat_ent_preserve_cb(const zen_bdat_entry_header_t *ent, void *arg)
 		 * We recognize but ignore these.
 		 */
 		case BDAT_MEM_TRAINING_DATA_CAPABILITIES_TYPE:
-		case BDAT_MEM_TRAINING_DATA_MODE_REGS_TYPE:
 		case BDAT_MEM_TRAINING_DATA_RCD_REGS_TYPE:
+			break;
+		case BDAT_MEM_TRAINING_DATA_MODE_REGS_TYPE:
+			rs->zbr_dmr_rsrcs[rs->zbr_ndmr_rsrcs++] = ent;
 			break;
 		case BDAT_MEM_TRAINING_DATA_RANK_MARGIN_TYPE:
 			rs->zbr_rmargin_rsrcs[rs->zbr_nrmargin_rsrcs++] = ent;
@@ -718,6 +781,8 @@ bdat_prd_amdzen_direct_init(void)
 
 	rsrcs->zbr_spd_rsrcs = kmem_zalloc(rsrcs->zbr_nspd_rsrcs *
 	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
+	rsrcs->zbr_dmr_rsrcs = kmem_zalloc(rsrcs->zbr_ndmr_rsrcs *
+	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
 	rsrcs->zbr_rmargin_rsrcs = kmem_zalloc(rsrcs->zbr_nrmargin_rsrcs *
 	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
 	rsrcs->zbr_dmargin_rsrcs = kmem_zalloc(rsrcs->zbr_ndmargin_rsrcs *
@@ -725,8 +790,9 @@ bdat_prd_amdzen_direct_init(void)
 	rsrcs->zbr_phy_rsrcs = kmem_zalloc(rsrcs->zbr_nphy_rsrcs *
 	    sizeof (zen_bdat_phy_data_t), KM_SLEEP);
 
-	rsrcs->zbr_nspd_rsrcs = rsrcs->zbr_nrmargin_rsrcs =
-	    rsrcs->zbr_ndmargin_rsrcs = rsrcs->zbr_nphy_rsrcs = 0;
+	rsrcs->zbr_nspd_rsrcs = rsrcs->zbr_ndmr_rsrcs =
+	    rsrcs->zbr_nrmargin_rsrcs = rsrcs->zbr_ndmargin_rsrcs =
+	    rsrcs->zbr_nphy_rsrcs = 0;
 
 	/*
 	 * Now we walk the entries again, this time saving the pointers to the

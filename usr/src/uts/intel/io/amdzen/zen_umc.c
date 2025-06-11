@@ -3519,11 +3519,75 @@ zen_umc_fill_chan_hash(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
 	return (B_TRUE);
 }
 
+static void
+zen_umc_fill_mode_regs(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan,
+    umc_dimm_t *dimm)
+{
+	bdat_prd_errno_t ret;
+	bdat_prd_mem_select_t sel = {
+		.bdat_sock = df->zud_sockno,
+		.bdat_chan = chan->chan_logid,
+		.bdat_dimm = dimm->ud_dimmno,
+	};
+
+	for (uint_t r = 0; r < ZEN_UMC_MAX_CS_PER_DIMM; r++) {
+		umc_cs_t *cs = &dimm->ud_cs[r];
+		mc_dram_mode_regs_t *moderegs = NULL;
+
+		if ((cs->ucs_flags & UMC_CS_F_DECODE_EN) == 0)
+			continue;
+
+		sel.bdat_rank = r;
+		for (uint_t sc = 0; sc < ZEN_UMC_MAX_SUBCHAN_PER_CHAN; sc++) {
+			size_t size;
+
+			sel.bdat_subchan = sc;
+			if (!bdat_prd_mem_present(BDAT_PRD_MEM_DRAM_MODE_REGS,
+			    &sel, &size)) {
+				if (sc > 0) {
+					dev_err(umc->umc_dip, CE_WARN,
+					    "missing expected DRAM Mode "
+					    "Registers for %u/%u/%u/%u",
+					    df->zud_sockno, chan->chan_logid,
+					    dimm->ud_dimmno, r);
+				}
+				break;
+			}
+
+			moderegs = kmem_zalloc(size, KM_SLEEP);
+
+			ret = bdat_prd_mem_read(BDAT_PRD_MEM_DRAM_MODE_REGS,
+			    &sel, moderegs, size);
+			if (ret != BPE_OK) {
+				dev_err(umc->umc_dip, CE_WARN,
+				    "failed to read DRAM Mode Registers for "
+				    "%u/%u/%u/%u/%u: %d", df->zud_sockno,
+				    chan->chan_logid, dimm->ud_dimmno, r, sc,
+				    ret);
+				kmem_free(moderegs, size);
+				moderegs = NULL;
+				break;
+			}
+
+			VERIFY3U(sizeof (*moderegs) + moderegs->mdmr_nregs *
+			    moderegs->mdmr_ndies, ==, size);
+
+			cs->ucs_moderegs[sc] = moderegs;
+			cs->ucs_moderegs_size[sc] = size;
+		}
+
+		if (moderegs != NULL)
+			cs->ucs_flags |= UMC_CS_F_MODE_REGS;
+	}
+}
+
 /*
- * This fills in any DDR PHY training data we may have available.
+ * This fills in any DDR PHY training data and DRAM Mode Registers made
+ * available by the system firmware.
  */
 static void
-zen_umc_fill_phy_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
+zen_umc_fill_training_data(zen_umc_t *umc, zen_umc_df_t *df,
+    zen_umc_chan_t *chan)
 {
 	bdat_prd_errno_t ret;
 	bdat_prd_mem_select_t sel = {
@@ -3533,6 +3597,21 @@ zen_umc_fill_phy_data(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
 	size_t size;
 	zen_bdat_phy_data_t *pdata;
 	size_t npstates;
+
+	/*
+	 * Grab the DRAM Mode Registers which hold training data from the DRAM's
+	 * perspective.
+	 */
+	for (uint_t d = 0; d < ZEN_UMC_MAX_DIMMS; d++) {
+		umc_dimm_t *dimm = &chan->chan_dimms[d];
+		if ((dimm->ud_flags & UMC_DIMM_F_VALID) == 0)
+			continue;
+		zen_umc_fill_mode_regs(umc, df, chan, dimm);
+	}
+
+	/*
+	 * Similarly, we also try to grab the PHY or controller's training data.
+	 */
 
 	if (!bdat_prd_mem_present(BDAT_PRD_MEM_AMD_PHY_DATA, &sel, &size))
 		return;
@@ -3793,7 +3872,7 @@ zen_umc_fill_chan(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
 	}
 	chan->chan_umccap_hi_raw = val;
 
-	zen_umc_fill_phy_data(umc, df, chan);
+	zen_umc_fill_training_data(umc, df, chan);
 
 	return (B_TRUE);
 }
@@ -4284,6 +4363,57 @@ zen_umc_get_phy_data(const zen_umc_df_t *df, mc_get_data_t *data)
 	return (phy_data);
 }
 
+static const void *
+zen_umc_get_mode_regs(const zen_umc_df_t *df, mc_get_data_t *data)
+{
+	const zen_umc_chan_t *chan;
+	const umc_dimm_t *dimm;
+	const umc_cs_t *cs;
+
+	if (!zen_umc_get_chan_dimm(df, data, &chan, &dimm))
+		return (NULL);
+
+	/*
+	 * Note a device can actually have more ranks than chip-selects
+	 * (e.g., 3DS RDIMMs) but we don't support those right now.
+	 */
+	if (data->mgd_rank >= ZEN_UMC_MAX_CS_PER_DIMM) {
+		data->mgd_error = MGD_INVALID_RANK;
+		return (NULL);
+	}
+
+	cs = &dimm->ud_cs[data->mgd_rank];
+	if ((cs->ucs_flags & UMC_CS_F_DECODE_EN) == 0) {
+		data->mgd_error = MGD_RANK_NOT_ENABLED;
+		return (NULL);
+	}
+
+	if (data->mgd_subchan >= ZEN_UMC_MAX_SUBCHAN_PER_CHAN) {
+		data->mgd_error = MGD_INVALID_SUBCHAN;
+		return (NULL);
+	} else if ((chan->chan_type == UMC_DIMM_T_DDR4 ||
+	    chan->chan_type == UMC_DIMM_T_LPDDR4) && data->mgd_subchan > 0) {
+		data->mgd_error = MGD_INVALID_SUBCHAN;
+		return (NULL);
+	}
+
+	if ((cs->ucs_flags & UMC_CS_F_MODE_REGS) == 0) {
+		data->mgd_error = MGD_NO_DATA;
+		return (NULL);
+	}
+
+	VERIFY3P(cs->ucs_moderegs[data->mgd_subchan], !=, NULL);
+	VERIFY3U(cs->ucs_moderegs_size[data->mgd_subchan], >, 0);
+
+	if (data->mgd_size != cs->ucs_moderegs_size[data->mgd_subchan]) {
+		data->mgd_size = cs->ucs_moderegs_size[data->mgd_subchan];
+		data->mgd_error = MGD_INVALID_SIZE;
+		return (NULL);
+	}
+
+	return (cs->ucs_moderegs[data->mgd_subchan]);
+}
+
 static int
 zen_umc_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
     int *rvalp)
@@ -4417,6 +4547,9 @@ zen_umc_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		case MDT_PHY_DATA:
 			datap = zen_umc_get_phy_data(df, &data);
 			break;
+		case MDT_DRAM_MODE_REGS:
+			datap = zen_umc_get_mode_regs(df, &data);
+			break;
 		default:
 			data.mgd_error = MGD_INVALID_TYPE;
 			datap = NULL;
@@ -4505,6 +4638,13 @@ zen_umc_chan_cleanup(zen_umc_t *umc, zen_umc_df_t *df, zen_umc_chan_t *chan)
 					    sizeof (zen_bdat_margin_t));
 					cs->ucs_dq_margins[sc] = NULL;
 					cs->ucs_ndq_margins[sc] = 0;
+				}
+
+				if (cs->ucs_moderegs[sc] != NULL) {
+					kmem_free(cs->ucs_moderegs[sc],
+					    cs->ucs_moderegs_size[sc]);
+					cs->ucs_moderegs[sc] = NULL;
+					cs->ucs_moderegs_size[sc] = 0;
 				}
 			}
 			if (cs->ucs_phy_data != NULL) {

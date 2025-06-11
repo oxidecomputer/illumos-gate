@@ -43,7 +43,7 @@ extern "C" {
 
 #define	BDAT_MEM_TRAINING_DATA_SCHEMA			8
 #define	BDAT_MEM_TRAINING_DATA_CAPABILITIES_TYPE	0
-#define	BDAT_MEM_TRAINING_DATA_MODE_REGS_TYPE		2 /* Deprecated */
+#define	BDAT_MEM_TRAINING_DATA_MODE_REGS_TYPE		2
 #define	BDAT_MEM_TRAINING_DATA_RCD_REGS_TYPE		3 /* Deprecated */
 #define	BDAT_MEM_TRAINING_DATA_RANK_MARGIN_TYPE		6
 #define	BDAT_MEM_TRAINING_DATA_DQ_MARGIN_TYPE		7
@@ -81,6 +81,14 @@ typedef struct {
 	uint8_t		zbml_dimm;
 	uint8_t		zbml_rank;
 } zen_bdat_mem_location_t;
+
+typedef struct {
+	zen_bdat_mem_location_t		zbedmr_loc;
+	uint8_t				zbedmr_nregs;
+	uint8_t				zbedmr_ndrams;
+	uint8_t				zbedmr_pad[1];
+	uint8_t				zbedmr_data[];
+} zen_bdat_entry_dram_mode_regs_t;
 
 typedef struct {
 	uint8_t		zbm_rd_dqdly[2];

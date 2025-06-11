@@ -57,6 +57,13 @@ typedef enum bdat_prd_mem_rsrc {
 	 */
 	BDAT_PRD_MEM_SPD,
 	/*
+	 * DRAM mode registers. While deprecated in the generic BDAT spec, AMD
+	 * still provides it.
+	 *
+	 * Selectors: Socket, Channel, Sub Channel, DIMM, & Rank.
+	 */
+	BDAT_PRD_MEM_DRAM_MODE_REGS,
+	/*
 	 * The training margin data per rank (AMD-specific extension).
 	 * Selectors: Socket, Channel, DIMM & Rank.
 	 */

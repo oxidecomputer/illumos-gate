@@ -31,6 +31,7 @@ extern "C" {
 #include <sys/nvpair.h>
 #include <sys/x86_archext.h>
 #include <sys/amdzen/bdat.h>
+#include <sys/mc.h>
 
 #include "amdzen_client.h"
 
@@ -352,6 +353,10 @@ typedef enum umc_cs_flags {
 	 * Indicates we have the per-rank training data from the DDR PHY.
 	 */
 	UMC_CS_F_PHY_DATA	= 1 << 3,
+	/*
+	 * Indicates the DRAM Mode Registers are present.
+	 */
+	UMC_CS_F_MODE_REGS	= 1 << 4,
 } umc_cs_flags_t;
 
 /*
@@ -486,6 +491,12 @@ typedef struct umc_cs {
 	 */
 	umc_rank_phy_data_t	*ucs_phy_data;
 	size_t			ucs_nphy_data;
+	/*
+	 * The DRAM mode registers indexed as [MR][DRAM], if provided by the
+	 * system firmware.
+	 */
+	mc_dram_mode_regs_t	*ucs_moderegs[ZEN_UMC_MAX_SUBCHAN_PER_CHAN];
+	size_t			ucs_moderegs_size[ZEN_UMC_MAX_SUBCHAN_PER_CHAN];
 } umc_cs_t;
 
 /*
