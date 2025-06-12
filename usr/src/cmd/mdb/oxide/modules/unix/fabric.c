@@ -456,6 +456,7 @@ fabric_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 typedef struct {
 	uint64_t	fid_num;
 	uint64_t	fid_iohcnum;
+	uint64_t	fid_iohubnum;
 	uint64_t	fid_nbionum;
 	uint64_t	fid_pcibus;
 	uint_t		fid_flags;
@@ -481,6 +482,10 @@ i_ioms(uintptr_t addr, const void *arg, void *cb_data)
 		return (WALK_NEXT);
 	if (data->fid_iohcnum != UINT64_MAX &&
 	    data->fid_iohcnum != ioms->zio_iohcnum) {
+		return (WALK_NEXT);
+	}
+	if (data->fid_iohubnum != UINT64_MAX &&
+	    data->fid_iohubnum != ioms->zio_iohubnum) {
 		return (WALK_NEXT);
 	}
 	if (data->fid_nbionum != UINT64_MAX &&
@@ -513,6 +518,7 @@ fabric_ioms_dcmd_help(void)
 	mdb_printf(
 	    "Prints a summary of the IOMS in the zen fabric.\n"
 	    "\n%<b>Options:%</b>\n"
+	    "\t-h num\tonly show the IOMS with the specified IOHUB number.\n"
 	    "\t-n num\tonly show the IOMS with the specified number.\n"
 	    "\t-N num\tonly show IOMS within the specified NBIO.\n"
 	    "\t-i num\tonly show the IOMS with the specified IOHC number.\n"
@@ -529,6 +535,7 @@ fabric_ioms_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		.fid_flags = flags,
 		.fid_num = UINT64_MAX,
 		.fid_iohcnum = UINT64_MAX,
+		.fid_iohubnum = UINT64_MAX,
 		.fid_nbionum = UINT64_MAX,
 		.fid_pcibus = UINT64_MAX
 	};
@@ -537,6 +544,7 @@ fabric_ioms_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		return (DCMD_USAGE);
 
 	if (mdb_getopts(argc, argv,
+	    'h', MDB_OPT_UINT64, &data.fid_iohubnum,
 	    'n', MDB_OPT_UINT64, &data.fid_num,
 	    'N', MDB_OPT_UINT64, &data.fid_nbionum,
 	    'i', MDB_OPT_UINT64, &data.fid_iohcnum,
