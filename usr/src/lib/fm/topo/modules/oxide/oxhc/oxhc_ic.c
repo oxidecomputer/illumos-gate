@@ -24,6 +24,7 @@
 #include <sys/sysmacros.h>
 #include <sys/bitext.h>
 #include <endian.h>
+#include <sys/debug.h>
 
 #include "oxhc.h"
 
@@ -740,9 +741,33 @@ topo_oxhc_ic_lm5066i_fmri(topo_mod_t *mod, const oxhc_ic_info_t *ic_info,
 	return (OXHC_IC_FMRI_OK);
 }
 
+static const oxhc_ic_sensor_t oxhc_ic_adm1272_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_TEMP,
+	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
+	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_temp)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_vout)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_iout)
+} };
+
+static const char *oxhc_ic_adm_hs_labels[] = {
+	"temp", "V54_HS_OUTPUT:vout", "V54_HS_OUTPUT:iout"
+};
+
+static const char *oxhc_ic_adm_fan_labels[] = {
+	"temp", "V54_FAN:vout", "V54_FAN:iout",
+};
+
 static const oxhc_ic_info_t oxhc_ic_adm1272 = {
 	.ic_cpn = "221-0000076", .ic_mfg = "Analog Devices",
-	.ic_mpn = "ADM1272-1ACPZ-RL", .ic_fmri = topo_oxhc_ic_adm1272_fmri
+	.ic_mpn = "ADM1272-1ACPZ-RL", .ic_fmri = topo_oxhc_ic_adm1272_fmri,
+	.ic_sensors = oxhc_ic_adm1272_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_adm1272_sensors)
 };
 
 static const oxhc_ic_info_t oxhc_ic_ign = {
@@ -754,9 +779,34 @@ static const oxhc_ic_info_t oxhc_ic_ign_bga = {
 	.ic_mpn = "ICE40HX8K-BG121"
 };
 
+/*
+ * Note, we currently don't plumb through the power readings as while there's a
+ * sensor ID for it, there isn't an obvious corresponding thing it is reading.
+ */
+static const oxhc_ic_sensor_t oxhc_ic_bmr491_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_TEMP,
+	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
+	.is_offset = offsetof(ipcc_inv_bmr491_t, bmr_temp)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_bmr491_t, bmr_vout)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_bmr491_t, bmr_iout)
+} };
+
+static const char *oxhc_ic_bmr491_labels[] = {
+	"temp", "V12_SYS_A2:vout", "V12_SYS_A2:iout",
+};
+
 static const oxhc_ic_info_t oxhc_ic_bmr491 = {
 	.ic_cpn = "229-0000025", .ic_mfg = "Flex", .ic_mpn = "BMR491-0203/851",
-	.ic_fmri = topo_oxhc_ic_bmr491_fmri, .ic_enum = topo_oxhc_ic_bmr491_enum
+	.ic_fmri = topo_oxhc_ic_bmr491_fmri,
+	.ic_enum = topo_oxhc_ic_bmr491_enum,
+	.ic_sensors = oxhc_ic_bmr491_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_bmr491_sensors)
 };
 
 static const oxhc_ic_info_t oxhc_ic_at24csw = {
@@ -811,9 +861,45 @@ static const oxhc_ic_info_t oxhc_ic_tmp451 = {
 	.ic_cpn = "221-0000086", .ic_mfg = "TI", .ic_mpn = "TMP451AQDQWRQ1"
 };
 
+static const oxhc_ic_sensor_t oxhc_ic_tps546b_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_TEMP,
+	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
+	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_temp)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_vout)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_iout)
+} };
+
+static const char *oxhc_ic_v3p3_a2_labels[] = {
+	"temp", "V3P3_SP_A2:vout", "V3P3_SP_A2:iout",
+};
+
+static const char *oxhc_ic_v3p3_a0_labels[] = {
+	"temp", "V3P3_SYS_A0:vout", "V3P3_SYS_A0:iout",
+};
+
+static const char *oxhc_ic_v5p0_a2_labels[] = {
+	"temp", "V5_SYS_A2:vout", "V5_SYS_A2:iout",
+};
+
+static const char *oxhc_ic_v1p8_a2_labels[] = {
+	"temp", "V1P8_SYS_A2:vout", "V1P8_SYS_A2:iout"
+};
+
+static const char *oxhc_ic_t6_v0p96_labels[] = {
+	"temp", "V0P96_NIC_VDD_A0HP:vout", "V0P96_NIC_VDD_A0HP:iout"
+};
+
 static const oxhc_ic_info_t oxhc_ic_tps546b = {
 	.ic_cpn = "229-0000018", .ic_mfg = "TI", .ic_mpn = "TPS546B24A",
-	.ic_fmri = topo_oxhc_ic_tps546_fmri
+	.ic_fmri = topo_oxhc_ic_tps546_fmri,
+	.ic_sensors = oxhc_ic_tps546b_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_tps546b_sensors)
 };
 
 static const oxhc_ic_info_t oxhc_ic_tps62913 = {
@@ -840,22 +926,111 @@ static const oxhc_ic_info_t oxhc_ic_max17651 = {
 	.ic_cpn = "221-0000150", .ic_mfg = "Maxim", .ic_mpn = "MAX17651AZT+"
 };
 
+
+static const oxhc_ic_sensor_t oxhc_ic_raa229xx_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_TEMP,
+	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
+	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_TEMP,
+	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
+	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[1])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[1])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[1])
+} };
+
+static const char *oxhc_ic_raa_sp3_vcore_labels[] = {
+	"VDD_VCORE:stage-max", "VDD_MEM_ABCD:stage-max", "VDD_VCORE:vout",
+	"VDD_MEM_ABCD:vout", "VDD_VCORE:iout", "VDD_MEM_ABCD:iout"
+};
+
+static const char *oxhc_ic_raa_sp3_vsoc_labels[] = {
+	"VDD_VSOC:stage-max", "VDD_MEM_EFGH:stage-max", "VDD_VSOC:vout",
+	"VDD_MEM_EFGH:vout", "VDD_VSOC:iout", "VDD_MEM_EFGH:iout",
+};
+
 static const oxhc_ic_info_t oxhc_ic_raa229618 = {
 	.ic_cpn = "221-0000037", .ic_mfg = "Renesas", .ic_mpn = "RAA229618",
 	.ic_fmri = topo_oxhc_ic_raa229618_fmri,
-	.ic_enum = topo_oxhc_ic_raa229618_enum
+	.ic_enum = topo_oxhc_ic_raa229618_enum,
+	.ic_sensors = oxhc_ic_raa229xx_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_raa229xx_sensors)
+};
+
+static const char *oxhc_ic_raa_sp5_vsoc_labels[] = {
+	"VDDCR_CPU0:stage-max", "VDDCR_SOC:stage-max", "VDDCR_CPU0:vout",
+	"VDDCR_SOC:vout", "VDDCR_CPU0:iout", "VDDCR_SOC:iout",
+};
+
+static const char *oxhc_ic_raa_sp5_vddio_labels[] = {
+	"VDDCR_CPU1:stage-max", "VDDIO_SP5_A0:stage-max", "VDDCR_CPU1:vout",
+	"VDDIO_SP5_A0:vout", "VDDCR_CPU1:iout", "VDDIO_SP5_A0:iout"
 };
 
 static const oxhc_ic_info_t oxhc_ic_raa229620a = {
 	.ic_cpn = "221-0000167", .ic_mfg = "Renesas", .ic_mpn = "RAA229620A",
 	.ic_fmri = topo_oxhc_ic_raa229620_fmri,
-	.ic_enum = topo_oxhc_ic_raa229620_enum
+	.ic_enum = topo_oxhc_ic_raa229620_enum,
+	.ic_sensors = oxhc_ic_raa229xx_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_raa229xx_sensors)
 };
+
+static const oxhc_ic_sensor_t oxhc_ic_isl68224_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[1])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[2])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[1])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[2])
+} };
 
 static const oxhc_ic_info_t oxhc_ic_isl68224 = {
 	.ic_cpn = "221-0000072", .ic_mfg = "Renesas", .ic_mpn = "ISL68224",
 	.ic_fmri = topo_oxhc_ic_isl68224_fmri,
-	.ic_enum = topo_oxhc_ic_isl68224_enum
+	.ic_enum = topo_oxhc_ic_isl68224_enum,
+	.ic_sensors = oxhc_ic_isl68224_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_isl68224_sensors)
+};
+
+static const char *oxhc_ic_sp3_vpp_labels[] = {
+	"VPP_ABCD:vout", "VPP_EFGH:vout", "V1P8_SP3:vout", "VPP_ABCD:iout",
+	"VPP_EFGH:iout", "V1P8_SP3:iout"
+};
+
+static const char *oxhc_ic_sp5_misc_labels[] = {
+	"V1P1_SP5_A0:vout", "V1P8_SP5_A0:vout", "V3P3_SP5:vout",
+	"V1P1_SP5_A0:iout", "V1P8_SP5_A0:iout", "V3P3_SP5_A0:iout"
 };
 
 static const oxhc_ic_info_t oxhc_ic_isl99390 = {
@@ -889,14 +1064,58 @@ static const oxhc_ic_info_t oxhc_ic_ice40seq = {
 	.ic_mpn = "ICE40HX8K-CT256"
 };
 
+static const oxhc_ic_sensor_t oxhc_ic_tmp117_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_TEMP,
+	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
+	.is_offset = offsetof(ipcc_inv_tmp11x_t, tmp_temp)
+} };
+
+static const char *oxhc_ic_tmp117_labels[] = { "temp" };
+
 static const oxhc_ic_info_t oxhc_ic_tmp117 = {
 	.ic_cpn = "234-0000002", .ic_mfg = "TI",
-	.ic_mpn = "TMP117", .ic_fmri = topo_oxhc_ic_tmp11x_fmri
+	.ic_mpn = "TMP117", .ic_fmri = topo_oxhc_ic_tmp11x_fmri,
+	.ic_sensors = oxhc_ic_tmp117_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_tmp117_sensors)
+};
+
+static const oxhc_ic_sensor_t oxhc_ic_max5970_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[1])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[1])
+} };
+
+static const char *oxhc_ic_max5970_m2_labels[] = {
+	"V3P3_M2A_A0HP:vout", "V3P3_M2B_A0HP:vout", "V3P3_M2A_A0HP:iout",
+	"V3P3_M2B_A0HP:iout"
+};
+
+static const char *oxhc_ic_max5970_t6_labels[] = {
+	"V12P0_NIC_A0HP:vout", "V5P0_NIC_A0HP:vout", "V12P0_NIC_A0HP:iout",
+	"V5P0_NIC_A0HP:iout"
+};
+
+static const char *oxhc_ic_max5970_sharkfin_labels[] = {
+	"V12:vout", "V3P3:vout", "V12:iout", "V3P3:iout"
 };
 
 static const oxhc_ic_info_t oxhc_ic_max5970 = {
 	.ic_cpn = "221-0000070", .ic_mfg = "Maxim",
-	.ic_mpn = "MAX5970ETX"
+	.ic_mpn = "MAX5970ETX",
+	.ic_sensors = oxhc_ic_max5970_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_max5970_sensors)
 };
 
 static const oxhc_ic_info_t oxhc_ic_t6 = {
@@ -904,8 +1123,32 @@ static const oxhc_ic_info_t oxhc_ic_t6 = {
 	.ic_mpn = "T6ASIC2100", .ic_enum = topo_oxhc_ic_t6_enum
 };
 
+static const oxhc_ic_sensor_t oxhc_ic_ltc4282_mcio_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_vout)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_iout)
+} };
+
+static const char *oxhc_ic_ltc4242_mcio_labels[] = {
+	"V12_MCIO_A0HP:vout", "V12_MCIO_A0HP:iout"
+};
+
+static const char *oxhc_ic_ltc4282_dimmAF_labels[] = {
+	"V12_DDR5_ABCDEF_A0:vout", "V12_DDR5_ABCDEF_A0:iout",
+};
+
+static const char *oxhc_ic_ltc4282_dimmGL_labels[] = {
+	"V12_DDR5_GHIJKL_A0:vout", "V12_DDR5_GHIJKL_A0:iout",
+};
+
 static const oxhc_ic_info_t oxhc_ic_ltc4282 = {
-	.ic_cpn = "221-0000149", .ic_mfg = "Linear", .ic_mpn = "LTC4282"
+	.ic_cpn = "221-0000149", .ic_mfg = "Linear", .ic_mpn = "LTC4282",
+	.ic_sensors = oxhc_ic_ltc4282_mcio_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_ltc4282_mcio_sensors)
 };
 
 static const oxhc_ic_info_t oxhc_ic_w25n01g = {
@@ -924,473 +1167,38 @@ static const oxhc_ic_info_t oxhc_ic_xc7s100 = {
 	.ic_cpn = "221-0000190", .ic_mfg = "AMD", .ic_mpn = "XC7S100-1FGGA484I"
 };
 
-static const oxhc_ic_info_t oxhc_ic_lm5066i = {
-	.ic_cpn = "221-0000206", .ic_mfg = "TI", .ic_mpn = "LM5066I",
-	.ic_fmri = topo_oxhc_ic_lm5066i_fmri
+static const oxhc_ic_sensor_t oxhc_ic_lm5066i_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_TEMP,
+	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
+	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_temp)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_vout)
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_iin)
+} };
+
+static const char *oxhc_ic_lm5066i_fan_east_labels[] = {
+	"temp", "V54P5_FAN_EAST:vout", "V54P5_FAN_EAST:iin"
 };
 
-/*
- * Note, we currently don't plumb through the power readings as while there's a
- * sensor ID for it, there isn't an obvious corresponding thing it is reading.
- */
-static const oxhc_ic_sensor_t oxhc_ic_bmr491_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_bmr491_t, bmr_temp)
-}, {
-	.is_name = "V12_SYS_A2:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_bmr491_t, bmr_vout)
-}, {
-	.is_name = "V12_SYS_A2:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_bmr491_t, bmr_iout)
-} };
+static const char *oxhc_ic_lm5066i_fan_center_labels[] = {
+	"temp", "V54P5_FAN_CENTRAL:vout", "V54P5_FAN_CENTRAL:iin"
+};
 
-static const oxhc_ic_sensor_t oxhc_ic_sp3_vpp_sensors[] = { {
-	.is_name = "VPP_ABCD:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[0])
-}, {
-	.is_name = "VPP_EFGH:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[1])
-}, {
-	.is_name = "V1P8_SP3:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[2])
-}, {
-	.is_name = "VPP_ABCD:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[0])
-}, {
-	.is_name = "VPP_EFGH:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[1])
-}, {
-	.is_name = "V1P8_SP3:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[2])
-} };
+static const char *oxhc_ic_lm5066i_fan_west_labels[] = {
+	"temp", "V54P5_FAN_WEST:vout", "V54P5_FAN_WEST:iin"
+};
 
-static const oxhc_ic_sensor_t oxhc_ic_raa_sp3_vcore_sensors[] = { {
-	.is_name = "VDD_VCORE:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[0])
-}, {
-	.is_name = "VDD_MEM_ABCD:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[1])
-}, {
-	.is_name = "VDD_VCORE:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[0])
-}, {
-	.is_name = "VDD_MEM_ABCD:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[1])
-}, {
-	.is_name = "VDD_VCORE:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-}, {
-	.is_name = "VDD_MEM_ABCD:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_raa_sp3_vsoc_sensors[] = { {
-	.is_name = "VDD_VSOC:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[0])
-}, {
-	.is_name = "VDD_MEM_EFGH:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[1])
-}, {
-	.is_name = "VDD_VSOC:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[0])
-}, {
-	.is_name = "VDD_MEM_EFGH:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[1])
-}, {
-	.is_name = "VDD_VSOC:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-}, {
-	.is_name = "VDD_MEM_EFGH:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_raa_sp5_vsoc_sensors[] = { {
-	.is_name = "VDDCR_CPU0:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[0])
-}, {
-	.is_name = "VDDCR_SOC:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[1])
-}, {
-	.is_name = "VDDCR_CPU0:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[0])
-}, {
-	.is_name = "VDDCR_SOC:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[1])
-}, {
-	.is_name = "VDDCR_CPU0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-}, {
-	.is_name = "VDDCR_SOC:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_raa_sp5_vddio_sensors[] = { {
-	.is_name = "VDDCR_CPU1:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[0])
-}, {
-	.is_name = "VDDIO_SP5_A0:stage-max",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_stage_temp_max[1])
-}, {
-	.is_name = "VDDCR_CPU1:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[0])
-}, {
-	.is_name = "VDDIO_SP5_A0:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_vout[1])
-}, {
-	.is_name = "VDDCR_CPU1:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-}, {
-	.is_name = "VDDIO_SP5_A0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_raa2296xx_t, raa_rail_iout[0])
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_sp5_misc_sensors[] = { {
-	.is_name = "V1P1_SP5_A0:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[0])
-}, {
-	.is_name = "V1P8_SP5_A0:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[1])
-}, {
-	.is_name = "V3P3_SP5:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[2])
-}, {
-	.is_name = "V1P1_SP5_A0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[0])
-}, {
-	.is_name = "V1P8_SP5_A0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[1])
-}, {
-	.is_name = "V3P3_SP5_A0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[2])
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_tps_v3p3_a2_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_temp)
-}, {
-	.is_name = "V3P3_SP_A2:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_vout)
-}, {
-	.is_name = "V3P3_SP_A2:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_tps_v3p3_a0_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_temp)
-}, {
-	.is_name = "V3P3_SYS_A0:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_vout)
-}, {
-	.is_name = "V3P3_SYS_A0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_tps_v5p0_a2_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_temp)
-}, {
-	.is_name = "V5_SYS_A2:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_vout)
-}, {
-	.is_name = "V5_SYS_A2:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_tps_v1p8_a2_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_temp)
-}, {
-	.is_name = "V1P8_SYS_A2:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_vout)
-}, {
-	.is_name = "V1P8_SYS_A2:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_tps_t6_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_temp)
-}, {
-	.is_name = "V0P96_NIC_VDD_A0HP:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_vout)
-}, {
-	.is_name = "V0P96_NIC_VDD_A0HP:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_tps546b24a_t, tps_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_max5970_m2_sensors[] = { {
-	.is_name = "V3P3_M2A_A0HP:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[0])
-}, {
-	.is_name = "V3P3_M2B_A0HP:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[1])
-}, {
-	.is_name = "V3P3_M2A_A0HP:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[0])
-}, {
-	.is_name = "V3P3_M2B_A0HP:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[1])
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_adm_hs_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_temp)
-}, {
-	.is_name = "V54_HS_OUTPUT:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_vout)
-}, {
-	.is_name = "V54_HS_OUTPUT:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_adm_fan_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_temp)
-}, {
-	.is_name = "V54_FAN:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_vout)
-}, {
-	.is_name = "V54_FAN:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_adm1272_t, adm_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_ltc4282_mcio_sensors[] = { {
-	.is_name = "V12_MCIO_A0HP:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_vout)
-}, {
-	.is_name = "V12_MCIO_A0HP:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_ltc4282_dimmAF_sensors[] = { {
-	.is_name = "V12_DDR5_ABCDEF_A0:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_vout)
-}, {
-	.is_name = "V12_DDR5_ABCDEF_A0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_ltc4282_dimmGL_sensors[] = { {
-	.is_name = "V12_DDR5_GHIJKL_A0:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_vout)
-}, {
-	.is_name = "V12_DDR5_GHIJKL_A0:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_ltc4282_t, ltc_iout)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_max5970_t6_sensors[] = { {
-	.is_name = "V12P0_NIC_A0HP:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[0])
-}, {
-	.is_name = "V5P0_NIC_A0HP:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[1])
-}, {
-	.is_name = "V12P0_NIC_A0HP:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[0])
-}, {
-	.is_name = "V5P0_NIC_A0HP:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[1])
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_lm5066i_fan_east_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_temp)
-}, {
-	.is_name = "V54P5_FAN_EAST:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_vout)
-}, {
-	.is_name = "V54P5_FAN_EAST:iin",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_iin)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_lm5066i_fan_center_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_temp)
-}, {
-	.is_name = "V54P5_FAN_CENTRAL:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_vout)
-}, {
-	.is_name = "V54P5_FAN_CENTRAL:iin",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_iin)
-} };
-
-static const oxhc_ic_sensor_t oxhc_ic_lm5066i_fan_west_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_temp)
-}, {
-	.is_name = "V54P5_FAN_WEST:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_vout)
-}, {
-	.is_name = "V54P5_FAN_WEST:iin",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_lm5066_t, lm_iin)
-} };
+static const oxhc_ic_info_t oxhc_ic_lm5066i = {
+	.ic_cpn = "221-0000206", .ic_mfg = "TI", .ic_mpn = "LM5066I",
+	.ic_fmri = topo_oxhc_ic_lm5066i_fmri,
+	.ic_sensors = oxhc_ic_lm5066i_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_lm5066i_sensors)
+};
 
 /*
  * To help maintain stable IDs in the tree, items in here should generally only
@@ -1400,14 +1208,14 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U452",
 		.ib_info = &oxhc_ic_adm1272,
-		.ib_sensors = oxhc_ic_adm_hs_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_adm_hs_sensors)
+		.ib_labels = oxhc_ic_adm_hs_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_hs_labels)
 	},
 	{
 		.ib_refdes = "U419",
 		.ib_info = &oxhc_ic_adm1272,
-		.ib_sensors = oxhc_ic_adm_fan_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_adm_fan_sensors)
+		.ib_labels = oxhc_ic_adm_fan_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_fan_labels)
 	},
 	/*
 	 * It is tempting to include the ignition controller's SPI flash here;
@@ -1419,8 +1227,8 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U431",
 		.ib_info = &oxhc_ic_bmr491,
-		.ib_sensors = oxhc_ic_bmr491_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_bmr491_sensors)
+		.ib_labels = oxhc_ic_bmr491_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_bmr491_labels)
 	},
 	{ .ib_refdes = "U615", .ib_info = &oxhc_ic_at24csw },
 	{ .ib_refdes = "U12", .ib_info = &oxhc_ic_stm32h7 },
@@ -1458,8 +1266,8 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U565",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_t6_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_t6_sensors)
+		.ib_labels = oxhc_ic_t6_v0p96_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_t6_v0p96_labels)
 	},
 	{ .ib_refdes = "U612", .ib_info = &oxhc_ic_tps62913 },
 	{ .ib_refdes = "U360", .ib_info = &oxhc_ic_lt3072 },
@@ -1475,8 +1283,8 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U350",
 		.ib_info = &oxhc_ic_raa229618,
-		.ib_sensors = oxhc_ic_raa_sp3_vcore_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_raa_sp3_vcore_sensors)
+		.ib_labels = oxhc_ic_raa_sp3_vcore_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_raa_sp3_vcore_labels)
 	},
 	/*
 	 * Note, out of order refdes follow the schematic page ordering.
@@ -1496,8 +1304,8 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U351",
 		.ib_info = &oxhc_ic_raa229618,
-		.ib_sensors = oxhc_ic_raa_sp3_vsoc_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_raa_sp3_vsoc_sensors)
+		.ib_labels = oxhc_ic_raa_sp3_vsoc_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_raa_sp3_vsoc_labels)
 	},
 	{ .ib_refdes = "UP26", .ib_info = &oxhc_ic_isl99390 },
 	{ .ib_refdes = "UP27", .ib_info = &oxhc_ic_isl99390 },
@@ -1510,8 +1318,8 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U352",
 		.ib_info = &oxhc_ic_isl68224,
-		.ib_sensors = oxhc_ic_sp3_vpp_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_sp3_vpp_sensors)
+		.ib_labels = oxhc_ic_sp3_vpp_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_sp3_vpp_labels)
 	},
 	{ .ib_refdes = "UP36", .ib_info = &oxhc_ic_isl99390 },
 	{ .ib_refdes = "UP37", .ib_info = &oxhc_ic_isl99390 },
@@ -1519,8 +1327,8 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U560",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_v3p3_a0_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_v3p3_a0_sensors)
+		.ib_labels = oxhc_ic_v3p3_a0_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v3p3_a0_labels)
 	},
 	{ .ib_refdes = "U432", .ib_info = &oxhc_ic_tps51200 },
 	{ .ib_refdes = "U445", .ib_info = &oxhc_ic_tps51200 },
@@ -1529,20 +1337,20 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U522",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_v3p3_a2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_v3p3_a2_sensors)
+		.ib_labels = oxhc_ic_v3p3_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v3p3_a2_labels)
 	},
 	{
 		.ib_refdes = "U524",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_v5p0_a2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_v5p0_a2_sensors)
+		.ib_labels = oxhc_ic_v5p0_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v5p0_a2_labels)
 	},
 	{
 		.ib_refdes = "U561",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_v1p8_a2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_v1p8_a2_sensors)
+		.ib_labels = oxhc_ic_v1p8_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v1p8_a2_labels)
 	},
 	{ .ib_refdes = "U489", .ib_info = &oxhc_ic_tps62913 },
 	{ .ib_refdes = "U488", .ib_info = &oxhc_ic_tps62913 },
@@ -1561,8 +1369,8 @@ const oxhc_ic_board_t oxhc_ic_gimlet_main[] = {
 	{
 		.ib_refdes = "U275",
 		.ib_info = &oxhc_ic_max5970,
-		.ib_sensors = oxhc_ic_max5970_m2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_max5970_m2_sensors)
+		.ib_labels = oxhc_ic_max5970_m2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_m2_labels)
 	},
 	/*
 	 * One day, we'd like some SP info for this.
@@ -1580,14 +1388,14 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U15",
 		.ib_info = &oxhc_ic_max5970,
-		.ib_sensors = oxhc_ic_max5970_m2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_max5970_m2_sensors)
+		.ib_labels = oxhc_ic_max5970_m2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_m2_labels)
 	},
 	{
 		.ib_refdes = "U16",
 		.ib_info = &oxhc_ic_ltc4282,
-		.ib_sensors = oxhc_ic_ltc4282_mcio_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_ltc4282_mcio_sensors)
+		.ib_labels = oxhc_ic_ltc4242_mcio_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_ltc4242_mcio_labels)
 	},
 	{ .ib_refdes = "U17", .ib_info = &oxhc_ic_t6 },
 	/*
@@ -1622,51 +1430,51 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U71",
 		.ib_info = &oxhc_ic_lm5066i,
-		.ib_sensors = oxhc_ic_lm5066i_fan_east_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_lm5066i_fan_east_sensors)
+		.ib_labels = oxhc_ic_lm5066i_fan_east_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_lm5066i_fan_east_labels)
 	},
 	{
 		.ib_refdes = "U72",
 		.ib_info = &oxhc_ic_lm5066i,
-		.ib_sensors = oxhc_ic_lm5066i_fan_center_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_lm5066i_fan_center_sensors)
+		.ib_labels = oxhc_ic_lm5066i_fan_center_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_lm5066i_fan_center_labels)
 	},
 	{
 		.ib_refdes = "U73",
 		.ib_info = &oxhc_ic_lm5066i,
-		.ib_sensors = oxhc_ic_lm5066i_fan_west_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_lm5066i_fan_west_sensors)
+		.ib_labels = oxhc_ic_lm5066i_fan_west_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_lm5066i_fan_west_labels)
 	},
 	{ .ib_refdes = "U58", .ib_info = &oxhc_ic_max31790 },
 	{
 		.ib_refdes = "U79",
 		.ib_info = &oxhc_ic_adm1272,
-		.ib_sensors = oxhc_ic_adm_hs_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_adm_hs_sensors)
+		.ib_labels = oxhc_ic_adm_hs_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_hs_labels)
 	},
 	{
 		.ib_refdes = "U80",
 		.ib_info = &oxhc_ic_bmr491,
-		.ib_sensors = oxhc_ic_bmr491_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_bmr491_sensors)
+		.ib_labels = oxhc_ic_bmr491_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_bmr491_labels)
 	},
 	{
 		.ib_refdes = "U81",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_v1p8_a2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_v1p8_a2_sensors)
+		.ib_labels = oxhc_ic_v1p8_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v1p8_a2_labels)
 	},
 	{
 		.ib_refdes = "U82",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_v3p3_a2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_v3p3_a2_sensors)
+		.ib_labels = oxhc_ic_v3p3_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v3p3_a2_labels)
 	},
 	{
 		.ib_refdes = "U83",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_v5p0_a2_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_v5p0_a2_sensors)
+		.ib_labels = oxhc_ic_v5p0_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v5p0_a2_labels)
 	},
 	{ .ib_refdes = "U46", .ib_info = &oxhc_ic_tps62916 },
 	{ .ib_refdes = "U85", .ib_info = &oxhc_ic_tps74501 },
@@ -1675,20 +1483,20 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U127",
 		.ib_info = &oxhc_ic_ltc4282,
-		.ib_sensors = oxhc_ic_ltc4282_dimmAF_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_ltc4282_dimmAF_sensors)
+		.ib_labels = oxhc_ic_ltc4282_dimmAF_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_ltc4282_dimmAF_labels)
 	},
 	{
 		.ib_refdes = "U42",
 		.ib_info = &oxhc_ic_ltc4282,
-		.ib_sensors = oxhc_ic_ltc4282_dimmGL_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_ltc4282_dimmGL_sensors)
+		.ib_labels = oxhc_ic_ltc4282_dimmGL_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_ltc4282_dimmGL_labels)
 	},
 	{
 		.ib_refdes = "U90",
 		.ib_info = &oxhc_ic_raa229620a,
-		.ib_sensors = oxhc_ic_raa_sp5_vsoc_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_raa_sp5_vsoc_sensors)
+		.ib_labels = oxhc_ic_raa_sp5_vsoc_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_raa_sp5_vsoc_labels)
 	},
 	{ .ib_refdes = "U91", .ib_info = &oxhc_ic_isl99390 },
 	{ .ib_refdes = "U92", .ib_info = &oxhc_ic_isl99390 },
@@ -1705,8 +1513,8 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U103",
 		.ib_info = &oxhc_ic_raa229620a,
-		.ib_sensors = oxhc_ic_raa_sp5_vddio_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_raa_sp5_vddio_sensors)
+		.ib_labels = oxhc_ic_raa_sp5_vddio_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_raa_sp5_vddio_labels)
 	},
 	{ .ib_refdes = "U104", .ib_info = &oxhc_ic_isl99390 },
 	{ .ib_refdes = "U105", .ib_info = &oxhc_ic_isl99390 },
@@ -1723,8 +1531,8 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U116",
 		.ib_info = &oxhc_ic_isl68224,
-		.ib_sensors = oxhc_ic_sp5_misc_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_sp5_misc_sensors)
+		.ib_labels = oxhc_ic_sp5_misc_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_sp5_misc_labels)
 	},
 	{ .ib_refdes = "U117", .ib_info = &oxhc_ic_isl99390 },
 	{ .ib_refdes = "U118", .ib_info = &oxhc_ic_isl99390 },
@@ -1735,14 +1543,14 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U54",
 		.ib_info = &oxhc_ic_max5970,
-		.ib_sensors = oxhc_ic_max5970_t6_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_max5970_t6_sensors)
+		.ib_labels = oxhc_ic_max5970_t6_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_t6_labels)
 	},
 	{
 		.ib_refdes = "U123",
 		.ib_info = &oxhc_ic_tps546b,
-		.ib_sensors = oxhc_ic_tps_t6_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_tps_t6_sensors)
+		.ib_labels = oxhc_ic_t6_v0p96_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_t6_v0p96_labels)
 	},
 	{ .ib_refdes = "U34", .ib_info = &oxhc_ic_tps62916 },
 	{ .ib_refdes = "U50", .ib_info = &oxhc_ic_lt3072 },
@@ -1753,51 +1561,22 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 
 const size_t oxhc_ic_cosmo_main_nents = ARRAY_SIZE(oxhc_ic_cosmo_main);
 
-static const oxhc_ic_sensor_t oxhc_ic_tmp117_sensors[] = { {
-	.is_name = "temp",
-	.is_type = TOPO_SENSOR_TYPE_TEMP,
-	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
-	.is_offset = offsetof(ipcc_inv_tmp11x_t, tmp_temp)
-} };
-
 const oxhc_ic_board_t oxhc_ic_temp_board[] = { {
 	.ib_refdes = "U1",
 	.ib_info = &oxhc_ic_tmp117,
-	.ib_sensors = oxhc_ic_tmp117_sensors,
-	.ib_nsensors = ARRAY_SIZE(oxhc_ic_tmp117_sensors)
+	.ib_labels = oxhc_ic_tmp117_labels,
+	.ib_nlabels = ARRAY_SIZE(oxhc_ic_tmp117_labels)
 } };
 
 const size_t oxhc_ic_temp_board_nents = ARRAY_SIZE(oxhc_ic_temp_board);
-
-static const oxhc_ic_sensor_t oxhc_ic_sharkfin_sensors[] = { {
-	.is_name = "V12:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[0])
-}, {
-	.is_name = "V3P3:vout",
-	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
-	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_vout[1])
-}, {
-	.is_name = "V12:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[0])
-}, {
-	.is_name = "V3P3:iout",
-	.is_type = TOPO_SENSOR_TYPE_CURRENT,
-	.is_unit = TOPO_SENSOR_UNITS_AMPS,
-	.is_offset = offsetof(ipcc_inv_max5970_t, max_rails_iout[1])
-} };
 
 const oxhc_ic_board_t oxhc_ic_sharkfin_gimlet[] = {
 	{ .ib_refdes = "U7", .ib_info = &oxhc_ic_at24csw },
 	{
 		.ib_refdes = "U8",
 		.ib_info = &oxhc_ic_max5970,
-		.ib_sensors = oxhc_ic_sharkfin_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_sharkfin_sensors)
+		.ib_labels = oxhc_ic_max5970_sharkfin_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_sharkfin_labels)
 	}
 };
 
@@ -1809,8 +1588,8 @@ const oxhc_ic_board_t oxhc_ic_sharkfin_cosmo[] = {
 	{
 		.ib_refdes = "U1",
 		.ib_info = &oxhc_ic_max5970,
-		.ib_sensors = oxhc_ic_sharkfin_sensors,
-		.ib_nsensors = ARRAY_SIZE(oxhc_ic_sharkfin_sensors)
+		.ib_labels = oxhc_ic_max5970_sharkfin_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_sharkfin_labels)
 	}
 };
 
@@ -1829,7 +1608,7 @@ const size_t oxhc_ic_fanvpd_nents = ARRAY_SIZE(oxhc_ic_fanvpd);
 
 static bool
 topo_oxhc_ic_sensor_create(topo_mod_t *mod, oxhc_ic_hc_t *hc, tnode_t *tn,
-    const oxhc_ic_sensor_t *sensor)
+    const oxhc_ic_sensor_t *sensor, const char *name)
 {
 	ipcc_sensor_id_t mgs_id;
 
@@ -1844,7 +1623,7 @@ topo_oxhc_ic_sensor_create(topo_mod_t *mod, oxhc_ic_hc_t *hc, tnode_t *tn,
 		return (true);
 	}
 
-	return (topo_oxhc_mgs_sensor(mod, tn, sensor->is_name, sensor->is_type,
+	return (topo_oxhc_mgs_sensor(mod, tn, name, sensor->is_type,
 	    sensor->is_unit, mgs_id));
 }
 
@@ -1885,7 +1664,7 @@ topo_oxhc_enum_ic_one(topo_mod_t *mod, const oxhc_t *oxhc, uint32_t rev,
 	 * find anything here.
 	 */
 	if (ic_info.ic_fmri != NULL || ic_info.ic_enum != NULL ||
-	    ib->ib_nsensors != 0) {
+	    ic_info.ic_nsensors != 0) {
 		const char *lookup;
 		char buf[IPCC_INVENTORY_NAMELEN];
 
@@ -1935,9 +1714,10 @@ topo_oxhc_enum_ic_one(topo_mod_t *mod, const oxhc_t *oxhc, uint32_t rev,
 		goto done;
 	}
 
-	for (size_t i = 0; i < ib->ib_nsensors; i++) {
+	VERIFY3U(ic_info.ic_nsensors, ==, ib->ib_nlabels);
+	for (size_t i = 0; i < ic_info.ic_nsensors; i++) {
 		if (!topo_oxhc_ic_sensor_create(mod, &hc_info, tn,
-		    &ib->ib_sensors[i])) {
+		    &ic_info.ic_sensors[i], ib->ib_labels[i])) {
 			ret = -1;
 			goto done;
 		}

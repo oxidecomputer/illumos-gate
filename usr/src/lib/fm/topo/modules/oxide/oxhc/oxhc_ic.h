@@ -69,14 +69,15 @@ typedef enum {
 /*
  * Information about a sensor to create for an IC. For now, all sensors are
  * assumed to be MGS remote threshold sensors. This can be expanded based on
- * need. A given sensor's name is used to reflect semantic information about
+ * need. Names are stored separately from the actual sensor definition here as
+ * we often have the same set of devices that are used, but all have different
+ * labels. A given sensor's name is used to reflect semantic information about
  * what the sensor is for. For a single temperature sensor for a device this may
  * be something simple like "temp". For a power controller we want not only the
  * rail name, but also what it is as we often have more than one sensor of a
  * given type (e.g. a Vin, Vout, Vout_min, Vout_max, etc.).
  */
 typedef struct {
-	const char *is_name;
 	uint32_t is_type;
 	uint32_t is_unit;
 	size_t is_offset;
@@ -100,6 +101,8 @@ struct oxhc_ic_info {
 	const char *ic_use;
 	oxhc_ic_fmri_f ic_fmri;
 	oxhc_ic_enum_f ic_enum;
+	const oxhc_ic_sensor_t *ic_sensors;
+	size_t ic_nsensors;
 };
 
 /*
@@ -114,8 +117,8 @@ typedef struct {
 	const char *ib_refdes;
 	const oxhc_ic_info_t *ib_info;
 	uint32_t ib_min_rev;
-	const oxhc_ic_sensor_t *ib_sensors;
-	size_t ib_nsensors;
+	const char **ib_labels;
+	size_t ib_nlabels;
 } oxhc_ic_board_t;
 
 /*
