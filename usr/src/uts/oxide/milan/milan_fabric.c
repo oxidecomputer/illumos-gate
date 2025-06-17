@@ -634,6 +634,7 @@
 #include <sys/io/milan/smu_impl.h>
 #include <sys/io/milan/pptable.h>
 
+#include <sys/io/zen/hacks.h>
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/hotplug.h>

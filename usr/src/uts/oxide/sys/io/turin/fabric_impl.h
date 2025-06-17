@@ -159,6 +159,7 @@ extern const zen_pcie_core_info_t *turin_pcie_core_info(const uint8_t, const
     uint8_t);
 extern const zen_pcie_port_info_t *turin_pcie_port_info(const uint8_t, const
     uint8_t);
+extern void turin_pcie_dbg_signal(void);
 
 #ifdef __cplusplus
 }

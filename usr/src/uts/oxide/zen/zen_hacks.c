@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -264,7 +264,7 @@ zen_hack_gpio(zen_hack_gpio_op_t op, uint16_t gpio)
 		break;
 	}
 	default:
-		cmn_err(CE_PANIC, "invalid milan GPIO hack op %d", op);
+		cmn_err(CE_PANIC, "invalid zen GPIO hack op %d", op);
 	}
 
 	mmio_reg_block_unmap(&gpio_block);

@@ -29,6 +29,7 @@
 #include <sys/platform_detect.h>
 #include <sys/stdbool.h>
 
+#include <sys/io/zen/hacks.h>
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/mpio.h>
@@ -41,6 +42,7 @@
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/io/turin/pcie_rsmu.h>
 #include <sys/io/turin/iohc.h>
+#include <sys/io/turin/iomux.h>
 #include <sys/io/turin/iommu.h>
 #include <sys/io/turin/mpio_impl.h>
 #include <sys/io/turin/nbif_impl.h>
@@ -1987,6 +1989,38 @@ turin_iohc_nmi_eoi(zen_ioms_t *ioms)
 		v = IOHC_INTR_EOI_SET_NMI(0);
 		zen_ioms_write(ioms, reg, v);
 	}
+}
+
+void
+turin_pcie_dbg_signal(void)
+{
+	static bool gpio_configured;
+
+	/*
+	 * On Cosmo, we want to signal via GPIO that we're collecting register
+	 * data. We use AGPIO22 (SP5_TO_FPGA1_DEBUG_2) for this and will toggle
+	 * this pin's state each time we collect registers. This allows
+	 * someone using a logic analyser to look at low-speed signals to
+	 * correlate those observations with these register values. The
+	 * register values are not a snapshot, but we do collect the timestamp
+	 * associated with each one so it's at least possible to reassemble a
+	 * complete strip chart with coordinated timestamps.
+	 *
+	 * If this is the first time we're using the GPIO, we will reset its
+	 * output, then toggle it twice at 1 microsecond intervals to provide a
+	 * clear start time (since the GPIO was previously an input and would
+	 * have read at an undefined level).
+	 */
+	if (oxide_board_data->obd_board != OXIDE_BOARD_COSMO)
+		return;
+
+	if (!gpio_configured) {
+		zen_hack_gpio_config(22, TURIN_FCH_IOMUX_22_AGPIO22);
+		zen_hack_gpio(ZHGOP_TOGGLE, 22);
+		drv_usecwait(1);
+		gpio_configured = true;
+	}
+	zen_hack_gpio(ZHGOP_TOGGLE, 22);
 }
 
 void
