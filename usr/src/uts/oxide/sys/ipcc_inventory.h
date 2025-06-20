@@ -79,7 +79,9 @@ typedef enum {
 	/* Added in SP release v1.0.37 (Cosmo) */
 	IPCC_INVENTORY_T_RAA229620,
 	IPCC_INVENTORY_T_LTC4282,
-	IPCC_INVENTORY_T_LM5066I
+	IPCC_INVENTORY_T_LM5066I,
+	/* Added in SP release v1.0.39 (Cosmo) */
+	IPCC_INVENTORY_T_DDR5
 } ipcc_inv_type_t;
 
 #pragma pack(1)
@@ -234,6 +236,10 @@ typedef struct {
 	ipcc_sensor_id_t lm_iin;
 } ipcc_inv_lm5066_t;
 
+typedef struct {
+	uint8_t ddr5_spd[1024];
+	ipcc_sensor_id_t ddr5_temp[2];
+} ipcc_inv_ddr5_t;
 #pragma pack() /* pack(1) */
 
 #ifdef __cplusplus

@@ -748,14 +748,29 @@ topo_oxhc_ddr4_info(topo_mod_t *mod, libipcc_inv_t *inv, const char *refdes,
 }
 
 /*
- * Extract DDR5 SPD data. This will be filled in once SP support has landed.
- * Setting no data present guarantees that we don't block enumeration.
+ * Extract DDR5 SPD data. One note here, the SP always gives us sensor IDs for
+ * the DDR5 temperature sensors, but doesn't check the SPD to see if both are
+ * present or not, which leaves it up to us.
  */
 static int
 topo_oxhc_ddr5_info(topo_mod_t *mod, libipcc_inv_t *inv, const char *refdes,
     oxhc_dimm_info_t *info)
 {
-	info->di_nspd = 0;
+	ipcc_inv_ddr5_t ddr5;
+
+	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_DDR5, &ddr5,
+	    sizeof (ddr5), sizeof (ddr5))) {
+		topo_mod_dprintf(mod, "IPCC information for %s is not "
+		    "copyable\n", refdes);
+		return (topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM));
+	}
+
+	(void) memcpy(info->di_spd, ddr5.ddr5_spd, sizeof (ddr5.ddr5_spd));
+	info->di_nspd = sizeof (ddr5.ddr5_spd);
+	info->di_temp[0] = ddr5.ddr5_temp[0];
+	info->di_temp[1] = ddr5.ddr5_temp[1];
+	info->di_ntemp = 2;
+
 	return (0);
 }
 
@@ -775,6 +790,7 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 	topo_dimm_t dimm;
 	tnode_t *dtn;
 	oxhc_dimm_info_t info;
+	uint32_t ts_count;
 
 	topo_mod_dprintf(mod, "post-processing %s[%" PRIu64 "]\n",
 	    topo_node_name(tn), topo_node_instance(tn));
@@ -862,15 +878,24 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	for (uint32_t i = 0; i < info.di_ntemp; i++) {
+	/*
+	 * Since we have parsed the SPD information to get the above, check to
+	 * see how many sensors it thinks exists. If we can't get this,
+	 * complain but move on.
+	 */
+	if (topo_prop_get_uint32(dtn, TOPO_PGROUP_DIMM_COMPONENTS,
+	    TOPO_PROP_DIMM_COMP_TS "-count", &ts_count, &err) != 0) {
+		topo_mod_dprintf(mod, "failed to get thermal sensor count "
+		    "property on %s[%" PRIu64 "]: %s\n", topo_node_name(tn),
+		    topo_node_instance(tn), topo_strerror(err));
+		ret = 0;
+		goto out;
+	}
+
+	for (uint32_t i = 0; i < MIN(info.di_ntemp, ts_count); i++) {
 		char name[32];
 
-		if (info.di_ntemp > 1) {
-			(void) snprintf(name, sizeof (name), "temp%u", i);
-		} else {
-			(void) strlcpy(name, "temp", sizeof (name));
-		}
-
+		(void) snprintf(name, sizeof (name), "temp%u", i);
 		if (!topo_oxhc_mgs_sensor(mod, dtn, name, TOPO_SENSOR_TYPE_TEMP,
 		    TOPO_SENSOR_UNITS_DEGREES_C, info.di_temp[i])) {
 			ret = -1;
