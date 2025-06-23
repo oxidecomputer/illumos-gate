@@ -2431,8 +2431,8 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
 	/*
-	 * Enable SRIS and associated parameters on the sidecar port which
-	 * is node 0, P0 (IOHC 0, Core 0 and port 0).
+	 * Enable SRIS and associated parameters on the backplane port which
+	 * is node 0, P0 (IOHC 0, Core 0, Port 1).
 	 */
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_SRIS_EN,
@@ -2441,7 +2441,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_nodematch = 0,
 		.strap_iohcmatch = 0,
 		.strap_corematch = 0,
-		.strap_portmatch = 0
+		.strap_portmatch = 1
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
@@ -2450,7 +2450,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_nodematch = 0,
 		.strap_iohcmatch = 0,
 		.strap_corematch = 0,
-		.strap_portmatch = 0
+		.strap_portmatch = 1
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
@@ -2459,7 +2459,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_nodematch = 0,
 		.strap_iohcmatch = 0,
 		.strap_corematch = 0,
-		.strap_portmatch = 0
+		.strap_portmatch = 1
 	}
 };
 
