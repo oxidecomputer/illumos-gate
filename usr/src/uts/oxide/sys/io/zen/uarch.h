@@ -278,6 +278,7 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_nbio_init)(zen_nbio_t *);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
 	void		(*zfo_nbif_init)(zen_nbif_t *);
+	void		(*zfo_misc_late_init)(zen_fabric_t *);
 
 	/*
 	 * Returns true iff a port is trained.

@@ -95,6 +95,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_smu_misc_late_init = turin_smu_features_init,
 	.zfo_nbio_init = turin_fabric_nbio_init,
 	.zfo_ioms_init = turin_fabric_ioms_init,
+	.zfo_misc_late_init = turin_fabric_misc_late_init,
 
 	.zfo_physaddr_size = turin_fabric_physaddr_size,
 	.zfo_init_tom = turin_fabric_init_tom,

@@ -150,6 +150,7 @@ extern void turin_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *);
 extern void turin_fabric_init_pcie_core(zen_pcie_core_t *);
 extern void turin_iohc_enable_nmi(zen_ioms_t *);
 extern void turin_iohc_nmi_eoi(zen_ioms_t *);
+extern void turin_fabric_misc_late_init(zen_fabric_t *);
 
 extern smn_reg_t turin_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);

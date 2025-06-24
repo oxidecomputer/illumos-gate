@@ -3262,9 +3262,13 @@ zen_fabric_init_smu_late(zen_iodie_t *iodie, void *arg __unused)
 void
 zen_fabric_init_post_mpstartup(void)
 {
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
 	zen_fabric_t *fabric = &zen_fabric;
 
 	zen_fabric_walk_iodie(fabric, zen_fabric_init_smu_late, NULL);
+
+	if (fops->zfo_misc_late_init != NULL)
+		fops->zfo_misc_late_init(fabric);
 }
 
 static int

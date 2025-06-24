@@ -2023,6 +2023,26 @@ turin_pcie_dbg_signal(void)
 	zen_hack_gpio(ZHGOP_TOGGLE, 22);
 }
 
+
+static void
+turin_fabric_gpio_watchdog(void *arg __unused)
+{
+	zen_hack_gpio(ZHGOP_TOGGLE, 22);
+}
+
+void
+turin_fabric_misc_late_init(zen_fabric_t *fabric)
+{
+	if (oxide_board_data->obd_board != OXIDE_BOARD_COSMO)
+		return;
+
+	/*
+	 * Toggle AGPIO22 (SP5_TO_FPGA1_DEBUG_2) around once a second as a
+	 * simple watchdog that can be observed by the FPGA and SP.
+	 */
+	(void) ddi_periodic_add(turin_fabric_gpio_watchdog, NULL, NANOSEC, 0);
+}
+
 void
 turin_set_mpio_global_config(zen_mpio_global_config_t *zconfig)
 {
