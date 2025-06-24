@@ -1006,6 +1006,7 @@ d usr/kernel/misc 0755 root sys
 d usr/kernel/misc/ktest 0755 root sys
 d usr/kernel/misc/ktest/amd64 0755 root sys
 f usr/kernel/misc/ktest/amd64/espi_ktest 0755 root sys
+f usr/kernel/misc/ktest/amd64/oxide_ktest 0755 root sys
 d usr/lib 0755 root bin
 s usr/lib/32=.
 s usr/lib/64=amd64

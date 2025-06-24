@@ -1716,6 +1716,13 @@ zen_pcie_populate_dbg(zen_fabric_t *fabric, uint32_t stage, uint8_t iodie_match)
 	    cookie);
 }
 
+void
+zen_pcie_populate_dbg_adhoc(void)
+{
+	zen_pcie_populate_dbg(&zen_fabric, ZPCS_USER_DIRECTED,
+	    ZEN_IODIE_MATCH_ANY);
+}
+
 /*
  * Our purpose here is to set up memlist structures for use in tracking. Right
  * now we use the xmemlist feature, though having something that is backed by

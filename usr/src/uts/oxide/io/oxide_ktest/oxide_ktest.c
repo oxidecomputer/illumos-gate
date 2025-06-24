@@ -140,6 +140,16 @@ cleanup:
 	mod_release_mod(hdl);
 }
 
+static void
+oxide_pciereg_capture(ktest_ctx_hdl_t *ctx)
+{
+	extern void zen_pcie_populate_dbg_adhoc(void);
+
+	zen_pcie_populate_dbg_adhoc();
+
+	KT_PASS(ctx);
+}
+
 
 static struct modlmisc oxide_ktest_modlmisc = {
 	.misc_modops = &mod_miscops,
@@ -159,9 +169,14 @@ _init()
 	ktest_suite_hdl_t *ks = NULL;
 
 	VERIFY0(ktest_create_module("oxide", &km));
+
 	VERIFY0(ktest_add_suite(km, "comm_page", &ks));
 	VERIFY0(ktest_add_test(ks, "comm_page_vars_test",
 	    comm_page_vars_test, 0));
+
+	VERIFY0(ktest_add_suite(km, "pcie", &ks));
+	VERIFY0(ktest_add_test(ks, "capture", oxide_pciereg_capture,
+	    KTEST_FLAG_NONE));
 
 	if ((ret = ktest_register_module(km)) != 0) {
 		ktest_free_module(km);
