@@ -168,6 +168,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/espi/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/oxide_ktest/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 # ridiculous contortions ---
 ATOMIC_SUBDIR_32	= i386
 ATOMIC_SUBDIR_64	= amd64
