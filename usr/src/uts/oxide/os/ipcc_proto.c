@@ -503,6 +503,9 @@ ipcc_channel_held(void)
 void
 ipcc_release_channel(const ipcc_ops_t *ops, void *arg, bool doclose)
 {
+	if (doclose && ops->io_close != NULL)
+		ops->io_close(arg);
+
 	if (!ipcc_multithreaded) {
 		VERIFY(ipcc_channel_held());
 		ipcc_channel_active = false;
@@ -514,9 +517,6 @@ ipcc_release_channel(const ipcc_ops_t *ops, void *arg, bool doclose)
 		cv_broadcast(&ipcc_cv);
 		mutex_exit(&ipcc_mutex);
 	}
-
-	if (doclose && ops->io_close != NULL)
-		ops->io_close(arg);
 }
 
 int
