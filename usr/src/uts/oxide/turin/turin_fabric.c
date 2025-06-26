@@ -20,6 +20,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/cyclic.h>
 #include <sys/ddi.h>
 #include <sys/pci.h>
 #include <sys/pcie.h>
@@ -2037,10 +2038,24 @@ turin_fabric_misc_late_init(zen_fabric_t *fabric)
 		return;
 
 	/*
-	 * Toggle AGPIO22 (SP5_TO_FPGA1_DEBUG_2) around once a second as a
-	 * simple watchdog that can be observed by the FPGA and SP.
+	 * Set up a cyclic to toggle AGPIO22 (SP5_TO_FPGA1_DEBUG_2) around
+	 * once a second as a simple watchdog that can be observed by the FPGA
+	 * and SP. This is a high level cyclic to help ensure it runs as long
+	 * as the kernel is alive.
 	 */
-	(void) ddi_periodic_add(turin_fabric_gpio_watchdog, NULL, NANOSEC, 0);
+	cyc_handler_t hdlr = {
+		.cyh_level = CY_HIGH_LEVEL,
+		.cyh_func = turin_fabric_gpio_watchdog,
+		.cyh_arg = NULL
+	};
+	cyc_time_t when = {
+		.cyt_when = 0,
+		.cyt_interval = NANOSEC
+	};
+
+	mutex_enter(&cpu_lock);
+	(void) cyclic_add(&hdlr, &when);
+	mutex_exit(&cpu_lock);
 }
 
 void
