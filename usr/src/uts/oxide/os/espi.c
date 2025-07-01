@@ -363,6 +363,122 @@ out:
 	return (ret);
 }
 
+static int
+espi_handle_interrupt(uint32_t r)
+{
+	const struct {
+		bool set;
+		int errnum;
+	} data[] = {
+		/*
+		 * This table covers all of the interrupts we can receive --
+		 * i.e. the bits defined in FCH::ITF::ESPI::SLAVE0_INT_STS.
+		 * They are listed in descending order of priority. Once we
+		 * find a matching bit which has a non-zero errno against it we
+		 * return that errno.
+		 */
+
+		{ FCH_ESPI_S0_INT_STS_GET_WDG_TO(r),		ETIMEDOUT },
+		{ FCH_ESPI_S0_INT_STS_GET_MST_ABORT(r),		ECONNABORTED },
+		{ FCH_ESPI_S0_INT_STS_GET_UPFIFO_WDG_TO(r),	ETIMEDOUT },
+
+		/*
+		 * These are all indicative of protocol errors. Either we have
+		 * sent invalid data or the target has.
+		 */
+		{ FCH_ESPI_S0_INT_STS_GET_PROTOERR(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_ILL_LEN(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_ILL_TAG(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_USF_CPL(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_UNK_CYC(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_UNK_RSP(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_CRC_ERR(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_WAIT_TMT(r),		EPROTO },
+		{ FCH_ESPI_S0_INT_STS_GET_BUS_ERR(r),		EPROTO },
+
+		/*
+		 * These are also indicative of protocol errors. The target has
+		 * sent a frame which is too large in one regard or another.
+		 */
+		{ FCH_ESPI_S0_INT_STS_GET_RXFLASH_OFLOW(r),	EOVERFLOW },
+		{ FCH_ESPI_S0_INT_STS_GET_RXMSG_OFLOW(r),	EOVERFLOW },
+		{ FCH_ESPI_S0_INT_STS_GET_RXOOB_OFLOW(r),	EOVERFLOW },
+
+		/*
+		 * No response was forthcoming when one was expected.
+		 */
+		{ FCH_ESPI_S0_INT_STS_GET_NO_RSP(r),		ETIMEDOUT },
+
+		/*
+		 * The target has sent a fatal error message.
+		 */
+		{ FCH_ESPI_S0_INT_STS_GET_FATAL_ERR(r),		EPROTO },
+
+		/*
+		 * The target has sent a non-fatal error message. This does not
+		 * affect its ability to process the received command(!)
+		 */
+		{ FCH_ESPI_S0_INT_STS_GET_NFATAL_ERR(r),	0 },
+
+		/*
+		 * These are completion alerts and not mapped to errors.
+		 */
+		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G3(r),		0 },
+		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G2(r),		0 },
+		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G1(r),		0 },
+		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G0(r),		0 },
+		{ FCH_ESPI_S0_INT_STS_GET_FLASHREQ(r),		0 },
+		{ FCH_ESPI_S0_INT_STS_GET_RXOOB(r),		0 },
+		{ FCH_ESPI_S0_INT_STS_GET_RXMSG(r),		0 },
+		{ FCH_ESPI_S0_INT_STS_GET_DNCMD(r),		0 },
+	};
+
+	for (uint_t i = 0; i < ARRAY_SIZE(data); i++) {
+		if (data[i].set && data[i].errnum != 0)
+			return (data[i].errnum);
+	}
+
+	return (0);
+}
+
+/*
+ * Clear out bits from the interrupt status register so we can better determine
+ * if the command we're about to send is responsible for setting any of them.
+ * The packet submission code will call espi_handle_interrupt() - above -
+ * to check and convert set bits to error codes.
+ *
+ * All general error bits and those related to OOB transactions are cleared;
+ * completion alert bits and errors for other packet types are left intact.
+ * It's particularly important to retain the RXOOB bit in case an OOB
+ * completion has arrived while the channel is idle from the host perspective.
+ * In this case we still need to consume any data in the FIFO and signal to the
+ * hardware that we're ready to receive the next packet.
+ */
+static void
+espi_clear_interrupt(mmio_reg_block_t block)
+{
+	mmio_reg_t intsts = FCH_ESPI_S0_INT_STS_MMIO(block);
+	uint32_t val = 0;
+
+	val = FCH_ESPI_S0_INT_STS_CLEAR_WDG_TO(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_MST_ABORT(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_UPFIFO_WDG_TO(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_PROTOERR(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_RXOOB_OFLOW(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_ILL_LEN(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_ILL_TAG(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_USF_CPL(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_UNK_CYC(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_UNK_RSP(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_NFATAL_ERR(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_FATAL_ERR(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_NO_RSP(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_CRC_ERR(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_WAIT_TMT(val);
+	val = FCH_ESPI_S0_INT_STS_CLEAR_BUS_ERR(val);
+	mmio_reg_write(intsts, val);
+}
+
 /*
  * Acquire ownership of the eSPI semaphore.
  */
@@ -412,6 +528,7 @@ espi_acquire(mmio_reg_block_t block)
 		if (FCH_ESPI_SEM_MISC_CTL_REG0_GET_SW2_OWN_STAT(val) == 1) {
 			/* Success */
 			ret = 0;
+			espi_clear_interrupt(block);
 			break;
 		}
 
@@ -497,84 +614,6 @@ espi_wait_idle(mmio_reg_block_t block)
 	return (ret);
 }
 
-static int
-espi_handle_interrupt(uint32_t r)
-{
-	const struct {
-		bool set;
-		int errnum;
-	} data[] = {
-		/*
-		 * This table covers all of the interrupts we can receive --
-		 * i.e. the bits defined in FCH::ITF::ESPI::SLAVE0_INT_STS.
-		 * They are listed in descending order of priority. Once we
-		 * find a matching bit which has a non-zero errno against it we
-		 * return that errno.
-		 */
-
-		{ FCH_ESPI_S0_INT_STS_GET_WDG_TO(r),		ETIMEDOUT },
-		{ FCH_ESPI_S0_INT_STS_GET_MST_ABORT(r),		ECONNABORTED },
-		{ FCH_ESPI_S0_INT_STS_GET_UPFIFO_WDG_TO(r),	ETIMEDOUT },
-
-		/*
-		 * These are all indicative of protocol errors. Either we have
-		 * sent invalid data or the target has.
-		 */
-		{ FCH_ESPI_S0_INT_STS_GET_PROTOERR(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_ILL_LEN(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_ILL_TAG(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_USF_CPL(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_UNK_CYC(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_UNK_RSP(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_CRC_ERR(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_WAIT_TMT(r),		EPROTO },
-		{ FCH_ESPI_S0_INT_STS_GET_BUS_ERR(r),		EPROTO },
-
-		/*
-		 * These are also indicative of protocol errors. The target has
-		 * sent a frame which is too large in one regard or another.
-		 */
-		{ FCH_ESPI_S0_INT_STS_GET_RXFLASH_OFLOW(r),	EOVERFLOW },
-		{ FCH_ESPI_S0_INT_STS_GET_RXMSG_OFLOW(r),	EOVERFLOW },
-		{ FCH_ESPI_S0_INT_STS_GET_RXOOB_OFLOW(r),	EOVERFLOW },
-
-		/*
-		 * No response was forthcoming when one was expected.
-		 */
-		{ FCH_ESPI_S0_INT_STS_GET_NO_RSP(r),		ETIMEDOUT },
-
-		/*
-		 * The target has sent a fatal error message.
-		 */
-		{ FCH_ESPI_S0_INT_STS_GET_FATAL_ERR(r),		EPROTO },
-
-		/*
-		 * The target has sent a non-fatal error message. This does not
-		 * affect its ability to process the received command(!)
-		 */
-		{ FCH_ESPI_S0_INT_STS_GET_NFATAL_ERR(r),	0 },
-
-		/*
-		 * These are completion alerts and not mapped to errors.
-		 */
-		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G3(r),		0 },
-		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G2(r),		0 },
-		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G1(r),		0 },
-		{ FCH_ESPI_S0_INT_STS_GET_RXVW_G0(r),		0 },
-		{ FCH_ESPI_S0_INT_STS_GET_FLASHREQ(r),		0 },
-		{ FCH_ESPI_S0_INT_STS_GET_RXOOB(r),		0 },
-		{ FCH_ESPI_S0_INT_STS_GET_RXMSG(r),		0 },
-		{ FCH_ESPI_S0_INT_STS_GET_DNCMD(r),		0 },
-	};
-
-	for (uint_t i = 0; i < ARRAY_SIZE(data); i++) {
-		if (data[i].set && data[i].errnum != 0)
-			return (data[i].errnum);
-	}
-
-	return (0);
-}
-
 /*
  * This routine takes care of sending a prepared message downstream. The
  * header registers and FIFO have already been programmed appropriately before
@@ -588,10 +627,10 @@ espi_submit(mmio_reg_block_t block)
 	uint32_t val;
 
 	/*
-	 * Clear all interrupt flags so we can determine any interrupt bits
-	 * that get set as a result of this operation.
+	 * Clear the DNCMD interrupt bit before sending the command down as we
+	 * need to watch for this to become set again to confirm dispatch.
 	 */
-	mmio_reg_write(intsts, mmio_reg_read(intsts));
+	mmio_reg_write(intsts, FCH_ESPI_S0_INT_STS_CLEAR_DNCMD(0));
 
 	/* Mark ready to send */
 	val = mmio_reg_read(hdr0_type);
