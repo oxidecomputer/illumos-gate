@@ -90,6 +90,9 @@
  * to the boarder system to detect any change in RESET_L/PWROK, assures that
  * a single core shutdown (e.g., due to a triple fault) results in our
  * desired semantics:  a machine reset through A2.
+ *
+ * Note that similar reasoning applies to the handling of interally generated
+ * SYNC_FLOOD, so we enable those as well.
  */
 void
 zen_shutdown_detect_init(void)
@@ -100,6 +103,7 @@ zen_shutdown_detect_init(void)
 
 	reg = FCH_PMIO_ACPICONFIG_MMIO(fch_pmio);
 	val = mmio_reg_read(reg);
+	val = FCH_PMIO_ACPICONFIG_SET_EN_SYNC_FLOOD(val, 1);
 	val = FCH_PMIO_ACPICONFIG_SET_EN_SHUTDOWN_MSG(val, 1);
 	mmio_reg_write(reg, val);
 
