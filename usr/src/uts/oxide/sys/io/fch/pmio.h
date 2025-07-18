@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_FCH_PMIO_H
@@ -168,7 +168,8 @@ MAKE_MMIO_FCH_REG_FN(PMIO, pmio, 4);
 #define	FCH_PMIO_ACPICONFIG_MMIO(b)	\
     fch_pmio_mmio_reg((b), D_FCH_PMIO_ACPICONFIG, 0)
 
-#define	FCH_PMIO_ACPICONFIG_SET_EN_SHUTDOWN_MSG(r, v) bitset32(r, 17, 17, v)
+#define	FCH_PMIO_ACPICONFIG_SET_EN_SYNC_FLOOD(r, v)	bitset32(r, 18, 18, v)
+#define	FCH_PMIO_ACPICONFIG_SET_EN_SHUTDOWN_MSG(r, v)	bitset32(r, 17, 17, v)
 
 /*
  * FCH::PM::RESETCONTROL1.
