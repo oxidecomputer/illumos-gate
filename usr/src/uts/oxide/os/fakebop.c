@@ -463,6 +463,20 @@ early_idt_init(void)
 	wr_idtr(&bop_idt_info);
 }
 
+void
+hacky_induce_triple_fault(void)
+{
+	desctbr_t failme;
+	void (*crashme)(void);
+	uint64_t ptr;
+
+	bzero(&failme, sizeof (failme));
+	wr_idtr(&failme);
+	ptr = 0x0b0f;  /* x86_64 UD2 instruction (little endian) */
+	crashme = (void (*)(void))&ptr;
+	crashme();
+}
+
 static void
 early_gdt_init(void)
 {
