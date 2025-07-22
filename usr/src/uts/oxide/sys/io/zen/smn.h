@@ -47,6 +47,15 @@ typedef struct zen_nbif_func zen_nbif_func_t;
 typedef struct zen_iodie zen_iodie_t;
 
 /*
+ * This allows reading an SMN register before PCI config space is setup by
+ * making use of CFC/CF8 I/O port-based access. This may only be used before
+ * the end of zen_fabric_topo_init (which will disable I/O port-based PCI config
+ * space access). After that point, the below MMIO-based access routines should
+ * be used instead.
+ */
+uint32_t zen_smn_early_read(const smn_reg_t);
+
+/*
  * Issue reads and writes on the network associated with the given IO die.
  */
 extern uint32_t zen_smn_read(zen_iodie_t *, const smn_reg_t);

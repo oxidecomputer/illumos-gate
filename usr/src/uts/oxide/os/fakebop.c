@@ -28,7 +28,7 @@
  *
  * Copyright (c) 2012 Gary Mills
  * Copyright 2020 Joyent, Inc.
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 /*
@@ -46,6 +46,7 @@
 #include <sys/boot_console.h>
 #include <sys/boot_data.h>
 #include <sys/boot_debug.h>
+#include <sys/clock.h>
 #include <sys/platform_detect.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/boot_physmem.h>
@@ -75,6 +76,8 @@
 #include <sys/apob.h>
 #include <sys/kapob.h>
 #include <sys/io/zen/ccx.h>
+#include <sys/io/zen/smn.h>
+#include <sys/amdzen/psp.h>
 
 /*
  * Comes from fs/ufsops.c.  For debugging the ramdisk/root fs operations.  Set
@@ -522,6 +525,62 @@ apob_init(void)
 }
 
 /*
+ * On Oxide machines the flash ROM that holds the initial boot and firmware
+ * images is muxed to either the host or the SP. The sequencer initially sets
+ * the mux to the host as part of the A2->A0 transition (we do need to be able
+ * to access the flash to be able to boot). The PSP will load the relevant
+ * firmware bits as well as the "BIOS" image (aka phase 1 image on Oxide). Once
+ * we're in the host we attempt to establish the IPCC channel between the host
+ * and SP. One side effect of the first IPCC command sent from the host
+ * (IPCC_HSS_STATUS / GetStatus) is that the flash mux is switched over to the
+ * SP, since the OS no longer needs access to the flash from the host. However,
+ * the PSP may still need to access the flash, so we make a best-effort attempt
+ * to wait for the PSP to signal that it has completed booting before switching
+ * the mux. Otherwise pulling out the flash from underneath it at this point can
+ * leave it in an indeterminate/broken state (e.g. the CPU2PSP mailbox interface
+ * remains uninitialized).
+ */
+static void
+wait_for_psp(void)
+{
+	/*
+	 * Values chosen based on observed delay + a fair bit of margin:
+	 * - Gimlet + Milan @   2 GHz 91000 ticks
+	 * - Cosmo  + Turin @ 2.6 GHz 2800000000 ticks
+	 */
+	const uint_t PSP_READY_WAIT_RETRIES = 125;
+	const uint_t PSP_READY_WAIT_SPINS = 25;
+	const uint_t PSP_READY_WAIT_DELAYMS = 50;
+
+	hrtime_t start = tsc_read();
+	x86_processor_family_t pf =
+	    _X86_CHIPREV_FAMILY(oxide_board_data->obd_cpuinfo.obc_chiprev);
+	smn_reg_t reg = PSP_C2PMBOX_CMD(pf);
+	cpu2psp_mbox_t mbox;
+
+	eb_printf("Waiting for PSP...");
+	for (uint_t attempt = 0; attempt < PSP_READY_WAIT_RETRIES; attempt++) {
+		mbox.c2pm_val = zen_smn_early_read(reg);
+
+		if (mbox.c2pm_recovery) {
+			eb_printf("recovery needed (mbox=%x)\n", mbox.c2pm_val);
+			return;
+		}
+
+		if (mbox.c2pm_ready) {
+			eb_printf("ready (%lld ticks)\n", tsc_read() - start);
+			return;
+		}
+
+		if (attempt > PSP_READY_WAIT_SPINS)
+			eb_pausems(PSP_READY_WAIT_DELAYMS);
+	}
+
+	eb_printf("timed out after %lld ticks (mbox=%x)\n",
+	    tsc_read() - start, mbox.c2pm_val);
+}
+
+/*
  * BTS: oxide boot
  *
  * This is where we enter the kernel. _start() dummies up the boot_ops and
@@ -627,6 +686,8 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	oxide_derive_platform();
 	bsp = boot_console_init();
 	oxide_report_platform();
+
+	wait_for_psp();
 
 	kernel_ipcc_init(IPCC_INIT_EARLYBOOT);
 	eb_physmem_init(&bm);

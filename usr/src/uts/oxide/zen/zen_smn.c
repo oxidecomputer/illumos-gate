@@ -23,6 +23,7 @@
 #include <sys/cmn_err.h>
 #include <sys/mutex.h>
 #include <sys/pci_cfgspace.h>
+#include <sys/pci_impl.h>
 
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/smn.h>
@@ -124,6 +125,44 @@ void
 zen_iodie_write(zen_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
 {
 	zen_smn_write(iodie, reg, val);
+}
+
+uint32_t
+zen_smn_early_read(const smn_reg_t reg)
+{
+	const uint32_t addr = SMN_REG_ADDR(reg);
+	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
+	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+	uint32_t val;
+
+	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
+	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
+
+	outl(PCI_CONFADD, PCI_CADDR1(0, AMDZEN_NB_SMN_DEVNO,
+	    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR));
+	outl(PCI_CONFDATA, base_addr);
+
+	outl(PCI_CONFADD, PCI_CADDR1(0, AMDZEN_NB_SMN_DEVNO,
+	    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off));
+	switch (SMN_REG_SIZE(reg)) {
+	case 1:
+		val = (uint32_t)inb(PCI_CONFDATA);
+		break;
+	case 2:
+		val = (uint32_t)inw(PCI_CONFDATA);
+		break;
+	case 4:
+		val = inl(PCI_CONFDATA);
+		break;
+	default:
+		panic("unreachable invalid SMN register size %u",
+		    SMN_REG_SIZE(reg));
+	}
+	if (zen_smn_log != 0) {
+		cmn_err(CE_NOTE, "SMN Early R reg 0x%x: 0x%x", addr, val);
+	}
+
+	return (val);
 }
 
 uint32_t
