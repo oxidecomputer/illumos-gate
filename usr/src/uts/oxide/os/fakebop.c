@@ -28,7 +28,7 @@
  *
  * Copyright (c) 2012 Gary Mills
  * Copyright 2020 Joyent, Inc.
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 /*
@@ -46,6 +46,7 @@
 #include <sys/boot_console.h>
 #include <sys/boot_data.h>
 #include <sys/boot_debug.h>
+#include <sys/clock.h>
 #include <sys/platform_detect.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/boot_physmem.h>
@@ -74,6 +75,7 @@
 #include <sys/memlist_impl.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
+#include <sys/io/fch/misc.h>
 #include <sys/io/zen/ccx.h>
 
 /*
@@ -522,6 +524,95 @@ apob_init(void)
 }
 
 /*
+ * On Oxide machines the flash ROM which holds the initial boot and firmware
+ * images is muxed to either the host or the SP. The sequencer initially sets
+ * the mux to the host as part of the A2->A0 transition (we do need to be able
+ * to access the flash to be able to boot). The PSP will load the relevant
+ * firmware bits as well as the "BIOS" image (aka phase 1 image on Oxide). Once
+ * we're in the host we attempt to establish the IPCC channel between the host
+ * and SP. One side effect of the first IPCC command sent from the host
+ * (IPCC_HSS_STATUS / GetStatus) is that the flash mux is switched over to the
+ * SP. Which makes well enough sense: we've made it to the OS and don't need
+ * access to the flash from the host anymore. Alas while we've booted up, the
+ * PSP may still attempt to access the flash (e.g. loading the firmware for the
+ * Secure OS). Pulling out the flash from underneath it at this point can leave
+ * it in an indeterminate/broken state (e.g. the CPU2PSP mailbox interface
+ * remains uninitialized). All that to say, we make a best effort attempt to
+ * wait for the PSP to indicate it has completed booting before pulling the
+ * rug (flash) out from under it.
+ */
+static void
+wait_for_psp(void)
+{
+	const uint32_t PSP_BL_PREFIX = 0xee000000;
+	const uint32_t PSP_BL_PREFIX_MASK = 0xff000000;
+	const uint32_t PSP_BL_CODE_MASK = 0xff;
+	// const uint32_t PSP_BL_SUCCESS_BOOT_DONE = 0xff;
+	const uint32_t PSP_BL_SUCCESS_CONTROL_TO_SOS = 0xf7;
+
+	/*
+	 * XXX: works but chosen somewhat arbitrarily
+	 */
+	const uint_t psp_bl_wait_retries = 100;
+	const uint_t psp_bl_wait_spins = 25;
+	const uint_t psp_bl_wait_delayms = 50;
+
+	mmio_reg_block_t fch_misc_a;
+	mmio_reg_t reg;
+
+	fch_misc_a = fch_misc_a_mmio_block();
+	reg = FCH_MISC_A_POSTCODESTACK(fch_misc_a);
+
+	for (uint_t attempt = 0; attempt < psp_bl_wait_retries; attempt++) {
+		for (uint_t i = 0; i < 32; i++) {
+			uint32_t postcode = mmio_reg_read(reg);
+
+			if ((postcode & PSP_BL_PREFIX_MASK) != PSP_BL_PREFIX)
+				continue;
+
+			/*
+			 * XXX: You would think "BOOT_DONE" comes last but no.
+			 * Observed continuing after just that still runs into
+			 * issues when the flash gets muxed to the SP.
+			 *
+			 * The other 0xee-prefixed post codes seen after
+			 * BL_SUCCESS_BOOT_DONE (0xff) are (in-order):
+			 * - BL_SUCCESS_SYS_DRV (0xf5)
+			 *   Bootloader successfully loaded sys_drv
+			 * - BL_SUCCESS_SOS (0xf6)
+			 *   Bootloader successfully loaded secure OS
+			 * - BL_SUCCESS_CONTROL_TO_SOS (0xf7)
+			 *   Bootloader about to transfer control to secureOS
+			 *
+			 * Based on those comments it makes some sense why
+			 * swapping the mux after BL_SUCCESS_BOOT_DONE but
+			 * before BL_SUCCESS_{SYS_DRV,SOS}.
+			 *
+			 * XXX: Also this was only tested on Turin 1.0.0.6.
+			 */
+#if 0
+			if ((postcode & PSP_BL_CODE_MASK) !=
+			    PSP_BL_SUCCESS_BOOT_DONE)
+				continue;
+#endif
+
+			if ((postcode & PSP_BL_CODE_MASK) !=
+			    PSP_BL_SUCCESS_CONTROL_TO_SOS)
+				continue;
+
+			eb_printf("PSP Bootloader Sequence Finished\n");
+			goto done;
+		}
+
+		if (attempt > psp_bl_wait_spins)
+			eb_pausems(psp_bl_wait_delayms);
+	}
+	eb_printf("PSP may not have finished booting!\n");
+done:
+	mmio_reg_block_unmap(&fch_misc_a);
+}
+
+/*
  * BTS: oxide boot
  *
  * This is where we enter the kernel. _start() dummies up the boot_ops and
@@ -627,6 +718,8 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	oxide_derive_platform();
 	bsp = boot_console_init();
 	oxide_report_platform();
+
+	wait_for_psp();
 
 	kernel_ipcc_init(IPCC_INIT_EARLYBOOT);
 	eb_physmem_init(&bm);

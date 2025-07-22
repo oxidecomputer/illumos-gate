@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2025 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_FCH_MISC_H
@@ -128,6 +128,18 @@ MAKE_MMIO_FCH_REG_FN(MISC_B, misc_b, 4);
 
 #define	FCH_MISC_A_CLKCTL0_GET_UPDATE_REQ(r)	bitx32(r, 30, 30)
 #define	FCH_MISC_A_CLKCTL0_SET_UPDATE_REQ(r, v)	bitset32(r, 30, 30, v)
+
+/*
+ * FCH::MISC::POSTCODESTACK. Provides the last 32 post codes. Reads return from
+ * oldest entry to newest. New writes coming in will toss oldest data if full.
+ */
+/*CSTYLED*/
+#define	D_FCH_MISC_A_POSTCODESTACK	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_FCH_MISC_A,	\
+	.srd_reg = 0x7c				\
+}
+#define	FCH_MISC_A_POSTCODESTACK(b)	\
+    fch_misc_a_mmio_reg((b), D_FCH_MISC_A_POSTCODESTACK, 0)
 
 /*
  * FCH::MISC::STRAPSTATUS.  Provides bits showing the state of the FCH's straps
