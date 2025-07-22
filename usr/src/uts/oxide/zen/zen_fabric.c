@@ -15,6 +15,7 @@
 
 #include <sys/clock.h>
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/prom_debug.h>
 #include <sys/x86_archext.h>
 #include <sys/ddi_subrdefs.h>
@@ -155,6 +156,13 @@
  */
 
 /*
+ * The global fabric object describing the system topology.
+ */
+static zen_fabric_t zen_fabric;
+
+bool zen_fabric_io_pci_cfg_disabled = false;
+
+/*
  * Copies the brand string into the given output buffer.  The buf and len
  * argument and return value semantics match those of snprintf(9f).
  */
@@ -203,13 +211,6 @@ zen_fabric_dump_iodie_fw_versions(zen_iodie_t *iodie)
 
 	return (0);
 }
-
-/*
- * The global fabric object describing the system topology.
- *
- * XXX: Make static once old milan code is migrated fully
- */
-zen_fabric_t zen_fabric;
 
 uint64_t
 zen_fabric_ecam_base(void)
@@ -312,6 +313,7 @@ zen_fabric_disable_io_pci_cfg(zen_fabric_t *fabric)
 			zen_df_bcast_write32(iodie, reg, val);
 		}
 	}
+	zen_fabric_io_pci_cfg_disabled = true;
 }
 
 static void

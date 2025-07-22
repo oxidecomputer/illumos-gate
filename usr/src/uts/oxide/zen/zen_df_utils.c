@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -36,6 +36,7 @@ static void
 zen_df_mech1_write32(const uint8_t dfno, const df_reg_def_t reg,
     const uint32_t val)
 {
+	VERIFY(!zen_fabric_io_pci_cfg_disabled);
 	VERIFY(df_reg_valid(oxide_zen_platform_consts()->zpc_df_rev, reg));
 	VERIFY3U(reg.drd_reg, <, 0x100);
 	outl(PCI_CONFADD, PCI_CADDR1(AMDZEN_DF_BUSNO,
