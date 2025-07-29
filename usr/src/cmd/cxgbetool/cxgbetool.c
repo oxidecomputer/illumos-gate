@@ -45,9 +45,6 @@
 #define CUDBG_SIZE (32 * 1024 * 1024)
 #define CUDBG_MAX_ENTITY_STR_LEN 4096
 #define MAX_PARAM_LEN 4096
-#ifndef MAX
-#define MAX(x, y)       ((x) > (y) ? (x) : (y))
-#endif
 
 #define	T4_NEXUS_NAME	"t4nex"
 #define	T4_PORT_NAME	"cxgbe"
@@ -134,16 +131,17 @@ static int check_option(char *opt)
 	return -1;
 }
 
-static void usage(FILE *fp)
+static void
+usage(FILE *fp)
 {
 	fprintf(fp, "Usage: %s <t4nex# | cxgbe#> [operation]\n", progname);
 	fprintf(fp,
-	    "\tdevlog                              show device log\n"
-	    "\tloadfw <FW image>                   Flash the FW image\n"
-	    "\tcudbg <option> [<args>]             Chelsio Unified Debugger\n"
-	    "\tregdump [<module>]                  Dump registers\n"
-	    "\treg <address>[=<val>]               Read or write the registers\n");
-	exit(fp == stderr ? 1 : 0);
+	    "\tdevlog                          Show device log for all cores\n"
+	    "\tloadfw <FW image>               Flash the FW image\n"
+	    "\tcudbg <option> [<args>]         Chelsio Unified Debugger\n"
+	    "\tregdump [<module>]              Dump registers\n"
+	    "\treg <address>[=<val>]           Read or write the registers\n");
+	exit(fp == stderr ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
 static int
@@ -161,56 +159,24 @@ doit(const char *iff_name, unsigned long cmd, void *data)
 }
 
 static void
-get_devlog(int argc, char *argv[], int start_arg, const char *iff_name)
+print_core(uint8_t core, uint_t nentries, struct fw_devlog_e *entries)
 {
-	struct t4_devlog *devlog;
-	struct fw_devlog_e *entry, *buf;
-	int rc = 0, first = 0, nentries, i, j, len;
+	uint_t i, first;
 	uint64_t ftstamp = UINT64_MAX;
-
-	devlog = malloc(T4_DEVLOG_SIZE + sizeof (struct t4_devlog));
-	if (!devlog)
-		err(1, "%s: can't allocate devlog buffer", __func__);
-
-	devlog->len = T4_DEVLOG_SIZE;
-	/* Get device log */
-	rc = doit(iff_name, T4_IOCTL_DEVLOG, devlog);
-	if (rc == ENOBUFS) {
-		/*
-		 * Default buffer size is not sufficient to hold device log.
-		 * Driver has updated the devlog.len to indicate the expected
-		 * size. Free the currently allocated devlog.data, allocate
-		 * again with right size and retry.
-		 */
-		len = devlog->len;
-		free(devlog);
-
-		if ((devlog = malloc(len + sizeof (struct t4_devlog))) == NULL)
-			err(1, "%s: can't reallocate devlog buffer", __func__);
-
-		rc = doit(iff_name, T4_IOCTL_DEVLOG, devlog);
-	}
-	if (rc) {
-		free(devlog);
-		errx(1, "%s: can't get device log", __func__);
-	}
-
-	/* There are nentries number of entries in the buffer */
-	nentries = (devlog->len / sizeof (struct fw_devlog_e));
-
-	buf = (struct fw_devlog_e *)devlog->data;
 
 	/* Find the first entry */
 	for (i = 0; i < nentries; i++) {
-		entry = &buf[i];
+		struct fw_devlog_e *entry = &entries[i];
 
 		if (entry->timestamp == 0)
 			break;
 
 		entry->timestamp = BE_64(entry->timestamp);
 		entry->seqno = BE_32(entry->seqno);
-		for (j = 0; j < 8; j++)
+
+		for (uint_t j = 0; j < 8; j++) {
 			entry->params[j] = BE_32(entry->params[j]);
+		}
 
 		if (entry->timestamp < ftstamp) {
 			ftstamp = entry->timestamp;
@@ -218,18 +184,15 @@ get_devlog(int argc, char *argv[], int start_arg, const char *iff_name)
 		}
 	}
 
-	printf("%10s  %15s  %8s  %8s  %s\n", "Seq#", "Tstamp", "Level",
-	    "Facility", "Message");
-
 	i = first;
 
 	do {
-		entry = &buf[i];
+		const struct fw_devlog_e *entry = &entries[i];
 
 		if (entry->timestamp == 0)
 			break;
 
-		printf("%10d  %15llu  %8s  %8s  ", entry->seqno,
+		printf("%5d %10d  %15llu  %8s  %8s  ", core, entry->seqno,
 		    entry->timestamp,
 		    (entry->level < ARRAY_SIZE(devlog_level_strings) ?
 		    devlog_level_strings[entry->level] : "UNKNOWN"),
@@ -245,8 +208,52 @@ get_devlog(int argc, char *argv[], int start_arg, const char *iff_name)
 			i = 0;
 
 	} while (i != first);
+}
 
-	free(devlog);
+
+static void
+get_devlog(const char *iff_name)
+{
+	int rc = 0;
+	struct t4_devlog *dl =
+	    malloc(T4_DEVLOG_SIZE + sizeof (struct t4_devlog));
+
+	if (dl == NULL)
+		err(1, "can't allocate devlog buffer");
+
+	dl->t4dl_len = T4_DEVLOG_SIZE;
+	/* Get device log */
+	rc = doit(iff_name, T4_IOCTL_DEVLOG, dl);
+
+	if (rc == ENOBUFS) {
+		/* The driver says we need more space for the entries. */
+		const uint32_t len = dl->t4dl_len;
+		free(dl);
+
+		if ((dl = malloc(len + sizeof (struct t4_devlog))) == NULL)
+			err(1, "can't allocate devlog buffer");
+
+		rc = doit(iff_name, T4_IOCTL_DEVLOG, dl);
+	}
+
+	if (rc) {
+		free(dl);
+		errx(1, "can't get device log");
+	}
+
+	/* The number of entries per cores. */
+	const uint32_t nentries =
+	    (dl->t4dl_len / sizeof (struct fw_devlog_e)) / dl->t4dl_ncores;
+
+	printf("%5s %10s  %15s  %8s  %8s  %s\n", "Core", "Seq#", "Tstamp",
+	    "Level", "Facility", "Message");
+
+	for (uint_t i = 0; i < dl->t4dl_ncores; i++) {
+		struct fw_devlog_e *entries = dl->t4dl_data;
+		print_core(i, nentries, &entries[nentries * i]);
+	}
+
+	free(dl);
 }
 
 static uint32_t xtract(uint32_t val, int shift, int len)
@@ -892,7 +899,7 @@ static void
 run_cmd(int argc, char *argv[], const char *iff_name)
 {
 	if (strcmp(argv[2], "devlog") == 0)
-		get_devlog(argc, argv, 3, iff_name);
+		get_devlog(iff_name);
 	else if (strcmp(argv[2], "loadfw") == 0)
 		load_fw(argc, argv, 3, iff_name);
 	else if (strcmp(argv[2], "cudbg") == 0)

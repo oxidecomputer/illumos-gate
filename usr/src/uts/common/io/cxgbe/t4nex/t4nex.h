@@ -108,11 +108,15 @@ struct t4_cim_qcfg {
 	uint32_t num_obq;
 };
 
+
 /* RPZ: check? */
 #define	T4_DEVLOG_SIZE	32768
+/* #define	T4_DEVLOG_ALL_CORES	MAX_UINT8 */
+
 struct t4_devlog {
-	uint32_t len;
-	uint32_t data[0];
+	uint32_t t4dl_ncores;
+	uint32_t t4dl_len;
+	char t4dl_data[];
 };
 
 struct t4_ldfw {

@@ -2058,7 +2058,7 @@ collect_fw_devlog(struct cudbg_init *pdbg_init,
 	u32 offset;
 	int rc = 0;
 
-	rc = t4_init_devlog_params(padap, 1);
+	rc = t4_init_devlog_ncores_params(padap, 1);
 
 	if (rc < 0) {
 		pdbg_init->print(padap->dip, CE_NOTE,

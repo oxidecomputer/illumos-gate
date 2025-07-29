@@ -4969,7 +4969,7 @@ int t4_prep_fw(struct adapter *adap, struct fw_info *fw_info,
 
 		/* Installed successfully, update cached information */
 		memcpy(card_fw, fs_fw, sizeof(*card_fw));
-		(void)t4_init_devlog_params(adap, 1);
+		(void)t4_init_devlog_ncores_params(adap, 1);
 		card_fw_usable = 1;
 		*reset = 0;	/* already reset as part of load_fw */
 	}
@@ -8898,7 +8898,7 @@ int t4_fw_upgrade(struct adapter *adap, unsigned int mbox,
 	 * Firmware for these parameters even though, as far as it's
 	 * concerned, we've never said "HELLO" to it ...
 	 */
-	(void)t4_init_devlog_params(adap, 1);
+	(void)t4_init_devlog_ncores_params(adap, 1);
 
 out:
 	adap->flags |= FW_OK;
@@ -11372,19 +11372,16 @@ int t4_bar2_sge_qregs(struct adapter *adapter,
 }
 
 /**
- *	t4_init_devlog_params - initialize adapter->params.devlog
+ *	t4_init_devlog_ncores_params - initialize adap->params.devlog and ncores
  *	@adap: the adapter
  *	@fw_attach: whether we can talk to the firmware
- *
- *	Initialize various fields of the adapter's Firmware Device Log
- *	Parameters structure.
  */
-int t4_init_devlog_params(struct adapter *adap, int fw_attach)
+int t4_init_devlog_ncores_params(struct adapter *adap, int fw_attach)
 {
-	struct devlog_params *dparams = adap->params.devlog;
-	u32 nentries128, size, start, pf_dparams;
+	struct devlog_params *dparams = &adap->params.devlog;
+	u32 pf_dparams;
+	unsigned int devlog_meminfo;
 	struct fw_devlog_cmd devlog_cmd;
-	u8 i, memtype, ncount;
 	int ret;
 
 	/* If we're dealing with newer firmware, the Device Log Paramerters
@@ -11394,20 +11391,26 @@ int t4_init_devlog_params(struct adapter *adap, int fw_attach)
 	pf_dparams =
 		t4_read_reg(adap, PCIE_FW_REG(A_PCIE_FW_PF, PCIE_FW_PF_DEVLOG));
 	if (pf_dparams) {
-		ncount = ((G_PCIE_FW_PF_DEVLOG_COUNT_MSB(pf_dparams) << 1) |
-			  G_PCIE_FW_PF_DEVLOG_COUNT_LSB(pf_dparams));
-		memtype = G_PCIE_FW_PF_DEVLOG_MEMTYPE(pf_dparams);
-		start = G_PCIE_FW_PF_DEVLOG_ADDR16(pf_dparams) << 4;
-		nentries128 = G_PCIE_FW_PF_DEVLOG_NENTRIES128(pf_dparams);
-		size = (nentries128 + 1) * 128 * sizeof(struct fw_devlog_e);
-		goto out_copy;
-	}
+		unsigned int nentries, nentries128, ncore_shift;
 
+		ncore_shift = (G_PCIE_FW_PF_DEVLOG_COUNT_MSB(pf_dparams) << 1) |
+		    G_PCIE_FW_PF_DEVLOG_COUNT_LSB(pf_dparams);
+		adap->params.ncores = 1 << ncore_shift;
+
+		dparams->memtype = G_PCIE_FW_PF_DEVLOG_MEMTYPE(pf_dparams);
+		dparams->start = G_PCIE_FW_PF_DEVLOG_ADDR16(pf_dparams) << 4;
+		nentries128 = G_PCIE_FW_PF_DEVLOG_NENTRIES128(pf_dparams);
+		nentries = (nentries128 + 1) * 128;
+		dparams->size = nentries * sizeof(struct fw_devlog_e);
+
+		return 0;
+	}
 
 	/*
 	 * For any failing returns ...
 	 */
-	memset(dparams, 0, sizeof(adap->params.devlog));
+	adap->params.ncores = 1;
+	memset(dparams, 0, sizeof *dparams);
 
 	/*
 	 * If we can't talk to the firmware, there's really nothing we can do
@@ -11418,7 +11421,7 @@ int t4_init_devlog_params(struct adapter *adap, int fw_attach)
 
 	/* Otherwise, ask the firmware for it's Device Log Parameters.
 	 */
-	memset(&devlog_cmd, 0, sizeof(devlog_cmd));
+	memset(&devlog_cmd, 0, sizeof devlog_cmd);
 	devlog_cmd.op_to_write = cpu_to_be32(V_FW_CMD_OP(FW_DEVLOG_CMD) |
 					     F_FW_CMD_REQUEST | F_FW_CMD_READ);
 	devlog_cmd.retval_len16 = cpu_to_be32(FW_LEN16(devlog_cmd));
@@ -11427,20 +11430,11 @@ int t4_init_devlog_params(struct adapter *adap, int fw_attach)
 	if (ret)
 		return ret;
 
-	pf_dparams = be32_to_cpu(devlog_cmd.memtype_devlog_memaddr16_devlog);
-	memtype = G_FW_DEVLOG_CMD_MEMTYPE_DEVLOG(pf_dparams);
-	start = G_FW_DEVLOG_CMD_MEMADDR16_DEVLOG(pf_dparams) << 4;
-	size = be32_to_cpu(devlog_cmd.memsize_devlog);
-	ncount = 0;
-
-out_copy:
-	adap->params.num_up_cores = 1 << ncount;
-	for (i = 0; i < adap->params.num_up_cores; i++) {
-		dparams[i].memtype = memtype;
-		dparams[i].start = start;
-		dparams[i].size = size / adap->params.num_up_cores;
-		start += dparams[i].size;
-	}
+	devlog_meminfo =
+		be32_to_cpu(devlog_cmd.memtype_devlog_memaddr16_devlog);
+	dparams->memtype = G_FW_DEVLOG_CMD_MEMTYPE_DEVLOG(devlog_meminfo);
+	dparams->start = G_FW_DEVLOG_CMD_MEMADDR16_DEVLOG(devlog_meminfo) << 4;
+	dparams->size = be32_to_cpu(devlog_cmd.memsize_devlog);
 
 	return 0;
 }

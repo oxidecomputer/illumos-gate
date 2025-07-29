@@ -392,7 +392,7 @@ struct adapter_params {
 	struct vpd_params vpd;
 	struct pf_resources pfres;
 	struct pci_params pci;
-	struct devlog_params devlog[MAX_UP_CORES];
+	struct devlog_params devlog;
 	enum pcie_memwin drv_memwin;
 
 	unsigned int sf_size;             /* serial flash size in bytes */
@@ -451,7 +451,7 @@ struct adapter_params {
 	bool smac_add_support;
 	bool clip2_cmd_support;		/* FW supports CLIP2_CMD */
 
-	u8 num_up_cores; /* # of enabled uP cores */
+	u8 ncores; /* # of enabled uP cores */
 	u32 tid_qid_sel_mask; /* TID based QID selection mask for uP cores */
 	u8 tid_qid_sel_shift; /* TID based QID selection shift for uP cores */
 };
@@ -796,7 +796,7 @@ int t4_bar2_sge_qregs(struct adapter *adapter,
 		      u64 *pbar2_qoffset,
 		      unsigned int *pbar2_qid);
 
-int t4_init_devlog_params(struct adapter *adapter, int fw_attach);
+int t4_init_devlog_ncores_params(struct adapter *adapter, int fw_attach);
 int t4_init_sge_params(struct adapter *adapter);
 int t4_init_tp_params(struct adapter *adap, bool sleep_ok);
 int t4_filter_field_shift(const struct adapter *adap, int filter_sel);

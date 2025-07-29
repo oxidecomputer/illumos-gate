@@ -171,58 +171,45 @@ out:
 static int
 get_devlog(struct adapter *sc, void *data, int flags)
 {
-	/* RPZ: need to deal with multi-core. */
-	struct devlog_params *dparams = &sc->params.devlog[0];
-	struct fw_devlog_e *buf;
-	struct t4_devlog dl;
+	struct devlog_params *dparams = &sc->params.devlog;
+	struct t4_devlog dl = {0};
 	int rc = 0;
 
-	if (ddi_copyin(data, &dl, sizeof (dl), flags) < 0) {
-		rc = EFAULT;
-		goto done;
-	}
+	/* The devlog params have not been initialized yet. */
+	if (dparams->size == 0)
+		return (EIO);
 
-	if (dparams->start == 0) {
-		dparams->memtype = 0;
-		dparams->start = 0x84000;
-		dparams->size = 32768;
-	}
+	if (ddi_copyin(data, &dl, sizeof (dl), flags) < 0)
+		return (EFAULT);
 
-	if (dl.len < dparams->size) {
-		dl.len = dparams->size;
+	if (dl.t4dl_len < dparams->size) {
+		dl.t4dl_len = dparams->size;
 		rc = ddi_copyout(&dl, data, sizeof (dl), flags);
-		/*
-		 * rc = 0 indicates copyout was successful, then return ENOBUFS
-		 * to indicate that the buffer size was not enough. Return of
-		 * EFAULT indicates that the copyout was not successful.
-		 */
-		rc = (rc == 0) ? ENOBUFS : EFAULT;
-		goto done;
+		return ((rc == 0) ? ENOBUFS : EFAULT);
 	}
 
-	buf = kmem_zalloc(dparams->size, KM_NOSLEEP);
-	if (buf == NULL) {
-		rc = ENOMEM;
-		goto done;
-	}
+	dl.t4dl_ncores = sc->params.ncores;
+
+	struct fw_devlog_e *entries = kmem_zalloc(dparams->size, KM_NOSLEEP);
+
+	if (entries == NULL)
+		return (ENOMEM);
 
 	rc = -t4_memory_rw(sc, sc->params.drv_memwin, dparams->memtype,
-	    dparams->start, dparams->size, (void *)buf, T4_MEMORY_READ);
+	    dparams->start, dparams->size, (void *)entries, T4_MEMORY_READ);
 	if (rc != 0)
-		goto done1;
+		goto done;
 
 	/* Copyout device log buffer and then carrier buffer */
-	if (ddi_copyout(buf, (void *)((uintptr_t)data + sizeof (dl)), dl.len,
-	    flags) < 0)
+	if (ddi_copyout(entries, (void *)((uintptr_t)data + sizeof (dl)),
+	    dl.t4dl_len, flags) < 0)
 		rc = EFAULT;
 
 	if (ddi_copyout(&dl, data, sizeof (dl), flags) < 0)
 		rc = EFAULT;
 
-done1:
-	kmem_free(buf, dparams->size);
-
 done:
+	kmem_free(buf, dparams->size);
 	return (rc);
 }
 
