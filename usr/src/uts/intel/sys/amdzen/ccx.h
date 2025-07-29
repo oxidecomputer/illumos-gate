@@ -273,14 +273,14 @@ DECL_CONST(CSTATE_POLICY, CC1_TMRSEL, MUL250, 2);
 DECL_CONST(CSTATE_POLICY, CC1_TMRSEL, MUL1000, 3);
 
 /*
- * Core::X86::Msr::CSTATE_CONFIG, also accessible via SMN as
- * L3::SCFCTP::PMC_CCR[2:0].  Does what its name suggests.
+ * Core::X86::Msr::CSTATE_CONFIG, providing access to various bits of
+ * L3::SCFCTP::PMC_CCR[3:0].  Does what its name suggests.
  *
- * "CCR<n>" should be read like "C-state Request <n>", possibly "Core C-state
- * Request <n>". The CCR<n> bits together describe the permissible state change
- * for a C-state request made through an I/O access to CSTATE_BASE_ADDR+<n>.
- * While CSTATE_CFG must be set to the same value on all processors, the value
- * across different CCR<n> seem to be able to differ.
+ * "CCR<n>" should be read as "C-state Configuration Register <n>".
+ * The CCR<n> bits together describe the permissible state change for a C-state
+ * request made through an I/O access to CSTATE_BASE_ADDR+<n>. While CSTATE_CFG
+ * must be set to the same value on all processors, the value across different
+ * CCR<n> seems to be able to differ.
  *
  * For each of the requests, there are three settings that can be configured:
  * * CC6En controls if that CCR<n> can bring a core to CC6.
@@ -292,16 +292,45 @@ DECL_CONST(CSTATE_POLICY, CC1_TMRSEL, MUL1000, 3);
  *   probably some multiple of cycles, but not documented or tested.
  */
 DECL_REG(CSTATE_CFG, 0xC0010296);
+DECL_FIELD_RW(CSTATE_CFG_U_ZEN5, CCR3_CC1E_EN, 63, 63);
+DECL_FIELD_RW(CSTATE_CFG_U_ZEN5, CCR3_CFOHTMR_LEN, 62, 56);
 DECL_FIELD_RW(CSTATE_CFG_U_ZEN4, CCR2_CC1E_EN, 55, 55);
 DECL_FIELD_RW(CSTATE_CFG, CCR2_CFOHTMR_LEN, 54, 48);
+DECL_FIELD_RW(CSTATE_CFG_U_ZEN4, CCR1_CC1E_EN, 47, 47);
 DECL_FIELD_RW(CSTATE_CFG, CCR1_CFOHTMR_LEN, 46, 40);
+DECL_FIELD_RW(CSTATE_CFG_U_ZEN4, CCR0_CC1E_EN, 39, 39);
 DECL_FIELD_RW(CSTATE_CFG, CCR0_CFOHTMR_LEN, 38, 32);
+DECL_FIELD_RW(CSTATE_CFG_U_ZEN5, CCR3_CC6EN, 30, 30);
+DECL_FIELD_RW(CSTATE_CFG_U_ZEN5, CCR3_CC1DFSID, 29, 24);
 DECL_FIELD_RW(CSTATE_CFG, CCR2_CC6EN, 22, 22);
 DECL_FIELD_RW(CSTATE_CFG, CCR2_CC1DFSID, 21, 16);
 DECL_FIELD_RW(CSTATE_CFG, CCR1_CC6EN, 14, 14);
 DECL_FIELD_RW(CSTATE_CFG, CCR1_CC1DFSID, 13, 8);
 DECL_FIELD_RW(CSTATE_CFG, CCR0_CC6EN, 6, 6);
 DECL_FIELD_RW(CSTATE_CFG, CCR0_CC1DFSID, 5, 0);
+
+/*
+ * Core::X86::Msr::CSTATE_CONFIG2, providing access to various bits of
+ * L3::SCFCTP::PMC_CCR[7:4]. This second MSR was added in Zen5, covering
+ * CCR[7:4].
+ */
+DECL_REG(CSTATE_CFG2, 0xC0010298);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR7_CC1E_EN, 63, 63);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR7_CFOHTMR_LEN, 62, 56);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR6_CC1E_EN, 55, 55);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR6_CFOHTMR_LEN, 54, 48);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR5_CC1E_EN, 47, 47);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR5_CFOHTMR_LEN, 46, 40);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR4_CC1E_EN, 39, 39);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR4_CFOHTMR_LEN, 38, 32);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR7_CC6EN, 30, 30);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR7_CC1DFSID, 29, 24);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR6_CC6EN, 22, 22);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR6_CC1DFSID, 21, 16);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR5_CC6EN, 14, 14);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR5_CC1DFSID, 13, 8);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR4_CC6EN, 6, 6);
+DECL_FIELD_RW(CSTATE_CFG2_U_ZEN5, CCR4_CC1DFSID, 5, 0);
 
 /*
  * Core::X86::Msr::MCODE_CTL.  Allows configuring aspects of microcode

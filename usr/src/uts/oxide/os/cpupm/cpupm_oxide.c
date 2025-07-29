@@ -109,6 +109,8 @@ amd_cstate_zen_cpu_setup(xc_arg_t arg1 __unused, xc_arg_t arg2 __unused,
 	cpupm_mach_state_t *mach_state =
 	    (cpupm_mach_state_t *)CPU->cpu_m.mcpu_pm_mach_state;
 	cpu_pm_state_t *handle = mach_state->ms_pm_handle;
+	const x86_uarch_t uarch = uarchrev_uarch(cpuid_getuarchrev(CPU));
+	uint64_t v;
 
 	/*
 	 * PPRs state that MSR_AMD_CSTATE_CFG and MSR_AMD_CSTATE_BASE_ADDR must
@@ -122,11 +124,30 @@ amd_cstate_zen_cpu_setup(xc_arg_t arg1 __unused, xc_arg_t arg2 __unused,
 	 * they are not very documented and we don't know better values to use
 	 * yet. See the definition of CSTATE_CFG for more here.
 	 */
-	uint64_t v = rdmsr(MSR_AMD_CSTATE_CFG);
-	v = AMD_CSTATE_CFG_SET_CCR2_CC6EN(v, 1);
-	v = AMD_CSTATE_CFG_SET_CCR1_CC6EN(v, 1);
-	v = AMD_CSTATE_CFG_SET_CCR0_CC6EN(v, 1);
+	v = rdmsr(MSR_AMD_CSTATE_CFG);
+	switch (uarch) {
+	case X86_UARCH_AMD_ZEN5:
+		v = AMD_CSTATE_CFG_U_ZEN5_SET_CCR3_CC6EN(v, 1);
+		/* FALLTHROUGH */
+	case X86_UARCH_AMD_ZEN4:
+	case X86_UARCH_AMD_ZEN3:
+		v = AMD_CSTATE_CFG_SET_CCR2_CC6EN(v, 1);
+		v = AMD_CSTATE_CFG_SET_CCR1_CC6EN(v, 1);
+		v = AMD_CSTATE_CFG_SET_CCR0_CC6EN(v, 1);
+		break;
+	default:
+		panic("Unsupported uarch 0x%x", uarch);
+	}
 	wrmsr_and_test(MSR_AMD_CSTATE_CFG, v);
+
+	if (uarch == X86_UARCH_AMD_ZEN5) {
+		v = rdmsr(MSR_AMD_CSTATE_CFG2);
+		v = AMD_CSTATE_CFG2_U_ZEN5_SET_CCR7_CC6EN(v, 1);
+		v = AMD_CSTATE_CFG2_U_ZEN5_SET_CCR6_CC6EN(v, 1);
+		v = AMD_CSTATE_CFG2_U_ZEN5_SET_CCR5_CC6EN(v, 1);
+		v = AMD_CSTATE_CFG2_U_ZEN5_SET_CCR4_CC6EN(v, 1);
+		wrmsr_and_test(MSR_AMD_CSTATE_CFG2, v);
+	}
 
 	wrmsr_and_test(MSR_AMD_CSTATE_BASE_ADDR, ZEN_IOPORT_CSTATE_BASE_ADDR);
 
