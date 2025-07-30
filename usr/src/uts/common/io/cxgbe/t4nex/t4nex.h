@@ -24,6 +24,9 @@
  * Copyright 2025 Oxide Computer Company
  */
 
+#include "osdep.h"
+#include "t4fw_interface.h"
+
 #ifndef __T4NEX_H
 #define	__T4NEX_H
 
@@ -109,14 +112,12 @@ struct t4_cim_qcfg {
 };
 
 
-/* RPZ: check? */
-#define	T4_DEVLOG_SIZE	32768
-/* #define	T4_DEVLOG_ALL_CORES	MAX_UINT8 */
+#define	T4_DEVLOG_NENTRIES	128
 
 struct t4_devlog {
 	uint32_t t4dl_ncores;
-	uint32_t t4dl_len;
-	char t4dl_data[];
+	uint32_t t4dl_nentries;
+	struct fw_devlog_e t4dl_data[];
 };
 
 struct t4_ldfw {

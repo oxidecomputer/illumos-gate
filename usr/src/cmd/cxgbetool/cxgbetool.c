@@ -10,14 +10,12 @@
  */
 
 /*
- * Copyright (c) 2018 by Chelsio Communications, Inc.
- */
-
-/*
  * Copyright 2019 Joyent, Inc.
  * Copyright 2025 Oxide Computer Company
+ * Copyright 2025 Chelsio Communications, Inc.
  */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -161,7 +159,7 @@ doit(const char *iff_name, unsigned long cmd, void *data)
 static void
 print_core(uint8_t core, uint_t nentries, struct fw_devlog_e *entries)
 {
-	uint_t i, first;
+	uint_t i, first = 0;
 	uint64_t ftstamp = UINT64_MAX;
 
 	/* Find the first entry */
@@ -215,24 +213,29 @@ static void
 get_devlog(const char *iff_name)
 {
 	int rc = 0;
-	struct t4_devlog *dl =
-	    malloc(T4_DEVLOG_SIZE + sizeof (struct t4_devlog));
+	size_t len = sizeof (struct t4_devlog) +
+	    (T4_DEVLOG_NENTRIES * sizeof (struct fw_devlog_e));
+	struct t4_devlog *dl = malloc(len);
 
 	if (dl == NULL)
 		err(1, "can't allocate devlog buffer");
 
-	dl->t4dl_len = T4_DEVLOG_SIZE;
-	/* Get device log */
+	dl->t4dl_ncores = 0;
+	dl->t4dl_nentries = T4_DEVLOG_NENTRIES;
 	rc = doit(iff_name, T4_IOCTL_DEVLOG, dl);
 
 	if (rc == ENOBUFS) {
 		/* The driver says we need more space for the entries. */
-		const uint32_t len = dl->t4dl_len;
+		const uint32_t nentries = dl->t4dl_nentries;
+		len = sizeof (struct t4_devlog) +
+		    (nentries * sizeof (struct fw_devlog_e));
+
 		free(dl);
 
-		if ((dl = malloc(len + sizeof (struct t4_devlog))) == NULL)
+		if ((dl = malloc(len)) == NULL)
 			err(1, "can't allocate devlog buffer");
 
+		dl->t4dl_nentries = nentries;
 		rc = doit(iff_name, T4_IOCTL_DEVLOG, dl);
 	}
 
@@ -242,15 +245,16 @@ get_devlog(const char *iff_name)
 	}
 
 	/* The number of entries per cores. */
-	const uint32_t nentries =
-	    (dl->t4dl_len / sizeof (struct fw_devlog_e)) / dl->t4dl_ncores;
+	assert(dl->t4dl_nentries % dl->t4dl_ncores == 0);
+	const uint32_t npercore = dl->t4dl_nentries / dl->t4dl_ncores;
 
 	printf("%5s %10s  %15s  %8s  %8s  %s\n", "Core", "Seq#", "Tstamp",
 	    "Level", "Facility", "Message");
 
 	for (uint_t i = 0; i < dl->t4dl_ncores; i++) {
-		struct fw_devlog_e *entries = dl->t4dl_data;
-		print_core(i, nentries, &entries[nentries * i]);
+		struct fw_devlog_e *entries =
+		    (struct fw_devlog_e *)dl->t4dl_data;
+		print_core(i, npercore, &entries[npercore * i]);
 	}
 
 	free(dl);

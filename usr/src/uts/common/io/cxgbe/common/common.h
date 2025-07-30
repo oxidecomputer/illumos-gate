@@ -370,9 +370,10 @@ struct pci_params {
  * Firmware device log.
  */
 struct devlog_params {
-	u32 memtype;			/* which memory (EDC0, EDC1, MC) */
-	u32 start;			/* start of log in firmware memory */
-	u32 size;			/* size of log */
+	u32 memtype;		/* which memory (EDC0, EDC1, MC) */
+	u32 start;		/* start of log in firmware memory */
+	u32 nentries;		/* total number of entries (all cores) */
+	u32 size;		/* size of log (all cores) */
 };
 
 /* Stores chip specific parameters */

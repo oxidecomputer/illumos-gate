@@ -182,34 +182,36 @@ get_devlog(struct adapter *sc, void *data, int flags)
 	if (ddi_copyin(data, &dl, sizeof (dl), flags) < 0)
 		return (EFAULT);
 
-	if (dl.t4dl_len < dparams->size) {
-		dl.t4dl_len = dparams->size;
+	dl.t4dl_ncores = sc->params.ncores;
+
+	if (dl.t4dl_nentries < dparams->nentries) {
+		dl.t4dl_nentries = dparams->nentries;
 		rc = ddi_copyout(&dl, data, sizeof (dl), flags);
 		return ((rc == 0) ? ENOBUFS : EFAULT);
 	}
 
-	dl.t4dl_ncores = sc->params.ncores;
-
-	struct fw_devlog_e *entries = kmem_zalloc(dparams->size, KM_NOSLEEP);
+	dl.t4dl_nentries = dparams->nentries;
+	const size_t len = dparams->nentries * sizeof (struct fw_devlog_e);
+	struct fw_devlog_e *entries = kmem_zalloc(len, KM_NOSLEEP);
 
 	if (entries == NULL)
 		return (ENOMEM);
 
 	rc = -t4_memory_rw(sc, sc->params.drv_memwin, dparams->memtype,
-	    dparams->start, dparams->size, (void *)entries, T4_MEMORY_READ);
+	    dparams->start, len, (void *)entries, T4_MEMORY_READ);
 	if (rc != 0)
 		goto done;
 
 	/* Copyout device log buffer and then carrier buffer */
-	if (ddi_copyout(entries, (void *)((uintptr_t)data + sizeof (dl)),
-	    dl.t4dl_len, flags) < 0)
+	if (ddi_copyout(entries, (void *)((uintptr_t)data + sizeof (dl)), len,
+	    flags) < 0)
 		rc = EFAULT;
 
 	if (ddi_copyout(&dl, data, sizeof (dl), flags) < 0)
 		rc = EFAULT;
 
 done:
-	kmem_free(buf, dparams->size);
+	kmem_free(entries, len);
 	return (rc);
 }
 

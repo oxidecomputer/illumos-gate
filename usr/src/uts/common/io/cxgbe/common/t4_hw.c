@@ -11401,6 +11401,7 @@ int t4_init_devlog_ncores_params(struct adapter *adap, int fw_attach)
 		dparams->start = G_PCIE_FW_PF_DEVLOG_ADDR16(pf_dparams) << 4;
 		nentries128 = G_PCIE_FW_PF_DEVLOG_NENTRIES128(pf_dparams);
 		nentries = (nentries128 + 1) * 128;
+		dparams->nentries = nentries;
 		dparams->size = nentries * sizeof(struct fw_devlog_e);
 
 		return 0;
