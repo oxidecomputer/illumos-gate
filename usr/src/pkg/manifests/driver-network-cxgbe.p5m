@@ -46,6 +46,9 @@ file path=lib/svc/method/svc-t6init mode=0555
 file path=kernel/firmware/cxgbe/t7fw-1.27.0.57.bin
 link path=kernel/firmware/cxgbe/t7fw.bin target=t7fw-1.27.0.57.bin
 file path=kernel/firmware/cxgbe/t7fw_cfg_fpga.txt
+file path=kernel/firmware/cxgbe/t7fw-1.27.0.72.bin
+link path=kernel/firmware/cxgbe/t7fw.bin target=t7fw-1.27.0.72.bin
+file path=kernel/firmware/cxgbe/t7fw_cfg.txt
 dir  path=usr group=sys
 dir  path=usr/lib
 dir  path=usr/lib/$(ARCH64)

@@ -1229,8 +1229,7 @@ upload_config_file(struct adapter *sc, uint32_t *mt, uint32_t *ma)
 		cfg_file = "t6fw_cfg.txt";
 		break;
 	case CHELSIO_T7:
-		/* RPZ: For now we just support FPGA. */
-		cfg_file = "t7fw_cfg_fpga.txt";
+		cfg_file = "t7fw_cfg.txt";
 		break;
 	default:
 		cxgb_printf(sc->dip, CE_WARN, "Invalid Adapter detected\n");
