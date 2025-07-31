@@ -23,7 +23,7 @@ UTSBASE = ../../..
 FW_VERSION_T4=	1.27.1.0
 FW_VERSION_T5=	1.27.5.0
 FW_VERSION_T6=	1.27.5.0
-FW_VERSION_T7=	1.27.0.57
+FW_VERSION_T7=	1.27.0.72
 
 FWDIR	= $(UTSBASE)/common/io/cxgbe/firmware
 FWFILES	= \
@@ -32,7 +32,7 @@ FWFILES	= \
 	t6fw-$(FW_VERSION_T6).bin \
 	t7fw-$(FW_VERSION_T7).bin
 FWLINKS = t4fw.bin t5fw.bin t6fw.bin t7fw.bin
-CFGFILES = t4fw_cfg.txt t5fw_cfg.txt t6fw_cfg.txt t7fw_cfg_fpga.txt
+CFGFILES = t4fw_cfg.txt t5fw_cfg.txt t6fw_cfg.txt t7fw_cfg.txt
 
 MODULE		= cxgbe
 ROOTFIRMWARE	= \
