@@ -1665,7 +1665,10 @@ done:
 		    "See eeprom(1M).");
 	}
 
-	zen_hsmp_get();
+	for (;;) {
+		zen_hsmp_get();
+		eb_pausems(1000);
+	}
 }
 
 int

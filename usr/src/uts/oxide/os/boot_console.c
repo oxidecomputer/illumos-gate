@@ -88,7 +88,7 @@ uart_ischar(void)
 struct boot_syscalls *
 boot_console_init(void)
 {
-	if (dw_apb_uart_init(&con_uart, DAP_0, 3000000,
+	if (dw_apb_uart_init(&con_uart, DAP_0, 115200,
 	    AD_8BITS, AP_NONE, AS_1BIT) != 0) {
 		bop_panic("Could not initialize boot console UART");
 	}

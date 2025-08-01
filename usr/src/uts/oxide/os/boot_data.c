@@ -299,7 +299,8 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len,
 static void
 eb_fake_ipcc_properties(void)
 {
-	bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "ramdisk");
+	bt_set_prop_str(BTPROP_NAME_BOOT_IMAGE_OPS, "misc/boot_image");
+	bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "disk:17");
 	bt_set_prop_u8(BTPROP_NAME_BSU, 'A');
 
 	bt_set_prop_str(BTPROP_NAME_BOARD_IDENT, "FAKE-IDENT");

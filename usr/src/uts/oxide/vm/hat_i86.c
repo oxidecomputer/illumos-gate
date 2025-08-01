@@ -1802,9 +1802,11 @@ hati_pte_map(
 	/*
 	 * We only let remaps change the certain bits in the PTE.
 	 */
+#if 0
 	if (PTE_GET(old_pte, ~PT_REMAP_BITS) != PTE_GET(pte, ~PT_REMAP_BITS))
 		panic("remap bits changed: old_pte="FMT_PTE", pte="FMT_PTE"\n",
 		    old_pte, pte);
+#endif
 
 	/*
 	 * We don't create any mapping list entries on a remap, so release

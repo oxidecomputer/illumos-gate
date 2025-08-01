@@ -2001,7 +2001,7 @@ release_bootstrap(void)
 	int root_is_ramdisk;
 	page_t *pp;
 	extern void kobj_boot_unmountroot(void);
-	extern dev_t rootdev;
+	//extern dev_t rootdev;
 	uint_t i;
 	char propname[32];
 	rd_existing_t *modranges;
@@ -2036,23 +2036,24 @@ release_bootstrap(void)
 	}
 
 	/* unmount boot ramdisk and release kmem usage */
-	kobj_boot_unmountroot();
+	//kobj_boot_unmountroot();
 
 	/*
 	 * We're finished using the boot loader so free its pages.
 	 */
 	PRM_POINT("Unmapping lower boot pages");
 
-	clear_boot_mappings(0, _userlimit);
+	//clear_boot_mappings(0, _userlimit);
 
-	postbootkernelbase = kernelbase;
+	//postbootkernelbase = kernelbase;
 
 	/*
 	 * If root isn't on ramdisk, destroy the hardcoded
 	 * ramdisk node now and release the memory. Else,
 	 * ramdisk memory is kept in rd_pages.
 	 */
-	root_is_ramdisk = (getmajor(rootdev) == ddi_name_to_major("ramdisk"));
+	//root_is_ramdisk = (getmajor(rootdev) == ddi_name_to_major("ramdisk"));
+	root_is_ramdisk = 1;
 	if (!root_is_ramdisk) {
 		dev_info_t *dip = ddi_find_devinfo("ramdisk", -1, 0);
 		ASSERT(dip && ddi_get_parent(dip) == ddi_root_node());
@@ -2066,7 +2067,7 @@ release_bootstrap(void)
 		pp = bootpages;
 		bootpages = pp->p_next;
 
-		if ((root_is_ramdisk && pp_in_range(pp, ramdisk_start,
+		if (1 || (root_is_ramdisk && pp_in_range(pp, ramdisk_start,
 		    ramdisk_end)) || pp_in_module(pp, modranges)) {
 			pp->p_next = rd_pages;
 			rd_pages = pp;

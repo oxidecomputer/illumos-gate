@@ -25,6 +25,8 @@
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_impl.h>
 #include <sys/clock.h>
+#include <sys/ddi.h>
+#include <sys/sunddi.h>
 
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/smn.h>
@@ -266,7 +268,7 @@ zen_hsmp_test(zen_iodie_t *iodie)
 	const smn_reg_t arg6 = SMN_MAKE_REG(0x3b109f8, SMN_UNIT_IOHC);
 	const smn_reg_t arg7 = SMN_MAKE_REG(0x3b109fc, SMN_UNIT_IOHC);
 #endif
-	uint32_t r;
+	uint32_t r, val;
 
 #if 0
 	// Test Message
@@ -300,6 +302,11 @@ testout:
 	}
 
 freqout:
-	cmn_err(CE_NOTE, "HSMP Freq result: response 0x%x value 0x%x", r,
-	    zen_smn_read(iodie, arg0));
+	val = zen_smn_read(iodie, arg0);
+	cmn_err(CE_NOTE, "HSMP Freq result: response 0x%x value 0x%x", r, val);
+
+	if ((val & 0xff) == 1)
+		outl(0x80, 0x1dec47c);
+	else
+		outl(0x80, 0x1de0000);
 }

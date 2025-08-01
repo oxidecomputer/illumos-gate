@@ -371,6 +371,7 @@ unmap_bios_page(caddr_t va)
 page_t *
 page_numtopp_alloc(pfn_t pfnum)
 {
+	extern uint32_t reset_vector;
 	page_t *pp;
 
 retry:
@@ -380,6 +381,8 @@ retry:
 	}
 
 	if (!page_trylock(pp, SE_EXCL)) {
+		if (pfnum == btop(reset_vector))
+			return (pp);
 		return (NULL);
 	}
 

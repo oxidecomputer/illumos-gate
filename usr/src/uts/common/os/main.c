@@ -539,6 +539,7 @@ main(void)
 	process_cache = kmem_cache_create("process_cache", sizeof (proc_t),
 	    0, NULL, NULL, NULL, NULL, NULL, 0);
 
+#if 0
 	boot_image_locate();
 
 	vfs_mountroot();	/* Mount the root file system */
@@ -546,8 +547,10 @@ main(void)
 	cpu_kstat_init(CPU);	/* after vfs_mountroot() so TOD is valid */
 	ddi_walk_devs(ddi_root_node(), pm_adjust_timestamps, NULL);
 				/* after vfs_mountroot() so hrestime is valid */
+#endif
 
 	post_startup();
+#if 0
 	swaploaded = 1;
 
 	/*
@@ -579,9 +582,11 @@ main(void)
 	 * and swap have been set up.
 	 */
 	consconfig();
+#endif
 #ifndef	__sparc
 	release_bootstrap();
 #endif
+#if 0
 
 	/*
 	 * attach drivers with ddi-forceattach prop
@@ -618,6 +623,7 @@ main(void)
 	 * Initialize threads of sysevent event channels
 	 */
 	sysevent_evc_thrinit();
+#endif
 
 	/*
 	 * This must be done after post_startup() but before
