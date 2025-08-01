@@ -1342,17 +1342,14 @@ partition_resources(struct adapter *sc)
 	}
 	sc->cfcsum = cfcsum;
 
-#ifdef TCP_OFFLOAD_ENABLE
-	caps.toecaps = htons(FW_CAPS_CONFIG_TOE);
-#else
 	/*
 	 * By disabling all offload caps we allow the firmware to
 	 * optimize the hardware configuration for "pure NIC"
 	 * usage.
 	 */
 	caps.toecaps = 0;
-	caps.niccaps ^= htons(FW_CAPS_CONFIG_NIC_ETHOFLD);
-#endif
+	/* RPZ: Come back to this */
+	/* caps.niccaps ^= htons(FW_CAPS_CONFIG_NIC_ETHOFLD); */
 	caps.iscsicaps = 0;
 	caps.rdmacaps = 0;
 	caps.fcoecaps = 0;
