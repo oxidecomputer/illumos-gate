@@ -27,9 +27,7 @@
 #include "t4nex.h"
 #include "common/common.h"
 #include "common/t4_regs.h"
-#ifdef ENABLE_CUDBG
 #include "cudbg.h"
-#endif
 
 /* helpers */
 static int pci_rw(struct adapter *sc, void *data, int flags, int write);
@@ -37,10 +35,7 @@ static int reg_rw(struct adapter *sc, void *data, int flags, int write);
 static int regdump(struct adapter *sc, void *data, int flags);
 static int get_devlog(struct adapter *sc, void *data, int flags);
 static int flash_fw(struct adapter *, void *, int);
-/* RPZ: The cudbg code might be moving to a firmware impl, ignore for now. */
-#ifdef ENABLE_CUDBG
 static int get_cudbg(struct adapter *, void *, int);
-#endif
 
 int
 t4_ioctl(struct adapter *sc, int cmd, void *data, int mode)
@@ -65,11 +60,9 @@ t4_ioctl(struct adapter *sc, int cmd, void *data, int mode)
 	case T4_IOCTL_LOAD_FW:
 		rc = flash_fw(sc, data, mode);
 		break;
-#ifdef ENABLE_CUDBG
 	case T4_IOCTL_GET_CUDBG:
 		rc = get_cudbg(sc, data, mode);
 		break;
-#endif
 	default:
 		return (EINVAL);
 	}
@@ -250,7 +243,6 @@ flash_fw(struct adapter *sc, void *data, int flags)
 	return (rc);
 }
 
-#ifdef ENABLE_CUDBG
 static int
 get_cudbg(struct adapter *sc, void *data, int flags)
 {
@@ -278,7 +270,7 @@ get_cudbg(struct adapter *sc, void *data, int flags)
 	cudbg->adap = sc;
 	cudbg->print = cxgb_printf;
 
-	ASSERT3U(sizeof (cudbg->dbg_bitmap), ==, sizeof (dump->bitmap));
+	ASSERT3U(sizeof (cudbg->dbg_bitmap), ==, sizeof (dump.bitmap));
 	memcpy(cudbg->dbg_bitmap, dump.bitmap, sizeof (cudbg->dbg_bitmap));
 
 	rc = cudbg_collect(handle, buf, &dump.len);
@@ -302,4 +294,3 @@ free:
 
 	return (rc);
 }
-#endif

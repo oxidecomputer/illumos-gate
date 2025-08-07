@@ -234,16 +234,17 @@ wr_entity_to_flash(void *handle, struct cudbg_buffer *dbg_buff,
 	u32 flash_data_offset;
 	u32 data_hdr_size;
 	int rc = -1;
+	int cudbg_len = t4_flash_location_size(adap, FLASH_LOC_CUDBG);
 
 	data_hdr_size = CUDBG_MAX_ENTITY * sizeof(struct cudbg_entity_hdr) +
 			sizeof(struct cudbg_hdr);
 
-	flash_data_offset = (FLASH_CUDBG_NSECS *
+	flash_data_offset = ((cudbg_len / SF_SEC_SIZE) *
 			     (sizeof(struct cudbg_flash_hdr) +
 			      data_hdr_size)) +
 			    (cur_entity_data_offset - data_hdr_size);
 
-	if (flash_data_offset > CUDBG_FLASH_SIZE) {
+	if (flash_data_offset > cudbg_len) {
 		update_skip_size(sec_info, cur_entity_size);
 		if (cudbg_init->verbose)
 			cudbg_init->print(adap->dip, CE_NOTE,
@@ -251,7 +252,7 @@ wr_entity_to_flash(void *handle, struct cudbg_buffer *dbg_buff,
 		return rc;
 	}
 
-	remain_flash_size = CUDBG_FLASH_SIZE - flash_data_offset;
+	remain_flash_size = cudbg_len - flash_data_offset;
 
 	if (cur_entity_size > remain_flash_size) {
 		update_skip_size(sec_info, cur_entity_size);
