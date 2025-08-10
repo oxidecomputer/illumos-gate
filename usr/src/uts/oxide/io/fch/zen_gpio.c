@@ -873,7 +873,7 @@ zen_gpio_attr_set_trig(zen_gpio_t *zg, const zen_gpio_pindata_t *pin,
 }
 
 static const zen_gpio_attr_table_t zen_gpio_attr_set[] = {
-	{ ZEN_GPIO_ATTR_NAME, zen_gpio_attr_set_ro },
+	{ KGPIO_ATTR_NAME, zen_gpio_attr_set_ro },
 	{ ZEN_GPIO_ATTR_PAD_NAME, zen_gpio_attr_set_ro },
 	{ ZEN_GPIO_ATTR_PAD_TYPE, zen_gpio_attr_set_ro },
 	{ ZEN_GPIO_ATTR_PIN, zen_gpio_attr_set_ro },
@@ -945,7 +945,7 @@ zen_gpio_op_attr_set(void *arg, uint32_t gpio_id, nvlist_t *nvl, nvlist_t *errs)
 }
 
 static int
-zen_gpio_op_attr_cap(void *arg, uint32_t gpio_id, dpio_caps_t *caps)
+zen_gpio_op_cap(void *arg, uint32_t gpio_id, dpio_caps_t *caps)
 {
 	/*
 	 * We don't support the interrupt yet, as such we only indicate read and
@@ -961,7 +961,7 @@ zen_gpio_op_attr_cap(void *arg, uint32_t gpio_id, dpio_caps_t *caps)
 }
 
 static int
-zen_gpio_op_attr_dpio_input(void *arg, uint32_t gpio_id, dpio_input_t *input)
+zen_gpio_op_dpio_input(void *arg, uint32_t gpio_id, dpio_input_t *input)
 {
 	int ret;
 	uint32_t val;
@@ -982,7 +982,7 @@ zen_gpio_op_attr_dpio_input(void *arg, uint32_t gpio_id, dpio_input_t *input)
 }
 
 static int
-zen_gpio_op_attr_dpio_output_state(void *arg, uint32_t gpio_id,
+zen_gpio_op_dpio_output_state(void *arg, uint32_t gpio_id,
     dpio_output_t *output)
 {
 	int ret;
@@ -1055,9 +1055,9 @@ static const kgpio_ops_t zen_gpio_ops = {
 	.kgo_name2id = zen_gpio_op_name2id,
 	.kgo_get = zen_gpio_op_attr_get,
 	.kgo_set = zen_gpio_op_attr_set,
-	.kgo_cap = zen_gpio_op_attr_cap,
-	.kgo_input = zen_gpio_op_attr_dpio_input,
-	.kgo_output_state = zen_gpio_op_attr_dpio_output_state,
+	.kgo_cap = zen_gpio_op_cap,
+	.kgo_input = zen_gpio_op_dpio_input,
+	.kgo_output_state = zen_gpio_op_dpio_output_state,
 	.kgo_output = zen_gpio_op_attr_dpio_output
 };
 
