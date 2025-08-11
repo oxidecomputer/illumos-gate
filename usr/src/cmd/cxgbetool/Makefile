@@ -15,7 +15,8 @@
 # Copyright (c) 2018, Joyent, Inc.
 
 PROG =  cxgbetool
-OBJS =	cxgbetool.o cudbg.o cudbg_view.o fastlz_api.o fastlz.o cudbg_common.o
+OBJS =	cxgbetool.o t4_common.o cudbg.o cudbg_view.o fastlz_api.o fastlz.o \
+	cudbg_common.o
 SRCS =	$(OBJS:%.o=%.c)
 VPATH = $(SRC)/uts/common/io/cxgbe/t4nex/
 

@@ -52,6 +52,7 @@
 #include "common/t4_regs.h"
 #include "common/t4_regs_values.h"
 #include "common/t4_extra_regs.h"
+#include "t4_common.h"
 
 static void *t4_soft_state;
 
@@ -168,6 +169,74 @@ t4_devo_probe(dev_info_t *dip)
 		return (DDI_PROBE_FAILURE);
 
 	return (DDI_PROBE_DONTCARE);
+}
+
+static void
+log_devlog_core(const struct adapter *sc, uint8_t core, uint_t nentries,
+    struct fw_devlog_e *entries)
+{
+	uint_t first = t4_prep_devlog(entries, nentries);
+	uint_t i = first;
+
+	do {
+		struct fw_devlog_e *entry = &entries[i];
+
+		if (entry->timestamp == 0)
+			break;
+
+		cxgb_printf(sc->dip, CE_NOTE, "%5d %10d %15llu %8s %8s ", core,
+		    entry->seqno, entry->timestamp,
+		    t4_devlog_level(entry->level),
+		    t4_devlog_facility(entry->facility));
+
+		cxgb_printf(sc->dip, CE_NOTE, (char *)entry->fmt,
+		    entry->params[0], entry->params[1], entry->params[2],
+		    entry->params[3], entry->params[4], entry->params[5],
+		    entry->params[6], entry->params[7]);
+
+		if (++i == nentries)
+			i = 0;
+
+	} while (i != first);
+}
+
+static void
+log_devlog(struct adapter *sc)
+{
+	const uint8_t ncores = sc->params.ncores;
+	const struct devlog_params *dp = &sc->params.devlog;
+
+	if (ncores == 0 || dp->start == 0) {
+		cxgb_printf(sc->dip, CE_WARN, "devlog params not initialized");
+		return;
+	}
+
+	uint32_t nentries = dp->nentries;
+	const size_t len = nentries * sizeof (struct fw_devlog_e);
+	struct fw_devlog_e *entries = kmem_zalloc(len, KM_NOSLEEP);
+
+	if (entries == NULL) {
+		cxgb_printf(sc->dip, CE_WARN, "failed to allocate devlog"
+		    " buffer");
+		goto done;
+	}
+
+	int ret = t4_memory_rw(sc, sc->params.drv_memwin, dp->memtype, dp->start,
+	    len, (void *)entries, T4_MEMORY_READ);
+
+	if (ret != 0) {
+		cxgb_printf(sc->dip, CE_WARN, "failed to read devlog: %d", ret);
+		goto done;
+	}
+
+	ASSERT0(len % ncores);
+	const uint32_t npercore = nentries / ncores;
+	for (int i = 0; i < ncores; i++) {
+		log_devlog_core(sc, i, npercore, &entries[npercore * i]);
+	}
+
+done:
+	kmem_free(entries, len);
 }
 
 static int t4_devo_detach(dev_info_t *, ddi_detach_cmd_t);
@@ -326,8 +395,12 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	/* Prepare the firmware for operation */
 	rc = prep_firmware(sc);
-	if (rc != 0)
+	if (rc != 0) {
+		(void) t4_init_devlog_ncores_params(sc, 0);
 		goto done; /* error message displayed already */
+	}
+
+	(void) t4_init_devlog_ncores_params(sc, 1);
 
 	rc = adap__pre_init_tweaks(sc);
 	if (rc != 0)
@@ -613,6 +686,8 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	sc->params.drv_memwin = MEMWIN_NIC;
 
 done:
+	log_devlog(sc);
+
 	if (rc != DDI_SUCCESS) {
 		(void) t4_devo_detach(dip, DDI_DETACH);
 

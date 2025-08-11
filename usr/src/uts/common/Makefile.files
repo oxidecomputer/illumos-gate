@@ -1989,6 +1989,7 @@ CXGBE_COM_OBJS =	t4_hw.o common.o
 # RPZ: come back to cudbg.
 #
 CXGBE_NEX_OBJS =	t4_nexus.o t4_sge.o t4_mac.o t4_ioctl.o t4_debug.o \
+			t4_common.o \
 			cudbg_lib.o cudbg_wtp.o fastlz.o \
 			fastlz_api.o cudbg_common.o cudbg_flash_utils.o \
 			cudbg.o

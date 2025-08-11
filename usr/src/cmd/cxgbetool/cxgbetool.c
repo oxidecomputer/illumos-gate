@@ -33,6 +33,7 @@
 #include <err.h>
 #include <libdevinfo.h>
 
+#include "t4_common.h"
 #include "t4nex.h"
 #include "osdep.h"
 #include "t4fw_interface.h"
@@ -72,47 +73,6 @@ enum {
 	CUDBG_OPT_COLLECT,
 	CUDBG_OPT_VIEW,
 	CUDBG_OPT_VERSION,
-};
-
-/*
- * Firmware Device Log Dumping
- */
-
-static const char * const devlog_level_strings[] = {
-	[FW_DEVLOG_LEVEL_EMERG]		= "EMERG",
-	[FW_DEVLOG_LEVEL_CRIT]		= "CRIT",
-	[FW_DEVLOG_LEVEL_ERR]		= "ERR",
-	[FW_DEVLOG_LEVEL_NOTICE]	= "NOTICE",
-	[FW_DEVLOG_LEVEL_INFO]		= "INFO",
-	[FW_DEVLOG_LEVEL_DEBUG]		= "DEBUG"
-};
-
-static const char * const devlog_facility_strings[] = {
-	[FW_DEVLOG_FACILITY_CORE]	= "CORE",
-	[FW_DEVLOG_FACILITY_CF]		= "CF",
-	[FW_DEVLOG_FACILITY_SCHED]	= "SCHED",
-	[FW_DEVLOG_FACILITY_TIMER]	= "TIMER",
-	[FW_DEVLOG_FACILITY_RES]	= "RES",
-	[FW_DEVLOG_FACILITY_HW]		= "HW",
-	[FW_DEVLOG_FACILITY_FLR]	= "FLR",
-	[FW_DEVLOG_FACILITY_DMAQ]	= "DMAQ",
-	[FW_DEVLOG_FACILITY_PHY]	= "PHY",
-	[FW_DEVLOG_FACILITY_MAC]	= "MAC",
-	[FW_DEVLOG_FACILITY_PORT]	= "PORT",
-	[FW_DEVLOG_FACILITY_VI]		= "VI",
-	[FW_DEVLOG_FACILITY_FILTER]	= "FILTER",
-	[FW_DEVLOG_FACILITY_ACL]	= "ACL",
-	[FW_DEVLOG_FACILITY_TM]		= "TM",
-	[FW_DEVLOG_FACILITY_QFC]	= "QFC",
-	[FW_DEVLOG_FACILITY_DCB]	= "DCB",
-	[FW_DEVLOG_FACILITY_ETH]	= "ETH",
-	[FW_DEVLOG_FACILITY_OFLD]	= "OFLD",
-	[FW_DEVLOG_FACILITY_RI]		= "RI",
-	[FW_DEVLOG_FACILITY_ISCSI]	= "ISCSI",
-	[FW_DEVLOG_FACILITY_FCOE]	= "FCOE",
-	[FW_DEVLOG_FACILITY_FOISCSI]	= "FOISCSI",
-	[FW_DEVLOG_FACILITY_FOFCOE]	= "FOFCOE",
-	[FW_DEVLOG_FACILITY_CHNET]	= "CHNET",
 };
 
 static const char *progname;
@@ -156,33 +116,15 @@ doit(const char *iff_name, unsigned long cmd, void *data)
 	return (rc);
 }
 
+/*
+ * Firmware Device Log Dumping
+ */
+
 static void
 print_core(uint8_t core, uint_t nentries, struct fw_devlog_e *entries)
 {
-	uint_t i, first = 0;
-	uint64_t ftstamp = UINT64_MAX;
-
-	/* Find the first entry */
-	for (i = 0; i < nentries; i++) {
-		struct fw_devlog_e *entry = &entries[i];
-
-		if (entry->timestamp == 0)
-			break;
-
-		entry->timestamp = BE_64(entry->timestamp);
-		entry->seqno = BE_32(entry->seqno);
-
-		for (uint_t j = 0; j < 8; j++) {
-			entry->params[j] = BE_32(entry->params[j]);
-		}
-
-		if (entry->timestamp < ftstamp) {
-			ftstamp = entry->timestamp;
-			first = i;
-		}
-	}
-
-	i = first;
+	uint_t first = t4_prep_devlog(entries, nentries);
+	uint_t i = first;
 
 	do {
 		const struct fw_devlog_e *entry = &entries[i];
@@ -190,12 +132,9 @@ print_core(uint8_t core, uint_t nentries, struct fw_devlog_e *entries)
 		if (entry->timestamp == 0)
 			break;
 
-		printf("%5d %10d  %15llu  %8s  %8s  ", core, entry->seqno,
-		    entry->timestamp,
-		    (entry->level < ARRAY_SIZE(devlog_level_strings) ?
-		    devlog_level_strings[entry->level] : "UNKNOWN"),
-		    (entry->facility < ARRAY_SIZE(devlog_facility_strings) ?
-		    devlog_facility_strings[entry->facility] : "UNKNOWN"));
+		printf("%5d %10d %15llu %8s %8s ", core, entry->seqno,
+		    entry->timestamp, t4_devlog_level(entry->level),
+		    t4_devlog_facility(entry->facility));
 
 		printf((const char *)entry->fmt, entry->params[0],
 		    entry->params[1], entry->params[2], entry->params[3],
@@ -244,7 +183,6 @@ get_devlog(const char *iff_name)
 		errx(1, "can't get device log");
 	}
 
-	/* The number of entries per cores. */
 	assert(dl->t4dl_nentries % dl->t4dl_ncores == 0);
 	const uint32_t npercore = dl->t4dl_nentries / dl->t4dl_ncores;
 
