@@ -75,7 +75,7 @@ cxgb_printf(dev_info_t *dip, int level, const char *fmt, ...)
 		return;
 	} else if (t4_debug_max_size < 0) {
 		/* User has opted into old cmn_err() behavior */
-		char pfmt[128];
+		char pfmt[256];
 
 		(void) snprintf(pfmt, sizeof (pfmt), "%s%d: %s",
 		    ddi_driver_name(dip), ddi_get_instance(dip), fmt);

@@ -179,20 +179,27 @@ log_devlog_core(const struct adapter *sc, uint8_t core, uint_t nentries,
 	uint_t i = first;
 
 	do {
+		char buff[256];
+
 		struct fw_devlog_e *entry = &entries[i];
 
 		if (entry->timestamp == 0)
 			break;
 
-		cxgb_printf(sc->dip, CE_NOTE, "%5d %10d %15llu %8s %8s ", core,
-		    entry->seqno, entry->timestamp,
+		size_t n = snprintf(buff, sizeof (buff), "%d %d %llu %s %s ",
+		    core, entry->seqno, entry->timestamp,
 		    t4_devlog_level(entry->level),
 		    t4_devlog_facility(entry->facility));
 
-		cxgb_printf(sc->dip, CE_NOTE, (char *)entry->fmt,
-		    entry->params[0], entry->params[1], entry->params[2],
-		    entry->params[3], entry->params[4], entry->params[5],
-		    entry->params[6], entry->params[7]);
+		if (n + 1 < sizeof (buff)) {
+			(void) snprintf(&buff[n], sizeof (buff) - n,
+			    (char *)entry->fmt, entry->params[0],
+			    entry->params[1], entry->params[2], entry->params[3],
+			    entry->params[4], entry->params[5], entry->params[6],
+			    entry->params[7]);
+		}
+
+		cxgb_printf(sc->dip, CE_NOTE, buff);
 
 		if (++i == nentries)
 			i = 0;
