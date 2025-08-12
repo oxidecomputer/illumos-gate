@@ -186,7 +186,7 @@ log_devlog_core(const struct adapter *sc, uint8_t core, uint_t nentries,
 		if (entry->timestamp == 0)
 			break;
 
-		size_t n = snprintf(buff, sizeof (buff), "%d %d %llu %s %s ",
+		size_t n = snprintf(buff, sizeof (buff), "%d %d %lu %s %s ",
 		    core, entry->seqno, entry->timestamp,
 		    t4_devlog_level(entry->level),
 		    t4_devlog_facility(entry->facility));
