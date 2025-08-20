@@ -86,6 +86,7 @@ int is_t4(enum chip_type chip);
 int is_t5(enum chip_type chip);
 int is_t6(enum chip_type chip);
 int is_t7(enum chip_type chip);
+int is_t7b(enum chip_type chip);
 int is_fpga(enum chip_type chip);
 
 #endif /* __T4_CHIP_TYPE_H__ */

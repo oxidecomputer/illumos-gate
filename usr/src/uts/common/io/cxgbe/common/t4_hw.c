@@ -4194,27 +4194,31 @@ static const struct t4_flash_loc_entry t4_flash_loc_arr[] = {
 	[FLASH_LOC_CUDBG] = { 32, 32 },
 	[FLASH_LOC_BOOT_AREA] = { 0, 8 }, /* Spans complete Boot Area */
 	[FLASH_LOC_MIN_SIZE] = { 0, 32 }, /* Spans minimum required sections */
-	[FLASH_LOC_END] = { 64, 0 },
+	[FLASH_LOC_END] = { 0, 64 }, /* Spans the entire Serial Flash*/
 };
 
 /* Flash Layout {start sector, # of sectors} for T7 adapters */
 static const struct t4_flash_loc_entry t7_flash_loc_arr[] = {
 	[FLASH_LOC_VPD] = { 0, 1 },
-	[FLASH_LOC_DPU_BOOT] = { 1, 7 },
-	[FLASH_LOC_FW] = { 8, 16 },
-	[FLASH_LOC_FWBOOTSTRAP] = { 27, 1 },
-	[FLASH_LOC_ISCSI_CRASH] = { 29, 1 },
-	[FLASH_LOC_FCOE_CRASH] = { 30, 1 },
+	[FLASH_LOC_FWBOOTSTRAP] = { 1, 1 },
+	[FLASH_LOC_FW] = { 2, 29 },
 	[FLASH_LOC_CFG] = { 31, 1 },
 	[FLASH_LOC_EXP_ROM] = { 32, 15 },
 	[FLASH_LOC_IBFT] = { 47, 1 },
 	[FLASH_LOC_BOOTCFG] = { 48, 1 },
-	[FLASH_LOC_CUDBG] = { 49, 48 },
-	[FLASH_LOC_CHIP_DUMP] = { 97, 48 },
-	[FLASH_LOC_DPU_AREA] = { 145, 111 },
-	[FLASH_LOC_BOOT_AREA] = { 32, 17 }, /* Spans complete Boot Area */
+	[FLASH_LOC_DPU_BOOT] = { 49, 13 },
+	[FLASH_LOC_ISCSI_CRASH] = { 62, 1 },
+	[FLASH_LOC_FCOE_CRASH] = { 63, 1 },
+	[FLASH_LOC_VPD_BACKUP] = { 64, 1 },
+	[FLASH_LOC_FWBOOTSTRAP_BACKUP] = { 65, 1 },
+	[FLASH_LOC_FW_BACKUP] = { 66, 29 },
+	[FLASH_LOC_CFG_BACK] = { 95, 1 },
+	[FLASH_LOC_CUDBG] = { 96, 48 },
+	[FLASH_LOC_CHIP_DUMP] = { 144, 48 },
+	[FLASH_LOC_DPU_AREA] = { 192, 64 },
+	[FLASH_LOC_BOOT_AREA] = { 32, 17 }, /* Spans complete UEFI/PXE Boot Area */
 	[FLASH_LOC_MIN_SIZE] = { 0, 32 }, /* Spans minimum required sections */
-	[FLASH_LOC_END] = { 256, 0 },
+	[FLASH_LOC_END] = { 0, 256 }, /* Spans the entire Serial Flash*/
 };
 
 static const struct t4_flash_loc_entry *
@@ -4328,8 +4332,14 @@ static int sf1_read(struct adapter *adapter, unsigned int byte_cnt, int cont,
 		return -EINVAL;
 	if (t4_read_reg(adapter, A_SF_OP) & F_BUSY)
 		return -EBUSY;
-	t4_write_reg(adapter, A_SF_OP,
-		     V_SF_LOCK(lock) | V_CONT(cont) | V_BYTECNT(byte_cnt - 1));
+	if (is_t7(adapter->params.chip))
+		t4_write_reg(adapter, A_SF_OP, F_QUADREADDISABLE |
+			     V_SF_LOCK(lock) | V_CONT(cont) |
+			     V_BYTECNT(byte_cnt - 1));
+	else
+		t4_write_reg(adapter, A_SF_OP,
+			     V_SF_LOCK(lock) | V_CONT(cont) |
+			     V_BYTECNT(byte_cnt - 1));
 	ret = t4_wait_op_done(adapter, A_SF_OP, F_BUSY, 0, SF_ATTEMPTS, 5);
 	if (!ret)
 		*valp = t4_read_reg(adapter, A_SF_DATA);
@@ -9813,10 +9823,15 @@ int t4_free_mac_filt(struct adapter *adap, unsigned int mbox,
 	int offset, ret = 0;
 	struct fw_vi_mac_cmd c;
 	unsigned int nfilters = 0;
-	unsigned int max_naddr = is_t4(adap->params.chip) ?
-				       NUM_MPS_CLS_SRAM_L_INSTANCES :
-				       NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
+	unsigned int max_naddr = 0;
 	unsigned int rem = naddr;
+
+	if (is_t4(adap->params.chip))
+		max_naddr =  NUM_MPS_CLS_SRAM_L_INSTANCES;
+	else if (is_t7b(adap->params.chip))
+		max_naddr = NUM_MPS_T7B_CLS_SRAM_L_INSTANCES;
+	else
+		max_naddr = NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
 
 	if (naddr > max_naddr)
 		return -EINVAL;
@@ -11177,7 +11192,9 @@ int t4_prep_pf(struct adapter *adapter)
 	} else if (is_t7(adapter->params.chip)) {
 		adapter->params.arch.sge_fl_db = 0;
 		adapter->params.arch.mps_tcam_size =
-				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
+			is_t7b(adapter->params.chip)
+			? NUM_MPS_T7B_CLS_SRAM_L_INSTANCES
+			: NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
 		adapter->params.arch.mps_rplc_size = 256;
 		adapter->params.arch.nchan = NCHAN;
 		adapter->params.arch.pm_stats_cnt = T6_PM_NSTATS;

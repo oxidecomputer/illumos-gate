@@ -35,6 +35,12 @@ int is_t7(enum chip_type chip)
 	return (CHELSIO_CHIP_VERSION(chip) == CHELSIO_T7);
 }
 
+int is_t7b(enum chip_type chip)
+{
+	return (CHELSIO_CHIP_VERSION(chip) == CHELSIO_T7 &&
+	    (CHELSIO_CHIP_RELEASE(chip) == 1));
+}
+
 int is_fpga(enum chip_type chip)
 {
 	 return chip & CHELSIO_CHIP_FPGA;

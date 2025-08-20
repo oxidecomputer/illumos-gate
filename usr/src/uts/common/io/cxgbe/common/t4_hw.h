@@ -271,6 +271,26 @@ enum t4_flash_loc {
 	FLASH_LOC_VPD,
 
 	/*
+	 * Backup init/vpd.
+	 */
+	FLASH_LOC_VPD_BACKUP,
+
+	/*
+	 * Backup firmware image.
+	 */
+	FLASH_LOC_FW_BACKUP,
+
+	/*
+	 * Backup bootstrap firmware image.
+	 */
+	FLASH_LOC_FWBOOTSTRAP_BACKUP,
+
+	/*
+	 * Backup Location of Firmware Configuration File in FLASH.
+	 */
+	FLASH_LOC_CFG_BACK,
+
+	/*
 	 * Helper to retrieve info that spans the entire Boot related area.
 	 */
 	FLASH_LOC_BOOT_AREA,
