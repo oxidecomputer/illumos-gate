@@ -1050,7 +1050,7 @@ prep_firmware(struct adapter *sc)
 	firmware_handle_t fw_hdl;
 	struct fw_info fi, *fw_info = &fi;
 
-	struct driver_properties *p = &sc->props;
+	/* struct driver_properties *p = &sc->props; */
 
 	/* Contact firmware, request master */
 	rc = t4_fw_hello(sc, sc->mbox, sc->mbox, MASTER_MUST, &state);
@@ -1138,7 +1138,7 @@ prep_firmware(struct adapter *sc)
 	card_fw = kmem_zalloc(sizeof (*card_fw), KM_SLEEP);
 
 	rc = -t4_prep_fw(sc, fw_info, fw_data, fw_size, card_fw,
-	    p->t4_fw_install, state, &reset);
+	    0, state, &reset);
 
 	kmem_free(card_fw, sizeof (*card_fw));
 	kmem_free(fw_data, fw_size);
