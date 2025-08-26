@@ -1967,7 +1967,7 @@ t4_getprop_priv(struct port_info *pi, const char *name, uint_t size, void *val)
 #define	ABS_DELTA(left, right)		\
 	(((left) > (right)) ? (left) - (right) : (right) - (left))
 
-static uint8_t
+uint8_t
 t4_choose_holdoff_timer(struct adapter *sc, uint_t target_us)
 {
 	const uint_t *timer_us = sc->props.holdoff_timer_us;
@@ -1987,7 +1987,7 @@ t4_choose_holdoff_timer(struct adapter *sc, uint_t target_us)
 	return (chosen_idx);
 }
 
-static int8_t
+int8_t
 t4_choose_holdoff_pktcnt(struct adapter *sc, int target_cnt)
 {
 	const uint_t *pkt_cnt = sc->props.holdoff_pktcnt;
@@ -2012,7 +2012,7 @@ t4_choose_holdoff_pktcnt(struct adapter *sc, int target_cnt)
 	return (chosen_idx);
 }
 
-static uint_t
+uint_t
 t4_choose_dbq_timer(struct adapter *sc, uint_t target_us)
 {
 	const uint16_t *dbq_us = sc->sge.dbq_timers;
