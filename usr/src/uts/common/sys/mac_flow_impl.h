@@ -38,6 +38,7 @@ extern "C" {
 #include <sys/stream.h>
 #include <sys/sdt.h>
 #include <net/if.h>
+#include <sys/stdbool.h>
 
 /*
  * Macros to increment/decrement the reference count on a flow_entry_t.
@@ -227,6 +228,57 @@ typedef struct mac_bw_ctl_s {
 	clock_t		mac_bw_curr_time;
 } mac_bw_ctl_t;
 
+typedef enum {
+	MF_TYPE_MAC,	/* Flows created by MAC. */
+	MF_TYPE_CLIENT,	/* Flows created by MAC clients. */
+} mac_flow_type_t;
+
+typedef enum {
+	MFA_TYPE_DELIVER,
+	MFA_TYPE_DROP,
+	MFA_TYPE_DELEGATE,
+} mac_flow_action_type_t;
+
+typedef struct {
+	mblk_t	*unvisited;
+	mblk_t	*visited; /* Do we need this, or just put on the SRS? */
+} flow_tree_pkt_set_t;
+
+typedef struct {
+	/* TODO: new fn prototype? */
+	/* TODO: how can we keep ethertype/ipproto matches fast? */
+	/* TODO: arg? */
+	flow_match_fn_t	ften_match;
+	flow_entry_t	*ften_match_arg;
+	bool		ften_descend;
+} flow_tree_enter_node_t;
+
+typedef struct {
+	mac_flow_action_type_t	ftex_do;
+	bool			ftex_ascend;
+	union {
+		/* MFA_TYPE_DELIVER */
+		void		*ftex_srs; /* mac_soft_ring_set_t */
+		/* MFA_TYPE_DROP_DELEGATE | DROP */
+		flow_entry_t	*ftex_flent; /* kept for stats */
+	} arg;
+} flow_tree_exit_node_t;
+
+typedef union {
+	flow_tree_enter_node_t enter;
+	flow_tree_exit_node_t exit;
+} flow_tree_baked_node_t;
+
+typedef struct {
+	uint16_t		ftb_depth;
+	uint16_t		ftb_len;
+	flow_tree_pkt_set_t	*ftb_chains;	/* len = ftb_depth */
+	flow_tree_baked_node_t	*ftb_subtree;	/* len = 2 * ftb_len */
+
+	flow_tree_enter_node_t	ftb_enter;
+	flow_tree_exit_node_t	ftb_exit;
+} flow_tree_baked_t;
+
 struct flow_entry_s {					/* Protected by */
 	struct flow_entry_s	*fe_next;		/* ft_lock */
 
@@ -323,6 +375,27 @@ struct flow_entry_s {					/* Protected by */
 
 	boolean_t		fe_desc_logged;
 	uint64_t		fe_nic_speed;
+
+	/*
+	 * Used in flow tree construction.
+	 */
+	/* Classifier tree pointers.  */
+	flow_entry_t *fe_parent;
+	flow_entry_t *fe_sibling;
+	flow_entry_t *fe_child;
+
+	/* used to generate flow_fn_t entries for each softring */
+	flow_action_t fe_action;
+
+	/* differentiate flows created by MAC / clients / flowadm */
+	mac_flow_type_t fe_owner_type;
+
+	/*
+	* Every flent needs a S/W classifier destination. This is itself
+	* a full-fledged SRS with workers/poll thrds matching the mrp.
+	* Guaranteed to exist.
+	*/
+	void *fe_rx_srs_sw; /* fe_lock */
 };
 
 /*

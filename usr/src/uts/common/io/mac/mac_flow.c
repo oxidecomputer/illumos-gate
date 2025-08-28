@@ -23,6 +23,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 #include <sys/strsun.h>
@@ -2500,4 +2501,152 @@ mac_flow_tab_info_get(flow_mask_t mask)
 			return (&flow_tab_info_list[i]);
 	}
 	return (NULL);
+}
+
+static inline void
+mac_flow_fill_exit(flow_entry_t *ent, flow_tree_exit_node_t *node, bool ascend)
+{
+	node->ftex_ascend = ascend;
+	if ((ent->fe_action.fa_flags & MFA_FLAGS_ACTION) != 0) {
+		if (ent->fe_action.fa_direct_rx_fn != NULL) {
+			node->ftex_do = MFA_TYPE_DELIVER;
+
+			/* TODO: create workerless SRSes for these guys! */
+			node->arg.ftex_srs =
+			    (void *)0xbabababaf000000f;
+		} else {
+			node->ftex_do = MFA_TYPE_DROP;
+			node->arg.ftex_flent = ent;
+		}
+	} else {
+		node->ftex_do = MFA_TYPE_DELEGATE;
+		node->arg.ftex_flent = ent;
+	}
+}
+
+/*
+ * Allocates the structure of a baked flow tree, filling in references to
+ * 
+ */
+int
+mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
+{
+	int err = 0;
+	size_t max_depth = 0;
+	size_t n_nodes = 0;
+
+	ASSERT3P(flent, !=, NULL);
+
+	/* TOOD: refcount manipulation? */
+
+	/* Walk the existing tree for size measurement. */
+	flow_entry_t *el = flent->fe_child;
+	bool ascended = false;
+	size_t depth = 1;
+	while (el != NULL && el != flent) {
+		ASSERT3P(el->fe_parent, !=, NULL);
+
+		if (!ascended) {
+			n_nodes += 1;
+		}
+
+		max_depth = MAX(max_depth, depth);
+
+		if (!ascended && el->fe_child != NULL) {
+			depth += 1;
+			el = el->fe_child;
+			ascended = false;
+		} else if (el->fe_sibling != NULL) {
+			el = el->fe_sibling;
+			ascended = false;
+		} else {
+			depth -= 1;
+			el = el->fe_parent;
+			ascended = true;
+		}
+	}
+
+	if (max_depth > UINT16_MAX || n_nodes > UINT16_MAX) {
+		err = E2BIG;
+		goto bail;
+	}
+
+	into->ftb_depth = (uint16_t)max_depth;
+	into->ftb_len = (uint16_t)n_nodes;
+
+	const size_t chain_len = max_depth * sizeof (flow_tree_pkt_set_t);
+	const size_t subtree_len = 2 * n_nodes *
+	    sizeof (flow_tree_baked_node_t);
+	into->ftb_chains = kmem_zalloc(chain_len, KM_SLEEP);
+	into->ftb_subtree = kmem_zalloc(subtree_len, KM_SLEEP);
+
+	if (into->ftb_chains == NULL || into->ftb_subtree == NULL) {
+		err = ENOMEM;
+		goto bail;
+	}
+
+	/* Now, populate the tree. */
+
+	/* TODO: refcounts on flent? */
+	into->ftb_enter.ften_match = flent->fe_match;
+	into->ftb_enter.ften_match_arg = flent;
+	into->ftb_enter.ften_descend = flent->fe_child != NULL;
+	mac_flow_fill_exit(el, &into->ftb_exit, false);
+	/* TODO: ftex_srs should be filled here even if DELEGATE */
+
+	el = flent->fe_child;
+	ascended = false;
+	flow_tree_baked_node_t *curr_node = into->ftb_subtree;
+
+	while (el != NULL && el != flent) {
+		if (!ascended) {
+			curr_node->enter.ften_match = el->fe_match;
+			curr_node->enter.ften_match_arg = el;
+			curr_node->enter.ften_descend = el->fe_child != NULL;
+			curr_node++;
+		}
+
+		if (!ascended && el->fe_child != NULL) {
+			ascended = false;
+			el = el->fe_child;
+		} else if (el->fe_sibling != NULL) {
+			ascended = false;
+			mac_flow_fill_exit(el, &curr_node->exit, false);
+			curr_node++;
+
+			el = el->fe_sibling;
+		} else {
+			ascended = true;
+			mac_flow_fill_exit(el, &curr_node->exit, true);
+			curr_node++;
+
+			el = el->fe_parent;
+		}
+	}
+
+	return (err);
+
+bail:
+	if (into->ftb_chains != NULL) {
+		kmem_free(into->ftb_chains, chain_len);
+	}
+	if (into->ftb_chains != NULL) {
+		kmem_free(into->ftb_chains, chain_len);
+	}
+	return (err);
+}
+
+void
+mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
+{
+	ASSERT3P(tree, !=, NULL);
+
+	if (tree->ftb_chains != NULL) {
+		kmem_free(tree->ftb_chains, tree->ftb_depth *
+		    sizeof (flow_tree_pkt_set_t));
+	}
+	if (tree->ftb_subtree != NULL) {
+		kmem_free(tree->ftb_subtree, 2 * tree->ftb_len *
+		    sizeof (flow_tree_baked_node_t));
+	}
 }

@@ -38,6 +38,7 @@ extern "C" {
 #endif
 
 #include <sys/types.h>
+#include <sys/mac.h>
 #include <sys/param.h>		/* for MAXPATHLEN */
 #include <netinet/in.h>		/* for IPPROTO_* constants */
 #include <sys/ethernet.h>
@@ -254,6 +255,53 @@ typedef	struct mac_resource_props_s {
 			(fmrp)->mrp_mask |= MRP_CPUS_USERSPEC;		\
 	}								\
 }
+
+/*
+ * MAC flow trees APIs.
+ */
+
+/* Opaque handle to a flow_entry_t. */
+typedef void	*flow_entry_handle_t;
+
+#define	MFA_FLAGS_ACTION	0x01
+#define	MFA_FLAGS_RESOURCE	0x02
+/*
+ * Used to signify that a flow entry should not be created
+ * for stats/bandwidth tracking in the Tx pathway.
+ */
+#define	MFA_FLAGS_RX_ONLY	0x04
+
+typedef struct flow_action_s {
+	uint32_t fa_flags;
+
+	/*
+	 * Function pointer used to handle each inbound packet when
+	 * `MFA_FLAGS_ACTION` is set. This controls `s_ring_rx_func/arg1`
+	 * on each softring.
+	 *
+	 * If this flag is not set, the flow will delegate packet processing
+	 * to its first ancestor with a valid action.
+	 *
+	 * If this flag is set, a NULL `fa_direct_rx_fn` will drop any packets
+	 * via `freemsgchain`.
+	 */
+	mac_direct_rx_t	fa_direct_rx_fn;
+	void		*fa_direct_rx_arg;
+
+	/*
+	 * Used when MFA_FLAGS_RESOURCE is set alongside MFA_FLAGS_ACTION.
+	 *
+	 * This exposes existing functionality used for DLS bypass to inform
+	 * a client about softring creation/deletion, CPU bindings and to
+	 * enable/disable/perform softring polling.
+	 */
+	mac_resource_add_t	fa_resource_add;
+	mac_resource_remove_t	fa_resource_remove;
+	mac_resource_quiesce_t	fa_resource_quiesce;
+	mac_resource_restart_t	fa_resource_restart;
+	mac_resource_bind_t	fa_resource_bind;
+	void			*fa_resource_arg;
+} flow_action_t;
 
 #if _LONG_LONG_ALIGNMENT == 8 && _LONG_LONG_ALIGNMENT_32 == 4
 #pragma pack()
