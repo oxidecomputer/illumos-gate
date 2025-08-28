@@ -239,18 +239,44 @@ typedef enum {
 	MFA_TYPE_DELEGATE,
 } mac_flow_action_type_t;
 
+typedef enum {
+	MFM_SAP,
+	MFM_IPPROTO,
+	MFM_LIST,
+	MFM_ARBITRARY,
+} mac_flow_match_type_t;
+
+typedef struct mac_flow_match_list_s mac_flow_match_list_t;
+
+typedef struct {
+	mac_direct_rx_t	mfma_direct_rx_fn;
+	void		*mfma_direct_rx_arg;
+} mac_flow_match_arbitrary_t;
+
+typedef struct {
+	mac_flow_match_type_t	mfm_type;
+	union {
+		uint16_t	mfm_sap;
+		uint8_t		mfm_ipproto;
+		mac_flow_match_list_t		*mfm_list;
+		mac_flow_match_arbitrary_t	mfm_arbitrary;
+	} arg;
+} mac_flow_match_t;
+
+struct mac_flow_match_list_s {
+	size_t			mfml_size;
+	mac_flow_match_t	mfml_match[];
+};
+
 typedef struct {
 	mblk_t	*unvisited;
 	mblk_t	*visited; /* Do we need this, or just put on the SRS? */
 } flow_tree_pkt_set_t;
 
 typedef struct {
-	/* TODO: new fn prototype? */
-	/* TODO: how can we keep ethertype/ipproto matches fast? */
-	/* TODO: arg? */
-	flow_match_fn_t	ften_match;
-	flow_entry_t	*ften_match_arg;
-	bool		ften_descend;
+	flow_entry_t		*ften_flent;
+	mac_flow_match_t	ften_match;
+	bool			ften_descend;
 } flow_tree_enter_node_t;
 
 typedef struct {
@@ -396,6 +422,9 @@ struct flow_entry_s {					/* Protected by */
 	* Guaranteed to exist.
 	*/
 	void *fe_rx_srs_sw; /* fe_lock */
+
+	/* TODO: swap out so this becomes the Real Thing */
+	mac_flow_match_t fe_match2;
 };
 
 /*

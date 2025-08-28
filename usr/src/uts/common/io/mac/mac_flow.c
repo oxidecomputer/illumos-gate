@@ -2588,8 +2588,8 @@ mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
 	/* Now, populate the tree. */
 
 	/* TODO: refcounts on flent? */
-	into->ftb_enter.ften_match = flent->fe_match;
-	into->ftb_enter.ften_match_arg = flent;
+	into->ftb_enter.ften_flent = flent;
+	into->ftb_enter.ften_match = flent->fe_match2;
 	into->ftb_enter.ften_descend = flent->fe_child != NULL;
 	mac_flow_fill_exit(el, &into->ftb_exit, false);
 	/* TODO: ftex_srs should be filled here even if DELEGATE */
@@ -2600,8 +2600,8 @@ mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
 
 	while (el != NULL && el != flent) {
 		if (!ascended) {
-			curr_node->enter.ften_match = el->fe_match;
-			curr_node->enter.ften_match_arg = el;
+			curr_node->enter.ften_flent = el;
+			curr_node->enter.ften_match = el->fe_match2;
 			curr_node->enter.ften_descend = el->fe_child != NULL;
 			curr_node++;
 		}
