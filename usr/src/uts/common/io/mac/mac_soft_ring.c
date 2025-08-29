@@ -215,7 +215,7 @@ mac_soft_ring_create(int id, clock_t wait, uint16_t type,
 		    (mac_tx_soft_ring_hiwat > mac_tx_soft_ring_max_q_cnt) ?
 		    mac_tx_soft_ring_max_q_cnt : mac_tx_soft_ring_hiwat;
 		if (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT) {
-			mac_srs_tx_t *tx = &mac_srs->srs_tx;
+			mac_srs_tx_t *tx = &mac_srs->srs_kind_data.tx;
 
 			ASSERT(tx->st_soft_rings[
 			    ((mac_ring_t *)x_arg2)->mr_index] == NULL);

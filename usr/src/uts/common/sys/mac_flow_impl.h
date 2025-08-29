@@ -577,12 +577,12 @@ typedef struct flow_tab_info_s {
 }
 
 #define	SRS_RX_STAT_UPDATE(m, s, c)  {					\
-	((mac_soft_ring_set_t *)(m))->srs_rx.sr_stat.mrs_##s		\
+	((mac_soft_ring_set_t *)(m))->srs_kind_data.rx.sr_stat.mrs_##s	\
 	+= ((uint64_t)(c));						\
 }
 
 #define	SRS_TX_STAT_UPDATE(m, s, c)  {					\
-	((mac_soft_ring_set_t *)(m))->srs_tx.st_stat.mts_##s		\
+	((mac_soft_ring_set_t *)(m))->srs_kind_data.tx.st_stat.mts_##s	\
 	+= ((uint64_t)(c));						\
 }
 

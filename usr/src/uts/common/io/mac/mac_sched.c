@@ -1214,7 +1214,7 @@ boolean_t mac_latency_optimize = B_TRUE;
 }
 
 #define	MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, head, tail, count, sz) {	\
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_rx;			\
+	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_kind_data.rx;			\
 									\
 	MAC_SRS_ENQUEUE_CHAIN(mac_srs, head, tail, count, sz);		\
 	srs_rx->sr_poll_pkt_cnt += count;				\
@@ -1246,7 +1246,7 @@ boolean_t mac_latency_optimize = B_TRUE;
 		(mac_srs)->srs_state |= SRS_POLLING;			\
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
 		    (mac_srs)->srs_ring);				\
-		(mac_srs)->srs_rx.sr_poll_on++;				\
+		(mac_srs)->srs_kind_data.rx.sr_poll_on++;				\
 	}								\
 }
 
@@ -1258,7 +1258,7 @@ boolean_t mac_latency_optimize = B_TRUE;
 		(mac_srs)->srs_state |= SRS_POLLING;			\
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
 		    (mac_srs)->srs_ring);				\
-		(mac_srs)->srs_rx.sr_worker_poll_on++;			\
+		(mac_srs)->srs_kind_data.rx.sr_worker_poll_on++;			\
 	}								\
 }
 
@@ -1272,7 +1272,7 @@ boolean_t mac_latency_optimize = B_TRUE;
  * if the drain was being done by the worker thread.
  */
 #define	MAC_SRS_POLL_RING(mac_srs) {					\
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_rx;			\
+	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_kind_data.rx;			\
 									\
 	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
 	srs_rx->sr_poll_thr_sig++;					\
@@ -1330,10 +1330,10 @@ int mac_srs_worker_wakeup_ticks = 0;
 	}								\
 }
 
-#define	TX_BANDWIDTH_MODE(mac_srs)				\
-	((mac_srs)->srs_tx.st_mode == SRS_TX_BW ||		\
-	    (mac_srs)->srs_tx.st_mode == SRS_TX_BW_FANOUT ||	\
-	    (mac_srs)->srs_tx.st_mode == SRS_TX_BW_AGGR)
+#define	TX_BANDWIDTH_MODE(mac_srs)					\
+	((mac_srs)->srs_kind_data.tx.st_mode == SRS_TX_BW ||		\
+	    (mac_srs)->srs_kind_data.tx.st_mode == SRS_TX_BW_FANOUT ||	\
+	    (mac_srs)->srs_kind_data.tx.st_mode == SRS_TX_BW_AGGR)
 
 #define	TX_SRS_TO_SOFT_RING(mac_srs, head, hint) {			\
 	if (tx_mode == SRS_TX_BW_FANOUT)				\
@@ -1354,12 +1354,12 @@ int mac_srs_worker_wakeup_ticks = 0;
  */
 #define	MAC_TX_SRS_BLOCK(srs, mp)	{			\
 	ASSERT(MUTEX_HELD(&(srs)->srs_lock));			\
-	if ((srs)->srs_tx.st_woken_up) {			\
-		(srs)->srs_tx.st_woken_up = B_FALSE;		\
+	if ((srs)->srs_kind_data.tx.st_woken_up) {		\
+		(srs)->srs_kind_data.tx.st_woken_up = B_FALSE;	\
 	} else {						\
 		ASSERT(!((srs)->srs_state & SRS_TX_BLOCKED));	\
 		(srs)->srs_state |= SRS_TX_BLOCKED;		\
-		(srs)->srs_tx.st_stat.mts_blockcnt++;		\
+		(srs)->srs_kind_data.tx.st_stat.mts_blockcnt++;	\
 	}							\
 }
 
@@ -1370,19 +1370,20 @@ int mac_srs_worker_wakeup_ticks = 0;
  * SRS_TX_HIWAT if srs_count exceeds srs_tx_hiwat.
  */
 #define	MAC_TX_SRS_TEST_HIWAT(srs, mp, tail, cnt, sz, cookie) {		\
+	mac_srs_tx_t *srs_tx = &(srs)->srs_kind_data.tx;		\
 	boolean_t enqueue = 1;						\
 									\
-	if ((srs)->srs_count > (srs)->srs_tx.st_hiwat) {		\
+	if ((srs)->srs_count > srs_tx->st_hiwat) {			\
 		/*							\
 		 * flow-controlled. Store srs in cookie so that it	\
 		 * can be returned as mac_tx_cookie_t to client		\
 		 */							\
 		(srs)->srs_state |= SRS_TX_HIWAT;			\
 		cookie = (mac_tx_cookie_t)srs;				\
-		(srs)->srs_tx.st_hiwat_cnt++;				\
-		if ((srs)->srs_count > (srs)->srs_tx.st_max_q_cnt) {	\
+		srs_tx->st_hiwat_cnt++;					\
+		if ((srs)->srs_count > srs_tx->st_max_q_cnt) {		\
 			/* increment freed stats */			\
-			(srs)->srs_tx.st_stat.mts_sdrops += cnt;	\
+			srs_tx->st_stat.mts_sdrops += cnt;		\
 			/*						\
 			 * b_prev may be set to the fanout hint		\
 			 * hence can't use freemsg directly		\
@@ -1409,7 +1410,7 @@ int mac_srs_worker_wakeup_ticks = 0;
 #define	MAC_TX_SRS_DROP_MESSAGE(srs, chain, cookie, s) {	\
 	mac_drop_chain((chain), (s));				\
 	/* increment freed stats */				\
-	(srs)->srs_tx.st_stat.mts_sdrops++;			\
+	(srs)->srs_kind_data.tx.st_stat.mts_sdrops++;			\
 	(cookie) = (mac_tx_cookie_t)(srs);			\
 }
 
@@ -1440,7 +1441,7 @@ uint_t mac_rx_srs_stack_toodeep;
 static void
 mac_rx_drop_pkt(mac_soft_ring_set_t *srs, mblk_t *mp)
 {
-	mac_srs_rx_t	*srs_rx = &srs->srs_rx;
+	mac_srs_rx_t	*srs_rx = &srs->srs_kind_data.rx;
 
 	ASSERT(mp->b_next == NULL);
 	mutex_enter(&srs->srs_lock);
@@ -2350,7 +2351,7 @@ mac_rx_srs_poll_ring(mac_soft_ring_set_t *mac_srs)
 {
 	kmutex_t		*lock = &mac_srs->srs_lock;
 	kcondvar_t		*async = &mac_srs->srs_cv;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_kind_data.rx;
 	mblk_t			*head, *tail, *mp;
 	callb_cpr_t		cprinfo;
 	ssize_t			bytes_to_pickup;
@@ -2737,7 +2738,7 @@ mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 	timeout_id_t		tid;
 	int			cnt = 0;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_kind_data.rx;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 	ASSERT(!(mac_srs->srs_type & SRST_BW_CONTROL));
@@ -2975,7 +2976,7 @@ mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 	size_t			sz = 0;
 	int			cnt = 0;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_kind_data.rx;
 	clock_t			now;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
@@ -3453,7 +3454,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 	size_t			sz = 0;
 	size_t			chain_sz, sz1;
 	mac_bw_ctl_t		*mac_bw;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_kind_data.rx;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
 
 	if (mcip != NULL && mcip->mci_siphon != NULL) {
@@ -3629,7 +3630,7 @@ mac_tx_srs_no_desc(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uint16_t flag, mblk_t **ret_mp)
 {
 	mac_tx_cookie_t cookie = 0;
-	mac_srs_tx_t *srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t *srs_tx = &mac_srs->srs_kind_data.tx;
 	boolean_t wakeup_worker = B_TRUE;
 	uint32_t tx_mode = srs_tx->st_mode;
 	int cnt, sz;
@@ -3700,7 +3701,7 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		wakeup_worker = B_FALSE;
 	MAC_COUNT_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
 	if (flag & MAC_DROP_ON_NO_DESC) {
-		if (mac_srs->srs_count > mac_srs->srs_tx.st_hiwat) {
+		if (mac_srs->srs_count > mac_srs->srs_kind_data.tx.st_hiwat) {
 			MAC_TX_SRS_DROP_MESSAGE(mac_srs, mp_chain, cookie,
 			    "Tx SRS hiwat");
 		} else {
@@ -3708,7 +3709,7 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 			    mp_chain, tail, cnt, sz);
 		}
 	} else if (flag & MAC_TX_NO_ENQUEUE) {
-		if ((mac_srs->srs_count > mac_srs->srs_tx.st_hiwat) ||
+		if ((mac_srs->srs_count > mac_srs->srs_kind_data.tx.st_hiwat) ||
 		    (mac_srs->srs_state & SRS_TX_WAKEUP_CLIENT)) {
 			MAC_TX_SET_NO_ENQUEUE(mac_srs, mp_chain,
 			    ret_mp, cookie);
@@ -3826,7 +3827,7 @@ static mac_tx_cookie_t
 mac_tx_single_ring_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_kind_data.tx;
 	mac_tx_stats_t		stats;
 	mac_tx_cookie_t		cookie = 0;
 
@@ -3895,7 +3896,7 @@ mac_tx_serializer_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 {
 	mac_tx_stats_t		stats;
 	mac_tx_cookie_t		cookie = 0;
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_kind_data.tx;
 
 	/* Single ring, serialize below */
 	ASSERT(srs_tx->st_mode == SRS_TX_SERIALIZE);
@@ -3960,8 +3961,8 @@ mac_tx_serializer_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  */
 
 #define	MAC_TX_SOFT_RING_PROCESS(chain) {				\
-	index = COMPUTE_INDEX(hash, mac_srs->srs_tx_ring_count),	\
-	softring = mac_srs->srs_tx_soft_rings[index];			\
+	index = COMPUTE_INDEX(hash, mac_srs->srs_soft_ring_count),	\
+	softring = mac_srs->srs_soft_rings[index];			\
 	cookie = mac_tx_soft_ring_process(softring, chain, flag, ret_mp); \
 	DTRACE_PROBE2(tx__fanout, uint64_t, hash, uint_t, index);	\
 }
@@ -3975,8 +3976,8 @@ mac_tx_fanout_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	uint_t			index;
 	mac_tx_cookie_t		cookie = 0;
 
-	ASSERT(mac_srs->srs_tx.st_mode == SRS_TX_FANOUT ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_BW_FANOUT);
+	ASSERT(mac_srs->srs_kind_data.tx.st_mode == SRS_TX_FANOUT ||
+	    mac_srs->srs_kind_data.tx.st_mode == SRS_TX_BW_FANOUT);
 	if (fanout_hint != 0) {
 		/*
 		 * The hint is specified by the caller, simply pass the
@@ -4059,7 +4060,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	int			cnt, sz;
 	mblk_t			*tail;
 	mac_tx_cookie_t		cookie = 0;
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_kind_data.tx;
 	clock_t			now;
 
 	ASSERT(TX_BANDWIDTH_MODE(mac_srs));
@@ -4122,8 +4123,8 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 
 		hash = HASH_HINT(fanout_hint);
 		indx = COMPUTE_INDEX(hash,
-		    mac_srs->srs_tx_ring_count);
-		softring = mac_srs->srs_tx_soft_rings[indx];
+		    mac_srs->srs_soft_ring_count);
+		softring = mac_srs->srs_soft_rings[indx];
 		return (mac_tx_soft_ring_process(softring, mp_chain, flag,
 		    ret_mp));
 	} else if (srs_tx->st_mode == SRS_TX_BW_AGGR) {
@@ -4178,7 +4179,7 @@ static mac_tx_cookie_t
 mac_tx_aggr_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_kind_data.tx;
 	mac_tx_ring_fn_t	find_tx_ring_fn;
 	mac_ring_handle_t	ring = NULL;
 	void			*arg;
@@ -4218,7 +4219,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 	uint32_t		tx_mode;
 	uint_t			saved_pkt_count;
 	mac_tx_stats_t		stats;
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_kind_data.tx;
 	clock_t			now;
 
 	saved_pkt_count = 0;
@@ -4661,14 +4662,13 @@ done:
 boolean_t
 mac_tx_srs_ring_present(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 {
-	int i;
 	mac_soft_ring_t *soft_ring;
 
-	if (srs->srs_tx.st_arg2 == tx_ring)
+	if (srs->srs_kind_data.tx.st_arg2 == tx_ring)
 		return (B_TRUE);
 
-	for (i = 0; i < srs->srs_tx_ring_count; i++) {
-		soft_ring =  srs->srs_tx_soft_rings[i];
+	for (int i = 0; i < srs->srs_soft_ring_count; i++) {
+		soft_ring = srs->srs_soft_rings[i];
 		if (soft_ring->s_ring_tx_arg2 == tx_ring)
 			return (B_TRUE);
 	}
@@ -4684,14 +4684,13 @@ mac_tx_srs_ring_present(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 mac_soft_ring_t *
 mac_tx_srs_get_soft_ring(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 {
-	int		i;
 	mac_soft_ring_t	*soft_ring;
 
-	if (srs->srs_tx.st_arg2 == tx_ring)
+	if (srs->srs_kind_data.tx.st_arg2 == tx_ring)
 		return (NULL);
 
-	for (i = 0; i < srs->srs_tx_ring_count; i++) {
-		soft_ring =  srs->srs_tx_soft_rings[i];
+	for (int i = 0; i < srs->srs_soft_ring_count; i++) {
+		soft_ring = srs->srs_soft_rings[i];
 		if (soft_ring->s_ring_tx_arg2 == tx_ring)
 			return (soft_ring);
 	}
@@ -4709,9 +4708,8 @@ mac_tx_srs_get_soft_ring(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 void
 mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring)
 {
-	int i;
 	mac_soft_ring_t *sringp;
-	mac_srs_tx_t *srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t *srs_tx = &mac_srs->srs_kind_data.tx;
 
 	mutex_enter(&mac_srs->srs_lock);
 	/*
@@ -4740,8 +4738,8 @@ mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring)
 	 * If you are here, it is for FANOUT, BW_FANOUT,
 	 * AGGR_MODE or AGGR_BW_MODE case
 	 */
-	for (i = 0; i < mac_srs->srs_tx_ring_count; i++) {
-		sringp = mac_srs->srs_tx_soft_rings[i];
+	for (int i = 0; i < mac_srs->srs_soft_ring_count; i++) {
+		sringp = mac_srs->srs_soft_rings[i];
 		mutex_enter(&sringp->s_ring_lock);
 		if (sringp->s_ring_tx_arg2 == ring) {
 			if (sringp->s_ring_state & S_RING_BLOCK) {
@@ -4862,7 +4860,7 @@ mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
 	mutex_enter(&ringp->s_ring_lock);
 	ringp->s_ring_total_inpkt += cnt;
 	ringp->s_ring_total_rbytes += sz;
-	if ((mac_srs->srs_rx.sr_poll_pkt_cnt <= 1) &&
+	if ((mac_srs->srs_kind_data.rx.sr_poll_pkt_cnt <= 1) &&
 	    !(ringp->s_ring_type & ST_RING_WORKER_ONLY)) {
 		/* If on processor or blanking on, then enqueue and return */
 		if (ringp->s_ring_state & S_RING_BLANK ||
@@ -5078,10 +5076,10 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
 	 * SRS_TX_FANOUT, SRS_TX_AGGR, SRS_TX_BW_AGGR.
 	 */
 	ASSERT(MAC_TX_SOFT_RINGS(mac_srs));
-	ASSERT(mac_srs->srs_tx.st_mode == SRS_TX_FANOUT ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_BW_FANOUT ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_AGGR ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_BW_AGGR);
+	ASSERT(mac_srs->srs_kind_data.tx.st_mode == SRS_TX_FANOUT ||
+	    mac_srs->srs_kind_data.tx.st_mode == SRS_TX_BW_FANOUT ||
+	    mac_srs->srs_kind_data.tx.st_mode == SRS_TX_AGGR ||
+	    mac_srs->srs_kind_data.tx.st_mode == SRS_TX_BW_AGGR);
 
 	if (ringp->s_ring_type & ST_RING_WORKER_ONLY) {
 		/* Serialization mode */

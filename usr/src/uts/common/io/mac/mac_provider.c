@@ -809,7 +809,7 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 			 * on this ring are hardware classified and
 			 * share the same MAC header info.
 			 */
-			mac_srs->srs_rx.sr_lower_proc(mh,
+			mac_srs->srs_kind_data.rx.sr_lower_proc(mh,
 			    (mac_resource_handle_t)mac_srs, mp_chain, B_FALSE);
 			MR_REFRELE(mr);
 			return;

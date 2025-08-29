@@ -317,28 +317,15 @@ struct mac_soft_ring_set_s {
 	 * The following block is protected by Rx quiescence.
 	 * i.e. they can be changed only after quiescing the SRS
 	 * Protected by srs_lock.
+	 *
+	 * TODO(ky) what is the protection in Tx case?
 	 */
 	mac_soft_ring_t	*srs_soft_ring_head;
 	mac_soft_ring_t	*srs_soft_ring_tail;
+	mac_soft_ring_t	**srs_soft_rings;
 	int		srs_soft_ring_count;
 	int		srs_soft_ring_quiesced_count;
 	int		srs_soft_ring_condemned_count;
-	mac_soft_ring_t	**srs_tcp_soft_rings;
-	int		srs_tcp_ring_count;
-	mac_soft_ring_t	**srs_udp_soft_rings;
-	int		srs_udp_ring_count;
-	mac_soft_ring_t	**srs_tcp6_soft_rings;
-	int		srs_tcp6_ring_count;
-	mac_soft_ring_t	**srs_udp6_soft_rings;
-	int		srs_udp6_ring_count;
-	mac_soft_ring_t	**srs_oth_soft_rings;
-	int		srs_oth_ring_count;
-	/*
-	 * srs_tx_soft_rings is used by tx_srs in
-	 * when operating in multi tx ring mode.
-	 */
-	mac_soft_ring_t	**srs_tx_soft_rings;
-	int		srs_tx_ring_count;
 
 	/*
 	 * Bandwidth control related members.
@@ -381,10 +368,18 @@ struct mac_soft_ring_set_s {
 	processorid_t	srs_poll_cpuid;		/* processor to bind to */
 	processorid_t	srs_poll_cpuid_save;	/* saved cpuid during offline */
 	uint_t		srs_fanout_state;
+
+	/*
+	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
+	 * then can we share this where relevant? It's like 5KiB each go.
+	 */
 	mac_cpus_t	srs_cpu;
 
-	mac_srs_rx_t	srs_rx;
-	mac_srs_tx_t	srs_tx;
+	union {
+		mac_srs_rx_t	rx; /* !(srs_type & SRST_TX) */
+		mac_srs_tx_t	tx; /* srs_type & SRST_TX */
+	} srs_kind_data;
+
 	kstat_t		*srs_ksp;
 };
 
@@ -393,6 +388,7 @@ struct mac_soft_ring_set_s {
  */
 #define	ST_RING_WORKER_ONLY	0x0001	/* Worker thread only */
 #define	ST_RING_ANY		0x0002	/* Any thread can process the queue */
+/* TODO: delete */
 #define	ST_RING_TCP		0x0004
 #define	ST_RING_UDP		0x0008
 #define	ST_RING_OTH		0x0010
@@ -400,6 +396,7 @@ struct mac_soft_ring_set_s {
 #define	ST_RING_BW_CTL		0x0020
 #define	ST_RING_TX		0x0040
 
+/* TODO: delete */
 #define	ST_RING_TCP6		0x0080
 #define	ST_RING_UDP6		0x0100
 
@@ -449,6 +446,12 @@ struct mac_soft_ring_set_s {
 
 #define	SRST_DLS_BYPASS		0x00001000
 #define	SRST_CLIENT_POLL_ENABLED 0x00002000
+
+inline bool
+mac_srs_is_tx(const mac_soft_ring_set_t *srs)
+{
+	return ((srs->srs_type & SRST_TX) != 0);
+}
 
 /*
  * soft ring set flags. These bits are dynamic in nature and get
@@ -543,7 +546,7 @@ extern struct dls_kstats dls_kstat;
 		(mac_srs)->srs_state &= ~SRS_POLLING;			\
 		(void) mac_hwring_enable_intr((mac_ring_handle_t)	\
 		    (mac_srs)->srs_ring);				\
-		(mac_srs)->srs_rx.sr_poll_off++;			\
+		(mac_srs)->srs_kind_data.rx.sr_poll_off++;			\
 	}								\
 }
 
@@ -583,7 +586,7 @@ extern struct dls_kstats dls_kstat;
  * mode if nothing is found.
  */
 #define	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt) {		        \
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_rx;			\
+	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_kind_data.rx;		\
 	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
 									\
 	srs_rx->sr_poll_pkt_cnt -= cnt;					\
@@ -631,7 +634,8 @@ extern struct dls_kstats dls_kstat;
 	(srs)->srs_bw->mac_bw_used += (sz);				\
 }
 
-#define	MAC_TX_SOFT_RINGS(mac_srs) ((mac_srs)->srs_tx_ring_count >= 1)
+#define	MAC_TX_SOFT_RINGS(mac_srs) (mac_srs_is_tx((mac_srs)) &&		\
+	(mac_srs)->srs_soft_ring_count >= 1)
 
 /* Soft ring flags for teardown */
 #define	SRS_POLL_THR_OWNER	(SRS_PROC | SRS_POLLING | SRS_GET_PKTS)

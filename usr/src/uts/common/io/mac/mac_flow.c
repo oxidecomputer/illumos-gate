@@ -117,7 +117,7 @@ flow_stat_update(kstat_t *ksp, int rw)
 		mac_srs = (mac_soft_ring_set_t *)fep->fe_rx_srs[i];
 		if (mac_srs == NULL) 		/* Multicast flow */
 			break;
-		mac_rx_stat = &mac_srs->srs_rx.sr_stat;
+		mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
 
 		flow_stats.fs_ibytes += mac_rx_stat->mrs_intrbytes +
 		    mac_rx_stat->mrs_pollbytes + mac_rx_stat->mrs_lclbytes;
@@ -131,7 +131,7 @@ flow_stat_update(kstat_t *ksp, int rw)
 	mac_srs = (mac_soft_ring_set_t *)fep->fe_tx_srs;
 	if (mac_srs == NULL) 		/* Multicast flow */
 		goto done;
-	mac_tx_stat = &mac_srs->srs_tx.st_stat;
+	mac_tx_stat = &mac_srs->srs_kind_data.tx.st_stat;
 
 	flow_stats.fs_obytes = mac_tx_stat->mts_obytes;
 	flow_stats.fs_opackets = mac_tx_stat->mts_opackets;
