@@ -431,11 +431,11 @@ turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 
 	switch (family) {
 	case X86_PF_AMD_TURIN:
-		if (maj != 94 || min < 91 || min > 123)
+		if (maj != 94 || min < 91 || min > 125)
 			valid = false;
 		break;
 	case X86_PF_AMD_DENSE_TURIN:
-		if (maj != 99 || min < 91 || min > 123)
+		if (maj != 99 || min < 91 || min > 125)
 			valid = false;
 		break;
 	default:
