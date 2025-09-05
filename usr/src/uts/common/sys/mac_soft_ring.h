@@ -369,6 +369,9 @@ struct mac_soft_ring_set_s {
 	processorid_t	srs_poll_cpuid_save;	/* saved cpuid during offline */
 	uint_t		srs_fanout_state;
 
+	/* valid iff. SRST_HAS_WORKER */
+	flow_tree_baked_t srs_flowtree;
+
 	/*
 	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
 	 * then can we share this where relevant? It's like 5KiB each go.
@@ -433,7 +436,7 @@ struct mac_soft_ring_set_s {
 #define	SRST_LINK		0x00000001
 #define	SRST_FLOW		0x00000002
 #define	SRST_NO_SOFT_RINGS	0x00000004
-#define	SRST_TCP_ONLY		0x00000008
+#define	SRST_HAS_WORKER		0x00000008
 
 #define	SRST_FANOUT_PROTO	0x00000010
 #define	SRST_FANOUT_SRC_IP	0x00000020
@@ -446,6 +449,8 @@ struct mac_soft_ring_set_s {
 
 #define	SRST_DLS_BYPASS		0x00001000
 #define	SRST_CLIENT_POLL_ENABLED 0x00002000
+
+#define	SRST_ALWAYS_HASH_OUT	0x00010000
 
 inline bool
 mac_srs_is_tx(const mac_soft_ring_set_t *srs)
