@@ -1804,7 +1804,7 @@ milan_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	 * versions. If we encounter a version we have not verified then we
 	 * panic.
 	 */
-	if (maj != 45 || min < 65 || min > 101) {
+	if (maj != 45 || min < 65 || min > 104) {
 		cmn_err(CE_PANIC,
 		    "The PP table layout for SMU version %u.%u is unknown",
 		    maj, min);
