@@ -717,8 +717,8 @@ extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
 	extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 extern void mac_soft_ring_free(mac_soft_ring_t *);
 extern void mac_soft_ring_signal(mac_soft_ring_t *, uint_t);
-extern void mac_rx_soft_ring_process(mac_client_impl_t *, mac_soft_ring_t *,
-    mblk_t *, mblk_t *, int, size_t);
+extern void mac_rx_soft_ring_process(mac_soft_ring_t *, mblk_t *, mblk_t *, int,
+    size_t);
 extern mac_tx_cookie_t mac_tx_soft_ring_process(mac_soft_ring_t *,
     mblk_t *, uint16_t, mblk_t **);
 extern void mac_srs_worker_quiesce(mac_soft_ring_set_t *);

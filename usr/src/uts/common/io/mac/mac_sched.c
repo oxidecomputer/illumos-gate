@@ -1434,6 +1434,12 @@ uint_t mac_rx_srs_stack_toodeep;
 #error Downward stack growth assumed.
 #endif
 
+static inline size_t
+mp_len(const mblk_t *mp)
+{
+	return ((mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp));
+}
+
 /*
  * Drop the rx packet and advance to the next one in the chain.
  */
@@ -1505,7 +1511,7 @@ mac_srs_fire(void *arg)
 
 #define	COMPUTE_INDEX(key, sz)	(key % sz)
 
-#define	FANOUT_ENQUEUE_MP(head, tail, cnt, bw_ctl, sz, sz0, mp) {	\
+#define	ENQUEUE_MP(head, tail, cnt, bw_ctl, sz, sz0, mp) {	\
 	if ((tail) != NULL) {						\
 		ASSERT((tail)->b_next == NULL);				\
 		(tail)->b_next = (mp);					\
@@ -1579,11 +1585,11 @@ enum pkt_type {
 static void
 mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 {
-	mblk_t				*headmp[MAX_SR_FANOUT];
-	mblk_t				*tailmp[MAX_SR_FANOUT];
-	int				cnt[MAX_SR_FANOUT];
-	size_t				sz[MAX_SR_FANOUT];
-	mac_client_impl_t		*mcip = mac_srs->srs_mcip;
+	mblk_t			*headmp[MAX_SR_FANOUT] = { 0 };
+	mblk_t			*tailmp[MAX_SR_FANOUT] = { 0 };
+	int			cnt[MAX_SR_FANOUT] = { 0 };
+	size_t			sz[MAX_SR_FANOUT] = { 0 };
+	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
 
 	/* TODO(ky): Perform this check further upstack to set inbuilt MEOI */
 	const bool is_ether =
@@ -1601,11 +1607,6 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	 * need to ensure that happens behind the SRS_PROC.
 	 */
 	const int fanout_cnt = mac_srs->srs_soft_ring_count;
-
-	bzero(headmp, MAX_SR_FANOUT * sizeof (mblk_t *));
-	bzero(tailmp, MAX_SR_FANOUT * sizeof (mblk_t *));
-	bzero(cnt, MAX_SR_FANOUT * sizeof (int));
-	bzero(sz, MAX_SR_FANOUT * sizeof (size_t));
 
 	/*
 	 * We got a chain from SRS that we need to send to the soft rings.
@@ -1628,8 +1629,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		mblk_t *mp = head;
 		head = head->b_next;
 		mp->b_next = NULL;
-		const size_t sz1 =
-		    (mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp);
+		const size_t sz1 = mp_len(mp);
 
 		/* TODO(ky): bind meoi to packet at the head of proceessing */
 		if (is_ether) {
@@ -1747,7 +1747,7 @@ compute_index:
 		 */
 		indx = COMPUTE_INDEX(hash, fanout_cnt);
 enqueue:
-		FANOUT_ENQUEUE_MP(headmp[indx], tailmp[indx],
+		ENQUEUE_MP(headmp[indx], tailmp[indx],
 		    cnt[indx], bw_ctl, sz[indx], sz1, mp);
 	}
 
@@ -1755,8 +1755,8 @@ enqueue:
 		if (headmp[i] != NULL) {
 			mac_soft_ring_t	*softring = mac_srs->srs_soft_rings[i];
 
-			ASSERT(tailmp[i]->b_next == NULL);
-			mac_rx_soft_ring_process(mcip, softring,
+			ASSERT3P(tailmp[i]->b_next, ==, NULL);
+			mac_rx_soft_ring_process(softring,
 			    headmp[i], tailmp[i], cnt[i], sz[i]);
 		}
 	}
@@ -1864,7 +1864,7 @@ check_again:
 		sz = 0;
 		while (mp != NULL) {
 			tail = mp;
-			sz += (mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp);
+			sz += mp_len(mp);
 			mp = mp->b_next;
 			count++;
 		}
@@ -2145,6 +2145,159 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
+static inline void
+mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
+    int cnt, int sz)
+{
+	if (head != NULL) {
+		if (mac_srs->srs_type & SRST_FANOUT_SRC_IP) {
+			mac_rx_srs_fanout(mac_srs, head);
+		} else {
+			mac_rx_soft_ring_process(mac_srs->srs_soft_rings[0],
+			    head, tail, cnt, sz);
+		}
+	}
+}
+
+static inline void
+mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
+{
+	uint16_t depth = 0;
+	bool is_enter = true;
+	const flow_tree_baked_node_t *node = ft->ftb_subtree;
+	const flow_tree_baked_node_t * const done = node + (ft->ftb_depth << 1);
+
+	while (node != done) {
+		flow_tree_pkt_set_t *my_pkts =
+			&(ft->ftb_chains[depth]);
+		flow_tree_pkt_set_t *par_pkts = (depth > 0)
+			? &(ft->ftb_chains[depth])
+			: pkts;
+		if (is_enter) {
+			const flow_tree_enter_node_t *inode = &node->enter;
+			/*
+			 * TODO(ky):
+			 * need/want a *skip* param here when there
+			 * are no matches, no packets remaining, etc.
+			 */
+			mblk_t *prev = NULL;
+			mblk_t *curr = par_pkts->ftp_avail_head;
+			for (; curr != NULL; curr = curr->b_next) {
+				/*
+				 * TODO(ky): match logic!!!!!
+				 */
+				const bool is_match = false;
+				if (is_match) {
+					size_t lsz = mp_len(curr);
+					par_pkts->ftp_avail_count--;
+					par_pkts->ftp_avail_size -= lsz;
+					if (prev != NULL) {
+						prev->b_cont = curr->b_next;
+					} else {
+						ASSERT3P(curr, ==,
+						    par_pkts->ftp_avail_head);
+						par_pkts->ftp_avail_head =
+						    curr->b_next;
+					}
+					ENQUEUE_MP(
+					    my_pkts->ftp_avail_head,
+					    my_pkts->ftp_avail_tail,
+					    my_pkts->ftp_avail_count,
+					    false,
+					    my_pkts->ftp_avail_size,
+					    lsz, curr);
+				} else {
+					prev = curr;
+				}
+			}
+			par_pkts->ftp_avail_tail = prev;
+			if (prev == NULL) {
+				par_pkts->ftp_avail_head = NULL;
+			}
+			par_pkts->ftp_avail_tail = prev;
+
+			if (inode->ften_descend) {
+				depth++;
+			} else {
+				is_enter = false;
+			}
+		} else {
+			const flow_tree_exit_node_t *inode =
+			    &node->exit;
+
+			const bool have_avail = my_pkts->ftp_avail_head != NULL;
+			const bool have_deli = my_pkts->ftp_deli_head != NULL;
+			/*
+			 * This list recombination here should *not* reorder
+			 * packets within a flow, given that flows will be moved
+			 * around together. Flows may be reordered wrt. one
+			 * another, however.
+			 */
+			/* TODO(ky): feels a bit wasteful, nah? */
+			if (have_avail) {
+				ASSERT3P(my_pkts->ftp_avail_tail, !=, NULL);
+				my_pkts->ftp_deli_count +=
+				    my_pkts->ftp_avail_count;
+				my_pkts->ftp_deli_size +=
+				    my_pkts->ftp_avail_size;
+				if (have_deli) {
+					ASSERT3P(my_pkts->ftp_deli_tail, !=,
+					    NULL);
+					my_pkts->ftp_deli_tail->b_next =
+					    my_pkts->ftp_avail_head;
+					my_pkts->ftp_deli_tail =
+					    my_pkts->ftp_avail_tail;
+				} else {
+					my_pkts->ftp_deli_head =
+					    my_pkts->ftp_avail_head;
+				}
+				my_pkts->ftp_deli_tail =
+				    my_pkts->ftp_avail_tail;
+			}
+			switch (inode->ftex_do) {
+			case MFA_TYPE_DELIVER:
+				mac_rx_srs_deliver(
+				    inode->arg.ftex_srs,
+				    my_pkts->ftp_deli_head,
+				    my_pkts->ftp_deli_tail,
+				    my_pkts->ftp_deli_count,
+				    my_pkts->ftp_deli_size);
+				break;
+			case MFA_TYPE_DELEGATE:
+				/* TODO(ky): flent stats?? */
+				if (par_pkts->ftp_deli_head == NULL) {
+					par_pkts->ftp_deli_head
+					    = my_pkts->ftp_deli_head;
+				} else {
+					ASSERT3P(par_pkts->ftp_deli_tail, !=,
+					    NULL);
+					par_pkts->ftp_deli_tail->b_next =
+					    my_pkts->ftp_avail_head;
+				}
+				par_pkts->ftp_deli_tail =
+				    my_pkts->ftp_deli_tail;
+				par_pkts->ftp_deli_count +=
+				    my_pkts->ftp_deli_count;
+				par_pkts->ftp_deli_size +=
+				    my_pkts->ftp_deli_size;
+				break;
+			case MFA_TYPE_DROP:
+				/* TODO(ky): right call? flent stats? */
+				freemsgchain(my_pkts->ftp_deli_head);
+				break;
+			}
+			bzero(my_pkts, sizeof (*my_pkts));
+
+			if (inode->ftex_ascend) {
+				depth--;
+			} else {
+				is_enter = true;
+			}
+		}
+		node++;
+	}
+}
+
 /*
  * mac_rx_srs_drain
  *
@@ -2258,35 +2411,29 @@ again:
 	/* TODO(ky): `likely()`? */
 	if (mac_srs->srs_flowtree.ftb_depth > 0) {
 		/* TODO(ky): walk tree, deliver to SRSes as needed */
-		ASSERT3U(mac_srs->srs_flowtree->ftb_len, >, 0);
-		ASSERT3P(mac_srs->srs_flowtree->ftb_chains, !=, NULL);
-		ASSERT3P(mac_srs->srs_flowtree->ftb_subtree, !=, NULL);
+		ASSERT3U(mac_srs->srs_flowtree.ftb_len, >, 0);
+		ASSERT3P(mac_srs->srs_flowtree.ftb_chains, !=, NULL);
+		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
 
-		uint32_t nodes_left = mac_srs->srs_flowtree.ftb_depth << 1;
-		uint16_t depth = 0;
-		bool is_enter = true;
-		flow_tree_baked_node_t *node = mac_srs->srs_flowtree.ftb_subtree;
+		// NOTES while I think
+		// Pile of stuffs needs to be similar shape to an SRS.
+		// Head, tail, count, sz. X2 per depth
+		// Why? Need delegation to be for keeps.
+		// See: ENQUEUE_MP(head, tail, cnt, bw_ctl, sz, sz0, mp)
+		// 
+		flow_tree_pkt_set_t quack = {0};
+		quack.ftp_avail_head = head;
+		quack.ftp_avail_tail = tail;
+		quack.ftp_avail_count = cnt;
+		quack.ftp_avail_size = sz;
 
-		while (nodes_left != 0) {
-			if (is_enter) {
-				/* TODO(ky) */
-			} else {
-				/* TODO(ky) */
-			}
-			nodes_left--;
-			node++;
-		}
+		mac_rx_srs_walk_flowtree(&quack, &mac_srs->srs_flowtree);
+
+		/* TODO(ky) unpack quack into head/tail/count/size. split between avail/deli? */
 	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
-	if (head != NULL) {
-		if (mac_srs->srs_type & SRST_FANOUT_SRC_IP) {
-			mac_rx_srs_fanout(mac_srs, head);
-		} else {
-			mac_rx_soft_ring_process(mcip,
-			    mac_srs->srs_soft_rings[0], head, tail, cnt, sz);
-		}
-	}
+	mac_rx_srs_deliver(mac_srs, head, tail, cnt, sz);
 
 	mutex_enter(&mac_srs->srs_lock);
 
@@ -2531,14 +2678,7 @@ again:
 	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
-	if (head != NULL) {
-		if (mac_srs->srs_type & SRST_FANOUT_SRC_IP) {
-			mac_rx_srs_fanout(mac_srs, head);
-		} else {
-			mac_rx_soft_ring_process(mcip,
-			    mac_srs->srs_soft_rings[0], head, tail, cnt, sz);
-		}
-	}
+	mac_rx_srs_deliver(mac_srs, head, tail, cnt, sz);
 
 	mutex_enter(&mac_srs->srs_lock);
 
@@ -2877,7 +3017,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 		while (mp != NULL) {
 			tail = mp;
 			count++;
-			sz += (mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp);
+			sz += mp_len(mp);
 			mp = mp->b_next;
 		}
 	}
@@ -2928,7 +3068,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 				tail = NULL;
 				head = NULL;
 				while (mp != NULL) {
-					sz1 = msgdsize(mp);
+					sz1 = mp_len(mp);
 					if (mac_bw->mac_bw_sz + chain_sz + sz1 >
 					    mac_bw->mac_bw_drop_threshold)
 						break;
@@ -3921,8 +4061,7 @@ mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
 			next = mp->b_next;
 			mp->b_next = NULL;
 			opackets++;
-			obytes += (mp->b_cont == NULL ? MBLKL(mp) :
-			    msgdsize(mp));
+			obytes += mp_len(mp);
 
 			CHECK_VID_AND_ADD_TAG(mp);
 			mp = mac_provider_tx(mip, ring, mp, src_mcip);
@@ -3960,7 +4099,7 @@ mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
 		next = mp->b_next;
 		mp->b_next = NULL;
 		opackets++;
-		pkt_size = (mp->b_cont == NULL ? MBLKL(mp) : msgdsize(mp));
+		pkt_size = mp_len(mp);
 		obytes += pkt_size;
 		CHECK_VID_AND_ADD_TAG(mp);
 
@@ -4243,10 +4382,9 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
  * The proc and arg for each mblk is already stored in the mblk in
  * appropriate places.
  */
-/* ARGSUSED */
 void
-mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
-    mblk_t *mp_chain, mblk_t *tail, int cnt, size_t sz)
+mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
+    int cnt, size_t sz)
 {
 	mac_direct_rx_t		proc;
 	void			*arg1;

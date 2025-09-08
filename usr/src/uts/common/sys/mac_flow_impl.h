@@ -269,8 +269,27 @@ struct mac_flow_match_list_s {
 };
 
 typedef struct {
-	mblk_t	*unvisited;
-	mblk_t	*visited; /* Do we need this, or just put on the SRS? */
+	/* TODO(ky): Could this be smarter? E.g. fewer queues? */
+	/*
+	 * Every layer in the flow tree needs to keep two lists of packets:
+	 *  - packets which have been taken by this layer, but which are eligible
+	 *    to be picked by a child flow entry.
+	 *  - packets which have been picked up by a child node and the action
+	 *    is, quite definitively, to drop them off here. these should NOT
+	 *    undergo any further processing.
+	 */
+	mblk_t		*ftp_avail_head;
+	mblk_t		*ftp_avail_tail;
+	uint32_t	ftp_avail_count;
+	size_t		ftp_avail_size;
+
+	/*
+	 * These packets unambiguously belong to this layer.
+	 */
+	mblk_t		*ftp_deli_head;
+	mblk_t		*ftp_deli_tail;
+	uint32_t	ftp_deli_count;
+	size_t		ftp_deli_size;
 } flow_tree_pkt_set_t;
 
 typedef struct {
