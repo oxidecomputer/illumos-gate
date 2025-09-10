@@ -3060,7 +3060,7 @@ static struct dev_ops t4_dev_ops = {
 
 static struct modldrv t4nex_modldrv = {
 	.drv_modops =		&mod_driverops,
-	.drv_linkinfo =		"Chelsio T4-T6 nexus " DRV_VERSION,
+	.drv_linkinfo =		"Chelsio T4-T7 nexus " DRV_VERSION,
 	.drv_dev_ops =		&t4_dev_ops
 };
 
