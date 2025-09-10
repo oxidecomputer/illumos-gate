@@ -2526,7 +2526,7 @@ mac_flow_fill_exit(flow_entry_t *ent, flow_tree_exit_node_t *node, bool ascend)
 
 /*
  * Allocates the structure of a baked flow tree, filling in references to
- * 
+ * ... XXX TODO(ky).
  */
 int
 mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
@@ -2542,7 +2542,7 @@ mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
 	/* Walk the existing tree for size measurement. */
 	flow_entry_t *el = flent->fe_child;
 	bool ascended = false;
-	size_t depth = 1;
+	size_t depth = 0;
 	while (el != NULL && el != flent) {
 		ASSERT3P(el->fe_parent, !=, NULL);
 
@@ -2577,10 +2577,15 @@ mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
 	const size_t chain_len = max_depth * sizeof (flow_tree_pkt_set_t);
 	const size_t subtree_len = 2 * n_nodes *
 	    sizeof (flow_tree_baked_node_t);
+	const size_t enter_track_len = max_depth * sizeof (uint16_t);
 	into->ftb_chains = kmem_zalloc(chain_len, KM_SLEEP);
 	into->ftb_subtree = kmem_zalloc(subtree_len, KM_SLEEP);
 
-	if (into->ftb_chains == NULL || into->ftb_subtree == NULL) {
+	/* Scratch space for ... without taking up too much stack */
+	uint16_t *node_enters = kmem_zalloc(enter_track_len, KM_SLEEP);
+
+	if (into->ftb_chains == NULL || into->ftb_subtree == NULL ||
+	    node_enters == NULL) {
 		err = ENOMEM;
 		goto bail;
 	}
@@ -2596,8 +2601,13 @@ mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
 	flow_tree_baked_node_t *curr_node = into->ftb_subtree;
 
 	while (el != NULL && el != flent) {
+		const size_t node_idx = curr_node - into->ftb_subtree;
+		ASSERT3U(node_idx, <=, UINT16_MAX);
+
 		if (!ascended) {
+			node_enters[depth] = node_idx;
 			curr_node->enter.ften_flent = el;
+			/* TODO(ky) FILL FE_MATCH2 AT SOURCE */
 			curr_node->enter.ften_match = el->fe_match2;
 			curr_node->enter.ften_descend = el->fe_child != NULL;
 			curr_node++;
@@ -2607,12 +2617,20 @@ mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
 			ascended = false;
 			el = el->fe_child;
 		} else if (el->fe_sibling != NULL) {
+			uint16_t my_enter = node_enters[depth];
+			curr_node[my_enter].enter.ften_skip = node_idx -
+			    my_enter;
+
 			ascended = false;
 			mac_flow_fill_exit(el, &curr_node->exit, false);
 			curr_node++;
 
 			el = el->fe_sibling;
 		} else {
+			uint16_t my_enter = node_enters[depth];
+			curr_node[my_enter].enter.ften_skip = node_idx -
+			    my_enter;
+
 			ascended = true;
 			mac_flow_fill_exit(el, &curr_node->exit, true);
 			curr_node++;
@@ -2621,14 +2639,19 @@ mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
 		}
 	}
 
+	kmem_free(node_enters, enter_track_len);
+
 	return (err);
 
 bail:
 	if (into->ftb_chains != NULL) {
 		kmem_free(into->ftb_chains, chain_len);
 	}
-	if (into->ftb_chains != NULL) {
-		kmem_free(into->ftb_chains, chain_len);
+	if (into->ftb_subtree != NULL) {
+		kmem_free(into->ftb_subtree, subtree_len);
+	}
+	if (node_enters != NULL) {
+		kmem_free(node_enters, enter_track_len);
 	}
 	return (err);
 }

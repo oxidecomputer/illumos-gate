@@ -2168,18 +2168,11 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 	const flow_tree_baked_node_t * const done = node + (ft->ftb_depth << 1);
 
 	while (node != done) {
-		flow_tree_pkt_set_t *my_pkts =
-			&(ft->ftb_chains[depth]);
-		flow_tree_pkt_set_t *par_pkts = (depth > 0)
-			? &(ft->ftb_chains[depth])
-			: pkts;
+		flow_tree_pkt_set_t *my_pkts = &(ft->ftb_chains[depth]);
+		flow_tree_pkt_set_t *par_pkts = (depth > 0) ?
+		    &(ft->ftb_chains[depth-1]) : pkts;
 		if (is_enter) {
 			const flow_tree_enter_node_t *inode = &node->enter;
-			/*
-			 * TODO(ky):
-			 * need/want a *skip* param here when there
-			 * are no matches, no packets remaining, etc.
-			 */
 			mblk_t *prev = NULL;
 			mblk_t *curr = par_pkts->ftp_avail_head;
 			for (; curr != NULL; curr = curr->b_next) {
@@ -2210,6 +2203,24 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 					prev = curr;
 				}
 			}
+
+			if (my_pkts->ftp_avail_head == NULL) {
+				/*
+				 * No packets were taken, thus do not call
+				 * children or attempt to deliver to this flent.
+				 * Skip to the corresponding exit node.
+				 */
+				node += inode->ften_skip;
+				const flow_tree_exit_node_t *enode =
+				    &node->exit;
+				if (enode->ftex_ascend) {
+					depth -= 1;
+				}
+
+				node++;
+				continue;
+			}
+
 			par_pkts->ftp_avail_tail = prev;
 			if (prev == NULL) {
 				par_pkts->ftp_avail_head = NULL;

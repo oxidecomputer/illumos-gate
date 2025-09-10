@@ -296,6 +296,7 @@ typedef struct {
 	flow_entry_t		*ften_flent;
 	mac_flow_match_t	ften_match;
 	bool			ften_descend;
+	uint16_t		ften_skip;
 } flow_tree_enter_node_t;
 
 typedef struct {
