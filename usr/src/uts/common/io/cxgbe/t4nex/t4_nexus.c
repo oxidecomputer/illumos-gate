@@ -399,6 +399,9 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	/* Do this early. Memory window is required for loading config file. */
 	t4_setup_adapter_memwin(sc);
+	/* RPZ: temporary(?) patch to make sure we catch first devlog entries */
+	(void) t4_init_devlog_ncores_params(sc, 0);
+	log_devlog(sc);
 
 	/* Prepare the firmware for operation */
 	rc = prep_firmware(sc);
