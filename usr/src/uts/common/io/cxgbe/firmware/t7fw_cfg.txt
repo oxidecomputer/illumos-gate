@@ -63,7 +63,7 @@
 	rss_glb_config_options = tnlmapen,hashtoeplitz,tnlalllkp
 
 	# PL_TIMEOUT register
-	pl_timeout_value = 1000		# the timeout value in units of us
+	pl_timeout_value = 200		# the timeout value in units of us
 
 	# The following Scatter Gather Engine (SGE) settings assume a 4KB Host
 	# Page Size and a 64B L1 Cache Line Size. It programs the
@@ -95,18 +95,26 @@
 	reg[0x10a8] = 0x402000/0x402000	# SGE_DOORBELL_CONTROL
 	sge_timer_value = 5, 10, 20, 50, 100, 200 # SGE_TIMER_VALUE* in usecs
 	reg[0x10c4] = 0x20000000/0x20000000 # GK_CONTROL, enable 5th thread
+	reg[0x173c] = 0x2/0x2
+
+	reg[0x1750] = 0x01000000/0x03c00000 # RDMA_INV_Handling = 1
+                                        # terminate_status_en = 0
+                                        # DISABLE = 0
 
 	#DBQ Timer duration = 1 cclk cycle duration * (sge_dbq_timertick+1) * sge_dbq_timer
 	#SGE DBQ tick value. All timers are multiple of this value
-	#sge_dbq_timertick = 5 #in usecs
-	#sge_dbq_timer = 1, 2, 4, 6, 8, 10, 12, 16
+	sge_dbq_timertick = 50 #in usecs
+	sge_dbq_timer = 1, 2, 4, 6, 8, 10, 12, 16
+
 	# enable TP_OUT_CONFIG.IPIDSPLITMODE
 	reg[0x7d04] = 0x00010000/0x00010000
 
 	reg[0x7dc0] = 0x0e2f8849	# TP_SHIFT_CNT
 
+    reg[0x46004] = 0x3/0x3      #Crypto core reset
+
 	#Tick granularities in kbps
-	tsch_ticks = 1000, 100, 10, 1
+	tsch_ticks = 100000, 10000, 1000, 10
 
 	# TP_VLAN_PRI_MAP to select filter tuples and enable ServerSram
 	# filter control: compact, fcoemask
@@ -158,27 +166,41 @@
 	reg[0x19c28] = 0x00800000/0x01f00000 # LE Hash bucket size 8, 
 
 	# ULP_TX_CONFIG
-	reg[0x8dc0] = 0x00000104/0x00000104 # Enable ITT on PI err
+	reg[0x8dc0] = 0x00000104/0x02000104 # Enable ITT on PI err
 					    # Enable more error msg for ...
 					    # TPT error.
+						# Err2uP = 0
 
-	# ULP_RX_MISC_FEATURE_ENABLE
-	reg[0x1925c] = 0x01003400/0x01003400 # iscsi tag pi bit
-					     # Enable offset decrement after ...
-					     # PI extraction and before DDP
-					     # ulp insert pi source info in DIF
-					     # iscsi_eff_offset_en
+	#ULP_RX_CTL1
+	reg[0x19330] = 0x000000f0/0x000000f0 # RDMA_Invld_Msg_Dis = 3
+	                                     # ROCE_Invld_Msg_Dis = 3
 
-	#Enable iscsi completion moderation feature
-	#reg[0x1925c] = 0x000041c0/0x000031c0	# Enable offset decrement after
+	#Enable iscsi completion moderation feature, disable rdma invlidate in ulptx
+	reg[0x1925c] = 0x000041c0/0x000031d0	# Enable offset decrement after
 						# PI extraction and before DDP.
 						# ulp insert pi source info in
 						# DIF.
 						# Enable iscsi hdr cmd mode.
 						# iscsi force cmd mode.
 						# Enable iscsi cmp mode.
-	#gc = 3 # 0 - disable, 1 - enable mc0 gc,
-		   # 2 - enable mc1/hma gc, 3 - enable gc for both
+						# terminate_status_en = 0
+
+	#ULP_RX_CQE_GEN_EN
+	reg[0x19250] = 0x0/0x3   # Termimate_msg = 0
+	                         # Terminate_with_err = 0
+
+	gc_disable = 3 # 3 - disable gc for hma/mc1 and mc0,
+				    # 2 - disable gc for mc1/hma enable mc0,
+				    # 1 - enable gc for mc1/hma disable mc0,
+				    # 0 - enable gc for mc1/hma and for mc0,
+				    # default gc enabled.
+
+	# HMA configuration (uncomment following lines to enable HMA)
+	hma_size = 92 			# Size (in MBs) of host memory expected
+	hma_regions = 	iscsi,rrq,tls,ddp,pmrx,stag,pbl,rq	# What all regions to place in host memory
+
+    #mc[0]=0
+    #mc[1]=0
 
 # Some "definitions" to make the rest of this a bit more readable.  We support
 # 4 ports, 3 functions (NIC, FCoE and iSCSI), scaling up to 8 "CPU Queue Sets"
@@ -332,46 +354,103 @@
 # managed on the "storage PFs" (see below).
 #
 
+[function "0"]
+	nvf = 16		# NVF on this function
+	wx_caps = all		# write/execute permissions for all commands
+	r_caps = all		# read permissions for all commands
+	nvi = 1			# 1 port
+	niqflint = 8		# NCPUS "Queue Sets"
+	nethctrl = 8		# NCPUS "Queue Sets"
+	neq = 16		# niqflint + nethctrl Egress Queues
+	nexactf = 8		# number of exact MPSTCAM MAC filters
+	cmask = all		# access to all channels
+	pmask = 0x1		# access to only one port
+
+
+[function "1"]
+	nvf = 16		# NVF on this function
+	wx_caps = all		# write/execute permissions for all commands
+	r_caps = all		# read permissions for all commands
+	nvi = 1			# 1 port
+	niqflint = 8		# NCPUS "Queue Sets"
+	nethctrl = 8		# NCPUS "Queue Sets"
+	neq = 16		# niqflint + nethctrl Egress Queues
+	nexactf = 8		# number of exact MPSTCAM MAC filters
+	cmask = all		# access to all channels
+	pmask = 0x2		# access to only one port
+
+[function "2"]
+	nvf = 16		# NVF on this function
+	wx_caps = all		# write/execute permissions for all commands
+	r_caps = all		# read permissions for all commands
+	nvi = 1			# 1 port
+	niqflint = 8		# NCPUS "Queue Sets"
+	nethctrl = 8		# NCPUS "Queue Sets"
+	neq = 16		# niqflint + nethctrl Egress Queues
+	nexactf = 8		# number of exact MPSTCAM MAC filters
+	cmask = all		# access to all channels
+	#pmask = 0x4		# access to only one port
+	pmask = 0x1		# access to only one port
+
+[function "3"]
+	nvf = 16		# NVF on this function
+	wx_caps = all		# write/execute permissions for all commands
+	r_caps = all		# read permissions for all commands
+	nvi = 1			# 1 port
+	niqflint = 8		# NCPUS "Queue Sets"
+	nethctrl = 8		# NCPUS "Queue Sets"
+	neq = 16		# niqflint + nethctrl Egress Queues
+	nexactf = 8		# number of exact MPSTCAM MAC filters
+	cmask = all		# access to all channels
+	#pmask = 0x2		# access to only one port
+
 # Some OS Drivers manage all application functions for all ports via PF4.
 # Thus we need to provide a large number of resources here.  For Egress
 # Queues we need to account for both TX Queues as well as Free List Queues
 # (because the host is responsible for producing Free List Buffers for the
 # hardware to consume).
 #
-[function "0"]
+
+[function "4"]
 	wx_caps = all		# write/execute permissions for all commands
 	r_caps = all		# read permissions for all commands
 	nvi = 28		# NVI_UNIFIED
 	niqflint = 170		# NFLIQ_UNIFIED + NLFIQ_WD
-	nethctrl = 96 		# NETHCTRL_UNIFIED + NETHCTRL_WD
+	nethctrl = 224 		# NETHCTRL_UNIFIED + NETHCTRL_WD
 	neq = 252		# NEQ_UNIFIED + NEQ_WD
+	nqpcq = 12288
 	nexactf = 40		# NMPSTCAM_UNIFIED
-	nrawf = 2
+	nrawf = 4
 	cmask = all		# access to all channels
 	pmask = all		# access to all four ports ...
 	nethofld = 1024		# number of user mode ethernet flow contexts
 	ncrypto_lookaside = 32
-	nclip = 32		# number of clip region entries
-	nfilter = 48		# number of filter region entries
-	nserver = 48		# number of server region entries
-	nhash = 2048		# number of hash region entries
-	nhpfilter = 0		# number of high priority filter region entries
-	protocol = nic_vm, ofld, rddp, rdmac, iscsi_initiator_pdu, iscsi_target_pdu, iscsi_t10dif, tlskeys, crypto_lookaside
+	nclip = 320		# number of clip region entries
+	nfilter = 480		# number of filter region entries
+	nserver = 480		# number of server region entries
+	nhash = 12288		# number of hash region entries
+	nhpfilter = 64		# number of high priority filter region entries
+	#protocol = nic_vm, ofld, rddp, rdmac, iscsi_initiator_pdu, iscsi_target_pdu, iscsi_t10dif, tlskeys, crypto_lookaside, ipsec_inline, rocev2, nic_hashfilter, ofld_sendpath
+	protocol = nic_vm, ofld, rddp, rdmac, iscsi_initiator_pdu, iscsi_target_pdu, iscsi_t10dif, tlskeys, crypto_lookaside, ipsec_inline, rocev2, nic_hashfilter, nvme_tcp
 	tp_l2t = 3072
 	tp_ddp = 2
 	tp_ddp_iscsi = 2
 	tp_tls_key = 3
-	tp_tls_mxrxsize = 17408    # 16384 + 1024, governs max rx data, pm max xfer len, rx coalesce sizes
+	tp_tls_mxrxsize = 33792    # 32768 + 1024, governs max rx data, pm max xfer len, rx coalesce sizes
 	tp_stag = 2
 	tp_pbl = 5
 	tp_rq = 7
+	tp_rrq = 4
 	tp_srq = 128
+	nipsec_tunnel16 = 64	# in unit of 16
+	nipsec_transport16 = 191 # in unit of 16
+
 
 # We have FCoE and iSCSI storage functions on PF5 and PF6 each of which may
 # need to have Virtual Interfaces on each of the four ports with up to NCPUS
 # "Queue Sets" each.
 #
-[function "1"]
+[function "5"]
 	wx_caps = all		# write/execute permissions for all commands
 	r_caps = all		# read permissions for all commands
 	nvi = 4			# NPORTS
@@ -382,8 +461,8 @@
 	cmask = all		# access to all channels
 	pmask = all		# access to all four ports ...
 	nserver = 16
-	nhash = 2048
-	tp_l2t = 1020
+	nhash = 1536
+	tp_l2t = 508
 	protocol = iscsi_initiator_fofld
 	tp_ddp_iscsi = 2
 	iscsi_ntask = 2048
@@ -391,6 +470,44 @@
 	iscsi_nconn_per_session = 1
 	iscsi_ninitiator_instance = 64
 
+[function "6"]
+	wx_caps = all		# write/execute permissions for all commands
+	r_caps = all		# read permissions for all commands
+	nvi = 4			# NPORTS
+	niqflint = 34		# NPORTS*NCPUS + NMSIX_EXTRA
+	nethctrl = 32		# NPORTS*NCPUS
+	neq = 66		# NPORTS*NCPUS * 2 (FL, ETHCTRL/TX) + 2 (EXTRA)
+	nexactf = 32		# NPORTS + adding 28 exact entries for FCoE
+				# which is OK since < MIN(SUM PF0..3, PF4)
+				# and we never load PF0..3 and PF4 concurrently
+	cmask = all		# access to all channels
+	pmask = all		# access to all four ports ...
+	nhash = 1536
+	tp_l2t = 4
+	protocol = fcoe_initiator
+	tp_ddp = 1
+	fcoe_nfcf = 16
+	fcoe_nvnp = 32
+	fcoe_nssn = 1024
+
+# Following function 7 is used by embedded ARM to communicate to
+# the firmware.
+[function "7"]
+	wx_caps = all		# write/execute permissions for all commands
+	r_caps = all		# read permissions for all commands
+	nvi = 4			# NVI_UNIFIED
+	cmask = all		# access to all channels
+	pmask = all		# access to all four ports ...
+	nexactf = 8		# NPORTS + DCBX +
+	nfilter = 16		# number of filter region entries
+	#nhpfilter = 16		# number of high priority filter region entries
+	niqflint = 34		# NPORTS*NCPUS + NMSIX_EXTRA
+	nethctrl = 32		# NPORTS*NCPUS
+	neq = 64		# NPORTS*NCPUS * 2 (FL, ETHCTRL/TX)
+	nserver = 16
+	nhash = 1024
+	tp_l2t = 512
+	protocol = nic_vm, ofld, rddp, rdmac, tlskeys, ipsec_inline, rocev2, nvme_tcp
 
 # The following function, 1023, is not an actual PCIE function but is used to
 # configure and reserve firmware internal resources that come from the global
@@ -417,9 +534,9 @@
 	wx_caps = 0x82		# DMAQ | VF
 	r_caps = 0x86		# DMAQ | VF | PORT
 	nvi = 1			# 1 port
-	niqflint = 4		# 2 "Queue Sets" + NXIQ
-	nethctrl = 2		# 2 "Queue Sets"
-	neq = 4			# 2 "Queue Sets" * 2
+	niqflint = 6		# 2 "Queue Sets" + NXIQ
+	nethctrl = 4		# 2 "Queue Sets"
+	neq = 8			# 2 "Queue Sets" * 2
 	nexactf = 4
 	cmask = all		# access to all channels
 	pmask = 0x1		# access to only one port ...
@@ -429,13 +546,35 @@
 	wx_caps = 0x82		# DMAQ | VF
 	r_caps = 0x86		# DMAQ | VF | PORT
 	nvi = 1			# 1 port
-	niqflint = 4		# 2 "Queue Sets" + NXIQ
-	nethctrl = 2		# 2 "Queue Sets"
-	neq = 4			# 2 "Queue Sets" * 2
+	niqflint = 6		# 2 "Queue Sets" + NXIQ
+	nethctrl = 4		# 2 "Queue Sets"
+	neq = 8			# 2 "Queue Sets" * 2
 	nexactf = 4
 	cmask = all		# access to all channels
 	pmask = 0x2		# access to only one port ...
 
+[function "2/*"]		# NVF
+	wx_caps = 0x82		# DMAQ | VF
+	r_caps = 0x86		# DMAQ | VF | PORT
+	nvi = 1			# 1 port
+	niqflint = 6		# 2 "Queue Sets" + NXIQ
+	nethctrl = 4		# 2 "Queue Sets"
+	neq = 8			# 2 "Queue Sets" * 2
+	nexactf = 4
+	cmask = all		# access to all channels
+	pmask = 0x1		# access to only one port ...
+
+
+[function "3/*"]		# NVF
+	wx_caps = 0x82		# DMAQ | VF
+	r_caps = 0x86		# DMAQ | VF | PORT
+	nvi = 1			# 1 port
+	niqflint = 6		# 2 "Queue Sets" + NXIQ
+	nethctrl = 4		# 2 "Queue Sets"
+	neq = 8			# 2 "Queue Sets" * 2
+	nexactf = 4
+	cmask = all		# access to all channels
+	pmask = 0x2		# access to only one port ...
 
 # MPS features a 196608 bytes ingress buffer that is used for ingress buffering
 # for packets from the wire as well as the loopback path of the L2 switch. The
@@ -452,7 +591,7 @@
 #		Bytes)
 #
 [port "0"]
-	dcb = ppp, dcbx, b2b	# configure for DCB PPP and enable DCBX offload
+	dcb = ppp, dcbx	# configure for DCB PPP and enable DCBX offload
 	hwm = 30
 	lwm = 15
 	dwm = 30
@@ -462,7 +601,16 @@
 
 
 [port "1"]
-	dcb = ppp, dcbx, b2b
+	dcb = ppp, dcbx
+	hwm = 30
+	lwm = 15
+	dwm = 30
+	dcb_app_tlv[0] = 0x8906, ethertype, 3
+	dcb_app_tlv[1] = 0x8914, ethertype, 3
+	dcb_app_tlv[2] = 3260, socketnum, 5
+
+[port "2"]
+	dcb = ppp, dcbx	# configure for DCB PPP and enable DCBX offload
 	hwm = 30
 	lwm = 15
 	dwm = 30
@@ -471,9 +619,18 @@
 	dcb_app_tlv[2] = 3260, socketnum, 5
 
 
+[port "3"]
+	dcb = ppp, dcbx
+	hwm = 30
+	lwm = 15
+	dwm = 30
+	dcb_app_tlv[0] = 0x8906, ethertype, 3
+	dcb_app_tlv[1] = 0x8914, ethertype, 3
+	dcb_app_tlv[2] = 3260, socketnum, 5
+
 [fini]
 	version = 0x1425001d
-	checksum = 0x35b45336
+	checksum = 0xb939da16
 
 # Total resources used by above allocations:
 #   Virtual Interfaces: 104
