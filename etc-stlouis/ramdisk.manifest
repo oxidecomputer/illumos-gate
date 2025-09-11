@@ -770,6 +770,8 @@ f platform/oxide/kernel/drv/amd64/dwu 0755 root sys
 f platform/oxide/kernel/drv/amd64/fch 0755 root sys
 f platform/oxide/kernel/drv/amd64/ipcc 0755 root sys
 f platform/oxide/kernel/drv/amd64/npe 0755 root sys
+f platform/oxide/kernel/drv/amd64/psp 0755 root sys
+f platform/oxide/kernel/drv/amd64/psp_einj 0755 root sys
 f platform/oxide/kernel/drv/amd64/rootnex 0755 root sys
 f platform/oxide/kernel/drv/apob.conf 0644 root sys
 f platform/oxide/kernel/drv/cpc.conf 0644 root sys
@@ -788,6 +790,7 @@ d platform/oxide/kernel/misc/amd64 0755 root sys
 f platform/oxide/kernel/misc/amd64/bdat_prd 0755 root sys
 f platform/oxide/kernel/misc/amd64/pcie 0755 root sys
 f platform/oxide/kernel/misc/amd64/pci_prd 0755 root sys
+f platform/oxide/kernel/misc/amd64/psp_fake_smm 0755 root sys
 d platform/oxide/ucode 0755 root sys
 d platform/oxide/ucode/AuthenticAMD 0755 root sys
 f platform/oxide/ucode/AuthenticAMD/A011-00 0444 root sys
@@ -1216,6 +1219,8 @@ f usr/lib/pci/pcidr 0555 root bin
 f usr/lib/pci/pcidr_plugin.so 0755 root bin
 f usr/lib/pci/pcieadm 0555 root bin
 f usr/lib/pci/pcieb 0555 root bin
+d usr/lib/psp 0755 root bin
+f usr/lib/psp/pspeinj 0555 root bin
 d usr/lib/rcm 0755 root bin
 d usr/lib/saf 0755 root bin
 f usr/lib/saf/listen 0755 root sys

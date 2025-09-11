@@ -1,0 +1,51 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2025 Oxide Computer Company
+.\"
+.Dd July 16, 2025
+.Dt PSP 4D
+.Os
+.Sh NAME
+.Nm psp
+.Nd AMD Platform Security Processor
+.Pq PSP
+driver
+.Sh SYNOPSIS
+.Pa /devices/pseudo/amdzen@0/psp@6:psp
+.Sh DESCRIPTION
+The
+.Nm
+driver provides access to the AMD Platform Security Processor
+.Pq PSP/MP0 ,
+also known as the AMD Secure Processor
+.Pq ASP/MPASP ,
+for a number of AMD EPYC CPUs from the following families:
+.Bl -bullet
+.It
+AMD Zen 3 Milan
+.Pq Family 19h
+.It
+AMD Zen 4 Genoa
+.Pq Family 19h
+.It
+AMD Zen 5 Turin
+.Pq Family 1ah
+.El
+.Pp
+This driver is a nexus driver that has the following children:
+.Bl -tag -width "psp_einj(4D)"
+.It Xr psp_einj 4D
+Provides access to the PSP's Error Injection functionality.
+.El
+.Sh SEE ALSO
+.Xr amdzen 4D ,
+.Xr psp_einj 4D

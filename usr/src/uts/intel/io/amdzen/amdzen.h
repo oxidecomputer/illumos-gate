@@ -192,7 +192,8 @@ typedef enum {
 	AMDZEN_C_USMN,
 	AMDZEN_C_ZEN_UDF,
 	AMDZEN_C_ZEN_UMC,
-	AMDZEN_C_UHSMP
+	AMDZEN_C_UHSMP,
+	AMDZEN_C_PSP
 } amdzen_child_t;
 
 /*

@@ -1,0 +1,41 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2025 Oxide Computer Company
+.\"
+.Dd September 25, 2025
+.Dt PSP_EINJ 4D
+.Os
+.Sh NAME
+.Nm psp_einj
+.Nd AMD Platform Security Processor
+.Pq PSP
+Error Injection
+driver
+.Sh SYNOPSIS
+.Pa /devices/pseudo/amdzen@0/psp@6/psp_einj@1
+.Sh DESCRIPTION
+The
+.Nm
+driver makes available the error injection capabilities provided by the AMD
+Platform Security Processor
+.Pq PSP/MP0 ,
+also known as the AMD Secure Processor
+.Pq ASP/MPASP ,
+on AMD Zen 5 Turin
+.Pq Family 1ah
+processors.
+.Pp
+This driver is intended strictly for facilitating platform development
+and is not recommended for systems that aren't doing kernel development
+on AMD Zen platforms.
+.Sh SEE ALSO
+.Xr psp 4D

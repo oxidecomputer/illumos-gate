@@ -500,6 +500,7 @@ i386_SUBDIRS=		\
 	mcmargins	\
 	nvmeadm		\
 	pptadm		\
+	psp		\
 	rdmsr		\
 	rsrvrctl	\
 	rtc		\

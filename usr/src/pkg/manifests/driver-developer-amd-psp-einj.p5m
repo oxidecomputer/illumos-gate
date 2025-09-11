@@ -1,0 +1,37 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2025 Oxide Computer Company
+#
+
+<include global_zone_only_component>
+set name=pkg.fmri value=pkg:/driver/developer/amd/psp/einj@$(PKGVERS)
+set name=pkg.summary value="AMD PSP Error Injection Driver"
+set name=pkg.description value="AMD PSP Error Injection Driver"
+set name=info.classification value=org.opensolaris.category.2008:System/Hardware
+set name=variant.arch value=i386
+dir  path=platform group=sys
+dir  path=platform/oxide group=sys
+dir  path=platform/oxide/kernel group=sys
+dir  path=platform/oxide/kernel/drv group=sys
+dir  path=platform/oxide/kernel/drv/$(ARCH64) group=sys
+file path=platform/oxide/kernel/drv/$(ARCH64)/psp_einj group=sys
+dir  path=usr group=sys
+dir  path=usr/lib
+dir  path=usr/lib/psp
+file path=usr/lib/psp/pspeinj mode=0555
+dir  path=usr/share
+dir  path=usr/share/man
+dir  path=usr/share/man/man4d
+file path=usr/share/man/man4d/psp_einj.4d
+driver name=psp_einj
+license lic_CDDL license=lic_CDDL
