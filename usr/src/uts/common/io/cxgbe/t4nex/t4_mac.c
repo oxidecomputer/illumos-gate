@@ -1868,10 +1868,10 @@ t4_init_synchronized(struct port_info *pi)
 		pi->xact_addr_filt = rc;
 	}
 
-	rc = -t4_link_l1cfg(sc, sc->mbox, pi->tx_chan, &pi->link_cfg,
+	rc = -t4_link_l1cfg(sc, sc->mbox, pi->lport, &pi->link_cfg,
 	    pi->link_cfg.admin_caps);
 	if (rc != 0) {
-		cxgb_printf(pi->dip, CE_WARN, "start_link failed: %d", rc);
+		cxgb_printf(pi->dip, CE_WARN, "link_l1cfg failed: %d", rc);
 		goto done;
 	}
 
