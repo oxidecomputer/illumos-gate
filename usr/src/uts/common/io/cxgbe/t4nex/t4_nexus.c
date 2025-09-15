@@ -325,6 +325,8 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	/*
 	 * Enable BAR0 access.
+	 *
+	 * RPZ: Should rnumber be 0 here?
 	 */
 	rc = ddi_regs_map_setup(dip, 1, &sc->regp, 0, 0, &da, &sc->regh);
 	if (rc != DDI_SUCCESS) {
@@ -1671,14 +1673,15 @@ get_params__post_init(struct adapter *sc)
 
 
 	/* These are finalized by FW initialization, load their values now */
-
-	/* RPZ: Call t4_init_tp_params() like fbsd/linux? There are
-	 * various params that are set, some of them realted to filtering.*/
-	val[0] = t4_read_reg(sc, A_TP_TIMER_RESOLUTION);
-	sc->params.tp.tre = G_TIMERRESOLUTION(val[0]);
-	sc->params.tp.dack_re = G_DELAYEDACKRESOLUTION(val[0]);
 	t4_read_mtu_tbl(sc, sc->params.mtus, NULL);
-	(void) t4_init_sge_params(sc);
+
+	if ((rc = t4_init_sge_params(sc)) != 0) {
+		return (rc);
+	}
+
+	if ((rc = t4_init_tp_params(sc, true)) != 0) {
+		return (rc);
+	}
 
 	return (0);
 }
