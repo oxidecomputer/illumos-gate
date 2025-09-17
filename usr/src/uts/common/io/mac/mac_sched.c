@@ -1406,11 +1406,11 @@ int mac_srs_worker_wakeup_ticks = 0;
 	if (!(srs->srs_type & SRST_TX))					\
 		mutex_exit(&srs->srs_bw->mac_bw_lock);
 
-#define	MAC_TX_SRS_DROP_MESSAGE(srs, chain, cookie, s) {	\
-	mac_drop_chain((chain), (s));				\
-	/* increment freed stats */				\
+#define	MAC_TX_SRS_DROP_MESSAGE(srs, chain, cookie, s) {		\
+	mac_drop_chain((chain), (s));					\
+	/* increment freed stats */					\
 	(srs)->srs_kind_data.tx.st_stat.mts_sdrops++;			\
-	(cookie) = (mac_tx_cookie_t)(srs);			\
+	(cookie) = (mac_tx_cookie_t)(srs);				\
 }
 
 #define	MAC_TX_SET_NO_ENQUEUE(srs, mp_chain, ret_mp, cookie) {		\
@@ -1610,9 +1610,9 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 
 	/*
 	 * We got a chain from SRS that we need to send to the soft rings.
-	 * Since squeues for TCP & IPv4 SAP poll their soft rings (for
-	 * performance reasons), we need to separate out v4_tcp, v4_udp
-	 * and the rest goes in other.
+	 * Use protocol information to derive the flow hash of each for this
+	 * purpose. IPv4/TCP SAPs (or other client flow bindings) may poll these
+	 * softrings, and are reliant on the hash matching any SQueue bindings.
 	 */
 	while (head != NULL) {
 		mac_ether_offload_info_t meoi = { 0 };
@@ -1630,52 +1630,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		head = head->b_next;
 		mp->b_next = NULL;
 		const size_t sz1 = mp_len(mp);
-
-		/* TODO(ky): bind meoi to packet at the head of proceessing */
-		if (is_ether) {
-			uint32_t vlan_tci;
-
-			/*
-			 * At this point we can be sure the packet at least
-			 * has an ether header.
-			 */
-			mac_ether_offload_info(mp, &meoi, NULL);
-			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
-
-			DTRACE_PROBE3(srs__fanout__ethertype,
-			    uint8_t, meoi.meoi_l3proto,
-			    mblk_t *, mp,
-			    mac_soft_ring_set_t *, mac_srs);
-		} else {
-			if (mac_header_info((mac_handle_t)mcip->mci_mip,
-			    mp, &non_ether_mhi) != 0) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
-
-			meoi.meoi_l2hlen = non_ether_mhi.mhi_hdrsize;
-			meoi.meoi_l3proto = non_ether_mhi.mhi_bindsap;
-			meoi.meoi_flags = MEOI_L2INFO_SET;
-			(void) mac_partial_offload_info(mp, 0, &meoi);
-		}
-
-		/*
-		 * While MEOI is unable to parse ESP headers, for the purposes
-		 * of classification here, we treat such packets like UDP, so we
-		 * can grant it a reprieve here.  This is acceptable since we
-		 * will not go rooting around in the ESP headers.
-		 */
-		if ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
-		    (meoi.meoi_flags & MEOI_L4INFO_SET) == 0 &&
-		    meoi.meoi_l4proto == IPPROTO_ESP) {
-			/* ESP header should consist of at least 8 octets */
-			meoi.meoi_l4hlen = 8;
-			meoi.meoi_flags |= MEOI_L4INFO_SET;
-		}
-		/* TODO(ky): bind above to packet at the head of proceessing */
+		mac_ether_offload_info(mp, &meoi, NULL);
 
 		const size_t total_hdr_len = meoi.meoi_l2hlen +
 		    meoi.meoi_l3hlen + meoi.meoi_l4hlen;
@@ -2160,6 +2115,116 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
 }
 
 /*
+ * Ensure that a network packet is in general fastpath eligible, and dropping
+ * any non-data STREAMS messages. This entails:
+ *  - Ensuring that L2/3/4 headers are contiguous.
+ *  - Ensuring that L3 headers are 4B-aligned.
+ *  - Ensuring the header-containing mblks are owned.
+ *  - Packets have MEOI inserted for flow resolution.
+ *
+ * Takes ownership of the passed in mblk_t, freeing it and allocating another
+ * when a pullup is required.
+ *
+ * Doing this requires extra work when the driver cannot fill in this info. This
+ * should be limited to use only *after* packets have been handed off to the
+ * SRS, so as not to impact pure-polling work.
+ */
+static inline mblk_t *
+mac_standardise_pkt(mac_client_impl_t *mcip, mblk_t *mp)
+{
+	ASSERT3P(mcip, !=, NULL);
+	ASSERT3P(mp, !=, NULL);
+	ASSERT3P(mp->b_next, ==, NULL);
+
+	if (DB_TYPE(mp) != M_DATA) {
+		mac_drop_pkt(mp,
+		    "network packets must have type M_DATA, saw %d",
+		    DB_TYPE(mp));
+		return (NULL);
+	}
+
+	const bool is_ether =
+	    (mcip->mci_mip->mi_info.mi_nativemedia == DL_ETHER);
+	bool force_set_info = false;
+	mac_ether_offload_info_t meoi = { 0 };
+	mac_ether_offload_info_t inner_meoi = { 0 };
+	if (is_ether) {
+		mac_ether_offload_info(mp, &meoi, &inner_meoi);
+	} else {
+		/* TODO(ky): unlikely() ? */
+		mac_header_info_t non_ether_mhi;
+		if (mac_header_info((mac_handle_t)mcip->mci_mip,
+		    mp, &non_ether_mhi) != 0) {
+			mac_drop_pkt(mp, "illegal L2 info");
+			return (NULL);
+		}
+		meoi.meoi_l2hlen = non_ether_mhi.mhi_hdrsize;
+		meoi.meoi_l3proto = non_ether_mhi.mhi_bindsap;
+		meoi.meoi_flags = MEOI_L2INFO_SET;
+		(void) mac_partial_offload_info(mp, 0, &meoi);
+		/* TODO(ky): not lose tuntype etc? */
+		force_set_info = true;
+	}
+
+	if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0) {
+		mac_drop_pkt(mp, "illegal L2 info");
+		return (NULL);
+	}
+	size_t needed_len = meoi.meoi_l2hlen;
+	if ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0) {
+		needed_len += meoi.meoi_l3hlen;
+	}
+	if ((meoi.meoi_flags & MEOI_L4INFO_SET) != 0) {
+		needed_len += meoi.meoi_l4hlen;
+	} else if ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
+	    meoi.meoi_l4proto == IPPROTO_ESP) {
+		/*
+		 * While MEOI is unable to parse ESP headers, for the purposes
+		 * of classification here, we treat such packets like UDP, so we
+		 * can grant it a reprieve here.  This is acceptable since we
+		 * will not go rooting around in the ESP headers.
+		 *
+		 * ESP header should consist of at least 8 octets
+		 */
+		meoi.meoi_l4hlen = 8;
+		meoi.meoi_flags |= MEOI_L4INFO_SET;
+		needed_len += meoi.meoi_l4hlen;
+	}
+	const size_t head_len = MBLKL(mp);
+	const uint8_t *l3_start = mp->b_rptr + meoi.meoi_l2hlen;
+
+	/*
+	 * Enforce parsed headers are all contiguous.
+	 */
+	if (DB_REF(mp) > 1 || !OK_32PTR(l3_start) || head_len < needed_len) {
+		const size_t pad = (4 - (meoi.meoi_l2hlen % 4)) % 4;
+		mblk_t *new_mp = msgpullup_pad(mp, needed_len, pad);
+		freemsgchain(mp);
+		if (new_mp == NULL) {
+			return (NULL);
+		}
+		mp = new_mp;
+	}
+
+	/*
+	 * Assume that if any info is set, the client should be trusted to have
+	 * filled out all relevant information.
+	 */
+	if (force_set_info || !mac_ether_any_set_pktinfo(mp)) {
+		mac_ether_set_pktinfo(mp, &meoi, &inner_meoi);
+	}
+
+	return (mp);
+}
+
+static inline bool
+mac_standardise_pkts(flow_tree_pkt_set_t* set)
+{
+	/* TODO(ky) */
+	return (false);
+}
+
+/*
  * TODO(ky): this is fairly unfortunate atm. Slight respin on mac_flow_lookup.
  */
 static bool
@@ -2310,9 +2375,6 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 			mblk_t *prev = NULL;
 			mblk_t *curr = par_pkts->ftp_avail_head;
 			for (; curr != NULL; curr = curr->b_next) {
-				/*
-				 * TODO(ky): match logic!!!!!
-				 */
 				const bool is_match = mac_pkt_is_flow_match(
 				    inode->ften_flent, &inode->ften_match,
 				    curr);
