@@ -55,10 +55,6 @@
 #include "t4_common.h"
 
 static void *t4_soft_state;
-
-/* RPZ: Set to non-zero for extra debug. */
-int rpz_debug = 1;
-
 static kmutex_t t4_adapter_list_lock;
 static list_t t4_adapter_list;
 
@@ -320,13 +316,10 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto done;
 	}
 
-	/* RPZ: Do we need to deal with this old TODO? */
 	/* TODO: Set max read request to 4K */
 
 	/*
 	 * Enable BAR0 access.
-	 *
-	 * RPZ: Should rnumber be 0 here?
 	 */
 	rc = ddi_regs_map_setup(dip, 1, &sc->regp, 0, 0, &da, &sc->regh);
 	if (rc != DDI_SUCCESS) {
@@ -401,18 +394,28 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 
 	/* Do this early. Memory window is required for loading config file. */
 	t4_setup_adapter_memwin(sc);
-	/* RPZ: temporary(?) patch to make sure we catch first devlog entries */
+
+	/*
+	 * Make an attempt to initialize devlog params and record the device log
+	 * early, before the first messages in the ring buffer are overwritten.
+	 * This can be useful for debugging.
+	 */
 	(void) t4_init_devlog_ncores_params(sc, 0);
 	log_devlog(sc);
 
 	/* Prepare the firmware for operation */
 	rc = prep_firmware(sc);
 	if (rc != 0) {
-		(void) t4_init_devlog_ncores_params(sc, 0);
 		goto done; /* error message displayed already */
 	}
 
-	(void) t4_init_devlog_ncores_params(sc, 1);
+	/*
+	 * We couldn't initialize the devlog via registers, try asking the
+	 * firmware.
+	 */
+	if (sc->params.devlog.start == 0) {
+		(void) t4_init_devlog_ncores_params(sc, 1);
+	}
 
 	rc = adap__pre_init_tweaks(sc);
 	if (rc != 0)
@@ -433,11 +436,6 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 			goto done;
 		}
 	}
-
-	/* RPZ: ummmm, is post_init supposed to be called twice? */
-	rc = get_params__post_init(sc);
-	if (rc != 0)
-		goto done; /* error message displayed already */
 
 	rc = set_params__post_init(sc);
 	if (rc != 0)
@@ -1336,14 +1334,7 @@ upload_config_file(struct adapter *sc, uint32_t *mt, uint32_t *ma)
 	 */
 	cflen &= ~3;
 
-	/*
-	 * RPZ: I'm using the new flash code to determine CFG size,
-	 * but the rest is unchanged. The Linux common code has an
-	 * entirely different method for loading the config file. We
-	 * may want to use it, but I'm going to wait to see what they
-	 * do in the latest FreeBSD drop.
-	 */
-	int cfmaxsz = t4_flash_location_size(sc, FLASH_LOC_CFG);
+	const int cfmaxsz = t4_flash_location_size(sc, FLASH_LOC_CFG);
 
 	if (cflen > cfmaxsz) {
 		cxgb_printf(sc->dip, CE_WARN,
@@ -1594,17 +1585,6 @@ get_params__post_init(struct adapter *sc)
 	sc->sge.eq_start = val[1];
 	sc->sge.iqmap_sz = val[2] - sc->sge.iq_start + 1;
 	sc->sge.eqmap_sz = val[3] - sc->sge.eq_start + 1;
-
-	/*
-	 * RPZ: Linux/FreeBSD call t4_init_sge_params() to set
-	 * iq/eq_qpp, we also do now thanks to Patrick's changes. So
-	 * we can probably remove this code here. However, I'd still
-	 * like to compare our QPP code with that of the other drivers.
-	 */
-	uint32_t r = t4_read_reg(sc, A_SGE_EGRESS_QUEUES_PER_PAGE_PF);
-	r >>= S_QUEUESPERPAGEPF0 +
-	    (S_QUEUESPERPAGEPF1 - S_QUEUESPERPAGEPF0) * sc->pf;
-	sc->sge.s_qpp = r & M_QUEUESPERPAGEPF0;
 
 	/* get capabilites */
 	bzero(&caps, sizeof (caps));
@@ -2402,11 +2382,6 @@ update_wc_kstats(kstat_t *ksp, int rw)
 	if (rw == KSTAT_WRITE)
 		return (0);
 
-	/*
-	 * RPZ: Patrick updated this from being a strict T5 check to a
-	 * GE check. What does this code do? Does it need to do
-	 * anything different for T6 or T7?
-	 */
 	if (t4_cver_ge(sc, CHELSIO_T5)) {
 		wc_total = t4_read_reg(sc, A_SGE_STAT_TOTAL);
 		wc_failure = t4_read_reg(sc, A_SGE_STAT_MATCH);
@@ -2455,12 +2430,6 @@ read_fec_pair(struct port_info *pi, uint32_t lo_reg, uint32_t high_reg)
 	uint8_t port = pi->tx_chan;
 	uint32_t low, high, ret;
 
-	/*
-	 * RPZ: I need to look for _all places_ in the code where we
-	 * were using things like T5_PORT_REG (and any other macros
-	 * like that), because now with T7 support we probably want to
-	 * replace them all with t4_port_reg().
-	 */
 	low = t4_read_reg(sc, t4_port_reg(sc, port, lo_reg));
 	high = t4_read_reg(sc, t4_port_reg(sc, port, high_reg));
 	ret = low & 0xffff;

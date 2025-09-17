@@ -372,18 +372,11 @@ struct sge_rxq {
 	uint64_t rxbytes;	/* # of ethernet bytes */
 
 	/* stats for not-that-common events */
-
-	/*
-	 * RPZ: we don't actually use this, but we should.
-	 *
-	 * RPZ: we have an allocb_fail stat on the freelist
-	 */
 	uint32_t nomem;		/* mblk allocation during rx failed */
 };
 
 struct sge {
 	int fl_starve_threshold;
-	int s_qpp;
 	uint64_t dbq_timer_tick;
 	uint16_t dbq_timers[SGE_NDBQTIMERS];
 
@@ -612,11 +605,6 @@ t4_mbox_list_first_entry(struct adapter *adap)
 	t4_get_port_stats_lb_mode((pi)->adapter, (pi)->lport,		\
 	    A_MPS_PORT_STAT_##name##_L)
 
-/*
- * RPZ: should this be using different reg base depending on chip?
- *
- * RPZ: check this impl against linux.
- */
 #define	T4_GET_STAT_COM(pi, name)				\
 	t4_read_reg64((pi)->adapter, A_MPS_STAT_##name##_L)
 
@@ -667,10 +655,6 @@ t4_cver_ge(const adapter_t *adap, uint8_t ver)
 	return (CHELSIO_CHIP_VERSION(adap->params.chip) >= ver);
 }
 
-/*
- * RPZ: AFAICT a "platform device" is a Linux-specific thing. For now
- * do this, but consider removing code related to this check.
- */
 static inline bool t4_os_is_platform_device(struct adapter *adap)
 {
 	return(false);
