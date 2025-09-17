@@ -180,6 +180,7 @@ typedef enum {
 /* Matches a flow_entry_t using the extracted flow_state_t info */
 typedef boolean_t	(*flow_match_fn_t)(flow_tab_t *, flow_entry_t *,
 			    flow_state_t *);
+typedef bool		(*flow_match_fn2_t)(void *, mblk_t *);
 
 /* fe_flags */
 #define	FE_QUIESCE		0x01	/* Quiesce the flow */
@@ -244,13 +245,15 @@ typedef enum {
 	MFM_IPPROTO,
 	MFM_LIST,
 	MFM_ARBITRARY,
+	/* TODO(ky): This is probably just an egregious hack to get *some* function */
+	MFM_SUBFLOW,
 } mac_flow_match_type_t;
 
 typedef struct mac_flow_match_list_s mac_flow_match_list_t;
 
 typedef struct {
-	mac_direct_rx_t	mfma_direct_rx_fn;
-	void		*mfma_direct_rx_arg;
+	flow_match_fn2_t	mfma_match;
+	void			*mfma_arg;
 } mac_flow_match_arbitrary_t;
 
 typedef struct {

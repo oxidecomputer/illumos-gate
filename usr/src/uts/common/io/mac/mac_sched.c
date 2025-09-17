@@ -2159,6 +2159,140 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
 	}
 }
 
+/*
+ * TODO(ky): this is fairly unfortunate atm. Slight respin on mac_flow_lookup.
+ */
+static bool
+mac_subflow_is_match(flow_entry_t *flent, mblk_t *mp)
+{
+	flow_state_t	s;
+	boolean_t	retried = B_FALSE;
+	int		i, err;
+
+	s.fs_flags = FLOW_INBOUND;
+retry:
+	s.fs_mp = mp;
+
+	/* This is a patch up for existing subflows to at least work. */
+	/* This will NOT be fast. */
+	/* TODO(ky): is this the right mcip? */
+	ASSERT3P(flent, !=, NULL);
+	mac_client_impl_t *mcip = (mac_client_impl_t *) flent->fe_mcip;
+	ASSERT3P(mcip, !=, NULL);
+	flow_tab_t *ft = mcip->mci_subflow_tab;
+	ASSERT3P(ft, !=, NULL);
+	flow_ops_t *ops = &ft->ft_ops;
+
+	/*
+	 * Walk the list of predeclared accept functions.
+	 * Each of these would accumulate enough state to allow the next
+	 * accept routine to make progress.
+	 *
+	 * TODO(ky): this obviously just duplicates existing logic, and will be
+	 * wickedly expensive for duplicated subflows after the fastpath to
+	 * rebuild the flow_state_t at leaves. I would really like this to be
+	 * cheaper!!
+	 */
+	for (i = 0; i < FLOW_MAX_ACCEPT && ops->fo_accept[i] != NULL; i++) {
+		if ((err = (ops->fo_accept[i])(ft, &s)) != 0) {
+			mblk_t	*last;
+
+			/*
+			 * ENOBUFS indicates that the mp could be too short
+			 * and may need a pullup.
+			 */
+			if (err != ENOBUFS || retried)
+				return (err);
+
+			/*
+			 * The pullup is done on the last processed mblk, not
+			 * the starting one. pullup is not done if the mblk
+			 * has references or if b_cont is NULL.
+			 */
+			last = s.fs_mp;
+			if (DB_REF(last) > 1 || last->b_cont == NULL ||
+			    pullupmsg(last, -1) == 0)
+				return (EINVAL);
+
+			retried = B_TRUE;
+			DTRACE_PROBE2(need_pullup, flow_tab_t *, ft,
+			    flow_state_t *, &s);
+			goto retry;
+		}
+	}
+
+	/*
+	 * The packet is considered sane. We may now attempt to
+	 * find the corresponding flent.
+	 */
+	return (flent->fe_match(ft, flent, &s));
+}
+
+static bool mac_pkt_is_flow_match_recurse(flow_entry_t *flent,
+    const mac_flow_match_t *match, mblk_t* mp);
+
+static inline bool
+mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
+    mblk_t* mp, bool is_head)
+{
+	ASSERT3P(flent, !=, NULL);
+	ASSERT3P(mp, !=, NULL);
+
+	/* I hope for all out sakes the MEOI is, if valid, set by this point */
+	/* TODO(ky): What is the actual cost here? Do we need dedicated methods on/for the dblk state? */
+	mac_ether_offload_info_t meoi = { 0 };
+	mac_ether_offload_info(mp, &meoi, NULL);
+
+	switch (match->mfm_type) {
+	case MFM_SAP:
+		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
+		    meoi.meoi_l3proto == match->arg.mfm_sap);
+	case MFM_IPPROTO:
+		return ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
+		    meoi.meoi_l3proto == match->arg.mfm_ipproto);
+	case MFM_ARBITRARY: {
+		/*
+		 * TODO(ky): the current flent match function is a bad
+		 * fit here.
+		 */
+		const mac_flow_match_arbitrary_t *arb =
+		    &match->arg.mfm_arbitrary;
+		return (arb->mfma_match(arb->mfma_arg, mp));
+	}
+	case MFM_SUBFLOW:
+		return (mac_subflow_is_match(flent, mp));
+	case MFM_LIST: {
+		const mac_flow_match_list_t *list = match->arg.mfm_list;
+		/* Nesting MFM_LIST is an error on our part. */
+		ASSERT(is_head);
+		ASSERT3P(list, !=, NULL);
+		for (size_t i = 0; i < list->mfml_size; i++) {
+			const mac_flow_match_t *el = &list->mfml_match[i];
+			if (!mac_pkt_is_flow_match_recurse(flent, match, mp)) {
+				return (false);
+			}
+		}
+		return (true);
+	}
+	default:
+		return (false);
+	}
+}
+
+static bool
+mac_pkt_is_flow_match_recurse(flow_entry_t *flent, const mac_flow_match_t *match,
+    mblk_t* mp)
+{
+	return (mac_pkt_is_flow_match_inner(flent, match, mp, false));
+}
+
+static inline bool
+mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
+    mblk_t* mp)
+{
+	return (mac_pkt_is_flow_match_inner(flent, match, mp, true));
+}
+
 static inline void
 mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 {
@@ -2179,7 +2313,9 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 				/*
 				 * TODO(ky): match logic!!!!!
 				 */
-				const bool is_match = false;
+				const bool is_match = mac_pkt_is_flow_match(
+				    inode->ften_flent, &inode->ften_match,
+				    curr);
 				if (is_match) {
 					size_t lsz = mp_len(curr);
 					par_pkts->ftp_avail_count--;
