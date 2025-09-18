@@ -1573,10 +1573,6 @@ enum pkt_type {
  *    |-> mac_rx_bypass_disable (! (srs_type & SRST_DLS_BYPASS)),
  *    |-> mac_rx_bypass_disable (mci_state_flags & MCIS_RX_BYPASS_DISABLE).
  *  - Iff. HW-classified && Promisc, need to validate L2 match by hand.
- *  - DB_TYPE == M_DATA, DB_REF == 1
- *    |-> Latter is already enforced by the ip_input functions? They'll copyout.
- *  - L3 header is 4B aligned.
- *  - L2/L3/L4 contiguous.
  *  - No fragmentation (is-frag or more-frags).
  *  - Need to march packet header forward by l2_hlen before fastpath.
  *  - TCP ring must have SRST_ALWAYS_HASH_OUT.
@@ -1589,11 +1585,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	mblk_t			*tailmp[MAX_SR_FANOUT] = { 0 };
 	int			cnt[MAX_SR_FANOUT] = { 0 };
 	size_t			sz[MAX_SR_FANOUT] = { 0 };
-	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
 
-	/* TODO(ky): Perform this check further upstack to set inbuilt MEOI */
-	const bool is_ether =
-	    (mcip->mci_mip->mi_info.mi_nativemedia == DL_ETHER);
 	const bool bw_ctl = (mac_srs->srs_type & SRST_BW_CONTROL) != 0;
 	const bool never_round_robin =
 	    (mac_srs->srs_type & SRST_ALWAYS_HASH_OUT) != 0;
@@ -1637,7 +1629,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 
 		/*
 		 * The stack should have ensured by this point that all packets
-		 * are MEOI'd, aligned, and happy with life.
+		 * are MEOI'd and have L3 correctly aligned.
 		 */
 		ASSERT3U(total_hdr_len, <=, MBLKL(mp));
 		if ((meoi.meoi_flags & MEOI_L3INFO_SET) == 0) {
@@ -1647,8 +1639,8 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		ASSERT(OK_32PTR(mp->b_rptr + meoi.meoi_l2hlen));
 
 		/*
-		 * By now, the fastpath requirements ensure that direct access
-		 * to the L3/L4 headers will fall safely within the mblk.
+		 * Direct access  to the L3/L4 headers will fall safely within
+		 * the mblk.
 		 */
 		uint_t hash = 0;
 		uint32_t ports = 0;
@@ -2130,7 +2122,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
  * SRS, so as not to impact pure-polling work.
  */
 static inline mblk_t *
-mac_standardise_pkt(mac_client_impl_t *mcip, mblk_t *mp)
+mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 {
 	ASSERT3P(mcip, !=, NULL);
 	ASSERT3P(mp, !=, NULL);
@@ -2218,8 +2210,8 @@ mac_standardise_pkt(mac_client_impl_t *mcip, mblk_t *mp)
 }
 
 static inline bool
-mac_standardise_pkts(mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
-    bool bw_ctl)
+mac_standardise_pkts(const mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
+    const bool bw_ctl)
 {
 	/*
 	 * Called on *entry* to mac_rx_srs_drain. All packets should be as-yet
@@ -2655,10 +2647,8 @@ again:
 		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
 
 		mac_standardise_pkts(mcip, &pktset, false);
-
 		mac_rx_srs_walk_flowtree(&pktset, &mac_srs->srs_flowtree);
 
-		/* TODO(ky) unpack quack into head/tail/count/size. split between avail/deli? */
 		if (pktset.ftp_deli_head != NULL) {
 			ASSERT3P(pktset.ftp_deli_tail, !=, NULL);
 			pktset.ftp_avail_count += pktset.ftp_deli_count;
