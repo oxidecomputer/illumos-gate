@@ -437,6 +437,10 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		}
 	}
 
+	rc = get_params__post_init(sc);
+	if (rc != 0)
+		goto done; /* error message displayed already */
+
 	rc = set_params__post_init(sc);
 	if (rc != 0)
 		goto done; /* error message displayed already */
