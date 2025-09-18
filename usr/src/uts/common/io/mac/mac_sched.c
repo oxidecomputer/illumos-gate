@@ -2218,10 +2218,40 @@ mac_standardise_pkt(mac_client_impl_t *mcip, mblk_t *mp)
 }
 
 static inline bool
-mac_standardise_pkts(flow_tree_pkt_set_t* set)
+mac_standardise_pkts(mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
+    bool bw_ctl)
 {
-	/* TODO(ky) */
-	return (false);
+	/*
+	 * Called on *entry* to mac_rx_srs_drain. All packets should be as-yet
+	 * unclassified in this flowtree.
+	 */
+	ASSERT3P(set->ftp_deli_head, ==, NULL);
+	ASSERT3P(set->ftp_deli_tail, ==, NULL);
+	mblk_t *mp = set->ftp_avail_head;
+	set->ftp_avail_head = NULL;
+	set->ftp_avail_tail = NULL;
+	set->ftp_avail_count = 0;
+	set->ftp_avail_size = 0;
+
+	while (mp != NULL) {
+		mblk_t *curr = mp;
+		mp = mp->b_next;
+		curr->b_next = NULL;
+
+		mblk_t *processed = mac_standardise_pkt(mcip, curr);
+		if (processed == NULL) {
+			continue;
+		}
+		ENQUEUE_MP(
+		    set->ftp_avail_head,
+		    set->ftp_avail_tail,
+		    set->ftp_avail_count,
+		    bw_ctl,
+		    set->ftp_avail_size,
+		    mp_len(curr), curr);
+	}
+
+	return (set->ftp_avail_head != NULL);
 }
 
 /*
@@ -2569,18 +2599,19 @@ mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 		MAC_SRS_POLL_RING(mac_srs);
 	}
 
+	flow_tree_pkt_set_t pktset = {0};
 again:
-	head = mac_srs->srs_first;
+	pktset.ftp_avail_head = mac_srs->srs_first;
+	pktset.ftp_avail_tail = mac_srs->srs_last;
+	pktset.ftp_avail_count = mac_srs->srs_count;
+	pktset.ftp_avail_size = mac_srs->srs_size;
 	mac_srs->srs_first = NULL;
-	tail = mac_srs->srs_last;
 	mac_srs->srs_last = NULL;
-	cnt = mac_srs->srs_count;
 	mac_srs->srs_count = 0;
-	sz = mac_srs->srs_size;
 	mac_srs->srs_size = 0;
 
-	ASSERT3P(head, !=, NULL);
-	ASSERT3P(tail, !=, NULL);
+	ASSERT3P(pktset.ftp_avail_head, !=, NULL);
+	ASSERT3P(pktset.ftp_avail_tail, !=, NULL);
 
 	if ((tid = mac_srs->srs_tid) != NULL) {
 		mac_srs->srs_tid = NULL;
@@ -2619,30 +2650,39 @@ again:
 	/* Generally we *should* have a subtree here, due to DLS bypass */
 	/* TODO(ky): `likely()`? */
 	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		/* TODO(ky): walk tree, deliver to SRSes as needed */
 		ASSERT3U(mac_srs->srs_flowtree.ftb_len, >, 0);
 		ASSERT3P(mac_srs->srs_flowtree.ftb_chains, !=, NULL);
 		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
 
-		// NOTES while I think
-		// Pile of stuffs needs to be similar shape to an SRS.
-		// Head, tail, count, sz. X2 per depth
-		// Why? Need delegation to be for keeps.
-		// See: ENQUEUE_MP(head, tail, cnt, bw_ctl, sz, sz0, mp)
-		// 
-		flow_tree_pkt_set_t quack = {0};
-		quack.ftp_avail_head = head;
-		quack.ftp_avail_tail = tail;
-		quack.ftp_avail_count = cnt;
-		quack.ftp_avail_size = sz;
+		mac_standardise_pkts(mcip, &pktset, false);
 
-		mac_rx_srs_walk_flowtree(&quack, &mac_srs->srs_flowtree);
+		mac_rx_srs_walk_flowtree(&pktset, &mac_srs->srs_flowtree);
 
 		/* TODO(ky) unpack quack into head/tail/count/size. split between avail/deli? */
+		if (pktset.ftp_deli_head != NULL) {
+			ASSERT3P(pktset.ftp_deli_tail, !=, NULL);
+			pktset.ftp_avail_count += pktset.ftp_deli_count;
+			pktset.ftp_avail_size += pktset.ftp_deli_size;
+			if (pktset.ftp_avail_head != NULL) {
+				ASSERT3P(pktset.ftp_avail_tail, !=, NULL);
+				pktset.ftp_avail_tail->b_next =
+				    pktset.ftp_deli_head;
+			} else {
+				pktset.ftp_avail_head = pktset.ftp_deli_head;
+			}
+			pktset.ftp_avail_tail = pktset.ftp_deli_tail;
+
+			pktset.ftp_deli_head = NULL;
+			pktset.ftp_deli_tail = NULL;
+			pktset.ftp_deli_count = 0;
+			pktset.ftp_deli_size = 0;
+		}
 	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
-	mac_rx_srs_deliver(mac_srs, head, tail, cnt, sz);
+	mac_rx_srs_deliver(mac_srs, pktset.ftp_avail_head,
+	    pktset.ftp_avail_tail, pktset.ftp_avail_count,
+	    pktset.ftp_avail_size);
 
 	mutex_enter(&mac_srs->srs_lock);
 
