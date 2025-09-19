@@ -2338,10 +2338,6 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 		return ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
 		    meoi.meoi_l3proto == match->arg.mfm_ipproto);
 	case MFM_ARBITRARY: {
-		/*
-		 * TODO(ky): the current flent match function is a bad
-		 * fit here.
-		 */
 		const mac_flow_match_arbitrary_t *arb =
 		    &match->arg.mfm_arbitrary;
 		return (arb->mfma_match(arb->mfma_arg, mp));

@@ -327,10 +327,18 @@ typedef struct {
 	flow_tree_exit_node_t	ftb_exit;
 } flow_tree_baked_t;
 
+/* TODO(ky): bw-aware variants of above */
+
 struct flow_entry_s {					/* Protected by */
 	struct flow_entry_s	*fe_next;		/* ft_lock */
 
 	datalink_id_t		fe_link_id;		/* WO */
+
+	/*
+	 * TODO(ky): each of the below resource_props accounts for 15KiB. Each!
+	 *           This can't be replicated if we have many flents!!
+	 *           Esp since fe_resource_props is the default.
+	 */
 
 	/* Properties as specified for this flow */
 	mac_resource_props_t	fe_resource_props;	/* SL */
