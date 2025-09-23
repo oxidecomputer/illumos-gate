@@ -69,7 +69,7 @@ typedef enum {
 	IPCC_INVENTORY_T_RAA229618,
 	IPCC_INVENTORY_T_TPS546B24A,
 	IPCC_INVENTORY_T_FANTRAY,
-	IPCC_INVENTORY_T_ADM1272,
+	IPCC_INVENTORY_T_ADM127X,
 	IPCC_INVENTORY_T_TMP117,
 	IPCC_INVENTORY_T_8A34XXX,
 	IPCC_INVENTORY_T_KSZ8463,
@@ -180,7 +180,7 @@ typedef struct {
 	ipcc_sensor_id_t adm_temp;
 	ipcc_sensor_id_t adm_vout;
 	ipcc_sensor_id_t adm_iout;
-} ipcc_inv_adm1272_t;
+} ipcc_inv_adm127x_t;
 
 typedef struct {
 	/*
