@@ -20,7 +20,6 @@
  */
 
 #include <sys/types.h>
-#include <sys/cyclic.h>
 #include <sys/ddi.h>
 #include <sys/pci.h>
 #include <sys/pcie.h>
@@ -2025,50 +2024,6 @@ turin_pcie_dbg_signal(void)
 		gpio_configured = true;
 	}
 	zen_hack_gpio(ZHGOP_TOGGLE, 22);
-}
-
-static void
-turin_fabric_gpio_watchdog(void *arg)
-{
-	mmio_reg_t reg = *(mmio_reg_t *)arg;
-	uint32_t val, output;
-
-	val = mmio_reg_read(reg);
-	output = FCH_GPIO_GPIO_GET_OUTPUT(val);
-	val = FCH_GPIO_GPIO_SET_OUTPUT(val, !output);
-	mmio_reg_write(reg, val);
-}
-
-void
-turin_fabric_misc_late_init(zen_fabric_t *fabric)
-{
-	if (oxide_board_data->obd_board != OXIDE_BOARD_COSMO)
-		return;
-
-	/*
-	 * Set up a cyclic to toggle AGPIO22 (SP5_TO_FPGA1_DEBUG_2) around
-	 * once a second as a simple watchdog that can be observed by the FPGA
-	 * and SP. This is a high level cyclic to help ensure it runs as long
-	 * as the kernel is alive. We map the MMIO block and build the register
-	 * definiton here once to avoid doing work at high PIL.
-	 */
-	mmio_reg_block_t gpio_block = fch_gpio_mmio_block();
-	mmio_reg_t gpio_reg = FCH_GPIO_GPIO_MMIO(gpio_block, 22);
-	mmio_reg_t *reg = kmem_alloc(sizeof (gpio_reg), KM_SLEEP);
-	*reg = gpio_reg;
-	cyc_handler_t hdlr = {
-		.cyh_level = CY_HIGH_LEVEL,
-		.cyh_func = turin_fabric_gpio_watchdog,
-		.cyh_arg = reg
-	};
-	cyc_time_t when = {
-		.cyt_when = 0,
-		.cyt_interval = NANOSEC
-	};
-
-	mutex_enter(&cpu_lock);
-	(void) cyclic_add(&hdlr, &when);
-	mutex_exit(&cpu_lock);
 }
 
 void

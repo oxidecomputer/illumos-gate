@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_IOMUX_H
@@ -51,7 +51,8 @@ extern "C" {
 
 /*
  * Documentation is inconsistent with respect to the names of the GPIO functions
- * associated with this pin: EGPIO_26 == EGPIO26_0 and EGPIO27 == EGPIO26_3.
+ * associated with these pins: EGPIO_26 == EGPIO26_0, EGPIO27 == EGPIO26_3
+ * EGPIO30 == EGPIO23_3.
  */
 #define	MILAN_FCH_IOMUX_26_PCIE_RST0_L		0
 #define	MILAN_FCH_IOMUX_26_EGPIO26		1
@@ -59,6 +60,10 @@ extern "C" {
 #define	MILAN_FCH_IOMUX_27_PCIE_RST3_L		0
 #define	MILAN_FCH_IOMUX_27_EGPIO27		1
 #define	MILAN_FCH_IOMUX_27_EGPIO26_3		1
+
+#define	MILAN_FCH_IOMUX_30_EGPIO30		0
+#define	MILAN_FCH_IOMUX_30_EGPIO23_3		0
+#define	MILAN_FCH_IOMUX_30_SGPIO		1
 
 #define	MILAN_FCH_IOMUX_129_KBRST_L		0
 #define	MILAN_FCH_IOMUX_129_AGPIO129		2

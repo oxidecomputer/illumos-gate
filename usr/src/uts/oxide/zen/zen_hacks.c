@@ -20,6 +20,7 @@
 
 #include <sys/types.h>
 #include <sys/stdbool.h>
+#include <sys/cyclic.h>
 
 #include <sys/amdzen/fch/iomux.h>
 #include <sys/amdzen/fch/gpio.h>
@@ -339,4 +340,51 @@ zen_fabric_hack_bridges(zen_fabric_t *fabric)
 	zen_pci_bus_counter_t c;
 	bzero(&c, sizeof (c));
 	zen_fabric_walk_pcie_port(fabric, zen_fabric_hack_bridges_cb, &c);
+}
+
+static void
+zen_gpio_watchdog_cyclic(void *arg)
+{
+	mmio_reg_t reg = *(mmio_reg_t *)arg;
+	uint32_t val, output;
+
+	val = mmio_reg_read(reg);
+	output = FCH_GPIO_GPIO_GET_OUTPUT(val);
+	val = FCH_GPIO_GPIO_SET_OUTPUT(val, !output);
+	mmio_reg_write(reg, val);
+}
+
+/*
+ * Set up a cyclic to toggle a board-specific GPIO around once a second as a
+ * simple watchdog that can be observed by the FPGA and SP. This is a high level
+ * cyclic to help ensure it runs as long as the kernel is alive. We map the MMIO
+ * block and build the register definiton here once to avoid doing work at high
+ * PIL.
+ */
+void
+zen_gpio_watchdog(void)
+{
+	const oxide_board_iomux_t *iomux = &oxide_board_data->obd_wd;
+	if (!iomux->obp_valid)
+		return;
+
+	mmio_reg_block_t gpio_block = fch_gpio_mmio_block();
+	mmio_reg_t gpio_reg = FCH_GPIO_GPIO_MMIO(gpio_block, iomux->obp_gpio);
+	mmio_reg_t *reg = kmem_alloc(sizeof (gpio_reg), KM_SLEEP);
+	*reg = gpio_reg;
+	cyc_handler_t hdlr = {
+		.cyh_level = CY_HIGH_LEVEL,
+		.cyh_func = zen_gpio_watchdog_cyclic,
+		.cyh_arg = reg
+	};
+	cyc_time_t when = {
+		.cyt_when = 0,
+		.cyt_interval = NANOSEC
+	};
+
+	zen_hack_gpio_config(iomux->obp_gpio, iomux->obp_iomux);
+	mutex_enter(&cpu_lock);
+	(void) cyclic_add(&hdlr, &when);
+	mutex_exit(&cpu_lock);
+
 }
