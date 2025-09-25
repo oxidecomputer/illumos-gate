@@ -31,6 +31,11 @@
  *  o Sensors were added in release v1.0.2 of SP software. This added the
  *    MAX5970 type and initial versions of all sensors.
  *  o The MAX31790 was added in v1.0.13.
+ *  o The Winbond 25Q flash parts used for auxflash and host flash on Cosmo
+ *    were added in v1.0.41.
+ *  o FANTRAYv2 was added in v1.0.47 alongside the existing FANTRAY. FANTRAYv2
+ *    can encode barcode data from fans which have either an 0XV1/0XV2 or MPN1
+ *    barcode whereas FANTRAY can only encode the former.
  */
 
 #include <sys/stdint.h>
@@ -81,7 +86,14 @@ typedef enum {
 	IPCC_INVENTORY_T_LTC4282,
 	IPCC_INVENTORY_T_LM5066I,
 	/* Added in SP release v1.0.39 (Cosmo) */
-	IPCC_INVENTORY_T_DDR5
+	IPCC_INVENTORY_T_DDR5,
+	/* Added in SP release v1.0.41 */
+	IPCC_INVENTORY_T_W25Q256J,	/* Cosmo/Grapefruit/Sidecar Auxflash */
+	IPCC_INVENTORY_T_W25Q01J,	/* Cosmo host flash */
+	/* Added in SP release v1.0.47 */
+	IPCC_INVENTORY_T_FANTRAYV2,
+
+	IPCC_INVENTORY_T_ANY = UINT32_MAX
 } ipcc_inv_type_t;
 
 #pragma pack(1)
@@ -240,6 +252,28 @@ typedef struct {
 	uint8_t ddr5_spd[1024];
 	ipcc_sensor_id_t ddr5_temp[2];
 } ipcc_inv_ddr5_t;
+
+/*
+ * Added in SP release 1.0.41.
+ */
+typedef struct {
+	uint8_t w_id[8];
+} ipcc_inv_w25q256j_t;
+
+typedef struct {
+	uint8_t w_id0[8];
+	uint8_t w_id1[8];
+} ipcc_inv_w25q01j_t;
+
+/*
+ * Added in SP release 1.0.47.
+ */
+#define	FANTRAYV2_BARCODE_LEN	0x80
+typedef struct {
+	uint8_t ft_id[FANTRAYV2_BARCODE_LEN];
+	uint8_t ft_board[FANTRAYV2_BARCODE_LEN];
+	uint8_t ft_fans[3][FANTRAYV2_BARCODE_LEN];
+} ipcc_inv_fantrayv2_t;
 #pragma pack() /* pack(1) */
 
 #ifdef __cplusplus

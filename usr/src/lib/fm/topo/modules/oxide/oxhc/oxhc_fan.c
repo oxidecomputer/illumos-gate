@@ -17,8 +17,8 @@
  * Logic to create and manage the fan-tray in Gimlet and Cosmo. The two are
  * designed the same, but have different part numbers.
  *
- * The Gimlet fan tray consists of a single enclosure with three fans each. Each
- * of the fans in turn has two rotors, which are independent and can fail. This
+ * The fan tray consists of a single enclosure with three fans each. Each of
+ * the fans in turn has two rotors, which are independent and can fail. This
  * looks roughly like:
  *			Label
  *   fan-tray
@@ -40,8 +40,11 @@
  */
 
 #include <string.h>
+#include <sys/stdbool.h>
+#include <sys/debug.h>
 
 #include "oxhc.h"
+#include "oxhc_util.h"
 
 #define	OXHC_MAX_ROTORS	2
 #define	OXHC_MAX_FANS	3
@@ -111,43 +114,70 @@ static const fan_tray_info_t cosmo_tray_info = {
 };
 
 typedef struct oxhc_fan {
+	const char *of_mfg;
 	const char *of_cpn;
 	uint32_t of_nrotors;
 	const char *of_labels[OXHC_MAX_ROTORS];
 } oxhc_fan_t;
 
 static const oxhc_fan_t oxhc_fans[] = {
-	{ "991-0000094", 2, { "South", "North" } },
-	{ "418-0000005", 2, { "South", "North" } }
+	{ "", "991-0000094", 2, { "South", "North" } },
+	{ "", "418-0000005", 2, { "South", "North" } },
+	{ "SYD", "9CRA0848P8G012", 2, { "South", "North" } },
+	{ "SYD", "9CRA0848P8G014", 2, { "South", "North" } },
 };
 
 static int
-topo_oxhc_enum_fan(topo_mod_t *mod, const ipcc_inv_vpdid_t *fan_vpd,
+topo_oxhc_enum_fan(topo_mod_t *mod, const oxhc_barcode_t *barcode,
     tnode_t *tray, topo_instance_t inst, nvlist_t *auth, const char *loc,
     const char *dir, const ipcc_sensor_id_t *sensors, uint32_t sensor_base)
 {
 	int ret;
-	char *fan_pn = NULL, *fan_sn = NULL, fan_rev[16];
+	char *fan_mfg = NULL, *fan_pn = NULL, *fan_sn = NULL, *fan_rev = NULL;
 	char label[64];
 	static const oxhc_fan_t *fan_info;
 	tnode_t *fan, *rotor;
 
-	if ((fan_pn = topo_mod_clean_strn(mod, (const char *)fan_vpd->vpdid_pn,
-	    sizeof (fan_vpd->vpdid_pn))) == NULL ||
-	    (fan_sn = topo_mod_clean_strn(mod, (const char *)fan_vpd->vpdid_sn,
-	    sizeof (fan_vpd->vpdid_sn))) == NULL) {
+	if ((fan_pn = topo_mod_clean_strn(mod, (const char *)barcode->ob_pn,
+	    sizeof (barcode->ob_pn))) == NULL ||
+	    (fan_sn = topo_mod_clean_strn(mod, (const char *)barcode->ob_sn,
+	    sizeof (barcode->ob_sn))) == NULL ||
+	    (fan_rev = topo_mod_clean_strn(mod, (const char *)barcode->ob_rev,
+	    sizeof (barcode->ob_rev))) == NULL) {
 		topo_mod_dprintf(mod, "failed to clean up fan %" PRIu64
 		    " strings\n", inst);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
 		goto out;
 	}
 
-	(void) snprintf(fan_rev, sizeof (fan_rev), "%u", fan_vpd->vpdid_rev);
+	if ((fan_mfg = topo_mod_clean_strn(mod, (const char *)barcode->ob_mfg,
+	    sizeof (barcode->ob_mfg))) == NULL) {
+		fan_mfg = topo_mod_strdup(mod, "");
+	}
+
 	(void) snprintf(label, sizeof (label), "Fan %" PRIu64 " (%s)", inst,
 	    loc);
 
 	if ((ret = topo_oxhc_tn_create(mod, tray, &fan, FAN, inst, auth, fan_pn,
 	    fan_rev, fan_sn, TOPO_OXHC_TN_F_SET_LABEL, label)) == -1) {
+		goto out;
+	}
+
+	if (strlen(fan_mfg) > 0) {
+		const char *mfg_name = topo_oxhc_vendor_name(fan_mfg);
+
+		if (topo_create_props(mod, fan, TOPO_PROP_IMMUTABLE,
+		    &oxhc_pgroup,
+		    TOPO_PGROUP_OXHC_MFGCODE, TOPO_TYPE_STRING, fan_mfg,
+		    TOPO_PGROUP_OXHC_MFGNAME, TOPO_TYPE_STRING,
+		    mfg_name != NULL ? mfg_name : "Unknown",
+		    NULL) != 0) {
+			topo_mod_dprintf(mod,
+			    "failed to create %s properties for "
+			    "%s[%" PRIu64 "]: %s\n",
+			    oxhc_pgroup.tpi_name, topo_node_name(fan),
+			    topo_node_instance(fan), topo_mod_errmsg(mod));
+		}
 		goto out;
 	}
 
@@ -158,7 +188,8 @@ topo_oxhc_enum_fan(topo_mod_t *mod, const ipcc_inv_vpdid_t *fan_vpd,
 	 */
 	fan_info = NULL;
 	for (size_t i = 0; i < ARRAY_SIZE(oxhc_fans); i++) {
-		if (strcmp(fan_pn, oxhc_fans[i].of_cpn) == 0) {
+		if (strcmp(fan_mfg, oxhc_fans[i].of_mfg) == 0 &&
+		    strcmp(fan_pn, oxhc_fans[i].of_cpn) == 0) {
 			fan_info = &oxhc_fans[i];
 			break;
 		}
@@ -166,7 +197,8 @@ topo_oxhc_enum_fan(topo_mod_t *mod, const ipcc_inv_vpdid_t *fan_vpd,
 
 	if (fan_info == NULL) {
 		topo_mod_dprintf(mod, "no additional rotor information "
-		    "available for fan %s:%s:%s\n", fan_pn, fan_rev, fan_sn);
+		    "available for fan %s:%s:%s:%s\n",
+		    fan_mfg, fan_pn, fan_rev, fan_sn);
 		ret = 0;
 		goto out;
 	}
@@ -198,9 +230,30 @@ topo_oxhc_enum_fan(topo_mod_t *mod, const ipcc_inv_vpdid_t *fan_vpd,
 
 	ret = 0;
 out:
+	topo_mod_strfree(mod, fan_mfg);
 	topo_mod_strfree(mod, fan_pn);
 	topo_mod_strfree(mod, fan_sn);
+	topo_mod_strfree(mod, fan_rev);
 	return (ret);
+}
+
+static bool
+topo_oxhc_fan_vpd_to_barcode(topo_mod_t *mod, const ipcc_inv_vpdid_t *vpd,
+    const char *tag, char *buf, size_t len)
+{
+	if (vpd->vpdid_rev > 999) {
+		topo_mod_dprintf(mod, "%s revision (%u) is >999, "
+		    "cannot encode in an 0XV2 barcode",
+		    tag, vpd->vpdid_rev);
+		return (false);
+	}
+	if (snprintf(buf, len, "%s:%s:%03u:%s", OXHC_BARCODE_0XV2_PFX,
+	    vpd->vpdid_pn, vpd->vpdid_rev, vpd->vpdid_sn) >= len) {
+		topo_mod_dprintf(mod, "Could not construct OXV2 barcode"
+		    "from fantrayv1 %s VPD; overflowed", tag);
+		return (false);
+	}
+	return (true);
 }
 
 static int
@@ -210,27 +263,98 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 {
 	int ret;
 	libipcc_inv_t *inv, *sense_inv;
-	ipcc_inv_fantray_t tray;
+	ipcc_inv_fantrayv2_t *tray = NULL;
 	ipcc_inv_max31790_t max31790;
-	const ipcc_inv_vpdid_t *tinv, *binv;
-	char *tray_pn = NULL, *tray_sn = NULL, tray_rev[16];
-	char *board_pn = NULL, *board_sn = NULL, board_rev[16];
+	char *tray_pn = NULL, *tray_sn = NULL, *tray_rev = NULL;
+	char *board_pn = NULL, *board_sn = NULL, *board_rev = NULL;
 	tnode_t *tray_tn, *board_tn;
 	nvlist_t *auth = NULL;
+	oxhc_barcode_t barcode;
+	ipcc_inv_type_t type;
+	uint32_t brevnum;
+	const char *errstr;
 
-	if ((inv = topo_oxhc_inventory_find(oxhc, info->ft_refdes)) == NULL) {
+	/*
+	 * To support MPN1-serialized fans, a new FANTRAYv2 inventory data type
+	 * was introduced. We use that by preference as the older FANTRAY type
+	 * cannot encode data for MPN1 barcodes.
+	 */
+	if ((inv = topo_oxhc_inventory_find(oxhc, info->ft_refdes,
+	    IPCC_INVENTORY_T_FANTRAYV2)) == NULL &&
+	    (inv = topo_oxhc_inventory_find(oxhc, info->ft_refdes,
+	    IPCC_INVENTORY_T_FANTRAY)) == NULL) {
 		topo_mod_dprintf(mod, "failed to find IPCC inventory entry "
 		    "%s\n", info->ft_refdes);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
 		goto out;
 	}
 
-	if (!topo_oxhc_inventory_bcopy(inv, IPCC_INVENTORY_T_FANTRAY, &tray,
-	    sizeof (tray), sizeof (tray))) {
-		topo_mod_dprintf(mod, "IPCC information for %s is not "
-		    "copyable\n", info->ft_refdes);
-		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+	type = libipcc_inv_type(inv);
+
+	tray = topo_mod_zalloc(mod, sizeof (*tray));
+	if (tray == NULL) {
+		topo_mod_dprintf(mod, "failed to allocate memory for IPCC "
+		    "inventory: %s\n", strerror(errno));
+		ret = topo_mod_seterrno(mod, EMOD_NOMEM);
 		goto out;
+	}
+
+	if (type == IPCC_INVENTORY_T_FANTRAYV2) {
+		if (!topo_oxhc_inventory_bcopy(inv, type, tray, sizeof (*tray),
+		    sizeof (*tray))) {
+			topo_mod_dprintf(mod,
+			    "IPCC information for %s is not copyable\n",
+			    info->ft_refdes);
+			ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+			goto out;
+		}
+	} else {
+		/*
+		 * For the older fantray data type, cons up the new format.
+		 */
+		ipcc_inv_fantray_t t;
+
+		VERIFY3U(type, ==, IPCC_INVENTORY_T_FANTRAY);
+
+		if (!topo_oxhc_inventory_bcopy(inv, type, &t, sizeof (t),
+		    sizeof (t))) {
+			topo_mod_dprintf(mod,
+			    "IPCC information for %s is not copyable\n",
+			    info->ft_refdes);
+			ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+			goto out;
+		}
+
+		if (!topo_oxhc_fan_vpd_to_barcode(mod, &t.ft_id,
+		    "ID", (char *)tray->ft_id, sizeof (tray->ft_id))) {
+			ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+			goto out;
+		}
+		if (!topo_oxhc_fan_vpd_to_barcode(mod, &t.ft_board,
+		    "BOARD", (char *)tray->ft_board, sizeof (tray->ft_board))) {
+			ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+			goto out;
+		}
+
+		for (size_t i = 0; i < ARRAY_SIZE(t.ft_fans); i++) {
+			char tag[sizeof ("FAN") + 2];
+
+			/*
+			 * Fans with MPN1-style barcodes will not be present in
+			 * the older FANTRAY message. If there is no part
+			 * number, skip barcode generation for this entry.
+			 */
+			if (t.ft_fans[i].vpdid_pn)
+				continue;
+
+			(void) snprintf(tag, sizeof (tag), "FAN %u", i);
+			if (!topo_oxhc_fan_vpd_to_barcode(mod, &t.ft_fans[i],
+			    tag, (char *)tray->ft_fans[i],
+			    sizeof (tray->ft_fans[i]))) {
+				ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+				goto out;
+			}
+		}
 	}
 
 	/*
@@ -240,17 +364,22 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 	 * CPN. If it's different, we probably shouldn't continue as it means
 	 * that things are likely different.
 	 */
-	tinv = &tray.ft_id;
-	if ((tray_pn = topo_mod_clean_strn(mod, (const char *)tinv->vpdid_pn,
-	    sizeof (tinv->vpdid_pn))) == NULL ||
-	    (tray_sn = topo_mod_clean_strn(mod, (const char *)tinv->vpdid_sn,
-	    sizeof (tinv->vpdid_sn))) == NULL) {
+	if (!topo_oxhc_barcode_parse(mod, oxhc, tray->ft_id,
+	    sizeof (tray->ft_id), &barcode)) {
+		topo_mod_dprintf(mod, "Could not parse fan tray ID barcode");
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
+	if ((tray_pn = topo_mod_clean_strn(mod, (const char *)barcode.ob_pn,
+	    sizeof (barcode.ob_pn))) == NULL ||
+	    (tray_sn = topo_mod_clean_strn(mod, (const char *)barcode.ob_sn,
+	    sizeof (barcode.ob_sn))) == NULL ||
+	    (tray_rev = topo_mod_clean_strn(mod, (const char *)barcode.ob_rev,
+	    sizeof (barcode.ob_rev))) == NULL) {
 		topo_mod_dprintf(mod, "failed to clean up fan tray strings\n");
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
 		goto out;
 	}
-
-	(void) snprintf(tray_rev, sizeof (tray_rev), "%u", tinv->vpdid_rev);
 
 	if (strcmp(tray_pn, info->ft_cpn) != 0) {
 		topo_mod_dprintf(mod, "found unexpected CPN for fan tray: %s, "
@@ -276,14 +405,14 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 	}
 
 	if ((ret = topo_node_range_create(mod, tray_tn, FAN, 0,
-	    ARRAY_SIZE(tray.ft_fans) - 1)) != 0) {
+	    ARRAY_SIZE(tray->ft_fans) - 1)) != 0) {
 		topo_mod_dprintf(mod, "failed to create fan range: %s\n",
 		    topo_mod_errmsg(mod));
 		goto out;
 	}
 
 	if ((ret = topo_node_range_create(mod, tray_tn, BOARD, 0, 0)) != 0) {
-		topo_mod_dprintf(mod, "failed to create fan range: %s\n",
+		topo_mod_dprintf(mod, "failed to create fan board range: %s\n",
 		    topo_mod_errmsg(mod));
 		goto out;
 	}
@@ -294,48 +423,90 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 	 * non-failure and set the sensor IDs to UINT32_MAX, which the fan
 	 * enum will take as a cue not to do anything here.
 	 */
-	sense_inv = topo_oxhc_inventory_find(oxhc, info->ft_ctrl);
+	sense_inv = topo_oxhc_inventory_find(oxhc, info->ft_ctrl,
+	    IPCC_INVENTORY_T_MAX31790);
 	if (sense_inv == NULL || !topo_oxhc_inventory_bcopy(sense_inv,
 	    IPCC_INVENTORY_T_MAX31790, &max31790, sizeof (max31790),
 	    sizeof (max31790))) {
 		(void) memset(&max31790, 0xff, sizeof (max31790));
 	}
 
-	for (size_t i = 0; i < ARRAY_SIZE(tray.ft_fans); i++) {
-		const ipcc_inv_vpdid_t *fan_vpd = &tray.ft_fans[i];
+	for (size_t i = 0; i < ARRAY_SIZE(tray->ft_fans); i++) {
+		/*
+		 * If there is no barcode for this fan, create it without
+		 * VPD information and, since we don't know what it is, without
+		 * any rotor information.
+		 */
+		if (*tray->ft_fans[i] == '\0') {
+			char label[64];
 
-		if ((ret = topo_oxhc_enum_fan(mod, fan_vpd, tray_tn, i, auth,
+			(void) snprintf(label, sizeof (label), "Fan %u (%s)",
+			    i, info->ft_labels[i]);
+			if ((ret = topo_oxhc_tn_create(mod, tray_tn, NULL, FAN,
+			    i, auth, NULL, NULL, NULL, TOPO_OXHC_TN_F_SET_LABEL,
+			    label)) == -1) {
+				goto out;
+			}
+			continue;
+		}
+
+		if (!topo_oxhc_barcode_parse(mod, oxhc, tray->ft_fans[i],
+		    sizeof (tray->ft_fans[i]), &barcode)) {
+			topo_mod_dprintf(mod, "Could not parse fan %u barcode",
+			    i);
+			goto out;
+		}
+
+		if ((ret = topo_oxhc_enum_fan(mod, &barcode, tray_tn, i, auth,
 		    info->ft_labels[i], info->ft_dirs[i],
 		    max31790.max_tach, info->ft_sensors[i])) != 0) {
 			goto out;
 		}
 	}
 
-	binv = &tray.ft_board;
-	if ((board_pn = topo_mod_clean_strn(mod, (const char *)binv->vpdid_pn,
-	    sizeof (tinv->vpdid_pn))) == NULL ||
-	    (board_sn = topo_mod_clean_strn(mod, (const char *)binv->vpdid_sn,
-	    sizeof (tinv->vpdid_sn))) == NULL) {
-		topo_mod_dprintf(mod, "failed to clean up fan tray strings\n");
+	if (!topo_oxhc_barcode_parse(mod, oxhc, tray->ft_board,
+	    sizeof (tray->ft_board), &barcode)) {
+		topo_mod_dprintf(mod, "Could not parse fan tray board barcode");
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
 		goto out;
 	}
-	(void) snprintf(board_rev, sizeof (board_rev), "%u", binv->vpdid_rev);
+	if ((board_pn = topo_mod_clean_strn(mod, (const char *)barcode.ob_pn,
+	    sizeof (barcode.ob_pn))) == NULL ||
+	    (board_sn = topo_mod_clean_strn(mod, (const char *)barcode.ob_sn,
+	    sizeof (barcode.ob_sn))) == NULL ||
+	    (board_rev = topo_mod_clean_strn(mod, (const char *)barcode.ob_rev,
+	    sizeof (barcode.ob_rev))) == NULL) {
+		topo_mod_dprintf(mod, "failed to clean up fan board strings\n");
+		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
+	}
 
 	if ((ret = topo_oxhc_tn_create(mod, tray_tn, &board_tn, BOARD, min,
 	    auth, board_pn, board_rev, board_sn, 0, NULL)) == -1) {
 		goto out;
 	}
 
+	brevnum = strtonum(board_rev, 0, UINT32_MAX, &errstr);
+	if (errstr != NULL) {
+		topo_mod_dprintf(mod,
+		    "failed to convert fan board rev '%s' to number: %s",
+		    board_rev, errstr);
+		goto out;
+	}
+
 	ret = topo_oxhc_enum_ic(mod, oxhc, board_tn, info->ft_vpd,
-	    binv->vpdid_rev, oxhc_ic_fanvpd, oxhc_ic_fanvpd_nents);
+	    brevnum, oxhc_ic_fanvpd, oxhc_ic_fanvpd_nents);
 
 out:
 	nvlist_free(auth);
 	topo_mod_strfree(mod, board_pn);
 	topo_mod_strfree(mod, board_sn);
+	topo_mod_strfree(mod, board_rev);
 	topo_mod_strfree(mod, tray_pn);
 	topo_mod_strfree(mod, tray_sn);
+	topo_mod_strfree(mod, tray_rev);
+	if (tray != NULL)
+		topo_mod_free(mod, tray, sizeof (*tray));
 	return (ret);
 }
 

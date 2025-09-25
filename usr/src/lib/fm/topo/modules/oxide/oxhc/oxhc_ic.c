@@ -1422,7 +1422,7 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	 * day.
 	 */
 	{ .ib_refdes = "U21", .ib_info = &oxhc_ic_w25q256j },
-	{ .ib_refdes = "U18", .ib_info = &oxhc_ic_w25q01j },
+	{ .ib_refdes = "U28", .ib_info = &oxhc_ic_w25q01j },
 	/*
 	 * We should get the 96-bit device ID out of the FPGA.
 	 */
@@ -1685,7 +1685,8 @@ topo_oxhc_enum_ic_one(topo_mod_t *mod, const oxhc_t *oxhc, uint32_t rev,
 			lookup = ic_info.ic_refdes;
 		}
 
-		hc_info.oih_inv = topo_oxhc_inventory_find(oxhc, lookup);
+		hc_info.oih_inv = topo_oxhc_inventory_find(oxhc, lookup,
+		    IPCC_INVENTORY_T_ANY);
 	}
 
 	fmri_ret = OXHC_IC_FMRI_DEFAULT;

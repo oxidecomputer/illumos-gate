@@ -36,8 +36,10 @@ extern "C" {
 /*
  * oxhc-specific property groups that are used internally.
  */
-#define	TOPO_PGROUP_OXHC	"oxhc"
-#define	TOPO_PGROUP_OXHC_REFDES	"refdes"
+#define	TOPO_PGROUP_OXHC		"oxhc"
+#define	TOPO_PGROUP_OXHC_REFDES		"refdes"
+#define	TOPO_PGROUP_OXHC_MFGCODE	"mfg-code"
+#define	TOPO_PGROUP_OXHC_MFGNAME	"mfg-name"
 
 /*
  * MGS remote sensor and property group.
@@ -185,7 +187,7 @@ extern void topo_oxhc_libipcc_error(topo_mod_t *, libipcc_handle_t *,
 extern int topo_oxhc_inventory_init(topo_mod_t *, libipcc_handle_t *, oxhc_t *);
 extern void topo_oxhc_inventory_fini(topo_mod_t *, oxhc_t *);
 extern libipcc_inv_t *topo_oxhc_inventory_find(const oxhc_t *,
-    const char *);
+    const char *, ipcc_inv_type_t);
 extern bool topo_oxhc_inventory_bcopy(libipcc_inv_t *, ipcc_inv_type_t,
     void *, size_t, size_t);
 extern bool topo_oxhc_inventory_bcopyoff(libipcc_inv_t *, void *, size_t,
@@ -219,6 +221,11 @@ extern int topo_oxhc_enum_sharkfin(topo_mod_t *, const oxhc_t *,
  */
 extern di_node_t topo_oxhc_slot_to_devi(topo_mod_t *, uint32_t);
 extern int topo_oxhc_enum_pcie(topo_mod_t *, tnode_t *, di_node_t);
+
+/*
+ * Property groups.
+ */
+extern const topo_pgroup_info_t oxhc_pgroup;
 
 #ifdef __cplusplus
 }

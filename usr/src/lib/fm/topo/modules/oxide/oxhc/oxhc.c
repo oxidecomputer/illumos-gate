@@ -63,6 +63,13 @@ static const topo_pgroup_info_t oxhc_remote_mgs_pgroup = {
 	1
 };
 
+const topo_pgroup_info_t oxhc_pgroup = {
+	TOPO_PGROUP_OXHC,
+	TOPO_STABILITY_PRIVATE,
+	TOPO_STABILITY_PRIVATE,
+	1
+};
+
 static const oxhc_slot_info_t oxhc_slots_gimlet[] = {
 	{ OXHC_SLOT_CEM, 0, 9, "215-0000085" },
 	{ OXHC_SLOT_DIMM, 10, 25, "215-0000086" },
@@ -665,7 +672,8 @@ topo_oxhc_enum_temp_board(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	if ((inv = topo_oxhc_inventory_find(oxhc, ipcc)) == NULL) {
+	if ((inv = topo_oxhc_inventory_find(oxhc, ipcc,
+	    IPCC_INVENTORY_T_ANY)) == NULL) {
 		topo_mod_dprintf(mod, "failed to find IPCC inventory entry %s",
 		    ipcc);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
@@ -805,7 +813,8 @@ topo_oxhc_enum_dimm(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	if ((inv = topo_oxhc_inventory_find(oxhc, slot_refdes)) == NULL) {
+	if ((inv = topo_oxhc_inventory_find(oxhc, slot_refdes,
+	    IPCC_INVENTORY_T_ANY)) == NULL) {
 		topo_mod_dprintf(mod, "failed to find IPCC inventory entry %s",
 		    slot_refdes);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
