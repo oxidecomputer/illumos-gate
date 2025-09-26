@@ -375,11 +375,6 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		}
 	}
 
-	unsigned int chip_ver = CHELSIO_CHIP_VERSION(sc->params.chip);
-	/* RPZ: temporary */
-	CH_DBG(sc, "chip version: %u (FPGA: %d) v17", chip_ver,
-	    is_fpga(sc->params.chip));
-
 	/*
 	 * Do this really early.  Note that minor number = instance.
 	 */

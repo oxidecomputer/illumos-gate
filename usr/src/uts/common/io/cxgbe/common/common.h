@@ -81,7 +81,6 @@ enum {
 	MACADDR_LEN    = 12,    /* MAC Address length */
 };
 
-/* RPZ: used? */
 enum {
 	T4_REGMAP_SIZE = (160 * 1024),
 	T5_REGMAP_SIZE = (332 * 1024),

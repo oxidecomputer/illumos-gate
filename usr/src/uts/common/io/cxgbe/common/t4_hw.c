@@ -790,13 +790,6 @@ static int t4_wr_mbox_meat_timeout_panic(struct adapter *adap, int mbox,
 int t4_wr_mbox_meat(struct adapter *adap, int mbox, const void *cmd, int size,
 		    void *rpl, bool sleep_ok)
 {
-	/* if (t4_os_is_platform_device(adap)) */
-	/* 	return t4_os_platform_mbox(adap, cmd, size, rpl, */
-	/* 				   FW_CMD_MAX_TIMEOUT, sleep_ok); */
-
-	const int timeout = is_fpga(adap->params.chip) ?
-	    FW_CMD_MAX_TIMEOUT_FPGA : FW_CMD_MAX_TIMEOUT;
-
 #ifdef CONFIG_CUDBG
 	if (adap->flags & K_CRASH)
 		return t4_wr_mbox_meat_timeout_panic(adap, mbox, cmd, size,
@@ -804,7 +797,7 @@ int t4_wr_mbox_meat(struct adapter *adap, int mbox, const void *cmd, int size,
 	else
 #endif
 		return t4_wr_mbox_meat_timeout(adap, mbox, cmd, size, rpl,
-					       sleep_ok, timeout);
+					       sleep_ok, FW_CMD_MAX_TIMEOUT);
 
 }
 
@@ -5577,7 +5570,7 @@ int t4_link_l1cfg_core(struct adapter *adapter, unsigned int mbox,
 	 */
 	if (ret) {
 		CH_ERR(adapter,
-		       "Requested Port Capabilities %#x rejected, error %d\n",
+		       "Requested Port Capabilities 0x%x rejected, error %d\n",
 		       rcap, -ret);
 		return ret;
 	}
@@ -10514,6 +10507,10 @@ static void t4_link_sanitize_caps(struct link_config *lc,
 	 * RPZ: This seems wrong. If you set a property not in the
 	 * pcaps list, then it enables ALL pcaps. But that's not what
 	 * the user requested.
+	 *
+	 * It's actually not wrong, but what I don't like about it is that it
+	 * potentially changes what the user asked for without telling them it
+	 * did so.
 	 */
 	/* Remove all unsupported caps */
 	if ((lc->pcaps | caps) != lc->pcaps)

@@ -1466,12 +1466,6 @@ t4_mc_setprop(void *arg, const char *name, mac_prop_id_t id, uint_t size,
 		relink = 1;
 		break;
 
-		/*
-		 * RPZ: Should the various 400/200 props actually
-		 * check for T7, otherwise return ENOTSUP? Same goes
-		 * for older chips: should we instead limit the
-		 * properties exposed based on the chip in play?
-		 */
 	case MAC_PROP_EN_400GFDX_CAP:
 		rc = -t4_link_set_speed(pi, FW_PORT_CAP32_SPEED_400G, v8,
 		    &new_caps);

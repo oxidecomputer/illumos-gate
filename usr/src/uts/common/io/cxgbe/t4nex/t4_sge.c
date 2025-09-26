@@ -42,14 +42,6 @@
 #include "common/t4_regs_values.h"
 
 /* TODO: Tune. */
-
-/*
- * RPZ: We are setting Rx buf size to 8K here, but I don't think we
- * are setting the bottom 4 bits of the "Free List Pointer". I believe
- * that means the FL will consider the buffer size to be whatever is
- * in the SGE_FL_BUFFER_SIZE0 reg. And I believe that's 4K. We should
- * look at how FreeBSD builds its FL.
- */
 int rx_buf_size = 8192;
 int tx_copy_threshold = 256;
 uint16_t rx_copy_threshold = 256;
@@ -290,7 +282,6 @@ t4_sge_init(struct adapter *sc)
 	dma_attr->dma_attr_version = DMA_ATTR_V0;
 	dma_attr->dma_attr_addr_lo = 0;
 	dma_attr->dma_attr_addr_hi = UINT64_MAX;
-	/* RPZ: I don't know if this is right. See other drivers. */
 	dma_attr->dma_attr_count_max = UINT64_MAX;
 	/*
 	 * Low 4 bits of an rx buffer address have a special meaning to the SGE
@@ -3199,8 +3190,6 @@ t4_tx_ring_db(struct sge_txq *txq)
 	else
 		val = V_PIDX_T5(eq->pending);
 
-	/* RPZ: Is there an intrinsic we could use to determine the bit, or
-	 * maybe a way to cache this to avoid doing this every time? */
 	db_mode = (1 << (ffs(db) - 1));
 	switch (db_mode) {
 		case DOORBELL_WCWR: {
