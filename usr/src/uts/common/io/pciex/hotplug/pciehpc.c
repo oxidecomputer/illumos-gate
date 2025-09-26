@@ -192,7 +192,7 @@
  * pciehpc_init(), we know that at that point (2) has completed. We also know
  * that the interrupt shouldn't be initiated at that point, but that isn't
  * guaranteed until we finish calling the pciehpc_hpc_init() entry point. We
- * subsequently will enable the interrupt via the enable_phc_intr() function
+ * subsequently will enable the interrupt via the enable_hpc_intr() function
  * pointer, which is called from pcie_hpintr_enable(). This gap is to allow the
  * overall driver (say pcieb) to ensure that it has allocated and attached
  * interrupts prior to us enabling it.
@@ -261,6 +261,62 @@
  * can enter the steady state. If devices have come or gone, the use of the
  * normal state machine transitions should allow us to get them to be attached
  * or not.
+ *
+ * Link State Changes
+ * ------------------
+ *
+ * When the bridge supports Data Link Layer Link Active reporting, we are also
+ * interrupted when the link below the slot comes up or goes down. During a
+ * deliberate state transition, such as when we power a slot on, this is
+ * expected. Otherwise, a change in the link state means that the device below
+ * the slot has been reset - The PCIe base specification (Transaction Layer
+ * Behavior in DL_Down Status) requires an Upstream Port to handle DL_Down as
+ * a reset, returning all of its PCIe registers, state machines, etc. to their
+ * defaults. That means that even if the link comes straight back up, which
+ * can happen before we take the link down interrupt, the device has lost
+ * everything that we programmed into it and cannot continue to be used. Rather
+ * than teaching every driver to recover from this, we treat it as a surprise
+ * removal followed by a surprise insertion, and the device goes back through
+ * hotplug.
+ *
+ * That means, then, that when the link changes while the slot is ENABLED and
+ * we are not in the middle of changing the slot state ourselves, we:
+ *
+ * 1) Post the DDI_DEVI_REMOVE_EVENT to the child so that its driver stops
+ *    using the hardware and fails any outstanding I/O, just as we do for a
+ *    surprise removal.
+ *
+ * 2) Set PCIE_HP_LINK_RESET and dispatch pciehpc_link_task(). The task first
+ *    takes the slot to POWERED, which causes the DDI hotplug framework to
+ *    offline and unprobe the child. Then, if the link is active at that point
+ *    and pcie_auto_online is set, it takes the slot back to ENABLED, which
+ *    probes and onlines whatever is now below the slot. If the link is not
+ *    active, the slot stays POWERED and the next link up interrupt dispatches
+ *    the task again.
+ *
+ * A link coming up while the slot is POWERED is treated in the same way as an
+ * insertion - if pcie_auto_online is set, the slot is enabled. That covers a
+ * slot left POWERED by the above, but also one whose device had not trained
+ * its link by the time the slot was first brought up, or whose probe failed.
+ *
+ * Those two steps have to be separate requests to the framework, and they have
+ * to occur in order. To arrange that we use a new task on pcie_link_tq.
+ *
+ * There are some cases where we deliberately do not treat a link event as a
+ * device reset:
+ *
+ *  o A presence change in the same interrupt, or a device that is no longer
+ *    present. The presence change handling takes precedence and takes the slot
+ *    to EMPTY.
+ *  o A link change while PCIE_HP_CHANGE_RUNNING is set. This is a side effect
+ *    of an in-progress transition.
+ *  o A link up that we have already waited for. Its interrupt may only be
+ *    serviced once the transition has completed, at which point it would look
+ *    like an unexpected change.
+ *
+ * Finally, because a probe requires an active link, moving from POWERED to
+ * ENABLED always verifies that the link is active first, regardless of whether
+ * the slot has a power controller.
  *
  * LED Management
  * --------------
@@ -484,6 +540,10 @@ static int pciehpc_downgrade_slot_state(pcie_hp_slot_t *slot_p,
     ddi_hp_cn_state_t target_state);
 static int pciehpc_change_slot_state(pcie_hp_slot_t *slot_p,
     ddi_hp_cn_state_t target_state);
+static bool pciehpc_link_active(pcie_hp_ctrl_t *ctrl_p);
+static void pciehpc_notify_child_remove(dev_info_t *dip);
+static void pciehpc_slot_link_change(pcie_hp_ctrl_t *ctrl_p, uint16_t status,
+    bool active);
 static int
     pciehpc_slot_poweron(pcie_hp_slot_t *slot_p, ddi_hp_cn_state_t *result);
 static int
@@ -508,8 +568,10 @@ typedef struct pciehpc_stat_data {
 	kstat_named_t psd_pres_chg_ts;
 	kstat_named_t psd_cmd_cpl_count;
 	kstat_named_t psd_cmd_cpl_ts;
-	kstat_named_t psd_dll_chg_count;
-	kstat_named_t psd_dll_chg_ts;
+	kstat_named_t psd_link_up_count;
+	kstat_named_t psd_link_up_ts;
+	kstat_named_t psd_link_down_count;
+	kstat_named_t psd_link_down_ts;
 	kstat_named_t psd_intr_count;
 	kstat_named_t psd_intr_ts;
 } pciehpc_stat_data_t;
@@ -670,6 +732,18 @@ pciehpc_uninit(dev_info_t *dip)
 	if (id != TASKQID_INVALID)
 		taskq_wait_id(system_taskq, id);
 
+	/*
+	 * Likewise, wait for any link change task to finish. Now that the
+	 * initialised flag is clear it will not do anything, and nothing will
+	 * dispatch it again.
+	 */
+	mutex_enter(&ctrl_p->hc_mutex);
+	while ((ctrl_p->hc_flags &
+	    (PCIE_HP_LINK_DISPATCHED | PCIE_HP_LINK_RUNNING)) != 0) {
+		cv_wait(&ctrl_p->hc_link_cv, &ctrl_p->hc_mutex);
+	}
+	mutex_exit(&ctrl_p->hc_mutex);
+
 	pcie_remove_minor_node(ctrl_p, 0);
 
 	/* unregister the slot */
@@ -713,6 +787,9 @@ pciehpc_uninit(dev_info_t *dip)
  * has already started executing, then its state change request will already
  * have been dispatched and we let things shake out with the additional logic we
  * have present in pciehpc_change_slot_state().
+ *
+ * Changes in the state of the link below the slot are handled as described in
+ * the 'Link State Changes' section of the theory statement.
  */
 int
 pciehpc_intr(dev_info_t *dip)
@@ -864,16 +941,7 @@ pciehpc_intr(dev_info_t *dip)
 			 * If supported, notify the child device driver that the
 			 * device is being removed.
 			 */
-			dev_info_t *cdip = ddi_get_child(dip);
-			if (cdip != NULL) {
-				ddi_eventcookie_t rm_cookie;
-				if (ddi_get_eventcookie(cdip,
-				    DDI_DEVI_REMOVE_EVENT,
-				    &rm_cookie) == DDI_SUCCESS) {
-					ndi_post_event(dip, cdip, rm_cookie,
-					    NULL);
-				}
-			}
+			pciehpc_notify_child_remove(dip);
 
 			/*
 			 * Ask DDI Hotplug framework to change state to Empty
@@ -887,28 +955,39 @@ pciehpc_intr(dev_info_t *dip)
 		clear_pend = B_TRUE;
 	}
 
-	/* check for DLL state changed interrupt */
+	/*
+	 * Check for a DLL state changed interrupt. The DLL Link Active bit in
+	 * the link status register tells us whether the link just came up or
+	 * went down.
+	 */
 	if (ctrl_p->hc_dll_active_rep &&
-	    (status & PCIE_SLOTSTS_DLL_STATE_CHANGED)) {
-		uint16_t linksts;
+	    (status & PCIE_SLOTSTS_DLL_STATE_CHANGED) != 0) {
+		const bool active = pciehpc_link_active(ctrl_p);
 
-		KSTAT_EVENT(slot_p, dll_chg, now);
+		if (active) {
+			KSTAT_EVENT(slot_p, link_up, now);
+		} else {
+			KSTAT_EVENT(slot_p, link_down, now);
+		}
 		PCIE_DBG("pciehpc_intr(): DLL STATE CHANGED interrupt received"
-		    " on slot %d\n", slot_p->hs_phy_slot_num);
+		    " on slot %d, link is %s\n", slot_p->hs_phy_slot_num,
+		    active ? "up" : "down");
 
 		/*
 		 * Give the platform a chance to capture link state directly
 		 * from the interrupt, while it reflects the link at the moment
-		 * it changed and before any subsequent hotplug power-off. The
-		 * DLL Active bit tells us whether the link just came up or went
-		 * down.
+		 * it changed and before any subsequent hotplug power-off.
 		 */
-		linksts = pciehpc_reg_get16(ctrl_p,
-		    bus_p->bus_pcie_off + PCIE_LINKSTS);
-		pci_prd_pcie_link_event(dip,
-		    (linksts & PCIE_LINKSTS_DLL_LINK_ACTIVE) != 0);
+		pci_prd_pcie_link_event(dip, active);
 
+		/*
+		 * Wake anyone waiting for the link to come up. The waiters
+		 * re-read the link status, so signalling on a link down is
+		 * harmless.
+		 */
 		cv_signal(&slot_p->hs_dll_active_cv);
+
+		pciehpc_slot_link_change(ctrl_p, status, active);
 	}
 
 	if (clear_pend) {
@@ -962,7 +1041,17 @@ pciehpc_hp_ops(dev_info_t *dip, char *cn_name, ddi_hp_op_t op,
 
 		mutex_enter(&slot_p->hs_ctrl->hc_mutex);
 
+		/*
+		 * Note that we are changing the slot state. The transition
+		 * may drop hc_mutex while it waits for the link or for a
+		 * command to complete and, if the interrupt handler runs in
+		 * the meantime, this tells it that any link change it sees is
+		 * a result of the transition and not a device reset. See the
+		 * 'Link State Changes' section of the theory statement.
+		 */
+		ctrl_p->hc_flags |= PCIE_HP_CHANGE_RUNNING;
 		ret = pciehpc_change_slot_state(slot_p, target_state);
+		ctrl_p->hc_flags &= ~PCIE_HP_CHANGE_RUNNING;
 		*(ddi_hp_cn_state_t *)result = slot_p->hs_info.cn_state;
 
 		mutex_exit(&slot_p->hs_ctrl->hc_mutex);
@@ -1486,10 +1575,14 @@ pciehpc_slot_kstat_init(pcie_hp_slot_t *slot_p)
 	    "command_completion_count", KSTAT_DATA_UINT64);
 	kstat_named_init(&slot_p->hs_stat_data->psd_cmd_cpl_ts,
 	    "command_completion_ts", KSTAT_DATA_UINT64);
-	kstat_named_init(&slot_p->hs_stat_data->psd_dll_chg_count,
-	    "dll_active_change_count", KSTAT_DATA_UINT64);
-	kstat_named_init(&slot_p->hs_stat_data->psd_dll_chg_ts,
-	    "dll_active_change_ts", KSTAT_DATA_UINT64);
+	kstat_named_init(&slot_p->hs_stat_data->psd_link_up_count,
+	    "link_up_count", KSTAT_DATA_UINT64);
+	kstat_named_init(&slot_p->hs_stat_data->psd_link_up_ts,
+	    "link_up_ts", KSTAT_DATA_UINT64);
+	kstat_named_init(&slot_p->hs_stat_data->psd_link_down_count,
+	    "link_down_count", KSTAT_DATA_UINT64);
+	kstat_named_init(&slot_p->hs_stat_data->psd_link_down_ts,
+	    "link_down_ts", KSTAT_DATA_UINT64);
 	kstat_named_init(&slot_p->hs_stat_data->psd_intr_count,
 	    "interrupt_count", KSTAT_DATA_UINT64);
 	kstat_named_init(&slot_p->hs_stat_data->psd_intr_ts,
@@ -1935,6 +2028,197 @@ pciehpc_enable_state_sync(pcie_hp_ctrl_t *ctrl_p)
 }
 
 /*
+ * Report whether the link below the slot is active. This only means something
+ * on a bridge that supports Data Link Layer Link Active reporting.
+ */
+static bool
+pciehpc_link_active(pcie_hp_ctrl_t *ctrl_p)
+{
+	pcie_bus_t *bus_p = PCIE_DIP2BUS(ctrl_p->hc_dip);
+	uint16_t linksts;
+
+	ASSERT(MUTEX_HELD(&ctrl_p->hc_mutex));
+	ASSERT(ctrl_p->hc_dll_active_rep);
+
+	linksts = pciehpc_reg_get16(ctrl_p, bus_p->bus_pcie_off + PCIE_LINKSTS);
+	return ((linksts & PCIE_LINKSTS_DLL_LINK_ACTIVE) != 0);
+}
+
+/*
+ * If the child's driver has registered for it, tell it that the device below
+ * the slot is going away so that it can stop using the hardware and fail any
+ * outstanding I/O.
+ */
+static void
+pciehpc_notify_child_remove(dev_info_t *dip)
+{
+	dev_info_t *cdip = ddi_get_child(dip);
+	ddi_eventcookie_t cookie;
+
+	if (cdip == NULL)
+		return;
+
+	if (ddi_get_eventcookie(cdip, DDI_DEVI_REMOVE_EVENT, &cookie) ==
+	    DDI_SUCCESS) {
+		(void) ndi_post_event(dip, cdip, cookie, NULL);
+	}
+}
+
+/*
+ * This is the task that puts a device back through hotplug after the link
+ * below the slot has changed unexpectedly. See the 'Link State Changes'
+ * section of the theory statement. It runs on the single-threaded pcie_link_tq
+ * and is coalesced through the PCIE_HP_LINK_DISPATCHED and PCIE_HP_LINK_RUNNING
+ * flags in the same way as the link bandwidth notification handling in pcie.c.
+ * Only one instance of the task is ever dispatched for each controller and, if
+ * another link change is seen while it is running, it runs again.
+ */
+static void
+pciehpc_link_task(void *arg)
+{
+	pcie_hp_ctrl_t *ctrl_p = arg;
+	pcie_hp_slot_t *slot_p = ctrl_p->hc_slots[0];
+	dev_info_t *dip = ctrl_p->hc_dip;
+	bool again;
+
+top:
+	mutex_enter(&ctrl_p->hc_mutex);
+	ctrl_p->hc_flags &= ~PCIE_HP_LINK_DISPATCHED;
+	ctrl_p->hc_flags |= PCIE_HP_LINK_RUNNING;
+
+	/*
+	 * The initialised flag is only cleared by pciehpc_uninit(), which then
+	 * waits for this task to finish before it unregisters the slot. The
+	 * slot is being torn down so there is nothing for us to do.
+	 */
+	if ((ctrl_p->hc_flags & PCIE_HP_INITIALIZED_FLAG) == 0)
+		goto done;
+
+	/*
+	 * If the device was reset while in use, take the slot down to POWERED.
+	 * The DDI hotplug framework offlines and unprobes the child before
+	 * asking us to change the slot state. If that does not leave us
+	 * POWERED, either the child could not be offlined or someone else has
+	 * changed the slot state in the meantime. In both cases there is
+	 * nothing more for us to do.
+	 */
+	if ((ctrl_p->hc_flags & PCIE_HP_LINK_RESET) != 0) {
+		ctrl_p->hc_flags &= ~PCIE_HP_LINK_RESET;
+		if (slot_p->hs_info.cn_state == DDI_HP_CN_STATE_ENABLED) {
+			mutex_exit(&ctrl_p->hc_mutex);
+			(void) ndi_hp_state_change_req(dip,
+			    slot_p->hs_info.cn_name, DDI_HP_CN_STATE_POWERED,
+			    DDI_HP_REQ_SYNC);
+			mutex_enter(&ctrl_p->hc_mutex);
+
+			if (slot_p->hs_info.cn_state != DDI_HP_CN_STATE_POWERED)
+				goto done;
+		}
+	}
+
+	/*
+	 * If the slot is powered but not enabled and the link is active,
+	 * enable it, as we would for an insertion. Moving to ENABLED probes
+	 * and onlines whatever is below the slot. If the link goes away again
+	 * before the transition checks it, we will be left POWERED and will
+	 * try again when it next comes up.
+	 */
+	if (slot_p->hs_info.cn_state == DDI_HP_CN_STATE_POWERED &&
+	    pcie_auto_online != 0 && pciehpc_link_active(ctrl_p)) {
+		mutex_exit(&ctrl_p->hc_mutex);
+		(void) ndi_hp_state_change_req(dip, slot_p->hs_info.cn_name,
+		    DDI_HP_CN_STATE_ENABLED, DDI_HP_REQ_SYNC);
+		mutex_enter(&ctrl_p->hc_mutex);
+	}
+
+done:
+	ctrl_p->hc_flags &= ~PCIE_HP_LINK_RUNNING;
+	cv_broadcast(&ctrl_p->hc_link_cv);
+	again = (ctrl_p->hc_flags & PCIE_HP_LINK_DISPATCHED) != 0;
+	mutex_exit(&ctrl_p->hc_mutex);
+
+	if (again)
+		goto top;
+}
+
+static void
+pciehpc_dispatch_link_task(pcie_hp_ctrl_t *ctrl_p)
+{
+	ASSERT(MUTEX_HELD(&ctrl_p->hc_mutex));
+
+	if ((ctrl_p->hc_flags & PCIE_HP_LINK_DISPATCHED) != 0)
+		return;
+
+	if ((ctrl_p->hc_flags & PCIE_HP_LINK_RUNNING) == 0) {
+		taskq_dispatch_ent(pcie_link_tq, pciehpc_link_task, ctrl_p, 0,
+		    &ctrl_p->hc_link_tqent);
+	}
+	ctrl_p->hc_flags |= PCIE_HP_LINK_DISPATCHED;
+}
+
+/*
+ * Handle a change in the state of the link below the slot that was reported by
+ * a DLL state changed interrupt. See the 'Link State Changes' section of the
+ * theory statement for the cases that we act on and those that we do not.
+ */
+static void
+pciehpc_slot_link_change(pcie_hp_ctrl_t *ctrl_p, uint16_t status, bool active)
+{
+	pcie_hp_slot_t *slot_p = ctrl_p->hc_slots[0];
+	dev_info_t *dip = ctrl_p->hc_dip;
+
+	ASSERT(MUTEX_HELD(&ctrl_p->hc_mutex));
+
+	/*
+	 * A link change during a state transition that we are driving is a
+	 * side effect of that transition and is dealt with there.
+	 */
+	if ((ctrl_p->hc_flags & PCIE_HP_CHANGE_RUNNING) != 0)
+		return;
+
+	/*
+	 * If the device's presence has changed as well, or it is no longer
+	 * present, the presence change handling takes precedence.
+	 */
+	if ((status & PCIE_SLOTSTS_PRESENCE_CHANGED) != 0 ||
+	    (status & PCIE_SLOTSTS_PRESENCE_DETECTED) == 0) {
+		return;
+	}
+
+	switch (slot_p->hs_info.cn_state) {
+	case DDI_HP_CN_STATE_ENABLED:
+		/*
+		 * The device has been reset and must go back through hotplug
+		 * whether or not the link is back up already. Tell the child's
+		 * driver that the device is gone before anything else happens.
+		 */
+		cmn_err(CE_WARN, "pciehpc (%s%d): link in slot %s %s "
+		    "unexpectedly", ddi_driver_name(dip), ddi_get_instance(dip),
+		    slot_p->hs_info.cn_name,
+		    active ? "was reset" : "went down");
+		slot_p->hs_condition = AP_COND_FAILED;
+		pciehpc_notify_child_remove(dip);
+		ctrl_p->hc_flags |= PCIE_HP_LINK_RESET;
+		pciehpc_dispatch_link_task(ctrl_p);
+		break;
+	case DDI_HP_CN_STATE_POWERED:
+		/*
+		 * A link coming up below a powered slot with nothing enabled
+		 * is treated like an insertion, subject to the same policy.
+		 */
+		if (active && pcie_auto_online != 0) {
+			cmn_err(CE_NOTE, "pciehpc (%s%d): link in slot %s is "
+			    "up", ddi_driver_name(dip), ddi_get_instance(dip),
+			    slot_p->hs_info.cn_name);
+			pciehpc_dispatch_link_task(ctrl_p);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+/*
  * Enable hot plug interrupts.
  * Note: this is only for Native hot plug mode.
  */
@@ -2049,6 +2333,7 @@ pciehpc_create_controller(dev_info_t *dip)
 	/* Initialize synchronization conditional variable */
 	cv_init(&ctrl_p->hc_cmd_comp_cv, NULL, CV_DRIVER, NULL);
 	ctrl_p->hc_cmd_pending = B_FALSE;
+	cv_init(&ctrl_p->hc_link_cv, NULL, CV_DRIVER, NULL);
 
 	bus_p->bus_hp_curr_mode = PCIE_NATIVE_HP_MODE;
 	PCIE_SET_HP_CTRL(dip, ctrl_p);
@@ -2074,6 +2359,7 @@ pciehpc_destroy_controller(dev_info_t *dip)
 
 	mutex_destroy(&ctrl_p->hc_mutex);
 	cv_destroy(&ctrl_p->hc_cmd_comp_cv);
+	cv_destroy(&ctrl_p->hc_link_cv);
 	kmem_free(ctrl_p->hc_slots[0], sizeof (pcie_hp_slot_t));
 	kmem_free(ctrl_p, sizeof (pcie_hp_ctrl_t));
 }
@@ -2172,7 +2458,7 @@ pciehpc_slot_wait_for_active(pcie_hp_slot_t *slot_p)
 
 	if (ctrl_p->hc_dll_active_rep) {
 		clock_t deadline;
-		uint16_t status;
+		uint16_t status, slotsts;
 
 		/* wait 1 sec for the DLL State Changed event */
 		status = pciehpc_reg_get16(ctrl_p,
@@ -2202,6 +2488,24 @@ pciehpc_slot_wait_for_active(pcie_hp_slot_t *slot_p)
 			 */
 			pci_prd_pcie_link_event(ctrl_p->hc_dip, B_FALSE);
 			return (B_FALSE);
+		}
+
+		/*
+		 * We have seen the link come up. Its interrupt may not have
+		 * been serviced yet and, if that only happens once the
+		 * transition that we are part of has completed, it would be
+		 * mistaken for an unexpected link change (see the 'Link State
+		 * Changes' section of the theory statement). Consume the event
+		 * here instead, doing what the interrupt handler would have.
+		 */
+		slotsts = pciehpc_reg_get16(ctrl_p,
+		    bus_p->bus_pcie_off + PCIE_SLOTSTS);
+		if ((slotsts & PCIE_SLOTSTS_DLL_STATE_CHANGED) != 0) {
+			pciehpc_reg_put16(ctrl_p,
+			    bus_p->bus_pcie_off + PCIE_SLOTSTS,
+			    PCIE_SLOTSTS_DLL_STATE_CHANGED);
+			KSTAT_EVENT(slot_p, link_up, gethrtime());
+			pci_prd_pcie_link_event(ctrl_p->hc_dip, B_TRUE);
 		}
 	} else {
 		/* wait 1 sec for link to come up */
@@ -2768,6 +3072,20 @@ pciehpc_upgrade_slot_state(pcie_hp_slot_t *slot_p,
 				    &curr_state);
 				if (rv != DDI_SUCCESS)
 					break;
+			} else if (ctrl_p->hc_dll_active_rep &&
+			    !pciehpc_slot_wait_for_active(slot_p)) {
+				/*
+				 * We may have been POWERED for some time, for
+				 * example after a probe failure or after the
+				 * link went down. We cannot become ENABLED
+				 * without an active link as the probe would
+				 * fail.
+				 */
+				cmn_err(CE_WARN, "pciehpc_upgrade_slot_state "
+				    "(slot %d): link is not active, unable to "
+				    "enable slot", slot_p->hs_phy_slot_num);
+				rv = DDI_FAILURE;
+				break;
 			}
 
 			curr_state = slot_p->hs_info.cn_state =
@@ -3121,7 +3439,7 @@ pciehpc_slot_prop_copyin(uintptr_t arg, ddi_hp_property_t *prop)
 		if (ddi_copyin((void *)arg, &prop32, sizeof (prop32), 0) != 0) {
 			return (false);
 		}
-		bzero(prop, sizeof (prop));
+		bzero(prop, sizeof (*prop));
 		prop->nvlist_buf = (void *)(uintptr_t)prop32.nvlist_buf;
 		prop->buf_size = prop32.buf_size;
 		break;

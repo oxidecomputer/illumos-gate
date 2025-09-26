@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_PCIE_IMPL_H
@@ -765,6 +765,9 @@ extern pcie_bus_t *pciev_get_affected_dev(pf_impl_t *, pf_data_t *,
     uint16_t, uint16_t);
 extern void pciev_eh_exit(pf_data_t *, uint_t);
 extern boolean_t pcie_in_domain(pcie_bus_t *, uint_t);
+
+/* Link management taskq, shared with the hotplug controller */
+extern taskq_t *pcie_link_tq;
 
 /* Link Bandwidth Monitoring */
 extern boolean_t pcie_link_bw_supported(dev_info_t *);
