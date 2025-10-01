@@ -750,6 +750,122 @@ topo_oxhc_ic_lm5066i_fmri(topo_mod_t *mod, const oxhc_ic_info_t *ic_info,
 	return (OXHC_IC_FMRI_OK);
 }
 
+static bool
+topo_oxhc_ic_w25q_enum_dies(topo_mod_t *mod, const oxhc_ic_info_t *ic_info,
+    tnode_t *tn, const uint_t ndies, const uint64_t die_size,
+    uint8_t (*serials)[8])
+{
+	nvlist_t *auth = NULL;
+
+	if (topo_node_range_create(mod, tn, BANK, 0, ndies - 1) != 0) {
+		topo_mod_dprintf(mod,
+		    "failed to create BANK range for %s: %s",
+		    ic_info->ic_refdes, topo_mod_errmsg(mod));
+		return (false);
+	}
+
+	auth = topo_mod_auth(mod, tn);
+	if (auth == NULL) {
+		topo_mod_dprintf(mod,
+		    "failed to get auth data for %s[%" PRIu64 "]: %s",
+		    topo_node_name(tn), topo_node_instance(tn),
+		    topo_mod_errmsg(mod));
+		return (false);
+	}
+
+	for (uint_t i = 0; i < ndies; i++) {
+		char serial[17];
+		tnode_t *die;
+
+		(void) snprintf(serial, sizeof (serial),
+		    "%02x%02x%02x%02x%02x%02x%02x%02x",
+		    serials[i][0], serials[i][1], serials[i][2],
+		    serials[i][3], serials[i][4], serials[i][5],
+		    serials[i][6], serials[i][7]);
+
+		if (topo_oxhc_tn_create(mod, tn, &die, BANK, i, auth,
+		    NULL, NULL, serial, 0, NULL) == 0) {
+			if (topo_create_props(mod, die, TOPO_PROP_IMMUTABLE,
+			    &oxhc_storage_pgroup,
+			    TOPO_STORAGE_SIZE, TOPO_TYPE_UINT64, die_size,
+			    NULL) != 0) {
+				topo_mod_dprintf(mod,
+				    "failed to create %s properties for "
+				    "%s[%" PRIu64 "]: %s",
+				    oxhc_storage_pgroup.tpi_name,
+				    topo_node_name(die),
+				    topo_node_instance(die),
+				    topo_mod_errmsg(mod));
+			}
+		}
+	}
+
+	nvlist_free(auth);
+	return (true);
+}
+
+static bool
+topo_oxhc_ic_w25q01j_enum(topo_mod_t *mod, const oxhc_ic_info_t *ic_info,
+    const oxhc_ic_hc_t *hc, tnode_t *tn)
+{
+	ipcc_inv_w25q01j_t w25q;
+
+	if (hc->oih_inv == NULL) {
+		topo_mod_dprintf(mod, "missing IPCC information for %s",
+		    ic_info->ic_refdes);
+		return (true);
+	}
+
+	if (!topo_oxhc_inventory_bcopy(hc->oih_inv, IPCC_INVENTORY_T_W25Q01J,
+	    &w25q, sizeof (w25q), sizeof (w25q))) {
+		topo_mod_dprintf(mod, "IPCC information for %s is not copyable",
+		    ic_info->ic_refdes);
+		return (true);
+	}
+
+	/* The W25Q01JV parts have two 512M-bit dies */
+	const uint_t ndies = 2;
+	const uint64_t die_size = 64 * 1024 * 1024; /* bytes */
+
+	if (!topo_oxhc_ic_w25q_enum_dies(mod, ic_info, tn, ndies, die_size,
+	    w25q.w_id)) {
+		return (false);
+	}
+
+	return (true);
+}
+
+static bool
+topo_oxhc_ic_w25q256j_enum(topo_mod_t *mod, const oxhc_ic_info_t *ic_info,
+    const oxhc_ic_hc_t *hc, tnode_t *tn)
+{
+	ipcc_inv_w25q256j_t w25q;
+
+	if (hc->oih_inv == NULL) {
+		topo_mod_dprintf(mod, "missing IPCC information for %s",
+		    ic_info->ic_refdes);
+		return (true);
+	}
+
+	if (!topo_oxhc_inventory_bcopy(hc->oih_inv, IPCC_INVENTORY_T_W25Q256J,
+	    &w25q, sizeof (w25q), sizeof (w25q))) {
+		topo_mod_dprintf(mod, "IPCC information for %s is not copyable",
+		    ic_info->ic_refdes);
+		return (true);
+	}
+
+	/* The W25Q256JV parts have one 256M-bit die */
+	const uint_t ndies = 1;
+	const uint64_t die_size = 32 * 1024 * 1024; /* bytes */
+
+	if (!topo_oxhc_ic_w25q_enum_dies(mod, ic_info, tn, ndies, die_size,
+	    &w25q.w_id)) {
+		return (false);
+	}
+
+	return (true);
+}
+
 static const oxhc_ic_sensor_t oxhc_ic_adm127x_sensors[] = { {
 	.is_type = TOPO_SENSOR_TYPE_TEMP,
 	.is_unit = TOPO_SENSOR_UNITS_DEGREES_C,
@@ -1165,11 +1281,13 @@ static const oxhc_ic_info_t oxhc_ic_w25n01g = {
 };
 
 static const oxhc_ic_info_t oxhc_ic_w25q256j = {
-	.ic_cpn = "225-0000020", .ic_mfg = "Winbond", .ic_mpn = "W25Q256JVEIQ"
+	.ic_cpn = "225-0000020", .ic_mfg = "Winbond", .ic_mpn = "W25Q256JVEIQ",
+	.ic_enum = topo_oxhc_ic_w25q256j_enum
 };
 
 static const oxhc_ic_info_t oxhc_ic_w25q01j = {
-	.ic_cpn = "221-0000194", .ic_mfg = "Winbond", .ic_mpn = "W25Q01JVZEIQ"
+	.ic_cpn = "221-0000194", .ic_mfg = "Winbond", .ic_mpn = "W25Q01JVZEIQ",
+	.ic_enum = topo_oxhc_ic_w25q01j_enum
 };
 
 static const oxhc_ic_info_t oxhc_ic_xc7s100 = {

@@ -226,6 +226,7 @@ extern int topo_oxhc_enum_pcie(topo_mod_t *, tnode_t *, di_node_t);
  * Property groups.
  */
 extern const topo_pgroup_info_t oxhc_pgroup;
+extern const topo_pgroup_info_t oxhc_storage_pgroup;
 
 #ifdef __cplusplus
 }

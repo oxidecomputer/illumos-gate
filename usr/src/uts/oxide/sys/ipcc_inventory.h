@@ -261,8 +261,7 @@ typedef struct {
 } ipcc_inv_w25q256j_t;
 
 typedef struct {
-	uint8_t w_id0[8];
-	uint8_t w_id1[8];
+	uint8_t w_id[2][8];
 } ipcc_inv_w25q01j_t;
 
 /*

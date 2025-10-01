@@ -70,6 +70,13 @@ const topo_pgroup_info_t oxhc_pgroup = {
 	1
 };
 
+const topo_pgroup_info_t oxhc_storage_pgroup = {
+	TOPO_PGROUP_STORAGE,
+	TOPO_STABILITY_PRIVATE,
+	TOPO_STABILITY_PRIVATE,
+	1
+};
+
 static const oxhc_slot_info_t oxhc_slots_gimlet[] = {
 	{ OXHC_SLOT_CEM, 0, 9, "215-0000085" },
 	{ OXHC_SLOT_DIMM, 10, 25, "215-0000086" },
