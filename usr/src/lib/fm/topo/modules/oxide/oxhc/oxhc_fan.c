@@ -344,7 +344,7 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 			 * the older FANTRAY message. If there is no part
 			 * number, skip barcode generation for this entry.
 			 */
-			if (t.ft_fans[i].vpdid_pn)
+			if (t.ft_fans[i].vpdid_pn[0] == '\0')
 				continue;
 
 			(void) snprintf(tag, sizeof (tag), "FAN %u", i);
