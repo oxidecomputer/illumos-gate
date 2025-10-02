@@ -36,7 +36,10 @@ static struct {
 	const char *tov_name;
 } topo_oxhc_vendor_names[] = {
 	{ "HPM", "Herold Precision Metals" },
+	{ "MIC", "Micron Technology" },
+	{ "SND", "Sandisk" },
 	{ "SYD", "Sanyo Denki" },
+	{ "WDC", "Western Digital Corporation" }
 };
 
 const char *
