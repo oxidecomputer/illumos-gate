@@ -20,7 +20,7 @@
 #
 <include global_zone_only_component>
 set name=pkg.fmri \
-    value=pkg:/system/microcode/oxide@20250616,$(PKGVERS_BUILTON)-$(PKGVERS_BRANCH)
+    value=pkg:/system/microcode/oxide@20251003,$(PKGVERS_BUILTON)-$(PKGVERS_BRANCH)
 set name=pkg.summary value="Microcode for the Oxide platform CPUs"
 set name=pkg.description value="Microcode for the Oxide platform CPUs"
 set name=info.classification value=org.opensolaris.category.2008:System/Core
@@ -38,6 +38,8 @@ file path=platform/oxide/ucode/AuthenticAMD/B100-00 group=sys mode=0444
 file path=platform/oxide/ucode/AuthenticAMD/B110-00 group=sys mode=0444
 file path=platform/oxide/ucode/AuthenticAMD/equivalence-table group=sys \
     mode=0444
+dir  path=platform/oxide/ucode/AuthenticAMD/fallback group=sys
+file path=platform/oxide/ucode/AuthenticAMD/fallback/A011-00 group=sys mode=0444
 license lic_CDDL license=lic_CDDL
 license usr/src/data/ucode/oxide/THIRDPARTYLICENSE \
     license=usr/src/data/ucode/oxide/THIRDPARTYLICENSE

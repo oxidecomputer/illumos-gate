@@ -24,12 +24,13 @@
 # Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2011 by Delphix. All rights reserved.
 # Copyright (c) 2018, Joyent, Inc.
-# Copyright 2024 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 #
 
 syntax: glob
 etc-stlouis/extras/*
+etc-stlouis/ramdisk.manifest
 exception_lists/closed-bins
 exception_lists/copyright
 exception_lists/cstyle
@@ -110,6 +111,7 @@ usr/src/data/perfmon/*
 usr/src/data/ucode/Makefile.links
 usr/src/data/ucode/amd/*
 usr/src/data/ucode/intel/*
+usr/src/data/ucode/oxide/*
 usr/src/grub/grub-0.97/stage2/Makefile.am
 usr/src/grub/grub-0.97/stage2/builtins.c
 usr/src/grub/grub-0.97/stage2/disk_io.c
