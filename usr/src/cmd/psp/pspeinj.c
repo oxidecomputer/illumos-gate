@@ -41,7 +41,7 @@ usage(const char *format, ...)
 		va_start(ap, format);
 		vwarnx(format, ap);
 		va_end(ap);
-		fputc('\n', stderr);
+		(void) fputc('\n', stderr);
 	}
 
 	(void) fprintf(stderr, "Usage: "

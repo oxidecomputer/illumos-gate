@@ -187,8 +187,6 @@ PSP_C2PMSG(x86_processor_family_t fam, const uint16_t reginst)
  */
 #define	PSP_RAS_MBOX_SET_DATA(r, v)	bitset32(r, 15, 0, v)
 
-#pragma pack(1)
-
 /*
  * Known CPU-to-PSP commands. The set of supported commands may vary between
  * processor families, i.e. Naples (ZP), Rome (SSP), Milan (GN), Genoa (RS),
@@ -474,7 +472,8 @@ typedef struct psp_ras_error_types_ext {
 			uint8_t		prete_pcie_seg;
 		};
 	};
-} psp_ras_error_types_ext_t;
+} __attribute__((packed)) psp_ras_error_types_ext_t;
+CTASSERT(sizeof (psp_ras_error_types_ext_t) == 36);
 
 typedef struct amd_vendor_errors {
 	uint64_t	ave_supported_errs;
@@ -483,7 +482,8 @@ typedef struct amd_vendor_errors {
 	uint8_t		ave_reserved[3];
 	uint32_t	ave_inj_ctrl;
 	uint8_t		ave_location[4];
-} amd_vendor_errors_t;
+} __attribute__((packed)) amd_vendor_errors_t;
+CTASSERT(sizeof (amd_vendor_errors_t) == 28);
 
 typedef struct psp_ras_vendor_error_type {
 	uint32_t		prvet_len;
@@ -494,6 +494,7 @@ typedef struct psp_ras_vendor_error_type {
 	uint8_t			prvet_reserved[3];
 	amd_vendor_errors_t	prvet_oem;
 } psp_ras_vendor_error_type_t;
+CTASSERT(sizeof (psp_ras_vendor_error_type_t) == 44);
 
 typedef struct psp_ras_vendor_error_type_rev1 {
 	psp_ras_vendor_error_type_t	prvet1_base;
@@ -501,6 +502,7 @@ typedef struct psp_ras_vendor_error_type_rev1 {
 	uint8_t				prvet1_ext_err_ctrl_buf[512];
 	uint8_t				prvet1_ext_err_log[1024];
 } psp_ras_vendor_error_type_rev1_t;
+CTASSERT(sizeof (psp_ras_vendor_error_type_rev1_t) == 1664);
 
 /*
  * Status codes returned for an error injection status.
@@ -606,8 +608,6 @@ typedef struct psp_ras_command_buffer {
 	psp_ras_vendor_error_type_rev1_t	prcb_vendor_error_type_rev1;
 } psp_ras_command_buffer_t;
 CTASSERT(sizeof (psp_ras_command_buffer_t) == 0x800);
-
-#pragma pack()	/* pack(1) */
 
 #ifdef __cplusplus
 }
