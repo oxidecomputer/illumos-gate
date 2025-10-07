@@ -17,6 +17,7 @@
 #define	_SYS_AMDZEN_PSP_H
 
 #include <sys/bitext.h>
+#include <sys/ccompile.h>
 #include <sys/stdint.h>
 #include <sys/x86_archext.h>
 
@@ -472,7 +473,7 @@ typedef struct psp_ras_error_types_ext {
 			uint8_t		prete_pcie_seg;
 		};
 	};
-} __attribute__((packed)) psp_ras_error_types_ext_t;
+} __packed psp_ras_error_types_ext_t;
 CTASSERT(sizeof (psp_ras_error_types_ext_t) == 36);
 
 typedef struct amd_vendor_errors {
@@ -482,7 +483,7 @@ typedef struct amd_vendor_errors {
 	uint8_t		ave_reserved[3];
 	uint32_t	ave_inj_ctrl;
 	uint8_t		ave_location[4];
-} __attribute__((packed)) amd_vendor_errors_t;
+} __packed amd_vendor_errors_t;
 CTASSERT(sizeof (amd_vendor_errors_t) == 28);
 
 typedef struct psp_ras_vendor_error_type {

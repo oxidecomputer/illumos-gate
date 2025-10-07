@@ -236,7 +236,14 @@ psp_einj_enable(psp_einj_t *pe)
 	VERIFY(MUTEX_HELD(&pe->pe_lock));
 
 	/*
-	 * We need to first enable the RAS mailbox.
+	 * The C2P command to enable the RAS mailbox must be made from SMM
+	 * which we can satisfy by making use of the psp_fake_smm module.
+	 */
+	if (!psp_fake_smm_enable())
+		return (false);
+
+	/*
+	 * Send command to enable the RAS mailbox.
 	 */
 	if (!psp_einj_enable_ras_mbox(pe))
 		return (false);
@@ -308,10 +315,6 @@ psp_einj_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 
 	pe->pe_dip = dip;
-
-	if (!psp_einj_enable(pe)) {
-		goto err;
-	}
 
 	if (ddi_create_minor_node(dip, PSP_EINJ_MINOR_NAME, S_IFCHR,
 	    PSP_EINJ_MINOR_NUM, DDI_PSEUDO, 0) != DDI_SUCCESS) {
@@ -410,15 +413,30 @@ psp_einj_open(dev_t *devp, int flags, int otype, cred_t *credp)
 static int
 psp_einj_req(psp_einj_t *pe, psp_einj_req_t *einj)
 {
-	volatile psp_ras_command_buffer_t *ras_cmd = pe->pe_ras_cmd_buf;
+	static bool psp_einj_enabled = false;
+	volatile psp_ras_command_buffer_t *ras_cmd;
+	volatile psp_ras_error_types_ext_t *err_ext;
 	psp_ras_error_types_t error_type = { 0 };
-	volatile psp_ras_error_types_ext_t *err_ext =
-	    (volatile psp_ras_error_types_ext_t *)
-	    &ras_cmd->prcb_set_error_type_with_addr;
 	int ret;
 	uint8_t status;
 
 	mutex_enter(&pe->pe_lock);
+
+	/*
+	 * We delay trying to enable error injection until we actually first
+	 * try to use it.
+	 */
+	if (!psp_einj_enabled) {
+		if (!psp_einj_enable(pe)) {
+			ret = ENXIO;
+			goto out;
+		}
+		psp_einj_enabled = true;
+	}
+
+	ras_cmd = pe->pe_ras_cmd_buf;
+	err_ext = (volatile psp_ras_error_types_ext_t *)
+	    &ras_cmd->prcb_set_error_type_with_addr;
 
 	if (ras_cmd->prcb_busy != 0) {
 		ret = EBUSY;

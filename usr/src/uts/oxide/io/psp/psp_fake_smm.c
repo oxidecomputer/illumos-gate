@@ -71,6 +71,7 @@ static ddi_dma_attr_t psp_dma_attrs = {
 };
 
 typedef struct psp_fake_smm {
+	bool			pfs_enabled;
 	kmutex_t		pfs_lock;
 
 	/*
@@ -106,6 +107,8 @@ psp_c_c2pmbox_smm_cmd(cpu2psp_mbox_cmd_t cmd, c2p_mbox_buffer_hdr_t *buf)
 	psp_fake_smm_t *pfs = &psp_fake_smm_data;
 	int ret;
 
+	ASSERT(pfs->pfs_enabled == true);
+
 	/*
 	 * Verify the buffer size against our max possible.
 	 */
@@ -128,6 +131,7 @@ static void
 psp_fake_smm_fini(void)
 {
 	psp_fake_smm_t *pfs = &psp_fake_smm_data;
+	pfs->pfs_enabled = false;
 	pfs->pfs_fake_smi = 0;
 	pfs->pfs_in_smm = NULL;
 	pfs->pfs_cmd_buf = NULL;
@@ -139,13 +143,18 @@ psp_fake_smm_fini(void)
 	mutex_destroy(&pfs->pfs_lock);
 }
 
-static int
-psp_fake_smm_enable(psp_fake_smm_t *pfs)
+bool
+psp_fake_smm_enable(void)
 {
+	psp_fake_smm_t *pfs = &psp_fake_smm_data;
 	c2p_mbox_smm_info_buffer_t *buf = &pfs->pfs_cmd_buf->c2pmb_smm_info;
 	int ret;
 	paddr_t cmd_buf_pa, smm_flag_pa, data_buf_pa, fake_smi_pa;
 	pfn_t pfn;
+
+	if (pfs->pfs_enabled) {
+		return (true);
+	}
 
 	bzero(buf, sizeof (*buf));
 
@@ -224,13 +233,12 @@ psp_fake_smm_enable(psp_fake_smm_t *pfs)
 	if (ret != 0 || buf->c2pmsib_hdr.c2pmb_status != 0) {
 		cmn_err(CE_WARN, "psp_fake_smm: failed to set smm info: %d"
 		    " (status = %u)", ret, buf->c2pmsib_hdr.c2pmb_status);
-		if (ret == 0)
-			ret = buf->c2pmsib_hdr.c2pmb_status;
-		goto out;
+		return (false);
 	}
 
-out:
-	return (ret);
+	pfs->pfs_enabled = true;
+
+	return (true);
 }
 
 static int
@@ -238,9 +246,6 @@ psp_fake_smm_init(void)
 {
 	psp_fake_smm_t *pfs = &psp_fake_smm_data;
 	char *buf;
-	int ret;
-
-	mutex_init(&pfs->pfs_lock, NULL, MUTEX_DRIVER, NULL);
 
 	switch (chiprev_family(cpuid_getchiprev(CPU))) {
 	case X86_PF_AMD_TURIN:
@@ -248,9 +253,10 @@ psp_fake_smm_init(void)
 		break;
 	default:
 		cmn_err(CE_WARN, "!psp_fake_smm: unsupported processor family");
-		ret = ENOTSUP;
-		goto err;
+		return (ENOTSUP);
 	}
+
+	mutex_init(&pfs->pfs_lock, NULL, MUTEX_DRIVER, NULL);
 
 	/*
 	 * Any buffers shared with the PSP are expected to be in physically
@@ -278,14 +284,7 @@ psp_fake_smm_init(void)
 	pfs->pfs_in_smm = (uint32_t *)P2ROUNDUP((uintptr_t)buf,
 	    alignof (uint32_t));
 
-	if ((ret = psp_fake_smm_enable(pfs)) != 0)
-		goto err;
-
 	return (0);
-
-err:
-	psp_fake_smm_fini();
-	return (ret);
 }
 
 static struct modlmisc psp_fake_smm_modlmisc = {
@@ -323,10 +322,21 @@ _info(struct modinfo *modinfop)
 int
 _fini(void)
 {
+	psp_fake_smm_t *pfs = &psp_fake_smm_data;
+	int ret;
+
 	/*
 	 * We don't unload once we've successfully initialized because the call
 	 * to the PSP indicating SMM info is one-way. Any subsequent calls to
 	 * the mailbox must be made via psp_c_c2pmbox_smm_cmd().
 	 */
-	return (EBUSY);
+	if (pfs->pfs_enabled) {
+		return (EBUSY);
+	}
+
+	if ((ret = mod_remove(&psp_fake_smm_modlinkage)) == 0) {
+		psp_fake_smm_fini();
+	}
+
+	return (ret);
 }

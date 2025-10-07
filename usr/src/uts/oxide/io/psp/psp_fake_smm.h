@@ -21,11 +21,15 @@
  * SMM mode.
  */
 
+#include <sys/stdbool.h>
+
 #include <sys/amdzen/psp.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern bool psp_fake_smm_enable(void);
 
 extern int psp_c_c2pmbox_smm_cmd(cpu2psp_mbox_cmd_t, c2p_mbox_buffer_hdr_t *);
 
