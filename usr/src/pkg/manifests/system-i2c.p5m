@@ -32,6 +32,11 @@ $(i386_ONLY)file path=kernel/drv/$(ARCH64)/pchsmbus
 file path=kernel/drv/$(ARCH64)/spd511x
 file path=kernel/drv/$(ARCH64)/tmp43x
 file path=kernel/drv/$(ARCH64)/ts511x
+$(i386_ONLY)dir path=platform/oxide group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel/drv group=sys
+$(i386_ONLY)dir path=platform/oxide/kernel/drv/$(ARCH64) group=sys
+$(i386_ONLY)file path=platform/oxide/kernel/drv/$(ARCH64)/dwi2c
 dir  path=usr/include
 file path=usr/include/libi2c.h mode=0644
 dir  path=usr/include/sys
@@ -87,6 +92,7 @@ driver name=at24c \
     alias=atmel,at24c32 \
     alias=atmel,at24c512 \
     alias=atmel,at24c64
+driver name=dwi2c
 driver name=ee100x alias=ee1004
 driver name=i2cnex
 driver name=ismt \

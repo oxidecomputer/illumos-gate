@@ -832,6 +832,10 @@ $(OBJS_DIR)/%.o:		$(I2CBASE)/ctrl/i2csim/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(I2CBASE)/ctrl/dwi2c/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(I2CBASE)/ctrl/ismt/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
