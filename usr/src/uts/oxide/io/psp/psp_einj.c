@@ -96,6 +96,7 @@ psp_einj_init(void)
 
 	pe->pe_fam = chiprev_family(cpuid_getchiprev(CPU));
 	switch (pe->pe_fam) {
+	case X86_PF_AMD_MILAN:
 	case X86_PF_AMD_TURIN:
 	case X86_PF_AMD_DENSE_TURIN:
 		break;
@@ -232,6 +233,7 @@ static bool
 psp_einj_enable(psp_einj_t *pe)
 {
 	paddr_t cmd_buf_pa;
+	uint8_t expected_einj_rev;
 
 	VERIFY(MUTEX_HELD(&pe->pe_lock));
 
@@ -266,16 +268,21 @@ psp_einj_enable(psp_einj_t *pe)
 	 * validating the EINJ FW revision.
 	 */
 	switch (pe->pe_fam) {
+	case X86_PF_AMD_MILAN:
+		expected_einj_rev = PSP_EINJ_FW_REV0;
+		break;
 	case X86_PF_AMD_TURIN:
 	case X86_PF_AMD_DENSE_TURIN:
-		if (pe->pe_ras_cmd_buf->prcb_einj_fw_rev != PSP_EINJ_FW_REV1) {
-			dev_err(pe->pe_dip, CE_WARN, "invalid EINJ FW rev: %u",
-			    pe->pe_ras_cmd_buf->prcb_einj_fw_rev);
-			return (false);
-		}
+		expected_einj_rev = PSP_EINJ_FW_REV1;
 		break;
 	default:
 		panic("unsupported processor family");
+	}
+	if (pe->pe_ras_cmd_buf->prcb_einj_fw_rev != expected_einj_rev) {
+		dev_err(pe->pe_dip, CE_WARN, "invalid EINJ FW rev: %u, "
+		    "expected %u", pe->pe_ras_cmd_buf->prcb_einj_fw_rev,
+		    expected_einj_rev);
+		return (false);
 	}
 
 	/*
@@ -438,12 +445,26 @@ psp_einj_req(psp_einj_t *pe, psp_einj_req_t *einj)
 	err_ext = (volatile psp_ras_error_types_ext_t *)
 	    &ras_cmd->prcb_set_error_type_with_addr;
 
-	if (ras_cmd->prcb_busy != 0) {
-		ret = EBUSY;
-		goto out;
-	}
-
 	switch (einj->per_type) {
+	case PSP_EINJ_TYPE_NONE:
+		/*
+		 * Skip injection and just return the set of supported types.
+		 */
+		error_type.pret_val = ras_cmd->prcb_error_types.pret_val;
+		if (error_type.pret_memory_correctable)
+			einj->per_type |= PSP_EINJ_TYPE_MEM_CORRECTABLE;
+		if (error_type.pret_memory_uncorrectable)
+			einj->per_type |= PSP_EINJ_TYPE_MEM_UNCORRECTABLE;
+		if (error_type.pret_memory_fatal)
+			einj->per_type |= PSP_EINJ_TYPE_MEM_FATAL;
+		if (error_type.pret_pcie_correctable)
+			einj->per_type |= PSP_EINJ_TYPE_PCIE_CORRECTABLE;
+		if (error_type.pret_pcie_uncorrectable)
+			einj->per_type |= PSP_EINJ_TYPE_PCIE_UNCORRECTABLE;
+		if (error_type.pret_pcie_fatal)
+			einj->per_type |= PSP_EINJ_TYPE_PCIE_FATAL;
+		ret = 0;
+		goto out;
 	case PSP_EINJ_TYPE_MEM_CORRECTABLE:
 		error_type.pret_memory_correctable = 1;
 		break;
@@ -464,6 +485,11 @@ psp_einj_req(psp_einj_t *pe, psp_einj_req_t *einj)
 		break;
 	default:
 		ret = EINVAL;
+		goto out;
+	}
+
+	if (ras_cmd->prcb_busy != 0) {
+		ret = EBUSY;
 		goto out;
 	}
 
@@ -594,22 +620,8 @@ psp_einj_req(psp_einj_t *pe, psp_einj_req_t *einj)
 	 * This may be skipped if "no trigger" is requested with the assumption
 	 * the caller will trigger the error manually, e.g. via a memory access.
 	 */
-	if (einj->per_no_trigger)
-		goto out;
-	ras_cmd->prcb_trigger_error_start = 1;
-
-	/*
-	 * Wait for the PSP to acknowledge and clear the trigger flag.
-	 */
-	for (uint_t i = 0; i < psp_retry_attempts; i++) {
-		if (ras_cmd->prcb_trigger_error_start == 0)
-			break;
-		delay(psp_retry_delay);
-	}
-	if (ras_cmd->prcb_trigger_error_start != 0) {
-		dev_err(pe->pe_dip, CE_WARN, "timed out while waiting for "
-		    "PSP to trigger RAS EINJ operation");
-		ret = ETIMEDOUT;
+	if (!einj->per_no_trigger) {
+		ras_cmd->prcb_trigger_error_start = 1;
 	}
 
 	/*
@@ -630,6 +642,7 @@ psp_einj_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 {
 	psp_einj_t *pe = &psp_einj_data;
 	psp_einj_req_t einj = { 0 };
+	bool query_supported;
 	int ret;
 
 	if (getminor(dev) != PSP_EINJ_MINOR_NUM) {
@@ -654,7 +667,17 @@ psp_einj_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	if (ddi_copyin((void *)arg, &einj, sizeof (einj), mode & FKIOCTL) != 0)
 		return (EFAULT);
 
+	query_supported = einj.per_type == PSP_EINJ_TYPE_NONE;
 	ret = psp_einj_req(pe, &einj);
+	if (ret == 0 && query_supported) {
+		/*
+		 * Report back the supported set of error types.
+		 */
+		if (ddi_copyout(&einj, (void *)arg, sizeof (einj),
+		    mode & FKIOCTL) != 0) {
+			return (EFAULT);
+		}
+	}
 
 	return (ret);
 }

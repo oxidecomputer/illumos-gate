@@ -24,7 +24,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
+#include <sys/debug.h>
 
 #include <psp_einj.h>
 
@@ -50,19 +52,30 @@ usage(const char *format, ...)
 	    "\tType is one of: 'corr', 'uncorr', or 'fatal'.\n\n"
 	    "\tPassing -n will cause the given error target to be injected\n"
 	    "\tbut NOT triggered. The caller may then trigger an error\n"
-	    "\tby, e.g., trying to read the target memory address.\n");
+	    "\tby, e.g., trying to read the target memory address.\n\n"
+	    "\tOmitting both -m and -p will print all the supported error\n"
+	    "\tinjection types.\n");
 	exit(EXIT_USAGE);
 }
 
-static psp_einj_type_t
-parse_type(const char *str, psp_einj_type_t base)
+static uint32_t
+parse_type(const char *str, psp_einj_type_t type)
 {
+	VERIFY(type == PSP_EINJ_TYPE_MEM || type == PSP_EINJ_TYPE_PCIE);
+	/*
+	 * The PSP_EINJ_TYPE_MEM/PCIE variants are non-zero and so we should
+	 * never have underflow because ffs() returned 0.
+	 */
+	int low_bit = ffs((int)type);
+	VERIFY3U(low_bit, >, 0);
+	low_bit -= 1;
+
 	if (strcmp(str, "corr") == 0) {
-		return (base + 0);
+		return (type & (1 << (low_bit + 0)));
 	} else if (strcmp(str, "uncorr") == 0) {
-		return (base + 1);
+		return (type & (1 << (low_bit + 1)));
 	} else if (strcmp(str, "fatal") == 0) {
-		return (base + 2);
+		return (type & (1 << (low_bit + 2)));
 	} else {
 		usage("invalid error injection type: %s", str);
 	}
@@ -167,23 +180,22 @@ main(int argc, char **argv)
 	if (argc > 0)
 		usage("invalid argument: %s", argv[0]);
 
-	if (mem_type == NULL && pcie_type == NULL) {
-		usage("an error type must be specified for injection (-m/-p)");
-	} else if (mem_type != NULL && pcie_type != NULL) {
+	if (mem_type != NULL && pcie_type != NULL) {
 		usage("only one of -m or -p may be specified");
 	}
 
-	if (target == NULL) {
+	if (mem_type == NULL && pcie_type == NULL && target != NULL) {
+		/* No target if no error to inject. */
+		usage(NULL);
+	} else if ((mem_type != NULL || pcie_type != NULL) && target == NULL) {
 		usage("an error injection target (-t) must be specified");
 	}
 
 	if (mem_type != NULL) {
-		einj.per_type = parse_type(mem_type,
-		    PSP_EINJ_TYPE_MEM_CORRECTABLE);
+		einj.per_type = parse_type(mem_type, PSP_EINJ_TYPE_MEM);
 		parse_mem_target(target, &einj);
 	} else	if (pcie_type != NULL) {
-		einj.per_type = parse_type(pcie_type,
-		    PSP_EINJ_TYPE_PCIE_CORRECTABLE);
+		einj.per_type = parse_type(pcie_type, PSP_EINJ_TYPE_PCIE);
 		parse_pcie_target(target, &einj);
 	}
 
@@ -197,5 +209,45 @@ main(int argc, char **argv)
 	}
 
 	(void) close(fd);
+
+	if (target == NULL) {
+		if (einj.per_type == 0) {
+			printf("No error types supported for injection.\n");
+			return (EXIT_SUCCESS);
+		}
+		if (einj.per_type & ~(PSP_EINJ_TYPE_MEM|PSP_EINJ_TYPE_PCIE)) {
+			errx(EXIT_FAILURE,
+			    "Unexpected error injection types: 0x%x",
+			    einj.per_type);
+		}
+		printf("Supported Error Types:\n");
+		if (einj.per_type & PSP_EINJ_TYPE_MEM) {
+			printf("Memory:");
+			if (einj.per_type & PSP_EINJ_TYPE_MEM_CORRECTABLE) {
+				printf("\tCorrectable");
+			}
+			if (einj.per_type & PSP_EINJ_TYPE_MEM_UNCORRECTABLE) {
+				printf("\tUncorrectable (Non-Fatal)");
+			}
+			if (einj.per_type & PSP_EINJ_TYPE_MEM_FATAL) {
+				printf("\tUncorrectable (Fatal)");
+			}
+			printf("\n");
+		}
+		if (einj.per_type & PSP_EINJ_TYPE_PCIE) {
+			printf("PCIe:");
+			if (einj.per_type & PSP_EINJ_TYPE_PCIE_CORRECTABLE) {
+				printf("\tCorrectable");
+			}
+			if (einj.per_type & PSP_EINJ_TYPE_PCIE_UNCORRECTABLE) {
+				printf("\tUncorrectable (Non-Fatal)");
+			}
+			if (einj.per_type & PSP_EINJ_TYPE_PCIE_FATAL) {
+				printf("\tUncorrectable (Fatal)");
+			}
+			printf("\n");
+		}
+	}
+
 	return (ret);
 }

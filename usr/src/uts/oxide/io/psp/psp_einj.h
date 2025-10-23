@@ -41,19 +41,32 @@ extern "C" {
  * Supported types of error for injection via this driver.
  */
 typedef enum psp_einj_type {
-	PSP_EINJ_TYPE_MEM_CORRECTABLE,
-	PSP_EINJ_TYPE_MEM_UNCORRECTABLE,
-	PSP_EINJ_TYPE_MEM_FATAL,
-	PSP_EINJ_TYPE_PCIE_CORRECTABLE,
-	PSP_EINJ_TYPE_PCIE_UNCORRECTABLE,
-	PSP_EINJ_TYPE_PCIE_FATAL,
+	PSP_EINJ_TYPE_NONE			= 0,
+	PSP_EINJ_TYPE_MEM_CORRECTABLE		= 1 << 0,
+	PSP_EINJ_TYPE_MEM_UNCORRECTABLE		= 1 << 1,
+	PSP_EINJ_TYPE_MEM_FATAL			= 1 << 2,
+	PSP_EINJ_TYPE_MEM = PSP_EINJ_TYPE_MEM_CORRECTABLE |
+	    PSP_EINJ_TYPE_MEM_UNCORRECTABLE |
+	    PSP_EINJ_TYPE_MEM_FATAL,
+	PSP_EINJ_TYPE_PCIE_CORRECTABLE		= 1 << 3,
+	PSP_EINJ_TYPE_PCIE_UNCORRECTABLE	= 1 << 4,
+	PSP_EINJ_TYPE_PCIE_FATAL		= 1 << 5,
+	PSP_EINJ_TYPE_PCIE = PSP_EINJ_TYPE_PCIE_CORRECTABLE |
+	    PSP_EINJ_TYPE_PCIE_UNCORRECTABLE |
+	    PSP_EINJ_TYPE_PCIE_FATAL,
 } psp_einj_type_t;
 
 /*
  * Error injection type and details submitted via PSP_EINJ_IOC_EINJ.
  */
 typedef struct psp_einj_req {
-	psp_einj_type_t			per_type;
+	/*
+	 * The error type to inject. Only a single error may be injected at a
+	 * time. Submiting a request with a value of 0 (PSP_EINJ_TYPE_NONE)
+	 * will not trigger any type of error injection but return a bitmap
+	 * indicating supported error injection types.
+	 */
+	uint32_t			per_type;
 	uint32_t			per_no_trigger;
 	union {
 		struct {

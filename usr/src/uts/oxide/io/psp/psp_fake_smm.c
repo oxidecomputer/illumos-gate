@@ -248,6 +248,7 @@ psp_fake_smm_init(void)
 	char *buf;
 
 	switch (chiprev_family(cpuid_getchiprev(CPU))) {
+	case X86_PF_AMD_MILAN:
 	case X86_PF_AMD_TURIN:
 	case X86_PF_AMD_DENSE_TURIN:
 		break;
