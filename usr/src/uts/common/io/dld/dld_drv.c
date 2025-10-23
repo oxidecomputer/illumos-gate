@@ -24,6 +24,7 @@
  * Copyright (c) 2017, Joyent, Inc.
  * Copyright 2023 Oxide Computer Company
  * Copyright 2025 MNX Cloud, Inc.
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -891,7 +892,7 @@ drv_ioc_getprop(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
  * DLDIOC_RENAME.
  *
  * This function handles two cases of link renaming. See more in comments above
- * dls_datalink_rename().
+ * dls_devnet_rename().
  */
 /* ARGSUSED */
 static int
