@@ -2263,7 +2263,7 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 	uint_t	mr_flag, srs_done_flag;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
-	ASSERT(!(srs->srs_type & SRST_TX));
+	ASSERT(!mac_srs_is_tx(srs));
 
 	if (srs_quiesce_flag == SRS_CONDEMNED) {
 		mr_flag = MR_CONDEMNED;
@@ -2278,8 +2278,8 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 			mac_srs_client_poll_quiesce(srs->srs_mcip, srs);
 	}
 
-	if (srs->srs_ring != NULL) {
-		mac_rx_ring_quiesce(srs->srs_ring, mr_flag);
+	if (srs->srs_kind_data.rx.sr_ring != NULL) {
+		mac_rx_ring_quiesce(srs->srs_kind_data.rx.sr_ring, mr_flag);
 	} else {
 		/*
 		 * SRS is driven by software classification. In case
@@ -2374,7 +2374,7 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 	}
 
 	/* Finally clear the flags to let the packets in */
-	mr = srs->srs_ring;
+	mr = srs->srs_kind_data.rx.sr_ring;
 	if (mr != NULL) {
 		MAC_RING_UNMARK(mr, MR_QUIESCE);
 		/* In case the ring was stopped, safely restart it */

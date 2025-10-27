@@ -1119,7 +1119,7 @@ mac_ring_intr_retarget(mac_group_t *group, mac_ring_t *ring)
 		if (ring->mr_type == MAC_RING_TYPE_RX) {
 			for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 				mac_rx_srs = flent->fe_rx_srs[i];
-				if (mac_rx_srs->srs_ring != ring)
+				if (mac_rx_srs->srs_kind_data.rx.sr_ring != ring)
 					continue;
 				srs_cpu = &mac_rx_srs->srs_cpu;
 				mutex_enter(&cpu_lock);

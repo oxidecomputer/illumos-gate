@@ -1244,7 +1244,7 @@ boolean_t mac_latency_optimize = B_TRUE;
 	    (SRS_POLLING_CAPAB|SRS_POLLING)) == SRS_POLLING_CAPAB) {	\
 		(mac_srs)->srs_state |= SRS_POLLING;			\
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_ring);				\
+		    (mac_srs)->srs_kind_data.rx.sr_ring);				\
 		(mac_srs)->srs_kind_data.rx.sr_poll_on++;				\
 	}								\
 }
@@ -1256,7 +1256,7 @@ boolean_t mac_latency_optimize = B_TRUE;
 	    (SRS_POLLING_CAPAB|SRS_WORKER)) {				\
 		(mac_srs)->srs_state |= SRS_POLLING;			\
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_ring);				\
+		    (mac_srs)->srs_kind_data.rx.sr_ring);				\
 		(mac_srs)->srs_kind_data.rx.sr_worker_poll_on++;			\
 	}								\
 }
@@ -1800,7 +1800,7 @@ check_again:
 
 		/* Poll the underlying Hardware */
 		mutex_exit(lock);
-		head = MAC_HWRING_POLL(mac_srs->srs_ring, (int)bytes_to_pickup);
+		head = MAC_HWRING_POLL(mac_srs->srs_kind_data.rx.sr_ring, (int)bytes_to_pickup);
 		mutex_enter(lock);
 
 		ASSERT((mac_srs->srs_state & SRS_POLL_THR_OWNER) ==
@@ -2541,7 +2541,7 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
  * also apply to mac_rx_srs_drain_bw as well.
  *
  * This function can only be called on valid entry SRSes from the
- * datapath (e.g., SRST_HAS_WORKER). Those holding onto softrings to
+ * datapath (e.g., SRST_LOGICAL). Those holding onto softrings to
  * be reached via a flow tree will be handled inline here.
  */
 void
@@ -2613,7 +2613,7 @@ again:
 	 * be served by the lowest level flow table in mac_rx_flow ->
 	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	ASSERT3U(mac_srs->srs_type & SRST_HAS_WORKER, !=, 0);
+	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 
@@ -2881,7 +2881,7 @@ again:
 	 * be served by the lowest level flow table in mac_rx_flow ->
 	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	ASSERT3U(mac_srs->srs_type & SRST_HAS_WORKER, !=, 0);
+	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 
@@ -4481,8 +4481,9 @@ mac_tx_srs_get_soft_ring(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
  * state field.
  */
 void
-mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring)
+mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring_h)
 {
+	mac_ring_t *ring = (mac_ring_t *)ring_h;
 	mac_soft_ring_t *sringp;
 	mac_srs_tx_t *srs_tx = &mac_srs->srs_kind_data.tx;
 

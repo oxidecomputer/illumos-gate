@@ -1064,15 +1064,12 @@ mac_srs_stat_create(mac_soft_ring_set_t *mac_srs)
 {
 	flow_entry_t	*flent = mac_srs->srs_flent;
 	char		statname[MAXNAMELEN];
-	boolean_t	is_tx_srs;
 
 	/* No hardware/software lanes for user defined flows */
 	if ((flent->fe_type & FLOW_USER) != 0)
 		return;
 
-	is_tx_srs = ((mac_srs->srs_type & SRST_TX) != 0);
-
-	if (is_tx_srs) {
+	if (mac_srs_is_tx(mac_srs)) {
 		mac_srs_tx_t	*srs_tx = &mac_srs->srs_kind_data.tx;
 		mac_ring_t	*ring = srs_tx->st_arg2;
 
@@ -1086,7 +1083,7 @@ mac_srs_stat_create(mac_soft_ring_set_t *mac_srs)
 		i_mac_tx_swlane_stat_create(mac_srs, flent->fe_flow_name,
 		    statname);
 	} else {
-		mac_ring_t	*ring = mac_srs->srs_ring;
+		mac_ring_t	*ring = mac_srs->srs_kind_data.rx.sr_ring;
 
 		if (ring == NULL) {
 			(void) snprintf(statname, sizeof (statname),
@@ -1121,7 +1118,7 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 {
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
 	flow_entry_t		*flent = ringp->s_ring_mcip->mci_flent;
-	mac_ring_t		*ring = (mac_ring_t *)ringp->s_ring_tx_arg2;
+	mac_ring_t		*ring_tx = (mac_ring_t *)ringp->s_ring_tx_arg2;
 	char			statname[MAXNAMELEN];
 
 	/* No hardware/software lanes for user defined flows */
@@ -1129,16 +1126,18 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 		return;
 
 	if (mac_srs_is_tx(mac_srs)) {	/* tx side hardware lane */
-		ASSERT(ring != NULL);
+		ASSERT(ring_tx != NULL);
 		(void) snprintf(statname, sizeof (statname), "mac_tx_hwlane%d",
-		    ring->mr_index);
+		    ring_tx->mr_index);
 		i_mac_tx_hwlane_stat_create(ringp, flent->fe_flow_name,
 		    statname);
 	} else {		/* rx side fanout */
 				/* Maintain single stat for (tcp, udp, oth) */
 		if (ringp->s_ring_type & ST_RING_TCP) {
-			int			index;
-			mac_soft_ring_t		*softring;
+			int		index;
+			mac_soft_ring_t	*softring;
+			mac_ring_t	*ring_rx =
+			    mac_srs->srs_kind_data.rx.sr_ring;
 
 			for (index = 0, softring = mac_srs->srs_soft_ring_head;
 			    softring != NULL;
@@ -1147,13 +1146,13 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 					break;
 			}
 
-			if (mac_srs->srs_ring == NULL) {
+			if (ring_rx == NULL) {
 				(void) snprintf(statname, sizeof (statname),
 				    "mac_rx_swlane0_fanout%d", index/3);
 			} else {
 				(void) snprintf(statname, sizeof (statname),
 				    "mac_rx_hwlane%d_fanout%d",
-				    mac_srs->srs_ring->mr_index, index/3);
+				    ring_rx->mr_index, index/3);
 			}
 			i_mac_rx_fanout_stat_create(ringp, flent->fe_flow_name,
 			    statname);

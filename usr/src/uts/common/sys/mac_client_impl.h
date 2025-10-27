@@ -208,6 +208,15 @@ struct mac_client_impl_s {			/* Protected by */
 	uint_t			mci_tx_flag;
 	kcondvar_t		mci_tx_cv;
 
+	/* TODO(ky) find somewhere longer lived for these guys */
+	/* Protected by ??? */
+	flow_entry_t	*mci_fastpath_ipv4;
+	flow_entry_t	*mci_fastpath_ipv4_tcp;
+	flow_entry_t	*mci_fastpath_ipv4_udp;
+	flow_entry_t	*mci_fastpath_ipv6;
+	flow_entry_t	*mci_fastpath_ipv6_tcp;
+	flow_entry_t	*mci_fastpath_ipv6_udp;
+
 	/* Must be last in the structure for dynamic sizing */
 	mac_tx_percpu_t		mci_tx_pcpu[1];		/* SL */
 };

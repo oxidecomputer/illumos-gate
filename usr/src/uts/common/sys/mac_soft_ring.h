@@ -130,12 +130,14 @@ typedef void (*mac_srs_drain_proc_t)(mac_soft_ring_set_t *, uint_t);
 /* Transmit side Soft Ring Set */
 typedef struct mac_srs_tx_s {
 	/* Members for Tx size processing */
-	uint32_t	st_mode;
-	mac_tx_func_t	st_func;
-	void		*st_arg1;
-	void		*st_arg2;
-	mac_group_t	*st_group;	/* TX group for share */
-	boolean_t	st_woken_up;
+	uint32_t		st_mode;
+	mac_tx_func_t		st_func;
+	/* TODO(ky) this is a `mac_client_impl_t *`. */
+	void			*st_arg1;
+	/* TODO(ky) this is a `mac_ring_t *`. */
+	void			*st_arg2;
+	mac_group_t		*st_group;	/* TX group for share */
+	boolean_t		st_woken_up;
 
 	/*
 	 * st_max_q_cnt is the queue depth threshold to limit
@@ -183,6 +185,7 @@ typedef struct mac_srs_rx_s {
 	 * another day.
 	 */
 	mac_direct_rx_t		sr_func;	/* srs_lock */
+	/* TODO(ky) this is a `mac_client_impl_t *`. */
 	void			*sr_arg1;	/* srs_lock */
 	mac_resource_handle_t	sr_arg2;	/* srs_lock */
 	mac_rx_func_t		sr_lower_proc;	/* Atomically changed */
@@ -246,6 +249,11 @@ typedef struct mac_srs_rx_s {
 	uint32_t		sr_drain_finish_intr;
 	/* Polling thread needs to schedule worker wakeup */
 	uint32_t		sr_poll_worker_wakeup;
+
+	kthread_t		*sr_poll_thr;		/* WO, poll thread */
+	mac_ring_t		*sr_ring;		/* Ring Descriptor (WO) */
+	processorid_t		sr_poll_cpuid;		/* processor to bind to */
+	processorid_t		sr_poll_cpuid_save;	/* saved cpuid during offline */
 } mac_srs_rx_t;
 
 /*
@@ -354,22 +362,18 @@ struct mac_soft_ring_set_s {
 	 */
 	struct mac_client_impl_s *srs_mcip;	/* back ptr to mac client */
 	void			*srs_flent;	/* back ptr to flent */
-	mac_ring_t		*srs_ring;	/*  Ring Descriptor */
 
 	/* Teardown, disable control ops */
 	kcondvar_t	srs_client_cv;	/* Client wait for the control op */
 
 	kthread_t	*srs_worker;	/* WO, worker thread */
-	kthread_t	*srs_poll_thr;	/* WO, poll thread */
 
 	uint_t		srs_ind;	/* Round Robin indx for picking up SR */
 	processorid_t	srs_worker_cpuid;	/* processor to bind to */
 	processorid_t	srs_worker_cpuid_save;	/* saved cpuid during offline */
-	processorid_t	srs_poll_cpuid;		/* processor to bind to */
-	processorid_t	srs_poll_cpuid_save;	/* saved cpuid during offline */
 	uint_t		srs_fanout_state;
 
-	/* valid iff. SRST_HAS_WORKER */
+	/* valid iff. SRST_HAS_RING */
 	flow_tree_baked_t srs_flowtree;
 
 	/*
@@ -433,14 +437,17 @@ struct mac_soft_ring_set_s {
  * and other static characteristics of a SRS like a tx
  * srs, tcp only srs, etc.
  */
+// TODO(ky): remove these three. 
 #define	SRST_LINK		0x00000001
 #define	SRST_FLOW		0x00000002
 #define	SRST_NO_SOFT_RINGS	0x00000004
-#define	SRST_HAS_WORKER		0x00000008
 
+#define	SRST_LOGICAL		0x00000008
+
+/* TODO(ky) remove, useless (== !SRC_IP) */
 #define	SRST_FANOUT_PROTO	0x00000010
 #define	SRST_FANOUT_SRC_IP	0x00000020
-#define	SRST_FANOUT_OTH		0x00000040
+// #define	SRST_FANOUT_OTH		0x00000040
 #define	SRST_DEFAULT_GRP	0x00000080
 
 #define	SRST_TX			0x00000100
@@ -550,7 +557,7 @@ extern struct dls_kstats dls_kstat;
 	    (SRS_POLLING_CAPAB|SRS_POLLING)) {				\
 		(mac_srs)->srs_state &= ~SRS_POLLING;			\
 		(void) mac_hwring_enable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_ring);				\
+		    (mac_srs)->srs_kind_data.rx.sr_ring);				\
 		(mac_srs)->srs_kind_data.rx.sr_poll_off++;			\
 	}								\
 }
@@ -661,9 +668,7 @@ extern void mac_soft_ring_destroy(mac_soft_ring_t *);
 extern void mac_soft_ring_dls_bypass(void *, mac_direct_rx_t, void *);
 
 /* Rx SRS */
-extern mac_soft_ring_set_t *mac_srs_create(struct mac_client_impl_s *,
-    flow_entry_t *, uint32_t, mac_direct_rx_t, void *, mac_resource_handle_t,
-    mac_ring_t *);
+extern mac_soft_ring_set_t *mac_srs_create_rx_logical(flow_entry_t *);
 extern void mac_srs_free(mac_soft_ring_set_t *);
 extern void mac_srs_signal(mac_soft_ring_set_t *, uint_t);
 extern cpu_t *mac_srs_bind(mac_soft_ring_set_t *, processorid_t);

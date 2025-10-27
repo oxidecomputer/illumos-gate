@@ -3810,7 +3810,7 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		goto done;
 	}
 
-	srs_tx = &srs->srs_kind_data.tx;;
+	srs_tx = &srs->srs_kind_data.tx;
 	if (srs_tx->st_mode == SRS_TX_DEFAULT &&
 	    (srs->srs_state & SRS_ENQUEUED) == 0 &&
 	    mip->mi_nactiveclients == 1 &&
