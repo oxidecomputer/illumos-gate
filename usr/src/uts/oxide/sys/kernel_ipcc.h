@@ -36,7 +36,7 @@ typedef enum {
 } ipcc_init_t;
 
 void kernel_ipcc_init(ipcc_init_t);
-extern int kernel_ipcc_acquire(void);
+extern int kernel_ipcc_acquire(ipcc_channel_flag_t);
 extern void kernel_ipcc_release(void);
 extern void kernel_ipcc_reboot(void);
 extern void kernel_ipcc_poweroff(void);

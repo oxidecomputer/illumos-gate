@@ -584,9 +584,15 @@ kernel_ipcc_panic(void)
  */
 
 int
-kernel_ipcc_acquire(void)
+kernel_ipcc_acquire(ipcc_channel_flag_t flags)
 {
-	return (ipcc_acquire_channel(&kernel_ipcc_ops, &kernel_ipcc_data));
+	int ret;
+
+	ret = ipcc_acquire_channel(&kernel_ipcc_ops, &kernel_ipcc_data);
+	if (ret == 0 && flags != 0)
+		ipcc_channel_setflags(flags);
+
+	return (ret);
 }
 
 void
@@ -712,7 +718,14 @@ kernel_ipcc_apobread(void)
 	apob_hdl_t *hdl = NULL;
 	int ret;
 
-	kernel_ipcc_acquire();
+	ret = kernel_ipcc_acquire(0);
+	if (ret != 0) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "Attempt to acquire IPCC channel for APOB header failed "
+		    "with error %d", ret);
+		goto fail;
+	}
+
 	len = sizeof (header);
 	ret = ipcc_apob_read(&kernel_ipcc_ops, &kernel_ipcc_data,
 	    0, header, &len, &readr);
@@ -763,8 +776,7 @@ kernel_ipcc_apobread(void)
 	kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_DEBUG,
 	    "Reading 0x%zx bytes of APOB from the SP\n", alloclen);
 
-	kernel_ipcc_acquire();
-	ipcc_channel_setflags(IPCC_CHAN_QUIET);
+	VERIFY0(kernel_ipcc_acquire(IPCC_CHAN_QUIET));
 	ipcc_fastpoll = true;
 
 	rem = alloclen;
@@ -921,18 +933,18 @@ kernel_ipcc_apobwrite(const apob_hdl_t *hdl)
 	    "APOB length: 0x%x\n", bufl);
 	kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_DEBUG,
 	    "APOB SHA256: "
-            "%02x%02x%02x%02x%02x%02x%02x%02x"
-            "%02x%02x%02x%02x%02x%02x%02x%02x"
-            "%02x%02x%02x%02x%02x%02x%02x%02x"
-            "%02x%02x%02x%02x%02x%02x%02x%02x\n",
-            hash[0], hash[1], hash[2], hash[3],
-            hash[4], hash[5], hash[6], hash[7],
-            hash[8], hash[9], hash[10], hash[11],
-            hash[12], hash[13], hash[14], hash[15],
-            hash[16], hash[17], hash[18], hash[19],
-            hash[20], hash[21], hash[22], hash[23],
-            hash[24], hash[25], hash[26], hash[27],
-            hash[28], hash[29], hash[30], hash[31]);
+	    "%02x%02x%02x%02x%02x%02x%02x%02x"
+	    "%02x%02x%02x%02x%02x%02x%02x%02x"
+	    "%02x%02x%02x%02x%02x%02x%02x%02x"
+	    "%02x%02x%02x%02x%02x%02x%02x%02x\n",
+	    hash[0], hash[1], hash[2], hash[3],
+	    hash[4], hash[5], hash[6], hash[7],
+	    hash[8], hash[9], hash[10], hash[11],
+	    hash[12], hash[13], hash[14], hash[15],
+	    hash[16], hash[17], hash[18], hash[19],
+	    hash[20], hash[21], hash[22], hash[23],
+	    hash[24], hash[25], hash[26], hash[27],
+	    hash[28], hash[29], hash[30], hash[31]);
 
 	ipcc_apob_begin_t beginr;
 	ret = ipcc_apob_begin(&kernel_ipcc_ops, &kernel_ipcc_data,
@@ -950,8 +962,7 @@ kernel_ipcc_apobwrite(const apob_hdl_t *hdl)
 	 * acquiring and releasing the channel and with faster response
 	 * polling. Acquire the channel now.
 	 */
-	kernel_ipcc_acquire();
-	ipcc_channel_setflags(IPCC_CHAN_QUIET);
+	VERIFY0(kernel_ipcc_acquire(IPCC_CHAN_QUIET));
 	ipcc_fastpoll = true;
 
 	uint64_t offset = 0;
@@ -1003,7 +1014,13 @@ int
 kernel_ipcc_imageblock(uint8_t *hash, uint64_t offset, uint8_t **data,
     size_t *datal)
 {
+	static ipcc_ops_t nops = { 0 };
 	int ret;
+
+	if (nops.io_write == NULL) {
+		nops = kernel_ipcc_ops;
+		nops.io_log = NULL;
+	}
 
 	/*
 	 * Callers of this function must have previously acquired exclusive
@@ -1012,18 +1029,11 @@ kernel_ipcc_imageblock(uint8_t *hash, uint64_t offset, uint8_t **data,
 	VERIFY(ipcc_channel_held());
 
 	/*
-	 * Enable fast polling. It is safe to modify this here as channel
-	 * access has been acquired.
+	 * Enable fast polling around the retrieval. It is safe to modify this
+	 * here as channel access has been acquired.
 	 */
 	ipcc_fastpoll = true;
-
-	/*
-	 * Logging is disabled for these requests to avoid spamming the console
-	 * (and so that the progress meter is visible).
-	 */
-	ipcc_channel_setflags(IPCC_CHAN_QUIET);
-
-	ret = ipcc_imageblock(&kernel_ipcc_ops, &kernel_ipcc_data, hash, offset,
+	ret = ipcc_imageblock(&nops, &kernel_ipcc_data, hash, offset,
 	    data, datal);
 	ipcc_fastpoll = false;
 

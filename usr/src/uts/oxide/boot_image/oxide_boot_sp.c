@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -85,7 +85,7 @@ oxide_boot_sp(oxide_boot_t *oxb)
 	 * The channel is released again at the end of this function, or by
 	 * oxide_boot_sp_fail() when returning an error.
 	 */
-	err = kernel_ipcc_acquire();
+	err = kernel_ipcc_acquire(IPCC_CHAN_QUIET);
 	if (err != 0) {
 		(void) kernel_ipcc_bootfail(IPCC_BOOTFAIL_NOPHASE2,
 		    "failed to acquire ipcc channel, err %d", err);
