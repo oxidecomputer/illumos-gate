@@ -1422,7 +1422,7 @@ tfpkt_tbus_push_free_bufs(tfpkt_tbus_t *tbp, int ring)
  * Setup the tbus control register to enable the pci network port
  */
 static int
-tfpkt_tbus_port_init(tfpkt_tbus_t *tbp, dev_info_t *tfp_dip)
+tfpkt_tbus_port_init(tfpkt_tbus_t *tbp)
 {
 	tf_tbus_ctrl_t ctrl;
 	uint32_t reg;
@@ -1449,6 +1449,34 @@ tfpkt_tbus_port_init(tfpkt_tbus_t *tbp, dev_info_t *tfp_dip)
 	}
 
 	return (tofino_tbus_write_reg(tbp->ttb_tofino_dip, reg, *ctrlp));
+}
+
+static void
+tfpkt_tbus_port_fini(tfpkt_tbus_t *tbp)
+{
+	tf_tbus_ctrl_t ctrl;
+	uint32_t reg;
+	uint32_t *ctrlp = (uint32_t *)&ctrl;
+	int rval;
+
+	ASSERT(tbp->ttb_gen == TOFINO_G_TF1 || tbp->ttb_gen == TOFINO_G_TF2);
+	if (tbp->ttb_gen == TOFINO_G_TF1) {
+		reg = TF_REG_TBUS_CTRL;
+	} else {
+		reg = TF2_REG_TBUS_CTRL;
+	}
+
+	/*
+	 * If we're finalizing because the ASIC has gone away, it's not
+	 * surprising that this would fail.
+	 */
+	if ((rval = tofino_tbus_read_reg(tbp->ttb_tofino_dip, reg, ctrlp)) != 0)
+		tfpkt_tbus_err(tbp, "!failed to read tbus control register");
+
+	ctrl.tftc_port_alive = 0;	/* turn off the port */
+	ctrl.tftc_rx_en = 0;		/* disable receive traffic */
+
+	(void) tofino_tbus_write_reg(tbp->ttb_tofino_dip, reg, *ctrlp);
 }
 
 static int
@@ -1512,6 +1540,8 @@ tfpkt_tbus_fini(tfpkt_t *tfp, tfpkt_tbus_t *tbp)
 		VERIFY0(tofino_tbus_unregister(tbp->ttb_tofino_dip));
 	}
 
+	tfpkt_tbus_fini_drs(tbp);
+	tfpkt_tbus_port_fini(tbp);
 	tfpkt_tbus_free_bufs(tbp);
 	tfpkt_tbus_free_drs(tbp);
 	kstat_delete(tbp->ttb_kstat);
@@ -1612,7 +1642,7 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 	if (err != 0)
 		goto fail;
 
-	if (tfpkt_tbus_port_init(tbp, tfp_dip) != 0)
+	if (tfpkt_tbus_port_init(tbp) != 0)
 		goto fail;
 
 	err = tofino_tbus_register_intr(tofino_dip, tfpkt_tbus_intr, tfp);
@@ -1721,7 +1751,6 @@ tfpkt_tbus_monitor(void *arg)
 			 * hygiene.
 			 */
 			mutex_exit(&tfp->tfp_tbus_mutex);
-			tfpkt_tbus_fini_drs(tbp);
 			tfpkt_tbus_fini(tfp, tbp);
 			mutex_enter(&tfp->tfp_tbus_mutex);
 
@@ -1800,7 +1829,6 @@ tfpkt_tbus_monitor_halt(tfpkt_t *tfp)
 	while (left > 0 && tfp->tfp_tbus_state != TFPKT_TBUS_HALTED) {
 		left = cv_timedwait(&tfp->tfp_tbus_cv, &tfp->tfp_tbus_mutex,
 		    deadline);
-
 	}
 
 	if (tfp->tfp_tbus_state == TFPKT_TBUS_HALTED) {
