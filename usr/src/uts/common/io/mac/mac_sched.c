@@ -1570,11 +1570,13 @@ enum pkt_type {
 /*
  * TODO(ky): these need to be belts & braces checks in the fastpath flow match:
  *  - DLS bypass disabled by either mechanism:
- *    |-> mac_rx_bypass_disable (! (srs_type & SRST_DLS_BYPASS)),
+ *    |-> mac_rx_bypass_disable (! (srs_type & SRST_DLS_BYPASS)), (done!)
  *    |-> mac_rx_bypass_disable (mci_state_flags & MCIS_RX_BYPASS_DISABLE).
  *  - Iff. HW-classified && Promisc, need to validate L2 match by hand.
  *  - No fragmentation (is-frag or more-frags).
  *  - Need to march packet header forward by l2_hlen before fastpath.
+ *      ...Do we? why not have custom accept fns that march forward by stored
+ *         l2_len at the IP side, and assume that l2len is set and valid?
  *  - TCP ring must have SRST_ALWAYS_HASH_OUT.
  * ...Or, we figure out how to fixup compatible frames for the benefit of IP.
  */
@@ -3129,84 +3131,6 @@ done:
 	/* The macro drops the srs_lock */
 	CALLB_CPR_EXIT(&cprinfo);
 	thread_exit();
-}
-
-/*
- * mac_rx_srs_subflow_process
- *
- * Receive side routine called from interrupt path when there are
- * sub flows present on this SRS.
- */
-/* ARGSUSED */
-void
-mac_rx_srs_subflow_process(void *arg, mac_resource_handle_t srs,
-    mblk_t *mp_chain, boolean_t loopback)
-{
-	flow_entry_t		*flent = NULL;
-	flow_entry_t		*prev_flent = NULL;
-	mblk_t			*mp = NULL;
-	mblk_t			*tail = NULL;
-	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)srs;
-	mac_client_impl_t	*mcip;
-
-	mcip = mac_srs->srs_mcip;
-	ASSERT(mcip != NULL);
-
-	/*
-	 * We need to determine the SRS for every packet
-	 * by walking the flow table, if we don't get any,
-	 * then we proceed using the SRS we came with.
-	 */
-	mp = tail = mp_chain;
-	while (mp != NULL) {
-
-		/*
-		 * We will increment the stats for the matching subflow.
-		 * when we get the bytes/pkt count for the classified packets
-		 * later in mac_rx_srs_process.
-		 */
-		(void) mac_flow_lookup(mcip->mci_subflow_tab, mp,
-		    FLOW_INBOUND, &flent);
-
-		if (mp == mp_chain || flent == prev_flent) {
-			if (prev_flent != NULL)
-				FLOW_REFRELE(prev_flent);
-			prev_flent = flent;
-			flent = NULL;
-			tail = mp;
-			mp = mp->b_next;
-			continue;
-		}
-		tail->b_next = NULL;
-		/*
-		 * A null indicates, this is for the mac_srs itself.
-		 * XXX-venu : probably assert for fe_rx_srs_cnt == 0.
-		 */
-		if (prev_flent == NULL || prev_flent->fe_rx_srs_cnt == 0) {
-			mac_rx_srs_process(arg,
-			    (mac_resource_handle_t)mac_srs, mp_chain,
-			    loopback);
-		} else {
-			(prev_flent->fe_cb_fn)(prev_flent->fe_cb_arg1,
-			    prev_flent->fe_cb_arg2, mp_chain, loopback);
-			FLOW_REFRELE(prev_flent);
-		}
-		prev_flent = flent;
-		flent = NULL;
-		mp_chain = mp;
-		tail = mp;
-		mp = mp->b_next;
-	}
-	/* Last chain */
-	ASSERT(mp_chain != NULL);
-	if (prev_flent == NULL || prev_flent->fe_rx_srs_cnt == 0) {
-		mac_rx_srs_process(arg,
-		    (mac_resource_handle_t)mac_srs, mp_chain, loopback);
-	} else {
-		(prev_flent->fe_cb_fn)(prev_flent->fe_cb_arg1,
-		    prev_flent->fe_cb_arg2, mp_chain, loopback);
-		FLOW_REFRELE(prev_flent);
-	}
 }
 
 /*

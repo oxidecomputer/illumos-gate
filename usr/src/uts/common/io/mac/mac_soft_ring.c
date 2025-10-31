@@ -148,7 +148,7 @@ mac_soft_ring_worker_wakeup(mac_soft_ring_t *ringp)
  * thread to the assigned CPU.
  */
 mac_soft_ring_t *
-mac_soft_ring_create(int id, clock_t wait, uint16_t type,
+mac_soft_ring_create(int id, clock_t wait, uint32_t type,
     pri_t pri, mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs,
     processorid_t cpuid, mac_direct_rx_t rx_func, void *x_arg1,
     mac_resource_handle_t x_arg2)
@@ -159,25 +159,12 @@ mac_soft_ring_create(int id, clock_t wait, uint16_t type,
 	bzero(name, 64);
 	ringp = kmem_cache_alloc(mac_soft_ring_cache, KM_SLEEP);
 
-	if (type & ST_RING_TCP) {
-		(void) snprintf(name, sizeof (name),
-		    "mac_tcp_soft_ring_%d_%p", id, (void *)mac_srs);
-	} else if (type & ST_RING_TCP6) {
-		(void) snprintf(name, sizeof (name),
-		    "mac_tcp6_soft_ring_%d_%p", id, (void *)mac_srs);
-	} else if (type & ST_RING_UDP) {
-		(void) snprintf(name, sizeof (name),
-		    "mac_udp_soft_ring_%d_%p", id, (void *)mac_srs);
-	} else if (type & ST_RING_UDP6) {
-		(void) snprintf(name, sizeof (name),
-		    "mac_udp6_soft_ring_%d_%p", id, (void *)mac_srs);
-	} else if (type & ST_RING_OTH) {
-		(void) snprintf(name, sizeof (name),
-		    "mac_oth_soft_ring_%d_%p", id, (void *)mac_srs);
-	} else {
-		ASSERT(type & ST_RING_TX);
+	if (type & ST_RING_TX) {
 		(void) snprintf(name, sizeof (name),
 		    "mac_tx_soft_ring_%d_%p", id, (void *)mac_srs);
+	} else {
+		(void) snprintf(name, sizeof (name),
+		    "mac_rx_soft_ring_%d_%p", id, (void *)mac_srs);
 	}
 
 	bzero(ringp, sizeof (mac_soft_ring_t));
@@ -597,28 +584,27 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 }
 
 /*
- * mac_soft_ring_dls_bypass
+ * mac_soft_ring_action_refresh
  *
- * Enable direct client (IP) callback function from the softrings.
- * Callers need to make sure they don't need any DLS layer processing
+ * Update this soft ring's action and arguments to match that of the flow it
+ * belongs to. It is assumed by this point that the linked SRS/flow has an
+ * action of type MFA_TYPE_DELIVER.
  */
 void
-mac_soft_ring_dls_bypass(void *arg, mac_direct_rx_t rx_func, void *rx_arg1)
+mac_soft_ring_action_refresh(mac_soft_ring_t *softring)
 {
-	mac_soft_ring_t		*softring = arg;
-	mac_soft_ring_set_t	*srs;
+	mac_soft_ring_set_t	*srs = softring->s_ring_set;
+	flow_entry_t		*flent = srs->srs_flent;
+	flow_action_t		*act = &flent->fe_action;
 
-	VERIFY3P(rx_func, !=, NULL);
+	ASSERT3P(flent, !=, NULL);
+	ASSERT3U(act->fa_flags & MFA_FLAGS_ACTION, !=, 0);
 
 	mutex_enter(&softring->s_ring_lock);
-	softring->s_ring_rx_func = rx_func;
-	softring->s_ring_rx_arg1 = rx_arg1;
+	/* TODO(ky): Do we need to lock srs->srs_lock? refcnt bump the flow? */
+	softring->s_ring_rx_func = act->fa_direct_rx_fn;
+	softring->s_ring_rx_arg1 = act->fa_direct_rx_arg;
 	mutex_exit(&softring->s_ring_lock);
-
-	srs = softring->s_ring_set;
-	mutex_enter(&srs->srs_lock);
-	srs->srs_type |= SRST_DLS_BYPASS;
-	mutex_exit(&srs->srs_lock);
 }
 
 /*

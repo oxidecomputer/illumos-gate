@@ -373,8 +373,24 @@ struct mac_soft_ring_set_s {
 	processorid_t	srs_worker_cpuid_save;	/* saved cpuid during offline */
 	uint_t		srs_fanout_state;
 
-	/* valid iff. SRST_HAS_RING */
-	flow_tree_baked_t srs_flowtree;
+	/*
+	 * An SRS may be either _complete_ (!(srs_type & SRST_LOGICAL)), or
+	 * _logical_ (srs_type & SRST_LOGICAL).
+	 *
+	 * Complete SRSes are valid entrypoints for packets, and may have the
+	 * full suite of poll and/or worker threads created and bound to them.
+	 * If needed, they will have a valid baked flowtree for packet delivery.
+	 *
+	 * Logical SRSes serve purely as lists of softrings, with bandwidth
+	 * control elements if required.
+	 */
+	flow_tree_baked_t	srs_flowtree;
+	/*
+	 * Singly-linked list of logical SRSes allocated within an srs_flowtree.
+	 * A complete SRS serves as the head of this list, which allows for
+	 * easier walking during stats collection or quiescence.
+	 */
+	mac_soft_ring_set_t	*srs_logical_next;
 
 	/*
 	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
@@ -395,17 +411,9 @@ struct mac_soft_ring_set_s {
  */
 #define	ST_RING_WORKER_ONLY	0x0001	/* Worker thread only */
 #define	ST_RING_ANY		0x0002	/* Any thread can process the queue */
-/* TODO: delete */
-#define	ST_RING_TCP		0x0004
-#define	ST_RING_UDP		0x0008
-#define	ST_RING_OTH		0x0010
 
 #define	ST_RING_BW_CTL		0x0020
 #define	ST_RING_TX		0x0040
-
-/* TODO: delete */
-#define	ST_RING_TCP6		0x0080
-#define	ST_RING_UDP6		0x0100
 
 /*
  * State flags.
@@ -437,7 +445,7 @@ struct mac_soft_ring_set_s {
  * and other static characteristics of a SRS like a tx
  * srs, tcp only srs, etc.
  */
-// TODO(ky): remove these three. 
+// TODO(ky): remove these three.
 #define	SRST_LINK		0x00000001
 #define	SRST_FLOW		0x00000002
 #define	SRST_NO_SOFT_RINGS	0x00000004
@@ -658,14 +666,13 @@ extern struct dls_kstats dls_kstat;
 extern void mac_soft_ring_init(void);
 extern void mac_soft_ring_finish(void);
 extern void mac_fanout_setup(mac_client_impl_t *, flow_entry_t *,
-    mac_resource_props_t *, mac_direct_rx_t, void *, mac_resource_handle_t,
-    cpupart_t *);
+    mac_resource_props_t *, cpupart_t *);
 
 extern void mac_soft_ring_worker_wakeup(mac_soft_ring_t *);
 extern void mac_soft_ring_blank(void *, time_t, uint_t, int);
 extern mblk_t *mac_soft_ring_poll(mac_soft_ring_t *, size_t);
 extern void mac_soft_ring_destroy(mac_soft_ring_t *);
-extern void mac_soft_ring_dls_bypass(void *, mac_direct_rx_t, void *);
+extern void mac_soft_ring_action_refresh(mac_soft_ring_t *);
 
 /* Rx SRS */
 extern mac_soft_ring_set_t *mac_srs_create_rx_logical(flow_entry_t *);
@@ -686,8 +693,6 @@ extern void mac_srs_client_poll_restart(struct mac_client_impl_s *,
     mac_soft_ring_set_t *);
 extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_restart(mac_soft_ring_set_t *);
-extern void mac_rx_srs_subflow_process(void *, mac_resource_handle_t, mblk_t *,
-    boolean_t);
 extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
 
 /* Tx SRS, Tx softring */
@@ -711,11 +716,11 @@ extern void mac_srs_update_bwlimit(flow_entry_t *, mac_resource_props_t *);
 extern void mac_srs_adjust_subflow_bwlimit(struct mac_client_impl_s *);
 extern void mac_srs_update_drv(struct mac_client_impl_s *);
 extern void mac_update_srs_priority(mac_soft_ring_set_t *, pri_t);
-extern void mac_client_update_classifier(mac_client_impl_t *, boolean_t);
+extern void mac_client_update_classifier(mac_client_impl_t *);
 
 extern int mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);
-extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, uint16_t,
+extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, uint32_t,
     pri_t, mac_client_impl_t *, mac_soft_ring_set_t *,
     processorid_t, mac_direct_rx_t, void *, mac_resource_handle_t);
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);

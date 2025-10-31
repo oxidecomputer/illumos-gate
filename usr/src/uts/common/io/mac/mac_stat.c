@@ -1121,42 +1121,41 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 	mac_ring_t		*ring_tx = (mac_ring_t *)ringp->s_ring_tx_arg2;
 	char			statname[MAXNAMELEN];
 
-	/* No hardware/software lanes for user defined flows */
-	if ((flent->fe_type & FLOW_USER) != 0)
-		return;
-
 	if (mac_srs_is_tx(mac_srs)) {	/* tx side hardware lane */
 		ASSERT(ring_tx != NULL);
 		(void) snprintf(statname, sizeof (statname), "mac_tx_hwlane%d",
 		    ring_tx->mr_index);
 		i_mac_tx_hwlane_stat_create(ringp, flent->fe_flow_name,
 		    statname);
-	} else {		/* rx side fanout */
-				/* Maintain single stat for (tcp, udp, oth) */
-		if (ringp->s_ring_type & ST_RING_TCP) {
-			int		index;
-			mac_soft_ring_t	*softring;
-			mac_ring_t	*ring_rx =
-			    mac_srs->srs_kind_data.rx.sr_ring;
+	} else {
+		/*
+		 * TODO(ky): should these be unified, like they were before?
+		 * Currently this will split these stats over each fastpath
+		 * subflow...
+		 * TODO(ky): Will this play poorly with multiple SRSes bound to
+		 * one flent, as we expect to have in baked trees?
+		 */
+		int		index;
+		mac_soft_ring_t	*softring;
+		mac_ring_t	*ring_rx = mac_srs->srs_kind_data.rx.sr_ring;
 
-			for (index = 0, softring = mac_srs->srs_soft_ring_head;
-			    softring != NULL;
-			    index++, softring = softring->s_ring_next) {
-				if (softring == ringp)
-					break;
-			}
-
-			if (ring_rx == NULL) {
-				(void) snprintf(statname, sizeof (statname),
-				    "mac_rx_swlane0_fanout%d", index/3);
-			} else {
-				(void) snprintf(statname, sizeof (statname),
-				    "mac_rx_hwlane%d_fanout%d",
-				    ring_rx->mr_index, index/3);
-			}
-			i_mac_rx_fanout_stat_create(ringp, flent->fe_flow_name,
-			    statname);
+		for (index = 0, softring = mac_srs->srs_soft_ring_head;
+		    softring != NULL;
+		    index++, softring = softring->s_ring_next) {
+			if (softring == ringp)
+				break;
 		}
+
+		if (ring_rx == NULL) {
+			(void) snprintf(statname, sizeof (statname),
+			    "mac_rx_swlane0_fanout%d", index);
+		} else {
+			(void) snprintf(statname, sizeof (statname),
+			    "mac_rx_hwlane%d_fanout%d",
+			    ring_rx->mr_index, index);
+		}
+		i_mac_rx_fanout_stat_create(ringp, flent->fe_flow_name,
+		    statname);
 	}
 }
 

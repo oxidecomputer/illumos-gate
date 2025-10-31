@@ -2290,6 +2290,11 @@ mac_unicast_flow_create(mac_client_impl_t *mcip, uint8_t *mac_addr,
 	    flent_flags, flent)) != 0)
 		return (err);
 
+	/* Be default, hand all packets up to DLS. */
+	(*flent)->fe_action.fa_flags = MFA_FLAGS_ACTION;
+	(*flent)->fe_action.fa_direct_rx_fn = mac_rx_deliver;
+	(*flent)->fe_action.fa_direct_rx_arg = (void *)mcip;
+
 	mac_misc_stat_create(*flent);
 	FLOW_MARK(*flent, FE_INCIPIENT);
 	(*flent)->fe_mcip = mcip;
@@ -4128,6 +4133,9 @@ mac_client_poll_enable(mac_client_handle_t mch)
 
 	flent = mcip->mci_flent;
 	ASSERT(flent != NULL);
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
+
+	mac_update_fastpath_flows(mcip);
 
 	mcip->mci_state_flags |= MCIS_CLIENT_POLL_CAPABLE;
 	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
@@ -4151,6 +4159,9 @@ mac_client_poll_disable(mac_client_handle_t mch)
 
 	flent = mcip->mci_flent;
 	ASSERT(flent != NULL);
+
+	// NOTE: fn is not yet unset by this point!
+	// What do!?!?
 
 	mcip->mci_state_flags &= ~MCIS_CLIENT_POLL_CAPABLE;
 	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
@@ -5915,4 +5926,188 @@ mac_set_promisc_filtered(mac_client_handle_t mch, boolean_t enable)
 		mcip->mci_protect_flags |= MPT_FLAG_PROMISC_FILTERED;
 	else
 		mcip->mci_protect_flags &= ~MPT_FLAG_PROMISC_FILTERED;
+}
+
+/*
+ * TODO(ky): We want these to be constructed and added by DLS, as/when bypass
+ * is requested. These should be configuring flows with the correct properties,
+ * rather than pushing them down onto:
+ * - mcip->mci_resource_add and friends
+ * - mcip->mci_direct_rx.mdrx_v4 and friends
+ *
+ * Reiterating what happens:
+ * - Client and its SRS etc. may be constructed before bypass is negotiated.
+ * - above set via dld_capab_poll_enable (mac_resource_set_common, ...)
+ *
+ * TODO(ky): refactor
+ * TODO(ky): actually hook these in!!!!!!
+ */
+
+static void
+mac_create_fastpath_flows(mac_client_impl_t *mcip)
+{
+	flow_entry_t *ipv4, *ipv4_tcp, *ipv4_udp;
+	flow_entry_t *ipv6, *ipv6_tcp, *ipv6_udp;
+	char flowname[MAXFLOWNAMELEN];
+
+	/* This is a dummy flow for now. We're actually filling in the contents of fe_match2. */
+	flow_desc_t f = { 0 };
+
+	/* TODO(ky): Reconsider meaning of FLOW_USER? Less draconian? */
+
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4", mcip->mci_name);
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
+	ipv4->fe_match2.mfm_type = MFM_SAP;
+	ipv4->fe_match2.arg.mfm_sap = ETHERTYPE_IP;
+
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4_tcp", mcip->mci_name);
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_tcp));
+	ipv4_tcp->fe_match2.mfm_type = MFM_IPPROTO;
+	ipv4_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
+
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4_udp", mcip->mci_name);
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_udp));
+	ipv4_udp->fe_match2.mfm_type = MFM_IPPROTO;
+	ipv4_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
+
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6", mcip->mci_name);
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6));
+	ipv6->fe_match2.mfm_type = MFM_SAP;
+	ipv6->fe_match2.arg.mfm_sap = ETHERTYPE_IPV6;
+
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6_tcp", mcip->mci_name);
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_tcp));
+	ipv6_tcp->fe_match2.mfm_type = MFM_IPPROTO;
+	ipv6_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
+
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6_udp", mcip->mci_name);
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_udp));
+	ipv6_udp->fe_match2.mfm_type = MFM_IPPROTO;
+	ipv6_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
+
+	/*
+	 * TODO(ky): are we enforcing all necessary params for the fastpath?
+	 */
+	ipv4->fe_parent = mcip->mci_flent;
+	ipv4->fe_sibling = ipv6;
+	ipv4->fe_child = ipv4_tcp;
+
+	ipv4_tcp->fe_parent = ipv4;
+	ipv4_tcp->fe_sibling = ipv4_udp;
+	ipv4_udp->fe_parent = ipv4;
+	ipv4_udp->fe_sibling = NULL;
+
+	ipv6->fe_parent = mcip->mci_flent;
+	ipv6->fe_sibling = NULL;
+	ipv6->fe_child = ipv6_tcp;
+
+	ipv6_tcp->fe_parent = ipv6;
+	ipv6_tcp->fe_sibling = ipv6_udp;
+	ipv6_udp->fe_parent = ipv6;
+
+	/* Parent MCIP isn't hooked into subflow_tab, so the leaf flows do not yet have children */
+
+	/* TODO(ky): create SRSes? */
+	/* TODO(ky): set SRST_ALWAYS_HASH_OUT as part of type for TCP SRS? */
+
+	mcip->mci_fastpath_ipv4 = ipv4;
+	mcip->mci_fastpath_ipv4_tcp = ipv4_tcp;
+	mcip->mci_fastpath_ipv4_udp = ipv4_udp;
+	mcip->mci_fastpath_ipv6 = ipv6;
+	mcip->mci_fastpath_ipv6_tcp = ipv6_tcp;
+	mcip->mci_fastpath_ipv6_udp = ipv6_udp;
+
+	mac_update_fastpath_flows(mcip);
+}
+
+/*
+ * Fastpath fn ptrs provided by userland have changed out (initial registration,
+ * most likely), or the subflow table got updated. Update leaf flows, rebake trees.
+ */
+static void
+mac_update_fastpath_flows(mac_client_impl_t *mcip)
+{
+	flow_entry_t *ipv4 = mcip->mci_fastpath_ipv4;
+	flow_entry_t *ipv4_tcp = mcip->mci_fastpath_ipv4_tcp;
+	flow_entry_t *ipv4_udp = mcip->mci_fastpath_ipv4_udp;
+	flow_entry_t *ipv6 = mcip->mci_fastpath_ipv6;
+	flow_entry_t *ipv6_tcp = mcip->mci_fastpath_ipv6_tcp;
+	flow_entry_t *ipv6_udp = mcip->mci_fastpath_ipv6_udp;
+
+	/* TODO(ky): Create subflow tab entries as children of leaves, sibling of v6 */
+	/* TODO(ky): Update fn pointers on leaf nodes  */
+
+	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv4_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv6->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv6_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv6_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+
+	if (mcip->mci_direct_rx.mdrx_v4 != NULL) {
+		ipv4_tcp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
+		ipv4_tcp->fe_action.fa_direct_rx_fn =
+		    mcip->mci_direct_rx.mdrx_v4;
+		ipv4_tcp->fe_action.fa_direct_rx_arg =
+		    mcip->mci_direct_rx.mdrx_arg_v4;
+		ipv4_udp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
+		ipv4_udp->fe_action.fa_direct_rx_fn =
+		    mcip->mci_direct_rx.mdrx_v4;
+		ipv4_udp->fe_action.fa_direct_rx_arg =
+		    mcip->mci_direct_rx.mdrx_arg_v4;
+
+		if (mcip->mci_resource_add != NULL) {
+			ipv4_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
+			ipv4_tcp->fe_action.fa_resource_add =
+			    mcip->mci_resource_add;
+			ipv4_tcp->fe_action.fa_resource_remove =
+			    mcip->mci_resource_remove;
+			ipv4_tcp->fe_action.fa_resource_quiesce =
+			    mcip->mci_resource_quiesce;
+			ipv4_tcp->fe_action.fa_resource_restart =
+			    mcip->mci_resource_restart;
+			ipv4_tcp->fe_action.fa_resource_bind =
+			    mcip->mci_resource_bind;
+			ipv4_tcp->fe_action.fa_resource_arg =
+			    mcip->mci_resource_arg;
+		}
+	}
+	if (mcip->mci_direct_rx.mdrx_v6 != NULL) {
+		ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
+		ipv6_tcp->fe_action.fa_direct_rx_fn =
+		    mcip->mci_direct_rx.mdrx_v6;
+		ipv6_tcp->fe_action.fa_direct_rx_arg =
+		    mcip->mci_direct_rx.mdrx_arg_v6;
+		ipv6_udp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
+		ipv6_udp->fe_action.fa_direct_rx_fn =
+		    mcip->mci_direct_rx.mdrx_v6;
+		ipv6_udp->fe_action.fa_direct_rx_arg =
+		    mcip->mci_direct_rx.mdrx_arg_v6;
+
+		if (mcip->mci_resource_add != NULL) {
+			ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
+			ipv6_tcp->fe_action.fa_resource_add =
+			    mcip->mci_resource_add;
+			ipv6_tcp->fe_action.fa_resource_remove =
+			    mcip->mci_resource_remove;
+			ipv6_tcp->fe_action.fa_resource_quiesce =
+			    mcip->mci_resource_quiesce;
+			ipv6_tcp->fe_action.fa_resource_restart =
+			    mcip->mci_resource_restart;
+			ipv6_tcp->fe_action.fa_resource_bind =
+			    mcip->mci_resource_bind;
+			ipv6_tcp->fe_action.fa_resource_arg =
+			    mcip->mci_resource_arg;
+		}
+	}
+}
+
+/*
+ * Fastpath fn ptrs provided by userland have changed out (initial registration,
+ * most likely). Update leaf flows, rebake trees.
+ */
+static void
+mac_teardown_fastpath_flows(mac_client_impl_t *mcip)
+{
+	
 }

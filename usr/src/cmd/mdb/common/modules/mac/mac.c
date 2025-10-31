@@ -38,7 +38,7 @@
 #include <sys/mac_stat.h>
 
 #define	STRSIZE	64
-#define	MAC_RX_SRS_SIZE	 (MAX_RINGS_PER_GROUP * sizeof (uintptr_t))
+#define	MAC_RX_SRS_SIZE	 ((MAX_RINGS_PER_GROUP + 1) * sizeof (uintptr_t))
 
 #define	LAYERED_WALKER_FOR_FLOW	"flow_entry_cache"
 #define	LAYERED_WALKER_FOR_SRS	"mac_srs_cache"
@@ -301,14 +301,14 @@ mac_flow_dcmd_output(uintptr_t addr, uint_t flags, uint_t args)
 		break;
 	}
 	case MAC_FLOW_RX: {
-		uintptr_t	rxaddr, rx_srs[MAX_RINGS_PER_GROUP] = {0};
+		uintptr_t	rxaddr, rx_srs[MAX_RINGS_PER_GROUP + 1] = {0};
 		int		i;
 
 		rxaddr = addr + OFFSETOF(flow_entry_t, fe_rx_srs);
 		(void) mdb_vread(rx_srs, MAC_RX_SRS_SIZE, rxaddr);
 		mdb_printf("%?p %-24s %3d ",
 		    addr, fe.fe_flow_name, fe.fe_rx_srs_cnt);
-		for (i = 0; i < MAX_RINGS_PER_GROUP; i++) {
+		for (i = 0; i < MAX_RINGS_PER_GROUP + 1; i++) {
 			if (rx_srs[i] == 0)
 				continue;
 			mdb_printf("%p ", rx_srs[i]);

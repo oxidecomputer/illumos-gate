@@ -326,6 +326,8 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
 
 /* POLLING SETUP AND TEAR DOWN ROUTINES */
 
+/* TODO(ky): these *do* need to decend into the baked flow tree's SRSes */
+
 /*
  * mac_srs_client_poll_quiesce and mac_srs_client_poll_restart
  *
@@ -337,6 +339,10 @@ void
 mac_srs_client_poll_quiesce(mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_srs)
 {
+	const flow_action_t *act =
+	    &((flow_entry_t *)mac_srs->srs_flent)->fe_action;
+	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
+
 	mac_soft_ring_t	*softring;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
@@ -348,9 +354,8 @@ mac_srs_client_poll_quiesce(mac_client_impl_t *mcip,
 
 	for (softring = mac_srs->srs_soft_ring_head;
 	    softring != NULL; softring = softring->s_ring_next) {
-		if ((softring->s_ring_type & ST_RING_TCP) &&
-		    (softring->s_ring_rx_arg2 != NULL)) {
-			mcip->mci_resource_quiesce(mcip->mci_resource_arg,
+		if (notify_upstack && softring->s_ring_rx_arg2 != NULL) {
+			act->fa_resource_quiesce(act->fa_resource_arg,
 			    softring->s_ring_rx_arg2);
 		}
 	}
@@ -360,7 +365,9 @@ void
 mac_srs_client_poll_restart(mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_srs)
 {
-	mac_soft_ring_t	*softring;
+	const flow_action_t *act =
+	    &((flow_entry_t *)mac_srs->srs_flent)->fe_action;
+	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
@@ -369,11 +376,10 @@ mac_srs_client_poll_restart(mac_client_impl_t *mcip,
 		return;
 	}
 
-	for (softring = mac_srs->srs_soft_ring_head;
+	for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
 	    softring != NULL; softring = softring->s_ring_next) {
-		if ((softring->s_ring_type & ST_RING_TCP) &&
-		    (softring->s_ring_rx_arg2 != NULL)) {
-			mcip->mci_resource_restart(mcip->mci_resource_arg,
+		if (notify_upstack && softring->s_ring_rx_arg2 != NULL) {
+			act->fa_resource_restart(act->fa_resource_arg,
 			    softring->s_ring_rx_arg2);
 		}
 	}
@@ -388,74 +394,58 @@ void
 mac_srs_client_poll_enable(mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_srs)
 {
-	mac_rx_fifo_t		mrf;
-	mac_soft_ring_t		*softring;
-
 	ASSERT(mac_srs->srs_mcip == mcip);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
+	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
 
 	if (!(mcip->mci_state_flags & MCIS_CLIENT_POLL_CAPABLE))
 		return;
 
-	bzero(&mrf, sizeof (mac_rx_fifo_t));
-	mrf.mrf_type = MAC_RX_FIFO;
+	mac_srs->srs_type |= SRST_CLIENT_POLL_ENABLED | SRST_DLS_BYPASS;
 
-	/*
-	 * A SRS is capable of acting as a soft ring for cases
-	 * where no fanout is needed. This is the case for userland
-	 * flows.
-	 */
-	if (mac_srs->srs_type & SRST_NO_SOFT_RINGS)
-		return;
+	mac_rx_fifo_t mrf = {
+		.mrf_type = MAC_RX_FIFO,
+		.mrf_receive = (mac_receive_t)mac_soft_ring_poll,
+		.mrf_intr_enable =
+		    (mac_intr_enable_t)mac_soft_ring_intr_enable,
+		.mrf_intr_disable =
+		    (mac_intr_disable_t)mac_soft_ring_intr_disable,
+	};
 
-	mrf.mrf_receive = (mac_receive_t)mac_soft_ring_poll;
-	mrf.mrf_intr_enable = (mac_intr_enable_t)mac_soft_ring_intr_enable;
-	mrf.mrf_intr_disable = (mac_intr_disable_t)mac_soft_ring_intr_disable;
-	mac_srs->srs_type |= SRST_CLIENT_POLL_ENABLED;
+	mac_soft_ring_set_t *logical_srs = mac_srs->srs_logical_next;
+	while (logical_srs != NULL) {
+		flow_entry_t *curr_f = logical_srs->srs_flent;
+		const bool is_fp_leaf = curr_f == mcip->mci_fastpath_ipv4_tcp ||
+		    curr_f == mcip->mci_fastpath_ipv4_udp ||
+		    curr_f == mcip->mci_fastpath_ipv6_tcp ||
+		    curr_f == mcip->mci_fastpath_ipv6_udp;
 
-	softring = mac_srs->srs_soft_ring_head;
-	while (softring != NULL) {
-		if (mcip->mci_direct_rx.mdrx_v4 != NULL &&
-		    softring->s_ring_type & (ST_RING_TCP | ST_RING_UDP)) {
-			/*
-			 * TCP and UDP support DLS bypass. Squeue polling
-			 * support implies DLS bypass since the squeue poll
-			 * path does not have DLS processing.
-			 */
-			mac_soft_ring_dls_bypass(softring,
-			    mcip->mci_direct_rx.mdrx_v4,
-			    mcip->mci_direct_rx.mdrx_arg_v4);
-		}
-		if (mcip->mci_direct_rx.mdrx_v6 != NULL &&
-		    softring->s_ring_type & (ST_RING_TCP6 | ST_RING_UDP6)) {
-			/*
-			 * TCP and UDP support DLS bypass. Squeue polling
-			 * support implies DLS bypass since the squeue poll
-			 * path does not have DLS processing.
-			 */
-			mac_soft_ring_dls_bypass(softring,
-			    mcip->mci_direct_rx.mdrx_v6,
-			    mcip->mci_direct_rx.mdrx_arg_v6);
-		}
-
-		/*
-		 * Non-TCP protocols don't support squeues. Hence we don't
-		 * make any ring addition callbacks for non-TCP rings
-		 */
-		if (!(softring->s_ring_type & ST_RING_TCP)) {
-			softring->s_ring_rx_arg2 = NULL;
-			softring = softring->s_ring_next;
+		if (!is_fp_leaf)
 			continue;
+
+		const flow_action_t *act = &curr_f->fe_action;
+		const mac_resource_add_t add_notify_fn =
+		    (curr_f == mcip->mci_fastpath_ipv4_tcp ||
+		    curr_f == mcip->mci_fastpath_ipv6_tcp) ?
+		    act->fa_resource_add : NULL;
+
+		for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
+		    softring != NULL; softring = softring->s_ring_next) {
+			mac_soft_ring_action_refresh(softring);
+			if (add_notify_fn != NULL &&
+			    softring->s_ring_rx_arg2 == NULL) {
+				mrf.mrf_rx_arg = softring;
+				mrf.mrf_intr_handle = (mac_intr_handle_t)softring;
+				mrf.mrf_cpu_id = softring->s_ring_cpuid;
+				mrf.mrf_flow_priority = logical_srs->srs_pri;
+
+				softring->s_ring_rx_arg2 = add_notify_fn(
+				    act->fa_resource_arg,
+				    (mac_resource_t *)&mrf);
+			}
 		}
-		mrf.mrf_rx_arg = softring;
-		mrf.mrf_intr_handle = (mac_intr_handle_t)softring;
-		mrf.mrf_cpu_id = softring->s_ring_cpuid;
-		mrf.mrf_flow_priority = mac_srs->srs_pri;
 
-		softring->s_ring_rx_arg2 = mcip->mci_resource_add(
-		    mcip->mci_resource_arg, (mac_resource_t *)&mrf);
-
-		softring = softring->s_ring_next;
+		logical_srs = mac_srs->srs_logical_next;
 	}
 }
 
@@ -468,17 +458,8 @@ void
 mac_srs_client_poll_disable(mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_srs)
 {
-	mac_soft_ring_t		*softring;
-
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
-
-	/*
-	 * A SRS is capable of acting as a soft ring for cases
-	 * where no protocol fanout is needed. This is the case
-	 * for userland flows. Nothing to do here.
-	 */
-	if (mac_srs->srs_type & SRST_NO_SOFT_RINGS)
-		return;
+	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
 
 	mutex_enter(&mac_srs->srs_lock);
 	if (!(mac_srs->srs_type & SRST_CLIENT_POLL_ENABLED)) {
@@ -494,29 +475,62 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
 	 * Reset the soft ring callbacks to the standard 'mac_rx_deliver'
 	 * callback. In addition, in the case of TCP, invoke IP's callback
 	 * for ring removal.
+	 *
+	 * Client polled rings and DLS bypass are persent on the *logical* SRSes
+	 * attached to this SRS. Keep these structures in place rather than
+	 * rebuilding/binding everything for what is likely a transient loss of
+	 * the bypass.
 	 */
-	for (softring = mac_srs->srs_soft_ring_head;
-	    softring != NULL; softring = softring->s_ring_next) {
-		if (!(softring->s_ring_type & (ST_RING_UDP | ST_RING_TCP)))
+	mac_soft_ring_set_t *logical_srs = mac_srs->srs_logical_next;
+	while (logical_srs != NULL) {
+		flow_entry_t *curr_f = logical_srs->srs_flent;
+		const bool is_fp_leaf = curr_f == mcip->mci_fastpath_ipv4_tcp ||
+		    curr_f == mcip->mci_fastpath_ipv4_udp ||
+		    curr_f == mcip->mci_fastpath_ipv6_tcp ||
+		    curr_f == mcip->mci_fastpath_ipv6_udp;
+
+		if (!is_fp_leaf)
 			continue;
 
-		if ((softring->s_ring_type & ST_RING_TCP) &&
-		    softring->s_ring_rx_arg2 != NULL) {
-			mcip->mci_resource_remove(mcip->mci_resource_arg,
-			    softring->s_ring_rx_arg2);
+		const flow_action_t *act = &curr_f->fe_action;
+		const mac_resource_remove_t rm_notify_fn =
+		    (curr_f == mcip->mci_fastpath_ipv4_tcp ||
+		    curr_f == mcip->mci_fastpath_ipv6_tcp) ?
+		    act->fa_resource_remove : NULL;
+
+		/* TODO(ky): update params on `act`? */
+
+		for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
+		    softring != NULL; softring = softring->s_ring_next) {
+			/*
+			 * Slightly manual re-expression of
+			 * mac_soft_ring_action_refresh. No one should be able
+			 * to redefine an action today, so no need for this
+			 * normally.
+			 */
+			if (rm_notify_fn != NULL &&
+			    softring->s_ring_rx_arg2 != NULL) {
+				rm_notify_fn(act->fa_resource_arg,
+				    softring->s_ring_rx_arg2);
+			}
+
+			mutex_enter(&softring->s_ring_lock);
+			while (softring->s_ring_state & S_RING_PROC) {
+				softring->s_ring_state |= S_RING_CLIENT_WAIT;
+				cv_wait(&softring->s_ring_client_cv,
+				    &softring->s_ring_lock);
+			}
+			softring->s_ring_state &= ~S_RING_CLIENT_WAIT;
+			softring->s_ring_rx_arg2 = NULL;
+			/* TODO(ky): take from the actual flent assoc'd? */
+			softring->s_ring_rx_func = mac_rx_deliver;
+			softring->s_ring_rx_arg1 = (void *)mcip;
+			mutex_exit(&softring->s_ring_lock);
 		}
 
-		mutex_enter(&softring->s_ring_lock);
-		while (softring->s_ring_state & S_RING_PROC) {
-			softring->s_ring_state |= S_RING_CLIENT_WAIT;
-			cv_wait(&softring->s_ring_client_cv,
-			    &softring->s_ring_lock);
-		}
-		softring->s_ring_state &= ~S_RING_CLIENT_WAIT;
-		softring->s_ring_rx_arg2 = NULL;
-		softring->s_ring_rx_func = mac_rx_deliver;
-		softring->s_ring_rx_arg1 = mcip;
-		mutex_exit(&softring->s_ring_lock);
+		logical_srs = mac_srs->srs_logical_next;
+
+		/* TODO(ky): there should be more common methods for this. */
 	}
 }
 
@@ -1646,38 +1660,38 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
  * resetting the entry point.
  */
 void
-mac_client_update_classifier(mac_client_impl_t *mcip, boolean_t enable)
+mac_client_update_classifier(mac_client_impl_t *mcip)
 {
 	flow_entry_t		*flent = mcip->mci_flent;
 	int			i;
 	mac_impl_t		*mip = mcip->mci_mip;
 	mac_rx_func_t		rx_func;
 	uint_t			rx_srs_cnt;
-	boolean_t		enable_classifier;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
-	enable_classifier = !FLOW_TAB_EMPTY(mcip->mci_subflow_tab) && enable;
-
-	rx_func = enable_classifier ? mac_rx_srs_subflow_process :
-	    mac_rx_srs_process;
+	/* TODO(ky): Trigger a rebuild/refresh/connection of subflow-tab flents to the fastpath tree */
+	/*
+	 * rx_func = enable_classifier ? mac_rx_srs_subflow_process :
+	 *   mac_rx_srs_process;
+	 */
+	bool enable_classifier = !FLOW_TAB_EMPTY(mcip->mci_subflow_tab);
+	rx_func = mac_rx_srs_process;
 
 	/* Tell mac_srs_poll_state_change to disable polling if necessary */
-	if (mip->mi_state_flags & MIS_POLL_DISABLE)
-		enable_classifier = B_TRUE;
+	bool disable_polling = (mip->mi_state_flags & MIS_POLL_DISABLE) != 0;
 
 	/*
-	 * If receive function has already been configured correctly for
-	 * current subflow configuration, do nothing.
+	 * This loop visits all of the _entry_ Rx SRSes on this MCIP, which is
+	 * to say those attached to the software classifier or a HW ring. While
+	 * we have logical SRSes associated with each baked flowtree, we don't
+	 * need to visit those since they cannot be polled.
 	 */
-	if (flent->fe_cb_fn == (flow_fn_t)rx_func)
-		return;
-
 	rx_srs_cnt = flent->fe_rx_srs_cnt;
 	for (i = 0; i < rx_srs_cnt; i++) {
 		ASSERT(flent->fe_rx_srs[i] != NULL);
 		mac_srs_poll_state_change(flent->fe_rx_srs[i],
-		    enable_classifier, rx_func);
+		    disable_polling, rx_func);
 	}
 
 	/*
@@ -1712,108 +1726,49 @@ mac_srs_update_fanout_list(mac_soft_ring_set_t *mac_srs)
 	ASSERT3S(mac_srs->srs_soft_ring_count, ==, count);
 }
 
-void
-mac_srs_create_proto_softrings(int id, uint16_t type, pri_t pri,
-    mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs,
-    processorid_t cpuid, mac_direct_rx_t rx_func, void *x_arg1,
-    mac_resource_handle_t x_arg2, boolean_t set_bypass)
+/* ARGSUSED */
+static void
+mac_rx_discard_unceremoniously(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
+    mac_header_info_t *arg3)
 {
-	mac_soft_ring_t	*softring;
-	mac_rx_fifo_t	mrf;
+	freemsgchain(mp_chain);
+}
 
-	bzero(&mrf, sizeof (mac_rx_fifo_t));
-	mrf.mrf_type = MAC_RX_FIFO;
-	mrf.mrf_receive = (mac_receive_t)mac_soft_ring_poll;
-	mrf.mrf_intr_enable = (mac_intr_enable_t)mac_soft_ring_intr_enable;
-	mrf.mrf_intr_disable = (mac_intr_disable_t)mac_soft_ring_intr_disable;
-	mrf.mrf_flow_priority = pri;
+void
+mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
+    mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs, processorid_t cpuid)
+{
+	ASSERT3U(type & ST_RING_TX, ==, 0);
 
-	softring = mac_soft_ring_create(id, mac_soft_ring_worker_wait,
-	    (type|ST_RING_TCP), pri, mcip, mac_srs,
-	    cpuid, rx_func, x_arg1, x_arg2);
-	softring->s_ring_rx_arg2 = NULL;
+	const flow_action_t *act =
+	    &((flow_entry_t *)mac_srs->srs_flent)->fe_action;
+	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
+	const bool process_packet = (act->fa_flags & MFA_FLAGS_ACTION) != 0;
+	const mac_direct_rx_t rx_func = process_packet ? act->fa_direct_rx_fn :
+	    mac_rx_discard_unceremoniously;
+	void *x_arg1 = process_packet ? act->fa_direct_rx_arg : NULL;
 
-	/*
-	 * TCP and UDP support DLS bypass. In addition TCP
-	 * squeue can also poll their corresponding soft rings.
-	 */
-	if (set_bypass && mcip->mci_direct_rx.mdrx_v4 != NULL &&
-	    (mcip->mci_resource_arg != NULL)) {
-		mac_soft_ring_dls_bypass(softring,
-		    mcip->mci_direct_rx.mdrx_v4,
-		    mcip->mci_direct_rx.mdrx_arg_v4);
+	mac_soft_ring_t *softring = mac_soft_ring_create(id,
+	    mac_soft_ring_worker_wait, type, pri, mcip, mac_srs, cpuid, rx_func,
+	    x_arg1, NULL);
 
-		mrf.mrf_rx_arg = softring;
-		mrf.mrf_intr_handle = (mac_intr_handle_t)softring;
+	if (notify_upstack) {
+		mac_rx_fifo_t mrf = {
+			.mrf_type = MAC_RX_FIFO,
+			.mrf_receive = (mac_receive_t)mac_soft_ring_poll,
+			.mrf_intr_enable =
+			    (mac_intr_enable_t)mac_soft_ring_intr_enable,
+			.mrf_intr_disable =
+			    (mac_intr_disable_t)mac_soft_ring_intr_disable,
+			.mrf_flow_priority = pri,
+			.mrf_rx_arg = softring,
+			.mrf_intr_handle = (mac_intr_handle_t)softring,
+		};
 
-		/*
-		 * Make a call in IP to get a TCP squeue assigned to
-		 * this softring to maintain full CPU locality through
-		 * the stack and allow the squeue to be able to poll
-		 * the softring so the flow control can be pushed
-		 * all the way to H/W.
-		 */
-		softring->s_ring_rx_arg2 =
-		    mcip->mci_resource_add((void *)mcip->mci_resource_arg,
+		softring->s_ring_rx_arg2 = act->fa_resource_add(
+		    (void *)mcip->mci_resource_arg,
 		    (mac_resource_t *)&mrf);
 	}
-
-	/*
-	 * Non-TCP protocols don't support squeues. Hence we
-	 * don't make any ring addition callbacks for non-TCP
-	 * rings. Now create the UDP softring and allow it to
-	 * bypass the DLS layer.
-	 */
-	softring = mac_soft_ring_create(id, mac_soft_ring_worker_wait,
-	    (type|ST_RING_UDP), pri, mcip, mac_srs,
-	    cpuid, rx_func, x_arg1, x_arg2);
-	softring->s_ring_rx_arg2 = NULL;
-
-	if (set_bypass && mcip->mci_direct_rx.mdrx_v4 != NULL &&
-	    (mcip->mci_resource_arg != NULL)) {
-		mac_soft_ring_dls_bypass(softring,
-		    mcip->mci_direct_rx.mdrx_v4,
-		    mcip->mci_direct_rx.mdrx_arg_v4);
-	}
-
-	/* TCP for IPv6. */
-	softring = mac_soft_ring_create(id, mac_soft_ring_worker_wait,
-	    (type|ST_RING_TCP6), pri, mcip, mac_srs,
-	    cpuid, rx_func, x_arg1, x_arg2);
-	softring->s_ring_rx_arg2 = NULL;
-
-	if (set_bypass && mcip->mci_direct_rx.mdrx_v6 != NULL &&
-	    (mcip->mci_resource_arg != NULL)) {
-		mac_soft_ring_dls_bypass(softring,
-		    mcip->mci_direct_rx.mdrx_v6,
-		    mcip->mci_direct_rx.mdrx_arg_v6);
-
-		mrf.mrf_rx_arg = softring;
-		mrf.mrf_intr_handle = (mac_intr_handle_t)softring;
-
-		softring->s_ring_rx_arg2 =
-		    mcip->mci_resource_add((void *)mcip->mci_resource_arg,
-		    (mac_resource_t *)&mrf);
-	}
-
-	/* UDP for IPv6. */
-	softring = mac_soft_ring_create(id, mac_soft_ring_worker_wait,
-	    (type|ST_RING_UDP6), pri, mcip, mac_srs,
-	    cpuid, rx_func, x_arg1, x_arg2);
-	softring->s_ring_rx_arg2 = NULL;
-
-	if (set_bypass && mcip->mci_direct_rx.mdrx_v6 != NULL &&
-	    (mcip->mci_resource_arg != NULL)) {
-		mac_soft_ring_dls_bypass(softring,
-		    mcip->mci_direct_rx.mdrx_v6,
-		    mcip->mci_direct_rx.mdrx_arg_v6);
-	}
-
-	/* Create the Oth softrings which has to go through the DLS. */
-	softring = mac_soft_ring_create(id, mac_soft_ring_worker_wait,
-	    (type|ST_RING_OTH), pri, mcip, mac_srs,
-	    cpuid, rx_func, x_arg1, x_arg2);
-	softring->s_ring_rx_arg2 = NULL;
 }
 
 /*
@@ -1825,8 +1780,7 @@ mac_srs_create_proto_softrings(int id, uint16_t type, pri_t pri,
  * same CPU as that of the soft ring's.
  */
 static void
-mac_srs_fanout_modify(mac_client_impl_t *mcip, mac_direct_rx_t rx_func,
-    void *x_arg1, mac_resource_handle_t x_arg2,
+mac_srs_fanout_modify(mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_rx_srs, mac_soft_ring_set_t *mac_tx_srs)
 {
 	uint32_t soft_ring_flag = 0;
@@ -1867,9 +1821,8 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip, mac_direct_rx_t rx_func,
 			 * DLS bypass where possible.
 			 */
 			const processorid_t cpuid = -1;
-			mac_srs_create_proto_softrings(i, soft_ring_flag,
-			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid,
-			    rx_func, x_arg1, x_arg2, B_TRUE);
+			mac_srs_create_rx_softring(i, soft_ring_flag,
+			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
 		}
 		mac_srs_update_fanout_list(mac_rx_srs);
 	} else if (new_fanout_cnt < srings_present) {
@@ -1928,7 +1881,6 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip, mac_direct_rx_t rx_func,
  */
 void
 mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
-    mac_direct_rx_t rx_func, void *x_arg1, mac_resource_handle_t x_arg2,
     mac_soft_ring_set_t *mac_rx_srs, mac_soft_ring_set_t *mac_tx_srs,
     cpupart_t *cpupart)
 {
@@ -1969,9 +1921,8 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 		for (i = 0; i < soft_ring_cnt; i++) {
 			cpuid = srs_cpu->mc_rx_fanout_cpus[i];
 			/* Create the protocol softrings */
-			mac_srs_create_proto_softrings(i, soft_ring_flag,
-			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid,
-			    rx_func, x_arg1, x_arg2, B_FALSE);
+			mac_srs_create_rx_softring(i, soft_ring_flag,
+			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
 		}
 		mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
 		mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
@@ -2005,7 +1956,6 @@ alldone:
 	if (soft_ring_cnt > 1)
 		mac_rx_srs->srs_type |= SRST_FANOUT_SRC_IP;
 	mac_srs_update_fanout_list(mac_rx_srs);
-	mac_srs_client_poll_enable(mcip, mac_rx_srs);
 	return;
 
 no_softrings:
@@ -2013,9 +1963,8 @@ no_softrings:
 		mutex_enter(&cpu_lock);
 		cpuid = mac_next_bind_cpu(cpupart);
 		/* Create the protocol softrings */
-		mac_srs_create_proto_softrings(0, soft_ring_flag,
-		    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid,
-		    rx_func, x_arg1, x_arg2, B_FALSE);
+		mac_srs_create_rx_softring(0, soft_ring_flag,
+		    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
 		mutex_exit(&cpu_lock);
 	} else {
 		/*
@@ -2025,17 +1974,18 @@ no_softrings:
 		mac_rx_srs->srs_type |= SRST_NO_SOFT_RINGS;
 	}
 	mac_srs_update_fanout_list(mac_rx_srs);
-	mac_srs_client_poll_enable(mcip, mac_rx_srs);
 }
 
 /*
  * Calls mac_srs_fanout_init() or modify() depending upon whether
  * the SRS is getting initialized or re-initialized.
+ *
+ * TODO(ky): Callers who do this on the group-only MCIP: is arg1 set
+ * properly on the attached flent?
  */
 void
 mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
-    mac_resource_props_t *mrp, mac_direct_rx_t rx_func, void *x_arg1,
-    mac_resource_handle_t x_arg2, cpupart_t *cpupart)
+    mac_resource_props_t *mrp, cpupart_t *cpupart)
 {
 	mac_soft_ring_set_t *mac_rx_srs, *mac_tx_srs;
 	int i, rx_srs_cnt;
@@ -2060,8 +2010,7 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 	/* No fanout for subflows */
 	if (flent->fe_type & FLOW_USER) {
-		mac_srs_fanout_init(mcip, mrp, rx_func,
-		    x_arg1, x_arg2, mac_rx_srs, mac_tx_srs,
+		mac_srs_fanout_init(mcip, mrp, mac_rx_srs, mac_tx_srs,
 		    cpupart);
 		return;
 	}
@@ -2083,16 +2032,14 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 			mac_tx_srs = NULL;
 		switch (mac_rx_srs->srs_fanout_state) {
 		case SRS_FANOUT_UNINIT:
-			mac_srs_fanout_init(mcip, mrp, rx_func,
-			    x_arg1, x_arg2, mac_rx_srs, mac_tx_srs,
+			mac_srs_fanout_init(mcip, mrp, mac_rx_srs, mac_tx_srs,
 			    cpupart);
 			break;
 		case SRS_FANOUT_INIT:
 			break;
 		case SRS_FANOUT_REINIT:
 			mac_rx_srs_quiesce(mac_rx_srs, SRS_QUIESCE);
-			mac_srs_fanout_modify(mcip, rx_func, x_arg1,
-			    x_arg2, mac_rx_srs, mac_tx_srs);
+			mac_srs_fanout_modify(mcip, mac_rx_srs, mac_tx_srs);
 			mac_rx_srs_restart(mac_rx_srs);
 			break;
 		default:
@@ -2313,15 +2260,22 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 		goto done;
 	}
 
-	if ((srs_type & SRST_FLOW) != 0 ||
-	    FLOW_TAB_EMPTY(mcip->mci_subflow_tab))
-		srs_rx->sr_lower_proc = mac_rx_srs_process;
-	else
-		srs_rx->sr_lower_proc = mac_rx_srs_subflow_process;
+	/* TODO(ky) use this to determine whether or not to hook in and recompute flow tree inclusive of subflow tab */
+	// if ((srs_type & SRST_FLOW) != 0 ||
+	//     FLOW_TAB_EMPTY(mcip->mci_subflow_tab))
+	// 	srs_rx->sr_lower_proc = mac_rx_srs_process;
+	// else
+	// 	srs_rx->sr_lower_proc = mac_rx_srs_subflow_process;
+	srs_rx->sr_lower_proc = mac_rx_srs_process;
 
 	if (!is_logical) {
 		mac_ring_t *ring = p->msc_data.rx.ring;
 
+		/*
+		 * TODO(ky): should this be the flow action?
+		 * That would be used by... mac_hwrings_rx_process?
+		 * Ordinarily that's never updated to be the DLS bypass.
+		 */
 		srs_rx->sr_func = p->msc_data.rx.rx_func;
 		srs_rx->sr_arg1 = mcip;
 		srs_rx->sr_arg2 = NULL;
@@ -2455,8 +2409,7 @@ mac_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 	pool_lock();
 	cpupart = mac_pset_find(mrp, &use_default);
-	mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-	    mac_rx_deliver, mcip, NULL, cpupart);
+	mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip), cpupart);
 	mac_set_pool_effective(use_default, cpupart, mrp, emrp);
 	pool_unlock();
 }
@@ -3201,7 +3154,6 @@ mac_datapath_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 				mac_fanout_setup(group_only_mcip,
 				    group_only_mcip->mci_flent,
 				    MCIP_RESOURCE_PROPS(group_only_mcip),
-				    mac_rx_deliver, group_only_mcip, NULL,
 				    cpupart);
 				mac_set_pool_effective(use_default, cpupart,
 				    mrp, emrp);
@@ -3327,8 +3279,7 @@ mac_datapath_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
 				    group_only_flent, SRST_LINK);
 				mac_fanout_setup(grp_only_mcip,
 				    group_only_flent,
-				    MCIP_RESOURCE_PROPS(grp_only_mcip),
-				    mac_rx_deliver, grp_only_mcip, NULL, NULL);
+				    MCIP_RESOURCE_PROPS(grp_only_mcip), NULL);
 				mac_rx_group_unmark(group, MR_INCIPIENT);
 				mac_set_rings_effective(grp_only_mcip);
 			} else if (next_state == MAC_GROUP_STATE_REGISTERED) {
@@ -3454,8 +3405,7 @@ mac_datapath_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
 			    grp_only_mcip->mci_flent, SRST_LINK);
 			mac_fanout_setup(grp_only_mcip,
 			    grp_only_mcip->mci_flent,
-			    MCIP_RESOURCE_PROPS(grp_only_mcip), mac_rx_deliver,
-			    grp_only_mcip, NULL, NULL);
+			    MCIP_RESOURCE_PROPS(grp_only_mcip), NULL);
 			mac_rx_group_unmark(default_group, MR_INCIPIENT);
 			mac_set_rings_effective(grp_only_mcip);
 		}
@@ -4128,8 +4078,7 @@ mac_fanout_recompute_client(mac_client_impl_t *mcip, cpupart_t *cpupart)
 		rx_srs = flent->fe_rx_srs[0];
 		srs_cpu = &rx_srs->srs_cpu;
 		if (soft_ring_count != srs_cpu->mc_rx_fanout_cnt) {
-			mac_fanout_setup(mcip, flent, mcip_mrp,
-			    mac_rx_deliver, mcip, NULL, cpupart);
+			mac_fanout_setup(mcip, flent, mcip_mrp, cpupart);
 		}
 	}
 }
@@ -4191,186 +4140,16 @@ mac_poll_state_change(mac_handle_t mh, boolean_t enable)
 	mac_client_impl_t *mcip;
 
 	i_mac_perim_enter(mip);
-	if (enable)
+	if (enable) {
 		mip->mi_state_flags &= ~MIS_POLL_DISABLE;
-	else
+	} else {
 		mip->mi_state_flags |= MIS_POLL_DISABLE;
+	}
+
 	for (mcip = mip->mi_clients_list; mcip != NULL;
 	    mcip = mcip->mci_client_next)
-		mac_client_update_classifier(mcip, B_TRUE);
+	{
+		mac_client_update_classifier(mcip);
+	}
 	i_mac_perim_exit(mip);
-}
-
-/*
- * TODO(ky): We want these to be constructed and added by DLS, as/when bypass
- * is requested. These should be configuring flows with the correct properties,
- * rather than pushing them down onto:
- * - mcip->mci_resource_add and friends
- * - mcip->mci_direct_rx.mdrx_v4 and friends
- *
- * Reiterating what happens:
- * - Client and its SRS etc. may be constructed before bypass is negotiated.
- * - above set via dld_capab_poll_enable (mac_resource_set_common, ...)
- *
- * TODO(ky): refactor
- */
-
-static void
-mac_create_fastpath_flows(mac_client_impl_t *mcip)
-{
-	flow_entry_t *ipv4, *ipv4_tcp, *ipv4_udp;
-	flow_entry_t *ipv6, *ipv6_tcp, *ipv6_udp;
-	char flowname[MAXFLOWNAMELEN];
-
-	/* This is a dummy flow for now. We're actually filling in the contents of fe_match2. */
-	flow_desc_t f = { 0 };
-
-	/* TODO(ky): Reconsider meaning of FLOW_USER? Less draconian? */
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4", mcip->mci_name);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
-	ipv4->fe_match2.mfm_type = MFM_SAP;
-	ipv4->fe_match2.arg.mfm_sap = ETHERTYPE_IP;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4_tcp", mcip->mci_name);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_tcp));
-	ipv4_tcp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv4_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4_udp", mcip->mci_name);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_udp));
-	ipv4_udp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv4_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6", mcip->mci_name);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6));
-	ipv6->fe_match2.mfm_type = MFM_SAP;
-	ipv6->fe_match2.arg.mfm_sap = ETHERTYPE_IPV6;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6_tcp", mcip->mci_name);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_tcp));
-	ipv6_tcp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv6_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6_udp", mcip->mci_name);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_udp));
-	ipv6_udp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv6_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
-
-	/*
-	 * TODO(ky): are we enforcing all necessary params for the fastpath?
-	 */
-	ipv4->fe_parent = mcip->mci_flent;
-	ipv4->fe_sibling = ipv6;
-	ipv4->fe_child = ipv4_tcp;
-
-	ipv4_tcp->fe_parent = ipv4;
-	ipv4_tcp->fe_sibling = ipv4_udp;
-	ipv4_udp->fe_parent = ipv4;
-	ipv4_udp->fe_sibling = NULL;
-
-	ipv6->fe_parent = mcip->mci_flent;
-	ipv6->fe_sibling = NULL;
-	ipv6->fe_child = ipv6_tcp;
-
-	ipv6_tcp->fe_parent = ipv6;
-	ipv6_tcp->fe_sibling = ipv6_udp;
-	ipv6_udp->fe_parent = ipv6;
-
-	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv4_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv6->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv6_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv6_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-
-	if (mcip->mci_direct_rx.mdrx_v4 != NULL) {
-		ipv4_tcp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
-		ipv4_tcp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v4;
-		ipv4_tcp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v4;
-		ipv4_udp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
-		ipv4_udp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v4;
-		ipv4_udp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v4;
-
-		if (mcip->mci_resource_add != NULL) {
-			ipv4_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
-			ipv4_tcp->fe_action.fa_resource_add =
-			    mcip->mci_resource_add;
-			ipv4_tcp->fe_action.fa_resource_remove =
-			    mcip->mci_resource_remove;
-			ipv4_tcp->fe_action.fa_resource_quiesce =
-			    mcip->mci_resource_quiesce;
-			ipv4_tcp->fe_action.fa_resource_restart =
-			    mcip->mci_resource_restart;
-			ipv4_tcp->fe_action.fa_resource_bind =
-			    mcip->mci_resource_bind;
-			ipv4_tcp->fe_action.fa_resource_arg =
-			    mcip->mci_resource_arg;
-		}
-	}
-	if (mcip->mci_direct_rx.mdrx_v6 != NULL) {
-		ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
-		ipv6_tcp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v6;
-		ipv6_tcp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v6;
-		ipv6_udp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
-		ipv6_udp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v6;
-		ipv6_udp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v6;
-
-		if (mcip->mci_resource_add != NULL) {
-			ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
-			ipv6_tcp->fe_action.fa_resource_add =
-			    mcip->mci_resource_add;
-			ipv6_tcp->fe_action.fa_resource_remove =
-			    mcip->mci_resource_remove;
-			ipv6_tcp->fe_action.fa_resource_quiesce =
-			    mcip->mci_resource_quiesce;
-			ipv6_tcp->fe_action.fa_resource_restart =
-			    mcip->mci_resource_restart;
-			ipv6_tcp->fe_action.fa_resource_bind =
-			    mcip->mci_resource_bind;
-			ipv6_tcp->fe_action.fa_resource_arg =
-			    mcip->mci_resource_arg;
-		}
-	}
-
-	/* Parent MCIP isn't hooked into subflow_tab, so the leaf flows do not yet have children */
-
-	/* TODO(ky): create SRSes? */
-	/* TODO(ky): set SRST_ALWAYS_HASH_OUT as part of type for TCP SRS? */
-
-	mcip->mci_fastpath_ipv4 = ipv4;
-	mcip->mci_fastpath_ipv4_tcp = ipv4_tcp;
-	mcip->mci_fastpath_ipv4_udp = ipv4_udp;
-	mcip->mci_fastpath_ipv6 = ipv6;
-	mcip->mci_fastpath_ipv6_tcp = ipv6_tcp;
-	mcip->mci_fastpath_ipv6_udp = ipv6_udp;
-}
-
-/*
- * Fastpath fn ptrs provided by userland have changed out (initial registration,
- * most likely), or the subflow table got updated. Update leaf flows, rebake trees.
- */
-static void
-mac_update_fastpath_flows(mac_client_impl_t *mcip)
-{
-	/* TODO(ky): Create subflow tab entries as children of leaves, sibling of v6 */
-	/* TODO(ky): Update fn pointers on leaf nodes  */
-}
-
-/*
- * Fastpath fn ptrs provided by userland have changed out (initial registration,
- * most likely). Update leaf flows, rebake trees.
- */
-static void
-mac_teardown_fastpath_flows(mac_client_impl_t *mcip)
-{
-	
 }

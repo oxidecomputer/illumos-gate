@@ -5006,7 +5006,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 			VERIFY3S(flent->fe_rx_srs_cnt, >, 0);
 			mac_rx_srs_group_setup(mcip, flent, SRST_LINK);
 			mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-			    mac_rx_deliver, mcip, NULL, NULL);
+			    NULL);
 		} else {
 			ring->mr_classify_type = MAC_SW_CLASSIFIER;
 		}
@@ -5060,7 +5060,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 			}
 			mac_tx_srs_add_ring(mac_srs, ring);
 			mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-			    mac_rx_deliver, mcip, NULL, NULL);
+			    NULL);
 			mac_tx_client_restart((mac_client_handle_t)mcip);
 			mgcp = mgcp->mgc_next;
 		}
@@ -7545,8 +7545,7 @@ mac_rx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 	if (tgrp->mrg_state == MAC_GROUP_STATE_RESERVED) {
 		mac_rx_srs_group_setup(mcip, mcip->mci_flent, SRST_LINK);
 		mac_fanout_setup(mcip, mcip->mci_flent,
-		    MCIP_RESOURCE_PROPS(mcip), mac_rx_deliver, mcip, NULL,
-		    NULL);
+		    MCIP_RESOURCE_PROPS(mcip), NULL);
 		mac_rx_group_unmark(tgrp, MR_INCIPIENT);
 	} else {
 		mac_rx_switch_grp_to_sw(tgrp);
@@ -7899,8 +7898,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 				mac_tx_srs_group_setup(gmcip, gflent,
 				    SRST_LINK);
 				mac_fanout_setup(gmcip, gflent,
-				    MCIP_RESOURCE_PROPS(gmcip), mac_rx_deliver,
-				    gmcip, NULL, NULL);
+				    MCIP_RESOURCE_PROPS(gmcip), NULL);
 
 				mac_tx_client_restart(
 				    (mac_client_handle_t)gmcip);
@@ -7960,8 +7958,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 			    &group_only_mcip, defgrp, B_FALSE);
 			mac_tx_srs_group_setup(gmcip, gflent, SRST_LINK);
 			mac_fanout_setup(gmcip, gflent,
-			    MCIP_RESOURCE_PROPS(gmcip), mac_rx_deliver,
-			    gmcip, NULL, NULL);
+			    MCIP_RESOURCE_PROPS(gmcip), NULL);
 
 			mac_tx_client_restart((mac_client_handle_t)gmcip);
 		}
@@ -7977,8 +7974,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 	    defgrp, B_FALSE);
 
 	mac_tx_srs_group_setup(mcip, flent, SRST_LINK);
-	mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-	    mac_rx_deliver, mcip, NULL, NULL);
+	mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip), NULL);
 }
 
 /*
@@ -8478,7 +8474,7 @@ mac_pool_link_update(mod_hash_key_t key, mod_hash_val_t *val, void *arg)
 				pool_lock();
 				cpupart = mac_pset_find(mrp, &use_default);
 				mac_fanout_setup(mcip, mcip->mci_flent, mrp,
-				    mac_rx_deliver, mcip, NULL, cpupart);
+				    cpupart);
 				mac_set_pool_effective(use_default, cpupart,
 				    mrp, emrp);
 				pool_unlock();
@@ -8496,7 +8492,7 @@ mac_pool_link_update(mod_hash_key_t key, mod_hash_val_t *val, void *arg)
 				emrp->mrp_mask &= ~MRP_POOL;
 				bzero(emrp->mrp_pool, MAXPATHLEN);
 				mac_fanout_setup(mcip, mcip->mci_flent, mrp,
-				    mac_rx_deliver, mcip, NULL, NULL);
+				    NULL);
 			}
 			mac_update_resources(mrp, MCIP_RESOURCE_PROPS(mcip),
 			    B_FALSE);

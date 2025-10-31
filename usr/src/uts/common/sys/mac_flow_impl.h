@@ -384,9 +384,20 @@ struct flow_entry_s {					/* Protected by */
 	void 			*fe_cb_arg1;		/* fe_lock */
 	void			*fe_cb_arg2;		/* fe_lock */
 
+	/*
+	 * Flows can be tied to physical rings and/or MAC clients.
+	 * When this is the case, we have softring sets which serve as valid
+	 * entrypoints for packet delivery. These will be:
+	 *  - an SRS for the software classifier for the MAC client.
+	 *  - an SRS for each ring bound to this flow.
+	 * fe_rx_srs contains a list of all such softring sets. These will be
+	 * complete SRSes where packet delivery processing can occur.
+	 *
+	 * ?? TODO(ky) what of fe_tx_srs?
+	 */
 	void			*fe_client_cookie;	/* WO */
 	void			*fe_rx_ring_group;	/* SL */
-	void			*fe_rx_srs[MAX_RINGS_PER_GROUP]; /* fe_lock */
+	void			*fe_rx_srs[MAX_RINGS_PER_GROUP + 1]; /* fe_lock */
 	int			fe_rx_srs_cnt;		/* fe_lock */
 	void			*fe_tx_ring_group;
 	void			*fe_tx_srs;		/* WO */

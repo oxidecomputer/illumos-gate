@@ -460,7 +460,7 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		ft->ft_mcip = mcip;
 		mcip->mci_subflow_tab = ft;
 		if (instantiate_flow)
-			mac_client_update_classifier(mcip, B_TRUE);
+			mac_client_update_classifier(mcip);
 	}
 	return (0);
 }
@@ -760,22 +760,19 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		if (!(flent->fe_type & FLOW_USER) &&
 		    !(changed_mask & MRP_CPUS) &&
 		    !(mcip_mrp->mrp_mask & MRP_CPUS_USERSPEC)) {
-			mac_fanout_setup(mcip, flent, mcip_mrp,
-			    mac_rx_deliver, mcip, NULL, NULL);
+			mac_fanout_setup(mcip, flent, mcip_mrp, NULL);
 		}
 	}
 	if (mrp->mrp_mask & MRP_PRIORITY)
 		mac_flow_update_priority(mcip, flent);
 
 	if (changed_mask & MRP_CPUS)
-		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip, NULL,
-		    NULL);
+		mac_fanout_setup(mcip, flent, mrp, NULL);
 
 	if (mrp->mrp_mask & MRP_POOL) {
 		pool_lock();
 		cpupart = mac_pset_find(mrp, &use_default);
-		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip, NULL,
-		    cpupart);
+		mac_fanout_setup(mcip, flent, mrp, cpupart);
 		mac_set_pool_effective(use_default, cpupart, mrp, emrp);
 		pool_unlock();
 	}
@@ -1132,7 +1129,7 @@ mac_link_init_flows(mac_client_handle_t mch)
 	 * function to mac_rx_srs_subflow_process and in case of hardware
 	 * classification, disable polling.
 	 */
-	mac_client_update_classifier(mcip, B_TRUE);
+	mac_client_update_classifier(mcip);
 
 }
 
@@ -1165,7 +1162,7 @@ mac_link_release_flows(mac_client_handle_t mch)
 	 * Change the mci_flent callback back to mac_rx_srs_process()
 	 * because flows are about to be deactivated.
 	 */
-	mac_client_update_classifier(mcip, B_FALSE);
+	mac_client_update_classifier(mcip);
 	(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 	    mac_link_release_flows_cb, mcip);
 }
@@ -1362,7 +1359,7 @@ mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 		 * mci_subflow_tab.
 		 */
 		mac_client_quiesce(mcip);
-		mac_client_update_classifier(mcip, B_FALSE);
+		mac_client_update_classifier(mcip);
 		mac_flow_tab_destroy(mcip->mci_subflow_tab);
 		mcip->mci_subflow_tab = NULL;
 		mac_client_restart(mcip);
