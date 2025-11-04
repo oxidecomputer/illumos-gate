@@ -2526,13 +2526,20 @@ mac_flow_fill_exit(flow_entry_t *ent, flow_tree_exit_node_t *node, bool ascend)
  * ... XXX TODO(ky).
  */
 int
-mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into)
+mac_flow_baked_tree_create(flow_entry_t *flent, flow_tree_baked_t *into,
+	mac_soft_ring_set_t *based_on)
 {
 	int err = 0;
 	size_t max_depth = 0;
 	size_t n_nodes = 0;
 
 	ASSERT3P(flent, !=, NULL);
+
+	/* TODO(ky): properly attach this to the logical SRS */
+	mac_cpus_t dup_fanout = based_on->srs_cpu;
+	dup_fanout.mc_ncpus = dup_fanout.mc_rx_fanout_cnt;
+	dup_fanout.mc_cpus = dup_fanout.mc_rx_fanout_cpus;
+	dup_fanout.mc_rx_intr_cpu = -1;
 
 	/* TOOD: refcount manipulation? */
 
