@@ -17,6 +17,7 @@
 #include <sys/boot_debug.h>
 #include <sys/clock.h>
 #include <sys/cmn_err.h>
+#include <sys/crypto/api.h>
 #include <sys/dw_apb_uart.h>
 #include <sys/file.h>
 #include <sys/ipcc_proto.h>
@@ -26,6 +27,7 @@
 #include <sys/psm_defs.h>
 #include <sys/reboot.h>
 #include <sys/stdbool.h>
+#include <sys/sha2.h>
 #include <sys/sunddi.h>
 #include <sys/sunldi.h>
 #include <sys/systm.h>
@@ -39,6 +41,7 @@
 #include <sys/archsystm.h>
 #include <sys/platform_detect.h>
 #include <sys/cpu.h>
+#include <sys/apob.h>
 
 static ipcc_ops_t kernel_ipcc_ops;
 static ipcc_init_t ipcc_init = IPCC_INIT_UNSET;
@@ -379,22 +382,31 @@ ebi_ipcc_init(void)
  */
 
 static void
-mb_ipcc_log(void *arg __unused, ipcc_log_type_t type __maybe_unused,
-    const char *fmt, ...)
+mb_ipcc_log(void *arg __unused, ipcc_log_type_t type, const char *fmt, ...)
 {
 	va_list ap;
 
+	if (type == IPCC_LOG_HEX) {
+		/*
+		 * Hexdump messages are never logged when we're in fast poll
+		 * mode. If that's set then we are expecting a lot of IPCC
+		 * traffic.
+		 */
+		if (ipcc_fastpoll)
+			return;
 #ifndef DEBUG
-	/*
-	 * In a non-DEBUG kernel the hexdump messages are not logged to the
-	 * console.
-	 */
-	if (type == IPCC_LOG_HEX)
+		/*
+		 * In a non-DEBUG kernel the hexdump messages are not logged to
+		 * the console.
+		 */
 		return;
 #endif
+	}
+
+	int level = (type == IPCC_LOG_WARNING) ? CE_WARN : CE_CONT;
 
 	va_start(ap, fmt);
-	vcmn_err(CE_CONT, fmt, ap);
+	vcmn_err(level, fmt, ap);
 	va_end(ap);
 }
 
@@ -572,9 +584,15 @@ kernel_ipcc_panic(void)
  */
 
 int
-kernel_ipcc_acquire(void)
+kernel_ipcc_acquire(ipcc_channel_flag_t flags)
 {
-	return (ipcc_acquire_channel(&kernel_ipcc_ops, &kernel_ipcc_data));
+	int ret;
+
+	ret = ipcc_acquire_channel(&kernel_ipcc_ops, &kernel_ipcc_data);
+	if (ret == 0 && flags != 0)
+		ipcc_channel_setflags(flags);
+
+	return (ret);
 }
 
 void
@@ -683,12 +701,326 @@ kernel_ipcc_keylookup(uint8_t key, uint8_t *buf, size_t *bufl)
 	return (0);
 }
 
+/*
+ * Read the current APOB out from the SP over IPCC. On success this returns an
+ * allocated `apob_hdl_t *` which must be freed via kernel_ipcc_apobfree()
+ * once no longer required. On failure the return value is NULL.
+ */
+apob_hdl_t *
+kernel_ipcc_apobread(void)
+{
+	ipcc_apob_read_t readr;
+	uint64_t offset;
+	uint8_t header[APOB_MIN_LEN];
+	size_t alloclen, rem, len;
+	uint8_t *buf = NULL;
+	size_t hdl_alloclen = apob_handle_size();
+	apob_hdl_t *hdl = NULL;
+	int ret;
+
+	ret = kernel_ipcc_acquire(0);
+	if (ret != 0) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "Attempt to acquire IPCC channel for APOB header failed "
+		    "with error %d", ret);
+		goto fail;
+	}
+
+	len = sizeof (header);
+	ret = ipcc_apob_read(&kernel_ipcc_ops, &kernel_ipcc_data,
+	    0, header, &len, &readr);
+	kernel_ipcc_release();
+
+	if (ret != 0) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "Attempt to read APOB header failed with error %d", ret);
+		goto fail;
+	}
+
+	if (readr != IPCC_APOB_READ_SUCCESS) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data,
+		    IPCC_LOG_WARNING,
+		    "Attempt to read APOB header was met with SP response %s",
+		    ipcc_apob_read_errstr(readr));
+		goto fail;
+	}
+
+	hdl = kmem_zalloc(hdl_alloclen, KM_SLEEP);
+	alloclen = apob_init_handle(hdl, header, len);
+
+	kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_DEBUG,
+	    "Read APOB header, length: 0x%zx\n", alloclen);
+
+	if (alloclen == 0) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB read: %s", apob_errmsg(hdl));
+		kmem_free(hdl, hdl_alloclen);
+		goto fail;
+	}
+	kmem_free(hdl, hdl_alloclen);
+
+	if (alloclen > IPCC_APOB_MAX_SIZE) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB read: invalid data length (0x%zx)", alloclen);
+		goto fail;
+	}
+
+	buf = kmem_alloc(alloclen, KM_NOSLEEP);
+	if (buf == NULL) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB read: failed to allocate 0x%zx bytes of memory",
+		    alloclen);
+		goto fail;
+	}
+
+	kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_DEBUG,
+	    "Reading 0x%zx bytes of APOB from the SP\n", alloclen);
+
+	VERIFY0(kernel_ipcc_acquire(IPCC_CHAN_QUIET));
+	ipcc_fastpoll = true;
+
+	rem = alloclen;
+	offset = 0;
+	while (rem > 0) {
+		len = MIN(rem, IPCC_APOB_MAX_PAYLOAD);
+
+		ret = ipcc_apob_read(&kernel_ipcc_ops, &kernel_ipcc_data,
+		    offset, buf + offset, &len, &readr);
+		if (ret != 0) {
+			kernel_ipcc_ops.io_log(&kernel_ipcc_data,
+			    IPCC_LOG_WARNING,
+			    "Attempt to read APOB offset 0x%lx length 0x%zx "
+			    "failed with error %d", offset, len, ret);
+			break;
+		}
+
+		if (readr != IPCC_APOB_READ_SUCCESS) {
+			kernel_ipcc_ops.io_log(&kernel_ipcc_data,
+			    IPCC_LOG_WARNING,
+			    "Attempt to read APOB offset 0x%lx length 0x%zx "
+			    "was met with SP response %s",
+			    offset, len, ipcc_apob_read_errstr(readr));
+			break;
+		}
+
+		rem -= len;
+		offset += len;
+	}
+
+	ipcc_fastpoll = false;
+	kernel_ipcc_release();
+
+	if (rem > 0)
+		goto fail;
+
+	hdl = kmem_zalloc(hdl_alloclen, KM_SLEEP);
+	len = apob_init_handle(hdl, buf, alloclen);
+	if (len == alloclen) {
+		/*
+		 * buf is not freed here since it is now pointed to by the
+		 * apob handle.
+		 */
+		return (hdl);
+	}
+
+	if (len == 0) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB read: %s", apob_errmsg(hdl));
+	} else {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB read: invalid final length "
+		    "(got 0x%zx, expected 0x%zx)", len, alloclen);
+	}
+	kmem_free(hdl, hdl_alloclen);
+
+fail:
+	if (buf != NULL)
+		kmem_free(buf, alloclen);
+	return (NULL);
+}
+
+void
+kernel_ipcc_apobfree(apob_hdl_t *hdl)
+{
+	const uint8_t *raw;
+	uint8_t *buf;
+	size_t len;
+
+	if (hdl == NULL)
+		return;
+
+	raw = apob_get_raw(hdl);
+	buf = __DECONST(uint8_t *, raw);
+	len = apob_get_len(hdl);
+	kmem_free(buf, len);
+	kmem_free(hdl, apob_handle_size());
+}
+
+int
+kernel_ipcc_apobwrite(const apob_hdl_t *hdl)
+{
+	const uint8_t *buf;
+	size_t bufl;
+	int ret = 0;
+
+	/*
+	 * If we have no data, jump straight to the commit phase which lets the
+	 * SP know that we are done in relation to APOB data for this boot.
+	 */
+	if (hdl == NULL)
+		goto commit;
+
+	buf = apob_get_raw(hdl);
+	bufl = apob_get_len(hdl);
+
+	/*
+	 * Calculate the hash and prepare to transmit the APOB.
+	 */
+	uint8_t hash[SHA256_DIGEST_LENGTH];
+	crypto_context_t cc;
+	crypto_mechanism_t cm;
+
+	bzero(&cm, sizeof (cm));
+	cm.cm_type = crypto_mech2id(SUN_CKM_SHA256);
+	if (cm.cm_type == CRYPTO_MECH_INVALID) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB hash: invalid crypto hash mechanism SHA256");
+		return (EIO);
+	}
+
+	ret = crypto_digest_init(&cm, &cc, NULL);
+	if (ret != CRYPTO_SUCCESS) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB hash: crypto_digest_init() failed %d", ret);
+		return (EIO);
+	}
+
+	crypto_data_t cd = {
+		.cd_format = CRYPTO_DATA_RAW,
+		.cd_length = bufl,
+		.cd_raw = {
+			.iov_base = (int8_t *)buf,
+			.iov_len = bufl,
+		},
+	};
+
+	ret = crypto_digest_update(cc, &cd, 0);
+	if (ret != CRYPTO_SUCCESS) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB hash: crypto_digest_update() failed %d", ret);
+		crypto_cancel_ctx(cc);
+		return (EIO);
+	}
+
+	crypto_data_t cf = {
+		.cd_format = CRYPTO_DATA_RAW,
+		.cd_length = sizeof (hash),
+		.cd_raw = {
+			.iov_base = (void *)hash,
+			.iov_len = sizeof (hash),
+		},
+	};
+
+	ret = crypto_digest_final(cc, &cf, 0);
+	if (ret != CRYPTO_SUCCESS) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB hash: crypto_digest_final() failed %d", ret);
+		crypto_cancel_ctx(cc);
+		return (EIO);
+	}
+
+	kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_DEBUG,
+	    "APOB length: 0x%x\n", bufl);
+	kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_DEBUG,
+	    "APOB SHA256: "
+	    "%02x%02x%02x%02x%02x%02x%02x%02x"
+	    "%02x%02x%02x%02x%02x%02x%02x%02x"
+	    "%02x%02x%02x%02x%02x%02x%02x%02x"
+	    "%02x%02x%02x%02x%02x%02x%02x%02x\n",
+	    hash[0], hash[1], hash[2], hash[3],
+	    hash[4], hash[5], hash[6], hash[7],
+	    hash[8], hash[9], hash[10], hash[11],
+	    hash[12], hash[13], hash[14], hash[15],
+	    hash[16], hash[17], hash[18], hash[19],
+	    hash[20], hash[21], hash[22], hash[23],
+	    hash[24], hash[25], hash[26], hash[27],
+	    hash[28], hash[29], hash[30], hash[31]);
+
+	ipcc_apob_begin_t beginr;
+	ret = ipcc_apob_begin(&kernel_ipcc_ops, &kernel_ipcc_data,
+	    bufl, IPCC_APOB_ALG_SHA256, hash, sizeof (hash), &beginr);
+	if (ret != 0)
+		return (ret);
+	if (beginr != IPCC_APOB_BEGIN_SUCCESS) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB Begin: %s", ipcc_apob_begin_errstr(beginr));
+		return (EIO);
+	}
+
+	/*
+	 * We want to transmit the following data quickly, without constantly
+	 * acquiring and releasing the channel and with faster response
+	 * polling. Acquire the channel now.
+	 */
+	VERIFY0(kernel_ipcc_acquire(IPCC_CHAN_QUIET));
+	ipcc_fastpoll = true;
+
+	uint64_t offset = 0;
+	while (bufl > 0) {
+		size_t sendlen = MIN(bufl, IPCC_APOB_MAX_PAYLOAD);
+		ipcc_apob_data_t datar;
+
+		ret = ipcc_apob_data(&kernel_ipcc_ops, &kernel_ipcc_data,
+		    offset, buf + offset, sendlen, &datar);
+
+		if (ret != 0) {
+			kernel_ipcc_ops.io_log(&kernel_ipcc_data,
+			    IPCC_LOG_WARNING,
+			    "Attempt to send APOB offset 0x%lx length 0x%zx "
+			    "failed with error %d", offset, sendlen, ret);
+			break;
+		}
+
+		if (datar != IPCC_APOB_DATA_SUCCESS) {
+			kernel_ipcc_ops.io_log(&kernel_ipcc_data,
+			    IPCC_LOG_WARNING,
+			    "Attempt to send APOB offset 0x%lx length 0x%zx "
+			    "was met with SP response %s",
+			    offset, sendlen, ipcc_apob_data_errstr(datar));
+			ret = EIO;
+			break;
+		}
+
+		bufl -= sendlen;
+		offset += sendlen;
+	}
+
+	ipcc_fastpoll = false;
+	kernel_ipcc_release();
+
+	ipcc_apob_commit_t commitr;
+commit:
+	ret = ipcc_apob_commit(&kernel_ipcc_ops, &kernel_ipcc_data, &commitr);
+	if (commitr != IPCC_APOB_COMMIT_SUCCESS) {
+		kernel_ipcc_ops.io_log(&kernel_ipcc_data, IPCC_LOG_WARNING,
+		    "APOB Commit: %s", ipcc_apob_commit_errstr(commitr));
+		return (EIO);
+	}
+
+	return (ret);
+}
+
 int
 kernel_ipcc_imageblock(uint8_t *hash, uint64_t offset, uint8_t **data,
     size_t *datal)
 {
-	ipcc_ops_t nops = { 0 };
+	static ipcc_ops_t nops = { 0 };
 	int ret;
+
+	if (nops.io_write == NULL) {
+		nops = kernel_ipcc_ops;
+		nops.io_log = NULL;
+	}
 
 	/*
 	 * Callers of this function must have previously acquired exclusive
@@ -697,18 +1029,10 @@ kernel_ipcc_imageblock(uint8_t *hash, uint64_t offset, uint8_t **data,
 	VERIFY(ipcc_channel_held());
 
 	/*
-	 * Enable fast polling. It is safe to modify this here as channel
-	 * access has been acquired.
+	 * Enable fast polling around the retrieval. It is safe to modify this
+	 * here as channel access has been acquired.
 	 */
 	ipcc_fastpoll = true;
-
-	/*
-	 * Logging is disabled for these requests to avoid spamming the console
-	 * (and so that the progress meter is visible).
-	 */
-	nops = kernel_ipcc_ops;
-	nops.io_log = NULL;
-
 	ret = ipcc_imageblock(&nops, &kernel_ipcc_data, hash, offset,
 	    data, datal);
 	ipcc_fastpoll = false;

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -76,7 +76,7 @@ tfpkt_tbus_dlog(tfpkt_tbus_t *tbp, const char *fmt, ...)
 
 	if (tfpkt_tbus_debug) {
 		va_start(args, fmt);
-		vdev_err(tbp->ttb_dip, CE_NOTE, fmt, args);
+		vdev_err(tbp->ttb_tfpkt_dip, CE_NOTE, fmt, args);
 		va_end(args);
 	}
 }
@@ -87,7 +87,7 @@ tfpkt_tbus_err(tfpkt_tbus_t *tbp, const char *fmt, ...)
 	va_list args;
 
 	va_start(args, fmt);
-	vdev_err(tbp->ttb_dip, CE_WARN, fmt, args);
+	vdev_err(tbp->ttb_tfpkt_dip, CE_WARN, fmt, args);
 	va_end(args);
 }
 
@@ -101,6 +101,89 @@ caddr_t
 tfpkt_buf_va(tfpkt_buf_t *buf)
 {
 	return (buf->tfb_dma.tpd_addr);
+}
+
+/* 4k aligned DMA for in-kernel buffers */
+static const ddi_dma_attr_t tfpkt_tbus_dma_attr = {
+	.dma_attr_version =		DMA_ATTR_V0,
+	.dma_attr_addr_lo =		0x0000000000000000ull,
+	.dma_attr_addr_hi =		0xFFFFFFFFFFFFFFFFull,
+	.dma_attr_count_max =		0x00000000FFFFFFFFull,
+	.dma_attr_align =		0x0000000000001000ull,
+	.dma_attr_burstsizes =		0x00000FFF,
+	.dma_attr_minxfer =		0x00000001,
+	.dma_attr_maxxfer =		0x00000000FFFFFFFFull,
+	.dma_attr_seg =			0xFFFFFFFFFFFFFFFFull,
+	.dma_attr_sgllen =		1,
+	.dma_attr_granular =		1,
+	.dma_attr_flags =		0,
+};
+
+static const ddi_device_acc_attr_t tfpkt_tbus_acc_attr = {
+	.devacc_attr_version =		DDI_DEVICE_ATTR_V1,
+	.devacc_attr_endian_flags =	DDI_STRUCTURE_LE_ACC,
+	.devacc_attr_dataorder =	DDI_STRICTORDER_ACC,
+	.devacc_attr_access =		DDI_DEFAULT_ACC,
+};
+
+/*
+ * Allocate a single buffer capable of DMA to/from the Tofino ASIC.
+ */
+static int
+tbus_dma_alloc(tfpkt_tbus_t *tbp, tf_tbus_dma_t *dmap, size_t size,
+    int flags)
+{
+	unsigned int count;
+	int err;
+
+	err = ddi_dma_alloc_handle(tbp->ttb_tfpkt_dip, &tfpkt_tbus_dma_attr,
+	    DDI_DMA_SLEEP, NULL, &dmap->tpd_handle);
+	if (err != DDI_SUCCESS) {
+		tfpkt_tbus_err(tbp, "!%s: alloc_handle failed: %d",
+		    __func__, err);
+		goto fail0;
+	}
+
+	err = ddi_dma_mem_alloc(dmap->tpd_handle, size, &tfpkt_tbus_acc_attr,
+	    DDI_DMA_STREAMING, DDI_DMA_SLEEP, NULL, &dmap->tpd_addr,
+	    &dmap->tpd_len, &dmap->tpd_acchdl);
+	if (err != DDI_SUCCESS) {
+		tfpkt_tbus_err(tbp, "!%s: mem_alloc failed", __func__);
+		goto fail1;
+	}
+
+	err = ddi_dma_addr_bind_handle(dmap->tpd_handle, NULL, dmap->tpd_addr,
+	    dmap->tpd_len, flags, DDI_DMA_SLEEP, NULL, &dmap->tpd_cookie,
+	    &count);
+	if (err != DDI_DMA_MAPPED) {
+		tfpkt_tbus_err(tbp, "!%s: bind_handle failed", __func__);
+		goto fail2;
+	}
+
+	if (count > 1) {
+		tfpkt_tbus_err(tbp, "!%s: more than one DMA cookie", __func__);
+		goto fail2;
+	}
+
+	return (0);
+fail2:
+	ddi_dma_mem_free(&dmap->tpd_acchdl);
+fail1:
+	ddi_dma_free_handle(&dmap->tpd_handle);
+fail0:
+	return (-1);
+}
+
+/*
+ * This routine frees a DMA buffer and its state, but does not free the
+ * tf_tbus_dma_t structure itself.
+ */
+static void
+tofino_tbus_dma_free(tf_tbus_dma_t *dmap)
+{
+	VERIFY3S(ddi_dma_unbind_handle(dmap->tpd_handle), ==, DDI_SUCCESS);
+	ddi_dma_mem_free(&dmap->tpd_acchdl);
+	ddi_dma_free_handle(&dmap->tpd_handle);
 }
 
 static void
@@ -385,8 +468,8 @@ tfpkt_tbus_alloc_bufs(tfpkt_tbus_t *tbp)
 
 	for (uint_t i = 0; i < tbp->ttb_bufs_capacity; i++) {
 		tfpkt_buf_t *buf = &tbp->ttb_bufs_mem[i];
-		if (tofino_tbus_dma_alloc(tbp->ttb_tbus_hdl, &buf->tfb_dma,
-		    tfpkt_buf_size, DDI_DMA_STREAMING | DDI_DMA_RDWR) != 0) {
+		if (tbus_dma_alloc(tbp, &buf->tfb_dma, tfpkt_buf_size,
+		    DDI_DMA_STREAMING | DDI_DMA_RDWR) != 0) {
 			goto fail;
 		}
 		buf->tfb_flags |= TFPKT_BUF_DMA_ALLOCED;
@@ -553,7 +636,7 @@ tfpkt_tbus_alloc_dr(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp,
 	 * combination with the final pointer
 	 */
 	total_sz = ring_sz + sizeof (uint64_t);
-	if (tofino_tbus_dma_alloc(tbp->ttb_tbus_hdl, &drp->tdr_dma, total_sz,
+	if (tbus_dma_alloc(tbp, &drp->tdr_dma, total_sz,
 	    DDI_DMA_STREAMING | DDI_DMA_RDWR) != 0) {
 		return (-1);
 	}
@@ -836,9 +919,9 @@ tfpkt_tbus_reg_op(tfpkt_tbus_t *tbp, size_t offset, uint32_t *val, bool rd)
 	int rval;
 
 	if (rd) {
-		rval = tofino_tbus_read_reg(tbp->ttb_tbus_hdl, offset, val);
+		rval = tofino_tbus_read_reg(tbp->ttb_tofino_dip, offset, val);
 	} else {
-		rval = tofino_tbus_write_reg(tbp->ttb_tbus_hdl, offset, *val);
+		rval = tofino_tbus_write_reg(tbp->ttb_tofino_dip, offset, *val);
 	}
 
 	if (rval != 0)
@@ -873,7 +956,7 @@ tfpkt_dr_clear(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, size_t dr_offset)
 {
 	uint64_t offset = drp->tdr_reg_base + dr_offset;
 
-	(void) tofino_tbus_clear_reg(tbp->ttb_tbus_hdl, offset);
+	(void) tofino_tbus_clear_reg(tbp->ttb_tofino_dip, offset);
 }
 
 /*
@@ -1341,7 +1424,6 @@ tfpkt_tbus_push_free_bufs(tfpkt_tbus_t *tbp, int ring)
 static int
 tfpkt_tbus_port_init(tfpkt_tbus_t *tbp, dev_info_t *tfp_dip)
 {
-	tf_tbus_hdl_t hdl = tbp->ttb_tbus_hdl;
 	tf_tbus_ctrl_t ctrl;
 	uint32_t reg;
 	uint32_t *ctrlp = (uint32_t *)&ctrl;
@@ -1353,7 +1435,7 @@ tfpkt_tbus_port_init(tfpkt_tbus_t *tbp, dev_info_t *tfp_dip)
 	} else {
 		reg = TF2_REG_TBUS_CTRL;
 	}
-	if ((rval = tofino_tbus_read_reg(hdl, reg, ctrlp)) != 0)
+	if ((rval = tofino_tbus_read_reg(tbp->ttb_tofino_dip, reg, ctrlp)) != 0)
 		return (rval);
 
 	ctrl.tftc_port_alive = 1;	/* turn on the port */
@@ -1366,7 +1448,7 @@ tfpkt_tbus_port_init(tfpkt_tbus_t *tbp, dev_info_t *tfp_dip)
 		ctrl.tftc_rx_channel_offset = 0;
 	}
 
-	return (tofino_tbus_write_reg(hdl, reg, *ctrlp));
+	return (tofino_tbus_write_reg(tbp->ttb_tofino_dip, reg, *ctrlp));
 }
 
 static int
@@ -1425,9 +1507,9 @@ err:
 static void
 tfpkt_tbus_fini(tfpkt_t *tfp, tfpkt_tbus_t *tbp)
 {
-	if (tbp->ttb_tbus_hdl != NULL) {
-		VERIFY0(tofino_tbus_unregister_intr(tbp->ttb_tbus_hdl));
-		VERIFY0(tofino_tbus_unregister(tbp->ttb_tbus_hdl));
+	if (tbp->ttb_tofino_dip != NULL) {
+		tofino_tbus_unregister_intr(tbp->ttb_tofino_dip);
+		VERIFY0(tofino_tbus_unregister(tbp->ttb_tofino_dip));
 	}
 
 	tfpkt_tbus_free_bufs(tbp);
@@ -1457,10 +1539,27 @@ static tfpkt_tbus_t *
 tfpkt_tbus_init(tfpkt_t *tfp)
 {
 	dev_info_t *tfp_dip = tfp->tfp_dip;
+	dev_info_t *tofino_dip = ddi_get_parent(tfp_dip);
 	tfpkt_tbus_t *tbp;
-	tf_tbus_hdl_t hdl;
 	kstat_t *kstat;
 	int count, err;
+
+	/*
+	 * This peforms the same check as tofino_tbus_register(), but we can
+	 * call it before doing all of the allocations below.  Since we don't
+	 * hold the lock between now and then, we might end up failing to
+	 * register anyway, but this pre-check will save some cycles in the
+	 * overwhelming majority of cases.
+	 *
+	 * The check being performed is whether the packet transfer mechanism on
+	 * the ASIC is in a well-defined state.  This check is necessary because
+	 * the bulk of the ASIC initialization is carried out by the userspace
+	 * dataplane daemon.  Thus, we can't initialize this mechanism until we
+	 * know that userspace has initialized the rest of the ASIC.
+	 */
+	if (tofino_tbus_ready(tofino_dip) != 0) {
+		return (NULL);
+	}
 
 	count = sizeof (tfpkt_tbus_stats_t) / sizeof (kstat_named_t);
 	kstat = kstat_create("tfpkt_tbus", ddi_get_instance(tfp_dip),
@@ -1472,7 +1571,8 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 	}
 
 	tbp = kmem_zalloc(sizeof (*tbp), KM_SLEEP);
-	tbp->ttb_dip = tfp_dip;
+	tbp->ttb_tfpkt_dip = tfp_dip;
+	tbp->ttb_tofino_dip = tofino_dip;
 	tbp->ttb_tfp = tfp;
 
 	tbp->ttb_kstat = kstat;
@@ -1481,7 +1581,7 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 	    sizeof (tfpkt_tbus_stats_t));
 	kstat_install(kstat);
 
-	if ((err = tofino_tbus_register(&hdl)) != 0) {
+	if ((err = tofino_tbus_register(tofino_dip)) != 0) {
 		if (err == EBUSY) {
 			oneshot_error(tbp, "!tofino tbus in use");
 		} else if (err == ENXIO) {
@@ -1499,8 +1599,7 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 		goto fail;
 	}
 
-	tbp->ttb_tbus_hdl = hdl;
-	tbp->ttb_gen = tofino_get_generation(hdl);
+	tbp->ttb_gen = tofino_get_generation(tofino_dip);
 
 	if ((err = tfpkt_tbus_alloc_bufs(tbp)) != 0) {
 		oneshot_error(tbp, "!failed to allocate buffers");
@@ -1516,9 +1615,10 @@ tfpkt_tbus_init(tfpkt_t *tfp)
 	if (tfpkt_tbus_port_init(tbp, tfp_dip) != 0)
 		goto fail;
 
-	if ((err = tofino_tbus_register_intr(hdl, tfpkt_tbus_intr, tfp)) != 0) {
+	err = tofino_tbus_register_intr(tofino_dip, tfpkt_tbus_intr, tfp);
+	if (err != 0) {
 		oneshot_error(tbp, "!failed to register softint");
-		VERIFY0(tofino_tbus_unregister(hdl));
+		VERIFY0(tofino_tbus_unregister(tofino_dip));
 	}
 
 	for (int i = 0; i < TFPKT_RX_CNT; i++)
@@ -1577,8 +1677,11 @@ tfpkt_tbus_monitor(void *arg)
 		switch (tfp->tfp_tbus_state) {
 		case TFPKT_TBUS_UNINIT:
 			/*
-			 * Keep asking the tofino driver to let us
-			 * use the tbus until it says OK.
+			 * Keep asking the tofino driver to let us use the tbus
+			 * until it says OK.  The two most likely reasons for
+			 * this to fail is that the tofino has been removed and
+			 * we're waiting to be detached, or if the userspace
+			 * daemon is in the process of reinitializing the ASIC.
 			 */
 			ASSERT(tbp == NULL);
 			tfp->tfp_tbus_data = tfpkt_tbus_init(tfp);
@@ -1594,7 +1697,7 @@ tfpkt_tbus_monitor(void *arg)
 			 * us.  In most cases, this will already have been
 			 * detected in one of the packet processing paths.
 			 */
-			if (tofino_tbus_state(tbp->ttb_tbus_hdl) ==
+			if (tofino_tbus_state(tbp->ttb_tofino_dip) ==
 			    TF_TBUS_READY)
 				break;
 			tfpkt_bus_update_state(tfp, TFPKT_TBUS_RESETTING);

@@ -62,6 +62,12 @@ typedef struct oxide_board_cpuinfo {
 	fch_kind_t		obc_fchkind;
 } oxide_board_cpuinfo_t;
 
+typedef struct oxide_board_iomux {
+	const uint32_t		obp_gpio;
+	const uint32_t		obp_iomux;
+	const bool		obp_valid;
+} oxide_board_iomux_t;
+
 typedef struct oxide_board_data {
 	/*
 	 * The derived system board type.
@@ -87,6 +93,12 @@ typedef struct oxide_board_data {
 	 * from the SP operates.
 	 */
 	oxide_ipcc_spintr_t	obd_ipccspintr;
+	/*
+	 * Specifies whether the APOB blob should be sent down to the SP over
+	 * IPCC. These data can be used for Enhanced Memory Context Restore
+	 * (eMCR) to speed up memory training on subsequent boots.
+	 */
+	bool			obd_ipccemcr;
 	/*
 	 * The set of system startup options that should be used. This is for
 	 * systems that do not support IPCC and replaces the startup options
@@ -133,6 +145,13 @@ typedef struct oxide_board_data {
 	const uint32_t		obd_ppt;	/* Package Power Tracking (W) */
 	const uint32_t		obd_edc;	/* Electrical Design curr (A) */
 	const uint32_t		obd_tdc;	/* Thermal design current (A) */
+
+	/*
+	 * Some platforms toggle a GPIO in a high-level cyclic as an indication
+	 * that they're alive. These settings are ignored if the board does not
+	 * enable the watchdog explicitly.
+	 */
+	oxide_board_iomux_t	obd_wd;
 } oxide_board_data_t;
 
 extern const oxide_board_data_t *oxide_board_data;

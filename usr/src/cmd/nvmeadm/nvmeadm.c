@@ -170,13 +170,19 @@ static const nvmeadm_cmd_t nvmeadm_cmds[] = {
 		"  -c\t\tlist only controllers\n"
 		"  -p\t\tprint parsable output\n"
 		"  -o field\tselect a field for parsable output\n",
-		"  model\t\tthe model name of the device\n"
-		"  serial\tthe serial number of the device\n"
-		"  fwrev\t\tthe device's current firmware revision\n"
-		"  version\tthe device's NVMe specification version\n"
-		"  capacity\tthe capacity of the device in bytes\n"
+		"  model\t\tthe controller's model name\n"
+		"  serial\tthe controller's serial number\n"
+		"  fwrev\t\tthe controller's current firmware revision\n"
+		"  version\tthe controller's NVMe specification version\n"
+		"  capacity\tthe controller or namespace's capacity in bytes\n"
 		"  instance\tthe device driver instance (e.g. nvme3)\n"
-		"  unallocated\tthe amount of unallocated NVM in bytes",
+		"  ctrlpath\tthe controller's /devices path\n"
+		"  unallocated\tthe amount of unallocated NVM in bytes\n"
+		"  size\t\tthe namespace's logical size in bytes\n"
+		"  used\t\tthe namespace's bytes used\n"
+		"  disk\t\tthe name of the namespace's disk device\n"
+		"  namespace\tthe namespace's numerical value\n"
+		"  ns-state\tthe namespace's current state\n",
 		do_list, usage_list, optparse_list,
 		NVMEADM_C_MULTI
 	},
@@ -476,6 +482,9 @@ static const nvmeadm_feature_t features[] = {
 	}, {
 		.f_feature = NVME_FEAT_PROGRESS,
 		.f_print = nvme_print_feat_progress
+	}, {
+		.f_feature = NVME_FEAT_HOST_BEHAVE,
+		.f_print = nvme_print_feat_host_behavior
 	}
 };
 
@@ -1112,6 +1121,8 @@ do_list_nsid(const nvme_process_arg_t *npa, nvme_ctrl_info_t *ctrl,
 		oarg.nloa_ns = ns;
 		oarg.nloa_disk = disk_path;
 		oarg.nloa_state = state;
+		if (!nvme_ctrl_devi(npa->npa_ctrl, &oarg.nloa_dip))
+			oarg.nloa_dip = DI_NODE_NIL;
 
 		ofmt_print(npa->npa_ofmt, &oarg);
 	} else {
@@ -1156,6 +1167,8 @@ do_list(const nvme_process_arg_t *npa)
 		nvmeadm_list_ofmt_arg_t oarg = { 0 };
 		oarg.nloa_name = npa->npa_ctrl_name;
 		oarg.nloa_ctrl = info;
+		if (!nvme_ctrl_devi(npa->npa_ctrl, &oarg.nloa_dip))
+			oarg.nloa_dip = DI_NODE_NIL;
 
 		ofmt_print(npa->npa_ofmt, &oarg);
 	}
@@ -1993,6 +2006,8 @@ do_get_logpage_common(const nvme_process_arg_t *npa, const char *page)
 	case NVME_LOGPAGE_PEV:
 		do_get_logpage_pev_relctx(npa, req);
 		break;
+	case NVME_LOGPAGE_TELMHOST:
+		return (do_get_logpage_telemetry(npa, disc, req));
 	default:
 		break;
 	}

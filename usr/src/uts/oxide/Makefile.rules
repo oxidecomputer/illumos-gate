@@ -101,6 +101,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/ppm/%.c
 $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/ppm/%.S
 	$(COMPILE.s) -o $@ $<
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/psp/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/ml/%.S
 	$(COMPILE.s) -o $@ $<
 

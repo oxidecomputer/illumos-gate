@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_HACKS_H
@@ -81,6 +81,9 @@ extern void zen_hack_gpio(zen_hack_gpio_op_t, uint16_t);
 extern void zen_hack_gpio_config(uint16_t, uint8_t);
 
 extern void zen_fabric_hack_bridges(zen_fabric_t *);
+extern void zen_apob_emcr_save(void);
+
+extern void zen_gpio_watchdog(void);
 
 #ifdef	__cplusplus
 }

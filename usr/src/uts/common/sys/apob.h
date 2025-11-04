@@ -32,8 +32,23 @@ extern "C" {
 
 #define	APOB_MIN_LEN	16
 
+/*
+ * This is the length of the HMAC for a given APOB entry.
+ */
+#define	APOB_HMAC_LEN	32
+
+/*
+ * Although the instance number within an APOB entry's header is 32-bits, AMD
+ * sources never expect there to be more than 255 instances of any group and
+ * type combination.
+ */
+#define	APOB_MAX_ENTRIES	255
+
 struct apob_hdl;
 typedef struct apob_hdl apob_hdl_t;
+
+struct apob_entry_hdl;
+typedef struct apob_entry_hdl apob_entry_hdl_t;
 
 typedef enum apob_group {
 	APOB_GROUP_MEMORY = 1,
@@ -115,6 +130,9 @@ extern size_t apob_get_len(const apob_hdl_t *);
 extern const uint8_t *apob_get_raw(const apob_hdl_t *);
 extern const void *apob_find(apob_hdl_t *, const apob_group_t, const uint32_t,
     const uint32_t, size_t *);
+extern bool apob_gather(apob_hdl_t *, const apob_group_t, const uint32_t,
+    apob_entry_hdl_t **, size_t *);
+extern uint8_t *apob_entry_hmac(const apob_entry_hdl_t *);
 extern int apob_errno(const apob_hdl_t *);
 extern const char *apob_errmsg(const apob_hdl_t *);
 

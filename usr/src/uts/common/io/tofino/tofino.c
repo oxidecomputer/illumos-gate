@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -70,38 +70,12 @@
 
 #define	TOFINO_MAX_INSTANCE	16
 
-static kmutex_t tofino_mutex;	/* protects the list below */
-static list_t tofino_devices;	/* all tofino devices attached to the system */
-
 static void		*tofino_soft_state = NULL;
 static id_space_t	*tofino_minors = NULL;
 int			tofino_debug = 0;
 
 static int tofino_instance_init(tofino_t *tf, minor_t minor);
 static void tofino_instance_fini(tofino_t *tf, minor_t minor);
-
-/*
- * This routine works on the fact that we currently only have a single tofino
- * attached to a system at once.  We really need the tbus client to specify a
- * device instance number, and return that one.
- *
- * Returns a pointer to the state structure for the physical device with the
- * lock held.  This ensures that a racing detach won't free the structure before
- * the tbus client completes the registration.
- */
-tofino_t *
-tofino_get_phys(void)
-{
-	tofino_t *tf;
-
-	mutex_enter(&tofino_mutex);
-	tf = list_head(&tofino_devices);
-	if (tf != NULL)
-		mutex_enter(&tf->tf_mutex);
-	mutex_exit(&tofino_mutex);
-
-	return (tf);
-}
 
 static tofino_t *
 tofino_minor_to_device(int instance)
@@ -183,8 +157,9 @@ tofino_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 	tofino_t *tf;
 	int err;
 
-	if ((tf = tofino_minor_to_device(minor)) == NULL)
+	if ((tf = tofino_minor_to_device(minor)) == NULL) {
 		return (ENXIO);
+	}
 
 	/*
 	 * The tofino management software is always expected to be 64-bit, so
@@ -201,13 +176,13 @@ tofino_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 		return (EBUSY);
 	}
 
-	if ((err = tofino_instance_init(tf, minor)) != 0) {
+	if ((err = tofino_instance_init(tf, minor)) == 0) {
+		*devp = makedevice(getmajor(*devp), minor);
+	} else {
 		id_free(tofino_minors, minor);
-		return (err);
 	}
-	*devp = makedevice(getmajor(*devp), minor);
 
-	return (0);
+	return (err);
 }
 
 /* 4k aligned DMA for in-kernel buffers */
@@ -509,6 +484,7 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	};
 
 	uint32_t resetting;
+	int rval = 0;
 	tofino_instance_data_t *tid;
 	tofino_t *tf;
 
@@ -528,9 +504,9 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 
 	case BF_GET_INTR_MODE:
 		if (ddi_copyout(&imode, (void *)arg, sizeof (imode), mode))
-			return (EFAULT);
+			rval = EFAULT;
 
-		return (0);
+		return (rval);
 
 	case BF_PKT_INIT:
 		if (ddi_copyin((void *)(uintptr_t)arg, &resetting,
@@ -539,25 +515,27 @@ tofino_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		}
 
 		mutex_enter(&tf->tf_mutex);
-		if (resetting) {
-			(void) tofino_tbus_state_update(tf, TF_TBUS_RESETTING);
+		if (tf->tf_tbus_state == TF_TBUS_REMOVED) {
+			rval = ENXIO;
+		} else if (resetting) {
+			tofino_tbus_state_update(tf, TF_TBUS_RESETTING);
 		} else {
-			(void) tofino_tbus_state_update(tf, TF_TBUS_RESET);
+			tofino_tbus_state_update(tf, TF_TBUS_RESET);
 		}
 		mutex_exit(&tf->tf_mutex);
-		return (0);
+		return (rval);
 
 	case BF_GET_PCI_DEVID:
 		if (ddi_copyout(&tf->tf_devid, (void *)arg,
 		    sizeof (tf->tf_devid), mode))
-			return (EFAULT);
-		return (0);
+			rval = EFAULT;
+		return (rval);
 
 	case BF_GET_VERSION:
 		if (ddi_copyout(&tf_version, (void *)arg, sizeof (tf_version),
 		    mode))
-			return (EFAULT);
-		return (0);
+			rval = EFAULT;
+		return (rval);
 	}
 
 	return (ENOTTY);
@@ -652,7 +630,6 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 {
 	tofino_t *tf = (tofino_t *)arg;
 	int intr_no = (int)(uintptr_t)arg2;
-	tofino_tbus_client_t *tbc;
 	uint32_t s0, s1, s2;
 
 	if (tf->tf_dip == NULL)
@@ -664,8 +641,7 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	pollwakeup(&tf->tf_pollhead, POLLRDNORM);
 
 	mutex_enter(&tf->tf_mutex);
-	tbc = tf->tf_tbus_client;
-	if (tbc == NULL || tbc->tbc_intr == NULL || tbc->tbc_intr_busy) {
+	if (tf->tf_tbus_intr == NULL || tf->tf_tbus_intr_busy) {
 		mutex_exit(&tf->tf_mutex);
 		return (DDI_INTR_UNCLAIMED);
 	}
@@ -677,7 +653,7 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	 * documented anywhere, but Intel's Linux driver does the same thing.
 	 */
 	tofino_tbus_intr_set(tf, false);
-	tbc->tbc_intr_busy = true;
+	tf->tf_tbus_intr_busy = true;
 	mutex_exit(&tf->tf_mutex);
 
 	/*
@@ -696,7 +672,7 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 		(void) tofino_read_reg(tf->tf_dip, TF2_REG_TBUS_INT_STAT2, &s2);
 	}
 
-	(void) tbc->tbc_intr(tbc->tbc_intr_arg);
+	(void) tf->tf_tbus_intr(tf->tf_tbus_intr_arg);
 
 	if (tf->tf_gen == TOFINO_G_TF1) {
 		(void) tofino_write_reg(tf->tf_dip, TF_REG_TBUS_INT_STAT0, s0);
@@ -709,7 +685,7 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	}
 
 	mutex_enter(&tf->tf_mutex);
-	tbc->tbc_intr_busy = false;
+	tf->tf_tbus_intr_busy = false;
 	tofino_tbus_intr_set(tf, true);
 	cv_broadcast(&tf->tf_cv);
 	mutex_exit(&tf->tf_mutex);
@@ -967,7 +943,6 @@ tofino_minor_create(tofino_t *tf)
 static void
 tofino_cleanup(tofino_t *tf)
 {
-	ASSERT(tf->tf_tbus_client == NULL);
 	ASSERT(MUTEX_HELD(&tf->tf_mutex));
 
 	/*
@@ -977,6 +952,15 @@ tofino_cleanup(tofino_t *tf)
 	 */
 	pollwakeup(&tf->tf_pollhead, POLLERR);
 	pollhead_clean(&tf->tf_pollhead);
+
+	if ((tf->tf_attach & TOFINO_A_REMOVE_EVENT) != 0) {
+		int ret = ddi_remove_event_handler(tf->tf_ev_rm_cb_id);
+		if (ret != DDI_SUCCESS) {
+			tofino_err(tf, "!failed to remove event handler: %d",
+			    ret);
+		}
+		tf->tf_attach &= ~TOFINO_A_REMOVE_EVENT;
+	}
 
 	if ((tf->tf_attach & TOFINO_A_MINOR) != 0) {
 		minor_t m = (minor_t)ddi_get_instance(tf->tf_dip);
@@ -1067,6 +1051,18 @@ tofino_instance_fini(tofino_t *tf, minor_t minor)
 	ddi_soft_state_free(tofino_soft_state, minor);
 }
 
+static void
+tofino_remove_callback(dev_info_t *dip, ddi_eventcookie_t cookie, void *a,
+    void *b)
+{
+	tofino_t *tf = a;
+
+	tofino_dlog(tf, "%s(): tofino device removed", __func__);
+	mutex_enter(&tf->tf_mutex);
+	tofino_tbus_state_update(tf, TF_TBUS_REMOVED);
+	mutex_exit(&tf->tf_mutex);
+}
+
 static int
 tofino_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
@@ -1088,6 +1084,7 @@ tofino_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	tf->tf_instance = instance;
 	ddi_set_driver_private(dip, tf);
 
+	tofino_dlog(tf, "!%s(): tofino driver attaching", __func__);
 	mutex_init(&tf->tf_mutex, NULL, MUTEX_DRIVER,
 	    DDI_INTR_PRI(tf->tf_intr_pri));
 	cv_init(&tf->tf_cv,  NULL, CV_DRIVER, NULL);
@@ -1123,9 +1120,19 @@ tofino_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto cleanup;
 	}
 	tf->tf_attach |= TOFINO_A_MINOR;
-	mutex_enter(&tofino_mutex);
-	list_insert_head(&tofino_devices, tf);
-	mutex_exit(&tofino_mutex);
+
+	if (ddi_get_eventcookie(dip, DDI_DEVI_REMOVE_EVENT,
+	    &tf->tf_rm_cookie) != DDI_SUCCESS) {
+		tofino_err(tf, "!failed to get eventcookie");
+		goto cleanup;
+	}
+
+	if (ddi_add_event_handler(dip, tf->tf_rm_cookie, tofino_remove_callback,
+	    tf, &tf->tf_ev_rm_cb_id) != DDI_SUCCESS) {
+		tofino_err(tf, "!failed to add handler for remove event");
+		goto cleanup;
+	}
+	tf->tf_attach |= TOFINO_A_REMOVE_EVENT;
 
 	ddi_report_dev(dip);
 	tofino_dlog(tf, "!%s(): tofino driver attached", __func__);
@@ -1163,7 +1170,6 @@ static int
 tofino_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 {
 	tofino_t *tf;
-	int rval;
 
 	if (cmd != DDI_DETACH) {
 		return (DDI_FAILURE);
@@ -1175,23 +1181,11 @@ tofino_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		return (DDI_FAILURE);
 	}
 
-	mutex_enter(&tofino_mutex);
 	mutex_enter(&tf->tf_mutex);
-	if (tf->tf_tbus_client != NULL) {
-		rval = DDI_FAILURE;
-	} else {
-		list_remove(&tofino_devices, tf);
-		rval = DDI_SUCCESS;
-	}
-	mutex_exit(&tofino_mutex);
+	dev_err(dip, CE_NOTE, "!tofino detached");
+	tofino_cleanup(tf);
 
-	if (rval == DDI_SUCCESS) {
-		tofino_cleanup(tf);
-	} else {
-		mutex_exit(&tf->tf_mutex);
-	}
-
-	return (rval);
+	return (DDI_SUCCESS);
 }
 
 static struct cb_ops tofino_cb_ops = {
@@ -1223,7 +1217,8 @@ static struct dev_ops tofino_dev_ops = {
 	.devo_detach =			tofino_detach,
 	.devo_reset =			nodev,
 	.devo_quiesce =			ddi_quiesce_not_supported,
-	.devo_cb_ops =			&tofino_cb_ops
+	.devo_cb_ops =			&tofino_cb_ops,
+	.devo_bus_ops =			&tofino_bus_ops
 };
 
 static struct modldrv tofino_modldrv = {
@@ -1243,12 +1238,6 @@ tofino_mod_cleanup(void)
 	ddi_soft_state_fini(&tofino_soft_state);
 	id_space_destroy(tofino_minors);
 	tofino_soft_state = NULL;
-
-	mutex_enter(&tofino_mutex);
-	ASSERT3P(list_head(&tofino_devices), ==, NULL);
-	list_destroy(&tofino_devices);
-	mutex_exit(&tofino_mutex);
-	mutex_destroy(&tofino_mutex);
 }
 
 int
@@ -1262,9 +1251,6 @@ _init(void)
 		return (err);
 	}
 
-	mutex_init(&tofino_mutex, NULL, MUTEX_DRIVER, NULL);
-	list_create(&tofino_devices, sizeof (tofino_t),
-	    offsetof(tofino_t, tf_link));
 	tofino_minors = id_space_create("tofino_minors",
 	    TOFINO_MAX_INSTANCE + 1, UINT16_MAX);
 

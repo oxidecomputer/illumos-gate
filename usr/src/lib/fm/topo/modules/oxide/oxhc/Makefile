@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 MODULE = oxhc
@@ -18,7 +18,7 @@ ARCH = oxide
 CLASS = arch
 
 MODULESRCS = oxhc.c oxhc_ipcc.c oxhc_ic.c bitext.c oxhc_fan.c \
-		oxhc_sharkfin.c
+		oxhc_sharkfin.c oxhc_util.c
 
 include ../../Makefile.plugin
 

@@ -137,6 +137,7 @@
 #include <sys/kernel_ipcc.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
+#include <sys/io/zen/apob.h>
 
 extern void mem_config_init(void);
 
@@ -1929,6 +1930,19 @@ post_startup(void)
 {
 	extern void cpupm_init(cpu_t *);
 	extern void cpu_event_init_cpu(cpu_t *);
+
+	/*
+	 * On some platforms we send the APOB data down to the SP so that it
+	 * can be cached for the PMU Enhanced Memory Context Restore (eMCR)
+	 * firmware to use. This allows portions of memory training to be
+	 * skipped on subsequent boots, as long as things like the APCB or DIMM
+	 * configuration have not changed. This is done in this phase of boot
+	 * so that the kernel crypto framework is available to assist with
+	 * hashing and so that we're post TSC calibration which allows use of
+	 * IPCC's fast poll mode, since that relies on tenmicrosec().
+	 */
+	if (oxide_board_data->obd_ipccemcr)
+		zen_apob_emcr_save();
 
 	/*
 	 * Set the system wide, processor-specific flags to be passed

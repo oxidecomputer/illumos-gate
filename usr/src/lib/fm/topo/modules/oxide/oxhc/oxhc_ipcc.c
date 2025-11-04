@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -108,7 +108,8 @@ topo_oxhc_inventory_init(topo_mod_t *mod, libipcc_handle_t *lih, oxhc_t *oxhc)
 }
 
 libipcc_inv_t *
-topo_oxhc_inventory_find(const oxhc_t *oxhc, const char *refdes)
+topo_oxhc_inventory_find(const oxhc_t *oxhc, const char *refdes,
+    ipcc_inv_type_t type)
 {
 	if (refdes == NULL) {
 		return (NULL);
@@ -122,11 +123,17 @@ topo_oxhc_inventory_find(const oxhc_t *oxhc, const char *refdes)
 		if (inv == NULL)
 			continue;
 
-		name = (const char *)libipcc_inv_name(inv, &len);
-
-		if (strcasecmp(refdes, name) == 0) {
-			return (inv);
+		if (type != IPCC_INVENTORY_T_ANY &&
+		    libipcc_inv_type(inv) != type) {
+			continue;
 		}
+
+		name = (const char *)libipcc_inv_name(inv, &len);
+		if (strcasecmp(refdes, name) != 0) {
+			continue;
+		}
+
+		return (inv);
 	}
 
 	return (NULL);

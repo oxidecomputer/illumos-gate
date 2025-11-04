@@ -25,6 +25,7 @@
 #include <sys/sysmacros.h>
 
 #include <sys/amdzen/df.h>
+#include <sys/io/zen/apob.h>
 #include <sys/io/zen/platform.h>
 #include <sys/io/zen/platform_impl.h>
 
@@ -95,7 +96,6 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_smu_misc_late_init = turin_smu_features_init,
 	.zfo_nbio_init = turin_fabric_nbio_init,
 	.zfo_ioms_init = turin_fabric_ioms_init,
-	.zfo_misc_late_init = turin_fabric_misc_late_init,
 
 	.zfo_physaddr_size = turin_fabric_physaddr_size,
 	.zfo_init_tom = turin_fabric_init_tom,
@@ -170,6 +170,7 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 static const zen_hack_ops_t turin_hack_ops = {
 	.zho_check_furtive_reset = zen_null_check_furtive_reset,
 	.zho_cgpll_set_ssc = turin_cgpll_set_ssc,
+	.zho_apob_emcr_save = zen_apob_sp_transmit
 };
 
 const zen_platform_t turin_platform = {

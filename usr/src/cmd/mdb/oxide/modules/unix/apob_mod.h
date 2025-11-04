@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _APOB_MOD_H
@@ -23,6 +23,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern void apob_props_init(void);
 
 extern int apob_walk_init(mdb_walk_state_t *);
 extern int apob_walk_step(mdb_walk_state_t *);

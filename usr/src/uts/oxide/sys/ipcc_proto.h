@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef	_SYS_IPCC_PROTO_H
@@ -34,10 +34,19 @@ extern "C" {
 
 #define	IPCC_COBS_SIZE(x)	(1 + (x) + (x) / 0xfe)
 #define	IPCC_MIN_PACKET_SIZE	IPCC_COBS_SIZE(IPCC_MIN_MESSAGE_SIZE)
-#define	IPCC_MAX_PACKET_SIZE	IPCC_COBS_SIZE(IPCC_MAX_MESSAGE_SIZE)
+/* Add one more to allow for the frame terminator */
+#define	IPCC_MAX_PACKET_SIZE	(IPCC_COBS_SIZE(IPCC_MAX_MESSAGE_SIZE) + 1)
 
 #define	IPCC_SEQ_MASK		0x7fffffffffffffffull
 #define	IPCC_SEQ_REPLY		0x8000000000000000ull
+
+typedef enum ipcc_channel_flag {
+	/*
+	 * Suppresses general information and progress messages from being
+	 * logged.
+	 */
+	IPCC_CHAN_QUIET = 1 << 0
+} ipcc_channel_flag_t;
 
 typedef enum ipcc_hss_cmd {
 	IPCC_HSS_REBOOT = 1,
@@ -55,7 +64,11 @@ typedef enum ipcc_hss_cmd {
 	IPCC_HSS_IMAGEBLOCK,
 	IPCC_HSS_KEYLOOKUP,
 	IPCC_HSS_INVENTORY,
-	IPCC_HSS_KEYSET
+	IPCC_HSS_KEYSET,
+	IPCC_HSS_APOBBEGIN,
+	IPCC_HSS_APOBCOMMIT,
+	IPCC_HSS_APOBDATA,
+	IPCC_HSS_APOBREAD
 } ipcc_hss_cmd_t;
 
 typedef enum ipcc_sp_cmd {
@@ -71,7 +84,11 @@ typedef enum ipcc_sp_cmd {
 	IPCC_SP_IMAGEBLOCK,
 	IPCC_SP_KEYLOOKUP,
 	IPCC_SP_INVENTORY,
-	IPCC_SP_KEYSET
+	IPCC_SP_KEYSET,
+	IPCC_SP_APOBBEGIN,
+	IPCC_SP_APOBCOMMIT,
+	IPCC_SP_APOBDATA,
+	IPCC_SP_APOBREAD
 } ipcc_sp_cmd_t;
 
 typedef enum ipcc_sp_decode_failure {
@@ -110,17 +127,68 @@ typedef enum ipcc_sp_startup {
 	IPCC_STARTUP_VERBOSE		= 1 << 8  /* boot with -v */
 } ipcc_sp_startup_t;
 
+typedef enum ipcc_apob_begin {
+	IPCC_APOB_BEGIN_SUCCESS = 0,
+	IPCC_APOB_BEGIN_NOTSUP,
+	IPCC_APOB_BEGIN_INVALID_STATE,
+	IPCC_APOB_BEGIN_INVALID_ALG,
+	IPCC_APOB_BEGIN_INVALID_HASHLEN,
+	IPCC_APOB_BEGIN_INVALID_LEN
+} ipcc_apob_begin_t;
+
+typedef enum ipcc_apob_alg {
+	IPCC_APOB_ALG_SHA256 = 0
+} ipcc_apob_alg_t;
+
+typedef enum ipcc_apob_commit {
+	IPCC_APOB_COMMIT_SUCCESS = 0,
+	IPCC_APOB_COMMIT_NOTSUP,
+	IPCC_APOB_COMMIT_INVALID_STATE,
+	IPCC_APOB_COMMIT_INVALID_DATA,
+	IPCC_APOB_COMMIT_FAILED
+} ipcc_apob_commit_t;
+
+typedef enum ipcc_apob_data {
+	IPCC_APOB_DATA_SUCCESS = 0,
+	IPCC_APOB_DATA_NOTSUP,
+	IPCC_APOB_DATA_INVALID_STATE,
+	IPCC_APOB_DATA_INVALID_OFFSET,
+	IPCC_APOB_DATA_INVALID_SIZE,
+	IPCC_APOB_DATA_FAILED,
+	IPCC_APOB_DATA_NOT_ERASED
+} ipcc_apob_data_t;
+
+typedef enum ipcc_apob_read {
+	IPCC_APOB_READ_SUCCESS = 0,
+	IPCC_APOB_READ_NOTSUP,
+	IPCC_APOB_READ_INVALID_STATE,
+	IPCC_APOB_READ_NODATA,
+	IPCC_APOB_READ_INVALID_OFFSET,
+	IPCC_APOB_READ_INVALID_SIZE,
+	IPCC_APOB_READ_FAILED
+} ipcc_apob_read_t;
+
 #define	IPCC_IDENT_DATALEN		106
 #define	IPCC_BSU_DATALEN		1
 #define	IPCC_MAC_DATALEN		9
 #define	IPCC_STATUS_DATALEN		16
 #define	IPCC_KEYSET_DATALEN		1
+#define	IPCC_APOB_MAX_PAYLOAD		\
+	(IPCC_MAX_DATA_SIZE - sizeof (uint64_t))
 #define	IPCC_BOOTFAIL_MAX_PAYLOAD	\
-	(IPCC_MAX_MESSAGE_SIZE - sizeof (uint8_t))
+	(IPCC_MAX_DATA_SIZE - sizeof (uint8_t))
+
+/*
+ * The Oxide SP reserves 2MiB to store the APOB. Any APOB larger than this is
+ * unsupported. Note that AMD currently only reserves 850KiB in BIOS images so
+ * there is some headroom.
+ */
+#define IPCC_APOB_MAX_SIZE		(2 * 1024 * 1024)
 
 typedef enum ipcc_log_type {
 	IPCC_LOG_DEBUG,
-	IPCC_LOG_HEX
+	IPCC_LOG_HEX,
+	IPCC_LOG_WARNING
 } ipcc_log_type_t;
 
 typedef enum ipcc_pollevent {
@@ -143,6 +211,7 @@ typedef struct ipcc_ops {
 extern void ipcc_begin_multithreaded(void);
 extern bool ipcc_channel_held(void);
 extern int ipcc_acquire_channel(const ipcc_ops_t *, void *);
+extern void ipcc_channel_setflags(ipcc_channel_flag_t);
 extern void ipcc_release_channel(const ipcc_ops_t *, void *, bool);
 extern int ipcc_reboot(const ipcc_ops_t *, void *);
 extern int ipcc_poweroff(const ipcc_ops_t *, void *);
@@ -161,6 +230,18 @@ extern int ipcc_ackstart(const ipcc_ops_t *, void *);
 extern int ipcc_imageblock(const ipcc_ops_t *, void *, uint8_t *, uint64_t,
     uint8_t **, size_t *);
 extern int ipcc_inventory(const ipcc_ops_t *, void *, ipcc_inventory_t *);
+
+extern const char *ipcc_apob_begin_errstr(ipcc_apob_begin_t);
+extern const char *ipcc_apob_commit_errstr(ipcc_apob_commit_t);
+extern const char *ipcc_apob_data_errstr(ipcc_apob_data_t);
+extern const char *ipcc_apob_read_errstr(ipcc_apob_read_t);
+extern int ipcc_apob_begin(const ipcc_ops_t *, void *, size_t, ipcc_apob_alg_t,
+    uint8_t *, size_t, ipcc_apob_begin_t *);
+extern int ipcc_apob_commit(const ipcc_ops_t *, void *, ipcc_apob_commit_t *);
+extern int ipcc_apob_data(const ipcc_ops_t *, void *, uint64_t, const uint8_t *,
+    size_t, ipcc_apob_data_t *);
+extern int ipcc_apob_read(const ipcc_ops_t *, void *, uint64_t, uint8_t *,
+    size_t *, ipcc_apob_read_t *);
 
 #ifdef __cplusplus
 }

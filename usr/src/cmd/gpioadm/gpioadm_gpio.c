@@ -42,8 +42,8 @@ gpioadm_gpio_attr_get_help(const char *fmt, ...)
 		va_end(ap);
 	}
 
-	(void) fprintf(stderr, "Usage:  gpioadm gpio attr get controller/gpio "
-	    "[-H] [-o field[,...] [-p]]\n\t\t\t      [filter...]\n");
+	(void) fprintf(stderr, "Usage:  gpioadm gpio attr get [-H] "
+	    "[-o field[,...] [-p]] controller/gpio\n\t\t\t      [filter...]\n");
 	(void) fprintf(stderr, "\nList attributes of a specific GPIO\n\n"
 	    "\t-H\t\tomit the column header\n"
 	    "\t-o field\toutput fields to print\n"

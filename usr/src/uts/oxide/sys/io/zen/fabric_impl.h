@@ -23,6 +23,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/memlist.h>
 #include <sys/memlist_impl.h>
 #include <sys/mutex.h>
@@ -43,6 +44,12 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+/*
+ * Port I/O-based access to PCI configuration space is only enabled before
+ * MMIO-based access has been setup.
+ */
+extern bool zen_fabric_io_pci_cfg_disabled;
 
 /*
  * Warning: These memlists cannot be given directly to PCI. They expect to be

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 #ifndef _SYS_TOFINO_IMPL_H
@@ -55,6 +55,7 @@ typedef enum {
 	TOFINO_A_INTR_HANDLERS	= 1 << 1,
 	TOFINO_A_INTR_ENABLE	= 1 << 2,
 	TOFINO_A_MINOR		= 1 << 3,
+	TOFINO_A_REMOVE_EVENT	= 1 << 4,
 } tofino_attach_t;
 
 typedef struct tofino {
@@ -64,6 +65,8 @@ typedef struct tofino {
 	int			tf_instance;
 	dev_info_t		*tf_dip;
 	ddi_acc_handle_t	tf_cfgspace;
+	ddi_eventcookie_t	tf_rm_cookie;
+	ddi_callback_id_t	tf_ev_rm_cb_id;
 	tofino_gen_t		tf_gen;
 	uint32_t		tf_devid;
 	tofino_attach_t		tf_attach;
@@ -80,20 +83,16 @@ typedef struct tofino {
 	struct pollhead		tf_pollhead;
 
 	tofino_tbus_state_t	tf_tbus_state;
-	tf_tbus_hdl_t		tf_tbus_client;
+
+	/* used to manage the client's use of the tbus interrupts */
+	tofino_intr_hdlr	tf_tbus_intr;
+	void			*tf_tbus_intr_arg;
+	boolean_t		tf_tbus_intr_busy;
+
+	dev_info_t		*tf_tfpkt;
 } tofino_t;
 
-/*
- * An opaque pointer to this struct is returned when a tbus client registers
- * with the tofino driver.
- */
-typedef struct tofino_tbus_client {
-	tofino_t		*tbc_tofino;
-	tofino_intr_hdlr	tbc_intr;
-	void			*tbc_intr_arg;
-	boolean_t		tbc_intr_busy;
-} tofino_tbus_client_t;
-
+extern struct bus_ops tofino_bus_ops;
 extern ddi_dma_attr_t tofino_dma_attr;
 
 /*

@@ -10,10 +10,18 @@
 #
 
 #
-# Copyright (c) 2012, Joyent, Inc.
+# Copyright 2025 Oxide Computer Company
 #
 
-This directory contains various unit tests for parts of the sgs source tree.
-There currently is no master runner for these tests, you should run them
-individually. You will need to manually make test executable. Currently tests
-expect to be given a path to the proto area.
+ROOTUCODEPATH = $(ROOT)/platform/i86pc/ucode
+AMD_FILES :sh= (print *-*)
+
+include ../../Makefile.com
+
+.PARALLEL:
+
+all clean:
+
+install: $(ROOTAMDFBFILES)
+
+include $(SRC)/data/Makefile.targ

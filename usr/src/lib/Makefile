@@ -32,6 +32,7 @@
 # Copyright 2017 RackTop Systems.
 # Copyright 2018 Jason King
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2025 Oxide Computer Company
 #
 
 include ../Makefile.master
@@ -516,6 +517,10 @@ sparc_HDRSUBDIRS=	\
 	libpri		\
 	libv12n		\
 	storage
+
+# Oxide subdirs
+i386_HDRSUBDIRS +=	\
+	libipcc
 
 all :=		TARGET= all
 check :=	TARGET= check

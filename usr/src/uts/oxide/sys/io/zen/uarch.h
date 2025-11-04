@@ -278,7 +278,6 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_nbio_init)(zen_nbio_t *);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
 	void		(*zfo_nbif_init)(zen_nbif_t *);
-	void		(*zfo_misc_late_init)(zen_fabric_t *);
 
 	/*
 	 * Returns true iff a port is trained.
@@ -349,6 +348,7 @@ typedef struct zen_fabric_ops {
 typedef struct zen_hack_ops {
 	void	(*zho_check_furtive_reset)(void);
 	bool	(*zho_cgpll_set_ssc)(bool);
+	void	(*zho_apob_emcr_save)(void);
 } zen_hack_ops_t;
 
 /*
@@ -357,6 +357,7 @@ typedef struct zen_hack_ops {
  */
 extern void zen_null_check_furtive_reset(void);
 extern bool zen_null_cgpll_set_ssc(bool);
+extern void zen_null_apob_emcr_save(void);
 extern void zen_null_fabric_iohc_pci_ids(zen_ioms_t *);
 extern void zen_null_fabric_sdp_control(zen_ioms_t *);
 extern void zen_null_fabric_nbio_sdp_control(zen_nbio_t *);

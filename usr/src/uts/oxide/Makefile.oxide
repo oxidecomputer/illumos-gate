@@ -240,9 +240,16 @@ DRV_KMODS	+= zen_gpio
 DRV_KMODS	+= apob
 
 #
-# Platform Power Modules
+#	Platform Power Modules
 #
 #DRV_KMODS	+= ppm acpippm
+
+#
+#	AMD PSP Modules
+#
+DRV_KMODS	+= psp
+DRV_KMODS	+= psp_einj
+MISC_KMODS	+= psp_fake_smm
 
 #
 #	CPU Modules

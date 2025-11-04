@@ -32,6 +32,7 @@
 #include <io/amdzen/amdzen.h>
 #include <sys/io/zen/mpio.h>
 
+#include "unix.h"
 #include "zen_kmdb_impl.h"
 
 static uint64_t pcicfg_physaddr;
@@ -109,81 +110,24 @@ df_discover_comp_ids(uint8_t dfno)
 	return (B_TRUE);
 }
 
-static boolean_t
-get_board_data(mdb_oxide_board_data_t *board_data)
-{
-	GElf_Sym board_data_sym;
-	uintptr_t board_data_addr = 0;
-
-	/*
-	 * We need to know what kind of system we're running on to figure out
-	 * the appropriate registers, instance/component IDs, mappings, etc.
-	 * Using the x86_chiprev routines/structures would be natural to use
-	 * but given that this is a kmdb module, we're limited by the API
-	 * surface.  Thankfully, we're already relatively constrained by the
-	 * fact this is the oxide machine architecture and so we can assume
-	 * that oxide_derive_platform() has already been run and populated the
-	 * oxide_board_data global, which conveniently has the chiprev handy.
-	 */
-
-	if (mdb_lookup_by_name("oxide_board_data", &board_data_sym) != 0) {
-		mdb_warn("failed to lookup oxide_board_data in target");
-		return (B_FALSE);
-	}
-	if (GELF_ST_TYPE(board_data_sym.st_info) != STT_OBJECT) {
-		mdb_warn("oxide_board_data symbol is not expected type: %u\n",
-		    GELF_ST_TYPE(board_data_sym.st_info));
-		return (B_FALSE);
-	}
-
-	if (mdb_vread(&board_data_addr, sizeof (board_data_addr),
-	    (uintptr_t)board_data_sym.st_value) != sizeof (board_data_addr)) {
-		mdb_warn("failed to read oxide_board_data addr from target");
-		return (B_FALSE);
-	}
-
-	if (board_data_addr == 0) {
-		mdb_warn("oxide_board_data is NULL\n");
-		return (B_FALSE);
-	}
-
-	if (mdb_ctf_vread(board_data, "oxide_board_data_t",
-	    "mdb_oxide_board_data_t", board_data_addr, 0) != 0) {
-		mdb_warn("failed to read oxide_board_data from target");
-		return (B_FALSE);
-	}
-
-	return (B_TRUE);
-}
-
 /*
  * Called on module initialization to initialize `df_props`.
  */
 boolean_t
 df_props_init(void)
 {
-	mdb_oxide_board_data_t board_data;
-	x86_chiprev_t chiprev;
 	df_reg_def_t fid0def, fid1def, fid2def;
 	uint32_t fid0, fid1, fid2;
 	df_fabric_decomp_t *decomp;
+	x86_chiprev_t chiprev;
 
 	if (df_props != NULL) {
 		mdb_warn("df_props already initialized\n");
 		return (B_TRUE);
 	}
 
-	if (!get_board_data(&board_data)) {
+	if (!target_chiprev(&chiprev))
 		return (B_FALSE);
-	}
-
-	chiprev = board_data.obd_cpuinfo.obc_chiprev;
-
-	if (_X86_CHIPREV_VENDOR(chiprev) != X86_VENDOR_AMD) {
-		mdb_warn("unsupported non-AMD system: %u\n",
-		    _X86_CHIPREV_VENDOR(chiprev));
-		return (B_FALSE);
-	}
 
 	switch (_X86_CHIPREV_FAMILY(chiprev)) {
 	case X86_PF_AMD_MILAN:
@@ -1645,7 +1589,7 @@ static const char *dimmhelp =
 "UMC:\t\tIndicates the UMC instance\n"
 "TRAIN:\tIndicates whether or not training completed successfully\n"
 "DIMM 0:\tIndicates whether DIMM 0 in the channel is present\n"
-"DIMM 1:\tIndicates whether DIMM 0 in the channel is present\n";
+"DIMM 1:\tIndicates whether DIMM 1 in the channel is present\n";
 
 
 void
@@ -1772,14 +1716,14 @@ dimm_report_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 static boolean_t
 get_platform(mdb_zen_platform_t *platform)
 {
-	mdb_oxide_board_data_t board_data = { 0 };
+	mdb_oxide_board_data_t *board_data;
 
-	if (!get_board_data(&board_data)) {
+	board_data = get_board_data();
+	if (board_data == NULL)
 		return (B_FALSE);
-	}
 
 	if (mdb_ctf_vread(platform, "zen_platform_t", "mdb_zen_platform_t",
-	    (uintptr_t)(void *)board_data.obd_zen_platform, 0) != 0) {
+	    (uintptr_t)(void *)board_data->obd_zen_platform, 0) != 0) {
 		mdb_warn("failed to read zen_platform from target");
 		return (B_FALSE);
 	}

@@ -47,12 +47,6 @@ typedef struct oxide_board_test oxide_board_test_t;
 struct oxide_board_testresult;
 typedef struct oxide_board_testresult oxide_board_testresult_t;
 
-typedef struct oxide_board_iomux {
-	const uint32_t		obp_gpio;
-	const uint32_t		obp_iomux;
-	const bool		obp_valid;
-} oxide_board_iomux_t;
-
 #define	IOMUX_CFG_ENTRY(g, m) { \
 	.obp_gpio = (g), \
 	.obp_iomux = (m), \
@@ -169,7 +163,9 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ipccmode = IPCC_MODE_UART1,
 			.obd_ipccspintr = IPCC_SPINTR_SP3_AGPIO139,
 			.obd_engines = { oxio_gimlet },
-			.obd_nengines = { &oxio_gimlet_nengines }
+			.obd_nengines = { &oxio_gimlet_nengines },
+			.obd_wd = IOMUX_CFG_ENTRY(30,
+			    MILAN_FCH_IOMUX_30_EGPIO30)
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -266,6 +262,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_bsu_slot = { 17, 18 },
 			.obd_ipccmode = IPCC_MODE_ESPI0,
 			.obd_ipccspintr = IPCC_SPINTR_SP5_AGPIO2,
+			.obd_ipccemcr = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_cosmo },
@@ -273,7 +270,9 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_tdp = 500, /* W */
 			.obd_ppt = 500, /* W */
 			.obd_edc = 330, /* A */
-			.obd_tdc = 235	/* A */
+			.obd_tdc = 235,	/* A */
+			.obd_wd = IOMUX_CFG_ENTRY(22,
+			    TURIN_FCH_IOMUX_22_AGPIO22)
 		},
 		.obdef_iomux = {
 			/* UART0 - Console */
@@ -338,6 +337,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			 * onward routing so we have to disable the interrupt.
 			 */
 			.obd_ipccspintr = IPCC_SPINTR_DISABLED,
+			.obd_ipccemcr = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_ruby },

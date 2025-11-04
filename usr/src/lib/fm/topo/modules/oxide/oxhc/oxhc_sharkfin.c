@@ -65,7 +65,8 @@ topo_oxhc_enum_sharkfin_find(topo_mod_t *mod, tnode_t *tn, const oxhc_t *oxhc,
 			return (NULL);
 		}
 
-		if ((inv = topo_oxhc_inventory_find(oxhc, ipcc)) == NULL) {
+		if ((inv = topo_oxhc_inventory_find(oxhc, ipcc,
+		    IPCC_INVENTORY_T_ANY)) == NULL) {
 			continue;
 		}
 

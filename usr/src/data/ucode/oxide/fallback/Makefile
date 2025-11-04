@@ -10,7 +10,18 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
-name="tfpkt" parent="pseudo" instance=0;
+ROOTUCODEPATH = $(ROOT)/platform/oxide/ucode
+AMD_FILES :sh= (print *-*)
+
+include ../../Makefile.com
+
+.PARALLEL:
+
+all clean:
+
+install: $(ROOTAMDFBFILES)
+
+include $(SRC)/data/Makefile.targ

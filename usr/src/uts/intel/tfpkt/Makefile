@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 #
@@ -24,7 +24,6 @@ UTSBASE	= ../..
 MODULE		= tfpkt
 OBJECTS		= $(TFPKT_OBJS:%=$(OBJS_DIR)/%)
 ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
-CONF_SRCDIR	= $(UTSBASE)/common/io/$(MODULE)
 
 #
 # Include common rules.
@@ -34,8 +33,8 @@ include $(UTSBASE)/intel/Makefile.intel
 #
 # Define targets
 #
-ALL_TARGET	= $(BINARY) $(SRC_CONFILE)
-INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
+ALL_TARGET	= $(BINARY)
+INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 
 #
 # Overrides

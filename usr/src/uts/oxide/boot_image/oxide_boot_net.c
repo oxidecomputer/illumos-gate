@@ -221,6 +221,7 @@ oxide_boot_net_find_ether(dev_info_t *dip, void *arg)
 	if (ofe->ofe_linkname[0] == '\0' ||
 	    strncmp(ddi_driver_name(dip), "igb", 3) == 0 ||
 	    strncmp(ddi_driver_name(dip), "e1000g", 6) == 0 ||
+	    strncmp(ddi_driver_name(dip), "ixgbe", 5) == 0 ||
 	    strncmp(ddi_driver_name(dip), "vioif", 5) == 0) {
 		(void) snprintf(ofe->ofe_linkname, sizeof (ofe->ofe_linkname),
 		    "%s%d", ddi_driver_name(dip), i_ddi_devi_get_ppa(dip));

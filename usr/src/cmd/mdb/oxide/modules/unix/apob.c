@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -30,16 +30,62 @@
 #include <io/amdzen/amdzen.h>
 #include <sys/apob.h>
 #include <sys/apob_impl.h>
+#include <sys/io/zen/apob.h>
 #include <milan_apob.h>
 
 #include "apob_mod.h"
+#include "unix.h"
 
 extern const char *milan_chan_map[8];
+extern const char *genoa_chan_map[12];
+extern const char *turin_chan_map[12];
+
+static const char **chan_map;
+static size_t chan_map_size;
 
 typedef struct mdb_apob_apob_hdl {
 	uintptr_t ah_header;
 	size_t ah_len;
 } mdb_apob_apob_hdl_t;
+
+/*
+ * Called on module init.
+ */
+void
+apob_props_init(void)
+{
+	x86_chiprev_t chiprev;
+
+	if (!target_chiprev(&chiprev))
+		return;
+
+	switch (_X86_CHIPREV_FAMILY(chiprev)) {
+	case X86_PF_AMD_MILAN:
+		chan_map = milan_chan_map;
+		chan_map_size = ARRAY_SIZE(milan_chan_map);
+		break;
+	case X86_PF_AMD_GENOA:
+		chan_map = genoa_chan_map;
+		chan_map_size = ARRAY_SIZE(genoa_chan_map);
+		break;
+	case X86_PF_AMD_TURIN:
+	case X86_PF_AMD_DENSE_TURIN:
+		chan_map = turin_chan_map;
+		chan_map_size = ARRAY_SIZE(turin_chan_map);
+		break;
+	default:
+		mdb_warn("%s: unsupported AMD chiprev family: %u\n", __func__,
+		    _X86_CHIPREV_FAMILY(chiprev));
+	}
+}
+
+static const char *
+chan_name(size_t chan)
+{
+	if (chan_map == NULL || chan >= chan_map_size)
+		return ("?");
+	return chan_map[chan];
+}
 
 /*
  * APOB walker.  The APOB is always mapped if mdb or kmdb can run.
@@ -146,12 +192,12 @@ apob_walk_step(mdb_walk_state_t *wsp)
 }
 
 static const char *apobhelp =
-"Walk the APOB and print all entries that match the specified group and\n"
-"type IDs. Both of these are required and will print all instances that\n"
-"match right now. The following options are supported:\n"
+"Walk the APOB and print all entries. The entries can be filtered by\n"
+"group and type IDs.\n"
+"The following options are supported:\n"
 "\n"
-"  -g group	Search for items that match the specified group\n"
-"  -t type	Search for items that match the specified type\n";
+"  -g group	Filter the output to items that match the specified group\n"
+"  -t type	Filter the output to items that match the specified type\n";
 
 void
 apob_dcmd_help(void)
@@ -170,8 +216,8 @@ apob_dcmd_cb(uintptr_t addr, const void *apob, void *arg)
 	const apob_entry_t *ent = apob;
 	const apob_dcmd_data_t *data = arg;
 
-	if (ent->ae_group == data->add_group &&
-	    ent->ae_type == data->add_type) {
+	if ((data->add_group == 0 || ent->ae_group == data->add_group) &&
+	    (data->add_type == 0 || ent->ae_type == data->add_type)) {
 		mdb_printf("0x%lx\n", addr);
 	}
 
@@ -188,11 +234,6 @@ apob_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	    'g', MDB_OPT_UINTPTR_SET, &group_set, &data.add_group,
 	    't', MDB_OPT_UINTPTR_SET, &type_set, &data.add_type, NULL) !=
 	    argc) {
-		return (DCMD_USAGE);
-	}
-
-	if (!group_set || !type_set) {
-		mdb_warn("both -g and -t must be specified\n");
 		return (DCMD_USAGE);
 	}
 
@@ -243,37 +284,58 @@ int
 pmuerr_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 {
 	int ret;
-	milan_apob_pmu_tfi_t tfi;
+	apob_pmu_tfi_t tfi;
 
 	if (!(flags & DCMD_ADDRSPEC))
 		return (DCMD_USAGE);
 
 	if ((ret = apob_read_entry(addr, APOB_GROUP_MEMORY,
-	    MILAN_APOB_MEMORY_PMU_TRAIN_FAIL, &tfi, sizeof (tfi))) != DCMD_OK) {
+	    APOB_MEMORY_TYPE_PMU_TRAIN_FAIL, &tfi, sizeof (tfi))) != DCMD_OK) {
 		return (ret);
 	}
 
-	if (tfi.mapt_nvalid == 0) {
+	if (tfi.apt_nvalid == 0) {
 		mdb_printf("No PMU failure entries found.\n");
 		return (DCMD_OK);
 	}
 
-	if (tfi.mapt_nvalid > ARRAY_SIZE(tfi.mapt_ents)) {
+	if (tfi.apt_nvalid > ARRAY_SIZE(tfi.apt_ents)) {
 		mdb_warn("structure claims %u valid events, but only "
-		    "%u are possible, limiting to %u\n", tfi.mapt_nvalid,
-		    ARRAY_SIZE(tfi.mapt_ents), ARRAY_SIZE(tfi.mapt_ents));
-		tfi.mapt_nvalid = ARRAY_SIZE(tfi.mapt_ents);
+		    "%u are possible, limiting to %u\n", tfi.apt_nvalid,
+		    ARRAY_SIZE(tfi.apt_ents), ARRAY_SIZE(tfi.apt_ents));
+		tfi.apt_nvalid = ARRAY_SIZE(tfi.apt_ents);
 	}
 
-	for (uint32_t i = 0; i < tfi.mapt_nvalid; i++) {
-		const milan_apob_tfi_ent_t *ent = &tfi.mapt_ents[i];
-		const char *sp3chan = milan_chan_map[ent->mapte_umc];
+	for (uint32_t i = 0; i < tfi.apt_nvalid; i++) {
+		const apob_tfi_ent_t *ent = &tfi.apt_ents[i];
+		uint32_t sock, umc, dim, dnum, dtype;
 
-		mdb_printf("%-4u %-1u (%s) %-1uD %-7u %-5u 0x%-08x 0x%x 0x%x "
-		    "0x%x 0x%x\n", ent->mapte_sock, ent->mapte_umc, sp3chan,
-		    ent->mapte_1d2d + 1, ent->mapte_1dnum, ent->mapte_stage,
-		    ent->mapte_error, ent->mapte_data[0], ent->mapte_data[1],
-		    ent->mapte_data[2], ent->mapte_data[3]);
+		/*
+		 * The UMC field is three bits for architectures that have 8
+		 * channels (Zen3) and four bits for those with more (Zen4+),
+		 * with the following fields all being bumped along. We use the
+		 * number of channels to select the appropriate variant.
+		 */
+		if (chan_map_size > 8) {
+			sock = ent->l.apte_sock;
+			umc = ent->l.apte_umc;
+			dim = ent->l.apte_1d2d;
+			dnum = ent->l.apte_1dnum;
+			dtype = ent->l.apte_dtype;
+		} else {
+			sock = ent->s.apte_sock;
+			umc = ent->s.apte_umc;
+			dim = ent->s.apte_1d2d;
+			dnum = ent->s.apte_1dnum;
+			dtype = ent->s.apte_dtype;
+		}
+
+		mdb_printf("%-4u %-1u (%s) %-1uD %-1u %-7u %-5u 0x%-08x "
+		    "0x%x 0x%x 0x%x 0x%x\n",
+		    sock, umc, chan_name(umc), dim + 1, dtype, dnum,
+		    ent->apte_stage, ent->apte_error,
+		    ent->apte_data[0], ent->apte_data[1],
+		    ent->apte_data[2], ent->apte_data[3]);
 	}
 
 	return (DCMD_OK);
@@ -295,15 +357,15 @@ static const char *
 apob_event_class_to_name(uint32_t class)
 {
 	switch (class) {
-	case MILAN_APOB_EVC_ALERT:
+	case APOB_EVC_ALERT:
 		return ("alert");
-	case MILAN_APOB_EVC_WARN:
+	case APOB_EVC_WARN:
 		return ("warning");
-	case MILAN_APOB_EVC_ERROR:
+	case APOB_EVC_ERROR:
 		return ("error");
-	case MILAN_APOB_EVC_CRIT:
+	case APOB_EVC_CRIT:
 		return ("critical");
-	case MILAN_APOB_EVC_FATAL:
+	case APOB_EVC_FATAL:
 		return ("fatal");
 	default:
 		return ("unknown");
@@ -316,6 +378,12 @@ apob_event_info_to_name(uint32_t info)
 	switch (info) {
 	case APOB_EVENT_TRAIN_ERROR:
 		return ("training error");
+	case APOB_EVENT_MEMTEST_ERROR:
+		return ("memory test error");
+	case APOB_EVENT_MEM_RRW_ERROR:
+		return ("MBIST error");
+	case APOB_EVENT_PMIC_RT_ERROR:
+		return ("PMIC real-time error");
 	default:
 		return ("unknown event");
 	}
@@ -326,8 +394,6 @@ apob_event_dcmd_print_train(uint32_t data0, uint32_t data1)
 {
 	const uint32_t sock = APOB_EVENT_TRAIN_ERROR_GET_SOCK(data0);
 	const uint32_t chan = APOB_EVENT_TRAIN_ERROR_GET_CHAN(data0);
-	const char *bchan = chan > ARRAY_SIZE(milan_chan_map) ?
-	    "unknown" : milan_chan_map[chan];
 
 	if (APOB_EVENT_TRAIN_ERROR_GET_PMULOAD(data1) != 0) {
 		mdb_printf("    PMU Firmware Loading Error\n");
@@ -338,7 +404,7 @@ apob_event_dcmd_print_train(uint32_t data0, uint32_t data1)
 	}
 
 	mdb_printf("    Socket: %u\n", sock);
-	mdb_printf("    UMC:    %u (%s)\n", chan, bchan);
+	mdb_printf("    UMC:    %u (%s)\n", chan, chan_name(chan));
 	mdb_printf("    DIMMs: ");
 	if (APOB_EVENT_TRAIN_ERROR_GET_DIMM0(data0) != 0) {
 		mdb_printf(" 0");
@@ -371,39 +437,39 @@ int
 apob_event_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 {
 	int ret;
-	milan_apob_event_log_t log;
+	apob_gen_event_log_t log;
 
 	if (!(flags & DCMD_ADDRSPEC))
 		return (DCMD_USAGE);
 
 	if ((ret = apob_read_entry(addr, APOB_GROUP_GENERAL,
-	    MILAN_APOB_GEN_EVENT_LOG, &log, sizeof (log))) != DCMD_OK) {
+	    APOB_GENERAL_TYPE_EVENT_LOG, &log, sizeof (log))) != DCMD_OK) {
 		return (DCMD_ERR);
 	}
 
-	if (log.mevl_count > ARRAY_SIZE(log.mevl_events)) {
+	if (log.agevl_count > ARRAY_SIZE(log.agevl_events)) {
 		mdb_warn("structure claims %u valid events, but only "
-		    "%u are possible, limiting to %u\n", log.mevl_count,
-		    ARRAY_SIZE(log.mevl_events), ARRAY_SIZE(log.mevl_events));
-		log.mevl_count = ARRAY_SIZE(log.mevl_events);
+		    "%u are possible, limiting to %u\n", log.agevl_count,
+		    ARRAY_SIZE(log.agevl_events), ARRAY_SIZE(log.agevl_events));
+		log.agevl_count = ARRAY_SIZE(log.agevl_events);
 	}
 
-	for (uint16_t i = 0; i < log.mevl_count; i++) {
-		const milan_apob_event_t *event = &log.mevl_events[i];
+	for (uint16_t i = 0; i < log.agevl_count; i++) {
+		const apob_event_t *event = &log.agevl_events[i];
 
 		mdb_printf("EVENT %u\n", i);
 		mdb_printf("  CLASS: %s (0x%x)\n",
-		    apob_event_class_to_name(event->mev_class),
-		    event->mev_class);
+		    apob_event_class_to_name(event->aev_class),
+		    event->aev_class);
 		mdb_printf("  EVENT: %s (0x%x)\n",
-		    apob_event_info_to_name(event->mev_info), event->mev_info);
-		mdb_printf("  DATA:  0x%x 0x%x\n", event->mev_data0,
-		    event->mev_data1);
+		    apob_event_info_to_name(event->aev_info), event->aev_info);
+		mdb_printf("  DATA:  0x%x 0x%x\n", event->aev_data0,
+		    event->aev_data1);
 
-		switch (event->mev_info) {
+		switch (event->aev_info) {
 		case APOB_EVENT_TRAIN_ERROR:
-			apob_event_dcmd_print_train(event->mev_data0,
-			    event->mev_data1);
+			apob_event_dcmd_print_train(event->aev_data0,
+			    event->aev_data1);
 			break;
 		default:
 			break;

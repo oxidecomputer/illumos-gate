@@ -60,7 +60,6 @@ extern "C" {
  * This contains some of the internal notes on the capabilities the pin
  * theoretially has.
  */
-#define	ZEN_GPIO_ATTR_NAME	"zen:name"
 #define	ZEN_GPIO_ATTR_PAD_NAME	"zen:pad_name"
 #define	ZEN_GPIO_ATTR_PAD_TYPE	"zen:pad_type"
 #define	ZEN_GPIO_ATTR_PIN	"zen:pin"
@@ -115,7 +114,7 @@ typedef enum {
 
 /*
  * ZEN_GPIO_ATTR_INPUT -- ro
- *	uint32_t -- zen_gpio_intput_t
+ *	uint32_t -- zen_gpio_input_t
  *
  * This describes the current input value of the pin.
  */
@@ -123,7 +122,7 @@ typedef enum {
 typedef enum {
 	ZEN_GPIO_INPUT_LOW,
 	ZEN_GPIO_INPUT_HIGH
-} zen_gpio_intput_t;
+} zen_gpio_input_t;
 
 /*
  * ZEN_GPIO_ATTR_VOLTAGE -- ro

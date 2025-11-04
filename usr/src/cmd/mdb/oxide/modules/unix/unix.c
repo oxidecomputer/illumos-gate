@@ -43,6 +43,7 @@
 #include "unix_sup.h"
 #include "zen_kmdb.h"
 #include "fabric.h"
+#include "unix.h"
 #include <sys/apix.h>
 #include <sys/x86_archext.h>
 #include <sys/bitmap.h>
@@ -50,6 +51,79 @@
 
 #define	TT_HDLR_WIDTH	17
 
+mdb_oxide_board_data_t *
+get_board_data(void)
+{
+	static mdb_oxide_board_data_t data;
+	static uintptr_t board_data_addr = 0;
+	GElf_Sym board_data_sym;
+
+	/*
+	 * We need to know what kind of system we're running on to figure out
+	 * the appropriate registers, instance/component IDs, mappings, etc.
+	 * Using the x86_chiprev routines/structures would be natural to use
+	 * but given that this is a kmdb module, we're limited by the API
+	 * surface.  Thankfully, we're already relatively constrained by the
+	 * fact this is the oxide machine architecture and so we can assume
+	 * that oxide_derive_platform() has already been run and populated the
+	 * oxide_board_data global, which conveniently has the chiprev handy.
+	 */
+
+	if (board_data_addr != 0)
+		return (&data);
+
+	if (mdb_lookup_by_name("oxide_board_data", &board_data_sym) != 0) {
+		mdb_warn("failed to lookup oxide_board_data in target");
+		return (NULL);
+	}
+	if (GELF_ST_TYPE(board_data_sym.st_info) != STT_OBJECT) {
+		mdb_warn("oxide_board_data symbol is not expected type: %u\n",
+		    GELF_ST_TYPE(board_data_sym.st_info));
+		return (NULL);
+	}
+
+	if (mdb_vread(&board_data_addr, sizeof (board_data_addr),
+	    (uintptr_t)board_data_sym.st_value) != sizeof (board_data_addr)) {
+		mdb_warn("failed to read oxide_board_data addr from target");
+		return (NULL);
+	}
+
+	if (board_data_addr == 0) {
+		mdb_warn("oxide_board_data is NULL\n");
+		return (NULL);
+	}
+
+	if (mdb_ctf_vread(&data, "oxide_board_data_t",
+	    "mdb_oxide_board_data_t", board_data_addr, 0) != 0) {
+		mdb_warn("failed to read oxide_board_data from target");
+		board_data_addr = 0;
+		return (NULL);
+	}
+
+	return (&data);
+}
+
+boolean_t
+target_chiprev(x86_chiprev_t *revp)
+{
+	mdb_oxide_board_data_t *board_data;
+	x86_chiprev_t chiprev;
+
+	board_data = get_board_data();
+	if (board_data == NULL)
+		return (B_FALSE);
+
+	chiprev = board_data->obd_cpuinfo.obc_chiprev;
+
+	if (_X86_CHIPREV_VENDOR(chiprev) != X86_VENDOR_AMD) {
+		mdb_warn("unsupported non-AMD system: %u\n",
+		    _X86_CHIPREV_VENDOR(chiprev));
+		return (B_FALSE);
+	}
+
+	*revp = chiprev;
+	return (B_TRUE);
+}
 
 /* apix only */
 static apix_impl_t *d_apixs[NCPU];
@@ -995,7 +1069,7 @@ extern void xcall_help(void);
 extern int xcall_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 static const mdb_dcmd_t dcmds[] = {
-	{ "apob", "?-g group -t type", "find APOB entry", apob_dcmd,
+	{ "apob", "?[-g group] [-t type]", "find APOB entries", apob_dcmd,
 	    apob_dcmd_help },
 	{ "apob_entry", ":[-r|-x]", "display an APOB entry", apob_entry_dcmd,
 	    apob_entry_dcmd_help },
@@ -1082,6 +1156,7 @@ _mdb_init(void)
 		return (NULL);
 	}
 #endif
+	apob_props_init();
 	return (&modinfo);
 }
 

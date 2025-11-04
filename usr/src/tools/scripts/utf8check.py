@@ -1,3 +1,4 @@
+#!@TOOLS_PYTHON@ -Es
 #
 # CDDL HEADER START
 #
@@ -18,14 +19,33 @@
 #
 # CDDL HEADER END
 #
+
 #
-# Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
-#
-#ident	"%Z%%M%	%I%	%E% SMI"
-#
-#	Configuration and targets for ECC KEF provider
-#	specific to Intel 32-bit architecture, i386.
+# Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
 #
 
-CPPFLAGS += -DMP_USE_UINT_DIGIT
+#
+# Check file for UTF-8 encoding issues
+#
+
+import sys, os, io
+
+sys.path.insert(1, os.path.join(os.path.dirname(__file__), "..", "lib",
+                                "python%d.%d" % sys.version_info[:2]))
+
+# Allow running from the source tree, using the modules in the source tree
+sys.path.insert(2, os.path.join(os.path.dirname(__file__), '..'))
+
+from onbld.Checks.UTF8Check import utf8check
+
+ret = 0
+for filename in sys.argv[1:]:
+	try:
+		ret |= utf8check(filename, output=sys.stderr)
+	except IOError as e:
+		sys.stderr.write("failed to open '%s': %s\n" %
+				 (e.filename, e.strerror))
+		continue
+
+sys.exit(ret)
