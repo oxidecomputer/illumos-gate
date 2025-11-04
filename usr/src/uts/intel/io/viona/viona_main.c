@@ -115,7 +115,7 @@
  *        |<-------------------------------------------<+
  *        |	      |					|
  *        |	      |					^
- *        |	      *	If ring is requested to pause (but not stop)from the
+ *        |	      *	If ring is requested to pause (but not stop) from the
  *        |             VRS_RUN state, it will return to the VRS_INIT state.
  *        |
  *        |						^
@@ -207,11 +207,14 @@
  * possible.
  *
  * Guest-to-host notifications, when new available descriptors have been placed
- * in the ring, are posted via the 'queue notify' address in the virtio BAR.
- * The vmm_drv_ioport_hook() interface was added to bhyve which allows viona to
- * install a callback hook on an ioport address.  Guest exits for accesses to
- * viona-hooked ioport addresses will result in direct calls to notify the
- * appropriate ring worker without a trip to userland.
+ * in the ring, are posted for legacy devices via the 'queue notify' address in
+ * the virtio BAR. For modern devices the notifications are posted to the MMIO
+ * bar that is indicated by the notify PCI capability. The
+ * vmm_drv_ioport_hook() and vmm_drv_mmio_hook() interfaces were added to bhyve
+ * which allows viona to install a callback hook on an ioport, or on an MMIO
+ * address range. Guest exits for accesses to viona-hooked addresses will
+ * result in direct calls to notify the appropriate ring worker without a trip
+ * to userland.
  *
  * Host-to-guest notifications in the form of interrupts enjoy similar
  * acceleration.  Each viona ring can be configured to send MSI notifications
@@ -286,10 +289,8 @@
  */
 #define	VIONA_S_HOSTCAPS	(	\
 	VIRTIO_NET_F_GUEST_CSUM |	\
-	VIRTIO_NET_F_MAC |		\
 	VIRTIO_NET_F_GUEST_TSO4 |	\
 	VIRTIO_NET_F_MRG_RXBUF |	\
-	VIRTIO_NET_F_STATUS |		\
 	VIRTIO_F_RING_NOTIFY_ON_EMPTY |	\
 	VIRTIO_F_RING_INDIRECT_DESC)
 
@@ -319,6 +320,7 @@ static int viona_ioc_create(viona_soft_state_t *, void *, int, cred_t *);
 static int viona_ioc_delete(viona_soft_state_t *, boolean_t);
 
 static int viona_ioc_set_notify_ioport(viona_link_t *, uint16_t);
+static int viona_ioc_set_notify_mmio(viona_link_t *, void *, int);
 static int viona_ioc_set_promisc(viona_link_t *, viona_promisc_t);
 static int viona_ioc_get_params(viona_link_t *, void *, int);
 static int viona_ioc_set_params(viona_link_t *, void *, int);
@@ -560,7 +562,8 @@ viona_ioctl(dev_t dev, int cmd, intptr_t data, int md, cred_t *cr, int *rv)
 {
 	viona_soft_state_t *ss;
 	void *dptr = (void *)data;
-	int err = 0, val;
+	int err = 0;
+	uint64_t val;
 	viona_link_t *link;
 
 	ss = ddi_get_soft_state(viona_state, getminor(dev));
@@ -606,6 +609,7 @@ viona_ioctl(dev_t dev, int cmd, intptr_t data, int md, cred_t *cr, int *rv)
 			err = EFAULT;
 			break;
 		}
+		link->l_modern = ((val & VIRTIO_F_VERSION_1) != 0);
 		val &= (VIONA_S_HOSTCAPS | link->l_features_hw);
 
 		if ((val & VIRTIO_NET_F_CSUM) == 0)
@@ -650,6 +654,9 @@ viona_ioctl(dev_t dev, int cmd, intptr_t data, int md, cred_t *cr, int *rv)
 			break;
 		}
 		err = viona_ioc_set_notify_ioport(link, (uint16_t)data);
+		break;
+	case VNA_IOC_SET_NOTIFY_MMIO:
+		err = viona_ioc_set_notify_mmio(link, dptr, md);
 		break;
 	case VNA_IOC_SET_PROMISC:
 		err = viona_ioc_set_promisc(link, (viona_promisc_t)data);
@@ -898,6 +905,7 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 	link->l_linkid = kvc.c_linkid;
 	link->l_vm_hold = hold;
 	link->l_mtu = VIONA_DEFAULT_MTU;
+	link->l_notify_mmaddr = NOTIFY_MMADDR_UNSET;
 
 	err = mac_open_by_linkid(link->l_linkid, &link->l_mh);
 	if (err != 0) {
@@ -1011,10 +1019,11 @@ viona_ioc_delete(viona_soft_state_t *ss, boolean_t on_close)
 	link->l_destroyed = B_TRUE;
 
 	/*
-	 * Tear down the IO port hook so it cannot be used to kick any of the
-	 * rings which are about to be reset and stopped.
+	 * Tear down the IO and MMIO port hooks so they cannot be used to kick
+	 * any of the rings which are about to be reset and stopped.
 	 */
 	VERIFY0(viona_ioc_set_notify_ioport(link, 0));
+	VERIFY0(viona_ioc_set_notify_mmio(link, NULL, 0));
 	mutex_exit(&ss->ss_lock);
 
 	/*
@@ -1072,7 +1081,9 @@ viona_ioc_ring_init(viona_link_t *link, void *udata, int md)
 		return (EFAULT);
 	}
 	const struct viona_ring_params params = {
-		.vrp_pa = kri.ri_qaddr,
+		.vrp_pa_desc = kri.ri_qaddr_desc,
+		.vrp_pa_avail = kri.ri_qaddr_avail,
+		.vrp_pa_used = kri.ri_qaddr_used,
 		.vrp_size = kri.ri_qsize,
 		.vrp_avail_idx = 0,
 		.vrp_used_idx = 0,
@@ -1093,7 +1104,9 @@ viona_ioc_ring_set_state(viona_link_t *link, void *udata, int md)
 		return (EFAULT);
 	}
 	const struct viona_ring_params params = {
-		.vrp_pa = krs.vrs_qaddr,
+		.vrp_pa_desc = krs.vrs_qaddr_desc,
+		.vrp_pa_avail = krs.vrs_qaddr_avail,
+		.vrp_pa_used = krs.vrs_qaddr_used,
 		.vrp_size = krs.vrs_qsize,
 		.vrp_avail_idx = krs.vrs_avail_idx,
 		.vrp_used_idx = krs.vrs_used_idx,
@@ -1119,7 +1132,9 @@ viona_ioc_ring_get_state(viona_link_t *link, void *udata, int md)
 		return (err);
 	}
 	krs.vrs_qsize = params.vrp_size;
-	krs.vrs_qaddr = params.vrp_pa;
+	krs.vrs_qaddr_desc = params.vrp_pa_desc;
+	krs.vrs_qaddr_avail = params.vrp_pa_avail;
+	krs.vrs_qaddr_used = params.vrp_pa_used;
 	krs.vrs_avail_idx = params.vrp_avail_idx;
 	krs.vrs_used_idx = params.vrp_used_idx;
 
@@ -1262,6 +1277,66 @@ viona_ioc_set_notify_ioport(viona_link_t *link, uint16_t ioport)
 			link->l_notify_ioport = ioport;
 		}
 	}
+	return (err);
+}
+
+static int
+viona_notify_mmio(void *arg, bool write, uint64_t address, int bytes,
+    uint64_t *val)
+{
+	viona_link_t *link = (viona_link_t *)arg;
+
+	/*
+	 * We are only interested in writes to this BAR region; kick reads out
+	 * to userspace.
+	 */
+	if (!write)
+		return (ESRCH);
+
+	const uint16_t vq = *val;
+
+	/* Let userspace handle notifications for rings other than RX/TX. */
+	if (vq >= VIONA_VQ_MAX)
+		return (ESRCH);
+
+	viona_vring_t *ring = &link->l_vrings[vq];
+	int res = 0;
+
+	mutex_enter(&ring->vr_lock);
+	if (ring->vr_state == VRS_RUN)
+		cv_broadcast(&ring->vr_cv);
+	else
+		res = ESRCH;
+	mutex_exit(&ring->vr_lock);
+
+	return (res);
+}
+
+static int
+viona_ioc_set_notify_mmio(viona_link_t *link, void *udata, int md)
+{
+	vioc_notify_mmio_t vim;
+	int err = 0;
+
+	if (link->l_notify_mmaddr != NOTIFY_MMADDR_UNSET) {
+		int err = vmm_drv_mmio_unhook(link->l_vm_hold,
+		    &link->l_notify_mmcookie);
+		VERIFY(err == 0 || err == ENOENT);
+		link->l_notify_mmaddr = NOTIFY_MMADDR_UNSET;
+	}
+
+	if (udata == NULL)
+		return (0);
+
+	if (ddi_copyin(udata, &vim, sizeof (vim), md) != 0)
+		return (EFAULT);
+
+	err = vmm_drv_mmio_hook(link->l_vm_hold, vim.vim_address, vim.vim_size,
+	    viona_notify_mmio, (void *)link, &link->l_notify_mmcookie);
+	if (err == 0) {
+		link->l_notify_mmaddr = vim.vim_address;
+	}
+
 	return (err);
 }
 

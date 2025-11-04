@@ -43,6 +43,7 @@
 #define	VNA_IOC_SET_PARAMS	(VNA_IOC | 0x26)
 #define	VNA_IOC_GET_MTU		(VNA_IOC | 0x27)
 #define	VNA_IOC_SET_MTU		(VNA_IOC | 0x28)
+#define	VNA_IOC_SET_NOTIFY_MMIO	(VNA_IOC | 0x29)
 
 
 /*
@@ -59,7 +60,7 @@
  * change when the version is modified.  It follows no rules like semver.
  *
  */
-#define	VIONA_CURRENT_INTERFACE_VERSION	4
+#define	VIONA_CURRENT_INTERFACE_VERSION	5
 
 typedef struct vioc_create {
 	datalink_id_t	c_linkid;
@@ -69,7 +70,9 @@ typedef struct vioc_create {
 typedef struct vioc_ring_init {
 	uint16_t	ri_index;
 	uint16_t	ri_qsize;
-	uint64_t	ri_qaddr;
+	uint64_t	ri_qaddr_desc;
+	uint64_t	ri_qaddr_avail;
+	uint64_t	ri_qaddr_used;
 } vioc_ring_init_t;
 
 typedef struct vioc_ring_state {
@@ -77,7 +80,9 @@ typedef struct vioc_ring_state {
 	uint16_t	vrs_avail_idx;
 	uint16_t	vrs_used_idx;
 	uint16_t	vrs_qsize;
-	uint64_t	vrs_qaddr;
+	uint64_t	vrs_qaddr_desc;
+	uint64_t	vrs_qaddr_avail;
+	uint64_t	vrs_qaddr_used;
 } vioc_ring_state_t;
 
 typedef struct vioc_ring_msi {
@@ -103,6 +108,10 @@ typedef struct vioc_intr_poll {
 	uint32_t	vip_status[VIONA_VQ_MAX];
 } vioc_intr_poll_t;
 
+typedef struct vioc_notify_mmio {
+	uint64_t	vim_address;
+	uint32_t	vim_size;
+} vioc_notify_mmio_t;
 
 /*
  * Viona Parameter Interfaces
