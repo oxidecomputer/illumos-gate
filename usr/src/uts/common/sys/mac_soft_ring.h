@@ -675,7 +675,8 @@ extern void mac_soft_ring_destroy(mac_soft_ring_t *);
 extern void mac_soft_ring_action_refresh(mac_soft_ring_t *);
 
 /* Rx SRS */
-extern mac_soft_ring_set_t *mac_srs_create_rx_logical(flow_entry_t *);
+extern mac_soft_ring_set_t *mac_srs_create_rx_logical(flow_entry_t *,
+    mac_soft_ring_set_t *);
 extern void mac_srs_free(mac_soft_ring_set_t *);
 extern void mac_srs_signal(mac_soft_ring_set_t *, uint_t);
 extern cpu_t *mac_srs_bind(mac_soft_ring_set_t *, processorid_t);

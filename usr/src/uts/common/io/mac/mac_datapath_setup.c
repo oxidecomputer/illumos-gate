@@ -79,6 +79,9 @@ struct mac_srs_create_params {
 			mac_direct_rx_t rx_func;
 			mac_ring_t *ring;
 		} rx;
+		struct {
+			mac_soft_ring_set_t *head_srs;
+		} logical;
 	} msc_data;
 };
 
@@ -326,8 +329,6 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
 
 /* POLLING SETUP AND TEAR DOWN ROUTINES */
 
-/* TODO(ky): these *do* need to decend into the baked flow tree's SRSes */
-
 /*
  * mac_srs_client_poll_quiesce and mac_srs_client_poll_restart
  *
@@ -429,6 +430,13 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 		    curr_f == mcip->mci_fastpath_ipv6_tcp) ?
 		    act->fa_resource_add : NULL;
 
+		/* TODO(ky): LOCKING?? QUIESCENCE?? */
+		if (add_notify_fn != NULL) {
+			/* TODO(ky): express this as part of the flowspec */
+			/* Want finer-grained control over fanout behaviour */
+			logical_srs->srs_type |= SRST_ALWAYS_HASH_OUT;
+		}
+
 		for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
 		    softring != NULL; softring = softring->s_ring_next) {
 			mac_soft_ring_action_refresh(softring);
@@ -476,7 +484,7 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
 	 * callback. In addition, in the case of TCP, invoke IP's callback
 	 * for ring removal.
 	 *
-	 * Client polled rings and DLS bypass are persent on the *logical* SRSes
+	 * Client polled rings and DLS bypass are present on the *logical* SRSes
 	 * attached to this SRS. Keep these structures in place rather than
 	 * rebuilding/binding everything for what is likely a transient loss of
 	 * the bypass.
@@ -491,6 +499,8 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
 
 		if (!is_fp_leaf)
 			continue;
+
+		/* TODO(ky): LOCKING?? QUIESCENCE?? */
 
 		const flow_action_t *act = &curr_f->fe_action;
 		const mac_resource_remove_t rm_notify_fn =
@@ -1913,8 +1923,6 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 	ASSERT(mrp != NULL);
 	soft_ring_cnt = srs_cpu->mc_rx_fanout_cnt;
 
-	/* TODO(ky): Revisit ALL of this. This should fall back to the flent cfg */
-
 	/* Step 1: bind cpu contains cpu list where threads need to bind */
 	if (soft_ring_cnt > 0) {
 		mutex_enter(&cpu_lock);
@@ -1924,9 +1932,13 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 			mac_srs_create_rx_softring(i, soft_ring_flag,
 			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
 		}
-		mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
-		mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
-		mac_rx_srs_retarget_intr(mac_rx_srs, srs_cpu->mc_rx_intr_cpu);
+		if ((mac_rx_srs->srs_type & SRST_LOGICAL) != 0) {
+			mac_srs_worker_bind(mac_rx_srs,
+			    srs_cpu->mc_rx_workerid);
+			mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
+			mac_rx_srs_retarget_intr(mac_rx_srs,
+			    srs_cpu->mc_rx_intr_cpu);
+		}
 		/*
 		 * Bind Tx srs and soft ring threads too.
 		 * Let's bind tx srs to the last cpu in
@@ -1946,8 +1958,10 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 		 * For a subflow, mrp_workerid and mrp_pollid
 		 * is not set.
 		 */
-		mac_srs_worker_bind(mac_rx_srs, mrp->mrp_rx_workerid);
-		mac_srs_poll_bind(mac_rx_srs, mrp->mrp_rx_pollid);
+		if ((mac_rx_srs->srs_type & SRST_LOGICAL) != 0) {
+			mac_srs_worker_bind(mac_rx_srs, mrp->mrp_rx_workerid);
+			mac_srs_poll_bind(mac_rx_srs, mrp->mrp_rx_pollid);
+		}
 		mutex_exit(&cpu_lock);
 		goto no_softrings;
 	}
@@ -2071,17 +2085,11 @@ mac_srs_create_tx(mac_client_impl_t *mcip, flow_entry_t *flent,
 }
 
 mac_soft_ring_set_t *
-mac_srs_create_rx_logical(flow_entry_t *flent)
+mac_srs_create_rx_logical(flow_entry_t *flent, mac_soft_ring_set_t *entry_srs)
 {
-	// Don't bind worker.
-	// Take various apects from target flent (delivery fn etc.)
-	const struct mac_srs_create_params p = { .msc_ty = SCT_LOGICAL };
-
-	// TODO: copy out bindings from the true parent srs.
-	// Figure out how to refcount these down the line.
-	// These should be defined by this point?
-	// TODO TODO TODO(ky)
-	return (NULL);
+	struct mac_srs_create_params p = { .msc_ty = SCT_LOGICAL };
+	p.msc_data.logical.head_srs = entry_srs;
+	return (mac_srs_create(entry_srs->srs_mcip, flent, SRST_LOGICAL, &p));
 }
 
 /*
@@ -2133,20 +2141,30 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 		if (flent->fe_rx_srs_cnt == 0)
 			bzero(mac_srs->srs_bw, sizeof (mac_bw_ctl_t));
 
-		/*
-		 * It is better to panic here rather than just assert because
-		 * on a non-debug kernel we might end up courrupting memory
-		 * and making it difficult to debug.
-		 */
-		if (flent->fe_rx_srs_cnt >= MAX_RINGS_PER_GROUP) {
-			panic("Array Overrun detected due to MAC client %p "
-			    " having more rings than %d", (void *)mcip,
-			    MAX_RINGS_PER_GROUP);
-		}
-		flent->fe_rx_srs[flent->fe_rx_srs_cnt] = mac_srs;
-		flent->fe_rx_srs_cnt++;
+		if (!is_logical) {
+			/*
+			 * It is better to panic here rather than just assert
+			 * because on a non-debug kernel we might end up
+			 * courrupting memory and making it difficult to debug.
+			 */
+			if (flent->fe_rx_srs_cnt >= MAX_RINGS_PER_GROUP) {
+				panic("Array Overrun detected due to MAC client"
+				    " %p having more rings than %d",
+				    (void *)mcip, MAX_RINGS_PER_GROUP);
+			}
+			flent->fe_rx_srs[flent->fe_rx_srs_cnt] = mac_srs;
+			flent->fe_rx_srs_cnt++;
 
-		srs_rx->sr_poll_cpuid = srs_rx->sr_poll_cpuid_save = -1;
+			srs_rx->sr_poll_cpuid = srs_rx->sr_poll_cpuid_save = -1;
+		} else {
+			mac_soft_ring_set_t *es = p->msc_data.logical.head_srs;
+			ASSERT3P(es, !=, NULL);
+			if (es->srs_logical_next != NULL) {
+				mac_srs->srs_logical_next =
+				    es->srs_logical_next;
+			}
+			es->srs_logical_next = mac_srs;
+		}
 	}
 	mac_srs->srs_flent = flent;
 	mutex_exit(&flent->fe_lock);
@@ -4152,4 +4170,187 @@ mac_poll_state_change(mac_handle_t mh, boolean_t enable)
 		mac_client_update_classifier(mcip);
 	}
 	i_mac_perim_exit(mip);
+}
+
+static inline void
+mac_flow_fill_exit(flow_entry_t *ent, flow_tree_exit_node_t *node, bool ascend,
+    mac_cpus_t *fanout_blueprint, mac_soft_ring_set_t *root_srs)
+{
+	node->ftex_ascend = ascend;
+	if ((ent->fe_action.fa_flags & MFA_FLAGS_ACTION) != 0) {
+		if (ent->fe_action.fa_direct_rx_fn != NULL) {
+			node->ftex_do = MFA_TYPE_DELIVER;
+			mac_soft_ring_set_t *srs =
+			    mac_srs_create_rx_logical(ent, root_srs);
+			srs->srs_cpu = *fanout_blueprint;
+			node->arg.ftex_srs = srs;
+			mac_srs_fanout_init(root_srs->srs_mcip,
+			    &ent->fe_resource_props, srs, NULL,
+			    NULL /* TODO(ky): plumb cpupart from somewhere? */);
+		} else {
+			node->ftex_do = MFA_TYPE_DROP;
+			node->arg.ftex_flent = ent;
+		}
+	} else {
+		node->ftex_do = MFA_TYPE_DELEGATE;
+		node->arg.ftex_flent = ent;
+	}
+}
+
+/*
+ * Allocates the structure of a baked flow tree, filling in references to
+ * ... XXX TODO(ky).
+ */
+int
+mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
+{
+	int err = 0;
+	size_t max_depth = 0;
+	size_t n_nodes = 0;
+	flow_tree_baked_t *into = &based_on->srs_flowtree;
+
+	ASSERT3P(flent, !=, NULL);
+
+	mac_cpus_t dup_fanout = based_on->srs_cpu;
+	dup_fanout.mc_ncpus = dup_fanout.mc_rx_fanout_cnt;
+	bcopy(dup_fanout.mc_cpus, dup_fanout.mc_rx_fanout_cpus,
+	    sizeof (dup_fanout.mc_cpus));
+	dup_fanout.mc_rx_intr_cpu = -1;
+
+	/* TOOD: refcount manipulation? */
+
+	/* Walk the existing tree for size measurement. */
+	flow_entry_t *el = flent->fe_child;
+	bool ascended = false;
+	size_t depth = 0;
+	while (el != NULL && el != flent) {
+		ASSERT3P(el->fe_parent, !=, NULL);
+
+		if (!ascended) {
+			n_nodes += 1;
+		}
+
+		max_depth = MAX(max_depth, depth);
+
+		if (!ascended && el->fe_child != NULL) {
+			depth += 1;
+			el = el->fe_child;
+			ascended = false;
+		} else if (el->fe_sibling != NULL) {
+			el = el->fe_sibling;
+			ascended = false;
+		} else {
+			depth -= 1;
+			el = el->fe_parent;
+			ascended = true;
+		}
+	}
+
+	if (max_depth > UINT16_MAX || n_nodes > UINT16_MAX) {
+		err = E2BIG;
+		goto bail;
+	}
+
+	into->ftb_depth = (uint16_t)max_depth;
+	into->ftb_len = (uint16_t)n_nodes;
+
+	const size_t chain_len = max_depth * sizeof (flow_tree_pkt_set_t);
+	const size_t subtree_len = 2 * n_nodes *
+	    sizeof (flow_tree_baked_node_t);
+	const size_t enter_track_len = max_depth * sizeof (uint16_t);
+	into->ftb_chains = kmem_zalloc(chain_len, KM_SLEEP);
+	into->ftb_subtree = kmem_zalloc(subtree_len, KM_SLEEP);
+
+	/* Scratch space for ... without taking up too much stack */
+	uint16_t *node_enters = kmem_zalloc(enter_track_len, KM_SLEEP);
+
+	if (into->ftb_chains == NULL || into->ftb_subtree == NULL ||
+	    node_enters == NULL) {
+		err = ENOMEM;
+		goto bail;
+	}
+
+	/* Now, populate the tree. */
+
+	/* TODO: refcounts on flent? */
+	mac_flow_fill_exit(el, &into->ftb_exit, false, &dup_fanout, based_on);
+	/* TODO: ftex_srs should be filled here even if DELEGATE */
+
+	el = flent->fe_child;
+	ascended = false;
+	flow_tree_baked_node_t *curr_node = into->ftb_subtree;
+
+	while (el != NULL && el != flent) {
+		const size_t node_idx = curr_node - into->ftb_subtree;
+		ASSERT3U(node_idx, <=, UINT16_MAX);
+
+		if (!ascended) {
+			node_enters[depth] = node_idx;
+			curr_node->enter.ften_flent = el;
+			/* TODO(ky) FILL FE_MATCH2 AT SOURCE */
+			curr_node->enter.ften_match = el->fe_match2;
+			curr_node->enter.ften_descend = el->fe_child != NULL;
+			curr_node++;
+		}
+
+		if (!ascended && el->fe_child != NULL) {
+			ascended = false;
+			el = el->fe_child;
+		} else if (el->fe_sibling != NULL) {
+			uint16_t my_enter = node_enters[depth];
+			curr_node[my_enter].enter.ften_skip = node_idx -
+			    my_enter;
+
+			ascended = false;
+			mac_flow_fill_exit(el, &into->ftb_exit, false,
+			    &dup_fanout, based_on);
+			curr_node++;
+
+			el = el->fe_sibling;
+		} else {
+			uint16_t my_enter = node_enters[depth];
+			curr_node[my_enter].enter.ften_skip = node_idx -
+			    my_enter;
+
+			ascended = true;
+			mac_flow_fill_exit(el, &into->ftb_exit, true,
+			    &dup_fanout, based_on);
+			curr_node++;
+
+			el = el->fe_parent;
+		}
+	}
+
+	kmem_free(node_enters, enter_track_len);
+
+	return (err);
+
+bail:
+	if (into->ftb_chains != NULL) {
+		kmem_free(into->ftb_chains, chain_len);
+	}
+	if (into->ftb_subtree != NULL) {
+		kmem_free(into->ftb_subtree, subtree_len);
+	}
+	if (node_enters != NULL) {
+		kmem_free(node_enters, enter_track_len);
+	}
+	return (err);
+}
+
+void
+mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
+{
+	ASSERT3P(tree, !=, NULL);
+
+	/* TODO(ky): SRS teardown. */
+
+	if (tree->ftb_chains != NULL) {
+		kmem_free(tree->ftb_chains, tree->ftb_depth *
+		    sizeof (flow_tree_pkt_set_t));
+	}
+	if (tree->ftb_subtree != NULL) {
+		kmem_free(tree->ftb_subtree, 2 * tree->ftb_len *
+		    sizeof (flow_tree_baked_node_t));
+	}
 }

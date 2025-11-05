@@ -26,7 +26,7 @@ PROGS = \
 
 COMMON_OBJS = mac_ktest_common.o
 
-SCRIPTS = mac_ktest
+SCRIPTS = mac_ktest # mac_flow_ktest
 
 DATAFILES = \
 	ipv4_bad_proto.snoop \

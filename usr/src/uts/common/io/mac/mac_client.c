@@ -165,6 +165,10 @@ static void mac_client_datapath_teardown(mac_client_handle_t,
     mac_unicast_impl_t *, flow_entry_t *);
 static int mac_resource_ctl_set(mac_client_handle_t, mac_resource_props_t *);
 
+static void mac_create_fastpath_flows(mac_client_impl_t *);
+static void mac_update_fastpath_flows(mac_client_impl_t *);
+static void mac_teardown_fastpath_flows(mac_client_impl_t *);
+
 /* ARGSUSED */
 static int
 i_mac_client_impl_ctor(void *buf, void *arg, int kmflag)
@@ -1444,6 +1448,9 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	FLOW_MARK(flent, FE_MC_NO_DATAPATH);
 	flent->fe_mcip = mcip;
 
+	/* Attach fastpath flows as used by DLS bypass */
+	mac_create_fastpath_flows(mcip);
+
 	/*
 	 * Place initial creation reference on the flow. This reference
 	 * is released in the corresponding delete action viz.
@@ -1522,6 +1529,9 @@ mac_client_close(mac_client_handle_t mch, uint16_t flags)
 		    mcip->mci_flent);
 		mcip->mci_state_flags &= ~MCIS_NO_UNICAST_ADDR;
 	}
+
+	/* remove the fastpath flows */
+	mac_teardown_fastpath_flows(mcip);
 
 	/*
 	 * Remove the flent associated with the MAC client
@@ -5940,7 +5950,6 @@ mac_set_promisc_filtered(mac_client_handle_t mch, boolean_t enable)
  * - above set via dld_capab_poll_enable (mac_resource_set_common, ...)
  *
  * TODO(ky): refactor
- * TODO(ky): actually hook these in!!!!!!
  */
 
 static void
@@ -5954,7 +5963,6 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	flow_desc_t f = { 0 };
 
 	/* TODO(ky): Reconsider meaning of FLOW_USER? Less draconian? */
-
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4", mcip->mci_name);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
 	ipv4->fe_match2.mfm_type = MFM_SAP;
@@ -5985,6 +5993,8 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	ipv6_udp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv6_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
 
+	/* TODO(ky): FLOW_MARK(flent, FE_UF_NO_DATAPATH); ? */
+
 	/*
 	 * TODO(ky): are we enforcing all necessary params for the fastpath?
 	 */
@@ -6007,8 +6017,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 	/* Parent MCIP isn't hooked into subflow_tab, so the leaf flows do not yet have children */
 
-	/* TODO(ky): create SRSes? */
-	/* TODO(ky): set SRST_ALWAYS_HASH_OUT as part of type for TCP SRS? */
+	/* TODO(ky): create SRSes? ...Not needed for the flow def'n, it would seem */
 
 	mcip->mci_fastpath_ipv4 = ipv4;
 	mcip->mci_fastpath_ipv4_tcp = ipv4_tcp;
@@ -6109,5 +6118,12 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 static void
 mac_teardown_fastpath_flows(mac_client_impl_t *mcip)
 {
-	
+	/* TODO(ky); anything else necessary here? */
+	/* There aren't bound  */
+	mac_flow_cleanup(mcip->mci_fastpath_ipv6_udp);
+	mac_flow_cleanup(mcip->mci_fastpath_ipv6_tcp);
+	mac_flow_cleanup(mcip->mci_fastpath_ipv6);
+	mac_flow_cleanup(mcip->mci_fastpath_ipv4_udp);
+	mac_flow_cleanup(mcip->mci_fastpath_ipv4_tcp);
+	mac_flow_cleanup(mcip->mci_fastpath_ipv4);
 }

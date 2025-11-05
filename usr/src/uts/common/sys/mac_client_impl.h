@@ -444,11 +444,6 @@ extern int mac_client_set_rings_prop(mac_client_impl_t *,
     mac_resource_props_t *, mac_resource_props_t *);
 extern void mac_set_prim_vlan_rings(mac_impl_t *, mac_resource_props_t *);
 
-/* TODO(ky): right place? */
-static void mac_create_fastpath_flows(mac_client_impl_t *);
-static void mac_update_fastpath_flows(mac_client_impl_t *);
-static void mac_teardown_fastpath_flows(mac_client_impl_t *);
-
 #ifdef	__cplusplus
 }
 #endif

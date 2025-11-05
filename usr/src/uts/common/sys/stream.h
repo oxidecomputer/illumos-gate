@@ -855,7 +855,7 @@ extern mblk_t *reallocb(mblk_t *, size_t, uint_t);	/* private */
 extern mblk_t *rmvb(mblk_t *, mblk_t *);
 extern int pullupmsg(struct msgb *, ssize_t);
 extern mblk_t *msgpullup(struct msgb *, ssize_t);
-extern mblk_t *msgpullup_pad(struct msgb *, ssize_t, ssize_t);
+extern mblk_t *msgpullup_pad(struct msgb *, ssize_t, size_t);
 extern int adjmsg(struct msgb *, ssize_t);
 extern size_t msgdsize(const struct msgb *);
 extern mblk_t *getq(queue_t *);
