@@ -66,6 +66,9 @@ static int mac_compute_soft_ring_count(flow_entry_t *, int, int);
 static void mac_walk_srs_and_bind(int);
 static void mac_walk_srs_and_unbind(int);
 
+static int mac_flow_baked_tree_create(flow_entry_t *, mac_soft_ring_set_t *);
+static void mac_flow_baked_tree_destroy(flow_tree_baked_t *);
+
 enum mac_srs_create_ty {
 	SCT_RX,
 	SCT_TX,
@@ -2332,6 +2335,10 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 	}
 done:
 	mac_srs_stat_create(mac_srs);
+	/* TODO(ky): right place? */
+	if (!is_tx_srs && !is_logical) {
+		VERIFY0(mac_flow_baked_tree_create(flent, mac_srs));
+	}
 	return (mac_srs);
 }
 
@@ -3533,6 +3540,12 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 
 	mac_srs->srs_bw = NULL;
 	mac_srs_stat_delete(mac_srs);
+
+	if ((mac_srs->srs_type & SRST_LOGICAL) != 0 &&
+	    (mac_srs->srs_type & SRST_TX) == 0) {
+		mac_flow_baked_tree_destroy(&mac_srs->srs_flowtree);
+	}
+
 	kmem_cache_free(mac_srs_cache, mac_srs);
 }
 
@@ -4201,13 +4214,15 @@ mac_flow_fill_exit(flow_entry_t *ent, flow_tree_exit_node_t *node, bool ascend,
  * Allocates the structure of a baked flow tree, filling in references to
  * ... XXX TODO(ky).
  */
-int
+static int
 mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 {
 	int err = 0;
 	size_t max_depth = 0;
 	size_t n_nodes = 0;
 	flow_tree_baked_t *into = &based_on->srs_flowtree;
+
+	debug_enter("flow_tree_create");
 
 	ASSERT3P(flent, !=, NULL);
 
@@ -4323,9 +4338,13 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 
 	kmem_free(node_enters, enter_track_len);
 
+	debug_enter("flow_tree_create done");
+
 	return (err);
 
 bail:
+	debug_enter("flow_tree_create bad!");
+
 	if (into->ftb_chains != NULL) {
 		kmem_free(into->ftb_chains, chain_len);
 	}
@@ -4338,7 +4357,7 @@ bail:
 	return (err);
 }
 
-void
+static void
 mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
 {
 	ASSERT3P(tree, !=, NULL);

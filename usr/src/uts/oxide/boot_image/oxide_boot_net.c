@@ -839,14 +839,14 @@ oxide_boot_net(oxide_boot_t *oxb)
 	 * cannot walk the device tree looking for a device class of
 	 * ESC_NETWORK until everything is attached.
 	 */
-	oxide_boot_debug("attaching stuff...");
+	oxide_boot_note("attaching stuff...");
 	(void) ndi_devi_config(ddi_root_node(), NDI_CONFIG | NDI_DEVI_PERSIST |
 	    NDI_NO_EVENT | NDI_DRV_CONF_REPROBE);
 
 	/*
 	 * We need to find and attach the Ethernet device we want.
 	 */
-	oxide_boot_debug("Ethernet interfaces:");
+	oxide_boot_note("Ethernet interfaces:");
 	ddi_walk_devs(ddi_root_node(), oxide_boot_net_find_ether, &ofe);
 
 	if (ofe.ofe_linkname[0] == '\0') {
@@ -856,13 +856,13 @@ oxide_boot_net(oxide_boot_t *oxb)
 
 	int r;
 	mac_handle_t mh;
-	oxide_boot_debug("opening %s handle", ofe.ofe_linkname);
+	oxide_boot_note("opening %s handle", ofe.ofe_linkname);
 	if ((r = mac_open(ofe.ofe_linkname, &mh)) != 0) {
 		oxide_boot_warn("mac_open failed with %d", r);
 		return (false);
 	}
 
-	oxide_boot_debug("opening client handle");
+	oxide_boot_note("opening client handle");
 	mac_client_handle_t mch;
 	if ((r = mac_client_open(mh, &mch, NULL,
 	    MAC_OPEN_FLAGS_USE_DATALINK_NAME)) != 0) {

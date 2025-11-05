@@ -1443,20 +1443,21 @@ mp_len(const mblk_t *mp)
 /*
  * Drop the rx packet and advance to the next one in the chain.
  */
-static void
-mac_rx_drop_pkt(mac_soft_ring_set_t *srs, mblk_t *mp)
-{
-	mac_srs_rx_t	*srs_rx = &srs->srs_kind_data.rx;
+/* TODO(ky): still needed? */
+// static void
+// mac_rx_drop_pkt(mac_soft_ring_set_t *srs, mblk_t *mp)
+// {
+// 	mac_srs_rx_t	*srs_rx = &srs->srs_kind_data.rx;
 
-	ASSERT(mp->b_next == NULL);
-	mutex_enter(&srs->srs_lock);
-	MAC_UPDATE_SRS_COUNT_LOCKED(srs, 1);
-	MAC_UPDATE_SRS_SIZE_LOCKED(srs, msgdsize(mp));
-	mutex_exit(&srs->srs_lock);
+// 	ASSERT(mp->b_next == NULL);
+// 	mutex_enter(&srs->srs_lock);
+// 	MAC_UPDATE_SRS_COUNT_LOCKED(srs, 1);
+// 	MAC_UPDATE_SRS_SIZE_LOCKED(srs, msgdsize(mp));
+// 	mutex_exit(&srs->srs_lock);
 
-	srs_rx->sr_stat.mrs_sdrops++;
-	freemsg(mp);
-}
+// 	srs_rx->sr_stat.mrs_sdrops++;
+// 	freemsg(mp);
+// }
 
 /* DATAPATH RUNTIME ROUTINES */
 
@@ -2909,9 +2910,9 @@ again:
 	/* TODO(ky): `likely()`? */
 	if (mac_srs->srs_flowtree.ftb_depth > 0) {
 		/* TODO(ky): walk tree, deliver to SRSes as needed */
-		ASSERT3U(mac_srs->srs_flowtree->ftb_len, >, 0);
-		ASSERT3P(mac_srs->srs_flowtree->ftb_chains, !=, NULL);
-		ASSERT3P(mac_srs->srs_flowtree->ftb_subtree, !=, NULL);
+		ASSERT3U(mac_srs->srs_flowtree.ftb_len, >, 0);
+		ASSERT3P(mac_srs->srs_flowtree.ftb_chains, !=, NULL);
+		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
 	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
@@ -3105,7 +3106,7 @@ done:
 		/*
 		 * Poll thread still owns the SRS and is still running
 		 */
-		ASSERT((mac_srs->srs_poll_thr == NULL) ||
+		ASSERT((mac_srs->srs_kind_data.rx.sr_poll_thr == NULL) ||
 		    ((mac_srs->srs_state & SRS_POLL_THR_OWNER) ==
 		    SRS_POLL_THR_OWNER));
 	}

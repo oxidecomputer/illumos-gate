@@ -5181,8 +5181,8 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 			ASSERT(mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT);
 			mac_srs = MCIP_TX_SRS(mcip);
 			srs_tx = &mac_srs->srs_kind_data.tx;
-			ASSERT(srs_tx.st_mode == SRS_TX_AGGR ||
-			    srs_tx.st_mode == SRS_TX_BW_AGGR);
+			ASSERT(srs_tx->st_mode == SRS_TX_AGGR ||
+			    srs_tx->st_mode == SRS_TX_BW_AGGR);
 			/*
 			 * Wakeup any callers blocked on this
 			 * Tx ring due to flow control.

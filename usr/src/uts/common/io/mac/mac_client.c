@@ -1448,8 +1448,12 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	FLOW_MARK(flent, FE_MC_NO_DATAPATH);
 	flent->fe_mcip = mcip;
 
+	debug_enter("before fp flows");
+
 	/* Attach fastpath flows as used by DLS bypass */
 	mac_create_fastpath_flows(mcip);
+
+	debug_enter("after fp flows");
 
 	/*
 	 * Place initial creation reference on the flow. This reference
