@@ -377,7 +377,7 @@ struct mac_soft_ring_set_s {
 	 * An SRS may be either _complete_ (!(srs_type & SRST_LOGICAL)), or
 	 * _logical_ (srs_type & SRST_LOGICAL).
 	 *
-	 * Complete SRSes are valid entrypoints for packets, and may have the
+	 * Complete SRSes are valid entry points for packets, and may have the
 	 * full suite of poll and/or worker threads created and bound to them.
 	 * If needed, they will have a valid baked flowtree for packet delivery.
 	 *

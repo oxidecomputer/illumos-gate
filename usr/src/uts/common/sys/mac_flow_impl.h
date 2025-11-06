@@ -241,6 +241,7 @@ typedef enum {
 } mac_flow_action_type_t;
 
 typedef enum {
+	MFM_NONE,
 	MFM_SAP,
 	MFM_IPPROTO,
 	MFM_LIST,

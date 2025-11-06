@@ -1935,7 +1935,7 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 			mac_srs_create_rx_softring(i, soft_ring_flag,
 			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
 		}
-		if ((mac_rx_srs->srs_type & SRST_LOGICAL) != 0) {
+		if ((mac_rx_srs->srs_type & SRST_LOGICAL) == 0) {
 			mac_srs_worker_bind(mac_rx_srs,
 			    srs_cpu->mc_rx_workerid);
 			mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
@@ -1961,7 +1961,7 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 		 * For a subflow, mrp_workerid and mrp_pollid
 		 * is not set.
 		 */
-		if ((mac_rx_srs->srs_type & SRST_LOGICAL) != 0) {
+		if ((mac_rx_srs->srs_type & SRST_LOGICAL) == 0) {
 			mac_srs_worker_bind(mac_rx_srs, mrp->mrp_rx_workerid);
 			mac_srs_poll_bind(mac_rx_srs, mrp->mrp_rx_pollid);
 		}
@@ -2045,18 +2045,22 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 	 */
 	for (i = 0; i < rx_srs_cnt; i++) {
 		mac_rx_srs = flent->fe_rx_srs[i];
+		ASSERT3U((mac_rx_srs->srs_type & SRST_LOGICAL), ==, 0);
 		if (i != 0)
 			mac_tx_srs = NULL;
 		switch (mac_rx_srs->srs_fanout_state) {
 		case SRS_FANOUT_UNINIT:
 			mac_srs_fanout_init(mcip, mrp, mac_rx_srs, mac_tx_srs,
 			    cpupart);
+			/* TODO(ky): right place? */
+			VERIFY0(mac_flow_baked_tree_create(flent, mac_rx_srs));
 			break;
 		case SRS_FANOUT_INIT:
 			break;
 		case SRS_FANOUT_REINIT:
 			mac_rx_srs_quiesce(mac_rx_srs, SRS_QUIESCE);
 			mac_srs_fanout_modify(mcip, mac_rx_srs, mac_tx_srs);
+			/* TODO(ky): do the same on attached logicals? */
 			mac_rx_srs_restart(mac_rx_srs);
 			break;
 		default:
@@ -2335,10 +2339,6 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 	}
 done:
 	mac_srs_stat_create(mac_srs);
-	/* TODO(ky): right place? */
-	if (!is_tx_srs && !is_logical) {
-		VERIFY0(mac_flow_baked_tree_create(flent, mac_srs));
-	}
 	return (mac_srs);
 }
 
@@ -3641,10 +3641,10 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 void
 mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 {
-	mac_ring_t	*ring;
+	mac_ring_t	*ring = mac_srs->srs_kind_data.rx.sr_ring;
 
-	ASSERT(mac_srs_is_tx(mac_srs) ||
-	    (mac_srs->srs_kind_data.rx.sr_ring->mr_refcnt == 0));
+	ASSERT(mac_srs_is_tx(mac_srs) || (ring == NULL) ||
+	    (ring->mr_refcnt == 0));
 
 	if (srs_flag == SRS_CONDEMNED) {
 		/*
@@ -4264,6 +4264,11 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	if (max_depth > UINT16_MAX || n_nodes > UINT16_MAX) {
 		err = E2BIG;
 		goto bail;
+	} else if (n_nodes == 0) {
+		ASSERT3U(max_depth, ==, 0);
+		into->ftb_chains = NULL;
+		into->ftb_subtree = NULL;
+		return (0);
 	}
 
 	into->ftb_depth = (uint16_t)max_depth;
@@ -4273,6 +4278,7 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	const size_t subtree_len = 2 * n_nodes *
 	    sizeof (flow_tree_baked_node_t);
 	const size_t enter_track_len = max_depth * sizeof (uint16_t);
+
 	into->ftb_chains = kmem_zalloc(chain_len, KM_SLEEP);
 	into->ftb_subtree = kmem_zalloc(subtree_len, KM_SLEEP);
 
@@ -4302,7 +4308,6 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 		if (!ascended) {
 			node_enters[depth] = node_idx;
 			curr_node->enter.ften_flent = el;
-			/* TODO(ky) FILL FE_MATCH2 AT SOURCE */
 			curr_node->enter.ften_match = el->fe_match2;
 			curr_node->enter.ften_descend = el->fe_child != NULL;
 			curr_node++;

@@ -1438,7 +1438,6 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	mcip->mci_misc_stat.mms_brdcstxmt = 0;
 
 	/* Create an initial flow */
-
 	err = mac_flow_create(NULL, NULL, mcip->mci_name, NULL,
 	    mcip->mci_state_flags & MCIS_IS_VNIC ? FLOW_VNIC_MAC :
 	    FLOW_PRIMARY_MAC, &flent);
@@ -1447,6 +1446,11 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	mcip->mci_flent = flent;
 	FLOW_MARK(flent, FE_MC_NO_DATAPATH);
 	flent->fe_mcip = mcip;
+
+	/* Be default, hand all packets up to DLS. */
+	flent->fe_action.fa_flags = MFA_FLAGS_ACTION;
+	flent->fe_action.fa_direct_rx_fn = mac_rx_deliver;
+	flent->fe_action.fa_direct_rx_arg = (void *)mcip;
 
 	debug_enter("before fp flows");
 
@@ -5959,14 +5963,15 @@ mac_set_promisc_filtered(mac_client_handle_t mch, boolean_t enable)
 static void
 mac_create_fastpath_flows(mac_client_impl_t *mcip)
 {
-	flow_entry_t *ipv4, *ipv4_tcp, *ipv4_udp;
-	flow_entry_t *ipv6, *ipv6_tcp, *ipv6_udp;
+	flow_entry_t *ipv4 = NULL, *ipv4_tcp = NULL, *ipv4_udp = NULL;
+	flow_entry_t *ipv6 = NULL, *ipv6_tcp = NULL, *ipv6_udp = NULL;
 	char flowname[MAXFLOWNAMELEN];
 
 	/* This is a dummy flow for now. We're actually filling in the contents of fe_match2. */
 	flow_desc_t f = { 0 };
 
 	/* TODO(ky): Reconsider meaning of FLOW_USER? Less draconian? */
+	/* TODO(ky): Namespace collisions here between initial bringup and extra clients */
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4", mcip->mci_name);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
 	ipv4->fe_match2.mfm_type = MFM_SAP;
@@ -6001,7 +6006,10 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 	/*
 	 * TODO(ky): are we enforcing all necessary params for the fastpath?
+	 * E.g. MAC checks in certain promisc cases.
 	 */
+	mcip->mci_flent->fe_child = ipv4;
+
 	ipv4->fe_parent = mcip->mci_flent;
 	ipv4->fe_sibling = ipv6;
 	ipv4->fe_child = ipv4_tcp;
@@ -6035,7 +6043,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 /*
  * Fastpath fn ptrs provided by userland have changed out (initial registration,
- * most likely), or the subflow table got updated. Update leaf flows, rebake trees.
+ * most likely), or the subflow table got updated. Update leaf flows, rebake(?) trees.
  */
 static void
 mac_update_fastpath_flows(mac_client_impl_t *mcip)
@@ -6048,22 +6056,25 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 	flow_entry_t *ipv6_udp = mcip->mci_fastpath_ipv6_udp;
 
 	/* TODO(ky): Create subflow tab entries as children of leaves, sibling of v6 */
-	/* TODO(ky): Update fn pointers on leaf nodes  */
 
 	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv4_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
+	ipv4_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
 	ipv6->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv6_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv6_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv6_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
+	ipv6_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
+
+	/* TODO(ky) This is not handled via delegation to avoid rebaking the flowtree atm */
+	const flow_entry_t *root_flent = mcip->mci_flent;
+	ASSERT3U(root_flent->fe_action.fa_flags & MFA_FLAGS_ACTION, !=, 0);
+	mac_direct_rx_t default_action = root_flent->fe_action.fa_direct_rx_fn;
+	mac_direct_rx_t default_arg = root_flent->fe_action.fa_direct_rx_arg;
 
 	if (mcip->mci_direct_rx.mdrx_v4 != NULL) {
-		ipv4_tcp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
 		ipv4_tcp->fe_action.fa_direct_rx_fn =
 		    mcip->mci_direct_rx.mdrx_v4;
 		ipv4_tcp->fe_action.fa_direct_rx_arg =
 		    mcip->mci_direct_rx.mdrx_arg_v4;
-		ipv4_udp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
 		ipv4_udp->fe_action.fa_direct_rx_fn =
 		    mcip->mci_direct_rx.mdrx_v4;
 		ipv4_udp->fe_action.fa_direct_rx_arg =
@@ -6084,6 +6095,11 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 			ipv4_tcp->fe_action.fa_resource_arg =
 			    mcip->mci_resource_arg;
 		}
+	} else {
+		ipv4_tcp->fe_action.fa_direct_rx_fn = default_action;
+		ipv4_tcp->fe_action.fa_direct_rx_arg = default_arg;
+		ipv4_udp->fe_action.fa_direct_rx_fn = default_action;
+		ipv4_udp->fe_action.fa_direct_rx_arg = default_arg;
 	}
 	if (mcip->mci_direct_rx.mdrx_v6 != NULL) {
 		ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
@@ -6112,6 +6128,11 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 			ipv6_tcp->fe_action.fa_resource_arg =
 			    mcip->mci_resource_arg;
 		}
+	} else {
+		ipv6_tcp->fe_action.fa_direct_rx_fn = default_action;
+		ipv6_tcp->fe_action.fa_direct_rx_arg = default_arg;
+		ipv6_udp->fe_action.fa_direct_rx_fn = default_action;
+		ipv6_udp->fe_action.fa_direct_rx_arg = default_arg;
 	}
 }
 

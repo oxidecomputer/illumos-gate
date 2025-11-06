@@ -2206,7 +2206,9 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 	 * filled out all relevant information.
 	 */
 	if (force_set_info || !mac_ether_any_set_pktinfo(mp)) {
-		mac_ether_set_pktinfo(mp, &meoi, &inner_meoi);
+		mac_ether_set_pktinfo(mp, &meoi,
+		    ((meoi.meoi_tuntype == METT_NONE) ? NULL :
+		    &inner_meoi));
 	}
 
 	return (mp);
@@ -2382,6 +2384,11 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 static inline void
 mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 {
+	ASSERT3U(ft->ftb_len, >, 0);
+	ASSERT3U(ft->ftb_depth, >, 0);
+	ASSERT3P(ft->ftb_chains, !=, NULL);
+	ASSERT3P(ft->ftb_subtree, !=, NULL);
+
 	uint16_t depth = 0;
 	bool is_enter = true;
 	const flow_tree_baked_node_t *node = ft->ftb_subtree;
@@ -2641,10 +2648,6 @@ again:
 	/* Generally we *should* have a subtree here, due to DLS bypass */
 	/* TODO(ky): `likely()`? */
 	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		ASSERT3U(mac_srs->srs_flowtree.ftb_len, >, 0);
-		ASSERT3P(mac_srs->srs_flowtree.ftb_chains, !=, NULL);
-		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
-
 		mac_standardise_pkts(mcip, &pktset, false);
 		mac_rx_srs_walk_flowtree(&pktset, &mac_srs->srs_flowtree);
 
