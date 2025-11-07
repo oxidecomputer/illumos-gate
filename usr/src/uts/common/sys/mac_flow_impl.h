@@ -324,8 +324,6 @@ typedef struct {
 	uint16_t		ftb_len;
 	flow_tree_pkt_set_t	*ftb_chains;	/* len = ftb_depth */
 	flow_tree_baked_node_t	*ftb_subtree;	/* len = 2 * ftb_len */
-
-	flow_tree_exit_node_t	ftb_exit;
 } flow_tree_baked_t;
 
 /* TODO(ky): bw-aware variants of above */

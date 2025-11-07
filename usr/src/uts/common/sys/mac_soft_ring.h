@@ -452,10 +452,8 @@ struct mac_soft_ring_set_s {
 
 #define	SRST_LOGICAL		0x00000008
 
-/* TODO(ky) remove, useless (== !SRC_IP) */
+/* TODO(ky) is this useful now that SRSes are more... normal? */
 #define	SRST_FANOUT_PROTO	0x00000010
-#define	SRST_FANOUT_SRC_IP	0x00000020
-// #define	SRST_FANOUT_OTH		0x00000040
 #define	SRST_DEFAULT_GRP	0x00000080
 
 #define	SRST_TX			0x00000100

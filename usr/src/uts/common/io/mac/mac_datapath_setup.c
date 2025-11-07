@@ -1823,10 +1823,6 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 
 	if (new_fanout_cnt > srings_present) {
 		/* soft rings increased */
-		mutex_enter(&mac_rx_srs->srs_lock);
-		mac_rx_srs->srs_type |= SRST_FANOUT_SRC_IP;
-		mutex_exit(&mac_rx_srs->srs_lock);
-
 		for (int i = mac_rx_srs->srs_soft_ring_count;
 		    i < new_fanout_cnt; i++) {
 			/*
@@ -1840,14 +1836,6 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 		mac_srs_update_fanout_list(mac_rx_srs);
 	} else if (new_fanout_cnt < srings_present) {
 		/* soft rings decreased */
-		if (new_fanout_cnt == 1) {
-			mutex_enter(&mac_rx_srs->srs_lock);
-			mac_rx_srs->srs_type &= ~SRST_FANOUT_SRC_IP;
-			ASSERT(mac_rx_srs->srs_type & SRST_FANOUT_PROTO);
-			mutex_exit(&mac_rx_srs->srs_lock);
-		}
-
-		/* Get rid of extra soft rings */
 		for (int i = new_fanout_cnt;
 		    i < mac_rx_srs->srs_soft_ring_count; i++) {
 			mac_soft_ring_t *softring =
@@ -1970,8 +1958,6 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 	}
 
 alldone:
-	if (soft_ring_cnt > 1)
-		mac_rx_srs->srs_type |= SRST_FANOUT_SRC_IP;
 	mac_srs_update_fanout_list(mac_rx_srs);
 	return;
 
@@ -2362,18 +2348,6 @@ mac_find_fanout(flow_entry_t *flent, uint32_t link_type)
 	case SRST_LINK:
 		fanout_type = SRST_FANOUT_PROTO;
 		break;
-	}
-
-	/* A primary NIC/link is being plumbed */
-	if (flent->fe_type & FLOW_PRIMARY_MAC) {
-		if (mac_soft_ring_enable && mac_rx_soft_ring_count > 1) {
-			fanout_type |= SRST_FANOUT_SRC_IP;
-		}
-	} else if (flent->fe_type & FLOW_VNIC) {
-		/* A VNIC is being created */
-		if (mrp != NULL && mrp->mrp_ncpus > 0) {
-			fanout_type |= SRST_FANOUT_SRC_IP;
-		}
 	}
 
 	return (fanout_type);
@@ -4211,8 +4185,21 @@ mac_flow_fill_exit(flow_entry_t *ent, flow_tree_exit_node_t *node, bool ascend,
 }
 
 /*
- * Allocates the structure of a baked flow tree, filling in references to
- * ... XXX TODO(ky).
+ * Allocates the structure of a baked flow tree, as well as any required
+ * resources for delivery.
+ *
+ * This function initialises a walkable tree from the *child* of `flent`, and
+ * `based_on` should be one of the full SRSes associated with `flent`. Whenever
+ * we examine a flow entry, we build an exit node for it using its specified
+ * fe_action:
+ * - A deliver node will have a new logical SRS allocated for it. This will have
+ *   the same fanout as `based_on`. In principle we will want to use the flent's
+ *   custom fanout MRP, if one is set.
+ * - A drop or delegate node will simply point at the underlying flent, for the
+ *   datapath to update stats.
+ * Note that the baked tree will often be rooted in a delegate node, given that
+ * we're beginning with the flent's child. The SRS deliver routine will hand off
+ * any such packets to `based_on`.
  */
 static int
 mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
@@ -4226,6 +4213,7 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 
 	ASSERT3P(flent, !=, NULL);
 
+	/* TODO(ky): too much stack for mac_cpus_t? */
 	mac_cpus_t dup_fanout = based_on->srs_cpu;
 	dup_fanout.mc_ncpus = dup_fanout.mc_rx_fanout_cnt;
 	bcopy(dup_fanout.mc_cpus, dup_fanout.mc_rx_fanout_cpus,
@@ -4234,11 +4222,14 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 
 	/* TOOD: refcount manipulation? */
 
-	/* Walk the existing tree for size measurement. */
+	/*
+	 * Walk the existing tree for size measurement.
+	 */
 	flow_entry_t *el = flent->fe_child;
 	bool ascended = false;
-	size_t depth = 0;
+	size_t depth = (el == NULL) ? 0 : 1;
 	while (el != NULL && el != flent) {
+		ASSERT3U(depth, >, 0);
 		ASSERT3P(el->fe_parent, !=, NULL);
 
 		if (!ascended) {
@@ -4260,6 +4251,7 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 			ascended = true;
 		}
 	}
+	VERIFY0(depth);
 
 	if (max_depth > UINT16_MAX || n_nodes > UINT16_MAX) {
 		err = E2BIG;
@@ -4294,19 +4286,22 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	/* Now, populate the tree. */
 
 	/* TODO: refcounts on flent? */
-	mac_flow_fill_exit(el, &into->ftb_exit, false, &dup_fanout, based_on);
+	// mac_flow_fill_exit(el, &into->ftb_exit, false, &dup_fanout, based_on);
 	/* TODO: ftex_srs should be filled here even if DELEGATE */
 
 	el = flent->fe_child;
 	ascended = false;
 	flow_tree_baked_node_t *curr_node = into->ftb_subtree;
+	depth = 1;
 
 	while (el != NULL && el != flent) {
+		ASSERT3U(depth, >, 0);
 		const size_t node_idx = curr_node - into->ftb_subtree;
 		ASSERT3U(node_idx, <=, UINT16_MAX);
+		const size_t st_depth = depth - 1;
 
 		if (!ascended) {
-			node_enters[depth] = node_idx;
+			node_enters[st_depth] = node_idx;
 			curr_node->enter.ften_flent = el;
 			curr_node->enter.ften_match = el->fe_match2;
 			curr_node->enter.ften_descend = el->fe_child != NULL;
@@ -4314,32 +4309,30 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 		}
 
 		if (!ascended && el->fe_child != NULL) {
+			depth += 1;
 			ascended = false;
 			el = el->fe_child;
-		} else if (el->fe_sibling != NULL) {
-			uint16_t my_enter = node_enters[depth];
-			curr_node[my_enter].enter.ften_skip = node_idx -
-			    my_enter;
-
-			ascended = false;
-			mac_flow_fill_exit(el, &into->ftb_exit, false,
-			    &dup_fanout, based_on);
-			curr_node++;
-
-			el = el->fe_sibling;
 		} else {
-			uint16_t my_enter = node_enters[depth];
-			curr_node[my_enter].enter.ften_skip = node_idx -
+			const bool has_sibling = el->fe_sibling != NULL;
+			const uint16_t my_enter = node_enters[st_depth];
+			into->ftb_subtree[my_enter].enter.ften_skip = node_idx -
 			    my_enter;
 
-			ascended = true;
-			mac_flow_fill_exit(el, &into->ftb_exit, true,
+			ascended = !has_sibling;
+			mac_flow_fill_exit(el, &curr_node->exit, ascended,
 			    &dup_fanout, based_on);
 			curr_node++;
 
-			el = el->fe_parent;
+			if (has_sibling) {
+				el = el->fe_sibling;
+			} else {
+				el = el->fe_parent;
+				depth -= 1;
+			}
 		}
 	}
+	VERIFY3P(curr_node, ==, into->ftb_subtree + (2 * n_nodes));
+	VERIFY0(depth);
 
 	kmem_free(node_enters, enter_track_len);
 

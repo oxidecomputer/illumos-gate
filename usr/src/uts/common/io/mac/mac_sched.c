@@ -2095,12 +2095,13 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
-static inline void
+/* TODO(ky) inline */
+static void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
     int cnt, int sz)
 {
 	if (head != NULL) {
-		if (mac_srs->srs_type & SRST_FANOUT_SRC_IP) {
+		if (mac_srs->srs_soft_ring_count > 0) {
 			mac_rx_srs_fanout(mac_srs, head);
 		} else {
 			mac_rx_soft_ring_process(mac_srs->srs_soft_rings[0],
@@ -2109,6 +2110,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
 	}
 }
 
+/* TODO(ky) inline */
 /*
  * Ensure that a network packet is in general fastpath eligible, and dropping
  * any non-data STREAMS messages. This entails:
@@ -2124,7 +2126,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
  * should be limited to use only *after* packets have been handed off to the
  * SRS, so as not to impact pure-polling work.
  */
-static inline mblk_t *
+static mblk_t *
 mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 {
 	ASSERT3P(mcip, !=, NULL);
@@ -2214,7 +2216,8 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 	return (mp);
 }
 
-static inline bool
+/* TODO(ky) inline */
+static bool
 mac_standardise_pkts(const mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
     const bool bw_ctl)
 {
@@ -2323,7 +2326,8 @@ retry:
 static bool mac_pkt_is_flow_match_recurse(flow_entry_t *flent,
     const mac_flow_match_t *match, mblk_t* mp);
 
-static inline bool
+/* TODO(ky) inline */
+static bool
 mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp, bool is_head)
 {
@@ -2374,14 +2378,16 @@ mac_pkt_is_flow_match_recurse(flow_entry_t *flent, const mac_flow_match_t *match
 	return (mac_pkt_is_flow_match_inner(flent, match, mp, false));
 }
 
-static inline bool
+/* TODO(ky) inline */
+static bool
 mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp)
 {
 	return (mac_pkt_is_flow_match_inner(flent, match, mp, true));
 }
 
-static inline void
+/* TODO(ky) inline */
+static void
 mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 {
 	ASSERT3U(ft->ftb_len, >, 0);
@@ -2392,7 +2398,7 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 	uint16_t depth = 0;
 	bool is_enter = true;
 	const flow_tree_baked_node_t *node = ft->ftb_subtree;
-	const flow_tree_baked_node_t * const done = node + (ft->ftb_depth << 1);
+	const flow_tree_baked_node_t * const done = node + (ft->ftb_len << 1);
 
 	while (node != done) {
 		flow_tree_pkt_set_t *my_pkts = &(ft->ftb_chains[depth]);
