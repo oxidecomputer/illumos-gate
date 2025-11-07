@@ -2074,7 +2074,7 @@ mac_srs_create_tx(mac_client_impl_t *mcip, flow_entry_t *flent,
 {
 	ASSERT3U(srs_type & (SRST_TX | SRST_LOGICAL), ==, 0);
 	const struct mac_srs_create_params p = { .msc_ty = SCT_TX };
-	return (mac_srs_create(mcip, flent, srs_type, &p));
+	return (mac_srs_create(mcip, flent, srs_type | SRST_TX, &p));
 }
 
 mac_soft_ring_set_t *
