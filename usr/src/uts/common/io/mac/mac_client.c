@@ -1452,12 +1452,8 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	flent->fe_action.fa_direct_rx_fn = mac_rx_deliver;
 	flent->fe_action.fa_direct_rx_arg = (void *)mcip;
 
-	debug_enter("before fp flows");
-
 	/* Attach fastpath flows as used by DLS bypass */
 	mac_create_fastpath_flows(mcip);
-
-	debug_enter("after fp flows");
 
 	/*
 	 * Place initial creation reference on the flow. This reference
@@ -6029,14 +6025,20 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 	/* Parent MCIP isn't hooked into subflow_tab, so the leaf flows do not yet have children */
 
-	/* TODO(ky): create SRSes? ...Not needed for the flow def'n, it would seem */
-
 	mcip->mci_fastpath_ipv4 = ipv4;
 	mcip->mci_fastpath_ipv4_tcp = ipv4_tcp;
 	mcip->mci_fastpath_ipv4_udp = ipv4_udp;
 	mcip->mci_fastpath_ipv6 = ipv6;
 	mcip->mci_fastpath_ipv6_tcp = ipv6_tcp;
 	mcip->mci_fastpath_ipv6_udp = ipv6_udp;
+
+	/* Necessity for FLOW_USER atm. during cleanup */
+	// FLOW_REFHOLD(ipv4);
+	// FLOW_REFHOLD(ipv4_tcp);
+	// FLOW_REFHOLD(ipv4_udp);
+	// FLOW_REFHOLD(ipv6);
+	// FLOW_REFHOLD(ipv6_tcp);
+	// FLOW_REFHOLD(ipv6_udp);
 
 	mac_update_fastpath_flows(mcip);
 }
@@ -6145,10 +6147,10 @@ mac_teardown_fastpath_flows(mac_client_impl_t *mcip)
 {
 	/* TODO(ky); anything else necessary here? */
 	/* There aren't bound  */
-	mac_flow_cleanup(mcip->mci_fastpath_ipv6_udp);
-	mac_flow_cleanup(mcip->mci_fastpath_ipv6_tcp);
-	mac_flow_cleanup(mcip->mci_fastpath_ipv6);
-	mac_flow_cleanup(mcip->mci_fastpath_ipv4_udp);
-	mac_flow_cleanup(mcip->mci_fastpath_ipv4_tcp);
-	mac_flow_cleanup(mcip->mci_fastpath_ipv4);
+	mac_flow_destroy(mcip->mci_fastpath_ipv6_udp);
+	mac_flow_destroy(mcip->mci_fastpath_ipv6_tcp);
+	mac_flow_destroy(mcip->mci_fastpath_ipv6);
+	mac_flow_destroy(mcip->mci_fastpath_ipv4_udp);
+	mac_flow_destroy(mcip->mci_fastpath_ipv4_tcp);
+	mac_flow_destroy(mcip->mci_fastpath_ipv4);
 }

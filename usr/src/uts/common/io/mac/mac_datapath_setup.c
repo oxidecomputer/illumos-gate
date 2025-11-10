@@ -456,7 +456,7 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 			}
 		}
 
-		logical_srs = mac_srs->srs_logical_next;
+		logical_srs = logical_srs->srs_logical_next;
 	}
 }
 
@@ -4209,8 +4209,6 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	size_t n_nodes = 0;
 	flow_tree_baked_t *into = &based_on->srs_flowtree;
 
-	debug_enter("flow_tree_create");
-
 	ASSERT3P(flent, !=, NULL);
 
 	/* TODO(ky): too much stack for mac_cpus_t? */
@@ -4269,13 +4267,13 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	const size_t chain_len = max_depth * sizeof (flow_tree_pkt_set_t);
 	const size_t subtree_len = 2 * n_nodes *
 	    sizeof (flow_tree_baked_node_t);
-	const size_t enter_track_len = max_depth * sizeof (uint16_t);
+	const size_t enter_track_len = max_depth * sizeof (uint32_t);
 
 	into->ftb_chains = kmem_zalloc(chain_len, KM_SLEEP);
 	into->ftb_subtree = kmem_zalloc(subtree_len, KM_SLEEP);
 
 	/* Scratch space for ... without taking up too much stack */
-	uint16_t *node_enters = kmem_zalloc(enter_track_len, KM_SLEEP);
+	uint32_t *node_enters = kmem_zalloc(enter_track_len, KM_SLEEP);
 
 	if (into->ftb_chains == NULL || into->ftb_subtree == NULL ||
 	    node_enters == NULL) {
@@ -4294,17 +4292,28 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	flow_tree_baked_node_t *curr_node = into->ftb_subtree;
 	depth = 1;
 
+	char scratch[128];
+	snprintf(scratch, 128, "flowtree begin (ne=%p)", node_enters);
+	debug_enter(scratch);
+
 	while (el != NULL && el != flent) {
 		ASSERT3U(depth, >, 0);
-		const size_t node_idx = curr_node - into->ftb_subtree;
-		ASSERT3U(node_idx, <=, UINT16_MAX);
+		ASSERT3U(curr_node - into->ftb_subtree, <=, 2 * UINT16_MAX);
 		const size_t st_depth = depth - 1;
 
+		// snprintf(scratch, 128, "visiting flent %p (n=%lu, asc=%u, d=%lu)",
+		//     el, curr_node - into->ftb_subtree, ascended, st_depth);
+		// debug_enter(scratch);
+
 		if (!ascended) {
+			const size_t node_idx = curr_node - into->ftb_subtree;
 			node_enters[st_depth] = node_idx;
 			curr_node->enter.ften_flent = el;
 			curr_node->enter.ften_match = el->fe_match2;
 			curr_node->enter.ften_descend = el->fe_child != NULL;
+			// snprintf(scratch, 128, "enter %p (i=%lu)", curr_node,
+			//     node_idx);
+			// debug_enter(scratch);
 			curr_node++;
 		}
 
@@ -4313,14 +4322,18 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 			ascended = false;
 			el = el->fe_child;
 		} else {
+			const size_t node_idx = curr_node - into->ftb_subtree;
 			const bool has_sibling = el->fe_sibling != NULL;
-			const uint16_t my_enter = node_enters[st_depth];
+			const uint32_t my_enter = node_enters[st_depth];
 			into->ftb_subtree[my_enter].enter.ften_skip = node_idx -
 			    my_enter;
 
 			ascended = !has_sibling;
 			mac_flow_fill_exit(el, &curr_node->exit, ascended,
 			    &dup_fanout, based_on);
+			// snprintf(scratch, 128, "exit %p (i=%lu, enter=%u)",
+			//     curr_node, node_idx, my_enter);
+			// debug_enter(scratch);
 			curr_node++;
 
 			if (has_sibling) {
@@ -4334,15 +4347,13 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	VERIFY3P(curr_node, ==, into->ftb_subtree + (2 * n_nodes));
 	VERIFY0(depth);
 
-	kmem_free(node_enters, enter_track_len);
+	debug_enter("flowtree create end");
 
-	debug_enter("flow_tree_create done");
+	kmem_free(node_enters, enter_track_len);
 
 	return (err);
 
 bail:
-	debug_enter("flow_tree_create bad!");
-
 	if (into->ftb_chains != NULL) {
 		kmem_free(into->ftb_chains, chain_len);
 	}

@@ -2446,7 +2446,9 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 				const flow_tree_exit_node_t *enode =
 				    &node->exit;
 				if (enode->ftex_ascend) {
-					depth -= 1;
+					depth--;
+				} else {
+					is_enter = true;
 				}
 
 				node++;
