@@ -928,5 +928,7 @@ oxide_boot_net(oxide_boot_t *oxb)
 	mutex_destroy(&oe.oe_mutex);
 	cv_destroy(&oe.oe_cv);
 
+	debug_enter("booted: set thine breakpoints");
+
 	return (true);
 }

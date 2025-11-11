@@ -2095,13 +2095,13 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
-/* TODO(ky) inline */
-static void
+static inline void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
-    int cnt, int sz)
+    int cnt, int sz, flow_tree_pkt_set_t *help)
 {
 	if (head != NULL) {
-		if (mac_srs->srs_soft_ring_count > 0) {
+		ASSERT3U(mac_srs->srs_soft_ring_count, !=, 0);
+		if (mac_srs->srs_soft_ring_count > 1) {
 			mac_rx_srs_fanout(mac_srs, head);
 		} else {
 			mac_rx_soft_ring_process(mac_srs->srs_soft_rings[0],
@@ -2110,7 +2110,6 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
 	}
 }
 
-/* TODO(ky) inline */
 /*
  * Ensure that a network packet is in general fastpath eligible, and dropping
  * any non-data STREAMS messages. This entails:
@@ -2126,7 +2125,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
  * should be limited to use only *after* packets have been handed off to the
  * SRS, so as not to impact pure-polling work.
  */
-static mblk_t *
+static inline mblk_t *
 mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 {
 	ASSERT3P(mcip, !=, NULL);
@@ -2216,8 +2215,7 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 	return (mp);
 }
 
-/* TODO(ky) inline */
-static bool
+static inline bool
 mac_standardise_pkts(const mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
     const bool bw_ctl)
 {
@@ -2248,7 +2246,7 @@ mac_standardise_pkts(const mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
 		    set->ftp_avail_count,
 		    bw_ctl,
 		    set->ftp_avail_size,
-		    mp_len(curr), curr);
+		    mp_len(processed), processed);
 	}
 
 	return (set->ftp_avail_head != NULL);
@@ -2326,8 +2324,7 @@ retry:
 static bool mac_pkt_is_flow_match_recurse(flow_entry_t *flent,
     const mac_flow_match_t *match, mblk_t* mp);
 
-/* TODO(ky) inline */
-static bool
+static inline bool
 mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp, bool is_head)
 {
@@ -2378,16 +2375,14 @@ mac_pkt_is_flow_match_recurse(flow_entry_t *flent, const mac_flow_match_t *match
 	return (mac_pkt_is_flow_match_inner(flent, match, mp, false));
 }
 
-/* TODO(ky) inline */
-static bool
+static inline bool
 mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp)
 {
 	return (mac_pkt_is_flow_match_inner(flent, match, mp, true));
 }
 
-/* TODO(ky) inline */
-static void
+static inline void
 mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 {
 	ASSERT3U(ft->ftb_len, >, 0);
@@ -2395,45 +2390,50 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 	ASSERT3P(ft->ftb_chains, !=, NULL);
 	ASSERT3P(ft->ftb_subtree, !=, NULL);
 
-	uint16_t depth = 0;
+	ssize_t depth = 0;
 	bool is_enter = true;
 	const flow_tree_baked_node_t *node = ft->ftb_subtree;
 	const flow_tree_baked_node_t * const done = node + (ft->ftb_len << 1);
 
 	while (node != done) {
+		ASSERT3S(depth, <, ft->ftb_depth);
+		ASSERT3S(depth, >=, 0);
 		flow_tree_pkt_set_t *my_pkts = &(ft->ftb_chains[depth]);
 		flow_tree_pkt_set_t *par_pkts = (depth > 0) ?
 		    &(ft->ftb_chains[depth-1]) : pkts;
+
 		if (is_enter) {
-			const flow_tree_enter_node_t *inode = &node->enter;
-			mblk_t *prev = NULL;
-			mblk_t *curr = par_pkts->ftp_avail_head;
-			for (; curr != NULL; curr = curr->b_next) {
+			const flow_tree_enter_node_t *enode = &node->enter;
+			mblk_t **to_curr = &par_pkts->ftp_avail_head;
+			mblk_t *curr = *to_curr;
+			while (curr != NULL) {
 				const bool is_match = mac_pkt_is_flow_match(
-				    inode->ften_flent, &inode->ften_match,
+				    enode->ften_flent, &enode->ften_match,
 				    curr);
 				if (is_match) {
-					size_t lsz = mp_len(curr);
+					*to_curr = curr->b_next;
+					curr->b_next = NULL;
+
+					/* TODO(ky): lsz only needed in bw? */
+					// size_t lsz = mp_len(curr);
 					par_pkts->ftp_avail_count--;
-					par_pkts->ftp_avail_size -= lsz;
-					if (prev != NULL) {
-						prev->b_cont = curr->b_next;
-					} else {
-						ASSERT3P(curr, ==,
-						    par_pkts->ftp_avail_head);
-						par_pkts->ftp_avail_head =
-						    curr->b_next;
-					}
+					// par_pkts->ftp_avail_size -= lsz;
+
 					ENQUEUE_MP(
 					    my_pkts->ftp_avail_head,
 					    my_pkts->ftp_avail_tail,
 					    my_pkts->ftp_avail_count,
 					    false,
 					    my_pkts->ftp_avail_size,
-					    lsz, curr);
+					    mp_len(curr), curr);
 				} else {
-					prev = curr;
+					to_curr = &curr->b_next;
 				}
+				curr = *to_curr;
+			}
+
+			if (par_pkts->ftp_avail_head == NULL) {
+				par_pkts->ftp_avail_tail = NULL;
 			}
 
 			if (my_pkts->ftp_avail_head == NULL) {
@@ -2442,36 +2442,29 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 				 * children or attempt to deliver to this flent.
 				 * Skip to the corresponding exit node.
 				 */
-				node += inode->ften_skip;
-				const flow_tree_exit_node_t *enode =
+				node += enode->ften_skip;
+				const flow_tree_exit_node_t *xnode =
 				    &node->exit;
-				if (enode->ftex_ascend) {
+				if (xnode->ftex_ascend) {
 					depth--;
-				} else {
-					is_enter = true;
+					is_enter = false;
 				}
 
 				node++;
 				continue;
 			}
 
-			par_pkts->ftp_avail_tail = prev;
-			if (prev == NULL) {
-				par_pkts->ftp_avail_head = NULL;
-			}
-			par_pkts->ftp_avail_tail = prev;
-
-			if (inode->ften_descend) {
+			if (enode->ften_descend) {
 				depth++;
 			} else {
 				is_enter = false;
 			}
 		} else {
-			const flow_tree_exit_node_t *inode =
-			    &node->exit;
+			const flow_tree_exit_node_t *xnode = &node->exit;
 
 			const bool have_avail = my_pkts->ftp_avail_head != NULL;
 			const bool have_deli = my_pkts->ftp_deli_head != NULL;
+
 			/*
 			 * This list recombination here should *not* reorder
 			 * packets within a flow, given that flows will be moved
@@ -2499,14 +2492,15 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 				my_pkts->ftp_deli_tail =
 				    my_pkts->ftp_avail_tail;
 			}
-			switch (inode->ftex_do) {
+			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELIVER:
 				mac_rx_srs_deliver(
-				    inode->arg.ftex_srs,
+				    xnode->arg.ftex_srs,
 				    my_pkts->ftp_deli_head,
 				    my_pkts->ftp_deli_tail,
 				    my_pkts->ftp_deli_count,
-				    my_pkts->ftp_deli_size);
+				    my_pkts->ftp_deli_size,
+				    my_pkts);
 				break;
 			case MFA_TYPE_DELEGATE:
 				/* TODO(ky): flent stats?? */
@@ -2533,7 +2527,7 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 			}
 			bzero(my_pkts, sizeof (*my_pkts));
 
-			if (inode->ftex_ascend) {
+			if (xnode->ftex_ascend) {
 				depth--;
 			} else {
 				is_enter = true;
@@ -2541,6 +2535,7 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 		}
 		node++;
 	}
+	ASSERT3S(depth, ==, -1);
 }
 
 /*
@@ -2682,7 +2677,7 @@ again:
 	/* Everything leftover is for delivery to *THIS* SRS. */
 	mac_rx_srs_deliver(mac_srs, pktset.ftp_avail_head,
 	    pktset.ftp_avail_tail, pktset.ftp_avail_count,
-	    pktset.ftp_avail_size);
+	    pktset.ftp_avail_size, NULL);
 
 	mutex_enter(&mac_srs->srs_lock);
 
@@ -2927,7 +2922,7 @@ again:
 	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
-	mac_rx_srs_deliver(mac_srs, head, tail, cnt, sz);
+	mac_rx_srs_deliver(mac_srs, head, tail, cnt, sz, NULL);
 
 	mutex_enter(&mac_srs->srs_lock);
 

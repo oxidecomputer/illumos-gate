@@ -419,13 +419,14 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 	mac_soft_ring_set_t *logical_srs = mac_srs->srs_logical_next;
 	while (logical_srs != NULL) {
 		flow_entry_t *curr_f = logical_srs->srs_flent;
-		const bool is_fp_leaf = curr_f == mcip->mci_fastpath_ipv4_tcp ||
-		    curr_f == mcip->mci_fastpath_ipv4_udp ||
-		    curr_f == mcip->mci_fastpath_ipv6_tcp ||
-		    curr_f == mcip->mci_fastpath_ipv6_udp;
+		const bool is_fp_leaf = (curr_f == mcip->mci_fastpath_ipv4_tcp) ||
+		    (curr_f == mcip->mci_fastpath_ipv4_udp) ||
+		    (curr_f == mcip->mci_fastpath_ipv6_tcp) ||
+		    (curr_f == mcip->mci_fastpath_ipv6_udp);
 
-		if (!is_fp_leaf)
-			continue;
+		if (!is_fp_leaf) {
+			goto next;
+		}
 
 		const flow_action_t *act = &curr_f->fe_action;
 		const mac_resource_add_t add_notify_fn =
@@ -456,6 +457,7 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 			}
 		}
 
+next:
 		logical_srs = logical_srs->srs_logical_next;
 	}
 }
@@ -4284,26 +4286,15 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	/* Now, populate the tree. */
 
 	/* TODO: refcounts on flent? */
-	// mac_flow_fill_exit(el, &into->ftb_exit, false, &dup_fanout, based_on);
-	/* TODO: ftex_srs should be filled here even if DELEGATE */
-
 	el = flent->fe_child;
 	ascended = false;
 	flow_tree_baked_node_t *curr_node = into->ftb_subtree;
 	depth = 1;
 
-	char scratch[128];
-	snprintf(scratch, 128, "flowtree begin (ne=%p)", node_enters);
-	debug_enter(scratch);
-
 	while (el != NULL && el != flent) {
 		ASSERT3U(depth, >, 0);
 		ASSERT3U(curr_node - into->ftb_subtree, <=, 2 * UINT16_MAX);
 		const size_t st_depth = depth - 1;
-
-		// snprintf(scratch, 128, "visiting flent %p (n=%lu, asc=%u, d=%lu)",
-		//     el, curr_node - into->ftb_subtree, ascended, st_depth);
-		// debug_enter(scratch);
 
 		if (!ascended) {
 			const size_t node_idx = curr_node - into->ftb_subtree;
@@ -4311,9 +4302,6 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 			curr_node->enter.ften_flent = el;
 			curr_node->enter.ften_match = el->fe_match2;
 			curr_node->enter.ften_descend = el->fe_child != NULL;
-			// snprintf(scratch, 128, "enter %p (i=%lu)", curr_node,
-			//     node_idx);
-			// debug_enter(scratch);
 			curr_node++;
 		}
 
@@ -4331,9 +4319,6 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 			ascended = !has_sibling;
 			mac_flow_fill_exit(el, &curr_node->exit, ascended,
 			    &dup_fanout, based_on);
-			// snprintf(scratch, 128, "exit %p (i=%lu, enter=%u)",
-			//     curr_node, node_idx, my_enter);
-			// debug_enter(scratch);
 			curr_node++;
 
 			if (has_sibling) {
@@ -4346,8 +4331,6 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	}
 	VERIFY3P(curr_node, ==, into->ftb_subtree + (2 * n_nodes));
 	VERIFY0(depth);
-
-	debug_enter("flowtree create end");
 
 	kmem_free(node_enters, enter_track_len);
 
