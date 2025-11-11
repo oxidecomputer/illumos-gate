@@ -250,10 +250,14 @@ typedef struct mac_srs_rx_s {
 	/* Polling thread needs to schedule worker wakeup */
 	uint32_t		sr_poll_worker_wakeup;
 
-	kthread_t		*sr_poll_thr;		/* WO, poll thread */
-	mac_ring_t		*sr_ring;		/* Ring Descriptor (WO) */
-	processorid_t		sr_poll_cpuid;		/* processor to bind to */
-	processorid_t		sr_poll_cpuid_save;	/* saved cpuid during offline */
+	/* WO, poll thread */
+	kthread_t		*sr_poll_thr;
+	/* Ring Descriptor (WO) */
+	mac_ring_t		*sr_ring;
+	/* processor to bind to */
+	processorid_t		sr_poll_cpuid;
+	/* saved cpuid during offline */
+	processorid_t		sr_poll_cpuid_save;
 } mac_srs_rx_t;
 
 /*
@@ -563,8 +567,8 @@ extern struct dls_kstats dls_kstat;
 	    (SRS_POLLING_CAPAB|SRS_POLLING)) {				\
 		(mac_srs)->srs_state &= ~SRS_POLLING;			\
 		(void) mac_hwring_enable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_kind_data.rx.sr_ring);				\
-		(mac_srs)->srs_kind_data.rx.sr_poll_off++;			\
+		    (mac_srs)->srs_kind_data.rx.sr_ring);		\
+		(mac_srs)->srs_kind_data.rx.sr_poll_off++;		\
 	}								\
 }
 

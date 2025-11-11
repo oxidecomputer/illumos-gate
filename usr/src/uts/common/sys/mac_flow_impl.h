@@ -246,7 +246,10 @@ typedef enum {
 	MFM_IPPROTO,
 	MFM_LIST,
 	MFM_ARBITRARY,
-	/* TODO(ky): This is probably just an egregious hack to get *some* function */
+	/*
+	 * TODO(ky): This is probably just an egregious hack to get *some*
+	 * functionality...
+	 */
 	MFM_SUBFLOW,
 } mac_flow_match_type_t;
 
@@ -276,8 +279,8 @@ typedef struct {
 	/* TODO(ky): Could this be smarter? E.g. fewer queues? */
 	/*
 	 * Every layer in the flow tree needs to keep two lists of packets:
-	 *  - packets which have been taken by this layer, but which are eligible
-	 *    to be picked by a child flow entry.
+	 *  - packets which have been taken by this layer, but which are
+	 *    eligible to be picked by a child flow entry.
 	 *  - packets which have been picked up by a child node and the action
 	 *    is, quite definitively, to drop them off here. these should NOT
 	 *    undergo any further processing.
@@ -335,8 +338,8 @@ struct flow_entry_s {					/* Protected by */
 
 	/*
 	 * TODO(ky): each of the below resource_props accounts for 15KiB. Each!
-	 *           This can't be replicated if we have many flents!!
-	 *           Esp since fe_resource_props is the default.
+	 *  This can't be replicated if we have many flents!!
+	 *  Esp since fe_resource_props is the default.
 	 */
 
 	/* Properties as specified for this flow */
@@ -396,7 +399,8 @@ struct flow_entry_s {					/* Protected by */
 	 */
 	void			*fe_client_cookie;	/* WO */
 	void			*fe_rx_ring_group;	/* SL */
-	void			*fe_rx_srs[MAX_RINGS_PER_GROUP + 1]; /* fe_lock */
+							/* fe_lock */
+	void			*fe_rx_srs[MAX_RINGS_PER_GROUP + 1];
 	int			fe_rx_srs_cnt;		/* fe_lock */
 	void			*fe_tx_ring_group;
 	void			*fe_tx_srs;		/* WO */
@@ -455,13 +459,6 @@ struct flow_entry_s {					/* Protected by */
 
 	/* differentiate flows created by MAC / clients / flowadm */
 	mac_flow_type_t fe_owner_type;
-
-	/*
-	* Every flent needs a S/W classifier destination. This is itself
-	* a full-fledged SRS with workers/poll thrds matching the mrp.
-	* Guaranteed to exist.
-	*/
-	void *fe_rx_srs_sw; /* fe_lock */
 
 	/* TODO: swap out so this becomes the Real Thing */
 	mac_flow_match_t fe_match2;

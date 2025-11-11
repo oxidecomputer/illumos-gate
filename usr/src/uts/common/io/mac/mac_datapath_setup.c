@@ -441,8 +441,9 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 			logical_srs->srs_type |= SRST_ALWAYS_HASH_OUT;
 		}
 
-		for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
-		    softring != NULL; softring = softring->s_ring_next) {
+		for (mac_soft_ring_t *softring =
+		    logical_srs->srs_soft_ring_head; softring != NULL;
+		    softring = softring->s_ring_next) {
 			mac_soft_ring_action_refresh(softring);
 			if (add_notify_fn != NULL &&
 			    softring->s_ring_rx_arg2 == NULL) {
@@ -497,13 +498,14 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
 	mac_soft_ring_set_t *logical_srs = mac_srs->srs_logical_next;
 	while (logical_srs != NULL) {
 		flow_entry_t *curr_f = logical_srs->srs_flent;
-		const bool is_fp_leaf = curr_f == mcip->mci_fastpath_ipv4_tcp ||
-		    curr_f == mcip->mci_fastpath_ipv4_udp ||
-		    curr_f == mcip->mci_fastpath_ipv6_tcp ||
-		    curr_f == mcip->mci_fastpath_ipv6_udp;
+		const bool is_fp_leaf = (curr_f == mcip->mci_fastpath_ipv4_tcp) ||
+		    (curr_f == mcip->mci_fastpath_ipv4_udp) ||
+		    (curr_f == mcip->mci_fastpath_ipv6_tcp) ||
+		    (curr_f == mcip->mci_fastpath_ipv6_udp);
 
-		if (!is_fp_leaf)
-			continue;
+		if (!is_fp_leaf) {
+			goto next;
+		}
 
 		/* TODO(ky): LOCKING?? QUIESCENCE?? */
 
@@ -515,8 +517,9 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
 
 		/* TODO(ky): update params on `act`? */
 
-		for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
-		    softring != NULL; softring = softring->s_ring_next) {
+		for (mac_soft_ring_t *softring =
+		    logical_srs->srs_soft_ring_head; softring != NULL;
+		    softring = softring->s_ring_next) {
 			/*
 			 * Slightly manual re-expression of
 			 * mac_soft_ring_action_refresh. No one should be able
@@ -543,7 +546,8 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
 			mutex_exit(&softring->s_ring_lock);
 		}
 
-		logical_srs = mac_srs->srs_logical_next;
+next:
+		logical_srs = logical_srs->srs_logical_next;
 
 		/* TODO(ky): there should be more common methods for this. */
 	}
@@ -3521,6 +3525,8 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 	    (mac_srs->srs_type & SRST_TX) == 0) {
 		mac_flow_baked_tree_destroy(&mac_srs->srs_flowtree);
 	}
+
+	/* TODO(ky): cleanup here! */
 
 	kmem_cache_free(mac_srs_cache, mac_srs);
 }
