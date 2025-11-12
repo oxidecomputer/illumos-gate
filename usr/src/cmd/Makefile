@@ -497,7 +497,7 @@ i386_SUBDIRS=		\
 	cxgbetool	\
 	diskscan	\
 	ficl		\
-	mcmargins	\
+	mc		\
 	nvmeadm		\
 	pptadm		\
 	psp		\
