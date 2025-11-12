@@ -127,6 +127,8 @@
 #include <sys/stack.h>
 #include <sys/archsystm.h>
 
+#include <sys/mac_provider.h>
+
 #include <inet/ipclassifier.h>
 #include <inet/udp_impl.h>
 
@@ -959,6 +961,25 @@ poll_again:
 		bytes_to_pickup = MAX_BYTES_TO_PICKUP;
 		mutex_exit(lock);
 		head = sq_get_pkts(sq_mac_handle, bytes_to_pickup);
+
+		/* TODO(ky): this should be a common util for `ip` */
+		mac_ether_offload_info_t meoi = {0};
+		for (mblk_t *curr = head; curr != NULL; curr = curr->b_next) {
+			/* TODO(ky): This is best-effort enough for now... */
+			meoi.meoi_flags = 0;
+			mac_ether_offload_info(curr, &meoi, NULL);
+
+			/*
+			 * MAC now enforces, on our behalf, that we have header
+			 * contiguity through all the layers it understands.
+			 */
+			if (meoi.meoi_flags & MEOI_L2INFO_SET) {
+				ASSERT3P(curr->b_rptr + meoi.meoi_l2hlen, <, curr->b_wptr);
+				curr->b_rptr += meoi.meoi_l2hlen;
+			}
+			mac_ether_clear_pktinfo(mp);
+		}
+
 		mp = NULL;
 		if (head != NULL) {
 			/*

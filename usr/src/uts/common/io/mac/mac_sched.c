@@ -2336,13 +2336,16 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 	mac_ether_offload_info_t meoi = { 0 };
 	mac_ether_offload_info(mp, &meoi, NULL);
 
+	DTRACE_PROBE3(fm__inner__meoi, mblk_t*, mp,
+	    mac_ether_offload_info_t*, &meoi, mac_flow_match_t *, match);
+
 	switch (match->mfm_type) {
 	case MFM_SAP:
 		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
 		    meoi.meoi_l3proto == match->arg.mfm_sap);
 	case MFM_IPPROTO:
 		return ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
-		    meoi.meoi_l3proto == match->arg.mfm_ipproto);
+		    meoi.meoi_l4proto == match->arg.mfm_ipproto);
 	case MFM_ARBITRARY: {
 		const mac_flow_match_arbitrary_t *arb =
 		    &match->arg.mfm_arbitrary;
@@ -2382,6 +2385,9 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	return (mac_pkt_is_flow_match_inner(flent, match, mp, true));
 }
 
+/*
+ * TODO(ky): theory statement on what this is doing.
+ */
 static inline void
 mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 {
@@ -2492,10 +2498,20 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 				my_pkts->ftp_deli_tail =
 				    my_pkts->ftp_avail_tail;
 			}
+
+			mac_soft_ring_set_t *send_to =
+				(mac_soft_ring_set_t *) xnode->arg.ftex_srs;
 			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELIVER:
+				/* TODO(ky): contention on pkt count? */
+				/* softrings REALLY want this to be happy */
+				mutex_enter(&send_to->srs_lock);
+				send_to->srs_kind_data.rx.sr_poll_pkt_cnt +=
+				    my_pkts->ftp_deli_count;
+				mutex_exit(&send_to->srs_lock);
+
 				mac_rx_srs_deliver(
-				    xnode->arg.ftex_srs,
+				    send_to,
 				    my_pkts->ftp_deli_head,
 				    my_pkts->ftp_deli_tail,
 				    my_pkts->ftp_deli_count,
@@ -2650,8 +2666,16 @@ again:
 
 	/* Generally we *should* have a subtree here, due to DLS bypass */
 	/* TODO(ky): `likely()`? */
+
+	/*
+	 * TODO(ky): is this the best way to move this state from one SRS to
+	 * another? feels like it's in need of a revisit.
+	 */
+	uint32_t pkts_gone = 0;
+
 	if (mac_srs->srs_flowtree.ftb_depth > 0) {
 		mac_standardise_pkts(mcip, &pktset, false);
+		const uint32_t pkts_before = pktset.ftp_avail_count;
 		mac_rx_srs_walk_flowtree(&pktset, &mac_srs->srs_flowtree);
 
 		if (pktset.ftp_deli_head != NULL) {
@@ -2672,6 +2696,8 @@ again:
 			pktset.ftp_deli_count = 0;
 			pktset.ftp_deli_size = 0;
 		}
+
+		pkts_gone = pkts_before - pktset.ftp_avail_count;
 	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
@@ -2680,6 +2706,8 @@ again:
 	    pktset.ftp_avail_size, NULL);
 
 	mutex_enter(&mac_srs->srs_lock);
+	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, pkts_gone);
+	/* TODO(ky): bw_gone? */
 
 	if (!(mac_srs->srs_state & (SRS_BLANK|SRS_PAUSE)) &&
 	    (mac_srs->srs_first != NULL)) {

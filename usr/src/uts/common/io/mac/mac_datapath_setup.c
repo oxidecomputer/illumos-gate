@@ -3478,11 +3478,11 @@ mac_srs_ring_free(mac_soft_ring_set_t *mac_srs)
 	mac_ring_t		*ring;
 	flow_entry_t		*flent;
 
-	ring = mac_srs->srs_kind_data.rx.sr_ring;
 	if (mac_srs_is_tx(mac_srs)) {
-		ASSERT(ring == NULL);
 		return;
 	}
+
+	ring = mac_srs->srs_kind_data.rx.sr_ring;
 
 	if (ring == NULL)
 		return;

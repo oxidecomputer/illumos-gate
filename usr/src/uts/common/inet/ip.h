@@ -3258,6 +3258,10 @@ extern void	ip_input(ill_t *, ill_rx_ring_t *, mblk_t *,
     struct mac_header_info_s *);
 extern void	ip_input_v6(ill_t *, ill_rx_ring_t *, mblk_t *,
     struct mac_header_info_s *);
+extern void	ip_input_raw(ill_t *, ill_rx_ring_t *, mblk_t *,
+    struct mac_header_info_s *);
+extern void	ip_input_v6_raw(ill_t *, ill_rx_ring_t *, mblk_t *,
+    struct mac_header_info_s *);
 extern mblk_t	*ip_input_common_v4(ill_t *, ill_rx_ring_t *, mblk_t *,
     struct mac_header_info_s *, squeue_t *, mblk_t **, uint_t *);
 extern mblk_t	*ip_input_common_v6(ill_t *, ill_rx_ring_t *, mblk_t *,
