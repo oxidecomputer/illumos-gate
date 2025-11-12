@@ -1574,12 +1574,8 @@ enum pkt_type {
  *    |-> mac_rx_bypass_disable (! (srs_type & SRST_DLS_BYPASS)), (done!)
  *    |-> mac_rx_bypass_disable (mci_state_flags & MCIS_RX_BYPASS_DISABLE).
  *  - Iff. HW-classified && Promisc, need to validate L2 match by hand.
- *  - No fragmentation (is-frag or more-frags).
- *  - Need to march packet header forward by l2_hlen before fastpath.
- *      ...Do we? why not have custom accept fns that march forward by stored
- *         l2_len at the IP side, and assume that l2len is set and valid?
- *  - TCP ring must have SRST_ALWAYS_HASH_OUT.
- * ...Or, we figure out how to fixup compatible frames for the benefit of IP.
+ *    |-> Should this be in the domain of the client? E.g., bottom-of-the-
+ *        tree check iff. promisc is enabled?
  */
 static void
 mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
@@ -1642,7 +1638,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		ASSERT(OK_32PTR(mp->b_rptr + meoi.meoi_l2hlen));
 
 		/*
-		 * Direct access  to the L3/L4 headers will fall safely within
+		 * Direct access to the L3/L4 headers will fall safely within
 		 * the mblk.
 		 */
 		uint_t hash = 0;
@@ -2338,6 +2334,13 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 
 	DTRACE_PROBE3(fm__inner__meoi, mblk_t*, mp,
 	    mac_ether_offload_info_t*, &meoi, mac_flow_match_t *, match);
+
+	if ((match->mfm_cond & MFC_NOFRAG) != 0) {
+		if ((meoi.meoi_flags &
+		    (MEOI_L3_FRAG_MORE | MEOI_L3_FRAG_OFFSET)) != 0) {
+			return (false);
+		}
+	}
 
 	switch (match->mfm_type) {
 	case MFM_SAP:

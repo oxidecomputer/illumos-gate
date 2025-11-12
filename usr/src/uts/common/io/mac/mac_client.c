@@ -5972,6 +5972,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
 	ipv4->fe_match2.mfm_type = MFM_SAP;
 	ipv4->fe_match2.arg.mfm_sap = ETHERTYPE_IP;
+	ipv4->fe_match2.mfm_cond = MFC_NOFRAG;
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4_tcp", mcip->mci_name);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_tcp));
@@ -5987,6 +5988,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6));
 	ipv6->fe_match2.mfm_type = MFM_SAP;
 	ipv6->fe_match2.arg.mfm_sap = ETHERTYPE_IPV6;
+	ipv6->fe_match2.mfm_cond = MFC_NOFRAG;
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6_tcp", mcip->mci_name);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_tcp));

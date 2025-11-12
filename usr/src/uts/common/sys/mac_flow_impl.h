@@ -253,6 +253,10 @@ typedef enum {
 	MFM_SUBFLOW,
 } mac_flow_match_type_t;
 
+typedef enum {
+	MFC_NOFRAG = (1 << 0),
+} mac_flow_match_condition_t;
+
 typedef struct mac_flow_match_list_s mac_flow_match_list_t;
 
 typedef struct {
@@ -261,7 +265,8 @@ typedef struct {
 } mac_flow_match_arbitrary_t;
 
 typedef struct {
-	mac_flow_match_type_t	mfm_type;
+	mac_flow_match_type_t		mfm_type;
+	mac_flow_match_condition_t	mfm_cond;
 	union {
 		uint16_t	mfm_sap;
 		uint8_t		mfm_ipproto;
