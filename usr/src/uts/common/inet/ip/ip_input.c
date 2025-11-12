@@ -166,30 +166,6 @@ ip_input(ill_t *ill, ill_rx_ring_t *ip_ring, mblk_t *mp_chain,
 	    NULL);
 }
 
-void
-ip_input_raw(ill_t *ill, ill_rx_ring_t *ip_ring, mblk_t *mp_chain,
-    struct mac_header_info_s *mhip)
-{
-	mac_ether_offload_info_t meoi = {0};
-	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
-		/* TODO(ky): This is best-effort enough for now... */
-		meoi.meoi_flags = 0;
-		mac_ether_offload_info(curr, &meoi, NULL);
-
-		/*
-		 * MAC now enforces, on our behalf, that we have header
-		 * contiguity through all the layers it understands.
-		 */
-		if (meoi.meoi_flags & MEOI_L2INFO_SET) {
-			ASSERT3P(curr->b_rptr + meoi.meoi_l2hlen, <,
-			    curr->b_wptr);
-			curr->b_rptr += meoi.meoi_l2hlen;
-		}
-	}
-	(void) ip_input_common_v4(ill, ip_ring, mp_chain, mhip, NULL, NULL,
-	    NULL);
-}
-
 /*
  * ip_accept_tcp() - This function is called by the squeue when it retrieves
  * a chain of packets in the poll mode. The packets have gone through the

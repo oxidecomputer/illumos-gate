@@ -2015,9 +2015,9 @@ ill_capability_direct_enable(ill_t *ill)
 
 	bzero(&direct, sizeof (direct));
 	if (ill->ill_isv6) {
-		direct.di_rx_cf = (uintptr_t)ip_input_v6_raw;
+		direct.di_rx_cf = (uintptr_t)ip_input_v6;
 	} else {
-		direct.di_rx_cf = (uintptr_t)ip_input_raw;
+		direct.di_rx_cf = (uintptr_t)ip_input;
 	}
 	direct.di_rx_ch = ill;
 

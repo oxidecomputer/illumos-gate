@@ -713,8 +713,6 @@ extern mac_tx_cookie_t mac_tx_srs_no_desc(mac_soft_ring_set_t *, mblk_t *,
     uint16_t, mblk_t **);
 
 /* Subflow specific stuff */
-extern int mac_srs_flow_create(struct mac_client_impl_s *, flow_entry_t *,
-    mac_resource_props_t *, int, int, mac_direct_rxs_t *);
 extern void mac_srs_update_bwlimit(flow_entry_t *, mac_resource_props_t *);
 extern void mac_srs_adjust_subflow_bwlimit(struct mac_client_impl_s *);
 extern void mac_srs_update_drv(struct mac_client_impl_s *);

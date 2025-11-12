@@ -120,7 +120,8 @@ struct mac_client_impl_s {			/* Protected by */
 	uint32_t		mci_state_flags;	/* WO */
 	mac_rx_t		mci_rx_fn;		/* Rx Quiescence */
 	void			*mci_rx_arg;		/* Rx Quiescence */
-	mac_direct_rxs_t	mci_direct_rx;		/* SL */
+	mac_direct_rx_wrapper_t	mci_v4_fastpath;	/* SL */
+	mac_direct_rx_wrapper_t	mci_v6_fastpath;	/* SL */
 	mac_rx_t		mci_rx_p_fn;		/* Rx Quiescence */
 	void			*mci_rx_p_arg;		/* Rx Quiescence */
 	/* for packet siphon handlers */

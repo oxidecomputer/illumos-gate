@@ -918,12 +918,10 @@ extern void mac_led_init(mac_impl_t *);
 extern int mac_led_get(mac_handle_t, mac_led_mode_t *, mac_led_mode_t *);
 extern int mac_led_set(mac_handle_t, mac_led_mode_t);
 
-typedef struct mac_direct_rxs_s {
-	mac_direct_rx_t	mdrx_v4;
-	mac_direct_rx_t	mdrx_v6;
-	void		*mdrx_arg_v4;
-	void		*mdrx_arg_v6;
-} mac_direct_rxs_t;
+typedef struct mac_direct_wrapper_s {
+	mac_direct_rx_t	mdrx;
+	void		*mdrx_arg;
+} mac_direct_rx_wrapper_t;
 
 /*
  * Functions related to packet parsing, and manipulation of stored packet facts.

@@ -1370,10 +1370,10 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	mcip->mci_siphon = NULL;
 	mcip->mci_siphon_arg = NULL;
 	mcip->mci_p_unicast_list = NULL;
-	mcip->mci_direct_rx.mdrx_v4 = NULL;
-	mcip->mci_direct_rx.mdrx_v6 = NULL;
-	mcip->mci_direct_rx.mdrx_arg_v4 = NULL;
-	mcip->mci_direct_rx.mdrx_arg_v6 = NULL;
+	mcip->mci_v4_fastpath.mdrx = NULL;
+	mcip->mci_v4_fastpath.mdrx_arg = NULL;
+	mcip->mci_v6_fastpath.mdrx = NULL;
+	mcip->mci_v6_fastpath.mdrx_arg = NULL;
 	mcip->mci_vidcache = MCIP_VIDCACHE_INVALID;
 
 	mcip->mci_unicast_list = NULL;
@@ -1589,11 +1589,11 @@ mac_rx_bypass_set(mac_client_handle_t mch, mac_direct_rx_t rx_fn, void *arg1,
 	 * don't need any protection
 	 */
 	if (v6) {
-		mcip->mci_direct_rx.mdrx_v6 = rx_fn;
-		mcip->mci_direct_rx.mdrx_arg_v6 = arg1;
+		mcip->mci_v6_fastpath.mdrx = rx_fn;
+		mcip->mci_v6_fastpath.mdrx_arg = arg1;
 	} else {
-		mcip->mci_direct_rx.mdrx_v4 = rx_fn;
-		mcip->mci_direct_rx.mdrx_arg_v4 = arg1;
+		mcip->mci_v4_fastpath.mdrx = rx_fn;
+		mcip->mci_v4_fastpath.mdrx_arg = arg1;
 	}
 	return (B_TRUE);
 }
@@ -6046,6 +6046,37 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 }
 
 /*
+ * The function plumbed down from IP for the fastpaths assumes that L2 headers
+ * have been removed from the packet. Do so here for its benefit.
+ */
+static void
+mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
+    mblk_t *mp_chain, mac_header_info_t *arg3)
+{
+	mac_ether_offload_info_t meoi = {0};
+	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
+		/* Given `mac_standardise_packets`, this should be a cheap retrieval */
+		meoi.meoi_flags = 0;
+		mac_ether_offload_info(curr, &meoi, NULL);
+
+		/*
+		 * MAC now enforces, on our behalf, that we have header
+		 * contiguity through all the layers it understands.
+		 * (And, a refcount of 1 in the leading segment).
+		 */
+		if (meoi.meoi_flags & MEOI_L2INFO_SET) {
+			ASSERT3P(curr->b_rptr + meoi.meoi_l2hlen, <,
+			    curr->b_wptr);
+			curr->b_rptr += meoi.meoi_l2hlen;
+		}
+
+		/* IP cannot yet be trusted not to recycle MEOI. */
+		mac_ether_clear_pktinfo(curr);
+	}
+	mdrx->mdrx(mdrx->mdrx_arg, mrh, mp_chain, arg3);
+}
+
+/*
  * Fastpath fn ptrs provided by userland have changed out (initial registration,
  * most likely), or the subflow table got updated. Update leaf flows, rebake(?) trees.
  */
@@ -6074,15 +6105,15 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 	mac_direct_rx_t default_action = root_flent->fe_action.fa_direct_rx_fn;
 	mac_direct_rx_t default_arg = root_flent->fe_action.fa_direct_rx_arg;
 
-	if (mcip->mci_direct_rx.mdrx_v4 != NULL) {
+	if (mcip->mci_v4_fastpath.mdrx != NULL) {
 		ipv4_tcp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v4;
+		    (mac_direct_rx_t)mac_strip_l2_and_do;
 		ipv4_tcp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v4;
+		    &mcip->mci_v4_fastpath;
 		ipv4_udp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v4;
+		    (mac_direct_rx_t)mac_strip_l2_and_do;
 		ipv4_udp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v4;
+		    &mcip->mci_v4_fastpath;
 
 		if (mcip->mci_resource_add != NULL) {
 			ipv4_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
@@ -6105,17 +6136,15 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 		ipv4_udp->fe_action.fa_direct_rx_fn = default_action;
 		ipv4_udp->fe_action.fa_direct_rx_arg = default_arg;
 	}
-	if (mcip->mci_direct_rx.mdrx_v6 != NULL) {
-		ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
+	if (mcip->mci_v6_fastpath.mdrx != NULL) {
 		ipv6_tcp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v6;
+		    (mac_direct_rx_t)mac_strip_l2_and_do;
 		ipv6_tcp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v6;
-		ipv6_udp->fe_action.fa_flags |= MFA_FLAGS_ACTION;
+		    &mcip->mci_v6_fastpath;
 		ipv6_udp->fe_action.fa_direct_rx_fn =
-		    mcip->mci_direct_rx.mdrx_v6;
+		    (mac_direct_rx_t)mac_strip_l2_and_do;
 		ipv6_udp->fe_action.fa_direct_rx_arg =
-		    mcip->mci_direct_rx.mdrx_arg_v6;
+		    &mcip->mci_v6_fastpath;
 
 		if (mcip->mci_resource_add != NULL) {
 			ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
