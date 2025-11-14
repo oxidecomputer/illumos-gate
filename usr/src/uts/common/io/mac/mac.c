@@ -2260,23 +2260,18 @@ void
 mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 {
 	flow_entry_t	*flent = srs->srs_flent;
-	uint_t	mr_flag, srs_done_flag;
+	const uint_t mr_flag = (srs_quiesce_flag == SRS_CONDEMNED) ?
+	    MR_CONDEMNED : MR_QUIESCE;
+	const uint_t srs_done_flag = (srs_quiesce_flag == SRS_CONDEMNED) ?
+	    SRS_CONDEMNED_DONE : SRS_QUIESCE_DONE;
 
+	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
+	    srs_quiesce_flag == SRS_CONDEMNED);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
 	ASSERT(!mac_srs_is_tx(srs));
+	ASSERT3U((srs->srs_type & SRST_LOGICAL), !=, 0);
 
-	if (srs_quiesce_flag == SRS_CONDEMNED) {
-		mr_flag = MR_CONDEMNED;
-		srs_done_flag = SRS_CONDEMNED_DONE;
-		if (srs->srs_type & SRST_CLIENT_POLL_ENABLED)
-			mac_srs_client_poll_disable(srs->srs_mcip, srs);
-	} else {
-		ASSERT(srs_quiesce_flag == SRS_QUIESCE);
-		mr_flag = MR_QUIESCE;
-		srs_done_flag = SRS_QUIESCE_DONE;
-		if (srs->srs_type & SRST_CLIENT_POLL_ENABLED)
-			mac_srs_client_poll_quiesce(srs->srs_mcip, srs);
-	}
+	mac_srs_client_poll_quiesce(srs, srs_quiesce_flag);
 
 	if (srs->srs_kind_data.rx.sr_ring != NULL) {
 		mac_rx_ring_quiesce(srs->srs_kind_data.rx.sr_ring, mr_flag);
@@ -2295,7 +2290,10 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 	/*
 	 * Signal the SRS to quiesce itself, and then cv_wait for the
 	 * SRS quiesce to complete. The SRS worker thread will wake us
-	 * up when the quiesce is complete
+	 * up when the quiesce is complete.
+	 * Only complete SRSes have a worker thread -- they are responsible
+	 * for completing teardown operations on their logical SRSes' soft
+	 * rings.
 	 */
 	mac_srs_signal(srs, srs_quiesce_flag);
 	mac_srs_quiesce_wait(srs, srs_done_flag);
@@ -2370,7 +2368,7 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 		mac_srs_quiesce_wait(srs, SRS_RESTART_DONE);
 		mac_srs_clear_flag(srs, SRS_RESTART_DONE);
 
-		mac_srs_client_poll_restart(srs->srs_mcip, srs);
+		mac_srs_client_poll_restart(srs);
 	}
 
 	/* Finally clear the flags to let the packets in */

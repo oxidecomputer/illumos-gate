@@ -337,54 +337,85 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
  *
  * These routines are used to call back into the upper layer
  * (primarily TCP squeue) to stop polling the soft rings or
- * restart polling.
+ * restart polling on all softrings resident under a complete
+ * SRS.
  */
 void
-mac_srs_client_poll_quiesce(mac_client_impl_t *mcip,
-    mac_soft_ring_set_t *mac_srs)
+mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
+    uint_t srs_quiesce_flag)
 {
-	const flow_action_t *act =
-	    &((flow_entry_t *)mac_srs->srs_flent)->fe_action;
-	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
+	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
+	    srs_quiesce_flag == SRS_CONDEMNED);
+	ASSERT(!mac_srs_is_tx(mac_srs));
+	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), !=, 0);
 
-	mac_soft_ring_t	*softring;
+	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		const flow_action_t *act =
+		    &((flow_entry_t *)curr->srs_flent)->fe_action;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
+		if ((act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
+			continue;
+		}
 
-	if (!(mac_srs->srs_type & SRST_CLIENT_POLL_ENABLED)) {
-		ASSERT(!(mac_srs->srs_type & SRST_DLS_BYPASS));
-		return;
-	}
+		const mac_resource_remove_t rm_notify_fn =
+		    act->fa_resource_remove;
+		const mac_resource_remove_t quiesce_notify_fn =
+		    act->fa_resource_quiesce;
+		ASSERT3P(rm_notify_fn, !=, NULL);
+		ASSERT3P(quiesce_notify_fn, !=, NULL);
 
-	for (softring = mac_srs->srs_soft_ring_head;
-	    softring != NULL; softring = softring->s_ring_next) {
-		if (notify_upstack && softring->s_ring_rx_arg2 != NULL) {
-			act->fa_resource_quiesce(act->fa_resource_arg,
-			    softring->s_ring_rx_arg2);
+		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
+		    softring != NULL; softring = softring->s_ring_next) {
+			if (softring->s_ring_rx_arg2 == NULL) {
+				continue;
+			}
+
+			switch (srs_quiesce_flag) {
+			case SRS_CONDEMNED:
+				rm_notify_fn(act->fa_resource_arg,
+				    softring->s_ring_rx_arg2);
+				softring->s_ring_rx_arg2 = NULL;
+				break;
+			case SRS_QUIESCE:
+				quiesce_notify_fn(act->fa_resource_arg,
+				    softring->s_ring_rx_arg2);
+				break;
+			default:
+				break;
+			}
+
 		}
 	}
 }
 
 void
-mac_srs_client_poll_restart(mac_client_impl_t *mcip,
-    mac_soft_ring_set_t *mac_srs)
+mac_srs_client_poll_restart(mac_soft_ring_set_t *mac_srs)
 {
-	const flow_action_t *act =
-	    &((flow_entry_t *)mac_srs->srs_flent)->fe_action;
-	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
+	ASSERT(!mac_srs_is_tx(mac_srs));
+	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), !=, 0);
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
+	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		const flow_action_t *act =
+		    &((flow_entry_t *)curr->srs_flent)->fe_action;
 
-	if (!(mac_srs->srs_type & SRST_CLIENT_POLL_ENABLED)) {
-		ASSERT(!(mac_srs->srs_type & SRST_DLS_BYPASS));
-		return;
-	}
+		if ((act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
+			continue;
+		}
 
-	for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
-	    softring != NULL; softring = softring->s_ring_next) {
-		if (notify_upstack && softring->s_ring_rx_arg2 != NULL) {
-			act->fa_resource_restart(act->fa_resource_arg,
-			    softring->s_ring_rx_arg2);
+		const mac_resource_remove_t restart_notify_fn =
+		    act->fa_resource_restart;
+		ASSERT3P(restart_notify_fn, !=, NULL);
+
+		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
+		    softring != NULL; softring = softring->s_ring_next) {
+			if (softring->s_ring_rx_arg2 != NULL) {
+				restart_notify_fn(act->fa_resource_arg,
+				    softring->s_ring_rx_arg2);
+			}
 		}
 	}
 }
@@ -3526,7 +3557,12 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 		mac_flow_baked_tree_destroy(&mac_srs->srs_flowtree);
 	}
 
-	/* TODO(ky): cleanup here! */
+	if ((mac_srs->srs_type & SRST_LOGICAL) == 0) {
+		for (mac_soft_ring_set_t *child = mac_srs->srs_logical_next;
+		    child != NULL; child = child->srs_logical_next) {
+			mac_srs_free(child);
+		}
+	}
 
 	kmem_cache_free(mac_srs_cache, mac_srs);
 }
@@ -3572,24 +3608,24 @@ mac_srs_soft_rings_quiesce(mac_soft_ring_set_t *mac_srs, uint_t s_ring_flag)
 void
 mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 {
-	uint_t			s_ring_flag;
-	uint_t			srs_poll_wait_flag;
-
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-	ASSERT(mac_srs->srs_state & (SRS_CONDEMNED | SRS_QUIESCE));
 
-	if (mac_srs->srs_state & SRS_CONDEMNED) {
-		s_ring_flag = S_RING_CONDEMNED;
-		srs_poll_wait_flag = SRS_POLL_THR_EXITED;
-	} else {
-		s_ring_flag = S_RING_QUIESCE;
-		srs_poll_wait_flag = SRS_POLL_THR_QUIESCED;
-	}
+	uint_t quiesce_flag = mac_srs->srs_state &
+	    (SRS_CONDEMNED | SRS_QUIESCE);
+
+	ASSERT3U(quiesce_flag, !=, 0);
+	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, !=, 0);
+
+	uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
+	    S_RING_CONDEMNED: S_RING_QUIESCE;
+	uint_t srs_poll_wait_flag = (quiesce_flag == SRS_CONDEMNED) ?
+	    SRS_POLL_THR_EXITED: SRS_POLL_THR_QUIESCED;
 
 	/*
 	 * In the case of Rx SRS wait till the poll thread is done.
 	 */
-	if (!mac_srs_is_tx(mac_srs) && mac_srs->srs_kind_data.rx.sr_poll_thr != NULL) {
+	if (!mac_srs_is_tx(mac_srs) &&
+	    mac_srs->srs_kind_data.rx.sr_poll_thr != NULL) {
 		while (!(mac_srs->srs_state & srs_poll_wait_flag))
 			cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
 
@@ -3604,12 +3640,17 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	 * Then signal the soft ring worker threads to quiesce or quit
 	 * as needed and then wait till that happens.
 	 */
-	mac_srs_soft_rings_quiesce(mac_srs, s_ring_flag);
+	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		mac_srs_soft_rings_quiesce(curr, s_ring_flag);
+		if (mac_srs->srs_state & SRS_CONDEMNED){
+			mac_srs->srs_state |=
+			    (SRS_QUIESCE_DONE | SRS_CONDEMNED_DONE);
+		} else {
+			mac_srs->srs_state |= SRS_QUIESCE_DONE;
+		}
+	}
 
-	if (mac_srs->srs_state & SRS_CONDEMNED)
-		mac_srs->srs_state |= (SRS_QUIESCE_DONE | SRS_CONDEMNED_DONE);
-	else
-		mac_srs->srs_state |= SRS_QUIESCE_DONE;
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
 }
 

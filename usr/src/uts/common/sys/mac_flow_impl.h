@@ -465,7 +465,7 @@ struct flow_entry_s {					/* Protected by */
 	/* differentiate flows created by MAC / clients / flowadm */
 	mac_flow_type_t fe_owner_type;
 
-	/* TODO: swap out so this becomes the Real Thing */
+	/* TODO(ky): swap out so this becomes the Real Thing */
 	mac_flow_match_t fe_match2;
 };
 

@@ -690,10 +690,8 @@ extern void mac_srs_client_poll_enable(struct mac_client_impl_s *,
     mac_soft_ring_set_t *);
 extern void mac_srs_client_poll_disable(struct mac_client_impl_s *,
     mac_soft_ring_set_t *);
-extern void mac_srs_client_poll_quiesce(struct mac_client_impl_s *,
-    mac_soft_ring_set_t *);
-extern void mac_srs_client_poll_restart(struct mac_client_impl_s *,
-    mac_soft_ring_set_t *);
+extern void mac_srs_client_poll_quiesce(mac_soft_ring_set_t *, uint_t);
+extern void mac_srs_client_poll_restart(mac_soft_ring_set_t *);
 extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_restart(mac_soft_ring_set_t *);
 extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
