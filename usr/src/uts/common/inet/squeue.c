@@ -977,7 +977,7 @@ poll_again:
 				ASSERT3P(curr->b_rptr + meoi.meoi_l2hlen, <, curr->b_wptr);
 				curr->b_rptr += meoi.meoi_l2hlen;
 			}
-			mac_ether_clear_pktinfo(mp);
+			mac_ether_clear_pktinfo(curr);
 		}
 
 		mp = NULL;

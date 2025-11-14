@@ -6034,14 +6034,6 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	mcip->mci_fastpath_ipv6_tcp = ipv6_tcp;
 	mcip->mci_fastpath_ipv6_udp = ipv6_udp;
 
-	/* Necessity for FLOW_USER atm. during cleanup */
-	// FLOW_REFHOLD(ipv4);
-	// FLOW_REFHOLD(ipv4_tcp);
-	// FLOW_REFHOLD(ipv4_udp);
-	// FLOW_REFHOLD(ipv6);
-	// FLOW_REFHOLD(ipv6_tcp);
-	// FLOW_REFHOLD(ipv6_udp);
-
 	mac_update_fastpath_flows(mcip);
 }
 
