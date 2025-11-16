@@ -1525,14 +1525,14 @@ int mac_fanout_type = MAC_FANOUT_DEFAULT;
 
 #define	MAX_SR_TYPES	5
 /* fanout types for port based hashing */
-enum pkt_type {
+typedef enum pkt_type {
 	V4_TCP = 0,
 	V4_UDP,
 	V6_TCP,
 	V6_UDP,
 	OTH,
 	UNDEF
-};
+} pkt_type_t;
 
 /*
  * Pair of local and remote ports in the transport header
@@ -1636,7 +1636,7 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 				}
 			}
 
-			is_unicast = (ether_addr[0] & 0x01) == 0;
+			is_unicast = ((ether_addr[0] & 0x01) == 0);
 		} else {
 			if (mac_header_info((mac_handle_t)mcip->mci_mip,
 			    mp, &non_ether_mhi) != 0) {
@@ -1656,6 +1656,9 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 
 		if (!dls_bypass) {
 			DTRACE_PROBE(no__dls__bypass);
+			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
+			    mac_ether_offload_info_t *, &meoi,
+			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, OTH);
 			FANOUT_ENQUEUE_MP(headmp[OTH], tailmp[OTH],
 			    cnt[OTH], bw_ctl, sz[OTH], sz1, mp);
 			continue;
@@ -1717,6 +1720,9 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		}
 
 		if (!is_fastpath) {
+			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
+			    mac_ether_offload_info_t *, &meoi,
+			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, OTH);
 			FANOUT_ENQUEUE_MP(headmp[OTH], tailmp[OTH],
 			    cnt[OTH], bw_ctl, sz[OTH], sz1, mp);
 			continue;
@@ -1733,7 +1739,7 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 * of the IP header.  Otherwise leave the message as is for
 		 * further processing by DLS.
 		 */
-		enum pkt_type type = OTH;
+		pkt_type_t type = OTH;
 		switch (meoi.meoi_l4proto) {
 		case IPPROTO_TCP:
 			type = (meoi.meoi_l3proto == ETHERTYPE_IPV6) ?
@@ -1749,11 +1755,14 @@ mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			break;
 		}
 
+		DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
+		    mac_ether_offload_info_t *, &meoi, mac_soft_ring_set_t *,
+		    mac_srs, pkt_type_t, type);
 		FANOUT_ENQUEUE_MP(headmp[type], tailmp[type], cnt[type],
 		    bw_ctl, sz[type], sz1, mp);
 	}
 
-	for (enum pkt_type type = V4_TCP; type < UNDEF; type++) {
+	for (pkt_type_t type = V4_TCP; type < UNDEF; type++) {
 		if (headmp[type] != NULL) {
 			mac_soft_ring_t			*softring;
 
@@ -1790,7 +1799,7 @@ int	fanout_unaligned = 0;
  */
 static int
 mac_rx_srs_long_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *mp,
-    uint32_t sap, size_t hdrsize, enum pkt_type *type, uint_t *indx)
+    uint32_t sap, size_t hdrsize, pkt_type_t *type, uint_t *indx)
 {
 	ip6_t		*ip6h;
 	ipha_t		*ipha;
@@ -2034,7 +2043,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		uint8_t ether_addr[ETHERADDRL];
 		const uint8_t *dstaddr = ether_addr;
 		mac_header_info_t non_ether_mhi;
-		enum pkt_type type;
+		pkt_type_t type;
 		uint_t indx;
 		boolean_t is_unicast = B_FALSE;
 
@@ -2109,6 +2118,9 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 				continue;
 			}
 
+			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
+			    mac_ether_offload_info_t *, &meoi,
+			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, type);
 			FANOUT_ENQUEUE_MP(headmp[type][indx],
 			    tailmp[type][indx],
 			    cnt[type][indx], bw_ctl,
@@ -2178,7 +2190,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			}
 
 			if ((meoi.meoi_flags &
-			    (MEOI_L3_FRAG_MORE|MEOI_L3_FRAG_OFFSET)) != 0) {
+			    (MEOI_L3_FRAG_MORE | MEOI_L3_FRAG_OFFSET)) != 0) {
 				is_fastpath = B_FALSE;
 			}
 		}
@@ -2214,6 +2226,9 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 				continue;
 			}
 
+			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
+			    mac_ether_offload_info_t *, &meoi,
+			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, type);
 			FANOUT_ENQUEUE_MP(headmp[type][indx],
 			    tailmp[type][indx], cnt[type][indx], bw_ctl,
 			    sz[type][indx], sz1, mp);
@@ -2291,11 +2306,14 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			type = OTH;
 		}
 
+		DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
+		    mac_ether_offload_info_t *, &meoi, mac_soft_ring_set_t *,
+		    mac_srs, pkt_type_t, type);
 		FANOUT_ENQUEUE_MP(headmp[type][indx], tailmp[type][indx],
 		    cnt[type][indx], bw_ctl, sz[type][indx], sz1, mp);
 	}
 
-	for (enum pkt_type type = V4_TCP; type < UNDEF; type++) {
+	for (pkt_type_t type = V4_TCP; type < UNDEF; type++) {
 		for (int i = 0; i < fanout_cnt; i++) {
 			if (headmp[type][i] != NULL) {
 				mac_soft_ring_t	*softring;
