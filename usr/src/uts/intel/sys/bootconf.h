@@ -232,15 +232,12 @@ extern uint64_t kbm_map_ramdisk(uint64_t, uint64_t);
 
 extern void bop_no_more_mem(void);
 
-/*PRINTFLIKE2*/
 extern void bop_printf(void *, const char *, ...)
     __KPRINTFLIKE(2);
 extern void vbop_printf(void *, const char *, va_list);
 
-/*PRINTFLIKE1*/
 extern void bop_panic(const char *, ...)
     __KPRINTFLIKE(1) __NORETURN;
-#pragma rarely_called(bop_panic)
 
 extern void read_bootenvrc(void);
 
