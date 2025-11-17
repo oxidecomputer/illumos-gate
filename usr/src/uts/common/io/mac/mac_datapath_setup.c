@@ -348,7 +348,7 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
 	ASSERT(!mac_srs_is_tx(mac_srs));
-	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), !=, 0);
+	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), ==, 0);
 
 	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
@@ -395,7 +395,7 @@ mac_srs_client_poll_restart(mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
 	ASSERT(!mac_srs_is_tx(mac_srs));
-	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), !=, 0);
+	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), ==, 0);
 
 	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
@@ -2195,6 +2195,8 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 			}
 			es->srs_logical_next = mac_srs;
 		}
+
+		srs_rx->sr_poll_cpuid = srs_rx->sr_poll_cpuid_save = -1;
 	}
 	mac_srs->srs_flent = flent;
 	mutex_exit(&flent->fe_lock);
@@ -3553,14 +3555,16 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 	mac_srs_stat_delete(mac_srs);
 
 	if ((mac_srs->srs_type & SRST_LOGICAL) != 0 &&
-	    (mac_srs->srs_type & SRST_TX) == 0) {
+	    !mac_srs_is_tx(mac_srs)) {
 		mac_flow_baked_tree_destroy(&mac_srs->srs_flowtree);
 	}
 
 	if ((mac_srs->srs_type & SRST_LOGICAL) == 0) {
-		for (mac_soft_ring_set_t *child = mac_srs->srs_logical_next;
-		    child != NULL; child = child->srs_logical_next) {
+		mac_soft_ring_set_t *child = mac_srs->srs_logical_next;
+		while (child != NULL) {
+			mac_soft_ring_set_t *next = child->srs_logical_next;
 			mac_srs_free(child);
+			child = next;
 		}
 	}
 
@@ -3614,7 +3618,7 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	    (SRS_CONDEMNED | SRS_QUIESCE);
 
 	ASSERT3U(quiesce_flag, !=, 0);
-	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, !=, 0);
+	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
 
 	uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
 	    S_RING_CONDEMNED: S_RING_QUIESCE;
@@ -3642,32 +3646,28 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	 */
 	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
+		if (curr != mac_srs) {
+			mutex_enter(&curr->srs_lock);
+		}
 		mac_srs_soft_rings_quiesce(curr, s_ring_flag);
-		if (mac_srs->srs_state & SRS_CONDEMNED){
-			mac_srs->srs_state |=
+		if (curr->srs_state & SRS_CONDEMNED){
+			curr->srs_state |=
 			    (SRS_QUIESCE_DONE | SRS_CONDEMNED_DONE);
 		} else {
-			mac_srs->srs_state |= SRS_QUIESCE_DONE;
+			curr->srs_state |= SRS_QUIESCE_DONE;
+		}
+		if (curr != mac_srs) {
+			mutex_exit(&curr->srs_lock);
 		}
 	}
 
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
 }
 
-/*
- * Signal an SRS to start a temporary quiesce, or permanent removal, or restart
- * a quiesced SRS by setting the appropriate flags and signaling the SRS worker
- * or poll thread. This function is internal to the quiescing logic and is
- * called internally from the SRS quiesce or flow quiesce or client quiesce
- * higher level functions.
- */
-void
-mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
+static void
+mac_srs_signal_inner(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 {
 	mac_ring_t	*ring = mac_srs->srs_kind_data.rx.sr_ring;
-
-	ASSERT(mac_srs_is_tx(mac_srs) || (ring == NULL) ||
-	    (ring->mr_refcnt == 0));
 
 	if (srs_flag == SRS_CONDEMNED) {
 		/*
@@ -3688,6 +3688,36 @@ mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 	cv_signal(&mac_srs->srs_async);
 	cv_signal(&mac_srs->srs_cv);
 	mutex_exit(&mac_srs->srs_lock);
+}
+
+/*
+ * Signal an SRS to start a temporary quiesce, or permanent removal, or restart
+ * a quiesced SRS by setting the appropriate flags and signaling the SRS worker
+ * or poll thread. This function is internal to the quiescing logic and is
+ * called internally from the SRS quiesce or flow quiesce or client quiesce
+ * higher level functions.
+ */
+void
+mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
+{
+	mac_ring_t	*ring = mac_srs->srs_kind_data.rx.sr_ring;
+
+	ASSERT(mac_srs_is_tx(mac_srs) || (ring == NULL) ||
+	    (ring->mr_refcnt == 0));
+
+	/*
+	 * Logical SRSes attached to an SRS do not have any worker or poll
+	 * threads. Because the remainder of the signal handling must be
+	 * executed by the complete SRS, we signal all logical SRSes first such
+	 * that this SRS's worker will see the same signal propagated to all
+	 * children.
+	 */
+	for (mac_soft_ring_set_t *curr = mac_srs->srs_logical_next;
+	    curr != NULL; curr = curr->srs_logical_next) {
+		mac_srs_signal_inner(curr, srs_flag);
+	}
+
+	mac_srs_signal_inner(mac_srs, srs_flag);
 }
 
 /*
@@ -3717,7 +3747,7 @@ mac_srs_soft_rings_signal(mac_soft_ring_set_t *mac_srs, uint_t sr_flag)
 void
 mac_srs_worker_restart(mac_soft_ring_set_t *mac_srs)
 {
-	bool		is_tx_srs = mac_srs_is_tx(mac_srs);
+	const bool	is_tx_srs = mac_srs_is_tx(mac_srs);
 	mac_srs_rx_t	*srs_rx = &mac_srs->srs_kind_data.rx;
 	mac_soft_ring_t	*softring;
 
@@ -3736,36 +3766,50 @@ mac_srs_worker_restart(mac_soft_ring_set_t *mac_srs)
 		}
 	}
 
-	/*
-	 * Signal any quiesced soft ring workers to restart and wait for the
-	 * soft ring down count to come down to zero.
-	 */
-	if (mac_srs->srs_soft_ring_quiesced_count != 0) {
-		for (softring = mac_srs->srs_soft_ring_head; softring != NULL;
-		    softring = softring->s_ring_next) {
-			if (!(softring->s_ring_state & S_RING_QUIESCE))
-				continue;
-			mac_soft_ring_signal(softring, S_RING_RESTART);
+	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		if (curr != mac_srs) {
+			mutex_enter(&curr->srs_lock);
 		}
-		while (mac_srs->srs_soft_ring_quiesced_count != 0)
-			cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
+
+		/*
+		 * Signal any quiesced soft ring workers to restart and wait for the
+		 * soft ring down count to come down to zero.
+		 */
+		if (curr->srs_soft_ring_quiesced_count != 0) {
+			for (softring = curr->srs_soft_ring_head;
+			    softring != NULL;
+			    softring = softring->s_ring_next) {
+				if (!(softring->s_ring_state & S_RING_QUIESCE))
+					continue;
+				mac_soft_ring_signal(softring, S_RING_RESTART);
+			}
+			while (curr->srs_soft_ring_quiesced_count != 0)
+				cv_wait(&curr->srs_async, &curr->srs_lock);
+		}
+
+		curr->srs_state &=
+		    ~(SRS_QUIESCE_DONE | SRS_QUIESCE | SRS_RESTART);
+		if (!is_tx_srs && curr->srs_kind_data.rx.sr_poll_thr != NULL) {
+			/*
+			 * Signal the poll thread and ask it to restart. Wait till it
+			 * actually restarts and the SRS_POLL_THR_QUIESCED flag gets
+			 * cleared.
+			 */
+			curr->srs_state |= SRS_POLL_THR_RESTART;
+			cv_signal(&curr->srs_cv);
+			while (curr->srs_state & SRS_POLL_THR_QUIESCED)
+				cv_wait(&curr->srs_async, &curr->srs_lock);
+			ASSERT(!(curr->srs_state & SRS_POLL_THR_RESTART));
+		}
+		/* Wake up any waiter waiting for the restart to complete */
+		curr->srs_state |= SRS_RESTART_DONE;
+
+		if (curr != mac_srs) {
+			mutex_exit(&curr->srs_lock);
+		}
 	}
 
-	mac_srs->srs_state &= ~(SRS_QUIESCE_DONE | SRS_QUIESCE | SRS_RESTART);
-	if (!is_tx_srs && srs_rx->sr_poll_thr != NULL) {
-		/*
-		 * Signal the poll thread and ask it to restart. Wait till it
-		 * actually restarts and the SRS_POLL_THR_QUIESCED flag gets
-		 * cleared.
-		 */
-		mac_srs->srs_state |= SRS_POLL_THR_RESTART;
-		cv_signal(&mac_srs->srs_cv);
-		while (mac_srs->srs_state & SRS_POLL_THR_QUIESCED)
-			cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
-		ASSERT(!(mac_srs->srs_state & SRS_POLL_THR_RESTART));
-	}
-	/* Wake up any waiter waiting for the restart to complete */
-	mac_srs->srs_state |= SRS_RESTART_DONE;
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
 }
 

@@ -2269,7 +2269,7 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 	    srs_quiesce_flag == SRS_CONDEMNED);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
 	ASSERT(!mac_srs_is_tx(srs));
-	ASSERT3U((srs->srs_type & SRST_LOGICAL), !=, 0);
+	ASSERT3U((srs->srs_type & SRST_LOGICAL), ==, 0);
 
 	mac_srs_client_poll_quiesce(srs, srs_quiesce_flag);
 
@@ -2366,7 +2366,10 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 	if (!SRS_QUIESCED_PERMANENT(srs)) {
 		mac_srs_signal(srs, SRS_RESTART);
 		mac_srs_quiesce_wait(srs, SRS_RESTART_DONE);
-		mac_srs_clear_flag(srs, SRS_RESTART_DONE);
+		for (mac_soft_ring_set_t *curr = srs; curr != NULL;
+		    curr = curr->srs_logical_next) {
+			mac_srs_clear_flag(curr, SRS_RESTART_DONE);
+		}
 
 		mac_srs_client_poll_restart(srs);
 	}
