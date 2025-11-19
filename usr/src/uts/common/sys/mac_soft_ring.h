@@ -475,6 +475,12 @@ mac_srs_is_tx(const mac_soft_ring_set_t *srs)
 	return ((srs->srs_type & SRST_TX) != 0);
 }
 
+inline bool
+mac_srs_is_logical(const mac_soft_ring_set_t *srs)
+{
+	return ((srs->srs_type & SRST_LOGICAL) != 0);
+}
+
 /*
  * soft ring set flags. These bits are dynamic in nature and get
  * applied to srs_state. They reflect the state of SRS at any

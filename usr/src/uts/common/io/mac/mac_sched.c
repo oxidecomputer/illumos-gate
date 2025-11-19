@@ -2508,10 +2508,13 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 			case MFA_TYPE_DELIVER:
 				/* TODO(ky): contention on pkt count? */
 				/* softrings REALLY want this to be happy */
-				mutex_enter(&send_to->srs_lock);
-				send_to->srs_kind_data.rx.sr_poll_pkt_cnt +=
-				    my_pkts->ftp_deli_count;
-				mutex_exit(&send_to->srs_lock);
+				// mutex_enter(&send_to->srs_lock);
+				// send_to->srs_kind_data.rx.sr_poll_pkt_cnt +=
+				//     my_pkts->ftp_deli_count;
+				// mutex_exit(&send_to->srs_lock);
+				atomic_add_32(
+				    &send_to->srs_kind_data.rx.sr_poll_pkt_cnt,
+				    my_pkts->ftp_deli_count);
 
 				mac_rx_srs_deliver(
 				    send_to,
@@ -2645,7 +2648,7 @@ again:
 	 * be served by the lowest level flow table in mac_rx_flow ->
 	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
+	ASSERT(!mac_srs_is_logical(mac_srs));
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 
@@ -2666,6 +2669,22 @@ again:
 		(void) untimeout(tid);
 		tid = NULL;
 	}
+
+	/*
+	 * TODO(ky): We need to handle a key promisc case here:
+	 *  - promisc is enabled.
+	 *  - this SRS is hw classified.
+	 *  - this SRS is also SRST_DEFAULT_GROUP.
+	 *  - this SRS is also an L2 flow, rather than e.g. a more complex
+	 *    NIC filter (SRST_LINK?).
+	 * In this case, we need to check L2 match, and divert any unicast
+	 * packets which fail this check straight to local (no flow tree).
+	 */
+
+	/*
+	 * TODO(ky): m'cast/b'cast traffic should walk the flowtree, but
+	 * should not be admitted by the DLS bypass flows.
+	 */
 
 	/* Generally we *should* have a subtree here, due to DLS bypass */
 	/* TODO(ky): `likely()`? */
@@ -2921,7 +2940,7 @@ again:
 	 * be served by the lowest level flow table in mac_rx_flow ->
 	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
+	ASSERT(!mac_srs_is_logical(mac_srs));
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 

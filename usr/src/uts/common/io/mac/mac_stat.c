@@ -1147,8 +1147,14 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 		}
 
 		if (ring_rx == NULL) {
-			(void) snprintf(statname, sizeof (statname),
-			    "mac_rx_swlane0_fanout%d", index);
+			if (mac_srs_is_logical(mac_srs)) {
+				(void) snprintf(statname, sizeof (statname),
+				    "flow_%s_fanout%d", flent->fe_flow_name,
+				    index);
+			} else {
+				(void) snprintf(statname, sizeof (statname),
+				    "mac_rx_swlane0_fanout%d", index);
+			}
 		} else {
 			(void) snprintf(statname, sizeof (statname),
 			    "mac_rx_hwlane%d_fanout%d",

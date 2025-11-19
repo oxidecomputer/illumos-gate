@@ -2269,7 +2269,7 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 	    srs_quiesce_flag == SRS_CONDEMNED);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
 	ASSERT(!mac_srs_is_tx(srs));
-	ASSERT3U((srs->srs_type & SRST_LOGICAL), ==, 0);
+	ASSERT(!mac_srs_is_logical(srs));
 
 	mac_srs_client_poll_quiesce(srs, srs_quiesce_flag);
 

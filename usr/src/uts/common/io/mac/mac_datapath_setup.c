@@ -348,7 +348,7 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
 	ASSERT(!mac_srs_is_tx(mac_srs));
-	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), ==, 0);
+	ASSERT(!mac_srs_is_logical(mac_srs));
 
 	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
@@ -395,7 +395,7 @@ mac_srs_client_poll_restart(mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
 	ASSERT(!mac_srs_is_tx(mac_srs));
-	ASSERT3U((mac_srs->srs_type & SRST_LOGICAL), ==, 0);
+	ASSERT(!mac_srs_is_logical(mac_srs));
 
 	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
@@ -431,7 +431,7 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 {
 	ASSERT(mac_srs->srs_mcip == mcip);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
-	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
+	ASSERT(!mac_srs_is_logical(mac_srs));
 
 	if (!(mcip->mci_state_flags & MCIS_CLIENT_POLL_CAPABLE))
 		return;
@@ -504,7 +504,7 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
-	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
+	ASSERT(!mac_srs_is_logical(mac_srs));
 
 	mutex_enter(&mac_srs->srs_lock);
 	if (!(mac_srs->srs_type & SRST_CLIENT_POLL_ENABLED)) {
@@ -1844,6 +1844,7 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 	/* Does this flow need to report bindings to an upstack client? */
 	const flow_action_t *act =
 	    &((flow_entry_t *)mac_rx_srs->srs_flent)->fe_action;
+	const bool is_logical = mac_srs_is_logical(mac_rx_srs);
 	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
 	const mac_resource_remove_t rm_notify_fn = act->fa_resource_remove;
 	const mac_resource_bind_t bind_notify_fn = act->fa_resource_bind;
@@ -1900,9 +1901,12 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 		}
 	}
 
-	mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
-	mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
-	mac_rx_srs_retarget_intr(mac_rx_srs, srs_cpu->mc_rx_intr_cpu);
+	if (!is_logical) {
+		mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
+		mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
+		mac_rx_srs_retarget_intr(mac_rx_srs, srs_cpu->mc_rx_intr_cpu);
+	}
+
 	/*
 	 * Bind Tx srs and soft ring threads too. Let's bind tx
 	 * srs to the last cpu in mrp list.
@@ -1960,7 +1964,7 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 			mac_srs_create_rx_softring(i, soft_ring_flag,
 			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
 		}
-		if ((mac_rx_srs->srs_type & SRST_LOGICAL) == 0) {
+		if (!mac_srs_is_logical(mac_rx_srs)) {
 			mac_srs_worker_bind(mac_rx_srs,
 			    srs_cpu->mc_rx_workerid);
 			mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
@@ -1986,7 +1990,7 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 		 * For a subflow, mrp_workerid and mrp_pollid
 		 * is not set.
 		 */
-		if ((mac_rx_srs->srs_type & SRST_LOGICAL) == 0) {
+		if (!mac_srs_is_logical(mac_rx_srs)) {
 			mac_srs_worker_bind(mac_rx_srs, mrp->mrp_rx_workerid);
 			mac_srs_poll_bind(mac_rx_srs, mrp->mrp_rx_pollid);
 		}
@@ -2068,14 +2072,13 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 	 */
 	for (i = 0; i < rx_srs_cnt; i++) {
 		mac_rx_srs = flent->fe_rx_srs[i];
-		ASSERT3U((mac_rx_srs->srs_type & SRST_LOGICAL), ==, 0);
+		ASSERT(!mac_srs_is_logical(mac_rx_srs));
 		if (i != 0)
 			mac_tx_srs = NULL;
 		switch (mac_rx_srs->srs_fanout_state) {
 		case SRS_FANOUT_UNINIT:
 			mac_srs_fanout_init(mcip, mrp, mac_rx_srs, mac_tx_srs,
 			    cpupart);
-			/* TODO(ky): right place? */
 			VERIFY0(mac_flow_baked_tree_create(flent, mac_rx_srs));
 			break;
 		case SRS_FANOUT_INIT:
@@ -2083,7 +2086,28 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		case SRS_FANOUT_REINIT:
 			mac_rx_srs_quiesce(mac_rx_srs, SRS_QUIESCE);
 			mac_srs_fanout_modify(mcip, mac_rx_srs, mac_tx_srs);
-			/* TODO(ky): do the same on attached logicals? */
+			/* refresh attached logical SRSes */
+			for (mac_soft_ring_set_t *curr =
+			    mac_rx_srs->srs_logical_next; curr != NULL;
+			    curr = curr->srs_logical_next) {
+				/*
+				 * TODO(ky): Not all flows will want to copy the
+				 * bindings of mac_srs (e.g., user flows).
+				 * Blueprint should be a property of the SRS.
+				 *
+				 * TODO(ky): basically copied from
+				 *     mac_flow_baked_tree_create!
+				 */
+				bcopy(&mac_rx_srs->srs_cpu, &curr->srs_cpu,
+				    sizeof (mac_cpus_t));
+				bcopy(curr->srs_cpu.mc_rx_fanout_cpus,
+				    curr->srs_cpu.mc_cpus,
+				    sizeof (curr->srs_cpu.mc_cpus));
+				curr->srs_cpu.mc_ncpus =
+				    curr->srs_cpu.mc_rx_fanout_cnt;
+				curr->srs_cpu.mc_rx_intr_cpu = -1;
+				mac_srs_fanout_modify(mcip, curr, NULL);
+			}
 			mac_rx_srs_restart(mac_rx_srs);
 			break;
 		default:
@@ -3536,7 +3560,7 @@ mac_srs_ring_free(mac_soft_ring_set_t *mac_srs)
  * Physical unlink and free of the data structures happen below. This is
  * driven from mac_flow_destroy(), on the last refrele of a flow.
  *
- * Assumes Rx srs is 1-1 mapped with an ring.
+ * Assumes a full Rx srs is 1-1 mapped with a ring.
  */
 void
 mac_srs_free(mac_soft_ring_set_t *mac_srs)
@@ -3546,6 +3570,8 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 	ASSERT((mac_srs->srs_state & (SRS_CONDEMNED | SRS_CONDEMNED_DONE |
 	    SRS_PROC | SRS_PROC_FAST)) == (SRS_CONDEMNED | SRS_CONDEMNED_DONE));
 
+	const bool is_full_srs = !mac_srs_is_logical(mac_srs);
+
 	mac_drop_chain(mac_srs->srs_first, "SRS free");
 	mac_srs_ring_free(mac_srs);
 	mac_srs_soft_rings_free(mac_srs);
@@ -3554,12 +3580,10 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 	mac_srs->srs_bw = NULL;
 	mac_srs_stat_delete(mac_srs);
 
-	if ((mac_srs->srs_type & SRST_LOGICAL) != 0 &&
-	    !mac_srs_is_tx(mac_srs)) {
-		mac_flow_baked_tree_destroy(&mac_srs->srs_flowtree);
-	}
-
-	if ((mac_srs->srs_type & SRST_LOGICAL) == 0) {
+	if (is_full_srs) {
+		if (!mac_srs_is_tx(mac_srs)) {
+			mac_flow_baked_tree_destroy(&mac_srs->srs_flowtree);
+		}
 		mac_soft_ring_set_t *child = mac_srs->srs_logical_next;
 		while (child != NULL) {
 			mac_soft_ring_set_t *next = child->srs_logical_next;
@@ -3618,7 +3642,7 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	    (SRS_CONDEMNED | SRS_QUIESCE);
 
 	ASSERT3U(quiesce_flag, !=, 0);
-	ASSERT3U(mac_srs->srs_type & SRST_LOGICAL, ==, 0);
+	ASSERT(!mac_srs_is_logical(mac_srs));
 
 	uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
 	    S_RING_CONDEMNED: S_RING_QUIESCE;
@@ -4305,9 +4329,13 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	ASSERT3P(flent, !=, NULL);
 
 	/* TODO(ky): too much stack for mac_cpus_t? */
+	/*
+	 * Create a mac_cpus_t for all logical SRSes with identical fanout to
+	 * `based_on`, but no workers/poll bound.
+	 */
 	mac_cpus_t dup_fanout = based_on->srs_cpu;
 	dup_fanout.mc_ncpus = dup_fanout.mc_rx_fanout_cnt;
-	bcopy(dup_fanout.mc_cpus, dup_fanout.mc_rx_fanout_cpus,
+	bcopy(dup_fanout.mc_rx_fanout_cpus, dup_fanout.mc_cpus,
 	    sizeof (dup_fanout.mc_cpus));
 	dup_fanout.mc_rx_intr_cpu = -1;
 
