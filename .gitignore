@@ -40,6 +40,7 @@ usr/src/cmd/dtrace_ipcc/dtrace_ipcc
 usr/src/cmd/gpioadm/gpioadm
 usr/src/cmd/ipcc/ipcc
 usr/src/cmd/mcmargins/mcmargins
+usr/src/cmd/psp/pspeinj
 usr/src/cmd/t6init/t6init
 usr/src/cmd/t6mfgadm/t6mfgadm
 usr/src/cmd/tmpx/tmpx

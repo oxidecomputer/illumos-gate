@@ -58,7 +58,8 @@ mac_lso_usage(void)
 	    "\t<cap_file_in> is a snoop capture containing one test packet.\n"
 	    "\t<cap_file_out> is a snoop capture of expected output packets.\n"
 	    "\tInput packets may or may not have filled L3/L4 checksums, as\n"
-	    "\tclients will have different expectations about which \n",
+	    "\tclients will have different expectations about which\n",
+	    "\tchecksum offloads are available.\n",
 	    mac_lso_cmd);
 	exit(EXIT_FAILURE);
 }

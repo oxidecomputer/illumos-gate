@@ -1080,7 +1080,7 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		oleft -= seg_len;
 
 		/*
-		 * Setup partial checksum offsets for non-tunneled packets.
+		 * Set up partial checksum offsets for non-tunneled packets.
 		 * mac_sw_cksum will figure precise offsets out for tunneled
 		 * packets, as we may have two partial checksums (thus need to
 		 * rely upon parsing from MEOI).

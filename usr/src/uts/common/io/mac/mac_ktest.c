@@ -53,6 +53,20 @@ typedef struct emul_test_params {
 	uint_t		etp_splits[SPLITS_MAX];
 } emul_test_params_t;
 
+static void
+etp_free(const emul_test_params_t *etp)
+{
+	if (etp->etp_mp != NULL) {
+		freemsgchain(etp->etp_mp);
+	}
+	if (etp->etp_raw != NULL) {
+		kmem_free(etp->etp_raw, etp->etp_raw_sz);
+	}
+	if (etp->etp_outputs != NULL) {
+		kmem_free(etp->etp_outputs, etp->etp_outputs_sz);
+	}
+}
+
 static mblk_t *
 cksum_alloc_pkt(const emul_test_params_t *etp, uint32_t padding)
 {
@@ -193,9 +207,8 @@ emul_test_parse_input(ktest_ctx_hdl_t *ctx, emul_test_params_t *etp)
 	return (B_TRUE);
 
 bail:
-	if (etp->etp_raw != NULL) {
-		kmem_free(etp->etp_raw, etp->etp_raw_sz);
-	}
+	etp_free(etp);
+
 	if (params != NULL) {
 		nvlist_free(params);
 	}
@@ -336,7 +349,7 @@ pkt_compare(ktest_ctx_hdl_t *ctx, const uchar_t *buf, const uint_t len,
 	return (B_TRUE);
 }
 
-/* Compare resulting mblk chain with known good values in test parameters.  */
+/* Compare resulting mblk chain with known good values in test parameters. */
 static boolean_t
 pkt_result_compare_chain(ktest_ctx_hdl_t *ctx, const emul_test_params_t *etp,
     mblk_t *mp)
@@ -344,7 +357,7 @@ pkt_result_compare_chain(ktest_ctx_hdl_t *ctx, const emul_test_params_t *etp,
 	uint_t remaining = etp->etp_outputs_sz;
 	const uchar_t *raw_cur = etp->etp_outputs;
 
-	int idx = 0;
+	uint_t idx = 0;
 	while (remaining != 0 && mp != NULL) {
 		uint32_t inner_pkt_len;
 		if (remaining < sizeof (inner_pkt_len)) {
@@ -511,11 +524,8 @@ mac_hw_emul_test(ktest_ctx_hdl_t *ctx, emul_test_params_t *etp)
 		}
 
 		mac_hw_emul(&mp, NULL, NULL, emul_flags);
+		KT_ASSERT3P(mp, !=, NULL, ctx);
 		etp->etp_mp = mp;
-		if (mp == NULL) {
-			KT_ERROR(ctx, "emulation failed (check mac-drop SDT?)");
-			return;
-		}
 
 		boolean_t success = (etp->etp_outputs == NULL) ?
 		    pkt_compare(ctx, etp->etp_raw, etp->etp_raw_sz, mp) :
@@ -532,13 +542,11 @@ mac_hw_emul_test(ktest_ctx_hdl_t *ctx, emul_test_params_t *etp)
 }
 
 /*
- * Verify mac_sw_cksum() emulation against an arbitrary input packet.  If the
- * packet is of a support protocol, any L3 and L4 checksums are cleared, and
- * then mac_sw_cksum() is called to perform the offload emulation.  Afterwards,
- * the packet is compared to see if it equasl the input, which is assumed to
+ * Verify checksum emulation against an arbitrary chain of packets.  If the
+ * packet is of a supported protocol, any L3 and L4 checksums are cleared, and
+ * then mac_hw_emul() is called to perform the offload emulation.  Afterwards,
+ * the packet is compared to see if it equals the input, which is assumed to
  * have correct checksums.
- *
- * This can request either emulation via HCK_PARTIALCKSUM or HCK_FULLCKSUM.
  */
 static void
 mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
@@ -551,15 +559,7 @@ mac_sw_cksum_test(ktest_ctx_hdl_t *ctx)
 	mac_hw_emul_test(ctx, &etp);
 
 cleanup:
-	if (etp.etp_mp != NULL) {
-		freemsgchain(etp.etp_mp);
-	}
-	if (etp.etp_raw != NULL) {
-		kmem_free(etp.etp_raw, etp.etp_raw_sz);
-	}
-	if (etp.etp_outputs != NULL) {
-		kmem_free(etp.etp_outputs, etp.etp_outputs_sz);
-	}
+	etp_free(&etp);
 }
 
 /*
@@ -591,15 +591,7 @@ mac_sw_lso_test(ktest_ctx_hdl_t *ctx)
 	mac_hw_emul_test(ctx, &etp);
 
 cleanup:
-	if (etp.etp_mp != NULL) {
-		freemsgchain(etp.etp_mp);
-	}
-	if (etp.etp_raw != NULL) {
-		kmem_free(etp.etp_raw, etp.etp_raw_sz);
-	}
-	if (etp.etp_outputs != NULL) {
-		kmem_free(etp.etp_outputs, etp.etp_outputs_sz);
-	}
+	etp_free(&etp);
 }
 
 typedef struct meoi_test_params {

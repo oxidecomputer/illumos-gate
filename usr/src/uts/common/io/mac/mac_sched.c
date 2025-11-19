@@ -1532,20 +1532,19 @@ int mac_fanout_type = MAC_FANOUT_DEFAULT;
 
 #define	MAX_SR_TYPES	5
 /* fanout types for port based hashing */
-enum pkt_type {
+typedef enum pkt_type {
 	V4_TCP = 0,
 	V4_UDP,
 	V6_TCP,
 	V6_UDP,
 	OTH,
 	UNDEF
-};
+} pkt_type_t;
 
 /*
  * Pair of local and remote ports in the transport header
  */
 #define	PORTS_SIZE 4
-
 
 /*
  * This routine delivers packets destined for an SRS into a soft ring member
@@ -1649,7 +1648,6 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		if ((meoi.meoi_flags & MEOI_L4INFO_SET) == 0) {
 			goto compute_index;
 		}
-
 		switch (meoi.meoi_l4proto) {
 		case IPPROTO_TCP:
 		case IPPROTO_UDP:
