@@ -41,14 +41,12 @@ file path=kernel/firmware/cxgbe/t5fw_cfg.txt
 file path=kernel/firmware/cxgbe/t6fw-1.27.5.0.bin
 link path=kernel/firmware/cxgbe/t6fw.bin target=t6fw-1.27.5.0.bin
 file path=kernel/firmware/cxgbe/t6fw_cfg.txt
-file path=lib/svc/manifest/system/t6init.xml group=sys mode=0444
-file path=lib/svc/method/svc-t6init mode=0555
-file path=kernel/firmware/cxgbe/t7fw-1.27.0.57.bin
-link path=kernel/firmware/cxgbe/t7fw.bin target=t7fw-1.27.0.57.bin
-file path=kernel/firmware/cxgbe/t7fw_cfg_fpga.txt
 file path=kernel/firmware/cxgbe/t7fw-1.27.0.72.bin
 link path=kernel/firmware/cxgbe/t7fw.bin target=t7fw-1.27.0.72.bin
 file path=kernel/firmware/cxgbe/t7fw_cfg.txt
+file path=kernel/firmware/cxgbe/t7fw_cfg_fpga.txt
+file path=lib/svc/manifest/system/t6init.xml group=sys mode=0444
+file path=lib/svc/method/svc-t6init mode=0555
 dir  path=usr group=sys
 dir  path=usr/lib
 dir  path=usr/lib/$(ARCH64)
@@ -168,7 +166,7 @@ driver name=t4nex perms="* 0666 root sys" clone_perms="t4nex 0666 root sys" \
     alias=pciex1425,6489 \
     alias=pciex1425,648a \
     alias=pciex1425,648b \
-    alias=pciex1425,6492 devlink=type=ddi_ctl:devctl;minor1=t4nex\tt4nex\M2
+    alias=pciex1425,6492 \
     alias=pciex1425,6492 \
     alias=pciex1425,7400 \
     alias=pciex1425,7401 \
