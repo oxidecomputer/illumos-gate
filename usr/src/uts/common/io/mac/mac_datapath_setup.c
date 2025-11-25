@@ -368,7 +368,8 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 
 		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
 		    softring != NULL; softring = softring->s_ring_next) {
-			if (softring->s_ring_rx_arg2 == NULL) {
+			if (softring->s_ring_rx_arg2 == NULL ||
+			    act->fa_resource_arg == NULL) {
 				continue;
 			}
 
@@ -412,7 +413,8 @@ mac_srs_client_poll_restart(mac_soft_ring_set_t *mac_srs)
 
 		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
 		    softring != NULL; softring = softring->s_ring_next) {
-			if (softring->s_ring_rx_arg2 != NULL) {
+			if (softring->s_ring_rx_arg2 != NULL &&
+			    act->fa_resource_arg != NULL) {
 				restart_notify_fn(act->fa_resource_arg,
 				    softring->s_ring_rx_arg2);
 			}
@@ -477,7 +479,8 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 		    softring = softring->s_ring_next) {
 			mac_soft_ring_action_refresh(softring);
 			if (add_notify_fn != NULL &&
-			    softring->s_ring_rx_arg2 == NULL) {
+			    softring->s_ring_rx_arg2 == NULL &&
+			    act->fa_resource_arg != NULL) {
 				mrf.mrf_rx_arg = softring;
 				mrf.mrf_intr_handle = (mac_intr_handle_t)softring;
 				mrf.mrf_cpu_id = softring->s_ring_cpuid;
@@ -597,7 +600,7 @@ next:
  */
 static void
 mac_srs_poll_state_change(mac_soft_ring_set_t *mac_srs,
-    boolean_t turn_off_poll_capab, mac_rx_func_t rx_func)
+    boolean_t turn_off_poll_capab)
 {
 	boolean_t	need_restart = B_FALSE;
 	mac_srs_rx_t	*srs_rx = &mac_srs->srs_kind_data.rx;
@@ -615,7 +618,6 @@ mac_srs_poll_state_change(mac_soft_ring_set_t *mac_srs,
 		else if (mac_poll_enable)
 			mac_srs->srs_state |= SRS_POLLING_CAPAB;
 	}
-	srs_rx->sr_lower_proc = rx_func;
 
 	if (need_restart)
 		mac_rx_srs_restart(mac_srs);
@@ -1708,53 +1710,39 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
  * In the future if there are multiple SRS, we can simply
  * take one and give it to the flow rather than disabling polling and
  * resetting the entry point.
+ *
+ * TODO(ky): above comment is no longer what this function does. We now
+ * readapt the flow tree.
  */
 void
 mac_client_update_classifier(mac_client_impl_t *mcip)
 {
 	flow_entry_t		*flent = mcip->mci_flent;
-	int			i;
 	mac_impl_t		*mip = mcip->mci_mip;
-	mac_rx_func_t		rx_func;
-	uint_t			rx_srs_cnt;
+	uint_t			rx_srs_cnt = flent->fe_rx_srs_cnt;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
-	/* TODO(ky): Trigger a rebuild/refresh/connection of subflow-tab flents to the fastpath tree */
-	/*
-	 * rx_func = enable_classifier ? mac_rx_srs_subflow_process :
-	 *   mac_rx_srs_process;
-	 */
-	bool enable_classifier = !FLOW_TAB_EMPTY(mcip->mci_subflow_tab);
-	rx_func = mac_rx_srs_process;
+	mac_update_subflows_on_fastpath(mcip, true);
 
-	/* Tell mac_srs_poll_state_change to disable polling if necessary */
-	bool disable_polling = (mip->mi_state_flags & MIS_POLL_DISABLE) != 0;
-
-	/*
-	 * This loop visits all of the _entry_ Rx SRSes on this MCIP, which is
-	 * to say those attached to the software classifier or a HW ring. While
-	 * we have logical SRSes associated with each baked flowtree, we don't
-	 * need to visit those since they cannot be polled.
-	 */
-	rx_srs_cnt = flent->fe_rx_srs_cnt;
-	for (i = 0; i < rx_srs_cnt; i++) {
-		ASSERT(flent->fe_rx_srs[i] != NULL);
-		mac_srs_poll_state_change(flent->fe_rx_srs[i],
-		    disable_polling, rx_func);
+	/* TODO(ky): be smarter about when to actually rebuild the tree. */
+	/* TODO(ky): What do we do/need to do if flow props change on an existing? */
+	for (int i = 0; i < rx_srs_cnt; i++) {
+		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
+		ASSERT3P(srs, !=, NULL);
+		mutex_enter(&srs->srs_lock);
+		ASSERT3U(srs->srs_state & SRS_QUIESCE_DONE, !=, 0);
+		mac_flow_baked_tree_destroy(&srs->srs_flowtree);
+		mac_soft_ring_set_t *child = srs->srs_logical_next;
+		while (child != NULL) {
+			mac_soft_ring_set_t *next = child->srs_logical_next;
+			mac_srs_free(child);
+			child = next;
+		}
+		srs->srs_logical_next = NULL;
+		mac_flow_baked_tree_create(flent, srs);
+		mutex_exit(&srs->srs_lock);
 	}
-
-	/*
-	 * Change the S/W classifier so that we can land in the
-	 * correct processing function with correct argument.
-	 * If all subflows have been removed we can revert to
-	 * mac_rx_srs_process(), else we need mac_rx_srs_subflow_process().
-	 */
-	mutex_enter(&flent->fe_lock);
-	flent->fe_cb_fn = (flow_fn_t)rx_func;
-	flent->fe_cb_arg1 = (void *)mip;
-	flent->fe_cb_arg2 = flent->fe_rx_srs[0];
-	mutex_exit(&flent->fe_lock);
 }
 
 static void
@@ -1802,7 +1790,7 @@ mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
 	    mac_soft_ring_worker_wait, type, pri, mcip, mac_srs, cpuid, rx_func,
 	    x_arg1, NULL);
 
-	if (notify_upstack) {
+	if (notify_upstack && (act->fa_resource_arg != NULL)) {
 		mac_rx_fifo_t mrf = {
 			.mrf_type = MAC_RX_FIFO,
 			.mrf_receive = (mac_receive_t)mac_soft_ring_poll,
@@ -1813,11 +1801,11 @@ mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
 			.mrf_flow_priority = pri,
 			.mrf_rx_arg = softring,
 			.mrf_intr_handle = (mac_intr_handle_t)softring,
+			.mrf_cpu_id = cpuid,
 		};
 
 		softring->s_ring_rx_arg2 = act->fa_resource_add(
-		    (void *)mcip->mci_resource_arg,
-		    (mac_resource_t *)&mrf);
+		    act->fa_resource_arg, (mac_resource_t *)&mrf);
 	}
 }
 
@@ -1879,6 +1867,7 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 			mac_soft_ring_t *softring =
 			    mac_rx_srs->srs_soft_rings[i];
 			if (notify_upstack &&
+			    notify_arg != NULL &&
 			    softring->s_ring_rx_arg2 != NULL) {
 				rm_notify_fn(notify_arg,
 				    softring->s_ring_rx_arg2);
@@ -1895,7 +1884,8 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 		    mac_rx_srs->srs_soft_rings[i];
 		const processorid_t cpuid = srs_cpu->mc_rx_fanout_cpus[i];
 		(void) mac_soft_ring_bind(softring, cpuid);
-		if (notify_upstack && softring->s_ring_rx_arg2 != NULL) {
+		if (notify_upstack && softring->s_ring_rx_arg2 != NULL &&
+		    notify_arg != NULL) {
 			bind_notify_fn(notify_arg, softring->s_ring_rx_arg2,
 			    cpuid);
 		}
@@ -3567,7 +3557,14 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(mac_srs->srs_mcip == NULL ||
 	    MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
-	ASSERT((mac_srs->srs_state & (SRS_CONDEMNED | SRS_CONDEMNED_DONE |
+	/*
+	 * Flowtree teardown/creation can happen on an SRS which is otherwise
+	 * simply quiesced. Logical SRSes should allow this.
+	 */
+	ASSERT((mac_srs_is_logical(mac_srs) && (mac_srs->srs_state &
+	    (SRS_QUIESCE | SRS_QUIESCE_DONE | SRS_PROC | SRS_PROC_FAST)) ==
+	    (SRS_QUIESCE | SRS_QUIESCE_DONE)) ||
+	    (mac_srs->srs_state & (SRS_CONDEMNED | SRS_CONDEMNED_DONE |
 	    SRS_PROC | SRS_PROC_FAST)) == (SRS_CONDEMNED | SRS_CONDEMNED_DONE));
 
 	const bool is_full_srs = !mac_srs_is_logical(mac_srs);
@@ -4259,7 +4256,6 @@ void
 mac_poll_state_change(mac_handle_t mh, boolean_t enable)
 {
 	mac_impl_t *mip = (mac_impl_t *)mh;
-	mac_client_impl_t *mcip;
 
 	i_mac_perim_enter(mip);
 	if (enable) {
@@ -4268,10 +4264,22 @@ mac_poll_state_change(mac_handle_t mh, boolean_t enable)
 		mip->mi_state_flags |= MIS_POLL_DISABLE;
 	}
 
-	for (mcip = mip->mi_clients_list; mcip != NULL;
+	for (mac_client_impl_t *mcip = mip->mi_clients_list; mcip != NULL;
 	    mcip = mcip->mci_client_next)
 	{
-		mac_client_update_classifier(mcip);
+		/*
+		 * This loop visits all of the _complete_ Rx SRSes on this MCIP,
+		 * which is to say those attached to the software classifier or
+		 * an HW ring. While we have logical SRSes associated with each
+		 * baked flowtree, we don't need to visit those since they do
+		 * not have a poll thread.
+		 */
+		flow_entry_t *flent = mcip->mci_flent;
+		uint_t rx_srs_cnt = flent->fe_rx_srs_cnt;
+		for (int i = 0; i < rx_srs_cnt; i++) {
+			ASSERT(flent->fe_rx_srs[i] != NULL);
+			mac_srs_poll_state_change(flent->fe_rx_srs[i], !enable);
+		}
 	}
 	i_mac_perim_exit(mip);
 }
@@ -4327,6 +4335,7 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	flow_tree_baked_t *into = &based_on->srs_flowtree;
 
 	ASSERT3P(flent, !=, NULL);
+	ASSERT3P(based_on->srs_logical_next, ==, NULL);
 
 	/* TODO(ky): too much stack for mac_cpus_t? */
 	/*
@@ -4339,7 +4348,15 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	    sizeof (dup_fanout.mc_cpus));
 	dup_fanout.mc_rx_intr_cpu = -1;
 
-	/* TOOD: refcount manipulation? */
+	/* TOOD(ky): flow refcount manipulation? */
+
+	/*
+	 * TODO(ky): Do we want to uniqify created logical SRSes by flow? Can we
+	 * do so? This depends to some extent on what the policies are around
+	 * priority attached to delegate flows, whether delegate-but-actually-
+	 * an-SRS flows (e.g. med-prio child on high-prio) are separately
+	 * pollable resources as viewed by the client...
+	 */
 
 	/*
 	 * Walk the existing tree for size measurement.
@@ -4472,8 +4489,6 @@ static void
 mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
 {
 	ASSERT3P(tree, !=, NULL);
-
-	/* TODO(ky): SRS teardown. */
 
 	if (tree->ftb_chains != NULL) {
 		kmem_free(tree->ftb_chains, tree->ftb_depth *

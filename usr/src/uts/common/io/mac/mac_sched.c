@@ -2089,7 +2089,8 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
-static inline void
+// static inline void
+static void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mblk_t *head, mblk_t *tail,
     int cnt, int sz, flow_tree_pkt_set_t *help)
 {
@@ -2264,7 +2265,7 @@ retry:
 	/* This will NOT be fast. */
 	/* TODO(ky): is this the right mcip? */
 	ASSERT3P(flent, !=, NULL);
-	mac_client_impl_t *mcip = (mac_client_impl_t *) flent->fe_mcip;
+	mac_client_impl_t *mcip = (mac_client_impl_t *)flent->fe_mcip;
 	ASSERT3P(mcip, !=, NULL);
 	flow_tab_t *ft = mcip->mci_subflow_tab;
 	ASSERT3P(ft, !=, NULL);
@@ -2315,12 +2316,13 @@ retry:
 	return (flent->fe_match(ft, flent, &s));
 }
 
-static bool mac_pkt_is_flow_match_recurse(flow_entry_t *flent,
-    const mac_flow_match_t *match, mblk_t* mp);
+static bool mac_pkt_is_flow_match_recurse(flow_entry_t *,
+    const mac_flow_match_t *, mblk_t*, bool);
 
-static inline bool
+// static inline bool
+static bool
 mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
-    mblk_t* mp, bool is_head)
+    mblk_t* mp, bool is_head, bool is_tx)
 {
 	ASSERT3P(flent, !=, NULL);
 	ASSERT3P(mp, !=, NULL);
@@ -2340,13 +2342,60 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 		}
 	}
 
-	switch (match->mfm_type) {
+	/* Convert any local/remote filters to src/dst, based on direction */
+	mac_flow_match_type_t act_as = match->mfm_type;
+	switch (act_as) {
+	case MFM_L3_REMOTE:
+		act_as = (is_tx) ? MFM_L3_DST : MFM_L3_SRC;
+		break;
+	case MFM_L3_LOCAL:
+		act_as = (is_tx) ? MFM_L3_SRC : MFM_L3_DST;
+		break;
+	case MFM_L4_REMOTE:
+		act_as = (is_tx) ? MFM_L4_DST : MFM_L4_SRC;
+		break;
+	case MFM_L4_LOCAL:
+		act_as = (is_tx) ? MFM_L4_SRC : MFM_L4_DST;
+		break;
+	default:
+		break;
+	}
+
+	/* Perform the actual match here */
+	switch (act_as) {
 	case MFM_SAP:
 		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
 		    meoi.meoi_l3proto == match->arg.mfm_sap);
 	case MFM_IPPROTO:
 		return ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
 		    meoi.meoi_l4proto == match->arg.mfm_ipproto);
+	case MFM_L2_DST:
+		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
+		    meoi.meoi_l2hlen >= sizeof (struct ether_header) &&
+		    bcmp(mp->b_rptr, match->arg.mfm_l2addr, ETHERADDRL));
+	case MFM_L2_SRC:
+		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
+		    meoi.meoi_l2hlen >= sizeof (struct ether_header) &&
+		    bcmp(mp->b_rptr + ETHERADDRL, match->arg.mfm_l2addr,
+		    ETHERADDRL));
+	// case MFM_L3_DST:
+	// 	if ((meoi.meoi_flags & (MEOI_L2INFO_SET | MEOI_L3INFO_SET))
+	// 	    == (MEOI_L2INFO_SET | MEOI_L3INFO_SET)) {
+	// 		return (false);
+	// 	}
+	// 	switch (meoi.meoi_l3proto) {
+	// 	case ETHERTYPE_IP: {
+	// 		const ipha_t *ip = (ipha_t *)
+	// 		    (mp->b_rptr + meoi.meoi_l2hlen);
+	// 		return 
+	// 	}
+	// 	case ETHERTYPE_IPV6: {
+
+	// 	}
+	// 	default:
+	// 		return (false);
+	// 	}
+	
 	case MFM_ARBITRARY: {
 		const mac_flow_match_arbitrary_t *arb =
 		    &match->arg.mfm_arbitrary;
@@ -2354,18 +2403,29 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 	}
 	case MFM_SUBFLOW:
 		return (mac_subflow_is_match(flent, mp));
-	case MFM_LIST: {
+	case MFM_ALL: {
 		const mac_flow_match_list_t *list = match->arg.mfm_list;
-		/* Nesting MFM_LIST is an error on our part. */
-		ASSERT(is_head);
 		ASSERT3P(list, !=, NULL);
 		for (size_t i = 0; i < list->mfml_size; i++) {
 			const mac_flow_match_t *el = &list->mfml_match[i];
-			if (!mac_pkt_is_flow_match_recurse(flent, match, mp)) {
+			if (!mac_pkt_is_flow_match_recurse(flent, match, mp,
+			    is_tx)) {
 				return (false);
 			}
 		}
 		return (true);
+	}
+	case MFM_ANY: {
+		const mac_flow_match_list_t *list = match->arg.mfm_list;
+		ASSERT3P(list, !=, NULL);
+		for (size_t i = 0; i < list->mfml_size; i++) {
+			const mac_flow_match_t *el = &list->mfml_match[i];
+			if (mac_pkt_is_flow_match_recurse(flent, match, mp,
+			    is_tx)) {
+				return (true);
+			}
+		}
+		return (false);
 	}
 	default:
 		return (false);
@@ -2374,22 +2434,24 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 
 static bool
 mac_pkt_is_flow_match_recurse(flow_entry_t *flent, const mac_flow_match_t *match,
-    mblk_t* mp)
+    mblk_t* mp, bool is_tx)
 {
-	return (mac_pkt_is_flow_match_inner(flent, match, mp, false));
+	return (mac_pkt_is_flow_match_inner(flent, match, mp, false, is_tx));
 }
 
-static inline bool
+// static inline bool
+static bool
 mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
-    mblk_t* mp)
+    mblk_t* mp, bool is_tx)
 {
-	return (mac_pkt_is_flow_match_inner(flent, match, mp, true));
+	return (mac_pkt_is_flow_match_inner(flent, match, mp, true, is_tx));
 }
 
 /*
  * TODO(ky): theory statement on what this is doing.
  */
-static inline void
+// static inline void
+static void
 mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 {
 	ASSERT3U(ft->ftb_len, >, 0);
@@ -2416,7 +2478,7 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 			while (curr != NULL) {
 				const bool is_match = mac_pkt_is_flow_match(
 				    enode->ften_flent, &enode->ften_match,
-				    curr);
+				    curr, false);
 				if (is_match) {
 					*to_curr = curr->b_next;
 					curr->b_next = NULL;

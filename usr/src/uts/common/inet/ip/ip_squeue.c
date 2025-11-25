@@ -527,10 +527,18 @@ ip_squeue_add_ring(ill_t *ill, void *mrp)
 	DTRACE_PROBE4(ill__ring__add, char *, ill->ill_name, ill_t *, ill, int,
 	    ip_rx_index, void *, mrfp->mrf_rx_arg);
 
+
 	/* Assign the squeue to the specified CPU as well */
-	mutex_enter(&cpu_lock);
-	(void) ip_squeue_bind_ring(ill, rx_ring, mrfp->mrf_cpu_id);
-	mutex_exit(&cpu_lock);
+	if (mrfp->mrf_cpu_id != -1) {
+		const boolean_t need_cpu_lock = !MUTEX_HELD(&cpu_lock);
+		if (need_cpu_lock) {
+			mutex_enter(&cpu_lock);
+		}
+		(void) ip_squeue_bind_ring(ill, rx_ring, mrfp->mrf_cpu_id);
+		if (need_cpu_lock) {
+			mutex_exit(&cpu_lock);
+		}
+	}
 
 	return (rx_ring);
 }

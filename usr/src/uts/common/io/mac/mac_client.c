@@ -6035,6 +6035,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	mcip->mci_fastpath_ipv6_udp = ipv6_udp;
 
 	mac_update_fastpath_flows(mcip);
+	mac_update_subflows_on_fastpath(mcip, true);
 }
 
 /*
@@ -6075,14 +6076,13 @@ mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
 static void
 mac_update_fastpath_flows(mac_client_impl_t *mcip)
 {
+	flow_entry_t *root = mcip->mci_flent;
 	flow_entry_t *ipv4 = mcip->mci_fastpath_ipv4;
 	flow_entry_t *ipv4_tcp = mcip->mci_fastpath_ipv4_tcp;
 	flow_entry_t *ipv4_udp = mcip->mci_fastpath_ipv4_udp;
 	flow_entry_t *ipv6 = mcip->mci_fastpath_ipv6;
 	flow_entry_t *ipv6_tcp = mcip->mci_fastpath_ipv6_tcp;
 	flow_entry_t *ipv6_udp = mcip->mci_fastpath_ipv6_udp;
-
-	/* TODO(ky): Create subflow tab entries as children of leaves, sibling of v6 */
 
 	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
 	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
@@ -6161,6 +6161,95 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 	}
 }
 
+struct flent_modify {
+	flow_entry_t *flent;
+	bool on_child;
+};
+
+static int
+copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
+{
+	struct flent_modify *arg = (struct flent_modify *)raw_arg;
+
+	flow_entry_t **write_into = (arg->on_child) ? &arg->flent->fe_child :
+	    &arg->flent->fe_sibling;
+	ASSERT3P(*write_into, ==, NULL);
+
+	/* TODO(ky): I *know* this isn't safe around list/arg aliasing etc. */
+	VERIFY0(mac_flow_create(&flent->fe_flow_desc, NULL, flent->fe_flow_name,
+	    NULL, FLOW_USER, write_into));
+	(*write_into)->fe_match2 = flent->fe_match2;
+	(*write_into)->fe_action = flent->fe_action;
+	(*write_into)->fe_parent = (arg->on_child) ? arg->flent :
+	    arg->flent->fe_parent;
+	(*write_into)->fe_mcip = flent->fe_mcip;
+	(*write_into)->fe_match = flent->fe_match;
+
+	/* TODO(ky): copy CPU props, act on CPU props/prio/... */
+	arg->on_child = false;
+	arg->flent = *write_into;
+
+	return (0);
+}
+
+/*
+ * ...
+ */
+void
+mac_update_subflows_on_fastpath(mac_client_impl_t *mcip, bool and_create)
+{
+	flow_entry_t *ipv6 = mcip->mci_fastpath_ipv6;
+	flow_entry_t *ipv4_tcp = mcip->mci_fastpath_ipv4_tcp;
+	flow_entry_t *ipv4_udp = mcip->mci_fastpath_ipv4_udp;
+	flow_entry_t *ipv6_tcp = mcip->mci_fastpath_ipv6_tcp;
+	flow_entry_t *ipv6_udp = mcip->mci_fastpath_ipv6_udp;
+
+	ASSERT3P(ipv6, !=, NULL);
+	ASSERT3P(ipv4_tcp, !=, NULL);
+	ASSERT3P(ipv4_udp, !=, NULL);
+	ASSERT3P(ipv6_tcp, !=, NULL);
+	ASSERT3P(ipv6_udp, !=, NULL);
+
+	/* Remove any existing flows duplicated into this tree. */
+	const struct flent_modify to_visit[] = {
+		{ ipv6, false },
+		{ ipv4_tcp, true },
+		{ ipv4_udp, true },
+		{ ipv6_tcp, true },
+		{ ipv6_udp, true },
+	};
+	const size_t n_visitees = sizeof (to_visit) /
+	    sizeof (struct flent_modify);
+
+	/* Cleanup any existing flows duplicated into this tree. */
+	for (int i = 0; i < n_visitees; i++) {
+		flow_entry_t *curr = (to_visit[i].on_child) ?
+		    to_visit[i].flent->fe_child : to_visit[i].flent->fe_sibling;
+		while (curr != NULL) {
+			flow_entry_t *next = curr->fe_sibling;
+			mac_flow_destroy(curr);
+			curr = next;
+		}
+		if (to_visit[i].on_child) {
+			to_visit[i].flent->fe_child = NULL;
+		} else {
+			to_visit[i].flent->fe_sibling = NULL;
+		}
+	}
+
+	if (!and_create) {
+		return;
+	}
+
+	if (!FLOW_TAB_EMPTY(mcip->mci_subflow_tab)) {
+		for (int i = 0; i < n_visitees; i++) {
+			struct flent_modify curr = to_visit[i];
+			mac_flow_walk_nolock(mcip->mci_subflow_tab,
+			    copy_basic_flent_onto, &curr);
+		}
+	}
+}
+
 /*
  * Fastpath fn ptrs provided by userland have changed out (initial registration,
  * most likely). Update leaf flows, rebake trees.
@@ -6168,8 +6257,11 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 static void
 mac_teardown_fastpath_flows(mac_client_impl_t *mcip)
 {
-	/* TODO(ky); anything else necessary here? */
-	/* There aren't bound  */
+	mcip->mci_flent->fe_child = NULL;
+
+	/* Remove all copies of subflow tab flows from our fastpath leaves. */
+	mac_update_subflows_on_fastpath(mcip, false);
+
 	mac_flow_destroy(mcip->mci_fastpath_ipv6_udp);
 	mac_flow_destroy(mcip->mci_fastpath_ipv6_tcp);
 	mac_flow_destroy(mcip->mci_fastpath_ipv6);

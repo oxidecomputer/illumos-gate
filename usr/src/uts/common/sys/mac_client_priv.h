@@ -101,6 +101,8 @@ extern void mac_link_init_flows(mac_client_handle_t);
 extern void mac_link_release_flows(mac_client_handle_t);
 extern int mac_link_flow_add(datalink_id_t, char *, flow_desc_t *,
     mac_resource_props_t *);
+extern int mac_link_flow_add_action(datalink_id_t, char *, flow_desc_t *,
+    mac_resource_props_t *, flow_action_t *);
 extern int mac_link_flow_remove(char *);
 extern int mac_link_flow_modify(char *, mac_resource_props_t *);
 extern boolean_t mac_link_has_flows(mac_client_handle_t);

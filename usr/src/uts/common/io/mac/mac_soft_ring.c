@@ -233,7 +233,11 @@ mac_soft_ring_create(int id, clock_t wait, uint32_t type,
 void
 mac_soft_ring_free(mac_soft_ring_t *softring)
 {
-	ASSERT((softring->s_ring_state &
+	const mac_soft_ring_set_t *srs = softring->s_ring_set;
+	ASSERT((mac_srs_is_logical(srs) && (softring->s_ring_state &
+	    (S_RING_QUIESCE | S_RING_QUIESCE_DONE | S_RING_PROC)) ==
+	    (S_RING_QUIESCE | S_RING_QUIESCE_DONE)) ||
+	    (softring->s_ring_state &
 	    (S_RING_CONDEMNED | S_RING_CONDEMNED_DONE | S_RING_PROC)) ==
 	    (S_RING_CONDEMNED | S_RING_CONDEMNED_DONE));
 	mac_drop_chain(softring->s_ring_first, "softring free");

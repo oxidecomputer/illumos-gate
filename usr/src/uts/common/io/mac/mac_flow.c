@@ -441,6 +441,11 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		return (err);
 	}
 
+	/* TODO(ky): move flowadm flows *off* of this slow construct */
+	flent->fe_match2.mfm_type = MFM_SUBFLOW;
+	flent->fe_match2.mfm_cond = 0;
+	flent->fe_action.fa_flags = 0; /* DELEGATE */
+
 	if (instantiate_flow) {
 		/* Now activate the flow by creating its SRSs */
 		ASSERT(MCIP_DATAPATH_SETUP(mcip));
@@ -459,9 +464,19 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		ASSERT(mcip->mci_subflow_tab == NULL);
 		ft->ft_mcip = mcip;
 		mcip->mci_subflow_tab = ft;
-		if (instantiate_flow)
-			mac_client_update_classifier(mcip);
 	}
+
+	/*
+	 * Unconditionally trigger a rebuild of the flowtree.
+	 * MAC is not yet smart enough to take a pile of flow descriptions
+	 * and self-assemble them into a structure with appropriate duplication,
+	 * so we need to duplicate this subflow on top of all our fastpath
+	 * entries.
+	 */
+	mac_client_quiesce(mcip);
+	mac_client_update_classifier(mcip);
+	mac_client_restart(mcip);
+
 	return (0);
 }
 
@@ -776,6 +791,8 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		mac_set_pool_effective(use_default, cpupart, mrp, emrp);
 		pool_unlock();
 	}
+
+	/* TODO(ky): this one might be tricky. Ideally we can make this a conditional rebuild of flowtree? */
 }
 
 /*
@@ -1129,7 +1146,9 @@ mac_link_init_flows(mac_client_handle_t mch)
 	 * function to mac_rx_srs_subflow_process and in case of hardware
 	 * classification, disable polling.
 	 */
-	mac_client_update_classifier(mcip);
+	// mac_client_quiesce(mcip);
+	// mac_client_update_classifier(mcip);
+	// mac_client_restart(mcip);
 
 }
 
@@ -1162,7 +1181,7 @@ mac_link_release_flows(mac_client_handle_t mch)
 	 * Change the mci_flent callback back to mac_rx_srs_process()
 	 * because flows are about to be deactivated.
 	 */
-	mac_client_update_classifier(mcip);
+	// mac_client_update_classifier(mcip);
 	(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 	    mac_link_release_flows_cb, mcip);
 }
@@ -1208,6 +1227,18 @@ int
 mac_link_flow_add(datalink_id_t linkid, char *flow_name,
     flow_desc_t *flow_desc, mac_resource_props_t *mrp)
 {
+	return (mac_link_flow_add_action(linkid, flow_name, flow_desc, mrp,
+	    NULL));
+}
+
+/*
+ * mac_link_flow_add_action()
+ * Used by flowadm(8) or kernel mac clients for creating flows.
+ */
+int
+mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
+    flow_desc_t *flow_desc, mac_resource_props_t *mrp, flow_action_t *ac)
+{
 	flow_entry_t		*flent = NULL;
 	int			err;
 	dls_dl_handle_t		dlh;
@@ -1228,6 +1259,9 @@ mac_link_flow_add(datalink_id_t linkid, char *flow_name,
 	 */
 	err = mac_flow_create(flow_desc, mrp, flow_name, NULL,
 	    FLOW_USER | FLOW_OTHER, &flent);
+
+	/* TODO(ky): validate fe_action, etc. etc. */
+	flent->fe_action = *ac;
 
 	if (err != 0)
 		return (err);
@@ -1349,21 +1383,21 @@ mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 	mac_flow_cleanup(sub_flow);
 
 	/*
-	 * If all the subflows are gone, renable some of the stuff
-	 * we disabled when adding a subflow, polling etc.
+	 * If all the subflows are gone, then clear out the subflow table.
+	 * Always rebuild the flowtree in response.
 	 */
+	mac_client_quiesce(mcip);
 	if (last_subflow) {
 		/*
 		 * The subflow table itself is not protected by any locks or
 		 * refcnts. Hence quiesce the client upfront before clearing
 		 * mci_subflow_tab.
 		 */
-		mac_client_quiesce(mcip);
-		mac_client_update_classifier(mcip);
 		mac_flow_tab_destroy(mcip->mci_subflow_tab);
 		mcip->mci_subflow_tab = NULL;
-		mac_client_restart(mcip);
 	}
+	mac_client_update_classifier(mcip);
+	mac_client_restart(mcip);
 }
 
 /*

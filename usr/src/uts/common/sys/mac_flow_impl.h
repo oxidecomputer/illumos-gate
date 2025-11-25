@@ -37,6 +37,7 @@ extern "C" {
 #include <sys/mac_flow.h>
 #include <sys/stream.h>
 #include <sys/sdt.h>
+#include <sys/ethernet.h>
 #include <net/if.h>
 #include <sys/stdbool.h>
 
@@ -244,8 +245,24 @@ typedef enum {
 	MFM_NONE,
 	MFM_SAP,
 	MFM_IPPROTO,
-	MFM_LIST,
+
+	MFM_L2_DST,
+	MFM_L2_SRC,
+
+	MFM_L3_DST,
+	MFM_L3_SRC,
+	MFM_L3_REMOTE,
+	MFM_L3_LOCAL,
+
+	MFM_L4_DST,
+	MFM_L4_SRC,
+	MFM_L4_REMOTE,
+	MFM_L4_LOCAL,
+
+	MFM_ALL,
+	MFM_ANY,
 	MFM_ARBITRARY,
+
 	/*
 	 * TODO(ky): This is probably just an egregious hack to get *some*
 	 * functionality...
@@ -265,6 +282,13 @@ typedef struct {
 } mac_flow_match_arbitrary_t;
 
 typedef struct {
+	in6_addr_t	mfml_addr;
+	uint8_t		mfml_prefixlen: 5;
+	uint8_t		mfml_v4: 1;
+	uint8_t		mfml_unused: 2;
+} mac_flow_match_l3_t;
+
+typedef struct {
 	mac_flow_match_type_t		mfm_type;
 	mac_flow_match_condition_t	mfm_cond;
 	union {
@@ -272,6 +296,9 @@ typedef struct {
 		uint8_t		mfm_ipproto;
 		mac_flow_match_list_t		*mfm_list;
 		mac_flow_match_arbitrary_t	mfm_arbitrary;
+		uint8_t		mfm_l2addr[ETHERADDRL];
+		mac_flow_match_l3_t	mfm_l3addr;
+		uint16_t	mfm_l4addr;
 	} arg;
 } mac_flow_match_t;
 
