@@ -2563,7 +2563,7 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 			}
 
 			mac_soft_ring_set_t *send_to =
-				(mac_soft_ring_set_t *) xnode->arg.ftex_srs;
+			    (mac_soft_ring_set_t *) xnode->arg.ftex_srs;
 			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELIVER:
 				/* TODO(ky): contention on pkt count? */
@@ -2593,7 +2593,7 @@ mac_rx_srs_walk_flowtree(flow_tree_pkt_set_t *pkts, const flow_tree_baked_t *ft)
 					ASSERT3P(par_pkts->ftp_deli_tail, !=,
 					    NULL);
 					par_pkts->ftp_deli_tail->b_next =
-					    my_pkts->ftp_avail_head;
+					    my_pkts->ftp_deli_head;
 				}
 				par_pkts->ftp_deli_tail =
 				    my_pkts->ftp_deli_tail;
@@ -2761,6 +2761,7 @@ again:
 		mac_rx_srs_walk_flowtree(&pktset, &mac_srs->srs_flowtree);
 
 		if (pktset.ftp_deli_head != NULL) {
+			/* TODO(ky): this is getting tripped rarely. diagnose why */
 			ASSERT3P(pktset.ftp_deli_tail, !=, NULL);
 			pktset.ftp_avail_count += pktset.ftp_deli_count;
 			pktset.ftp_avail_size += pktset.ftp_deli_size;

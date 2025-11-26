@@ -444,7 +444,7 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 	/* TODO(ky): move flowadm flows *off* of this slow construct */
 	flent->fe_match2.mfm_type = MFM_SUBFLOW;
 	flent->fe_match2.mfm_cond = 0;
-	flent->fe_action.fa_flags = 0; /* DELEGATE */
+	// flent->fe_action.fa_flags = 0; /* DELEGATE */
 
 	if (instantiate_flow) {
 		/* Now activate the flow by creating its SRSs */
@@ -1260,11 +1260,13 @@ mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
 	err = mac_flow_create(flow_desc, mrp, flow_name, NULL,
 	    FLOW_USER | FLOW_OTHER, &flent);
 
-	/* TODO(ky): validate fe_action, etc. etc. */
-	flent->fe_action = *ac;
-
 	if (err != 0)
 		return (err);
+
+	/* TODO(ky): validate fe_action, etc. etc. */
+	if (ac != NULL) {
+		flent->fe_action = *ac;
+	}
 
 	/*
 	 * We've got a local variable referencing this flow now, so we need

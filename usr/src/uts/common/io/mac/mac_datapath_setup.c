@@ -883,6 +883,26 @@ mac_tx_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp,
 }
 
 /*
+ * Set the fanout init state on a given complete SRS and any attached logical
+ * SRSes.
+ */
+static void
+mac_srs_set_fanout_state(mac_soft_ring_set_t *mac_srs,
+    mac_srs_fanout_state_t state)
+{
+	/*
+	 * TODO(ky): This currently assumes that all attached logicals must be
+	 * reinitialised. We probably want to curtail this a bit better (e.g.,
+	 * those whose MRP matches the root srs).
+	 */
+	mac_srs->srs_fanout_state = state;
+	for (mac_soft_ring_set_t *curr = mac_srs->srs_logical_next;
+	    curr != NULL; curr = curr->srs_logical_next) {
+		curr->srs_fanout_state = state;
+	}
+}
+
+/*
  * Assignment of user specified CPUs to a link.
  *
  * Minimum CPUs required to get an optimal assignmet:
@@ -1004,9 +1024,10 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 		/* Do the assignment for the default Rx ring */
 		cpu_cnt = 0;
 		rx_srs = flent->fe_rx_srs[0];
-		ASSERT(rx_srs->srs_kind_data.rx.sr_ring == NULL);
-		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT)
-			rx_srs->srs_fanout_state = SRS_FANOUT_REINIT;
+		ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, ==, NULL);
+		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT) {
+			mac_srs_set_fanout_state(rx_srs, SRS_FANOUT_REINIT);
+		}
 		srs_cpu = &rx_srs->srs_cpu;
 		srs_cpu->mc_ncpus = no_of_cpus;
 		bcopy(mrp->mrp_cpu,
@@ -1026,11 +1047,12 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 			for (srs_cnt = 1;
 			    srs_cnt < flent->fe_rx_srs_cnt; srs_cnt++) {
 				rx_srs = flent->fe_rx_srs[srs_cnt];
-				ASSERT(rx_srs->srs_kind_data.rx.sr_ring != NULL);
+				ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, !=,
+				    NULL);
 				if (rx_srs->srs_fanout_state ==
 				    SRS_FANOUT_INIT) {
-					rx_srs->srs_fanout_state =
-					    SRS_FANOUT_REINIT;
+					mac_srs_set_fanout_state(rx_srs,
+					    SRS_FANOUT_REINIT);
 				}
 				srs_cpu = &rx_srs->srs_cpu;
 				srs_cpu->mc_ncpus = no_of_cpus;
@@ -1081,9 +1103,10 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 		 * associated with h/w Rx ring.
 		 */
 		rx_srs = flent->fe_rx_srs[0];
-		ASSERT(rx_srs->srs_kind_data.rx.sr_ring == NULL);
-		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT)
-			rx_srs->srs_fanout_state = SRS_FANOUT_REINIT;
+		ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, ==, NULL);
+		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT) {
+			mac_srs_set_fanout_state(rx_srs, SRS_FANOUT_REINIT);
+		}
 		cpu_cnt = 0;
 		srs_cpu = &rx_srs->srs_cpu;
 		srs_cpu->mc_ncpus = no_of_cpus;
@@ -1105,11 +1128,12 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 			for (srs_cnt = 1;
 			    srs_cnt < flent->fe_rx_srs_cnt; srs_cnt++) {
 				rx_srs = flent->fe_rx_srs[srs_cnt];
-				ASSERT(rx_srs->srs_kind_data.rx.sr_ring != NULL);
+				ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, !=,
+				    NULL);
 				if (rx_srs->srs_fanout_state ==
 				    SRS_FANOUT_INIT) {
-					rx_srs->srs_fanout_state =
-					    SRS_FANOUT_REINIT;
+					mac_srs_set_fanout_state(rx_srs,
+					    SRS_FANOUT_REINIT);
 				}
 				srs_cpu = &rx_srs->srs_cpu;
 				srs_cpu->mc_ncpus = no_of_cpus;
@@ -1142,8 +1166,9 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 	for (srs_cnt = 0; srs_cnt < flent->fe_rx_srs_cnt; srs_cnt++) {
 		rx_srs = flent->fe_rx_srs[srs_cnt];
 		srs_cpu = &rx_srs->srs_cpu;
-		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT)
-			rx_srs->srs_fanout_state = SRS_FANOUT_REINIT;
+		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT) {
+			mac_srs_set_fanout_state(rx_srs, SRS_FANOUT_REINIT);
+		}
 		srs_cpu->mc_ncpus = no_of_cpus;
 		bcopy(mrp->mrp_cpu,
 		    srs_cpu->mc_cpus, sizeof (srs_cpu->mc_cpus));
@@ -1224,8 +1249,9 @@ mac_flow_cpu_init(flow_entry_t *flent, cpupart_t *cpupart)
 	    emrp->mrp_ncpus < MRP_NCPUS; srs_cnt++) {
 		rx_srs = flent->fe_rx_srs[srs_cnt];
 		srs_cpu = &rx_srs->srs_cpu;
-		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT)
-			rx_srs->srs_fanout_state = SRS_FANOUT_REINIT;
+		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT) {
+			mac_srs_set_fanout_state(rx_srs, SRS_FANOUT_REINIT);
+		}
 		srs_cpu->mc_ncpus = soft_ring_cnt;
 		srs_cpu->mc_rx_fanout_cnt = soft_ring_cnt;
 		mutex_enter(&cpu_lock);
@@ -1839,7 +1865,7 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 	void *notify_arg = act->fa_resource_arg;
 
 	/* fanout state is REINIT. Set it back to INIT */
-	ASSERT(mac_rx_srs->srs_fanout_state == SRS_FANOUT_REINIT);
+	ASSERT3U(mac_rx_srs->srs_fanout_state, ==, SRS_FANOUT_REINIT);
 	mac_rx_srs->srs_fanout_state = SRS_FANOUT_INIT;
 
 	mutex_enter(&mac_rx_srs->srs_lock);
