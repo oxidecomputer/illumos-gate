@@ -4429,18 +4429,20 @@ mac_flow_baked_tree_create(flow_entry_t *flent, mac_soft_ring_set_t *based_on)
 	into->ftb_len = (uint16_t)n_nodes;
 
 	const size_t chain_len = max_depth * sizeof (flow_tree_pkt_set_t);
+	const size_t bw_refund_len = max_depth * sizeof (flow_tree_bw_refund_t);
 	const size_t subtree_len = 2 * n_nodes *
 	    sizeof (flow_tree_baked_node_t);
 	const size_t enter_track_len = max_depth * sizeof (uint32_t);
 
 	into->ftb_chains = kmem_zalloc(chain_len, KM_SLEEP);
+	into->ftb_bw_refund = kmem_zalloc(bw_refund_len, KM_SLEEP);
 	into->ftb_subtree = kmem_zalloc(subtree_len, KM_SLEEP);
 
 	/* Scratch space for ... without taking up too much stack */
 	uint32_t *node_enters = kmem_zalloc(enter_track_len, KM_SLEEP);
 
 	if (into->ftb_chains == NULL || into->ftb_subtree == NULL ||
-	    node_enters == NULL) {
+	    into->ftb_bw_refund == NULL || node_enters == NULL) {
 		err = ENOMEM;
 		goto bail;
 	}

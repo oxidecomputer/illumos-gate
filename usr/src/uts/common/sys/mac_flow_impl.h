@@ -40,6 +40,7 @@ extern "C" {
 #include <sys/ethernet.h>
 #include <net/if.h>
 #include <sys/stdbool.h>
+#include <sys/mac_datapath_impl.h>
 
 /*
  * Macros to increment/decrement the reference count on a flow_entry_t.
@@ -308,7 +309,6 @@ struct mac_flow_match_list_s {
 };
 
 typedef struct {
-	/* TODO(ky): Could this be smarter? E.g. fewer queues? */
 	/*
 	 * Every layer in the flow tree needs to keep two lists of packets:
 	 *  - packets which have been taken by this layer, but which are
@@ -317,18 +317,8 @@ typedef struct {
 	 *    is, quite definitively, to drop them off here. these should NOT
 	 *    undergo any further processing.
 	 */
-	mblk_t		*ftp_avail_head;
-	mblk_t		*ftp_avail_tail;
-	uint32_t	ftp_avail_count;
-	size_t		ftp_avail_size;
-
-	/*
-	 * These packets unambiguously belong to this layer.
-	 */
-	mblk_t		*ftp_deli_head;
-	mblk_t		*ftp_deli_tail;
-	uint32_t	ftp_deli_count;
-	size_t		ftp_deli_size;
+	mac_pkt_list_t	ftp_avail;
+	mac_pkt_list_t	ftp_deli;
 } flow_tree_pkt_set_t;
 
 typedef struct {
@@ -336,6 +326,7 @@ typedef struct {
 	mac_flow_match_t	ften_match;
 	bool			ften_descend;
 	uint16_t		ften_skip;
+	mac_bw_ctl_t		*ften_bw;
 } flow_tree_enter_node_t;
 
 typedef struct {
@@ -355,13 +346,19 @@ typedef union {
 } flow_tree_baked_node_t;
 
 typedef struct {
+	mac_bw_ctl_t	*ftbr_bw;
+	uint32_t	ftbr_count; /* TODO(ky): needed? */
+	size_t		ftbr_size;
+} flow_tree_bw_refund_t;
+
+typedef struct {
 	uint16_t		ftb_depth;
 	uint16_t		ftb_len;
+	bool			ftb_needs_bw;
 	flow_tree_pkt_set_t	*ftb_chains;	/* len = ftb_depth */
+	flow_tree_bw_refund_t	*ftb_bw_refund;	/* len = ftb_depth */
 	flow_tree_baked_node_t	*ftb_subtree;	/* len = 2 * ftb_len */
 } flow_tree_baked_t;
-
-/* TODO(ky): bw-aware variants of above */
 
 struct flow_entry_s {					/* Protected by */
 	struct flow_entry_s	*fe_next;		/* ft_lock */

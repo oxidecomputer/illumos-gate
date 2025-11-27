@@ -380,6 +380,7 @@ CHKHDRS=			\
 	mac.h			\
 	mac_client.h		\
 	mac_client_impl.h	\
+	mac_datapath_impl.h	\
 	mac_ether.h		\
 	mac_flow.h		\
 	mac_flow_impl.h		\
