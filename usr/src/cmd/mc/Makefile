@@ -15,7 +15,7 @@
 
 UTSBASE = $(SRC)/uts
 
-PROG = mcmargins
+PROG = mcmargins spddump
 
 include ../Makefile.cmd
 include ../Makefile.cmd.64
@@ -27,7 +27,7 @@ CSTD = $(CSTD_GNU17)
 CTF_MODE = link
 
 CPPFLAGS += -I$(UTSBASE)/intel -I$(UTSBASE)/intel/io/amdzen
-LDFLAGS += -lofmt
+mcmargins := LDLIBS += -lofmt
 
 ROOTCMDDIR = $(ROOTLIB)/mc
 
