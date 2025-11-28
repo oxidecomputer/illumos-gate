@@ -4124,6 +4124,8 @@ mac_resource_set_common(mac_client_handle_t mch, mac_resource_add_t add,
 	mcip->mci_resource_restart = restart;
 	mcip->mci_resource_bind = bind;
 	mcip->mci_resource_arg = arg;
+
+	mac_update_fastpath_flows(mcip);
 }
 
 void
@@ -4149,8 +4151,6 @@ mac_client_poll_enable(mac_client_handle_t mch)
 	ASSERT(flent != NULL);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
-	mac_update_fastpath_flows(mcip);
-
 	mcip->mci_state_flags |= MCIS_CLIENT_POLL_CAPABLE;
 	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 		mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
@@ -4173,9 +4173,6 @@ mac_client_poll_disable(mac_client_handle_t mch)
 
 	flent = mcip->mci_flent;
 	ASSERT(flent != NULL);
-
-	// NOTE: fn is not yet unset by this point!
-	// What do!?!?
 
 	mcip->mci_state_flags &= ~MCIS_CLIENT_POLL_CAPABLE;
 	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {

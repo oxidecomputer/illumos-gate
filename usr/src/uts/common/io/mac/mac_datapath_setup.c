@@ -1806,7 +1806,8 @@ mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
 
 	const flow_action_t *act =
 	    &((flow_entry_t *)mac_srs->srs_flent)->fe_action;
-	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
+	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0 &&
+	    act->fa_resource_add != NULL && act->fa_resource_arg != NULL;
 	const bool process_packet = (act->fa_flags & MFA_FLAGS_ACTION) != 0;
 	const mac_direct_rx_t rx_func = process_packet ? act->fa_direct_rx_fn :
 	    mac_rx_discard_unceremoniously;
@@ -1816,7 +1817,7 @@ mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
 	    mac_soft_ring_worker_wait, type, pri, mcip, mac_srs, cpuid, rx_func,
 	    x_arg1, NULL);
 
-	if (notify_upstack && (act->fa_resource_arg != NULL)) {
+	if (notify_upstack) {
 		mac_rx_fifo_t mrf = {
 			.mrf_type = MAC_RX_FIFO,
 			.mrf_receive = (mac_receive_t)mac_soft_ring_poll,
