@@ -3188,6 +3188,9 @@ mac_datapath_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 		mcip->mci_unicast = mac_find_macaddr(mip, mac_addr);
 		VERIFY3P(mcip->mci_unicast, !=, NULL);
+		flent->fe_match2.mfm_type = MFM_L2_DST;
+		bcopy(mcip->mci_unicast, flent->fe_match2.arg.mfm_l2addr,
+		    ETHERADDRL);
 
 		/*
 		 * Setup the Rx and Tx SRSes. If the client has a
@@ -4504,6 +4507,9 @@ bail:
 	if (into->ftb_chains != NULL) {
 		kmem_free(into->ftb_chains, chain_len);
 	}
+	if (into->ftb_bw_refund != NULL) {
+		kmem_free(into->ftb_bw_refund, bw_refund_len);
+	}
 	if (into->ftb_subtree != NULL) {
 		kmem_free(into->ftb_subtree, subtree_len);
 	}
@@ -4521,6 +4527,10 @@ mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
 	if (tree->ftb_chains != NULL) {
 		kmem_free(tree->ftb_chains, tree->ftb_depth *
 		    sizeof (flow_tree_pkt_set_t));
+	}
+	if (tree->ftb_bw_refund != NULL) {
+		kmem_free(tree->ftb_bw_refund, tree->ftb_depth *
+		    sizeof (flow_tree_bw_refund_t));
 	}
 	if (tree->ftb_subtree != NULL) {
 		kmem_free(tree->ftb_subtree, 2 * tree->ftb_len *

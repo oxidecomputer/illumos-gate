@@ -32,6 +32,7 @@ extern "C" {
 #include <sys/types.h>
 #include <sys/debug.h>
 #include <sys/stream.h>
+#include <sys/sunddi.h>
 
 typedef struct {
 	mblk_t		*mpl_head;
@@ -54,19 +55,24 @@ mac_pkt_list_is_empty(const mac_pkt_list_t *list) {
 }
 
 inline void
-mac_pkt_list_append(mac_pkt_list_t *src, mac_pkt_list_t *dst) {
+mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst) {
 	if (mac_pkt_list_is_empty(src)) {
 		return;
 	}
 
-	dst->mpl_count += src->mpl_count;
-	dst->mpl_size += src->mpl_size;
 	if (!mac_pkt_list_is_empty(dst)) {
 		dst->mpl_tail->b_next = src->mpl_head;
 	} else {
 		dst->mpl_head = src->mpl_head;
 	}
 	dst->mpl_tail = src->mpl_tail;
+	dst->mpl_count += src->mpl_count;
+	dst->mpl_size += src->mpl_size;
+
+	src->mpl_head = NULL;
+	src->mpl_tail = NULL;
+	src->mpl_count = 0;
+	src->mpl_size = 0;
 }
 
 #ifdef	__cplusplus

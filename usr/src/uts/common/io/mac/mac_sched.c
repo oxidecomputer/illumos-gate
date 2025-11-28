@@ -1514,6 +1514,7 @@ mac_srs_fire(void *arg)
 #define	COMPUTE_INDEX(key, sz)	(key % sz)
 
 #define	ENQUEUE_MP(head, tail, cnt, bw_ctl, sz, sz0, mp) {		\
+	ASSERT3P((mp), !=, NULL);					\
 	if ((tail) != NULL) {						\
 		ASSERT3P((tail)->b_next, ==, NULL);			\
 		(tail)->b_next = (mp);					\
@@ -1523,8 +1524,9 @@ mac_srs_fire(void *arg)
 	}								\
 	(tail) = (mp);							\
 	(cnt)++;							\
-	if ((bw_ctl))							\
+	if ((bw_ctl)) {							\
 		(sz) += (sz0);						\
+	}								\
 }
 
 #define	ENQUEUE_MP_LIST(list, bw_ctl, sz0, mp) {			\
@@ -2116,6 +2118,10 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
 			    list->mpl_head, list->mpl_tail, list->mpl_count,
 			    list->mpl_size);
 		}
+		list->mpl_head = NULL;
+		list->mpl_tail = NULL;
+		list->mpl_count = 0;
+		list->mpl_size = 0;
 	}
 }
 
@@ -2225,18 +2231,13 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 }
 
 static inline void
-mac_standardise_pkts(const mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
-    const bool bw_ctl)
+mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t* set,
+    const bool bw_ctl, mblk_t *mp)
 {
 	/*
 	 * Called on *entry* to mac_rx_srs_drain. All packets should be as-yet
 	 * unclassified in this flowtree.
 	 */
-	ASSERT(mac_pkt_list_is_empty(&set->ftp_deli));
-	ASSERT3P(set->ftp_deli_tail, ==, NULL);
-	mblk_t *mp = set->ftp_avail.mpl_head;
-	bzero(&set->ftp_avail, sizeof (set->ftp_avail));
-
 	while (mp != NULL) {
 		mblk_t *curr = mp;
 		mp = mp->b_next;
@@ -2246,8 +2247,7 @@ mac_standardise_pkts(const mac_client_impl_t *mcip, flow_tree_pkt_set_t* set,
 		if (processed == NULL) {
 			continue;
 		}
-		ENQUEUE_MP_LIST(&set->ftp_avail, bw_ctl, mp_len(processed),
-		    processed);
+		ENQUEUE_MP_LIST(set, bw_ctl, mp_len(processed), processed);
 	}
 }
 
@@ -2494,11 +2494,7 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 					if (to_class->mpl_tail == curr) {
 						to_class->mpl_tail = prev;
 					}
-
-					/* TODO(ky): lsz only needed in bw? */
-					// size_t lsz = mp_len(curr);
 					to_class->mpl_count--;
-					// to_class->mpl_size -= lsz;
 
 					ENQUEUE_MP_LIST(classed, false,
 					    mp_len(curr), curr);
@@ -2509,11 +2505,15 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 				curr = *to_curr;
 			}
 
-			/* (head == NULL) => (tail == NULL) for both layers */
-			ASSERT((to_class->mpl_head != NULL) ||
-			    (to_class->mpl_tail == NULL));
-			ASSERT((classed->mpl_head != NULL) ||
-			    (classed->mpl_tail == NULL));
+			/* (head == NULL) <=> (tail == NULL) for both layers */
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_tail == NULL);
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_count == 0);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_tail == NULL);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_count == 0);
 
 			if (mac_pkt_list_is_empty(classed)) {
 				/*
@@ -2528,6 +2528,9 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 					depth--;
 					is_enter = false;
 				}
+
+				ASSERT(mac_pkt_list_is_empty(
+				    &my_pkts->ftp_deli));
 
 				node++;
 				continue;
@@ -2555,7 +2558,7 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 			mac_pkt_list_t *deliver_from = (have_deli) ?
 			    &my_pkts->ftp_deli : &my_pkts->ftp_avail;
 			if (have_deli && have_avail) {
-				mac_pkt_list_append(&my_pkts->ftp_avail,
+				mac_pkt_list_extend(&my_pkts->ftp_avail,
 				    &my_pkts->ftp_deli);
 			}
 
@@ -2578,15 +2581,20 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 			}
 			case MFA_TYPE_DELEGATE:
 				/* TODO(ky): flent stats?? */
-				mac_pkt_list_append(deliver_from,
+				mac_pkt_list_extend(deliver_from,
 				    &par_pkts->ftp_deli);
 				break;
 			case MFA_TYPE_DROP:
 				/* TODO(ky): right call? flent stats? */
 				freemsgchain(deliver_from->mpl_head);
+				deliver_from->mpl_head = NULL;
+				deliver_from->mpl_tail = NULL;
+				deliver_from->mpl_count = 0;
+				deliver_from->mpl_size = 0;
 				break;
 			}
-			bzero(my_pkts, sizeof (*my_pkts));
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
 
 			if (xnode->ftex_ascend) {
 				depth--;
@@ -2600,7 +2608,8 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 }
 
 static void
-mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
+mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
+    flow_tree_pkt_set_t *pkts)
 {
 	ASSERT3U(ft->ftb_len, >, 0);
 	ASSERT3U(ft->ftb_depth, >, 0);
@@ -2746,7 +2755,7 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pk
 			mac_pkt_list_t *deliver_from = (have_deli) ?
 			    &my_pkts->ftp_deli : &my_pkts->ftp_avail;
 			if (have_deli && have_avail) {
-				mac_pkt_list_append(&my_pkts->ftp_avail,
+				mac_pkt_list_extend(&my_pkts->ftp_avail,
 				    &my_pkts->ftp_deli);
 			}
 
@@ -2765,7 +2774,7 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pk
 			}
 			case MFA_TYPE_DELEGATE:
 				/* TODO(ky): flent stats?? */
-				mac_pkt_list_append(deliver_from,
+				mac_pkt_list_extend(deliver_from,
 				    &par_pkts->ftp_deli);
 				break;
 			case MFA_TYPE_DROP:
@@ -2818,11 +2827,8 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pk
 void
 mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 {
-	mblk_t			*head;
-	mblk_t			*tail;
+	mblk_t			*in_chain = NULL;
 	timeout_id_t		tid;
-	int			cnt = 0;
-	int			sz = 0;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
 	mac_srs_rx_t		*srs_rx = &mac_srs->srs_kind_data.rx;
 
@@ -2858,19 +2864,13 @@ mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 		MAC_SRS_POLL_RING(mac_srs);
 	}
 
-	flow_tree_pkt_set_t pktset = {0};
+	flow_tree_pkt_set_t pktset = { 0 };
 again:
-	pktset.ftp_avail.mpl_head = mac_srs->srs_first;
-	pktset.ftp_avail.mpl_tail = mac_srs->srs_last;
-	pktset.ftp_avail.mpl_count = mac_srs->srs_count;
-	pktset.ftp_avail.mpl_size = mac_srs->srs_size;
+	ASSERT3P(mac_srs->srs_first, !=, NULL);
+	in_chain = mac_srs->srs_first;
 	mac_srs->srs_first = NULL;
 	mac_srs->srs_last = NULL;
 	mac_srs->srs_count = 0;
-	mac_srs->srs_size = 0;
-
-	/* mac_pkt_list_is_empty contains assert that tail is non-null */
-	ASSERT(!mac_pkt_list_is_empty(&pktset.ftp_avail));
 
 	if ((tid = mac_srs->srs_tid) != NULL) {
 		mac_srs->srs_tid = NULL;
@@ -2888,18 +2888,37 @@ again:
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 
-	if (mcip->mci_promisc_list != NULL) {
-		mutex_exit(&mac_srs->srs_lock);
-		mac_promisc_client_dispatch(mcip, head);
-		mutex_enter(&mac_srs->srs_lock);
-	}
-	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
-		mutex_exit(&mac_srs->srs_lock);
-		mac_protect_intercept_dynamic(mcip, head);
-		mutex_enter(&mac_srs->srs_lock);
-	}
+	/*
+	 * Generally, we'd expect when promiscuous mode is enabled that any
+	 * extra frames would land on the default group, with all of the
+	 * broadcast and multicast traffic. The confounding case is L2 flows on
+	 * NICs which expose a single group, and thus that traffic can land on a
+	 * unicast flow ring -- the group is shared between all clients for such
+	 * hardware.
+	 *
+	 * In this case, we need to manually check the L2 match, and divert any
+	 * unicast packets which fail this check straight to DLS (no flow
+	 * tree, which is predicated on an L2 match).
+	 */
+	const bool is_promisc_on = mcip->mci_promisc_list != NULL;
+	const bool needs_sw_check = is_promisc_on &&
+	    srs_rx->sr_ring != NULL &&
+	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER &&
+	    (mac_srs->srs_type & (SRST_LINK | SRST_DEFAULT_GRP)) ==
+	    (SRST_LINK | SRST_DEFAULT_GRP);
 
 	mutex_exit(&mac_srs->srs_lock);
+
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_avail));
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_deli));
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, false, in_chain);
+
+	if (__builtin_expect(is_promisc_on, 0)) {
+		mac_promisc_client_dispatch(mcip, in_chain);
+	}
+	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
+		mac_protect_intercept_dynamic(mcip, in_chain);
+	}
 
 	if (tid != NULL) {
 		(void) untimeout(tid);
@@ -2907,51 +2926,70 @@ again:
 	}
 
 	/*
-	 * TODO(ky): We need to handle a key promisc case here:
-	 *  - promisc is enabled.
-	 *  - this SRS is hw classified.
-	 *  - this SRS is also SRST_DEFAULT_GROUP.
-	 *  - this SRS is also an L2 flow, rather than e.g. a more complex
-	 *    NIC filter (SRST_LINK?).
-	 * In this case, we need to check L2 match, and divert any unicast
-	 * packets which fail this check straight to local (no flow tree).
+	 * TODO(ky): is this the best way to move this state from one SRS to
+	 * another? feels like it's in need of a revisit.
 	 */
+	const uint32_t pkts_before = pktset.ftp_avail.mpl_count;
+
+	if (__builtin_expect(needs_sw_check, 0)) {
+		/* TODO(ky): refhold needed? It's from the srs... */
+		/* TODO(ky): Almost identical chain pick to walker */
+		flow_entry_t *flent = mac_srs->srs_flent;
+		mac_pkt_list_t *from = &pktset.ftp_avail;
+		mac_pkt_list_t *to = &pktset.ftp_deli;
+		mblk_t *curr = from->mpl_head;
+		mblk_t *prev = NULL;
+		while (curr != NULL) {
+			mblk_t **to_curr = (prev != NULL) ?
+			    &prev->b_next : &from->mpl_head;
+			const bool is_match = mac_pkt_is_flow_match(
+			    flent, &flent->fe_match2,
+			    curr, false);
+			if (!is_match) {
+				*to_curr = curr->b_next;
+				curr->b_next = NULL;
+				if (from->mpl_tail == curr) {
+					from->mpl_tail = prev;
+				}
+				from->mpl_count--;
+
+				ENQUEUE_MP_LIST(to, false,
+				    mp_len(curr), curr);
+			} else {
+				to_curr = &curr->b_next;
+				prev = curr;
+			}
+			curr = *to_curr;
+		}
+	}
 
 	/*
 	 * TODO(ky): m'cast/b'cast traffic should walk the flowtree, but
 	 * should not be admitted by the DLS bypass flows.
 	 */
 
-	/*
-	 * TODO(ky): is this the best way to move this state from one SRS to
-	 * another? feels like it's in need of a revisit.
-	 */
-	uint32_t pkts_gone = 0;
-
 	/* Generally we *should* have a subtree here, due to DLS bypass */
-	/* TODO(ky): `likely()`? */
-	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		mac_standardise_pkts(mcip, &pktset, false);
-		const uint32_t pkts_before = pktset.ftp_avail.mpl_count;
-		mac_rx_srs_walk_flowtree(&mac_srs->srs_flowtree, &pktset);
-
-		mac_pkt_list_append(&pktset.ftp_deli, &pktset.ftp_avail);
-
-		if (!mac_pkt_list_is_empty(&pktset.ftp_deli)) {
-			mac_pkt_list_append(&pktset.ftp_deli,
-			    &pktset.ftp_avail);
-			bzero(&pktset.ftp_deli, sizeof(pktset.ftp_deli));
+	if (__builtin_expect(mac_srs->srs_flowtree.ftb_depth > 0, 1)) {
+		if (__builtin_expect(!mac_srs->srs_flowtree.ftb_needs_bw, 1)) {
+			mac_rx_srs_walk_flowtree(&mac_srs->srs_flowtree,
+			    &pktset);
+		} else {
+			/* TODO(ky): not ready */
+			ASSERT(false);
+			mac_rx_srs_walk_flowtree_bw(&mac_srs->srs_flowtree,
+			    &pktset);
 		}
-
-		pkts_gone = pkts_before - pktset.ftp_avail.mpl_count;
 	}
+
+	/* Combine any unpicked packets with those delegated. */
+	mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+	const uint32_t pkts_gone = pkts_before - pktset.ftp_avail.mpl_count;
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
 	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
 
 	mutex_enter(&mac_srs->srs_lock);
 	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, pkts_gone);
-	/* TODO(ky): bw_gone? */
 
 	if (!(mac_srs->srs_state & (SRS_BLANK|SRS_PAUSE)) &&
 	    (mac_srs->srs_first != NULL)) {
