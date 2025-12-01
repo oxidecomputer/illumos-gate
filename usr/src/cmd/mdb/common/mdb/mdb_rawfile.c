@@ -23,7 +23,7 @@
  * Use is subject to license terms.
  *
  * Copyright 2018 Joyent, Inc.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -44,7 +44,9 @@
 #include <mdb/mdb_err.h>
 #include <mdb/mdb.h>
 
+#include <sys/apob.h>
 #include <sys/dtrace.h>
+#include <sys/sysmacros.h>
 #include <fcntl.h>
 
 typedef struct rf_data {
@@ -308,6 +310,7 @@ static const struct rf_magic {
 	const char *rfm_mod;
 } rf_magic[] = {
 	{ DOF_MAG_STRING, DOF_MAG_STRLEN, "dof" },
+	{ (const char *)APOB_SIG, ARRAY_SIZE(APOB_SIG), "apob" },
 	{ NULL, 0, NULL }
 };
 

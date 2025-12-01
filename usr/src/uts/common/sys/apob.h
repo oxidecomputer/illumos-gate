@@ -30,6 +30,14 @@
 extern "C" {
 #endif
 
+/*
+ * Signature value for the APOB. This is unsurprisingly "APOB". This is written
+ * out in memory such that byte zero is 'A', etc. This means that when
+ * interpreted as a little-endian integer the letters are reversed.  We keep it
+ * in a byte form.
+ */
+static const uint8_t APOB_SIG[4] = { 'A', 'P', 'O', 'B' };
+
 #define	APOB_MIN_LEN	16
 
 /*
