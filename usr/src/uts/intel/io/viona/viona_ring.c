@@ -362,7 +362,7 @@ viona_ring_init(viona_link_t *link, uint16_t idx,
 	int err = 0;
 	const uint16_t qsz = params->vrp_size;
 
-	if (idx >= VIONA_VQ_MAX) {
+	if (!VIONA_RING_VALID(link, idx)) {
 		return (EINVAL);
 	}
 
@@ -389,6 +389,7 @@ viona_ring_init(viona_link_t *link, uint16_t idx,
 		goto fail;
 	}
 
+	ring->vr_index = idx;
 	ring->vr_size = qsz;
 	ring->vr_mask = (ring->vr_size - 1);
 
@@ -411,9 +412,8 @@ viona_ring_init(viona_link_t *link, uint16_t idx,
 	ring->vr_cur_aidx = params->vrp_avail_idx;
 	ring->vr_cur_uidx = params->vrp_used_idx;
 
-	if (idx == VIONA_VQ_TX) {
+	if (VIONA_RING_ISTX(ring))
 		viona_tx_ring_alloc(ring, qsz);
-	}
 
 	/* Zero out MSI-X configuration */
 	ring->vr_msi_addr = 0;
@@ -454,7 +454,7 @@ viona_ring_get_state(viona_link_t *link, uint16_t idx,
 {
 	viona_vring_t *ring;
 
-	if (idx >= VIONA_VQ_MAX) {
+	if (!VIONA_RING_VALID(link, idx)) {
 		return (EINVAL);
 	}
 
@@ -831,9 +831,9 @@ ring_init:
 	}
 
 	/* Process actual work */
-	if (ring == &link->l_vrings[VIONA_VQ_RX]) {
+	if (VIONA_RING_ISRX(ring)) {
 		viona_worker_rx(ring, link);
-	} else if (ring == &link->l_vrings[VIONA_VQ_TX]) {
+	} else if (VIONA_RING_ISTX(ring)) {
 		viona_worker_tx(ring, link);
 	} else {
 		panic("unexpected ring: %p", (void *)ring);
@@ -1328,8 +1328,7 @@ static void
 viona_ring_consolidate_stats(viona_vring_t *ring)
 {
 	viona_link_t *link = ring->vr_link;
-	struct viona_transfer_stats *lstat =
-	    (ring == &link->l_vrings[VIONA_VQ_RX]) ?
+	struct viona_transfer_stats *lstat = VIONA_RING_ISRX(ring) ?
 	    &link->l_stats.vls_rx : &link->l_stats.vls_tx;
 
 	mutex_enter(&link->l_stats_lock);

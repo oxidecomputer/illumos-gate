@@ -125,6 +125,7 @@ struct vring_used {
 #define	VTCFG_STATUS_DRIVER	0x02	/* guest OS driver is loaded */
 #define	VTCFG_STATUS_DRIVER_OK	0x04	/* guest OS driver ready */
 #define	VTCFG_STATUS_FEAT_OK	0x08	/* driver finished cfg features */
+#define	VTCFG_STATUS_NEEDS_RST	0x40	/* device needs reset */
 #define	VTCFG_STATUS_FAILED	0x80	/* guest has given up on this dev */
 
 #define	VIRTIO_CONFIG_STATUS_DRIVER_OK	VTCFG_STATUS_DRIVER_OK
