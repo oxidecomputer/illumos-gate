@@ -234,11 +234,8 @@ void
 mac_soft_ring_free(mac_soft_ring_t *softring)
 {
 	const mac_soft_ring_set_t *srs = softring->s_ring_set;
-	ASSERT((mac_srs_is_logical(srs) && (softring->s_ring_state &
-	    (S_RING_QUIESCE | S_RING_QUIESCE_DONE | S_RING_PROC)) ==
-	    (S_RING_QUIESCE | S_RING_QUIESCE_DONE)) ||
-	    (softring->s_ring_state &
-	    (S_RING_CONDEMNED | S_RING_CONDEMNED_DONE | S_RING_PROC)) ==
+	ASSERT3U((softring->s_ring_state &
+	    (S_RING_CONDEMNED | S_RING_CONDEMNED_DONE | S_RING_PROC)), ==,
 	    (S_RING_CONDEMNED | S_RING_CONDEMNED_DONE));
 	mac_drop_chain(softring->s_ring_first, "softring free");
 	softring->s_ring_tx_arg2 = NULL;
@@ -472,7 +469,7 @@ done:
 			goto start;
 		}
 	}
-	ASSERT(ringp->s_ring_state & S_RING_CONDEMNED);
+	ASSERT3U(ringp->s_ring_state & S_RING_CONDEMNED, !=, 0);
 	ringp->s_ring_state |= S_RING_CONDEMNED_DONE;
 	CALLB_CPR_EXIT(&cprinfo);
 	srs->srs_soft_ring_condemned_count++;

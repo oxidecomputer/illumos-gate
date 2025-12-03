@@ -473,7 +473,7 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 	 * so we need to duplicate this subflow on top of all our fastpath
 	 * entries.
 	 */
-	mac_client_quiesce(mcip);
+	mac_client_quiesce(mcip, true);
 	mac_client_update_classifier(mcip);
 	mac_client_restart(mcip);
 
@@ -928,7 +928,7 @@ mac_flow_set_desc(flow_entry_t *flent, flow_desc_t *fd)
 
 	/*
 	 * Need to remove the flow entry from the table and reinsert it,
-	 * into a potentially diference hash line. The hash depends on
+	 * into a potentially different hash line. The hash depends on
 	 * the new descriptor fields. However access to fe_desc itself
 	 * is always under the fe_lock. This helps log and stat functions
 	 * see a self-consistent fe_flow_desc.
@@ -1146,7 +1146,7 @@ mac_link_init_flows(mac_client_handle_t mch)
 	 * function to mac_rx_srs_subflow_process and in case of hardware
 	 * classification, disable polling.
 	 */
-	// mac_client_quiesce(mcip);
+	// mac_client_quiesce(mcip, true);
 	// mac_client_update_classifier(mcip);
 	// mac_client_restart(mcip);
 
@@ -1211,8 +1211,19 @@ mac_link_flow_init(mac_client_handle_t mch, flow_entry_t *sub_flow)
 	ASSERT(mch != NULL);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
-	if ((err = mac_datapath_setup(mcip, sub_flow, SRST_FLOW)) != 0)
-		return (err);
+	/*
+	 * TODO(ky): This relies on an open design problem downstream of IPD45.
+	 *  - Ask the client what it can give us in terms of rings for this
+	 *    flent's flow description.
+	 *  - Create a specialised sub-group and associate it to this flent.
+	 *  - This creates valid entry SRSes, which can *then* be registered to
+	 *    the flent.
+	 */
+	const bool advanced_ring_support = false;
+	if (advanced_ring_support) {
+		if ((err = mac_datapath_setup(mcip, sub_flow, SRST_FLOW)) != 0)
+			return (err);
+	}
 
 	sub_flow->fe_mcip = mcip;
 
@@ -1309,6 +1320,8 @@ mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
 
 	/*
 	 * do not allow flows to be configured on an anchor VNIC
+	 *
+	 * TODO(ky): still relevant?
 	 */
 	if (mac_capab_get(dlp->dl_mh, MAC_CAPAB_ANCHOR_VNIC, NULL)) {
 		err = ENOTSUP;
@@ -1388,7 +1401,7 @@ mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 	 * If all the subflows are gone, then clear out the subflow table.
 	 * Always rebuild the flowtree in response.
 	 */
-	mac_client_quiesce(mcip);
+	mac_client_quiesce(mcip, true);
 	if (last_subflow) {
 		/*
 		 * The subflow table itself is not protected by any locks or

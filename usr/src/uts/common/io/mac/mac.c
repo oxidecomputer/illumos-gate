@@ -2260,12 +2260,13 @@ void
 mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 {
 	flow_entry_t	*flent = srs->srs_flent;
-	const uint_t mr_flag = (srs_quiesce_flag == SRS_CONDEMNED) ?
+	const uint_t mr_flag = ((srs_quiesce_flag == SRS_CONDEMNED) != 0) ?
 	    MR_CONDEMNED : MR_QUIESCE;
 	const uint_t srs_done_flag = (srs_quiesce_flag == SRS_CONDEMNED) ?
 	    SRS_CONDEMNED_DONE : SRS_QUIESCE_DONE;
 
 	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
+	    srs_quiesce_flag == (SRS_QUIESCE | SRS_NEW_TREE) ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
 	ASSERT(!mac_srs_is_tx(srs));
@@ -2394,12 +2395,14 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 int
 mac_rx_classify_flow_quiesce(flow_entry_t *flent, void *arg)
 {
-	int		i;
+	size_t extra_flags = (size_t)arg;
+	ASSERT3U(extra_flags & (~SRS_NEW_TREE), ==, 0);
 
-	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
+	for (int i = 0; i < flent->fe_rx_srs_cnt; i++) {
 		mac_rx_srs_quiesce((mac_soft_ring_set_t *)flent->fe_rx_srs[i],
-		    SRS_QUIESCE);
+		    SRS_QUIESCE | extra_flags);
 	}
+
 	return (0);
 }
 
@@ -2411,10 +2414,9 @@ mac_rx_classify_flow_quiesce(flow_entry_t *flent, void *arg)
 int
 mac_rx_classify_flow_restart(flow_entry_t *flent, void *arg)
 {
-	int		i;
-
-	for (i = 0; i < flent->fe_rx_srs_cnt; i++)
+	for (int i = 0; i < flent->fe_rx_srs_cnt; i++) {
 		mac_rx_srs_restart((mac_soft_ring_set_t *)flent->fe_rx_srs[i]);
+	}
 
 	return (0);
 }
@@ -2445,18 +2447,20 @@ mac_srs_perm_quiesce(mac_client_handle_t mch, boolean_t on)
 }
 
 void
-mac_rx_client_quiesce(mac_client_handle_t mch)
+mac_rx_client_quiesce(mac_client_handle_t mch, const bool redo_tree)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
+	size_t extra_flags = (redo_tree) ? SRS_NEW_TREE : 0;
+
 	if (MCIP_DATAPATH_SETUP(mcip)) {
 		(void) mac_rx_classify_flow_quiesce(mcip->mci_flent,
-		    NULL);
+		    (void *)extra_flags);
 		(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
-		    mac_rx_classify_flow_quiesce, NULL);
+		    mac_rx_classify_flow_quiesce, (void *)extra_flags);
 	}
 }
 
@@ -2599,9 +2603,9 @@ mac_tx_client_flush(mac_client_impl_t *mcip)
 }
 
 void
-mac_client_quiesce(mac_client_impl_t *mcip)
+mac_client_quiesce(mac_client_impl_t *mcip, const bool redo_tree)
 {
-	mac_rx_client_quiesce((mac_client_handle_t)mcip);
+	mac_rx_client_quiesce((mac_client_handle_t)mcip, redo_tree);
 	mac_tx_client_quiesce((mac_client_handle_t)mcip);
 }
 
@@ -7362,7 +7366,7 @@ mac_rx_move_macaddr(mac_client_impl_t *mcip, mac_group_t *fgrp,
 	mac_unicast_impl_t	*muip;
 	boolean_t		use_hw;
 
-	mac_rx_client_quiesce((mac_client_handle_t)mcip);
+	mac_rx_client_quiesce((mac_client_handle_t)mcip, false);
 	VERIFY3P(mcip->mci_unicast, !=, NULL);
 	bcopy(mcip->mci_unicast->ma_addr, maddr, mcip->mci_unicast->ma_len);
 

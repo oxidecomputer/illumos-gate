@@ -52,6 +52,7 @@ extern boolean_t mac_latency_optimize;
 
 typedef struct mac_soft_ring_s mac_soft_ring_t;
 typedef struct mac_soft_ring_set_s mac_soft_ring_set_t;
+struct flow_entry_s;
 
 typedef void (*mac_soft_ring_drain_func_t)(mac_soft_ring_t *);
 typedef mac_tx_cookie_t (*mac_tx_func_t)(mac_soft_ring_set_t *, mblk_t *,
@@ -365,7 +366,7 @@ struct mac_soft_ring_set_s {
 	 * of the SRS
 	 */
 	struct mac_client_impl_s *srs_mcip;	/* back ptr to mac client */
-	void			*srs_flent;	/* back ptr to flent */
+	struct flow_entry_s	*srs_flent;	/* back ptr to flent */
 
 	/* Teardown, disable control ops */
 	kcondvar_t	srs_client_cv;	/* Client wait for the control op */
@@ -524,14 +525,15 @@ mac_srs_is_logical(const mac_soft_ring_set_t *srs)
 #define	SRS_QUIESCE_PERM	0x10000000
 #define	SRS_LATENCY_OPT		0x20000000
 #define	SRS_SOFTRING_QUEUE	0x40000000
+#define	SRS_NEW_TREE		0x80000000
 
-#define	SRS_QUIESCED(srs)	(srs->srs_state & SRS_QUIESCE_DONE)
+#define	SRS_QUIESCED(srs)	((srs)->srs_state & SRS_QUIESCE_DONE)
 
 /*
  * If the SRS_QUIESCE_PERM flag is set, the SRS worker thread will not be
  * able to be restarted.
  */
-#define	SRS_QUIESCED_PERMANENT(srs)	(srs->srs_state & SRS_QUIESCE_PERM)
+#define	SRS_QUIESCED_PERMANENT(srs)	((srs)->srs_state & SRS_QUIESCE_PERM)
 
 /*
  * soft ring set (SRS) Tx modes

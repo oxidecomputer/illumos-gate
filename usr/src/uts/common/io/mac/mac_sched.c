@@ -2105,8 +2105,8 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
-// static inline void
-static void
+static inline void
+// static void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
 {
 	if (!mac_pkt_list_is_empty(list)) {
@@ -2255,7 +2255,7 @@ mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t* set,
  * TODO(ky): this is fairly unfortunate atm. Slight respin on mac_flow_lookup.
  */
 static bool
-mac_subflow_is_match(flow_entry_t *flent, mblk_t *mp)
+mac_subflow_is_match(flow_entry_t *flent, mblk_t *mp, const bool is_tx)
 {
 	flow_state_t	s;
 	boolean_t	retried = B_FALSE;
@@ -2294,7 +2294,7 @@ retry:
 			 * and may need a pullup.
 			 */
 			if (err != ENOBUFS || retried)
-				return (err);
+				return (false);
 
 			/*
 			 * The pullup is done on the last processed mblk, not
@@ -2304,7 +2304,7 @@ retry:
 			last = s.fs_mp;
 			if (DB_REF(last) > 1 || last->b_cont == NULL ||
 			    pullupmsg(last, -1) == 0)
-				return (EINVAL);
+				return (false);
 
 			retried = B_TRUE;
 			DTRACE_PROBE2(need_pullup, flow_tab_t *, ft,
@@ -2312,6 +2312,9 @@ retry:
 			goto retry;
 		}
 	}
+
+	/* Hash functions can initialise parts of flow_state_t. Sigh. */
+	(void) ops->fo_hash(ft, &s);
 
 	/*
 	 * The packet is considered sane. We may now attempt to
@@ -2323,8 +2326,8 @@ retry:
 static bool mac_pkt_is_flow_match_recurse(flow_entry_t *,
     const mac_flow_match_t *, mblk_t*, bool);
 
-// static inline bool
-static bool
+static inline bool
+// static bool
 mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp, const bool is_head, const bool is_tx)
 {
@@ -2406,7 +2409,7 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 		return (arb->mfma_match(arb->mfma_arg, mp));
 	}
 	case MFM_SUBFLOW:
-		return (mac_subflow_is_match(flent, mp));
+		return (mac_subflow_is_match(flent, mp, is_tx));
 	case MFM_ALL: {
 		const mac_flow_match_list_t *list = match->arg.mfm_list;
 		ASSERT3P(list, !=, NULL);
@@ -2443,8 +2446,8 @@ mac_pkt_is_flow_match_recurse(flow_entry_t *flent, const mac_flow_match_t *match
 	return (mac_pkt_is_flow_match_inner(flent, match, mp, false, is_tx));
 }
 
-// static inline bool
-static bool
+static inline bool
+// static bool
 mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp, const bool is_tx)
 {
@@ -2454,8 +2457,8 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 /*
  * TODO(ky): theory statement on what this is doing.
  */
-// static inline void
-static void
+static inline void
+// static void
 mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 {
 	ASSERT3U(ft->ftb_len, >, 0);

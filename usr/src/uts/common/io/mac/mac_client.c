@@ -1632,7 +1632,7 @@ mac_rx_set(mac_client_handle_t mch, mac_rx_t rx_fn, void *arg)
 	 * the data flow subsequently.
 	 */
 	i_mac_perim_enter(mip);
-	mac_rx_client_quiesce(mch);
+	mac_rx_client_quiesce(mch, false);
 
 	mcip->mci_rx_fn = rx_fn;
 	mcip->mci_rx_arg = arg;
@@ -1683,7 +1683,7 @@ mac_siphon_set(mac_client_handle_t mch, mac_siphon_t rx_fn, void *arg)
 	 * quiesce mechanism).
 	 */
 	i_mac_perim_enter(mip);
-	mac_rx_client_quiesce(mch);
+	mac_rx_client_quiesce(mch, false);
 
 	mcip->mci_siphon = rx_fn;
 	mcip->mci_siphon_arg = arg;
@@ -1711,7 +1711,7 @@ mac_rx_barrier(mac_client_handle_t mch)
 
 	/* If a RX callback is set, quiesce and restart that datapath */
 	if (mcip->mci_rx_fn != mac_rx_def) {
-		mac_rx_client_quiesce(mch);
+		mac_rx_client_quiesce(mch, false);
 		mac_rx_client_restart(mch);
 	}
 

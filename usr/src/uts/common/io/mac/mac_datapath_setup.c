@@ -346,6 +346,7 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 {
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
 	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
+	    srs_quiesce_flag == (SRS_QUIESCE | SRS_NEW_TREE) ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
 	ASSERT(!mac_srs_is_tx(mac_srs));
 	ASSERT(!mac_srs_is_logical(mac_srs));
@@ -532,7 +533,8 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip,
 	mac_soft_ring_set_t *logical_srs = mac_srs->srs_logical_next;
 	while (logical_srs != NULL) {
 		flow_entry_t *curr_f = logical_srs->srs_flent;
-		const bool is_fp_leaf = (curr_f == mcip->mci_fastpath_ipv4_tcp) ||
+		const bool is_fp_leaf =
+		    (curr_f == mcip->mci_fastpath_ipv4_tcp) ||
 		    (curr_f == mcip->mci_fastpath_ipv4_udp) ||
 		    (curr_f == mcip->mci_fastpath_ipv6_tcp) ||
 		    (curr_f == mcip->mci_fastpath_ipv6_udp);
@@ -1757,7 +1759,7 @@ mac_client_update_classifier(mac_client_impl_t *mcip)
 		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
 		ASSERT3P(srs, !=, NULL);
 		mutex_enter(&srs->srs_lock);
-		ASSERT3U(srs->srs_state & SRS_QUIESCE_DONE, !=, 0);
+		ASSERT(SRS_QUIESCED(srs));
 		mac_flow_baked_tree_destroy(&srs->srs_flowtree);
 		mac_soft_ring_set_t *child = srs->srs_logical_next;
 		while (child != NULL) {
@@ -3190,8 +3192,8 @@ mac_datapath_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		mcip->mci_unicast = mac_find_macaddr(mip, mac_addr);
 		VERIFY3P(mcip->mci_unicast, !=, NULL);
 		flent->fe_match2.mfm_type = MFM_L2_DST;
-		bcopy(mcip->mci_unicast, flent->fe_match2.arg.mfm_l2addr,
-		    ETHERADDRL);
+		bcopy(&mcip->mci_unicast->ma_addr,
+		    flent->fe_match2.arg.mfm_l2addr, ETHERADDRL);
 
 		/*
 		 * Setup the Rx and Tx SRSes. If the client has a
@@ -3664,17 +3666,15 @@ void
 mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-
-	uint_t quiesce_flag = mac_srs->srs_state &
-	    (SRS_CONDEMNED | SRS_QUIESCE);
-
-	ASSERT3U(quiesce_flag, !=, 0);
 	ASSERT(!mac_srs_is_logical(mac_srs));
 
-	uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
-	    S_RING_CONDEMNED: S_RING_QUIESCE;
-	uint_t srs_poll_wait_flag = (quiesce_flag == SRS_CONDEMNED) ?
-	    SRS_POLL_THR_EXITED: SRS_POLL_THR_QUIESCED;
+	const uint_t top_quiesce_flag = mac_srs->srs_state &
+	    (SRS_CONDEMNED | SRS_QUIESCE);
+	const uint_t srs_poll_wait_flag =
+	    (top_quiesce_flag == SRS_CONDEMNED) ? SRS_POLL_THR_EXITED :
+	    SRS_POLL_THR_QUIESCED;
+
+	ASSERT3U(top_quiesce_flag, !=, 0);
 
 	/*
 	 * In the case of Rx SRS wait till the poll thread is done.
@@ -3697,6 +3697,16 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	 */
 	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
+		const uint_t quiesce_flag = curr->srs_state &
+		    (SRS_CONDEMNED | SRS_QUIESCE);
+		const uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
+		    S_RING_CONDEMNED : S_RING_QUIESCE;
+		const uint_t srs_poll_wait_flag =
+		    (quiesce_flag == SRS_CONDEMNED) ? SRS_POLL_THR_EXITED :
+		    SRS_POLL_THR_QUIESCED;
+
+		ASSERT3U(quiesce_flag, !=, 0);
+
 		if (curr != mac_srs) {
 			mutex_enter(&curr->srs_lock);
 		}
@@ -3762,13 +3772,20 @@ mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 	 * executed by the complete SRS, we signal all logical SRSes first such
 	 * that this SRS's worker will see the same signal propagated to all
 	 * children.
+	 *
+	 * If the baked flowtree must be rebuilt, then all attached logical
+	 * SRSes must be completely torn down. Condemn them in such this case.
 	 */
+	const uint_t base_flags = srs_flag & ~SRS_NEW_TREE;
+	const uint_t logical_flag = (base_flags != srs_flag) ?
+	    SRS_CONDEMNED : base_flags;
+
 	for (mac_soft_ring_set_t *curr = mac_srs->srs_logical_next;
 	    curr != NULL; curr = curr->srs_logical_next) {
-		mac_srs_signal_inner(curr, srs_flag);
+		mac_srs_signal_inner(curr, logical_flag);
 	}
 
-	mac_srs_signal_inner(mac_srs, srs_flag);
+	mac_srs_signal_inner(mac_srs, base_flags);
 }
 
 /*
@@ -3782,11 +3799,10 @@ mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 static void
 mac_srs_soft_rings_signal(mac_soft_ring_set_t *mac_srs, uint_t sr_flag)
 {
-	mac_soft_ring_t		*softring;
-
-	for (softring = mac_srs->srs_soft_ring_head; softring != NULL;
-	    softring = softring->s_ring_next)
+	for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
+	    softring != NULL; softring = softring->s_ring_next) {
 		mac_soft_ring_signal(softring, sr_flag);
+	}
 }
 
 /*

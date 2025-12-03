@@ -161,6 +161,7 @@ typedef struct flow_tab_s		flow_tab_t;
 typedef struct flow_state_s 		flow_state_t;
 struct mac_impl_s;
 struct mac_client_impl_s;
+struct mac_soft_ring_set_s;
 
 /*
  * Classification flags used to lookup the flow.
@@ -334,7 +335,7 @@ typedef struct {
 	bool			ftex_ascend;
 	union {
 		/* MFA_TYPE_DELIVER */
-		void		*ftex_srs; /* mac_soft_ring_set_t */
+		struct mac_soft_ring_set_s	*ftex_srs;
 		/* MFA_TYPE_DROP_DELEGATE | DROP */
 		flow_entry_t	*ftex_flent; /* kept for stats */
 	} arg;
@@ -429,10 +430,10 @@ struct flow_entry_s {					/* Protected by */
 	void			*fe_client_cookie;	/* WO */
 	void			*fe_rx_ring_group;	/* SL */
 							/* fe_lock */
-	void			*fe_rx_srs[MAX_RINGS_PER_GROUP + 1];
+	struct mac_soft_ring_set_s	*fe_rx_srs[MAX_RINGS_PER_GROUP + 1];
 	int			fe_rx_srs_cnt;		/* fe_lock */
 	void			*fe_tx_ring_group;
-	void			*fe_tx_srs;		/* WO */
+	struct mac_soft_ring_set_s	*fe_tx_srs;	/* WO */
 	int			fe_tx_ring_cnt;
 
 	/*

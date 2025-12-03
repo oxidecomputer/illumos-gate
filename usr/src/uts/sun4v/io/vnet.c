@@ -2823,7 +2823,7 @@ vnet_bind_hwrings(vnet_t *vnetp)
 		 * directly passed up to the pseudo RX ring and handled
 		 * by mac srs created over the pseudo RX ring.
 		 */
-		mac_rx_client_quiesce(vnetp->hio_mch);
+		mac_rx_client_quiesce(vnetp->hio_mch, false);
 		mac_srs_perm_quiesce(vnetp->hio_mch, B_TRUE);
 	}
 
