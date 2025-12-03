@@ -1559,7 +1559,7 @@ typedef enum pkt_type {
 /*
  * Pair of local and remote ports in the transport header
  */
-#define	PORTS_SIZE 4
+#define	PORTS_SIZE (sizeof (uint16_t) << 1)
 
 /*
  * This routine delivers packets destined for an SRS into a soft ring member
@@ -2340,7 +2340,7 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 	mac_ether_offload_info(mp, &meoi, NULL);
 
 	DTRACE_PROBE3(fm__inner__meoi, mblk_t*, mp,
-	    mac_ether_offload_info_t*, &meoi, mac_flow_match_t *, match);
+	    mac_ether_offload_info_t *, &meoi, mac_flow_match_t *, match);
 
 	if ((match->mfm_cond & MFC_NOFRAG) != 0) {
 		if ((meoi.meoi_flags &
@@ -2402,7 +2402,18 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 	// 	default:
 	// 		return (false);
 	// 	}
-	
+	case MFM_L4_SRC:
+		return ((meoi.meoi_flags & MEOI_FULL) == MEOI_FULL &&
+		    meoi.meoi_l4hlen >= PORTS_SIZE &&
+		    *((uint16_t *)(mp->b_rptr + meoi.meoi_l2hlen +
+		    meoi.meoi_l3hlen)) == match->arg.mfm_l4addr);
+	case MFM_L4_DST:
+		return ((meoi.meoi_flags & MEOI_FULL) == MEOI_FULL &&
+		    meoi.meoi_l4hlen >= PORTS_SIZE &&
+		    *((uint16_t *)(mp->b_rptr + meoi.meoi_l2hlen +
+		    meoi.meoi_l3hlen + sizeof (uint16_t))) ==
+		    match->arg.mfm_l4addr);
+
 	case MFM_ARBITRARY: {
 		const mac_flow_match_arbitrary_t *arb =
 		    &match->arg.mfm_arbitrary;
