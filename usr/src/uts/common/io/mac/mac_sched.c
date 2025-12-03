@@ -2415,7 +2415,7 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 		ASSERT3P(list, !=, NULL);
 		for (size_t i = 0; i < list->mfml_size; i++) {
 			const mac_flow_match_t *el = &list->mfml_match[i];
-			if (!mac_pkt_is_flow_match_recurse(flent, match, mp,
+			if (!mac_pkt_is_flow_match_recurse(flent, el, mp,
 			    is_tx)) {
 				return (false);
 			}

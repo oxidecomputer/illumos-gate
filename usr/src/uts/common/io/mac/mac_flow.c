@@ -391,6 +391,11 @@ mac_flow_rem_subflow(flow_entry_t *flent)
 	mac_fastpath_enable(mh);
 }
 
+static boolean_t
+flow_transport_lport_match(flow_tab_t *, flow_entry_t *, flow_state_t *);
+static boolean_t
+flow_transport_rport_match(flow_tab_t *, flow_entry_t *, flow_state_t *);
+
 /*
  * Add a flow to a mac client's subflow table and instantiate the flow
  * in the mac by creating the associated SRSs etc.
@@ -441,10 +446,38 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		return (err);
 	}
 
-	/* TODO(ky): move flowadm flows *off* of this slow construct */
+	/* TODO(ky): enshrine this a little bit better */
 	flent->fe_match2.mfm_type = MFM_SUBFLOW;
 	flent->fe_match2.mfm_cond = 0;
-	// flent->fe_action.fa_flags = 0; /* DELEGATE */
+	if (flent->fe_match == flow_transport_lport_match) {
+		flent->fe_match2.mfm_type = MFM_ALL;
+		flent->fe_match2.arg.mfm_list =
+		    kmem_zalloc(offsetof(mac_flow_match_list_t, mfml_size) +
+		    (2 * sizeof (mac_flow_match_t)), KM_SLEEP);
+		flent->fe_match2.arg.mfm_list->mfml_size = 2;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
+		    MFM_IPPROTO;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
+		    flent->fe_flow_desc.fd_protocol;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
+		    MFM_L4_LOCAL;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
+		    flent->fe_flow_desc.fd_local_port;
+	} else if (flent->fe_match == flow_transport_rport_match) {
+		flent->fe_match2.mfm_type = MFM_ALL;
+		flent->fe_match2.arg.mfm_list =
+		    kmem_zalloc(offsetof(mac_flow_match_list_t, mfml_size) +
+		    (2 * sizeof (mac_flow_match_t)), KM_SLEEP);
+		flent->fe_match2.arg.mfm_list->mfml_size = 2;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
+		    MFM_IPPROTO;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
+		    flent->fe_flow_desc.fd_protocol;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
+		    MFM_L4_REMOTE;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
+		    flent->fe_flow_desc.fd_remote_port;
+	}
 
 	if (instantiate_flow) {
 		/* Now activate the flow by creating its SRSs */
@@ -642,6 +675,56 @@ mac_flow_walk(flow_tab_t *ft, int (*fn)(flow_entry_t *, void *),
 
 static boolean_t	mac_flow_clean(flow_entry_t *);
 
+static void
+mac_flow_destroy_match(mac_flow_match_t *ma)
+{
+	switch (ma->mfm_type) {
+	case MFM_ALL:
+	case MFM_ANY: {
+		mac_flow_match_list_t *list = ma->arg.mfm_list;
+		if (list == NULL)
+			return;
+
+		size_t to_free = offsetof(mac_flow_match_list_t, mfml_size) +
+		    (list->mfml_size * sizeof (mac_flow_match_t));
+		for (size_t i = 0; i < list->mfml_size; i++) {
+			mac_flow_destroy_match(list->mfml_match + i);
+		}
+		kmem_free(list, to_free);
+	}
+	default:
+		break;
+	}
+}
+
+mac_flow_match_t
+mac_flow_clone_match(const mac_flow_match_t *ma)
+{
+	mac_flow_match_t out = *ma;
+
+	switch (ma->mfm_type) {
+	case MFM_ALL:
+	case MFM_ANY: {
+		const mac_flow_match_list_t *in_list = ma->arg.mfm_list;
+		if (in_list == NULL)
+			return (out);
+
+		size_t to_alloc = offsetof(mac_flow_match_list_t, mfml_size) +
+		    (in_list->mfml_size * sizeof (mac_flow_match_t));
+		out.arg.mfm_list = kmem_zalloc(to_alloc, KM_SLEEP);
+		out.arg.mfm_list->mfml_size = in_list->mfml_size;
+		for (size_t i = 0; i < in_list->mfml_size; i++) {
+			out.arg.mfm_list->mfml_match[i] =
+			    mac_flow_clone_match(in_list->mfml_match + i);
+		}
+	}
+	default:
+		break;
+	}
+
+	return (out);
+}
+
 /*
  * Destroy a flow entry. Called when the last reference on a flow is released.
  */
@@ -659,6 +742,7 @@ mac_flow_destroy(flow_entry_t *flent)
 	mutex_destroy(&flent->fe_lock);
 	cv_destroy(&flent->fe_cv);
 	flow_stat_destroy(flent);
+	mac_flow_destroy_match(&flent->fe_match2);
 	kmem_cache_free(flow_cache, flent);
 }
 

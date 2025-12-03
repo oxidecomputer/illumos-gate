@@ -6161,12 +6161,32 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 struct flent_modify {
 	flow_entry_t *flent;
 	bool on_child;
+	bool needs_subflows;
+	bool is_tcp;
+	bool is_udp;
 };
 
 static int
 copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 {
 	struct flent_modify *arg = (struct flent_modify *)raw_arg;
+
+	/* TODO(ky): hacked together to stop slamming all the branches */
+	const mac_flow_match_t *mfm = &flent->fe_match2;
+	const bool can_elide = arg->needs_subflows &&
+	    (mfm->mfm_type == MFM_ALL) &&
+	    (mfm->arg.mfm_list->mfml_size > 0) &&
+	    (mfm->arg.mfm_list->mfml_match[0].mfm_type ==
+	    MFM_IPPROTO);
+	const bool flent_is_tcp = can_elide &&
+	    (mfm->arg.mfm_list->mfml_match[0].arg.mfm_ipproto == IPPROTO_TCP);
+	const bool flent_is_udp = can_elide &&
+	    (mfm->arg.mfm_list->mfml_match[0].arg.mfm_ipproto == IPPROTO_UDP);
+
+	if ((arg->is_tcp && flent_is_udp) || (arg->is_udp && flent_is_tcp)) {
+		/* Flent and parent are an impossible combo, skip addition. */
+		return (0);
+	}
 
 	flow_entry_t **write_into = (arg->on_child) ? &arg->flent->fe_child :
 	    &arg->flent->fe_sibling;
@@ -6175,7 +6195,7 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 	/* TODO(ky): I *know* this isn't safe around list/arg aliasing etc. */
 	VERIFY0(mac_flow_create(&flent->fe_flow_desc, NULL, flent->fe_flow_name,
 	    NULL, FLOW_USER, write_into));
-	(*write_into)->fe_match2 = flent->fe_match2;
+	(*write_into)->fe_match2 = mac_flow_clone_match(&flent->fe_match2);
 	(*write_into)->fe_action = flent->fe_action;
 	(*write_into)->fe_parent = (arg->on_child) ? arg->flent :
 	    arg->flent->fe_parent;
@@ -6209,11 +6229,11 @@ mac_update_subflows_on_fastpath(mac_client_impl_t *mcip, bool and_create)
 
 	/* Remove any existing flows duplicated into this tree. */
 	const struct flent_modify to_visit[] = {
-		{ ipv6, false },
-		{ ipv4_tcp, true },
-		{ ipv4_udp, true },
-		{ ipv6_tcp, true },
-		{ ipv6_udp, true },
+		{ ipv6, false, true, false, false },
+		{ ipv4_tcp, true, false, true, false },
+		{ ipv4_udp, true, false, false, true },
+		{ ipv6_tcp, true, false, true, false },
+		{ ipv6_udp, true, false, false, true },
 	};
 	const size_t n_visitees = sizeof (to_visit) /
 	    sizeof (struct flent_modify);
