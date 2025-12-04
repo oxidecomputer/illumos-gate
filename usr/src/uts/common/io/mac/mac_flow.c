@@ -451,10 +451,7 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 	flent->fe_match2.mfm_cond = 0;
 	if (flent->fe_match == flow_transport_lport_match) {
 		flent->fe_match2.mfm_type = MFM_ALL;
-		flent->fe_match2.arg.mfm_list =
-		    kmem_zalloc(offsetof(mac_flow_match_list_t, mfml_size) +
-		    (2 * sizeof (mac_flow_match_t)), KM_SLEEP);
-		flent->fe_match2.arg.mfm_list->mfml_size = 2;
+		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
 		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
 		    MFM_IPPROTO;
 		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
@@ -465,10 +462,7 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		    flent->fe_flow_desc.fd_local_port;
 	} else if (flent->fe_match == flow_transport_rport_match) {
 		flent->fe_match2.mfm_type = MFM_ALL;
-		flent->fe_match2.arg.mfm_list =
-		    kmem_zalloc(offsetof(mac_flow_match_list_t, mfml_size) +
-		    (2 * sizeof (mac_flow_match_t)), KM_SLEEP);
-		flent->fe_match2.arg.mfm_list->mfml_size = 2;
+		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
 		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
 		    MFM_IPPROTO;
 		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
@@ -675,26 +669,88 @@ mac_flow_walk(flow_tab_t *ft, int (*fn)(flow_entry_t *, void *),
 
 static boolean_t	mac_flow_clean(flow_entry_t *);
 
+static inline size_t
+mac_flow_match_list_size_bytes(const size_t len) {
+	return (sizeof (mac_flow_match_list_t) +
+	    (len * sizeof (mac_flow_match_t)));
+}
+
+mac_flow_match_list_t *
+mac_flow_match_list_create(const size_t len)
+{
+	const size_t to_alloc = mac_flow_match_list_size_bytes(len);
+
+	mac_flow_match_list_t *out = kmem_zalloc(to_alloc, KM_SLEEP);
+	out->mfml_size = len;
+
+	return (out);
+}
+
 static void
-mac_flow_destroy_match(mac_flow_match_t *ma)
+mac_flow_match_destroy(mac_flow_match_t *ma)
 {
 	switch (ma->mfm_type) {
 	case MFM_ALL:
 	case MFM_ANY: {
 		mac_flow_match_list_t *list = ma->arg.mfm_list;
+		const size_t to_free =
+		    mac_flow_match_list_size_bytes(list->mfml_size);
 		if (list == NULL)
 			return;
 
-		size_t to_free = offsetof(mac_flow_match_list_t, mfml_size) +
-		    (list->mfml_size * sizeof (mac_flow_match_t));
 		for (size_t i = 0; i < list->mfml_size; i++) {
-			mac_flow_destroy_match(list->mfml_match + i);
+			mac_flow_match_destroy(list->mfml_match + i);
 		}
 		kmem_free(list, to_free);
+		ma->arg.mfm_list = NULL;
 	}
 	default:
 		break;
 	}
+}
+
+void
+mac_flow_match_list_remove(mac_flow_match_t *ma, const size_t i)
+{
+	ASSERT((ma->mfm_type == MFM_ALL) || (ma->mfm_type == MFM_ANY));
+	mac_flow_match_t out = *ma;
+
+	mac_flow_match_list_t *in_list = ma->arg.mfm_list;
+	ASSERT3U(in_list->mfml_size, >, 0);
+	ASSERT3U(i, <, in_list->mfml_size);
+
+	mac_flow_match_t to_clean = *ma;
+
+	switch (in_list->mfml_size) {
+	case 1:
+		ma->mfm_type = MFM_NONE;
+		bzero(&ma->arg, sizeof (ma->arg));
+		break;
+	case 2: {
+		/*
+		 * Extract the remaining match from the list.
+		 */
+		const size_t to_save = (i == 0) ? 1 : 0;
+		*ma = in_list->mfml_match[to_save];
+		break;
+	}
+	default:
+		ma->arg.mfm_list =
+		    mac_flow_match_list_create(in_list->mfml_size - 1);
+		if (i != 0) {
+			bcopy(in_list->mfml_match,
+			    ma->arg.mfm_list->mfml_match,
+			    i * sizeof (mac_flow_match_t));
+		}
+		if ((i + 1) < in_list->mfml_size) {
+			bcopy(in_list->mfml_match + i + 1,
+			    ma->arg.mfm_list->mfml_match + i,
+			    (ma->arg.mfm_list->mfml_size - i) *
+			    sizeof (mac_flow_match_t));
+		}
+		break;
+	}
+	mac_flow_match_destroy(&to_clean);
 }
 
 mac_flow_match_t
@@ -709,10 +765,9 @@ mac_flow_clone_match(const mac_flow_match_t *ma)
 		if (in_list == NULL)
 			return (out);
 
-		size_t to_alloc = offsetof(mac_flow_match_list_t, mfml_size) +
-		    (in_list->mfml_size * sizeof (mac_flow_match_t));
-		out.arg.mfm_list = kmem_zalloc(to_alloc, KM_SLEEP);
-		out.arg.mfm_list->mfml_size = in_list->mfml_size;
+		out.arg.mfm_list =
+		    mac_flow_match_list_create(in_list->mfml_size);
+
 		for (size_t i = 0; i < in_list->mfml_size; i++) {
 			out.arg.mfm_list->mfml_match[i] =
 			    mac_flow_clone_match(in_list->mfml_match + i);
@@ -742,7 +797,7 @@ mac_flow_destroy(flow_entry_t *flent)
 	mutex_destroy(&flent->fe_lock);
 	cv_destroy(&flent->fe_cv);
 	flow_stat_destroy(flent);
-	mac_flow_destroy_match(&flent->fe_match2);
+	mac_flow_match_destroy(&flent->fe_match2);
 	kmem_cache_free(flow_cache, flent);
 }
 

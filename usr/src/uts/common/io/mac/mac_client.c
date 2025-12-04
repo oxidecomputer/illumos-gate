@@ -6173,7 +6173,7 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 
 	/* TODO(ky): hacked together to stop slamming all the branches */
 	const mac_flow_match_t *mfm = &flent->fe_match2;
-	const bool can_elide = arg->needs_subflows &&
+	const bool can_elide = (!arg->needs_subflows) &&
 	    (mfm->mfm_type == MFM_ALL) &&
 	    (mfm->arg.mfm_list->mfml_size > 0) &&
 	    (mfm->arg.mfm_list->mfml_match[0].mfm_type ==
@@ -6201,6 +6201,11 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 	    arg->flent->fe_parent;
 	(*write_into)->fe_mcip = flent->fe_mcip;
 	(*write_into)->fe_match = flent->fe_match;
+
+	/* Remove the now-duplicate TCP/UDP check if detected. */
+	if ((arg->is_tcp && flent_is_tcp) || (arg->is_udp && flent_is_udp)) {
+		mac_flow_match_list_remove(&(*write_into)->fe_match2, 0);
+	}
 
 	/* TODO(ky): copy CPU props, act on CPU props/prio/... */
 	arg->on_child = false;

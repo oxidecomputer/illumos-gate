@@ -714,7 +714,9 @@ extern void	mac_flow_tab_destroy(flow_tab_t *);
 extern void	mac_flow_drop(void *, void *, mblk_t *);
 extern void	flow_stat_destroy(flow_entry_t *);
 
+extern mac_flow_match_list_t *mac_flow_match_list_create(const size_t);
 extern mac_flow_match_t mac_flow_clone_match(const mac_flow_match_t *);
+extern void mac_flow_match_list_remove(mac_flow_match_t *, const size_t);
 
 #ifdef	__cplusplus
 }
