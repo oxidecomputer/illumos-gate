@@ -190,7 +190,7 @@ psp_c2pmbox_cmd_locked(psp_c2p_t *c2p, cpu2psp_mbox_cmd_t cmd,
 	val = PSP_C2PMBOX_SET_CMD_ID(val, cmd);
 	val = PSP_C2PMBOX_CLEAR_READY(val);
 	if ((ret = amdzen_c_smn_write(0, c2p->c2p_regs.c2p_cmd, val)) != 0) {
-		cmn_err(CE_WARN, "?psp: failed to write CPU-to-PSP mailbox "
+		cmn_err(CE_WARN, "psp: failed to write CPU-to-PSP mailbox "
 		    "command reg: %d (0x%x)", ret, val);
 		goto out;
 	}
@@ -503,7 +503,7 @@ psp_bus_ctl(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
 		if (rdip == NULL) {
 			return (DDI_FAILURE);
 		}
-		cmn_err(CE_CONT, "psp: %s@%s, %s%d\n",
+		cmn_err(CE_CONT, "?psp: %s@%s, %s%d\n",
 		    ddi_node_name(rdip), ddi_get_name_addr(rdip),
 		    ddi_driver_name(rdip), ddi_get_instance(rdip));
 		break;
