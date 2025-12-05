@@ -396,6 +396,7 @@ struct mac_soft_ring_set_s {
 	 * easier walking during stats collection or quiescence.
 	 */
 	mac_soft_ring_set_t	*srs_logical_next;
+	mac_soft_ring_set_t	*srs_complete_parent;
 
 	/*
 	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
@@ -463,6 +464,7 @@ struct mac_soft_ring_set_s {
 
 #define	SRST_TX			0x00000100
 #define	SRST_BW_CONTROL		0x00000200
+/* TODO(ky): unused, both here and stlouis? */
 #define	SRST_DIRECT_POLL	0x00000400
 
 #define	SRST_DLS_BYPASS		0x00001000

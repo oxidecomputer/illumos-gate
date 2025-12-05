@@ -2237,6 +2237,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 				    es->srs_logical_next;
 			}
 			es->srs_logical_next = mac_srs;
+			mac_srs->srs_complete_parent = es;
 		}
 
 		srs_rx->sr_poll_cpuid = srs_rx->sr_poll_cpuid_save = -1;

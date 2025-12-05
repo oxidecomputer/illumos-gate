@@ -345,36 +345,32 @@ mac_soft_ring_fire(void *arg)
 static void
 mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 {
-	mblk_t		*mp;
-	void		*arg1;
-	mac_resource_handle_t arg2;
-	timeout_id_t	tid;
-	mac_direct_rx_t	proc;
-	size_t		sz;
-	int		cnt;
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
 
 	ringp->s_ring_run = curthread;
 	ASSERT(mutex_owned(&ringp->s_ring_lock));
 	ASSERT(!(ringp->s_ring_state & S_RING_PROC));
 
-	if ((tid = ringp->s_ring_tid) != NULL)
+	timeout_id_t tid = ringp->s_ring_tid;
+	if (tid != NULL) {
 		ringp->s_ring_tid = NULL;
+	}
 
 	ringp->s_ring_state |= S_RING_PROC;
 
-	proc = ringp->s_ring_rx_func;
-	arg1 = ringp->s_ring_rx_arg1;
-	arg2 = ringp->s_ring_rx_arg2;
+	const mac_direct_rx_t proc = ringp->s_ring_rx_func;
+	void *arg1 = ringp->s_ring_rx_arg1;
+	mac_resource_handle_t arg2 = ringp->s_ring_rx_arg2;
 
 	while ((ringp->s_ring_first != NULL) &&
 	    !(ringp->s_ring_state & S_RING_PAUSE)) {
-		mp = ringp->s_ring_first;
+		mblk_t *mp = ringp->s_ring_first;
+		const int cnt = ringp->s_ring_count;
+		const size_t sz = ringp->s_ring_size;
+
 		ringp->s_ring_first = NULL;
 		ringp->s_ring_last = NULL;
-		cnt = ringp->s_ring_count;
 		ringp->s_ring_count = 0;
-		sz = ringp->s_ring_size;
 		ringp->s_ring_size = 0;
 		mutex_exit(&ringp->s_ring_lock);
 
@@ -398,11 +394,20 @@ mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 		MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
 		mutex_exit(&mac_srs->srs_lock);
 
+		mac_soft_ring_set_t *parent = mac_srs->srs_complete_parent;
+		if (parent != NULL) {
+			mutex_enter(&parent->srs_lock);
+			MAC_UPDATE_SRS_COUNT_LOCKED(parent, cnt);
+			MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
+			mutex_exit(&parent->srs_lock);
+		}
+
 		mutex_enter(&ringp->s_ring_lock);
 	}
 	ringp->s_ring_state &= ~S_RING_PROC;
-	if (ringp->s_ring_state & S_RING_CLIENT_WAIT)
+	if ((ringp->s_ring_state & S_RING_CLIENT_WAIT) != 0) {
 		cv_signal(&ringp->s_ring_client_cv);
+	}
 	ringp->s_ring_run = NULL;
 }
 
@@ -475,6 +480,27 @@ done:
 	srs->srs_soft_ring_condemned_count++;
 	cv_broadcast(&srs->srs_async);
 	mutex_exit(&srs->srs_lock);
+
+	/*
+	 * S_RING_PAUSE takes priority over serving any packets. Thus, there
+	 * is a possibility that we still have mblks on the softring. Free them
+	 * and return credits to the complete SRS if required.
+	 */
+	freemsgchain(ringp->s_ring_first);
+
+	mac_soft_ring_set_t *parent = srs->srs_complete_parent;
+	if (parent != NULL) {
+		const int cnt = ringp->s_ring_count;
+		const size_t sz = ringp->s_ring_size;
+
+		mutex_enter(&parent->srs_lock);
+		MAC_UPDATE_SRS_COUNT_LOCKED(parent, cnt);
+		MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
+		mutex_exit(&parent->srs_lock);
+
+		cmn_err(CE_WARN,
+		    "condemned SR returned %d pkts to parent", cnt);
+	}
 	thread_exit();
 }
 
@@ -581,6 +607,14 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
 	MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
 	mutex_exit(&mac_srs->srs_lock);
+
+	mac_soft_ring_set_t *parent = mac_srs->srs_complete_parent;
+	if (parent != NULL) {
+		mutex_enter(&parent->srs_lock);
+		MAC_UPDATE_SRS_COUNT_LOCKED(parent, cnt);
+		MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
+		mutex_exit(&parent->srs_lock);
+	}
 	return (head);
 }
 

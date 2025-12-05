@@ -2468,15 +2468,17 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 /*
  * TODO(ky): theory statement on what this is doing.
  */
-static inline void
-// static void
-mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
+static inline uint32_t
+// static int
+mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs, flow_tree_pkt_set_t *pkts)
 {
+	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
 	ASSERT3U(ft->ftb_len, >, 0);
 	ASSERT3U(ft->ftb_depth, >, 0);
 	ASSERT3P(ft->ftb_chains, !=, NULL);
 	ASSERT3P(ft->ftb_subtree, !=, NULL);
 
+	uint32_t dropped_pkts = 0;
 	ssize_t depth = 0;
 	bool is_enter = true;
 	const flow_tree_baked_node_t *node = ft->ftb_subtree;
@@ -2601,6 +2603,7 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 			case MFA_TYPE_DROP:
 				/* TODO(ky): right call? flent stats? */
 				freemsgchain(deliver_from->mpl_head);
+				dropped_pkts += deliver_from->mpl_count;
 				deliver_from->mpl_head = NULL;
 				deliver_from->mpl_tail = NULL;
 				deliver_from->mpl_count = 0;
@@ -2619,6 +2622,8 @@ mac_rx_srs_walk_flowtree(const flow_tree_baked_t *ft, flow_tree_pkt_set_t *pkts)
 		node++;
 	}
 	ASSERT3S(depth, ==, -1);
+
+	return (dropped_pkts);
 }
 
 static void
@@ -2882,6 +2887,7 @@ mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 again:
 	ASSERT3P(mac_srs->srs_first, !=, NULL);
 	in_chain = mac_srs->srs_first;
+	const uint32_t initial_count = mac_srs->srs_count;
 	mac_srs->srs_first = NULL;
 	mac_srs->srs_last = NULL;
 	mac_srs->srs_count = 0;
@@ -2926,6 +2932,7 @@ again:
 	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_avail));
 	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_deli));
 	mac_standardise_pkts(mcip, &pktset.ftp_avail, false, in_chain);
+	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
 
 	if (__builtin_expect(is_promisc_on, 0)) {
 		mac_promisc_client_dispatch(mcip, in_chain);
@@ -2939,13 +2946,7 @@ again:
 		tid = NULL;
 	}
 
-	/*
-	 * TODO(ky): is this the best way to move this state from one SRS to
-	 * another? feels like it's in need of a revisit.
-	 */
-	const uint32_t pkts_before = pktset.ftp_avail.mpl_count;
-
-	if (__builtin_expect(needs_sw_check, 0)) {
+	if (needs_sw_check) {
 		/* TODO(ky): refhold needed? It's from the srs... */
 		/* TODO(ky): Almost identical chain pick to walker */
 		flow_entry_t *flent = mac_srs->srs_flent;
@@ -2983,9 +2984,9 @@ again:
 	 */
 
 	/* Generally we *should* have a subtree here, due to DLS bypass */
-	if (__builtin_expect(mac_srs->srs_flowtree.ftb_depth > 0, 1)) {
-		if (__builtin_expect(!mac_srs->srs_flowtree.ftb_needs_bw, 1)) {
-			mac_rx_srs_walk_flowtree(&mac_srs->srs_flowtree,
+	if (mac_srs->srs_flowtree.ftb_depth > 0) {
+		if (!mac_srs->srs_flowtree.ftb_needs_bw) {
+			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
 			/* TODO(ky): not ready */
@@ -2997,13 +2998,14 @@ again:
 
 	/* Combine any unpicked packets with those delegated. */
 	mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
-	const uint32_t pkts_gone = pkts_before - pktset.ftp_avail.mpl_count;
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
 	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
 
 	mutex_enter(&mac_srs->srs_lock);
-	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, pkts_gone);
+	if (dropped_pkts != 0) {
+		MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, dropped_pkts);
+	}
 
 	if (!(mac_srs->srs_state & (SRS_BLANK|SRS_PAUSE)) &&
 	    (mac_srs->srs_first != NULL)) {
@@ -4945,6 +4947,15 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 			MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
 			MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
 			mutex_exit(&mac_srs->srs_lock);
+
+			mac_soft_ring_set_t *parent =
+			     mac_srs->srs_complete_parent;
+			if (parent != NULL) {
+				mutex_enter(&parent->srs_lock);
+				MAC_UPDATE_SRS_COUNT_LOCKED(parent, cnt);
+				MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
+				mutex_exit(&parent->srs_lock);
+			}
 
 			mutex_enter(&ringp->s_ring_lock);
 			ringp->s_ring_run = NULL;
