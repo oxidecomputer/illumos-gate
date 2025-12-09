@@ -30,8 +30,10 @@ extern "C" {
 #endif
 
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/debug.h>
 #include <sys/stream.h>
+#include <sys/strsun.h>
 #include <sys/sunddi.h>
 
 typedef struct {
@@ -40,6 +42,12 @@ typedef struct {
 	uint32_t	mpl_count;
 	size_t		mpl_size;
 } mac_pkt_list_t;
+
+inline size_t
+mp_len(const mblk_t *mp)
+{
+	return ((mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp));
+}
 
 inline bool
 mac_pkt_list_is_empty(const mac_pkt_list_t *list) {

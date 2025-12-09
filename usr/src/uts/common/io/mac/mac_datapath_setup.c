@@ -453,7 +453,8 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 	mac_soft_ring_set_t *logical_srs = mac_srs->srs_logical_next;
 	while (logical_srs != NULL) {
 		flow_entry_t *curr_f = logical_srs->srs_flent;
-		const bool is_fp_leaf = (curr_f == mcip->mci_fastpath_ipv4_tcp) ||
+		const bool is_fp_leaf =
+		    (curr_f == mcip->mci_fastpath_ipv4_tcp) ||
 		    (curr_f == mcip->mci_fastpath_ipv4_udp) ||
 		    (curr_f == mcip->mci_fastpath_ipv6_tcp) ||
 		    (curr_f == mcip->mci_fastpath_ipv6_udp);
@@ -470,8 +471,10 @@ mac_srs_client_poll_enable(mac_client_impl_t *mcip,
 
 		/* TODO(ky): LOCKING?? QUIESCENCE?? */
 		if (add_notify_fn != NULL) {
-			/* TODO(ky): express this as part of the flowspec */
-			/* Want finer-grained control over fanout behaviour */
+			/*
+			 * TODO(ky): express this as part of the flowspec
+			 * Want finer-grained control over fanout behaviour.
+			 */
 			logical_srs->srs_type |= SRST_ALWAYS_HASH_OUT;
 		}
 
@@ -605,7 +608,7 @@ mac_srs_poll_state_change(mac_soft_ring_set_t *mac_srs,
     boolean_t turn_off_poll_capab)
 {
 	boolean_t	need_restart = B_FALSE;
-	mac_srs_rx_t	*srs_rx = &mac_srs->srs_kind_data.rx;
+	mac_srs_rx_t	*srs_rx = &mac_srs->srs_data.rx;
 	mac_ring_t	*ring = srs_rx->sr_ring;
 
 	if (!SRS_QUIESCED(mac_srs)) {
@@ -821,7 +824,7 @@ mac_tx_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp,
     cpupart_t *cpupart)
 {
 	mac_soft_ring_set_t *tx_srs = flent->fe_tx_srs;
-	mac_srs_tx_t *srs_tx = &tx_srs->srs_kind_data.tx;
+	mac_srs_tx_t *srs_tx = &tx_srs->srs_data.tx;
 	mac_cpus_t *srs_cpu = &tx_srs->srs_cpu;
 	mac_soft_ring_t *sringp;
 	mac_ring_t *ring;
@@ -1026,7 +1029,7 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 		/* Do the assignment for the default Rx ring */
 		cpu_cnt = 0;
 		rx_srs = flent->fe_rx_srs[0];
-		ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, ==, NULL);
+		ASSERT3P(rx_srs->srs_data.rx.sr_ring, ==, NULL);
 		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT) {
 			mac_srs_set_fanout_state(rx_srs, SRS_FANOUT_REINIT);
 		}
@@ -1049,7 +1052,7 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 			for (srs_cnt = 1;
 			    srs_cnt < flent->fe_rx_srs_cnt; srs_cnt++) {
 				rx_srs = flent->fe_rx_srs[srs_cnt];
-				ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, !=,
+				ASSERT3P(rx_srs->srs_data.rx.sr_ring, !=,
 				    NULL);
 				if (rx_srs->srs_fanout_state ==
 				    SRS_FANOUT_INIT) {
@@ -1105,7 +1108,7 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 		 * associated with h/w Rx ring.
 		 */
 		rx_srs = flent->fe_rx_srs[0];
-		ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, ==, NULL);
+		ASSERT3P(rx_srs->srs_data.rx.sr_ring, ==, NULL);
 		if (rx_srs->srs_fanout_state == SRS_FANOUT_INIT) {
 			mac_srs_set_fanout_state(rx_srs, SRS_FANOUT_REINIT);
 		}
@@ -1130,7 +1133,7 @@ mac_flow_user_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp)
 			for (srs_cnt = 1;
 			    srs_cnt < flent->fe_rx_srs_cnt; srs_cnt++) {
 				rx_srs = flent->fe_rx_srs[srs_cnt];
-				ASSERT3P(rx_srs->srs_kind_data.rx.sr_ring, !=,
+				ASSERT3P(rx_srs->srs_data.rx.sr_ring, !=,
 				    NULL);
 				if (rx_srs->srs_fanout_state ==
 				    SRS_FANOUT_INIT) {
@@ -1324,7 +1327,7 @@ mac_srs_fanout_list_alloc(mac_soft_ring_set_t *mac_srs)
 		    kmem_zalloc(sizeof (mac_soft_ring_t *) *
 		    MAX_RINGS_PER_GROUP, KM_SLEEP);
 		if (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT) {
-			mac_srs_tx_t *tx = &mac_srs->srs_kind_data.tx;
+			mac_srs_tx_t *tx = &mac_srs->srs_data.tx;
 
 			tx->st_soft_rings = (mac_soft_ring_t **)
 			    kmem_zalloc(sizeof (mac_soft_ring_t *) *
@@ -1371,7 +1374,7 @@ mac_srs_poll_bind(mac_soft_ring_set_t *mac_srs, processorid_t cpuid)
 {
 	cpu_t *cp;
 	boolean_t clear = B_FALSE;
-	mac_srs_rx_t	*srs_rx = &mac_srs->srs_kind_data.rx;
+	mac_srs_rx_t	*srs_rx = &mac_srs->srs_data.rx;
 
 	ASSERT(MUTEX_HELD(&cpu_lock));
 
@@ -1406,7 +1409,7 @@ void
 mac_rx_srs_retarget_intr(mac_soft_ring_set_t *mac_srs, processorid_t cpuid)
 {
 	cpu_t *cp;
-	mac_ring_t *ring = mac_srs->srs_kind_data.rx.sr_ring;
+	mac_ring_t *ring = mac_srs->srs_data.rx.sr_ring;
 	mac_intr_t *mintr = &ring->mr_info.mri_intr;
 	flow_entry_t *flent = mac_srs->srs_flent;
 	boolean_t primary = mac_is_primary_client(mac_srs->srs_mcip);
@@ -1489,7 +1492,7 @@ mac_tx_srs_retarget_intr(mac_soft_ring_set_t *mac_srs)
 			mutex_enter(&cpu_lock);
 		}
 	} else {
-		mac_srs_tx_t *srs_tx = &mac_srs->srs_kind_data.tx;
+		mac_srs_tx_t *srs_tx = &mac_srs->srs_data.tx;
 		cpuid = srs_cpu->mc_tx_intr_cpu[0];
 		cp = cpu_get(cpuid);
 		if (cp == NULL || !cpu_is_online(cp)) {
@@ -1540,9 +1543,9 @@ mac_walk_srs_and_bind(int cpuid)
 		}
 
 		if (!mac_srs_is_tx(mac_srs)) {
-			if (mac_srs->srs_kind_data.rx.sr_poll_cpuid == -1 &&
-			    mac_srs->srs_kind_data.rx.sr_poll_cpuid_save == cpuid) {
-				mac_srs->srs_kind_data.rx.sr_poll_cpuid_save = -1;
+			if (mac_srs->srs_data.rx.sr_poll_cpuid == -1 &&
+			    mac_srs->srs_data.rx.sr_poll_cpuid_save == cpuid) {
+				mac_srs->srs_data.rx.sr_poll_cpuid_save = -1;
 				mac_srs_poll_bind(mac_srs, cpuid);
 			}
 		}
@@ -1577,11 +1580,11 @@ mac_update_srs_priority(mac_soft_ring_set_t *mac_srs, pri_t prival)
 	thread_lock(mac_srs->srs_worker);
 	(void) thread_change_pri(mac_srs->srs_worker, mac_srs->srs_pri, 0);
 	thread_unlock(mac_srs->srs_worker);
-	if (!mac_srs_is_tx(mac_srs) && mac_srs->srs_kind_data.rx.sr_poll_thr != NULL) {
-		thread_lock(mac_srs->srs_kind_data.rx.sr_poll_thr);
-		(void) thread_change_pri(mac_srs->srs_kind_data.rx.sr_poll_thr,
+	if (!mac_srs_is_tx(mac_srs) && mac_srs->srs_data.rx.sr_poll_thr != NULL) {
+		thread_lock(mac_srs->srs_data.rx.sr_poll_thr);
+		(void) thread_change_pri(mac_srs->srs_data.rx.sr_poll_thr,
 		    mac_srs->srs_pri, 0);
-		thread_unlock(mac_srs->srs_kind_data.rx.sr_poll_thr);
+		thread_unlock(mac_srs->srs_data.rx.sr_poll_thr);
 	}
 	if ((ringp = mac_srs->srs_soft_ring_head) == NULL)
 		return;
@@ -1649,7 +1652,7 @@ static void
 mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
 {
 	uint32_t		tx_mode, ring_info = 0;
-	mac_srs_tx_t		*srs_tx = &srs->srs_kind_data.tx;
+	mac_srs_tx_t		*srs_tx = &srs->srs_data.tx;
 	mac_client_impl_t	*mcip = srs->srs_mcip;
 
 	/*
@@ -2188,7 +2191,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 	    kmem_cache_alloc(mac_srs_cache, KM_SLEEP);
 	bzero(mac_srs, sizeof (mac_soft_ring_set_t));
 
-	mac_srs_rx_t *srs_rx = &mac_srs->srs_kind_data.rx;
+	mac_srs_rx_t *srs_rx = &mac_srs->srs_data.rx;
 
 	mutex_enter(&flent->fe_lock);
 
@@ -2341,7 +2344,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 	}
 
 	if (is_tx_srs) {
-		mac_srs_tx_t *srs_tx = &mac_srs->srs_kind_data.tx;
+		mac_srs_tx_t *srs_tx = &mac_srs->srs_data.tx;
 
 		/* Handle everything about Tx SRS and return */
 		mac_srs->srs_drain_func = mac_tx_srs_drain;
@@ -2547,7 +2550,7 @@ mac_rx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		    fanout_type | link_type, mac_rx_deliver, NULL);
 		mutex_enter(&flent->fe_lock);
 		flent->fe_cb_fn =
-		    (flow_fn_t)mac_srs->srs_kind_data.rx.sr_lower_proc;
+		    (flow_fn_t)mac_srs->srs_data.rx.sr_lower_proc;
 		flent->fe_cb_arg1 = (void *)mip;
 		flent->fe_cb_arg2 = (void *)mac_srs;
 		mutex_exit(&flent->fe_lock);
@@ -2709,7 +2712,7 @@ mac_tx_srs_group_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
 	if (tx_srs == NULL)
 		return;
 
-	mac_srs_tx_t *tx = &tx_srs->srs_kind_data.tx;
+	mac_srs_tx_t *tx = &tx_srs->srs_data.tx;
 	switch (link_type) {
 	case SRST_FLOW:
 		/*
@@ -3533,7 +3536,7 @@ mac_srs_fanout_list_free(mac_soft_ring_set_t *mac_srs)
 	ASSERT3P(mac_srs->srs_soft_rings, !=, NULL);
 
 	if (mac_srs_is_tx(mac_srs)) {
-		mac_srs_tx_t *tx = &mac_srs->srs_kind_data.tx;
+		mac_srs_tx_t *tx = &mac_srs->srs_data.tx;
 		kmem_free(mac_srs->srs_soft_rings,
 		    sizeof (mac_soft_ring_t *) * MAX_RINGS_PER_GROUP);
 		if (tx->st_soft_rings != NULL) {
@@ -3562,7 +3565,7 @@ mac_srs_ring_free(mac_soft_ring_set_t *mac_srs)
 		return;
 	}
 
-	ring = mac_srs->srs_kind_data.rx.sr_ring;
+	ring = mac_srs->srs_data.rx.sr_ring;
 
 	if (ring == NULL)
 		return;
@@ -3681,7 +3684,7 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	 * In the case of Rx SRS wait till the poll thread is done.
 	 */
 	if (!mac_srs_is_tx(mac_srs) &&
-	    mac_srs->srs_kind_data.rx.sr_poll_thr != NULL) {
+	    mac_srs->srs_data.rx.sr_poll_thr != NULL) {
 		while (!(mac_srs->srs_state & srs_poll_wait_flag))
 			cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
 
@@ -3729,7 +3732,7 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 static void
 mac_srs_signal_inner(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 {
-	mac_ring_t	*ring = mac_srs->srs_kind_data.rx.sr_ring;
+	mac_ring_t	*ring = mac_srs->srs_data.rx.sr_ring;
 
 	if (srs_flag == SRS_CONDEMNED) {
 		/*
@@ -3762,7 +3765,7 @@ mac_srs_signal_inner(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 void
 mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
 {
-	mac_ring_t	*ring = mac_srs->srs_kind_data.rx.sr_ring;
+	mac_ring_t	*ring = mac_srs->srs_data.rx.sr_ring;
 
 	ASSERT(mac_srs_is_tx(mac_srs) || (ring == NULL) ||
 	    (ring->mr_refcnt == 0));
@@ -3816,7 +3819,7 @@ void
 mac_srs_worker_restart(mac_soft_ring_set_t *mac_srs)
 {
 	const bool	is_tx_srs = mac_srs_is_tx(mac_srs);
-	mac_srs_rx_t	*srs_rx = &mac_srs->srs_kind_data.rx;
+	mac_srs_rx_t	*srs_rx = &mac_srs->srs_data.rx;
 	mac_soft_ring_t	*softring;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
@@ -3858,7 +3861,7 @@ mac_srs_worker_restart(mac_soft_ring_set_t *mac_srs)
 
 		curr->srs_state &=
 		    ~(SRS_QUIESCE_DONE | SRS_QUIESCE | SRS_RESTART);
-		if (!is_tx_srs && curr->srs_kind_data.rx.sr_poll_thr != NULL) {
+		if (!is_tx_srs && curr->srs_data.rx.sr_poll_thr != NULL) {
 			/*
 			 * Signal the poll thread and ask it to restart. Wait till it
 			 * actually restarts and the SRS_POLL_THR_QUIESCED flag gets
@@ -3900,7 +3903,7 @@ mac_srs_worker_unbind(mac_soft_ring_set_t *mac_srs)
 static void
 mac_srs_poll_unbind(mac_soft_ring_set_t *mac_srs)
 {
-	mac_srs_rx_t	*srs_rx = &mac_srs->srs_kind_data.rx;
+	mac_srs_rx_t	*srs_rx = &mac_srs->srs_data.rx;
 	ASSERT(!mac_srs_is_tx(mac_srs));
 	mutex_enter(&mac_srs->srs_lock);
 	if (srs_rx->sr_poll_thr == NULL ||
@@ -3959,8 +3962,8 @@ mac_walk_srs_and_unbind(int cpuid)
 		}
 
 		if (!mac_srs_is_tx(mac_srs)) {
-			if (mac_srs->srs_kind_data.rx.sr_poll_cpuid == cpuid) {
-				mac_srs->srs_kind_data.rx.sr_poll_cpuid_save = cpuid;
+			if (mac_srs->srs_data.rx.sr_poll_cpuid == cpuid) {
+				mac_srs->srs_data.rx.sr_poll_cpuid_save = cpuid;
 				mac_srs_poll_unbind(mac_srs);
 			}
 		}
@@ -4078,7 +4081,7 @@ mac_tx_srs_del_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 	 * be removed.
 	 */
 	if (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT) {
-		mac_srs_tx_t *tx = &mac_srs->srs_kind_data.tx;
+		mac_srs_tx_t *tx = &mac_srs->srs_data.tx;
 
 		ASSERT3P(tx->st_soft_rings[tx_ring->mr_index], ==,
 		    remove_sring);
@@ -4103,7 +4106,7 @@ mac_tx_srs_setup(mac_client_impl_t *mcip, flow_entry_t *flent)
 	uint32_t		soft_ring_type;
 	mac_group_t		*grp = NULL;
 	mac_ring_t		*ring;
-	mac_srs_tx_t		*tx = &tx_srs->srs_kind_data.tx;
+	mac_srs_tx_t		*tx = &tx_srs->srs_data.tx;
 	boolean_t		is_aggr;
 	uint_t			ring_info = 0;
 

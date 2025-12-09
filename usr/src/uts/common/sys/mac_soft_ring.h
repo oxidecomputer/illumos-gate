@@ -42,6 +42,7 @@ extern "C" {
 #include <sys/dlpi.h>
 #include <sys/mac_impl.h>
 #include <sys/mac_stat.h>
+#include <sys/atomic.h>
 
 #define	S_RING_NAMELEN 64
 
@@ -407,7 +408,7 @@ struct mac_soft_ring_set_s {
 	union {
 		mac_srs_rx_t	rx; /* !(srs_type & SRST_TX) */
 		mac_srs_tx_t	tx; /* srs_type & SRST_TX */
-	} srs_kind_data;
+	} srs_data;
 
 	kstat_t		*srs_ksp;
 };
@@ -577,8 +578,8 @@ extern struct dls_kstats dls_kstat;
 	    (SRS_POLLING_CAPAB|SRS_POLLING)) {				\
 		(mac_srs)->srs_state &= ~SRS_POLLING;			\
 		(void) mac_hwring_enable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_kind_data.rx.sr_ring);		\
-		(mac_srs)->srs_kind_data.rx.sr_poll_off++;		\
+		    (mac_srs)->srs_data.rx.sr_ring);		\
+		(mac_srs)->srs_data.rx.sr_poll_off++;		\
 	}								\
 }
 
@@ -618,7 +619,7 @@ extern struct dls_kstats dls_kstat;
  * mode if nothing is found.
  */
 #define	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt) {		        \
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_kind_data.rx;		\
+	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_data.rx;		\
 	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
 									\
 	srs_rx->sr_poll_pkt_cnt -= cnt;					\
@@ -632,6 +633,56 @@ extern struct dls_kstats dls_kstat;
 	}								\
 }
 
+/*
+ * Decrement the cumulative packet count in SRS and its
+ * soft rings. If the srs_poll_pkt_cnt goes below lowat, then check
+ * if if the interface was left in a polling mode and no one
+ * is really processing the queue (to get the interface out
+ * of poll mode). If no one is processing the queue, then
+ * acquire the PROC and signal the poll thread to check the
+ * interface for packets and get the interface back to interrupt
+ * mode if nothing is found.
+ */
+inline void
+mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
+	const bool is_logical = mac_srs_is_logical(mac_srs);
+
+	/*
+	 * The poll packet count on a logical SRS serves no real function, we
+	 * want to feed this information back to control the poll thread of the
+	 * complete SRS.
+	 */
+	mac_soft_ring_set_t *true_target = (is_logical) ?
+	    mac_srs->srs_complete_parent : mac_srs;
+	ASSERT3P(true_target, !=, NULL);
+
+	mac_srs_rx_t *srs_rx = &true_target->srs_data.rx;
+
+	/* TODO(ky): No atomic sub? */
+	const uint32_t point_value = atomic_add_32_nv(
+	    &srs_rx->sr_poll_pkt_cnt, -cnt);
+	if (point_value <= srs_rx->sr_poll_thres) {
+		mutex_enter(&true_target->srs_lock);
+		/*
+		 * Re-verify count/flags.
+		 */
+		if ((srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_poll_thres) &&
+		    ((true_target->srs_state &
+		    (SRS_POLLING|SRS_PROC|SRS_GET_PKTS)) == SRS_POLLING))
+		{
+			true_target->srs_state |= (SRS_PROC|SRS_GET_PKTS);
+			cv_signal(&true_target->srs_cv);
+			srs_rx->sr_below_hiwat++;
+		}
+		mutex_exit(&true_target->srs_lock);
+	}
+}
+
+/*
+ * TODO(ky): needing to lock the SRS to check if it has suddenly become
+ * bandwidth-addled hurts. Eliding this for now but there *must* be a way to
+ * subvert this. Maybe the 'xxx-venu' comment is right.
+ */
 /*
  * The following two macros are used to update the inbound packet and byte.
  * count. The packet and byte count reflect the packets and bytes that are

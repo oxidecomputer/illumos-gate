@@ -497,7 +497,7 @@ static uint64_t
 i_mac_tx_swlane_stat_get(void *handle, uint_t stat)
 {
 	mac_soft_ring_set_t *mac_srs = (mac_soft_ring_set_t *)handle;
-	mac_tx_stats_t *mac_tx_stat = &mac_srs->srs_kind_data.tx.st_stat;
+	mac_tx_stats_t *mac_tx_stat = &mac_srs->srs_data.tx.st_stat;
 
 	switch (stat) {
 	case MAC_STAT_OBYTES:
@@ -550,7 +550,7 @@ static uint64_t
 i_mac_rx_swlane_stat_get(void *handle, uint_t stat)
 {
 	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)handle;
-	mac_rx_stats_t		*mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+	mac_rx_stats_t		*mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
 	switch (stat) {
 	case MAC_STAT_IPACKETS:
@@ -609,7 +609,7 @@ static uint64_t
 i_mac_rx_hwlane_stat_get(void *handle, uint_t stat)
 {
 	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)handle;
-	mac_rx_stats_t		*mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+	mac_rx_stats_t		*mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
 	switch (stat) {
 	case MAC_STAT_IPACKETS:
@@ -1070,7 +1070,7 @@ mac_srs_stat_create(mac_soft_ring_set_t *mac_srs)
 		return;
 
 	if (mac_srs_is_tx(mac_srs)) {
-		mac_srs_tx_t	*srs_tx = &mac_srs->srs_kind_data.tx;
+		mac_srs_tx_t	*srs_tx = &mac_srs->srs_data.tx;
 		mac_ring_t	*ring = srs_tx->st_arg2;
 
 		if (ring != NULL) {
@@ -1083,7 +1083,7 @@ mac_srs_stat_create(mac_soft_ring_set_t *mac_srs)
 		i_mac_tx_swlane_stat_create(mac_srs, flent->fe_flow_name,
 		    statname);
 	} else {
-		mac_ring_t	*ring = mac_srs->srs_kind_data.rx.sr_ring;
+		mac_ring_t	*ring = mac_srs->srs_data.rx.sr_ring;
 
 		if (ring == NULL) {
 			(void) snprintf(statname, sizeof (statname),
@@ -1137,7 +1137,7 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 		 */
 		int		index;
 		mac_soft_ring_t	*softring;
-		mac_ring_t	*ring_rx = mac_srs->srs_kind_data.rx.sr_ring;
+		mac_ring_t	*ring_rx = mac_srs->srs_data.rx.sr_ring;
 
 		for (index = 0, softring = mac_srs->srs_soft_ring_head;
 		    softring != NULL;
@@ -1190,7 +1190,7 @@ mac_srs_stat_delete(mac_soft_ring_set_t *mac_srs)
 		 */
 		mac_client_impl_t	*mcip = mac_srs->srs_mcip;
 		mac_misc_stats_t	*mac_misc_stat = &mcip->mci_misc_stat;
-		mac_rx_stats_t		*mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+		mac_rx_stats_t		*mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
 		i_mac_add_stats(&mac_misc_stat->mms_defunctrxlanestats,
 		    mac_rx_stat, &mac_misc_stat->mms_defunctrxlanestats,
@@ -1312,7 +1312,7 @@ mac_tx_srs_stat_recreate(mac_soft_ring_set_t *tx_srs, boolean_t add_stats)
 {
 	mac_client_impl_t	*mcip = tx_srs->srs_mcip;
 	mac_misc_stats_t	*mac_misc_stat = &mcip->mci_misc_stat;
-	mac_tx_stats_t		*mac_tx_stat = &tx_srs->srs_kind_data.tx.st_stat;
+	mac_tx_stats_t		*mac_tx_stat = &tx_srs->srs_data.tx.st_stat;
 
 	if (add_stats) {
 		/* Add the stats to cumulative stats */

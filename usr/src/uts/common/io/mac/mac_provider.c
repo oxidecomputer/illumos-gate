@@ -809,7 +809,7 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 			 * on this ring are hardware classified and
 			 * share the same MAC header info.
 			 */
-			mac_srs->srs_kind_data.rx.sr_lower_proc(mh,
+			mac_srs->srs_data.rx.sr_lower_proc(mh,
 			    (mac_resource_handle_t)mac_srs, mp_chain, B_FALSE);
 			MR_REFRELE(mr);
 			return;
@@ -1119,7 +1119,7 @@ mac_ring_intr_retarget(mac_group_t *group, mac_ring_t *ring)
 		if (ring->mr_type == MAC_RING_TYPE_RX) {
 			for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 				mac_rx_srs = flent->fe_rx_srs[i];
-				if (mac_rx_srs->srs_kind_data.rx.sr_ring != ring)
+				if (mac_rx_srs->srs_data.rx.sr_ring != ring)
 					continue;
 				srs_cpu = &mac_rx_srs->srs_cpu;
 				mutex_enter(&cpu_lock);

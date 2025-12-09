@@ -86,6 +86,7 @@
 #include <inet/ipsecesp.h>
 #include <inet/ipsecah.h>
 
+#include <sys/mac_datapath_impl.h>
 #include <sys/mac_impl.h>
 #include <sys/mac_client_impl.h>
 #include <sys/mac_soft_ring.h>
@@ -202,7 +203,7 @@ mac_soft_ring_create(int id, clock_t wait, uint32_t type,
 		    (mac_tx_soft_ring_hiwat > mac_tx_soft_ring_max_q_cnt) ?
 		    mac_tx_soft_ring_max_q_cnt : mac_tx_soft_ring_hiwat;
 		if (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT) {
-			mac_srs_tx_t *tx = &mac_srs->srs_kind_data.tx;
+			mac_srs_tx_t *tx = &mac_srs->srs_data.tx;
 
 			ASSERT(tx->st_soft_rings[
 			    ((mac_ring_t *)x_arg2)->mr_index] == NULL);
@@ -389,18 +390,11 @@ mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 		 * counters only when the packet is processed by both
 		 * the SRS and the soft ring.
 		 */
-		mutex_enter(&mac_srs->srs_lock);
-		MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
-		MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
-		mutex_exit(&mac_srs->srs_lock);
-
-		mac_soft_ring_set_t *parent = mac_srs->srs_complete_parent;
-		if (parent != NULL) {
-			mutex_enter(&parent->srs_lock);
-			MAC_UPDATE_SRS_COUNT_LOCKED(parent, cnt);
-			MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
-			mutex_exit(&parent->srs_lock);
-		}
+		// mutex_enter(&mac_srs->srs_lock);
+		// MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
+		mac_update_srs_count(mac_srs, cnt);
+		// MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
+		// mutex_exit(&mac_srs->srs_lock);
 
 		mutex_enter(&ringp->s_ring_lock);
 	}
@@ -483,24 +477,24 @@ done:
 
 	/*
 	 * S_RING_PAUSE takes priority over serving any packets. Thus, there
-	 * is a possibility that we still have mblks on the softring. Free them
-	 * and return credits to the complete SRS if required.
+	 * is a faint possibility that we still have mblks on the softring. Free
+	 * them and return credits to the complete SRS if required.
 	 */
 	freemsgchain(ringp->s_ring_first);
 
-	mac_soft_ring_set_t *parent = srs->srs_complete_parent;
-	if (parent != NULL) {
-		const int cnt = ringp->s_ring_count;
-		const size_t sz = ringp->s_ring_size;
+	/* TODO(ky): rethink? */
 
-		mutex_enter(&parent->srs_lock);
-		MAC_UPDATE_SRS_COUNT_LOCKED(parent, cnt);
-		MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
-		mutex_exit(&parent->srs_lock);
+	// const int cnt = ringp->s_ring_count;
+	// const size_t sz = ringp->s_ring_size;
 
-		cmn_err(CE_WARN,
-		    "condemned SR returned %d pkts to parent", cnt);
-	}
+	// // mac_update_srs_count(parent, cnt);
+
+	// mac_soft_ring_set_t *parent = srs->srs_complete_parent;
+	// if (parent != NULL) {
+	// 	// mutex_enter(&parent->srs_lock);
+	// 	MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
+	// 	// mutex_exit(&parent->srs_lock);
+	// }
 	thread_exit();
 }
 
@@ -581,7 +575,7 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 		ringp->s_ring_size = 0;
 	} else {
 		while (mp && sz <= bytes_to_pickup) {
-			sz += msgdsize(mp);
+			sz += mp_len(mp);
 			cnt++;
 			tail = mp;
 			mp = mp->b_next;
@@ -603,18 +597,11 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 	 * Update the shared count and size counters so
 	 * that SRS has a accurate idea of queued packets.
 	 */
-	mutex_enter(&mac_srs->srs_lock);
-	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
-	MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
-	mutex_exit(&mac_srs->srs_lock);
-
-	mac_soft_ring_set_t *parent = mac_srs->srs_complete_parent;
-	if (parent != NULL) {
-		mutex_enter(&parent->srs_lock);
-		MAC_UPDATE_SRS_COUNT_LOCKED(parent, cnt);
-		MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
-		mutex_exit(&parent->srs_lock);
-	}
+	mac_update_srs_count(mac_srs, cnt);
+	// mutex_enter(&mac_srs->srs_lock);
+	// MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
+	// MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
+	// mutex_exit(&mac_srs->srs_lock);
 	return (head);
 }
 

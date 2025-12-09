@@ -339,9 +339,9 @@ mac_flow_dcmd_output(uintptr_t addr, uint_t flags, uint_t args)
 		for (i = 0; i < fe.fe_rx_srs_cnt; i++) {
 			mac_srs = (mac_soft_ring_set_t *)(fe.fe_rx_srs[i]);
 			if (mdb_vread(&mac_rx_stat, sizeof (mac_rx_stats_t),
-			    (uintptr_t)&mac_srs->srs_kind_data.rx.sr_stat) == -1) {
+			    (uintptr_t)&mac_srs->srs_data.rx.sr_stat) == -1) {
 				mdb_warn("failed to read mac_rx_stats_t at %p",
-				    &mac_srs->srs_kind_data.rx.sr_stat);
+				    &mac_srs->srs_data.rx.sr_stat);
 				return (DCMD_ERR);
 			}
 
@@ -356,9 +356,9 @@ mac_flow_dcmd_output(uintptr_t addr, uint_t flags, uint_t args)
 		mac_srs = (mac_soft_ring_set_t *)(fe.fe_tx_srs);
 		if (mac_srs != NULL) {
 			if (mdb_vread(&mac_tx_stat, sizeof (mac_tx_stats_t),
-			    (uintptr_t)&mac_srs->srs_kind_data.tx.st_stat) == -1) {
+			    (uintptr_t)&mac_srs->srs_data.tx.st_stat) == -1) {
 				mdb_warn("failed to read max_tx_stats_t at %p",
-				    &mac_srs->srs_kind_data.tx.st_stat);
+				    &mac_srs->srs_data.tx.st_stat);
 				return (DCMD_ERR);
 			}
 
@@ -635,7 +635,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 
 		mdb_printf("%?p %-16s %-4s "
 		    "%08x %08x %8d %8d %3d\n",
-		    addr, mci.mci_name, mac_srs_txmode2str(srs.srs_kind_data.tx.st_mode),
+		    addr, mci.mci_name, mac_srs_txmode2str(srs.srs_data.tx.st_mode),
 		    srs.srs_state, srs.srs_type, srs.srs_count, srs.srs_size,
 		    srs.srs_soft_ring_count);
 		break;
@@ -733,7 +733,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		 * mac_srs_tx_t.
 		 */
 		if (srs.srs_soft_ring_count == 0) {
-			m_ringp = srs.srs_kind_data.tx.st_arg2;
+			m_ringp = srs.srs_data.tx.st_arg2;
 			if (m_ringp != NULL) {
 				(void) mdb_vread(&m_ring, sizeof (m_ring),
 				    (uintptr_t)m_ringp);
@@ -788,7 +788,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 
 		mdb_printf("%?p %-12s ", addr, mci.mci_name);
 
-		m_ringp = srs.srs_kind_data.rx.sr_ring;
+		m_ringp = srs.srs_data.rx.sr_ring;
 		if (m_ringp != NULL) {
 			(void) mdb_vread(&m_ring, sizeof (m_ring),
 			    (uintptr_t)m_ringp);
@@ -845,7 +845,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		break;
 	}
 	case MAC_SRS_RXSTAT: {
-		mac_rx_stats_t *mac_rx_stat = &srs.srs_kind_data.rx.sr_stat;
+		mac_rx_stats_t *mac_rx_stat = &srs.srs_data.rx.sr_stat;
 
 		if (DCMD_HDRSPEC(flags)) {
 			mdb_printf("%?s %-16s %8s %8s "
@@ -869,7 +869,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		break;
 	}
 	case MAC_SRS_TXSTAT: {
-		mac_tx_stats_t *mac_tx_stat = &srs.srs_kind_data.tx.st_stat;
+		mac_tx_stats_t *mac_tx_stat = &srs.srs_data.tx.st_stat;
 		mac_soft_ring_t *s_ringp, s_ring;
 		boolean_t	first = B_TRUE;
 
@@ -924,7 +924,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		}
 		mdb_printf("%?p %-20s %?p %?p "
 		    "%-3s ",
-		    addr, mci.mci_name, srs.srs_flent, srs.srs_kind_data.rx.sr_ring, /* TODO(ky): correct? */
+		    addr, mci.mci_name, srs.srs_flent, srs.srs_data.rx.sr_ring, /* TODO(ky): correct? */
 		    (srs.srs_type & SRST_TX ? "TX" : "RX"));
 		break;
 	}

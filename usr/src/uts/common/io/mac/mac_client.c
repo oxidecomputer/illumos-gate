@@ -626,7 +626,7 @@ mac_client_stat_get(mac_client_handle_t mch, uint_t stat)
 	uint64_t val = 0;
 
 	mac_srs = (mac_soft_ring_set_t *)(flent->fe_tx_srs);
-	mac_tx_stat = &mac_srs->srs_kind_data.tx.st_stat;
+	mac_tx_stat = &mac_srs->srs_data.tx.st_stat;
 	old_rx_stat = &mcip->mci_misc_stat.mms_defunctrxlanestats;
 	old_tx_stat = &mcip->mci_misc_stat.mms_defuncttxlanestats;
 
@@ -673,7 +673,7 @@ mac_client_stat_get(mac_client_handle_t mch, uint_t stat)
 	case MAC_STAT_IPACKETS:
 		for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 			mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
-			mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+			mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 			val += mac_rx_stat->mrs_intrcnt +
 			    mac_rx_stat->mrs_pollcnt + mac_rx_stat->mrs_lclcnt;
 		}
@@ -683,7 +683,7 @@ mac_client_stat_get(mac_client_handle_t mch, uint_t stat)
 	case MAC_STAT_RBYTES:
 		for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 			mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
-			mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+			mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 			val += mac_rx_stat->mrs_intrbytes +
 			    mac_rx_stat->mrs_pollbytes +
 			    mac_rx_stat->mrs_lclbytes;
@@ -694,7 +694,7 @@ mac_client_stat_get(mac_client_handle_t mch, uint_t stat)
 	case MAC_STAT_IERRORS:
 		for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 			mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
-			mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+			mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 			val += mac_rx_stat->mrs_ierrors;
 		}
 		val += old_rx_stat->mrs_ierrors;
@@ -3829,7 +3829,7 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		goto done;
 	}
 
-	srs_tx = &srs->srs_kind_data.tx;
+	srs_tx = &srs->srs_data.tx;
 	if (srs_tx->st_mode == SRS_TX_DEFAULT &&
 	    (srs->srs_state & SRS_ENQUEUED) == 0 &&
 	    mip->mi_nactiveclients == 1 &&
@@ -3939,7 +3939,7 @@ mac_tx_is_flow_blocked(mac_client_handle_t mch, mac_tx_cookie_t cookie)
 	 * the multiple Tx ring flow control case. For all other
 	 * case, SRS (srs_state) will store the condition.
 	 */
-	mac_srs_tx_t *srs_tx = &mac_srs->srs_kind_data.tx;
+	mac_srs_tx_t *srs_tx = &mac_srs->srs_data.tx;
 	if (srs_tx->st_mode == SRS_TX_FANOUT ||
 	    srs_tx->st_mode == SRS_TX_AGGR) {
 		if (cookie != 0) {

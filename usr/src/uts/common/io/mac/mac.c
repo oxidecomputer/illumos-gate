@@ -1552,7 +1552,7 @@ mac_hwrings_rx_process(void *arg, mac_resource_handle_t srs,
     mblk_t *mp_chain, boolean_t loopback)
 {
 	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)srs;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_kind_data.rx;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 	mac_direct_rx_t		proc;
 	void			*arg1;
 	mac_resource_handle_t	arg2;
@@ -1797,7 +1797,7 @@ mac_hwring_setup(mac_ring_handle_t hwrh, mac_resource_handle_t prh,
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		ASSERT(!(mac_srs->srs_type & SRST_TX));
 		mac_srs->srs_mrh = prh;
-		mac_srs->srs_kind_data.rx.sr_lower_proc =
+		mac_srs->srs_data.rx.sr_lower_proc =
 		    mac_hwrings_rx_process;
 	}
 }
@@ -1814,7 +1814,7 @@ mac_hwring_teardown(mac_ring_handle_t hwrh)
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		mac_srs = hw_ring->mr_srs;
 		ASSERT(!(mac_srs->srs_type & SRST_TX));
-		mac_srs->srs_kind_data.rx.sr_lower_proc =
+		mac_srs->srs_data.rx.sr_lower_proc =
 		    mac_rx_srs_process;
 		mac_srs->srs_mrh = NULL;
 	}
@@ -2274,8 +2274,8 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 
 	mac_srs_client_poll_quiesce(srs, srs_quiesce_flag);
 
-	if (srs->srs_kind_data.rx.sr_ring != NULL) {
-		mac_rx_ring_quiesce(srs->srs_kind_data.rx.sr_ring, mr_flag);
+	if (srs->srs_data.rx.sr_ring != NULL) {
+		mac_rx_ring_quiesce(srs->srs_data.rx.sr_ring, mr_flag);
 	} else {
 		/*
 		 * SRS is driven by software classification. In case
@@ -2376,7 +2376,7 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 	}
 
 	/* Finally clear the flags to let the packets in */
-	mr = srs->srs_kind_data.rx.sr_ring;
+	mr = srs->srs_data.rx.sr_ring;
 	if (mr != NULL) {
 		MAC_RING_UNMARK(mr, MR_QUIESCE);
 		/* In case the ring was stopped, safely restart it */
@@ -5041,7 +5041,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 			flent = mcip->mci_flent;
 			is_aggr = (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT);
 			mac_srs = MCIP_TX_SRS(mcip);
-			tx = &mac_srs->srs_kind_data.tx;
+			tx = &mac_srs->srs_data.tx;
 			mac_tx_client_quiesce((mac_client_handle_t)mcip);
 			/*
 			 * If we are  growing from 1 to multiple rings.
@@ -5185,7 +5185,7 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 			ASSERT3P(mcip, !=, NULL);
 			ASSERT(mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT);
 			mac_srs = MCIP_TX_SRS(mcip);
-			srs_tx = &mac_srs->srs_kind_data.tx;
+			srs_tx = &mac_srs->srs_data.tx;
 			ASSERT(srs_tx->st_mode == SRS_TX_AGGR ||
 			    srs_tx->st_mode == SRS_TX_BW_AGGR);
 			/*
@@ -5214,7 +5214,7 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 		while (mgcp != NULL) {
 			mcip = mgcp->mgc_client;
 			mac_srs = MCIP_TX_SRS(mcip);
-			tx = &mac_srs->srs_kind_data.tx;
+			tx = &mac_srs->srs_data.tx;
 			mac_tx_client_quiesce((mac_client_handle_t)mcip);
 			/*
 			 * If we are here when removing rings from the
@@ -5997,7 +5997,7 @@ mac_write_flow_stats(flow_entry_t *flent)
 	nstat->ns_name = flent->fe_flow_name;
 	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 		mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
-		mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+		mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
 		nstat->ns_ibytes += mac_rx_stat->mrs_intrbytes +
 		    mac_rx_stat->mrs_pollbytes + mac_rx_stat->mrs_lclbytes;
@@ -6008,7 +6008,7 @@ mac_write_flow_stats(flow_entry_t *flent)
 
 	mac_srs = (mac_soft_ring_set_t *)(flent->fe_tx_srs);
 	if (mac_srs != NULL) {
-		mac_tx_stat = &mac_srs->srs_kind_data.tx.st_stat;
+		mac_tx_stat = &mac_srs->srs_data.tx.st_stat;
 
 		nstat->ns_obytes = mac_tx_stat->mts_obytes;
 		nstat->ns_opackets = mac_tx_stat->mts_opackets;
@@ -6084,7 +6084,7 @@ mac_write_link_stats(mac_client_impl_t *mcip)
 	if (flent != NULL)  {
 		for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 			mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
-			mac_rx_stat = &mac_srs->srs_kind_data.rx.sr_stat;
+			mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
 			nstat->ns_ibytes += mac_rx_stat->mrs_intrbytes +
 			    mac_rx_stat->mrs_pollbytes +
@@ -6097,7 +6097,7 @@ mac_write_link_stats(mac_client_impl_t *mcip)
 
 	mac_srs = (mac_soft_ring_set_t *)(mcip->mci_flent->fe_tx_srs);
 	if (mac_srs != NULL) {
-		mac_tx_stat = &mac_srs->srs_kind_data.tx.st_stat;
+		mac_tx_stat = &mac_srs->srs_data.tx.st_stat;
 
 		nstat->ns_obytes = mac_tx_stat->mts_obytes;
 		nstat->ns_opackets = mac_tx_stat->mts_opackets;
@@ -7802,8 +7802,8 @@ mac_release_tx_group(mac_client_impl_t *mcip, mac_group_t *grp)
 				mac_tx_srs_del_ring(srs, ring);
 			}
 		} else {
-			ASSERT3P(srs->srs_kind_data.tx.st_arg2, !=, NULL);
-			srs->srs_kind_data.tx.st_arg2 = NULL;
+			ASSERT3P(srs->srs_data.tx.st_arg2, !=, NULL);
+			srs->srs_data.tx.st_arg2 = NULL;
 			mac_srs_stat_delete(srs);
 		}
 	}
@@ -7832,7 +7832,7 @@ mac_tx_dismantle_soft_rings(mac_group_t *fgrp, flow_entry_t *flent)
 	mac_ring_t		*ring;
 
 	tx_srs = flent->fe_tx_srs;
-	tx = &tx_srs->srs_kind_data.tx;
+	tx = &tx_srs->srs_data.tx;
 
 	/* Single ring case we haven't created any soft rings */
 	if (tx->st_mode == SRS_TX_BW || tx->st_mode == SRS_TX_SERIALIZE ||
