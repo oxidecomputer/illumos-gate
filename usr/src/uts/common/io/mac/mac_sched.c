@@ -2079,8 +2079,8 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
-static inline void
-// static void
+// static inline void
+static void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
 {
 	if (!mac_pkt_list_is_empty(list)) {
@@ -2297,13 +2297,11 @@ retry:
 	return (flent->fe_match(ft, flent, &s));
 }
 
-static bool mac_pkt_is_flow_match_recurse(flow_entry_t *,
-    const mac_flow_match_t *, mblk_t*, bool);
-
-static inline bool
+// static inline bool
 // static bool
-mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
-    mblk_t* mp, const bool is_head, const bool is_tx)
+static bool
+mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
+    mblk_t* mp, const bool is_tx)
 {
 	ASSERT3P(flent, !=, NULL);
 	ASSERT3P(mp, !=, NULL);
@@ -2400,7 +2398,7 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 		ASSERT3P(list, !=, NULL);
 		for (size_t i = 0; i < list->mfml_size; i++) {
 			const mac_flow_match_t *el = &list->mfml_match[i];
-			if (!mac_pkt_is_flow_match_recurse(flent, el, mp,
+			if (!mac_pkt_is_flow_match(flent, el, mp,
 			    is_tx)) {
 				return (false);
 			}
@@ -2412,7 +2410,7 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 		ASSERT3P(list, !=, NULL);
 		for (size_t i = 0; i < list->mfml_size; i++) {
 			const mac_flow_match_t *el = &list->mfml_match[i];
-			if (mac_pkt_is_flow_match_recurse(flent, match, mp,
+			if (mac_pkt_is_flow_match(flent, match, mp,
 			    is_tx)) {
 				return (true);
 			}
@@ -2424,26 +2422,19 @@ mac_pkt_is_flow_match_inner(flow_entry_t *flent, const mac_flow_match_t *match,
 	}
 }
 
-static bool
-mac_pkt_is_flow_match_recurse(flow_entry_t *flent, const mac_flow_match_t *match,
-    mblk_t* mp, const bool is_tx)
-{
-	return (mac_pkt_is_flow_match_inner(flent, match, mp, false, is_tx));
-}
-
-static inline bool
+// static inline bool
 // static bool
-mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
-    mblk_t* mp, const bool is_tx)
-{
-	return (mac_pkt_is_flow_match_inner(flent, match, mp, true, is_tx));
-}
+// mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
+//     mblk_t* mp, const bool is_tx)
+// {
+// 	return (mac_pkt_is_flow_match_inner(flent, match, mp, is_tx));
+// }
 
 /*
  * TODO(ky): theory statement on what this is doing.
  */
-static inline uint32_t
-// static int
+// static inline uint32_t
+static int
 mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs, flow_tree_pkt_set_t *pkts)
 {
 	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
@@ -2903,7 +2894,7 @@ again:
 	mac_standardise_pkts(mcip, &pktset.ftp_avail, false, in_chain);
 	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
 
-	if (is_promisc_on) {
+	if (unlikely(is_promisc_on)) {
 		mac_promisc_client_dispatch(mcip, in_chain);
 	}
 	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
@@ -2915,7 +2906,8 @@ again:
 		tid = NULL;
 	}
 
-	if (needs_sw_check) {
+	if (unlikely(needs_sw_check)) {
+		DTRACE_PROBE1(mac__needs__swcheck, mac_soft_ring_t, mac_srs);
 		/* TODO(ky): need to place VID check in during client setup, too */
 		/* TODO(ky): refhold needed? It's from the srs... */
 		/* TODO(ky): Almost identical chain pick to walker */
@@ -2930,7 +2922,7 @@ again:
 			const bool is_match = mac_pkt_is_flow_match(
 			    flent, &flent->fe_match2,
 			    curr, false);
-			if (!is_match) {
+			if (unlikely(!is_match)) {
 				*to_curr = curr->b_next;
 				curr->b_next = NULL;
 				if (from->mpl_tail == curr) {
@@ -2954,8 +2946,8 @@ again:
 	 */
 
 	/* Generally we *should* have a subtree here, due to DLS bypass */
-	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		if (!mac_srs->srs_flowtree.ftb_needs_bw) {
+	if (likely(mac_srs->srs_flowtree.ftb_depth > 0)) {
+		if (likely(!mac_srs->srs_flowtree.ftb_needs_bw)) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {

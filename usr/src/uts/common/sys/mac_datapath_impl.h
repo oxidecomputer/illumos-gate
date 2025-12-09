@@ -36,6 +36,9 @@ extern "C" {
 #include <sys/strsun.h>
 #include <sys/sunddi.h>
 
+#define	likely(x)	__builtin_expect((x), 1)
+#define	unlikely(x)	__builtin_expect((x), 0)
+
 typedef struct {
 	mblk_t		*mpl_head;
 	mblk_t		*mpl_tail;
