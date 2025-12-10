@@ -1069,12 +1069,7 @@ extern void xcall_help(void);
 extern int xcall_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 static const mdb_dcmd_t dcmds[] = {
-	{ "apob", "?[-g group] [-t type]", "find APOB entries", apob_dcmd,
-	    apob_dcmd_help },
-	{ "apob_entry", ":[-r|-x]", "display an APOB entry", apob_entry_dcmd,
-	    apob_entry_dcmd_help },
-	{ "apob_event", ":", "decode the APOB event log", apob_event_dcmd,
-	    apob_event_dcmd_help },
+	APOB_DCMDS,
 	{ "fabric", "[-cnv]", "summarise the fabric", fabric_dcmd,
 	    fabric_dcmd_help },
 	{ "ioms", "[-n num] [-h iohubnum] [-N nbionum] [-i iohcnum] [-b bus]",
@@ -1100,7 +1095,6 @@ static const mdb_dcmd_t dcmds[] = {
 	{ "mfntopfn", ":", "convert hypervisor machine page to physical page",
 	    mfntopfn_dcmd },
 	{ "memseg_list", ":", "show memseg list", memseg_list },
-	{ "pmuerr", ":", "decode APOB PMU Training error data", pmuerr_dcmd },
 	{ "scalehrtime", ":[-a|-r]", "scale an unscaled high-res time",
 	    scalehrtime_dcmd, scalehrtime_help },
 	{ "x86_featureset", ":", "dump the x86_featureset vector",
@@ -1131,7 +1125,7 @@ static const mdb_dcmd_t dcmds[] = {
 };
 
 static const mdb_walker_t walkers[] = {
-	{ "apob", "walk the APOB", apob_walk_init, apob_walk_step },
+	APOB_WALKERS,
 	{ "ttrace", "walks trap trace buffers in reverse chronological order",
 		ttrace_walk_init, ttrace_walk_step, ttrace_walk_fini },
 	{ "mutex_owner", "walks the owner of a mutex",
@@ -1150,13 +1144,16 @@ static const mdb_modinfo_t modinfo = { MDB_API_VERSION, dcmds, walkers };
 const mdb_modinfo_t *
 _mdb_init(void)
 {
+	x86_chiprev_t chiprev;
 #ifdef _KMDB
 	if (!df_props_init()) {
 		mdb_warn("failed to initialize df properties\n");
 		return (NULL);
 	}
 #endif
-	apob_props_init();
+	if (target_chiprev(&chiprev))
+		apob_set_target(_X86_CHIPREV_FAMILY(chiprev));
+
 	return (&modinfo);
 }
 

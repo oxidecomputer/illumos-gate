@@ -1642,7 +1642,7 @@ mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
 			srs->srs_drain_func = mac_rx_srs_drain_bw;
 		}
 	}
-done:
+
 	mutex_exit(&srs->srs_bw->mac_bw_lock);
 	mutex_exit(&srs->srs_lock);
 }
@@ -1707,7 +1707,7 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
 			}
 		}
 	}
-done:
+
 	srs_tx->st_func = mac_tx_get_func(srs_tx->st_mode);
 	mutex_exit(&srs->srs_bw->mac_bw_lock);
 	mutex_exit(&srs->srs_lock);

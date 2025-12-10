@@ -552,8 +552,8 @@ psp_einj_req(psp_einj_t *pe, psp_einj_req_t *einj)
 	ret = psp_einj_ras_cmd_direct(pe, PSP_RAS_EINJ_EXECUTE_OPERATION,
 	    &status);
 	if (ret != 0 || status != 0) {
-		dev_err(pe->pe_dip, CE_NOTE, "?failed to execute EINJ: %d "
-		    "(status = %u)\n", ret, status);
+		dev_err(pe->pe_dip, CE_WARN, "failed to execute EINJ: %d "
+		    "(status = %u)", ret, status);
 		if (ret == 0) {
 			switch (status) {
 			case EINJ_STATUS_INVALID:
