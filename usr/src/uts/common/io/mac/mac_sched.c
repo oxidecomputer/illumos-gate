@@ -1595,8 +1595,6 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	 * softrings, and are reliant on the hash matching any SQueue bindings.
 	 */
 	while (head != NULL) {
-		mac_ether_offload_info_t meoi = { 0 };
-		mac_header_info_t non_ether_mhi;
 		uint_t indx = 0;
 
 		/* TODO(ky): unlikely()? */
@@ -1609,22 +1607,26 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		mblk_t *mp = head;
 		head = head->b_next;
 		mp->b_next = NULL;
-		const size_t sz1 = mp_len(mp);
-		mac_ether_offload_info(mp, &meoi, NULL);
 
-		const size_t total_hdr_len = meoi.meoi_l2hlen +
-		    meoi.meoi_l3hlen + meoi.meoi_l4hlen;
+		const ssize_t l2hlen = meoi_fast_l2hlen(mp);
+		const ssize_t l3hlen = meoi_fast_l3hlen(mp);
+		const ssize_t l4hlen = meoi_fast_l4hlen(mp);
+		ASSERT3S(l2hlen, >=, 0);
+		const size_t total_hdr_len = l2hlen +
+		    MAX(0, l3hlen) + MAX(0, l4hlen);
 
 		/*
 		 * The stack should have ensured by this point that all packets
 		 * are MEOI'd and have L3 correctly aligned.
 		 */
 		ASSERT3U(total_hdr_len, <=, MBLKL(mp));
-		if ((meoi.meoi_flags & MEOI_L3INFO_SET) == 0) {
+		const int32_t l3proto = meoi_fast_l3proto(mp);
+		const int16_t l4proto = meoi_fast_l4proto(mp);
+		if (l4proto < 0) {
 			/* Go out on softring 0, can't even do addr fanout. */
 			goto enqueue;
 		}
-		ASSERT(OK_32PTR(mp->b_rptr + meoi.meoi_l2hlen));
+		ASSERT(OK_32PTR(mp->b_rptr + l2hlen));
 
 		/*
 		 * Direct access to the L3/L4 headers will fall safely within
@@ -1632,13 +1634,13 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 */
 		uint_t hash = 0;
 		uint32_t ports = 0;
-		const ipha_t *ipha = (ipha_t *)(mp->b_rptr + meoi.meoi_l2hlen);
-		const ip6_t *ip6 = (ip6_t *)(mp->b_rptr + meoi.meoi_l2hlen);
+		const ipha_t *ipha = (ipha_t *)(mp->b_rptr + l2hlen);
+		const ip6_t *ip6 = (ip6_t *)(mp->b_rptr + l2hlen);
 
-		if ((meoi.meoi_flags & MEOI_L4INFO_SET) == 0) {
+		if (l4hlen < 0) {
 			goto compute_index;
 		}
-		switch (meoi.meoi_l4proto) {
+		switch (l4proto) {
 		case IPPROTO_TCP:
 		case IPPROTO_UDP:
 		case IPPROTO_SCTP:
@@ -1649,25 +1651,26 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			 * confident that the "ports" portion of the
 			 * hashing payload is covered too.
 			 */
-			ASSERT3U(meoi.meoi_l4hlen, >=, PORTS_SIZE);
-			ports = *(uint32_t *)(mp->b_rptr + meoi.meoi_l2hlen +
-			    meoi.meoi_l3hlen);
+			ASSERT3U(l4hlen, >=, PORTS_SIZE);
+			ports = *(uint32_t *)(mp->b_rptr + l2hlen + l3hlen);
 			DTRACE_PROBE3(srs__fanout__proto,
-			    uint8_t, meoi.meoi_l4proto,
+			    uint8_t, l4proto,
 			    mblk_t *, mp,
 			    mac_soft_ring_set_t *, mac_srs);
 			break;
 		default:
 			DTRACE_PROBE3(srs__fanout__unhandled__proto,
-			    uint8_t, meoi.meoi_l4proto,
+			    uint8_t, l4proto,
 			    mblk_t *, mp,
 			    mac_soft_ring_set_t *, mac_srs);
 			break;
 		}
 
-		if (meoi.meoi_l3proto == ETHERTYPE_IP) {
+		ASSERT3S(l3proto, >=, 0);
+
+		if (l3proto == ETHERTYPE_IP) {
 			hash = HASH_ADDR(ipha->ipha_src, ipha->ipha_dst, ports);
-		} else if (meoi.meoi_l3proto == ETHERTYPE_IPV6) {
+		} else if (l3proto == ETHERTYPE_IPV6) {
 			hash = HASH_ADDR6(ip6->ip6_src, ip6->ip6_dst, ports);
 		}
 compute_index:
@@ -1682,7 +1685,7 @@ compute_index:
 		indx = COMPUTE_INDEX(hash, fanout_cnt);
 enqueue:
 		ENQUEUE_MP(headmp[indx], tailmp[indx],
-		    cnt[indx], bw_ctl, sz[indx], sz1, mp);
+		    cnt[indx], bw_ctl, sz[indx], mp_len(mp), mp);
 	}
 
 	for (int i = 0; i < fanout_cnt; i++) {
@@ -2308,20 +2311,20 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 
 	/* I hope for all out sakes the MEOI is, if valid, set by this point */
 	/* TODO(ky): What is the actual cost here? Do we need dedicated methods on/for the dblk state? */
-	mac_ether_offload_info_t meoi = { 0 };
-	mac_ether_offload_info(mp, &meoi, NULL);
+	// mac_ether_offload_info_t meoi = { 0 };
+	// mac_ether_offload_info(mp, &meoi, NULL);
 
-	DTRACE_PROBE3(fm__inner__meoi, mblk_t*, mp,
-	    mac_ether_offload_info_t *, &meoi, mac_flow_match_t *, match);
+	// DTRACE_PROBE3(fm__inner__meoi, mblk_t*, mp,
+	//     mac_ether_offload_info_t *, &meoi, mac_flow_match_t *, match);
 
 	if ((match->mfm_cond & MFC_NOFRAG) != 0) {
-		if ((meoi.meoi_flags &
-		    (MEOI_L3_FRAG_MORE | MEOI_L3_FRAG_OFFSET)) != 0) {
+		if (meoi_fast_fragmented(mp)) {
 			return (false);
 		}
 	}
 
 	/* Convert any local/remote filters to src/dst, based on direction */
+	/* TODO(ky): do ahead-of-time? */
 	mac_flow_match_type_t act_as = match->mfm_type;
 	switch (act_as) {
 	case MFM_L3_REMOTE:
@@ -2343,18 +2346,14 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	/* Perform the actual match here */
 	switch (act_as) {
 	case MFM_SAP:
-		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
-		    meoi.meoi_l3proto == match->arg.mfm_sap);
+		return (meoi_fast_l3proto(mp) == match->arg.mfm_sap);
 	case MFM_IPPROTO:
-		return ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
-		    meoi.meoi_l4proto == match->arg.mfm_ipproto);
+		return (meoi_fast_l4proto(mp) == match->arg.mfm_ipproto);
 	case MFM_L2_DST:
-		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
-		    meoi.meoi_l2hlen >= sizeof (struct ether_header) &&
+		return (meoi_fast_l2hlen(mp) >= sizeof (struct ether_header) &&
 		    bcmp(mp->b_rptr, match->arg.mfm_l2addr, ETHERADDRL));
 	case MFM_L2_SRC:
-		return ((meoi.meoi_flags & MEOI_L2INFO_SET) != 0 &&
-		    meoi.meoi_l2hlen >= sizeof (struct ether_header) &&
+		return (meoi_fast_l2hlen(mp) >= sizeof (struct ether_header) &&
 		    bcmp(mp->b_rptr + ETHERADDRL, match->arg.mfm_l2addr,
 		    ETHERADDRL));
 	// case MFM_L3_DST:
@@ -2374,17 +2373,20 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	// 	default:
 	// 		return (false);
 	// 	}
-	case MFM_L4_SRC:
-		return ((meoi.meoi_flags & MEOI_FULL) == MEOI_FULL &&
-		    meoi.meoi_l4hlen >= PORTS_SIZE &&
-		    *((uint16_t *)(mp->b_rptr + meoi.meoi_l2hlen +
-		    meoi.meoi_l3hlen)) == match->arg.mfm_l4addr);
-	case MFM_L4_DST:
-		return ((meoi.meoi_flags & MEOI_FULL) == MEOI_FULL &&
-		    meoi.meoi_l4hlen >= PORTS_SIZE &&
-		    *((uint16_t *)(mp->b_rptr + meoi.meoi_l2hlen +
-		    meoi.meoi_l3hlen + sizeof (uint16_t))) ==
+	case MFM_L4_SRC: {
+		const ssize_t l4off = meoi_fast_l4off(mp);
+		return (l4off >= 0 && meoi_fast_l4hlen(mp) >= PORTS_SIZE &&
+		    *((uint16_t *)(mp->b_rptr + l4off)) ==
 		    match->arg.mfm_l4addr);
+	}
+	/* FALLTHROUGH (not really) */
+	case MFM_L4_DST: {
+		const ssize_t l4off = meoi_fast_l4off(mp);
+		return (l4off >= 0 && meoi_fast_l4hlen(mp) >= PORTS_SIZE &&
+		    *((uint16_t *)(mp->b_rptr + l4off + sizeof (uint16_t))) ==
+		    match->arg.mfm_l4addr);
+	}
+	/* FALLTHROUGH (not really) */
 
 	case MFM_ARBITRARY: {
 		const mac_flow_match_arbitrary_t *arb =

@@ -35,6 +35,7 @@ extern "C" {
 #include <sys/stream.h>
 #include <sys/strsun.h>
 #include <sys/sunddi.h>
+#include <sys/mac_provider.h>
 
 #define	likely(x)	__builtin_expect((x), 1)
 #define	unlikely(x)	__builtin_expect((x), 0)
@@ -84,6 +85,75 @@ mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst) {
 	src->mpl_tail = NULL;
 	src->mpl_count = 0;
 	src->mpl_size = 0;
+}
+
+/*
+ * Methods for reading parts of outermost MEOI facts in the domain covered by
+ * `mac_standardise_pkts`.
+ */
+static inline ssize_t
+meoi_fast_l2hlen(const mblk_t* mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	return ((db->t_tuntype == 0) ?
+	    (((db->p_flags & MEOI_L2INFO_SET) != 0) ? db->p_l2hlen: -1) :
+	    (((db->t_flags & MEOI_L2INFO_SET) != 0) ? db->t_l2hlen: -1));
+}
+
+static inline int32_t
+meoi_fast_l3proto(const mblk_t* mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	return ((db->t_tuntype == 0) ?
+	    (((db->p_flags & MEOI_L2INFO_SET) != 0) ? db->p_l3proto: -1) :
+	    (((db->t_flags & MEOI_L2INFO_SET) != 0) ? db->t_l3proto: -1));
+}
+
+static inline ssize_t
+meoi_fast_l3hlen(const mblk_t* mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	return ((db->t_tuntype == 0) ?
+	    (((db->p_flags & MEOI_L3INFO_SET) != 0) ? db->p_l3hlen: -1) :
+	    (((db->t_flags & MEOI_L3INFO_SET) != 0) ? db->t_l3hlen: -1));
+}
+
+static inline int16_t
+meoi_fast_l4proto(const mblk_t* mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	return ((db->t_tuntype == 0) ?
+	    (((db->p_flags & MEOI_L3INFO_SET) != 0) ? db->p_l4proto: -1) :
+	    (((db->t_flags & MEOI_L3INFO_SET) != 0) ? IPPROTO_UDP: -1));
+}
+
+static inline ssize_t
+meoi_fast_l4hlen(const mblk_t* mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	return ((db->t_tuntype == 0) ?
+	    (((db->p_flags & MEOI_L4INFO_SET) != 0) ? db->p_l4proto: -1) :
+	    (((db->t_flags & MEOI_L4INFO_SET) != 0) ? 8: -1));
+}
+
+static inline ssize_t
+meoi_fast_l4off(const mblk_t* mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	const mac_ether_offload_flags_t flags =
+	    (MEOI_L2INFO_SET | MEOI_L3INFO_SET);
+	return ((db->t_tuntype == 0) ?
+	    (((db->p_flags & flags) == flags) ?
+	    db->p_l2hlen + db->p_l3hlen: -1) :
+	    (((db->t_flags & flags) == flags) ? db->t_l2hlen +
+	    db->t_l3hlen: -1));
+}
+
+static inline bool
+meoi_fast_fragmented(const mblk_t* mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	return ((((db->t_tuntype == 0) ? db->p_flags : db->t_flags) & 0x30) != 0);
 }
 
 #ifdef	__cplusplus

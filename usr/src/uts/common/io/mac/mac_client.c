@@ -6045,19 +6045,16 @@ mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
 {
 	mac_ether_offload_info_t meoi = {0};
 	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
-		/* Given `mac_standardise_packets`, this should be a cheap retrieval */
-		meoi.meoi_flags = 0;
-		mac_ether_offload_info(curr, &meoi, NULL);
+		const ssize_t l2hlen = meoi_fast_l2hlen(curr);
 
 		/*
 		 * MAC now enforces, on our behalf, that we have header
 		 * contiguity through all the layers it understands.
 		 * (And, a refcount of 1 in the leading segment).
 		 */
-		if (meoi.meoi_flags & MEOI_L2INFO_SET) {
-			ASSERT3P(curr->b_rptr + meoi.meoi_l2hlen, <,
-			    curr->b_wptr);
-			curr->b_rptr += meoi.meoi_l2hlen;
+		if (l2hlen > 0) {
+			ASSERT3P(curr->b_rptr + l2hlen, <, curr->b_wptr);
+			curr->b_rptr += l2hlen;
 		}
 
 		/* IP cannot yet be trusted not to recycle MEOI. */
