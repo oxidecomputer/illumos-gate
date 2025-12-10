@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -199,6 +199,13 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		/*
+		 * We've run into issues with drives at Gen5 and so we limit
+		 * this and all other U.2 slots to Gen4.
+		 */
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N1 (B)",
@@ -218,6 +225,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N2 (C)",
@@ -237,6 +247,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N3 (D)",
@@ -256,6 +269,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N4 (E)",
@@ -275,6 +291,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N5 (F)",
@@ -294,6 +313,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N6 (G)",
@@ -313,6 +335,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N7 (H)",
@@ -332,6 +357,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N8 (I)",
@@ -351,6 +379,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "U.2 N9 (J)",
@@ -370,6 +401,9 @@ const oxio_engine_t oxio_cosmo[] = { {
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT | OXIO_PCIE_CAP_ATTNLED |
 		    OXIO_PCIE_CAP_EMILS
+	},
+	.oe_tuning = {
+		.ot_hw_limit = OXIO_SPEED_GEN_4
 	}
 }, {
 	.oe_name = "Backplane (Switch)",
