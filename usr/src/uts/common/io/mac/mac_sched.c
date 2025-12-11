@@ -1247,6 +1247,8 @@ boolean_t mac_latency_optimize = B_TRUE;
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
 		    (mac_srs)->srs_data.rx.sr_ring);			\
 		(mac_srs)->srs_data.rx.sr_poll_on++;			\
+		DTRACE_PROBE2(mac__poll__on, mac_soft_ring_set_t *,	\
+		    (mac_srs), bool, false);				\
 	}								\
 }
 
@@ -1259,6 +1261,8 @@ boolean_t mac_latency_optimize = B_TRUE;
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
 		    (mac_srs)->srs_data.rx.sr_ring);			\
 		(mac_srs)->srs_data.rx.sr_worker_poll_on++;		\
+		DTRACE_PROBE2(mac__poll__on, mac_soft_ring_set_t *,	\
+		    (mac_srs), bool, true);				\
 	}								\
 }
 
@@ -1281,6 +1285,8 @@ boolean_t mac_latency_optimize = B_TRUE;
 		(SRS_WORKER|SRS_POLLING_CAPAB)) {			\
 		(mac_srs)->srs_state |= SRS_GET_PKTS;			\
 		cv_signal(&(mac_srs)->srs_cv);				\
+		DTRACE_PROBE1(mac__poll__req, mac_soft_ring_set_t *,	\
+		    (mac_srs));						\
 	} else {							\
 		srs_rx->sr_poll_thr_busy++;				\
 	}								\
@@ -1719,11 +1725,8 @@ mac_rx_srs_poll_ring(mac_soft_ring_set_t *mac_srs)
 	kmutex_t		*lock = &mac_srs->srs_lock;
 	kcondvar_t		*async = &mac_srs->srs_cv;
 	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
-	mblk_t			*head, *tail, *mp;
 	callb_cpr_t		cprinfo;
 	ssize_t			bytes_to_pickup;
-	size_t			sz;
-	uint_t			count;
 	mac_client_impl_t	*smcip;
 
 	CALLB_CPR_INIT(&cprinfo, lock, callb_generic_cpr, "mac_srs_poll");
@@ -1790,21 +1793,26 @@ check_again:
 
 		/* Poll the underlying Hardware */
 		mutex_exit(lock);
-		head = MAC_HWRING_POLL(srs_rx->sr_ring, (int)bytes_to_pickup);
+		mblk_t *head = MAC_HWRING_POLL(srs_rx->sr_ring,
+		    (int)bytes_to_pickup);
 		mutex_enter(lock);
 
 		ASSERT3U(mac_srs->srs_state & SRS_POLL_THR_OWNER, ==,
 		    SRS_POLL_THR_OWNER);
 
-		mp = tail = head;
-		count = 0;
-		sz = 0;
+		mblk_t *tail = head;
+		mblk_t *mp = head;
+		uint32_t count = 0;
+		size_t sz = 0;
 		while (mp != NULL) {
 			tail = mp;
 			sz += mp_len(mp);
 			mp = mp->b_next;
 			count++;
 		}
+
+		DTRACE_PROBE3(mac__poll__get, mac_soft_ring_set_t *, mac_srs,
+		    uint32_t, count, size_t, sz);
 
 		if (head != NULL) {
 			tail->b_next = NULL;

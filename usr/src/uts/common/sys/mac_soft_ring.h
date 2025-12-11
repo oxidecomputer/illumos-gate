@@ -578,8 +578,10 @@ extern struct dls_kstats dls_kstat;
 	    (SRS_POLLING_CAPAB|SRS_POLLING)) {				\
 		(mac_srs)->srs_state &= ~SRS_POLLING;			\
 		(void) mac_hwring_enable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_data.rx.sr_ring);		\
-		(mac_srs)->srs_data.rx.sr_poll_off++;		\
+		    (mac_srs)->srs_data.rx.sr_ring);			\
+		(mac_srs)->srs_data.rx.sr_poll_off++;			\
+		DTRACE_PROBE1(mac__poll__off, mac_soft_ring_set_t *,	\
+			(mac_srs));					\
 	}								\
 }
 
