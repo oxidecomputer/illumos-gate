@@ -4344,15 +4344,17 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 	if (max_depth > UINT16_MAX || n_nodes > UINT16_MAX) {
 		err = E2BIG;
 		goto bail;
-	} else if (n_nodes == 0) {
-		ASSERT3U(max_depth, ==, 0);
-		into->ftb_chains = NULL;
-		into->ftb_subtree = NULL;
-		return (0);
 	}
 
 	into->ftb_depth = (uint16_t)max_depth;
 	into->ftb_len = (uint16_t)n_nodes;
+	if (n_nodes == 0) {
+		ASSERT3U(max_depth, ==, 0);
+		into->ftb_chains = NULL;
+		into->ftb_subtree = NULL;
+		into->ftb_bw_refund = NULL;
+		return (0);
+	}
 
 	const size_t chain_len = max_depth * sizeof (flow_tree_pkt_set_t);
 	const size_t bw_refund_len = max_depth * sizeof (flow_tree_bw_refund_t);
@@ -4489,4 +4491,6 @@ mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
 		kmem_free(tree->ftb_subtree, 2 * tree->ftb_len *
 		    sizeof (flow_tree_baked_node_t));
 	}
+
+	bzero(tree, sizeof (*tree));
 }
