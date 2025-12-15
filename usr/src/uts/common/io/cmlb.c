@@ -1192,6 +1192,13 @@ cmlb_ioctl(cmlb_handle_t cmlbhandle, dev_t dev, int cmd, intptr_t arg,
 				return (EOVERFLOW);
 			}
 			break;
+		case DKIOCFREE:
+			/*
+			 * To improve performance of DKIOCFREE, skip
+			 * force-validation of geometry.
+			 */
+			mutex_exit(CMLB_MUTEX(cl));
+			return (ENOTTY);
 		default:
 			(void) cmlb_validate_geometry(cl, 1, CMLB_SILENT,
 			    tg_cookie);
