@@ -6015,34 +6015,40 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 	/* TODO(ky): Reconsider meaning of FLOW_USER? Less draconian? */
 	/* TODO(ky): Namespace collisions here between initial bringup and extra clients */
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4", mcip->mci_name);
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4",
+	    mcip->mci_name, mcip);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
 	ipv4->fe_match2.mfm_type = MFM_SAP;
 	ipv4->fe_match2.arg.mfm_sap = ETHERTYPE_IP;
 	ipv4->fe_match2.mfm_cond = MFC_NOFRAG;
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4_tcp", mcip->mci_name);
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4_tcp",
+	    mcip->mci_name, mcip);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_tcp));
 	ipv4_tcp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv4_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v4_udp", mcip->mci_name);
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4_udp",
+	    mcip->mci_name, mcip);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_udp));
 	ipv4_udp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv4_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6", mcip->mci_name);
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6",
+	    mcip->mci_name, mcip);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6));
 	ipv6->fe_match2.mfm_type = MFM_SAP;
 	ipv6->fe_match2.arg.mfm_sap = ETHERTYPE_IPV6;
 	ipv6->fe_match2.mfm_cond = MFC_NOFRAG;
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6_tcp", mcip->mci_name);
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6_tcp",
+	    mcip->mci_name, mcip);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_tcp));
 	ipv6_tcp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv6_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_v6_udp", mcip->mci_name);
+	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6_udp",
+	    mcip->mci_name, mcip);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_udp));
 	ipv6_udp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv6_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;

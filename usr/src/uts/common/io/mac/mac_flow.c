@@ -385,8 +385,8 @@ mac_flow_rem_subflow(flow_entry_t *flent)
 			mcip->mci_subflow_tab = NULL;
 		}
 	} else {
-		mac_flow_wait(flent, FLOW_DRIVER_UPCALL);
 		mac_link_flow_clean((mac_client_handle_t)mcip, flent);
+		mac_flow_wait(flent, FLOW_DRIVER_UPCALL);
 	}
 	mac_fastpath_enable(mh);
 }
@@ -1037,20 +1037,20 @@ mac_flow_cleanup(flow_entry_t *flent)
 	if ((flent->fe_type & FLOW_USER) == 0) {
 		ASSERT((flent->fe_mbg == NULL && flent->fe_mcip != NULL) ||
 		    (flent->fe_mbg != NULL && flent->fe_mcip == NULL));
-		ASSERT(flent->fe_refcnt == 0);
+		ASSERT3U(flent->fe_refcnt, ==, 0);
 	} else {
-		ASSERT(flent->fe_refcnt == 1);
+		ASSERT3U(flent->fe_refcnt, ==, 1);
 	}
 
 	if (flent->fe_mbg != NULL) {
-		ASSERT(flent->fe_tx_srs == NULL);
+		ASSERT3P(flent->fe_tx_srs, ==, NULL);
 		/* This is a multicast or broadcast flow entry */
 		mac_bcast_grp_free(flent->fe_mbg);
 		flent->fe_mbg = NULL;
 	}
 
 	if (flent->fe_tx_srs != NULL) {
-		ASSERT(flent->fe_mbg == NULL);
+		ASSERT3P(flent->fe_mbg, ==, NULL);
 		mac_srs_free(flent->fe_tx_srs);
 		flent->fe_tx_srs = NULL;
 	}
@@ -1354,8 +1354,8 @@ static int
 mac_link_release_flows_cb(flow_entry_t *flent, void *arg)
 {
 	FLOW_MARK(flent, FE_UF_NO_DATAPATH);
-	mac_flow_wait(flent, FLOW_DRIVER_UPCALL);
 	mac_link_flow_clean(arg, flent);
+	mac_flow_wait(flent, FLOW_DRIVER_UPCALL);
 	return (0);
 }
 
