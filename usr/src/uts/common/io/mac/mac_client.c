@@ -1452,9 +1452,6 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	flent->fe_action.fa_direct_rx_fn = mac_rx_deliver;
 	flent->fe_action.fa_direct_rx_arg = (void *)mcip;
 
-	/* Attach fastpath flows as used by DLS bypass */
-	mac_create_fastpath_flows(mcip);
-
 	/*
 	 * Place initial creation reference on the flow. This reference
 	 * is released in the corresponding delete action viz.
@@ -1462,6 +1459,19 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	 * to go away. The wait happens in mac_flow_wait.
 	 */
 	FLOW_REFHOLD(flent);
+
+	/*
+	 * Create the root of this flow tree, then plumb in thw fastpath.
+	 * Quiesce logic in a few places (mac_flow_wait) wants to treat unicast
+	 * and broadcast flows identically, so we apply a refrele here to treat
+	 * the flow tree root node as part of the same hold as the client.
+	 */
+	mcip->mci_flow_tree = mac_flow_tree_node_create(flent);
+	VERIFY3P(mcip->mci_flow_tree, !=, NULL);
+	FLOW_REFRELE(flent);
+
+	/* Attach fastpath flows as used by DLS bypass */
+	mac_create_fastpath_flows(mcip);
 
 	/*
 	 * Do this ahead of the mac_bcast_add() below so that the mi_nclients
@@ -1508,7 +1518,7 @@ mac_client_close(mac_client_handle_t mch, uint16_t flags)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
-	flow_entry_t		*flent;
+	flow_entry_t		*flent = mcip->mci_flent;
 
 	i_mac_perim_enter(mip);
 
@@ -1527,20 +1537,28 @@ mac_client_close(mac_client_handle_t mch, uint16_t flags)
 		return;
 	}
 
-	/* If we have only setup up minimal datapth setup, tear it down */
+	/* If we have only setup up a minimal datapath, tear it down */
 	if (mcip->mci_state_flags & MCIS_NO_UNICAST_ADDR) {
 		mac_client_datapath_teardown((mac_client_handle_t)mcip, NULL,
 		    mcip->mci_flent);
 		mcip->mci_state_flags &= ~MCIS_NO_UNICAST_ADDR;
 	}
 
-	/* remove the fastpath flows */
+	/*
+	 * Remove the dedicated fastpath flows and teardown the associated
+	 * datapath.
+	 *
+	 * Re-add the flent hold for tree teardown to proceed. Destruction of
+	 * the fastpath flows themselves requires that the tree (which has
+	 * refholds on said flows) is gone.
+	 */
+	FLOW_REFHOLD(flent);
+	mac_flow_tree_destroy(mcip->mci_flow_tree);
 	mac_teardown_fastpath_flows(mcip);
 
 	/*
 	 * Remove the flent associated with the MAC client
 	 */
-	flent = mcip->mci_flent;
 	mcip->mci_flent = NULL;
 	FLOW_FINAL_REFRELE(flent);
 
@@ -4111,33 +4129,44 @@ mac_notify_remove(mac_notify_handle_t mnh, boolean_t wait)
  */
 
 void
-mac_resource_set_common(mac_client_handle_t mch, mac_resource_add_t add,
-    mac_resource_remove_t remove, mac_resource_quiesce_t quiesce,
-    mac_resource_restart_t restart, mac_resource_bind_t bind,
-    void *arg)
+mac_resource_set_common(mac_client_handle_t mch, uint16_t sap,
+    mac_resource_add_t add, mac_resource_remove_t remove,
+    mac_resource_quiesce_t quiesce, mac_resource_restart_t restart,
+    mac_resource_bind_t bind, void *arg)
 {
 	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
 
-	mcip->mci_resource_add = add;
-	mcip->mci_resource_remove = remove;
-	mcip->mci_resource_quiesce = quiesce;
-	mcip->mci_resource_restart = restart;
-	mcip->mci_resource_bind = bind;
-	mcip->mci_resource_arg = arg;
+	flow_entry_t *affected_flent = (sap == ETHERTYPE_IP) ?
+	    mcip->mci_fastpath_ipv4_tcp : ((sap == ETHERTYPE_IPV6) ?
+	    mcip->mci_fastpath_ipv6_tcp : NULL);
+	if (affected_flent != NULL) {
+		flow_action_t *ac = &affected_flent->fe_action;
+		ac->fa_flags &= ~MFA_FLAGS_RESOURCE;
+		if (add != NULL) {
+			ac->fa_flags |= MFA_FLAGS_RESOURCE;
+			ac->fa_resource_add = add;
+			ac->fa_resource_remove = remove;
+			ac->fa_resource_quiesce = quiesce;
+			ac->fa_resource_restart = restart;
+			ac->fa_resource_bind = bind;
+			ac->fa_resource_arg = arg;
+		}
+	}
 
 	mac_update_fastpath_flows(mcip);
 }
 
 void
-mac_resource_set(mac_client_handle_t mch, mac_resource_add_t add, void *arg)
+mac_resource_set(mac_client_handle_t mch, uint16_t sap, mac_resource_add_t add,
+    void *arg)
 {
 	/* update the 'resource_add' callback */
-	mac_resource_set_common(mch, add, NULL, NULL, NULL, NULL, arg);
+	mac_resource_set_common(mch, sap, add, NULL, NULL, NULL, NULL, arg);
 }
 
 /*
  * Sets up the client resources and enable the polling interface over all the
- * SRS's and the soft rings of the client
+ * SRS's and the soft rings of the client for a given SAP.
  */
 void
 mac_client_poll_enable(mac_client_handle_t mch)
@@ -4148,38 +4177,59 @@ mac_client_poll_enable(mac_client_handle_t mch)
 	int			i;
 
 	flent = mcip->mci_flent;
-	ASSERT(flent != NULL);
+	ASSERT3P(flent, !=, NULL);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	mcip->mci_state_flags |= MCIS_CLIENT_POLL_CAPABLE;
-	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
-		mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
-		ASSERT(mac_srs->srs_mcip == mcip);
-		mac_srs_client_poll_enable(mcip, mac_srs);
-	}
+
+	mac_client_quiesce(mcip, true);
+	mac_client_rebuild_flowtrees(mcip, SRST_CLIENT_POLL_ENABLED |
+	    SRST_DLS_BYPASS);
+	mac_client_restart(mcip);
 }
 
 /*
  * Tears down the client resources and disable the polling interface over all
- * the SRS's and the soft rings of the client
+ * the SRS's and the soft rings of the client for a given SAP.
  */
 void
-mac_client_poll_disable(mac_client_handle_t mch)
+mac_client_poll_disable(mac_client_handle_t mch, const uint16_t sap)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
-	mac_soft_ring_set_t	*mac_srs;
-	flow_entry_t		*flent;
-	int			i;
+	flow_entry_t		*flent = mcip->mci_flent;
 
-	flent = mcip->mci_flent;
-	ASSERT(flent != NULL);
+	ASSERT3P(flent, !=, NULL);
+	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
-	mcip->mci_state_flags &= ~MCIS_CLIENT_POLL_CAPABLE;
-	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
-		mac_srs = (mac_soft_ring_set_t *)flent->fe_rx_srs[i];
-		ASSERT(mac_srs->srs_mcip == mcip);
-		mac_srs_client_poll_disable(mcip, mac_srs);
+	/*
+	 * Flow tree teardown must happen with the OLD settings of
+	 * `mac_resource` applied, such that resource removal/quiescence
+	 * can inform the correct callbacks etc.
+	 */
+	mac_client_quiesce(mcip, true);
+	mac_client_destroy_flowtrees(mcip);
+
+	if (sap == ETHERTYPE_IPV6) {
+		mcip->mci_v6_fastpath.mdrx = NULL;
+		mcip->mci_v6_fastpath.mdrx_arg = NULL;
+	} else if (sap == ETHERTYPE_IP) {
+		mcip->mci_v4_fastpath.mdrx = NULL;
+		mcip->mci_v4_fastpath.mdrx_arg = NULL;
 	}
+
+	const bool still_has_bypass = mcip->mci_v6_fastpath.mdrx != NULL ||
+	    mcip->mci_v4_fastpath.mdrx != NULL;
+	if (still_has_bypass) {
+		mcip->mci_state_flags |= MCIS_CLIENT_POLL_CAPABLE;
+	} else {
+		mcip->mci_state_flags &= ~MCIS_CLIENT_POLL_CAPABLE;
+	}
+
+	mac_resource_set(mch, sap, NULL, NULL);
+
+	mac_client_create_flowtrees(mcip, still_has_bypass);
+
+	mac_client_restart(mcip);
 }
 
 /*
@@ -5999,30 +6049,19 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 	/* TODO(ky): FLOW_MARK(flent, FE_UF_NO_DATAPATH); ? */
 
-	/*
-	 * TODO(ky): are we enforcing all necessary params for the fastpath?
-	 * E.g. MAC checks in certain promisc cases.
-	 */
-	mcip->mci_flent->fe_child = ipv4;
+	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
+	ipv4_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
+	ipv6->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
+	ipv6_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
+	ipv6_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
 
-	ipv4->fe_parent = mcip->mci_flent;
-	ipv4->fe_sibling = ipv6;
-	ipv4->fe_child = ipv4_tcp;
-
-	ipv4_tcp->fe_parent = ipv4;
-	ipv4_tcp->fe_sibling = ipv4_udp;
-	ipv4_udp->fe_parent = ipv4;
-	ipv4_udp->fe_sibling = NULL;
-
-	ipv6->fe_parent = mcip->mci_flent;
-	ipv6->fe_sibling = NULL;
-	ipv6->fe_child = ipv6_tcp;
-
-	ipv6_tcp->fe_parent = ipv6;
-	ipv6_tcp->fe_sibling = ipv6_udp;
-	ipv6_udp->fe_parent = ipv6;
-
-	/* Parent MCIP isn't hooked into subflow_tab, so the leaf flows do not yet have children */
+	FLOW_REFHOLD(ipv4);
+	FLOW_REFHOLD(ipv4_tcp);
+	FLOW_REFHOLD(ipv4_udp);
+	FLOW_REFHOLD(ipv6);
+	FLOW_REFHOLD(ipv6_tcp);
+	FLOW_REFHOLD(ipv6_udp);
 
 	mcip->mci_fastpath_ipv4 = ipv4;
 	mcip->mci_fastpath_ipv4_tcp = ipv4_tcp;
@@ -6032,7 +6071,6 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	mcip->mci_fastpath_ipv6_udp = ipv6_udp;
 
 	mac_update_fastpath_flows(mcip);
-	mac_update_subflows_on_fastpath(mcip, true);
 }
 
 /*
@@ -6070,7 +6108,6 @@ mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
 static void
 mac_update_fastpath_flows(mac_client_impl_t *mcip)
 {
-	flow_entry_t *root = mcip->mci_flent;
 	flow_entry_t *ipv4 = mcip->mci_fastpath_ipv4;
 	flow_entry_t *ipv4_tcp = mcip->mci_fastpath_ipv4_tcp;
 	flow_entry_t *ipv4_udp = mcip->mci_fastpath_ipv4_udp;
@@ -6078,18 +6115,16 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 	flow_entry_t *ipv6_tcp = mcip->mci_fastpath_ipv6_tcp;
 	flow_entry_t *ipv6_udp = mcip->mci_fastpath_ipv6_udp;
 
-	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-	ipv4_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-	ipv6->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv6_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-	ipv6_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-
-	/* TODO(ky) This is not handled via delegation to avoid rebaking the flowtree atm */
 	const flow_entry_t *root_flent = mcip->mci_flent;
 	ASSERT3U(root_flent->fe_action.fa_flags & MFA_FLAGS_ACTION, !=, 0);
 	mac_direct_rx_t default_action = root_flent->fe_action.fa_direct_rx_fn;
 	mac_direct_rx_t default_arg = root_flent->fe_action.fa_direct_rx_arg;
+
+	flow_tree_t *t_root = mcip->mci_flow_tree;
+	if (t_root->ft_child != NULL) {
+		mac_flow_tree_destroy(t_root->ft_child);
+		t_root->ft_child = NULL;
+	}
 
 	if (mcip->mci_v4_fastpath.mdrx != NULL) {
 		ipv4_tcp->fe_action.fa_direct_rx_fn =
@@ -6101,21 +6136,17 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 		ipv4_udp->fe_action.fa_direct_rx_arg =
 		    &mcip->mci_v4_fastpath;
 
-		if (mcip->mci_resource_add != NULL) {
-			ipv4_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
-			ipv4_tcp->fe_action.fa_resource_add =
-			    mcip->mci_resource_add;
-			ipv4_tcp->fe_action.fa_resource_remove =
-			    mcip->mci_resource_remove;
-			ipv4_tcp->fe_action.fa_resource_quiesce =
-			    mcip->mci_resource_quiesce;
-			ipv4_tcp->fe_action.fa_resource_restart =
-			    mcip->mci_resource_restart;
-			ipv4_tcp->fe_action.fa_resource_bind =
-			    mcip->mci_resource_bind;
-			ipv4_tcp->fe_action.fa_resource_arg =
-			    mcip->mci_resource_arg;
-		}
+		flow_tree_t *v4node = mac_flow_tree_node_create(ipv4);
+		t_root->ft_child = v4node;
+		v4node->ft_parent = t_root;
+
+		flow_tree_t *tcpnode = mac_flow_tree_node_create(ipv4_tcp);
+		v4node->ft_child = tcpnode;
+		tcpnode->ft_parent = v4node;
+
+		flow_tree_t *udpnode = mac_flow_tree_node_create(ipv4_udp);
+		udpnode->ft_parent = v4node;
+		tcpnode->ft_sibling = udpnode;
 	} else {
 		ipv4_tcp->fe_action.fa_direct_rx_fn = default_action;
 		ipv4_tcp->fe_action.fa_direct_rx_arg = default_arg;
@@ -6132,31 +6163,33 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 		ipv6_udp->fe_action.fa_direct_rx_arg =
 		    &mcip->mci_v6_fastpath;
 
-		if (mcip->mci_resource_add != NULL) {
-			ipv6_tcp->fe_action.fa_flags |= MFA_FLAGS_RESOURCE;
-			ipv6_tcp->fe_action.fa_resource_add =
-			    mcip->mci_resource_add;
-			ipv6_tcp->fe_action.fa_resource_remove =
-			    mcip->mci_resource_remove;
-			ipv6_tcp->fe_action.fa_resource_quiesce =
-			    mcip->mci_resource_quiesce;
-			ipv6_tcp->fe_action.fa_resource_restart =
-			    mcip->mci_resource_restart;
-			ipv6_tcp->fe_action.fa_resource_bind =
-			    mcip->mci_resource_bind;
-			ipv6_tcp->fe_action.fa_resource_arg =
-			    mcip->mci_resource_arg;
+		flow_tree_t *v6node = mac_flow_tree_node_create(ipv6);
+		if (t_root->ft_child == NULL) {
+			t_root->ft_child = v6node;
+		} else {
+			t_root->ft_child->ft_sibling = v6node;
 		}
+		v6node->ft_parent = t_root;
+
+		flow_tree_t *tcpnode = mac_flow_tree_node_create(ipv6_tcp);
+		v6node->ft_child = tcpnode;
+		tcpnode->ft_parent = v6node;
+
+		flow_tree_t *udpnode = mac_flow_tree_node_create(ipv6_udp);
+		udpnode->ft_parent = v6node;
+		tcpnode->ft_sibling = udpnode;
 	} else {
 		ipv6_tcp->fe_action.fa_direct_rx_fn = default_action;
 		ipv6_tcp->fe_action.fa_direct_rx_arg = default_arg;
 		ipv6_udp->fe_action.fa_direct_rx_fn = default_action;
 		ipv6_udp->fe_action.fa_direct_rx_arg = default_arg;
 	}
+
+	mac_update_subflows_on_fastpath(mcip);
 }
 
 struct flent_modify {
-	flow_entry_t *flent;
+	flow_tree_t *node;
 	bool on_child;
 	bool needs_subflows;
 	bool is_tcp;
@@ -6173,8 +6206,7 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 	const bool can_elide = (!arg->needs_subflows) &&
 	    (mfm->mfm_type == MFM_ALL) &&
 	    (mfm->arg.mfm_list->mfml_size > 0) &&
-	    (mfm->arg.mfm_list->mfml_match[0].mfm_type ==
-	    MFM_IPPROTO);
+	    (mfm->arg.mfm_list->mfml_match[0].mfm_type == MFM_IPPROTO);
 	const bool flent_is_tcp = can_elide &&
 	    (mfm->arg.mfm_list->mfml_match[0].arg.mfm_ipproto == IPPROTO_TCP);
 	const bool flent_is_udp = can_elide &&
@@ -6185,28 +6217,23 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 		return (0);
 	}
 
-	flow_entry_t **write_into = (arg->on_child) ? &arg->flent->fe_child :
-	    &arg->flent->fe_sibling;
+	flow_tree_t **write_into = (arg->on_child) ? &arg->node->ft_child :
+	    &arg->node->ft_sibling;
 	ASSERT3P(*write_into, ==, NULL);
 
-	/* TODO(ky): I *know* this isn't safe around list/arg aliasing etc. */
-	VERIFY0(mac_flow_create(&flent->fe_flow_desc, NULL, flent->fe_flow_name,
-	    NULL, FLOW_USER, write_into));
-	(*write_into)->fe_match2 = mac_flow_clone_match(&flent->fe_match2);
-	(*write_into)->fe_action = flent->fe_action;
-	(*write_into)->fe_parent = (arg->on_child) ? arg->flent :
-	    arg->flent->fe_parent;
-	(*write_into)->fe_mcip = flent->fe_mcip;
-	(*write_into)->fe_match = flent->fe_match;
+	*write_into = mac_flow_tree_node_create(flent);
+	(*write_into)->ft_parent = (arg->on_child) ? arg->node :
+	    arg->node->ft_parent;
 
 	/* Remove the now-duplicate TCP/UDP check if detected. */
 	if ((arg->is_tcp && flent_is_tcp) || (arg->is_udp && flent_is_udp)) {
-		mac_flow_match_list_remove(&(*write_into)->fe_match2, 0);
+		(*write_into)->ft_match_override = mac_flow_clone_match(mfm);
+		mac_flow_match_list_remove(
+		    &(*write_into)->ft_match_override, 0);
 	}
 
-	/* TODO(ky): copy CPU props, act on CPU props/prio/... */
 	arg->on_child = false;
-	arg->flent = *write_into;
+	arg->node = *write_into;
 
 	return (0);
 }
@@ -6215,49 +6242,80 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
  * ...
  */
 void
-mac_update_subflows_on_fastpath(mac_client_impl_t *mcip, bool and_create)
+mac_update_subflows_on_fastpath(mac_client_impl_t *mcip)
 {
-	flow_entry_t *ipv6 = mcip->mci_fastpath_ipv6;
-	flow_entry_t *ipv4_tcp = mcip->mci_fastpath_ipv4_tcp;
-	flow_entry_t *ipv4_udp = mcip->mci_fastpath_ipv4_udp;
-	flow_entry_t *ipv6_tcp = mcip->mci_fastpath_ipv6_tcp;
-	flow_entry_t *ipv6_udp = mcip->mci_fastpath_ipv6_udp;
+	const bool v4fp_defined = mcip->mci_v4_fastpath.mdrx != NULL;
+	const bool v6fp_defined = mcip->mci_v6_fastpath.mdrx != NULL;
 
-	ASSERT3P(ipv6, !=, NULL);
-	ASSERT3P(ipv4_tcp, !=, NULL);
-	ASSERT3P(ipv4_udp, !=, NULL);
-	ASSERT3P(ipv6_tcp, !=, NULL);
-	ASSERT3P(ipv6_udp, !=, NULL);
+	struct flent_modify to_visit[5] = { 0 };
+	size_t n_visitees = 1;
 
-	/* Remove any existing flows duplicated into this tree. */
-	const struct flent_modify to_visit[] = {
-		{ ipv6, false, true, false, false },
-		{ ipv4_tcp, true, false, true, false },
-		{ ipv4_udp, true, false, false, true },
-		{ ipv6_tcp, true, false, true, false },
-		{ ipv6_udp, true, false, false, true },
-	};
-	const size_t n_visitees = sizeof (to_visit) /
-	    sizeof (struct flent_modify);
+	if (!v4fp_defined && !v6fp_defined) {
+		to_visit[0].node = mcip->mci_flow_tree;
+		to_visit[0].on_child = true;
+	} else if (v4fp_defined && v6fp_defined) {
+		to_visit[0].node = mcip->mci_flow_tree->ft_child->ft_sibling;
+		to_visit[0].on_child = false;
+	} else {
+		to_visit[0].node = mcip->mci_flow_tree->ft_child;
+		to_visit[0].on_child = false;
+	}
+	to_visit[0].needs_subflows = true;
+	to_visit[0].is_tcp = false;
+	to_visit[0].is_udp = false;
 
-	/* Cleanup any existing flows duplicated into this tree. */
-	for (int i = 0; i < n_visitees; i++) {
-		flow_entry_t *curr = (to_visit[i].on_child) ?
-		    to_visit[i].flent->fe_child : to_visit[i].flent->fe_sibling;
-		while (curr != NULL) {
-			flow_entry_t *next = curr->fe_sibling;
-			mac_flow_destroy(curr);
-			curr = next;
-		}
-		if (to_visit[i].on_child) {
-			to_visit[i].flent->fe_child = NULL;
-		} else {
-			to_visit[i].flent->fe_sibling = NULL;
-		}
+	if (v4fp_defined) {
+		flow_tree_t *v4_base = mcip->mci_flow_tree->ft_child;
+		flow_tree_t *v4t = v4_base->ft_child;
+		flow_tree_t *v4u = v4t->ft_sibling;
+
+		to_visit[n_visitees].node = v4t;
+		to_visit[n_visitees].on_child = true;
+		to_visit[n_visitees].needs_subflows = false;
+		to_visit[n_visitees].is_tcp = true;
+		to_visit[n_visitees++].is_udp = false;
+
+		to_visit[n_visitees].node = v4u;
+		to_visit[n_visitees].on_child = true;
+		to_visit[n_visitees].needs_subflows = false;
+		to_visit[n_visitees].is_tcp = false;
+		to_visit[n_visitees++].is_udp = true;
 	}
 
-	if (!and_create) {
-		return;
+	if (v6fp_defined) {
+		flow_tree_t *v6_base = (v4fp_defined) ?
+		    mcip->mci_flow_tree->ft_child->ft_sibling:
+		    mcip->mci_flow_tree->ft_child;
+		flow_tree_t *v6t = v6_base->ft_child;
+		flow_tree_t *v6u = v6t->ft_sibling;
+
+		to_visit[n_visitees].node = v6t;
+		to_visit[n_visitees].on_child = true;
+		to_visit[n_visitees].needs_subflows = false;
+		to_visit[n_visitees].is_tcp = true;
+		to_visit[n_visitees++].is_udp = false;
+
+		to_visit[n_visitees].node = v6u;
+		to_visit[n_visitees].on_child = true;
+		to_visit[n_visitees].needs_subflows = false;
+		to_visit[n_visitees].is_tcp = false;
+		to_visit[n_visitees++].is_udp = true;
+	}
+
+	/* Cleanup any existing flows on this tree. */
+	for (int i = 0; i < n_visitees; i++) {
+		flow_tree_t *node = (to_visit[i].on_child) ?
+		    to_visit[i].node->ft_child : to_visit[i].node->ft_sibling;
+
+		if (to_visit[i].on_child) {
+			to_visit[i].node->ft_child = NULL;
+		} else {
+			to_visit[i].node->ft_sibling = NULL;
+		}
+
+		if (node != NULL) {
+			mac_flow_tree_destroy(node);
+		}
 	}
 
 	if (!FLOW_TAB_EMPTY(mcip->mci_subflow_tab)) {
@@ -6276,15 +6334,10 @@ mac_update_subflows_on_fastpath(mac_client_impl_t *mcip, bool and_create)
 static void
 mac_teardown_fastpath_flows(mac_client_impl_t *mcip)
 {
-	mcip->mci_flent->fe_child = NULL;
-
-	/* Remove all copies of subflow tab flows from our fastpath leaves. */
-	mac_update_subflows_on_fastpath(mcip, false);
-
-	mac_flow_destroy(mcip->mci_fastpath_ipv6_udp);
-	mac_flow_destroy(mcip->mci_fastpath_ipv6_tcp);
-	mac_flow_destroy(mcip->mci_fastpath_ipv6);
-	mac_flow_destroy(mcip->mci_fastpath_ipv4_udp);
-	mac_flow_destroy(mcip->mci_fastpath_ipv4_tcp);
-	mac_flow_destroy(mcip->mci_fastpath_ipv4);
+	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv6_udp);
+	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv6_tcp);
+	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv6);
+	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv4_udp);
+	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv4_tcp);
+	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv4);
 }

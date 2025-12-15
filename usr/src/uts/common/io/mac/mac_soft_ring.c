@@ -606,30 +606,6 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 }
 
 /*
- * mac_soft_ring_action_refresh
- *
- * Update this soft ring's action and arguments to match that of the flow it
- * belongs to. It is assumed by this point that the linked SRS/flow has an
- * action of type MFA_TYPE_DELIVER.
- */
-void
-mac_soft_ring_action_refresh(mac_soft_ring_t *softring)
-{
-	mac_soft_ring_set_t	*srs = softring->s_ring_set;
-	flow_entry_t		*flent = srs->srs_flent;
-	flow_action_t		*act = &flent->fe_action;
-
-	ASSERT3P(flent, !=, NULL);
-	ASSERT3U(act->fa_flags & MFA_FLAGS_ACTION, !=, 0);
-
-	mutex_enter(&softring->s_ring_lock);
-	/* TODO(ky): Do we need to lock srs->srs_lock? refcnt bump the flow? */
-	softring->s_ring_rx_func = act->fa_direct_rx_fn;
-	softring->s_ring_rx_arg1 = act->fa_direct_rx_arg;
-	mutex_exit(&softring->s_ring_lock);
-}
-
-/*
  * mac_soft_ring_signal
  *
  * Typically used to set the soft ring state to QUIESCE, CONDEMNED, or

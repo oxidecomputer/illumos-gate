@@ -152,15 +152,6 @@ struct mac_client_impl_s {			/* Protected by */
 	uint_t			mci_nvids;		/* mci_rw_lock */
 	volatile uint32_t	mci_vidcache;		/* VID cache */
 
-	/* Resource Management Functions */
-	mac_resource_add_t	mci_resource_add;	/* SL */
-	mac_resource_remove_t	mci_resource_remove;	/* SL */
-	mac_resource_quiesce_t	mci_resource_quiesce;	/* SL */
-	mac_resource_restart_t	mci_resource_restart;	/* SL */
-	mac_resource_bind_t	mci_resource_bind;	/* SL */
-	void			*mci_resource_arg;	/* SL */
-
-
 	/* Tx notify callback */
 	kmutex_t		mci_tx_cb_lock;
 	mac_cb_info_t		mci_tx_notify_cb_info;	/* cb list info */
@@ -217,6 +208,8 @@ struct mac_client_impl_s {			/* Protected by */
 	flow_entry_t	*mci_fastpath_ipv6;
 	flow_entry_t	*mci_fastpath_ipv6_tcp;
 	flow_entry_t	*mci_fastpath_ipv6_udp;
+
+	flow_tree_t	*mci_flow_tree;
 
 	/* Must be last in the structure for dynamic sizing */
 	mac_tx_percpu_t		mci_tx_pcpu[1];		/* SL */
@@ -425,7 +418,7 @@ extern void mac_client_init(void);
 extern void mac_client_fini(void);
 extern void mac_promisc_dispatch(mac_impl_t *, mblk_t *, mac_client_impl_t *,
     boolean_t);
-extern void mac_update_subflows_on_fastpath(mac_client_impl_t *, bool);
+extern void mac_update_subflows_on_fastpath(mac_client_impl_t *);
 
 extern int mac_validate_props(mac_impl_t *, mac_resource_props_t *);
 
@@ -445,6 +438,11 @@ extern boolean_t mac_is_primary_client(mac_client_impl_t *);
 extern int mac_client_set_rings_prop(mac_client_impl_t *,
     mac_resource_props_t *, mac_resource_props_t *);
 extern void mac_set_prim_vlan_rings(mac_impl_t *, mac_resource_props_t *);
+
+extern void mac_client_update_classifier(mac_client_impl_t *);
+extern void mac_client_rebuild_flowtrees(mac_client_impl_t *, const uint32_t);
+extern void mac_client_create_flowtrees(mac_client_impl_t *, const bool);
+extern void mac_client_destroy_flowtrees(mac_client_impl_t *);
 
 #ifdef	__cplusplus
 }

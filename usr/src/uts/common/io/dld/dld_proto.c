@@ -1430,7 +1430,7 @@ dld_capab_poll_enable(dld_str_t *dsp, dld_capab_poll_t *poll)
 	 * the user decides to modify CPU bindings to use more CPUs for the
 	 * device in which case we will switch to fanout using soft rings.
 	 */
-	mac_resource_set_common(dsp->ds_mch,
+	mac_resource_set_common(dsp->ds_mch, dsp->ds_sap,
 	    (mac_resource_add_t)poll->poll_ring_add_cf,
 	    (mac_resource_remove_t)poll->poll_ring_remove_cf,
 	    (mac_resource_quiesce_t)poll->poll_ring_quiesce_cf,
@@ -1451,8 +1451,7 @@ dld_capab_poll_disable(dld_str_t *dsp, dld_capab_poll_t *poll)
 	if (!dsp->ds_polling)
 		return (EINVAL);
 
-	mac_client_poll_disable(dsp->ds_mch);
-	mac_resource_set(dsp->ds_mch, NULL, NULL);
+	mac_client_poll_disable(dsp->ds_mch, dsp->ds_sap);
 
 	dsp->ds_polling = B_FALSE;
 	return (0);

@@ -74,7 +74,7 @@ extern "C" {
 #define	FLOW_REFRELE(flent) {					\
 	DTRACE_PROBE1(flow_refrele, flow_entry_t *, (flent));	\
 	mutex_enter(&(flent)->fe_lock);				\
-	ASSERT((flent)->fe_refcnt != 0);			\
+	ASSERT3U((flent)->fe_refcnt, !=, 0);			\
 	(flent)->fe_refcnt--;					\
 	if ((flent)->fe_flags & FE_WAITER) {			\
 		ASSERT((flent)->fe_refcnt != 0);		\
@@ -95,7 +95,7 @@ extern "C" {
 
 #define	FLOW_USER_REFRELE(flent) {			\
 	mutex_enter(&(flent)->fe_lock);			\
-	ASSERT((flent)->fe_user_refcnt != 0);		\
+	ASSERT3U((flent)->fe_user_refcnt, !=, 0);	\
 	if (--(flent)->fe_user_refcnt == 0 &&		\
 	    ((flent)->fe_flags & FE_WAITER))		\
 		cv_signal(&(flent)->fe_cv);		\
@@ -103,7 +103,8 @@ extern "C" {
 }
 
 #define	FLOW_FINAL_REFRELE(flent) {			\
-	ASSERT(flent->fe_refcnt == 1 && flent->fe_user_refcnt == 0);	\
+	ASSERT3U(flent->fe_refcnt, ==, 1);		\
+	ASSERT3U(flent->fe_user_refcnt, ==, 0);		\
 	FLOW_REFRELE(flent);				\
 }
 
@@ -157,6 +158,7 @@ extern "C" {
 #define	MAC_FLOW_TAB_SIZE		500
 
 typedef struct flow_entry_s		flow_entry_t;
+typedef struct flow_tree_s		flow_tree_t;
 typedef struct flow_tab_s		flow_tab_t;
 typedef struct flow_state_s 		flow_state_t;
 struct mac_impl_s;
@@ -479,10 +481,6 @@ struct flow_entry_s {					/* Protected by */
 	/*
 	 * Used in flow tree construction.
 	 */
-	/* Classifier tree pointers.  */
-	flow_entry_t *fe_parent;
-	flow_entry_t *fe_sibling;
-	flow_entry_t *fe_child;
 
 	/* used to generate flow_fn_t entries for each softring */
 	flow_action_t fe_action;
@@ -493,6 +491,19 @@ struct flow_entry_s {					/* Protected by */
 	/* TODO(ky): swap out so this becomes the Real Thing */
 	mac_flow_match_t fe_match2;
 };
+
+typedef struct flow_tree_s {
+	flow_entry_t	*ft_flent;
+	flow_tree_t	*ft_parent;
+	flow_tree_t	*ft_sibling;
+	flow_tree_t	*ft_child;
+
+	/*
+	 * If set to a value other than MFM_NONE, then use this matcher in place
+	 * of that in ft_flent.
+	 */
+	mac_flow_match_t ft_match_override;
+} flow_tree_t;
 
 /*
  * Various structures used by the flows framework for keeping track
@@ -714,9 +725,14 @@ extern void	mac_flow_tab_destroy(flow_tab_t *);
 extern void	mac_flow_drop(void *, void *, mblk_t *);
 extern void	flow_stat_destroy(flow_entry_t *);
 
+extern void mac_flow_match_destroy(mac_flow_match_t *);
 extern mac_flow_match_list_t *mac_flow_match_list_create(const size_t);
 extern mac_flow_match_t mac_flow_clone_match(const mac_flow_match_t *);
 extern void mac_flow_match_list_remove(mac_flow_match_t *, const size_t);
+
+extern flow_tree_t *mac_flow_tree_node_create(flow_entry_t *);
+extern void mac_flow_tree_node_destroy(flow_tree_t *);
+extern void mac_flow_tree_destroy(flow_tree_t *);
 
 #ifdef	__cplusplus
 }

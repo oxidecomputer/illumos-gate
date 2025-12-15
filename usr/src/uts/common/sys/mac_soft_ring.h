@@ -737,7 +737,6 @@ extern void mac_soft_ring_worker_wakeup(mac_soft_ring_t *);
 extern void mac_soft_ring_blank(void *, time_t, uint_t, int);
 extern mblk_t *mac_soft_ring_poll(mac_soft_ring_t *, size_t);
 extern void mac_soft_ring_destroy(mac_soft_ring_t *);
-extern void mac_soft_ring_action_refresh(mac_soft_ring_t *);
 
 /* Rx SRS */
 extern mac_soft_ring_set_t *mac_srs_create_rx_logical(flow_entry_t *,
@@ -749,10 +748,6 @@ extern void mac_rx_srs_retarget_intr(mac_soft_ring_set_t *, processorid_t);
 extern void mac_tx_srs_retarget_intr(mac_soft_ring_set_t *);
 
 extern void mac_srs_quiesce_initiate(mac_soft_ring_set_t *);
-extern void mac_srs_client_poll_enable(struct mac_client_impl_s *,
-    mac_soft_ring_set_t *);
-extern void mac_srs_client_poll_disable(struct mac_client_impl_s *,
-    mac_soft_ring_set_t *);
 extern void mac_srs_client_poll_quiesce(mac_soft_ring_set_t *, uint_t);
 extern void mac_srs_client_poll_restart(mac_soft_ring_set_t *);
 extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
@@ -778,7 +773,6 @@ extern void mac_srs_update_bwlimit(flow_entry_t *, mac_resource_props_t *);
 extern void mac_srs_adjust_subflow_bwlimit(struct mac_client_impl_s *);
 extern void mac_srs_update_drv(struct mac_client_impl_s *);
 extern void mac_update_srs_priority(mac_soft_ring_set_t *, pri_t);
-extern void mac_client_update_classifier(mac_client_impl_t *);
 
 extern int mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);

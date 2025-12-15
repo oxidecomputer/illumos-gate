@@ -686,7 +686,7 @@ mac_flow_match_list_create(const size_t len)
 	return (out);
 }
 
-static void
+void
 mac_flow_match_destroy(mac_flow_match_t *ma)
 {
 	switch (ma->mfm_type) {
@@ -780,13 +780,61 @@ mac_flow_clone_match(const mac_flow_match_t *ma)
 	return (out);
 }
 
+flow_tree_t *
+mac_flow_tree_node_create(flow_entry_t *flent)
+{
+	FLOW_REFHOLD(flent);
+	flow_tree_t *out = kmem_zalloc(sizeof (flow_tree_t), KM_SLEEP);
+	out->ft_flent = flent;
+	return (out);
+}
+
+void
+mac_flow_tree_node_destroy(flow_tree_t *node)
+{
+	mac_flow_match_destroy(&node->ft_match_override);
+	FLOW_REFRELE(node->ft_flent);
+	kmem_free(node, sizeof (flow_tree_t));
+}
+
+void
+mac_flow_tree_destroy(flow_tree_t *ft)
+{
+	flow_tree_t *el = ft->ft_child;
+	bool ascended = false;
+	size_t depth = (el == NULL) ? 0 : 1;
+	while (el != NULL && el != ft) {
+		flow_tree_t *self = el;
+		ASSERT3U(depth, >, 0);
+		ASSERT3P(el->ft_parent, !=, NULL);
+
+		if (!ascended && el->ft_child != NULL) {
+			depth += 1;
+			el = el->ft_child;
+			ascended = false;
+		} else if (el->ft_sibling != NULL) {
+			el = el->ft_sibling;
+			ascended = false;
+			mac_flow_tree_node_destroy(self);
+		} else {
+			depth -= 1;
+			el = el->ft_parent;
+			ascended = true;
+			mac_flow_tree_node_destroy(self);
+		}
+	}
+	VERIFY0(depth);
+
+	mac_flow_tree_node_destroy(ft);
+}
+
 /*
  * Destroy a flow entry. Called when the last reference on a flow is released.
  */
 void
 mac_flow_destroy(flow_entry_t *flent)
 {
-	ASSERT(flent->fe_refcnt == 0);
+	ASSERT3U(flent->fe_refcnt, ==, 0);
 
 	if ((flent->fe_type & FLOW_USER) != 0) {
 		ASSERT(mac_flow_clean(flent));

@@ -1584,7 +1584,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	const bool never_round_robin =
 	    (mac_srs->srs_type & SRST_ALWAYS_HASH_OUT) != 0;
 	const bool do_round_robin = !never_round_robin &&
-	    (mac_fanout_type != MAC_FANOUT_DEFAULT);
+	    (mac_fanout_type == MAC_FANOUT_RND_ROBIN);
 
 	/*
 	 * Since the softrings are never destroyed, it's OK to check one
@@ -1603,8 +1603,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	while (head != NULL) {
 		uint_t indx = 0;
 
-		/* TODO(ky): unlikely()? */
-		if (do_round_robin) {
+		if (unlikely(do_round_robin)) {
 			indx = mac_srs->srs_ind % fanout_cnt;
 			mac_srs->srs_ind++;
 			goto enqueue;
@@ -2090,8 +2089,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
-// static inline void
-static void
+static inline void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
 {
 	if (!mac_pkt_list_is_empty(list)) {
@@ -2144,10 +2142,9 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 	bool force_set_info = false;
 	mac_ether_offload_info_t meoi = { 0 };
 	mac_ether_offload_info_t inner_meoi = { 0 };
-	if (is_ether) {
+	if (likely(is_ether)) {
 		mac_ether_offload_info(mp, &meoi, &inner_meoi);
 	} else {
-		/* TODO(ky): unlikely() ? */
 		mac_header_info_t non_ether_mhi;
 		if (mac_header_info((mac_handle_t)mcip->mci_mip,
 		    mp, &non_ether_mhi) != 0) {
@@ -2956,7 +2953,7 @@ again:
 	 */
 
 	/* Generally we *should* have a subtree here, due to DLS bypass */
-	if (likely(mac_srs->srs_flowtree.ftb_depth > 0)) {
+	if (mac_srs->srs_flowtree.ftb_depth > 0) {
 		if (likely(!mac_srs->srs_flowtree.ftb_needs_bw)) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
