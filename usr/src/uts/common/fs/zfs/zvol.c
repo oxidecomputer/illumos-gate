@@ -107,12 +107,6 @@ static char *zvol_tag = "zvol_tag";
 kmutex_t zfsdev_state_lock;
 static uint32_t zvol_minors;
 
-typedef struct zvol_extent {
-	list_node_t	ze_node;
-	dva_t		ze_dva;		/* dva associated with this extent */
-	uint64_t	ze_nblks;	/* number of blocks in extent */
-} zvol_extent_t;
-
 /*
  * The in-core state of each volume.
  */
@@ -127,7 +121,8 @@ typedef struct zvol_state {
 	uint32_t	zv_open_count[OTYPCNT];	/* open counts */
 	uint32_t	zv_total_opens;	/* total open count */
 	zilog_t		*zv_zilog;	/* ZIL handle */
-	list_t		zv_extents;	/* List of extents for dump */
+	dva_t		*zv_dvas;	/* block -> dva mapping for dump */
+	size_t		zv_ndvas;	/* number of dvas allocated */
 	rangelock_t	zv_rangelock;
 	dnode_t		*zv_dn;		/* dnode hold */
 } zvol_state_t;
@@ -179,6 +174,12 @@ zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
 	/* Notify specfs to invalidate the cached size */
 	spec_size_invalidate(dev, VBLK);
 	spec_size_invalidate(dev, VCHR);
+}
+
+static uint64_t
+zvol_num_blocks(zvol_state_t *zv)
+{
+	return (zv->zv_volsize / zv->zv_volblocksize);
 }
 
 int
@@ -261,9 +262,7 @@ static int
 zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
     const zbookmark_phys_t *zb, const dnode_phys_t *dnp, void *arg)
 {
-	struct maparg *ma = arg;
-	zvol_extent_t *ze;
-	int bs = ma->ma_zv->zv_volblocksize;
+	zvol_state_t *zv = arg;
 
 	if (bp == NULL || BP_IS_HOLE(bp) ||
 	    zb->zb_object != ZVOL_OBJ || zb->zb_level != 0)
@@ -271,64 +270,57 @@ zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 
 	VERIFY(!BP_IS_EMBEDDED(bp));
 
-	VERIFY3U(ma->ma_blks, ==, zb->zb_blkid);
-	ma->ma_blks++;
-
 	/* Abort immediately if we have encountered gang blocks */
 	if (BP_IS_GANG(bp))
 		return (SET_ERROR(EFRAGS));
 
-	/*
-	 * See if the block is at the end of the previous extent.
-	 */
-	ze = list_tail(&ma->ma_zv->zv_extents);
-	if (ze &&
-	    DVA_GET_VDEV(BP_IDENTITY(bp)) == DVA_GET_VDEV(&ze->ze_dva) &&
-	    DVA_GET_OFFSET(BP_IDENTITY(bp)) ==
-	    DVA_GET_OFFSET(&ze->ze_dva) + ze->ze_nblks * bs) {
-		ze->ze_nblks++;
-		return (0);
-	}
+	VERIFY3U(zb->zb_blkid, <, zvol_num_blocks(zv));
+	zv->zv_dvas[zb->zb_blkid] = bp->blk_dva[0];
 
-	dprintf_bp(bp, "%s", "next blkptr:");
-
-	/* start a new extent */
-	ze = kmem_zalloc(sizeof (zvol_extent_t), KM_SLEEP);
-	ze->ze_dva = bp->blk_dva[0];	/* structure assignment */
-	ze->ze_nblks = 1;
-	list_insert_tail(&ma->ma_zv->zv_extents, ze);
 	return (0);
 }
 
 static void
-zvol_free_extents(zvol_state_t *zv)
+zvol_free_dvas(zvol_state_t *zv)
 {
-	zvol_extent_t *ze;
-
-	while (ze = list_head(&zv->zv_extents)) {
-		list_remove(&zv->zv_extents, ze);
-		kmem_free(ze, sizeof (zvol_extent_t));
+	if (zv->zv_dvas != NULL) {
+		/*
+		 * Note, ndvas may differ from zvol_num_blocks() if the volume
+		 * size was changed (see zvol_size_changed()).
+		 */
+		kmem_free(zv->zv_dvas, zv->zv_ndvas * sizeof (dva_t));
+		zv->zv_dvas = NULL;
+		zv->zv_ndvas = 0;
 	}
 }
 
 static int
-zvol_get_lbas(zvol_state_t *zv)
+zvol_get_dvas(zvol_state_t *zv)
 {
 	objset_t *os = zv->zv_objset;
-	struct maparg	ma;
 	int		err;
 
-	ma.ma_zv = zv;
-	ma.ma_blks = 0;
-	zvol_free_extents(zv);
+	zvol_free_dvas(zv);
 
 	/* commit any in-flight changes before traversing the dataset */
 	txg_wait_synced(dmu_objset_pool(os), 0);
+	zv->zv_ndvas = zvol_num_blocks(zv);
+	zv->zv_dvas = kmem_zalloc(zv->zv_ndvas * sizeof (dva_t), KM_SLEEP);
 	err = traverse_dataset(dmu_objset_ds(os), 0,
-	    TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA, zvol_map_block, &ma);
-	if (err || ma.ma_blks != (zv->zv_volsize / zv->zv_volblocksize)) {
-		zvol_free_extents(zv);
-		return (err ? err : EIO);
+	    TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA, zvol_map_block, zv);
+	if (err == 0) {
+		/* make sure we filled in all dvas */
+		for (uint64_t i = 0; i < zvol_num_blocks(zv); i++) {
+			if (DVA_IS_EMPTY(&zv->zv_dvas[i])) {
+				err = EIO;
+				break;
+			}
+		}
+
+	}
+	if (err != 0) {
+		zvol_free_dvas(zv);
+		return (err);
 	}
 
 	return (0);
@@ -555,8 +547,6 @@ zvol_create_minor(const char *name)
 	if (dmu_objset_is_snapshot(os) || !spa_writeable(dmu_objset_spa(os)))
 		zv->zv_flags |= ZVOL_RDONLY;
 	rangelock_init(&zv->zv_rangelock, NULL, NULL);
-	list_create(&zv->zv_extents, sizeof (zvol_extent_t),
-	    offsetof(zvol_extent_t, ze_node));
 	/* get and cache the blocksize */
 	error = dmu_object_info(os, ZVOL_OBJ, &doi);
 	ASSERT(error == 0);
@@ -700,7 +690,7 @@ zvol_prealloc(zvol_state_t *zv)
 		return (SET_ERROR(ENOSPC));
 
 	/* Free old extents if they exist */
-	zvol_free_extents(zv);
+	zvol_free_dvas(zv);
 
 	while (resid != 0) {
 		int error;
@@ -1131,38 +1121,28 @@ zvol_dumpio_vdev(vdev_t *vd, void *addr, uint64_t offset, uint64_t origoffset,
 }
 
 static int
-zvol_dumpio(zvol_state_t *zv, void *addr, uint64_t offset, uint64_t size,
+zvol_dumpio(zvol_state_t *zv, void *addr, uint64_t vol_offset, uint64_t size,
     boolean_t doread, boolean_t isdump)
 {
-	vdev_t *vd;
-	int error;
-	zvol_extent_t *ze;
 	spa_t *spa = dmu_objset_spa(zv->zv_objset);
 
-	/* Must be sector aligned, and not stradle a block boundary. */
-	if (P2PHASE(offset, DEV_BSIZE) || P2PHASE(size, DEV_BSIZE) ||
-	    P2BOUNDARY(offset, size, zv->zv_volblocksize)) {
+	/* Must be sector aligned, and not straddle a block boundary. */
+	if (P2PHASE(vol_offset, DEV_BSIZE) || P2PHASE(size, DEV_BSIZE) ||
+	    P2BOUNDARY(vol_offset, size, zv->zv_volblocksize)) {
 		return (SET_ERROR(EINVAL));
 	}
 	VERIFY3U(size, <=, zv->zv_volblocksize);
 
 	/* Locate the extent this belongs to */
-	for (ze = list_head(&zv->zv_extents);
-	    ze != NULL && offset >= ze->ze_nblks * zv->zv_volblocksize;
-	    ze = list_next(&zv->zv_extents, ze)) {
-		offset -= ze->ze_nblks * zv->zv_volblocksize;
-	}
-
-	if (ze == NULL)
-		return (SET_ERROR(EINVAL));
+	dva_t *dva = &zv->zv_dvas[vol_offset / zv->zv_volblocksize];
+	uint64_t dva_offset = vol_offset % zv->zv_volblocksize;
 
 	if (!ddi_in_panic())
 		spa_config_enter(spa, SCL_STATE, FTAG, RW_READER);
 
-	vd = vdev_lookup_top(spa, DVA_GET_VDEV(&ze->ze_dva));
-	offset += DVA_GET_OFFSET(&ze->ze_dva);
-	error = zvol_dumpio_vdev(vd, addr, offset, DVA_GET_OFFSET(&ze->ze_dva),
-	    size, doread, isdump);
+	vdev_t *vd = vdev_lookup_top(spa, DVA_GET_VDEV(dva));
+	int error = zvol_dumpio_vdev(vd, addr, DVA_GET_OFFSET(dva) + dva_offset,
+	    DVA_GET_OFFSET(dva), size, doread, isdump);
 
 	if (!ddi_in_panic())
 		spa_config_exit(spa, SCL_STATE, FTAG);
@@ -2090,7 +2070,7 @@ zvol_dumpify(zvol_state_t *zv)
 	/*
 	 * Build up our lba mapping.
 	 */
-	error = zvol_get_lbas(zv);
+	error = zvol_get_dvas(zv);
 	if (error) {
 		(void) zvol_dump_fini(zv);
 		return (error);
@@ -2172,7 +2152,7 @@ zvol_dump_fini(zvol_state_t *zv)
 	    nv, NULL);
 	nvlist_free(nv);
 
-	zvol_free_extents(zv);
+	zvol_free_dvas(zv);
 	zv->zv_flags &= ~ZVOL_DUMPIFIED;
 	(void) dmu_free_long_range(os, ZVOL_OBJ, 0, DMU_OBJECT_END);
 	/* wait for dmu_free_long_range to actually free the blocks */
