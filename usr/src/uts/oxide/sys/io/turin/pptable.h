@@ -148,9 +148,15 @@ typedef struct turin_pptable_cff {
  * Power and Performance Table.
  * This is the version of the table that was introduced in Turin SMU firmware
  * version 94.91.0 and Dense Turin SMU firmware version 99.91.0. It is valid
- * across Turin PI firmware versions 0.0.9.0 to 1.0.0.7. The tpp_cclk_mode
- * field was introduced in SMU firmware minor version 0x7d (Turin PI 1.0.0.7)
- * and is reserved prior to that.
+ * across Turin PI firmware versions 0.0.9.0 to 1.0.0.8. Some previously
+ * reserved fields have been introduced as named fields as part of a minor SMU
+ * version update:
+ * +------------------+---------------------------------+------------+
+ * | Field            | SMU Version (Classic / Dense)   | PI Version |
+ * +------------------+---------------------------------+------------+
+ * | tpp_cclk_mode    | 0x5e.0x7d.0x00 / 0x63.0x7d.0x00 | 1.0.0.7    |
+ * | tpp_adjust_gb    | 0x5e.0x81.0x00 / 0x63.0x81.0x00 | 1.0.0.8    |
+ * +------------------+---------------------------------+------------+
  */
 typedef struct turin_pptable_v94_91 {
 	turin_pptable_default_limits_t		tpp_default_limits;
@@ -175,7 +181,8 @@ typedef struct turin_pptable_v94_91 {
 	uint8_t					tpp_rsvd1[3];
 
 	uint8_t					tpp_cclk_mode; /* >= 1.0.0.7 */
-	uint8_t					tpp_rsvd2[31];
+	uint8_t					tpp_adjust_gb; /* >= 1.0.0.8 */
+	uint8_t					tpp_rsvd2[30];
 } turin_pptable_v94_91_t;
 
 CTASSERT(sizeof (turin_pptable_v94_91_t) == 0x90);
@@ -198,7 +205,7 @@ CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_xgmi_pstate_range_max) == 0x6a);
 CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_xgmi_pstate_range_spare) == 0x6b);
 CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_xgmi_min_width) == 0x6c);
 CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_rsvd1) == 0x6d);
-CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_rsvd2) == 0x71);
+CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_rsvd2) == 0x72);
 
 #pragma pack()  /* pragma pack(4) */
 
