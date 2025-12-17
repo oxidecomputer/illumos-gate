@@ -2019,7 +2019,7 @@ done:
  */
 static mblk_t *
 mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
-    size_t *chain_sz, int *chain_cnt)
+    size_t *chain_sz, uint32_t *chain_cnt)
 {
 	mblk_t			*head = NULL;
 	mblk_t			*tail = NULL;
@@ -2305,22 +2305,12 @@ retry:
 	return (flent->fe_match(ft, flent, &s));
 }
 
-// static inline bool
-// static bool
 static bool
 mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp, const bool is_tx)
 {
 	ASSERT3P(flent, !=, NULL);
 	ASSERT3P(mp, !=, NULL);
-
-	/* I hope for all out sakes the MEOI is, if valid, set by this point */
-	/* TODO(ky): What is the actual cost here? Do we need dedicated methods on/for the dblk state? */
-	// mac_ether_offload_info_t meoi = { 0 };
-	// mac_ether_offload_info(mp, &meoi, NULL);
-
-	// DTRACE_PROBE3(fm__inner__meoi, mblk_t*, mp,
-	//     mac_ether_offload_info_t *, &meoi, mac_flow_match_t *, match);
 
 	if ((match->mfm_cond & MFC_NOFRAG) != 0) {
 		if (meoi_fast_fragmented(mp)) {
@@ -2429,20 +2419,12 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	}
 }
 
-// static inline bool
-// static bool
-// mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
-//     mblk_t* mp, const bool is_tx)
-// {
-// 	return (mac_pkt_is_flow_match_inner(flent, match, mp, is_tx));
-// }
-
 /*
  * TODO(ky): theory statement on what this is doing.
  */
-// static inline uint32_t
-static int
-mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs, flow_tree_pkt_set_t *pkts)
+static uint32_t
+mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts)
 {
 	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
 	ASSERT3U(ft->ftb_len, >, 0);
@@ -2552,12 +2534,6 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs, flow_tree_pkt_set_t *pkts
 
 			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELIVER: {
-				/* TODO(ky): contention on pkt count? */
-				/* softrings REALLY want this to be happy */
-				// mutex_enter(&send_to->srs_lock);
-				// send_to->srs_data.rx.sr_poll_pkt_cnt +=
-				//     my_pkts->ftp_deli_count;
-				// mutex_exit(&send_to->srs_lock);
 				mac_soft_ring_set_t *send_to =
 				    (mac_soft_ring_set_t *) xnode->arg.ftex_srs;
 
@@ -2595,17 +2571,33 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs, flow_tree_pkt_set_t *pkts
 	return (dropped_pkts);
 }
 
-static void
-mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
-    flow_tree_pkt_set_t *pkts)
+static inline bool
+mac_bw_ctl_try_refresh(mac_bw_ctl_t *bw)
 {
-	/* TODO(ky): all MAC_UPDATE_SRS_SIZE_LOCKED should live here */
+	const clock_t now = ddi_get_lbolt();
+	const bool refresh = bw->mac_bw_curr_time != now;
+
+	if (refresh) {
+		mac_srs->srs_bw->mac_bw_curr_time = now;
+		mac_srs->srs_bw->mac_bw_used = 0;
+	}
+
+	return (refresh);
+}
+
+static uint32_t
+mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts, flow_tree_bw_refund_t *root_bw)
+{
+	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
+	const bool update_root_bw = root_bw != NULL && root_bw->ftbr_bw != NULL;
 	ASSERT3U(ft->ftb_len, >, 0);
 	ASSERT3U(ft->ftb_depth, >, 0);
 	ASSERT3P(ft->ftb_chains, !=, NULL);
 	ASSERT3P(ft->ftb_bw_refund, !=, NULL);
 	ASSERT3P(ft->ftb_subtree, !=, NULL);
 
+	uint32_t dropped_pkts = 0;
 	ssize_t depth = 0;
 	bool is_enter = true;
 	const flow_tree_baked_node_t *node = ft->ftb_subtree;
@@ -2633,8 +2625,7 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
 			if (is_ctld) {
 				my_bw->ftbr_bw = enode->ften_bw;
 				mutex_enter(&enode->ften_bw->mac_bw_lock);
-
-				/* TODO(ky): refresh tick? */
+				_ = mac_bw_ctl_try_refresh(my_bw->ftbr_bw);
 			}
 			const size_t bw_avail = (is_ctld) ?
 			    (enode->ften_bw->mac_bw_limit -
@@ -2678,30 +2669,42 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
 				    classed->mpl_size;
 				mutex_exit(&enode->ften_bw->mac_bw_lock);
 
-				/* propagate refund to all parents */
-				/* TODO(ky): propagate refund to caller? */
+				/*
+				 * Any packets dropped due to a nested b/w
+				 * control should be refunded, if possible.
+				 * Mark those up now, and perform the refunds
+				 * at exit time.
+				 */
 				for (int i = 0; i < depth; i++){
 					flow_tree_bw_refund_t *rf =
 					    &(ft->ftb_bw_refund[i]);
-					if (rf == NULL) {
+					if (rf->ftbr_bw == NULL) {
 						continue;
 					}
-					rf->ftbr_count += drop_list.mpl_count;
 					rf->ftbr_size += drop_list.mpl_size;
+				}
+				if (update_root_bw) {
+					root_bw->ftbr_size +=
+					    drop_list.mpl_size;
 				}
 
 				if (!mac_pkt_list_is_empty(&drop_list)) {
 					freemsgchain(drop_list.mpl_head);
+					dropped_pkts += drop_list.mpl_count;
 				}
 			} else {
 				ASSERT(mac_pkt_list_is_empty(&drop_list));
 			}
 
-			/* (head == NULL) => (tail == NULL) for both layers */
-			ASSERT((to_class->mpl_head != NULL) ||
-			    (to_class->mpl_tail == NULL));
-			ASSERT((classed->mpl_head != NULL) ||
-			    (classed->mpl_tail == NULL));
+			/* (head == NULL) <=> (tail == NULL) for both layers */
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_tail == NULL);
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_count == 0);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_tail == NULL);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_count == 0);
 
 			if (mac_pkt_list_is_empty(classed)) {
 				/*
@@ -2716,6 +2719,9 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
 					depth--;
 					is_enter = false;
 				}
+
+				ASSERT(mac_pkt_list_is_empty(
+				    &my_pkts->ftp_deli));
 
 				node++;
 				continue;
@@ -2750,10 +2756,8 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
 
 			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELIVER: {
-				/* TODO(ky): contention on pkt count? */
 				mac_soft_ring_set_t *send_to =
 				    (mac_soft_ring_set_t *) xnode->arg.ftex_srs;
-				/* TODO(ky): bw_sz on this member? */
 
 				mac_rx_srs_deliver(send_to, deliver_from);
 				break;
@@ -2766,9 +2770,15 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
 			case MFA_TYPE_DROP:
 				/* TODO(ky): right call? flent stats? */
 				freemsgchain(deliver_from->mpl_head);
+				dropped_pkts += deliver_from->mpl_count;
+				deliver_from->mpl_head = NULL;
+				deliver_from->mpl_tail = NULL;
+				deliver_from->mpl_count = 0;
+				deliver_from->mpl_size = 0;
 				break;
 			}
-			bzero(my_pkts, sizeof (*my_pkts));
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
 
 			if (is_ctld && my_bw->ftbr_size != 0) {
 				/* Process any outstanding refunds */
@@ -2778,6 +2788,7 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
 				    my_bw->ftbr_bw->mac_bw_used);
 				mutex_exit(&my_bw->ftbr_bw->mac_bw_lock);
 				bzero(my_bw, sizeof (*my_bw));
+
 			}
 
 			if (xnode->ftex_ascend) {
@@ -2789,6 +2800,8 @@ mac_rx_srs_walk_flowtree_bw(const flow_tree_baked_t *ft,
 		node++;
 	}
 	ASSERT3S(depth, ==, -1);
+
+	return (dropped_pkts);
 }
 
 /*
@@ -2952,15 +2965,17 @@ again:
 	 * should not be admitted by the DLS bypass flows.
 	 */
 
-	/* Generally we *should* have a subtree here, due to DLS bypass */
+	/*
+	 * Generally we *should* have a subtree here, due to DLS bypass.
+	 * Clients like viona (and some vnic/etherstub/... topologies) will
+	 * create effectively L2-only clients.
+	 */
 	if (mac_srs->srs_flowtree.ftb_depth > 0) {
 		if (likely(!mac_srs->srs_flowtree.ftb_needs_bw)) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
-			/* TODO(ky): not ready */
-			ASSERT(false);
-			mac_rx_srs_walk_flowtree_bw(&mac_srs->srs_flowtree,
+			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
 			    &pktset);
 		}
 	}
@@ -2972,7 +2987,6 @@ again:
 	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
 
 	if (dropped_pkts != 0) {
-		// MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, dropped_pkts);
 		mac_update_srs_count(mac_srs, dropped_pkts);
 	}
 
@@ -3089,23 +3103,16 @@ mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 	mblk_t			*head;
 	mblk_t			*tail;
 	timeout_id_t		tid;
-	size_t			sz = 0;
-	int			cnt = 0;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
 	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
-	clock_t			now;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-	ASSERT(mac_srs->srs_type & SRST_BW_CONTROL);
+	ASSERT3U(mac_srs->srs_type & SRST_BW_CONTROL, !=, 0);
 again:
 	/* Check if we are doing B/W control */
 	mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
-	now = ddi_get_lbolt();
-	if (mac_srs->srs_bw->mac_bw_curr_time != now) {
-		mac_srs->srs_bw->mac_bw_curr_time = now;
-		mac_srs->srs_bw->mac_bw_used = 0;
-		if (mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED)
-			mac_srs->srs_bw->mac_bw_state &= ~SRS_BW_ENFORCED;
+	if (mac_bw_ctl_try_refresh(mac_srs->srs_bw)) {
+		mac_srs->srs_bw->mac_bw_state &= ~SRS_BW_ENFORCED;
 	} else if (mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED) {
 		mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
 		goto done;
@@ -3124,8 +3131,8 @@ again:
 		goto done;
 	}
 
-	sz = 0;
-	cnt = 0;
+	size_t sz = 0;
+	uint32_t cnt = 0;
 	if ((head = mac_srs_pick_chain(mac_srs, &tail, &sz, &cnt)) == NULL) {
 		/*
 		 * We couldn't pick up a single packet.
@@ -4099,12 +4106,8 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		return (cookie);
 	}
 	MAC_COUNT_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
-	now = ddi_get_lbolt();
-	if (mac_srs->srs_bw->mac_bw_curr_time != now) {
-		mac_srs->srs_bw->mac_bw_curr_time = now;
-		mac_srs->srs_bw->mac_bw_used = 0;
-	} else if (mac_srs->srs_bw->mac_bw_used >
-	    mac_srs->srs_bw->mac_bw_limit) {
+	if (!mac_bw_ctl_try_refresh(mac_srs->srs_bw) &&
+	    mac_srs->srs_bw->mac_bw_used > mac_srs->srs_bw->mac_bw_limit) {
 		mac_srs->srs_bw->mac_bw_state |= SRS_BW_ENFORCED;
 		MAC_TX_SRS_ENQUEUE_CHAIN(mac_srs,
 		    mp_chain, tail, cnt, sz);
@@ -4293,18 +4296,14 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 			    mac_srs->srs_bw->mac_bw_limit)
 				continue;
 
-			now = ddi_get_lbolt();
-			if (mac_srs->srs_bw->mac_bw_curr_time != now) {
-				mac_srs->srs_bw->mac_bw_curr_time = now;
-				mac_srs->srs_bw->mac_bw_used = sz;
+			if (mac_bw_ctl_try_refresh(mac_srs->srs_bw)) {
 				continue;
 			}
 			mac_srs->srs_bw->mac_bw_state |= SRS_BW_ENFORCED;
 			break;
 		}
 
-		ASSERT((head == NULL && tail == NULL) ||
-		    (head != NULL && tail != NULL));
+		ASSERT3B((head == NULL), ==, (tail == NULL));
 		if (tail != NULL) {
 			tail->b_next = NULL;
 			mutex_exit(&mac_srs->srs_lock);
@@ -4376,17 +4375,13 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 			    mac_srs->srs_bw->mac_bw_limit)
 				continue;
 
-			now = ddi_get_lbolt();
-			if (mac_srs->srs_bw->mac_bw_curr_time != now) {
-				mac_srs->srs_bw->mac_bw_curr_time = now;
-				mac_srs->srs_bw->mac_bw_used = 0;
+			if (mac_bw_ctl_try_refresh(mac_srs->srs_bw)) {
 				continue;
 			}
 			mac_srs->srs_bw->mac_bw_state |= SRS_BW_ENFORCED;
 			break;
 		}
-		ASSERT((head == NULL && tail == NULL) ||
-		    (head != NULL && tail != NULL));
+		ASSERT3B(head == NULL, ==, tail == NULL);
 		if (tail != NULL) {
 			tail->b_next = NULL;
 			mutex_exit(&mac_srs->srs_lock);

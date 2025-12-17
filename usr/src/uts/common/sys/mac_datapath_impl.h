@@ -92,7 +92,7 @@ mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst) {
  * `mac_standardise_pkts`.
  */
 static inline ssize_t
-meoi_fast_l2hlen(const mblk_t* mp)
+meoi_fast_l2hlen(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
 	return ((db->t_tuntype == 0) ?
@@ -101,7 +101,7 @@ meoi_fast_l2hlen(const mblk_t* mp)
 }
 
 static inline int32_t
-meoi_fast_l3proto(const mblk_t* mp)
+meoi_fast_l3proto(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
 	return ((db->t_tuntype == 0) ?
@@ -110,7 +110,7 @@ meoi_fast_l3proto(const mblk_t* mp)
 }
 
 static inline ssize_t
-meoi_fast_l3hlen(const mblk_t* mp)
+meoi_fast_l3hlen(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
 	return ((db->t_tuntype == 0) ?
@@ -119,7 +119,7 @@ meoi_fast_l3hlen(const mblk_t* mp)
 }
 
 static inline int16_t
-meoi_fast_l4proto(const mblk_t* mp)
+meoi_fast_l4proto(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
 	return ((db->t_tuntype == 0) ?
@@ -128,7 +128,7 @@ meoi_fast_l4proto(const mblk_t* mp)
 }
 
 static inline ssize_t
-meoi_fast_l4hlen(const mblk_t* mp)
+meoi_fast_l4hlen(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
 	return ((db->t_tuntype == 0) ?
@@ -137,7 +137,7 @@ meoi_fast_l4hlen(const mblk_t* mp)
 }
 
 static inline ssize_t
-meoi_fast_l4off(const mblk_t* mp)
+meoi_fast_l4off(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
 	const mac_ether_offload_flags_t flags =
@@ -150,10 +150,11 @@ meoi_fast_l4off(const mblk_t* mp)
 }
 
 static inline bool
-meoi_fast_fragmented(const mblk_t* mp)
+meoi_fast_fragmented(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
-	return ((((db->t_tuntype == 0) ? db->p_flags : db->t_flags) & 0x30) != 0);
+	return ((((db->t_tuntype == 0) ?
+	    db->p_flags : db->t_flags) & 0x30) != 0);
 }
 
 #ifdef	__cplusplus

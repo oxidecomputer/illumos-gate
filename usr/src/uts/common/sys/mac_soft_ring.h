@@ -670,8 +670,7 @@ mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
 		 */
 		if ((srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_poll_thres) &&
 		    ((true_target->srs_state &
-		    (SRS_POLLING|SRS_PROC|SRS_GET_PKTS)) == SRS_POLLING))
-		{
+		    (SRS_POLLING|SRS_PROC|SRS_GET_PKTS)) == SRS_POLLING)) {
 			true_target->srs_state |= (SRS_PROC|SRS_GET_PKTS);
 			cv_signal(&true_target->srs_cv);
 			srs_rx->sr_below_hiwat++;

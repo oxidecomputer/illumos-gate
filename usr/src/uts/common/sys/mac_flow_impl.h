@@ -350,7 +350,6 @@ typedef union {
 
 typedef struct {
 	mac_bw_ctl_t	*ftbr_bw;
-	uint32_t	ftbr_count; /* TODO(ky): needed? */
 	size_t		ftbr_size;
 } flow_tree_bw_refund_t;
 
