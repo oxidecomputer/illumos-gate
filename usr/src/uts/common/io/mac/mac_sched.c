@@ -2117,7 +2117,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
  *  - Packets have MEOI inserted for flow resolution.
  *
  * Takes ownership of the passed in mblk_t, freeing it and allocating another
- * when a pullup is required.
+ * if a pullup is required.
  *
  * Doing this requires extra work when the driver cannot fill in this info. This
  * should be limited to use only *after* packets have been handed off to the
@@ -2212,6 +2212,14 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 	return (mp);
 }
 
+/*
+ * Ensure that a set of packets meet the constraints described in
+ * `mac_standardise_pkt`.
+ *
+ * Callers must check the packet count on `set` before/after this function is
+ * called to determine whether any packets were dropped, especially where SRS
+ * state and poll packet counts are concerned.
+ */
 static inline void
 mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t* set,
     const bool bw_ctl, mblk_t *mp)
@@ -2305,6 +2313,10 @@ retry:
 	return (flent->fe_match(ft, flent, &s));
 }
 
+/*
+ * Returns whether a packet successfully matches a packet filter associated
+ * with a flow.
+ */
 static bool
 mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
     mblk_t* mp, const bool is_tx)
@@ -2571,6 +2583,12 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 	return (dropped_pkts);
 }
 
+/*
+ * Checks whether a `bw` was last updated on a previous tick, and refreshes its
+ * bandwidth allocation if so.
+ *
+ * Returns `true` if the available bandwidth on `bw` was replenished.
+ */
 static inline bool
 mac_bw_ctl_try_refresh(mac_bw_ctl_t *bw)
 {
@@ -2578,11 +2596,23 @@ mac_bw_ctl_try_refresh(mac_bw_ctl_t *bw)
 	const bool refresh = bw->mac_bw_curr_time != now;
 
 	if (refresh) {
-		mac_srs->srs_bw->mac_bw_curr_time = now;
-		mac_srs->srs_bw->mac_bw_used = 0;
+		bw->mac_bw_curr_time = now;
+		bw->mac_bw_used = 0;
 	}
 
 	return (refresh);
+}
+
+static inline void
+mac_bw_ctl_do_refund(flow_tree_bw_refund_t *bw)
+{
+	if (bw->ftbr_size != 0) {
+		mutex_enter(&bw->ftbr_bw->mac_bw_lock);
+		bw->ftbr_bw->mac_bw_used -=
+		    MIN(bw->ftbr_size,
+		    bw->ftbr_bw->mac_bw_used);
+		mutex_exit(&bw->ftbr_bw->mac_bw_lock);
+	}
 }
 
 static uint32_t
@@ -2625,7 +2655,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 			if (is_ctld) {
 				my_bw->ftbr_bw = enode->ften_bw;
 				mutex_enter(&enode->ften_bw->mac_bw_lock);
-				_ = mac_bw_ctl_try_refresh(my_bw->ftbr_bw);
+				(void) mac_bw_ctl_try_refresh(my_bw->ftbr_bw);
 			}
 			const size_t bw_avail = (is_ctld) ?
 			    (enode->ften_bw->mac_bw_limit -
@@ -2780,15 +2810,10 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
 			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
 
-			if (is_ctld && my_bw->ftbr_size != 0) {
-				/* Process any outstanding refunds */
-				mutex_enter(&my_bw->ftbr_bw->mac_bw_lock);
-				my_bw->ftbr_bw->mac_bw_used -=
-				    MIN(my_bw->ftbr_size,
-				    my_bw->ftbr_bw->mac_bw_used);
-				mutex_exit(&my_bw->ftbr_bw->mac_bw_lock);
+			/* Process any outstanding refunds */
+			if (is_ctld) {
+				mac_bw_ctl_do_refund(my_bw);
 				bzero(my_bw, sizeof (*my_bw));
-
 			}
 
 			if (xnode->ftex_ascend) {
@@ -2802,6 +2827,39 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 	ASSERT3S(depth, ==, -1);
 
 	return (dropped_pkts);
+}
+
+static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pktset)
+{
+	/* TODO(ky): need to place VID check in during client setup, too */
+	flow_entry_t *flent = mac_srs->srs_flent;
+	mac_pkt_list_t *from = &pktset->ftp_avail;
+	mac_pkt_list_t *to = &pktset->ftp_deli;
+	mblk_t *curr = from->mpl_head;
+	mblk_t *prev = NULL;
+	while (curr != NULL) {
+		mblk_t **to_curr = (prev != NULL) ?
+		    &prev->b_next : &from->mpl_head;
+		const bool is_match = mac_pkt_is_flow_match(
+		    flent, &flent->fe_match2,
+		    curr, false);
+		if (unlikely(!is_match)) {
+			*to_curr = curr->b_next;
+			curr->b_next = NULL;
+			if (from->mpl_tail == curr) {
+				from->mpl_tail = prev;
+			}
+			from->mpl_count--;
+
+			ENQUEUE_MP_LIST(to, false,
+			    mp_len(curr), curr);
+		} else {
+			to_curr = &curr->b_next;
+			prev = curr;
+		}
+		curr = *to_curr;
+	}
 }
 
 /*
@@ -2911,15 +2969,16 @@ again:
 
 	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_avail));
 	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_deli));
-	mac_standardise_pkts(mcip, &pktset.ftp_avail, false, in_chain);
-	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
 
-	if (unlikely(is_promisc_on)) {
+	if (is_promisc_on) {
 		mac_promisc_client_dispatch(mcip, in_chain);
 	}
 	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
 		mac_protect_intercept_dynamic(mcip, in_chain);
 	}
+
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, false, in_chain);
+	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
 
 	if (tid != NULL) {
 		(void) untimeout(tid);
@@ -2927,37 +2986,7 @@ again:
 	}
 
 	if (unlikely(needs_sw_check)) {
-		DTRACE_PROBE1(mac__needs__swcheck, mac_soft_ring_t, mac_srs);
-		/* TODO(ky): need to place VID check in during client setup, too */
-		/* TODO(ky): refhold needed? It's from the srs... */
-		/* TODO(ky): Almost identical chain pick to walker */
-		flow_entry_t *flent = mac_srs->srs_flent;
-		mac_pkt_list_t *from = &pktset.ftp_avail;
-		mac_pkt_list_t *to = &pktset.ftp_deli;
-		mblk_t *curr = from->mpl_head;
-		mblk_t *prev = NULL;
-		while (curr != NULL) {
-			mblk_t **to_curr = (prev != NULL) ?
-			    &prev->b_next : &from->mpl_head;
-			const bool is_match = mac_pkt_is_flow_match(
-			    flent, &flent->fe_match2,
-			    curr, false);
-			if (unlikely(!is_match)) {
-				*to_curr = curr->b_next;
-				curr->b_next = NULL;
-				if (from->mpl_tail == curr) {
-					from->mpl_tail = prev;
-				}
-				from->mpl_count--;
-
-				ENQUEUE_MP_LIST(to, false,
-				    mp_len(curr), curr);
-			} else {
-				to_curr = &curr->b_next;
-				prev = curr;
-			}
-			curr = *to_curr;
-		}
+		mac_rx_srs_swcheck(mac_srs, &pktset);
 	}
 
 	/*
@@ -2971,12 +3000,12 @@ again:
 	 * create effectively L2-only clients.
 	 */
 	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		if (likely(!mac_srs->srs_flowtree.ftb_needs_bw)) {
+		if (!mac_srs->srs_flowtree.ftb_needs_bw) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
 			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
-			    &pktset);
+			    &pktset, NULL);
 		}
 	}
 
@@ -3108,6 +3137,8 @@ mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 	ASSERT3U(mac_srs->srs_type & SRST_BW_CONTROL, !=, 0);
+
+	flow_tree_pkt_set_t pktset = { 0 };
 again:
 	/* Check if we are doing B/W control */
 	mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
@@ -3164,8 +3195,8 @@ again:
 		goto done;
 	}
 
-	ASSERT(head != NULL);
-	ASSERT(tail != NULL);
+	ASSERT3P(head, !=, NULL);
+	ASSERT3P(tail, !=, NULL);
 
 	/* zero bandwidth: drop all and return to interrupt mode */
 	mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
@@ -3178,6 +3209,7 @@ again:
 		mac_drop_chain(head, "Rx no bandwidth");
 		goto leave_poll;
 	} else {
+		mac_srs->srs_bw->mac_bw_sz -= sz;
 		mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
 	}
 
@@ -3197,44 +3229,82 @@ again:
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 
-	if (mcip->mci_promisc_list != NULL) {
-		mutex_exit(&mac_srs->srs_lock);
-		mac_promisc_client_dispatch(mcip, head);
-		mutex_enter(&mac_srs->srs_lock);
-	}
-	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
-		mutex_exit(&mac_srs->srs_lock);
-		mac_protect_intercept_dynamic(mcip, head);
-		mutex_enter(&mac_srs->srs_lock);
-	}
+	/*
+	 * Generally, we'd expect when promiscuous mode is enabled that any
+	 * extra frames would land on the default group, with all of the
+	 * broadcast and multicast traffic. The confounding case is L2 flows on
+	 * NICs which expose a single group, and thus that traffic can land on a
+	 * unicast flow ring -- the group is shared between all clients for such
+	 * hardware.
+	 *
+	 * In this case, we need to manually check the L2 match, and divert any
+	 * unicast packets which fail this check straight to DLS (no flow
+	 * tree, which is predicated on an L2 match).
+	 */
+	const bool is_promisc_on = mcip->mci_promisc_list != NULL;
+	const bool needs_sw_check = is_promisc_on &&
+	    srs_rx->sr_ring != NULL &&
+	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER &&
+	    (mac_srs->srs_type & (SRST_LINK | SRST_DEFAULT_GRP)) ==
+	    (SRST_LINK | SRST_DEFAULT_GRP);
 
 	mutex_exit(&mac_srs->srs_lock);
+
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_avail));
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_deli));
+
+	if (is_promisc_on) {
+		mac_promisc_client_dispatch(mcip, head);
+	}
+	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
+		mac_protect_intercept_dynamic(mcip, head);
+	}
+
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, true, head);
+	uint32_t dropped_pkts = cnt - pktset.ftp_avail.mpl_count;
 
 	if (tid != NULL) {
 		(void) untimeout(tid);
 		tid = NULL;
 	}
 
-	/* Generally we *should* have a subtree here, due to DLS bypass */
-	/* TODO(ky): `likely()`? */
-	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		/* TODO(ky): walk tree, deliver to SRSes as needed */
-		ASSERT3U(mac_srs->srs_flowtree.ftb_len, >, 0);
-		ASSERT3P(mac_srs->srs_flowtree.ftb_chains, !=, NULL);
-		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
+	if (unlikely(needs_sw_check)) {
+		mac_rx_srs_swcheck(mac_srs, &pktset);
 	}
 
-	mac_pkt_list_t tmp_deliver = {
-		.mpl_head = head,
-		.mpl_tail = tail,
-		.mpl_count = cnt,
-		.mpl_size = sz,
-	};
+	/*
+	 * Generally we *should* have a subtree here, due to DLS bypass.
+	 * Clients like viona (and some vnic/etherstub/... topologies) will
+	 * create effectively L2-only clients.
+	 */
+	if (mac_srs->srs_flowtree.ftb_depth > 0) {
+		if (!mac_srs->srs_flowtree.ftb_needs_bw) {
+			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
+			    &pktset);
+		} else {
+			flow_tree_bw_refund_t to_refund = {
+				.ftbr_bw = mac_srs->srs_bw,
+				.ftbr_size = 0,
+			};
+			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
+			    &pktset, &to_refund);
+			mac_bw_ctl_do_refund(&to_refund);
+		}
+	}
+
+	/* Combine any unpicked packets with those delegated. */
+	mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
-	mac_rx_srs_deliver(mac_srs, &tmp_deliver);
+	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
+
+	if (dropped_pkts != 0) {
+		mac_update_srs_count(mac_srs, dropped_pkts);
+	}
 
 	mutex_enter(&mac_srs->srs_lock);
+
+
 
 	/*
 	 * Send the poll thread to pick up any packets arrived
