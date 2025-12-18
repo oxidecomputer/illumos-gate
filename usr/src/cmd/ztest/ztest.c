@@ -2393,7 +2393,7 @@ ztest_prealloc(ztest_ds_t *zd, uint64_t object, uint64_t offset, uint64_t size)
 	txg = ztest_tx_assign(tx, TXG_WAIT, FTAG);
 
 	if (txg != 0) {
-		dmu_prealloc(os, object, offset, size, tx);
+		dmu_zero(os, object, offset, size, tx);
 		dmu_tx_commit(tx);
 		txg_wait_synced(dmu_objset_pool(os), txg);
 	} else {

@@ -897,6 +897,21 @@ vdev_disk_ioctl_done(void *zio_arg, int error)
 	zio_interrupt(zio);
 }
 
+static int
+vdev_disk_issue_trim(vdev_disk_t *dvd, uint64_t offset, uint64_t size)
+{
+	/* dkioc_free_list_t is already declared to hold one entry */
+	dkioc_free_list_t dfl;
+	dfl.dfl_flags = 0;
+	dfl.dfl_num_exts = 1;
+	dfl.dfl_offset = 0;
+	dfl.dfl_exts[0].dfle_start = offset;
+	dfl.dfl_exts[0].dfle_length = size;
+
+	return (ldi_ioctl(dvd->vd_lh, DKIOCFREE,
+	    (uintptr_t)&dfl, FKIOCTL, kcred, NULL));
+}
+
 static void
 vdev_disk_io_start(zio_t *zio)
 {
@@ -978,16 +993,8 @@ vdev_disk_io_start(zio_t *zio)
 		/* Currently only supported on ZoL. */
 		ASSERT0(zio->io_trim_flags & ZIO_TRIM_SECURE);
 
-		/* dkioc_free_list_t is already declared to hold one entry */
-		dkioc_free_list_t dfl;
-		dfl.dfl_flags = 0;
-		dfl.dfl_num_exts = 1;
-		dfl.dfl_offset = 0;
-		dfl.dfl_exts[0].dfle_start = zio->io_offset;
-		dfl.dfl_exts[0].dfle_length = zio->io_size;
-
-		zio->io_error = ldi_ioctl(dvd->vd_lh, DKIOCFREE,
-		    (uintptr_t)&dfl, FKIOCTL, kcred, NULL);
+		zio->io_error = vdev_disk_issue_trim(dvd,
+		    zio->io_offset, zio->io_size);
 
 		if (zio->io_error == ENOTSUP || zio->io_error == ENOTTY) {
 			/*
@@ -999,6 +1006,19 @@ vdev_disk_io_start(zio_t *zio)
 
 		zio_interrupt(zio);
 		return;
+	case ZIO_TYPE_WRITE:
+		/*
+		 * If zeroing is requested and the drive supports TRIM, use it.
+		 * Otherwise, fall through and write the zero-filled buffer.
+		 */
+		if (zio->io_flags & ZIO_FLAG_ZERO_DATA &&
+		    !zfs_no_trim && vd->vdev_has_trim) {
+			if (vdev_disk_issue_trim(dvd,
+			    zio->io_offset, zio->io_size) == 0) {
+				zio_interrupt(zio);
+				return;
+			}
+		}
 	}
 
 	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);

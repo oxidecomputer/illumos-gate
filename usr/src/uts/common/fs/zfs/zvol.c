@@ -704,7 +704,7 @@ zvol_prealloc(zvol_state_t *zv)
 			(void) dmu_free_long_range(os, ZVOL_OBJ, 0, off);
 			return (error);
 		}
-		dmu_prealloc(os, ZVOL_OBJ, off, bytes, tx);
+		dmu_zero(os, ZVOL_OBJ, off, bytes, tx);
 		dmu_tx_commit(tx);
 		off += bytes;
 		resid -= bytes;
