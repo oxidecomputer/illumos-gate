@@ -327,6 +327,21 @@ struct mac_soft_ring_set_s {
 	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
 
 	/*
+	 * An SRS may be either _complete_ (!(srs_type & SRST_LOGICAL)), or
+	 * _logical_ (srs_type & SRST_LOGICAL).
+	 *
+	 * Complete SRSes are valid entry points for packets, and may have the
+	 * full suite of poll and/or worker threads created and bound to them.
+	 * If needed, they will have a valid baked flowtree for packet delivery.
+	 *
+	 * Logical SRSes serve purely as lists of softrings, with bandwidth
+	 * control elements if required.
+	 *
+	 * This field is protected by quiescence of the SRS.
+	 */
+	flow_tree_baked_t	srs_flowtree;
+
+	/*
 	 * List of soft rings & processing function.
 	 * The following block is protected by Rx quiescence.
 	 * i.e. they can be changed only after quiescing the SRS
@@ -379,18 +394,6 @@ struct mac_soft_ring_set_s {
 	processorid_t	srs_worker_cpuid_save;	/* saved cpuid during offline */
 	uint_t		srs_fanout_state;
 
-	/*
-	 * An SRS may be either _complete_ (!(srs_type & SRST_LOGICAL)), or
-	 * _logical_ (srs_type & SRST_LOGICAL).
-	 *
-	 * Complete SRSes are valid entry points for packets, and may have the
-	 * full suite of poll and/or worker threads created and bound to them.
-	 * If needed, they will have a valid baked flowtree for packet delivery.
-	 *
-	 * Logical SRSes serve purely as lists of softrings, with bandwidth
-	 * control elements if required.
-	 */
-	flow_tree_baked_t	srs_flowtree;
 	/*
 	 * Singly-linked list of logical SRSes allocated within an srs_flowtree.
 	 * A complete SRS serves as the head of this list, which allows for
@@ -498,7 +501,6 @@ mac_srs_is_logical(const mac_soft_ring_set_t *srs)
 #define	SRS_PROC		0x00000010
 #define	SRS_GET_PKTS		0x00000020
 #define	SRS_POLLING		0x00000040
-#define	SRS_BW_ENFORCED		0x00000080
 
 #define	SRS_WORKER		0x00000100
 #define	SRS_ENQUEUED		0x00000200

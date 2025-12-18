@@ -223,7 +223,7 @@ typedef bool		(*flow_match_fn2_t)(void *, mblk_t *);
  */
 typedef struct mac_bw_ctl_s {
 	kmutex_t	mac_bw_lock;
-	uint32_t	mac_bw_state;
+	uint8_t		mac_bw_state;
 	size_t		mac_bw_sz;	/* ?? Is it needed */
 	size_t		mac_bw_limit;	/* Max bytes to process per tick */
 	size_t		mac_bw_used;	/* Bytes processed in current tick */
@@ -233,6 +233,10 @@ typedef struct mac_bw_ctl_s {
 	size_t		mac_bw_intr;
 	clock_t		mac_bw_curr_time;
 } mac_bw_ctl_t;
+
+/* mac_bw_state */
+#define	BW_ENABLED	0x01
+#define	BW_ENFORCED	0x02
 
 typedef enum {
 	MF_TYPE_MAC,	/* Flows created by MAC. */
@@ -329,7 +333,6 @@ typedef struct {
 	mac_flow_match_t	ften_match;
 	bool			ften_descend;
 	uint16_t		ften_skip;
-	mac_bw_ctl_t		*ften_bw;
 } flow_tree_enter_node_t;
 
 typedef struct {
@@ -354,12 +357,12 @@ typedef struct {
 } flow_tree_bw_refund_t;
 
 typedef struct {
+	flow_tree_baked_node_t	*ftb_subtree;	/* len = 2 * ftb_len */
 	uint16_t		ftb_depth;
 	uint16_t		ftb_len;
-	bool			ftb_needs_bw;
+	uint32_t		ftb_bw_count;
 	flow_tree_pkt_set_t	*ftb_chains;	/* len = ftb_depth */
 	flow_tree_bw_refund_t	*ftb_bw_refund;	/* len = ftb_depth */
-	flow_tree_baked_node_t	*ftb_subtree;	/* len = 2 * ftb_len */
 } flow_tree_baked_t;
 
 struct flow_entry_s {					/* Protected by */

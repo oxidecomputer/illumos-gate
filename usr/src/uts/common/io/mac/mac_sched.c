@@ -1296,7 +1296,7 @@ boolean_t mac_latency_optimize = B_TRUE;
  * MAC_SRS_CHECK_BW_CONTROL
  *
  * Check to see if next tick has started so we can reset the
- * SRS_BW_ENFORCED flag and allow more packets to come in the
+ * BW_ENFORCED flag and allow more packets to come in the
  * system.
  */
 #define	MAC_SRS_CHECK_BW_CONTROL(mac_srs) {				\
@@ -1307,8 +1307,8 @@ boolean_t mac_latency_optimize = B_TRUE;
 	if ((mac_srs)->srs_bw->mac_bw_curr_time != now) {		\
 		(mac_srs)->srs_bw->mac_bw_curr_time = now;		\
 		(mac_srs)->srs_bw->mac_bw_used = 0;			\
-		if ((mac_srs)->srs_bw->mac_bw_state & SRS_BW_ENFORCED)	\
-			(mac_srs)->srs_bw->mac_bw_state &= ~SRS_BW_ENFORCED; \
+		if ((mac_srs)->srs_bw->mac_bw_state & BW_ENFORCED)	\
+			(mac_srs)->srs_bw->mac_bw_state &= ~BW_ENFORCED;\
 	}								\
 }
 
@@ -1556,12 +1556,12 @@ typedef enum pkt_type {
  * Note:
  * Since we know what is the maximum fanout possible, we create an array
  * of 'MAX_SR_FANOUT' for the head, tail, cnt and sz variables so that we
- * can enter the softrings with a chain. We need the MAX_SR_FANOUT so we can allocate the arrays on the stack (a kmem_alloc
- * for each packet would be expensive). If we ever want to have the
- * ability to have unlimited fanout, we should probably declare a head,
- * tail, cnt, sz with each soft ring (a data struct which contains a softring
- * along with these members) and create an array of this uber struct so we
- * don't have to do kmem_alloc.
+ * can enter the softrings with a chain. We need the MAX_SR_FANOUT so we can
+ * allocate the arrays on the stack (a kmem_alloc for each packet would be
+ * expensive). If we ever want to have the ability to have unlimited fanout, we
+ * should probably declare a head, tail, cnt, sz with each soft ring (a data
+ * struct which contains a softring along with these members) and create an
+ * array of this uber struct so we don't have to do kmem_alloc.
  */
 /*
  * TODO(ky): these need to be belts & braces checks in the fastpath flow match:
@@ -2041,6 +2041,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 		*chain_sz = mac_srs->srs_size;
 		*chain_cnt = mac_srs->srs_count;
 		mac_srs->srs_count = 0;
+		mac_srs->srs_bw->mac_bw_used += mac_srs->srs_size;
 		mac_srs->srs_size = 0;
 		return (head);
 	}
@@ -2054,17 +2055,12 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 		sz = msgdsize(mp);
 		if ((tsz + sz + mac_srs->srs_bw->mac_bw_used) >
 		    mac_srs->srs_bw->mac_bw_limit) {
-			if (!(mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED))
+			if (!(mac_srs->srs_bw->mac_bw_state & BW_ENFORCED))
 				mac_srs->srs_bw->mac_bw_state |=
-				    SRS_BW_ENFORCED;
+				    BW_ENFORCED;
 			break;
 		}
 
-		/*
-		 * The _size & cnt is  decremented from the softrings
-		 * when they send up the packet for polling to work
-		 * properly.
-		 */
 		tsz += sz;
 		cnt++;
 		mac_srs->srs_count--;
@@ -2076,6 +2072,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 		tail = mp;
 		mac_srs->srs_first = mac_srs->srs_first->b_next;
 	}
+	mac_srs->srs_bw->mac_bw_used += tsz;
 	mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
 	if (mac_srs->srs_first == NULL)
 		mac_srs->srs_last = NULL;
@@ -2651,15 +2648,26 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 
 			mac_pkt_list_t drop_list = { 0 };
 
-			const bool is_ctld = enode->ften_bw != NULL;
+			mac_bw_ctl_t *flent_bw = &enode->ften_flent->fe_rx_bw;
+			const bool likely_ctld =
+			    (flent_bw->mac_bw_state & BW_ENABLED) != 0;
+
+			if (likely_ctld) {
+				mutex_enter(&flent_bw->mac_bw_lock);
+			}
+
+			const bool is_ctld = likely_ctld &&
+			    (flent_bw->mac_bw_state & BW_ENABLED) != 0;
+
 			if (is_ctld) {
-				my_bw->ftbr_bw = enode->ften_bw;
-				mutex_enter(&enode->ften_bw->mac_bw_lock);
+				my_bw->ftbr_bw = flent_bw;
 				(void) mac_bw_ctl_try_refresh(my_bw->ftbr_bw);
+			} else if (likely_ctld) {
+				mutex_exit(&flent_bw->mac_bw_lock);
 			}
 			const size_t bw_avail = (is_ctld) ?
-			    (enode->ften_bw->mac_bw_limit -
-			    enode->ften_bw->mac_bw_used) : SIZE_MAX;
+			    (flent_bw->mac_bw_limit -
+			    flent_bw->mac_bw_used) : SIZE_MAX;
 
 			while (curr != NULL) {
 				mblk_t **to_curr = (prev != NULL) ?
@@ -2693,11 +2701,10 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 			}
 
 			if (is_ctld) {
-				enode->ften_bw->mac_bw_used +=
-				    classed->mpl_size;
-				enode->ften_bw->mac_bw_drop_bytes +=
-				    classed->mpl_size;
-				mutex_exit(&enode->ften_bw->mac_bw_lock);
+				flent_bw->mac_bw_used += classed->mpl_size;
+				flent_bw->mac_bw_drop_bytes +=
+				    drop_list.mpl_size;
+				mutex_exit(&flent_bw->mac_bw_lock);
 
 				/*
 				 * Any packets dropped due to a nested b/w
@@ -2929,6 +2936,7 @@ again:
 	mac_srs->srs_first = NULL;
 	mac_srs->srs_last = NULL;
 	mac_srs->srs_count = 0;
+	mac_srs->srs_size = 0;
 
 	if ((tid = mac_srs->srs_tid) != NULL) {
 		mac_srs->srs_tid = NULL;
@@ -2999,8 +3007,8 @@ again:
 	 * Clients like viona (and some vnic/etherstub/... topologies) will
 	 * create effectively L2-only clients.
 	 */
-	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		if (!mac_srs->srs_flowtree.ftb_needs_bw) {
+	if (mac_srs->srs_flowtree.ftb_subtree != NULL) {
+		if (mac_srs->srs_flowtree.ftb_bw_count == 0) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
@@ -3143,13 +3151,13 @@ again:
 	/* Check if we are doing B/W control */
 	mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
 	if (mac_bw_ctl_try_refresh(mac_srs->srs_bw)) {
-		mac_srs->srs_bw->mac_bw_state &= ~SRS_BW_ENFORCED;
-	} else if (mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED) {
+		mac_srs->srs_bw->mac_bw_state &= ~BW_ENFORCED;
+	} else if (mac_srs->srs_bw->mac_bw_state & BW_ENFORCED) {
 		mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
 		goto done;
 	} else if (mac_srs->srs_bw->mac_bw_used >
 	    mac_srs->srs_bw->mac_bw_limit) {
-		mac_srs->srs_bw->mac_bw_state |= SRS_BW_ENFORCED;
+		mac_srs->srs_bw->mac_bw_state |= BW_ENFORCED;
 		mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
 		goto done;
 	}
@@ -3171,7 +3179,7 @@ again:
 		mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
 		if ((mac_srs->srs_bw->mac_bw_used == 0) &&
 		    (mac_srs->srs_size != 0) &&
-		    !(mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED)) {
+		    !(mac_srs->srs_bw->mac_bw_state & BW_ENFORCED)) {
 			/*
 			 * Seems like configured B/W doesn't
 			 * even allow processing of 1 packet
@@ -3277,8 +3285,8 @@ again:
 	 * Clients like viona (and some vnic/etherstub/... topologies) will
 	 * create effectively L2-only clients.
 	 */
-	if (mac_srs->srs_flowtree.ftb_depth > 0) {
-		if (!mac_srs->srs_flowtree.ftb_needs_bw) {
+	if (mac_srs->srs_flowtree.ftb_subtree != NULL) {
+		if (mac_srs->srs_flowtree.ftb_bw_count == 0) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
@@ -3324,7 +3332,7 @@ again:
 	 * handed to the poll thread if it was running.
 	 */
 	mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
-	if (!(mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED)) {
+	if (!(mac_srs->srs_bw->mac_bw_state & BW_ENFORCED)) {
 		if (mac_srs->srs_first != NULL) {
 			if (proc_type == SRS_WORKER) {
 				mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
@@ -3373,7 +3381,7 @@ done:
 	 */
 	mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
 	if ((mac_srs->srs_state & SRS_POLLING_CAPAB) &&
-	    ((mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED) ||
+	    ((mac_srs->srs_bw->mac_bw_state & BW_ENFORCED) ||
 	    (srs_rx->sr_poll_pkt_cnt > 0))) {
 		MAC_SRS_POLLING_ON(mac_srs);
 		mac_srs->srs_state &= ~(SRS_PROC|proc_type);
@@ -3416,12 +3424,12 @@ start:
 		if (mac_srs->srs_type & SRST_BW_CONTROL) {
 			MAC_SRS_BW_LOCK(mac_srs);
 			MAC_SRS_CHECK_BW_CONTROL(mac_srs);
-			if (mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED)
+			if (mac_srs->srs_bw->mac_bw_state & BW_ENFORCED)
 				bw_ctl_flag = B_TRUE;
 			MAC_SRS_BW_UNLOCK(mac_srs);
 		}
 		/*
-		 * The SRS_BW_ENFORCED flag may change since we have dropped
+		 * The BW_ENFORCED flag may change since we have dropped
 		 * the mac_bw_lock. However the drain function can handle both
 		 * a drainable SRS or a bandwidth controlled SRS, and the
 		 * effect of scheduling a timeout is to wakeup the worker
@@ -3463,11 +3471,11 @@ wait:
 			    mac_srs->srs_type & SRST_BW_CONTROL) {
 				MAC_SRS_BW_LOCK(mac_srs);
 				if (mac_srs->srs_bw->mac_bw_state &
-				    SRS_BW_ENFORCED) {
+				    BW_ENFORCED) {
 					MAC_SRS_CHECK_BW_CONTROL(mac_srs);
 				}
 				bw_ctl_flag = mac_srs->srs_bw->mac_bw_state &
-				    SRS_BW_ENFORCED;
+				    BW_ENFORCED;
 				MAC_SRS_BW_UNLOCK(mac_srs);
 			}
 		}
@@ -4169,7 +4177,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		mutex_exit(&mac_srs->srs_lock);
 		return (cookie);
 	} else if ((mac_srs->srs_first != NULL) ||
-	    (mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED)) {
+	    (mac_srs->srs_bw->mac_bw_state & BW_ENFORCED)) {
 		cookie = mac_tx_srs_enqueue(mac_srs, mp_chain, flag,
 		    fanout_hint, ret_mp);
 		mutex_exit(&mac_srs->srs_lock);
@@ -4178,7 +4186,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	MAC_COUNT_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
 	if (!mac_bw_ctl_try_refresh(mac_srs->srs_bw) &&
 	    mac_srs->srs_bw->mac_bw_used > mac_srs->srs_bw->mac_bw_limit) {
-		mac_srs->srs_bw->mac_bw_state |= SRS_BW_ENFORCED;
+		mac_srs->srs_bw->mac_bw_state |= BW_ENFORCED;
 		MAC_TX_SRS_ENQUEUE_CHAIN(mac_srs,
 		    mp_chain, tail, cnt, sz);
 		/*
@@ -4346,9 +4354,9 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 		/*
 		 * We are here because the timer fired and we have some data
 		 * to tranmit. Also mac_tx_srs_worker should have reset
-		 * SRS_BW_ENFORCED flag
+		 * BW_ENFORCED flag
 		 */
-		ASSERT(!(mac_srs->srs_bw->mac_bw_state & SRS_BW_ENFORCED));
+		ASSERT(!(mac_srs->srs_bw->mac_bw_state & BW_ENFORCED));
 		head = tail = mac_srs->srs_first;
 		while (mac_srs->srs_first != NULL) {
 			tail = mac_srs->srs_first;
@@ -4369,7 +4377,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 			if (mac_bw_ctl_try_refresh(mac_srs->srs_bw)) {
 				continue;
 			}
-			mac_srs->srs_bw->mac_bw_state |= SRS_BW_ENFORCED;
+			mac_srs->srs_bw->mac_bw_state |= BW_ENFORCED;
 			break;
 		}
 
@@ -4448,7 +4456,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 			if (mac_bw_ctl_try_refresh(mac_srs->srs_bw)) {
 				continue;
 			}
-			mac_srs->srs_bw->mac_bw_state |= SRS_BW_ENFORCED;
+			mac_srs->srs_bw->mac_bw_state |= BW_ENFORCED;
 			break;
 		}
 		ASSERT3B(head == NULL, ==, tail == NULL);

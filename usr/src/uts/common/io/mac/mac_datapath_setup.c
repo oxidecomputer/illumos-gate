@@ -1432,19 +1432,37 @@ mac_update_srs_priority(mac_soft_ring_set_t *mac_srs, pri_t prival)
 	thread_unlock(ringp->s_ring_worker);
 }
 
+static void
+mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
+    const mac_resource_props_t *mrp)
+{
+	ASSERT(MUTEX_HELD(bw->mac_bw_lock));
+	if (is_enabled) {
+		/* Set/Modify bandwidth limit */
+		bw->mac_bw_state |= BW_ENABLED;
+		bw->mac_bw_limit = FLOW_BYTES_PER_TICK(mrp->mrp_maxbw);
+		/*
+		 * Give twice the queuing capability before
+		 * dropping packets. The unit is bytes/tick.
+		 */
+		bw->mac_bw_drop_threshold = bw->mac_bw_limit << 1;
+	} else {
+		bw->mac_bw_state &= ~BW_ENABLED;
+	}
+}
+
 /*
  * Change the receive bandwidth limit.
  */
 static void
-mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
+mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
+    const mac_resource_props_t *mrp)
 {
 	mac_soft_ring_t		*softring;
 
 	mutex_enter(&srs->srs_lock);
-	mutex_enter(&srs->srs_bw->mac_bw_lock);
 
 	if (mrp->mrp_maxbw == MRP_MAXBW_RESETVAL) {
-		/* Reset bandwidth limit */
 		if (srs->srs_type & SRST_BW_CONTROL) {
 			softring = srs->srs_soft_ring_head;
 			while (softring != NULL) {
@@ -1454,33 +1472,23 @@ mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
 			srs->srs_type &= ~SRST_BW_CONTROL;
 			srs->srs_drain_func = mac_rx_srs_drain;
 		}
-	} else {
-		/* Set/Modify bandwidth limit */
-		srs->srs_bw->mac_bw_limit = FLOW_BYTES_PER_TICK(mrp->mrp_maxbw);
-		/*
-		 * Give twice the queuing capability before
-		 * dropping packets. The unit is bytes/tick.
-		 */
-		srs->srs_bw->mac_bw_drop_threshold =
-		    srs->srs_bw->mac_bw_limit << 1;
-		if (!(srs->srs_type & SRST_BW_CONTROL)) {
-			softring = srs->srs_soft_ring_head;
-			while (softring != NULL) {
-				softring->s_ring_type |= ST_RING_BW_CTL;
-				softring = softring->s_ring_next;
-			}
-			srs->srs_type |= SRST_BW_CONTROL;
-			srs->srs_drain_func = mac_rx_srs_drain_bw;
+	} else if (!(srs->srs_type & SRST_BW_CONTROL)) {
+		softring = srs->srs_soft_ring_head;
+		while (softring != NULL) {
+			softring->s_ring_type |= ST_RING_BW_CTL;
+			softring = softring->s_ring_next;
 		}
+		srs->srs_type |= SRST_BW_CONTROL;
+		srs->srs_drain_func = mac_rx_srs_drain_bw;
 	}
 
-	mutex_exit(&srs->srs_bw->mac_bw_lock);
 	mutex_exit(&srs->srs_lock);
 }
 
 /* Change the transmit bandwidth limit */
 static void
-mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
+mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
+    const mac_resource_props_t *mrp)
 {
 	uint32_t		tx_mode, ring_info = 0;
 	mac_srs_tx_t		*srs_tx = &srs->srs_data.tx;
@@ -1496,8 +1504,11 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
 	mutex_enter(&srs->srs_lock);
 	mutex_enter(&srs->srs_bw->mac_bw_lock);
 
+	const bool is_disabled = mrp->mrp_maxbw == MRP_MAXBW_RESETVAL;
+	mac_bw_ctl_set_state(srs->srs_bw, !is_disabled, mrp);
+
 	tx_mode = srs_tx->st_mode;
-	if (mrp->mrp_maxbw == MRP_MAXBW_RESETVAL) {
+	if (is_disabled) {
 		/* Reset bandwidth limit */
 		if (tx_mode == SRS_TX_BW) {
 			if (srs_tx->st_arg2 != NULL)
@@ -1515,14 +1526,6 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
 		}
 		srs->srs_type &= ~SRST_BW_CONTROL;
 	} else {
-		/* Set/Modify bandwidth limit */
-		srs->srs_bw->mac_bw_limit = FLOW_BYTES_PER_TICK(mrp->mrp_maxbw);
-		/*
-		 * Give twice the queuing capability before
-		 * dropping packets. The unit is bytes/tick.
-		 */
-		srs->srs_bw->mac_bw_drop_threshold =
-		    srs->srs_bw->mac_bw_limit << 1;
 		srs->srs_type |= SRST_BW_CONTROL;
 		if (tx_mode != SRS_TX_BW && tx_mode != SRS_TX_BW_FANOUT &&
 		    tx_mode != SRS_TX_BW_AGGR) {
@@ -1552,11 +1555,63 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs, mac_resource_props_t *mrp)
 void
 mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 {
-	int			count;
+	const bool disable = mrp->mrp_maxbw == MRP_MAXBW_RESETVAL;
 
-	for (count = 0; count < flent->fe_rx_srs_cnt; count++)
-		mac_rx_srs_update_bwlimit(flent->fe_rx_srs[count], mrp);
-	mac_tx_srs_update_bwlimit(flent->fe_tx_srs, mrp);
+	mutex_enter(&flent->fe_rx_bw.mac_bw_lock);
+	const bool was_disabled =
+	    (flent->fe_rx_bw.mac_bw_state & BW_ENABLED) == 0;
+	const bool state_changed = disable != was_disabled;
+	mac_bw_ctl_set_state(&flent->fe_rx_bw, !disable, mrp);
+	mutex_exit(&flent->fe_rx_bw.mac_bw_lock);
+
+	for (int i = 0; i < flent->fe_rx_srs_cnt; i++) {
+		mac_rx_srs_update_bwlimit(flent->fe_rx_srs[i], mrp);
+	}
+
+	if (flent->fe_tx_srs != NULL) {
+		mac_tx_srs_update_bwlimit(flent->fe_tx_srs, mrp);
+	} else {
+		/*
+		 * If there are no associated SRSes with this flent, then make
+		 * sure that the underlying mac_bw_ctl_t is still updated.
+		 */
+		mac_bw_ctl_set_state(&flent->fe_tx_bw, disable, mrp);
+	}
+
+	if (!state_changed || (flent->fe_type & FLOW_USER) == 0) {
+		return;
+	}
+
+	/*
+	 * `flent` is a user-flow, so the SRSes which refer back to it will be
+	 * reached through the client's flent. Propagate the state change to all
+	 * SRSes whose flowtrees use this flow entry.
+	 */
+	const mac_client_impl_t *mcip = (mac_client_impl_t*)flent->fe_mcip;
+	const flow_entry_t *client = mcip->mci_flent;
+
+	for (int i = 0; i < client->fe_rx_srs_cnt; i++) {
+		mac_soft_ring_set_t *root_srs = client->fe_rx_srs[i];
+		flow_tree_baked_t *root_tree = &root_srs->srs_flowtree;
+		mac_soft_ring_set_t *srs = root_srs;
+		while (srs != NULL) {
+			if (srs->srs_flent == flent) {
+				if (disable) {
+					atomic_dec_32(&root_tree->ftb_bw_count);
+				} else {
+					atomic_inc_32(&root_tree->ftb_bw_count);
+				}
+			}
+			srs = srs->srs_logical_next;
+		}
+	}
+
+	/* TODO(ky): need to figure out how exactly the tx path is to be shaped */
+	if (disable) {
+		atomic_dec_32(&client->fe_tx_srs->srs_flowtree.ftb_bw_count);
+	} else {
+		atomic_inc_32(&client->fe_tx_srs->srs_flowtree.ftb_bw_count);
+	}
 }
 
 void
@@ -2095,7 +2150,6 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 	 * the 1st one being brought up (the rx bw ctl struct may
 	 * be shared by multiple SRSs)
 	 */
-	mac_bw_ctl_t *mac_bw;
 	if (is_tx_srs) {
 		mac_srs->srs_bw = &flent->fe_tx_bw;
 		bzero(mac_srs->srs_bw, sizeof (mac_bw_ctl_t));
@@ -2177,19 +2231,13 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 	mac_srs_add_glist(mac_srs);
 
 	/* Initialize bw limit */
+	/* TODO(ky): should this be comparing against MRP_MAXBW_RESETVAL? */
 	if ((mrp->mrp_mask & MRP_MAXBW) != 0) {
 		mac_srs->srs_drain_func = mac_rx_srs_drain_bw;
 
-		mac_bw = mac_srs->srs_bw;
-		mutex_enter(&mac_bw->mac_bw_lock);
-		mac_bw->mac_bw_limit = FLOW_BYTES_PER_TICK(mrp->mrp_maxbw);
-
-		/*
-		 * Give twice the queuing capability before
-		 * dropping packets. The unit is bytes/tick.
-		 */
-		mac_bw->mac_bw_drop_threshold = mac_bw->mac_bw_limit << 1;
-		mutex_exit(&mac_bw->mac_bw_lock);
+		mutex_enter(&mac_srs->srs_bw->mac_bw_lock);
+		mac_bw_ctl_set_state(mac_srs->srs_bw, true, mrp);
+		mutex_exit(&mac_srs->srs_bw->mac_bw_lock);
 		mac_srs->srs_type |= SRST_BW_CONTROL;
 	} else {
 		mac_srs->srs_drain_func = mac_rx_srs_drain;
@@ -4283,6 +4331,7 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 	int err = 0;
 	size_t max_depth = 0;
 	size_t n_nodes = 0;
+	size_t bw_set_count = 0;
 	flow_tree_baked_t *into = &based_on->srs_flowtree;
 
 	ASSERT3P(ft, !=, NULL);
@@ -4322,6 +4371,16 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 
 		if (!ascended) {
 			n_nodes += 1;
+
+			/*
+			 * BW enabled state cannot change out from under us,
+			 * since creating/modifying a client requires the MAC
+			 * permieter.
+			 */
+			const mac_bw_ctl_t *bw = &el->ft_flent->fe_rx_bw;
+			if ((bw->mac_bw_state & BW_ENABLED) != 0) {
+				bw_set_count++;
+			}
 		}
 
 		max_depth = MAX(max_depth, depth);
@@ -4348,6 +4407,7 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 
 	into->ftb_depth = (uint16_t)max_depth;
 	into->ftb_len = (uint16_t)n_nodes;
+	into->ftb_bw_count = (uint32_t)bw_set_count;
 	if (n_nodes == 0) {
 		ASSERT3U(max_depth, ==, 0);
 		into->ftb_chains = NULL;

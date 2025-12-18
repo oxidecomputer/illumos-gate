@@ -1431,7 +1431,8 @@ mac_link_flow_add(datalink_id_t linkid, char *flow_name,
 
 /*
  * mac_link_flow_add_action()
- * Used by flowadm(8) or kernel mac clients for creating flows.
+ * Used by flowadm(8) or kernel mac clients for creating flows with a specified
+ * action.
  */
 int
 mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
