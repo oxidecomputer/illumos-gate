@@ -725,7 +725,7 @@
  *            * . Yes                                |   frames to the   |
  *            v                                      |      caller       |
  *      +===========+                                +-------------------+
- *      v braodcast v      +----------------+                  ^
+ *      v broadcast v      +----------------+                  ^
  *      v   flow?   v--*-->| mac_bcast_send |------------------+
  *      +===========+  .   +----------------+                  |
  *            |        . . Yes                                 |
@@ -1027,6 +1027,7 @@
 
 #include <sys/types.h>
 #include <sys/callb.h>
+#include <sys/ethernet.h>
 #include <sys/pattr.h>
 #include <sys/sdt.h>
 #include <sys/strsubr.h>
@@ -1145,7 +1146,7 @@ mac_tx_mode_t mac_tx_mode_list[] = {
  *
  * In poll mode, its better to keep the pipeline going where the
  * SRS worker thread keeps processing packets and poll thread
- * keeps bringing more packets (specially if they get to run
+ * keeps bringing more packets (especially if they get to run
  * on different CPUs). This also prevents the overheads associated
  * by excessive signalling (on NUMA machines, this can be
  * pretty devastating). The exception is latency optimized case
@@ -1166,7 +1167,7 @@ mac_tx_mode_t mac_tx_mode_list[] = {
  *    backlog (sr_poll_pkt_cnt > 0), we stay in polling
  *    mode but don't poll the H/W for packets anymore
  *    (let the polling thread go to sleep).
- * 5) Once the backlog is relived (packets are processed)
+ * 5) Once the backlog is relieved (packets are processed)
  *    we reenable polling (by signalling the poll thread)
  *    only when the backlog dips below sr_poll_thres.
  * 6) sr_hiwat is used exclusively when we are not
@@ -1568,9 +1569,6 @@ typedef enum pkt_type {
  *  - DLS bypass disabled by either mechanism:
  *    |-> mac_rx_bypass_disable (! (srs_type & SRST_DLS_BYPASS)), (done!)
  *    |-> mac_rx_bypass_disable (mci_state_flags & MCIS_RX_BYPASS_DISABLE).
- *  - Iff. HW-classified && Promisc, need to validate L2 match by hand.
- *    |-> Should this be in the domain of the client? E.g., bottom-of-the-
- *        tree check iff. promisc is enabled?
  */
 static void
 mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
@@ -2321,9 +2319,21 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	ASSERT3P(flent, !=, NULL);
 	ASSERT3P(mp, !=, NULL);
 
-	if ((match->mfm_cond & MFC_NOFRAG) != 0) {
-		if (meoi_fast_fragmented(mp)) {
-			return (false);
+	if (match->mfm_cond != 0) {
+		if ((match->mfm_cond & MFC_NOFRAG) != 0) {
+			if (meoi_fast_fragmented(mp)) {
+				return (false);
+			}
+		}
+		if ((match->mfm_cond & MFC_UNICAST) != 0) {
+			const bool too_small = meoi_fast_l2hlen(mp) >=
+			    sizeof (struct ether_header);
+			const struct ether_header *ether =
+			    (struct ether_header *) mp->b_rptr;
+			if (too_small || (ether->ether_dhost.ether_addr_octet[0]
+			    & 0x01) != 0) {
+				return (false);
+			}
 		}
 	}
 
@@ -2360,6 +2370,11 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 		return (meoi_fast_l2hlen(mp) >= sizeof (struct ether_header) &&
 		    bcmp(mp->b_rptr + ETHERADDRL, match->arg.mfm_l2addr,
 		    ETHERADDRL));
+	case MFM_L2_VID:
+		return (meoi_fast_is_vlan(mp) &&
+		    meoi_fast_l2hlen(mp) >= sizeof (struct ether_vlan_header) &&
+		    ((struct ether_vlan_header *) mp->b_rptr)->ether_tci ==
+		    match->arg.mfm_vid);
 	// case MFM_L3_DST:
 	// 	if ((meoi.meoi_flags & (MEOI_L2INFO_SET | MEOI_L3INFO_SET))
 	// 	    == (MEOI_L2INFO_SET | MEOI_L3INFO_SET)) {

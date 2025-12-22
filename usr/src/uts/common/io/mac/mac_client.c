@@ -3774,7 +3774,7 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		 * reason, the following logic should change as well.
 		 * I suppose the fanout_hint also assumes this .
 		 */
-		ASSERT(flent != NULL);
+		ASSERT3P(flent, !=, NULL);
 		is_subflow = B_TRUE;
 	} else {
 		flent = mcip->mci_flent;
@@ -6044,7 +6044,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
 	ipv4->fe_match2.mfm_type = MFM_SAP;
 	ipv4->fe_match2.arg.mfm_sap = ETHERTYPE_IP;
-	ipv4->fe_match2.mfm_cond = MFC_NOFRAG;
+	ipv4->fe_match2.mfm_cond = MFC_NOFRAG | MFC_UNICAST;
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4_tcp",
 	    mcip->mci_name, mcip);
@@ -6063,7 +6063,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6));
 	ipv6->fe_match2.mfm_type = MFM_SAP;
 	ipv6->fe_match2.arg.mfm_sap = ETHERTYPE_IPV6;
-	ipv6->fe_match2.mfm_cond = MFC_NOFRAG;
+	ipv6->fe_match2.mfm_cond = MFC_NOFRAG | MFC_UNICAST;
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6_tcp",
 	    mcip->mci_name, mcip);

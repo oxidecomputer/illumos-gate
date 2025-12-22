@@ -100,6 +100,15 @@ meoi_fast_l2hlen(const mblk_t *mp)
 	    (((db->t_flags & MEOI_L2INFO_SET) != 0) ? db->t_l2hlen: -1));
 }
 
+static inline bool
+meoi_fast_is_vlan(const mblk_t *mp)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	return ((db->t_tuntype == 0) ?
+	    ((db->p_flags & MEOI_VLAN_TAGGED) != 0) :
+	    ((db->t_flags & MEOI_VLAN_TAGGED) != 0));
+}
+
 static inline int32_t
 meoi_fast_l3proto(const mblk_t *mp)
 {

@@ -3144,9 +3144,23 @@ mac_datapath_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 		mcip->mci_unicast = mac_find_macaddr(mip, mac_addr);
 		VERIFY3P(mcip->mci_unicast, !=, NULL);
-		flent->fe_match2.mfm_type = MFM_L2_DST;
-		bcopy(&mcip->mci_unicast->ma_addr,
-		    flent->fe_match2.arg.mfm_l2addr, ETHERADDRL);
+		if (vid != VLAN_ID_NONE) {
+			flent->fe_match2.mfm_type = MFM_ALL;
+			flent->fe_match2.arg.mfm_list =
+			    mac_flow_match_list_create(2);
+
+			mac_flow_match_list_t *list =
+			    flent->fe_match2.arg.mfm_list; 
+			list->mfml_match[0].mfm_type = MFM_L2_DST;
+			bcopy(&mcip->mci_unicast->ma_addr,
+			    list->mfml_match[0].arg.mfm_l2addr, ETHERADDRL);
+			list->mfml_match[1].mfm_type = MFM_L2_VID;
+			list->mfml_match[1].arg.mfm_vid = vid;
+		} else {
+			flent->fe_match2.mfm_type = MFM_L2_DST;
+			bcopy(&mcip->mci_unicast->ma_addr,
+			    flent->fe_match2.arg.mfm_l2addr, ETHERADDRL);
+		}
 
 		/*
 		 * Setup the Rx and Tx SRSes. If the client has a

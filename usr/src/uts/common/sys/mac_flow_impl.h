@@ -256,6 +256,7 @@ typedef enum {
 
 	MFM_L2_DST,
 	MFM_L2_SRC,
+	MFM_L2_VID,
 
 	MFM_L3_DST,
 	MFM_L3_SRC,
@@ -280,6 +281,7 @@ typedef enum {
 
 typedef enum {
 	MFC_NOFRAG = (1 << 0),
+	MFC_UNICAST = (1 << 1),
 } mac_flow_match_condition_t;
 
 typedef struct mac_flow_match_list_s mac_flow_match_list_t;
@@ -301,6 +303,7 @@ typedef struct {
 	mac_flow_match_condition_t	mfm_cond;
 	union {
 		uint16_t	mfm_sap;
+		uint16_t	mfm_vid;
 		uint8_t		mfm_ipproto;
 		mac_flow_match_list_t		*mfm_list;
 		mac_flow_match_arbitrary_t	mfm_arbitrary;
