@@ -484,10 +484,12 @@ done:
 
 	/* TODO(ky): rethink? */
 
-	// const int cnt = ringp->s_ring_count;
+	const int cnt = ringp->s_ring_count;
 	// const size_t sz = ringp->s_ring_size;
 
-	// // mac_update_srs_count(parent, cnt);
+	if (cnt != 0) {
+		mac_update_srs_count(parent, cnt);
+	}
 
 	// mac_soft_ring_set_t *parent = srs->srs_complete_parent;
 	// if (parent != NULL) {

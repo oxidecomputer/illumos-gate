@@ -670,7 +670,7 @@
  *                                                                    +--------+
  *
  * [1] The simple case refers to the SRS being configured with the
- * SRS_TX_DEFAULT transmission mode, having a single mblk_t (not a chain), their
+ * SRS_TX_DEFAULT transmission mode, having a single mblk_t (not a chain), there
  * being only a single active client, and not having a backlog in the srs.
  *
  *
@@ -2050,7 +2050,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	 */
 	ASSERT(MUTEX_HELD(&mac_srs->srs_bw->mac_bw_lock));
 	while ((mp = mac_srs->srs_first) != NULL) {
-		sz = msgdsize(mp);
+		sz = mp_len(mp);
 		if ((tsz + sz + mac_srs->srs_bw->mac_bw_used) >
 		    mac_srs->srs_bw->mac_bw_limit) {
 			if (!(mac_srs->srs_bw->mac_bw_state & BW_ENFORCED))
@@ -2854,7 +2854,6 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
     flow_tree_pkt_set_t *pktset)
 {
-	/* TODO(ky): need to place VID check in during client setup, too */
 	flow_entry_t *flent = mac_srs->srs_flent;
 	mac_pkt_list_t *from = &pktset->ftp_avail;
 	mac_pkt_list_t *to = &pktset->ftp_deli;
@@ -3083,7 +3082,7 @@ out:
 	if (mac_srs->srs_state & SRS_GET_PKTS) {
 		/*
 		 * Poll thread is already running. Leave the
-		 * SRS_RPOC set and hand over the control to
+		 * SRS_PROC set and hand over the control to
 		 * poll thread.
 		 */
 		mac_srs->srs_state &= ~proc_type;
@@ -3367,7 +3366,7 @@ done:
 	if (mac_srs->srs_state & SRS_GET_PKTS) {
 		/*
 		 * Poll thread is already running. Leave the
-		 * SRS_RPOC set and hand over the control to
+		 * SRS_PROC set and hand over the control to
 		 * poll thread.
 		 */
 		mac_srs->srs_state &= ~proc_type;
@@ -3428,14 +3427,13 @@ mac_srs_worker(mac_soft_ring_set_t *mac_srs)
 	kmutex_t		*lock = &mac_srs->srs_lock;
 	kcondvar_t		*async = &mac_srs->srs_async;
 	callb_cpr_t		cprinfo;
-	boolean_t		bw_ctl_flag;
 
 	CALLB_CPR_INIT(&cprinfo, lock, callb_generic_cpr, "srs_worker");
 	mutex_enter(lock);
 
 start:
 	for (;;) {
-		bw_ctl_flag = B_FALSE;
+		bool bw_ctl_flag = false;
 		if (mac_srs->srs_type & SRST_BW_CONTROL) {
 			MAC_SRS_BW_LOCK(mac_srs);
 			MAC_SRS_CHECK_BW_CONTROL(mac_srs);
@@ -3450,7 +3448,7 @@ start:
 		 * effect of scheduling a timeout is to wakeup the worker
 		 * thread which in turn will call the drain function. Since
 		 * we release the srs_lock atomically only in the cv_wait there
-		 * isn't a fear of waiting for ever.
+		 * isn't a fear of waiting forever.
 		 */
 		while (((mac_srs->srs_state & SRS_PROC) ||
 		    (mac_srs->srs_first == NULL) || bw_ctl_flag ||
@@ -3464,8 +3462,8 @@ start:
 			 */
 			if (bw_ctl_flag && mac_srs->srs_tid == NULL) {
 				/*
-				 * We need to ensure that a timer  is already
-				 * scheduled or we force  schedule one for
+				 * We need to ensure that a timer is already
+				 * scheduled or we force schedule one for
 				 * later so that we can continue processing
 				 * after this  quanta is over.
 				 */
@@ -3489,8 +3487,8 @@ wait:
 				    BW_ENFORCED) {
 					MAC_SRS_CHECK_BW_CONTROL(mac_srs);
 				}
-				bw_ctl_flag = mac_srs->srs_bw->mac_bw_state &
-				    BW_ENFORCED;
+				bw_ctl_flag = (mac_srs->srs_bw->mac_bw_state &
+				    BW_ENFORCED) != 0;
 				MAC_SRS_BW_UNLOCK(mac_srs);
 			}
 		}
@@ -5157,7 +5155,7 @@ mac_tx_sring_enqueue(mac_soft_ring_t *ringp, mblk_t *mp_chain, uint16_t flag,
  * mac_tx_soft_ring_process
  *
  * This routine is called when fanning out outgoing traffic among
- * multipe Tx rings.
+ * multiple Tx rings.
  * Note that a soft ring is associated with a h/w Tx ring.
  */
 mac_tx_cookie_t

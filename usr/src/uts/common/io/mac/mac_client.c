@@ -3725,6 +3725,23 @@ mac_tx_needed_offloads(const mac_impl_t *mip, mblk_t **mpp)
 
 /*
  * Send function invoked by MAC clients.
+ *
+ * This function transmits the packet set `mp_chain` on a given MAC provider,
+ * selecting the necessary underlying ring(s) and queueing as appropriate.
+ *
+ * Flags are explained in the mac_sched.c theory statement, under the headers:
+ *  - MAC_DROP_ON_NO_DESC - "DROP MODE"
+ *  - MAC_TX_NO_ENQUEUE - "DON'T ENQUEUE"
+ * The nuances of available flags are discussed in more detail in the doc
+ * comment for `mac_tx_get_func`, since their semantics vary based on the
+ * underlying tx function in use.
+ *
+ * `hint` allows the caller to provide a precomputed flow-hash value for fanout
+ * purposes. This signals to mac_tx that every packet in the chain belongs to
+ * the same flow (i.e., that they have identical 5-tuples), and that the given
+ * value is consistent for any one flow. If the chain contains packets from more
+ * than one flow, this value must be set to 0. In this case MAC will determine a
+ * flow match for every packet, and will compute a fanout hash if needed.
  */
 mac_tx_cookie_t
 mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,

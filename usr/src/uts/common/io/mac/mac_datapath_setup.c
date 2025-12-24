@@ -1870,8 +1870,9 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 		}
 	}
 
+	mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
+
 	if (!is_logical) {
-		mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
 		mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
 		mac_rx_srs_retarget_intr(mac_rx_srs, srs_cpu->mc_rx_intr_cpu);
 	}
@@ -1933,9 +1934,8 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 			mac_srs_create_rx_softring(i, soft_ring_flag,
 			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
 		}
+		mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
 		if (!mac_srs_is_logical(mac_rx_srs)) {
-			mac_srs_worker_bind(mac_rx_srs,
-			    srs_cpu->mc_rx_workerid);
 			mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
 			mac_rx_srs_retarget_intr(mac_rx_srs,
 			    srs_cpu->mc_rx_intr_cpu);
@@ -1956,11 +1956,10 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 	} else {
 		mutex_enter(&cpu_lock);
 		/*
-		 * For a subflow, mrp_workerid and mrp_pollid
-		 * is not set.
+		 * For logical SRSes, mrp_pollid is not set.
 		 */
+		mac_srs_worker_bind(mac_rx_srs, mrp->mrp_rx_workerid);
 		if (!mac_srs_is_logical(mac_rx_srs)) {
-			mac_srs_worker_bind(mac_rx_srs, mrp->mrp_rx_workerid);
 			mac_srs_poll_bind(mac_rx_srs, mrp->mrp_rx_pollid);
 		}
 		mutex_exit(&cpu_lock);
@@ -2177,8 +2176,6 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 			}
 			flent->fe_rx_srs[flent->fe_rx_srs_cnt] = mac_srs;
 			flent->fe_rx_srs_cnt++;
-
-			srs_rx->sr_poll_cpuid = srs_rx->sr_poll_cpuid_save = -1;
 		} else {
 			mac_soft_ring_set_t *es = p->msc_data.logical.head_srs;
 			ASSERT3P(es, !=, NULL);
@@ -2287,10 +2284,8 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 	 * against stack overflows; see the use of mac_rx_srs_stack_needed
 	 * in mac_sched.c).
 	 */
-	if (!is_logical) {
-		mac_srs->srs_worker = thread_create(NULL, default_stksize << 1,
-		    mac_srs_worker, mac_srs, 0, &p0, TS_RUN, mac_srs->srs_pri);
-	}
+	mac_srs->srs_worker = thread_create(NULL, default_stksize << 1,
+	    mac_srs_worker, mac_srs, 0, &p0, TS_RUN, mac_srs->srs_pri);
 
 	if (is_tx_srs) {
 		mac_srs_tx_t *srs_tx = &mac_srs->srs_data.tx;
@@ -2306,22 +2301,11 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 		goto done;
 	}
 
-	/* TODO(ky) use this to determine whether or not to hook in and recompute flow tree inclusive of subflow tab */
-	// if ((srs_type & SRST_FLOW) != 0 ||
-	//     FLOW_TAB_EMPTY(mcip->mci_subflow_tab))
-	// 	srs_rx->sr_lower_proc = mac_rx_srs_process;
-	// else
-	// 	srs_rx->sr_lower_proc = mac_rx_srs_subflow_process;
 	srs_rx->sr_lower_proc = mac_rx_srs_process;
 
 	if (!is_logical) {
 		mac_ring_t *ring = p->msc_data.rx.ring;
 
-		/*
-		 * TODO(ky): should this be the flow action?
-		 * That would be used by... mac_hwrings_rx_process?
-		 * Ordinarily that's never updated to be the DLS bypass.
-		 */
 		srs_rx->sr_func = p->msc_data.rx.rx_func;
 		srs_rx->sr_arg1 = mcip;
 		srs_rx->sr_arg2 = NULL;
@@ -2339,9 +2323,12 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
 			ring->mr_classify_type = MAC_HW_CLASSIFIER;
 			ring->mr_flag |= MR_INCIPIENT;
 
-			if (!(mcip->mci_mip->mi_state_flags & MIS_POLL_DISABLE) &&
-			    FLOW_TAB_EMPTY(mcip->mci_subflow_tab) && mac_poll_enable)
+			const bool mi_can_poll =
+			    (mcip->mci_mip->mi_state_flags &
+			    MIS_POLL_DISABLE) == 0;
+			if (mi_can_poll && mac_poll_enable) {
 				mac_srs->srs_state |= SRS_POLLING_CAPAB;
+			}
 
 			srs_rx->sr_poll_thr = thread_create(NULL, 0,
 			    mac_rx_srs_poll_ring, mac_srs, 0, &p0, TS_RUN,
@@ -3556,15 +3543,8 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(mac_srs->srs_mcip == NULL ||
 	    MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
-	/*
-	 * Flowtree teardown/creation can happen on an SRS which is otherwise
-	 * simply quiesced. Logical SRSes should allow this.
-	 */
-	ASSERT((mac_srs_is_logical(mac_srs) && (mac_srs->srs_state &
-	    (SRS_QUIESCE | SRS_QUIESCE_DONE | SRS_PROC | SRS_PROC_FAST)) ==
-	    (SRS_QUIESCE | SRS_QUIESCE_DONE)) ||
-	    (mac_srs->srs_state & (SRS_CONDEMNED | SRS_CONDEMNED_DONE |
-	    SRS_PROC | SRS_PROC_FAST)) == (SRS_CONDEMNED | SRS_CONDEMNED_DONE));
+	ASSERT3U(mac_srs->srs_state & (SRS_CONDEMNED | SRS_CONDEMNED_DONE |
+	    SRS_PROC | SRS_PROC_FAST), ==, SRS_CONDEMNED | SRS_CONDEMNED_DONE);
 
 	const bool is_full_srs = !mac_srs_is_logical(mac_srs);
 
@@ -3635,13 +3615,15 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 	ASSERT(!mac_srs_is_logical(mac_srs));
 
-	const uint_t top_quiesce_flag = mac_srs->srs_state &
+	const uint_t quiesce_flag = mac_srs->srs_state &
 	    (SRS_CONDEMNED | SRS_QUIESCE);
+	const uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
+	    S_RING_CONDEMNED : S_RING_QUIESCE;
 	const uint_t srs_poll_wait_flag =
-	    (top_quiesce_flag == SRS_CONDEMNED) ? SRS_POLL_THR_EXITED :
+	    (quiesce_flag == SRS_CONDEMNED) ? SRS_POLL_THR_EXITED :
 	    SRS_POLL_THR_QUIESCED;
 
-	ASSERT3U(top_quiesce_flag, !=, 0);
+	ASSERT3U(quiesce_flag, !=, 0);
 
 	/*
 	 * In the case of Rx SRS wait till the poll thread is done.
@@ -3662,31 +3644,11 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	 * Then signal the soft ring worker threads to quiesce or quit
 	 * as needed and then wait till that happens.
 	 */
-	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
-	    curr = curr->srs_logical_next) {
-		const uint_t quiesce_flag = curr->srs_state &
-		    (SRS_CONDEMNED | SRS_QUIESCE);
-		const uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
-		    S_RING_CONDEMNED : S_RING_QUIESCE;
-		const uint_t srs_poll_wait_flag =
-		    (quiesce_flag == SRS_CONDEMNED) ? SRS_POLL_THR_EXITED :
-		    SRS_POLL_THR_QUIESCED;
-
-		ASSERT3U(quiesce_flag, !=, 0);
-
-		if (curr != mac_srs) {
-			mutex_enter(&curr->srs_lock);
-		}
-		mac_srs_soft_rings_quiesce(curr, s_ring_flag);
-		if (curr->srs_state & SRS_CONDEMNED){
-			curr->srs_state |=
-			    (SRS_QUIESCE_DONE | SRS_CONDEMNED_DONE);
-		} else {
-			curr->srs_state |= SRS_QUIESCE_DONE;
-		}
-		if (curr != mac_srs) {
-			mutex_exit(&curr->srs_lock);
-		}
+	mac_srs_soft_rings_quiesce(mac_srs, s_ring_flag);
+	if (mac_srs->srs_state & SRS_CONDEMNED){
+		mac_srs->srs_state |= (SRS_QUIESCE_DONE | SRS_CONDEMNED_DONE);
+	} else {
+		mac_srs->srs_state |= SRS_QUIESCE_DONE;
 	}
 
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
@@ -4353,13 +4315,16 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 
 	/* TODO(ky): too much stack for mac_cpus_t? */
 	/*
-	 * Create a mac_cpus_t for all logical SRSes with identical fanout to
-	 * `based_on`, but no workers/poll bound.
+	 * Create a mac_cpus_t for all logical SRSes with identical fanout and
+	 * worker thread binding to `based_on`. The worker thread is only used
+	 * for ring quiesce/teardown and to keep packets flowing if we become
+	 * BW_ENFORCED.
 	 */
 	mac_cpus_t dup_fanout = based_on->srs_cpu;
-	dup_fanout.mc_ncpus = dup_fanout.mc_rx_fanout_cnt;
+	dup_fanout.mc_ncpus = dup_fanout.mc_rx_fanout_cnt + 1;
 	bcopy(dup_fanout.mc_rx_fanout_cpus, dup_fanout.mc_cpus,
 	    sizeof (dup_fanout.mc_cpus));
+	dup_fanout.mc_cpus[dup_fanout.mc_ncpus++] = dup_fanout.mc_rx_workerid;
 	dup_fanout.mc_rx_intr_cpu = -1;
 
 	/*

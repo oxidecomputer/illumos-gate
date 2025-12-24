@@ -2214,10 +2214,13 @@ mac_tx_client_unblock(mac_client_impl_t *mcip)
 static void
 mac_srs_quiesce_wait(mac_soft_ring_set_t *srs, uint_t srs_flag)
 {
-	mutex_enter(&srs->srs_lock);
-	while (!(srs->srs_state & srs_flag))
-		cv_wait(&srs->srs_quiesce_done_cv, &srs->srs_lock);
-	mutex_exit(&srs->srs_lock);
+	for (mac_soft_ring_set_t *curr = srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		mutex_enter(&curr->srs_lock);
+		while (!(curr->srs_state & srs_flag))
+			cv_wait(&curr->srs_quiesce_done_cv, &curr->srs_lock);
+		mutex_exit(&curr->srs_lock);
+	}
 }
 
 /*
