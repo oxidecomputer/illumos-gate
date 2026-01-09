@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -2408,7 +2408,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_32GT_PRECODE_REQ,
-		.strap_data = 0x0,
+		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
