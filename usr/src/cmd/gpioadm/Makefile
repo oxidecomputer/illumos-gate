@@ -30,10 +30,6 @@ $(PROG): $(OBJS)
 	$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
 	$(POST_PROCESS)
 
-%.o: %.c
-	$(COMPILE.c) $<
-	$(POST_PROCESS_O)
-
 all: $(PROG)
 
 install: all $(ROOTUSRSBINPROG)

@@ -26,6 +26,7 @@ MANSECT=	4d
 
 _MANFILES=	aac.4d		\
 		afe.4d		\
+		at24c.4d	\
 		audio.4d	\
 		audio1575.4d	\
 		audioens.4d	\
@@ -47,6 +48,7 @@ _MANFILES=	aac.4d		\
 		dmfe.4d		\
 		dtrace.4d	\
 		e1000g.4d	\
+		ee100x.4d	\
 		ehci.4d		\
 		ena.4d		\
 		fasttrap.4d	\
@@ -79,6 +81,7 @@ _MANFILES=	aac.4d		\
 		ipnet.4d	\
 		iscsi.4d	\
 		iser.4d		\
+		ismt.4d		\
 		ixgbe.4d	\
 		kgpio.4d	\
 		kmdb.4d		\
@@ -90,6 +93,7 @@ _MANFILES=	aac.4d		\
 		lockstat.4d	\
 		lofi.4d		\
 		log.4d		\
+		lm7x.4d		\
 		mem.4d		\
 		mpt_sas.4d	\
 		mr_sas.4d	\
@@ -102,7 +106,9 @@ _MANFILES=	aac.4d		\
 		nxge.4d		\
 		ohci.4d		\
 		openprom.4d	\
+		pca954x.4d	\
 		pcic.4d		\
+		pchsmbus.4d	\
 		pcmcia.4d	\
 		physmem.4d	\
 		pm.4d		\
@@ -126,11 +132,14 @@ _MANFILES=	aac.4d		\
 		sfe.4d		\
 		sgen.4d		\
 		smartpqi.4d	\
+		spd511x.4d	\
 		srpt.4d		\
 		st.4d		\
 		sysmsg.4d	\
 		systrace.4d	\
 		ticlts.4d	\
+		tmp43x.4d	\
+		ts511x.4d	\
 		tty.4d		\
 		tzmon.4d	\
 		ufm.4d		\

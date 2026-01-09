@@ -505,8 +505,7 @@
 #include <sys/gpio/kgpio.h>
 #include <sys/gpio/dpio.h>
 
-#define	KGPIO_CTRL_NAMELEN	64
-CTASSERT(KGPIO_CTRL_NAMELEN == DPIO_NAMELEN);
+#define	KGPIO_CTRL_NAMELEN	DPIO_NAMELEN
 
 typedef enum {
 	/*
@@ -637,7 +636,9 @@ typedef struct dpio {
 
 /*
  * This is the maximum size of a user nvlist_t that we're willing to consider in
- * the kernel.
+ * the kernel. This value is a rough swag of what we think the maximum size
+ * nvlist would ever be for a single GPIO with headroom. This is here in case
+ * someone has need to tune it to unblock something.
  */
 size_t kgpio_max_user_nvl = 512 * 1024;
 
@@ -650,7 +651,7 @@ static id_space_t *kgpio_g_ids;
 static kgpio_minor_t kgpio_g_dpinfo;
 
 static int
-kgpio_minor_comprator(const void *l, const void *r)
+kgpio_minor_comparator(const void *l, const void *r)
 {
 	const kgpio_minor_t *kml = l;
 	const kgpio_minor_t *kmr = r;
@@ -2352,7 +2353,7 @@ kgpio_init(void)
 	    offsetof(kgpio_t, kgpio_link));
 	list_create(&kgpio_g_dpios, sizeof (dpio_t),
 	    offsetof(dpio_t, dpio_link));
-	avl_create(&kgpio_g_minors, kgpio_minor_comprator,
+	avl_create(&kgpio_g_minors, kgpio_minor_comparator,
 	    sizeof (kgpio_minor_t), offsetof(kgpio_minor_t, kminor_avl));
 	kgpio_g_ids = id_space_create("kgpios", KGPIO_MINOR_FIRST, L_MAXMIN32);
 }

@@ -31,7 +31,7 @@ gpioadm_controller_list_usage(FILE *f)
 	    "[-p]] [filter...]\n");
 }
 
-static void
+static void __PRINTFLIKE(1)
 gpioadm_controller_list_help(const char *fmt, ...)
 {
 	if (fmt != NULL) {

@@ -876,3 +876,8 @@ usr/include/sys/apob_impl.h
 # implementation -- which is fully controlled by gate.
 #
 usr/include/sys/ktest_impl.h
+
+#
+# Temporary exception until the ACPI nexus is sorted out.
+#
+usr/include/sys/gpio/zen_gpio.h
