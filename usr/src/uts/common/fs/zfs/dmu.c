@@ -27,6 +27,7 @@
  * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2018 DilOS
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/dmu.h>
@@ -1249,7 +1250,7 @@ dmu_object_remap_indirects(objset_t *os, uint64_t object,
 
 void
 dmu_zero(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
-    dmu_tx_t *tx)
+    boolean_t initialize_only, dmu_tx_t *tx)
 {
 	dmu_buf_t **dbp;
 	int numbufs, i;
@@ -1263,7 +1264,10 @@ dmu_zero(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	for (i = 0; i < numbufs; i++) {
 		dmu_buf_t *db = dbp[i];
 
-		dmu_buf_zero_fill(db, tx);
+		if (initialize_only)
+			dmu_buf_will_not_fill(db, tx);
+		else
+			dmu_buf_zero_fill(db, tx);
 	}
 	dmu_buf_rele_array(dbp, numbufs, FTAG);
 }

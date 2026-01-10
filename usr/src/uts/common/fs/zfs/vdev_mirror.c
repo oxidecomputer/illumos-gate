@@ -26,6 +26,7 @@
 /*
  * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/zfs_context.h>
@@ -824,6 +825,7 @@ vdev_ops_t vdev_mirror_ops = {
 	.vdev_op_remap = NULL,
 	.vdev_op_xlate = vdev_default_xlate,
 	.vdev_op_dumpio = vdev_mirror_dumpio,
+	.vdev_op_rawio = NULL,
 	.vdev_op_type = VDEV_TYPE_MIRROR,	/* name of this vdev type */
 	.vdev_op_leaf = B_FALSE			/* not a leaf vdev */
 };
@@ -841,6 +843,7 @@ vdev_ops_t vdev_replacing_ops = {
 	.vdev_op_remap = NULL,
 	.vdev_op_xlate = vdev_default_xlate,
 	.vdev_op_dumpio = vdev_mirror_dumpio,
+	.vdev_op_rawio = NULL,
 	.vdev_op_type = VDEV_TYPE_REPLACING,	/* name of this vdev type */
 	.vdev_op_leaf = B_FALSE			/* not a leaf vdev */
 };
@@ -858,6 +861,7 @@ vdev_ops_t vdev_spare_ops = {
 	.vdev_op_remap = NULL,
 	.vdev_op_xlate = vdev_default_xlate,
 	.vdev_op_dumpio = vdev_mirror_dumpio,
+	.vdev_op_rawio = NULL,
 	.vdev_op_type = VDEV_TYPE_SPARE,	/* name of this vdev type */
 	.vdev_op_leaf = B_FALSE			/* not a leaf vdev */
 };

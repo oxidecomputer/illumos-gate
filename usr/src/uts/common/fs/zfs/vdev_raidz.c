@@ -25,6 +25,7 @@
  * Copyright (c) 2016 Gvozden Nešković. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/zfs_context.h>
@@ -2578,6 +2579,7 @@ vdev_ops_t vdev_raidz_ops = {
 	.vdev_op_remap = NULL,
 	.vdev_op_xlate = vdev_raidz_xlate,
 	.vdev_op_dumpio = vdev_raidz_dumpio,
+	.vdev_op_rawio = NULL,
 	.vdev_op_type = VDEV_TYPE_RAIDZ,	/* name of this vdev type */
 	.vdev_op_leaf = B_FALSE			/* not a leaf vdev */
 };

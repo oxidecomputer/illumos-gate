@@ -30,6 +30,7 @@
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2017, Intel Corporation.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright 2026 Oxide Computer Company
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -847,7 +848,7 @@ void dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 void dmu_write_by_dnode(dnode_t *dn, uint64_t offset, uint64_t size,
     const void *buf, dmu_tx_t *tx);
 void dmu_zero(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
-	dmu_tx_t *tx);
+	boolean_t initialize_only, dmu_tx_t *tx);
 int dmu_read_uio(objset_t *os, uint64_t object, struct uio *uio, uint64_t size);
 int dmu_read_uio_dbuf(dmu_buf_t *zdb, struct uio *uio, uint64_t size);
 int dmu_read_uio_dnode(dnode_t *dn, struct uio *uio, uint64_t size);

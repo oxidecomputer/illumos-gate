@@ -38,7 +38,7 @@
  * Copyright 2017 RackTop Systems.
  * Copyright (c) 2017, Datto, Inc. All rights reserved.
  * Copyright 2021 The University of Queensland
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -3306,6 +3306,7 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	dmu_objset_type_t type;
 	boolean_t is_insensitive = B_FALSE;
 	dsl_crypto_params_t *dcp = NULL;
+	uint64_t rawvol = B_FALSE;
 
 	type = (dmu_objset_type_t)fnvlist_lookup_int32(innvl, "type");
 	(void) nvlist_lookup_nvlist(innvl, "props", &nvprops);
@@ -3356,6 +3357,10 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 		    (error = zvol_check_volsize(volsize,
 		    volblocksize)) != 0)
 			return (error);
+
+		(void) nvlist_lookup_uint64(nvprops,
+		    zfs_prop_to_name(ZFS_PROP_RAWVOL), &rawvol);
+
 	} else if (type == DMU_OST_ZFS) {
 		int error;
 
@@ -3384,6 +3389,16 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 
 	error = dmu_objset_create(fsname, type,
 	    is_insensitive ? DS_FLAG_CI_DATASET : 0, dcp, cbfunc, &zct);
+
+	if (error == 0 && type == DMU_OST_ZVOL && rawvol) {
+		objset_t *os;
+		error = dmu_objset_own(fsname, DMU_OST_ZVOL, B_FALSE, B_TRUE,
+		    FTAG, &os);
+		if (error != 0)
+			return (SET_ERROR(EPERM));
+		error = zvol_raw_volume_init(os);
+		dmu_objset_disown(os, B_FALSE, FTAG);
+	}
 
 	nvlist_free(zct.zct_zplprops);
 	dsl_crypto_params_free(dcp, !!error);
@@ -7148,7 +7163,7 @@ zfsdev_open(dev_t *devp, int flag, int otyp, cred_t *cr)
 	int error = 0;
 
 	if (getminor(*devp) != 0)
-		return (zvol_open(devp, flag, otyp, cr));
+		return (zvol_open(*devp, flag, otyp, cr));
 
 	/* This is the control device. Allocate a new minor if requested. */
 	if (flag & FEXCL) {
@@ -7438,8 +7453,8 @@ static struct cb_ops zfs_cb_ops = {
 	NULL,		/* streamtab */
 	D_NEW | D_MP | D_64BIT,		/* Driver compatibility flag */
 	CB_REV,		/* version */
-	nodev,		/* async read */
-	nodev,		/* async write */
+	zvol_aread,	/* async read */
+	zvol_awrite,	/* async write */
 };
 
 static struct dev_ops zfs_dev_ops = {

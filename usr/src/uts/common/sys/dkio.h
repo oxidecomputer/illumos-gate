@@ -25,6 +25,7 @@
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_DKIO_H
@@ -219,6 +220,21 @@ struct dk_callback {
 #define	DKIOCGAPART	(DKIOC|5)		/* Get all partitions */
 #define	DKIOCG_PHYGEOM	(DKIOC|32)		/* get physical geometry */
 #define	DKIOCG_VIRTGEOM	(DKIOC|33)		/* get virtual geometry */
+
+typedef struct dk_rawvol_status {
+	uint32_t drs_vers;
+	int32_t drs_status;
+	uint64_t drs_zoff;
+	uint64_t drs_len;
+} dk_rawvol_status_t;
+
+/*
+ * The following ioctls are used by ZFS for the raw volume feature.
+ */
+/* Check the status of the raw volume initialization */
+#define	DKIOCRAWVOLSTATUS	(DKIOC|30)
+/* Stop the raw volume initialization */
+#define	DKIOCRAWVOLSTOP		(DKIOC|31)
 
 /*
  * The following ioctl's are removable media support

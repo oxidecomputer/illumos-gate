@@ -23,6 +23,7 @@
  * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_DBUF_H
@@ -69,6 +70,8 @@ extern "C" {
  *		|			 |
  *		|			 |
  *		+-------> ZEROFILL ------+
+ *		|			 |
+ *		+--------> NOFILL -------+
  *
  * DB_SEARCH is an invalid state for a dbuf. It is used by dbuf_free_range
  * to find all dbufs in a range of a dnode and must be less than any other
@@ -78,6 +81,7 @@ typedef enum dbuf_states {
 	DB_SEARCH = -1,
 	DB_UNCACHED,
 	DB_FILL,
+	DB_NOFILL,
 	DB_ZEROFILL,
 	DB_READ,
 	DB_CACHED,
@@ -345,6 +349,7 @@ dmu_buf_impl_t *dbuf_find(struct objset *os, uint64_t object, uint8_t level,
 
 int dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags);
 void dmu_buf_zero_fill(dmu_buf_t *db, dmu_tx_t *tx);
+void dmu_buf_will_not_fill(dmu_buf_t *db, dmu_tx_t *tx);
 void dmu_buf_will_fill(dmu_buf_t *db, dmu_tx_t *tx);
 void dmu_buf_fill_done(dmu_buf_t *db, dmu_tx_t *tx);
 void dbuf_assign_arcbuf(dmu_buf_impl_t *db, arc_buf_t *buf, dmu_tx_t *tx);
