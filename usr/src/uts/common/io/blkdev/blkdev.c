@@ -134,7 +134,7 @@
  * Lock Hierarchy
  * --------------
  * The only two locks which may be held simultaneously are q_iomutex and
- * d_ksmutex. In all cases q_iomutex must be acquired before d_ksmutex.
+ * d_ksmutex. In all cases d_ksmutex must be acquired before q_iomutex.
  */
 
 #define	BD_MAXPART	64
@@ -231,6 +231,7 @@ struct bd_queue {
 	uint32_t	q_qactive;
 	list_t		q_runq;
 	list_t		q_waitq;
+	kstat_io_t	q_kstat_io;
 };
 
 #define	i_dmah		i_public.x_dmah
@@ -640,6 +641,121 @@ bd_queues_free(bd_t *bd)
 	kmem_free(bd->d_queues, sizeof (*bd->d_queues) * bd->d_qcount);
 }
 
+/*
+ * Custom snapshot function to aggregate per-queue kstats into device-level
+ * kstat. This function is called with ks_lock (d_ksmutex) held.
+ *
+ * We iterate through all queues, briefly locking each q_iomutex to read
+ * consistent statistics, then aggregate them into the device-level kstat
+ * buffer. Time normalization and incomplete I/O handling follows the same
+ * logic as default_kstat_snapshot().
+ */
+static int
+bd_kstat_snapshot(kstat_t *ksp, void *buf, int rw)
+{
+	bd_t		*bd = (bd_t *)ksp->ks_private;
+	kstat_io_t	*kiop = (kstat_io_t *)buf;
+	hrtime_t	cur_time;
+	uint32_t	i;
+
+	ksp->ks_snaptime = gethrtime();
+	cur_time = gethrtime_unscaled();
+
+	if (rw == KSTAT_WRITE) {
+		/* kstat is read-only for I/O stats */
+		return (EACCES);
+	}
+
+	/*
+	 * Zero out the aggregation buffer. We aggregate into bd->d_kiop
+	 * first, then copy to user buffer.
+	 */
+	bzero(bd->d_kiop, sizeof (kstat_io_t));
+
+	/*
+	 * Aggregate stats from all queues. Each queue's stats are protected
+	 * by q_iomutex. We acquire each queue lock briefly to get a
+	 * consistent snapshot. Track the maximum lastupdate times to report
+	 * the most recent activity across all queues.
+	 */
+	hrtime_t max_wlastupdate = 0;
+	hrtime_t max_rlastupdate = 0;
+
+	for (i = 0; i < bd->d_qcount; i++) {
+		bd_queue_t	*bq = &bd->d_queues[i];
+		kstat_io_t	*qkiop;
+		hrtime_t	wfix, rfix;
+
+		mutex_enter(&bq->q_iomutex);
+		qkiop = &bq->q_kstat_io;
+
+		/* Aggregate basic counters */
+		bd->d_kiop->nread += qkiop->nread;
+		bd->d_kiop->nwritten += qkiop->nwritten;
+		bd->d_kiop->reads += qkiop->reads;
+		bd->d_kiop->writes += qkiop->writes;
+
+		/* Aggregate time statistics */
+		bd->d_kiop->wtime += qkiop->wtime;
+		bd->d_kiop->wlentime += qkiop->wlentime;
+		bd->d_kiop->rtime += qkiop->rtime;
+		bd->d_kiop->rlentime += qkiop->rlentime;
+
+		/* Aggregate current queue lengths */
+		bd->d_kiop->wcnt += qkiop->wcnt;
+		bd->d_kiop->rcnt += qkiop->rcnt;
+
+		/*
+		 * Track the most recent (unscaled) lastupdate times across
+		 * all queues.
+		 */
+		if (qkiop->wlastupdate > max_wlastupdate)
+			max_wlastupdate = qkiop->wlastupdate;
+		if (qkiop->rlastupdate > max_rlastupdate)
+			max_rlastupdate = qkiop->rlastupdate;
+
+		/*
+		 * Handle incomplete transactions for this specific queue.
+		 * We must account for items currently in this queue based on
+		 * this queue's own lastupdate time, not an aggregated time.
+		 */
+		if (qkiop->wcnt != 0) {
+			wfix = cur_time - qkiop->wlastupdate;
+			bd->d_kiop->wlentime += qkiop->wcnt * wfix;
+			bd->d_kiop->wtime += wfix;
+			max_wlastupdate = cur_time;
+		}
+
+		if (qkiop->rcnt != 0) {
+			rfix = cur_time - qkiop->rlastupdate;
+			bd->d_kiop->rlentime += qkiop->rcnt * rfix;
+			bd->d_kiop->rtime += rfix;
+			max_rlastupdate = cur_time;
+		}
+
+		mutex_exit(&bq->q_iomutex);
+	}
+
+	/*
+	 * Now normalize times for reporting to userland.
+	 */
+	scalehrtime(&bd->d_kiop->wtime);
+	scalehrtime(&bd->d_kiop->wlentime);
+	scalehrtime(&bd->d_kiop->rtime);
+	scalehrtime(&bd->d_kiop->rlentime);
+
+	bd->d_kiop->wlastupdate = max_wlastupdate;
+	scalehrtime(&bd->d_kiop->wlastupdate);
+
+	bd->d_kiop->rlastupdate = max_rlastupdate;
+	scalehrtime(&bd->d_kiop->rlastupdate);
+
+	/* Copy aggregated and normalized data to user buffer */
+	bcopy(bd->d_kiop, buf, sizeof (kstat_io_t));
+
+	return (0);
+}
+
 static int
 bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
@@ -735,6 +851,8 @@ bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	    KSTAT_TYPE_IO, 1, KSTAT_FLAG_PERSISTENT);
 	if (bd->d_ksp != NULL) {
 		bd->d_ksp->ks_lock = &bd->d_ksmutex;
+		bd->d_ksp->ks_snapshot = bd_kstat_snapshot;
+		bd->d_ksp->ks_private = bd;
 		kstat_install(bd->d_ksp);
 		bd->d_kiop = bd->d_ksp->ks_data;
 	} else {
@@ -822,6 +940,9 @@ bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		    offsetof(struct bd_xfer_impl, i_linkage));
 		list_create(&bq->q_runq, sizeof (bd_xfer_impl_t),
 		    offsetof(struct bd_xfer_impl, i_linkage));
+
+		/* Initialize per-queue kstat structure */
+		bzero(&bq->q_kstat_io, sizeof (kstat_io_t));
 	}
 
 	if (*(uint64_t *)drive.d_eui64 != 0 ||
@@ -1841,6 +1962,9 @@ bd_tg_getinfo(dev_info_t *dip, int cmd, void *arg, void *tg_cookie)
 }
 
 
+/*
+ * Must be called with q_iomutex held; will return with q_iomutex dropped.
+ */
 static void
 bd_sched(bd_t *bd, bd_queue_t *bq)
 {
@@ -1848,13 +1972,9 @@ bd_sched(bd_t *bd, bd_queue_t *bq)
 	struct buf	*bp;
 	int		rv;
 
-	mutex_enter(&bq->q_iomutex);
-
 	while ((bq->q_qactive < bq->q_qsize) &&
 	    ((xi = list_remove_head(&bq->q_waitq)) != NULL)) {
-		mutex_enter(&bd->d_ksmutex);
-		kstat_waitq_to_runq(bd->d_kiop);
-		mutex_exit(&bd->d_ksmutex);
+		kstat_waitq_to_runq(&bq->q_kstat_io);
 
 		bq->q_qactive++;
 		list_insert_tail(&bq->q_runq, xi);
@@ -1877,9 +1997,7 @@ bd_sched(bd_t *bd, bd_queue_t *bq)
 
 			mutex_enter(&bq->q_iomutex);
 
-			mutex_enter(&bd->d_ksmutex);
-			kstat_runq_exit(bd->d_kiop);
-			mutex_exit(&bd->d_ksmutex);
+			kstat_runq_exit(&bq->q_kstat_io);
 
 			bq->q_qactive--;
 			list_remove(&bq->q_runq, xi);
@@ -1905,12 +2023,7 @@ bd_submit(bd_t *bd, bd_xfer_impl_t *xi)
 	mutex_enter(&bq->q_iomutex);
 
 	list_insert_tail(&bq->q_waitq, xi);
-
-	mutex_enter(&bd->d_ksmutex);
-	kstat_waitq_enter(bd->d_kiop);
-	mutex_exit(&bd->d_ksmutex);
-
-	mutex_exit(&bq->q_iomutex);
+	kstat_waitq_enter(&bq->q_kstat_io);
 
 	bd_sched(bd, bq);
 }
@@ -1925,24 +2038,19 @@ bd_runq_exit(bd_xfer_impl_t *xi, int err)
 	mutex_enter(&bq->q_iomutex);
 	bq->q_qactive--;
 
-	mutex_enter(&bd->d_ksmutex);
-	kstat_runq_exit(bd->d_kiop);
-	mutex_exit(&bd->d_ksmutex);
-
-	list_remove(&bq->q_runq, xi);
-	mutex_exit(&bq->q_iomutex);
+	kstat_runq_exit(&bq->q_kstat_io);
 
 	if (err == 0) {
 		if (bp->b_flags & B_READ) {
-			atomic_inc_uint(&bd->d_kiop->reads);
-			atomic_add_64((uint64_t *)&bd->d_kiop->nread,
-			    bp->b_bcount - xi->i_resid);
+			bq->q_kstat_io.reads++;
+			bq->q_kstat_io.nread += bp->b_bcount - xi->i_resid;
 		} else {
-			atomic_inc_uint(&bd->d_kiop->writes);
-			atomic_add_64((uint64_t *)&bd->d_kiop->nwritten,
-			    bp->b_bcount - xi->i_resid);
+			bq->q_kstat_io.writes++;
+			bq->q_kstat_io.nwritten += bp->b_bcount - xi->i_resid;
 		}
 	}
+
+	list_remove(&bq->q_runq, xi);
 	bd_sched(bd, bq);
 }
 
