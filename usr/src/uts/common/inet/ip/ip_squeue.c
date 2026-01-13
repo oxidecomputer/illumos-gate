@@ -22,6 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2017 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -499,8 +500,9 @@ ip_squeue_add_ring(ill_t *ill, void *mrp)
 
 	bzero(rx_ring, sizeof (ill_rx_ring_t));
 	rx_ring->rr_rx = mrfp->mrf_receive;
-	/* XXX: Hard code it to tcp accept for now */
-	rx_ring->rr_ip_accept = (ip_accept_t)ip_accept_tcp;
+	rx_ring->rr_ip_accept = (ill->ill_isv6 != 0) ?
+	    (ip_accept_t)ip_accept_tcp :
+	    (ip_accept_t)ip_accept_tcp_v6;
 
 	rx_ring->rr_intr_handle = mrfp->mrf_intr_handle;
 	rx_ring->rr_intr_enable = (ip_mac_intr_enable_t)mrfp->mrf_intr_enable;

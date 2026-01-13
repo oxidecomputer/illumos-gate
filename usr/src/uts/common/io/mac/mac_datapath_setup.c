@@ -1452,6 +1452,33 @@ mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
 }
 
 /*
+ * Chooses the correct `mac_srs_drain_proc_t` for `srs` dependent on whether
+ * it has a bandwidth limit configured and any subflows. This allows for the SRS
+ * drain to perform logic for each case unconditionally.
+ *
+ * This method should be called under either Rx quiescence or srs_lock.
+ */
+static void
+mac_rx_srs_update_drain_proc(mac_soft_ring_set_t *srs)
+{
+	const bool bw_ctld = (srs->srs_type & SRST_BW_CONTROL) != 0;
+	const bool has_subflows = srs->srs_flowtree.ftb_subtree != NULL;
+
+	mac_srs_drain_proc_t drain_fn = NULL;
+	if (bw_ctld) {
+		drain_fn = has_subflows ? mac_rx_srs_drain_bw_subtree :
+		    mac_rx_srs_drain_bw;
+	} else {
+		drain_fn = has_subflows ? mac_rx_srs_drain_subtree :
+		    mac_rx_srs_drain;
+	}
+
+	ASSERT3P(drain_fn, !=, NULL);
+
+	srs->srs_drain_func = drain_fn;
+}
+
+/*
  * Change the receive bandwidth limit.
  */
 static void
@@ -1470,7 +1497,6 @@ mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
 				softring = softring->s_ring_next;
 			}
 			srs->srs_type &= ~SRST_BW_CONTROL;
-			srs->srs_drain_func = mac_rx_srs_drain;
 		}
 	} else if (!(srs->srs_type & SRST_BW_CONTROL)) {
 		softring = srs->srs_soft_ring_head;
@@ -1479,8 +1505,9 @@ mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
 			softring = softring->s_ring_next;
 		}
 		srs->srs_type |= SRST_BW_CONTROL;
-		srs->srs_drain_func = mac_rx_srs_drain_bw;
 	}
+
+	mac_rx_srs_update_drain_proc(srs);
 
 	mutex_exit(&srs->srs_lock);
 }
@@ -4261,8 +4288,65 @@ mac_poll_state_change(mac_handle_t mh, boolean_t enable)
 
 static inline void
 mac_flow_fill_exit(flow_entry_t *ent, flow_tree_exit_node_t *node, bool ascend,
-    mac_cpus_t *fanout_blueprint, mac_soft_ring_set_t *root_srs)
+    mac_cpus_t *fanout_blueprint, mac_soft_ring_set_t *root_srs,
+    flow_tree_t *curr_tree_node, flow_tree_t *root_tree_node)
 {
+	/*
+	 * We create a logical SRS here for every node, although we do not plan
+	 * to use each one in the ideal case.
+	 *
+	 * When no bandwidth limits are imposed on the subtree, we always
+	 * delegate packets back to the 'canonical' flow where possible. E.g.,
+	 * when plumbing DLS bypass we have intermediate nodes for
+	 * (unfragmented) v4 and v6 -- we prefer that any non TCP/UDP traffic is
+	 * queued and processed on the root SRS all at once. The exception is
+	 * when a child flow's priority or fanout differs from that of its
+	 * parent, and we need to deliver to the logical SRS to meet those
+	 * constraints.
+	 *
+	 * The bandwidth case, however, is what requires that we have an SRS per
+	 * flow in case any limit is imposed, as the flow hierarchy exists
+	 * outside of the `flow_entry_t`s themselves. This is important to
+	 * resolve cases such as combining separate _classes_ of flow like:
+	 *  - f1: Limit v4 on CIDR 192.168.0.0/16 @ rate 1.
+	 *  - f2: Limit UDP traffic on local port 53 @ rate 2.
+	 * Ideally we construct a tree of the form:
+	 *
+	 * +-------+    +-------+    +-------+
+	 * |root(A)| -> | f1(B) | -> | f2(C) |
+	 * +-------+ |  +-------+    +-------+
+	 *           |  +-------+
+	 *           -> | f2(D) |
+	 *              +-------+
+	 *
+	 * This allows us to enforce rate 1 at B (v4, not UDP53), rate 2 at D
+	 * (v4), rates 1 and 2 at C (v4, and UDP53), and no rates at A (all
+	 * other packets).
+	 *
+	 * The consequence is that we need to know what path a packet took to
+	 * know which bandwidth members govern it. The node SRS encodes this in
+	 * `srs_bw`, and we only enqueue on this node (rather than delegating)
+	 * if `SRST_BW_CONTROL` is set. We cannot stuff e.g. a `mac_bw_ctl_t **`
+	 * in `b_prev` and use the delegated flow's SRS, as we would cause
+	 * head-of-line blocking (or have a backlog of packets who are
+	 * repeatedly revisited).
+	 *
+	 * TODO(ky): can this be a dummy queue which, when drained, forwards to
+	 * the softrings of the real SRS we care about?
+	 *
+	 * The interactions with flow actions which care about ring create, bind
+	 * and removal notifications need some explanation, for correctness in
+	 * both the BW and non-BW (diff. prio/fanout) scenarios. 
+	 *
+	 * ?? Explain the ILL_MAX_RINGS and rebinding situation.
+	 * ?? Explain why we always create, even iff delegate.
+	 *   (Iff diff CPUs or prios, need a new SRS. and need a dedicated
+	 *   SRS which holds the chain of bandwidth parents.)
+	 */
+
+	/*
+	 * TODO(ky): the above!!
+	 */
 	node->ftex_ascend = ascend;
 	if ((ent->fe_action.fa_flags & MFA_FLAGS_ACTION) != 0) {
 		if (ent->fe_action.fa_direct_rx_fn != NULL) {
@@ -4392,6 +4476,7 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 		into->ftb_chains = NULL;
 		into->ftb_subtree = NULL;
 		into->ftb_bw_refund = NULL;
+		mac_rx_srs_update_drain_proc(based_on);
 		return (0);
 	}
 
@@ -4453,7 +4538,7 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 
 			ascended = !has_sibling;
 			mac_flow_fill_exit(el->ft_flent, &curr_node->exit,
-			    ascended, &dup_fanout, based_on);
+			    ascended, &dup_fanout, based_on, el, ft);
 			curr_node++;
 
 			if (has_sibling) {
@@ -4468,6 +4553,8 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 	VERIFY0(depth);
 
 	kmem_free(node_enters, enter_track_len);
+
+	mac_rx_srs_update_drain_proc(based_on);
 
 	return (err);
 

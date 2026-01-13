@@ -308,7 +308,7 @@ typedef struct {
 		mac_flow_match_list_t		*mfm_list;
 		mac_flow_match_arbitrary_t	mfm_arbitrary;
 		uint8_t		mfm_l2addr[ETHERADDRL];
-		mac_flow_match_l3_t	mfm_l3addr;
+		mac_flow_match_l3_t	*mfm_l3addr;
 		uint16_t	mfm_l4addr;
 	} arg;
 } mac_flow_match_t;

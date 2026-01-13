@@ -3295,6 +3295,8 @@ extern int	ip_total_hdrs_len_v4(const ip_pkt_t *);
 
 extern mblk_t	*ip_accept_tcp(ill_t *, ill_rx_ring_t *, squeue_t *,
     mblk_t *, mblk_t **, uint_t *cnt);
+extern mblk_t	*ip_accept_tcp_v6(ill_t *, ill_rx_ring_t *, squeue_t *,
+    mblk_t *, mblk_t **, uint_t *cnt);
 extern void	ip_rput_dlpi(ill_t *, mblk_t *);
 extern void	ip_rput_notdata(ill_t *, mblk_t *);
 

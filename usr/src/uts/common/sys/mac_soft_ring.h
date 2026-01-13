@@ -360,8 +360,12 @@ struct mac_soft_ring_set_s {
 	 * Bandwidth control related members.
 	 * They are common to both Rx- and Tx-side.
 	 * Following protected by srs_lock
+	 *
+	 * TODO(ky): should these not be WO?
 	 */
-	mac_bw_ctl_t	*srs_bw;
+	mac_bw_ctl_t	**srs_bw;
+	mac_bw_ctl_t	*srs_bw_count;
+	/* TODO(ky): *these* should be protected by srs_lock */
 	size_t		srs_size;	/* Size of packets queued in bytes */
 	pri_t		srs_pri;
 
@@ -647,6 +651,7 @@ extern struct dls_kstats dls_kstat;
  * interface for packets and get the interface back to interrupt
  * mode if nothing is found.
  */
+__attribute__((always_inline))
 inline void
 mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
 	const bool is_logical = mac_srs_is_logical(mac_srs);
@@ -794,7 +799,9 @@ extern void mac_rx_attach_flow_srs(mac_impl_t *, flow_entry_t *,
     mac_soft_ring_set_t *, mac_ring_t *, mac_classify_type_t);
 
 extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *, uint_t);
+extern void mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_drain(mac_soft_ring_set_t *, uint_t);
+extern void mac_rx_srs_drain_subtree(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);

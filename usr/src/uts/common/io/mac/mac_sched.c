@@ -2902,8 +2902,10 @@ static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
  * datapath (e.g., SRST_LOGICAL). Those holding onto softrings to
  * be reached via a flow tree will be handled inline here.
  */
-void
-mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+__attribute__((always_inline))
+static inline void
+mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs, uint_t proc_type,
+    const bool has_subtree)
 {
 	mblk_t			*in_chain = NULL;
 	timeout_id_t		tid;
@@ -2920,8 +2922,9 @@ mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 		goto out;
 	}
 
-	if (mac_srs->srs_first == NULL)
+	if (mac_srs->srs_first == NULL) {
 		goto out;
+	}
 
 	if (!(mac_srs->srs_state & SRS_LATENCY_OPT) &&
 	    (srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat)) {
@@ -3012,16 +3015,15 @@ again:
 	}
 
 	/*
-	 * TODO(ky): m'cast/b'cast traffic should walk the flowtree, but
-	 * should not be admitted by the DLS bypass flows.
-	 */
-
-	/*
 	 * Generally we *should* have a subtree here, due to DLS bypass.
 	 * Clients like viona (and some vnic/etherstub/... topologies) will
 	 * create effectively L2-only clients.
+	 *
+	 * TODO(ky): find more things which can be const-if'd out based on
+	 * has_subtree. viona will thank you.
 	 */
-	if (mac_srs->srs_flowtree.ftb_subtree != NULL) {
+	if (has_subtree) {
+		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
 		if (mac_srs->srs_flowtree.ftb_bw_count == 0) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
@@ -3122,8 +3124,9 @@ out:
 		mac_srs->srs_state &= ~(SRS_PROC|proc_type);
 		srs_rx->sr_drain_keep_polling++;
 		MAC_SRS_POLLING_ON(mac_srs);
-		if (srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat)
+		if (srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat) {
 			MAC_SRS_POLL_RING(mac_srs);
+		}
 		return;
 	}
 
@@ -3131,6 +3134,23 @@ out:
 	MAC_SRS_POLLING_OFF(mac_srs);
 	mac_srs->srs_state &= ~(SRS_PROC|proc_type);
 	srs_rx->sr_drain_finish_intr++;
+}
+
+/*
+ * TODO(ky): swap between these when reprogramming the flowtree and en/disabling
+ * bandwidth checks.
+ */
+
+void
+mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+{
+	mac_rx_srs_drain_inner(mac_srs, proc_type, false);
+}
+
+void
+mac_rx_srs_drain_subtree(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+{
+	mac_rx_srs_drain_inner(mac_srs, proc_type, true);
 }
 
 /*
@@ -3148,8 +3168,10 @@ out:
  * to read/debug if they stay separate. Any code changes here might
  * also apply to mac_rx_srs_drain as well.
  */
-void
-mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+__attribute__((always_inline))
+static inline void
+mac_rx_srs_drain_bw_inner(mac_soft_ring_set_t *mac_srs, uint_t proc_type,
+    const bool has_subtree)
 {
 	mblk_t			*head;
 	mblk_t			*tail;
@@ -3298,8 +3320,12 @@ again:
 	 * Generally we *should* have a subtree here, due to DLS bypass.
 	 * Clients like viona (and some vnic/etherstub/... topologies) will
 	 * create effectively L2-only clients.
+	 *
+	 * TODO(ky): find more things which can be const-if'd out based on
+	 * has_subtree. viona will thank you.
 	 */
-	if (mac_srs->srs_flowtree.ftb_subtree != NULL) {
+	if (has_subtree) {
+		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
 		if (mac_srs->srs_flowtree.ftb_bw_count == 0) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
@@ -3413,6 +3439,18 @@ leave_poll:
 	/* Nothing else to do. Get out of poll mode */
 	MAC_SRS_POLLING_OFF(mac_srs);
 	mac_srs->srs_state &= ~(SRS_PROC|proc_type);
+}
+
+void
+mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+{
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, false);
+}
+
+void
+mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+{
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true);
 }
 
 /*
