@@ -23,6 +23,8 @@
  * Copyright 2025 Oxide Computer Company
  */
 
+#include <sys/ddi.h>
+#include <sys/sunddi.h>
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/boot_data.h>
@@ -38,6 +40,7 @@
 #include <sys/kernel_ipcc.h>
 #include <sys/smt.h>
 #include <sys/time.h>
+#include <sys/io/zen/fabric.h>
 
 /*
  * Used by apix code that could be shared with other kernels.  Not tunable on
@@ -460,6 +463,30 @@ genunix_set_tunables(void)
 	 * no default value there so we must clear it.
 	 */
 	smt_boot_disable = 0;
+}
+
+/*
+ * As we reach certain phases of boot we want to make this observable
+ * externally. We do this in a number of ways:
+ *
+ * - In early boot, if "prom_debug" is set, print a message to the console;
+ * - Send an IPCC "BootStage" message down to the service processor to it can
+ *   record the event somewhere (most likely in a ring buffer);
+ * - Toggle a debug GPIO (if the platform has one);
+ * - Output an oxide-specific POST code.
+ */
+void
+oxide_report_boot_stage(boot_stage_t stage)
+{
+	extern int standalone;
+
+	if (standalone != 0) {
+		EB_DBGMSG("BOOT STAGE 0x%x\n", stage);
+	}
+
+	(void) kernel_ipcc_bootstage(BOOT_STAGE_VERSION, (uint64_t)stage);
+	zen_fabric_debug_signal();
+	outl(0x80, BOOT_STAGE_POSTCODE | stage);
 }
 
 /*

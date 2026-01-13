@@ -1241,6 +1241,8 @@ ipcc_cmd_str(ipcc_hss_cmd_t cmd)
 		return ("APOBDATA");
 	case IPCC_HSS_APOBREAD:
 		return ("APOBREAD");
+	case IPCC_HSS_BOOTSTAGE,:
+		return ("BOOTSTAGE");
 	default:
 		break;
 	}
@@ -1790,6 +1792,20 @@ ipcc_ackstart(const ipcc_ops_t *ops, void *arg)
 {
 	return (ipcc_command(ops, arg, IPCC_HSS_ACKSTART, IPCC_SP_ACK,
 	    NULL, 0));
+}
+
+int
+ipcc_bootstage(const ipcc_ops_t *ops, void *arg, uint64_t version,
+    uint64_t stage)
+{
+	uint8_t data[sizeof (uint64_t) * 2];
+	size_t off = 0;
+
+	ipcc_encode_bytes((uint8_t *)&version, sizeof (version), data, &off);
+	ipcc_encode_bytes((uint8_t *)&stage, sizeof (stage), data, &off);
+
+	return (ipcc_command(ops, arg, IPCC_HSS_BOOTSTAGE, IPCC_SP_ACK,
+	    data, off));
 }
 
 int

@@ -691,6 +691,7 @@ _start(uint64_t ramdisk_paddr, size_t ramdisk_len)
 	wait_for_psp();
 
 	kernel_ipcc_init(IPCC_INIT_EARLYBOOT);
+	oxide_report_boot_stage(BOOT_STAGE_START);
 	eb_physmem_init(&bm);
 	eb_create_properties(ramdisk_paddr, ramdisk_len);
 

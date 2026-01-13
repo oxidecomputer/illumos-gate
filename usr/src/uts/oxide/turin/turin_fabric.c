@@ -20,6 +20,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/clock.h>
 #include <sys/ddi.h>
 #include <sys/pci.h>
 #include <sys/pcie.h>
@@ -2033,7 +2034,7 @@ turin_pcie_dbg_signal(void)
 	if (!gpio_configured) {
 		zen_hack_gpio_config(22, TURIN_FCH_IOMUX_22_AGPIO22);
 		zen_hack_gpio(ZHGOP_TOGGLE, 22);
-		drv_usecwait(1);
+		eb_pausems(1);
 		gpio_configured = true;
 	}
 	zen_hack_gpio(ZHGOP_TOGGLE, 22);

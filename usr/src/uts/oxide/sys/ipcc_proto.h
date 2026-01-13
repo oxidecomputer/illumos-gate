@@ -68,7 +68,8 @@ typedef enum ipcc_hss_cmd {
 	IPCC_HSS_APOBBEGIN,
 	IPCC_HSS_APOBCOMMIT,
 	IPCC_HSS_APOBDATA,
-	IPCC_HSS_APOBREAD
+	IPCC_HSS_APOBREAD,
+	IPCC_HSS_BOOTSTAGE
 } ipcc_hss_cmd_t;
 
 typedef enum ipcc_sp_cmd {
@@ -227,6 +228,7 @@ extern int ipcc_bootfail(const ipcc_ops_t *, void *, ipcc_host_boot_failure_t,
     const uint8_t *, size_t);
 extern int ipcc_status(const ipcc_ops_t *, void *, uint64_t *, uint64_t *);
 extern int ipcc_ackstart(const ipcc_ops_t *, void *);
+extern int ipcc_bootstage(const ipcc_ops_t *, void *, uint64_t, uint64_t);
 extern int ipcc_imageblock(const ipcc_ops_t *, void *, uint8_t *, uint64_t,
     uint8_t **, size_t *);
 extern int ipcc_inventory(const ipcc_ops_t *, void *, ipcc_inventory_t *);

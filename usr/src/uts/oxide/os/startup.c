@@ -615,6 +615,8 @@ startup(void)
 {
 	extern cpuset_t cpu_ready_set;
 
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP);
+
 	/*
 	 * Make sure that nobody tries to use segkpm until we have
 	 * initialized it properly.
@@ -626,7 +628,9 @@ startup(void)
 	ssp_init();
 	startup_init();
 	startup_memlist();
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_KMEM);
 	startup_kmem();
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_VM);
 	startup_vm();
 
 	/*
@@ -654,17 +658,21 @@ startup(void)
 		    "CGPLL: spread-spectrum clocking could not be enabled");
 	}
 
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_TSC);
 	startup_tsc();
 
 	/*
 	 * At this point in time, go through and initialize the SoC's I/O
 	 * fabric. This includes the SMU, DXIO, NBIO, etc.
 	 */
+	oxide_report_boot_stage(BOOT_STAGE_ZEN_FABRIC_INIT);
 	zen_fabric_init();
 	if (smm_init() != 0)
 		cmn_err(CE_WARN, "SMI handler initialisation failed");
 
+	oxide_report_boot_stage(BOOT_STAGE_SMAP);
 	startup_smap();
+	oxide_report_boot_stage(BOOT_STAGE_MODULES);
 	startup_modules();
 
 	startup_end();
@@ -1824,6 +1832,7 @@ startup_end(void)
 	int i;
 	extern void cpu_event_init(void);
 
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_END);
 	PRM_POINT("startup_end() starting...");
 
 	/*
@@ -1927,6 +1936,8 @@ post_startup(void)
 {
 	extern void cpupm_init(cpu_t *);
 	extern void cpu_event_init_cpu(cpu_t *);
+
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_POST);
 
 	/*
 	 * On some platforms we send the APOB data down to the SP so that it
