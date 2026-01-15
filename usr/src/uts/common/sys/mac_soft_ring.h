@@ -260,6 +260,9 @@ typedef struct mac_srs_rx_s {
 	processorid_t		sr_poll_cpuid;
 	/* saved cpuid during offline */
 	processorid_t		sr_poll_cpuid_save;
+
+	/* WO */
+	flow_entry_t		*sr_act_as;
 } mac_srs_rx_t;
 
 /*
@@ -363,8 +366,8 @@ struct mac_soft_ring_set_s {
 	 *
 	 * TODO(ky): should these not be WO?
 	 */
-	mac_bw_ctl_t	**srs_bw;
-	mac_bw_ctl_t	*srs_bw_count;
+	mac_bw_ctl_t	**srs_bw; /* WO */
+	mac_bw_ctl_t	*srs_bw_len; /* WO */
 	/* TODO(ky): *these* should be protected by srs_lock */
 	size_t		srs_size;	/* Size of packets queued in bytes */
 	pri_t		srs_pri;
@@ -490,6 +493,22 @@ inline bool
 mac_srs_is_logical(const mac_soft_ring_set_t *srs)
 {
 	return ((srs->srs_type & SRST_LOGICAL) != 0);
+}
+
+inline flow_entry_t *
+mac_srs_rx_action_flent(mac_soft_ring_set_t *srs)
+{
+	ASSERT(!mac_srs_is_tx(srs));
+
+	return ((srs->srs_data.rx.sr_act_as != NULL) ?
+	    srs->srs_data.rx.sr_act_as :
+	    srs->srs_flent);
+}
+
+inline flow_action_t *
+mac_srs_rx_action(mac_soft_ring_set_t *srs)
+{
+	return (&mac_srs_rx_action_flent(srs)->fe_action);
 }
 
 /*
@@ -745,8 +764,6 @@ extern mblk_t *mac_soft_ring_poll(mac_soft_ring_t *, size_t);
 extern void mac_soft_ring_destroy(mac_soft_ring_t *);
 
 /* Rx SRS */
-extern mac_soft_ring_set_t *mac_srs_create_rx_logical(flow_entry_t *,
-    mac_soft_ring_set_t *);
 extern void mac_srs_free(mac_soft_ring_set_t *);
 extern void mac_srs_signal(mac_soft_ring_set_t *, uint_t);
 extern cpu_t *mac_srs_bind(mac_soft_ring_set_t *, processorid_t);

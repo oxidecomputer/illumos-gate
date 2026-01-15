@@ -962,6 +962,7 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		if (!(flent->fe_type & FLOW_USER) &&
 		    !(changed_mask & MRP_CPUS) &&
 		    !(mcip_mrp->mrp_mask & MRP_CPUS_USERSPEC)) {
+			/* TODO(ky): safe to call this? do we have a default? */
 			mac_fanout_setup(mcip, flent, mcip_mrp, NULL);
 		}
 	}
