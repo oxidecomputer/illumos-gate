@@ -178,6 +178,8 @@
 
 #include <sys/amdzen/df.h>
 #include <sys/amdzen/ccd.h>
+#include <sys/io/zen/fabric.h>
+#include <sys/plat/amdzen.h>
 #include "amdzen.h"
 #include "amdzen_client.h"
 #include "amdzen_topo.h"
@@ -361,9 +363,18 @@ amdzen_smn_read(amdzen_t *azn, amdzen_df_t *df, const smn_reg_t reg)
 {
 	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
 	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+	uint32_t val;
+	int ret;
 
 	VERIFY(SMN_REG_IS_NATURALLY_ALIGNED(reg));
 	VERIFY(MUTEX_HELD(&azn->azn_mutex));
+
+	ret = amdzen_plat_smn_read(df->adf_nodeid, reg, &val);
+	if (ret == 0)
+		return (val);
+	if (ret != ESRCH)
+		return (UINT32_MAX);
+
 	amdzen_stub_put32(df->adf_nb, AMDZEN_NB_SMN_ADDR, base_addr);
 
 	switch (SMN_REG_SIZE(reg)) {
@@ -387,10 +398,16 @@ amdzen_smn_write(amdzen_t *azn, amdzen_df_t *df, const smn_reg_t reg,
 {
 	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
 	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+	int ret;
 
 	VERIFY(SMN_REG_IS_NATURALLY_ALIGNED(reg));
 	VERIFY(SMN_REG_VALUE_FITS(reg, val));
 	VERIFY(MUTEX_HELD(&azn->azn_mutex));
+
+	ret = amdzen_plat_smn_write(df->adf_nodeid, reg, val);
+	if (ret != ESRCH)
+		return;
+
 	amdzen_stub_put32(df->adf_nb, AMDZEN_NB_SMN_ADDR, base_addr);
 
 	switch (SMN_REG_SIZE(reg)) {

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -2408,7 +2408,7 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 	},
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_32GT_PRECODE_REQ,
-		.strap_data = 0x0,
+		.strap_data = 0x1,
 		.strap_nodematch = PCIE_NODEMATCH_ANY,
 		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY,
@@ -2652,8 +2652,14 @@ turin_fabric_init_pcie_port_after_reconfig(zen_pcie_port_t *port)
 	    PCIE_PORT_LC_PRST_MASK_CTL_8GT_VAL);
 	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_16GT(val,
 	    PCIE_PORT_LC_PRST_MASK_CTL_16GT_VAL);
-	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_32GT(val,
-	    PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL);
+
+	/* The Gen5 value can be overridden per board */
+	const uint32_t mask32gt =
+	    oxide_board_data->obd_pcie_gen5_eq_preset_mask != 0 ?
+	    oxide_board_data->obd_pcie_gen5_eq_preset_mask :
+	    PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL;
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_32GT(val, mask32gt);
+
 	zen_pcie_port_write(port, reg, val);
 
 	/*

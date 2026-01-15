@@ -191,6 +191,13 @@ extern void zen_pcie_core_write(zen_pcie_core_t *, const smn_reg_t,
 extern uint32_t zen_pcie_port_read(zen_pcie_port_t *, const smn_reg_t);
 extern void zen_pcie_port_write(zen_pcie_port_t *, const smn_reg_t,
     const uint32_t);
+/*
+ * These two variants are for callers that wish to read a PCIe register on a
+ * given IO die, without having to cons up a zen_pcie_{port,core}_t. The more
+ * specific functions above should be used when the core or port is available.
+ */
+extern uint32_t zen_read_iodie_pcie_reg(uint32_t, const smn_reg_t);
+extern void zen_write_iodie_pcie_reg(uint32_t, const smn_reg_t, const uint32_t);
 
 #define	ZEN_IODIE_MATCH_ANY	UINT8_MAX
 extern void zen_pcie_populate_dbg(zen_fabric_t *, uint32_t, uint8_t);

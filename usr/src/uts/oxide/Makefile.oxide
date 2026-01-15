@@ -238,6 +238,7 @@ DRV_KMODS	+= dwu
 DRV_KMODS	+= cpudrv
 DRV_KMODS	+= zen_gpio
 DRV_KMODS	+= apob
+DRV_KMODS	+= dwi2c
 
 #
 #	Platform Power Modules
@@ -284,7 +285,8 @@ SYS_KMODS	+=
 #
 #	'Misc' Modules (/kernel/misc):
 #
-MISC_KMODS	+= pcie pci_prd boot_image espi_ktest bdat_prd oxide_ktest
+MISC_KMODS	+= pcie pci_prd boot_image espi_ktest bdat_prd oxide_ktest \
+		   amdzen_plat
 
 #
 #	'Dacf' modules (/kernel/dacf)

@@ -59,6 +59,16 @@ typedef struct df_comp {
 	const boolean_t dc_invalid_dest;
 } df_comp_t;
 
+typedef enum df_props_flags {
+	/*
+	 * Access to PCIe registers must be proxied via the MPIO.
+	 *
+	 * This isn't technically a property of the data fabric but rather
+	 * related to the security policy installed on the CPU.
+	 */
+	DFPROP_FLAG_PROXY_PCIERW = 1 << 0
+} df_props_flags_t;
+
 /*
  * Fixed and dynamically discovered properties of the DF on the current system.
  */
@@ -67,6 +77,11 @@ typedef struct df_props {
 	 * The major DF revision -- determines register definitions we'll use.
 	 */
 	const df_rev_t dfp_rev;
+
+	/*
+	 * Flags.
+	 */
+	const df_props_flags_t dfp_flags;
 
 	/*
 	 * The maximum number of PCI Bus configuration address maps.

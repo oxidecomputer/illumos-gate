@@ -100,7 +100,7 @@ usmn_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	 * for the value to be written in the USMN_WRITE case below.
 	 */
 	const smn_reg_t reg = SMN_MAKE_REG_SIZED(usr.usr_addr, usr.usr_size,
-	    SMN_UNIT_UNKNOWN);
+	    usr.usr_unit);
 
 	if (cmd == USMN_READ) {
 		int ret;

@@ -14,7 +14,8 @@
  */
 
 /*
- * An evolving, but private, interface to the kernel GPIO subsystem.
+ * An evolving, but private, interface to the kernel xPIO (GPIO and DPIO)
+ * subsystem.
  */
 
 #include <stddef.h>

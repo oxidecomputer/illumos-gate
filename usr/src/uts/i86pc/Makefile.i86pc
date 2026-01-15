@@ -290,7 +290,7 @@ SYS_KMODS	+=
 #
 #	'Misc' Modules (/kernel/misc):
 #
-MISC_KMODS	+= gfx_private pcie pci_prd
+MISC_KMODS	+= gfx_private pcie pci_prd amdzen_plat
 MISC_KMODS	+= acpidev
 MISC_KMODS	+= drmach_acpi
 MISC_KMODS	+= tem

@@ -22,16 +22,16 @@
 .Sh DESCRIPTION
 The
 .Nm
-driver provides access to general purpose and dedicated purpose I/Os
-that are built using the kernel's GPIO framework.
+driver provides access to general purpose and dedicated purpose I/O
+.Pq GPIO and DPIO respectively
+devices that are built using the kernel's GPIO framework.
 See
 .Xr gpio 7
 for general background and an overview of the system's design.
 GPIO controllers that are registered with the framework are made
 available to the system through this driver.
-In addition, when a DPIO is created, the
-.Nm
-driver is what is responsible for providing that abstraction.
+In addition, when a DPIO is created, this
+driver is responsible for providing that abstraction.
 .Pp
 GPIO controllers, GPIO attributes, and the manipulation of DPIOs can be
 explored through the

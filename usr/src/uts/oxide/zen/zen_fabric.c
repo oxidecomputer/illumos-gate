@@ -4083,3 +4083,73 @@ zen_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
 	}
 	return (ops->zfo_pcie_port_write(port, reg, val));
 }
+
+typedef struct zen_iodie_by_nodeid_data {
+	uint32_t	zibnd_nodeid;
+	zen_iodie_t	*zibnd_iodie;
+} zen_iodie_by_nodeid_data_t;
+
+static int
+zen_iodie_by_nodeid_cb(zen_iodie_t *iodie, void *arg)
+{
+	zen_iodie_by_nodeid_data_t *data = arg;
+
+	if (iodie->zi_node_id == data->zibnd_nodeid) {
+		data->zibnd_iodie = iodie;
+		return (1);	/* match found; terminate walk */
+	}
+	return (0);
+}
+
+static zen_iodie_t *
+zen_iodie_by_nodeid(uint32_t nodeid)
+{
+	zen_fabric_t *fabric = &zen_fabric;
+	zen_iodie_by_nodeid_data_t data = {
+		.zibnd_nodeid = nodeid
+	};
+
+	(void) zen_fabric_walk_iodie(fabric, zen_iodie_by_nodeid_cb, &data);
+	return (data.zibnd_iodie);
+}
+
+uint32_t
+zen_read_iodie_pcie_reg(uint32_t nodeid, const smn_reg_t reg)
+{
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
+	zen_iodie_t *iodie = zen_iodie_by_nodeid(nodeid);
+	uint32_t rval, val = UINT32_MAX;
+
+	VERIFY(SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_CORE ||
+	    SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_PORT);
+
+	if (iodie == NULL)
+		return (val);
+
+	if (ops->zfo_read_iodie_pcie_reg == NULL)
+		return (zen_smn_read(iodie, reg));
+
+	if (ops->zfo_read_iodie_pcie_reg(iodie, reg, &rval))
+		val = rval;
+
+	return (val);
+}
+
+void
+zen_write_iodie_pcie_reg(uint32_t nodeid, const smn_reg_t reg,
+    const uint32_t val)
+{
+	const zen_fabric_ops_t *ops = oxide_zen_fabric_ops();
+	zen_iodie_t *iodie = zen_iodie_by_nodeid(nodeid);
+
+	VERIFY(SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_CORE ||
+	    SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_PORT);
+
+	if (iodie == NULL)
+		return;
+
+	if (ops->zfo_write_iodie_pcie_reg == NULL)
+		zen_smn_write(iodie, reg, val);
+	else
+		(void) ops->zfo_write_iodie_pcie_reg(iodie, reg, val);
+}

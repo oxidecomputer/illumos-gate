@@ -30,7 +30,7 @@ gpioadm_dpio_list_usage(FILE *f)
 	    "[filter...]\n");
 }
 
-static void
+static void __PRINTFLIKE(1)
 gpioadm_dpio_list_help(const char *fmt, ...)
 {
 	if (fmt != NULL) {
@@ -287,7 +287,7 @@ gpioadm_dpio_define_usage(FILE *f)
 	    "controller/gpio name\n");
 }
 
-static void
+static void __PRINTFLIKE(1)
 gpioadm_dpio_define_help(const char *fmt, ...)
 {
 	if (fmt != NULL) {
@@ -364,7 +364,7 @@ gpioadm_dpio_undefine_usage(FILE *f)
 	(void) fprintf(f, "\tgpioadm dpio undefine controller/gpio\n");
 }
 
-static void
+static void __PRINTFLIKE(1)
 gpioadm_dpio_undefine_help(const char *fmt, ...)
 {
 	if (fmt != NULL) {

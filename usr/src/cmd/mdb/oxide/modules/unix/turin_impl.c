@@ -185,6 +185,7 @@ static const df_comp_t turin_comps[] = {
 
 df_props_t df_props_turin = {
 	.dfp_rev = DF_REV_4D2,
+	.dfp_flags = DFPROP_FLAG_PROXY_PCIERW,
 	.dfp_max_cfgmap = DF_MAX_CFGMAP_TURIN,
 	.dfp_max_iorr = DF_MAX_IO_RULES_TURIN,
 	.dfp_max_mmiorr = DF_MAX_MMIO_RULES_TURIN,

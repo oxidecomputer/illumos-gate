@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2025 Oxide Computer Company
  */
 
 /*
@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <unistd.h>
 #include <err.h>
 #include <sys/types.h>
@@ -26,6 +27,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <usmn.h>
+#include <smn.h>
 
 static boolean_t
 usmn_parse_uint32(const char *str, uint32_t *valp)
@@ -50,14 +52,38 @@ usmn_parse_uint32(const char *str, uint32_t *valp)
 	return (B_TRUE);
 }
 
+const struct {
+	const char *um_name;
+	smn_unit_t um_unit;
+} unit_map[] = {
+	{ "pciecore", SMN_UNIT_PCIE_CORE },
+	{ "pcieport", SMN_UNIT_PCIE_PORT }
+};
+
+static boolean_t
+usmn_parse_unit(const char *str, smn_unit_t *unitp)
+{
+	*unitp = SMN_UNIT_UNKNOWN;
+
+	for (uint_t i = 0; i < ARRAY_SIZE(unit_map); i++) {
+		if (strcasecmp(str, unit_map[i].um_name) == 0) {
+			*unitp = unit_map[i].um_unit;
+			return (B_TRUE);
+		}
+	}
+	warnx("Unknown unit '%s'", str);
+	return (B_FALSE);
+}
+
 static boolean_t
 usmn_op(boolean_t do_write, int fd, const char *addr, uint32_t length,
-    uint32_t value)
+    uint32_t value, smn_unit_t unit)
 {
 	usmn_reg_t usr;
 
 	usr.usr_data = value;
 	usr.usr_size = length;
+	usr.usr_unit = unit;
 	if (!usmn_parse_uint32(addr, &usr.usr_addr)) {
 		return (B_FALSE);
 	}
@@ -81,8 +107,9 @@ main(int argc, char *argv[])
 	boolean_t do_write = B_FALSE;
 	uint32_t wval = 0;
 	uint32_t length = 4;
+	smn_unit_t unit = SMN_UNIT_UNKNOWN;
 
-	while ((c = getopt(argc, argv, "d:L:w:")) != -1) {
+	while ((c = getopt(argc, argv, "d:L:u:w:")) != -1) {
 		switch (c) {
 		case 'd':
 			device = optarg;
@@ -94,6 +121,11 @@ main(int argc, char *argv[])
 			if (length != 1 && length != 2 && length != 4) {
 				warnx("length %u is out of range {1,2,4}",
 				    length);
+				return (EXIT_FAILURE);
+			}
+			break;
+		case 'u':
+			if (!usmn_parse_unit(optarg, &unit)) {
 				return (EXIT_FAILURE);
 			}
 			break;
@@ -132,7 +164,7 @@ main(int argc, char *argv[])
 
 	ret = EXIT_SUCCESS;
 	for (i = 0; i < argc; i++) {
-		if (!usmn_op(do_write, fd, argv[i], length, wval)) {
+		if (!usmn_op(do_write, fd, argv[i], length, wval, unit)) {
 			ret = EXIT_FAILURE;
 		}
 	}

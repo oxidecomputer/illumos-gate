@@ -31,7 +31,7 @@ gpioadm_gpio_attr_get_usage(FILE *f)
 	    "controller/gpio [filter...]\n");
 }
 
-static void
+static void __PRINTFLIKE(1)
 gpioadm_gpio_attr_get_help(const char *fmt, ...)
 {
 	if (fmt != NULL) {
@@ -319,7 +319,7 @@ gpioadm_gpio_attr_set_usage(FILE *f)
 	    "[attr=value...]\n");
 }
 
-static void
+static void __PRINTFLIKE(1)
 gpioadm_gpio_attr_set_help(const char *fmt, ...)
 {
 	if (fmt != NULL) {
@@ -446,7 +446,7 @@ gpioadm_gpio_list_usage(FILE *f)
 	    "[-1] [filter...]\n");
 }
 
-static void
+static void __PRINTFLIKE(1)
 gpioadm_gpio_list_help(const char *fmt, ...)
 {
 	if (fmt != NULL) {

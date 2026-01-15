@@ -24,6 +24,7 @@ CSTD = $(CSTD_GNU99)
 COMMON_OBJS = apob_common.o
 
 apobdump := EXTRA_OBJS += apob_common.o
+usmn := CPPFLAGS += -I$(SRC)/uts/intel/sys/amdzen
 uhsmp := CPPFLAGS += -I$(SRC)/uts/intel
 
 .KEEP_STATE:

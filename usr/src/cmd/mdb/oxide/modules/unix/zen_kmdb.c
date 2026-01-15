@@ -43,6 +43,8 @@ static df_props_t *df_props = NULL;
 static boolean_t df_read32(uint8_t, const df_reg_def_t, uint32_t *);
 static boolean_t df_read32_indirect(uint8_t, uint16_t, const df_reg_def_t,
     uint32_t *);
+static boolean_t mpiorpc_read_pcie_reg(uint8_t, const smn_reg_t, uint32_t *);
+static boolean_t mpiorpc_write_pcie_reg(uint8_t, const smn_reg_t, uint32_t);
 
 /*
  * Grabs the effective ComponentIDs for each component instance in the DF and
@@ -820,7 +822,8 @@ static const char *smnhelp =
 "options are supported:\n"
 "\n"
 "  -L len	use access size {1,2,4} bytes, default 4\n"
-"  -s socket	direct the I/O to the specified I/O die, generally a socket\n";
+"  -s socket	direct the I/O to the specified I/O die, generally a socket\n"
+"  -u unit	specify the register unit type.\n";
 
 void
 rdsmn_dcmd_help(void)
@@ -843,7 +846,6 @@ static int
 smn_rw_reg(const smn_reg_t reg, uint8_t sock, smn_rw_t rw,
     uint32_t *smn_val)
 {
-	uint8_t smn_busno;
 	boolean_t res;
 	size_t len = SMN_REG_SIZE(reg);
 	uint32_t addr = SMN_REG_ADDR(reg);
@@ -865,35 +867,55 @@ smn_rw_reg(const smn_reg_t reg, uint8_t sock, smn_rw_t rw,
 		return (DCMD_ERR);
 	}
 
-	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
-	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+	if ((df_props->dfp_flags & DFPROP_FLAG_PROXY_PCIERW) != 0 &&
+	    (SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_CORE ||
+	    SMN_REG_UNIT(reg) == SMN_UNIT_PCIE_PORT)) {
+		switch (rw) {
+		case SMN_RD:
+			res = mpiorpc_read_pcie_reg(sock, reg, smn_val);
+			break;
+		case SMN_WR:
+			res = mpiorpc_write_pcie_reg(sock, reg, *smn_val);
+			break;
+		default:
+			mdb_warn("internal error: "
+			    "unreachable SMN R/W type %d\n", rw);
+			return (DCMD_ERR);
+		}
+	} else {
+		const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
+		const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+		uint8_t smn_busno;
 
-	if (!df_get_smn_busno(sock, &smn_busno)) {
-		mdb_warn("failed to get SMN bus number\n");
-		return (DCMD_ERR);
-	}
+		if (!df_get_smn_busno(sock, &smn_busno)) {
+			mdb_warn("failed to get SMN bus number\n");
+			return (DCMD_ERR);
+		}
 
-	if (!pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
-	    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR, sizeof (base_addr),
-	    base_addr)) {
-		mdb_warn("failed to write to IOHC SMN address register\n");
-		return (DCMD_ERR);
-	}
+		if (!pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
+		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR,
+		    sizeof (base_addr), base_addr)) {
+			mdb_warn(
+			    "failed to write to IOHC SMN address register\n");
+			return (DCMD_ERR);
+		}
 
-	switch (rw) {
-	case SMN_RD:
-		res = pcicfg_read(smn_busno, AMDZEN_NB_SMN_DEVNO,
-		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
-		    SMN_REG_SIZE(reg), smn_val);
-		break;
-	case SMN_WR:
-		res = pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
-		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
-		    SMN_REG_SIZE(reg), *smn_val);
-		break;
-	default:
-		mdb_warn("internal error: unreachable SMN R/W type %d\n", rw);
-		return (DCMD_ERR);
+		switch (rw) {
+		case SMN_RD:
+			res = pcicfg_read(smn_busno, AMDZEN_NB_SMN_DEVNO,
+			    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
+			    SMN_REG_SIZE(reg), smn_val);
+			break;
+		case SMN_WR:
+			res = pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
+			    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
+			    SMN_REG_SIZE(reg), *smn_val);
+			break;
+		default:
+			mdb_warn("internal error: "
+			    "unreachable SMN R/W type %d\n", rw);
+			return (DCMD_ERR);
+		}
 	}
 
 	if (!res) {
@@ -902,7 +924,29 @@ smn_rw_reg(const smn_reg_t reg, uint8_t sock, smn_rw_t rw,
 	}
 
 	return (DCMD_OK);
+}
 
+static const struct {
+	const char *sum_name;
+	smn_unit_t sum_unit;
+} smn_unit_map[] = {
+	{ "pciecore", SMN_UNIT_PCIE_CORE },
+	{ "pcieport", SMN_UNIT_PCIE_PORT }
+};
+
+static boolean_t
+smn_parse_unit(const char *str, smn_unit_t *unitp)
+{
+	*unitp = SMN_UNIT_UNKNOWN;
+
+	for (uint_t i = 0; i < ARRAY_SIZE(smn_unit_map); i++) {
+		if (strcasecmp(str, smn_unit_map[i].sum_name) == 0) {
+			*unitp = smn_unit_map[i].sum_unit;
+			return (B_TRUE);
+		}
+	}
+	mdb_warn("Unknown unit '%s'\n", str);
+	return (B_FALSE);
 }
 
 static int
@@ -913,6 +957,8 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 	u_longlong_t parse_val;
 	uint32_t smn_val = 0;
 	uint64_t sock = 0;
+	char *unit_str = NULL;
+	smn_unit_t unit = SMN_UNIT_UNKNOWN;
 	int ret;
 
 	if (!(flags & DCMD_ADDRSPEC)) {
@@ -920,11 +966,16 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 		return (DCMD_USAGE);
 	}
 
-	if (mdb_getopts(argc, argv, 'L', MDB_OPT_UINTPTR, (uintptr_t *)&len,
-	    's', MDB_OPT_UINT64, &sock, NULL) !=
-	    ((rw == SMN_RD) ? argc : (argc - 1))) {
+	if (mdb_getopts(argc, argv,
+	    'L', MDB_OPT_UINTPTR, (uintptr_t *)&len,
+	    's', MDB_OPT_UINT64, &sock,
+	    'u', MDB_OPT_STR, &unit_str,
+	    NULL) != ((rw == SMN_RD) ? argc : (argc - 1))) {
 		return (DCMD_USAGE);
 	}
+
+	if (unit_str != NULL && !smn_parse_unit(unit_str, &unit))
+		return (DCMD_ERR);
 
 	if (rw == SMN_WR) {
 		parse_val = mdb_argtoull(&argv[argc - 1]);
@@ -945,7 +996,7 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 		return (DCMD_ERR);
 	}
 
-	const smn_reg_t reg = SMN_MAKE_REG_SIZED(addr, len, SMN_UNIT_UNKNOWN);
+	const smn_reg_t reg = SMN_MAKE_REG_SIZED(addr, len, unit);
 
 	ret = smn_rw_reg(reg, (uint8_t)sock, rw, &smn_val);
 	if (ret != DCMD_OK) {
@@ -1743,7 +1794,8 @@ get_platform(mdb_zen_platform_t *platform)
 #define	RPC_FW_RESP_MASK	0xff
 
 typedef struct {
-	uint32_t	req, resp;
+	uint32_t	req;
+	uint32_t	resp;
 	uint32_t	args[6];
 } mdb_mpio_rpc_t;
 
@@ -1759,15 +1811,22 @@ mpio_regdef_to_reg(uint32_t smn_reg_base, smn_reg_def_t reg_def)
 }
 
 static boolean_t
-mpio_rpc(uint8_t sock, mdb_mpio_rpc_t *rpc, const mdb_zen_platform_consts_t *cp)
+mpio_rpc(uint8_t sock, mdb_mpio_rpc_t *rpc)
 {
 	uint32_t req, resp;
+	static mdb_zen_platform_t platform = { 0 };
+	const mdb_zen_platform_consts_t *cp = &platform.zp_consts;
 	const mdb_zen_mpio_smn_addrs_t *mpio = &cp->zpc_mpio_smn_addrs;
 
+	if (mpio->zmsa_reg_base == 0 && !get_platform(&platform)) {
+		mdb_warn("cannot read platform setting up for MPIO RPC\n");
+		return (B_FALSE);
+	}
 	if (mpio->zmsa_resp.srd_unit != SMN_UNIT_MPIO_RPC) {
 		mdb_warn("MPIO RPCs unsupported on this platform.\n");
 		return (B_FALSE);
 	}
+
 	const uint32_t reg_base = mpio->zmsa_reg_base;
 	const smn_reg_t response =
 	    mpio_regdef_to_reg(reg_base, mpio->zmsa_resp);
@@ -1868,13 +1927,47 @@ static const mdb_bitmask_t mpio_resp_flags[] = {
 	{ NULL, 0, 0 },
 };
 
+static boolean_t
+mpiorpc_read_pcie_reg(uint8_t sock, const smn_reg_t reg, uint32_t *val)
+{
+	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+	mdb_mpio_rpc_t rpc = { 0 };
+
+	rpc.req = ZEN_MPIO_OP_RDWR_PCIE_PROXY;
+	rpc.args[0] = SMN_REG_ADDR_BASE(reg);
+
+	if (!mpio_rpc(sock, &rpc)) {
+		mdb_warn("mpio: RPC failed\n");
+		return (B_FALSE);
+	}
+	*val = (rpc.args[0] >> (addr_off << 3)) & SMN_REG_SIZE_MASK(reg);
+	return (B_TRUE);
+}
+
+static boolean_t
+mpiorpc_write_pcie_reg(uint8_t sock, const smn_reg_t reg, uint32_t val)
+{
+	const uint32_t addr_off = SMN_REG_ADDR_OFF(reg);
+	mdb_mpio_rpc_t rpc = { 0 };
+
+	rpc.req = ZEN_MPIO_OP_RDWR_PCIE_PROXY;
+	rpc.args[0] = SMN_REG_ADDR_BASE(reg);
+	rpc.args[1] = SMN_REG_SIZE_MASK(reg) << (addr_off << 3);
+	rpc.args[2] = val << (addr_off << 3);
+
+	if (!mpio_rpc(sock, &rpc)) {
+		mdb_warn("mpio: RPC failed\n");
+		return (B_FALSE);
+	}
+	return (B_TRUE);
+}
+
 int
 mpiorpc_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 {
 	uint64_t sock = 0;
 	int nopts;
 	mdb_mpio_rpc_t rpc = { 0 };
-	mdb_zen_platform_t platform;
 
 	if ((flags & DCMD_ADDRSPEC) == 0)
 		return (DCMD_USAGE);
@@ -1906,12 +1999,8 @@ mpiorpc_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		}
 		rpc.args[i] = arg;
 	}
-	if (!get_platform(&platform)) {
-		mdb_warn("cannot read platform setting up for for MPIO RPC\n");
-		return (DCMD_ERR);
-	}
 	rpc.req = (uint32_t)addr;
-	if (!mpio_rpc(sock, &rpc, &platform.zp_consts)) {
+	if (!mpio_rpc(sock, &rpc)) {
 		mdb_warn("mpio: RPC failed\n");
 		return (DCMD_ERR);
 	}

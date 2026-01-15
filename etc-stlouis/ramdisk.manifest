@@ -787,6 +787,7 @@ d platform/oxide/kernel/mach/amd64 0755 root sys
 f platform/oxide/kernel/mach/amd64/apix 0755 root sys
 d platform/oxide/kernel/misc 0755 root sys
 d platform/oxide/kernel/misc/amd64 0755 root sys
+f platform/oxide/kernel/misc/amd64/amdzen_plat 0755 root sys
 f platform/oxide/kernel/misc/amd64/bdat_prd 0755 root sys
 f platform/oxide/kernel/misc/amd64/pcie 0755 root sys
 f platform/oxide/kernel/misc/amd64/pci_prd 0755 root sys

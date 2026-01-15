@@ -32,6 +32,7 @@
 #include <sys/io/milan/iomux.h>
 #include <sys/io/genoa/iomux.h>
 #include <sys/io/turin/iomux.h>
+#include <sys/io/turin/pcie.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/platform.h>
 
@@ -271,6 +272,9 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ppt = 500, /* W */
 			.obd_edc = 330, /* A */
 			.obd_tdc = 235,	/* A */
+			.obd_pcie_gen5_eq_preset_mask =
+			    PCIE_PORT_LC_PRST_MASK_CTL_P(4) |
+			    PCIE_PORT_LC_PRST_MASK_CTL_P(5),
 			.obd_wd = IOMUX_CFG_ENTRY(22,
 			    TURIN_FCH_IOMUX_22_AGPIO22)
 		},

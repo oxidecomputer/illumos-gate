@@ -734,6 +734,12 @@ CRYPTOHDRS=			\
 DCAMHDRS=			\
 	dcam1394_io.h
 
+I2CHDRS=		\
+	controller.h	\
+	i2c.h		\
+	ioctl.h		\
+	mux.h
+
 IBHDRS=			\
 	ib_types.h	\
 	ib_pkt_hdrs.h
@@ -892,10 +898,12 @@ FSHDRS=				\
 
 GPIOHDRS=			\
 	dpio.h			\
-	kgpio.h			\
+	gpio_sim.h		\
 	kgpio_attr.h		\
 	kgpio_provider.h	\
-	gpio_sim.h		\
+	kgpio.h			\
+	ltc4306.h		\
+	pca953x.h		\
 	zen_gpio.h
 
 NVMEHDRS=		\
@@ -1173,6 +1181,7 @@ CHECKHDRS=						\
 	$(FCHDRS:%.h=fibre-channel/%.check)		\
 	$(FCIMPLHDRS:%.h=fibre-channel/impl/%.check)	\
 	$(FCULPHDRS:%.h=fibre-channel/ulp/%.check)	\
+	$(I2CHDRS:%.h=i2c/%.check)			\
 	$(IBHDRS:%.h=ib/%.check)			\
 	$(IBDHDRS:%.h=ib/clients/ibd/%.check)		\
 	$(IBTLHDRS:%.h=ib/ibtl/%.check)			\
@@ -1251,6 +1260,7 @@ CHECKHDRS=						\
 	$(ROOTFMFSHDRS)		\
 	$(ROOTFSHDRS)		\
 	$(ROOTGPIOHDRS)		\
+	$(ROOTI2CHDRS)		\
 	$(ROOTIBDHDRS)		\
 	$(ROOTIBHDRS)		\
 	$(ROOTIBTLHDRS)		\
@@ -1323,6 +1333,7 @@ install_h:			\
 	$(ROOTFMIOHDRS)		\
 	$(ROOTFSHDRS)		\
 	$(ROOTGPIOHDRS)		\
+	$(ROOTI2CHDRS)		\
 	$(ROOTIBDHDRS)		\
 	$(ROOTIBHDRS)		\
 	$(ROOTIBTLHDRS)		\

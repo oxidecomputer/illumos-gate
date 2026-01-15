@@ -210,6 +210,7 @@ extern "C" {
 #define	DDI_NT_UGEN	"ddi_generic:usb"	/* USB generic drv */
 
 #define	DDI_NT_SMP	"ddi_sas_smp"		/* smp devcies */
+#define	DDI_NT_EEPROM	"ddi_eeprom"		/* EEPROM device */
 
 #define	DDI_NT_NEXUS	"ddi_ctl:devctl"	/* nexus drivers */
 
@@ -273,6 +274,14 @@ extern "C" {
  */
 #define	DDI_NT_GPIO_CTRL	"ddi_gpio:controller"
 #define	DDI_NT_GPIO_DPIO	"ddi_gpio:dpio"
+
+/*
+ * Device types used for I2C
+ */
+#define	DDI_NT_I2C_CTRL		"ddi_i2c:controller"
+#define	DDI_NT_I2C_PORT		"ddi_i2c:port"
+#define	DDI_NT_I2C_DEV		"ddi_i2c:device"
+#define	DDI_NT_I2C_MUX		"ddi_i2c:mux"
 
 /*
  * DDI event definitions

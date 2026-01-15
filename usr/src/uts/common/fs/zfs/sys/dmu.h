@@ -510,7 +510,7 @@ dmu_write_embedded(objset_t *os, uint64_t object, uint64_t offset,
 /*
  * Decide how to write a block: checksum, compression, number of copies, etc.
  */
-#define	WP_NOFILL	0x1
+#define	WP_ZEROFILL	0x1
 #define	WP_DMU_SYNC	0x2
 #define	WP_SPILL	0x4
 
@@ -846,7 +846,7 @@ void dmu_write(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	const void *buf, dmu_tx_t *tx);
 void dmu_write_by_dnode(dnode_t *dn, uint64_t offset, uint64_t size,
     const void *buf, dmu_tx_t *tx);
-void dmu_prealloc(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
+void dmu_zero(objset_t *os, uint64_t object, uint64_t offset, uint64_t size,
 	dmu_tx_t *tx);
 int dmu_read_uio(objset_t *os, uint64_t object, struct uio *uio, uint64_t size);
 int dmu_read_uio_dbuf(dmu_buf_t *zdb, struct uio *uio, uint64_t size);

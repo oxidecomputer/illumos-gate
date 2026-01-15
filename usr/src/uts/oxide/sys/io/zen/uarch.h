@@ -248,6 +248,15 @@ typedef struct zen_fabric_ops {
 	    const smn_reg_t);
 	void		(*zfo_pcie_port_write)(zen_pcie_port_t *,
 	    const smn_reg_t, const uint32_t);
+	/*
+	 * These two variants are for callers that wish to read a PCIe
+	 * register on an IO die, without having to cons up a
+	 * zen_pcie_{port,core}_t.
+	 */
+	bool		(*zfo_read_iodie_pcie_reg)(zen_iodie_t *,
+	    const smn_reg_t, uint32_t *);
+	bool		(*zfo_write_iodie_pcie_reg)(zen_iodie_t *,
+	    const smn_reg_t, uint32_t);
 
 	/*
 	 * Signal that we're collecting register data.

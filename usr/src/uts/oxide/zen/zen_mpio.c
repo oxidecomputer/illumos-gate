@@ -838,7 +838,7 @@ zen_mpio_send_data(zen_iodie_t *iodie, void *arg __unused)
  * routines and instead must proxy through MPIO.
  */
 
-static bool
+bool
 zen_mpio_read_pcie_reg(zen_iodie_t *iodie, const smn_reg_t reg, uint32_t *val)
 {
 	zen_mpio_rpc_t rpc = { 0 };
@@ -865,7 +865,7 @@ zen_mpio_read_pcie_reg(zen_iodie_t *iodie, const smn_reg_t reg, uint32_t *val)
 	return (true);
 }
 
-static bool
+bool
 zen_mpio_write_pcie_reg(zen_iodie_t *iodie, const smn_reg_t reg,
     uint32_t val)
 {

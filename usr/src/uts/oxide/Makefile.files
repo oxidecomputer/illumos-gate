@@ -200,6 +200,8 @@ ROOTNEX_OBJS += rootnex.o
 
 PCI_PRD_OBJS += pci_prd_oxide.o
 
+AMDZEN_PLAT_OBJS += amdzen_plat_oxide.o
+
 FCH_OBJS += fch.o ixbar.o
 
 DWU_OBJS += asy.o

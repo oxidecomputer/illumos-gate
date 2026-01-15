@@ -14,7 +14,8 @@
  */
 
 /*
- * Initial attempt at driving GPIO activities.
+ * This command implements the basics of administering general purpose and
+ * dedicated purpose I/O (GPIO and DPIO).
  */
 
 #include <string.h>
