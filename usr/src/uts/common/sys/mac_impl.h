@@ -379,6 +379,7 @@ struct mac_impl_s {
 	uint8_t			mi_addr[MAXMACADDRLEN];	/* mi_rw_lock */
 	uint8_t			mi_dstaddr[MAXMACADDRLEN]; /* mi_rw_lock */
 	boolean_t		mi_dstaddr_set;
+	uint64_t		mi_hash_key[MACHASHKEYLEN];
 
 	/*
 	 * The mac perimeter. All client initiated create/modify operations

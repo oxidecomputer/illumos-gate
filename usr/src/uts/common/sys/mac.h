@@ -150,6 +150,11 @@ typedef struct mac_propval_range_s {
 
 #define	MPT_MAXMACADDR		32
 
+/*
+ * Number of 64-bit words in a mac hash key.
+ */
+#define	MACHASHKEYLEN		2
+
 typedef struct mac_secondary_addr_s {
 	uint32_t	ms_addrcnt;
 	uint8_t		ms_addrs[MPT_MAXMACADDR][MAXMACADDRLEN];
@@ -747,6 +752,9 @@ extern boolean_t		mac_is_vnic_primary(mac_handle_t);
 
 extern uint64_t			mac_pkt_hash(uint_t, mblk_t *, uint8_t,
 				    boolean_t);
+
+extern uint64_t			mac_pkt_keyed_hash(uint_t, mblk_t *,
+				    uint8_t, const uint64_t *, size_t);
 
 /*
  * Bridging linkage

@@ -733,12 +733,32 @@ static inline viona_vring_t *
 viona_rx_pick_ring(viona_link_t *link, mblk_t *mp)
 {
 	viona_vring_t *ring;
-	uint8_t r = 0;
+	size_t r = 0;
 
 	if (link->l_usepairs > 1) {
-		r = (uint8_t)mac_pkt_hash(DL_ETHER, mp,
+#if 1
+		uint64_t h = mac_pkt_hash(DL_ETHER, mp,
 		    MAC_PKT_HASH_L3 | MAC_PKT_HASH_L4, B_TRUE);
-		r %= link->l_usepairs;
+		/*
+		 * The following is the bit mixing step from MurmurHash3.
+		 * By default, `mac_pkt_hash` is not well-distributed at
+		 * all, resulting in poor use of multiple queues; we at
+		 * we least try to randomize it a bit more.
+		 */
+		h ^= (h >> 33);
+        	h *= 0xff51afd7ed558ccdULL;
+        	h ^= (h >> 33);
+        	h *= 0xc4ceb9fe1a85ec53ULL;
+		r = (h >> 33) % link->l_usepairs;
+#else
+		const uint64_t key[2] = {
+		    0xff51afd7ed558ccdULL,
+		    0xc4ceb9fe1a85ec53ULL
+		};
+		uint64_t h = mac_pkt_keyed_hash(DL_ETHER, mp,
+		    MAC_PKT_HASH_L3 | MAC_PKT_HASH_L4, key, 2);
+		r = h % link->l_usepairs;
+#endif
 	}
 
 	ring = &link->l_vrings[r * 2];

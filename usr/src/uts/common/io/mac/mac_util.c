@@ -2197,19 +2197,85 @@ mac_get_devinfo(mac_handle_t mh)
 	return ((void *)mip->mi_dip);
 }
 
-#define	PKT_HASH_2BYTES(x) ((x)[0] ^ (x)[1])
-#define	PKT_HASH_4BYTES(x) ((x)[0] ^ (x)[1] ^ (x)[2] ^ (x)[3])
-#define	PKT_HASH_MAC(x) ((x)[0] ^ (x)[1] ^ (x)[2] ^ (x)[3] ^ (x)[4] ^ (x)[5])
-
 uint64_t
 mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 {
+	/* for now we support only outbound packets */
+	ASSERT(is_outbound);
+	return (mac_pkt_keyed_hash(media, mp, policy, NULL, 0));
+}
+
+#define ROTL(x, b) ((x << b) | (x >> (64 - b)))
+#define SIPROUND(v0, v1, v2, v3) \
+    do { \
+    	v0 += v1; \
+    	v1 = ROTL(v1, 13); \
+    	v1 ^= v0; \
+    	v0 = ROTL(v0, 32); \
+    	v2 += v1; \
+    	v1 = ROTL(v1, 17); \
+    	v1 ^= v2; \
+    	v2 = ROTL(v2, 32); \
+	v2 += v3; \
+	v3 = ROTL(v3, 16); \
+	v3 ^= v2; \
+	v0 += v3; \
+	v3 = ROTL(v3, 21); \
+	v3 ^= v0; \
+    } while(0)
+
+uint64_t
+siphash_c1_d3(const void *data, size_t len, uint64_t key[2])
+{
+	const size_t U64LEN = sizeof(uint64_t);
+	const size_t w = (len + 1 + (U64LEN - 1)) & (U64LEN - 1);
+	const uint64_t last = ((uint64_t)len & 0xFF) << (7*8);
+	const uint8_t *bs = data;
+
+	uint64_t v0 = key[0] ^ 0x736f6d6570736575ULL;
+	uint64_t v1 = key[1] ^ 0x646f72616e646f6dULL;
+	uint64_t v2 = key[0] ^ 0x6c7967656e657261ULL;
+	uint64_t v3 = key[1] ^ 0x7465646279746573ULL;
+
+	for (size_t k = 0, nbs = len; k < w; ++k) {
+		const size_t len = nbs < U64LEN ? nbs : U64LEN;
+		uint64_t m = last;
+		uint8_t *mp = (uint8_t *)&m;
+		for (size_t j = 0; j < len; ++j) {
+			mp[j] = bs[j];
+		}
+		bs += len;
+		nbs -= len;
+		v3 ^= m;
+		SIPROUND(v0, v1, v2, v3);
+		v0 ^= m;
+	}
+	v2 ^= 0xff;
+	SIPROUND(v0, v1, v2, v3);
+	SIPROUND(v0, v1, v2, v3);
+	SIPROUND(v0, v1, v2, v3);
+
+	return (v0 ^ v1 ^ v2 ^ v3);
+}
+
+uint64_t
+mac_pkt_keyed_hash(uint_t media, mblk_t *mp, uint8_t policy,
+    const uint64_t *mac_key, size_t mac_key_len)
+{
 	struct ether_header *ehp;
 	uint64_t hash = 0;
+	uint64_t key[2] = { 0 };
+	uint64_t buf[8];
+	uint8_t *bp = (uint8_t *)buf;
+	size_t blen = 0;
 	uint16_t sap;
 	uint_t skip_len;
 	uint8_t proto;
 	boolean_t ip_fragmented;
+
+	size_t keylen = mac_key_len < 2 ? mac_key_len : 2;
+	for (size_t k = 0; k < keylen; ++k)
+		key[k] = mac_key[k];
 
 	/*
 	 * We may want to have one of these per MAC type plugin in the
@@ -2218,19 +2284,19 @@ mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 	if (media != DL_ETHER)
 		return (0L);
 
-	/* for now we support only outbound packets */
-	ASSERT(is_outbound);
 	ASSERT(IS_P2ALIGNED(mp->b_rptr, sizeof (uint16_t)));
 	ASSERT(MBLKL(mp) >= sizeof (struct ether_header));
 
-	/* compute L2 hash */
-
+	/* Accumulate L2 data */
 	ehp = (struct ether_header *)mp->b_rptr;
 
 	if ((policy & MAC_PKT_HASH_L2) != 0) {
 		uchar_t *mac_src = ehp->ether_shost.ether_addr_octet;
 		uchar_t *mac_dst = ehp->ether_dhost.ether_addr_octet;
-		hash = PKT_HASH_MAC(mac_src) ^ PKT_HASH_MAC(mac_dst);
+		memcpy(bp + blen, mac_src, ETHERADDRL);
+		blen += ETHERADDRL;
+		memcpy(bp + blen, mac_dst, ETHERADDRL);
+		blen += ETHERADDRL;
 		policy &= ~MAC_PKT_HASH_L2;
 	}
 
@@ -2238,8 +2304,8 @@ mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 		goto done;
 
 	/* skip ethernet header */
-
 	sap = ntohs(ehp->ether_type);
+	skip_len = sizeof (struct ether_header);
 	if (sap == ETHERTYPE_VLAN) {
 		struct ether_vlan_header *evhp;
 		mblk_t *newmp = NULL;
@@ -2258,8 +2324,6 @@ mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 
 		sap = ntohs(evhp->ether_type);
 		freemsg(newmp);
-	} else {
-		skip_len = sizeof (struct ether_header);
 	}
 
 	/* if ethernet header is in its own mblk, skip it */
@@ -2272,8 +2336,7 @@ mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 
 	sap = (sap < ETHERTYPE_802_MIN) ? 0 : sap;
 
-	/* compute IP src/dst addresses hash and skip IPv{4,6} header */
-
+	/* Accumulate IP src/dst addresses and skip IPv{4,6} header */
 	switch (sap) {
 	case ETHERTYPE_IP: {
 		ipha_t *iphp;
@@ -2304,14 +2367,17 @@ mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 			uint8_t *ip_src = (uint8_t *)&(iphp->ipha_src);
 			uint8_t *ip_dst = (uint8_t *)&(iphp->ipha_dst);
 
-			hash ^= (PKT_HASH_4BYTES(ip_src) ^
-			    PKT_HASH_4BYTES(ip_dst));
+			memcpy(bp + blen, ip_src, 4);
+			blen += 4;
+			memcpy(bp + blen, ip_dst, 4);
+			blen += 4;
 			policy &= ~MAC_PKT_HASH_L3;
 		}
 
 		if (ip_fragmented) {
 			uint8_t *identp = (uint8_t *)&iphp->ipha_ident;
-			hash ^= PKT_HASH_2BYTES(identp);
+			memcpy(bp + blen, identp, 2);
+			blen += 2;
 			goto done;
 		}
 		break;
@@ -2343,17 +2409,20 @@ mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 		 * better distribution.
 		 */
 		if (frag != NULL || (policy & MAC_PKT_HASH_L3) != 0) {
-			uint8_t *ip_src = &(ip6hp->ip6_src.s6_addr8[12]);
-			uint8_t *ip_dst = &(ip6hp->ip6_dst.s6_addr8[12]);
+			uint8_t *ip_src = ip6hp->ip6_src.s6_addr8;
+			uint8_t *ip_dst = ip6hp->ip6_dst.s6_addr8;
 
-			hash ^= (PKT_HASH_4BYTES(ip_src) ^
-			    PKT_HASH_4BYTES(ip_dst));
+			memcpy(bp + blen, ip_src, 16);
+			blen += 16;
+			memcpy(bp + blen, ip_dst, 16);
+			blen += 16;
 			policy &= ~MAC_PKT_HASH_L3;
 		}
 
 		if (frag != NULL) {
 			uint8_t *identp = (uint8_t *)&frag->ip6f_ident;
-			hash ^= PKT_HASH_4BYTES(identp);
+			memcpy(bp + blen, identp, 4);
+			blen += 4;
 			goto done;
 		}
 		break;
@@ -2387,7 +2456,8 @@ again:
 		 */
 		if (mp->b_rptr + skip_len + 4 > mp->b_wptr)
 			goto done;
-		hash ^= PKT_HASH_4BYTES((mp->b_rptr + skip_len));
+		memcpy(bp + blen, mp->b_rptr + skip_len, 4);
+		blen += 4;
 		break;
 
 	case IPPROTO_AH: {
@@ -2413,5 +2483,10 @@ again:
 	}
 
 done:
+	// hash = siphash_c1_d3(bp, blen, key);
+	(void)key;
+	for (size_t k = 0; k < blen; ++k) {
+		hash ^= bp[k];
+	}
 	return (hash);
 }

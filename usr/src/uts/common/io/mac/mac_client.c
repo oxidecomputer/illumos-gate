@@ -454,6 +454,12 @@ mac_name(mac_handle_t mh)
 	return (((mac_impl_t *)mh)->mi_name);
 }
 
+const uint64_t *
+mac_hash_key(mac_handle_t mh)
+{
+	return (((mac_impl_t *)mh)->mi_hash_key);
+}
+
 int
 mac_type(mac_handle_t mh)
 {
