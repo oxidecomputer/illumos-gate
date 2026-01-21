@@ -2458,7 +2458,7 @@ zfs_mvdev_dump_activate_feature_sync(void *arg, dmu_tx_t *tx)
 }
 
 int
-zvol_raw_volume_init(objset_t *os)
+zvol_raw_volume_init(objset_t *os, nvlist_t *nvprops)
 {
 	dmu_tx_t *tx;
 	int error;
@@ -2491,6 +2491,22 @@ zvol_raw_volume_init(objset_t *os)
 	dmu_objset_name(os, osname);
 	error = zfs_set_prop_nvlist(osname, ZPROP_SRC_LOCAL,
 	    nv, NULL);
+
+	/*
+	 * Remove overridden properties from the nvlist so the standard
+	 * property-handling logic does not attempt to set them.
+	 */
+	if (error == 0 && nvprops != NULL) {
+		nvlist_remove_all(nvprops,
+		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION));
+		nvlist_remove_all(nvprops,
+		    zfs_prop_to_name(ZFS_PROP_COMPRESSION));
+		nvlist_remove_all(nvprops, zfs_prop_to_name(ZFS_PROP_CHECKSUM));
+		if (version >= SPA_VERSION_DEDUP) {
+			nvlist_remove_all(nvprops,
+			    zfs_prop_to_name(ZFS_PROP_DEDUP));
+		}
+	}
 	nvlist_free(nv);
 	return (error);
 }
@@ -2620,7 +2636,7 @@ zvol_dump_init(zvol_state_t *zv, boolean_t resize)
 	 * the dump area for the first time.
 	 */
 	if (!resize) {
-		return (zvol_raw_volume_init(zv->zv_objset));
+		return (zvol_raw_volume_init(zv->zv_objset, NULL));
 	}
 	return (0);
 }

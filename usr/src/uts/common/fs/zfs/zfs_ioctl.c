@@ -3396,7 +3396,7 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 		    FTAG, &os);
 		if (error != 0)
 			return (SET_ERROR(EPERM));
-		error = zvol_raw_volume_init(os);
+		error = zvol_raw_volume_init(os, nvprops);
 		dmu_objset_disown(os, B_FALSE, FTAG);
 	}
 
