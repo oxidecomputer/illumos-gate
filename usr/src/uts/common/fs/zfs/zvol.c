@@ -2111,8 +2111,8 @@ zvol_ioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cr, int *rvalp)
 		 * chance to run before we try to get its status.
 		 */
 		while (!(zv->zv_flags & ZVOL_ZERO_STARTED)) {
-			if (!cv_wait_sig(&zv->zv_state_cv,
-			    &zv->zv_state_lock)) {
+			if (cv_wait_sig(&zv->zv_state_cv,
+			    &zv->zv_state_lock) == 0) {
 				error = SET_ERROR(EINTR);
 				goto out;
 			}
@@ -2152,8 +2152,8 @@ out:
 		 * we can signal it to stop.
 		 */
 		while (!(zv->zv_flags & ZVOL_ZERO_STARTED)) {
-			if (!cv_wait_sig(&zv->zv_state_cv,
-			    &zv->zv_state_lock)) {
+			if (cv_wait_sig(&zv->zv_state_cv,
+			    &zv->zv_state_lock) == 0) {
 				mutex_exit(&zv->zv_state_lock);
 				mutex_exit(&zfsdev_state_lock);
 				return (SET_ERROR(EINTR));
@@ -2162,11 +2162,16 @@ out:
 
 		zv->zv_zero_exit_wanted = B_TRUE;
 		while (zv->zv_zero_thread != NULL) {
-			cv_wait(&zv->zv_state_cv, &zv->zv_state_lock);
+			if (cv_wait_sig(&zv->zv_state_cv,
+			    &zv->zv_state_lock) == 0) {
+				mutex_exit(&zv->zv_state_lock);
+				mutex_exit(&zfsdev_state_lock);
+				return (SET_ERROR(EINTR));
+			}
 		}
 		mutex_exit(&zv->zv_state_lock);
 		mutex_exit(&zfsdev_state_lock);
-		return (zv->zv_zero_error);
+		return (0);
 	}
 
 	case DKIOCINFO:
