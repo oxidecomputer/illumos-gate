@@ -1084,7 +1084,7 @@ zvol_set_volsize(const char *name, uint64_t volsize)
 	 * just ignore that error.
 	 */
 	error = zvol_create_minor(name);
-	if (error != EEXIST)
+	if (error != 0 && error != EEXIST)
 		return (error);
 
 	mutex_enter(&zfsdev_state_lock);
