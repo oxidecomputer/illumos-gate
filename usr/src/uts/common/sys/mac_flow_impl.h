@@ -42,6 +42,8 @@ extern "C" {
 #include <sys/stdbool.h>
 #include <sys/mac_datapath_impl.h>
 
+#define	MAX_MAC_RX_SRS	 (MAX_RINGS_PER_GROUP + 1)
+
 /*
  * Macros to increment/decrement the reference count on a flow_entry_t.
  */
@@ -224,14 +226,16 @@ typedef bool		(*flow_match_fn2_t)(void *, mblk_t *);
 typedef struct mac_bw_ctl_s {
 	kmutex_t	mac_bw_lock;
 	uint8_t		mac_bw_state;
-	size_t		mac_bw_sz;	/* ?? Is it needed */
+	size_t		mac_bw_sz;	/* Bytes enqueued in controlled SRSes */
 	size_t		mac_bw_limit;	/* Max bytes to process per tick */
 	size_t		mac_bw_used;	/* Bytes processed in current tick */
 	size_t		mac_bw_drop_threshold; /* Max queue length */
-	size_t		mac_bw_drop_bytes;
-	size_t		mac_bw_polled;
-	size_t		mac_bw_intr;
 	clock_t		mac_bw_curr_time;
+
+	/* stats */
+	uint64_t	mac_bw_drop_bytes;
+	uint64_t	mac_bw_polled;
+	uint64_t	mac_bw_intr;
 } mac_bw_ctl_t;
 
 /* mac_bw_state */
@@ -342,9 +346,9 @@ typedef struct {
 	mac_flow_action_type_t	ftex_do;
 	bool			ftex_ascend;
 	union {
-		/* MFA_TYPE_DELIVER */
+		/* MFA_TYPE_DELIVER | MFA_TYPE_DROP_DELEGATE */
 		struct mac_soft_ring_set_s	*ftex_srs;
-		/* MFA_TYPE_DROP_DELEGATE | DROP */
+		/* MFA_TYPE_DROP_DROP */
 		flow_entry_t	*ftex_flent; /* kept for stats */
 	} arg;
 } flow_tree_exit_node_t;
@@ -437,7 +441,7 @@ struct flow_entry_s {					/* Protected by */
 	void			*fe_client_cookie;	/* WO */
 	void			*fe_rx_ring_group;	/* SL */
 							/* fe_lock */
-	struct mac_soft_ring_set_s	*fe_rx_srs[MAX_RINGS_PER_GROUP + 1];
+	struct mac_soft_ring_set_s	*fe_rx_srs[MAX_MAC_RX_SRS];
 	int			fe_rx_srs_cnt;		/* fe_lock */
 	void			*fe_tx_ring_group;
 	struct mac_soft_ring_set_s	*fe_tx_srs;	/* WO */
@@ -738,6 +742,45 @@ extern void mac_flow_match_list_remove(mac_flow_match_t *, const size_t);
 extern flow_tree_t *mac_flow_tree_node_create(flow_entry_t *);
 extern void mac_flow_tree_node_destroy(flow_tree_t *);
 extern void mac_flow_tree_destroy(flow_tree_t *);
+
+inline mac_flow_action_type_t
+mac_flow_action_type(const flow_action_t *ac)
+{
+	ASSERT3P(ac, !=, NULL);
+	if ((ac->fa_flags & MFA_FLAGS_ACTION) == 0) {
+		return (MFA_TYPE_DELEGATE);
+	}
+	return ((ac->fa_direct_rx_fn == NULL) ?
+	    MFA_TYPE_DROP : MFA_TYPE_DELIVER);
+}
+
+inline bool
+mac_bw_ctl_is_enabled(const mac_bw_ctl_t *bw)
+{
+	return ((bw->mac_bw_state & BW_ENABLED) != 0);
+}
+
+inline bool
+mac_bw_ctl_is_enforced(const mac_bw_ctl_t *bw)
+{
+	return ((bw->mac_bw_state & BW_ENFORCED) != 0);
+}
+
+inline void
+mac_bw_ctls_lock(mac_bw_ctl_t **list, const size_t list_len)
+{
+	for (size_t i = 0; i < list_len; i++) {
+		mutex_enter(&list[i]->mac_bw_lock);
+	}
+}
+
+inline void
+mac_bw_ctls_unlock(mac_bw_ctl_t **list, const size_t list_len)
+{
+	for (size_t i = 0; i < list_len; i++) {
+		mutex_exit(&list[i]->mac_bw_lock);
+	}
+}
 
 #ifdef	__cplusplus
 }

@@ -355,9 +355,21 @@ struct mac_soft_ring_set_s {
 	mac_soft_ring_t	*srs_soft_ring_head;
 	mac_soft_ring_t	*srs_soft_ring_tail;
 	mac_soft_ring_t	**srs_soft_rings;
-	int		srs_soft_ring_count;
-	int		srs_soft_ring_quiesced_count;
-	int		srs_soft_ring_condemned_count;
+	uint32_t	srs_soft_ring_count;
+	uint32_t	srs_soft_ring_quiesced_count;
+	uint32_t	srs_soft_ring_condemned_count;
+
+	/*
+	 * Logical SRSes which hold no actual softrings are used as queues
+	 * limited by one or more bandwidth controls. These then forward onto
+	 * the set of softrings held by `srs_give_to`, which may be logical or
+	 * complete.
+	 *
+	 * This allows us to avoid creating excess softrings for BW-limited
+	 * delegate Rx actions, and is used to mete out access to the underlying
+	 * Tx rings for BW-limited cases.
+	 */
+	mac_soft_ring_set_t	*srs_give_to; /* WO */
 
 	/*
 	 * Bandwidth control related members.
@@ -367,7 +379,8 @@ struct mac_soft_ring_set_s {
 	 * TODO(ky): should these not be WO?
 	 */
 	mac_bw_ctl_t	**srs_bw; /* WO */
-	mac_bw_ctl_t	*srs_bw_len; /* WO */
+	size_t		srs_bw_len; /* WO */
+
 	/* TODO(ky): *these* should be protected by srs_lock */
 	size_t		srs_size;	/* Size of packets queued in bytes */
 	pri_t		srs_pri;
@@ -462,15 +475,14 @@ struct mac_soft_ring_set_s {
  * and other static characteristics of a SRS like a tx
  * srs, tcp only srs, etc.
  */
-// TODO(ky): remove these three.
+// TODO(ky): remove?
 #define	SRST_LINK		0x00000001
 #define	SRST_FLOW		0x00000002
-#define	SRST_NO_SOFT_RINGS	0x00000004
 
+#define	SRST_NO_SOFT_RINGS	0x00000004
 #define	SRST_LOGICAL		0x00000008
 
-/* TODO(ky) is this useful now that SRSes are more... normal? */
-#define	SRST_FANOUT_PROTO	0x00000010
+#define	SRST_FORWARD		0x00000010
 #define	SRST_DEFAULT_GRP	0x00000080
 
 #define	SRST_TX			0x00000100
@@ -623,13 +635,13 @@ extern struct dls_kstats dls_kstat;
 	if ((head)->b_next == NULL) {				\
 		cnt = 1;					\
 		if (bw_ctl)					\
-			sz += msgdsize(head);			\
+			sz += mp_len(head);			\
 	} else {						\
 		while (tmp != NULL) {				\
 			tail = tmp;				\
 			cnt++;					\
 			if (bw_ctl)				\
-				sz += msgdsize(tmp);		\
+				sz += mp_len(tmp);		\
 			tmp = tmp->b_next;			\
 		}						\
 	}							\
@@ -684,9 +696,15 @@ mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
 	    mac_srs->srs_complete_parent : mac_srs;
 	ASSERT3P(true_target, !=, NULL);
 
+	/*
+	 * Poll packet occupancy is not tracked by Tx SRSes.
+	 */
+	if (mac_srs_is_tx(true_target)) {
+		return;
+	}
+
 	mac_srs_rx_t *srs_rx = &true_target->srs_data.rx;
 
-	/* TODO(ky): No atomic sub? */
 	const uint32_t point_value = atomic_add_32_nv(
 	    &srs_rx->sr_poll_pkt_cnt, -cnt);
 	if (point_value <= srs_rx->sr_poll_thres) {
@@ -703,45 +721,6 @@ mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
 		}
 		mutex_exit(&true_target->srs_lock);
 	}
-}
-
-/*
- * TODO(ky): needing to lock the SRS to check if it has suddenly become
- * bandwidth-addled hurts. Eliding this for now but there *must* be a way to
- * subvert this. Maybe the 'xxx-venu' comment is right.
- */
-/*
- * The following two macros are used to update the inbound packet and byte.
- * count. The packet and byte count reflect the packets and bytes that are
- * taken out of the SRS's queue, i.e. indicating they are being delivered.
- * The srs_count and srs_size are updated in different locations as the
- * srs_size is also used to take into account any bandwidth limits. The
- * srs_size is updated only when a soft ring, if any, sends a packet up,
- * as opposed to updating it when the SRS sends a packet to the SR, i.e.
- * the srs_size reflects the packets in the SRS and SRs. These
- * macros decrement the srs_size and srs_count and also increment the
- * ipackets and ibytes stats resp.
- *
- * xxx-venu These are done under srs_lock, for now we still update
- * mci_stat_ibytes/mci_stat_ipackets atomically, need to check if
- * just updating them would be accurate enough.
- *
- * If we are updating these for a sub-flow SRS, then we need to also
- * updated it's MAC client bandwidth info, if the MAC client is also
- * bandwidth regulated.
- */
-#define	MAC_UPDATE_SRS_SIZE_LOCKED(srs, sz) {				\
-	if ((srs)->srs_type & SRST_BW_CONTROL) {			\
-		mutex_enter(&(srs)->srs_bw->mac_bw_lock);		\
-		(srs)->srs_bw->mac_bw_sz -= (sz);			\
-		(srs)->srs_bw->mac_bw_used += (sz);			\
-		mutex_exit(&(srs)->srs_bw->mac_bw_lock);		\
-	}								\
-}
-
-#define	MAC_TX_UPDATE_BW_INFO(srs, sz) {				\
-	(srs)->srs_bw->mac_bw_sz -= (sz);				\
-	(srs)->srs_bw->mac_bw_used += (sz);				\
 }
 
 #define	MAC_TX_SOFT_RINGS(mac_srs) (mac_srs_is_tx((mac_srs)) &&		\
@@ -824,9 +803,56 @@ extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
 extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
 extern void mac_tx_srs_drain(mac_soft_ring_set_t *, uint_t);
+extern void mac_srs_drain_forward(mac_soft_ring_set_t *, uint_t);
 
 extern void mac_tx_srs_restart(mac_soft_ring_set_t *);
 extern void mac_rx_srs_remove(mac_soft_ring_set_t *);
+
+/* Bandwidth control related functions */
+inline bool
+mac_srs_any_bw_enabled(const mac_soft_ring_set_t *srs)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		if (mac_bw_ctl_is_enabled(srs->srs_bw[i])) {
+			return (true);
+		}
+	}
+	return (false);
+}
+
+inline bool
+mac_srs_any_bw_enforced(const mac_soft_ring_set_t *srs)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		if (mac_bw_ctl_is_enforced(srs->srs_bw[i])) {
+			return (true);
+		}
+	}
+	return (false);
+}
+
+inline bool
+mac_srs_any_bw_zeroed(const mac_soft_ring_set_t *srs)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		if(srs->srs_bw[i]->mac_bw_limit == 0) {
+			return (true);
+		}
+	}
+	return (false);
+}
+
+inline void
+mac_srs_bw_lock(const mac_soft_ring_set_t *srs)
+{
+	mac_bw_ctls_lock(srs->srs_bw, srs->srs_bw_len);
+}
+
+inline void
+mac_srs_bw_unlock(const mac_soft_ring_set_t *srs)
+{
+	mac_bw_ctls_unlock(srs->srs_bw, srs->srs_bw_len);
+}
 
 #ifdef	__cplusplus
 }

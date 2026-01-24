@@ -383,18 +383,10 @@ mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 		(*proc)(arg1, arg2, mp, NULL);
 
 		/*
-		 * If we have an SRS performing bandwidth control, then
-		 * we need to decrement the size and count so the SRS
-		 * has an accurate measure of the data queued between
-		 * the SRS and its soft rings. We decrement the
-		 * counters only when the packet is processed by both
-		 * the SRS and the soft ring.
+		 * Update the SRS (or its complete parent's) poll
+		 * packet count to make room for more to be enqueued.
 		 */
-		// mutex_enter(&mac_srs->srs_lock);
-		// MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
 		mac_update_srs_count(mac_srs, cnt);
-		// MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
-		// mutex_exit(&mac_srs->srs_lock);
 
 		mutex_enter(&ringp->s_ring_lock);
 	}
@@ -475,6 +467,7 @@ done:
 	cv_broadcast(&srs->srs_async);
 	mutex_exit(&srs->srs_lock);
 
+	mutex_enter(lock);
 	/*
 	 * S_RING_PAUSE takes priority over serving any packets. Thus, there
 	 * is a faint possibility that we still have mblks on the softring. Free
@@ -482,21 +475,19 @@ done:
 	 */
 	freemsgchain(ringp->s_ring_first);
 
-	/* TODO(ky): rethink? */
-
 	const int cnt = ringp->s_ring_count;
-	// const size_t sz = ringp->s_ring_size;
-
 	mac_soft_ring_set_t *parent = srs->srs_complete_parent;
 	if (cnt != 0) {
 		mac_update_srs_count(parent, cnt);
 	}
 
-	// if (parent != NULL) {
-	// 	// mutex_enter(&parent->srs_lock);
-	// 	MAC_UPDATE_SRS_SIZE_LOCKED(parent, sz);
-	// 	// mutex_exit(&parent->srs_lock);
-	// }
+	ringp->s_ring_first = NULL;
+	ringp->s_ring_last = NULL;
+	ringp->s_ring_count = 0;
+	ringp->s_ring_size = 0;
+
+	mutex_exit(lock);
+
 	thread_exit();
 }
 
@@ -596,14 +587,10 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 
 	mutex_exit(&ringp->s_ring_lock);
 	/*
-	 * Update the shared count and size counters so
-	 * that SRS has a accurate idea of queued packets.
+	 * Update the SRS (or its complete parent's) poll
+	 * packet count to make room for more to be enqueued.
 	 */
 	mac_update_srs_count(mac_srs, cnt);
-	// mutex_enter(&mac_srs->srs_lock);
-	// MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
-	// MAC_UPDATE_SRS_SIZE_LOCKED(mac_srs, sz);
-	// mutex_exit(&mac_srs->srs_lock);
 	return (head);
 }
 

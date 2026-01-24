@@ -141,7 +141,7 @@ meoi_fast_l4hlen(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
 	return ((db->t_tuntype == 0) ?
-	    (((db->p_flags & MEOI_L4INFO_SET) != 0) ? db->p_l4proto: -1) :
+	    (((db->p_flags & MEOI_L4INFO_SET) != 0) ? db->p_l4hlen: -1) :
 	    (((db->t_flags & MEOI_L4INFO_SET) != 0) ? 8: -1));
 }
 
