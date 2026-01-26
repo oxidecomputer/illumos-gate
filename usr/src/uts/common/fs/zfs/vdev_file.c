@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/zfs_context.h>
@@ -304,6 +305,7 @@ vdev_ops_t vdev_file_ops = {
 	.vdev_op_remap = NULL,
 	.vdev_op_xlate = vdev_default_xlate,
 	.vdev_op_dumpio = NULL,
+	.vdev_op_rawio = NULL,
 	.vdev_op_type = VDEV_TYPE_FILE,		/* name of this vdev type */
 	.vdev_op_leaf = B_TRUE			/* leaf vdev */
 };
@@ -326,6 +328,7 @@ vdev_ops_t vdev_disk_ops = {
 	.vdev_op_remap = NULL,
 	.vdev_op_xlate = vdev_default_xlate,
 	.vdev_op_dumpio = NULL,
+	.vdev_op_rawio = NULL,
 	.vdev_op_type = VDEV_TYPE_DISK,		/* name of this vdev type */
 	.vdev_op_leaf = B_TRUE			/* leaf vdev */
 };

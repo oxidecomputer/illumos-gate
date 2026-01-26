@@ -35,6 +35,7 @@
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright 2017-2018 RackTop Systems.
  * Copyright (c) 2021 Matt Fiddaman
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <ctype.h>
@@ -1744,6 +1745,11 @@ zfs_setprop_error(libzfs_handle_t *hdl, zfs_prop_t prop, int err,
 			(void) zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "property setting is not allowed on "
 			    "root pools"));
+			(void) zfs_error(hdl, EZFS_NOTSUP, errbuf);
+		} else if (prop == ZFS_PROP_VOLSIZE) {
+			(void) zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "property setting is not allowed on "
+			    "raw volumes"));
 			(void) zfs_error(hdl, EZFS_NOTSUP, errbuf);
 		} else {
 			(void) zfs_standard_error(hdl, err, errbuf);

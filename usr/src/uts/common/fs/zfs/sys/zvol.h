@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_ZVOL_H
@@ -45,7 +46,9 @@ extern int zvol_remove_minor(const char *);
 extern void zvol_remove_minors(const char *);
 extern int zvol_set_volsize(const char *, uint64_t);
 
-extern int zvol_open(dev_t *devp, int flag, int otyp, cred_t *cr);
+extern int zvol_raw_volume_init(objset_t *os, nvlist_t *nvprops);
+
+extern int zvol_open(dev_t dev, int flag, int otyp, cred_t *cr);
 extern int zvol_dump(dev_t dev, caddr_t addr, daddr_t offset, int nblocks);
 extern int zvol_close(dev_t dev, int flag, int otyp, cred_t *cr);
 extern int zvol_strategy(buf_t *bp);

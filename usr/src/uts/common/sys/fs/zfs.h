@@ -27,6 +27,7 @@
  * Copyright 2020 Joyent, Inc.
  * Copyright (c) 2017 Datto Inc.
  * Copyright (c) 2017, Intel Corporation.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -184,6 +185,7 @@ typedef enum {
 	ZFS_PROP_KEY_GUID,
 	ZFS_PROP_KEYSTATUS,
 	ZFS_PROP_IVSET_GUID,		/* not exposed to the user */
+	ZFS_PROP_RAWVOL,
 	ZFS_NUM_PROPS
 } zfs_prop_t;
 

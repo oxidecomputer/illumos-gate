@@ -26,6 +26,7 @@
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/zfs_context.h>
@@ -871,7 +872,7 @@ dbuf_clear_data(dmu_buf_impl_t *db)
 	dbuf_evict_user(db);
 	ASSERT3P(db->db_buf, ==, NULL);
 	db->db.db_data = NULL;
-	if (db->db_state != DB_ZEROFILL)
+	if (db->db_state != DB_ZEROFILL && db->db_state != DB_NOFILL)
 		db->db_state = DB_UNCACHED;
 }
 
@@ -1325,7 +1326,7 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 	 */
 	ASSERT(!zfs_refcount_is_zero(&db->db_holds));
 
-	if (db->db_state == DB_ZEROFILL)
+	if (db->db_state == DB_ZEROFILL || db->db_state == DB_NOFILL)
 		return (SET_ERROR(EIO));
 
 	DB_DNODE_ENTER(db);
@@ -1457,7 +1458,7 @@ dbuf_noread(dmu_buf_impl_t *db)
 		ASSERT(db->db.db_data == NULL);
 		dbuf_set_data(db, arc_alloc_buf(spa, db, type, db->db.db_size));
 		db->db_state = DB_FILL;
-	} else if (db->db_state == DB_ZEROFILL) {
+	} else if (db->db_state == DB_ZEROFILL || db->db_state == DB_NOFILL) {
 		dbuf_clear_data(db);
 	} else {
 		ASSERT3U(db->db_state, ==, DB_CACHED);
@@ -1553,6 +1554,7 @@ dbuf_free_range(dnode_t *dn, uint64_t start_blkid, uint64_t end_blkid,
 
 		if (db->db_state == DB_UNCACHED ||
 		    db->db_state == DB_ZEROFILL ||
+		    db->db_state == DB_NOFILL ||
 		    db->db_state == DB_EVICTING) {
 			ASSERT(db->db.db_data == NULL);
 			mutex_exit(&db->db_mtx);
@@ -1684,7 +1686,8 @@ dbuf_redirty(dbuf_dirty_record_t *dr)
 		 */
 		dbuf_unoverride(dr);
 		if (db->db.db_object != DMU_META_DNODE_OBJECT &&
-		    db->db_state != DB_ZEROFILL) {
+		    db->db_state != DB_ZEROFILL &&
+		    db->db_state != DB_NOFILL) {
 			/* Already released on initial dirty, so just thaw. */
 			ASSERT(arc_released(db->db_buf));
 			arc_buf_thaw(db->db_buf);
@@ -1741,7 +1744,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	 */
 	ASSERT(db->db_level != 0 ||
 	    db->db_state == DB_CACHED || db->db_state == DB_FILL ||
-	    db->db_state == DB_ZEROFILL);
+	    db->db_state == DB_ZEROFILL || db->db_state == DB_NOFILL);
 
 	mutex_enter(&dn->dn_mtx);
 	/*
@@ -1831,7 +1834,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	if (db->db_level == 0) {
 		void *data_old = db->db_buf;
 
-		if (db->db_state != DB_ZEROFILL) {
+		if (db->db_state != DB_ZEROFILL && db->db_state != DB_NOFILL) {
 			if (db->db_blkid == DMU_BONUS_BLKID) {
 				dbuf_fix_old_data(db, tx->tx_txg);
 				data_old = db->db.db_data;
@@ -2056,7 +2059,7 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	}
 	DB_DNODE_EXIT(db);
 
-	if (db->db_state != DB_ZEROFILL) {
+	if (db->db_state != DB_ZEROFILL && db->db_state != DB_NOFILL) {
 		dbuf_unoverride(dr);
 
 		ASSERT(db->db_buf != NULL);
@@ -2071,7 +2074,8 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	db->db_dirtycnt -= 1;
 
 	if (zfs_refcount_remove(&db->db_holds, (void *)(uintptr_t)txg) == 0) {
-		ASSERT(db->db_state == DB_ZEROFILL || arc_released(db->db_buf));
+		ASSERT(db->db_state == DB_ZEROFILL ||
+		    db->db_state == DB_NOFILL || arc_released(db->db_buf));
 		dbuf_destroy(db);
 		return (B_TRUE);
 	}
@@ -2132,6 +2136,16 @@ dmu_buf_zero_fill(dmu_buf_t *db_fake, dmu_tx_t *tx)
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
 
 	db->db_state = DB_ZEROFILL;
+
+	dmu_buf_will_fill(db_fake, tx);
+}
+
+void
+dmu_buf_will_not_fill(dmu_buf_t *db_fake, dmu_tx_t *tx)
+{
+	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
+
+	db->db_state = DB_NOFILL;
 
 	dmu_buf_will_fill(db_fake, tx);
 }
@@ -2360,7 +2374,8 @@ dbuf_destroy(dmu_buf_impl_t *db)
 		db->db_caching_status = DB_NO_CACHE;
 	}
 
-	ASSERT(db->db_state == DB_UNCACHED || db->db_state == DB_ZEROFILL);
+	ASSERT(db->db_state == DB_UNCACHED || db->db_state == DB_ZEROFILL ||
+	    db->db_state == DB_NOFILL);
 	ASSERT(db->db_data_pending == NULL);
 
 	db->db_state = DB_EVICTING;
@@ -3213,7 +3228,8 @@ dbuf_rele_and_unlock(dmu_buf_impl_t *db, void *tag, boolean_t evicting)
 			 * dbuf with any data allocated from the ARC.
 			 */
 			ASSERT(db->db_state == DB_UNCACHED ||
-			    db->db_state == DB_ZEROFILL);
+			    db->db_state == DB_ZEROFILL ||
+			    db->db_state == DB_NOFILL);
 			dbuf_destroy(db);
 		} else if (arc_released(db->db_buf)) {
 			/*
@@ -3531,7 +3547,7 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 		ASSERT(db->db.db_data != dr->dt.dl.dr_data);
 	} else {
 		ASSERT(db->db_state == DB_CACHED ||
-		    db->db_state == DB_ZEROFILL);
+		    db->db_state == DB_ZEROFILL || db->db_state == DB_NOFILL);
 	}
 	DBUF_VERIFY(db);
 
@@ -3608,7 +3624,7 @@ dbuf_sync_leaf(dbuf_dirty_record_t *dr, dmu_tx_t *tx)
 	if (os->os_encrypted && dn->dn_object == DMU_META_DNODE_OBJECT)
 		dbuf_prepare_encrypted_dnode_leaf(dr);
 
-	if (db->db_state != DB_ZEROFILL &&
+	if (db->db_state != DB_ZEROFILL && db->db_state != DB_NOFILL &&
 	    dn->dn_object != DMU_META_DNODE_OBJECT &&
 	    zfs_refcount_count(&db->db_holds) > 1 &&
 	    dr->dt.dl.dr_override_state != DR_OVERRIDDEN &&
@@ -3923,7 +3939,7 @@ dbuf_write_done(zio_t *zio, arc_buf_t *buf, void *vdb)
 	if (db->db_level == 0) {
 		ASSERT(db->db_blkid != DMU_BONUS_BLKID);
 		ASSERT(dr->dt.dl.dr_override_state == DR_NOT_OVERRIDDEN);
-		if (db->db_state != DB_ZEROFILL) {
+		if (db->db_state != DB_ZEROFILL && db->db_state != DB_NOFILL) {
 			if (dr->dt.dl.dr_data != db->db_buf)
 				arc_buf_destroy(dr->dt.dl.dr_data, db);
 		}
@@ -4156,7 +4172,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 	dn = DB_DNODE(db);
 	os = dn->dn_objset;
 
-	if (db->db_state != DB_ZEROFILL) {
+	if (db->db_state != DB_ZEROFILL && db->db_state != DB_NOFILL) {
 		if (db->db_level > 0 || dn->dn_type == DMU_OT_DNODE) {
 			/*
 			 * Private object buffers are released here rather
@@ -4206,7 +4222,8 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 
 	if (db->db_blkid == DMU_SPILL_BLKID)
 		wp_flag = WP_SPILL;
-	wp_flag |= (db->db_state == DB_ZEROFILL) ? WP_ZEROFILL : 0;
+	wp_flag |= (db->db_state == DB_ZEROFILL ||
+	    db->db_state == DB_NOFILL) ? WP_ZEROFILL : 0;
 
 	dmu_write_policy(os, dn, db->db_level, wp_flag, &zp);
 
@@ -4249,6 +4266,16 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 		    dbuf_write_zerofill_done, db,
 		    ZIO_PRIORITY_ASYNC_WRITE,
 		    ZIO_FLAG_MUSTSUCCEED | ZIO_FLAG_ZERO_DATA, &zb);
+	} else if (db->db_state == DB_NOFILL) {
+		ASSERT(zp.zp_checksum == ZIO_CHECKSUM_OFF ||
+		    zp.zp_checksum == ZIO_CHECKSUM_NOPARITY);
+		dr->dr_zio = zio_write(zio, os->os_spa, txg,
+		    &dr->dr_bp_copy, NULL,
+		    db->db.db_size, db->db.db_size, &zp,
+		    dbuf_write_zerofill_ready, NULL, NULL,
+		    dbuf_write_zerofill_done, db,
+		    ZIO_PRIORITY_ASYNC_WRITE,
+		    ZIO_FLAG_MUSTSUCCEED | ZIO_FLAG_NODATA, &zb);
 	} else {
 		ASSERT(arc_released(data));
 
