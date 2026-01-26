@@ -27,8 +27,8 @@
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2025 Oxide Computer Company
  * Copyright 2024 Hans Rosenfeld
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifdef OXIDE_DWU
@@ -68,6 +68,7 @@
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/signal.h>
 #include <sys/stream.h>
 #include <sys/termio.h>
@@ -170,7 +171,7 @@ static	int debug  = 0;
 	if (ASY_DEBUG(asy, fac)) \
 		asyerror(asy, CE_CONT, "!%s: " format, __func__, ##__VA_ARGS__)
 #else
-#define	ASY_DEBUG(asy, x) B_FALSE
+#define	ASY_DEBUG(asy, x) false
 #define	ASY_DPRINTF(asy, fac, format, ...)
 #endif
 
@@ -225,7 +226,7 @@ static void	asysetsoft(struct asycom *);
 static uint_t	asysoftintr(caddr_t, caddr_t);
 static uint_t	asyintr(caddr_t, caddr_t);
 
-static boolean_t abort_charseq_recognize(uchar_t ch);
+static bool	abort_charseq_recognize(uchar_t ch);
 
 /* The async interrupt entry points */
 static void	async_txint(struct asycom *asy);
@@ -262,10 +263,11 @@ static void	asy_reset_fifo(struct asycom *asy, uchar_t flags);
 static void	asy_carrier_check(struct asycom *);
 static int	asy_getproperty(dev_info_t *devi, struct asycom *asy,
 		    const char *property);
-static boolean_t	async_flowcontrol_sw_input(struct asycom *asy,
-			    async_flowc_action onoff, int type);
+static bool	async_flowcontrol_sw_input(struct asycom *asy,
+		    async_flowc_action onoff, int type);
 static void	async_flowcontrol_sw_output(struct asycom *asy,
 		    async_flowc_action onoff);
+static void	asy_update_from_modem_status(struct asycom *asy);
 static void	async_flowcontrol_hw_input(struct asycom *asy,
 		    async_flowc_action onoff, int type);
 static void	async_flowcontrol_hw_output(struct asycom *asy,
@@ -291,7 +293,7 @@ static uint_t num_com_ports;
  * Set this to true to make the driver pretend to do a suspend.  Useful
  * for debugging suspend/resume code with a serial debugger.
  */
-boolean_t	asy_nosuspend = B_FALSE;
+bool	asy_nosuspend = false;
 #endif
 
 #ifdef OXIDE_DWU
@@ -458,7 +460,7 @@ static struct {
 static int asyrsrv(queue_t *q);
 static int asyopen(queue_t *rq, dev_t *dev, int flag, int sflag, cred_t *cr);
 static int asyclose(queue_t *q, int flag, cred_t *credp);
-static int asywputdo(queue_t *q, mblk_t *mp, boolean_t);
+static int asywputdo(queue_t *q, mblk_t *mp, bool);
 static int asywput(queue_t *q, mblk_t *mp);
 
 struct module_info asy_info = {
@@ -995,7 +997,7 @@ async_process_suspq(struct asycom *asy)
 		q = async->async_ttycommon.t_writeq;
 		ASSERT(q != NULL);
 		mutex_exit(&asy->asy_excl);
-		(void) asywputdo(q, mp, B_FALSE);
+		(void) asywputdo(q, mp, false);
 		mutex_enter(&asy->asy_excl);
 	}
 	async->async_flags &= ~ASYNC_DDI_SUSPENDED;
@@ -1511,6 +1513,7 @@ asydetach(dev_info_t *devi, ddi_detach_cmd_t cmd)
 		ddi_regs_map_free(&asy->asy_iohandle);
 
 	ASY_DPRINTF(asy, ASY_DEBUG_INIT, "shutdown complete");
+	ddi_set_driver_private(devi, NULL);
 	asy_soft_state_free(asy);
 
 	return (DDI_SUCCESS);
@@ -1847,6 +1850,7 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	asy->polledio.cons_polledio_enter = NULL;
 	asy->polledio.cons_polledio_exit = NULL;
 
+	ddi_set_driver_private(devi, asy);
 	ddi_report_dev(devi);
 	ASY_DPRINTF(asy, ASY_DEBUG_INIT, "done");
 	return (DDI_SUCCESS);
@@ -1963,21 +1967,21 @@ asy_hw_name(struct asycom *asy)
 	return ("?");
 }
 
-static boolean_t
+static bool
 asy_is_devid(struct asycom *asy, char *venprop, char *devprop,
     int venid, int devid)
 {
 	if (ddi_prop_get_int(DDI_DEV_T_ANY, asy->asy_dip, DDI_PROP_DONTPASS,
 	    venprop, 0) != venid) {
-		return (B_FALSE);
+		return (false);
 	}
 
 	if (ddi_prop_get_int(DDI_DEV_T_ANY, asy->asy_dip, DDI_PROP_DONTPASS,
 	    devprop, 0) != devid) {
-		return (B_FALSE);
+		return (false);
 	}
 
-	return (B_FALSE);
+	return (true);
 }
 
 static void
@@ -2551,7 +2555,7 @@ again:
 	/*
 	 * Check carrier.
 	 */
-	asy->asy_msr = asy_get(asy, ASY_MSR);
+	asy_update_from_modem_status(asy);
 	ASY_DPRINTF(asy, ASY_DEBUG_INIT, "TS_SOFTCAR is %s, MSR & DCD is %s",
 	    (async->async_ttycommon.t_flags & TS_SOFTCAR) ? "set" : "clear",
 	    (asy->asy_msr & ASY_MSR_DCD) ? "set" : "clear");
@@ -2573,8 +2577,8 @@ again:
 		    ((async->async_flags & ASYNC_OUT) &&
 		    !(*dev & OUTLINE))) {
 			async->async_flags |= ASYNC_WOPEN;
-			if (cv_wait_sig(&async->async_flags_cv,
-			    &asy->asy_excl) == B_FALSE) {
+			if (!cv_wait_sig(&async->async_flags_cv,
+			    &asy->asy_excl)) {
 				async->async_flags &= ~ASYNC_WOPEN;
 				mutex_exit(&asy->asy_excl);
 				return (EINTR);
@@ -2844,7 +2848,7 @@ nodrain:
 	return (0);
 }
 
-static boolean_t
+static bool
 asy_isbusy(struct asycom *asy)
 {
 	struct asyncline *async;
@@ -2940,22 +2944,17 @@ asy_program(struct asycom *asy, int mode)
 	/* flush/reset the status registers */
 	(void) asy_get(asy, ASY_ISR);
 	(void) asy_get(asy, ASY_LSR);
-	asy->asy_msr = flush_reg = asy_get(asy, ASY_MSR);
-	/*
-	 * The device is programmed in the open sequence, if we
-	 * have to hardware handshake, then this is a good time
-	 * to check if the device can receive any data.
-	 */
+	asy_update_from_modem_status(asy);
+	flush_reg = asy->asy_msr;
 
-	if ((CRTSCTS & async->async_ttycommon.t_cflag) &&
-	    !(flush_reg & ASY_MSR_CTS)) {
-		async_flowcontrol_hw_output(asy, FLOW_STOP);
-	} else {
-		/*
-		 * We can not use async_flowcontrol_hw_output(asy, FLOW_START)
-		 * here, because if CRTSCTS is clear, we need clear
-		 * ASYNC_HW_OUT_FLW bit.
-		 */
+	/*
+	 * The device is programmed in the open sequence, and
+	 * `asy_update_from_modem_status` will take care of handling flow
+	 * control, if enabled in software.  However, if the terminal
+	 * does not set CRTSCTS, we need to clear ASYNC_HW_OUT_FLW,
+	 * so test for that and do it here.
+	 */
+	if ((CRTSCTS & async->async_ttycommon.t_cflag) == 0) {
 		async->async_flags &= ~ASYNC_HW_OUT_FLW;
 	}
 
@@ -3078,7 +3077,7 @@ asy_program(struct asycom *asy, int mode)
 	ASY_DPRINTF(asy, ASY_DEBUG_PROCS, "done");
 }
 
-static boolean_t
+static bool
 asy_baudok(struct asycom *asy)
 {
 	struct asyncline *async = asy->asy_priv;
@@ -3132,7 +3131,7 @@ asyintr(caddr_t argasy, caddr_t argunused __unused)
 			 */
 			(void) asy_get(asy, ASY_LSR);
 			(void) asy_get(asy, ASY_RHR);
-			asy->asy_msr = asy_get(asy, ASY_MSR);
+			asy_update_from_modem_status(asy);
 			ret_status = DDI_INTR_CLAIMED;
 		}
 		mutex_exit(&asy->asy_excl_hi);
@@ -3477,61 +3476,80 @@ check_looplim:
 /*
  * Modem status interrupt.
  *
- * (Note: It is assumed that the MSR hasn't been read by asyintr().)
+ * `asyintr` must not have read the `MSR` before this is called.
  */
-
 static void
 async_msint(struct asycom *asy)
 {
-	struct asyncline *async = asy->asy_priv;
-	int msr, t_cflag = async->async_ttycommon.t_cflag;
-
 	ASSERT(MUTEX_HELD(&asy->asy_excl_hi));
 
-async_msint_retry:
-	/* this resets the interrupt */
-	msr = asy_get(asy, ASY_MSR);
-	ASY_DPRINTF(asy, ASY_DEBUG_STATE, "call #%d:",
-	    ++(asy->asy_msint_cnt));
-	ASY_DPRINTF(asy, ASY_DEBUG_STATE, "   transition: %3s %3s %3s %3s",
+	struct asyncline *async = asy->asy_priv;
+	if (async != NULL)
+		async->async_ext++;
+	asy->asy_msint_cnt++;
+	ASY_DPRINTF(asy, ASY_DEBUG_STATE, "call #%d:", asy->asy_msint_cnt);
+
+	asy_update_from_modem_status(asy);
+
+	/* Handle possible PPS event */
+	if (asy->asy_flags & ASY_PPS)
+		asy_ppsevent(asy, asy->asy_msr);
+
+	asysetsoft(asy);
+}
+
+/*
+ * Read the MSR and update driver state accordingly.
+ * Sets `asy->asy_msr`.
+ */
+static void
+asy_update_from_modem_status(struct asycom *asy)
+{
+	ASSERT(MUTEX_HELD(&asy->asy_excl_hi));
+
+	int t_cflag = 0;
+	const struct asyncline *async = asy->asy_priv;
+	if (async != NULL)
+		t_cflag = async->async_ttycommon.t_cflag;
+	const bool term_uses_hw_flowctl = (t_cflag & CRTSCTS) != 0;
+
+	/*
+	 * Note that reading the MSR resets the modem status interrupt state.
+	 */
+	const int msr = asy_get(asy, ASY_MSR);
+
+	ASY_DPRINTF(asy, ASY_DEBUG_STATE,
+	    "   transition: %3s %3s %3s %3s",
 	    (msr & ASY_MSR_DCTS) ? "DCTS" : "    ",
 	    (msr & ASY_MSR_DDSR) ? "DDSR" : "    ",
 	    (msr & ASY_MSR_TERI) ? "TERI" : "    ",
 	    (msr & ASY_MSR_DDCD) ? "DDCD" : "    ");
-	ASY_DPRINTF(asy, ASY_DEBUG_STATE, "current state: %3s %3s %3s %3s",
+	ASY_DPRINTF(asy, ASY_DEBUG_STATE,
+	    "current state: %3s %3s %3s %3s",
 	    (msr & ASY_MSR_CTS)  ? "CTS " : "    ",
 	    (msr & ASY_MSR_DSR)  ? "DSR " : "    ",
 	    (msr & ASY_MSR_RI)   ? "RI  " : "    ",
 	    (msr & ASY_MSR_DCD)  ? "DCD " : "    ");
 
-	/* If CTS status is changed, do H/W output flow control */
-	if ((t_cflag & CRTSCTS) && (((asy->asy_msr ^ msr) & ASY_MSR_CTS) != 0))
-		async_flowcontrol_hw_output(asy,
-		    msr & ASY_MSR_CTS ? FLOW_START : FLOW_STOP);
 	/*
-	 * Reading MSR resets the interrupt, we save the
-	 * value of msr so that other functions could examine MSR by
-	 * looking at asy_msr.
+	 * If the CTS state changed, we are on a terminal that uses hardware
+	 * flow control, and the device does not use automatic flow-control,
+	 * then set hardware output state accordingly.
+	 */
+	const bool cts_changed = ((asy->asy_msr ^ msr) & ASY_MSR_CTS) != 0;
+	const bool autoflow_enabled = (asy->asy_mcr & ASY_MCR_AFCE) != 0;
+	if (!autoflow_enabled && term_uses_hw_flowctl && cts_changed) {
+		const bool cts_on = (msr & ASY_MSR_CTS) != 0;
+		const async_flowc_action flow = cts_on ? FLOW_START : FLOW_STOP;
+		async_flowcontrol_hw_output(asy, flow);
+	}
+
+	/*
+	 * Reading MSR clears pending interrupts, so we cache the
+	 * value we read so that other functions can examine it without
+	 * resetting interrupt state.
 	 */
 	asy->asy_msr = (uchar_t)msr;
-
-	/* Handle PPS event */
-	if (asy->asy_flags & ASY_PPS)
-		asy_ppsevent(asy, msr);
-
-	async->async_ext++;
-	asysetsoft(asy);
-	/*
-	 * We will make sure that the modem status presented to us
-	 * during the previous read has not changed. If the chip samples
-	 * the modem status on the falling edge of the interrupt line,
-	 * and uses this state as the base for detecting change of modem
-	 * status, we would miss a change of modem status event that occured
-	 * after we initiated a read MSR operation.
-	 */
-	msr = asy_get(asy, ASY_MSR);
-	if (ASY_MSR_STATES(msr) != ASY_MSR_STATES(asy->asy_msr))
-		goto	async_msint_retry;
 }
 
 /*
@@ -3971,7 +3989,7 @@ async_start(struct asyncline *async)
 	mblk_t *bp;
 	uchar_t *xmit_addr;
 	int	fifo_len = 1;
-	boolean_t didsome;
+	bool didsome;
 	mblk_t *nbp;
 
 	ASY_DPRINTF(asy, ASY_DEBUG_PROCS, "enter");
@@ -4115,13 +4133,13 @@ async_start(struct asyncline *async)
 	 * If the transmitter is ready, shove the first
 	 * character out.
 	 */
-	didsome = B_FALSE;
+	didsome = false;
 	while (--fifo_len >= 0 && cc > 0) {
 		if (!(asy_get(asy, ASY_LSR) & ASY_LSR_THRE))
 			break;
 		asy_put(asy, ASY_THR, *xmit_addr++);
 		cc--;
-		didsome = B_TRUE;
+		didsome = true;
 	}
 	async->async_optr = xmit_addr;
 	async->async_ocnt = cc;
@@ -4658,7 +4676,7 @@ asyrsrv(queue_t *q)
  * as we do in ldterm.
  */
 static int
-asywputdo(queue_t *q, mblk_t *mp, boolean_t wput)
+asywputdo(queue_t *q, mblk_t *mp, bool wput)
 {
 	struct asyncline *async;
 	struct asycom *asy;
@@ -4952,7 +4970,7 @@ asywputdo(queue_t *q, mblk_t *mp, boolean_t wput)
 static int
 asywput(queue_t *q, mblk_t *mp)
 {
-	return (asywputdo(q, mp, B_TRUE));
+	return (asywputdo(q, mp, true));
 }
 
 /*
@@ -5140,7 +5158,8 @@ asymctl(struct asycom *asy, int bits, int how)
 			ASY_DPRINTF(asy, ASY_DEBUG_MODEM,
 			    "TIOCMGET, read msr_r = %x", msr_r);
 		} else {
-			msr_r = asy_get(asy, ASY_MSR);
+			asy_update_from_modem_status(asy);
+			msr_r = asy->asy_msr;
 			ASY_DPRINTF(asy, ASY_DEBUG_MODEM,
 			    "TIOCMGET, read MSR = %x", msr_r);
 		}
@@ -5409,7 +5428,7 @@ asy_parse_mode(dev_info_t *devi, struct asycom *asy)
 /*
  * Check for abort character sequence
  */
-static boolean_t
+static bool
 abort_charseq_recognize(uchar_t ch)
 {
 	static int state = 0;
@@ -5419,12 +5438,12 @@ abort_charseq_recognize(uchar_t ch)
 	if (ch == sequence[state]) {
 		if (++state >= sizeof (sequence)) {
 			state = 0;
-			return (B_TRUE);
+			return (true);
 		}
 	} else {
 		state = (ch == sequence[0]) ? 1 : 0;
 	}
-	return (B_FALSE);
+	return (false);
 }
 
 /*
@@ -5446,15 +5465,15 @@ abort_charseq_recognize(uchar_t ch)
  *		 IN_FLOW_RINGBUFF means flow control is due to RING BUFFER
  *		 IN_FLOW_STREAMS means flow control is due to STREAMS
  *		 IN_FLOW_USER means flow control is due to user's commands
- * RETURN VALUE: B_FALSE means no flow control char is sent
- *               B_TRUE means one flow control char is sent
+ * RETURN VALUE: false means no flow control char is sent
+ *               true means one flow control char is sent
  */
-static boolean_t
+static bool
 async_flowcontrol_sw_input(struct asycom *asy, async_flowc_action onoff,
     int type)
 {
 	struct asyncline *async = asy->asy_priv;
-	int rval = B_FALSE;
+	bool rval = false;
 
 	ASSERT(mutex_owned(&asy->asy_excl_hi));
 
@@ -5506,7 +5525,7 @@ async_flowcontrol_sw_input(struct asycom *asy, async_flowc_action onoff,
 		asy_put(asy, ASY_THR,
 		    async->async_flags & ASYNC_SW_IN_FLOW ?
 		    async->async_stopc : async->async_startc);
-		rval = B_TRUE;
+		rval = true;
 	}
 	return (rval);
 }
@@ -5622,9 +5641,6 @@ async_flowcontrol_hw_output(struct asycom *asy, async_flowc_action onoff)
 	struct asyncline *async = asy->asy_priv;
 
 	ASSERT(mutex_owned(&asy->asy_excl_hi));
-
-	if (!(async->async_ttycommon.t_cflag & CRTSCTS))
-		return;
 
 	switch (onoff) {
 	case FLOW_STOP:
