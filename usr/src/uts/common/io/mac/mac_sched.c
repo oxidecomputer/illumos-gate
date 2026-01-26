@@ -1208,6 +1208,7 @@ mac_srs_bw_try_refresh(mac_soft_ring_set_t *srs)
 
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		const bool refresh = bw->mac_bw_curr_time != now;
 
 		/*
@@ -1252,6 +1253,7 @@ mac_srs_bw_enqueue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
 
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		const mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (!mac_bw_ctl_is_enabled(bw)) {
 			continue;
 		}
@@ -1276,6 +1278,7 @@ mac_srs_bw_enqueue(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (mac_bw_ctl_is_enabled(bw)) {
 			bw->mac_bw_sz += bytes;
 		}
@@ -1296,6 +1299,7 @@ mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
 
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		const mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (!mac_bw_ctl_is_enabled(bw)) {
 			continue;
 		}
@@ -1323,6 +1327,7 @@ mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (mac_bw_ctl_is_enabled(bw)) {
 			/*
 			 * Defend against possible cases where packets are
@@ -1347,6 +1352,7 @@ mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (mac_bw_ctl_is_enabled(bw)) {
 			bw->mac_bw_used -= MIN(bw->mac_bw_used, bytes);
 
@@ -1362,6 +1368,7 @@ mac_srs_bw_stat_dropped(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (mac_bw_ctl_is_enabled(bw)) {
 			bw->mac_bw_drop_bytes += bytes;
 		}
@@ -1373,6 +1380,7 @@ mac_srs_bw_stat_poll(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (mac_bw_ctl_is_enabled(bw)) {
 			bw->mac_bw_polled += bytes;
 		}
@@ -1384,6 +1392,7 @@ mac_srs_bw_stat_intr(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 		if (mac_bw_ctl_is_enabled(bw)) {
 			bw->mac_bw_intr += bytes;
 		}
@@ -1934,8 +1943,10 @@ start:
 		if (mac_srs->srs_state & SRS_PAUSE)
 			goto done;
 
+		bool is_bw = (mac_srs->srs_type & SRST_BW_CONTROL) != 0;
 check_again:
-		if (mac_srs->srs_type & SRST_BW_CONTROL) {
+		is_bw = (mac_srs->srs_type & SRST_BW_CONTROL) != 0;
+		if (is_bw) {
 			/*
 			 * We pick as many bytes as we are allowed to queue.
 			 * Its possible that we will exceed the total
@@ -1955,8 +1966,9 @@ check_again:
 			 * some of the bytes accounting is driver
 			 * dependant, we do the safety check.
 			 */
-			if (bytes_to_pickup < 0)
+			if (bytes_to_pickup < 0) {
 				bytes_to_pickup = 0;
+			}
 			mac_srs_bw_unlock(mac_srs);
 		} else {
 			/*
@@ -1982,7 +1994,7 @@ check_again:
 			bytes_to_pickup = max_bytes_to_pickup;
 		}
 
-		/* Poll the underlying Hardware */
+		/* Poll the underlying hardware */
 		mutex_exit(lock);
 		mblk_t *head = MAC_HWRING_POLL(srs_rx->sr_ring,
 		    (int)bytes_to_pickup);
@@ -2012,7 +2024,7 @@ check_again:
 			SRS_RX_STAT_UPDATE(mac_srs, pollbytes, sz);
 			SRS_RX_STAT_UPDATE(mac_srs, pollcnt, count);
 
-			if (mac_srs->srs_type & SRST_BW_CONTROL) {
+			if (is_bw) {
 				mac_srs_bw_lock(mac_srs);
 				mac_srs_bw_stat_poll(mac_srs, sz);
 				mac_srs_bw_unlock(mac_srs);
@@ -2060,8 +2072,14 @@ check_again:
 			}
 
 			if (head != NULL) {
+				if (is_bw) {
+					mac_srs_bw_lock(mac_srs);
+				}
 				MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, head, tail,
 				    count, sz);
+				if (is_bw) {
+					mac_srs_bw_unlock(mac_srs);
+				}
 			}
 		}
 
@@ -2142,14 +2160,13 @@ check_again:
 			 * as well (head == NULL);
 			 */
 			ASSERT3P(head, ==, NULL);
-			mac_srs->srs_state &=
-			    ~(SRS_PROC|SRS_GET_PKTS);
+			mac_srs->srs_state &= ~(SRS_PROC|SRS_GET_PKTS);
 
 			/*
 			 * If we have a packets in soft ring, don't allow
 			 * more packets to come into this SRS by keeping the
 			 * interrupts off but not polling the H/W. The
-			 * poll thread will get signaled as soon as
+			 * poll thread will get signalled as soon as
 			 * srs_poll_pkt_cnt dips below poll threshold.
 			 */
 			if (srs_rx->sr_poll_pkt_cnt == 0) {
@@ -2263,7 +2280,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 		tsz += sz;
 		cnt++;
 		mac_srs->srs_count--;
-		mac_srs->srs_size -= sz;
+		mac_srs->srs_size -= MIN(sz, mac_srs->srs_size);
 		if (tail != NULL) {
 			tail->b_next = mp;
 		} else {
@@ -3010,7 +3027,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 			 * at an SRS for a worker (who handles shaping), or
 			 * handled inline.
 			 *
-			 * Unlike the 
+			 * Unlike the TODO
 			 */
 			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELEGATE:
@@ -3450,6 +3467,7 @@ again:
 		 *  queue and return to interrupt mode.
 		 */
 		if (mac_srs_any_bw_zeroed(mac_srs)) {
+			srs_rx->sr_stat.mrs_sdrops += mac_srs->srs_count;
 			mac_srs_bw_dequeue(mac_srs, mac_srs->srs_size);
 			mac_srs_bw_stat_dropped(mac_srs, mac_srs->srs_size);
 			mac_srs_bw_unlock(mac_srs);
@@ -3712,7 +3730,7 @@ start:
 				 * We need to ensure that a timer is already
 				 * scheduled or we force schedule one for
 				 * later so that we can continue processing
-				 * after this  quanta is over.
+				 * after this quanta is over.
 				 */
 				mac_srs->srs_tid = timeout(mac_srs_fire,
 				    mac_srs, 1);
@@ -3730,10 +3748,9 @@ wait:
 			if (mac_srs->srs_first != NULL &&
 			    mac_srs->srs_type & SRST_BW_CONTROL) {
 				mac_srs_bw_lock(mac_srs);
-				if (mac_srs_any_bw_enforced(mac_srs)) {
-					bw_ctl_flag =
-					    !mac_srs_bw_try_refresh(mac_srs);
-				}
+				bw_ctl_flag =
+				    mac_srs_any_bw_enforced(mac_srs) &&
+				    !mac_srs_bw_try_refresh(mac_srs);
 				mac_srs_bw_unlock(mac_srs);
 			}
 		}

@@ -219,9 +219,19 @@ typedef bool		(*flow_match_fn2_t)(void *, mblk_t *);
  * shared across all the SRS in the group and their associated
  * soft rings.
  *
- * There is a many to 1 mapping between the SRS and
- * mac_bw_ctl if the flow has a group of Rx rings associated with
- * it.
+ * Bandwidth controls cause all affected SRSes (packet queues) to obey a shared
+ * policing/shaping criteria:
+ *  - Total queue occupancy beyond `mac_bw_drop_threshold` will lead to packet
+ *    drops. (Policing)
+ *  - All queues can, amongst themselves, admit at most `mac_bw_limit` bytes
+ *    to their softrings per system tick. (Shaping)
+ * The policing threshold is set today at 2 * mac_bw_limit.
+ *
+ * There is generally a many-to-1 mapping between SRSes and mac_bw_ctl. The Rx
+ * path's software classifier and SRSes for hardware rings will necessarily
+ * share a control, as will any logical SRSes for subflows reachable by several
+ * classifier paths. In the Tx path, nested bandwidth limits on subflows with
+ * hardware resources will cause a control to be shared.
  */
 typedef struct mac_bw_ctl_s {
 	kmutex_t	mac_bw_lock;
@@ -757,12 +767,14 @@ mac_flow_action_type(const flow_action_t *ac)
 inline bool
 mac_bw_ctl_is_enabled(const mac_bw_ctl_t *bw)
 {
+	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 	return ((bw->mac_bw_state & BW_ENABLED) != 0);
 }
 
 inline bool
 mac_bw_ctl_is_enforced(const mac_bw_ctl_t *bw)
 {
+	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 	return ((bw->mac_bw_state & BW_ENFORCED) != 0);
 }
 
