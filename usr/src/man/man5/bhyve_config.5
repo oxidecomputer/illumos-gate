@@ -451,8 +451,8 @@ and one receive
 queue.
 Note that most guests will allocate memory for all permitted queues, regardless
 of whether they are actively used.
-The default of 8 queue pairs results in 16 data queues for network
-packet transfer, plus one control queue.
+The default of 8 queue pairs results in 8 RX and 8 TX queues for network packet
+transfer, plus one control queue.
 .El
 .Pp
 Viona network devices have the ability to lend out their TX buffers, which
