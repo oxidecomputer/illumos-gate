@@ -657,34 +657,16 @@ extern struct dls_kstats dls_kstat;
  * interface for packets and get the interface back to interrupt
  * mode if nothing is found.
  */
-#define	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt) {		        \
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_data.rx;		\
-	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
-									\
-	srs_rx->sr_poll_pkt_cnt -= cnt;					\
-	if ((srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_poll_thres) &&	\
-	    (((mac_srs)->srs_state &					\
-	    (SRS_POLLING|SRS_PROC|SRS_GET_PKTS)) == SRS_POLLING))	\
-	{								\
-		(mac_srs)->srs_state |= (SRS_PROC|SRS_GET_PKTS);	\
-		cv_signal(&(mac_srs)->srs_cv);				\
-		srs_rx->sr_below_hiwat++;				\
-	}								\
-}
-
-/*
- * Decrement the cumulative packet count in SRS and its
- * soft rings. If the srs_poll_pkt_cnt goes below lowat, then check
- * if if the interface was left in a polling mode and no one
- * is really processing the queue (to get the interface out
- * of poll mode). If no one is processing the queue, then
- * acquire the PROC and signal the poll thread to check the
- * interface for packets and get the interface back to interrupt
- * mode if nothing is found.
- */
 __attribute__((always_inline))
 inline void
 mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
+	/*
+	 * Poll packet occupancy is not tracked by Tx SRSes.
+	 */
+	if (mac_srs_is_tx(mac_srs)) {
+		return;
+	}
+
 	const bool is_logical = mac_srs_is_logical(mac_srs);
 
 	/*
@@ -695,13 +677,6 @@ mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
 	mac_soft_ring_set_t *true_target = (is_logical) ?
 	    mac_srs->srs_complete_parent : mac_srs;
 	ASSERT3P(true_target, !=, NULL);
-
-	/*
-	 * Poll packet occupancy is not tracked by Tx SRSes.
-	 */
-	if (mac_srs_is_tx(true_target)) {
-		return;
-	}
 
 	mac_srs_rx_t *srs_rx = &true_target->srs_data.rx;
 

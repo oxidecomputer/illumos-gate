@@ -1345,7 +1345,11 @@ mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
 
 /*
  * Refund used credit on a set of bandwidth controls when a NIC is unable to
- * provide enough descriptors to actually carry admitted traffic.
+ * provide enough descriptors to actually carry admitted traffic, or the packets
+ * are policed by a downstream control.
+ *
+ * Packets dropped by policy (e.g., explicit drop) should not be refunded in
+ * this way.
  */
 static inline void
 mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
@@ -2103,8 +2107,8 @@ check_again:
 		 * that SRS_WORKER flag remains set as long as its
 		 * processing the queue.
 		 */
-		if (!(mac_srs->srs_state & SRS_WORKER) &&
-		    (mac_srs->srs_first != NULL)) {
+		const bool worker_live = (mac_srs->srs_state & SRS_WORKER) != 0;
+		if (!worker_live && mac_srs->srs_first != NULL) {
 			/*
 			 * We have packets to process and worker thread
 			 * is not running. Check to see if poll thread is
@@ -2151,16 +2155,25 @@ check_again:
 				MAC_SRS_WORKER_WAKEUP(mac_srs);
 				srs_rx->sr_poll_sig_worker++;
 			}
-		} else if ((mac_srs->srs_first == NULL) &&
-		    !(mac_srs->srs_state & SRS_WORKER)) {
+		} else if (mac_srs->srs_first == NULL) {
 			/*
-			 * There is nothing queued in SRS and
-			 * no worker thread running. Plus we
+			 * TODO(ky): this is patching over some other issue with
+			 * pollthread deactivation when a worker is present.
+			 * audit and think through.
+			 *
+			 * Formerly this branch required !worker_live, and
+			 * cleared SRS_PROC|SRS_GET_PKTS.
+			 */
+
+			/*
+			 * There is nothing queued in SRS, plus we
 			 * didn't get anything from the H/W
 			 * as well (head == NULL);
 			 */
 			ASSERT3P(head, ==, NULL);
-			mac_srs->srs_state &= ~(SRS_PROC|SRS_GET_PKTS);
+			mac_srs->srs_state &= worker_live ?
+			    ~SRS_GET_PKTS :
+			    ~(SRS_PROC|SRS_GET_PKTS);
 
 			/*
 			 * If we have a packets in soft ring, don't allow
@@ -2187,9 +2200,9 @@ check_again:
 			}
 		} else {
 			/*
-			 * Worker thread is already running.
-			 * Nothing much to do. If the polling
-			 * was enabled, worker thread will deal
+			 * Worker thread is already running and there are
+			 * packets for it to handle. Nothing much to do.
+			 * If the polling was enabled, worker thread will deal
 			 * with that.
 			 */
 			mac_srs->srs_state &= ~SRS_GET_PKTS;
@@ -2847,7 +2860,7 @@ mac_bw_ctl_do_refund(flow_tree_bw_refund_t *bw)
  */
 static uint32_t
 mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
-    flow_tree_pkt_set_t *pkts)
+    flow_tree_pkt_set_t *pkts, size_t *policed_bytes)
 {
 	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
 	ASSERT3U(ft->ftb_len, >, 0);
@@ -2855,12 +2868,15 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 	ASSERT3P(ft->ftb_chains, !=, NULL);
 	ASSERT3P(ft->ftb_bw_refund, !=, NULL);
 	ASSERT3P(ft->ftb_subtree, !=, NULL);
+	ASSERT3P(policed_bytes, !=, NULL);
 
 	uint32_t dropped_pkts = 0;
 	ssize_t depth = 0;
 	bool is_enter = true;
 	const flow_tree_baked_node_t *node = ft->ftb_subtree;
 	const flow_tree_baked_node_t * const done = node + (ft->ftb_len << 1);
+
+	*policed_bytes = 0;
 
 	while (node != done) {
 		ASSERT3S(depth, <, ft->ftb_depth);
@@ -2958,6 +2974,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				if (!mac_pkt_list_is_empty(&drop_list)) {
 					freemsgchain(drop_list.mpl_head);
 					dropped_pkts += drop_list.mpl_count;
+					*policed_bytes += drop_list.mpl_size;
 				}
 			} else {
 				ASSERT(mac_pkt_list_is_empty(&drop_list));
@@ -3283,8 +3300,9 @@ again:
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
+			size_t policed_bytes = 0;
 			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
-			    &pktset);
+			    &pktset, &policed_bytes);
 		}
 	}
 
@@ -3499,7 +3517,7 @@ again:
 	/*
 	 * Assert that we're being called on a valid entrypoint.
 	 * Broadcast and multicast flows cannot have an MCIP, but they should
-	 * be served by the lowest level f]low table in mac_rx_flow ->
+	 * be served by the lowest level flow table in mac_rx_flow ->
 	 * mac_bcast_send (via fe_cb_fn).
 	 */
 	ASSERT(!mac_srs_is_logical(mac_srs));
@@ -3557,6 +3575,7 @@ again:
 	 * TODO(ky): find more things which can be const-if'd out based on
 	 * has_subtree. viona will thank you.
 	 */
+	size_t policed_bytes = 0;
 	if (has_subtree) {
 		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
 		if (mac_srs->srs_flowtree.ftb_bw_count == 0) {
@@ -3564,7 +3583,7 @@ again:
 			    &pktset);
 		} else {
 			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
-			    &pktset);
+			    &pktset, &policed_bytes);
 		}
 	}
 
@@ -3577,7 +3596,7 @@ again:
 	if (dropped_pkts != 0) {
 		mac_update_srs_count(mac_srs, dropped_pkts);
 		mac_srs_bw_lock(mac_srs);
-		mac_srs_bw_refund_tx(mac_srs, dropped_pkts);
+		mac_srs_bw_refund_tx(mac_srs, policed_bytes);
 		mac_srs_bw_unlock(mac_srs);
 	}
 
@@ -3625,6 +3644,7 @@ done:
 		 * poll thread.
 		 */
 		mac_srs->srs_state &= ~proc_type;
+		srs_rx->sr_drain_poll_running++;
 		return;
 	}
 
@@ -3698,6 +3718,8 @@ mac_srs_worker(mac_soft_ring_set_t *mac_srs)
 	CALLB_CPR_INIT(&cprinfo, lock, callb_generic_cpr, "srs_worker");
 	mutex_enter(lock);
 
+	const bool is_tx = mac_srs_is_tx(mac_srs);
+
 start:
 	for (;;) {
 		bool bw_ctl_flag = false;
@@ -3736,6 +3758,20 @@ start:
 				    mac_srs, 1);
 			}
 wait:
+			/*
+			 * Hail mary in case we hit this point and the poll
+			 * thread has decided it's sleepytime. There must be
+			 * more to this,,,
+			 *
+			 * TODO(ky): this is patching over some other issue with
+			 * pollthread deactivation when a worker is present.
+			 * audit and think through.
+			 */
+			if (!is_tx && (mac_srs->srs_state & SRS_POLLING) != 0 &&
+			    (mac_srs->srs_state & SRS_GET_PKTS) == 0 &&
+			    (mac_srs->srs_data.rx.sr_poll_pkt_cnt == 0)) {
+				MAC_SRS_POLLING_OFF(mac_srs);
+			}
 			CALLB_CPR_SAFE_BEGIN(&cprinfo);
 			cv_wait(async, lock);
 			CALLB_CPR_SAFE_END(&cprinfo, lock);
