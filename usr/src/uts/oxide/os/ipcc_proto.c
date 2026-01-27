@@ -332,7 +332,7 @@
  *
  * XXX - the implementation currently applies an arbitrary limit for the number
  *       of retransmissions that are attempted before giving up. This is the
- *       IPCC_MAX_ATTEMPTS macro below. Any loss of synchronisation on the
+ *       ipcc_max_attempts tuneable below. Any loss of synchronisation on the
  *       channel should be resolved well before this limit is reached.
  *       XXX - panic instead?
  *
@@ -443,7 +443,16 @@
 #endif
 
 /* See "Retransmissions" above */
-#define	IPCC_MAX_ATTEMPTS	10
+uint_t ipcc_max_attempts = 10;
+
+/*
+ * When polling for channel readability we do not want to loop forever if no
+ * response is received. Particularly in early boot this will result in a hung
+ * system that is not responsive to NMI since NMI handling has not yet been set
+ * up.
+ */
+uint_t ipcc_readpoll_timeout_ms = 100;
+uint_t ipcc_readpoll_attempts = 600; /* 60s with default readpoll_timeout_ms */
 
 /*
  * Global message and packet buffers.
@@ -775,10 +784,14 @@ ipcc_pkt_recv(uint8_t *pkt, size_t len, uint8_t **endp,
 		ipcc_pollevent_t rev;
 		size_t n;
 		int err;
+		uint_t retries = ipcc_readpoll_attempts;
 
-		while ((err = ops->io_poll(arg, ev, &rev, 100)) != 0) {
+		while ((err = ops->io_poll(arg, ev, &rev,
+		    ipcc_readpoll_timeout_ms)) != 0) {
 			if (err != ETIMEDOUT)
 				return (err);
+			if (--retries == 0)
+				return (ETIMEDOUT);
 			/*
 			 * Send periodic frame terminators in case the real one
 			 * was corrupted or lost. The SP will just discard
@@ -1016,14 +1029,14 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 
 resend:
 
-	if (++attempt > IPCC_MAX_ATTEMPTS) {
+	if (++attempt > ipcc_max_attempts) {
 		LOG("Maximum attempts exceeded\n");
 		return (ETIMEDOUT);
 	}
 
 	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
 		LOG("\n------> Sending IPCC command 0x%x (%s), attempt %u/%u\n",
-		    cmd, ipcc_cmd_str(cmd), attempt, IPCC_MAX_ATTEMPTS);
+		    cmd, ipcc_cmd_str(cmd), attempt, ipcc_max_attempts);
 	}
 
 	off = 0;
@@ -1089,6 +1102,11 @@ reread:
 		/* The SP-to-host interrupt line was asserted. */
 		if ((err = ipcc_sp_interrupt(ops, arg)) != 0)
 			return (err);
+		goto resend;
+	}
+
+	if (err == ETIMEDOUT) {
+		LOG("Receive timed out, retrying\n");
 		goto resend;
 	}
 
