@@ -2551,7 +2551,7 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 			}
 		}
 		if ((match->mfm_cond & MFC_UNICAST) != 0) {
-			const bool too_small = meoi_fast_l2hlen(mp) >=
+			const bool too_small = meoi_fast_l2hlen(mp) <
 			    sizeof (struct ether_header);
 			const struct ether_header *ether =
 			    (struct ether_header *)mp->b_rptr;
@@ -2563,7 +2563,6 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	}
 
 	/* Convert any local/remote filters to src/dst, based on direction */
-	/* TODO(ky): do ahead-of-time? */
 	mac_flow_match_type_t act_as = match->mfm_type;
 	switch (act_as) {
 	case MFM_L3_REMOTE:
