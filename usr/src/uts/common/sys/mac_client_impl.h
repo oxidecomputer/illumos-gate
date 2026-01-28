@@ -446,6 +446,49 @@ extern void mac_client_rebuild_flowtrees(mac_client_impl_t *, const uint32_t);
 extern void mac_client_create_flowtrees(mac_client_impl_t *, const bool);
 extern void mac_client_destroy_flowtrees(mac_client_impl_t *);
 
+/*
+ * Reference count the number of active Tx threads. MCI_TX_QUIESCE indicates
+ * that a control operation wants to quiesce the Tx data flow in which case
+ * we return an error. Holding any of the per cpu locks ensures that the
+ * mci_tx_flag won't change.
+ *
+ * 'CPU' must be accessed just once and used to compute the index into the
+ * percpu array, and that index must be used for the entire duration of the
+ * packet send operation. Note that the thread may be preempted and run on
+ * another cpu any time and so we can't use 'CPU' more than once for the
+ * operation.
+ */
+#define	MAC_TX_TRY_HOLD(mcip, mytx, error)				\
+{									\
+	(error) = 0;							\
+	(mytx) = &(mcip)->mci_tx_pcpu[CPU->cpu_seqid & mac_tx_percpu_cnt]; \
+	mutex_enter(&(mytx)->pcpu_tx_lock);				\
+	if (!((mcip)->mci_tx_flag & MCI_TX_QUIESCE)) {			\
+		(mytx)->pcpu_tx_refcnt++;				\
+	} else {							\
+		(error) = -1;						\
+	}								\
+	mutex_exit(&(mytx)->pcpu_tx_lock);				\
+}
+
+/*
+ * Release the reference. If needed, signal any control operation waiting
+ * for Tx quiescence. The wait and signal are always done using the
+ * mci_tx_pcpu[0]'s lock
+ */
+#define	MAC_TX_RELE(mcip, mytx) {					\
+	mutex_enter(&(mytx)->pcpu_tx_lock);				\
+	if (--(mytx)->pcpu_tx_refcnt == 0 &&				\
+	    (mcip)->mci_tx_flag & MCI_TX_QUIESCE) {			\
+		mutex_exit(&(mytx)->pcpu_tx_lock);			\
+		mutex_enter(&(mcip)->mci_tx_pcpu[0].pcpu_tx_lock);	\
+		cv_signal(&(mcip)->mci_tx_cv);				\
+		mutex_exit(&(mcip)->mci_tx_pcpu[0].pcpu_tx_lock);	\
+	} else {							\
+		mutex_exit(&(mytx)->pcpu_tx_lock);			\
+	}								\
+}
+
 #ifdef	__cplusplus
 }
 #endif

@@ -1664,7 +1664,9 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 		 * If there are no associated SRSes with this flent, then make
 		 * sure that the underlying mac_bw_ctl_t is still updated.
 		 */
+		mutex_enter(&flent->fe_tx_bw.mac_bw_lock);
 		mac_bw_ctl_set_state(&flent->fe_tx_bw, !disable, mrp);
+		mutex_exit(&flent->fe_tx_bw.mac_bw_lock);
 	}
 
 	if (!state_changed || (flent->fe_type & FLOW_USER) == 0) {

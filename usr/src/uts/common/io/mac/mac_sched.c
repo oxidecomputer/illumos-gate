@@ -3063,9 +3063,9 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 					    deliver_from->mpl_count,
 					    deliver_from->mpl_size);
 					MAC_SRS_WORKER_WAKEUP(send_to);
-					mutex_exit(&mac_srs->srs_lock);
+					mutex_exit(&send_to->srs_lock);
 				} else {
-					mutex_exit(&mac_srs->srs_lock);
+					mutex_exit(&send_to->srs_lock);
 					if (handle) {
 						mac_rx_srs_deliver(send_to,
 						    deliver_from);
@@ -4083,6 +4083,16 @@ mac_tx_srs_no_desc(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	return (cookie);
 }
 
+static inline void
+mac_stash_chain_hints(mblk_t *mp_chain, uintptr_t fanout_hint)
+{
+	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
+		if (curr->b_prev == NULL) {
+			curr->b_prev = (mblk_t *)fanout_hint;
+		}
+	}
+}
+
 /*
  * mac_tx_srs_enqueue
  *
@@ -4128,7 +4138,7 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 			MAC_TX_SET_NO_ENQUEUE(mac_srs, mp_chain,
 			    ret_mp, cookie);
 		} else {
-			mp_chain->b_prev = (mblk_t *)fanout_hint;
+			mac_stash_chain_hints(mp_chain, fanout_hint);
 			MAC_TX_SRS_ENQUEUE_CHAIN(mac_srs,
 			    mp_chain, tail, cnt, sz);
 		}
@@ -4139,7 +4149,7 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		 * prescribed rate. Before enqueueing, save
 		 * the fanout hint.
 		 */
-		mp_chain->b_prev = (mblk_t *)fanout_hint;
+		mac_stash_chain_hints(mp_chain, fanout_hint);
 		MAC_TX_SRS_TEST_HIWAT(mac_srs, mp_chain,
 		    tail, cnt, sz, cookie);
 	}
@@ -4656,15 +4666,9 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
 
 	ASSERT(mutex_owned(&mac_srs->srs_lock));
-	ASSERT(!(mac_srs->srs_state & SRS_PROC));
+	ASSERT3U(mac_srs->srs_state & SRS_PROC, ==, 0);
 
 	mac_srs->srs_state |= SRS_PROC;
-
-	/*
-	 * Some number of enqueue cases will stash each packet's fanout hint
-	 * in the `b_prev` member. We need to strip this out before delivery
-	 * to the NIC (mac_tx_send, or emplacement on a softring).
-	 */
 
 	tx_mode = srs_tx->st_mode;
 	if (tx_mode == SRS_TX_DEFAULT || tx_mode == SRS_TX_SERIALIZE) {
@@ -5572,6 +5576,74 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
 void
 mac_srs_drain_forward(mac_soft_ring_set_t *srs, uint_t proc_type) {
 	ASSERT(mac_srs_is_logical(srs));
+	ASSERT3U(srs->srs_type & SRST_FORWARD, !=, 0);
+	ASSERT(mutex_owned(&srs->srs_lock));
+	ASSERT3U(srs->srs_state & SRS_PROC, ==, 0);
+
+	mac_pkt_list_t pkts = { 0 };
 	const bool is_tx = mac_srs_is_tx(srs);
-	panic("NOT YET IMPLD");
+	mac_soft_ring_set_t *give_to = srs->srs_give_to;
+	ASSERT3P(srs->srs_give_to, !=, NULL);
+	ASSERT3B(mac_srs_is_tx(srs->srs_give_to), ==, is_tx);
+
+	srs->srs_state |= SRS_PROC;
+
+	mac_srs_bw_lock(srs);
+	if (!mac_srs_bw_try_refresh(srs)) {
+		mac_srs_bw_unlock(srs);
+		goto done;
+	}
+	pkts.mpl_head = mac_srs_pick_chain(srs, &pkts.mpl_tail, &pkts.mpl_size,
+	    &pkts.mpl_count);
+	mac_srs_bw_unlock(srs);
+
+	if (mac_pkt_list_is_empty(&pkts)) {
+		goto done;
+	}
+
+	mutex_exit(&srs->srs_lock);
+
+	if (is_tx) {
+		/*
+		 * In the Tx case, we have applied all our bandwidth limits
+		 * _except_ that of the underlying client, if one is set.
+		 * Delivery here requires that we check for underlying Tx
+		 * quiesce like `mac_tx` would impose, to ensure that st_func is
+		 * valid.
+		 */
+		int error = 0;
+		mac_tx_percpu_t *mytx;
+		MAC_TX_TRY_HOLD(give_to->srs_mcip, mytx, error);
+
+		mblk_t *unsent = NULL;
+		if (error == 0) {
+			give_to->srs_data.tx.st_func(give_to, pkts.mpl_head,
+			    0, 0, &unsent);
+			MAC_TX_RELE(give_to->srs_mcip, mytx);
+		} else {
+			/*
+			 * Assume that the quiesce is temporary and
+			 * refund/requeue the packets. If it's permanent then
+			 * our own SRS cleanup will free packets etc.
+			 */
+			unsent = pkts.mpl_head;
+		}
+
+		mutex_enter(&srs->srs_lock);
+		if (unsent != NULL) {
+			mac_tx_srs_block(srs, unsent, true);
+		}
+	} else {
+		/*
+		 * In the Rx case, all bandwidth limits have been applied.
+		 * Go straight to `srs_give_to`'s softrings. This is safe to do
+		 * without locking as adjustment of softring count happens
+		 * behind Rx quiesce of *all* SRSes in the client.
+		 */
+		mac_rx_srs_deliver(srs->srs_give_to, &pkts);
+		mutex_enter(&srs->srs_lock);
+	}
+
+done:
+	srs->srs_state &= SRS_PROC;
 }
