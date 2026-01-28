@@ -920,7 +920,7 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		break;
 	}
 	case MAC_SRS_NONE: {
-		const boolean_t is_tx = srs.srs_type & SRST_TX == 1;
+		const boolean_t is_tx = (srs.srs_type & SRST_TX) != 0;
 		if (DCMD_HDRSPEC(flags)) {
 			mdb_printf("%<u>%?s %-20s %?s %?s %-3s%</u>\n",
 			    "ADDR", "LINK_NAME", "FLENT", "HW RING", "DIR");
