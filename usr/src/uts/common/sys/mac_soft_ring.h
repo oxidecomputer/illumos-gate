@@ -383,13 +383,13 @@ struct mac_soft_ring_set_s {
 
 	/* TODO(ky): *these* should be protected by srs_lock */
 	size_t		srs_size;	/* Size of packets queued in bytes */
-	pri_t		srs_pri;
+	pri_t		srs_pri; /* srs_lock */
 
 	mac_soft_ring_set_t	*srs_next;	/* mac_srs_g_lock */
 	mac_soft_ring_set_t	*srs_prev;	/* mac_srs_g_lock */
 
 	/* Attribute specific drain func (BW ctl vs non-BW ctl)	*/
-	mac_srs_drain_proc_t	srs_drain_func;	/* Write once (WO) */
+	mac_srs_drain_proc_t	srs_drain_func;	/* srs_lock(Rx), Quiesce(tx) */
 
 	/*
 	 * If the associated ring is exclusively used by a mac client, e.g.,

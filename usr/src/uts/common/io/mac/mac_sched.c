@@ -1733,17 +1733,6 @@ mac_srs_fire(void *arg)
 #define	MAC_FANOUT_RND_ROBIN	1
 int mac_fanout_type = MAC_FANOUT_DEFAULT;
 
-#define	MAX_SR_TYPES	5
-/* fanout types for port based hashing */
-typedef enum pkt_type {
-	V4_TCP = 0,
-	V4_UDP,
-	V6_TCP,
-	V6_UDP,
-	OTH,
-	UNDEF
-} pkt_type_t;
-
 /*
  * Pair of local and remote ports in the transport header
  */
@@ -3039,13 +3028,20 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 
 				mutex_enter(&send_to->srs_lock);
 				if ((send_to->srs_state & SRST_BW_CONTROL)
-				    != 0) {
+				    != 0 &&
+				    !mac_pkt_list_is_empty(deliver_from)) {
+					ASSERT3U(send_to->srs_type &
+					    SRST_FORWARD, !=, 0);
 					MAC_SRS_ENQUEUE_CHAIN(send_to,
 					    deliver_from->mpl_head,
 					    deliver_from->mpl_tail,
 					    deliver_from->mpl_count,
 					    deliver_from->mpl_size);
 					MAC_SRS_WORKER_WAKEUP(send_to);
+					deliver_from->mpl_head = NULL;
+					deliver_from->mpl_tail = NULL;
+					deliver_from->mpl_count = 0;
+					deliver_from->mpl_size = 0;
 					mutex_exit(&send_to->srs_lock);
 				} else {
 					mutex_exit(&send_to->srs_lock);
@@ -3257,7 +3253,10 @@ again:
 		mac_protect_intercept_dynamic(mcip, in_chain);
 	}
 
-	mac_standardise_pkts(mcip, &pktset.ftp_avail, false, in_chain);
+	const bool subtree_is_bw = has_subtree &&
+	    mac_srs->srs_flowtree.ftb_bw_count != 0;
+
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, subtree_is_bw, in_chain);
 	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
 
 	if (tid != NULL) {
@@ -3279,7 +3278,7 @@ again:
 	 */
 	if (has_subtree) {
 		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
-		if (mac_srs->srs_flowtree.ftb_bw_count == 0) {
+		if (!subtree_is_bw) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
