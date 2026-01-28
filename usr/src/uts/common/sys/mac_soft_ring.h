@@ -23,7 +23,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2017 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_MAC_SOFT_RING_H
@@ -659,7 +659,8 @@ extern struct dls_kstats dls_kstat;
  */
 __attribute__((always_inline))
 inline void
-mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt) {
+mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt)
+{
 	/*
 	 * Poll packet occupancy is not tracked by Tx SRSes.
 	 */
@@ -810,7 +811,7 @@ inline bool
 mac_srs_any_bw_zeroed(const mac_soft_ring_set_t *srs)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
-		if(srs->srs_bw[i]->mac_bw_limit == 0) {
+		if (srs->srs_bw[i]->mac_bw_limit == 0) {
 			return (true);
 		}
 	}

@@ -23,7 +23,7 @@
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.
  * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -1718,7 +1718,7 @@ mac_srs_fire(void *arg)
 }
 
 #define	ENQUEUE_MP_LIST(list, bw_ctl, sz0, mp) {			\
-	mac_pkt_list_t *enq_mp_list = (list); 				\
+	mac_pkt_list_t *enq_mp_list = (list);				\
 	ENQUEUE_MP(							\
 	    enq_mp_list->mpl_head,					\
 	    enq_mp_list->mpl_tail,					\
@@ -2452,7 +2452,7 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
  * state and poll packet counts are concerned.
  */
 static void
-mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t* set,
+mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t *set,
     const bool bw_ctl, mblk_t *mp)
 {
 	/*
@@ -2550,7 +2550,7 @@ retry:
  */
 static bool
 mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
-    mblk_t* mp, const bool is_tx)
+    mblk_t *mp, const bool is_tx)
 {
 	ASSERT3P(flent, !=, NULL);
 	ASSERT3P(mp, !=, NULL);
@@ -2565,7 +2565,7 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 			const bool too_small = meoi_fast_l2hlen(mp) >=
 			    sizeof (struct ether_header);
 			const struct ether_header *ether =
-			    (struct ether_header *) mp->b_rptr;
+			    (struct ether_header *)mp->b_rptr;
 			if (too_small || (ether->ether_dhost.ether_addr_octet[0]
 			    & 0x01) != 0) {
 				return (false);
@@ -2609,25 +2609,8 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	case MFM_L2_VID:
 		return (meoi_fast_is_vlan(mp) &&
 		    meoi_fast_l2hlen(mp) >= sizeof (struct ether_vlan_header) &&
-		    ((struct ether_vlan_header *) mp->b_rptr)->ether_tci ==
+		    ((struct ether_vlan_header *)mp->b_rptr)->ether_tci ==
 		    match->arg.mfm_vid);
-	// case MFM_L3_DST:
-	// 	if ((meoi.meoi_flags & (MEOI_L2INFO_SET | MEOI_L3INFO_SET))
-	// 	    == (MEOI_L2INFO_SET | MEOI_L3INFO_SET)) {
-	// 		return (false);
-	// 	}
-	// 	switch (meoi.meoi_l3proto) {
-	// 	case ETHERTYPE_IP: {
-	// 		const ipha_t *ip = (ipha_t *)
-	// 		    (mp->b_rptr + meoi.meoi_l2hlen);
-	// 		return 
-	// 	}
-	// 	case ETHERTYPE_IPV6: {
-
-	// 	}
-	// 	default:
-	// 		return (false);
-	// 	}
 	case MFM_L4_SRC: {
 		const ssize_t l4off = meoi_fast_l4off(mp);
 		return (l4off >= 0 && meoi_fast_l4hlen(mp) >= PORTS_SIZE &&
@@ -2795,7 +2778,7 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELIVER: {
 				mac_soft_ring_set_t *send_to =
-				    (mac_soft_ring_set_t *) xnode->arg.ftex_srs;
+				    (mac_soft_ring_set_t *)xnode->arg.ftex_srs;
 
 				mac_rx_srs_deliver(send_to, deliver_from);
 				break;
@@ -2962,7 +2945,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				 * Mark those up now, and perform the refunds
 				 * at exit time.
 				 */
-				for (int i = 0; i < depth; i++){
+				for (int i = 0; i < depth; i++) {
 					flow_tree_bw_refund_t *rf =
 					    &(ft->ftb_bw_refund[i]);
 					if (rf->ftbr_bw == NULL) {
@@ -3052,7 +3035,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				const bool handle = xnode->ftex_do ==
 				    MFA_TYPE_DELIVER;
 				mac_soft_ring_set_t *send_to =
-				    (mac_soft_ring_set_t *) xnode->arg.ftex_srs;
+				    (mac_soft_ring_set_t *)xnode->arg.ftex_srs;
 
 				mutex_enter(&send_to->srs_lock);
 				if ((send_to->srs_state & SRST_BW_CONTROL)
@@ -3088,7 +3071,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				 * removed from prior BW limits' queue
 				 * occupancy.
 				 */
-				for (int i = 0; i < depth; i++){
+				for (int i = 0; i < depth; i++) {
 					flow_tree_bw_refund_t *rf =
 					    &(ft->ftb_bw_refund[i]);
 					if (rf->ftbr_bw == NULL) {
@@ -4575,7 +4558,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		/*
 		 * The NIC did not have enough descriptors to send some portion
 		 * of `mp_chain`. Subtract those packets from the used budget
-		 * and 
+		 * and enqueue the packets to be sent out later.
 		 */
 		if (mp_chain != NULL) {
 			mac_srs_bw_lock(mac_srs);
@@ -5574,7 +5557,8 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
  * rate limit(s).
  */
 void
-mac_srs_drain_forward(mac_soft_ring_set_t *srs, uint_t proc_type) {
+mac_srs_drain_forward(mac_soft_ring_set_t *srs, uint_t proc_type)
+{
 	ASSERT(mac_srs_is_logical(srs));
 	ASSERT3U(srs->srs_type & SRST_FORWARD, !=, 0);
 	ASSERT(mutex_owned(&srs->srs_lock));

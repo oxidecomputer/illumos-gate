@@ -1412,7 +1412,8 @@ mac_update_srs_priority(mac_soft_ring_set_t *mac_srs, pri_t prival)
 	thread_lock(mac_srs->srs_worker);
 	(void) thread_change_pri(mac_srs->srs_worker, mac_srs->srs_pri, 0);
 	thread_unlock(mac_srs->srs_worker);
-	if (!mac_srs_is_tx(mac_srs) && mac_srs->srs_data.rx.sr_poll_thr != NULL) {
+	if (!mac_srs_is_tx(mac_srs) &&
+	    mac_srs->srs_data.rx.sr_poll_thr != NULL) {
 		thread_lock(mac_srs->srs_data.rx.sr_poll_thr);
 		(void) thread_change_pri(mac_srs->srs_data.rx.sr_poll_thr,
 		    mac_srs->srs_pri, 0);
@@ -1678,7 +1679,7 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	 * reached through the client's flent. Propagate the state change to all
 	 * SRSes whose flowtrees use this flow entry.
 	 */
-	const mac_client_impl_t *mcip = (mac_client_impl_t*)flent->fe_mcip;
+	const mac_client_impl_t *mcip = (mac_client_impl_t *)flent->fe_mcip;
 	const flow_entry_t *client = mcip->mci_flent;
 
 	for (int i = 0; i < client->fe_rx_srs_cnt; i++) {
@@ -1822,7 +1823,7 @@ mac_srs_update_fanout_list(mac_soft_ring_set_t *mac_srs)
 
 /* ARGSUSED */
 static void
-mac_rx_discard_unceremoniously(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
+mac_rx_discard(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
     mac_header_info_t *arg3)
 {
 	freemsgchain(mp_chain);
@@ -1839,7 +1840,7 @@ mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
 	    act->fa_resource_add != NULL && act->fa_resource_arg != NULL;
 	const bool process_packet = (act->fa_flags & MFA_FLAGS_ACTION) != 0;
 	const mac_direct_rx_t rx_func = process_packet ? act->fa_direct_rx_fn :
-	    mac_rx_discard_unceremoniously;
+	    mac_rx_discard;
 	void *x_arg1 = process_packet ? act->fa_direct_rx_arg : NULL;
 
 	mac_soft_ring_t *softring = mac_soft_ring_create(id,
@@ -2188,7 +2189,7 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 				 * Blueprint should be a property of the SRS.
 				 *
 				 * TODO(ky): basically copied from
-				 *     mac_flow_baked_tree_create!
+				 *  mac_flow_baked_tree_create!
 				 */
 				bcopy(&mac_rx_srs->srs_cpu, &curr->srs_cpu,
 				    sizeof (mac_cpus_t));
@@ -2225,7 +2226,7 @@ mac_srs_create_rx(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 static mac_soft_ring_set_t *
 mac_srs_create_tx(mac_client_impl_t *mcip, flow_entry_t *flent,
-	uint32_t srs_type)
+    uint32_t srs_type)
 {
 	ASSERT3P(mcip, !=, NULL);
 	ASSERT3P(flent, !=, NULL);
@@ -3292,7 +3293,7 @@ mac_datapath_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 			    mac_flow_match_list_create(2);
 
 			mac_flow_match_list_t *list =
-			    flent->fe_match2.arg.mfm_list; 
+			    flent->fe_match2.arg.mfm_list;
 			list->mfml_match[0].mfm_type = MFM_L2_DST;
 			bcopy(&mcip->mci_unicast->ma_addr,
 			    list->mfml_match[0].arg.mfm_l2addr, ETHERADDRL);
@@ -3809,7 +3810,7 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	 * as needed and then wait till that happens.
 	 */
 	mac_srs_soft_rings_quiesce(mac_srs, s_ring_flag);
-	if (mac_srs->srs_state & SRS_CONDEMNED){
+	if (mac_srs->srs_state & SRS_CONDEMNED) {
 		mac_srs->srs_state |= (SRS_QUIESCE_DONE | SRS_CONDEMNED_DONE);
 	} else {
 		mac_srs->srs_state |= SRS_QUIESCE_DONE;
@@ -4401,8 +4402,7 @@ mac_poll_state_change(mac_handle_t mh, boolean_t enable)
 	}
 
 	for (mac_client_impl_t *mcip = mip->mi_clients_list; mcip != NULL;
-	    mcip = mcip->mci_client_next)
-	{
+	    mcip = mcip->mci_client_next) {
 		/*
 		 * This loop visits all of the _complete_ Rx SRSes on this MCIP,
 		 * which is to say those attached to the software classifier or

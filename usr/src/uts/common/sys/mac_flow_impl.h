@@ -22,6 +22,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_MAC_FLOW_IMPL_H
@@ -162,7 +163,7 @@ extern "C" {
 typedef struct flow_entry_s		flow_entry_t;
 typedef struct flow_tree_s		flow_tree_t;
 typedef struct flow_tab_s		flow_tab_t;
-typedef struct flow_state_s 		flow_state_t;
+typedef struct flow_state_s		flow_state_t;
 struct mac_impl_s;
 struct mac_client_impl_s;
 struct mac_soft_ring_set_s;
@@ -200,7 +201,7 @@ typedef bool		(*flow_match_fn2_t)(void *, mblk_t *);
 #define	FE_MC_NO_DATAPATH	0x80	/* No datapath setup for mac client */
 
 /* fe_type */
-#define	FLOW_PRIMARY_MAC	0x01 	/* NIC primary MAC address */
+#define	FLOW_PRIMARY_MAC	0x01	/* NIC primary MAC address */
 #define	FLOW_VNIC_MAC		0x02	/* VNIC flow */
 #define	FLOW_MCAST		0x04	/* Multicast (and broadcast) */
 #define	FLOW_OTHER		0x08	/* Other flows configured */
@@ -434,7 +435,7 @@ struct flow_entry_s {					/* Protected by */
 	 * be changed.
 	 */
 	flow_fn_t		fe_cb_fn;		/* fe_lock */
-	void 			*fe_cb_arg1;		/* fe_lock */
+	void			*fe_cb_arg1;		/* fe_lock */
 	void			*fe_cb_arg2;		/* fe_lock */
 
 	/*
@@ -460,7 +461,7 @@ struct flow_entry_s {					/* Protected by */
 	/*
 	 * This is a unicast flow, and is a mac_client_impl_t
 	 */
-	void			*fe_mcip; 		/* WO */
+	void			*fe_mcip;		/* WO */
 
 	/*
 	 * Used by mci_flent_list of mac_client_impl_t to track flows sharing

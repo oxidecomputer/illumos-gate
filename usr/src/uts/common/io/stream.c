@@ -27,7 +27,7 @@
  *
  * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2022 Garrett D'Amore
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>

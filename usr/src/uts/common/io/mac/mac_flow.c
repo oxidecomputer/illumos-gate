@@ -23,7 +23,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/strsun.h>
@@ -115,7 +115,7 @@ flow_stat_update(kstat_t *ksp, int rw)
 
 	for (i = 0; i < fep->fe_rx_srs_cnt; i++) {
 		mac_srs = (mac_soft_ring_set_t *)fep->fe_rx_srs[i];
-		if (mac_srs == NULL) 		/* Multicast flow */
+		if (mac_srs == NULL)		/* Multicast flow */
 			break;
 		mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
@@ -129,7 +129,7 @@ flow_stat_update(kstat_t *ksp, int rw)
 	}
 
 	mac_srs = (mac_soft_ring_set_t *)fep->fe_tx_srs;
-	if (mac_srs == NULL) 		/* Multicast flow */
+	if (mac_srs == NULL)		/* Multicast flow */
 		goto done;
 	mac_tx_stat = &mac_srs->srs_data.tx.st_stat;
 
@@ -670,7 +670,8 @@ mac_flow_walk(flow_tab_t *ft, int (*fn)(flow_entry_t *, void *),
 static boolean_t	mac_flow_clean(flow_entry_t *);
 
 static inline size_t
-mac_flow_match_list_size_bytes(const size_t len) {
+mac_flow_match_list_size_bytes(const size_t len)
+{
 	return (sizeof (mac_flow_match_list_t) +
 	    (len * sizeof (mac_flow_match_t)));
 }
@@ -948,7 +949,7 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 	rw_exit(&ft->ft_lock);
 	/*
 	 * Push the changed parameters to the scheduling code in the
-	 * SRS's, to take effect right away.
+	 * SRSes, to take effect right away.
 	 */
 	if (changed_mask & MRP_MAXBW) {
 		mac_srs_update_bwlimit(flent, mrp);
@@ -980,7 +981,12 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		pool_unlock();
 	}
 
-	/* TODO(ky): this one might be tricky. Ideally we can make this a conditional rebuild of flowtree? */
+	/*
+	 * TODO(ky): Verify this works (and make this work) for priority/CPU
+	 * alteration. This one might be tricky.
+	 *
+	 * Ideally we can make this a conditional rebuild of flowtree?
+	 */
 }
 
 /*
@@ -1392,7 +1398,7 @@ mac_rename_flow(flow_entry_t *fep, const char *new_name)
 int
 mac_link_flow_init(mac_client_handle_t mch, flow_entry_t *sub_flow)
 {
-	mac_client_impl_t 	*mcip = (mac_client_impl_t *)mch;
+	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 	int			err;
 
@@ -1557,7 +1563,7 @@ bail:
 void
 mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 {
-	mac_client_impl_t 	*mcip = (mac_client_impl_t *)mch;
+	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 	boolean_t		last_subflow;
 
@@ -1675,7 +1681,7 @@ int
 mac_link_flow_modify(char *flow_name, mac_resource_props_t *mrp)
 {
 	flow_entry_t		*flent;
-	mac_client_impl_t 	*mcip;
+	mac_client_impl_t	*mcip;
 	int			err = 0;
 	mac_perim_handle_t	mph;
 	datalink_id_t		linkid;

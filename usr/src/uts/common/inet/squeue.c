@@ -24,6 +24,7 @@
 
 /*
  * Copyright 2017 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -974,7 +975,8 @@ poll_again:
 			 * contiguity through all the layers it understands.
 			 */
 			if (meoi.meoi_flags & MEOI_L2INFO_SET) {
-				ASSERT3P(curr->b_rptr + meoi.meoi_l2hlen, <, curr->b_wptr);
+				ASSERT3P(curr->b_rptr + meoi.meoi_l2hlen, <,
+				    curr->b_wptr);
 				curr->b_rptr += meoi.meoi_l2hlen;
 			}
 			mac_ether_clear_pktinfo(curr);

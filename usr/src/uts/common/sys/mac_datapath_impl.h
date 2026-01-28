@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_MAC_DATAPATH_IMPL_H
@@ -54,7 +54,8 @@ mp_len(const mblk_t *mp)
 }
 
 inline bool
-mac_pkt_list_is_empty(const mac_pkt_list_t *list) {
+mac_pkt_list_is_empty(const mac_pkt_list_t *list)
+{
 	const bool out = list->mpl_head == NULL;
 	ASSERT3B(out, ==, list->mpl_tail == NULL);
 	ASSERT3B(out, ==, list->mpl_count == 0);
@@ -67,7 +68,8 @@ mac_pkt_list_is_empty(const mac_pkt_list_t *list) {
 }
 
 inline void
-mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst) {
+mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst)
+{
 	if (mac_pkt_list_is_empty(src)) {
 		return;
 	}

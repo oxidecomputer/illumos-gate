@@ -24,7 +24,7 @@
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 RackTop Systems.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -6008,11 +6008,13 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	flow_entry_t *ipv6 = NULL, *ipv6_tcp = NULL, *ipv6_udp = NULL;
 	char flowname[MAXFLOWNAMELEN];
 
-	/* This is a dummy flow for now. We're actually filling in the contents of fe_match2. */
+	/*
+	 * This is a dummy flow definition for now, because there is no
+	 * mechanism yet to compute fe_match2 (what the classifier will use)
+	 * from a flow_desc_t.
+	 */
 	flow_desc_t f = { 0 };
 
-	/* TODO(ky): Reconsider meaning of FLOW_USER? Less draconian? */
-	/* TODO(ky): Namespace collisions here between initial bringup and extra clients */
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4",
 	    mcip->mci_name, mcip);
 	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
@@ -6022,13 +6024,15 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4_tcp",
 	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_tcp));
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
+	    &ipv4_tcp));
 	ipv4_tcp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv4_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4_udp",
 	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4_udp));
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
+	    &ipv4_udp));
 	ipv4_udp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv4_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
 
@@ -6041,17 +6045,17 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6_tcp",
 	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_tcp));
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
+	    &ipv6_tcp));
 	ipv6_tcp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv6_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
 
 	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6_udp",
 	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6_udp));
+	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
+	    &ipv6_udp));
 	ipv6_udp->fe_match2.mfm_type = MFM_IPPROTO;
 	ipv6_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
-
-	/* TODO(ky): FLOW_MARK(flent, FE_UF_NO_DATAPATH); ? */
 
 	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
 	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
@@ -6107,7 +6111,9 @@ mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
 
 /*
  * Fastpath fn ptrs provided by userland have changed out (initial registration,
- * most likely), or the subflow table got updated. Update leaf flows, rebake(?) trees.
+ * most likely), or the subflow table got updated.
+ *
+ * Update leaf flows, rebake(?) trees.
  */
 static void
 mac_update_fastpath_flows(mac_client_impl_t *mcip)

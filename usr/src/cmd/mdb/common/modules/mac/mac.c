@@ -636,7 +636,8 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 
 		mdb_printf("%?p %-16s %-4s "
 		    "%08x %08x %8d %8d %3d\n",
-		    addr, mci.mci_name, mac_srs_txmode2str(srs.srs_data.tx.st_mode),
+		    addr, mci.mci_name,
+		    mac_srs_txmode2str(srs.srs_data.tx.st_mode),
 		    srs.srs_state, srs.srs_type, srs.srs_count, srs.srs_size,
 		    srs.srs_soft_ring_count);
 		break;
@@ -919,14 +920,16 @@ mac_srs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		break;
 	}
 	case MAC_SRS_NONE: {
+		const boolean_t is_tx = srs.srs_type & SRST_TX == 1;
 		if (DCMD_HDRSPEC(flags)) {
 			mdb_printf("%<u>%?s %-20s %?s %?s %-3s%</u>\n",
 			    "ADDR", "LINK_NAME", "FLENT", "HW RING", "DIR");
 		}
 		mdb_printf("%?p %-20s %?p %?p "
 		    "%-3s ",
-		    addr, mci.mci_name, srs.srs_flent, srs.srs_data.rx.sr_ring, /* TODO(ky): correct? */
-		    (srs.srs_type & SRST_TX ? "TX" : "RX"));
+		    addr, mci.mci_name, srs.srs_flent,
+		    (is_tx ? NULL : srs.srs_data.rx.sr_ring),
+		    (is_tx ? "TX" : "RX"));
 		break;
 	}
 	default:
