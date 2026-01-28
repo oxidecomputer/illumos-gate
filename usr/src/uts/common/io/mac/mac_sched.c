@@ -2812,9 +2812,11 @@ mac_bw_ctl_do_refund(flow_tree_bw_refund_t *bw)
 {
 	if (bw->ftbr_size != 0) {
 		mutex_enter(&bw->ftbr_bw->mac_bw_lock);
-		bw->ftbr_bw->mac_bw_sz -=
-		    MIN(bw->ftbr_size,
+		bw->ftbr_bw->mac_bw_sz -= MIN(bw->ftbr_size,
 		    bw->ftbr_bw->mac_bw_sz);
+		if (bw->ftbr_bw->mac_bw_used < bw->ftbr_bw->mac_bw_limit) {
+			bw->ftbr_bw->mac_bw_state &= ~BW_ENFORCED;
+		}
 		mutex_exit(&bw->ftbr_bw->mac_bw_lock);
 	}
 }
@@ -3027,7 +3029,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				    (mac_soft_ring_set_t *)xnode->arg.ftex_srs;
 
 				mutex_enter(&send_to->srs_lock);
-				if ((send_to->srs_state & SRST_BW_CONTROL)
+				if ((send_to->srs_type & SRST_BW_CONTROL)
 				    != 0 &&
 				    !mac_pkt_list_is_empty(deliver_from)) {
 					ASSERT3U(send_to->srs_type &
@@ -5569,7 +5571,7 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs, uint_t proc_type)
 	ASSERT3P(srs->srs_give_to, !=, NULL);
 	ASSERT3B(mac_srs_is_tx(srs->srs_give_to), ==, is_tx);
 
-	srs->srs_state |= SRS_PROC;
+	srs->srs_state |= (SRS_PROC | proc_type);
 
 	mac_srs_bw_lock(srs);
 	if (!mac_srs_bw_try_refresh(srs)) {
@@ -5628,5 +5630,5 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs, uint_t proc_type)
 	}
 
 done:
-	srs->srs_state &= SRS_PROC;
+	srs->srs_state &= ~(SRS_PROC | proc_type);
 }

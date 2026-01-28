@@ -1694,7 +1694,8 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 }
 
 void
-mac_client_rebuild_flowtrees(mac_client_impl_t *mcip, const uint32_t add_type)
+mac_client_rebuild_flowtrees(mac_client_impl_t *mcip,
+    const mac_soft_ring_set_type_t add_type)
 {
 	flow_entry_t		*flent = mcip->mci_flent;
 	mac_impl_t		*mip = mcip->mci_mip;
@@ -2213,7 +2214,8 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 static mac_soft_ring_set_t *
 mac_srs_create_rx(mac_client_impl_t *mcip, flow_entry_t *flent,
-    uint32_t srs_type, mac_direct_rx_t rx_func, mac_ring_t *ring)
+    mac_soft_ring_set_type_t srs_type, mac_direct_rx_t rx_func,
+    mac_ring_t *ring)
 {
 	ASSERT3P(mcip, !=, NULL);
 	ASSERT3P(flent, !=, NULL);
@@ -2226,7 +2228,7 @@ mac_srs_create_rx(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 static mac_soft_ring_set_t *
 mac_srs_create_tx(mac_client_impl_t *mcip, flow_entry_t *flent,
-    uint32_t srs_type)
+    mac_soft_ring_set_type_t srs_type)
 {
 	ASSERT3P(mcip, !=, NULL);
 	ASSERT3P(flent, !=, NULL);
@@ -2292,8 +2294,8 @@ mac_srs_create_tx_logical(flow_entry_t *flent, mac_soft_ring_set_t *entry_srs,
  * to be heavily modified.
  */
 static mac_soft_ring_set_t *
-mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent, uint32_t srs_type,
-    const struct mac_srs_create_params *p)
+mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
+    mac_soft_ring_set_type_t srs_type, const struct mac_srs_create_params *p)
 {
 	const bool is_tx_srs = (p->msc_ty & SCT_TX) != 0;
 	const bool is_logical = (p->msc_ty & SCT_LOGICAL) != 0;

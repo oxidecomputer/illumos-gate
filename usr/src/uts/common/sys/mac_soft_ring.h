@@ -266,6 +266,113 @@ typedef struct mac_srs_rx_s {
 } mac_srs_rx_t;
 
 /*
+ * Immutable and slowly-varying aspects of a softring set, stored in srs_type.
+ *
+ * These identify mainly static characteristics (Tx/Rx, whether the SRS
+ * corresponds to the entrypoint on a MAC client) as well as state on an
+ * administrative timescale (fanout behaviour, bandwidth control).
+ */
+typedef enum {
+	/*
+	 * The flow entry underpinning this SRS belongs to a MAC client for
+	 * a link.
+	 *
+	 * Immutable.
+	 */
+	SRST_LINK		= 0x00000001,
+	/*
+	 * The flow entry underpinning this SRS belongs to a classifier attached
+	 * to a given MAC client.
+	 *
+	 * Immutable.
+	 */
+	SRST_FLOW		= 0x00000002,
+	/*
+	 * This SRS does not have any softrings assigned.
+	 *
+	 * Immutable.
+	 */
+	SRST_NO_SOFT_RINGS 	= 0x00000004,
+	/*
+	 * This softring set is logical, and exists as part of the flowtree of a
+	 * complete SRS. It is not directly visible via the flow entry's Rx/Tx
+	 * SRS list.
+	 *
+	 * The field `srs_complete_parent` points to the SRS whose flowtree
+	 * this object is contained in.
+	 *
+	 * Immutable.
+	 */
+	SRST_LOGICAL	 	= 0x00000008,
+
+	/*
+	 * This softring set behaves as a queue for a bandwidth limited subflow,
+	 * and directs traffic to another (logical/complete) SRS `srs_give_to`
+	 * every system tick.
+	 *
+	 * Immutable. Requires SRST_LOGICAL and SRST_NO_SOFT_RINGS.
+	 */
+	SRST_FORWARD		= 0x00000010,
+	/*
+	 * The client underlying this softring set has been assigned the default
+	 * group (either due to oversubscription, or the device admits only one
+	 * group).
+	 *
+	 * A hardware classified ring of this type will receive additional
+	 * traffic when moved into full or all-multicast promiscuous mode.
+	 *
+	 * Mutable.
+	 */
+	SRST_DEFAULT_GRP	= 0x00000080,
+
+	/*
+	 * If present, this softring set is a transmit SRS. Otherwise it is a
+	 * receive SRS.
+	 *
+	 * Transmit SRSes use softrings as mappings to underlying Tx rings
+	 * from the hardware.
+	 *
+	 * Tx/Rx specific data in `srs_data` are gated on this flag, as are the
+	 * choice of drain functions, enqueue behaviours, etc.
+	 *
+	 * Immutable.
+	 */
+	SRST_TX			= 0x00000100,
+	/*
+	 * One or more elements of `srs_bw` is `BW_ENABLED`, and the queue size
+	 * and egress rate of this SRS are limited accordingly.
+	 *
+	 * Mutable.
+	 */
+	SRST_BW_CONTROL		= 0x00000200,
+
+	/*
+	 * This complete SRS has had flows plumbed from IP to allow matching
+	 * IPv4/IPv6 packets to bypass DLS (i.e., the root SRS action).
+	 *
+	 * Mutable.
+	 */
+	SRST_DLS_BYPASS			= 0x00001000,
+	/*
+	 * This complete SRS has plumbed the DLS bypass from IP and has
+	 * registered callbacks to communicate creation/deletion/... of
+	 * softrings to IP.
+	 *
+	 * Mutable. Requires SRST_DLS_BYPASS.
+	 */
+	SRST_CLIENT_POLL_ENABLED	= 0x00002000,
+
+	/*
+	 * The action associated with this soft ring set (complete/logical) is
+	 * sensitive to CPU bindings of soft rings, so packet fanout must always
+	 * be flowhash-driven.
+	 *
+	 * Mutable.
+	 */
+	SRST_ALWAYS_HASH_OUT	 	= 0x00010000,
+} mac_soft_ring_set_type_t;
+
+/*
  * mac_soft_ring_set_s:
  * This is used both for Tx and Rx side. The srs_type identifies Rx or
  * Tx type.
@@ -319,8 +426,8 @@ struct mac_soft_ring_set_s {
 	 * The following block of fields are protected by srs_lock
 	 */
 	kmutex_t	srs_lock;
-	uint32_t	srs_type;
-	uint32_t	srs_state;	/* state flags */
+	mac_soft_ring_set_type_t	srs_type;
+	uint32_t	srs_state;
 	uint32_t	srs_count;
 	mblk_t		*srs_first;	/* first mblk chain or NULL */
 	mblk_t		*srs_last;	/* last mblk chain or NULL */
@@ -464,36 +571,6 @@ struct mac_soft_ring_set_s {
 
 #define	S_RING_RESTART		0x1000	/* Go back to normal traffic flow */
 #define	S_RING_ENQUEUED		0x2000	/* Pkts enqueued in Tx soft ring */
-
-/*
- * arguments for processors to bind to
- */
-#define	S_RING_BIND_NONE	-1
-
-/*
- * defines for srs_type - identifies a link or a sub-flow
- * and other static characteristics of a SRS like a tx
- * srs, tcp only srs, etc.
- */
-// TODO(ky): remove?
-#define	SRST_LINK		0x00000001
-#define	SRST_FLOW		0x00000002
-
-#define	SRST_NO_SOFT_RINGS	0x00000004
-#define	SRST_LOGICAL		0x00000008
-
-#define	SRST_FORWARD		0x00000010
-#define	SRST_DEFAULT_GRP	0x00000080
-
-#define	SRST_TX			0x00000100
-#define	SRST_BW_CONTROL		0x00000200
-/* TODO(ky): unused, both here and stlouis? */
-#define	SRST_DIRECT_POLL	0x00000400
-
-#define	SRST_DLS_BYPASS		0x00001000
-#define	SRST_CLIENT_POLL_ENABLED 0x00002000
-
-#define	SRST_ALWAYS_HASH_OUT	0x00010000
 
 inline bool
 mac_srs_is_tx(const mac_soft_ring_set_t *srs)
