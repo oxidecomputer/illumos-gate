@@ -4112,41 +4112,35 @@ mac_notify_remove(mac_notify_handle_t mnh, boolean_t wait)
  * Associate resource management callbacks with the specified MAC
  * clients.
  */
-
 void
-mac_resource_set_common(mac_client_handle_t mch, uint16_t sap,
-    mac_resource_add_t add, mac_resource_remove_t remove,
-    mac_resource_quiesce_t quiesce, mac_resource_restart_t restart,
-    mac_resource_bind_t bind, void *arg)
+mac_resource_set(mac_client_handle_t mch, mac_resource_cb_t *rcbs,
+    boolean_t is_v6)
 {
 	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
 
-	flow_entry_t *affected_flent = (sap == ETHERTYPE_IP) ?
-	    mcip->mci_fastpath_ipv4_tcp : ((sap == ETHERTYPE_IPV6) ?
-	    mcip->mci_fastpath_ipv6_tcp : NULL);
-	if (affected_flent != NULL) {
-		flow_action_t *ac = &affected_flent->fe_action;
-		ac->fa_flags &= ~MFA_FLAGS_RESOURCE;
-		if (add != NULL) {
-			ac->fa_flags |= MFA_FLAGS_RESOURCE;
-			ac->fa_resource_add = add;
-			ac->fa_resource_remove = remove;
-			ac->fa_resource_quiesce = quiesce;
-			ac->fa_resource_restart = restart;
-			ac->fa_resource_bind = bind;
-			ac->fa_resource_arg = arg;
-		}
-	}
+	flow_entry_t *affected_flent = is_v6 ?
+	    mcip->mci_fastpath_ipv4_tcp :
+	    mcip->mci_fastpath_ipv6_tcp;
+
+	flow_action_t *ac = &affected_flent->fe_action;
+	ac->fa_flags |= MFA_FLAGS_RESOURCE;
+	ac->fa_resource = mcbs;
 
 	mac_update_fastpath_flows(mcip);
 }
 
 void
-mac_resource_set(mac_client_handle_t mch, uint16_t sap, mac_resource_add_t add,
-    void *arg)
+mac_resource_clear(mac_client_handle_t mch, boolean_t is_v6)
 {
-	/* update the 'resource_add' callback */
-	mac_resource_set_common(mch, sap, add, NULL, NULL, NULL, NULL, arg);
+	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
+
+	flow_entry_t *affected_flent = is_v6 ?
+	    mcip->mci_fastpath_ipv4_tcp :
+	    mcip->mci_fastpath_ipv6_tcp;
+
+	flow_action_t *ac = &affected_flent->fe_action;
+	ac->fa_flags &= ~MFA_FLAGS_RESOURCE;
+	bzero(&ac->fa_resource, sizeof (ac->fa_resource));
 }
 
 /*
@@ -4154,7 +4148,7 @@ mac_resource_set(mac_client_handle_t mch, uint16_t sap, mac_resource_add_t add,
  * SRS's and the soft rings of the client for a given SAP.
  */
 void
-mac_client_poll_enable(mac_client_handle_t mch)
+mac_client_poll_enable(mac_client_handle_t mch, boolean_t is_v6)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_soft_ring_set_t	*mac_srs;
@@ -4168,8 +4162,7 @@ mac_client_poll_enable(mac_client_handle_t mch)
 	mcip->mci_state_flags |= MCIS_CLIENT_POLL_CAPABLE;
 
 	mac_client_quiesce(mcip, true);
-	mac_client_rebuild_flowtrees(mcip, SRST_CLIENT_POLL_ENABLED |
-	    SRST_DLS_BYPASS);
+	mac_client_rebuild_flowtrees(mcip, SRST_DLS_BYPASS);
 	mac_client_restart(mcip);
 }
 
@@ -4178,13 +4171,13 @@ mac_client_poll_enable(mac_client_handle_t mch)
  * the SRS's and the soft rings of the client for a given SAP.
  */
 void
-mac_client_poll_disable(mac_client_handle_t mch, const uint16_t sap)
+mac_client_poll_disable(mac_client_handle_t mch, boolean_t is_v6)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	flow_entry_t		*flent = mcip->mci_flent;
 
-	ASSERT3P(flent, !=, NULL);
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
+	VERIFY3P(flent, !=, NULL);
+	VERIFY(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	/*
 	 * Flow tree teardown must happen with the OLD settings of
@@ -4194,25 +4187,35 @@ mac_client_poll_disable(mac_client_handle_t mch, const uint16_t sap)
 	mac_client_quiesce(mcip, true);
 	mac_client_destroy_flowtrees(mcip);
 
-	if (sap == ETHERTYPE_IPV6) {
+	/*
+	 * With how DLS/IP are setup, a call to disable client polling also
+	 * demands that we clear the DLS bypass capability.
+	 */
+	if (is_v6) {
 		mcip->mci_v6_fastpath.mdrx = NULL;
 		mcip->mci_v6_fastpath.mdrx_arg = NULL;
-	} else if (sap == ETHERTYPE_IP) {
+	} else if (is_v6) {
 		mcip->mci_v4_fastpath.mdrx = NULL;
 		mcip->mci_v4_fastpath.mdrx_arg = NULL;
 	}
 
-	const bool still_has_bypass = mcip->mci_v6_fastpath.mdrx != NULL ||
-	    mcip->mci_v4_fastpath.mdrx != NULL;
-	if (still_has_bypass) {
+	mac_soft_ring_set_type_t vanity_flags = 0;
+	if (mcip->mci_v4_fastpath.mdrx != NULL) {
+		vanity_flags |= SRST_DLS_BYPASS_V4;
+	}
+	if (mcip->mci_v6_fastpath.mdrx != NULL) {
+		vanity_flags |= SRST_DLS_BYPASS_V6;
+	}
+
+	if (vanity_flags != 0) {
 		mcip->mci_state_flags |= MCIS_CLIENT_POLL_CAPABLE;
 	} else {
 		mcip->mci_state_flags &= ~MCIS_CLIENT_POLL_CAPABLE;
 	}
 
-	mac_resource_set(mch, sap, NULL, NULL);
+	mac_resource_clear(mch, is_v6);
 
-	mac_client_create_flowtrees(mcip, still_has_bypass);
+	mac_client_create_flowtrees(mcip, vanity_flags);
 
 	mac_client_restart(mcip);
 }

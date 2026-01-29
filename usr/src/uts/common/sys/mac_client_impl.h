@@ -202,8 +202,18 @@ struct mac_client_impl_s {			/* Protected by */
 	uint_t			mci_tx_flag;
 	kcondvar_t		mci_tx_cv;
 
-	/* TODO(ky) find somewhere longer lived for these guys */
-	/* Protected by ??? */
+	/* Protected by Rx quiescence */
+	/*
+	 * When an IPv4/IPv6 address is plumbed atop a client, IP will assign
+	 * an ill_t for each protocol and set mci_v4_fastpath/mci_v6_fastpath.
+	 * These flows enable TCP/UDP traffic over IPv4/IPv6 to bypass DLS using
+	 * these callbacks, and give us space in the flow's action to place the
+	 * resource management callback functions which enable TCP queue
+	 * polling. At this time resources are used solely by TCP softrings
+	 * for the purpose of IP ring/squeue creation and polling. Currently the
+	 * callbacks are identical across protocol types, save the mrc_arg,
+	 * which is used to pass the ill_t up to IP.
+	 */
 	flow_entry_t	*mci_fastpath_ipv4;
 	flow_entry_t	*mci_fastpath_ipv4_tcp;
 	flow_entry_t	*mci_fastpath_ipv4_udp;

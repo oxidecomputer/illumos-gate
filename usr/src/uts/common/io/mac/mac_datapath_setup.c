@@ -337,12 +337,8 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
 /* POLLING SETUP AND TEAR DOWN ROUTINES */
 
 /*
- * mac_srs_client_poll_quiesce and mac_srs_client_poll_restart
- *
- * These routines are used to call back into the upper layer
- * (primarily TCP squeue) to stop polling the soft rings or
- * restart polling on all softrings resident under a complete
- * SRS.
+ * Walk an Rx SRS and all its logical SRSes to inform upstack clients
+ * that no soft rings may be polled.
  */
 void
 mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
@@ -364,27 +360,27 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 		}
 
 		const mac_resource_remove_t rm_notify_fn =
-		    act->fa_resource_remove;
+		    act->fa_resource.mrc_remove;
 		const mac_resource_remove_t quiesce_notify_fn =
-		    act->fa_resource_quiesce;
+		    act->fa_resource.mrc_quiesce;
 		ASSERT3P(rm_notify_fn, !=, NULL);
 		ASSERT3P(quiesce_notify_fn, !=, NULL);
 
 		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
 		    softring != NULL; softring = softring->s_ring_next) {
 			if (softring->s_ring_rx_arg2 == NULL ||
-			    act->fa_resource_arg == NULL) {
+			    act->fa_resource.mrc_arg == NULL) {
 				continue;
 			}
 
 			switch (srs_quiesce_flag) {
 			case SRS_CONDEMNED:
-				rm_notify_fn(act->fa_resource_arg,
+				rm_notify_fn(act->fa_resource.mrc_arg,
 				    softring->s_ring_rx_arg2);
 				softring->s_ring_rx_arg2 = NULL;
 				break;
 			case SRS_QUIESCE:
-				quiesce_notify_fn(act->fa_resource_arg,
+				quiesce_notify_fn(act->fa_resource.mrc_arg,
 				    softring->s_ring_rx_arg2);
 				break;
 			default:
@@ -395,6 +391,10 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 	}
 }
 
+/*
+ * Walk an Rx SRS and all its logical SRSes to inform upstack clients
+ * that all soft rings can be polled again.
+ */
 void
 mac_srs_client_poll_restart(mac_soft_ring_set_t *mac_srs)
 {
@@ -411,14 +411,14 @@ mac_srs_client_poll_restart(mac_soft_ring_set_t *mac_srs)
 		}
 
 		const mac_resource_remove_t restart_notify_fn =
-		    act->fa_resource_restart;
+		    act->fa_resource.mrc_restart;
 		ASSERT3P(restart_notify_fn, !=, NULL);
 
 		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
 		    softring != NULL; softring = softring->s_ring_next) {
 			if (softring->s_ring_rx_arg2 != NULL &&
-			    act->fa_resource_arg != NULL) {
-				restart_notify_fn(act->fa_resource_arg,
+			    act->fa_resource.mrc_arg != NULL) {
+				restart_notify_fn(act->fa_resource.mrc_arg,
 				    softring->s_ring_rx_arg2);
 			}
 		}
@@ -1499,21 +1499,9 @@ mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
 	mutex_enter(&srs->srs_lock);
 
 	if (mrp->mrp_maxbw == MRP_MAXBW_RESETVAL) {
-		if (srs->srs_type & SRST_BW_CONTROL) {
-			softring = srs->srs_soft_ring_head;
-			while (softring != NULL) {
-				softring->s_ring_type &= ~ST_RING_BW_CTL;
-				softring = softring->s_ring_next;
-			}
-			srs->srs_type &= ~SRST_BW_CONTROL;
-		}
-	} else if (!(srs->srs_type & SRST_BW_CONTROL)) {
-		softring = srs->srs_soft_ring_head;
-		while (softring != NULL) {
-			softring->s_ring_type |= ST_RING_BW_CTL;
-			softring = softring->s_ring_next;
-		}
-		srs->srs_type |= SRST_BW_CONTROL;
+		srs->srs_type &= ~SRST_BW_CONTROL;
+	} else {
+		srs->srs_type |= ~SRST_BW_CONTROL;
 	}
 
 	mac_rx_srs_update_drain_proc(srs);
@@ -1729,13 +1717,13 @@ mac_client_destroy_flowtrees(mac_client_impl_t *mcip)
 	mac_impl_t		*mip = mcip->mci_mip;
 	uint_t			rx_srs_cnt = flent->fe_rx_srs_cnt;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
+	VERIFY(MAC_PERIM_HELD((mac_handle_t)mip));
 
 	for (int i = 0; i < rx_srs_cnt; i++) {
 		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
-		ASSERT3P(srs, !=, NULL);
+		VERIFY3P(srs, !=, NULL);
 		mutex_enter(&srs->srs_lock);
-		ASSERT(SRS_QUIESCED(srs));
+		VERIFY(SRS_QUIESCED(srs));
 		mac_flow_baked_tree_destroy(&srs->srs_flowtree);
 		mac_soft_ring_set_t *child = srs->srs_logical_next;
 		while (child != NULL) {
@@ -1749,25 +1737,25 @@ mac_client_destroy_flowtrees(mac_client_impl_t *mcip)
 }
 
 void
-mac_client_create_flowtrees(mac_client_impl_t *mcip, const bool has_any_bypass)
+mac_client_create_flowtrees(mac_client_impl_t *mcip,
+    const mac_soft_ring_set_type_t vanity_flags)
 {
 	flow_entry_t		*flent = mcip->mci_flent;
 	mac_impl_t		*mip = mcip->mci_mip;
 	uint_t			rx_srs_cnt = flent->fe_rx_srs_cnt;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
+	const mac_soft_ring_set_type_t all_vanity =
+	    SRST_DLS_BYPASS_V4 | SRST_DLS_BYPASS_V6;
+
+	VERIFY(MAC_PERIM_HELD((mac_handle_t)mip));
+	VERIFY0(vanity_flags & ~all_vanity);
 
 	for (int i = 0; i < rx_srs_cnt; i++) {
 		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
 		mutex_enter(&srs->srs_lock);
-		ASSERT(SRS_QUIESCED(srs));
-		if (has_any_bypass) {
-			srs->srs_type |=
-			    (SRST_CLIENT_POLL_ENABLED | SRST_DLS_BYPASS);
-		} else {
-			srs->srs_type &=
-			    ~(SRST_CLIENT_POLL_ENABLED | SRST_DLS_BYPASS);
-		}
+		VERIFY(SRS_QUIESCED(srs));
+		srs->srs_type &= all_vanity;
+		srs->srs_type |= vanity_flags;
 		mac_flow_baked_tree_create(mcip->mci_flow_tree, srs);
 		mutex_exit(&srs->srs_lock);
 	}
@@ -1831,21 +1819,21 @@ mac_rx_discard(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 }
 
 void
-mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
-    mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs, processorid_t cpuid)
+mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
+    mac_soft_ring_set_t *mac_srs, processorid_t cpuid)
 {
-	ASSERT3U(type & ST_RING_TX, ==, 0);
 
 	const flow_action_t *act = mac_srs_rx_action(mac_srs);
 	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0 &&
-	    act->fa_resource_add != NULL && act->fa_resource_arg != NULL;
+	    act->fa_resource.mrc_add != NULL &&
+	    act->fa_resource.mrc_arg != NULL;
 	const bool process_packet = (act->fa_flags & MFA_FLAGS_ACTION) != 0;
 	const mac_direct_rx_t rx_func = process_packet ? act->fa_direct_rx_fn :
 	    mac_rx_discard;
 	void *x_arg1 = process_packet ? act->fa_direct_rx_arg : NULL;
 
 	mac_soft_ring_t *softring = mac_soft_ring_create(id,
-	    mac_soft_ring_worker_wait, type, pri, mcip, mac_srs, cpuid, rx_func,
+	    mac_soft_ring_worker_wait, 0, pri, mcip, mac_srs, cpuid, rx_func,
 	    x_arg1, NULL);
 
 	if (notify_upstack) {
@@ -1862,8 +1850,8 @@ mac_srs_create_rx_softring(int id, uint32_t type, pri_t pri,
 			.mrf_cpu_id = cpuid,
 		};
 
-		softring->s_ring_rx_arg2 = act->fa_resource_add(
-		    act->fa_resource_arg, (mac_resource_t *)&mrf);
+		softring->s_ring_rx_arg2 = act->fa_resource.mrc_add(
+		    act->fa_resource.mrc_arg, (mac_resource_t *)&mrf);
 	}
 }
 
@@ -1879,8 +1867,6 @@ static void
 mac_srs_fanout_modify(mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_rx_srs, mac_soft_ring_set_t *mac_tx_srs)
 {
-	uint32_t soft_ring_flag = 0;
-
 	/* New request */
 	mac_cpus_t *srs_cpu = &mac_rx_srs->srs_cpu;
 	const uint32_t new_fanout_cnt = srs_cpu->mc_rx_fanout_cnt;
@@ -1891,18 +1877,13 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 	const flow_action_t *act = mac_srs_rx_action(mac_rx_srs);
 	const bool is_logical = mac_srs_is_logical(mac_rx_srs);
 	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
-	const mac_resource_remove_t rm_notify_fn = act->fa_resource_remove;
-	const mac_resource_bind_t bind_notify_fn = act->fa_resource_bind;
-	void *notify_arg = act->fa_resource_arg;
+	const mac_resource_remove_t rm_notify_fn = act->fa_resource.mrc_remove;
+	const mac_resource_bind_t bind_notify_fn = act->fa_resource.mrc_bind;
+	void *notify_arg = act->fa_resource.mrc_arg;
 
 	/* fanout state is REINIT. Set it back to INIT */
 	ASSERT3U(mac_rx_srs->srs_fanout_state, ==, SRS_FANOUT_REINIT);
 	mac_rx_srs->srs_fanout_state = SRS_FANOUT_INIT;
-
-	mutex_enter(&mac_rx_srs->srs_lock);
-	if (mac_rx_srs->srs_type & SRST_BW_CONTROL)
-		soft_ring_flag |= ST_RING_BW_CTL;
-	mutex_exit(&mac_rx_srs->srs_lock);
 
 	if (new_fanout_cnt > srings_present) {
 		/* soft rings increased */
@@ -1912,8 +1893,8 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 			 * DLS bypass where possible.
 			 */
 			const processorid_t cpuid = -1;
-			mac_srs_create_rx_softring(i, soft_ring_flag,
-			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
+			mac_srs_create_rx_softring(i, mac_rx_srs->srs_pri, mcip,
+			    mac_rx_srs, cpuid);
 		}
 		mac_srs_update_fanout_list(mac_rx_srs);
 	} else if (new_fanout_cnt < srings_present) {
@@ -1972,8 +1953,6 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
     cpupart_t *cpupart)
 {
 	int		i;
-	processorid_t	cpuid;
-	uint32_t	soft_ring_flag = 0;
 	int soft_ring_cnt;
 	mac_cpus_t *srs_cpu = &mac_rx_srs->srs_cpu;
 
@@ -1987,10 +1966,7 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 
 	VERIFY3P(mac_rx_srs->srs_soft_ring_head, ==, NULL);
 	VERIFY(!mac_srs_is_logical(mac_rx_srs));
-	VERIFY(mac_tx_srs == NULL || !mac_srs_is_logical(mac_tx_srs));
-
-	if (mac_rx_srs->srs_type & SRST_BW_CONTROL)
-		soft_ring_flag |= ST_RING_BW_CTL;
+	VERIFY3B(mac_tx_srs == NULL, ||, !mac_srs_is_logical(mac_tx_srs));
 
 	ASSERT3U(mac_rx_srs->srs_fanout_state, ==, SRS_FANOUT_UNINIT);
 	mac_rx_srs->srs_fanout_state = SRS_FANOUT_INIT;
@@ -2003,13 +1979,12 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 	soft_ring_cnt = srs_cpu->mc_rx_fanout_cnt;
 
 	/* Step 1: bind cpu contains cpu list where threads need to bind */
+	mutex_enter(&cpu_lock);
 	if (soft_ring_cnt > 0) {
-		mutex_enter(&cpu_lock);
 		for (i = 0; i < soft_ring_cnt; i++) {
-			cpuid = srs_cpu->mc_rx_fanout_cpus[i];
-			/* Create the protocol softrings */
-			mac_srs_create_rx_softring(i, soft_ring_flag,
-			    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
+			processorid_t cpuid = srs_cpu->mc_rx_fanout_cpus[i];
+			mac_srs_create_rx_softring(i, mac_rx_srs->srs_pri, mcip,
+			    mac_rx_srs, cpuid);
 		}
 		mac_srs_worker_bind(mac_rx_srs, srs_cpu->mc_rx_workerid);
 		mac_srs_poll_bind(mac_rx_srs, srs_cpu->mc_rx_pollid);
@@ -2029,27 +2004,20 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 		mac_tx_srs_retarget_intr(mac_tx_srs);
 		mutex_exit(&cpu_lock);
 	} else {
-		mutex_enter(&cpu_lock);
 		/*
 		 * For logical SRSes, mrp_pollid is not set.
 		 */
 		mac_srs_worker_bind(mac_rx_srs, mrp->mrp_rx_workerid);
 		mac_srs_poll_bind(mac_rx_srs, mrp->mrp_rx_pollid);
+
+		processorid_t cpuid = mac_next_bind_cpu(cpupart);
+		/* Create the protocol softrings */
+		mac_srs_create_rx_softring(0, mac_rx_srs->srs_pri, mcip,
+		    mac_rx_srs, cpuid);
 		mutex_exit(&cpu_lock);
-		goto no_softrings;
 	}
 
 alldone:
-	mac_srs_update_fanout_list(mac_rx_srs);
-	return;
-
-no_softrings:
-	mutex_enter(&cpu_lock);
-	cpuid = mac_next_bind_cpu(cpupart);
-	/* Create the protocol softrings */
-	mac_srs_create_rx_softring(0, soft_ring_flag,
-	    mac_rx_srs->srs_pri, mcip, mac_rx_srs, cpuid);
-	mutex_exit(&cpu_lock);
 	mac_srs_update_fanout_list(mac_rx_srs);
 }
 
@@ -2355,7 +2323,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 		 */
 		if ((mac_srs_rx_action(mac_srs)->fa_flags &
 		    MFA_FLAGS_RESOURCE) != 0) {
-			srs_type |= SRST_ALWAYS_HASH_OUT;
+			srs_type |= SRST_CLIENT_POLL;
 		}
 
 		srs_rx->sr_poll_cpuid = srs_rx->sr_poll_cpuid_save = -1;

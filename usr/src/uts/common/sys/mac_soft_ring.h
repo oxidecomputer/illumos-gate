@@ -110,9 +110,9 @@ struct mac_soft_ring_s {
 	timeout_id_t	s_ring_tid;	/* timer id of pending timeout() */
 	kthread_t	*s_ring_worker;	/* kernel thread id */
 	char		s_ring_name[S_RING_NAMELEN + 1];
-	uint32_t	s_ring_total_inpkt;
-	uint32_t	s_ring_total_rbytes;
-	uint32_t	s_ring_drops;
+	uint64_t	s_ring_total_inpkt;
+	uint64_t	s_ring_total_rbytes;
+	uint64_t	s_ring_drops;
 	struct mac_client_impl_s *s_ring_mcip;
 	kstat_t		*s_ring_ksp;
 
@@ -348,28 +348,39 @@ typedef enum {
 
 	/*
 	 * This complete SRS has had flows plumbed from IP to allow matching
-	 * IPv4/IPv6 packets to bypass DLS (i.e., the root SRS action).
+	 * IPv4 packets to bypass DLS (i.e., the root SRS action).
+	 *
+	 * This is a vanity flag to make MAC client plumbing state clearer when
+	 * debugging, and does not alter datapath behaviour.
 	 *
 	 * Mutable.
 	 */
-	SRST_DLS_BYPASS			= 0x00001000,
+	SRST_DLS_BYPASS_V4		= 0x00001000,
 	/*
-	 * This complete SRS has plumbed the DLS bypass from IP and has
-	 * registered callbacks to communicate creation/deletion/... of
-	 * softrings to IP.
+	 * This complete SRS has had flows plumbed from IP to allow matching
+	 * IPv6 packets to bypass DLS (i.e., the root SRS action).
 	 *
-	 * Mutable. Requires SRST_DLS_BYPASS.
+	 * This is a vanity flag to make MAC client plumbing state clearer when
+	 * debugging, and does not alter datapath behaviour.
+	 *
+	 * Mutable.
 	 */
-	SRST_CLIENT_POLL_ENABLED	= 0x00002000,
+	SRST_DLS_BYPASS_V6		= 0x00002000,
 
 	/*
 	 * The action associated with this soft ring set (complete/logical) is
-	 * sensitive to CPU bindings of soft rings, so packet fanout must always
-	 * be flowhash-driven.
+	 * configured with `MFA_FLAGS_RESOURCE`, and we will inform an upstack
+	 * client of any changes to softrings (creation, deletion, CPU bind,
+	 * quiesce). The client may also poll the softrings to check for
+	 * packets.
+	 *
+	 * This implies that the client is sensitive to the CPU bindings of soft
+	 * rings and/or that flows are consistently delivered to the same
+	 * softring. Accordingly, packet fanout must always be flowhash-driven.
 	 *
 	 * Mutable.
 	 */
-	SRST_ALWAYS_HASH_OUT	 	= 0x00010000,
+	SRST_CLIENT_POLL	 	= 0x00010000,
 } mac_soft_ring_set_type_t;
 
 /*
@@ -548,8 +559,6 @@ struct mac_soft_ring_set_s {
  */
 #define	ST_RING_WORKER_ONLY	0x0001	/* Worker thread only */
 #define	ST_RING_ANY		0x0002	/* Any thread can process the queue */
-
-#define	ST_RING_BW_CTL		0x0020
 #define	ST_RING_TX		0x0040
 
 /*

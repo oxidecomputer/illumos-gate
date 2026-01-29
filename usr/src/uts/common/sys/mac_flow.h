@@ -296,12 +296,7 @@ typedef struct flow_action_s {
 	 * a client about softring creation/deletion, CPU bindings and to
 	 * enable/disable/perform softring polling.
 	 */
-	mac_resource_add_t	fa_resource_add;
-	mac_resource_remove_t	fa_resource_remove;
-	mac_resource_quiesce_t	fa_resource_quiesce;
-	mac_resource_restart_t	fa_resource_restart;
-	mac_resource_bind_t	fa_resource_bind;
-	void			*fa_resource_arg;
+	mac_resource_cb_t	fa_resource;
 } flow_action_t;
 
 #if _LONG_LONG_ALIGNMENT == 8 && _LONG_LONG_ALIGNMENT_32 == 4

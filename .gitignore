@@ -37,7 +37,6 @@ illumos.sh
 usr/src/cmd/amdzen/apobdump
 usr/src/cmd/amdzen/uhsmp
 usr/src/cmd/dtrace_ipcc/dtrace_ipcc
-usr/src/cmd/gpioadm/gpioadm
 usr/src/cmd/ipcc/ipcc
 usr/src/cmd/mc/mcmargins
 usr/src/cmd/mc/spddump
@@ -46,5 +45,4 @@ usr/src/cmd/t6init/t6init
 usr/src/cmd/t6mfgadm/t6mfgadm
 usr/src/cmd/tmpx/tmpx
 usr/src/lib/libipcc/common/libipcc_dt.h
-usr/src/test/os-tests/tests/mac/mac_lso
 usr/src/uts/oxide/cpu/scripts/ao_gendisp

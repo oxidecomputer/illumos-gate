@@ -1701,7 +1701,7 @@ mac_srs_fire(void *arg)
 
 #define	COMPUTE_INDEX(key, sz)	(key % sz)
 
-#define	ENQUEUE_MP(head, tail, cnt, bw_ctl, sz, sz0, mp) {		\
+#define	ENQUEUE_MP(head, tail, cnt, sz, sz0, mp) {			\
 	ASSERT3P((mp), !=, NULL);					\
 	if ((tail) != NULL) {						\
 		ASSERT3P((tail)->b_next, ==, NULL);			\
@@ -1712,18 +1712,15 @@ mac_srs_fire(void *arg)
 	}								\
 	(tail) = (mp);							\
 	(cnt)++;							\
-	if ((bw_ctl)) {							\
-		(sz) += (sz0);						\
-	}								\
+	(sz) += (sz0);							\
 }
 
-#define	ENQUEUE_MP_LIST(list, bw_ctl, sz0, mp) {			\
+#define	ENQUEUE_MP_LIST(list, sz0, mp) {				\
 	mac_pkt_list_t *enq_mp_list = (list);				\
 	ENQUEUE_MP(							\
 	    enq_mp_list->mpl_head,					\
 	    enq_mp_list->mpl_tail,					\
 	    enq_mp_list->mpl_count,					\
-	    (bw_ctl),							\
 	    enq_mp_list->mpl_size,					\
 	    (sz0),							\
 	    (mp))							\
@@ -1773,19 +1770,21 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	int			cnt[MAX_SR_FANOUT] = { 0 };
 	size_t			sz[MAX_SR_FANOUT] = { 0 };
 
-	const bool bw_ctl = (mac_srs->srs_type & SRST_BW_CONTROL) != 0;
 	const bool never_round_robin =
-	    (mac_srs->srs_type & SRST_ALWAYS_HASH_OUT) != 0;
+	    (mac_srs->srs_type & SRST_CLIENT_POLL) != 0;
 	const bool do_round_robin = !never_round_robin &&
 	    (mac_fanout_type == MAC_FANOUT_RND_ROBIN);
 
 	/*
-	 * Since the softrings are never destroyed, it's OK to check one
-	 * of them for count and use it without any lock. In future, if
-	 * soft rings get destroyed because of reduction in fanout, we will
-	 * need to ensure that happens behind the SRS_PROC.
+	 * Softrings can be created/destroyed, but only under Rx quiescence.
+	 * Being here *enforces* that the SRS state does not include
+	 * `SRS_QUIESCE_DONE`, and thus any thread holding the MAC perimeter
+	 * cannot fundamentally alter the SRS. This is because `SRS_PROC` is
+	 * set, and so the worker thread will not proceed with performing the
+	 * quiesce. Because of this it is fine to access the soft
+	 * ring count and rings themselves without `srs_lock`.
 	 */
-	const int fanout_cnt = mac_srs->srs_soft_ring_count;
+	const uint32_t fanout_cnt = mac_srs->srs_soft_ring_count;
 
 	/*
 	 * We got a chain from SRS that we need to send to the soft rings.
@@ -1872,18 +1871,10 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			hash = HASH_ADDR6(ip6->ip6_src, ip6->ip6_dst, ports);
 		}
 compute_index:
-		/*
-		 * XXX-Sunay: We should hold srs_lock since ring_count
-		 * below can change. But if we are always called from
-		 * mac_rx_srs_drain and SRS_PROC is set, then we can
-		 * enforce that ring_count can't be changed i.e.
-		 * to change fanout type or ring count, the calling
-		 * thread needs to be behind SRS_PROC.
-		 */
 		indx = COMPUTE_INDEX(hash, fanout_cnt);
 enqueue:
-		ENQUEUE_MP(headmp[indx], tailmp[indx],
-		    cnt[indx], bw_ctl, sz[indx], mp_len(mp), mp);
+		ENQUEUE_MP(headmp[indx], tailmp[indx], cnt[indx], sz[indx],
+		    mp_len(mp), mp);
 	}
 
 	for (int i = 0; i < fanout_cnt; i++) {
@@ -2442,7 +2433,7 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
  */
 static void
 mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t *set,
-    const bool bw_ctl, mblk_t *mp)
+    mblk_t *mp)
 {
 	/*
 	 * Called on *entry* to mac_rx_srs_drain. All packets should be as-yet
@@ -2457,7 +2448,7 @@ mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t *set,
 		if (processed == NULL) {
 			continue;
 		}
-		ENQUEUE_MP_LIST(set, bw_ctl, mp_len(processed), processed);
+		ENQUEUE_MP_LIST(set, mp_len(processed), processed);
 	}
 }
 
@@ -2695,10 +2686,13 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 					if (to_class->mpl_tail == curr) {
 						to_class->mpl_tail = prev;
 					}
-					to_class->mpl_count--;
 
-					ENQUEUE_MP_LIST(classed, false,
-					    mp_len(curr), curr);
+					const size_t lsz = mp_len(curr);
+
+					to_class->mpl_count--;
+					to_class->mpl_size -= lsz;
+
+					ENQUEUE_MP_LIST(classed, lsz, curr);
 				} else {
 					to_curr = &curr->b_next;
 					prev = curr;
@@ -2903,7 +2897,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 						to_class->mpl_tail = prev;
 					}
 
-					size_t lsz = mp_len(curr);
+					const size_t lsz = mp_len(curr);
 					const bool is_space = (!is_ctld) ||
 					    ((classed->mpl_size + lsz) <=
 					    queue_avail) ||
@@ -2915,7 +2909,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 
 					ENQUEUE_MP_LIST(
 					    is_space ? classed : &drop_list,
-					    true, lsz, curr);
+					    lsz, curr);
 				} else {
 					to_curr = &curr->b_next;
 					prev = curr;
@@ -3126,7 +3120,7 @@ static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
 			}
 			from->mpl_count--;
 
-			ENQUEUE_MP_LIST(to, false, mp_len(curr), curr);
+			ENQUEUE_MP_LIST(to, mp_len(curr), curr);
 		} else {
 			to_curr = &curr->b_next;
 			prev = curr;
@@ -3257,7 +3251,7 @@ again:
 	const bool subtree_is_bw = has_subtree &&
 	    mac_srs->srs_flowtree.ftb_bw_count != 0;
 
-	mac_standardise_pkts(mcip, &pktset.ftp_avail, subtree_is_bw, in_chain);
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, in_chain);
 	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
 
 	if (tid != NULL) {
@@ -5168,9 +5162,7 @@ mac_tx_notify(mac_impl_t *mip)
 	(ringp)->s_ring_last = (tail);					\
 	(ringp)->s_ring_count += (cnt);					\
 	ASSERT((ringp)->s_ring_count > 0);				\
-	if ((ringp)->s_ring_type & ST_RING_BW_CTL) {			\
-		(ringp)->s_ring_size += sz;				\
-	}								\
+	(ringp)->s_ring_size += sz;					\
 }
 
 /*

@@ -2268,12 +2268,13 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 	const uint_t srs_done_flag = (srs_quiesce_flag == SRS_CONDEMNED) ?
 	    SRS_CONDEMNED_DONE : SRS_QUIESCE_DONE;
 
-	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
+	VERIFY(mac_perim_held((mac_handle_t)FLENT_TO_MIP(flent)));
+	VERIFY(!mac_srs_is_tx(srs));
+	VERIFY(!mac_srs_is_logical(srs));
+
+	VERIFY(srs_quiesce_flag == SRS_QUIESCE ||
 	    srs_quiesce_flag == (SRS_QUIESCE | SRS_NEW_TREE) ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
-	ASSERT(!mac_srs_is_tx(srs));
-	ASSERT(!mac_srs_is_logical(srs));
 
 	mac_srs_client_poll_quiesce(srs, srs_quiesce_flag);
 
