@@ -3486,8 +3486,10 @@ async_msint(struct asycom *asy)
 	struct asyncline *async = asy->asy_priv;
 	if (async != NULL)
 		async->async_ext++;
+#ifdef DEBUG
 	asy->asy_msint_cnt++;
 	ASY_DPRINTF(asy, ASY_DEBUG_STATE, "call #%d:", asy->asy_msint_cnt);
+#endif
 
 	asy_update_from_modem_status(asy);
 
