@@ -39,6 +39,7 @@
 #include <sys/mac_stat.h>
 #include <net/if.h>
 #include <sys/mac_flow_impl.h>
+#include <sys/mac_soft_ring.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -452,8 +453,10 @@ extern int mac_client_set_rings_prop(mac_client_impl_t *,
 extern void mac_set_prim_vlan_rings(mac_impl_t *, mac_resource_props_t *);
 
 extern void mac_client_update_classifier(mac_client_impl_t *);
-extern void mac_client_rebuild_flowtrees(mac_client_impl_t *, const uint32_t);
-extern void mac_client_create_flowtrees(mac_client_impl_t *, const bool);
+extern void mac_client_rebuild_flowtrees(mac_client_impl_t *,
+    const mac_soft_ring_set_type_t);
+extern void mac_client_create_flowtrees(mac_client_impl_t *,
+    const mac_soft_ring_set_type_t);
 extern void mac_client_destroy_flowtrees(mac_client_impl_t *);
 
 /*

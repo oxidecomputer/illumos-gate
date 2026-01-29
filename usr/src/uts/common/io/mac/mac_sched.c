@@ -3532,7 +3532,7 @@ again:
 		mac_protect_intercept_dynamic(mcip, head);
 	}
 
-	mac_standardise_pkts(mcip, &pktset.ftp_avail, true, head);
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, head);
 	uint32_t dropped_pkts = cnt - pktset.ftp_avail.mpl_count;
 
 	if (tid != NULL) {

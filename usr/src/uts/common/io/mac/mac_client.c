@@ -4124,7 +4124,7 @@ mac_resource_set(mac_client_handle_t mch, mac_resource_cb_t *rcbs,
 
 	flow_action_t *ac = &affected_flent->fe_action;
 	ac->fa_flags |= MFA_FLAGS_RESOURCE;
-	ac->fa_resource = mcbs;
+	ac->fa_resource = *rcbs;
 
 	mac_update_fastpath_flows(mcip);
 }
@@ -4161,8 +4161,16 @@ mac_client_poll_enable(mac_client_handle_t mch, boolean_t is_v6)
 
 	mcip->mci_state_flags |= MCIS_CLIENT_POLL_CAPABLE;
 
+	mac_soft_ring_set_type_t vanity_flags = 0;
+	if (mcip->mci_v4_fastpath.mdrx != NULL) {
+		vanity_flags |= SRST_DLS_BYPASS_V4;
+	}
+	if (mcip->mci_v6_fastpath.mdrx != NULL) {
+		vanity_flags |= SRST_DLS_BYPASS_V6;
+	}
+
 	mac_client_quiesce(mcip, true);
-	mac_client_rebuild_flowtrees(mcip, SRST_DLS_BYPASS);
+	mac_client_rebuild_flowtrees(mcip, vanity_flags);
 	mac_client_restart(mcip);
 }
 

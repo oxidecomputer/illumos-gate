@@ -1683,13 +1683,17 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 
 void
 mac_client_rebuild_flowtrees(mac_client_impl_t *mcip,
-    const mac_soft_ring_set_type_t add_type)
+    const mac_soft_ring_set_type_t vanity_flags)
 {
 	flow_entry_t		*flent = mcip->mci_flent;
 	mac_impl_t		*mip = mcip->mci_mip;
 	uint_t			rx_srs_cnt = flent->fe_rx_srs_cnt;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
+	const mac_soft_ring_set_type_t all_vanity =
+	    SRST_DLS_BYPASS_V4 | SRST_DLS_BYPASS_V6;
+
+	VERIFY(MAC_PERIM_HELD((mac_handle_t)mip));
+	VERIFY0(vanity_flags & ~all_vanity);
 
 	for (int i = 0; i < rx_srs_cnt; i++) {
 		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
@@ -1704,7 +1708,7 @@ mac_client_rebuild_flowtrees(mac_client_impl_t *mcip,
 			child = next;
 		}
 		srs->srs_logical_next = NULL;
-		srs->srs_type |= add_type;
+		srs->srs_type |= vanity_flags;
 		mac_flow_baked_tree_create(mcip->mci_flow_tree, srs);
 		mutex_exit(&srs->srs_lock);
 	}
@@ -1966,7 +1970,7 @@ mac_srs_fanout_init(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 
 	VERIFY3P(mac_rx_srs->srs_soft_ring_head, ==, NULL);
 	VERIFY(!mac_srs_is_logical(mac_rx_srs));
-	VERIFY3B(mac_tx_srs == NULL, ||, !mac_srs_is_logical(mac_tx_srs));
+	VERIFY(mac_tx_srs == NULL || !mac_srs_is_logical(mac_tx_srs));
 
 	ASSERT3U(mac_rx_srs->srs_fanout_state, ==, SRS_FANOUT_UNINIT);
 	mac_rx_srs->srs_fanout_state = SRS_FANOUT_INIT;
@@ -2032,13 +2036,9 @@ mac_srs_fanout_init_logical(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 	VERIFY3P(logical_srs, !=, NULL);
 	VERIFY(mac_srs_is_logical(logical_srs));
 
-	uint32_t	soft_ring_flag = 0;
 	mac_cpus_t *srs_cpu = &logical_srs->srs_cpu;
 
 	VERIFY3P(logical_srs->srs_soft_ring_head, ==, NULL);
-
-	if (logical_srs->srs_type & SRST_BW_CONTROL)
-		soft_ring_flag |= ST_RING_BW_CTL;
 
 	VERIFY3U(logical_srs->srs_fanout_state, ==, SRS_FANOUT_UNINIT);
 	logical_srs->srs_fanout_state = SRS_FANOUT_INIT;
@@ -2056,7 +2056,7 @@ mac_srs_fanout_init_logical(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 		 * Tx logicals *must* forward to the underlying MCIP, since it
 		 * gates access to the rings or underlying client.
 		 */
-		ASSERT(is_forward);
+		VERIFY(is_forward);
 		goto alldone;
 	}
 
@@ -2066,8 +2066,8 @@ mac_srs_fanout_init_logical(mac_client_impl_t *mcip, mac_resource_props_t *mrp,
 	for (size_t i = 0; i < soft_ring_cnt; i++) {
 		const processorid_t cpuid = srs_cpu->mc_rx_fanout_cpus[i];
 		/* Create the protocol softrings */
-		mac_srs_create_rx_softring(i, soft_ring_flag,
-		    logical_srs->srs_pri, mcip, logical_srs, cpuid);
+		mac_srs_create_rx_softring(i, logical_srs->srs_pri, mcip,
+		    logical_srs, cpuid);
 	}
 
 	mutex_enter(&logical_srs->srs_lock);

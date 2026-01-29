@@ -367,6 +367,15 @@ typedef int			(*mac_resource_modify_t)(void *, void *,
 typedef	void			(*mac_change_upcall_t)(void *, mac_direct_rx_t,
     void *);
 
+typedef struct mac_resource_cb_s {
+	mac_resource_add_t	mrc_add;
+	mac_resource_remove_t	mrc_remove;
+	mac_resource_quiesce_t	mrc_quiesce;
+	mac_resource_restart_t	mrc_restart;
+	mac_resource_bind_t	mrc_bind;
+	void			*mrc_arg;
+} mac_resource_cb_t;
+
 #ifdef	_KERNEL
 
 /*
@@ -524,90 +533,6 @@ typedef void		(*mac_rx_t)(void *, mac_resource_handle_t, mblk_t *,
  */
 typedef mblk_t		*(*mac_siphon_t)(void *, mblk_t *, mblk_t **, uint_t *,
 			    size_t *);
-
-/*
- * MAC resource types
- */
-typedef enum {
-	MAC_RX_FIFO = 1
-} mac_resource_type_t;
-
-typedef	int	(*mac_intr_enable_t)(mac_intr_handle_t);
-typedef	int	(*mac_intr_disable_t)(mac_intr_handle_t);
-
-typedef	struct mac_intr_s {
-	mac_intr_handle_t	mi_handle;
-	mac_intr_enable_t	mi_enable;
-	mac_intr_disable_t	mi_disable;
-	ddi_intr_handle_t	mi_ddi_handle;
-	boolean_t		mi_ddi_shared;
-} mac_intr_t;
-
-typedef struct mac_rx_fifo_s {
-	mac_resource_type_t	mrf_type;	/* MAC_RX_FIFO */
-	mac_intr_t		mrf_intr;
-	mac_receive_t		mrf_receive;
-	void			*mrf_rx_arg;
-	uint32_t		mrf_flow_priority;
-	/*
-	 * The CPU this flow is to be processed on. With intrd and future
-	 * things, we should know which CPU the flow needs to be processed
-	 * and get a squeue assigned on that CPU.
-	 */
-	uint_t			mrf_cpu_id;
-} mac_rx_fifo_t;
-
-#define	mrf_intr_handle		mrf_intr.mi_handle
-#define	mrf_intr_enable		mrf_intr.mi_enable
-#define	mrf_intr_disable	mrf_intr.mi_disable
-
-typedef union mac_resource_u {
-	mac_resource_type_t	mr_type;
-	mac_rx_fifo_t		mr_fifo;
-} mac_resource_t;
-
-typedef enum {
-	MAC_ADDRTYPE_UNICAST,
-	MAC_ADDRTYPE_MULTICAST,
-	MAC_ADDRTYPE_BROADCAST
-} mac_addrtype_t;
-
-typedef struct mac_header_info_s {
-	size_t		mhi_hdrsize;
-	size_t		mhi_pktsize;
-	const uint8_t	*mhi_daddr;
-	const uint8_t	*mhi_saddr;
-	uint32_t	mhi_origsap;
-	uint32_t	mhi_bindsap;
-	mac_addrtype_t	mhi_dsttype;
-	uint16_t	mhi_tci;
-	boolean_t	mhi_istagged;
-	boolean_t	mhi_ispvid;
-} mac_header_info_t;
-
-/*
- * Function pointer to match dls client signature. Should be same as
- * dls_rx_t to allow a soft ring to bypass DLS layer and call a DLS
- * client directly.
- */
-typedef	void		(*mac_direct_rx_t)(void *, mac_resource_handle_t,
-				mblk_t *, mac_header_info_t *);
-
-typedef mac_resource_handle_t	(*mac_resource_add_t)(void *, mac_resource_t *);
-typedef int			(*mac_resource_bind_t)(void *,
-    mac_resource_handle_t, processorid_t);
-typedef void			(*mac_resource_remove_t)(void *, void *);
-typedef void			(*mac_resource_quiesce_t)(void *, void *);
-typedef void			(*mac_resource_restart_t)(void *, void *);
-
-typedef struct mac_resource_cb_s {
-	mac_resource_add_t	mrc_add;
-	mac_resource_remove_t	mrc_remove;
-	mac_resource_quiesce_t	mrc_quiesce;
-	mac_resource_restart_t	mrc_restart;
-	mac_resource_bind_t	mrc_bind;
-	void			*mrc_arg;
-} mac_resource_cb_t;
 
 /*
  * MAC-Type plugin interfaces
