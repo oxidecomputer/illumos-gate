@@ -1195,38 +1195,42 @@ boolean_t mac_latency_optimize = B_TRUE;
 
 /*
  * Checks all bandwidth limits governing assigned to `srs`, and refreshes their
- * bandwidth allocation if so. This allows more packets to either enter the
- * system or to be sent down to the NIC.
+ * bandwidth allocation if possible. This allows more packets to either enter
+ * the system or to be sent down to the NIC.
+ *
+ * This function refreshes each bucket every system tick, and will not refund
+ * e.g. a percentage of `mac_bw_limit` if called midway through a tick.
  *
  * Returns `true` if no active bandwidth controls are maxed out.
  */
 static bool
 mac_srs_bw_try_refresh(mac_soft_ring_set_t *srs)
 {
-	bool limited = false;
-	const clock_t now = ddi_get_lbolt();
+	bool not_limited = true;
+	const hrtime_t now = gethrtime();
 
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
 		mac_bw_ctl_t *bw = srs->srs_bw[i];
 		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
-		const bool refresh = bw->mac_bw_curr_time != now;
 
-		/*
-		 * TODO(ky): need to properly account for the case that an
-		 *   allowed pkt might cause a drain on bw that lasts several
-		 *   ticks.
-		 */
+		const hrtime_t elapsed = now - bw->mac_bw_curr_time;
+		const hrtime_t elapsed_ticks = NSEC_TO_TICK(elapsed);
 
-		if (refresh) {
+		if (elapsed_ticks <= 0) {
+			not_limited &= !mac_bw_ctl_is_enforced(bw);
+			continue;
+		}
+
+		bw->mac_bw_used -= MIN(bw->mac_bw_limit * elapsed_ticks,
+		    bw->mac_bw_used);
+		bw->mac_bw_curr_time += TICK_TO_NSEC(elapsed_ticks);
+
+		if (bw->mac_bw_used <= bw->mac_bw_limit) {
 			bw->mac_bw_state &= ~BW_ENFORCED;
-			bw->mac_bw_curr_time = now;
-			bw->mac_bw_used = 0;
-		} else if (mac_bw_ctl_is_enforced(bw)) {
-			limited = true;
 		}
 	}
 
-	return (!limited);
+	return (not_limited);
 }
 
 /*
@@ -1320,7 +1324,7 @@ mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
  * of data onto the softrings (and thus the rest of the system).
  *
  * `bytes` is allowed to exceed `space` when we have a single packet and `space`
- * is nonzero.
+ * is non-negative.
  */
 static inline void
 mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
@@ -2232,7 +2236,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	 * and the bandwidth refresh logic will account for cases where we have
 	 * spent multiple ticks' budget.
 	 */
-	if (!is_limited || mac_srs->srs_size < admit_at_most ||
+	if (!is_limited || mac_srs->srs_size <= admit_at_most ||
 	    (admit_at_most >= 0 && mac_srs->srs_count == 1)) {
 		mac_srs_bw_dequeue(mac_srs, mac_srs->srs_size);
 
@@ -2252,6 +2256,9 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 
 	if (admit_at_most < 0) {
 		/* One or more of our bandwidth controls is at/over capacity. */
+		*chain_tail = NULL;
+		*chain_cnt = 0;
+		*chain_sz = 0;
 		return (NULL);
 	}
 
@@ -4466,9 +4473,10 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	mac_tx_cookie_t		cookie = 0;
 	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
 
+	mutex_enter(&mac_srs->srs_lock);
+
 	ASSERT(TX_BANDWIDTH_MODE(mac_srs));
 	ASSERT3U(mac_srs->srs_type & SRST_BW_CONTROL, !=, 0);
-	mutex_enter(&mac_srs->srs_lock);
 
 	mac_srs_bw_lock(mac_srs);
 
@@ -4505,6 +4513,13 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		return (cookie);
 	}
 
+	/*
+	 * This fact allows us to use the SRS as a scratch space and call into
+	 * `mac_srs_pick_chain` without fear that we'll pick up packets which
+	 * belong to other flows.
+	 */
+	ASSERT3P(mac_srs->srs_first, ==, NULL);
+
 	uint32_t cnt = 0;
 	size_t sz = 0;
 	mblk_t *tail = NULL;
@@ -4512,8 +4527,6 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	MAC_COUNT_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
 
 	if (!mac_srs_bw_try_refresh(mac_srs)) {
-		MAC_TX_SRS_ENQUEUE_CHAIN(mac_srs,
-		    mp_chain, tail, cnt, sz);
 		/*
 		 * Wakeup worker thread. Note that worker
 		 * thread has to be woken up so that it
@@ -4525,53 +4538,91 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		 * and hence this this code path won't be
 		 * entered until BW_ENFORCED is reset.
 		 */
+		MAC_TX_SRS_ENQUEUE_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
 		mac_srs_bw_unlock(mac_srs);
 		cv_signal(&mac_srs->srs_async);
 		mutex_exit(&mac_srs->srs_lock);
 		return (cookie);
 	}
 
-	mac_srs_bw_dequeue(mac_srs, sz);
+	/*
+	 * Don't use the `TX` variant to avoid setting extra flags.
+	 */
+	MAC_SRS_ENQUEUE_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
+
+	uint32_t admit_cnt = 0;
+	size_t admit_sz = 0;
+	mblk_t *admit_tail = NULL;
+	mblk_t *admit_head = mac_srs_pick_chain(mac_srs, &admit_tail,
+	    &admit_sz, &admit_cnt);
 	mac_srs_bw_unlock(mac_srs);
+
+	/*
+	 * mp_chain, tail, sz, cnt now contain the packets which we are rate
+	 * limiting. ideally these are NULL.
+	 */
+	mp_chain = mac_srs->srs_first;
+	tail = mac_srs->srs_last;
+	cnt = mac_srs->srs_count;
+	sz = mac_srs->srs_size;
+	mac_srs->srs_first = NULL;
+	mac_srs->srs_last = NULL;
+	mac_srs->srs_count = 0;
+	mac_srs->srs_size = 0;
 	mutex_exit(&mac_srs->srs_lock);
 
+	mblk_t *my_ret_mp = NULL;
+
 	if (srs_tx->st_mode == SRS_TX_BW_FANOUT) {
-		mac_soft_ring_t *softring;
-		uint_t indx, hash;
-
-		hash = HASH_HINT(fanout_hint);
-		indx = COMPUTE_INDEX(hash,
-		    mac_srs->srs_soft_ring_count);
-		softring = mac_srs->srs_soft_rings[indx];
-		return (mac_tx_soft_ring_process(softring, mp_chain, flag,
-		    ret_mp));
+		cookie = mac_tx_fanout_mode(mac_srs, admit_head,
+		    fanout_hint, flag, &my_ret_mp);
 	} else if (srs_tx->st_mode == SRS_TX_BW_AGGR) {
-		return (mac_tx_aggr_mode(mac_srs, mp_chain,
-		    fanout_hint, flag, ret_mp));
+		cookie = mac_tx_aggr_mode(mac_srs, admit_head,
+		    fanout_hint, flag, &my_ret_mp);
 	} else {
-		mac_tx_stats_t		stats;
-
-		mp_chain = mac_tx_send(srs_tx->st_arg1, srs_tx->st_arg2,
-		    mp_chain, &stats);
-
-		/*
-		 * The NIC did not have enough descriptors to send some portion
-		 * of `mp_chain`. Subtract those packets from the used budget
-		 * and enqueue the packets to be sent out later.
-		 */
-		if (mp_chain != NULL) {
-			mac_srs_bw_lock(mac_srs);
-			MAC_COUNT_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
-			mac_srs_bw_refund_tx(mac_srs, sz);
-			cookie = mac_tx_srs_enqueue(mac_srs, mp_chain, flag,
-			    fanout_hint, ret_mp);
-			mac_srs_bw_unlock(mac_srs);
-			return (cookie);
-		}
+		mac_tx_stats_t stats = { 0 };
+		my_ret_mp = mac_tx_send(srs_tx->st_arg1, srs_tx->st_arg2,
+		    admit_head, &stats);
 		SRS_TX_STATS_UPDATE(mac_srs, &stats);
-
-		return (0);
 	}
+
+	/*
+	 * We now may have two chains:
+	 * - my_ret_mp contains all of the packets the BW admitted, which the
+	 *   NIC lacked descriptors for. Subtract those packets from the used
+	 *   budget.
+	 * - mp_chain contains all of the packets which we would have either
+	 *   enqueued, dropped, or returned to the caller because they shot
+	 *   past the bandwidth constraint.
+	 * Recombine these, using my_ret_mp as the head if it exists to prevent
+	 * packet reordering. Afterwards, attempt to enqueue this chain
+	 * depending on flag state.
+	 */
+	mblk_t *to_enqueue = NULL;
+	mblk_t *my_ret_tail = NULL;
+	if (my_ret_mp != NULL) {
+		to_enqueue = my_ret_mp;
+		MAC_COUNT_CHAIN(mac_srs, to_enqueue, my_ret_tail, cnt, sz);
+
+		mac_srs_bw_lock(mac_srs);
+		mac_srs_bw_refund_tx(mac_srs, sz);
+		mac_srs_bw_unlock(mac_srs);
+	}
+	if (mp_chain != NULL) {
+		if (to_enqueue == NULL) {
+			to_enqueue = mp_chain;
+		} else {
+			ASSERT3P(my_ret_tail, !=, NULL);
+			my_ret_tail->b_next = mp_chain;
+		}
+	}
+
+	if (to_enqueue != NULL) {
+		cookie = mac_tx_srs_enqueue(mac_srs, to_enqueue, flag,
+		    fanout_hint, ret_mp);
+	}
+
+	return (cookie);
 }
 
 /*

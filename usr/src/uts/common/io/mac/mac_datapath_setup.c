@@ -1457,7 +1457,7 @@ mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
 
 		if (was_disabled) {
 			bw->mac_bw_state &= ~BW_ENFORCED;
-			bw->mac_bw_curr_time = ddi_get_lbolt();
+			bw->mac_bw_curr_time = gethrtime();
 			bw->mac_bw_used = 0;
 			bw->mac_bw_sz = 0;
 		}

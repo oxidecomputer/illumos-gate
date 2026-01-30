@@ -34,6 +34,7 @@ extern "C" {
 
 #include <sys/param.h>
 #include <sys/atomic.h>
+#include <sys/time.h>
 #include <sys/ksynch.h>
 #include <sys/mac_flow.h>
 #include <sys/stream.h>
@@ -241,7 +242,7 @@ typedef struct mac_bw_ctl_s {
 	size_t		mac_bw_limit;	/* Max bytes to process per tick */
 	size_t		mac_bw_used;	/* Bytes processed in current tick */
 	size_t		mac_bw_drop_threshold; /* Max queue length */
-	clock_t		mac_bw_curr_time;
+	hrtime_t	mac_bw_curr_time;
 
 	/* stats */
 	uint64_t	mac_bw_drop_bytes;
