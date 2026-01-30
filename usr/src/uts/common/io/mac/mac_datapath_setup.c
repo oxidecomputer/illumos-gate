@@ -93,7 +93,7 @@ struct mac_srs_create_params {
 };
 
 static mac_soft_ring_set_t *mac_srs_create(mac_client_impl_t *, flow_entry_t *,
-    uint32_t, const struct mac_srs_create_params *);
+    mac_soft_ring_set_type_t, const struct mac_srs_create_params *);
 
 extern boolean_t mac_latency_optimize;
 

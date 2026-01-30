@@ -303,7 +303,7 @@ typedef enum {
 	 *
 	 * Immutable.
 	 */
-	SRST_LOGICAL	 	= 0x00000008,
+	SRST_LOGICAL		= 0x00000008,
 
 	/*
 	 * This softring set behaves as a queue for a bandwidth limited subflow,
@@ -380,7 +380,7 @@ typedef enum {
 	 *
 	 * Mutable.
 	 */
-	SRST_CLIENT_POLL	 	= 0x00010000,
+	SRST_CLIENT_POLL		= 0x00010000,
 } mac_soft_ring_set_type_t;
 
 /*

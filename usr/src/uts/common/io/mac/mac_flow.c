@@ -694,10 +694,11 @@ mac_flow_match_destroy(mac_flow_match_t *ma)
 	case MFM_ALL:
 	case MFM_ANY: {
 		mac_flow_match_list_t *list = ma->arg.mfm_list;
-		const size_t to_free =
-		    mac_flow_match_list_size_bytes(list->mfml_size);
 		if (list == NULL)
 			return;
+
+		const size_t to_free =
+		    mac_flow_match_list_size_bytes(list->mfml_size);
 
 		for (size_t i = 0; i < list->mfml_size; i++) {
 			mac_flow_match_destroy(list->mfml_match + i);
