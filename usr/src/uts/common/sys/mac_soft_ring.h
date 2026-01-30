@@ -292,7 +292,7 @@ typedef enum {
 	 *
 	 * Immutable.
 	 */
-	SRST_NO_SOFT_RINGS 	= 0x00000004,
+	SRST_NO_SOFT_RINGS	= 0x00000004,
 	/*
 	 * This softring set is logical, and exists as part of the flowtree of a
 	 * complete SRS. It is not directly visible via the flow entry's Rx/Tx
