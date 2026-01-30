@@ -4185,7 +4185,7 @@ mac_client_poll_disable(mac_client_handle_t mch, boolean_t is_v6)
 	flow_entry_t		*flent = mcip->mci_flent;
 
 	VERIFY3P(flent, !=, NULL);
-	VERIFY(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
+	VERIFY(mac_perim_held((mac_handle_t)mcip->mci_mip));
 
 	/*
 	 * Flow tree teardown must happen with the OLD settings of

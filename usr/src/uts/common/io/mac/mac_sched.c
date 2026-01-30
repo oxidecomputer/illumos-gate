@@ -1777,12 +1777,10 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 
 	/*
 	 * Softrings can be created/destroyed, but only under Rx quiescence.
-	 * Being here *enforces* that the SRS state does not include
-	 * `SRS_QUIESCE_DONE`, and thus any thread holding the MAC perimeter
-	 * cannot fundamentally alter the SRS. This is because `SRS_PROC` is
-	 * set, and so the worker thread will not proceed with performing the
-	 * quiesce. Because of this it is fine to access the soft
-	 * ring count and rings themselves without `srs_lock`.
+	 * Being here *requires* that `SRS_PROC` is set, which prohibits the
+	 * worker thread from upgrading `SRS_QUIESCE` to `SRS_QUIESCE_DONE`, and
+	 * thus the quiesce cannot yet proceed. Because of this it is fine to
+	 * access the soft ring count and rings themselves without `srs_lock`.
 	 */
 	const uint32_t fanout_cnt = mac_srs->srs_soft_ring_count;
 

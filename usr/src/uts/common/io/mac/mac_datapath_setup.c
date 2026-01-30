@@ -1434,12 +1434,18 @@ mac_update_srs_priority(mac_soft_ring_set_t *mac_srs, pri_t prival)
 	thread_unlock(ringp->s_ring_worker);
 }
 
+/*
+ * Update a bandwidth control to reflect its new state, clearing any existing
+ * usage if moving from disabled to active.
+ */
 static void
 mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
     const mac_resource_props_t *mrp)
 {
 	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 	if (is_enabled) {
+		const bool was_disabled = (bw->mac_bw_state & BW_ENABLED) == 0;
+
 		/* Set/Modify bandwidth limit */
 		bw->mac_bw_state |= BW_ENABLED;
 		bw->mac_bw_limit = FLOW_BYTES_PER_TICK(mrp->mrp_maxbw);
@@ -1448,6 +1454,13 @@ mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
 		 * dropping packets. The unit is bytes/tick.
 		 */
 		bw->mac_bw_drop_threshold = bw->mac_bw_limit << 1;
+
+		if (was_disabled) {
+			bw->mac_bw_state &= ~BW_ENFORCED;
+			bw->mac_bw_curr_time = ddi_get_lbolt();
+			bw->mac_bw_used = 0;
+			bw->mac_bw_sz = 0;
+		}
 	} else {
 		bw->mac_bw_state &= ~BW_ENABLED;
 	}
@@ -1462,7 +1475,7 @@ mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
  * quiescence or srs_lock.
  */
 static void
-mac_rx_srs_update_drain_proc(mac_soft_ring_set_t *srs)
+mac_srs_update_drain_proc(mac_soft_ring_set_t *srs)
 {
 	const bool is_tx = mac_srs_is_tx(srs);
 	const bool is_forward = (srs->srs_type & SRST_FORWARD) != 0;
@@ -1488,30 +1501,11 @@ mac_rx_srs_update_drain_proc(mac_soft_ring_set_t *srs)
 }
 
 /*
- * Change the receive bandwidth limit.
+ * Change a complete Tx SRS's state to reflect whether it is bandwidth
+ * controlled.
  */
 static void
-mac_rx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
-    const mac_resource_props_t *mrp)
-{
-	mac_soft_ring_t		*softring;
-
-	mutex_enter(&srs->srs_lock);
-
-	if (mrp->mrp_maxbw == MRP_MAXBW_RESETVAL) {
-		srs->srs_type &= ~SRST_BW_CONTROL;
-	} else {
-		srs->srs_type |= ~SRST_BW_CONTROL;
-	}
-
-	mac_rx_srs_update_drain_proc(srs);
-
-	mutex_exit(&srs->srs_lock);
-}
-
-/* Change the transmit bandwidth limit */
-static void
-mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
+mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
     const mac_resource_props_t *mrp)
 {
 	flow_entry_t		*flent = srs->srs_flent;
@@ -1519,6 +1513,8 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
 	uint32_t		ring_info = 0;
 	mac_srs_tx_t		*srs_tx = &srs->srs_data.tx;
 	mac_client_impl_t	*mcip = srs->srs_mcip;
+
+	VERIFY(mac_srs_is_tx(srs));
 
 	/*
 	 * We need to quiesce/restart the client here because mac_tx() and
@@ -1550,9 +1546,9 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
 		} else if (tx_mode == SRS_TX_BW_AGGR) {
 			srs_tx->st_mode = SRS_TX_AGGR;
 		}
+
 		srs->srs_type &= ~SRST_BW_CONTROL;
 	} else {
-		srs->srs_type |= SRST_BW_CONTROL;
 		if (tx_mode != SRS_TX_BW && tx_mode != SRS_TX_BW_FANOUT &&
 		    tx_mode != SRS_TX_BW_AGGR) {
 			if (tx_mode == SRS_TX_SERIALIZE ||
@@ -1566,6 +1562,8 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
 				ASSERT(0);
 			}
 		}
+
+		srs->srs_type |= SRST_BW_CONTROL;
 	}
 
 	srs_tx->st_func = mac_tx_get_func(srs_tx->st_mode);
@@ -1573,6 +1571,28 @@ mac_tx_srs_update_bwlimit(mac_soft_ring_set_t *srs,
 	mutex_exit(&srs->srs_lock);
 
 	mac_tx_client_restart((mac_client_handle_t)mcip);
+}
+
+/*
+ * Change a {logical, complete Rx} SRS's state to reflect whether it is
+ * bandwidth controlled.
+ */
+static void
+mac_srs_update_bwlimit_state(mac_soft_ring_set_t *srs, const bool is_disabled)
+{
+	VERIFY(mac_srs_is_logical(srs) || !mac_srs_is_tx(srs));
+
+	mutex_enter(&srs->srs_lock);
+
+	if (is_disabled) {
+		srs->srs_type &= ~SRST_BW_CONTROL;
+	} else {
+		srs->srs_type |= SRST_BW_CONTROL;
+	}
+
+	mac_srs_update_drain_proc(srs);
+
+	mutex_exit(&srs->srs_lock);
 }
 
 static bool
@@ -1606,7 +1626,6 @@ mac_srs_update_bw_for_logicals(mac_soft_ring_set_t *mac_srs,
 		}
 
 		if (mac_srs_governed_by_bw(curr, bw)) {
-			mutex_enter(&curr->srs_lock);
 			mac_srs_bw_lock(curr);
 			size_t active = 0;
 			for (size_t i = 0; i < curr->srs_bw_len; i++) {
@@ -1615,12 +1634,7 @@ mac_srs_update_bw_for_logicals(mac_soft_ring_set_t *mac_srs,
 				}
 			}
 			mac_srs_bw_unlock(curr);
-			if (active == 0) {
-				curr->srs_type &= ~SRST_BW_CONTROL;
-			} else {
-				curr->srs_type |= SRST_BW_CONTROL;
-			}
-			mutex_exit(&curr->srs_lock);
+			mac_srs_update_bwlimit_state(curr, active == 0);
 		}
 
 		curr = curr->srs_logical_next;
@@ -1643,11 +1657,19 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	mutex_exit(&flent->fe_rx_bw.mac_bw_lock);
 
 	for (int i = 0; i < flent->fe_rx_srs_cnt; i++) {
-		mac_rx_srs_update_bwlimit(flent->fe_rx_srs[i], mrp);
+		mac_srs_update_bwlimit_state(flent->fe_rx_srs[i], disable);
 	}
 
+	/*
+	 * If there are no associated SRSes with this flent, then make
+	 * sure that the underlying mac_bw_ctl_t is still updated.
+	 */
+	mutex_enter(&flent->fe_tx_bw.mac_bw_lock);
+	mac_bw_ctl_set_state(&flent->fe_tx_bw, !disable, mrp);
+	mutex_exit(&flent->fe_tx_bw.mac_bw_lock);
+
 	if (flent->fe_tx_srs != NULL) {
-		mac_tx_srs_update_bwlimit(flent->fe_tx_srs, mrp);
+		mac_tx_srs_update_bwlimit_state(flent->fe_tx_srs, mrp);
 	} else {
 		/*
 		 * If there are no associated SRSes with this flent, then make
@@ -1692,7 +1714,7 @@ mac_client_rebuild_flowtrees(mac_client_impl_t *mcip,
 	const mac_soft_ring_set_type_t all_vanity =
 	    SRST_DLS_BYPASS_V4 | SRST_DLS_BYPASS_V6;
 
-	VERIFY(MAC_PERIM_HELD((mac_handle_t)mip));
+	VERIFY(mac_perim_held((mac_handle_t)mip));
 	VERIFY0(vanity_flags & ~all_vanity);
 
 	for (int i = 0; i < rx_srs_cnt; i++) {
@@ -1721,7 +1743,7 @@ mac_client_destroy_flowtrees(mac_client_impl_t *mcip)
 	mac_impl_t		*mip = mcip->mci_mip;
 	uint_t			rx_srs_cnt = flent->fe_rx_srs_cnt;
 
-	VERIFY(MAC_PERIM_HELD((mac_handle_t)mip));
+	VERIFY(mac_perim_held((mac_handle_t)mip));
 
 	for (int i = 0; i < rx_srs_cnt; i++) {
 		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
@@ -1751,7 +1773,7 @@ mac_client_create_flowtrees(mac_client_impl_t *mcip,
 	const mac_soft_ring_set_type_t all_vanity =
 	    SRST_DLS_BYPASS_V4 | SRST_DLS_BYPASS_V6;
 
-	VERIFY(MAC_PERIM_HELD((mac_handle_t)mip));
+	VERIFY(mac_perim_held((mac_handle_t)mip));
 	VERIFY0(vanity_flags & ~all_vanity);
 
 	for (int i = 0; i < rx_srs_cnt; i++) {
@@ -2393,7 +2415,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 		mac_srs->srs_type |= SRST_BW_CONTROL;
 	}
 
-	mac_rx_srs_update_drain_proc(mac_srs);
+	mac_srs_update_drain_proc(mac_srs);
 
 	/*
 	 * We use the following policy to control Receive
@@ -4598,7 +4620,7 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 		into->ftb_chains = NULL;
 		into->ftb_subtree = NULL;
 		into->ftb_bw_refund = NULL;
-		mac_rx_srs_update_drain_proc(based_on);
+		mac_srs_update_drain_proc(based_on);
 		return (0);
 	}
 
@@ -4786,7 +4808,7 @@ mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 	kmem_free(use_mrp, tree_track_len);
 	kmem_free(built_srs, tree_track_len);
 
-	mac_rx_srs_update_drain_proc(based_on);
+	mac_srs_update_drain_proc(based_on);
 
 	return (err);
 
