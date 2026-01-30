@@ -858,8 +858,10 @@ extern void mac_rx_attach_flow_srs(mac_impl_t *, flow_entry_t *,
 
 extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *, uint_t);
+extern void mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_drain(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_drain_subtree(mac_soft_ring_set_t *, uint_t);
+extern void mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *, uint_t);
 extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);

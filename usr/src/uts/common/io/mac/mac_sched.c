@@ -3149,7 +3149,7 @@ static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
 __attribute__((always_inline))
 static inline void
 mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs, uint_t proc_type,
-    const bool has_subtree)
+    const bool has_subtree, const bool subtree_has_bw)
 {
 	mblk_t			*in_chain = NULL;
 	timeout_id_t		tid;
@@ -3211,7 +3211,6 @@ again:
 	 * be served by the lowest level flow table in mac_rx_flow ->
 	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	ASSERT(!mac_srs_is_logical(mac_srs));
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 
@@ -3246,9 +3245,6 @@ again:
 		mac_protect_intercept_dynamic(mcip, in_chain);
 	}
 
-	const bool subtree_is_bw = has_subtree &&
-	    mac_srs->srs_flowtree.ftb_bw_count != 0;
-
 	mac_standardise_pkts(mcip, &pktset.ftp_avail, in_chain);
 	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
 
@@ -3271,7 +3267,7 @@ again:
 	 */
 	if (has_subtree) {
 		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
-		if (!subtree_is_bw) {
+		if (!subtree_has_bw) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
@@ -3392,13 +3388,19 @@ out:
 void
 mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 {
-	mac_rx_srs_drain_inner(mac_srs, proc_type, false);
+	mac_rx_srs_drain_inner(mac_srs, proc_type, false, false);
 }
 
 void
 mac_rx_srs_drain_subtree(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 {
-	mac_rx_srs_drain_inner(mac_srs, proc_type, true);
+	mac_rx_srs_drain_inner(mac_srs, proc_type, true, false);
+}
+
+void
+mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+{
+	mac_rx_srs_drain_inner(mac_srs, proc_type, true, true);
 }
 
 /*
@@ -3419,7 +3421,7 @@ mac_rx_srs_drain_subtree(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 __attribute__((always_inline))
 static inline void
 mac_rx_srs_drain_bw_inner(mac_soft_ring_set_t *mac_srs, uint_t proc_type,
-    const bool has_subtree)
+    const bool has_subtree, const bool subtree_has_bw)
 {
 	mblk_t			*head;
 	mblk_t			*tail;
@@ -3495,7 +3497,6 @@ again:
 	 * be served by the lowest level flow table in mac_rx_flow ->
 	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	ASSERT(!mac_srs_is_logical(mac_srs));
 	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
 	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
 
@@ -3553,7 +3554,7 @@ again:
 	size_t policed_bytes = 0;
 	if (has_subtree) {
 		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
-		if (mac_srs->srs_flowtree.ftb_bw_count == 0) {
+		if (!subtree_has_bw) {
 			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
 			    &pktset);
 		} else {
@@ -3668,13 +3669,19 @@ leave_poll:
 void
 mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 {
-	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, false);
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, false, false);
 }
 
 void
 mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
 {
-	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true);
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true, false);
+}
+
+void
+mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+{
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true, true);
 }
 
 /*
