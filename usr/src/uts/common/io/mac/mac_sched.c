@@ -1225,7 +1225,7 @@ mac_srs_bw_try_refresh(mac_soft_ring_set_t *srs)
 		    bw->mac_bw_used);
 		bw->mac_bw_curr_time += TICK_TO_NSEC(elapsed_ticks);
 
-		if (bw->mac_bw_used <= bw->mac_bw_limit) {
+		if (bw->mac_bw_used < bw->mac_bw_limit) {
 			bw->mac_bw_state &= ~BW_ENFORCED;
 		}
 	}
@@ -1250,7 +1250,7 @@ mac_bw_ctl_enqueue_bound(const mac_bw_ctl_t *bw)
  * Returns whether any BW limits were active, and thus `space` contains a useful
  * count.
  */
-static inline bool
+static bool
 mac_srs_bw_enqueue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
 {
 	bool any_enabled = false;
@@ -1276,8 +1276,7 @@ mac_srs_bw_enqueue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
  * `bytes` is allowed to exceed `space` when we have a single packet and `space`
  * is positive.
  */
-__attribute__((always_inline))
-static inline void
+static void
 mac_srs_bw_enqueue(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
@@ -1296,8 +1295,8 @@ mac_srs_bw_enqueue(const mac_soft_ring_set_t *srs, const size_t bytes)
  * Returns whether any BW limits were active, and thus `space` contains a useful
  * count.
  */
-static inline bool
-mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
+static bool
+mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, size_t *space)
 {
 	bool any_enabled = false;
 
@@ -1307,13 +1306,15 @@ mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
 		if (!mac_bw_ctl_is_enabled(bw)) {
 			continue;
 		}
+		any_enabled = true;
 		if (mac_bw_ctl_is_enforced(bw)) {
-			*space = -1;
+			*space = 0;
 			break;
 		}
+
 		const ssize_t space_here = bw->mac_bw_limit - bw->mac_bw_used;
-		*space = (any_enabled) ? MIN(*space, space_here) : space_here;
-		any_enabled = true;
+		const size_t clamped = (size_t)MAX(space_here, 0);
+		*space = (i != 0) ? MIN(*space, clamped) : clamped;
 	}
 
 	return (any_enabled);
@@ -1326,7 +1327,7 @@ mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
  * `bytes` is allowed to exceed `space` when we have a single packet and `space`
  * is non-negative.
  */
-static inline void
+static void
 mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
@@ -1340,7 +1341,7 @@ mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
 			bw->mac_bw_used += bytes;
 			bw->mac_bw_sz -= MIN(bw->mac_bw_sz, bytes);
 
-			if (bw->mac_bw_used + bytes > bw->mac_bw_limit) {
+			if (bw->mac_bw_used >= bw->mac_bw_limit) {
 				bw->mac_bw_state |= BW_ENFORCED;
 			}
 		}
@@ -1355,7 +1356,7 @@ mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
  * Packets dropped by policy (e.g., explicit drop) should not be refunded in
  * this way.
  */
-static inline void
+static void
 mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
 	for (size_t i = 0; i < srs->srs_bw_len; i++) {
@@ -2226,7 +2227,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
     size_t *chain_sz, uint32_t *chain_cnt)
 {
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-	ssize_t admit_at_most = 0;
+	size_t admit_at_most = 0;
 	const bool is_limited = mac_srs_bw_dequeue_bound(mac_srs,
 	    &admit_at_most);
 
@@ -2237,7 +2238,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	 * spent multiple ticks' budget.
 	 */
 	if (!is_limited || mac_srs->srs_size <= admit_at_most ||
-	    (admit_at_most >= 0 && mac_srs->srs_count == 1)) {
+	    (admit_at_most > 0 && mac_srs->srs_count == 1)) {
 		mac_srs_bw_dequeue(mac_srs, mac_srs->srs_size);
 
 		mblk_t *head = mac_srs->srs_first;
@@ -2254,13 +2255,15 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 
 	ASSERT(is_limited);
 
-	if (admit_at_most < 0) {
+	if (admit_at_most == 0) {
 		/* One or more of our bandwidth controls is at/over capacity. */
 		*chain_tail = NULL;
 		*chain_cnt = 0;
 		*chain_sz = 0;
 		return (NULL);
 	}
+
+	ASSERT3U(admit_at_most, >=, 1);
 
 	/*
 	 * Can't clear the entire backlog. We need to find how many packets to
@@ -2273,8 +2276,12 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	uint32_t cnt = 0;
 	mblk_t *mp = NULL;
 
-	while ((mp = mac_srs->srs_first) != NULL && tsz <= admit_at_most) {
+	while ((mp = mac_srs->srs_first) != NULL) {
 		const size_t sz = mp_len(mp);
+
+		if (tsz + sz > admit_at_most && cnt != 0)
+			break;
+
 		tsz += sz;
 		cnt++;
 		mac_srs->srs_count--;
