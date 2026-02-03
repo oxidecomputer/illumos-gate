@@ -67,12 +67,158 @@ typedef struct mac_tx_notify_cb_s {
 	void			*mtnf_arg;	/* Callback function argument */
 } mac_tx_notify_cb_t;
 
+/*
+ * Flagset of immutable and slowly-varying aspects of a softring, stored in
+ * `s_ring_type` as a 16-bit value.
+ *
+ * These identify static characteristics of how a ring should process packets.
+ */
+typedef enum {
+	/*
+	 * If set, this is a transmit softring. Packets will be directed via
+	 * `mac_tx_send` to an underlying client and ring.
+	 *
+	 * If absent, this is a receive softring. Packets will be delivered to a
+	 * client via `s_ring_rx_func`.
+	 *
+	 * Immutable.
+	 */
+	ST_RING_TX		= 0x0001,
+
+	/*
+	 * Packets may only be drained from this softring by its own worker
+	 * thread, and cannot be handled inline by `mac_tx`, any SRS threads,
+	 * or the interrupt context.
+	 *
+	 * Immutable.
+	 */
+	ST_RING_WORKER_ONLY	= 0x0002,
+
+	/*
+	 * This softring is known to an upstack client, which may invoke any
+	 * `mac_rx_fifo_t` operations (direct polling, disable/re-enable inline
+	 * delivery).
+	 *
+	 * `s_ring_rx_arg2` must be non-null.
+	 *
+	 * Mutable.
+	 */
+	ST_RING_POLLABLE	= 0x0010,
+} mac_soft_ring_type_t;
+
+/*
+ * Flagset reflecting the current state of datapath processing for a given
+ * softring, stored in `s_ring_state` as a 16-bit value.
+ */
+typedef enum {
+	/*
+	 * A thread is currently processing packets from this softring, and has
+	 * relinquished its hold on `s_ring_lock` to allow new packets to be
+	 * enqueued.
+	 *
+	 * SRS processing will always enqueue packets if set, with the
+	 * expectation that whoever was draining the thread will continue to
+	 * do so.
+	 */
+	S_RING_PROC		= 0x0001,
+	/*
+	 * The worker thread of this CPU has been bound to a specific CPU.
+	 */
+	S_RING_BOUND		= 0x0002,
+	/*
+	 * This softring is a TX softring and has run out of descriptors on the
+	 * underlying ring/NIC.
+	 *
+	 * Any outbound packets will be queued until the underlying provider
+	 * marks more descriptors as available via `mac_tx_ring_update`.
+	 */
+	S_RING_BLOCK		= 0x0004,
+	/*
+	 * This softring is a TX softring and is flow controlled: more than
+	 * `s_ring_tx_hiwat` packets are currently enqueued.
+	 *
+	 * Any outbound packets will be enqueued, and drained by the softring
+	 * worker. Senders will receive a cookie -- they will be informed when
+	 * any cookie is no longer flow controlled if they have registered a
+	 * callback via `mac_client_tx_notify`.
+	 */
+	S_RING_TX_HIWAT		= 0x0008,
+
+	/*
+	 * This softring is a TX softring and has returned a cookie to at least
+	 * one sender who has set `NO_ENQUEUE` regardless of hiwat state.
+	 *
+	 * When the softring is drained, notify the client via its
+	 * `mac_client_tx_notify` callback that it may send.
+	 */
+	S_RING_WAKEUP_CLIENT	= 0x0010,
+	/*
+	 * This RX softring is client pollable (`ST_RING_POLLABLE`) and this
+	 * client has called `mac_soft_ring_intr_enable` to remove MAC's ability
+	 * to deliver frames via `s_ring_rx_func`.
+	 *
+	 * Packets may only be delivered by client polling. The client may undo
+	 * this using `mac_soft_ring_intr_disable`.
+	 */
+	S_RING_BLANK		= 0x0020,
+	/*
+	 * Inform a thread which holds `S_RING_PROC` that it should notify a
+	 * client/MAC when it is done processing using `s_ring_client_cv`.
+	 *
+	 * This may be used to ensure that replace `s_ring_rx_func` and its
+	 * arguments, by waiting until `S_RING_PROC` is unset and these data
+	 * are not in use.
+	 */
+	S_RING_CLIENT_WAIT	= 0x0040,
+
+	/*
+	 * This softring is marked for deletion.
+	 *
+	 * No further packets can be admitted into the softring, and enqueued
+	 * packets must not be processed.
+	 */
+	S_RING_CONDEMNED	= 0x0100,
+	/*
+	 * The softring worker has completed any teardown in response to
+	 * `S_RING_CONDEMNED`.
+	 *
+	 * Requires `S_RING_QUIESCE_DONE`.
+	 */
+	S_RING_CONDEMNED_DONE	= 0x0200,
+	/*
+	 * This softring has been signalled to stop processing any packets.
+	 *
+	 * The presence of this flag implies that the parent softring set has
+	 * *also* been asked to quiesce. It will not enqueue any packets here.
+	 */
+	S_RING_QUIESCE		= 0x0400,
+	/*
+	 * The softring has ceased processing any enqueued/arriving packets, and
+	 * is awaiting a signal alongside either `S_RING_CONDEMNED` or
+	 * `S_RING_RESTART` to wake up.
+	 */
+	S_RING_QUIESCE_DONE	= 0x0800,
+
+	/*
+	 * The softring has been signalled to resume processing traffic.
+	 *
+	 * The worker thread should unset this and any `QUIESCE` flags and
+	 * resume processing packets.
+	 */
+	S_RING_RESTART		= 0x1000,
+	/*
+	 * This TX softring has packets enqueued, which the worker thread is
+	 * responsible for draining.
+	 */
+	S_RING_ENQUEUED		= 0x2000,
+} mac_soft_ring_state_t;
+
 struct mac_soft_ring_s {
 	/* Keep the most used members 64bytes cache aligned */
 	kmutex_t	s_ring_lock;	/* lock before using any member */
 	uint16_t	s_ring_type;	/* processing model of the sq */
 	uint16_t	s_ring_state;	/* state flags and message count */
-	int		s_ring_count;	/* # of mblocks in mac_soft_ring */
+	uint32_t	s_ring_count;	/* # of mblocks in mac_soft_ring */
 	size_t		s_ring_size;	/* Size of data queued */
 	mblk_t		*s_ring_first;	/* first mblk chain or NULL */
 	mblk_t		*s_ring_last;	/* last mblk chain or NULL */
@@ -81,15 +227,17 @@ struct mac_soft_ring_s {
 	void			*s_ring_rx_arg1;
 	mac_resource_handle_t	s_ring_rx_arg2;
 
+	/* 64B */
+
 	/*
 	 * Threshold after which packets get dropped.
 	 * Is always greater than s_ring_tx_hiwat
 	 */
-	int		s_ring_tx_max_q_cnt;
+	uint32_t	s_ring_tx_max_q_cnt;
 	/* # of mblocks after which to apply flow control */
-	int		s_ring_tx_hiwat;
+	uint32_t	s_ring_tx_hiwat;
 	/* # of mblocks after which to relieve flow control */
-	int		s_ring_tx_lowat;
+	uint32_t	s_ring_tx_lowat;
 	boolean_t	s_ring_tx_woken_up;
 	uint32_t	s_ring_hiwat_cnt;	/* times blocked for Tx descs */
 
@@ -266,7 +414,8 @@ typedef struct mac_srs_rx_s {
 } mac_srs_rx_t;
 
 /*
- * Immutable and slowly-varying aspects of a softring set, stored in srs_type.
+ * Flagset of immutable and slowly-varying aspects of a softring set, stored in
+ * `srs_type`.
  *
  * These identify mainly static characteristics (Tx/Rx, whether the SRS
  * corresponds to the entrypoint on a MAC client) as well as state on an
@@ -384,6 +533,14 @@ typedef enum {
 } mac_soft_ring_set_type_t;
 
 /*
+ * Flagset reflecting the current state of datapath processing for a given
+ * softring set, stored in `srs_state`.
+ */
+typedef enum {
+	SRS_NOOP,
+} mac_soft_ring_set_state_t;
+
+/*
  * mac_soft_ring_set_s:
  * This is used both for Tx and Rx side. The srs_type identifies Rx or
  * Tx type.
@@ -430,7 +587,6 @@ typedef enum {
  * a hint passed in mac_tx_srs_process(). Each soft ring, in turn, will
  * be associated with a distinct h/w Tx ring.
  */
-
 struct mac_soft_ring_set_s {
 	/*
 	 * Common elements, common to both Rx and Tx SRS type.
@@ -438,7 +594,7 @@ struct mac_soft_ring_set_s {
 	 */
 	kmutex_t	srs_lock;
 	mac_soft_ring_set_type_t	srs_type;
-	uint32_t	srs_state;
+	mac_soft_ring_set_state_t	srs_state;
 	uint32_t	srs_count;
 	mblk_t		*srs_first;	/* first mblk chain or NULL */
 	mblk_t		*srs_last;	/* last mblk chain or NULL */
@@ -553,33 +709,6 @@ struct mac_soft_ring_set_s {
 
 	kstat_t		*srs_ksp;
 };
-
-/*
- * type flags - combination allowed to process and drain the queue
- */
-#define	ST_RING_WORKER_ONLY	0x0001	/* Worker thread only */
-#define	ST_RING_ANY		0x0002	/* Any thread can process the queue */
-#define	ST_RING_TX		0x0040
-
-/*
- * State flags.
- */
-#define	S_RING_PROC		0x0001	/* being processed */
-#define	S_RING_BOUND		0x0002	/* Worker thread is bound to a cpu */
-#define	S_RING_BLOCK		0x0004	/* No Tx descs */
-#define	S_RING_TX_HIWAT		0x0008	/* Tx high watermark reached */
-
-#define	S_RING_WAKEUP_CLIENT	0x0010	/* flow ctrl, client wakeup needed */
-#define	S_RING_BLANK		0x0020	/* Has been put into polling mode */
-#define	S_RING_CLIENT_WAIT	0x0040	/* Client waiting for control op */
-
-#define	S_RING_CONDEMNED	0x0100	/* Being torn down */
-#define	S_RING_CONDEMNED_DONE	0x0200	/* Being torn down */
-#define	S_RING_QUIESCE		0x0400	/* No traffic flow, transient flag */
-#define	S_RING_QUIESCE_DONE	0x0800	/* No traffic flow, transient flag */
-
-#define	S_RING_RESTART		0x1000	/* Go back to normal traffic flow */
-#define	S_RING_ENQUEUED		0x2000	/* Pkts enqueued in Tx soft ring */
 
 inline bool
 mac_srs_is_tx(const mac_soft_ring_set_t *srs)
@@ -840,7 +969,7 @@ extern void mac_update_srs_priority(mac_soft_ring_set_t *, pri_t);
 
 extern int mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);
-extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, uint32_t,
+extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, mac_soft_ring_type_t,
     pri_t, mac_client_impl_t *, mac_soft_ring_set_t *,
     processorid_t, mac_direct_rx_t, void *, mac_resource_handle_t);
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);

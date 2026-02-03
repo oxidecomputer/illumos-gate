@@ -112,16 +112,16 @@ uint32_t mac_soft_ring_worker_wait = 0;
  * turned off with absolute care and for the rare workload (very
  * low latency sensitive traffic).
  */
-int mac_poll_enable = B_TRUE;
+boolean_t mac_poll_enable = B_TRUE;
 
 /*
  * Need to set mac_soft_ring_max_q_cnt based on bandwidth and perhaps latency.
  * Large values could end up in consuming lot of system memory and cause
  * system hang.
  */
-int mac_soft_ring_max_q_cnt = 1024;
-int mac_soft_ring_min_q_cnt = 256;
-int mac_soft_ring_poll_thres = 16;
+uint32_t mac_soft_ring_max_q_cnt = 1024;
+uint32_t mac_soft_ring_min_q_cnt = 256;
+uint32_t mac_soft_ring_poll_thres = 16;
 
 boolean_t mac_tx_serialize = B_FALSE;
 
@@ -351,6 +351,8 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 	ASSERT(!mac_srs_is_tx(mac_srs));
 	ASSERT(!mac_srs_is_logical(mac_srs));
 
+	/* TODO(ky): locking of both SR & SRS? */
+
 	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
 		const flow_action_t *act = mac_srs_rx_action(curr);
@@ -378,6 +380,7 @@ mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
 				rm_notify_fn(act->fa_resource.mrc_arg,
 				    softring->s_ring_rx_arg2);
 				softring->s_ring_rx_arg2 = NULL;
+				softring->s_ring_type &= ~ST_RING_POLLABLE;
 				break;
 			case SRS_QUIESCE:
 				quiesce_notify_fn(act->fa_resource.mrc_arg,
@@ -1885,6 +1888,10 @@ mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
 
 		softring->s_ring_rx_arg2 = act->fa_resource.mrc_add(
 		    act->fa_resource.mrc_arg, (mac_resource_t *)&mrf);
+
+		if (softring->s_ring_rx_arg2 != NULL) {
+			softring->s_ring_type |= ST_RING_POLLABLE;
+		}
 	}
 }
 
@@ -1939,6 +1946,8 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 			    softring->s_ring_rx_arg2 != NULL) {
 				rm_notify_fn(notify_arg,
 				    softring->s_ring_rx_arg2);
+				softring->s_ring_rx_arg2 = NULL;
+				softring->s_ring_type &= ~ST_RING_POLLABLE;
 			}
 			mac_soft_ring_remove(mac_rx_srs, softring);
 		}
@@ -4085,7 +4094,7 @@ mac_tx_srs_add_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 	mac_client_impl_t *mcip = mac_srs->srs_mcip;
 	mac_soft_ring_t *soft_ring;
 	int count = mac_srs->srs_soft_ring_count;
-	uint32_t soft_ring_type = ST_RING_TX;
+	mac_soft_ring_type_t soft_ring_type = ST_RING_TX;
 	uint_t ring_info;
 
 	ASSERT(mac_srs_is_tx(mac_srs));
@@ -4189,7 +4198,6 @@ mac_tx_srs_setup(mac_client_impl_t *mcip, flow_entry_t *flent)
 	mac_soft_ring_set_t	*tx_srs = flent->fe_tx_srs;
 	int			i;
 	int			tx_ring_count = 0;
-	uint32_t		soft_ring_type;
 	mac_group_t		*grp = NULL;
 	mac_ring_t		*ring;
 	mac_srs_tx_t		*tx = &tx_srs->srs_data.tx;
@@ -4236,7 +4244,6 @@ no_group:
 				}
 				break;
 			}
-			soft_ring_type = ST_RING_TX;
 			if (tx_srs->srs_type & SRST_BW_CONTROL) {
 				tx->st_mode = is_aggr ?
 				    SRS_TX_BW_AGGR : SRS_TX_BW_FANOUT;
@@ -4248,8 +4255,10 @@ no_group:
 				ASSERT(ring != NULL);
 				switch (ring->mr_state) {
 				case MR_INUSE:
-				case MR_FREE:
-					ASSERT(ring->mr_srs == NULL);
+				case MR_FREE: {
+					ASSERT3P(ring->mr_srs, ==, NULL);
+					mac_soft_ring_type_t soft_ring_type =
+					    ST_RING_TX;
 
 					if (ring->mr_state != MR_INUSE)
 						(void) mac_start_ring(ring);
@@ -4265,6 +4274,7 @@ no_group:
 					    mcip, tx_srs, -1, NULL, mcip,
 					    (mac_resource_handle_t)ring);
 					break;
+				}
 				default:
 					cmn_err(CE_PANIC,
 					    "srs_setup: mcip = %p "

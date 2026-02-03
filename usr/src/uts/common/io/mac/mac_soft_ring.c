@@ -149,7 +149,7 @@ mac_soft_ring_worker_wakeup(mac_soft_ring_t *ringp)
  * thread to the assigned CPU.
  */
 mac_soft_ring_t *
-mac_soft_ring_create(int id, clock_t wait, uint32_t type,
+mac_soft_ring_create(int id, clock_t wait, mac_soft_ring_type_t type,
     pri_t pri, mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs,
     processorid_t cpuid, mac_direct_rx_t rx_func, void *x_arg1,
     mac_resource_handle_t x_arg2)
