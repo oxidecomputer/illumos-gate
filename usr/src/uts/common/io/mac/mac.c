@@ -2212,7 +2212,8 @@ mac_tx_client_unblock(mac_client_impl_t *mcip)
  * quiesce is done.
  */
 static void
-mac_srs_quiesce_wait(mac_soft_ring_set_t *srs, uint_t srs_flag)
+mac_srs_quiesce_wait(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t srs_flag)
 {
 	for (mac_soft_ring_set_t *curr = srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
@@ -2258,14 +2259,20 @@ mac_srs_quiesce_wait(mac_soft_ring_set_t *srs, uint_t srs_flag)
  * The restart mechanism to reactivate the SRS and softrings is explained
  * in mac_srs_worker_restart(). Here we just signal the SRS worker to start the
  * restart sequence.
+ *
+ * The parameter `condemn_logicals` is used to upgrade a QUIESCE to a CONDEMN
+ * for any logical SRSes if required for flow tree reconfiguration.
  */
 void
-mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
+mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t srs_quiesce_flag,
+    const bool condemn_logicals)
 {
 	flow_entry_t	*flent = srs->srs_flent;
 	const uint_t mr_flag = ((srs_quiesce_flag == SRS_CONDEMNED) != 0) ?
 	    MR_CONDEMNED : MR_QUIESCE;
-	const uint_t srs_done_flag = (srs_quiesce_flag == SRS_CONDEMNED) ?
+	const mac_soft_ring_set_state_t srs_done_flag =
+	    (srs_quiesce_flag == SRS_CONDEMNED) ?
 	    SRS_CONDEMNED_DONE : SRS_QUIESCE_DONE;
 
 	VERIFY(mac_perim_held((mac_handle_t)FLENT_TO_MIP(flent)));
@@ -2273,7 +2280,6 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 	VERIFY(!mac_srs_is_logical(srs));
 
 	VERIFY(srs_quiesce_flag == SRS_QUIESCE ||
-	    srs_quiesce_flag == (SRS_QUIESCE | SRS_NEW_TREE) ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
 
 	mac_srs_client_poll_quiesce(srs, srs_quiesce_flag);
@@ -2299,8 +2305,13 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
 	 * Only complete SRSes have a worker thread -- they are responsible
 	 * for completing teardown operations on their logical SRSes' soft
 	 * rings.
+	 *
+	 * If the baked flowtree must be rebuilt, then all attached logical
+	 * SRSes must be completely torn down. Condemn them in such a case.
 	 */
-	mac_srs_signal(srs, srs_quiesce_flag);
+	const mac_soft_ring_set_state_t logical_flag = condemn_logicals ?
+	    SRS_CONDEMNED : srs_quiesce_flag;
+	mac_srs_signal_diff(srs, srs_quiesce_flag, logical_flag);
 	mac_srs_quiesce_wait(srs, srs_done_flag);
 }
 
@@ -2313,7 +2324,7 @@ mac_rx_srs_remove(mac_soft_ring_set_t *srs)
 	flow_entry_t *flent = srs->srs_flent;
 	int i;
 
-	mac_rx_srs_quiesce(srs, SRS_CONDEMNED);
+	mac_rx_srs_quiesce(srs, SRS_CONDEMNED, false);
 	/*
 	 * Locate and remove our entry in the fe_rx_srs[] array, and
 	 * adjust the fe_rx_srs array entries and array count by
@@ -2340,7 +2351,7 @@ mac_rx_srs_remove(mac_soft_ring_set_t *srs)
 }
 
 static void
-mac_srs_clear_flag(mac_soft_ring_set_t *srs, uint_t flag)
+mac_srs_clear_flag(mac_soft_ring_set_t *srs, mac_soft_ring_set_state_t flag)
 {
 	mutex_enter(&srs->srs_lock);
 	srs->srs_state &= ~flag;
@@ -2395,16 +2406,14 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
  * Temporary quiesce of a flow and associated Rx SRS.
  * Please see block comment above mac_rx_classify_flow_rem.
  */
-/* ARGSUSED */
 int
 mac_rx_classify_flow_quiesce(flow_entry_t *flent, void *arg)
 {
-	size_t extra_flags = (size_t)arg;
-	ASSERT3U(extra_flags & (~SRS_NEW_TREE), ==, 0);
+	const bool condemn_logicals = (bool)arg;
 
 	for (int i = 0; i < flent->fe_rx_srs_cnt; i++) {
 		mac_rx_srs_quiesce((mac_soft_ring_set_t *)flent->fe_rx_srs[i],
-		    SRS_QUIESCE | extra_flags);
+		    SRS_QUIESCE, condemn_logicals);
 	}
 
 	return (0);
@@ -2458,13 +2467,11 @@ mac_rx_client_quiesce(mac_client_handle_t mch, const bool redo_tree)
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
-	size_t extra_flags = (redo_tree) ? SRS_NEW_TREE : 0;
-
 	if (MCIP_DATAPATH_SETUP(mcip)) {
 		(void) mac_rx_classify_flow_quiesce(mcip->mci_flent,
-		    (void *)extra_flags);
+		    (void *)redo_tree);
 		(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
-		    mac_rx_classify_flow_quiesce, (void *)extra_flags);
+		    mac_rx_classify_flow_quiesce, (void *)redo_tree);
 	}
 }
 
@@ -2489,7 +2496,8 @@ mac_rx_client_restart(mac_client_handle_t mch)
  * future transmits in the mac before calling this function.
  */
 void
-mac_tx_srs_quiesce(mac_soft_ring_set_t *srs, uint_t srs_quiesce_flag)
+mac_tx_srs_quiesce(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t srs_quiesce_flag)
 {
 	mac_client_impl_t	*mcip = srs->srs_mcip;
 
@@ -2556,7 +2564,8 @@ mac_tx_flow_restart(flow_entry_t *flent, void *arg)
 }
 
 static void
-i_mac_tx_client_quiesce(mac_client_handle_t mch, uint_t srs_quiesce_flag)
+i_mac_tx_client_quiesce(mac_client_handle_t mch,
+    const mac_soft_ring_set_state_t srs_quiesce_flag)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 

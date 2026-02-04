@@ -114,7 +114,7 @@ typedef enum {
 	/*
 	 * A thread is currently processing packets from this softring, and has
 	 * relinquished its hold on `s_ring_lock` to allow new packets to be
-	 * enqueued.
+	 * enqueued while it does so.
 	 *
 	 * SRS processing will always enqueue packets if set, with the
 	 * expectation that whoever was draining the thread will continue to
@@ -146,7 +146,8 @@ typedef enum {
 
 	/*
 	 * This softring is a TX softring and has returned a cookie to at least
-	 * one sender who has set `NO_ENQUEUE` regardless of hiwat state.
+	 * one sender who has set `MAC_TX_NO_ENQUEUE` regardless of watermark
+	 * state.
 	 *
 	 * When the softring is drained, notify the client via its
 	 * `mac_client_tx_notify` callback that it may send.
@@ -172,32 +173,32 @@ typedef enum {
 	S_RING_CLIENT_WAIT	= 0x0040,
 
 	/*
+	 * This softring has been signalled to stop processing any packets.
+	 *
+	 * The presence of this flag implies that the parent softring set has
+	 * *also* been asked to quiesce. It will not enqueue any packets here.
+	 */
+	S_RING_QUIESCE		= 0x0100,
+	/*
+	 * The softring has ceased processing any enqueued/arriving packets, and
+	 * is awaiting a signal alongside either `S_RING_CONDEMNED` or
+	 * `S_RING_RESTART` to wake up.
+	 */
+	S_RING_QUIESCE_DONE	= 0x0200,
+	/*
 	 * This softring is marked for deletion.
 	 *
 	 * No further packets can be admitted into the softring, and enqueued
 	 * packets must not be processed.
 	 */
-	S_RING_CONDEMNED	= 0x0100,
+	S_RING_CONDEMNED	= 0x0400,
 	/*
 	 * The softring worker has completed any teardown in response to
 	 * `S_RING_CONDEMNED`.
 	 *
 	 * Requires `S_RING_QUIESCE_DONE`.
 	 */
-	S_RING_CONDEMNED_DONE	= 0x0200,
-	/*
-	 * This softring has been signalled to stop processing any packets.
-	 *
-	 * The presence of this flag implies that the parent softring set has
-	 * *also* been asked to quiesce. It will not enqueue any packets here.
-	 */
-	S_RING_QUIESCE		= 0x0400,
-	/*
-	 * The softring has ceased processing any enqueued/arriving packets, and
-	 * is awaiting a signal alongside either `S_RING_CONDEMNED` or
-	 * `S_RING_RESTART` to wake up.
-	 */
-	S_RING_QUIESCE_DONE	= 0x0800,
+	S_RING_CONDEMNED_DONE	= 0x0800,
 
 	/*
 	 * The softring has been signalled to resume processing traffic.
@@ -428,20 +429,20 @@ typedef enum {
 	 *
 	 * Immutable.
 	 */
-	SRST_LINK		= 0x00000001,
+	SRST_LINK			= 0x00000001,
 	/*
 	 * The flow entry underpinning this SRS belongs to a classifier attached
 	 * to a given MAC client.
 	 *
 	 * Immutable.
 	 */
-	SRST_FLOW		= 0x00000002,
+	SRST_FLOW			= 0x00000002,
 	/*
 	 * This SRS does not have any softrings assigned.
 	 *
 	 * Immutable.
 	 */
-	SRST_NO_SOFT_RINGS	= 0x00000004,
+	SRST_NO_SOFT_RINGS		= 0x00000004,
 	/*
 	 * This softring set is logical, and exists as part of the flowtree of a
 	 * complete SRS. It is not directly visible via the flow entry's Rx/Tx
@@ -452,16 +453,16 @@ typedef enum {
 	 *
 	 * Immutable.
 	 */
-	SRST_LOGICAL		= 0x00000008,
+	SRST_LOGICAL			= 0x00000008,
 
 	/*
 	 * This softring set behaves as a queue for a bandwidth limited subflow,
 	 * and directs traffic to another (logical/complete) SRS `srs_give_to`
 	 * every system tick.
 	 *
-	 * Immutable. Requires SRST_LOGICAL and SRST_NO_SOFT_RINGS.
+	 * Immutable. Requires `SRST_LOGICAL` and `SRST_NO_SOFT_RINGS`.
 	 */
-	SRST_FORWARD		= 0x00000010,
+	SRST_FORWARD			= 0x00000010,
 	/*
 	 * The client underlying this softring set has been assigned the default
 	 * group (either due to oversubscription, or the device admits only one
@@ -472,7 +473,7 @@ typedef enum {
 	 *
 	 * Mutable.
 	 */
-	SRST_DEFAULT_GRP	= 0x00000080,
+	SRST_DEFAULT_GRP		= 0x00000080,
 
 	/*
 	 * If present, this softring set is a transmit SRS. Otherwise it is a
@@ -486,14 +487,39 @@ typedef enum {
 	 *
 	 * Immutable.
 	 */
-	SRST_TX			= 0x00000100,
+	SRST_TX				= 0x00000100,
 	/*
 	 * One or more elements of `srs_bw` is `BW_ENABLED`, and the queue size
 	 * and egress rate of this SRS are limited accordingly.
 	 *
 	 * Mutable.
 	 */
-	SRST_BW_CONTROL		= 0x00000200,
+	SRST_BW_CONTROL			= 0x00000200,
+	/*
+	 * Set on all Rx SRSes when the tunable `mac_latency_optimize` is
+	 * `true`.
+	 *
+	 * If set, packets may be processed inline by any caller who arrives
+	 * with more packets to enqueue if there is no existing backlog.
+	 * The worker thread will share a CPU binding with the poll thread.
+	 * Wakeups sent to worker threads will be instantaneous (teardown and
+	 * bandwidth-controlled cases).
+	 *
+	 * If unset on an Rx SRS, packets may only be moved to softrings by the
+	 * worker thread. `SRST_ENQUEUE` will also be set in this case.
+	 *
+	 * Immutable. Requires ¬`SRST_TX`.
+	 */
+	SRST_LATENCY_OPT		= 0x00000400,
+	/*
+	 * All softrings will be initialised with `ST_RING_WORKER_ONLY`.
+	 *
+	 * Set when `SRST_LATENCY_OPT` is disabled, or when the underlying ring
+	 * requires `MAC_RING_RX_ENQUEUE` (sun4v).
+	 *
+	 * Immutable. Requires ¬`SRST_TX`.
+	 */
+	SRST_ENQUEUE			= 0x00000800,
 
 	/*
 	 * This complete SRS has had flows plumbed from IP to allow matching
@@ -537,8 +563,197 @@ typedef enum {
  * softring set, stored in `srs_state`.
  */
 typedef enum {
-	SRS_NOOP,
+	/*
+	 * This Rx softring set has been temporarily prevented from processing
+	 * packets.
+	 *
+	 * Unused.
+	 */
+	SRS_BLANK		= 0x00000001,
+	/*
+	 * This softring set's worker thread is explicitly bound to a single
+	 * CPU.
+	 */
+	SRS_WORKER_BOUND	= 0x00000002,
+	/*
+	 * This complete Rx softring set's poll thread is explicitly bound to a
+	 * single CPU.
+	 */
+	SRS_POLL_BOUND		= 0x00000004,
+	/*
+	 * This complete Rx softring set is created on top of (and has exclusive
+	 * use of) a dedicated ring. When under sufficient load, MAC will
+	 * disable interrupts and pull packets into the SRS by polling the
+	 * NIC/ring, and will set `SRS_POLLING` when this is the case.
+	 *
+	 * This flag may be added/removed as SRSes move between
+	 * hardware/software classification (e.g., if groups must be shared).
+	 *
+	 * TODO(ky): based on timescale, should be a type, not a state?
+	 */
+	SRS_POLLING_CAPAB	= 0x00000008,
+
+	/*
+	 * A thread is currently processing packets from this softring set, and
+	 * has relinquished its hold on `srs_lock` to allow new packets to be
+	 * enqueued while it does so.
+	 *
+	 * SRS processing will always enqueue packets if set, with the
+	 * expectation that whoever was draining the thread will continue to
+	 * do so.
+	 *
+	 * Requires qualification of what thread is doing the processing: either
+	 * `SRS_WORKER`, `SRS_PROC_FAST`, or `SRS_POLL_PROC`.
+	 */
+	SRS_PROC		= 0x00000010,
+	/*
+	 * The Rx poll thread should request more packets from the underlying
+	 * device.
+	 *
+	 * Requires `SRS_POLLING`.
+	 */
+	SRS_GET_PKTS		= 0x00000020,
+	/*
+	 * This Rx softring set has been moved into poll mode. Interrupts from
+	 * the underlying device are disabled, and the poll thread is
+	 * exclusively responsible for moving packets into the SRS.
+	 *
+	 * Requires `SRS_POLLING_CAPAB`.
+	 */
+	SRS_POLLING		= 0x00000040,
+
+	/*
+	 * The SRS worker thread currently holds `SRS_PROC`.
+	 *
+	 * Requires `SRS_PROC`.
+	 */
+	SRS_WORKER		= 0x00000100,
+	/*
+	 * Packets have been enqueued on this TX SRS due to either flow control
+	 * or a lack of Tx descriptors on the NIC.
+	 */
+	SRS_ENQUEUED		= 0x00000200,
+	/*
+	 * `SRS_PROC` is held by the caller of `mac_rx_srs_process` (typically
+	 * the interrupt context) and packets are being processed inline.
+	 *
+	 * Requires `SRS_PROC`.
+	 */
+	SRS_PROC_FAST		= 0x00000800,
+
+	/*
+	 * The Rx SRS poll thread currently holds `SRS_PROC`.
+	 *
+	 * Requires `SRS_PROC`.
+	 */
+	SRS_POLL_PROC		= 0x00001000,
+	/*
+	 * This Tx SRS has run out of descriptors on the underlying NIC.
+	 *
+	 * Any outbound packets will be queued until the underlying provider
+	 * marks more descriptors as available via `mac_tx_ring_update`.
+	 */
+	SRS_TX_BLOCKED		= 0x00002000,
+	/*
+	 * This Tx SRS is flow controlled: more than `st_hiwat` packets are
+	 * currently enqueued.
+	 *
+	 * Any outbound packets will be enqueued, and drained by the SRS
+	 * worker. Senders will receive a cookie -- they will be informed when
+	 * any cookie is no longer flow controlled if they have registered a
+	 * callback via `mac_client_tx_notify`.
+	 */
+	SRS_TX_HIWAT		= 0x00004000,
+	/*
+	 * This Tx SRS has returned a cookie to at least one sender who has set
+	 * `MAC_TX_NO_ENQUEUE` regardless of watermark state.
+	 *
+	 * When the SRS is drained, notify the client via its
+	 * `mac_client_tx_notify` callback that it may send.
+	 */
+	SRS_TX_WAKEUP_CLIENT	= 0x00008000,
+
+	/*
+	 * This SRS has been signalled to stop processing any packets.
+	 *
+	 * Downstack entrypoints (rings, flows) which can call into this SRS
+	 * should be quiesced with no remaining references such that no more
+	 * packets will be enqueued while this is set.
+	 *
+	 * The SRS worker thread will propagate the request to any softrings.
+	 */
+	SRS_QUIESCE		= 0x00010000,
+	/*
+	 * The SRS has ceased processing any enqueued packets, the worker thread
+	 * has finished quiescing any softrings and is awaiting a signal
+	 * alongside either `SRS_CONDEMNED` or `SRS_RESTART` to wake up.
+	 */
+	SRS_QUIESCE_DONE	= 0x00020000,
+	/*
+	 * This SRS is marked for deletion.
+	 *
+	 * Downstack entrypoints (rings, flows) which can call into this SRS
+	 * should be quiesced with no remaining references such that no more
+	 * packets will be enqueued while this is set.
+	 *
+	 * The SRS worker thread will propagate the request to any softrings.
+	 */
+	SRS_CONDEMNED		= 0x00040000,
+	/*
+	 * The SRS worker has completed any teardown in response to
+	 * `SRS_CONDEMNED`.
+	 *
+	 * Requires `SRS_CONDEMNED_DONE`.
+	 */
+	SRS_CONDEMNED_DONE	= 0x00080000,
+
+	/*
+	 * The SRS has been signalled to resume processing traffic.
+	 *
+	 * The worker thread should unset this and any `QUIESCE` flags,
+	 * propagate the request to softrings and the poll thread, and
+	 * resume processing packets.
+	 */
+	SRS_RESTART		= 0x00100000,
+	/*
+	 * The SRS has successfully restarted all of its softrings and poll
+	 * thread, if present.
+	 */
+	SRS_RESTART_DONE	= 0x00200000,
+	/*
+	 * This Rx SRS's poll thread has quiesced in response to `SRS_QUIESCE`.
+	 */
+	SRS_POLL_THR_QUIESCED	= 0x00400000,
+	/*
+	 * This Rx SRS's poll thread has terminated in response to
+	 * `SRS_CONDEMN`.
+	 */
+	SRS_POLL_THR_EXITED	= 0x00800000,
+
+	/*
+	 * This Rx SRS's worker thread has signalled the poll thread to resume
+	 * in response to `SRS_RESTART`.
+	 */
+	SRS_POLL_THR_RESTART	= 0x01000000,
+	/*
+	 * This SRS is semi-permanently quiesced, and should not accept
+	 * `SRS_RESTART` requests.
+	 */
+	SRS_QUIESCE_PERM	= 0x02000000,
+	/*
+	 * This SRS is part of the global list `mac_srs_g_list`. Its siblings
+	 * are accessed via `srs_next` and `srs_prev`.
+	 */
+	SRS_IN_GLIST		= 0x04000000,
 } mac_soft_ring_set_state_t;
+
+#define	SRS_QUIESCED(srs)	((srs)->srs_state & SRS_QUIESCE_DONE)
+
+/*
+ * If the SRS_QUIESCE_PERM flag is set, the SRS worker thread will not be
+ * able to be restarted.
+ */
+#define	SRS_QUIESCED_PERMANENT(srs)	((srs)->srs_state & SRS_QUIESCE_PERM)
 
 /*
  * mac_soft_ring_set_s:
@@ -649,8 +864,6 @@ struct mac_soft_ring_set_s {
 	 * Bandwidth control related members.
 	 * They are common to both Rx- and Tx-side.
 	 * Following protected by srs_lock
-	 *
-	 * TODO(ky): should these not be WO?
 	 */
 	mac_bw_ctl_t	**srs_bw; /* WO */
 	size_t		srs_bw_len; /* WO */
@@ -722,6 +935,12 @@ mac_srs_is_logical(const mac_soft_ring_set_t *srs)
 	return ((srs->srs_type & SRST_LOGICAL) != 0);
 }
 
+inline bool
+mac_srs_is_latency_opt(const mac_soft_ring_set_t *srs)
+{
+	return ((srs->srs_type & SRST_LATENCY_OPT) != 0);
+}
+
 inline flow_entry_t *
 mac_srs_rx_action_flent(mac_soft_ring_set_t *srs)
 {
@@ -737,58 +956,6 @@ mac_srs_rx_action(mac_soft_ring_set_t *srs)
 {
 	return (&mac_srs_rx_action_flent(srs)->fe_action);
 }
-
-/*
- * soft ring set flags. These bits are dynamic in nature and get
- * applied to srs_state. They reflect the state of SRS at any
- * point of time
- */
-#define	SRS_BLANK		0x00000001
-#define	SRS_WORKER_BOUND	0x00000002
-#define	SRS_POLL_BOUND		0x00000004
-#define	SRS_POLLING_CAPAB	0x00000008
-
-#define	SRS_PROC		0x00000010
-#define	SRS_GET_PKTS		0x00000020
-#define	SRS_POLLING		0x00000040
-
-#define	SRS_WORKER		0x00000100
-#define	SRS_ENQUEUED		0x00000200
-#define	SRS_ANY_PROCESS		0x00000400
-#define	SRS_PROC_FAST		0x00000800
-
-#define	SRS_POLL_PROC		0x00001000
-#define	SRS_TX_BLOCKED		0x00002000	/* out of Tx descs */
-#define	SRS_TX_HIWAT		0x00004000	/* Tx count exceeds hiwat */
-#define	SRS_TX_WAKEUP_CLIENT	0x00008000	/* Flow-ctl: wakeup client */
-
-#define	SRS_CLIENT_PROC		0x00010000
-#define	SRS_CLIENT_WAIT		0x00020000
-#define	SRS_QUIESCE		0x00040000
-#define	SRS_QUIESCE_DONE	0x00080000
-
-#define	SRS_CONDEMNED		0x00100000
-#define	SRS_CONDEMNED_DONE	0x00200000
-#define	SRS_POLL_THR_QUIESCED	0x00400000
-#define	SRS_RESTART		0x00800000
-
-#define	SRS_RESTART_DONE	0x01000000
-#define	SRS_POLL_THR_RESTART	0x02000000
-#define	SRS_IN_GLIST		0x04000000
-#define	SRS_POLL_THR_EXITED	0x08000000
-
-#define	SRS_QUIESCE_PERM	0x10000000
-#define	SRS_LATENCY_OPT		0x20000000
-#define	SRS_SOFTRING_QUEUE	0x40000000
-#define	SRS_NEW_TREE		0x80000000
-
-#define	SRS_QUIESCED(srs)	((srs)->srs_state & SRS_QUIESCE_DONE)
-
-/*
- * If the SRS_QUIESCE_PERM flag is set, the SRS worker thread will not be
- * able to be restarted.
- */
-#define	SRS_QUIESCED_PERMANENT(srs)	((srs)->srs_state & SRS_QUIESCE_PERM)
 
 /*
  * soft ring set (SRS) Tx modes
@@ -929,23 +1096,28 @@ extern void mac_fanout_setup(mac_client_impl_t *, flow_entry_t *,
     mac_resource_props_t *, cpupart_t *);
 
 extern void mac_soft_ring_worker_wakeup(mac_soft_ring_t *);
-extern void mac_soft_ring_blank(void *, time_t, uint_t, int);
 extern mblk_t *mac_soft_ring_poll(mac_soft_ring_t *, size_t);
 extern void mac_soft_ring_destroy(mac_soft_ring_t *);
 
 /* Rx SRS */
 extern void mac_srs_free(mac_soft_ring_set_t *);
-extern void mac_srs_signal(mac_soft_ring_set_t *, uint_t);
+extern void mac_srs_signal(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_srs_signal_diff(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t, const mac_soft_ring_set_state_t);
 extern cpu_t *mac_srs_bind(mac_soft_ring_set_t *, processorid_t);
 extern void mac_rx_srs_retarget_intr(mac_soft_ring_set_t *, processorid_t);
 extern void mac_tx_srs_retarget_intr(mac_soft_ring_set_t *);
 
 extern void mac_srs_quiesce_initiate(mac_soft_ring_set_t *);
-extern void mac_srs_client_poll_quiesce(mac_soft_ring_set_t *, uint_t);
+extern void mac_srs_client_poll_quiesce(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 extern void mac_srs_client_poll_restart(mac_soft_ring_set_t *);
-extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
+extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t, const bool);
 extern void mac_rx_srs_restart(mac_soft_ring_set_t *);
-extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *, uint_t);
+extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 
 /* Tx SRS, Tx softring */
 extern void mac_tx_srs_wakeup(mac_soft_ring_set_t *, mac_ring_handle_t);
@@ -975,7 +1147,8 @@ extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, mac_soft_ring_type_t,
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
 	extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 extern void mac_soft_ring_free(mac_soft_ring_t *);
-extern void mac_soft_ring_signal(mac_soft_ring_t *, uint_t);
+extern void mac_soft_ring_signal(mac_soft_ring_t *,
+    const mac_soft_ring_state_t);
 extern void mac_rx_soft_ring_process(mac_soft_ring_t *, mblk_t *, mblk_t *, int,
     size_t);
 extern mac_tx_cookie_t mac_tx_soft_ring_process(mac_soft_ring_t *,
@@ -985,18 +1158,26 @@ extern void mac_srs_worker_restart(mac_soft_ring_set_t *);
 extern void mac_rx_attach_flow_srs(mac_impl_t *, flow_entry_t *,
     mac_soft_ring_set_t *, mac_ring_t *, mac_classify_type_t);
 
-extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *, uint_t);
-extern void mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *, uint_t);
-extern void mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *, uint_t);
-extern void mac_rx_srs_drain(mac_soft_ring_set_t *, uint_t);
-extern void mac_rx_srs_drain_subtree(mac_soft_ring_set_t *, uint_t);
-extern void mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *, uint_t);
+extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_subtree(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
-extern void mac_tx_srs_drain(mac_soft_ring_set_t *, uint_t);
-extern void mac_srs_drain_forward(mac_soft_ring_set_t *, uint_t);
+extern void mac_tx_srs_drain(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_srs_drain_forward(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 
 extern void mac_tx_srs_restart(mac_soft_ring_set_t *);
 extern void mac_rx_srs_remove(mac_soft_ring_set_t *);

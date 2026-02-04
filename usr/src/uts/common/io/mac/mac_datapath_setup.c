@@ -342,14 +342,13 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
  */
 void
 mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
-    uint_t srs_quiesce_flag)
+    const mac_soft_ring_set_state_t srs_quiesce_flag)
 {
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
-	ASSERT(srs_quiesce_flag == SRS_QUIESCE ||
-	    srs_quiesce_flag == (SRS_QUIESCE | SRS_NEW_TREE) ||
+	VERIFY(mac_perim_held((mac_handle_t)mac_srs->srs_mcip->mci_mip));
+	VERIFY(srs_quiesce_flag == SRS_QUIESCE ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
-	ASSERT(!mac_srs_is_tx(mac_srs));
-	ASSERT(!mac_srs_is_logical(mac_srs));
+	VERIFY(!mac_srs_is_tx(mac_srs));
+	VERIFY(!mac_srs_is_logical(mac_srs));
 
 	/* TODO(ky): locking of both SR & SRS? */
 
@@ -448,7 +447,7 @@ mac_srs_poll_state_change(mac_soft_ring_set_t *mac_srs,
 	mac_ring_t	*ring = srs_rx->sr_ring;
 
 	if (!SRS_QUIESCED(mac_srs)) {
-		mac_rx_srs_quiesce(mac_srs, SRS_QUIESCE);
+		mac_rx_srs_quiesce(mac_srs, SRS_QUIESCE, false);
 		need_restart = B_TRUE;
 	}
 
@@ -2184,7 +2183,7 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		case SRS_FANOUT_INIT:
 			break;
 		case SRS_FANOUT_REINIT:
-			mac_rx_srs_quiesce(mac_rx_srs, SRS_QUIESCE);
+			mac_rx_srs_quiesce(mac_rx_srs, SRS_QUIESCE, false);
 			mac_srs_fanout_modify(mcip, mac_rx_srs, mac_tx_srs);
 			/* refresh attached logical SRSes */
 			for (mac_soft_ring_set_t *curr =
@@ -2464,10 +2463,8 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 		srs_rx->sr_poll_thres = mac_soft_ring_poll_thres <=
 		    (srs_rx->sr_lowat >> 1) ? mac_soft_ring_poll_thres :
 		    (srs_rx->sr_lowat >> 1);
-		if (mac_latency_optimize)
-			mac_srs->srs_state |= SRS_LATENCY_OPT;
-		else
-			mac_srs->srs_state |= SRS_SOFTRING_QUEUE;
+		mac_srs->srs_type |= mac_latency_optimize ?
+		    SRST_LATENCY_OPT : SRST_ENQUEUE;
 	}
 
 	/*
@@ -2533,8 +2530,9 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 			 * mode under backlog.
 			 */
 			ring_info = mac_hwring_getinfo((mac_ring_handle_t)ring);
-			if (ring_info & MAC_RING_RX_ENQUEUE)
-				mac_srs->srs_state |= SRS_SOFTRING_QUEUE;
+			if (ring_info & MAC_RING_RX_ENQUEUE) {
+				mac_srs->srs_type |= SRST_ENQUEUE;
+			}
 		}
 	}
 done:
@@ -2783,7 +2781,7 @@ mac_rx_srs_group_teardown(flow_entry_t *flent, boolean_t hwonly)
 		if (i == 0 && hwonly)
 			continue;
 		mac_srs = flent->fe_rx_srs[i];
-		mac_rx_srs_quiesce(mac_srs, SRS_CONDEMNED);
+		mac_rx_srs_quiesce(mac_srs, SRS_CONDEMNED, true);
 		mac_srs_free(mac_srs);
 		flent->fe_rx_srs[i] = NULL;
 		flent->fe_rx_srs_cnt--;
@@ -3828,7 +3826,8 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 }
 
 static void
-mac_srs_signal_inner(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
+mac_srs_signal_one(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t srs_flag)
 {
 	mac_ring_t	*ring = mac_srs->srs_data.rx.sr_ring;
 
@@ -3861,33 +3860,33 @@ mac_srs_signal_inner(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
  * higher level functions.
  */
 void
-mac_srs_signal(mac_soft_ring_set_t *mac_srs, uint_t srs_flag)
+mac_srs_signal(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t srs_flag)
 {
-	mac_ring_t	*ring = mac_srs->srs_data.rx.sr_ring;
+	mac_srs_signal_diff(mac_srs, srs_flag, srs_flag);
+}
 
-	ASSERT(mac_srs_is_tx(mac_srs) || (ring == NULL) ||
+/*
+ * Send different signals to a complete SRS and any logical SRSes hanging off
+ * it. This allows for the logical SRSes and flow tree to be torn down while
+ * keeping the root SRS intact.
+ */
+void
+mac_srs_signal_diff(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t complete_flag,
+    const mac_soft_ring_set_state_t logical_flag)
+{
+	mac_ring_t *ring = mac_srs->srs_data.rx.sr_ring;
+
+	VERIFY(mac_srs_is_tx(mac_srs) || (ring == NULL) ||
 	    (ring->mr_refcnt == 0));
 
-	/*
-	 * Logical SRSes attached to an SRS do not have any worker or poll
-	 * threads. Because the remainder of the signal handling must be
-	 * executed by the complete SRS, we signal all logical SRSes first such
-	 * that this SRS's worker will see the same signal propagated to all
-	 * children.
-	 *
-	 * If the baked flowtree must be rebuilt, then all attached logical
-	 * SRSes must be completely torn down. Condemn them in such this case.
-	 */
-	const uint_t base_flags = srs_flag & ~SRS_NEW_TREE;
-	const uint_t logical_flag = (base_flags != srs_flag) ?
-	    SRS_CONDEMNED : base_flags;
+	mac_srs_signal_one(mac_srs, complete_flag);
 
 	for (mac_soft_ring_set_t *curr = mac_srs->srs_logical_next;
 	    curr != NULL; curr = curr->srs_logical_next) {
-		mac_srs_signal_inner(curr, logical_flag);
+		mac_srs_signal_one(curr, logical_flag);
 	}
-
-	mac_srs_signal_inner(mac_srs, base_flags);
 }
 
 /*

@@ -215,8 +215,9 @@ mac_soft_ring_create(int id, clock_t wait, mac_soft_ring_type_t type,
 		ringp->s_ring_rx_func = rx_func;
 		ringp->s_ring_rx_arg1 = x_arg1;
 		ringp->s_ring_rx_arg2 = x_arg2;
-		if (mac_srs->srs_state & SRS_SOFTRING_QUEUE)
+		if ((mac_srs->srs_type & SRST_ENQUEUE) != 0) {
 			ringp->s_ring_type |= ST_RING_WORKER_ONLY;
+		}
 	}
 	if (cpuid != -1)
 		(void) mac_soft_ring_bind(ringp, cpuid);

@@ -1517,8 +1517,8 @@ int mac_srs_worker_wakeup_ticks = 0;
 	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
 	if (!((mac_srs)->srs_state & SRS_PROC) &&			\
 		(mac_srs)->srs_tid == NULL) {				\
-		if (((mac_srs)->srs_state & SRS_LATENCY_OPT) ||		\
-			(mac_srs_worker_wakeup_ticks == 0))		\
+		if (mac_srs_is_latency_opt((mac_srs)) ||		\
+			mac_srs_worker_wakeup_ticks == 0)		\
 			cv_signal(&(mac_srs)->srs_async);		\
 		else							\
 			(mac_srs)->srs_tid =				\
@@ -2097,7 +2097,7 @@ check_again:
 			 * is not running. Check to see if poll thread is
 			 * allowed to process.
 			 */
-			if (mac_srs->srs_state & SRS_LATENCY_OPT) {
+			if (mac_srs_is_latency_opt(mac_srs)) {
 				mac_srs->srs_drain_func(mac_srs, SRS_POLL_PROC);
 				if (!(mac_srs->srs_state & SRS_PAUSE) &&
 				    srs_rx->sr_poll_pkt_cnt <=
@@ -3162,8 +3162,9 @@ static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
  */
 __attribute__((always_inline))
 static inline void
-mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs, uint_t proc_type,
-    const bool has_subtree, const bool subtree_has_bw)
+mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type, const bool has_subtree,
+    const bool subtree_has_bw)
 {
 	mblk_t			*in_chain = NULL;
 	timeout_id_t		tid;
@@ -3184,8 +3185,8 @@ mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs, uint_t proc_type,
 		goto out;
 	}
 
-	if (!(mac_srs->srs_state & SRS_LATENCY_OPT) &&
-	    (srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat)) {
+	if (!mac_srs_is_latency_opt(mac_srs) &&
+	    srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat) {
 		/*
 		 * In the normal case, the SRS worker thread does no
 		 * work and we wait for a backlog to build up before
@@ -3394,25 +3395,23 @@ out:
 	srs_rx->sr_drain_finish_intr++;
 }
 
-/*
- * TODO(ky): swap between these when reprogramming the flowtree and en/disabling
- * bandwidth checks.
- */
-
 void
-mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	mac_rx_srs_drain_inner(mac_srs, proc_type, false, false);
 }
 
 void
-mac_rx_srs_drain_subtree(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+mac_rx_srs_drain_subtree(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	mac_rx_srs_drain_inner(mac_srs, proc_type, true, false);
 }
 
 void
-mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	mac_rx_srs_drain_inner(mac_srs, proc_type, true, true);
 }
@@ -3434,8 +3433,9 @@ mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
  */
 __attribute__((always_inline))
 static inline void
-mac_rx_srs_drain_bw_inner(mac_soft_ring_set_t *mac_srs, uint_t proc_type,
-    const bool has_subtree, const bool subtree_has_bw)
+mac_rx_srs_drain_bw_inner(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type, const bool has_subtree,
+    const bool subtree_has_bw)
 {
 	mblk_t			*head;
 	mblk_t			*tail;
@@ -3681,19 +3681,22 @@ leave_poll:
 }
 
 void
-mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, false, false);
 }
 
 void
-mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true, false);
 }
 
 void
-mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true, true);
 }
@@ -3999,7 +4002,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 		 * latency, or if our stack is running deep, we should signal
 		 * the worker thread.
 		 */
-		if (loopback || !(mac_srs->srs_state & SRS_LATENCY_OPT)) {
+		if (loopback || !mac_srs_is_latency_opt(mac_srs)) {
 			/*
 			 * For loopback, We need to let the worker take
 			 * over as we don't want to continue in the same
@@ -4698,7 +4701,8 @@ mac_strip_chain_hints(mblk_t *mp_chain)
 
 /* ARGSUSED */
 void
-mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs, uint_t proc_type)
+mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	mblk_t			*head, *tail;
 	uint32_t		tx_mode;
@@ -5612,7 +5616,8 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
  * rate limit(s).
  */
 void
-mac_srs_drain_forward(mac_soft_ring_set_t *srs, uint_t proc_type)
+mac_srs_drain_forward(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t proc_type)
 {
 	ASSERT(mac_srs_is_logical(srs));
 	ASSERT3U(srs->srs_type & SRST_FORWARD, !=, 0);
