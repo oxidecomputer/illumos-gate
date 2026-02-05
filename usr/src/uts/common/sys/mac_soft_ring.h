@@ -464,18 +464,6 @@ typedef enum {
 	 */
 	SRST_FORWARD			= 0x00000010,
 	/*
-	 * The client underlying this softring set has been assigned the default
-	 * group (either due to oversubscription, or the device admits only one
-	 * group).
-	 *
-	 * A hardware classified ring of this type will receive additional
-	 * traffic when moved into full or all-multicast promiscuous mode.
-	 *
-	 * Mutable.
-	 */
-	SRST_DEFAULT_GRP		= 0x00000080,
-
-	/*
 	 * If present, this softring set is a transmit SRS. Otherwise it is a
 	 * receive SRS.
 	 *
@@ -487,14 +475,7 @@ typedef enum {
 	 *
 	 * Immutable.
 	 */
-	SRST_TX				= 0x00000100,
-	/*
-	 * One or more elements of `srs_bw` is `BW_ENABLED`, and the queue size
-	 * and egress rate of this SRS are limited accordingly.
-	 *
-	 * Mutable.
-	 */
-	SRST_BW_CONTROL			= 0x00000200,
+	SRST_TX				= 0x00000020,
 	/*
 	 * Set on all Rx SRSes when the tunable `mac_latency_optimize` is
 	 * `true`.
@@ -510,7 +491,7 @@ typedef enum {
 	 *
 	 * Immutable. Requires ¬`SRST_TX`.
 	 */
-	SRST_LATENCY_OPT		= 0x00000400,
+	SRST_LATENCY_OPT		= 0x00000040,
 	/*
 	 * All softrings will be initialised with `ST_RING_WORKER_ONLY`.
 	 *
@@ -519,28 +500,26 @@ typedef enum {
 	 *
 	 * Immutable. Requires ¬`SRST_TX`.
 	 */
-	SRST_ENQUEUE			= 0x00000800,
+	SRST_ENQUEUE			= 0x00000080,
 
 	/*
-	 * This complete SRS has had flows plumbed from IP to allow matching
-	 * IPv4 packets to bypass DLS (i.e., the root SRS action).
+	 * The client underlying this softring set has been assigned the default
+	 * group (either due to oversubscription, or the device admits only one
+	 * group).
 	 *
-	 * This is a vanity flag to make MAC client plumbing state clearer when
-	 * debugging, and does not alter datapath behaviour.
+	 * A hardware classified ring of this type will receive additional
+	 * traffic when moved into full or all-multicast promiscuous mode.
 	 *
 	 * Mutable.
 	 */
-	SRST_DLS_BYPASS_V4		= 0x00001000,
+	SRST_DEFAULT_GRP		= 0x00000100,
 	/*
-	 * This complete SRS has had flows plumbed from IP to allow matching
-	 * IPv6 packets to bypass DLS (i.e., the root SRS action).
-	 *
-	 * This is a vanity flag to make MAC client plumbing state clearer when
-	 * debugging, and does not alter datapath behaviour.
+	 * One or more elements of `srs_bw` is `BW_ENABLED`, and the queue size
+	 * and egress rate of this SRS are limited accordingly.
 	 *
 	 * Mutable.
 	 */
-	SRST_DLS_BYPASS_V6		= 0x00002000,
+	SRST_BW_CONTROL			= 0x00000200,
 
 	/*
 	 * The action associated with this soft ring set (complete/logical) is
@@ -555,7 +534,28 @@ typedef enum {
 	 *
 	 * Mutable.
 	 */
-	SRST_CLIENT_POLL		= 0x00010000,
+	SRST_CLIENT_POLL		= 0x00001000,
+
+	/*
+	 * This complete SRS has had flows plumbed from IP to allow matching
+	 * IPv4 packets to bypass DLS (i.e., the root SRS action).
+	 *
+	 * This is a vanity flag to make MAC client plumbing state clearer when
+	 * debugging, and does not alter datapath behaviour.
+	 *
+	 * Mutable.
+	 */
+	SRST_DLS_BYPASS_V4		= 0x00010000,
+	/*
+	 * This complete SRS has had flows plumbed from IP to allow matching
+	 * IPv6 packets to bypass DLS (i.e., the root SRS action).
+	 *
+	 * This is a vanity flag to make MAC client plumbing state clearer when
+	 * debugging, and does not alter datapath behaviour.
+	 *
+	 * Mutable.
+	 */
+	SRST_DLS_BYPASS_V6		= 0x00020000,
 } mac_soft_ring_set_type_t;
 
 /*
