@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2017, Intel Corporation.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_METASLAB_H
@@ -112,6 +113,7 @@ uint64_t metaslab_class_get_alloc(metaslab_class_t *);
 uint64_t metaslab_class_get_space(metaslab_class_t *);
 uint64_t metaslab_class_get_dspace(metaslab_class_t *);
 uint64_t metaslab_class_get_deferred(metaslab_class_t *);
+uint64_t metaslab_class_find_blocksize(metaslab_class_t *, uint64_t);
 
 void metaslab_space_update(vdev_t *, metaslab_class_t *,
     int64_t, int64_t, int64_t);

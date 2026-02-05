@@ -91,6 +91,7 @@
 #include <sys/smt.h>
 #include <sys/dkioc_free_util.h>
 #include <sys/zfs_rlock.h>
+#include <sys/metaslab.h>
 
 #include "zfs_namecheck.h"
 
@@ -158,6 +159,7 @@ typedef struct zvol_state {
 	char		zv_name[MAXPATHLEN]; /* pool/dd name */
 	uint64_t	zv_volsize;	/* amount of space we advertise */
 	uint64_t	zv_volblocksize; /* volume block size */
+	uint64_t	zv_min_volblocksize; /* min block size for raw vol */
 	minor_t		zv_minor;	/* minor number */
 	uint8_t		zv_min_bs;	/* minimum addressable block shift */
 	enum zio_flags	zv_flags;	/* readonly, dumpified, etc. */
@@ -331,7 +333,7 @@ zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 
 	/* Abort immediately if we have encountered gang blocks */
 	if (BP_IS_GANG(bp))
-		return (SET_ERROR(EFRAGS));
+		return (SET_ERROR(EOVERFLOW));
 
 	VERIFY3U(zb->zb_blkid, <, zvol_num_blocks(zv));
 	zv->zv_dvas[zb->zb_blkid] = bp->blk_dva[0];
@@ -382,6 +384,21 @@ zvol_get_dvas(zvol_state_t *zv)
 	}
 	if (err != 0) {
 		zvol_free_dvas(zv);
+		if (err == EOVERFLOW) {
+			zfs_dbgmsg("zv %p, encountered gang blocks, "
+			    "blocksize = %llu", zv, zv->zv_volblocksize);
+			zv->zv_flags &= ~ZVOL_PREALLOCED;
+			(void) dmu_free_long_range(os, ZVOL_OBJ, 0,
+			    DMU_OBJECT_END);
+			txg_wait_synced(dmu_objset_pool(os), 0);
+			/*
+			 * If we still see gang blocks and we're at our
+			 * minimum block size then stop trying and return
+			 * back an error the user.
+			 */
+			if (zv->zv_volblocksize == zv->zv_min_volblocksize)
+				err = EFRAGS;
+		}
 		return (err);
 	}
 
@@ -426,13 +443,14 @@ zvol_create_cb(objset_t *os, void *arg, cred_t *cr, dmu_tx_t *tx)
 	    DMU_OT_NONE, 0, tx);
 	ASSERT(error == 0);
 
-	error = zap_update(os, ZVOL_ZAP_OBJ, "size", 8, 1, &volsize, tx);
-	ASSERT(error == 0);
+	VERIFY0(zap_update(os, ZVOL_ZAP_OBJ, "size", 8, 1, &volsize, tx));
 
 	if (rawvol) {
-		error = zap_update(os, ZVOL_ZAP_OBJ,
-		    zfs_prop_to_name(ZFS_PROP_RAWVOL), 8, 1, &rawvol, tx);
-		ASSERT(error == 0);
+		VERIFY0(zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), 8, 1,
+		    &volblocksize, tx));
+		VERIFY0(zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_RAWVOL), 8, 1, &rawvol, tx));
 	}
 }
 
@@ -634,6 +652,12 @@ zvol_create_minor(const char *name)
 	error = dmu_object_info(os, ZVOL_OBJ, &doi);
 	ASSERT(error == 0);
 	zv->zv_volblocksize = doi.doi_data_block_size;
+	if (zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
+	    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), 8, 1,
+	    &zv->zv_min_volblocksize) != 0) {
+		zv->zv_min_volblocksize =
+		    zfs_prop_default_numeric(ZFS_PROP_VOLBLOCKSIZE);
+	}
 
 	if (spa_writeable(dmu_objset_spa(os))) {
 		if (zil_replay_disable)
@@ -806,6 +830,27 @@ zvol_get_initialized_offset(objset_t *os)
 	}
 }
 
+static uint64_t
+zvol_raw_max_blocksize(zvol_state_t *zv)
+{
+	spa_t *spa = dmu_objset_spa(zv->zv_objset);
+
+	uint64_t blocksize = metaslab_class_find_blocksize(
+	    spa_normal_class(spa), zv->zv_volsize);
+
+	if (zv->zv_zero_error == EOVERFLOW) {
+		if (zv->zv_volblocksize > zv->zv_min_volblocksize) {
+			blocksize = MIN(blocksize, zv->zv_volblocksize >> 1);
+		} else {
+			blocksize = zv->zv_min_volblocksize;
+		}
+		zfs_dbgmsg("zv %p, current blocksize %llu, trying "
+		    "blocksize %llu", zv, zv->zv_volblocksize, blocksize);
+	}
+	VERIFY3U(blocksize, >=, zv->zv_min_volblocksize);
+	return (blocksize);
+}
+
 static int
 zvol_zero(zvol_state_t *zv)
 {
@@ -826,11 +871,31 @@ zvol_zero(zvol_state_t *zv)
 	VERIFY3U(resid, >=, zv->zv_zero_off);
 	resid -= zv->zv_zero_off;
 	while (resid != 0 && !zv->zv_zero_exit_wanted) {
-		uint64_t bytes = MIN(resid, SPA_OLD_MAXBLOCKSIZE);
 
 		mutex_exit(&zv->zv_state_lock);
 
 		tx = dmu_tx_create(os);
+		/*
+		 * Set the blocksize the first time we're initializing
+		 * the volume.
+		 */
+		if (zv->zv_zero_off == 0 && !(zv->zv_flags & ZVOL_DUMPIFIED)) {
+			uint64_t blocksize = zvol_raw_max_blocksize(zv);
+
+			dmu_tx_hold_bonus(tx, ZVOL_OBJ);
+			error = dmu_object_set_blocksize(
+			    zv->zv_objset, ZVOL_OBJ, blocksize, 0, tx);
+			if (error != 0) {
+				dmu_tx_abort(tx);
+				mutex_enter(&zv->zv_state_lock);
+				break;
+			}
+			zv->zv_volblocksize = blocksize;
+			zfs_dbgmsg("zv %p set blocksize to %llu", zv,
+			    blocksize);
+		}
+		uint64_t bytes = MIN(resid, zv->zv_volblocksize);
+
 		dmu_tx_hold_write(tx, ZVOL_OBJ, zv->zv_zero_off, bytes);
 		error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error) {
@@ -875,6 +940,7 @@ static void
 zvol_zero_thread(void *arg)
 {
 	zvol_state_t *zv = arg;
+	int error = 0;
 
 	mutex_enter(&zv->zv_state_lock);
 
@@ -885,15 +951,17 @@ zvol_zero_thread(void *arg)
 	zv->zv_flags |= ZVOL_ZERO_STARTED;
 	cv_broadcast(&zv->zv_state_cv);
 
-	int error = zvol_zero(zv);
-	if (error == 0) {
-		error = zvol_get_dvas(zv);
-	}
+	do {
+		error = zvol_zero(zv);
+		if (error == 0)
+			error = zvol_get_dvas(zv);
 
-	zfs_dbgmsg("zvol_zero done: zv %p, flags %d, opens %u, err %d",
-	    zv, zv->zv_flags, zv->zv_total_opens, error);
+		zfs_dbgmsg("zvol_zero done: zv %p, flags %d, opens %u, err %d",
+		    zv, zv->zv_flags, zv->zv_total_opens, error);
+		zv->zv_zero_error = error;
 
-	zv->zv_zero_error = error;
+	} while (error == EOVERFLOW && !(zv->zv_flags & ZVOL_DUMPIFIED));
+
 	zv->zv_zero_exit_wanted = B_FALSE;
 	zv->zv_zero_thread = NULL;
 	cv_broadcast(&zv->zv_state_cv);
@@ -939,6 +1007,31 @@ zvol_prealloc(zvol_state_t *zv)
 	uint64_t volsize = zv->zv_volsize;
 
 	ASSERT(MUTEX_HELD(&zv->zv_state_lock));
+
+	/*
+	 * If we encounter a raw zvol without the volblocksize property
+	 * then we know that this was a volume that was created using
+	 * older software and never initialized.  The new software
+	 * uses the user-specified volblocksize as the minimum blocksize,
+	 * we need to record the current blocksize property before we
+	 * start to initialize the volume.
+	 */
+	if (zap_lookup(zv->zv_objset, ZVOL_ZAP_OBJ,
+	    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), 8, 1,
+	    &zv->zv_min_volblocksize) != 0) {
+		dmu_tx_t *tx = dmu_tx_create(os);
+		dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
+		int error = dmu_tx_assign(tx, TXG_WAIT);
+		if (error != 0) {
+			dmu_tx_abort(tx);
+			return (error);
+		}
+		VERIFY0(zap_update(os, ZVOL_ZAP_OBJ,
+		    zfs_prop_to_name(ZFS_PROP_VOLBLOCKSIZE), 8, 1,
+		    &zv->zv_volblocksize, tx));
+		zv->zv_min_volblocksize = zv->zv_volblocksize;
+		dmu_tx_commit(tx);
+	}
 
 	zv->zv_zero_off = zvol_get_initialized_offset(os);
 
@@ -2467,7 +2560,6 @@ zfs_mvdev_dump_activate_feature_sync(void *arg, dmu_tx_t *tx)
 int
 zvol_raw_volume_init(objset_t *os, nvlist_t *nvprops)
 {
-	dmu_tx_t *tx;
 	int error;
 	spa_t *spa = dmu_objset_spa(os);
 	uint64_t version = spa_version(spa);
@@ -2498,22 +2590,6 @@ zvol_raw_volume_init(objset_t *os, nvlist_t *nvprops)
 	dmu_objset_name(os, osname);
 	error = zfs_set_prop_nvlist(osname, ZPROP_SRC_LOCAL,
 	    nv, NULL);
-
-	/*
-	 * Remove overridden properties from the nvlist so the standard
-	 * property-handling logic does not attempt to set them.
-	 */
-	if (error == 0 && nvprops != NULL) {
-		nvlist_remove_all(nvprops,
-		    zfs_prop_to_name(ZFS_PROP_REFRESERVATION));
-		nvlist_remove_all(nvprops,
-		    zfs_prop_to_name(ZFS_PROP_COMPRESSION));
-		nvlist_remove_all(nvprops, zfs_prop_to_name(ZFS_PROP_CHECKSUM));
-		if (version >= SPA_VERSION_DEDUP) {
-			nvlist_remove_all(nvprops,
-			    zfs_prop_to_name(ZFS_PROP_DEDUP));
-		}
-	}
 	nvlist_free(nv);
 	return (error);
 }

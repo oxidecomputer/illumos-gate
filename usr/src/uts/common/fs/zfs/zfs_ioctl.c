@@ -3390,16 +3390,6 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	error = dmu_objset_create(fsname, type,
 	    is_insensitive ? DS_FLAG_CI_DATASET : 0, dcp, cbfunc, &zct);
 
-	if (error == 0 && type == DMU_OST_ZVOL && rawvol) {
-		objset_t *os;
-		error = dmu_objset_own(fsname, DMU_OST_ZVOL, B_FALSE, B_TRUE,
-		    FTAG, &os);
-		if (error != 0)
-			return (SET_ERROR(EPERM));
-		error = zvol_raw_volume_init(os, nvprops);
-		dmu_objset_disown(os, B_FALSE, FTAG);
-	}
-
 	nvlist_free(zct.zct_zplprops);
 	dsl_crypto_params_free(dcp, !!error);
 
@@ -3409,6 +3399,26 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	if (error == 0) {
 		error = zfs_set_prop_nvlist(fsname, ZPROP_SRC_LOCAL,
 		    nvprops, outnvl);
+
+		/*
+		 * Let the standard property process take place first
+		 * since it will check any errors and abort the creation
+		 * if necessary. In particular, we want the creation to
+		 * abort if there is not enough space in the pool and that
+		 * will happen when the REFRESERVATION is checked above.
+		 * The raw volume creation will clear this property.
+		 */
+		if (error == 0 && type == DMU_OST_ZVOL && rawvol) {
+			objset_t *os;
+			error = dmu_objset_own(fsname, DMU_OST_ZVOL, B_FALSE,
+			    B_TRUE, FTAG, &os);
+			if (error != 0) {
+				(void) dsl_destroy_head(fsname);
+				return (SET_ERROR(EPERM));
+			}
+			error = zvol_raw_volume_init(os, nvprops);
+			dmu_objset_disown(os, B_FALSE, FTAG);
+		}
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);
 	}

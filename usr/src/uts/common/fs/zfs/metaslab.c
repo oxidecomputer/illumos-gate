@@ -24,6 +24,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright (c) 2017, Intel Corporation.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/zfs_context.h>
@@ -682,6 +683,59 @@ metaslab_compare(const void *x1, const void *x2)
 }
 
 /*
+ * Return the largest block size (in bytes) that can be used
+ * to fully allocate space_needed based on the metaslab class histogram.
+ *
+ * Each histogram index represents log2(blocksize), and each entry contains
+ * the count of free ranges of that size.
+ *
+ * The upper bound of the returned block size is SPA_MAXBLOCKSIZE and the
+ * lower bound is the vdev's physical blocksize (1 << spa_max_ashift).
+ */
+uint64_t
+metaslab_class_find_blocksize(metaslab_class_t *mc, uint64_t space_needed)
+{
+	uint64_t avail_space = 0;
+	int idx;
+	int min_idx = mc->mc_spa->spa_max_ashift;
+
+	/*
+	 * Walk from larger to smaller block sizes, accumulating
+	 * available space until space_needed can be satisfied.
+	 *
+	 * Since each bucket represents segments in the range of
+	 * [2^i, (2^(i+1))-1], we use the upper bound to estimate
+	 * the space to ensure that we don't underestimate the free
+	 * space available.
+	 *
+	 * If we're already at the lower bound, then there's no point
+	 * validating that space_needed can be fully allocated.
+	 */
+	for (idx = RANGE_TREE_HISTOGRAM_SIZE - 1; idx > min_idx; idx--) {
+		uint64_t bucket_size;
+		if (idx + 1 == RANGE_TREE_HISTOGRAM_SIZE)
+			bucket_size = UINT64_MAX;
+		else
+			bucket_size = (1ULL << (idx + 1)) - (1ULL << min_idx);
+		avail_space += mc->mc_histogram[idx] * bucket_size;
+
+		if (avail_space >= space_needed)
+			break;
+	}
+
+	/*
+	 * Ensure the result never exceed the maximum block size supported
+	 * by the SPA.
+	 */
+	idx = MIN(idx, SPA_MAXBLOCKSHIFT);
+
+	VERIFY3U(idx, >=, min_idx);
+	VERIFY3U(idx, <, RANGE_TREE_HISTOGRAM_SIZE);
+
+	return (1ULL << idx);
+}
+
+/*
  * ==========================================================================
  * Metaslab groups
  * ==========================================================================
@@ -1000,9 +1054,15 @@ metaslab_group_histogram_verify(metaslab_group_t *mg)
 	for (int m = 0; m < vd->vdev_ms_count; m++) {
 		metaslab_t *msp = vd->vdev_ms[m];
 
-		/* skip if not active or not a member */
-		if (msp->ms_sm == NULL || msp->ms_group != mg)
+		/* skip if not a member */
+		if (msp->ms_group != mg)
 			continue;
+
+		/* the entire metaslab is free */
+		if (msp->ms_sm == NULL) {
+			mg_hist[vd->vdev_ms_shift]++;
+			continue;
+		}
 
 		for (i = 0; i < SPACE_MAP_HISTOGRAM_SIZE; i++)
 			mg_hist[i + ashift] +=
@@ -1022,8 +1082,14 @@ metaslab_group_histogram_add(metaslab_group_t *mg, metaslab_t *msp)
 	uint64_t ashift = mg->mg_vd->vdev_ashift;
 
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
-	if (msp->ms_sm == NULL)
+	if (msp->ms_sm == NULL) {
+		uint64_t ms_shift = mg->mg_vd->vdev_ms_shift;
+
+		/* the entire metaslab is free */
+		mg->mg_histogram[ms_shift]++;
+		mc->mc_histogram[ms_shift]++;
 		return;
+	}
 
 	mutex_enter(&mg->mg_lock);
 	for (int i = 0; i < SPACE_MAP_HISTOGRAM_SIZE; i++) {
@@ -1042,8 +1108,12 @@ metaslab_group_histogram_remove(metaslab_group_t *mg, metaslab_t *msp)
 	uint64_t ashift = mg->mg_vd->vdev_ashift;
 
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
-	if (msp->ms_sm == NULL)
+	if (msp->ms_sm == NULL) {
+		uint64_t ms_shift = mg->mg_vd->vdev_ms_shift;
+		mg->mg_histogram[ms_shift]--;
+		mc->mc_histogram[ms_shift]--;
 		return;
+	}
 
 	mutex_enter(&mg->mg_lock);
 	for (int i = 0; i < SPACE_MAP_HISTOGRAM_SIZE; i++) {
