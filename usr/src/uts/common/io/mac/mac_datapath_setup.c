@@ -4105,7 +4105,6 @@ mac_tx_srs_add_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 	soft_ring = mac_soft_ring_create(count, 0,
 	    soft_ring_type, maxclsyspri, mcip, mac_srs, -1,
 	    NULL, mcip, (mac_resource_handle_t)tx_ring);
-	mac_srs->srs_soft_ring_count++;
 	mac_srs_update_fanout_list(mac_srs);
 	/*
 	 * put this soft ring in quiesce mode too so when we restart
