@@ -755,6 +755,8 @@ extern flow_tree_t *mac_flow_tree_node_create(flow_entry_t *);
 extern void mac_flow_tree_node_destroy(flow_tree_t *);
 extern void mac_flow_tree_destroy(flow_tree_t *);
 
+extern bool mac_flow_action_validate(const flow_action_t *);
+
 inline mac_flow_action_type_t
 mac_flow_action_type(const flow_action_t *ac)
 {

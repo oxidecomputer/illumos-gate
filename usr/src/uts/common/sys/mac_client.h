@@ -127,6 +127,8 @@ typedef enum {
 
 extern int mac_client_open(mac_handle_t, mac_client_handle_t *, char *,
     uint16_t);
+extern int mac_client_open_action(mac_handle_t, mac_client_handle_t *, char *,
+    uint16_t, const flow_action_t *);
 extern void mac_client_close(mac_client_handle_t, uint16_t);
 
 extern int mac_unicast_add(mac_client_handle_t, uint8_t *, uint16_t,

@@ -1444,7 +1444,7 @@ mac_link_flow_add(datalink_id_t linkid, char *flow_name,
  */
 int
 mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
-    flow_desc_t *flow_desc, mac_resource_props_t *mrp, flow_action_t *ac)
+    flow_desc_t *flow_desc, mac_resource_props_t *mrp, const flow_action_t *ac)
 {
 	flow_entry_t		*flent = NULL;
 	int			err;
@@ -1453,6 +1453,10 @@ mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
 	boolean_t		link_held = B_FALSE;
 	boolean_t		hash_added = B_FALSE;
 	mac_perim_handle_t	mph;
+
+	if (ac != NULL && !mac_flow_action_validate(ac)) {
+		return (EINVAL);
+	}
 
 	err = mac_flow_lookup_byname(flow_name, &flent);
 	if (err == 0) {
@@ -1470,7 +1474,6 @@ mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
 	if (err != 0)
 		return (err);
 
-	/* TODO(ky): validate fe_action, etc. etc. */
 	if (ac != NULL) {
 		flent->fe_action = *ac;
 	}
@@ -2742,4 +2745,40 @@ mac_flow_tab_info_get(flow_mask_t mask)
 			return (&flow_tab_info_list[i]);
 	}
 	return (NULL);
+}
+
+/*
+ * Validates that all function parameters and callbacks are present given
+ * the state of `fa_flags`.
+ */
+bool
+mac_flow_action_validate(const flow_action_t *action)
+{
+	if ((action->fa_flags & MFA_FLAGS_ACTION) != 0) {
+		/*
+		 * A non-drop action must have a valid argument.
+		 */
+		if (action->fa_direct_rx_fn != NULL &&
+		    action->fa_direct_rx_arg == NULL) {
+			return (false);
+		}
+	}
+
+	if ((action->fa_flags & MFA_FLAGS_RESOURCE) != 0) {
+		/*
+		 * Resource API users must be able to handle all aspects of
+		 * a soft ring's lifecycle.
+		 */
+		const mac_resource_cb_t *rx = &action->fa_resource;
+		if (rx->mrc_add == NULL ||
+		    rx->mrc_remove == NULL ||
+		    rx->mrc_quiesce == NULL ||
+		    rx->mrc_restart == NULL ||
+		    rx->mrc_bind == NULL ||
+		    rx->mrc_arg == NULL) {
+			return (false);
+		}
+	}
+
+	return (true);
 }

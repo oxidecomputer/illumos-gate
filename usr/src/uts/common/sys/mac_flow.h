@@ -264,16 +264,18 @@ typedef	struct mac_resource_props_s {
 /* Opaque handle to a flow_entry_t. */
 typedef void	*flow_entry_handle_t;
 
-#define	MFA_FLAGS_ACTION	0x01
-#define	MFA_FLAGS_RESOURCE	0x02
-/*
- * Used to signify that a flow entry should not be created
- * for stats/bandwidth tracking in the Tx pathway.
- */
-#define	MFA_FLAGS_RX_ONLY	0x04
+typedef enum {
+	MFA_FLAGS_ACTION	= 0x01,
+	MFA_FLAGS_RESOURCE	= 0x02,
+	/*
+	 * Used to signify that a flow entry should not be created
+	 * for stats/bandwidth tracking in the Tx pathway.
+	 */
+	MFA_FLAGS_RX_ONLY	= 0x04,
+} fa_flags_t;
 
 typedef struct flow_action_s {
-	uint32_t fa_flags;
+	fa_flags_t fa_flags;
 
 	/*
 	 * Function pointer used to handle each inbound packet when
@@ -284,7 +286,8 @@ typedef struct flow_action_s {
 	 * to its first ancestor with a valid action.
 	 *
 	 * If this flag is set, a NULL `fa_direct_rx_fn` will drop any packets
-	 * via `freemsgchain`.
+	 * via `freemsgchain`. A non-NULL function must have a non-NULL
+	 * argument.
 	 */
 	mac_direct_rx_t	fa_direct_rx_fn;
 	void		*fa_direct_rx_arg;
@@ -295,6 +298,8 @@ typedef struct flow_action_s {
 	 * This exposes existing functionality used for DLS bypass to inform
 	 * a client about softring creation/deletion, CPU bindings and to
 	 * enable/disable/perform softring polling.
+	 *
+	 * If set, all fields of this struct must have non-NULL values.
 	 */
 	mac_resource_cb_t	fa_resource;
 } flow_action_t;
