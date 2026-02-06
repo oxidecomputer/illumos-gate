@@ -75,6 +75,7 @@ mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst)
 	}
 
 	if (!mac_pkt_list_is_empty(dst)) {
+		ASSERT3P(dst->mpl_tail->b_next, ==, NULL);
 		dst->mpl_tail->b_next = src->mpl_head;
 	} else {
 		dst->mpl_head = src->mpl_head;

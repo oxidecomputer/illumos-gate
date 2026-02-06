@@ -279,7 +279,7 @@ struct mac_soft_ring_s {
 typedef void (*mac_srs_drain_proc_t)(mac_soft_ring_set_t *, uint_t);
 
 /* Transmit side Soft Ring Set */
-typedef struct mac_srs_tx_s {
+typedef struct {
 	/* Members for Tx size processing */
 	uint32_t		st_mode;
 	mac_tx_func_t		st_func;
@@ -326,7 +326,7 @@ typedef struct mac_srs_tx_s {
 } mac_srs_tx_t;
 
 /* Receive side Soft Ring Set */
-typedef struct mac_srs_rx_s {
+typedef struct {
 	/*
 	 * Upcall Function for fanout, Rx processing etc. Perhaps
 	 * the same 3 members below can be used for Tx
@@ -804,18 +804,25 @@ typedef enum {
  */
 struct mac_soft_ring_set_s {
 	/*
-	 * Common elements, common to both Rx and Tx SRS type.
+	 * Elements common to all SRS types.
 	 * The following block of fields are protected by srs_lock
 	 */
 	kmutex_t	srs_lock;
 	mac_soft_ring_set_type_t	srs_type;
 	mac_soft_ring_set_state_t	srs_state;
-	uint32_t	srs_count;
 	mblk_t		*srs_first;	/* first mblk chain or NULL */
 	mblk_t		*srs_last;	/* last mblk chain or NULL */
+	size_t		srs_size;	/* Size of packets queued in bytes */
+	uint32_t	srs_count;
 	kcondvar_t	srs_async;	/* cv for worker thread */
 	kcondvar_t	srs_cv;		/* cv for poll thread */
 	kcondvar_t	srs_quiesce_done_cv;	/* cv for removal */
+
+	/* Type-specific drain function (BW ctl vs non-BW ctl)	*/
+	mac_srs_drain_proc_t	srs_drain_func;	/* srs_lock(Rx), Quiesce(tx) */
+
+	/* 64B */
+
 	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
 
 	/*
@@ -834,19 +841,18 @@ struct mac_soft_ring_set_s {
 	flow_tree_baked_t	srs_flowtree;
 
 	/*
-	 * List of soft rings & processing function.
-	 * The following block is protected by Rx quiescence.
-	 * i.e. they can be changed only after quiescing the SRS
-	 * Protected by srs_lock.
+	 * List of soft rings.
+	 * The following block can be altered only after quiescing the SRS.
 	 *
-	 * TODO(ky) what is the protection in Tx case?
+	 * Counts are limited to `uint16_t` to save space, as we admit at most
+	 * `MAX_SR_FANOUT` (24, Rx) or `MAX_RINGS_PER_GROUP` (128, Tx) elements.
 	 */
 	mac_soft_ring_t	*srs_soft_ring_head;
 	mac_soft_ring_t	*srs_soft_ring_tail;
 	mac_soft_ring_t	**srs_soft_rings;
-	uint32_t	srs_soft_ring_count;
-	uint32_t	srs_soft_ring_quiesced_count;
-	uint32_t	srs_soft_ring_condemned_count;
+	uint16_t	srs_soft_ring_count;
+	uint16_t	srs_soft_ring_quiesced_count;
+	uint16_t	srs_soft_ring_condemned_count;
 
 	/*
 	 * Logical SRSes which hold no actual softrings are used as queues
@@ -868,15 +874,10 @@ struct mac_soft_ring_set_s {
 	mac_bw_ctl_t	**srs_bw; /* WO */
 	size_t		srs_bw_len; /* WO */
 
-	/* TODO(ky): *these* should be protected by srs_lock */
-	size_t		srs_size;	/* Size of packets queued in bytes */
 	pri_t		srs_pri; /* srs_lock */
 
 	mac_soft_ring_set_t	*srs_next;	/* mac_srs_g_lock */
 	mac_soft_ring_set_t	*srs_prev;	/* mac_srs_g_lock */
-
-	/* Attribute specific drain func (BW ctl vs non-BW ctl)	*/
-	mac_srs_drain_proc_t	srs_drain_func;	/* srs_lock(Rx), Quiesce(tx) */
 
 	/*
 	 * If the associated ring is exclusively used by a mac client, e.g.,
@@ -890,9 +891,6 @@ struct mac_soft_ring_set_s {
 	 */
 	struct mac_client_impl_s *srs_mcip;	/* back ptr to mac client */
 	struct flow_entry_s	*srs_flent;	/* back ptr to flent */
-
-	/* Teardown, disable control ops */
-	kcondvar_t	srs_client_cv;	/* Client wait for the control op */
 
 	kthread_t	*srs_worker;	/* WO, worker thread */
 

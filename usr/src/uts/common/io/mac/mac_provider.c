@@ -42,6 +42,7 @@
 #include <sys/mac_impl.h>
 #include <sys/mac_client_impl.h>
 #include <sys/mac_client_priv.h>
+#include <sys/mac_datapath_impl.h>
 #include <sys/mac_soft_ring.h>
 #include <sys/mac_stat.h>
 #include <sys/dld.h>
@@ -2672,7 +2673,7 @@ mac_ether_offload_info(const mblk_t *pkt, mac_ether_offload_info_t *outer_info,
 	 * before unpacking it if the parsing of outer_info is incomplete (or
 	 * not a tunnel at all).
 	 */
-	outer_target->meoi_len = msgdsize(pkt);
+	outer_target->meoi_len = mp_len(pkt);
 	if (inner_info != NULL) {
 		inner_info->meoi_flags = 0;
 		inner_info->meoi_tuntype = METT_NONE;

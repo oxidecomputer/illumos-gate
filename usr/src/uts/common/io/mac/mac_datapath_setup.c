@@ -195,7 +195,7 @@ boolean_t mac_rx_intr_retarget = B_FALSE;
  */
 #define	BIND_TX_SRS_AND_SOFT_RINGS(mac_tx_srs, mrp) {			\
 	processorid_t cpuid;						\
-	int i;								\
+	uint16_t i;								\
 	mac_soft_ring_t *softring;					\
 	mac_cpus_t *srs_cpu;						\
 									\
@@ -664,7 +664,7 @@ mac_tx_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp,
 	mac_ring_t *ring;
 	processorid_t worker_cpuid;
 	boolean_t retargetable_client = B_FALSE;
-	int i, j;
+	int j;
 
 	if (RETARGETABLE_CLIENT((mac_group_t *)flent->fe_tx_ring_group,
 	    flent->fe_mcip)) {
@@ -674,7 +674,7 @@ mac_tx_cpu_init(flow_entry_t *flent, mac_resource_props_t *mrp,
 	if (MAC_TX_SOFT_RINGS(tx_srs)) {
 		if (mrp != NULL)
 			j = mrp->mrp_ncpus - 1;
-		for (i = 0; i < tx_srs->srs_soft_ring_count; i++) {
+		for (uint16_t i = 0; i < tx_srs->srs_soft_ring_count; i++) {
 			if (mrp != NULL) {
 				if (j < 0)
 					j = mrp->mrp_ncpus - 1;
@@ -1301,7 +1301,7 @@ mac_tx_srs_retarget_intr(mac_soft_ring_set_t *mac_srs)
 
 	srs_cpu = &mac_srs->srs_cpu;
 	if (MAC_TX_SOFT_RINGS(mac_srs)) {
-		for (int i = 0; i < mac_srs->srs_soft_ring_count; i++) {
+		for (uint16_t i = 0; i < mac_srs->srs_soft_ring_count; i++) {
 			sringp = mac_srs->srs_soft_rings[i];
 			ring = (mac_ring_t *)sringp->s_ring_tx_arg2;
 			cpuid = srs_cpu->mc_tx_intr_cpu[i];
@@ -1907,9 +1907,11 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 {
 	/* New request */
 	mac_cpus_t *srs_cpu = &mac_rx_srs->srs_cpu;
-	const uint32_t new_fanout_cnt = srs_cpu->mc_rx_fanout_cnt;
+	VERIFY3U(srs_cpu->mc_rx_fanout_cnt, <=,
+	    MAX(MAX_SR_FANOUT, MAX_RINGS_PER_GROUP));
+	const uint16_t new_fanout_cnt = (uint16_t)srs_cpu->mc_rx_fanout_cnt;
 	/* How many are present right now? */
-	const uint32_t srings_present = mac_rx_srs->srs_soft_ring_count;
+	const uint16_t srings_present = mac_rx_srs->srs_soft_ring_count;
 
 	/* Does this flow need to report bindings to an upstack client? */
 	const flow_action_t *act = mac_srs_rx_action(mac_rx_srs);
@@ -1925,7 +1927,7 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 
 	if (new_fanout_cnt > srings_present) {
 		/* soft rings increased */
-		for (uint32_t i = srings_present; i < new_fanout_cnt; i++) {
+		for (uint16_t i = srings_present; i < new_fanout_cnt; i++) {
 			/*
 			 * Create the protocol softrings and set the
 			 * DLS bypass where possible.
@@ -1937,7 +1939,7 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 		mac_srs_update_fanout_list(mac_rx_srs);
 	} else if (new_fanout_cnt < srings_present) {
 		/* soft rings decreased */
-		for (uint32_t i = new_fanout_cnt; i < srings_present; i++) {
+		for (uint16_t i = new_fanout_cnt; i < srings_present; i++) {
 			mac_soft_ring_t *softring =
 			    mac_rx_srs->srs_soft_rings[i];
 			if (notify_upstack && notify_arg != NULL &&
@@ -1954,7 +1956,7 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 
 	ASSERT3U(new_fanout_cnt, ==, mac_rx_srs->srs_soft_ring_count);
 	mutex_enter(&cpu_lock);
-	for (int i = 0; i < mac_rx_srs->srs_soft_ring_count; i++) {
+	for (uint16_t i = 0; i < mac_rx_srs->srs_soft_ring_count; i++) {
 		mac_soft_ring_t *softring =
 		    mac_rx_srs->srs_soft_rings[i];
 		const processorid_t cpuid = srs_cpu->mc_rx_fanout_cpus[i];
@@ -4091,7 +4093,7 @@ mac_tx_srs_add_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 {
 	mac_client_impl_t *mcip = mac_srs->srs_mcip;
 	mac_soft_ring_t *soft_ring;
-	int count = mac_srs->srs_soft_ring_count;
+	uint16_t count = mac_srs->srs_soft_ring_count;
 	mac_soft_ring_type_t soft_ring_type = ST_RING_TX;
 	uint_t ring_info;
 
@@ -4116,7 +4118,7 @@ static void
 mac_soft_ring_remove(mac_soft_ring_set_t *mac_srs, mac_soft_ring_t *softring)
 {
 	mutex_enter(&mac_srs->srs_lock);
-	uint32_t sringcnt = mac_srs->srs_soft_ring_count;
+	uint16_t sringcnt = mac_srs->srs_soft_ring_count;
 	mac_soft_ring_signal(softring, S_RING_CONDEMNED);
 
 	ASSERT3U(mac_srs->srs_soft_ring_condemned_count, ==, 0);
@@ -4152,7 +4154,7 @@ mac_soft_ring_remove(mac_soft_ring_set_t *mac_srs, mac_soft_ring_t *softring)
 void
 mac_tx_srs_del_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 {
-	uint32_t i;
+	uint16_t i;
 	mac_soft_ring_t *soft_ring, *remove_sring;
 	mac_client_impl_t *mcip = mac_srs->srs_mcip;
 
@@ -4293,7 +4295,7 @@ no_group:
 		    MAC_CAPAB_AGGR, &tx->st_capab_aggr));
 	}
 	DTRACE_PROBE3(tx__srs___setup__return, mac_soft_ring_set_t *, tx_srs,
-	    int, tx->st_mode, int, tx_srs->srs_soft_ring_count);
+	    int, tx->st_mode, uint16_t, tx_srs->srs_soft_ring_count);
 }
 
 /*
