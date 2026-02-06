@@ -1857,7 +1857,6 @@ void
 mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_srs, processorid_t cpuid)
 {
-
 	const flow_action_t *act = mac_srs_rx_action(mac_srs);
 	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0 &&
 	    act->fa_resource.mrc_add != NULL &&

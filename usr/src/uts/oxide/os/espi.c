@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -796,6 +796,21 @@ espi_oob_writable(mmio_reg_block_t block)
 void
 espi_oob_flush(mmio_reg_block_t block)
 {
+	mmio_reg_t hdr0 = FCH_ESPI_UP_RXHDR0_MMIO(block);
+
+	/*
+	 * Proactively advertise that the RX FIFO is ready to accept a new
+	 * upstream OOB request, regardless of whether we have any
+	 * indication from the eSPI registers that data is pending.
+	 *
+	 * We have observed that if data becomes available before the OS is
+	 * running, the eSPI controller will already be asserting an OOB
+	 * alert, no interrupt will be delivered to the driver and the
+	 * controller will not generate another alert until the existing
+	 * data is consumed.
+	 */
+	mmio_reg_write(hdr0, FCH_ESPI_UP_RXHDR0_CLEAR_UPCMD_STAT(0));
+
 	/* Drain the input buffer */
 	while (espi_oob_readable(block))
 		(void) espi_oob_rx(block, NULL, NULL);

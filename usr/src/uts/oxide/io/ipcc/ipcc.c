@@ -156,14 +156,14 @@ ipcc_poll(void *arg, ipcc_pollevent_t ev, ipcc_pollevent_t *revp,
 		 * maximum of 0.1s.
 		 */
 		if (++loops % 10 == 0)
-			delay = MAX(delay << 1, 100);
+			delay = MIN(delay << 1, 100);
 
 		/*
 		 * If we're under a timeout, sleep only for as long as is
 		 * remaining, but clamp to at least 10ms.
 		 */
 		if (timeout_ms > 0)
-			delay = MIN(10, MAX(delay, timeout_ms - elapsed));
+			delay = MAX(10, MIN(delay, timeout_ms - elapsed));
 	}
 
 	*revp = rev;
