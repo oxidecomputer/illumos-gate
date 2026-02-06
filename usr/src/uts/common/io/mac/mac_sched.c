@@ -1774,6 +1774,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 	mblk_t			*tailmp[MAX_SR_FANOUT] = { 0 };
 	int			cnt[MAX_SR_FANOUT] = { 0 };
 	size_t			sz[MAX_SR_FANOUT] = { 0 };
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 
 	const bool never_round_robin =
 	    (mac_srs->srs_type & SRST_CLIENT_POLL) != 0;
@@ -1799,8 +1800,7 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		uint_t indx = 0;
 
 		if (unlikely(do_round_robin)) {
-			indx = mac_srs->srs_ind % fanout_cnt;
-			mac_srs->srs_ind++;
+			indx = (srs_rx->sr_ind++) % fanout_cnt;
 			goto enqueue;
 		}
 
@@ -2346,7 +2346,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
  * should be limited to use only *after* packets have been handed off to the
  * SRS, so as not to impact pure-polling work.
  */
-static mblk_t *
+static inline mblk_t *
 mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 {
 	ASSERT3P(mcip, !=, NULL);
@@ -2443,7 +2443,7 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
  * called to determine whether any packets were dropped, especially where SRS
  * state and poll packet counts are concerned.
  */
-static void
+static inline void
 mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t *set,
     mblk_t *mp)
 {

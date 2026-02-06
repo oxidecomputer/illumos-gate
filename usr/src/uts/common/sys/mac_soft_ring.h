@@ -33,6 +33,7 @@
 extern "C" {
 #endif
 
+#include <sys/stddef.h>
 #include <sys/types.h>
 #include <sys/cpuvar.h>
 #include <sys/cpupart.h>
@@ -59,6 +60,27 @@ typedef void (*mac_soft_ring_drain_func_t)(mac_soft_ring_t *);
 typedef mac_tx_cookie_t (*mac_tx_func_t)(mac_soft_ring_set_t *, mblk_t *,
     uintptr_t, uint16_t, mblk_t **);
 
+/*
+ * soft ring set (SRS) Tx modes
+ */
+typedef enum {
+	SRS_TX_DEFAULT = 0,
+	SRS_TX_SERIALIZE,
+	SRS_TX_FANOUT,
+	SRS_TX_BW,
+	SRS_TX_BW_FANOUT,
+	SRS_TX_AGGR,
+	SRS_TX_BW_AGGR
+} mac_tx_srs_mode_t;
+
+/*
+ * SRS fanout states
+ */
+typedef enum {
+	SRS_FANOUT_UNINIT = 0,
+	SRS_FANOUT_INIT,
+	SRS_FANOUT_REINIT
+} mac_srs_fanout_state_t;
 
 /* Tx notify callback */
 typedef struct mac_tx_notify_cb_s {
@@ -280,12 +302,11 @@ typedef void (*mac_srs_drain_proc_t)(mac_soft_ring_set_t *, uint_t);
 
 /* Transmit side Soft Ring Set */
 typedef struct {
-	/* Members for Tx size processing */
-	uint32_t		st_mode;
+	mac_tx_srs_mode_t	st_mode;
 	mac_tx_func_t		st_func;
-	/* TODO(ky) this is a `mac_client_impl_t *`. */
+	/* TODO(ky): typechecking -- this is a `mac_client_impl_t *`. */
 	void			*st_arg1;
-	/* TODO(ky) this is a `mac_ring_t *`. */
+	/* TODO(ky): typechecking -- this is a `mac_ring_impl_t *`. */
 	void			*st_arg2;
 	mac_group_t		*st_group;	/* TX group for share */
 	boolean_t		st_woken_up;
@@ -336,17 +357,23 @@ typedef struct {
 	 * another day.
 	 */
 	mac_direct_rx_t		sr_func;	/* srs_lock */
-	/* TODO(ky) this is a `mac_client_impl_t *`. */
+	/* TODO(ky): typechecking -- this is a `mac_client_impl_t *`. */
 	void			*sr_arg1;	/* srs_lock */
 	mac_resource_handle_t	sr_arg2;	/* srs_lock */
 	mac_rx_func_t		sr_lower_proc;	/* Atomically changed */
-	uint32_t		sr_poll_pkt_cnt;
+	mac_ring_t		*sr_ring;	/* Ring Descriptor (WO) */
 	uint32_t		sr_poll_thres;
-
 	/* mblk cnt to apply flow control */
 	uint32_t		sr_hiwat;
 	/* mblk cnt to relieve flow control */
 	uint32_t		sr_lowat;
+	flow_entry_t		*sr_act_as;	/* WO */
+
+	/* 64B */
+
+	uint32_t		sr_poll_pkt_cnt; /* Atomically updated */
+	/* Round Robin index for hashing into softrings */
+	uint32_t		sr_ind; /* SRS_PROC */
 	mac_rx_stats_t		sr_stat;
 
 	/* Times polling was enabled */
@@ -403,15 +430,11 @@ typedef struct {
 
 	/* WO, poll thread */
 	kthread_t		*sr_poll_thr;
-	/* Ring Descriptor (WO) */
-	mac_ring_t		*sr_ring;
+
 	/* processor to bind to */
 	processorid_t		sr_poll_cpuid;
 	/* saved cpuid during offline */
 	processorid_t		sr_poll_cpuid_save;
-
-	/* WO */
-	flow_entry_t		*sr_act_as;
 } mac_srs_rx_t;
 
 /*
@@ -805,7 +828,8 @@ typedef enum {
 struct mac_soft_ring_set_s {
 	/*
 	 * Elements common to all SRS types.
-	 * The following block of fields are protected by srs_lock
+	 * The following block of fields are protected by srs_lock and fill one
+	 * cache line with the elements which change often in the datapath.
 	 */
 	kmutex_t	srs_lock;
 	mac_soft_ring_set_type_t	srs_type;
@@ -817,13 +841,15 @@ struct mac_soft_ring_set_s {
 	kcondvar_t	srs_async;	/* cv for worker thread */
 	kcondvar_t	srs_cv;		/* cv for poll thread */
 	kcondvar_t	srs_quiesce_done_cv;	/* cv for removal */
+	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
+
+	/*
+	 * From here 'til `srs_data`, the fields of this struct are mostly
+	 * static barring changes from administrative commands.
+	 */
 
 	/* Type-specific drain function (BW ctl vs non-BW ctl)	*/
 	mac_srs_drain_proc_t	srs_drain_func;	/* srs_lock(Rx), Quiesce(tx) */
-
-	/* 64B */
-
-	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
 
 	/*
 	 * An SRS may be either _complete_ (!(srs_type & SRST_LOGICAL)), or
@@ -894,10 +920,9 @@ struct mac_soft_ring_set_s {
 
 	kthread_t	*srs_worker;	/* WO, worker thread */
 
-	uint_t		srs_ind;	/* Round Robin indx for picking up SR */
 	processorid_t	srs_worker_cpuid;	/* processor to bind to */
 	processorid_t	srs_worker_cpuid_save;	/* saved cpuid during offline */
-	uint_t		srs_fanout_state;
+	mac_srs_fanout_state_t	srs_fanout_state;
 
 	/*
 	 * Singly-linked list of logical SRSes allocated within an srs_flowtree.
@@ -908,18 +933,31 @@ struct mac_soft_ring_set_s {
 	mac_soft_ring_set_t	*srs_complete_parent;
 
 	/*
-	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
-	 * then can we share this where relevant? It's like 5KiB each go.
+	 * We want to setup cache-line alignment for `mac_srs_rx_t` and
+	 * `mac_srs_tx_t` such that they can reason about placing immutable
+	 * members together regardless of this struct's layout.
+	 *
+	 * We assert this property holds below.
 	 */
-	mac_cpus_t	srs_cpu;
+	uint8_t 		srs_pad[8];
 
 	union {
 		mac_srs_rx_t	rx; /* !(srs_type & SRST_TX) */
 		mac_srs_tx_t	tx; /* srs_type & SRST_TX */
 	} srs_data;
 
+	/*
+	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
+	 * then can we share this where relevant? It's like 5KiB each go.
+	 */
+	mac_cpus_t	srs_cpu;
+
 	kstat_t		*srs_ksp;
 };
+
+#ifdef _KERNEL
+CTASSERT((offsetof (mac_soft_ring_set_t, srs_data) % 64) == 0);
+#endif
 
 inline bool
 mac_srs_is_tx(const mac_soft_ring_set_t *srs)
@@ -954,28 +992,6 @@ mac_srs_rx_action(mac_soft_ring_set_t *srs)
 {
 	return (&mac_srs_rx_action_flent(srs)->fe_action);
 }
-
-/*
- * soft ring set (SRS) Tx modes
- */
-typedef enum {
-	SRS_TX_DEFAULT = 0,
-	SRS_TX_SERIALIZE,
-	SRS_TX_FANOUT,
-	SRS_TX_BW,
-	SRS_TX_BW_FANOUT,
-	SRS_TX_AGGR,
-	SRS_TX_BW_AGGR
-} mac_tx_srs_mode_t;
-
-/*
- * SRS fanout states
- */
-typedef enum {
-	SRS_FANOUT_UNINIT = 0,
-	SRS_FANOUT_INIT,
-	SRS_FANOUT_REINIT
-} mac_srs_fanout_state_t;
 
 /*
  * Structure for dls statistics

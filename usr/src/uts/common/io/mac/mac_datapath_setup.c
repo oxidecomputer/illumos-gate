@@ -79,7 +79,6 @@ struct mac_srs_create_params {
 	enum mac_srs_create_ty	msc_ty;
 	union {
 		struct {
-			mac_direct_rx_t rx_func;
 			mac_ring_t *ring;
 		} rx;
 		struct {
@@ -2220,14 +2219,12 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 static mac_soft_ring_set_t *
 mac_srs_create_rx(mac_client_impl_t *mcip, flow_entry_t *flent,
-    mac_soft_ring_set_type_t srs_type, mac_direct_rx_t rx_func,
-    mac_ring_t *ring)
+    mac_soft_ring_set_type_t srs_type, mac_ring_t *ring)
 {
 	ASSERT3P(mcip, !=, NULL);
 	ASSERT3P(flent, !=, NULL);
 	ASSERT3U(srs_type & (SRST_TX | SRST_LOGICAL), ==, 0);
 	struct mac_srs_create_params p = { .msc_ty = SCT_RX };
-	p.msc_data.rx.rx_func = rx_func;
 	p.msc_data.rx.ring = ring;
 	return (mac_srs_create(mcip, flent, srs_type, &p));
 }
@@ -2493,12 +2490,22 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 	srs_rx->sr_lower_proc = mac_rx_srs_process;
 
+	/*
+	 * Allow for delivery to this SRS directly from an aggr device.
+	 *
+	 * TODO(ky): Setup SRST_NO_SOFT_RINGS delivery via this? Is ths needed?
+	 */
+	const flow_action_t *my_action =
+	    (mac_srs->srs_give_to == NULL) ?
+	    &flent->fe_action :
+	    &mac_srs->srs_give_to->srs_flent->fe_action;
+	VERIFY3U(my_action->fa_flags & MFA_FLAGS_ACTION, !=, 0);
+	srs_rx->sr_func = my_action->fa_direct_rx_fn;
+	srs_rx->sr_arg1 = my_action->fa_direct_rx_arg;
+	srs_rx->sr_arg2 = NULL;
+
 	if (!is_logical) {
 		mac_ring_t *ring = p->msc_data.rx.ring;
-
-		srs_rx->sr_func = p->msc_data.rx.rx_func;
-		srs_rx->sr_arg1 = mcip;
-		srs_rx->sr_arg2 = NULL;
 
 		if (ring != NULL) {
 			uint_t ring_info;
@@ -2646,8 +2653,7 @@ mac_rx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 	/* Create the SRS for SW classification if none exists */
 	if (flent->fe_rx_srs[0] == NULL) {
 		ASSERT3S(flent->fe_rx_srs_cnt, ==, 0);
-		mac_srs = mac_srs_create_rx(mcip, flent, link_type,
-		    mac_rx_deliver, NULL);
+		mac_srs = mac_srs_create_rx(mcip, flent, link_type, NULL);
 		mutex_enter(&flent->fe_lock);
 		flent->fe_cb_fn =
 		    (flow_fn_t)mac_srs->srs_data.rx.sr_lower_proc;
@@ -2696,7 +2702,7 @@ mac_rx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 				 * HW rings.
 				 */
 				mac_srs = mac_srs_create_rx(mcip, flent,
-				    link_type, mac_rx_deliver, ring);
+				    link_type, ring);
 				break;
 			default:
 				cmn_err(CE_PANIC,

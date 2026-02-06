@@ -121,6 +121,7 @@
 #include <sys/modhash.h>
 #include <sys/mac_impl.h>
 #include <sys/mac_client_impl.h>
+#include <sys/mac_datapath_impl.h>
 #include <sys/mac_soft_ring.h>
 #include <sys/mac_stat.h>
 #include <sys/dls.h>
