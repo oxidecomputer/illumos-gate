@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -442,6 +442,61 @@
 #error ipcc needs porting for big-endian platforms
 #endif
 
+typedef struct {
+	const ipcc_ops_t	*lhcb_ops;
+	const char		*lhcb_tag;
+	void			*lhcb_arg;
+} loghex_cb_t;
+
+static int
+ipcc_loghex_cb(void *arg, uint64_t addr, const char *str,
+    size_t len __unused)
+{
+	const loghex_cb_t *cb = arg;
+
+	cb->lhcb_ops->io_log(cb->lhcb_arg, IPCC_LOG_HEX, "%s  %s\n",
+	    cb->lhcb_tag, str);
+	return (0);
+}
+
+static void
+ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
+    const ipcc_ops_t *ops, void *arg)
+{
+	loghex_cb_t cb = {
+		.lhcb_ops = ops,
+		.lhcb_tag = tag,
+		.lhcb_arg = arg
+	};
+	/*
+	 * A line of hexdump output with the default width of 16 bytes per line
+	 * and a grouping of 4, in conjunction with the address and ascii
+	 * options will not exceed 80 characters, even if the address becomes
+	 * large enough to use additional columns.
+	 */
+	uint8_t scratchbuf[80];
+	hexdump_t h;
+
+	hexdump_init(&h);
+	hexdump_set_grouping(&h, 4);
+	hexdump_set_buf(&h, scratchbuf, sizeof (scratchbuf));
+	/*
+	 * Limit the amount of hex shown for large messages to the initial
+	 * portion.
+	 */
+	bufl = MIN(bufl, 0x100);
+
+	(void) hexdumph(&h, buf, bufl, HDF_ADDRESS | HDF_ASCII,
+	    ipcc_loghex_cb, (void *)&cb);
+
+	hexdump_fini(&h);
+}
+
+#define	LOG(...) if (ops->io_log != NULL) \
+	ops->io_log(arg, IPCC_LOG_DEBUG, __VA_ARGS__)
+#define	LOGHEX(tag, buf, len) \
+	if (ops->io_log != NULL) ipcc_loghex((tag), (buf), (len), ops, arg)
+
 /* See "Retransmissions" above */
 uint_t ipcc_max_attempts = 10;
 
@@ -457,11 +512,90 @@ uint_t ipcc_readpoll_attempts = 600; /* 60s with default readpoll_timeout_ms */
 /*
  * Global message and packet buffers.
  * For outbound messages, the message is constructed in ipcc_msg and then COBS
- * encoded into ipcc_pkt. For inbound messages the packet is received into
- * ipcc_pkt and then decoded into ipcc_msg.
+ * encoded into ipcc_out.
+ *
+ * For inbound messages the packet is received into the `ipcc_in_bbuf` ring
+ * buffer and then decoded
+ * into ipcc_msg.
  */
 static uint8_t ipcc_msg[IPCC_MAX_MESSAGE_SIZE];
-static uint8_t ipcc_pkt[IPCC_MAX_PACKET_SIZE];
+static uint8_t ipcc_out[IPCC_MAX_PACKET_SIZE];
+static uint8_t ipcc_in[IPCC_MAX_PACKET_SIZE];
+
+typedef struct ipcc_bbuffer {
+	uint8_t *irb_bounce;
+	size_t irb_size;
+	size_t irb_head;
+	size_t irb_tail;
+} ipcc_bbuffer_t;
+
+static uint8_t ipcc_in_bouncebuf[IPCC_MAX_PACKET_SIZE];
+
+static ipcc_bbuffer_t ipcc_in_bbuf = {
+	.irb_bounce = ipcc_in_bouncebuf,
+	.irb_size = sizeof (ipcc_in_bouncebuf),
+	.irb_head = 0,
+	.irb_tail = 0,
+};
+
+static size_t
+ipcc_bbuffer_size(ipcc_bbuffer_t *ring)
+{
+	ASSERT3P(ring, !=, NULL);
+	return (ring->irb_size);
+}
+
+static size_t
+ipcc_bbuffer_len(ipcc_bbuffer_t *ring)
+{
+	ASSERT3P(ring, !=, NULL);
+	return (ring->irb_tail - ring->irb_head);
+}
+
+static bool
+ipcc_bbuffer_is_empty(ipcc_bbuffer_t *ring)
+{
+	return (ipcc_bbuffer_len(ring) == 0);
+}
+
+static bool
+ipcc_bbuffer_is_full(ipcc_bbuffer_t *ring)
+{
+	return (ipcc_bbuffer_len(ring) == ring->irb_size);
+}
+
+static void
+ipcc_bbuffer_push_back(ipcc_bbuffer_t *ring, uint8_t byte)
+{
+	ASSERT3P(ring, !=, NULL);
+	VERIFY(!ipcc_bbuffer_is_full(ring));
+	ring->irb_bounce[ring->irb_tail++] = byte;
+}
+
+static uint8_t
+ipcc_bbuffer_pop_front(ipcc_bbuffer_t *ring)
+{
+	ASSERT3P(ring, !=, NULL);
+	VERIFY(!ipcc_bbuffer_is_empty(ring));
+	uint8_t byte = ring->irb_bounce[ring->irb_head++];
+	return (byte);
+}
+
+static int
+ipcc_bbuffer_fill(ipcc_bbuffer_t *ring,
+    int (*thunk)(void *, uint8_t *, size_t *), void *arg)
+{
+	ASSERT3P(ring, !=, NULL);
+	VERIFY(ipcc_bbuffer_is_empty(ring));
+	size_t n = ring->irb_size;
+	int err = thunk(arg, ring->irb_bounce, &n);
+	if (err != 0)
+		return (err);
+	VERIFY3U(n, <=, ring->irb_size);
+	ring->irb_head = 0;
+	ring->irb_tail = n;
+	return (0);
+}
 
 /*
  * As well as indicating that we should expect to be called from multiple
@@ -768,30 +902,23 @@ ipcc_pkt_send(uint8_t *pkt, size_t len, const ipcc_ops_t *ops, void *arg)
 }
 
 static int
-ipcc_pkt_recv(uint8_t *pkt, size_t len, uint8_t **endp,
-    const ipcc_ops_t *ops, void *arg)
+ipcc_fill_ring(ipcc_bbuffer_t *ring, const ipcc_ops_t *ops, void *arg)
 {
-	ipcc_pollevent_t ev;
-	uint8_t *frame = pkt;
-
-	*endp = NULL;
+	ipcc_pollevent_t ev = IPCC_POLLIN, rev = 0;
+	size_t n = 0;
+	int err = 0;
+	uint_t retries = ipcc_readpoll_attempts;
 
 	ev = IPCC_POLLIN;
 	if (ops->io_readintr != NULL)
 		ev |= IPCC_INTR;
 
-	do {
-		ipcc_pollevent_t rev;
-		size_t n;
-		int err;
-		uint_t retries = ipcc_readpoll_attempts;
-
+	ASSERT3P(ring, !=, NULL);
+	while (ipcc_bbuffer_is_empty(ring)) {
 		while ((err = ops->io_poll(arg, ev, &rev,
 		    ipcc_readpoll_timeout_ms)) != 0) {
-			if (err != ETIMEDOUT)
+			if (--retries == 0 || err != ETIMEDOUT)
 				return (err);
-			if (--retries == 0)
-				return (ETIMEDOUT);
 			/*
 			 * Send periodic frame terminators in case the real one
 			 * was corrupted or lost. The SP will just discard
@@ -801,99 +928,86 @@ ipcc_pkt_recv(uint8_t *pkt, size_t len, uint8_t **endp,
 			n = 1;
 			(void) ops->io_write(arg, &ka, &n);
 		}
+
 		if ((rev & IPCC_INTR) != 0)
 			return (ESPINTR);
 		ASSERT((rev & IPCC_POLLIN) != 0);
 
-		n = len;
-		err = ops->io_read(arg, frame, &n);
+		err = ipcc_bbuffer_fill(ring, ops->io_read, arg);
 		if (err != 0)
 			return (err);
 
-		VERIFY3U(n, <=, len);
+		if (ipcc_bbuffer_is_empty(ring))
+			LOG("SHORT READ INTO BOUNCE BUFFER");
+	}
 
-		if (n == 0)
-			continue;
-
-		/*
-		 * If the accumulated frame now ends with a terminator, return
-		 * it to the caller;
-		 */
-		uint8_t *end = frame + n - 1;
-		if (*end == '\0') {
-			/*
-			 * Strip off any extra frame terminators which may have
-			 * been accumulated. The SP will send terminators
-			 * whenever it considers the channel idle, including
-			 * just after it has delivered a response.
-			 */
-			while (end > pkt && end[-1] == '\0')
-				end--;
-			*endp = end;
-			return (0);
-		}
-
-		frame += n;
-		len -= n;
-	} while (len > 0);
-
-	return (ENOBUFS);
-}
-
-typedef struct {
-	const ipcc_ops_t	*lhcb_ops;
-	const char		*lhcb_tag;
-	void			*lhcb_arg;
-} loghex_cb_t;
-
-static int
-ipcc_loghex_cb(void *arg, uint64_t addr, const char *str,
-    size_t len __unused)
-{
-	const loghex_cb_t *cb = arg;
-
-	cb->lhcb_ops->io_log(cb->lhcb_arg, IPCC_LOG_HEX, "%s  %s\n",
-	    cb->lhcb_tag, str);
 	return (0);
 }
 
-static void
-ipcc_loghex(const char *tag, const uint8_t *buf, size_t bufl,
+static int
+ipcc_getc(ipcc_bbuffer_t *ring, uint8_t *bp,
     const ipcc_ops_t *ops, void *arg)
 {
-	loghex_cb_t cb = {
-		.lhcb_ops = ops,
-		.lhcb_tag = tag,
-		.lhcb_arg = arg
-	};
-	/*
-	 * A line of hexdump output with the default width of 16 bytes per line
-	 * and a grouping of 4, in conjunction with the address and ascii
-	 * options will not exceed 80 characters, even if the address becomes
-	 * large enough to use additional columns.
-	 */
-	uint8_t scratchbuf[80];
-	hexdump_t h;
-
-	hexdump_init(&h);
-	hexdump_set_grouping(&h, 4);
-	hexdump_set_buf(&h, scratchbuf, sizeof (scratchbuf));
-	/*
-	 * Limit the amount of hex shown for large messages to the initial
-	 * portion.
-	 */
-	bufl = MIN(bufl, 0x100);
-
-	(void) hexdumph(&h, buf, bufl, HDF_ADDRESS | HDF_ASCII,
-	    ipcc_loghex_cb, (void *)&cb);
-
-	hexdump_fini(&h);
+	ASSERT3P(ring, !=, NULL);
+	ASSERT3P(bp, !=, NULL);
+	if (ipcc_bbuffer_is_empty(ring)) {
+		int err = ipcc_fill_ring(ring, ops, arg);
+		if (err != 0)
+			return (err);
+	}
+	*bp = ipcc_bbuffer_pop_front(ring);
+	return (0);
 }
 
-#define	LOG(...) if (ops->io_log != NULL) \
-	ops->io_log(arg, IPCC_LOG_DEBUG, __VA_ARGS__)
-#define	LOGHEX(tag, buf, len) \
-	if (ops->io_log != NULL) ipcc_loghex((tag), (buf), (len), ops, arg)
+static int
+ipcc_pkt_recv(ipcc_bbuffer_t *ring,
+    uint8_t *pkt, size_t len, uint8_t **endp,
+    const ipcc_ops_t *ops, void *arg)
+{
+	ASSERT3U(len, >=, IPCC_MIN_PACKET_SIZE);
+
+	*endp = NULL;
+
+	/*
+	 * Absorb any frame separators lingering in the input device.
+	 */
+	uint8_t b = 0;
+	int err = 0;
+	while (err == 0 && b == 0)
+		err = ipcc_getc(ring, &b, ops, arg);
+	if (err != 0)
+		return (err);
+
+	/*
+	 * If we get here, then we know that err == 0 and b != 0,
+	 * so we have a valid, non-NUL byte.  Store that into the
+	 * packet buffer and continue accummulating a frame until
+	 * we reach the end of the buffer, or the end of the frame.
+	 */
+	pkt[0] = b;
+	size_t k = 1;
+	while (b != 0 && k < len) {
+		err = ipcc_getc(ring, &b, ops, arg);
+		if (err != 0)
+			return (err);
+		pkt[k++] = b;
+	}
+
+	/*
+	 * If we did not find a terminator, then the frame was too
+	 * long for our packet buffer we.
+	 */
+	if (b != 0) {
+		ASSERT3U(k, ==, len);
+		return (ENOBUFS);
+	}
+	uint8_t *end = pkt + k - 1;
+
+	ASSERT3U(*end, ==, 0);
+	*endp = end;
+
+	return (0);
+}
 
 static const char *
 ipcc_cmd_str(ipcc_hss_cmd_t cmd)
@@ -1057,27 +1171,27 @@ resend:
 	if ((err = ipcc_msg_fini(ipcc_msg, sizeof (ipcc_msg), &off)) != 0)
 		return (err);
 
-	if (IPCC_COBS_SIZE(off) > sizeof (ipcc_pkt) - 1)
+	if (IPCC_COBS_SIZE(off) > sizeof (ipcc_out) - 1)
 		return (ENOBUFS);
 
 	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
 		LOGHEX("     OUT", ipcc_msg, off);
 	}
 	if (!ipcc_cobs_encode(ipcc_msg, off,
-	    ipcc_pkt, sizeof (ipcc_pkt), &pktl)) {
+	    ipcc_out, sizeof (ipcc_out), &pktl)) {
 		/*
-		 * This should never happen since ipcc_pkt is sized based on
+		 * This should never happen since ipcc_out is sized based on
 		 * ipcc_msg, accounting for the maximum COBS overhead.
 		 */
 		return (ENOBUFS);
 	}
 	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
-		LOGHEX("COBS OUT", ipcc_pkt, pktl);
+		LOGHEX("COBS OUT", ipcc_out, pktl);
 	}
 	/* Add frame terminator. */
-	ipcc_pkt[pktl++] = 0;
+	ipcc_out[pktl++] = 0;
 
-	err = ipcc_pkt_send(ipcc_pkt, pktl, ops, arg);
+	err = ipcc_pkt_send(ipcc_out, pktl, ops, arg);
 
 	if (err == ESPINTR) {
 		/* The SP-to-host interrupt line was asserted. */
@@ -1086,17 +1200,24 @@ resend:
 		goto resend;
 	}
 
-	if (err != 0)
+	if (err != 0) {
+		LOG("ipcc_pkg_send failed: error=%d", err);
 		return (err);
+	}
 
 	if (expected_rcmd == IPCC_SP_NONE) {
 		/* No response expected. */
 		return (0);
 	}
 
-reread:
+	attempt = 0;
 
-	err = ipcc_pkt_recv(ipcc_pkt, sizeof (ipcc_pkt), &end, ops, arg);
+reread:
+	if (++attempt > ipcc_max_attempts)
+		return (err);
+
+	err = ipcc_pkt_recv(&ipcc_in_bbuf, ipcc_in, sizeof (ipcc_in), &end,
+	    ops, arg);
 
 	if (err == ESPINTR) {
 		/* The SP-to-host interrupt line was asserted. */
@@ -1110,6 +1231,11 @@ reread:
 		goto resend;
 	}
 
+	if (err != 0 && err != ENOBUFS) {
+		LOG("Receive returned unexpected error (%d)\n", err);
+		return (err);
+	}
+
 	if (err == ENOBUFS || end == NULL) {
 		LOG("Could not find frame terminator\n");
 		goto resend;
@@ -1118,16 +1244,14 @@ reread:
 	if (err != 0)
 		return (err);
 
-	frame = ipcc_pkt;
-
-	/* Skip any leading frame terminators */
-	while (*frame == '\0' && end > frame)
-		frame++;
-
-	if (end == frame) {
+	frame = ipcc_in;
+	if (frame == end) {
 		LOG("Received empty frame\n");
+		err = ENODATA;
 		goto reread;
 	}
+	ASSERT3U(*frame, !=, 0);
+	ASSERT3U(*end, ==, 0);
 
 	/* Decode the frame */
 	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
@@ -1843,7 +1967,7 @@ ipcc_apob_data(const ipcc_ops_t *ops, void *arg, uint64_t offset,
 	ipcc_encode_bytes((uint8_t *)&offset, sizeof (offset), input, &off);
 	ipcc_encode_bytes(data, len, input, &off);
 
-	outputl = sizeof(result);
+	outputl = sizeof (result);
 	err = ipcc_command_locked(ops, arg, IPCC_HSS_APOBDATA,
 	    IPCC_SP_APOBDATA, input, off, &output, &outputl);
 	if (err != 0)
