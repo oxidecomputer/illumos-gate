@@ -79,6 +79,23 @@ typedef struct espi_data {
 static espi_data_t espi_data;
 
 /*
+ * Bounce buffer for OOB receive data. Hardware delivers data in packets up to
+ * the negotiated OOB payload size (at most 256 bytes), but callers may want to
+ * read less than a full packet at a time. We read complete packets from the
+ * hardware FIFO into this bounce buffer and serve bytes to callers from it,
+ * refilling as necessary.
+ */
+#define	ESPI_OOB_BOUNCE_BUFSZ	256
+
+typedef struct espi_oob_bounce {
+	uint8_t		eob_buf[ESPI_OOB_BOUNCE_BUFSZ];
+	size_t		eob_pos;	/* current read position */
+	size_t		eob_len;	/* amount of valid data */
+} espi_oob_bounce_t;
+
+static espi_oob_bounce_t espi_oob_bounce;
+
+/*
  * We place some fairly arbitrary bounds on the length of register polling. We
  * do not expect these values to be exceeded in operation. In general we expect
  * operations to be quick and so we spin briefly before falling back to
@@ -779,6 +796,9 @@ espi_oob_readable(mmio_reg_block_t block)
 	mmio_reg_t reg = FCH_ESPI_S0_INT_STS_MMIO(block);
 	uint32_t val;
 
+	if (espi_oob_bounce.eob_pos < espi_oob_bounce.eob_len)
+		return (true);
+
 	val = mmio_reg_read(reg);
 	return (FCH_ESPI_S0_INT_STS_GET_RXOOB(val) == 1);
 }
@@ -964,85 +984,137 @@ espi_oob_tx(mmio_reg_block_t block, uint8_t *buf, size_t *lenp)
 	return (ret);
 }
 
+/*
+ * Read a single OOB packet from the hardware FIFO into the bounce buffer.
+ * The caller must have verified both that the buffer is empty and RXOOB
+ * is set before calling this.
+ */
+static void
+espi_oob_rx_one(mmio_reg_block_t block)
+{
+	mmio_reg_t intsts = FCH_ESPI_S0_INT_STS_MMIO(block);
+	mmio_reg_t hdr0 = FCH_ESPI_UP_RXHDR0_MMIO(block);
+	mmio_reg_t hdr1 = FCH_ESPI_UP_RXHDR1_MMIO(block);
+	uint32_t val0, val1;
+	size_t len;
+
+	VERIFY3U(espi_oob_bounce.eob_pos, ==, espi_oob_bounce.eob_len);
+
+	val0 = mmio_reg_read(hdr0);
+	val1 = mmio_reg_read(hdr1);
+
+	/*
+	 * Retrieve the payload length rather than the length in hdr0.
+	 * This length will reflect the data we want to read and not
+	 * include the length of the header or PEC bytes.
+	 */
+	len = FCH_ESPI_UP_RXHDR1_GET_HDATA5(val1);
+
+	if (standalone == 0) {
+		DTRACE_PROBE3(espi__rx, size_t, len, uint32_t, val0,
+		    uint32_t, val1);
+	}
+
+	/*
+	 * Clear the RXOOB interrupt flag now that we are going to go
+	 * and read the FIFO, and request any further data.
+	 */
+	mmio_reg_write(intsts, FCH_ESPI_S0_INT_STS_CLEAR_RXOOB(0));
+
+	VERIFY3U(len, <=, ESPI_OOB_BOUNCE_BUFSZ);
+
+	bzero(espi_oob_bounce.eob_buf, ESPI_OOB_BOUNCE_BUFSZ);
+	espi_oob_bounce.eob_pos = 0;
+	espi_oob_bounce.eob_len = len;
+
+	mmio_reg_t data = FCH_ESPI_UP_RXDATA_PORT_MMIO(block);
+	uint8_t *dst = espi_oob_bounce.eob_buf;
+
+	while (len > 0) {
+		uint32_t val;
+		size_t l = MIN(len, sizeof (val));
+
+		val = mmio_reg_read(data);
+		bcopy(&val, dst, l);
+		dst += l;
+		len -= l;
+	}
+
+	/*
+	 * Let the hardware know we've finished with the message in the
+	 * FIFO and are ready to accept a new OOB message.
+	 */
+	mmio_reg_write(hdr0, FCH_ESPI_UP_RXHDR0_CLEAR_UPCMD_STAT(0));
+}
+
 int
 espi_oob_rx(mmio_reg_block_t block, uint8_t *buf, size_t *buflen)
 {
 	mmio_reg_t intsts = FCH_ESPI_S0_INT_STS_MMIO(block);
-	size_t accum, space;
+	uint32_t val;
 
-	accum = 0;
-	space = (buf == NULL) ? 0 : *buflen;
+	/*
+	 * When called with a NULL buf, discard all pending data including
+	 * any in the bounce buffer.
+	 */
+	if (buf == NULL) {
+		bzero(espi_oob_bounce.eob_buf, ESPI_OOB_BOUNCE_BUFSZ);
+		espi_oob_bounce.eob_pos = 0;
+		espi_oob_bounce.eob_len = 0;
 
-	for (;;) {
-		uint32_t val, val0, val1;
-		size_t len;
+		for (;;) {
+			mmio_reg_t hdr0 = FCH_ESPI_UP_RXHDR0_MMIO(block);
 
-		/* If there is nothing to read, we're done */
+			val = mmio_reg_read(intsts);
+
+			if (FCH_ESPI_S0_INT_STS_GET_RXOOB(val) == 0)
+				break;
+
+			mmio_reg_write(intsts,
+			    FCH_ESPI_S0_INT_STS_CLEAR_RXOOB(0));
+			mmio_reg_write(hdr0,
+			    FCH_ESPI_UP_RXHDR0_CLEAR_UPCMD_STAT(0));
+		}
+
+		return (0);
+	}
+
+	size_t accum = 0;
+	size_t space = *buflen;
+
+	while (space > 0) {
+		/*
+		 * Serve any data remaining in the bounce buffer from a
+		 * previous read.
+		 */
+		if (espi_oob_bounce.eob_pos < espi_oob_bounce.eob_len) {
+			size_t avail = espi_oob_bounce.eob_len -
+			    espi_oob_bounce.eob_pos;
+			size_t n = MIN(avail, space);
+
+			bcopy(
+			    &espi_oob_bounce.eob_buf[espi_oob_bounce.eob_pos],
+			    buf, n);
+			espi_oob_bounce.eob_pos += n;
+			buf += n;
+			space -= n;
+			accum += n;
+			continue;
+		}
+
+		/*
+		 * The bounce buffer is empty. If there is more data
+		 * available from the hardware, read one packet into the
+		 * bounce buffer and loop to serve it.
+		 */
 		val = mmio_reg_read(intsts);
 		if (FCH_ESPI_S0_INT_STS_GET_RXOOB(val) == 0)
 			break;
 
-		mmio_reg_t hdr0 = FCH_ESPI_UP_RXHDR0_MMIO(block);
-		mmio_reg_t hdr1 = FCH_ESPI_UP_RXHDR1_MMIO(block);
-
-		val0 = mmio_reg_read(hdr0);
-		val1 = mmio_reg_read(hdr1);
-		/*
-		 * Retrieve the payload length rather than the length in hdr0.
-		 * This length will reflect the data we want to read and not
-		 * include the length of the header or PEC bytes.
-		 */
-		len = FCH_ESPI_UP_RXHDR1_GET_HDATA5(val1);
-
-		if (standalone == 0) {
-			DTRACE_PROBE3(espi__rx, size_t, len, uint32_t, val0,
-			    uint32_t, val1);
-		}
-
-		/*
-		 * If we were called with a NULL buf, throw the data away to
-		 * drain the FIFO.
-		 */
-		if (buf == NULL) {
-			mmio_reg_write(intsts,
-			    FCH_ESPI_S0_INT_STS_CLEAR_RXOOB(0));
-			goto next;
-		}
-
-		if (len > space) {
-			*buflen = accum;
-			return (EOVERFLOW);
-		}
-
-		/*
-		 * Clear the RXOOB interrupt flag now that we are going to go
-		 * and read the FIFO, and request any further data.
-		 */
-		mmio_reg_write(intsts, FCH_ESPI_S0_INT_STS_CLEAR_RXOOB(0));
-
-		accum += len;
-		space -= len;
-
-		mmio_reg_t data = FCH_ESPI_UP_RXDATA_PORT_MMIO(block);
-		while (len > 0) {
-			size_t l = MIN(len, sizeof (val));
-
-			val = mmio_reg_read(data);
-			bcopy(&val, buf, l);
-			buf += l;
-			len -= l;
-		}
-
-next:
-		/*
-		 * Let the hardware know we've finished with the message in the
-		 * FIFO and are ready to accept a new OOB message..
-		 */
-		mmio_reg_write(hdr0, FCH_ESPI_UP_RXHDR0_CLEAR_UPCMD_STAT(0));
+		espi_oob_rx_one(block);
 	}
 
-	if (buf != NULL)
-		*buflen = accum;
+	*buflen = accum;
 
 	return (0);
 }
