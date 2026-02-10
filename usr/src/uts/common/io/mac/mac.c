@@ -5067,7 +5067,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 				tx->st_arg2 = NULL;
 				mac_tx_srs_stat_recreate(mac_srs, B_TRUE);
 				mac_tx_srs_add_ring(mac_srs, tx_ring);
-				if (mac_srs->srs_type & SRST_BW_CONTROL) {
+				if (mac_srs_is_bw_controlled(mac_srs)) {
 					tx->st_mode = is_aggr ? SRS_TX_BW_AGGR :
 					    SRS_TX_BW_FANOUT;
 				} else {
@@ -5268,7 +5268,7 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 				 * We are  shrinking from multiple
 				 * to 1 ring.
 				 */
-				if (mac_srs->srs_type & SRST_BW_CONTROL) {
+				if (mac_srs_is_bw_controlled(mac_srs)) {
 					tx->st_mode = SRS_TX_BW;
 				} else if (mac_tx_serialize ||
 				    (ring_info & MAC_RING_TX_SERIALIZE)) {

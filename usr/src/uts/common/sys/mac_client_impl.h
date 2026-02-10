@@ -459,6 +459,8 @@ extern void mac_client_create_flowtrees(mac_client_impl_t *,
     const mac_soft_ring_set_type_t);
 extern void mac_client_destroy_flowtrees(mac_client_impl_t *);
 
+extern mblk_t *mac_standardise_pkt(const mac_client_impl_t *, mblk_t *);
+
 /*
  * Reference count the number of active Tx threads. MCI_TX_QUIESCE indicates
  * that a control operation wants to quiesce the Tx data flow in which case

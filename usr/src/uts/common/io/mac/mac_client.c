@@ -3725,20 +3725,17 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
     uint16_t flag, mblk_t **ret_mp)
 {
 	mac_tx_cookie_t		cookie = 0;
-	int			error;
+	int			error = 0;
 	mac_tx_percpu_t		*mytx;
-	mac_soft_ring_set_t	*srs;
-	flow_entry_t		*flent;
-	boolean_t		is_subflow = B_FALSE;
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
+	mac_soft_ring_set_t	*srs = mcip->mci_flent->fe_tx_srs;
 	mac_impl_t		*mip = mcip->mci_mip;
-	mac_srs_tx_t		*srs_tx;
 	mblk_t			*mp = mp_chain;
-	mblk_t			*new_head = NULL;
-	mblk_t			*new_tail = NULL;
 
 	/*
 	 * Check whether the active Tx threads count is bumped already.
+	 * If the client is Tx-quiesced, then we will fail to take a hold on the
+	 * client and drop all packets.
 	 */
 	if (!(flag & MAC_TX_NO_HOLD)) {
 		MAC_TX_TRY_HOLD(mcip, mytx, error);
@@ -3754,27 +3751,10 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 	 */
 	if ((mcip->mci_flent->
 	    fe_resource_props.mrp_mask & MRP_PROTECT) != 0 &&
-	    (mp_chain = mac_protect_check(mch, mp_chain)) == NULL)
+	    (mp_chain = mac_protect_check(mch, mp_chain)) == NULL) {
 		goto done;
-
-	if (mcip->mci_subflow_tab != NULL &&
-	    mcip->mci_subflow_tab->ft_flow_count > 0 &&
-	    mac_flow_lookup(mcip->mci_subflow_tab, mp_chain,
-	    FLOW_OUTBOUND, &flent) == 0) {
-		/*
-		 * The main assumption here is that if in the event
-		 * we get a chain, all the packets will be classified
-		 * to the same Flow/SRS. If this changes for any
-		 * reason, the following logic should change as well.
-		 * I suppose the fanout_hint also assumes this .
-		 */
-		ASSERT3P(flent, !=, NULL);
-		is_subflow = B_TRUE;
-	} else {
-		flent = mcip->mci_flent;
 	}
 
-	srs = flent->fe_tx_srs;
 	/*
 	 * This is to avoid panics with PF_PACKET that can call mac_tx()
 	 * against an interface that is not capable of sending. A rewrite
@@ -3784,6 +3764,9 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		freemsgchain(mp_chain);
 		goto done;
 	}
+
+	const bool walk_flowtree = srs->srs_flowtree.ftb_len != 0;
+	flow_tree_pkt_set_t pktset = { 0 };
 
 	/*
 	 * There are occasions where the packets arriving here
@@ -3811,10 +3794,22 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		mblk_t *tail = NULL;
 		mp->b_next = NULL;
 
+		/*
+		 * Avoid being parse-friendly if we can help it. This is likely
+		 * to end up pulling up headers for most packets in the Tx path
+		 * today, even if it could be used to speedup e.g.
+		 * `mac_pkt_hash` down the line.
+		 */
+		if (walk_flowtree) {
+			mp = mac_standardise_pkt(mcip, mp);
+			if (mp == NULL) {
+				goto nextpkt;
+			}
+		}
+
 		const uint16_t needed = mac_tx_needed_offloads(mip, &mp);
 		if (mp == NULL) {
-			mp = next;
-			continue;
+			goto nextpkt;
 		}
 
 		if ((needed & (HCK_TX_FLAGS | HW_LSO_FLAGS)) != 0) {
@@ -3832,27 +3827,69 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 			mac_hw_emul(&mp, &tail, NULL, emul);
 
 			if (mp == NULL) {
-				mp = next;
-				continue;
+				goto nextpkt;
 			}
 		}
 
-		if (new_head == NULL) {
-			new_head = mp;
+		if (likely(mp->b_next == NULL)) {
+			mac_pkt_list_append(&pktset.ftp_avail, mp);
 		} else {
-			new_tail->b_next = mp;
+			uint32_t local_pkts = 0;
+			size_t local_bytes = 0;
+			for (mblk_t *curr = mp; curr != NULL;
+			    curr = curr->b_next) {
+				local_pkts++;
+				local_bytes += mp_len(curr);
+			}
+			mac_pkt_list_t push = {
+				.mpl_head = mp,
+				.mpl_tail = tail,
+				.mpl_count = local_pkts,
+				.mpl_size = local_bytes
+			};
+			mac_pkt_list_extend(&push, &pktset.ftp_avail);
 		}
-
-		new_tail = (tail == NULL) ? mp : tail;
+nextpkt:
 		mp = next;
 	}
 
-	if (new_head == NULL) {
+	const bool single_flow = hint != 0;
+	if (srs->srs_flowtree.ftb_bw_count != 0) {
+		/*
+		 * One or more flowtree nodes is bandwidth controlled.
+		 * Anything for such nodes must be enqueued at the corresponding
+		 * logical SRS.
+		 */
+		ASSERT(walk_flowtree);
+		mac_tx_srs_walk_flowtree_bw(srs, &pktset, single_flow);
+	} else if (walk_flowtree) {
+		/*
+		 * Allocate the count/size to matching flows, count the
+		 * remainder as matches for the underlying client, and deliver
+		 * all to said client.
+		 *
+		 * `drop` actions function as intended, whereas everything else
+		 * will delegate to the client.
+		 */
+		mac_tx_srs_walk_flowtree_stat(srs, &pktset, single_flow);
+	}
+
+	atomic_add_64(&srs->srs_match_pkts, pktset.ftp_avail.mpl_count);
+	atomic_add_64(&srs->srs_match_bytes, pktset.ftp_avail.mpl_size);
+
+	/* Combine any unpicked packets with those delegated. */
+	mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+
+	/*
+	 * Deliver all remaining packets
+	 */
+	if (mac_pkt_list_is_empty(&pktset.ftp_avail)) {
 		cookie = 0;
 		goto done;
 	}
 
-	srs_tx = &srs->srs_data.tx;
+	mblk_t *new_head = pktset.ftp_avail.mpl_head;
+	mac_srs_tx_t *srs_tx = &srs->srs_data.tx;
 	if (srs_tx->st_mode == SRS_TX_DEFAULT &&
 	    (srs->srs_state & SRS_ENQUEUED) == 0 &&
 	    mip->mi_nactiveclients == 1 &&
@@ -3909,11 +3946,9 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 	}
 
 done:
-	if (is_subflow)
-		FLOW_REFRELE(flent);
-
-	if (!(flag & MAC_TX_NO_HOLD))
+	if (!(flag & MAC_TX_NO_HOLD)) {
 		MAC_TX_RELE(mcip, mytx);
+	}
 
 	return (cookie);
 }

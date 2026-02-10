@@ -947,6 +947,20 @@ struct mac_soft_ring_set_s {
 	} srs_data;
 
 	/*
+	 * Stats relating to bytes and packets *matching this SRS explicitly*,
+	 * even if another SRS is doing the processing (e.g., non-BW delegate
+	 * actions).
+	 *
+	 * Stats for a given flent will sum up all Tx/Rx counts by walking the
+	 * SRSes in a client. Stats per *action* are instead accumulated over
+	 * all softrings.
+	 *
+	 * Modified/read atomically.
+	 */
+	uint64_t	srs_match_pkts;
+	uint64_t	srs_match_bytes;
+
+	/*
 	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
 	 * then can we share this where relevant? It's like 5KiB each go.
 	 */
@@ -975,6 +989,12 @@ inline bool
 mac_srs_is_latency_opt(const mac_soft_ring_set_t *srs)
 {
 	return ((srs->srs_type & SRST_LATENCY_OPT) != 0);
+}
+
+inline bool
+mac_srs_is_bw_controlled(const mac_soft_ring_set_t *srs)
+{
+	return ((srs->srs_type & SRST_BW_CONTROL) != 0);
 }
 
 inline flow_entry_t *
@@ -1025,7 +1045,7 @@ extern struct dls_kstats dls_kstat;
 	ASSERT((head) != NULL);					\
 	cnt = 0;						\
 	sz = 0;							\
-	if ((mac_srs)->srs_type & SRST_BW_CONTROL)		\
+	if (mac_srs_is_bw_controlled((mac_srs)))		\
 		bw_ctl = B_TRUE;				\
 	tmp = tail = (head);					\
 	if ((head)->b_next == NULL) {				\
@@ -1152,6 +1172,12 @@ extern void mac_srs_update_bwlimit(flow_entry_t *, mac_resource_props_t *);
 extern void mac_srs_adjust_subflow_bwlimit(struct mac_client_impl_s *);
 extern void mac_srs_update_drv(struct mac_client_impl_s *);
 extern void mac_update_srs_priority(mac_soft_ring_set_t *, pri_t);
+
+/* Flowtree walkers */
+extern void mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *,
+    flow_tree_pkt_set_t *, const bool);
+extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
+    flow_tree_pkt_set_t *, const bool);
 
 extern int mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);

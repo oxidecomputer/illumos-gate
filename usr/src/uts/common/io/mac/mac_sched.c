@@ -1437,7 +1437,7 @@ mac_srs_bw_stat_intr(const mac_soft_ring_set_t *srs, const size_t bytes)
 	MAC_SRS_ENQUEUE_CHAIN(mac_srs, head, tail, count, sz);		\
 	atomic_add_32(&srs_rx->sr_poll_pkt_cnt, count);			\
 	ASSERT3U(srs_rx->sr_poll_pkt_cnt, >, 0);			\
-	if ((mac_srs)->srs_type & SRST_BW_CONTROL) {			\
+	if (mac_srs_is_bw_controlled((mac_srs))) {			\
 		mac_srs_bw_enqueue((mac_srs), (sz));			\
 	}								\
 }
@@ -1720,17 +1720,6 @@ mac_srs_fire(void *arg)
 	(sz) += (sz0);							\
 }
 
-#define	ENQUEUE_MP_LIST(list, sz0, mp) {				\
-	mac_pkt_list_t *enq_mp_list = (list);				\
-	ENQUEUE_MP(							\
-	    enq_mp_list->mpl_head,					\
-	    enq_mp_list->mpl_tail,					\
-	    enq_mp_list->mpl_count,					\
-	    enq_mp_list->mpl_size,					\
-	    (sz0),							\
-	    (mp))							\
-}
-
 #define	MAC_FANOUT_DEFAULT	0
 #define	MAC_FANOUT_RND_ROBIN	1
 int mac_fanout_type = MAC_FANOUT_DEFAULT;
@@ -1930,9 +1919,9 @@ start:
 		if (mac_srs->srs_state & SRS_PAUSE)
 			goto done;
 
-		bool is_bw = (mac_srs->srs_type & SRST_BW_CONTROL) != 0;
+		bool is_bw = mac_srs_is_bw_controlled(mac_srs);
 check_again:
-		is_bw = (mac_srs->srs_type & SRST_BW_CONTROL) != 0;
+		is_bw = mac_srs_is_bw_controlled(mac_srs);
 		if (is_bw) {
 			/*
 			 * We pick as many bytes as we are allowed to queue.
@@ -2123,7 +2112,7 @@ check_again:
 				 * we should schedule worker thread
 				 * since no one else will wake us up.
 				 */
-				if ((mac_srs->srs_type & SRST_BW_CONTROL) &&
+				if (mac_srs_is_bw_controlled(mac_srs) &&
 				    (mac_srs->srs_tid == NULL)) {
 					mac_srs->srs_tid =
 					    timeout(mac_srs_fire, mac_srs, 1);
@@ -2312,6 +2301,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
+__attribute__((always_inline))
 static inline void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
 {
@@ -2331,6 +2321,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
 	}
 }
 
+
 /*
  * Ensure that a network packet is in general fastpath eligible, and dropping
  * any non-data STREAMS messages. This entails:
@@ -2346,7 +2337,7 @@ mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
  * should be limited to use only *after* packets have been handed off to the
  * SRS, so as not to impact pure-polling work.
  */
-static inline mblk_t *
+mblk_t *
 mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 {
 	ASSERT3P(mcip, !=, NULL);
@@ -2415,11 +2406,16 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 	if (DB_REF(mp) > 1 || !OK_32PTR(l3_start) || head_len < needed_len) {
 		const size_t pad = (4 - (meoi.meoi_l2hlen % 4)) % 4;
 		mblk_t *new_mp = msgpullup_pad(mp, needed_len, pad);
-		freemsgchain(mp);
-		if (new_mp == NULL) {
+		if (new_mp != NULL) {
+			if (DB_CKSUMFLAGS(mp) != 0) {
+				mac_hcksum_clone(mp, new_mp);
+			}
+			freemsgchain(mp);
+			mp = new_mp;
+		} else {
+			freemsgchain(mp);
 			return (NULL);
 		}
-		mp = new_mp;
 	}
 
 	/*
@@ -2460,7 +2456,7 @@ mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t *set,
 		if (processed == NULL) {
 			continue;
 		}
-		ENQUEUE_MP_LIST(set, mp_len(processed), processed);
+		mac_pkt_list_append(set, processed);
 	}
 }
 
@@ -2704,7 +2700,8 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 					to_class->mpl_count--;
 					to_class->mpl_size -= lsz;
 
-					ENQUEUE_MP_LIST(classed, lsz, curr);
+					mac_pkt_list_append_sz(classed, curr,
+					    lsz);
 				} else {
 					to_curr = &curr->b_next;
 					prev = curr;
@@ -2757,6 +2754,16 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 			    !mac_pkt_list_is_empty(&my_pkts->ftp_deli);
 
 			/*
+			 * Any stats for exact matches come from the
+			 * _available_ packet list. These packets were not in
+			 * turn matched by any subflow.
+			 */
+			const uint64_t matched_pkts =
+			    my_pkts->ftp_avail.mpl_count;
+			const uint64_t matched_bytes =
+			    my_pkts->ftp_avail.mpl_size;
+
+			/*
 			 * This list recombination here should *not* reorder
 			 * packets within a flow, given that flows will be moved
 			 * around together. Flows may be reordered wrt. one
@@ -2770,20 +2777,39 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 			}
 
 			switch (xnode->ftex_do) {
+			case MFA_TYPE_DELEGATE:
 			case MFA_TYPE_DELIVER: {
+				const bool handle = xnode->ftex_do ==
+				    MFA_TYPE_DELIVER;
 				mac_soft_ring_set_t *send_to =
-				    (mac_soft_ring_set_t *)xnode->arg.ftex_srs;
+				    xnode->arg.ftex_srs;
+				if (matched_pkts != 0) {
+					atomic_add_64(&send_to->srs_match_pkts,
+					    matched_pkts);
+					atomic_add_64(&send_to->srs_match_bytes,
+					    matched_bytes);
+				}
 
-				mac_rx_srs_deliver(send_to, deliver_from);
+				if (handle) {
+					mac_rx_srs_deliver(send_to,
+					    deliver_from);
+				} else {
+					mac_pkt_list_extend(deliver_from,
+					    &par_pkts->ftp_deli);
+				}
 				break;
 			}
-			case MFA_TYPE_DELEGATE:
-				/* TODO(ky): flent stats?? */
-				mac_pkt_list_extend(deliver_from,
-				    &par_pkts->ftp_deli);
-				break;
-			case MFA_TYPE_DROP:
-				/* TODO(ky): right call? flent stats? */
+			case MFA_TYPE_DROP: {
+				flow_entry_t *stat_into = xnode->arg.ftex_flent;
+				atomic_add_64(&stat_into->fe_match_pkts_in,
+				    matched_pkts);
+				atomic_add_64(&stat_into->fe_match_bytes_in,
+				    matched_bytes);
+				atomic_add_64(&stat_into->fe_act_pkts_in,
+				    deliver_from->mpl_count);
+				atomic_add_64(&stat_into->fe_act_bytes_in,
+				    deliver_from->mpl_size);
+
 				freemsgchain(deliver_from->mpl_head);
 				dropped_pkts += deliver_from->mpl_count;
 				deliver_from->mpl_head = NULL;
@@ -2791,6 +2817,7 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 				deliver_from->mpl_count = 0;
 				deliver_from->mpl_size = 0;
 				break;
+			}
 			}
 			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
 			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
@@ -2919,9 +2946,9 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 					to_class->mpl_count--;
 					to_class->mpl_size -= lsz;
 
-					ENQUEUE_MP_LIST(
+					mac_pkt_list_append_sz(
 					    is_space ? classed : &drop_list,
-					    lsz, curr);
+					    curr, lsz);
 				} else {
 					to_curr = &curr->b_next;
 					prev = curr;
@@ -2941,7 +2968,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				 * Mark those up now, and perform the refunds
 				 * at exit time.
 				 */
-				for (int i = 0; i < depth; i++) {
+				for (ssize_t i = 0; i < depth; i++) {
 					flow_tree_bw_refund_t *rf =
 					    &(ft->ftb_bw_refund[i]);
 					if (rf->ftbr_bw == NULL) {
@@ -3005,6 +3032,16 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 			const bool is_ctld = my_bw->ftbr_bw != NULL;
 
 			/*
+			 * Any stats for exact matches come from the
+			 * _available_ packet list. These packets were not in
+			 * turn matched by any subflow.
+			 */
+			const uint64_t matched_pkts =
+			    my_pkts->ftp_avail.mpl_count;
+			const uint64_t matched_bytes =
+			    my_pkts->ftp_avail.mpl_size;
+
+			/*
 			 * This list recombination here should *not* reorder
 			 * packets within a flow, given that flows will be moved
 			 * around together. Flows may be reordered wrt. one
@@ -3022,8 +3059,6 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 			 * we need to determine whether packets will be dropped
 			 * at an SRS for a worker (who handles shaping), or
 			 * handled inline.
-			 *
-			 * Unlike the TODO
 			 */
 			switch (xnode->ftex_do) {
 			case MFA_TYPE_DELEGATE:
@@ -3031,11 +3066,17 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				const bool handle = xnode->ftex_do ==
 				    MFA_TYPE_DELIVER;
 				mac_soft_ring_set_t *send_to =
-				    (mac_soft_ring_set_t *)xnode->arg.ftex_srs;
+				    xnode->arg.ftex_srs;
+
+				if (matched_pkts != 0) {
+					atomic_add_64(&send_to->srs_match_pkts,
+					    matched_pkts);
+					atomic_add_64(&send_to->srs_match_bytes,
+					    matched_bytes);
+				}
 
 				mutex_enter(&send_to->srs_lock);
-				if ((send_to->srs_type & SRST_BW_CONTROL)
-				    != 0 &&
+				if (mac_srs_is_bw_controlled(send_to) &&
 				    !mac_pkt_list_is_empty(deliver_from)) {
 					ASSERT3U(send_to->srs_type &
 					    SRST_FORWARD, !=, 0);
@@ -3056,7 +3097,6 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 						mac_rx_srs_deliver(send_to,
 						    deliver_from);
 					} else {
-						/* TODO(ky): flow stats? */
 						mac_pkt_list_extend(
 						    deliver_from,
 						    &par_pkts->ftp_deli);
@@ -3064,8 +3104,17 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				}
 				break;
 			}
-			case MFA_TYPE_DROP:
-				/* TODO(ky): right call? flent stats? */
+			case MFA_TYPE_DROP: {
+				flow_entry_t *stat_into = xnode->arg.ftex_flent;
+				atomic_add_64(&stat_into->fe_match_pkts_in,
+				    matched_pkts);
+				atomic_add_64(&stat_into->fe_match_bytes_in,
+				    matched_bytes);
+				atomic_add_64(&stat_into->fe_act_pkts_in,
+				    deliver_from->mpl_count);
+				atomic_add_64(&stat_into->fe_act_bytes_in,
+				    deliver_from->mpl_size);
+
 				freemsgchain(deliver_from->mpl_head);
 				dropped_pkts += deliver_from->mpl_count;
 
@@ -3088,6 +3137,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				deliver_from->mpl_count = 0;
 				deliver_from->mpl_size = 0;
 				break;
+			}
 			}
 			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
 			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
@@ -3131,8 +3181,7 @@ static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
 				from->mpl_tail = prev;
 			}
 			from->mpl_count--;
-
-			ENQUEUE_MP_LIST(to, mp_len(curr), curr);
+			mac_pkt_list_append(to, curr);
 		} else {
 			to_curr = &curr->b_next;
 			prev = curr;
@@ -3172,7 +3221,7 @@ mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs,
 	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-	ASSERT3U(mac_srs->srs_type & SRST_BW_CONTROL, ==, 0);
+	ASSERT(!mac_srs_is_bw_controlled(mac_srs));
 
 	/* If we are blanked i.e. can't do upcalls, then we are done */
 	if (mac_srs->srs_state & (SRS_BLANK | SRS_PAUSE)) {
@@ -3290,6 +3339,13 @@ again:
 			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
 			    &pktset, &policed_bytes);
 		}
+	}
+
+	if (!has_subtree || !mac_pkt_list_is_empty(&pktset.ftp_avail)) {
+		atomic_add_64(&mac_srs->srs_match_pkts,
+		    pktset.ftp_avail.mpl_count);
+		atomic_add_64(&mac_srs->srs_match_bytes,
+		    pktset.ftp_avail.mpl_size);
 	}
 
 	/* Combine any unpicked packets with those delegated. */
@@ -3444,7 +3500,7 @@ mac_rx_srs_drain_bw_inner(mac_soft_ring_set_t *mac_srs,
 	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-	ASSERT3U(mac_srs->srs_type & SRST_BW_CONTROL, !=, 0);
+	ASSERT(mac_srs_is_bw_controlled(mac_srs));
 
 	flow_tree_pkt_set_t pktset = { 0 };
 again:
@@ -3575,6 +3631,13 @@ again:
 			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
 			    &pktset, &policed_bytes);
 		}
+	}
+
+	if (!has_subtree || !mac_pkt_list_is_empty(&pktset.ftp_avail)) {
+		atomic_add_64(&mac_srs->srs_match_pkts,
+		    pktset.ftp_avail.mpl_count);
+		atomic_add_64(&mac_srs->srs_match_bytes,
+		    pktset.ftp_avail.mpl_size);
 	}
 
 	/* Combine any unpicked packets with those delegated. */
@@ -3722,7 +3785,7 @@ mac_srs_worker(mac_soft_ring_set_t *mac_srs)
 start:
 	for (;;) {
 		bool bw_ctl_flag = false;
-		if (mac_srs->srs_type & SRST_BW_CONTROL) {
+		if (mac_srs_is_bw_controlled(mac_srs)) {
 			mac_srs_bw_lock(mac_srs);
 			bw_ctl_flag = !mac_srs_bw_try_refresh(mac_srs);
 			mac_srs_bw_unlock(mac_srs);
@@ -3781,7 +3844,7 @@ wait:
 				goto wait;
 
 			if (mac_srs->srs_first != NULL &&
-			    mac_srs->srs_type & SRST_BW_CONTROL) {
+			    mac_srs_is_bw_controlled(mac_srs)) {
 				mac_srs_bw_lock(mac_srs);
 				bw_ctl_flag =
 				    mac_srs_any_bw_enforced(mac_srs) &&
@@ -3902,7 +3965,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 	 * has been reached, then queue the chain and check if
 	 * worker thread needs to be awakened.
 	 */
-	if (mac_srs->srs_type & SRST_BW_CONTROL) {
+	if (mac_srs_is_bw_controlled(mac_srs)) {
 		mac_srs_bw_lock(mac_srs);
 		mac_srs_bw_stat_intr(mac_srs, sz);
 		ssize_t admit_at_most = 0;
@@ -3975,7 +4038,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 		return;
 	}
 
-	ASSERT3U(mac_srs->srs_type & SRST_BW_CONTROL, ==, 0);
+	ASSERT(!mac_srs_is_bw_controlled(mac_srs));
 
 	/*
 	 * If the total number of packets queued in the SRS and
@@ -4486,7 +4549,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	mutex_enter(&mac_srs->srs_lock);
 
 	ASSERT(TX_BANDWIDTH_MODE(mac_srs));
-	ASSERT3U(mac_srs->srs_type & SRST_BW_CONTROL, !=, 0);
+	ASSERT(mac_srs_is_bw_controlled(mac_srs));
 
 	mac_srs_bw_lock(mac_srs);
 
@@ -5690,4 +5753,491 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs,
 
 done:
 	srs->srs_state &= ~(SRS_PROC | proc_type);
+}
+
+/*
+ * Differs from Rx by only delivering to BW limited nodes, and has the
+ * single-flow optimisation.
+ */
+void
+mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts, const bool single_flow)
+{
+	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
+	ASSERT3U(ft->ftb_len, >, 0);
+	ASSERT3U(ft->ftb_depth, >, 0);
+	ASSERT3P(ft->ftb_chains, !=, NULL);
+	ASSERT3P(ft->ftb_bw_refund, !=, NULL);
+	ASSERT3P(ft->ftb_subtree, !=, NULL);
+
+	ssize_t depth = 0;
+	bool is_enter = true;
+	const flow_tree_baked_node_t *node = ft->ftb_subtree;
+	const flow_tree_baked_node_t * const done = node + (ft->ftb_len << 1);
+
+	while (node != done) {
+		ASSERT3S(depth, <, ft->ftb_depth);
+		ASSERT3S(depth, >=, 0);
+		flow_tree_pkt_set_t *my_pkts = &(ft->ftb_chains[depth]);
+		flow_tree_pkt_set_t *par_pkts = (depth > 0) ?
+		    &(ft->ftb_chains[depth-1]) : pkts;
+		flow_tree_bw_refund_t *my_bw = &(ft->ftb_bw_refund[depth]);
+
+		if (is_enter) {
+			const flow_tree_enter_node_t *enode = &node->enter;
+			mac_pkt_list_t *to_class = &par_pkts->ftp_avail;
+			mac_pkt_list_t *classed = &my_pkts->ftp_avail;
+
+			mblk_t *curr = to_class->mpl_head;
+			mblk_t *prev = NULL;
+
+			mac_pkt_list_t drop_list = { 0 };
+
+			mac_bw_ctl_t *flent_bw = &enode->ften_flent->fe_tx_bw;
+			const bool likely_ctld =
+			    (flent_bw->mac_bw_state & BW_ENABLED) != 0;
+
+			if (likely_ctld) {
+				mutex_enter(&flent_bw->mac_bw_lock);
+			}
+
+			const bool is_ctld = likely_ctld &&
+			    mac_bw_ctl_is_enabled(flent_bw);
+
+			if (is_ctld) {
+				my_bw->ftbr_bw = flent_bw;
+			} else if (likely_ctld) {
+				mutex_exit(&flent_bw->mac_bw_lock);
+			}
+
+			const ssize_t queue_avail =
+			    mac_bw_ctl_enqueue_bound(flent_bw);
+
+			if (single_flow && !is_ctld) {
+				const bool is_match = mac_pkt_is_flow_match(
+				    enode->ften_flent, &enode->ften_match,
+				    curr, true);
+				if (is_match) {
+					mac_pkt_list_extend(to_class, classed);
+				}
+			} else {
+				bool early_exit = false;
+				bool flow_hit = false;
+				while (curr != NULL && !early_exit) {
+					mblk_t **to_curr = (prev != NULL) ?
+					    &prev->b_next : &to_class->mpl_head;
+					const bool is_match = flow_hit ||
+					    mac_pkt_is_flow_match(
+					    enode->ften_flent,
+					    &enode->ften_match, curr, true);
+					early_exit = (!is_match) && single_flow;
+					flow_hit = is_match && single_flow;
+					if (is_match) {
+						*to_curr = curr->b_next;
+						curr->b_next = NULL;
+						if (to_class->mpl_tail ==
+						    curr) {
+							to_class->mpl_tail =
+							    prev;
+						}
+
+						const size_t lsz = mp_len(curr);
+						const bool is_space =
+						    (!is_ctld) ||
+						    ((classed->mpl_size +
+						    lsz) <= queue_avail) ||
+						    (classed->mpl_count == 0 &&
+						    queue_avail > 0);
+
+						to_class->mpl_count--;
+						to_class->mpl_size -= lsz;
+
+						mac_pkt_list_append_sz(
+						    is_space ? classed :
+						    &drop_list, curr, lsz);
+					} else {
+						to_curr = &curr->b_next;
+						prev = curr;
+					}
+					curr = *to_curr;
+				}
+			}
+
+			if (is_ctld) {
+				flent_bw->mac_bw_sz += classed->mpl_size;
+				flent_bw->mac_bw_drop_bytes +=
+				    drop_list.mpl_size;
+				mutex_exit(&flent_bw->mac_bw_lock);
+
+				/*
+				 * Any packets dropped due to a nested b/w
+				 * control should be refunded, if possible.
+				 * Mark those up now, and perform the refunds
+				 * at exit time.
+				 */
+				for (ssize_t i = 0; i < depth; i++) {
+					flow_tree_bw_refund_t *rf =
+					    &(ft->ftb_bw_refund[i]);
+					if (rf->ftbr_bw == NULL) {
+						continue;
+					}
+					rf->ftbr_size += drop_list.mpl_size;
+				}
+
+				if (!mac_pkt_list_is_empty(&drop_list)) {
+					freemsgchain(drop_list.mpl_head);
+				}
+			} else {
+				ASSERT(mac_pkt_list_is_empty(&drop_list));
+			}
+
+			/* (head == NULL) <=> (tail == NULL) for both layers */
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_tail == NULL);
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_count == 0);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_tail == NULL);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_count == 0);
+
+			if (mac_pkt_list_is_empty(classed)) {
+				/*
+				 * No packets were taken, thus do not call
+				 * children or attempt to deliver to this flent.
+				 * Skip to the corresponding exit node.
+				 */
+				node += enode->ften_skip;
+				const flow_tree_exit_node_t *xnode =
+				    &node->exit;
+				if (xnode->ftex_ascend) {
+					depth--;
+					is_enter = false;
+				}
+
+				ASSERT(mac_pkt_list_is_empty(
+				    &my_pkts->ftp_deli));
+
+				node++;
+				continue;
+			}
+
+			if (enode->ften_descend) {
+				depth++;
+			} else {
+				is_enter = false;
+			}
+		} else {
+			const flow_tree_exit_node_t *xnode = &node->exit;
+
+			const bool have_avail =
+			    !mac_pkt_list_is_empty(&my_pkts->ftp_avail);
+			const bool have_deli =
+			    !mac_pkt_list_is_empty(&my_pkts->ftp_deli);
+			const bool is_ctld = my_bw->ftbr_bw != NULL;
+
+			/*
+			 * Any stats for exact matches come from the
+			 * _available_ packet list. These packets were not in
+			 * turn matched by any subflow.
+			 */
+			const uint64_t matched_pkts =
+			    my_pkts->ftp_avail.mpl_count;
+			const uint64_t matched_bytes =
+			    my_pkts->ftp_avail.mpl_size;
+
+			/*
+			 * This list recombination here should *not* reorder
+			 * packets within a flow, given that flows will be moved
+			 * around together. Flows may be reordered wrt. one
+			 * another, however.
+			 */
+			mac_pkt_list_t *deliver_from = (have_deli) ?
+			    &my_pkts->ftp_deli : &my_pkts->ftp_avail;
+			if (have_deli && have_avail) {
+				mac_pkt_list_extend(&my_pkts->ftp_avail,
+				    &my_pkts->ftp_deli);
+			}
+
+			/*
+			 * Because we may be bandwidth limited at an exit node,
+			 * we need to determine whether packets will be dropped
+			 * at an SRS for a worker (who handles shaping), or
+			 * handled inline.
+			 */
+			switch (xnode->ftex_do) {
+			case MFA_TYPE_DELEGATE:
+			case MFA_TYPE_DELIVER: {
+				mac_soft_ring_set_t *send_to =
+				    xnode->arg.ftex_srs;
+
+				if (matched_pkts != 0) {
+					atomic_add_64(&send_to->srs_match_pkts,
+					    matched_pkts);
+					atomic_add_64(&send_to->srs_match_bytes,
+					    matched_bytes);
+				}
+
+				mutex_enter(&send_to->srs_lock);
+				if (mac_srs_is_bw_controlled(send_to) &&
+				    !mac_pkt_list_is_empty(deliver_from)) {
+					ASSERT3U(send_to->srs_type &
+					    SRST_FORWARD, !=, 0);
+					MAC_SRS_ENQUEUE_CHAIN(send_to,
+					    deliver_from->mpl_head,
+					    deliver_from->mpl_tail,
+					    deliver_from->mpl_count,
+					    deliver_from->mpl_size);
+					MAC_SRS_WORKER_WAKEUP(send_to);
+					deliver_from->mpl_head = NULL;
+					deliver_from->mpl_tail = NULL;
+					deliver_from->mpl_count = 0;
+					deliver_from->mpl_size = 0;
+					mutex_exit(&send_to->srs_lock);
+				} else {
+					mutex_exit(&send_to->srs_lock);
+					mac_pkt_list_extend(
+					    deliver_from,
+					    &par_pkts->ftp_deli);
+				}
+				break;
+			}
+			case MFA_TYPE_DROP: {
+				flow_entry_t *stat_into = xnode->arg.ftex_flent;
+				atomic_add_64(&stat_into->fe_match_pkts_out,
+				    matched_pkts);
+				atomic_add_64(&stat_into->fe_match_bytes_out,
+				    matched_bytes);
+				atomic_add_64(&stat_into->fe_act_pkts_out,
+				    deliver_from->mpl_count);
+				atomic_add_64(&stat_into->fe_act_bytes_out,
+				    deliver_from->mpl_size);
+
+				freemsgchain(deliver_from->mpl_head);
+
+				/*
+				 * Intentionally dropped packets need to be
+				 * removed from prior BW limits' queue
+				 * occupancy.
+				 */
+				for (int i = 0; i < depth; i++) {
+					flow_tree_bw_refund_t *rf =
+					    &(ft->ftb_bw_refund[i]);
+					if (rf->ftbr_bw == NULL) {
+						continue;
+					}
+					rf->ftbr_size += deliver_from->mpl_size;
+				}
+
+				deliver_from->mpl_head = NULL;
+				deliver_from->mpl_tail = NULL;
+				deliver_from->mpl_count = 0;
+				deliver_from->mpl_size = 0;
+				break;
+			}
+			}
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
+
+			/* Process any outstanding refunds */
+			if (is_ctld) {
+				mac_bw_ctl_do_refund(my_bw);
+				bzero(my_bw, sizeof (*my_bw));
+			}
+
+			if (xnode->ftex_ascend) {
+				depth--;
+			} else {
+				is_enter = true;
+			}
+		}
+		node++;
+	}
+	ASSERT3S(depth, ==, -1);
+}
+
+void
+mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts, const bool single_flow)
+{
+	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
+	ASSERT3U(ft->ftb_len, >, 0);
+	ASSERT3U(ft->ftb_depth, >, 0);
+	ASSERT3P(ft->ftb_chains, !=, NULL);
+	ASSERT3P(ft->ftb_subtree, !=, NULL);
+
+	ssize_t depth = 0;
+	bool is_enter = true;
+	const flow_tree_baked_node_t *node = ft->ftb_subtree;
+	const flow_tree_baked_node_t * const done = node + (ft->ftb_len << 1);
+
+	while (node != done) {
+		ASSERT3S(depth, <, ft->ftb_depth);
+		ASSERT3S(depth, >=, 0);
+		flow_tree_pkt_set_t *my_pkts = &(ft->ftb_chains[depth]);
+		flow_tree_pkt_set_t *par_pkts = (depth > 0) ?
+		    &(ft->ftb_chains[depth-1]) : pkts;
+
+		if (is_enter) {
+			const flow_tree_enter_node_t *enode = &node->enter;
+			mac_pkt_list_t *to_class = &par_pkts->ftp_avail;
+			mac_pkt_list_t *classed = &my_pkts->ftp_avail;
+
+			mblk_t *curr = to_class->mpl_head;
+			mblk_t *prev = NULL;
+
+			if (single_flow) {
+				const bool is_match = mac_pkt_is_flow_match(
+				    enode->ften_flent, &enode->ften_match,
+				    curr, true);
+				if (is_match) {
+					mac_pkt_list_extend(to_class, classed);
+				}
+			} else {
+				while (curr != NULL) {
+					mblk_t **to_curr = (prev != NULL) ?
+					    &prev->b_next : &to_class->mpl_head;
+					const bool is_match =
+					    mac_pkt_is_flow_match(
+					    enode->ften_flent,
+					    &enode->ften_match,
+					    curr, true);
+					if (is_match) {
+						*to_curr = curr->b_next;
+						curr->b_next = NULL;
+						if (to_class->mpl_tail ==
+						    curr) {
+							to_class->mpl_tail =
+							    prev;
+						}
+
+						const size_t lsz = mp_len(curr);
+
+						to_class->mpl_count--;
+						to_class->mpl_size -= lsz;
+
+						mac_pkt_list_append_sz(classed,
+						    curr, lsz);
+					} else {
+						to_curr = &curr->b_next;
+						prev = curr;
+					}
+					curr = *to_curr;
+				}
+			}
+
+			/* (head == NULL) <=> (tail == NULL) for both layers */
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_tail == NULL);
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_count == 0);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_tail == NULL);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_count == 0);
+
+			if (mac_pkt_list_is_empty(classed)) {
+				/*
+				 * No packets were taken, thus do not call
+				 * children or attempt to deliver to this flent.
+				 * Skip to the corresponding exit node.
+				 */
+				node += enode->ften_skip;
+				const flow_tree_exit_node_t *xnode =
+				    &node->exit;
+				if (xnode->ftex_ascend) {
+					depth--;
+					is_enter = false;
+				}
+
+				ASSERT(mac_pkt_list_is_empty(
+				    &my_pkts->ftp_deli));
+
+				node++;
+				continue;
+			}
+
+			if (enode->ften_descend) {
+				depth++;
+			} else {
+				is_enter = false;
+			}
+		} else {
+			const flow_tree_exit_node_t *xnode = &node->exit;
+
+			const bool have_avail =
+			    !mac_pkt_list_is_empty(&my_pkts->ftp_avail);
+			const bool have_deli =
+			    !mac_pkt_list_is_empty(&my_pkts->ftp_deli);
+
+			/*
+			 * Any stats for exact matches come from the
+			 * _available_ packet list. These packets were not in
+			 * turn matched by any subflow.
+			 */
+			const uint64_t matched_pkts =
+			    my_pkts->ftp_avail.mpl_count;
+			const uint64_t matched_bytes =
+			    my_pkts->ftp_avail.mpl_size;
+
+			/*
+			 * This list recombination here should *not* reorder
+			 * packets within a flow, given that flows will be moved
+			 * around together. Flows may be reordered wrt. one
+			 * another, however.
+			 */
+			mac_pkt_list_t *deliver_from = (have_deli) ?
+			    &my_pkts->ftp_deli : &my_pkts->ftp_avail;
+			if (have_deli && have_avail) {
+				mac_pkt_list_extend(&my_pkts->ftp_avail,
+				    &my_pkts->ftp_deli);
+			}
+
+			switch (xnode->ftex_do) {
+			case MFA_TYPE_DELEGATE:
+			case MFA_TYPE_DELIVER: {
+				mac_soft_ring_set_t *send_to =
+				    xnode->arg.ftex_srs;
+				if (matched_pkts != 0) {
+					atomic_add_64(&send_to->srs_match_pkts,
+					    matched_pkts);
+					atomic_add_64(&send_to->srs_match_bytes,
+					    matched_bytes);
+				}
+
+				mac_pkt_list_extend(deliver_from,
+				    &par_pkts->ftp_deli);
+				break;
+			}
+			case MFA_TYPE_DROP: {
+				flow_entry_t *stat_into = xnode->arg.ftex_flent;
+				atomic_add_64(&stat_into->fe_match_pkts_out,
+				    matched_pkts);
+				atomic_add_64(&stat_into->fe_match_bytes_out,
+				    matched_bytes);
+				atomic_add_64(&stat_into->fe_act_pkts_out,
+				    deliver_from->mpl_count);
+				atomic_add_64(&stat_into->fe_act_bytes_out,
+				    deliver_from->mpl_size);
+
+				freemsgchain(deliver_from->mpl_head);
+				deliver_from->mpl_head = NULL;
+				deliver_from->mpl_tail = NULL;
+				deliver_from->mpl_count = 0;
+				deliver_from->mpl_size = 0;
+				break;
+			}
+			}
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
+
+			if (xnode->ftex_ascend) {
+				depth--;
+			} else {
+				is_enter = true;
+			}
+		}
+		node++;
+	}
+	ASSERT3S(depth, ==, -1);
 }

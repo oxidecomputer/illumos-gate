@@ -360,7 +360,7 @@ typedef struct {
 	union {
 		/* MFA_TYPE_DELIVER | MFA_TYPE_DROP_DELEGATE */
 		struct mac_soft_ring_set_s	*ftex_srs;
-		/* MFA_TYPE_DROP_DROP */
+		/* MFA_TYPE_DROP */
 		flow_entry_t	*ftex_flent; /* kept for stats */
 	} arg;
 } flow_tree_exit_node_t;
@@ -454,10 +454,9 @@ struct flow_entry_s {					/* Protected by */
 	void			*fe_rx_ring_group;	/* SL */
 							/* fe_lock */
 	struct mac_soft_ring_set_s	*fe_rx_srs[MAX_MAC_RX_SRS];
-	int			fe_rx_srs_cnt;		/* fe_lock */
+	uint16_t			fe_rx_srs_cnt;		/* fe_lock */
 	void			*fe_tx_ring_group;
 	struct mac_soft_ring_set_s	*fe_tx_srs;	/* WO */
-	int			fe_tx_ring_cnt;
 
 	/*
 	 * This is a unicast flow, and is a mac_client_impl_t
@@ -511,6 +510,30 @@ struct flow_entry_s {					/* Protected by */
 
 	/* TODO(ky): swap out so this becomes the Real Thing */
 	mac_flow_match_t fe_match2;
+
+	/*
+	 * Stats relating to bytes and packets *matching this flow entry
+	 * explicitly*, modified when no matching SRS exists or to preserve
+	 * counters from a condemned SRS.
+	 *
+	 * Modified/read atomically.
+	 */
+	uint64_t	fe_match_pkts_in;
+	uint64_t	fe_match_bytes_in;
+	uint64_t	fe_match_pkts_out;
+	uint64_t	fe_match_bytes_out;
+
+	/*
+	 * Stats relating to bytes and packets *which this flow action has been
+	 * used on*, modified when no matching SRS exists or to preserve counters
+	 * from a condemned SRS.
+	 *
+	 * Modified/read atomically.
+	 */
+	uint64_t	fe_act_pkts_in;
+	uint64_t	fe_act_bytes_in;
+	uint64_t	fe_act_pkts_out;
+	uint64_t	fe_act_bytes_out;
 };
 
 typedef struct flow_tree_s {

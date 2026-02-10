@@ -1480,7 +1480,7 @@ mac_srs_update_drain_proc(mac_soft_ring_set_t *srs)
 {
 	const bool is_tx = mac_srs_is_tx(srs);
 	const bool is_forward = (srs->srs_type & SRST_FORWARD) != 0;
-	const bool bw_ctld = (srs->srs_type & SRST_BW_CONTROL) != 0;
+	const bool bw_ctld = mac_srs_is_bw_controlled(srs);
 	const bool has_subflows = srs->srs_flowtree.ftb_subtree != NULL;
 	const bool subflows_are_bw = srs->srs_flowtree.ftb_bw_count != 0;
 
@@ -4239,7 +4239,7 @@ no_group:
 				}
 				tx->st_arg2 = (void *)ring;
 				mac_tx_srs_stat_recreate(tx_srs, B_FALSE);
-				if (tx_srs->srs_type & SRST_BW_CONTROL) {
+				if (mac_srs_is_bw_controlled(tx_srs)) {
 					tx->st_mode = SRS_TX_BW;
 				} else if (mac_tx_serialize ||
 				    (ring_info & MAC_RING_TX_SERIALIZE)) {
@@ -4249,7 +4249,7 @@ no_group:
 				}
 				break;
 			}
-			if (tx_srs->srs_type & SRST_BW_CONTROL) {
+			if (mac_srs_is_bw_controlled(tx_srs)) {
 				tx->st_mode = is_aggr ?
 				    SRS_TX_BW_AGGR : SRS_TX_BW_FANOUT;
 			} else {

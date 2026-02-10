@@ -47,12 +47,14 @@ typedef struct {
 	size_t		mpl_size;
 } mac_pkt_list_t;
 
+__attribute__((always_inline))
 inline size_t
 mp_len(const mblk_t *mp)
 {
 	return ((mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp));
 }
 
+__attribute__((always_inline))
 inline bool
 mac_pkt_list_is_empty(const mac_pkt_list_t *list)
 {
@@ -67,6 +69,7 @@ mac_pkt_list_is_empty(const mac_pkt_list_t *list)
 	return (out);
 }
 
+__attribute__((always_inline))
 inline void
 mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst)
 {
@@ -90,10 +93,36 @@ mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst)
 	src->mpl_size = 0;
 }
 
+__attribute__((always_inline))
+inline void
+mac_pkt_list_append_sz(mac_pkt_list_t *dst, mblk_t *mp, const size_t sz)
+{
+	ASSERT3P(mp, !=, NULL);
+	ASSERT3U(sz, ==, mp_len(mp));
+
+	if (!mac_pkt_list_is_empty(dst)) {
+		ASSERT3P(dst->mpl_tail->b_next, ==, NULL);
+		dst->mpl_tail->b_next = mp;
+	} else {
+		dst->mpl_head = mp;
+	}
+	dst->mpl_tail = mp;
+	dst->mpl_size += sz;
+	dst->mpl_count++;
+}
+
+__attribute__((always_inline))
+inline void
+mac_pkt_list_append(mac_pkt_list_t *dst, mblk_t *mp)
+{
+	mac_pkt_list_append_sz(dst, mp, mp_len(mp));
+}
+
 /*
  * Methods for reading parts of outermost MEOI facts in the domain covered by
  * `mac_standardise_pkts`.
  */
+__attribute__((always_inline))
 static inline ssize_t
 meoi_fast_l2hlen(const mblk_t *mp)
 {
