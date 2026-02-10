@@ -525,8 +525,8 @@ struct flow_entry_s {					/* Protected by */
 
 	/*
 	 * Stats relating to bytes and packets *which this flow action has been
-	 * used on*, modified when no matching SRS exists or to preserve counters
-	 * from a condemned SRS.
+	 * used on*, modified when no matching SRS exists or to preserve
+	 * counters from a condemned SRS.
 	 *
 	 * Modified/read atomically.
 	 */

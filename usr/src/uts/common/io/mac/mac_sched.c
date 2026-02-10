@@ -5761,7 +5761,7 @@ done:
  */
 void
 mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
-    flow_tree_pkt_set_t *pkts, const bool single_flow)
+    flow_tree_pkt_set_t *pkts, const uintptr_t hint)
 {
 	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
 	ASSERT3U(ft->ftb_len, >, 0);
@@ -5769,6 +5769,8 @@ mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 	ASSERT3P(ft->ftb_chains, !=, NULL);
 	ASSERT3P(ft->ftb_bw_refund, !=, NULL);
 	ASSERT3P(ft->ftb_subtree, !=, NULL);
+
+	const bool single_flow = hint != 0;
 
 	ssize_t depth = 0;
 	bool is_enter = true;
@@ -5983,6 +5985,11 @@ mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				    !mac_pkt_list_is_empty(deliver_from)) {
 					ASSERT3U(send_to->srs_type &
 					    SRST_FORWARD, !=, 0);
+					if (single_flow) {
+						mac_stash_chain_hints(
+						    deliver_from->mpl_head,
+						    hint);
+					}
 					MAC_SRS_ENQUEUE_CHAIN(send_to,
 					    deliver_from->mpl_head,
 					    deliver_from->mpl_tail,

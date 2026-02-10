@@ -115,6 +115,7 @@ mac_drop_chain(mblk_t *chain, const char *fmt, ...)
 		next = mp->b_next;
 		DTRACE_PROBE2(mac__drop, mblk_t *, mp, char *, msgp);
 		mp->b_next = NULL;
+		mp->b_prev = NULL;
 		freemsg(mp);
 		mp = next;
 	}

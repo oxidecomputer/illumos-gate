@@ -3861,7 +3861,7 @@ nextpkt:
 		 * logical SRS.
 		 */
 		ASSERT(walk_flowtree);
-		mac_tx_srs_walk_flowtree_bw(srs, &pktset, single_flow);
+		mac_tx_srs_walk_flowtree_bw(srs, &pktset, hint);
 	} else if (walk_flowtree) {
 		/*
 		 * Allocate the count/size to matching flows, count the

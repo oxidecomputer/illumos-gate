@@ -970,7 +970,7 @@ struct mac_soft_ring_set_s {
 };
 
 #ifdef _KERNEL
-CTASSERT((offsetof (mac_soft_ring_set_t, srs_data) % 64) == 0);
+CTASSERT((offsetof(mac_soft_ring_set_t, srs_data) % 64) == 0);
 #endif
 
 inline bool
@@ -1175,7 +1175,7 @@ extern void mac_update_srs_priority(mac_soft_ring_set_t *, pri_t);
 
 /* Flowtree walkers */
 extern void mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *,
-    flow_tree_pkt_set_t *, const bool);
+    flow_tree_pkt_set_t *, const uintptr_t);
 extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
     flow_tree_pkt_set_t *, const bool);
 
