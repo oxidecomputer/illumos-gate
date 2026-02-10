@@ -589,6 +589,15 @@ ipcc_bbuffer_pop_front(ipcc_bbuffer_t *bbuf)
 	return (byte);
 }
 
+static void
+ipcc_bbuffer_reset(ipcc_bbuffer_t *bbuf)
+{
+	ASSERT3P(bbuf, !=, NULL);
+	bzero(bbuf->ibb_bounce, IPCC_MAX_PACKET_SIZE);
+	bbuf->ibb_head = 0;
+	bbuf->ibb_tail = 0;
+}
+
 static int
 ipcc_bbuffer_fill(ipcc_bbuffer_t *bbuf,
     int (*thunk)(void *, uint8_t *, size_t *), void *arg)
@@ -885,6 +894,7 @@ ipcc_pkt_send(uint8_t *pkt, size_t len, const ipcc_ops_t *ops, void *arg)
 {
 	ipcc_pollevent_t ev;
 
+	ipcc_bbuffer_reset(&ipcc_in_bbuf);
 	if (ops->io_flush != NULL)
 		ops->io_flush(arg);
 
