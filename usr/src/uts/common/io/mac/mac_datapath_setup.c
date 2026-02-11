@@ -1535,7 +1535,6 @@ mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
 	mutex_enter(&bw->mac_bw_lock);
 
 	const bool is_disabled = mrp->mrp_maxbw == MRP_MAXBW_RESETVAL;
-	mac_bw_ctl_set_state(bw, !is_disabled, mrp);
 
 	uint32_t tx_mode = srs_tx->st_mode;
 	if (is_disabled) {
@@ -1664,12 +1663,12 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	mac_bw_ctl_set_state(&flent->fe_rx_bw, !disable, mrp);
 	mutex_exit(&flent->fe_rx_bw.mac_bw_lock);
 
-	for (int i = 0; i < flent->fe_rx_srs_cnt; i++) {
+	for (uint16_t i = 0; i < flent->fe_rx_srs_cnt; i++) {
 		mac_srs_update_bwlimit_state(flent->fe_rx_srs[i], disable);
 	}
 
 	/*
-	 * If there are no associated SRSes with this flent, then make
+	 * Even if there are no associated SRSes with this flent, then make
 	 * sure that the underlying mac_bw_ctl_t is still updated.
 	 */
 	mutex_enter(&flent->fe_tx_bw.mac_bw_lock);
@@ -1678,14 +1677,6 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 
 	if (flent->fe_tx_srs != NULL) {
 		mac_tx_srs_update_bwlimit_state(flent->fe_tx_srs, mrp);
-	} else {
-		/*
-		 * If there are no associated SRSes with this flent, then make
-		 * sure that the underlying mac_bw_ctl_t is still updated.
-		 */
-		mutex_enter(&flent->fe_tx_bw.mac_bw_lock);
-		mac_bw_ctl_set_state(&flent->fe_tx_bw, !disable, mrp);
-		mutex_exit(&flent->fe_tx_bw.mac_bw_lock);
 	}
 
 	if (!state_changed || (flent->fe_type & FLOW_USER) == 0) {
@@ -1826,9 +1817,7 @@ mac_client_create_flowtrees(mac_client_impl_t *mcip,
 void
 mac_client_update_classifier(mac_client_impl_t *mcip)
 {
-	flow_entry_t		*flent = mcip->mci_flent;
 	mac_impl_t		*mip = mcip->mci_mip;
-	uint_t			rx_srs_cnt = flent->fe_rx_srs_cnt;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
@@ -1852,7 +1841,22 @@ mac_srs_update_fanout_list(mac_soft_ring_set_t *mac_srs)
 		softring = softring->s_ring_next;
 	}
 
-	ASSERT3U(mac_srs->srs_soft_ring_count, ==, count);
+	/*
+	 * Complete Tx SRSes are the only case requiring adjustment here.
+	 *
+	 * An initialised Rx SRS will always have at least one soft
+	 * ring to allow traffic to be dropped off, and logical Tx SRSes
+	 * *must* be FORWARD|NO_SOFT_RINGS.
+	 */
+	if (!mac_srs_is_logical(mac_srs) && mac_srs_is_tx(mac_srs)) {
+		if (MAC_TX_SOFT_RINGS(mac_srs)) {
+			mac_srs->srs_type &= ~SRST_NO_SOFT_RINGS;
+		} else {
+			mac_srs->srs_type |= SRST_NO_SOFT_RINGS;
+		}
+	}
+
+	VERIFY3U(mac_srs->srs_soft_ring_count, ==, count);
 }
 
 /* ARGSUSED */
@@ -2315,8 +2319,8 @@ static mac_soft_ring_set_t *
 mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
     mac_soft_ring_set_type_t srs_type, const struct mac_srs_create_params *p)
 {
-	const bool is_tx_srs = (p->msc_ty & SCT_TX) != 0;
-	const bool is_logical = (p->msc_ty & SCT_LOGICAL) != 0;
+	const bool is_tx_srs = (srs_type & SRST_TX) != 0;
+	const bool is_logical = p->msc_ty == SCT_LOGICAL;
 	mac_soft_ring_set_t *mac_srs =
 	    kmem_cache_alloc(mac_srs_cache, KM_SLEEP);
 	bzero(mac_srs, sizeof (mac_soft_ring_set_t));
@@ -2435,7 +2439,6 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 	mac_srs_add_glist(mac_srs);
 
 	/* Initialize bw limit */
-	/* TODO(ky): should this be comparing against MRP_MAXBW_RESETVAL? */
 	if ((mrp->mrp_mask & MRP_MAXBW) != 0) {
 		mutex_enter(&my_bw->mac_bw_lock);
 		mac_bw_ctl_set_state(my_bw, true, mrp);

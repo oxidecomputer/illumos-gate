@@ -1523,8 +1523,6 @@ mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
 
 	/*
 	 * do not allow flows to be configured on an anchor VNIC
-	 *
-	 * TODO(ky): still relevant?
 	 */
 	if (mac_capab_get(dlp->dl_mh, MAC_CAPAB_ANCHOR_VNIC, NULL)) {
 		err = ENOTSUP;
