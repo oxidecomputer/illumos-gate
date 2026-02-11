@@ -1151,7 +1151,7 @@ extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t, const bool);
 extern void mac_rx_srs_restart(mac_soft_ring_set_t *);
 extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
+    const mac_soft_ring_set_state_t, const bool);
 
 /* Tx SRS, Tx softring */
 extern void mac_tx_srs_wakeup(mac_soft_ring_set_t *, mac_ring_handle_t);

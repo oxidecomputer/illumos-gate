@@ -191,24 +191,41 @@ typedef boolean_t	(*flow_match_fn_t)(flow_tab_t *, flow_entry_t *,
 			    flow_state_t *);
 typedef bool		(*flow_match_fn2_t)(void *, mblk_t *);
 
-/* fe_flags */
-#define	FE_QUIESCE		0x01	/* Quiesce the flow */
-#define	FE_WAITER		0x02	/* Flow has a waiter */
-#define	FE_FLOW_TAB		0x04	/* Flow is in the flow tab list */
-#define	FE_G_FLOW_HASH		0x08	/* Flow is in the global flow hash */
-#define	FE_INCIPIENT		0x10	/* Being setup */
-#define	FE_CONDEMNED		0x20	/* Being deleted */
-#define	FE_UF_NO_DATAPATH	0x40	/* No datapath setup for User flow */
-#define	FE_MC_NO_DATAPATH	0x80	/* No datapath setup for mac client */
+typedef enum {
+	/* Quiesce the flow */
+	FE_QUIESCE		= 0x01,
+	/* Flow has a waiter */
+	FE_WAITER		= 0x02,
+	/* Flow is in the flow tab list */
+	FE_FLOW_TAB		= 0x04,
+	/* Flow is in the global flow hash */
+	FE_G_FLOW_HASH		= 0x08,
+	/* Being setup */
+	FE_INCIPIENT		= 0x10,
+	/* Being deleted */
+	FE_CONDEMNED		= 0x20,
+	/* No datapath setup for User flow */
+	FE_UF_NO_DATAPATH	= 0x40,
+	/* No datapath setup for mac client */
+	FE_MC_NO_DATAPATH	= 0x80,
+} flow_entry_flags_t;
 
-/* fe_type */
-#define	FLOW_PRIMARY_MAC	0x01	/* NIC primary MAC address */
-#define	FLOW_VNIC_MAC		0x02	/* VNIC flow */
-#define	FLOW_MCAST		0x04	/* Multicast (and broadcast) */
-#define	FLOW_OTHER		0x08	/* Other flows configured */
-#define	FLOW_USER		0x10	/* User defined flow */
+typedef enum {
+	/* NIC primary MAC address */
+	FLOW_PRIMARY_MAC	= 0x01,
+	/* VNIC flow */
+	FLOW_VNIC_MAC		= 0x02,
+	/* Multicast (and broadcast) */
+	FLOW_MCAST		= 0x04,
+	/* Other flows configured */
+	FLOW_OTHER		= 0x08,
+	/* User defined flow */
+	FLOW_USER		= 0x10,
+	/* Don't create stats for the flow */
+	FLOW_NO_STATS		= 0x20,
+} flow_entry_type_t;
+
 #define	FLOW_VNIC		FLOW_VNIC_MAC
-#define	FLOW_NO_STATS		0x20	/* Don't create stats for the flow */
 
 /*
  * Shared Bandwidth control counters between the soft ring set and its
@@ -427,7 +444,7 @@ struct flow_entry_s {					/* Protected by */
 	 * has refs.
 	 */
 	uint32_t		fe_user_refcnt;		/* fe_lock */
-	uint_t			fe_flags;		/* fe_lock */
+	flow_entry_flags_t	fe_flags;		/* fe_lock */
 
 	/*
 	 * Function/args to invoke for delivering matching packets
@@ -473,7 +490,7 @@ struct flow_entry_s {					/* Protected by */
 	 * This is a broadcast or multicast flow and is a mac_bcast_grp_t
 	 */
 	void			*fe_mbg;		/* WO */
-	uint_t			fe_type;		/* WO */
+	flow_entry_type_t	fe_type;		/* WO */
 
 	/*
 	 * BW control info.

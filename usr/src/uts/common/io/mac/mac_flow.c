@@ -1042,12 +1042,16 @@ mac_flow_clean(flow_entry_t *flent)
 void
 mac_flow_cleanup(flow_entry_t *flent)
 {
+	/*
+	 * While we're deleting the datapath of a flow here, we can't make any
+	 * assumptions about the refcount of user flows. The Rx/Tx flowtrees
+	 * won't yet have relinquished their holds on `flent` until they are in
+	 * turn destroyed.
+	 */
 	if ((flent->fe_type & FLOW_USER) == 0) {
 		ASSERT((flent->fe_mbg == NULL && flent->fe_mcip != NULL) ||
 		    (flent->fe_mbg != NULL && flent->fe_mcip == NULL));
 		ASSERT3U(flent->fe_refcnt, ==, 0);
-	} else {
-		ASSERT3U(flent->fe_refcnt, ==, 1);
 	}
 
 	if (flent->fe_mbg != NULL) {

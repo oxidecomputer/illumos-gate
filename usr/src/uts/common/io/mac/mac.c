@@ -2497,7 +2497,8 @@ mac_rx_client_restart(mac_client_handle_t mch)
  */
 void
 mac_tx_srs_quiesce(mac_soft_ring_set_t *srs,
-    const mac_soft_ring_set_state_t srs_quiesce_flag)
+    const mac_soft_ring_set_state_t srs_quiesce_flag,
+    const bool condemn_logicals)
 {
 	mac_client_impl_t	*mcip = srs->srs_mcip;
 
@@ -2512,7 +2513,9 @@ mac_tx_srs_quiesce(mac_soft_ring_set_t *srs,
 	 * SRS quiesce to complete. The SRS worker thread will wake us
 	 * up when the quiesce is complete
 	 */
-	mac_srs_signal(srs, srs_quiesce_flag);
+	const mac_soft_ring_set_state_t logical_flag = condemn_logicals ?
+	    SRS_CONDEMNED : srs_quiesce_flag;
+	mac_srs_signal_diff(srs, srs_quiesce_flag, logical_flag);
 	mac_srs_quiesce_wait(srs, srs_quiesce_flag == SRS_QUIESCE ?
 	    SRS_QUIESCE_DONE : SRS_CONDEMNED_DONE);
 }
@@ -2546,7 +2549,7 @@ mac_tx_flow_quiesce(flow_entry_t *flent, void *arg)
 	 * not plumbed
 	 */
 	if (flent->fe_tx_srs != NULL)
-		mac_tx_srs_quiesce(flent->fe_tx_srs, SRS_QUIESCE);
+		mac_tx_srs_quiesce(flent->fe_tx_srs, SRS_QUIESCE, false);
 	return (0);
 }
 
@@ -2565,7 +2568,8 @@ mac_tx_flow_restart(flow_entry_t *flent, void *arg)
 
 static void
 i_mac_tx_client_quiesce(mac_client_handle_t mch,
-    const mac_soft_ring_set_state_t srs_quiesce_flag)
+    const mac_soft_ring_set_state_t srs_quiesce_flag,
+    const bool condemn_logicals)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 
@@ -2573,7 +2577,8 @@ i_mac_tx_client_quiesce(mac_client_handle_t mch,
 
 	mac_tx_client_block(mcip);
 	if (MCIP_TX_SRS(mcip) != NULL) {
-		mac_tx_srs_quiesce(MCIP_TX_SRS(mcip), srs_quiesce_flag);
+		mac_tx_srs_quiesce(MCIP_TX_SRS(mcip), srs_quiesce_flag,
+		    condemn_logicals);
 		(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 		    mac_tx_flow_quiesce, NULL);
 	}
@@ -2582,13 +2587,13 @@ i_mac_tx_client_quiesce(mac_client_handle_t mch,
 void
 mac_tx_client_quiesce(mac_client_handle_t mch)
 {
-	i_mac_tx_client_quiesce(mch, SRS_QUIESCE);
+	i_mac_tx_client_quiesce(mch, SRS_QUIESCE, false);
 }
 
 void
 mac_tx_client_condemn(mac_client_handle_t mch)
 {
-	i_mac_tx_client_quiesce(mch, SRS_CONDEMNED);
+	i_mac_tx_client_quiesce(mch, SRS_CONDEMNED, false);
 }
 
 void
@@ -2619,7 +2624,12 @@ void
 mac_client_quiesce(mac_client_impl_t *mcip, const bool redo_tree)
 {
 	mac_rx_client_quiesce((mac_client_handle_t)mcip, redo_tree);
-	mac_tx_client_quiesce((mac_client_handle_t)mcip);
+	if (redo_tree) {
+		i_mac_tx_client_quiesce((mac_client_handle_t)mcip, SRS_QUIESCE,
+		    true);
+	} else {
+		mac_tx_client_quiesce((mac_client_handle_t)mcip);
+	}
 }
 
 void

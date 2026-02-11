@@ -3062,14 +3062,13 @@ mac_client_datapath_teardown(mac_client_handle_t mch, mac_unicast_impl_t *muip,
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
-	boolean_t		no_unicast;
+	boolean_t		no_unicast =
+	    (mcip->mci_state_flags & MCIS_NO_UNICAST_ADDR) != 0;
 
 	/*
 	 * If we have not added a unicast address for this MAC client, just
 	 * teardown the datapath.
 	 */
-	no_unicast = mcip->mci_state_flags & MCIS_NO_UNICAST_ADDR;
-
 	if (!no_unicast) {
 		/*
 		 * We would have initialized subflows etc. only if we brought

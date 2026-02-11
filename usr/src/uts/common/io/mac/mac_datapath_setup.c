@@ -2839,7 +2839,7 @@ mac_tx_srs_group_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
 		 * For flows, we need to work with passed
 		 * flent to find the Rx/Tx SRS.
 		 */
-		mac_tx_srs_quiesce(tx_srs, SRS_CONDEMNED);
+		mac_tx_srs_quiesce(tx_srs, SRS_CONDEMNED, false);
 		break;
 	case SRST_LINK:
 		mac_tx_client_condemn((mac_client_handle_t)mcip);
@@ -4532,7 +4532,7 @@ mac_flow_tree_new_srs(flow_entry_t *ent, const bool is_tx,
 	}
 
 	/*
-	 * TODO(ky): This should be conditionally sourced from delegate_to,
+	 * TODO(ky): `act_as` should be conditionally sourced from delegate_to,
 	 * based on whether we have `altered_mrp` from the caller.
 	 */
 	flow_entry_t *act_as = NULL;
@@ -4581,7 +4581,6 @@ mac_flow_baked_tree_create(const flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 	size_t n_nodes = 0;
 	size_t bw_set_count = 0;
 	flow_tree_baked_t *into = &based_on->srs_flowtree;
-	/* TODO(ky): use this correctly everywhere? */
 	const bool is_tx = mac_srs_is_tx(based_on);
 
 	/* TODO(ky): too much stack for mac_cpus_t? */
@@ -4618,10 +4617,10 @@ mac_flow_baked_tree_create(const flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 			 * BW enabled state cannot change out from under us,
 			 * since creating/modifying a client requires the MAC
 			 * perimeter.
-			 *
-			 * TODO(ky) is_tx?
 			 */
-			const mac_bw_ctl_t *bw = &el->ft_flent->fe_rx_bw;
+			const mac_bw_ctl_t *bw = is_tx ?
+			    &el->ft_flent->fe_tx_bw :
+			    &el->ft_flent->fe_rx_bw;
 			if ((bw->mac_bw_state & BW_ENABLED) != 0) {
 				bw_set_count++;
 			}
