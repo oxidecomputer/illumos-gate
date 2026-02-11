@@ -1329,7 +1329,14 @@ mac_client_open_action(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	*mchp = NULL;
 
 	if (action != NULL && !mac_flow_action_validate(action)) {
-		return (EINVAL);
+		/*
+		 * In addition to the standard flow action validity, we need
+		 * the action to be non-delegate.
+		 */
+		if (!mac_flow_action_validate(action) ||
+		    (action->fa_flags & MFA_FLAGS_ACTION) == 0) {
+			return (EINVAL);
+		}
 	}
 
 	i_mac_perim_enter(mip);
@@ -1469,13 +1476,21 @@ mac_client_open_action(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	FLOW_REFHOLD(flent);
 
 	/*
-	 * Create the root of this flow tree, then plumb in thw fastpath.
+	 * Create the root of this flow tree, then plumb in the fastpath.
 	 * Quiesce logic in a few places (mac_flow_wait) wants to treat unicast
 	 * and broadcast flows identically, so we apply a refrele here to treat
 	 * the flow tree root node as part of the same hold as the client.
+	 *
+	 * Fastpath flows (and any flent with `MFA_FLAGS_RX_ONLY` set) should
+	 * *not* be considered for visiting in the Tx pathway. The easiest way
+	 * to handle this is to compile a separate tree containing all the
+	 * relevant flow entries.
 	 */
-	mcip->mci_flow_tree = mac_flow_tree_node_create(flent);
-	VERIFY3P(mcip->mci_flow_tree, !=, NULL);
+	mcip->mci_rx_flow_tree = mac_flow_tree_node_create(flent);
+	VERIFY3P(mcip->mci_rx_flow_tree, !=, NULL);
+	FLOW_REFRELE(flent);
+	mcip->mci_tx_flow_tree = mac_flow_tree_node_create(flent);
+	VERIFY3P(mcip->mci_tx_flow_tree, !=, NULL);
 	FLOW_REFRELE(flent);
 
 	/* Attach fastpath flows as used by DLS bypass */
@@ -1573,7 +1588,9 @@ mac_client_close(mac_client_handle_t mch, uint16_t flags)
 	 * refholds on said flows) is gone.
 	 */
 	FLOW_REFHOLD(flent);
-	mac_flow_tree_destroy(mcip->mci_flow_tree);
+	mac_flow_tree_destroy(mcip->mci_rx_flow_tree);
+	FLOW_REFHOLD(flent);
+	mac_flow_tree_destroy(mcip->mci_tx_flow_tree);
 	mac_teardown_fastpath_flows(mcip);
 
 	/*
@@ -6196,7 +6213,7 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 	mac_direct_rx_t default_action = root_flent->fe_action.fa_direct_rx_fn;
 	mac_direct_rx_t default_arg = root_flent->fe_action.fa_direct_rx_arg;
 
-	flow_tree_t *t_root = mcip->mci_flow_tree;
+	flow_tree_t *t_root = mcip->mci_rx_flow_tree;
 	if (t_root->ft_child != NULL) {
 		mac_flow_tree_destroy(t_root->ft_child);
 		t_root->ft_child = NULL;
@@ -6261,7 +6278,7 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 		ipv6_udp->fe_action.fa_direct_rx_arg = default_arg;
 	}
 
-	mac_update_subflows_on_fastpath(mcip);
+	mac_update_subflows(mcip);
 }
 
 struct flent_modify {
@@ -6270,6 +6287,7 @@ struct flent_modify {
 	bool needs_subflows;
 	bool is_tcp;
 	bool is_udp;
+	bool is_tx;
 };
 
 static int
@@ -6293,6 +6311,12 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 		return (0);
 	}
 
+	if (arg->is_tx &&
+	    (flent->fe_action.fa_flags & MFA_FLAGS_RX_ONLY) != 0) {
+		/* This subflow only exists for an Rx action and Rx stats. */
+		return (0);
+	}
+
 	flow_tree_t **write_into = (arg->on_child) ? &arg->node->ft_child :
 	    &arg->node->ft_sibling;
 	ASSERT3P(*write_into, ==, NULL);
@@ -6308,6 +6332,10 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 		    &(*write_into)->ft_match_override, 0);
 	}
 
+	/*
+	 * We've added a node. Subsequent additions on this walk must be placed
+	 * as siblings to said node.
+	 */
 	arg->on_child = false;
 	arg->node = *write_into;
 
@@ -6318,30 +6346,48 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
  * ...
  */
 void
-mac_update_subflows_on_fastpath(mac_client_impl_t *mcip)
+mac_update_subflows(mac_client_impl_t *mcip)
 {
 	const bool v4fp_defined = mcip->mci_v4_fastpath.mdrx != NULL;
 	const bool v6fp_defined = mcip->mci_v6_fastpath.mdrx != NULL;
 
-	struct flent_modify to_visit[5] = { 0 };
-	size_t n_visitees = 1;
+	struct flent_modify to_visit[6] = { 0 };
+	size_t n_visitees = 2;
 
+	/*
+	 * Root Rx subflows are the subtree if no fastpath, or adjacent to the
+	 * IPv4/IPv6 SAP nodes.
+	 */
 	if (!v4fp_defined && !v6fp_defined) {
-		to_visit[0].node = mcip->mci_flow_tree;
+		to_visit[0].node = mcip->mci_rx_flow_tree;
 		to_visit[0].on_child = true;
 	} else if (v4fp_defined && v6fp_defined) {
-		to_visit[0].node = mcip->mci_flow_tree->ft_child->ft_sibling;
+		to_visit[0].node = mcip->mci_rx_flow_tree->ft_child->ft_sibling;
 		to_visit[0].on_child = false;
 	} else {
-		to_visit[0].node = mcip->mci_flow_tree->ft_child;
+		to_visit[0].node = mcip->mci_rx_flow_tree->ft_child;
 		to_visit[0].on_child = false;
 	}
 	to_visit[0].needs_subflows = true;
 	to_visit[0].is_tcp = false;
 	to_visit[0].is_udp = false;
 
+	/*
+	 * Root Tx subflows.
+	 */
+	to_visit[1].node = mcip->mci_tx_flow_tree;
+	to_visit[1].on_child = true;
+	to_visit[1].needs_subflows = true;
+	to_visit[1].is_tcp = false;
+	to_visit[1].is_udp = false;
+	to_visit[1].is_tx = true;
+
+	/*
+	 * TCP/UDP fastpath flows have actions associated, so subflows must
+	 * be duplicated as their children to be successfully matched on.
+	 */
 	if (v4fp_defined) {
-		flow_tree_t *v4_base = mcip->mci_flow_tree->ft_child;
+		flow_tree_t *v4_base = mcip->mci_rx_flow_tree->ft_child;
 		flow_tree_t *v4t = v4_base->ft_child;
 		flow_tree_t *v4u = v4t->ft_sibling;
 
@@ -6349,19 +6395,21 @@ mac_update_subflows_on_fastpath(mac_client_impl_t *mcip)
 		to_visit[n_visitees].on_child = true;
 		to_visit[n_visitees].needs_subflows = false;
 		to_visit[n_visitees].is_tcp = true;
-		to_visit[n_visitees++].is_udp = false;
+		to_visit[n_visitees].is_udp = false;
+		to_visit[n_visitees++].is_tx = false;
 
 		to_visit[n_visitees].node = v4u;
 		to_visit[n_visitees].on_child = true;
 		to_visit[n_visitees].needs_subflows = false;
 		to_visit[n_visitees].is_tcp = false;
-		to_visit[n_visitees++].is_udp = true;
+		to_visit[n_visitees].is_udp = true;
+		to_visit[n_visitees++].is_tx = false;
 	}
 
 	if (v6fp_defined) {
 		flow_tree_t *v6_base = (v4fp_defined) ?
-		    mcip->mci_flow_tree->ft_child->ft_sibling:
-		    mcip->mci_flow_tree->ft_child;
+		    mcip->mci_rx_flow_tree->ft_child->ft_sibling:
+		    mcip->mci_rx_flow_tree->ft_child;
 		flow_tree_t *v6t = v6_base->ft_child;
 		flow_tree_t *v6u = v6t->ft_sibling;
 
@@ -6369,13 +6417,15 @@ mac_update_subflows_on_fastpath(mac_client_impl_t *mcip)
 		to_visit[n_visitees].on_child = true;
 		to_visit[n_visitees].needs_subflows = false;
 		to_visit[n_visitees].is_tcp = true;
-		to_visit[n_visitees++].is_udp = false;
+		to_visit[n_visitees].is_udp = false;
+		to_visit[n_visitees++].is_tx = false;
 
 		to_visit[n_visitees].node = v6u;
 		to_visit[n_visitees].on_child = true;
 		to_visit[n_visitees].needs_subflows = false;
 		to_visit[n_visitees].is_tcp = false;
-		to_visit[n_visitees++].is_udp = true;
+		to_visit[n_visitees].is_udp = true;
+		to_visit[n_visitees++].is_tx = false;
 	}
 
 	/* Cleanup any existing flows on this tree. */

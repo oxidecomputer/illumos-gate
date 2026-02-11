@@ -222,7 +222,8 @@ struct mac_client_impl_s {			/* Protected by */
 	flow_entry_t	*mci_fastpath_ipv6_tcp;
 	flow_entry_t	*mci_fastpath_ipv6_udp;
 
-	flow_tree_t	*mci_flow_tree;
+	flow_tree_t	*mci_rx_flow_tree;
+	flow_tree_t	*mci_tx_flow_tree;
 
 	/* Must be last in the structure for dynamic sizing */
 	mac_tx_percpu_t		mci_tx_pcpu[1];		/* SL */
@@ -431,7 +432,7 @@ extern void mac_client_init(void);
 extern void mac_client_fini(void);
 extern void mac_promisc_dispatch(mac_impl_t *, mblk_t *, mac_client_impl_t *,
     boolean_t);
-extern void mac_update_subflows_on_fastpath(mac_client_impl_t *);
+extern void mac_update_subflows(mac_client_impl_t *);
 
 extern int mac_validate_props(mac_impl_t *, mac_resource_props_t *);
 

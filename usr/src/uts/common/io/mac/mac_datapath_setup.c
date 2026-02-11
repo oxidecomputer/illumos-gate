@@ -66,7 +66,7 @@ static int mac_compute_soft_ring_count(flow_entry_t *, int, int);
 static void mac_walk_srs_and_bind(int);
 static void mac_walk_srs_and_unbind(int);
 
-static int mac_flow_baked_tree_create(flow_tree_t *, mac_soft_ring_set_t *);
+static int mac_flow_baked_tree_create(const flow_tree_t *, mac_soft_ring_set_t *);
 static void mac_flow_baked_tree_destroy(flow_tree_baked_t *);
 
 enum mac_srs_create_ty {
@@ -1711,13 +1711,32 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	}
 }
 
+static void mac_srs_rebuild_flowtree(mac_soft_ring_set_t *srs,
+    const flow_tree_t *ft, const mac_soft_ring_set_type_t vanity_flags) {
+	VERIFY3P(srs, !=, NULL);
+	VERIFY(!mac_srs_is_logical(srs));
+	mutex_enter(&srs->srs_lock);
+	VERIFY(SRS_QUIESCED(srs));
+	mac_flow_baked_tree_destroy(&srs->srs_flowtree);
+	mac_soft_ring_set_t *child = srs->srs_logical_next;
+	while (child != NULL) {
+		mac_soft_ring_set_t *next = child->srs_logical_next;
+		mac_srs_free(child);
+		child = next;
+	}
+	srs->srs_logical_next = NULL;
+	mac_flow_baked_tree_create(ft, srs);
+	srs->srs_type |= vanity_flags;
+	mutex_exit(&srs->srs_lock);
+}
+
 void
 mac_client_rebuild_flowtrees(mac_client_impl_t *mcip,
     const mac_soft_ring_set_type_t vanity_flags)
 {
 	flow_entry_t		*flent = mcip->mci_flent;
 	mac_impl_t		*mip = mcip->mci_mip;
-	uint_t			rx_srs_cnt = flent->fe_rx_srs_cnt;
+	uint16_t		rx_srs_cnt = flent->fe_rx_srs_cnt;
 
 	const mac_soft_ring_set_type_t all_vanity =
 	    SRST_DLS_BYPASS_V4 | SRST_DLS_BYPASS_V6;
@@ -1725,22 +1744,14 @@ mac_client_rebuild_flowtrees(mac_client_impl_t *mcip,
 	VERIFY(mac_perim_held((mac_handle_t)mip));
 	VERIFY0(vanity_flags & ~all_vanity);
 
-	for (int i = 0; i < rx_srs_cnt; i++) {
-		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
-		ASSERT3P(srs, !=, NULL);
-		mutex_enter(&srs->srs_lock);
-		ASSERT(SRS_QUIESCED(srs));
-		mac_flow_baked_tree_destroy(&srs->srs_flowtree);
-		mac_soft_ring_set_t *child = srs->srs_logical_next;
-		while (child != NULL) {
-			mac_soft_ring_set_t *next = child->srs_logical_next;
-			mac_srs_free(child);
-			child = next;
-		}
-		srs->srs_logical_next = NULL;
-		srs->srs_type |= vanity_flags;
-		mac_flow_baked_tree_create(mcip->mci_flow_tree, srs);
-		mutex_exit(&srs->srs_lock);
+	for (uint16_t i = 0; i < rx_srs_cnt; i++) {
+		mac_srs_rebuild_flowtree(flent->fe_rx_srs[i],
+		    mcip->mci_rx_flow_tree, vanity_flags);
+	}
+
+	if (flent->fe_tx_srs != NULL) {
+		mac_srs_rebuild_flowtree(flent->fe_tx_srs,
+		    mcip->mci_tx_flow_tree, 0);
 	}
 }
 
@@ -1790,7 +1801,7 @@ mac_client_create_flowtrees(mac_client_impl_t *mcip,
 		VERIFY(SRS_QUIESCED(srs));
 		srs->srs_type &= all_vanity;
 		srs->srs_type |= vanity_flags;
-		mac_flow_baked_tree_create(mcip->mci_flow_tree, srs);
+		mac_flow_baked_tree_create(mcip->mci_rx_flow_tree, srs);
 		mutex_exit(&srs->srs_lock);
 	}
 }
@@ -1821,7 +1832,7 @@ mac_client_update_classifier(mac_client_impl_t *mcip)
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
-	mac_update_subflows_on_fastpath(mcip);
+	mac_update_subflows(mcip);
 	mac_client_rebuild_flowtrees(mcip, 0);
 }
 
@@ -2177,8 +2188,12 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		case SRS_FANOUT_UNINIT:
 			mac_srs_fanout_init(mcip, mrp, mac_rx_srs, mac_tx_srs,
 			    cpupart);
-			VERIFY0(mac_flow_baked_tree_create(mcip->mci_flow_tree,
-			    mac_rx_srs));
+			VERIFY0(mac_flow_baked_tree_create(
+			    mcip->mci_rx_flow_tree, mac_rx_srs));
+			if (mac_tx_srs != NULL) {
+				VERIFY0(mac_flow_baked_tree_create(
+				    mcip->mci_tx_flow_tree, mac_tx_srs));
+			}
 			break;
 		case SRS_FANOUT_INIT:
 			break;
@@ -4555,7 +4570,7 @@ mac_flow_tree_new_srs(flow_entry_t *ent, const bool is_tx,
  * any such packets to `based_on`.
  */
 static int
-mac_flow_baked_tree_create(flow_tree_t *ft, mac_soft_ring_set_t *based_on)
+mac_flow_baked_tree_create(const flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 {
 	ASSERT3P(ft, !=, NULL);
 	ASSERT3P(based_on, !=, NULL);
