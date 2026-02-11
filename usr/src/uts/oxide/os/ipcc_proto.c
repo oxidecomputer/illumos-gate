@@ -1198,7 +1198,7 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 {
 	/* Sequence number for requests */
 	static uint64_t ipcc_seq;
-	size_t off, pktl, rcvd_datal;
+	size_t off, pktl, msgl, rcvd_datal;
 	uint64_t send_seq, rcvd_seq;
 	uint32_t rcvd_magic, rcvd_version;
 	uint16_t rcvd_crc, crc;
@@ -1352,23 +1352,23 @@ reread:
 		LOGHEX(" COBS IN", ipcc_in_pkt, end - ipcc_in_pkt);
 	}
 	if (!ipcc_cobs_decode(ipcc_in_pkt, end - ipcc_in_pkt, ipcc_in_msg,
-	    sizeof (ipcc_in_msg), &pktl)) {
+	    sizeof (ipcc_in_msg), &msgl)) {
 		LOG("Error decoding COBS frame\n");
 		goto resend;
 	}
-	LOGHEX("      IN", ipcc_in_msg, pktl);
-	if (pktl < IPCC_MIN_MESSAGE_SIZE) {
-		LOG("Short message received - 0x%lx byte(s)\n", pktl);
+	LOGHEX("      IN", ipcc_in_msg, msgl);
+	if (msgl < IPCC_MIN_MESSAGE_SIZE) {
+		LOG("Short message received - 0x%lx byte(s)\n", msgl);
 		goto resend;
 	}
 
-	rcvd_datal = pktl - IPCC_MIN_MESSAGE_SIZE;
+	rcvd_datal = msgl - IPCC_MIN_MESSAGE_SIZE;
 	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
 		LOG("Additional data length: 0x%lx\n", rcvd_datal);
 	}
 
 	/* Validate checksum */
-	off = pktl - 2;
+	off = msgl - 2;
 	crc = ipcc_fletcher16(ipcc_in_msg, off);
 	ipcc_decode_bytes((uint8_t *)&rcvd_crc, sizeof (rcvd_crc),
 	    ipcc_in_msg, &off);
