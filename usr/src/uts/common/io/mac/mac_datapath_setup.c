@@ -66,7 +66,8 @@ static int mac_compute_soft_ring_count(flow_entry_t *, int, int);
 static void mac_walk_srs_and_bind(int);
 static void mac_walk_srs_and_unbind(int);
 
-static int mac_flow_baked_tree_create(const flow_tree_t *, mac_soft_ring_set_t *);
+static int mac_flow_baked_tree_create(const flow_tree_t *,
+    mac_soft_ring_set_t *);
 static void mac_flow_baked_tree_destroy(flow_tree_baked_t *);
 
 enum mac_srs_create_ty {
@@ -1689,6 +1690,10 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	 * SRSes whose flowtrees use this flow entry.
 	 */
 	const mac_client_impl_t *mcip = (mac_client_impl_t *)flent->fe_mcip;
+	if (mcip == NULL) {
+		return;
+	}
+
 	const flow_entry_t *client = mcip->mci_flent;
 
 	for (int i = 0; i < client->fe_rx_srs_cnt; i++) {
@@ -4707,10 +4712,6 @@ mac_flow_baked_tree_create(const flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 		.srs = based_on,
 		.depth = 0,
 	};
-
-	/*
-	 * TODO(ky): tx tree construction?
-	 */
 
 	while (el != NULL && el != ft) {
 		ASSERT3U(depth, >, 0);

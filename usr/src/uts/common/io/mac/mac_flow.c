@@ -260,16 +260,22 @@ mac_flow_create(flow_desc_t *fd, mac_resource_props_t *mrp, char *name,
 		 * The effective resource list should reflect the priority
 		 * that we set implicitly.
 		 */
-		if (!(mrp->mrp_mask & MRP_PRIORITY))
+		if (!(mrp->mrp_mask & MRP_PRIORITY)) {
 			mrp->mrp_mask |= MRP_PRIORITY;
-		if (type & FLOW_USER)
-			mrp->mrp_priority = MPL_SUBFLOW_DEFAULT;
-		else
-			mrp->mrp_priority = MPL_LINK_DEFAULT;
+		}
+		mrp->mrp_priority = ((type & FLOW_USER) != 0) ?
+		    MPL_SUBFLOW_DEFAULT : MPL_LINK_DEFAULT;
 		bzero(mrp->mrp_pool, MAXPATHLEN);
 		bzero(&mrp->mrp_cpus, sizeof (mac_cpus_t));
 		bcopy(mrp, &flent->fe_effective_props,
 		    sizeof (mac_resource_props_t));
+		/*
+		 * Initialise bandwidth members of the flent itself, knowing
+		 * that we don't yet have any SRSes. This ensures that
+		 * `BW_ENABLED` is properly set ahead of time when this new
+		 * flow is incorporated in a tree.
+		 */
+		mac_srs_update_bwlimit(flent, mrp);
 	}
 	flow_stat_create(flent);
 
