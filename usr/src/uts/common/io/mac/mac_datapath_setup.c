@@ -1622,7 +1622,7 @@ mac_srs_update_bw_for_logicals(mac_soft_ring_set_t *mac_srs,
 {
 	ASSERT(!mac_srs_is_logical(mac_srs));
 	flow_tree_baked_t *root_tree = &mac_srs->srs_flowtree;
-	mac_soft_ring_set_t *curr = mac_srs;
+	mac_soft_ring_set_t *curr = mac_srs->srs_logical_next;
 
 	while (curr != NULL) {
 		if (curr->srs_flent == flent) {
@@ -1647,6 +1647,15 @@ mac_srs_update_bw_for_logicals(mac_soft_ring_set_t *mac_srs,
 
 		curr = curr->srs_logical_next;
 	}
+
+	/*
+	 * Once we have finalised changes to the root count, then we may
+	 * need to add/remove the BW aspect of flowtree walking on the
+	 * complete SRS.
+	 */
+	mutex_enter(&mac_srs->srs_lock);
+	mac_srs_update_drain_proc(mac_srs);
+	mutex_exit(&mac_srs->srs_lock);
 }
 
 /*
@@ -1928,13 +1937,15 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 	mac_cpus_t *srs_cpu = &mac_rx_srs->srs_cpu;
 	VERIFY3U(srs_cpu->mc_rx_fanout_cnt, <=,
 	    MAX(MAX_SR_FANOUT, MAX_RINGS_PER_GROUP));
-	const uint16_t new_fanout_cnt = (uint16_t)srs_cpu->mc_rx_fanout_cnt;
+	const bool is_logical = mac_srs_is_logical(mac_rx_srs);
+	const bool is_forward = (mac_rx_srs->srs_type & SRST_FORWARD) != 0;
+	const uint16_t new_fanout_cnt = is_forward ?
+	    0 : (uint16_t)srs_cpu->mc_rx_fanout_cnt;
 	/* How many are present right now? */
 	const uint16_t srings_present = mac_rx_srs->srs_soft_ring_count;
 
 	/* Does this flow need to report bindings to an upstack client? */
 	const flow_action_t *act = mac_srs_rx_action(mac_rx_srs);
-	const bool is_logical = mac_srs_is_logical(mac_rx_srs);
 	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
 	const mac_resource_remove_t rm_notify_fn = act->fa_resource.mrc_remove;
 	const mac_resource_bind_t bind_notify_fn = act->fa_resource.mrc_bind;
