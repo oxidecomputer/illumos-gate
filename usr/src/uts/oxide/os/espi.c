@@ -831,9 +831,34 @@ espi_oob_flush(mmio_reg_block_t block)
 	 */
 	mmio_reg_write(hdr0, FCH_ESPI_UP_RXHDR0_CLEAR_UPCMD_STAT(0));
 
-	/* Drain the input buffer */
-	while (espi_oob_readable(block))
+	/*
+	 * Drain the input buffer.
+	 *
+	 * Note the delays; we may we racing against the distant end producing
+	 * and sending data while we are actively trying to flush.  The delays
+	 * are meant to give them a fighting chance at sending that data, so
+	 * that we can discard it: an operational observation is that without
+	 * them, we may "finish" draining the input too quickly, and conclude
+	 * that the buffer is flushed, while data is still being transmitted
+	 * into it.  This is highly fallible method, and success is not, and
+	 * can not be, guaranteed.
+	 *
+	 * That said, the specific timeout value used here was determined
+	 * empirically to work reasonably well in testing, as measured by
+	 * absense of retransmissions and other protocol failures while
+	 * artifically injecting high levels of interference.  At the same
+	 * time, it does not increase latency for normal traffic so much as to
+	 * be burdensome for our current use cases.
+	 *
+	 * Regardless, this method is far from perfect, and the current state
+	 * should be viewed as nothing more than a best-effort attempt at a
+	 * reasonable balance between robustness and practicality.
+	 */
+	eb_pausems(espi_delay_ms);
+	while (espi_oob_readable(block)) {
 		(void) espi_oob_rx(block, NULL, NULL);
+		eb_pausems(espi_delay_ms);
+	}
 }
 
 /*
