@@ -2533,7 +2533,10 @@ mac_tx_srs_restart(mac_soft_ring_set_t *srs)
 
 	mac_srs_signal(srs, SRS_RESTART);
 	mac_srs_quiesce_wait(srs, SRS_RESTART_DONE);
-	mac_srs_clear_flag(srs, SRS_RESTART_DONE);
+	for (mac_soft_ring_set_t *curr = srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		mac_srs_clear_flag(curr, SRS_RESTART_DONE);
+	}
 }
 
 /*

@@ -260,11 +260,11 @@ mac_flow_create(flow_desc_t *fd, mac_resource_props_t *mrp, char *name,
 		 * The effective resource list should reflect the priority
 		 * that we set implicitly.
 		 */
-		if (!(mrp->mrp_mask & MRP_PRIORITY)) {
+		if ((mrp->mrp_mask & MRP_PRIORITY) == 0) {
 			mrp->mrp_mask |= MRP_PRIORITY;
+			mrp->mrp_priority = ((type & FLOW_USER) != 0) ?
+			    MPL_SUBFLOW_DEFAULT : MPL_LINK_DEFAULT;
 		}
-		mrp->mrp_priority = ((type & FLOW_USER) != 0) ?
-		    MPL_SUBFLOW_DEFAULT : MPL_LINK_DEFAULT;
 		bzero(mrp->mrp_pool, MAXPATHLEN);
 		bzero(&mrp->mrp_cpus, sizeof (mac_cpus_t));
 		bcopy(mrp, &flent->fe_effective_props,

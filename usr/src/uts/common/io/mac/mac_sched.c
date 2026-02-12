@@ -4155,6 +4155,14 @@ mac_stash_chain_hints(mblk_t *mp_chain, uintptr_t fanout_hint)
 	}
 }
 
+static inline void
+mac_strip_chain_hints(mblk_t *mp_chain)
+{
+	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
+		curr->b_prev = NULL;
+	}
+}
+
 /*
  * mac_tx_srs_enqueue
  *
@@ -4752,14 +4760,6 @@ mac_tx_invoke_callbacks(mac_client_impl_t *mcip, mac_tx_cookie_t cookie)
 	}
 	MAC_CALLBACK_WALKER_DCR(&mcip->mci_tx_notify_cb_info,
 	    &mcip->mci_tx_notify_cb_list);
-}
-
-static inline void
-mac_strip_chain_hints(mblk_t *mp_chain)
-{
-	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
-		curr->b_prev = NULL;
-	}
 }
 
 /* ARGSUSED */
@@ -5722,23 +5722,56 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs,
 		mac_tx_percpu_t *mytx;
 		MAC_TX_TRY_HOLD(give_to->srs_mcip, mytx, error);
 
-		mblk_t *unsent = NULL;
 		if (error == 0) {
-			give_to->srs_data.tx.st_func(give_to, pkts.mpl_head,
-			    0, 0, &unsent);
+			/*
+			 * `mac_tx` will have left us a fanout hint in b_prev.
+			 * As in other BW fanout cases, we must extract this.
+			 * Any packet chains will have been pushed as adjacent
+			 * runs with the fanout hint stashed in b_prev.
+			 *
+			 * This is almost identical to the code used in
+			 * `mac_tx_srs_drain` for the BW_FANOUT case.
+			 *
+			 * As there, we do not set `ret_mp` because packets have
+			 * already signed up for being enqueued etc. as part of
+			 * bandwidth control.
+			 */
+			const mac_tx_func_t proc = give_to->srs_data.tx.st_func;
+			mblk_t *curr = pkts.mpl_head;
+			mblk_t *sub_tail = pkts.mpl_head;
+			uintptr_t hint = 0;
+			while (curr != NULL) {
+				hint = (uintptr_t)curr->b_prev;
+				if ((uintptr_t)sub_tail->b_prev != hint) {
+					const uintptr_t s_hint =
+					    (uintptr_t)sub_tail->b_prev;
+					sub_tail->b_next = NULL;
+					mac_strip_chain_hints(pkts.mpl_head);
+					proc(give_to, pkts.mpl_head, s_hint, 0,
+					    NULL);
+					pkts.mpl_head = curr;
+				}
+
+				sub_tail = curr;
+				curr = curr->b_next;
+			}
+
+			mac_strip_chain_hints(pkts.mpl_head);
+			proc(give_to, pkts.mpl_head, hint, 0, NULL);
+
+			bzero(&pkts, sizeof (pkts));
+
 			MAC_TX_RELE(give_to->srs_mcip, mytx);
-		} else {
+		}
+
+		mutex_enter(&srs->srs_lock);
+		if (pkts.mpl_head != NULL) {
 			/*
 			 * Assume that the quiesce is temporary and
 			 * refund/requeue the packets. If it's permanent then
 			 * our own SRS cleanup will free packets etc.
 			 */
-			unsent = pkts.mpl_head;
-		}
-
-		mutex_enter(&srs->srs_lock);
-		if (unsent != NULL) {
-			mac_tx_srs_block(srs, unsent, true);
+			mac_tx_srs_block(srs, pkts.mpl_head, true);
 		}
 	} else {
 		/*
