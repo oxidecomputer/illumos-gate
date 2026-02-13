@@ -449,9 +449,7 @@ extern void mac_set_prim_vlan_rings(mac_impl_t *, mac_resource_props_t *);
 
 extern void mac_client_update_classifier(mac_client_impl_t *);
 extern void mac_client_rebuild_flowtrees(mac_client_impl_t *,
-    const mac_soft_ring_set_type_t);
-extern void mac_client_create_flowtrees(mac_client_impl_t *,
-    const mac_soft_ring_set_type_t);
+    const mac_soft_ring_set_type_t, const bool);
 extern void mac_client_destroy_flowtrees(mac_client_impl_t *);
 
 extern mblk_t *mac_standardise_pkt(const mac_client_impl_t *, mblk_t *);

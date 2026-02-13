@@ -108,6 +108,7 @@ extern "C" {
 
 #define	FLOW_FINAL_REFRELE(flent) {			\
 	ASSERT3U(flent->fe_refcnt, ==, 1);		\
+	ASSERT3U(flent->fe_flowtree_refcnt, ==, 0);	\
 	ASSERT3U(flent->fe_user_refcnt, ==, 0);		\
 	FLOW_REFRELE(flent);				\
 }
@@ -434,6 +435,7 @@ struct flow_entry_s {					/* Protected by */
 	 * the number of upcall refs
 	 */
 	uint32_t		fe_refcnt;		/* fe_lock */
+	uint32_t		fe_flowtree_refcnt;	/* fe_lock */
 
 	/*
 	 * This tracks lookups done using the global hash list for user

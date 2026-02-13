@@ -1488,10 +1488,8 @@ mac_client_open_action(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	 */
 	mcip->mci_rx_flow_tree = mac_flow_tree_node_create(flent);
 	VERIFY3P(mcip->mci_rx_flow_tree, !=, NULL);
-	FLOW_REFRELE(flent);
 	mcip->mci_tx_flow_tree = mac_flow_tree_node_create(flent);
 	VERIFY3P(mcip->mci_tx_flow_tree, !=, NULL);
-	FLOW_REFRELE(flent);
 
 	/* Attach fastpath flows as used by DLS bypass */
 	mac_create_fastpath_flows(mcip);
@@ -1587,9 +1585,7 @@ mac_client_close(mac_client_handle_t mch, uint16_t flags)
 	 * the fastpath flows themselves requires that the tree (which has
 	 * refholds on said flows) is gone.
 	 */
-	FLOW_REFHOLD(flent);
 	mac_flow_tree_destroy(mcip->mci_rx_flow_tree);
-	FLOW_REFHOLD(flent);
 	mac_flow_tree_destroy(mcip->mci_tx_flow_tree);
 	mac_teardown_fastpath_flows(mcip);
 
@@ -3119,8 +3115,10 @@ mac_client_datapath_teardown(mac_client_handle_t mch, mac_unicast_impl_t *muip,
 	 * if at all.
 	 */
 	mutex_enter(&flent->fe_lock);
-	ASSERT(flent->fe_refcnt == 1 && flent->fe_mbg == NULL &&
-	    flent->fe_tx_srs == NULL && flent->fe_rx_srs_cnt == 0);
+	VERIFY3U(flent->fe_refcnt, ==, 1 + flent->fe_flowtree_refcnt);
+	VERIFY3P(flent->fe_mbg, ==, NULL);
+	VERIFY3P(flent->fe_tx_srs, ==, NULL);
+	VERIFY3U(flent->fe_rx_srs_cnt, ==, 0);
 	flent->fe_flags = FE_MC_NO_DATAPATH;
 	flow_stat_destroy(flent);
 	mac_misc_stat_delete(flent);
@@ -4240,9 +4238,19 @@ mac_client_poll_enable(mac_client_handle_t mch, boolean_t is_v6)
 		vanity_flags |= SRST_DLS_BYPASS_V6;
 	}
 
-	mac_client_quiesce(mcip, true);
-	mac_client_rebuild_flowtrees(mcip, vanity_flags);
-	mac_client_restart(mcip);
+	/*
+	 * IP stack client polling affects only the Rx flow tree. Quiesce Rx,
+	 * rebuild the flowtree, and restart the Rx side without touching Tx.
+	 *
+	 * This is possible here since these flows are special-cased and we
+	 * know they can never influence the construction of the Tx flowtree.
+	 * When DLS sets these directly (and we build trees from a more
+	 * nondescript pile of flows), we would need to assert that the changed
+	 * flows were all `MFA_FLAGS_RX_ONLY`.
+	 */
+	mac_rx_client_quiesce(mch, true);
+	mac_client_rebuild_flowtrees(mcip, vanity_flags, false);
+	mac_rx_client_restart(mch);
 }
 
 /*
@@ -4263,9 +4271,9 @@ mac_client_poll_disable(mac_client_handle_t mch, boolean_t is_v6)
 	 * `mac_resource` applied, such that resource removal/quiescence
 	 * can inform the correct callbacks etc.
 	 *
-	 * TODO(ky): technically don't need to quiesce Tx here or in `enable`?
+	 * As in `enable`, we only touch the Rx path and respective flowtrees.
 	 */
-	mac_client_quiesce(mcip, true);
+	mac_rx_client_quiesce(mch, true);
 	mac_client_destroy_flowtrees(mcip);
 
 	/*
@@ -4296,9 +4304,9 @@ mac_client_poll_disable(mac_client_handle_t mch, boolean_t is_v6)
 
 	mac_resource_clear(mch, is_v6);
 
-	mac_client_create_flowtrees(mcip, vanity_flags);
+	mac_client_rebuild_flowtrees(mcip, vanity_flags, false);
 
-	mac_client_restart(mcip);
+	mac_rx_client_restart(mch);
 }
 
 /*

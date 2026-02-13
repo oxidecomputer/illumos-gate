@@ -791,17 +791,29 @@ mac_flow_clone_match(const mac_flow_match_t *ma)
 flow_tree_t *
 mac_flow_tree_node_create(flow_entry_t *flent)
 {
-	FLOW_REFHOLD(flent);
+	mutex_enter(&flent->fe_lock);
+	flent->fe_refcnt++;
+	flent->fe_flowtree_refcnt++;
+	mutex_exit(&flent->fe_lock);
+
 	flow_tree_t *out = kmem_zalloc(sizeof (flow_tree_t), KM_SLEEP);
 	out->ft_flent = flent;
+
 	return (out);
 }
 
 void
 mac_flow_tree_node_destroy(flow_tree_t *node)
 {
+	flow_entry_t *flent = node->ft_flent;
+
 	mac_flow_match_destroy(&node->ft_match_override);
-	FLOW_REFRELE(node->ft_flent);
+
+	mutex_enter(&flent->fe_lock);
+	flent->fe_refcnt--;
+	flent->fe_flowtree_refcnt--;
+	mutex_exit(&flent->fe_lock);
+
 	kmem_free(node, sizeof (flow_tree_t));
 }
 
@@ -1012,7 +1024,7 @@ mac_flow_wait(flow_entry_t *flent, mac_flow_state_t event)
 		 * We want to make sure the driver upcalls have finished before
 		 * we signal the Rx SRS worker to quit.
 		 */
-		while (flent->fe_refcnt != 1)
+		while (flent->fe_refcnt != (1 + flent->fe_flowtree_refcnt))
 			cv_wait(&flent->fe_cv, &flent->fe_lock);
 		break;
 
@@ -1654,7 +1666,7 @@ mac_link_flow_remove(char *flow_name)
 
 	/*
 	 * Remove the flow from the subflow table and deactivate the flow
-	 * by quiescing and removings its SRSs
+	 * by quiescing and removing its SRSes
 	 */
 	mac_flow_rem_subflow(flent);
 
@@ -1665,7 +1677,10 @@ mac_link_flow_remove(char *flow_name)
 
 	/*
 	 * Wait for any transient global flow hash refs to clear
-	 * and then release the creation reference on the flow
+	 * and then release the creation reference on the flow.
+	 *
+	 * FLOW_FINAL_REFRELE also requires that no flowtree nodes hold
+	 * a 
 	 */
 	mac_flow_wait(flent, FLOW_USER_REF);
 	FLOW_FINAL_REFRELE(flent);
