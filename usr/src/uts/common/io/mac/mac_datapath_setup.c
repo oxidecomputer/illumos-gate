@@ -317,7 +317,7 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
 	rw_enter(&mac_srs_g_lock, RW_WRITER);
 	mutex_enter(&mac_srs->srs_lock);
 
-	ASSERT((mac_srs->srs_state & SRS_IN_GLIST) != 0);
+	ASSERT3U(mac_srs->srs_state & SRS_IN_GLIST, !=, 0);
 
 	if (mac_srs == mac_srs_g_list) {
 		mac_srs_g_list = mac_srs->srs_next;
@@ -329,6 +329,9 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
 			mac_srs->srs_next->srs_prev = mac_srs->srs_prev;
 	}
 	mac_srs->srs_state &= ~SRS_IN_GLIST;
+
+	mac_srs->srs_prev = NULL;
+	mac_srs->srs_next = NULL;
 
 	mutex_exit(&mac_srs->srs_lock);
 	rw_exit(&mac_srs_g_lock);

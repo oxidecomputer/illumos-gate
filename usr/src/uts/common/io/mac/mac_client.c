@@ -4262,6 +4262,8 @@ mac_client_poll_disable(mac_client_handle_t mch, boolean_t is_v6)
 	 * Flow tree teardown must happen with the OLD settings of
 	 * `mac_resource` applied, such that resource removal/quiescence
 	 * can inform the correct callbacks etc.
+	 *
+	 * TODO(ky): technically don't need to quiesce Tx here or in `enable`?
 	 */
 	mac_client_quiesce(mcip, true);
 	mac_client_destroy_flowtrees(mcip);

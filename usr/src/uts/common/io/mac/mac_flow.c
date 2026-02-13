@@ -1346,15 +1346,6 @@ mac_link_init_flows(mac_client_handle_t mch)
 
 	(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 	    mac_link_init_flows_cb, mcip);
-	/*
-	 * If mac client had subflow(s) configured before plumb, change
-	 * function to mac_rx_srs_subflow_process and in case of hardware
-	 * classification, disable polling.
-	 */
-	// mac_client_quiesce(mcip, true);
-	// mac_client_update_classifier(mcip);
-	// mac_client_restart(mcip);
-
 }
 
 boolean_t
@@ -1386,7 +1377,6 @@ mac_link_release_flows(mac_client_handle_t mch)
 	 * Change the mci_flent callback back to mac_rx_srs_process()
 	 * because flows are about to be deactivated.
 	 */
-	// mac_client_update_classifier(mcip);
 	(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 	    mac_link_release_flows_cb, mcip);
 }

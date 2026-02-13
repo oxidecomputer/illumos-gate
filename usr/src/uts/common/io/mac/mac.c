@@ -2217,7 +2217,7 @@ mac_srs_quiesce_wait(mac_soft_ring_set_t *srs,
 {
 	for (mac_soft_ring_set_t *curr = srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
-		mac_srs_quiesce_wait_one(srs, srs_flag);
+		mac_srs_quiesce_wait_one(curr, srs_flag);
 	}
 }
 
@@ -2362,8 +2362,8 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 	flow_entry_t	*flent = srs->srs_flent;
 	mac_ring_t	*mr;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
-	ASSERT((srs->srs_type & SRST_TX) == 0);
+	VERIFY(mac_perim_held((mac_handle_t)FLENT_TO_MIP(flent)));
+	VERIFY(!mac_srs_is_tx(srs));
 
 	/*
 	 * This handles a change in the number of SRSs between the quiesce and
