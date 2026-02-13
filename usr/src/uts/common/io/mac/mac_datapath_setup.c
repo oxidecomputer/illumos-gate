@@ -3894,6 +3894,24 @@ mac_srs_signal_one(mac_soft_ring_set_t *mac_srs,
 }
 
 /*
+ * Wait for the worker thread of an SRS to complete a quiesce/lifecycle
+ * operation and to record `srs_flag`.
+ */
+void
+mac_srs_quiesce_wait_one(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t srs_flag)
+{
+	VERIFY(srs_flag == SRS_QUIESCE_DONE ||
+	    srs_flag == SRS_CONDEMNED_DONE ||
+	    srs_flag == SRS_RESTART_DONE);
+	mutex_enter(&srs->srs_lock);
+	while ((srs->srs_state & srs_flag) != srs_flag) {
+		cv_wait(&srs->srs_quiesce_done_cv, &srs->srs_lock);
+	}
+	mutex_exit(&srs->srs_lock);
+}
+
+/*
  * Signal an SRS to start a temporary quiesce, or permanent removal, or restart
  * a quiesced SRS by setting the appropriate flags and signaling the SRS worker
  * or poll thread. This function is internal to the quiescing logic and is
@@ -3919,6 +3937,9 @@ mac_srs_signal_diff(mac_soft_ring_set_t *mac_srs,
 {
 	mac_ring_t *ring = mac_srs->srs_data.rx.sr_ring;
 
+	/*
+	 * Any HW rings which could call into this SRS should be quiesced.
+	 */
 	VERIFY(mac_srs_is_tx(mac_srs) || (ring == NULL) ||
 	    (ring->mr_refcnt == 0));
 
@@ -3961,63 +3982,49 @@ mac_srs_worker_restart(mac_soft_ring_set_t *mac_srs)
 	mac_soft_ring_t	*softring;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-	if (is_tx_srs) {
-		ASSERT((mac_srs->srs_state &
-		    (SRS_POLL_THR_QUIESCED | SRS_QUIESCE_DONE | SRS_QUIESCE)) ==
-		    (SRS_QUIESCE_DONE | SRS_QUIESCE));
-	} else {
-		ASSERT((mac_srs->srs_state &
-		    (SRS_QUIESCE_DONE | SRS_QUIESCE)) ==
-		    (SRS_QUIESCE_DONE | SRS_QUIESCE));
-		if (srs_rx->sr_poll_thr != NULL) {
-			ASSERT((mac_srs->srs_state & SRS_POLL_THR_QUIESCED) ==
-			    SRS_POLL_THR_QUIESCED);
-		}
+	/*
+	 * Only complete Rx SRSes have a poll thread assigned.
+	 */
+	VERIFY3U(mac_srs->srs_state & (SRS_QUIESCE_DONE | SRS_QUIESCE),
+	    ==, SRS_QUIESCE_DONE | SRS_QUIESCE);
+	if (!is_tx_srs && srs_rx->sr_poll_thr != NULL) {
+		VERIFY3U(mac_srs->srs_state & SRS_POLL_THR_QUIESCED,
+		    ==, SRS_POLL_THR_QUIESCED);
 	}
 
-	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
-	    curr = curr->srs_logical_next) {
-		if (curr != mac_srs) {
-			mutex_enter(&curr->srs_lock);
+	/*
+	 * Signal any quiesced soft ring workers to restart and wait for
+	 * the soft ring down count to come down to zero.
+	 */
+	if (mac_srs->srs_soft_ring_quiesced_count != 0) {
+		for (softring = mac_srs->srs_soft_ring_head;
+		    softring != NULL;
+		    softring = softring->s_ring_next) {
+			if (!(softring->s_ring_state & S_RING_QUIESCE))
+				continue;
+			mac_soft_ring_signal(softring, S_RING_RESTART);
 		}
+		while (mac_srs->srs_soft_ring_quiesced_count != 0)
+			cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
+	}
 
+	mac_srs->srs_state &=
+	    ~(SRS_QUIESCE_DONE | SRS_QUIESCE | SRS_RESTART);
+	if (!is_tx_srs && mac_srs->srs_data.rx.sr_poll_thr != NULL) {
 		/*
-		 * Signal any quiesced soft ring workers to restart and wait for
-		 * the soft ring down count to come down to zero.
+		 * Signal the poll thread and ask it to restart. Wait
+		 * 'til it actually restarts and the
+		 * SRS_POLL_THR_QUIESCED flag gets cleared.
 		 */
-		if (curr->srs_soft_ring_quiesced_count != 0) {
-			for (softring = curr->srs_soft_ring_head;
-			    softring != NULL;
-			    softring = softring->s_ring_next) {
-				if (!(softring->s_ring_state & S_RING_QUIESCE))
-					continue;
-				mac_soft_ring_signal(softring, S_RING_RESTART);
-			}
-			while (curr->srs_soft_ring_quiesced_count != 0)
-				cv_wait(&curr->srs_async, &curr->srs_lock);
+		mac_srs->srs_state |= SRS_POLL_THR_RESTART;
+		cv_signal(&mac_srs->srs_cv);
+		while ((mac_srs->srs_state & SRS_POLL_THR_QUIESCED) != 0) {
+			cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
 		}
-
-		curr->srs_state &=
-		    ~(SRS_QUIESCE_DONE | SRS_QUIESCE | SRS_RESTART);
-		if (!is_tx_srs && curr->srs_data.rx.sr_poll_thr != NULL) {
-			/*
-			 * Signal the poll thread and ask it to restart. Wait
-			 * 'til it actually restarts and the
-			 * SRS_POLL_THR_QUIESCED flag gets cleared.
-			 */
-			curr->srs_state |= SRS_POLL_THR_RESTART;
-			cv_signal(&curr->srs_cv);
-			while (curr->srs_state & SRS_POLL_THR_QUIESCED)
-				cv_wait(&curr->srs_async, &curr->srs_lock);
-			ASSERT(!(curr->srs_state & SRS_POLL_THR_RESTART));
-		}
-		/* Wake up any waiter waiting for the restart to complete */
-		curr->srs_state |= SRS_RESTART_DONE;
-
-		if (curr != mac_srs) {
-			mutex_exit(&curr->srs_lock);
-		}
+		VERIFY3U(mac_srs->srs_state & SRS_POLL_THR_RESTART, ==, 0);
 	}
+	/* Wake up any waiter waiting for the restart to complete */
+	mac_srs->srs_state |= SRS_RESTART_DONE;
 
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
 }
@@ -4530,7 +4537,7 @@ struct delegate_entry {
  * for some flows if we create too many bindings.
  */
 static mac_soft_ring_set_t *
-mac_flow_tree_new_srs(flow_entry_t *ent, const bool is_tx,
+mac_flow_tree_new_srs(flow_entry_t *ent, const bool is_tx, const bool quiesce,
     const mac_flow_action_type_t ty,
     const struct delegate_entry *delegate_to, const size_t n_bw_members,
     const mac_cpus_t *fanout_blueprint, mac_soft_ring_set_t *root_srs,
@@ -4568,6 +4575,17 @@ mac_flow_tree_new_srs(flow_entry_t *ent, const bool is_tx,
 	    &ent->fe_resource_props, srs,
 	    NULL /* TODO(ky): plumb cpupart from somewhere? */);
 
+	/*
+	 * We will either be creating this logical SRS on a new client, or
+	 * we are mid-rebuild. In the latter case, we match the quiesce state
+	 * with `based_on` such that we can correctly handle the incoming
+	 * `SRS_RESTART`.
+	 */
+	if (quiesce) {
+		mac_srs_signal_one(srs, SRS_QUIESCE);
+		mac_srs_quiesce_wait_one(srs, SRS_QUIESCE_DONE);
+	}
+
 	return (srs);
 }
 
@@ -4601,6 +4619,7 @@ mac_flow_baked_tree_create(const flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 	size_t bw_set_count = 0;
 	flow_tree_baked_t *into = &based_on->srs_flowtree;
 	const bool is_tx = mac_srs_is_tx(based_on);
+	const bool is_quiesced = SRS_QUIESCED(based_on);
 
 	/* TODO(ky): too much stack for mac_cpus_t? */
 	/*
@@ -4766,8 +4785,9 @@ mac_flow_baked_tree_create(const flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 			}
 
 			*srs_slot = (effective_ty == MFA_TYPE_DROP) ? NULL :
-			    mac_flow_tree_new_srs(ent, is_tx, ty, curr_delegate,
-			    depth, &dup_fanout, based_on, el, ft);
+			    mac_flow_tree_new_srs(ent, is_tx, is_quiesced, ty,
+			    curr_delegate, depth, &dup_fanout, based_on, el,
+			    ft);
 
 			if (ty != MFA_TYPE_DELEGATE) {
 				const bool push_new =

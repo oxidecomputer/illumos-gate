@@ -463,7 +463,7 @@ typedef enum {
 	/*
 	 * This SRS does not have any softrings assigned.
 	 *
-	 * Immutable.
+	 * Mutable (Tx).
 	 */
 	SRST_NO_SOFT_RINGS		= 0x00000004,
 	/*
@@ -1135,6 +1135,8 @@ extern void mac_soft_ring_destroy(mac_soft_ring_t *);
 
 /* Rx SRS */
 extern void mac_srs_free(mac_soft_ring_set_t *);
+extern void mac_srs_quiesce_wait_one(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 extern void mac_srs_signal(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t);
 extern void mac_srs_signal_diff(mac_soft_ring_set_t *,

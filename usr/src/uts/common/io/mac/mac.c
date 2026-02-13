@@ -2217,10 +2217,7 @@ mac_srs_quiesce_wait(mac_soft_ring_set_t *srs,
 {
 	for (mac_soft_ring_set_t *curr = srs; curr != NULL;
 	    curr = curr->srs_logical_next) {
-		mutex_enter(&curr->srs_lock);
-		while (!(curr->srs_state & srs_flag))
-			cv_wait(&curr->srs_quiesce_done_cv, &curr->srs_lock);
-		mutex_exit(&curr->srs_lock);
+		mac_srs_quiesce_wait_one(srs, srs_flag);
 	}
 }
 
@@ -2268,7 +2265,7 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
     const mac_soft_ring_set_state_t srs_quiesce_flag,
     const bool condemn_logicals)
 {
-	flow_entry_t	*flent = srs->srs_flent;
+	flow_entry_t *flent = srs->srs_flent;
 	const uint_t mr_flag = ((srs_quiesce_flag == SRS_CONDEMNED) != 0) ?
 	    MR_CONDEMNED : MR_QUIESCE;
 	const mac_soft_ring_set_state_t srs_done_flag =
@@ -2351,7 +2348,8 @@ mac_rx_srs_remove(mac_soft_ring_set_t *srs)
 }
 
 static void
-mac_srs_clear_flag(mac_soft_ring_set_t *srs, mac_soft_ring_set_state_t flag)
+mac_srs_clear_flag(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t flag)
 {
 	mutex_enter(&srs->srs_lock);
 	srs->srs_state &= ~flag;

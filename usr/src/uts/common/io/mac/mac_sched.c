@@ -3866,14 +3866,14 @@ done:
 	 * thread. In the case of Tx, there shouldn't be any thread holding
 	 * SRS_PROC at this point.
 	 */
-	if (!(mac_srs->srs_state & SRS_PROC)) {
+	if ((mac_srs->srs_state & SRS_PROC) == 0) {
 		mac_srs->srs_state |= SRS_PROC;
 	} else {
-		ASSERT((mac_srs->srs_type & SRST_TX) == 0);
 		/*
-		 * Poll thread still owns the SRS and is still running
+		 * Poll thread still owns the SRS and is still running.
 		 */
-		ASSERT((mac_srs->srs_data.rx.sr_poll_thr == NULL) ||
+		VERIFY(!mac_srs_is_tx(mac_srs));
+		VERIFY((mac_srs->srs_data.rx.sr_poll_thr == NULL) ||
 		    ((mac_srs->srs_state & SRS_POLL_THR_OWNER) ==
 		    SRS_POLL_THR_OWNER));
 	}
@@ -4699,8 +4699,10 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	}
 
 	if (to_enqueue != NULL) {
+		mutex_enter(&mac_srs->srs_lock);
 		cookie = mac_tx_srs_enqueue(mac_srs, to_enqueue, flag,
 		    fanout_hint, ret_mp);
+		mutex_exit(&mac_srs->srs_lock);
 	}
 
 	return (cookie);
@@ -5684,7 +5686,7 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs,
 {
 	ASSERT(mac_srs_is_logical(srs));
 	ASSERT3U(srs->srs_type & SRST_FORWARD, !=, 0);
-	ASSERT(mutex_owned(&srs->srs_lock));
+	ASSERT(MUTEX_HELD(&srs->srs_lock));
 	ASSERT3U(srs->srs_state & SRS_PROC, ==, 0);
 
 	mac_pkt_list_t pkts = { 0 };
