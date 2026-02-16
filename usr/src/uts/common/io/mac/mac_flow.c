@@ -788,6 +788,14 @@ mac_flow_clone_match(const mac_flow_match_t *ma)
 	return (out);
 }
 
+/*
+ * Create a node to reference a target flow in a flowtree.
+ *
+ * Flowtree nodes should be linked via parent/child/sibling relationships in
+ * a strict tree. Any node may be the child or sibling of at most one other
+ * node. Individual `flow_entry_t`s can be usd multiple times in a tree by
+ * creating a new node for each.
+ */
 flow_tree_t *
 mac_flow_tree_node_create(flow_entry_t *flent)
 {
@@ -802,6 +810,9 @@ mac_flow_tree_node_create(flow_entry_t *flent)
 	return (out);
 }
 
+/*
+ * Destroy an individual flow tree node.
+ */
 void
 mac_flow_tree_node_destroy(flow_tree_t *node)
 {
@@ -817,19 +828,23 @@ mac_flow_tree_node_destroy(flow_tree_t *node)
 	kmem_free(node, sizeof (flow_tree_t));
 }
 
+/*
+ * Destroy a target flow tree node, and all other nodes reachable through
+ * its child/sibling links.
+ */
 void
 mac_flow_tree_destroy(flow_tree_t *ft)
 {
-	flow_tree_t *el = ft->ft_child;
 	bool ascended = false;
-	size_t depth = (el == NULL) ? 0 : 1;
-	while (el != NULL && el != ft) {
+	ssize_t depth = 0;
+	const flow_tree_t *stop_at = ft->ft_parent;
+	flow_tree_t *el = ft;
+	while (el != stop_at) {
 		flow_tree_t *self = el;
-		ASSERT3U(depth, >, 0);
-		ASSERT3P(el->ft_parent, !=, NULL);
+		ASSERT3U(depth, >=, 0);
 
 		if (!ascended && el->ft_child != NULL) {
-			depth += 1;
+			depth++;
 			el = el->ft_child;
 			ascended = false;
 		} else if (el->ft_sibling != NULL) {
@@ -837,15 +852,13 @@ mac_flow_tree_destroy(flow_tree_t *ft)
 			ascended = false;
 			mac_flow_tree_node_destroy(self);
 		} else {
-			depth -= 1;
+			depth--;
 			el = el->ft_parent;
 			ascended = true;
 			mac_flow_tree_node_destroy(self);
 		}
 	}
-	VERIFY0(depth);
-
-	mac_flow_tree_node_destroy(ft);
+	VERIFY3S(depth, ==, -1);
 }
 
 /*
