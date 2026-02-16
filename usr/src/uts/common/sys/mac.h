@@ -357,15 +357,11 @@ typedef	void		(*mac_direct_rx_t)(void *, mac_resource_handle_t,
 				mblk_t *, mac_header_info_t *);
 
 typedef mac_resource_handle_t	(*mac_resource_add_t)(void *, mac_resource_t *);
-typedef int			(*mac_resource_bind_t)(void *,
-    mac_resource_handle_t, processorid_t);
-typedef void			(*mac_resource_remove_t)(void *, void *);
-typedef void			(*mac_resource_quiesce_t)(void *, void *);
-typedef void			(*mac_resource_restart_t)(void *, void *);
-typedef int			(*mac_resource_modify_t)(void *, void *,
-				    mac_resource_t *);
-typedef	void			(*mac_change_upcall_t)(void *, mac_direct_rx_t,
-    void *);
+typedef int	(*mac_resource_bind_t)(void *, mac_resource_handle_t,
+    processorid_t);
+typedef void	(*mac_resource_remove_t)(void *, mac_resource_handle_t);
+typedef void	(*mac_resource_quiesce_t)(void *, mac_resource_handle_t);
+typedef void	(*mac_resource_restart_t)(void *, mac_resource_handle_t);
 
 typedef struct mac_resource_cb_s {
 	mac_resource_add_t	mrc_add;
