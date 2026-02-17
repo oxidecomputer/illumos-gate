@@ -1310,6 +1310,7 @@ extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
 /* Resource callbacks for clients */
 extern int mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);
+extern void mac_soft_ring_query(const mac_soft_ring_t *, mac_ring_query_t *);
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
 extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 
