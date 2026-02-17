@@ -1214,6 +1214,7 @@ extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
 
 /* Resource callbacks for clients */
 extern const mac_rx_fifo_ops_t mac_soft_ring_ops;
+extern void mac_soft_ring_await_locked(mac_soft_ring_t *ringp);
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
 extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 

@@ -189,7 +189,7 @@ size_t squeue_poll_budget_bytes = 150000;
 		ASSERT(rx_ring != NULL);				\
 		ASSERT(sqp->sq_state & SQS_POLL_CAPAB);			\
 		if (!(sqp->sq_state & SQS_POLLING)) {			\
-			if (ops->mrfo_disable(rx_ring->rr_mac_arg))	\
+			if (ops->mrfo_disable(rx_ring->rr_mac_arg, B_FALSE))\
 				sqp->sq_state |= SQS_POLLING;		\
 		}							\
 	}								\
