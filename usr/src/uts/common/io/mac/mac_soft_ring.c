@@ -596,6 +596,23 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 }
 
 /*
+ * Return facts about the ring and underlying SRS which clients need to
+ * effectively distribute their resources.
+ */
+void
+mac_soft_ring_query(const mac_soft_ring_t *ringp, mac_ring_query_t *info)
+{
+	const mac_soft_ring_set_t *srs = ringp->s_ring_set;
+	ASSERT(!mac_srs_is_tx(srs));
+
+	if (info == NULL) {
+		return;
+	}
+
+	info->mri_is_hw_ring = srs->srs_data.rx.sr_ring != NULL;
+}
+
+/*
  * mac_soft_ring_signal
  *
  * Typically used to set the soft ring state to QUIESCE, CONDEMNED, or

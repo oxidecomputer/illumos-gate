@@ -1784,7 +1784,8 @@ mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
 	    act->fa_resource.mrc_add != NULL &&
 	    act->fa_resource.mrc_arg != NULL;
 	const bool process_packet = (act->fa_flags & MFA_FLAGS_ACTION) != 0;
-	const mac_direct_rx_t rx_func = process_packet ? act->fa_direct_rx_fn :
+	const mac_direct_rx_t rx_func = (process_packet &&
+	    act->fa_direct_rx_fn != NULL) ? act->fa_direct_rx_fn :
 	    mac_rx_discard;
 	void *x_arg1 = process_packet ? act->fa_direct_rx_arg : NULL;
 
@@ -1800,6 +1801,8 @@ mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
 			    (mac_intr_enable_t)mac_soft_ring_intr_enable,
 			.mrf_intr_disable =
 			    (mac_intr_disable_t)mac_soft_ring_intr_disable,
+			.mrf_query =
+			    (mac_ring_querier_t)mac_soft_ring_query,
 			.mrf_flow_priority = pri,
 			.mrf_rx_arg = softring,
 			.mrf_intr_handle = (mac_intr_handle_t)softring,
@@ -4968,4 +4971,111 @@ mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
 	}
 
 	bzero(tree, sizeof (*tree));
+}
+
+static void
+mac_rx_srs_change_action(mac_soft_ring_set_t *srs, const flow_action_t *action)
+{
+	VERIFY(SRS_QUIESCED(srs));
+	VERIFY(!mac_srs_is_tx(srs));
+
+	flow_entry_t *old_flent = srs->srs_flent;
+
+	/*
+	 * Any old clients should lose access to the softrings. We aren't
+	 * condemning them, this will merely call the client's remove function
+	 * if present/needed.
+	 */
+	mac_srs_signal_client(srs, SRS_CONDEMNED);
+
+	const mac_direct_rx_t rx_func = (action->fa_direct_rx_fn == NULL) ?
+	    mac_rx_discard : action->fa_direct_rx_fn;
+	const bool do_notify = (action->fa_flags & MFA_FLAGS_RESOURCE) != 0;
+
+	mac_srs_rx_t *srs_rx = &srs->srs_data.rx;
+	srs_rx->sr_func = action->fa_direct_rx_fn;
+	srs_rx->sr_arg1 = action->fa_direct_rx_arg;
+	srs_rx->sr_arg2 = NULL;
+
+	if (do_notify) {
+		mac_rx_fifo_t mrf = {
+			.mrf_type = MAC_RX_FIFO,
+			.mrf_receive = (mac_receive_t)mac_soft_ring_poll,
+			.mrf_intr_enable =
+			    (mac_intr_enable_t)mac_soft_ring_intr_enable,
+			.mrf_intr_disable =
+			    (mac_intr_disable_t)mac_soft_ring_intr_disable,
+			.mrf_query =
+			    (mac_ring_querier_t)mac_soft_ring_query,
+			.mrf_flow_priority = srs->srs_pri,
+
+			.mrf_intr_handle = NULL,
+			.mrf_cpu_id = -1,
+			.mrf_rx_arg = NULL,
+		};
+
+		for (mac_soft_ring_t *softring = srs->srs_soft_ring_head;
+		    softring != NULL; softring = softring->s_ring_next) {
+			mrf.mrf_intr_handle = (mac_intr_handle_t)softring;
+			mrf.mrf_cpu_id = softring->s_ring_cpuid;
+			mrf.mrf_rx_arg = softring;
+
+			softring->s_ring_rx_func = rx_func;
+			softring->s_ring_rx_arg1 = action->fa_direct_rx_arg;
+
+			softring->s_ring_rx_arg2 = action->fa_resource.mrc_add(
+			    action->fa_resource.mrc_arg,
+			    (mac_resource_t *)&mrf);
+
+			if (softring->s_ring_rx_arg2 != NULL) {
+				mutex_enter(&softring->s_ring_lock);
+				softring->s_ring_type |= ST_RING_POLLABLE;
+				mutex_exit(&softring->s_ring_lock);
+			}
+		}
+	}
+
+	mutex_enter(&srs->srs_lock);
+	if (do_notify) {
+		srs->srs_type |= SRST_CLIENT_POLL;
+	} else {
+		srs->srs_type &= ~SRST_CLIENT_POLL;
+	}
+	mutex_exit(&srs->srs_lock);
+}
+
+void
+mac_flow_change_action(flow_entry_t *flent, const flow_action_t *action)
+{
+	/*
+	 * This function only works today for changing the flow action from
+	 * one non-delegate action to another (i.e., from `mac_action_set`).
+	 */
+	VERIFY3U(flent->fe_action.fa_flags & MFA_FLAGS_ACTION, !=, 0);
+	/*
+	 * We have a pile of Rx SRSes attached to this flent we must update --
+	 * complete SRSes on `flent`, and logical SRSes on the underlying
+	 * client.
+	 */
+	for (size_t i = 0; i < flent->fe_rx_srs_cnt; i++) {
+		mac_rx_srs_change_action(flent->fe_rx_srs[i], action);
+	}
+
+	mac_client_impl_t *mcip = flent->fe_mcip;
+	const flow_entry_t *base_flent = mcip->mci_flent;
+	if (base_flent == flent) {
+		goto done;
+	}
+
+	for (size_t i = 0; i < base_flent->fe_rx_srs_cnt; i++) {
+		mac_soft_ring_set_t *complete = base_flent->fe_rx_srs[i];
+		for (mac_soft_ring_set_t *curr = complete->srs_logical_next;
+		    curr != NULL; curr = curr->srs_logical_next) {
+			if (curr->srs_flent == flent) {
+				mac_rx_srs_change_action(curr, action);
+			}
+		}
+	}
+done:
+	bcopy(action, &flent->fe_action, sizeof (*action));
 }

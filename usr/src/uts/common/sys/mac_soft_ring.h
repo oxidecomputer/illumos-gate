@@ -1183,6 +1183,7 @@ extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
 
 extern int mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);
+extern void mac_soft_ring_query(const mac_soft_ring_t *, mac_ring_query_t *);
 extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, mac_soft_ring_type_t,
     pri_t, mac_client_impl_t *, mac_soft_ring_set_t *,
     processorid_t, mac_direct_rx_t, void *, mac_resource_handle_t);

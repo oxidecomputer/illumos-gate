@@ -36,7 +36,7 @@
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -1025,8 +1025,13 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 	viona_get_mac_capab(link);
 	viona_params_get_defaults(&link->l_params);
 
+	link->l_usepairs = 1;
+	if (viona_link_qalloc(link, 1) != 0)
+		goto bail;
+
 	(void) snprintf(cli_name, sizeof (cli_name), "%s-%d", VIONA_MODULE_NAME,
 	    link->l_linkid);
+
 	err = mac_client_open(link->l_mh, &link->l_mch, cli_name, 0);
 	if (err != 0) {
 		goto bail;
@@ -1037,10 +1042,6 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 	if (err != 0) {
 		goto bail;
 	}
-
-	if (viona_link_qalloc(link, 1) != 0)
-		goto bail;
-	link->l_usepairs = 1;
 
 	/*
 	 * Default to passing up all multicast traffic in addition to
@@ -1173,6 +1174,16 @@ viona_ioc_delete(viona_soft_state_t *ss, boolean_t on_close)
 
 	viona_neti_rele(nip);
 
+	for (size_t i = 0; i < MAX_RINGS_PER_GROUP; i++) {
+		viona_soft_ring_binding_t *soft_ring =
+		    link->l_soft_rings[i];
+
+		if (soft_ring == NULL)
+			continue;
+
+		kmem_free(soft_ring, sizeof (viona_soft_ring_binding_t));
+	}
+
 	kmem_free(link, sizeof (viona_link_t));
 	return (0);
 }
@@ -1289,10 +1300,14 @@ viona_ioc_link_setpairs(viona_link_t *link, uint16_t pairs)
 {
 	int err;
 
-	/* Unhook the receive callbacks while the rings are being reallocated */
-	viona_rx_clear(link);
+	/* Quiesce the receive path while the rings are being reallocated */
+	mac_perim_handle_t mphp = NULL;
+	mac_perim_enter_by_mch(link->l_mch, &mphp);
+	mac_rx_client_quiesce(link->l_mch, false);
 	err = viona_link_qalloc(link, pairs);
-	(void) viona_rx_set(link, link->l_promisc);
+	viona_recalculate_softring_bindings(link);
+	mac_rx_client_restart(link->l_mch);
+	mac_perim_exit(mphp);
 
 	return (err);
 }

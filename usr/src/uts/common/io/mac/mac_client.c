@@ -1685,6 +1685,55 @@ mac_rx_clear(mac_client_handle_t mch)
 }
 
 /*
+ * Set the flow action underlying a given MAC client.
+ *
+ * This has some advantages over `mac_rx_set`. The main packet callback will
+ * not have packet MEOI stripped, and the client can make use of inbound
+ * packets' rings or employ softring polling.
+ */
+int
+mac_action_set(mac_client_handle_t mch, const flow_action_t *action)
+{
+	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
+	mac_impl_t *mip = mcip->mci_mip;
+
+	if (action == NULL || !mac_flow_action_validate(action)) {
+		return (EINVAL);
+	}
+
+	/*
+	 * The MAC client *must* have a defined action, there is no one (at
+	 * present) to delegate to.
+	 */
+	if ((action->fa_flags & MFA_FLAGS_ACTION) == 0) {
+		return (EINVAL);
+	}
+
+	i_mac_perim_enter(mip);
+	mac_rx_client_quiesce(mch, false);
+	mac_flow_change_action(mcip->mci_flent, action);
+	mac_rx_client_restart(mch);
+	i_mac_perim_exit(mip);
+
+	return (0);
+}
+
+/*
+ * Reset the flow action for this client to the standard action, which will
+ * use the mac_rx_set callbacks.
+ */
+void
+mac_action_clear(mac_client_handle_t mch)
+{
+	const flow_action_t default_ac = {
+		.fa_flags = MFA_FLAGS_ACTION,
+		.fa_direct_rx_fn = mac_rx_deliver,
+		.fa_direct_rx_arg = mch,
+	};
+	(void) mac_action_set(mch, &default_ac);
+}
+
+/*
  * Set the siphon callback for the specified MAC client.
  */
 void

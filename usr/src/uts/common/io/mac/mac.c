@@ -1062,6 +1062,12 @@ mac_perim_enter_by_mh(mac_handle_t mh, mac_perim_handle_t *mphp)
 	MAC_ENCODE_MPH(*mphp, mip, 0);
 }
 
+void mac_perim_enter_by_mch(mac_client_handle_t mch, mac_perim_handle_t *mphp)
+{
+	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
+	mac_perim_enter_by_mh((mac_handle_t)mcip->mci_mip, mphp);
+}
+
 int
 mac_perim_enter_by_macname(const char *name, mac_perim_handle_t *mphp)
 {
