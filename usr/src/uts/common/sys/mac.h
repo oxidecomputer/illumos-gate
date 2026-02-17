@@ -457,9 +457,39 @@ typedef	struct mac_intr_s {
 	boolean_t		mi_ddi_shared;
 } mac_intr_t;
 
+typedef enum mac_fifo_query_res {
+	/* The requested value was successfully written. */
+	MFQR_OK = 0,
+	/*
+	 * The MAC resource does not recognise or support the given
+	 * mac_fifo_query_t.
+	 */
+	MFQR_UNRECOGNISED,
+	/* The output buffer is too small to contain the requested value. */
+	MFQR_TOO_SMALL,
+} mac_fifo_query_res_t;
+
+typedef enum mac_fifo_query {
+	/*
+	 * Is this softring fanned out from a hardware ring on the device?
+	 *
+	 * This can be used to apportion resources separately between traffic
+	 * arriving on hardware rings versus that which arrives via the
+	 * software classifier. Software-only rings should not exclusively
+	 * reserve client resources, as this datapath is used in rarer cases
+	 * such as local loopback.
+	 *
+	 * The output type is a bool.
+	 */
+	MFQ_IS_HW,
+} mac_fifo_query_t;
+
 typedef	int		(*mac_fifo_enable_t)(mac_rx_fifo_handle_t);
 typedef	boolean_t	(*mac_fifo_disable_t)(mac_rx_fifo_handle_t);
 typedef	mblk_t		*(*mac_fifo_receive_t)(mac_rx_fifo_handle_t, size_t);
+typedef	mac_fifo_query_res_t (*mac_fifo_querier_t)(const mac_rx_fifo_handle_t,
+				    mac_fifo_query_t, void *, size_t);
+typedef	void		(*mac_fifo_await_t)(mac_rx_fifo_handle_t);
 
 /*
  * Operations that a MAC client may call on an RX FIFO.
@@ -468,7 +498,7 @@ typedef struct {
 	/*
 	 * Flagset that controls which fields of this struct are valid.
 	 *
-	 * All members from mrfo_valid through mrfo_receive are mandatory, and
+	 * All members from mrfo_valid through mrfo_await are mandatory, and
 	 * are implicitly valid.
 	 */
 	uint64_t		mrfo_valid;
@@ -487,6 +517,19 @@ typedef struct {
 	 * Poll this FIFO for any packets up to a given byte limit.
 	 */
 	mac_fifo_receive_t	mrfo_receive;
+	/*
+	 * Request information about this FIFO's configuration, underlying
+	 * resources, or current state.
+	 */
+	mac_fifo_querier_t	mrfo_query;
+	/*
+	 * Wait for any current packet processing driven by MAC on this FIFO
+	 * to cease.
+	 *
+	 * When preceded by mrfo_disable, this ensures that MAC will only
+	 * enqueue packets and have ceased calling the receive callback itself.
+	 */
+	mac_fifo_await_t	mrfo_await;
 
 	/*
 	 * New members must be added here, and must define a flag entry in
