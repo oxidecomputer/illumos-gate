@@ -635,6 +635,60 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
 }
 
 /*
+ * Return facts about the ring and underlying SRS which clients need to
+ * effectively distribute their resources.
+ */
+mac_ring_query_res_t
+mac_soft_ring_query(const mac_soft_ring_t *ringp, mac_ring_query_t ty,
+    void *data, size_t data_len)
+{
+	const mac_soft_ring_set_t *srs = ringp->s_ring_set;
+	ASSERT(!mac_srs_is_tx(srs));
+
+	switch (ty) {
+	case MRQ_IS_HW:
+		if (data_len < sizeof (bool)) {
+			return (MRQR_TOO_SMALL);
+		}
+		bool *is_hw = data;
+		*is_hw = srs->srs_rx.sr_ring != NULL;
+		break;
+	default:
+		return (MRQR_UNRECOGNISED);
+	}
+
+	return (MRQR_OK);
+}
+
+/*
+ * Wait for any current packet processing driven by MAC on a softring to cease.
+ *
+ * When combined with a command to blank the ring, this ensures that MAC will
+ * only enqueue packets and cease calling s_ring_rx_func.
+ */
+void
+mac_soft_ring_await(mac_soft_ring_t *ringp)
+{
+	mutex_enter(&ringp->s_ring_lock);
+	mac_soft_ring_await_locked(ringp);
+	mutex_exit(&ringp->s_ring_lock);
+}
+
+void
+mac_soft_ring_await_locked(mac_soft_ring_t *ringp)
+{
+	VERIFY(!mac_srs_is_tx(ringp->s_ring_set));
+	VERIFY(MUTEX_HELD(&ringp->s_ring_lock));
+
+	while ((ringp->s_ring_state & S_RING_PROC) != 0) {
+		ringp->s_ring_state |= S_RING_CLIENT_WAIT;
+		cv_wait(&ringp->s_ring_client_cv, &ringp->s_ring_lock);
+	}
+
+	ringp->s_ring_state &= ~S_RING_CLIENT_WAIT;
+}
+
+/*
  * mac_soft_ring_signal
  *
  * Typically used to set the soft ring state to QUIESCE, CONDEMNED, or

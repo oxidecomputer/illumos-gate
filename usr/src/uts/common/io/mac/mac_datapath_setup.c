@@ -1913,7 +1913,8 @@ mac_srs_create_rx_softring(uint16_t id, pri_t pri, mac_client_impl_t *mcip,
 	    act->fa_resource.mrc_add != NULL &&
 	    act->fa_resource.mrc_arg != NULL;
 	const bool process_packet = (act->fa_flags & MFA_FLAGS_ACTION) != 0;
-	const mac_direct_rx_t rx_func = process_packet ? act->fa_direct_rx_fn :
+	const mac_direct_rx_t rx_func = (process_packet &&
+	    act->fa_direct_rx_fn != NULL) ? act->fa_direct_rx_fn :
 	    mac_rx_discard;
 	void *x_arg1 = process_packet ? act->fa_direct_rx_arg : NULL;
 
@@ -1929,6 +1930,8 @@ mac_srs_create_rx_softring(uint16_t id, pri_t pri, mac_client_impl_t *mcip,
 			    (mac_intr_enable_t)mac_soft_ring_intr_enable,
 			.mrf_intr_disable =
 			    (mac_intr_disable_t)mac_soft_ring_intr_disable,
+			.mrf_query = (mac_ring_querier_t)mac_soft_ring_query,
+			.mrf_await = (mac_ring_await_t)mac_soft_ring_await,
 			.mrf_flow_priority = pri,
 			.mrf_rx_arg = softring,
 			.mrf_intr_handle = (mac_intr_handle_t)softring,
@@ -3947,16 +3950,8 @@ mac_soft_ring_signal_client(mac_soft_ring_t *ringp,
 	 * If S_RING_PROC is present, one or more threads could be
 	 * calling up into the client with s_ring_rx_arg2 set. Allow
 	 * them to finish, so that we can alter s_ring_rx_arg2.
-	 *
-	 * S_RING_CLIENT_WAIT may only be set/cleared by a thread holding the
-	 * MCA perimeter.
 	 */
-	while ((ringp->s_ring_state & S_RING_PROC) != 0) {
-		ringp->s_ring_state |= S_RING_CLIENT_WAIT;
-		cv_wait(&ringp->s_ring_client_cv, &ringp->s_ring_lock);
-	}
-
-	ringp->s_ring_state &= ~S_RING_CLIENT_WAIT;
+	mac_soft_ring_await_locked(ringp);
 
 	if ((ringp->s_ring_state & ST_RING_POLLABLE) == 0) {
 		mutex_exit(&ringp->s_ring_lock);
@@ -5237,4 +5232,105 @@ mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
 	}
 
 	bzero(tree, sizeof (*tree));
+}
+
+static void
+mac_rx_srs_change_action(mac_soft_ring_set_t *srs, const flow_action_t *action)
+{
+	VERIFY(SRS_QUIESCED(srs));
+	VERIFY(!mac_srs_is_tx(srs));
+
+	flow_entry_t *old_flent = srs->srs_flent;
+
+	/*
+	 * Any old clients should lose access to the softrings. We aren't
+	 * condemning them, this will merely call the client's remove function
+	 * if present/needed.
+	 */
+	mac_srs_signal_client(srs, SRS_CONDEMNED);
+
+	const mac_direct_rx_t rx_func = (action->fa_direct_rx_fn == NULL) ?
+	    mac_rx_discard : action->fa_direct_rx_fn;
+	const bool do_notify = (action->fa_flags & MFA_FLAGS_RESOURCE) != 0;
+
+	mac_srs_rx_t *srs_rx = &srs->srs_rx;
+	srs_rx->sr_func = action->fa_direct_rx_fn;
+	srs_rx->sr_arg1 = action->fa_direct_rx_arg;
+
+	mac_rx_fifo_t mrf = {
+		.mrf_type = MAC_RX_FIFO,
+		.mrf_receive = (mac_receive_t)mac_soft_ring_poll,
+		.mrf_intr_enable = (mac_intr_enable_t)mac_soft_ring_intr_enable,
+		.mrf_intr_disable =
+		    (mac_intr_disable_t)mac_soft_ring_intr_disable,
+		.mrf_query = (mac_ring_querier_t)mac_soft_ring_query,
+		.mrf_await = (mac_ring_await_t)mac_soft_ring_await,
+		.mrf_flow_priority = srs->srs_pri,
+
+		.mrf_intr_handle = NULL,
+		.mrf_cpu_id = -1,
+		.mrf_rx_arg = NULL,
+	};
+
+	for (mac_soft_ring_t *softring = srs->srs_soft_ring_head;
+	    softring != NULL; softring = softring->s_ring_next) {
+		/*
+		 * The client cookie should have been cleared during
+		 * mac_srs_signal_client().
+		 */
+		softring->s_ring_rx_func = rx_func;
+		softring->s_ring_rx_arg1 = action->fa_direct_rx_arg;
+		VERIFY3P(softring->s_ring_rx_arg2, ==, NULL);
+
+		if (!do_notify) {
+			continue;
+		}
+
+		mrf.mrf_intr_handle = (mac_intr_handle_t)softring;
+		mrf.mrf_cpu_id = softring->s_ring_cpuid;
+		mrf.mrf_rx_arg = softring;
+		softring->s_ring_rx_arg2 = action->fa_resource.mrc_add(
+		    action->fa_resource.mrc_arg, (mac_resource_t *)&mrf);
+
+		if (softring->s_ring_rx_arg2 != NULL) {
+			mutex_enter(&softring->s_ring_lock);
+			softring->s_ring_state |= ST_RING_POLLABLE;
+			mutex_exit(&softring->s_ring_lock);
+		}
+	}
+
+	mutex_enter(&srs->srs_lock);
+	if (do_notify) {
+		srs->srs_type |= SRST_CLIENT_POLL;
+	} else {
+		srs->srs_type &= ~SRST_CLIENT_POLL;
+	}
+	mutex_exit(&srs->srs_lock);
+}
+
+void
+mac_flow_change_action(flow_entry_t *flent, const flow_action_t *action)
+{
+	/*
+	 * This function only works today for changing the flow action from
+	 * one non-delegate action to another (i.e., from `mac_action_set`).
+	 */
+	VERIFY3U(flent->fe_action.fa_flags & MFA_FLAGS_ACTION, !=, 0);
+
+	/*
+	 * We have a pile of Rx SRSes attached to this flent we must update --
+	 * complete SRSes on `flent`, and logical SRSes on the underlying
+	 * client.
+	 */
+	rw_enter(&flent->fe_srs_list_lock, RW_READER);
+	for (mac_soft_ring_set_t *curr = list_head(&flent->fe_srs_list);
+	    curr != NULL; curr = list_next(&flent->fe_srs_list, curr)) {
+		if (mac_srs_is_tx(curr)) {
+			continue;
+		}
+		mac_rx_srs_change_action(curr, action);
+	}
+	rw_exit(&flent->fe_srs_list_lock);
+
+	bcopy(action, &flent->fe_action, sizeof (*action));
 }

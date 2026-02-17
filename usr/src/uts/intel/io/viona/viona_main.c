@@ -76,7 +76,7 @@
  * ring events. An RX worker has the simple task of watching for ring shutdown
  * conditions. A TX worker does that in addition to processing all requests to
  * transmit data. Data destined for the guest is delivered directly by MAC to
- * viona_rx() when the ring is active.
+ * viona_rx_classified() when the ring is active.
  *
  *
  * -----------
@@ -187,6 +187,23 @@
  * data to the guest can be varied at any time via ioctl(VNA_IOC_SET_USEPAIRS).
  * The number of pairs to use can never exceed the total number of allocated
  * pairs.
+ *
+ * In the RX pathway, viona determines which queue each packet will land on
+ * using the hash of its outermost flow 5-tuple. However, the NIC and MAC will
+ * already split flows onto separate hardware rings and softrings downstack.
+ * viona takes advantage of this to prevent multiple threads from contending
+ * over locks for the same RX queues. When configuring the RX action on a MAC
+ * client, we provide a set of callbacks which allow MAC to tell us whenever any
+ * softring is created, destroyed, or undergoes a temporary state change. We
+ * allocate state for each softring (viona_soft_ring_binding_t), which MAC will
+ * pass us a pointer to on RX. Here we store a _subset_ of the rx queue indices
+ * that traffic arriving on a given softring may be routed to, ideally with
+ * minimal overlap. Whenever the downstack fanout changes, we recalculate these
+ * subsets.
+ *
+ * If viona runs out of slots to provide an individual softring with its own
+ * queue list, or packets arrive on a promiscuous mode callback, then they will
+ * be hashed over the full list of RX queues.
  *
  *
  * ----------------------------
@@ -366,6 +383,21 @@
  * l_stats_lock is held to protect against a racing consolidation, with the
  * existing per-ring values being added in at update time to provide an accurate
  * figure.
+ *
+ *
+ * -------------
+ * Lock Ordering
+ * -------------
+ *
+ * ss_lock > MAC perimeter > (link-/ring-specific locks)
+ *
+ * We impose this ordering to account for the main ways viona will be called
+ * into for any operations which need to change state. ioctls will take ss_lock
+ * early to ensure that only one request is served at a time. Calls to the MAC
+ * layer from here will either require or implicitly take the MAC perimeter, and
+ * in the case of mac_action_set/_clear will call back into viona_softring_add
+ * or _remove (etc.) in the same callstack. These functions can also be called
+ * by MAC itself at any time, where only the MAC perimeter is held.
  */
 
 #include <sys/conf.h>
@@ -1049,8 +1081,9 @@ viona_link_qalloc(viona_link_t *link, uint16_t pairs)
 
 	/*
 	 * This is safe as we are holding the ss_lock, have checked that all
-	 * of the rings are in the VRS_RESET state and know that the mac RX
-	 * callback is not set at this point.
+	 * of the rings are in the VRS_RESET state and know that either the MAC
+	 * Rx pathway has not yet been configured (during viona_link_t creation)
+	 * or is quiesced, so no inbound packets will attempt to use the vrings.
 	 */
 	viona_link_qfree(link);
 
@@ -1137,9 +1170,9 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 
 	viona_get_mac_capab(link);
 	viona_params_get_defaults(&link->l_params);
-
 	(void) snprintf(cli_name, sizeof (cli_name), "%s-%d", VIONA_MODULE_NAME,
 	    link->l_linkid);
+
 	err = mac_client_open(link->l_mh, &link->l_mch, cli_name, 0);
 	if (err != 0) {
 		goto bail;
@@ -1288,6 +1321,15 @@ viona_ioc_delete(viona_soft_state_t *ss, boolean_t on_close)
 
 	viona_neti_rele(nip);
 
+	for (size_t i = 0; i < ARRAY_SIZE(link->l_soft_rings); i++) {
+		viona_soft_ring_binding_t *soft_ring = link->l_soft_rings[i];
+
+		if (soft_ring == NULL)
+			continue;
+
+		kmem_free(soft_ring, sizeof (viona_soft_ring_binding_t));
+	}
+
 	kmem_free(link, sizeof (viona_link_t));
 	return (0);
 }
@@ -1402,24 +1444,30 @@ viona_ioc_ring_get_state(viona_link_t *link, void *udata, int md)
 static int
 viona_ioc_link_setpairs(viona_link_t *link, uint16_t pairs)
 {
-	int err, rx_err;
-
-	/* Unhook the receive callbacks while the rings are being reallocated */
-	viona_rx_clear(link);
-	err = viona_link_qalloc(link, pairs);
+	int err;
 
 	/*
-	 * Restore the receive callbacks removed above, re-applying the
-	 * requested reception mode.  Reinstalling the classified callback
-	 * cannot fail, but re-adding a promiscuous mode can, as
-	 * mac_promisc_add() is fallible through the provider.  In that case,
-	 * the active mode falls back to VIONA_PROMISC_NONE while l_promisc
-	 * retains the request, and retrying this operation reattempts the
-	 * missing handler.  The error is also returned to the ioctl caller.
+	 * Quiesce the receive path while the rings are being reallocated. We
+	 * require a full quiesce here because any softring which delivers
+	 * packets with a NULL viona_soft_ring_binding_t cannot be blanked, and
+	 * will directly access l_vrings. So too will any packets arriving on
+	 * promiscuous handlers.
+	 *
+	 * We do not need to readjust softring bindings as we do not update
+	 * l_usepairs, and cannot reduce l_npairs below the number of pairs in
+	 * use.
+	 *
+	 * The quiesce is moderately time-consuming, but means we do not need
+	 * any locks in the datapath itself.
 	 */
-	rx_err = viona_rx_set(link, link->l_promisc);
+	mac_perim_handle_t mphp = NULL;
+	mac_perim_enter_by_mch(link->l_mch, &mphp);
+	mac_rx_client_quiesce(link->l_mch);
+	err = viona_link_qalloc(link, pairs);
+	mac_rx_client_restart(link->l_mch);
+	mac_perim_exit(mphp);
 
-	return ((err != 0) ? err : rx_err);
+	return (err);
 }
 
 static int
@@ -1427,7 +1475,24 @@ viona_ioc_link_usepairs(viona_link_t *link, uint16_t pairs)
 {
 	if (pairs < VIONA_MIN_QPAIR || pairs > link->l_npairs)
 		return (EINVAL);
+
+	/*
+	 * Here we can avoid a full quiesce, and instead temporarily blank all
+	 * softrings with active bindings. Atomic adjustment of l_usepairs is
+	 * valid since all entries of l_vrings up to l_npairs are initialised.
+	 *
+	 * We do need to hold the MAC perimeter to prevent a ring addition
+	 * or change to CPU bindings from calling into viona_softring_add/remove
+	 * and calling viona_recalculate_softring_bindings in parallel.
+	 */
+	mac_perim_handle_t mphp = NULL;
+	mac_perim_enter_by_mch(link->l_mch, &mphp);
+	viona_blank_softrings(link, NULL);
 	link->l_usepairs = pairs;
+	viona_recalculate_softring_bindings(link);
+	viona_unblank_softrings(link, NULL);
+	mac_perim_exit(mphp);
+
 	return (0);
 }
 

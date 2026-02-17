@@ -42,6 +42,7 @@
 
 #include <sys/types.h>
 #include <sys/strsubr.h>
+#include <sys/debug.h>
 
 #include <sys/atomic.h>
 #include <sys/dlpi.h>
@@ -822,10 +823,17 @@ viona_rx_get_ring(viona_link_t *link, const uint8_t idx)
 }
 
 static inline viona_vring_t *
-viona_rx_pick_ring(viona_link_t *link, mblk_t *mp)
+viona_rx_pick_ring(viona_link_t *link,
+    const viona_soft_ring_binding_t *my_rings, mblk_t *mp)
 {
-	const uint8_t r = (uint8_t)mac_pkt_hash(DL_ETHER, mp,
-	    MAC_PKT_HASH_L3 | MAC_PKT_HASH_L4, B_TRUE) % link->l_usepairs;
+	uint8_t r = (uint8_t)mac_pkt_hash(DL_ETHER, mp,
+	    MAC_PKT_HASH_L3 | MAC_PKT_HASH_L4, B_TRUE);
+	if (my_rings != NULL) {
+		r %= my_rings->vsb_len;
+		r = my_rings->vsb_queue[r];
+	} else {
+		r %= link->l_usepairs;
+	}
 
 	return (viona_rx_get_ring(link, r));
 }
@@ -849,13 +857,16 @@ viona_rx_ring_deliver(viona_vring_t *ring, mblk_t *mp,
  */
 static inline void
 viona_rx_split_deliver(viona_link_t *link, mblk_t *head,
-    const boolean_t is_loopback)
+    const viona_soft_ring_binding_t *my_rings, const boolean_t is_loopback)
 {
 	/*
 	 * We have no internal fanout. Deliver in one shot without hashing.
 	 */
-	if (link->l_usepairs == 1) {
-		viona_rx_ring_deliver(viona_rx_get_ring(link, 0), head,
+	if (link->l_usepairs == 1 ||
+	    (my_rings != NULL && my_rings->vsb_len == 1)) {
+		const uint8_t ring_idx = (my_rings != NULL) ?
+		    my_rings->vsb_queue[0] : 0;
+		viona_rx_ring_deliver(viona_rx_get_ring(link, ring_idx), head,
 		    is_loopback);
 		return;
 	}
@@ -864,7 +875,8 @@ viona_rx_split_deliver(viona_link_t *link, mblk_t *head,
 	mblk_t *sub_tail = head;
 	viona_vring_t *ring = NULL;
 	while (curr != NULL) {
-		viona_vring_t *my_ring = viona_rx_pick_ring(link, curr);
+		viona_vring_t *my_ring =
+		    viona_rx_pick_ring(link, my_rings, curr);
 		/*
 		 * The target ring of this packet differs from head..sub_tail.
 		 * Break the chain, send it up, and then set curr as the new
@@ -900,7 +912,8 @@ viona_rx_split_deliver(viona_link_t *link, mblk_t *head,
  * non-multicast.
  */
 static boolean_t
-viona_rx_pkt_is_mcast(viona_link_t *link, mblk_t *mp)
+viona_rx_pkt_is_mcast(viona_link_t *link, mblk_t *mp,
+    const viona_soft_ring_binding_t *my_rings)
 {
 	mac_header_info_t mhi;
 	int err;
@@ -918,7 +931,7 @@ viona_rx_pkt_is_mcast(viona_link_t *link, mblk_t *mp)
 		}
 		if (err != 0) {
 			viona_vring_t *my_ring =
-			    viona_rx_pick_ring(link, mp);
+			    viona_rx_pick_ring(link, my_rings, mp);
 			VIONA_RING_STAT_INCR(my_ring, rx_mcast_check);
 			return (B_FALSE);
 		}
@@ -936,7 +949,7 @@ viona_rx_pkt_is_mcast(viona_link_t *link, mblk_t *mp)
  */
 static mblk_t *
 viona_rx_filter_mcast(viona_link_t *link, mblk_t *mp,
-    const boolean_t keep_mcast)
+    const viona_soft_ring_binding_t *my_rings, const boolean_t keep_mcast)
 {
 	mblk_t *head = NULL;
 	mblk_t **mpp = &head;
@@ -945,7 +958,7 @@ viona_rx_filter_mcast(viona_link_t *link, mblk_t *mp,
 		mblk_t *mp_next = mp->b_next;
 
 		mp->b_next = NULL;
-		if (viona_rx_pkt_is_mcast(link, mp) == keep_mcast) {
+		if (viona_rx_pkt_is_mcast(link, mp, my_rings) == keep_mcast) {
 			*mpp = mp;
 			mpp = &mp->b_next;
 		} else {
@@ -959,17 +972,24 @@ viona_rx_filter_mcast(viona_link_t *link, mblk_t *mp,
 
 /*
  * Classified receive callback, which is installed once and left in place across
- * reception-mode transitions.  The filtering behavior follows l_rx_mode,
- * which viona_rx_set() publishes after the new promiscuous callback is
- * installed and before the old one is removed.  Delivery paths therefore
- * overlap during a transition, leaving no gap for new arrivals.  Packets
- * already queued here at the transition are filtered under the new mode.
+ * reception-mode transitions.
+ *
+ * Traffic will be split over all queues assigned to the softring binding at
+ * `mrh`, defaulting to all queues if no binding exists.
+ *
+ * The filtering behavior follows l_rx_mode, which viona_rx_set() publishes
+ * after the new promiscuous callback is installed and before the old one is
+ * removed.  Delivery paths therefore overlap during a transition, leaving no
+ * gap for new arrivals.  Packets already queued here at the transition are
+ * filtered under the new mode.
  */
 static void
-viona_rx_classified(void *arg, mac_resource_handle_t mrh __unused, mblk_t *mp,
-    boolean_t is_loopback)
+viona_rx_classified(void *arg, mac_resource_handle_t mrh, mblk_t *mp,
+    void *mhi __unused)
 {
 	viona_link_t *link = (viona_link_t *)arg;
+	const viona_soft_ring_binding_t *my_rings =
+	    (viona_soft_ring_binding_t *)mrh;
 
 	switch (link->l_rx_mode) {
 	case VIONA_PROMISC_MULTI:
@@ -990,7 +1010,7 @@ viona_rx_classified(void *arg, mac_resource_handle_t mrh __unused, mblk_t *mp,
 		 * Since viona has only a VLAN_ID_NONE flow, nonzero-VID
 		 * multicast is rejected before reaching either callback.
 		 */
-		mp = viona_rx_filter_mcast(link, mp, B_FALSE);
+		mp = viona_rx_filter_mcast(link, mp, my_rings, B_FALSE);
 		break;
 	case VIONA_PROMISC_ALL:
 		/*
@@ -1004,7 +1024,7 @@ viona_rx_classified(void *arg, mac_resource_handle_t mrh __unused, mblk_t *mp,
 	}
 
 	if (mp != NULL) {
-		viona_rx_split_deliver(link, mp, is_loopback);
+		viona_rx_split_deliver(link, mp, my_rings, B_FALSE);
 	}
 }
 
@@ -1014,7 +1034,7 @@ viona_rx_promisc(void *arg, mac_resource_handle_t mrh __unused, mblk_t *mp,
 {
 	viona_link_t *link = (viona_link_t *)arg;
 
-	viona_rx_split_deliver(link, mp, is_loopback);
+	viona_rx_split_deliver(link, mp, NULL, is_loopback);
 }
 
 static void
@@ -1029,10 +1049,268 @@ viona_rx_mcast(void *arg, mac_resource_handle_t mrh __unused, mblk_t *mp,
 	 * has already delivered that broadcast traffic, so it should be
 	 * suppressed here, rather than duplicating it to the guest.
 	 */
-	mp = viona_rx_filter_mcast(link, mp, B_TRUE);
+	mp = viona_rx_filter_mcast(link, mp, NULL, B_TRUE);
 	if (mp != NULL) {
-		viona_rx_split_deliver(link, mp, is_loopback);
+		viona_rx_split_deliver(link, mp, NULL, is_loopback);
 	}
+}
+
+/*
+ * Assign a subset of a link's Rx queues to each softring registered by
+ * MAC. This function can only be called when we are certain that no reference
+ * to l_soft_rings will be used -- either by quiescing the client, or by
+ * blanking all of the link's registered softrings.
+ *
+ * We create two softring->queue set mappings: one for the softrings reachable
+ * from a hardware ring (vsb_is_hw_ring), and one for the remaining softrings
+ * (which exist on a device's software classifier).
+ *
+ * The allocation strategy for each class is fairly simple. If we have
+ * usepairs >= softrings, then each softring gets dedicated use of a chunk of
+ * the virtio queues. Excess queues are handed out one by one. If we have
+ * usepairs < softrings, then each softring can only deliver to one queue. We
+ * perform round-robin allocation in this case. Queues may be delivered to by
+ * multiple softrings in this case.
+ */
+void
+viona_recalculate_softring_bindings(viona_link_t *link)
+{
+	ASSERT(mac_perim_held(link->l_mh));
+	ASSERT3U(link->l_usepairs, >=, VIONA_MIN_QPAIR);
+
+	const uint16_t queue_cnt = link->l_usepairs;
+
+	uint16_t hw_queues_idx = 0;
+	uint16_t hw_srs_left = link->l_hw_soft_ring_cnt;
+	const uint16_t chunk_size_hw = (link->l_hw_soft_ring_cnt == 0) ? 0 :
+	    MAX((queue_cnt / link->l_hw_soft_ring_cnt), 1);
+	const bool is_hw_rr = link->l_hw_soft_ring_cnt > queue_cnt;
+	uint16_t overspill_hw = is_hw_rr ?
+	    0 : (queue_cnt - (hw_srs_left * chunk_size_hw));
+
+	uint16_t sw_queues_idx = 0;
+	uint16_t sw_srs_left = link->l_sw_soft_ring_cnt;
+	const uint16_t chunk_size_sw = (link->l_sw_soft_ring_cnt == 0) ? 0 :
+	    MAX((queue_cnt / link->l_sw_soft_ring_cnt), 1);
+	const bool is_sw_rr = link->l_sw_soft_ring_cnt > queue_cnt;
+	uint16_t overspill_sw = is_sw_rr ?
+	    0 : (queue_cnt - (sw_srs_left * chunk_size_sw));
+
+	for (size_t i = 0; i < ARRAY_SIZE(link->l_soft_rings); i++) {
+		viona_soft_ring_binding_t *bind = link->l_soft_rings[i];
+		if (bind == NULL) {
+			continue;
+		}
+
+		if (bind->vsb_is_hw_ring) {
+			VERIFY3U(hw_srs_left, >, 0);
+			hw_srs_left--;
+		} else {
+			VERIFY3U(sw_srs_left, >, 0);
+			sw_srs_left--;
+		}
+
+		const uint16_t class_chunk = bind->vsb_is_hw_ring ?
+		    chunk_size_hw : chunk_size_sw;
+
+		uint16_t *my_overspill = bind->vsb_is_hw_ring ?
+		    &overspill_hw : &overspill_sw;
+		const uint16_t my_chunk_sz = class_chunk +
+		    ((*my_overspill > 0) ? 1 : 0);
+
+		if (*my_overspill > 0) {
+			(*my_overspill)--;
+		}
+
+		ASSERT3U(my_chunk_sz, >=, 1);
+
+		bind->vsb_len = my_chunk_sz;
+		for (size_t j = 0; j < my_chunk_sz; j++) {
+			if (bind->vsb_is_hw_ring) {
+				bind->vsb_queue[j] = hw_queues_idx++;
+				hw_queues_idx %= queue_cnt;
+			} else {
+				bind->vsb_queue[j] = sw_queues_idx++;
+				sw_queues_idx %= queue_cnt;
+			}
+		}
+	}
+
+	ASSERT0(hw_srs_left);
+	ASSERT0(sw_srs_left);
+}
+
+/*
+ * Prevent MAC from using any non-quiesced softrings, waiting until any have
+ * exited viona_rx_classified. This ensures that we can alter all
+ * viona_soft_ring_binding_t.
+ *
+ * An optional element, skip, can be provided to avoid operating on a softring
+ * that is still being created or destroyed.
+ *
+ * Any inbound packets arriving after this function is called will be enqueued
+ * in MAC until the softring is unblanked.
+ */
+void
+viona_blank_softrings(viona_link_t *link, const viona_soft_ring_binding_t *skip)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(link->l_soft_rings); i++) {
+		viona_soft_ring_binding_t *soft_ring = link->l_soft_rings[i];
+		if (soft_ring == NULL || soft_ring == skip ||
+		    soft_ring->vsb_is_quiesced) {
+			continue;
+		}
+
+		mac_intr_handle_t handle = soft_ring->vsb_ops.mrf_intr_handle;
+		soft_ring->vsb_ops.mrf_intr_disable(handle);
+		soft_ring->vsb_ops.mrf_await(soft_ring->vsb_ops.mrf_rx_arg);
+	}
+}
+
+/*
+ * Resume MAC processing on all non-quiesced softrings except skip.
+ */
+void
+viona_unblank_softrings(viona_link_t *link,
+    const viona_soft_ring_binding_t *skip)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(link->l_soft_rings); i++) {
+		viona_soft_ring_binding_t *soft_ring = link->l_soft_rings[i];
+		if (soft_ring == NULL || soft_ring == skip ||
+		    soft_ring->vsb_is_quiesced) {
+			continue;
+		}
+
+		/*
+		 * Unblanking the softring will awaken its worker if any packets
+		 * are enqueued. We don't need to poll it ourselves.
+		 */
+		mac_intr_handle_t handle = soft_ring->vsb_ops.mrf_intr_handle;
+		soft_ring->vsb_ops.mrf_intr_enable(handle);
+	}
+}
+
+static mac_resource_handle_t
+viona_softring_add(void *arg, mac_resource_t *ring)
+{
+	viona_link_t *link = (viona_link_t *)arg;
+	viona_soft_ring_binding_t *res = NULL;
+
+	if (ring->mr_type != MAC_RX_FIFO) {
+		goto done;
+	}
+
+	const mac_rx_fifo_t *ops = &ring->mr_fifo;
+
+	/*
+	 * This is a fairly simple mechanism. We find an empty slot in
+	 * l_soft_rings, and create an entry if there was space. Each slot then
+	 * allocates a subset of our active rx queues, Q, to a softring. These
+	 * subsets do not need to be disjoint.
+	 *
+	 * For each packet that arrives, we will then deliver it to
+	 * Q[flow_hash % q_len].
+	 *
+	 * MAC can handle us running out of space and returning NULL. In this
+	 * case viona_rx_classified will receive a NULL resource handle when
+	 * called with arriving packets, and then fall back to using the set of
+	 * all its rx queues as Q. Flows on such softrings will still be handed
+	 * to a consistent virtio queue, because they have the same flow hash.
+	 */
+	bool is_hw = false;
+	if (ops->mrf_query != NULL) {
+		VERIFY3U(ops->mrf_query(ops->mrf_rx_arg, MRQ_IS_HW, &is_hw,
+		    sizeof (is_hw)), ==, MRQR_OK);
+	}
+
+	for (size_t i = 0; i < ARRAY_SIZE(link->l_soft_rings); i++) {
+		if (link->l_soft_rings[i] == NULL) {
+			res = kmem_zalloc(sizeof (viona_soft_ring_binding_t),
+			    KM_SLEEP);
+			link->l_soft_rings[i] = res;
+			res->vsb_is_hw_ring = is_hw;
+			break;
+		}
+	}
+
+	if (res == NULL) {
+		goto done;
+	}
+
+	bcopy(ops, &res->vsb_ops, sizeof (*ops));
+
+	if (res->vsb_is_hw_ring) {
+		link->l_hw_soft_ring_cnt++;
+	} else {
+		link->l_sw_soft_ring_cnt++;
+	}
+
+	/*
+	 * All that MAC can promise us at this point is that the caller holds
+	 * the MAC perimeter, and that the SRS that the new ring belongs to is
+	 * quiesced or unplumbed. To reallocate queues amongst *all* our
+	 * existing viona_soft_ring_binding_t, we need to prevent MAC from
+	 * calling into viona for all viona_soft_ring_binding_t it knows about.
+	 */
+	viona_blank_softrings(link, res);
+	viona_recalculate_softring_bindings(link);
+	viona_unblank_softrings(link, res);
+
+done:
+	return ((mac_resource_handle_t)res);
+}
+
+static void
+viona_softring_remove(void *arg, mac_resource_handle_t arg2)
+{
+	viona_link_t *link = (viona_link_t *)arg;
+	viona_soft_ring_binding_t *to_find = (viona_soft_ring_binding_t *)arg2;
+
+	size_t i;
+	for (i = 0; i < ARRAY_SIZE(link->l_soft_rings); i++) {
+		if (link->l_soft_rings[i] == to_find) {
+			break;
+		}
+	}
+	VERIFY3U(i, <, ARRAY_SIZE(link->l_soft_rings));
+
+	link->l_soft_rings[i] = NULL;
+	if (to_find->vsb_is_hw_ring) {
+		link->l_hw_soft_ring_cnt--;
+	} else {
+		link->l_sw_soft_ring_cnt--;
+	}
+	kmem_free(to_find, sizeof (*to_find));
+
+	viona_blank_softrings(link, NULL);
+	viona_recalculate_softring_bindings(link);
+	viona_unblank_softrings(link, NULL);
+}
+
+
+/*
+ * Viona doesn't attempt to poll the softrings or map the (idle) Rx worker
+ * thread's affinity to that of the softring. Quiesce/restart/bind are no-ops.
+ */
+static void
+viona_softring_quiesce(void *arg __unused, mac_resource_handle_t arg2)
+{
+	viona_soft_ring_binding_t *to_find = (viona_soft_ring_binding_t *)arg2;
+	to_find->vsb_is_quiesced = true;
+}
+
+static void
+viona_softring_restart(void *arg __unused, mac_resource_handle_t arg2)
+{
+	viona_soft_ring_binding_t *to_find = (viona_soft_ring_binding_t *)arg2;
+	to_find->vsb_is_quiesced = false;
+}
+
+static int
+viona_softring_bind(void *arg __unused, mac_resource_handle_t arg2 __unused,
+    processorid_t id __unused)
+{
+	return (0);
 }
 
 int
@@ -1040,12 +1318,13 @@ viona_rx_set(viona_link_t *link, viona_promisc_t mode)
 {
 	mac_promisc_handle_t old_mph = link->l_mph;
 	mac_promisc_handle_t new_mph = NULL;
+
 	int err = 0;
 
 	/*
 	 * The classified callback is left in place across mode transitions;
 	 * otherwise, changing its mode-dependent filtering would require
-	 * replacing it through mac_rx_set(), which quiesces the receive
+	 * replacing it through mac_action_set(), which quiesces the receive
 	 * datapath and can drop packets arriving during that quiescence.  The
 	 * installed callback instead filters based on l_rx_mode.  It is
 	 * removed only by viona_rx_clear(), during ring reallocation or link
@@ -1060,7 +1339,23 @@ viona_rx_set(viona_link_t *link, viona_promisc_t mode)
 	 * for a retry.
 	 */
 	if (!link->l_rx_classified) {
-		mac_rx_set(link->l_mch, viona_rx_classified, link);
+		const flow_action_t viona_do_spec = {
+			.fa_flags = MFA_FLAGS_ACTION | MFA_FLAGS_RESOURCE,
+
+			.fa_direct_rx_fn =
+			    (mac_direct_rx_t)viona_rx_classified,
+			.fa_direct_rx_arg = link,
+
+			.fa_resource = {
+				.mrc_add = viona_softring_add,
+				.mrc_remove = viona_softring_remove,
+				.mrc_quiesce = viona_softring_quiesce,
+				.mrc_restart = viona_softring_restart,
+				.mrc_bind = viona_softring_bind,
+				.mrc_arg = link,
+			},
+		};
+		VERIFY0(mac_action_set(link->l_mch, &viona_do_spec));
 		link->l_rx_classified = true;
 	}
 
@@ -1158,7 +1453,7 @@ viona_rx_clear(viona_link_t *link)
 		mac_promisc_remove(link->l_mph);
 		link->l_mph = NULL;
 	}
-	mac_rx_clear(link->l_mch);
+	mac_action_clear(link->l_mch);
 	link->l_rx_classified = false;
 	link->l_rx_mode = VIONA_PROMISC_NONE;
 }
