@@ -80,6 +80,7 @@ extern mblk_t *mac_header_cook(mac_handle_t, mblk_t *);
 extern mblk_t *mac_header_uncook(mac_handle_t, mblk_t *);
 
 extern	void mac_perim_enter_by_mh(mac_handle_t, mac_perim_handle_t *);
+extern	void mac_perim_enter_by_mch(mac_client_handle_t, mac_perim_handle_t *);
 extern	int mac_perim_enter_by_macname(const char *, mac_perim_handle_t *);
 extern	int mac_perim_enter_by_linkid(datalink_id_t, mac_perim_handle_t *);
 extern	void mac_perim_exit(mac_perim_handle_t);
