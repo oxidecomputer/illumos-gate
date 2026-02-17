@@ -816,6 +816,7 @@ extern void mac_flow_update_priority(mac_client_impl_t *, flow_entry_t *);
 extern void mac_flow_rem_subflow(flow_entry_t *);
 extern void mac_rename_flow(flow_entry_t *, const char *);
 extern void mac_flow_set_name(flow_entry_t *, const char *);
+extern void mac_flow_change_action(flow_entry_t *, const flow_action_t *);
 
 extern mblk_t *mac_add_vlan_tag(mblk_t *, uint_t, uint16_t);
 extern mblk_t *mac_add_vlan_tag_chain(mblk_t *, uint_t, uint16_t);

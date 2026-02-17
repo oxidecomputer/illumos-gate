@@ -293,10 +293,24 @@ typedef enum {
 	MAC_RX_FIFO = 1
 } mac_resource_type_t;
 
+typedef struct {
+	/*
+	 * Is this softring fanned out from a hardware ring on the device?
+	 *
+	 * This can be used to apportion resources separately between traffic
+	 * arriving on hardware rings versus that which arrives via the
+	 * software classifier. Software-only rings should not exclusively
+	 * reserve client resources, as this datapath is used in rarer cases
+	 * such as local loopback.
+	 */
+	boolean_t mri_is_hw_ring;
+} mac_ring_query_t;
+
 typedef	int	(*mac_intr_enable_t)(mac_intr_handle_t);
 typedef	int	(*mac_intr_disable_t)(mac_intr_handle_t);
 
 typedef	mblk_t		*(*mac_receive_t)(void *, size_t);
+typedef	void		(*mac_ring_querier_t)(void *, mac_ring_query_t *);
 
 typedef	struct mac_intr_s {
 	mac_intr_handle_t	mi_handle;
@@ -310,6 +324,7 @@ typedef struct mac_rx_fifo_s {
 	mac_resource_type_t	mrf_type;	/* MAC_RX_FIFO */
 	mac_intr_t		mrf_intr;
 	mac_receive_t		mrf_receive;
+	mac_ring_querier_t	mrf_query;
 	void			*mrf_rx_arg;
 	uint32_t		mrf_flow_priority;
 	/*

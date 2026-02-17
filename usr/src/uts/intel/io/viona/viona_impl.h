@@ -36,7 +36,7 @@
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_VIONA_IMPL_H
@@ -231,6 +231,22 @@ typedef struct viona_link_params {
 	boolean_t	vlp_tx_copy_data;
 } viona_link_params_t;
 
+typedef struct {
+	uint16_t	vsb_queue[VIONA_MAX_QPAIR];
+	uint16_t	vsb_len;
+	bool		vsb_is_hw_ring;
+	/*
+	 * Operations MAC allows us to perform on a given softring. This is
+	 * used during ring addition to determine whether an SRS is backed
+	 * by a hardware ring (as, e.g., ring-capable NICs also get software
+	 * classifier rings, used for loopback and when the device runs out of
+	 * groups).
+	 *
+	 * In future this will allow us to blank and poll the softring directly.
+	 */
+	mac_rx_fifo_t	vsb_ops;
+} viona_soft_ring_binding_t;
+
 struct viona_link {
 	viona_soft_state_t	*l_ss;
 
@@ -264,6 +280,19 @@ struct viona_link {
 	pollhead_t		l_pollhead;
 
 	viona_neti_t		*l_neti;
+
+	/*
+	 * The below members are interacted with in three contexts:
+	 *  - the datapath (read only)
+	 *  - softring add/removal under the MAC perimeter and Rx quiescence
+	 *  - alteration of l_usepairs by the guest
+	 *
+	 * ?? Implications. Dpath does not need l_sr_lock (mutually exclusive
+	 * with quiesce), . No dpath locking.
+	 */
+	viona_soft_ring_binding_t	*l_soft_rings[MAX_RINGS_PER_GROUP];
+	uint16_t			l_hw_soft_ring_cnt;
+	uint16_t			l_sw_soft_ring_cnt;
 
 	kmutex_t		l_stats_lock;
 	struct viona_link_stats {
@@ -494,9 +523,11 @@ bool iov_bunch_next_chunk(iov_bunch_t *, caddr_t *, uint32_t *);
 
 void viona_rx_init(void);
 void viona_rx_fini(void);
+void viona_recalculate_softring_bindings(viona_link_t *link);
 int viona_rx_set(viona_link_t *, viona_promisc_t);
 void viona_rx_clear(viona_link_t *);
 void viona_worker_rx(viona_vring_t *, viona_link_t *);
+void viona_rx_classified2(void *, mac_resource_handle_t, mblk_t *, void *);
 
 extern kmutex_t viona_force_copy_lock;
 extern uint_t viona_max_header_pad;
