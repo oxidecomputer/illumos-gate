@@ -555,7 +555,8 @@ typedef enum {
 	 * rings and/or that flows are consistently delivered to the same
 	 * softring. Accordingly, packet fanout must always be flowhash-driven.
 	 *
-	 * Mutable.
+	 * Mutable under quiescence, if a flow action is changed on an
+	 * established SRS.
 	 */
 	SRST_CLIENT_POLL		= 0x00001000,
 
@@ -566,7 +567,7 @@ typedef enum {
 	 * This is a vanity flag to make MAC client plumbing state clearer when
 	 * debugging, and does not alter datapath behaviour.
 	 *
-	 * Mutable.
+	 * Mutable under quiescence.
 	 */
 	SRST_DLS_BYPASS_V4		= 0x00010000,
 	/*
@@ -576,7 +577,7 @@ typedef enum {
 	 * This is a vanity flag to make MAC client plumbing state clearer when
 	 * debugging, and does not alter datapath behaviour.
 	 *
-	 * Mutable.
+	 * Mutable under quiescence.
 	 */
 	SRST_DLS_BYPASS_V6		= 0x00020000,
 } mac_soft_ring_set_type_t;
@@ -1141,16 +1142,15 @@ extern void mac_srs_signal(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t);
 extern void mac_srs_signal_diff(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t, const mac_soft_ring_set_state_t);
+extern void mac_srs_signal_client(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 extern cpu_t *mac_srs_bind(mac_soft_ring_set_t *, processorid_t);
 extern void mac_rx_srs_retarget_intr(mac_soft_ring_set_t *, processorid_t);
 extern void mac_tx_srs_retarget_intr(mac_soft_ring_set_t *);
 
 extern void mac_srs_quiesce_initiate(mac_soft_ring_set_t *);
-extern void mac_srs_client_poll_quiesce(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_srs_client_poll_restart(mac_soft_ring_set_t *);
 extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t, const bool);
+    const mac_soft_ring_set_state_t);
 extern void mac_rx_srs_restart(mac_soft_ring_set_t *);
 extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t, const bool);

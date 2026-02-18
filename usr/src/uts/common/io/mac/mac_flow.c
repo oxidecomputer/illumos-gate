@@ -391,8 +391,8 @@ mac_flow_rem_subflow(flow_entry_t *flent)
 			mcip->mci_subflow_tab = NULL;
 		}
 	} else {
-		mac_link_flow_clean((mac_client_handle_t)mcip, flent);
 		mac_flow_wait(flent, FLOW_DRIVER_UPCALL);
+		mac_link_flow_clean((mac_client_handle_t)mcip, flent);
 	}
 	mac_fastpath_enable(mh);
 }
@@ -1388,8 +1388,8 @@ static int
 mac_link_release_flows_cb(flow_entry_t *flent, void *arg)
 {
 	FLOW_MARK(flent, FE_UF_NO_DATAPATH);
-	mac_link_flow_clean(arg, flent);
 	mac_flow_wait(flent, FLOW_DRIVER_UPCALL);
+	mac_link_flow_clean(arg, flent);
 	return (0);
 }
 

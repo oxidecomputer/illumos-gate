@@ -2056,6 +2056,10 @@ ill_capability_poll_enable(ill_t *ill)
 
 	ASSERT(IAM_WRITER_ILL(ill));
 
+	/*
+	 * These methods follow the contract outlined in mac_resource_cb_t,
+	 * and are eventually plumbed into a client flow specification.
+	 */
 	bzero(&poll, sizeof (poll));
 	poll.poll_ring_add_cf = (uintptr_t)ip_squeue_add_ring;
 	poll.poll_ring_remove_cf = (uintptr_t)ip_squeue_clean_ring;

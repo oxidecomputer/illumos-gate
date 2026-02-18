@@ -2260,8 +2260,8 @@ mac_srs_quiesce_wait(mac_soft_ring_set_t *srs,
  * The parameter `condemn_logicals` is used to upgrade a QUIESCE to a CONDEMN
  * for any logical SRSes if required for flow tree reconfiguration.
  */
-void
-mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
+static void
+mac_rx_srs_quiesce_i(mac_soft_ring_set_t *srs,
     const mac_soft_ring_set_state_t srs_quiesce_flag,
     const bool condemn_logicals)
 {
@@ -2278,8 +2278,6 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
 
 	VERIFY(srs_quiesce_flag == SRS_QUIESCE ||
 	    srs_quiesce_flag == SRS_CONDEMNED);
-
-	mac_srs_client_poll_quiesce(srs, srs_quiesce_flag);
 
 	if (srs->srs_data.rx.sr_ring != NULL) {
 		mac_rx_ring_quiesce(srs->srs_data.rx.sr_ring, mr_flag);
@@ -2308,8 +2306,21 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
 	 */
 	const mac_soft_ring_set_state_t logical_flag = condemn_logicals ?
 	    SRS_CONDEMNED : srs_quiesce_flag;
+
+	mac_srs_signal_client(srs, srs_quiesce_flag);
+	for (mac_soft_ring_set_t *curr = srs->srs_logical_next;
+	    curr != NULL; curr = curr->srs_logical_next) {
+		mac_srs_signal_client(curr, logical_flag);
+	}
 	mac_srs_signal_diff(srs, srs_quiesce_flag, logical_flag);
 	mac_srs_quiesce_wait(srs, srs_done_flag);
+}
+
+void
+mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t srs_quiesce_flag)
+{
+	mac_rx_srs_quiesce_i(srs, srs_quiesce_flag, false);
 }
 
 /*
@@ -2321,7 +2332,7 @@ mac_rx_srs_remove(mac_soft_ring_set_t *srs)
 	flow_entry_t *flent = srs->srs_flent;
 	int i;
 
-	mac_rx_srs_quiesce(srs, SRS_CONDEMNED, false);
+	mac_rx_srs_quiesce(srs, SRS_CONDEMNED);
 	/*
 	 * Locate and remove our entry in the fe_rx_srs[] array, and
 	 * adjust the fe_rx_srs array entries and array count by
@@ -2383,12 +2394,11 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 		for (mac_soft_ring_set_t *curr = srs; curr != NULL;
 		    curr = curr->srs_logical_next) {
 			mac_srs_clear_flag(curr, SRS_RESTART_DONE);
+			mac_srs_signal_client(curr, SRS_RESTART);
 		}
-
-		mac_srs_client_poll_restart(srs);
 	}
 
-	/* Finally clear the flags to let the packets in */
+	/* Finally clear the HW ring flags to let packets in */
 	mr = srs->srs_data.rx.sr_ring;
 	if (mr != NULL) {
 		MAC_RING_UNMARK(mr, MR_QUIESCE);
@@ -2410,7 +2420,7 @@ mac_rx_classify_flow_quiesce(flow_entry_t *flent, void *arg)
 	const bool condemn_logicals = (bool)arg;
 
 	for (int i = 0; i < flent->fe_rx_srs_cnt; i++) {
-		mac_rx_srs_quiesce((mac_soft_ring_set_t *)flent->fe_rx_srs[i],
+		mac_rx_srs_quiesce_i((mac_soft_ring_set_t *)flent->fe_rx_srs[i],
 		    SRS_QUIESCE, condemn_logicals);
 	}
 

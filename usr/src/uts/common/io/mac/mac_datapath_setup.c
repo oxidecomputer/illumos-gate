@@ -340,97 +340,6 @@ mac_srs_remove_glist(mac_soft_ring_set_t *mac_srs)
 /* POLLING SETUP AND TEAR DOWN ROUTINES */
 
 /*
- * Walk an Rx SRS and all its logical SRSes to inform upstack clients
- * that no soft rings may be polled.
- */
-void
-mac_srs_client_poll_quiesce(mac_soft_ring_set_t *mac_srs,
-    const mac_soft_ring_set_state_t srs_quiesce_flag)
-{
-	VERIFY(mac_perim_held((mac_handle_t)mac_srs->srs_mcip->mci_mip));
-	VERIFY(srs_quiesce_flag == SRS_QUIESCE ||
-	    srs_quiesce_flag == SRS_CONDEMNED);
-	VERIFY(!mac_srs_is_tx(mac_srs));
-	VERIFY(!mac_srs_is_logical(mac_srs));
-
-	/* TODO(ky): locking of both SR & SRS? */
-
-	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
-	    curr = curr->srs_logical_next) {
-		const flow_action_t *act = mac_srs_rx_action(curr);
-
-		if ((act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
-			continue;
-		}
-
-		const mac_resource_remove_t rm_notify_fn =
-		    act->fa_resource.mrc_remove;
-		const mac_resource_remove_t quiesce_notify_fn =
-		    act->fa_resource.mrc_quiesce;
-		ASSERT3P(rm_notify_fn, !=, NULL);
-		ASSERT3P(quiesce_notify_fn, !=, NULL);
-
-		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
-		    softring != NULL; softring = softring->s_ring_next) {
-			if (softring->s_ring_rx_arg2 == NULL ||
-			    act->fa_resource.mrc_arg == NULL) {
-				continue;
-			}
-
-			switch (srs_quiesce_flag) {
-			case SRS_CONDEMNED:
-				rm_notify_fn(act->fa_resource.mrc_arg,
-				    softring->s_ring_rx_arg2);
-				softring->s_ring_rx_arg2 = NULL;
-				softring->s_ring_type &= ~ST_RING_POLLABLE;
-				break;
-			case SRS_QUIESCE:
-				quiesce_notify_fn(act->fa_resource.mrc_arg,
-				    softring->s_ring_rx_arg2);
-				break;
-			default:
-				break;
-			}
-
-		}
-	}
-}
-
-/*
- * Walk an Rx SRS and all its logical SRSes to inform upstack clients
- * that all soft rings can be polled again.
- */
-void
-mac_srs_client_poll_restart(mac_soft_ring_set_t *mac_srs)
-{
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mac_srs->srs_mcip->mci_mip));
-	ASSERT(!mac_srs_is_tx(mac_srs));
-	ASSERT(!mac_srs_is_logical(mac_srs));
-
-	for (mac_soft_ring_set_t *curr = mac_srs; curr != NULL;
-	    curr = curr->srs_logical_next) {
-		const flow_action_t *act = mac_srs_rx_action(curr);
-
-		if ((act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
-			continue;
-		}
-
-		const mac_resource_remove_t restart_notify_fn =
-		    act->fa_resource.mrc_restart;
-		ASSERT3P(restart_notify_fn, !=, NULL);
-
-		for (mac_soft_ring_t *softring = curr->srs_soft_ring_head;
-		    softring != NULL; softring = softring->s_ring_next) {
-			if (softring->s_ring_rx_arg2 != NULL &&
-			    act->fa_resource.mrc_arg != NULL) {
-				restart_notify_fn(act->fa_resource.mrc_arg,
-				    softring->s_ring_rx_arg2);
-			}
-		}
-	}
-}
-
-/*
  * Enable or disable poll capability of the SRS on the underlying Rx ring.
  *
  * There is a need to enable or disable the poll capability of an SRS over an
@@ -450,7 +359,7 @@ mac_srs_poll_state_change(mac_soft_ring_set_t *mac_srs,
 	mac_ring_t	*ring = srs_rx->sr_ring;
 
 	if (!SRS_QUIESCED(mac_srs)) {
-		mac_rx_srs_quiesce(mac_srs, SRS_QUIESCE, false);
+		mac_rx_srs_quiesce(mac_srs, SRS_QUIESCE);
 		need_restart = B_TRUE;
 	}
 
@@ -1932,7 +1841,6 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 	/* Does this flow need to report bindings to an upstack client? */
 	const flow_action_t *act = mac_srs_rx_action(mac_rx_srs);
 	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
-	const mac_resource_remove_t rm_notify_fn = act->fa_resource.mrc_remove;
 	const mac_resource_bind_t bind_notify_fn = act->fa_resource.mrc_bind;
 	void *notify_arg = act->fa_resource.mrc_arg;
 
@@ -1957,13 +1865,6 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 		for (uint16_t i = new_fanout_cnt; i < srings_present; i++) {
 			mac_soft_ring_t *softring =
 			    mac_rx_srs->srs_soft_rings[i];
-			if (notify_upstack && notify_arg != NULL &&
-			    softring->s_ring_rx_arg2 != NULL) {
-				rm_notify_fn(notify_arg,
-				    softring->s_ring_rx_arg2);
-				softring->s_ring_rx_arg2 = NULL;
-				softring->s_ring_type &= ~ST_RING_POLLABLE;
-			}
 			mac_soft_ring_remove(mac_rx_srs, softring);
 		}
 		mac_srs_update_fanout_list(mac_rx_srs);
@@ -2203,7 +2104,7 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		case SRS_FANOUT_INIT:
 			break;
 		case SRS_FANOUT_REINIT:
-			mac_rx_srs_quiesce(mac_rx_srs, SRS_QUIESCE, false);
+			mac_rx_srs_quiesce(mac_rx_srs, SRS_QUIESCE);
 			mac_srs_fanout_modify(mcip, mac_rx_srs, mac_tx_srs);
 			/* refresh attached logical SRSes */
 			for (mac_soft_ring_set_t *curr =
@@ -2807,7 +2708,7 @@ mac_rx_srs_group_teardown(flow_entry_t *flent, boolean_t hwonly)
 		if (i == 0 && hwonly)
 			continue;
 		mac_srs = flent->fe_rx_srs[i];
-		mac_rx_srs_quiesce(mac_srs, SRS_CONDEMNED, true);
+		mac_rx_srs_quiesce(mac_srs, SRS_CONDEMNED);
 		mac_srs_free(mac_srs);
 		flent->fe_rx_srs[i] = NULL;
 		flent->fe_rx_srs_cnt--;
@@ -3849,6 +3750,129 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
 }
 
+/*
+ * Inform any upstack pollable clients (SRST_CLIENT_POLL) of a change in the
+ * soft rings' state.
+ *
+ * While we are generally willing to accept `mac_rx_fifo_t` operations on a
+ * soft ring which is quiesced, the ideal pattern of use is that we tell clients
+ * _before_ a quiesce/condemn begins, and _after_ a restart completes such that
+ * they will only interact with rings in a running state.
+ */
+static void
+mac_soft_ring_signal_client(mac_soft_ring_t *ringp,
+    mac_soft_ring_set_t *srs, const mac_soft_ring_set_state_t srs_flag)
+{
+	VERIFY(mac_perim_held((mac_handle_t)srs->srs_mcip->mci_mip));
+	VERIFY(srs_flag == SRS_QUIESCE || srs_flag == SRS_RESTART ||
+	    srs_flag == SRS_CONDEMNED);
+
+	/*
+	 * The flags on the SRS read here are immutable or can only be changed
+	 * under quiescence, so we do not need srs_lock. The MAC perimeter
+	 * suffices here.
+	 */
+	if (mac_srs_is_tx(srs) ||
+	    (srs->srs_type & SRST_CLIENT_POLL) == 0) {
+		return;
+	}
+	const flow_action_t *act = mac_srs_rx_action(srs);
+	if (act == NULL || (act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
+		return;
+	}
+
+	void *rs_arg = act->fa_resource.mrc_arg;
+	const mac_resource_quiesce_t quiesce_notify_fn =
+	    act->fa_resource.mrc_quiesce;
+	const mac_resource_restart_t restart_notify_fn =
+	    act->fa_resource.mrc_restart;
+	const mac_resource_remove_t remove_notify_fn =
+	    act->fa_resource.mrc_remove;
+	VERIFY3P(rs_arg, !=, NULL);
+	VERIFY3P(quiesce_notify_fn, !=, NULL);
+	VERIFY3P(restart_notify_fn, !=, NULL);
+	VERIFY3P(remove_notify_fn, !=, NULL);
+
+	mutex_enter(&ringp->s_ring_lock);
+	/*
+	 * If `S_RING_PROC` is present, one or more threads could be
+	 * calling up into the client with s_ring_rx_arg2 set. Allow
+	 * them to finish, so that we can alter s_ring_rx_arg2.
+	 */
+	while ((ringp->s_ring_state & S_RING_PROC) != 0) {
+		ringp->s_ring_state |= S_RING_CLIENT_WAIT;
+		cv_wait(&ringp->s_ring_client_cv, &ringp->s_ring_lock);
+	}
+
+	ringp->s_ring_state &= ~S_RING_CLIENT_WAIT;
+
+	if ((ringp->s_ring_state & ST_RING_POLLABLE) == 0) {
+		mutex_exit(&ringp->s_ring_lock);
+		return;
+	}
+
+	mac_resource_handle_t client_cookie = ringp->s_ring_rx_arg2;
+	VERIFY3P(client_cookie, !=, NULL);
+
+	/*
+	 * Drop the soft ring lock before calling into the client. To make a
+	 * client deadlock less likely (e.g., via an attempt to poll for
+	 * leftover packets), we hold *only* the MAC perimeter.
+	 */
+	switch (srs_flag) {
+	case SRS_QUIESCE:
+		mutex_exit(&ringp->s_ring_lock);
+		quiesce_notify_fn(rs_arg, client_cookie);
+		break;
+	case SRS_RESTART:
+		mutex_exit(&ringp->s_ring_lock);
+		restart_notify_fn(rs_arg, client_cookie);
+		break;
+	case SRS_CONDEMNED:
+		ringp->s_ring_rx_arg2 = NULL;
+		ringp->s_ring_type &= ~ST_RING_POLLABLE;
+		mutex_exit(&ringp->s_ring_lock);
+		remove_notify_fn(rs_arg, client_cookie);
+		break;
+	default:
+		mutex_exit(&ringp->s_ring_lock);
+		break;
+	}
+}
+
+void
+mac_srs_signal_client(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t srs_flag)
+{
+	VERIFY(mac_perim_held((mac_handle_t)mac_srs->srs_mcip->mci_mip));
+	VERIFY(srs_flag == SRS_QUIESCE || srs_flag == SRS_RESTART ||
+	    srs_flag == SRS_CONDEMNED);
+
+	/*
+	 * The flags on the SRS read here are immutable or can only be changed
+	 * under quiescence, so we do not need srs_lock. The MAC perimeter
+	 * suffices here.
+	 */
+	if (mac_srs_is_tx(mac_srs) ||
+	    (mac_srs->srs_type & SRST_CLIENT_POLL) == 0) {
+		return;
+	}
+
+	const flow_action_t *act = mac_srs_rx_action(mac_srs);
+	if (act == NULL || (act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
+		return;
+	}
+
+	/*
+	 * We hold the mac perimeter, and thus no other thread can modify the
+	 * softrings of this SRS.
+	 */
+	for (mac_soft_ring_t *ringp = mac_srs->srs_soft_ring_head;
+	    ringp != NULL; ringp = ringp->s_ring_next) {
+		mac_soft_ring_signal_client(ringp, mac_srs, srs_flag);
+	}
+}
+
 static void
 mac_srs_signal_one(mac_soft_ring_set_t *mac_srs,
     const mac_soft_ring_set_state_t srs_flag)
@@ -4147,6 +4171,13 @@ mac_tx_srs_add_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 static void
 mac_soft_ring_remove(mac_soft_ring_set_t *mac_srs, mac_soft_ring_t *softring)
 {
+	/*
+	 * Inform upstack clients (IP, etc.) that this softring is going away.
+	 */
+	if (!mac_srs_is_tx(mac_srs)) {
+		mac_soft_ring_signal_client(softring, mac_srs, SRS_CONDEMNED);
+	}
+
 	mutex_enter(&mac_srs->srs_lock);
 	uint16_t sringcnt = mac_srs->srs_soft_ring_count;
 	mac_soft_ring_signal(softring, S_RING_CONDEMNED);
@@ -4173,6 +4204,7 @@ mac_soft_ring_remove(mac_soft_ring_set_t *mac_srs, mac_soft_ring_t *softring)
 			mac_srs->srs_soft_ring_tail = softring->s_ring_prev;
 		}
 	}
+
 	mac_srs->srs_soft_ring_count--;
 
 	mac_srs->srs_soft_ring_condemned_count--;
