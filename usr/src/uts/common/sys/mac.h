@@ -393,7 +393,7 @@ typedef struct mac_resource_cb_s {
 	 * ring.
 	 *
 	 * The client MUST NOT use any of the control ops on this soft ring
-	 * after exiting. 
+	 * after exiting.
 	 */
 	mac_resource_remove_t	mrc_remove;
 	/*
