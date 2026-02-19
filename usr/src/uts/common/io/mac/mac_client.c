@@ -1312,12 +1312,13 @@ mac_addr_random(mac_client_handle_t mch, uint_t prefix_len,
 	}
 
 /*
- * MAC client open entry point using a desired `action`. If NULL, this will be
- * the standard `mac_rx_deliver` to the underlying MCIP.
+ * MAC client open entry point. Return a new MAC client handle. Each
+ * MAC client is associated with a name, specified through the 'name'
+ * argument.
  */
 int
-mac_client_open_action(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
-    uint16_t flags, const flow_action_t *action)
+mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
+    uint16_t flags)
 {
 	mac_impl_t		*mip = (mac_impl_t *)mh;
 	mac_client_impl_t	*mcip;
@@ -1327,17 +1328,6 @@ mac_client_open_action(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 
 	share_desired = (flags & MAC_OPEN_FLAGS_SHARES_DESIRED) != 0;
 	*mchp = NULL;
-
-	if (action != NULL && !mac_flow_action_validate(action)) {
-		/*
-		 * In addition to the standard flow action validity, we need
-		 * the action to be non-delegate.
-		 */
-		if (!mac_flow_action_validate(action) ||
-		    (action->fa_flags & MFA_FLAGS_ACTION) == 0) {
-			return (EINVAL);
-		}
-	}
 
 	i_mac_perim_enter(mip);
 
@@ -1458,14 +1448,10 @@ mac_client_open_action(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	FLOW_MARK(flent, FE_MC_NO_DATAPATH);
 	flent->fe_mcip = mcip;
 
-	if (action != NULL) {
-		bcopy(action, &flent->fe_action, sizeof (*action));
-	} else {
-		/* By default, hand all packets up to DLS. */
-		flent->fe_action.fa_flags = MFA_FLAGS_ACTION;
-		flent->fe_action.fa_direct_rx_fn = mac_rx_deliver;
-		flent->fe_action.fa_direct_rx_arg = (void *)mcip;
-	}
+	/* Be default, hand all packets up to DLS. */
+	flent->fe_action.fa_flags = MFA_FLAGS_ACTION;
+	flent->fe_action.fa_direct_rx_fn = mac_rx_deliver;
+	flent->fe_action.fa_direct_rx_arg = (void *)mcip;
 
 	/*
 	 * Place initial creation reference on the flow. This reference
@@ -1529,18 +1515,6 @@ done:
 	mcip->mci_tx_flag = 0;
 	kmem_cache_free(mac_client_impl_cache, mcip);
 	return (err);
-}
-
-/*
- * MAC client open entry point. Return a new MAC client handle. Each
- * MAC client is associated with a name, specified through the 'name'
- * argument.
- */
-int
-mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
-    uint16_t flags)
-{
-	return (mac_client_open_action(mh, mchp, name, flags, NULL));
 }
 
 /*
@@ -2651,7 +2625,7 @@ mac_get_passive_primary_client(mac_impl_t *mip)
  *
  * In no case can a client use the PVID for the MAC, if the MAC has one set.
  */
-int
+static int
 i_mac_unicast_add(mac_client_handle_t mch, uint8_t *mac_addr, uint16_t flags,
     mac_unicast_handle_t *mah, uint16_t vid, mac_diag_t *diag)
 {
