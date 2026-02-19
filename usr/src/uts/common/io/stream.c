@@ -27,7 +27,7 @@
  *
  * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  * Copyright 2022 Garrett D'Amore
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -1680,6 +1680,21 @@ pullupmsg(mblk_t *mp, ssize_t len)
 mblk_t *
 msgpullup(mblk_t *mp, ssize_t len)
 {
+	return (msgpullup_pad(mp, len, 0));
+}
+
+/* TODO(ky): include this in `man msgpullup` */
+/*
+ * Concatenate and align at least the first len bytes of common message
+ * type, leaving `pad` bytes of headroom before the message.
+ *
+ * `len` == -1 means concatenate everything.  The original message is
+ * unaltered.  Returns a pointer to a new message on success, otherwise
+ * returns NULL.
+ */
+mblk_t *
+msgpullup_pad(mblk_t *mp, ssize_t len, size_t pad)
+{
 	mblk_t *newmp;
 	ssize_t totlen = xmsgsize(mp);
 	ssize_t offset = 0;
@@ -1690,12 +1705,14 @@ msgpullup(mblk_t *mp, ssize_t len)
 	if (len < 0 || (len > 0 && len > totlen))
 		return (NULL);
 
-	if ((newmp = allocb_tmpl(len, mp)) == NULL)
+	if ((newmp = allocb_tmpl(len + pad, mp)) == NULL)
 		return (NULL);
 
 	newmp->b_flag = mp->b_flag;
 	newmp->b_band = mp->b_band;
 	newmp->b_datap->db_meoi = mp->b_datap->db_meoi;
+	newmp->b_wptr += pad;
+	newmp->b_rptr = newmp->b_wptr;
 
 	while (len > 0) {
 		ssize_t seglen = MBLKL(mp);

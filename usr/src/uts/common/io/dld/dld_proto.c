@@ -1477,7 +1477,6 @@ dld_capab_poll_disable(dld_str_t *dsp, dld_capab_poll_t *poll)
 		return (EINVAL);
 
 	mac_client_poll_disable(dsp->ds_mch, dsp->ds_sap == ETHERTYPE_IPV6);
-	mac_resource_clear(dsp->ds_mch, dsp->ds_sap == ETHERTYPE_IPV6);
 
 	dsp->ds_polling = B_FALSE;
 	return (0);

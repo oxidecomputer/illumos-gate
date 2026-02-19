@@ -37,6 +37,7 @@
 
 #include <sys/mac.h>
 #include <sys/mac_flow.h>
+#include <sys/stdbool.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -99,6 +100,8 @@ extern void mac_link_init_flows(mac_client_handle_t);
 extern void mac_link_release_flows(mac_client_handle_t);
 extern int mac_link_flow_add(datalink_id_t, char *, flow_desc_t *,
     mac_resource_props_t *);
+extern int mac_link_flow_add_action(datalink_id_t, char *, flow_desc_t *,
+    mac_resource_props_t *, const flow_action_t *);
 extern int mac_link_flow_remove(char *);
 extern int mac_link_flow_modify(char *, mac_resource_props_t *);
 extern boolean_t mac_link_has_flows(mac_client_handle_t);
@@ -114,7 +117,7 @@ extern int mac_link_flow_walk(datalink_id_t,
     int (*)(mac_flowinfo_t *, void *), void *);
 extern int mac_link_flow_info(char *, mac_flowinfo_t *);
 
-extern void mac_rx_client_quiesce(mac_client_handle_t);
+extern void mac_rx_client_quiesce(mac_client_handle_t, const bool);
 extern void mac_rx_client_restart(mac_client_handle_t);
 extern void mac_tx_client_quiesce(mac_client_handle_t);
 extern void mac_tx_client_condemn(mac_client_handle_t);

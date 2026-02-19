@@ -23,6 +23,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -2823,7 +2824,7 @@ vnet_bind_hwrings(vnet_t *vnetp)
 		 * directly passed up to the pseudo RX ring and handled
 		 * by mac srs created over the pseudo RX ring.
 		 */
-		mac_rx_client_quiesce(vnetp->hio_mch);
+		mac_rx_client_quiesce(vnetp->hio_mch, false);
 		mac_srs_perm_quiesce(vnetp->hio_mch, B_TRUE);
 	}
 

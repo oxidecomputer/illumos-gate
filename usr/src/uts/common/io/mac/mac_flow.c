@@ -23,6 +23,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/strsun.h>
@@ -114,9 +115,9 @@ flow_stat_update(kstat_t *ksp, int rw)
 
 	for (i = 0; i < fep->fe_rx_srs_cnt; i++) {
 		mac_srs = (mac_soft_ring_set_t *)fep->fe_rx_srs[i];
-		if (mac_srs == NULL) 		/* Multicast flow */
+		if (mac_srs == NULL)		/* Multicast flow */
 			break;
-		mac_rx_stat = &mac_srs->srs_rx.sr_stat;
+		mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
 		flow_stats.fs_ibytes += mac_rx_stat->mrs_intrbytes +
 		    mac_rx_stat->mrs_pollbytes + mac_rx_stat->mrs_lclbytes;
@@ -128,9 +129,9 @@ flow_stat_update(kstat_t *ksp, int rw)
 	}
 
 	mac_srs = (mac_soft_ring_set_t *)fep->fe_tx_srs;
-	if (mac_srs == NULL) 		/* Multicast flow */
+	if (mac_srs == NULL)		/* Multicast flow */
 		goto done;
-	mac_tx_stat = &mac_srs->srs_tx.st_stat;
+	mac_tx_stat = &mac_srs->srs_data.tx.st_stat;
 
 	flow_stats.fs_obytes = mac_tx_stat->mts_obytes;
 	flow_stats.fs_opackets = mac_tx_stat->mts_opackets;
@@ -259,16 +260,22 @@ mac_flow_create(flow_desc_t *fd, mac_resource_props_t *mrp, char *name,
 		 * The effective resource list should reflect the priority
 		 * that we set implicitly.
 		 */
-		if (!(mrp->mrp_mask & MRP_PRIORITY))
+		if ((mrp->mrp_mask & MRP_PRIORITY) == 0) {
 			mrp->mrp_mask |= MRP_PRIORITY;
-		if (type & FLOW_USER)
-			mrp->mrp_priority = MPL_SUBFLOW_DEFAULT;
-		else
-			mrp->mrp_priority = MPL_LINK_DEFAULT;
+			mrp->mrp_priority = ((type & FLOW_USER) != 0) ?
+			    MPL_SUBFLOW_DEFAULT : MPL_LINK_DEFAULT;
+		}
 		bzero(mrp->mrp_pool, MAXPATHLEN);
 		bzero(&mrp->mrp_cpus, sizeof (mac_cpus_t));
 		bcopy(mrp, &flent->fe_effective_props,
 		    sizeof (mac_resource_props_t));
+		/*
+		 * Initialise bandwidth members of the flent itself, knowing
+		 * that we don't yet have any SRSes. This ensures that
+		 * `BW_ENABLED` is properly set ahead of time when this new
+		 * flow is incorporated in a tree.
+		 */
+		mac_srs_update_bwlimit(flent, mrp);
 	}
 	flow_stat_create(flent);
 
@@ -390,6 +397,11 @@ mac_flow_rem_subflow(flow_entry_t *flent)
 	mac_fastpath_enable(mh);
 }
 
+static boolean_t
+flow_transport_lport_match(flow_tab_t *, flow_entry_t *, flow_state_t *);
+static boolean_t
+flow_transport_rport_match(flow_tab_t *, flow_entry_t *, flow_state_t *);
+
 /*
  * Add a flow to a mac client's subflow table and instantiate the flow
  * in the mac by creating the associated SRSs etc.
@@ -440,6 +452,33 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		return (err);
 	}
 
+	/* TODO(ky): enshrine this a little bit better */
+	flent->fe_match2.mfm_type = MFM_SUBFLOW;
+	flent->fe_match2.mfm_cond = 0;
+	if (flent->fe_match == flow_transport_lport_match) {
+		flent->fe_match2.mfm_type = MFM_ALL;
+		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
+		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
+		    MFM_IPPROTO;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
+		    flent->fe_flow_desc.fd_protocol;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
+		    MFM_L4_LOCAL;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
+		    flent->fe_flow_desc.fd_local_port;
+	} else if (flent->fe_match == flow_transport_rport_match) {
+		flent->fe_match2.mfm_type = MFM_ALL;
+		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
+		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
+		    MFM_IPPROTO;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
+		    flent->fe_flow_desc.fd_protocol;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
+		    MFM_L4_REMOTE;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
+		    flent->fe_flow_desc.fd_remote_port;
+	}
+
 	if (instantiate_flow) {
 		/* Now activate the flow by creating its SRSs */
 		ASSERT(MCIP_DATAPATH_SETUP(mcip));
@@ -458,9 +497,19 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		ASSERT(mcip->mci_subflow_tab == NULL);
 		ft->ft_mcip = mcip;
 		mcip->mci_subflow_tab = ft;
-		if (instantiate_flow)
-			mac_client_update_classifier(mcip, B_TRUE);
 	}
+
+	/*
+	 * Unconditionally trigger a rebuild of the flowtree.
+	 * MAC is not yet smart enough to take a pile of flow descriptions
+	 * and self-assemble them into a structure with appropriate duplication,
+	 * so we need to duplicate this subflow on top of all our fastpath
+	 * entries.
+	 */
+	mac_client_quiesce(mcip, true);
+	mac_client_update_classifier(mcip);
+	mac_client_restart(mcip);
+
 	return (0);
 }
 
@@ -626,13 +675,199 @@ mac_flow_walk(flow_tab_t *ft, int (*fn)(flow_entry_t *, void *),
 
 static boolean_t	mac_flow_clean(flow_entry_t *);
 
+static inline size_t
+mac_flow_match_list_size_bytes(const size_t len)
+{
+	return (sizeof (mac_flow_match_list_t) +
+	    (len * sizeof (mac_flow_match_t)));
+}
+
+mac_flow_match_list_t *
+mac_flow_match_list_create(const size_t len)
+{
+	const size_t to_alloc = mac_flow_match_list_size_bytes(len);
+
+	mac_flow_match_list_t *out = kmem_zalloc(to_alloc, KM_SLEEP);
+	out->mfml_size = len;
+
+	return (out);
+}
+
+void
+mac_flow_match_destroy(mac_flow_match_t *ma)
+{
+	switch (ma->mfm_type) {
+	case MFM_ALL:
+	case MFM_ANY: {
+		mac_flow_match_list_t *list = ma->arg.mfm_list;
+		if (list == NULL)
+			return;
+
+		const size_t to_free =
+		    mac_flow_match_list_size_bytes(list->mfml_size);
+
+		for (size_t i = 0; i < list->mfml_size; i++) {
+			mac_flow_match_destroy(list->mfml_match + i);
+		}
+		kmem_free(list, to_free);
+		ma->arg.mfm_list = NULL;
+	}
+	default:
+		break;
+	}
+}
+
+void
+mac_flow_match_list_remove(mac_flow_match_t *ma, const size_t i)
+{
+	ASSERT((ma->mfm_type == MFM_ALL) || (ma->mfm_type == MFM_ANY));
+	mac_flow_match_t out = *ma;
+
+	mac_flow_match_list_t *in_list = ma->arg.mfm_list;
+	ASSERT3U(in_list->mfml_size, >, 0);
+	ASSERT3U(i, <, in_list->mfml_size);
+
+	mac_flow_match_t to_clean = *ma;
+
+	switch (in_list->mfml_size) {
+	case 1:
+		ma->mfm_type = MFM_NONE;
+		bzero(&ma->arg, sizeof (ma->arg));
+		break;
+	case 2: {
+		/*
+		 * Extract the remaining match from the list.
+		 */
+		const size_t to_save = (i == 0) ? 1 : 0;
+		*ma = in_list->mfml_match[to_save];
+		break;
+	}
+	default:
+		ma->arg.mfm_list =
+		    mac_flow_match_list_create(in_list->mfml_size - 1);
+		if (i != 0) {
+			bcopy(in_list->mfml_match,
+			    ma->arg.mfm_list->mfml_match,
+			    i * sizeof (mac_flow_match_t));
+		}
+		if ((i + 1) < in_list->mfml_size) {
+			bcopy(in_list->mfml_match + i + 1,
+			    ma->arg.mfm_list->mfml_match + i,
+			    (ma->arg.mfm_list->mfml_size - i) *
+			    sizeof (mac_flow_match_t));
+		}
+		break;
+	}
+	mac_flow_match_destroy(&to_clean);
+}
+
+mac_flow_match_t
+mac_flow_clone_match(const mac_flow_match_t *ma)
+{
+	mac_flow_match_t out = *ma;
+
+	switch (ma->mfm_type) {
+	case MFM_ALL:
+	case MFM_ANY: {
+		const mac_flow_match_list_t *in_list = ma->arg.mfm_list;
+		if (in_list == NULL)
+			return (out);
+
+		out.arg.mfm_list =
+		    mac_flow_match_list_create(in_list->mfml_size);
+
+		for (size_t i = 0; i < in_list->mfml_size; i++) {
+			out.arg.mfm_list->mfml_match[i] =
+			    mac_flow_clone_match(in_list->mfml_match + i);
+		}
+	}
+	default:
+		break;
+	}
+
+	return (out);
+}
+
+/*
+ * Create a node to reference a target flow in a flowtree.
+ *
+ * Flowtree nodes should be linked via parent/child/sibling relationships in
+ * a strict tree. Any node may be the child or sibling of at most one other
+ * node. Individual `flow_entry_t`s can be usd multiple times in a tree by
+ * creating a new node for each.
+ */
+flow_tree_t *
+mac_flow_tree_node_create(flow_entry_t *flent)
+{
+	mutex_enter(&flent->fe_lock);
+	flent->fe_refcnt++;
+	flent->fe_flowtree_refcnt++;
+	mutex_exit(&flent->fe_lock);
+
+	flow_tree_t *out = kmem_zalloc(sizeof (flow_tree_t), KM_SLEEP);
+	out->ft_flent = flent;
+
+	return (out);
+}
+
+/*
+ * Destroy an individual flow tree node.
+ */
+void
+mac_flow_tree_node_destroy(flow_tree_t *node)
+{
+	flow_entry_t *flent = node->ft_flent;
+
+	mac_flow_match_destroy(&node->ft_match_override);
+
+	mutex_enter(&flent->fe_lock);
+	flent->fe_refcnt--;
+	flent->fe_flowtree_refcnt--;
+	mutex_exit(&flent->fe_lock);
+
+	kmem_free(node, sizeof (flow_tree_t));
+}
+
+/*
+ * Destroy a target flow tree node, and all other nodes reachable through
+ * its child/sibling links.
+ */
+void
+mac_flow_tree_destroy(flow_tree_t *ft)
+{
+	bool ascended = false;
+	ssize_t depth = 0;
+	const flow_tree_t *stop_at = ft->ft_parent;
+	flow_tree_t *el = ft;
+	while (el != stop_at) {
+		flow_tree_t *self = el;
+		ASSERT3U(depth, >=, 0);
+
+		if (!ascended && el->ft_child != NULL) {
+			depth++;
+			el = el->ft_child;
+			ascended = false;
+		} else if (el->ft_sibling != NULL) {
+			el = el->ft_sibling;
+			ascended = false;
+			mac_flow_tree_node_destroy(self);
+		} else {
+			depth--;
+			el = el->ft_parent;
+			ascended = true;
+			mac_flow_tree_node_destroy(self);
+		}
+	}
+	VERIFY3S(depth, ==, -1);
+}
+
 /*
  * Destroy a flow entry. Called when the last reference on a flow is released.
  */
 void
 mac_flow_destroy(flow_entry_t *flent)
 {
-	ASSERT(flent->fe_refcnt == 0);
+	ASSERT3U(flent->fe_refcnt, ==, 0);
 
 	if ((flent->fe_type & FLOW_USER) != 0) {
 		ASSERT(mac_flow_clean(flent));
@@ -643,6 +878,7 @@ mac_flow_destroy(flow_entry_t *flent)
 	mutex_destroy(&flent->fe_lock);
 	cv_destroy(&flent->fe_cv);
 	flow_stat_destroy(flent);
+	mac_flow_match_destroy(&flent->fe_match2);
 	kmem_cache_free(flow_cache, flent);
 }
 
@@ -745,7 +981,7 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 	rw_exit(&ft->ft_lock);
 	/*
 	 * Push the changed parameters to the scheduling code in the
-	 * SRS's, to take effect right away.
+	 * SRSes, to take effect right away.
 	 */
 	if (changed_mask & MRP_MAXBW) {
 		mac_srs_update_bwlimit(flent, mrp);
@@ -759,25 +995,30 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		if (!(flent->fe_type & FLOW_USER) &&
 		    !(changed_mask & MRP_CPUS) &&
 		    !(mcip_mrp->mrp_mask & MRP_CPUS_USERSPEC)) {
-			mac_fanout_setup(mcip, flent, mcip_mrp,
-			    mac_rx_deliver, mcip, NULL, NULL);
+			/* TODO(ky): safe to call this? do we have a default? */
+			mac_fanout_setup(mcip, flent, mcip_mrp, NULL);
 		}
 	}
 	if (mrp->mrp_mask & MRP_PRIORITY)
 		mac_flow_update_priority(mcip, flent);
 
 	if (changed_mask & MRP_CPUS)
-		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip, NULL,
-		    NULL);
+		mac_fanout_setup(mcip, flent, mrp, NULL);
 
 	if (mrp->mrp_mask & MRP_POOL) {
 		pool_lock();
 		cpupart = mac_pset_find(mrp, &use_default);
-		mac_fanout_setup(mcip, flent, mrp, mac_rx_deliver, mcip, NULL,
-		    cpupart);
+		mac_fanout_setup(mcip, flent, mrp, cpupart);
 		mac_set_pool_effective(use_default, cpupart, mrp, emrp);
 		pool_unlock();
 	}
+
+	/*
+	 * TODO(ky): Verify this works (and make this work) for priority/CPU
+	 * alteration. This one might be tricky.
+	 *
+	 * Ideally we can make this a conditional rebuild of flowtree?
+	 */
 }
 
 /*
@@ -796,7 +1037,7 @@ mac_flow_wait(flow_entry_t *flent, mac_flow_state_t event)
 		 * We want to make sure the driver upcalls have finished before
 		 * we signal the Rx SRS worker to quit.
 		 */
-		while (flent->fe_refcnt != 1)
+		while (flent->fe_refcnt != (1 + flent->fe_flowtree_refcnt))
 			cv_wait(&flent->fe_cv, &flent->fe_lock);
 		break;
 
@@ -832,23 +1073,27 @@ mac_flow_clean(flow_entry_t *flent)
 void
 mac_flow_cleanup(flow_entry_t *flent)
 {
+	/*
+	 * While we're deleting the datapath of a flow here, we can't make any
+	 * assumptions about the refcount of user flows. The Rx/Tx flowtrees
+	 * won't yet have relinquished their holds on `flent` until they are in
+	 * turn destroyed.
+	 */
 	if ((flent->fe_type & FLOW_USER) == 0) {
 		ASSERT((flent->fe_mbg == NULL && flent->fe_mcip != NULL) ||
 		    (flent->fe_mbg != NULL && flent->fe_mcip == NULL));
-		ASSERT(flent->fe_refcnt == 0);
-	} else {
-		ASSERT(flent->fe_refcnt == 1);
+		ASSERT3U(flent->fe_refcnt, ==, 0);
 	}
 
 	if (flent->fe_mbg != NULL) {
-		ASSERT(flent->fe_tx_srs == NULL);
+		ASSERT3P(flent->fe_tx_srs, ==, NULL);
 		/* This is a multicast or broadcast flow entry */
 		mac_bcast_grp_free(flent->fe_mbg);
 		flent->fe_mbg = NULL;
 	}
 
 	if (flent->fe_tx_srs != NULL) {
-		ASSERT(flent->fe_mbg == NULL);
+		ASSERT3P(flent->fe_mbg, ==, NULL);
 		mac_srs_free(flent->fe_tx_srs);
 		flent->fe_tx_srs = NULL;
 	}
@@ -913,7 +1158,7 @@ mac_flow_set_desc(flow_entry_t *flent, flow_desc_t *fd)
 
 	/*
 	 * Need to remove the flow entry from the table and reinsert it,
-	 * into a potentially diference hash line. The hash depends on
+	 * into a potentially different hash line. The hash depends on
 	 * the new descriptor fields. However access to fe_desc itself
 	 * is always under the fe_lock. This helps log and stat functions
 	 * see a self-consistent fe_flow_desc.
@@ -1126,13 +1371,6 @@ mac_link_init_flows(mac_client_handle_t mch)
 
 	(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 	    mac_link_init_flows_cb, mcip);
-	/*
-	 * If mac client had subflow(s) configured before plumb, change
-	 * function to mac_rx_srs_subflow_process and in case of hardware
-	 * classification, disable polling.
-	 */
-	mac_client_update_classifier(mcip, B_TRUE);
-
 }
 
 boolean_t
@@ -1164,7 +1402,6 @@ mac_link_release_flows(mac_client_handle_t mch)
 	 * Change the mci_flent callback back to mac_rx_srs_process()
 	 * because flows are about to be deactivated.
 	 */
-	mac_client_update_classifier(mcip, B_FALSE);
 	(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 	    mac_link_release_flows_cb, mcip);
 }
@@ -1187,15 +1424,26 @@ mac_rename_flow(flow_entry_t *fep, const char *new_name)
 int
 mac_link_flow_init(mac_client_handle_t mch, flow_entry_t *sub_flow)
 {
-	mac_client_impl_t 	*mcip = (mac_client_impl_t *)mch;
+	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 	int			err;
 
 	ASSERT(mch != NULL);
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
-	if ((err = mac_datapath_setup(mcip, sub_flow, SRST_FLOW)) != 0)
-		return (err);
+	/*
+	 * TODO(ky): This relies on an open design problem downstream of IPD45.
+	 *  - Ask the client what it can give us in terms of rings for this
+	 *    flent's flow description.
+	 *  - Create a specialised sub-group and associate it to this flent.
+	 *  - This creates valid entry SRSes, which can *then* be registered to
+	 *    the flent.
+	 */
+	const bool advanced_ring_support = false;
+	if (advanced_ring_support) {
+		if ((err = mac_datapath_setup(mcip, sub_flow, SRST_FLOW)) != 0)
+			return (err);
+	}
 
 	sub_flow->fe_mcip = mcip;
 
@@ -1210,6 +1458,19 @@ int
 mac_link_flow_add(datalink_id_t linkid, char *flow_name,
     flow_desc_t *flow_desc, mac_resource_props_t *mrp)
 {
+	return (mac_link_flow_add_action(linkid, flow_name, flow_desc, mrp,
+	    NULL));
+}
+
+/*
+ * mac_link_flow_add_action()
+ * Used by flowadm(8) or kernel mac clients for creating flows with a specified
+ * action.
+ */
+int
+mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
+    flow_desc_t *flow_desc, mac_resource_props_t *mrp, const flow_action_t *ac)
+{
 	flow_entry_t		*flent = NULL;
 	int			err;
 	dls_dl_handle_t		dlh;
@@ -1217,6 +1478,10 @@ mac_link_flow_add(datalink_id_t linkid, char *flow_name,
 	boolean_t		link_held = B_FALSE;
 	boolean_t		hash_added = B_FALSE;
 	mac_perim_handle_t	mph;
+
+	if (ac != NULL && !mac_flow_action_validate(ac)) {
+		return (EINVAL);
+	}
 
 	err = mac_flow_lookup_byname(flow_name, &flent);
 	if (err == 0) {
@@ -1233,6 +1498,10 @@ mac_link_flow_add(datalink_id_t linkid, char *flow_name,
 
 	if (err != 0)
 		return (err);
+
+	if (ac != NULL) {
+		flent->fe_action = *ac;
+	}
 
 	/*
 	 * We've got a local variable referencing this flow now, so we need
@@ -1321,7 +1590,7 @@ bail:
 void
 mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 {
-	mac_client_impl_t 	*mcip = (mac_client_impl_t *)mch;
+	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 	boolean_t		last_subflow;
 
@@ -1351,21 +1620,21 @@ mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 	mac_flow_cleanup(sub_flow);
 
 	/*
-	 * If all the subflows are gone, renable some of the stuff
-	 * we disabled when adding a subflow, polling etc.
+	 * If all the subflows are gone, then clear out the subflow table.
+	 * Always rebuild the flowtree in response.
 	 */
+	mac_client_quiesce(mcip, true);
 	if (last_subflow) {
 		/*
 		 * The subflow table itself is not protected by any locks or
 		 * refcnts. Hence quiesce the client upfront before clearing
 		 * mci_subflow_tab.
 		 */
-		mac_client_quiesce(mcip);
-		mac_client_update_classifier(mcip, B_FALSE);
 		mac_flow_tab_destroy(mcip->mci_subflow_tab);
 		mcip->mci_subflow_tab = NULL;
-		mac_client_restart(mcip);
 	}
+	mac_client_update_classifier(mcip);
+	mac_client_restart(mcip);
 }
 
 /*
@@ -1410,7 +1679,7 @@ mac_link_flow_remove(char *flow_name)
 
 	/*
 	 * Remove the flow from the subflow table and deactivate the flow
-	 * by quiescing and removings its SRSs
+	 * by quiescing and removing its SRSes
 	 */
 	mac_flow_rem_subflow(flent);
 
@@ -1421,7 +1690,10 @@ mac_link_flow_remove(char *flow_name)
 
 	/*
 	 * Wait for any transient global flow hash refs to clear
-	 * and then release the creation reference on the flow
+	 * and then release the creation reference on the flow.
+	 *
+	 * FLOW_FINAL_REFRELE also requires that no flowtree nodes hold
+	 * a 
 	 */
 	mac_flow_wait(flent, FLOW_USER_REF);
 	FLOW_FINAL_REFRELE(flent);
@@ -1439,7 +1711,7 @@ int
 mac_link_flow_modify(char *flow_name, mac_resource_props_t *mrp)
 {
 	flow_entry_t		*flent;
-	mac_client_impl_t 	*mcip;
+	mac_client_impl_t	*mcip;
 	int			err = 0;
 	mac_perim_handle_t	mph;
 	datalink_id_t		linkid;
@@ -2499,4 +2771,40 @@ mac_flow_tab_info_get(flow_mask_t mask)
 			return (&flow_tab_info_list[i]);
 	}
 	return (NULL);
+}
+
+/*
+ * Validates that all function parameters and callbacks are present given
+ * the state of `fa_flags`.
+ */
+bool
+mac_flow_action_validate(const flow_action_t *action)
+{
+	if ((action->fa_flags & MFA_FLAGS_ACTION) != 0) {
+		/*
+		 * A non-drop action must have a valid argument.
+		 */
+		if (action->fa_direct_rx_fn != NULL &&
+		    action->fa_direct_rx_arg == NULL) {
+			return (false);
+		}
+	}
+
+	if ((action->fa_flags & MFA_FLAGS_RESOURCE) != 0) {
+		/*
+		 * Resource API users must be able to handle all aspects of
+		 * a soft ring's lifecycle.
+		 */
+		const mac_resource_cb_t *rx = &action->fa_resource;
+		if (rx->mrc_add == NULL ||
+		    rx->mrc_remove == NULL ||
+		    rx->mrc_quiesce == NULL ||
+		    rx->mrc_restart == NULL ||
+		    rx->mrc_bind == NULL ||
+		    rx->mrc_arg == NULL) {
+			return (false);
+		}
+	}
+
+	return (true);
 }

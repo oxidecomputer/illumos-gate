@@ -24,7 +24,7 @@
  * Copyright 2019 Joyent, Inc.
  * Copyright 2017 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -42,6 +42,7 @@
 #include <sys/mac_impl.h>
 #include <sys/mac_client_impl.h>
 #include <sys/mac_client_priv.h>
+#include <sys/mac_datapath_impl.h>
 #include <sys/mac_soft_ring.h>
 #include <sys/mac_stat.h>
 #include <sys/dld.h>
@@ -809,7 +810,7 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 			 * on this ring are hardware classified and
 			 * share the same MAC header info.
 			 */
-			mac_srs->srs_rx.sr_lower_proc(mh,
+			mac_srs->srs_data.rx.sr_lower_proc(mh,
 			    (mac_resource_handle_t)mac_srs, mp_chain, B_FALSE);
 			MR_REFRELE(mr);
 			return;
@@ -1119,7 +1120,7 @@ mac_ring_intr_retarget(mac_group_t *group, mac_ring_t *ring)
 		if (ring->mr_type == MAC_RING_TYPE_RX) {
 			for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
 				mac_rx_srs = flent->fe_rx_srs[i];
-				if (mac_rx_srs->srs_ring != ring)
+				if (mac_rx_srs->srs_data.rx.sr_ring != ring)
 					continue;
 				srs_cpu = &mac_rx_srs->srs_cpu;
 				mutex_enter(&cpu_lock);
@@ -2672,7 +2673,7 @@ mac_ether_offload_info(const mblk_t *pkt, mac_ether_offload_info_t *outer_info,
 	 * before unpacking it if the parsing of outer_info is incomplete (or
 	 * not a tunnel at all).
 	 */
-	outer_target->meoi_len = msgdsize(pkt);
+	outer_target->meoi_len = mp_len(pkt);
 	if (inner_info != NULL) {
 		inner_info->meoi_flags = 0;
 		inner_info->meoi_tuntype = METT_NONE;
