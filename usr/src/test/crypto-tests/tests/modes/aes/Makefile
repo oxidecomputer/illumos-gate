@@ -13,10 +13,11 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2019 Joyent, Inc.
+# Copyright 2023 RackTop Systems, Inc.
 #
 
 .PARALLEL: $(SUBDIRS)
 
-SUBDIRS = cbc cbc_pad ccm cmac ctr ecb gcm
+SUBDIRS = cbc cbc_pad ccm cmac ctr ecb gcm gmac
 
 include $(SRC)/test/Makefile.com

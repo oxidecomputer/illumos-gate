@@ -532,8 +532,14 @@ uint_t ipcc_max_attempts = 10;
  * response is received. Particularly in early boot this will result in a hung
  * system that is not responsive to NMI since NMI handling has not yet been set
  * up.
+ *
+ * Similarly when polling for readability when syncing the contents of a
+ * channel.  In the usual case, data is neither waiting for us nor forthcoming
+ * shortly, and we time out quickly in that case.  Thus, the timeout is much
+ * shorter than for packet poll.
  */
 uint_t ipcc_readpoll_timeout_ms = 100;
+uint_t ipcc_syncpoll_timeout_ms = 5; /* ipcc_readpoll_timeout_ms / 20 */
 uint_t ipcc_readpoll_attempts = 600; /* 60s with default readpoll_timeout_ms */
 
 /*
@@ -630,6 +636,7 @@ static ipcc_channel_flag_t ipcc_channel_flags;
 static kthread_t *ipcc_channel_owner;
 
 static int ipcc_sp_interrupt(const ipcc_ops_t *, void *);
+static void ipcc_channel_flush(const ipcc_ops_t *, void *);
 
 /*
  * This is an error code return by ipcc_pkt_{send,recv} when the SP-to-host
@@ -719,6 +726,14 @@ ipcc_channel_setflags(ipcc_channel_flag_t flags)
 {
 	VERIFY(ipcc_channel_held());
 	ipcc_channel_flags |= flags;
+}
+
+static void
+ipcc_channel_flush(const ipcc_ops_t *ops, void *arg)
+{
+	ipcc_bbuffer_reset(&ipcc_in_bbuf);
+	if (ops->io_flush != NULL)
+		(void) ops->io_flush(arg);
 }
 
 static uint16_t
@@ -889,59 +904,52 @@ ipcc_msg_fini(uint8_t *buf, size_t len, size_t *off)
 	return (0);
 }
 
+/*
+ * The signature of this function is unfortunate in that "success" is defined by
+ * the absence of an error; that is, it returns zero when the channel is
+ * readable. Ideally, we'd return a boolean, but the issue is that we need to be
+ * able to detect and return errors as well.  Perhaps we could do that with an
+ * out parameter, but that feels even clunkier than this. Moreover, the same
+ * basic technique is used elsewhere, such as in the IPCC driver's `ipcc_poll`
+ * method.
+ */
 static int
-ipcc_pkt_send(uint8_t *pkt, size_t len, const ipcc_ops_t *ops, void *arg)
+ipcc_readable(ipcc_bbuffer_t *bbuf, const ipcc_ops_t *ops, void *arg,
+    uint_t timeout)
 {
-	ipcc_pollevent_t ev;
+	ipcc_pollevent_t ev, rev = 0;
+	int err = 0;
 
-	ipcc_bbuffer_reset(&ipcc_in_bbuf);
-	if (ops->io_flush != NULL)
-		ops->io_flush(arg);
+	ASSERT3P(bbuf, !=, NULL);
+	if (!ipcc_bbuffer_is_empty(bbuf))
+		return (0);
 
-	ev = IPCC_POLLOUT;
+	ev = IPCC_POLLIN;
+	ASSERT3P(ops, !=, NULL);
 	if (ops->io_readintr != NULL)
 		ev |= IPCC_INTR;
 
-	while (len > 0) {
-		ipcc_pollevent_t rev;
-		size_t n;
-		int err;
+	ASSERT3P(ops->io_poll, !=, NULL);
+	err = ops->io_poll(arg, ev, &rev, timeout);
+	if (err != 0)
+		return (err);
+	if ((rev & IPCC_INTR) != 0)
+		return (ESPINTR);
+	if ((rev & IPCC_POLLIN) == 0)
+		return (ETIMEDOUT);
 
-		if ((err = ops->io_poll(arg, ev, &rev, 0)) != 0)
-			return (err);
-		if ((rev & IPCC_INTR) != 0)
-			return (ESPINTR);
-		ASSERT((rev & IPCC_POLLOUT) != 0);
-
-		n = len;
-		err = ops->io_write(arg, pkt, &n);
-		if (err != 0)
-			return (err);
-
-		VERIFY3U(n, <=, len);
-
-		pkt += n;
-		len -= n;
-	}
-
-	return (0);
+	return (err);
 }
 
 static int
 ipcc_fill_bbuf(ipcc_bbuffer_t *bbuf, const ipcc_ops_t *ops, void *arg)
 {
-	ipcc_pollevent_t ev, rev = 0;
-	size_t n = 0;
 	int err = 0;
 	uint_t retries = ipcc_readpoll_attempts;
 
-	ev = IPCC_POLLIN;
-	if (ops->io_readintr != NULL)
-		ev |= IPCC_INTR;
-
 	ASSERT3P(bbuf, !=, NULL);
 	while (ipcc_bbuffer_is_empty(bbuf)) {
-		while ((err = ops->io_poll(arg, ev, &rev,
+		while ((err = ipcc_readable(bbuf, ops, arg,
 		    ipcc_readpoll_timeout_ms)) != 0) {
 			if (--retries == 0 || err != ETIMEDOUT)
 				return (err);
@@ -951,13 +959,9 @@ ipcc_fill_bbuf(ipcc_bbuffer_t *bbuf, const ipcc_ops_t *ops, void *arg)
 			 * empty frames.
 			 */
 			uint8_t ka = 0;
-			n = 1;
+			size_t n = 1;
 			(void) ops->io_write(arg, &ka, &n);
 		}
-
-		if ((rev & IPCC_INTR) != 0)
-			return (ESPINTR);
-		ASSERT((rev & IPCC_POLLIN) != 0);
 
 		err = ipcc_bbuffer_fill(bbuf, ops->io_read, arg);
 		if (err != 0)
@@ -981,6 +985,110 @@ ipcc_getc(ipcc_bbuffer_t *bbuf, uint8_t *bp, const ipcc_ops_t *ops, void *arg)
 			return (err);
 	}
 	*bp = ipcc_bbuffer_pop_front(bbuf);
+	return (0);
+}
+
+/*
+ * Synchronize input to the start of a frame by draining the input buffer until
+ * either it is empty, or we find a frame terminator.
+ */
+static int
+ipcc_sync(ipcc_bbuffer_t *bbuf, const ipcc_ops_t *ops, void *arg)
+{
+	uint_t max = IPCC_MAX_PACKET_SIZE;
+	uint8_t b;
+
+	/*
+	 * If there is no data available from any source, either from the bounce
+	 * buffer or the underlying communications channel, then we assume the
+	 * channel is drained from a protocol perspective and return quickly;
+	 * similarly if testing for readability returns some sort of error.
+	 */
+	int err = ipcc_readable(bbuf, ops, arg, ipcc_syncpoll_timeout_ms);
+	if (err == 0) {
+		/*
+		 * Otherwise, data is available; read through it until we find
+		 * a frame terminator or exceed a pre-determined threshold.  The
+		 * choice to abort after reading a packet's worth of data is
+		 * somewhat arbitrary.
+		 */
+		do {
+			err = ipcc_getc(bbuf, &b, ops, arg);
+		} while (err == 0 && b != IPCC_PKT_TERM && --max != 0);
+	}
+	if (err == ETIMEDOUT)
+		return (0);
+	/*
+	 * We read a whole packet's worth of data and did not see a frame
+	 * terminator on the channel; this strongly implies that the protocol is
+	 * very much out of sync with the distant end.
+	 */
+	if (max == 0)
+		return (EOVERFLOW);
+
+	return (err);
+}
+
+static int
+ipcc_pkt_send(uint8_t *pkt, size_t len, const ipcc_ops_t *ops, void *arg)
+{
+	ipcc_pollevent_t ev;
+	int err;
+
+	/*
+	 * It is possible that there is data in the input buffer, either
+	 * garbage from a system reset, or a fragment of a previous response
+	 * frame from an earlier request that failed to receive for some
+	 * reason, so we flush the channel at the start of each command, and we
+	 * further believe that the delays we have selected and artificially
+	 * inserted into that process (see, e.g., `espi_oob_flush`) are
+	 * sufficient that any data in the distant end's output queue but not
+	 * yet on the channel will have time to drain, and will thus be flushed.
+	 *
+	 * But there is also the possibility that we are racing against an SP
+	 * in the process of generating a response to an earlier (interrupted)
+	 * request that has not yet been put onto the channel.  Similarly in
+	 * the case of retransmission: line noise or other corruption on the
+	 * channel could cause a terminator being seen before the true end of
+	 * the frame we intended to receive.
+	 *
+	 * Thus, despite flushing, we may still see a fragment of an earlier
+	 * message when we receive, interfering with the protocol.  To address
+	 * this, we attempt to "synchronize" the channel to the start of a
+	 * frame before sending, avoiding a suprious receive failure for a
+	 * known case we have seen before.
+	 */
+	err = ipcc_sync(&ipcc_in_bbuf, ops, arg);
+	if (err != 0)
+		return (err);
+
+	ev = IPCC_POLLOUT;
+	if (ops->io_readintr != NULL)
+		ev |= IPCC_INTR;
+
+	while (len > 0) {
+		ipcc_pollevent_t rev;
+		size_t n;
+		int err;
+
+		if ((err = ops->io_poll(arg, ev, &rev, 0)) != 0)
+			return (err);
+		if ((rev & IPCC_INTR) != 0)
+			return (ESPINTR);
+		if ((rev & IPCC_POLLOUT) == 0)
+			return (ETIMEDOUT);
+
+		n = len;
+		err = ops->io_write(arg, pkt, &n);
+		if (err != 0)
+			return (err);
+
+		VERIFY3U(n, <=, len);
+
+		pkt += n;
+		len -= n;
+	}
+
 	return (0);
 }
 
@@ -1041,22 +1149,24 @@ ipcc_pkt_recv(ipcc_bbuffer_t *bbuf, uint8_t *pkt, size_t len, uint8_t **endp,
 	/*
 	 * If we exhausted the above loop without error and `b` is still a
 	 * packet terminator, then it is likely that we are out of sync with
-	 * the distant end and so we return an error and let higher levels of
-	 * the protocol deal with the issue appropriately.
+	 * the distant end, and we return an error and let our caller handle
+	 * either retransmission or failing this request.
 	 *
-	 * Critically, we do not want to find outselves in the situation where
-	 * we are absorbing the output of the SP's steady-state idle pattern of
-	 * continually emitting empty frames in an infinite loop.
+	 * Critically, we limit the number of bytes we will examine so that we
+	 * do not want to find outselves in the situation where we are in
+	 * live-lock with the SP, infinitely looping over absorbing the output
+	 * of its steady-state idle pattern of continually emitting empty
+	 * frames.
 	 */
 	if (b == IPCC_PKT_TERM)
 		return (EOVERFLOW);
 
 	/*
-	 * If we get here, then we know that err == 0 and b is not a
-	 * packet terminator, so we have a valid byte.  Store that into
-	 * the packet buffer and continue accumulating a frame until
-	 * we reach the end of the buffer, or the end of the frame, as
-	 * marked by a terminator byte.
+	 * If we get here, then we know that err == 0 and b is not a packet
+	 * terminator, so we have a valid data byte.  Store that into the start
+	 * of the packet buffer and continue accumulating a frame until we
+	 * reach the end of the buffer, or we find a terminator marking the end
+	 * of the frame.
 	 */
 	pkt[0] = b;
 	size_t k = 1;
@@ -1068,8 +1178,8 @@ ipcc_pkt_recv(ipcc_bbuffer_t *bbuf, uint8_t *pkt, size_t len, uint8_t **endp,
 	}
 
 	/*
-	 * If we did not find a terminator, then the frame was too
-	 * long for our packet buffer, and we return an error.
+	 * If we did not find a terminator, then the frame was too long for our
+	 * packet buffer, and we return an error.
 	 */
 	if (b != IPCC_PKT_TERM) {
 		ASSERT3U(k, ==, len);
@@ -1077,8 +1187,8 @@ ipcc_pkt_recv(ipcc_bbuffer_t *bbuf, uint8_t *pkt, size_t len, uint8_t **endp,
 	}
 
 	/*
-	 * Otherwise, let our caller know the location of the end
-	 * of the frame and return success.
+	 * Otherwise, let our caller know the location of the end of the frame
+	 * and return success.
 	 */
 	uint8_t *end = pkt + k - 1;
 	ASSERT3U(*end, ==, IPCC_PKT_TERM);
@@ -1198,7 +1308,7 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 {
 	/* Sequence number for requests */
 	static uint64_t ipcc_seq;
-	size_t off, pktl, rcvd_datal;
+	size_t off, pktl, msgl, rcvd_datal;
 	uint64_t send_seq, rcvd_seq;
 	uint32_t rcvd_magic, rcvd_version;
 	uint16_t rcvd_crc, crc;
@@ -1220,8 +1330,16 @@ ipcc_command_locked(const ipcc_ops_t *ops, void *arg,
 		ipcc_seq = 1;
 	send_seq = ipcc_seq;
 
-resend:
+	/*
+	 * Flush the input channel to discard data lingering from previously
+	 * failed or interrupted requests, uninitialized data from reset, and
+	 * so on.  Since this marks the start of a new request, with a new
+	 * sequence number, any data currently in the channel is irrelevant to
+	 * that request, and can be safely discarded.
+	 */
+	ipcc_channel_flush(ops, arg);
 
+resend:
 	if (++txattempt > ipcc_max_attempts) {
 		LOG("Maximum transmit attempts exceeded\n");
 		return (ETIMEDOUT);
@@ -1352,23 +1470,23 @@ reread:
 		LOGHEX(" COBS IN", ipcc_in_pkt, end - ipcc_in_pkt);
 	}
 	if (!ipcc_cobs_decode(ipcc_in_pkt, end - ipcc_in_pkt, ipcc_in_msg,
-	    sizeof (ipcc_in_msg), &pktl)) {
+	    sizeof (ipcc_in_msg), &msgl)) {
 		LOG("Error decoding COBS frame\n");
 		goto resend;
 	}
-	LOGHEX("      IN", ipcc_in_msg, pktl);
-	if (pktl < IPCC_MIN_MESSAGE_SIZE) {
-		LOG("Short message received - 0x%lx byte(s)\n", pktl);
+	LOGHEX("      IN", ipcc_in_msg, msgl);
+	if (msgl < IPCC_MIN_MESSAGE_SIZE) {
+		LOG("Short message received - 0x%lx byte(s)\n", msgl);
 		goto resend;
 	}
 
-	rcvd_datal = pktl - IPCC_MIN_MESSAGE_SIZE;
+	rcvd_datal = msgl - IPCC_MIN_MESSAGE_SIZE;
 	if ((ipcc_channel_flags & IPCC_CHAN_QUIET) == 0) {
 		LOG("Additional data length: 0x%lx\n", rcvd_datal);
 	}
 
 	/* Validate checksum */
-	off = pktl - 2;
+	off = msgl - 2;
 	crc = ipcc_fletcher16(ipcc_in_msg, off);
 	ipcc_decode_bytes((uint8_t *)&rcvd_crc, sizeof (rcvd_crc),
 	    ipcc_in_msg, &off);
@@ -2121,7 +2239,6 @@ ipcc_apob_read(const ipcc_ops_t *ops, void *arg, uint64_t offset, uint8_t *buf,
 out:
 	return (err);
 }
-
 
 int
 ipcc_bootfail(const ipcc_ops_t *ops, void *arg, ipcc_host_boot_failure_t type,
