@@ -357,7 +357,8 @@ typedef struct packed_meoi {
 	 */
 	uint16_t t_flags: 6;
 	uint16_t p_flags: 6;
-	uint16_t t_tuntype: 4;
+	uint16_t t_tuntype: 3;
+	uint16_t hash_is_set: 1;
 
 	uint16_t t_l2hlen: DBLK_L2HLEN_WIDTH;
 	uint16_t p_l2hlen: DBLK_L2HLEN_WIDTH;
@@ -374,6 +375,8 @@ typedef struct packed_meoi {
 	uint16_t t_tunhlen;
 	uint8_t p_l4proto;
 	/* t_l4proto can be derived from t_tuntype */
+
+	uint32_t hash;
 } packed_meoi_t;
 
 typedef struct datab {

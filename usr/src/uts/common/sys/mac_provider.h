@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_MAC_PROVIDER_H
@@ -856,6 +856,10 @@ extern void mac_ether_set_pktinfo(mblk_t *, const mac_ether_offload_info_t *,
 extern void mac_ether_clear_pktinfo(mblk_t *);
 extern boolean_t mac_ether_any_set_pktinfo(const mblk_t *mp);
 extern mac_ether_tun_type_t mac_ether_tun_type(const mblk_t *);
+
+extern boolean_t mac_ether_get_pkthash(const mblk_t *, uint32_t *);
+extern void mac_ether_set_pkthash(mblk_t *, const uint32_t);
+extern void mac_ether_clear_pkthash(mblk_t *);
 
 #endif	/* _KERNEL */
 

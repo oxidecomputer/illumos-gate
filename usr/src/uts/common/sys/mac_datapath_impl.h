@@ -198,6 +198,17 @@ meoi_fast_fragmented(const mblk_t *mp)
 	    db->p_flags : db->t_flags) & 0x30) != 0);
 }
 
+static inline bool
+meoi_fast_hash(const mblk_t *mp, uint32_t *hash)
+{
+	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;
+	const bool out = db->hash_is_set == 1;
+	if (out) {
+		*hash = db->hash;
+	}
+	return (out);
+}
+
 #ifdef	__cplusplus
 }
 #endif

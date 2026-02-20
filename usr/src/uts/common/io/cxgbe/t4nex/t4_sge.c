@@ -21,7 +21,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/ddi.h>
@@ -838,6 +838,9 @@ t4_ring_rx(struct sge_rxq *rxq, int budget)
 
 				t4_rx_fill_meoi(m, cpl, CHELSIO_CHIP_VERSION(
 				    rxq->port->adapter->params.chip));
+				if (rss->hash_type != 0) {
+					mac_ether_set_pkthash(m, rss->hash_val);
+				}
 
 				*mblk_tail = m;
 				mblk_tail = &m->b_next;

@@ -1798,6 +1798,11 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		head = head->b_next;
 		mp->b_next = NULL;
 
+		uint32_t hash = 0;
+		if (meoi_fast_hash(mp, &hash)) {
+			goto compute_index;
+		}
+
 		const ssize_t l2hlen = meoi_fast_l2hlen(mp);
 		const ssize_t l3hlen = meoi_fast_l3hlen(mp);
 		const ssize_t l4hlen = meoi_fast_l4hlen(mp);
@@ -1822,7 +1827,6 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 		 * Direct access to the L3/L4 headers will fall safely within
 		 * the mblk.
 		 */
-		uint_t hash = 0;
 		uint32_t ports = 0;
 		const ipha_t *ipha = (ipha_t *)(mp->b_rptr + l2hlen);
 		const ip6_t *ip6 = (ip6_t *)(mp->b_rptr + l2hlen);

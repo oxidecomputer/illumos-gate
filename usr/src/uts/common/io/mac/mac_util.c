@@ -2206,11 +2206,15 @@ uint64_t
 mac_pkt_hash(uint_t media, mblk_t *mp, uint8_t policy, boolean_t is_outbound)
 {
 	struct ether_header *ehp;
-	uint64_t hash = 0;
+	uint32_t hash = 0;
 	uint16_t sap;
 	uint_t skip_len;
 	uint8_t proto;
 	boolean_t ip_fragmented;
+
+	if (mac_ether_get_pkthash(mp, &hash)) {
+		return (hash);
+	}
 
 	/*
 	 * We may want to have one of these per MAC type plugin in the
