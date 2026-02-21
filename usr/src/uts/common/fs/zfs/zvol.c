@@ -747,6 +747,8 @@ zvol_first_open(zvol_state_t *zv, boolean_t rdonly)
 
 		error = zvol_prealloc(zv);
 		if (error) {
+			dnode_rele(zv->zv_dn, zvol_tag);
+			zv->zv_dn = NULL;
 			dmu_objset_disown(os, 1, zv);
 			return (error);
 		}
