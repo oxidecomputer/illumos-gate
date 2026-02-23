@@ -27,6 +27,7 @@
 #include "libdevinfo.h"
 #include "devinfo_devlink.h"
 #include "device_info.h"
+#include <syslog.h>
 
 #undef	DEBUG
 #ifndef	DEBUG
@@ -540,6 +541,25 @@ invalid_db(struct di_devlink_handle *hdp, size_t fsize, long page_sz)
 	return (0);
 }
 
+static void
+check_lowercase_corruption(const char *path, const char *tag, uint32_t nidx)
+{
+	const char *wp, *cp;
+
+	if ((wp = strstr(path, "@w")) == NULL)
+		return;
+
+	for (cp = wp + 2; *cp != '\0' && *cp != ','; cp++) {
+		if (*cp >= 'a' && *cp <= 'f') {
+			syslog(LOG_WARNING,
+			    "devlink: %s: node[%u] path has "
+			    "unexpected lowercase hex: %s",
+			    tag, nidx, path);
+			break;
+		}
+	}
+}
+
 static int
 read_nodes(struct di_devlink_handle *hdp, cache_node_t *pcnp, uint32_t nidx)
 {
@@ -563,6 +583,9 @@ read_nodes(struct di_devlink_handle *hdp, cache_node_t *pcnp, uint32_t nidx)
 	for (; dnp = get_node(hdp, nidx); nidx = dnp->sib) {
 
 		path = get_string(hdp, dnp->path);
+
+		if (path != NULL)
+			check_lowercase_corruption(path, "read_nodes", nidx);
 
 		/*
 		 * Insert at head of list to recreate original order
@@ -651,6 +674,16 @@ read_links(struct di_devlink_handle *hdp, cache_minor_t *pcmp, uint32_t nidx)
 
 		path = get_string(hdp, dlp->path);
 		content = get_string(hdp, dlp->content);
+
+		if (path != NULL)
+			check_lowercase_corruption(path, "read_links", nidx);
+
+		if (link_hash(hdp, path, 0) != NULL) {
+			(void) devlink_dprintf(DBG_ERR,
+			    "read_links: skipping duplicate link[%u]: "
+			    "%s\n", nidx, path ? path : "<NULL>");
+			continue;
+		}
 
 		clp = link_insert(hdp, pcmp, path, content, dlp->attr);
 		if (clp == NULL) {
@@ -1009,6 +1042,11 @@ write_string(struct di_devlink_handle *hdp, const char *str, uint32_t *next)
 	}
 
 	(void) strcpy(dstr, str);
+
+	if (strcmp(dstr, str) != 0) {
+		syslog(LOG_ERR, "devlink: write_string: post-write "
+		    "mismatch: wrote \"%s\", read back \"%s\"", str, dstr);
+	}
 
 	next[DB_STR] += strlen(dstr) + 1;
 

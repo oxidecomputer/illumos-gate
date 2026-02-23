@@ -2518,6 +2518,27 @@ devfsadm_mklink(char *link, di_node_t node, di_minor_t minor, int flags)
 		}
 		(void) snprintf(phy_path, sizeof (phy_path), "%s:%s",
 		    dev_path, di_minor_name(minor));
+		{
+			const char *wp;
+
+			if ((wp = strstr(dev_path, "@w")) != NULL) {
+				const char *cp;
+
+				for (cp = wp + 2;
+				    *cp != '\0' && *cp != ':' && *cp != ',';
+				    cp++) {
+					if (*cp >= 'a' && *cp <= 'f') {
+						err_print(
+						    "devfsadm_mklink: "
+						    "unexpected lowercase "
+						    "hex in device path: "
+						    "%s (link: %s)\n",
+						    dev_path, link);
+						break;
+					}
+				}
+			}
+		}
 		di_devfs_path_free(dev_path);
 		acontents = phy_path;
 	}
