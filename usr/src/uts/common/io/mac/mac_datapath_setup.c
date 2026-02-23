@@ -1486,7 +1486,6 @@ mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
 		srs->srs_type |= SRST_BW_CONTROL;
 	}
 
-	srs_tx->st_func = mac_tx_get_func(srs_tx->st_mode);
 	mutex_exit(&bw->mac_bw_lock);
 	mutex_exit(&srs->srs_lock);
 
@@ -4351,7 +4350,6 @@ no_group:
 			ASSERT(B_FALSE);
 			break;
 	}
-	tx->st_func = mac_tx_get_func(tx->st_mode);
 	if (is_aggr) {
 		VERIFY(i_mac_capab_get((mac_handle_t)mip,
 		    MAC_CAPAB_AGGR, &tx->st_capab_aggr));

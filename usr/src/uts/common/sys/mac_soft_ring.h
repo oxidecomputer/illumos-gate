@@ -300,7 +300,6 @@ struct mac_soft_ring_s {
 /* Transmit side Soft Ring Set */
 typedef struct {
 	mac_tx_srs_mode_t	st_mode;
-	mac_tx_func_t		st_func;
 	/* TODO(ky): typechecking -- this is a `mac_client_impl_t *`. */
 	void			*st_arg1;
 	/* TODO(ky): typechecking -- this is a `mac_ring_impl_t *`. */
@@ -1169,7 +1168,6 @@ extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *,
 /* Tx SRS, Tx softring */
 extern void mac_tx_srs_wakeup(mac_soft_ring_set_t *, mac_ring_handle_t);
 extern void mac_tx_srs_setup(struct mac_client_impl_s *, flow_entry_t *);
-extern mac_tx_func_t mac_tx_get_func(uint32_t);
 extern mblk_t *mac_tx_send(mac_client_handle_t, mac_ring_handle_t, mblk_t *,
     mac_tx_stats_t *);
 extern boolean_t mac_tx_srs_ring_present(mac_soft_ring_set_t *, mac_ring_t *);
@@ -1211,26 +1209,10 @@ extern void mac_srs_worker_restart(mac_soft_ring_set_t *);
 extern void mac_rx_attach_flow_srs(mac_impl_t *, flow_entry_t *,
     mac_soft_ring_set_t *, mac_ring_t *, mac_classify_type_t);
 
-extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_rx_srs_drain(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_rx_srs_drain_subtree(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
 extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
-extern void mac_tx_srs_drain(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_srs_drain_forward(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
 
 extern void mac_tx_srs_restart(mac_soft_ring_set_t *);
 extern void mac_rx_srs_remove(mac_soft_ring_set_t *);
@@ -1280,6 +1262,23 @@ mac_srs_bw_unlock(const mac_soft_ring_set_t *srs)
 {
 	mac_bw_ctls_unlock(srs->srs_bw, srs->srs_bw_len);
 }
+
+extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_subtree(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_tx_srs_drain(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_srs_drain_forward(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 
 __attribute__((always_inline))
 inline void
@@ -1351,6 +1350,76 @@ mac_srs_drain_rx_complete(mac_soft_ring_set_t *srs,
 	}
 }
 
+extern mac_tx_cookie_t mac_tx_single_ring_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_serializer_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_fanout_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_bw_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_aggr_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+
+/*
+ * There are seven modes of operation on the Tx side. These modes get set
+ * in mac_tx_srs_setup(). Except for the experimental TX_SERIALIZE mode,
+ * none of the other modes are user configurable. They get selected by
+ * the system depending upon whether the link (or flow) has multiple Tx
+ * rings or a bandwidth configured, or if the link is an aggr, etc.
+ *
+ * When the Tx SRS is operating in aggr mode (st_mode) or if there are
+ * multiple Tx rings owned by Tx SRS, then each Tx ring (pseudo or
+ * otherwise) will have a soft ring associated with it. These soft rings
+ * are stored in srs_tx_soft_rings[] array.
+ *
+ * Additionally in the case of aggr, there is the st_soft_rings[] array
+ * in the mac_srs_tx_t structure. This array is used to store the same
+ * set of soft rings that are present in srs_tx_soft_rings[] array but
+ * in a different manner. The soft ring associated with the pseudo Tx
+ * ring is saved at mr_index (of the pseudo ring) in st_soft_rings[]
+ * array. This helps in quickly getting the soft ring associated with the
+ * Tx ring when aggr_find_tx_ring() returns the pseudo Tx ring that is to
+ * be used for transmit.
+ */
+inline mac_tx_cookie_t
+mac_srs_send_tx_complete(mac_soft_ring_set_t *srs, mblk_t *mp,
+    uintptr_t hint, uint16_t flags, mblk_t **retmp)
+{
+	ASSERT(!MUTEX_HELD(&srs->srs_lock));
+	ASSERT(mac_srs_is_tx(srs));
+	ASSERT(!mac_srs_is_logical(srs));
+
+	const mac_srs_tx_t *srs_tx = &srs->srs_data.tx;
+	mac_tx_cookie_t out = 0;
+	switch (srs_tx->st_mode) {
+		case SRS_TX_DEFAULT:
+			out = mac_tx_single_ring_mode(srs, mp, hint, flags,
+			    retmp);
+			break;
+		case SRS_TX_SERIALIZE:
+			out = mac_tx_serializer_mode(srs, mp, hint, flags,
+			    retmp);
+			break;
+		case SRS_TX_FANOUT:
+			out = mac_tx_fanout_mode(srs, mp, hint, flags, retmp);
+			break;
+		case SRS_TX_AGGR:
+			out = mac_tx_aggr_mode(srs, mp, hint, flags, retmp);
+			break;
+		case SRS_TX_BW:
+		case SRS_TX_BW_FANOUT:
+		case SRS_TX_BW_AGGR:
+			out = mac_tx_bw_mode(srs, mp, hint, flags, retmp);
+			break;
+		default:
+			panic("Illegal tx func %d for Transmit SRS.",
+			    srs_tx->st_mode);
+			break;
+	}
+
+	return (out);
+}
 
 #ifdef	__cplusplus
 }

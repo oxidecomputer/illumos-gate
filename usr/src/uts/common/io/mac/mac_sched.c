@@ -1049,53 +1049,6 @@
 #include <sys/mac_soft_ring.h>
 #include <sys/mac_flow_impl.h>
 
-static mac_tx_cookie_t mac_tx_single_ring_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_serializer_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_fanout_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_bw_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_aggr_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-
-typedef struct mac_tx_mode_s {
-	mac_tx_srs_mode_t	mac_tx_mode;
-	mac_tx_func_t		mac_tx_func;
-} mac_tx_mode_t;
-
-/*
- * There are seven modes of operation on the Tx side. These modes get set
- * in mac_tx_srs_setup(). Except for the experimental TX_SERIALIZE mode,
- * none of the other modes are user configurable. They get selected by
- * the system depending upon whether the link (or flow) has multiple Tx
- * rings or a bandwidth configured, or if the link is an aggr, etc.
- *
- * When the Tx SRS is operating in aggr mode (st_mode) or if there are
- * multiple Tx rings owned by Tx SRS, then each Tx ring (pseudo or
- * otherwise) will have a soft ring associated with it. These soft rings
- * are stored in srs_tx_soft_rings[] array.
- *
- * Additionally in the case of aggr, there is the st_soft_rings[] array
- * in the mac_srs_tx_t structure. This array is used to store the same
- * set of soft rings that are present in srs_tx_soft_rings[] array but
- * in a different manner. The soft ring associated with the pseudo Tx
- * ring is saved at mr_index (of the pseudo ring) in st_soft_rings[]
- * array. This helps in quickly getting the soft ring associated with the
- * Tx ring when aggr_find_tx_ring() returns the pseudo Tx ring that is to
- * be used for transmit.
- */
-mac_tx_mode_t mac_tx_mode_list[] = {
-	{SRS_TX_DEFAULT,	mac_tx_single_ring_mode},
-	{SRS_TX_SERIALIZE,	mac_tx_serializer_mode},
-	{SRS_TX_FANOUT,		mac_tx_fanout_mode},
-	{SRS_TX_BW,		mac_tx_bw_mode},
-	{SRS_TX_BW_FANOUT,	mac_tx_bw_mode},
-	{SRS_TX_AGGR,		mac_tx_aggr_mode},
-	{SRS_TX_BW_AGGR,	mac_tx_bw_mode}
-};
-
 /*
  * Soft Ring Set (SRS) - The Run time code that deals with
  * dynamic polling from the hardware, bandwidth enforcement,
@@ -4103,7 +4056,7 @@ mac_tx_srs_no_desc(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	mac_tx_cookie_t cookie = 0;
 	mac_srs_tx_t *srs_tx = &mac_srs->srs_data.tx;
 	boolean_t wakeup_worker = B_TRUE;
-	uint32_t tx_mode = srs_tx->st_mode;
+	mac_tx_srs_mode_t tx_mode = srs_tx->st_mode;
 	int cnt, sz;
 	mblk_t *tail;
 
@@ -4171,7 +4124,7 @@ mac_strip_chain_hints(mblk_t *mp_chain)
  * returned back to the caller only after hi-watermark worth of data
  * is queued.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uint16_t flag, uintptr_t fanout_hint, mblk_t **ret_mp)
 {
@@ -4305,14 +4258,8 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * SRS_TX_WAKEUP_CLIENT will be set when tx hi-watermark is reached.
  */
 
-mac_tx_func_t
-mac_tx_get_func(uint32_t mode)
-{
-	return (mac_tx_mode_list[mode].mac_tx_func);
-}
-
 /* ARGSUSED */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_single_ring_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
@@ -4379,7 +4326,7 @@ mac_tx_single_ring_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * NIC to send the packet out.
  */
 /* ARGSUSED */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_serializer_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
@@ -4456,7 +4403,7 @@ mac_tx_serializer_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	DTRACE_PROBE2(tx__fanout, uint64_t, hash, uint_t, index);	\
 }
 
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_fanout_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
@@ -4542,7 +4489,7 @@ mac_tx_fanout_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * SRS. If the SRS has multiple Tx rings, then packets will get fanned
  * out to a Tx rings.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
@@ -4724,7 +4671,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * side as the pseudo Tx ring won't be available anymore to
  * aggr_find_tx_ring() once the port has been removed.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_aggr_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
@@ -4765,16 +4712,15 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
     const mac_soft_ring_set_state_t proc_type)
 {
 	mblk_t			*head, *tail;
-	uint32_t		tx_mode;
 	mac_tx_stats_t		stats;
 	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
+	mac_tx_srs_mode_t	tx_mode = srs_tx->st_mode;
 
 	ASSERT(mutex_owned(&mac_srs->srs_lock));
 	ASSERT3U(mac_srs->srs_state & SRS_PROC, ==, 0);
 
 	mac_srs->srs_state |= SRS_PROC;
 
-	tx_mode = srs_tx->st_mode;
 	if (tx_mode == SRS_TX_DEFAULT || tx_mode == SRS_TX_SERIALIZE) {
 		if (mac_srs->srs_first != NULL) {
 			head = mac_srs->srs_first;
@@ -5473,7 +5419,7 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
  * soft ring pointer as the opaque cookie for the client enable
  * flow control.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_sring_enqueue(mac_soft_ring_t *ringp, mblk_t *mp_chain, uint16_t flag,
     mblk_t **ret_mp)
 {
@@ -5734,7 +5680,6 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs,
 			 * already signed up for being enqueued etc. as part of
 			 * bandwidth control.
 			 */
-			const mac_tx_func_t proc = give_to->srs_data.tx.st_func;
 			mblk_t *curr = pkts.mpl_head;
 			mblk_t *sub_tail = pkts.mpl_head;
 			uintptr_t hint = 0;
@@ -5745,8 +5690,8 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs,
 					    (uintptr_t)sub_tail->b_prev;
 					sub_tail->b_next = NULL;
 					mac_strip_chain_hints(pkts.mpl_head);
-					proc(give_to, pkts.mpl_head, s_hint, 0,
-					    NULL);
+					mac_srs_send_tx_complete(give_to,
+					    pkts.mpl_head, s_hint, 0, NULL);
 					pkts.mpl_head = curr;
 				}
 
@@ -5755,7 +5700,8 @@ mac_srs_drain_forward(mac_soft_ring_set_t *srs,
 			}
 
 			mac_strip_chain_hints(pkts.mpl_head);
-			proc(give_to, pkts.mpl_head, hint, 0, NULL);
+			mac_srs_send_tx_complete(give_to, pkts.mpl_head, hint,
+			    0, NULL);
 
 			bzero(&pkts, sizeof (pkts));
 

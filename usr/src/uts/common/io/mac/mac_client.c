@@ -3934,7 +3934,8 @@ nextpkt:
 			mutex_exit(&srs->srs_lock);
 		}
 	} else {
-		cookie = srs_tx->st_func(srs, new_head, hint, flag, ret_mp);
+		cookie = mac_srs_send_tx_complete(srs, new_head, hint, flag,
+		    ret_mp);
 	}
 
 done:
