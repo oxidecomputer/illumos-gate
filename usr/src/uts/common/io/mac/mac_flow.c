@@ -506,9 +506,9 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 	 * so we need to duplicate this subflow on top of all our fastpath
 	 * entries.
 	 */
-	mac_client_quiesce(mcip, true);
+	mac_client_quiesce_new_tree(mcip);
 	mac_client_update_classifier(mcip);
-	mac_client_restart(mcip);
+	mac_client_restart(mch);
 
 	return (0);
 }
@@ -1623,7 +1623,7 @@ mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 	 * If all the subflows are gone, then clear out the subflow table.
 	 * Always rebuild the flowtree in response.
 	 */
-	mac_client_quiesce(mcip, true);
+	mac_client_quiesce_new_tree(mcip);
 	if (last_subflow) {
 		/*
 		 * The subflow table itself is not protected by any locks or
@@ -1634,7 +1634,7 @@ mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
 		mcip->mci_subflow_tab = NULL;
 	}
 	mac_client_update_classifier(mcip);
-	mac_client_restart(mcip);
+	mac_client_restart(mch);
 }
 
 /*

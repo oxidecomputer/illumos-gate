@@ -802,8 +802,9 @@ extern void mac_tx_srs_group_teardown(mac_client_impl_t *, flow_entry_t *,
 	    uint32_t);
 extern int mac_rx_classify_flow_quiesce(flow_entry_t *, void *);
 extern int mac_rx_classify_flow_restart(flow_entry_t *, void *);
-extern void mac_client_quiesce(mac_client_impl_t *, const bool);
-extern void mac_client_restart(mac_client_impl_t *);
+extern void mac_client_quiesce_new_tree(mac_client_impl_t *);
+extern void mac_rx_client_quiesce_new_tree(mac_client_impl_t *);
+extern void mac_tx_client_condemn(mac_client_impl_t *);
 
 extern void mac_flow_update_priority(mac_client_impl_t *, flow_entry_t *);
 

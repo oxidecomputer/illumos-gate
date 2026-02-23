@@ -117,10 +117,11 @@ extern int mac_link_flow_walk(datalink_id_t,
     int (*)(mac_flowinfo_t *, void *), void *);
 extern int mac_link_flow_info(char *, mac_flowinfo_t *);
 
-extern void mac_rx_client_quiesce(mac_client_handle_t, const bool);
+extern void mac_client_quiesce(mac_client_handle_t);
+extern void mac_client_restart(mac_client_handle_t);
+extern void mac_rx_client_quiesce(mac_client_handle_t);
 extern void mac_rx_client_restart(mac_client_handle_t);
 extern void mac_tx_client_quiesce(mac_client_handle_t);
-extern void mac_tx_client_condemn(mac_client_handle_t);
 extern void mac_tx_client_restart(mac_client_handle_t);
 extern void mac_srs_perm_quiesce(mac_client_handle_t, boolean_t);
 extern uint_t mac_hwrings_idx_get(mac_handle_t, uint_t, mac_group_handle_t *,

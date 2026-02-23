@@ -2747,7 +2747,7 @@ mac_tx_srs_group_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
 		mac_tx_srs_quiesce(tx_srs, SRS_CONDEMNED, false);
 		break;
 	case SRST_LINK:
-		mac_tx_client_condemn((mac_client_handle_t)mcip);
+		mac_tx_client_condemn(mcip);
 		if (tx->st_arg2 != NULL) {
 			ASSERT(mac_srs_is_tx(tx_srs));
 			/*

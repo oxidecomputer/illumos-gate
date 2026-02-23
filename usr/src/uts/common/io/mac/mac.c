@@ -2467,10 +2467,9 @@ mac_srs_perm_quiesce(mac_client_handle_t mch, boolean_t on)
 	}
 }
 
-void
-mac_rx_client_quiesce(mac_client_handle_t mch, const bool redo_tree)
+static void
+i_mac_rx_client_quiesce(mac_client_impl_t *mcip, const bool redo_tree)
 {
-	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
@@ -2481,6 +2480,18 @@ mac_rx_client_quiesce(mac_client_handle_t mch, const bool redo_tree)
 		(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 		    mac_rx_classify_flow_quiesce, (void *)redo_tree);
 	}
+}
+
+void
+mac_rx_client_quiesce(mac_client_handle_t mch)
+{
+	i_mac_rx_client_quiesce((mac_client_impl_t *)mch, false);
+}
+
+void
+mac_rx_client_quiesce_new_tree(mac_client_impl_t *mch)
+{
+	i_mac_rx_client_quiesce(mch, true);
 }
 
 void
@@ -2578,12 +2589,10 @@ mac_tx_flow_restart(flow_entry_t *flent, void *arg)
 }
 
 static void
-i_mac_tx_client_quiesce(mac_client_handle_t mch,
+i_mac_tx_client_quiesce(mac_client_impl_t *mcip,
     const mac_soft_ring_set_state_t srs_quiesce_flag,
     const bool condemn_logicals)
 {
-	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
-
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	mac_tx_client_block(mcip);
@@ -2598,13 +2607,13 @@ i_mac_tx_client_quiesce(mac_client_handle_t mch,
 void
 mac_tx_client_quiesce(mac_client_handle_t mch)
 {
-	i_mac_tx_client_quiesce(mch, SRS_QUIESCE, false);
+	i_mac_tx_client_quiesce((mac_client_impl_t *)mch, SRS_QUIESCE, false);
 }
 
 void
-mac_tx_client_condemn(mac_client_handle_t mch)
+mac_tx_client_condemn(mac_client_impl_t *mcip)
 {
-	i_mac_tx_client_quiesce(mch, SRS_CONDEMNED, false);
+	i_mac_tx_client_quiesce(mcip, SRS_CONDEMNED, false);
 }
 
 void
@@ -2632,22 +2641,24 @@ mac_tx_client_flush(mac_client_impl_t *mcip)
 }
 
 void
-mac_client_quiesce(mac_client_impl_t *mcip, const bool redo_tree)
+mac_client_quiesce(mac_client_handle_t mch)
 {
-	mac_rx_client_quiesce((mac_client_handle_t)mcip, redo_tree);
-	if (redo_tree) {
-		i_mac_tx_client_quiesce((mac_client_handle_t)mcip, SRS_QUIESCE,
-		    true);
-	} else {
-		mac_tx_client_quiesce((mac_client_handle_t)mcip);
-	}
+	mac_rx_client_quiesce(mch);
+	mac_tx_client_quiesce(mch);
 }
 
 void
-mac_client_restart(mac_client_impl_t *mcip)
+mac_client_quiesce_new_tree(mac_client_impl_t *mcip)
 {
-	mac_rx_client_restart((mac_client_handle_t)mcip);
-	mac_tx_client_restart((mac_client_handle_t)mcip);
+	i_mac_rx_client_quiesce(mcip, true);
+	i_mac_tx_client_quiesce(mcip, SRS_QUIESCE, true);
+}
+
+void
+mac_client_restart(mac_client_handle_t mch)
+{
+	mac_rx_client_restart(mch);
+	mac_tx_client_restart(mch);
 }
 
 /*
@@ -7400,7 +7411,7 @@ mac_rx_move_macaddr(mac_client_impl_t *mcip, mac_group_t *fgrp,
 	mac_unicast_impl_t	*muip;
 	boolean_t		use_hw;
 
-	mac_rx_client_quiesce((mac_client_handle_t)mcip, false);
+	mac_rx_client_quiesce((mac_client_handle_t)mcip);
 	VERIFY3P(mcip->mci_unicast, !=, NULL);
 	bcopy(mcip->mci_unicast->ma_addr, maddr, mcip->mci_unicast->ma_len);
 

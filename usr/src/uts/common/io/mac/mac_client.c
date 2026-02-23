@@ -1560,7 +1560,9 @@ mac_client_close(mac_client_handle_t mch, uint16_t flags)
 	 * refholds on said flows) is gone.
 	 */
 	mac_flow_tree_destroy(mcip->mci_rx_flow_tree);
+	mcip->mci_rx_flow_tree = NULL;
 	mac_flow_tree_destroy(mcip->mci_tx_flow_tree);
+	mcip->mci_tx_flow_tree = NULL;
 	mac_teardown_fastpath_flows(mcip);
 
 	/*
@@ -1657,7 +1659,7 @@ mac_rx_set(mac_client_handle_t mch, mac_rx_t rx_fn, void *arg)
 	 * the data flow subsequently.
 	 */
 	i_mac_perim_enter(mip);
-	mac_rx_client_quiesce(mch, false);
+	mac_rx_client_quiesce(mch);
 
 	mcip->mci_rx_fn = rx_fn;
 	mcip->mci_rx_arg = arg;
@@ -1708,7 +1710,7 @@ mac_siphon_set(mac_client_handle_t mch, mac_siphon_t rx_fn, void *arg)
 	 * quiesce mechanism).
 	 */
 	i_mac_perim_enter(mip);
-	mac_rx_client_quiesce(mch, false);
+	mac_rx_client_quiesce(mch);
 
 	mcip->mci_siphon = rx_fn;
 	mcip->mci_siphon_arg = arg;
@@ -1736,7 +1738,7 @@ mac_rx_barrier(mac_client_handle_t mch)
 
 	/* If a RX callback is set, quiesce and restart that datapath */
 	if (mcip->mci_rx_fn != mac_rx_def) {
-		mac_rx_client_quiesce(mch, false);
+		mac_rx_client_quiesce(mch);
 		mac_rx_client_restart(mch);
 	}
 
@@ -4184,6 +4186,7 @@ mac_resource_clear(mac_client_handle_t mch, boolean_t is_v6)
 	flow_action_t *ac = &affected_flent->fe_action;
 	ac->fa_flags &= ~MFA_FLAGS_RESOURCE;
 	bzero(&ac->fa_resource, sizeof (ac->fa_resource));
+	mac_update_fastpath_flows(mcip);
 }
 
 /*
@@ -4222,7 +4225,7 @@ mac_client_poll_enable(mac_client_handle_t mch, boolean_t is_v6)
 	 * nondescript pile of flows), we would need to assert that the changed
 	 * flows were all `MFA_FLAGS_RX_ONLY`.
 	 */
-	mac_rx_client_quiesce(mch, true);
+	mac_rx_client_quiesce_new_tree(mcip);
 	mac_client_rebuild_flowtrees(mcip, vanity_flags, false);
 	mac_rx_client_restart(mch);
 }
@@ -4247,7 +4250,7 @@ mac_client_poll_disable(mac_client_handle_t mch, boolean_t is_v6)
 	 *
 	 * As in `enable`, we only touch the Rx path and respective flowtrees.
 	 */
-	mac_rx_client_quiesce(mch, true);
+	mac_rx_client_quiesce_new_tree(mcip);
 	mac_client_destroy_flowtrees(mcip);
 
 	/*
@@ -6155,7 +6158,6 @@ static void
 mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
     mblk_t *mp_chain, mac_header_info_t *arg3)
 {
-	mac_ether_offload_info_t meoi = {0};
 	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
 		const ssize_t l2hlen = meoi_fast_l2hlen(curr);
 
@@ -6172,6 +6174,7 @@ mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
 		/* IP cannot yet be trusted not to recycle MEOI. */
 		mac_ether_clear_pktinfo(curr);
 	}
+
 	mdrx->mdrx(mdrx->mdrx_arg, mrh, mp_chain, arg3);
 }
 
@@ -6444,9 +6447,15 @@ static void
 mac_teardown_fastpath_flows(mac_client_impl_t *mcip)
 {
 	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv6_udp);
+	mcip->mci_fastpath_ipv6_udp = NULL;
 	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv6_tcp);
+	mcip->mci_fastpath_ipv6_tcp = NULL;
 	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv6);
+	mcip->mci_fastpath_ipv6 = NULL;
 	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv4_udp);
+	mcip->mci_fastpath_ipv4_udp = NULL;
 	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv4_tcp);
+	mcip->mci_fastpath_ipv4_tcp = NULL;
 	FLOW_FINAL_REFRELE(mcip->mci_fastpath_ipv4);
+	mcip->mci_fastpath_ipv4 = NULL;
 }
