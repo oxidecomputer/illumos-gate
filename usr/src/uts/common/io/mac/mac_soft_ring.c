@@ -93,7 +93,6 @@
 #include <sys/mac_flow_impl.h>
 #include <sys/mac_stat.h>
 
-static void mac_rx_soft_ring_drain(mac_soft_ring_t *);
 static void mac_soft_ring_fire(void *);
 static void mac_soft_ring_worker(mac_soft_ring_t *);
 static void mac_tx_soft_ring_drain(mac_soft_ring_t *);
@@ -195,7 +194,6 @@ mac_soft_ring_create(int id, clock_t wait, mac_soft_ring_type_t type,
 	ringp->s_ring_worker = thread_create(NULL, 0,
 	    mac_soft_ring_worker, ringp, 0, &p0, TS_RUN, pri);
 	if (type & ST_RING_TX) {
-		ringp->s_ring_drain_func = mac_tx_soft_ring_drain;
 		ringp->s_ring_tx_arg1 = x_arg1;
 		ringp->s_ring_tx_arg2 = x_arg2;
 		ringp->s_ring_tx_max_q_cnt = mac_tx_soft_ring_max_q_cnt;
@@ -211,7 +209,6 @@ mac_soft_ring_create(int id, clock_t wait, mac_soft_ring_type_t type,
 			    ringp;
 		}
 	} else {
-		ringp->s_ring_drain_func = mac_rx_soft_ring_drain;
 		ringp->s_ring_rx_func = rx_func;
 		ringp->s_ring_rx_arg1 = x_arg1;
 		ringp->s_ring_rx_arg2 = x_arg2;
@@ -344,7 +341,7 @@ mac_soft_ring_fire(void *arg)
  *
  *    o s_ring_rx_{arg1,arg2}: opaque values specific to the client.
  */
-static void
+void
 mac_rx_soft_ring_drain(mac_soft_ring_t *ringp)
 {
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
@@ -414,6 +411,8 @@ mac_soft_ring_worker(mac_soft_ring_t *ringp)
 
 	CALLB_CPR_INIT(&cprinfo, lock, callb_generic_cpr, "mac_soft_ring");
 	mutex_enter(lock);
+
+	const bool is_rx = (ringp->s_ring_type & ST_RING_TX) == 0;
 start:
 	for (;;) {
 		while (((ringp->s_ring_first == NULL ||
@@ -433,7 +432,11 @@ start:
 		if (ringp->s_ring_state & S_RING_PAUSE)
 			goto done;
 
-		ringp->s_ring_drain_func(ringp);
+		if (is_rx) {
+			mac_rx_soft_ring_drain(ringp);
+		} else {
+			mac_tx_soft_ring_drain(ringp);
+		}
 	}
 done:
 	mutex_exit(lock);

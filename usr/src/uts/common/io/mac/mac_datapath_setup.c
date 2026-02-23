@@ -1397,26 +1397,26 @@ mac_srs_update_drain_proc(mac_soft_ring_set_t *srs)
 	const bool has_subflows = srs->srs_flowtree.ftb_subtree != NULL;
 	const bool subflows_are_bw = srs->srs_flowtree.ftb_bw_count != 0;
 
-	mac_srs_drain_proc_t drain_fn = NULL;
+	mac_srs_drain_proc_t drain_fn = MDSP_UNSPEC;
 	if (is_forward) {
-		drain_fn = mac_srs_drain_forward;
+		drain_fn = MDSP_FORWARD;
 	} else if (is_tx) {
-		drain_fn = mac_tx_srs_drain;
+		drain_fn = MDSP_TX;
 	} else if (bw_ctld) {
 		drain_fn = has_subflows ?
 		    (subflows_are_bw ?
-		    mac_rx_srs_drain_bw_subtree_bw :
-		    mac_rx_srs_drain_bw_subtree) :
-		    mac_rx_srs_drain_bw;
+		    MDSP_RX_BW_SUBTREE_BW :
+		    MDSP_RX_BW_SUBTREE) :
+		    MDSP_RX_BW;
 	} else {
 		drain_fn = has_subflows ?
 		    (subflows_are_bw ?
-		    mac_rx_srs_drain_subtree_bw :
-		    mac_rx_srs_drain_subtree) :
-		    mac_rx_srs_drain;
+		    MDSP_RX_SUBTREE_BW :
+		    MDSP_RX_SUBTREE) :
+		    MDSP_RX;
 	}
 
-	VERIFY3P(drain_fn, !=, NULL);
+	VERIFY3U(drain_fn, !=, MDSP_UNSPEC);
 
 	srs->srs_drain_func = drain_fn;
 }

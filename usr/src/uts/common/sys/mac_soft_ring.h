@@ -293,12 +293,9 @@ struct mac_soft_ring_s {
 	mac_soft_ring_set_t *s_ring_set;   /* The SRS this ring belongs to */
 	mac_soft_ring_t	*s_ring_next;
 	mac_soft_ring_t	*s_ring_prev;
-	mac_soft_ring_drain_func_t s_ring_drain_func;
 
 	mac_tx_stats_t	s_st_stat;
 };
-
-typedef void (*mac_srs_drain_proc_t)(mac_soft_ring_set_t *, uint_t);
 
 /* Transmit side Soft Ring Set */
 typedef struct {
@@ -779,6 +776,19 @@ typedef enum {
  */
 #define	SRS_QUIESCED_PERMANENT(srs)	((srs)->srs_state & SRS_QUIESCE_PERM)
 
+typedef enum {
+	MDSP_UNSPEC,
+
+	MDSP_TX,
+	MDSP_RX,
+	MDSP_RX_SUBTREE,
+	MDSP_RX_SUBTREE_BW,
+	MDSP_RX_BW,
+	MDSP_RX_BW_SUBTREE,
+	MDSP_RX_BW_SUBTREE_BW,
+	MDSP_FORWARD,
+} mac_srs_drain_proc_t;
+
 /*
  * mac_soft_ring_set_s:
  * This is used both for Tx and Rx side. The srs_type identifies Rx or
@@ -1129,6 +1139,7 @@ extern void mac_soft_ring_init(void);
 extern void mac_soft_ring_finish(void);
 extern void mac_fanout_setup(mac_client_impl_t *, flow_entry_t *,
     mac_resource_props_t *, cpupart_t *);
+extern void mac_rx_soft_ring_drain(mac_soft_ring_t *);
 
 extern void mac_soft_ring_worker_wakeup(mac_soft_ring_t *);
 extern mblk_t *mac_soft_ring_poll(mac_soft_ring_t *, size_t);
@@ -1269,6 +1280,77 @@ mac_srs_bw_unlock(const mac_soft_ring_set_t *srs)
 {
 	mac_bw_ctls_unlock(srs->srs_bw, srs->srs_bw_len);
 }
+
+__attribute__((always_inline))
+inline void
+mac_srs_drain(mac_soft_ring_set_t *srs, const mac_soft_ring_set_state_t owner)
+{
+	ASSERT(MUTEX_HELD(&srs->srs_lock));
+	switch (srs->srs_drain_func) {
+		case MDSP_TX:
+			mac_tx_srs_drain(srs, owner);
+			break;
+		case MDSP_RX:
+			mac_rx_srs_drain(srs, owner);
+			break;
+		case MDSP_RX_BW:
+			mac_rx_srs_drain_bw(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE:
+			mac_rx_srs_drain_subtree(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE_BW:
+			mac_rx_srs_drain_subtree_bw(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE:
+			mac_rx_srs_drain_bw_subtree(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE_BW:
+			mac_rx_srs_drain_bw_subtree_bw(srs, owner);
+			break;
+		case MDSP_FORWARD:
+			mac_srs_drain_forward(srs, owner);
+			break;
+		default:
+			panic("Illegal drain func %d for SRS.",
+			    srs->srs_drain_func);
+			break;
+	}
+}
+
+inline void
+mac_srs_drain_rx_complete(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t owner)
+{
+	ASSERT(MUTEX_HELD(&srs->srs_lock));
+	ASSERT(!mac_srs_is_tx(srs));
+	ASSERT(!mac_srs_is_logical(srs));
+	switch (srs->srs_drain_func) {
+		case MDSP_RX:
+			mac_rx_srs_drain(srs, owner);
+			break;
+		case MDSP_RX_BW:
+			mac_rx_srs_drain_bw(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE:
+			mac_rx_srs_drain_subtree(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE_BW:
+			mac_rx_srs_drain_subtree_bw(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE:
+			mac_rx_srs_drain_bw_subtree(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE_BW:
+			mac_rx_srs_drain_bw_subtree_bw(srs, owner);
+			break;
+		default:
+			panic("Illegal drain func %d for Receive SRS.",
+			    srs->srs_drain_func);
+			break;
+	}
+}
+
 
 #ifdef	__cplusplus
 }

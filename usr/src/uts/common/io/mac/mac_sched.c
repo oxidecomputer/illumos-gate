@@ -2087,7 +2087,8 @@ check_again:
 			 * allowed to process.
 			 */
 			if (mac_srs_is_latency_opt(mac_srs)) {
-				mac_srs->srs_drain_func(mac_srs, SRS_POLL_PROC);
+				mac_srs_drain_rx_complete(mac_srs,
+				    SRS_POLL_PROC);
 				if (!(mac_srs->srs_state & SRS_PAUSE) &&
 				    srs_rx->sr_poll_pkt_cnt <=
 				    srs_rx->sr_lowat) {
@@ -3855,7 +3856,7 @@ wait:
 
 		if (mac_srs->srs_state & SRS_PAUSE)
 			goto done;
-		mac_srs->srs_drain_func(mac_srs, SRS_WORKER);
+		mac_srs_drain(mac_srs, SRS_WORKER);
 	}
 done:
 	/*
@@ -4087,7 +4088,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 			 * latency optimized case (in latency optimized
 			 * case, we inline process chains of any size).
 			 */
-			mac_srs->srs_drain_func(mac_srs, SRS_PROC_FAST);
+			mac_srs_drain_rx_complete(mac_srs, SRS_PROC_FAST);
 		}
 	}
 	mutex_exit(&mac_srs->srs_lock);
@@ -5362,12 +5363,13 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 	    (my_mac_srs->srs_complete_parent != NULL) ?
 	    my_mac_srs->srs_complete_parent : my_mac_srs;
 
-	ASSERT(ringp != NULL);
-	ASSERT(mp_chain != NULL);
-	ASSERT(tail != NULL);
+	ASSERT3P(ringp, !=, NULL);
+	ASSERT3P(mp_chain, !=, NULL);
+	ASSERT3P(tail, !=, NULL);
 	ASSERT(MUTEX_NOT_HELD(&ringp->s_ring_lock));
 
 	mutex_enter(&ringp->s_ring_lock);
+	ASSERT3U(ringp->s_ring_type & ST_RING_TX, ==, 0);
 	ringp->s_ring_total_inpkt += cnt;
 	ringp->s_ring_total_rbytes += sz;
 	/* TODO(ky): this was never locked in original impl. Think through? */
@@ -5444,7 +5446,7 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 		ASSERT(MUTEX_HELD(&ringp->s_ring_lock));
 		ASSERT(ringp->s_ring_first != NULL);
 
-		ringp->s_ring_drain_func(ringp);
+		mac_rx_soft_ring_drain(ringp);
 		mutex_exit(&ringp->s_ring_lock);
 		return;
 	} else {
