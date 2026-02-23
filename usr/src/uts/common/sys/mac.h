@@ -353,8 +353,8 @@ typedef struct mac_header_info_s {
  * dls_rx_t to allow a soft ring to bypass DLS layer and call a DLS
  * client directly.
  */
-typedef	void		(*mac_direct_rx_t)(void *, mac_resource_handle_t,
-				mblk_t *, mac_header_info_t *);
+typedef	void	(*mac_direct_rx_t)(void *, mac_resource_handle_t,
+			mblk_t *, mac_header_info_t *);
 
 typedef mac_resource_handle_t	(*mac_resource_add_t)(void *, mac_resource_t *);
 typedef int	(*mac_resource_bind_t)(void *, mac_resource_handle_t,

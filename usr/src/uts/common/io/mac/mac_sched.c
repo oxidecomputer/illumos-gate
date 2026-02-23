@@ -1750,12 +1750,6 @@ int mac_fanout_type = MAC_FANOUT_DEFAULT;
  * struct which contains a softring along with these members) and create an
  * array of this uber struct so we don't have to do kmem_alloc.
  */
-/*
- * TODO(ky): these need to be belts & braces checks in the fastpath flow match:
- *  - DLS bypass disabled by either mechanism:
- *    |-> mac_rx_bypass_disable (! (srs_type & SRST_DLS_BYPASS)), (done!)
- *    |-> mac_rx_bypass_disable (mci_state_flags & MCIS_RX_BYPASS_DISABLE).
- */
 static void
 mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 {

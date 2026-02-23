@@ -920,8 +920,9 @@ extern int mac_led_get(mac_handle_t, mac_led_mode_t *, mac_led_mode_t *);
 extern int mac_led_set(mac_handle_t, mac_led_mode_t);
 
 typedef struct mac_direct_wrapper_s {
-	mac_direct_rx_t	mdrx;
-	void		*mdrx_arg;
+	mac_direct_rx_t		mdrx;
+	void			*mdrx_arg;
+	mac_client_impl_t	*mdrx_mcip;
 } mac_direct_rx_wrapper_t;
 
 /*

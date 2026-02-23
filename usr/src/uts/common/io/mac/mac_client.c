@@ -1373,8 +1373,10 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	mcip->mci_p_unicast_list = NULL;
 	mcip->mci_v4_fastpath.mdrx = NULL;
 	mcip->mci_v4_fastpath.mdrx_arg = NULL;
+	mcip->mci_v4_fastpath.mdrx_mcip = mcip;
 	mcip->mci_v6_fastpath.mdrx = NULL;
 	mcip->mci_v6_fastpath.mdrx_arg = NULL;
+	mcip->mci_v6_fastpath.mdrx_mcip = mcip;
 	mcip->mci_vidcache = MCIP_VIDCACHE_INVALID;
 
 	mcip->mci_unicast_list = NULL;
@@ -6151,6 +6153,10 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 }
 
 /*
+ * Execute an optimistic bypass function for a client who would ordinarily be
+ * reached through DLS. In the event that this bypass is disabled, revert
+ * locally to the standard `mac_rx_deliver` callback.
+ *
  * The function plumbed down from IP for the fastpaths assumes that L2 headers
  * have been removed from the packet. Do so here for its benefit.
  */
@@ -6158,6 +6164,17 @@ static void
 mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
     mblk_t *mp_chain, mac_header_info_t *arg3)
 {
+	mac_client_impl_t *mcip = mdrx->mdrx_mcip;
+
+	ASSERT3P(mdrx->mdrx, !=, NULL);
+	ASSERT3P(mdrx->mdrx_arg, !=, NULL);
+	ASSERT3P(mcip, !=, NULL);
+
+	if ((mcip->mci_state_flags & MCIS_RX_BYPASS_DISABLE) != 0) {
+		mac_rx_deliver(mcip, mrh, mp_chain, arg3);
+		return;
+	}
+
 	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
 		const ssize_t l2hlen = meoi_fast_l2hlen(curr);
 
