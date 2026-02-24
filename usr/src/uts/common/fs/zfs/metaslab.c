@@ -643,6 +643,31 @@ metaslab_class_evict_old(metaslab_class_t *mc, uint64_t txg)
 	}
 }
 
+boolean_t
+metaslab_class_has_raw_trim(metaslab_class_t *mc)
+{
+	vdev_t *rvd = mc->mc_spa->spa_root_vdev;
+
+	spa_config_enter(mc->mc_spa, SCL_VDEV, FTAG, RW_READER);
+
+	for (int c = 0; c < rvd->vdev_children; c++) {
+		vdev_t *tvd = rvd->vdev_child[c];
+
+		if (tvd->vdev_ms_shift == 0 || tvd->vdev_mg->mg_class != mc) {
+			continue;
+		}
+
+		if (tvd->vdev_ops->vdev_op_rawio == NULL ||
+		    !tvd->vdev_has_trim) {
+			spa_config_exit(mc->mc_spa, SCL_VDEV, FTAG);
+			return (B_FALSE);
+		}
+
+	}
+	spa_config_exit(mc->mc_spa, SCL_VDEV, FTAG);
+	return (B_TRUE);
+}
+
 static int
 metaslab_compare(const void *x1, const void *x2)
 {

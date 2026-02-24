@@ -142,7 +142,8 @@ enum zio_flags {
 	ZVOL_RAW		= 1 << 4,
 	ZVOL_ZERO_STARTED	= 1 << 5,
 	/* Used by both dump or raw zvols to indicate preallocation finished */
-	ZVOL_PREALLOCED		= 1 << 6
+	ZVOL_PREALLOCED		= 1 << 6,
+	ZVOL_RAW_HAS_TRIM	= 1 << 7,
 };
 
 /*
@@ -231,7 +232,12 @@ zvol_size_changed(zvol_state_t *zv, uint64_t volsize)
 static uint64_t
 zvol_num_blocks(zvol_state_t *zv)
 {
-	return (zv->zv_volsize / zv->zv_volblocksize);
+	/*
+	 * Round up the number of blocks to account for any partial block at
+	 * the end.
+	 */
+	return (P2ROUNDUP(zv->zv_volsize, zv->zv_volblocksize) /
+	    zv->zv_volblocksize);
 }
 
 int
@@ -769,6 +775,17 @@ zvol_first_open(zvol_state_t *zv, boolean_t rdonly)
 		 */
 		zv->zv_min_bs = dmu_objset_spa(os)->spa_max_ashift;
 
+		/*
+		 * We assume that all the blocks are allocated from the normal
+		 * class, and that it won't become un-trimmable while the raw
+		 * zvol is in use (e.g. by using `zpool attach` to turn the
+		 * plain disk into a mirror).
+		 */
+		metaslab_class_t *mc = spa_normal_class(dmu_objset_spa(os));
+		if (metaslab_class_has_raw_trim(mc)) {
+			zv->zv_flags |= ZVOL_RAW_HAS_TRIM;
+		}
+
 		error = zvol_prealloc(zv);
 		if (error) {
 			dnode_rele(zv->zv_dn, zvol_tag);
@@ -869,8 +886,11 @@ zvol_zero(zvol_state_t *zv)
 	zfs_dbgmsg("zv %p initializing from offset %llu to %llu",
 	    zv, zv->zv_zero_off, resid);
 
-	VERIFY3U(resid, >=, zv->zv_zero_off);
-	resid -= zv->zv_zero_off;
+	if (zv->zv_zero_off >= resid) {
+		resid = 0;
+	} else {
+		resid -= zv->zv_zero_off;
+	}
 	while (resid != 0 && !zv->zv_zero_exit_wanted) {
 
 		mutex_exit(&zv->zv_state_lock);
@@ -1045,7 +1065,7 @@ zvol_prealloc(zvol_state_t *zv)
 
 	/* Check the space usage before attempting to allocate the space */
 	dmu_objset_space(os, &refd, &avail, &usedobjs, &availobjs);
-	if (avail < (volsize - zv->zv_zero_off)) {
+	if (zv->zv_zero_off < volsize && avail < (volsize - zv->zv_zero_off)) {
 		zfs_dbgmsg("zvol_prealloc ENOSPC avail %llu, size %llu, "
 		    "offset %llu", avail, volsize, zv->zv_zero_off);
 		return (SET_ERROR(ENOSPC));
@@ -1538,10 +1558,13 @@ zvol_dumpio(zvol_state_t *zv, caddr_t addr, uint64_t vol_offset, uint64_t size,
 static int
 zvol_rawio_vdev(vdev_t *vd, buf_t *bp, uint64_t offset, uint64_t size)
 {
-	if ((bp->b_flags & B_READ) && !vdev_readable(vd))
-		return (SET_ERROR(EIO));
-	if (!(bp->b_flags & B_READ) && !vdev_writeable(vd))
-		return (SET_ERROR(EIO));
+	/* NULL bp indicates TRIM */
+	if (bp != NULL) {
+		if ((bp->b_flags & B_READ) && !vdev_readable(vd))
+			return (SET_ERROR(EIO));
+		if (!(bp->b_flags & B_READ) && !vdev_writeable(vd))
+			return (SET_ERROR(EIO));
+	}
 	if (vd->vdev_ops->vdev_op_rawio == NULL)
 		return (SET_ERROR(EIO));
 
@@ -1669,6 +1692,23 @@ zvol_raw_strategy(zvol_state_t *zv, buf_t *bp)
 
 	biodone(bp);
 	smt_end_unsafe();
+	return (0);
+}
+
+static int
+zvol_raw_trim(zvol_state_t *zv, uint64_t offset, uint64_t size)
+{
+	while (size > 0) {
+		uint64_t trim_size = MIN(size,
+		    P2END(offset, zv->zv_volblocksize) - offset);
+
+		int error = zvol_rawio(zv, NULL, offset, trim_size);
+		if (error)
+			return (error);
+
+		offset += trim_size;
+		size -= trim_size;
+	}
 	return (0);
 }
 
@@ -2423,7 +2463,8 @@ out:
 		dkioc_free_list_t *dfl;
 		dmu_tx_t *tx;
 
-		if (!zvol_unmap_enabled || zv->zv_flags & ZVOL_RAW) {
+		if (!zvol_unmap_enabled || ((zv->zv_flags & ZVOL_RAW) &&
+		    !(zv->zv_flags & ZVOL_RAW_HAS_TRIM))) {
 			mutex_exit(&zfsdev_state_lock);
 			return (SET_ERROR(ENOTSUP));
 		}
@@ -2460,6 +2501,11 @@ out:
 			if (end > zv->zv_volsize) {
 				end = DMU_OBJECT_END;
 				length = end - start;
+			}
+
+			if (zv->zv_flags & ZVOL_RAW) {
+				zvol_raw_trim(zv, start, length);
+				continue;
 			}
 
 			lr = rangelock_enter(&zv->zv_rangelock, start, length,
@@ -2506,8 +2552,10 @@ out:
 
 	case DKIOC_CANFREE:
 		i = zvol_unmap_enabled ? 1 : 0;
-		if (zv->zv_flags & ZVOL_RAW)
+		if (i && (zv->zv_flags & ZVOL_RAW) &&
+		    !(zv->zv_flags & ZVOL_RAW_HAS_TRIM)) {
 			i = 0;
+		}
 		if (ddi_copyout(&i, (void *)arg, sizeof (int), flag) != 0) {
 			error = EFAULT;
 		} else {

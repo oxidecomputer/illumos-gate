@@ -114,6 +114,7 @@ uint64_t metaslab_class_get_space(metaslab_class_t *);
 uint64_t metaslab_class_get_dspace(metaslab_class_t *);
 uint64_t metaslab_class_get_deferred(metaslab_class_t *);
 uint64_t metaslab_class_find_blocksize(metaslab_class_t *, uint64_t);
+boolean_t metaslab_class_has_raw_trim(metaslab_class_t *);
 
 void metaslab_space_update(vdev_t *, metaslab_class_t *,
     int64_t, int64_t, int64_t);

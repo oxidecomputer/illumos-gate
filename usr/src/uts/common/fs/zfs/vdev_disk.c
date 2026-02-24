@@ -79,6 +79,8 @@ typedef struct vdev_disk_ldi_cb {
 	ldi_callback_id_t	lcb_id;
 } vdev_disk_ldi_cb_t;
 
+static int vdev_disk_issue_trim(vdev_disk_t *, uint64_t, uint64_t);
+
 /*
  * Bypass the devid when opening a disk vdev.
  * There have been issues where the devids of several devices were shuffled,
@@ -875,7 +877,13 @@ vdev_disk_rawio(vdev_t *vd, buf_t *bp, size_t size, uint64_t offset)
 
 	ASSERT(vd->vdev_ops == &vdev_disk_ops);
 	offset += VDEV_LABEL_START_SIZE;
-	return (vdev_disk_ldi_raw_physio(dvd->vd_lh, bp, size, offset));
+
+	/* NULL bp indicates TRIM, see zvol_raw_trim() */
+	if (bp == NULL) {
+		return (vdev_disk_issue_trim(dvd, offset, size));
+	} else {
+		return (vdev_disk_ldi_raw_physio(dvd->vd_lh, bp, size, offset));
+	}
 }
 
 static int
