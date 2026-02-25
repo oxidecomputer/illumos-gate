@@ -40,15 +40,18 @@
  * type of control operations on a per mac end point while allowing data threads
  * concurrently.
  *
- * Control operations (set) that modify a mac end point are always serialized on
- * a per mac end point basis, We have at most 1 such thread per mac end point
+ * Control operations that modify a mac end point are always serialized on
+ * a per mac end point basis. We have at most 1 such thread per mac end point
  * at a time.
  *
  * All other operations that are not serialized are essentially multi-threaded.
- * For example a control operation (get) like getting statistics which may not
- * care about reading values atomically or data threads sending or receiving
- * data. Mostly these type of operations don't modify the control state. Any
- * state these operations care about are protected using traditional locks.
+ * For example, data threads sending or receiving packets don't modify the
+ * control state. Any state these operations care about are protected using
+ * traditional locks. However, some statistics operations walk multiple
+ * structures which could be modified, added, or removed by a control operation.
+ * In this case they may take a perimeter _read_ to hold off any changes until
+ * they are complete. An outstanding request to take the MAC perimeter in write
+ * mode will block any such stat reads.
  *
  * The perimeter only serializes serial operations. It does not imply there
  * aren't any other concurrent operations. However a serialized operation may
@@ -958,11 +961,14 @@ i_mac_perim_enter(mac_impl_t *mip)
 		return;
 	}
 
-	while (mip->mi_perim_owner != NULL)
+	while (mip->mi_perim_owner != NULL || mip->mi_perim_rcnt != 0) {
+		mip->mi_perim_wait = true;
 		cv_wait(&mip->mi_perim_cv, &mip->mi_perim_lock);
+	}
+	mip->mi_perim_wait = false;
 
 	mip->mi_perim_owner = curthread;
-	ASSERT(mip->mi_perim_ocnt == 0);
+	ASSERT3U(mip->mi_perim_ocnt, ==, 0);
 	mip->mi_perim_ocnt++;
 #ifdef DEBUG
 	mip->mi_perim_stack_depth = getpcstack(mip->mi_perim_stack,
@@ -986,7 +992,20 @@ i_mac_perim_enter_nowait(mac_impl_t *mip)
 		return (0);
 	}
 
+	/*
+	 * We're willing to wait for any read ops to complete because they
+	 * should be lightweight, and we can prevent any further such holds
+	 * from being taken. In contrast the sole consumer of this method
+	 * (mac_unregister) wants to know whether *any underlying changes* to
+	 * the provider or its SRSes are occurring and return EBUSY in such a
+	 * case.
+	 */
 	mutex_enter(&mip->mi_perim_lock);
+	while (mip->mi_perim_rcnt != 0) {
+		mip->mi_perim_wait = true;
+		cv_wait(&mip->mi_perim_cv, &mip->mi_perim_lock);
+	}
+	mip->mi_perim_wait = false;
 	if (mip->mi_perim_owner != NULL) {
 		mutex_exit(&mip->mi_perim_lock);
 		return (EBUSY);
@@ -1013,11 +1032,61 @@ i_mac_perim_exit(mac_impl_t *mip)
 		mip = mcip->mci_mip;
 	}
 
-	ASSERT(mip->mi_perim_owner == curthread && mip->mi_perim_ocnt != 0);
+	ASSERT3P(mip->mi_perim_owner, ==, curthread);
+	ASSERT3U(mip->mi_perim_ocnt, !=, 0);
 
 	mutex_enter(&mip->mi_perim_lock);
 	if (--mip->mi_perim_ocnt == 0) {
 		mip->mi_perim_owner = NULL;
+		cv_signal(&mip->mi_perim_cv);
+	}
+	mutex_exit(&mip->mi_perim_lock);
+}
+
+int
+i_mac_perim_tryread(mac_impl_t *mip)
+{
+	mac_client_impl_t	*mcip;
+
+	if (mip->mi_state_flags & MIS_IS_VNIC) {
+		/*
+		 * This is a VNIC. Return the lower mac since that is what
+		 * we want to serialize on.
+		 */
+		mcip = mac_vnic_lower(mip);
+		mip = mcip->mci_mip;
+	}
+
+	mutex_enter(&mip->mi_perim_lock);
+	if (mip->mi_perim_owner != NULL || mip->mi_perim_wait) {
+		mutex_exit(&mip->mi_perim_lock);
+		return (EBUSY);
+	}
+	ASSERT3U(mip->mi_perim_ocnt, ==, 0);
+	mip->mi_perim_rcnt++;
+	mutex_exit(&mip->mi_perim_lock);
+	return (0);
+}
+
+void
+i_mac_perim_read_exit(mac_impl_t *mip)
+{
+	mac_client_impl_t	*mcip;
+
+	if (mip->mi_state_flags & MIS_IS_VNIC) {
+		/*
+		 * This is a VNIC. Return the lower mac since that is what
+		 * we want to serialize on.
+		 */
+		mcip = mac_vnic_lower(mip);
+		mip = mcip->mci_mip;
+	}
+
+	mutex_enter(&mip->mi_perim_lock);
+	ASSERT3P(mip->mi_perim_owner, ==, NULL);
+	ASSERT3U(mip->mi_perim_rcnt, !=, 0);
+	ASSERT3U(mip->mi_perim_ocnt, ==, 0);
+	if (--mip->mi_perim_rcnt == 0) {
 		cv_signal(&mip->mi_perim_cv);
 	}
 	mutex_exit(&mip->mi_perim_lock);

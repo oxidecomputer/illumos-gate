@@ -383,11 +383,16 @@ struct mac_impl_s {
 	/*
 	 * The mac perimeter. All client initiated create/modify operations
 	 * on a mac end point go through this.
+	 *
+	 * Stats reporting may hold a read lock on the perimeter to ensure that
+	 * no admininstrative operations are in flight while running.
 	 */
 	kmutex_t		mi_perim_lock;
 	kthread_t		*mi_perim_owner;	/* mi_perim_lock */
-	uint_t			mi_perim_ocnt;		/* mi_perim_lock */
-	kcondvar_t		mi_perim_cv;		/* mi_perim_lock */
+	uint32_t		mi_perim_ocnt;		/* mi_perim_lock */
+	bool			mi_perim_wait;		/* mi_perim_lock */
+	uint64_t		mi_perim_rcnt;		/* mi_perim_lock */
+	kcondvar_t		mi_perim_cv;		/* mi_perim_cv_lock */
 
 	/* mac notification callbacks */
 	kmutex_t		mi_notify_lock;
@@ -822,6 +827,8 @@ extern void i_mac_share_alloc(mac_client_impl_t *);
 extern void i_mac_share_free(mac_client_impl_t *);
 extern void i_mac_perim_enter(mac_impl_t *);
 extern void i_mac_perim_exit(mac_impl_t *);
+extern int i_mac_perim_tryread(mac_impl_t *);
+extern void i_mac_perim_read_exit(mac_impl_t *);
 extern int i_mac_perim_enter_nowait(mac_impl_t *);
 extern void i_mac_tx_srs_notify(mac_impl_t *, mac_ring_handle_t);
 extern int mac_hold(const char *, mac_impl_t **);

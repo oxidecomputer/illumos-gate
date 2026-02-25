@@ -171,6 +171,12 @@ flow_stat_update(kstat_t *ksp, int rw)
 	 * the flent outside of operations which, themselves, require the MAC
 	 * perimeter.
 	 */
+	mac_impl_t *mip = FLENT_TO_MIP(fep);
+	int err = i_mac_perim_tryread(mip);
+	if (err != 0) {
+		return (err);
+	}
+
 	// mac_perim_handle_t mph;
 	/*
 	 * Need to TRY enter mac perim...
@@ -204,7 +210,7 @@ flow_stat_update(kstat_t *ksp, int rw)
 	flow_stat_fill(&flow_stats, fep->fe_tx_srs, fep);
 
 done:
-	// mac_perim_exit(mph);
+	i_mac_perim_read_exit(mip);
 	for (size_t i = 0; i < FS_SIZE; i++, knp++) {
 		statp = (uint64_t *)
 		    ((uchar_t *)&flow_stats + flow_stats_list[i].fs_offset);
