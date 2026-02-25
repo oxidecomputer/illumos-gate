@@ -3239,7 +3239,8 @@ again:
 	 * tree, which is predicated on an L2 match).
 	 */
 	const bool is_promisc_on = mcip->mci_promisc_list != NULL;
-	const bool needs_sw_check = is_promisc_on &&
+	const bool needs_sw_check = has_subtree &&
+	    is_promisc_on &&
 	    srs_rx->sr_ring != NULL &&
 	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER &&
 	    (mac_srs->srs_type & (SRST_LINK | SRST_DEFAULT_GRP)) ==
@@ -3273,9 +3274,6 @@ again:
 	 * Generally we *should* have a subtree here, due to DLS bypass.
 	 * Clients like viona (and some vnic/etherstub/... topologies) will
 	 * create effectively L2-only clients.
-	 *
-	 * TODO(ky): find more things which can be const-if'd out based on
-	 * has_subtree. viona will thank you.
 	 */
 	if (has_subtree) {
 		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
@@ -3296,8 +3294,10 @@ again:
 		    pktset.ftp_avail.mpl_size);
 	}
 
-	/* Combine any unpicked packets with those delegated. */
-	mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+	if (has_subtree) {
+		/* Combine any unpicked packets with those delegated. */
+		mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
 	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
@@ -3531,7 +3531,8 @@ again:
 	 * tree, which is predicated on an L2 match).
 	 */
 	const bool is_promisc_on = mcip->mci_promisc_list != NULL;
-	const bool needs_sw_check = is_promisc_on &&
+	const bool needs_sw_check = has_subtree &&
+	    is_promisc_on &&
 	    srs_rx->sr_ring != NULL &&
 	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER &&
 	    (mac_srs->srs_type & (SRST_LINK | SRST_DEFAULT_GRP)) ==
@@ -3565,9 +3566,6 @@ again:
 	 * Generally we *should* have a subtree here, due to DLS bypass.
 	 * Clients like viona (and some vnic/etherstub/... topologies) will
 	 * create effectively L2-only clients.
-	 *
-	 * TODO(ky): find more things which can be const-if'd out based on
-	 * has_subtree. viona will thank you.
 	 */
 	size_t policed_bytes = 0;
 	if (has_subtree) {
@@ -3588,8 +3586,10 @@ again:
 		    pktset.ftp_avail.mpl_size);
 	}
 
-	/* Combine any unpicked packets with those delegated. */
-	mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+	if (has_subtree) {
+		/* Combine any unpicked packets with those delegated. */
+		mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+	}
 
 	/* Everything leftover is for delivery to *THIS* SRS. */
 	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
