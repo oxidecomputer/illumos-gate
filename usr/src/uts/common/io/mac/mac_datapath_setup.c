@@ -2407,7 +2407,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 		goto done;
 	}
 
-	srs_rx->sr_lower_proc = mac_rx_srs_process;
+	srs_rx->sr_lower_proc = MRSLP_PROCESS;
 
 	/*
 	 * Allow for delivery to this SRS directly from an aggr device.
@@ -2574,8 +2574,8 @@ mac_rx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		ASSERT3S(flent->fe_rx_srs_cnt, ==, 0);
 		mac_srs = mac_srs_create_rx(mcip, flent, link_type, NULL);
 		mutex_enter(&flent->fe_lock);
-		flent->fe_cb_fn =
-		    (flow_fn_t)mac_srs->srs_data.rx.sr_lower_proc;
+		flent->fe_cb_fn = (flow_fn_t)mac_srs_lower_proc(
+		    mac_srs->srs_data.rx.sr_lower_proc);
 		flent->fe_cb_arg1 = (void *)mip;
 		flent->fe_cb_arg2 = (void *)mac_srs;
 		mutex_exit(&flent->fe_lock);

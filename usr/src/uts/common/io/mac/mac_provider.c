@@ -810,8 +810,22 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 			 * on this ring are hardware classified and
 			 * share the same MAC header info.
 			 */
-			mac_srs->srs_data.rx.sr_lower_proc(mh,
-			    (mac_resource_handle_t)mac_srs, mp_chain, B_FALSE);
+			const mac_rx_srs_lower_proc_t proc =
+			    mac_srs->srs_data.rx.sr_lower_proc;
+			switch (proc) {
+			case MRSLP_PROCESS:
+				mac_rx_srs_process(mh,
+				    (mac_resource_handle_t)mac_srs, mp_chain,
+				    B_FALSE);
+				break;
+			case MRSLP_HWRINGS:
+				mac_hwrings_rx_process(mh,
+				    (mac_resource_handle_t)mac_srs, mp_chain,
+				    B_FALSE);
+				break;
+			default:
+				panic("No lower proc defined for %d.", proc);
+			}
 			MR_REFRELE(mr);
 			return;
 		}

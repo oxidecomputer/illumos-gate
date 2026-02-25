@@ -297,6 +297,11 @@ struct mac_soft_ring_s {
 	mac_tx_stats_t	s_st_stat;
 };
 
+typedef enum {
+	MRSLP_PROCESS,
+	MRSLP_HWRINGS,
+} mac_rx_srs_lower_proc_t;
+
 /* Transmit side Soft Ring Set */
 typedef struct {
 	mac_tx_srs_mode_t	st_mode;
@@ -356,7 +361,7 @@ typedef struct {
 	/* TODO(ky): typechecking -- this is a `mac_client_impl_t *`. */
 	void			*sr_arg1;	/* srs_lock */
 	mac_resource_handle_t	sr_arg2;	/* srs_lock */
-	mac_rx_func_t		sr_lower_proc;	/* Atomically changed */
+	mac_rx_srs_lower_proc_t	sr_lower_proc;	/* Atomically changed */
 	mac_ring_t		*sr_ring;	/* Ring Descriptor (WO) */
 	uint32_t		sr_poll_thres;
 	/* mblk cnt to apply flow control */
@@ -1211,6 +1216,8 @@ extern void mac_rx_attach_flow_srs(mac_impl_t *, flow_entry_t *,
 
 extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
+extern void mac_hwrings_rx_process(void *, mac_resource_handle_t, mblk_t *,
+    boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
 
@@ -1419,6 +1426,19 @@ mac_srs_send_tx_complete(mac_soft_ring_set_t *srs, mblk_t *mp,
 	}
 
 	return (out);
+}
+
+inline mac_rx_func_t
+mac_srs_lower_proc(const mac_rx_srs_lower_proc_t proc)
+{
+	switch (proc) {
+	case MRSLP_PROCESS:
+		return (mac_rx_srs_process);
+	case MRSLP_HWRINGS:
+		return (mac_hwrings_rx_process);
+	default:
+		panic("No lower proc defined for %d.", proc);
+	}
 }
 
 #ifdef	__cplusplus

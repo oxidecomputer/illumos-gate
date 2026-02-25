@@ -1616,7 +1616,7 @@ mac_rx_group_unmark(mac_group_t *grp, uint_t flag)
  * addresses, or set up the Rx callback.
  */
 /* ARGSUSED */
-static void
+void
 mac_hwrings_rx_process(void *arg, mac_resource_handle_t srs,
     mblk_t *mp_chain, boolean_t loopback)
 {
@@ -1864,10 +1864,9 @@ mac_hwring_setup(mac_ring_handle_t hwrh, mac_resource_handle_t prh,
 	}
 
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
-		ASSERT(!(mac_srs->srs_type & SRST_TX));
+		ASSERT(!mac_srs_is_tx(mac_srs));
 		mac_srs->srs_mrh = prh;
-		mac_srs->srs_data.rx.sr_lower_proc =
-		    mac_hwrings_rx_process;
+		mac_srs->srs_data.rx.sr_lower_proc = MRSLP_PROCESS;
 	}
 }
 
@@ -1882,9 +1881,8 @@ mac_hwring_teardown(mac_ring_handle_t hwrh)
 	hw_ring->mr_prh = NULL;
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		mac_srs = hw_ring->mr_srs;
-		ASSERT(!(mac_srs->srs_type & SRST_TX));
-		mac_srs->srs_data.rx.sr_lower_proc =
-		    mac_rx_srs_process;
+		ASSERT(!mac_srs_is_tx(mac_srs));
+		mac_srs->srs_data.rx.sr_lower_proc = MRSLP_HWRINGS;
 		mac_srs->srs_mrh = NULL;
 	}
 }
