@@ -3590,7 +3590,7 @@ mac_srs_fanout_list_free(mac_soft_ring_set_t *mac_srs)
 
 /*
  * An RX SRS is attached to at most one mac_ring.
- * A TX SRS  has no  rings.
+ * A TX SRS has no rings.
  */
 static void
 mac_srs_ring_free(mac_soft_ring_set_t *mac_srs)
@@ -3635,6 +3635,7 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 	    SRS_PROC | SRS_PROC_FAST), ==, SRS_CONDEMNED | SRS_CONDEMNED_DONE);
 
 	const bool is_full_srs = !mac_srs_is_logical(mac_srs);
+	const bool is_tx = mac_srs_is_tx(mac_srs);
 
 	mac_drop_chain(mac_srs->srs_first, "SRS free");
 	mac_srs->srs_first = NULL;
@@ -3663,6 +3664,23 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 	}
 	mac_srs->srs_bw = NULL;
 	mac_srs->srs_bw_len = 0;
+
+	/*
+	 * Fold any acquired stats into the flent.
+	 */
+	if (is_tx) {
+		atomic_add_64(&mac_srs->srs_flent->fe_match_pkts_out,
+		    mac_srs->srs_match_bytes);
+		atomic_add_64(&mac_srs->srs_flent->fe_match_bytes_out,
+		    mac_srs->srs_match_pkts);
+	} else {
+		atomic_add_64(&mac_srs->srs_flent->fe_match_pkts_in,
+		    mac_srs->srs_match_bytes);
+		atomic_add_64(&mac_srs->srs_flent->fe_match_bytes_in,
+		    mac_srs->srs_match_pkts);
+	}
+	mac_srs->srs_match_bytes = 0;
+	mac_srs->srs_match_pkts = 0;
 
 	kmem_cache_free(mac_srs_cache, mac_srs);
 }

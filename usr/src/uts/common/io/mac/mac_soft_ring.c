@@ -240,6 +240,21 @@ mac_soft_ring_free(mac_soft_ring_t *softring)
 	softring->s_ring_tx_arg2 = NULL;
 	mac_soft_ring_stat_delete(softring);
 	mac_callback_free(softring->s_ring_notify_cb_list);
+
+	/*
+	 * Fold any acquired stats into the flent. Only consider Rx here,
+	 * since we don't have any notion of a Tx action other than drop
+	 * (which is covered in the flowtree walk).
+	 */
+	if ((softring->s_ring_type & ST_RING_TX) == 0) {
+		atomic_add_64(&srs->srs_flent->fe_act_pkts_in,
+		    softring->s_ring_total_inpkt);
+		atomic_add_64(&srs->srs_flent->fe_act_bytes_in,
+		    softring->s_ring_total_rbytes);
+	}
+	softring->s_ring_total_inpkt = 0;
+	softring->s_ring_total_rbytes = 0;
+
 	kmem_cache_free(mac_soft_ring_cache, softring);
 }
 

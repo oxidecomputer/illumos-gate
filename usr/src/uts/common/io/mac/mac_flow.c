@@ -96,53 +96,121 @@ flow_stat_init(kstat_named_t *knp)
 	}
 }
 
+static void
+flow_stat_fill(flow_stats_t *stats, const mac_soft_ring_set_t *srs,
+    const flow_entry_t *flent)
+{
+	for (const mac_soft_ring_set_t *curr = srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		if (curr->srs_flent != flent) {
+			continue;
+		}
+
+		const bool is_logical = mac_srs_is_logical(curr);
+
+		/*
+		 * TODO(ky): do we need a new stat or two here? to differentiate
+		 * matched bytes from those which arrived at the SRS.
+		 *
+		 * The intr/poll/lcl are closer to arrival counts now, so we
+		 * have: [arrive, match, act] as separate concepts.
+		 */
+		if (mac_srs_is_tx(srs)) {
+			const mac_tx_stats_t *ts = &curr->srs_data.tx.st_stat;
+			if (is_logical) {
+				stats->fs_opackets += srs->srs_match_pkts;
+				stats->fs_obytes += srs->srs_match_bytes;
+			} else {
+				stats->fs_obytes = ts->mts_obytes;
+				stats->fs_opackets = ts->mts_opackets;
+				stats->fs_oerrors = ts->mts_oerrors;
+			}
+		} else {
+			const mac_rx_stats_t *rs = &curr->srs_data.rx.sr_stat;
+			if (is_logical) {
+				stats->fs_ipackets += srs->srs_match_pkts;
+				stats->fs_ibytes += srs->srs_match_bytes;
+			} else {
+				stats->fs_ibytes += rs->mrs_intrbytes +
+				    rs->mrs_pollbytes + rs->mrs_lclbytes;
+
+				stats->fs_ipackets += rs->mrs_intrcnt +
+				    rs->mrs_pollcnt + rs->mrs_lclcnt;
+
+				stats->fs_ierrors += rs->mrs_ierrors;
+			}
+		}
+	}
+}
+
 static int
 flow_stat_update(kstat_t *ksp, int rw)
 {
 	flow_entry_t		*fep = ksp->ks_private;
 	kstat_named_t		*knp = ksp->ks_data;
 	uint64_t		*statp;
-	int			i;
-	mac_rx_stats_t		*mac_rx_stat;
-	mac_tx_stats_t		*mac_tx_stat;
-	flow_stats_t		flow_stats;
-	mac_soft_ring_set_t	*mac_srs;
+	flow_stats_t		flow_stats = { 0 };
 
-	if (rw != KSTAT_READ)
+	if (rw != KSTAT_READ) {
 		return (EACCES);
-
-	bzero(&flow_stats, sizeof (flow_stats_t));
-
-	for (i = 0; i < fep->fe_rx_srs_cnt; i++) {
-		mac_srs = (mac_soft_ring_set_t *)fep->fe_rx_srs[i];
-		if (mac_srs == NULL)		/* Multicast flow */
-			break;
-		mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
-
-		flow_stats.fs_ibytes += mac_rx_stat->mrs_intrbytes +
-		    mac_rx_stat->mrs_pollbytes + mac_rx_stat->mrs_lclbytes;
-
-		flow_stats.fs_ipackets += mac_rx_stat->mrs_intrcnt +
-		    mac_rx_stat->mrs_pollcnt + mac_rx_stat->mrs_lclcnt;
-
-		flow_stats.fs_ierrors += mac_rx_stat->mrs_ierrors;
 	}
 
-	mac_srs = (mac_soft_ring_set_t *)fep->fe_tx_srs;
-	if (mac_srs == NULL)		/* Multicast flow */
-		goto done;
-	mac_tx_stat = &mac_srs->srs_data.tx.st_stat;
+	flow_stats.fs_ibytes = fep->fe_match_bytes_in;
+	flow_stats.fs_ipackets = fep->fe_match_pkts_in;
+	flow_stats.fs_obytes = fep->fe_match_bytes_out;
+	flow_stats.fs_opackets = fep->fe_match_pkts_out;
 
-	flow_stats.fs_obytes = mac_tx_stat->mts_obytes;
-	flow_stats.fs_opackets = mac_tx_stat->mts_opackets;
-	flow_stats.fs_oerrors = mac_tx_stat->mts_oerrors;
+	/*
+	 * We need to take the MAC perimeter here to ensure that we're looking
+	 * at a consistent set of SRSes and softrings. This applies to even the
+	 * cases where we have only complete SRSes on a link flow --
+	 * add/remove/movement of rings between groups will alter the set of
+	 * complete SRSes visible to this flent via fe_rx_srs_cnt.
+	 *
+	 * Similarly, stats recorded on any softring/SRS will not be elevated to
+	 * the flent outside of operations which, themselves, require the MAC
+	 * perimeter.
+	 */
+	// mac_perim_handle_t mph;
+	/*
+	 * Need to TRY enter mac perim...
+	 */
+	// int err = mac_perim_enter_by_linkid(fep->fe_link_id, &mph);
+	// i_mac_perim_enter_nowait()
+	// if (err != 0) {
+	// 	return (err);
+	// }
+
+	/*
+	 * Fold in all stats from logical SRSes which reference this
+	 * flent.
+	 */
+	mac_client_impl_t *mcip = (mac_client_impl_t *)fep->fe_mcip;
+	if (mcip != NULL && mcip->mci_flent != NULL) {
+		flow_entry_t *remote = mcip->mci_flent;
+		mac_soft_ring_set_t *mci_srs;
+		for (size_t i = 0; i < remote->fe_rx_srs_cnt; i++) {
+			flow_stat_fill(&flow_stats, remote->fe_rx_srs[i], fep);
+		}
+		flow_stat_fill(&flow_stats, remote->fe_tx_srs, fep);
+	}
+
+	for (size_t i = 0; i < fep->fe_rx_srs_cnt; i++) {
+		if (fep->fe_rx_srs[i] == NULL)	/* Multicast flow */
+			break;
+		flow_stat_fill(&flow_stats, fep->fe_rx_srs[i], fep);
+	}
+
+	flow_stat_fill(&flow_stats, fep->fe_tx_srs, fep);
 
 done:
-	for (i = 0; i < FS_SIZE; i++, knp++) {
+	// mac_perim_exit(mph);
+	for (size_t i = 0; i < FS_SIZE; i++, knp++) {
 		statp = (uint64_t *)
 		    ((uchar_t *)&flow_stats + flow_stats_list[i].fs_offset);
 		knp->value.ui64 = *statp;
 	}
+
 	return (0);
 }
 
