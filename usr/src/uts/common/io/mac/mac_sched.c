@@ -2536,11 +2536,11 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 		return (meoi_fast_l4proto(mp) == match->arg.mfm_ipproto);
 	case MFM_L2_DST:
 		return (meoi_fast_l2hlen(mp) >= sizeof (struct ether_header) &&
-		    bcmp(mp->b_rptr, match->arg.mfm_l2addr, ETHERADDRL));
+		    bcmp(mp->b_rptr, match->arg.mfm_l2addr, ETHERADDRL) == 0);
 	case MFM_L2_SRC:
 		return (meoi_fast_l2hlen(mp) >= sizeof (struct ether_header) &&
 		    bcmp(mp->b_rptr + ETHERADDRL, match->arg.mfm_l2addr,
-		    ETHERADDRL));
+		    ETHERADDRL) == 0);
 	case MFM_L2_VID:
 		return (meoi_fast_is_vlan(mp) &&
 		    meoi_fast_l2hlen(mp) >= sizeof (struct ether_vlan_header) &&
