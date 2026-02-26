@@ -1762,7 +1762,6 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 			/* Go out on softring 0, can't even do addr fanout. */
 			goto enqueue;
 		}
-		ASSERT(OK_32PTR(mp->b_rptr + l2hlen));
 
 		/*
 		 * Direct access to the L3/L4 headers will fall safely within
@@ -2349,9 +2348,23 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 	const uint8_t *l3_start = mp->b_rptr + meoi.meoi_l2hlen;
 
 	/*
-	 * Enforce parsed headers are all contiguous.
+	 * x86 doesn't require alignment for us to pull out addresses and ports
+	 * in classification and hash computation. Clients like IP may have
+	 * stricter requirements, but make their own determination as to whether
+	 * they need to pullup.
 	 */
-	if (DB_REF(mp) > 1 || !OK_32PTR(l3_start) || head_len < needed_len) {
+#if defined(__i386__) || defined(__amd64__)
+	const bool need_align = false;
+#else
+	const bool need_align = !OK_32PTR(l3_start);
+#endif
+
+	/*
+	 * Enforce parsed headers are all contiguous. If we're doing a pullup
+	 * for any reason, make sure that we can guarantee L3+ alignment since
+	 * we're copying out these bytes anyway.
+	 */
+	if (DB_REF(mp) > 1 || need_align || head_len < needed_len) {
 		const size_t pad = (4 - (meoi.meoi_l2hlen % 4)) % 4;
 		mblk_t *new_mp = msgpullup_pad(mp, needed_len, pad);
 		if (new_mp != NULL) {
