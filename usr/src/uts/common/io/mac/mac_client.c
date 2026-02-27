@@ -4167,8 +4167,8 @@ mac_resource_set(mac_client_handle_t mch, mac_resource_cb_t *rcbs,
 	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
 
 	flow_entry_t *affected_flent = is_v6 ?
-	    mcip->mci_fastpath_ipv4_tcp :
-	    mcip->mci_fastpath_ipv6_tcp;
+	    mcip->mci_fastpath_ipv6_tcp :
+	    mcip->mci_fastpath_ipv4_tcp;
 
 	flow_action_t *ac = &affected_flent->fe_action;
 	ac->fa_flags |= MFA_FLAGS_RESOURCE;
@@ -4183,8 +4183,8 @@ mac_resource_clear(mac_client_handle_t mch, boolean_t is_v6)
 	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
 
 	flow_entry_t *affected_flent = is_v6 ?
-	    mcip->mci_fastpath_ipv4_tcp :
-	    mcip->mci_fastpath_ipv6_tcp;
+	    mcip->mci_fastpath_ipv6_tcp :
+	    mcip->mci_fastpath_ipv4_tcp;
 
 	flow_action_t *ac = &affected_flent->fe_action;
 	ac->fa_flags &= ~MFA_FLAGS_RESOURCE;
@@ -4197,7 +4197,7 @@ mac_resource_clear(mac_client_handle_t mch, boolean_t is_v6)
  * SRS's and the soft rings of the client for a given SAP.
  */
 void
-mac_client_poll_enable(mac_client_handle_t mch, boolean_t is_v6)
+mac_client_poll_enable(mac_client_handle_t mch)
 {
 	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_soft_ring_set_t	*mac_srs;

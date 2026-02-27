@@ -1464,7 +1464,7 @@ dld_capab_poll_enable(dld_str_t *dsp, dld_capab_poll_t *poll)
 	rcbs.mrc_arg = poll->poll_ring_ch;
 
 	mac_resource_set(dsp->ds_mch, &rcbs, dsp->ds_sap == ETHERTYPE_IPV6);
-	mac_client_poll_enable(dsp->ds_mch, dsp->ds_sap == ETHERTYPE_IPV6);
+	mac_client_poll_enable(dsp->ds_mch);
 
 	dsp->ds_polling = B_TRUE;
 	return (0);
