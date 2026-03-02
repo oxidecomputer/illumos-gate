@@ -656,8 +656,8 @@ mac_srs_set_fanout_state(mac_soft_ring_set_t *mac_srs,
 /*
  * Assignment of user specified CPUs to a link.
  *
- * Minimum CPUs required to get an optimal assignmet:
- * For each Rx SRS, atleast two CPUs are needed if mac_latency_optimize
+ * Minimum CPUs required to get an optimal assignment:
+ * For each Rx SRS, at least two CPUs are needed if mac_latency_optimize
  * flag is set -- one for polling, one for fanout soft ring.
  * If mac_latency_optimize is not set, then 3 CPUs are needed -- one
  * for polling, one for SRS worker thread and one for fanout soft ring.
@@ -2037,17 +2037,11 @@ alldone:
 /*
  * Calls mac_srs_fanout_init() or modify() depending upon whether
  * the SRS is getting initialized or re-initialized.
- *
- * TODO(ky): Callers who do this on the group-only MCIP: is arg1 set
- * properly on the attached flent?
  */
 void
 mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
     mac_resource_props_t *mrp, cpupart_t *cpupart)
 {
-	mac_soft_ring_set_t *mac_rx_srs, *mac_tx_srs;
-	int i, rx_srs_cnt;
-
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	/*
@@ -2055,40 +2049,35 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 	 * called on an aggr port.
 	 */
 	ASSERT3U((mcip->mci_state_flags & MCIS_IS_AGGR_PORT), ==, 0);
-	mac_rx_srs = flent->fe_rx_srs[0];
 
 	/*
 	 * Set up the fanout on the tx side only once, with the
 	 * first rx SRS. The CPU binding, fanout, and bandwidth
 	 * criteria are common to both RX and TX, so
-	 * initializing them along side avoids redundant code.
+	 * initializing them together avoids redundant code.
 	 */
-	mac_tx_srs = flent->fe_tx_srs;
-	rx_srs_cnt = flent->fe_rx_srs_cnt;
+	const uint16_t rx_srs_cnt = flent->fe_rx_srs_cnt;
 
-	/* No fanout for subflows */
-	if (flent->fe_type & FLOW_USER) {
-		mac_srs_fanout_init(mcip, mrp, mac_rx_srs, mac_tx_srs,
-		    cpupart);
-		return;
-	}
-
-	if (mrp->mrp_mask & MRP_CPUS_USERSPEC)
+	if ((mrp->mrp_mask & MRP_CPUS_USERSPEC) != 0) {
 		mac_flow_user_cpu_init(flent, mrp);
-	else
+	} else {
 		mac_flow_cpu_init(flent, cpupart);
-
-	mrp->mrp_rx_fanout_cnt = mac_rx_srs->srs_cpu.mc_rx_fanout_cnt;
+	}
 
 	/*
 	 * Set up fanout for both SW (0th SRS) and HW classified
 	 * SRS (the rest of Rx SRSs in flent).
 	 */
-	for (i = 0; i < rx_srs_cnt; i++) {
-		mac_rx_srs = flent->fe_rx_srs[i];
+	for (uint16_t i = 0; i < rx_srs_cnt; i++) {
+		mac_soft_ring_set_t *mac_rx_srs = flent->fe_rx_srs[i];
+		mac_soft_ring_set_t *mac_tx_srs = NULL;
+		if (i == 0) {
+			mac_tx_srs = flent->fe_tx_srs;
+			mrp->mrp_rx_fanout_cnt =
+			    mac_rx_srs->srs_cpu.mc_rx_fanout_cnt;
+		}
+
 		ASSERT(!mac_srs_is_logical(mac_rx_srs));
-		if (i != 0)
-			mac_tx_srs = NULL;
 		switch (mac_rx_srs->srs_fanout_state) {
 		case SRS_FANOUT_UNINIT:
 			mac_srs_fanout_init(mcip, mrp, mac_rx_srs, mac_tx_srs,
@@ -3823,7 +3812,7 @@ mac_soft_ring_signal_client(mac_soft_ring_t *ringp,
 
 	ringp->s_ring_state &= ~S_RING_CLIENT_WAIT;
 
-	if ((ringp->s_ring_state & ST_RING_POLLABLE) == 0) {
+	if ((ringp->s_ring_type & ST_RING_POLLABLE) == 0) {
 		mutex_exit(&ringp->s_ring_lock);
 		return;
 	}

@@ -4305,8 +4305,9 @@ mac_cpu_set(mac_client_handle_t mch, mac_resource_props_t *mrp)
 	    mcip->mci_upper_mip : mip, mrp)) != 0) {
 		return (err);
 	}
-	if (MCIP_DATAPATH_SETUP(mcip))
+	if (MCIP_DATAPATH_SETUP(mcip)) {
 		mac_flow_modify(mip->mi_flow_tab, mcip->mci_flent, mrp);
+	}
 
 	mac_update_resources(mrp, MCIP_RESOURCE_PROPS(mcip), B_FALSE);
 	return (0);

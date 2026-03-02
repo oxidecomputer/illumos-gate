@@ -177,16 +177,6 @@ flow_stat_update(kstat_t *ksp, int rw)
 		return (err);
 	}
 
-	// mac_perim_handle_t mph;
-	/*
-	 * Need to TRY enter mac perim...
-	 */
-	// int err = mac_perim_enter_by_linkid(fep->fe_link_id, &mph);
-	// i_mac_perim_enter_nowait()
-	// if (err != 0) {
-	// 	return (err);
-	// }
-
 	/*
 	 * Fold in all stats from logical SRSes which reference this
 	 * flent.
@@ -208,8 +198,6 @@ flow_stat_update(kstat_t *ksp, int rw)
 	}
 
 	flow_stat_fill(&flow_stats, fep->fe_tx_srs, fep);
-
-done:
 	i_mac_perim_read_exit(mip);
 	for (size_t i = 0; i < FS_SIZE; i++, knp++) {
 		statp = (uint64_t *)
@@ -1073,11 +1061,13 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 			mac_fanout_setup(mcip, flent, mcip_mrp, NULL);
 		}
 	}
-	if (mrp->mrp_mask & MRP_PRIORITY)
+	if (mrp->mrp_mask & MRP_PRIORITY) {
 		mac_flow_update_priority(mcip, flent);
+	}
 
-	if (changed_mask & MRP_CPUS)
+	if (changed_mask & MRP_CPUS) {
 		mac_fanout_setup(mcip, flent, mrp, NULL);
+	}
 
 	if (mrp->mrp_mask & MRP_POOL) {
 		pool_lock();
@@ -1086,13 +1076,6 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		mac_set_pool_effective(use_default, cpupart, mrp, emrp);
 		pool_unlock();
 	}
-
-	/*
-	 * TODO(ky): Verify this works (and make this work) for priority/CPU
-	 * alteration. This one might be tricky.
-	 *
-	 * Ideally we can make this a conditional rebuild of flowtree?
-	 */
 }
 
 /*
