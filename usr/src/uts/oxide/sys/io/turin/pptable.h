@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_PPTABLE_H
@@ -156,33 +156,35 @@ typedef struct turin_pptable_cff {
  * +------------------+---------------------------------+------------+
  * | tpp_cclk_mode    | 0x5e.0x7d.0x00 / 0x63.0x7d.0x00 | 1.0.0.7    |
  * | tpp_adjust_gb    | 0x5e.0x81.0x00 / 0x63.0x81.0x00 | 1.0.0.8    |
+ * | tpp_one_cppc_max | 0x5e.0x83.0x00 / 0x63.0x83.0x00 | 1.0.0.a    |
  * +------------------+---------------------------------+------------+
  */
 typedef struct turin_pptable_v94_91 {
-	turin_pptable_default_limits_t		tpp_default_limits;
-	turin_pptable_platform_limits_t		tpp_platform_limits;
-	turin_pptable_debug_t			tpp_debug;
-	turin_pptable_df_cstate_t		tpp_df_cstate;
-	turin_pptable_xgmi_t			tpp_xgmi;
-	turin_pptable_telemetry_t		tpp_telemetry;
-	turin_pptable_dram_t			tpp_dram;
-	turin_pptable_overclock_t		tpp_overclock;
-	turin_pptable_cff_t			tpp_cff;
+	turin_pptable_default_limits_t	tpp_default_limits;
+	turin_pptable_platform_limits_t	tpp_platform_limits;
+	turin_pptable_debug_t		tpp_debug;
+	turin_pptable_df_cstate_t	tpp_df_cstate;
+	turin_pptable_xgmi_t		tpp_xgmi;
+	turin_pptable_telemetry_t	tpp_telemetry;
+	turin_pptable_dram_t		tpp_dram;
+	turin_pptable_overclock_t	tpp_overclock;
+	turin_pptable_cff_t		tpp_cff;
 
-	uint8_t					tpp_df_pstate_range_en;
-	uint8_t					tpp_df_pstate_range_min;
-	uint8_t					tpp_df_pstate_range_max;
-	uint8_t					tpp_df_pstate_range_spare;
-	uint8_t					tpp_xgmi_pstate_range_en;
-	uint8_t					tpp_xgmi_pstate_range_min;
-	uint8_t					tpp_xgmi_pstate_range_max;
-	uint8_t					tpp_xgmi_pstate_range_spare;
-	uint8_t					tpp_xgmi_min_width;
-	uint8_t					tpp_rsvd1[3];
+	uint8_t				tpp_df_pstate_range_en;
+	uint8_t				tpp_df_pstate_range_min;
+	uint8_t				tpp_df_pstate_range_max;
+	uint8_t				tpp_df_pstate_range_spare;
+	uint8_t				tpp_xgmi_pstate_range_en;
+	uint8_t				tpp_xgmi_pstate_range_min;
+	uint8_t				tpp_xgmi_pstate_range_max;
+	uint8_t				tpp_xgmi_pstate_range_spare;
+	uint8_t				tpp_xgmi_min_width;
+	uint8_t				tpp_rsvd1[3];
 
-	uint8_t					tpp_cclk_mode; /* >= 1.0.0.7 */
-	uint8_t					tpp_adjust_gb; /* >= 1.0.0.8 */
-	uint8_t					tpp_rsvd2[30];
+	uint8_t				tpp_cclk_mode;		/* >= 1.0.0.7 */
+	uint8_t				tpp_adjust_gb;		/* >= 1.0.0.8 */
+	uint8_t				tpp_one_cppc_max;	/* >= 1.0.0.a */
+	uint8_t				tpp_rsvd2[29];
 } turin_pptable_v94_91_t;
 
 CTASSERT(sizeof (turin_pptable_v94_91_t) == 0x90);
@@ -205,7 +207,7 @@ CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_xgmi_pstate_range_max) == 0x6a);
 CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_xgmi_pstate_range_spare) == 0x6b);
 CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_xgmi_min_width) == 0x6c);
 CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_rsvd1) == 0x6d);
-CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_rsvd2) == 0x72);
+CTASSERT(offsetof(turin_pptable_v94_91_t, tpp_rsvd2) == 0x73);
 
 #pragma pack()  /* pragma pack(4) */
 
