@@ -24,7 +24,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2016, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014, OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
