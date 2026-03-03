@@ -835,8 +835,8 @@ mac_bw_ctls_lock(mac_bw_ctl_t **list, const size_t list_len)
 inline void
 mac_bw_ctls_unlock(mac_bw_ctl_t **list, const size_t list_len)
 {
-	for (size_t i = 0; i < list_len; i++) {
-		mutex_exit(&list[i]->mac_bw_lock);
+	for (size_t i = list_len; i > 0; i--) {
+		mutex_exit(&list[i - 1]->mac_bw_lock);
 	}
 }
 

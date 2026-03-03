@@ -1358,7 +1358,7 @@ mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
 {
 	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 	if (is_enabled) {
-		const bool was_disabled = (bw->mac_bw_state & BW_ENABLED) == 0;
+		const bool was_disabled = !mac_bw_ctl_is_enabled(bw);
 
 		/* Set/Modify bandwidth limit */
 		bw->mac_bw_state |= BW_ENABLED;
@@ -1376,7 +1376,11 @@ mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
 			bw->mac_bw_sz = 0;
 		}
 	} else {
-		bw->mac_bw_state &= ~BW_ENABLED;
+		/*
+		 * As there is no bandwidth limit, then we cannot be enforced
+		 * either.
+		 */
+		bw->mac_bw_state &= ~(BW_ENABLED | BW_ENFORCED);
 	}
 }
 
@@ -1578,8 +1582,7 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	const bool disable = mrp->mrp_maxbw == MRP_MAXBW_RESETVAL;
 
 	mutex_enter(&flent->fe_rx_bw.mac_bw_lock);
-	const bool was_disabled =
-	    (flent->fe_rx_bw.mac_bw_state & BW_ENABLED) == 0;
+	const bool was_disabled = !mac_bw_ctl_is_enabled(&flent->fe_rx_bw);
 	const bool state_changed = disable != was_disabled;
 	mac_bw_ctl_set_state(&flent->fe_rx_bw, !disable, mrp);
 	mutex_exit(&flent->fe_rx_bw.mac_bw_lock);

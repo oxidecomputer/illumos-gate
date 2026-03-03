@@ -627,7 +627,8 @@ mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
  * Tx soft rings.
  */
 void
-mac_soft_ring_signal(mac_soft_ring_t *softring, uint_t sr_flag)
+mac_soft_ring_signal(mac_soft_ring_t *softring,
+    const mac_soft_ring_state_t sr_flag)
 {
 	mutex_enter(&softring->s_ring_lock);
 	softring->s_ring_state |= sr_flag;

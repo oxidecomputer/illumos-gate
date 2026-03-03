@@ -1486,10 +1486,14 @@ int mac_srs_worker_wakeup_ticks = 0;
 	    (mac_srs)->srs_data.tx.st_mode == SRS_TX_BW_AGGR)
 
 #define	TX_SRS_TO_SOFT_RING(mac_srs, head, hint) {			\
-	if (tx_mode == SRS_TX_BW_FANOUT)				\
+	ASSERT3U(tx_mode, !=, SRS_TX_DEFAULT);				\
+	ASSERT3U(tx_mode, !=, SRS_TX_SERIALIZE);			\
+	ASSERT3U(tx_mode, !=, SRS_TX_BW);				\
+	if (tx_mode == SRS_TX_BW_FANOUT || tx_mode == SRS_TX_FANOUT) {	\
 		(void) mac_tx_fanout_mode(mac_srs, head, hint, 0, NULL);\
-	else								\
+	} else {							\
 		(void) mac_tx_aggr_mode(mac_srs, head, hint, 0, NULL);	\
+	}								\
 }
 
 /*
@@ -4531,7 +4535,6 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		 * unsent packets back.
 		 */
 		if (flag & MAC_TX_NO_ENQUEUE) {
-			cookie = (mac_tx_cookie_t)mac_srs;
 			*ret_mp = mp_chain;
 		} else {
 			MAC_TX_SRS_DROP_MESSAGE(mac_srs, mp_chain, cookie,
@@ -4734,7 +4737,9 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 
 	mac_srs->srs_state |= SRS_PROC;
 
-	if (tx_mode == SRS_TX_DEFAULT || tx_mode == SRS_TX_SERIALIZE) {
+	switch (tx_mode) {
+	case SRS_TX_DEFAULT:
+	case SRS_TX_SERIALIZE: {
 		if (mac_srs->srs_first != NULL) {
 			head = mac_srs->srs_first;
 			tail = mac_srs->srs_last;
@@ -4755,7 +4760,9 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 				SRS_TX_STATS_UPDATE(mac_srs, &stats);
 			}
 		}
-	} else if (tx_mode == SRS_TX_BW) {
+		break;
+	}
+	case SRS_TX_BW: {
 		/*
 		 * We are here because the timer fired and we have some data
 		 * to transmit. Also mac_srs_worker should have reset
@@ -4789,10 +4796,22 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 				SRS_TX_STATS_UPDATE(mac_srs, &stats);
 			}
 		}
-	} else if (tx_mode == SRS_TX_BW_FANOUT || tx_mode == SRS_TX_BW_AGGR) {
+		break;
+	}
+	case SRS_TX_BW_FANOUT:
+	case SRS_TX_BW_AGGR:
+	case SRS_TX_FANOUT:
+	case SRS_TX_AGGR: {
 		/*
-		 * We are here because the timer fired and we
-		 * have some quota to transmit.
+		 * In the BW cases, we are here because the timer fired and we
+		 * have some quota to transmit. In the non-BW cases, the Tx
+		 * methods should never enqueue any packets on the SRS and
+		 * should instead go to the softrings when flow control happens.
+		 * However, if we are BW_ENFORCED then we will enqueue packets
+		 * on this SRS -- and if we then transition back to a non-BW
+		 * case we need to clear that backlog. `mac_srs_pick_chain`
+		 * correctly handles the case where no BW limit is applied,
+		 * allowing us to clean up after this case.
 		 */
 		mac_srs_bw_lock(mac_srs);
 		if (!mac_srs_bw_try_refresh(mac_srs)) {
@@ -4846,14 +4865,9 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 			TX_SRS_TO_SOFT_RING(mac_srs, head, hint);
 		}
 		mutex_enter(&mac_srs->srs_lock);
+		break;
 	}
-	/*
-	 * SRS_TX_FANOUT case not considered here because packets
-	 * won't be queued in the SRS for this case. Packets will
-	 * be sent directly to soft rings underneath and if there
-	 * is any queueing at all, it would be in Tx side soft
-	 * rings.
-	 */
+	}
 
 done:
 	/*
