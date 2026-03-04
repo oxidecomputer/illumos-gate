@@ -22,6 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -258,7 +259,7 @@ int
 mac_bcast_add(mac_client_impl_t *mcip, const uint8_t *addr, uint16_t vid,
     mac_addrtype_t addrtype)
 {
-	mac_impl_t 		*mip = mcip->mci_mip;
+	mac_impl_t		*mip = mcip->mci_mip;
 	mac_bcast_grp_t		*grp = NULL, **last_grp;
 	size_t			addr_len = mip->mi_type->mt_addr_length;
 	int			rc = 0;

@@ -1045,7 +1045,7 @@ struct mac_soft_ring_set_s {
 	 *
 	 * We assert this property holds below.
 	 */
-	uint8_t 		srs_pad[8];
+	uint8_t			srs_pad[8];
 
 	union {
 		mac_srs_rx_t	rx; /* !(srs_type & SRST_TX) */

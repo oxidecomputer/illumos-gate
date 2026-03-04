@@ -197,7 +197,7 @@ boolean_t mac_rx_intr_retarget = B_FALSE;
  */
 #define	BIND_TX_SRS_AND_SOFT_RINGS(mac_tx_srs, mrp) {			\
 	processorid_t cpuid;						\
-	uint16_t i;								\
+	uint16_t i;							\
 	mac_soft_ring_t *softring;					\
 	mac_cpus_t *srs_cpu;						\
 									\

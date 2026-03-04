@@ -1750,7 +1750,8 @@ mac_link_flow_remove(char *flow_name)
 	 * and then release the creation reference on the flow.
 	 *
 	 * FLOW_FINAL_REFRELE also requires that no flowtree nodes hold
-	 * a 
+	 * a reference to this flow (i.e., all flow trees on the client have
+	 * been rebuilt or deleted).
 	 */
 	mac_flow_wait(flent, FLOW_USER_REF);
 	FLOW_FINAL_REFRELE(flent);
