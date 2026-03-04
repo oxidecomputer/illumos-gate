@@ -203,6 +203,8 @@ extern boolean_t mac_prop_check_size(mac_prop_id_t, uint_t, boolean_t);
 extern uint64_t mac_pseudo_rx_ring_stat_get(mac_ring_handle_t, uint_t);
 extern uint64_t mac_pseudo_tx_ring_stat_get(mac_ring_handle_t, uint_t);
 
+extern void mac_strip_l2(mblk_t *);
+
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus

@@ -6155,6 +6155,33 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 }
 
 /*
+ * Remove L2 headers and MEOI information from a chain of packets before
+ * handing it off to an L3-only client.
+ */
+void
+mac_strip_l2(mblk_t *mp_chain)
+{
+	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
+		const ssize_t l2hlen = meoi_fast_l2hlen(curr);
+
+		/*
+		 * MAC now enforces, on our behalf, that we have header
+		 * contiguity through all the layers it understands.
+		 * The below pktinfo clear also verifiees that we have a
+		 * refcount of 1 in the leading segment, making these
+		 * modifications safe.
+		 */
+		if (l2hlen > 0) {
+			ASSERT3P(curr->b_rptr + l2hlen, <, curr->b_wptr);
+			curr->b_rptr += l2hlen;
+		}
+
+		/* IP cannot yet be trusted not to recycle MEOI. */
+		mac_ether_clear_pktinfo(curr);
+	}
+}
+
+/*
  * Execute an optimistic bypass function for a client who would ordinarily be
  * reached through DLS. In the event that this bypass is disabled, revert
  * locally to the standard `mac_rx_deliver` callback.
@@ -6177,22 +6204,7 @@ mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
 		return;
 	}
 
-	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
-		const ssize_t l2hlen = meoi_fast_l2hlen(curr);
-
-		/*
-		 * MAC now enforces, on our behalf, that we have header
-		 * contiguity through all the layers it understands.
-		 * (And, a refcount of 1 in the leading segment).
-		 */
-		if (l2hlen > 0) {
-			ASSERT3P(curr->b_rptr + l2hlen, <, curr->b_wptr);
-			curr->b_rptr += l2hlen;
-		}
-
-		/* IP cannot yet be trusted not to recycle MEOI. */
-		mac_ether_clear_pktinfo(curr);
-	}
+	mac_strip_l2(mp_chain);
 
 	mdrx->mdrx(mdrx->mdrx_arg, mrh, mp_chain, arg3);
 }

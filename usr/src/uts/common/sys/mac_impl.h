@@ -716,7 +716,7 @@ extern void mac_rx_deliver(void *, mac_resource_handle_t, mblk_t *,
     mac_header_info_t *);
 extern void mac_tx_notify(mac_impl_t *);
 extern mblk_t *mac_ring_tx(mac_handle_t, mac_ring_handle_t, mblk_t *);
-extern mblk_t *mac_provider_tx(mac_impl_t *, mac_ring_handle_t, mblk_t *,
+extern mblk_t *mac_provider_tx(mac_impl_t *, mac_ring_t *, mblk_t *,
     mac_client_impl_t *);
 
 extern void mac_callback_add(mac_cb_info_t *, mac_cb_t **, mac_cb_t *);

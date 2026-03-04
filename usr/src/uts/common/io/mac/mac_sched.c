@@ -4965,10 +4965,9 @@ mac_tx_classify(mac_impl_t *mip, mblk_t *mp)
 }
 
 mblk_t *
-mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
+mac_tx_send(mac_client_impl_t *src_mcip, mac_ring_t *ring, mblk_t *mp_chain,
     mac_tx_stats_t *stats)
 {
-	mac_client_impl_t *src_mcip = (mac_client_impl_t *)mch;
 	mac_impl_t *mip = src_mcip->mci_mip;
 	uint_t obytes = 0, opackets = 0, oerrors = 0;
 	mblk_t *mp = NULL, *next;
@@ -4979,7 +4978,7 @@ mac_tx_send(mac_client_handle_t mch, mac_ring_handle_t ring, mblk_t *mp_chain,
 		vid_check = MAC_VID_CHECK_NEEDED(src_mcip);
 		add_tag = MAC_TAG_NEEDED(src_mcip);
 		if (add_tag)
-			vid = mac_client_vid(mch);
+			vid = mac_client_vid((mac_client_handle_t)src_mcip);
 	} else {
 		ASSERT(mip->mi_nclients == 1);
 		vid_check = add_tag = B_FALSE;

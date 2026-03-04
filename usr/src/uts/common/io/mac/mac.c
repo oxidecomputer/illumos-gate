@@ -1866,7 +1866,7 @@ mac_hwring_setup(mac_ring_handle_t hwrh, mac_resource_handle_t prh,
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		ASSERT(!mac_srs_is_tx(mac_srs));
 		mac_srs->srs_mrh = prh;
-		mac_srs->srs_data.rx.sr_lower_proc = MRSLP_PROCESS;
+		mac_srs->srs_data.rx.sr_lower_proc = MRSLP_HWRINGS;
 	}
 }
 
@@ -1882,7 +1882,7 @@ mac_hwring_teardown(mac_ring_handle_t hwrh)
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		mac_srs = hw_ring->mr_srs;
 		ASSERT(!mac_srs_is_tx(mac_srs));
-		mac_srs->srs_data.rx.sr_lower_proc = MRSLP_HWRINGS;
+		mac_srs->srs_data.rx.sr_lower_proc = MRSLP_PROCESS;
 		mac_srs->srs_mrh = NULL;
 	}
 }
@@ -2007,9 +2007,10 @@ mblk_t *
 mac_hwring_send_priv(mac_client_handle_t mch, mac_ring_handle_t rh, mblk_t *mp)
 {
 	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
+	mac_ring_t *mr = (mac_ring_t *)rh;
 	mac_impl_t *mip = mcip->mci_mip;
 
-	return (mac_provider_tx(mip, rh, mp, mcip));
+	return (mac_provider_tx(mip, mr, mp, mcip));
 }
 
 /*
@@ -5358,7 +5359,7 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 				if (rem_ring->mr_state != MR_INUSE) {
 					(void) mac_start_ring(rem_ring);
 				}
-				tx->st_arg2 = (void *)rem_ring;
+				tx->st_arg2 = rem_ring;
 				mac_tx_srs_stat_recreate(mac_srs, B_FALSE);
 				ring_info = mac_hwring_getinfo(
 				    (mac_ring_handle_t)rem_ring);
@@ -9058,9 +9059,10 @@ mac_ring_tx(mac_handle_t mh, mac_ring_handle_t mrh, mblk_t *mp)
  * forwarding.
  */
 mblk_t *
-mac_provider_tx(mac_impl_t *mip, mac_ring_handle_t rh, mblk_t *mp,
+mac_provider_tx(mac_impl_t *mip, mac_ring_t *ring, mblk_t *mp,
     mac_client_impl_t *mcip)
 {
+	mac_ring_handle_t rh = (mac_ring_handle_t)ring;
 	/*
 	 * If there is a bound Hybrid I/O share, send packets through
 	 * the default tx ring. When there's a bound Hybrid I/O share,
@@ -9073,8 +9075,9 @@ mac_provider_tx(mac_impl_t *mip, mac_ring_handle_t rh, mblk_t *mp,
 	if (mip->mi_promisc_list != NULL)
 		mac_promisc_dispatch(mip, mp, mcip, B_FALSE);
 
-	if (mip->mi_bridge_link == NULL)
+	if (mip->mi_bridge_link == NULL) {
 		return (mac_ring_tx((mac_handle_t)mip, rh, mp));
-	else
+	} else {
 		return (mac_bridge_tx(mip, rh, mp));
+	}
 }

@@ -53,6 +53,8 @@ static void mac_srs_poll_unbind(mac_soft_ring_set_t *);
 static void mac_srs_worker_unbind(mac_soft_ring_set_t *);
 static void mac_srs_soft_rings_quiesce(mac_soft_ring_set_t *, uint_t);
 
+static void mac_tx_srs_setup(mac_client_impl_t *, flow_entry_t *);
+
 static int mac_srs_cpu_setup(cpu_setup_t, int, void *);
 static void mac_srs_worker_bind(mac_soft_ring_set_t *, processorid_t);
 static void mac_srs_poll_bind(mac_soft_ring_set_t *, processorid_t);
@@ -1453,12 +1455,15 @@ mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
 
 	const bool is_disabled = mrp->mrp_maxbw == MRP_MAXBW_RESETVAL;
 
-	uint32_t tx_mode = srs_tx->st_mode;
+	mac_tx_srs_mode_t tx_mode = srs_tx->st_mode;
 	if (is_disabled) {
 		/* Reset bandwidth limit */
 		if (tx_mode == SRS_TX_BW) {
-			if (srs_tx->st_arg2 != NULL)
-				ring_info = mac_hwring_getinfo(srs_tx->st_arg2);
+			if (srs_tx->st_arg2 != NULL) {
+				mac_ring_handle_t mrh =
+				    (mac_ring_handle_t)srs_tx->st_arg2;
+				ring_info = mac_hwring_getinfo(mrh);
+			}
 			if (mac_tx_serialize ||
 			    (ring_info & MAC_RING_TX_SERIALIZE)) {
 				srs_tx->st_mode = SRS_TX_SERIALIZE;
@@ -4261,7 +4266,7 @@ mac_tx_srs_del_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
  * Used to setup Tx rings. If no free Tx ring is available, then default
  * Tx ring is used.
  */
-void
+static void
 mac_tx_srs_setup(mac_client_impl_t *mcip, flow_entry_t *flent)
 {
 	mac_impl_t		*mip = mcip->mci_mip;
@@ -4302,7 +4307,7 @@ no_group:
 					ring_info = mac_hwring_getinfo(
 					    (mac_ring_handle_t)ring);
 				}
-				tx->st_arg2 = (void *)ring;
+				tx->st_arg2 = ring;
 				mac_tx_srs_stat_recreate(tx_srs, B_FALSE);
 				if (mac_srs_is_bw_controlled(tx_srs)) {
 					tx->st_mode = SRS_TX_BW;
