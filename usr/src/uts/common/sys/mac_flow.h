@@ -261,11 +261,23 @@ typedef	struct mac_resource_props_s {
  * MAC flow trees APIs.
  */
 
-/* Opaque handle to a flow_entry_t. */
-typedef void	*flow_entry_handle_t;
-
+/*
+ * Flags for the validity of fields in a `flow_action_t`.
+ */
 typedef enum {
+	/*
+	 * Packets matching this flow should be processed 
+	 */
 	MFA_FLAGS_ACTION	= 0x01,
+	/*
+	 * The client handling these packets wants to receive information on the
+	 * set of softrings assigned to this flow action.
+	 *
+	 * MAC will include a pointer indicating which softring any packet
+	 * arrives on, and the client may poll this ring.
+	 *
+	 * Requires `MFA_FLAGS_ACTION`.
+	 */
 	MFA_FLAGS_RESOURCE	= 0x02,
 	/*
 	 * Used to signify that a flow entry should not be created
@@ -274,7 +286,7 @@ typedef enum {
 	MFA_FLAGS_RX_ONLY	= 0x04,
 } fa_flags_t;
 
-typedef struct flow_action_s {
+typedef struct {
 	fa_flags_t fa_flags;
 
 	/*

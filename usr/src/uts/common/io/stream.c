@@ -1683,7 +1683,6 @@ msgpullup(mblk_t *mp, ssize_t len)
 	return (msgpullup_pad(mp, len, 0));
 }
 
-/* TODO(ky): include this in `man msgpullup` */
 /*
  * Concatenate and align at least the first len bytes of common message
  * type, leaving `pad` bytes of headroom before the message.

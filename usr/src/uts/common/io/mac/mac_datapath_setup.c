@@ -481,8 +481,8 @@ mac_compute_soft_ring_count(flow_entry_t *flent, int rx_srs_cnt, int maxcpus)
 			srings = mac_rx_soft_ring_count;
 
 		/* Is this a 10Gig link? */
-		flent->fe_nic_speed = mac_client_stat_get(flent->fe_mcip,
-		    MAC_STAT_IFSPEED);
+		flent->fe_nic_speed = mac_client_stat_get(
+		    (mac_client_handle_t)flent->fe_mcip, MAC_STAT_IFSPEED);
 		/* convert to Mbps */
 		if (((flent->fe_nic_speed)/1000000) > 1000 &&
 		    mac_rx_soft_ring_10gig_count > 0) {
@@ -644,8 +644,9 @@ mac_srs_set_fanout_state(mac_soft_ring_set_t *mac_srs,
     mac_srs_fanout_state_t state)
 {
 	/*
-	 * TODO(ky): This currently assumes that all attached logicals must be
-	 * reinitialised. We probably want to curtail this a bit better (e.g.,
+	 * This currently assumes that all attached logicals must be
+	 * reinitialised. We probably want to curtail this a bit better once
+	 * subtree logicals correctly allow for custom CPU bindings (e.g.,
 	 * those whose MRP matches the root srs).
 	 */
 	mac_srs->srs_fanout_state = state;
@@ -1713,30 +1714,17 @@ mac_client_destroy_flowtrees(mac_client_impl_t *mcip)
 }
 
 /*
- * When the first sub-flow is added to a link, we disable polling on the
- * link and also modify the entry point to mac_rx_srs_subflow_process().
- * (polling is disabled because with the subflow added, accounting
- * for polling needs additional logic, it is assumed that when a subflow is
- * added, we can take some hit as a result of disabling polling rather than
- * adding more complexity - if this becomes a perf. issue we need to
- * re-rvaluate this logic).  When the last subflow is removed, we turn back
- * polling and also reset the entry point to mac_rx_srs_process().
- *
- * In the future if there are multiple SRS, we can simply
- * take one and give it to the flow rather than disabling polling and
- * resetting the entry point.
- *
- * TODO(ky): above comment is no longer what this function does. We now
- * readapt the flow tree.
+ * Update the flowtree classifier of the MCIP and all its SRSes in response to
+ * the addition/removal of a subflow.
  */
 void
 mac_client_update_classifier(mac_client_impl_t *mcip)
 {
 	mac_impl_t		*mip = mcip->mci_mip;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
+	VERIFY(mac_perim_held((mac_handle_t)mip));
 
-	mac_update_subflows(mcip);
+	mac_update_subflow_flowtree(mcip);
 	mac_client_rebuild_flowtrees(mcip, 0, true);
 }
 
@@ -1747,7 +1735,7 @@ mac_srs_update_fanout_list(mac_soft_ring_set_t *mac_srs)
 
 	mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
 	if (softring == NULL) {
-		ASSERT3U(mac_srs->srs_soft_ring_count, ==, 0);
+		VERIFY3U(mac_srs->srs_soft_ring_count, ==, 0);
 		return;
 	}
 
@@ -4389,8 +4377,8 @@ mac_fanout_recompute_client(mac_client_impl_t *mcip, cpupart_t *cpupart)
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
-	link_speed = mac_client_stat_get(mcip->mci_flent->fe_mcip,
-	    MAC_STAT_IFSPEED);
+	link_speed = mac_client_stat_get(
+	    (mac_client_handle_t)mcip->mci_flent->fe_mcip, MAC_STAT_IFSPEED);
 
 	if ((link_speed != 0) &&
 	    (link_speed != mcip->mci_flent->fe_nic_speed)) {
@@ -4845,7 +4833,6 @@ mac_flow_baked_tree_create(const flow_tree_t *ft, mac_soft_ring_set_t *based_on)
 			curr_node->enter.ften_match =
 			    mac_flow_clone_match(copy_match_from);
 
-			curr_node->enter.ften_descend = el->ft_child != NULL;
 			curr_node++;
 		}
 
@@ -4951,7 +4938,7 @@ mac_flow_baked_tree_destroy(flow_tree_baked_t *tree)
 		if (is_enter) {
 			flow_tree_enter_node_t *enode = &node->enter;
 			mac_flow_match_destroy(&enode->ften_match);
-			if (enode->ften_descend) {
+			if (enode->ften_skip != 1) {
 				depth++;
 			} else {
 				is_enter = false;

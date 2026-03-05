@@ -167,7 +167,7 @@ static void mac_client_datapath_teardown(mac_client_handle_t,
 static int mac_resource_ctl_set(mac_client_handle_t, mac_resource_props_t *);
 
 static void mac_create_fastpath_flows(mac_client_impl_t *);
-static void mac_update_fastpath_flows(mac_client_impl_t *);
+static void mac_update_fastpath_flowtree(mac_client_impl_t *);
 static void mac_teardown_fastpath_flows(mac_client_impl_t *);
 
 /* ARGSUSED */
@@ -4174,7 +4174,7 @@ mac_resource_set(mac_client_handle_t mch, mac_resource_cb_t *rcbs,
 	ac->fa_flags |= MFA_FLAGS_RESOURCE;
 	ac->fa_resource = *rcbs;
 
-	mac_update_fastpath_flows(mcip);
+	mac_update_fastpath_flowtree(mcip);
 }
 
 void
@@ -4189,7 +4189,7 @@ mac_resource_clear(mac_client_handle_t mch, boolean_t is_v6)
 	flow_action_t *ac = &affected_flent->fe_action;
 	ac->fa_flags &= ~MFA_FLAGS_RESOURCE;
 	bzero(&ac->fa_resource, sizeof (ac->fa_resource));
-	mac_update_fastpath_flows(mcip);
+	mac_update_fastpath_flowtree(mcip);
 }
 
 /*
@@ -6060,20 +6060,26 @@ mac_set_promisc_filtered(mac_client_handle_t mch, boolean_t enable)
 		mcip->mci_protect_flags &= ~MPT_FLAG_PROMISC_FILTERED;
 }
 
-/*
- * TODO(ky): We want these to be constructed and added by DLS, as/when bypass
- * is requested. These should be configuring flows with the correct properties,
- * rather than pushing them down onto:
- * - mcip->mci_resource_add and friends
- * - mcip->mci_direct_rx.mdrx_v4 and friends
- *
- * Reiterating what happens:
- * - Client and its SRS etc. may be constructed before bypass is negotiated.
- * - above set via dld_capab_poll_enable (mac_resource_set_common, ...)
- *
- * TODO(ky): refactor
- */
+struct fp_flow_spec {
+	flow_entry_t **into;
+	char *name_spec;
+	bool delegate;
+	mac_flow_match_t match;
+};
 
+/*
+ * Construct flow entries to be used if DLS bypass is requested by IP. These act
+ * as storage for resource callbacks and enable/disable state.
+ *
+ * In an ideal future world, DLS will create these flows as and when it requires
+ * them during the bypass/client polling negotiation. This will require that MAC
+ * includes the logic to turn an unstructured collection of flows into a
+ * flowtree, correctly inserting duplicate references to flents as required.
+ *
+ * For now these are always created on a client -- the bypass is used often,
+ * and this keeps flowtree construction simple while we still only allow for
+ * one class of match in the subflows table.
+ */
 static void
 mac_create_fastpath_flows(mac_client_impl_t *mcip)
 {
@@ -6088,70 +6094,49 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 	 */
 	flow_desc_t f = { 0 };
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4",
-	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv4));
-	ipv4->fe_match2.mfm_type = MFM_SAP;
-	ipv4->fe_match2.arg.mfm_sap = ETHERTYPE_IP;
-	ipv4->fe_match2.mfm_cond = MFC_NOFRAG | MFC_UNICAST;
+	struct fp_flow_spec flows[] = {
+		{&mcip->mci_fastpath_ipv4, "%s_%p_v4", true, {
+			.mfm_type = MFM_SAP,
+			.arg = { .mfm_sap = ETHERTYPE_IP },
+			.mfm_cond = MFC_NOFRAG | MFC_UNICAST,
+		}},
+		{&mcip->mci_fastpath_ipv4_tcp, "%s_%p_v4_tcp", false, {
+			.mfm_type = MFM_IPPROTO,
+			.arg = { .mfm_ipproto = IPPROTO_TCP },
+		}},
+		{&mcip->mci_fastpath_ipv4_udp, "%s_%p_v4_udp", false, {
+			.mfm_type = MFM_IPPROTO,
+			.arg = { .mfm_ipproto = IPPROTO_UDP },
+		}},
+		{&mcip->mci_fastpath_ipv6, "%s_%p_v6", true, {
+			.mfm_type = MFM_SAP,
+			.arg = { .mfm_sap = ETHERTYPE_IPV6 },
+			.mfm_cond = MFC_NOFRAG | MFC_UNICAST,
+		}},
+		{&mcip->mci_fastpath_ipv6_tcp, "%s_%p_v6_tcp", false, {
+			.mfm_type = MFM_IPPROTO,
+			.arg = { .mfm_ipproto = IPPROTO_TCP },
+		}},
+		{&mcip->mci_fastpath_ipv6_udp, "%s_%p_v6_udp", false, {
+			.mfm_type = MFM_IPPROTO,
+			.arg = { .mfm_ipproto = IPPROTO_UDP },
+		}},
+		{ 0 },
+	};
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4_tcp",
-	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
-	    &ipv4_tcp));
-	ipv4_tcp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv4_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
+	for (struct fp_flow_spec *el = flows; el->into != NULL; el++) {
+		VERIFY3P(*el->into, ==, NULL);
+		(void) snprintf(flowname, MAXFLOWNAMELEN, el->name_spec,
+		    mcip->mci_name, mcip);
+		VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
+		    el->into));
+		(*el->into)->fe_match2 = el->match;
+		(*el->into)->fe_action.fa_flags = MFA_FLAGS_RX_ONLY |
+		    (el->delegate ? 0 : MFA_FLAGS_ACTION);
+		FLOW_REFHOLD(*el->into);
+	}
 
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v4_udp",
-	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
-	    &ipv4_udp));
-	ipv4_udp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv4_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6",
-	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER, &ipv6));
-	ipv6->fe_match2.mfm_type = MFM_SAP;
-	ipv6->fe_match2.arg.mfm_sap = ETHERTYPE_IPV6;
-	ipv6->fe_match2.mfm_cond = MFC_NOFRAG | MFC_UNICAST;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6_tcp",
-	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
-	    &ipv6_tcp));
-	ipv6_tcp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv6_tcp->fe_match2.arg.mfm_sap = IPPROTO_TCP;
-
-	(void) snprintf(flowname, MAXFLOWNAMELEN, "%s_%p_v6_udp",
-	    mcip->mci_name, mcip);
-	VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_USER,
-	    &ipv6_udp));
-	ipv6_udp->fe_match2.mfm_type = MFM_IPPROTO;
-	ipv6_udp->fe_match2.arg.mfm_sap = IPPROTO_UDP;
-
-	ipv4->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv4_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-	ipv4_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-	ipv6->fe_action.fa_flags = MFA_FLAGS_RX_ONLY;
-	ipv6_tcp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-	ipv6_udp->fe_action.fa_flags = MFA_FLAGS_RX_ONLY | MFA_FLAGS_ACTION;
-
-	FLOW_REFHOLD(ipv4);
-	FLOW_REFHOLD(ipv4_tcp);
-	FLOW_REFHOLD(ipv4_udp);
-	FLOW_REFHOLD(ipv6);
-	FLOW_REFHOLD(ipv6_tcp);
-	FLOW_REFHOLD(ipv6_udp);
-
-	mcip->mci_fastpath_ipv4 = ipv4;
-	mcip->mci_fastpath_ipv4_tcp = ipv4_tcp;
-	mcip->mci_fastpath_ipv4_udp = ipv4_udp;
-	mcip->mci_fastpath_ipv6 = ipv6;
-	mcip->mci_fastpath_ipv6_tcp = ipv6_tcp;
-	mcip->mci_fastpath_ipv6_udp = ipv6_udp;
-
-	mac_update_fastpath_flows(mcip);
+	mac_update_fastpath_flowtree(mcip);
 }
 
 /*
@@ -6210,13 +6195,11 @@ mac_strip_l2_and_do(mac_direct_rx_wrapper_t *mdrx, mac_resource_handle_t mrh,
 }
 
 /*
- * Fastpath fn ptrs provided by userland have changed out (initial registration,
- * most likely), or the subflow table got updated.
- *
- * Update leaf flows, rebake(?) trees.
+ * Reconstruct the flow tree in response to a change in IPv4/IPv6 fastpath
+ * state.
  */
 static void
-mac_update_fastpath_flows(mac_client_impl_t *mcip)
+mac_update_fastpath_flowtree(mac_client_impl_t *mcip)
 {
 	flow_entry_t *ipv4 = mcip->mci_fastpath_ipv4;
 	flow_entry_t *ipv4_tcp = mcip->mci_fastpath_ipv4_tcp;
@@ -6295,7 +6278,7 @@ mac_update_fastpath_flows(mac_client_impl_t *mcip)
 		ipv6_udp->fe_action.fa_direct_rx_arg = default_arg;
 	}
 
-	mac_update_subflows(mcip);
+	mac_update_subflow_flowtree(mcip);
 }
 
 struct flent_modify {
@@ -6307,12 +6290,27 @@ struct flent_modify {
 	bool is_tx;
 };
 
+/*
+ * Flowtable walker callback for `mac_update_subflow_flowtree` to expand the
+ * subflow table into set of flowtree nodes attached to a given node.
+ *
+ * This walker will simplify and skip nodes which it identifies are either
+ * already partly verified or incompatible with the current parent.
+ */
 static int
 copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 {
 	struct flent_modify *arg = (struct flent_modify *)raw_arg;
 
-	/* TODO(ky): hacked together to stop slamming all the branches */
+	/*
+	 * Modify any subflow checks to remove any redundant checks against TCP/
+	 * UDP.
+	 *
+	 * In principle we want to have slightly more comprehensive methods for
+	 * any `mac_flow_match_t` which let us ask what checks we can remove
+	 * based on parents in the tree and whether any two matchers are
+	 * incompatible.
+	 */
 	const mac_flow_match_t *mfm = &flent->fe_match2;
 	const bool can_elide = (!arg->needs_subflows) &&
 	    (mfm->mfm_type == MFM_ALL) &&
@@ -6360,10 +6358,32 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 }
 
 /*
- * ...
+ * Reflect the current state of the MCIP's subflow table within its flowtree in
+ * response to the addition/deletion of a flow entry.
+ *
+ * The Tx case is trivial, as there will be no other flows we need to mix in
+ * (all DLS bypass flows are marked `MFA_FLAGS_RX_ONLY`). In the Rx case we need
+ * to push the table as an child of every non-delegate flow. When v4 and v6 are
+ * simultaneously plumbed, this looks like:
+ *
+ * CLIENT
+ *   |
+ *   v
+ * IPv4 ------------------> IPv6 --------> [subflows]
+ *   |                        |
+ *   v                        v
+ *  TCP --------> UDP        TCP --------> UDP
+ *   |             |          |             |
+ *   v             v          v             v
+ * [subflows] [subflows]    [subflows] [subflows]
+ *
+ * Accordingly there are at least 2 (Tx, no-fastpath-Rx) and at most 6 places
+ * where we need to insert nodes from the subflow table.
+ *
+ * Once complete, any baked flowtress should be rebuilt.
  */
 void
-mac_update_subflows(mac_client_impl_t *mcip)
+mac_update_subflow_flowtree(mac_client_impl_t *mcip)
 {
 	const bool v4fp_defined = mcip->mci_v4_fastpath.mdrx != NULL;
 	const bool v6fp_defined = mcip->mci_v6_fastpath.mdrx != NULL;
@@ -6471,8 +6491,7 @@ mac_update_subflows(mac_client_impl_t *mcip)
 }
 
 /*
- * Fastpath fn ptrs provided by userland have changed out (initial registration,
- * most likely). Update leaf flows, rebake trees.
+ * Cleanup all DLS bypass flows as part of MAC client teardown.
  */
 static void
 mac_teardown_fastpath_flows(mac_client_impl_t *mcip)

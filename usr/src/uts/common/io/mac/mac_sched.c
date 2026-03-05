@@ -2529,12 +2529,6 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 	/* Convert any local/remote filters to src/dst, based on direction */
 	mac_flow_match_type_t act_as = match->mfm_type;
 	switch (act_as) {
-	case MFM_L3_REMOTE:
-		act_as = (is_tx) ? MFM_L3_DST : MFM_L3_SRC;
-		break;
-	case MFM_L3_LOCAL:
-		act_as = (is_tx) ? MFM_L3_SRC : MFM_L3_DST;
-		break;
 	case MFM_L4_REMOTE:
 		act_as = (is_tx) ? MFM_L4_DST : MFM_L4_SRC;
 		break;
@@ -2569,19 +2563,11 @@ mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
 		    *((uint16_t *)(mp->b_rptr + l4off)) ==
 		    match->arg.mfm_l4addr);
 	}
-	/* FALLTHROUGH (not really) */
 	case MFM_L4_DST: {
 		const ssize_t l4off = meoi_fast_l4off(mp);
 		return (l4off >= 0 && meoi_fast_l4hlen(mp) >= PORTS_SIZE &&
 		    *((uint16_t *)(mp->b_rptr + l4off + sizeof (uint16_t))) ==
 		    match->arg.mfm_l4addr);
-	}
-	/* FALLTHROUGH (not really) */
-
-	case MFM_ARBITRARY: {
-		const mac_flow_match_arbitrary_t *arb =
-		    &match->arg.mfm_arbitrary;
-		return (arb->mfma_match(arb->mfma_arg, mp));
 	}
 	case MFM_SUBFLOW:
 		return (mac_subflow_is_match(flent, mp, is_tx));
@@ -2705,7 +2691,7 @@ mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
 				continue;
 			}
 
-			if (enode->ften_descend) {
+			if (enode->ften_skip != 1) {
 				depth++;
 			} else {
 				is_enter = false;
@@ -2982,7 +2968,7 @@ mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				continue;
 			}
 
-			if (enode->ften_descend) {
+			if (enode->ften_skip != 1) {
 				depth++;
 			} else {
 				is_enter = false;
@@ -5927,7 +5913,7 @@ mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
 				continue;
 			}
 
-			if (enode->ften_descend) {
+			if (enode->ften_skip != 1) {
 				depth++;
 			} else {
 				is_enter = false;
@@ -6167,7 +6153,7 @@ mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *mac_srs,
 				continue;
 			}
 
-			if (enode->ften_descend) {
+			if (enode->ften_skip != 1) {
 				depth++;
 			} else {
 				is_enter = false;

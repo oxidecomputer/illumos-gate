@@ -465,6 +465,41 @@ static boolean_t
 flow_transport_rport_match(flow_tab_t *, flow_entry_t *, flow_state_t *);
 
 /*
+ * Make a best-effort attempt to install an optimised `mac_flow_match_t` for
+ * a given subflow, falling back to `MFM_SUBFLOW` otherwise.
+ */
+static void
+mac_flow_fill_tree_match(flow_entry_t *flent)
+{
+	if (flent->fe_match == flow_transport_lport_match) {
+		flent->fe_match2.mfm_type = MFM_ALL;
+		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
+		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
+		    MFM_IPPROTO;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
+		    flent->fe_flow_desc.fd_protocol;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
+		    MFM_L4_LOCAL;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
+		    flent->fe_flow_desc.fd_local_port;
+	} else if (flent->fe_match == flow_transport_rport_match) {
+		flent->fe_match2.mfm_type = MFM_ALL;
+		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
+		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
+		    MFM_IPPROTO;
+		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
+		    flent->fe_flow_desc.fd_protocol;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
+		    MFM_L4_REMOTE;
+		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
+		    flent->fe_flow_desc.fd_remote_port;
+	} else {
+		flent->fe_match2.mfm_type = MFM_SUBFLOW;
+		flent->fe_match2.mfm_cond = 0;
+	}
+}
+
+/*
  * Add a flow to a mac client's subflow table and instantiate the flow
  * in the mac by creating the associated SRSs etc.
  */
@@ -514,32 +549,7 @@ mac_flow_add_subflow(mac_client_handle_t mch, flow_entry_t *flent,
 		return (err);
 	}
 
-	/* TODO(ky): enshrine this a little bit better */
-	flent->fe_match2.mfm_type = MFM_SUBFLOW;
-	flent->fe_match2.mfm_cond = 0;
-	if (flent->fe_match == flow_transport_lport_match) {
-		flent->fe_match2.mfm_type = MFM_ALL;
-		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
-		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
-		    MFM_IPPROTO;
-		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
-		    flent->fe_flow_desc.fd_protocol;
-		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
-		    MFM_L4_LOCAL;
-		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
-		    flent->fe_flow_desc.fd_local_port;
-	} else if (flent->fe_match == flow_transport_rport_match) {
-		flent->fe_match2.mfm_type = MFM_ALL;
-		flent->fe_match2.arg.mfm_list = mac_flow_match_list_create(2);
-		flent->fe_match2.arg.mfm_list->mfml_match[0].mfm_type =
-		    MFM_IPPROTO;
-		flent->fe_match2.arg.mfm_list->mfml_match[0].arg.mfm_ipproto =
-		    flent->fe_flow_desc.fd_protocol;
-		flent->fe_match2.arg.mfm_list->mfml_match[1].mfm_type =
-		    MFM_L4_REMOTE;
-		flent->fe_match2.arg.mfm_list->mfml_match[1].arg.mfm_l4addr =
-		    flent->fe_flow_desc.fd_remote_port;
-	}
+	mac_flow_fill_tree_match(flent);
 
 	if (instantiate_flow) {
 		/* Now activate the flow by creating its SRSs */
@@ -1057,7 +1067,6 @@ mac_flow_modify(flow_tab_t *ft, flow_entry_t *flent, mac_resource_props_t *mrp)
 		if (!(flent->fe_type & FLOW_USER) &&
 		    !(changed_mask & MRP_CPUS) &&
 		    !(mcip_mrp->mrp_mask & MRP_CPUS_USERSPEC)) {
-			/* TODO(ky): safe to call this? do we have a default? */
 			mac_fanout_setup(mcip, flent, mcip_mrp, NULL);
 		}
 	}
@@ -1489,7 +1498,7 @@ mac_link_flow_init(mac_client_handle_t mch, flow_entry_t *sub_flow)
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
 	/*
-	 * TODO(ky): This relies on an open design problem downstream of IPD45.
+	 * This relies on an open design problem downstream of IPD45.
 	 *  - Ask the client what it can give us in terms of rings for this
 	 *    flent's flow description.
 	 *  - Create a specialised sub-group and associate it to this flent.

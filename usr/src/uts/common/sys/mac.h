@@ -280,8 +280,11 @@ typedef enum mac_led_mode {
 	MAC_LED_ON	= (1 << 3)
 } mac_led_mode_t;
 
-/* TODO(ky): placating mdb */
-
+/*
+ * mac_resource_t, and thus mac_intr_t, are visible to userland consumers via
+ * the MAC flow APIs. Define this type as an opaque handle to ensure that these
+ * types are usable in dcmds.
+ */
 #ifndef	_KERNEL
 typedef void *ddi_intr_handle_t;
 #endif

@@ -1067,8 +1067,8 @@ struct mac_soft_ring_set_s {
 	uint64_t	srs_match_bytes;
 
 	/*
-	 * TODO(ky) if we're doing one SRS per flent in the tree (PER RING!),
-	 * then can we share this where relevant? It's like 5KiB each go.
+	 * TODO(ky): This struct is around 5kiB. We need to be smarter around
+	 * refcounting this member now that we have *many* SRSes per client.
 	 */
 	mac_cpus_t	srs_cpu;
 
