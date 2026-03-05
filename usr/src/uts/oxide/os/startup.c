@@ -164,6 +164,7 @@ static void startup_vm(void);
 static void startup_tsc(void);
 static void startup_end(void);
 static void layout_kernel_va(void);
+static void setx86isalist(void);
 
 /*
  * XXX For the moment pci_boot.c expects this data to exist to create a list of
@@ -331,8 +332,6 @@ static pgcnt_t kphysm_init(page_t *, pgcnt_t);
 /*
  *		64-bit Kernel's Virtual memory layout. (assuming 64 bit app)
  *			+-----------------------+
- *			|			|
- * 0xFFFFFFFF.FFC00000  |-----------------------|- ARGSBASE
  *			|	debugger (?)	|
  * 0xFFFFFFFF.FF800000  |-----------------------|- SEGDEBUGBASE
  *			|      unused		|
@@ -881,11 +880,6 @@ startup_memlist(void)
 	size_t page_ctrs_size;
 	size_t pse_table_alloc_size;
 	struct memlist *current;
-	extern void startup_build_mem_nodes(struct memlist *);
-
-	/* XX64 fix these - they should be in include files */
-	extern size_t page_coloring_init(uint_t, int, int);
-	extern void page_coloring_setup(caddr_t);
 
 	PRM_POINT("startup_memlist() starting...");
 
@@ -1227,7 +1221,6 @@ startup_memlist(void)
 static void
 startup_kmem(void)
 {
-	extern void page_set_colorequiv_arr(void);
 	extern uint64_t kpti_kbase;
 
 	PRM_POINT("startup_kmem() starting...");
@@ -1829,7 +1822,6 @@ static void
 startup_end(void)
 {
 	int i;
-	extern void setx86isalist(void);
 	extern void cpu_event_init(void);
 
 	PRM_POINT("startup_end() starting...");
@@ -2535,7 +2527,7 @@ kobj_texthole_free(caddr_t addr, size_t size)
  *
  * So, we just leave this alone.
  */
-void
+static void
 setx86isalist(void)
 {
 	char *tp;
