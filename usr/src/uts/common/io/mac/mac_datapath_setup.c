@@ -4606,6 +4606,20 @@ mac_flow_tree_new_srs(flow_entry_t *ent, const bool is_tx, const bool quiesce,
 }
 
 /*
+ * Determine whether a flow should deliver, drop, delegate to another flow.
+ */
+static mac_flow_action_type_t
+mac_flow_action_type(const flow_action_t *ac)
+{
+	ASSERT3P(ac, !=, NULL);
+	if ((ac->fa_flags & MFA_FLAGS_ACTION) == 0) {
+		return (MFA_TYPE_DELEGATE);
+	}
+	return ((ac->fa_direct_rx_fn == NULL) ?
+	    MFA_TYPE_DROP : MFA_TYPE_DELIVER);
+}
+
+/*
  * Allocates the structure of a baked flow tree, as well as any required
  * resources for delivery.
  *

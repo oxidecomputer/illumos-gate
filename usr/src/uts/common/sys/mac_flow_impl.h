@@ -852,20 +852,6 @@ extern void	mac_flow_tree_destroy(flow_tree_t *);
 extern bool	mac_flow_action_validate(const flow_action_t *);
 
 /*
- * Determine whether a 
- */
-inline mac_flow_action_type_t
-mac_flow_action_type(const flow_action_t *ac)
-{
-	ASSERT3P(ac, !=, NULL);
-	if ((ac->fa_flags & MFA_FLAGS_ACTION) == 0) {
-		return (MFA_TYPE_DELEGATE);
-	}
-	return ((ac->fa_direct_rx_fn == NULL) ?
-	    MFA_TYPE_DROP : MFA_TYPE_DELIVER);
-}
-
-/*
  * Is the target bandwidth control enabled?
  */
 inline bool
