@@ -1241,7 +1241,7 @@ ipcc_cmd_str(ipcc_hss_cmd_t cmd)
 		return ("APOBDATA");
 	case IPCC_HSS_APOBREAD:
 		return ("APOBREAD");
-	case IPCC_HSS_BOOTSTAGE,:
+	case IPCC_HSS_BOOTSTAGE:
 		return ("BOOTSTAGE");
 	default:
 		break;
