@@ -2274,15 +2274,15 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 		mac_srs->srs_bw_len = p->msc_data.logical.bw_list_len;
 		mac_srs->srs_give_to = p->msc_data.logical.give_to;
 
-		/* TODO(ky): assert on locking / quiesce? */
-		mac_soft_ring_set_t *es = p->msc_data.logical.head_srs;
-		ASSERT3P(es, !=, NULL);
-		if (es->srs_logical_next != NULL) {
+		mac_soft_ring_set_t *parent = p->msc_data.logical.head_srs;
+		VERIFY3P(parent, !=, NULL);
+		VERIFY(SRS_QUIESCED(parent));
+		if (parent->srs_logical_next != NULL) {
 			mac_srs->srs_logical_next =
-			    es->srs_logical_next;
+			    parent->srs_logical_next;
 		}
-		es->srs_logical_next = mac_srs;
-		mac_srs->srs_complete_parent = es;
+		parent->srs_logical_next = mac_srs;
+		mac_srs->srs_complete_parent = parent;
 	} else {
 		mac_srs->srs_give_to = NULL;
 		mac_srs->srs_bw = kmem_zalloc(sizeof (my_bw), KM_SLEEP);
@@ -2396,8 +2396,6 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 	/*
 	 * Allow for delivery to this SRS directly from an aggr device.
-	 *
-	 * TODO(ky): Setup SRST_NO_SOFT_RINGS delivery via this? Is ths needed?
 	 */
 	const flow_action_t *my_action =
 	    (mac_srs->srs_give_to == NULL) ?
@@ -4574,8 +4572,10 @@ mac_flow_tree_new_srs(flow_entry_t *ent, const bool is_tx, const bool quiesce,
 	}
 
 	/*
-	 * TODO(ky): `act_as` should be conditionally sourced from delegate_to,
+	 * `act_as` should be conditionally sourced from delegate_to,
 	 * based on whether we have `altered_mrp` from the caller.
+	 *
+	 * Flowtrees do not yet respect custom priority or CPU bindings.
 	 */
 	flow_entry_t *act_as = NULL;
 	mac_soft_ring_set_t *delegate_srs = (is_tx) ? root_srs :
