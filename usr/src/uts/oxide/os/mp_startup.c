@@ -145,6 +145,7 @@
 #include <sys/hma.h>
 #include <sys/cpu_module.h>
 #include <sys/ontrap.h>
+#include <sys/boot_data.h>
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric.h>
 #include <sys/io/zen/ras_impl.h>
@@ -1527,6 +1528,8 @@ start_other_cpus(int cprboot)
 	uint_t who;
 	uint_t bootcpuid = 0;
 
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_AP);
+
 	/*
 	 * Initialize our own cpu_info.
 	 */
@@ -1598,6 +1601,8 @@ start_other_cpus(int cprboot)
 			continue;
 		ASSERT(who != bootcpuid);
 
+		zen_fabric_debug_signal();
+
 		mutex_enter(&cpu_lock);
 		if (start_cpu(who) != 0)
 			CPUSET_DEL(mp_cpus, who);
@@ -1627,6 +1632,7 @@ done:
 	 * At this point, do any late fabric initialization that may be
 	 * required.
 	 */
+	oxide_report_boot_stage(BOOT_STAGE_ZEN_FABRIC_INIT_POSTAP);
 	zen_fabric_init_post_mpstartup();
 
 	if (use_mp && ncpus != boot_max_ncpus) {
@@ -1638,6 +1644,8 @@ done:
 		    "Use \"boot-ncpus\" parameter to enable more CPU(s). "
 		    "See eeprom(1M).");
 	}
+
+	oxide_report_boot_stage(BOOT_STAGE_COMPLETE_AP);
 }
 
 int

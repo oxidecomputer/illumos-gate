@@ -164,6 +164,7 @@ static void startup_vm(void);
 static void startup_tsc(void);
 static void startup_end(void);
 static void layout_kernel_va(void);
+static void setx86isalist(void);
 
 /*
  * XXX For the moment pci_boot.c expects this data to exist to create a list of
@@ -331,8 +332,6 @@ static pgcnt_t kphysm_init(page_t *, pgcnt_t);
 /*
  *		64-bit Kernel's Virtual memory layout. (assuming 64 bit app)
  *			+-----------------------+
- *			|			|
- * 0xFFFFFFFF.FFC00000  |-----------------------|- ARGSBASE
  *			|	debugger (?)	|
  * 0xFFFFFFFF.FF800000  |-----------------------|- SEGDEBUGBASE
  *			|      unused		|
@@ -616,6 +615,8 @@ startup(void)
 {
 	extern cpuset_t cpu_ready_set;
 
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP);
+
 	/*
 	 * Make sure that nobody tries to use segkpm until we have
 	 * initialized it properly.
@@ -627,7 +628,9 @@ startup(void)
 	ssp_init();
 	startup_init();
 	startup_memlist();
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_KMEM);
 	startup_kmem();
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_VM);
 	startup_vm();
 
 	/*
@@ -655,17 +658,21 @@ startup(void)
 		    "CGPLL: spread-spectrum clocking could not be enabled");
 	}
 
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_TSC);
 	startup_tsc();
 
 	/*
 	 * At this point in time, go through and initialize the SoC's I/O
 	 * fabric. This includes the SMU, DXIO, NBIO, etc.
 	 */
+	oxide_report_boot_stage(BOOT_STAGE_ZEN_FABRIC_INIT);
 	zen_fabric_init();
 	if (smm_init() != 0)
 		cmn_err(CE_WARN, "SMI handler initialisation failed");
 
+	oxide_report_boot_stage(BOOT_STAGE_SMAP);
 	startup_smap();
+	oxide_report_boot_stage(BOOT_STAGE_MODULES);
 	startup_modules();
 
 	startup_end();
@@ -881,11 +888,6 @@ startup_memlist(void)
 	size_t page_ctrs_size;
 	size_t pse_table_alloc_size;
 	struct memlist *current;
-	extern void startup_build_mem_nodes(struct memlist *);
-
-	/* XX64 fix these - they should be in include files */
-	extern size_t page_coloring_init(uint_t, int, int);
-	extern void page_coloring_setup(caddr_t);
 
 	PRM_POINT("startup_memlist() starting...");
 
@@ -1227,7 +1229,6 @@ startup_memlist(void)
 static void
 startup_kmem(void)
 {
-	extern void page_set_colorequiv_arr(void);
 	extern uint64_t kpti_kbase;
 
 	PRM_POINT("startup_kmem() starting...");
@@ -1829,9 +1830,9 @@ static void
 startup_end(void)
 {
 	int i;
-	extern void setx86isalist(void);
 	extern void cpu_event_init(void);
 
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_END);
 	PRM_POINT("startup_end() starting...");
 
 	/*
@@ -1935,6 +1936,8 @@ post_startup(void)
 {
 	extern void cpupm_init(cpu_t *);
 	extern void cpu_event_init_cpu(cpu_t *);
+
+	oxide_report_boot_stage(BOOT_STAGE_STARTUP_POST);
 
 	/*
 	 * On some platforms we send the APOB data down to the SP so that it
@@ -2535,7 +2538,7 @@ kobj_texthole_free(caddr_t addr, size_t size)
  *
  * So, we just leave this alone.
  */
-void
+static void
 setx86isalist(void)
 {
 	char *tp;

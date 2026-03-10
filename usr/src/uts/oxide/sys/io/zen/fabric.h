@@ -183,6 +183,11 @@ extern void zen_fabric_thread_get_dpm_weights_noop(const zen_thread_t *,
     const uint64_t **, uint32_t *);
 
 /*
+ * Routine to send a debug signal / timing point via a GPIO.
+ */
+extern void zen_fabric_debug_signal(void);
+
+/*
  * Read and write PCIe core and port registers.
  */
 extern uint32_t zen_pcie_core_read(zen_pcie_core_t *, const smn_reg_t);

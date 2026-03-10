@@ -702,6 +702,18 @@ kernel_ipcc_keylookup(uint8_t key, uint8_t *buf, size_t *bufl)
 }
 
 /*
+ * This interface is used throughout boot to provide an indication on how far
+ * the boot has progressed to the service processor. The service processor
+ * records this information for inspection but takes no further action.
+ */
+int
+kernel_ipcc_bootstage(uint64_t version, uint64_t stage)
+{
+	return (ipcc_bootstage(&kernel_ipcc_ops, &kernel_ipcc_data,
+	    version, stage));
+}
+
+/*
  * Read the current APOB out from the SP over IPCC. On success this returns an
  * allocated `apob_hdl_t *` which must be freed via kernel_ipcc_apobfree()
  * once no longer required. On failure the return value is NULL.

@@ -75,6 +75,38 @@ extern void eb_set_tunables(void);
 extern void genunix_set_tunables(void);
 extern bool genunix_is_loaded(void);
 
+#define	BOOT_STAGE_VERSION	1
+/*
+ * When we reach a particular boot stage, we send a POST code via I/O port 0x80
+ * that is the following value ORed with the boot stage. This obviously doesn't
+ * scale to a high number of stages but this gives us the lower 12-bits to use.
+ */
+#define	BOOT_STAGE_POSTCODE	0x1de0b000
+
+typedef enum boot_stage {
+	BOOT_STAGE_START	= 0,
+	BOOT_STAGE_MLSETUP,
+	BOOT_STAGE_ZEN_FABRIC_TOPO_INIT,
+	BOOT_STAGE_ZEN_CCX_INIT,
+	BOOT_STAGE_ZEN_RAS_INIT,
+	BOOT_STAGE_STARTUP,
+	BOOT_STAGE_STARTUP_KMEM,
+	BOOT_STAGE_STARTUP_VM,
+	BOOT_STAGE_STARTUP_TSC,
+	BOOT_STAGE_ZEN_FABRIC_INIT,
+	BOOT_STAGE_PCIE_INIT,
+	BOOT_STAGE_HOTPLUG_INIT,
+	BOOT_STAGE_SMAP,
+	BOOT_STAGE_MODULES,
+	BOOT_STAGE_STARTUP_END,
+	BOOT_STAGE_STARTUP_POST,
+	BOOT_STAGE_STARTUP_AP,
+	BOOT_STAGE_ZEN_FABRIC_INIT_POSTAP,
+	BOOT_STAGE_COMPLETE_AP,
+} boot_stage_t;
+
+extern void oxide_report_boot_stage(boot_stage_t);
+
 #ifdef	__cplusplus
 }
 #endif

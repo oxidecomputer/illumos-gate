@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  * Copyright 2024 Ryan Zezeski
  */
 
@@ -759,7 +759,25 @@ mac_ether_offload_info_test(ktest_ctx_hdl_t *ctx)
 		return;
 	}
 
-	mac_ether_offload_info_t result;
+	/*
+	 * Part of the contract with this function today is that it will
+	 * zero-fill any unused fields -- the test data we receive into
+	 * `expect` accounts for this.
+	 *
+	 * Initialise the struct with garbage data to be certain that this
+	 * contract is upheld.
+	 */
+	mac_ether_offload_info_t result = {
+		.meoi_flags = 0xbadd,
+		.meoi_tuntype = 0xcafe,
+		.meoi_len = 0xbadd,
+		.meoi_l2hlen = 0xba,
+		.meoi_l3proto = 0xcafe,
+		.meoi_l3hlen = 0xbadd,
+		.meoi_l4proto = 0xca,
+		.meoi_l4hlen = 0xfe,
+		.meoi_tunhlen = 0xbadd,
+	};
 	mac_ether_offload_info(mtp.mtp_mp, &result, NULL);
 
 	const mac_ether_offload_info_t *expect = &mtp.mtp_results;
@@ -769,6 +787,9 @@ mac_ether_offload_info_test(ktest_ctx_hdl_t *ctx)
 	KT_ASSERT3UG(result.meoi_l3hlen, ==, expect->meoi_l3hlen, ctx, done);
 	KT_ASSERT3UG(result.meoi_l4proto, ==, expect->meoi_l4proto, ctx, done);
 	KT_ASSERT3UG(result.meoi_l4hlen, ==, expect->meoi_l4hlen, ctx, done);
+
+	KT_ASSERT3UG(result.meoi_tuntype, ==, METT_NONE, ctx, done);
+	KT_ASSERT3UG(result.meoi_tunhlen, ==, 0, ctx, done);
 
 	KT_PASS(ctx);
 
@@ -795,6 +816,9 @@ mac_partial_offload_info_test(ktest_ctx_hdl_t *ctx)
 	KT_ASSERT3UG(result->meoi_l3hlen, ==, expect->meoi_l3hlen, ctx, done);
 	KT_ASSERT3UG(result->meoi_l4proto, ==, expect->meoi_l4proto, ctx, done);
 	KT_ASSERT3UG(result->meoi_l4hlen, ==, expect->meoi_l4hlen, ctx, done);
+
+	KT_ASSERT3UG(result->meoi_tuntype, ==, METT_NONE, ctx, done);
+	KT_ASSERT3UG(result->meoi_tunhlen, ==, 0, ctx, done);
 
 	KT_PASS(ctx);
 

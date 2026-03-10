@@ -189,6 +189,8 @@ static void startup_tsc(void);
 #endif
 static void startup_end(void);
 static void layout_kernel_va(void);
+static void setx86isalist(void);
+
 
 /*
  * Declare these as initialized data so we can patch them.
@@ -358,51 +360,8 @@ static pgcnt_t kphysm_init(page_t *, pgcnt_t);
 	((uintptr_t)P2ROUNDUP((uintptr_t)(x), mmu.level_size[mmu.max_level]))
 
 /*
- *	32-bit Kernel's Virtual memory layout.
- *		+-----------------------+
- *		|			|
- * 0xFFC00000  -|-----------------------|- ARGSBASE
- *		|	debugger	|
- * 0xFF800000  -|-----------------------|- SEGDEBUGBASE
- *		|      Kernel Data	|
- * 0xFEC00000  -|-----------------------|
- *              |      Kernel Text	|
- * 0xFE800000  -|-----------------------|- KERNEL_TEXT (0xFB400000 on Xen)
- *		|---       GDT       ---|- GDT page (GDT_VA)
- *		|---    debug info   ---|- debug info (DEBUG_INFO_VA)
- *		|			|
- *		|   page_t structures	|
- *		|   memsegs, memlists,	|
- *		|   page hash, etc.	|
- * ---	       -|-----------------------|- ekernelheap, valloc_base (floating)
- *		|			|  (segkp is just an arena in the heap)
- *		|			|
- *		|	kvseg		|
- *		|			|
- *		|			|
- * ---         -|-----------------------|- kernelheap (floating)
- *		|        Segkmap	|
- * 0xC3002000  -|-----------------------|- segmap_start (floating)
- *		|	Red Zone	|
- * 0xC3000000  -|-----------------------|- kernelbase / userlimit (floating)
- *		|			|			||
- *		|     Shared objects	|			\/
- *		|			|
- *		:			:
- *		|	user data	|
- *		|-----------------------|
- *		|	user text	|
- * 0x08048000  -|-----------------------|
- *		|	user stack	|
- *		:			:
- *		|	invalid		|
- * 0x00000000	+-----------------------+
- *
- *
  *		64-bit Kernel's Virtual memory layout. (assuming 64 bit app)
  *			+-----------------------+
- *			|			|
- * 0xFFFFFFFF.FFC00000  |-----------------------|- ARGSBASE
  *			|	debugger (?)	|
  * 0xFFFFFFFF.FF800000  |-----------------------|- SEGDEBUGBASE
  *			|      unused		|
@@ -998,11 +957,6 @@ startup_memlist(void)
 	size_t page_ctrs_size;
 	size_t pse_table_alloc_size;
 	struct memlist *current;
-	extern void startup_build_mem_nodes(struct memlist *);
-
-	/* XX64 fix these - they should be in include files */
-	extern size_t page_coloring_init(uint_t, int, int);
-	extern void page_coloring_setup(caddr_t);
 
 	PRM_POINT("startup_memlist() starting...");
 
@@ -1352,7 +1306,6 @@ startup_memlist(void)
 static void
 startup_kmem(void)
 {
-	extern void page_set_colorequiv_arr(void);
 #if !defined(__xpv)
 	extern uint64_t kpti_kbase;
 #endif
@@ -2088,7 +2041,6 @@ static void
 startup_end(void)
 {
 	int i;
-	extern void setx86isalist(void);
 	extern void cpu_event_init(void);
 
 	PRM_POINT("startup_end() starting...");
@@ -3075,7 +3027,7 @@ kobj_texthole_free(caddr_t addr, size_t size)
  *
  * So, we just leave this alone.
  */
-void
+static void
 setx86isalist(void)
 {
 	char *tp;

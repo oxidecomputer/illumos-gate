@@ -45,6 +45,7 @@ extern int kernel_ipcc_bsu(uint8_t *);
 extern int kernel_ipcc_ident(ipcc_ident_t *);
 extern int kernel_ipcc_status(uint64_t *, uint64_t *);
 extern int kernel_ipcc_ackstart(void);
+extern int kernel_ipcc_bootstage(uint64_t, uint64_t);
 extern int kernel_ipcc_bootfailv(ipcc_host_boot_failure_t, const char *,
     va_list);
 extern int kernel_ipcc_bootfail(ipcc_host_boot_failure_t, const char *, ...);

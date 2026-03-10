@@ -2687,11 +2687,11 @@ mac_ether_offload_info(const mblk_t *pkt, mac_ether_offload_info_t *outer_info,
 	 * before unpacking it if the parsing of outer_info is incomplete (or
 	 * not a tunnel at all).
 	 */
+	bzero(outer_target, sizeof (*outer_target));
 	outer_target->meoi_len = mp_len(pkt);
+
 	if (inner_info != NULL) {
-		inner_info->meoi_flags = 0;
-		inner_info->meoi_tuntype = METT_NONE;
-		inner_info->meoi_len = 0;
+		bzero(inner_info, sizeof (*inner_info));
 	}
 
 	/*

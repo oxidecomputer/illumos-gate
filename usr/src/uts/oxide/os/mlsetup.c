@@ -73,6 +73,8 @@ mlsetup(struct regs *rp)
 
 	ASSERT_STACK_ALIGNED();
 
+	oxide_report_boot_stage(BOOT_STAGE_MLSETUP);
+
 	genunix_set_tunables();
 
 	/*
@@ -156,6 +158,7 @@ mlsetup(struct regs *rp)
 	 * parts of the build.  We need to probe out the CCXs before we can set
 	 * mcpu_hwthread and to set up brand strings for cpuid in a later pass.
 	 */
+	oxide_report_boot_stage(BOOT_STAGE_ZEN_FABRIC_TOPO_INIT);
 	zen_fabric_topo_init();
 	CPU->cpu_m.mcpu_hwthread = zen_fabric_find_thread_by_cpuid(CPU->cpu_id);
 
@@ -191,11 +194,13 @@ mlsetup(struct regs *rp)
 	 * so it must be done before the BASIC cpuid pass.  This will be run on
 	 * APs later on.
 	 */
+	oxide_report_boot_stage(BOOT_STAGE_ZEN_CCX_INIT);
 	zen_ccx_init();
 
 	/*
 	 * Initialize the BSP's MCA banks.
 	 */
+	oxide_report_boot_stage(BOOT_STAGE_ZEN_RAS_INIT);
 	zen_ras_init();
 
 	/*

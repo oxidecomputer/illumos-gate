@@ -590,6 +590,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/clock.h>
 #include <sys/ddi.h>
 #include <sys/ddi_subrdefs.h>
 #include <sys/ksynch.h>
@@ -1258,7 +1259,7 @@ milan_pcie_dbg_signal(void)
 			milan_hack_set_kbrst_en(false);
 			zen_hack_gpio_config(129, MILAN_FCH_IOMUX_129_AGPIO129);
 			zen_hack_gpio(ZHGOP_TOGGLE, 129);
-			drv_usecwait(1);
+			eb_pausems(1);
 			gpio_configured = true;
 		}
 		zen_hack_gpio(ZHGOP_TOGGLE, 129);

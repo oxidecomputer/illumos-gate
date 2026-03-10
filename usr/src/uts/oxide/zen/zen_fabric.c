@@ -28,6 +28,7 @@
 #include <sys/pci_cfgspace_impl.h>
 #include <sys/pcie.h>
 #include <sys/platform_detect.h>
+#include <sys/boot_data.h>
 
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/df.h>
@@ -1706,11 +1707,9 @@ zen_pcie_populate_port_dbg(zen_pcie_port_t *port, void *arg)
 void
 zen_pcie_populate_dbg(zen_fabric_t *fabric, uint32_t stage, uint8_t iodie_match)
 {
-	const zen_fabric_ops_t *fabric_ops = oxide_zen_fabric_ops();
 	void *cookie = zen_pcie_dbg_cookie(stage, iodie_match);
 
-	if (fabric_ops->zfo_pcie_dbg_signal != NULL)
-		(fabric_ops->zfo_pcie_dbg_signal)();
+	zen_fabric_debug_signal();
 
 	(void) zen_fabric_walk_pcie_core(fabric, zen_pcie_populate_core_dbg,
 	    cookie);
@@ -3219,6 +3218,7 @@ zen_fabric_init(void)
 	/*
 	 * Move on to PCIe training.
 	 */
+	oxide_report_boot_stage(BOOT_STAGE_PCIE_INIT);
 	zen_pcie_populate_dbg(fabric, ZPCS_PRE_INIT, ZEN_IODIE_MATCH_ANY);
 
 	VERIFY3P(fabric_ops->zfo_pcie, !=, NULL);
@@ -3245,6 +3245,7 @@ zen_fabric_init(void)
 	 */
 	zen_pcie_populate_dbg(fabric, ZPCS_PRE_HOTPLUG, ZEN_IODIE_MATCH_ANY);
 
+	oxide_report_boot_stage(BOOT_STAGE_HOTPLUG_INIT);
 	if (!zen_fabric_pcie_hotplug_init(fabric)) {
 		cmn_err(CE_WARN,
 		    "hotplug initialization failed; "
@@ -3283,6 +3284,14 @@ zen_fabric_nmi_cb(zen_ioms_t *ioms, void *arg)
 	void (*uarch_nmi_func)(zen_ioms_t *) = arg;
 	uarch_nmi_func(ioms);
 	return (0);
+}
+
+void
+zen_fabric_debug_signal(void)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	if (fops->zfo_pcie_dbg_signal != NULL)
+		fops->zfo_pcie_dbg_signal();
 }
 
 /*
