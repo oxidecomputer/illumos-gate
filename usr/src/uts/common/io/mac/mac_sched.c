@@ -2426,7 +2426,12 @@ mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t *set,
 }
 
 /*
- * TODO(ky): this is fairly unfortunate atm. Slight respin on mac_flow_lookup.
+ * Determine whether a packet matches a target subflow, in the context of a
+ * flowtree walk. Subflows matched using this function are more expensive,
+ * as they do not rely on MEOI parse information.
+ *
+ * This code duplicates `mac_flow_lookup`, and should be retired once all
+ * subflows can be represented as `mac_flow_match_t`s.
  */
 static bool
 mac_subflow_is_match(flow_entry_t *flent, mblk_t *mp, const bool is_tx)
@@ -2439,9 +2444,6 @@ mac_subflow_is_match(flow_entry_t *flent, mblk_t *mp, const bool is_tx)
 retry:
 	s.fs_mp = mp;
 
-	/* This is a patch up for existing subflows to at least work. */
-	/* This will NOT be fast. */
-	/* TODO(ky): is this the right mcip? */
 	ASSERT3P(flent, !=, NULL);
 	mac_client_impl_t *mcip = (mac_client_impl_t *)flent->fe_mcip;
 	ASSERT3P(mcip, !=, NULL);
@@ -2453,11 +2455,6 @@ retry:
 	 * Walk the list of predeclared accept functions.
 	 * Each of these would accumulate enough state to allow the next
 	 * accept routine to make progress.
-	 *
-	 * TODO(ky): this obviously just duplicates existing logic, and will be
-	 * wickedly expensive for duplicated subflows after the fastpath to
-	 * rebuild the flow_state_t at leaves. I would really like this to be
-	 * cheaper!!
 	 */
 	for (i = 0; i < FLOW_MAX_ACCEPT && ops->fo_accept[i] != NULL; i++) {
 		if ((err = (ops->fo_accept[i])(ft, &s)) != 0) {
@@ -2487,13 +2484,11 @@ retry:
 		}
 	}
 
-	/* Hash functions can initialise parts of flow_state_t. Sigh. */
-	(void) ops->fo_hash(ft, &s);
-
 	/*
-	 * The packet is considered sane. We may now attempt to
-	 * find the corresponding flent.
+	 * Hash functions can initialise parts of flow_state_t used in the match
+	 * itself.
 	 */
+	(void) ops->fo_hash(ft, &s);
 	return (flent->fe_match(ft, flent, &s));
 }
 
@@ -5296,12 +5291,9 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 /*
  * Process a chain for a given soft ring. If the number of packets
  * queued in the SRS and its associated soft rings (including this
- * one) is very small (tracked by srs_poll_pkt_cnt) then allow the
+ * one) is a single packet (tracked by srs_poll_pkt_cnt), then allow the
  * entering thread (interrupt or poll thread) to process the chain
  * inline. This is meant to reduce latency under low load.
- *
- * The proc and arg for each mblk is already stored in the mblk in
- * appropriate places.
  */
 void
 mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
@@ -5324,7 +5316,16 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 	ASSERT3U(ringp->s_ring_type & ST_RING_TX, ==, 0);
 	atomic_add_64(&ringp->s_ring_total_inpkt, cnt);
 	atomic_add_64(&ringp->s_ring_total_rbytes, sz);
-	/* TODO(ky): this was never locked in original impl. Think through? */
+	/*
+	 * `sr_poll_pkt_cnt` can be modified by a few other concurrent actors.
+	 * - Another softring reduces this count by clearing its own chain.
+	 * - More packets were enqueued onto this SRS behind us, because we are
+	 *   the worker thread.
+	 * In the worst case, we narrowly miss a slightly lower-latency
+	 * processing opportunity, but the ring is arguably still loaded enough
+	 * to warrant passing off frames to the softring worker. The packets
+	 * will always be handled either way.
+	 */
 	if ((from_mac_srs->srs_data.rx.sr_poll_pkt_cnt <= 1) &&
 	    !(ringp->s_ring_type & ST_RING_WORKER_ONLY)) {
 		/* If on processor or blanking on, then enqueue and return */
@@ -5369,8 +5370,9 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 			mutex_enter(&ringp->s_ring_lock);
 			ringp->s_ring_run = NULL;
 			ringp->s_ring_state &= ~S_RING_PROC;
-			if (ringp->s_ring_state & S_RING_CLIENT_WAIT)
+			if (ringp->s_ring_state & S_RING_CLIENT_WAIT) {
 				cv_signal(&ringp->s_ring_client_cv);
+			}
 
 			if ((ringp->s_ring_first == NULL) ||
 			    (ringp->s_ring_state & S_RING_BLANK)) {
