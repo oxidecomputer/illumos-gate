@@ -266,7 +266,8 @@ typedef	struct mac_resource_props_s {
  */
 typedef enum {
 	/*
-	 * Packets matching this flow should be processed 
+	 * Packets matching this flow should be explicitly handled with either
+	 * a provided function, or dropped.
 	 */
 	MFA_FLAGS_ACTION	= 0x01,
 	/*

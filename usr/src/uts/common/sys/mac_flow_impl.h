@@ -473,7 +473,7 @@ struct flow_entry_s {					/* Protected by */
 	 * Initial flow ref is 1 on creation. A thread that lookups the
 	 * flent typically by a mac_flow_lookup() dynamically holds a ref, and
 	 * any `flow_tree_t`s referencing this flent hold a long-term ref.
-	 * 
+	 *
 	 * If the ref count equals the number of flowtree refs, it means there
 	 * aren't any upcalls from the driver or downcalls from the stack using
 	 * this flent. Other structures pointing to the flent or flent inserted
@@ -840,7 +840,7 @@ extern void	mac_flow_tab_destroy(flow_tab_t *);
 extern void	mac_flow_drop(void *, void *, mblk_t *);
 extern void	flow_stat_destroy(flow_entry_t *);
 
-extern void 	mac_flow_match_destroy(mac_flow_match_t *);
+extern void	mac_flow_match_destroy(mac_flow_match_t *);
 extern mac_flow_match_list_t	*mac_flow_match_list_create(const size_t);
 extern mac_flow_match_t	mac_flow_clone_match(const mac_flow_match_t *);
 extern void	mac_flow_match_list_remove(mac_flow_match_t *, const size_t);
