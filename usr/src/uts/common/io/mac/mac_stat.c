@@ -866,73 +866,51 @@ i_mac_tx_hwlane_stat_create(mac_soft_ring_t *ringp, const char *modname,
 	ringp->s_ring_ksp = ksp;
 }
 
+static inline uint64_t
+i_mac_rx_fanout_stat_get_one(mac_soft_ring_t *ringp, uint_t stat)
+{
+	/*
+	 * These values are adjusted atomically by the dataplane.
+	 */
+	switch (stat) {
+	case MAC_STAT_RBYTES:
+		return (ringp->s_ring_total_rbytes);
+	case MAC_STAT_IPACKETS:
+		return (ringp->s_ring_total_inpkt);
+	default:
+		return (0);
+	}
+}
+
 /*
  * Per fanout rx statistics
  */
 static uint64_t
 i_mac_rx_fanout_stat_get(void *handle, uint_t stat)
 {
-	mac_soft_ring_t		*tcp_ringp = (mac_soft_ring_t *)handle;
-	/*
-	mac_soft_ring_t		*tcp6_ringp = NULL, *udp_ringp = NULL;
-	mac_soft_ring_t		*udp6_ringp = NULL, *oth_ringp = NULL;
-	*/
-	mac_soft_ring_set_t	*mac_srs = tcp_ringp->s_ring_set;
-	int			index;
-	uint64_t		val;
+	mac_soft_ring_t *ringp = (mac_soft_ring_t *)handle;
+	mac_soft_ring_set_t *mac_srs = ringp->s_ring_set;
+	mac_impl_t *mac = mac_srs->srs_mcip->mci_mip;
+	processorid_t my_cpu = ringp->s_ring_cpuid;
 
-	/*
-	 * TODO(ky): We kinda want to preserve *something* like what is
-	 * here in a post flow-trees world.
-	 * Currently this doesn't apply to e.g. SRST_FLOW.
-	 * I think that we want it to apply to any flow, and to track through
-	 * the MRP assigned to said flow. But I need to find the right way to
-	 * walk/track that.
-	 */
+	ASSERT(!mac_srs_is_logical(mac_srs));
 
-	mutex_enter(&mac_srs->srs_lock);
-	/* Extract corresponding udp and oth ring pointers */
-	for (index = 0; mac_srs->srs_soft_rings[index] != NULL; index++) {
-		if (mac_srs->srs_soft_rings[index] == tcp_ringp) {
-			/*
-			tcp6_ringp = mac_srs->srs_tcp6_soft_rings[index];
-			udp_ringp = mac_srs->srs_udp_soft_rings[index];
-			udp6_ringp = mac_srs->srs_udp6_soft_rings[index];
-			oth_ringp = mac_srs->srs_oth_soft_rings[index];
-			*/
-			break;
+	if (i_mac_perim_tryread(mac) != 0) {
+		return (0);
+	}
+	uint64_t val = i_mac_rx_fanout_stat_get_one(ringp, stat);
+	for (mac_soft_ring_set_t *curr = mac_srs->srs_logical_next;
+	    curr != NULL; curr = curr->srs_logical_next) {
+		for (uint16_t i = 0; i < curr->srs_soft_ring_count; i++) {
+			mac_soft_ring_t *candidate = curr->srs_soft_rings[i];
+			if (candidate->s_ring_cpuid == my_cpu) {
+				val +=
+				    i_mac_rx_fanout_stat_get_one(ringp, stat);
+				break;
+			}
 		}
 	}
-
-	/*
-	ASSERT((tcp6_ringp != NULL) && (udp_ringp != NULL) &&
-	    (udp6_ringp != NULL) && (oth_ringp != NULL));
-	*/
-
-	switch (stat) {
-	case MAC_STAT_RBYTES:
-		val = tcp_ringp->s_ring_total_rbytes;
-		/*val = (tcp_ringp->s_ring_total_rbytes) +
-		    (tcp6_ringp->s_ring_total_rbytes) +
-		    (udp_ringp->s_ring_total_rbytes) +
-		    (udp6_ringp->s_ring_total_rbytes) +
-		    (oth_ringp->s_ring_total_rbytes);*/
-		break;
-
-	case MAC_STAT_IPACKETS:
-		val = tcp_ringp->s_ring_total_inpkt;
-		/*val = (tcp_ringp->s_ring_total_inpkt) +
-		    (tcp6_ringp->s_ring_total_inpkt) +
-		    (udp_ringp->s_ring_total_inpkt) +
-		    (udp6_ringp->s_ring_total_inpkt) +
-		    (oth_ringp->s_ring_total_inpkt);*/
-		break;
-
-	default:
-		val = 0;
-		break;
-	}
-	mutex_exit(&mac_srs->srs_lock);
+	i_mac_perim_read_exit(mac);
 	return (val);
 }
 
@@ -1066,8 +1044,9 @@ mac_srs_stat_create(mac_soft_ring_set_t *mac_srs)
 	char		statname[MAXNAMELEN];
 
 	/* No hardware/software lanes for user defined flows */
-	if ((flent->fe_type & FLOW_USER) != 0)
+	if (mac_srs_is_logical(mac_srs) || (flent->fe_type & FLOW_USER) != 0) {
 		return;
+	}
 
 	if (mac_srs_is_tx(mac_srs)) {
 		mac_srs_tx_t	*srs_tx = &mac_srs->srs_data.tx;
@@ -1121,6 +1100,11 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 	mac_ring_t		*ring_tx = (mac_ring_t *)ringp->s_ring_tx_arg2;
 	char			statname[MAXNAMELEN];
 
+	if (mac_srs_is_logical(mac_srs)) {
+		ringp->s_ring_ksp = NULL;
+		return;
+	}
+
 	if (mac_srs_is_tx(mac_srs)) {	/* tx side hardware lane */
 		ASSERT(ring_tx != NULL);
 		(void) snprintf(statname, sizeof (statname), "mac_tx_hwlane%d",
@@ -1128,13 +1112,6 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 		i_mac_tx_hwlane_stat_create(ringp, flent->fe_flow_name,
 		    statname);
 	} else {
-		/*
-		 * TODO(ky): should these be unified, like they were before?
-		 * Currently this will split these stats over each fastpath
-		 * subflow...
-		 * TODO(ky): Will this play poorly with multiple SRSes bound to
-		 * one flent, as we expect to have in baked trees?
-		 */
 		int		index;
 		mac_soft_ring_t	*softring;
 		mac_ring_t	*ring_rx = mac_srs->srs_data.rx.sr_ring;
@@ -1147,17 +1124,8 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 		}
 
 		if (ring_rx == NULL) {
-			if (mac_srs_is_logical(mac_srs)) {
-				flow_entry_t *l_flent =
-				    (flow_entry_t *)mac_srs->srs_flent;
-				(void) snprintf(statname, sizeof (statname),
-				    "flow_%s_fanout%d_client_%p",
-				    l_flent->fe_flow_name, index,
-				    ringp->s_ring_mcip);
-			} else {
-				(void) snprintf(statname, sizeof (statname),
-				    "mac_rx_swlane0_fanout%d", index);
-			}
+			(void) snprintf(statname, sizeof (statname),
+			    "mac_rx_swlane0_fanout%d", index);
 		} else {
 			(void) snprintf(statname, sizeof (statname),
 			    "mac_rx_hwlane%d_fanout%d",
@@ -1180,17 +1148,14 @@ mac_ring_stat_delete(mac_ring_t *ring)
 void
 mac_srs_stat_delete(mac_soft_ring_set_t *mac_srs)
 {
-	boolean_t	is_tx_srs;
-
-	is_tx_srs = ((mac_srs->srs_type & SRST_TX) != 0);
-	if (!is_tx_srs) {
+	if (!mac_srs_is_tx(mac_srs)) {
 		/*
 		 * Rx ring has been taken away. Before destroying corresponding
 		 * SRS, save the stats recorded by that SRS.
 		 */
-		mac_client_impl_t	*mcip = mac_srs->srs_mcip;
-		mac_misc_stats_t	*mac_misc_stat = &mcip->mci_misc_stat;
-		mac_rx_stats_t		*mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
+		mac_client_impl_t *mcip = mac_srs->srs_mcip;
+		mac_misc_stats_t *mac_misc_stat = &mcip->mci_misc_stat;
+		mac_rx_stats_t *mac_rx_stat = &mac_srs->srs_data.rx.sr_stat;
 
 		i_mac_add_stats(&mac_misc_stat->mms_defunctrxlanestats,
 		    mac_rx_stat, &mac_misc_stat->mms_defunctrxlanestats,
@@ -1216,10 +1181,8 @@ void
 mac_soft_ring_stat_delete(mac_soft_ring_t *ringp)
 {
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
-	boolean_t		is_tx_srs;
 
-	is_tx_srs = ((mac_srs->srs_type & SRST_TX) != 0);
-	if (is_tx_srs) {
+	if (mac_srs_is_tx(mac_srs)) {
 		/*
 		 * Tx ring has been taken away. Before destroying corresponding
 		 * soft ring, save the stats recorded by that soft ring.
@@ -1233,7 +1196,7 @@ mac_soft_ring_stat_delete(mac_soft_ring_t *ringp)
 		    tx_softring_stats_list, TX_SOFTRING_STAT_SIZE);
 	}
 
-	if (ringp->s_ring_ksp) {
+	if (ringp->s_ring_ksp != NULL) {
 		kstat_delete(ringp->s_ring_ksp);
 		ringp->s_ring_ksp = NULL;
 	}

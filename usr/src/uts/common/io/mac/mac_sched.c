@@ -5322,8 +5322,8 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 
 	mutex_enter(&ringp->s_ring_lock);
 	ASSERT3U(ringp->s_ring_type & ST_RING_TX, ==, 0);
-	ringp->s_ring_total_inpkt += cnt;
-	ringp->s_ring_total_rbytes += sz;
+	atomic_add_64(&ringp->s_ring_total_inpkt, cnt);
+	atomic_add_64(&ringp->s_ring_total_rbytes, sz);
 	/* TODO(ky): this was never locked in original impl. Think through? */
 	if ((from_mac_srs->srs_data.rx.sr_poll_pkt_cnt <= 1) &&
 	    !(ringp->s_ring_type & ST_RING_WORKER_ONLY)) {
