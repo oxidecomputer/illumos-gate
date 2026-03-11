@@ -391,7 +391,6 @@ typedef struct {
 	 */
 	mac_direct_rx_t		sr_func;	/* srs_lock + ¬SRS_PROC */
 	void			*sr_arg1;	/* srs_lock + ¬SRS_PROC */
-	mac_resource_handle_t	sr_arg2;	/* srs_lock + ¬SRS_PROC */
 
 	mac_rx_srs_lower_proc_t	sr_lower_proc;	/* Atomically changed */
 	mac_ring_t		*sr_ring;	/* Ring Descriptor (WO) */

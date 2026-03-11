@@ -2404,7 +2404,6 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 	VERIFY3U(my_action->fa_flags & MFA_FLAGS_ACTION, !=, 0);
 	srs_rx->sr_func = my_action->fa_direct_rx_fn;
 	srs_rx->sr_arg1 = my_action->fa_direct_rx_arg;
-	srs_rx->sr_arg2 = NULL;
 
 	if (!is_logical) {
 		mac_ring_t *ring = p->msc_data.rx.ring;
@@ -3711,11 +3710,11 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 
-	const uint_t quiesce_flag = mac_srs->srs_state &
+	const mac_soft_ring_set_state_t quiesce_flag = mac_srs->srs_state &
 	    (SRS_CONDEMNED | SRS_QUIESCE);
-	const uint_t s_ring_flag = (quiesce_flag == SRS_CONDEMNED) ?
-	    S_RING_CONDEMNED : S_RING_QUIESCE;
-	const uint_t srs_poll_wait_flag =
+	const mac_soft_ring_state_t s_ring_flag =
+	    (quiesce_flag == SRS_CONDEMNED) ? S_RING_CONDEMNED : S_RING_QUIESCE;
+	const mac_soft_ring_set_state_t srs_poll_wait_flag =
 	    (quiesce_flag == SRS_CONDEMNED) ? SRS_POLL_THR_EXITED :
 	    SRS_POLL_THR_QUIESCED;
 
