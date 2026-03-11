@@ -57,10 +57,6 @@ typedef struct mac_soft_ring_set_s mac_soft_ring_set_t;
 struct flow_entry_s;
 struct mac_client_impl_s;
 
-typedef void (*mac_soft_ring_drain_func_t)(mac_soft_ring_t *);
-typedef mac_tx_cookie_t (*mac_tx_func_t)(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-
 /* Tx notify callback */
 typedef struct mac_tx_notify_cb_s {
 	mac_cb_t		mtnf_link;	/* Linked list of callbacks */
@@ -393,10 +389,9 @@ typedef struct {
 	 * places. I am leaving the consolidation battle for
 	 * another day.
 	 */
-	mac_direct_rx_t			sr_func;	/* srs_lock */
-	struct mac_client_impl_s	*sr_arg1;	/* srs_lock */
-	mac_resource_handle_t		sr_arg2;	/* srs_lock */
-
+	mac_direct_rx_t		sr_func;	/* srs_lock + ¬SRS_PROC */
+	void			*sr_arg1;	/* srs_lock + ¬SRS_PROC */
+	mac_resource_handle_t	sr_arg2;	/* srs_lock + ¬SRS_PROC */
 
 	mac_rx_srs_lower_proc_t	sr_lower_proc;	/* Atomically changed */
 	mac_ring_t		*sr_ring;	/* Ring Descriptor (WO) */
