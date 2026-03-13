@@ -3920,8 +3920,8 @@ nextpkt:
 		obytes = (new_head->b_cont == NULL ? MBLKL(new_head) :
 		    msgdsize(new_head));
 
-		new_head = mac_provider_tx(mip, srs_tx->st_arg2, new_head,
-		    mcip);
+		new_head = mac_provider_tx(mip,
+		    (mac_ring_handle_t)srs_tx->st_arg2, new_head, mcip);
 
 		if (new_head == NULL) {
 			cookie = 0;

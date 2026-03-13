@@ -47,11 +47,13 @@
 #include <sys/mac_flow_impl.h>
 #include <sys/mac_stat.h>
 
-static void mac_srs_soft_rings_signal(mac_soft_ring_set_t *, uint_t);
+static void mac_srs_soft_rings_signal(mac_soft_ring_set_t *,
+    const mac_soft_ring_state_t);
 static void mac_srs_update_fanout_list(mac_soft_ring_set_t *);
 static void mac_srs_poll_unbind(mac_soft_ring_set_t *);
 static void mac_srs_worker_unbind(mac_soft_ring_set_t *);
-static void mac_srs_soft_rings_quiesce(mac_soft_ring_set_t *, uint_t);
+static void mac_srs_soft_rings_quiesce(mac_soft_ring_set_t *,
+    const mac_soft_ring_state_t);
 
 static void mac_tx_srs_setup(mac_client_impl_t *, flow_entry_t *);
 
@@ -95,7 +97,7 @@ struct mac_srs_create_params {
 };
 
 static mac_soft_ring_set_t *mac_srs_create(mac_client_impl_t *, flow_entry_t *,
-    mac_soft_ring_set_type_t, const struct mac_srs_create_params *);
+    const mac_soft_ring_set_type_t, const struct mac_srs_create_params *);
 
 extern boolean_t mac_latency_optimize;
 
@@ -1747,6 +1749,10 @@ mac_srs_update_fanout_list(mac_soft_ring_set_t *mac_srs)
 	/*
 	 * Complete Tx SRSes are the only case requiring adjustment here.
 	 *
+	 * `SRST_NO_SOFT_RINGS` is a static property of Rx SRSes, and determines
+	 * their processing model. Adjust this only on Tx SRSes, where its
+	 * meaning is something of a vanity flag.
+	 * 
 	 * An initialised Rx SRS will always have at least one soft
 	 * ring to allow traffic to be dropped off, and logical Tx SRSes
 	 * *must* be FORWARD|NO_SOFT_RINGS.
@@ -2124,7 +2130,7 @@ mac_fanout_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 static mac_soft_ring_set_t *
 mac_srs_create_rx(mac_client_impl_t *mcip, flow_entry_t *flent,
-    mac_soft_ring_set_type_t srs_type, mac_ring_t *ring)
+    const mac_soft_ring_set_type_t srs_type, mac_ring_t *ring)
 {
 	ASSERT3P(mcip, !=, NULL);
 	ASSERT3P(flent, !=, NULL);
@@ -2136,7 +2142,7 @@ mac_srs_create_rx(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 static mac_soft_ring_set_t *
 mac_srs_create_tx(mac_client_impl_t *mcip, flow_entry_t *flent,
-    mac_soft_ring_set_type_t srs_type)
+    const mac_soft_ring_set_type_t srs_type)
 {
 	ASSERT3P(mcip, !=, NULL);
 	ASSERT3P(flent, !=, NULL);
@@ -2203,7 +2209,8 @@ mac_srs_create_tx_logical(flow_entry_t *flent, mac_soft_ring_set_t *entry_srs,
  */
 static mac_soft_ring_set_t *
 mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
-    mac_soft_ring_set_type_t srs_type, const struct mac_srs_create_params *p)
+    const mac_soft_ring_set_type_t srs_type,
+    const struct mac_srs_create_params *p)
 {
 	const bool is_tx_srs = (srs_type & SRST_TX) != 0;
 	const bool is_logical = p->msc_ty == SCT_LOGICAL;
@@ -2216,6 +2223,9 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 	mutex_enter(&flent->fe_lock);
 
 	mac_srs->srs_flent = flent;
+	mac_srs->srs_type = (srs_type | SRST_NO_SOFT_RINGS);
+	mac_srs->srs_worker_cpuid = mac_srs->srs_worker_cpuid_save = -1;
+	mac_srs->srs_mcip = mcip;
 
 	/*
 	 * Get the bandwidth control structure from the flent. Get
@@ -2263,7 +2273,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 		 */
 		if ((mac_srs_rx_action(mac_srs)->fa_flags &
 		    MFA_FLAGS_RESOURCE) != 0) {
-			srs_type |= SRST_CLIENT_POLL;
+			mac_srs->srs_type |= SRST_CLIENT_POLL;
 		}
 
 		srs_rx->sr_poll_cpuid = srs_rx->sr_poll_cpuid_save = -1;
@@ -2293,13 +2303,9 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 	mutex_exit(&flent->fe_lock);
 
 	if (mac_srs->srs_give_to != NULL) {
-		srs_type |= SRST_FORWARD;
+		mac_srs->srs_type |= SRST_FORWARD;
 	}
 
-	mac_srs->srs_state = 0;
-	mac_srs->srs_type = (srs_type | SRST_NO_SOFT_RINGS);
-	mac_srs->srs_worker_cpuid = mac_srs->srs_worker_cpuid_save = -1;
-	mac_srs->srs_mcip = mcip;
 	mac_srs_fanout_list_alloc(mac_srs);
 
 	/*
@@ -2518,7 +2524,7 @@ mac_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
  */
 void
 mac_rx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
-    uint32_t link_type)
+    const mac_soft_ring_set_type_t link_type)
 {
 	mac_impl_t		*mip = mcip->mci_mip;
 	mac_soft_ring_set_t	*mac_srs;
@@ -2633,7 +2639,7 @@ mac_rx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
  */
 void
 mac_tx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
-    uint32_t link_type)
+    const mac_soft_ring_set_type_t link_type)
 {
 	/*
 	 * If this is an exclusive client (e.g. an aggr port), then
@@ -2711,7 +2717,7 @@ mac_rx_srs_group_teardown(flow_entry_t *flent, boolean_t hwonly)
  */
 void
 mac_tx_srs_group_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
-    uint32_t link_type)
+    const mac_soft_ring_set_type_t  link_type)
 {
 	mac_soft_ring_set_t *tx_srs = flent->fe_tx_srs;
 
@@ -3007,7 +3013,7 @@ mac_group_next_state(mac_group_t *grp, mac_client_impl_t **group_only_mcip,
 
 int
 mac_datapath_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
-    uint32_t link_type)
+    const mac_soft_ring_set_type_t link_type)
 {
 	mac_impl_t		*mip = mcip->mci_mip;
 	mac_group_t		*rgroup = NULL;
@@ -3302,7 +3308,7 @@ setup_failed:
 
 void
 mac_datapath_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
-    uint32_t link_type)
+    const mac_soft_ring_set_type_t link_type)
 {
 	mac_impl_t		*mip = mcip->mci_mip;
 	mac_group_t		*group = NULL;
@@ -3668,7 +3674,8 @@ mac_srs_free(mac_soft_ring_set_t *mac_srs)
 }
 
 static void
-mac_srs_soft_rings_quiesce(mac_soft_ring_set_t *mac_srs, uint_t s_ring_flag)
+mac_srs_soft_rings_quiesce(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_state_t s_ring_flag)
 {
 	mac_soft_ring_t	*softring;
 
@@ -3710,15 +3717,12 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 {
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 
-	const mac_soft_ring_set_state_t quiesce_flag = mac_srs->srs_state &
-	    (SRS_CONDEMNED | SRS_QUIESCE);
-	const mac_soft_ring_state_t s_ring_flag =
-	    (quiesce_flag == SRS_CONDEMNED) ? S_RING_CONDEMNED : S_RING_QUIESCE;
-	const mac_soft_ring_set_state_t srs_poll_wait_flag =
-	    (quiesce_flag == SRS_CONDEMNED) ? SRS_POLL_THR_EXITED :
-	    SRS_POLL_THR_QUIESCED;
-
-	ASSERT3U(quiesce_flag, !=, 0);
+	VERIFY3U(mac_srs->srs_state & (SRS_CONDEMNED | SRS_QUIESCE), !=, 0);
+	const boolean_t condemn = (mac_srs->srs_state & SRS_CONDEMNED) != 0;
+	const mac_soft_ring_state_t s_ring_flag = condemn ?
+	    S_RING_CONDEMNED : S_RING_QUIESCE;
+	const mac_soft_ring_set_state_t srs_poll_wait_flag = condemn ?
+	    SRS_POLL_THR_EXITED : SRS_POLL_THR_QUIESCED;
 
 	/*
 	 * In the case of Rx SRS wait till the poll thread is done.
@@ -3740,10 +3744,9 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	 * as needed and then wait till that happens.
 	 */
 	mac_srs_soft_rings_quiesce(mac_srs, s_ring_flag);
-	if (mac_srs->srs_state & SRS_CONDEMNED) {
-		mac_srs->srs_state |= (SRS_QUIESCE_DONE | SRS_CONDEMNED_DONE);
-	} else {
-		mac_srs->srs_state |= SRS_QUIESCE_DONE;
+	mac_srs->srs_state |= SRS_QUIESCE_DONE;
+	if (condemn) {
+		mac_srs->srs_state |= SRS_CONDEMNED_DONE;
 	}
 
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
@@ -3966,7 +3969,8 @@ mac_srs_signal_diff(mac_soft_ring_set_t *mac_srs,
  * Tx soft rings.
  */
 static void
-mac_srs_soft_rings_signal(mac_soft_ring_set_t *mac_srs, uint_t sr_flag)
+mac_srs_soft_rings_signal(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_state_t sr_flag)
 {
 	for (mac_soft_ring_t *softring = mac_srs->srs_soft_ring_head;
 	    softring != NULL; softring = softring->s_ring_next) {
@@ -4147,7 +4151,7 @@ mac_tx_srs_add_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 	mac_client_impl_t *mcip = mac_srs->srs_mcip;
 	mac_soft_ring_t *soft_ring;
 	uint16_t count = mac_srs->srs_soft_ring_count;
-	mac_soft_ring_type_t soft_ring_type = ST_RING_TX;
+	mac_soft_ring_state_t soft_ring_type = ST_RING_TX;
 	uint_t ring_info;
 
 	ASSERT(mac_srs_is_tx(mac_srs));
@@ -4312,13 +4316,14 @@ no_group:
 				    SRS_TX_FANOUT;
 			}
 			for (i = 0; i < tx_ring_count; i++) {
-				ASSERT(ring != NULL);
+				ASSERT3P(ring, !=, NULL);
+				mac_soft_ring_state_t soft_ring_type =
+				    ST_RING_TX;
+
 				switch (ring->mr_state) {
 				case MR_INUSE:
-				case MR_FREE: {
+				case MR_FREE:
 					ASSERT3P(ring->mr_srs, ==, NULL);
-					mac_soft_ring_type_t soft_ring_type =
-					    ST_RING_TX;
 
 					if (ring->mr_state != MR_INUSE)
 						(void) mac_start_ring(ring);
@@ -4334,7 +4339,6 @@ no_group:
 					    mcip, tx_srs, -1, NULL, mcip,
 					    (mac_resource_handle_t)ring);
 					break;
-				}
 				default:
 					cmn_err(CE_PANIC,
 					    "srs_setup: mcip = %p "

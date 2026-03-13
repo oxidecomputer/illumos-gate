@@ -4716,7 +4716,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 	ASSERT(mutex_owned(&mac_srs->srs_lock));
 	ASSERT3U(mac_srs->srs_state & SRS_PROC, ==, 0);
 
-	mac_srs->srs_state |= SRS_PROC;
+	mac_srs->srs_state |= (proc_type | SRS_PROC);
 
 	switch (tx_mode) {
 	case SRS_TX_DEFAULT:

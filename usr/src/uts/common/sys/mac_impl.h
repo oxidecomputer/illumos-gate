@@ -691,6 +691,9 @@ typedef struct mac_prop_info_state_s {
 
 typedef struct mac_client_impl_s mac_client_impl_t;
 
+enum mac_soft_ring_set_type_e;
+typedef enum mac_soft_ring_set_type_e mac_soft_ring_set_type_t;
+
 extern void	mac_init(void);
 extern int	mac_fini(void);
 
@@ -711,7 +714,6 @@ extern boolean_t mac_ip_hdr_length_v6(ip6_t *, uint8_t *, uint16_t *,
     uint8_t *, ip6_frag_t **);
 
 extern mblk_t *mac_copymsgchain_cksum(mblk_t *);
-extern void mac_packet_print(mac_handle_t, mblk_t *);
 extern void mac_rx_deliver(void *, mac_resource_handle_t, mblk_t *,
     mac_header_info_t *);
 extern void mac_tx_notify(mac_impl_t *);
@@ -748,8 +750,6 @@ extern int mac_group_addmac(mac_group_t *, const uint8_t *);
 extern int mac_group_remmac(mac_group_t *, const uint8_t *);
 extern int mac_group_addvlan(mac_group_t *, uint16_t);
 extern int mac_group_remvlan(mac_group_t *, uint16_t);
-extern int mac_rx_group_add_flow(mac_client_impl_t *, flow_entry_t *,
-    mac_group_t *);
 extern mblk_t *mac_hwring_tx(mac_ring_handle_t, mblk_t *);
 extern mblk_t *mac_bridge_tx(mac_impl_t *, mac_ring_handle_t, mblk_t *);
 extern mac_group_t *mac_reserve_rx_group(mac_client_impl_t *, uint8_t *,
@@ -768,11 +768,9 @@ extern void mac_rx_switch_grp_to_sw(mac_group_t *);
  * MAC address functions are used internally by MAC layer.
  */
 extern mac_address_t *mac_find_macaddr(mac_impl_t *, uint8_t *);
-extern mac_address_t *mac_find_macaddr_vlan(mac_impl_t *, uint8_t *, uint16_t);
 extern boolean_t mac_check_macaddr_shared(mac_address_t *);
 extern int mac_update_macaddr(mac_address_t *, uint8_t *);
 extern void mac_freshen_macaddr(mac_address_t *, uint8_t *);
-extern void mac_retrieve_macaddr(mac_address_t *, uint8_t *);
 extern void mac_init_macaddr(mac_impl_t *);
 extern void mac_fini_macaddr(mac_impl_t *);
 
@@ -795,16 +793,17 @@ extern void mac_fanout_recompute(mac_impl_t *);
  * add/remove/update flows associated with a mac_impl_t. They should
  * never be used directly by MAC clients.
  */
-extern int mac_datapath_setup(mac_client_impl_t *, flow_entry_t *, uint32_t);
+extern int mac_datapath_setup(mac_client_impl_t *, flow_entry_t *,
+    const mac_soft_ring_set_type_t);
 extern void mac_datapath_teardown(mac_client_impl_t *, flow_entry_t *,
-    uint32_t);
+    const mac_soft_ring_set_type_t);
 extern void mac_rx_srs_group_setup(mac_client_impl_t *, flow_entry_t *,
-    uint32_t);
+    const mac_soft_ring_set_type_t);
 extern void mac_tx_srs_group_setup(mac_client_impl_t *, flow_entry_t *,
-    uint32_t);
+    const mac_soft_ring_set_type_t);
 extern void mac_rx_srs_group_teardown(flow_entry_t *, boolean_t);
 extern void mac_tx_srs_group_teardown(mac_client_impl_t *, flow_entry_t *,
-	    uint32_t);
+    const mac_soft_ring_set_type_t);
 extern int mac_rx_classify_flow_quiesce(flow_entry_t *, void *);
 extern int mac_rx_classify_flow_restart(flow_entry_t *, void *);
 extern void mac_client_quiesce_new_tree(mac_client_impl_t *);
@@ -937,6 +936,34 @@ typedef struct mac_direct_wrapper_s {
  */
 extern void mac_partial_offload_info(const mblk_t *, size_t,
     mac_ether_offload_info_t *);
+
+/*
+ * Struct definitions for mac_bcast.c
+ */
+
+/*
+ * The same MAC client may be added for different <addr,vid> tuple,
+ * we maintain a ref count for the number of times it has been added
+ * to account for deleting the MAC client from the group.
+ */
+typedef struct mac_bcast_grp_mcip_s {
+	mac_client_impl_t	*mgb_client;
+	int			mgb_client_ref;
+} mac_bcast_grp_mcip_t;
+
+typedef struct mac_bcast_grp_s {			/* Protected by */
+	struct mac_bcast_grp_s	*mbg_next;		/* SL */
+	void			*mbg_addr;		/* SL */
+	uint16_t		mbg_vid;		/* SL */
+	mac_impl_t		*mbg_mac_impl;		/* WO */
+	mac_addrtype_t		mbg_addrtype;		/* WO */
+	flow_entry_t		*mbg_flow_ent;		/* WO */
+	mac_bcast_grp_mcip_t	*mbg_clients;		/* mi_rw_lock */
+	uint_t			mbg_nclients;		/* mi_rw_lock */
+	uint_t			mbg_nclients_alloc;	/* SL */
+	uint64_t		mbg_clients_gen;	/* mi_rw_lock */
+	uint32_t		mbg_id;			/* atomic */
+} mac_bcast_grp_t;
 
 #ifdef	__cplusplus
 }

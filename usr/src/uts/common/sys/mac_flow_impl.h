@@ -169,6 +169,8 @@ typedef struct flow_state_s		flow_state_t;
 struct mac_impl_s;
 struct mac_client_impl_s;
 struct mac_soft_ring_set_s;
+struct mac_group_s;
+struct mac_bcast_grp_s;
 
 /*
  * Classification flags used to lookup the flow.
@@ -449,7 +451,7 @@ typedef struct {
 } flow_tree_baked_t;
 
 struct flow_entry_s {					/* Protected by */
-	struct flow_entry_s	*fe_next;		/* ft_lock */
+	flow_entry_t		*fe_next;		/* ft_lock */
 
 	datalink_id_t		fe_link_id;		/* WO */
 
@@ -517,11 +519,11 @@ struct flow_entry_s {					/* Protected by */
 	 * ?? TODO(ky) what of fe_tx_srs?
 	 */
 	void			*fe_client_cookie;	/* WO */
-	void			*fe_rx_ring_group;	/* SL */
+	struct mac_group_s	*fe_rx_ring_group;	/* SL */
 							/* fe_lock */
 	struct mac_soft_ring_set_s	*fe_rx_srs[MAX_MAC_RX_SRS];
 	uint16_t			fe_rx_srs_cnt;		/* fe_lock */
-	void			*fe_tx_ring_group;
+	struct mac_group_s		*fe_tx_ring_group;
 	struct mac_soft_ring_set_s	*fe_tx_srs;	/* WO */
 
 	/*
@@ -533,12 +535,12 @@ struct flow_entry_s {					/* Protected by */
 	 * Used by mci_flent_list of mac_client_impl_t to track flows sharing
 	 * the same mac_client_impl_t.
 	 */
-	struct flow_entry_s	*fe_client_next;
+	flow_entry_t		*fe_client_next;
 
 	/*
 	 * This is a broadcast or multicast flow and is a mac_bcast_grp_t
 	 */
-	void			*fe_mbg;		/* WO */
+	struct mac_bcast_grp_s	*fe_mbg;		/* WO */
 	flow_entry_type_t	fe_type;		/* WO */
 
 	/*
@@ -821,15 +823,12 @@ extern void	*mac_flow_get_client_cookie(flow_entry_t *);
 
 extern uint32_t	mac_flow_modify_props(flow_entry_t *, mac_resource_props_t *);
 
-extern int	mac_flow_update(flow_tab_t *, flow_entry_t *, flow_desc_t *);
 extern void	mac_flow_get_desc(flow_entry_t *, flow_desc_t *);
 extern void	mac_flow_set_desc(flow_entry_t *, flow_desc_t *);
 
 extern void	mac_flow_remove(flow_tab_t *, flow_entry_t *, boolean_t);
 extern void	mac_flow_hash_remove(flow_entry_t *);
 extern void	mac_flow_wait(flow_entry_t *, mac_flow_state_t);
-extern void	mac_flow_quiesce(flow_entry_t *);
-extern void	mac_flow_restart(flow_entry_t *);
 extern void	mac_flow_cleanup(flow_entry_t *);
 extern void	mac_flow_destroy(flow_entry_t *);
 
@@ -837,7 +836,6 @@ extern void	mac_flow_tab_create(flow_ops_t *, flow_mask_t, uint_t,
 		    struct mac_impl_s *, flow_tab_t **);
 extern void	mac_flow_l2tab_create(struct mac_impl_s *, flow_tab_t **);
 extern void	mac_flow_tab_destroy(flow_tab_t *);
-extern void	mac_flow_drop(void *, void *, mblk_t *);
 extern void	flow_stat_destroy(flow_entry_t *);
 
 extern void	mac_flow_match_destroy(mac_flow_match_t *);

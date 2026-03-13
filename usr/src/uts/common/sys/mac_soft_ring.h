@@ -54,7 +54,6 @@ extern boolean_t mac_latency_optimize;
 
 typedef struct mac_soft_ring_s mac_soft_ring_t;
 typedef struct mac_soft_ring_set_s mac_soft_ring_set_t;
-struct flow_entry_s;
 struct mac_client_impl_s;
 
 /* Tx notify callback */
@@ -65,23 +64,24 @@ typedef struct mac_tx_notify_cb_s {
 } mac_tx_notify_cb_t;
 
 /*
- * Flagset of immutable and slowly-varying aspects of a softring, stored in
- * `s_ring_type` as a 16-bit value.
+ * Flagset of immutable and datapath-altered aspects of a softring, stored in
+ * `s_ring_flags`.
  *
- * These identify static characteristics of how a ring should process packets.
+ * Flags prefixed by `ST_` identify functionally static characteristics of how a
+ * ring should process packets, whereas those prefixed `S_RING` reflect the
+ * current state of datapath processing.
  */
 typedef enum {
 	/*
 	 * If set, this is a transmit softring. Packets will be directed via
-	 * `mac_tx_send` to an underlying client and ring.
+	 * `mac_tx_send` to an underlying provider's ring.
 	 *
 	 * If absent, this is a receive softring. Packets will be delivered to a
 	 * client via `s_ring_rx_func`.
 	 *
 	 * Immutable.
 	 */
-	ST_RING_TX		= 0x0001,
-
+	ST_RING_TX		= 0x00000001,
 	/*
 	 * Packets may only be drained from this softring by its own worker
 	 * thread, and cannot be handled inline by `mac_tx`, any SRS threads,
@@ -89,39 +89,33 @@ typedef enum {
 	 *
 	 * Immutable.
 	 */
-	ST_RING_WORKER_ONLY	= 0x0002,
+	ST_RING_WORKER_ONLY	= 0x00000002,
 
 	/*
-	 * This softring is known to an upstack client, which may invoke any
+	 * This Rx softring is known to an upstack client, which may invoke any
 	 * `mac_rx_fifo_t` operations (direct polling, disable/re-enable inline
 	 * delivery).
 	 *
 	 * `s_ring_rx_arg2` must be non-null.
 	 *
-	 * Mutable.
+	 * Mutable. Requires ¬`ST_RING_TX`.
 	 */
-	ST_RING_POLLABLE	= 0x0010,
-} mac_soft_ring_type_t;
+	ST_RING_POLLABLE	= 0x00000010,
 
-/*
- * Flagset reflecting the current state of datapath processing for a given
- * softring, stored in `s_ring_state` as a 16-bit value.
- */
-typedef enum {
 	/*
 	 * A thread is currently processing packets from this softring, and has
-	 * relinquished its hold on `s_ring_lock` to allow new packets to be
+	 * relinquished its hold on `s_ring_lock` to allow more packets to be
 	 * enqueued while it does so.
 	 *
-	 * SRS processing will always enqueue packets if set, with the
+	 * Rx/Tx process methods will always enqueue packets if set, with the
 	 * expectation that whoever was draining the thread will continue to
 	 * do so.
 	 */
-	S_RING_PROC		= 0x0001,
+	S_RING_PROC		= 0x00010000,
 	/*
 	 * The worker thread of this softring has been bound to a specific CPU.
 	 */
-	S_RING_BOUND		= 0x0002,
+	S_RING_BOUND		= 0x00020000,
 	/*
 	 * This softring is a TX softring and has run out of descriptors on the
 	 * underlying ring/NIC.
@@ -129,7 +123,7 @@ typedef enum {
 	 * Any outbound packets will be queued until the underlying provider
 	 * marks more descriptors as available via `mac_tx_ring_update`.
 	 */
-	S_RING_BLOCK		= 0x0004,
+	S_RING_BLOCK		= 0x00040000,
 	/*
 	 * This softring is a TX softring and is flow controlled: more than
 	 * `s_ring_tx_hiwat` packets are currently enqueued.
@@ -139,7 +133,7 @@ typedef enum {
 	 * any cookie is no longer flow controlled if they have registered a
 	 * callback via `mac_client_tx_notify`.
 	 */
-	S_RING_TX_HIWAT		= 0x0008,
+	S_RING_TX_HIWAT		= 0x00080000,
 
 	/*
 	 * This softring is a TX softring and has returned a cookie to at least
@@ -149,7 +143,7 @@ typedef enum {
 	 * When the softring is drained, notify the client via its
 	 * `mac_client_tx_notify` callback that it may send.
 	 */
-	S_RING_WAKEUP_CLIENT	= 0x0010,
+	S_RING_WAKEUP_CLIENT	= 0x00100000,
 	/*
 	 * This RX softring is client pollable (type `ST_RING_POLLABLE`) and its
 	 * client has called `mac_soft_ring_intr_enable` to stop MAC from
@@ -158,16 +152,16 @@ typedef enum {
 	 * Packets may _only_ be delivered by client polling. The client may
 	 * undo this using `mac_soft_ring_intr_disable`.
 	 */
-	S_RING_BLANK		= 0x0020,
+	S_RING_BLANK		= 0x00200000,
 	/*
 	 * Inform a thread which holds `S_RING_PROC` that it should signal
 	 * `s_ring_client_cv` once it is done processing.
 	 *
 	 * This allows MAC to ensure that `s_ring_rx_func` and its arguments are
-	 * not in use by waiting until `S_RING_PROC` is unset, which allows
+	 * not in use by waiting until `S_RING_PROC` is unset. This allows
 	 * these arguments to be safely altered.
 	 */
-	S_RING_CLIENT_WAIT	= 0x0040,
+	S_RING_CLIENT_WAIT	= 0x00400000,
 
 	/*
 	 * This softring has been signalled to stop processing any packets.
@@ -175,27 +169,27 @@ typedef enum {
 	 * The presence of this flag implies that the parent softring set has
 	 * *also* been asked to quiesce. It will not enqueue any packets here.
 	 */
-	S_RING_QUIESCE		= 0x0100,
+	S_RING_QUIESCE		= 0x01000000,
 	/*
 	 * The softring has ceased processing any enqueued/arriving packets, and
 	 * is awaiting a signal of either `S_RING_CONDEMNED` or `S_RING_RESTART`
 	 * to wake up.
 	 */
-	S_RING_QUIESCE_DONE	= 0x0200,
+	S_RING_QUIESCE_DONE	= 0x02000000,
 	/*
 	 * This softring is marked for deletion.
 	 *
 	 * No further packets can be admitted into the softring, and enqueued
 	 * packets must not be processed.
 	 */
-	S_RING_CONDEMNED	= 0x0400,
+	S_RING_CONDEMNED	= 0x04000000,
 	/*
 	 * The softring worker has completed any teardown in response to
 	 * `S_RING_CONDEMNED`.
 	 *
 	 * Requires `S_RING_QUIESCE_DONE`.
 	 */
-	S_RING_CONDEMNED_DONE	= 0x0800,
+	S_RING_CONDEMNED_DONE	= 0x08000000,
 
 	/*
 	 * The softring has been signalled to resume processing traffic.
@@ -203,13 +197,20 @@ typedef enum {
 	 * The worker thread should unset this and any `QUIESCE` flags and
 	 * resume processing packets.
 	 */
-	S_RING_RESTART		= 0x1000,
+	S_RING_RESTART		= 0x10000000,
 	/*
 	 * This TX softring has packets enqueued, which the worker thread is
 	 * responsible for draining.
 	 */
-	S_RING_ENQUEUED		= 0x2000,
+	S_RING_ENQUEUED		= 0x20000000,
 } mac_soft_ring_state_t;
+
+/*
+ * Used to verify whether a given value is allowed to be used as the
+ * `type` of a softring during creation.
+ */
+#define	SR_TYPE		0x0000ffff
+#define	SR_STATE	0xffff0000
 
 /*
  * A MAC soft ring.
@@ -221,13 +222,13 @@ typedef enum {
 struct mac_soft_ring_s {
 	/* Keep the most used members 64bytes cache aligned */
 	kmutex_t	s_ring_lock;	/* lock before using any member */
-	uint16_t	s_ring_type;	/* processing model of the sq */
-	uint16_t	s_ring_state;	/* state flags and message count */
+	mac_soft_ring_state_t	s_ring_state;	/* processing model and state */
 	uint32_t	s_ring_count;	/* # of mblocks in mac_soft_ring */
 	size_t		s_ring_size;	/* Size of data queued */
 	mblk_t		*s_ring_first;	/* first mblk chain or NULL */
 	mblk_t		*s_ring_last;	/* last mblk chain or NULL */
 
+	/* Protected by s_ring_lock + ¬S_RING_PROC */
 	mac_direct_rx_t		s_ring_rx_func;
 	void			*s_ring_rx_arg1;
 	mac_resource_handle_t	s_ring_rx_arg2;
@@ -246,8 +247,9 @@ struct mac_soft_ring_s {
 	boolean_t	s_ring_tx_woken_up;
 	uint32_t	s_ring_hiwat_cnt;	/* times blocked for Tx descs */
 
-	void		*s_ring_tx_arg1;
-	void		*s_ring_tx_arg2;
+	/* Arguments for `mac_tx_send`, called by `mac_tx_soft_ring_drain` */
+	struct mac_client_impl_s	*s_ring_tx_arg1;
+	mac_ring_t			*s_ring_tx_arg2;
 
 	/* Tx notify callback */
 	mac_cb_info_t	s_ring_notify_cb_info;		/* cb list info */
@@ -382,15 +384,17 @@ typedef enum {
  */
 typedef struct {
 	/*
-	 * Upcall Function for fanout, Rx processing etc. Perhaps
-	 * the same 3 members below can be used for Tx
-	 * processing, but looking around, mac_rx_func_t has
-	 * proliferated too much into various files at different
-	 * places. I am leaving the consolidation battle for
-	 * another day.
+	 * Upcall function for Rx processing when `SRST_NO_SOFT_RINGS` is set.
+	 * Rx softring callbacks for non-bypass traffic should use the same
+	 * function and initial argument.
+	 * Argument 2 of `sr_func` would be a client-provided handle, but is
+	 * always `NULL` in this context as SRSes themselves cannot be used as
+	 * part of client polling.
+	 *
+	 * Protected by srs_lock + ¬SRS_PROC.
 	 */
-	mac_direct_rx_t		sr_func;	/* srs_lock + ¬SRS_PROC */
-	void			*sr_arg1;	/* srs_lock + ¬SRS_PROC */
+	mac_direct_rx_t		sr_func;
+	void			*sr_arg1;
 
 	mac_rx_srs_lower_proc_t	sr_lower_proc;	/* Atomically changed */
 	mac_ring_t		*sr_ring;	/* Ring Descriptor (WO) */
@@ -487,7 +491,7 @@ typedef struct {
  * corresponds to the entrypoint on a MAC client) as well as state on an
  * administrative timescale (fanout behaviour, bandwidth control).
  */
-typedef enum {
+enum mac_soft_ring_set_type_e {
 	/*
 	 * The flow entry underpinning this SRS belongs to a MAC client for
 	 * a link.
@@ -496,14 +500,17 @@ typedef enum {
 	 */
 	SRST_LINK			= 0x00000001,
 	/*
-	 * The flow entry underpinning this SRS belongs to a classifier attached
-	 * to a given MAC client.
+	 * The flow entry underpinning this SRS belongs to a flow classifier
+	 * attached to a given MAC client.
 	 *
 	 * Immutable.
 	 */
 	SRST_FLOW			= 0x00000002,
 	/*
 	 * This SRS does not have any softrings assigned.
+	 *
+	 * A Tx SRS has no rings and will send packets directly to the NIC,
+	 * and an Rx SRS will handle packets inline via `sr_func`.
 	 *
 	 * Mutable for Tx SRSes.
 	 */
@@ -548,8 +555,8 @@ typedef enum {
 	 * If set, packets may be processed inline by any caller who arrives
 	 * with more packets to enqueue if there is no existing backlog.
 	 * The worker thread will share a CPU binding with the poll thread.
-	 * Wakeups sent to worker threads will be instantaneous (teardown and
-	 * bandwidth-controlled cases).
+	 * Wakeups sent to worker threads will be instantaneous (loopback,
+	 * teardown and bandwidth-controlled cases).
 	 *
 	 * If unset on an Rx SRS, packets may only be moved to softrings by the
 	 * worker thread. `SRST_ENQUEUE` will also be set in this case.
@@ -622,7 +629,7 @@ typedef enum {
 	 * Mutable under quiescence. Requires ¬`SRST_TX`.
 	 */
 	SRST_DLS_BYPASS_V6		= 0x00020000,
-} mac_soft_ring_set_type_t;
+};
 
 /*
  * Flagset reflecting the current state of datapath processing for a given
@@ -659,7 +666,7 @@ typedef enum {
 
 	/*
 	 * A thread is currently processing packets from this softring set, and
-	 * has relinquished its hold on `srs_lock` to allow new packets to be
+	 * has relinquished its hold on `srs_lock` to allow more packets to be
 	 * enqueued while it does so.
 	 *
 	 * SRS processing will always enqueue packets if set, with the
@@ -1016,7 +1023,7 @@ struct mac_soft_ring_set_s {
 	 * of the SRS.
 	 */
 	struct mac_client_impl_s *srs_mcip;	/* back ptr to mac client */
-	struct flow_entry_s	*srs_flent;	/* back ptr to flent */
+	flow_entry_t		*srs_flent;	/* back ptr to flent */
 
 	kthread_t	*srs_worker;	/* WO, worker thread */
 
@@ -1303,12 +1310,13 @@ extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
 /* Resource callbacks for clients */
 extern int mac_soft_ring_intr_enable(void *);
 extern boolean_t mac_soft_ring_intr_disable(void *);
-extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t, mac_soft_ring_type_t,
-    pri_t, mac_client_impl_t *, mac_soft_ring_set_t *,
-    processorid_t, mac_direct_rx_t, void *, mac_resource_handle_t);
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
-	extern void mac_soft_ring_unbind(mac_soft_ring_t *);
+extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 
+extern mac_soft_ring_t *mac_soft_ring_create(int, clock_t,
+    const mac_soft_ring_state_t, pri_t, mac_client_impl_t *,
+    mac_soft_ring_set_t *, processorid_t, mac_direct_rx_t, void *,
+    mac_resource_handle_t);
 extern void mac_soft_ring_free(mac_soft_ring_t *);
 extern void mac_soft_ring_signal(mac_soft_ring_t *,
     const mac_soft_ring_state_t);
@@ -1327,17 +1335,6 @@ extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
 
 /* Bandwidth control related functions */
-inline bool
-mac_srs_any_bw_enabled(const mac_soft_ring_set_t *srs)
-{
-	for (size_t i = 0; i < srs->srs_bw_len; i++) {
-		if (mac_bw_ctl_is_enabled(srs->srs_bw[i])) {
-			return (true);
-		}
-	}
-	return (false);
-}
-
 inline bool
 mac_srs_any_bw_enforced(const mac_soft_ring_set_t *srs)
 {
