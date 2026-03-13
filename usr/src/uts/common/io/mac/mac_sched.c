@@ -3461,6 +3461,7 @@ again:
 	if (mac_srs->srs_state & (SRS_BLANK | SRS_PAUSE)) {
 		ASSERT((mac_srs->srs_type & SRST_NO_SOFT_RINGS) ||
 		    (mac_srs->srs_state & SRS_PAUSE));
+		mac_srs_bw_unlock(mac_srs);
 		goto done;
 	}
 
@@ -3994,9 +3995,6 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 	 */
 	if (srs_rx->sr_poll_pkt_cnt > srs_rx->sr_hiwat) {
 		srs_rx->sr_stat.mrs_sdrops += count;
-		mac_srs_bw_lock(mac_srs);
-		mac_srs_bw_stat_dropped(mac_srs, sz);
-		mac_srs_bw_unlock(mac_srs);
 		mutex_exit(&mac_srs->srs_lock);
 
 		freemsgchain(mp_chain);
@@ -4607,7 +4605,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	}
 
 	/*
-	 * We now may have two chains:
+	 * We may now have two chains:
 	 * - my_ret_mp contains all of the packets the BW admitted, which the
 	 *   NIC lacked descriptors for. Subtract those packets from the used
 	 *   budget.
@@ -4879,7 +4877,7 @@ done:
 		}
 		mutex_enter(&mac_srs->srs_lock);
 	}
-	mac_srs->srs_state &= ~SRS_PROC;
+	mac_srs->srs_state &= ~(proc_type | SRS_PROC);
 }
 
 /*
