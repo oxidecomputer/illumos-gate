@@ -175,7 +175,7 @@ mac_soft_ring_create(int id, clock_t wait, const mac_soft_ring_state_t type,
 	mutex_init(&ringp->s_ring_lock, NULL, MUTEX_DEFAULT, NULL);
 	ringp->s_ring_notify_cb_info.mcbi_lockp = &ringp->s_ring_lock;
 
-	ringp->s_ring_type = type;
+	ringp->s_ring_state = type;
 	ringp->s_ring_wait = MSEC_TO_TICK(wait);
 	ringp->s_ring_mcip = mcip;
 	ringp->s_ring_set = mac_srs;
@@ -213,7 +213,7 @@ mac_soft_ring_create(int id, clock_t wait, const mac_soft_ring_state_t type,
 		ringp->s_ring_rx_arg1 = x_arg1;
 		ringp->s_ring_rx_arg2 = x_arg2;
 		if ((mac_srs->srs_type & SRST_ENQUEUE) != 0) {
-			ringp->s_ring_type |= ST_RING_WORKER_ONLY;
+			ringp->s_ring_state |= ST_RING_WORKER_ONLY;
 		}
 	}
 	if (cpuid != -1)
@@ -246,7 +246,7 @@ mac_soft_ring_free(mac_soft_ring_t *softring)
 	 * since we don't have any notion of a Tx action other than drop
 	 * (which is covered in the flowtree walk).
 	 */
-	if ((softring->s_ring_type & ST_RING_TX) == 0) {
+	if ((softring->s_ring_state & ST_RING_TX) == 0) {
 		atomic_add_64(&srs->srs_flent->fe_act_pkts_in,
 		    softring->s_ring_total_inpkt);
 		atomic_add_64(&srs->srs_flent->fe_act_bytes_in,
@@ -427,7 +427,7 @@ mac_soft_ring_worker(mac_soft_ring_t *ringp)
 	CALLB_CPR_INIT(&cprinfo, lock, callb_generic_cpr, "mac_soft_ring");
 	mutex_enter(lock);
 
-	const bool is_rx = (ringp->s_ring_type & ST_RING_TX) == 0;
+	const bool is_rx = (ringp->s_ring_state & ST_RING_TX) == 0;
 start:
 	for (;;) {
 		while (((ringp->s_ring_first == NULL ||

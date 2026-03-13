@@ -5313,7 +5313,7 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 	ASSERT(MUTEX_NOT_HELD(&ringp->s_ring_lock));
 
 	mutex_enter(&ringp->s_ring_lock);
-	ASSERT3U(ringp->s_ring_type & ST_RING_TX, ==, 0);
+	ASSERT3U(ringp->s_ring_state & ST_RING_TX, ==, 0);
 	atomic_add_64(&ringp->s_ring_total_inpkt, cnt);
 	atomic_add_64(&ringp->s_ring_total_rbytes, sz);
 	/*
@@ -5327,7 +5327,7 @@ mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
 	 * will always be handled either way.
 	 */
 	if ((from_mac_srs->srs_data.rx.sr_poll_pkt_cnt <= 1) &&
-	    !(ringp->s_ring_type & ST_RING_WORKER_ONLY)) {
+	    !(ringp->s_ring_state & ST_RING_WORKER_ONLY)) {
 		/* If on processor or blanking on, then enqueue and return */
 		if (ringp->s_ring_state & S_RING_BLANK ||
 		    ringp->s_ring_state & S_RING_PROC) {
@@ -5540,7 +5540,7 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
 	    mac_srs->srs_data.tx.st_mode == SRS_TX_AGGR ||
 	    mac_srs->srs_data.tx.st_mode == SRS_TX_BW_AGGR);
 
-	if (ringp->s_ring_type & ST_RING_WORKER_ONLY) {
+	if (ringp->s_ring_state & ST_RING_WORKER_ONLY) {
 		/* Serialization mode */
 
 		mutex_enter(&ringp->s_ring_lock);

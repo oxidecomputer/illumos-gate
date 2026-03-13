@@ -1811,7 +1811,7 @@ mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
 		    act->fa_resource.mrc_arg, (mac_resource_t *)&mrf);
 
 		if (softring->s_ring_rx_arg2 != NULL) {
-			softring->s_ring_type |= ST_RING_POLLABLE;
+			softring->s_ring_state |= ST_RING_POLLABLE;
 		}
 	}
 }
@@ -3808,7 +3808,7 @@ mac_soft_ring_signal_client(mac_soft_ring_t *ringp,
 
 	ringp->s_ring_state &= ~S_RING_CLIENT_WAIT;
 
-	if ((ringp->s_ring_type & ST_RING_POLLABLE) == 0) {
+	if ((ringp->s_ring_state & ST_RING_POLLABLE) == 0) {
 		mutex_exit(&ringp->s_ring_lock);
 		return;
 	}
@@ -3832,7 +3832,7 @@ mac_soft_ring_signal_client(mac_soft_ring_t *ringp,
 		break;
 	case SRS_CONDEMNED:
 		ringp->s_ring_rx_arg2 = NULL;
-		ringp->s_ring_type &= ~ST_RING_POLLABLE;
+		ringp->s_ring_state &= ~ST_RING_POLLABLE;
 		mutex_exit(&ringp->s_ring_lock);
 		remove_notify_fn(rs_arg, client_cookie);
 		break;
