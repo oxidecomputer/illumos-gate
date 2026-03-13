@@ -2007,10 +2007,9 @@ mblk_t *
 mac_hwring_send_priv(mac_client_handle_t mch, mac_ring_handle_t rh, mblk_t *mp)
 {
 	mac_client_impl_t *mcip = (mac_client_impl_t *)mch;
-	mac_ring_t *mr = (mac_ring_t *)rh;
 	mac_impl_t *mip = mcip->mci_mip;
 
-	return (mac_provider_tx(mip, mr, mp, mcip));
+	return (mac_provider_tx(mip, rh, mp, mcip));
 }
 
 /*
@@ -9059,10 +9058,9 @@ mac_ring_tx(mac_handle_t mh, mac_ring_handle_t mrh, mblk_t *mp)
  * forwarding.
  */
 mblk_t *
-mac_provider_tx(mac_impl_t *mip, mac_ring_t *ring, mblk_t *mp,
+mac_provider_tx(mac_impl_t *mip, mac_ring_handle_t rh, mblk_t *mp,
     mac_client_impl_t *mcip)
 {
-	mac_ring_handle_t rh = (mac_ring_handle_t)ring;
 	/*
 	 * If there is a bound Hybrid I/O share, send packets through
 	 * the default tx ring. When there's a bound Hybrid I/O share,

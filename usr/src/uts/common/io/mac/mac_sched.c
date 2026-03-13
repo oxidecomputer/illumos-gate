@@ -4981,7 +4981,8 @@ mac_tx_send(mac_client_impl_t *src_mcip, mac_ring_t *ring, mblk_t *mp_chain,
 			obytes += mp_len(mp);
 
 			CHECK_VID_AND_ADD_TAG(mp);
-			mp = mac_provider_tx(mip, ring, mp, src_mcip);
+			mp = mac_provider_tx(mip, (mac_ring_handle_t)ring, mp,
+			    src_mcip);
 
 			/*
 			 * If the driver is out of descriptors and does a
@@ -5089,7 +5090,8 @@ mac_tx_send(mac_client_impl_t *src_mcip, mac_ring_t *ring, mblk_t *mp_chain,
 			 * Unknown destination, send via the underlying
 			 * NIC.
 			 */
-			mp = mac_provider_tx(mip, ring, mp, src_mcip);
+			mp = mac_provider_tx(mip, (mac_ring_handle_t)ring, mp,
+			    src_mcip);
 			if (mp != NULL) {
 				/*
 				 * Adjust for the last packet that
