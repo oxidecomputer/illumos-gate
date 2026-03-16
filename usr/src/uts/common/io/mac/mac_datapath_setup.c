@@ -1358,11 +1358,11 @@ mac_update_srs_priority(mac_soft_ring_set_t *mac_srs, pri_t prival)
  * usage if moving from disabled to active.
  */
 static void
-mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool is_enabled,
+mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const bool do_enabled,
     const mac_resource_props_t *mrp)
 {
 	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
-	if (is_enabled) {
+	if (do_enabled) {
 		const bool was_disabled = !mac_bw_ctl_is_enabled(bw);
 
 		/* Set/Modify bandwidth limit */
@@ -1436,30 +1436,41 @@ mac_srs_update_drain_proc(mac_soft_ring_set_t *srs)
  */
 static void
 mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
-    const mac_resource_props_t *mrp)
+    const bool is_enabled)
 {
-	flow_entry_t		*flent = srs->srs_flent;
-	mac_bw_ctl_t		*bw = &flent->fe_tx_bw;
 	uint32_t		ring_info = 0;
 	mac_srs_tx_t		*srs_tx = &srs->srs_data.tx;
 	mac_client_impl_t	*mcip = srs->srs_mcip;
 
-	VERIFY(mac_srs_is_tx(srs));
+	VERIFY(mac_srs_is_tx(srs) && !mac_srs_is_logical(srs));
 
 	/*
 	 * We need to quiesce/restart the client here because mac_tx() and
-	 * srs->srs_tx->st_func do not hold srs->srs_lock while accessing
+	 * srs->srs_data.tx.st_func do not hold srs->srs_lock while accessing
 	 * st_mode and related fields, which are modified by the code below.
 	 */
 	mac_tx_client_quiesce((mac_client_handle_t)mcip);
 
 	mutex_enter(&srs->srs_lock);
-	mutex_enter(&bw->mac_bw_lock);
-
-	const bool is_disabled = mrp->mrp_maxbw == MRP_MAXBW_RESETVAL;
 
 	mac_tx_srs_mode_t tx_mode = srs_tx->st_mode;
-	if (is_disabled) {
+	if (is_enabled) {
+		if (tx_mode != SRS_TX_BW && tx_mode != SRS_TX_BW_FANOUT &&
+		    tx_mode != SRS_TX_BW_AGGR) {
+			if (tx_mode == SRS_TX_SERIALIZE ||
+			    tx_mode == SRS_TX_DEFAULT) {
+				srs_tx->st_mode = SRS_TX_BW;
+			} else if (tx_mode == SRS_TX_FANOUT) {
+				srs_tx->st_mode = SRS_TX_BW_FANOUT;
+			} else if (tx_mode == SRS_TX_AGGR) {
+				srs_tx->st_mode = SRS_TX_BW_AGGR;
+			} else {
+				ASSERT(0);
+			}
+		}
+
+		srs->srs_type |= SRST_BW_CONTROL;
+	} else {
 		/* Reset bandwidth limit */
 		if (tx_mode == SRS_TX_BW) {
 			if (srs_tx->st_arg2 != NULL) {
@@ -1480,25 +1491,8 @@ mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
 		}
 
 		srs->srs_type &= ~SRST_BW_CONTROL;
-	} else {
-		if (tx_mode != SRS_TX_BW && tx_mode != SRS_TX_BW_FANOUT &&
-		    tx_mode != SRS_TX_BW_AGGR) {
-			if (tx_mode == SRS_TX_SERIALIZE ||
-			    tx_mode == SRS_TX_DEFAULT) {
-				srs_tx->st_mode = SRS_TX_BW;
-			} else if (tx_mode == SRS_TX_FANOUT) {
-				srs_tx->st_mode = SRS_TX_BW_FANOUT;
-			} else if (tx_mode == SRS_TX_AGGR) {
-				srs_tx->st_mode = SRS_TX_BW_AGGR;
-			} else {
-				ASSERT(0);
-			}
-		}
-
-		srs->srs_type |= SRST_BW_CONTROL;
 	}
 
-	mutex_exit(&bw->mac_bw_lock);
 	mutex_exit(&srs->srs_lock);
 
 	mac_tx_client_restart((mac_client_handle_t)mcip);
@@ -1509,16 +1503,16 @@ mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
  * bandwidth controlled.
  */
 static void
-mac_srs_update_bwlimit_state(mac_soft_ring_set_t *srs, const bool is_disabled)
+mac_srs_update_bwlimit_state(mac_soft_ring_set_t *srs, const bool is_enabled)
 {
 	VERIFY(mac_srs_is_logical(srs) || !mac_srs_is_tx(srs));
 
 	mutex_enter(&srs->srs_lock);
 
-	if (is_disabled) {
-		srs->srs_type &= ~SRST_BW_CONTROL;
-	} else {
+	if (is_enabled) {
 		srs->srs_type |= SRST_BW_CONTROL;
+	} else {
+		srs->srs_type &= ~SRST_BW_CONTROL;
 	}
 
 	mac_srs_update_drain_proc(srs);
@@ -1541,7 +1535,7 @@ mac_srs_governed_by_bw(const mac_soft_ring_set_t *mac_srs,
 
 static void
 mac_srs_update_bw_for_logicals(mac_soft_ring_set_t *mac_srs,
-    const flow_entry_t *flent, const mac_bw_ctl_t *bw, const bool disable)
+    const flow_entry_t *flent, const mac_bw_ctl_t *bw, const bool enable)
 {
 	ASSERT(!mac_srs_is_logical(mac_srs));
 	flow_tree_baked_t *root_tree = &mac_srs->srs_flowtree;
@@ -1549,10 +1543,10 @@ mac_srs_update_bw_for_logicals(mac_soft_ring_set_t *mac_srs,
 
 	while (curr != NULL) {
 		if (curr->srs_flent == flent) {
-			if (disable) {
-				atomic_dec_32(&root_tree->ftb_bw_count);
-			} else {
+			if (enable) {
 				atomic_inc_32(&root_tree->ftb_bw_count);
+			} else {
+				atomic_dec_32(&root_tree->ftb_bw_count);
 			}
 		}
 
@@ -1582,21 +1576,23 @@ mac_srs_update_bw_for_logicals(mac_soft_ring_set_t *mac_srs,
 }
 
 /*
- * The uber function that deals with any update to bandwidth limits.
+ * Update the Tx and Rx bandwidth control on a target flent, then reconfigure
+ * any downstream SRSes to use the correct drain/process methods to use or skip
+ * bandwidth checking as required.
  */
 void
 mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 {
-	const bool disable = mrp->mrp_maxbw == MRP_MAXBW_RESETVAL;
+	const bool enable = mrp->mrp_maxbw != MRP_MAXBW_RESETVAL;
 
 	mutex_enter(&flent->fe_rx_bw.mac_bw_lock);
-	const bool was_disabled = !mac_bw_ctl_is_enabled(&flent->fe_rx_bw);
-	const bool state_changed = disable != was_disabled;
-	mac_bw_ctl_set_state(&flent->fe_rx_bw, !disable, mrp);
+	const bool was_enabled = !mac_bw_ctl_is_enabled(&flent->fe_rx_bw);
+	const bool state_changed = enable != was_enabled;
+	mac_bw_ctl_set_state(&flent->fe_rx_bw, enable, mrp);
 	mutex_exit(&flent->fe_rx_bw.mac_bw_lock);
 
 	for (uint16_t i = 0; i < flent->fe_rx_srs_cnt; i++) {
-		mac_srs_update_bwlimit_state(flent->fe_rx_srs[i], disable);
+		mac_srs_update_bwlimit_state(flent->fe_rx_srs[i], enable);
 	}
 
 	/*
@@ -1604,11 +1600,11 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	 * sure that the underlying mac_bw_ctl_t is still updated.
 	 */
 	mutex_enter(&flent->fe_tx_bw.mac_bw_lock);
-	mac_bw_ctl_set_state(&flent->fe_tx_bw, !disable, mrp);
+	mac_bw_ctl_set_state(&flent->fe_tx_bw, enable, mrp);
 	mutex_exit(&flent->fe_tx_bw.mac_bw_lock);
 
 	if (flent->fe_tx_srs != NULL) {
-		mac_tx_srs_update_bwlimit_state(flent->fe_tx_srs, mrp);
+		mac_tx_srs_update_bwlimit_state(flent->fe_tx_srs, enable);
 	}
 
 	if (!state_changed || (flent->fe_type & FLOW_USER) == 0) {
@@ -1630,11 +1626,11 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	for (int i = 0; i < client->fe_rx_srs_cnt; i++) {
 		mac_soft_ring_set_t *root_srs = client->fe_rx_srs[i];
 		mac_srs_update_bw_for_logicals(client->fe_rx_srs[i], flent,
-		    &flent->fe_rx_bw, disable);
+		    &flent->fe_rx_bw, enable);
 	}
 	if (client->fe_tx_srs != NULL) {
 		mac_srs_update_bw_for_logicals(client->fe_tx_srs, flent,
-		    &flent->fe_tx_bw, disable);
+		    &flent->fe_tx_bw, enable);
 	}
 }
 
@@ -1752,7 +1748,7 @@ mac_srs_update_fanout_list(mac_soft_ring_set_t *mac_srs)
 	 * `SRST_NO_SOFT_RINGS` is a static property of Rx SRSes, and determines
 	 * their processing model. Adjust this only on Tx SRSes, where its
 	 * meaning is something of a vanity flag.
-	 * 
+	 *
 	 * An initialised Rx SRS will always have at least one soft
 	 * ring to allow traffic to be dropped off, and logical Tx SRSes
 	 * *must* be FORWARD|NO_SOFT_RINGS.
@@ -4359,7 +4355,8 @@ no_group:
 		    MAC_CAPAB_AGGR, &tx->st_capab_aggr));
 	}
 	DTRACE_PROBE3(tx__srs___setup__return, mac_soft_ring_set_t *, tx_srs,
-	    int, tx->st_mode, uint16_t, tx_srs->srs_soft_ring_count);
+	    mac_tx_srs_mode_t, tx->st_mode,
+	    uint16_t, tx_srs->srs_soft_ring_count);
 }
 
 /*

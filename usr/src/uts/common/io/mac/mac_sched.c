@@ -1169,18 +1169,17 @@ mac_srs_bw_try_refresh(mac_soft_ring_set_t *srs)
 		const hrtime_t elapsed = now - bw->mac_bw_curr_time;
 		const hrtime_t elapsed_ticks = NSEC_TO_TICK(elapsed);
 
-		if (elapsed_ticks <= 0) {
-			not_limited &= !mac_bw_ctl_is_enforced(bw);
-			continue;
+		if (elapsed_ticks > 0) {
+			bw->mac_bw_used -= MIN(bw->mac_bw_limit * elapsed_ticks,
+			    bw->mac_bw_used);
+			bw->mac_bw_curr_time += TICK_TO_NSEC(elapsed_ticks);
+
+			if (bw->mac_bw_used < bw->mac_bw_limit) {
+				bw->mac_bw_state &= ~BW_ENFORCED;
+			}
 		}
 
-		bw->mac_bw_used -= MIN(bw->mac_bw_limit * elapsed_ticks,
-		    bw->mac_bw_used);
-		bw->mac_bw_curr_time += TICK_TO_NSEC(elapsed_ticks);
-
-		if (bw->mac_bw_used < bw->mac_bw_limit) {
-			bw->mac_bw_state &= ~BW_ENFORCED;
-		}
+		not_limited &= !mac_bw_ctl_is_enforced(bw);
 	}
 
 	return (not_limited);
