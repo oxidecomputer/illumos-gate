@@ -1586,7 +1586,7 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	const bool enable = mrp->mrp_maxbw != MRP_MAXBW_RESETVAL;
 
 	mutex_enter(&flent->fe_rx_bw.mac_bw_lock);
-	const bool was_enabled = !mac_bw_ctl_is_enabled(&flent->fe_rx_bw);
+	const bool was_enabled = mac_bw_ctl_is_enabled(&flent->fe_rx_bw);
 	const bool state_changed = enable != was_enabled;
 	mac_bw_ctl_set_state(&flent->fe_rx_bw, enable, mrp);
 	mutex_exit(&flent->fe_rx_bw.mac_bw_lock);

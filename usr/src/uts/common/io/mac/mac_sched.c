@@ -1173,13 +1173,13 @@ mac_srs_bw_try_refresh(mac_soft_ring_set_t *srs)
 			bw->mac_bw_used -= MIN(bw->mac_bw_limit * elapsed_ticks,
 			    bw->mac_bw_used);
 			bw->mac_bw_curr_time += TICK_TO_NSEC(elapsed_ticks);
-
-			if (bw->mac_bw_used < bw->mac_bw_limit) {
-				bw->mac_bw_state &= ~BW_ENFORCED;
-			}
 		}
 
-		not_limited &= !mac_bw_ctl_is_enforced(bw);
+		if (bw->mac_bw_used < bw->mac_bw_limit) {
+			bw->mac_bw_state &= ~BW_ENFORCED;
+		} else {
+			not_limited = false;
+		}
 	}
 
 	return (not_limited);
