@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -347,7 +347,7 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 			if (t.ft_fans[i].vpdid_pn[0] == '\0')
 				continue;
 
-			(void) snprintf(tag, sizeof (tag), "FAN %u", i);
+			(void) snprintf(tag, sizeof (tag), "FAN %zu", i);
 			if (!topo_oxhc_fan_vpd_to_barcode(mod, &t.ft_fans[i],
 			    tag, (char *)tray->ft_fans[i],
 			    sizeof (tray->ft_fans[i]))) {
@@ -440,7 +440,7 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 		if (*tray->ft_fans[i] == '\0') {
 			char label[64];
 
-			(void) snprintf(label, sizeof (label), "Fan %u (%s)",
+			(void) snprintf(label, sizeof (label), "Fan %zu (%s)",
 			    i, info->ft_labels[i]);
 			if ((ret = topo_oxhc_tn_create(mod, tray_tn, NULL, FAN,
 			    i, auth, NULL, NULL, NULL, TOPO_OXHC_TN_F_SET_LABEL,
@@ -452,7 +452,7 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 
 		if (!topo_oxhc_barcode_parse(mod, oxhc, tray->ft_fans[i],
 		    sizeof (tray->ft_fans[i]), &barcode)) {
-			topo_mod_dprintf(mod, "Could not parse fan %u barcode",
+			topo_mod_dprintf(mod, "Could not parse fan %zu barcode",
 			    i);
 			goto out;
 		}

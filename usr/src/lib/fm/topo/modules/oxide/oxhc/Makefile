@@ -10,27 +10,11 @@
 #
 
 #
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
-MODULE = oxhc
-ARCH = oxide
-CLASS = arch
+include $(SRC)/Makefile.master
 
-MODULESRCS = oxhc.c oxhc_ipcc.c oxhc_ic.c bitext.c oxhc_fan.c \
-		oxhc_sharkfin.c oxhc_util.c
+SUBDIRS = $(MACH) $(MACH64)
 
-include ../../Makefile.plugin
-
-PLATFORM = /usr/platform/oxide
-ROOTPLATFORM = $(ROOT)$(PLATFORM)
-
-CPPFLAGS += -I$(SRC)/uts/oxide -I$(ROOTPLATFORM)/include
-CPPFLAGS += -I../../common/zen -I../../common/dimm -I../../common/ufm
-
-LDFLAGS += -L$(ROOTPLATFORM)/lib -R$(PLATFORM)/lib
-LDLIBS += -ldevinfo -lipcc
-
-%.o: $(SRC)/common/bitext/%.c
-	$(COMPILE.c) -o $@ $<
-	$(CTFCONVERT_O)
+include ../../../../Makefile.subdirs

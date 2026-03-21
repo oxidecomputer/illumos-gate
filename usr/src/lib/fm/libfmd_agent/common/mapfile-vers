@@ -56,11 +56,9 @@ $if _x86
 	fmd_agent_chip_count;
 	fmd_agent_physcpu_info;
 	fmd_agent_physcpu_pci;
-$if _ELF32
 	fmd_agent_cpu_retire;
 	fmd_agent_cpu_isretired;
 	fmd_agent_cpu_unretire;
-$endif
 $endif
 
     local:

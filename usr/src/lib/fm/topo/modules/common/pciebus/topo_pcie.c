@@ -98,7 +98,7 @@ pcie_node_print(topo_mod_t *mod, pcie_t *pcie, topo_list_t *list, uint_t indent)
 		char suffix[0x10] = "";
 
 		if (node->pn_type == PCIE_NODE_ROOTNEXUS) {
-			(void) snprintf(suffix, sizeof (suffix), " cpu%u",
+			(void) snprintf(suffix, sizeof (suffix), " cpu%" PRIu64,
 			    node->pn_cpu);
 		}
 		topo_mod_dprintf(mod, "%*s[%x/%x/%x] %s [%s%d] {%x/%x/%x} %s%s",

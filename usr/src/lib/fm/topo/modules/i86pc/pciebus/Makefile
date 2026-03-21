@@ -13,25 +13,8 @@
 # Copyright 2026 Oxide Computer Company
 #
 
-MODULE = pciebus
-ARCH = i86pc
-CLASS = arch
-UTILDIR = ../../common/pciebus
-MODULESRCS = \
-	topo_pcie.c \
-	topo_pcie_cfgspace.c \
-	topo_pcie_prop.c \
-	topo_pcie_util.c \
-	bitext.c \
-	topo_pcie_$(ARCH).c
+include $(SRC)/Makefile.master
 
-include ../../Makefile.plugin
+SUBDIRS = $(MACH) $(MACH64)
 
-LDLIBS += -ldevinfo -lpcidb -lfmd_agent -lsmbios
-
-CPPFLAGS += -I$(SRC)/uts/common -I$(SRC)/uts/intel -I$(UTILDIR)
-
-%.o: $(SRC)/common/bitext/%.c
-	$(COMPILE.c) $<
-	$(CTFCONVERT_O)
-
+include ../../../../Makefile.subdirs

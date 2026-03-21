@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -63,7 +63,8 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 		return (false);
 
 	if (blen >= sizeof (buf)) {
-		topo_mod_dprintf(mod, "Barcode too long: '%.*s'", blen, bstr);
+		topo_mod_dprintf(mod, "Barcode too long: '%.*s'", (int)blen,
+		    bstr);
 		return (false);
 	}
 
@@ -75,7 +76,8 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	tok = strsep(&cursor, ":");
 	if (tok == NULL) {
 		topo_mod_dprintf(mod,
-		    "Could not extract barcode prefix from '%.*s'", blen, bstr);
+		    "Could not extract barcode prefix from '%.*s'", (int)blen,
+		    bstr);
 		return (false);
 	}
 
@@ -91,7 +93,7 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	} else {
 		topo_mod_dprintf(mod,
 		    "Unknown barcode format '%s' found in '%.*s'",
-		    tok, blen, bstr);
+		    tok, (int)blen, bstr);
 		return (false);
 	}
 
@@ -101,21 +103,22 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 		if (tok == NULL) {
 			topo_mod_dprintf(mod,
 			    "Could not extract barcode MFG from '%.*s'",
-			    blen, bstr);
+			    (int)blen, bstr);
 			return (false);
 		}
 		if (strlen(tok) != sizeof (bar->ob_mfg)) {
 			topo_mod_dprintf(mod,
-			    "Barcode MFG field must be %u characters, "
+			    "Barcode MFG field must be %zu characters, "
 			    "found '%s' in '%.*s'",
-			    sizeof (bar->ob_mfg), tok, blen, bstr);
+			    sizeof (bar->ob_mfg), tok, (int)blen, bstr);
 			return (false);
 		}
 		bcopy(tok, bar->ob_mfg, strlen(tok));
 	}
 
 	if (cursor == NULL) {
-		topo_mod_dprintf(mod, "Barcode truncated '%.*s'", blen, bstr);
+		topo_mod_dprintf(mod, "Barcode truncated '%.*s'", (int)blen,
+		    bstr);
 		return (false);
 	}
 
@@ -123,7 +126,8 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	tok = strsep(&cursor, ":");
 	if (tok == NULL || strlen(tok) > sizeof (bar->ob_pn)) {
 		topo_mod_dprintf(mod,
-		    "Could not extract barcode PN from '%.*s'", blen, bstr);
+		    "Could not extract barcode PN from '%.*s'", (int)blen,
+		    bstr);
 		if (bar->ob_type < OXBC_MPN1)
 			return (false);
 	} else {
@@ -131,7 +135,8 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	}
 
 	if (cursor == NULL) {
-		topo_mod_dprintf(mod, "Barcode truncated '%.*s'", blen, bstr);
+		topo_mod_dprintf(mod, "Barcode truncated '%.*s'", (int)blen,
+		    bstr);
 		return (false);
 	}
 
@@ -139,7 +144,8 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	tok = strsep(&cursor, ":");
 	if (tok == NULL || strlen(tok) > sizeof (bar->ob_rev)) {
 		topo_mod_dprintf(mod,
-		    "Could not extract barcode REV from '%.*s'", blen, bstr);
+		    "Could not extract barcode REV from '%.*s'", (int)blen,
+		    bstr);
 		if (bar->ob_type < OXBC_MPN1)
 			return (false);
 	} else {
@@ -149,7 +155,7 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 				topo_mod_dprintf(mod,
 				    "OXVx barcode REV fields must be 3 numeric "
 				    "characters, found '%s' in '%.*s'",
-				    tok, blen, bstr);
+				    tok, (int)blen, bstr);
 				return (false);
 			}
 			/* Elide leading 0 from revisions in 0XVx barcodes */
@@ -160,7 +166,8 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	}
 
 	if (cursor == NULL) {
-		topo_mod_dprintf(mod, "Barcode truncated '%.*s'", blen, bstr);
+		topo_mod_dprintf(mod, "Barcode truncated '%.*s'", (int)blen,
+		    bstr);
 		return (false);
 	}
 
@@ -168,7 +175,8 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	tok = strsep(&cursor, ":");
 	if (tok == NULL || strlen(tok) > sizeof (bar->ob_sn)) {
 		topo_mod_dprintf(mod,
-		    "Could not extract barcode SN from '%.*s'", blen, bstr);
+		    "Could not extract barcode SN from '%.*s'", (int)blen,
+		    bstr);
 		if (bar->ob_type < OXBC_MPN1)
 			return (false);
 	} else {
@@ -178,7 +186,7 @@ topo_oxhc_barcode_parse(topo_mod_t *mod, const oxhc_t *oxhc __unused,
 	if (cursor != NULL) {
 		topo_mod_dprintf(mod,
 		    "Trailing data '%s' found at end of barcode '%.*s'",
-		    cursor, blen, bstr);
+		    cursor, (int)blen, bstr);
 		return (false);
 	}
 
