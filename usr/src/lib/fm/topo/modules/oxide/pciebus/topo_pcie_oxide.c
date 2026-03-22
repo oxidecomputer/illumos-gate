@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -77,13 +77,13 @@ MKSLOTSUB(slot29_substrate, 0x29);
  * a slot property. The substrate is modelled as a port directly on the system
  * board.
  */
-static const substrate_t slot13_substrate[][SS_CLEN]= {
+static const substrate_t slot13_substrate[][SS_CLEN] = {
 	{ { PORT, 0 } },
 	{ { PORT, 0 }, { BOARD, 0 } },
 	{ 0 },
 };
 
-static const substrate_t board_substrate[][SS_CLEN]= {
+static const substrate_t board_substrate[][SS_CLEN] = {
 	{ { BOARD, 0 } },
 	{ 0 },
 };
@@ -185,6 +185,22 @@ map_slot(topo_mod_t *mod, tnode_t *tn, const enum_map_t *map, const char *stop)
 	}
 
 	return (NULL);
+}
+
+/*
+ * All boards today have a single socket with the label P0. If we see instance 0
+ * then use this label.
+ */
+static tnode_t *
+decorate_cpu(tnode_t *tn)
+{
+	if (topo_node_instance(tn) == 0) {
+		int err;
+
+		(void) topo_node_label_set(tn, "P0", &err);
+	}
+
+	return (tn);
 }
 
 static tnode_t *
@@ -330,6 +346,8 @@ mod_pcie_platform_topo_node_decorate(topo_mod_t *mod, const pcie_t *pcie,
 		return (decorate_port(pd, mod, pcie, map, node, tn));
 	else if (strcmp(name, "link") == 0)
 		return (decorate_link(pd, mod, pcie, map, node, tn));
+	else if (strcmp(name, "cpu") == 0)
+		return (decorate_cpu(tn));
 
 	return (tn);
 }
