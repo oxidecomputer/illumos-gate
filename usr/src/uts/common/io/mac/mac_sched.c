@@ -1806,12 +1806,14 @@ mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 
 		ASSERT3S(l3proto, >=, 0);
 
+compute_index:
 		if (l3proto == ETHERTYPE_IP) {
 			hash = HASH_ADDR(ipha->ipha_src, ipha->ipha_dst, ports);
 		} else if (l3proto == ETHERTYPE_IPV6) {
 			hash = HASH_ADDR6(ip6->ip6_src, ip6->ip6_dst, ports);
+		} else {
+			hash = HASH_HINT(ports);
 		}
-compute_index:
 		indx = COMPUTE_INDEX(hash, fanout_cnt);
 enqueue:
 		ENQUEUE_MP(headmp[indx], tailmp[indx], cnt[indx], sz[indx],
