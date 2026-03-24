@@ -527,6 +527,11 @@ mac_hw_emul_test(ktest_ctx_hdl_t *ctx, emul_test_params_t *etp)
 		KT_ASSERT3P(mp, !=, NULL, ctx);
 		etp->etp_mp = mp;
 
+		for (mblk_t *curr = mp; curr != NULL; curr = curr->b_next) {
+			KT_ASSERT(OK_32PTR(curr->b_rptr + meoi.meoi_l2hlen),
+			    ctx);
+		}
+
 		boolean_t success = (etp->etp_outputs == NULL) ?
 		    pkt_compare(ctx, etp->etp_raw, etp->etp_raw_sz, mp) :
 		    pkt_result_compare_chain(ctx, etp, mp);

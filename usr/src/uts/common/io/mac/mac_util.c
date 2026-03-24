@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -273,13 +273,17 @@ mac_sw_cksum_impl(mblk_t *mp, mac_emul_t emul, const uint32_t encap_len,
 	 * 1. Collected in the first mblk after (optional) encap + l2
 	 * 2. Held in a data-block which is safe for us to modify
 	 *    (It must have a refcount of 1)
+	 * 3. IP headers are 4-byte aligned. IP header size is always a multiple
+	 *    of 4 bytes, thus L4 headers will also be safe to access.
 	 * To simplify mblk management, also copy any preceding bytes in
 	 * target_mp.
 	 */
 	const size_t hdr_len_reqd = l4_off +
 	    (do_ulp_cksum ? meoi->meoi_l4hlen : 0);
-	if (MBLKL(target_mp) < hdr_len_reqd || DB_REF(target_mp) > 1) {
-		mblk_t *hdrmp = msgpullup(target_mp, hdr_len_reqd);
+	if (MBLKL(target_mp) < hdr_len_reqd || DB_REF(target_mp) > 1 ||
+	    !OK_32PTR(mp->b_rptr + l4_off)) {
+		const size_t pad_by = (4 - (l4_off % 4)) % 4;
+		mblk_t *hdrmp = msgpullup_pad(target_mp, hdr_len_reqd, pad_by);
 
 		if (hdrmp == NULL) {
 			err = "could not pullup msg headers";
@@ -906,7 +910,8 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 * are contiguous at this stage, we'd need to perform at least one
 	 * pullup later to safely modify outer lengths/checksums. In particular,
 	 * the IP header is used for the benefit of DTrace SDTs, and the TCP
-	 * header is actively read.
+	 * header is actively read. We ensure the innermost L3/L4 headers are 4B
+	 * aligned.
 	 *
 	 * Most clients (IP, viona) will setup well-behaved mblks. This small
 	 * pullup should only practically happen when mac_add_vlan_tag is in
@@ -915,8 +920,10 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 	 * mblk. This causes at most one more (header-sized) copy.
 	 */
 	const size_t hdr_len_reqd = encap_len + ohdrslen;
-	if (MBLKL(omp) < hdr_len_reqd) {
-		mblk_t *tmp = msgpullup(omp, hdr_len_reqd);
+	const size_t pad_by = (4 - ((encap_len + oehlen) % 4)) % 4;
+	if (MBLKL(omp) < hdr_len_reqd ||
+	    !OK_32PTR(omp->b_rptr + hdr_len_reqd)) {
+		mblk_t *tmp = msgpullup_pad(omp, hdr_len_reqd, pad_by);
 		if (tmp == NULL) {
 			mac_drop_pkt(omp, "failed to pull up");
 			goto fail;
@@ -1035,11 +1042,12 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		uint32_t seg_len;
 
 		/*
+		 * Ensure that we have 4B L3/L4 alignment for any output frames.
 		 * If we fail to allocate, then drop the partially
 		 * allocated chain as well as the LSO packet. Let the
 		 * sender deal with the fallout.
 		 */
-		if ((nhdrmp = allocb(hdr_len_reqd, 0)) == NULL) {
+		if ((nhdrmp = allocb(pad_by + hdr_len_reqd, 0)) == NULL) {
 			freemsgchain(seg_chain);
 			mac_drop_pkt(omp, "failed to alloc segment header");
 			goto fail;
@@ -1047,8 +1055,9 @@ mac_sw_lso(mblk_t *omp, mac_emul_t emul, mblk_t **head, mblk_t **tail,
 		ASSERT3P(nhdrmp->b_cont, ==, NULL);
 
 		/* Copy over the header stack. */
+		nhdrmp->b_rptr += pad_by;
+		nhdrmp->b_wptr = nhdrmp->b_rptr + hdr_len_reqd;
 		bcopy(omp->b_rptr, nhdrmp->b_rptr, hdr_len_reqd);
-		nhdrmp->b_wptr += hdr_len_reqd;
 
 		if (seg_chain == NULL) {
 			seg_chain = nhdrmp;
