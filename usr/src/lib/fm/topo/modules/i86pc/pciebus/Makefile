@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2023 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 MODULE = pciebus
@@ -27,7 +27,7 @@ MODULESRCS = \
 
 include ../../Makefile.plugin
 
-LDLIBS += -ldevinfo -lpcidb -lfmd_agent
+LDLIBS += -ldevinfo -lpcidb -lfmd_agent -lsmbios
 
 CPPFLAGS += -I$(SRC)/uts/common -I$(SRC)/uts/intel -I$(UTILDIR)
 

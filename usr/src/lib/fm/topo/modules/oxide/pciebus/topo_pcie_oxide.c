@@ -467,8 +467,8 @@ mod_pcie_platform_fini(topo_mod_t *mod, pcie_t *pcie)
 	mod_pcie_privdata_t *pd;
 
 	if ((pd = pcie_get_platdata(pcie)) != NULL) {
-		topo_mod_strfree(mod, (char *)pd->mpp_sn);
-		topo_mod_strfree(mod, (char *)pd->mpp_pn);
+		topo_mod_strfree(mod, __DECONST(char *, pd->mpp_sn));
+		topo_mod_strfree(mod, __DECONST(char *, pd->mpp_pn));
 		nvlist_free(pd->mpp_board_fmri);
 
 		topo_mod_free(mod, pd, sizeof (*pd));
