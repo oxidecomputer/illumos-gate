@@ -533,7 +533,7 @@ mac_srs_client_poll_disable(mac_client_impl_t *mcip, mac_soft_ring_set_t *srs,
  */
 static void
 mac_srs_poll_state_change(mac_soft_ring_set_t *mac_srs,
-    boolean_t turn_off_poll_capab, mac_rx_func_t rx_func)
+    boolean_t turn_off_poll_capab, const mac_rx_srs_lower_proc_t proc)
 {
 	boolean_t	need_restart = B_FALSE;
 	mac_srs_rx_t	*srs_rx = &mac_srs->srs_rx;
@@ -552,7 +552,7 @@ mac_srs_poll_state_change(mac_soft_ring_set_t *mac_srs,
 		else if (mac_poll_enable)
 			mac_srs->srs_state |= SRS_POLLING_CAPAB;
 	}
-	srs_rx->sr_lower_proc = rx_func;
+	srs_rx->sr_lower_proc = proc;
 
 	if (need_restart)
 		mac_rx_srs_restart(mac_srs);
@@ -1569,16 +1569,16 @@ mac_bw_ctl_set_state(mac_bw_ctl_t *bw, const boolean_t do_enable,
 static void
 mac_srs_update_drain_proc(mac_soft_ring_set_t *srs)
 {
-	mac_srs_drain_proc_t drain_fn = NULL;
+	mac_srs_drain_proc_t drain_fn = MDSP_UNSPEC;
 	if ((srs->srs_type & SRST_TX) != 0) {
-		drain_fn = mac_tx_srs_drain;
+		drain_fn = MDSP_TX;
 	} else if (mac_srs_is_bw_controlled(srs)) {
-		drain_fn = mac_rx_srs_drain_bw;
+		drain_fn = MDSP_RX_BW;
 	} else {
-		drain_fn = mac_rx_srs_drain;
+		drain_fn = MDSP_RX;
 	}
 
-	VERIFY3P(drain_fn, !=, NULL);
+	VERIFY3P(drain_fn, !=, MDSP_UNSPEC);
 
 	srs->srs_drain_func = drain_fn;
 }
@@ -1597,9 +1597,9 @@ mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
 	VERIFY3U(srs->srs_type & SRST_TX, !=, 0);
 
 	/*
-	 * We need to quiesce/restart the client here because mac_tx() and
-	 * srs->srs_tx.st_func do not hold srs->srs_lock while accessing
-	 * st_mode and related fields, which are modified by the code below.
+	 * We need to quiesce/restart the client here because mac_tx() does not
+	 * hold srs->srs_lock while accessing st_mode and related fields, which
+	 * are modified by the code below.
 	 */
 	mac_tx_client_quiesce((mac_client_handle_t)mcip);
 
@@ -1645,7 +1645,6 @@ mac_tx_srs_update_bwlimit_state(mac_soft_ring_set_t *srs,
 		srs->srs_type &= ~SRST_BW_CONTROL;
 	}
 
-	srs_tx->st_func = mac_tx_get_func(srs_tx->st_mode);
 	mutex_exit(&srs->srs_lock);
 
 	mac_tx_client_restart((mac_client_handle_t)mcip);
@@ -1696,6 +1695,21 @@ mac_srs_update_bwlimit(flow_entry_t *flent, mac_resource_props_t *mrp)
 	mac_tx_srs_update_bwlimit_state(flent->fe_tx_srs, enable);
 }
 
+static mac_rx_func_t
+mac_srs_lower_proc(const mac_rx_srs_lower_proc_t proc)
+{
+	switch (proc) {
+	case MRSLP_PROCESS:
+		return (mac_rx_srs_process);
+	case MRSLP_SUBFLOW_PROCESS:
+		return (mac_rx_srs_subflow_process);
+	case MRSLP_HWRINGS:
+		return (mac_hwrings_rx_process);
+	default:
+		panic("No lower proc defined for %d.", proc);
+	}
+}
+
 /*
  * When the first sub-flow is added to a link, we disable polling on the
  * link and also modify the entry point to mac_rx_srs_subflow_process().
@@ -1716,7 +1730,6 @@ mac_client_update_classifier(mac_client_impl_t *mcip, boolean_t enable)
 	flow_entry_t		*flent = mcip->mci_flent;
 	int			i;
 	mac_impl_t		*mip = mcip->mci_mip;
-	mac_rx_func_t		rx_func;
 	uint_t			rx_srs_cnt;
 	boolean_t		enable_classifier;
 
@@ -1724,8 +1737,9 @@ mac_client_update_classifier(mac_client_impl_t *mcip, boolean_t enable)
 
 	enable_classifier = !FLOW_TAB_EMPTY(mcip->mci_subflow_tab) && enable;
 
-	rx_func = enable_classifier ? mac_rx_srs_subflow_process :
-	    mac_rx_srs_process;
+	const mac_rx_srs_lower_proc_t proc = enable_classifier ?
+	    MRSLP_SUBFLOW_PROCESS : MRSLP_PROCESS;
+	const mac_rx_func_t rx_func = mac_srs_lower_proc(proc);
 
 	/* Tell mac_srs_poll_state_change to disable polling if necessary */
 	if (mip->mi_state_flags & MIS_POLL_DISABLE)
@@ -1742,7 +1756,7 @@ mac_client_update_classifier(mac_client_impl_t *mcip, boolean_t enable)
 	for (i = 0; i < rx_srs_cnt; i++) {
 		ASSERT(flent->fe_rx_srs[i] != NULL);
 		mac_srs_poll_state_change(flent->fe_rx_srs[i],
-		    enable_classifier, rx_func);
+		    enable_classifier, proc);
 	}
 
 	/*
@@ -2341,9 +2355,9 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 	if ((srs_type & SRST_FLOW) != 0 ||
 	    FLOW_TAB_EMPTY(mcip->mci_subflow_tab))
-		srs_rx->sr_lower_proc = mac_rx_srs_process;
+		srs_rx->sr_lower_proc = MRSLP_PROCESS;
 	else
-		srs_rx->sr_lower_proc = mac_rx_srs_subflow_process;
+		srs_rx->sr_lower_proc = MRSLP_SUBFLOW_PROCESS;
 
 	srs_rx->sr_func = rx_func;
 	srs_rx->sr_arg1 = mcip;
@@ -2533,7 +2547,8 @@ mac_rx_srs_group_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 		mac_srs = mac_srs_create(mcip, flent, fanout_type | link_type,
 		    mac_rx_deliver, NULL);
 		mutex_enter(&flent->fe_lock);
-		flent->fe_cb_fn = (flow_fn_t)mac_srs->srs_rx.sr_lower_proc;
+		flent->fe_cb_fn = (flow_fn_t)mac_srs_lower_proc(
+		    mac_srs->srs_rx.sr_lower_proc);
 		flent->fe_cb_arg1 = (void *)mip;
 		flent->fe_cb_arg2 = (void *)mac_srs;
 		mutex_exit(&flent->fe_lock);
@@ -4117,7 +4132,6 @@ no_group:
 			ASSERT(B_FALSE);
 			break;
 	}
-	tx->st_func = mac_tx_get_func(tx->st_mode);
 	if (is_aggr) {
 		VERIFY(i_mac_capab_get((mac_handle_t)mip,
 		    MAC_CAPAB_AGGR, &tx->st_capab_aggr));

@@ -3686,6 +3686,43 @@ mac_tx_needed_offloads(const mac_impl_t *mip, mblk_t **mpp)
 	}								\
 }
 
+static inline mac_tx_cookie_t
+mac_srs_send_tx(mac_soft_ring_set_t *srs, mblk_t *mp,
+    uintptr_t hint, uint16_t flags, mblk_t **retmp)
+{
+	ASSERT(!MUTEX_HELD(&srs->srs_lock));
+	ASSERT((srs->srs_type & SRST_TX) != 0);
+
+	mac_tx_cookie_t out = 0;
+	switch (srs->srs_tx.st_mode) {
+		case SRS_TX_DEFAULT:
+			out = mac_tx_single_ring_mode(srs, mp, hint, flags,
+			    retmp);
+			break;
+		case SRS_TX_SERIALIZE:
+			out = mac_tx_serializer_mode(srs, mp, hint, flags,
+			    retmp);
+			break;
+		case SRS_TX_FANOUT:
+			out = mac_tx_fanout_mode(srs, mp, hint, flags, retmp);
+			break;
+		case SRS_TX_AGGR:
+			out = mac_tx_aggr_mode(srs, mp, hint, flags, retmp);
+			break;
+		case SRS_TX_BW:
+		case SRS_TX_BW_FANOUT:
+		case SRS_TX_BW_AGGR:
+			out = mac_tx_bw_mode(srs, mp, hint, flags, retmp);
+			break;
+		default:
+			panic("Illegal tx func %d for Transmit SRS.",
+			    srs->srs_tx.st_mode);
+			break;
+	}
+
+	return (out);
+}
+
 /*
  * Send function invoked by MAC clients.
  */
@@ -3874,7 +3911,7 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 			mutex_exit(&srs->srs_lock);
 		}
 	} else {
-		cookie = srs_tx->st_func(srs, new_head, hint, flag, ret_mp);
+		cookie = mac_srs_send_tx(srs, new_head, hint, flag, ret_mp);
 	}
 
 done:

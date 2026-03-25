@@ -1547,7 +1547,7 @@ mac_rx_group_unmark(mac_group_t *grp, uint_t flag)
  * addresses, or set up the Rx callback.
  */
 /* ARGSUSED */
-static void
+void
 mac_hwrings_rx_process(void *arg, mac_resource_handle_t srs,
     mblk_t *mp_chain, boolean_t loopback)
 {
@@ -1797,7 +1797,7 @@ mac_hwring_setup(mac_ring_handle_t hwrh, mac_resource_handle_t prh,
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		ASSERT(!(mac_srs->srs_type & SRST_TX));
 		mac_srs->srs_mrh = prh;
-		mac_srs->srs_rx.sr_lower_proc = mac_hwrings_rx_process;
+		mac_srs->srs_rx.sr_lower_proc = MRSLP_HWRINGS;
 	}
 }
 
@@ -1813,7 +1813,7 @@ mac_hwring_teardown(mac_ring_handle_t hwrh)
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		mac_srs = hw_ring->mr_srs;
 		ASSERT(!(mac_srs->srs_type & SRST_TX));
-		mac_srs->srs_rx.sr_lower_proc = mac_rx_srs_process;
+		mac_srs->srs_rx.sr_lower_proc = MRSLP_PROCESS;
 		mac_srs->srs_mrh = NULL;
 	}
 }
@@ -5067,7 +5067,6 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 					tx->st_mode = is_aggr ? SRS_TX_AGGR :
 					    SRS_TX_FANOUT;
 				}
-				tx->st_func = mac_tx_get_func(tx->st_mode);
 			}
 			mac_tx_srs_add_ring(mac_srs, ring);
 			mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
@@ -5269,7 +5268,6 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 				} else {
 					tx->st_mode = SRS_TX_DEFAULT;
 				}
-				tx->st_func = mac_tx_get_func(tx->st_mode);
 			}
 			mac_tx_client_restart((mac_client_handle_t)mcip);
 			mgcp = mgcp->mgc_next;
