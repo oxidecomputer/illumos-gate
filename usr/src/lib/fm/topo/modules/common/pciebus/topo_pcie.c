@@ -57,7 +57,7 @@
 
 #include <io/amdzen/amdzen_topo.h>
 
-#include "topo_pcie.h"
+#include "topo_pcie_impl.h"
 
 typedef struct cbdata {
 	pcie_t			*cbd_pcie;

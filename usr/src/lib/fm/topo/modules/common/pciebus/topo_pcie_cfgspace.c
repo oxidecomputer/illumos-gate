@@ -26,7 +26,7 @@
 #include <sys/stat.h>
 #include <sys/pci_tools.h>
 
-#include "topo_pcie.h"
+#include "topo_pcie_impl.h"
 
 static bool
 read_cfgspace(topo_mod_t *mod, pcie_node_t *node,

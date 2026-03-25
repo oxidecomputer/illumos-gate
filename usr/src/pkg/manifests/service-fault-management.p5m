@@ -151,6 +151,7 @@ file path=usr/include/fm/topo_hc.h
 file path=usr/include/fm/topo_list.h
 file path=usr/include/fm/topo_method.h
 file path=usr/include/fm/topo_mod.h
+file path=usr/include/fm/topo_pcie.h
 dir  path=usr/lib variant.opensolaris.zone=__NODEFAULT
 dir  path=usr/lib/fm variant.opensolaris.zone=__NODEFAULT
 dir  path=usr/lib/fm/$(ARCH64) variant.opensolaris.zone=__NODEFAULT

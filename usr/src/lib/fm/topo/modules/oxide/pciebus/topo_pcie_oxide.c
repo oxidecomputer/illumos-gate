@@ -30,7 +30,7 @@
 #include <fm/topo_list.h>
 #include <fm/topo_method.h>
 
-#include "topo_pcie.h"
+#include "topo_pcie_impl.h"
 
 typedef struct {
 	const char *s_name;

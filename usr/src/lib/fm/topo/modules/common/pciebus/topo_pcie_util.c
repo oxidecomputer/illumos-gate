@@ -21,7 +21,7 @@
 #include <fm/topo_list.h>
 #include <fm/topo_method.h>
 
-#include "topo_pcie.h"
+#include "topo_pcie_impl.h"
 
 const char *
 pcie_type_name(pcie_node_type_t type)

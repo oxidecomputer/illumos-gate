@@ -22,7 +22,7 @@
 #include <fm/topo_list.h>
 #include <fm/topo_method.h>
 
-#include "topo_pcie.h"
+#include "topo_pcie_impl.h"
 
 nvlist_t *
 mod_pcie_platform_auth(topo_mod_t *mod, const pcie_t *pcie, tnode_t *parent)

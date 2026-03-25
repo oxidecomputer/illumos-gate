@@ -31,7 +31,7 @@
 #include <fm/topo_method.h>
 #include <fm/topo_hc.h>
 
-#include "topo_pcie.h"
+#include "topo_pcie_impl.h"
 
 static const topo_pgroup_info_t io_pgroup = {
 	.tpi_name = TOPO_PCIE_PGROUP_IO,
