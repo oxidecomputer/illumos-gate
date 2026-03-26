@@ -3860,8 +3860,8 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		obytes = (new_head->b_cont == NULL ? MBLKL(new_head) :
 		    msgdsize(new_head));
 
-		new_head = mac_provider_tx(mip, srs_tx->st_arg2, new_head,
-		    mcip);
+		new_head = mac_provider_tx(mip,
+		    (mac_ring_handle_t)srs_tx->st_arg2, new_head, mcip);
 
 		if (new_head == NULL) {
 			cookie = 0;
