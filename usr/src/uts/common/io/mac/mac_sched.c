@@ -2376,10 +2376,10 @@ mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
 			if (DB_CKSUMFLAGS(mp) != 0) {
 				mac_hcksum_clone(mp, new_mp);
 			}
-			freemsgchain(mp);
+			freemsg(mp);
 			mp = new_mp;
 		} else {
-			freemsgchain(mp);
+			freemsg(mp);
 			return (NULL);
 		}
 	}
