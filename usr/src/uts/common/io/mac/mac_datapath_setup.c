@@ -4148,7 +4148,6 @@ void
 mac_tx_srs_add_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 {
 	mac_client_impl_t *mcip = mac_srs->srs_mcip;
-	mac_soft_ring_t *soft_ring;
 	uint16_t count = mac_srs->srs_soft_ring_count;
 
 	VERIFY(mac_srs_is_tx(mac_srs));

@@ -920,8 +920,6 @@ struct mac_soft_ring_set_s {
 	kcondvar_t	srs_cv;		/* cv for poll thread */
 	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
 
-	/* 64B */
-
 	/*
 	 * From here 'til `srs_data`, the fields of this struct are mostly
 	 * static, barring changes from administrative commands.
@@ -932,6 +930,8 @@ struct mac_soft_ring_set_s {
 	 * non-Bandwidth, and Subtree vs. non-Subtree.
 	 */
 	mac_srs_drain_proc_t	srs_drain_func;	/* srs_lock(Rx), Quiesce(tx) */
+
+	/* 64B */
 
 	/*
 	 * A structure for classifying packets received on a complete SRS and
@@ -976,12 +976,6 @@ struct mac_soft_ring_set_s {
 	size_t		srs_bw_len; /* WO */
 
 	/*
-	 * Priority assignment for poll/worker threads for this SRS and its
-	 * softrings.
-	 */
-	pri_t		srs_pri; /* srs_lock */
-
-	/*
 	 * Global doubly-linked list of all SRSes.
 	 */
 	mac_soft_ring_set_t	*srs_next;	/* mac_srs_g_lock */
@@ -1007,6 +1001,12 @@ struct mac_soft_ring_set_s {
 	mac_srs_fanout_state_t	srs_fanout_state;
 
 	/*
+	 * Priority assignment for poll/worker threads for this SRS and its
+	 * softrings.
+	 */
+	pri_t		srs_pri; /* srs_lock */
+
+	/*
 	 * Singly-linked list of logical SRSes allocated within an srs_flowtree.
 	 * A complete SRS serves as the head of this list, which allows for
 	 * easier walking during stats collection or quiescence.
@@ -1021,7 +1021,7 @@ struct mac_soft_ring_set_s {
 	 *
 	 * We assert this property holds below.
 	 */
-	uint8_t			srs_pad[8];
+	uint8_t			srs_pad[24];
 
 	union {
 		mac_srs_rx_t	rx; /* !(srs_type & SRST_TX) */
@@ -1166,8 +1166,7 @@ extern struct dls_kstats dls_kstat;
  * `SRS_PROC` and signal the poll thread to check the interface for packets and
  * get the interface back to interrupt mode if nothing is found.
  */
-__attribute__((always_inline))
-inline void
+static inline __attribute__((always_inline)) void
 mac_update_srs_count(mac_soft_ring_set_t *mac_srs, uint32_t cnt)
 {
 	/*
@@ -1366,8 +1365,7 @@ extern void mac_tx_srs_drain(mac_soft_ring_set_t *,
 extern void mac_srs_drain_forward(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t);
 
-__attribute__((always_inline))
-inline void
+static inline __attribute__((always_inline)) void
 mac_srs_drain(mac_soft_ring_set_t *srs, const mac_soft_ring_set_state_t owner)
 {
 	ASSERT(MUTEX_HELD(&srs->srs_lock));

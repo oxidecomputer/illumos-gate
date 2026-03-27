@@ -203,8 +203,6 @@ mac_soft_ring_create_rx(int id, clock_t wait, pri_t pri,
     mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs, processorid_t cpuid,
     mac_direct_rx_t rx_func, void *x_arg1)
 {
-	VERIFY3U((type & ST_RING_TX), ==, 0);
-
 	mac_soft_ring_t *ringp = mac_soft_ring_create_i(id, wait, 0, pri,
 	    mcip, mac_srs, cpuid);
 
@@ -238,7 +236,7 @@ mac_soft_ring_create_tx(int id, clock_t wait, const mac_soft_ring_state_t type,
 	    (mac_tx_soft_ring_hiwat > mac_tx_soft_ring_max_q_cnt) ?
 	    mac_tx_soft_ring_max_q_cnt : mac_tx_soft_ring_hiwat;
 	if (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT) {
-		mac_srs_tx_t *tx = &mac_srs->srs_tx;
+		mac_srs_tx_t *tx = &mac_srs->srs_data.tx;
 		VERIFY3P(tx->st_soft_rings[ring->mr_index], ==, NULL);
 		tx->st_soft_rings[ring->mr_index] = ringp;
 	}

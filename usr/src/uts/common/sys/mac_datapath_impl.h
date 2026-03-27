@@ -47,15 +47,13 @@ typedef struct {
 	size_t		mpl_size;
 } mac_pkt_list_t;
 
-__attribute__((always_inline))
-inline size_t
+static inline __attribute__((always_inline)) size_t
 mp_len(const mblk_t *mp)
 {
 	return ((mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp));
 }
 
-__attribute__((always_inline))
-inline bool
+static inline __attribute__((always_inline)) bool
 mac_pkt_list_is_empty(const mac_pkt_list_t *list)
 {
 	const bool out = list->mpl_head == NULL;
@@ -69,8 +67,7 @@ mac_pkt_list_is_empty(const mac_pkt_list_t *list)
 	return (out);
 }
 
-__attribute__((always_inline))
-inline void
+static inline __attribute__((always_inline)) void
 mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst)
 {
 	if (mac_pkt_list_is_empty(src)) {
@@ -93,8 +90,7 @@ mac_pkt_list_extend(mac_pkt_list_t *src, mac_pkt_list_t *dst)
 	src->mpl_size = 0;
 }
 
-__attribute__((always_inline))
-inline void
+static inline __attribute__((always_inline)) void
 mac_pkt_list_append_sz(mac_pkt_list_t *dst, mblk_t *mp, const size_t sz)
 {
 	ASSERT3P(mp, !=, NULL);
@@ -111,8 +107,7 @@ mac_pkt_list_append_sz(mac_pkt_list_t *dst, mblk_t *mp, const size_t sz)
 	dst->mpl_count++;
 }
 
-__attribute__((always_inline))
-inline void
+static inline __attribute__((always_inline)) void
 mac_pkt_list_append(mac_pkt_list_t *dst, mblk_t *mp)
 {
 	mac_pkt_list_append_sz(dst, mp, mp_len(mp));
@@ -122,8 +117,7 @@ mac_pkt_list_append(mac_pkt_list_t *dst, mblk_t *mp)
  * Methods for reading parts of outermost MEOI facts in the domain covered by
  * `mac_standardise_pkts`.
  */
-__attribute__((always_inline))
-static inline ssize_t
+static inline __attribute__((always_inline)) ssize_t
 meoi_fast_l2hlen(const mblk_t *mp)
 {
 	const packed_meoi_t *db = &mp->b_datap->db_meoi.pktinfo;

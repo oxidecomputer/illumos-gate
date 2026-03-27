@@ -2254,8 +2254,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
-__attribute__((always_inline))
-static inline void
+static inline __attribute__((always_inline)) void
 mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
 {
 	if (!mac_pkt_list_is_empty(list)) {
@@ -3157,7 +3156,6 @@ static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
  * datapath (e.g., SRST_LOGICAL). Those holding onto softrings to
  * be reached via a flow tree will be handled inline here.
  */
-__attribute__((always_inline))
 static inline __attribute__((always_inline)) void
 mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs,
     const mac_soft_ring_set_state_t proc_type, const bool has_subtree,
@@ -3301,8 +3299,8 @@ again:
 	}
 
 	mutex_enter(&mac_srs->srs_lock);
-	if ((mac_srs->srs_state & SRS_PAUSE) == 0) &&
-	    (mac_srs->srs_first != NULL)) {
+	if ((mac_srs->srs_state & SRS_PAUSE) == 0 &&
+	    mac_srs->srs_first != NULL) {
 		/*
 		 * More packets arrived while we were clearing the
 		 * SRS. This can be possible because of one of
