@@ -43,6 +43,7 @@
 #include "unix_sup.h"
 #include "zen_kmdb.h"
 #include "fabric.h"
+#include "oxio.h"
 #include "unix.h"
 #include <sys/apix.h>
 #include <sys/x86_archext.h>
@@ -1107,6 +1108,9 @@ static const mdb_dcmd_t dcmds[] = {
 	    "route tables", df_route_dcmd, df_route_dcmd_help },
 	{ "mpiorpc", ":[-s socket] [arg]...", "Invoke an MPIO RPC",
 	    mpiorpc_dcmd, mpiorpc_dcmd_help },
+	{ "oxio_unlimit", "name [name ...]",
+	    "clear PCIe limit for named engines (Cosmo only)",
+	    oxio_unlimit_dcmd, oxio_unlimit_help },
 	{ "rddf", ":[-b | -i inst] [-f func] [-s socket]", "read df register",
 	    rddf_dcmd, rddf_dcmd_help },
 	{ "rdpcicfg", ":[-L len] bus dev func",

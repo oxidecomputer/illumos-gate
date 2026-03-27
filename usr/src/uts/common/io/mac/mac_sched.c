@@ -1470,12 +1470,13 @@ int mac_srs_worker_wakeup_ticks = 0;
 	if (!((mac_srs)->srs_state & SRS_PROC) &&			\
 		(mac_srs)->srs_tid == NULL) {				\
 		if (mac_srs_is_latency_opt((mac_srs)) ||		\
-			mac_srs_worker_wakeup_ticks == 0)		\
+		    mac_srs_worker_wakeup_ticks == 0) {			\
 			cv_signal(&(mac_srs)->srs_async);		\
-		else							\
+		} else {						\
 			(mac_srs)->srs_tid =				\
 				timeout(mac_srs_fire, (mac_srs),	\
 					mac_srs_worker_wakeup_ticks);	\
+		}							\
 	}								\
 }
 
@@ -3157,7 +3158,7 @@ static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
  * be reached via a flow tree will be handled inline here.
  */
 __attribute__((always_inline))
-static inline void
+static inline __attribute__((always_inline)) void
 mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs,
     const mac_soft_ring_set_state_t proc_type, const bool has_subtree,
     const bool subtree_has_bw)
@@ -3170,14 +3171,8 @@ mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs,
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 	ASSERT(!mac_srs_is_bw_controlled(mac_srs));
 
-	/* If we are blanked i.e. can't do upcalls, then we are done */
-	if (mac_srs->srs_state & (SRS_BLANK | SRS_PAUSE)) {
-		ASSERT((mac_srs->srs_type & SRST_NO_SOFT_RINGS) ||
-		    (mac_srs->srs_state & SRS_PAUSE));
-		goto out;
-	}
-
-	if (mac_srs->srs_first == NULL) {
+	if ((mac_srs->srs_state & SRS_PAUSE) != 0 ||
+	    mac_srs->srs_first == NULL) {
 		goto out;
 	}
 
@@ -3306,7 +3301,7 @@ again:
 	}
 
 	mutex_enter(&mac_srs->srs_lock);
-	if (!(mac_srs->srs_state & (SRS_BLANK|SRS_PAUSE)) &&
+	if ((mac_srs->srs_state & SRS_PAUSE) == 0) &&
 	    (mac_srs->srs_first != NULL)) {
 		/*
 		 * More packets arrived while we were clearing the
@@ -3434,8 +3429,7 @@ mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *mac_srs,
  * to read/debug if they stay separate. Any code changes here might
  * also apply to mac_rx_srs_drain as well.
  */
-__attribute__((always_inline))
-static inline void
+static inline __attribute__((always_inline)) void
 mac_rx_srs_drain_bw_inner(mac_soft_ring_set_t *mac_srs,
     const mac_soft_ring_set_state_t proc_type, const bool has_subtree,
     const bool subtree_has_bw)
@@ -3458,10 +3452,7 @@ again:
 		goto done;
 	}
 
-	/* If we are blanked i.e. can't do upcalls, then we are done */
-	if (mac_srs->srs_state & (SRS_BLANK | SRS_PAUSE)) {
-		ASSERT((mac_srs->srs_type & SRST_NO_SOFT_RINGS) ||
-		    (mac_srs->srs_state & SRS_PAUSE));
+	if ((mac_srs->srs_state & SRS_PAUSE) != 0) {
 		mac_srs_bw_unlock(mac_srs);
 		goto done;
 	}
@@ -4702,7 +4693,6 @@ mac_tx_invoke_callbacks(mac_client_impl_t *mcip, mac_tx_cookie_t cookie)
 	    &mcip->mci_tx_notify_cb_list);
 }
 
-/* ARGSUSED */
 void
 mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
     const mac_soft_ring_set_state_t proc_type)
@@ -5197,7 +5187,7 @@ mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring_h)
 	 * If you are here, it is for FANOUT, BW_FANOUT,
 	 * AGGR_MODE or AGGR_BW_MODE case
 	 */
-	for (int i = 0; i < mac_srs->srs_soft_ring_count; i++) {
+	for (uint16_t i = 0; i < mac_srs->srs_soft_ring_count; i++) {
 		sringp = mac_srs->srs_soft_rings[i];
 		mutex_enter(&sringp->s_ring_lock);
 		if (sringp->s_ring_tx_arg2 == ring) {

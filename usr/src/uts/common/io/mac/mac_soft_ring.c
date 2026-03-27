@@ -142,16 +142,13 @@ mac_soft_ring_worker_wakeup(mac_soft_ring_t *ringp)
 }
 
 /*
- * mac_soft_ring_create
- *
  * Create a soft ring, do the necessary setup and bind the worker
  * thread to the assigned CPU.
  */
-mac_soft_ring_t *
-mac_soft_ring_create(int id, clock_t wait, const mac_soft_ring_state_t type,
+static mac_soft_ring_t *
+mac_soft_ring_create_i(int id, clock_t wait, const mac_soft_ring_state_t type,
     pri_t pri, mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs,
-    processorid_t cpuid, mac_direct_rx_t rx_func, void *x_arg1,
-    mac_resource_handle_t x_arg2)
+    processorid_t cpuid)
 {
 	mac_soft_ring_t		*ringp;
 	char			name[S_RING_NAMELEN];
@@ -195,29 +192,56 @@ mac_soft_ring_create(int id, clock_t wait, const mac_soft_ring_state_t type,
 	ringp->s_ring_cpuid = ringp->s_ring_cpuid_save = -1;
 	ringp->s_ring_worker = thread_create(NULL, 0,
 	    mac_soft_ring_worker, ringp, 0, &p0, TS_RUN, pri);
-	if (type & ST_RING_TX) {
-		mac_ring_t *mr = (mac_ring_t *)x_arg2;
-		ringp->s_ring_tx_arg1 = x_arg1;
-		ringp->s_ring_tx_arg2 = mr;
-		ringp->s_ring_tx_max_q_cnt = mac_tx_soft_ring_max_q_cnt;
-		ringp->s_ring_tx_hiwat =
-		    (mac_tx_soft_ring_hiwat > mac_tx_soft_ring_max_q_cnt) ?
-		    mac_tx_soft_ring_max_q_cnt : mac_tx_soft_ring_hiwat;
-		if (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT) {
-			mac_srs_tx_t *tx = &mac_srs->srs_data.tx;
-			ASSERT3P(tx->st_soft_rings[mr->mr_index], ==, NULL);
-			tx->st_soft_rings[mr->mr_index] = ringp;
-		}
-	} else {
-		ringp->s_ring_rx_func = rx_func;
-		ringp->s_ring_rx_arg1 = x_arg1;
-		ringp->s_ring_rx_arg2 = x_arg2;
-		if ((mac_srs->srs_type & SRST_ENQUEUE) != 0) {
-			ringp->s_ring_state |= ST_RING_WORKER_ONLY;
-		}
-	}
 	if (cpuid != -1)
 		(void) mac_soft_ring_bind(ringp, cpuid);
+
+	return (ringp);
+}
+
+mac_soft_ring_t *
+mac_soft_ring_create_rx(int id, clock_t wait, pri_t pri,
+    mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs, processorid_t cpuid,
+    mac_direct_rx_t rx_func, void *x_arg1)
+{
+	VERIFY3U((type & ST_RING_TX), ==, 0);
+
+	mac_soft_ring_t *ringp = mac_soft_ring_create_i(id, wait, 0, pri,
+	    mcip, mac_srs, cpuid);
+
+	ringp->s_ring_rx_func = rx_func;
+	ringp->s_ring_rx_arg1 = x_arg1;
+	ringp->s_ring_rx_arg2 = NULL;
+	if ((mac_srs->srs_type & SRST_ENQUEUE) != 0) {
+		ringp->s_ring_state |= ST_RING_WORKER_ONLY;
+	}
+
+	mac_soft_ring_stat_create(ringp);
+
+	return (ringp);
+}
+
+mac_soft_ring_t *
+mac_soft_ring_create_tx(int id, clock_t wait, const mac_soft_ring_state_t type,
+    pri_t pri, mac_client_impl_t *mcip, mac_soft_ring_set_t *mac_srs,
+    processorid_t cpuid, mac_ring_t *ring)
+{
+	VERIFY3U((type & ST_RING_TX), ==, 0);
+	VERIFY(ring != NULL);
+
+	mac_soft_ring_t *ringp = mac_soft_ring_create_i(id, wait,
+	    type | ST_RING_TX, pri, mcip, mac_srs, cpuid);
+
+	ringp->s_ring_tx_arg1 = mcip;
+	ringp->s_ring_tx_arg2 = ring;
+	ringp->s_ring_tx_max_q_cnt = mac_tx_soft_ring_max_q_cnt;
+	ringp->s_ring_tx_hiwat =
+	    (mac_tx_soft_ring_hiwat > mac_tx_soft_ring_max_q_cnt) ?
+	    mac_tx_soft_ring_max_q_cnt : mac_tx_soft_ring_hiwat;
+	if (mcip->mci_state_flags & MCIS_IS_AGGR_CLIENT) {
+		mac_srs_tx_t *tx = &mac_srs->srs_tx;
+		VERIFY3P(tx->st_soft_rings[ring->mr_index], ==, NULL);
+		tx->st_soft_rings[ring->mr_index] = ringp;
+	}
 
 	mac_soft_ring_stat_create(ringp);
 

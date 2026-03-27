@@ -1097,7 +1097,7 @@ mac_soft_ring_stat_create(mac_soft_ring_t *ringp)
 {
 	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
 	flow_entry_t		*flent = ringp->s_ring_mcip->mci_flent;
-	mac_ring_t		*ring_tx = (mac_ring_t *)ringp->s_ring_tx_arg2;
+	mac_ring_t		*ring_tx = ringp->s_ring_tx_arg2;
 	char			statname[MAXNAMELEN];
 
 	if (mac_srs_is_logical(mac_srs)) {

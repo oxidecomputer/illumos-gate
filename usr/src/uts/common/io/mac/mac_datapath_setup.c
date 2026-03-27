@@ -1737,6 +1737,10 @@ mac_srs_update_fanout_list(mac_soft_ring_set_t *mac_srs)
 		return;
 	}
 
+	if ((mac_srs->srs_type & SRST_TX) != 0) {
+		mac_srs->srs_type &= ~SRST_NO_SOFT_RINGS;
+	}
+
 	while (softring != NULL) {
 		mac_srs->srs_soft_rings[count++] = softring;
 		softring = softring->s_ring_next;
@@ -1772,7 +1776,7 @@ mac_rx_discard(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 	freemsgchain(mp_chain);
 }
 
-void
+static void
 mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
     mac_soft_ring_set_t *mac_srs, processorid_t cpuid)
 {
@@ -1785,9 +1789,9 @@ mac_srs_create_rx_softring(int id, pri_t pri, mac_client_impl_t *mcip,
 	    mac_rx_discard;
 	void *x_arg1 = process_packet ? act->fa_direct_rx_arg : NULL;
 
-	mac_soft_ring_t *softring = mac_soft_ring_create(id,
-	    mac_soft_ring_worker_wait, 0, pri, mcip, mac_srs, cpuid, rx_func,
-	    x_arg1, NULL);
+	mac_soft_ring_t *softring = mac_soft_ring_create_rx(id,
+	    mac_soft_ring_worker_wait, pri, mcip, mac_srs, cpuid, rx_func,
+	    x_arg1);
 
 	if (notify_upstack) {
 		mac_rx_fifo_t mrf = {
@@ -2467,7 +2471,7 @@ mac_rx_switch_grp_to_sw(mac_group_t *group)
 			 * As a result, polling will be disabled.
 			 */
 			mac_srs = ring->mr_srs;
-			ASSERT3P(mac_srs, !=, NULL);
+			VERIFY(mac_srs != NULL);
 			mac_rx_srs_remove(mac_srs);
 			ring->mr_srs = NULL;
 		}
@@ -2713,7 +2717,7 @@ mac_rx_srs_group_teardown(flow_entry_t *flent, boolean_t hwonly)
  */
 void
 mac_tx_srs_group_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
-    const mac_soft_ring_set_type_t  link_type)
+    const mac_soft_ring_set_type_t link_type)
 {
 	mac_soft_ring_set_t *tx_srs = flent->fe_tx_srs;
 
@@ -3202,7 +3206,7 @@ mac_datapath_setup(mac_client_impl_t *mcip, flow_entry_t *flent,
 			goto setup_failed;
 
 		mcip->mci_unicast = mac_find_macaddr(mip, mac_addr);
-		VERIFY3P(mcip->mci_unicast, !=, NULL);
+		VERIFY(mcip->mci_unicast != NULL);
 		if (vid != VLAN_ID_NONE) {
 			flent->fe_match2.mfm_type = MFM_ALL;
 			flent->fe_match2.arg.mfm_list =
@@ -3375,7 +3379,7 @@ mac_datapath_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
 				/*
 				 * Only one client left on this RX group.
 				 */
-				VERIFY3P(grp_only_mcip, !=, NULL);
+				VERIFY(grp_only_mcip != NULL);
 				mac_set_group_state(group,
 				    MAC_GROUP_STATE_RESERVED);
 				group_only_flent = grp_only_mcip->mci_flent;
@@ -3507,7 +3511,7 @@ mac_datapath_teardown(mac_client_impl_t *mcip, flow_entry_t *flent,
 		next_state = mac_group_next_state(default_group,
 		    &grp_only_mcip, default_group, B_TRUE);
 		if (next_state == MAC_GROUP_STATE_RESERVED) {
-			VERIFY3P(grp_only_mcip, !=, NULL);
+			VERIFY(grp_only_mcip != NULL);
 			VERIFY3U(mip->mi_nactiveclients, ==, 1);
 			mac_set_group_state(default_group,
 			    MAC_GROUP_STATE_RESERVED);
@@ -3711,9 +3715,8 @@ mac_srs_soft_rings_quiesce(mac_soft_ring_set_t *mac_srs,
 void
 mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 {
-	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
-
-	VERIFY3U(mac_srs->srs_state & (SRS_CONDEMNED | SRS_QUIESCE), !=, 0);
+	VERIFY(MUTEX_HELD(&mac_srs->srs_lock));
+	VERIFY((mac_srs->srs_state & (SRS_CONDEMNED | SRS_QUIESCE)) != 0);
 	const boolean_t condemn = (mac_srs->srs_state & SRS_CONDEMNED) != 0;
 	const mac_soft_ring_state_t s_ring_flag = condemn ?
 	    S_RING_CONDEMNED : S_RING_QUIESCE;
@@ -4147,22 +4150,20 @@ mac_tx_srs_add_ring(mac_soft_ring_set_t *mac_srs, mac_ring_t *tx_ring)
 	mac_client_impl_t *mcip = mac_srs->srs_mcip;
 	mac_soft_ring_t *soft_ring;
 	uint16_t count = mac_srs->srs_soft_ring_count;
-	mac_soft_ring_state_t soft_ring_type = ST_RING_TX;
-	uint_t ring_info;
 
-	ASSERT(mac_srs_is_tx(mac_srs));
+	VERIFY(mac_srs_is_tx(mac_srs));
+	VERIFY((mac_srs->srs_state & SRS_QUIESCE) != 0);
 
-	ASSERT(mac_srs->srs_state & SRS_QUIESCE);
-	ring_info = mac_hwring_getinfo((mac_ring_handle_t)tx_ring);
-	if (mac_tx_serialize || (ring_info & MAC_RING_TX_SERIALIZE))
-		soft_ring_type |= ST_RING_WORKER_ONLY;
-	soft_ring = mac_soft_ring_create(count, 0,
-	    soft_ring_type, maxclsyspri, mcip, mac_srs, -1,
-	    NULL, mcip, (mac_resource_handle_t)tx_ring);
+	uint_t ring_info = mac_hwring_getinfo((mac_ring_handle_t)tx_ring);
+	const mac_soft_ring_state_t soft_ring_type =
+	    (mac_tx_serialize || (ring_info & MAC_RING_TX_SERIALIZE) != 0) ?
+	    ST_RING_WORKER_ONLY : 0;
+	mac_soft_ring_t *soft_ring = mac_soft_ring_create_tx(count, 0,
+	    soft_ring_type, maxclsyspri, mcip, mac_srs, -1, tx_ring);
 	mac_srs_update_fanout_list(mac_srs);
 	/*
-	 * put this soft ring in quiesce mode too so when we restart
-	 * all soft rings in the srs are in the same state.
+	 * Put this soft ring in quiesce mode too, so that when we restart
+	 * all soft rings in the SRS are in the same state.
 	 */
 	mac_soft_ring_signal(soft_ring, S_RING_QUIESCE);
 }
@@ -4181,7 +4182,7 @@ mac_soft_ring_remove(mac_soft_ring_set_t *mac_srs, mac_soft_ring_t *softring)
 	uint16_t sringcnt = mac_srs->srs_soft_ring_count;
 	mac_soft_ring_signal(softring, S_RING_CONDEMNED);
 
-	ASSERT3U(mac_srs->srs_soft_ring_condemned_count, ==, 0);
+	VERIFY3U(mac_srs->srs_soft_ring_condemned_count, ==, 0);
 	while (mac_srs->srs_soft_ring_condemned_count != 1) {
 		cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
 	}
@@ -4312,14 +4313,13 @@ no_group:
 				    SRS_TX_FANOUT;
 			}
 			for (i = 0; i < tx_ring_count; i++) {
-				ASSERT3P(ring, !=, NULL);
-				mac_soft_ring_state_t soft_ring_type =
-				    ST_RING_TX;
+				VERIFY(ring != NULL);
+				mac_soft_ring_state_t soft_ring_type = 0;
 
 				switch (ring->mr_state) {
 				case MR_INUSE:
 				case MR_FREE:
-					ASSERT3P(ring->mr_srs, ==, NULL);
+					VERIFY3P(ring->mr_srs, ==, NULL);
 
 					if (ring->mr_state != MR_INUSE)
 						(void) mac_start_ring(ring);
@@ -4330,10 +4330,9 @@ no_group:
 						soft_ring_type |=
 						    ST_RING_WORKER_ONLY;
 					}
-					(void) mac_soft_ring_create(i, 0,
+					(void) mac_soft_ring_create_tx(i, 0,
 					    soft_ring_type, maxclsyspri,
-					    mcip, tx_srs, -1, NULL, mcip,
-					    (mac_resource_handle_t)ring);
+					    mcip, tx_srs, -1, ring);
 					break;
 				default:
 					cmn_err(CE_PANIC,

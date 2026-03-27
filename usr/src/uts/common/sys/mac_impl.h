@@ -691,8 +691,7 @@ typedef struct mac_prop_info_state_s {
 
 typedef struct mac_client_impl_s mac_client_impl_t;
 
-enum mac_soft_ring_set_type_e;
-typedef enum mac_soft_ring_set_type_e mac_soft_ring_set_type_t;
+typedef enum mac_soft_ring_set_type mac_soft_ring_set_type_t;
 
 extern void	mac_init(void);
 extern int	mac_fini(void);

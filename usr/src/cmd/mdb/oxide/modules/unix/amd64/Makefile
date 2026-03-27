@@ -32,7 +32,7 @@ MODSRCS = unix.c i86mmu.c xcall.c apob.c fabric.c
 MODSRCS += genoa_impl.c milan_impl.c turin_impl.c zen_fabric_utils.c
 MODASMSRCS = unix_sup.S
 
-KMODSRCS = $(MODSRCS) zen_kmdb.c
+KMODSRCS = $(MODSRCS) zen_kmdb.c oxio.c
 KMODASMSRCS = $(MODASMSRCS)
 
 KMOD_SOURCES_DIFFERENT=$(POUND_SIGN)

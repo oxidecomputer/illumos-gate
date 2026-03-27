@@ -20,6 +20,7 @@
 #include <sys/x86_archext.h>
 #include <sys/amdzen/df.h>
 #include <io/amdzen/amdzen_client.h>
+#include <sys/platform_detect.h>
 
 /*
  * Shadow structures for bits that we care about in the debugger.
@@ -50,6 +51,7 @@ typedef struct {
 } mdb_oxide_board_cpuinfo_t;
 
 typedef struct {
+	oxide_board_t			obd_board;
 	mdb_oxide_board_cpuinfo_t	obd_cpuinfo;
 	const mdb_zen_platform_t	*obd_zen_platform;
 } mdb_oxide_board_data_t;
