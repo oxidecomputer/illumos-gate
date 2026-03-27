@@ -778,6 +778,11 @@ extern void			mac_transceiver_info_set_usable(
  * When clients *do* fill this information in, providers are able to make use of
  * this information to correctly request offloads from underlying NICs without
  * needing to reparse the packet, increasing performance.
+ *
+ * Providers may also fill this in to aid fanout/softring selection, if the
+ * underlying device returns parse information. `mac_partial_offload_info`
+ * will continue manually parsing from an incomplete set of packet facts, which
+ * can be stored in the dblk_t via `mac_ether_set_pktinfo` once completed.
  */
 
 /*
@@ -843,6 +848,8 @@ extern boolean_t mac_tun_meoi_is_full(const mac_ether_offload_info_t *);
 
 extern boolean_t mac_ether_l2_info(const mblk_t *, uint8_t *, uint32_t *);
 extern void mac_ether_offload_info(const mblk_t *, mac_ether_offload_info_t *,
+    mac_ether_offload_info_t *);
+extern void mac_partial_offload_info(const mblk_t *, size_t,
     mac_ether_offload_info_t *);
 extern void mac_ether_set_pktinfo(mblk_t *, const mac_ether_offload_info_t *,
     const mac_ether_offload_info_t *);
