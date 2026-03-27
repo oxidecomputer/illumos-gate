@@ -1044,6 +1044,7 @@
 #include <sys/mac_impl.h>
 #include <sys/mac_client_impl.h>
 #include <sys/mac_client_priv.h>
+#include <sys/mac_provider.h>
 #include <sys/mac_soft_ring.h>
 #include <sys/mac_flow_impl.h>
 
