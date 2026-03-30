@@ -90,7 +90,7 @@ static int
 setdevaccess(char *dev, uid_t uid, gid_t gid, mode_t mode,
     void (*errmsg)(char *))
 {
-	int err = 0, local_errno;
+	int err = 0, local_errno = 0;
 	char errstring[MAX_LINELEN];
 	struct stat st;
 
