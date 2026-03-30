@@ -432,6 +432,8 @@ retry:
 
 		linkid = DATALINK_INVALID_LINKID;
 		for (;;) {
+			struct sockaddr_storage *s;
+
 			if (dl_get_next(door_fd, linkid, DATALINK_CLASS_ALL,
 			    DATALINK_ANY_MEDIATYPE, DLMGMT_ACTIVE,
 			    &next_retval) != 0) {
@@ -476,10 +478,14 @@ retry:
 			    NULL)
 				goto fail;
 
-			curr->ifa_addr =
-			    calloc(1, sizeof (struct sockaddr_storage));
-			if (curr->ifa_addr == NULL)
+			/*
+			 * We split this allocation and assignment to satisfy
+			 * smatch.
+			 */
+			s = calloc(1, sizeof (struct sockaddr_storage));
+			if (s == NULL)
 				goto fail;
+			curr->ifa_addr = (struct sockaddr *)s;
 
 			curr->ifa_data = calloc(1, sizeof (if_data_t));
 			if (curr->ifa_data == NULL)
