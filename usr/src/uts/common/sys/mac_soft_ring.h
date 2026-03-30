@@ -88,7 +88,7 @@ typedef enum {
 	 *
 	 * `s_ring_rx_arg2` must be non-null.
 	 *
-	 * Mutable. Requires ¬`ST_RING_TX`.
+	 * Mutable. Requires !`ST_RING_TX`.
 	 */
 	ST_RING_POLLABLE	= 1 << 1,
 	/*
@@ -593,7 +593,7 @@ enum mac_soft_ring_set_type {
 	 * softring. Accordingly, packet fanout must always be flowhash-driven.
 	 *
 	 * Mutable under quiescence, if a flow action is changed on an
-	 * established SRS. Requires ¬`SRST_TX`.
+	 * established SRS. Requires !`SRST_TX`.
 	 */
 	SRST_CLIENT_POLL		= 1 << 10,
 	/*
@@ -603,7 +603,7 @@ enum mac_soft_ring_set_type {
 	 * This is a vanity flag to make MAC client plumbing state clearer when
 	 * debugging, and does not alter datapath behaviour.
 	 *
-	 * Mutable under quiescence. Requires ¬`SRST_TX`.
+	 * Mutable under quiescence. Requires !`SRST_TX`.
 	 */
 	SRST_DLS_BYPASS_V4		= 1 << 12,
 	/*
@@ -613,7 +613,7 @@ enum mac_soft_ring_set_type {
 	 * This is a vanity flag to make MAC client plumbing state clearer when
 	 * debugging, and does not alter datapath behaviour.
 	 *
-	 * Mutable under quiescence. Requires ¬`SRST_TX`.
+	 * Mutable under quiescence. Requires !`SRST_TX`.
 	 */
 	SRST_DLS_BYPASS_V6		= 1 << 13,
 };
