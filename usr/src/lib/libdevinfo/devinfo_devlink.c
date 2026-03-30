@@ -38,6 +38,7 @@
 #endif
 
 #include <assert.h>
+#include <upanic.h>
 
 static mutex_t update_mutex = DEFAULTMUTEX; /* Protects update record lock */
 static mutex_t temp_file_mutex = DEFAULTMUTEX; /* for file creation tests */
@@ -542,6 +543,13 @@ invalid_db(struct di_devlink_handle *hdp, size_t fsize, long page_sz)
 	return (0);
 }
 
+/*
+ * stlouis#723 is tracking a bug where we sometimes end up with corrupt entries
+ * in the devino database. The corruption observed so far is very specific, a
+ * bit flip changing the 5th character to lower case. We check for any lower
+ * case characters in the WWN here and panic if any are found to provide a core
+ * file for further investigation.
+ */
 static void
 check_lowercase_corruption(const char *path, const char *tag, uint32_t nidx)
 {
@@ -552,11 +560,29 @@ check_lowercase_corruption(const char *path, const char *tag, uint32_t nidx)
 
 	for (cp = wp + 2; *cp != '\0' && *cp != ','; cp++) {
 		if (*cp >= 'a' && *cp <= 'f') {
+			const char *panicstr = "Corrupt devlink path";
+			char msg[1024];
+			size_t len;
+			int ret;
+
 			syslog(LOG_WARNING,
 			    "devlink: %s: node[%u] path has "
 			    "unexpected lowercase hex: %s",
 			    tag, nidx, path);
-			break;
+
+			ret = snprintf(msg, sizeof (msg),
+			    "%s: %s node[%u] '%s'",
+			    panicstr, tag, nidx, path);
+			if (ret <= 0) {
+				len = strlen(panicstr) + 1;
+			} else if (ret >= sizeof (msg)) {
+				len = sizeof (msg);
+				panicstr = msg;
+			} else {
+				len = (size_t)ret;
+				panicstr = msg;
+			}
+			upanic(panicstr, len);
 		}
 	}
 }
@@ -1038,15 +1064,74 @@ write_string(struct di_devlink_handle *hdp, const char *str, uint32_t *next)
 		return (DB_NIL);
 	}
 
+	/*
+	 * stlouis#723 is tracking a bug where we sometimes end up with corrupt
+	 * entries in the devino database. The corruption observed so far is
+	 * very specific, a bit flip changing the 5th character to lower case.
+	 * We check for any lower case characters in the WWN here and crash if
+	 * any are found to provide a core file for further investigation.
+	 */
+	if ((dstr = strstr(str, "blkdev@w")) != NULL) {
+		uint_t i;
+
+		dstr += strlen("blkdev@w");
+		for (i = 0; i < 16; i++) {
+			if (dstr[i] == '\0')
+				break;
+			if (dstr[i] >= 'a' && dstr[i] <= 'z') {
+				const char *panicstr = "Corrupt WWN str";
+				char msg[1024];
+				size_t len;
+				int ret;
+
+				ret = snprintf(msg, sizeof (msg),
+				    "%s='%s'", panicstr, str);
+				if (ret <= 0) {
+					len = strlen(panicstr) + 1;
+				} else if (ret >= sizeof (msg)) {
+					len = sizeof (msg);
+					panicstr = msg;
+				} else {
+					len = (size_t)ret;
+					panicstr = msg;
+				}
+				upanic(panicstr, len);
+			}
+		}
+	}
+
 	if ((dstr = set_string(hdp, idx)) == NULL) {
 		return (DB_NIL);
 	}
 
 	(void) strcpy(dstr, str);
 
+	/*
+	 * stlouis#723 is tracking a bug where we sometimes end up with corrupt
+	 * entries in the devino database. The corruption observed so far is
+	 * very specific, a bit flip changing the 5th character to lower case.
+	 * We check for any lower case characters in the WWN here and crash if
+	 * any are found to provide a core file for further investigation.
+	 */
 	if (strcmp(dstr, str) != 0) {
-		syslog(LOG_ERR, "devlink: write_string: post-write "
-		    "mismatch: wrote \"%s\", read back \"%s\"", str, dstr);
+		const char *panicstr = "write_string: post-write mismatch";
+		char msg[1024];
+		size_t len;
+		int ret;
+
+		ret = snprintf(msg, sizeof (msg),
+		    "%s: wrote \"%s\", read back \"%s\"",
+		    panicstr, str, dstr);
+		if (ret <= 0) {
+			len = strlen(panicstr) + 1;
+		} else if (ret >= sizeof (msg)) {
+			len = sizeof (msg);
+			panicstr = msg;
+		} else {
+			len = (size_t)ret;
+			panicstr = msg;
+		}
+		upanic(panicstr, len);
 	}
 
 	next[DB_STR] += strlen(dstr) + 1;

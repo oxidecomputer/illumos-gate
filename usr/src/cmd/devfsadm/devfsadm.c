@@ -45,6 +45,7 @@
 #include <utime.h>
 #include <sys/param.h>
 #include <bsm/libbsm.h>
+#include <upanic.h>
 #include <zone.h>
 #include "devfsadm_impl.h"
 
@@ -2483,6 +2484,48 @@ call_minor_init(module_t *module)
 }
 
 /*
+ * stlouis#723 is tracking a bug where we sometimes end up with corrupt entries
+ * in the devino database. The corruption observed so far is very specific, a
+ * bit flip changing the 5th character to lower case. We check for any lower
+ * case characters in the WWN here and panic if any are found to provide a core
+ * file for further investigation.
+ */
+static void
+devfsadm_check_corruption(const char *path, const char *link)
+{
+	const char *wp, *cp;
+
+	if ((wp = strstr(path, "@w")) == NULL)
+		return;
+
+	for (cp = wp + 2; *cp != '\0' && *cp != ':' && *cp != ','; cp++) {
+		if (*cp >= 'a' && *cp <= 'f') {
+			const char *panicstr = "devfsadm_mklink: "
+			    "unexpected lowercase hex in device path";
+			char msg[1024];
+			size_t len;
+			int ret;
+
+			err_print("%s: %s (link: %s)\n",
+			    panicstr, path, link);
+
+			ret = snprintf(msg, sizeof (msg), "%s: %s (link: %s)",
+			    panicstr, path, link);
+			if (ret <= 0) {
+				len = strlen(panicstr) + 1;
+			} else if (ret >= sizeof (msg)) {
+				len = sizeof (msg);
+				panicstr = msg;
+			} else {
+				len = (size_t)ret;
+				panicstr = msg;
+			}
+			upanic(panicstr, len);
+		}
+	}
+}
+
+/*
  * Creates a symlink 'link' to the physical path of node:minor.
  * Construct link contents, then call create_link_common().
  */
@@ -2519,27 +2562,7 @@ devfsadm_mklink(char *link, di_node_t node, di_minor_t minor, int flags)
 		}
 		(void) snprintf(phy_path, sizeof (phy_path), "%s:%s",
 		    dev_path, di_minor_name(minor));
-		{
-			const char *wp;
-
-			if ((wp = strstr(dev_path, "@w")) != NULL) {
-				const char *cp;
-
-				for (cp = wp + 2;
-				    *cp != '\0' && *cp != ':' && *cp != ',';
-				    cp++) {
-					if (*cp >= 'a' && *cp <= 'f') {
-						err_print(
-						    "devfsadm_mklink: "
-						    "unexpected lowercase "
-						    "hex in device path: "
-						    "%s (link: %s)\n",
-						    dev_path, link);
-						break;
-					}
-				}
-			}
-		}
+		devfsadm_check_corruption(dev_path, link);
 		di_devfs_path_free(dev_path);
 		acontents = phy_path;
 	}
