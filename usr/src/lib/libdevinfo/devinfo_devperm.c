@@ -44,6 +44,7 @@
 #include <stdarg.h>
 #include <syslog.h>
 #include <sys/acl.h>
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ddi.h>
@@ -594,10 +595,10 @@ di_devperm_login(const char *ttyn, uid_t uid, gid_t gid,
 		tty_gid = grpp->gr_gid;
 	} else {
 		/*
-		 * this should never happen, but if it does set
-		 * group to tty's traditional value.
+		 * This should never happen, but if it does fall back to
+		 * the traditional tty group id.
 		 */
-		tty_gid = 7;
+		tty_gid = GID_TTY;
 	}
 
 	/* set the login console device permission */
