@@ -652,6 +652,13 @@ read_links(struct di_devlink_handle *hdp, cache_minor_t *pcmp, uint32_t nidx)
 		path = get_string(hdp, dlp->path);
 		content = get_string(hdp, dlp->content);
 
+		if (link_hash(hdp, path, 0) != NULL) {
+			(void) devlink_dprintf(DBG_ERR,
+			    "read_links: skipping duplicate link[%u]: "
+			    "%s\n", nidx, path ? path : "<NULL>");
+			continue;
+		}
+
 		clp = link_insert(hdp, pcmp, path, content, dlp->attr);
 		if (clp == NULL) {
 			SET_DB_ERR(hdp);
