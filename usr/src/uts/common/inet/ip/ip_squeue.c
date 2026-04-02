@@ -440,8 +440,7 @@ ip_squeue_cpu_move(squeue_t *sq, processorid_t cpuid)
 }
 
 /*
- * The mac layer is calling, asking us to move an squeue to a
- * new CPU. This routine is called with cpu_lock held.
+ * The mac layer is calling, asking us to move an squeue to a new CPU.
  */
 void
 ip_squeue_bind_ring(ill_t *ill, ill_rx_ring_t *rx_ring, processorid_t cpuid)
@@ -449,10 +448,12 @@ ip_squeue_bind_ring(ill_t *ill, ill_rx_ring_t *rx_ring, processorid_t cpuid)
 	ASSERT(ILL_MAC_PERIM_HELD(ill));
 	ASSERT(rx_ring->rr_ill == ill);
 
+	mutex_enter(&cpu_lock);
 	mutex_enter(&ill->ill_lock);
 	if (rx_ring->rr_ring_state == RR_FREE ||
 	    rx_ring->rr_ring_state == RR_FREE_INPROG) {
 		mutex_exit(&ill->ill_lock);
+		mutex_exit(&cpu_lock);
 		return;
 	}
 
@@ -460,6 +461,7 @@ ip_squeue_bind_ring(ill_t *ill, ill_rx_ring_t *rx_ring, processorid_t cpuid)
 		rx_ring->rr_ring_state = RR_SQUEUE_BOUND;
 
 	mutex_exit(&ill->ill_lock);
+	mutex_exit(&cpu_lock);
 }
 
 void *
@@ -531,10 +533,11 @@ ip_squeue_add_ring(ill_t *ill, void *mrp)
 	DTRACE_PROBE4(ill__ring__add, char *, ill->ill_name, ill_t *, ill, int,
 	    ip_rx_index, void *, mrfp->mrf_rx_arg);
 
+
 	/* Assign the squeue to the specified CPU as well */
-	mutex_enter(&cpu_lock);
-	(void) ip_squeue_bind_ring(ill, rx_ring, mrfp->mrf_cpu_id);
-	mutex_exit(&cpu_lock);
+	if (mrfp->mrf_cpu_id != -1) {
+		(void) ip_squeue_bind_ring(ill, rx_ring, mrfp->mrf_cpu_id);
+	}
 
 	return (rx_ring);
 }
