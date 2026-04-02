@@ -31,8 +31,11 @@
 #define	_SYS_MAC_H
 
 #include <sys/types.h>
+#include <sys/processor.h>
+#include <sys/stream.h>
 #ifdef	_KERNEL
 #include <sys/sunddi.h>
+#include <sys/ddi_intr.h>
 #endif
 
 /*
@@ -277,7 +280,6 @@ typedef enum mac_led_mode {
 	MAC_LED_ON	= (1 << 3)
 } mac_led_mode_t;
 
-
 #ifdef	_KERNEL
 
 /*
@@ -502,22 +504,65 @@ typedef struct mac_header_info_s {
  * dls_rx_t to allow a soft ring to bypass DLS layer and call a DLS
  * client directly.
  */
-typedef	void		(*mac_direct_rx_t)(void *, mac_resource_handle_t,
-				mblk_t *, mac_header_info_t *);
+typedef	void	(*mac_direct_rx_t)(void *, mac_resource_handle_t,
+			mblk_t *, mac_header_info_t *);
 
 typedef mac_resource_handle_t	(*mac_resource_add_t)(void *, mac_resource_t *);
-typedef int			(*mac_resource_bind_t)(void *,
-    mac_resource_handle_t, processorid_t);
-typedef void			(*mac_resource_remove_t)(void *, void *);
-typedef void			(*mac_resource_quiesce_t)(void *, void *);
-typedef void			(*mac_resource_restart_t)(void *, void *);
+typedef int	(*mac_resource_bind_t)(void *, mac_resource_handle_t,
+    processorid_t);
+typedef void	(*mac_resource_remove_t)(void *, mac_resource_handle_t);
+typedef void	(*mac_resource_quiesce_t)(void *, mac_resource_handle_t);
+typedef void	(*mac_resource_restart_t)(void *, mac_resource_handle_t);
 
+/*
+ * Callbacks from MAC to a polling client signifying state changes on
+ * available soft rings.
+ *
+ * All methods are called with the MAC perimeter of the underlying device held.
+ * Each method must complete any operations in the client to reflect the new
+ * state before returning.
+ */
 typedef struct mac_resource_cb_s {
+	/*
+	 * A new softring has been created, with an opaque handle, CPU binding,
+	 * and control operations provided via `mac_resource_t`. The client
+	 * should return a non-NULL cookie which it can use to identify the ring
+	 * in future callbacks.
+	 *
+	 * If the client returns NULL (e.g., due to lack of space for a new
+	 * ring), then it will not receive any notification of future state
+	 * changes on this softring and MUST NOT use any of its control ops.
+	 */
 	mac_resource_add_t	mrc_add;
+	/*
+	 * MAC is about to remove a softring, and the client must remove all
+	 * resources associated with the ring and its cookie. MAC has asserted
+	 * that no packets are using, nor will use again, the cookie for this
+	 * ring.
+	 *
+	 * The client MUST NOT use any of the control ops on this soft ring
+	 * after returning.
+	 */
 	mac_resource_remove_t	mrc_remove;
+	/*
+	 * The ring is being quiesced and will receive no packets, and thus
+	 * should not be polled or have its control operations used.
+	 */
 	mac_resource_quiesce_t	mrc_quiesce;
+	/*
+	 * The ring has restarted and may be polled again.
+	 */
 	mac_resource_restart_t	mrc_restart;
+	/*
+	 * The CPU binding of a soft ring's worker thread has been changed.
+	 */
 	mac_resource_bind_t	mrc_bind;
+	/*
+	 * Handle to the polling client, used as the first argument to all
+	 * callbacks.
+	 *
+	 * Must be non-NULL.
+	 */
 	void			*mrc_arg;
 } mac_resource_cb_t;
 
