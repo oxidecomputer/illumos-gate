@@ -26,6 +26,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright 2019, Joyent, Inc.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _ZIO_H
@@ -179,7 +180,6 @@ enum zio_flag {
 	ZIO_FLAG_NODATA		= 1 << 12,
 	ZIO_FLAG_INDUCE_DAMAGE	= 1 << 13,
 	ZIO_FLAG_IO_ALLOCATING	= 1 << 14,
-	ZIO_FLAG_ZERO_DATA	= 1 << 15,
 
 #define	ZIO_FLAG_DDT_INHERIT	(ZIO_FLAG_IO_RETRY - 1)
 #define	ZIO_FLAG_GANG_INHERIT	(ZIO_FLAG_IO_RETRY - 1)
@@ -187,7 +187,8 @@ enum zio_flag {
 	/*
 	 * Flags inherited by vdev children.
 	 */
-	ZIO_FLAG_IO_RETRY	= 1 << 16,	/* must be first for INHERIT */
+	ZIO_FLAG_IO_RETRY	= 1 << 15,	/* must be first for INHERIT */
+	ZIO_FLAG_ZERO_DATA	= 1 << 16,
 	ZIO_FLAG_PROBE		= 1 << 17,
 	ZIO_FLAG_TRYHARD	= 1 << 18,
 	ZIO_FLAG_OPTIONAL	= 1 << 19,
