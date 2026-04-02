@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -115,6 +115,7 @@ mac_drop_chain(mblk_t *chain, const char *fmt, ...)
 		next = mp->b_next;
 		DTRACE_PROBE2(mac__drop, mblk_t *, mp, char *, msgp);
 		mp->b_next = NULL;
+		mp->b_prev = NULL;
 		freemsg(mp);
 		mp = next;
 	}
@@ -2173,7 +2174,7 @@ mac_client_intr_cpu(mac_client_handle_t mch)
 	if (mac_is_primary_client(mcip) && flent->fe_rx_srs_cnt == 2) {
 		rx_srs = flent->fe_rx_srs[1];
 		srs_cpu = &rx_srs->srs_cpu;
-		ring = rx_srs->srs_ring;
+		ring = rx_srs->srs_data.rx.sr_ring;
 		mintr = &ring->mr_info.mri_intr;
 		/*
 		 * If ddi_handle is present or the poll CPU is

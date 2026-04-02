@@ -34,11 +34,17 @@ extern "C" {
 
 #include <sys/param.h>
 #include <sys/atomic.h>
+#include <sys/time.h>
 #include <sys/ksynch.h>
 #include <sys/mac_flow.h>
 #include <sys/stream.h>
 #include <sys/sdt.h>
+#include <sys/ethernet.h>
 #include <net/if.h>
+#include <sys/stdbool.h>
+#include <sys/mac_datapath_impl.h>
+
+#define	MAX_MAC_RX_SRS	 (MAX_RINGS_PER_GROUP + 1)
 
 /*
  * Macros to increment/decrement the reference count on a flow_entry_t.
@@ -72,7 +78,7 @@ extern "C" {
 #define	FLOW_REFRELE(flent) {					\
 	DTRACE_PROBE1(flow_refrele, flow_entry_t *, (flent));	\
 	mutex_enter(&(flent)->fe_lock);				\
-	ASSERT((flent)->fe_refcnt != 0);			\
+	ASSERT3U((flent)->fe_refcnt, !=, 0);			\
 	(flent)->fe_refcnt--;					\
 	if ((flent)->fe_flags & FE_WAITER) {			\
 		ASSERT((flent)->fe_refcnt != 0);		\
@@ -93,7 +99,7 @@ extern "C" {
 
 #define	FLOW_USER_REFRELE(flent) {			\
 	mutex_enter(&(flent)->fe_lock);			\
-	ASSERT((flent)->fe_user_refcnt != 0);		\
+	ASSERT3U((flent)->fe_user_refcnt, !=, 0);	\
 	if (--(flent)->fe_user_refcnt == 0 &&		\
 	    ((flent)->fe_flags & FE_WAITER))		\
 		cv_signal(&(flent)->fe_cv);		\
@@ -101,7 +107,9 @@ extern "C" {
 }
 
 #define	FLOW_FINAL_REFRELE(flent) {			\
-	ASSERT(flent->fe_refcnt == 1 && flent->fe_user_refcnt == 0);	\
+	ASSERT3U(flent->fe_refcnt, ==, 1);		\
+	ASSERT3U(flent->fe_flowtree_refcnt, ==, 0);	\
+	ASSERT3U(flent->fe_user_refcnt, ==, 0);		\
 	FLOW_REFRELE(flent);				\
 }
 
@@ -155,6 +163,7 @@ extern "C" {
 #define	MAC_FLOW_TAB_SIZE		500
 
 typedef struct flow_entry_s		flow_entry_t;
+typedef struct flow_tree_s		flow_tree_t;
 typedef struct flow_tab_s		flow_tab_t;
 typedef struct flow_state_s		flow_state_t;
 struct mac_impl_s;
@@ -221,6 +230,14 @@ typedef enum {
 #define	FLOW_VNIC		FLOW_VNIC_MAC
 
 /*
+ * Bitflags denoting the state of an individual bandwidth control.
+ */
+typedef enum {
+	BW_ENABLED	= 0x01,
+	BW_ENFORCED	= 0x02,
+} mac_bw_state_t;
+
+/*
  * Shared Bandwidth control counters between the soft ring set and its
  * associated soft rings. In case the flow associated with NIC/VNIC
  * has a group of Rx rings assigned to it, we have the same
@@ -231,27 +248,218 @@ typedef enum {
  * shared across all the SRS in the group and their associated
  * soft rings.
  *
- * There is a many to 1 mapping between the SRS and
- * mac_bw_ctl if the flow has a group of Rx rings associated with
- * it.
+ * Bandwidth controls cause all affected SRSes (packet queues) to obey a shared
+ * policing/shaping criteria:
+ *  - Total queue occupancy beyond `mac_bw_drop_threshold` will lead to packet
+ *    drops. (Policing)
+ *  - All queues can, amongst themselves, admit at most `mac_bw_limit` bytes
+ *    to their softrings per system tick. (Shaping)
+ * The policing threshold is set today at 2 * mac_bw_limit.
+ *
+ * There is generally a many-to-1 mapping between SRSes and mac_bw_ctl. The Rx
+ * path's software classifier and SRSes for hardware rings will necessarily
+ * share a control, as will any logical SRSes for subflows reachable by several
+ * classifier paths. In the Tx path, nested bandwidth limits on subflows with
+ * hardware resources will cause a control to be shared.
  */
 typedef struct mac_bw_ctl_s {
 	kmutex_t	mac_bw_lock;
-	uint32_t	mac_bw_state;
-	size_t		mac_bw_sz;	/* ?? Is it needed */
+	mac_bw_state_t	mac_bw_state;
+	size_t		mac_bw_sz;	/* Bytes enqueued in controlled SRSes */
 	size_t		mac_bw_limit;	/* Max bytes to process per tick */
 	size_t		mac_bw_used;	/* Bytes processed in current tick */
 	size_t		mac_bw_drop_threshold; /* Max queue length */
-	size_t		mac_bw_drop_bytes;
-	size_t		mac_bw_polled;
-	size_t		mac_bw_intr;
-	clock_t		mac_bw_curr_time;
+	hrtime_t	mac_bw_curr_time;
+
+	/* stats */
+	uint64_t	mac_bw_drop_bytes;
+	uint64_t	mac_bw_polled;
+	uint64_t	mac_bw_intr;
 } mac_bw_ctl_t;
+
+/*
+ * Derived action for a flow according to its `flow_action_t`.
+ */
+typedef enum {
+	MFA_TYPE_DELIVER,
+	MFA_TYPE_DROP,
+	MFA_TYPE_DELEGATE,
+} mac_flow_action_type_t;
+
+/*
+ * Type of an individual packet match operation.
+ */
+typedef enum {
+	MFM_NONE,
+	MFM_SAP,
+	MFM_IPPROTO,
+
+	MFM_L2_DST,
+	MFM_L2_SRC,
+	MFM_L2_VID,
+
+	MFM_L4_DST,
+	MFM_L4_SRC,
+	MFM_L4_REMOTE,
+	MFM_L4_LOCAL,
+
+	MFM_ALL,
+	MFM_ANY,
+
+	/*
+	 * Fallback mechanism for legacy subflows which have not yet been
+	 * converted to `mac_flow_match_t`.
+	 */
+	MFM_SUBFLOW,
+} mac_flow_match_type_t;
+
+/*
+ * Common conditions which can be enforced as part of a packet match without
+ * requiring a list construct like `MFM_ALL`.
+ */
+typedef enum {
+	MFC_NOFRAG = (1 << 0),
+	MFC_UNICAST = (1 << 1),
+} mac_flow_match_condition_t;
+
+typedef struct mac_flow_match_list_s mac_flow_match_list_t;
+
+/*
+ * An individual packet match operation within a baked flow tree.
+ */
+typedef struct {
+	mac_flow_match_type_t		mfm_type;
+	mac_flow_match_condition_t	mfm_cond;
+	union {
+		/* MFM_SAP */
+		uint16_t	mfm_sap;
+		/* MFM_IPPROTO */
+		uint8_t		mfm_ipproto;
+
+		/* MFM_{ALL, ANY} */
+		mac_flow_match_list_t	*mfm_list;
+		/* MFM_L2_{DST, SRC} */
+		uint8_t		mfm_l2addr[ETHERADDRL];
+		/* MFM_L2_VID */
+		uint16_t	mfm_vid;
+		/* MFM_L4_{DST, SRC, REMOTE, LOCAL} */
+		uint16_t	mfm_l4addr;
+	} arg;
+} mac_flow_match_t;
+
+/*
+ * A list of packet match operations.
+ */
+struct mac_flow_match_list_s {
+	size_t			mfml_size;
+	mac_flow_match_t	mfml_match[];
+};
+
+/*
+ * Packet lists used for tracking matches/delegation while walking a baked flow
+ * tree.
+ *
+ * Every layer in the flow tree needs to keep two lists of packets:
+ *  - packets which have been taken by this layer, but which are
+ *    eligible to be picked by a child flow entry.
+ *  - packets which have been picked up by a child node and the action
+ *    is, quite definitively, to drop them off here. these should NOT
+ *    undergo any further processing.
+ */
+typedef struct {
+	/*
+	 * Packets which match this node and are now eligible for matching by a
+	 * child flow.
+	 */
+	mac_pkt_list_t	ftp_avail;
+	/*
+	 * Packets which have been explicitly delegated to this node by a child
+	 * node.
+	 */
+	mac_pkt_list_t	ftp_deli;
+} flow_tree_pkt_set_t;
+
+/*
+ * Entry node (match) of an unrolled depth-first traversal of a flowtree.
+ */
+typedef struct {
+	/*
+	 * Underlying flent for statistics.
+	 */
+	flow_entry_t		*ften_flent;
+	/*
+	 * Match criteria for this flent.
+	 */
+	mac_flow_match_t	ften_match;
+	/*
+	 * Distance in the node list to the corresponding exit node. This allows
+	 * all subtrees to be skipped when there are no matches.
+	 *
+	 * A skip value greater than 1 implies that the next node in order is an
+	 * entry node at the next layer of the tree.
+	 */
+	uint16_t		ften_skip;
+} flow_tree_enter_node_t;
+
+/*
+ * Exit node (deliver) of an unrolled depth-first traversal of a flowtree.
+ */
+typedef struct {
+	/*
+	 * How a packet should be handled. In bandwidth-controlled nodes we
+	 * must still deliver to `ftex_srs` to perform traffic shaping.
+	 */
+	mac_flow_action_type_t	ftex_do;
+	/*
+	 * Is this exit node the last element at the current depth?
+	 */
+	bool			ftex_ascend;
+	union {
+		/* MFA_TYPE_{DELIVER, DELEGATE} */
+		struct mac_soft_ring_set_s	*ftex_srs;
+		/* MFA_TYPE_DROP */
+		flow_entry_t	*ftex_flent;
+	} arg;
+} flow_tree_exit_node_t;
+
+typedef union {
+	flow_tree_enter_node_t enter;
+	flow_tree_exit_node_t exit;
+} flow_tree_baked_node_t;
+
+/*
+ * Credits to be refunded to an ancestor bandwidth control if packets when
+ * packets are policed at a subflow.
+ */
+typedef struct {
+	mac_bw_ctl_t	*ftbr_bw;
+	size_t		ftbr_size;
+} flow_tree_bw_refund_t;
+
+/*
+ * A baked flow tree, owned by a complete SRS. This unrolls a depth-first
+ * traversal along a `flow_tree_t` into an array of entry and exit nodes.
+ * Each non-drop node owns a logical SRS.
+ */
+typedef struct {
+	flow_tree_baked_node_t	*ftb_subtree;	/* len = 2 * ftb_len */
+	uint16_t		ftb_depth;
+	uint16_t		ftb_len;
+	uint32_t		ftb_bw_count;
+	flow_tree_pkt_set_t	*ftb_chains;	/* len = ftb_depth */
+	flow_tree_bw_refund_t	*ftb_bw_refund;	/* len = ftb_depth */
+} flow_tree_baked_t;
 
 struct flow_entry_s {					/* Protected by */
 	flow_entry_t		*fe_next;		/* ft_lock */
 
 	datalink_id_t		fe_link_id;		/* WO */
+
+	/*
+	 * TODO(ky): Each `mac_resource_props_t` occupies around 15KiB, and
+	 * we now have around 7 flows per MAC client rather than one. These
+	 * (and mac_cpu_t) need to be refcounted and more intelligently handled.
+	 */
 
 	/* Properties as specified for this flow */
 	mac_resource_props_t	fe_resource_props;	/* SL */
@@ -265,16 +473,18 @@ struct flow_entry_s {					/* Protected by */
 	kcondvar_t		fe_cv;			/* fe_lock */
 	/*
 	 * Initial flow ref is 1 on creation. A thread that lookups the
-	 * flent typically by a mac_flow_lookup() dynamically holds a ref.
-	 * If the ref is 1, it means there arent' any upcalls from the driver
-	 * or downcalls from the stack using this flent. Structures pointing
-	 * to the flent or flent inserted in lists don't count towards this
-	 * refcnt. Instead they are tracked using fe_flags. Only a control
-	 * thread doing a teardown operation deletes the flent, after waiting
-	 * for upcalls to finish synchronously. The fe_refcnt tracks
-	 * the number of upcall refs
+	 * flent typically by a mac_flow_lookup() dynamically holds a ref, and
+	 * any `flow_tree_t`s referencing this flent hold a long-term ref.
+	 *
+	 * If the ref count equals the number of flowtree refs, it means there
+	 * aren't any upcalls from the driver or downcalls from the stack using
+	 * this flent. Other structures pointing to the flent or flent inserted
+	 * in lists don't count towards this refcnt. Instead they are tracked
+	 * using fe_flags. Only a control thread doing a teardown operation
+	 * deletes the flent, after waiting for upcalls to finish synchronously.
 	 */
 	uint32_t		fe_refcnt;		/* fe_lock */
+	uint32_t		fe_flowtree_refcnt;	/* fe_lock */
 
 	/*
 	 * This tracks lookups done using the global hash list for user
@@ -289,27 +499,37 @@ struct flow_entry_s {					/* Protected by */
 
 	/*
 	 * Function/args to invoke for delivering matching packets
-	 * Only the function ff_fn may be changed dynamically and atomically.
-	 * The ff_arg1 and ff_arg2 are set at creation time and may not
+	 * Only the function fe_cb_fn may be changed dynamically and atomically.
+	 * The fe_cb_arg1 and fe_cb_arg2 are set at creation time and may not
 	 * be changed.
 	 */
 	flow_fn_t		fe_cb_fn;		/* fe_lock */
 	void			*fe_cb_arg1;		/* fe_lock */
 	void			*fe_cb_arg2;		/* fe_lock */
 
+	/*
+	 * Flows can be tied to physical rings and/or MAC clients.
+	 * When this is the case, we have softring sets which serve as valid
+	 * entrypoints for packet delivery. These will be:
+	 *  - an SRS for the software classifier for the MAC client.
+	 *  - an SRS for each ring bound to this flow.
+	 * fe_rx_srs contains a list of all such softring sets. These will be
+	 * complete SRSes where packet delivery processing can occur.
+	 *
+	 * ?? TODO(ky) what of fe_tx_srs?
+	 */
 	void			*fe_client_cookie;	/* WO */
 	struct mac_group_s	*fe_rx_ring_group;	/* SL */
-
 							/* fe_lock */
-	struct mac_soft_ring_set_s	*fe_rx_srs[MAX_RINGS_PER_GROUP];
-	uint32_t			fe_rx_srs_cnt;		/* fe_lock */
+	struct mac_soft_ring_set_s	*fe_rx_srs[MAX_MAC_RX_SRS];
+	uint16_t			fe_rx_srs_cnt;		/* fe_lock */
 	struct mac_group_s		*fe_tx_ring_group;
-	struct mac_soft_ring_set_s	*fe_tx_srs;		/* WO */
+	struct mac_soft_ring_set_s	*fe_tx_srs;	/* WO */
 
 	/*
 	 * This is a unicast flow, and is a mac_client_impl_t
 	 */
-	struct mac_client_impl_s	*fe_mcip;		/* WO */
+	struct mac_client_impl_s	*fe_mcip;	/* WO */
 
 	/*
 	 * Used by mci_flent_list of mac_client_impl_t to track flows sharing
@@ -345,7 +565,62 @@ struct flow_entry_s {					/* Protected by */
 
 	boolean_t		fe_desc_logged;
 	uint64_t		fe_nic_speed;
+
+	/*
+	 * The specification for how packets matching this flow entry
+	 * should be processed.
+	 */
+	flow_action_t fe_action;
+
+	/*
+	 * The specification for how packets should be matched within a
+	 * flowtree.
+	 *
+	 * This exists alongside `fe_match` whilst the software classifier and
+	 * loopback delivery rely upon the original flow table design.
+	 */
+	mac_flow_match_t fe_match2;
+
+	/*
+	 * Stats relating to bytes and packets *matching this flow entry
+	 * explicitly*, modified when no matching SRS exists or to preserve
+	 * counters from a condemned SRS.
+	 *
+	 * Modified/read atomically.
+	 */
+	uint64_t	fe_match_pkts_in;
+	uint64_t	fe_match_bytes_in;
+	uint64_t	fe_match_pkts_out;
+	uint64_t	fe_match_bytes_out;
+
+	/*
+	 * Stats relating to bytes and packets *which this flow action has been
+	 * used on*, modified when no matching SRS exists or to preserve
+	 * counters from a condemned SRS.
+	 *
+	 * Modified/read atomically.
+	 */
+	uint64_t	fe_act_pkts_in;
+	uint64_t	fe_act_bytes_in;
+	uint64_t	fe_act_pkts_out;
+	uint64_t	fe_act_bytes_out;
 };
+
+/*
+ * A relationship between flow entries in a client.
+ */
+typedef struct flow_tree_s {
+	flow_entry_t	*ft_flent;
+	flow_tree_t	*ft_parent;
+	flow_tree_t	*ft_sibling;
+	flow_tree_t	*ft_child;
+
+	/*
+	 * If set to a value other than MFM_NONE, then use this matcher in place
+	 * of that in ft_flent.
+	 */
+	mac_flow_match_t ft_match_override;
+} flow_tree_t;
 
 /*
  * Various structures used by the flows framework for keeping track
@@ -497,12 +772,12 @@ typedef struct flow_tab_info_s {
 }
 
 #define	SRS_RX_STAT_UPDATE(m, s, c)  {					\
-	((mac_soft_ring_set_t *)(m))->srs_rx.sr_stat.mrs_##s		\
+	((mac_soft_ring_set_t *)(m))->srs_data.rx.sr_stat.mrs_##s	\
 	+= ((uint64_t)(c));						\
 }
 
 #define	SRS_TX_STAT_UPDATE(m, s, c)  {					\
-	((mac_soft_ring_set_t *)(m))->srs_tx.st_stat.mts_##s		\
+	((mac_soft_ring_set_t *)(m))->srs_data.tx.st_stat.mts_##s	\
 	+= ((uint64_t)(c));						\
 }
 
@@ -562,6 +837,53 @@ extern void	mac_flow_tab_create(flow_ops_t *, flow_mask_t, uint_t,
 extern void	mac_flow_l2tab_create(struct mac_impl_s *, flow_tab_t **);
 extern void	mac_flow_tab_destroy(flow_tab_t *);
 extern void	flow_stat_destroy(flow_entry_t *);
+
+extern void	mac_flow_match_destroy(mac_flow_match_t *);
+extern mac_flow_match_list_t	*mac_flow_match_list_create(const size_t);
+extern mac_flow_match_t	mac_flow_clone_match(const mac_flow_match_t *);
+extern void	mac_flow_match_list_remove(mac_flow_match_t *, const size_t);
+
+extern flow_tree_t	*mac_flow_tree_node_create(flow_entry_t *);
+extern void	mac_flow_tree_node_destroy(flow_tree_t *);
+extern void	mac_flow_tree_destroy(flow_tree_t *);
+
+extern bool	mac_flow_action_validate(const flow_action_t *);
+
+/*
+ * Is the target bandwidth control enabled?
+ */
+inline bool
+mac_bw_ctl_is_enabled(const mac_bw_ctl_t *bw)
+{
+	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+	return ((bw->mac_bw_state & BW_ENABLED) != 0);
+}
+
+/*
+ * Has the target bandwidth control gone past its limit in the current tick?
+ */
+inline bool
+mac_bw_ctl_is_enforced(const mac_bw_ctl_t *bw)
+{
+	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+	return ((bw->mac_bw_state & BW_ENFORCED) != 0);
+}
+
+inline void
+mac_bw_ctls_lock(mac_bw_ctl_t **list, const size_t list_len)
+{
+	for (size_t i = 0; i < list_len; i++) {
+		mutex_enter(&list[i]->mac_bw_lock);
+	}
+}
+
+inline void
+mac_bw_ctls_unlock(mac_bw_ctl_t **list, const size_t list_len)
+{
+	for (size_t i = list_len; i > 0; i--) {
+		mutex_exit(&list[i - 1]->mac_bw_lock);
+	}
+}
 
 #ifdef	__cplusplus
 }
