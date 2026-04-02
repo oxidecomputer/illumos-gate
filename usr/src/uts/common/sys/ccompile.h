@@ -27,6 +27,7 @@
  * Copyright 2015 EveryCity Ltd. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2026 Edgecast Cloud LLC.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_CCOMPILE_H
@@ -97,6 +98,18 @@ extern "C" {
 #endif
 
 /*
+ * The function is 'extern inline' and expects GNU C89 behaviour, not C99
+ * behaviour.
+ *
+ * Should only be used on 'extern inline' definitions for GCC.
+ */
+#if __GNUC_VERSION >= 30100
+#define	__sun_attr_always_inline	__attribute__((always_inline))
+#else
+#define	__sun_attr_always_inline
+#endif
+
+/*
  * The function has control flow such that it may return multiple times (in
  * the manner of setjmp or vfork)
  */
@@ -156,6 +169,7 @@ extern "C" {
 #define	__KVPRINTFLIKE(__n)	__sun_attr__((__KVPRINTFLIKE__(__n)))
 #define	__NORETURN		__sun_attr__((__noreturn__))
 #define	__GNU_INLINE		__inline__ __sun_attr__((__gnu_inline__))
+#define	__ALWAYS_INLINE		__sun_attr__((always_inline))
 #define	__RETURNS_TWICE		__sun_attr__((__returns_twice__))
 #define	__CONST			__sun_attr__((__const__))
 #define	__PURE			__sun_attr__((__pure__))

@@ -31,7 +31,7 @@
 # Copyright 2019, Joyent, Inc.
 # Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2020 Peter Tribble
-# Copyright 2024 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 #
@@ -84,6 +84,7 @@ usr/include/sys/dls_impl.h
 usr/include/sys/dls.h
 usr/include/sys/mac_client_impl.h
 usr/include/sys/mac_client.h
+usr/include/sys/mac_datapath_impl.h
 usr/include/sys/mac_flow_impl.h
 usr/include/sys/mac_impl.h
 usr/include/sys/mac_soft_ring.h
