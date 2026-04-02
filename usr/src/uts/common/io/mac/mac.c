@@ -1547,7 +1547,7 @@ mac_rx_group_unmark(mac_group_t *grp, uint_t flag)
  * addresses, or set up the Rx callback.
  */
 /* ARGSUSED */
-static void
+void
 mac_hwrings_rx_process(void *arg, mac_resource_handle_t srs,
     mblk_t *mp_chain, boolean_t loopback)
 {
@@ -1795,7 +1795,7 @@ mac_hwring_setup(mac_ring_handle_t hwrh, mac_resource_handle_t prh,
 	}
 
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
-		ASSERT(!(mac_srs->srs_type & SRST_TX));
+		VERIFY(!mac_srs_is_tx(mac_srs));
 		mac_srs->srs_mrh = prh;
 		mac_srs->srs_rx.sr_lower_proc = mac_hwrings_rx_process;
 	}
@@ -1812,7 +1812,7 @@ mac_hwring_teardown(mac_ring_handle_t hwrh)
 	hw_ring->mr_prh = NULL;
 	if (hw_ring->mr_type == MAC_RING_TYPE_RX) {
 		mac_srs = hw_ring->mr_srs;
-		ASSERT(!(mac_srs->srs_type & SRST_TX));
+		VERIFY(!mac_srs_is_tx(mac_srs));
 		mac_srs->srs_rx.sr_lower_proc = mac_rx_srs_process;
 		mac_srs->srs_mrh = NULL;
 	}
@@ -2213,10 +2213,12 @@ static void
 mac_srs_quiesce_wait(mac_soft_ring_set_t *srs,
     const mac_soft_ring_set_state_t srs_flag)
 {
-	mutex_enter(&srs->srs_lock);
-	while (!(srs->srs_state & srs_flag))
-		cv_wait(&srs->srs_quiesce_done_cv, &srs->srs_lock);
-	mutex_exit(&srs->srs_lock);
+	VERIFY(!mac_srs_is_logical(srs));
+	VERIFY(rw_lock_held(&srs->srs_logical_lock));
+	for (mac_soft_ring_set_t *curr = srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		mac_srs_quiesce_wait_one(curr, srs_flag);
+	}
 }
 
 /*
@@ -2254,40 +2256,31 @@ mac_srs_quiesce_wait(mac_soft_ring_set_t *srs,
  * The restart mechanism to reactivate the SRS and softrings is explained
  * in mac_srs_worker_restart(). Here we just signal the SRS worker to start the
  * restart sequence.
+ *
+ * The parameter `condemn_logicals` is used to upgrade a QUIESCE to a CONDEMN
+ * for any logical SRSes if required for flow tree reconfiguration.
  */
-void
-mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
-    const mac_soft_ring_set_state_t srs_quiesce_flag)
+static void
+mac_rx_srs_quiesce_i(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t srs_quiesce_flag,
+    const bool condemn_logicals)
 {
 	flow_entry_t *flent = srs->srs_flent;
-	uint_t mr_flag;
-	mac_soft_ring_set_state_t srs_done_flag;
+	const uint_t mr_flag = ((srs_quiesce_flag == SRS_CONDEMNED) != 0) ?
+	    MR_CONDEMNED : MR_QUIESCE;
+	const mac_soft_ring_set_state_t srs_done_flag =
+	    (srs_quiesce_flag == SRS_CONDEMNED) ?
+	    SRS_CONDEMNED_DONE : SRS_QUIESCE_DONE;
 
 	VERIFY(mac_perim_held((mac_handle_t)FLENT_TO_MIP(flent)));
-	VERIFY0(srs->srs_type & SRST_TX);
+	VERIFY(!mac_srs_is_tx(srs));
+	VERIFY(!mac_srs_is_logical(srs));
 
-	if (srs_quiesce_flag == SRS_CONDEMNED) {
-		mr_flag = MR_CONDEMNED;
-		srs_done_flag = SRS_CONDEMNED_DONE;
+	VERIFY(srs_quiesce_flag == SRS_QUIESCE ||
+	    srs_quiesce_flag == SRS_CONDEMNED);
 
-		if (srs->srs_type & SRST_CLIENT_POLL_V4) {
-			mac_srs_client_poll_disable(srs->srs_mcip, srs,
-			    B_FALSE);
-		}
-
-		if (srs->srs_type & SRST_CLIENT_POLL_V6) {
-			mac_srs_client_poll_disable(srs->srs_mcip, srs,
-			    B_TRUE);
-		}
-	} else {
-		VERIFY3U(srs_quiesce_flag, ==, SRS_QUIESCE);
-		mr_flag = MR_QUIESCE;
-		srs_done_flag = SRS_QUIESCE_DONE;
-		mac_srs_client_poll_quiesce(srs->srs_mcip, srs);
-	}
-
-	if (srs->srs_ring != NULL) {
-		mac_rx_ring_quiesce(srs->srs_ring, mr_flag);
+	if (srs->srs_rx.sr_ring != NULL) {
+		mac_rx_ring_quiesce(srs->srs_rx.sr_ring, mr_flag);
 	} else {
 		/*
 		 * SRS is driven by software classification. In case
@@ -2301,12 +2294,39 @@ mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
 	}
 
 	/*
-	 * Signal the SRS to quiesce itself, and then cv_wait for the
-	 * SRS quiesce to complete. The SRS worker thread will wake us
-	 * up when the quiesce is complete
+	 * If the baked flowtree must be rebuilt, then all attached logical
+	 * SRSes must be completely torn down. We will upgrade them from a
+	 * quiesce to a condemn request.
 	 */
-	mac_srs_signal(srs, srs_quiesce_flag);
+	const mac_soft_ring_set_state_t logical_flag = condemn_logicals ?
+	    SRS_CONDEMNED : srs_quiesce_flag;
+
+	/*
+	 * Before we perform the quiesce, tell any upstream clients of this SRS
+	 * and its logical SRSes to stop polling on them.
+	 */
+	rw_enter(&srs->srs_logical_lock, RW_READER);
+	mac_srs_signal_client(srs, srs_quiesce_flag);
+	for (mac_soft_ring_set_t *curr = srs->srs_logical_next;
+	    curr != NULL; curr = curr->srs_logical_next) {
+		mac_srs_signal_client(curr, logical_flag);
+	}
+
+	/*
+	 * Signal the SRS to quiesce itself, and then cv_wait for all
+	 * SRS quiesces to complete. Each SRS worker thread will wake us
+	 * up when it is finished.
+	 */
+	mac_srs_signal_diff(srs, srs_quiesce_flag, logical_flag);
 	mac_srs_quiesce_wait(srs, srs_done_flag);
+	rw_exit(&srs->srs_logical_lock);
+}
+
+void
+mac_rx_srs_quiesce(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t srs_quiesce_flag)
+{
+	mac_rx_srs_quiesce_i(srs, srs_quiesce_flag, false);
 }
 
 /*
@@ -2359,8 +2379,8 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 	flow_entry_t	*flent = srs->srs_flent;
 	mac_ring_t	*mr;
 
-	ASSERT(MAC_PERIM_HELD((mac_handle_t)FLENT_TO_MIP(flent)));
-	ASSERT((srs->srs_type & SRST_TX) == 0);
+	VERIFY(mac_perim_held((mac_handle_t)FLENT_TO_MIP(flent)));
+	VERIFY(!mac_srs_is_tx(srs));
 
 	/*
 	 * This handles a change in the number of SRSs between the quiesce and
@@ -2368,6 +2388,8 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 	 */
 	if (!SRS_QUIESCED(srs))
 		return;
+
+	rw_enter(&srs->srs_logical_lock, RW_READER);
 
 	/*
 	 * Signal the SRS to restart itself. Wait for the restart to complete
@@ -2377,13 +2399,17 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
 	if (!SRS_QUIESCED_PERMANENT(srs)) {
 		mac_srs_signal(srs, SRS_RESTART);
 		mac_srs_quiesce_wait(srs, SRS_RESTART_DONE);
-		mac_srs_clear_flag(srs, SRS_RESTART_DONE);
-
-		mac_srs_client_poll_restart(srs->srs_mcip, srs);
+		for (mac_soft_ring_set_t *curr = srs; curr != NULL;
+		    curr = curr->srs_logical_next) {
+			mac_srs_clear_flag(curr, SRS_RESTART_DONE);
+			mac_srs_signal_client(curr, SRS_RESTART);
+		}
 	}
 
-	/* Finally clear the flags to let the packets in */
-	mr = srs->srs_ring;
+	rw_exit(&srs->srs_logical_lock);
+
+	/* Finally clear the HW ring flags to let packets in */
+	mr = srs->srs_rx.sr_ring;
 	if (mr != NULL) {
 		MAC_RING_UNMARK(mr, MR_QUIESCE);
 		/* In case the ring was stopped, safely restart it */
@@ -2398,16 +2424,16 @@ mac_rx_srs_restart(mac_soft_ring_set_t *srs)
  * Temporary quiesce of a flow and associated Rx SRS.
  * Please see block comment above mac_rx_classify_flow_rem.
  */
-/* ARGSUSED */
 int
 mac_rx_classify_flow_quiesce(flow_entry_t *flent, void *arg)
 {
-	int		i;
+	const bool condemn_logicals = (bool)arg;
 
-	for (i = 0; i < flent->fe_rx_srs_cnt; i++) {
-		mac_rx_srs_quiesce((mac_soft_ring_set_t *)flent->fe_rx_srs[i],
-		    SRS_QUIESCE);
+	for (uint16_t i = 0; i < flent->fe_rx_srs_cnt; i++) {
+		mac_rx_srs_quiesce_i((mac_soft_ring_set_t *)flent->fe_rx_srs[i],
+		    SRS_QUIESCE, condemn_logicals);
 	}
+
 	return (0);
 }
 
@@ -2419,10 +2445,9 @@ mac_rx_classify_flow_quiesce(flow_entry_t *flent, void *arg)
 int
 mac_rx_classify_flow_restart(flow_entry_t *flent, void *arg)
 {
-	int		i;
-
-	for (i = 0; i < flent->fe_rx_srs_cnt; i++)
+	for (uint16_t i = 0; i < flent->fe_rx_srs_cnt; i++) {
 		mac_rx_srs_restart((mac_soft_ring_set_t *)flent->fe_rx_srs[i]);
+	}
 
 	return (0);
 }
@@ -2452,20 +2477,31 @@ mac_srs_perm_quiesce(mac_client_handle_t mch, boolean_t on)
 	}
 }
 
-void
-mac_rx_client_quiesce(mac_client_handle_t mch)
+static void
+i_mac_rx_client_quiesce(mac_client_impl_t *mcip, const bool redo_tree)
 {
-	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
 	mac_impl_t		*mip = mcip->mci_mip;
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 
 	if (MCIP_DATAPATH_SETUP(mcip)) {
 		(void) mac_rx_classify_flow_quiesce(mcip->mci_flent,
-		    NULL);
+		    (void *)redo_tree);
 		(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
-		    mac_rx_classify_flow_quiesce, NULL);
+		    mac_rx_classify_flow_quiesce, (void *)redo_tree);
 	}
+}
+
+void
+mac_rx_client_quiesce(mac_client_handle_t mch)
+{
+	i_mac_rx_client_quiesce((mac_client_impl_t *)mch, false);
+}
+
+void
+mac_rx_client_quiesce_new_tree(mac_client_impl_t *mch)
+{
+	i_mac_rx_client_quiesce(mch, true);
 }
 
 void
@@ -2490,7 +2526,8 @@ mac_rx_client_restart(mac_client_handle_t mch)
  */
 void
 mac_tx_srs_quiesce(mac_soft_ring_set_t *srs,
-    const mac_soft_ring_set_state_t srs_quiesce_flag)
+    const mac_soft_ring_set_state_t srs_quiesce_flag,
+    const bool condemn_logicals)
 {
 	mac_client_impl_t	*mcip = srs->srs_mcip;
 
@@ -2501,13 +2538,23 @@ mac_tx_srs_quiesce(mac_soft_ring_set_t *srs,
 	    srs_quiesce_flag == SRS_QUIESCE);
 
 	/*
-	 * Signal the SRS to quiesce itself, and then cv_wait for the
-	 * SRS quiesce to complete. The SRS worker thread will wake us
-	 * up when the quiesce is complete
+	 * If the baked flowtree must be rebuilt, then all attached logical
+	 * SRSes must be completely torn down. We will upgrade them from a
+	 * quiesce to a condemn request.
 	 */
-	mac_srs_signal(srs, srs_quiesce_flag);
+	const mac_soft_ring_set_state_t logical_flag = condemn_logicals ?
+	    SRS_CONDEMNED : srs_quiesce_flag;
+
+	/*
+	 * Signal the SRS to quiesce itself, and then cv_wait for all
+	 * SRS quiesces to complete. Each SRS worker thread will wake us
+	 * up when it is finished.
+	 */
+	rw_enter(&srs->srs_logical_lock, RW_READER);
+	mac_srs_signal_diff(srs, srs_quiesce_flag, logical_flag);
 	mac_srs_quiesce_wait(srs, srs_quiesce_flag == SRS_QUIESCE ?
 	    SRS_QUIESCE_DONE : SRS_CONDEMNED_DONE);
+	rw_exit(&srs->srs_logical_lock);
 }
 
 void
@@ -2521,9 +2568,14 @@ mac_tx_srs_restart(mac_soft_ring_set_t *srs)
 	if (!SRS_QUIESCED(srs))
 		return;
 
+	rw_enter(&srs->srs_logical_lock, RW_READER);
 	mac_srs_signal(srs, SRS_RESTART);
 	mac_srs_quiesce_wait(srs, SRS_RESTART_DONE);
-	mac_srs_clear_flag(srs, SRS_RESTART_DONE);
+	for (mac_soft_ring_set_t *curr = srs; curr != NULL;
+	    curr = curr->srs_logical_next) {
+		mac_srs_clear_flag(curr, SRS_RESTART_DONE);
+	}
+	rw_exit(&srs->srs_logical_lock);
 }
 
 /*
@@ -2539,7 +2591,7 @@ mac_tx_flow_quiesce(flow_entry_t *flent, void *arg)
 	 * not plumbed
 	 */
 	if (flent->fe_tx_srs != NULL)
-		mac_tx_srs_quiesce(flent->fe_tx_srs, SRS_QUIESCE);
+		mac_tx_srs_quiesce(flent->fe_tx_srs, SRS_QUIESCE, false);
 	return (0);
 }
 
@@ -2557,16 +2609,16 @@ mac_tx_flow_restart(flow_entry_t *flent, void *arg)
 }
 
 static void
-i_mac_tx_client_quiesce(mac_client_handle_t mch,
-    const mac_soft_ring_set_state_t srs_quiesce_flag)
+i_mac_tx_client_quiesce(mac_client_impl_t *mcip,
+    const mac_soft_ring_set_state_t srs_quiesce_flag,
+    const bool condemn_logicals)
 {
-	mac_client_impl_t	*mcip = (mac_client_impl_t *)mch;
-
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mcip->mci_mip));
 
 	mac_tx_client_block(mcip);
 	if (MCIP_TX_SRS(mcip) != NULL) {
-		mac_tx_srs_quiesce(MCIP_TX_SRS(mcip), srs_quiesce_flag);
+		mac_tx_srs_quiesce(MCIP_TX_SRS(mcip), srs_quiesce_flag,
+		    condemn_logicals);
 		(void) mac_flow_walk_nolock(mcip->mci_subflow_tab,
 		    mac_tx_flow_quiesce, NULL);
 	}
@@ -2575,13 +2627,13 @@ i_mac_tx_client_quiesce(mac_client_handle_t mch,
 void
 mac_tx_client_quiesce(mac_client_handle_t mch)
 {
-	i_mac_tx_client_quiesce(mch, SRS_QUIESCE);
+	i_mac_tx_client_quiesce((mac_client_impl_t *)mch, SRS_QUIESCE, false);
 }
 
 void
 mac_tx_client_condemn(mac_client_handle_t mch)
 {
-	i_mac_tx_client_quiesce(mch, SRS_CONDEMNED);
+	i_mac_tx_client_quiesce((mac_client_impl_t *)mch, SRS_CONDEMNED, false);
 }
 
 void
@@ -2609,17 +2661,24 @@ mac_tx_client_flush(mac_client_impl_t *mcip)
 }
 
 void
-mac_client_quiesce(mac_client_impl_t *mcip)
+mac_client_quiesce(mac_client_handle_t mch)
 {
-	mac_rx_client_quiesce((mac_client_handle_t)mcip);
-	mac_tx_client_quiesce((mac_client_handle_t)mcip);
+	mac_rx_client_quiesce(mch);
+	mac_tx_client_quiesce(mch);
 }
 
 void
-mac_client_restart(mac_client_impl_t *mcip)
+mac_client_quiesce_new_tree(mac_client_impl_t *mcip)
 {
-	mac_rx_client_restart((mac_client_handle_t)mcip);
-	mac_tx_client_restart((mac_client_handle_t)mcip);
+	i_mac_rx_client_quiesce(mcip, true);
+	i_mac_tx_client_quiesce(mcip, SRS_QUIESCE, true);
+}
+
+void
+mac_client_restart(mac_client_handle_t mch)
+{
+	mac_rx_client_restart(mch);
+	mac_tx_client_restart(mch);
 }
 
 /*
@@ -5017,7 +5076,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 			VERIFY3S(flent->fe_rx_srs_cnt, >, 0);
 			mac_rx_srs_group_setup(mcip, flent, SRST_LINK);
 			mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-			    mac_rx_deliver, mcip, NULL);
+			    NULL);
 		} else {
 			ring->mr_classify_type = MAC_SW_CLASSIFIER;
 		}
@@ -5060,7 +5119,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 				tx->st_arg2 = NULL;
 				mac_tx_srs_stat_recreate(mac_srs, B_TRUE);
 				mac_tx_srs_add_ring(mac_srs, tx_ring);
-				if (mac_srs->srs_type & SRST_BW_CONTROL) {
+				if (mac_srs_is_bw_controlled(mac_srs)) {
 					tx->st_mode = is_aggr ? SRS_TX_BW_AGGR :
 					    SRS_TX_BW_FANOUT;
 				} else {
@@ -5071,7 +5130,7 @@ i_mac_group_add_ring(mac_group_t *group, mac_ring_t *ring, int index)
 			}
 			mac_tx_srs_add_ring(mac_srs, ring);
 			mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-			    mac_rx_deliver, mcip, NULL);
+			    NULL);
 			mac_tx_client_restart((mac_client_handle_t)mcip);
 			mgcp = mgcp->mgc_next;
 		}
@@ -5221,7 +5280,7 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 			i_mac_group_aggr_remove_tx_ring(group, mip, ring);
 			break; /* Out of the MAC_RING_TYPE_TX case. */
 		}
-		ASSERT(ring != (mac_ring_t *)mip->mi_default_tx_ring);
+		VERIFY3P(ring, !=, (mac_ring_t *)mip->mi_default_tx_ring);
 		group_type = mip->mi_tx_group_type;
 		cap_rings = &mip->mi_tx_rings_cap;
 		/*
@@ -5271,7 +5330,7 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 				if (rem_ring->mr_state != MR_INUSE) {
 					(void) mac_start_ring(rem_ring);
 				}
-				srs_tx->st_arg2 = (void *)rem_ring;
+				srs_tx->st_arg2 = rem_ring;
 				mac_tx_srs_stat_recreate(mac_srs, B_FALSE);
 				ring_info = mac_hwring_getinfo(
 				    (mac_ring_handle_t)rem_ring);
@@ -5279,7 +5338,7 @@ i_mac_group_rem_ring(mac_group_t *group, mac_ring_t *ring,
 				 * We are  shrinking from multiple
 				 * to 1 ring.
 				 */
-				if (mac_srs->srs_type & SRST_BW_CONTROL) {
+				if (mac_srs_is_bw_controlled(mac_srs)) {
 					srs_tx->st_mode = SRS_TX_BW;
 				} else if (mac_tx_serialize ||
 				    (ring_info & MAC_RING_TX_SERIALIZE)) {
@@ -7575,7 +7634,7 @@ mac_rx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 	if (tgrp->mrg_state == MAC_GROUP_STATE_RESERVED) {
 		mac_rx_srs_group_setup(mcip, mcip->mci_flent, SRST_LINK);
 		mac_fanout_setup(mcip, mcip->mci_flent,
-		    MCIP_RESOURCE_PROPS(mcip), mac_rx_deliver, mcip, NULL);
+		    MCIP_RESOURCE_PROPS(mcip), NULL);
 		mac_rx_group_unmark(tgrp, MR_INCIPIENT);
 	} else {
 		mac_rx_switch_grp_to_sw(tgrp);
@@ -7820,14 +7879,14 @@ mac_release_tx_group(mac_client_impl_t *mcip, mac_group_t *grp)
 		if (srs->srs_soft_ring_count > 0) {
 			for (ring = grp->mrg_rings; ring != NULL;
 			    ring = ring->mr_next) {
-				ASSERT(mac_tx_srs_ring_present(srs, ring));
+				VERIFY(mac_tx_srs_ring_present(srs, ring));
 				mac_tx_invoke_callbacks(mcip,
 				    (mac_tx_cookie_t)
 				    mac_tx_srs_get_soft_ring(srs, ring));
 				mac_tx_srs_del_ring(srs, ring);
 			}
 		} else {
-			ASSERT(srs->srs_tx.st_arg2 != NULL);
+			VERIFY(srs->srs_tx.st_arg2 != NULL);
 			srs->srs_tx.st_arg2 = NULL;
 			mac_srs_stat_delete(srs);
 		}
@@ -7874,7 +7933,7 @@ mac_tx_dismantle_soft_rings(mac_group_t *fgrp, flow_entry_t *flent)
 			    ring));
 			mac_tx_srs_del_ring(tx_srs, ring);
 		}
-		ASSERT(tx->st_arg2 == NULL);
+		VERIFY3P(tx->st_arg2, ==, NULL);
 	}
 }
 
@@ -7928,8 +7987,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 				mac_tx_srs_group_setup(gmcip, gflent,
 				    SRST_LINK);
 				mac_fanout_setup(gmcip, gflent,
-				    MCIP_RESOURCE_PROPS(gmcip), mac_rx_deliver,
-				    gmcip, NULL);
+				    MCIP_RESOURCE_PROPS(gmcip), NULL);
 
 				mac_tx_client_restart(
 				    (mac_client_handle_t)gmcip);
@@ -7989,8 +8047,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 			    &group_only_mcip, defgrp, B_FALSE);
 			mac_tx_srs_group_setup(gmcip, gflent, SRST_LINK);
 			mac_fanout_setup(gmcip, gflent,
-			    MCIP_RESOURCE_PROPS(gmcip), mac_rx_deliver,
-			    gmcip, NULL);
+			    MCIP_RESOURCE_PROPS(gmcip), NULL);
 
 			mac_tx_client_restart((mac_client_handle_t)gmcip);
 		}
@@ -8006,8 +8063,7 @@ mac_tx_switch_group(mac_client_impl_t *mcip, mac_group_t *fgrp,
 	    defgrp, B_FALSE);
 
 	mac_tx_srs_group_setup(mcip, flent, SRST_LINK);
-	mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip),
-	    mac_rx_deliver, mcip, NULL);
+	mac_fanout_setup(mcip, flent, MCIP_RESOURCE_PROPS(mcip), NULL);
 }
 
 /*
@@ -8507,7 +8563,7 @@ mac_pool_link_update(mod_hash_key_t key, mod_hash_val_t *val, void *arg)
 				pool_lock();
 				cpupart = mac_pset_find(mrp, &use_default);
 				mac_fanout_setup(mcip, mcip->mci_flent, mrp,
-				    mac_rx_deliver, mcip, cpupart);
+				    cpupart);
 				mac_set_pool_effective(use_default, cpupart,
 				    mrp, emrp);
 				pool_unlock();
@@ -8525,7 +8581,7 @@ mac_pool_link_update(mod_hash_key_t key, mod_hash_val_t *val, void *arg)
 				emrp->mrp_mask &= ~MRP_POOL;
 				bzero(emrp->mrp_pool, MAXPATHLEN);
 				mac_fanout_setup(mcip, mcip->mci_flent, mrp,
-				    mac_rx_deliver, mcip, NULL);
+				    NULL);
 			}
 			mac_update_resources(mrp, MCIP_RESOURCE_PROPS(mcip),
 			    B_FALSE);
@@ -8991,8 +9047,9 @@ mac_provider_tx(mac_impl_t *mip, mac_ring_handle_t rh, mblk_t *mp,
 	if (mip->mi_promisc_list != NULL)
 		mac_promisc_dispatch(mip, mp, mcip, B_FALSE);
 
-	if (mip->mi_bridge_link == NULL)
+	if (mip->mi_bridge_link == NULL) {
 		return (mac_ring_tx((mac_handle_t)mip, rh, mp));
-	else
+	} else {
 		return (mac_bridge_tx(mip, rh, mp));
+	}
 }
