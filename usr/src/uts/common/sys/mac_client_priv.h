@@ -37,6 +37,7 @@
 
 #include <sys/mac.h>
 #include <sys/mac_flow.h>
+#include <sys/stdbool.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -88,7 +89,7 @@ extern	uint16_t mac_client_vid(mac_client_handle_t);
 extern int mac_vnic_unicast_set(mac_client_handle_t, const uint8_t *);
 extern boolean_t mac_client_is_vlan_vnic(mac_client_handle_t);
 
-extern void mac_client_poll_enable(mac_client_handle_t, boolean_t);
+extern void mac_client_poll_enable(mac_client_handle_t);
 extern void mac_client_poll_disable(mac_client_handle_t, boolean_t);
 
 /*
@@ -99,6 +100,8 @@ extern void mac_link_init_flows(mac_client_handle_t);
 extern void mac_link_release_flows(mac_client_handle_t);
 extern int mac_link_flow_add(datalink_id_t, char *, flow_desc_t *,
     mac_resource_props_t *);
+extern int mac_link_flow_add_action(datalink_id_t, char *, flow_desc_t *,
+    mac_resource_props_t *, const flow_action_t *);
 extern int mac_link_flow_remove(char *);
 extern int mac_link_flow_modify(char *, mac_resource_props_t *);
 extern boolean_t mac_link_has_flows(mac_client_handle_t);
@@ -114,6 +117,8 @@ extern int mac_link_flow_walk(datalink_id_t,
     int (*)(mac_flowinfo_t *, void *), void *);
 extern int mac_link_flow_info(char *, mac_flowinfo_t *);
 
+extern void mac_client_quiesce(mac_client_handle_t);
+extern void mac_client_restart(mac_client_handle_t);
 extern void mac_rx_client_quiesce(mac_client_handle_t);
 extern void mac_rx_client_restart(mac_client_handle_t);
 extern void mac_tx_client_quiesce(mac_client_handle_t);
@@ -198,6 +203,8 @@ extern boolean_t mac_prop_check_size(mac_prop_id_t, uint_t, boolean_t);
 
 extern uint64_t mac_pseudo_rx_ring_stat_get(mac_ring_handle_t, uint_t);
 extern uint64_t mac_pseudo_tx_ring_stat_get(mac_ring_handle_t, uint_t);
+
+extern void mac_strip_l2(mblk_t *);
 
 #endif	/* _KERNEL */
 
