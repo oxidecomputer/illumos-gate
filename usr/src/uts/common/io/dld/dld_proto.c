@@ -1447,9 +1447,11 @@ dld_capab_poll_enable(dld_str_t *dsp, dld_capab_poll_t *poll)
 	 * (IP) to directly poll the soft ring (since DLS processing
 	 * hasn't been done) nor can we allow DLS bypass.
 	 */
-	if (!mac_rx_bypass_set(dsp->ds_mch, dsp->ds_rx, dsp->ds_rx_arg,
-	    dsp->ds_sap == ETHERTYPE_IPV6))
-		return (ENOTSUP);
+	int err = mac_rx_bypass_set(dsp->ds_mch, dsp->ds_rx, dsp->ds_rx_arg,
+	    dsp->ds_sap == ETHERTYPE_IPV6);
+	if (err != 0) {
+		return (err);
+	}
 
 	/*
 	 * Register soft ring resources. This will come in handy later if
@@ -1463,8 +1465,8 @@ dld_capab_poll_enable(dld_str_t *dsp, dld_capab_poll_t *poll)
 	rcbs.mrc_bind = (mac_resource_bind_t)poll->poll_ring_bind_cf;
 	rcbs.mrc_arg = poll->poll_ring_ch;
 
-	mac_resource_set(dsp->ds_mch, &rcbs, dsp->ds_sap == ETHERTYPE_IPV6);
-	mac_client_poll_enable(dsp->ds_mch, dsp->ds_sap == ETHERTYPE_IPV6);
+	mac_client_poll_enable(dsp->ds_mch, &rcbs,
+	    dsp->ds_sap == ETHERTYPE_IPV6);
 
 	dsp->ds_polling = B_TRUE;
 	return (0);
@@ -1477,7 +1479,6 @@ dld_capab_poll_disable(dld_str_t *dsp, dld_capab_poll_t *poll)
 		return (EINVAL);
 
 	mac_client_poll_disable(dsp->ds_mch, dsp->ds_sap == ETHERTYPE_IPV6);
-	mac_resource_clear(dsp->ds_mch, dsp->ds_sap == ETHERTYPE_IPV6);
 
 	dsp->ds_polling = B_FALSE;
 	return (0);

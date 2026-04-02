@@ -350,10 +350,15 @@ typedef struct packed_meoi {
 	 * (1 << 5) -- 6 flags. Not all are needed, however:
 	 * - Tunnel: MEOI_L4INFO_SET is omitted, and is implied
 	 *   by the tuntype and valid tuninfo.
-	 * - Packet: MEOI_TUNINFO_SET cannot be part of this
-	 *   flagset.
+	 * - Packet: MEOI_TUNINFO_SET is omitted as it cannot be
+	 *   part of this flagset.
 	 * The values stored here contain the rightward shift of
 	 * all flags following an omitted entry.
+	 * E.g., MEOI_TUNINFO_SET is represented as (1 << 2) in
+	 * p_flags, and MEOI_VLAN_TAGGED is represented as (1 << 3)
+	 * in both flagsets. Only mac provider APIs responsible for
+	 * packing/unpacking these fields (and datapath match logic)
+	 * need to work around this representation.
 	 */
 	uint16_t t_flags: 6;
 	uint16_t p_flags: 6;

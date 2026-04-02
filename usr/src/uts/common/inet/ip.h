@@ -3659,7 +3659,6 @@ extern void ip_squeue_init(void (*)(squeue_t *));
 extern squeue_t	*ip_squeue_random(uint_t);
 extern squeue_t *ip_squeue_get(ill_rx_ring_t *);
 extern squeue_t *ip_squeue_getfree(pri_t);
-extern int ip_squeue_cpu_move(squeue_t *, processorid_t);
 extern void *ip_squeue_add_ring(ill_t *, void *);
 extern void ip_squeue_bind_ring(ill_t *, ill_rx_ring_t *, processorid_t);
 extern void ip_squeue_clean_ring(ill_t *, ill_rx_ring_t *);
