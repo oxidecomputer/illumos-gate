@@ -128,6 +128,10 @@
 #include <sys/stack.h>
 #include <sys/archsystm.h>
 
+#include <sys/mac_client.h>
+#include <sys/mac_provider.h>
+#include <sys/mac_client_priv.h>
+
 #include <inet/ipclassifier.h>
 #include <inet/udp_impl.h>
 
@@ -962,6 +966,14 @@ poll_again:
 		bytes_to_pickup = squeue_poll_budget_bytes;
 		mutex_exit(lock);
 		head = sq_get_pkts(sq_mac_handle, bytes_to_pickup);
+
+		/*
+		 * MAC flows (by which DLS bypass and squeue polling are
+		 * plumbed) provide a raw paket interface. IP expects that L2
+		 * headers are removed by the time they are passed in.
+		 */
+		mac_strip_l2(head);
+
 		mp = NULL;
 		if (head != NULL) {
 			/*

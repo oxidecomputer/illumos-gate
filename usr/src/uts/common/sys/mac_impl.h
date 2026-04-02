@@ -383,11 +383,16 @@ struct mac_impl_s {
 	/*
 	 * The mac perimeter. All client initiated create/modify operations
 	 * on a mac end point go through this.
+	 *
+	 * Stats reporting may hold a read lock on the perimeter to ensure that
+	 * no admininstrative operations are in flight while running.
 	 */
 	kmutex_t		mi_perim_lock;
 	kthread_t		*mi_perim_owner;	/* mi_perim_lock */
-	uint_t			mi_perim_ocnt;		/* mi_perim_lock */
-	kcondvar_t		mi_perim_cv;		/* mi_perim_lock */
+	uint32_t		mi_perim_ocnt;		/* mi_perim_lock */
+	bool			mi_perim_wait;		/* mi_perim_lock */
+	uint64_t		mi_perim_rcnt;		/* mi_perim_lock */
+	kcondvar_t		mi_perim_cv;		/* mi_perim_cv_lock */
 
 	/* mac notification callbacks */
 	kmutex_t		mi_notify_lock;
@@ -800,8 +805,9 @@ extern void mac_tx_srs_group_teardown(mac_client_impl_t *, flow_entry_t *,
     const mac_soft_ring_set_type_t);
 extern int mac_rx_classify_flow_quiesce(flow_entry_t *, void *);
 extern int mac_rx_classify_flow_restart(flow_entry_t *, void *);
-extern void mac_client_quiesce(mac_client_impl_t *);
-extern void mac_client_restart(mac_client_impl_t *);
+extern void mac_client_quiesce_new_tree(mac_client_impl_t *);
+extern void mac_rx_client_quiesce_new_tree(mac_client_impl_t *);
+extern void mac_tx_client_condemn(mac_client_impl_t *);
 
 extern void mac_flow_update_priority(mac_client_impl_t *, flow_entry_t *);
 
@@ -819,6 +825,8 @@ extern void i_mac_share_alloc(mac_client_impl_t *);
 extern void i_mac_share_free(mac_client_impl_t *);
 extern void i_mac_perim_enter(mac_impl_t *);
 extern void i_mac_perim_exit(mac_impl_t *);
+extern int i_mac_perim_tryread(mac_impl_t *);
+extern void i_mac_perim_read_exit(mac_impl_t *);
 extern int i_mac_perim_enter_nowait(mac_impl_t *);
 extern void i_mac_tx_srs_notify(mac_impl_t *, mac_ring_handle_t);
 extern int mac_hold(const char *, mac_impl_t **);
@@ -916,12 +924,11 @@ extern void mac_led_init(mac_impl_t *);
 extern int mac_led_get(mac_handle_t, mac_led_mode_t *, mac_led_mode_t *);
 extern int mac_led_set(mac_handle_t, mac_led_mode_t);
 
-typedef struct mac_direct_rxs_s {
-	mac_direct_rx_t	mdrx_v4;
-	mac_direct_rx_t	mdrx_v6;
-	void		*mdrx_arg_v4;
-	void		*mdrx_arg_v6;
-} mac_direct_rxs_t;
+typedef struct mac_direct_wrapper_s {
+	mac_direct_rx_t		mdrx;
+	void			*mdrx_arg;
+	mac_client_impl_t	*mdrx_mcip;
+} mac_direct_rx_wrapper_t;
 
 /*
  * Struct definitions for mac_bcast.c

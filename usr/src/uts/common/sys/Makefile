@@ -29,7 +29,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2019 Peter Tribble.
 # Copyright 2015, Joyent, Inc. All rights reserved.
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -380,6 +380,7 @@ CHKHDRS=			\
 	mac.h			\
 	mac_client.h		\
 	mac_client_impl.h	\
+	mac_datapath_impl.h	\
 	mac_ether.h		\
 	mac_flow.h		\
 	mac_flow_impl.h		\
