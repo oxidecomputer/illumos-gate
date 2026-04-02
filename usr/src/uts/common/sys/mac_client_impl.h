@@ -39,6 +39,7 @@
 #include <sys/mac_stat.h>
 #include <net/if.h>
 #include <sys/mac_flow_impl.h>
+#include <sys/mac_soft_ring.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -197,7 +198,8 @@ struct mac_client_impl_s {			/* Protected by */
 	mac_client_state_t	mci_state_flags;	/* WO */
 	mac_rx_t		mci_rx_fn;		/* Rx Quiescence */
 	void			*mci_rx_arg;		/* Rx Quiescence */
-	mac_direct_rxs_t	mci_direct_rx;		/* SL */
+	mac_direct_rx_wrapper_t	mci_v4_fastpath;	/* SL */
+	mac_direct_rx_wrapper_t	mci_v6_fastpath;	/* SL */
 	mac_rx_t		mci_rx_p_fn;		/* Rx Quiescence */
 	void			*mci_rx_p_arg;		/* Rx Quiescence */
 	/* for packet siphon handlers */
@@ -227,19 +229,6 @@ struct mac_client_impl_s {			/* Protected by */
 	uint_t			mci_nflents;		/* mci_rw_lock */
 	uint_t			mci_nvids;		/* mci_rw_lock */
 	volatile uint32_t	mci_vidcache;		/* VID cache */
-
-	/*
-	 * Resource Management Callback Functions
-	 *
-	 * A mac client may have both an IPv4 and IPv6 ill_t active on it. In
-	 * order to avoid stomping on each other we give each their own resource
-	 * callbacks. At this time resources are used solely by TCP softrings
-	 * for the purpose of IP ring/squeue creation and polling. Currently the
-	 * callbacks are identical across protocol types, save the mrc_arg,
-	 * which is used to pass the ill_t up to IP.
-	 */
-	mac_resource_cb_t	mci_rcb4;	/* SL */
-	mac_resource_cb_t	mci_rcb6;	/* SL */
 
 	/* Tx notify callback */
 	kmutex_t		mci_tx_cb_lock;
@@ -288,6 +277,25 @@ struct mac_client_impl_s {			/* Protected by */
 	 */
 	uint_t			mci_tx_flag;
 	kcondvar_t		mci_tx_cv;
+
+	/* Protected by Rx quiescence */
+	/*
+	 * When an IPv4/IPv6 address is plumbed atop a client, IP will assign
+	 * an ill_t for each protocol and set mci_v4_fastpath/mci_v6_fastpath.
+	 * These flows enable TCP/UDP traffic over IPv4/IPv6 to bypass DLS using
+	 * these callbacks, and give us space in the flow's action to place the
+	 * resource management callback functions which enable TCP queue
+	 * polling.
+	 */
+	flow_entry_t	*mci_fastpath_ipv4;
+	flow_entry_t	*mci_fastpath_ipv4_tcp;
+	flow_entry_t	*mci_fastpath_ipv4_udp;
+	flow_entry_t	*mci_fastpath_ipv6;
+	flow_entry_t	*mci_fastpath_ipv6_tcp;
+	flow_entry_t	*mci_fastpath_ipv6_udp;
+
+	flow_tree_t	*mci_rx_flow_tree;
+	flow_tree_t	*mci_tx_flow_tree;
 
 	/* Must be last in the structure for dynamic sizing */
 	mac_tx_percpu_t		mci_tx_pcpu[1];		/* SL */
@@ -412,6 +420,7 @@ extern void mac_client_init(void);
 extern void mac_client_fini(void);
 extern void mac_promisc_dispatch(mac_impl_t *, mblk_t *, mac_client_impl_t *,
     boolean_t);
+extern void mac_update_subflow_flowtree(mac_client_impl_t *);
 
 extern int mac_validate_props(mac_impl_t *, mac_resource_props_t *);
 
@@ -431,6 +440,55 @@ extern boolean_t mac_is_primary_client(mac_client_impl_t *);
 extern int mac_client_set_rings_prop(mac_client_impl_t *,
     mac_resource_props_t *, mac_resource_props_t *);
 extern void mac_set_prim_vlan_rings(mac_impl_t *, mac_resource_props_t *);
+
+extern void mac_client_update_classifier(mac_client_impl_t *);
+extern void mac_client_rebuild_flowtrees(mac_client_impl_t *, const bool);
+extern void mac_client_destroy_flowtrees(mac_client_impl_t *);
+
+extern mblk_t *mac_standardise_pkt(const mac_client_impl_t *, mblk_t *);
+
+/*
+ * Reference count the number of active Tx threads. MCI_TX_QUIESCE indicates
+ * that a control operation wants to quiesce the Tx data flow in which case
+ * we return an error. Holding any of the per cpu locks ensures that the
+ * mci_tx_flag won't change.
+ *
+ * 'CPU' must be accessed just once and used to compute the index into the
+ * percpu array, and that index must be used for the entire duration of the
+ * packet send operation. Note that the thread may be preempted and run on
+ * another cpu any time and so we can't use 'CPU' more than once for the
+ * operation.
+ */
+#define	MAC_TX_TRY_HOLD(mcip, mytx, error)				\
+{									\
+	(error) = 0;							\
+	(mytx) = &(mcip)->mci_tx_pcpu[CPU->cpu_seqid & mac_tx_percpu_cnt]; \
+	mutex_enter(&(mytx)->pcpu_tx_lock);				\
+	if (!((mcip)->mci_tx_flag & MCI_TX_QUIESCE)) {			\
+		(mytx)->pcpu_tx_refcnt++;				\
+	} else {							\
+		(error) = -1;						\
+	}								\
+	mutex_exit(&(mytx)->pcpu_tx_lock);				\
+}
+
+/*
+ * Release the reference. If needed, signal any control operation waiting
+ * for Tx quiescence. The wait and signal are always done using the
+ * mci_tx_pcpu[0]'s lock
+ */
+#define	MAC_TX_RELE(mcip, mytx) {					\
+	mutex_enter(&(mytx)->pcpu_tx_lock);				\
+	if (--(mytx)->pcpu_tx_refcnt == 0 &&				\
+	    (mcip)->mci_tx_flag & MCI_TX_QUIESCE) {			\
+		mutex_exit(&(mytx)->pcpu_tx_lock);			\
+		mutex_enter(&(mcip)->mci_tx_pcpu[0].pcpu_tx_lock);	\
+		cv_signal(&(mcip)->mci_tx_cv);				\
+		mutex_exit(&(mcip)->mci_tx_pcpu[0].pcpu_tx_lock);	\
+	} else {							\
+		mutex_exit(&(mytx)->pcpu_tx_lock);			\
+	}								\
+}
 
 #ifdef	__cplusplus
 }

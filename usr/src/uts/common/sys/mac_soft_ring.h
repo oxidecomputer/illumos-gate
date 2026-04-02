@@ -33,6 +33,7 @@
 extern "C" {
 #endif
 
+#include <sys/stddef.h>
 #include <sys/types.h>
 #include <sys/cpuvar.h>
 #include <sys/cpupart.h>
@@ -42,8 +43,9 @@ extern "C" {
 #include <sys/dlpi.h>
 #include <sys/mac_impl.h>
 #include <sys/mac_stat.h>
+#include <sys/atomic.h>
 
-#define	S_RING_NAMELEN 64
+#define	S_RING_NAMELEN	64
 
 #define	MAX_SR_FANOUT	24
 
@@ -52,10 +54,6 @@ extern boolean_t mac_latency_optimize;
 
 typedef struct mac_soft_ring_s mac_soft_ring_t;
 typedef struct mac_soft_ring_set_s mac_soft_ring_set_t;
-
-typedef void (*mac_soft_ring_drain_func_t)(mac_soft_ring_t *);
-typedef mac_tx_cookie_t (*mac_tx_func_t)(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
 
 /* Tx notify callback */
 typedef struct mac_tx_notify_cb_s {
@@ -78,31 +76,21 @@ typedef struct mac_tx_notify_cb_s {
 typedef enum {
 	/*
 	 * Packets may only be drained from this softring by its own worker
-	 * thread, and cannot be handled inline by the SRS or its caller..
+	 * thread, and cannot be handled inline by the SRS or its caller.
 	 *
 	 * Immutable.
 	 */
 	ST_RING_WORKER_ONLY	= 1 << 0,
 	/*
-	 * This softring is dedicated to handling TCP/IPv4 traffic when DLS
-	 * bypass is configured.
+	 * This Rx softring is known to an upstack client, which may invoke any
+	 * `mac_rx_fifo_t` operations (direct polling, disable/re-enable inline
+	 * delivery).
 	 *
-	 * Immutable.
-	 */
-	ST_RING_TCP		= 1 << 2,
-	/*
-	 * This softring is dedicated to handling UDP/IPv4 traffic when DLS
-	 * bypass is configured.
+	 * `s_ring_rx_arg2` must be non-null.
 	 *
-	 * Immutable.
+	 * Mutable. Requires !`ST_RING_TX`.
 	 */
-	ST_RING_UDP		= 1 << 3,
-	/*
-	 * This softring handles all traffic which is ineligible for DLS bypass.
-	 *
-	 * Immutable.
-	 */
-	ST_RING_OTH		= 1 << 4,
+	ST_RING_POLLABLE	= 1 << 1,
 	/*
 	 * If set, this is a transmit softring. Packets will be directed via
 	 * `mac_tx_send` to an underlying provider's ring.
@@ -113,20 +101,6 @@ typedef enum {
 	 * Immutable.
 	 */
 	ST_RING_TX		= 1 << 6,
-	/*
-	 * This softring is dedicated to handling TCP/IPv6 traffic when DLS
-	 * bypass is configured.
-	 *
-	 * Immutable.
-	 */
-	ST_RING_TCP6		= 1 << 7,
-	/*
-	 * This softring is dedicated to handling UDP/IPv6 traffic when DLS
-	 * bypass is configured.
-	 *
-	 * Immutable.
-	 */
-	ST_RING_UDP6		= 1 << 8,
 	/*
 	 * A thread is currently processing packets from this softring, and has
 	 * relinquished its hold on `s_ring_lock` to allow more packets to be
@@ -229,6 +203,13 @@ typedef enum {
  */
 #define	SR_STATE	0xffff0000
 
+/*
+ * A MAC soft ring.
+ *
+ * This represents a queue of packets which have underwent any rate control
+ * or fanout, and are ready to be passed up to a client or handed down to the
+ * NIC.
+ */
 struct mac_soft_ring_s {
 	/* Keep the most used members 64bytes cache aligned */
 	kmutex_t	s_ring_lock;	/* lock before using any member */
@@ -285,13 +266,32 @@ struct mac_soft_ring_s {
 	mac_soft_ring_set_t *s_ring_set;   /* The SRS this ring belongs to */
 	mac_soft_ring_t	*s_ring_next;
 	mac_soft_ring_t	*s_ring_prev;
-	mac_soft_ring_drain_func_t s_ring_drain_func;
 
 	mac_tx_stats_t	s_st_stat;
 };
 
 /*
- * soft ring set (SRS) Tx modes
+ * Soft ring set (SRS) Tx modes.
+ *
+ * There are seven modes of operation on the Tx side. These modes get set
+ * in mac_tx_srs_setup(). Except for the experimental TX_SERIALIZE mode,
+ * none of the other modes are user configurable. They get selected by
+ * the system depending upon whether the link (or flow) has multiple Tx
+ * rings or a bandwidth configured, or if the link is an aggr, etc.
+ *
+ * When the Tx SRS is operating in aggr mode (st_mode) or if there are
+ * multiple Tx rings owned by Tx SRS, then each Tx ring (pseudo or
+ * otherwise) will have a soft ring associated with it. These soft rings
+ * are stored in srs_soft_rings[] array.
+ *
+ * Additionally in the case of aggr, there is the st_soft_rings[] array
+ * in the mac_srs_tx_t structure. This array is used to store the same
+ * set of soft rings that are present in srs_tx_soft_rings[] array but
+ * in a different manner. The soft ring associated with the pseudo Tx
+ * ring is saved at mr_index (of the pseudo ring) in st_soft_rings[]
+ * array. This helps in quickly getting the soft ring associated with the
+ * Tx ring when aggr_find_tx_ring() returns the pseudo Tx ring that is to
+ * be used for transmit.
  */
 typedef enum {
 	SRS_TX_DEFAULT = 0,
@@ -303,13 +303,13 @@ typedef enum {
 	SRS_TX_BW_AGGR
 } mac_tx_srs_mode_t;
 
-/* Transmit side Soft Ring Set */
-typedef struct mac_srs_tx_s {
-	/* Members for Tx-side processing */
-	mac_tx_srs_mode_t		st_mode;
-	mac_tx_func_t			st_func;
+/*
+ * Members specific to transmit SRSes.
+ */
+typedef struct {
+	mac_tx_srs_mode_t	st_mode;
 
-	/* Arguments for `mac_tx_send` when called within `st_func` */
+	/* Arguments for `mac_tx_send` when called within `st_mode` */
 	mac_client_impl_t	*st_arg1;
 	mac_ring_t		*st_arg2;
 
@@ -338,7 +338,9 @@ typedef struct mac_srs_tx_s {
 	uint32_t	st_lowat;	/* mblk cnt to relieve flow control */
 	uint32_t	st_hiwat_cnt; /* times blocked for Tx descs */
 	mac_tx_stats_t	st_stat;
+
 	mac_capab_aggr_t	st_capab_aggr;
+
 	/*
 	 * st_soft_rings is used as an array to store aggr Tx soft
 	 * rings. When aggr_find_tx_ring() returns a pseudo ring,
@@ -351,8 +353,27 @@ typedef struct mac_srs_tx_s {
 	mac_soft_ring_t **st_soft_rings;
 } mac_srs_tx_t;
 
-/* Receive side Soft Ring Set */
-typedef struct mac_srs_rx_s {
+/*
+ * Methods for moving packets from receipt at a MAC provider onto the correct
+ * Rx SRS.
+ */
+typedef enum {
+	/*
+	 * Packets will be moved onto this SRS using `mac_rx_srs_process`.
+	 */
+	MRSLP_PROCESS,
+	/*
+	 * Packets will be moved onto this SRS using `mac_hwrings_rx_process`.
+	 *
+	 * This should only occur for Rx rings when sun4v is in use,
+	 */
+	MRSLP_HWRINGS,
+} mac_rx_srs_lower_proc_t;
+
+/*
+ * Members specific to receive SRSes.
+ */
+typedef struct {
 	/*
 	 * Upcall function for Rx processing when `SRST_NO_SOFT_RINGS` is set.
 	 * Rx softring callbacks for non-bypass traffic should use the same
@@ -366,14 +387,28 @@ typedef struct mac_srs_rx_s {
 	mac_direct_rx_t		sr_func;
 	void			*sr_arg1;
 
-	mac_rx_func_t		sr_lower_proc;	/* Atomically changed */
-	uint32_t		sr_poll_pkt_cnt;
-	uint32_t		sr_poll_thres;
+	mac_rx_srs_lower_proc_t	sr_lower_proc;	/* Atomically changed */
+	mac_ring_t		*sr_ring;	/* Ring Descriptor (WO) */
 
-	/* mblk cnt to apply flow control */
+	/*
+	 * mblk count under which we should signal the poll thread to request
+	 * more packets.
+	 */
+	uint32_t		sr_poll_thres;
+	/* mblk count to apply flow control. */
 	uint32_t		sr_hiwat;
-	/* mblk cnt to relieve flow control */
+	/* mblk count to relieve flow control. */
 	uint32_t		sr_lowat;
+	/* Target flent to use for an action spec, if `srs_flent` is delegate */
+	flow_entry_t		*sr_act_as;	/* WO */
+
+	/*
+	 * Number of mblks enqueued in this complete SRS, its logical SRSes,
+	 * and all of their softrings. Always 0 for a logical SRS.
+	 */
+	uint32_t		sr_poll_pkt_cnt; /* Atomically updated */
+	/* Round Robin index for hashing into softrings */
+	uint32_t		sr_ind; /* SRS_PROC */
 	mac_rx_stats_t		sr_stat;
 
 	/* Times polling was enabled */
@@ -427,6 +462,14 @@ typedef struct mac_srs_rx_s {
 	uint32_t		sr_drain_finish_intr;
 	/* Polling thread needs to schedule worker wakeup */
 	uint32_t		sr_poll_worker_wakeup;
+
+	/* WO, poll thread */
+	kthread_t		*sr_poll_thr;
+
+	/* processor to bind to */
+	processorid_t		sr_poll_cpuid;
+	/* saved cpuid during offline */
+	processorid_t		sr_poll_cpuid_save;
 } mac_srs_rx_t;
 
 /*
@@ -480,21 +523,24 @@ enum mac_soft_ring_set_type {
 	 */
 	SRST_LATENCY_OPT		= 1 << 3,
 	/*
-	 * This Rx SRS has softrings assigned, and has at least one per traffic
-	 * class. Traffic must move to a softring for processing, but may still
-	 * drain inline if the SRS is quiet.
+	 * This SRS is logical, and exists as part of the flowtree of a
+	 * complete SRS. It is not directly visible via the flow entry's Rx/Tx
+	 * SRS list.
 	 *
-	 * Immutable. Requires !`SRST_TX`. Mutually exclusive with
-	 * `SRST_NO_SOFT_RINGS`.
+	 * The field `srs_complete_parent` points to the SRS whose flowtree
+	 * this object is contained in.
+	 *
+	 * Immutable.
 	 */
-	SRST_FANOUT_PROTO		= 1 << 4,
+	SRST_LOGICAL			= 1 << 4,
 	/*
-	 * This receive SRS has more than one softring for each traffic class,
-	 * and must hash/round-robin received packets amongst a class's rings.
+	 * This SRS behaves as a queue for a bandwidth limited subflow,
+	 * and directs traffic to another logical/complete SRS, `srs_give_to`,
+	 * every system tick.
 	 *
-	 * Mutable. Requires !`SRST_TX`.
+	 * Immutable. Requires `SRST_LOGICAL` and `SRST_NO_SOFT_RINGS`.
 	 */
-	SRST_FANOUT_SRC_IP		= 1 << 5,
+	SRST_FORWARD			= 1 << 5,
 	/*
 	 * All softrings will be initialised with `ST_RING_WORKER_ONLY`.
 	 *
@@ -520,59 +566,53 @@ enum mac_soft_ring_set_type {
 	 * Transmit SRSes use softrings as mappings to underlying Tx rings
 	 * from the hardware.
 	 *
-	 * The validity of `srs_tx`/`srs_rx` are gated on this flag, as are the
+	 * Tx/Rx specific data in `srs_data` are gated on this flag, as are the
 	 * choice of drain functions, enqueue behaviours, etc.
 	 *
 	 * Immutable.
 	 */
 	SRST_TX				= 1 << 8,
 	/*
-	 * `srs_bw` is enabled, and the queue size and egress rate of this SRS
-	 * are limited accordingly.
+	 * One or more elements of `srs_bw` is `BW_ENABLED`, and the queue size
+	 * and egress rate of this SRS are limited accordingly.
 	 *
 	 * Mutable.
 	 */
 	SRST_BW_CONTROL			= 1 << 9,
 	/*
-	 * The SRS's MAC client has had a callback plumbed from IP to allow
-	 * matching IPv4 packets to bypass DLS.
+	 * The action associated with this SRS (complete/logical) is configured
+	 * with `MFA_FLAGS_RESOURCE`, and we will inform an upstack client of
+	 * any changes to softrings (creation, deletion, CPU bind, quiesce). The
+	 * client may also poll the softrings to check for packets.
 	 *
-	 * When set, `ST_RING_TCP` and `ST_RING_UDP` must make use of this
-	 * callback. The Rx path will send eligible traffic to these softrings
-	 * in this case.
+	 * This implies that the client is sensitive to the CPU bindings of soft
+	 * rings and/or that flows are consistently delivered to the same
+	 * softring. Accordingly, packet fanout must always be flowhash-driven.
+	 *
+	 * Mutable under quiescence, if a flow action is changed on an
+	 * established SRS. Requires !`SRST_TX`.
+	 */
+	SRST_CLIENT_POLL		= 1 << 10,
+	/*
+	 * This complete SRS has had flows plumbed from IP to allow matching
+	 * IPv4 packets to bypass DLS (i.e., the root SRS action).
+	 *
+	 * This is a vanity flag to make MAC client plumbing state clearer when
+	 * debugging, and does not alter datapath behaviour.
 	 *
 	 * Mutable under quiescence. Requires !`SRST_TX`.
 	 */
 	SRST_DLS_BYPASS_V4		= 1 << 12,
 	/*
-	 * The SRS's MAC client has had a callback plumbed from IP to allow
-	 * matching IPv6 packets to bypass DLS.
+	 * This complete SRS has had flows plumbed from IP to allow matching
+	 * IPv6 packets to bypass DLS (i.e., the root SRS action).
 	 *
-	 * When set, `ST_RING_TCP6` and `ST_RING_UDP6` must make use of this
-	 * callback. The Rx path will send eligible traffic to these softrings
-	 * in this case.
+	 * This is a vanity flag to make MAC client plumbing state clearer when
+	 * debugging, and does not alter datapath behaviour.
 	 *
 	 * Mutable under quiescence. Requires !`SRST_TX`.
 	 */
 	SRST_DLS_BYPASS_V6		= 1 << 13,
-	/*
-	 * The underlying MAC client has had a `mac_resource_cb_t` plumbed down
-	 * from IP for TCP/IPv4 classified traffic. MAC must inform IP of the
-	 * addition, removal, and other state changes to any `ST_RING_TCP`
-	 * softrings.
-	 *
-	 * Mutable under quiescence. Requires !`SRST_TX`.
-	 */
-	SRST_CLIENT_POLL_V4		= 1 << 14,
-	/*
-	 * The underlying MAC client has had a `mac_resource_cb_t` plumbed down
-	 * from IP for TCP/IPv6 classified traffic. MAC must inform IP of the
-	 * addition, removal, and other state changes to any `ST_RING_TCP6`
-	 * softrings.
-	 *
-	 * Mutable under quiescence. Requires !`SRST_TX`.
-	 */
-	SRST_CLIENT_POLL_V6		= 1 << 15,
 };
 
 /*
@@ -591,7 +631,7 @@ typedef enum {
 	 */
 	SRS_POLL_BOUND		= 1 << 2,
 	/*
-	 * This Rx SRS is created on top of (and has exclusive
+	 * This complete Rx SRS is created on top of (and has exclusive
 	 * use of) a dedicated ring. When under sufficient load, MAC will
 	 * disable interrupts and pull packets into the SRS by polling the
 	 * NIC/ring, and will set `SRS_POLLING` when this is the case.
@@ -677,13 +717,6 @@ typedef enum {
 	 * `mac_client_tx_notify` callback that it may send.
 	 */
 	SRS_TX_WAKEUP_CLIENT	= 1 << 15,
-	/*
-	 * `SRS_PROC` is held by the SRS drain function, which is handling
-	 * packets inline because it is of type `SRST_NO_SOFT_RINGS`.
-	 *
-	 * Requires `SRS_PROC`.
-	 */
-	SRS_CLIENT_PROC		= 1 << 16,
 	/*
 	 * This SRS has been signalled to stop processing any packets.
 	 *
@@ -778,60 +811,95 @@ typedef enum {
 	SRS_FANOUT_REINIT
 } mac_srs_fanout_state_t;
 
-typedef void (*mac_srs_drain_proc_t)(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
+#define	SRS_QUIESCED(srs)	((srs)->srs_state & SRS_QUIESCE_DONE)
 
 /*
- * mac_soft_ring_set_s:
- * This is used both for Tx and Rx side. The srs_type identifies Rx or
- * Tx type.
+ * If the SRS_QUIESCE_PERM flag is set, the SRS worker thread will not be
+ * able to be restarted.
+ */
+#define	SRS_QUIESCED_PERMANENT(srs)	((srs)->srs_state & SRS_QUIESCE_PERM)
+
+/*
+ * Methods for draining packets enqueued on a softring set. These vary according
+ * to how any SRS is configured, and may be specialised to remove conditionals
+ * around how packets must be processed.
+ */
+typedef enum {
+	/*
+	 * Sentinel value used to ensure that a valid drain function is always
+	 * configured.
+	 */
+	MDSP_UNSPEC = 0,
+	MDSP_TX,
+	MDSP_RX,
+	MDSP_RX_SUBTREE,
+	MDSP_RX_SUBTREE_BW,
+	MDSP_RX_BW,
+	MDSP_RX_BW_SUBTREE,
+	MDSP_RX_BW_SUBTREE_BW,
+	MDSP_FORWARD,
+} mac_srs_drain_proc_t;
+
+/*
+ * The first-line packet queue hit once packets are received from or
+ * transmitted onto a MAC provider. srs_type identifies whether an SRS
+ * is transmit or receive, as well as other aspects of how packets should be
+ * processed.
  *
- * Note that the structure is carefully crafted, with Rx elements coming
- * first followed by Tx specific members. Future additions to this
- * structure should follow the same guidelines.
+ * An SRS may be either _complete_ (!(srs_type & SRST_LOGICAL)), or
+ * _logical_ (srs_type & SRST_LOGICAL).
  *
- * Rx-side notes:
- * mac_rx_classify_flow_add() always creates a mac_soft_ring_set_t and fn_flow
- * points to info from it (func = srs_lower_proc, arg = soft_ring_set). On
- * interrupt path, srs_lower_proc does B/W adjustment and switch to polling mode
- * (if poll capable) and feeds the packets to soft_ring_list via choosen
- * fanout type (specified by srs_type). In poll mode, the poll thread which is
- * also a pointer can pick up the packets and feed them to various
- * soft_ring_list.
+ * Complete SRSes are valid entry points for packets, and may have the
+ * full suite of poll and/or worker threads created and bound to them.
+ * If needed, they will have a filled flowtree for packet delivery to any
+ * subflows.
  *
- * The srs_type can either be protocol based or fanout based where fanout itelf
- * can be various types
+ * Logical SRSes serve purely as lists of softrings or a queue ahead of another
+ * SRS, with bandwidth control elements if required. Forward SRSes are a subset
+ * of logical SRSes, which are responsible only for policing and shaping traffic
+ * packets bound for another SRS due to bandwidth limitations.
  *
- * The polling works by turning off interrupts as soon as a packets
- * are queued on the soft ring set. Once the backlog is clear and poll
- * thread return empty handed i.e. Rx ring doesn't have anything, the
- * interrupt is turned back on. For this purpose we keep a separate
- * srs_poll_pkt_cnt counter which tracks the packets queued between SRS
- * and the soft rings as well. The counter is incremented when packets
- * are queued and decremented when SRS processes them (in case it has
- * no soft rings) or the soft ring process them. Its important that
- * in case SRS has softrings, the decrement doesn't happen till the
- * packet is processed by the soft rings since it takes very little time
- * for SRS to queue packet from SRS to soft rings and it will keep
- * bringing more packets in the system faster than soft rings can
- * process them.
+ * # Rx SRS operation
+ * Softrings in an Rx SRS are responsible for parallelising the upstack
+ * processing of inbound traffic, by fanning out from a single Rx ring or device
+ * entrypoint.
  *
- * Tx side notes:
- * The srs structure acts as a serializer with a worker thread. The
- * default behavior of srs though is to act as a pass-thru. The queues
- * (srs_first, srs_last, srs_count) get used when Tx ring runs out of Tx
- * descriptors or to enforce bandwidth limits.
+ * In the interrupt path, `sr_lower_proc` is responsible for moving packets into
+ * the SRS. Bandwidth adjustment controls whether packets can be enqueued here
+ * and the rate at which they are dequeued. Once dequeued, the packets are
+ * fanned out across `srs_soft_rings` according to `srs_type`, and may switch to
+ * polling mode (if poll capable). In poll mode, the poll thread is often
+ * expected to perform fanout if the SRS is `SRST_LATENCY_OPT`.
  *
- * When multiple Tx rings are present, the SRS state will be set to
- * SRS_FANOUT_OTH. Outgoing packets coming into mac_tx_srs_process()
- * function will be fanned out to one of the Tx side soft rings based on
- * a hint passed in mac_tx_srs_process(). Each soft ring, in turn, will
- * be associated with a distinct h/w Tx ring.
+ * Polling works by turning off interrupts if packets are still queued on any
+ * soft ring reachable via a complete SRS once the drain routine finishes. Once
+ * the backlog is clear and a poll attempt returns no packets, i.e., the Rx ring
+ * doesn't have anything, interrupts are turned back on. For this purpose we
+ * keep a separate `sr_poll_pkt_cnt` counter which tracks the sum of packets
+ * present in all these queues. The counter is incremented when packets
+ * are queued in the SRS and decremented once they are fully processed by a
+ * client (via sr_func or the soft rings) or dropped due to bandwidth policing.
+ * It's important that this decrement occurs after handoff to the client, since
+ * this best reflects the rate at which MAC clients are willing/able to process
+ * this traffic.
+ *
+ * # Tx SRS operation
+ * Softrings in a Tx SRS each hold a Tx ring returned from the underlying
+ * device. The SRS is responsible for handling traffic from many upstack
+ * callers, and fanning it out across these rings using either an optional hint
+ * value or computing packets' flow hash. Devices without HW ring capabilities
+ * will have no softrings and go straight to the device.
+ *
+ * The SRS structure acts as a serializer with a worker thread. The Tx SRS's
+ * default behaviour is to act as a pass-through and either send straight to the
+ * NIC or to a target softring. The queue in each layer is used when either a
+ * Tx ring runs out of descriptors, or to enforce bandwidth limits.
  */
 struct mac_soft_ring_set_s {
 	/*
-	 * Common elements, common to both Rx and Tx SRS type.
-	 * The following block of fields are protected by srs_lock
+	 * Elements common to all SRS types.
+	 * The following block of fields are protected by srs_lock and fill one
+	 * cache line with the elements which change often in the datapath.
 	 */
 	kmutex_t	srs_lock;
 	mac_soft_ring_set_type_t	srs_type;
@@ -850,52 +918,63 @@ struct mac_soft_ring_set_s {
 	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
 
 	/*
-	 * List of soft rings & processing function.
-	 * The following block is protected by Rx quiescence.
-	 * i.e. they can be changed only after quiescing the SRS
-	 * Protected by srs_lock.
+	 * From here 'til `srs_data`, the fields of this struct are mostly
+	 * static, barring changes from administrative commands.
+	 */
+
+	/*
+	 * Type-specific drain function accounting for Tx vs. Rx, Bandwidth vs.
+	 * non-Bandwidth, and Subtree vs. non-Subtree.
+	 */
+	mac_srs_drain_proc_t	srs_drain_func;	/* srs_lock(Rx), Quiesce(tx) */
+
+	/*
+	 * A structure for classifying packets received on a complete SRS and
+	 * directing them to the correct logical SRSes according to any
+	 * installed subflows.
+	 *
+	 * This field is protected by Tx/Rx quiescence.
+	 */
+	flow_tree_baked_t	srs_flowtree;
+
+	/*
+	 * List of soft rings.
+	 * The following block can be altered only after quiescing the SRS.
+	 *
+	 * Counts are limited to `uint16_t` to save space, as we admit at most
+	 * `MAX_SR_FANOUT` (24, Rx) or `MAX_RINGS_PER_GROUP` (128, Tx) elements.
 	 */
 	mac_soft_ring_t	*srs_soft_ring_head;
 	mac_soft_ring_t	*srs_soft_ring_tail;
-	int		srs_soft_ring_count;
-	int		srs_soft_ring_quiesced_count;
-	int		srs_soft_ring_condemned_count;
+	mac_soft_ring_t	**srs_soft_rings;
+	uint16_t	srs_soft_ring_count;
+	uint16_t	srs_soft_ring_quiesced_count;
+	uint16_t	srs_soft_ring_condemned_count;
 
 	kcondvar_t	srs_quiesce_done_cv;	/* cv for removal */
 
-	mac_soft_ring_t	**srs_tcp_soft_rings;
-	mac_soft_ring_t	**srs_udp_soft_rings;
-	mac_soft_ring_t	**srs_tcp6_soft_rings;
-	mac_soft_ring_t	**srs_udp6_soft_rings;
-	mac_soft_ring_t	**srs_oth_soft_rings;
 	/*
-	 * srs_tx_soft_rings is used by tx_srs in
-	 * when operating in multi tx ring mode.
+	 * Forward-type SRSes are used as queues limited by one or more
+	 * bandwidth controls. These then fanout onto the set of softrings held
+	 * by `srs_give_to`, which may be logical or complete.
+	 *
+	 * This allows us to avoid creating any softrings for BW-limited
+	 * delegate Rx actions, and is used to mete out access to the underlying
+	 * Tx rings for BW-limited cases.
 	 */
-	mac_soft_ring_t	**srs_tx_soft_rings;
-	int		srs_tcp_ring_count;
-	int		srs_udp_ring_count;
-	int		srs_tcp6_ring_count;
-	int		srs_udp6_ring_count;
-	int		srs_oth_ring_count;
-	int		srs_tx_ring_count;
+	mac_soft_ring_set_t	*srs_give_to; /* WO */
 
 	/*
 	 * Bandwidth control related members.
 	 */
-	mac_bw_ctl_t	*srs_bw; /* WO */
+	mac_bw_ctl_t	**srs_bw; /* WO */
+	size_t		srs_bw_len; /* WO */
 
 	/*
-	 * Priority assignment for poll/worker threads for this SRS and its
-	 * softrings.
+	 * Global doubly-linked list of all SRSes.
 	 */
-	pri_t		srs_pri; /* srs_lock */
-
 	mac_soft_ring_set_t	*srs_next;	/* mac_srs_g_lock */
 	mac_soft_ring_set_t	*srs_prev;	/* mac_srs_g_lock */
-
-	/* Attribute specific drain func (BW ctl vs non-BW ctl)	*/
-	mac_srs_drain_proc_t	srs_drain_func;	/* srs_lock(Rx), Quiesce(tx) */
 
 	/*
 	 * If the associated ring is exclusively used by a mac client, e.g.,
@@ -905,51 +984,124 @@ struct mac_soft_ring_set_s {
 	mac_resource_handle_t	srs_mrh;
 	/*
 	 * The following blocks are write once (WO) and valid for the life
-	 * of the SRS
+	 * of the SRS.
 	 */
-	mac_client_impl_t *srs_mcip;	/* back ptr to mac client */
-	flow_entry_t	*srs_flent;	/* back ptr to flent */
-	mac_ring_t	*srs_ring;	/*  Ring Descriptor */
+	mac_client_impl_t	*srs_mcip;	/* back ptr to mac client */
+	flow_entry_t		*srs_flent;	/* back ptr to flent */
 
 	kthread_t	*srs_worker;	/* WO, worker thread */
-	kthread_t	*srs_poll_thr;	/* WO, poll thread */
 
-	uint_t		srs_ind;	/* Round Robin indx for picking up SR */
 	processorid_t	srs_worker_cpuid;	/* processor to bind to */
 	processorid_t	srs_worker_cpuid_save;	/* saved cpuid during offline */
-	processorid_t	srs_poll_cpuid;		/* processor to bind to */
-	processorid_t	srs_poll_cpuid_save;	/* saved cpuid during offline */
 	mac_srs_fanout_state_t	srs_fanout_state;
+
+	/*
+	 * Priority assignment for poll/worker threads for this SRS and its
+	 * softrings.
+	 */
+	pri_t		srs_pri; /* srs_lock */
+
+	/*
+	 * Singly-linked list of logical SRSes allocated within a flow tree.
+	 * A complete SRS serves as the head of this list, which allows for
+	 * easier walking during stats collection or quiescence.
+	 */
+	mac_soft_ring_set_t	*srs_logical_next;
+	mac_soft_ring_set_t	*srs_complete_parent;
+
+	/*
+	 * We want to setup cache-line alignment for `mac_srs_rx_t` and
+	 * `mac_srs_tx_t` such that they can reason about placing immutable
+	 * members together regardless of this struct's layout.
+	 *
+	 * We assert this property holds below.
+	 */
+	uint8_t			srs_pad[24];
+
+	union {
+		mac_srs_rx_t	rx; /* !(srs_type & SRST_TX) */
+		mac_srs_tx_t	tx; /* srs_type & SRST_TX */
+	} srs_data;
+
+	/*
+	 * Stats relating to bytes and packets *matching this SRS explicitly*,
+	 * even if another SRS is doing the processing (e.g., non-BW delegate
+	 * actions).
+	 *
+	 * Stats for a given flent will sum up all Tx/Rx counts by walking the
+	 * SRSes in a client. Stats per *action* are instead accumulated over
+	 * all softrings.
+	 *
+	 * Modified/read atomically.
+	 */
+	uint64_t	srs_match_pkts;
+	uint64_t	srs_match_bytes;
+
+	/*
+	 * TODO(ky): This struct is around 5kiB. We need to be smarter around
+	 * refcounting this member now that we have *many* SRSes per client.
+	 */
 	mac_cpus_t	srs_cpu;
 
-	mac_srs_rx_t	srs_rx;
-	mac_srs_tx_t	srs_tx;
 	kstat_t		*srs_ksp;
 };
 
-static inline boolean_t
+#ifdef _KERNEL
+CTASSERT((offsetof(mac_soft_ring_set_t, srs_data) % 64) == 0);
+#endif
+
+static inline bool
+mac_srs_is_tx(const mac_soft_ring_set_t *srs)
+{
+	return ((srs->srs_type & SRST_TX) != 0);
+}
+
+static inline bool
+mac_srs_is_logical(const mac_soft_ring_set_t *srs)
+{
+	return ((srs->srs_type & SRST_LOGICAL) != 0);
+}
+
+static inline bool
+mac_srs_is_latency_opt(const mac_soft_ring_set_t *srs)
+{
+	return ((srs->srs_type & SRST_LATENCY_OPT) != 0);
+}
+
+static inline bool
 mac_srs_is_bw_controlled(const mac_soft_ring_set_t *srs)
 {
 	return ((srs->srs_type & SRST_BW_CONTROL) != 0);
 }
 
 /*
- * The total number of softring protocol lanes: TCP, TCP6, UDP, UDP6, OTH.
+ * Return the flow entry which specifies the action that packets should
+ * be subject to on this Rx SRS (either directly or via some layers of
+ * delegation).
+ *
+ * This flow entry's action is guaranteed to have `MFA_FLAGS_ACTION` set.
  */
-#define	ST_RING_NUM_PROTO	5
+static inline flow_entry_t *
+mac_srs_rx_action_flent(mac_soft_ring_set_t *srs)
+{
+	ASSERT(!mac_srs_is_tx(srs));
+
+	return ((srs->srs_data.rx.sr_act_as != NULL) ?
+	    srs->srs_data.rx.sr_act_as :
+	    srs->srs_flent);
+}
 
 /*
- * arguments for processors to bind to
+ * Return the action that packets should be subject to on this Rx SRS (either
+ * directly or via some layers of delegation).
+ *
+ * This action is guaranteed to have `MFA_FLAGS_ACTION` set.
  */
-#define	S_RING_BIND_NONE	-1
-
-#define	SRS_QUIESCED(srs)	(srs->srs_state & SRS_QUIESCE_DONE)
-
-/*
- * If the SRS_QUIESCE_PERM flag is set, the SRS worker thread will not be
- * able to be restarted.
- */
-#define	SRS_QUIESCED_PERMANENT(srs)	(srs->srs_state & SRS_QUIESCE_PERM)
+static inline flow_action_t *
+mac_srs_rx_action(mac_soft_ring_set_t *srs)
+{
+	return (&mac_srs_rx_action_flent(srs)->fe_action);
+}
 
 /*
  * Structure for dls statistics
@@ -969,14 +1121,16 @@ extern struct dls_kstats dls_kstat;
 	    (SRS_POLLING_CAPAB|SRS_POLLING)) {				\
 		(mac_srs)->srs_state &= ~SRS_POLLING;			\
 		(void) mac_hwring_enable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_ring);				\
-		(mac_srs)->srs_rx.sr_poll_off++;			\
+		    (mac_srs)->srs_data.rx.sr_ring);			\
+		(mac_srs)->srs_data.rx.sr_poll_off++;			\
+		DTRACE_PROBE1(mac__poll__off, mac_soft_ring_set_t *,	\
+			(mac_srs));					\
 	}								\
 }
 
 #define	MAC_COUNT_CHAIN(mac_srs, head, tail, cnt, sz)	{		\
 	mblk_t		*tmp;						\
-	const boolean_t	bw_ctl = mac_srs_is_bw_controlled(mac_srs);	\
+	const bool	bw_ctl = mac_srs_is_bw_controlled((mac_srs));	\
 									\
 	ASSERT((head) != NULL);						\
 	cnt = 0;							\
@@ -985,44 +1139,80 @@ extern struct dls_kstats dls_kstat;
 	if ((head)->b_next == NULL) {					\
 		cnt = 1;						\
 		if (bw_ctl)						\
-			sz += msgdsize(head);				\
+			sz += mp_len(head);				\
 	} else {							\
 		while (tmp != NULL) {					\
 			tail = tmp;					\
 			cnt++;						\
 			if (bw_ctl)					\
-				sz += msgdsize(tmp);			\
+				sz += mp_len(tmp);			\
 			tmp = tmp->b_next;				\
 		}							\
 	}								\
 }
 
 /*
- * Decrement the cumulative packet count in SRS and its
- * soft rings. If the srs_poll_pkt_cnt goes below lowat, then check
- * if if the interface was left in a polling mode and no one
- * is really processing the queue (to get the interface out
- * of poll mode). If no one is processing the queue, then
- * acquire the PROC and signal the poll thread to check the
- * interface for packets and get the interface back to interrupt
- * mode if nothing is found.
+ * Decrement the cumulative packet count in SRS and its softrings. If the
+ * `sr_poll_pkt_cnt` goes below lowat, then check if the interface was left in a
+ * polling mode and no one is really processing the queue (to get the interface
+ * out of poll mode). If no one is processing the queue, then acquire
+ * `SRS_PROC` and signal the poll thread to check the interface for packets and
+ * get the interface back to interrupt mode if nothing is found.
  */
-#define	MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt) {		        \
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_rx;			\
-	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
-									\
-	srs_rx->sr_poll_pkt_cnt -= cnt;					\
-	if ((srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_poll_thres) &&	\
-	    (((mac_srs)->srs_state &					\
-	    (SRS_POLLING|SRS_PROC|SRS_GET_PKTS)) == SRS_POLLING))	\
-	{								\
-		(mac_srs)->srs_state |= (SRS_PROC|SRS_GET_PKTS);	\
-		cv_signal(&(mac_srs)->srs_cv);				\
-		srs_rx->sr_below_hiwat++;				\
-	}								\
+static inline __attribute__((always_inline)) void
+mac_update_srs_count(mac_soft_ring_set_t *mac_srs, const uint32_t cnt)
+{
+	/*
+	 * Poll packet occupancy is not tracked by Tx SRSes.
+	 */
+	if (mac_srs_is_tx(mac_srs)) {
+		return;
+	}
+
+	/*
+	 * The poll packet count on a logical SRS serves no real function. We
+	 * want to feed this information back to control the poll thread of its
+	 * complete SRS.
+	 */
+	mac_soft_ring_set_t *true_target = mac_srs_is_logical(mac_srs) ?
+	    mac_srs->srs_complete_parent : mac_srs;
+	ASSERT3P(true_target, !=, NULL);
+	ASSERT(!mac_srs_is_tx(true_target));
+
+	mac_srs_rx_t *srs_rx = &true_target->srs_data.rx;
+
+	/*
+	 * Update the count of queued packets, but only attempt to lock the SRS
+	 * and signal the poll thread when necessary.
+	 *
+	 * We know that at least one thread will send the signal even with
+	 * several competing softrings and the poll thread itself. The only case
+	 * in which we would back off from doing so is if `sr_poll_pkt_cnt`
+	 * is increased past the threshold. If this occurs, the poll thread
+	 * *is/was active*, and will either poll again of its own accord or will
+	 * be alerted to do so once those packets are dequeued.
+	 */
+	const uint32_t point_value =
+	    atomic_add_32_nv(&srs_rx->sr_poll_pkt_cnt, -cnt);
+	if (point_value <= srs_rx->sr_poll_thres) {
+		mutex_enter(&true_target->srs_lock);
+		/*
+		 * Check that the poll condition still holds, and whether
+		 * the SRS is in in poll mode (with the poll thread asleep).
+		 */
+		if ((srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_poll_thres) &&
+		    ((true_target->srs_state &
+		    (SRS_POLLING|SRS_PROC|SRS_GET_PKTS)) == SRS_POLLING)) {
+			true_target->srs_state |= (SRS_PROC|SRS_GET_PKTS);
+			cv_signal(&true_target->srs_cv);
+			srs_rx->sr_below_hiwat++;
+		}
+		mutex_exit(&true_target->srs_lock);
+	}
 }
 
-#define	MAC_TX_SOFT_RINGS(mac_srs) ((mac_srs)->srs_tx_ring_count >= 1)
+#define	MAC_TX_SOFT_RINGS(mac_srs) (mac_srs_is_tx((mac_srs)) &&		\
+	(mac_srs)->srs_soft_ring_count >= 1)
 
 /* Soft ring flags for teardown */
 #define	SRS_POLL_THR_OWNER	(SRS_PROC | SRS_POLLING | SRS_GET_PKTS)
@@ -1033,45 +1223,37 @@ extern struct dls_kstats dls_kstat;
 extern void mac_soft_ring_init(void);
 extern void mac_soft_ring_finish(void);
 extern void mac_fanout_setup(mac_client_impl_t *, flow_entry_t *,
-    mac_resource_props_t *, mac_direct_rx_t, void *, cpupart_t *);
+    mac_resource_props_t *, cpupart_t *);
 
 extern void mac_soft_ring_worker_wakeup(mac_soft_ring_t *);
 extern mblk_t *mac_soft_ring_poll(mac_soft_ring_t *, size_t);
-extern void mac_soft_ring_dls_bypass_enable(mac_soft_ring_t *, mac_direct_rx_t,
-    void *);
-extern void mac_soft_ring_dls_bypass_disable(mac_soft_ring_t *,
-    mac_client_impl_t *);
-extern void mac_soft_ring_poll_enable(mac_soft_ring_t *, mac_direct_rx_t,
-    void *, mac_resource_cb_t *, uint32_t);
-extern void mac_soft_ring_poll_disable(mac_soft_ring_t *, mac_resource_cb_t *,
-    mac_client_impl_t *);
+
+extern void mac_rx_soft_ring_drain(mac_soft_ring_t *);
 
 /* SRS */
 extern void mac_srs_free(mac_soft_ring_set_t *);
+extern void mac_srs_quiesce_wait_one(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 extern void mac_srs_signal(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_srs_signal_diff(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t, const mac_soft_ring_set_state_t);
+extern void mac_srs_signal_client(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t);
 
 extern void mac_rx_srs_retarget_intr(mac_soft_ring_set_t *, processorid_t);
 extern void mac_tx_srs_retarget_intr(mac_soft_ring_set_t *);
 
-extern void mac_srs_client_poll_enable(mac_client_impl_t *,
-    mac_soft_ring_set_t *, boolean_t);
-extern void mac_srs_client_poll_disable(mac_client_impl_t *,
-    mac_soft_ring_set_t *, boolean_t);
-extern void mac_srs_client_poll_quiesce(mac_client_impl_t *,
-    mac_soft_ring_set_t *);
-extern void mac_srs_client_poll_restart(mac_client_impl_t *,
-    mac_soft_ring_set_t *);
 extern void mac_rx_srs_quiesce(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t);
 extern void mac_rx_srs_restart(mac_soft_ring_set_t *);
 extern void mac_tx_srs_quiesce(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
+    const mac_soft_ring_set_state_t, const bool);
+extern void mac_tx_srs_restart(mac_soft_ring_set_t *);
+extern void mac_rx_srs_remove(mac_soft_ring_set_t *);
 
 /* Tx SRS, Tx softring */
 extern void mac_tx_srs_wakeup(mac_soft_ring_set_t *, mac_ring_handle_t);
-extern void mac_tx_srs_setup(mac_client_impl_t *, flow_entry_t *);
-extern mac_tx_func_t mac_tx_get_func(uint32_t);
 extern mblk_t *mac_tx_send(mac_client_impl_t *, mac_ring_t *, mblk_t *,
     mac_tx_stats_t *);
 extern boolean_t mac_tx_srs_ring_present(mac_soft_ring_set_t *, mac_ring_t *);
@@ -1085,9 +1267,12 @@ extern mac_tx_cookie_t mac_tx_srs_no_desc(mac_soft_ring_set_t *, mblk_t *,
 /* Subflow specific stuff */
 extern void mac_srs_update_bwlimit(flow_entry_t *, mac_resource_props_t *);
 extern void mac_update_srs_priority(mac_soft_ring_set_t *, pri_t);
-extern void mac_client_update_classifier(mac_client_impl_t *, boolean_t);
-extern void mac_rx_srs_subflow_process(void *, mac_resource_handle_t, mblk_t *,
-    boolean_t);
+
+/* Flowtree walkers */
+extern void mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *,
+    flow_tree_pkt_set_t *, const uintptr_t);
+extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
+    flow_tree_pkt_set_t *, const uintptr_t);
 
 /* Resource callbacks for clients */
 extern int mac_soft_ring_intr_enable(void *);
@@ -1095,35 +1280,218 @@ extern boolean_t mac_soft_ring_intr_disable(void *);
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
 extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 
-extern mac_soft_ring_t *mac_soft_ring_create_rx(int, clock_t,
-    const mac_soft_ring_state_t, pri_t, mac_client_impl_t *,
-    mac_soft_ring_set_t *, processorid_t, mac_direct_rx_t, void *);
+extern mac_soft_ring_t *mac_soft_ring_create_rx(int, clock_t, pri_t,
+    mac_client_impl_t *, mac_soft_ring_set_t *, processorid_t, mac_direct_rx_t,
+    void *);
 extern mac_soft_ring_t *mac_soft_ring_create_tx(int, clock_t,
     const mac_soft_ring_state_t, pri_t, mac_client_impl_t *,
     mac_soft_ring_set_t *, processorid_t, mac_ring_t *);
 extern void mac_soft_ring_free(mac_soft_ring_t *);
 extern void mac_soft_ring_signal(mac_soft_ring_t *,
     const mac_soft_ring_state_t);
-extern void mac_rx_soft_ring_process(mac_client_impl_t *, mac_soft_ring_t *,
-    mblk_t *, mblk_t *, int, size_t);
+extern void mac_rx_soft_ring_process(mac_soft_ring_t *, mblk_t *, mblk_t *, int,
+    size_t);
 extern mac_tx_cookie_t mac_tx_soft_ring_process(mac_soft_ring_t *,
     mblk_t *, uint16_t, mblk_t **);
 extern void mac_srs_worker_quiesce(mac_soft_ring_set_t *);
 extern void mac_srs_worker_restart(mac_soft_ring_set_t *);
 
-extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
-extern void mac_rx_srs_drain(mac_soft_ring_set_t *,
-    const mac_soft_ring_set_state_t);
 extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
+    boolean_t);
+extern void mac_hwrings_rx_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
+
+/* Bandwidth control related functions */
+static inline bool
+mac_srs_any_bw_enforced(const mac_soft_ring_set_t *srs)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		if (mac_bw_ctl_is_enforced(srs->srs_bw[i])) {
+			return (true);
+		}
+	}
+	return (false);
+}
+
+static inline bool
+mac_srs_any_bw_zeroed(const mac_soft_ring_set_t *srs)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		if (srs->srs_bw[i]->mac_bw_limit == 0) {
+			return (true);
+		}
+	}
+	return (false);
+}
+
+static inline void
+mac_srs_bw_lock(const mac_soft_ring_set_t *srs)
+{
+	mac_bw_ctls_lock(srs->srs_bw, srs->srs_bw_len);
+}
+
+static inline void
+mac_srs_bw_unlock(const mac_soft_ring_set_t *srs)
+{
+	mac_bw_ctls_unlock(srs->srs_bw, srs->srs_bw_len);
+}
+
+/*
+ * Static dispatch for all SRS drain functions.
+ */
+extern void mac_rx_srs_drain_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_subtree(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
+extern void mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 extern void mac_tx_srs_drain(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t);
+extern void mac_srs_drain_forward(mac_soft_ring_set_t *,
+    const mac_soft_ring_set_state_t);
 
-extern void mac_tx_srs_restart(mac_soft_ring_set_t *);
-extern void mac_rx_srs_remove(mac_soft_ring_set_t *);
+static inline __attribute__((always_inline)) void
+mac_srs_drain(mac_soft_ring_set_t *srs, const mac_soft_ring_set_state_t owner)
+{
+	ASSERT(MUTEX_HELD(&srs->srs_lock));
+	switch (srs->srs_drain_func) {
+		case MDSP_TX:
+			mac_tx_srs_drain(srs, owner);
+			break;
+		case MDSP_RX:
+			mac_rx_srs_drain(srs, owner);
+			break;
+		case MDSP_RX_BW:
+			mac_rx_srs_drain_bw(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE:
+			mac_rx_srs_drain_subtree(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE_BW:
+			mac_rx_srs_drain_subtree_bw(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE:
+			mac_rx_srs_drain_bw_subtree(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE_BW:
+			mac_rx_srs_drain_bw_subtree_bw(srs, owner);
+			break;
+		case MDSP_FORWARD:
+			mac_srs_drain_forward(srs, owner);
+			break;
+		default:
+			panic("Illegal drain func %d for SRS.",
+			    srs->srs_drain_func);
+			break;
+	}
+}
+
+static inline void
+mac_srs_drain_rx_complete(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t owner)
+{
+	ASSERT(MUTEX_HELD(&srs->srs_lock));
+	ASSERT(!mac_srs_is_tx(srs));
+	ASSERT(!mac_srs_is_logical(srs));
+	switch (srs->srs_drain_func) {
+		case MDSP_RX:
+			mac_rx_srs_drain(srs, owner);
+			break;
+		case MDSP_RX_BW:
+			mac_rx_srs_drain_bw(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE:
+			mac_rx_srs_drain_subtree(srs, owner);
+			break;
+		case MDSP_RX_SUBTREE_BW:
+			mac_rx_srs_drain_subtree_bw(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE:
+			mac_rx_srs_drain_bw_subtree(srs, owner);
+			break;
+		case MDSP_RX_BW_SUBTREE_BW:
+			mac_rx_srs_drain_bw_subtree_bw(srs, owner);
+			break;
+		default:
+			panic("Illegal drain func %d for Receive SRS.",
+			    srs->srs_drain_func);
+			break;
+	}
+}
+
+/*
+ * Static dispatch for all Tx SRS transmit functions.
+ */
+extern mac_tx_cookie_t mac_tx_single_ring_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_serializer_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_fanout_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_bw_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+extern mac_tx_cookie_t mac_tx_aggr_mode(mac_soft_ring_set_t *, mblk_t *,
+    uintptr_t, uint16_t, mblk_t **);
+
+static inline mac_tx_cookie_t
+mac_srs_send_tx_complete(mac_soft_ring_set_t *srs, mblk_t *mp,
+    uintptr_t hint, uint16_t flags, mblk_t **retmp)
+{
+	ASSERT(!MUTEX_HELD(&srs->srs_lock));
+	ASSERT(mac_srs_is_tx(srs));
+	ASSERT(!mac_srs_is_logical(srs));
+
+	const mac_srs_tx_t *srs_tx = &srs->srs_data.tx;
+	mac_tx_cookie_t out = 0;
+	switch (srs_tx->st_mode) {
+		case SRS_TX_DEFAULT:
+			out = mac_tx_single_ring_mode(srs, mp, hint, flags,
+			    retmp);
+			break;
+		case SRS_TX_SERIALIZE:
+			out = mac_tx_serializer_mode(srs, mp, hint, flags,
+			    retmp);
+			break;
+		case SRS_TX_FANOUT:
+			out = mac_tx_fanout_mode(srs, mp, hint, flags, retmp);
+			break;
+		case SRS_TX_AGGR:
+			out = mac_tx_aggr_mode(srs, mp, hint, flags, retmp);
+			break;
+		case SRS_TX_BW:
+		case SRS_TX_BW_FANOUT:
+		case SRS_TX_BW_AGGR:
+			out = mac_tx_bw_mode(srs, mp, hint, flags, retmp);
+			break;
+		default:
+			panic("Illegal tx func %d for Transmit SRS.",
+			    srs_tx->st_mode);
+			break;
+	}
+
+	return (out);
+}
+
+static inline mac_rx_func_t
+mac_srs_lower_proc(const mac_rx_srs_lower_proc_t proc)
+{
+	switch (proc) {
+	case MRSLP_PROCESS:
+		return (mac_rx_srs_process);
+	case MRSLP_HWRINGS:
+		return (mac_hwrings_rx_process);
+	default:
+		panic("No lower proc defined for %d.", proc);
+	}
+}
 
 #ifdef	__cplusplus
 }

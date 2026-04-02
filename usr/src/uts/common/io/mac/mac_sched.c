@@ -670,7 +670,7 @@
  *                                                                    +--------+
  *
  * [1] The simple case refers to the SRS being configured with the
- * SRS_TX_DEFAULT transmission mode, having a single mblk_t (not a chain), their
+ * SRS_TX_DEFAULT transmission mode, having a single mblk_t (not a chain), there
  * being only a single active client, and not having a backlog in the srs.
  *
  *
@@ -725,7 +725,7 @@
  *            * . Yes                                |   frames to the   |
  *            v                                      |      caller       |
  *      +===========+                                +-------------------+
- *      v braodcast v      +----------------+                  ^
+ *      v broadcast v      +----------------+                  ^
  *      v   flow?   v--*-->| mac_bcast_send |------------------+
  *      +===========+  .   +----------------+                  |
  *            |        . . Yes                                 |
@@ -1027,6 +1027,7 @@
 
 #include <sys/types.h>
 #include <sys/callb.h>
+#include <sys/ethernet.h>
 #include <sys/pattr.h>
 #include <sys/sdt.h>
 #include <sys/strsubr.h>
@@ -1042,58 +1043,12 @@
 #include <inet/ip6.h>
 
 #include <sys/mac_impl.h>
+#include <sys/mac_datapath_impl.h>
 #include <sys/mac_client_impl.h>
 #include <sys/mac_client_priv.h>
 #include <sys/mac_provider.h>
 #include <sys/mac_soft_ring.h>
 #include <sys/mac_flow_impl.h>
-
-static mac_tx_cookie_t mac_tx_single_ring_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_serializer_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_fanout_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_bw_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-static mac_tx_cookie_t mac_tx_aggr_mode(mac_soft_ring_set_t *, mblk_t *,
-    uintptr_t, uint16_t, mblk_t **);
-
-typedef struct mac_tx_mode_s {
-	mac_tx_srs_mode_t	mac_tx_mode;
-	mac_tx_func_t		mac_tx_func;
-} mac_tx_mode_t;
-
-/*
- * There are seven modes of operation on the Tx side. These modes get set
- * in mac_tx_srs_setup(). Except for the experimental TX_SERIALIZE mode,
- * none of the other modes are user configurable. They get selected by
- * the system depending upon whether the link (or flow) has multiple Tx
- * rings or a bandwidth configured, or if the link is an aggr, etc.
- *
- * When the Tx SRS is operating in aggr mode (st_mode) or if there are
- * multiple Tx rings owned by Tx SRS, then each Tx ring (pseudo or
- * otherwise) will have a soft ring associated with it. These soft rings
- * are stored in srs_tx_soft_rings[] array.
- *
- * Additionally in the case of aggr, there is the st_soft_rings[] array
- * in the mac_srs_tx_t structure. This array is used to store the same
- * set of soft rings that are present in srs_tx_soft_rings[] array but
- * in a different manner. The soft ring associated with the pseudo Tx
- * ring is saved at mr_index (of the pseudo ring) in st_soft_rings[]
- * array. This helps in quickly getting the soft ring associated with the
- * Tx ring when aggr_find_tx_ring() returns the pseudo Tx ring that is to
- * be used for transmit.
- */
-mac_tx_mode_t mac_tx_mode_list[] = {
-	{SRS_TX_DEFAULT,	mac_tx_single_ring_mode},
-	{SRS_TX_SERIALIZE,	mac_tx_serializer_mode},
-	{SRS_TX_FANOUT,		mac_tx_fanout_mode},
-	{SRS_TX_BW,		mac_tx_bw_mode},
-	{SRS_TX_BW_FANOUT,	mac_tx_bw_mode},
-	{SRS_TX_AGGR,		mac_tx_aggr_mode},
-	{SRS_TX_BW_AGGR,	mac_tx_bw_mode}
-};
 
 /*
  * Soft Ring Set (SRS) - The Run time code that deals with
@@ -1145,7 +1100,7 @@ mac_tx_mode_t mac_tx_mode_list[] = {
  *
  * In poll mode, its better to keep the pipeline going where the
  * SRS worker thread keeps processing packets and poll thread
- * keeps bringing more packets (specially if they get to run
+ * keeps bringing more packets (especially if they get to run
  * on different CPUs). This also prevents the overheads associated
  * by excessive signalling (on NUMA machines, this can be
  * pretty devastating). The exception is latency optimized case
@@ -1166,7 +1121,7 @@ mac_tx_mode_t mac_tx_mode_list[] = {
  *    backlog (sr_poll_pkt_cnt > 0), we stay in polling
  *    mode but don't poll the H/W for packets anymore
  *    (let the polling thread go to sleep).
- * 5) Once the backlog is relived (packets are processed)
+ * 5) Once the backlog is relieved (packets are processed)
  *    we reenable polling (by signalling the poll thread)
  *    only when the backlog dips below sr_poll_thres.
  * 6) sr_hiwat is used exclusively when we are not
@@ -1193,63 +1148,87 @@ mac_tx_mode_t mac_tx_mode_list[] = {
 boolean_t mac_latency_optimize = B_TRUE;
 
 /*
- * Checks the bandwidth limit governing `srs`, and refreshes its
+ * Checks all bandwidth limits governing `srs`, and refreshes their
  * bandwidth allocation if possible. This allows more packets to either enter
  * the system or to be sent down to the NIC.
  *
- * This function refreshes capacity at most once every system tick, and will
- * not refund a percentage of `mac_bw_limit` if called midway through a tick.
+ * This function refreshes each bucket every system tick, and will not refund
+ * a percentage of `mac_bw_limit` if called midway through a tick.
  *
- * Returns `B_TRUE` if packets can be dequeued.
+ * Returns `true` if packets can be dequeued.
  */
-static boolean_t
+static bool
 mac_srs_bw_try_refresh(mac_soft_ring_set_t *srs)
 {
+	bool not_limited = true;
 	const hrtime_t now = gethrtime();
-	mac_bw_ctl_t *bw = srs->srs_bw;
-	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 
-	const hrtime_t elapsed_ticks = NSEC_TO_TICK(now - bw->mac_bw_curr_time);
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
 
-	if (elapsed_ticks > 0) {
-		bw->mac_bw_used -= MIN(bw->mac_bw_limit * elapsed_ticks,
-		    bw->mac_bw_used);
-		bw->mac_bw_curr_time += TICK_TO_NSEC(elapsed_ticks);
+		const hrtime_t elapsed = now - bw->mac_bw_curr_time;
+		const hrtime_t elapsed_ticks = NSEC_TO_TICK(elapsed);
+
+		if (elapsed_ticks > 0) {
+			bw->mac_bw_used -= MIN(bw->mac_bw_limit * elapsed_ticks,
+			    bw->mac_bw_used);
+			bw->mac_bw_curr_time += TICK_TO_NSEC(elapsed_ticks);
+		}
+
+		if (!mac_bw_ctl_is_enabled(bw)) {
+			continue;
+		}
+
+		if (bw->mac_bw_used < bw->mac_bw_limit) {
+			bw->mac_bw_state &= ~BW_ENFORCED;
+		} else {
+			not_limited = false;
+		}
 	}
 
-	if (bw->mac_bw_used < bw->mac_bw_limit) {
-		bw->mac_bw_state &= ~BW_ENFORCED;
-		return (B_TRUE);
-	} else {
-		return (B_FALSE);
-	}
+	return (not_limited);
+}
+
+/*
+ * Compute the maximum number of bytes which can still be enqueued in a given
+ * bandwidth control.
+ */
+static inline ssize_t
+mac_bw_ctl_enqueue_bound(const mac_bw_ctl_t *bw)
+{
+	return (bw->mac_bw_drop_threshold - bw->mac_bw_sz);
 }
 
 /*
  * Compute the maximum number of bytes which can be enqueued onto this SRS
- * accounting for its bandwidth limit, if enabled.
+ * accounting for all enabled bandwidth limits.
  *
- * Returns whether the BW limit was active, and thus `space` contains a useful
+ * Returns whether any BW limits were active, and thus `space` contains a useful
  * count.
  */
-static boolean_t
+static bool
 mac_srs_bw_enqueue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
 {
-	const mac_bw_ctl_t *bw = srs->srs_bw;
-	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+	bool any_enabled = false;
 
-	if (!mac_bw_ctl_is_enabled(bw)) {
-		return (B_FALSE);
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		const mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (!mac_bw_ctl_is_enabled(bw)) {
+			continue;
+		}
+		const ssize_t space_here = mac_bw_ctl_enqueue_bound(bw);
+		*space = any_enabled ? MIN(*space, space_here) : space_here;
+		any_enabled = true;
 	}
 
-	*space = bw->mac_bw_drop_threshold - bw->mac_bw_sz;
-
-	return (B_TRUE);
+	return (any_enabled);
 }
 
 /*
- * Mark the bandwidth limit on `srs` as accepting `bytes` worth of data onto the
- * queue.
+ * Mark all active bandwidth limits on `srs` as accepting `bytes` worth
+ * of data onto the queue.
  *
  * `bytes` is allowed to exceed the value of `space` from
  * `mac_srs_bw_enqueue_bound` when we have a single packet and `space` is
@@ -1258,43 +1237,49 @@ mac_srs_bw_enqueue_bound(const mac_soft_ring_set_t *srs, ssize_t *space)
 static void
 mac_srs_bw_enqueue(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
-	mac_bw_ctl_t *bw = srs->srs_bw;
-	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
-
-	if (mac_bw_ctl_is_enabled(bw)) {
-		bw->mac_bw_sz += bytes;
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (mac_bw_ctl_is_enabled(bw)) {
+			bw->mac_bw_sz += bytes;
+		}
 	}
 }
 
 /*
  * Compute the maximum number of bytes which can be dequeued from this SRS
- * accounting for its bandwidth limit, if enabled.
+ * accounting for all enabled bandwidth limits.
  *
- * Returns whether the BW limit was active, and thus `space` contains a useful
+ * Returns whether any BW limits were active, and thus `space` contains a useful
  * count.
  */
-static boolean_t
+static bool
 mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, size_t *space)
 {
-	const mac_bw_ctl_t *bw = srs->srs_bw;
-	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+	bool any_enabled = false;
 
-	if (!mac_bw_ctl_is_enabled(bw)) {
-		return (B_FALSE);
-	}
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		const mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (!mac_bw_ctl_is_enabled(bw)) {
+			continue;
+		}
+		any_enabled = true;
+		if (mac_bw_ctl_is_enforced(bw)) {
+			*space = 0;
+			break;
+		}
 
-	if (mac_bw_ctl_is_enforced(bw)) {
-		*space = 0;
-	} else {
 		const ssize_t space_here = bw->mac_bw_limit - bw->mac_bw_used;
-		*space = (size_t)MAX(space_here, 0);
+		const size_t clamped = (size_t)MAX(space_here, 0);
+		*space = (i != 0) ? MIN(*space, clamped) : clamped;
 	}
 
-	return (B_TRUE);
+	return (any_enabled);
 }
 
 /*
- * Mark the active bandwidth limit on `srs` as admitting `bytes` worth
+ * Mark all active bandwidth limits on `srs` as admitting `bytes` worth
  * of data to be dequeued this tick.
  *
  * `bytes` is allowed to exceed the value of `space` returned from
@@ -1304,22 +1289,25 @@ mac_srs_bw_dequeue_bound(const mac_soft_ring_set_t *srs, size_t *space)
 static void
 mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
-	mac_bw_ctl_t *bw = srs->srs_bw;
-	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
-	if (mac_bw_ctl_is_enabled(bw)) {
-		/*
-		 * The saturating arithmetic here defends against cases where
-		 * packets are enqueued on the SRS as a control comes online. In
-		 * this case we don't walk the chains of enqueued packets across
-		 * all SRSes to retroactively fill `mac_bw_sz`, so this value
-		 * may be smaller than the bytes actually contained in the SRSes
-		 * when the control is turned on.
-		 */
-		bw->mac_bw_used += bytes;
-		bw->mac_bw_sz -= MIN(bw->mac_bw_sz, bytes);
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (mac_bw_ctl_is_enabled(bw)) {
+			/*
+			 * The saturating arithmetic here defends against cases
+			 * where packets are enqueued on the SRS as a control
+			 * comes online. In this case we don't walk the chains
+			 * of enqueued packets across all SRSes to retroactively
+			 * fill `mac_bw_sz`, so this value may be smaller than
+			 * the bytes actually contained in the SRSes when the
+			 * control is turned on.
+			 */
+			bw->mac_bw_used += bytes;
+			bw->mac_bw_sz -= MIN(bw->mac_bw_sz, bytes);
 
-		if (bw->mac_bw_used >= bw->mac_bw_limit) {
-			bw->mac_bw_state |= BW_ENFORCED;
+			if (bw->mac_bw_used >= bw->mac_bw_limit) {
+				bw->mac_bw_state |= BW_ENFORCED;
+			}
 		}
 	}
 }
@@ -1328,17 +1316,58 @@ mac_srs_bw_dequeue(const mac_soft_ring_set_t *srs, const size_t bytes)
  * Refund used credit on a set of bandwidth controls when a NIC is unable to
  * provide enough descriptors to actually carry admitted traffic, or the packets
  * are policed by a later control.
+ *
+ * Packets dropped by policy (e.g., explicit drop) should not be refunded in
+ * this way.
  */
 static void
 mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
 {
-	mac_bw_ctl_t *bw = srs->srs_bw;
-	ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
-	if (mac_bw_ctl_is_enabled(bw)) {
-		bw->mac_bw_used -= MIN(bw->mac_bw_used, bytes);
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (mac_bw_ctl_is_enabled(bw)) {
+			bw->mac_bw_used -= MIN(bw->mac_bw_used, bytes);
 
-		if (bw->mac_bw_used < bw->mac_bw_limit) {
-			bw->mac_bw_state &= ~BW_ENFORCED;
+			if (bw->mac_bw_used < bw->mac_bw_limit) {
+				bw->mac_bw_state &= ~BW_ENFORCED;
+			}
+		}
+	}
+}
+
+static inline void
+mac_srs_bw_stat_dropped(const mac_soft_ring_set_t *srs, const size_t bytes)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (mac_bw_ctl_is_enabled(bw)) {
+			bw->mac_bw_drop_bytes += bytes;
+		}
+	}
+}
+
+static inline void
+mac_srs_bw_stat_poll(const mac_soft_ring_set_t *srs, const size_t bytes)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (mac_bw_ctl_is_enabled(bw)) {
+			bw->mac_bw_polled += bytes;
+		}
+	}
+}
+
+static inline void
+mac_srs_bw_stat_intr(const mac_soft_ring_set_t *srs, const size_t bytes)
+{
+	for (size_t i = 0; i < srs->srs_bw_len; i++) {
+		mac_bw_ctl_t *bw = srs->srs_bw[i];
+		ASSERT(MUTEX_HELD(&bw->mac_bw_lock));
+		if (mac_bw_ctl_is_enabled(bw)) {
+			bw->mac_bw_intr += bytes;
 		}
 	}
 }
@@ -1364,12 +1393,12 @@ mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
 }
 
 #define	MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, head, tail, count, sz, bw) {	\
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_rx;			\
+	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_data.rx;		\
 									\
 	MAC_SRS_ENQUEUE_CHAIN(mac_srs, head, tail, count, sz);		\
-	srs_rx->sr_poll_pkt_cnt += count;				\
-	ASSERT(srs_rx->sr_poll_pkt_cnt > 0);				\
-	if ((bw)) {							\
+	atomic_add_32(&srs_rx->sr_poll_pkt_cnt, count);			\
+	ASSERT3U(srs_rx->sr_poll_pkt_cnt, >, 0);			\
+	if ((bw)) {			\
 		mac_srs_bw_enqueue((mac_srs), (sz));			\
 	}								\
 }
@@ -1388,8 +1417,10 @@ mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
 	    (SRS_POLLING_CAPAB|SRS_POLLING)) == SRS_POLLING_CAPAB) {	\
 		(mac_srs)->srs_state |= SRS_POLLING;			\
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_ring);				\
-		(mac_srs)->srs_rx.sr_poll_on++;				\
+		    (mac_srs)->srs_data.rx.sr_ring);			\
+		(mac_srs)->srs_data.rx.sr_poll_on++;			\
+		DTRACE_PROBE2(mac__poll__on, mac_soft_ring_set_t *,	\
+		    (mac_srs), bool, false);				\
 	}								\
 }
 
@@ -1400,8 +1431,10 @@ mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
 	    (SRS_POLLING_CAPAB|SRS_WORKER)) {				\
 		(mac_srs)->srs_state |= SRS_POLLING;			\
 		(void) mac_hwring_disable_intr((mac_ring_handle_t)	\
-		    (mac_srs)->srs_ring);				\
-		(mac_srs)->srs_rx.sr_worker_poll_on++;			\
+		    (mac_srs)->srs_data.rx.sr_ring);			\
+		(mac_srs)->srs_data.rx.sr_worker_poll_on++;		\
+		DTRACE_PROBE2(mac__poll__on, mac_soft_ring_set_t *,	\
+		    (mac_srs), bool, true);				\
 	}								\
 }
 
@@ -1415,7 +1448,7 @@ mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
  * if the drain was being done by the worker thread.
  */
 #define	MAC_SRS_POLL_RING(mac_srs) {					\
-	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_rx;			\
+	mac_srs_rx_t	*srs_rx = &(mac_srs)->srs_data.rx;		\
 									\
 	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
 	srs_rx->sr_poll_thr_sig++;					\
@@ -1424,6 +1457,8 @@ mac_srs_bw_refund_tx(const mac_soft_ring_set_t *srs, const size_t bytes)
 		(SRS_WORKER|SRS_POLLING_CAPAB)) {			\
 		(mac_srs)->srs_state |= SRS_GET_PKTS;			\
 		cv_signal(&(mac_srs)->srs_cv);				\
+		DTRACE_PROBE1(mac__poll__req, mac_soft_ring_set_t *,	\
+		    (mac_srs));						\
 	} else {							\
 		srs_rx->sr_poll_thr_busy++;				\
 	}								\
@@ -1443,20 +1478,21 @@ int mac_srs_worker_wakeup_ticks = 0;
 	ASSERT(MUTEX_HELD(&(mac_srs)->srs_lock));			\
 	if (!((mac_srs)->srs_state & SRS_PROC) &&			\
 		(mac_srs)->srs_tid == NULL) {				\
-		if (((mac_srs)->srs_type & SRST_LATENCY_OPT) ||		\
-			(mac_srs_worker_wakeup_ticks == 0))		\
+		if (mac_srs_is_latency_opt((mac_srs)) ||		\
+		    mac_srs_worker_wakeup_ticks == 0) {			\
 			cv_signal(&(mac_srs)->srs_async);		\
-		else							\
+		} else {						\
 			(mac_srs)->srs_tid =				\
 				timeout(mac_srs_fire, (mac_srs),	\
 					mac_srs_worker_wakeup_ticks);	\
+		}							\
 	}								\
 }
 
-#define	TX_BANDWIDTH_MODE(mac_srs)				\
-	((mac_srs)->srs_tx.st_mode == SRS_TX_BW ||		\
-	    (mac_srs)->srs_tx.st_mode == SRS_TX_BW_FANOUT ||	\
-	    (mac_srs)->srs_tx.st_mode == SRS_TX_BW_AGGR)
+#define	TX_BANDWIDTH_MODE(mac_srs)					\
+	((mac_srs)->srs_data.tx.st_mode == SRS_TX_BW ||			\
+	    (mac_srs)->srs_data.tx.st_mode == SRS_TX_BW_FANOUT ||	\
+	    (mac_srs)->srs_data.tx.st_mode == SRS_TX_BW_AGGR)
 
 #define	TX_SRS_TO_SOFT_RING(mac_srs, head, hint) {			\
 	ASSERT3U(tx_mode, !=, SRS_TX_DEFAULT);				\
@@ -1487,7 +1523,7 @@ int mac_srs_worker_wakeup_ticks = 0;
  * that.
  */
 static inline void
-mac_tx_srs_block(mac_soft_ring_set_t *srs, mblk_t *head, const boolean_t is_bw)
+mac_tx_srs_block(mac_soft_ring_set_t *srs, mblk_t *head, const bool is_bw)
 {
 	ASSERT(MUTEX_HELD(&srs->srs_lock));
 
@@ -1511,17 +1547,35 @@ mac_tx_srs_block(mac_soft_ring_set_t *srs, mblk_t *head, const boolean_t is_bw)
 	srs->srs_size += chain_sz;
 
 	if (is_bw) {
-		MAC_SRS_BW_LOCK(srs);
+		mac_srs_bw_lock(srs);
 		mac_srs_bw_refund_tx(srs, chain_sz);
-		MAC_SRS_BW_UNLOCK(srs);
+		mac_srs_bw_unlock(srs);
 	}
 
-	if (srs->srs_tx.st_woken_up) {
-		srs->srs_tx.st_woken_up = B_FALSE;
+	if (srs->srs_data.tx.st_woken_up) {
+		srs->srs_data.tx.st_woken_up = B_FALSE;
 	} else {
 		ASSERT3U(srs->srs_state & SRS_TX_BLOCKED, ==, 0);
 		srs->srs_state |= SRS_TX_BLOCKED;
-		srs->srs_tx.st_stat.mts_blockcnt++;
+		srs->srs_data.tx.st_stat.mts_blockcnt++;
+	}
+}
+
+static inline void
+mac_stash_chain_hints(mblk_t *mp_chain, const uintptr_t fanout_hint)
+{
+	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
+		if (curr->b_prev == NULL) {
+			curr->b_prev = (mblk_t *)fanout_hint;
+		}
+	}
+}
+
+static inline void
+mac_strip_chain_hints(mblk_t *mp_chain)
+{
+	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
+		curr->b_prev = NULL;
 	}
 }
 
@@ -1532,19 +1586,20 @@ mac_tx_srs_block(mac_soft_ring_set_t *srs, mblk_t *head, const boolean_t is_bw)
  * SRS_TX_HIWAT if srs_count exceeds srs_tx_hiwat.
  */
 #define	MAC_TX_SRS_TEST_HIWAT(srs, mp, tail, cnt, sz, cookie) {		\
+	mac_srs_tx_t *srs_tx = &(srs)->srs_data.tx;			\
 	boolean_t enqueue = 1;						\
 									\
-	if ((srs)->srs_count > (srs)->srs_tx.st_hiwat) {		\
+	if ((srs)->srs_count > srs_tx->st_hiwat) {			\
 		/*							\
 		 * flow-controlled. Store srs in cookie so that it	\
 		 * can be returned as mac_tx_cookie_t to client		\
 		 */							\
 		(srs)->srs_state |= SRS_TX_HIWAT;			\
 		cookie = (mac_tx_cookie_t)srs;				\
-		(srs)->srs_tx.st_hiwat_cnt++;				\
-		if ((srs)->srs_count > (srs)->srs_tx.st_max_q_cnt) {	\
+		srs_tx->st_hiwat_cnt++;					\
+		if ((srs)->srs_count > srs_tx->st_max_q_cnt) {		\
 			/* increment freed stats */			\
-			(srs)->srs_tx.st_stat.mts_sdrops += cnt;	\
+			srs_tx->st_stat.mts_sdrops += cnt;		\
 			/*						\
 			 * b_prev may be set to the fanout hint		\
 			 * hence can't use freemsg directly		\
@@ -1560,11 +1615,11 @@ mac_tx_srs_block(mac_soft_ring_set_t *srs, mblk_t *head, const boolean_t is_bw)
 }
 
 /* Some utility macros */
-#define	MAC_TX_SRS_DROP_MESSAGE(srs, chain, cookie, s) {	\
-	mac_drop_chain((chain), (s));				\
-	/* increment freed stats */				\
-	(srs)->srs_tx.st_stat.mts_sdrops++;			\
-	(cookie) = (mac_tx_cookie_t)(srs);			\
+#define	MAC_TX_SRS_DROP_MESSAGE(srs, chain, cookie, s) {		\
+	mac_drop_chain((chain), (s));					\
+	/* increment freed stats */					\
+	(srs)->srs_data.tx.st_stat.mts_sdrops++;			\
+	(cookie) = (mac_tx_cookie_t)(srs);				\
 }
 
 #define	MAC_TX_SET_NO_ENQUEUE(srs, mp_chain, ret_mp, cookie) {		\
@@ -1587,23 +1642,6 @@ uint_t mac_rx_srs_stack_toodeep;
 #ifndef STACK_GROWTH_DOWN
 #error Downward stack growth assumed.
 #endif
-
-/*
- * Drop the rx packet and advance to the next one in the chain.
- */
-static void
-mac_rx_drop_pkt(mac_soft_ring_set_t *srs, mblk_t *mp)
-{
-	mac_srs_rx_t	*srs_rx = &srs->srs_rx;
-
-	ASSERT(mp->b_next == NULL);
-	mutex_enter(&srs->srs_lock);
-	MAC_UPDATE_SRS_COUNT_LOCKED(srs, 1);
-	mutex_exit(&srs->srs_lock);
-
-	srs_rx->sr_stat.mrs_sdrops++;
-	freemsg(mp);
-}
 
 /* DATAPATH RUNTIME ROUTINES */
 
@@ -1658,12 +1696,13 @@ mac_srs_fire(void *arg)
 
 #define	COMPUTE_INDEX(key, sz)	(key % sz)
 
-#define	FANOUT_ENQUEUE_MP(head, tail, cnt, sz, sz0, mp) {		\
+#define	ENQUEUE_MP(head, tail, cnt, sz, sz0, mp) {			\
+	ASSERT3P((mp), !=, NULL);					\
 	if ((tail) != NULL) {						\
-		ASSERT((tail)->b_next == NULL);				\
+		ASSERT3P((tail)->b_next, ==, NULL);			\
 		(tail)->b_next = (mp);					\
 	} else {							\
-		ASSERT((head) == NULL);					\
+		ASSERT3P((head), ==, NULL);				\
 		(head) = (mp);						\
 	}								\
 	(tail) = (mp);							\
@@ -1675,832 +1714,154 @@ mac_srs_fire(void *arg)
 #define	MAC_FANOUT_RND_ROBIN	1
 int mac_fanout_type = MAC_FANOUT_DEFAULT;
 
-/* fanout types for port based hashing */
-typedef enum pkt_type {
-	V4_TCP = 0,
-	V4_UDP,
-	V6_TCP,
-	V6_UDP,
-	OTH,
-	UNDEF
-} pkt_type_t;
-
 /*
  * Pair of local and remote ports in the transport header
  */
-#define	PORTS_SIZE 4
-
-/*
- * This routine delivers packets destined for an SRS into one of the
- * protocol soft rings.
- *
- * Given a chain of packets we need to split it up into multiple sub
- * chains: TCP, UDP or OTH soft ring. Instead of entering the soft
- * ring one packet at a time, we want to enter it in the form of a
- * chain otherwise we get this start/stop behaviour where the worker
- * thread goes to sleep and then next packet comes in forcing it to
- * wake up.
- */
-static void
-mac_rx_srs_proto_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
-{
-	mblk_t			*headmp[ST_RING_NUM_PROTO] = { 0 };
-	mblk_t			*tailmp[ST_RING_NUM_PROTO] = { 0 };
-	int			cnt[ST_RING_NUM_PROTO] = { 0 };
-	size_t			sz[ST_RING_NUM_PROTO] = { 0 };
-	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
-
-	const boolean_t is_ether =
-	    (mcip->mci_mip->mi_info.mi_nativemedia == DL_ETHER);
-
-	/*
-	 * If we don't have a Rx ring, S/W classification would have done
-	 * its job and its a packet meant for us. If we were polling on
-	 * the default ring (i.e. there was a ring assigned to this SRS),
-	 * then we need to make sure that the mac address really belongs
-	 * to us.
-	 */
-	const boolean_t hw_classified = mac_srs->srs_ring != NULL &&
-	    mac_srs->srs_ring->mr_classify_type == MAC_HW_CLASSIFIER;
-
-	/*
-	 * Some clients, such as non-ethernet, need DLS processing in the Rx
-	 * path. Such clients clear the bypass flag. DLS bypass may also be
-	 * disabled via the MCIS_RX_BYPASS_DISABLE flag.
-	 */
-	const boolean_t dls_bypass_v4 =
-	    ((mac_srs->srs_type & SRST_DLS_BYPASS_V4) != 0) &&
-	    ((mcip->mci_state_flags & MCIS_RX_BYPASS_DISABLE) == 0);
-
-	const boolean_t dls_bypass_v6 =
-	    ((mac_srs->srs_type & SRST_DLS_BYPASS_V6) != 0) &&
-	    ((mcip->mci_state_flags & MCIS_RX_BYPASS_DISABLE) == 0);
-
-	/*
-	 * We have a chain from SRS that we need to split across the
-	 * soft rings. The squeues for the TCP and IPv4 SAPs use their
-	 * own soft rings to allow polling from the squeue. The rest of
-	 * the packets are delivered on the OTH soft ring which cannot
-	 * be polled.
-	 */
-	while (head != NULL) {
-		mac_ether_offload_info_t meoi = { 0 };
-		uint8_t ether_addr[ETHERADDRL];
-		const uint8_t *dstaddr = ether_addr;
-		mac_header_info_t non_ether_mhi;
-		boolean_t is_unicast = B_FALSE;
-
-		mblk_t *mp = head;
-		head = head->b_next;
-		mp->b_next = NULL;
-		const size_t sz1 =
-		    (mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp);
-
-		if (is_ether) {
-			uint32_t vlan_tci;
-
-			mac_ether_offload_info(mp, &meoi, NULL);
-			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0 ||
-			    !mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
-
-			DTRACE_PROBE3(srs__proto__fanout__ethertype,
-			    uint8_t, meoi.meoi_l3proto,
-			    mblk_t *, mp,
-			    mac_soft_ring_set_t *, mac_srs);
-
-			/*
-			 * Check if the VID of the packet, if any, belongs to
-			 * this client.  Technically, if this packet came up via
-			 * a HW classified ring then we don't need to perform
-			 * this check.  Perhaps a future optimization.
-			 */
-			if ((meoi.meoi_flags & MEOI_VLAN_TAGGED) != 0) {
-				ASSERT3U(meoi.meoi_l2hlen, ==,
-				    sizeof (struct ether_vlan_header));
-				ASSERT3U(vlan_tci, <=, UINT16_MAX);
-
-				if (!mac_client_check_flow_vid(mcip,
-				    VLAN_ID(vlan_tci))) {
-					mac_rx_drop_pkt(mac_srs, mp);
-					continue;
-				}
-			}
-
-			is_unicast = ((ether_addr[0] & 0x01) == 0);
-		} else {
-			if (mac_header_info((mac_handle_t)mcip->mci_mip,
-			    mp, &non_ether_mhi) != 0) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
-
-			meoi.meoi_l2hlen = non_ether_mhi.mhi_hdrsize;
-			meoi.meoi_l3proto = non_ether_mhi.mhi_bindsap;
-			meoi.meoi_flags = MEOI_L2INFO_SET;
-			(void) mac_partial_offload_info(mp, 0, &meoi);
-
-			is_unicast =
-			    (non_ether_mhi.mhi_dsttype == MAC_ADDRTYPE_UNICAST);
-			dstaddr = non_ether_mhi.mhi_daddr;
-		}
-
-		if ((!dls_bypass_v4 && meoi.meoi_l3proto == ETHERTYPE_IP) ||
-		    (!dls_bypass_v6 && meoi.meoi_l3proto == ETHERTYPE_IPV6)) {
-			DTRACE_PROBE(no__dls__bypass);
-			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
-			    mac_ether_offload_info_t *, &meoi,
-			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, OTH);
-			FANOUT_ENQUEUE_MP(headmp[OTH], tailmp[OTH], cnt[OTH],
-			    sz[OTH], sz1, mp);
-			continue;
-		}
-
-		ASSERT((meoi.meoi_flags & MEOI_L2INFO_SET) != 0);
-
-		boolean_t is_fastpath = B_FALSE;
-
-		if (meoi.meoi_l3proto == ETHERTYPE_IP ||
-		    meoi.meoi_l3proto == ETHERTYPE_IPV6) {
-			/*
-			 * If we are H/W classified, but we have promisc
-			 * on, then we need to check for the unicast address.
-			 */
-			if (hw_classified && mcip->mci_promisc_list != NULL) {
-				mac_address_t		*map;
-
-				rw_enter(&mcip->mci_rw_lock, RW_READER);
-				map = mcip->mci_unicast;
-				if (bcmp(dstaddr, map->ma_addr,
-				    map->ma_len) == 0)
-					is_fastpath = B_TRUE;
-				rw_exit(&mcip->mci_rw_lock);
-			} else if (is_unicast) {
-				is_fastpath = B_TRUE;
-			}
-		}
-
-		/*
-		 * This needs to become a contract with the driver for
-		 * the fast path.
-		 *
-		 * In the normal case the packet will have at least the L2
-		 * header and the IP + Transport header in the same mblk.
-		 * This is usually the case when the NIC driver sends up
-		 * the packet. This is also true when the stack generates
-		 * a packet that is looped back and when the stack uses the
-		 * fastpath mechanism. The normal case is optimized for
-		 * performance and may bypass DLS. All other cases go through
-		 * the 'OTH' type path without DLS bypass.
-		 */
-		if (is_fastpath) {
-			if ((meoi.meoi_flags & MEOI_L3INFO_SET) == 0 ||
-			    (meoi.meoi_flags & MEOI_L4INFO_SET) == 0) {
-				is_fastpath = B_FALSE;
-			}
-			if (DB_TYPE(mp) != M_DATA || DB_REF(mp) != 1) {
-				is_fastpath = B_FALSE;
-			}
-
-			const size_t total_hdr_len = meoi.meoi_l2hlen
-			    + meoi.meoi_l3hlen + meoi.meoi_l4hlen;
-
-			if (!OK_32PTR(mp->b_rptr + meoi.meoi_l2hlen) ||
-			    total_hdr_len > MBLKL(mp)) {
-				is_fastpath = B_FALSE;
-			}
-		}
-
-		if (!is_fastpath) {
-			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
-			    mac_ether_offload_info_t *, &meoi,
-			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, OTH);
-			FANOUT_ENQUEUE_MP(headmp[OTH], tailmp[OTH], cnt[OTH],
-			    sz[OTH], sz1, mp);
-			continue;
-		}
-
-		DTRACE_PROBE3(srs__proto__fanout__proto,
-		    uint8_t, meoi.meoi_l4proto,
-		    mblk_t *, mp,
-		    mac_soft_ring_set_t *, mac_srs);
-
-		/*
-		 * Determine the type from the IP protocol value. If classified
-		 * as TCP or UDP, then update the read pointer to the beginning
-		 * of the IP header.  Otherwise leave the message as is for
-		 * further processing by DLS.
-		 */
-		pkt_type_t type = OTH;
-		switch (meoi.meoi_l4proto) {
-		case IPPROTO_TCP:
-			type = (meoi.meoi_l3proto == ETHERTYPE_IPV6) ?
-			    V6_TCP : V4_TCP;
-			mp->b_rptr += meoi.meoi_l2hlen;
-			break;
-		case IPPROTO_UDP:
-			type = (meoi.meoi_l3proto == ETHERTYPE_IPV6) ?
-			    V6_UDP : V4_UDP;
-			mp->b_rptr += meoi.meoi_l2hlen;
-			break;
-		default:
-			break;
-		}
-
-		DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
-		    mac_ether_offload_info_t *, &meoi, mac_soft_ring_set_t *,
-		    mac_srs, pkt_type_t, type);
-		FANOUT_ENQUEUE_MP(headmp[type], tailmp[type], cnt[type],
-		    sz[type], sz1, mp);
-	}
-
-	for (pkt_type_t type = V4_TCP; type < UNDEF; type++) {
-		if (headmp[type] != NULL) {
-			mac_soft_ring_t			*softring;
-
-			ASSERT(tailmp[type]->b_next == NULL);
-			switch (type) {
-			case V4_TCP:
-				softring = mac_srs->srs_tcp_soft_rings[0];
-				break;
-			case V6_TCP:
-				softring = mac_srs->srs_tcp6_soft_rings[0];
-				break;
-			case V4_UDP:
-				softring = mac_srs->srs_udp_soft_rings[0];
-				break;
-			case V6_UDP:
-				softring = mac_srs->srs_udp6_soft_rings[0];
-				break;
-			case OTH:
-				softring = mac_srs->srs_oth_soft_rings[0];
-			}
-			mac_rx_soft_ring_process(mcip, softring,
-			    headmp[type], tailmp[type], cnt[type], sz[type]);
-		}
-	}
-}
-
-int	fanout_unaligned = 0;
-
-/*
- * The fanout routine for any clients with DLS bypass disabled or for
- * traffic classified as "other". Returns -1 on an error (drop the
- * packet due to a malformed packet), 0 on success, with values
- * written in *indx and *type.
- */
-static int
-mac_rx_srs_long_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *mp,
-    uint32_t sap, size_t hdrsize, pkt_type_t *type, uint_t *indx)
-{
-	ip6_t		*ip6h;
-	ipha_t		*ipha;
-	uint8_t		*whereptr;
-	uint_t		hash;
-	uint16_t	remlen;
-	uint8_t		nexthdr;
-	uint16_t	hdr_len;
-	uint32_t	src_val, dst_val;
-	boolean_t	modifiable = B_TRUE;
-	boolean_t	v6;
-
-	ASSERT(MBLKL(mp) >= hdrsize);
-
-	if (sap == ETHERTYPE_IPV6) {
-		v6 = B_TRUE;
-		hdr_len = IPV6_HDR_LEN;
-	} else if (sap == ETHERTYPE_IP) {
-		v6 = B_FALSE;
-		hdr_len = IP_SIMPLE_HDR_LENGTH;
-	} else {
-		*indx = 0;
-		*type = OTH;
-		return (0);
-	}
-
-	ip6h = (ip6_t *)(mp->b_rptr + hdrsize);
-	ipha = (ipha_t *)ip6h;
-
-	if ((uint8_t *)ip6h == mp->b_wptr) {
-		/*
-		 * The first mblk_t only includes the mac header.
-		 * Note that it is safe to change the mp pointer here,
-		 * as the subsequent operation does not assume mp
-		 * points to the start of the mac header.
-		 */
-		mp = mp->b_cont;
-
-		/*
-		 * Make sure the IP header points to an entire one.
-		 */
-		if (mp == NULL)
-			return (-1);
-
-		if (MBLKL(mp) < hdr_len) {
-			modifiable = (DB_REF(mp) == 1);
-
-			if (modifiable && !pullupmsg(mp, hdr_len))
-				return (-1);
-		}
-
-		ip6h = (ip6_t *)mp->b_rptr;
-		ipha = (ipha_t *)ip6h;
-	}
-
-	if (!modifiable || !(OK_32PTR((char *)ip6h)) ||
-	    ((uint8_t *)ip6h + hdr_len > mp->b_wptr)) {
-		/*
-		 * If either the IP header is not aligned, or it does not hold
-		 * the complete simple structure (a pullupmsg() is not an
-		 * option since it would result in an unaligned IP header),
-		 * fanout to the default ring.
-		 *
-		 * Note that this may cause packet reordering.
-		 */
-		*indx = 0;
-		*type = OTH;
-		fanout_unaligned++;
-		return (0);
-	}
-
-	/*
-	 * Extract next-header, full header length, and source-hash value
-	 * using v4/v6 specific fields.
-	 */
-	if (v6) {
-		remlen = ntohs(ip6h->ip6_plen);
-		nexthdr = ip6h->ip6_nxt;
-		src_val = V4_PART_OF_V6(ip6h->ip6_src);
-		dst_val = V4_PART_OF_V6(ip6h->ip6_dst);
-		/*
-		 * Do src based fanout if below tunable is set to B_TRUE or
-		 * when mac_ip_hdr_length_v6() fails because of malformed
-		 * packets or because mblks need to be concatenated using
-		 * pullupmsg().
-		 *
-		 * Perform a version check to prevent parsing weirdness...
-		 */
-		if (IPH_HDR_VERSION(ip6h) != IPV6_VERSION ||
-		    !mac_ip_hdr_length_v6(ip6h, mp->b_wptr, &hdr_len, &nexthdr,
-		    NULL)) {
-			goto src_dst_based_fanout;
-		}
-	} else {
-		hdr_len = IPH_HDR_LENGTH(ipha);
-		remlen = ntohs(ipha->ipha_length) - hdr_len;
-		nexthdr = ipha->ipha_protocol;
-		src_val = (uint32_t)ipha->ipha_src;
-		dst_val = (uint32_t)ipha->ipha_dst;
-		/*
-		 * Catch IPv4 fragment case here.  IPv6 has nexthdr == FRAG
-		 * for its equivalent case.
-		 */
-		if ((ntohs(ipha->ipha_fragment_offset_and_flags) &
-		    (IPH_MF | IPH_OFFSET)) != 0) {
-			goto src_dst_based_fanout;
-		}
-	}
-	if (remlen < MIN_EHDR_LEN)
-		return (-1);
-	whereptr = (uint8_t *)ip6h + hdr_len;
-
-	/* If the transport is one of below, we do port/SPI based fanout */
-	switch (nexthdr) {
-	case IPPROTO_TCP:
-	case IPPROTO_UDP:
-	case IPPROTO_SCTP:
-	case IPPROTO_ESP:
-		/*
-		 * If the ports or SPI in the transport header is not part of
-		 * the mblk, do src_based_fanout, instead of calling
-		 * pullupmsg().
-		 */
-		if (mp->b_cont == NULL || whereptr + PORTS_SIZE <= mp->b_wptr)
-			break;	/* out of switch... */
-		/* FALLTHRU */
-	default:
-		goto src_dst_based_fanout;
-	}
-
-	switch (nexthdr) {
-	case IPPROTO_TCP:
-		hash = HASH_ADDR(src_val, dst_val, *(uint32_t *)whereptr);
-		*indx = COMPUTE_INDEX(hash, mac_srs->srs_tcp_ring_count);
-		*type = OTH;
-		break;
-	case IPPROTO_UDP:
-	case IPPROTO_SCTP:
-	case IPPROTO_ESP:
-		if (mac_fanout_type == MAC_FANOUT_DEFAULT) {
-			hash = HASH_ADDR(src_val, dst_val,
-			    *(uint32_t *)whereptr);
-			*indx = COMPUTE_INDEX(hash,
-			    mac_srs->srs_udp_ring_count);
-		} else {
-			*indx = mac_srs->srs_ind % mac_srs->srs_udp_ring_count;
-			mac_srs->srs_ind++;
-		}
-		*type = OTH;
-		break;
-	}
-	return (0);
-
-src_dst_based_fanout:
-	hash = HASH_ADDR(src_val, dst_val, (uint32_t)0);
-	*indx = COMPUTE_INDEX(hash, mac_srs->srs_oth_ring_count);
-	*type = OTH;
-	return (0);
-}
+#define	PORTS_SIZE (sizeof (uint16_t) << 1)
 
 /*
  * This routine delivers packets destined for an SRS into a soft ring member
  * of the set.
  *
- * Given a chain of packets we need to split it up into multiple sub
- * chains: TCP, UDP or OTH soft ring. Instead of entering the soft
+ * Given a chain of packets, we need to split it up into multiple sub-chains
+ * across the set of softrings we have. Instead of entering the soft
  * ring one packet at a time, we want to enter it in the form of a
  * chain otherwise we get this start/stop behaviour where the worker
  * thread goes to sleep and then next packet comes in forcing it to
  * wake up.
  *
  * Note:
- * Since we know what is the maximum fanout possible, we create a 2D array
- * of 'softring types * MAX_SR_FANOUT' for the head, tail, cnt and sz
- * variables so that we can enter the softrings with chain. We need the
- * MAX_SR_FANOUT so we can allocate the arrays on the stack (a kmem_alloc
- * for each packet would be expensive). If we ever want to have the
- * ability to have unlimited fanout, we should probably declare a head,
- * tail, cnt, sz with each soft ring (a data struct which contains a softring
- * along with these members) and create an array of this uber struct so we
- * don't have to do kmem_alloc.
+ * Since we know what the maximum fanout possible is, we create an array
+ * of 'MAX_SR_FANOUT' for the head, tail, cnt and sz variables so that we
+ * can enter the softrings with a chain. We need the MAX_SR_FANOUT so we can
+ * allocate the arrays on the stack (a kmem_alloc for each packet would be
+ * expensive). If we ever want to have the ability to have unlimited fanout, we
+ * should probably declare a head, tail, cnt, sz with each soft ring (a data
+ * struct which contains a softring along with these members) and create an
+ * array of this uber struct so we don't have to do kmem_alloc.
  */
-
 static void
 mac_rx_srs_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *head)
 {
-	mblk_t			*headmp[ST_RING_NUM_PROTO][MAX_SR_FANOUT];
-	mblk_t			*tailmp[ST_RING_NUM_PROTO][MAX_SR_FANOUT];
-	int			cnt[ST_RING_NUM_PROTO][MAX_SR_FANOUT];
-	size_t			sz[ST_RING_NUM_PROTO][MAX_SR_FANOUT];
-	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
+	mblk_t			*headmp[MAX_SR_FANOUT] = { 0 };
+	mblk_t			*tailmp[MAX_SR_FANOUT] = { 0 };
+	int			cnt[MAX_SR_FANOUT] = { 0 };
+	size_t			sz[MAX_SR_FANOUT] = { 0 };
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 
-	const boolean_t is_ether =
-	    (mcip->mci_mip->mi_info.mi_nativemedia == DL_ETHER);
-
-	/*
-	 * If we don't have a Rx ring, S/W classification would have done
-	 * its job and its a packet meant for us. If we were polling on
-	 * the default ring (i.e. there was a ring assigned to this SRS),
-	 * then we need to make sure that the mac address really belongs
-	 * to us.
-	 */
-	const boolean_t hw_classified = mac_srs->srs_ring != NULL &&
-	    mac_srs->srs_ring->mr_classify_type == MAC_HW_CLASSIFIER;
+	const bool never_round_robin =
+	    (mac_srs->srs_type & SRST_CLIENT_POLL) != 0;
+	const bool do_round_robin = !never_round_robin &&
+	    (mac_fanout_type == MAC_FANOUT_RND_ROBIN);
 
 	/*
-	 * Some clients, such as non Ethernet, need DLS processing in the Rx
-	 * path. Such clients clear the bypass flag. DLS bypass may also be
-	 * disabled via the MCIS_RX_BYPASS_DISABLE flag, but this is only
-	 * consumed by sun4v vsw currently.
+	 * Softrings can be created/destroyed, but only under Rx quiescence.
+	 * Being here *requires* that `SRS_PROC` is set, which prohibits the
+	 * worker thread from upgrading `SRS_QUIESCE` to `SRS_QUIESCE_DONE`, and
+	 * thus the quiesce cannot yet proceed. Because of this it is fine to
+	 * access the soft ring count and rings themselves without `srs_lock`.
 	 */
-	const boolean_t dls_bypass_v4 =
-	    ((mac_srs->srs_type & SRST_DLS_BYPASS_V4) != 0) &&
-	    ((mcip->mci_state_flags & MCIS_RX_BYPASS_DISABLE) == 0);
-
-	const boolean_t dls_bypass_v6 =
-	    ((mac_srs->srs_type & SRST_DLS_BYPASS_V6) != 0) &&
-	    ((mcip->mci_state_flags & MCIS_RX_BYPASS_DISABLE) == 0);
-
-	/*
-	 * Since the softrings are never destroyed and we always
-	 * create equal number of softrings for TCP, UDP and rest,
-	 * its OK to check one of them for count and use it without
-	 * any lock. In future, if soft rings get destroyed because
-	 * of reduction in fanout, we will need to ensure that happens
-	 * behind the SRS_PROC.
-	 */
-	const int fanout_cnt = mac_srs->srs_tcp_ring_count;
-
-	bzero(headmp, sizeof (headmp));
-	bzero(tailmp, sizeof (tailmp));
-	bzero(cnt, sizeof (cnt));
-	bzero(sz, sizeof (sz));
+	const uint32_t fanout_cnt = mac_srs->srs_soft_ring_count;
 
 	/*
 	 * We got a chain from SRS that we need to send to the soft rings.
-	 * Since squeues for TCP & IPv4 SAP poll their soft rings (for
-	 * performance reasons), we need to separate out v4_tcp, v4_udp
-	 * and the rest goes in other.
+	 * Use protocol information to derive the flow hash of each for this
+	 * purpose. If there are client flow bindings which poll the softrings,
+	 * then they are often reliant on the hash being consistent for any
+	 * given flow to maintain SQueue bindings or similar.
 	 */
 	while (head != NULL) {
-		mac_ether_offload_info_t meoi = { 0 };
-		uint8_t ether_addr[ETHERADDRL];
-		const uint8_t *dstaddr = ether_addr;
-		mac_header_info_t non_ether_mhi;
-		pkt_type_t type;
-		uint_t indx;
-		boolean_t is_unicast = B_FALSE;
+		uint_t indx = 0;
+
+		if (unlikely(do_round_robin)) {
+			indx = (srs_rx->sr_ind++) % fanout_cnt;
+			goto enqueue;
+		}
 
 		mblk_t *mp = head;
 		head = head->b_next;
 		mp->b_next = NULL;
-		const size_t sz1 =
-		    (mp->b_cont == NULL) ? MBLKL(mp) : msgdsize(mp);
 
-		if (is_ether) {
-			uint32_t vlan_tci;
+		const ssize_t l2hlen = meoi_fast_l2hlen(mp);
+		const ssize_t l3hlen = meoi_fast_l3hlen(mp);
+		const ssize_t l4hlen = meoi_fast_l4hlen(mp);
+		ASSERT3S(l2hlen, >=, 0);
+		const size_t total_hdr_len = l2hlen +
+		    MAX(0, l3hlen) + MAX(0, l4hlen);
 
-			/*
-			 * At this point we can be sure the packet at least
-			 * has an ether header.
-			 */
-			mac_ether_offload_info(mp, &meoi, NULL);
-			if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0 ||
-			    !mac_ether_l2_info(mp, ether_addr, &vlan_tci)) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
-
-			DTRACE_PROBE3(srs__fanout__ethertype,
-			    uint8_t, meoi.meoi_l3proto,
-			    mblk_t *, mp,
-			    mac_soft_ring_set_t *, mac_srs);
-
-
-			/*
-			 * Check if the VID of the packet, if any, belongs to
-			 * this client.  Technically, if this packet came up via
-			 * a HW classified ring then we don't need to perform
-			 * this check.  Perhaps a future optimization.
-			 */
-			if ((meoi.meoi_flags & MEOI_VLAN_TAGGED) != 0) {
-				ASSERT3U(meoi.meoi_l2hlen, ==,
-				    sizeof (struct ether_vlan_header));
-				ASSERT3U(vlan_tci, <=, UINT16_MAX);
-
-				if (!mac_client_check_flow_vid(mcip,
-				    VLAN_ID(vlan_tci))) {
-					mac_rx_drop_pkt(mac_srs, mp);
-					continue;
-				}
-			}
-
-			is_unicast = (ether_addr[0] & 0x01) == 0;
-		} else {
-			if (mac_header_info((mac_handle_t)mcip->mci_mip,
-			    mp, &non_ether_mhi) != 0) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
-
-			meoi.meoi_l2hlen = non_ether_mhi.mhi_hdrsize;
-			meoi.meoi_l3proto = non_ether_mhi.mhi_bindsap;
-			meoi.meoi_flags = MEOI_L2INFO_SET;
-			(void) mac_partial_offload_info(mp, 0, &meoi);
-
-			is_unicast =
-			    (non_ether_mhi.mhi_dsttype == MAC_ADDRTYPE_UNICAST);
-			dstaddr = non_ether_mhi.mhi_daddr;
-		}
-
-		if ((!dls_bypass_v4 && meoi.meoi_l3proto == ETHERTYPE_IP) ||
-		    (!dls_bypass_v6 && meoi.meoi_l3proto == ETHERTYPE_IPV6)) {
-			DTRACE_PROBE(no__dls__bypass);
-			if (mac_rx_srs_long_fanout(mac_srs, mp,
-			    meoi.meoi_l3proto, meoi.meoi_l2hlen,
-			    &type, &indx) == -1) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
-
-			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
-			    mac_ether_offload_info_t *, &meoi,
-			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, type);
-			FANOUT_ENQUEUE_MP(headmp[type][indx],
-			    tailmp[type][indx], cnt[type][indx],
-			    sz[type][indx], sz1, mp);
-			continue;
+		/*
+		 * The stack should have ensured by this point that all packets
+		 * are MEOI'd and have L3 correctly aligned.
+		 */
+		ASSERT3U(total_hdr_len, <=, MBLKL(mp));
+		const int32_t l3proto = meoi_fast_l3proto(mp);
+		const int16_t l4proto = meoi_fast_l4proto(mp);
+		if (unlikely(l3proto < 0 || l3hlen < 0)) {
+			/* Go out on softring 0, can't even do addr fanout. */
+			goto enqueue;
 		}
 
 		/*
-		 * While MEOI is unable to parse ESP headers, for the purposes
-		 * of classification here, we treat such packets like UDP, so we
-		 * can grant it a reprieve here.  This is acceptable since we
-		 * will not go rooting around in the ESP headers.
+		 * Direct access to the L3/L4 headers will fall safely within
+		 * the mblk.
 		 */
-		if ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
-		    (meoi.meoi_flags & MEOI_L4INFO_SET) == 0 &&
-		    meoi.meoi_l4proto == IPPROTO_ESP) {
-			/* ESP header should consist of at least 8 octets */
-			meoi.meoi_l4hlen = 8;
-			meoi.meoi_flags |= MEOI_L4INFO_SET;
+		uint_t hash = 0;
+		uint32_t ports = 0;
+		const ipha_t *ipha = (ipha_t *)(mp->b_rptr + l2hlen);
+		const ip6_t *ip6 = (ip6_t *)(mp->b_rptr + l2hlen);
+
+		if (unlikely(l4proto < 0 || l4hlen < 0)) {
+			goto compute_index;
 		}
-
-		/*
-		 * If we are using the default Rx ring where H/W or S/W
-		 * classification has not happened, we need to verify if
-		 * this unicast packet really belongs to us.
-		 */
-		boolean_t is_fastpath = B_FALSE;
-		if (meoi.meoi_l3proto == ETHERTYPE_IP ||
-		    meoi.meoi_l3proto == ETHERTYPE_IPV6) {
-			/*
-			 * If we are H/W classified, but we have promisc
-			 * on, then we need to check for the unicast address.
-			 */
-			if (hw_classified && mcip->mci_promisc_list != NULL) {
-				mac_address_t		*map;
-
-				rw_enter(&mcip->mci_rw_lock, RW_READER);
-				map = mcip->mci_unicast;
-				if (bcmp(dstaddr, map->ma_addr,
-				    map->ma_len) == 0)
-					is_fastpath = B_TRUE;
-				rw_exit(&mcip->mci_rw_lock);
-			} else if (is_unicast) {
-				is_fastpath = B_TRUE;
-			}
-		}
-
-		/*
-		 * Verify that the requirements for taking the fast path are all
-		 * still met.  This needs to become a contract with the driver.
-		 */
-		if (is_fastpath) {
-			if ((meoi.meoi_flags & MEOI_L3INFO_SET) == 0 ||
-			    (meoi.meoi_flags & MEOI_L4INFO_SET) == 0) {
-				is_fastpath = B_FALSE;
-			}
-			if (DB_TYPE(mp) != M_DATA || DB_REF(mp) != 1) {
-				is_fastpath = B_FALSE;
-			}
-
-			const size_t total_hdr_len = meoi.meoi_l2hlen
-			    + meoi.meoi_l3hlen + meoi.meoi_l4hlen;
-
-			if (!OK_32PTR(mp->b_rptr + meoi.meoi_l2hlen) ||
-			    total_hdr_len > MBLKL(mp)) {
-				is_fastpath = B_FALSE;
-			}
-
-			if ((meoi.meoi_flags &
-			    (MEOI_L3_FRAG_MORE | MEOI_L3_FRAG_OFFSET)) != 0) {
-				is_fastpath = B_FALSE;
-			}
-		}
-		switch (meoi.meoi_l4proto) {
+		switch (l4proto) {
 		case IPPROTO_TCP:
 		case IPPROTO_UDP:
 		case IPPROTO_SCTP:
 		case IPPROTO_ESP:
-			if (is_fastpath) {
-				/*
-				 * Since the above checks ensure that the first
-				 * mblk covers the L2-L4 headers, we can be
-				 * confident that the "ports" portion of the
-				 * hashing payload is covered too.
-				 */
-				ASSERT3U(meoi.meoi_l4hlen, >=, PORTS_SIZE);
-			}
+			/*
+			 * Since the above checks ensure that the first
+			 * mblk covers the L2-L4 headers, we can be
+			 * confident that the "ports" portion of the
+			 * hashing payload is covered too.
+			 */
+			ASSERT3U(l4hlen, >=, PORTS_SIZE);
+			ports = *(uint32_t *)(mp->b_rptr + l2hlen + l3hlen);
+			DTRACE_PROBE3(srs__fanout__proto,
+			    uint8_t, l4proto,
+			    mblk_t *, mp,
+			    mac_soft_ring_set_t *, mac_srs);
 			break;
 		default:
 			DTRACE_PROBE3(srs__fanout__unhandled__proto,
-			    uint8_t, meoi.meoi_l4proto,
+			    uint8_t, l4proto,
 			    mblk_t *, mp,
 			    mac_soft_ring_set_t *, mac_srs);
-			is_fastpath = B_FALSE;
 			break;
 		}
 
-		if (!is_fastpath) {
-			if (mac_rx_srs_long_fanout(mac_srs, mp,
-			    meoi.meoi_l3proto, meoi.meoi_l2hlen,
-			    &type, &indx) == -1) {
-				mac_rx_drop_pkt(mac_srs, mp);
-				continue;
-			}
+		ASSERT3S(l3proto, >=, 0);
 
-			DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
-			    mac_ether_offload_info_t *, &meoi,
-			    mac_soft_ring_set_t *, mac_srs, pkt_type_t, type);
-			FANOUT_ENQUEUE_MP(headmp[type][indx],
-			    tailmp[type][indx], cnt[type][indx],
-			    sz[type][indx], sz1, mp);
-			continue;
+compute_index:
+		if (l3proto == ETHERTYPE_IP) {
+			hash = HASH_ADDR(ipha->ipha_src, ipha->ipha_dst, ports);
+		} else if (l3proto == ETHERTYPE_IPV6) {
+			hash = HASH_ADDR6(ip6->ip6_src, ip6->ip6_dst, ports);
+		} else {
+			hash = HASH_HINT(ports);
 		}
-
-		DTRACE_PROBE3(srs__fanout__proto,
-		    uint8_t, meoi.meoi_l4proto,
-		    mblk_t *, mp,
-		    mac_soft_ring_set_t *, mac_srs);
-
-		/*
-		 * By now, the fastpath requirements ensure that direct access
-		 * to the L3/L4 headers will fall safely within the mblk.
-		 */
-		const ipha_t *ipha = (ipha_t *)(mp->b_rptr + meoi.meoi_l2hlen);
-		const ip6_t *ip6 = (ip6_t *)(mp->b_rptr + meoi.meoi_l2hlen);
-		const uint32_t *ports = (uint32_t *)
-		    (mp->b_rptr + meoi.meoi_l2hlen + meoi.meoi_l3hlen);
-
-		/*
-		 * XXX-Sunay: We should hold srs_lock since ring_count
-		 * below can change. But if we are always called from
-		 * mac_rx_srs_drain and SRS_PROC is set, then we can
-		 * enforce that ring_count can't be changed i.e.
-		 * to change fanout type or ring count, the calling
-		 * thread needs to be behind SRS_PROC.
-		 */
-		uint_t hash;
-		switch (meoi.meoi_l4proto) {
-		case IPPROTO_TCP:
-			/*
-			 * Note that for ESP, we fanout on SPI and it is at the
-			 * same offset as the 2x16-bit ports. So it is clumped
-			 * along with TCP, UDP and SCTP.
-			 */
-			if (meoi.meoi_l3proto == ETHERTYPE_IP) {
-				hash = HASH_ADDR(ipha->ipha_src, ipha->ipha_dst,
-				    *ports);
-				type = V4_TCP;
-			}
-			if (meoi.meoi_l3proto == ETHERTYPE_IPV6) {
-				hash = HASH_ADDR6(ip6->ip6_src, ip6->ip6_dst,
-				    *ports);
-				type = V6_TCP;
-			}
-			indx = COMPUTE_INDEX(hash, mac_srs->srs_tcp_ring_count);
-			mp->b_rptr += meoi.meoi_l2hlen;
-			break;
-		case IPPROTO_UDP:
-		case IPPROTO_SCTP:
-		case IPPROTO_ESP:
-			if (mac_fanout_type == MAC_FANOUT_DEFAULT) {
-				if (meoi.meoi_l3proto == ETHERTYPE_IP) {
-					hash = HASH_ADDR(ipha->ipha_src,
-					    ipha->ipha_dst, *ports);
-				}
-				if (meoi.meoi_l3proto == ETHERTYPE_IPV6) {
-					hash = HASH_ADDR6(ip6->ip6_src,
-					    ip6->ip6_dst, *ports);
-				}
-				indx = COMPUTE_INDEX(hash,
-				    mac_srs->srs_udp_ring_count);
-			} else {
-				indx = mac_srs->srs_ind %
-				    mac_srs->srs_udp_ring_count;
-				mac_srs->srs_ind++;
-			}
-			type = (meoi.meoi_l3proto == ETHERTYPE_IPV6) ?
-			    V6_UDP : V4_UDP;
-			mp->b_rptr += meoi.meoi_l2hlen;
-			break;
-		default:
-			indx = 0;
-			type = OTH;
-		}
-
-		DTRACE_PROBE4(rx__fanout, mblk_t *, mp,
-		    mac_ether_offload_info_t *, &meoi, mac_soft_ring_set_t *,
-		    mac_srs, pkt_type_t, type);
-		FANOUT_ENQUEUE_MP(headmp[type][indx], tailmp[type][indx],
-		    cnt[type][indx], sz[type][indx], sz1, mp);
+		indx = COMPUTE_INDEX(hash, fanout_cnt);
+enqueue:
+		ENQUEUE_MP(headmp[indx], tailmp[indx], cnt[indx], sz[indx],
+		    mp_len(mp), mp);
 	}
 
-	for (pkt_type_t type = V4_TCP; type < UNDEF; type++) {
-		for (int i = 0; i < fanout_cnt; i++) {
-			if (headmp[type][i] != NULL) {
-				mac_soft_ring_t	*softring;
+	for (uint32_t i = 0; i < fanout_cnt; i++) {
+		if (headmp[i] != NULL) {
+			mac_soft_ring_t	*softring = mac_srs->srs_soft_rings[i];
 
-				ASSERT(tailmp[type][i]->b_next == NULL);
-				switch (type) {
-				case V4_TCP:
-					softring =
-					    mac_srs->srs_tcp_soft_rings[i];
-					break;
-				case V6_TCP:
-					softring =
-					    mac_srs->srs_tcp6_soft_rings[i];
-					break;
-				case V4_UDP:
-					softring =
-					    mac_srs->srs_udp_soft_rings[i];
-					break;
-				case V6_UDP:
-					softring =
-					    mac_srs->srs_udp6_soft_rings[i];
-					break;
-				case OTH:
-					softring =
-					    mac_srs->srs_oth_soft_rings[i];
-					break;
-				}
-				mac_rx_soft_ring_process(mcip,
-				    softring, headmp[type][i], tailmp[type][i],
-				    cnt[type][i], sz[type][i]);
-			}
+			ASSERT3P(tailmp[i]->b_next, ==, NULL);
+			mac_rx_soft_ring_process(softring,
+			    headmp[i], tailmp[i], cnt[i], sz[i]);
 		}
 	}
 }
@@ -2524,12 +1885,9 @@ mac_rx_srs_poll_ring(mac_soft_ring_set_t *mac_srs)
 {
 	kmutex_t		*lock = &mac_srs->srs_lock;
 	kcondvar_t		*async = &mac_srs->srs_cv;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
-	mblk_t			*head, *tail, *mp;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 	callb_cpr_t		cprinfo;
 	ssize_t			bytes_to_pickup;
-	size_t			sz;
-	uint_t			count;
 	mac_client_impl_t	*smcip;
 	boolean_t		is_bw;
 
@@ -2548,6 +1906,7 @@ start:
 		if (mac_srs->srs_state & SRS_PAUSE)
 			goto done;
 
+		bool is_bw = mac_srs_is_bw_controlled(mac_srs);
 check_again:
 		is_bw = mac_srs_is_bw_controlled(mac_srs);
 		if (is_bw) {
@@ -2559,7 +1918,7 @@ check_again:
 			 * upto the max allowed packets at the same time
 			 * but that should be OK.
 			 */
-			MAC_SRS_BW_LOCK(mac_srs);
+			mac_srs_bw_lock(mac_srs);
 			if (!mac_srs_bw_enqueue_bound(mac_srs,
 			    &bytes_to_pickup)) {
 				bytes_to_pickup = max_bytes_to_pickup;
@@ -2573,7 +1932,7 @@ check_again:
 			if (bytes_to_pickup < 0) {
 				bytes_to_pickup = 0;
 			}
-			MAC_SRS_BW_UNLOCK(mac_srs);
+			mac_srs_bw_unlock(mac_srs);
 		} else {
 			/*
 			 * ToDO: Need to change the polling API
@@ -2598,23 +1957,28 @@ check_again:
 			bytes_to_pickup = max_bytes_to_pickup;
 		}
 
-		/* Poll the underlying Hardware */
+		/* Poll the underlying hardware */
 		mutex_exit(lock);
-		head = MAC_HWRING_POLL(mac_srs->srs_ring, (int)bytes_to_pickup);
+		mblk_t *head = MAC_HWRING_POLL(srs_rx->sr_ring,
+		    (int)bytes_to_pickup);
 		mutex_enter(lock);
 
-		ASSERT((mac_srs->srs_state & SRS_POLL_THR_OWNER) ==
+		ASSERT3U(mac_srs->srs_state & SRS_POLL_THR_OWNER, ==,
 		    SRS_POLL_THR_OWNER);
 
-		mp = tail = head;
-		count = 0;
-		sz = 0;
+		mblk_t *tail = head;
+		mblk_t *mp = head;
+		uint32_t count = 0;
+		size_t sz = 0;
 		while (mp != NULL) {
 			tail = mp;
-			sz += msgdsize(mp);
+			sz += mp_len(mp);
 			mp = mp->b_next;
 			count++;
 		}
+
+		DTRACE_PROBE3(mac__poll__get, mac_soft_ring_set_t *, mac_srs,
+		    uint32_t, count, size_t, sz);
 
 		if (head != NULL) {
 			tail->b_next = NULL;
@@ -2624,9 +1988,9 @@ check_again:
 			SRS_RX_STAT_UPDATE(mac_srs, pollcnt, count);
 
 			if (is_bw) {
-				MAC_SRS_BW_LOCK(mac_srs);
-				mac_srs->srs_bw->mac_bw_polled += sz;
-				MAC_SRS_BW_UNLOCK(mac_srs);
+				mac_srs_bw_lock(mac_srs);
+				mac_srs_bw_stat_poll(mac_srs, sz);
+				mac_srs_bw_unlock(mac_srs);
 			}
 
 			if (count <= 10)
@@ -2672,12 +2036,12 @@ check_again:
 
 			if (head != NULL) {
 				if (is_bw) {
-					MAC_SRS_BW_LOCK(mac_srs);
+					mac_srs_bw_lock(mac_srs);
 				}
 				MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, head, tail,
 				    count, sz, is_bw);
 				if (is_bw) {
-					MAC_SRS_BW_UNLOCK(mac_srs);
+					mac_srs_bw_unlock(mac_srs);
 				}
 			}
 		}
@@ -2702,15 +2066,16 @@ check_again:
 		 * that SRS_WORKER flag remains set as long as its
 		 * processing the queue.
 		 */
-		if (!(mac_srs->srs_state & SRS_WORKER) &&
-		    (mac_srs->srs_first != NULL)) {
+		const bool worker_live = (mac_srs->srs_state & SRS_WORKER) != 0;
+		if (!worker_live && mac_srs->srs_first != NULL) {
 			/*
 			 * We have packets to process and worker thread
 			 * is not running. Check to see if poll thread is
 			 * allowed to process.
 			 */
-			if (mac_srs->srs_type & SRST_LATENCY_OPT) {
-				mac_srs->srs_drain_func(mac_srs, SRS_POLL_PROC);
+			if (mac_srs_is_latency_opt(mac_srs)) {
+				mac_srs_drain_rx_complete(mac_srs,
+				    SRS_POLL_PROC);
 				if (!(mac_srs->srs_state & SRS_PAUSE) &&
 				    srs_rx->sr_poll_pkt_cnt <=
 				    srs_rx->sr_lowat) {
@@ -2750,23 +2115,31 @@ check_again:
 				MAC_SRS_WORKER_WAKEUP(mac_srs);
 				srs_rx->sr_poll_sig_worker++;
 			}
-		} else if ((mac_srs->srs_first == NULL) &&
-		    !(mac_srs->srs_state & SRS_WORKER)) {
+		} else if (mac_srs->srs_first == NULL) {
 			/*
-			 * There is nothing queued in SRS and
-			 * no worker thread running. Plus we
+			 * TODO(ky): this is patching over some other issue with
+			 * pollthread deactivation when a worker is present.
+			 * audit and think through.
+			 *
+			 * Formerly this branch required !worker_live, and
+			 * cleared SRS_PROC|SRS_GET_PKTS.
+			 */
+
+			/*
+			 * There is nothing queued in SRS, plus we
 			 * didn't get anything from the H/W
 			 * as well (head == NULL);
 			 */
-			ASSERT(head == NULL);
-			mac_srs->srs_state &=
+			ASSERT3P(head, ==, NULL);
+			mac_srs->srs_state &= worker_live ?
+			    ~SRS_GET_PKTS :
 			    ~(SRS_PROC|SRS_GET_PKTS);
 
 			/*
 			 * If we have a packets in soft ring, don't allow
 			 * more packets to come into this SRS by keeping the
 			 * interrupts off but not polling the H/W. The
-			 * poll thread will get signaled as soon as
+			 * poll thread will get signalled as soon as
 			 * srs_poll_pkt_cnt dips below poll threshold.
 			 */
 			if (srs_rx->sr_poll_pkt_cnt == 0) {
@@ -2787,9 +2160,9 @@ check_again:
 			}
 		} else {
 			/*
-			 * Worker thread is already running.
-			 * Nothing much to do. If the polling
-			 * was enabled, worker thread will deal
+			 * Worker thread is already running and there are
+			 * packets for it to handle. Nothing much to do.
+			 * If the polling was enabled, worker thread will deal
 			 * with that.
 			 */
 			mac_srs->srs_state &= ~SRS_GET_PKTS;
@@ -2807,7 +2180,7 @@ done:
 	while (!(mac_srs->srs_state & (SRS_CONDEMNED | SRS_POLL_THR_RESTART)))
 		cv_wait(async, lock);
 	if (mac_srs->srs_state & SRS_POLL_THR_RESTART) {
-		ASSERT(!(mac_srs->srs_state & SRS_CONDEMNED));
+		ASSERT3U(mac_srs->srs_state & SRS_CONDEMNED, ==, 0);
 		mac_srs->srs_state &=
 		    ~(SRS_POLL_THR_QUIESCED | SRS_POLL_THR_RESTART);
 		cv_signal(&mac_srs->srs_async);
@@ -2832,7 +2205,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 {
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 	size_t admit_at_most = 0;
-	const boolean_t is_limited = mac_srs_bw_dequeue_bound(mac_srs,
+	const bool is_limited = mac_srs_bw_dequeue_bound(mac_srs,
 	    &admit_at_most);
 
 	/*
@@ -2860,7 +2233,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	ASSERT(is_limited);
 
 	if (admit_at_most == 0) {
-		/* Our bandwidth control is at/over capacity. */
+		/* One or more of our bandwidth controls is at/over capacity. */
 		*chain_tail = NULL;
 		*chain_cnt = 0;
 		*chain_sz = 0;
@@ -2881,7 +2254,7 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	mblk_t *mp = NULL;
 
 	while ((mp = mac_srs->srs_first) != NULL) {
-		const size_t sz = msgdsize(mp);
+		const size_t sz = mp_len(mp);
 
 		if (tsz + sz > admit_at_most && cnt != 0)
 			break;
@@ -2921,6 +2294,886 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
 	return (head);
 }
 
+static inline __attribute__((always_inline)) void
+mac_rx_srs_deliver(mac_soft_ring_set_t *mac_srs, mac_pkt_list_t *list)
+{
+	if (!mac_pkt_list_is_empty(list)) {
+		ASSERT3U(mac_srs->srs_soft_ring_count, !=, 0);
+		if (mac_srs->srs_soft_ring_count > 1) {
+			mac_rx_srs_fanout(mac_srs, list->mpl_head);
+		} else {
+			mac_rx_soft_ring_process(mac_srs->srs_soft_rings[0],
+			    list->mpl_head, list->mpl_tail, list->mpl_count,
+			    list->mpl_size);
+		}
+		list->mpl_head = NULL;
+		list->mpl_tail = NULL;
+		list->mpl_count = 0;
+		list->mpl_size = 0;
+	}
+}
+
+
+/*
+ * Ensure that a network packet is in general fastpath eligible, and drop
+ * any non-data STREAMS messages. This entails:
+ *  - Ensuring that L2/3/4 headers are contiguous.
+ *  - Ensuring that L3 headers are 4B-aligned.
+ *  - Ensuring the header-containing mblks are owned.
+ *  - Packets have MEOI inserted for flow resolution.
+ *
+ * Takes ownership of the passed in mblk_t, freeing it and allocating another
+ * if a pullup is required.
+ *
+ * Doing this requires extra work when the driver cannot fill in this info. This
+ * should be limited to use only *after* packets have been handed off to the
+ * SRS, so as not to impact pure-polling work.
+ */
+mblk_t *
+mac_standardise_pkt(const mac_client_impl_t *mcip, mblk_t *mp)
+{
+	ASSERT3P(mcip, !=, NULL);
+	ASSERT3P(mp, !=, NULL);
+	ASSERT3P(mp->b_next, ==, NULL);
+
+	if (DB_TYPE(mp) != M_DATA) {
+		mac_drop_pkt(mp,
+		    "network packets must have type M_DATA, saw %d",
+		    DB_TYPE(mp));
+		return (NULL);
+	}
+
+	const bool is_ether =
+	    (mcip->mci_mip->mi_info.mi_nativemedia == DL_ETHER);
+	bool force_set_info = false;
+	mac_ether_offload_info_t meoi = { 0 };
+	mac_ether_offload_info_t inner_meoi = { 0 };
+	if (likely(is_ether)) {
+		mac_ether_offload_info(mp, &meoi, &inner_meoi);
+	} else {
+		mac_header_info_t non_ether_mhi;
+		if (mac_header_info((mac_handle_t)mcip->mci_mip,
+		    mp, &non_ether_mhi) != 0) {
+			mac_drop_pkt(mp, "illegal L2 info");
+			return (NULL);
+		}
+		meoi.meoi_l2hlen = non_ether_mhi.mhi_hdrsize;
+		meoi.meoi_l3proto = non_ether_mhi.mhi_bindsap;
+		meoi.meoi_flags = MEOI_L2INFO_SET;
+		(void) mac_partial_offload_info(mp, 0, &meoi);
+		meoi.meoi_tuntype = mac_ether_tun_type(mp);
+		force_set_info = true;
+	}
+
+	if ((meoi.meoi_flags & MEOI_L2INFO_SET) == 0) {
+		mac_drop_pkt(mp, "illegal L2 info");
+		return (NULL);
+	}
+	size_t needed_len = meoi.meoi_l2hlen;
+	if ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0) {
+		needed_len += meoi.meoi_l3hlen;
+	}
+	if ((meoi.meoi_flags & MEOI_L4INFO_SET) != 0) {
+		needed_len += meoi.meoi_l4hlen;
+	} else if ((meoi.meoi_flags & MEOI_L3INFO_SET) != 0 &&
+	    meoi.meoi_l4proto == IPPROTO_ESP) {
+		/*
+		 * While MEOI is unable to parse ESP headers, for the purposes
+		 * of classification here, we treat such packets like UDP, so we
+		 * can grant it a reprieve here.  This is acceptable since we
+		 * will not go rooting around in the ESP headers.
+		 *
+		 * ESP header should consist of at least 8 octets
+		 */
+		meoi.meoi_l4hlen = 8;
+		meoi.meoi_flags |= MEOI_L4INFO_SET;
+		needed_len += meoi.meoi_l4hlen;
+	}
+	const size_t head_len = MBLKL(mp);
+	const uint8_t *l3_start = mp->b_rptr + meoi.meoi_l2hlen;
+
+	/*
+	 * x86 doesn't require alignment for us to pull out addresses and ports
+	 * in classification and hash computation. Clients like IP may have
+	 * stricter requirements, but make their own determination as to whether
+	 * they need to pullup.
+	 */
+#if defined(__i386__) || defined(__amd64__)
+	const bool need_align = false;
+#else
+	const bool need_align = !OK_32PTR(l3_start);
+#endif
+
+	/*
+	 * Enforce parsed headers are all contiguous. If we're doing a pullup
+	 * for any reason, make sure that we can guarantee L3+ alignment since
+	 * we're copying out these bytes anyway.
+	 */
+	if (DB_REF(mp) > 1 || need_align || head_len < needed_len) {
+		const size_t pad = (4 - (meoi.meoi_l2hlen % 4)) % 4;
+		mblk_t *new_mp = msgpullup_pad(mp, needed_len, pad);
+		if (new_mp != NULL) {
+			if (DB_CKSUMFLAGS(mp) != 0) {
+				mac_hcksum_clone(mp, new_mp);
+			}
+			freemsg(mp);
+			mp = new_mp;
+		} else {
+			freemsg(mp);
+			return (NULL);
+		}
+	}
+
+	/*
+	 * Assume that if any info is set, the client should be trusted to have
+	 * filled out all relevant information.
+	 */
+	if (force_set_info || !mac_ether_any_set_pktinfo(mp)) {
+		mac_ether_set_pktinfo(mp, &meoi,
+		    ((meoi.meoi_tuntype == METT_NONE) ? NULL :
+		    &inner_meoi));
+	}
+
+	return (mp);
+}
+
+/*
+ * Ensure that a set of packets meet the constraints described in
+ * `mac_standardise_pkt`.
+ *
+ * Callers must check the packet count on `set` before/after this function is
+ * called to determine whether any packets were dropped, especially where SRS
+ * state and poll packet counts are concerned.
+ */
+static inline void
+mac_standardise_pkts(const mac_client_impl_t *mcip, mac_pkt_list_t *set,
+    mblk_t *mp)
+{
+	/*
+	 * Called on *entry* to mac_rx_srs_drain. All packets should be as-yet
+	 * unclassified in this flowtree.
+	 */
+	while (mp != NULL) {
+		mblk_t *curr = mp;
+		mp = mp->b_next;
+		curr->b_next = NULL;
+
+		mblk_t *processed = mac_standardise_pkt(mcip, curr);
+		if (processed == NULL) {
+			continue;
+		}
+		mac_pkt_list_append(set, processed);
+	}
+}
+
+/*
+ * Determine whether a packet matches a target subflow, in the context of a
+ * flowtree walk. Subflows matched using this function are more expensive,
+ * as they do not rely on MEOI parse information.
+ *
+ * This code duplicates `mac_flow_lookup`, and should be retired once all
+ * subflows can be represented as `mac_flow_match_t`s.
+ */
+static bool
+mac_subflow_is_match(flow_entry_t *flent, mblk_t *mp)
+{
+	flow_state_t	s;
+	boolean_t	retried = B_FALSE;
+	int		i, err;
+
+	s.fs_flags = FLOW_INBOUND;
+retry:
+	s.fs_mp = mp;
+
+	ASSERT3P(flent, !=, NULL);
+	mac_client_impl_t *mcip = (mac_client_impl_t *)flent->fe_mcip;
+	ASSERT3P(mcip, !=, NULL);
+	flow_tab_t *ft = mcip->mci_subflow_tab;
+	ASSERT3P(ft, !=, NULL);
+	flow_ops_t *ops = &ft->ft_ops;
+
+	/*
+	 * Walk the list of predeclared accept functions.
+	 * Each of these would accumulate enough state to allow the next
+	 * accept routine to make progress.
+	 */
+	for (i = 0; i < FLOW_MAX_ACCEPT && ops->fo_accept[i] != NULL; i++) {
+		if ((err = (ops->fo_accept[i])(ft, &s)) != 0) {
+			mblk_t	*last;
+
+			/*
+			 * ENOBUFS indicates that the mp could be too short
+			 * and may need a pullup.
+			 */
+			if (err != ENOBUFS || retried)
+				return (false);
+
+			/*
+			 * The pullup is done on the last processed mblk, not
+			 * the starting one. pullup is not done if the mblk
+			 * has references or if b_cont is NULL.
+			 */
+			last = s.fs_mp;
+			if (DB_REF(last) > 1 || last->b_cont == NULL ||
+			    pullupmsg(last, -1) == 0)
+				return (false);
+
+			retried = B_TRUE;
+			DTRACE_PROBE2(need_pullup, flow_tab_t *, ft,
+			    flow_state_t *, &s);
+			goto retry;
+		}
+	}
+
+	/*
+	 * Hash functions can initialise parts of flow_state_t used in the match
+	 * itself.
+	 */
+	(void) ops->fo_hash(ft, &s);
+	return (flent->fe_match(ft, flent, &s));
+}
+
+/*
+ * Returns whether a packet successfully matches a packet filter associated
+ * with a flow.
+ */
+static bool
+mac_pkt_is_flow_match(flow_entry_t *flent, const mac_flow_match_t *match,
+    mblk_t *mp)
+{
+	ASSERT3P(flent, !=, NULL);
+	ASSERT3P(mp, !=, NULL);
+
+	if (match->mfm_cond != 0) {
+		if ((match->mfm_cond & MFC_NOFRAG) != 0) {
+			if (meoi_fast_fragmented(mp)) {
+				return (false);
+			}
+		}
+		if ((match->mfm_cond & MFC_UNICAST) != 0) {
+			const bool too_small = meoi_fast_l2hlen(mp) <
+			    sizeof (struct ether_header);
+			const struct ether_header *ether =
+			    (struct ether_header *)mp->b_rptr;
+			if (too_small || (ether->ether_dhost.ether_addr_octet[0]
+			    & 0x01) != 0) {
+				return (false);
+			}
+		}
+	}
+
+	/* Perform the actual match here */
+	switch (match->mfm_type) {
+	case MFM_SAP:
+		return (meoi_fast_l3proto(mp) == match->arg.mfm_sap);
+	case MFM_IPPROTO:
+		return (meoi_fast_l4proto(mp) == match->arg.mfm_ipproto);
+	case MFM_L2_DST:
+		return (meoi_fast_l2hlen(mp) >= sizeof (struct ether_header) &&
+		    bcmp(mp->b_rptr, match->arg.mfm_l2addr, ETHERADDRL) == 0);
+	case MFM_L2_SRC:
+		return (meoi_fast_l2hlen(mp) >= sizeof (struct ether_header) &&
+		    bcmp(mp->b_rptr + ETHERADDRL, match->arg.mfm_l2addr,
+		    ETHERADDRL) == 0);
+	case MFM_L2_VID:
+		return (meoi_fast_is_vlan(mp) &&
+		    meoi_fast_l2hlen(mp) >= sizeof (struct ether_vlan_header) &&
+		    ((struct ether_vlan_header *)mp->b_rptr)->ether_tci ==
+		    match->arg.mfm_vid);
+	case MFM_L4_SRC: {
+		const ssize_t l4off = meoi_fast_l4off(mp);
+		return (l4off >= 0 && meoi_fast_l4hlen(mp) >= PORTS_SIZE &&
+		    *((uint16_t *)(mp->b_rptr + l4off)) ==
+		    match->arg.mfm_l4addr);
+	}
+	case MFM_L4_DST: {
+		const ssize_t l4off = meoi_fast_l4off(mp);
+		return (l4off >= 0 && meoi_fast_l4hlen(mp) >= PORTS_SIZE &&
+		    *((uint16_t *)(mp->b_rptr + l4off + sizeof (uint16_t))) ==
+		    match->arg.mfm_l4addr);
+	}
+	case MFM_SUBFLOW:
+		return (mac_subflow_is_match(flent, mp));
+	case MFM_ALL: {
+		const mac_flow_match_list_t *list = match->arg.mfm_list;
+		ASSERT3P(list, !=, NULL);
+		for (size_t i = 0; i < list->mfml_size; i++) {
+			const mac_flow_match_t *el = &list->mfml_match[i];
+			if (!mac_pkt_is_flow_match(flent, el, mp)) {
+				return (false);
+			}
+		}
+		return (true);
+	}
+	case MFM_ANY: {
+		const mac_flow_match_list_t *list = match->arg.mfm_list;
+		ASSERT3P(list, !=, NULL);
+		for (size_t i = 0; i < list->mfml_size; i++) {
+			const mac_flow_match_t *el = &list->mfml_match[i];
+			if (mac_pkt_is_flow_match(flent, match, mp)) {
+				return (true);
+			}
+		}
+		return (false);
+	}
+	/*
+	 * Any remote/local matches should have been converted to
+	 * source/destination matches during flowtree construction.
+	 */
+	case MFM_L4_REMOTE:
+	case MFM_L4_LOCAL:
+	default:
+		return (false);
+	}
+}
+
+/*
+ * Refund credit to a `mac_bw_ctl_t` for any packets which were policed by
+ * a subsequent bandwidth control.
+ */
+static inline void
+mac_bw_ctl_do_refund(flow_tree_bw_refund_t *bw)
+{
+	if (bw->ftbr_size != 0) {
+		mutex_enter(&bw->ftbr_bw->mac_bw_lock);
+		bw->ftbr_bw->mac_bw_sz -= MIN(bw->ftbr_size,
+		    bw->ftbr_bw->mac_bw_sz);
+		if (bw->ftbr_bw->mac_bw_used < bw->ftbr_bw->mac_bw_limit) {
+			bw->ftbr_bw->mac_bw_state &= ~BW_ENFORCED;
+		}
+		mutex_exit(&bw->ftbr_bw->mac_bw_lock);
+	}
+}
+
+/*
+ * Move all packets matching the flow at `enode` from the packet list `to_class`
+ * into `classed`.
+ */
+static inline __attribute__((always_inline)) void
+mac_walk_flow_tree_match(const flow_tree_enter_node_t *enode,
+    mac_pkt_list_t *to_class, mac_pkt_list_t *classed, const bool single_flow)
+{
+	mblk_t *curr = to_class->mpl_head;
+	mblk_t *prev = NULL;
+
+	if (single_flow) {
+		const bool is_match = mac_pkt_is_flow_match(enode->ften_flent,
+		    &enode->ften_match, curr);
+		if (is_match) {
+			mac_pkt_list_extend(to_class, classed);
+		}
+		return;
+	}
+
+	while (curr != NULL) {
+		mblk_t **to_curr = (prev != NULL) ? &prev->b_next :
+		    &to_class->mpl_head;
+		const bool is_match = mac_pkt_is_flow_match(enode->ften_flent,
+		    &enode->ften_match, curr);
+		if (is_match) {
+			*to_curr = curr->b_next;
+			curr->b_next = NULL;
+			if (to_class->mpl_tail == curr) {
+				to_class->mpl_tail = prev;
+			}
+
+			const size_t lsz = mp_len(curr);
+
+			to_class->mpl_count--;
+			to_class->mpl_size -= lsz;
+
+			mac_pkt_list_append_sz(classed, curr, lsz);
+		} else {
+			to_curr = &curr->b_next;
+			prev = curr;
+		}
+		curr = *to_curr;
+	}
+}
+
+/*
+ * Move all packets matching the flow at `enode` from the packet list `to_class`
+ * into `classed` which can be admitted by the set of bandwidth controls on
+ * `enode`s SRS.
+ */
+static inline __attribute__((always_inline)) uint32_t
+mac_walk_flow_tree_match_bw(const flow_tree_enter_node_t *enode,
+    mac_pkt_list_t *to_class, mac_pkt_list_t *classed, const bool single_flow,
+    const bool is_rx, const flow_tree_baked_t *ft, const ssize_t depth,
+    size_t *policed_bytes)
+{
+	mblk_t *curr = to_class->mpl_head;
+	mblk_t *prev = NULL;
+	uint32_t dropped_pkts = 0;
+
+	mac_pkt_list_t drop_list = { 0 };
+	mac_bw_ctl_t *flent_bw = is_rx ? &enode->ften_flent->fe_rx_bw :
+	    &enode->ften_flent->fe_tx_bw;
+	const bool likely_ctld = (flent_bw->mac_bw_state & BW_ENABLED) != 0;
+	flow_tree_bw_refund_t *my_bw = &(ft->ftb_bw_refund[depth]);
+
+	if (likely_ctld) {
+		mutex_enter(&flent_bw->mac_bw_lock);
+	}
+
+	const bool is_ctld = likely_ctld && mac_bw_ctl_is_enabled(flent_bw);
+
+	if (is_ctld) {
+		my_bw->ftbr_bw = flent_bw;
+	} else if (likely_ctld) {
+		mutex_exit(&flent_bw->mac_bw_lock);
+	}
+
+	const ssize_t queue_avail = mac_bw_ctl_enqueue_bound(flent_bw);
+
+	if (single_flow && !is_ctld) {
+		const bool is_match = mac_pkt_is_flow_match(enode->ften_flent,
+		    &enode->ften_match, curr);
+		if (is_match) {
+			mac_pkt_list_extend(to_class, classed);
+		}
+		goto class_done;
+	}
+
+	bool early_exit = false;
+	bool flow_hit = false;
+	while (curr != NULL && !early_exit) {
+		mblk_t **to_curr = (prev != NULL) ? &prev->b_next :
+		    &to_class->mpl_head;
+		const bool is_match = flow_hit || mac_pkt_is_flow_match(
+		    enode->ften_flent, &enode->ften_match,
+		    curr);
+		early_exit = single_flow && (!is_match);
+		flow_hit = single_flow && is_match;
+		if (is_match) {
+			*to_curr = curr->b_next;
+			curr->b_next = NULL;
+			if (to_class->mpl_tail == curr) {
+				to_class->mpl_tail = prev;
+			}
+
+			const size_t lsz = mp_len(curr);
+			const bool is_space = !is_ctld ||
+			    ((classed->mpl_size + lsz) <= queue_avail) ||
+			    (classed->mpl_count == 0 && queue_avail > 0);
+
+			to_class->mpl_count--;
+			to_class->mpl_size -= lsz;
+
+			mac_pkt_list_append_sz(is_space ? classed : &drop_list,
+			    curr, lsz);
+		} else {
+			to_curr = &curr->b_next;
+			prev = curr;
+		}
+		curr = *to_curr;
+	}
+
+class_done:
+	if (is_ctld) {
+		flent_bw->mac_bw_sz += classed->mpl_size;
+		flent_bw->mac_bw_drop_bytes += drop_list.mpl_size;
+		mutex_exit(&flent_bw->mac_bw_lock);
+
+		/*
+		 * Any packets dropped due to a nested b/w control should be
+		 * refunded, if possible. Mark those up now, and perform the
+		 * refunds at exit time.
+		 */
+		for (size_t i = 0; i < depth; i++) {
+			flow_tree_bw_refund_t *rf = &(ft->ftb_bw_refund[i]);
+			if (rf->ftbr_bw == NULL) {
+				continue;
+			}
+			rf->ftbr_size += drop_list.mpl_size;
+		}
+
+		if (!mac_pkt_list_is_empty(&drop_list)) {
+			freemsgchain(drop_list.mpl_head);
+			dropped_pkts += drop_list.mpl_count;
+			if (policed_bytes != NULL) {
+				*policed_bytes += drop_list.mpl_size;
+			}
+		}
+	} else {
+		ASSERT(mac_pkt_list_is_empty(&drop_list));
+	}
+
+	return (dropped_pkts);
+}
+
+/*
+ * Place the packets in `deliver_from` onto the SRS if it has any enabled
+ * bandwidth controls. This allows the worker to shape the rate of packet
+ * egress for delivery.
+ *
+ * This contrasts non-Bw & non-delegate delivery, where packets are placed
+ * onto the *soft rings* instead to reduce latency.
+ */
+static inline __attribute__((always_inline)) bool
+mac_walk_flow_tree_deliver_bw(mac_soft_ring_set_t *send_to,
+    mac_pkt_list_t *deliver_from, const bool is_rx, const uintptr_t hint)
+{
+	bool delivered = false;
+	mutex_enter(&send_to->srs_lock);
+	if (mac_srs_is_bw_controlled(send_to)) {
+		ASSERT3U(send_to->srs_type & SRST_FORWARD, !=, 0);
+		if (!is_rx && hint != 0) {
+			mac_stash_chain_hints(deliver_from->mpl_head, hint);
+		}
+		MAC_SRS_ENQUEUE_CHAIN(send_to, deliver_from->mpl_head,
+		    deliver_from->mpl_tail, deliver_from->mpl_count,
+		    deliver_from->mpl_size);
+		MAC_SRS_WORKER_WAKEUP(send_to);
+		deliver_from->mpl_head = NULL;
+		deliver_from->mpl_tail = NULL;
+		deliver_from->mpl_count = 0;
+		deliver_from->mpl_size = 0;
+		delivered = true;
+	}
+	mutex_exit(&send_to->srs_lock);
+	return (delivered);
+}
+
+/*
+ * Walk the flowtree classifier to deliver a chain of packets which may be split
+ * among one or more flows. This is a shared flowtree walker implementation for
+ * Rx and Tx packet processing, with the expectation that inlining with constant
+ * propagation will eliminate Tx/Rx/Bw logic as appropriate. Packet delivery
+ * code should not call this function directly, but should use one of the
+ * specialised `mac_*_srs_walk_flowtree*` functions.
+ *
+ * Returns the number of dropped packets.
+ *
+ * Packets are classified by walking a list of nodes unrolled by performing
+ * a depth-first traversal on the flowtree. Each node in the flowtree creates
+ * an entry and exit node in this unrolled (baked) formulation. We have a
+ * preallocated packet list for each layer of the tree, to store ongoing
+ * classification state.
+ *
+ * At each entry node, we match every packet belonging to our parent (or root)
+ * against the current flow. All matched packets are moved to a new chain, and
+ * all others still belong to the parent (and may be matched by a sibling node).
+ * Each entry node contains the distance to its corresponding exit node at the
+ * same depth -- if no packets are matched, we skip to that node to avoid
+ * descending the tree further.
+ *
+ * At each exit node, we are left with the set of packets which we know belong
+ * to a given flent -- we will pass these off to the SRS as required.
+ *
+ * We can determine whether a node is entry/exit based on the type of the
+ * previous node, and how we are altering `depth`:
+ *
+ * - If the skip parameter of an entry node is 1, the next node in the list is
+ *   its exit node. Else, it is an entry node at `++depth`.
+ *
+ * - If we are at an exit node, then `ftex_ascend` implies the next node is
+ *   the exit node for our parent (`--depth`). Else, it is the entry node for
+ *   our sibling.
+ *
+ * Tx and Rx differ in that Tx will only deliver to bandwidth-limited flowtree
+ * nodes, where the main value is in stat accumulation.
+ *
+ * Unlike mac_srs_pick_chain, we apply *one* bandwidth limit at a time to
+ * prevent child flows from being given any preferential treatment for packet
+ * enqueue. This walk occurs in reverse order to an SRS's own enqueue/dequeue
+ * logic. Accordingly, we hold only one BW lock at a time to avoid deadlocking
+ * due to a lock ordering violation.
+ */
+static inline __attribute__((always_inline)) uint32_t
+mac_walk_flowtree_inner(mac_soft_ring_set_t *mac_srs, flow_tree_pkt_set_t *pkts,
+    const bool is_rx, const bool is_bw, const uintptr_t hint,
+    size_t *policed_bytes)
+{
+	const flow_tree_baked_t *ft = &mac_srs->srs_flowtree;
+	ASSERT3U(ft->ftb_len, >, 0);
+	ASSERT3U(ft->ftb_depth, >, 0);
+	ASSERT3P(ft->ftb_chains, !=, NULL);
+	ASSERT3P(ft->ftb_subtree, !=, NULL);
+	ASSERT3P(ft->ftb_bw_refund, !=, NULL);
+
+	const bool single_flow = hint != 0;
+
+	uint32_t dropped_pkts = 0;
+	ssize_t depth = 0;
+	bool is_enter = true;
+	const flow_tree_baked_node_t *node = ft->ftb_subtree;
+	const flow_tree_baked_node_t * const done = node + (ft->ftb_len << 1);
+
+	if (policed_bytes != NULL) {
+		*policed_bytes = 0;
+	}
+
+	while (node != done) {
+		ASSERT3S(depth, <, ft->ftb_depth);
+		ASSERT3S(depth, >=, 0);
+		flow_tree_pkt_set_t *my_pkts = &(ft->ftb_chains[depth]);
+		flow_tree_pkt_set_t *par_pkts = (depth > 0) ?
+		    &(ft->ftb_chains[depth-1]) : pkts;
+
+		if (is_enter) {
+			const flow_tree_enter_node_t *enode = &node->enter;
+			mac_pkt_list_t *to_class = &par_pkts->ftp_avail;
+			mac_pkt_list_t *classed = &my_pkts->ftp_avail;
+
+			if (is_bw) {
+				dropped_pkts += mac_walk_flow_tree_match_bw(
+				    enode, to_class, classed, single_flow,
+				    is_rx, ft, depth, policed_bytes);
+			} else {
+				mac_walk_flow_tree_match(enode, to_class,
+				    classed, single_flow);
+			}
+
+			/* (head == NULL) <=> (tail == NULL) for both layers */
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_tail == NULL);
+			ASSERT3B(to_class->mpl_head == NULL, ==,
+			    to_class->mpl_count == 0);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_tail == NULL);
+			ASSERT3B(classed->mpl_head == NULL, ==,
+			    classed->mpl_count == 0);
+
+			if (mac_pkt_list_is_empty(classed)) {
+				/*
+				 * No packets were taken, thus do not call
+				 * children or attempt to deliver to this flent.
+				 * Skip to the corresponding exit node.
+				 */
+				node += enode->ften_skip;
+				const flow_tree_exit_node_t *xnode =
+				    &node->exit;
+				if (xnode->ftex_ascend) {
+					depth--;
+					is_enter = false;
+				}
+
+				ASSERT(mac_pkt_list_is_empty(
+				    &my_pkts->ftp_deli));
+
+				node++;
+				continue;
+			}
+
+			if (enode->ften_skip != 1) {
+				depth++;
+			} else {
+				is_enter = false;
+			}
+		} else {
+			const flow_tree_exit_node_t *xnode = &node->exit;
+
+			const bool have_avail =
+			    !mac_pkt_list_is_empty(&my_pkts->ftp_avail);
+			const bool have_deli =
+			    !mac_pkt_list_is_empty(&my_pkts->ftp_deli);
+			const bool is_ctld = is_bw &&
+			    ft->ftb_bw_refund[depth].ftbr_bw != NULL;
+
+			/*
+			 * Any stats for exact matches come from the
+			 * _available_ packet list. These packets were not in
+			 * turn matched by any subflow.
+			 */
+			const uint64_t matched_pkts =
+			    my_pkts->ftp_avail.mpl_count;
+			const uint64_t matched_bytes =
+			    my_pkts->ftp_avail.mpl_size;
+
+			/*
+			 * This list recombination here should *not* reorder
+			 * packets within a flow, given that flows will be moved
+			 * around together. Flows may be reordered wrt. one
+			 * another, however.
+			 */
+			mac_pkt_list_t *deliver_from = (have_deli) ?
+			    &my_pkts->ftp_deli : &my_pkts->ftp_avail;
+			if (have_deli && have_avail) {
+				mac_pkt_list_extend(&my_pkts->ftp_avail,
+				    &my_pkts->ftp_deli);
+			}
+
+			switch (xnode->ftex_do) {
+			case MFA_TYPE_DELEGATE:
+			case MFA_TYPE_DELIVER: {
+				mac_soft_ring_set_t *send_to =
+				    xnode->arg.ftex_srs;
+				const bool handle = is_rx &&
+				    xnode->ftex_do == MFA_TYPE_DELIVER;
+				if (matched_pkts != 0) {
+					atomic_add_64(&send_to->srs_match_pkts,
+					    matched_pkts);
+					atomic_add_64(&send_to->srs_match_bytes,
+					    matched_bytes);
+				}
+
+				/*
+				 * If we're in a bandwidth-checking case,
+				 * `is_ctld` does not suffice here, since it
+				 * only covers _this SRS's flent's BW_. Check
+				 * whether the SRS has any limits from its
+				 * ancestors.
+				 */
+				if (is_bw &&
+				    (mac_pkt_list_is_empty(deliver_from) ||
+				    mac_walk_flow_tree_deliver_bw(send_to,
+				    deliver_from, is_rx, hint))) {
+					break;
+				}
+
+				if (handle) {
+					mac_rx_srs_deliver(send_to,
+					    deliver_from);
+				} else {
+					mac_pkt_list_extend(deliver_from,
+					    &par_pkts->ftp_deli);
+				}
+				break;
+			}
+			case MFA_TYPE_DROP: {
+				flow_entry_t *stat_into = xnode->arg.ftex_flent;
+				if (is_rx) {
+					atomic_add_64(
+					    &stat_into->fe_match_pkts_in,
+					    matched_pkts);
+					atomic_add_64(
+					    &stat_into->fe_match_bytes_in,
+					    matched_bytes);
+					atomic_add_64(
+					    &stat_into->fe_act_pkts_in,
+					    deliver_from->mpl_count);
+					atomic_add_64(
+					    &stat_into->fe_act_bytes_in,
+					    deliver_from->mpl_size);
+				} else {
+					atomic_add_64(
+					    &stat_into->fe_match_pkts_out,
+					    matched_pkts);
+					atomic_add_64(
+					    &stat_into->fe_match_bytes_out,
+					    matched_bytes);
+					atomic_add_64(
+					    &stat_into->fe_act_pkts_out,
+					    deliver_from->mpl_count);
+					atomic_add_64(
+					    &stat_into->fe_act_bytes_out,
+					    deliver_from->mpl_size);
+				}
+
+				freemsgchain(deliver_from->mpl_head);
+
+				/*
+				 * Intentionally dropped packets need to be
+				 * removed from prior BW limits' queue occupancy
+				 */
+				if (is_bw) {
+					for (size_t i = 0; i < depth; i++) {
+						flow_tree_bw_refund_t *rf =
+						    &(ft->ftb_bw_refund[i]);
+						if (rf->ftbr_bw == NULL) {
+							continue;
+						}
+						rf->ftbr_size +=
+						    deliver_from->mpl_size;
+					}
+				}
+
+				dropped_pkts += deliver_from->mpl_count;
+				deliver_from->mpl_head = NULL;
+				deliver_from->mpl_tail = NULL;
+				deliver_from->mpl_count = 0;
+				deliver_from->mpl_size = 0;
+				break;
+			}
+			}
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_avail));
+			ASSERT(mac_pkt_list_is_empty(&my_pkts->ftp_deli));
+
+			/* Process any outstanding refunds */
+			if (is_ctld) {
+				flow_tree_bw_refund_t *my_bw =
+				    &(ft->ftb_bw_refund[depth]);
+				mac_bw_ctl_do_refund(my_bw);
+				bzero(my_bw, sizeof (*my_bw));
+			}
+
+			if (xnode->ftex_ascend) {
+				depth--;
+			} else {
+				is_enter = true;
+			}
+		}
+		node++;
+	}
+	ASSERT3S(depth, ==, -1);
+
+	return (dropped_pkts);
+}
+
+static uint32_t
+mac_rx_srs_walk_flowtree(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts)
+{
+	return (mac_walk_flowtree_inner(mac_srs, pkts, true, false, 0, NULL));
+}
+
+static uint32_t
+mac_rx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts, size_t *policed_bytes)
+{
+	return (mac_walk_flowtree_inner(mac_srs, pkts, true, true, 0,
+	    policed_bytes));
+}
+
+void
+mac_tx_srs_walk_flowtree_bw(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts, const uintptr_t hint)
+{
+	(void) mac_walk_flowtree_inner(mac_srs, pkts, false, true, hint, NULL);
+}
+
+void
+mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pkts, const uintptr_t hint)
+{
+	(void) mac_walk_flowtree_inner(mac_srs, pkts, false, false, hint, NULL);
+}
+
+/*
+ * Rechecks any packets to ensure that they match the classifier(s) at
+ * `mac_srs`, moving them to `ftp_deli` if they fail classification so that
+ * they are not seen by the flowtree.
+ */
+static void mac_rx_srs_swcheck(mac_soft_ring_set_t *mac_srs,
+    flow_tree_pkt_set_t *pktset)
+{
+	flow_entry_t *flent = mac_srs->srs_flent;
+	mac_pkt_list_t *from = &pktset->ftp_avail;
+	mac_pkt_list_t *to = &pktset->ftp_deli;
+	mblk_t *curr = from->mpl_head;
+	mblk_t *prev = NULL;
+	while (curr != NULL) {
+		mblk_t **to_curr = (prev != NULL) ?
+		    &prev->b_next : &from->mpl_head;
+		const bool is_match = mac_pkt_is_flow_match(flent,
+		    &flent->fe_ft_match, curr);
+		if (unlikely(!is_match)) {
+			*to_curr = curr->b_next;
+			curr->b_next = NULL;
+			if (from->mpl_tail == curr) {
+				from->mpl_tail = prev;
+			}
+			from->mpl_count--;
+			mac_pkt_list_append(to, curr);
+		} else {
+			to_curr = &curr->b_next;
+			prev = curr;
+		}
+		curr = *to_curr;
+	}
+}
+
 /*
  * mac_rx_srs_drain
  *
@@ -2935,17 +3188,20 @@ mac_srs_pick_chain(mac_soft_ring_set_t *mac_srs, mblk_t **chain_tail,
  * routines but they are highly performance sensitive and are easier
  * to read/debug if they stay separate. Any code changes here might
  * also apply to mac_rx_srs_drain_bw as well.
+ *
+ * This function can only be called on valid entry SRSes from the
+ * datapath (e.g., SRST_LOGICAL). Those holding onto softrings to
+ * be reached via a flow tree will be handled inline here.
  */
-void
-mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs,
-    const mac_soft_ring_set_state_t proc_type)
+static inline __attribute__((always_inline)) void
+mac_rx_srs_drain_inner(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type, const bool has_subtree,
+    const bool subtree_has_bw)
 {
-	mblk_t			*head;
-	mblk_t			*tail;
+	mblk_t			*in_chain = NULL;
 	timeout_id_t		tid;
-	int			cnt = 0;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 	ASSERT(!mac_srs_is_bw_controlled(mac_srs));
@@ -2955,8 +3211,8 @@ mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs,
 		goto out;
 	}
 
-	if (!(mac_srs->srs_type & SRST_LATENCY_OPT) &&
-	    (srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat)) {
+	if (!mac_srs_is_latency_opt(mac_srs) &&
+	    srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat) {
 		/*
 		 * In the normal case, the SRS worker thread does no
 		 * work and we wait for a backlog to build up before
@@ -2974,93 +3230,115 @@ mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs,
 		MAC_SRS_POLL_RING(mac_srs);
 	}
 
+	flow_tree_pkt_set_t pktset = { 0 };
 again:
 	ASSERT3P(mac_srs->srs_first, !=, NULL);
 	ASSERT3P(mac_srs->srs_last, !=, NULL);
-
-	head = mac_srs->srs_first;
+	in_chain = mac_srs->srs_first;
+	const uint32_t initial_count = mac_srs->srs_count;
 	mac_srs->srs_first = NULL;
 	mac_srs->srs_last = NULL;
 	mac_srs->srs_count = 0;
 	mac_srs->srs_size = 0;
 
-	if ((tid = mac_srs->srs_tid) != NULL)
+	if ((tid = mac_srs->srs_tid) != NULL) {
 		mac_srs->srs_tid = NULL;
+	}
 
 	mac_srs->srs_state |= (SRS_PROC|proc_type);
 
 	/*
-	 * mcip is NULL for broadcast and multicast flows. The promisc
-	 * callbacks for broadcast and multicast packets are delivered from
-	 * mac_rx() and we don't need to worry about that case in this path
+	 * Assert that we're being called on a valid entrypoint.
+	 * Broadcast and multicast flows cannot have an MCIP, but they should
+	 * be served by the lowest level flow table in mac_rx_flow ->
+	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	if (mcip != NULL) {
-		if (mcip->mci_promisc_list != NULL) {
-			mutex_exit(&mac_srs->srs_lock);
-			mac_promisc_client_dispatch(mcip, head);
-			mutex_enter(&mac_srs->srs_lock);
-		}
-		if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
-			mutex_exit(&mac_srs->srs_lock);
-			mac_protect_intercept_dynamic(mcip, head);
-			mutex_enter(&mac_srs->srs_lock);
-		}
+	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
+	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
+
+	/*
+	 * Generally, we'd expect when promiscuous mode is enabled that any
+	 * extra frames would land on the default group, with all of the
+	 * broadcast and multicast traffic. The confounding case is L2 flows on
+	 * NICs which expose a single group, and thus that traffic can land on a
+	 * unicast flow ring -- the group is shared between all clients for such
+	 * hardware.
+	 *
+	 * In this case, we need to manually check the L2 match, and divert any
+	 * unicast packets which fail this check straight to DLS (no flow
+	 * tree, which is predicated on an L2 match).
+	 */
+	const bool is_promisc_on = mcip->mci_promisc_list != NULL;
+	const bool needs_sw_check = has_subtree &&
+	    is_promisc_on &&
+	    srs_rx->sr_ring != NULL &&
+	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER &&
+	    (mac_srs->srs_type & (SRST_LINK | SRST_DEFAULT_GRP)) ==
+	    (SRST_LINK | SRST_DEFAULT_GRP);
+
+	mutex_exit(&mac_srs->srs_lock);
+
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_avail));
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_deli));
+
+	if (is_promisc_on) {
+		mac_promisc_client_dispatch(mcip, in_chain);
+	}
+	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
+		mac_protect_intercept_dynamic(mcip, in_chain);
+	}
+
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, in_chain);
+	uint32_t dropped_pkts = initial_count - pktset.ftp_avail.mpl_count;
+
+	if (tid != NULL) {
+		(void) untimeout(tid);
+		tid = NULL;
+	}
+
+	if (unlikely(needs_sw_check)) {
+		mac_rx_srs_swcheck(mac_srs, &pktset);
 	}
 
 	/*
-	 * Check if SRS itself is doing the processing. This direct
-	 * path applies only when subflows are present.
+	 * Generally we *should* have a subtree here, due to DLS bypass.
+	 * Clients like viona (and some vnic/etherstub/... topologies) will
+	 * create effectively L2-only clients.
 	 */
-	if (mac_srs->srs_type & SRST_NO_SOFT_RINGS) {
-		mac_direct_rx_t		proc;
-		void			*arg1;
-
-		/*
-		 * This is the case when a Rx is directly
-		 * assigned and we have a fully classified
-		 * protocol chain. We can deal with it in
-		 * one shot.
-		 */
-		proc = srs_rx->sr_func;
-		arg1 = srs_rx->sr_arg1;
-
-		mac_srs->srs_state |= SRS_CLIENT_PROC;
-		mutex_exit(&mac_srs->srs_lock);
-		if (tid != NULL) {
-			(void) untimeout(tid);
-			tid = NULL;
+	if (has_subtree) {
+		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
+		if (!subtree_has_bw) {
+			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
+			    &pktset);
+		} else {
+			size_t policed_bytes = 0;
+			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
+			    &pktset, &policed_bytes);
 		}
-
-		proc(arg1, NULL, head, NULL);
-		/*
-		 * Decrement the size and count here itelf
-		 * since the packet has been processed.
-		 */
-		mutex_enter(&mac_srs->srs_lock);
-		MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
-
-		mac_srs->srs_state &= ~SRS_CLIENT_PROC;
-	} else {
-		/* Some kind of softrings based fanout is required */
-		mutex_exit(&mac_srs->srs_lock);
-		if (tid != NULL) {
-			(void) untimeout(tid);
-			tid = NULL;
-		}
-
-		/*
-		 * Since the fanout routines can deal with chains,
-		 * shoot the entire chain up.
-		 */
-		if (mac_srs->srs_type & SRST_FANOUT_SRC_IP)
-			mac_rx_srs_fanout(mac_srs, head);
-		else
-			mac_rx_srs_proto_fanout(mac_srs, head);
-		mutex_enter(&mac_srs->srs_lock);
 	}
 
-	if (((mac_srs->srs_state & SRS_PAUSE) == 0) &&
-	    (mac_srs->srs_first != NULL)) {
+	if (!has_subtree || !mac_pkt_list_is_empty(&pktset.ftp_avail)) {
+		atomic_add_64(&mac_srs->srs_match_pkts,
+		    pktset.ftp_avail.mpl_count);
+		atomic_add_64(&mac_srs->srs_match_bytes,
+		    pktset.ftp_avail.mpl_size);
+	}
+
+	if (has_subtree) {
+		/* Combine any unpicked packets with those delegated. */
+		mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+	}
+
+	/* Everything leftover is for delivery to *THIS* SRS. */
+	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
+
+	if (dropped_pkts != 0) {
+		mac_update_srs_count(mac_srs, dropped_pkts);
+	}
+
+	mutex_enter(&mac_srs->srs_lock);
+	if ((mac_srs->srs_state & SRS_PAUSE) == 0 &&
+	    mac_srs->srs_first != NULL) {
 		/*
 		 * More packets arrived while we were clearing the
 		 * SRS. This can be possible because of one of
@@ -3099,7 +3377,7 @@ out:
 	if (mac_srs->srs_state & SRS_GET_PKTS) {
 		/*
 		 * Poll thread is already running. Leave the
-		 * SRS_RPOC set and hand over the control to
+		 * SRS_PROC set and hand over the control to
 		 * poll thread.
 		 */
 		mac_srs->srs_state &= ~proc_type;
@@ -3139,8 +3417,9 @@ out:
 		mac_srs->srs_state &= ~(SRS_PROC|proc_type);
 		srs_rx->sr_drain_keep_polling++;
 		MAC_SRS_POLLING_ON(mac_srs);
-		if (srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat)
+		if (srs_rx->sr_poll_pkt_cnt <= srs_rx->sr_lowat) {
 			MAC_SRS_POLL_RING(mac_srs);
+		}
 		return;
 	}
 
@@ -3148,6 +3427,27 @@ out:
 	MAC_SRS_POLLING_OFF(mac_srs);
 	mac_srs->srs_state &= ~(SRS_PROC|proc_type);
 	srs_rx->sr_drain_finish_intr++;
+}
+
+void
+mac_rx_srs_drain(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
+{
+	mac_rx_srs_drain_inner(mac_srs, proc_type, false, false);
+}
+
+void
+mac_rx_srs_drain_subtree(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
+{
+	mac_rx_srs_drain_inner(mac_srs, proc_type, true, false);
+}
+
+void
+mac_rx_srs_drain_subtree_bw(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
+{
+	mac_rx_srs_drain_inner(mac_srs, proc_type, true, true);
 }
 
 /*
@@ -3165,25 +3465,27 @@ out:
  * to read/debug if they stay separate. Any code changes here might
  * also apply to mac_rx_srs_drain as well.
  */
-void
-mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs,
-    const mac_soft_ring_set_state_t proc_type)
+static inline __attribute__((always_inline)) void
+mac_rx_srs_drain_bw_inner(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type, const bool has_subtree,
+    const bool subtree_has_bw)
 {
 	mblk_t			*head;
 	mblk_t			*tail;
 	timeout_id_t		tid;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
-	clock_t			now;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 
 	ASSERT(MUTEX_HELD(&mac_srs->srs_lock));
 	ASSERT(mac_srs_is_bw_controlled(mac_srs));
+
+	flow_tree_pkt_set_t pktset = { 0 };
 again:
 	/* Check if we are doing B/W control */
-	MAC_SRS_BW_LOCK(mac_srs);
+	mac_srs_bw_lock(mac_srs);
 	if ((mac_srs->srs_state & SRS_PAUSE) != 0 ||
 	    !mac_srs_bw_try_refresh(mac_srs)) {
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		goto done;
 	}
 
@@ -3200,12 +3502,15 @@ again:
 		 *  Check for the latter case -- if this is detected, drop the
 		 *  chain and return to interrupt mode.
 		 */
-		if (mac_srs->srs_bw->mac_bw_limit == 0) {
+		if (mac_srs_any_bw_zeroed(mac_srs)) {
 			srs_rx->sr_stat.mrs_sdrops += mac_srs->srs_count;
-			mac_srs->srs_bw->mac_bw_used = 0;
-			mac_srs->srs_bw->mac_bw_sz = 0;
-			mac_srs->srs_bw->mac_bw_drop_bytes += mac_srs->srs_size;
-			MAC_SRS_BW_UNLOCK(mac_srs);
+			mac_srs_bw_dequeue(mac_srs, mac_srs->srs_size);
+			for (size_t i = 0; i < mac_srs->srs_bw_len; i++) {
+				mac_bw_ctl_t *bw = mac_srs->srs_bw[i];
+				bw->mac_bw_used = 0;
+			}
+			mac_srs_bw_stat_dropped(mac_srs, mac_srs->srs_size);
+			mac_srs_bw_unlock(mac_srs);
 
 			mac_drop_chain(mac_srs->srs_first,
 			    "dequeue no bandwidth");
@@ -3216,91 +3521,114 @@ again:
 			mac_srs->srs_size = 0;
 			goto leave_poll;
 		}
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		goto done;
 	}
-	MAC_SRS_BW_UNLOCK(mac_srs);
+	mac_srs_bw_unlock(mac_srs);
 
 	ASSERT3P(head, !=, NULL);
 	ASSERT3P(tail, !=, NULL);
 
-	if ((tid = mac_srs->srs_tid) != NULL)
+	if ((tid = mac_srs->srs_tid) != NULL) {
 		mac_srs->srs_tid = NULL;
+	}
 
 	mac_srs->srs_state |= (SRS_PROC|proc_type);
 	MAC_SRS_WORKER_POLLING_ON(mac_srs);
 
 	/*
-	 * mcip is NULL for broadcast and multicast flows. The promisc
-	 * callbacks for broadcast and multicast packets are delivered from
-	 * mac_rx() and we don't need to worry about that case in this path
+	 * Assert that we're being called on a valid entrypoint.
+	 * Broadcast and multicast flows cannot have an MCIP, but they should
+	 * be served by the lowest level flow table in mac_rx_flow ->
+	 * mac_bcast_send (via fe_cb_fn).
 	 */
-	if (mcip != NULL) {
-		if (mcip->mci_promisc_list != NULL) {
-			mutex_exit(&mac_srs->srs_lock);
-			mac_promisc_client_dispatch(mcip, head);
-			mutex_enter(&mac_srs->srs_lock);
-		}
-		if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
-			mutex_exit(&mac_srs->srs_lock);
-			mac_protect_intercept_dynamic(mcip, head);
-			mutex_enter(&mac_srs->srs_lock);
-		}
+	ASSERT3P(mac_srs->srs_mcip, !=, NULL);
+	ASSERT3S(mac_srs->srs_soft_ring_count, >, 0);
+
+	/*
+	 * Generally, we'd expect when promiscuous mode is enabled that any
+	 * extra frames would land on the default group, with all of the
+	 * broadcast and multicast traffic. The confounding case is L2 flows on
+	 * NICs which expose a single group, and thus that traffic can land on a
+	 * unicast flow ring -- the group is shared between all clients for such
+	 * hardware.
+	 *
+	 * In this case, we need to manually check the L2 match, and divert any
+	 * unicast packets which fail this check straight to DLS (no flow
+	 * tree, which is predicated on an L2 match).
+	 */
+	const bool is_promisc_on = mcip->mci_promisc_list != NULL;
+	const bool needs_sw_check = has_subtree &&
+	    is_promisc_on &&
+	    srs_rx->sr_ring != NULL &&
+	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER &&
+	    (mac_srs->srs_type & (SRST_LINK | SRST_DEFAULT_GRP)) ==
+	    (SRST_LINK | SRST_DEFAULT_GRP);
+
+	mutex_exit(&mac_srs->srs_lock);
+
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_avail));
+	ASSERT(mac_pkt_list_is_empty(&pktset.ftp_deli));
+
+	if (is_promisc_on) {
+		mac_promisc_client_dispatch(mcip, head);
+	}
+	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
+		mac_protect_intercept_dynamic(mcip, head);
+	}
+
+	mac_standardise_pkts(mcip, &pktset.ftp_avail, head);
+	uint32_t dropped_pkts = cnt - pktset.ftp_avail.mpl_count;
+
+	if (tid != NULL) {
+		(void) untimeout(tid);
+		tid = NULL;
+	}
+
+	if (unlikely(needs_sw_check)) {
+		mac_rx_srs_swcheck(mac_srs, &pktset);
 	}
 
 	/*
-	 * Check if SRS itself is doing the processing
-	 * This direct path does not apply when subflows are present. In this
-	 * case, packets need to be dispatched to a soft ring according to the
-	 * flow's bandwidth and other resources contraints.
+	 * Generally we *should* have a subtree here, due to DLS bypass.
+	 * Clients like viona (and some vnic/etherstub/... topologies) will
+	 * create effectively L2-only clients.
 	 */
-	if (mac_srs->srs_type & SRST_NO_SOFT_RINGS) {
-		mac_direct_rx_t		proc;
-		void			*arg1;
-
-		/*
-		 * This is the case when a Rx is directly
-		 * assigned and we have a fully classified
-		 * protocol chain. We can deal with it in
-		 * one shot.
-		 */
-		proc = srs_rx->sr_func;
-		arg1 = srs_rx->sr_arg1;
-
-		mac_srs->srs_state |= SRS_CLIENT_PROC;
-		mutex_exit(&mac_srs->srs_lock);
-		if (tid != NULL) {
-			(void) untimeout(tid);
-			tid = NULL;
+	size_t policed_bytes = 0;
+	if (has_subtree) {
+		ASSERT3P(mac_srs->srs_flowtree.ftb_subtree, !=, NULL);
+		if (!subtree_has_bw) {
+			dropped_pkts += mac_rx_srs_walk_flowtree(mac_srs,
+			    &pktset);
+		} else {
+			dropped_pkts += mac_rx_srs_walk_flowtree_bw(mac_srs,
+			    &pktset, &policed_bytes);
 		}
-
-		proc(arg1, NULL, head, NULL);
-		/*
-		 * Decrement the size and count here itelf
-		 * since the packet has been processed.
-		 */
-		mutex_enter(&mac_srs->srs_lock);
-		MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
-
-		mac_srs->srs_state &= ~SRS_CLIENT_PROC;
-	} else {
-		/* Some kind of softrings based fanout is required */
-		mutex_exit(&mac_srs->srs_lock);
-		if (tid != NULL) {
-			(void) untimeout(tid);
-			tid = NULL;
-		}
-
-		/*
-		 * Since the fanout routines can deal with chains,
-		 * shoot the entire chain up.
-		 */
-		if (mac_srs->srs_type & SRST_FANOUT_SRC_IP)
-			mac_rx_srs_fanout(mac_srs, head);
-		else
-			mac_rx_srs_proto_fanout(mac_srs, head);
-		mutex_enter(&mac_srs->srs_lock);
 	}
+
+	if (!has_subtree || !mac_pkt_list_is_empty(&pktset.ftp_avail)) {
+		atomic_add_64(&mac_srs->srs_match_pkts,
+		    pktset.ftp_avail.mpl_count);
+		atomic_add_64(&mac_srs->srs_match_bytes,
+		    pktset.ftp_avail.mpl_size);
+	}
+
+	if (has_subtree) {
+		/* Combine any unpicked packets with those delegated. */
+		mac_pkt_list_extend(&pktset.ftp_deli, &pktset.ftp_avail);
+	}
+
+	/* Everything leftover is for delivery to *THIS* SRS. */
+	mac_rx_srs_deliver(mac_srs, &pktset.ftp_avail);
+
+	if (dropped_pkts != 0) {
+		mac_update_srs_count(mac_srs, dropped_pkts);
+		mac_srs_bw_lock(mac_srs);
+		mac_srs_bw_refund_tx(mac_srs, policed_bytes);
+		mac_srs_bw_unlock(mac_srs);
+	}
+
+	mutex_enter(&mac_srs->srs_lock);
 
 	/*
 	 * Send the poll thread to pick up any packets arrived
@@ -3319,31 +3647,33 @@ again:
 	 * all the checks below are done and control is
 	 * handed to the poll thread if it was running.
 	 */
-	MAC_SRS_BW_LOCK(mac_srs);
-	if (!mac_bw_ctl_is_enforced(mac_srs->srs_bw)) {
+	mac_srs_bw_lock(mac_srs);
+	if (!mac_srs_any_bw_enforced(mac_srs)) {
 		if (mac_srs->srs_first != NULL) {
 			if (proc_type == SRS_WORKER) {
-				MAC_SRS_BW_UNLOCK(mac_srs);
+				mac_srs_bw_unlock(mac_srs);
 				if (srs_rx->sr_poll_pkt_cnt <=
-				    srs_rx->sr_lowat)
+				    srs_rx->sr_lowat) {
 					MAC_SRS_POLL_RING(mac_srs);
+				}
 				goto again;
 			} else {
 				cv_signal(&mac_srs->srs_async);
 			}
 		}
 	}
-	MAC_SRS_BW_UNLOCK(mac_srs);
+	mac_srs_bw_unlock(mac_srs);
 
 done:
 
 	if (mac_srs->srs_state & SRS_GET_PKTS) {
 		/*
 		 * Poll thread is already running. Leave the
-		 * SRS_RPOC set and hand over the control to
+		 * SRS_PROC set and hand over the control to
 		 * poll thread.
 		 */
 		mac_srs->srs_state &= ~proc_type;
+		srs_rx->sr_drain_poll_running++;
 		return;
 	}
 
@@ -3367,9 +3697,9 @@ done:
 	 * in the soft ring set or its soft rings, we will leave
 	 * the interface in polling mode.
 	 */
-	MAC_SRS_BW_LOCK(mac_srs);
+	mac_srs_bw_lock(mac_srs);
 	if ((mac_srs->srs_state & SRS_POLLING_CAPAB) != 0 &&
-	    (mac_bw_ctl_is_enforced(mac_srs->srs_bw) ||
+	    (mac_srs_any_bw_enforced(mac_srs) ||
 	    (srs_rx->sr_poll_pkt_cnt > 0))) {
 		MAC_SRS_POLLING_ON(mac_srs);
 		mac_srs->srs_state &= ~(SRS_PROC|proc_type);
@@ -3377,16 +3707,37 @@ done:
 		    (mac_srs->srs_tid == NULL)) {
 			mac_srs->srs_tid = timeout(mac_srs_fire, mac_srs, 1);
 		}
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		return;
 	}
-	MAC_SRS_BW_UNLOCK(mac_srs);
+	mac_srs_bw_unlock(mac_srs);
 
 leave_poll:
 
 	/* Nothing else to do. Get out of poll mode */
 	MAC_SRS_POLLING_OFF(mac_srs);
 	mac_srs->srs_state &= ~(SRS_PROC|proc_type);
+}
+
+void
+mac_rx_srs_drain_bw(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
+{
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, false, false);
+}
+
+void
+mac_rx_srs_drain_bw_subtree(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
+{
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true, false);
+}
+
+void
+mac_rx_srs_drain_bw_subtree_bw(mac_soft_ring_set_t *mac_srs,
+    const mac_soft_ring_set_state_t proc_type)
+{
+	mac_rx_srs_drain_bw_inner(mac_srs, proc_type, true, true);
 }
 
 /*
@@ -3405,22 +3756,24 @@ mac_srs_worker(mac_soft_ring_set_t *mac_srs)
 	CALLB_CPR_INIT(&cprinfo, lock, callb_generic_cpr, "srs_worker");
 	mutex_enter(lock);
 
+	const bool is_tx = mac_srs_is_tx(mac_srs);
+
 start:
 	for (;;) {
-		boolean_t bw_ctl_flag = B_FALSE;
+		bool bw_ctl_flag = false;
 		if (mac_srs_is_bw_controlled(mac_srs)) {
-			MAC_SRS_BW_LOCK(mac_srs);
+			mac_srs_bw_lock(mac_srs);
 			bw_ctl_flag = !mac_srs_bw_try_refresh(mac_srs);
-			MAC_SRS_BW_UNLOCK(mac_srs);
+			mac_srs_bw_unlock(mac_srs);
 		}
 		/*
-		 * The SRS_BW_ENFORCED flag may change since we have dropped
+		 * The BW_ENFORCED flag may change since we have dropped
 		 * the mac_bw_lock. However the drain function can handle both
 		 * a drainable SRS or a bandwidth controlled SRS, and the
 		 * effect of scheduling a timeout is to wakeup the worker
 		 * thread which in turn will call the drain function. Since
 		 * we release the srs_lock atomically only in the cv_wait there
-		 * isn't a fear of waiting for ever.
+		 * isn't a fear of waiting forever.
 		 */
 		while (((mac_srs->srs_state & SRS_PROC) ||
 		    (mac_srs->srs_first == NULL) || bw_ctl_flag ||
@@ -3434,15 +3787,29 @@ start:
 			 */
 			if (bw_ctl_flag && mac_srs->srs_tid == NULL) {
 				/*
-				 * We need to ensure that a timer  is already
-				 * scheduled or we force  schedule one for
+				 * We need to ensure that a timer is already
+				 * scheduled or we force schedule one for
 				 * later so that we can continue processing
-				 * after this  quanta is over.
+				 * after this quanta is over.
 				 */
 				mac_srs->srs_tid = timeout(mac_srs_fire,
 				    mac_srs, 1);
 			}
 wait:
+			/*
+			 * Hail mary in case we hit this point and the poll
+			 * thread has decided it's sleepytime. There must be
+			 * more to this,,,
+			 *
+			 * TODO(ky): this is patching over some other issue with
+			 * pollthread deactivation when a worker is present.
+			 * audit and think through.
+			 */
+			if (!is_tx && (mac_srs->srs_state & SRS_POLLING) != 0 &&
+			    (mac_srs->srs_state & SRS_GET_PKTS) == 0 &&
+			    (mac_srs->srs_data.rx.sr_poll_pkt_cnt == 0)) {
+				MAC_SRS_POLLING_OFF(mac_srs);
+			}
 			CALLB_CPR_SAFE_BEGIN(&cprinfo);
 			cv_wait(async, lock);
 			CALLB_CPR_SAFE_END(&cprinfo, lock);
@@ -3454,17 +3821,17 @@ wait:
 
 			if (mac_srs->srs_first != NULL &&
 			    mac_srs_is_bw_controlled(mac_srs)) {
-				MAC_SRS_BW_LOCK(mac_srs);
+				mac_srs_bw_lock(mac_srs);
 				bw_ctl_flag =
-				    mac_bw_ctl_is_enforced(mac_srs->srs_bw) &&
+				    mac_srs_any_bw_enforced(mac_srs) &&
 				    !mac_srs_bw_try_refresh(mac_srs);
-				MAC_SRS_BW_UNLOCK(mac_srs);
+				mac_srs_bw_unlock(mac_srs);
 			}
 		}
 
 		if (mac_srs->srs_state & SRS_PAUSE)
 			goto done;
-		mac_srs->srs_drain_func(mac_srs, SRS_WORKER);
+		mac_srs_drain(mac_srs, SRS_WORKER);
 	}
 done:
 	/*
@@ -3475,14 +3842,14 @@ done:
 	 * thread. In the case of Tx, there shouldn't be any thread holding
 	 * SRS_PROC at this point.
 	 */
-	if (!(mac_srs->srs_state & SRS_PROC)) {
+	if ((mac_srs->srs_state & SRS_PROC) == 0) {
 		mac_srs->srs_state |= SRS_PROC;
 	} else {
-		ASSERT((mac_srs->srs_type & SRST_TX) == 0);
 		/*
-		 * Poll thread still owns the SRS and is still running
+		 * Poll thread still owns the SRS and is still running.
 		 */
-		ASSERT((mac_srs->srs_poll_thr == NULL) ||
+		VERIFY(!mac_srs_is_tx(mac_srs));
+		VERIFY((mac_srs->srs_data.rx.sr_poll_thr == NULL) ||
 		    ((mac_srs->srs_state & SRS_POLL_THR_OWNER) ==
 		    SRS_POLL_THR_OWNER));
 	}
@@ -3511,84 +3878,6 @@ done:
 }
 
 /*
- * mac_rx_srs_subflow_process
- *
- * Receive side routine called from interrupt path when there are
- * sub flows present on this SRS.
- */
-/* ARGSUSED */
-void
-mac_rx_srs_subflow_process(void *arg, mac_resource_handle_t srs,
-    mblk_t *mp_chain, boolean_t loopback)
-{
-	flow_entry_t		*flent = NULL;
-	flow_entry_t		*prev_flent = NULL;
-	mblk_t			*mp = NULL;
-	mblk_t			*tail = NULL;
-	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)srs;
-	mac_client_impl_t	*mcip;
-
-	mcip = mac_srs->srs_mcip;
-	ASSERT(mcip != NULL);
-
-	/*
-	 * We need to determine the SRS for every packet
-	 * by walking the flow table, if we don't get any,
-	 * then we proceed using the SRS we came with.
-	 */
-	mp = tail = mp_chain;
-	while (mp != NULL) {
-
-		/*
-		 * We will increment the stats for the matching subflow.
-		 * when we get the bytes/pkt count for the classified packets
-		 * later in mac_rx_srs_process.
-		 */
-		(void) mac_flow_lookup(mcip->mci_subflow_tab, mp,
-		    FLOW_INBOUND, &flent);
-
-		if (mp == mp_chain || flent == prev_flent) {
-			if (prev_flent != NULL)
-				FLOW_REFRELE(prev_flent);
-			prev_flent = flent;
-			flent = NULL;
-			tail = mp;
-			mp = mp->b_next;
-			continue;
-		}
-		tail->b_next = NULL;
-		/*
-		 * A null indicates, this is for the mac_srs itself.
-		 * XXX-venu : probably assert for fe_rx_srs_cnt == 0.
-		 */
-		if (prev_flent == NULL || prev_flent->fe_rx_srs_cnt == 0) {
-			mac_rx_srs_process(arg,
-			    (mac_resource_handle_t)mac_srs, mp_chain,
-			    loopback);
-		} else {
-			(prev_flent->fe_cb_fn)(prev_flent->fe_cb_arg1,
-			    prev_flent->fe_cb_arg2, mp_chain, loopback);
-			FLOW_REFRELE(prev_flent);
-		}
-		prev_flent = flent;
-		flent = NULL;
-		mp_chain = mp;
-		tail = mp;
-		mp = mp->b_next;
-	}
-	/* Last chain */
-	ASSERT(mp_chain != NULL);
-	if (prev_flent == NULL || prev_flent->fe_rx_srs_cnt == 0) {
-		mac_rx_srs_process(arg,
-		    (mac_resource_handle_t)mac_srs, mp_chain, loopback);
-	} else {
-		(prev_flent->fe_cb_fn)(prev_flent->fe_cb_arg1,
-		    prev_flent->fe_cb_arg2, mp_chain, loopback);
-		FLOW_REFRELE(prev_flent);
-	}
-}
-
-/*
  * MAC SRS receive side routine. If the data is coming from the
  * network (i.e. from a NIC) then this is called in interrupt context.
  * If the data is coming from a local sender (e.g. mac_tx_send() or
@@ -3603,11 +3892,10 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
     boolean_t loopback)
 {
 	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)srs;
-	mblk_t			*mp, *tail;
-	uint32_t		count = 0;
+	mblk_t			*tail = NULL;
+	uint_t			count = 0;
 	size_t			sz = 0;
-	mac_bw_ctl_t		*mac_bw = mac_srs->srs_bw;
-	mac_srs_rx_t		*srs_rx = &mac_srs->srs_rx;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
 	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
 
 	if (mcip != NULL && mcip->mci_siphon != NULL) {
@@ -3625,11 +3913,11 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 		 * of whether we are doing B/W control or not for the
 		 * purpose of updating the stats.
 		 */
-		mp = tail = mp_chain;
+		mblk_t *mp = mp_chain;
 		while (mp != NULL) {
 			tail = mp;
 			count++;
-			sz += msgdsize(mp);
+			sz += mp_len(mp);
 			mp = mp->b_next;
 		}
 	}
@@ -3642,7 +3930,6 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 	if (loopback) {
 		SRS_RX_STAT_UPDATE(mac_srs, lclbytes, sz);
 		SRS_RX_STAT_UPDATE(mac_srs, lclcnt, count);
-
 	} else {
 		SRS_RX_STAT_UPDATE(mac_srs, intrbytes, sz);
 		SRS_RX_STAT_UPDATE(mac_srs, intrcnt, count);
@@ -3655,10 +3942,10 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 	 * worker thread needs to be awakened.
 	 */
 	if (mac_srs_is_bw_controlled(mac_srs)) {
-		MAC_SRS_BW_LOCK(mac_srs);
-		mac_bw->mac_bw_intr += sz;
+		mac_srs_bw_lock(mac_srs);
+		mac_srs_bw_stat_intr(mac_srs, sz);
 		ssize_t admit_at_most = 0;
-		const boolean_t limited =
+		const bool limited =
 		    mac_srs_bw_enqueue_bound(mac_srs, &admit_at_most);
 
 		if (limited && admit_at_most <= 0) {
@@ -3666,8 +3953,8 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 			 * No queue allocation left, drop everything.
 			 */
 			srs_rx->sr_stat.mrs_sdrops += count;
-			mac_bw->mac_bw_drop_bytes += sz;
-			MAC_SRS_BW_UNLOCK(mac_srs);
+			mac_srs_bw_stat_dropped(mac_srs, sz);
+			mac_srs_bw_unlock(mac_srs);
 			mutex_exit(&mac_srs->srs_lock);
 			mac_drop_chain(mp_chain, "Rx no bandwidth");
 			return;
@@ -3679,16 +3966,16 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 		 */
 		if (!limited || sz <= admit_at_most || count == 1) {
 			MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, mp_chain,
-			    tail, count, sz, B_TRUE);
+			    tail, count, sz, true);
 			mp_chain = NULL;
 		} else {
-			mp = mp_chain;
+			mblk_t *mp = mp_chain;
 			size_t chain_sz = 0;
 			size_t sub_count = 0;
 			tail = NULL;
 
 			while (mp != NULL) {
-				const size_t sz1 = msgdsize(mp);
+				const size_t sz1 = mp_len(mp);
 				if (chain_sz + sz1 > admit_at_most &&
 				    sub_count > 0) {
 					break;
@@ -3711,12 +3998,12 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 			if (drop_head != NULL) {
 				/* Drop any packet over the threshold */
 				srs_rx->sr_stat.mrs_sdrops += count;
-				mac_bw->mac_bw_drop_bytes += sz;
+				mac_srs_bw_stat_dropped(mac_srs, sz);
 			}
 
 			mp_chain = drop_head;
 		}
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		MAC_SRS_WORKER_WAKEUP(mac_srs);
 		mutex_exit(&mac_srs->srs_lock);
 
@@ -3748,7 +4035,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 		 * latency, or if our stack is running deep, we should signal
 		 * the worker thread.
 		 */
-		if (loopback || !(mac_srs->srs_type & SRST_LATENCY_OPT)) {
+		if (loopback || !mac_srs_is_latency_opt(mac_srs)) {
 			/*
 			 * For loopback, We need to let the worker take
 			 * over as we don't want to continue in the same
@@ -3770,7 +4057,7 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 			 * latency optimized case (in latency optimized
 			 * case, we inline process chains of any size).
 			 */
-			mac_srs->srs_drain_func(mac_srs, SRS_PROC_FAST);
+			mac_srs_drain_rx_complete(mac_srs, SRS_PROC_FAST);
 		}
 	}
 	mutex_exit(&mac_srs->srs_lock);
@@ -3789,9 +4076,9 @@ mac_tx_srs_no_desc(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uint16_t flag, mblk_t **ret_mp)
 {
 	mac_tx_cookie_t cookie = 0;
-	mac_srs_tx_t *srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t *srs_tx = &mac_srs->srs_data.tx;
 	boolean_t wakeup_worker = B_TRUE;
-	uint32_t tx_mode = srs_tx->st_mode;
+	mac_tx_srs_mode_t tx_mode = srs_tx->st_mode;
 	int cnt, sz;
 	mblk_t *tail;
 
@@ -3828,24 +4115,6 @@ mac_tx_srs_no_desc(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	return (cookie);
 }
 
-static inline void
-mac_stash_chain_hints(mblk_t *mp_chain, uintptr_t fanout_hint)
-{
-	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
-		if (curr->b_prev == NULL) {
-			curr->b_prev = (mblk_t *)fanout_hint;
-		}
-	}
-}
-
-static inline void
-mac_strip_chain_hints(mblk_t *mp_chain)
-{
-	for (mblk_t *curr = mp_chain; curr != NULL; curr = curr->b_next) {
-		curr->b_prev = NULL;
-	}
-}
-
 /*
  * mac_tx_srs_enqueue
  *
@@ -3859,7 +4128,7 @@ mac_strip_chain_hints(mblk_t *mp_chain)
  * returned back to the caller only after hi-watermark worth of data
  * is queued.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uint16_t flag, uintptr_t fanout_hint, mblk_t **ret_mp)
 {
@@ -3878,7 +4147,7 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		wakeup_worker = B_FALSE;
 	MAC_COUNT_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
 	if (flag & MAC_DROP_ON_NO_DESC) {
-		if (mac_srs->srs_count > mac_srs->srs_tx.st_hiwat) {
+		if (mac_srs->srs_count > mac_srs->srs_data.tx.st_hiwat) {
 			MAC_TX_SRS_DROP_MESSAGE(mac_srs, mp_chain, cookie,
 			    "Tx SRS hiwat");
 		} else {
@@ -3886,7 +4155,7 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 			    mp_chain, tail, cnt, sz);
 		}
 	} else if (flag & MAC_TX_NO_ENQUEUE) {
-		if ((mac_srs->srs_count > mac_srs->srs_tx.st_hiwat) ||
+		if ((mac_srs->srs_count > mac_srs->srs_data.tx.st_hiwat) ||
 		    (mac_srs->srs_state & SRS_TX_WAKEUP_CLIENT)) {
 			MAC_TX_SET_NO_ENQUEUE(mac_srs, mp_chain,
 			    ret_mp, cookie);
@@ -3993,18 +4262,12 @@ mac_tx_srs_enqueue(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * SRS_TX_WAKEUP_CLIENT will be set when tx hi-watermark is reached.
  */
 
-mac_tx_func_t
-mac_tx_get_func(uint32_t mode)
-{
-	return (mac_tx_mode_list[mode].mac_tx_func);
-}
-
 /* ARGSUSED */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_single_ring_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
 	mac_tx_stats_t		stats;
 	mac_tx_cookie_t		cookie = 0;
 
@@ -4067,13 +4330,13 @@ mac_tx_single_ring_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * NIC to send the packet out.
  */
 /* ARGSUSED */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_serializer_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
 	mac_tx_stats_t		stats;
 	mac_tx_cookie_t		cookie = 0;
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
 
 	/* Single ring, serialize below */
 	ASSERT(srs_tx->st_mode == SRS_TX_SERIALIZE);
@@ -4138,13 +4401,13 @@ mac_tx_serializer_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  */
 
 #define	MAC_TX_SOFT_RING_PROCESS(chain) {				\
-	index = COMPUTE_INDEX(hash, mac_srs->srs_tx_ring_count),	\
-	softring = mac_srs->srs_tx_soft_rings[index];			\
+	index = COMPUTE_INDEX(hash, mac_srs->srs_soft_ring_count),	\
+	softring = mac_srs->srs_soft_rings[index];			\
 	cookie = mac_tx_soft_ring_process(softring, chain, flag, ret_mp); \
 	DTRACE_PROBE2(tx__fanout, uint64_t, hash, uint_t, index);	\
 }
 
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_fanout_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
@@ -4153,8 +4416,8 @@ mac_tx_fanout_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	uint_t			index;
 	mac_tx_cookie_t		cookie = 0;
 
-	ASSERT(mac_srs->srs_tx.st_mode == SRS_TX_FANOUT ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_BW_FANOUT);
+	ASSERT(mac_srs->srs_data.tx.st_mode == SRS_TX_FANOUT ||
+	    mac_srs->srs_data.tx.st_mode == SRS_TX_BW_FANOUT);
 	if (fanout_hint != 0) {
 		/*
 		 * The hint is specified by the caller, simply pass the
@@ -4230,19 +4493,19 @@ mac_tx_fanout_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * SRS. If the SRS has multiple Tx rings, then packets will get fanned
  * out to a Tx rings.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
 	mac_tx_cookie_t		cookie = 0;
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
 
 	mutex_enter(&mac_srs->srs_lock);
 
 	ASSERT(TX_BANDWIDTH_MODE(mac_srs));
 	ASSERT(mac_srs_is_bw_controlled(mac_srs));
 
-	MAC_SRS_BW_LOCK(mac_srs);
+	mac_srs_bw_lock(mac_srs);
 
 	/*
 	 * The choice made historically is that Tx SRSes do not check against
@@ -4252,7 +4515,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	 * we see here (at least for TCP), whereas in the Rx case we are
 	 * having resource use pushed onto us.
 	 */
-	if (mac_srs->srs_bw->mac_bw_limit == 0) {
+	if (mac_srs_any_bw_zeroed(mac_srs)) {
 		/*
 		 * zero bandwidth, no traffic is sent: drop the packets,
 		 * or return the whole chain if the caller requests all
@@ -4264,14 +4527,14 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 			MAC_TX_SRS_DROP_MESSAGE(mac_srs, mp_chain, cookie,
 			    "Tx no bandwidth");
 		}
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		mutex_exit(&mac_srs->srs_lock);
 		return (cookie);
 	} else if (mac_srs->srs_first != NULL ||
-	    mac_bw_ctl_is_enforced(mac_srs->srs_bw)) {
+	    mac_srs_any_bw_enforced(mac_srs)) {
 		cookie = mac_tx_srs_enqueue(mac_srs, mp_chain, flag,
 		    fanout_hint, ret_mp);
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		mutex_exit(&mac_srs->srs_lock);
 		return (cookie);
 	}
@@ -4302,7 +4565,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		 * entered until BW_ENFORCED is reset.
 		 */
 		MAC_TX_SRS_ENQUEUE_CHAIN(mac_srs, mp_chain, tail, cnt, sz);
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		cv_signal(&mac_srs->srs_async);
 		mutex_exit(&mac_srs->srs_lock);
 		return (cookie);
@@ -4320,7 +4583,7 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 	mblk_t *admit_tail = NULL;
 	mblk_t *admit_head = mac_srs_pick_chain(mac_srs, &admit_tail,
 	    &admit_sz, &admit_cnt);
-	MAC_SRS_BW_UNLOCK(mac_srs);
+	mac_srs_bw_unlock(mac_srs);
 
 	/*
 	 * mp_chain, tail, sz, cnt now contain the packets which we are rate
@@ -4373,9 +4636,9 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
 		to_enqueue = my_ret_mp;
 		MAC_COUNT_CHAIN(mac_srs, to_enqueue, my_ret_tail, cnt, sz);
 
-		MAC_SRS_BW_LOCK(mac_srs);
+		mac_srs_bw_lock(mac_srs);
 		mac_srs_bw_refund_tx(mac_srs, sz);
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 	}
 	if (mp_chain != NULL) {
 		if (to_enqueue == NULL) {
@@ -4417,11 +4680,11 @@ mac_tx_bw_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
  * side as the pseudo Tx ring won't be available anymore to
  * aggr_find_tx_ring() once the port has been removed.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_aggr_mode(mac_soft_ring_set_t *mac_srs, mblk_t *mp_chain,
     uintptr_t fanout_hint, uint16_t flag, mblk_t **ret_mp)
 {
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
 	mac_tx_ring_fn_t	find_tx_ring_fn;
 	mac_ring_handle_t	ring = NULL;
 	void			*arg;
@@ -4458,7 +4721,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 {
 	mblk_t			*head, *tail;
 	mac_tx_stats_t		stats;
-	mac_srs_tx_t		*srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t		*srs_tx = &mac_srs->srs_data.tx;
 	mac_tx_srs_mode_t	tx_mode = srs_tx->st_mode;
 
 	ASSERT(mutex_owned(&mac_srs->srs_lock));
@@ -4483,7 +4746,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 
 			mutex_enter(&mac_srs->srs_lock);
 			if (head != NULL) {
-				mac_tx_srs_block(mac_srs, head, B_FALSE);
+				mac_tx_srs_block(mac_srs, head, false);
 			} else {
 				srs_tx->st_woken_up = B_FALSE;
 				SRS_TX_STATS_UPDATE(mac_srs, &stats);
@@ -4497,16 +4760,16 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 		 * to transmit. Also mac_srs_worker should have reset
 		 * BW_ENFORCED flag.
 		 */
-		MAC_SRS_BW_LOCK(mac_srs);
+		mac_srs_bw_lock(mac_srs);
 		if (!mac_srs_bw_try_refresh(mac_srs)) {
-			MAC_SRS_BW_UNLOCK(mac_srs);
+			mac_srs_bw_unlock(mac_srs);
 			goto done;
 		}
 
 		size_t chain_sz = 0;
 		uint32_t chain_ct = 0;
 		head = mac_srs_pick_chain(mac_srs, &tail, &chain_sz, &chain_ct);
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 
 		ASSERT3B(head == NULL, ==, tail == NULL);
 
@@ -4519,7 +4782,7 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 
 			mutex_enter(&mac_srs->srs_lock);
 			if (head != NULL) {
-				mac_tx_srs_block(mac_srs, head, B_TRUE);
+				mac_tx_srs_block(mac_srs, head, true);
 			} else {
 				srs_tx->st_woken_up = B_FALSE;
 				SRS_TX_STATS_UPDATE(mac_srs, &stats);
@@ -4542,16 +4805,16 @@ mac_tx_srs_drain(mac_soft_ring_set_t *mac_srs,
 		 * correctly handles the case where no BW limit is applied,
 		 * allowing us to clean up after this case.
 		 */
-		MAC_SRS_BW_LOCK(mac_srs);
+		mac_srs_bw_lock(mac_srs);
 		if (!mac_srs_bw_try_refresh(mac_srs)) {
-			MAC_SRS_BW_UNLOCK(mac_srs);
+			mac_srs_bw_unlock(mac_srs);
 			goto done;
 		}
 
 		size_t chain_sz = 0;
 		uint32_t chain_ct = 0;
 		head = mac_srs_pick_chain(mac_srs, &tail, &chain_sz, &chain_ct);
-		MAC_SRS_BW_UNLOCK(mac_srs);
+		mac_srs_bw_unlock(mac_srs);
 		mutex_exit(&mac_srs->srs_lock);
 
 		ASSERT3B(head == NULL, ==, tail == NULL);
@@ -4726,8 +4989,7 @@ mac_tx_send(mac_client_impl_t *src_mcip, mac_ring_t *ring, mblk_t *mp_chain,
 			next = mp->b_next;
 			mp->b_next = NULL;
 			opackets++;
-			obytes += (mp->b_cont == NULL ? MBLKL(mp) :
-			    msgdsize(mp));
+			obytes += mp_len(mp);
 
 			CHECK_VID_AND_ADD_TAG(mp);
 			mp = mac_provider_tx(mip, (mac_ring_handle_t)ring, mp,
@@ -4766,7 +5028,7 @@ mac_tx_send(mac_client_impl_t *src_mcip, mac_ring_t *ring, mblk_t *mp_chain,
 		next = mp->b_next;
 		mp->b_next = NULL;
 		opackets++;
-		pkt_size = (mp->b_cont == NULL ? MBLKL(mp) : msgdsize(mp));
+		pkt_size = mp_len(mp);
 		obytes += pkt_size;
 		CHECK_VID_AND_ADD_TAG(mp);
 
@@ -4839,8 +5101,8 @@ mac_tx_send(mac_client_impl_t *src_mcip, mac_ring_t *ring, mblk_t *mp_chain,
 			 * Unknown destination, send via the underlying
 			 * NIC.
 			 */
-			mp = mac_provider_tx(mip, (mac_ring_handle_t)ring,
-			    mp, src_mcip);
+			mp = mac_provider_tx(mip, (mac_ring_handle_t)ring, mp,
+			    src_mcip);
 			if (mp != NULL) {
 				/*
 				 * Adjust for the last packet that
@@ -4870,14 +5132,13 @@ done:
 boolean_t
 mac_tx_srs_ring_present(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 {
-	int i;
 	mac_soft_ring_t *soft_ring;
 
-	if (srs->srs_tx.st_arg2 == tx_ring)
+	if (srs->srs_data.tx.st_arg2 == tx_ring)
 		return (B_TRUE);
 
-	for (i = 0; i < srs->srs_tx_ring_count; i++) {
-		soft_ring =  srs->srs_tx_soft_rings[i];
+	for (uint16_t i = 0; i < srs->srs_soft_ring_count; i++) {
+		soft_ring = srs->srs_soft_rings[i];
 		if (soft_ring->s_ring_tx_arg2 == tx_ring)
 			return (B_TRUE);
 	}
@@ -4893,14 +5154,13 @@ mac_tx_srs_ring_present(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 mac_soft_ring_t *
 mac_tx_srs_get_soft_ring(mac_soft_ring_set_t *srs, mac_ring_t *tx_ring)
 {
-	int		i;
 	mac_soft_ring_t	*soft_ring;
 
-	if (srs->srs_tx.st_arg2 == tx_ring)
+	if (srs->srs_data.tx.st_arg2 == tx_ring)
 		return (NULL);
 
-	for (i = 0; i < srs->srs_tx_ring_count; i++) {
-		soft_ring =  srs->srs_tx_soft_rings[i];
+	for (uint16_t i = 0; i < srs->srs_soft_ring_count; i++) {
+		soft_ring = srs->srs_soft_rings[i];
 		if (soft_ring->s_ring_tx_arg2 == tx_ring)
 			return (soft_ring);
 	}
@@ -4919,9 +5179,8 @@ void
 mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring_h)
 {
 	mac_ring_t *ring = (mac_ring_t *)ring_h;
-	int i;
 	mac_soft_ring_t *sringp;
-	mac_srs_tx_t *srs_tx = &mac_srs->srs_tx;
+	mac_srs_tx_t *srs_tx = &mac_srs->srs_data.tx;
 
 	mutex_enter(&mac_srs->srs_lock);
 	/*
@@ -4950,8 +5209,8 @@ mac_tx_srs_wakeup(mac_soft_ring_set_t *mac_srs, mac_ring_handle_t ring_h)
 	 * If you are here, it is for FANOUT, BW_FANOUT,
 	 * AGGR_MODE or AGGR_BW_MODE case
 	 */
-	for (i = 0; i < mac_srs->srs_tx_ring_count; i++) {
-		sringp = mac_srs->srs_tx_soft_rings[i];
+	for (uint16_t i = 0; i < mac_srs->srs_soft_ring_count; i++) {
+		sringp = mac_srs->srs_soft_rings[i];
 		mutex_enter(&sringp->s_ring_lock);
 		if (sringp->s_ring_tx_arg2 == ring) {
 			if (sringp->s_ring_state & S_RING_BLOCK) {
@@ -5045,32 +5304,45 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 /*
  * Process a chain for a given soft ring. If the number of packets
  * queued in the SRS and its associated soft rings (including this
- * one) is very small (tracked by srs_poll_pkt_cnt) then allow the
+ * one) is a single packet (tracked by srs_poll_pkt_cnt), then allow the
  * entering thread (interrupt or poll thread) to process the chain
  * inline. This is meant to reduce latency under low load.
- *
- * The proc and arg for each mblk is already stored in the mblk in
- * appropriate places.
  */
-/* ARGSUSED */
 void
-mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
-    mblk_t *mp_chain, mblk_t *tail, int cnt, size_t sz)
+mac_rx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain, mblk_t *tail,
+    int cnt, size_t sz)
 {
 	mac_direct_rx_t		proc;
 	void			*arg1;
 	mac_resource_handle_t	arg2;
-	mac_soft_ring_set_t	*mac_srs = ringp->s_ring_set;
+	mac_soft_ring_set_t	*my_mac_srs = ringp->s_ring_set;
+	mac_soft_ring_set_t	*from_mac_srs =
+	    (my_mac_srs->srs_complete_parent != NULL) ?
+	    my_mac_srs->srs_complete_parent : my_mac_srs;
 
-	ASSERT(ringp != NULL);
-	ASSERT(mp_chain != NULL);
-	ASSERT(tail != NULL);
+	ASSERT3P(ringp, !=, NULL);
+	ASSERT3P(mp_chain, !=, NULL);
+	ASSERT3P(tail, !=, NULL);
 	ASSERT(MUTEX_NOT_HELD(&ringp->s_ring_lock));
 
 	mutex_enter(&ringp->s_ring_lock);
-	ringp->s_ring_total_inpkt += cnt;
-	ringp->s_ring_total_rbytes += sz;
-	if ((mac_srs->srs_rx.sr_poll_pkt_cnt <= 1) &&
+	ASSERT3U(ringp->s_ring_state & ST_RING_TX, ==, 0);
+	atomic_add_64(&ringp->s_ring_total_inpkt, cnt);
+	atomic_add_64(&ringp->s_ring_total_rbytes, sz);
+	/*
+	 * `sr_poll_pkt_cnt` can be modified by a few other concurrent actors.
+	 *
+	 * - Another softring reduces this count by clearing its own chain.
+	 *
+	 * - More packets were enqueued onto this SRS behind us, because we are
+	 *   the SRS worker thread.
+	 *
+	 * In the worst case, this read narrowly misses a slightly lower-latency
+	 * processing opportunity, but the ring is arguably still loaded enough
+	 * to warrant passing off frames to the softring worker. The packets
+	 * will always be handled either way.
+	 */
+	if ((from_mac_srs->srs_data.rx.sr_poll_pkt_cnt <= 1) &&
 	    !(ringp->s_ring_state & ST_RING_WORKER_ONLY)) {
 		/* If on processor or blanking on, then enqueue and return */
 		if (ringp->s_ring_state & S_RING_BLANK ||
@@ -5106,23 +5378,17 @@ mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
 
 			ASSERT(MUTEX_NOT_HELD(&ringp->s_ring_lock));
 			/*
-			 * If we have an SRS performing bandwidth
-			 * control then we need to decrement the size
-			 * and count so the SRS has an accurate count
-			 * of the data queued between the SRS and its
-			 * soft rings. We decrement the counters only
-			 * when the packet is processed by both the
-			 * SRS and the soft ring.
+			 * Update the SRS (or its complete parent's) poll
+			 * packet count to make room for more to be enqueued.
 			 */
-			mutex_enter(&mac_srs->srs_lock);
-			MAC_UPDATE_SRS_COUNT_LOCKED(mac_srs, cnt);
-			mutex_exit(&mac_srs->srs_lock);
+			mac_update_srs_count(from_mac_srs, cnt);
 
 			mutex_enter(&ringp->s_ring_lock);
 			ringp->s_ring_run = NULL;
 			ringp->s_ring_state &= ~S_RING_PROC;
-			if (ringp->s_ring_state & S_RING_CLIENT_WAIT)
+			if (ringp->s_ring_state & S_RING_CLIENT_WAIT) {
 				cv_signal(&ringp->s_ring_client_cv);
+			}
 
 			if ((ringp->s_ring_first == NULL) ||
 			    (ringp->s_ring_state & S_RING_BLANK)) {
@@ -5150,7 +5416,7 @@ mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
 		ASSERT(MUTEX_HELD(&ringp->s_ring_lock));
 		ASSERT(ringp->s_ring_first != NULL);
 
-		ringp->s_ring_drain_func(ringp);
+		mac_rx_soft_ring_drain(ringp);
 		mutex_exit(&ringp->s_ring_lock);
 		return;
 	} else {
@@ -5183,7 +5449,7 @@ mac_rx_soft_ring_process(mac_client_impl_t *mcip, mac_soft_ring_t *ringp,
  * soft ring pointer as the opaque cookie for the client enable
  * flow control.
  */
-static mac_tx_cookie_t
+mac_tx_cookie_t
 mac_tx_sring_enqueue(mac_soft_ring_t *ringp, mblk_t *mp_chain, uint16_t flag,
     mblk_t **ret_mp)
 {
@@ -5264,7 +5530,7 @@ mac_tx_sring_enqueue(mac_soft_ring_t *ringp, mblk_t *mp_chain, uint16_t flag,
  * mac_tx_soft_ring_process
  *
  * This routine is called when fanning out outgoing traffic among
- * multipe Tx rings.
+ * multiple Tx rings.
  * Note that a soft ring is associated with a h/w Tx ring.
  */
 mac_tx_cookie_t
@@ -5285,10 +5551,10 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
 	 * SRS_TX_FANOUT, SRS_TX_AGGR, SRS_TX_BW_AGGR.
 	 */
 	ASSERT(MAC_TX_SOFT_RINGS(mac_srs));
-	ASSERT(mac_srs->srs_tx.st_mode == SRS_TX_FANOUT ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_BW_FANOUT ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_AGGR ||
-	    mac_srs->srs_tx.st_mode == SRS_TX_BW_AGGR);
+	ASSERT(mac_srs->srs_data.tx.st_mode == SRS_TX_FANOUT ||
+	    mac_srs->srs_data.tx.st_mode == SRS_TX_BW_FANOUT ||
+	    mac_srs->srs_data.tx.st_mode == SRS_TX_AGGR ||
+	    mac_srs->srs_data.tx.st_mode == SRS_TX_BW_AGGR);
 
 	if (ringp->s_ring_state & ST_RING_WORKER_ONLY) {
 		/* Serialization mode */
@@ -5367,4 +5633,133 @@ mac_tx_soft_ring_process(mac_soft_ring_t *ringp, mblk_t *mp_chain,
 
 		return (0);
 	}
+}
+
+/*
+ * Forwards packets from a logical SRS with no softrings to the softrings of
+ * another SRS.
+ *
+ * This function is used in bandwidth limited cases where subflows are
+ * concerned:
+ *
+ *  - Rx: We have a bandwidth limited delegate action with identical CPU
+ *    bindings to its parent.
+ *
+ *  - Tx: A bandwidth limit has been applied to a subflow.
+ *
+ * Accordingly we always check bandwidth state. In the Tx case we deliver to the
+ * target SRS, rather than the softrings due to differences in accounting.
+ *
+ * As with other BW cases, packets which we take off the SRS need to be taken
+ * off our own queue policing limits, and checked against the target's
+ * rate limit(s).
+ */
+void
+mac_srs_drain_forward(mac_soft_ring_set_t *srs,
+    const mac_soft_ring_set_state_t proc_type)
+{
+	ASSERT(mac_srs_is_logical(srs));
+	ASSERT3U(srs->srs_type & SRST_FORWARD, !=, 0);
+	ASSERT(MUTEX_HELD(&srs->srs_lock));
+	ASSERT3U(srs->srs_state & SRS_PROC, ==, 0);
+
+	mac_pkt_list_t pkts = { 0 };
+	const bool is_tx = mac_srs_is_tx(srs);
+	mac_soft_ring_set_t *give_to = srs->srs_give_to;
+	ASSERT3P(srs->srs_give_to, !=, NULL);
+	ASSERT3B(mac_srs_is_tx(srs->srs_give_to), ==, is_tx);
+
+	srs->srs_state |= (SRS_PROC | proc_type);
+
+	mac_srs_bw_lock(srs);
+	if (!mac_srs_bw_try_refresh(srs)) {
+		mac_srs_bw_unlock(srs);
+		goto done;
+	}
+	pkts.mpl_head = mac_srs_pick_chain(srs, &pkts.mpl_tail, &pkts.mpl_size,
+	    &pkts.mpl_count);
+	mac_srs_bw_unlock(srs);
+
+	if (mac_pkt_list_is_empty(&pkts)) {
+		goto done;
+	}
+
+	mutex_exit(&srs->srs_lock);
+
+	if (is_tx) {
+		/*
+		 * In the Tx case, we have applied all our bandwidth limits
+		 * _except_ that of the underlying client, if one is set.
+		 * Delivery here requires that we check for underlying Tx
+		 * quiesce like `mac_tx` would impose, to ensure that st_mode is
+		 * valid and not about to change.
+		 */
+		int error = 0;
+		mac_tx_percpu_t *mytx;
+		MAC_TX_TRY_HOLD(give_to->srs_mcip, mytx, error);
+
+		if (error == 0) {
+			/*
+			 * `mac_tx` will have left us a fanout hint in b_prev.
+			 * As in other BW fanout cases, we must extract this.
+			 * Any packet chains will have been pushed as adjacent
+			 * runs with the fanout hint stashed in b_prev.
+			 *
+			 * This is almost identical to the code used in
+			 * `mac_tx_srs_drain` for the BW_FANOUT case.
+			 *
+			 * As there, we do not set `ret_mp` because packets have
+			 * already signed up for being enqueued etc. as part of
+			 * bandwidth control.
+			 */
+			mblk_t *curr = pkts.mpl_head;
+			mblk_t *sub_tail = pkts.mpl_head;
+			uintptr_t hint = 0;
+			while (curr != NULL) {
+				hint = (uintptr_t)curr->b_prev;
+				if ((uintptr_t)sub_tail->b_prev != hint) {
+					const uintptr_t s_hint =
+					    (uintptr_t)sub_tail->b_prev;
+					sub_tail->b_next = NULL;
+					mac_strip_chain_hints(pkts.mpl_head);
+					mac_srs_send_tx_complete(give_to,
+					    pkts.mpl_head, s_hint, 0, NULL);
+					pkts.mpl_head = curr;
+				}
+
+				sub_tail = curr;
+				curr = curr->b_next;
+			}
+
+			mac_strip_chain_hints(pkts.mpl_head);
+			mac_srs_send_tx_complete(give_to, pkts.mpl_head, hint,
+			    0, NULL);
+
+			bzero(&pkts, sizeof (pkts));
+
+			MAC_TX_RELE(give_to->srs_mcip, mytx);
+		}
+
+		mutex_enter(&srs->srs_lock);
+		if (pkts.mpl_head != NULL) {
+			/*
+			 * Assume that the quiesce is temporary and
+			 * refund/requeue the packets. If it's permanent then
+			 * our own SRS cleanup will free packets etc.
+			 */
+			mac_tx_srs_block(srs, pkts.mpl_head, true);
+		}
+	} else {
+		/*
+		 * In the Rx case, all bandwidth limits have been applied.
+		 * Go straight to `srs_give_to`'s softrings. This is safe to do
+		 * without locking as adjustment of softring count happens
+		 * behind Rx quiesce of *all* SRSes in the client.
+		 */
+		mac_rx_srs_deliver(srs->srs_give_to, &pkts);
+		mutex_enter(&srs->srs_lock);
+	}
+
+done:
+	srs->srs_state &= ~(SRS_PROC | proc_type);
 }
