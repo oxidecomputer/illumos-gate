@@ -1623,7 +1623,6 @@ ipcc_handle_alerts(const ipcc_ops_t *ops, void *arg)
 		size_t datal = 0;
 		size_t off;
 		uint8_t action;
-		int err = 0;
 
 		err = ipcc_command_locked(ops, arg,
 		    IPCC_HSS_ALERT, IPCC_SP_ALERT, NULL, 0, &data, &datal);
