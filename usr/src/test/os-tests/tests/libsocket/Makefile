@@ -18,7 +18,9 @@
 #
 
 PROGS = \
-	getifaddrs_dl
+	getifaddrs_dl \
+	inet6_opt \
+	nametoindex
 
 PROGS32 += $(PROGS:%=%.32)
 PROGS64 += $(PROGS:%=%.64)
