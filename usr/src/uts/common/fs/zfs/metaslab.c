@@ -3957,6 +3957,16 @@ metaslab_sync(metaslab_t *msp, uint64_t txg)
 		    zfs_metaslab_sm_blksz_no_log, tx);
 		VERIFY3U(new_object, !=, 0);
 
+		/*
+		 * Empty metaslabs contribute all free space as a single
+		 * large segment. Once allocations begin, remove this
+		 * synthetic entry so the histogram reflects the actual
+		 * spacemap fragmentation.
+		 */
+		mutex_enter(&msp->ms_lock);
+		metaslab_group_histogram_remove(mg, msp);
+		mutex_exit(&msp->ms_lock);
+
 		dmu_write(mos, vd->vdev_ms_array, sizeof (uint64_t) *
 		    msp->ms_id, sizeof (uint64_t), &new_object, tx);
 
