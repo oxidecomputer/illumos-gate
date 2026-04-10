@@ -858,6 +858,7 @@ zvol_zero(zvol_state_t *zv)
 	dmu_tx_t *tx;
 	uint64_t resid, bytes_zeroed = 0;
 	int error = 0;
+	uint64_t blocksize = zv->zv_volblocksize;
 
 	ASSERT(MUTEX_HELD(&zv->zv_state_lock));
 
@@ -874,15 +875,31 @@ zvol_zero(zvol_state_t *zv)
 
 		mutex_exit(&zv->zv_state_lock);
 
-		tx = dmu_tx_create(os);
 		/*
-		 * Set the blocksize the first time we're initializing
-		 * the volume.
+		 * For raw zvols, determine the block size when beginning
+		 * initialization. This may adapt based on available space
+		 * to maximize allocation size while avoiding fragmentation.
 		 */
 		if (zv->zv_zero_off == 0 && !(zv->zv_flags & ZVOL_DUMPIFIED)) {
-			uint64_t blocksize = zvol_raw_max_blocksize(zv);
+			blocksize = zvol_raw_max_blocksize(zv);
+		}
+		uint64_t bytes = MIN(resid, blocksize);
 
-			dmu_tx_hold_bonus(tx, ZVOL_OBJ);
+		tx = dmu_tx_create(os);
+		dmu_tx_hold_write(tx, ZVOL_OBJ, zv->zv_zero_off, bytes);
+		dmu_tx_hold_bonus(tx, ZVOL_OBJ);
+		error = dmu_tx_assign(tx, TXG_WAIT);
+		if (error) {
+			dmu_tx_abort(tx);
+			mutex_enter(&zv->zv_state_lock);
+			break;
+		}
+
+		/*
+		 * If the chosen block size differs from the current
+		 * volblocksize, update the DMU.
+		 */
+		if (blocksize != zv->zv_volblocksize) {
 			error = dmu_object_set_blocksize(
 			    zv->zv_objset, ZVOL_OBJ, blocksize, 0, tx);
 			if (error != 0) {
@@ -893,15 +910,6 @@ zvol_zero(zvol_state_t *zv)
 			zv->zv_volblocksize = blocksize;
 			zfs_dbgmsg("zv %p set blocksize to %llu", zv,
 			    blocksize);
-		}
-		uint64_t bytes = MIN(resid, zv->zv_volblocksize);
-
-		dmu_tx_hold_write(tx, ZVOL_OBJ, zv->zv_zero_off, bytes);
-		error = dmu_tx_assign(tx, TXG_WAIT);
-		if (error) {
-			dmu_tx_abort(tx);
-			mutex_enter(&zv->zv_state_lock);
-			break;
 		}
 		dmu_zero(os, ZVOL_OBJ, zv->zv_zero_off, bytes,
 		    (zv->zv_flags & ZVOL_DUMPIFIED), tx);
@@ -2564,8 +2572,6 @@ zvol_raw_volume_init(objset_t *os, nvlist_t *nvprops)
 	spa_t *spa = dmu_objset_spa(os);
 	uint64_t version = spa_version(spa);
 	nvlist_t *nv = NULL;
-
-	ASSERT(MUTEX_HELD(&zfsdev_state_lock));
 
 	/*
 	 * If MULTI_VDEV_CRASH_DUMP is active, use the NOPARITY checksum
