@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2018 Joyent, Inc.  All rights reserved.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <regex.h>
@@ -105,6 +105,9 @@ static devfsadm_create_t misc_cbt[] = {
 	{ "pseudo", "ddi_pseudo", "apob",
 	    TYPE_EXACT | DRV_EXACT, ILEVEL_0, ln_minor_name,
 	},
+	{ "pseudo", "ddi_pseudo", "os_rot",
+	    TYPE_EXACT | DRV_EXACT, ILEVEL_0, ln_minor_name,
+	},
 };
 
 DEVFSADM_CREATE_INIT_V0(misc_cbt);
@@ -141,6 +144,9 @@ static devfsadm_remove_t misc_remove_cbt[] = {
 		ILEVEL_0, devfsadm_rm_all
 	},
 	{ "pseudo", "^ipcc$", RM_ALWAYS | RM_PRE | RM_HOT,
+		ILEVEL_0, devfsadm_rm_all
+	},
+	{ "pseudo", "^os_rot$", RM_ALWAYS | RM_PRE | RM_HOT,
 		ILEVEL_0, devfsadm_rm_all
 	},
 };

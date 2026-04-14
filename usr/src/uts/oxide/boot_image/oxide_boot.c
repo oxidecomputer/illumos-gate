@@ -44,6 +44,7 @@
 #include <sys/boot_data.h>
 #include <sys/kernel_ipcc.h>
 #include <sys/boot_image_ops.h>
+#include <sys/platform_detect.h>
 
 #include "oxide_boot.h"
 
@@ -450,11 +451,23 @@ oxide_boot_disk_read(ldi_handle_t lh, uint64_t offset, uint8_t *buf, size_t len)
 	return (true);
 }
 
+/*
+ * Calculate the checksums of the ramdisk and optionally verify that the
+ * SHA2-256 checksum matches the expected value.
+ *
+ * The image verification protocol (with phase 1, the SP, the network boot
+ * server, and the on-disk image header) is expressed in terms of SHA2-256,
+ * so that remains the checksum we verify against.  If `sha384` is not NULL, we
+ * also compute a SHA2-384 digest over the same data in the same pass for later
+ * consumers that require that measurement before the ramdisk is imported
+ * as the (writable) root pool and its contents diverge from the
+ * distributed image.
+ */
 static bool
-oxide_boot_ramdisk_check(oxide_boot_t *oxb)
+oxide_boot_ramdisk_check(oxide_boot_t *oxb, bool skip_verify, uint8_t *sha384)
 {
-	crypto_context_t cc;
-	crypto_mechanism_t cm;
+	crypto_context_t cc256 = NULL, cc384 = NULL;
+	crypto_mechanism_t cm256, cm384;
 
 	int r;
 
@@ -462,14 +475,30 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 		return (false);
 	}
 
-	bzero(&cm, sizeof (cm));
-	if ((cm.cm_type = crypto_mech2id(SUN_CKM_SHA256)) ==
+	bzero(&cm256, sizeof (cm256));
+	if ((cm256.cm_type = crypto_mech2id(SUN_CKM_SHA256)) ==
 	    CRYPTO_MECH_INVALID) {
 		return (false);
 	}
 
-	if ((r = crypto_digest_init(&cm, &cc, NULL)) != CRYPTO_SUCCESS) {
-		oxide_boot_warn("crypto_digest_init() failed %d", r);
+	if (sha384 != NULL) {
+		bzero(&cm384, sizeof (cm384));
+		if ((cm384.cm_type = crypto_mech2id(SUN_CKM_SHA384)) ==
+		    CRYPTO_MECH_INVALID) {
+			return (false);
+		}
+	}
+
+	if ((r = crypto_digest_init(&cm256, &cc256, NULL)) != CRYPTO_SUCCESS) {
+		oxide_boot_warn("crypto_digest_init(SHA256) failed %d", r);
+		return (false);
+	}
+
+	if (sha384 != NULL &&
+	    (r = crypto_digest_init(&cm384, &cc384, NULL)) != CRYPTO_SUCCESS) {
+		oxide_boot_warn("crypto_digest_init(SHA384) failed %d", r);
+		crypto_cancel_ctx(cc256);
+		return (false);
 	}
 
 	uint8_t *buf = kmem_alloc(PAGESIZE, KM_SLEEP);
@@ -494,8 +523,17 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 				.iov_len = sz,
 			},
 		};
-		if ((r = crypto_digest_update(cc, &cd, 0) != CRYPTO_SUCCESS)) {
-			oxide_boot_warn("crypto digest update failed %d", r);
+		if ((r = crypto_digest_update(cc256, &cd, 0)) !=
+		    CRYPTO_SUCCESS) {
+			oxide_boot_warn("crypto digest update (SHA256) "
+			    "failed %d", r);
+			goto bail;
+		}
+
+		if (sha384 != NULL && (r = crypto_digest_update(cc384, &cd, 0))
+		    != CRYPTO_SUCCESS) {
+			oxide_boot_warn("crypto digest update (SHA384) "
+			    "failed %d", r);
 			goto bail;
 		}
 
@@ -503,7 +541,7 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 		pos += sz;
 	}
 
-	crypto_data_t cd = {
+	crypto_data_t cd256 = {
 		.cd_format = CRYPTO_DATA_RAW,
 		.cd_length = OXBOOT_CSUMLEN_SHA256,
 		.cd_raw = {
@@ -511,22 +549,47 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 			.iov_len = OXBOOT_CSUMLEN_SHA256,
 		},
 	};
-	if ((r = crypto_digest_final(cc, &cd, 0)) != CRYPTO_SUCCESS) {
-		oxide_boot_warn("crypto digest final failed %d", r);
+	if ((r = crypto_digest_final(cc256, &cd256, 0)) != CRYPTO_SUCCESS) {
+		oxide_boot_warn("crypto digest final (SHA256) failed %d", r);
+		/*
+		 * Do not call crypto_cancel_ctx() after crypto_digest_final()!
+		 */
+		cc256 = NULL;
 		goto bail;
+	}
+	cc256 = NULL;
+
+	if (sha384 != NULL) {
+		crypto_data_t cd384 = {
+			.cd_format = CRYPTO_DATA_RAW,
+			.cd_length = OXBOOT_CSUMLEN_SHA384,
+			.cd_raw = {
+				.iov_base = (void *)sha384,
+				.iov_len = OXBOOT_CSUMLEN_SHA384,
+			},
+		};
+		if ((r = crypto_digest_final(cc384, &cd384, 0)) !=
+		    CRYPTO_SUCCESS) {
+			oxide_boot_warn("crypto digest final (SHA384) "
+			    "failed %d", r);
+			cc384 = NULL;
+			goto bail;
+		}
+		cc384 = NULL;
 	}
 
 	kmem_free(buf, PAGESIZE);
+
+	if (skip_verify) {
+		oxide_boot_debug("skipping checksum verification");
+		return (true);
+	}
 
 	if (bcmp(oxb->oxb_csum_want, oxb->oxb_csum_have,
 	    OXBOOT_CSUMLEN_SHA256) != 0) {
 		oxide_boot_warn("checksum mismatch");
 		oxide_dump_sum("want", oxb->oxb_csum_want);
 		oxide_dump_sum("have", oxb->oxb_csum_have);
-
-		/*
-		 * Do not call crypto_cancel_ctx() after crypto_digest_final()!
-		 */
 		return (false);
 	}
 
@@ -535,7 +598,10 @@ oxide_boot_ramdisk_check(oxide_boot_t *oxb)
 
 bail:
 	kmem_free(buf, PAGESIZE);
-	crypto_cancel_ctx(cc);
+	if (cc256 != NULL)
+		crypto_cancel_ctx(cc256);
+	if (cc384 != NULL)
+		crypto_cancel_ctx(cc384);
 	return (false);
 }
 
@@ -574,10 +640,68 @@ oxide_boot_fail(ipcc_host_boot_failure_t reason, const char *fmt, ...)
 	/* vpanic() does not return */
 }
 
+static bool
+oxide_boot_ramdisk(oxide_boot_t *oxb)
+{
+	bool ret = false;
+	int r;
+	dev_info_t *rd_dip;
+	ldi_handle_t lh = NULL;
+	rd_existing_t *rd_prop;
+	uint_t rd_proplen;
+	char path[MAXPATHLEN] = {0};
+
+	rd_dip = ddi_find_devinfo("ramdisk", -1, 0);
+	if (rd_dip == NULL) {
+		oxide_boot_warn("could not locate phase-1 ramdisk devinfo");
+		goto out;
+	}
+
+	if ((ddi_prop_lookup_byte_array(DDI_DEV_T_ANY, rd_dip,
+	    DDI_PROP_DONTPASS, RD_EXISTING_PROP_NAME, (uchar_t **)&rd_prop,
+	    &rd_proplen) != DDI_PROP_SUCCESS) ||
+	    (rd_proplen != sizeof (rd_existing_t))) {
+		oxide_boot_warn("ramdisk " RD_EXISTING_PROP_NAME
+		    " property not available");
+		goto out;
+	}
+
+	(void) strlcpy(path, "/devices", MAXPATHLEN);
+	(void) ddi_pathname(rd_dip, path + strlen(path));
+	(void) strlcat(path, ":a", MAXPATHLEN);
+
+	if ((r = ldi_open_by_name(path, FREAD, kcred, &lh, oxb->oxb_li)) != 0) {
+		oxide_boot_warn("failed to open phase-1 ramdisk %s: %d",
+		    path, r);
+		goto out;
+	}
+
+	mutex_enter(&oxb->oxb_mutex);
+	oxb->oxb_rd_disk = lh;
+	oxb->oxb_ramdisk_data_size = rd_prop->size;
+	mutex_exit(&oxb->oxb_mutex);
+	lh = NULL;
+	ret = true;
+
+out:
+	if (lh != NULL)
+		(void) ldi_close(lh, FREAD, kcred);
+	if (rd_prop != NULL)
+		ddi_prop_free(rd_prop);
+	if (rd_dip != NULL)
+		ndi_rele_devi(rd_dip);
+	return (ret);
+}
+
 static void
 oxide_boot_locate(void)
 {
 	int err;
+	char *bootdev = NULL;
+	bool is_ramdisk;
+	bool success = false;
+	bool measure_root = oxide_board_data->obd_measure_root;
+	uint8_t root_sha384[OXBOOT_CSUMLEN_SHA384] = {0};
 
 	oxide_boot_note("Starting Oxide boot");
 
@@ -591,29 +715,6 @@ oxide_boot_locate(void)
 	}
 
 	/*
-	 * Load the hash of the ramdisk that matches the bits in the phase1
-	 * archive.
-	 */
-	intptr_t fd;
-	if ((fd = kobj_open("/boot_image_csum")) == -1 ||
-	    kobj_read(fd, (int8_t *)&oxb->oxb_csum_want,
-	    OXBOOT_CSUMLEN_SHA256, 0) != OXBOOT_CSUMLEN_SHA256) {
-		oxide_boot_fail(IPCC_BOOTFAIL_GENERAL,
-		    "could not read /boot_image_csum");
-	}
-	kobj_close(fd);
-	oxide_dump_sum("Phase 1 wants", oxb->oxb_csum_want);
-
-	/*
-	 * The checksum only appears in the boot archive, which will be
-	 * released after the root pool is mounted.  Preserve the checksum for
-	 * diagnostic purposes.
-	 */
-	(void) e_ddi_prop_update_byte_array(DDI_DEV_T_NONE, ddi_root_node(),
-	    OXBOOT_DEVPROP_IMAGE_CHECKSUM, oxb->oxb_csum_want,
-	    OXBOOT_CSUMLEN_SHA256);
-
-	/*
 	 * During early-boot communication with the SP, the desired phase 2
 	 * image source will have been set as a boot property. The value will
 	 * be one of:
@@ -621,15 +722,36 @@ oxide_boot_locate(void)
 	 *   - sp	Retrieve from the service processor.
 	 *   - net	Network boot - this is used during development.
 	 *   - disk:NN	M.2 device in slot NN.
+	 *
+	 * For dev scenarios it may also be set to 'ramdisk' indicating the
+	 * early-boot ramdisk should be used as the root filesystem. No
+	 * subsequent phase 2 image is loaded in this case.
 	 */
-	bool success = false;
-	char *bootdev;
-
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_root_node(),
 	    DDI_PROP_DONTPASS, BTPROP_NAME_BOOT_SOURCE, &bootdev) !=
-	    DDI_SUCCESS) {
+	    DDI_SUCCESS || bootdev == NULL) {
 		oxide_boot_fail(IPCC_BOOTFAIL_NOPHASE2,
 		    "No phase2 image source was specified");
+	}
+	is_ramdisk = strcmp(bootdev, "ramdisk") == 0;
+
+	/*
+	 * Load the hash of the ramdisk that matches the bits in the phase1
+	 * archive.
+	 *
+	 * If the boot source is 'ramdisk', there is no subsequent
+	 * phase2 image to load.
+	 */
+	if (!is_ramdisk) {
+		intptr_t fd;
+		if ((fd = kobj_open("/boot_image_csum")) == -1 ||
+		    kobj_read(fd, (int8_t *)&oxb->oxb_csum_want,
+		    OXBOOT_CSUMLEN_SHA256, 0) != OXBOOT_CSUMLEN_SHA256) {
+			oxide_boot_fail(IPCC_BOOTFAIL_GENERAL,
+			    "could not read /boot_image_csum");
+		}
+		kobj_close(fd);
+		oxide_dump_sum("Phase 1 wants", oxb->oxb_csum_want);
 	}
 
 	if (strcmp(bootdev, "sp") == 0) {
@@ -643,6 +765,8 @@ oxide_boot_locate(void)
 		    slot < UINT16_MAX) {
 			success = oxide_boot_disk(oxb, (int)slot);
 		}
+	} else if (strcmp(bootdev, "ramdisk") == 0) {
+		success = oxide_boot_ramdisk(oxb);
 	}
 
 	mutex_enter(&oxb->oxb_mutex);
@@ -659,12 +783,13 @@ oxide_boot_locate(void)
 
 	oxide_boot_debug("ramdisk data size = %lu",
 	    oxb->oxb_ramdisk_data_size);
-	if (oxb->oxb_ramdisk_dataset == NULL) {
+	if (!is_ramdisk && oxb->oxb_ramdisk_dataset == NULL) {
 		oxide_boot_fail(IPCC_BOOTFAIL_HEADER,
 		    "no dataset name was specified");
 	}
 
-	if (!oxide_boot_ramdisk_check(oxb)) {
+	if (!oxide_boot_ramdisk_check(oxb, is_ramdisk,
+	    measure_root ? root_sha384 : NULL)) {
 		char want[OXBOOT_CSUMBUF_SHA256];
 		char have[OXBOOT_CSUMBUF_SHA256];
 
@@ -675,17 +800,30 @@ oxide_boot_locate(void)
 	}
 
 	/*
-	 * Tell the system to import the ramdisk device as a ZFS pool, and to
-	 * ignore any device names or IDs found in the pool label.
+	 * Preserve the calculated digests.
 	 */
-	(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
-	    ddi_root_node(), "fstype", "zfs");
-	(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
-	    ddi_root_node(), "zfs-bootfs",
-	    oxb->oxb_ramdisk_dataset);
-	(void) e_ddi_prop_update_string(DDI_DEV_T_NONE,
-	    ddi_root_node(), "zfs-rootdisk-path",
-	    oxb->oxb_ramdisk_path);
+	(void) e_ddi_prop_update_byte_array(DDI_DEV_T_NONE, ddi_root_node(),
+	    OXBOOT_DEVPROP_IMAGE_CHECKSUM, oxb->oxb_csum_have,
+	    OXBOOT_CSUMLEN_SHA256);
+	if (measure_root) {
+		(void) e_ddi_prop_update_byte_array(DDI_DEV_T_NONE,
+		    ddi_root_node(), OXBOOT_DEVPROP_IMAGE_SHA384,
+		    root_sha384, OXBOOT_CSUMLEN_SHA384);
+	}
+
+	/*
+	 * If we successfully loaded a phase 2 image, tell the system to import
+	 * the ramdisk device as a ZFS pool, and to ignore any device names or
+	 * IDs found in the pool label.
+	 */
+	if (!is_ramdisk) {
+		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE, ddi_root_node(),
+		    "fstype", "zfs");
+		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE, ddi_root_node(),
+		    "zfs-bootfs", oxb->oxb_ramdisk_dataset);
+		(void) e_ddi_prop_update_string(DDI_DEV_T_NONE, ddi_root_node(),
+		    "zfs-rootdisk-path", oxb->oxb_ramdisk_path);
+	}
 
 	oxide_boot_fini(oxb);
 }

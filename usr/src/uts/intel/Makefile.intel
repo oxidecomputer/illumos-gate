@@ -586,6 +586,7 @@ MISC_KMODS	+= ctf
 MISC_KMODS	+= dadk
 MISC_KMODS	+= dcopy
 MISC_KMODS	+= dls
+MISC_KMODS	+= dpe
 MISC_KMODS	+= fssnap_if
 MISC_KMODS	+= gda
 MISC_KMODS	+= gld

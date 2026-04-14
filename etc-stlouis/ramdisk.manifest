@@ -301,6 +301,7 @@ f kernel/cc/amd64/cc_newreno 0755 root sys
 f kernel/cc/amd64/cc_sunreno 0755 root sys
 d kernel/crypto 0755 root sys
 d kernel/crypto/amd64 0755 root sys
+h kernel/crypto/amd64/sha2=kernel/misc/amd64/sha2
 f kernel/crypto/amd64/swrand 0755 root sys
 d kernel/dacf 0755 root sys
 d kernel/dacf/amd64 0755 root sys
@@ -472,6 +473,7 @@ f kernel/misc/amd64/cmlb 0755 root sys
 f kernel/misc/amd64/consconfig 0755 root sys
 f kernel/misc/amd64/ctf 0755 root sys
 f kernel/misc/amd64/dls 0755 root sys
+f kernel/misc/amd64/dpe 0755 root sys
 f kernel/misc/amd64/edonr 0755 root sys
 f kernel/misc/amd64/fssnap_if 0755 root sys
 f kernel/misc/amd64/gld 0755 root sys
@@ -543,6 +545,7 @@ f lib/amd64/libavl.so.1 0755 root bin
 f lib/amd64/libc.so.1 0755 root bin
 f lib/amd64/libc_db.so.1 0755 root bin
 f lib/amd64/libcmdutils.so.1 0755 root bin
+f lib/amd64/libcrypto.so.3 0755 root bin
 f lib/amd64/libcryptoutil.so.1 0755 root bin
 f lib/amd64/libctf.so.1 0755 root bin
 f lib/amd64/libcurses.so.1 0755 root bin
@@ -604,6 +607,7 @@ f lib/libc.so.1 0755 root bin
 f lib/libc_db.so.1 0755 root bin
 f lib/libcmdutils.so.1 0755 root bin
 f lib/libcontract.so.1 0755 root bin
+f lib/libcrypto.so.3 0755 root bin
 f lib/libcryptoutil.so.1 0755 root bin
 f lib/libctf.so.1 0755 root bin
 f lib/libcurses.so.1 0755 root bin
@@ -771,12 +775,15 @@ f platform/oxide/kernel/drv/amd64/fch 0755 root sys
 f platform/oxide/kernel/drv/amd64/ipcc 0755 root sys
 f platform/oxide/kernel/drv/amd64/npe 0755 root sys
 f platform/oxide/kernel/drv/amd64/psp 0755 root sys
+f platform/oxide/kernel/drv/amd64/os_rot 0755 root sys
+f platform/oxide/kernel/drv/amd64/psp_dpe 0755 root sys
 f platform/oxide/kernel/drv/amd64/psp_einj 0755 root sys
 f platform/oxide/kernel/drv/amd64/rootnex 0755 root sys
 f platform/oxide/kernel/drv/apob.conf 0644 root sys
 f platform/oxide/kernel/drv/cpc.conf 0644 root sys
 f platform/oxide/kernel/drv/dwu.conf 0755 root sys
 f platform/oxide/kernel/drv/ipcc.conf 0755 root sys
+f platform/oxide/kernel/drv/os_rot.conf 0644 root sys
 d platform/oxide/kernel/kmdb 0755 root sys
 d platform/oxide/kernel/kmdb/amd64 0755 root sys
 f platform/oxide/kernel/kmdb/amd64/apix 0555 root sys
@@ -789,6 +796,7 @@ d platform/oxide/kernel/misc 0755 root sys
 d platform/oxide/kernel/misc/amd64 0755 root sys
 f platform/oxide/kernel/misc/amd64/amdzen_plat 0755 root sys
 f platform/oxide/kernel/misc/amd64/bdat_prd 0755 root sys
+f platform/oxide/kernel/misc/amd64/boot_image 0755 root sys
 f platform/oxide/kernel/misc/amd64/pcie 0755 root sys
 f platform/oxide/kernel/misc/amd64/pci_prd 0755 root sys
 f platform/oxide/kernel/misc/amd64/psp_fake_smm 0755 root sys
@@ -1309,6 +1317,7 @@ f usr/sbin/modinfo 0555 root sys
 f usr/sbin/modload 0555 root sys
 f usr/sbin/modunload 0555 root sys
 f usr/sbin/nvmeadm 0555 root bin
+f usr/sbin/osrotc 0555 root bin
 f usr/sbin/pcitool 0555 root bin
 f usr/sbin/ping 4555 root bin
 f usr/sbin/pmadm 0555 root sys

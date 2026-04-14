@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -264,6 +264,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_ipccmode = IPCC_MODE_ESPI0,
 			.obd_ipccspintr = IPCC_SPINTR_SP5_AGPIO2,
 			.obd_ipccemcr = true,
+			.obd_measure_root = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_cosmo },
@@ -342,6 +343,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			 */
 			.obd_ipccspintr = IPCC_SPINTR_DISABLED,
 			.obd_ipccemcr = true,
+			.obd_measure_root = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_ruby },
@@ -423,6 +425,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_board = OXIDE_BOARD_RUBY,
 			.obd_rootnexus = "Oxide,Ruby",
 			.obd_ipccmode = IPCC_MODE_DISABLED,
+			.obd_measure_root = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
 			.obd_engines = { oxio_ruby },

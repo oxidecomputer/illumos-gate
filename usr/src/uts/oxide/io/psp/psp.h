@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _IO_PSP_PSP_H
@@ -39,6 +39,7 @@ extern "C" {
 typedef enum psp_child {
 	PSP_C_INVAL,
 	PSP_C_EINJ = 1,
+	PSP_C_DPE,
 	/*
 	 * This limit is artifical so that we may have a shared IOCTL space for
 	 * all PSP drivers.

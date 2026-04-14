@@ -11,13 +11,13 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Co.
+# Copyright 2026 Oxide Computer Co.
 #
 
 set -eu
 set -o pipefail
 
-SIZE=77824
+SIZE=87040
 USR_SIZE=44032
 
 rev="$(git rev-parse --short=12 HEAD)"

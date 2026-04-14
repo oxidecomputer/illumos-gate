@@ -223,7 +223,10 @@ ZEN_GPIO_OBJS += zen_gpio.o
 
 APOB_OBJS += apobdrv.o
 
+OS_ROT_OBJS		+= os_rot.o
+
 PSP_OBJS		+= psp.o
+PSP_DPE_OBJS		+= psp_dpe.o
 PSP_EINJ_OBJS		+= psp_einj.o
 PSP_FAKE_SMM_OBJS	+= psp_fake_smm.o
 

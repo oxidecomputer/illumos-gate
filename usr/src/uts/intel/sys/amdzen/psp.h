@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_PSP_H
@@ -215,6 +215,12 @@ typedef enum cpu2psp_mbox_cmd {
 	 */
 	C2P_MBOX_CMD_ACPI_RAS_EINJ	= 0x41,
 	/*
+	 * Invokes a DICE Protection Environment (DPE) operation.
+	 *
+	 * Supported: BRH[D], WH
+	 */
+	C2P_MBOX_CMD_DPE_INTERFACE	= 0x71,
+	/*
 	 * Abort the last command.
 	 */
 	C2P_MBOX_CMD_ABORT		= 0xfe,
@@ -337,12 +343,214 @@ typedef struct c2p_mbox_smm_info_buffer {
 	c2p_mbox_smm_info_t	c2pmsib_info;
 } c2p_mbox_smm_info_buffer_t;
 
+/*
+ * Supported PSP DPE commands.
+ */
+typedef enum psp_dpe_cmd {
+	/*
+	 * Retrieve the current DPE profile.
+	 */
+	PSP_DPE_CMD_GET_PROFILE		= 0x1,
+	PSP_DPE_CMD_DERIVE_CHILD	= 0x6,
+	PSP_DPE_CMD_CERTIFY_KEY		= 0x7,
+	PSP_DPE_CMD_SIGN		= 0x8,
+	PSP_DPE_CMD_DESTROY_CONTEXT	= 0x13,
+	/*
+	 * Retrieve the certificate chain for the current DPE context.
+	 */
+	PSP_DPE_CMD_GET_CERT_CHAIN	= 0x14,
+} psp_dpe_cmd_t;
+
+/*
+ * Magic bit pattern indicating a DPE command ("DPEC").
+ */
+#define	PSP_DPE_CMD_MAGIC		0x44504543
+
+/*
+ * Magic bit pattern indicating a DPE response ("DPER").
+ */
+#define	PSP_DPE_RESP_MAGIC		0x44504552
+
+/*
+ * Supported DICE Protection Environment (DPE) profiles. The choice of profile
+ * impacts the format and size of the input data as well as key size, types, etc
+ */
+typedef enum psp_dpe_profile {
+	/*
+	 * tcg.profile.irot.p384
+	 *
+	 * DICE Protection Environment on an Integrated Root of Trust (iROT)
+	 * profile using the ECDSA P-384 curve for signing and SHA2-384 as the
+	 * measurement digest algorithm.
+	 */
+	PSP_DPE_PROFILE_IROT_P384_SHA384	= 0x2,
+	PSP_DPE_PROFILE_INVALID			= 0xFFFFFFFF,
+} psp_dpe_profile_t;
+
+/*
+ * PSP_DPE_PROFILE_IROT_P384_SHA384 profile parameters.
+ */
+#define	PSP_DPE_IROT_P384_HASH_SIZE	48
+#define	PSP_DPE_IROT_P384_KEY_SIZE	96
+#define	PSP_DPE_IROT_P384_SIG_SIZE	96
+#define	PSP_DPE_IROT_P384_TYPE_SIZE	4
+#define	PSP_DPE_IROT_P384_LABEL_SIZE	4
+/*
+ * The OCP specification defines the max certificate size per-profile and
+ * requires that a single certificate must fit within a single DPE message.
+ */
+#define	PSP_DPE_IROT_P384_MAX_CERT_SIZE	0x800
+
+/*
+ * Common response header for DPE commands.
+ */
+typedef struct psp_dpe_resp_hdr {
+	uint32_t	pdr_magic;
+	uint32_t	pdr_status;
+	uint32_t	pdr_profile;
+} psp_dpe_resp_hdr_t;
+
+typedef struct psp_dpe_derive_child_irot384_req {
+	/*
+	 * The input data digest/hash of the Trusted Computing Base (TCB)
+	 * component to measure.
+	 */
+	uint8_t			pddc_hash[PSP_DPE_IROT_P384_HASH_SIZE];
+	union {
+		struct {
+			uint32_t	pddc_reserved : 30;
+			uint32_t	pddc_include_dice : 1;
+			uint32_t	pddc_include_info : 1;
+		};
+		uint32_t		pddc_flags;
+	};
+	uint8_t			pddc_type[4];
+} psp_dpe_derive_child_irot384_req_t;
+
+typedef struct psp_dpe_certify_key_irot384_req {
+	/*
+	 * Label used to derive the key pair.
+	 */
+	uint8_t			pdck_label[4];
+} psp_dpe_certify_key_irot384_req_t;
+
+typedef struct psp_dpe_certify_key_irot384_resp {
+	psp_dpe_resp_hdr_t	pdck_resp_hdr;
+
+	/*
+	 * The concatenation of X and Y components of the derived ECDSA public
+	 * key. This is the same key as found in the SubjectPublicKeyInfo field
+	 * of the returned certificate.
+	 */
+	uint8_t			pdck_pubkey[PSP_DPE_IROT_P384_KEY_SIZE];
+
+	uint32_t		pdck_cert_size;
+	uint8_t			pdck_cert[PSP_DPE_IROT_P384_MAX_CERT_SIZE];
+} psp_dpe_certify_key_irot384_resp_t;
+
+typedef struct psp_dpe_sign_irot384_req {
+	/*
+	 * Label used to derive the key pair.
+	 */
+	uint8_t			pds_label[4];
+	union {
+		struct {
+			uint32_t	pds_reserved : 31;
+			uint32_t	pds_is_symmetric : 1;
+		};
+		uint32_t	pds_flags;
+	};
+	/*
+	 * Data to be signed.
+	 */
+	uint8_t			pds_data[PSP_DPE_IROT_P384_HASH_SIZE];
+} psp_dpe_sign_irot384_req_t;
+typedef struct psp_dpe_sign_irot384_resp {
+
+	psp_dpe_resp_hdr_t	pds_resp_hdr;
+
+	/*
+	 * The concatenation of the R and S values of the ECDSA signature over
+	 * the input data.
+	 */
+	uint8_t			pds_sig[PSP_DPE_IROT_P384_SIG_SIZE];
+} psp_dpe_sign_irot384_resp_t;
+
+typedef struct psp_dpe_get_cert_chain_req {
+	/*
+	 * Starting offset within the certificate chain to retrieve.
+	 */
+	uint32_t		pdgcc_offset;
+	/*
+	 * Maximum size of the certificate chain data to retrieve.
+	 */
+	uint32_t		pdgcc_size;
+} psp_dpe_get_cert_chain_req_t;
+
+typedef struct psp_dpe_get_cert_chain_resp {
+	psp_dpe_resp_hdr_t	pdgcc_resp_hdr;
+	/*
+	 * Size of the certificate chain data returned.
+	 */
+	uint32_t		pdgcc_chain_size;
+	/*
+	 * The certificate chain data up to `pdgcc_cert_size` bytes.
+	 */
+	uint8_t			pdgcc_chain[PSP_DPE_IROT_P384_MAX_CERT_SIZE];
+} psp_dpe_get_cert_chain_resp_t;
+
+typedef struct c2p_mbox_dpe_buffer {
+	c2p_mbox_buffer_hdr_t		c2pmdb_hdr;
+	uint32_t			c2pmdb_magic;
+	uint32_t			c2pmdb_cmd;
+	uint32_t			c2pmdb_profile;
+	union {
+		/*
+		 * GetProfile doesn't take any additional arguments nor does it
+		 * produce any additional response data other than the common
+		 * response header.
+		 */
+		struct {
+			psp_dpe_resp_hdr_t			resp;
+		} c2pmdb_get_profile;
+
+		struct {
+			psp_dpe_derive_child_irot384_req_t	req;
+			psp_dpe_resp_hdr_t			resp;
+		} c2pmdb_derive_child_irot384;
+
+		struct {
+			psp_dpe_certify_key_irot384_req_t	req;
+			psp_dpe_certify_key_irot384_resp_t	resp;
+		} c2pmdb_certify_key_irot384;
+
+		struct {
+			psp_dpe_sign_irot384_req_t		req;
+			psp_dpe_sign_irot384_resp_t		resp;
+		} c2pmdb_sign_irot384;
+
+		/*
+		 * DestroyContext doesn't take any additional arguments nor does
+		 * it produce any additional response data other than the common
+		 * response header.
+		 */
+		struct {
+			psp_dpe_resp_hdr_t			resp;
+		} c2pmdb_destroy_context;
+
+		struct {
+			psp_dpe_get_cert_chain_req_t		req;
+			psp_dpe_get_cert_chain_resp_t		resp;
+		} c2pmdb_get_cert_chain;
+	};
+} c2p_mbox_dpe_buffer_t;
 
 typedef union {
 	c2p_mbox_buffer_hdr_t		c2pmb_hdr;
 	c2p_mbox_get_ver_buffer_t	c2pmb_get_ver;
 	c2p_mbox_ras_einj_buffer_t	c2pmb_ras_einj;
 	c2p_mbox_smm_info_buffer_t	c2pmb_smm_info;
+	c2p_mbox_dpe_buffer_t		c2pmb_dpe;
 } c2p_mbox_buffer_t;
 
 /*

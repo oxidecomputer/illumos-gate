@@ -1624,6 +1624,8 @@ CRYPTOADM_OBJS += cryptoadm.o
 
 CRYPTO_OBJS +=	crypto.o
 
+DPE_OBJS +=	dpe.o
+
 DPROV_OBJS +=	dprov.o
 
 DCA_OBJS +=	dca.o dca_3des.o dca_debug.o dca_dsa.o dca_kstat.o dca_rng.o \

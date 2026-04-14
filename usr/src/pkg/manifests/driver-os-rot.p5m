@@ -14,9 +14,9 @@
 #
 
 <include global_zone_only_component>
-set name=pkg.fmri value=pkg:/driver/cpu/amd/psp@$(PKGVERS)
-set name=pkg.summary value="AMD PSP Nexus Driver"
-set name=pkg.description value="AMD PSP Nexus Driver"
+set name=pkg.fmri value=pkg:/driver/oxide/os-rot@$(PKGVERS)
+set name=pkg.summary value="Oxide OS RoT Driver"
+set name=pkg.description value="Oxide OS RoT Driver"
 set name=info.classification value=org.opensolaris.category.2008:System/Hardware
 set name=variant.arch value=i386
 dir  path=platform group=sys
@@ -24,16 +24,11 @@ dir  path=platform/oxide group=sys
 dir  path=platform/oxide/kernel group=sys
 dir  path=platform/oxide/kernel/drv group=sys
 dir  path=platform/oxide/kernel/drv/$(ARCH64) group=sys
-file path=platform/oxide/kernel/drv/$(ARCH64)/psp group=sys
-file path=platform/oxide/kernel/drv/$(ARCH64)/psp_dpe group=sys
-dir  path=platform/oxide/kernel/misc group=sys
-dir  path=platform/oxide/kernel/misc/$(ARCH64) group=sys
-file path=platform/oxide/kernel/misc/$(ARCH64)/psp_fake_smm group=sys mode=0755
+file path=platform/oxide/kernel/drv/$(ARCH64)/os_rot group=sys
+file path=platform/oxide/kernel/drv/os_rot.conf group=sys
 dir  path=usr group=sys
-dir  path=usr/share
-dir  path=usr/share/man
-dir  path=usr/share/man/man4d
-file path=usr/share/man/man4d/psp.4d
-driver name=psp
-driver name=psp_dpe
+dir  path=usr/sbin
+file path=usr/sbin/osrotc mode=0555
+driver name=os_rot
 license lic_CDDL license=lic_CDDL
+depend type=require fmri=driver/cpu/amd/psp

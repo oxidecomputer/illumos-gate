@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -112,15 +112,27 @@ psp_c_c2pmbox_smm_cmd(cpu2psp_mbox_cmd_t cmd, c2p_mbox_buffer_hdr_t *buf)
 	/*
 	 * Verify the buffer size against our max possible.
 	 */
-	VERIFY3U(buf->c2pmb_size, <=, sizeof (c2p_mbox_buffer_t));
+	if (buf->c2pmb_size > sizeof (c2p_mbox_buffer_t)) {
+		return (EINVAL);
+	}
 
 	mutex_enter(&pfs->pfs_lock);
 
+	/*
+	 * The PSP requires SMM commands to be submitted via the specific
+	 * command buffer whose physical address was registered during the
+	 * SMM_INFO handshake.  We use the direct submit path to avoid the
+	 * intermediate copy that psp_c_c2pmbox_cmd() performs.
+	 */
 	bcopy(buf, pfs->pfs_cmd_buf, buf->c2pmb_size);
 
 	*(pfs->pfs_in_smm) = 1;
-	ret = psp_c_c2pmbox_cmd(cmd, &pfs->pfs_cmd_buf->c2pmb_hdr);
+	ret = psp_c_c2pmbox_submit(cmd, &pfs->pfs_cmd_buf->c2pmb_hdr);
 	*(pfs->pfs_in_smm) = 0;
+
+	if (ret == 0) {
+		bcopy(pfs->pfs_cmd_buf, buf, buf->c2pmb_size);
+	}
 
 	mutex_exit(&pfs->pfs_lock);
 

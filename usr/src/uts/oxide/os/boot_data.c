@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/ddi.h>
@@ -297,6 +297,12 @@ eb_create_common_properties(uint64_t ramdisk_paddr, size_t ramdisk_len,
 	 * to sate krtld.
 	 */
 	bt_set_prop_str(BTPROP_NAME_BOOTARGS, "");
+
+	/*
+	 * Ask main() to load misc/boot_image.  For phase-2 boots the module
+	 * locates and fetches the phase 2 image from the configured source.
+	 */
+	bt_set_prop_str(BTPROP_NAME_BOOT_IMAGE_OPS, "misc/boot_image");
 }
 
 static void
@@ -344,46 +350,34 @@ eb_real_ipcc_properties(uint64_t spstatus, uint64_t spstartup)
 	 * flags in the SP's startup options register, and by the boot storage
 	 * unit (BSU) communicated by the SP.
 	 */
-
 	if ((spstartup & IPCC_STARTUP_BOOT_RAMDISK) != 0) {
 		/*
 		 * This option selects booting using the provided ramdisk for
 		 * the root filesystem, without loading a phase 2 image.
 		 */
 		bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "ramdisk");
+	} else if ((spstartup & IPCC_STARTUP_RECOVERY) != 0) {
+		/*
+		 * The SP has requested phase2 recovery - load via ipcc.
+		 */
+		bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "sp");
+	} else if ((spstartup & IPCC_STARTUP_BOOT_NET) != 0) {
+		/*
+		 * The SP has requested network boot.
+		 */
+		bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "net");
 	} else {
 		/*
-		 * In this block, we are heading for new style boot,
-		 * acquiring a phase 2 image from somewhere. Setting this
-		 * property causes main() to try and load the kernel module
-		 * set as the value, and use it to locate phase 2.
+		 * No special options, request boot from the BSU
+		 * provided by the SP.
 		 */
-		bt_set_prop_str(BTPROP_NAME_BOOT_IMAGE_OPS, "misc/boot_image");
+		char bootdev[sizeof ("disk:") + 10];
 
-		if ((spstartup & IPCC_STARTUP_RECOVERY) != 0) {
-			/*
-			 * The SP has requested phase2 recovery - load via
-			 * ipcc.
-			 */
-			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "sp");
-		} else if ((spstartup & IPCC_STARTUP_BOOT_NET) != 0) {
-			/*
-			 * The SP has requested network boot.
-			 */
-			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, "net");
-		} else {
-			/*
-			 * No special options, request boot from the BSU
-			 * provided by the SP.
-			 */
-			char bootdev[sizeof ("disk:") + 10];
+		(void) snprintf(bootdev, sizeof (bootdev), "disk:%u",
+		    (uint32_t)oxide_board_data->obd_bsu_slot[bsu ==
+		    'A' ? 0 : 1]);
 
-			(void) snprintf(bootdev, sizeof (bootdev), "disk:%u",
-			    (uint32_t)oxide_board_data->obd_bsu_slot[bsu ==
-			    'A' ? 0 : 1]);
-
-			bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, bootdev);
-		}
+		bt_set_prop_str(BTPROP_NAME_BOOT_SOURCE, bootdev);
 	}
 }
 

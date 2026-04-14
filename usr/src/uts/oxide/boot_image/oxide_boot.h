@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_OXIDE_BOOT_H
@@ -35,6 +35,7 @@ extern "C" {
 #endif
 
 #define	OXBOOT_DEVPROP_IMAGE_CHECKSUM		"oxide-boot-image-checksum"
+#define	OXBOOT_DEVPROP_IMAGE_SHA384		"oxide-boot-image-sha384"
 #define	OXBOOT_DEVPROP_IMAGE_NAME		"oxide-boot-image-name"
 #define	OXBOOT_DEVPROP_DISK_SLICE		"oxide-boot-disk-slice"
 
@@ -42,6 +43,7 @@ extern "C" {
 
 #define	OXBOOT_CSUMLEN_SHA256	32
 #define	OXBOOT_CSUMBUF_SHA256	(OXBOOT_CSUMLEN_SHA256 * 2 + 1)
+#define	OXBOOT_CSUMLEN_SHA384	48
 /*
  * Images should be less than 4GiB, because that would be too large!
  * serves as another validity check on the header.

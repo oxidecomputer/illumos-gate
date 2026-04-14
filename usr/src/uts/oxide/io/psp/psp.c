@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -35,6 +35,7 @@
 #include <sys/policy.h>
 #include <sys/cpuvar.h>
 #include <sys/ccompile.h>
+#include <sys/ddi_subrdefs.h>
 #include <sys/smm_amd64.h>
 #include <sys/x86_archext.h>
 #include <sys/amdzen/psp.h>
@@ -64,7 +65,23 @@ typedef struct psp_c2p {
 		smn_reg_t	c2p_addr_lo;
 		smn_reg_t	c2p_addr_hi;
 	}			c2p_regs;
+	c2p_mbox_buffer_t	*c2p_buf;
 } psp_c2p_t;
+
+static ddi_dma_attr_t psp_c2p_dma_attrs = {
+	.dma_attr_version =	DMA_ATTR_V0,
+	.dma_attr_addr_lo =	0,
+	.dma_attr_addr_hi =	UINT64_MAX,
+	.dma_attr_count_max =	UINT32_MAX,
+	.dma_attr_align =	PSP_C2PMBOX_BUF_ALIGN,
+	.dma_attr_burstsizes =	0,
+	.dma_attr_minxfer =	1,
+	.dma_attr_maxxfer =	UINT32_MAX,
+	.dma_attr_seg =		UINT32_MAX,
+	.dma_attr_sgllen =	1,
+	.dma_attr_granular =	1,
+	.dma_attr_flags =	0
+};
 
 typedef struct psp {
 	dev_info_t		*psp_dip;
@@ -81,6 +98,7 @@ typedef struct psp_child_def {
 } psp_child_def_t;
 
 static const psp_child_def_t psp_children[] = {
+	{ "psp_dpe", PSP_C_DPE },
 	{ "psp_einj", PSP_C_EINJ }
 };
 
@@ -123,8 +141,14 @@ psp_c2pmbox_ready_locked(psp_c2p_t *c2p, uint32_t *valp)
 
 static void psp_c2pmbox_abort_locked(psp_c2p_t *c2p);
 
+/*
+ * Submit a command to the PSP via the CPU-to-PSP mailbox.  The provided buffer
+ * must already be in physically contiguous memory with the required alignment.
+ * This is the low-level submission path; most callers should use
+ * psp_c2pmbox_cmd_locked() which handles copying to a safe buffer.
+ */
 static int
-psp_c2pmbox_cmd_locked(psp_c2p_t *c2p, cpu2psp_mbox_cmd_t cmd,
+psp_c2pmbox_submit_locked(psp_c2p_t *c2p, cpu2psp_mbox_cmd_t cmd,
     c2p_mbox_buffer_hdr_t *buf)
 {
 	int ret = 0;
@@ -134,16 +158,6 @@ psp_c2pmbox_cmd_locked(psp_c2p_t *c2p, cpu2psp_mbox_cmd_t cmd,
 	uint32_t val;
 
 	VERIFY(MUTEX_HELD(&c2p->c2p_lock));
-
-	/*
-	 * The PSP expects a 32-byte aligned physical address to the buffer.
-	 */
-	pfn = hat_getpfnum(kas.a_hat, (caddr_t)buf);
-	VERIFY3U(pfn, !=, PFN_INVALID);
-	buf_pa = mmu_ptob(pfn) | ((uintptr_t)buf & PAGEOFFSET);
-	VERIFY3B(IS_P2ALIGNED(buf_pa, PSP_C2PMBOX_BUF_ALIGN), ==, B_TRUE);
-	lo = (uint32_t)buf_pa;
-	hi = (uint32_t)(buf_pa >> 32);
 
 	/*
 	 * For non-abort commands let's make sure the PSP is in a ready state.
@@ -172,6 +186,13 @@ psp_c2pmbox_cmd_locked(psp_c2p_t *c2p, cpu2psp_mbox_cmd_t cmd,
 			}
 		}
 	}
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)buf);
+	VERIFY3U(pfn, !=, PFN_INVALID);
+	buf_pa = mmu_ptob(pfn) | ((uintptr_t)buf & PAGEOFFSET);
+	VERIFY3B(IS_P2ALIGNED(buf_pa, PSP_C2PMBOX_BUF_ALIGN), ==, B_TRUE);
+	lo = (uint32_t)buf_pa;
+	hi = (uint32_t)(buf_pa >> 32);
 
 	/*
 	 * PSP is ready (or we're issuing an abort), let's go ahead and write
@@ -234,6 +255,35 @@ out:
 	return (ret);
 }
 
+/*
+ * Submit a command to the PSP via the CPU-to-PSP mailbox.  The PSP expects
+ * the buffer to reside in physically contiguous memory; to avoid requiring
+ * callers to guarantee this, we copy into a preallocated contiguous buffer
+ * before submission and copy the response back afterwards on success.
+ */
+static int
+psp_c2pmbox_cmd_locked(psp_c2p_t *c2p, cpu2psp_mbox_cmd_t cmd,
+    c2p_mbox_buffer_hdr_t *buf)
+{
+	int ret;
+
+	VERIFY(MUTEX_HELD(&c2p->c2p_lock));
+
+	if (buf->c2pmb_size > sizeof (*c2p->c2p_buf)) {
+		return (EINVAL);
+	}
+
+	bcopy(buf, c2p->c2p_buf, buf->c2pmb_size);
+
+	ret = psp_c2pmbox_submit_locked(c2p, cmd, &c2p->c2p_buf->c2pmb_hdr);
+
+	if (ret == 0) {
+		bcopy(c2p->c2p_buf, buf, buf->c2pmb_size);
+	}
+
+	return (ret);
+}
+
 static int
 psp_c2pmbox_cmd(psp_c2p_t *c2p, cpu2psp_mbox_cmd_t cmd,
     c2p_mbox_buffer_hdr_t *buf)
@@ -252,10 +302,31 @@ psp_c_c2pmbox_cmd(cpu2psp_mbox_cmd_t cmd, c2p_mbox_buffer_hdr_t *buf)
 	return (psp_c2pmbox_cmd(&psp_data.psp_c2p, cmd, buf));
 }
 
+/*
+ * Submit a command to the PSP using a caller-provided buffer that is already
+ * in physically contiguous memory.  Unlike psp_c_c2pmbox_cmd() no intermediate
+ * copy is performed; the buffer is passed directly to the PSP.  This is
+ * required for SMM commands where the PSP expects the buffer at a specific
+ * pre-registered physical address.
+ */
+int
+psp_c_c2pmbox_submit(cpu2psp_mbox_cmd_t cmd, c2p_mbox_buffer_hdr_t *buf)
+{
+	psp_c2p_t *c2p = &psp_data.psp_c2p;
+	int ret;
+
+	VERIFY3B(IS_P2ALIGNED(buf, PSP_C2PMBOX_BUF_ALIGN), ==, B_TRUE);
+
+	mutex_enter(&c2p->c2p_lock);
+	ret = psp_c2pmbox_submit_locked(c2p, cmd, buf);
+	mutex_exit(&c2p->c2p_lock);
+	return (ret);
+}
+
 static void
 psp_c2pmbox_abort_locked(psp_c2p_t *c2p)
 {
-	c2p_mbox_buffer_hdr_t buf __aligned(PSP_C2PMBOX_BUF_ALIGN);
+	c2p_mbox_buffer_hdr_t buf;
 	int ret;
 
 	VERIFY(MUTEX_HELD(&c2p->c2p_lock));
@@ -273,7 +344,7 @@ psp_c2pmbox_abort_locked(psp_c2p_t *c2p)
 static int
 psp_c2pmbox_get_versions(psp_c2p_t *c2p, psp_fw_versions_t *vers)
 {
-	c2p_mbox_get_ver_buffer_t buf __aligned(PSP_C2PMBOX_BUF_ALIGN);
+	c2p_mbox_get_ver_buffer_t buf;
 	int ret;
 
 	bzero(&buf, sizeof (c2p_mbox_get_ver_buffer_t));
@@ -294,11 +365,15 @@ out:
 static void
 psp_c2p_fini(psp_c2p_t *c2p)
 {
+	if (c2p->c2p_buf) {
+		contig_free(c2p->c2p_buf, sizeof (c2p_mbox_buffer_t));
+		c2p->c2p_buf = NULL;
+	}
 	bzero(&c2p->c2p_regs, sizeof (c2p->c2p_regs));
 	mutex_destroy(&c2p->c2p_lock);
 }
 
-static void
+static int
 psp_c2p_init(psp_c2p_t *c2p)
 {
 	x86_processor_family_t fam = chiprev_family(cpuid_getchiprev(CPU));
@@ -307,6 +382,14 @@ psp_c2p_init(psp_c2p_t *c2p)
 	c2p->c2p_regs.c2p_cmd = PSP_C2PMBOX(fam);
 	c2p->c2p_regs.c2p_addr_lo = PSP_C2PMBOX_BUF_ADDR_LO(fam);
 	c2p->c2p_regs.c2p_addr_hi = PSP_C2PMBOX_BUF_ADDR_HI(fam);
+
+	c2p->c2p_buf = contig_alloc(sizeof (c2p_mbox_buffer_t),
+	    &psp_c2p_dma_attrs, PSP_C2PMBOX_BUF_ALIGN, 1);
+	if (c2p->c2p_buf == NULL)
+		return (ENOMEM);
+	bzero(c2p->c2p_buf, sizeof (c2p_mbox_buffer_t));
+
+	return (0);
 }
 
 static void
@@ -345,7 +428,8 @@ psp_init(void)
 		goto err;
 	}
 
-	psp_c2p_init(&psp->psp_c2p);
+	if ((ret = psp_c2p_init(&psp->psp_c2p)) != 0)
+		goto err;
 
 	/*
 	 * Ask the PSP for the running FW versions. This also serves as a test
@@ -515,9 +599,17 @@ psp_bus_ctl(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
 			return (DDI_FAILURE);
 		}
 
-		pcd = ddi_get_parent_data(cdip);
+		pcd = NULL;
+		for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
+			if (strcmp(psp_children[i].pcd_node_name,
+			    ddi_node_name(cdip)) == 0) {
+				pcd = &psp_children[i];
+				break;
+			}
+		}
 		if (pcd == NULL) {
-			dev_err(dip, CE_WARN, "!missing child parent data");
+			dev_err(dip, CE_WARN, "!unknown child %s for "
+			    "DDI_CTLOPS_INITCHILD", ddi_node_name(cdip));
 			return (DDI_FAILURE);
 		}
 
@@ -556,7 +648,7 @@ psp_lookup_child(const psp_t *const psp, const psp_child_def_t *const pcd)
 
 	for (cdip = ddi_get_child(pdip); cdip != NULL;
 	    cdip = ddi_get_next_sibling(cdip)) {
-		if (ddi_get_parent_data(cdip) == pcd) {
+		if (strcmp(pcd->pcd_node_name, ddi_node_name(cdip)) == 0) {
 			return (cdip);
 		}
 	}
@@ -587,7 +679,7 @@ psp_lookup_child_def(const char *devname)
 		return (NULL);
 	}
 
-	for (uint_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
+	for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
 		const psp_child_def_t *const pcd = &psp_children[i];
 
 		if (strcmp(pcd->pcd_node_name, cdrv) == 0 &&
@@ -617,21 +709,7 @@ psp_config_child(psp_t *psp, const psp_child_def_t *pcd)
 
 	ndi_devi_alloc_sleep(pdip, pcd->pcd_node_name, (pnode_t)DEVI_SID_NODEID,
 	    &cdip);
-	ddi_set_parent_data(cdip, (void *)pcd);
 	(void) ndi_devi_bind_driver(cdip, 0);
-}
-
-static void
-psp_unconfig_child(psp_t *psp, dev_info_t *cdip)
-{
-	psp_child_def_t *pcd = ddi_get_parent_data(cdip);
-
-	ASSERT3P(pcd, !=, NULL);
-	ddi_set_parent_data(cdip, NULL);
-
-	if (ndi_devi_free(cdip) != NDI_SUCCESS) {
-		ddi_set_parent_data(cdip, pcd);
-	}
 }
 
 static int
@@ -659,7 +737,7 @@ psp_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 		}
 		psp_config_child(psp, pcd);
 	} else {
-		for (uint_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
+		for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
 			psp_config_child(psp, &psp_children[i]);
 		}
 	}
@@ -696,6 +774,16 @@ psp_bus_unconfig(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 		return (NDI_FAILURE);
 	}
 
+	/*
+	 * At this point, `ndi_busop_bus_unconfig()` will have already detached
+	 * any nodes required. If there wasn't an explicit request to also
+	 * remove the device nodes, then we'll leave them bound but detached.
+	 */
+	if ((flags & NDI_DEVI_REMOVE) == 0) {
+		ndi_devi_exit(pdip);
+		return (NDI_SUCCESS);
+	}
+
 	if (op == BUS_UNCONFIG_ONE) {
 		pcd = psp_lookup_child_def((const char *)arg);
 		if (pcd == NULL) {
@@ -709,10 +797,10 @@ psp_bus_unconfig(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 			return (NDI_EINVAL);
 		}
 
-		psp_unconfig_child(psp, cdip);
+		(void) ndi_devi_free(cdip);
 	} else {
 		major = (major_t)(uintptr_t)arg;
-		for (uint_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
+		for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
 			pcd = &psp_children[i];
 			cdip = psp_lookup_child(psp, pcd);
 			if (cdip == NULL)
@@ -723,7 +811,7 @@ psp_bus_unconfig(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
 				continue;
 			}
 
-			psp_unconfig_child(psp, cdip);
+			(void) ndi_devi_free(cdip);
 		}
 	}
 

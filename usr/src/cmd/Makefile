@@ -499,6 +499,7 @@ i386_SUBDIRS=		\
 	ficl		\
 	mc		\
 	nvmeadm		\
+	osrotc		\
 	pptadm		\
 	psp		\
 	rdmsr		\

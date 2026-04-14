@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_PLATFORM_DETECT_H
@@ -99,6 +99,11 @@ typedef struct oxide_board_data {
 	 * (eMCR) to speed up memory training on subsequent boots.
 	 */
 	bool			obd_ipccemcr;
+	/*
+	 * Specifies whether the root filesystem should be measured. If enabled,
+	 * the verified phase 2 image will have its SHA2-384 digest computed.
+	 */
+	bool			obd_measure_root;
 	/*
 	 * The set of system startup options that should be used. This is for
 	 * systems that do not support IPCC and replaces the startup options
