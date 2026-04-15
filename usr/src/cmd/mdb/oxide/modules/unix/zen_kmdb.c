@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -517,6 +517,9 @@ pcicfg_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 		mdb_printf("%llx\n", (u_longlong_t)val);
 	}
 
+	if (flags & DCMD_LOOP)
+		mdb_set_dot(addr + len);
+
 	return (DCMD_OK);
 }
 
@@ -1006,6 +1009,9 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 	if (rw == SMN_RD) {
 		mdb_printf("%x\n", smn_val);
 	}
+
+	if (flags & DCMD_LOOP)
+		mdb_set_dot(addr + len);
 
 	return (DCMD_OK);
 }
