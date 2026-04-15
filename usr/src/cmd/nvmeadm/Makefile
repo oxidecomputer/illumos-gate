@@ -20,6 +20,7 @@ PROG= nvmeadm
 
 OBJS=	nvme_version.o	\
 	nvmeadm.o	\
+	nvmeadm_extsmart.o \
 	nvmeadm_field.o \
 	nvmeadm_field_suplog.o \
 	nvmeadm_micron.o \
@@ -29,6 +30,7 @@ OBJS=	nvme_version.o	\
 	nvmeadm_phyeye.o \
 	nvmeadm_print.o	\
 	nvmeadm_sandisk.o \
+	nvmeadm_solidigm.o \
 	nvmeadm_telemetry.o \
 	nvmeadm_vuc.o \
 	nvmeadm_wdc.o	\
