@@ -1450,6 +1450,43 @@ mac_srs_update_drain_proc(mac_soft_ring_set_t *srs)
 }
 
 /*
+ * TODO(ky)
+ */
+static void
+mac_srs_update_lower_proc(mac_soft_ring_set_t *srs)
+{
+	if (mac_srs_is_tx(srs)) {
+		return;
+	}
+
+	mac_srs_rx_t *srs_rx = &srs->srs_rx;
+
+	if (srs->srs_rx.sr_lower_proc == mac_hwrings_rx_process) {
+		return;
+	}
+
+	const bool bw_ctld = mac_srs_is_bw_controlled(srs);
+	const bool has_subflows = srs->srs_flowtree.ftb_subtree != NULL;
+	const bool hw_class = srs_rx->sr_ring != NULL &&
+	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER;
+
+	if (bw_ctld || has_subflows || hw_class) {
+		srs_rx->sr_lower_proc = mac_rx_srs_process;
+	} else {
+		srs_rx->sr_lower_proc = mac_rx_srs_process_lockless;
+	}
+
+	if (srs == srs->srs_flent->fe_rx_srs[0]) {
+		flow_entry_t *flent = srs->srs_flent;
+		mutex_enter(&flent->fe_lock);
+		flent->fe_cb_fn = (flow_fn_t)srs_rx->sr_lower_proc;
+		flent->fe_cb_arg1 = (void *)srs->srs_mcip->mci_mip;
+		flent->fe_cb_arg2 = (void *)srs;
+		mutex_exit(&flent->fe_lock);
+	}
+}
+
+/*
  * Return the number of active bandwidth controls on an SRS.
  *
  * Calling this function requires that the MAC perimeter is held. This
@@ -1562,6 +1599,7 @@ mac_srs_update_bwlimit_state(mac_soft_ring_set_t *srs)
 	}
 
 	mac_srs_update_drain_proc(srs);
+	mac_srs_update_lower_proc(srs);
 
 	mutex_exit(&srs->srs_lock);
 }
@@ -1784,6 +1822,7 @@ mac_client_rebuild_flowtrees(mac_client_impl_t *mcip, const bool do_tx)
 		mac_soft_ring_set_t *srs = flent->fe_rx_srs[i];
 		mac_srs_rebuild_flowtree(srs, mcip->mci_rx_flow_tree,
 		    debug_flags);
+		mac_srs_update_lower_proc(srs);
 	}
 
 	if (do_tx && flent->fe_tx_srs != NULL) {
@@ -2636,6 +2675,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 				mac_srs->srs_type |= SRST_ENQUEUE;
 			}
 		}
+		mac_srs_update_lower_proc(mac_srs);
 	}
 done:
 	mac_srs_stat_create(mac_srs);
@@ -3874,6 +3914,14 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	const mac_soft_ring_set_state_t srs_poll_wait_flag = condemn ?
 	    SRS_POLL_THR_EXITED : SRS_POLL_THR_QUIESCED;
 
+	uint32_t walkers = atomic_or_32_nv(&mac_srs->srs_walkers,
+	    SRS_WALKER_BUSY);
+
+	while (walkers != SRS_WALKER_BUSY) {
+		cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
+		walkers = mac_srs->srs_walkers;
+	}
+
 	/*
 	 * In the case of Rx SRS wait till the poll thread is done.
 	 */
@@ -4190,6 +4238,8 @@ mac_srs_worker_restart(mac_soft_ring_set_t *mac_srs)
 	}
 	/* Wake up any waiter waiting for the restart to complete */
 	mac_srs->srs_state |= SRS_RESTART_DONE;
+
+	(void) atomic_and_32_nv(&mac_srs->srs_walkers, ~SRS_WALKER_BUSY);
 
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
 }
