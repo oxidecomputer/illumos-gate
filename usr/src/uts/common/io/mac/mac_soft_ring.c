@@ -648,7 +648,7 @@ mac_soft_ring_query(const mac_soft_ring_t *ringp, mac_ring_query_t *info)
 		return;
 	}
 
-	info->mri_is_hw_ring = srs->srs_data.rx.sr_ring != NULL;
+	info->mri_is_hw_ring = srs->srs_rx.sr_ring != NULL;
 }
 
 /*

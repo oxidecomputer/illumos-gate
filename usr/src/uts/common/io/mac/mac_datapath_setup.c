@@ -1455,8 +1455,49 @@ mac_srs_lower_proc(const mac_rx_srs_lower_proc_t proc)
 		return (mac_rx_srs_process);
 	case MRSLP_HWRINGS:
 		return (mac_hwrings_rx_process);
+	/* TODO(ky): is this updated often enough? */
+	case MRSLP_SHARED:
+		return (mac_rx_srs_process_lockless);
 	default:
 		panic("No lower proc defined for %d.", proc);
+	}
+}
+
+/*
+ * TODO(ky)
+ */
+static void
+mac_srs_update_lower_proc(mac_soft_ring_set_t *srs)
+{
+	if (mac_srs_is_tx(srs)) {
+		return;
+	}
+
+	mac_srs_rx_t *srs_rx = &srs->srs_rx;
+
+	if (srs->srs_rx.sr_lower_proc == MRSLP_HWRINGS) {
+		return;
+	}
+
+	const bool bw_ctld = mac_srs_is_bw_controlled(srs);
+	const bool has_subflows = srs->srs_flowtree.ftb_subtree != NULL;
+	const bool hw_class = srs_rx->sr_ring != NULL &&
+	    srs_rx->sr_ring->mr_classify_type == MAC_HW_CLASSIFIER;
+
+	if (bw_ctld || has_subflows || hw_class) {
+		srs_rx->sr_lower_proc = MRSLP_PROCESS;
+	} else {
+		srs_rx->sr_lower_proc = MRSLP_SHARED;
+	}
+
+	if (srs == srs->srs_flent->fe_rx_srs[0]) {
+		flow_entry_t *flent = srs->srs_flent;
+		mutex_enter(&flent->fe_lock);
+		flent->fe_cb_fn = (flow_fn_t)mac_srs_lower_proc(
+		    srs_rx->sr_lower_proc);
+		flent->fe_cb_arg1 = (void *)srs->srs_mcip->mci_mip;
+		flent->fe_cb_arg2 = (void *)srs;
+		mutex_exit(&flent->fe_lock);
 	}
 }
 
@@ -1572,6 +1613,7 @@ mac_srs_update_bwlimit_state(mac_soft_ring_set_t *srs)
 	}
 
 	mac_srs_update_drain_proc(srs);
+	mac_srs_update_lower_proc(srs);
 
 	mutex_exit(&srs->srs_lock);
 }
@@ -1788,6 +1830,7 @@ mac_client_rebuild_flowtrees(mac_client_impl_t *mcip, const bool do_tx)
 	for (uint16_t i = 0; i < rx_srs_cnt; i++) {
 		mac_srs_rebuild_flowtree(flent->fe_rx_srs[i],
 		    mcip->mci_rx_flow_tree, debug_flags);
+		mac_srs_update_lower_proc(flent->fe_rx_srs[i]);
 	}
 
 	if (do_tx && flent->fe_tx_srs != NULL) {
@@ -2603,6 +2646,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 				mac_srs->srs_type |= SRST_ENQUEUE;
 			}
 		}
+		mac_srs_update_lower_proc(mac_srs);
 	}
 done:
 	mac_srs_stat_create(mac_srs);
@@ -3832,6 +3876,14 @@ mac_srs_worker_quiesce(mac_soft_ring_set_t *mac_srs)
 	const mac_soft_ring_set_state_t srs_poll_wait_flag = condemn ?
 	    SRS_POLL_THR_EXITED : SRS_POLL_THR_QUIESCED;
 
+	uint32_t walkers = atomic_or_32_nv(&mac_srs->srs_walkers,
+	    SRS_WALKER_BUSY);
+
+	while (walkers != SRS_WALKER_BUSY) {
+		cv_wait(&mac_srs->srs_async, &mac_srs->srs_lock);
+		walkers = mac_srs->srs_walkers;
+	}
+
 	/*
 	 * In the case of Rx SRS wait till the poll thread is done.
 	 */
@@ -4146,6 +4198,8 @@ mac_srs_worker_restart(mac_soft_ring_set_t *mac_srs)
 	}
 	/* Wake up any waiter waiting for the restart to complete */
 	mac_srs->srs_state |= SRS_RESTART_DONE;
+
+	(void) atomic_and_32_nv(&mac_srs->srs_walkers, ~SRS_WALKER_BUSY);
 
 	cv_signal(&mac_srs->srs_quiesce_done_cv);
 }
@@ -5214,7 +5268,7 @@ mac_rx_srs_change_action(mac_soft_ring_set_t *srs, const flow_action_t *action)
 	    mac_rx_discard : action->fa_direct_rx_fn;
 	const bool do_notify = (action->fa_flags & MFA_FLAGS_RESOURCE) != 0;
 
-	mac_srs_rx_t *srs_rx = &srs->srs_data.rx;
+	mac_srs_rx_t *srs_rx = &srs->srs_rx;
 	srs_rx->sr_func = action->fa_direct_rx_fn;
 	srs_rx->sr_arg1 = action->fa_direct_rx_arg;
 
