@@ -368,6 +368,14 @@ typedef enum {
 	 * This should only occur for Rx rings when sun4v is in use,
 	 */
 	MRSLP_HWRINGS,
+	/*
+	 * Packets will skip being enqueued on the SRS, and will always be
+	 * processed inline without locking the SRS or acquiring `SRS_PROC`.
+	 *
+	 * This method requires that the SRS is not bandwidth-limited, and has
+	 * no flowtree
+	 */
+	MRSLP_SHARED,
 } mac_rx_srs_lower_proc_t;
 
 /*
@@ -840,6 +848,8 @@ typedef enum {
 	MDSP_FORWARD,
 } mac_srs_drain_proc_t;
 
+#define	SRS_WALKER_BUSY		(1 << 31)
+
 /*
  * The first-line packet queue hit once packets are received from or
  * transmitted onto a MAC provider. srs_type identifies whether an SRS
@@ -916,6 +926,14 @@ struct mac_soft_ring_set_s {
 	kcondvar_t	srs_async;	/* cv for worker thread */
 	kcondvar_t	srs_cv;		/* cv for poll thread */
 	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
+
+	/*
+	 * An atomic count of the number of threads processing
+	 * packets in this SRS. Used when `MRSLP_SHARED`.
+	 *
+	 * The MSB (SRS_WALKER_BUSY) controls whether new walkers can be added.
+	 */
+	uint32_t	srs_walkers;
 
 	/*
 	 * From here 'til `srs_data`, the fields of this struct are mostly
@@ -1301,6 +1319,8 @@ extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_hwrings_rx_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
+extern void mac_rx_srs_process_lockless(void *, mac_resource_handle_t, mblk_t *,
+    boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
 
@@ -1489,6 +1509,9 @@ mac_srs_lower_proc(const mac_rx_srs_lower_proc_t proc)
 		return (mac_rx_srs_process);
 	case MRSLP_HWRINGS:
 		return (mac_hwrings_rx_process);
+	/* TODO(ky): is this updated often enough? */
+	case MRSLP_SHARED:
+		return (mac_rx_srs_process_lockless);
 	default:
 		panic("No lower proc defined for %d.", proc);
 	}

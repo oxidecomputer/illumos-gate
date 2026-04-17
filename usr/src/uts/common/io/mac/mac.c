@@ -1890,6 +1890,7 @@ mac_hwring_teardown(mac_ring_handle_t hwrh)
 		mac_srs = hw_ring->mr_srs;
 		VERIFY(!mac_srs_is_tx(mac_srs));
 		mac_srs->srs_data.rx.sr_lower_proc = MRSLP_PROCESS;
+		/* TODO(ky) call mac_srs_update_lower_proc */
 		mac_srs->srs_mrh = NULL;
 	}
 }

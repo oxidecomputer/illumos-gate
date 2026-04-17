@@ -823,6 +823,11 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 				    (mac_resource_handle_t)mac_srs, mp_chain,
 				    B_FALSE);
 				break;
+			case MRSLP_SHARED:
+				mac_rx_srs_process_lockless(mh,
+				    (mac_resource_handle_t)mac_srs, mp_chain,
+				    B_FALSE);
+				break;
 			default:
 				panic("No lower proc defined for %d.", proc);
 			}

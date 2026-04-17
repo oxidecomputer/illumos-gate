@@ -4021,6 +4021,115 @@ mac_rx_srs_process(void *arg, mac_resource_handle_t srs, mblk_t *mp_chain,
 	mutex_exit(&mac_srs->srs_lock);
 }
 
+/*
+ * TODO(ky)
+ */
+void
+mac_rx_srs_process_lockless(void *arg, mac_resource_handle_t srs,
+    mblk_t *in_chain, boolean_t loopback)
+{
+	mac_soft_ring_set_t	*mac_srs = (mac_soft_ring_set_t *)srs;
+	mac_client_impl_t	*mcip = mac_srs->srs_mcip;
+	mac_srs_rx_t		*srs_rx = &mac_srs->srs_data.rx;
+
+	/* TODO(ky): make these methods atomic! and use them! */
+	// SRS_RX_STAT_UPDATE(mac_srs, pollbytes, sz);
+	// SRS_RX_STAT_UPDATE(mac_srs, pollcnt, count);
+
+	// We need to fallback to the worker thread for loopback traffic,
+	// otherwise we will panic the system by running out of stack space
+	// and pinging back and forth between rx/tx.
+	if (loopback || STACK_BIAS + (uintptr_t)getfp() -
+	    (uintptr_t)curthread->t_stkbase < mac_rx_srs_stack_needed) {
+		uint32_t count = 0;
+		size_t sz = 0;
+		mblk_t *count_mp = in_chain;
+		mblk_t *tail = NULL;
+		while (count_mp != NULL) {
+			tail = count_mp;
+			count++;
+			sz += mp_len(count_mp);
+			count_mp = count_mp->b_next;
+		}
+
+		mutex_enter(&mac_srs->srs_lock);
+		MAC_RX_SRS_ENQUEUE_CHAIN(mac_srs, in_chain, tail, count, sz,
+		    B_FALSE);
+		cv_signal(&mac_srs->srs_async);
+		mutex_exit(&mac_srs->srs_lock);
+		return;
+	}
+
+	uint32_t walkers;
+
+	while (1) {
+		walkers = mac_srs->srs_walkers;
+		if ((walkers & SRS_WALKER_BUSY) != 0) {
+			mac_drop_chain(in_chain, "SRS is quiesced");
+			return;
+		}
+
+		/* Ensure count < (2 << 31) - 1 */
+		if (walkers == ~SRS_WALKER_BUSY) {
+			mac_drop_chain(in_chain, "SRS has too many walkers");
+			return;
+		}
+
+		if (atomic_cas_32(&mac_srs->srs_walkers, walkers,
+		    walkers + 1) == walkers) {
+			break;
+		}
+	}
+
+	/*
+	 * TODO(ky): fences?
+	 */
+
+	/*
+	 * TODO(ky) blatantly copied from mac_rx_srs_drain_inner. refactor
+	 * TODO(ky) need to solve the cases to *allow* for flowtrees.
+	 */
+	const bool is_promisc_on = mcip->mci_promisc_list != NULL;
+
+	mac_pkt_list_t pkts = { 0 };
+
+	if (is_promisc_on) {
+		mac_promisc_client_dispatch(mcip, in_chain);
+	}
+
+	if (MAC_PROTECT_ENABLED(mcip, MPT_IPNOSPOOF)) {
+		mac_protect_intercept_dynamic(mcip, in_chain);
+	}
+
+	mac_standardise_pkts(mcip, &pkts, in_chain);
+
+	atomic_add_32(&srs_rx->sr_poll_pkt_cnt, pkts.mpl_count);
+	atomic_add_64(&mac_srs->srs_match_pkts, pkts.mpl_count);
+	atomic_add_64(&mac_srs->srs_match_bytes, pkts.mpl_size);
+
+	/* Everything leftover is for delivery to *THIS* SRS. */
+	mac_rx_srs_deliver(mac_srs, &pkts);
+
+	/*
+	 * TODO(ky) ASSUMING THERE IS NO POLL THREAD
+	 */
+
+	while (1) {
+		walkers = mac_srs->srs_walkers;
+		if (atomic_cas_32(&mac_srs->srs_walkers, walkers,
+		    walkers - 1) == walkers) {
+			/*
+			 * Last walker out informs an ongoing quiesce that it
+			 * can continue.
+			 */
+			if ((walkers - 1) == SRS_WALKER_BUSY) {
+				cv_signal(&mac_srs->srs_async);
+			}
+			break;
+		}
+	}
+}
+
 /* TX SIDE ROUTINES (RUNTIME) */
 
 /*
