@@ -809,6 +809,8 @@ typedef enum {
 typedef void (*mac_srs_drain_proc_t)(mac_soft_ring_set_t *,
     const mac_soft_ring_set_state_t);
 
+#define	SRS_WALKER_BUSY		(1 << 31)
+
 /*
  * The first-line packet queue hit once packets are received from or
  * transmitted onto a MAC provider. srs_type identifies whether an SRS
@@ -890,6 +892,14 @@ struct mac_soft_ring_set_s {
 	kcondvar_t	srs_async;	/* cv for worker thread */
 	kcondvar_t	srs_cv;		/* cv for poll thread */
 	timeout_id_t	srs_tid;	/* timeout id for pending timeout */
+
+	/*
+	 * An atomic count of the number of threads processing
+	 * packets in this SRS. Used when `MRSLP_SHARED`.
+	 *
+	 * The MSB (SRS_WALKER_BUSY) controls whether new walkers can be added.
+	 */
+	uint32_t	srs_walkers;
 
 	/*
 	 * From here 'til `srs_data`, the fields of this struct are mostly
@@ -990,7 +1000,7 @@ struct mac_soft_ring_set_s {
 	 *
 	 * We assert this property holds below.
 	 */
-	uint8_t			srs_pad[24];
+	uint8_t			srs_pad[16];
 
 	union {
 		mac_srs_rx_t	srs_rx; /* !(srs_type & SRST_TX) */
@@ -1210,6 +1220,8 @@ extern void mac_srs_worker_restart(mac_soft_ring_set_t *);
 extern void mac_rx_srs_process(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_hwrings_rx_process(void *, mac_resource_handle_t, mblk_t *,
+    boolean_t);
+extern void mac_rx_srs_process_lockless(void *, mac_resource_handle_t, mblk_t *,
     boolean_t);
 extern void mac_srs_worker(mac_soft_ring_set_t *);
 extern void mac_rx_srs_poll_ring(mac_soft_ring_set_t *);
