@@ -55,7 +55,7 @@
 .Nd report process status
 .Sh SYNOPSIS
 .Nm
-.Op Fl aAcdefjHlLPWyZ
+.Op Fl aAcdefjHlLmPWyZ
 .Op Fl g Ar grplist
 .Op Fl h Ar lgrplist
 .Op Fl n Ar namelist
@@ -179,6 +179,11 @@ Prints information about each light weight process
 .Pq lwp
 in each selected process.
 .Pq See below .
+.It Fl m
+Prints microstate information about the process or, when
+.Fl L
+is specified, each thread.
+See below for a list of the output fields this adds.
 .It Fl n Ar namelist
 Specifies the name of an alternative system
 .Ar namelist
@@ -462,6 +467,65 @@ and
 show the values for the lwp, not the process.
 A traditional single-threaded process contains only one lwp.
 .Pp
+The
+.Fl m
+option prints information about the process or thread microstate accounting.
+When looking at information for a process, it is a summation across all threads
+that currently exist or have ever existed in the process.
+Use the
+.Fl o
+option for stable output.
+Stable output for these fields is printed as a hexadecimal number of
+nanoseconds.
+Otherwise, times are humanized and are displayed in the following units:
+.Bl -tag -compact -width Ds -offset indent
+.It Sy ns
+nanoseconds
+.It Sy us
+microseconds
+.It Sy ms
+milliseconds
+.It Sy s
+seconds
+.It Sy m
+minutes
+.It Sy h
+hours
+.It Sy d
+days
+.It Sy y
+years
+.El
+.Pp
+The following additional columns are printed when the
+.Fl m
+option is specified:
+.Bl -tag -width Ds
+.It Sy USERTIME
+Elapsed time spent in user mode.
+.It Sy SYSTIME
+Elapsed time spent in system mode.
+Generally due to executing system calls or page faults.
+.It Sy TTIME
+Time spent in other system traps.
+.It Sy TFTIME
+Time spent asleep in user text page faults.
+.It Sy DFTIME
+Time spent asleep in user data page faults.
+.It Sy KFTIME
+Time spent asleep in kernel page faults.
+.It Sy LTIME
+Time spent asleep waiting for a user-mode lock.
+.It Sy SLPTIME
+Time spent asleep for any other reason.
+.It Sy WTIME
+Time spent runnable, but waiting for CPU availability.
+.It Sy STOPTIME
+Time spent stopped for any reason, such as job control, use of
+.Pa /proc ,
+etc.
+.El
+.Pp
 A process that has exited and has a parent, but has not yet been waited for by
 the parent, is marked
 .Sy <defunct> .
@@ -680,6 +744,41 @@ The home lgroup of the process.
 The data model of the process, printed in the same manner as via
 .Xr pflags 1 .
 The currently supported data models are _ILP32 and _LP64.
+.It Sy usertime
+Elapsed time executing in user mode.
+.It Sy systime
+Elapsed time executing in system mode.
+Generally due to executing system calls or page faults.
+.It Sy ttime
+Time spent in other system traps.
+.It Sy tftime
+Time spent asleep in user text page faults.
+.It Sy dftime
+Time spent asleep in user data page faults.
+.It Sy kftime
+Time spent asleep in kernel page faults.
+.It Sy ltime
+Time spent asleep waiting for a user-mode lock.
+.It Sy slptime
+Time spent asleep for any other reason.
+.It Sy wtime
+Time spent runnable, but waiting for CPU availability.
+.It Sy stoptime
+Time spent stopped for any reason, such as job control, use of
+.Pa /proc ,
+etc.
+.It Sy minf
+Number of minor page faults.
+.It Sy majf
+Number of major page faults.
+.It Sy vctx
+Count of voluntary context switches.
+.It Sy ictx
+Count of involuntary context switches.
+.It Sy sigs
+Count of signals received.
+.It Sy sysc
+Count of system calls executed.
 .El
 .Pp
 Only
