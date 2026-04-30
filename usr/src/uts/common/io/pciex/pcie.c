@@ -494,6 +494,7 @@
 #include <sys/hotplug/pci/pcishpc.h>
 #include <sys/hotplug/pci/pcicfg.h>
 #include <sys/pci_cfgacc.h>
+#include <sys/iommu.h>
 #include <sys/sysevent.h>
 #include <sys/sysevent/eventdefs.h>
 #include <sys/sysevent/pcie.h>
@@ -1174,6 +1175,11 @@ pcie_initchild(dev_info_t *cdip)
 	    == PCIE_ARI_DEVICE)) {
 		bus_p->bus_ari = B_TRUE;
 	}
+
+	/*
+	 * Perform any IOMMU-specific initialization that may be required.
+	 */
+	psm_iommu_dev_init(cdip);
 
 	return (DDI_SUCCESS);
 }
@@ -2210,6 +2216,7 @@ pcie_postattach_child(dev_info_t *cdip)
 void
 pcie_uninitchild(dev_info_t *cdip)
 {
+	psm_iommu_dev_fini(cdip);
 	pcie_disable_errors(cdip);
 	pcie_fini_cfghdl(cdip);
 	pcie_fini_dom(cdip);

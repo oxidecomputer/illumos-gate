@@ -59,7 +59,25 @@ extern "C" {
 #define	NCPU		256
 #define	NCPU_LOG2	8
 
-#define	NCPU_INTR	255
+
+/*
+ * The numerically largest processor ID that a device can send an interrupt to
+ * without using interrupt remapping via an IOMMU.  We are constrained to 8-bit
+ * APIC IDs in this context by how x86 defined the destination field in its
+ * architecture-specific MSI address field format, how that was preserved in
+ * MSI-X, and how redirection table entries in the IOAPIC are defined.
+ *
+ * Using a count of CPUs alone is insufficient here, as the constraining item is
+ * the physical APIC ID: given 2P systems, it is possible for the total number
+ * of CPUs to be less than 2^8, but a given CPU's processor ID to be larger, as
+ * the x2APIC ID space is sparse.  When determining how to distribute interrupts
+ * between CPUs, we must look at the combination of NCPU, physical processor
+ * IDs, and whether the IOMMU and its interrupt redirection support are enabled.
+ *
+ * Note that this is an identifier, not a limit, and that we do not use 255, as
+ * that is the xAPIC broadcast address.
+ */
+#define	INTR_MAX_PROCID	254
 
 /* NCPU_P2 is NCPU rounded to a power of 2 */
 #define	NCPU_P2	(1 << NCPU_LOG2)

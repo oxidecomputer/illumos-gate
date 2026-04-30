@@ -27,7 +27,7 @@
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright 2017 Joyent, Inc.
  * Copyright 2020 Ryan Zezeski
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 /*
@@ -55,6 +55,7 @@
 #include <vm/page.h>
 #include <sys/avintr.h>
 #include <sys/errno.h>
+#include <sys/iommu.h>
 #include <sys/modctl.h>
 #include <sys/ddi_impldefs.h>
 #include <sys/sunddi.h>
@@ -4622,30 +4623,8 @@ rootnex_dma_check(dev_info_t *dip, const void *handle, const void *addr,
 	return (DDI_FM_UNKNOWN);
 }
 
-/*ARGSUSED*/
 static int
-rootnex_quiesce(dev_info_t *dip)
+rootnex_quiesce(dev_info_t *dip __unused)
 {
-	return (DDI_SUCCESS);
-}
-
-/*
- * XXX Stubs required because the "generic" x86 modstubs assume that rootnex
- * always supports/provides an Intel MMU implementation.  We don't support any
- * Intel processors so we don't have that; without these, rootnex can't be
- * loaded properly.
- */
-void
-immu_init(void)
-{
-}
-
-void
-immu_startup(void)
-{
-}
-
-void
-immu_physmem_update(uint64_t addr, uint64_t size)
-{
+	return (psm_iommu_quiesce());
 }

@@ -63,6 +63,7 @@
 #include <sys/cpc_pcbe.h>
 #include <sys/prom_debug.h>
 #include <sys/tsc.h>
+#include <sys/apic.h>
 
 
 #define	OFFSETOF(s, m)		(size_t)(&(((s *)0)->m))
@@ -193,6 +194,8 @@ static ushort_t mach_ver[4] = {0, 0, 0, 0};
  * virtualization support for psm
  */
 void *psm_vt_ops = NULL;
+uint16_t apic_io_iommu_devid[MAX_IO_APIC];
+
 /*
  * If non-zero, idle cpus will become "halted" when there's
  * no work to do.

@@ -84,6 +84,7 @@ include $(UTSBASE)/common/Makefile.files
 #	won't be as parallel as we might like.
 #
 NOT_YET_KMODS	 = $(OLDPTY_OBJS) $(PTY_OBJS) $(VCONS_CONF_OBJS) $(MOD_OBJS)
+NOT_YET_KMODS	+= $(IOMMU_OBJS)
 
 #
 # ----- END OF TRANSITIONAL SECTION -------------------------------------------

@@ -172,6 +172,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/espi/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/amd_iommu/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/oxide/io/oxide_ktest/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)

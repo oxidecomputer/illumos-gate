@@ -50,10 +50,10 @@ int zen_smn_log = 0;
  * spinlocks potentially held by the code preempted by the NMI.  We fall back
  * to prom_printf in that case.
  */
-#define	ZEN_SMN_LOG(fmt, ...) do { \
+#define	ZEN_SMN_LOG(is_nmi, fmt, ...) do { \
 	if (zen_smn_log == 0) \
 		break; \
-	if (apix_nmi_in_progress()) \
+	if (is_nmi) \
 		prom_printf(fmt "\n", __VA_ARGS__); \
 	else \
 		cmn_err(CE_NOTE, fmt, __VA_ARGS__); \
@@ -90,10 +90,23 @@ zen_ioms_read(zen_ioms_t *ioms, const smn_reg_t reg)
 	return (zen_smn_read(ioms->zio_nbio->zn_iodie, reg));
 }
 
+uint64_t
+zen_ioms_read64(zen_ioms_t *ioms, const smn_reg_t reglo, const smn_reg_t reghi)
+{
+	return (zen_smn_read64(ioms->zio_nbio->zn_iodie, reglo, reghi));
+}
+
 void
 zen_ioms_write(zen_ioms_t *ioms, const smn_reg_t reg, const uint32_t val)
 {
 	zen_smn_write(ioms->zio_nbio->zn_iodie, reg, val);
+}
+
+void
+zen_ioms_write64(zen_ioms_t *ioms, const smn_reg_t reglo, const smn_reg_t reghi,
+    const uint64_t val)
+{
+	zen_smn_write64(ioms->zio_nbio->zn_iodie, reglo, reghi, val);
 }
 
 uint32_t
@@ -220,8 +233,8 @@ zen_smn_read_pair(zen_iodie_t *iodie, const smn_reg_t reg, uint32_t smn_idx,
 	return (val);
 }
 
-uint32_t
-zen_smn_read(zen_iodie_t *iodie, const smn_reg_t reg)
+static uint32_t
+zen_smn_read_locked(zen_iodie_t *iodie, const smn_reg_t reg, bool is_nmi)
 {
 	uint32_t val;
 
@@ -229,24 +242,69 @@ zen_smn_read(zen_iodie_t *iodie, const smn_reg_t reg)
 	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
 	ASSERT3P(iodie, !=, NULL);
 
-	if (apix_nmi_in_progress()) {
+	if (is_nmi) {
 		val = zen_smn_read_pair(iodie, reg, ZEN_NB_SMN_INDEX_NMI,
 		    ZEN_NB_SMN_DATA_NMI);
 	} else {
-		mutex_enter(&iodie->zi_smn_lock);
+		ASSERT(MUTEX_HELD(&iodie->zi_smn_lock));
 		val = zen_smn_read_pair(iodie, reg, ZEN_NB_SMN_INDEX,
 		    ZEN_NB_SMN_DATA);
-		mutex_exit(&iodie->zi_smn_lock);
 	}
 
-	ZEN_SMN_LOG("SMN R reg 0x%x: 0x%x", SMN_REG_ADDR(reg), val);
+	return (val);
+}
+
+uint32_t
+zen_smn_read(zen_iodie_t *iodie, const smn_reg_t reg)
+{
+	uint32_t val;
+	bool is_nmi;
+
+	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
+	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
+	ASSERT3P(iodie, !=, NULL);
+
+	is_nmi = apix_nmi_in_progress();
+
+	if (!is_nmi)
+		mutex_enter(&iodie->zi_smn_lock);
+	val = zen_smn_read_locked(iodie, reg, is_nmi);
+	if (!is_nmi)
+		mutex_exit(&iodie->zi_smn_lock);
+
+	ZEN_SMN_LOG(is_nmi, "SMN R reg 0x%x: 0x%x", SMN_REG_ADDR(reg), val);
+
+	return (val);
+}
+
+uint64_t
+zen_smn_read64(zen_iodie_t *iodie, const smn_reg_t reglo,
+    const smn_reg_t reghi)
+{
+	bool is_nmi;
+	uint32_t hi, lo;
+	uint64_t val;
+
+	ASSERT3P(iodie, !=, NULL);
+
+	is_nmi = apix_nmi_in_progress();
+	if (!is_nmi)
+		mutex_enter(&iodie->zi_smn_lock);
+	lo = zen_smn_read_locked(iodie, reglo, is_nmi);
+	hi = zen_smn_read_locked(iodie, reghi, is_nmi);
+	if (!is_nmi)
+		mutex_exit(&iodie->zi_smn_lock);
+	val = ((uint64_t)hi << 32) | lo;
+
+	ZEN_SMN_LOG(is_nmi, "SMN R reglo/hi 0x%x/0x%x: 0x%lx",
+	    SMN_REG_ADDR(reglo), SMN_REG_ADDR(reghi), val);
 
 	return (val);
 }
 
 static void
-zen_smn_write_pair(zen_iodie_t *iodie, const smn_reg_t reg, uint32_t smn_idx,
-    uint32_t smn_data, uint32_t val)
+zen_smn_write_pair(zen_iodie_t *iodie, const smn_reg_t reg,
+    uint32_t smn_idx, uint32_t smn_data, uint32_t val)
 {
 	const uint32_t base_addr = SMN_REG_ADDR_BASE(reg);
 	const uint32_t data_off = smn_data + SMN_REG_ADDR_OFF(reg);
@@ -272,23 +330,65 @@ zen_smn_write_pair(zen_iodie_t *iodie, const smn_reg_t reg, uint32_t smn_idx,
 	}
 }
 
-void
-zen_smn_write(zen_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
+static void
+zen_smn_write_locked(zen_iodie_t *iodie, const smn_reg_t reg,
+    const uint32_t val, bool is_nmi)
 {
 	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
 	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
 	ASSERT(SMN_REG_VALUE_FITS(reg, val));
 	ASSERT3P(iodie, !=, NULL);
 
-	ZEN_SMN_LOG("SMN W reg 0x%x: 0x%x", SMN_REG_ADDR(reg), val);
-
-	if (apix_nmi_in_progress()) {
+	if (is_nmi) {
 		zen_smn_write_pair(iodie, reg, ZEN_NB_SMN_INDEX_NMI,
 		    ZEN_NB_SMN_DATA_NMI, val);
-		return;
+	} else {
+		ASSERT(MUTEX_HELD(&iodie->zi_smn_lock));
+		zen_smn_write_pair(iodie, reg, ZEN_NB_SMN_INDEX,
+		    ZEN_NB_SMN_DATA, val);
 	}
+}
 
-	mutex_enter(&iodie->zi_smn_lock);
-	zen_smn_write_pair(iodie, reg, ZEN_NB_SMN_INDEX, ZEN_NB_SMN_DATA, val);
-	mutex_exit(&iodie->zi_smn_lock);
+void
+zen_smn_write(zen_iodie_t *iodie, const smn_reg_t reg, const uint32_t val)
+{
+	bool is_nmi;
+
+	ASSERT(SMN_REG_IS_NATURALLY_ALIGNED(reg));
+	ASSERT(SMN_REG_SIZE_IS_VALID(reg));
+	ASSERT(SMN_REG_VALUE_FITS(reg, val));
+	ASSERT3P(iodie, !=, NULL);
+
+	is_nmi = apix_nmi_in_progress();
+	ZEN_SMN_LOG(is_nmi, "SMN W reg 0x%x: 0x%x", SMN_REG_ADDR(reg), val);
+
+	if (!is_nmi)
+		mutex_enter(&iodie->zi_smn_lock);
+	zen_smn_write_locked(iodie, reg, val, is_nmi);
+	if (!is_nmi)
+		mutex_exit(&iodie->zi_smn_lock);
+}
+
+void
+zen_smn_write64(zen_iodie_t *iodie, const smn_reg_t reglo,
+    const smn_reg_t reghi, uint64_t val)
+{
+	uint32_t hi, lo;
+	bool is_nmi;
+
+	ASSERT3P(iodie, !=, NULL);
+
+	is_nmi = apix_nmi_in_progress();
+	hi = (val >> 32) & UINT32_MAX;
+	lo = val & UINT32_MAX;
+
+	ZEN_SMN_LOG(is_nmi, "SMN W reg lo/hi 0x%x/0x%x: 0x%lx",
+	    SMN_REG_ADDR(reglo), SMN_REG_ADDR(reghi), val);
+
+	if (!is_nmi)
+		mutex_enter(&iodie->zi_smn_lock);
+	zen_smn_write_locked(iodie, reghi, hi, is_nmi);
+	zen_smn_write_locked(iodie, reglo, lo, is_nmi);
+	if (!is_nmi)
+		mutex_exit(&iodie->zi_smn_lock);
 }

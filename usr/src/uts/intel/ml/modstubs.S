@@ -1080,9 +1080,7 @@ fcnname##_info:							\
  * Stubs for rootnex nexus driver.
  */
 	MODULE(rootnex,drv);
-	STUB(rootnex, immu_init, 0);
-	STUB(rootnex, immu_startup, 0);
-	STUB(rootnex, immu_physmem_update, 0);
+	STUB(rootnex, psm_iommu_linkage, nomod_zero);
 	END_MODULE(rootnex);
 
 /*

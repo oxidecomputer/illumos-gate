@@ -27,6 +27,7 @@
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright 2017 Joyent, Inc.
  * Copyright 2020 Ryan Zezeski
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -68,6 +69,7 @@
 #include <sys/ddifm.h>
 #include <sys/ddi_isa.h>
 #include <sys/apic.h>
+#include <sys/iommu.h>
 
 #ifdef __xpv
 #include <sys/bootinfo.h>
@@ -75,11 +77,6 @@
 #include <sys/bootconf.h>
 #include <vm/kboot_mmu.h>
 #endif
-
-#if !defined(__xpv)
-#include <sys/immu.h>
-#endif
-
 
 /*
  * enable/disable extra checking of function parameters. Useful for debugging
@@ -248,7 +245,6 @@ static int rootnex_coredma_hdl_setprivate(dev_info_t *dip, dev_info_t *rdip,
 static void *rootnex_coredma_hdl_getprivate(dev_info_t *dip, dev_info_t *rdip,
     ddi_dma_handle_t handle);
 #endif
-
 
 static struct bus_ops rootnex_bus_ops = {
 	BUSO_REV,
@@ -452,11 +448,7 @@ rootnex_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	case DDI_ATTACH:
 		break;
 	case DDI_RESUME:
-#if !defined(__xpv)
-		return (immu_unquiesce());
-#else
-		return (DDI_SUCCESS);
-#endif
+		return (psm_iommu_unquiesce());
 	default:
 		return (DDI_FAILURE);
 	}
@@ -522,11 +514,7 @@ rootnex_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 {
 	switch (cmd) {
 	case DDI_SUSPEND:
-#if !defined(__xpv)
-		return (immu_quiesce());
-#else
-		return (DDI_SUCCESS);
-#endif
+		return (psm_iommu_quiesce());
 	default:
 		return (DDI_FAILURE);
 	}
@@ -4780,33 +4768,8 @@ rootnex_dma_check(dev_info_t *dip, const void *handle, const void *addr,
 	return (DDI_FM_UNKNOWN);
 }
 
-/*ARGSUSED*/
 static int
-rootnex_quiesce(dev_info_t *dip)
+rootnex_quiesce(dev_info_t *dip __unused)
 {
-#if !defined(__xpv)
-	return (immu_quiesce());
-#else
-	return (DDI_SUCCESS);
-#endif
+	return (psm_iommu_quiesce());
 }
-
-#if defined(__xpv)
-void
-immu_init(void)
-{
-	;
-}
-
-void
-immu_startup(void)
-{
-	;
-}
-/*ARGSUSED*/
-void
-immu_physmem_update(uint64_t addr, uint64_t size)
-{
-	;
-}
-#endif

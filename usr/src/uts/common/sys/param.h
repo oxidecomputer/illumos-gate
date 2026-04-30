@@ -388,7 +388,7 @@ extern const unsigned int _nbpg;
 extern const int _ncpu;
 extern const int _ncpu_log2;
 extern const int _ncpu_p2;
-extern const int _ncpu_intr;
+extern const unsigned int _intr_max_procid;
 extern const int _clsize;
 #endif	/* defined(_KERNEL) && !defined(_ASM) */
 
@@ -409,7 +409,7 @@ extern const int _clsize;
 #define	NCPU		_ncpu
 #define	NCPU_LOG2	_ncpu_log2
 #define	NCPU_P2		_ncpu_p2
-#define	NCPU_INTR	_ncpu_intr
+#define	INTR_MAX_PROCID	_intr_max_procid
 
 #endif	/* defined(_MACHDEP) */
 

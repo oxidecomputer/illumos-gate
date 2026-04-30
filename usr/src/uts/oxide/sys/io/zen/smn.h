@@ -82,6 +82,10 @@ uint32_t zen_smn_mech1_read(const smn_reg_t);
 extern uint32_t zen_smn_read(zen_iodie_t *, const smn_reg_t);
 extern void zen_smn_write(zen_iodie_t *, const smn_reg_t, const uint32_t);
 
+extern uint64_t zen_smn_read64(zen_iodie_t *, const smn_reg_t, const smn_reg_t);
+extern void zen_smn_write64(zen_iodie_t *, const smn_reg_t, const smn_reg_t,
+    uint64_t);
+
 /*
  * Accessors for Core registers.
  */
@@ -105,6 +109,9 @@ extern void zen_nbio_write(zen_nbio_t *, const smn_reg_t, const uint32_t);
  */
 extern uint32_t zen_ioms_read(zen_ioms_t *, const smn_reg_t);
 extern void zen_ioms_write(zen_ioms_t *, const smn_reg_t, const uint32_t);
+extern uint64_t zen_ioms_read64(zen_ioms_t *, const smn_reg_t, const smn_reg_t);
+extern void zen_ioms_write64(zen_ioms_t *, const smn_reg_t, const smn_reg_t,
+    uint64_t);
 
 /*
  * Accessors for nBIF registers.

@@ -40,6 +40,9 @@
  * whose bracket is more than four times the narrowest seen were disturbed,
  * for example by an SMI, and are discarded. Over the default interval of
  * 250ms the result repeats to within a few parts in 10^8.
+ *
+ * Note, when we want to support generating interrupts from the HPET, we will
+ * need to set up interrupt remapping for it in zen_fabric and the IOMMU.
  */
 uint32_t tscc_hpet_interval_ms = 250;
 

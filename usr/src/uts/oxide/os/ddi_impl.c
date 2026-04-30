@@ -29,8 +29,9 @@
  */
 
 /*
- * PC specific DDI implementation
+ * Oxide specific DDI implementation
  */
+
 #include <sys/types.h>
 #include <sys/autoconf.h>
 #include <sys/avintr.h>
@@ -63,6 +64,7 @@
 #include <sys/sunndi.h>
 #include <sys/vmem.h>
 #include <sys/pci_impl.h>
+#include <sys/iommu.h>
 #include <sys/mach_intr.h>
 #include <vm/hat_i86.h>
 #include <sys/x86_archext.h>
@@ -101,8 +103,6 @@ static int poke_mem(peekpoke_ctlops_t *in_args);
 static int peek_mem(peekpoke_ctlops_t *in_args);
 
 static int kmem_override_cache_attrs(caddr_t, size_t, uint_t);
-
-extern void immu_init(void);
 
 /*
  * We use an AVL tree to store contiguous address allocations made with the
@@ -208,10 +208,9 @@ configure(void)
 	 * Startup happens later via a direct call
 	 * to IOMMU code by boot code.
 	 * At this point, all PCI bus renumbering
-	 * is done, so safe to init the IMMU
-	 * AKA Intel IOMMU.
+	 * is done, so safe to init the IOMMU.
 	 */
-	immu_init();
+	psm_iommu_init();
 }
 
 /*

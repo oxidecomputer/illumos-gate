@@ -30,7 +30,7 @@
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Pluribus Networks, Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 #include <sys/processor.h>
@@ -302,7 +302,7 @@ apix_pci_msi_enable_vector(apix_vector_t *vecp, dev_info_t *dip, int type,
     int inum, int count, uchar_t vector, int target_apic_id)
 {
 	uint64_t		msi_addr, msi_data;
-	ushort_t		msi_ctrl;
+	uint16_t		msi_ctrl;
 	int			i, cap_ptr = i_ddi_get_msi_msix_cap_ptr(dip);
 	ddi_acc_handle_t	handle = i_ddi_get_pci_config_handle(dip);
 	msi_regs_t		msi_regs;
@@ -345,7 +345,51 @@ apix_pci_msi_enable_vector(apix_vector_t *vecp, dev_info_t *dip, int type,
 		msi_ctrl |= ((highbit(count) - 1) << PCI_MSI_MME_SHIFT);
 		pci_config_put16(handle, cap_ptr + PCI_MSI_CTRL, msi_ctrl);
 
-		if ((vecp->v_flags & APIX_VEC_F_MASKABLE) == 0)
+		/*
+		 * If the vector is not maskable, and we are not using interrupt
+		 * remapping, then moving the interrupt is a multi-step process,
+		 * as updating the MSI data and address registers cannot be done
+		 * atomically:
+		 *
+		 * 1. We assume that `apix_rebindinfo` has been set so that it
+		 *    contains information about the redirection for this
+		 *    interrupt.
+		 * 2. We program the MSI data register for this device to point
+		 *    to the "reserved" vector; `apix_add_pending_hardint` will
+		 *    recognize this and use the rebind information to ensure
+		 *    that the correct handlers are run.
+		 * 3. We then update the MSI address register to point the
+		 *    interrupt to a new CPU.  If the interrupt should fire now,
+		 *    the correct handlers will still be invoked, using the
+		 *    rebind info, as before.
+		 * 4. Finally, we rewrite the MSI data register to point to the
+		 *    new interrupt directly.
+		 *
+		 * If we _are_ using interrupt remapping, then MSI data does
+		 * not correspond to an actual vector, and for both Intel and
+		 * AMD IOMMUs, the IOMMU code itself will handle properly
+		 * updating things so that entries are not lost: in the AMD
+		 * case, the address is fixed and only data matters, and in the
+		 * Intel case, the redirection entry can be updated atomically,
+		 * so the address does not need to be updated.  If we try to
+		 * change MSI data to point to the reserved vector when using
+		 * interrupt remapping, we may lose interrupts, as we have not
+		 * programmed interrupt remapping entries for the reserved
+		 * vector (and MSI data is not a vector anyway in these cases).
+		 *
+		 * Regardless, in every case, if we detect that the MSI address
+		 * does not change from what is presently programmed into the
+		 * device, we can skip pointing to the reserved vector.
+		 */
+		uint64_t msi_old_addr = pci_config_get32(handle, cap_ptr +
+		    PCI_MSI_ADDR_OFFSET);
+		if (msi_ctrl & PCI_MSI_64BIT_MASK) {
+			uint32_t oaddrhi = pci_config_get32(handle, cap_ptr +
+			    PCI_MSI_64BIT_ADDR);
+			msi_old_addr |= (uint64_t)oaddrhi << 32;
+		}
+		if ((vecp->v_flags & APIX_VEC_F_MASKABLE) == 0 &&
+		    msi_old_addr != msi_addr)
 			APIX_WRITE_MSI_DATA(handle, cap_ptr, msi_ctrl,
 			    APIX_RESV_VECTOR);
 

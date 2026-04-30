@@ -26,7 +26,7 @@
  * Copyright 2020 Joyent, Inc.
  * Copyright (c) 2015 by Delphix. All rights reserved.
  * Copyright (c) 2020 Carlos Neira <cneirabustos@gmail.com>
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  * Copyright 2025 Edgecast Cloud LLC.
  */
 /*
@@ -131,6 +131,7 @@
 #include <sys/ramdisk.h>
 #include <sys/tsc.h>
 #include <sys/clock.h>
+#include <sys/iommu.h>
 
 #ifdef	__xpv
 
@@ -168,10 +169,6 @@ static char hostid_file[] = "/etc/hostid";
 #endif
 
 void *gfx_devinfo_list;
-
-#if !defined(__xpv)
-extern void immu_startup(void);
-#endif
 
 /*
  * segkp
@@ -2135,13 +2132,13 @@ startup_end(void)
 	xs_domu_init();
 #endif
 
-#if !defined(__xpv)
 	/*
-	 * Intel IOMMU has been setup/initialized in ddi_impl.c
+	 * IOMMU has been appropriately setup/initialized in ddi_impl.c
 	 * Start it up now.
 	 */
-	immu_startup();
+	psm_iommu_startup();
 
+#if !defined(__xpv)
 	/*
 	 * Now that we're no longer going to drop into real mode for a BIOS call
 	 * via bootops, we can enable PCID (which requires CR0.PG).

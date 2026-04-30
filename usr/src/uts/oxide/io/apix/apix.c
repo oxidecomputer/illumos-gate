@@ -1177,7 +1177,7 @@ apix_intr_ops(dev_info_t *dip, ddi_intr_handle_impl_t *hdlp,
 		 */
 		*result = EINVAL;
 		target = (int)(intptr_t)hdlp->ih_private;
-		if (!apic_cpu_in_range(target)) {
+		if (!apic_cpu_in_bind_range(target)) {
 			DDI_INTR_IMPLDBG((CE_WARN,
 			    "[grp_]set_cpu: cpu out of range: %d\n", target));
 			return (PSM_FAILURE);
