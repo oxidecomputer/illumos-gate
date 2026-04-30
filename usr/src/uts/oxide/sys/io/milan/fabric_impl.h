@@ -162,6 +162,9 @@ extern bool milan_fabric_pcie_hotplug_init(zen_fabric_t *);
 extern void milan_iohc_enable_nmi(zen_ioms_t *);
 extern void milan_iohc_nmi_eoi(zen_ioms_t *);
 
+extern smn_reg_t milan_iommu_mmio_reg(const zen_ioms_t *const,
+    const smn_reg_def_t);
+
 extern smn_reg_t milan_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);
 extern smn_reg_t milan_pcie_core_reg(const zen_pcie_core_t *const,

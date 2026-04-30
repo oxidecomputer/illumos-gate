@@ -196,6 +196,11 @@ typedef struct zen_fabric_ops {
 	void		(*zfo_ioapic)(zen_ioms_t *);
 
 	/*
+	 * IOMMU initialization.
+	 */
+	void		(*zfo_iommu)(zen_ioms_t *);
+
+	/*
 	 * Configure nBIF straps.
 	 */
 	void		(*zfo_nbif_dev_straps)(zen_nbif_t *);
@@ -249,6 +254,12 @@ typedef struct zen_fabric_ops {
 	    pcie_link_speed_t, uint32_t, pcie_eq_t *);
 	int		(*zfo_pcie_port_set_preset_mask)(zen_pcie_port_t *,
 	    pcie_link_speed_t, uint32_t);
+
+	/*
+	 * Retrieve register handles for IOMMU MMIO registers.
+	 */
+	smn_reg_t	(*zfo_iommu_mmio_reg)(const zen_ioms_t *const,
+	    const smn_reg_def_t);
 
 	/*
 	 * Optional microarchitecture-specific overrides for PCIe core and port

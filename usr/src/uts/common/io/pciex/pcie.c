@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -494,6 +494,7 @@
 #include <sys/hotplug/pci/pcishpc.h>
 #include <sys/hotplug/pci/pcicfg.h>
 #include <sys/pci_cfgacc.h>
+#include <sys/iommu.h>
 #include <sys/sysevent.h>
 #include <sys/sysevent/eventdefs.h>
 #include <sys/sysevent/pcie.h>
@@ -1174,6 +1175,11 @@ pcie_initchild(dev_info_t *cdip)
 	    == PCIE_ARI_DEVICE)) {
 		bus_p->bus_ari = B_TRUE;
 	}
+
+	/*
+	 * Perform any IOMMU-specific initialization that may be required.
+	 */
+	psm_iommu_dev_init(cdip);
 
 	return (DDI_SUCCESS);
 }

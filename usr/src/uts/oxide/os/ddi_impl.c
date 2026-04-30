@@ -29,8 +29,9 @@
  */
 
 /*
- * PC specific DDI implementation
+ * Oxide specific DDI implementation
  */
+#include <sys/stdbool.h>
 #include <sys/types.h>
 #include <sys/autoconf.h>
 #include <sys/avintr.h>
@@ -63,6 +64,7 @@
 #include <sys/sunndi.h>
 #include <sys/vmem.h>
 #include <sys/pci_impl.h>
+#include <sys/iommu.h>
 #include <sys/mach_intr.h>
 #include <vm/hat_i86.h>
 #include <sys/x86_archext.h>
@@ -102,8 +104,6 @@ static int peek_mem(peekpoke_ctlops_t *in_args);
 
 static int kmem_override_cache_attrs(caddr_t, size_t, uint_t);
 
-extern void immu_init(void);
-
 /*
  * We use an AVL tree to store contiguous address allocations made with the
  * kalloca() routine, so that we can return the size to free with kfreea().
@@ -122,6 +122,10 @@ static avl_tree_t ctgtree;
 static kmutex_t		ctgmutex;
 #define	CTGLOCK()	mutex_enter(&ctgmutex)
 #define	CTGUNLOCK()	mutex_exit(&ctgmutex)
+
+/* This really ought to be in a header file somewhere. */
+extern page_t *page_create_io(vnode_t *, u_offset_t, uint_t,
+    uint_t, struct as *, caddr_t, const ddi_dma_attr_t *);
 
 /*
  * Minimum pfn value of page_t's put on the free list.  This is to simplify
@@ -204,14 +208,18 @@ configure(void)
 	impl_bus_reprobe();
 
 	/*
+	 * Set up the platform-specific IOMMU linkage.
+	 */
+	psm_iommu_linkage();
+
+	/*
 	 * Setup but don't startup the IOMMU
 	 * Startup happens later via a direct call
 	 * to IOMMU code by boot code.
 	 * At this point, all PCI bus renumbering
-	 * is done, so safe to init the IMMU
-	 * AKA Intel IOMMU.
+	 * is done, so safe to init the IOMMU.
 	 */
-	immu_init();
+	psm_iommu_init();
 }
 
 /*
@@ -861,9 +869,6 @@ static int kmem_io_idx;		/* index of first populated kmem_io[] */
 static page_t *
 page_create_io_wrapper(void *addr, size_t len, int vmflag, void *arg)
 {
-	extern page_t *page_create_io(vnode_t *, u_offset_t, uint_t,
-	    uint_t, struct as *, caddr_t, ddi_dma_attr_t *);
-
 	return (page_create_io(&kvp, (u_offset_t)(uintptr_t)addr, len,
 	    PG_EXCL | ((vmflag & VM_NOSLEEP) ? 0 : PG_WAIT), &kas, addr, arg));
 }
@@ -1158,16 +1163,14 @@ getctgsz(void *addr)
 
 /*ARGSUSED*/
 void *
-contig_alloc(size_t size, ddi_dma_attr_t *attr, uintptr_t align, int cansleep)
+contig_alloc(size_t size, const ddi_dma_attr_t *attr, uintptr_t align,
+    bool cansleep)
 {
 	pgcnt_t		pgcnt = btopr(size);
 	size_t		asize = pgcnt * PAGESIZE;
 	page_t		*ppl;
 	int		pflag;
 	void		*addr;
-
-	extern page_t *page_create_io(vnode_t *, u_offset_t, uint_t,
-	    uint_t, struct as *, caddr_t, ddi_dma_attr_t *);
 
 	/* segkmem_xalloc */
 

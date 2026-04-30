@@ -130,6 +130,8 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_get_dxio_fw_version = milan_get_dxio_fw_version,
 	.zfo_report_dxio_fw_version = milan_report_dxio_fw_version,
 
+	.zfo_iommu_mmio_reg = milan_iommu_mmio_reg,
+
 	.zfo_iohc_n_pcie_cores = milan_iohc_n_pcie_cores,
 	.zfo_pcie_core_n_ports = milan_pcie_core_n_ports,
 	.zfo_pcie_core_info = milan_pcie_core_info,

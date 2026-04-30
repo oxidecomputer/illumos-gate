@@ -25,7 +25,7 @@
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  * Copyright 2020 Joshua M. Clulow <josh@sysmgr.org>
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/note.h>
@@ -65,6 +65,7 @@
 #include <sys/modhash.h>
 #include <sys/instance.h>
 #include <sys/sysevent/eventdefs.h>
+#include <sys/iommu.h>
 
 #if defined(__amd64) && !defined(__xpv)
 #include <sys/iommulib.h>
@@ -9354,13 +9355,7 @@ ddi_err(ddi_err_t ade, dev_info_t *rdip, const char *fmt, ...)
 void
 ddi_mem_update(uint64_t addr, uint64_t size)
 {
-#if defined(__x86) && !defined(__xpv)
-	extern void immu_physmem_update(uint64_t addr, uint64_t size);
-	immu_physmem_update(addr, size);
-#else
-	/*LINTED*/
-	;
-#endif
+	psm_iommu_physmem_update(addr, size);
 }
 
 void

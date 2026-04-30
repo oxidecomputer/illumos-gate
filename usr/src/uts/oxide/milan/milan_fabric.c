@@ -1206,11 +1206,24 @@ milan_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	case SMN_UNIT_IOMMUL2:
 		reg = milan_iommul2_smn_reg(iohcnum, def, reginst);
 		break;
+	case SMN_UNIT_IOMMUMMIO:
+		reg = milan_iommummio_smn_reg(iohcnum, def, reginst);
+		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
 		    def.srd_unit);
 	}
 	return (reg);
+}
+
+smn_reg_t
+milan_iommu_mmio_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def)
+{
+	if (def.srd_unit != SMN_UNIT_IOMMUMMIO) {
+		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMMU MMIO",
+		    def.srd_unit);
+	}
+	return (milan_ioms_reg(ioms, def, 0));
 }
 
 static smn_reg_t

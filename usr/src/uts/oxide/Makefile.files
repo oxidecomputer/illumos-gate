@@ -188,6 +188,9 @@ SPECIAL_OBJS +=			\
 PCIE_MISC_OBJS += pcie_x86.o
 PCI_E_NEXUS_OBJS += npe.o npe_misc.o
 PCI_E_NEXUS_OBJS += pci_common.o pci_kstats.o pci_tools.o
+
+AMD_IOMMU_OBJS += amd_iommu.o amd_iommu_cmd.o amd_iommu_intrmap.o
+
 APIX_OBJS += apix.o apic_regops.o psm_common.o apix_intr.o apix_utils.o \
 		apix_irm.o apic_common.o apic_timer.o apix_regops.o
 
@@ -199,7 +202,7 @@ CPUDRV_OBJS	+= \
 
 DR_OBJS	+= dr.o dr_cpu.o dr_err.o dr_io.o dr_mem_acpi.o dr_quiesce.o dr_util.o
 
-ROOTNEX_OBJS += rootnex.o
+ROOTNEX_OBJS += rootnex.o $(AMD_IOMMU_OBJS)
 
 PCI_PRD_OBJS += pci_prd_oxide.o
 

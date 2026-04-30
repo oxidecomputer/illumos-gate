@@ -23,7 +23,7 @@
  * Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_DDI_SUBRDEFS_H
@@ -33,6 +33,7 @@
  * Sun DDI platform implementation subroutines definitions
  */
 
+#include <sys/stdbool.h>
 #include <sys/ddidmareq.h>
 
 #ifdef	__cplusplus
@@ -44,7 +45,7 @@ extern "C" {
 extern void impl_bus_add_probe(void (*)(int));
 extern void impl_bus_delete_probe(void (*)(int));
 
-extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
+extern void *contig_alloc(size_t, const ddi_dma_attr_t *, uintptr_t, bool);
 extern void contig_free(void *, size_t);
 
 #endif	/* _KERNEL */

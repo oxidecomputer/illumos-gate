@@ -55,7 +55,7 @@ extern "C" {
 #define	NCPU		1024
 #define	NCPU_LOG2	10
 
-#define	NCPU_INTR	255
+#define	INTR_MAX_PROCID 254
 
 /* NCPU_P2 is NCPU rounded to a power of 2 */
 #define	NCPU_P2		(1 << NCPU_LOG2)

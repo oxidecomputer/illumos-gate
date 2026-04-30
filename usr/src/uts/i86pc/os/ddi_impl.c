@@ -67,6 +67,7 @@
 #include <sys/hypervisor.h>
 #endif
 #include <sys/mach_intr.h>
+#include <sys/iommu.h>
 #include <vm/hat_i86.h>
 #include <sys/x86_archext.h>
 #include <sys/avl.h>
@@ -106,10 +107,6 @@ static int poke_mem(peekpoke_ctlops_t *in_args);
 static int peek_mem(peekpoke_ctlops_t *in_args);
 
 static int kmem_override_cache_attrs(caddr_t, size_t, uint_t);
-
-#if !defined(__xpv)
-extern void immu_init(void);
-#endif
 
 /*
  * We use an AVL tree to store contiguous address allocations made with the
@@ -209,17 +206,18 @@ configure(void)
 	/* reprogram devices not set up by firmware (BIOS) */
 	impl_bus_reprobe();
 
-#if !defined(__xpv)
 	/*
-	 * Setup but don't startup the IOMMU
+	 * Setup but don't startup the IOMMU, if
+	 * available.
+	 *
 	 * Startup happens later via a direct call
 	 * to IOMMU code by boot code.
 	 * At this point, all PCI bus renumbering
 	 * is done, so safe to init the IMMU
 	 * AKA Intel IOMMU.
 	 */
-	immu_init();
-#endif
+	psm_iommu_linkage();
+	psm_iommu_init();
 
 	/*
 	 * attach the isa nexus to get ACPI resource usage

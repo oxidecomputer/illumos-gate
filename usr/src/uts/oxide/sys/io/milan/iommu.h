@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_IOMMU_H
@@ -36,6 +36,8 @@ extern "C" {
 #define	IOMMUL1_N_UNITS		4
 /* No IOMMUL1 registers for the WAFL port. */
 #define	IOMMUL1_N_PCIE_CORES	2
+#define	IOMMUL2_N_UNITS		4
+#define	IOMMUMMIO_N_UNITS	4
 
 ZEN_MAKE_SMN_IOMMUL1_REG_FN(milan, PCIE, pcie, 0x14700000,
     IOMMUL1_N_PCIE_CORES, 22, IOMMUL1_N_UNITS);
@@ -45,7 +47,9 @@ ZEN_MAKE_SMN_IOMMUL1_REG_FN(milan, IOAGR, ioagr, 0x15300000, 1, 0,
     IOMMUL1_N_UNITS);
 
 AMDZEN_MAKE_SMN_REG_FN(milan_iommul2_smn_reg, IOMMUL2, 0x13f00000,
-    SMN_APERTURE_MASK, 4, 20);
+    SMN_APERTURE_MASK, IOMMUL2_N_UNITS, 20);
+AMDZEN_MAKE_SMN_REG_FN(milan_iommummio_smn_reg, IOMMUMMIO, 0x02400000,
+    SMN_APERTURE_MASK, IOMMUMMIO_N_UNITS, 20);
 
 /*
  * Unlike IOHCDEV, all the registers in IOMMUL1 space exist for each functional
@@ -64,12 +68,6 @@ AMDZEN_MAKE_SMN_REG_FN(milan_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 	.srd_unit = SMN_UNIT_IOMMUL1,	\
 	.srd_reg = 0x1c	\
 }
-#define	IOMMUL1_PCIE_CTL1(i, p)	\
-    milan_iommul1_pcie_smn_reg(i, D_IOMMUL1_CTL1, p)
-#define	IOMMUL1_NBIF_CTL1(i)	\
-    milan_iommul1_nbif_smn_reg(i, D_IOMMUL1_CTL1, 0)
-#define	IOMMUL1_IOAGR_CTL1(i)	\
-    milan_iommul1_ioagr_smn_reg(i, D_IOMMUL1_CTL1, 0)
 #define	IOMMUL1_CTL1_SET_ORDERING(r, v)	bitset32(r, 0, 0, v)
 
 /*
@@ -80,12 +78,6 @@ AMDZEN_MAKE_SMN_REG_FN(milan_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 	.srd_unit = SMN_UNIT_IOMMUL1,	\
 	.srd_reg = 0x24	\
 }
-#define	IOMMUL1_PCIE_SB_LOCATION(i, p)	\
-    milan_iommul1_pcie_smn_reg(i, IOMMUL1_PCIE_SB_LOCATION, p)
-#define	IOMMUL1_NBIF_SB_LOCATION(i)	\
-    milan_iommul1_nbif_smn_reg(i, IOMMUL1_NBIF_SB_LOCATION, 0)
-#define	IOMMUL1_IOAGR_SB_LOCATION(i)	\
-    milan_iommul1_ioagr_smn_reg(i, IOMMUL1_IOAGR_SB_LOCATION, 0)
 
 /*
  * IOMMUL2::L2_SB_LOCATION. Yet another place we program the FCH information.
@@ -95,7 +87,6 @@ AMDZEN_MAKE_SMN_REG_FN(milan_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 	.srd_unit = SMN_UNIT_IOMMUL2,	\
 	.srd_reg = 0x112c	\
 }
-#define	IOMMUL2_SB_LOCATION(i)	milan_iommul2_smn_reg(i, IOMMUL2_SB_LOCATION)
 
 #ifdef __cplusplus
 }

@@ -768,6 +768,7 @@ d platform/oxide/kernel/dacf/amd64 0755 root sys
 f platform/oxide/kernel/dacf/amd64/consconfig_dacf 0755 root sys
 d platform/oxide/kernel/drv 0755 root sys
 d platform/oxide/kernel/drv/amd64 0755 root sys
+f platform/oxide/kernel/drv/amd64/amd_iommu 0755 root sys
 f platform/oxide/kernel/drv/amd64/apob 0755 root sys
 f platform/oxide/kernel/drv/amd64/cpc 0755 root sys
 f platform/oxide/kernel/drv/amd64/dwu 0755 root sys
@@ -779,6 +780,7 @@ f platform/oxide/kernel/drv/amd64/os_rot 0755 root sys
 f platform/oxide/kernel/drv/amd64/psp_dpe 0755 root sys
 f platform/oxide/kernel/drv/amd64/psp_einj 0755 root sys
 f platform/oxide/kernel/drv/amd64/rootnex 0755 root sys
+f platform/oxide/kernel/drv/amd_iommu.conf 0644 root sys
 f platform/oxide/kernel/drv/apob.conf 0644 root sys
 f platform/oxide/kernel/drv/cpc.conf 0644 root sys
 f platform/oxide/kernel/drv/dwu.conf 0755 root sys

@@ -508,6 +508,8 @@ CONSKBD_OBJS += conskbd.o
 
 CONSMS_OBJS +=	consms.o
 
+IOMMU_OBJS +=	iommu_psm.o
+
 OLDPTY_OBJS +=	tty_ptyconf.o
 
 PTC_OBJS +=	tty_pty.o

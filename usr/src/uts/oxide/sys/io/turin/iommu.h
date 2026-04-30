@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_IOMMU_H
@@ -25,15 +25,16 @@ extern "C" {
 #endif
 
 /*
- * IOMMU Registers. The IOMMU is broken into an L1 and L2. The IOMMU L1
- * registers work a lot like the IOHCDEV registers in that there is a block for
- * each of several other devices: 8 directly connected PCIe cores, and 4 more
- * behind an IO aggregator (IOAGR).  Note that the latter are only on the large
- * IOHCs.  The L2 register sets only exist on the larger IOHCs.
+ * IOMMU Registers. The IOMMU is broken into an L1, an L2, and an IOMMU space.
+ * The L1 registers work a lot like the IOHCDEV registers in that there is a
+ * block for each of several other devices: 8 directly connected PCIe cores, and
+ * 4 more behind an IO aggregator (IOAGR).  Note that the latter are only on the
+ * large IOHCs.  The L2 register sets only exist on the larger IOHCs.
  */
 #define	IOMMUL1_N_IOAGR_PCIE_CORES	4
 #define	IOMMUL1_N_PCIE_CORES		8
 #define	IOMMUL2_N_UNITS			4
+#define	IOMMUMMIO_N_UNITS		4
 
 AMDZEN_MAKE_SMN_REG_FN(turin_iommul1_pcie_smn_reg, IOMMUL1, 0x14700000,
     SMN_APERTURE_MASK, IOMMUL1_N_PCIE_CORES, 20);
@@ -43,6 +44,9 @@ AMDZEN_MAKE_SMN_REG_FN(turin_iommul1_ioagr_pcie_smn_reg, IOMMUL1_IOAGR,
 
 AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
     SMN_APERTURE_MASK, IOMMUL2_N_UNITS, 20);
+
+AMDZEN_MAKE_SMN_REG_FN(turin_iommummio_smn_reg, IOMMUMMIO, 0x02400000,
+    SMN_APERTURE_MASK, IOMMUMMIO_N_UNITS, 20);
 
 /*
  * Unlike IOHCDEV, all the registers in IOMMUL1 space exist for each functional
@@ -96,6 +100,24 @@ AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 #define	IOMMUL_SB_LOCATION_PORT_D	8
 
 /*
+ * IOMMUL2::IOMMU_CAP_BASE_LO.
+ */
+/*CSTYLED*/
+#define	D_IOMMUL2_CAP_BASE_LO	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOMMUL2,	\
+	.srd_reg = 0x0044	\
+}
+
+/*
+ * IOMMUL2::IOMMU_CAP_BASE_HI.
+ */
+/*CSTYLED*/
+#define	D_IOMMUL2_CAP_BASE_HI	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_IOMMUL2,	\
+	.srd_reg = 0x0048	\
+}
+
+/*
  * IOMMUL2::L2_SB_LOCATION. Yet another place we program the FCH information.
  */
 /*CSTYLED*/
@@ -103,7 +125,6 @@ AMDZEN_MAKE_SMN_REG_FN(turin_iommul2_smn_reg, IOMMUL2, 0x13f00000,
 	.srd_unit = SMN_UNIT_IOMMUL2,	\
 	.srd_reg = 0x112c	\
 }
-#define	IOMMUL2_SB_LOCATION(i)	turin_iommul2_smn_reg(i, IOMMUL2_SB_LOCATION)
 
 #ifdef __cplusplus
 }

@@ -260,6 +260,9 @@ typedef enum apic_mode {
 #ifndef	_ASM
 
 #define	RDT_VECTOR(x)	((uchar_t)((x) & 0xFF))
+#define	RDT_DLM(x)	((uchar_t)(((x) >> 8) & 0x07))
+#define	RDT_DM(x)	((uchar_t)(((x) >> 11) & 0x01))
+#define	RDT_TM(x)	((uchar_t)(((x) >> 15) & 0x01))
 
 #define	APIC_MAXVAL	0xffffffffUL
 #define	APIC_TIME_MIN	0x5000
@@ -639,6 +642,7 @@ extern cpuset_t apic_cpumask;
 extern uint_t apic_picinit_called;
 extern apic_irq_t *apic_irq_table[APIC_MAX_VECTOR+1];
 extern volatile uint32_t *apicioadr[MAX_IO_APIC];
+extern uint16_t apic_io_iommu_devid[MAX_IO_APIC];
 extern uchar_t apic_io_id[MAX_IO_APIC];
 extern lock_t apic_ioapic_lock;
 extern uint32_t apic_physaddr[MAX_IO_APIC];

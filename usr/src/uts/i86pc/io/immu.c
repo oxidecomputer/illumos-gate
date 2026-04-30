@@ -28,7 +28,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -61,6 +61,7 @@
 #include <sys/bootconf.h>
 #include <sys/bootinfo.h>
 #include <sys/atomic.h>
+#include <sys/iommu.h>
 #include <sys/immu.h>
 /* ########################### Globals and tunables ######################## */
 /*
@@ -1346,6 +1347,28 @@ immu_init_inv_wait(immu_inv_wait_t *iwp, const char *name, boolean_t sync)
 
 	iwp->iwp_pstatus = paddr;
 	iwp->iwp_name = name;
+}
+
+void
+immu_dev_init(dev_info_t *dip __unused)
+{
+}
+
+static psm_iommu_ops_t immu_ops = {
+	.pio_init = immu_init,
+	.pio_dev_init = immu_dev_init,
+	.pio_startup = immu_startup,
+	.pio_physmem_update = immu_physmem_update,
+	.pio_quiesce = immu_quiesce,
+	.pio_unquiesce = immu_unquiesce,
+};
+
+void
+psm_iommu_linkage(void)
+{
+#if !defined(__xpv)
+	psm_iommu_ops = &immu_ops;
+#endif
 }
 
 /* ##############  END Intel IOMMU entry points ################## */

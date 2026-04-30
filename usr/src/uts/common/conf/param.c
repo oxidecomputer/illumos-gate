@@ -121,7 +121,7 @@ const int		_ncpu_log2	= (int)NCPU_LOG2;
 const int		_ncpu_p2	= (int)NCPU_P2;
 const unsigned long	_defaultstksz	= (unsigned long)DEFAULTSTKSZ;
 const unsigned int	_nbpg		= (unsigned int)MMU_PAGESIZE;
-const int		_ncpu_intr	= (int)NCPU_INTR;
+const unsigned int	_intr_max_procid = (unsigned int)INTR_MAX_PROCID;
 
 /*
  * System parameter formulae.

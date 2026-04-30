@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_FABRIC_H
@@ -61,7 +61,7 @@ typedef enum zen_ioms_rsrc {
 	ZIR_PCI_PREFETCH,
 	ZIR_PCI_BUS,
 	ZIR_GEN_LEGACY,
-	ZIR_GEN_MMIO
+	ZIR_GEN_MMIO,
 } zen_ioms_rsrc_t;
 
 /*
@@ -156,6 +156,11 @@ extern struct memlist *zen_fabric_pci_subsume(uint32_t, pci_prd_rsrc_t);
  * IO and MMIO spaces; for PCI use zen_fabric_pci_subsume.
  */
 extern struct memlist *zen_fabric_gen_subsume(zen_ioms_t *, zen_ioms_rsrc_t);
+
+/*
+ * Populates the DeviceIDs of IOAPICs in system for use in interrupt remapping.
+ */
+extern void zen_populate_iommu_ioapic_device_ids(uint16_t *, size_t);
 
 /*
  * Enable the NMI functionality in the IOHC to allow external devices (i.e., the

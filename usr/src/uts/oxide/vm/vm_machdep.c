@@ -25,7 +25,7 @@
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
  * Copyright 2019, Joyent, Inc.
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 /* Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T */
@@ -1173,7 +1173,7 @@ retry:
 #define	check_dma(a, b, c) (void)(0)
 #else
 static void
-check_dma(ddi_dma_attr_t *dma_attr, page_t *pp, int cnt)
+check_dma(const ddi_dma_attr_t *dma_attr, page_t *pp, int cnt)
 {
 	if (dma_attr == NULL)
 		return;
@@ -1191,7 +1191,7 @@ check_dma(ddi_dma_attr_t *dma_attr, page_t *pp, int cnt)
 #endif
 
 static page_t *
-page_get_contigpage(pgcnt_t *pgcnt, ddi_dma_attr_t *mattr, int iolock)
+page_get_contigpage(pgcnt_t *pgcnt, const ddi_dma_attr_t *mattr, int iolock)
 {
 	pfn_t		pfn;
 	int		sgllen;
@@ -1932,7 +1932,7 @@ bp_color(struct buf *bp)
  */
 static page_t *
 page_get_mnode_anylist(ulong_t origbin, uchar_t szc, uint_t flags,
-    int mnode, int mtype, ddi_dma_attr_t *dma_attr)
+    int mnode, int mtype, const ddi_dma_attr_t *dma_attr)
 {
 	kmutex_t		*pcm;
 	int			i;
@@ -2142,7 +2142,7 @@ nextcachebin:
 /*ARGSUSED*/
 static page_t *
 page_get_anylist(struct vnode *vp, u_offset_t off, struct as *as, caddr_t vaddr,
-    size_t size, uint_t flags, ddi_dma_attr_t *dma_attr, lgrp_t	*lgrp)
+    size_t size, uint_t flags, const ddi_dma_attr_t *dma_attr, lgrp_t *lgrp)
 {
 	uint_t		bin;
 	int		mtype;
@@ -2275,13 +2275,13 @@ page_get_anylist(struct vnode *vp, u_offset_t off, struct as *as, caddr_t vaddr,
 
 page_t *
 page_create_io(
-	struct vnode	*vp,
-	u_offset_t	off,
-	uint_t		bytes,
-	uint_t		flags,
-	struct as	*as,
-	caddr_t		vaddr,
-	ddi_dma_attr_t	*mattr)	/* DMA memory attributes if any */
+	struct vnode		*vp,
+	u_offset_t		off,
+	uint_t			bytes,
+	uint_t			flags,
+	struct as		*as,
+	caddr_t			vaddr,
+	const ddi_dma_attr_t	*mattr)	/* DMA memory attributes if any */
 {
 	page_t		*plist = NULL;
 	uint_t		plist_len = 0;

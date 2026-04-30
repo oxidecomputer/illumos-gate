@@ -27,6 +27,7 @@
  * Copyright (c) 2008, Intel Corporation.
  * All rights reserved.
  * Copyright 2025 RackTop Systems, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_INTEL_IOMMU_H
@@ -843,6 +844,7 @@ extern int immu_use_tm;
 extern int immu_use_alh;
 
 /* ################### Interfaces exported outside IOMMU code ############## */
+void immu_linkage(void);
 void immu_init(void);
 void immu_startup(void);
 void immu_shutdown(void);

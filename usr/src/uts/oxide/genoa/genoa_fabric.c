@@ -670,11 +670,24 @@ genoa_ioms_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def,
 	case SMN_UNIT_IOMMUL2:
 		reg = genoa_iommul2_smn_reg(iohcnum, def, reginst);
 		break;
+	case SMN_UNIT_IOMMUMMIO:
+		reg = genoa_iommummio_smn_reg(iohcnum, def, reginst);
+		break;
 	default:
 		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMS",
 		    def.srd_unit);
 	}
 	return (reg);
+}
+
+smn_reg_t
+genoa_iommu_mmio_reg(const zen_ioms_t *const ioms, const smn_reg_def_t def)
+{
+	if (def.srd_unit != SMN_UNIT_IOMMUMMIO) {
+		cmn_err(CE_PANIC, "invalid SMN register type %d for IOMMU MMIO",
+		    def.srd_unit);
+	}
+	return (genoa_ioms_reg(ioms, def, 0));
 }
 
 static smn_reg_t

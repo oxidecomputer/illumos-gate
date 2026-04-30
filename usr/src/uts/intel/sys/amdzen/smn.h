@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_SMN_H
@@ -380,6 +380,7 @@ typedef enum smn_unit {
 	SMN_UNIT_IOMMUL1,
 	SMN_UNIT_IOMMUL1_IOAGR,
 	SMN_UNIT_IOMMUL2,
+	SMN_UNIT_IOMMUMMIO,
 	SMN_UNIT_NBIF,
 	SMN_UNIT_NBIF_ALT,
 	SMN_UNIT_NBIF_ALT2,

@@ -13,6 +13,7 @@
  * Copyright 2026 Oxide Computer Company
  */
 
+#include <sys/stdint.h>
 #include <sys/clock.h>
 #include <sys/types.h>
 #include <sys/stdbool.h>
@@ -24,6 +25,7 @@
 #include <sys/machsystm.h>
 #include <sys/bitext.h>
 #include <sys/spl.h>
+#include <sys/pci_cfgacc.h>
 #include <sys/pci_cfgspace.h>
 #include <sys/pci_cfgspace_impl.h>
 #include <sys/pcie.h>
@@ -33,6 +35,7 @@
 #include <io/amdzen/amdzen.h>
 #include <sys/amdzen/df.h>
 #include <sys/amdzen/ccd.h>
+#include <sys/amdzen/iommu.h>
 #include <sys/io/zen/ccx_impl.h>
 #include <sys/io/zen/df_utils.h>
 #include <sys/io/zen/fabric_impl.h>
@@ -2087,141 +2090,192 @@ zen_route_io_ports(zen_fabric_t *fabric)
 #define	ZEN_SEC_IOMS_GEN_MMIO32_SPACE 0x10000
 #define	ZEN_SEC_IOMS_GEN_MMIO64_SPACE 0x10000
 
-typedef struct zen_route_mmio {
-	uint32_t	zrm_cur;
-	uint32_t	zrm_mmio32_base;
-	uint32_t	zrm_mmio32_chunks;
-	uint32_t	zrm_fch_base;
-	uint32_t	zrm_fch_chunks;
-	uint64_t	zrm_mmio64_base;
-	uint64_t	zrm_mmio64_chunks;
-	uint64_t	zrm_bases[ZEN_MAX_MMIO_RULES];
-	uint64_t	zrm_limits[ZEN_MAX_MMIO_RULES];
-	uint32_t	zrm_dests[ZEN_MAX_MMIO_RULES];
-} zen_route_mmio_t;
+/*
+ * Tracks MMIO space for each IO hub.
+ *
+ * Each IO hub/IOMS splits IO space into two regions: a 32-bit region below
+ * 4GiB, and a 64-bit region above 4GiB.  Each of these must be specified in an
+ * MMIO route that routes access to those regions to the associated IOMS.
+ *
+ * Additionally, each each region below 4GiB potentially dedicates space to an
+ * FCH.  One region will have space for a legacy MMIO region just between the
+ * 4GiB boundary; we track this region specially and allocate the primary FCH
+ * space there.  In all cases, these subregions are covered by a single MMIO
+ * route that subsumes the entire 32-bit MMIO base and limit dedicated to that
+ * IOMS.
+ *
+ * The tracker structer maintains the number of routes created so far, the 32-
+ * and 64-bit bases, fixed sizes for both regions calclated from the available
+ * size and number of IOMSes, and the routes themselves.  For convenience when
+ * routing the primary FCH, we also keep track of the "last" region before the
+ * compatibility hole.
+ */
+typedef struct zen_mmio_route {
+	uint64_t		zmr_base;
+	uint64_t		zmr_limit;
+	uint32_t		zmr_dest;
+} zen_mmio_route_t;
+
+typedef struct zen_mmio_route_tracker {
+	size_t			zmrt_cur;
+	size_t			zmrt_max_nroutes;
+	uint32_t		zmrt_mmio32_base;
+	uint32_t		zmrt_mmio32_last_base;
+	size_t			zmrt_mmio32_size_per_ioms;
+	uint64_t		zmrt_mmio64_base;
+	size_t			zmrt_mmio64_size_per_ioms;
+	zen_mmio_route_t	zmrt_routes[ZEN_MAX_MMIO_RULES];
+} zen_mmio_route_tracker_t;
 
 /*
- * We allocate two rules per device. The first is a 32-bit rule. The second is
- * then its corresponding 64-bit. 32-bit memory is always treated as
- * non-prefetchable due to the dearth of it. 64-bit memory is only treated as
- * prefetchable because we can't practically do anything else with it due to
- * the limitations of PCI-PCI bridges (64-bit memory has to be prefetch).
+ * We allocate two rules per IOMS: The first is a 32-bit rule, and the second is
+ * its corresponding 64-bit rule.
+ *
+ * 32-bit memory is always treated as non-prefetchable due to the dearth of it.
+ * 64-bit memory has to be pre-fetch, because practically as we can't do
+ * anything else with it due to the limitations of PCI-PCI bridges.
  */
 static int
 zen_mmio_allocate(zen_ioms_t *ioms, void *arg)
 {
-	const zen_platform_consts_t *platform_consts =
-	    oxide_zen_platform_consts();
-	zen_route_mmio_t *zrm = arg;
-	const uint32_t mmio_gran = 1 << DF_MMIO_SHIFT;
+	zen_mmio_route_tracker_t *zrm = arg;
 	zen_ioms_memlists_t *imp = &ioms->zio_memlists;
-	uint32_t gen_base32 = 0;
-	uint64_t gen_base64 = 0;
+	zen_mmio_route_t *route32;
+	zen_mmio_route_t *route64;
+	uint64_t base64, pmem_size64;
+	uint64_t gen_base64;
+	uint32_t mmio_base32, mmio_size32, pci_size32;
+	uint32_t base32, size32, limit32;
+	bool has_fch, iodie_is_primary;
 	int ret;
 
-	VERIFY3U(zrm->zrm_cur, <, platform_consts->zpc_max_mmiorr);
+	VERIFY3U(zrm->zmrt_cur + 1, <, zrm->zmrt_max_nroutes);
+
+	route32 = &zrm->zmrt_routes[zrm->zmrt_cur++];
+	route64 = &zrm->zmrt_routes[zrm->zmrt_cur++];
 
 	/*
-	 * The primary FCH is treated as a special case so that its 32-bit MMIO
-	 * region is as close to the subtractive compat region as possible.
+	 * The FCH (if it exists) are assigned space at the end of the region.
+	 *
+	 * The primary IO die's FCH is a special case and is assigned to the
+	 * region as close to the subtractive compatibility region as possible.
 	 * That region must not be made available for PCI allocation, but we do
 	 * need to keep track of where it is so the FCH driver or its children
 	 * can allocate from it.
+	 *
+	 * For the secondary die's FCH (and potentially any other non-PCI
+	 * destination) we reserve a small amount of space for general
+	 * use and give the rest to PCI.
 	 */
-	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0 &&
-	    (ioms->zio_nbio->zn_iodie->zi_flags & ZEN_IODIE_F_PRIMARY) != 0) {
-		zrm->zrm_bases[zrm->zrm_cur] = zrm->zrm_fch_base;
-		zrm->zrm_limits[zrm->zrm_cur] = zrm->zrm_fch_base;
-		zrm->zrm_limits[zrm->zrm_cur] += zrm->zrm_fch_chunks *
-		    mmio_gran - 1;
-		ret = xmemlist_add_span(&imp->zim_pool,
-		    zrm->zrm_limits[zrm->zrm_cur] + 1, ZEN_COMPAT_MMIO_SIZE,
-		    &imp->zim_mmio_avail_gen, 0);
-		VERIFY3S(ret, ==, MEML_SPANOP_OK);
+	has_fch = (ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0;
+	iodie_is_primary =
+	    (ioms->zio_nbio->zn_iodie->zi_flags & ZEN_IODIE_F_PRIMARY) != 0;
+	if (has_fch && iodie_is_primary) {
+		base32 = zrm->zmrt_mmio32_last_base;
+		size32 = zrm->zmrt_mmio32_size_per_ioms;
+		mmio_size32 = ZEN_COMPAT_MMIO_SIZE;
+		VERIFY3U(size32, >, mmio_size32);
+		limit32 = base32 + size32 - mmio_size32 - 1;
 	} else {
-		zrm->zrm_bases[zrm->zrm_cur] = zrm->zrm_mmio32_base;
-		zrm->zrm_limits[zrm->zrm_cur] = zrm->zrm_mmio32_base;
-		zrm->zrm_limits[zrm->zrm_cur] += zrm->zrm_mmio32_chunks *
-		    mmio_gran - 1;
-		zrm->zrm_mmio32_base += zrm->zrm_mmio32_chunks *
-		    mmio_gran;
-
-		if (zrm->zrm_mmio32_chunks * mmio_gran >
-		    2 * ZEN_SEC_IOMS_GEN_MMIO32_SPACE) {
-			gen_base32 = zrm->zrm_limits[zrm->zrm_cur] -
-			    (ZEN_SEC_IOMS_GEN_MMIO32_SPACE - 1);
-		}
+		VERIFY3U(zrm->zmrt_mmio32_base, !=, zrm->zmrt_mmio32_last_base);
+		base32 = zrm->zmrt_mmio32_base;
+		size32 = zrm->zmrt_mmio32_size_per_ioms;
+		mmio_size32 = ZEN_SEC_IOMS_GEN_MMIO32_SPACE;
+		limit32 = base32 + size32 - 1;
+		zrm->zmrt_mmio32_base += size32;
 	}
+	pci_size32 = size32 - mmio_size32;
+	mmio_base32 = base32 + pci_size32;
+	VERIFY3U(base32, !=, 0);
+	VERIFY(IS_P2ALIGNED(base32, DF_MMIO_LIMIT_EXCL));
+	VERIFY3U(mmio_base32, !=, 0);
+	VERIFY(IS_P2ALIGNED(mmio_base32, DF_MMIO_LIMIT_EXCL));
 
-	/*
-	 * For secondary FCHs (and potentially any other non-PCI destination)
-	 * we reserve a small amount of space for general use and give the rest
-	 * to PCI. If there's not enough, we give it all to PCI.
-	 */
-	zrm->zrm_dests[zrm->zrm_cur] = ioms->zio_dest_id;
-	if (gen_base32 != 0) {
-		ret = xmemlist_add_span(&imp->zim_pool,
-		    zrm->zrm_bases[zrm->zrm_cur],
-		    zrm->zrm_limits[zrm->zrm_cur] -
-		    zrm->zrm_bases[zrm->zrm_cur] -
-		    ZEN_SEC_IOMS_GEN_MMIO32_SPACE + 1,
-		    &imp->zim_mmio_avail_pci, 0);
-		VERIFY3S(ret, ==, MEML_SPANOP_OK);
+	ret = xmemlist_add_span(&imp->zim_pool,
+	    base32, pci_size32,
+	    &imp->zim_mmio_avail_pci, 0);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
+	ret = xmemlist_add_span(&imp->zim_pool,
+	    mmio_base32, mmio_size32,
+	    &imp->zim_mmio_avail_gen, 0);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
-		ret = xmemlist_add_span(&imp->zim_pool, gen_base32,
-		    ZEN_SEC_IOMS_GEN_MMIO32_SPACE,
-		    &imp->zim_mmio_avail_gen, 0);
-		VERIFY3S(ret, ==, MEML_SPANOP_OK);
-	} else {
-		ret = xmemlist_add_span(&imp->zim_pool,
-		    zrm->zrm_bases[zrm->zrm_cur],
-		    zrm->zrm_limits[zrm->zrm_cur] -
-		    zrm->zrm_bases[zrm->zrm_cur] + 1,
-		    &imp->zim_mmio_avail_pci, 0);
-		VERIFY3S(ret, ==, MEML_SPANOP_OK);
-	}
-
-	zrm->zrm_cur++;
+	route32->zmr_base = base32;
+	route32->zmr_limit = limit32;
+	route32->zmr_dest = ioms->zio_dest_id;
 
 	/*
 	 * Now onto the 64-bit register, which is thankfully uniform for all
 	 * IOMS entries.
 	 */
-	zrm->zrm_bases[zrm->zrm_cur] = zrm->zrm_mmio64_base;
-	zrm->zrm_limits[zrm->zrm_cur] = zrm->zrm_mmio64_base +
-	    zrm->zrm_mmio64_chunks * mmio_gran - 1;
-	zrm->zrm_mmio64_base += zrm->zrm_mmio64_chunks * mmio_gran;
-	zrm->zrm_dests[zrm->zrm_cur] = ioms->zio_dest_id;
+	base64 = zrm->zmrt_mmio64_base;
+	zrm->zmrt_mmio64_base += zrm->zmrt_mmio64_size_per_ioms;
 
-	if (zrm->zrm_mmio64_chunks * mmio_gran >
-	    2 * ZEN_SEC_IOMS_GEN_MMIO64_SPACE) {
-		gen_base64 = zrm->zrm_limits[zrm->zrm_cur] -
-		    (ZEN_SEC_IOMS_GEN_MMIO64_SPACE - 1);
+	route64->zmr_base = base64;
+	route64->zmr_limit = base64 + zrm->zmrt_mmio64_size_per_ioms - 1;
+	route64->zmr_dest = ioms->zio_dest_id;
 
-		ret = xmemlist_add_span(&imp->zim_pool,
-		    zrm->zrm_bases[zrm->zrm_cur],
-		    zrm->zrm_limits[zrm->zrm_cur] -
-		    zrm->zrm_bases[zrm->zrm_cur] -
-		    ZEN_SEC_IOMS_GEN_MMIO64_SPACE + 1,
-		    &imp->zim_pmem_avail, 0);
-		VERIFY3S(ret, ==, MEML_SPANOP_OK);
+	pmem_size64 =
+	    zrm->zmrt_mmio64_size_per_ioms - ZEN_SEC_IOMS_GEN_MMIO64_SPACE;
+	ret = xmemlist_add_span(&imp->zim_pool,
+	    base64, pmem_size64,
+	    &imp->zim_pmem_avail, 0);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
-		ret = xmemlist_add_span(&imp->zim_pool, gen_base64,
-		    ZEN_SEC_IOMS_GEN_MMIO64_SPACE,
-		    &imp->zim_mmio_avail_gen, 0);
-		VERIFY3S(ret, ==, MEML_SPANOP_OK);
-	} else {
-		ret = xmemlist_add_span(&imp->zim_pool,
-		    zrm->zrm_bases[zrm->zrm_cur],
-		    zrm->zrm_limits[zrm->zrm_cur] -
-		    zrm->zrm_bases[zrm->zrm_cur] + 1,
-		    &imp->zim_pmem_avail, 0);
-		VERIFY3S(ret, ==, MEML_SPANOP_OK);
-	}
-
-	zrm->zrm_cur++;
+	gen_base64 = base64 + pmem_size64;
+	ret = xmemlist_add_span(&imp->zim_pool,
+	    gen_base64, ZEN_SEC_IOMS_GEN_MMIO64_SPACE,
+	    &imp->zim_mmio_avail_gen, 0);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
 
 	return (0);
+}
+
+typedef struct zen_iommu_ioapic_tracker {
+	uint16_t *ziit_device_ids;
+} zen_iommu_ioapic_tracker_t;
+
+/*
+ * Called from an IOMS walk to populate the DeviceIDs for the primary IOAPIC
+ * in the fabric.  The Device and Function numbers for each IOAPIC are fixed,
+ * depending on function, across Milan, Genoa, and Turin.
+ */
+static int
+zen_populate_iommu_ioapic_device_ids_cb(zen_ioms_t *ioms, void *arg)
+{
+	ASSERT3P(ioms, !=, NULL);
+	ASSERT3P(arg, !=, NULL);
+	zen_iommu_ioapic_tracker_t *tracker = arg;
+
+	if (ioms->zio_iohctype != ZEN_IOHCT_LARGE)
+		return (0);
+
+	/*
+	 * On every uarch we support, only one IOHC in the fabric has an
+	 * attached FCH.  We treat that specially, and put its DeviceIDs for
+	 * the FCH/IOHC at indexes 0 and 1 in the list.
+	 */
+	if ((ioms->zio_flags & ZEN_IOMS_F_HAS_FCH) != 0) {
+		tracker->ziit_device_ids[0] =
+		    PCI_GETBDF(ioms->zio_pci_busno, 0x14, 0x00);
+		tracker->ziit_device_ids[1] =
+		    PCI_GETBDF(ioms->zio_pci_busno, 0x00, 0x01);
+	}
+
+	return (0);
+}
+
+void
+zen_populate_iommu_ioapic_device_ids(uint16_t *device_ids, size_t ndevice_ids)
+{
+	VERIFY3P(device_ids, !=, NULL);
+	VERIFY3U(ndevice_ids, >=, 2);
+	zen_iommu_ioapic_tracker_t tracker;
+	bzero(&tracker, sizeof (tracker));
+	bzero(device_ids, sizeof (*device_ids) * ndevice_ids);
+	tracker.ziit_device_ids = device_ids;
+	(void) zen_fabric_walk_ioms(&zen_fabric,
+	    zen_populate_iommu_ioapic_device_ids_cb, &tracker);
 }
 
 /*
@@ -2233,48 +2287,46 @@ static int
 zen_mmio_assign(zen_iodie_t *iodie, void *arg)
 {
 	const df_rev_t df_rev = oxide_zen_platform_consts()->zpc_df_rev;
-	zen_route_mmio_t *zrm = arg;
+	zen_mmio_route_tracker_t *zrm = arg;
 
-	for (uint32_t i = 0; i < zrm->zrm_cur; i++) {
-		uint32_t base, limit;
+	for (uint32_t i = 0; i < zrm->zmrt_cur; i++) {
+		const zen_mmio_route_t *route = &zrm->zmrt_routes[i];
+		uint32_t base, limit, dest;
+		uint32_t ext_base, ext_limit;
 		uint32_t ctrl = 0;
+		uint32_t ext = 0;
 
-		base = zrm->zrm_bases[i] >> DF_MMIO_SHIFT;
-		limit = zrm->zrm_limits[i] >> DF_MMIO_SHIFT;
+		base = route->zmr_base >> DF_MMIO_SHIFT;
+		limit = route->zmr_limit >> DF_MMIO_SHIFT;
+		dest = route->zmr_dest;
 
 		ctrl = DF_MMIO_CTL_SET_RE(ctrl, 1);
 		ctrl = DF_MMIO_CTL_SET_WE(ctrl, 1);
 
 		switch (df_rev) {
 		case DF_REV_3:
-			ctrl = DF_MMIO_CTL_V3_SET_DEST_ID(ctrl,
-			    zrm->zrm_dests[i]);
-
+			ctrl = DF_MMIO_CTL_V3_SET_DEST_ID(ctrl, dest);
 			zen_df_bcast_write32(iodie, DF_MMIO_BASE_V2(i), base);
 			zen_df_bcast_write32(iodie, DF_MMIO_LIMIT_V2(i), limit);
 			zen_df_bcast_write32(iodie, DF_MMIO_CTL_V2(i), ctrl);
 			break;
 		case DF_REV_4:
-		case DF_REV_4D2: {
-			uint32_t ext = 0;
-
+		case DF_REV_4D2:
 			ctrl = df_rev == DF_REV_4 ?
-			    DF_MMIO_CTL_V4_SET_DEST_ID(ctrl,
-			    zrm->zrm_dests[i]) :
-			    DF_MMIO_CTL_V4D2_SET_DEST_ID(ctrl,
-			    zrm->zrm_dests[i]);
+			    DF_MMIO_CTL_V4_SET_DEST_ID(ctrl, dest) :
+			    DF_MMIO_CTL_V4D2_SET_DEST_ID(ctrl, dest);
 
-			ext = DF_MMIO_EXT_V4_SET_BASE(ext,
-			    zrm->zrm_bases[i] >> DF_MMIO_EXT_SHIFT);
-			ext = DF_MMIO_EXT_V4_SET_LIMIT(ext,
-			    zrm->zrm_limits[i] >> DF_MMIO_EXT_SHIFT);
+			ext_base = route->zmr_base >> DF_MMIO_EXT_SHIFT;
+			ext_limit = route->zmr_limit >> DF_MMIO_EXT_SHIFT;
+
+			ext = DF_MMIO_EXT_V4_SET_BASE(ext, ext_base);
+			ext = DF_MMIO_EXT_V4_SET_LIMIT(ext, ext_limit);
 
 			zen_df_bcast_write32(iodie, DF_MMIO_BASE_V4(i), base);
 			zen_df_bcast_write32(iodie, DF_MMIO_LIMIT_V4(i), limit);
 			zen_df_bcast_write32(iodie, DF_MMIO_EXT_V4(i), ext);
 			zen_df_bcast_write32(iodie, DF_MMIO_CTL_V4(i), ctrl);
 			break;
-		}
 		default:
 			cmn_err(CE_PANIC, "Unsupported DF revision %d", df_rev);
 		}
@@ -2284,66 +2336,80 @@ zen_mmio_assign(zen_iodie_t *iodie, void *arg)
 }
 
 /*
- * Routing MMIO is both important and a little complicated mostly due to the
- * how x86 actually has historically split MMIO between the below 4 GiB region
- * and the above 4 GiB region. In addition, there are only 16 routing rules
- * that we can write on some platforms, which means we get a maximum of 2
- * routing rules per IOMS (mostly because we're being lazy).
+ * Routing MMIO space is critical, but complicated due to the way x86 splits
+ * it into regions above and below 4GiB.  The space for setting routing rules is
+ * limited (e.g., only supporitng a total of 16 routing rules, and so with 8
+ * IOMSes, this means we are constrained to only assign up to 2 rules per IOMS).
+ * Additionally, a rule for the space below 4 GiB must also accommodate special
+ * handling for the compatability region at `ZEN_PHYSADDR_COMPAT_MMIO`.
  *
- * The below 4 GiB space is split due to the compat region
- * (ZEN_PHYSADDR_COMPAT_MMIO). The way we divide up the lower region is
- * simple:
+ * Note that the hardware requires that we allocate address space in 16-bit
+ * chunks, so we actually treat all of our allocations as units of 64 KiB;
+ * proper sizing and alignment is ensured by assertions when we calculate the
+ * various sizes.
  *
- *   o The region between TOM and 4 GiB is split evenly among all IOMSs.
+ * The way we divide up the lower region is simple:
+ *
+ *   - The region between TOM and 4 GiB is split evenly among all IOMSs.
  *     In a 1P system with the MMIO base set at 0x8000_0000 (as it always is in
  *     the oxide architecture) this results in 512 MiB per IOMS for Milan and
  *     Genoa, and 256MiB per IOMS for Turin; with 2P it's simply half that.
  *
- *   o The part of this region at the top is assigned to the IOMS with the FCH
- *     A small part of this is removed from this routed region to account for
- *     the adjacent FCH compatibility space immediately below 4 GiB; the
- *     remainder is routed to the primary root bridge.
+ *   - The part of this region closest to 4GiB is assigned to the IOMS with the
+ *     (primary) FCH, and part of the region is removed from the routed part to
+ *     to account for the adjacent MMIO compatibility space immediately below 4
+ *     GiB; the remainder is routed to the primary root bridge.  All others
+ *     reserve a small part of the region for MMIO.
  *
- * 64-bit space is also simple. We find which is higher: TOM2 or the top of the
- * second hole (ZEN_PHYSADDR_IOMMU_HOLE_END). The 256 MiB ECAM region lives
- * there; above it, we just divide all the remaining space between that and
- * the end of accessible physical address space. This is the zen_fabric_t's
- * zf_mmio64_base and zf_mmio64_size members.
+ * 64-bit space is also simple. We determine whether TOM2, or the top of the
+ * second hole (ZEN_PHYSADDR_IOMMU_HOLE_END), is higher and we map 256 MiB ECAM
+ * region there; above that, we divide the remaining physical address space
+ * evenly between IOMSes.  This is the zen_fabric_t's zf_mmio64_base and
+ * zf_mmio64_size members.
  *
  * Our general assumption with this strategy is that 64-bit MMIO is plentiful
- * and that's what we'd rather assign and use. This ties into the last bit
- * which is important: the hardware requires us to allocate in 16-bit chunks.
- * So we actually really treat all of our allocations as units of 64 KiB.
+ * and that's what we'd rather assign and use, but we are constrained in some
+ * ways by what the platform provides and requires.
  */
 static void
 zen_route_mmio(zen_fabric_t *fabric)
 {
-	uint32_t mmio32_size;
-	uint_t nioms32;
-	zen_route_mmio_t zrm;
-	const uint32_t mmio_gran = DF_MMIO_LIMIT_EXCL;
-
-	VERIFY(IS_P2ALIGNED(fabric->zf_tom, mmio_gran));
-	VERIFY3U(ZEN_PHYSADDR_COMPAT_MMIO, >, fabric->zf_tom);
-	mmio32_size = ZEN_PHYSADDR_MMIO32_END - fabric->zf_tom;
-	nioms32 = fabric->zf_total_ioms;
-	VERIFY3U(mmio32_size, >,
-	    nioms32 * mmio_gran + ZEN_COMPAT_MMIO_SIZE);
-
-	VERIFY(IS_P2ALIGNED(fabric->zf_mmio64_base, mmio_gran));
-	VERIFY3U(fabric->zf_mmio64_size, >, fabric->zf_total_ioms * mmio_gran);
-
 	CTASSERT(IS_P2ALIGNED(ZEN_PHYSADDR_COMPAT_MMIO, DF_MMIO_LIMIT_EXCL));
+	CTASSERT((ZEN_PHYSADDR_COMPAT_MMIO + ZEN_COMPAT_MMIO_SIZE) ==
+	    ZEN_PHYSADDR_MMIO32_END);
 
+	const uint32_t nioms = fabric->zf_total_ioms;
+	const uint32_t base32 = fabric->zf_tom;
+	const uint32_t size32 = ZEN_PHYSADDR_MMIO32_END - base32;
+	const uint32_t size32_per_ioms = size32 / nioms;
+	const zen_platform_consts_t *platform_consts =
+	    oxide_zen_platform_consts();
+
+	VERIFY3U(platform_consts->zpc_max_mmiorr, <=, ZEN_MAX_MMIO_RULES);
+	VERIFY3U(ZEN_PHYSADDR_COMPAT_MMIO, >, base32);
+	VERIFY3U(size32, >, nioms * DF_MMIO_LIMIT_EXCL + ZEN_COMPAT_MMIO_SIZE);
+	/*
+	 * Ensure that the per-IOMS size is greater than the next power of two
+	 * larger than the sum of compat and MMIO sizes.  The factor of four
+	 * ensures we go beyond a power of two.
+	 */
+	VERIFY3U(size32_per_ioms, >=,
+	    4 * (ZEN_COMPAT_MMIO_SIZE + ZEN_SEC_IOMS_GEN_MMIO32_SPACE));
+	VERIFY(IS_P2ALIGNED(size32_per_ioms, DF_MMIO_LIMIT_EXCL));
+	VERIFY(IS_P2ALIGNED(fabric->zf_mmio64_base, DF_MMIO_LIMIT_EXCL));
+	VERIFY3U(fabric->zf_mmio64_size, >, nioms * DF_MMIO_LIMIT_EXCL);
+
+	zen_mmio_route_tracker_t zrm;
 	bzero(&zrm, sizeof (zrm));
-	zrm.zrm_mmio32_base = fabric->zf_tom;
-	zrm.zrm_mmio32_chunks = mmio32_size / mmio_gran / nioms32;
-	zrm.zrm_fch_base = ZEN_PHYSADDR_MMIO32_END - mmio32_size / nioms32;
-	zrm.zrm_fch_chunks = zrm.zrm_mmio32_chunks -
-	    ZEN_COMPAT_MMIO_SIZE / mmio_gran;
-	zrm.zrm_mmio64_base = fabric->zf_mmio64_base;
-	zrm.zrm_mmio64_chunks = fabric->zf_mmio64_size / mmio_gran /
-	    fabric->zf_total_ioms;
+
+	zrm.zmrt_max_nroutes = platform_consts->zpc_max_mmiorr;
+	zrm.zmrt_mmio32_last_base = ZEN_PHYSADDR_MMIO32_END - size32_per_ioms;
+	zrm.zmrt_mmio32_base = fabric->zf_tom;
+	zrm.zmrt_mmio32_size_per_ioms = size32_per_ioms;
+	zrm.zmrt_mmio64_base = fabric->zf_mmio64_base;
+	zrm.zmrt_mmio64_size_per_ioms = fabric->zf_mmio64_size / nioms;
+	VERIFY3U(zrm.zmrt_mmio64_size_per_ioms, >,
+	    2 * ZEN_SEC_IOMS_GEN_MMIO64_SPACE);
 
 	(void) zen_fabric_walk_ioms(fabric, zen_mmio_allocate, &zrm);
 	(void) zen_fabric_walk_iodie(fabric, zen_mmio_assign, &zrm);
@@ -3290,7 +3356,7 @@ zen_fabric_init(void)
 	 * With that done, proceed to initialize the IOAPIC in each IOMS. While
 	 * the FCH contains what the OS generally thinks of as the IOAPIC, we
 	 * need to go through and deal with interrupt routing and how that
-	 * interface with each of the northbridges here.
+	 * interfaces with each of the northbridges here.
 	 */
 	zen_fabric_walk_ioms(fabric, zen_fabric_ioms_op,
 	    fabric_ops->zfo_ioapic);
@@ -4161,15 +4227,14 @@ zen_fabric_pci_subsume(uint32_t bus, pci_prd_rsrc_t rsrc)
 /*
  * This is for the rest of the available legacy IO and MMIO space that we've set
  * aside for things that are not PCI.  The intent is that the caller will feed
- * the space to busra or the moral equivalent.  While this is presently used
- * only by the FCH and is set up only for the IOMSs that have an FCH attached,
- * in principle this could be applied to other users as well, including IOAPICs
- * and IOMMUs that are present in all NB instances.  For now this is really
- * about getting all this out of earlyboot context where we don't have modules
- * like rootnex and busra and into places where it's better managed; in this it
- * has the same purpose as its PCI counterpart above.  The memlists we supply
- * don't have to be allocated by kmem, but we do it anyway for consistency and
- * ease of use for callers.
+ * the space to busra or the moral equivalent.  While this is presently only
+ * used by the FCH and IOMMUs, in principle this could be applied to other users
+ * as well, including IOAPICs that are present in all NB instances.  For now
+ * this is really about getting all this out of earlyboot context where we don't
+ * have modules like rootnex and busra and into places where it's better
+ * managed; in this it has the same purpose as its PCI counterpart above.  The
+ * memlists we supply don't have to be allocated by kmem, but we do it anyway
+ * for consistency and ease of use for callers.
  *
  * Curiously, AMD's documentation indicates that each of the PCI and non-PCI
  * regions associated with each NB instance must be contiguous, but there's no

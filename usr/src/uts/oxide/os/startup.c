@@ -25,7 +25,7 @@
  * Copyright 2017 Nexenta Systems, Inc.
  * Copyright (c) 2020 Joyent, Inc.
  * Copyright (c) 2015 by Delphix. All rights reserved.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  * Copyright (c) 2020 Carlos Neira <cneirabustos@gmail.com>
  * Copyright 2025 Edgecast Cloud LLC.
  */
@@ -139,6 +139,7 @@
 #include <sys/apob.h>
 #include <sys/kapob.h>
 #include <sys/io/zen/apob.h>
+#include <sys/iommu.h>
 
 extern void mem_config_init(void);
 
@@ -1905,6 +1906,12 @@ startup_end(void)
 	PRM_POINT("NULLing out bootops");
 	*bootopsp = (struct bootops *)NULL;
 	bootops = (struct bootops *)NULL;
+
+	/*
+	 * IOMMU has been appropriately setup/initialized in ddi_impl.c
+	 * Start it up now.
+	 */
+	psm_iommu_startup();
 
 	enable_pcid();
 
