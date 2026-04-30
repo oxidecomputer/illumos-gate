@@ -702,9 +702,6 @@ read_links(struct di_devlink_handle *hdp, cache_minor_t *pcmp, uint32_t nidx)
 		path = get_string(hdp, dlp->path);
 		content = get_string(hdp, dlp->content);
 
-		if (path != NULL)
-			check_lowercase_corruption(path, "read_links", nidx);
-
 		if (link_hash(hdp, path, 0) != NULL) {
 			(void) devlink_dprintf(DBG_ERR,
 			    "read_links: skipping duplicate link[%u]: "
