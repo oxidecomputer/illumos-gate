@@ -2435,6 +2435,8 @@ amdzen_topo_ioctl_df(amdzen_t *azn, intptr_t arg, int mode)
 	topo_df.atd_nb_busno = df->adf_nb_busno;
 	max_ents = MIN(topo_df.atd_df_buf_nents, df->adf_nents);
 
+	topo_df.atd_nb_busno = df->adf_nb_busno;
+
 	if (topo_df.atd_df_ents == NULL) {
 		topo_df.atd_df_buf_nvalid = 0;
 		mutex_exit(&azn->azn_mutex);

@@ -25,7 +25,7 @@
  * programmatically. The static XML file defines just the root of the tree, a
  * CPU enumerator, and then a PCIe root complex enumerator under each CPU.
  * Each root complex is discovered, attached to the corresponding CPU and then
- * recursiely enumerated to discover bridges, switches, devices, etc. that lie
+ * recursively enumerated to discover bridges, switches, devices, etc. that lie
  * underneath. Platform-specific modules can augment the discovered tree by
  * adding labels or nodes that cannot be discovered, such as re-timers.
  *
@@ -901,6 +901,7 @@ pcie_enum(topo_mod_t *mod, tnode_t *pnode, const char *name,
     topo_instance_t min, topo_instance_t max, void *modarg, void *data)
 {
 	pcie_t *pcie;
+	const pcie_enum_t *pe;
 	const char *pname;
 	tnode_t *tn = NULL;
 	bool post, range;
@@ -934,6 +935,7 @@ pcie_enum(topo_mod_t *mod, tnode_t *pnode, const char *name,
 	 */
 	pname = topo_node_name(pnode);
 	range = (min != max);
+	post = false;
 	if (strcmp(pname, name) == 0) {
 		topo_instance_t pinst = topo_node_instance(pnode);
 
@@ -944,57 +946,54 @@ pcie_enum(topo_mod_t *mod, tnode_t *pnode, const char *name,
 		pnode = topo_node_parent(tn);
 		pname = topo_node_name(pnode);
 		post = true;
-	} else {
-		post = false;
 	}
 
 	topo_mod_dprintf(mod, "enum: %s for %s (parent %s=%" PRIu64 ")",
 	    post ? "post" : "initial", name,
 	    pname, topo_node_instance(pnode));
 
+	pe = NULL;
 	for (size_t i = 0; i < ARRAY_SIZE(pcie_enum_common); i++) {
-		const pcie_enum_t *pe = &pcie_enum_common[i];
-
-		if (strcmp(pe->pe_name, name) != 0)
-			continue;
-
-		if (range && !post &&
-		    (pe->pe_flags & PCIE_ENUM_F_MULTI_RANGE) == 0) {
-			topo_mod_dprintf(mod, "enum: multi-instance range "
-			    "enumeration not supported");
-			return (topo_mod_seterrno(mod, EMOD_NODE_RANGE));
-		}
-
-		if (post) {
-			if (pe->pe_post_enum == NULL) {
-				topo_mod_dprintf(mod, "enum: skipping post: no "
-				    "processing function");
-				return (0);
-			}
-			return (pe->pe_post_enum(mod, pcie, pe, pnode, tn, min,
-			    max));
-		} else {
-			/*
-			 * While there are cases that we might get called into
-			 * post-enumeration just because of how we've
-			 * constructed the topo map even if we don't need to do
-			 * anything (but we want to make sure it doesn't go to
-			 * some other module), we pretty much always expect to
-			 * have something for initial enumeration right now.
-			 */
-			if (pe->pe_range_enum == NULL) {
-				topo_mod_dprintf(mod, "enum: missing initial "
-				    "enumeration function!");
-				return (-1);
-			}
-
-			return (pe->pe_range_enum(mod, pcie, pe, pnode, tn, min,
-			    max));
+		if (strcmp(pcie_enum_common[i].pe_name, name) == 0) {
+			pe = &pcie_enum_common[i];
+			break;
 		}
 	}
 
-	topo_mod_dprintf(mod, "enum: component %s unknown", name);
-	return (-1);
+	if (pe == NULL) {
+		topo_mod_dprintf(mod, "enum: component %s unknown", name);
+		return (-1);
+	}
+
+	if (range && !post && (pe->pe_flags & PCIE_ENUM_F_MULTI_RANGE) == 0) {
+		topo_mod_dprintf(mod,
+		    "enum: multi-instance range enumeration not supported");
+		return (topo_mod_seterrno(mod, EMOD_NODE_RANGE));
+	}
+
+	if (post) {
+		if (pe->pe_post_enum == NULL) {
+			topo_mod_dprintf(mod,
+			    "enum: skipping post: no processing function");
+			return (0);
+		}
+		return (pe->pe_post_enum(mod, pcie, pe, pnode, tn, min, max));
+	}
+
+	/*
+	 * While there are cases that we might get called into post-enumeration
+	 * just because of how we've constructed the topo map even if we don't
+	 * need to do anything (but we want to make sure it doesn't go to some
+	 * other module), we pretty much always expect to have something for
+	 * initial enumeration right now.
+	 */
+	if (pe->pe_range_enum == NULL) {
+		topo_mod_dprintf(mod,
+		    "enum: missing initial enumeration function!");
+		return (-1);
+	}
+
+	return (pe->pe_range_enum(mod, pcie, pe, pnode, tn, min, max));
 }
 
 bool
@@ -1052,18 +1051,19 @@ pcie_free(topo_mod_t *mod, pcie_t *pcie)
 static pcie_t *
 pcie_alloc(topo_mod_t *mod)
 {
-	pcie_t *pcie = NULL;
+	pcie_t *pcie;
 
 	if ((pcie = topo_mod_zalloc(mod, sizeof (*pcie))) == NULL) {
 		topo_mod_dprintf(mod,
 		    "Could not allocate memory for pcie_t: %s",
 		    topo_strerror(EMOD_NOMEM));
-		goto free;
+		return (NULL);
 	}
 
 	if ((pcie->tp_devinfo = topo_mod_devinfo(mod)) == DI_NODE_NIL) {
 		topo_mod_dprintf(mod, "No devinfo node from framework");
-		goto free;
+		pcie_free(mod, pcie);
+		return (NULL);
 	}
 
 	if ((pcie->tp_pcidb_hdl = pcidb_open(PCIDB_VERSION)) == NULL) {
@@ -1072,10 +1072,6 @@ pcie_alloc(topo_mod_t *mod)
 	}
 
 	return (pcie);
-
-free:
-	pcie_free(mod, pcie);
-	return (NULL);
 }
 
 static const topo_modops_t pcie_ops = {
@@ -1108,10 +1104,12 @@ _topo_init(topo_mod_t *mod, topo_version_t version)
 
 	if (topo_mod_register(mod, &pcie_mod, TOPO_VERSION) != 0) {
 		topo_mod_dprintf(mod, "failed to register module");
+		pcie_free(mod, pcie);
 		return (-1);
 	}
 
 	if (!mod_pcie_platform_init(mod, pcie)) {
+		topo_mod_unregister(mod);
 		pcie_free(mod, pcie);
 		return (-1);
 	}
@@ -1133,4 +1131,6 @@ _topo_fini(topo_mod_t *mod)
 		mod_pcie_platform_fini(mod, pcie);
 		pcie_free(mod, pcie);
 	}
+
+	topo_mod_unregister(mod);
 }

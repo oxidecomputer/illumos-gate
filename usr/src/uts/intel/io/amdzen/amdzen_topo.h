@@ -96,9 +96,9 @@ typedef struct amdzen_topo_df {
 	uint32_t atd_sockid;
 	uint32_t atd_dieid;
 	df_rev_t atd_rev;
-	uint_t atd_nb_busno;
 	uint32_t atd_major;
 	uint32_t atd_minor;
+	uint_t atd_nb_busno;
 	/*
 	 * atd_ndf_buf_nents should be set to the size of the number of DF
 	 * entries that are present in atd_df_ents. atd_ndf_buf_valid will
@@ -120,9 +120,9 @@ typedef struct {
 	uint32_t atd_sockid;
 	uint32_t atd_dieid;
 	df_rev_t atd_rev;
-	uint32_t atd_nb_busno;
 	uint32_t atd_major;
 	uint32_t atd_minor;
+	uint32_t atd_nb_busno;
 	uint32_t atd_df_buf_nents;
 	uint32_t atd_df_buf_nvalid;
 	uint32_t atd_df_act_nents;
