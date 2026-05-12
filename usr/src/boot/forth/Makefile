@@ -49,9 +49,14 @@ FORTH +=	screen.4th
 FORTH +=	shortcuts.4th
 FORTH +=	support.4th
 FORTH +=	version.4th
+FORTH +=	brand-helios.4th
+FORTH +=	logo-helios.4th
 FILES +=	illumos-logo.png
 FILES +=	illumos-brand.png
 FILES +=	loader.rc
+FILES +=	illumos-small.png
+FILES +=	helios-logo.png
+FILES +=	helios-sun.png
 
 all clean clobber:
 

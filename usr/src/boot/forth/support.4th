@@ -353,6 +353,21 @@ create last_module_option sizeof module.next allot 0 last_module_option !
 	s" screen-width" getenv?
 ;
 
+\ Set the screen font based on an environment variable.
+\ If the framebuffer is not active or the variable is not set, do nothing
+: set_font ( addr len -- )
+	framebuffer? if
+	        getenv dup -1 = if
+	                \ variable not set
+	                drop
+	        else
+	                s" screen-font" setenv
+	        then
+	else
+	        2drop
+	then
+;
+
 \ Private definitions
 
 vocabulary support-functions

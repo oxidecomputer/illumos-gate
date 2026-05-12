@@ -22,6 +22,7 @@
 #
 # Copyright 2016, Toomas Soome <tsoome@me.com>
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2026 Oxide Computer Company
 #
 
 #
@@ -44,6 +45,7 @@ $(i386_ONLY)file path=boot/defaults/loader.conf group=sys mode=0444
 $(i386_ONLY)dir path=boot/forth group=sys
 $(i386_ONLY)file path=boot/forth/beadm.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/beastie.4th group=sys mode=0444
+$(i386_ONLY)file path=boot/forth/brand-helios.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/brand-illumos.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/brand.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/check-password.4th group=sys mode=0444
@@ -55,6 +57,7 @@ $(i386_ONLY)file path=boot/forth/loader.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-beastie.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-beastiebw.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-fbsdbw.4th group=sys mode=0444
+$(i386_ONLY)file path=boot/forth/logo-helios.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-illumos.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-orb.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-orbbw.4th group=sys mode=0444
@@ -68,8 +71,11 @@ $(i386_ONLY)file path=boot/forth/shortcuts.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/support.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/version.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/gptzfsboot group=sys mode=0444
+$(i386_ONLY)file path=boot/helios-logo.png group=sys mode=0444
+$(i386_ONLY)file path=boot/helios-sun.png group=sys mode=0444
 $(i386_ONLY)file path=boot/illumos-brand.png group=sys mode=0444
 $(i386_ONLY)file path=boot/illumos-logo.png group=sys mode=0444
+$(i386_ONLY)file path=boot/illumos-small.png group=sys mode=0444
 $(i386_ONLY)file path=boot/isoboot group=sys mode=0444
 $(i386_ONLY)file path=boot/loader group=sys mode=0444
 $(i386_ONLY)file path=boot/loader.help group=sys mode=0444
