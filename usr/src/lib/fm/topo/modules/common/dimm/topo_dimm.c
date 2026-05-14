@@ -1312,6 +1312,7 @@ topo_dimm_enum(topo_mod_t *mod, tnode_t *pn, const char *name,
 		topo_mod_dprintf(mod, "failed to parse SPD information: got "
 		    "error 0x%x", spd_err);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);
+		goto out;
 	}
 
 	if ((ret = nvlist_lookup_uint32(spd_nvl, SPD_KEY_DRAM_TYPE,
