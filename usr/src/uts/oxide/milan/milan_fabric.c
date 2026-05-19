@@ -2994,7 +2994,7 @@ milan_dxio_init(zen_iodie_t *iodie, void *arg)
 	 */
 	if (!milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_PHY_PROG, 1) ||
 	    !milan_dxio_rpc_set_var(iodie, MILAN_DXIO_VAR_SKIP_PSP, 1)) {
-		return (0);
+		return (1);
 	}
 
 	return (0);
