@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -397,8 +397,10 @@ tofino_dma_teardown(tofino_instance_data_t *tid, intptr_t arg, int mode)
 
 /*
  * read(2) for tofino devices is used to communicate interrupt status to the
- * userspace daemon.  The reference code uses a 32-bit integer per interrupt to
- * track the interrupts which have fired since the previous read.
+ * userspace daemon.  We return an array of uint32s, with a non-0 value at
+ * position n indicating that MSI n has fired since this fd was last read. This
+ * interface is based on Intel's reference code, and provides the semantics
+ * expected by their SDE.
  */
 /* ARGSUSED */
 static int
@@ -414,6 +416,13 @@ tofino_read(dev_t dev, struct uio *uio, cred_t *cr)
 		return (ENXIO);
 	tf = tid->tid_tofino;
 
+	/*
+	 * We maintain a global count of the number of times an MSI was
+	 * triggered, and a per-open copy of the counts when the file was last
+	 * read.  Any difference between the global and per-open copies
+	 * indicates that the MSI has been triggered, so we update the "fired"
+	 * array which is returned to the caller.
+	 */
 	max = MIN(TOFINO_MAX_MSI_INTRS, uio->uio_resid / sizeof (uint32_t));
 	mutex_enter(&tid->tid_mutex);
 	for (uint32_t i = 0; i < max; i++) {
@@ -452,18 +461,19 @@ tofino_chpoll(dev_t dev, short events, int anyyet, short *reventsp,
 	 * open() of the device, we keep track of the count when the value was
 	 * last read for that open.  This lets us return a meaningful per-open
 	 * poll result.
+	 *
+	 * By convention MSI 0 is used to signal events that the user-space
+	 * control plane daemon is interested in, and MSI 1 is used for events
+	 * of interest to the kernel driver.  Thus, only a change in the MSI 0
+	 * count can lead to a poll-able change.
 	 */
 	*reventsp = 0;
 	if ((events & POLLRDNORM) == 0)
 		return (0);
 
 	mutex_enter(&tid->tid_mutex);
-	for (int i = 0; i < TOFINO_MAX_MSI_INTRS; i++) {
-		if (tf->tf_intr_cnt[i] != tid->tid_intr_read[i]) {
-			*reventsp |= POLLRDNORM;
-			break;
-		}
-	}
+	if (tf->tf_intr_cnt[0] != tid->tid_intr_read[0])
+		*reventsp |= POLLRDNORM;
 	mutex_exit(&tid->tid_mutex);
 
 	if ((*reventsp == 0 && !anyyet) || (events & POLLET))
@@ -637,13 +647,14 @@ tofino_intr(caddr_t arg, caddr_t arg2)
 	if (intr_no >= TOFINO_MAX_MSI_INTRS)
 		return (DDI_INTR_UNCLAIMED);
 
-	atomic_inc_32(&tf->tf_intr_cnt[intr_no]);
-	pollwakeup(&tf->tf_pollhead, POLLRDNORM);
+	tf->tf_intr_cnt[intr_no]++;
+	if (intr_no == 0)
+		pollwakeup(&tf->tf_pollhead, POLLRDNORM);
 
 	mutex_enter(&tf->tf_mutex);
 	if (tf->tf_tbus_intr == NULL || tf->tf_tbus_intr_busy) {
 		mutex_exit(&tf->tf_mutex);
-		return (DDI_INTR_UNCLAIMED);
+		return (DDI_INTR_CLAIMED);
 	}
 
 	/*

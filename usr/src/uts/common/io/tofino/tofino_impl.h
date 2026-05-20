@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_TOFINO_IMPL_H
@@ -28,7 +28,7 @@ extern "C" {
  * version change as well.
  */
 #define	TOFINO_DRIVER_MAJOR	1
-#define	TOFINO_DRIVER_MINOR	1
+#define	TOFINO_DRIVER_MINOR	2
 #define	TOFINO_DRIVER_PATCH	0
 
 #define	TOFINO_VENDID		0x1d1c
