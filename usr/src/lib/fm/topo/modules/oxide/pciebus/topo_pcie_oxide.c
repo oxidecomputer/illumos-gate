@@ -419,6 +419,7 @@ bool
 mod_pcie_platform_init(topo_mod_t *mod, pcie_t *pcie)
 {
 	mod_pcie_privdata_t *pd;
+	di_node_t devinfo;
 	const char *product;
 	char *props;
 	int nprop;
@@ -428,17 +429,20 @@ mod_pcie_platform_init(topo_mod_t *mod, pcie_t *pcie)
 	if ((pd = topo_mod_zalloc(mod, sizeof (*pd))) == NULL)
 		return (false);
 
-	product = di_node_name(pcie->tp_devinfo);
+	devinfo = topo_mod_devinfo(mod);
+	product = devinfo != DI_NODE_NIL ? di_node_name(devinfo) : NULL;
 
-	for (size_t i = 0; i < ARRAY_SIZE(enum_map); i++) {
-		if (strcmp(enum_map[i].em_product, product) == 0) {
-			pd->mpp_map = &enum_map[i];
-			break;
+	if (product != NULL) {
+		for (size_t i = 0; i < ARRAY_SIZE(enum_map); i++) {
+			if (strcmp(enum_map[i].em_product, product) == 0) {
+				pd->mpp_map = &enum_map[i];
+				break;
+			}
 		}
 	}
 	if (pd->mpp_map == NULL) {
 		topo_mod_dprintf(mod, "Could not find product map for %s",
-		    product);
+		    product == NULL ? "<unknown>" : product);
 		/* Carry on; there will just be no decoration. */
 	}
 
@@ -448,15 +452,17 @@ mod_pcie_platform_init(topo_mod_t *mod, pcie_t *pcie)
 		return (false);
 	}
 
-	nprop = di_prop_lookup_strings(DDI_DEV_T_ANY, pcie->tp_devinfo,
-	    "baseboard-identifier", &props);
-	if (nprop == 1)
-		pd->mpp_sn = topo_mod_strdup(mod, props);
+	if (devinfo != DI_NODE_NIL) {
+		nprop = di_prop_lookup_strings(DDI_DEV_T_ANY, devinfo,
+		    "baseboard-identifier", &props);
+		if (nprop == 1)
+			pd->mpp_sn = topo_mod_strdup(mod, props);
 
-	nprop = di_prop_lookup_strings(DDI_DEV_T_ANY, pcie->tp_devinfo,
-	    "baseboard-model", &props);
-	if (nprop == 1)
-		pd->mpp_pn = topo_mod_strdup(mod, props);
+		nprop = di_prop_lookup_strings(DDI_DEV_T_ANY, devinfo,
+		    "baseboard-model", &props);
+		if (nprop == 1)
+			pd->mpp_pn = topo_mod_strdup(mod, props);
+	}
 
 	return (pcie_set_platdata(pcie, pd));
 }
