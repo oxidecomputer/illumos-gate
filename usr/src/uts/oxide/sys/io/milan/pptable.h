@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_PPTABLE_H
@@ -78,6 +78,15 @@ typedef struct milan_pptable_debug {
 	int32_t		mppd_vddcr_cpu_margin; /* mV */
 	int32_t		mppd_vddcr_soc_margin; /* mV */
 	uint8_t		mppd_cc1_dis; /* bool */
+	/*
+	 * When the determinism percentage is enabled (mppd_detpct_en == 1)
+	 * the percentage is set to either 100 to select Performance,
+	 * or 0 to select Power. For parity with later supported platforms
+	 * which abandoned the idea of a user controllable slider entirely
+	 * we define these in the same DISABLE and ENABLE form.
+	 */
+#define	MPPD_DETERMINISM_DISABLE	0	/* Power */
+#define	MPPD_DETERMINISM_ENABLE		100	/* Performance */
 	uint8_t		mppd_detpct_en; /* bool */
 	uint8_t		mppd_detpct; /* percent */
 	uint8_t		mppd_ccx_dci_mode; /* 1: async */

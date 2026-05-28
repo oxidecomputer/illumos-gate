@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -312,9 +312,15 @@ genoa_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	    sizeof (gpp->gpp_cppc.gppc_thr_map));
 
 	/*
+	 * Select performance (default) versus power determinism.
+	 */
+	gpp->gpp_debug.gppd_detctl = zen_power_determinism ?
+	    GPPD_DETERMINISM_DISABLE : GPPD_DETERMINISM_ENABLE;
+
+	/*
 	 * Explicitly disable the overclocking part of the table.
 	 */
-	gpp->gpp_overclock.gppo_oc_dis = 1;
+	gpp->gpp_overclock.gppo_oc_dis = true;
 
 	/*
 	 * Set platform-specific power and current limits.

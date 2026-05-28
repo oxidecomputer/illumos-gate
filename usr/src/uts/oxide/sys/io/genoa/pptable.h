@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_GENOA_PPTABLE_H
@@ -79,7 +79,10 @@ typedef struct genoa_pptable_debug {
 	int32_t		gppd_vddcr_soc_margin; /* mV */
 	int32_t		gppd_vddio_margin; /* mV */
 	uint8_t		gppd_cc1_dis; /* bool */
-	uint8_t		tppd_detctl;
+#define	GPPD_DETERMINISM_DEFAULT	0	/* use fused default */
+#define	GPPD_DETERMINISM_DISABLE	1	/* Power */
+#define	GPPD_DETERMINISM_ENABLE		2	/* Performance */
+	uint8_t		gppd_detctl;
 	uint8_t		gppd_ccx_dci_mode; /* 1: async */
 	uint8_t		gppd_apb_dis; /* bool */
 	/*

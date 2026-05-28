@@ -52,6 +52,14 @@ extern "C" {
 extern bool zen_fabric_io_pci_cfg_disabled;
 
 /*
+ * Selects the processor determinism mode applied when initialising the SMU
+ * power and performance table. The default (false) selects performance
+ * determinism. Setting it true selects power determinism instead. It is read
+ * late enough in boot that it can be overridden via /etc/system.
+ */
+extern bool zen_power_determinism;
+
+/*
  * Warning: These memlists cannot be given directly to PCI. They expect to be
  * kmem_alloc'd which we are not doing here at all.
  */

@@ -164,6 +164,14 @@ static zen_fabric_t zen_fabric;
 bool zen_fabric_io_pci_cfg_disabled = false;
 
 /*
+ * Processor determinism mode applied when initialising the SMU power and
+ * performance table. By default we select performance determinism. Setting
+ * this true instead selects power determinism. It is consumed late enough in
+ * boot that it can be overridden via /etc/system.
+ */
+bool zen_power_determinism = false;
+
+/*
  * Copies the brand string into the given output buffer.  The buf and len
  * argument and return value semantics match those of snprintf(9f).
  */

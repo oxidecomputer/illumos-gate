@@ -455,9 +455,19 @@ turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	VERIFY3U(sizeof (*tpp), <=, *len);
 
 	/*
+	 * The AGESA specification states that the fused default value here is
+	 * "Disabled", which is equivalent to a traditional BIOS setting of
+	 * "Power" versus "Performance". Experimentation on Turin parts has
+	 * indicated that the fused default is actually "Enabled", but we
+	 * assert the desired setting explicitly.
+	 */
+	tpp->tpp_debug.tppd_detctl = zen_power_determinism ?
+	    TPPD_DETERMINISM_DISABLE : TPPD_DETERMINISM_ENABLE;
+
+	/*
 	 * Explicitly disable the overclocking part of the table.
 	 */
-	tpp->tpp_overclock.tppo_oc_dis = 1;
+	tpp->tpp_overclock.tppo_oc_dis = true;
 
 	/*
 	 * Force cores on the same VDDCR_CPU voltage rail to run at the same
@@ -470,7 +480,7 @@ turin_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	 * Introduced in Turin PI 1.0.0.7 (SMU minor version 125/0x7D).
 	 */
 	if (min >= 125)
-		tpp->tpp_cclk_mode = 1;
+		tpp->tpp_cclk_mode = true;
 
 	/*
 	 * Set platform-specific power and current limits.

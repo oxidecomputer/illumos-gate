@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -1820,14 +1820,22 @@ milan_fabric_smu_pptable_init(zen_fabric_t *fabric, void *pptable, size_t *len)
 	    sizeof (mpp->mpp_cppc.mppc_thr_map));
 
 	/*
+	 * Select performance (default) versus power determinism.
+	 */
+	if (zen_power_determinism) {
+		mpp->mpp_debug.mppd_detpct_en = true;
+		mpp->mpp_debug.mppd_detpct = MPPD_DETERMINISM_DISABLE;
+	}
+
+	/*
 	 * Explicitly disable the overclocking part of the table.
 	 */
-	mpp->mpp_overclock.mppo_oc_dis = 1;
+	mpp->mpp_overclock.mppo_oc_dis = true;
 
 	/*
 	 * CCA is enabled by default. XXX anyone know what it stands for?
 	 */
-	mpp->mpp_cca_en = 1;
+	mpp->mpp_cca_en = true;
 
 	/*
 	 * Set platform-specific power and current limits.
