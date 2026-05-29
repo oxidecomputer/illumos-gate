@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <strings.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -483,8 +484,253 @@ pcieadm_link_ltssm(pcieadm_t *pcip, int argc, char *argv[])
 	return (EXIT_SUCCESS);
 }
 
+static void
+pcieadm_link_limit_usage(FILE *f)
+{
+	(void) fprintf(f, "\tlink limit\t[-s speed] -d device\n");
+}
+
+static void
+pcieadm_link_limit_help(const char *fmt, ...)
+{
+	if (fmt != NULL) {
+		va_list ap;
+
+		va_start(ap, fmt);
+		vwarnx(fmt, ap);
+		va_end(ap);
+		(void) fprintf(stderr, "\n");
+	}
+
+	(void) fprintf(stderr, "Usage:  %s link limit [-s speed] -d device\n",
+	    pcieadm_progname);
+	(void) fprintf(stderr, "Print or set the administrative limit on the "
+	    "corresponding PCIe link\n\n"
+	    "\t-d device\tthe PCIe bridge to operate on (driver instance,"
+	    "\n\t\t\t/devices path, or b/d/f)\n"
+	    "\t-s speed\tlimit the device to the specified PCIe gen/speed "
+	    "(e.g.\n\t\t\t2.5, 32, gen2, gen3, etc.)\n");
+}
+
+typedef struct {
+	uint32_t	pls_speed;
+	const char	*pls_gts;
+	const char	*pls_gen;
+	const char	*pls_alt;
+} pcieadm_link_speed_t;
+
+static const pcieadm_link_speed_t pcieadm_link_speeds[] = {
+	{ PCIEB_LINK_SPEED_GEN1, "2.5",  "gen1", NULL },
+	{ PCIEB_LINK_SPEED_GEN2, "5.0",  "gen2", "5" },
+	{ PCIEB_LINK_SPEED_GEN3, "8.0",  "gen3", "8" },
+	{ PCIEB_LINK_SPEED_GEN4, "16.0", "gen4", "16" },
+	{ PCIEB_LINK_SPEED_GEN5, "32.0", "gen5", "32" },
+	{ PCIEB_LINK_SPEED_GEN6, "64.0", "gen6", "64" }
+};
+
+static uint32_t
+pcieadm_parse_pcieb_speed(const char *str)
+{
+	for (uint_t i = 0; i < ARRAY_SIZE(pcieadm_link_speeds); i++) {
+		const pcieadm_link_speed_t *pls = &pcieadm_link_speeds[i];
+
+		if (strcasecmp(str, pls->pls_gts) == 0 ||
+		    strcasecmp(str, pls->pls_gen) == 0 ||
+		    (pls->pls_alt != NULL &&
+		    strcasecmp(str, pls->pls_alt) == 0)) {
+			return (pls->pls_speed);
+		}
+	}
+
+	errx(EXIT_FAILURE, "failed to parse speed: %s", str);
+}
+
+static const pcieadm_link_speed_t *
+pcieadm_link_speed_lookup(uint32_t speed)
+{
+	for (uint_t i = 0; i < ARRAY_SIZE(pcieadm_link_speeds); i++) {
+		if (pcieadm_link_speeds[i].pls_speed == speed)
+			return (&pcieadm_link_speeds[i]);
+	}
+
+	return (NULL);
+}
+
+static int
+pcieadm_link_limit(pcieadm_t *pcip, int argc, char *argv[])
+{
+	int c, ret = EXIT_SUCCESS;
+	const char *device = NULL, *speed = NULL;
+	pcieb_ioctl_target_speed_t pits;
+
+	while ((c = getopt(argc, argv, ":d:s:")) != -1) {
+		switch (c) {
+		case 'd':
+			device = optarg;
+			break;
+		case 's':
+			speed = optarg;
+			break;
+		case ':':
+			pcieadm_link_limit_help("Option -%c requires an "
+			    "argument", optopt);
+			exit(EXIT_USAGE);
+		case '?':
+		default:
+			pcieadm_link_limit_help("unknown option: -%c",
+			    optopt);
+			exit(EXIT_USAGE);
+		}
+
+	}
+
+	if (device == NULL) {
+		pcieadm_link_limit_help("missing required device argument "
+		    "(-d)");
+		exit(EXIT_USAGE);
+	}
+
+	argc -= optind;
+	argv += optind;
+	if (argc != 0) {
+		errx(EXIT_USAGE, "encountered extraneous arguments starting "
+		    "with %s", argv[0]);
+	}
+
+	int fd = pcieadm_link_pcieb_open(pcip, device, speed != NULL);
+	bzero(&pits, sizeof (pits));
+
+	if (speed != NULL) {
+		pits.pits_speed = pcieadm_parse_pcieb_speed(speed);
+
+		if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_eff) != 0)
+			err(EXIT_FAILURE, "failed to raise privileges");
+
+		if (ioctl(fd, PCIEB_IOCTL_SET_TARGET_SPEED, &pits) != 0) {
+			err(EXIT_FAILURE, "failed to set %s target speed",
+			    device);
+		}
+
+		if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_min) != 0)
+			err(EXIT_FAILURE, "failed to reduce privileges");
+
+	} else {
+		const pcieadm_link_speed_t *pls;
+
+		if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_eff) != 0)
+			err(EXIT_FAILURE, "failed to raise privileges");
+
+		if (ioctl(fd, PCIEB_IOCTL_GET_TARGET_SPEED, &pits) != 0) {
+			err(EXIT_FAILURE, "failed to get %s target speed",
+			    device);
+		}
+
+		if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_min) != 0)
+			err(EXIT_FAILURE, "failed to reduce privileges");
+
+		pls = pcieadm_link_speed_lookup(pits.pits_speed);
+		if (pls != NULL) {
+			(void) printf("Target speed: %s GT/s (%s)\n",
+			    pls->pls_gts, pls->pls_gen);
+		} else {
+			(void) printf("Target speed: unknown speed value: "
+			    "0x%x\n", pits.pits_speed);
+		}
+
+		if ((pits.pits_flags & ~PCIEB_FLAGS_ADMIN_SET) != 0) {
+			(void) printf("Unknown flags: 0x%x\n", pits.pits_flags);
+		} else if ((pits.pits_flags & PCIEB_FLAGS_ADMIN_SET) != 0) {
+			(void) printf("Flags: Admin Set Speed\n");
+		}
+
+	}
+
+	VERIFY0(close(fd));
+	return (ret);
+}
+
+static void
+pcieadm_link_retrain_usage(FILE *f)
+{
+	(void) fprintf(f, "\tlink retrain\t-d device\n");
+}
+
+static void
+pcieadm_link_retrain_help(const char *fmt, ...)
+{
+	if (fmt != NULL) {
+		va_list ap;
+
+		va_start(ap, fmt);
+		vwarnx(fmt, ap);
+		va_end(ap);
+		(void) fprintf(stderr, "\n");
+	}
+
+	(void) fprintf(stderr, "Usage:  %s link retrain -d device\n",
+	    pcieadm_progname);
+	(void) fprintf(stderr, "Retrain the link on the specified upstream "
+	    "port by requesting it via the PCIe Link Control register.\n\n"
+	    "\t-d device\tthe PCIe bridge to operate on (driver instance,"
+	    "\n\t\t\t/devices path, or b/d/f)\n");
+}
+
+static int
+pcieadm_link_retrain(pcieadm_t *pcip, int argc, char *argv[])
+{
+	int c, ret = EXIT_SUCCESS;
+	const char *device = NULL;
+
+	while ((c = getopt(argc, argv, ":d:")) != -1) {
+		switch (c) {
+		case 'd':
+			device = optarg;
+			break;
+		case ':':
+			pcieadm_link_retrain_help("Option -%c requires an "
+			    "argument", optopt);
+			exit(EXIT_USAGE);
+		case '?':
+		default:
+			pcieadm_link_retrain_help("unknown option: -%c",
+			    optopt);
+			exit(EXIT_USAGE);
+		}
+	}
+
+	if (device == NULL) {
+		pcieadm_link_retrain_help("missing required device argument "
+		    "(-d)");
+		exit(EXIT_USAGE);
+	}
+
+	argc -= optind;
+	argv += optind;
+	if (argc != 0) {
+		errx(EXIT_USAGE, "encountered extraneous arguments starting "
+		    "with %s", argv[0]);
+	}
+
+	int fd = pcieadm_link_pcieb_open(pcip, device, true);
+
+	if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_eff) != 0)
+		err(EXIT_FAILURE, "failed to raise privileges");
+
+	if (ioctl(fd, PCIEB_IOCTL_RETRAIN) != 0) {
+		err(EXIT_FAILURE, "failed to retrain link %s", device);
+	}
+
+	if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_min) != 0)
+		err(EXIT_FAILURE, "failed to reduce privileges");
+
+	VERIFY0(close(fd));
+	return (ret);
+}
+
 static const pcieadm_cmdtab_t pcieadm_cmds_link[] = {
+	{ "limit", pcieadm_link_limit, pcieadm_link_limit_usage },
 	{ "ltssm", pcieadm_link_ltssm, pcieadm_link_ltssm_usage },
+	{ "retrain", pcieadm_link_retrain, pcieadm_link_retrain_usage },
 	{ NULL }
 };
 
