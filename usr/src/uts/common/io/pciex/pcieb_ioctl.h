@@ -25,6 +25,7 @@
 
 #include <sys/stdint.h>
 #include "pcie_ltssm.h"
+#include "pcie_eq.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,6 +75,35 @@ typedef struct pcieb_ioctl_ltssm {
 	uint32_t		pil_pad;
 	pcie_ltssm_snapshot_t	pil_snapshot;
 } pcieb_ioctl_ltssm_t;
+
+/*
+ * Retrieve PCIe link equalisation (EQ) data for the link below this bridge.
+ * Equalisation applies from PCIEB_LINK_SPEED_GEN3 upwards. pie_gen selects the
+ * generation whose data to read; PCIEB_LINK_SPEED_UNKNOWN selects the link's
+ * current speed (which requires the link to be up). The preset mask for the
+ * requested generation is always returned, but per-lane data is present only
+ * while the link is up.
+ */
+#define	PCIEB_IOCTL_GET_EQ		(PCIEB_IOCTL | 0x05)
+
+typedef struct pcieb_ioctl_eq {
+	uint32_t	pie_gen;
+	pcie_eq_t	pie_eq;
+} pcieb_ioctl_eq_t;
+
+/*
+ * Set the equalisation preset search mask for the link below this bridge.
+ * pipm_gen must name a specific generation (PCIEB_LINK_SPEED_GEN3 or above);
+ * there is no current-speed option. Setting the mask does not itself
+ * re-equalise the link; it is picked up the next time the link equalises,
+ * such as when it is disabled and re-enabled or the device is power cycled.
+ */
+#define	PCIEB_IOCTL_SET_PRESET_MASK	(PCIEB_IOCTL | 0x06)
+
+typedef struct pcieb_ioctl_preset_mask {
+	uint32_t	pipm_gen;
+	uint32_t	pipm_mask;
+} pcieb_ioctl_preset_mask_t;
 
 #ifdef __cplusplus
 }

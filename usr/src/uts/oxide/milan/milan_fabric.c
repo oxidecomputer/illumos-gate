@@ -1001,6 +1001,166 @@ milan_pcie_core_reg(const zen_pcie_core_t *const pc, const smn_reg_def_t def)
 }
 
 /*
+ * Read the equalisation settings for each of the link's nlanes lanes at the
+ * given PCIe signalling rate, along with that rate's preset search mask. Milan
+ * supports equalisation only at 8.0 and 16.0 GT/s (generations 3 and 4).
+ *
+ * The per-lane settings in LC_BEST_EQ_SETTINGS and LC_CNTL5 report on the
+ * single lane selected by LANE_MASK in the parent core's LC_DBG_CTL, at the
+ * rate selected within each register. Reading them therefore requires writing
+ * those selectors, so we save the three registers we disturb and restore them
+ * afterwards in an attempt to leave the hardware as we found it.
+ */
+int
+milan_pcie_port_eq(zen_pcie_port_t *port, pcie_link_speed_t speed,
+    uint32_t nlanes, pcie_eq_t *eq)
+{
+	zen_pcie_core_t *pc = port->zpp_core;
+	smn_reg_t dbg_reg, best_reg, ctl5_reg, mask_reg;
+	uint32_t rate, mask, save_dbg, save_best, save_ctl5;
+	uint32_t linkup_mask = 0;
+	hrtime_t linkup_ts = 0;
+
+	dbg_reg = milan_pcie_core_reg(pc, D_PCIE_CORE_LC_DBG_CTL);
+	best_reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_BEST_EQ);
+	ctl5_reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL5);
+	mask_reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL10);
+
+	mask = zen_pcie_port_read(port, mask_reg);
+
+	/*
+	 * Also retrieve the mask that was in effect when the link last came up,
+	 * if we have a capture of it. The preset mask register is captured at
+	 * link events so this lets a consumer distinguish a freshly programmed
+	 * mask from the one that actually governed the current link. A zero
+	 * timestamp means no capture.
+	 */
+	(void) zen_pcie_port_dbg_val_by_name(port,
+	    "PCIEPORT::PCIE_LC_CNTL10", ZPCS_LINK_UP, &linkup_mask, &linkup_ts);
+
+	switch (speed) {
+	case PCIE_LINK_SPEED_8:
+		rate = PCIE_PORT_LC_BEST_EQ_RATE_8P0;
+		eq->peq_mask = PCIE_PORT_LC_CTL10_GET_MASK_8GT(mask);
+		eq->peq_mask_linkup =
+		    PCIE_PORT_LC_CTL10_GET_MASK_8GT(linkup_mask);
+		break;
+	case PCIE_LINK_SPEED_16:
+		rate = PCIE_PORT_LC_BEST_EQ_RATE_16P0;
+		eq->peq_mask = PCIE_PORT_LC_CTL10_GET_MASK_16GT(mask);
+		eq->peq_mask_linkup =
+		    PCIE_PORT_LC_CTL10_GET_MASK_16GT(linkup_mask);
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	if (linkup_ts != 0) {
+		eq->peq_linkup_time = linkup_ts;
+		eq->peq_flags |= PCIE_EQ_F_LINKUP_VALID;
+	}
+
+	eq->peq_nlanes = nlanes;
+
+	/*
+	 * With no lanes to report (the link is down) the mask is all the caller
+	 * can get; there is no per-lane data to read, so don't disturb the
+	 * lane-selector and rate registers.
+	 */
+	if (nlanes == 0)
+		return (0);
+
+	save_dbg = zen_pcie_core_read(pc, dbg_reg);
+	save_best = zen_pcie_port_read(port, best_reg);
+	save_ctl5 = zen_pcie_port_read(port, ctl5_reg);
+
+	/* The rate selector is the same for every lane, so program it once */
+	zen_pcie_port_write(port, best_reg,
+	    PCIE_PORT_LC_BEST_EQ_SET_RATE(save_best, rate));
+	zen_pcie_port_write(port, ctl5_reg,
+	    PCIE_PORT_LC_CTL5_SET_LOCAL_RATE(save_ctl5, rate));
+
+	for (uint32_t lane = 0; lane < nlanes; lane++) {
+		pcie_eq_lane_t *pel = &eq->peq_lanes[lane];
+		uint32_t best, ctl5, dbg;
+
+		dbg = PCIE_CORE_LC_DBG_CTL_SET_LANE_MASK(save_dbg, 1U << lane);
+		zen_pcie_core_write(pc, dbg_reg, dbg);
+
+		best = zen_pcie_port_read(port, best_reg);
+		ctl5 = zen_pcie_port_read(port, ctl5_reg);
+
+		pel->pel_lane = lane;
+		pel->pel_best_preset = PCIE_PORT_LC_BEST_EQ_GET_PRESET(best);
+		pel->pel_best_precursor =
+		    PCIE_PORT_LC_BEST_EQ_GET_PRECURSOR(best);
+		pel->pel_best_cursor = PCIE_PORT_LC_BEST_EQ_GET_CURSOR(best);
+		pel->pel_best_postcursor =
+		    PCIE_PORT_LC_BEST_EQ_GET_POSTCURSOR(best);
+		pel->pel_best_fom = PCIE_PORT_LC_BEST_EQ_GET_FOM(best);
+		pel->pel_local_preset = PCIE_PORT_LC_CTL5_GET_PRESET(ctl5);
+		pel->pel_local_precursor =
+		    PCIE_PORT_LC_CTL5_GET_PRECURSOR(ctl5);
+		pel->pel_local_cursor = PCIE_PORT_LC_CTL5_GET_CURSOR(ctl5);
+		pel->pel_local_postcursor =
+		    PCIE_PORT_LC_CTL5_GET_POSTCURSOR(ctl5);
+		/*
+		 * Milan's LC_CNTL5 has no field reporting whether the local
+		 * transmitter is driving a preset rather than coefficients, so
+		 * we leave PCIE_EQ_LANE_F_USE_PRESET_VALID clear to mark the
+		 * use-preset state as unknown.
+		 */
+	}
+
+	zen_pcie_port_write(port, ctl5_reg, save_ctl5);
+	zen_pcie_port_write(port, best_reg, save_best);
+	zen_pcie_core_write(pc, dbg_reg, save_dbg);
+
+	return (0);
+}
+
+int
+milan_pcie_port_set_preset_mask(zen_pcie_port_t *port, pcie_link_speed_t speed,
+    uint32_t mask)
+{
+	smn_reg_t mask_reg, eq_reg;
+	uint32_t val, eq_val;
+
+	mask_reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL10);
+	val = zen_pcie_port_read(port, mask_reg);
+
+	switch (speed) {
+	case PCIE_LINK_SPEED_8:
+		val = PCIE_PORT_LC_CTL10_SET_MASK_8GT(val, mask);
+		eq_reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL4);
+		eq_val = zen_pcie_port_read(port, eq_reg);
+		eq_val = PCIE_PORT_LC_CTL4_SET_REDO_EQ_8GT(eq_val, 1);
+		break;
+	case PCIE_LINK_SPEED_16:
+		val = PCIE_PORT_LC_CTL10_SET_MASK_16GT(val, mask);
+		eq_reg = milan_pcie_port_reg(port, D_PCIE_PORT_LC_CTL8);
+		eq_val = zen_pcie_port_read(port, eq_reg);
+		eq_val = PCIE_PORT_LC_CTL8_SET_REDO_EQ_16GT(eq_val, 1);
+		break;
+	default:
+		return (EINVAL);
+	}
+
+	zen_pcie_port_write(port, mask_reg, val);
+
+	/*
+	 * Programming the mask only affects a subsequent equalisation. Arm a
+	 * redo at this rate so the new mask is picked up the next time the
+	 * link equalises, such as when it is disabled and re-enabled or the
+	 * downstream device is power cycled. The hardware clears this bit once
+	 * equalisation has run.
+	 */
+	zen_pcie_port_write(port, eq_reg, eq_val);
+
+	return (0);
+}
+
+/*
  * We consider the IOAGR to be part of the NBIO/IOHC/IOMS, so the IOMMUL1's
  * IOAGR block falls under the IOMS; the IOAPIC, SDPMUX, and IOMMUL2 are similar
  * as they do not (currently) have independent representation in the fabric.

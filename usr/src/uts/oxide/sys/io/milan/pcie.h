@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_MILAN_PCIE_H
@@ -844,7 +844,8 @@ milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL3_ENH_HP_EN(r, v)		bitset32(r, 10, 10, v)
 
 /*
- * PCIEPORT::PCIE_LC_CNTL4 - unused but captured for debugging.
+ * PCIEPORT::PCIE_LC_CNTL4 - holds the Gen3 (8.0 GT/s) equalisation search mode
+ * and redo controls, amongst other things.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_CTL4	(const smn_reg_def_t){	\
@@ -852,10 +853,18 @@ milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_reg = 0x2d8	\
 }
 
+#define	PCIE_PORT_LC_CTL4_SET_GO_TO_EQ_8GT(r, v)	bitset32(r, 12, 12, v)
+/*
+ * These are values for the Gen3 (8.0 GT/s) equalisation search mode which are
+ * passed directly to firmware via DXIO, rather than ever being written to
+ * the field in bits [9:8] in this register. There are therefore no accessor
+ * macros here, just the values.
+ */
 #define	LC_CTL4_EQ_8GT_MODE_COEFF_BASIC		0x00
 #define	LC_CTL4_EQ_8GT_MODE_COEFF_EX		0x01
 #define	LC_CTL4_EQ_8GT_MODE_COEFF_EX_3X3	0x02
 #define	LC_CTL4_EQ_8GT_MODE_COEFF_PRESET	0x03
+#define	PCIE_PORT_LC_CTL4_SET_REDO_EQ_8GT(r, v)		bitset32(r, 5, 5, v)
 
 /*
  * PCIEPORT::PCIE_LC_CNTL5 - Port Link Control Register 5. There are several
@@ -871,6 +880,21 @@ milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL5(n, p, b)	\
     milan_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL5, (p), (b))
 #define	PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(r, v)	bitset32(r, 28, 28, v)
+/*
+ * These fields capture the equalisation settings used by the local (near-end)
+ * transmitter, for the lane selected in the parent core's LC_DBG_CTL and the
+ * rate selected by LOCAL_RATE. Unlike Turin and Genoa, this register has no
+ * field reporting whether a preset rather than the individual coefficients is
+ * in use.
+ */
+#define	PCIE_PORT_LC_CTL5_GET_POSTCURSOR(r)		bitx32(r, 20, 16)
+#define	PCIE_PORT_LC_CTL5_GET_CURSOR(r)			bitx32(r, 15, 10)
+#define	PCIE_PORT_LC_CTL5_GET_PRECURSOR(r)		bitx32(r, 9, 6)
+#define	PCIE_PORT_LC_CTL5_GET_PRESET(r)			bitx32(r, 5, 2)
+#define	PCIE_PORT_LC_CTL5_GET_LOCAL_RATE(r)		bitx32(r, 1, 0)
+#define	PCIE_PORT_LC_CTL5_SET_LOCAL_RATE(r, v)		bitset32(r, 1, 0, v)
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_8P0		0
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_16P0		1
 
 /*
  * PCIEPORT::PCIE_LC_FORCE_COEFF - unused but captured for debugging.
@@ -882,15 +906,31 @@ milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 
 /*
- * PCIEPORT::PCIE_LC_BEST_EQ_SETTINGS - unused but captured for debugging.  Data
- * captured in this register's fields applies to a lane selected by the
- * LC_DBG_CTL register in the port's parent core.
+ * PCIEPORT::PCIE_LC_BEST_EQ_SETTINGS - data captured in this register's fields
+ * applies to a lane selected by the LC_DBG_CTL register in the port's parent
+ * core.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_BEST_EQ	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2e4	\
 }
+/*
+ * These fields capture the best equalisation settings found during the link's
+ * equalisation search, including a figure of merit (FOM), for the lane selected
+ * in the parent core's LC_DBG_CTL and the rate selected by RATE. Unlike Turin
+ * and Genoa the rate is a single bit, as Milan supports equalisation only at
+ * 8.0 and 16.0 GT/s.
+ */
+#define	PCIE_PORT_LC_BEST_EQ_GET_RATE(r)	bitx32(r, 30, 30)
+#define	PCIE_PORT_LC_BEST_EQ_SET_RATE(r, v)	bitset32(r, 30, 30, v)
+#define	PCIE_PORT_LC_BEST_EQ_RATE_8P0			0
+#define	PCIE_PORT_LC_BEST_EQ_RATE_16P0			1
+#define	PCIE_PORT_LC_BEST_EQ_GET_FOM(r)		bitx32(r, 29, 22)
+#define	PCIE_PORT_LC_BEST_EQ_GET_POSTCURSOR(r)	bitx32(r, 21, 16)
+#define	PCIE_PORT_LC_BEST_EQ_GET_CURSOR(r)	bitx32(r, 15, 10)
+#define	PCIE_PORT_LC_BEST_EQ_GET_PRECURSOR(r)	bitx32(r, 9, 4)
+#define	PCIE_PORT_LC_BEST_EQ_GET_PRESET(r)	bitx32(r, 3, 0)
 
 /*
  * PCIEPORT::PCIE_LC_FORCE_EQ_REQ_COEFF - unused but captured for debugging.
@@ -1069,13 +1109,16 @@ milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	PCIE_PORT_HP_CTL_SET_SLOT(r, v)		bitset32(r, 12, 0, v)
 
 /*
- * PCIEPORT::PCIE_LC_CNTL8 - unused but captured for debugging.
+ * PCIEPORT::PCIE_LC_CNTL8 - holds the Gen4 (16.0 GT/s) equalisation redo
+ * control, amongst other things.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_CTL8	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x374	\
 }
+#define	PCIE_PORT_LC_CTL8_SET_GO_TO_EQ_16GT(r, v)	bitset32(r, 9, 9, v)
+#define	PCIE_PORT_LC_CTL8_SET_REDO_EQ_16GT(r, v)	bitset32(r, 7, 7, v)
 
 /*
  * PCIEPORT::PCIE_LC_CNTL9 - unused but captured for debugging.
@@ -1117,13 +1160,21 @@ milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 
 /*
- * PCIEPORT::PCIE_LC_CNTL10 - unused but captured for debugging.
+ * PCIEPORT::PCIE_LC_CNTL10 - amongst other things, holds the equalisation
+ * preset search masks. Each mask is a bit vector covering presets P0 to P9
+ * controlling which presets the link's EQ search may consider at that rate.
+ * Unlike Turin, which has a dedicated PCIE_LC_PRESET_MASK_CNTL register, Milan
+ * keeps the Gen3 (8.0 GT/s) and Gen4 (16.0 GT/s) masks here.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_CTL10	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x38c	\
 }
+#define	PCIE_PORT_LC_CTL10_GET_MASK_16GT(r)	bitx32(r, 25, 16)
+#define	PCIE_PORT_LC_CTL10_SET_MASK_16GT(r, v)	bitset32(r, 25, 16, v)
+#define	PCIE_PORT_LC_CTL10_GET_MASK_8GT(r)	bitx32(r, 15, 6)
+#define	PCIE_PORT_LC_CTL10_SET_MASK_8GT(r, v)	bitset32(r, 15, 6, v)
 
 /*
  * PCIEPORT::PCIE_LC_CNTL11 - unused but captured for debugging.

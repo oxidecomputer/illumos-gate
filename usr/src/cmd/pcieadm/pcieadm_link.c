@@ -319,7 +319,7 @@ pcieadm_link_pcieb_open(pcieadm_t *pcip, const char *device, bool write)
 }
 
 static void
-pcieadm_ltssm_hrtime_to_str(hrtime_t hrt, char *buf, size_t buflen)
+pcieadm_link_hrtime_to_str(hrtime_t hrt, char *buf, size_t buflen)
 {
 	hrtime_t now = gethrtime();
 	struct timeval tv;
@@ -468,7 +468,7 @@ pcieadm_link_ltssm(pcieadm_t *pcip, int argc, char *argv[])
 	if (!parse && ltssm.pil_snapshot.pls_time != 0) {
 		char tbuf[64];
 
-		pcieadm_ltssm_hrtime_to_str(ltssm.pil_snapshot.pls_time,
+		pcieadm_link_hrtime_to_str(ltssm.pil_snapshot.pls_time,
 		    tbuf, sizeof (tbuf));
 		(void) printf("%s state captured at ~%s (hrtime %" PRId64 ")\n",
 		    pcieadm_ltssm_sources[snap], tbuf,
@@ -727,7 +727,460 @@ pcieadm_link_retrain(pcieadm_t *pcip, int argc, char *argv[])
 	return (ret);
 }
 
+typedef enum {
+	PCIEADM_LINK_EQ_GEN,
+	PCIEADM_LINK_EQ_MASK,
+	PCIEADM_LINK_EQ_UPMASK,
+	PCIEADM_LINK_EQ_LANE,
+	PCIEADM_LINK_EQ_PRESET,
+	PCIEADM_LINK_EQ_PRE,
+	PCIEADM_LINK_EQ_CUR,
+	PCIEADM_LINK_EQ_POST,
+	PCIEADM_LINK_EQ_FOM,
+	PCIEADM_LINK_EQ_USED,
+	PCIEADM_LINK_EQ_LPRESET,
+	PCIEADM_LINK_EQ_LPRE,
+	PCIEADM_LINK_EQ_LCUR,
+	PCIEADM_LINK_EQ_LPOST
+} pcieadm_link_eq_otype_t;
+
+/*
+ * The per-lane EQ data is reported as one row per lane, but the generation and
+ * the preset masks (configured and at last link-up) are properties of the whole
+ * capture.
+ */
+typedef struct {
+	const pcie_eq_t		*peo_eq;
+	const pcie_eq_lane_t	*peo_lane;
+} pcieadm_link_eq_ofmt_t;
+
+static boolean_t
+pcieadm_link_eq_ofmt_cb(ofmt_arg_t *ofarg, char *buf, uint_t buflen)
+{
+	const pcieadm_link_eq_ofmt_t *peo = ofarg->ofmt_cbarg;
+	const pcie_eq_t *pe = peo->peo_eq;
+	const pcie_eq_lane_t *pel = peo->peo_lane;
+	size_t ret;
+
+	switch (ofarg->ofmt_id) {
+	case PCIEADM_LINK_EQ_GEN:
+		ret = snprintf(buf, buflen, "gen%u", pe->peq_gen);
+		break;
+	case PCIEADM_LINK_EQ_MASK:
+		ret = snprintf(buf, buflen, "0x%03x", pe->peq_mask);
+		break;
+	case PCIEADM_LINK_EQ_UPMASK:
+		if ((pe->peq_flags & PCIE_EQ_F_LINKUP_VALID) == 0) {
+			ret = snprintf(buf, buflen, "--");
+		} else {
+			ret = snprintf(buf, buflen, "0x%03x",
+			    pe->peq_mask_linkup);
+		}
+		break;
+	case PCIEADM_LINK_EQ_LANE:
+		ret = snprintf(buf, buflen, "%u", pel->pel_lane);
+		break;
+	case PCIEADM_LINK_EQ_PRESET:
+		ret = snprintf(buf, buflen, "P%u", pel->pel_best_preset);
+		break;
+	case PCIEADM_LINK_EQ_PRE:
+		ret = snprintf(buf, buflen, "%u", pel->pel_best_precursor);
+		break;
+	case PCIEADM_LINK_EQ_CUR:
+		ret = snprintf(buf, buflen, "%u", pel->pel_best_cursor);
+		break;
+	case PCIEADM_LINK_EQ_POST:
+		ret = snprintf(buf, buflen, "%u", pel->pel_best_postcursor);
+		break;
+	case PCIEADM_LINK_EQ_FOM:
+		ret = snprintf(buf, buflen, "%u", pel->pel_best_fom);
+		break;
+	case PCIEADM_LINK_EQ_USED:
+		if ((pel->pel_flags & PCIE_EQ_LANE_F_USE_PRESET_VALID) == 0) {
+			ret = strlcat(buf, "--", buflen);
+		} else {
+			ret = strlcat(buf,
+			    (pel->pel_flags & PCIE_EQ_LANE_F_USE_PRESET) != 0 ?
+			    "yes" : "no", buflen);
+		}
+		break;
+	case PCIEADM_LINK_EQ_LPRESET:
+		ret = snprintf(buf, buflen, "P%u", pel->pel_local_preset);
+		break;
+	case PCIEADM_LINK_EQ_LPRE:
+		ret = snprintf(buf, buflen, "%u", pel->pel_local_precursor);
+		break;
+	case PCIEADM_LINK_EQ_LCUR:
+		ret = snprintf(buf, buflen, "%u", pel->pel_local_cursor);
+		break;
+	case PCIEADM_LINK_EQ_LPOST:
+		ret = snprintf(buf, buflen, "%u", pel->pel_local_postcursor);
+		break;
+	default:
+		return (B_FALSE);
+	}
+
+	return (buflen > ret);
+}
+
+static const char *pcieadm_link_eq_fields =
+	"lane,preset,pre,cur,post,fom,used";
+static const ofmt_field_t pcieadm_link_eq_ofmt[] = {
+	{ "GEN", 6, PCIEADM_LINK_EQ_GEN, pcieadm_link_eq_ofmt_cb },
+	{ "MASK", 8, PCIEADM_LINK_EQ_MASK, pcieadm_link_eq_ofmt_cb },
+	{ "UPMASK", 8, PCIEADM_LINK_EQ_UPMASK, pcieadm_link_eq_ofmt_cb },
+	{ "LANE", 6, PCIEADM_LINK_EQ_LANE, pcieadm_link_eq_ofmt_cb },
+	{ "PRESET", 8, PCIEADM_LINK_EQ_PRESET, pcieadm_link_eq_ofmt_cb },
+	{ "PRE", 6, PCIEADM_LINK_EQ_PRE, pcieadm_link_eq_ofmt_cb },
+	{ "CUR", 6, PCIEADM_LINK_EQ_CUR, pcieadm_link_eq_ofmt_cb },
+	{ "POST", 6, PCIEADM_LINK_EQ_POST, pcieadm_link_eq_ofmt_cb },
+	{ "FOM", 6, PCIEADM_LINK_EQ_FOM, pcieadm_link_eq_ofmt_cb },
+	{ "USED", 6, PCIEADM_LINK_EQ_USED, pcieadm_link_eq_ofmt_cb },
+	{ "LPRESET", 8, PCIEADM_LINK_EQ_LPRESET, pcieadm_link_eq_ofmt_cb },
+	{ "LPRE", 6, PCIEADM_LINK_EQ_LPRE, pcieadm_link_eq_ofmt_cb },
+	{ "LCUR", 6, PCIEADM_LINK_EQ_LCUR, pcieadm_link_eq_ofmt_cb },
+	{ "LPOST", 6, PCIEADM_LINK_EQ_LPOST, pcieadm_link_eq_ofmt_cb },
+	{ NULL, 0, 0, NULL }
+};
+
+static void
+pcieadm_link_eq_usage(FILE *f)
+{
+	(void) fprintf(f, "\tlink eq\t\t[-H] [-o field,... [-p]] [-s speed] "
+	    "-d device\n");
+}
+
+static void
+pcieadm_link_eq_help(const char *fmt, ...)
+{
+	if (fmt != NULL) {
+		va_list ap;
+
+		va_start(ap, fmt);
+		vwarnx(fmt, ap);
+		va_end(ap);
+		(void) fprintf(stderr, "\n");
+	}
+
+	(void) fprintf(stderr, "Usage:  %s link eq [-H] [-o field,... [-p]] "
+	    "[-s speed] -d device\n", pcieadm_progname);
+	(void) fprintf(stderr, "Show the equalization settings of a "
+	    "PCIe link.\n\n"
+	    "\t-d device\tthe PCIe bridge to operate on (driver instance,\n"
+	    "\t\t\t/devices path, or b/d/f)\n"
+	    "\t-H\t\tomit the column header\n"
+	    "\t-o field\toutput fields to print (required for -p)\n"
+	    "\t-p\t\tparsable output (requires -o)\n"
+	    "\t-s speed\tthe PCIe gen/speed to report (gen3 and above;\n"
+	    "\t\t\tdefaults to the current link speed)\n\n");
+	(void) fprintf(stderr, "The following fields are supported:\n"
+	    "\tgen\t\tthe PCIe generation the data is for\n"
+	    "\tmask\t\tthe configured preset search mask\n"
+	    "\tupmask\t\tthe preset search mask at the last link-up\n"
+	    "\tlane\t\tthe logical lane number\n"
+	    "\tpreset\t\tthe best preset found during equalization\n"
+	    "\tpre\t\tthe best pre-cursor coefficient\n"
+	    "\tcur\t\tthe best cursor coefficient\n"
+	    "\tpost\t\tthe best post-cursor coefficient\n"
+	    "\tfom\t\tthe figure of merit for the best settings\n"
+	    "\tused\t\twhether the local transmitter is using a preset, shown\n"
+	    "\t\t\tas '--' when the platform cannot report it\n"
+	    "\tlpreset\t\tthe preset used by the local transmitter\n"
+	    "\tlpre\t\tthe local pre-cursor coefficient\n"
+	    "\tlcur\t\tthe local cursor coefficient\n"
+	    "\tlpost\t\tthe local post-cursor coefficient\n");
+}
+
+static void
+pcieadm_link_preset_mask_usage(FILE *f)
+{
+	(void) fprintf(f, "\tlink preset-mask\t-s speed -m mask -d device\n");
+}
+
+static void
+pcieadm_link_preset_mask_help(const char *fmt, ...)
+{
+	if (fmt != NULL) {
+		va_list ap;
+
+		va_start(ap, fmt);
+		vwarnx(fmt, ap);
+		va_end(ap);
+		(void) fprintf(stderr, "\n");
+	}
+
+	(void) fprintf(stderr, "Usage:  %s link preset-mask -s speed -m mask "
+	    "-d device\n", pcieadm_progname);
+	(void) fprintf(stderr, "Set the equalization preset search mask of a "
+	    "PCIe link.\n\n"
+	    "\t-d device\tthe PCIe bridge to operate on (driver instance,\n"
+	    "\t\t\t/devices path, or b/d/f)\n"
+	    "\t-m mask\t\tthe preset search mask to program; bit i selects\n"
+	    "\t\t\tpreset Pi. The meaning of an all-zero mask is\n"
+	    "\t\t\tplatform-specific\n"
+	    "\t-s speed\tthe PCIe gen/speed to set the mask for (gen3 and\n"
+	    "\t\t\tabove)\n\n");
+	(void) fprintf(stderr, "The new mask takes effect on the next "
+	    "equalization, i.e. after the link is\ndisabled and re-enabled, "
+	    "or the device is power cycled.\n");
+}
+
+/*
+ * Parse a user-specified speed into a PCIe generation that supports
+ * equalisation (gen3 and above), exiting on error.
+ */
+static uint32_t
+pcieadm_link_eq_parse_gen(const char *speed)
+{
+	uint32_t gen = pcieadm_parse_pcieb_speed(speed);
+
+	if (gen < PCIEB_LINK_SPEED_GEN3) {
+		errx(EXIT_FAILURE,
+		    "equalization only applies to gen3 and above");
+	}
+
+	return (gen);
+}
+
+/*
+ * Print the human-readable interpretation of a preset search mask: if the
+ * platform has told us it considers every preset (all_presets) say so,
+ * otherwise list the presets the mask selects, or "none" if it selects nothing.
+ */
+static void
+pcieadm_link_eq_print_mask(uint32_t mask, bool all_presets)
+{
+	if (all_presets) {
+		(void) printf("all presets");
+	} else if (mask == 0) {
+		(void) printf("none");
+	} else {
+		for (uint_t i = 0, n = 0; i < PCIE_EQ_NPRESETS; i++) {
+			if ((mask & (1U << i)) != 0)
+				(void) printf("%sP%u", n++ == 0 ? "" : " ", i);
+		}
+	}
+}
+
+static int
+pcieadm_link_eq(pcieadm_t *pcip, int argc, char *argv[])
+{
+	int c, fd;
+	const char *device = NULL, *fields = NULL, *speed = NULL;
+	uint_t flags = 0;
+	bool parse = false;
+	ofmt_status_t oferr;
+	ofmt_handle_t ofmt;
+	pcieb_ioctl_eq_t eq;
+	const pcie_eq_t *pe;
+
+	while ((c = getopt(argc, argv, ":d:Ho:ps:")) != -1) {
+		switch (c) {
+		case 'd':
+			device = optarg;
+			break;
+		case 'H':
+			flags |= OFMT_NOHEADER;
+			break;
+		case 'o':
+			fields = optarg;
+			break;
+		case 'p':
+			parse = true;
+			flags |= OFMT_PARSABLE;
+			break;
+		case 's':
+			speed = optarg;
+			break;
+		case ':':
+			pcieadm_link_eq_help(
+			    "Option -%c requires an argument", optopt);
+			exit(EXIT_USAGE);
+		case '?':
+		default:
+			pcieadm_link_eq_help("unknown option: -%c", optopt);
+			exit(EXIT_USAGE);
+		}
+	}
+
+	if (device == NULL) {
+		pcieadm_link_eq_help("missing required device argument");
+		exit(EXIT_USAGE);
+	}
+
+	argc -= optind;
+	argv += optind;
+	if (argc != 0) {
+		errx(EXIT_USAGE,
+		    "encountered extraneous arguments starting with %s",
+		    argv[0]);
+	}
+
+	if (parse && fields == NULL)
+		errx(EXIT_USAGE, "-p requires fields specified with -o");
+
+	if (fields == NULL)
+		fields = pcieadm_link_eq_fields;
+
+	bzero(&eq, sizeof (eq));
+	if (speed != NULL)
+		eq.pie_gen = pcieadm_link_eq_parse_gen(speed);
+
+	oferr = ofmt_open(fields, pcieadm_link_eq_ofmt, flags, 0, &ofmt);
+	ofmt_check(oferr, parse, ofmt, pcieadm_ofmt_errx, warnx);
+
+	fd = pcieadm_link_pcieb_open(pcip, device, false);
+
+	if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_eff) != 0)
+		err(EXIT_FAILURE, "failed to raise privileges");
+
+	if (ioctl(fd, PCIEB_IOCTL_GET_EQ, &eq) != 0)
+		err(EXIT_FAILURE, "failed to get EQ data for %s", device);
+
+	if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_min) != 0)
+		err(EXIT_FAILURE, "failed to reduce privileges");
+
+	pe = &eq.pie_eq;
+
+	if (!parse) {
+		const pcieadm_link_speed_t *pls =
+		    pcieadm_link_speed_lookup(pe->peq_gen);
+
+		if (pls != NULL) {
+			(void) printf("Generation: %s (%s GT/s)\n",
+			    pls->pls_gen, pls->pls_gts);
+		}
+
+		/*
+		 * This is the mask programmed now, which governs the next
+		 * equalisation. If it differs from the link-up mask below, the
+		 * per-lane results were produced with a different mask that has
+		 * not yet taken effect.
+		 */
+		(void) printf("Preset search mask (configured): 0x%03x (",
+		    pe->peq_mask);
+		pcieadm_link_eq_print_mask(pe->peq_mask,
+		    (pe->peq_flags & PCIE_EQ_F_ALL_PRESETS) != 0);
+		(void) printf(")\n");
+
+		/*
+		 * If the platform captured the mask in effect at the last
+		 * link-up, show it too, with when that was, so a mask changed
+		 * since can be told apart from the one actually in use.
+		 */
+		if ((pe->peq_flags & PCIE_EQ_F_LINKUP_VALID) != 0) {
+			bool all = (pe->peq_flags &
+			    PCIE_EQ_F_LINKUP_ALL_PRESETS) != 0;
+			char tbuf[64];
+
+			pcieadm_link_hrtime_to_str(pe->peq_linkup_time, tbuf,
+			    sizeof (tbuf));
+			(void) printf("Preset search mask (at last link-up, "
+			    "~%s): 0x%03x (", tbuf, pe->peq_mask_linkup);
+			pcieadm_link_eq_print_mask(pe->peq_mask_linkup, all);
+			(void) printf(")\n");
+		}
+	}
+
+	for (uint_t i = 0; i < pe->peq_nlanes; i++) {
+		pcieadm_link_eq_ofmt_t peo;
+
+		peo.peo_eq = pe;
+		peo.peo_lane = &pe->peq_lanes[i];
+		ofmt_print(ofmt, &peo);
+	}
+
+	VERIFY0(close(fd));
+	ofmt_close(ofmt);
+
+	return (EXIT_SUCCESS);
+}
+
+static int
+pcieadm_link_preset_mask(pcieadm_t *pcip, int argc, char *argv[])
+{
+	int c, fd;
+	const char *device = NULL, *speed = NULL, *mask_str = NULL;
+	const char *errstr;
+	long long mask;
+	pcieb_ioctl_preset_mask_t pm;
+
+	while ((c = getopt(argc, argv, ":d:m:s:")) != -1) {
+		switch (c) {
+		case 'd':
+			device = optarg;
+			break;
+		case 'm':
+			mask_str = optarg;
+			break;
+		case 's':
+			speed = optarg;
+			break;
+		case ':':
+			pcieadm_link_preset_mask_help(
+			    "Option -%c requires an argument", optopt);
+			exit(EXIT_USAGE);
+		case '?':
+		default:
+			pcieadm_link_preset_mask_help("unknown option: -%c",
+			    optopt);
+			exit(EXIT_USAGE);
+		}
+	}
+
+	if (device == NULL) {
+		pcieadm_link_preset_mask_help(
+		    "missing required device argument");
+		exit(EXIT_USAGE);
+	}
+	if (speed == NULL) {
+		pcieadm_link_preset_mask_help(
+		    "setting the preset mask requires a speed (-s)");
+		exit(EXIT_USAGE);
+	}
+	if (mask_str == NULL) {
+		pcieadm_link_preset_mask_help(
+		    "setting the preset mask requires a mask (-m)");
+		exit(EXIT_USAGE);
+	}
+
+	argc -= optind;
+	argv += optind;
+	if (argc != 0) {
+		errx(EXIT_USAGE,
+		    "encountered extraneous arguments starting with %s",
+		    argv[0]);
+	}
+
+	mask = strtonumx(mask_str, 0, (1 << PCIE_EQ_NPRESETS) - 1, &errstr, 0);
+	if (errstr != NULL) {
+		errx(EXIT_FAILURE, "invalid preset mask '%s': %s", mask_str,
+		    errstr);
+	}
+
+	bzero(&pm, sizeof (pm));
+	pm.pipm_gen = pcieadm_link_eq_parse_gen(speed);
+	pm.pipm_mask = (uint32_t)mask;
+
+	fd = pcieadm_link_pcieb_open(pcip, device, true);
+
+	if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_eff) != 0)
+		err(EXIT_FAILURE, "failed to raise privileges");
+
+	if (ioctl(fd, PCIEB_IOCTL_SET_PRESET_MASK, &pm) != 0)
+		err(EXIT_FAILURE, "failed to set preset mask for %s", device);
+
+	if (setppriv(PRIV_SET, PRIV_EFFECTIVE, pcip->pia_priv_min) != 0)
+		err(EXIT_FAILURE, "failed to reduce privileges");
+
+	VERIFY0(close(fd));
+	return (EXIT_SUCCESS);
+}
+
 static const pcieadm_cmdtab_t pcieadm_cmds_link[] = {
+	{ "eq", pcieadm_link_eq, pcieadm_link_eq_usage },
+	{ "preset-mask", pcieadm_link_preset_mask,
+	    pcieadm_link_preset_mask_usage },
 	{ "limit", pcieadm_link_limit, pcieadm_link_limit_usage },
 	{ "ltssm", pcieadm_link_ltssm, pcieadm_link_ltssm_usage },
 	{ "retrain", pcieadm_link_retrain, pcieadm_link_retrain_usage },

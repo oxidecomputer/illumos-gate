@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -134,6 +134,8 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_pcie_port_info = milan_pcie_port_info,
 	.zfo_pcie_core_reg = milan_pcie_core_reg,
 	.zfo_pcie_port_reg = milan_pcie_port_reg,
+	.zfo_pcie_port_eq = milan_pcie_port_eq,
+	.zfo_pcie_port_set_preset_mask = milan_pcie_port_set_preset_mask,
 	.zfo_pcie_dbg_signal = milan_pcie_dbg_signal,
 
 	.zfo_tile_fw_hp_id = milan_tile_smu_hp_id

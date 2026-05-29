@@ -34,7 +34,9 @@
 #include <sys/io/zen/pcie.h>
 #include <sys/io/zen/oxio.h>
 
+#include <sys/pcie_impl.h>
 #include <io/pciex/pcie_ltssm.h>
+#include <io/pciex/pcie_eq.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -270,6 +272,15 @@ struct zen_pcie_core {
 
 	kmutex_t		zpc_strap_lock;
 
+	/*
+	 * Serialises the equalisation (EQ) register sequences run against this
+	 * core and its ports. The per-lane EQ read selects a lane via the
+	 * core-shared DEBUG_LANE_EN and reads back several registers, and
+	 * programming the preset mask is a read-modify-write; neither may run
+	 * concurrently with another on the same core.
+	 */
+	kmutex_t		zpc_eq_lock;
+
 	zen_ioms_t		*zpc_ioms;
 };
 
@@ -337,6 +348,19 @@ extern int zen_pcie_ltssm_by_bdf(uint8_t, uint8_t, uint8_t, pcie_ltssm_snap_t,
  * function in response to its link coming up or going down.
  */
 extern int zen_pcie_ltssm_link_event_by_bdf(uint8_t, uint8_t, uint8_t, bool);
+
+/*
+ * Retrieve PCIe link equalisation (EQ) data, and program the equalisation
+ * preset search mask, for the PCIe bridge with the given bus, device and
+ * function at the given PCIe signalling rate. For the retrieval interface,
+ * nlanes is the number of active lanes to report. Returns ENXIO if no such
+ * bridge exists and ENOTSUP if the platform's microarchitecture does not
+ * implement equalisation retrieval.
+ */
+extern int zen_pcie_eq_by_bdf(uint8_t, uint8_t, uint8_t, pcie_link_speed_t,
+    uint32_t, pcie_eq_t *);
+extern int zen_pcie_set_preset_mask_by_bdf(uint8_t, uint8_t, uint8_t,
+    pcie_link_speed_t, uint32_t);
 
 #ifdef	__cplusplus
 }

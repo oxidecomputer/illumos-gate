@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_UARCH_H
@@ -28,6 +28,8 @@
 
 #include <sys/amdzen/df.h>
 #include <sys/amdzen/smn.h>
+#include <sys/pcie_impl.h>
+#include <io/pciex/pcie_eq.h>
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/nbif_impl.h>
@@ -235,6 +237,18 @@ typedef struct zen_fabric_ops {
 	    const smn_reg_def_t);
 	smn_reg_t	(*zfo_pcie_core_reg)(const zen_pcie_core_t *const,
 	    const smn_reg_def_t);
+
+	/*
+	 * Retrieve PCIe link equalisation (EQ) data for a port at a given PCIe
+	 * signalling rate across nlanes lanes, and program a port's
+	 * equalisation preset search mask for a rate. Optional; a
+	 * microarchitecture that does not implement these leaves them NULL and
+	 * the operation reports ENOTSUP.
+	 */
+	int		(*zfo_pcie_port_eq)(zen_pcie_port_t *,
+	    pcie_link_speed_t, uint32_t, pcie_eq_t *);
+	int		(*zfo_pcie_port_set_preset_mask)(zen_pcie_port_t *,
+	    pcie_link_speed_t, uint32_t);
 
 	/*
 	 * Optional microarchitecture-specific overrides for PCIe core and port

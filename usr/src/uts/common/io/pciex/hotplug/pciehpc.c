@@ -1616,6 +1616,22 @@ pciehpc_slotinfo_init(pcie_hp_ctrl_t *ctrl_p)
 
 	if (slot_p->hs_info.cn_state >= DDI_HP_CN_STATE_ENABLED)
 		slot_p->hs_condition = AP_COND_OK;
+
+	/*
+	 * If the link is already up at init time (a device that trained during
+	 * boot), there will be no DLL-state-changed interrupt to capture it, so
+	 * give the platform the same link-up notification the interrupt path
+	 * does. This lets consumers report the state from when the link came up
+	 * even for a device present since boot.
+	 */
+	if (ctrl_p->hc_dll_active_rep) {
+		uint16_t linksts;
+
+		linksts = pciehpc_reg_get16(ctrl_p,
+		    bus_p->bus_pcie_off + PCIE_LINKSTS);
+		if ((linksts & PCIE_LINKSTS_DLL_LINK_ACTIVE) != 0)
+			pci_prd_pcie_link_event(ctrl_p->hc_dip, B_TRUE);
+	}
 	mutex_exit(&ctrl_p->hc_mutex);
 
 	if (!pciehpc_slot_kstat_init(slot_p)) {

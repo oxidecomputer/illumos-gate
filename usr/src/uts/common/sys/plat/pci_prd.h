@@ -45,7 +45,9 @@
 #include <sys/types.h>
 #include <sys/memlist.h>
 #include <sys/sunddi.h>
+#include <sys/pcie_impl.h>
 #include <io/pciex/pcie_ltssm.h>
+#include <io/pciex/pcie_eq.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -147,6 +149,17 @@ extern int pci_prd_pcie_ltssm(dev_info_t *, pcie_ltssm_snap_t,
  * interrupt context and the platform must not block.
  */
 extern void pci_prd_pcie_link_event(dev_info_t *, boolean_t);
+
+/*
+ * Retrieve PCIe link equalisation (EQ) data for the link below the named
+ * bridge, and program its equalisation preset search mask. This may be called
+ * outside of boot in response to a userland request. Platforms that cannot
+ * provide this information should return ENOTSUP.
+ */
+extern int pci_prd_pcie_eq(dev_info_t *, pcie_link_speed_t, uint32_t,
+    pcie_eq_t *);
+extern int pci_prd_pcie_set_preset_mask(dev_info_t *, pcie_link_speed_t,
+    uint32_t);
 
 /*
  * Give the chance for a platform to go through and use knowledge that it

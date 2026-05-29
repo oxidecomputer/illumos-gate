@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_FABRIC_IMPL_H
@@ -31,6 +31,8 @@
 #include <sys/io/turin/nbif_impl.h>
 #include <sys/io/turin/pcie_impl.h>
 #include <sys/amdzen/smn.h>
+#include <sys/pcie_impl.h>
+#include <io/pciex/pcie_eq.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -155,6 +157,10 @@ extern smn_reg_t turin_pcie_port_reg(const zen_pcie_port_t *const,
     const smn_reg_def_t);
 extern smn_reg_t turin_pcie_core_reg(const zen_pcie_core_t *const,
     const smn_reg_def_t);
+extern int turin_pcie_port_eq(zen_pcie_port_t *, pcie_link_speed_t, uint32_t,
+    pcie_eq_t *);
+extern int turin_pcie_port_set_preset_mask(zen_pcie_port_t *,
+    pcie_link_speed_t, uint32_t);
 extern const zen_pcie_core_info_t *turin_pcie_core_info(const uint8_t, const
     uint8_t);
 extern const zen_pcie_port_info_t *turin_pcie_port_info(const uint8_t, const

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_PCIE_H
@@ -804,6 +804,21 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_reg = 0x2dc	\
 }
 #define	PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(r, v)		bitset32(r, 28, 28, v)
+/*
+ * These fields capture the equalisation settings used by the local (near-end)
+ * transmitter, for the lane selected in the parent core's LC_DEBUG_CNTL and the
+ * rate selected by LOCAL_RATE.
+ */
+#define	PCIE_PORT_LC_CTL5_GET_USE_PRESET(r)		bitx32(r, 21, 21)
+#define	PCIE_PORT_LC_CTL5_GET_POSTCURSOR(r)		bitx32(r, 20, 16)
+#define	PCIE_PORT_LC_CTL5_GET_CURSOR(r)			bitx32(r, 15, 10)
+#define	PCIE_PORT_LC_CTL5_GET_PRECURSOR(r)		bitx32(r, 9, 6)
+#define	PCIE_PORT_LC_CTL5_GET_PRESET(r)			bitx32(r, 5, 2)
+#define	PCIE_PORT_LC_CTL5_GET_LOCAL_RATE(r)		bitx32(r, 1, 0)
+#define	PCIE_PORT_LC_CTL5_SET_LOCAL_RATE(r, v)		bitset32(r, 1, 0, v)
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_8P0			0
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_16P0			1
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_32P0			2
 
 /*
  * PCIEPORT::PCIE_LC_FORCE_COEFF - unused but captured for debugging.
@@ -815,15 +830,30 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 
 /*
- * PCIEPORT::PCIE_LC_BEST_EQ_SETTINGS - unused but captured for debugging. Data
- * captured in this register's fields applies to a lane selected by the
- * LC_DBG_CTL register in the port's parent core.
+ * PCIEPORT::PCIE_LC_BEST_EQ_SETTINGS - data captured in this register's fields
+ * applies to a lane selected by the LC_DBG_CTL register in the port's parent
+ * core.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_BEST_EQ	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2e4	\
 }
+/*
+ * These fields capture the best equalisation settings found during the link's
+ * equalisation search, including a figure of merit (FOM), for the lane selected
+ * in the parent core's LC_DEBUG_CNTL and the rate selected by RATE.
+ */
+#define	PCIE_PORT_LC_BEST_EQ_GET_RATE(r)	bitx32(r, 31, 30)
+#define	PCIE_PORT_LC_BEST_EQ_SET_RATE(r, v)	bitset32(r, 31, 30, v)
+#define	PCIE_PORT_LC_BEST_EQ_RATE_8P0			0
+#define	PCIE_PORT_LC_BEST_EQ_RATE_16P0			1
+#define	PCIE_PORT_LC_BEST_EQ_RATE_32P0			2
+#define	PCIE_PORT_LC_BEST_EQ_GET_FOM(r)		bitx32(r, 29, 22)
+#define	PCIE_PORT_LC_BEST_EQ_GET_POSTCURSOR(r)	bitx32(r, 21, 16)
+#define	PCIE_PORT_LC_BEST_EQ_GET_CURSOR(r)	bitx32(r, 15, 10)
+#define	PCIE_PORT_LC_BEST_EQ_GET_PRECURSOR(r)	bitx32(r, 9, 4)
+#define	PCIE_PORT_LC_BEST_EQ_GET_PRESET(r)	bitx32(r, 3, 0)
 
 /*
  * PCIEPORT::PCIE_LC_FORCE_EQ_REQ_COEFF - unused but captured for debugging.
@@ -1114,12 +1144,14 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x390	\
 }
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_GO_TO_EQ(r, v)	bitset32(r, 7, 7, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE3X3			2
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_PRST			3
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_REDO_EQ(r, v)	bitset32(r, 1, 1, v)
 
 /*
  * PCIEPORT::PCIE_LC_EQ_CNTL_16GT - Used to set equalization search modes etc.
@@ -1129,12 +1161,14 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x394	\
 }
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_GO_TO_EQ(r, v)	bitset32(r, 7, 7, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE3X3			2
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_PRST			3
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_REDO_EQ(r, v)	bitset32(r, 1, 1, v)
 
 /*
  * PCIEPORT::PCIE_LC_SAVE_RESTORE_1 - unused but captured for debugging.
@@ -1171,12 +1205,14 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x400	\
 }
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_GO_TO_EQ(r, v)	bitset32(r, 7, 7, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE3X3			2
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_PRST			3
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_REDO_EQ(r, v)	bitset32(r, 1, 1, v)
 
 /*
  * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL - Used to control preset masks.
@@ -1192,6 +1228,9 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     bitset32(r, 19, 10, v)
 #define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_8GT(r, v) \
     bitset32(r, 9, 0, v)
+#define	PCIE_PORT_LC_PRST_MASK_CTL_GET_MASK_32GT(r)	bitx32(r, 29, 20)
+#define	PCIE_PORT_LC_PRST_MASK_CTL_GET_MASK_16GT(r)	bitx32(r, 19, 10)
+#define	PCIE_PORT_LC_PRST_MASK_CTL_GET_MASK_8GT(r)	bitx32(r, 9, 0)
 
 #define	PCIE_PORT_LC_PRST_MASK_CTL_P(p)  (1U << p)
 
@@ -1981,6 +2020,20 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	.srd_unit = SMN_UNIT_PCIE_CORE,	\
 	.srd_reg = 0x0c	\
 }
+
+/*
+ * PCIECORE::PCIE_LC_DEBUG_CNTL - DEBUG_LANE_EN selects the lane that a port's
+ * per-lane debug registers such as PCIE_LC_BEST_EQ_SETTINGS and PCIE_LC_CNTL5
+ * report on. For some reason this is a core register in which we set the
+ * port lane we're interested in.
+ */
+/*CSTYLED*/
+#define	D_PCIE_CORE_LC_DEBUG_CNTL	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_PCIE_CORE,	\
+	.srd_reg = 0x4e4	\
+}
+#define	PCIE_CORE_LC_DEBUG_CNTL_GET_DEBUG_LANE_EN(r)	bitx32(r, 31, 16)
+#define	PCIE_CORE_LC_DEBUG_CNTL_SET_DEBUG_LANE_EN(r, v)	bitset32(r, 31, 16, v)
 
 /*
  * PCIECORE::PCIE_HW_DEBUG_TX - unused but captured for debugging.

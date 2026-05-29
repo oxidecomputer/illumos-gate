@@ -132,6 +132,40 @@ pci_prd_pcie_link_event(dev_info_t *bridge, boolean_t up)
 	    up);
 }
 
+/*
+ * Retrieve link equalisation (EQ) data for the link below the given PCIe
+ * bridge, and program its equalisation preset search mask.
+ */
+int
+pci_prd_pcie_eq(dev_info_t *bridge, pcie_link_speed_t speed, uint32_t nlanes,
+    pcie_eq_t *eq)
+{
+	pcie_bus_t *bus_p = PCIE_DIP2BUS(bridge);
+	pcie_req_id_t bdf;
+
+	if (bus_p == NULL)
+		return (ENXIO);
+
+	bdf = bus_p->bus_bdf;
+	return (zen_pcie_eq_by_bdf(BUS(bdf), DEV(bdf), FUNC(bdf),
+	    speed, nlanes, eq));
+}
+
+int
+pci_prd_pcie_set_preset_mask(dev_info_t *bridge, pcie_link_speed_t speed,
+    uint32_t mask)
+{
+	pcie_bus_t *bus_p = PCIE_DIP2BUS(bridge);
+	pcie_req_id_t bdf;
+
+	if (bus_p == NULL)
+		return (ENXIO);
+
+	bdf = bus_p->bus_bdf;
+	return (zen_pcie_set_preset_mask_by_bdf(BUS(bdf), DEV(bdf), FUNC(bdf),
+	    speed, mask));
+}
+
 int
 pci_prd_init(pci_prd_upcalls_t *upcalls)
 {

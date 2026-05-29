@@ -1244,6 +1244,8 @@ zen_fabric_ioms_pcie_init(zen_ioms_t *ioms)
 		mutex_init(&zpc->zpc_strap_lock, NULL, MUTEX_SPIN,
 		    (ddi_iblock_cookie_t)ipltospl(15));
 
+		mutex_init(&zpc->zpc_eq_lock, NULL, MUTEX_DRIVER, NULL);
+
 		/*
 		 * Calculate the unit ID for this core's first SDP port, which
 		 * will later be programmed into PCIECORE::PCIE_SDP_CTRL. In

@@ -863,8 +863,8 @@ pci_prd_init(pci_prd_upcalls_t *upcalls)
 }
 
 /*
- * Retrieving LTSSM state and capturing link events are not currently
- * implemented on i86pc.
+ * Retrieving LTSSM state, capturing link events, and retrieving or
+ * programming link equalisation state are not currently implemented on i86pc.
  */
 int
 pci_prd_pcie_ltssm(dev_info_t *bridge __unused, pcie_ltssm_snap_t snap __unused,
@@ -876,6 +876,20 @@ pci_prd_pcie_ltssm(dev_info_t *bridge __unused, pcie_ltssm_snap_t snap __unused,
 void
 pci_prd_pcie_link_event(dev_info_t *bridge __unused, boolean_t up __unused)
 {
+}
+
+int
+pci_prd_pcie_eq(dev_info_t *bridge __unused, pcie_link_speed_t speed __unused,
+    uint32_t nlanes __unused, pcie_eq_t *eq __unused)
+{
+	return (ENOTSUP);
+}
+
+int
+pci_prd_pcie_set_preset_mask(dev_info_t *bridge __unused,
+    pcie_link_speed_t speed __unused, uint32_t mask __unused)
+{
+	return (ENOTSUP);
 }
 
 void

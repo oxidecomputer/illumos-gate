@@ -919,6 +919,15 @@ const zen_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 		.zprd_name = "PCIEPORT::PCIE_LC_STATE5",
 		.zprd_def = D_PCIE_PORT_LC_STATE5
 	},
+	/*
+	 * The preset mask register is kept outside the DEBUG guard, like the
+	 * LTSSM state above, so that the mask in effect at the last link-up can
+	 * be reported on non-DEBUG kernels.
+	 */
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_PRESET_MASK_CNTL",
+		.zprd_def = D_PCIE_PORT_LC_PRST_MASK_CTL
+	},
 #ifdef DEBUG
 	{
 		.zprd_name = "PCIEPORT::PCIEP_HW_DEBUG",
@@ -1235,10 +1244,6 @@ const zen_pcie_reg_dbg_t genoa_pcie_port_dbg_regs[] = {
 	{
 		.zprd_name = "PCIEPORT::PCIE_LC_EQ_CNTL_32GT",
 		.zprd_def = D_PCIE_PORT_LC_EQ_CTL_32GT
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_PRESET_MASK_CNTL",
-		.zprd_def = D_PCIE_PORT_LC_PRST_MASK_CTL
 	},
 	{
 		.zprd_name = "PCIEPORT::PCIE_LC_RXRECOVER_RXSTANDBY_CNTL",

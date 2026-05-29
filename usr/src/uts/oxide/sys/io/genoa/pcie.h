@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_GENOA_PCIE_H
@@ -717,6 +717,21 @@ genoa_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 #define	PCIE_PORT_LC_CTL5(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_CTL5, (p), (b))
 #define	PCIE_PORT_LC_CTL5_SET_WAIT_DETECT(r, v)		bitset32(r, 28, 28, v)
+/*
+ * These fields capture the equalisation settings used by the local (near-end)
+ * transmitter, for the lane selected in the parent core's LC_DBG_CTL and the
+ * rate selected by LOCAL_RATE.
+ */
+#define	PCIE_PORT_LC_CTL5_GET_USE_PRESET(r)		bitx32(r, 21, 21)
+#define	PCIE_PORT_LC_CTL5_GET_POSTCURSOR(r)		bitx32(r, 20, 16)
+#define	PCIE_PORT_LC_CTL5_GET_CURSOR(r)			bitx32(r, 15, 10)
+#define	PCIE_PORT_LC_CTL5_GET_PRECURSOR(r)		bitx32(r, 9, 6)
+#define	PCIE_PORT_LC_CTL5_GET_PRESET(r)			bitx32(r, 5, 2)
+#define	PCIE_PORT_LC_CTL5_GET_LOCAL_RATE(r)		bitx32(r, 1, 0)
+#define	PCIE_PORT_LC_CTL5_SET_LOCAL_RATE(r, v)		bitset32(r, 1, 0, v)
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_8P0		0
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_16P0		1
+#define	PCIE_PORT_LC_CTL5_LOCAL_RATE_32P0		2
 
 /*
  * PCIEPORT::PCIE_LC_FORCE_COEFF - unused but captured for debugging.
@@ -728,15 +743,30 @@ genoa_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 
 /*
- * PCIEPORT::PCIE_LC_BEST_EQ_SETTINGS - unused but captured for debugging. Data
- * captured in this register's fields applies to a lane selected by the
- * LC_DBG_CTL register in the port's parent core.
+ * PCIEPORT::PCIE_LC_BEST_EQ_SETTINGS - data captured in this register's fields
+ * applies to a lane selected by the LC_DBG_CTL register in the port's parent
+ * core.
  */
 /*CSTYLED*/
 #define	D_PCIE_PORT_LC_BEST_EQ	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_PCIE_PORT,	\
 	.srd_reg = 0x2e4	\
 }
+/*
+ * These fields capture the best equalisation settings found during the link's
+ * equalisation search, including a figure of merit (FOM), for the lane selected
+ * in the parent core's LC_DBG_CTL and the rate selected by RATE.
+ */
+#define	PCIE_PORT_LC_BEST_EQ_GET_RATE(r)	bitx32(r, 31, 30)
+#define	PCIE_PORT_LC_BEST_EQ_SET_RATE(r, v)	bitset32(r, 31, 30, v)
+#define	PCIE_PORT_LC_BEST_EQ_RATE_8P0			0
+#define	PCIE_PORT_LC_BEST_EQ_RATE_16P0			1
+#define	PCIE_PORT_LC_BEST_EQ_RATE_32P0			2
+#define	PCIE_PORT_LC_BEST_EQ_GET_FOM(r)		bitx32(r, 29, 22)
+#define	PCIE_PORT_LC_BEST_EQ_GET_POSTCURSOR(r)	bitx32(r, 21, 16)
+#define	PCIE_PORT_LC_BEST_EQ_GET_CURSOR(r)	bitx32(r, 15, 10)
+#define	PCIE_PORT_LC_BEST_EQ_GET_PRECURSOR(r)	bitx32(r, 9, 4)
+#define	PCIE_PORT_LC_BEST_EQ_GET_PRESET(r)	bitx32(r, 3, 0)
 
 /*
  * PCIEPORT::PCIE_LC_FORCE_EQ_REQ_COEFF - unused but captured for debugging.
@@ -1033,12 +1063,14 @@ genoa_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_EQ_CTL_8GT(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_8GT, (p), (b))
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_GO_TO_EQ(r, v)	bitset32(r, 7, 7, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_CE3X3			2
 #define	PCIE_PORT_LC_EQ_CTL_8GT_SEARCH_MODE_PRST			3
+#define	PCIE_PORT_LC_EQ_CTL_8GT_SET_REDO_EQ(r, v)	bitset32(r, 1, 1, v)
 
 /*
  * PCIEPORT::PCIE_LC_EQ_CNTL_16GT - Used to set equalization search modes etc.
@@ -1050,12 +1082,14 @@ genoa_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_EQ_CTL_16GT(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_16GT, (p), (b))
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_GO_TO_EQ(r, v)	bitset32(r, 7, 7, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_CE3X3			2
 #define	PCIE_PORT_LC_EQ_CTL_16GT_SEARCH_MODE_PRST			3
+#define	PCIE_PORT_LC_EQ_CTL_16GT_SET_REDO_EQ(r, v)	bitset32(r, 1, 1, v)
 
 /*
  * PCIEPORT::PCIE_LC_SAVE_RESTORE_1 - unused but captured for debugging.
@@ -1094,12 +1128,14 @@ genoa_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 }
 #define	PCIE_PORT_LC_EQ_CTL_32GT(n, p, b)	\
     genoa_pcie_port_smn_reg((n), D_PCIE_PORT_LC_EQ_CTL_32GT, (p), (b))
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_GO_TO_EQ(r, v)	bitset32(r, 7, 7, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SKIP_PH23(r, v)	bitset32(r, 6, 6, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SET_SEARCH_MODE(r, v)	bitset32(r, 3, 2, v)
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CB				0
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE				1
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_CE3X3			2
 #define	PCIE_PORT_LC_EQ_CTL_32GT_SEARCH_MODE_PRST			3
+#define	PCIE_PORT_LC_EQ_CTL_32GT_SET_REDO_EQ(r, v)	bitset32(r, 1, 1, v)
 
 /*
  * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL - Used to control preset masks.
@@ -1117,6 +1153,9 @@ genoa_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     bitset32(r, 19, 10, v)
 #define	PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_8GT(r, v) \
     bitset32(r, 9, 0, v)
+#define	PCIE_PORT_LC_PRST_MASK_CTL_GET_MASK_32GT(r)	bitx32(r, 29, 20)
+#define	PCIE_PORT_LC_PRST_MASK_CTL_GET_MASK_16GT(r)	bitx32(r, 19, 10)
+#define	PCIE_PORT_LC_PRST_MASK_CTL_GET_MASK_8GT(r)	bitx32(r, 9, 0)
 
 #define	PCIE_PORT_LC_PRST_MASK_CTL_P(p)  (1U << p)
 

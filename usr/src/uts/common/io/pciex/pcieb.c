@@ -1679,6 +1679,157 @@ pcieb_ioctl_get_ltssm(pcieb_devstate_t *pcieb, intptr_t arg, int mode,
 	return (0);
 }
 
+static pcie_link_speed_t
+pcieb_gen_to_link_speed(uint32_t gen)
+{
+	switch (gen) {
+	case PCIEB_LINK_SPEED_GEN1:
+		return (PCIE_LINK_SPEED_2_5);
+	case PCIEB_LINK_SPEED_GEN2:
+		return (PCIE_LINK_SPEED_5);
+	case PCIEB_LINK_SPEED_GEN3:
+		return (PCIE_LINK_SPEED_8);
+	case PCIEB_LINK_SPEED_GEN4:
+		return (PCIE_LINK_SPEED_16);
+	case PCIEB_LINK_SPEED_GEN5:
+		return (PCIE_LINK_SPEED_32);
+	case PCIEB_LINK_SPEED_GEN6:
+		return (PCIE_LINK_SPEED_64);
+	default:
+		return (PCIE_LINK_SPEED_UNKNOWN);
+	}
+}
+
+static int
+pcieb_ioctl_get_eq(pcieb_devstate_t *pcieb, intptr_t arg, int mode,
+    cred_t *credp)
+{
+	pcie_bus_t *bus_p = PCIE_DIP2BUS(pcieb->pcieb_dip);
+	pcieb_ioctl_eq_t eq;
+	pcie_link_speed_t speed;
+	uint16_t linksts;
+	uint32_t gen, nlanes;
+	int ret;
+
+	if (drv_priv(credp) != 0)
+		return (EPERM);
+
+	if ((mode & FREAD) == 0)
+		return (EBADF);
+
+	if (!PCIE_IS_PCIE(bus_p))
+		return (ENOTSUP);
+
+	if (!PCIE_IS_RP(bus_p) && !PCIE_IS_SWD(bus_p))
+		return (ENOTSUP);
+
+	if (ddi_copyin((void *)arg, &eq, sizeof (eq), mode & FKIOCTL) != 0)
+		return (EFAULT);
+
+	linksts = PCIE_CAP_GET(16, bus_p, PCIE_LINKSTS);
+
+	/*
+	 * The caller either names a generation to report on, or asks (with
+	 * PCIEB_LINK_SPEED_UNKNOWN) for whatever the link's current speed is.
+	 * The latter only has an answer while the link is up; the former does
+	 * not, as the per-rate preset mask can always be read back.
+	 *
+	 * We determine link-up from DLL Link Active. A root port that does not
+	 * implement DLL Link Active reporting will always appear down here, so
+	 * for such a port the current-speed request returns ENXIO and no
+	 * per-lane data is reported. Handling those root ports is left for the
+	 * future.
+	 */
+	if (eq.pie_gen == PCIEB_LINK_SPEED_UNKNOWN) {
+		if ((linksts & PCIE_LINKSTS_DLL_LINK_ACTIVE) == 0)
+			return (ENXIO);
+		gen = linksts & PCIE_LINKSTS_SPEED_MASK;
+	} else {
+		gen = eq.pie_gen;
+	}
+
+	speed = pcieb_gen_to_link_speed(gen);
+	if (speed == PCIE_LINK_SPEED_UNKNOWN)
+		return (EINVAL);
+
+	/* Equalisation only applies at 8.0 GT/s (generation 3) and above */
+	if (speed < PCIE_LINK_SPEED_8)
+		return (ENOTSUP);
+
+	/*
+	 * The negotiated width is only meaningful while the link is up. With
+	 * the link down we still return the preset mask but no per-lane data.
+	 */
+	if ((linksts & PCIE_LINKSTS_DLL_LINK_ACTIVE) != 0) {
+		nlanes = (linksts & PCIE_LINKSTS_NEG_WIDTH_MASK) >> 4;
+		if (nlanes > PCIE_EQ_MAX_LANES)
+			nlanes = PCIE_EQ_MAX_LANES;
+	} else {
+		nlanes = 0;
+	}
+
+	bzero(&eq.pie_eq, sizeof (eq.pie_eq));
+	ret = pci_prd_pcie_eq(pcieb->pcieb_dip, speed, nlanes, &eq.pie_eq);
+	if (ret != 0)
+		return (ret);
+
+	eq.pie_eq.peq_gen = gen;
+
+	if (ddi_copyout(&eq, (void *)arg, sizeof (eq), mode & FKIOCTL) != 0)
+		return (EFAULT);
+
+	return (0);
+}
+
+static int
+pcieb_ioctl_set_preset_mask(pcieb_devstate_t *pcieb, intptr_t arg, int mode,
+    cred_t *credp)
+{
+	pcie_bus_t *bus_p = PCIE_DIP2BUS(pcieb->pcieb_dip);
+	pcieb_ioctl_preset_mask_t pm;
+	pcie_link_speed_t speed;
+
+	if (drv_priv(credp) != 0)
+		return (EPERM);
+
+	if ((mode & FWRITE) == 0)
+		return (EBADF);
+
+	if (!PCIE_IS_PCIE(bus_p))
+		return (ENOTSUP);
+
+	if (!PCIE_IS_RP(bus_p) && !PCIE_IS_SWD(bus_p))
+		return (ENOTSUP);
+
+	if (ddi_copyin((void *)arg, &pm, sizeof (pm), mode & FKIOCTL) != 0)
+		return (EFAULT);
+
+	/*
+	 * The mask is always programmed for a specific generation; unlike the
+	 * read path there is no "current speed" option, so an unrecognised or
+	 * unspecified generation is an error.
+	 */
+	speed = pcieb_gen_to_link_speed(pm.pipm_gen);
+	if (speed == PCIE_LINK_SPEED_UNKNOWN)
+		return (EINVAL);
+	if (speed < PCIE_LINK_SPEED_8)
+		return (ENOTSUP);
+
+	/*
+	 * The mask selects which of the presets P0 to P(PCIE_EQ_NPRESETS-1) the
+	 * equalisation search may consider, so bits outside that range are
+	 * rejected here. The meaning of particular in-range values is
+	 * implementation-defined - an all-zero mask, for example, means
+	 * "consider every preset" on some platforms and may be rejected on
+	 * others - so any further validation is left to the platform.
+	 */
+	if (pm.pipm_mask >= (1U << PCIE_EQ_NPRESETS))
+		return (EINVAL);
+
+	return (pci_prd_pcie_set_preset_mask(pcieb->pcieb_dip, speed,
+	    pm.pipm_mask));
+}
+
 static int
 pcieb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
     int *rvalp)
@@ -1708,6 +1859,12 @@ pcieb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		break;
 	case PCIEB_IOCTL_GET_LTSSM:
 		rv = pcieb_ioctl_get_ltssm(pcieb, arg, mode, credp);
+		break;
+	case PCIEB_IOCTL_GET_EQ:
+		rv = pcieb_ioctl_get_eq(pcieb, arg, mode, credp);
+		break;
+	case PCIEB_IOCTL_SET_PRESET_MASK:
+		rv = pcieb_ioctl_set_preset_mask(pcieb, arg, mode, credp);
 		break;
 	default:
 		/* To handle devctl and hotplug related ioctls */

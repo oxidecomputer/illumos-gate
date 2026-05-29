@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -158,6 +158,8 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_pcie_port_info = turin_pcie_port_info,
 	.zfo_pcie_core_reg = turin_pcie_core_reg,
 	.zfo_pcie_port_reg = turin_pcie_port_reg,
+	.zfo_pcie_port_eq = turin_pcie_port_eq,
+	.zfo_pcie_port_set_preset_mask = turin_pcie_port_set_preset_mask,
 	.zfo_pcie_core_read = zen_mpio_pcie_core_read,
 	.zfo_pcie_core_write = zen_mpio_pcie_core_write,
 	.zfo_pcie_port_read = zen_mpio_pcie_port_read,

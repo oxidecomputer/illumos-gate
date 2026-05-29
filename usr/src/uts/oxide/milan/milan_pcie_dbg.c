@@ -533,6 +533,15 @@ const zen_pcie_reg_dbg_t milan_pcie_port_dbg_regs[] = {
 		.zprd_name = "PCIEPORT::PCIE_LC_STATE5",
 		.zprd_def = D_PCIE_PORT_LC_STATE5
 	},
+	/*
+	 * The preset mask register (CNTL10 on Milan) is kept outside the DEBUG
+	 * guard, like the LTSSM state above, so that the mask in effect at the
+	 * last link-up can be reported on non-DEBUG kernels.
+	 */
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_CNTL10",
+		.zprd_def = D_PCIE_PORT_LC_CTL10
+	},
 #ifdef DEBUG
 	{
 		.zprd_name = "PCIEPORT::PCIEP_HW_DEBUG",
@@ -881,10 +890,6 @@ const zen_pcie_reg_dbg_t milan_pcie_port_dbg_regs[] = {
 	{
 		.zprd_name = "PCIEPORT::PCIE_LC_FINE_GRAIN_CLK_GATE_OVERRIDES",
 		.zprd_def = D_PCIE_PORT_LC_FINE_GRAIN_CLK_GATE_OVR
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_CNTL10",
-		.zprd_def = D_PCIE_PORT_LC_CTL10
 	},
 	{
 		.zprd_name = "PCIEPORT::PCIE_LC_CNTL11",

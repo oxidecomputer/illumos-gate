@@ -154,6 +154,7 @@ ZEN_OBJS +=			\
 	zen_hacks.o		\
 	zen_mpio.o		\
 	zen_oxio.o		\
+	zen_pcie_eq.o		\
 	zen_pcie_ltssm.o	\
 	zen_pcie_ltssm_decode.o	\
 	zen_platform.o		\

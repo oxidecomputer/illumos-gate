@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -136,6 +136,8 @@ static const zen_fabric_ops_t genoa_fabric_ops = {
 	.zfo_pcie_port_info = genoa_pcie_port_info,
 	.zfo_pcie_core_reg = genoa_pcie_core_reg,
 	.zfo_pcie_port_reg = genoa_pcie_port_reg,
+	.zfo_pcie_port_eq = genoa_pcie_port_eq,
+	.zfo_pcie_port_set_preset_mask = genoa_pcie_port_set_preset_mask,
 
 	.zfo_tile_fw_hp_id = genoa_fabric_hotplug_tile_id,
 };
