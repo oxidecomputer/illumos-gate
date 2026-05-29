@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _APOB_MOD_H
@@ -38,8 +38,6 @@ extern void apob_event_dcmd_help(void);
 extern int apob_event_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 extern void apob_entry_dcmd_help(void);
 extern int apob_entry_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
-extern int apob_target_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
-extern void apob_target_dcmd_help(void);
 
 #define	APOB_DCMDS	\
 	{ "apob", "?[-g group] [-t type]", "find APOB entries", apob_dcmd, \
@@ -49,9 +47,6 @@ extern void apob_target_dcmd_help(void);
 	{ "apob_event", "?[-c class -e event [-a payload 0] [-b payload 1]]", \
 	    "decode the APOB event log", apob_event_dcmd, \
 	    apob_event_dcmd_help }, \
-	{ "apob_target", "[milan|genoa|turin]", \
-	    "set the target CPU family used for APOB operations", \
-	    apob_target_dcmd, apob_target_dcmd_help }, \
 	{ "pmuerr", ":", "decode APOB PMU Training error data", pmuerr_dcmd }
 
 #define	APOB_WALKERS	\

@@ -24,7 +24,7 @@
  */
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_PCIE_H
@@ -314,6 +314,84 @@ extern "C" {
 #define	PCIE_LINKSTS_DLL_LINK_ACTIVE	0x2000	/* DLL Link Active */
 #define	PCIE_LINKSTS_LINK_BW_MGMT	0x4000	/* Link bw mgmt status */
 #define	PCIE_LINKSTS_AUTO_BW		0x8000	/* Link auto BW status */
+
+/*
+ * Link Training and Status State Machine (LTSSM) states as defined by the
+ * PCI Express Base Specification.
+ */
+typedef enum pcie_ltssm_state {
+	PCIE_LTSSM_UNKNOWN = 0,
+	PCIE_LTSSM_DETECT,
+	PCIE_LTSSM_POLLING,
+	PCIE_LTSSM_CONFIG,
+	PCIE_LTSSM_RECOVERY,
+	PCIE_LTSSM_L0,
+	PCIE_LTSSM_L0S,
+	PCIE_LTSSM_L1,
+	PCIE_LTSSM_L2,
+	PCIE_LTSSM_DISABLED,
+	PCIE_LTSSM_LOOPBACK,
+	PCIE_LTSSM_HOT_RESET
+} pcie_ltssm_state_t;
+
+/*
+ * LTSSM sub-states as defined by the PCI Express Base Specification, Revision
+ * 5.0 (§4.2.6). A precise point in the state machine is the tuple
+ * (pcie_ltssm_state_t, pcie_ltssm_substate_t). Not every state has architected
+ * sub-states (e.g. L0); PCIE_LTSSM_SS_NONE is used in that case and
+ * PCIE_LTSSM_SS_UNKNOWN where a platform's encoding does not map to a known
+ * sub-state. A platform may expose finer-grained hardware states than these
+ * (and future generations add more, e.g. Gen6 L0p); its decode retains the
+ * exact name in addition to this classification.
+ *
+ * Each state's sub-states are given a distinct base with room to grow so that
+ * adding a sub-state in a later spec revision does not renumber the others.
+ */
+typedef enum pcie_ltssm_substate {
+	PCIE_LTSSM_SS_UNKNOWN = 0,
+	PCIE_LTSSM_SS_NONE,
+
+	PCIE_LTSSM_SS_DETECT_QUIET = 0x10,
+	PCIE_LTSSM_SS_DETECT_ACTIVE,
+
+	PCIE_LTSSM_SS_POLLING_ACTIVE = 0x20,
+	PCIE_LTSSM_SS_POLLING_COMPLIANCE,
+	PCIE_LTSSM_SS_POLLING_CONFIGURATION,
+	/*
+	 * Defined by the spec (§4.2.6.2.4) but unreachable: a link comes up at
+	 * 2.5 GT/s and changes speed by entering Recovery, not from here.
+	 */
+	PCIE_LTSSM_SS_POLLING_SPEED,
+
+	PCIE_LTSSM_SS_CONFIG_LINKWIDTH_START = 0x30,
+	PCIE_LTSSM_SS_CONFIG_LINKWIDTH_ACCEPT,
+	PCIE_LTSSM_SS_CONFIG_LANENUM_WAIT,
+	PCIE_LTSSM_SS_CONFIG_LANENUM_ACCEPT,
+	PCIE_LTSSM_SS_CONFIG_COMPLETE,
+	PCIE_LTSSM_SS_CONFIG_IDLE,
+
+	PCIE_LTSSM_SS_RECOVERY_RCVRLOCK = 0x40,
+	PCIE_LTSSM_SS_RECOVERY_RCVRCFG,
+	PCIE_LTSSM_SS_RECOVERY_SPEED,
+	PCIE_LTSSM_SS_RECOVERY_EQUALIZATION,
+	PCIE_LTSSM_SS_RECOVERY_IDLE,
+
+	PCIE_LTSSM_SS_L0S_ENTRY = 0x50,
+	PCIE_LTSSM_SS_L0S_IDLE,
+	PCIE_LTSSM_SS_L0S_FTS,
+
+	PCIE_LTSSM_SS_L1_ENTRY = 0x60,
+	PCIE_LTSSM_SS_L1_IDLE,
+	PCIE_LTSSM_SS_L1_1,
+	PCIE_LTSSM_SS_L1_2,
+
+	PCIE_LTSSM_SS_L2_IDLE = 0x70,
+	PCIE_LTSSM_SS_L2_TRANSMIT_WAKE,
+
+	PCIE_LTSSM_SS_LOOPBACK_ENTRY = 0x80,
+	PCIE_LTSSM_SS_LOOPBACK_ACTIVE,
+	PCIE_LTSSM_SS_LOOPBACK_EXIT
+} pcie_ltssm_substate_t;
 
 /*
  * Slot Capability Register (4 bytes)

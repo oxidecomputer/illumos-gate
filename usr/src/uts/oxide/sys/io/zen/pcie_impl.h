@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_PCIE_IMPL_H
@@ -33,6 +33,8 @@
 #include <sys/io/zen/hotplug.h>
 #include <sys/io/zen/pcie.h>
 #include <sys/io/zen/oxio.h>
+
+#include <io/pciex/pcie_ltssm.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -132,9 +134,11 @@ typedef enum zen_pcie_core_flag {
 /*
  * In order to aid PCIe debugging, core and port registers are captured at
  * various stages of PCIe programming and initialization and stored in the
- * corresponding zen_pcie_port_t and zen_pcie_core_t structures. This is costly
- * in both space and time, and is only done on DEBUG kernels. They do not
- * control any software behaviour other than in mdb.
+ * corresponding zen_pcie_port_t and zen_pcie_core_t structures. Most of the
+ * captured registers are only non-empty on DEBUG kernels; however, the LTSSM
+ * state registers are always captured (see the per-microarchitecture
+ * zpc_pcie_port_dbg_regs tables) and the ZPCS_LINK_{UP,DOWN} stages below are
+ * populated at runtime when a link comes up or goes down.
  */
 typedef enum zen_pcie_config_stage {
 	ZPCS_PRE_INIT,
@@ -149,6 +153,8 @@ typedef enum zen_pcie_config_stage {
 	ZPCS_PRE_HOTPLUG,
 	ZPCS_POST_HOTPLUG,
 	ZPCS_USER_DIRECTED,
+	ZPCS_LINK_DOWN,
+	ZPCS_LINK_UP,
 	ZPCS_NUM_STAGES
 } zen_pcie_config_stage_t;
 
@@ -167,6 +173,13 @@ typedef struct zen_pcie_dbg {
 
 #define	ZEN_PCIE_DBG_SIZE(_nr)	\
 	(sizeof (zen_pcie_dbg_t) + (_nr) * sizeof (zen_pcie_reg_dbg_t))
+
+/*
+ * The LTSSM state history is held in the PCIEPORT::PCIE_LC_STATE[0..5]
+ * registers, each of which packs four 6-bit state values.
+ */
+#define	ZEN_PCIE_LC_STATE_NREGS		6
+#define	ZEN_PCIE_LC_STATE_PER_REG	4
 
 /*
  * A PCIe port attached to a PCIe core.
@@ -294,6 +307,36 @@ typedef struct zen_pcie_strap_setting {
 #define	PCIE_IOHCMATCH_ANY	0xFF
 #define	PCIE_COREMATCH_ANY	0xFF
 #define	PCIE_PORTMATCH_ANY	0xFF
+
+/*
+ * Find a PCIe port register by name in the current platform's port register
+ * table, returning its register definition.
+ */
+extern bool zen_pcie_port_dbg_reg_by_name(const char *, smn_reg_def_t *);
+
+/*
+ * Capture the registers of a single port at the given stage, and look up a
+ * previously captured register value by name. These operate on the per-port
+ * capture in zen_pcie_port_t.zpp_dbg.
+ */
+extern void zen_pcie_port_dbg_snapshot(zen_pcie_port_t *, uint32_t);
+extern bool zen_pcie_port_dbg_val_by_name(const zen_pcie_port_t *,
+    const char *, uint32_t, uint32_t *, hrtime_t *);
+
+/*
+ * Retrieve and decode the requested LTSSM snapshot for the PCIe bridge with the
+ * given bus, device and function. Returns 0 on success, ENXIO if no matching
+ * port is found, or ENOENT if the requested link-up/link-down capture has not
+ * been taken.
+ */
+extern int zen_pcie_ltssm_by_bdf(uint8_t, uint8_t, uint8_t, pcie_ltssm_snap_t,
+    pcie_ltssm_snapshot_t *);
+
+/*
+ * Record an LTSSM capture for the PCIe bridge with the given bus, device and
+ * function in response to its link coming up or going down.
+ */
+extern int zen_pcie_ltssm_link_event_by_bdf(uint8_t, uint8_t, uint8_t, bool);
 
 #ifdef	__cplusplus
 }

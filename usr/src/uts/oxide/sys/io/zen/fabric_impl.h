@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_FABRIC_IMPL_H
@@ -396,6 +396,8 @@ extern int zen_fabric_walk_nbif(zen_fabric_t *, zen_nbif_cb_f, void *);
 
 extern zen_ioms_t *zen_fabric_find_ioms(zen_fabric_t *, uint32_t);
 extern zen_ioms_t *zen_fabric_find_ioms_by_bus(zen_fabric_t *, uint32_t);
+extern zen_pcie_port_t *zen_fabric_find_pcie_port_by_bdf(uint8_t, uint8_t,
+    uint8_t);
 
 extern int zen_fabric_iodie_op(zen_iodie_t *, void *);
 extern int zen_fabric_nbio_op(zen_nbio_t *, void *);

@@ -22,7 +22,7 @@
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <mdb/mdb_modapi.h>
@@ -43,7 +43,9 @@
 #include "unix_sup.h"
 #include "zen_kmdb.h"
 #include "fabric.h"
+#include "pcie.h"
 #include "oxio.h"
+#include "target.h"
 #include "unix.h"
 #include <sys/apix.h>
 #include <sys/x86_archext.h>
@@ -1071,10 +1073,13 @@ extern int xcall_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 
 static const mdb_dcmd_t dcmds[] = {
 	APOB_DCMDS,
+	TARGET_DCMDS,
 	{ "fabric", "[-cnv]", "summarise the fabric", fabric_dcmd,
 	    fabric_dcmd_help },
 	{ "ioms", "[-n num] [-h iohubnum] [-N nbionum] [-i iohcnum] [-b bus]",
 	    "show IOMS", fabric_ioms_dcmd, fabric_ioms_dcmd_help },
+	{ "ltssm", "?", "decode captured PCIe LTSSM state", ltssm_dcmd,
+	    ltssm_dcmd_help },
 	{ "gate_desc", ":", "dump a gate descriptor", gate_desc },
 	{ "idt", ":[-v]", "dump an IDT", idt },
 	{ "ttrace", "[-x] [-t kthread]", "dump trap trace buffers", ttrace },
@@ -1156,7 +1161,7 @@ _mdb_init(void)
 	}
 #endif
 	if (target_chiprev(&chiprev))
-		apob_set_target(_X86_CHIPREV_FAMILY(chiprev));
+		oxide_mdb_set_target_family(_X86_CHIPREV_FAMILY(chiprev));
 
 	return (&modinfo);
 }

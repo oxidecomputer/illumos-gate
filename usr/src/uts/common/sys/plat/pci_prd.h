@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_PLAT_PCI_PRD_H
@@ -45,6 +45,7 @@
 #include <sys/types.h>
 #include <sys/memlist.h>
 #include <sys/sunddi.h>
+#include <io/pciex/pcie_ltssm.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,6 +124,29 @@ extern boolean_t pci_prd_ignore_firmware(void);
  */
 typedef boolean_t (*pci_prd_root_complex_f)(uint32_t, void *);
 extern void pci_prd_root_complex_iter(pci_prd_root_complex_f, void *);
+
+/*
+ * Retrieve a single LTSSM (Link Training and Status State Machine) capture for
+ * the link below the bridge named by the given dev_info_t. The caller selects
+ * which capture to retrieve (the live state, or the last link-up/link-down
+ * capture) via the pcie_ltssm_snap_t argument and the platform reads and
+ * decodes the relevant hardware state into the supplied pcie_ltssm_snapshot_t.
+ * Platforms that cannot provide this information should return ENOTSUP. Unlike
+ * the interfaces above, this may be called outside of boot, in response to a
+ * userland request.
+ */
+extern int pci_prd_pcie_ltssm(dev_info_t *, pcie_ltssm_snap_t,
+    pcie_ltssm_snapshot_t *);
+
+/*
+ * Notify the platform that the link below the bridge named by the given
+ * dev_info_t has come up or gone down, so that it can capture any relevant
+ * state. This is called from the hotplug interrupt handler when the link's Data
+ * Link Layer active state changes, capturing the link at the moment it changed
+ * and before any subsequent hotplug power-off. As such it is called in
+ * interrupt context and the platform must not block.
+ */
+extern void pci_prd_pcie_link_event(dev_info_t *, boolean_t);
 
 /*
  * Give the chance for a platform to go through and use knowledge that it

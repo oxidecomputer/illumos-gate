@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -21,8 +21,16 @@
 
 #include <sys/plat/pci_prd.h>
 #include <sys/modctl.h>
+#include <sys/errno.h>
 #include <sys/pci.h>
+#include <sys/sunndi.h>
+#include <sys/pcie_impl.h>
 #include <sys/io/zen/fabric.h>
+#include <sys/io/zen/pcie_impl.h>
+
+#define	BUS(bdf) (((bdf) & PCIE_REQ_ID_BUS_MASK) >> PCIE_REQ_ID_BUS_SHIFT)
+#define	DEV(bdf) (((bdf) & PCIE_REQ_ID_DEV_MASK) >> PCIE_REQ_ID_DEV_SHIFT)
+#define	FUNC(bdf) (((bdf) & PCIE_REQ_ID_FUNC_MASK) >> PCIE_REQ_ID_FUNC_SHIFT)
 
 /*
  * We always just tell the system to scan all PCI buses.
@@ -83,6 +91,45 @@ boolean_t
 pci_prd_ignore_firmware(void)
 {
 	return (B_TRUE);
+}
+
+/*
+ * Retrieve the requested LTSSM snapshot for the link below the given PCIe
+ * bridge.
+ */
+int
+pci_prd_pcie_ltssm(dev_info_t *bridge, pcie_ltssm_snap_t snap,
+    pcie_ltssm_snapshot_t *snapshot)
+{
+	pcie_bus_t *bus_p = PCIE_DIP2BUS(bridge);
+	pcie_req_id_t bdf;
+
+	if (bus_p == NULL)
+		return (ENXIO);
+
+	bdf = bus_p->bus_bdf;
+
+	return (zen_pcie_ltssm_by_bdf(BUS(bdf), DEV(bdf), FUNC(bdf),
+	    snap, snapshot));
+}
+
+/*
+ * Record an LTSSM capture for the link below the given PCIe bridge in response
+ * to a link state change.
+ */
+void
+pci_prd_pcie_link_event(dev_info_t *bridge, boolean_t up)
+{
+	pcie_bus_t *bus_p = PCIE_DIP2BUS(bridge);
+	pcie_req_id_t bdf;
+
+	if (bus_p == NULL)
+		return;
+
+	bdf = bus_p->bus_bdf;
+
+	(void) zen_pcie_ltssm_link_event_by_bdf(BUS(bdf), DEV(bdf), FUNC(bdf),
+	    up);
 }
 
 int

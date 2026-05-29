@@ -24,7 +24,7 @@
 /*
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -160,6 +160,7 @@
 #include <sys/pci_cap.h>
 #include <sys/pci_impl.h>
 #include <sys/pcie_impl.h>
+#include <sys/plat/pci_prd.h>
 #include <sys/open.h>
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -1626,6 +1627,47 @@ pcieb_ioctl_set_speed(pcieb_devstate_t *pcieb, intptr_t arg, int mode,
 }
 
 static int
+pcieb_ioctl_get_ltssm(pcieb_devstate_t *pcieb, intptr_t arg, int mode,
+    cred_t *credp)
+{
+	pcie_bus_t		*bus_p = PCIE_DIP2BUS(pcieb->pcieb_dip);
+	pcieb_ioctl_ltssm_t	ltssm;
+	int			ret;
+
+	if (drv_priv(credp) != 0)
+		return (EPERM);
+
+	if ((mode & FREAD) == 0)
+		return (EBADF);
+
+	if (!PCIE_IS_PCIE(bus_p))
+		return (ENOTSUP);
+
+	if (!PCIE_IS_RP(bus_p) && !PCIE_IS_SWD(bus_p))
+		return (ENOTSUP);
+
+	if (ddi_copyin((void *)arg, &ltssm, sizeof (ltssm),
+	    mode & FKIOCTL) != 0) {
+		return (EFAULT);
+	}
+
+	if (ltssm.pil_snap >= PCIE_LTSSM_NSNAP)
+		return (EINVAL);
+
+	ret = pci_prd_pcie_ltssm(pcieb->pcieb_dip, ltssm.pil_snap,
+	    &ltssm.pil_snapshot);
+	if (ret != 0)
+		return (ret);
+
+	if (ddi_copyout(&ltssm, (void *)arg, sizeof (ltssm),
+	    mode & FKIOCTL) != 0) {
+		return (EFAULT);
+	}
+
+	return (0);
+}
+
+static int
 pcieb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
     int *rvalp)
 {
@@ -1651,6 +1693,9 @@ pcieb_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		break;
 	case PCIEB_IOCTL_SET_TARGET_SPEED:
 		rv = pcieb_ioctl_set_speed(pcieb, arg, mode, credp);
+		break;
+	case PCIEB_IOCTL_GET_LTSSM:
+		rv = pcieb_ioctl_get_ltssm(pcieb, arg, mode, credp);
 		break;
 	default:
 		/* To handle devctl and hotplug related ioctls */

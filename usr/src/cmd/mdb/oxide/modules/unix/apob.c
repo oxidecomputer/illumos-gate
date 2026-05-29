@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -26,6 +26,7 @@
 #include <sys/io/zen/apob.h>
 
 #include "apob_mod.h"
+#include "target.h"
 
 /*
  * Special value to indicate we should try to discover where the APOB is
@@ -37,7 +38,6 @@ extern const char *milan_chan_map[8];
 extern const char *genoa_chan_map[12];
 extern const char *turin_chan_map[12];
 
-static const char *apob_target_cpu = "<unknown>";
 static const char **chan_map;
 static size_t chan_map_size;
 
@@ -53,18 +53,15 @@ apob_set_target(x86_processor_family_t pf)
 	case X86_PF_AMD_MILAN:
 		chan_map = milan_chan_map;
 		chan_map_size = ARRAY_SIZE(milan_chan_map);
-		apob_target_cpu = "Milan";
 		break;
 	case X86_PF_AMD_GENOA:
 		chan_map = genoa_chan_map;
 		chan_map_size = ARRAY_SIZE(genoa_chan_map);
-		apob_target_cpu = "Genoa";
 		break;
 	case X86_PF_AMD_TURIN:
 	case X86_PF_AMD_DENSE_TURIN:
 		chan_map = turin_chan_map;
 		chan_map_size = ARRAY_SIZE(turin_chan_map);
-		apob_target_cpu = "Turin";
 		break;
 	default:
 		mdb_warn("apob: unsupported AMD chiprev family: %u\n", pf);
@@ -867,53 +864,10 @@ apob_entry_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	return (DCMD_OK);
 }
 
-static const char *apob_target_help =
-"Some APOB structures differ between processor families (e.g., max number of\n"
-"memory channels). In cases where we can't determine the target's CPU, e.g.,\n"
-"while inspecting a previously saved APOB or a dump from a different system,\n"
-"this command may be used to set an override.\n"
-"The following are the currently supported CPUs:\n"
-"\n"
-"  - Milan\n"
-"  - Genoa\n"
-"  - Turin\n"
-"\n"
-"Passing no argument will print the current target.\n";
-
-void
-apob_target_dcmd_help(void)
-{
-	mdb_printf(apob_target_help);
-}
-
-int
-apob_target_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
-{
-	if (argc == 0) {
-		mdb_printf("%s\n", apob_target_cpu);
-		return (DCMD_OK);
-	}
-
-	if (argc != 1 || argv[0].a_type != MDB_TYPE_STRING ||
-	    (flags & DCMD_ADDRSPEC)) {
-		return (DCMD_USAGE);
-	}
-
-	if ((strcasecmp(argv[0].a_un.a_str, "milan")) == 0) {
-		apob_set_target(X86_PF_AMD_MILAN);
-	} else if ((strcasecmp(argv[0].a_un.a_str, "genoa")) == 0) {
-		apob_set_target(X86_PF_AMD_GENOA);
-	} else if ((strcasecmp(argv[0].a_un.a_str, "turin")) == 0) {
-		apob_set_target(X86_PF_AMD_TURIN);
-	} else {
-		return (DCMD_USAGE);
-	}
-	return (DCMD_OK);
-}
-
 #ifdef	APOB_RAW_DMOD
 static const mdb_dcmd_t dcmds[] = {
 	APOB_DCMDS,
+	TARGET_DCMDS,
 	{ NULL }
 };
 

@@ -10,13 +10,13 @@
 #
 
 #
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 MODULE = apob.so
 MDBTGT = raw
 
-MODSRCS = apob.c
+MODSRCS = apob.c target.c
 MODSRCS += genoa_impl.c milan_impl.c turin_impl.c
 
 include $(SRC)/cmd/Makefile.cmd

@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -375,6 +375,7 @@
 #include <sys/zone.h>
 #include <sys/hotplug/pci/pcie_hp.h>
 #include <sys/hotplug/pci/pciehpc.h>
+#include <sys/plat/pci_prd.h>
 
 /* XXX /etc/system is NOT a policy interface */
 int pcie_auto_online = 1;
@@ -886,9 +887,23 @@ pciehpc_intr(dev_info_t *dip)
 	/* check for DLL state changed interrupt */
 	if (ctrl_p->hc_dll_active_rep &&
 	    (status & PCIE_SLOTSTS_DLL_STATE_CHANGED)) {
+		uint16_t linksts;
+
 		KSTAT_EVENT(slot_p, dll_chg, now);
 		PCIE_DBG("pciehpc_intr(): DLL STATE CHANGED interrupt received"
 		    " on slot %d\n", slot_p->hs_phy_slot_num);
+
+		/*
+		 * Give the platform a chance to capture link state directly
+		 * from the interrupt, while it reflects the link at the moment
+		 * it changed and before any subsequent hotplug power-off. The
+		 * DLL Active bit tells us whether the link just came up or went
+		 * down.
+		 */
+		linksts = pciehpc_reg_get16(ctrl_p,
+		    bus_p->bus_pcie_off + PCIE_LINKSTS);
+		pci_prd_pcie_link_event(dip,
+		    (linksts & PCIE_LINKSTS_DLL_LINK_ACTIVE) != 0);
 
 		cv_signal(&slot_p->hs_dll_active_cv);
 	}
@@ -2159,6 +2174,14 @@ pciehpc_slot_wait_for_active(pcie_hp_slot_t *slot_p)
 		}
 
 		if ((status & PCIE_LINKSTS_DLL_LINK_ACTIVE) == 0) {
+			/*
+			 * The link failed to train within the timeout. Give the
+			 * platform a chance to capture its state before our
+			 * caller powers the slot back off, so that the reason
+			 * the link did not come up can be inspected after the
+			 * fact.
+			 */
+			pci_prd_pcie_link_event(ctrl_p->hc_dip, B_FALSE);
 			return (B_FALSE);
 		}
 	} else {

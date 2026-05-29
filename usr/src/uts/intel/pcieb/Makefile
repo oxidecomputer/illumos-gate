@@ -25,6 +25,7 @@
 # Use is subject to license terms.
 #
 # Copyright 2019 Joyent, Inc.
+# Copyright 2026 Oxide Computer Company
 
 #
 #	Path to the base of the uts directory tree (usually /usr/src/uts).
@@ -51,9 +52,9 @@ ALL_TARGET	= $(BINARY) $(SRC_CONFILE)
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 
 #
-# depends on misc/pcie
+# depends on misc/pcie and misc/pci_prd
 #
-LDFLAGS		+= -Nmisc/pcie
+LDFLAGS		+= -Nmisc/pcie -Nmisc/pci_prd
 
 #
 #	Default build targets.

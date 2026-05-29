@@ -25,7 +25,7 @@
 # Copyright (c) 2010, Intel Corporation.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2019 Joyent, Inc.
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 #	This Makefile defines file modules in the directory uts/oxide
 #	and its children. These are the source files which are oxide
@@ -154,6 +154,8 @@ ZEN_OBJS +=			\
 	zen_hacks.o		\
 	zen_mpio.o		\
 	zen_oxio.o		\
+	zen_pcie_ltssm.o	\
+	zen_pcie_ltssm_decode.o	\
 	zen_platform.o		\
 	zen_ras.o		\
 	zen_smn.o		\

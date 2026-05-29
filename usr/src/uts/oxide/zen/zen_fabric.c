@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/clock.h>
@@ -1591,6 +1591,50 @@ zen_fabric_init_pcie_dbg(zen_pcie_dbg_t **dbg,
 	return (0);
 }
 
+bool
+zen_pcie_port_dbg_reg_by_name(const char *name, smn_reg_def_t *defp)
+{
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const zen_pcie_reg_dbg_t *regs = consts->zpc_pcie_port_dbg_regs;
+	const size_t nregs = *consts->zpc_pcie_port_dbg_nregs;
+
+	for (size_t i = 0; i < nregs; i++) {
+		if (strcmp(regs[i].zprd_name, name) == 0) {
+			*defp = regs[i].zprd_def;
+			return (true);
+		}
+	}
+
+	return (false);
+}
+
+/*
+ * Look up a previously captured register value (and optionally its timestamp)
+ * by name in a port's per-port capture for the given stage. Returns false if
+ * there is no capture or no register with that name.
+ */
+bool
+zen_pcie_port_dbg_val_by_name(const zen_pcie_port_t *port, const char *name,
+    uint32_t stage, uint32_t *valp, hrtime_t *tsp)
+{
+	const zen_pcie_dbg_t *dbg = port->zpp_dbg;
+
+	if (dbg == NULL)
+		return (false);
+
+	for (size_t i = 0; i < dbg->zpd_nregs; i++) {
+		if (strcmp(dbg->zpd_regs[i].zprd_name, name) == 0) {
+			if (valp != NULL)
+				*valp = dbg->zpd_regs[i].zprd_val[stage];
+			if (tsp != NULL)
+				*tsp = dbg->zpd_regs[i].zprd_ts[stage];
+			return (true);
+		}
+	}
+
+	return (false);
+}
+
 static int
 zen_fabric_init_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
 {
@@ -1702,6 +1746,18 @@ zen_pcie_populate_port_dbg(zen_pcie_port_t *port, void *arg)
 	dbg->zpd_last_stage = stage;
 
 	return (0);
+}
+
+/*
+ * Capture the registers of a single port at the given stage. This is used to
+ * snapshot link state in response to runtime events such as a link coming up or
+ * going down.
+ */
+void
+zen_pcie_port_dbg_snapshot(zen_pcie_port_t *port, uint32_t stage)
+{
+	(void) zen_pcie_populate_port_dbg(port,
+	    zen_pcie_dbg_cookie(stage, ZEN_IODIE_MATCH_ANY));
 }
 
 void
@@ -3704,6 +3760,49 @@ zen_fabric_find_ioms_by_bus(zen_fabric_t *fabric, uint32_t pci_bus)
 	    &zffi);
 
 	return (zffi.zffi_ioms);
+}
+
+typedef struct zen_fabric_find_port {
+	uint8_t		zffp_bus;
+	uint8_t		zffp_dev;
+	uint8_t		zffp_func;
+	zen_pcie_port_t	*zffp_port;
+} zen_fabric_find_port_t;
+
+static int
+zen_fabric_find_pcie_port_by_bdf_cb(zen_pcie_port_t *port, void *arg)
+{
+	zen_fabric_find_port_t *f = arg;
+	zen_ioms_t *ioms = port->zpp_core->zpc_ioms;
+
+	if (ioms->zio_pci_busno == f->zffp_bus &&
+	    port->zpp_device == f->zffp_dev &&
+	    port->zpp_func == f->zffp_func) {
+		f->zffp_port = port;
+		return (1);
+	}
+
+	return (0);
+}
+
+/*
+ * Find the PCIe port (root port bridge) at the given bus, device and function.
+ * Returns NULL if no port matches.
+ */
+zen_pcie_port_t *
+zen_fabric_find_pcie_port_by_bdf(uint8_t bus, uint8_t dev, uint8_t func)
+{
+	zen_fabric_find_port_t f = {
+		.zffp_bus = bus,
+		.zffp_dev = dev,
+		.zffp_func = func,
+		.zffp_port = NULL,
+	};
+
+	(void) zen_fabric_walk_pcie_port(&zen_fabric,
+	    zen_fabric_find_pcie_port_by_bdf_cb, &f);
+
+	return (f.zffp_port);
 }
 
 typedef struct zen_fabric_find_pcie_core {

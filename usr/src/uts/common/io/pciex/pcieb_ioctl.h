@@ -11,7 +11,7 @@
 
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _IO_PCIE_PCIEB_IOCTL_H
@@ -24,6 +24,7 @@
  */
 
 #include <sys/stdint.h>
+#include "pcie_ltssm.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,6 +60,20 @@ typedef struct pcieb_ioctl_target_speed {
 #define	PCIEB_LINK_SPEED_GEN4		0x04
 #define	PCIEB_LINK_SPEED_GEN5		0x05
 #define	PCIEB_LINK_SPEED_GEN6		0x06
+
+/*
+ * Retrieve a single LTSSM (Link Training and Status State Machine) capture for
+ * the link below this bridge. The caller sets pil_snap to the desired snapshot
+ * (a pcie_ltssm_snap_t: the live state or the last link-up/link-down capture)
+ * and the driver fills in pil_snapshot.
+ */
+#define	PCIEB_IOCTL_GET_LTSSM	(PCIEB_IOCTL | 0x04)
+
+typedef struct pcieb_ioctl_ltssm {
+	uint32_t		pil_snap;	/* pcie_ltssm_snap_t */
+	uint32_t		pil_pad;
+	pcie_ltssm_snapshot_t	pil_snapshot;
+} pcieb_ioctl_ltssm_t;
 
 #ifdef __cplusplus
 }

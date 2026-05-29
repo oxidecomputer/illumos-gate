@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -505,6 +505,34 @@ const zen_pcie_reg_dbg_t milan_pcie_core_dbg_regs[] = {
 };
 
 const zen_pcie_reg_dbg_t milan_pcie_port_dbg_regs[] = {
+	/*
+	 * These LTSSM state history registers are kept outside the DEBUG guard
+	 * so that link state can be retrieved on non-DEBUG kernels.
+	 */
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_STATE0",
+		.zprd_def = D_PCIE_PORT_LC_STATE0
+	},
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_STATE1",
+		.zprd_def = D_PCIE_PORT_LC_STATE1
+	},
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_STATE2",
+		.zprd_def = D_PCIE_PORT_LC_STATE2
+	},
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_STATE3",
+		.zprd_def = D_PCIE_PORT_LC_STATE3
+	},
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_STATE4",
+		.zprd_def = D_PCIE_PORT_LC_STATE4
+	},
+	{
+		.zprd_name = "PCIEPORT::PCIE_LC_STATE5",
+		.zprd_def = D_PCIE_PORT_LC_STATE5
+	},
 #ifdef DEBUG
 	{
 		.zprd_name = "PCIEPORT::PCIEP_HW_DEBUG",
@@ -729,30 +757,6 @@ const zen_pcie_reg_dbg_t milan_pcie_port_dbg_regs[] = {
 	{
 		.zprd_name = "PCIEPORT::PCIE_LC_SPEED_CNTL",
 		.zprd_def = D_PCIE_PORT_LC_SPEED_CTL
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_STATE0",
-		.zprd_def = D_PCIE_PORT_LC_STATE0
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_STATE1",
-		.zprd_def = D_PCIE_PORT_LC_STATE1
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_STATE2",
-		.zprd_def = D_PCIE_PORT_LC_STATE2
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_STATE3",
-		.zprd_def = D_PCIE_PORT_LC_STATE3
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_STATE4",
-		.zprd_def = D_PCIE_PORT_LC_STATE4
-	},
-	{
-		.zprd_name = "PCIEPORT::PCIE_LC_STATE5",
-		.zprd_def = D_PCIE_PORT_LC_STATE5
 	},
 	{
 		.zprd_name = "PCIEPORT::PCIE_LINK_MANAGEMENT_CNTL2",

@@ -23,7 +23,7 @@
  * Copyright 2016 Joyent, Inc.
  * Copyright 2019 Western Digital Corporation
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -38,6 +38,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/errno.h>
 #include <sys/memlist.h>
 #include <sys/pci.h>
 #include <sys/pci_impl.h>
@@ -859,6 +860,22 @@ pci_prd_init(pci_prd_upcalls_t *upcalls)
 	prd_upcalls = upcalls;
 
 	return (0);
+}
+
+/*
+ * Retrieving LTSSM state and capturing link events are not currently
+ * implemented on i86pc.
+ */
+int
+pci_prd_pcie_ltssm(dev_info_t *bridge __unused, pcie_ltssm_snap_t snap __unused,
+    pcie_ltssm_snapshot_t *snapshot __unused)
+{
+	return (ENOTSUP);
+}
+
+void
+pci_prd_pcie_link_event(dev_info_t *bridge __unused, boolean_t up __unused)
+{
 }
 
 void
