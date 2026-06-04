@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2026 RackTop Systems, Inc.
  */
 
 #include <sys/types.h>
@@ -234,7 +235,7 @@ vt_clean(queue_t *q, vc_state_t *pvc)
 		pvc->vc_timeoutid = 0;
 	}
 	ttycommon_close(&pvc->vc_ttycommon);
-
+	tem_clean(pvc->vc_tem);
 	pvc->vc_flags &= ~WCS_INIT;
 }
 
@@ -343,15 +344,17 @@ vt_open(minor_t minor, queue_t *rq, cred_t *crp)
 	if (pvc == NULL)
 		return (ENXIO);
 
+	/* Re-open (qreopen): already attached, nothing to do. */
+	if (rq->q_ptr != NULL) {
+		ASSERT3P(rq->q_ptr, ==, pvc);
+		return (0);
+	}
+
 	mutex_enter(&vc_lock);
 	mutex_enter(&pvc->vc_state_lock);
 
 	if (!(pvc->vc_flags & WCS_ISOPEN)) {
-		/*
-		 * vc_tem might not be intialized if !tems.ts_initialized,
-		 * and this only happens during console configuration.
-		 */
-		pvc->vc_tem = tem_init(crp, rq);
+		pvc->vc_tem = tem_init(crp);
 	}
 
 	if (!(pvc->vc_flags & WCS_INIT))
@@ -392,6 +395,7 @@ vt_open(minor_t minor, queue_t *rq, cred_t *crp)
 	pvc->vc_flags |= WCS_ISOPEN;
 	pvc->vc_ttycommon.t_readq = rq;
 	pvc->vc_ttycommon.t_writeq = WR(rq);
+	tem_init_q(pvc->vc_tem, rq);
 
 	mutex_exit(&pvc->vc_state_lock);
 	mutex_exit(&vc_lock);
