@@ -26,11 +26,11 @@ extern void fabric_dcmd_help(void);
 extern int fabric_ioms_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 extern void fabric_ioms_dcmd_help(void);
 
-extern int fabric_walk_init(mdb_walk_state_t *);
-extern int fabric_walk_soc_step(mdb_walk_state_t *);
-extern int fabric_walk_iodie_step(mdb_walk_state_t *);
-extern int fabric_walk_nbio_step(mdb_walk_state_t *);
-extern int fabric_walk_ioms_step(mdb_walk_state_t *);
+extern int fabric_walk_soc_init(mdb_walk_state_t *);
+extern int fabric_walk_iodie_init(mdb_walk_state_t *);
+extern int fabric_walk_nbio_init(mdb_walk_state_t *);
+extern int fabric_walk_ioms_init(mdb_walk_state_t *);
+extern int fabric_walk_step(mdb_walk_state_t *);
 
 #ifdef	__cplusplus
 }

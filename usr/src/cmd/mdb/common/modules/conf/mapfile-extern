@@ -65,9 +65,11 @@ SYMBOL_SCOPE {
 		mdb_callback_remove		{ FLAGS = EXTERN };
 		mdb_cpuset_find			{ FLAGS = EXTERN };
 		mdb_ctf_array_info		{ FLAGS = EXTERN };
+		mdb_ctf_enum_iter		{ FLAGS = EXTERN };
 		mdb_ctf_enum_name		{ FLAGS = EXTERN };
 		mdb_ctf_lookup_by_addr		{ FLAGS = EXTERN };
 		mdb_ctf_lookup_by_name		{ FLAGS = EXTERN };
+		mdb_ctf_member_info		{ FLAGS = EXTERN };
 		mdb_ctf_member_iter		{ FLAGS = EXTERN };
 		mdb_ctf_module_lookup		{ FLAGS = EXTERN };
 		mdb_ctf_offsetof		{ FLAGS = EXTERN };

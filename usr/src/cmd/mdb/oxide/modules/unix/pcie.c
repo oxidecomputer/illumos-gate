@@ -115,71 +115,47 @@ ltssm_resolve(const char *type, const char *member, const char *elem,
 }
 
 typedef struct {
-	const char	*lmf_name;
-	mdb_ctf_id_t	lmf_id;
-	bool		lmf_found;
-} ltssm_member_find_t;
+	const char	*lev_name;
+	int		lev_val;
+	bool		lev_found;
+} ltssm_enum_lookup_t;
 
 static int
-ltssm_member_find_cb(const char *name, mdb_ctf_id_t id, ulong_t off __unused,
-    void *arg)
+ltssm_enum_lookup_cb(const char *name, int value, void *arg)
 {
-	ltssm_member_find_t *f = arg;
+	ltssm_enum_lookup_t *l = arg;
 
-	if (strcmp(name, f->lmf_name) == 0) {
-		f->lmf_id = id;
-		f->lmf_found = true;
+	if (strcmp(name, l->lev_name) == 0) {
+		l->lev_val = value;
+		l->lev_found = true;
 		return (1);
 	}
 	return (0);
 }
 
 /*
- * Find the CTF type of a named struct member. mdb_ctf_member_info() is not part
- * of the dmod API, so we iterate the members ourselves.
+ * Resolve an enumerator's value by name.
  */
 static bool
-ltssm_member_type(const char *type, const char *member, mdb_ctf_id_t *idp)
+ltssm_enum_value(mdb_ctf_id_t id, const char *name, int *valp)
 {
-	mdb_ctf_id_t tid;
-	ltssm_member_find_t f = { .lmf_name = member };
+	ltssm_enum_lookup_t l = { .lev_name = name };
 
-	if (mdb_ctf_lookup_by_name(type, &tid) != 0) {
-		mdb_warn("couldn't find type %s\n", type);
+	(void) mdb_ctf_enum_iter(id, ltssm_enum_lookup_cb, &l);
+	if (!l.lev_found) {
+		mdb_warn("couldn't find enumerator %s\n", name);
 		return (false);
 	}
-	(void) mdb_ctf_member_iter(tid, ltssm_member_find_cb, &f, 0);
-	if (!f.lmf_found) {
-		mdb_warn("couldn't find member %s of %s\n", member, type);
-		return (false);
-	}
-	*idp = f.lmf_id;
+	*valp = l.lev_val;
 	return (true);
-}
-
-/*
- * Resolve an enumerator's value by scanning the enum for its name.
- */
-static bool
-ltssm_enum_value(mdb_ctf_id_t id, uint_t nstages, const char *name, int *valp)
-{
-	for (uint_t v = 0; v < nstages; v++) {
-		const char *en = mdb_ctf_enum_name(id, (int)v);
-
-		if (en != NULL && strcmp(en, name) == 0) {
-			*valp = (int)v;
-			return (true);
-		}
-	}
-	mdb_warn("couldn't find enumerator %s\n", name);
-	return (false);
 }
 
 static bool
 ltssm_layout_init(ltssm_layout_t *l)
 {
-	mdb_ctf_id_t valid;
+	mdb_ctf_id_t structid, valid;
 	mdb_ctf_arinfo_t ar;
+	ulong_t moff;
 	int coff, voff, toff;
 
 	if (!ltssm_resolve("zen_ioms_t", "zio_pcie_cores", "zen_pcie_core_t",
@@ -203,7 +179,8 @@ ltssm_layout_init(ltssm_layout_t *l)
 	l->ll_val_off = (ulong_t)voff;
 	l->ll_ts_off = (ulong_t)toff;
 
-	if (!ltssm_member_type("zen_pcie_reg_dbg_t", "zprd_val", &valid) ||
+	if (mdb_ctf_lookup_by_name("zen_pcie_reg_dbg_t", &structid) != 0 ||
+	    mdb_ctf_member_info(structid, "zprd_val", &moff, &valid) != 0 ||
 	    mdb_ctf_array_info(valid, &ar) != 0) {
 		mdb_warn("couldn't determine zprd_val array length\n");
 		return (false);
@@ -215,10 +192,10 @@ ltssm_layout_init(ltssm_layout_t *l)
 		mdb_warn("couldn't find enum zen_pcie_config_stage\n");
 		return (false);
 	}
-	return (ltssm_enum_value(l->ll_stage_enum, l->ll_nstages,
-	    "ZPCS_LINK_UP", &l->ll_link_up) &&
-	    ltssm_enum_value(l->ll_stage_enum, l->ll_nstages,
-	    "ZPCS_LINK_DOWN", &l->ll_link_down));
+	return (ltssm_enum_value(l->ll_stage_enum, "ZPCS_LINK_UP",
+	    &l->ll_link_up) &&
+	    ltssm_enum_value(l->ll_stage_enum, "ZPCS_LINK_DOWN",
+	    &l->ll_link_down));
 }
 
 static const char *

@@ -1141,10 +1141,10 @@ static const mdb_walker_t walkers[] = {
 		mutex_owner_init, mutex_owner_step },
 	{ "memseg", "walk the memseg structures",
 		memseg_walk_init, memseg_walk_step, memseg_walk_fini },
-	{ "soc", "walk SOCs", fabric_walk_init, fabric_walk_soc_step },
-	{ "iodie", "walk IODIEs", fabric_walk_init, fabric_walk_iodie_step },
-	{ "nbio", "walk NBIOs", fabric_walk_init, fabric_walk_nbio_step },
-	{ "ioms", "walk IOMS", fabric_walk_init, fabric_walk_ioms_step },
+	{ "soc", "walk SOCs", fabric_walk_soc_init, fabric_walk_step },
+	{ "iodie", "walk IODIEs", fabric_walk_iodie_init, fabric_walk_step },
+	{ "nbio", "walk NBIOs", fabric_walk_nbio_init, fabric_walk_step },
+	{ "ioms", "walk IOMS", fabric_walk_ioms_init, fabric_walk_step },
 	{ NULL }
 };
 
