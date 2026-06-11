@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -94,38 +94,34 @@ z_uncompress_stream(zmod_stream_t *zs, uint8_t *in, size_t inl,
 		 * type (zlib or gzip) should be automatically detected.
 		 */
 		ret = inflateInit2(&zs->zsi_stream, DEF_WBITS | 0x20);
-		if (ret != Z_OK) {
-			kobj_free(zs, sizeof (zmod_stream_t));
+		if (ret != Z_OK)
 			return (ret);
-		}
 		zs->zsi_initdone = true;
 	}
 
 	/*
-	 * Call inflate() repeatedly and pass the output to the callback until
-	 * there is no more, indicated by inflate() not filling the output
-	 * buffer. We cannot do the more obvious thing of looping until
-	 * avail_in is zero since the deflate stream may end before the data
-	 * does.
+	 * Call `inflate()` repeatedly and pass the output to the callback,
+	 * while we can still make forward progress with decompression, as
+	 * indicated by `inflate` completely filling the output buffer.
+	 *
+	 * We cannot do the more obvious thing of looping until `avail_in` is
+	 * zero since the deflated stream may end before the data does.
+	 * Conversely, if the input is exhausted just as the output buffer is
+	 * filled, the nextcall to `inflate` can make no progress and returns
+	 * `Z_BUF_ERROR`.  This is not fatal, and we propagate it to the caller
+	 * to indicate that more input data is required.
 	 */
 	do {
-		size_t len;
+		size_t len = sizeof (zs->zsi_out);
 
 		zs->zsi_stream.next_out = zs->zsi_out;
-		zs->zsi_stream.avail_out = sizeof (zs->zsi_out);
-
+		zs->zsi_stream.avail_out = len;
 		ret = inflate(&zs->zsi_stream, Z_NO_FLUSH);
-		switch (ret) {
-		case Z_OK:
-		case Z_STREAM_END:
-			break;
-		default:
+		if (ret != Z_OK && ret != Z_STREAM_END)
 			return (ret);
-		}
-
-		len = sizeof (zs->zsi_out) - zs->zsi_stream.avail_out;
+		len -= zs->zsi_stream.avail_out;
 		if (!cb(arg, zs->zsi_out, len))
-			return (Z_BUF_ERROR);
+			return (Z_STREAM_ERROR);
 	} while (zs->zsi_stream.avail_out == 0);
 
 	if (ret == Z_STREAM_END) {

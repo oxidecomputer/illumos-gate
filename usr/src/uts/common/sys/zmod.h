@@ -68,15 +68,24 @@ extern const char *z_strerror(int);
  * as Z_OK (see contrib/zlib/zlib.h).
  *
  * To use this interface, callers should first call z_uncompress_stream_init()
- * providing a pointer to a zmod_stream_t * which will be filled in on
- * successful initialisation.
+ * providing a pointer to a `zmod_stream_t *` which will be filled in on
+ * successful initialization.
+ *
  * Whenever additional data is available, pass it to the decompressor by
- * calling z_uncompress_stream() with the initialised handle and providing a
- * callback function. The callback function will be called zero or more times
- * with uncompressed data from the stream. z_uncompress_stream() can be called
- * multiple times to provide additional data and once it returns Z_STREAM_END,
- * decompression of the stream is complete. Callers should call
- * z_uncompress_stream_fini() when finished.
+ * calling z_uncompress_stream() with the initialized handle and a callback
+ * function. The callback function will be called zero or more times with
+ * uncompressed data from the stream.
+ *
+ * `z_uncompress_stream()` can be called multiple times to provide additional
+ * data; a return value of `Z_OK` means that some data was decompressed, but
+ * the end of the stream has not yet been reached.  If `Z_BUF_ERROR` is
+ * returned, then the decompressor could not make forward progress and requires
+ * more data (but note that `Z_BUF_ERROR` is not fatal).  If the callback
+ * fails, the return value will be `Z_STREAM_ERROR`.  If decompression
+ * successfully completes by reaching the end of the input stream, the return
+ * value is `Z_STREAM_END`.
+ *
+ * Callers should call `z_uncompress_stream_fini()` when finished.
  */
 
 /* opaque handle for stream decompression functions */

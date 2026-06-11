@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -326,8 +326,9 @@ oxide_boot_ramdisk_write_append(oxide_boot_t *oxb, uint8_t *buf, size_t len)
 		oxide_boot_debug("end of compression stream");
 		/* FALLTHROUGH */
 	case Z_OK:
-		return (true);
 	case Z_BUF_ERROR:
+		return (true);
+	case Z_STREAM_ERROR:
 		oxide_boot_warn("failed ramdisk write at offset 0x%lx", opos);
 		break;
 	default:
