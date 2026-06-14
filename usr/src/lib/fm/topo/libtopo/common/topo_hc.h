@@ -345,6 +345,7 @@ extern "C" {
 
 #define	TOPO_PGROUP_NVME		"nvme-properties"
 #define	TOPO_PROP_NVME_VER		"nvme-version"
+#define	TOPO_PROP_NVME_NVM_CAPACITY	"nvm-capacity"
 
 /*
  * Hardware cache properties.
