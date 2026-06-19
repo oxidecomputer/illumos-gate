@@ -331,8 +331,10 @@ static pgcnt_t kphysm_init(page_t *, pgcnt_t);
 
 /*
  *		64-bit Kernel's Virtual memory layout. (assuming 64 bit app)
- *			+-----------------------+
- *			|	debugger (?)	|
+ *			+-----------------------+- top of address space
+ *			|      unused		|
+ * 0xFFFFFFFF.FFE00000  |-----------------------|- SEGDEBUGBASE + SEGDEBUGSIZE
+ *			|	debugger	| (mapped when kmdb is loaded)
  * 0xFFFFFFFF.FF800000  |-----------------------|- SEGDEBUGBASE
  *			|      unused		|
  *			+-----------------------+

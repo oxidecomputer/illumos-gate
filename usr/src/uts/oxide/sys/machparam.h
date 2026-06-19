@@ -119,10 +119,24 @@ extern "C" {
 #define	LL_INTR_STKSZ		(LL_INTR_STKSZ_NPGS * PAGESIZE)
 
 /*
- * Virtual address range available to the debugger
+ * Virtual address range available to the debugger (kmdb). When kmdb is loaded
+ * at boot it is confined to this segment until the kernel VM is up and
+ * kctl_memavail() grants it more memory, so the segment must be large enough
+ * for kmdb's early startup on its own. A number of those startup allocations
+ * scale with NCPU.
+ *
+ * The size must be a whole number of mebibytes, since the boot-time allocator
+ * maps the segment in 1 MiB chunks and drops any smaller remainder. It must
+ * also leave the top 2 MiB of the address space unmapped for now. Several
+ * early boot walks of the boot loader's mappings advance a cursor past each
+ * region, and/or round that cursor up to the next 2 MiB boundary, so a segment
+ * reaching the final 2 MiB would wrap the cursor to zero and loop forever.
+ * With the base where it is, that caps the segment at 6 MiB. If those walks
+ * are fixed to handle reaching the top of memory it could grow to fill the
+ * window to the top of the address space (8 MiB).
  */
 #define	SEGDEBUGBASE	ADDRESS_C(0xffffffffff800000)
-#define	SEGDEBUGSIZE	ADDRESS_C(0x400000)
+#define	SEGDEBUGSIZE	ADDRESS_C(0x600000)
 
 #define	KERNEL_TEXT	UINT64_C(0xfffffffffbc00000)
 

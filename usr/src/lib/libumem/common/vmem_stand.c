@@ -23,6 +23,9 @@
  * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2026 Oxide Computer Company
+ */
 
 /*
  * Standalone-specific vmem routines
@@ -97,6 +100,31 @@ vmem_stand_add(caddr_t base, size_t len)
 	stand_nregions++;
 
 	return (0);
+}
+
+/*
+ * Report the standalone heap's footprint to the caller.
+ */
+void
+vmem_stand_stat(size_t *totalp, size_t *usedp, size_t *availp)
+{
+	size_t used = 0;
+	size_t avail = 0;
+	int i;
+
+	for (i = 0; i < stand_nregions; i++) {
+		const stand_region_t *sr = &stand_regions[i];
+
+		used += (size_t)(sr->sr_curtop - sr->sr_base);
+		avail += sr->sr_left;
+	}
+
+	if (totalp != NULL)
+		*totalp = used + avail;
+	if (usedp != NULL)
+		*usedp = used;
+	if (availp != NULL)
+		*availp = avail;
 }
 
 static void *

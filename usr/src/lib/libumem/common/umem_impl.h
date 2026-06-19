@@ -27,6 +27,7 @@
 /*
  * Copyright (c) 2012 Joyent, Inc.  All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _UMEM_IMPL_H
@@ -400,6 +401,7 @@ typedef struct umem_cpu {
 #ifdef UMEM_STANDALONE
 extern void umem_startup(caddr_t, size_t, size_t, caddr_t, caddr_t);
 extern int umem_add(caddr_t, size_t);
+extern void vmem_stand_stat(size_t *, size_t *, size_t *);
 #endif
 
 /*

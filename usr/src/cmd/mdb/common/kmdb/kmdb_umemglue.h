@@ -23,6 +23,9 @@
  * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2026 Oxide Computer Company
+ */
 
 #ifndef _KMDB_UMEMGLUE_H
 #define	_KMDB_UMEMGLUE_H
@@ -37,6 +40,7 @@ extern "C" {
 
 extern void mdb_umem_startup(caddr_t, size_t, size_t);
 extern int mdb_umem_add(caddr_t, size_t);
+extern void mdb_umem_stat(size_t *, size_t *, size_t *);
 
 #ifdef __cplusplus
 }

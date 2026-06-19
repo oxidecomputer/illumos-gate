@@ -23,7 +23,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  *
  * Copyright 2019 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <kmdb/kmdb_kvm.h>
@@ -32,6 +32,7 @@
 #include <kmdb/kmdb_promif.h>
 #include <kmdb/kmdb_module.h>
 #include <kmdb/kmdb_asmutil.h>
+#include <kmdb/kmdb_umemglue.h>
 #include <mdb/mdb_types.h>
 #include <mdb/mdb_conf.h>
 #include <mdb/mdb_err.h>
@@ -557,6 +558,10 @@ kmt_status_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 {
 	struct utsname uts;
 	char uuid[UUID_PRINTABLE_STRING_LENGTH];
+	size_t total, used, avail;
+	char usedbuf[MDB_NICENUM_BUFLEN];
+	char totalbuf[MDB_NICENUM_BUFLEN];
+	char availbuf[MDB_NICENUM_BUFLEN];
 	kreg_t tt;
 
 	if (mdb_tgt_readsym(mdb.m_target, MDB_TGT_AS_VIRT, &uts, sizeof (uts),
@@ -591,6 +596,13 @@ kmt_status_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	(void) kmt_dmod_status("pending dmod loads:", KMDB_MC_STATE_LOADING);
 	(void) kmt_dmod_status("pending dmod unloads:",
 	    KMDB_MC_STATE_UNLOADING);
+
+	mdb_umem_stat(&total, &used, &avail);
+	mdb_nicenum(used, usedbuf);
+	mdb_nicenum(total, totalbuf);
+	mdb_nicenum(avail, availbuf);
+	mdb_printf("debugger heap: %siB used of %siB (%siB free)\n",
+	    usedbuf, totalbuf, availbuf);
 
 	return (DCMD_OK);
 }

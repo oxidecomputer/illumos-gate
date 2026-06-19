@@ -23,6 +23,9 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2026 Oxide Computer Company
+ */
 
 #include <mdb/mdb_debug.h>
 #include <mdb/mdb_err.h>
@@ -125,4 +128,10 @@ int
 mdb_umem_add(caddr_t base, size_t len)
 {
 	return (umem_add(base, len));
+}
+
+void
+mdb_umem_stat(size_t *totalp, size_t *usedp, size_t *availp)
+{
+	vmem_stand_stat(totalp, usedp, availp);
 }
