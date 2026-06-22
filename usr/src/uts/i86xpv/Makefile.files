@@ -43,6 +43,7 @@ CORE_OBJS +=			\
 	cmi_hw.o		\
 	cms.o			\
 	confunix.o		\
+	cpufreq_mon.o		\
 	cpuid.o			\
 	cpuid_subr.o		\
 	cpupm.o			\

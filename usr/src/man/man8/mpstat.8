@@ -16,7 +16,7 @@
 .\" Copyright (c) 2004, Sun Microsystems, Inc.  All Rights Reserved
 .\" Copyright 2026 Oxide Computer Company
 .\"
-.Dd June 29, 2026
+.Dd July 14, 2026
 .Dt MPSTAT 8
 .Os
 .Sh NAME
@@ -24,7 +24,7 @@
 .Nd report per-processor or per-processor-set statistics
 .Sh SYNOPSIS
 .Nm
-.Op Fl aq
+.Op Fl afq
 .Op Fl p | P Ar set
 .Op Fl T Cm u | d
 .Op Ar interval Oo Ar count Oc
@@ -116,6 +116,35 @@ The following options are supported:
 Aggregate output by processor set.
 Sort the output by set.
 The default output is sorted by CPU number.
+.It Fl f
+Display a per-CPU frequency view in place of the default activity report.
+Each row shows the CPU id, its user, system, and idle percentages, and three
+frequencies in MHz:
+.Bl -tag -width Ds
+.It Sy eff
+the effective clock delivered while the CPU was executing, with boost included;
+.It Sy avg
+the average frequency over the sample.
+This is the cycles the CPU actually executed per second of real time.
+Because the counters advance only while the CPU is executing but wall-clock time
+does not stop, idle time counts as zero, so avg is a measure of delivered work
+rather than a clock speed.
+A mostly-idle CPU reads a low value even when it runs fast while active.
+.It Sy base
+the nominal frequency.
+.El
+.Pp
+These frequencies derive from the x86-specific
+.Em APERF
+and
+.Em MPERF
+hardware feedback counters, and so are available only on x86 systems that
+export the per-CPU cpufreq kstats.
+On systems without them,
+.Nm
+exits with an error.
+Each value is the most recent sample, updated independently of the reporting
+interval.
 .It Fl p
 Report processor set membership of each CPU.
 Sort the output by set.
