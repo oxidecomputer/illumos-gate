@@ -16,7 +16,7 @@
 #
 # Copyright 2018 Joyent, Inc.
 # Copyright 2023 OmniOS Community Edition (OmniOSce) Association.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 #
@@ -35,15 +35,27 @@ dir  path=kernel group=sys
 dir  path=kernel/kmdb group=sys
 dir  path=kernel/kmdb/$(ARCH64) group=sys
 file path=kernel/kmdb/$(ARCH64)/vmm group=sys mode=0555
+dir  path=platform group=sys
+dir  path=platform/i86pc group=sys
+dir  path=platform/i86pc/kernel group=sys
+dir  path=platform/i86pc/kernel/drv group=sys
+dir  path=platform/i86pc/kernel/drv/$(ARCH64) group=sys
+file path=platform/i86pc/kernel/drv/$(ARCH64)/vmm
+file path=platform/i86pc/kernel/drv/vmm.conf
+dir  path=platform/oxide group=sys
+dir  path=platform/oxide/kernel group=sys
+dir  path=platform/oxide/kernel/drv group=sys
+dir  path=platform/oxide/kernel/drv/$(ARCH64) group=sys
+file path=platform/oxide/kernel/drv/$(ARCH64)/vmm
+file path=platform/oxide/kernel/drv/vmm.conf
 dir  path=usr group=sys
+dir  path=usr/kernel group=sys
 dir  path=usr/kernel/drv group=sys
 dir  path=usr/kernel/drv/$(ARCH64) group=sys
 file path=usr/kernel/drv/$(ARCH64)/ppt
 file path=usr/kernel/drv/$(ARCH64)/viona
-file path=usr/kernel/drv/$(ARCH64)/vmm
 file path=usr/kernel/drv/ppt.conf
 file path=usr/kernel/drv/viona.conf
-file path=usr/kernel/drv/vmm.conf
 dir  path=usr/kernel/misc group=sys
 dir  path=usr/kernel/misc/$(ARCH64) group=sys
 file path=usr/kernel/misc/$(ARCH64)/vmm_vtd mode=0755

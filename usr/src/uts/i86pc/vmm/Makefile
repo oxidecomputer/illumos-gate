@@ -12,14 +12,14 @@
 #
 # Copyright 2013 Pluribus Networks Inc.
 # Copyright 2019 Joyent, Inc.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 UTSBASE	= ../..
 
 MODULE		= vmm
 OBJECTS		= $(VMM_OBJS:%=$(OBJS_DIR)/%)
-ROOTMODULE	= $(USR_DRV_DIR)/$(MODULE)
+ROOTMODULE	= $(ROOT_PSM_DRV_DIR)/$(MODULE)
 
 include $(UTSBASE)/i86pc//Makefile.i86pc
 include $(UTSBASE)/intel/io/vmm/Makefile.vmm
