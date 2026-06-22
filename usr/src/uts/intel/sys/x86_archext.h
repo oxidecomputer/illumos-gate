@@ -32,7 +32,7 @@
  * Copyright 2012 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
  * Copyright 2014 Josef 'Jeff' Sipek <jeffpc@josefsipek.net>
  * Copyright 2018 Nexenta Systems, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  * Copyright 2024 MNX Cloud, Inc.
  */
 
@@ -755,6 +755,15 @@ extern "C" {
 #define	IA32_TSX_CTRL_CPUID_CLEAR	0x02
 
 /*
+ * MSRs for the hardware coordination feedback mechanism (the effective
+ * frequency interface), defined by both Intel and AMD. Their presence is
+ * indicated by CPUID leaf 6, ECX[0] (CPUID_INTC_ECX_MAPERF /
+ * X86FSET_EFF_FREQ_IF).
+ */
+#define	MSR_MPERF			0xe7
+#define	MSR_APERF			0xe8
+
+/*
  * Intel Thermal MSRs
  */
 #define	MSR_IA32_THERM_INTERRUPT	0x19b
@@ -1069,6 +1078,7 @@ extern "C" {
 #define	X86FSET_PBRSB_NO	111
 #define	X86FSET_BHI_NO		112
 #define	X86FSET_BHI_CTRL	113
+#define	X86FSET_EFF_FREQ_IF	114
 
 /*
  * Intel Deep C-State invariant TSC in leaf 0x80000007.
@@ -1775,7 +1785,7 @@ typedef enum x86_uarchrev {
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 
-#define	NUM_X86_FEATURES	114
+#define	NUM_X86_FEATURES	115
 extern uchar_t x86_featureset[];
 
 extern void free_x86_featureset(void *featureset);

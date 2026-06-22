@@ -25,7 +25,7 @@
 # Copyright (c) 2010, Intel Corporation.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2020 Joyent, Inc.
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 # Copyright 2021 Jason King
 #
 #	This Makefile defines file modules in the directory uts/i86pc
@@ -47,6 +47,7 @@ CORE_OBJS +=			\
 	comm_page.o		\
 	confunix.o		\
 	cpu_idle.o		\
+	cpufreq_mon.o		\
 	cpuid.o			\
 	cpuid_subr.o		\
 	cpupm.o			\

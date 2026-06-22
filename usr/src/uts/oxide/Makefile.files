@@ -47,6 +47,7 @@ CORE_OBJS +=			\
 	comm_page.o		\
 	confunix.o		\
 	cpu_idle.o		\
+	cpufreq_mon.o		\
 	cpuid.o			\
 	cpuid_subr.o		\
 	cpupm.o			\

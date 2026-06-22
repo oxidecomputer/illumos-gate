@@ -83,6 +83,7 @@
 #endif
 #include <sys/cpu_module.h>
 #include <sys/ontrap.h>
+#include <sys/cpufreq_mon.h>
 
 struct cpu	cpus[1] __aligned(MMU_PAGESIZE);
 struct cpu	*cpu[NCPU] = {&cpus[0]};
@@ -1614,6 +1615,11 @@ done:
 	if (get_hwenv() == HW_NATIVE)
 		workaround_errata_end();
 	cmi_post_mpstartup();
+
+	/*
+	 * All CPUs are now started, so enable the per-CPU frequency monitor.
+	 */
+	cpufreq_mon_init();
 
 #if !defined(__xpv)
 	/*

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/x86_archext.h>
@@ -77,6 +77,10 @@ pwrnow_pstate_prepare(cpu_pm_state_t *handle)
 	 * We're not actually handling P-states yet. Error out in this stub
 	 * function as there is nothing to manage and callers should not even
 	 * try.
+	 *
+	 * When P-state management is implemented here it will also activate
+	 * the turbo accounting in turbo.c. Any new APERF/MPERF use here must
+	 * be read-only.
 	 */
 	return (false);
 }

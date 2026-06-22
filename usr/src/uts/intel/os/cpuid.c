@@ -24,7 +24,7 @@
  * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2014 Josef "Jeff" Sipek <jeffpc@josefsipek.net>
  * Copyright 2020 Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  * Copyright 2024 MNX Cloud, Inc.
  * Copyright 2025 Edgecast Cloud LLC.
  */
@@ -1720,7 +1720,8 @@ static char *x86_feature_names[NUM_X86_FEATURES] = {
 	"rfds_clear",
 	"pbrsb_no",
 	"bhi_no",
-	"bhi_clear"
+	"bhi_clear",
+	"effi"
 };
 
 boolean_t
@@ -3801,10 +3802,10 @@ cpuid_basic_topology(cpu_t *cpu, uchar_t *featureset)
 }
 
 /*
- * Gather relevant CPU features from leaf 6 which covers thermal information. We
- * always gather leaf 6 if it's supported; however, we only look for features on
- * Intel systems as AMD does not currently define any of the features we look
- * for below.
+ * Gather relevant CPU features from leaf 6, which covers thermal and power
+ * management information. The effective frequency interface (the APERF/MPERF
+ * coordination feedback mechanism) is defined by both Intel and AMD; the
+ * remaining features below are only defined by Intel.
  */
 static void
 cpuid_basic_thermal(cpu_t *cpu, uchar_t *featureset)
@@ -3821,6 +3822,9 @@ cpuid_basic_thermal(cpu_t *cpu, uchar_t *featureset)
 	cp->cp_ebx = cp->cp_ecx = cp->cp_edx = 0;
 	(void) __cpuid_insn(cp);
 	platform_cpuid_mangle(cpi->cpi_vendor, 6, cp);
+
+	if ((cp->cp_ecx & CPUID_INTC_ECX_MAPERF) != 0)
+		add_x86_feature(featureset, X86FSET_EFF_FREQ_IF);
 
 	if (cpi->cpi_vendor != X86_VENDOR_Intel) {
 		return;
