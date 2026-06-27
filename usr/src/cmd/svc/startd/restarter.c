@@ -94,6 +94,7 @@
  *     gu->gu_lock
  *     tu->tu_lock
  *     tq->tq_lock
+ *       debug_queue->dq_lock
  *     inst->ri_queue_lock
  *       wait_info_lock
  *       bp->cb_lock
@@ -2572,7 +2573,7 @@ timeout_now()
 	/*
 	 * Walk through the (sorted) timeouts list.  While the timeout
 	 * at the head of the list is <= the current time, kill the
-	 * method.
+	 * method or enqueue it for collecting debug data.
 	 */
 	MUTEX_LOCK(&timeouts->tq_lock);
 
@@ -2585,7 +2586,12 @@ timeout_now()
 		    "Method or service exit timed out.  Killing contract %ld.",
 		    e->te_ctid);
 		e->te_fired = 1;
-		(void) contract_kill(e->te_ctid, SIGKILL, e->te_fmri);
+		if (contract_collect_debug_on_timeout_enabled(e->te_fmri)) {
+        	contract_collect_debug_enqueue(e->te_ctid, e->te_fmri,
+        	    e->te_logstem);
+        } else {
+		    (void) contract_kill(e->te_ctid, SIGKILL, e->te_fmri);
+        }
 	}
 
 	if (uu_list_numnodes(timeouts->tq_list) > 0)

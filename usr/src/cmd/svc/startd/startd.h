@@ -574,6 +574,9 @@ extern uu_list_pool_t *contract_list_pool;
 /* contract.c */
 ctid_t contract_init(void);
 void contract_abandon(ctid_t);
+void contract_collect_debug_init(void);
+boolean_t contract_collect_debug_on_timeout_enabled(const char*);
+void contract_collect_debug_enqueue(ctid_t, const char *, const char *);
 int contract_kill(ctid_t, int, const char *);
 int contract_is_empty(ctid_t);
 void contract_hash_init();

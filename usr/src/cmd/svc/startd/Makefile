@@ -91,6 +91,7 @@ proc.o := CPPFLAGS += -D_REENTRANT
 LDLIBS += \
 	-lcontract \
 	-lkstat \
+	-lgen \
 	-lmd5 \
 	-lnvpair \
 	-lrestart \

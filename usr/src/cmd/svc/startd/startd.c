@@ -938,6 +938,7 @@ startup(void)
 	timeout_init();
 	restarter_protocol_init();
 	restarter_init();
+	contract_collect_debug_init();
 
 	/*
 	 * svc.configd is started by fork_configd_thread so repository access is
