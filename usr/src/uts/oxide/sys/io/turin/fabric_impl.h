@@ -100,6 +100,8 @@ extern "C" {
 extern uint8_t turin_fabric_ioms_nbio_num(uint8_t);
 extern bool turin_fabric_smu_pptable_init(zen_fabric_t *, void *, size_t *);
 extern void turin_fabric_smu_pptable_post(zen_iodie_t *);
+extern bool turin_smu_pm_set_dram_addr(zen_iodie_t *, uint64_t);
+extern bool turin_smu_pm_get_version(zen_iodie_t *, uint32_t *);
 extern void turin_fabric_nbio_init(zen_nbio_t *);
 extern void turin_fabric_ioms_init(zen_ioms_t *);
 

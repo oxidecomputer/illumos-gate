@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_SMU_IMPL_H
@@ -71,6 +71,21 @@ extern "C" {
 #define	MILAN_SMU_OP_SET_EDC_TRACK	0x45
 #define	MILAN_SMU_OP_SET_DF_IRRITATOR	0x46
 #define	MILAN_SMU_OP_HAVE_A_HP_ADDRESS	0x47
+
+/*
+ * Operation codes for the SMU "tool" mailbox (D_MILAN_SMU_TOOL_*). This is a
+ * distinct opcode space from the BIOS mailbox above; these are the messages
+ * used to drive the PM log.
+ */
+#define	MILAN_SMU_TOOL_OP_PMLOG_READ_SAMPLE		0x05
+#define	MILAN_SMU_TOOL_OP_PMLOG_GET_DRAM_ADDR		0x06
+#define	MILAN_SMU_TOOL_OP_PMLOG_GET_TABLE_VERSION	0x08
+
+/*
+ * Size of the DRAM buffer for the SMU PM log: four pages. This is the
+ * default value of PcdCfgAgmLogDramSize.
+ */
+#define	MILAN_SMU_PM_TABLE_SIZE				(4 * MMU_PAGESIZE)
 
 /*
  * SMU features, as enabled via MILAN_SMU_OP_ENABLE_FEATURE. Note that not

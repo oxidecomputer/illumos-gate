@@ -2540,6 +2540,55 @@ zen_fabric_ioms_iohc_disable_unused_pcie_bridges(zen_ioms_t *ioms,
 	return (0);
 }
 
+void
+zen_smu_pm_table_init(zen_iodie_t *iodie)
+{
+	const zen_fabric_ops_t *fops = oxide_zen_fabric_ops();
+	const zen_platform_consts_t *consts = oxide_zen_platform_consts();
+	const size_t len = consts->zpc_smu_pm_table_size;
+	ddi_dma_attr_t attr;
+	void *buf;
+	pfn_t pfn;
+
+	if (fops->zfo_smu_pm_set_dram_addr == NULL || len == 0)
+		return;
+
+	zen_fabric_dma_attr(&attr);
+	buf = contig_alloc(len, &attr, MMU_PAGESIZE, 1);
+	if (buf == NULL) {
+		cmn_err(CE_WARN,
+		    "IO die %u: failed to allocate SMU PM table buffer",
+		    iodie->zi_num);
+		return;
+	}
+	bzero(buf, len);
+
+	pfn = hat_getpfnum(kas.a_hat, (caddr_t)buf);
+	iodie->zi_pmtable = buf;
+	iodie->zi_pmtable_pa = mmu_ptob((uint64_t)pfn);
+	iodie->zi_pmtable_len = len;
+
+	if (!fops->zfo_smu_pm_set_dram_addr(iodie, iodie->zi_pmtable_pa)) {
+		contig_free(buf, len);
+		iodie->zi_pmtable = NULL;
+		iodie->zi_pmtable_pa = 0;
+		iodie->zi_pmtable_len = 0;
+		return;
+	}
+
+	if (fops->zfo_smu_pm_get_version != NULL &&
+	    !fops->zfo_smu_pm_get_version(iodie,
+	    &iodie->zi_pmtable_version)) {
+		cmn_err(CE_WARN,
+		    "IO die %u: failed to read the SMU PM table version",
+		    iodie->zi_num);
+	}
+
+	cmn_err(CE_CONT, "?IO die %u: SMU PM table registered at pa 0x%lx "
+	    "(kva %p, %lu bytes, version 0x%x)\n", iodie->zi_num,
+	    iodie->zi_pmtable_pa, buf, len, iodie->zi_pmtable_version);
+}
+
 static int
 zen_fabric_send_pptable(zen_iodie_t *iodie, void *pptable)
 {
@@ -2556,6 +2605,8 @@ zen_fabric_send_pptable(zen_iodie_t *iodie, void *pptable)
 
 	if (fops->zfo_smu_pptable_post != NULL)
 		fops->zfo_smu_pptable_post(iodie);
+
+	zen_smu_pm_table_init(iodie);
 
 	return (0);
 }

@@ -36,6 +36,7 @@
 #include <sys/io/turin/ras_impl.h>
 #include <sys/io/turin/hacks.h>
 #include <sys/io/turin/smu.h>
+#include <sys/io/turin/smu_impl.h>
 #include <sys/io/zen/mpio.h>
 
 /*
@@ -88,6 +89,8 @@ static const zen_fabric_ops_t turin_fabric_ops = {
 	.zfo_set_mpio_global_config = turin_set_mpio_global_config,
 	.zfo_smu_pptable_init = turin_fabric_smu_pptable_init,
 	.zfo_smu_pptable_post = turin_fabric_smu_pptable_post,
+	.zfo_smu_pm_set_dram_addr = turin_smu_pm_set_dram_addr,
+	.zfo_smu_pm_get_version = turin_smu_pm_get_version,
 	/*
 	 * We currently initialize SMU features late on Turin, after APs are
 	 * running. Doing it earlier can cause a fault state where the CPU
@@ -200,6 +203,17 @@ const zen_platform_t turin_platform = {
 			.zssa_arg4 = D_TURIN_SMU_RPC_ARG4,
 			.zssa_arg5 = D_TURIN_SMU_RPC_ARG5,
 		},
+		.zpc_smu_tool_smn_addrs = {
+			.zssa_req = D_TURIN_SMU_TOOL_MSG,
+			.zssa_resp = D_TURIN_SMU_TOOL_RESP,
+			.zssa_arg0 = D_TURIN_SMU_TOOL_ARG0,
+			.zssa_arg1 = D_TURIN_SMU_TOOL_ARG1,
+			.zssa_arg2 = D_TURIN_SMU_TOOL_ARG2,
+			.zssa_arg3 = D_TURIN_SMU_TOOL_ARG3,
+			.zssa_arg4 = D_TURIN_SMU_TOOL_ARG4,
+			.zssa_arg5 = D_TURIN_SMU_TOOL_ARG5,
+		},
+		.zpc_smu_pm_table_size = TURIN_SMU_PM_TABLE_SIZE,
 		.zpc_mpio_smn_addrs = {
 			.zmsa_reg_base = ZEN_MPIO_SMN_REG_BASE,
 			.zmsa_arg0 = D_TURIN_MPIO_RPC_ARG0,
@@ -251,6 +265,17 @@ const zen_platform_t dense_turin_platform = {
 			.zssa_arg4 = D_TURIN_SMU_RPC_ARG4,
 			.zssa_arg5 = D_TURIN_SMU_RPC_ARG5,
 		},
+		.zpc_smu_tool_smn_addrs = {
+			.zssa_req = D_TURIN_SMU_TOOL_MSG,
+			.zssa_resp = D_TURIN_SMU_TOOL_RESP,
+			.zssa_arg0 = D_TURIN_SMU_TOOL_ARG0,
+			.zssa_arg1 = D_TURIN_SMU_TOOL_ARG1,
+			.zssa_arg2 = D_TURIN_SMU_TOOL_ARG2,
+			.zssa_arg3 = D_TURIN_SMU_TOOL_ARG3,
+			.zssa_arg4 = D_TURIN_SMU_TOOL_ARG4,
+			.zssa_arg5 = D_TURIN_SMU_TOOL_ARG5,
+		},
+		.zpc_smu_pm_table_size = TURIN_SMU_PM_TABLE_SIZE,
 		.zpc_mpio_smn_addrs = {
 			.zmsa_reg_base = ZEN_MPIO_SMN_REG_BASE,
 			.zmsa_arg0 = D_TURIN_MPIO_RPC_ARG0,

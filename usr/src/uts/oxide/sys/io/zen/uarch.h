@@ -298,6 +298,13 @@ typedef struct zen_fabric_ops {
 	bool		(*zfo_smu_pptable_init)(zen_fabric_t *, void *,
 	    size_t *);
 	void		(*zfo_smu_pptable_post)(zen_iodie_t *);
+	/*
+	 * Optional SMU PM log (metrics) support. A platform that implements
+	 * these can have the SMU DMA its PM table into a host DRAM buffer.
+	 * Left NULL on platforms without support.
+	 */
+	bool		(*zfo_smu_pm_set_dram_addr)(zen_iodie_t *, uint64_t);
+	bool		(*zfo_smu_pm_get_version)(zen_iodie_t *, uint32_t *);
 	void		(*zfo_nbio_init)(zen_nbio_t *);
 	void		(*zfo_ioms_init)(zen_ioms_t *);
 	void		(*zfo_nbif_init)(zen_nbif_t *);
@@ -505,6 +512,20 @@ typedef struct zen_platform_consts {
 	 * The platform-specific SMN addresses of the SMU RPC registers.
 	 */
 	const zen_smu_smn_addrs_t	zpc_smu_smn_addrs;
+
+	/*
+	 * The platform-specific SMN addresses of the SMU "tool" mailbox
+	 * registers. This is a second mailbox with its own opcode space, used
+	 * by test/debug tooling such as the PM log. May be left zeroed on
+	 * platforms where it has not been verified.
+	 */
+	const zen_smu_smn_addrs_t	zpc_smu_tool_smn_addrs;
+
+	/*
+	 * Size of the DRAM buffer to allocate for the SMU PM log. Zero on
+	 * platforms without PM log support.
+	 */
+	size_t				zpc_smu_pm_table_size;
 
 	/*
 	 * The platform-specific SMN addresses of the MPIO RPC registers.

@@ -51,6 +51,7 @@
 #include <sys/io/turin/mpio_impl.h>
 #include <sys/io/turin/nbif_impl.h>
 #include <sys/io/turin/smu.h>
+#include <sys/io/turin/smu_impl.h>
 #include <sys/io/turin/ioapic.h>
 #include <sys/io/turin/pptable.h>
 
@@ -532,6 +533,41 @@ turin_fabric_smu_pptable_post(zen_iodie_t *iodie)
 		iodie->zi_edc = limits.zpl_edc;
 		iodie->zi_edc_max = limits.zpl_edc_max;
 	}
+}
+
+bool
+turin_smu_pm_set_dram_addr(zen_iodie_t *iodie, uint64_t pa)
+{
+	zen_smu_rpc_t rpc = { 0 };
+	zen_smu_rpc_res_t res;
+
+	rpc.zsr_req = TURIN_SMU_OP_TOOLS_ADDRESS;
+	rpc.zsr_args[0] = bitx64(pa, 31, 0);
+	rpc.zsr_args[1] = bitx64(pa, 63, 32);
+
+	res = zen_smu_rpc(iodie, &rpc);
+	if (res != ZEN_SMU_RPC_OK) {
+		cmn_err(CE_WARN, "Socket %u IO die %u: "
+		    "SMU tools-address RPC failed: pa 0x%lx, %s (SMU 0x%x)",
+		    iodie->zi_soc->zs_num, iodie->zi_num, pa,
+		    zen_smu_rpc_res_str(res), rpc.zsr_resp);
+		return (false);
+	}
+
+	return (true);
+}
+
+bool
+turin_smu_pm_get_version(zen_iodie_t *iodie, uint32_t *versionp)
+{
+	zen_smu_rpc_t rpc = { 0 };
+
+	rpc.zsr_req = TURIN_SMU_TOOL_OP_PMLOG_GET_TABLE_VERSION;
+	if (zen_smu_tool_rpc(iodie, &rpc) != ZEN_SMU_RPC_OK)
+		return (false);
+
+	*versionp = rpc.zsr_args[0];
+	return (true);
 }
 
 /*

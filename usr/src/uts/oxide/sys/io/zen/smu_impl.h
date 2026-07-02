@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -53,9 +53,26 @@ typedef struct zen_smu_rpc {
 extern zen_smu_rpc_res_t zen_smu_rpc(zen_iodie_t *, zen_smu_rpc_t *);
 
 /*
+ * As zen_smu_rpc(), but issued against the SMU "tool" mailbox
+ * (zpc_smu_tool_smn_addrs) rather than the BIOS mailbox. The opcode space is
+ * distinct and platform-specific.
+ */
+extern zen_smu_rpc_res_t zen_smu_tool_rpc(zen_iodie_t *, zen_smu_rpc_t *);
+
+/*
  * Returns the string representation of a SMU RPC response.
  */
 extern const char *zen_smu_rpc_res_str(const zen_smu_rpc_res_t);
+
+/*
+ * SMU PM log (metrics) support. zen_smu_pm_table_init() allocates a host DRAM
+ * buffer for a given iodie and registers it with the SMU; it is a no-op on
+ * platforms that do not implement the zfo_smu_pm_* ops. The kernel does not
+ * consume the table at runtime; that is done from userland through the
+ * common upmt driver, which drives the SMU tool mailbox over SMN and adopts
+ * the buffer registered here.
+ */
+extern void zen_smu_pm_table_init(zen_iodie_t *);
 
 /*
  * The implementation of these types is exposed to implementers but not to

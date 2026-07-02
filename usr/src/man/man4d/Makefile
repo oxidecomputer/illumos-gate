@@ -16,7 +16,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2023 Peter Tribble
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 # Copyright 2023 RackTop Systems, Inc.
 #
 
@@ -228,6 +228,7 @@ i386_MANFILES=	ahci.4d		\
 		smntemp.4d	\
 		uath.4d		\
 		uhsmp.4d	\
+		upmt.4d		\
 		ural.4d		\
 		urtw.4d		\
 		usmn.4d		\

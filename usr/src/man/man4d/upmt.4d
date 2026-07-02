@@ -1,0 +1,42 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Oxide Computer Company
+.\"
+.Dd July 10, 2026
+.Dt UPMT 4D
+.Os
+.Sh NAME
+.Nm upmt
+.Nd AMD SMU PM table user access driver
+.Sh SYNOPSIS
+.Pa /devices/pseudo/amdzen@0/upmt@7:upmt.*
+.Sh DESCRIPTION
+The
+.Nm
+driver provides read access to the PM
+.Pq metrics
+table that the System Management Unit
+.Pq SMU
+transfers into host DRAM on request, on AMD Milan
+.Pq Zen 3
+and Turin
+.Pq Zen 5
+processors.
+.Pp
+The table's DRAM buffer must have been registered with the SMU by the
+platform, for example by system firmware or by the operating system during
+boot; the driver only exposes a buffer that something else registered.
+One minor node is created per I/O die, and opening a minor fails if no
+buffer is registered for that die at the time of the open.
+.Sh SEE ALSO
+.Xr amdzen 4D ,
+.Xr uhsmp 4D

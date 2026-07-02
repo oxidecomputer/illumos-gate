@@ -122,6 +122,8 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 
 	.zfo_smu_misc_init = milan_fabric_smu_misc_init,
 	.zfo_smu_pptable_init = milan_fabric_smu_pptable_init,
+	.zfo_smu_pm_set_dram_addr = milan_smu_pm_set_dram_addr,
+	.zfo_smu_pm_get_version = milan_smu_pm_get_version,
 	.zfo_nbio_init = milan_fabric_nbio_init,
 	.zfo_ioms_init = milan_fabric_ioms_init,
 
@@ -169,6 +171,17 @@ const zen_platform_t milan_platform = {
 			.zssa_arg4 = D_MILAN_SMU_RPC_ARG4,
 			.zssa_arg5 = D_MILAN_SMU_RPC_ARG5,
 		},
+		.zpc_smu_tool_smn_addrs = {
+			.zssa_req = D_MILAN_SMU_TOOL_MSG,
+			.zssa_resp = D_MILAN_SMU_TOOL_RESP,
+			.zssa_arg0 = D_MILAN_SMU_TOOL_ARG0,
+			.zssa_arg1 = D_MILAN_SMU_TOOL_ARG1,
+			.zssa_arg2 = D_MILAN_SMU_TOOL_ARG2,
+			.zssa_arg3 = D_MILAN_SMU_TOOL_ARG3,
+			.zssa_arg4 = D_MILAN_SMU_TOOL_ARG4,
+			.zssa_arg5 = D_MILAN_SMU_TOOL_ARG5,
+		},
+		.zpc_smu_pm_table_size = MILAN_SMU_PM_TABLE_SIZE,
 		.zpc_nnbif = MILAN_NBIO_MAX_NBIF,
 		.zpc_nbif_nfunc = milan_nbif_nfunc,
 		.zpc_nbif_data = milan_nbif_data,

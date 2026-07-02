@@ -11,7 +11,7 @@
 
 /*
  * Copyright 2019, Joyent, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -238,7 +238,8 @@ static const amdzen_child_data_t amdzen_children[] = {
 	{ "zen_udf", AMDZEN_C_ZEN_UDF, false },
 	{ "zen_umc", AMDZEN_C_ZEN_UMC, true },
 	{ "uhsmp", AMDZEN_C_UHSMP, false },
-	{ "psp", AMDZEN_C_PSP, false }
+	{ "psp", AMDZEN_C_PSP, false },
+	{ "upmt", AMDZEN_C_UPMT, false }
 };
 
 static uint8_t

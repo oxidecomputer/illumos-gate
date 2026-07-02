@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -26,23 +26,6 @@
 #include <sys/io/zen/fabric_impl.h>
 #include <sys/io/zen/platform_impl.h>
 #include <sys/io/zen/smn.h>
-
-#define	ZEN_SMU_RPC_REQ(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_req, 0)
-#define	ZEN_SMU_RPC_RESP(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_resp, 0)
-#define	ZEN_SMU_RPC_ARG0(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_arg0, 0)
-#define	ZEN_SMU_RPC_ARG1(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_arg1, 0)
-#define	ZEN_SMU_RPC_ARG2(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_arg2, 0)
-#define	ZEN_SMU_RPC_ARG3(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_arg3, 0)
-#define	ZEN_SMU_RPC_ARG4(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_arg4, 0)
-#define	ZEN_SMU_RPC_ARG5(ZPCS) \
-    zen_smu_smn_reg(0, (ZPCS)->zpc_smu_smn_addrs.zssa_arg5, 0)
 
 /*
  * Translates the raw SMU RPC response code from firmware to our internal
@@ -78,6 +61,7 @@ zen_smu_rpc_res_str(const zen_smu_rpc_res_t res)
 	case ZEN_SMU_RPC_ERROR:		return ("ZEN_SMU_RPC_ERROR");
 	case ZEN_SMU_RPC_ETIMEOUT:	return ("ZEN_SMU_RPC_ETIMEOUT");
 	case ZEN_SMU_RPC_EOTHER:	return ("ZEN_SMU_RPC_EOTHER");
+	case ZEN_SMU_RPC_EUNSUPPORTED:	return ("ZEN_SMU_RPC_EUNSUPPORTED");
 	default:
 		panic("Unknown SMU result code: 0x%x", res);
 		break;
@@ -103,10 +87,25 @@ zen_smu_rpc_res_str(const zen_smu_rpc_res_t res)
  */
 #define	RPC_NOTDONE		0x00
 
-zen_smu_rpc_res_t
-zen_smu_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
+/*
+ * Issue an RPC against the SMU mailbox described by `addrs`. The transport is
+ * identical across the BIOS and tool mailboxes; only the register set (and the
+ * opcode space of the caller-supplied request) differs.
+ */
+static zen_smu_rpc_res_t
+zen_smu_rpc_common(zen_iodie_t *iodie, zen_smu_rpc_t *rpc,
+    const zen_smu_smn_addrs_t *addrs)
 {
-	const zen_platform_consts_t *zpcs = oxide_zen_platform_consts();
+	const smn_reg_t req = zen_smu_smn_reg(0, addrs->zssa_req, 0);
+	const smn_reg_t resp_reg = zen_smu_smn_reg(0, addrs->zssa_resp, 0);
+	const smn_reg_t args[] = {
+		zen_smu_smn_reg(0, addrs->zssa_arg0, 0),
+		zen_smu_smn_reg(0, addrs->zssa_arg1, 0),
+		zen_smu_smn_reg(0, addrs->zssa_arg2, 0),
+		zen_smu_smn_reg(0, addrs->zssa_arg3, 0),
+		zen_smu_smn_reg(0, addrs->zssa_arg4, 0),
+		zen_smu_smn_reg(0, addrs->zssa_arg5, 0),
+	};
 	zen_smu_rpc_res_t res;
 	uint32_t resp;
 
@@ -116,26 +115,22 @@ zen_smu_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
 	 * Write a sentinel value to the RPC response register.  When the value
 	 * read from the register changes from this value, the RPC is complete.
 	 */
-	zen_iodie_write(iodie, ZEN_SMU_RPC_RESP(zpcs), RPC_NOTDONE);
+	zen_iodie_write(iodie, resp_reg, RPC_NOTDONE);
 
 	/* Write arguments. */
-	zen_iodie_write(iodie, ZEN_SMU_RPC_ARG0(zpcs), rpc->zsr_args[0]);
-	zen_iodie_write(iodie, ZEN_SMU_RPC_ARG1(zpcs), rpc->zsr_args[1]);
-	zen_iodie_write(iodie, ZEN_SMU_RPC_ARG2(zpcs), rpc->zsr_args[2]);
-	zen_iodie_write(iodie, ZEN_SMU_RPC_ARG3(zpcs), rpc->zsr_args[3]);
-	zen_iodie_write(iodie, ZEN_SMU_RPC_ARG4(zpcs), rpc->zsr_args[4]);
-	zen_iodie_write(iodie, ZEN_SMU_RPC_ARG5(zpcs), rpc->zsr_args[5]);
+	for (uint_t i = 0; i < ARRAY_SIZE(args); i++)
+		zen_iodie_write(iodie, args[i], rpc->zsr_args[i]);
 
 	/*
 	 * Write the request to the request register.  This initiates the
 	 * processing of the RPC on the SMU.
 	 */
-	zen_iodie_write(iodie, ZEN_SMU_RPC_REQ(zpcs), rpc->zsr_req);
+	zen_iodie_write(iodie, req, rpc->zsr_req);
 
 	/* Poll the response register for completion. */
 	resp = RPC_NOTDONE;
 	for (uint_t k = 0; resp == RPC_NOTDONE && k < RPC_DONE_MAX_SPIN; k++)
-		resp = zen_iodie_read(iodie, ZEN_SMU_RPC_RESP(zpcs));
+		resp = zen_iodie_read(iodie, resp_reg);
 	rpc->zsr_resp = resp;
 
 	/* Check for timeout. */
@@ -160,16 +155,31 @@ zen_smu_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
 	}
 
 	/* The RPC was successful; read response. */
-	rpc->zsr_args[0] = zen_iodie_read(iodie, ZEN_SMU_RPC_ARG0(zpcs));
-	rpc->zsr_args[1] = zen_iodie_read(iodie, ZEN_SMU_RPC_ARG1(zpcs));
-	rpc->zsr_args[2] = zen_iodie_read(iodie, ZEN_SMU_RPC_ARG2(zpcs));
-	rpc->zsr_args[3] = zen_iodie_read(iodie, ZEN_SMU_RPC_ARG3(zpcs));
-	rpc->zsr_args[4] = zen_iodie_read(iodie, ZEN_SMU_RPC_ARG4(zpcs));
-	rpc->zsr_args[5] = zen_iodie_read(iodie, ZEN_SMU_RPC_ARG5(zpcs));
+	for (uint_t i = 0; i < ARRAY_SIZE(args); i++)
+		rpc->zsr_args[i] = zen_iodie_read(iodie, args[i]);
 
 	mutex_exit(&iodie->zi_smu_lock);
 
 	return (ZEN_SMU_RPC_OK);
+}
+
+zen_smu_rpc_res_t
+zen_smu_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
+{
+	const zen_platform_consts_t *zpcs = oxide_zen_platform_consts();
+
+	return (zen_smu_rpc_common(iodie, rpc, &zpcs->zpc_smu_smn_addrs));
+}
+
+zen_smu_rpc_res_t
+zen_smu_tool_rpc(zen_iodie_t *iodie, zen_smu_rpc_t *rpc)
+{
+	const zen_platform_consts_t *zpcs = oxide_zen_platform_consts();
+
+	if (zpcs->zpc_smu_tool_smn_addrs.zssa_req.srd_unit != SMN_UNIT_SMU_RPC)
+		return (ZEN_SMU_RPC_EUNSUPPORTED);
+
+	return (zen_smu_rpc_common(iodie, rpc, &zpcs->zpc_smu_tool_smn_addrs));
 }
 
 /*

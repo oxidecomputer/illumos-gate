@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_SMU_H
@@ -75,6 +75,59 @@ extern "C" {
 #define	D_MILAN_SMU_RPC_ARG5	(const smn_reg_def_t){	\
 	.srd_unit = SMN_UNIT_SMU_RPC,	\
 	.srd_reg = 0x9d8,		\
+}
+
+/*
+ * The SMU also implements a second, "tool" mailbox (a distinct set of C2PMSG
+ * registers with its own message opcode space, used by test/debug tooling such
+ * as the PM log).
+ */
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_MSG	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0x524,		\
+}
+
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_RESP	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0x570,		\
+}
+
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_ARG0	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0xa40,		\
+}
+
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_ARG1	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0xa44,		\
+}
+
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_ARG2	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0xa48,		\
+}
+
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_ARG3	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0xa4c,		\
+}
+
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_ARG4	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0xa50,		\
+}
+
+/*CSTYLED*/
+#define	D_MILAN_SMU_TOOL_ARG5	(const smn_reg_def_t){	\
+	.srd_unit = SMN_UNIT_SMU_RPC,	\
+	.srd_reg = 0xa54,		\
 }
 
 #ifdef __cplusplus

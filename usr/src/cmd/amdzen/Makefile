@@ -13,8 +13,8 @@
 # Copyright 2026 Oxide Computer Company
 #
 
-PROG= usmn udf apobdump uhsmp
-DEVINFOPROG = usmn udf uhsmp
+PROG= usmn udf apobdump uhsmp upmt
+DEVINFOPROG = usmn udf uhsmp upmt
 
 include ../Makefile.cmd
 
@@ -29,6 +29,7 @@ $(DEVINFOPROG) := EXTRA_OBJS += amdzen_common.o
 $(DEVINFOPROG) := LDLIBS += -ldevinfo
 usmn := CPPFLAGS += -I$(SRC)/uts/intel/sys/amdzen
 uhsmp := CPPFLAGS += -I$(SRC)/uts/intel
+upmt := LDLIBS += -lm
 
 .KEEP_STATE:
 

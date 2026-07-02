@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -22,6 +22,7 @@
 #define	_ZEN_SMU_H
 
 #include <sys/types.h>
+#include <sys/int_limits.h>
 #include <sys/stdbool.h>
 
 #ifdef __cplusplus
@@ -64,6 +65,10 @@ typedef enum zen_smu_rpc_res {
 	 * we don't explicitly handle.
 	 */
 	ZEN_SMU_RPC_EOTHER,
+	/*
+	 * The requested mailbox is not configured on this platform.
+	 */
+	ZEN_SMU_RPC_EUNSUPPORTED,
 } zen_smu_rpc_res_t;
 
 /*
