@@ -13,6 +13,7 @@
  * Copyright 2023 The University of Queensland
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -2037,6 +2038,7 @@ mlxcx_rx_completion(mlxcx_t *mlxp, mlxcx_completion_queue_t *mlcq,
 	uint_t wqe_index, used;
 	ddi_fm_error_t err;
 	mblk_t *mp;
+	pkt_hash_t hw_hash = { 0 };
 
 	ASSERT(mutex_owned(&mlcq->mlcq_mtx));
 
@@ -2124,6 +2126,15 @@ mlxcx_rx_completion(mlxcx_t *mlxp, mlxcx_completion_queue_t *mlcq,
 	if (chkflags != 0) {
 		mac_hcksum_set(mp, 0, 0, 0, from_be16(ent->mlcqe_checksum),
 		    chkflags);
+	}
+
+	if (get_bits8(ent->mlcqe_rx_hash_type, MLXCX_CQE_RX_HASH_L4_DEST) !=
+	    MLXCX_CQE_RX_HASH_NONE ||
+	    get_bits8(ent->mlcqe_rx_hash_type, MLXCX_CQE_RX_HASH_IP_DEST) !=
+	    MLXCX_CQE_RX_HASH_NONE) {
+		hw_hash.ph_val = from_be32(ent->mlcqe_rx_hash_result);
+		hw_hash.ph_polarity = MAC_PKT_HASH_POLARITY_RX;
+		mac_pkt_hash_set(mp, &hw_hash);
 	}
 
 	/*

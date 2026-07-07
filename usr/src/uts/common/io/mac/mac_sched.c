@@ -5009,6 +5009,7 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
     mac_header_info_t *arg3)
 {
 	mac_client_impl_t *mcip = arg1;
+	pkt_hash_t ph = { 0 };
 
 	if (mcip->mci_nvids == 1 &&
 	    !(mcip->mci_state_flags & MCIS_STRIP_DISABLE)) {
@@ -5033,10 +5034,25 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 	 * path. For the rationale, please see the 'Packet Metadata in
 	 * MAC' in mac_sched.c,
 	 * Strip this information here before delivery to a client, if possible.
+	 *
+	 * Following the same reasoning, we do the same thing for db_pkt_hash
+	 * unless the MAC client is enlightened i.e. promises to strip off the
+	 * hash once it has been used.
 	 */
-	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next)
-		if (DB_REF(mp) < 2)
+	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next) {
+		mac_pkt_hash_get(mp, &ph);
+		if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_TX) {
+			DTRACE_PROBE1(pkt__hash__reuse__in__rx,
+			    pkt_hash_t *, &ph);
+		}
+		if (DB_REF(mp) < 2) {
 			mac_ether_clear_pktinfo(mp);
+			if (!(mcip->mci_state_flags &
+			    MCIS_PKT_HASH_NO_REUSE)) {
+				mac_pkt_hash_clear(mp);
+			}
+		}
+	}
 
 	mcip->mci_rx_fn(mcip->mci_rx_arg, mrh, mp_chain, B_FALSE);
 }

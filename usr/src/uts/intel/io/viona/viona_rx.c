@@ -57,6 +57,8 @@
 
 static mblk_t *viona_vlan_pad_mp;
 
+boolean_t viona_rss_steering = B_TRUE;
+
 void
 viona_rx_init(void)
 {
@@ -823,8 +825,20 @@ viona_rx_get_ring(viona_link_t *link, const uint8_t idx)
 static inline viona_vring_t *
 viona_rx_pick_ring(viona_link_t *link, mblk_t *mp)
 {
-	const uint8_t r = (uint8_t)mac_pkt_hash(DL_ETHER, mp,
-	    MAC_PKT_HASH_L3 | MAC_PKT_HASH_L4, B_TRUE) % link->l_usepairs;
+	uint8_t r;
+	pkt_hash_t ph = { 0 };
+
+	CTASSERT(MAC_PKT_HASH_POLARITY_RX != 0);
+
+	if (viona_rss_steering) {
+		mac_pkt_hash_get(mp, &ph);
+	}
+	if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_RX) {
+		r = (uint8_t)(ph.ph_val % link->l_usepairs);
+	} else {
+		r = (uint8_t)mac_pkt_hash(DL_ETHER, mp, MAC_PKT_HASH_L3 |
+		    MAC_PKT_HASH_L4, B_TRUE) % link->l_usepairs;
+	}
 
 	return (viona_rx_get_ring(link, r));
 }

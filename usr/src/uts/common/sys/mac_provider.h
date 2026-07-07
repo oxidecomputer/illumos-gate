@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_MAC_PROVIDER_H
@@ -829,6 +829,12 @@ typedef struct mac_ether_offload_info {
 	uint16_t	meoi_tunhlen;
 } mac_ether_offload_info_t;
 
+typedef enum mac_pkt_hash_polarity {
+	MAC_PKT_HASH_POLARITY_NONE	= 0,
+	MAC_PKT_HASH_POLARITY_RX	= 1,
+	MAC_PKT_HASH_POLARITY_TX	= 2
+} mac_pkt_hash_polarity_t;
+
 /*
  * When querying the VLAN TCI from packet headers via mac_ether_l2_info(), or
  * as part of the internal logic in mac_ether_offload_info(), a value of
@@ -849,6 +855,11 @@ extern void mac_ether_set_pktinfo(mblk_t *, const mac_ether_offload_info_t *,
 extern void mac_ether_clear_pktinfo(mblk_t *);
 extern boolean_t mac_ether_any_set_pktinfo(const mblk_t *mp);
 extern mac_ether_tun_type_t mac_ether_tun_type(const mblk_t *);
+
+extern void mac_pkt_hash_get(const mblk_t *, pkt_hash_t *);
+extern void mac_pkt_hash_set(mblk_t *, const pkt_hash_t *);
+extern void mac_pkt_hash_clear(mblk_t *);
+extern void mac_pkt_hash_clone(const mblk_t *, mblk_t *);
 
 #endif	/* _KERNEL */
 

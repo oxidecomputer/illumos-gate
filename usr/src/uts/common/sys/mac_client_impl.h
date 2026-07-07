@@ -172,6 +172,14 @@ typedef enum {
 	 * This client has no MAC unicast addresss associated with it.
 	 */
 	MCIS_NO_UNICAST_ADDR		= 1 << 13,
+
+	/*
+	 * This client knows about dblk_t packet hashes and promises to either
+	 * not reuse them, or to strip them of their hashes after use. Else,
+	 * MAC will strip off the hash to prevent unintentional mis-steering
+	 * based on stale hashes.
+	 */
+	MCIS_PKT_HASH_NO_REUSE		= 1 << 14,
 } mac_client_state_t;
 
 /*

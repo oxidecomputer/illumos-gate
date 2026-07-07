@@ -21,7 +21,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/ddi.h>
@@ -975,6 +975,14 @@ t4_process_rx_iq(t4_sge_iq_t *rx_iq, uint_t desc_budget,
 					    HCK_FULLCKSUM_OK | HCK_FULLCKSUM |
 					    HCK_IPV4_HDRCKSUM_OK);
 					rxq->stats.rxcsum++;
+				}
+
+				if (rss->hash_type != RSS_HASH_NONE) {
+					pkt_hash_t hw_hash = { 0 };
+					hw_hash.ph_val = BE_32(rss->hash_val);
+					hw_hash.ph_polarity =
+					    MAC_PKT_HASH_POLARITY_RX;
+					mac_pkt_hash_set(mp, &hw_hash);
 				}
 
 				const uint16_t pkt_len = BE_16(cpl->len);

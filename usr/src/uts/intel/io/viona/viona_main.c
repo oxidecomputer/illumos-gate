@@ -1038,7 +1038,8 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 
 	(void) snprintf(cli_name, sizeof (cli_name), "%s-%d", VIONA_MODULE_NAME,
 	    link->l_linkid);
-	err = mac_client_open(link->l_mh, &link->l_mch, cli_name, 0);
+	err = mac_client_open(link->l_mh, &link->l_mch, cli_name,
+	    MAC_OPEN_FLAGS_NO_REUSE);
 	if (err != 0) {
 		goto bail;
 	}

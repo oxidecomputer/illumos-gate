@@ -2768,3 +2768,31 @@ mac_ether_tun_type(const mblk_t *pkt)
 {
 	return (pkt->b_datap->db_pktinfo.t_tuntype);
 }
+
+void
+mac_pkt_hash_get(const mblk_t *mp, pkt_hash_t *ht)
+{
+	*ht = mp->b_datap->db_pkt_hash;
+}
+
+void
+mac_pkt_hash_set(mblk_t *mp, const pkt_hash_t *ht)
+{
+	VERIFY3U(DB_REF(mp), <, 2);
+	VERIFY0(ht->ph_rsvd);
+	mp->b_datap->db_pkt_hash = *ht;
+}
+
+void
+mac_pkt_hash_clear(mblk_t *mp)
+{
+	VERIFY3U(DB_REF(mp), <, 2);
+	bzero(&mp->b_datap->db_pkt_hash, sizeof (mp->b_datap->db_pkt_hash));
+}
+
+void
+mac_pkt_hash_clone(const mblk_t *src, mblk_t *dst)
+{
+	bcopy(&src->b_datap->db_pkt_hash, &dst->b_datap->db_pkt_hash,
+	    sizeof (src->b_datap->db_pkt_hash));
+}
