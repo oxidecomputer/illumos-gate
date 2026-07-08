@@ -104,7 +104,7 @@ ttrace_walk_init(mdb_walk_state_t *wsp)
 		return (WALK_ERR);
 	}
 
-	if (ncpu < 0)
+	if (ncpu <= 0)
 		return (WALK_ERR);
 
 	ttc_size = sizeof (trap_trace_ctl_t) * ncpu;
@@ -574,7 +574,7 @@ ttrace(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	if (!ttrace_ttr_size_check())
 		return (WALK_ERR);
 
-	if (ncpu < 0)
+	if (ncpu <= 0)
 		return (DCMD_ERR);
 
 	ttc_size = sizeof (trap_trace_ctl_t) * ncpu;

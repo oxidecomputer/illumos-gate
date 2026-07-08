@@ -57,7 +57,7 @@ interrupt_dump_apix(uintptr_t addr, uint_t flags, int argc,
 	    NULL) != argc)
 		return (DCMD_USAGE);
 
-	if (ncpu < 0)
+	if (ncpu <= 0)
 		return (DCMD_ERR);
 
 	d_apixs = mdb_zalloc(ncpu * sizeof (apix_impl_t *), UM_SLEEP | UM_GC);
