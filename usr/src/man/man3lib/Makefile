@@ -52,6 +52,7 @@ MANFILES=	libMPAPI.3lib		\
 		libfstyp.3lib		\
 		libgen.3lib		\
 		libgss.3lib		\
+		libhsmp.3lib		\
 		libintl.3lib		\
 		libipcc.3lib		\
 		libiscsit.3lib		\

@@ -1,0 +1,42 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2026 Oxide Computer Company
+#
+
+libhsmp_boost.3hsmp
+	libhsmp_boost_limit.3hsmp
+	libhsmp_boost_limit_set.3hsmp
+	libhsmp_boost_limit_set_all.3hsmp
+libhsmp_err.3hsmp
+	libhsmp_errmsg.3hsmp
+	libhsmp_strerror.3hsmp
+	libhsmp_syserr.3hsmp
+libhsmp_init.3hsmp
+	libhsmp_fini.3hsmp
+	libhsmp_ntargets.3hsmp
+	libhsmp_target_info.3hsmp
+libhsmp_power.3hsmp
+	libhsmp_power_limit.3hsmp
+	libhsmp_power_limit_max.3hsmp
+	libhsmp_power_limit_set.3hsmp
+libhsmp_telemetry.3hsmp
+	libhsmp_c0_residency.3hsmp
+	libhsmp_cclk_limit.3hsmp
+	libhsmp_ddr_bandwidth.3hsmp
+	libhsmp_fclk_memclk.3hsmp
+	libhsmp_freq_limit.3hsmp
+	libhsmp_freq_src_str.3hsmp
+	libhsmp_prochot.3hsmp
+libhsmp_version.3hsmp
+	libhsmp_interface_version.3hsmp
+	libhsmp_smu_version.3hsmp

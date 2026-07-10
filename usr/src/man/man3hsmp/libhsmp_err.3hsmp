@@ -1,0 +1,102 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Oxide Computer Company
+.\"
+.Dd July 10, 2026
+.Dt LIBHSMP_ERR 3HSMP
+.Os
+.Sh NAME
+.Nm libhsmp_err ,
+.Nm libhsmp_errmsg ,
+.Nm libhsmp_strerror ,
+.Nm libhsmp_syserr
+.Nd Retrieve error information from an HSMP library handle
+.Sh LIBRARY
+.Lb libhsmp
+.Sh SYNOPSIS
+.In libhsmp.h
+.Ft libhsmp_err_t
+.Fo libhsmp_err
+.Fa "const libhsmp_handle_t *handle"
+.Fc
+.Ft "const char *"
+.Fo libhsmp_errmsg
+.Fa "const libhsmp_handle_t *handle"
+.Fc
+.Ft "const char *"
+.Fo libhsmp_strerror
+.Fa "libhsmp_err_t err"
+.Fc
+.Ft int32_t
+.Fo libhsmp_syserr
+.Fa "const libhsmp_handle_t *handle"
+.Fc
+.Sh DESCRIPTION
+These functions are used to retrieve error information from a library
+.Fa handle
+after another
+.Xr libhsmp 3LIB
+function has failed.
+The information stored in the handle is invalidated by any subsequent call
+to a library function other than those described here.
+.Pp
+.Fn libhsmp_err
+returns the error code associated with the most recent failure.
+The full set of error codes is described in the
+.Sy ERRORS
+section of
+.Xr libhsmp 3LIB .
+.Pp
+.Fn libhsmp_errmsg
+returns a NUL-terminated string that describes the most recent failure in a
+form suitable for display.
+The string is stored in memory associated with the library handle and is
+overwritten by subsequent library calls.
+.Pp
+.Fn libhsmp_strerror
+returns the constant name of the provided error code, for example
+.Qq LIBHSMP_ERR_TIMEOUT .
+If
+.Fa err
+is not a known error code, a constant placeholder string is returned.
+This function never returns
+.Dv NULL .
+.Pp
+.Fn libhsmp_syserr
+returns the system
+.Va errno
+associated with the most recent failure.
+Not every failure has an associated system error, and
+.Fn libhsmp_syserr
+returns 0 when there is none.
+.Sh RETURN VALUES
+.Fn libhsmp_err
+returns the error code associated with the most recent failure recorded in
+the handle.
+.Fn libhsmp_errmsg
+returns a pointer to the corresponding error message.
+.Fn libhsmp_strerror
+returns a pointer to a constant string naming the provided error code.
+.Fn libhsmp_syserr
+returns the associated system
+.Va errno ,
+or 0.
+.Sh INTERFACE STABILITY
+.Sy Private
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libhsmp 3LIB .
+.Sh SEE ALSO
+.Xr libhsmp_init 3HSMP ,
+.Xr libhsmp 3LIB

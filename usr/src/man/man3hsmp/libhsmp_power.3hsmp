@@ -1,0 +1,112 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Oxide Computer Company
+.\"
+.Dd July 10, 2026
+.Dt LIBHSMP_POWER 3HSMP
+.Os
+.Sh NAME
+.Nm libhsmp_power ,
+.Nm libhsmp_power_limit ,
+.Nm libhsmp_power_limit_max ,
+.Nm libhsmp_power_limit_set
+.Nd Retrieve and control socket power
+.Sh LIBRARY
+.Lb libhsmp
+.Sh SYNOPSIS
+.In libhsmp.h
+.Ft bool
+.Fo libhsmp_power
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *powerp"
+.Fc
+.Ft bool
+.Fo libhsmp_power_limit
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *limitp"
+.Fc
+.Ft bool
+.Fo libhsmp_power_limit_max
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *limitp"
+.Fc
+.Ft bool
+.Fo libhsmp_power_limit_set
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t limit"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve and control the power consumption of the socket
+served by the HSMP target
+.Fa targ .
+.Fa targ
+must be less than the value returned by
+.Xr libhsmp_ntargets 3HSMP .
+All power values are expressed in milliwatts.
+.Pp
+.Fn libhsmp_power
+retrieves the current average power consumption of the socket.
+.Pp
+.Fn libhsmp_power_limit
+retrieves the current socket power limit.
+The firmware manages the socket so that its power consumption does not
+exceed this limit.
+.Pp
+.Fn libhsmp_power_limit_max
+retrieves the highest power limit that can be set for the socket.
+.Pp
+.Fn libhsmp_power_limit_set
+sets the socket power limit to
+.Fa limit .
+The firmware clamps the requested value to the range that the platform
+supports, and so the value subsequently reported by
+.Fn libhsmp_power_limit
+may differ from the value requested.
+.Pp
+The socket power limit set here is only one of several constraints on the
+socket's power consumption.
+The firmware combines limits from a number of sources, and so the value
+set through this interface may not be the limit ultimately in effect.
+.Sh RETURN VALUES
+Upon successful completion, these functions return
+.Dv true ,
+and those that retrieve a value have updated the variable pointed to by
+their final argument.
+Otherwise,
+.Dv false
+is returned.
+.Sh ERRORS
+When the functions defined in this page return
+.Dv false ,
+the reason for the failure is recorded in the library handle and can be
+retrieved using the functions described in
+.Xr libhsmp_err 3HSMP .
+The full set of error codes is described in the
+.Sy ERRORS
+section of
+.Xr libhsmp 3LIB .
+.Sh INTERFACE STABILITY
+.Sy Private
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libhsmp 3LIB .
+.Sh SEE ALSO
+.Xr libhsmp_err 3HSMP ,
+.Xr libhsmp_init 3HSMP ,
+.Xr libhsmp_ntargets 3HSMP ,
+.Xr libhsmp 3LIB

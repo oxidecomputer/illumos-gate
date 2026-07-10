@@ -9,9 +9,9 @@
 .\" http://www.illumos.org/license/CDDL.
 .\"
 .\"
-.\" Copyright 2025 Oxide Computer Company
+.\" Copyright 2026 Oxide Computer Company
 .\"
-.Dd April 29, 2025
+.Dd July 10, 2026
 .Dt UHSMP 4D
 .Os
 .Sh NAME
@@ -25,11 +25,26 @@ The
 driver provides the ability to issue commands to the Host System Management
 Port
 .Pq HSMP
-on AMD Family 19h
-.Pq Zen 3 and Zen 4 ,
-and AMD Family 1ah
-.Pq Zen 5
+on AMD Zen 3 and Zen 4
+.Pq Family 19h ,
+and Zen 5
+.Pq Family 1ah
 processors.
+.Pp
+The driver creates a minor node for each data fabric instance in the
+system.
+All supported processors have one data fabric instance, and one HSMP
+mailbox, per socket.
+Commands issued through a minor node are despatched to the HSMP mailbox of
+the corresponding socket.
+.Pp
+Consumers should not use this driver directly, but should instead use the
+interfaces provided by
+.Xr libhsmp 3LIB
+and
+.Xr hsmp 8 .
 .Sh SEE ALSO
+.Xr libhsmp 3LIB ,
 .Xr amdzen 4D ,
-.Xr zen_udf 4D
+.Xr zen_udf 4D ,
+.Xr hsmp 8

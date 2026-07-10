@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_HSMP_H
@@ -30,30 +30,52 @@ extern "C" {
 #endif
 
 /*
- * HSMP commands.
+ * HSMP commands. These identifiers, and the encodings of their argument
+ * registers, are documented in the HSMP chapter of AMD's Processor
+ * Programming Reference volumes, for example publication 55898 for Milan.
+ * The set of available commands depends on the interface version that the
+ * firmware reports through HSMP_CMD_GETIFVERSION.
+ *
+ * Power values are in milliwatts and frequencies are in MHz throughout.
  */
-#define	HSMP_CMD_TESTMESSAGE		0x1
-#define	HSMP_CMD_GETIFVERSION		0x3
+#define	HSMP_CMD_TESTMESSAGE			0x1
+#define	HSMP_CMD_GETSMUVERSION			0x2
+#define	HSMP_CMD_GETIFVERSION			0x3
+#define	HSMP_CMD_READSOCKETPOWER		0x4
+#define	HSMP_CMD_WRITESOCKETPOWERLIMIT		0x5
+#define	HSMP_CMD_READSOCKETPOWERLIMIT		0x6
+#define	HSMP_CMD_READMAXSOCKETPOWERLIMIT	0x7
+#define	HSMP_CMD_WRITEBOOSTLIMIT		0x8
+#define	HSMP_CMD_WRITEBOOSTLIMITALLCORES	0x9
+#define	HSMP_CMD_READBOOSTLIMIT			0xa
+#define	HSMP_CMD_READPROCHOTSTATUS		0xb
+#define	HSMP_CMD_READFCLKMEMCLK			0xf
+#define	HSMP_CMD_READCCLKFREQLIMIT		0x10
+#define	HSMP_CMD_READC0RESIDENCY		0x11
+#define	HSMP_CMD_GETDDRBANDWIDTH		0x14
+#define	HSMP_CMD_GETSOCKETFREQLIMIT		0x19
 
 /*
- * Documented HSMP response codes.
+ * Documented HSMP response codes. A response of 0 means that the command
+ * has not yet completed. Any other code except HSMP_RESPONSE_OK indicates
+ * failure, including undocumented values in the range [0x2, 0xfb].
  */
-#define	HSMP_RESPONSE_INCOMPLETE	0x0
-#define	HSMP_RESPONSE_OK		0x1
-#define	HSMP_RESPONSE_REJECTED_BUSY	0xfc
-#define	HSMP_RESPONSE_REJECTED_PREREQ	0xfd
-#define	HSMP_RESPONSE_INVALID_MSGID	0xfe
-#define	HSMP_RESPONSE_INVALID_ARGS	0xff
+#define	HSMP_RESPONSE_INCOMPLETE		0x0
+#define	HSMP_RESPONSE_OK			0x1
+#define	HSMP_RESPONSE_REJECTED_BUSY		0xfc
+#define	HSMP_RESPONSE_REJECTED_PREREQ		0xfd
+#define	HSMP_RESPONSE_INVALID_MSGID		0xfe
+#define	HSMP_RESPONSE_INVALID_ARGS		0xff
 
 /*
  * Supported number of functions for each interface version.
  */
-#define	HSMP_IFVER1_FUNCS		0x11
-#define	HSMP_IFVER2_FUNCS		0x12
-#define	HSMP_IFVER3_FUNCS		0x14
-#define	HSMP_IFVER4_FUNCS		0x15
-#define	HSMP_IFVER5_FUNCS		0x2f
-#define	HSMP_IFVER7_FUNCS		0x3f
+#define	HSMP_IFVER1_FUNCS			0x11
+#define	HSMP_IFVER2_FUNCS			0x12
+#define	HSMP_IFVER3_FUNCS			0x14
+#define	HSMP_IFVER4_FUNCS			0x15
+#define	HSMP_IFVER5_FUNCS			0x2f
+#define	HSMP_IFVER7_FUNCS			0x3f
 
 /*
  * HSMP register block.

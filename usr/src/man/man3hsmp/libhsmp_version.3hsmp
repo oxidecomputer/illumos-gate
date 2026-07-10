@@ -1,0 +1,92 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Oxide Computer Company
+.\"
+.Dd July 10, 2026
+.Dt LIBHSMP_VERSION 3HSMP
+.Os
+.Sh NAME
+.Nm libhsmp_smu_version ,
+.Nm libhsmp_interface_version
+.Nd Retrieve SMU firmware and HSMP interface versions
+.Sh LIBRARY
+.Lb libhsmp
+.Sh SYNOPSIS
+.In libhsmp.h
+.Ft bool
+.Fo libhsmp_smu_version
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "libhsmp_smu_version_t *version"
+.Fc
+.Ft bool
+.Fo libhsmp_interface_version
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *version"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve version information from the SMU firmware that
+services the HSMP target
+.Fa targ .
+.Fa targ
+must be less than the value returned by
+.Xr libhsmp_ntargets 3HSMP .
+.Pp
+.Fn libhsmp_smu_version
+retrieves the version of the SMU firmware itself.
+On success, the structure pointed to by
+.Fa version
+is filled in with the following members:
+.Bd -literal -offset 2
+uint8_t lsv_major;   /* major version */
+uint8_t lsv_minor;   /* minor version */
+uint8_t lsv_patch;   /* patch level */
+.Ed
+.Pp
+.Fn libhsmp_interface_version
+retrieves the version of the HSMP interface that the firmware implements,
+which determines the set of HSMP functions that are available.
+Requests for a function that is not available in the implemented interface
+version fail with
+.Dv LIBHSMP_ERR_UNSUPPORTED .
+.Sh RETURN VALUES
+Upon successful completion, these functions return
+.Dv true
+and the variable pointed to by
+.Fa version
+is updated.
+Otherwise,
+.Dv false
+is returned.
+.Sh ERRORS
+When the functions defined in this page return
+.Dv false ,
+the reason for the failure is recorded in the library handle and can be
+retrieved using the functions described in
+.Xr libhsmp_err 3HSMP .
+The full set of error codes is described in the
+.Sy ERRORS
+section of
+.Xr libhsmp 3LIB .
+.Sh INTERFACE STABILITY
+.Sy Private
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libhsmp 3LIB .
+.Sh SEE ALSO
+.Xr libhsmp_err 3HSMP ,
+.Xr libhsmp_init 3HSMP ,
+.Xr libhsmp_ntargets 3HSMP ,
+.Xr libhsmp 3LIB
