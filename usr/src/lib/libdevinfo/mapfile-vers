@@ -190,6 +190,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	di_devlink_type;
 	di_devlink_update;
 	di_devlink_walk;
+	di_devlink_wwn_corrupt;
 	di_devperm_login;
 	di_devperm_logout;
 	di_dim_fini;

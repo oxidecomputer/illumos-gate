@@ -234,50 +234,46 @@ disk_callback_blkdev(di_minor_t minor, di_node_t node)
 	char *addr;
 	char disk[DISK_SUBPATH_MAX];
 	char guid[50];
-	uint_t i, lun = 0;
+	uint_t lun = 0;
 
 	addr = di_bus_addr(node);
 	*guid = '\0';
 	(void) sscanf(addr, "w%49[0-9A-Fa-f],%X", guid, &lun);
 	(void) snprintf(disk, DISK_SUBPATH_MAX, "t%sd%d", guid, lun);
 	/*
-	 * stlouis#723 is tracking a bug where we sometimes end up with corrupt
-	 * entries in the devino database. The corruption observed so far is
-	 * very specific, a bit flip changing the 5th character to lower case.
-	 * We check for any lower case characters in the WWN here and panic if
-	 * any are found to provide a core file for further investigation.
+	 * A rare and so far undiagnosed form of corruption has been observed
+	 * in devlink databases where a single byte has somehow had bit 5 set,
+	 * changing an upper case character in a WWN to lower case. Check the
+	 * path obtained from the kernel for the corruption signature and panic
+	 * if it is found, providing a core file for further investigation.
 	 */
-	for (i = 0; i < sizeof (guid); i++) {
-		if (guid[i] == '\0')
-			break;
-		if (guid[i] >= 'a' && guid[i] <= 'z') {
-			const char *panicstr = "Corrupt WWN addr";
-			char msg[1024];
-			size_t len;
-			int ret;
+	if (di_devlink_wwn_corrupt(addr) != 0) {
+		const char *panicstr = "Corrupt WWN addr";
+		char msg[1024];
+		size_t len;
+		int ret;
 
-			/*
-			 * Save copies of the variables for post-mortem
-			 * inspection.
-			 */
-			upanic_addr = addr;
-			bcopy(disk, upanic_disk, sizeof (upanic_disk));
-			bcopy(guid, upanic_guid, sizeof (upanic_guid));
+		/*
+		 * Save copies of the variables for post-mortem
+		 * inspection.
+		 */
+		upanic_addr = addr;
+		bcopy(disk, upanic_disk, sizeof (upanic_disk));
+		bcopy(guid, upanic_guid, sizeof (upanic_guid));
 
-			ret = snprintf(msg, sizeof (msg),
-			    "%s='%s' guid='%s' disk='%s'",
-			    panicstr, addr, guid, disk);
-			if (ret <= 0) {
-				len = strlen(panicstr) + 1;
-			} else if (ret >= sizeof (msg)) {
-				len = sizeof (msg);
-				panicstr = msg;
-			} else {
-				len = (size_t)ret;
-				panicstr = msg;
-			}
-			upanic(panicstr, len);
+		ret = snprintf(msg, sizeof (msg),
+		    "%s='%s' guid='%s' disk='%s'",
+		    panicstr, addr, guid, disk);
+		if (ret <= 0) {
+			len = strlen(panicstr) + 1;
+		} else if (ret >= sizeof (msg)) {
+			len = sizeof (msg);
+			panicstr = msg;
+		} else {
+			len = (size_t)ret;
+			panicstr = msg;
 		}
+		upanic(panicstr, len);
 	}
 	disk_common(minor, node, disk, RM_STALE);
 	return (DEVFSADM_CONTINUE);

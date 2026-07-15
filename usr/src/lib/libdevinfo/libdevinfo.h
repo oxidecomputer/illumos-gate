@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1997, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_LIBDEVINFO_H
@@ -469,6 +470,8 @@ extern int di_devlink_rm_link(di_devlink_handle_t hdp, const char *link);
 extern int di_devlink_add_link(di_devlink_handle_t hdp, const char *link,
     const char *content, int flags);
 extern int di_devlink_update(di_devlink_handle_t hdp);
+
+extern int di_devlink_wwn_corrupt(const char *path);
 extern di_devlink_handle_t di_devlink_init_root(const char *root,
     const char *name, uint_t flags);
 extern int di_devlink_cache_walk(di_devlink_handle_t hdp, const char *re,
