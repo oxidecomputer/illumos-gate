@@ -959,10 +959,11 @@ apix_do_interrupt(struct regs *rp, trap_trace_rec_t *ttp)
 		return;
 
 	/*
-	 * We are on-core servicing a real interrupt, so take an opportunistic
-	 * CPU-frequency sample.
+	 * We are on-core servicing a real interrupt. Unless this is a
+	 * high-level interrupt, take an opportunistic CPU-frequency sample.
 	 */
-	cpufreq_mon_sample();
+	if (newipl <= LOCK_LEVEL)
+		cpufreq_mon_sample();
 
 	vector = rp->r_trapno;
 	vecp = xv_vector(cpu->cpu_id, vector);
