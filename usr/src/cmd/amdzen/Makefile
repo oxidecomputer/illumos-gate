@@ -21,7 +21,7 @@ include ../Makefile.cmd
 ROOTCMDDIR = $(ROOTLIB)
 CPPFLAGS += -I$(SRC)/uts/intel/io/amdzen
 CFLAGS += $(CCVERBOSE)
-CSTD = $(CSTD_GNU99)
+CSTD = $(CSTD_GNU17)
 COMMON_OBJS = apob_common.o amdzen_common.o
 
 apobdump := EXTRA_OBJS += apob_common.o
