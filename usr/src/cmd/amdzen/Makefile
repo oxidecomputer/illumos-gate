@@ -10,10 +10,11 @@
 #
 
 #
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 PROG= usmn udf apobdump uhsmp
+DEVINFOPROG = usmn udf uhsmp
 
 include ../Makefile.cmd
 
@@ -21,9 +22,11 @@ ROOTCMDDIR = $(ROOTLIB)
 CPPFLAGS += -I$(SRC)/uts/intel/io/amdzen
 CFLAGS += $(CCVERBOSE)
 CSTD = $(CSTD_GNU99)
-COMMON_OBJS = apob_common.o
+COMMON_OBJS = apob_common.o amdzen_common.o
 
 apobdump := EXTRA_OBJS += apob_common.o
+$(DEVINFOPROG) := EXTRA_OBJS += amdzen_common.o
+$(DEVINFOPROG) := LDLIBS += -ldevinfo
 usmn := CPPFLAGS += -I$(SRC)/uts/intel/sys/amdzen
 uhsmp := CPPFLAGS += -I$(SRC)/uts/intel
 
