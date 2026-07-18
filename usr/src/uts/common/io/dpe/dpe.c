@@ -24,8 +24,12 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/errno.h>
+#include <sys/param.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
+#include <sys/sunndi.h>
+#include <sys/esunddi.h>
+#include <sys/ddi_impldefs.h>
 #include <sys/debug.h>
 #include <sys/disp.h>
 #include <sys/kmem.h>
@@ -50,10 +54,14 @@ static list_t dpe_providers;
 static list_t dpe_consumers;
 
 /*
- * Taskq used to deliver consumer notifications.  Notifications are coalesced
- * with a single outstanding event per-consumer.
+ * Taskq used to deliver consumer notifications (coalesced, with a single
+ * outstanding event per-consumer) and to run deferred provider teardown
+ * from the DDI unbind callback.  Using our own taskq matters for the
+ * latter: _fini() destroys it after mod_remove() succeeds, and
+ * taskq_destroy() drains pending tasks, so a queued teardown can never
+ * outlive the module's text.
  */
-static taskq_t *dpe_notify_taskq;
+static taskq_t *dpe_taskq;
 
 /*
  * If the given provider advertises support for `profile`, return true and
@@ -61,9 +69,9 @@ static taskq_t *dpe_notify_taskq;
  * the profile.  The pointer is valid for the lifetime of the provider's
  * registration.
  *
- * Note: a provider's profile list is immutable after registration, so this
- * function must be called with the global `dpe_lock` held rather than the
- * per-provider lock.
+ * Note: a provider's profile list is a framework-owned copy, immutable
+ * after first registration.  This function requires the global `dpe_lock`
+ * only to protect against the entry's final teardown.
  */
 static bool
 dpe_prov_supports(const dpe_prov_t *prov, dpe_profile_t profile,
@@ -116,7 +124,7 @@ dpe_consumer_notify_task(void *arg)
 /*
  * Notify a consumer that a provider supporting its desired profile may be
  * available.  Callbacks run in taskq context so that a provider registering
- * from its attach(9e) never runs consumer code (which will typically call back
+ * from its attach(9E) never runs consumer code (which will typically call back
  * into the framework) in that context.
  *
  * Notifications are coalesced: at most one notify task is outstanding per
@@ -143,26 +151,20 @@ dpe_consumer_notify(dpe_consumer_t *dcon)
 	}
 
 	dcon->dc_dispatched = true;
-	taskq_dispatch_ent(dpe_notify_taskq, dpe_consumer_notify_task, dcon,
+	taskq_dispatch_ent(dpe_taskq, dpe_consumer_notify_task, dcon,
 	    TQ_NOSLEEP, &dcon->dc_tqent);
 }
 
 int
-dpe_consumer_register(dpe_profile_t profile, const char *provider_hint,
-    dpe_avail_cb_f cb, void *arg, dpe_consumer_t **dconp)
+dpe_consumer_register(dpe_profile_t profile, dpe_avail_cb_f cb, void *arg,
+    dpe_consumer_t **dconp)
 {
 	dpe_consumer_t *dcon;
 	dpe_prov_t *prov;
-	bool hint_present = false, found_provider = false;
+	bool found_provider = false;
 
 	if (cb == NULL || dconp == NULL)
 		return (EINVAL);
-
-	if (provider_hint != NULL) {
-		size_t hint_len = strnlen(provider_hint, DPE_PROVIDER_NAME_MAX);
-		if (hint_len >= DPE_PROVIDER_NAME_MAX || hint_len == 0)
-			return (EINVAL);
-	}
 
 	dcon = kmem_zalloc(sizeof (*dcon), KM_SLEEP);
 	dcon->dc_profile = profile;
@@ -175,40 +177,17 @@ dpe_consumer_register(dpe_profile_t profile, const char *provider_hint,
 
 	/*
 	 * If a matching provider is already registered, notify the consumer
-	 * right away.
+	 * right away.  Providers whose driver is currently detached still
+	 * count: dpe_open() will revive them on demand.
 	 */
 	for (prov = list_head(&dpe_providers); prov != NULL;
 	    prov = list_next(&dpe_providers, prov)) {
 		if (dpe_prov_supports(prov, profile, NULL))
 			found_provider = true;
-		if (provider_hint != NULL &&
-		    strcmp(prov->dp_name, provider_hint) == 0) {
-			hint_present = true;
-		}
 	}
 	if (found_provider)
 		dpe_consumer_notify(dcon);
 	mutex_exit(&dpe_lock);
-
-	/*
-	 * If the hinted provider has yet to register, try a best effort attempt
-	 * to get its driver loaded and attached.  This specifically is for the
-	 * case where the consumer gets attached after both consumer and
-	 * provider were detached post-initial boot-time configuration.  In that
-	 * scenario, there's nothing that would otherwise trigger the provider
-	 * to attach.
-	 *
-	 * This must be called without `dpe_lock` held: attaching the driver
-	 * runs its attach(9e), which will typically call
-	 * dpe_provider_register().
-	 */
-	if (provider_hint != NULL && !hint_present) {
-		major_t major = ddi_name_to_major(provider_hint);
-		if (major != DDI_MAJOR_T_NONE) {
-			if (ddi_hold_installed_driver(major) != NULL)
-				ddi_rele_driver(major);
-		}
-	}
 
 	*dconp = dcon;
 	return (0);
@@ -237,16 +216,67 @@ dpe_consumer_unregister(dpe_consumer_t *dcon)
 	kmem_free(dcon, sizeof (*dcon));
 }
 
+static void
+dpe_provider_free(dpe_prov_t *prov)
+{
+	cv_destroy(&prov->dp_cv);
+	kmem_free(prov->dp_path, MAXPATHLEN);
+	kmem_free(prov->dp_profiles,
+	    prov->dp_nprofiles * sizeof (dpe_profile_info_t));
+	kmem_free(prov, sizeof (*prov));
+}
+
+static void
+dpe_provider_unbind_task(void *arg)
+{
+	dpe_prov_t *prov = arg;
+
+	/*
+	 * Wait out any dpe_open() that was already in-flight when the node
+	 * went away: its revival attempt will fail once it observes
+	 * DPE_PROV_F_REMOVED and it will then drop its `dp_owner` claim.
+	 * (A successfully opened context holds the device node, which prevents
+	 * the unbind that got us here.)
+	 */
+	mutex_enter(&dpe_lock);
+	while (prov->dp_owner != NULL)
+		cv_wait(&prov->dp_cv, &dpe_lock);
+	mutex_exit(&dpe_lock);
+
+	dpe_provider_free(prov);
+}
+
+/*
+ * DDI unbind callback: the provider's device node is being removed from the
+ * system for good, so tear down the registration.  This runs in the context
+ * of the thread removing the node, with devinfo tree locks held, so only
+ * unhook the provider from the framework here and push the potentially
+ * blocking teardown out to a taskq.
+ */
+static void
+dpe_provider_unbind_cb(void *arg, dev_info_t *dip)
+{
+	dpe_prov_t *prov = arg;
+
+	mutex_enter(&dpe_lock);
+	VERIFY3P(prov->dp_dip, ==, dip);
+	prov->dp_flags |= DPE_PROV_F_REMOVED;
+	list_remove(&dpe_providers, prov);
+	taskq_dispatch_ent(dpe_taskq, dpe_provider_unbind_task, prov,
+	    TQ_NOSLEEP, &prov->dp_tqent);
+	mutex_exit(&dpe_lock);
+}
+
 int
 dpe_provider_register(const dpe_provider_t *desc, dpe_prov_t **provp)
 {
 	dpe_prov_t *prov;
 	dpe_consumer_t *dcon;
-	size_t prov_name_len;
+	size_t prov_name_len, profsz;
 
-	if (desc == NULL || desc->dpp_profiles == NULL ||
-	    desc->dpp_nprofiles == 0 || desc->dpp_ops == NULL ||
-	    provp == NULL) {
+	if (desc == NULL || desc->dpp_dip == NULL ||
+	    desc->dpp_profiles == NULL || desc->dpp_nprofiles == 0 ||
+	    desc->dpp_ops == NULL || provp == NULL) {
 		return (EINVAL);
 	}
 
@@ -255,18 +285,59 @@ dpe_provider_register(const dpe_provider_t *desc, dpe_prov_t **provp)
 		return (EINVAL);
 	}
 
-	prov = kmem_zalloc(sizeof (*prov), KM_SLEEP);
-	CTASSERT(sizeof (prov->dp_name) == sizeof (desc->dpp_name));
-	bcopy(desc->dpp_name, prov->dp_name, prov_name_len);
-	prov->dp_profiles = desc->dpp_profiles;
-	prov->dp_nprofiles = desc->dpp_nprofiles;
-	prov->dp_ops = desc->dpp_ops;
-	prov->dp_private = desc->dpp_private;
-	mutex_init(&prov->dp_lock, NULL, MUTEX_DRIVER, NULL);
-	prov->dp_in_use = false;
+	/*
+	 * Registration is only allowed from the provider driver's
+	 * attach(9E): the registration's lifetime is keyed to the device
+	 * node and revival relies on re-attach re-registering.
+	 */
+	if (!DEVI_IS_ATTACHING(desc->dpp_dip))
+		return (EAGAIN);
 
+	profsz = desc->dpp_nprofiles * sizeof (dpe_profile_info_t);
+
+	/*
+	 * A provider re-attaching after a detach reactivates its existing
+	 * registration.  But given it may have since unloaded, its
+	 * module-resident pointers may differ and we so we refresh them here.
+	 */
 	mutex_enter(&dpe_lock);
-	list_insert_tail(&dpe_providers, prov);
+	for (prov = list_head(&dpe_providers); prov != NULL;
+	    prov = list_next(&dpe_providers, prov)) {
+		if (prov->dp_dip == desc->dpp_dip)
+			break;
+	}
+	if (prov != NULL) {
+		VERIFY0(prov->dp_flags & DPE_PROV_F_VALID);
+		VERIFY0(strcmp(prov->dp_name, desc->dpp_name));
+		VERIFY3U(prov->dp_nprofiles, ==, desc->dpp_nprofiles);
+		VERIFY0(bcmp(prov->dp_profiles, desc->dpp_profiles, profsz));
+
+		prov->dp_ops = desc->dpp_ops;
+		prov->dp_private = desc->dpp_private;
+		prov->dp_flags |= DPE_PROV_F_VALID;
+	} else {
+		mutex_exit(&dpe_lock);
+
+		prov = kmem_zalloc(sizeof (*prov), KM_SLEEP);
+		CTASSERT(sizeof (prov->dp_name) == sizeof (desc->dpp_name));
+		bcopy(desc->dpp_name, prov->dp_name, prov_name_len);
+		prov->dp_dip = desc->dpp_dip;
+		prov->dp_path = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+		(void) ddi_pathname(desc->dpp_dip, prov->dp_path);
+		prov->dp_profiles = kmem_alloc(profsz, KM_SLEEP);
+		bcopy(desc->dpp_profiles, prov->dp_profiles, profsz);
+		prov->dp_nprofiles = desc->dpp_nprofiles;
+		prov->dp_ops = desc->dpp_ops;
+		prov->dp_private = desc->dpp_private;
+		prov->dp_flags = DPE_PROV_F_VALID;
+		cv_init(&prov->dp_cv, NULL, CV_DRIVER, NULL);
+		prov->dp_cb.ddiub_cb = dpe_provider_unbind_cb;
+		prov->dp_cb.ddiub_arg = prov;
+		e_ddi_register_unbind_callback(desc->dpp_dip, &prov->dp_cb);
+
+		mutex_enter(&dpe_lock);
+		list_insert_tail(&dpe_providers, prov);
+	}
 
 	/*
 	 * Notify any consumers waiting on a provider supporting one of our
@@ -283,27 +354,111 @@ dpe_provider_register(const dpe_provider_t *desc, dpe_prov_t **provp)
 	return (0);
 }
 
+/*
+ * Called from the provider driver's detach(9E), or from its attach(9E) when
+ * cleaning up after a failure.  This only deactivates the registration: the
+ * entry (and the device node it is keyed to) persists so that a later
+ * dpe_open() can revive the provider, and is finally torn down by the unbind
+ * callback when the node is removed from the system.
+ */
 int
 dpe_provider_unregister(dpe_prov_t *prov)
 {
 	if (prov == NULL)
 		return (EINVAL);
 
+	/*
+	 * Like registration, we should only be called from detach(9E) (or from
+	 * attach(9E) for failure cleanup).
+	 */
+	VERIFY(DEVI_IS_ATTACHING(prov->dp_dip) ||
+	    DEVI_IS_DETACHING(prov->dp_dip));
+
 	mutex_enter(&dpe_lock);
-	mutex_enter(&prov->dp_lock);
-	if (prov->dp_in_use) {
-		mutex_exit(&prov->dp_lock);
+	if (prov->dp_owner != NULL) {
 		mutex_exit(&dpe_lock);
+		/*
+		 * An open context holds the provider's device node, which
+		 * prevents the detach that would lead here.  But `dp_owner`
+		 * is also set by an in-flight dpe_open() that has claimed the
+		 * provider without yet taking that hold.  Such an open may be
+		 * racing a detach, which then correctly fails and leaves the
+		 * provider attached for the open to complete against.  It also
+		 * may have triggered a revival whose attach failed and is
+		 * unregistering as part of its cleanup.
+		 */
 		return (EBUSY);
 	}
-	mutex_exit(&prov->dp_lock);
 
-	list_remove(&dpe_providers, prov);
+	prov->dp_flags &= ~DPE_PROV_F_VALID;
+	prov->dp_ops = NULL;
+	prov->dp_private = NULL;
 	mutex_exit(&dpe_lock);
 
-	mutex_destroy(&prov->dp_lock);
-	kmem_free(prov, sizeof (*prov));
 	return (0);
+}
+
+/*
+ * Acquire a hold on the provider's device node, reviving (re-attaching) the
+ * provider driver if it is currently detached.  Returns true with a hold on
+ * `dp_dip` that the caller owns.  That hold pins the provider attached (and
+ * its module loaded) until released.
+ */
+static bool
+dpe_prov_hold(dpe_prov_t *prov)
+{
+	dev_info_t *pdip, *dip;
+	bool ok;
+
+	/*
+	 * Revival needs no explicit serialization: the caller holds the
+	 * provider's exclusive claim (`dp_owner`), so at most one hold
+	 * attempt can be in-flight per provider.  Should concurrent claims
+	 * ever be allowed, explicit per-provider serialization must be
+	 * reintroduced here.
+	 */
+	mutex_enter(&dpe_lock);
+	ASSERT3P(prov->dp_owner, !=, NULL);
+	if ((prov->dp_flags & DPE_PROV_F_REMOVED) != 0) {
+		mutex_exit(&dpe_lock);
+		return (false);
+	}
+	mutex_exit(&dpe_lock);
+
+	pdip = ddi_get_parent(prov->dp_dip);
+	ndi_devi_enter(pdip);
+	e_ddi_hold_devi(prov->dp_dip);
+	ndi_devi_exit(pdip);
+
+	mutex_enter(&dpe_lock);
+	if ((prov->dp_flags & (DPE_PROV_F_VALID | DPE_PROV_F_REMOVED)) == 0) {
+		/*
+		 * At this point, we have a registered provider entry but it
+		 * has since detached.  We can't use the saved ops as the module
+		 * may have been unloaded.  We attempt to revive the provider by
+		 * resolving the saved device path, which configures each
+		 * component along the way and thus revives any detached
+		 * ancestors as well.  A successful re-attach re-registers the
+		 * provider, setting DPE_PROV_F_VALID and refreshing its ops.
+		 * We only keep our original hold: the one returned by the path
+		 * lookup is redundant on success, and on a mismatch the node
+		 * was replaced out from under us, which the flag recheck below
+		 * turns into a failure.
+		 */
+		mutex_exit(&dpe_lock);
+		dip = e_ddi_hold_devi_by_path(prov->dp_path, 0);
+		if (dip != NULL)
+			ddi_release_devi(dip);
+		mutex_enter(&dpe_lock);
+	}
+
+	ok = (prov->dp_flags & DPE_PROV_F_VALID) != 0 &&
+	    (prov->dp_flags & DPE_PROV_F_REMOVED) == 0;
+	mutex_exit(&dpe_lock);
+
+	if (!ok)
+		ddi_release_devi(prov->dp_dip);
+	return (ok);
 }
 
 dpe_error_t
@@ -319,6 +474,8 @@ dpe_open(dpe_profile_t profile, const char *provider_name, dpe_ctx_t **ctxp)
 		err.dpe_error = DPE_E_BAD_ARG;
 		return (err);
 	}
+
+	ctx = kmem_zalloc(sizeof (*ctx), KM_SLEEP);
 
 	mutex_enter(&dpe_lock);
 	for (prov = list_head(&dpe_providers); prov != NULL;
@@ -336,19 +493,17 @@ dpe_open(dpe_profile_t profile, const char *provider_name, dpe_ctx_t **ctxp)
 
 		matched_profile = true;
 
-		mutex_enter(&prov->dp_lock);
-		if (!prov->dp_in_use) {
-			prov->dp_in_use = true;
-			mutex_exit(&prov->dp_lock);
+		if (prov->dp_owner == NULL) {
+			prov->dp_owner = ctx;
 			chosen = prov;
 			chosen_info = info;
 			break;
 		}
-		mutex_exit(&prov->dp_lock);
 	}
 	mutex_exit(&dpe_lock);
 
 	if (chosen == NULL) {
+		kmem_free(ctx, sizeof (*ctx));
 		if (provider_name != NULL && !matched_prov)
 			err.dpe_error = DPE_E_NO_SUCH_PROVIDER;
 		else if (matched_profile)
@@ -358,7 +513,21 @@ dpe_open(dpe_profile_t profile, const char *provider_name, dpe_ctx_t **ctxp)
 		return (err);
 	}
 
-	ctx = kmem_zalloc(sizeof (*ctx), KM_SLEEP);
+	/*
+	 * Take a hold on the provider for the lifetime of the context,
+	 * reviving it first if its driver is currently detached.
+	 */
+	if (!dpe_prov_hold(chosen)) {
+		mutex_enter(&dpe_lock);
+		VERIFY3P(chosen->dp_owner, ==, ctx);
+		chosen->dp_owner = NULL;
+		cv_broadcast(&chosen->dp_cv);
+		mutex_exit(&dpe_lock);
+		kmem_free(ctx, sizeof (*ctx));
+		err.dpe_error = DPE_E_NO_SUCH_PROVIDER;
+		return (err);
+	}
+
 	ctx->dc_prov = chosen;
 	ctx->dc_profile = *chosen_info;
 	ctx->dc_derived_context = false;
@@ -383,9 +552,12 @@ dpe_close(dpe_ctx_t *ctx)
 			return (err);
 	}
 
-	mutex_enter(&ctx->dc_prov->dp_lock);
-	ctx->dc_prov->dp_in_use = false;
-	mutex_exit(&ctx->dc_prov->dp_lock);
+	mutex_enter(&dpe_lock);
+	VERIFY3P(ctx->dc_prov->dp_owner, ==, ctx);
+	ctx->dc_prov->dp_owner = NULL;
+	cv_broadcast(&ctx->dc_prov->dp_cv);
+	mutex_exit(&dpe_lock);
+	ddi_release_devi(ctx->dc_prov->dp_dip);
 
 	kmem_free(ctx, sizeof (*ctx));
 	return (err);
@@ -429,6 +601,7 @@ dpe_derive_context(dpe_ctx_t *ctx, const uint8_t *type, size_t type_size,
 		return (err);
 	}
 
+	ASSERT3P(ctx->dc_prov->dp_owner, ==, ctx);
 	err.dpe_prov = ctx->dc_prov->dp_ops->dop_derive_context(
 	    ctx->dc_prov->dp_private, type, hash, opts ? opts : &zero_opts);
 	if (err.dpe_prov != DPE_PROV_E_OK)
@@ -475,6 +648,7 @@ dpe_certify_key(dpe_ctx_t *ctx, const uint8_t *label, size_t label_size,
 		return (err);
 	}
 
+	ASSERT3P(ctx->dc_prov->dp_owner, ==, ctx);
 	err.dpe_prov = ctx->dc_prov->dp_ops->dop_certify_key(
 	    ctx->dc_prov->dp_private, label, pubkey, cert, cert_size);
 	if (err.dpe_prov != DPE_PROV_E_OK)
@@ -506,6 +680,7 @@ dpe_sign(dpe_ctx_t *ctx, const uint8_t *label, size_t label_size,
 		return (err);
 	}
 
+	ASSERT3P(ctx->dc_prov->dp_owner, ==, ctx);
 	err.dpe_prov = ctx->dc_prov->dp_ops->dop_sign(
 	    ctx->dc_prov->dp_private, label, data, sig);
 	if (err.dpe_prov != DPE_PROV_E_OK)
@@ -523,6 +698,7 @@ dpe_get_cert_chain_size(dpe_ctx_t *ctx, uint32_t *sizep)
 		return (err);
 	}
 
+	ASSERT3P(ctx->dc_prov->dp_owner, ==, ctx);
 	err.dpe_prov = ctx->dc_prov->dp_ops->dop_get_cert_chain_size(
 	    ctx->dc_prov->dp_private, sizep);
 	if (err.dpe_prov != DPE_PROV_E_OK)
@@ -541,6 +717,7 @@ dpe_get_cert_chain(dpe_ctx_t *ctx, uint32_t offset, uint32_t req_sz,
 		return (err);
 	}
 
+	ASSERT3P(ctx->dc_prov->dp_owner, ==, ctx);
 	err.dpe_prov = ctx->dc_prov->dp_ops->dop_get_cert_chain(
 	    ctx->dc_prov->dp_private, offset, req_sz, out, got);
 	if (err.dpe_prov != DPE_PROV_E_OK)
@@ -558,6 +735,7 @@ dpe_destroy_context(dpe_ctx_t *ctx)
 		return (err);
 	}
 
+	ASSERT3P(ctx->dc_prov->dp_owner, ==, ctx);
 	err.dpe_prov = ctx->dc_prov->dp_ops->dop_destroy_context(
 	    ctx->dc_prov->dp_private);
 	if (err.dpe_prov != DPE_PROV_E_OK)
@@ -589,11 +767,11 @@ _init(void)
 	    offsetof(dpe_prov_t, dp_node));
 	list_create(&dpe_consumers, sizeof (dpe_consumer_t),
 	    offsetof(dpe_consumer_t, dc_node));
-	dpe_notify_taskq = taskq_create("dpe_notify", 1, minclsyspri, 1, 1,
+	dpe_taskq = taskq_create("dpe", 1, minclsyspri, 1, 1,
 	    TASKQ_PREPOPULATE);
 
 	if ((ret = mod_install(&dpe_modlinkage)) != 0) {
-		taskq_destroy(dpe_notify_taskq);
+		taskq_destroy(dpe_taskq);
 		list_destroy(&dpe_consumers);
 		list_destroy(&dpe_providers);
 		mutex_destroy(&dpe_lock);
@@ -622,7 +800,7 @@ _fini(void)
 	if ((ret = mod_remove(&dpe_modlinkage)) != 0)
 		return (ret);
 
-	taskq_destroy(dpe_notify_taskq);
+	taskq_destroy(dpe_taskq);
 	list_destroy(&dpe_consumers);
 	list_destroy(&dpe_providers);
 	mutex_destroy(&dpe_lock);

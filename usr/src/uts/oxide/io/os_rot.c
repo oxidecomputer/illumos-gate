@@ -538,14 +538,11 @@ os_rot_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	 * framework invokes os_rot_dpe_avail() as they become available;
 	 * once OS_ROT_DPE_PROVIDER shows up, the callback completes the DPE
 	 * initialization.  Until then ioctls fail with
-	 * OS_ROT_E_NO_PROVIDER.  Passing OS_ROT_DPE_PROVIDER as the hint
-	 * lets the framework try to load and attach the provider driver if
-	 * nothing else will (e.g. we're being reloaded on an open of
-	 * /dev/os_rot after both drivers were explicitly unloaded).
+	 * OS_ROT_E_NO_PROVIDER.  A provider whose driver has detached still
+	 * counts as available: dpe_open() revives it on demand.
 	 */
 	ret = dpe_consumer_register(DPE_PROFILE_IROT_P384_SHA384,
-	    OS_ROT_DPE_PROVIDER, os_rot_dpe_avail, osr,
-	    &osr->osr_dpe_consumer);
+	    os_rot_dpe_avail, osr, &osr->osr_dpe_consumer);
 	if (ret != 0) {
 		dev_err(dip, CE_WARN, "!failed to register as a DPE "
 		    "consumer: %d", ret);

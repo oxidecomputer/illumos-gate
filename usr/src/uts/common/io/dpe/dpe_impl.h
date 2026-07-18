@@ -26,6 +26,7 @@
 #include <sys/condvar.h>
 #include <sys/thread.h>
 #include <sys/taskq_impl.h>
+#include <sys/esunddi.h>
 
 #include "dpe.h"
 
@@ -33,31 +34,61 @@
 extern "C" {
 #endif
 
+typedef enum {
+	/*
+	 * The provider is currently registered: its driver is attached and
+	 * `dp_ops`/`dp_private` are usable.  Cleared when the provider
+	 * driver detaches (dpe_provider_unregister()).
+	 */
+	DPE_PROV_F_VALID	= 1 << 0,
+	/*
+	 * The provider's device node is being removed (DDI unbind callback
+	 * has fired).  The entry is off the providers list and awaiting
+	 * final teardown.
+	 */
+	DPE_PROV_F_REMOVED	= 1 << 1,
+} dpe_prov_flags_t;
+
 /*
  * Internal representation of a registered provider.  A `dpe_prov_t` is
- * allocated and initialized by the framework when a backend calls
- * dpe_provider_register().
+ * allocated and initialized by the framework when a backend first calls
+ * dpe_provider_register() and lives until the provider's device node is
+ * unbound: the provider driver detaching merely marks it invalid (see
+ * dpe.c for the full lifecycle).  All mutable state is protected by the
+ * global `dpe_lock`.
  */
 struct dpe_prov {
 	list_node_t		dp_node;	/* on dpe_providers list */
 
 	/*
-	 * Identity / capabilities.  These are copied from or reference the
-	 * caller's dpe_provider_t descriptor at registration time and are
-	 * immutable afterwards.
+	 * Identity / capabilities, captured at first registration.
+	 * `dp_profiles` is a framework-owned copy. `dp_path` is the
+	 * provider's /devices path, used to revive (re-attach) it on
+	 * demand.  `dp_ops`/`dp_private` reference provider module memory
+	 * and are refreshed on every re-registration and NULLed while the
+	 * provider is not valid.
 	 */
-	char				dp_name[DPE_PROVIDER_NAME_MAX];
-	const dpe_profile_info_t	*dp_profiles;
-	size_t				dp_nprofiles;
-	const dpe_ops_t			*dp_ops;
-	void				*dp_private;
+	char			dp_name[DPE_PROVIDER_NAME_MAX];
+	dev_info_t		*dp_dip;
+	char			*dp_path;
+	dpe_profile_info_t	*dp_profiles;
+	size_t			dp_nprofiles;
+	const dpe_ops_t		*dp_ops;
+	void			*dp_private;
+
+	taskq_ent_t		dp_tqent;
+	ddi_unbind_callback_t	dp_cb;
+	dpe_prov_flags_t	dp_flags;
+	kcondvar_t		dp_cv;
 
 	/*
-	 * Per-provider lock and in-use flag.  Only one consumer context
-	 * may be bound to the provider at a time.
+	 * The consumer context holding the exclusive claim on this
+	 * provider, or NULL if unclaimed.  Only one context may be bound
+	 * to the provider at a time.  While claimed, the context also
+	 * holds the provider's device node (see dpe_open()), pinning it
+	 * attached.  `dp_cv` is signaled when the claim is dropped.
 	 */
-	kmutex_t		dp_lock;
-	bool			dp_in_use;
+	dpe_ctx_t		*dp_owner;
 };
 
 /*

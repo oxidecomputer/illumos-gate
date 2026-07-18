@@ -380,6 +380,7 @@ psp_dpe_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	uint32_t profile = PSP_DPE_PROFILE_INVALID;
 	dpe_provider_t prov_desc = {
 		.dpp_name = "psp_dpe",
+		.dpp_dip = dip,
 		.dpp_profiles = psp_dpe_profiles,
 		.dpp_nprofiles = ARRAY_SIZE(psp_dpe_profiles),
 		.dpp_ops = &psp_dpe_ops,
@@ -454,14 +455,13 @@ psp_dpe_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	}
 
 	/*
-	 * Unregister from the DPE framework first: this fails with EBUSY if
-	 * any consumer still holds a context against us, in which case we must
-	 * not proceed.
+	 * Unregister from the DPE framework first.  This only deactivates
+	 * the registration -- it persists, keyed to our device node, and the
+	 * framework will revive us by driving a re-attach if a consumer
+	 * opens a context later..
 	 */
 	ret = dpe_provider_unregister(pd->pd_dpe_prov);
-	if (ret == EBUSY) {
-		return (DDI_FAILURE);
-	} else if (ret != 0) {
+	if (ret != 0) {
 		dev_err(dip, CE_WARN, "!failed to unregister DPE provider: %d",
 		    ret);
 		return (DDI_FAILURE);
