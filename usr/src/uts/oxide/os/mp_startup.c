@@ -145,7 +145,6 @@
 #include <sys/hma.h>
 #include <sys/cpu_module.h>
 #include <sys/ontrap.h>
-#include <sys/cpufreq_mon.h>
 #include <sys/boot_data.h>
 #include <sys/io/zen/ccx.h>
 #include <sys/io/zen/fabric.h>
@@ -1622,11 +1621,6 @@ done:
 	if (get_hwenv() == HW_NATIVE)
 		workaround_errata_end();
 	cmi_post_mpstartup();
-
-	/*
-	 * All CPUs are now started, so enable the per-CPU frequency monitor.
-	 */
-	cpufreq_mon_init();
 
 	/*
 	 * Once other CPUs have completed startup procedures, perform

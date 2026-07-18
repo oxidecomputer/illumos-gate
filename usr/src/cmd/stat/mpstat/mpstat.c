@@ -22,9 +22,6 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * Copyright 2026 Oxide Computer Company
- */
 
 #include <sys/pset.h>
 #include <sys/types.h>
@@ -62,11 +59,9 @@ static int hz;
 static int display_pset = -1;
 static int show_set = 0;
 static int suppress_state;
-static int freq_view = 0;
 
 static void print_header(int, int);
 static void show_cpu_usage(struct snapshot *, struct snapshot *, int);
-static int snapshot_has_cpufreq(struct snapshot *);
 static void usage(void);
 
 int
@@ -91,19 +86,13 @@ main(int argc, char **argv)
 #endif
 	(void) textdomain(TEXT_DOMAIN);
 
-	while ((c = getopt(argc, argv, "afpP:qT:")) != (int)EOF)
+	while ((c = getopt(argc, argv, "apP:qT:")) != (int)EOF)
 		switch (c) {
 			case 'a':
 				/*
 				 * Display aggregate data for processor sets.
 				 */
 				display_agg = 1;
-				break;
-			case 'f':
-				/*
-				 * Display per-CPU frequency information.
-				 */
-				freq_view = 1;
 				break;
 			case 'p':
 				/*
@@ -178,20 +167,6 @@ main(int argc, char **argv)
 	if (signal(SIGCONT, cont_handler) == SIG_ERR)
 		fail(1, "signal failed");
 
-	/*
-	 * The frequency view has no data if no CPU exports the cpufreq
-	 * kstats. Fail rather than printing a table of zeros.
-	 */
-	if (freq_view) {
-		struct snapshot *ss = acquire_snapshot(kc, types, NULL);
-
-		if (!snapshot_has_cpufreq(ss)) {
-			fail(0, "per-CPU frequency data is not available "
-			    "on this system");
-		}
-		free_snapshot(ss);
-	}
-
 	start_n = gethrtime();
 
 	while (infinite_cycles || iter > 0) {
@@ -227,18 +202,6 @@ main(int argc, char **argv)
 static void
 print_header(int display_agg, int show_set)
 {
-	if (freq_view && display_agg == 1) {
-		(void) printf("SET  usr  sys  idl    eff    avg   base sze\n");
-		return;
-	}
-	if (freq_view) {
-		(void) printf("CPU  usr  sys  idl    eff    avg   base");
-		if (show_set == 1)
-			(void) printf(" set");
-		(void) printf("\n");
-		return;
-	}
-
 	if (display_agg == 1)
 		(void) printf("SET minf mjf xcal  intr ithr  csw icsw migr "
 		    "smtx  srw syscl  usr sys  wt idl sze");
@@ -249,36 +212,6 @@ print_header(int display_agg, int show_set)
 			(void) printf(" set");
 	}
 	(void) printf("\n");
-}
-
-static int
-snapshot_has_cpufreq(struct snapshot *ss)
-{
-	size_t i;
-
-	for (i = 0; i < ss->s_nr_cpus; i++) {
-		if (ss->s_cpus[i].cs_cpufreq.ks_data != NULL)
-			return (1);
-	}
-	return (0);
-}
-
-/*
- * Return one of a CPU's published frequency values ("effective_Hz",
- * "average_Hz" or "base_Hz") in MHz, or 0 if the frequency monitor kstat is
- * absent. This is a level read straight from the current snapshot, not a delta
- * over the interval.
- */
-static uint64_t
-cpufreq_mhz(kstat_t *ks, char *name)
-{
-	kstat_named_t *kn;
-
-	if (ks->ks_data == NULL)
-		return (0);
-	if ((kn = kstat_data_lookup(ks, name)) == NULL)
-		return (0);
-	return (kn->value.ui64 / 1000000);
 }
 
 static void
@@ -315,24 +248,6 @@ print_cpu(struct cpu_snapshot *c1, struct cpu_snapshot *c2)
 	if (etime == 0.0) /* Prevent divide by zero errors */
 		etime = 1.0;
 	percent = 100.0 / etime / hz;
-
-	if (freq_view) {
-		(void) printf("%3d %4.0f %4.0f %4.0f %6llu %6llu %6llu",
-		    c2->cs_id,
-		    kstat_delta(old_sys, &c2->cs_sys, "cpu_ticks_user") *
-		    percent,
-		    kstat_delta(old_sys, &c2->cs_sys, "cpu_ticks_kernel") *
-		    percent,
-		    kstat_delta(old_sys, &c2->cs_sys, "cpu_ticks_idle") *
-		    percent,
-		    (u_longlong_t)cpufreq_mhz(&c2->cs_cpufreq, "effective_Hz"),
-		    (u_longlong_t)cpufreq_mhz(&c2->cs_cpufreq, "average_Hz"),
-		    (u_longlong_t)cpufreq_mhz(&c2->cs_cpufreq, "base_Hz"));
-		if (show_set)
-			(void) printf(" %3d", c2->cs_pset_id);
-		(void) printf("\n");
-		return;
-	}
 
 	(void) printf("%3d %4.0f %3.0f %4.0f %5.0f %4.0f "
 	    "%4.0f %4.0f %4.0f %4.0f %4.0f %5.0f  %3.0f %3.0f "
@@ -477,27 +392,6 @@ get_nr_ticks(struct pset_snapshot *p1, struct pset_snapshot *p2)
 	return (cpu_ticks_delta(old, new));
 }
 
-/*
- * Average a frequency value (in MHz) across the active CPUs in a processor
- * set, or 0 if no CPU in the set has the frequency monitor kstat.
- */
-static uint64_t
-pset_cpufreq_mhz(struct pset_snapshot *p, char *name)
-{
-	uint64_t sum = 0;
-	size_t i, n = 0;
-
-	for (i = 0; i < p->ps_nr_cpus; i++) {
-		uint64_t v = cpufreq_mhz(&p->ps_cpus[i]->cs_cpufreq, name);
-
-		if (v != 0) {
-			sum += v;
-			n++;
-		}
-	}
-	return (n != 0 ? sum / n : 0);
-}
-
 static void
 print_pset(struct pset_snapshot *p1, struct pset_snapshot *p2)
 {
@@ -540,22 +434,6 @@ print_pset(struct pset_snapshot *p1, struct pset_snapshot *p2)
 	if (etime == 0.0) /* Prevent divide by zero errors */
 		etime = 1.0;
 	percent = 100.0 / p2->ps_nr_cpus / etime / hz;
-
-	if (freq_view) {
-		(void) printf("%3d %4.0f %4.0f %4.0f %6llu %6llu %6llu %3d\n",
-		    p2->ps_id,
-		    kstat_delta(&old_sys, &new_sys, "cpu_ticks_user") *
-		    percent,
-		    kstat_delta(&old_sys, &new_sys, "cpu_ticks_kernel") *
-		    percent,
-		    kstat_delta(&old_sys, &new_sys, "cpu_ticks_idle") *
-		    percent,
-		    (u_longlong_t)pset_cpufreq_mhz(p2, "effective_Hz"),
-		    (u_longlong_t)pset_cpufreq_mhz(p2, "average_Hz"),
-		    (u_longlong_t)pset_cpufreq_mhz(p2, "base_Hz"),
-		    p2->ps_nr_cpus);
-		goto out;
-	}
 
 	(void) printf("%3d %4.0f %3.0f %4.0f %5.0f %4.0f "
 	    "%4.0f %4.0f %4.0f %4.0f %4.0f %5.0f  %3.0f %3.0f "
@@ -638,7 +516,7 @@ static void
 usage(void)
 {
 	(void) fprintf(stderr,
-	    "Usage: mpstat [-afq] [-p | -P processor_set] [-T d|u] "
+	    "Usage: mpstat [-aq] [-p | -P processor_set] [-T d|u] "
 	    "[interval [count]]\n");
 	exit(1);
 }

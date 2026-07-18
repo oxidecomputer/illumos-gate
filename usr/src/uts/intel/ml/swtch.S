@@ -26,7 +26,6 @@
 /*
  * Copyright 2020 Joyent, Inc.
  * Copyright 2024 MNX Cloud, Inc.
- * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -368,13 +367,6 @@
 .nosmap:
 
 	call	smt_mark
-
-	/*
-	 * We are now on-core running the resumed thread, alongside the other
-	 * per-resume CPU work above. Take an opportunistic CPU-frequency
-	 * sample.
-	 */
-	call	cpufreq_mon_sample
 
 	/*
 	 * Restore non-volatile registers, then have spl0 return to the
