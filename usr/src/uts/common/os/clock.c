@@ -2650,17 +2650,22 @@ lbolt_cyclic(void)
  * Since the lbolt service was historically cyclic driven, it must be 'stopped'
  * when the system drops into the kernel debugger. lbolt_debug_entry() is
  * called by the KDI system claim callbacks to record a hires timestamp at
- * debug enter time. lbolt_debug_return() is called by the sistem release
+ * debug enter time. lbolt_debug_return() is called by the system release
  * callbacks to account for the time spent in the debugger. The value is then
  * accumulated in the lb_info structure and used by lbolt_event_driven() and
  * lbolt_cyclic_driven(), as well as the mdb_get_lbolt() routine.
+ *
+ * The debugger may be entered while a CPU holds hres_lock, and that lock will
+ * not be released until the debugger returns. gethrtime() is a seqlock reader
+ * that would spin forever on such a held lock, so the wait-free reader is used
+ * here instead so that the debugger can always be entered and resumed.
  */
 void
 lbolt_debug_entry(void)
 {
 	if (lbolt_hybrid != lbolt_bootstrap) {
 		ASSERT(lb_info != NULL);
-		lb_info->lbi_debug_ts = gethrtime();
+		lb_info->lbi_debug_ts = gethrtime_waitfree();
 	}
 }
 
@@ -2678,7 +2683,7 @@ lbolt_debug_return(void)
 		ASSERT(lb_info != NULL);
 		ASSERT(nsec_per_tick > 0);
 
-		ts = gethrtime();
+		ts = gethrtime_waitfree();
 		lb_info->lbi_internal = (ts/nsec_per_tick);
 		lb_info->lbi_debug_time +=
 		    ((ts - lb_info->lbi_debug_ts)/nsec_per_tick);

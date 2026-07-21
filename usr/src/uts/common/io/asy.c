@@ -27,7 +27,6 @@
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2026 Oxide Computer Company
  * Copyright 2024 Hans Rosenfeld
  * Copyright 2026 Oxide Computer Company
  */
@@ -98,6 +97,7 @@
 #include <sys/asy.h>
 #include <sys/policy.h>
 #include <sys/sysmacros.h>
+#include <sys/cpu.h>
 
 /*
  * set the RX FIFO trigger_level to half the RX FIFO size for now
@@ -250,6 +250,8 @@ static void	asy_waiteot(struct asycom *asy);
 static void	asyputchar(cons_polledio_arg_t, uchar_t c);
 static int	asygetchar(cons_polledio_arg_t);
 static boolean_t	asyischar(cons_polledio_arg_t);
+static void	asy_polledio_enter(cons_polledio_arg_t);
+static void	asy_polledio_exit(cons_polledio_arg_t);
 
 static int	asymctl(struct asycom *, int, int);
 static int	asytodm(int, int);
@@ -1851,8 +1853,8 @@ asyattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	asy->polledio.cons_polledio_putchar = asyputchar;
 	asy->polledio.cons_polledio_getchar = asygetchar;
 	asy->polledio.cons_polledio_ischar = asyischar;
-	asy->polledio.cons_polledio_enter = NULL;
-	asy->polledio.cons_polledio_exit = NULL;
+	asy->polledio.cons_polledio_enter = asy_polledio_enter;
+	asy->polledio.cons_polledio_exit = asy_polledio_exit;
 
 	ddi_set_driver_private(devi, asy);
 	ddi_report_dev(devi);
@@ -5089,8 +5091,13 @@ asyputchar(cons_polledio_arg_t arg, uchar_t c)
 		asyputchar(arg, '\r');
 
 	while ((asy_get_reg(asy, ASY_LSR) & ASY_LSR_THRE) == 0) {
-		/* wait for xmit to finish */
-		drv_usecwait(10);
+		/*
+		 * Wait for the transmitter to drain. This is a polled path
+		 * that may run with hres_lock held, so spin rather than use a
+		 * clock-based delay such as drv_usecwait(), which could never
+		 * return in that case.
+		 */
+		SMT_PAUSE();
 	}
 
 	/* put the character out */
@@ -5118,8 +5125,69 @@ asygetchar(cons_polledio_arg_t arg)
 	struct asycom *asy = (struct asycom *)arg;
 
 	while (!asyischar(arg))
-		drv_usecwait(10);
+		SMT_PAUSE();
 	return (asy_get_reg(asy, ASY_RHR));
+}
+
+/*
+ * Prepare the console for polled use by the debugger, and undo that when it
+ * releases the console. The debugger may be entered at any point, including
+ * while the rest of the system is making no progress, so these must not take
+ * any locks nor depend on any other kernel service, and they may be
+ * interrupting driver code mid-operation. The interrupt enables are cleared
+ * so that if any part of the system is still running the interrupt handler
+ * cannot consume received data before the polled consumer sees it. The line
+ * control register is normalised in case a baud rate change (DLAB) or a timed
+ * break (SETBRK) was in progress. The modem control register is forced into a
+ * usable state.
+ */
+static void
+asy_polledio_enter(cons_polledio_arg_t arg)
+{
+	struct asycom *asy = (struct asycom *)arg;
+
+	if (asy->asy_polled_depth++ != 0)
+		return;
+
+	asy->asy_polled_ier = asy_get_reg(asy, ASY_IER);
+	asy->asy_polled_lcr = asy_get_reg(asy, ASY_LCR);
+	asy->asy_polled_mcr = asy_get_reg(asy, ASY_MCR);
+
+	asy_put_reg(asy, ASY_IER, 0);
+	asy_put_reg(asy, ASY_LCR,
+	    asy->asy_polled_lcr & ~(ASY_LCR_DLAB | ASY_LCR_SETBRK));
+	asy_put_reg(asy, ASY_MCR,
+	    ASY_MCR_RTS | ASY_MCR_DTR | ASY_MCR_OUT2);
+}
+
+static void
+asy_polledio_exit(cons_polledio_arg_t arg)
+{
+	struct asycom *asy = (struct asycom *)arg;
+
+	if (asy->asy_polled_depth == 0 || --asy->asy_polled_depth != 0)
+		return;
+
+	/*
+	 * Restore what was changed on entry. The ISR re-derives everything
+	 * else from LSR/MSR when the pending interrupt is serviced after
+	 * resume.
+	 *
+	 * SETBRK is restored because a break in progress is persistent line
+	 * state. The driver still believes it is asserted and will clear it
+	 * itself in due course, from a timeout or an ioctl, so restoring it
+	 * lets an interrupted timed break complete as intended.
+	 *
+	 * DLAB is not restored because it is not line state, but a register
+	 * bank select that the driver only ever sets for a few bracketed
+	 * instructions. It must be clear for the write below to reach IER
+	 * rather than the divisor latch, and if the code we interrupted never
+	 * completes its sequence, a latched DLAB would leave the console
+	 * unusable.
+	 */
+	asy_put_reg(asy, ASY_LCR, asy->asy_polled_lcr & ~ASY_LCR_DLAB);
+	asy_put_reg(asy, ASY_MCR, asy->asy_polled_mcr);
+	asy_put_reg(asy, ASY_IER, asy->asy_polled_ier);
 }
 
 /*

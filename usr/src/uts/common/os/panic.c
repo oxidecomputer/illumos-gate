@@ -25,7 +25,7 @@
 /*
  * Copyright (c) 2011, Joyent, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -247,6 +247,7 @@
 #include <sys/panic.h>
 #include <sys/fm/util.h>
 #include <sys/clock_impl.h>
+#include <sys/consdev.h>
 #include <sys/sunddi.h>
 
 /*
@@ -328,6 +329,13 @@ panicsys(const char *format, va_list alist, struct regs *rp, int on_panic_stack)
 	t->t_schedflag |= TS_DONT_SWAP;
 	t->t_bound_cpu = cp;
 	t->t_preempt++;
+
+	/*
+	 * The panic banner and any subsequent dump proceed with polled
+	 * console I/O, so give the console driver the chance to make itself
+	 * ready. There is no matching exit; we are not coming back.
+	 */
+	console_polled_enter();
 
 	panic_enter_hw(s);
 

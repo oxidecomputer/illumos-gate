@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  *
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -45,6 +46,7 @@
 #include <sys/kobj.h>
 #include <sys/kobj_impl.h>
 #include <sys/clock_impl.h>
+#include <sys/consdev.h>
 
 static void
 kdi_system_claim(void)
@@ -168,4 +170,11 @@ plat_kdi_init(kdi_t *kdi)
 {
 	kdi->pkdi_system_claim = kdi_system_claim;
 	kdi->pkdi_system_release = kdi_system_release;
+	/*
+	 * Ask the console driver to prepare for polled use on every debugger
+	 * entry, however the debugger came to be entered, and to undo that
+	 * when it releases the system.
+	 */
+	kdi->pkdi_console_claim = console_polled_enter;
+	kdi->pkdi_console_release = console_polled_exit;
 }

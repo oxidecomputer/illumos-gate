@@ -30,6 +30,7 @@
 #include <sys/varargs.h>
 #include <sys/systm.h>
 #include <sys/cmn_err.h>
+#include <sys/panic.h>
 #include <sys/stream.h>
 #include <sys/strsubr.h>
 #include <sys/strsun.h>
@@ -102,6 +103,8 @@ static void log_cons_destructor(void *, void *);
 void
 log_enter(void)
 {
+	if (panicstr != NULL)
+		return;
 	if (rw_owner(&log_rwlock) != curthread)
 		rw_enter(&log_rwlock, RW_WRITER);
 	log_rwlock_depth++;
@@ -110,6 +113,8 @@ log_enter(void)
 void
 log_exit(void)
 {
+	if (panicstr != NULL)
+		return;
 	if (--log_rwlock_depth == 0)
 		rw_exit(&log_rwlock);
 }
@@ -625,12 +630,21 @@ log_sendmsg(mblk_t *mp, zoneid_t zoneid)
 	 * from these log_ctl_t structures; it only uses ttime from log_ctl_t's
 	 * that contain good data.
 	 *
+	 * When panicking we must not call the timekeeping routines. They are
+	 * seqlock readers of hres_lock, and if a CPU holds that lock they would
+	 * spin here forever, so the message would never reach the console. The
+	 * values captured lock-free by panicsys() are used instead.
 	 */
-	lc->ltime = ddi_get_lbolt();
-	if (timechanged) {
-		lc->ttime = gethrestime_sec();
+	if (panicstr != NULL) {
+		lc->ltime = (clock_t)panic_lbolt64;
+		lc->ttime = panic_hrestime.tv_sec;
 	} else {
-		lc->ttime = 0;
+		lc->ltime = ddi_get_lbolt();
+		if (timechanged) {
+			lc->ttime = gethrestime_sec();
+		} else {
+			lc->ttime = 0;
+		}
 	}
 
 	flags = lc->flags & lzp->lz_active;
