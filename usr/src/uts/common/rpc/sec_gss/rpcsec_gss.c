@@ -137,7 +137,7 @@ int ga_cache_hit;
 int ga_cache_miss;
 int ga_cache_reclaim;
 
-#define	NOT_DEAD(ptr)	ASSERT((((intptr_t)(ptr)) != 0xdeadbeef))
+#define	NOT_DEAD(ptr)	ASSERT((((intptr_t)(ptr)) != 0xdeadbeefdeadbeef))
 
 void
 gssauth_init(void)
