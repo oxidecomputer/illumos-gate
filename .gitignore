@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2026 Oxide Computer Company
+# Copyright 2025 Oxide Computer Company
 #
 
 # Note: this does not try to ignore all files in a fully built workspace.
@@ -22,28 +22,4 @@
 /proto
 /webrev
 /.vscode
-# BEGIN AUTO-GENERATED SECTION
-# To refresh this section, do a release stlouis build and run:
-#     ./etc-stlouis/tools/update_gitignore
-etc-stlouis/tools/builder/builder
-etc-stlouis/tools/builder/builder.o
-etc-stlouis/tools/builder/file_cp.o
-etc-stlouis/tools/builder/users.c
-etc-stlouis/tools/builder/users.o
-illumos-quick-debug.sh
-illumos-quick.sh
-illumos-release.sh
-illumos.sh
-usr/src/cmd/amdzen/apobdump
-usr/src/cmd/amdzen/uhsmp
-usr/src/cmd/dtrace_ipcc/dtrace_ipcc
-usr/src/cmd/ipcc/ipcc
-usr/src/cmd/mc/mcmargins
-usr/src/cmd/mc/spddump
-usr/src/cmd/osrotc/osrotc
-usr/src/cmd/psp/pspeinj
-usr/src/cmd/t6init/t6init
-usr/src/cmd/t6mfgadm/t6mfgadm
-usr/src/cmd/tmpx/tmpx
-usr/src/lib/libipcc/common/libipcc_dt.h
-usr/src/uts/oxide/cpu/scripts/ao_gendisp
+/.$EXTEND
