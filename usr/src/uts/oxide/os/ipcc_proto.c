@@ -1643,6 +1643,12 @@ ipcc_handle_alerts(const ipcc_ops_t *ops, void *arg)
 		if (err != 0)
 			break;
 
+		if (datal < sizeof (action)) {
+			LOG("Short alert reply - got 0x%lx bytes\n", datal);
+			err = EIO;
+			break;
+		}
+
 		off = 0;
 		ipcc_decode_bytes((uint8_t *)&action, sizeof (action),
 		    data, &off);
