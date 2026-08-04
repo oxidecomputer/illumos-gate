@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -135,8 +135,7 @@ bipcc_open(char *path, int flags __unused)
 
 	if (ret != 0 || bufl == 0) {
 		bipcc_printf("ipcc: failed to open '%s': %d\n", path, ret);
-		bkmem_free(buf, IPCC_MAX_DATA_SIZE);
-		return (-1);
+		goto err;
 	}
 
 	bipcc_printf("ipcc: opened '%s', 0x%lx bytes\n", path, bufl);
@@ -145,7 +144,16 @@ bipcc_open(char *path, int flags __unused)
 	 * Compressed objects are stored in the SP with a leading uint16_t that
 	 * specifies the length of original data.
 	 */
+	if (bufl <= sizeof (uint16_t)) {
+		bipcc_printf("ipcc: missing header for '%s' (0x%lx bytes)\n",
+		    path, bufl);
+		goto err;
+	}
 	dstlen = *(uint16_t *)buf;
+	if (dstlen == 0) {
+		bipcc_printf("ipcc: '%s' has zero decompressed length\n", path);
+		goto err;
+	}
 	dst = bkmem_alloc(dstlen);
 	len = dstlen;
 	ret = z_uncompress(dst, &len, buf + sizeof (uint16_t),
@@ -177,6 +185,10 @@ bipcc_open(char *path, int flags __unused)
 	add_open_file(file);
 
 	return (file->if_fd);
+
+err:
+	bkmem_free(buf, IPCC_MAX_DATA_SIZE);
+	return (-1);
 }
 
 static int
