@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -812,6 +812,14 @@ kernel_ipcc_apobread(void)
 			    "Attempt to read APOB offset 0x%lx length 0x%zx "
 			    "was met with SP response %s",
 			    offset, len, ipcc_apob_read_errstr(readr));
+			break;
+		}
+
+		if (len == 0) {
+			kernel_ipcc_ops.io_log(&kernel_ipcc_data,
+			    IPCC_LOG_WARNING,
+			    "Attempt to read APOB offset 0x%lx returned "
+			    "no data", offset);
 			break;
 		}
 
