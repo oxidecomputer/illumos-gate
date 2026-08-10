@@ -76,6 +76,7 @@ typedef struct tfpkt_tbus_stats {
 	kstat_named_t	ttb_rxfail_no_descriptors;
 	kstat_named_t	ttb_rxfail_bad_descriptor_type;
 	kstat_named_t	ttb_rxfail_unknown_buf;
+	kstat_named_t	ttb_rxfail_pkt_too_large;
 	kstat_named_t	ttb_txfail_pkt_too_large;
 	kstat_named_t	ttb_txfail_no_bufs;
 	kstat_named_t	ttb_txfail_no_descriptors;

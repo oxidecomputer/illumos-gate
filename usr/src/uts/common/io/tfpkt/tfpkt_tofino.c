@@ -50,6 +50,7 @@ static tfpkt_tbus_stats_t tfpkt_tbus_stats_template = {
 	{ "ttb_rxfail_no_descriptors",		KSTAT_DATA_UINT64 },
 	{ "ttb_rxfail_bad_descriptor_type",	KSTAT_DATA_UINT64 },
 	{ "ttb_rxfail_unknown_buf",		KSTAT_DATA_UINT64 },
+	{ "ttb_rxfail_pkt_too_large",		KSTAT_DATA_UINT64 },
 	{ "ttb_txfail_pkt_too_large",		KSTAT_DATA_UINT64 },
 	{ "ttb_txfail_no_bufs",			KSTAT_DATA_UINT64 },
 	{ "ttb_txfail_no_descriptors",		KSTAT_DATA_UINT64 },
@@ -867,6 +868,15 @@ tfpkt_tbus_process_rx(tfpkt_tbus_t *tbp, tfpkt_dr_t *drp, tfpkt_dr_rx_t *rx_dr)
 		tfpkt_tbus_dlog(tbp, "!unrecognized rx buf: %lx",
 		    rx_dr->rx_addr);
 		TBUS_STAT_BUMP(tbp, ttb_rxfail_unknown_buf);
+	} else if (rx_dr->rx_size > tfpkt_buf_size) {
+		/*
+		 * The size in the descriptor is written by the ASIC and
+		 * cannot be trusted to be within the buffer we posted.
+		 */
+		tfpkt_tbus_dlog(tbp, "!oversized rx pkt: %lu",
+		    (ulong_t)rx_dr->rx_size);
+		TBUS_STAT_BUMP(tbp, ttb_rxfail_pkt_too_large);
+		(void) tfpkt_buf_insert(&tbp->ttb_rxbufs_free, buf);
 	} else {
 		(void) tfpkt_buf_insert(&tbp->ttb_rxbufs_inuse, buf);
 		tfpkt_rx(tbp->ttb_tfp, tfpkt_buf_va(buf), rx_dr->rx_size);
