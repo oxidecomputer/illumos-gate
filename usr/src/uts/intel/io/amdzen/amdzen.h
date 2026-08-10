@@ -144,6 +144,7 @@ typedef struct {
 	uint32_t	adf_mask1;
 	uint32_t	adf_mask2;
 	uint32_t	adf_nccm;
+	uint32_t	adf_nphys_ccds;
 	df_fabric_decomp_t	adf_decomp;
 } amdzen_df_t;
 
