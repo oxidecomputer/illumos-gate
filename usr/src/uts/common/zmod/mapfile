@@ -46,6 +46,7 @@ SYMBOL_SCOPE {
 		z_compress_level;
 		z_strerror;
 		z_uncompress;
+		z_uncompress_sleep;
 
 		# streaming interfaces
 		z_uncompress_stream_init;
