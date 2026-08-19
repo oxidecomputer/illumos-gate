@@ -1881,6 +1881,18 @@ milan_dxio_rpc_retrieve_engine(zen_iodie_t *iodie)
 		return (false);
 	}
 
+	/*
+	 * Guard against DXIO firmware DMA-ing back an unexpected number of
+	 * engines. We should never get back more engines than we originally
+	 * provided in milan_dxio_plat_data().
+	 */
+	if (conf->zdc_conf->zdp_nengines > iodie->zi_nengines) {
+		cmn_err(CE_WARN, "DXIO returned 0x%x engines, more than the "
+		    "0x%lx that were configured", conf->zdc_conf->zdp_nengines,
+		    iodie->zi_nengines);
+		return (false);
+	}
+
 	return (true);
 }
 
