@@ -103,7 +103,6 @@ static const zen_fabric_ops_t milan_fabric_ops = {
 	.zfo_nbif_bridges = milan_fabric_nbif_bridges,
 	.zfo_ioms_nbio_num = milan_fabric_ioms_nbio_num,
 	.zfo_pcie = milan_fabric_pcie,
-	.zfo_pcie_port_is_trained = milan_fabric_pcie_port_is_trained,
 	.zfo_pcie_port_hide_bridge = milan_fabric_hide_bridge,
 	.zfo_pcie_port_unhide_bridge = milan_fabric_unhide_bridge,
 	.zfo_init_pcie_core = milan_fabric_init_pcie_core,

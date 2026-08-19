@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -170,12 +170,6 @@ extern void zen_mpio_report_fw_version(const zen_iodie_t *iodie);
  * so on.
  */
 extern void zen_mpio_pcie_init(zen_fabric_t *);
-
-/*
- * Returns true iff the given port's link state status in the ASK indicates that
- * it was successfully trained.
- */
-extern bool zen_mpio_pcie_port_is_trained(const zen_pcie_port_t *);
 
 /*
  * Accessors for PCIe core/port registers via MPIO proxy.

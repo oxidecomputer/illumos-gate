@@ -3091,8 +3091,7 @@ zen_fabric_init_pcie_port(zen_pcie_port_t *port)
 		bool hotplug, trained;
 
 		hotplug = (pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		VERIFY3P(ops->zfo_pcie_port_is_trained, !=, NULL);
-		trained = (ops->zfo_pcie_port_is_trained)(port);
+		trained = (port->zpp_flags & ZEN_PCIE_PORT_F_TRAINED) != 0;
 		hide = !hotplug && !trained;
 	}
 
