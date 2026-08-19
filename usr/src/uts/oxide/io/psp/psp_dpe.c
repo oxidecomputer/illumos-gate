@@ -510,7 +510,6 @@ _init(void)
 	case X86_PF_AMD_DENSE_TURIN:
 		break;
 	default:
-		cmn_err(CE_WARN, "!psp_dpe: unsupported processor family");
 		return (ENOTSUP);
 	}
 

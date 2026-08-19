@@ -667,8 +667,6 @@ _init(void)
 {
 	ASSERT3P(oxide_board_data, !=, NULL);
 	if (!oxide_board_data->obd_measure_root) {
-		cmn_err(CE_WARN, "!phase 2 root filesystem measurement is "
-		    "disabled on this platform");
 		return (ENOTSUP);
 	}
 
