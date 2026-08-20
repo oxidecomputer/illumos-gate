@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -522,11 +522,20 @@ zen_mpio_ubm_hfc_init(zen_iodie_t *iodie, zen_ubm_hfc_t *hfc)
 		VERIFY3U(conf->zmc_ask_nports, <, ZEN_MPIO_ASK_MAX_PORTS);
 		if (!zen_mpio_rpc_ubm_get_i2c_device(iodie, hfc->zuh_num, dfcno,
 		    &dfc)) {
-			cmn_err(CE_PANIC, "%s: failed to get DFC information "
+			cmn_err(CE_WARN, "%s: failed to get DFC information "
 			    "for DFC %u", hfc->zuh_oxio->oe_name, dfcno);
+			return;
 		}
-		if (dfcno == 0)
+		if (dfcno == 0) {
+			if (dfc.zmudd_ndfcs > ZEN_MAX_UBM_DFC_PER_HFC) {
+				cmn_err(CE_WARN, "%s: MPIO returned 0x%x DFCs "
+				    "for HFC %u, but only 0x%x are supported",
+				    hfc->zuh_oxio->oe_name, dfc.zmudd_ndfcs,
+				    hfc->zuh_num, ZEN_MAX_UBM_DFC_PER_HFC);
+				return;
+			}
 			hfc->zuh_ndfcs = dfc.zmudd_ndfcs;
+		}
 		if (hfc->zuh_ndfcs == 0)
 			return;
 
