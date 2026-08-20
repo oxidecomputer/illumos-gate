@@ -345,8 +345,6 @@ static uint32_t segment_crc(struct di_devlink_handle *hdp, db_seg_t seg,
     int prot);
 static bool verify_db_crc(struct di_devlink_handle *hdp);
 static void seal_db(struct di_devlink_handle *hdp, uint32_t *next);
-static void check_wwn_corruption(struct di_devlink_handle *hdp,
-    const char *path, const char *tag, uint32_t nidx);
 static void devlink_db_fault(struct di_devlink_handle *hdp,
     const char *fmt, ...) __PRINTFLIKE(2) __NORETURN;
 static void cache_free(struct di_devlink_handle *hdp);

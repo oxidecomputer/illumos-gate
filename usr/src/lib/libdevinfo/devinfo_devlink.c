@@ -557,14 +557,6 @@ invalid_db(struct di_devlink_handle *hdp, size_t fsize, long page_sz)
 	return (0);
 }
 
-/*
- * A rare and so far undiagnosed form of corruption has been observed in
- * devlink databases where a single byte has somehow had bit 5 set, changing an
- * upper case character in a WWN to lower case. Check the path obtained from
- * the kernel for the corruption signature and panic if it is found, providing
- * a core file for further investigation.
- */
-
 static const uint32_t devlink_crc32_table[256] = { CRC32_TABLE };
 
 static uint32_t
@@ -589,13 +581,15 @@ devlink_db_fault(struct di_devlink_handle *hdp, const char *fmt, ...)
 	va_list ap;
 	int ret;
 
-	va_start(ap, fmt);
-	ret = vsnprintf(msg, sizeof (msg), fmt, ap);
-	va_end(ap);
-	if (ret <= 0)
-		(void) strlcpy(msg, "devlink DB corruption", sizeof (msg));
+	len = strlcpy(msg, "devlink DB corruption: ", sizeof (msg));
 
-	syslog(LOG_ALERT, "devlink DB corruption: %s", msg);
+	va_start(ap, fmt);
+	ret = vsnprintf(msg + len, sizeof (msg) - len, fmt, ap);
+	va_end(ap);
+	if (ret < 0)
+		msg[len] = '\0';
+
+	syslog(LOG_ALERT, "%s", msg);
 
 	if (hdp != NULL && DB_OPEN(hdp)) {
 		get_db_path(hdp, DB_RDWR(hdp) ? DB_TMP : DB_FILE,
@@ -613,83 +607,6 @@ devlink_db_fault(struct di_devlink_handle *hdp, const char *fmt, ...)
 	}
 
 	upanic(msg, strlen(msg) + 1);
-}
-
-/*
- * Return the length of the run of hex digit characters at the start of s.
- */
-static size_t
-hex_run(const char *s)
-{
-	size_t n = 0;
-
-	while ((s[n] >= '0' && s[n] <= '9') ||
-	    (s[n] >= 'a' && s[n] <= 'f') ||
-	    (s[n] >= 'A' && s[n] <= 'F')) {
-		n++;
-	}
-	return (n);
-}
-
-/*
- * WWNs in device paths, and in the /dev names derived from them, are stored in
- * a single case. A mixed-case WWN is the signature of an observed corruption
- * in which bit 5 of a single character becomes set. Scan the given string for
- * WWN-like runs and return non-zero if one contains hex letters of both cases.
- */
-int
-di_devlink_wwn_corrupt(const char *path)
-{
-	const char *cp, *wwn;
-	bool upper, lower;
-	size_t i, n;
-
-	if (path == NULL)
-		return (0);
-
-	for (cp = path; *cp != '\0'; cp++) {
-		wwn = NULL;
-		n = 0;
-		if (cp[0] == '@' && cp[1] == 'w') {
-			wwn = cp + 2;
-			n = hex_run(wwn);
-		} else if (cp == path && cp[0] == 'w') {
-			wwn = cp + 1;
-			n = hex_run(wwn);
-		} else if (cp[0] == 't') {
-			n = hex_run(cp + 1);
-			if (n >= 18 && cp[17] == 'd') {
-				wwn = cp + 1;
-				n = 16;
-			}
-		}
-		if (wwn == NULL || n == 0)
-			continue;
-
-		upper = lower = false;
-		for (i = 0; i < n; i++) {
-			if (wwn[i] >= 'A' && wwn[i] <= 'F')
-				upper = true;
-			else if (wwn[i] >= 'a' && wwn[i] <= 'f')
-				lower = true;
-		}
-		if (upper && lower)
-			return (1);
-		cp = wwn + n - 1;
-	}
-
-	return (0);
-}
-
-static void
-check_wwn_corruption(struct di_devlink_handle *hdp, const char *path,
-    const char *tag, uint32_t nidx)
-{
-	if (path == NULL || di_devlink_wwn_corrupt(path) == 0)
-		return;
-
-	devlink_db_fault(hdp, "%s: mixed-case WWN in entry[%u] '%s'",
-	    tag, nidx, path);
 }
 
 static uint32_t
@@ -806,8 +723,6 @@ read_nodes(struct di_devlink_handle *hdp, cache_node_t *pcnp, uint32_t nidx)
 
 		path = get_string(hdp, dnp->path);
 
-		check_wwn_corruption(hdp, path, "read_nodes", nidx);
-
 		/*
 		 * Insert at head of list to recreate original order
 		 */
@@ -895,9 +810,6 @@ read_links(struct di_devlink_handle *hdp, cache_minor_t *pcmp, uint32_t nidx)
 
 		path = get_string(hdp, dlp->path);
 		content = get_string(hdp, dlp->content);
-
-		check_wwn_corruption(hdp, path, "read_links", nidx);
-		check_wwn_corruption(hdp, content, "read_links content", nidx);
 
 		if (link_hash(hdp, path, 0) != NULL) {
 			(void) devlink_dprintf(DBG_ERR,
@@ -1260,11 +1172,6 @@ write_string(struct di_devlink_handle *hdp, const char *str, uint32_t *next)
 		    "write_string: invalid index[%u], string(%s)\n", idx, str);
 		return (DB_NIL);
 	}
-
-	/*
-	 * Validate the source string before it is written.
-	 */
-	check_wwn_corruption(hdp, str, "write_string", idx);
 
 	if ((dstr = set_string(hdp, idx)) == NULL) {
 		return (DB_NIL);
