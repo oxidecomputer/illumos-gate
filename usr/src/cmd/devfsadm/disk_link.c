@@ -35,7 +35,6 @@
 #include <limits.h>
 #include <ctype.h>
 #include <unistd.h>
-#include <upanic.h>
 #include <sys/int_fmtio.h>
 #include <sys/stat.h>
 #include <bsm/devalloc.h>
@@ -224,10 +223,6 @@ disk_callback_nchan(di_minor_t minor, di_node_t node)
 
 }
 
-static char *upanic_addr;
-static char upanic_disk[DISK_SUBPATH_MAX];
-static char upanic_guid[50];
-
 static int
 disk_callback_blkdev(di_minor_t minor, di_node_t node)
 {
@@ -237,44 +232,8 @@ disk_callback_blkdev(di_minor_t minor, di_node_t node)
 	uint_t lun = 0;
 
 	addr = di_bus_addr(node);
-	*guid = '\0';
-	(void) sscanf(addr, "w%49[0-9A-Fa-f],%X", guid, &lun);
+	(void) sscanf(addr, "w%49[0-9A-F],%X", &guid, &lun);
 	(void) snprintf(disk, DISK_SUBPATH_MAX, "t%sd%d", guid, lun);
-	/*
-	 * A rare and so far undiagnosed form of corruption has been observed
-	 * in devlink databases where a single byte has somehow had bit 5 set,
-	 * changing an upper case character in a WWN to lower case. Check the
-	 * path obtained from the kernel for the corruption signature and panic
-	 * if it is found, providing a core file for further investigation.
-	 */
-	if (di_devlink_wwn_corrupt(addr) != 0) {
-		const char *panicstr = "Corrupt WWN addr";
-		char msg[1024];
-		size_t len;
-		int ret;
-
-		/*
-		 * Save copies of the variables for post-mortem
-		 * inspection.
-		 */
-		upanic_addr = addr;
-		bcopy(disk, upanic_disk, sizeof (upanic_disk));
-		bcopy(guid, upanic_guid, sizeof (upanic_guid));
-
-		ret = snprintf(msg, sizeof (msg),
-		    "%s='%s' guid='%s' disk='%s'",
-		    panicstr, addr, guid, disk);
-		if (ret <= 0) {
-			len = strlen(panicstr) + 1;
-		} else if (ret >= sizeof (msg)) {
-			len = sizeof (msg);
-			panicstr = msg;
-		} else {
-			len = (size_t)ret;
-			panicstr = msg;
-		}
-		upanic(panicstr, len);
-	}
 	disk_common(minor, node, disk, RM_STALE);
 	return (DEVFSADM_CONTINUE);
 }

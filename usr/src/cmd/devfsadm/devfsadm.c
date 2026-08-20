@@ -45,7 +45,6 @@
 #include <utime.h>
 #include <sys/param.h>
 #include <bsm/libbsm.h>
-#include <upanic.h>
 #include <zone.h>
 #include "devfsadm_impl.h"
 
@@ -2484,40 +2483,6 @@ call_minor_init(module_t *module)
 }
 
 /*
- * A rare and so far undiagnosed form of corruption has been observed in
- * devlink databases where a single byte has somehow had bit 5 set, changing an
- * upper case character in a WWN to lower case. Check the path obtained from
- * the kernel for the corruption signature and panic if it is found, providing
- * a core file for further investigation.
- */
-static void
-devfsadm_check_corruption(const char *path, const char *link)
-{
-	const char *panicstr = "devfsadm_mklink: mixed-case WWN in device path";
-	char msg[1024];
-	size_t len;
-	int ret;
-
-	if (di_devlink_wwn_corrupt(path) == 0)
-		return;
-
-	err_print("%s: %s (link: %s)\n", panicstr, path, link);
-
-	ret = snprintf(msg, sizeof (msg), "%s: %s (link: %s)",
-	    panicstr, path, link);
-	if (ret <= 0) {
-		len = strlen(panicstr) + 1;
-	} else if (ret >= sizeof (msg)) {
-		len = sizeof (msg);
-		panicstr = msg;
-	} else {
-		len = (size_t)ret;
-		panicstr = msg;
-	}
-	upanic(panicstr, len);
-}
-
-/*
  * Creates a symlink 'link' to the physical path of node:minor.
  * Construct link contents, then call create_link_common().
  */
@@ -2554,7 +2519,6 @@ devfsadm_mklink(char *link, di_node_t node, di_minor_t minor, int flags)
 		}
 		(void) snprintf(phy_path, sizeof (phy_path), "%s:%s",
 		    dev_path, di_minor_name(minor));
-		devfsadm_check_corruption(dev_path, link);
 		di_devfs_path_free(dev_path);
 		acontents = phy_path;
 	}
