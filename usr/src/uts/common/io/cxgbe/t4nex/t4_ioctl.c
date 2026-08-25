@@ -22,6 +22,7 @@
 
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
+#include <sys/queue.h>
 
 #include "t4nex.h"
 #include "common/common.h"
