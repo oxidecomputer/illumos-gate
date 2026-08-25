@@ -32,6 +32,7 @@ SUBDIRS = mdb_kb \
 	sata \
 	smbios \
 	vmm \
-	xhci
+	xhci \
+	cxgbe
 
 include ../../Makefile.subdirs
