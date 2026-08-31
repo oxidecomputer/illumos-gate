@@ -1644,6 +1644,7 @@ mac_add_vlan_tag(mblk_t *mp, uint_t pri, uint16_t vid)
 	 * rest of messages to the header message.
 	 */
 	mac_hcksum_clone(mp, hmp);
+	mac_pkt_hash_clone(mp, hmp);
 	if (MBLKL(mp) == 0) {
 		hmp->b_cont = mp->b_cont;
 		freeb(mp);

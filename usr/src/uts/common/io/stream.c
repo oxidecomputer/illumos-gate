@@ -225,6 +225,7 @@ dblk_constructor(void *buf, void *cdrarg, int kmflags)
 	dbp->db_struioun.cksum.flags = 0;
 
 	bzero(&dbp->db_meoi, sizeof (dbp->db_meoi));
+	bzero(&dbp->db_pkt_hash, sizeof (dbp->db_pkt_hash));
 
 	return (0);
 }
@@ -246,6 +247,7 @@ dblk_esb_constructor(void *buf, void *cdrarg, int kmflags)
 	dbp->db_struioun.cksum.flags = 0;
 
 	bzero(&dbp->db_meoi, sizeof (dbp->db_meoi));
+	bzero(&dbp->db_pkt_hash, sizeof (dbp->db_pkt_hash));
 
 	return (0);
 }
@@ -277,6 +279,7 @@ bcache_dblk_constructor(void *buf, void *cdrarg, int kmflags)
 	dbp->db_struioun.cksum.flags = 0;
 
 	bzero(&dbp->db_meoi, sizeof (dbp->db_meoi));
+	bzero(&dbp->db_pkt_hash, sizeof (dbp->db_pkt_hash));
 
 	return (0);
 }
@@ -739,6 +742,7 @@ dblk_unset_mac_state(dblk_t *dbp)
 	 * values as garbage.
 	 */
 	dbp->db_meoi.valid = 0;
+	bzero(&dbp->db_pkt_hash, sizeof (dbp->db_pkt_hash));
 }
 
 static void
@@ -1506,6 +1510,8 @@ copyb(mblk_t *bp)
 	bcopy(dp->db_struioun.data, ndp->db_struioun.data,
 	    sizeof (dp->db_struioun.data));
 
+	bcopy(&dp->db_pkt_hash, &ndp->db_pkt_hash, sizeof (ndp->db_pkt_hash));
+
 	/*
 	 * Well, here is a potential issue.  If we are trying to
 	 * trace a flow, and we copy the message, we might lose
@@ -1714,6 +1720,7 @@ msgpullup_pad(mblk_t *mp, ssize_t len, size_t pad)
 	newmp->b_flag = mp->b_flag;
 	newmp->b_band = mp->b_band;
 	newmp->b_datap->db_meoi = mp->b_datap->db_meoi;
+	newmp->b_datap->db_pkt_hash = mp->b_datap->db_pkt_hash;
 	newmp->b_wptr += pad;
 	newmp->b_rptr = newmp->b_wptr;
 

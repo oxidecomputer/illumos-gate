@@ -1957,14 +1957,16 @@ mac_rx_srs_long_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *mp,
 	ip6_t		*ip6h;
 	ipha_t		*ipha;
 	uint8_t		*whereptr;
-	uint_t		hash;
+	uint32_t	hash;
 	uint16_t	remlen;
 	uint8_t		nexthdr;
 	uint16_t	hdr_len;
 	uint32_t	src_val, dst_val;
 	boolean_t	modifiable = B_TRUE;
 	boolean_t	v6;
+	pkt_hash_t ph = { 0 };
 
+	mac_pkt_hash_get(mp, &ph);
 	ASSERT(MBLKL(mp) >= hdrsize);
 
 	if (sap == ETHERTYPE_IPV6) {
@@ -2085,17 +2087,26 @@ mac_rx_srs_long_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *mp,
 
 	switch (nexthdr) {
 	case IPPROTO_TCP:
-		hash = HASH_ADDR(src_val, dst_val, *(uint32_t *)whereptr);
-		*indx = COMPUTE_INDEX(hash, mac_srs->srs_tcp_ring_count);
+		if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_RX) {
+			hash = ph.ph_val;
+		} else {
+			hash = HASH_ADDR(src_val, dst_val,
+			    *(uint32_t *)whereptr);
+		}
+		*indx = COMPUTE_INDEX(ph.ph_val, mac_srs->srs_tcp_ring_count);
 		*type = OTH;
 		break;
 	case IPPROTO_UDP:
 	case IPPROTO_SCTP:
 	case IPPROTO_ESP:
 		if (mac_fanout_type == MAC_FANOUT_DEFAULT) {
-			hash = HASH_ADDR(src_val, dst_val,
-			    *(uint32_t *)whereptr);
-			*indx = COMPUTE_INDEX(hash,
+			if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_RX) {
+				hash = ph.ph_val;
+			} else {
+				hash = HASH_ADDR(src_val, dst_val,
+				    *(uint32_t *)whereptr);
+			}
+			*indx = COMPUTE_INDEX(ph.ph_val,
 			    mac_srs->srs_udp_ring_count);
 		} else {
 			*indx = mac_srs->srs_ind % mac_srs->srs_udp_ring_count;
@@ -2107,8 +2118,12 @@ mac_rx_srs_long_fanout(mac_soft_ring_set_t *mac_srs, mblk_t *mp,
 	return (0);
 
 src_dst_based_fanout:
-	hash = HASH_ADDR(src_val, dst_val, (uint32_t)0);
-	*indx = COMPUTE_INDEX(hash, mac_srs->srs_oth_ring_count);
+	if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_RX) {
+		hash = ph.ph_val;
+	} else {
+		hash = HASH_ADDR(src_val, dst_val, (uint32_t)0);
+	}
+	*indx = COMPUTE_INDEX(ph.ph_val, mac_srs->srs_oth_ring_count);
 	*type = OTH;
 	return (0);
 }
@@ -5033,10 +5048,21 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 	 * path. For the rationale, please see the 'Packet Metadata in
 	 * MAC' in mac_sched.c,
 	 * Strip this information here before delivery to a client, if possible.
+	 * Note that mac_ether_clear_pktinfo also clears the packet hash.
 	 */
-	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next)
-		if (DB_REF(mp) < 2)
-			mac_ether_clear_pktinfo(mp);
+	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next) {
+		pkt_hash_t ph = { 0 };
+		mac_pkt_hash_get(mp, &ph);
+		if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_TX) {
+			DTRACE_PROBE1(pkt__hash__reuse__in__rx,
+			    pkt_hash_t *, &ph);
+		}
+		if (DB_REF(mp) < 2) {
+			if (!(mcip->mci_state_flags & MCIS_PKT_HASH_NO_REUSE)) {
+				mac_ether_clear_pktinfo(mp);
+			}
+		}
+	}
 
 	mcip->mci_rx_fn(mcip->mci_rx_arg, mrh, mp_chain, B_FALSE);
 }
