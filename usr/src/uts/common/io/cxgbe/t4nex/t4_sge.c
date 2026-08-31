@@ -21,7 +21,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/ddi.h>
@@ -758,6 +758,15 @@ t4_ring_rx(struct sge_rxq *rxq, int budget)
 					    HCK_IPV4_HDRCKSUM_OK);
 					rxq->rxcsum++;
 				}
+
+				if (rss->hash_type != RSS_HASH_NONE) {
+					pkt_hash_t hw_hash = { 0 };
+					hw_hash.ph_val = BE_32(rss->hash_val);
+					hw_hash.ph_polarity =
+					    MAC_PKT_HASH_POLARITY_RX;
+					mac_pkt_hash_set(m, &hw_hash);
+				}
+
 				rxq->rxpkts++;
 				rxq->rxbytes += pkt_len;
 				received_bytes += pkt_len;

@@ -5033,10 +5033,21 @@ mac_rx_deliver(void *arg1, mac_resource_handle_t mrh, mblk_t *mp_chain,
 	 * path. For the rationale, please see the 'Packet Metadata in
 	 * MAC' in mac_sched.c,
 	 * Strip this information here before delivery to a client, if possible.
+	 * Note that mac_ether_clear_pktinfo also clears the packet hash.
 	 */
-	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next)
-		if (DB_REF(mp) < 2)
-			mac_ether_clear_pktinfo(mp);
+	for (mblk_t *mp = mp_chain; mp != NULL; mp = mp->b_next) {
+		pkt_hash_t ph = { 0 };
+		mac_pkt_hash_get(mp, &ph);
+		if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_TX) {
+			DTRACE_PROBE1(pkt__hash__reuse__in__rx,
+			    pkt_hash_t *, &ph);
+		}
+		if (DB_REF(mp) < 2) {
+			if (!(mcip->mci_state_flags & MCIS_PKT_HASH_NO_REUSE)) {
+				mac_ether_clear_pktinfo(mp);
+			}
+		}
+	}
 
 	mcip->mci_rx_fn(mcip->mci_rx_arg, mrh, mp_chain, B_FALSE);
 }

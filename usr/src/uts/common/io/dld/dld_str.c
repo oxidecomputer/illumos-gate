@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -992,6 +992,7 @@ i_dld_ether_header_update_tag(mblk_t *mp, uint_t pri, uint16_t vid,
 		 * rest of the messages to the header message.
 		 */
 		mac_hcksum_clone(mp, hmp);
+		mac_pkt_hash_clone(mp, hmp);
 		if (MBLKL(mp) == 0) {
 			hmp->b_cont = mp->b_cont;
 			freeb(mp);

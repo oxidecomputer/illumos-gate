@@ -1423,6 +1423,9 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	if (flags & MAC_OPEN_FLAGS_NO_UNICAST_ADDR)
 		mcip->mci_state_flags |= MCIS_NO_UNICAST_ADDR;
 
+	if (flags & MAC_OPEN_FLAGS_NO_REUSE)
+		mcip->mci_state_flags |= MCIS_PKT_HASH_NO_REUSE;
+
 	mac_protect_init(mcip);
 
 	/* the subflow table will be created dynamically */
@@ -3702,6 +3705,7 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 	mblk_t			*mp = mp_chain;
 	mblk_t			*new_head = NULL;
 	mblk_t			*new_tail = NULL;
+	pkt_hash_t		ph = { 0 };
 
 	/*
 	 * Check whether the active Tx threads count is bumped already.
@@ -3781,6 +3785,13 @@ mac_tx(mac_client_handle_t mch, mblk_t *mp_chain, uintptr_t hint,
 		if (mp == NULL) {
 			mp = next;
 			continue;
+		}
+
+		mac_pkt_hash_get(mp, &ph);
+		if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_RX) {
+			/* See "Packet Metadata in MAC" in mac_sched.c */
+			DTRACE_PROBE1(pkt__hash__reuse__in__tx,
+			    pkt_hash_t *, &ph);
 		}
 
 		if ((needed & (HCK_TX_FLAGS | HW_LSO_FLAGS)) != 0) {
