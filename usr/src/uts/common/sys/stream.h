@@ -343,6 +343,21 @@ CTASSERT((1 << DBLK_L2HLEN_WIDTH) - 1 >= 22);
 CTASSERT((1 << DBLK_L4HLEN_WIDTH) - 1 >= 60);
 #endif
 
+/*
+ * Hash of packet contents. This value may be provided on either TX or RX.
+ * It is most useful when supplied on RX by hardware.
+ * Deliberately laid out to fit in a single register.
+ */
+typedef struct pkt_hash {
+	uint32_t ph_val;
+	uint32_t ph_polarity: 2;		/* mac_pkt_hash_polarity_t */
+	uint32_t ph_rsvd: 30;			/* Padding reserved */
+} pkt_hash_t;
+
+#ifdef _KERNEL
+CTASSERT(sizeof (pkt_hash_t) == 8);
+#endif
+
 typedef struct packed_meoi {
 	/*
 	 * The flags here contain values of type
@@ -419,6 +434,8 @@ typedef struct datab {
 		uint16_t valid;
 		packed_meoi_t pktinfo;
 	} db_meoi;
+
+	pkt_hash_t db_pkt_hash;
 } dblk_t;
 
 #define	db_pktinfo	db_meoi.pktinfo
