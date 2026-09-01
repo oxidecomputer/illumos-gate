@@ -22,10 +22,11 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2022 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
+#include <sys/stdbool.h>
 #include <sys/cmn_err.h>
 #include <sys/mutex.h>
 #include <sys/param.h>		/* for NULL */
@@ -33,6 +34,7 @@
 #include <sys/memlist.h>
 #include <sys/memlist_impl.h>
 #include <sys/sysmacros.h>
+#include <sys/systm.h>
 #include <sys/kmem.h>
 
 /*
@@ -45,6 +47,13 @@
  * locking.
  */
 static memlist_pool_t pool;
+
+/*
+ * The kmem-backed pool, see MEMLP_FL_KMEM in <sys/memlist_impl.h>.
+ */
+memlist_pool_t memlist_kmem_pool = {
+	.mp_flags = MEMLP_FL_KMEM
+};
 
 /*
  * In order to use these routines early in boot (before %gs is set on x86, in
@@ -69,12 +78,16 @@ static memlist_pool_t pool;
 	} while (0)
 
 /*
- * Caller must test for NULL return.
+ * Caller must test for NULL return, unless the pool is kmem-backed: those
+ * sleep for memory instead of coming up empty.
  */
 struct memlist *
 xmemlist_get_one(memlist_pool_t *mpp)
 {
 	struct memlist *mlp;
+
+	if ((mpp->mp_flags & MEMLP_FL_KMEM) != 0)
+		return (kmem_zalloc(sizeof (struct memlist), KM_SLEEP));
 
 	MEMLP_LOCK(mpp);
 	mlp = mpp->mp_freelist;
@@ -84,6 +97,9 @@ xmemlist_get_one(memlist_pool_t *mpp)
 		mpp->mp_freelist_count--;
 	}
 	MEMLP_UNLOCK(mpp);
+
+	if (mlp != NULL)
+		bzero(mlp, sizeof (*mlp));
 
 	return (mlp);
 }
@@ -98,6 +114,11 @@ void
 xmemlist_free_one(memlist_pool_t *mpp, struct memlist *mlp)
 {
 	ASSERT(mlp != NULL);
+
+	if ((mpp->mp_flags & MEMLP_FL_KMEM) != 0) {
+		kmem_free(mlp, sizeof (struct memlist));
+		return;
+	}
 
 	MEMLP_LOCK(mpp);
 	mlp->ml_next = mpp->mp_freelist;
@@ -119,6 +140,16 @@ xmemlist_free_list(memlist_pool_t *mpp, struct memlist *mlp)
 	uint_t count;
 
 	if (mlp == NULL) {
+		return;
+	}
+
+	if ((mpp->mp_flags & MEMLP_FL_KMEM) != 0) {
+		while (mlp != NULL) {
+			struct memlist *next = mlp->ml_next;
+
+			kmem_free(mlp, sizeof (struct memlist));
+			mlp = next;
+		}
 		return;
 	}
 
@@ -144,6 +175,12 @@ xmemlist_free_block(memlist_pool_t *mpp, caddr_t base, size_t bytes)
 	struct memlist *mlp, *mlendp;
 	uint_t count;
 
+	/*
+	 * A kmem-backed pool has no freelist to stock since entries come from
+	 * kmem on-demand.
+	 */
+	VERIFY0(mpp->mp_flags & MEMLP_FL_KMEM);
+
 	count = bytes / sizeof (struct memlist);
 	if (count == 0)
 		return;
@@ -165,6 +202,12 @@ void
 memlist_free_block(caddr_t base, size_t bytes)
 {
 	xmemlist_free_block(&pool, base, bytes);
+}
+
+static bool
+memlist_span_wraps(uint64_t address, uint64_t bytes)
+{
+	return (bytes != 0 && address > UINT64_MAX - bytes);
 }
 
 /*
@@ -476,6 +519,8 @@ memlist_insert(
 	struct memlist *cur, *last;
 	uint64_t start, end;
 
+	ASSERT(!memlist_span_wraps(new->ml_address, new->ml_size));
+
 	start = new->ml_address;
 	end = start + new->ml_size;
 	last = NULL;
@@ -534,6 +579,35 @@ memlist_del(struct memlist *memlistp,
 	}
 }
 
+/*
+ * Determine whether the address range [addr, addr + len) is in memlist mp.
+ */
+int
+address_in_memlist(struct memlist *mp, uint64_t addr, size_t len)
+{
+	for (; mp != NULL; mp = mp->ml_next) {
+		if (addr >= mp->ml_address &&
+		    addr + len <= mp->ml_address + mp->ml_size)
+			return (1);	/* TRUE */
+	}
+
+	return (0);	/* FALSE */
+}
+
+/*
+ * Returns the count of items in memlist mp.
+ */
+size_t
+memlist_count(const struct memlist *mp)
+{
+	size_t count = 0;
+
+	for (; mp != NULL; mp = mp->ml_next)
+		count++;
+
+	return (count);
+}
+
 struct memlist *
 memlist_find(struct memlist *mlp, uint64_t address)
 {
@@ -550,6 +624,7 @@ memlist_find(struct memlist *mlp, uint64_t address)
  * MEML_SPANOP_OK if OK.
  * MEML_SPANOP_ESPAN if part or all of span already exists
  * MEML_SPANOP_EALLOC for allocation failure
+ * MEML_SPANOP_EOVERFLOW if the span wraps
  */
 int
 xmemlist_add_span(
@@ -561,6 +636,15 @@ xmemlist_add_span(
 {
 	struct memlist *dst;
 	struct memlist *prev, *next;
+
+	if (memlist_span_wraps(address, bytes))
+		return (MEML_SPANOP_EOVERFLOW);
+
+	/*
+	 * Inserting a zero-length span is a nop with relaxed semantics.
+	 */
+	if (bytes == 0 && (flags & MEML_FL_RELAXED) != 0)
+		return (MEML_SPANOP_OK);
 
 	/*
 	 * allocate a new struct memlist
@@ -743,6 +827,12 @@ xmemlist_delete_span_relaxed(memlist_pool_t *mpp, uint64_t address,
 	struct memlist *next, *del, *second;
 	uint64_t end;
 
+	/*
+	 * Deleting a zero-length span is a nop under relaxed semantics.
+	 */
+	if (bytes == 0)
+		return (MEML_SPANOP_OK);
+
 	for (next = *curmemlistp; next != NULL; next = next->ml_next) {
 		if (next->ml_address + next->ml_size > address)
 			break;
@@ -813,6 +903,8 @@ xmemlist_delete_span_relaxed(memlist_pool_t *mpp, uint64_t address,
 		second->ml_prev = next;
 
 		next->ml_size = address - next->ml_address;
+		if (next->ml_next != NULL)
+			next->ml_next->ml_prev = second;
 		next->ml_next = second;
 
 		return (MEML_SPANOP_OK);
@@ -831,6 +923,7 @@ xmemlist_delete_span_relaxed(memlist_pool_t *mpp, uint64_t address,
  * MEML_SPANOP_OK if OK.
  * MEML_SPANOP_ESPAN if part or all of span does not exist and not relaxed
  * MEML_SPANOP_EALLOC for allocation failure
+ * MEML_SPANOP_EOVERFLOW if the span wraps
  */
 int
 xmemlist_delete_span(
@@ -841,6 +934,9 @@ xmemlist_delete_span(
 	uint64_t flags)
 {
 	struct memlist *dst, *next;
+
+	if (memlist_span_wraps(address, bytes))
+		return (MEML_SPANOP_EOVERFLOW);
 
 	/*
 	 * It's not totally inconceivable to refactor this, but these two
@@ -855,7 +951,19 @@ xmemlist_delete_span(
 	 * Find element containing address.
 	 */
 	for (next = *curmemlistp; next != NULL; next = next->ml_next) {
-		if ((address >= next->ml_address) &&
+		if (bytes == 0) {
+			/*
+			 * If we're deleting a zero-length span, we don't want
+			 * to split an existing span uselessly, i.e.
+			 * delete_span(P, 0x30, 0, L, 0) should be a nop if
+			 * L=[0x10,0x40) and not split it into [0x10,0x30) and
+			 * [0x30,0x40).  Thus the only case we should leave this
+			 * loop with next not NULL for a zero-length span is if
+			 * we found exactly that span which we'll remove below.
+			 */
+			if (address == next->ml_address && next->ml_size == 0)
+				break;
+		} else if ((address >= next->ml_address) &&
 		    (address < next->ml_address + next->ml_size))
 			break;
 	}
@@ -864,7 +972,11 @@ xmemlist_delete_span(
 	 * If start address not in list.
 	 */
 	if (next == NULL) {
-		return (MEML_SPANOP_ESPAN);
+		/*
+		 * If the zero-length span isn't otherwise contained, deleting
+		 * it is just a nop.
+		 */
+		return (bytes == 0 ? MEML_SPANOP_OK : MEML_SPANOP_ESPAN);
 	}
 
 	/*
@@ -957,23 +1069,24 @@ memlist_delete_span(uint64_t address, uint64_t bytes, memlist_t **curmemlistp)
 	return (xmemlist_delete_span(&pool, address, bytes, curmemlistp, 0));
 }
 
+/*
+ * Copy a list, entry-by-entry, into the given pool.  Use this to hand a list
+ * from one pool's ownership to another's, which relinking cannot do: an entry
+ * has to be freed to the pool it came from.
+ *
+ * Returns NULL if the pool runs out, having put back whatever it took.
+ */
 struct memlist *
-memlist_kmem_dup(const struct memlist *src, int kmflags)
+xmemlist_dup(memlist_pool_t *mpp, const struct memlist *src)
 {
 	struct memlist *dest = NULL, *last = NULL;
 
 	while (src != NULL) {
 		struct memlist *new;
 
-		new = kmem_zalloc(sizeof (struct memlist), kmflags);
+		new = xmemlist_get_one(mpp);
 		if (new == NULL) {
-			while (dest != NULL) {
-				struct memlist *to_free;
-
-				to_free = dest;
-				dest = dest->ml_next;
-				kmem_free(to_free, sizeof (struct memlist));
-			}
+			xmemlist_free_list(mpp, dest);
 			return (NULL);
 		}
 
@@ -992,4 +1105,232 @@ memlist_kmem_dup(const struct memlist *src, int kmflags)
 	}
 
 	return (dest);
+}
+
+void
+xmemlist_free_all(memlist_pool_t *mpp, struct memlist **listp)
+{
+	xmemlist_free_list(mpp, *listp);
+	*listp = NULL;
+}
+
+/*
+ * Add every span of one list to another.  With MEML_FL_RELAXED the result is
+ * the union of the two; without it, any overlap is an error and the
+ * destination is left partly added to.
+ *
+ * xmemlist_subsume() empties the source as it goes, freeing it to the pool.
+ * xmemlist_merge() leaves it alone.  Both source and destination must belong
+ * to the given pool for subsume, since it frees the one and allocates in the
+ * other.
+ */
+int
+xmemlist_merge(memlist_pool_t *mpp, const struct memlist *src,
+    struct memlist **destp, uint64_t flags)
+{
+	int ret = MEML_SPANOP_OK;
+
+	for (; src != NULL; src = src->ml_next) {
+		ret = xmemlist_add_span(mpp, src->ml_address, src->ml_size,
+		    destp, flags);
+		if (ret != MEML_SPANOP_OK)
+			break;
+	}
+
+	return (ret);
+}
+
+int
+xmemlist_subsume(memlist_pool_t *mpp, struct memlist **srcp,
+    struct memlist **destp, uint64_t flags)
+{
+	int ret = MEML_SPANOP_OK;
+
+	while (*srcp != NULL) {
+		struct memlist *src = *srcp;
+
+		ret = xmemlist_add_span(mpp, src->ml_address, src->ml_size,
+		    destp, flags);
+		if (ret != MEML_SPANOP_OK)
+			break;
+
+		*srcp = src->ml_next;
+		if (*srcp != NULL)
+			(*srcp)->ml_prev = NULL;
+		xmemlist_free_one(mpp, src);
+	}
+
+	return (ret);
+}
+
+int
+xmemlist_delete_list(memlist_pool_t *mpp, struct memlist **listp,
+    const struct memlist *del, uint64_t flags)
+{
+	int ret = MEML_SPANOP_OK;
+
+	for (; del != NULL && *listp != NULL; del = del->ml_next) {
+		ret = xmemlist_delete_span(mpp, del->ml_address, del->ml_size,
+		    listp, flags);
+		if (ret != MEML_SPANOP_OK)
+			break;
+	}
+
+	return (ret);
+}
+
+int
+memlist_find_span(const struct memlist *ml, uint64_t size, uint64_t align,
+    uint64_t *addrp)
+{
+	uint64_t delta, pad;
+
+	ASSERT(align == 0 || ISP2(align));
+
+	for (; ml != NULL; ml = ml->ml_next) {
+		delta = (align == 0) ? 0 : (ml->ml_address & (align - 1));
+		pad = (delta == 0) ? 0 : (align - delta);
+
+		/*
+		 * Check if this entry is large enough to hold the requested
+		 * size, while respecting the alignment and avoiding overflow.
+		 */
+		if (ml->ml_size >= pad && ml->ml_size - pad >= size)
+			break;
+	}
+
+	if (ml == NULL)
+		return (MEML_SPANOP_ESPAN);
+
+	if (addrp != NULL)
+		*addrp = ml->ml_address + pad;
+
+	return (MEML_SPANOP_OK);
+}
+
+int
+xmemlist_claim_span(memlist_pool_t *mpp, struct memlist **listp, uint64_t size,
+    uint64_t align, uint64_t *addrp)
+{
+	uint64_t addr;
+	int ret;
+
+	ret = memlist_find_span(*listp, size, align, &addr);
+	if (ret != MEML_SPANOP_OK)
+		return (ret);
+
+	ret = xmemlist_delete_span(mpp, addr, size, listp, MEML_FL_RELAXED);
+
+	if (ret == MEML_SPANOP_OK)
+		*addrp = addr;
+
+	return (ret);
+}
+
+int
+xmemlist_claim_span_at(memlist_pool_t *mpp, struct memlist **listp,
+    uint64_t address, uint64_t size, uint64_t align, uint64_t *addrp)
+{
+	const struct memlist *ml;
+	uint64_t delta, pad, addr;
+	int ret;
+
+	ASSERT(align == 0 || ISP2(align));
+
+	if (memlist_span_wraps(address, size))
+		return (MEML_SPANOP_EOVERFLOW);
+
+	for (ml = *listp; ml != NULL && ml->ml_address != address;
+	    ml = ml->ml_next)
+		;
+
+	if (ml == NULL)
+		return (MEML_SPANOP_ESPAN);
+
+	delta = (align == 0) ? 0 : (ml->ml_address & (align - 1));
+	pad = (delta == 0) ? 0 : (align - delta);
+
+	if (ml->ml_size < pad || ml->ml_size - pad < size)
+		return (MEML_SPANOP_ESPAN);
+
+	addr = ml->ml_address + pad;
+
+	ret = xmemlist_delete_span(mpp, addr, size, listp, MEML_FL_RELAXED);
+
+	if (ret == MEML_SPANOP_OK)
+		*addrp = addr;
+
+	return (ret);
+}
+
+/*
+ * The resource-list operations: kmem-backed pool and relaxed semantics.
+ */
+
+void
+memlist_rsrc_add(struct memlist **listp, uint64_t address, uint64_t bytes)
+{
+	int ret = xmemlist_add_span(&memlist_kmem_pool, address, bytes, listp,
+	    MEML_FL_RELAXED);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
+}
+
+void
+memlist_rsrc_delete(struct memlist **listp, uint64_t address, uint64_t bytes)
+{
+	int ret = xmemlist_delete_span(&memlist_kmem_pool, address, bytes,
+	    listp, MEML_FL_RELAXED);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
+}
+
+void
+memlist_rsrc_delete_list(struct memlist **listp, const struct memlist *del)
+{
+	int ret = xmemlist_delete_list(&memlist_kmem_pool, listp, del,
+	    MEML_FL_RELAXED);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
+}
+
+void
+memlist_rsrc_merge(const struct memlist *src, struct memlist **destp)
+{
+	int ret = xmemlist_merge(&memlist_kmem_pool, src, destp,
+	    MEML_FL_RELAXED);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
+}
+
+void
+memlist_rsrc_subsume(struct memlist **srcp, struct memlist **destp)
+{
+	int ret = xmemlist_subsume(&memlist_kmem_pool, srcp, destp,
+	    MEML_FL_RELAXED);
+	VERIFY3S(ret, ==, MEML_SPANOP_OK);
+}
+
+int
+memlist_rsrc_claim(struct memlist **listp, uint64_t size, uint64_t align,
+    uint64_t *addrp)
+{
+	return (xmemlist_claim_span(&memlist_kmem_pool, listp, size, align,
+	    addrp));
+}
+
+int
+memlist_rsrc_claim_at(struct memlist **listp, uint64_t address, uint64_t size,
+    uint64_t align, uint64_t *addrp)
+{
+	return (xmemlist_claim_span_at(&memlist_kmem_pool, listp, address, size,
+	    align, addrp));
+}
+
+struct memlist *
+memlist_rsrc_dup(const struct memlist *src)
+{
+	return (xmemlist_dup(&memlist_kmem_pool, src));
+}
+
+void
+memlist_rsrc_free(struct memlist **listp)
+{
+	xmemlist_free_all(&memlist_kmem_pool, listp);
 }

@@ -91,7 +91,6 @@ CORE_OBJS +=			\
 	mem_config.o		\
 	mem_config_stubs.o	\
 	mem_config_arch.o	\
-	memlist_new.o		\
 	memnode.o		\
 	memstr.o		\
 	microcode_amd.o		\
@@ -247,7 +246,7 @@ XSVC_OBJS += xsvc.o
 AMD_IOMMU_OBJS +=	amd_iommu.o amd_iommu_impl.o amd_iommu_acpi.o \
 			amd_iommu_cmd.o amd_iommu_log.o amd_iommu_page_tables.o
 
-PCI_PRD_OBJS += pci_prd_i86pc.o pci_memlist.o
+PCI_PRD_OBJS += pci_prd_i86pc.o
 
 AMDZEN_PLAT_OBJS += amdzen_plat_i86pc.o
 

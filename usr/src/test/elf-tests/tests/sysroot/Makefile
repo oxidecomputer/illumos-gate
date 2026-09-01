@@ -9,37 +9,22 @@
 # http://www.illumos.org/license/CDDL.
 #
 
-# Copyright 2018, Richard Lowe.
+# Copyright 2023, Richard Lowe.
 
 include $(SRC)/cmd/Makefile.cmd
 include $(SRC)/test/Makefile.com
 
-PROG =	amd64-ie-test
-
-DATAFILES =			\
-	Makefile.test		\
-	style1-func-with-r12.s	\
-	style1-func-with-r13.s	\
-	style1-func.s		\
-	style1-main.s		\
-	style2-with-badness.o	\
-	style2-with-r12.s	\
-	style2-with-r13.s	\
-	style2.s
+PROG =	test-search
 
 ROOTOPTPKG = $(ROOT)/opt/elf-tests
-TESTDIR = $(ROOTOPTPKG)/tests/tls/amd64/ie
+TESTDIR = $(ROOTOPTPKG)/tests/sysroot
 
 CMDS = $(PROG:%=$(TESTDIR)/%)
 $(CMDS) := FILEMODE = 0555
 
+all:
 
-DATA = $(DATAFILES:%=$(TESTDIR)/%)
-$(DATA) := FILEMODE = 0444
-
-all: $(PROG)
-
-install: all $(CMDS) $(DATA)
+install: all $(CMDS)
 
 clobber: clean
 	-$(RM) $(PROG)
@@ -47,14 +32,13 @@ clobber: clean
 clean:
 	-$(RM) $(CLEANFILES)
 
-$(CMDS): $(TESTDIR) $(PROG)
+$(CMDS): $(TESTDIR)
 
 $(TESTDIR):
 	$(INS.dir)
 
-$(TESTDIR)/%: %
-	$(INS.file)
-
-$(TESTDIR)/%.o: %.elf
+$(TESTDIR)/%: %.sh
 	$(INS.rename)
 
+$(TESTDIR)/%: %
+	$(INS.file)
