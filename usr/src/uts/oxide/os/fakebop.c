@@ -28,7 +28,7 @@
  *
  * Copyright (c) 2012 Gary Mills
  * Copyright 2020 Joyent, Inc.
- * Copyright 2025 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -72,7 +72,6 @@
 #include <sys/ddipropdefs.h>	/* For DDI prop types */
 #include <sys/dw_apb_uart.h>
 #include <sys/uart.h>
-#include <sys/memlist_impl.h>
 #include <sys/apob.h>
 #include <sys/kapob.h>
 #include <sys/io/zen/ccx.h>

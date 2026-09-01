@@ -606,7 +606,6 @@
 #include <sys/x86_archext.h>
 #include <sys/bitext.h>
 #include <sys/sysmacros.h>
-#include <sys/memlist_impl.h>
 #include <sys/machsystm.h>
 #include <sys/plat/pci_prd.h>
 #include <sys/apic.h>

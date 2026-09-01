@@ -60,8 +60,10 @@ extern bool zen_fabric_io_pci_cfg_disabled;
 extern bool zen_power_determinism;
 
 /*
- * Warning: These memlists cannot be given directly to PCI. They expect to be
- * kmem_alloc'd which we are not doing here at all.
+ * Warning: These memlists cannot be given directly to PCI or other consumers,
+ * whose entries must belong to memlist_kmem_pool. They are backed by the
+ * private zim_pool and must be duplicated with memlist_rsrc_dup() on the way
+ * out, see zen_fabric_rsrc_subsume().
  */
 typedef struct zen_ioms_memlists {
 	kmutex_t		zim_lock;

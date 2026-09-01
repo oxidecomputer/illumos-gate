@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -650,6 +650,7 @@
 #include <sys/ddi_subrdefs.h>
 #include <sys/ksynch.h>
 #include <sys/mach_intr.h>
+#include <sys/memlist_impl.h>
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
 #include <sys/sysmacros.h>
@@ -818,19 +819,6 @@ fch_get_child_reg(dev_info_t *cdip, fch_rangespec_t **frpp)
 	}
 
 	return (nreg);
-}
-
-/* XXX duplicates the implementation in pci_memlist.c.  Should be generic. */
-static inline uint_t
-memlist_count(const memlist_t *ml)
-{
-	uint_t count = 0;
-	while (ml != NULL) {
-		++count;
-		ml = ml->ml_next;
-	}
-
-	return (count);
 }
 
 typedef enum fch_child_flags {
@@ -2563,10 +2551,11 @@ static struct modlinkage fch_modlinkage = {
 
 /*
  * Add the contents of memlist ml to the set of preallocated ranges frp,
- * assuming address space as.  The memlist is freed after conversion and the
- * return value is the number of ranges used, which may be smaller than the
- * number of memlist entries.  This coalesces adjacent memlist spans into a
- * single range and discards empty memlist spans.
+ * assuming address space as.  The memlist, which must be backed by
+ * memlist_kmem_pool, is freed after conversion and the return value is the
+ * number of ranges used, which may be smaller than the number of memlist
+ * entries.  This coalesces adjacent memlist spans into a single range and
+ * discards empty memlist spans.
  */
 static uint_t
 memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
@@ -2578,7 +2567,7 @@ memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
 	for (ridx = 0; ml != NULL; ml = next) {
 		next = ml->ml_next;
 		if (ml->ml_size == 0) {
-			kmem_free(ml, sizeof (memlist_t));
+			xmemlist_free_one(&memlist_kmem_pool, ml);
 			continue;
 		}
 
@@ -2592,7 +2581,7 @@ memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
 		frp[ridx].fr_physlo = (uint32_t)ml->ml_address;
 		frp[ridx].fr_physhi = (uint32_t)(ml->ml_address >> 32);
 
-		kmem_free(ml, sizeof (memlist_t));
+		xmemlist_free_one(&memlist_kmem_pool, ml);
 
 		/* Check for contiguous spans and coalesce. */
 		while (next != NULL && next->ml_address == end + 1) {
@@ -2605,7 +2594,7 @@ memlist_to_ranges(memlist_t *ml, fch_rangespec_t *frp, fch_addrsp_t as)
 			size += ml->ml_size;
 			end += ml->ml_size;
 
-			kmem_free(ml, sizeof (memlist_t));
+			xmemlist_free_one(&memlist_kmem_pool, ml);
 		}
 
 		/* Close out and count this range. */

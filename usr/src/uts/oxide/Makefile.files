@@ -87,7 +87,6 @@ CORE_OBJS +=			\
 	mem_config.o		\
 	mem_config_arch.o	\
 	mem_config_stubs.o	\
-	memlist_new.o		\
 	memnode.o		\
 	memstr.o		\
 	memscrub.o		\

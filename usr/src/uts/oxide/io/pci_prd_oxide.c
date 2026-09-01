@@ -44,30 +44,12 @@ pci_prd_max_bus(void)
 struct memlist *
 pci_prd_find_resource(uint32_t bus, pci_prd_rsrc_t rsrc)
 {
-	struct memlist *ret;
 	switch (rsrc) {
 	case PCI_PRD_R_IO:
 	case PCI_PRD_R_MMIO:
 	case PCI_PRD_R_BUS:
 	case PCI_PRD_R_PREFETCH:
-		/*
-		 * XXX The traditional memlists that the kernel builds via
-		 * memlist_new.c use both the forward and rear links in the
-		 * pointers for ease of management. However, the pci_memlist.c
-		 * implementation only uses the forward pointers. As such, we go
-		 * through and NULL out all the previous pointers here to just
-		 * keep things what PCI expects and so as not to confuse someone
-		 * who is debugging later.
-		 */
-		ret = zen_fabric_pci_subsume(bus, rsrc);
-		if (ret != NULL) {
-			struct memlist *fix = ret;
-			while (fix != NULL) {
-				fix->ml_prev = NULL;
-				fix = fix->ml_next;
-			}
-		}
-		return (ret);
+		return (zen_fabric_pci_subsume(bus, rsrc));
 	default:
 		return (NULL);
 	}
