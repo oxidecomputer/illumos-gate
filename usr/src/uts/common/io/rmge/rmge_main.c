@@ -21,12 +21,25 @@
 static int
 rmge_internalize_csrs(rmge_t *rmge)
 {
+	ddi_device_acc_attr_t acc_attr = {
+		DDI_DEVICE_ATTR_V1,
+		DDI_STRUCTURE_LE_ACC,
+		DDI_STRICTORDER_ACC,
+		DDI_DEFAULT_ACC
+	};
+
 	if (pci_config_setup(rmge->devinfo, &rmge->cfg_space_handle)
 	    != DDI_SUCCESS) {
 		goto fail;
 	}
 
+	if (ddi_regs_map_setup(rmge->devinfo, RMGE_BAR2, &rmge->bar2_mmio_addr,
+	    0, 0, &acc_attr, &rmge->bar2_mmio_handle) != DDI_SUCCESS) {
+		goto fail;
+	}
+
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_CSRS;
+
 	return (RMGE_SUCCESS);
 
 fail:

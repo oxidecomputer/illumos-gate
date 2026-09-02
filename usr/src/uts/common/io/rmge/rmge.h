@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 #define	RMGE_DRIVER_NAME	"rmge"
-#define	RMGE_REGS_MAP		2
+#define	RMGE_BAR2		2
 
 #define	RMGE_SUCCESS			DDI_SUCCESS
 #define	RMGE_FAILURE			DDI_FAILURE
@@ -28,9 +28,11 @@ typedef enum {
 typedef struct rmge {
 	dev_info_t		*devinfo;
 	int			instance;
-	ddi_acc_handle_t	cfg_space_handle;
-	caddr_t			regmap_handle;
 	rmge_att_milestone	att_milestone;
+
+	ddi_acc_handle_t	cfg_space_handle;
+	caddr_t			bar2_mmio_addr;
+	ddi_acc_handle_t	bar2_mmio_handle;
 } rmge_t;
 
 #ifdef __cplusplus
