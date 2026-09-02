@@ -1,0 +1,28 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+
+#
+# Copyright 2026 Oxide Computer Company
+#
+
+<include global_zone_only_component>
+set name=pkg.fmri value=pkg:/driver/network/rmge@$(PKGVERS)
+set name=pkg.summary value="Realtek Multi-Gigabit Ethernet driver scaffold"
+set name=pkg.description \
+    value="Non-functional scaffold for a Realtek Multi-Gigabit Ethernet driver"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Drivers/Networking
+set name=variant.arch value=$(ARCH)
+dir  path=kernel group=sys
+dir  path=kernel/drv group=sys
+dir  path=kernel/drv/$(ARCH64) group=sys
+file path=kernel/drv/$(ARCH64)/rmge group=sys
+dir  path=usr/share/man
+dir  path=usr/share/man/man4d
+file path=usr/share/man/man4d/rmge.4d
+driver name=rmge alias=pciex10ec,3000
+license lic_CDDL license=lic_CDDL
