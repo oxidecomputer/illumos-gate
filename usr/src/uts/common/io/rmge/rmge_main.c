@@ -46,6 +46,25 @@ fail:
 	return (RMGE_FAILURE);
 }
 
+static uint32_t
+rmge_read_bar2_32(rmge_t *rmge, uint64_t reg)
+{
+	uint32_t *off = (uint32_t *)(rmge->bar2_mmio_addr + reg);
+	return (ddi_get32(rmge->bar2_mmio_handle, off));
+}
+
+static int
+rmge_identify_hw_rev(rmge_t *rmge)
+{
+	uint32_t txcfg;
+
+	txcfg = rmge_read_bar2_32(rmge, RMGE_REG_TXCFG);
+	rmge->hw_rev = txcfg & RMGE_REG_TXCFG_MASK_HW_REV;
+
+	rmge->att_milestone |= RMGE_ATT_MILESTONE_ID_HW_REV;
+	return (RMGE_SUCCESS);
+}
+
 static int
 rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 {
@@ -75,6 +94,11 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 		goto rollback;
 	}
 
+	if (rmge_identify_hw_rev(rmge) != RMGE_SUCCESS) {
+		cmn_err(CE_WARN, "failed to identify hw rev");
+		goto rollback;
+	}
+
 	return (DDI_SUCCESS);
 rollback:
 	kmem_free(rmge, sizeof (*rmge));
@@ -99,14 +123,16 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 		break;
 	}
 
-	cmn_err(CE_WARN, "rmge detaching");
-
 	rmge = ddi_get_driver_private(devinfo);
 
 	if (rmge == NULL)
 		return (DDI_FAILURE);
 
-	pci_config_teardown(&rmge->cfg_space_handle);
+	if (rmge->cfg_space_handle != NULL)
+		pci_config_teardown(&rmge->cfg_space_handle);
+
+	if (rmge->bar2_mmio_handle != NULL)
+		ddi_regs_map_free(&rmge->bar2_mmio_handle);
 
 	kmem_free(rmge, sizeof (*rmge));
 

@@ -20,9 +20,13 @@ extern "C" {
 #define	RMGE_SUCCESS			DDI_SUCCESS
 #define	RMGE_FAILURE			DDI_FAILURE
 
+#define	RMGE_REG_TXCFG			0x40
+#define	RMGE_REG_TXCFG_MASK_HW_REV	0x7cf00000
+
 typedef enum {
-	RMGE_ATT_MILESTONE_START		= 1 << 0,
-	RMGE_ATT_MILESTONE_CSRS			= 1 << 1
+	RMGE_ATT_MILESTONE_START			= 1 << 0,
+	RMGE_ATT_MILESTONE_CSRS				= 1 << 1,
+	RMGE_ATT_MILESTONE_ID_HW_REV			= 1 << 2
 } rmge_att_milestone;
 
 typedef struct rmge {
@@ -33,6 +37,8 @@ typedef struct rmge {
 	ddi_acc_handle_t	cfg_space_handle;
 	caddr_t			bar2_mmio_addr;
 	ddi_acc_handle_t	bar2_mmio_handle;
+
+	uint32_t		hw_rev;
 } rmge_t;
 
 #ifdef __cplusplus
