@@ -16,7 +16,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2023 Peter Tribble
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 # Copyright 2023 RackTop Systems, Inc.
 #
 
@@ -120,6 +120,7 @@ _MANFILES=	aac.4d		\
 		ramdisk.4d	\
 		random.4d	\
 		rge.4d		\
+		rmge.4d		\
 		rtls.4d		\
 		sad.4d		\
 		sata.4d		\
