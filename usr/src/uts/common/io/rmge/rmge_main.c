@@ -20,6 +20,8 @@ static void *rmge_soft_state;
 /*
  * Setup internal mappings to the device's config and status registers, in
  * both the config space and second BAR window.
+ *
+ * test
  */
 static int
 rmge_internalize_csrs(rmge_t *rmge)
