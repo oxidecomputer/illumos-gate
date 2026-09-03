@@ -39,8 +39,6 @@ typedef struct rmge {
 	caddr_t			bar2_mmio_addr;
 	ddi_acc_handle_t	bar2_mmio_handle;
 
-	mac_handle_t		mac_handle;
-
 	rmge_att_milestone	att_milestone;
 	uint32_t		hw_rev;
 } rmge_t;
