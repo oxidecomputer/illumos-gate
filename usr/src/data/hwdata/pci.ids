@@ -88,6 +88,7 @@
 	0000  Propolis NVMe Controller
 	0001  Propolis xHCI Controller
 	0002  Propolis PCI-PCI Bridge
+	0003  Redhawk Communication Processor
 # probably misprogrammed Intel Atom C2338 on Dell 0K8Y0N board
 0200  Dell (wrong ID)
 # 021b is not Compaq but there is a board misprogrammed
@@ -5344,6 +5345,7 @@
 	153c  Turin RCEC
 	153d  Turin PCIe Dummy Host Bridge
 	153e  Turin GPP Bridge
+		01de fff7  Metro Baseboard
 		01de fff8  Cosmo Baseboard
 	1540  Kryptos/Cato/Garfield/Garfield+/Arlene/Pooky HT Configuration
 	1541  Kryptos/Cato/Garfield/Garfield+/Arlene/Pooky Address Maps

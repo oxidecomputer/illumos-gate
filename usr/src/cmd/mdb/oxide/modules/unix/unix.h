@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _UNIX_H
@@ -54,6 +54,8 @@ typedef struct {
 	oxide_board_t			obd_board;
 	mdb_oxide_board_cpuinfo_t	obd_cpuinfo;
 	const mdb_zen_platform_t	*obd_zen_platform;
+	uintptr_t			obd_engines[ZEN_FABRIC_MAX_IO_DIES];
+	uintptr_t			obd_nengines[ZEN_FABRIC_MAX_IO_DIES];
 } mdb_oxide_board_data_t;
 
 extern mdb_oxide_board_data_t *get_board_data(void);

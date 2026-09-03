@@ -14,23 +14,45 @@
  */
 
 /*
- * Oxide DXIO Engines for Cosmo. These are organized as follows:
+ * Oxide DXIO Engines for Metro. These are organized as follows:
  *
- *  o x16 NIC
+ *  o 2x x8 NIC (Redhawk)
  *  o 2x x4 M.2
  *  o 10x x4 U.2
  *  o Sidecar
- *  o MCIO connector
  *
  * A couple of notes on this:
  *
  *   o We do not want to constrain the link speed for most devices at this time.
- *     The exceptions are the T6 NIC when in manufacturing mode (see note
- *     below), and the backplane link to the sidecar.
+ *     The exception is the backplane link to the sidecar, see the note on
+ *     that entry below.
  *   o The reversible setting comes from firmware information. It seems that G0,
  *     G1, P2, and P3 are considered reversed (this is zdlc_reverse), polarity
  *     reversals are elsewhere.
- *   o The MCIO connector is not currently included in the DXIO data.
+ *   o Unlike Cosmo, Metro has no MCIO connector and nothing is connected to
+ *     G1.
+ *   o The NIC is a Versal VP1202 (Redhawk) which is wired to P1 as two x8
+ *     channels. Channel A is SP5 lanes 0-7 into GTYP quads 104/105 and
+ *     channel B is SP5 lanes 8-15 into GTYP quads 102/103. Each channel has
+ *     its own reference clock buffer output, PERST, presence and power
+ *     enable signals, all of which are managed by the sequencer FPGA. Within
+ *     each channel, SP5 lane 0 lands on the highest numbered quad channel.
+ *     The Versal cannot present a Gen 5 x16 link, so the NIC is structured as
+ *     two distinct PCIe devices with each channel presenting as an Oxide PCIe
+ *     device (vendor 0x1de, device 0x3) on a CPM5 PCIe controller running at
+ *     Gen 5 x8. Presence for a channel is asserted by the Versal once its
+ *     image has been loaded, at which point the host enables power and clocks
+ *     and releases PERST through the usual hotplug mechanism.
+ *
+ *     XXX: The subsystem ID should be that of the Metro baseboard,
+ *     0x1de/0xfff7, although the current Redhawk design programs 0x1de/0x3
+ *     there.
+ *
+ *     XXX: Lane reversal (OXIO_ENGINE_F_REVERSE) depends on how the CPM5
+ *     numbers its lanes - TBC.
+ *
+ *     XXX: Redhawk currently only enables CPM5 controller 1 and adding
+ *     controller 0 for Metro is a TODO.
  *
  * The following table covers core information around a PCIe device, the port
  * it's on, the physical lanes and corresponding dxio lanes. The notes have the
@@ -54,7 +76,8 @@
  * here for historical information.
  *
  * DEVICE	PORT	XP	PHYS		NOTES
- * NIC		P1	0-15	0x20-0x2f	rx
+ * Redhawk A	P1	0-7	0x20-0x27	rx
+ * Redhawk B	P1	8-15	0x28-0x2f	rx
  * M.2 E (A)	P2	0-3	0x30-0x33	cr, rx(0,1,2), tx(3)
  * M.2 W (B)	P3	0-3	0x10-0x13	cr, rx(1,2,3), tx(0)
  * U.2 0 (A)	G0	12-15	0x6c-0x6f	cr, rx
@@ -68,19 +91,23 @@
  * U.2 8 (I)	G3	0-3	0x50-0x53	rx
  * U.2 9 (J)	G2	0-3	0x70-0x73	rx
  * Sidecar	P0	0-3	0x00-0x03	rx(0,2), tx(1,2,3)
- * MCIO		G1	0-15	0x40-0x4f	cr
  *
  * Entries in this table follow the same order as the table above. That is first
  * the NIC, then M.2 devices, SSDs, and finally the switch. A slot ID of zero
  * is reserved in PCIe for on-board or root-complex-integrated slots and
  * carries various assumptions; we don't use it. Physical slots 0x20-0x29 are
- * the U.2 devices, the remaining slots start at 0x10. With that in mind, the
- * following table is used to indicate which i2c devices everything is on.
+ * the U.2 devices, the remaining slots start at 0x11. Slot 0x10, which was
+ * the T6 on Cosmo, is unused so that the two NIC channels can be numbered
+ * together. With that in mind, the following table is used to indicate which
+ * i2c devices everything is on.
  * Unlike Gimlet, there are no I/O expanders for PERST which is controlled
- * entirely by the FPGA.
+ * entirely by the FPGA. The I/O expanders are all virtual: 0x20 (U.2 A-E) and
+ * 0x21 (U.2 F-J) are emulated by the front FPGA, and 0x22 by the sequencer
+ * FPGA.
  *
  * DEVICE	PORT	TYPE	I2C/BYTE	SLOT
- * NIC		P1	9506	0x22/2		0x10
+ * Redhawk A	P1	9506	0x22/2		0x14
+ * Redhawk B	P1	9506	0x22/4		0x15
  * M.2 E (A)	P2	9506	0x22/0		0x11
  * M.2 W (B)	P3	9506	0x22/1		0x12
  * U.2 0 (A)	G0	9506	0x20/0		0x20
@@ -94,7 +121,6 @@
  * U.2 8 (I)	G3	9506	0x21/3		0x28
  * U.2 9 (J)	G2	9506	0x21/4		0x29
  * Sidecar	P0	9506	0x22/3		0x13
- * MCIO		G1				0x14
  */
 
 #include <sys/io/turin/pcie.h>
@@ -102,19 +128,22 @@
 #include <sys/sysmacros.h>
 
 /*
- * The Gen 5 equalisation presets offered on the U.2 links.
+ * The Gen 5 equalisation presets for the NICs and U.2s.
  */
-#define	COSMO_U2_GEN5_PRESETS	(PCIE_PORT_LC_PRST_MASK_CTL_P(4) | \
+#define	METRO_NIC_GEN5_PRESETS	(PCIE_PORT_LC_PRST_MASK_CTL_P(4) | \
 	PCIE_PORT_LC_PRST_MASK_CTL_P(5))
+#define	METRO_U2_GEN5_PRESETS	(PCIE_PORT_LC_PRST_MASK_CTL_P(6) | \
+	PCIE_PORT_LC_PRST_MASK_CTL_P(7) | PCIE_PORT_LC_PRST_MASK_CTL_P(8) | \
+	PCIE_PORT_LC_PRST_MASK_CTL_P(9))
 
-const oxio_engine_t oxio_cosmo[] = { {
-	.oe_name = "T6",
+const oxio_engine_t oxio_metro[] = { {
+	.oe_name = "Redhawk A",
 	.oe_type = OXIO_ENGINE_T_PCIE,
 	.oe_hp_type = OXIO_HOTPLUG_T_EXP_A,
 	.oe_tile = OXIO_TILE_P1,
 	.oe_lane = 0,
-	.oe_nlanes = 16,
-	.oe_slot = 0x10,
+	.oe_nlanes = 8,
+	.oe_slot = 0x14,
 	.oe_hp_flags = 0,
 	.oe_hp_trad = {
 		.ohp_dev = {
@@ -123,34 +152,36 @@ const oxio_engine_t oxio_cosmo[] = { {
 			.otg_byte = 2
 		},
 		/*
-		 * The T6 GPIO for physical presence is strapped low because
-		 * this device is always on the board. However, we still want to
-		 * make sure that this is visible this way to the operating
-		 * system.
+		 * Unlike the T6 on Cosmo, presence for each Redhawk channel is
+		 * driven by the Versal itself and is only asserted once its
+		 * image has been loaded.
 		 */
 		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
 		    OXIO_PCIE_CAP_PWRFLT
 	},
 	.oe_tuning = {
-		/*
-		 * On Cosmo, we control whether the T6 enters manufacturing
-		 * mode or mission mode (what one would normally expect) based
-		 * on a GPIO. This GPIO is strapped on the board to enter
-		 * manufacturing mode by default, which limits the device to
-		 * PCIe Gen 2 operation.
-		 *
-		 * For various reasons, we have seen issues while trying to
-		 * perform initial training to PCIe Gen 2. In particular, while
-		 * this is successfully negotiated and we see the SoC enter a
-		 * Recovery.Speed in the PCIe LTSSM, it fails to leave the
-		 * subsequent Recovery.Config and then enters Compliance mode.
-		 * We've observed that by limiting the bridge to PCIe Gen 1
-		 * behavior, that we will always successfully train the link
-		 * initially. This setting applies an initial constraint on the
-		 * bridge that will be lifted by the t6init service when it
-		 * transitions to mission mode via a pcieb driver ioctl.
-		 */
-		.ot_log_limit = OXIO_SPEED_GEN_1
+		.ot_gen5_eq_preset_mask = METRO_NIC_GEN5_PRESETS
+	}
+}, {
+	.oe_name = "Redhawk B",
+	.oe_type = OXIO_ENGINE_T_PCIE,
+	.oe_hp_type = OXIO_HOTPLUG_T_EXP_A,
+	.oe_tile = OXIO_TILE_P1,
+	.oe_lane = 8,
+	.oe_nlanes = 8,
+	.oe_slot = 0x15,
+	.oe_hp_flags = 0,
+	.oe_hp_trad = {
+		.ohp_dev = {
+			.otg_exp_type = OXIO_I2C_GPIO_EXP_T_PCA9506,
+			.otg_addr = 0x22,
+			.otg_byte = 4
+		},
+		.ohp_cap = OXIO_PCIE_CAP_OOB_PRSNT | OXIO_PCIE_CAP_PWREN |
+		    OXIO_PCIE_CAP_PWRFLT
+	},
+	.oe_tuning = {
+		.ot_gen5_eq_preset_mask = METRO_NIC_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "M.2 East",
@@ -208,12 +239,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		/*
-		 * We've run into issues with drives at Gen5 and so we limit
-		 * this and all other U.2 slots to Gen4.
-		 */
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N1 (B)",
@@ -235,8 +261,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N2 (C)",
@@ -258,8 +283,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N3 (D)",
@@ -281,8 +305,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N4 (E)",
@@ -304,8 +327,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N5 (F)",
@@ -327,8 +349,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N6 (G)",
@@ -350,8 +371,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N7 (H)",
@@ -373,8 +393,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N8 (I)",
@@ -396,8 +415,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N9 (J)",
@@ -419,8 +437,7 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4,
-		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
+		.ot_gen5_eq_preset_mask = METRO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "Backplane (Switch)",
@@ -448,4 +465,4 @@ const oxio_engine_t oxio_cosmo[] = { {
 	}
 } };
 
-const size_t oxio_cosmo_nengines = ARRAY_SIZE(oxio_cosmo);
+const size_t oxio_metro_nengines = ARRAY_SIZE(oxio_metro);

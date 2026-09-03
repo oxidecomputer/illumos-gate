@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_OXIO_H
@@ -294,6 +294,15 @@ typedef struct oxio_tuning {
 	 * more information.
 	 */
 	oxio_speed_t	ot_log_limit;
+	/*
+	 * This value is used to override the value used for
+	 * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL[LC_PRESET_MASK_32GT], which
+	 * controls which presets are included in the candidates during
+	 * the Gen5 link equalization phase. If this is left at zero for a
+	 * port then the the per-platform constant
+	 * PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL is used.
+	 */
+	uint32_t	ot_gen5_eq_preset_mask;
 } oxio_tuning_t;
 
 typedef struct {
@@ -363,6 +372,9 @@ extern const size_t oxio_ruby_nengines;
 
 extern const oxio_engine_t oxio_cosmo[];
 extern const size_t oxio_cosmo_nengines;
+
+extern const oxio_engine_t oxio_metro[];
+extern const size_t oxio_metro_nengines;
 
 #ifdef __cplusplus
 }

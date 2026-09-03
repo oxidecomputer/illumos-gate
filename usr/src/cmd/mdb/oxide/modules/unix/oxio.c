@@ -39,8 +39,8 @@ oxio_unlimit_help(void)
 {
 	mdb_printf(
 	    "Clears the oe_tuning.ot_hw_limit field (resets to\n"
-	    "OXIO_SPEED_GEN_MAX) for selected engines in the\n"
-	    "oxio_cosmo array, removing the hardware speed limit.\n"
+	    "OXIO_SPEED_GEN_MAX) for selected engines in the board's\n"
+	    "oxio engine array, removing the hardware speed limit.\n"
 	    "This is intended to be used early in boot from kmdb to\n"
 	    "allow devices to train at their maximum supported speed.\n"
 	    "\n"
@@ -55,20 +55,27 @@ int
 oxio_unlimit_dcmd(uintptr_t addr, uint_t flags, int argc,
     const mdb_arg_t *argv)
 {
-	GElf_Sym arr_sym, n_sym;
 	uintptr_t arr_addr;
 	size_t nengines;
 	ssize_t engine_sz, speed_sz;
 	int tuning_off, hw_limit_off, field_off;
-	mdb_oxide_board_data_t *board_data = get_board_data();
+	mdb_oxide_board_data_t *board_data;
 	mdb_ctf_id_t id, idr;
 	uint_t ncleared = 0;
 
 	if (flags & DCMD_ADDRSPEC)
 		return (DCMD_USAGE);
 
-	if (board_data->obd_board != OXIDE_BOARD_COSMO) {
-		mdb_warn("only available on Oxide Cosmo systems\n");
+	if ((board_data = get_board_data()) == NULL)
+		return (DCMD_ERR);
+
+	/*
+	 * The engines for the first (and only) I/O die describe this board's
+	 * PCIe devices. Boards that are not described by oxio data have none.
+	 */
+	arr_addr = board_data->obd_engines[0];
+	if (arr_addr == 0) {
+		mdb_warn("no oxio engines are defined for this board\n");
 		return (DCMD_ERR);
 	}
 
@@ -79,18 +86,9 @@ oxio_unlimit_dcmd(uintptr_t addr, uint_t flags, int argc,
 		}
 	}
 
-	if (mdb_lookup_by_name("oxio_cosmo", &arr_sym) == -1) {
-		mdb_warn("failed to find 'oxio_cosmo' structure");
-		return (DCMD_ERR);
-	}
-	arr_addr = arr_sym.st_value;
-
-	if (mdb_lookup_by_name("oxio_cosmo_nengines", &n_sym) == -1) {
-		mdb_warn("failed to find 'oxio_cosmo_nengines'");
-		return (DCMD_ERR);
-	}
-	if (mdb_vread(&nengines, sizeof (nengines), n_sym.st_value) == -1) {
-		mdb_warn("failed to read oxio_cosmo_nengines");
+	if (mdb_vread(&nengines, sizeof (nengines),
+	    board_data->obd_nengines[0]) == -1) {
+		mdb_warn("failed to read the oxio engine count");
 		return (DCMD_ERR);
 	}
 
@@ -151,7 +149,7 @@ oxio_unlimit_dcmd(uintptr_t addr, uint_t flags, int argc,
 
 		/*
 		 * This command is only intended to operate on the bridges
-		 * above U.2 drives in an Oxide Cosmo sled. These all have
+		 * above U.2 drives in an Oxide sled. These all have
 		 * an `oe_name` field that begins with this string, for example
 		 * "U.2 N0 (A)". If this is not such a bridge, move on to the
 		 * next.
@@ -199,7 +197,7 @@ oxio_unlimit_dcmd(uintptr_t addr, uint_t flags, int argc,
 	}
 
 	if (argc != 0 && ncleared == 0) {
-		mdb_warn("no matching engines found in oxio_cosmo\n");
+		mdb_warn("no matching engines found\n");
 		return (DCMD_ERR);
 	}
 

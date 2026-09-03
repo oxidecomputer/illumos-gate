@@ -4254,6 +4254,16 @@ zen_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
 	return (ops->zfo_pcie_port_write(port, reg, val));
 }
 
+uint32_t
+zen_pcie_port_gen5_preset_mask(const zen_pcie_port_t *port, uint32_t def)
+{
+	if (port->zpp_oxio != NULL &&
+	    port->zpp_oxio->oe_tuning.ot_gen5_eq_preset_mask != 0) {
+		return (port->zpp_oxio->oe_tuning.ot_gen5_eq_preset_mask);
+	}
+	return (def);
+}
+
 typedef struct zen_iodie_by_nodeid_data {
 	uint32_t	zibnd_nodeid;
 	zen_iodie_t	*zibnd_iodie;

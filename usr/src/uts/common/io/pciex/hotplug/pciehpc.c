@@ -421,8 +421,8 @@ static const pciehpc_led_plat_state_t pciehpc_std_leds[PCIEHPC_LED_NSTATES] = {
 };
 
 /*
- * The Gimlet and Cosmo hardware platforms only have a single attention LED that
- * is used for multiple purposes.
+ * The Gimlet, Cosmo and Metro hardware platforms only have a single attention
+ * LED that is used for multiple purposes.
  */
 static const pciehpc_led_plat_state_t
     pciehpc_oxide_sharkfin_leds[PCIEHPC_LED_NSTATES] =
@@ -453,7 +453,10 @@ static const pciehpc_led_plat_map_t pciehpc_led_plat_map[] = {
 	    .plpm_ssys = 0xfff9, .plpm_map = pciehpc_oxide_sharkfin_leds },
 	/* Oxide Cosmo (SP5) platform */
 	{ .plpm_vid = 0x1022, .plpm_did = 0x153e, .plpm_svid = 0x1de,
-	    .plpm_ssys = 0xfff8, .plpm_map = pciehpc_oxide_sharkfin_leds }
+	    .plpm_ssys = 0xfff8, .plpm_map = pciehpc_oxide_sharkfin_leds },
+	/* Oxide Metro (SP5) platform */
+	{ .plpm_vid = 0x1022, .plpm_did = 0x153e, .plpm_svid = 0x1de,
+	    .plpm_ssys = 0xfff7, .plpm_map = pciehpc_oxide_sharkfin_leds }
 };
 
 /* Local functions prototype */

@@ -166,6 +166,7 @@ BOARD_OBJS +=			\
 	oxio_ethanolx.o		\
 	oxio_cosmo.o		\
 	oxio_gimlet.o		\
+	oxio_metro.o		\
 	oxio_ruby.o
 
 CORE_OBJS += $(ZEN_OBJS) $(MILAN_OBJS) $(GENOA_OBJS) $(TURIN_OBJS)

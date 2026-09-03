@@ -2231,11 +2231,11 @@ turin_pcie_dbg_signal(void)
 	static bool gpio_configured;
 
 	/*
-	 * On Cosmo, we want to signal via GPIO that we're collecting register
-	 * data. We use AGPIO22 (SP5_TO_FPGA1_DEBUG_2) for this and will toggle
-	 * this pin's state each time we collect registers. This allows
-	 * someone using a logic analyser to look at low-speed signals to
-	 * correlate those observations with these register values. The
+	 * On Cosmo/Metro, we want to signal via GPIO that we're collecting
+	 * register data. We use AGPIO22 (SP5_TO_FPGA1_DEBUG_2) for this and
+	 * will toggle this pin's state each time we collect registers. This
+	 * allows someone using a logic analyser to look at low-speed signals
+	 * to correlate those observations with these register values. The
 	 * register values are not a snapshot, but we do collect the timestamp
 	 * associated with each one so it's at least possible to reassemble a
 	 * complete strip chart with coordinated timestamps.
@@ -2245,8 +2245,10 @@ turin_pcie_dbg_signal(void)
 	 * clear start time (since the GPIO was previously an input and would
 	 * have read at an undefined level).
 	 */
-	if (oxide_board_data->obd_board != OXIDE_BOARD_COSMO)
+	if (oxide_board_data->obd_board != OXIDE_BOARD_COSMO &&
+	    oxide_board_data->obd_board != OXIDE_BOARD_METRO) {
 		return;
+	}
 
 	if (!gpio_configured) {
 		zen_hack_gpio_config(22, TURIN_FCH_IOMUX_22_AGPIO22);
@@ -2504,6 +2506,22 @@ static const zen_pcie_strap_setting_t turin_pcie_strap_settings[] = {
 		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
 		.strap_corematch = PCIE_COREMATCH_ANY
 	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_SUBVID,
+		.strap_data = PCI_VENDOR_ID_OXIDE,
+		.strap_boardmatch = OXIDE_BOARD_METRO,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_SUBDID,
+		.strap_data = PCI_SDID_OXIDE_METRO_BASE,
+		.strap_boardmatch = OXIDE_BOARD_METRO,
+		.strap_nodematch = PCIE_NODEMATCH_ANY,
+		.strap_iohcmatch = PCIE_IOHCMATCH_ANY,
+		.strap_corematch = PCIE_COREMATCH_ANY
+	},
 
 };
 
@@ -2665,8 +2683,8 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_portmatch = PCIE_PORTMATCH_ANY,
 	},
 	/*
-	 * Enable SRIS and associated parameters on the backplane port which
-	 * is node 0, P0 (IOHC 0, Core 0, Port 1).
+	 * Enable SRIS and associated parameters on the Cosmo and Metro
+	 * backplane port, which is node 0, P0 (IOHC 0, Core 0, Port 1).
 	 */
 	{
 		.strap_reg = TURIN_STRAP_PCIE_P_SRIS_EN,
@@ -2690,6 +2708,33 @@ static const zen_pcie_strap_setting_t turin_pcie_port_settings[] = {
 		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
 		.strap_data = 0,
 		.strap_boardmatch = OXIDE_BOARD_COSMO,
+		.strap_nodematch = 0,
+		.strap_iohcmatch = 0,
+		.strap_corematch = 0,
+		.strap_portmatch = 1
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_SRIS_EN,
+		.strap_data = 0x1,
+		.strap_boardmatch = OXIDE_BOARD_METRO,
+		.strap_nodematch = 0,
+		.strap_iohcmatch = 0,
+		.strap_corematch = 0,
+		.strap_portmatch = 1
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_GEN_SUP,
+		.strap_data = 0,
+		.strap_boardmatch = OXIDE_BOARD_METRO,
+		.strap_nodematch = 0,
+		.strap_iohcmatch = 0,
+		.strap_corematch = 0,
+		.strap_portmatch = 1
+	},
+	{
+		.strap_reg = TURIN_STRAP_PCIE_P_LOW_SKP_OS_RCV_SUP,
+		.strap_data = 0,
+		.strap_boardmatch = OXIDE_BOARD_METRO,
 		.strap_nodematch = 0,
 		.strap_iohcmatch = 0,
 		.strap_corematch = 0,
@@ -2871,12 +2916,10 @@ turin_fabric_init_pcie_port_after_reconfig(zen_pcie_port_t *port)
 	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_16GT(val,
 	    PCIE_PORT_LC_PRST_MASK_CTL_16GT_VAL);
 
-	/* The Gen5 value can be overridden per board */
-	const uint32_t mask32gt =
-	    oxide_board_data->obd_pcie_gen5_eq_preset_mask != 0 ?
-	    oxide_board_data->obd_pcie_gen5_eq_preset_mask :
-	    PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL;
-	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_32GT(val, mask32gt);
+	/* The Gen5 value can be overridden per port */
+	val = PCIE_PORT_LC_PRST_MASK_CTL_SET_MASK_32GT(val,
+	    zen_pcie_port_gen5_preset_mask(port,
+	    PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL));
 
 	zen_pcie_port_write(port, reg, val);
 

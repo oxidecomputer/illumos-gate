@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -92,12 +92,24 @@ static const oxhc_slot_info_t oxhc_slots_cosmo[] = {
 	{ OXHC_SLOT_MCIO, 30, 30, "215-0000162" }
 };
 
+static const oxhc_slot_info_t oxhc_slots_metro[] = {
+	{ OXHC_SLOT_CEM, 0, 9, "215-0000175" },
+	{ OXHC_SLOT_DIMM, 10, 21, "215-0000166" },
+	{ OXHC_SLOT_M2, 22, 23, "215-0000172" },
+	{ OXHC_SLOT_TEMP, 24, 28, "215-0000092" }
+};
+
 static const oxhc_port_info_t oxhc_ports_gimlet[] = {
 	{ OXHC_PORT_EXAMAX_4X8, 0, 2, "215-0000082" },
 	{ OXHC_PORT_PWRBLADE, 3, 3, "215-0000114" }
 };
 
 static const oxhc_port_info_t oxhc_ports_cosmo[] = {
+	{ OXHC_PORT_EXAMAX_4X8, 0, 2, "215-0000082" },
+	{ OXHC_PORT_PWRBLADE, 3, 3, "215-0000114" }
+};
+
+static const oxhc_port_info_t oxhc_ports_metro[] = {
 	{ OXHC_PORT_EXAMAX_4X8, 0, 2, "215-0000082" },
 	{ OXHC_PORT_PWRBLADE, 3, 3, "215-0000114" }
 };
@@ -1102,6 +1114,15 @@ topo_oxhc_enum_cosmo_board(topo_mod_t *mod, const oxhc_t *oxhc,
 	    oxhc_ic_cosmo_main, oxhc_ic_cosmo_main_nents));
 }
 
+static int
+topo_oxhc_enum_metro_board(topo_mod_t *mod, const oxhc_t *oxhc,
+    const oxhc_enum_t *oe, tnode_t *pn, tnode_t *tn, topo_instance_t min,
+    topo_instance_t max)
+{
+	return (topo_oxhc_enum_ic(mod, oxhc, tn, NULL, oxhc->oxhc_rev,
+	    oxhc_ic_metro_main, oxhc_ic_metro_main_nents));
+}
+
 /*
  * Data enumeration table. In particular, this module is the main enumeration
  * method for most of the chassis, motherboard, various, ports, etc. The
@@ -1174,6 +1195,37 @@ static const oxhc_enum_t oxhc_enum_cosmo[] = {
 	    .oe_range_enum = topo_oxhc_enum_cosmo_fan_tray },
 };
 
+static const oxhc_enum_t oxhc_enum_metro[] = {
+	{ .oe_name = CHASSIS, .oe_parent = "hc",
+	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN | OXHC_ENUM_F_MAKE_AUTH |
+	    OXHC_ENUM_F_FRU_SELF, .oe_range_enum = topo_oxhc_enum_range },
+	{ .oe_name = BAY, .oe_parent = CHASSIS,
+	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_pcie_child },
+	{ .oe_name = SYSTEMBOARD, .oe_parent = CHASSIS,
+	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN |
+	    OXHC_ENUM_F_USE_IPCC_PN | OXHC_ENUM_F_USE_IPCC_REV |
+	    OXHC_ENUM_F_FRU_SELF,
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_metro_board },
+	{ .oe_name = SOCKET, .oe_parent = SYSTEMBOARD, .oe_cpn = "215-0000156",
+	    .oe_range_enum = topo_oxhc_enum_range,
+	    .oe_post_enum = topo_oxhc_enum_cpu },
+	{ .oe_name = SLOT, .oe_parent = SYSTEMBOARD,
+	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
+	    .oe_range_enum = topo_oxhc_enum_range_slot,
+	    .oe_post_enum = topo_oxhc_enum_slot },
+	{ .oe_name = PORT, .oe_parent = SYSTEMBOARD,
+	    .oe_flags = OXHC_ENUM_F_MULTI_RANGE,
+	    .oe_range_enum = topo_oxhc_enum_range_port,
+	    .oe_post_enum = topo_oxhc_enum_gimlet_port },
+
+	{ .oe_name = FANTRAY, .oe_parent = CHASSIS,
+	    .oe_flags = OXHC_ENUM_F_FRU_SELF,
+	    .oe_range_enum = topo_oxhc_enum_cosmo_fan_tray },
+};
+
 typedef struct {
 	const char *oem_pn;
 	const oxhc_enum_t *oem_enum;
@@ -1203,6 +1255,15 @@ static const oxhc_enum_map_t oxhc_enum_map[] = {
 		.oem_nslots = ARRAY_SIZE(oxhc_slots_cosmo),
 		.oem_ports = oxhc_ports_cosmo,
 		.oem_nports = ARRAY_SIZE(oxhc_ports_cosmo),
+		.oem_dimm_info = topo_oxhc_ddr5_info
+	}, {
+		.oem_pn = "913-0000028",
+		.oem_enum = oxhc_enum_metro,
+		.oem_nenum = ARRAY_SIZE(oxhc_enum_metro),
+		.oem_slots = oxhc_slots_metro,
+		.oem_nslots = ARRAY_SIZE(oxhc_slots_metro),
+		.oem_ports = oxhc_ports_metro,
+		.oem_nports = ARRAY_SIZE(oxhc_ports_metro),
 		.oem_dimm_info = topo_oxhc_ddr5_info
 	}
 };

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -57,6 +57,7 @@ static struct {
 static const char *platforms[] = {
 	"Oxide,Cosmo",
 	"Oxide,Gimlet",
+	"Oxide,Metro",
 	"Oxide,RubyRed"
 };
 

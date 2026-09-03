@@ -25,6 +25,8 @@
 #include <sys/x86_archext.h>
 #include <sys/io/fch/pmio.h>
 #include <sys/io/fch/misc.h>
+#include <sys/io/fch/espi.h>
+#include <sys/espi_impl.h>
 #include <sys/amdzen/fch.h>
 #include <sys/amdzen/fch/iomux.h>
 #include <sys/amdzen/fch/gpio.h>
@@ -32,7 +34,6 @@
 #include <sys/io/milan/iomux.h>
 #include <sys/io/genoa/iomux.h>
 #include <sys/io/turin/iomux.h>
-#include <sys/io/turin/pcie.h>
 #include <sys/io/zen/mpio_impl.h>
 #include <sys/io/zen/platform.h>
 
@@ -80,6 +81,22 @@ typedef struct oxide_test_gpio_tristate {
 	const oxide_gpio_tristate_t		otgt_expect;
 } oxide_test_gpio_tristate_t;
 
+/* eSPI target configuration register tests */
+
+typedef struct oxide_test_espi_cfg {
+	const uint16_t		otec_reg;
+	const uint32_t		otec_value;
+} oxide_test_espi_cfg_t;
+
+/*
+ * The eSPI specification reserves configuration registers from 0x800 onwards
+ * for platform specific use. On boards where the sequencer FPGA is the eSPI
+ * target, the first of these identifies the board.
+ */
+#define	ESPI_REG_OXIDE_BOARD		0x800
+#define	ESPI_REG_OXIDE_BOARD_COSMO	0
+#define	ESPI_REG_OXIDE_BOARD_METRO	1
+
 /* Oxide board tests */
 
 /*
@@ -87,7 +104,7 @@ typedef struct oxide_test_gpio_tristate {
  * when adding new entries.
  */
 #define	OXIDE_BOARD_CHIPREVS	3
-#define	OXIDE_BOARD_TESTS	4
+#define	OXIDE_BOARD_TESTS	5
 #define	OXIDE_BOARD_IOMUX	10
 
 typedef bool (*oxide_board_test_f)(const oxide_board_cpuinfo_t *cpuinfo,
@@ -100,6 +117,7 @@ typedef struct oxide_board_test {
 		const x86_chiprev_t	obt_chiprev[OXIDE_BOARD_CHIPREVS];
 		const oxide_test_gpio_tristate_t	obt_tristate;
 		const uint32_t		obt_romtype;
+		const oxide_test_espi_cfg_t	obt_espicfg;
 	};
 } oxide_board_test_t;
 
@@ -107,6 +125,7 @@ typedef struct oxide_board_testresult {
 	union {
 		oxide_gpio_tristate_t	obtr_tristate;
 		uint32_t		obtr_romtype;
+		uint32_t		obtr_espicfg;
 	};
 } oxide_board_testresult_t;
 
@@ -126,6 +145,8 @@ static bool eb_eval_socket(const oxide_board_cpuinfo_t *, const
 static bool eb_eval_gpio_tristate(const oxide_board_cpuinfo_t *, const
     oxide_board_test_t *, oxide_board_testresult_t *);
 static bool eb_eval_romtype(const oxide_board_cpuinfo_t *, const
+    oxide_board_test_t *, oxide_board_testresult_t *);
+static bool eb_eval_espi_cfg(const oxide_board_cpuinfo_t *, const
     oxide_board_test_t *, oxide_board_testresult_t *);
 
 static void eb_milan_disable_kbrst(const oxide_board_cpuinfo_t *,
@@ -258,8 +279,8 @@ static oxide_board_def_t oxide_board_defs[] = {
 		}
 	}, {
 		.obdef_board_data = {
-			.obd_board = OXIDE_BOARD_COSMO,
-			.obd_rootnexus = "Oxide,Cosmo",
+			.obd_board = OXIDE_BOARD_METRO,
+			.obd_rootnexus = "Oxide,Metro",
 			.obd_bsu_slot = { 17, 18 },
 			.obd_ipccmode = IPCC_MODE_ESPI0,
 			.obd_ipccspintr = IPCC_SPINTR_SP5_AGPIO2,
@@ -267,15 +288,12 @@ static oxide_board_def_t oxide_board_defs[] = {
 			.obd_measure_root = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
-			.obd_engines = { oxio_cosmo },
-			.obd_nengines = { &oxio_cosmo_nengines },
+			.obd_engines = { oxio_metro },
+			.obd_nengines = { &oxio_metro_nengines },
 			.obd_tdp = 500, /* W */
 			.obd_ppt = 500, /* W */
 			.obd_edc = 330, /* A */
 			.obd_tdc = 235,	/* A */
-			.obd_pcie_gen5_eq_preset_mask =
-			    PCIE_PORT_LC_PRST_MASK_CTL_P(4) |
-			    PCIE_PORT_LC_PRST_MASK_CTL_P(5),
 			.obd_wd = IOMUX_CFG_ENTRY(22,
 			    TURIN_FCH_IOMUX_22_AGPIO22)
 		},
@@ -304,13 +322,13 @@ static oxide_board_def_t oxide_board_defs[] = {
 				    FCH_MISC_A_STRAPSTATUS_ROMTYPE_ESPI_SAFS
 			}, {
 				/*
-				 * We determine if this is a Cosmo versus a
-				 * RubyRed by inspecting the state of AGPIO21.
-				 * On Ruby this GPIO is connected to a test
-				 * point so will follow the pulls, whereas
-				 * on Cosmo the FPGA drives this high once the
-				 * rails are up, at least until the first IPCC
-				 * message has been seen.
+				 * We determine if this is a Metro or Cosmo,
+				 * versus a RubyRed, by inspecting the state of
+				 * AGPIO21. On Ruby this GPIO is connected to a
+				 * test point so will follow the pulls, whereas
+				 * on Metro and Cosmo the FPGA drives this high
+				 * once the rails are up, at least until the
+				 * first IPCC message has been seen.
 				 *
 				 * The tests are run in order so by the time
 				 * we are here we know this is a Turin chip in
@@ -327,6 +345,88 @@ static oxide_board_def_t oxide_board_defs[] = {
 						.ogt_pulledup = OGS_HIGH,
 						.ogt_pulleddown = OGS_HIGH
 					}
+				}
+			}, {
+				/*
+				 * Metro and Cosmo are distinguished by asking
+				 * the FPGA, which is the eSPI target, for its
+				 * board identification register.
+				 */
+				.obt_func = eb_eval_espi_cfg,
+				.obt_espicfg = {
+					.otec_reg = ESPI_REG_OXIDE_BOARD,
+					.otec_value = ESPI_REG_OXIDE_BOARD_METRO
+				}
+			}
+		}
+	}, {
+		.obdef_board_data = {
+			.obd_board = OXIDE_BOARD_COSMO,
+			.obd_rootnexus = "Oxide,Cosmo",
+			.obd_bsu_slot = { 17, 18 },
+			.obd_ipccmode = IPCC_MODE_ESPI0,
+			.obd_ipccspintr = IPCC_SPINTR_SP5_AGPIO2,
+			.obd_ipccemcr = true,
+			.obd_measure_root = true,
+			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
+			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
+			.obd_engines = { oxio_cosmo },
+			.obd_nengines = { &oxio_cosmo_nengines },
+			.obd_tdp = 500, /* W */
+			.obd_ppt = 500, /* W */
+			.obd_edc = 330, /* A */
+			.obd_tdc = 235,	/* A */
+			.obd_wd = IOMUX_CFG_ENTRY(22,
+			    TURIN_FCH_IOMUX_22_AGPIO22)
+		},
+		.obdef_iomux = {
+			/* UART0 - Console */
+			IOMUX_CFG_ENTRY(135, TURIN_FCH_IOMUX_135_UART0_CTS_L),
+			IOMUX_CFG_ENTRY(136, TURIN_FCH_IOMUX_136_UART0_RXD),
+			IOMUX_CFG_ENTRY(137, TURIN_FCH_IOMUX_137_UART0_RTS_L),
+			IOMUX_CFG_ENTRY(138, TURIN_FCH_IOMUX_138_UART0_TXD),
+			/* SP_TO_SP5_INT_L_V1P8 */
+			IOMUX_CFG_ENTRY(2, TURIN_FCH_IOMUX_2_AGPIO2),
+		},
+		.obdef_tests = {
+			{
+				.obt_func = eb_eval_socket,
+				.obt_socket = X86_SOCKET_SP5
+			}, {
+				.obt_func = eb_eval_chiprev,
+				.obt_chiprev = {
+					X86_CHIPREV_AMD_TURIN_ANY,
+					X86_CHIPREV_AMD_DENSE_TURIN_ANY
+				}
+			}, {
+				.obt_func = eb_eval_romtype,
+				.obt_romtype =
+				    FCH_MISC_A_STRAPSTATUS_ROMTYPE_ESPI_SAFS
+			}, {
+				/*
+				 * See the corresponding Metro entry above for
+				 * the reasoning behind these two tests. Cosmo
+				 * FPGA images that predate the board
+				 * identification register return zero for any
+				 * configuration register they do not implement,
+				 * which is also the Cosmo value.
+				 */
+				.obt_func = eb_eval_gpio_tristate,
+				.obt_tristate = {
+					.otgt_gpionum = 21,
+					.otgt_iomux = IOMUX_CFG_ENTRY(21,
+					    TURIN_FCH_IOMUX_21_AGPIO21),
+					.otgt_expect = {
+						.ogt_floating = OGS_HIGH,
+						.ogt_pulledup = OGS_HIGH,
+						.ogt_pulleddown = OGS_HIGH
+					}
+				}
+			}, {
+				.obt_func = eb_eval_espi_cfg,
+				.obt_espicfg = {
+					.otec_reg = ESPI_REG_OXIDE_BOARD,
+					.otec_value = ESPI_REG_OXIDE_BOARD_COSMO
 				}
 			}
 		}
@@ -614,6 +714,48 @@ eb_eval_romtype(const oxide_board_cpuinfo_t *cpuinfo,
 	return (result->obtr_romtype == test->obt_romtype);
 }
 
+/*
+ * Read a configuration register from the target attached to the first eSPI
+ * controller and compare it against the expected value. This is only used
+ * once earlier tests have established that the system was booted from eSPI
+ * flash, in which case the PSP and ABL have already initialised the
+ * controller and all that is required is to take the bus semaphore and issue
+ * a GET_CONFIGURATION command. The semaphore is released again afterwards so
+ * that the later, full, eSPI initialisation for IPCC is unaffected. A failure
+ * to read the register is treated as a mismatch.
+ */
+static bool
+eb_eval_espi_cfg(const oxide_board_cpuinfo_t *cpuinfo __unused,
+    const oxide_board_test_t *test, oxide_board_testresult_t *result)
+{
+	const oxide_test_espi_cfg_t *ec = &test->obt_espicfg;
+	mmio_reg_block_t block;
+	mmio_reg_t reg;
+	uint32_t val = ESPI_CFG_INVAL32;
+
+	block = fch_espi_mmio_block(0);
+	reg = FCH_ESPI_RESERVED_REG0_MMIO(block);
+
+	if (FCH_ESPI_RESERVED_REG0_INIT_STAT(mmio_reg_read(reg)) !=
+	    FCH_ESPI_RESERVED_REG0_INIT_STAT_SUCCESS) {
+		EB_DBGMSG("eSPI: controller not initialised, cannot read "
+		    "configuration register 0x%x\n", ec->otec_reg);
+	} else if (espi_acquire(block) != 0) {
+		EB_DBGMSG("eSPI: could not acquire semaphore to read "
+		    "configuration register 0x%x\n", ec->otec_reg);
+	} else {
+		val = espi_get_configuration(block, ec->otec_reg);
+		espi_release(block);
+		EB_DBGMSG("eSPI: configuration register 0x%x is 0x%x\n",
+		    ec->otec_reg, val);
+	}
+
+	mmio_reg_block_unmap(&block);
+	result->obtr_espicfg = val;
+
+	return (val == ec->otec_value);
+}
+
 static void
 eb_milan_disable_kbrst(const oxide_board_cpuinfo_t *cpuinfo __unused,
     const oxide_board_test_t *test __unused)
@@ -691,6 +833,8 @@ oxide_board_name(oxide_board_t board)
 		return ("Ethanol-X");
 	case OXIDE_BOARD_COSMO:
 		return ("Cosmo");
+	case OXIDE_BOARD_METRO:
+		return ("Metro");
 	case OXIDE_BOARD_RUBY:
 		return ("Ruby");
 	case OXIDE_BOARD_RUBYRED:

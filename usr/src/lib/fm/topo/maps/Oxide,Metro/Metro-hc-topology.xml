@@ -16,7 +16,7 @@
 -->
 
 <!--
-  This is the primary chassis topology map for Cosmo. See the introduction in
+  This is the primary chassis topology map for Metro. See the introduction in
   the Oxide,Gimlet HC topology file for background and information on how this
   works and is designed.
 -->
@@ -303,12 +303,10 @@
             CEM: 0-9
             DIMMs: 10-21
             M.2s: 22-23
-            Temp Sensors: 24-29
-            MCIO: 30 (while it is split between two connectors, we treat it as
-                      one logical slot for now)
+            Temp Sensors: 24-28
           -->
           <dependents grouping='children'>
-            <range name='slot' min='0' max='30'>
+            <range name='slot' min='0' max='28'>
               <enum-method name='oxhc' version='1' />
               <node instance='0' static='true'>
                 <propgroup name='protocol' version='1'
@@ -838,34 +836,11 @@
               <node instance='28' static='true'>
                   <propgroup name='protocol' version='1'
                       name-stability='Private' data-stability='Private' >
-                    <propval name='label' type='string' value='North Thermal' />
-                  </propgroup>
-                  <propgroup name='oxhc' version='1'
-                      name-stability='Private' data-stability='Private' >
-                    <propval name='refdes' type='string' value='J48' />
-                  </propgroup>
-                <enum-method name='oxhc' version='1' />
-              </node>
-              <node instance='29' static='true'>
-                  <propgroup name='protocol' version='1'
-                      name-stability='Private' data-stability='Private' >
                     <propval name='label' type='string' value='NE Thermal' />
                   </propgroup>
                   <propgroup name='oxhc' version='1'
                       name-stability='Private' data-stability='Private' >
                     <propval name='refdes' type='string' value='J49' />
-                  </propgroup>
-                <enum-method name='oxhc' version='1' />
-              </node>
-
-              <node instance='30' static='true'>
-                  <propgroup name='protocol' version='1'
-                      name-stability='Private' data-stability='Private' >
-                    <propval name='label' type='string' value='MCIO' />
-                  </propgroup>
-                  <propgroup name='oxhc' version='1'
-                      name-stability='Private' data-stability='Private' >
-                    <propval name='refdes' type='string' value='J6' />
                   </propgroup>
                 <enum-method name='oxhc' version='1' />
               </node>
