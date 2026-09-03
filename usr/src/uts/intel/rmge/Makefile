@@ -21,6 +21,8 @@ ALL_TARGET	= $(BINARY)
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 CPPFLAGS	+= -I$(UTSBASE)/common/io/rmge
 
+LDFLAGS		+= -N misc/mac -N drv/ip
+
 .KEEP_STATE:
 
 def:		$(DEF_DEPS)
