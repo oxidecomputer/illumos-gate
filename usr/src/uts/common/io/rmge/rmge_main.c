@@ -20,6 +20,7 @@
 static void *rmge_soft_state;
 
 static mac_callbacks_t rmge_mac_callbacks;
+
 /*
  * Setup internal mappings to the device's config and status registers, in
  * both the config space and second BAR window.
