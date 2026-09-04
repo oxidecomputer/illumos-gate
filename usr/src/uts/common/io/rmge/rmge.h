@@ -50,6 +50,7 @@ typedef struct rmge {
 	uint32_t		hw_rev;
 
 	mac_handle_t		mh;
+	boolean_t		started;
 	uint8_t			hw_mac_addr[ETHERADDRL];
 } rmge_t;
 

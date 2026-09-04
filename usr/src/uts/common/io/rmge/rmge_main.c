@@ -35,6 +35,13 @@ rmge_internalize_csrs(rmge_t *rmge)
 		DDI_DEFAULT_ACC
 	};
 
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT3P(rmge->dip, !=, NULL);
+	ASSERT3P(rmge->cfg_space_handle, ==, NULL);
+	ASSERT3P(rmge->bar2_mmio_addr, ==, NULL);
+	ASSERT3P(rmge->bar2_mmio_handle, ==, NULL);
+	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+
 	if (pci_config_setup(rmge->dip, &rmge->cfg_space_handle)
 	    != DDI_SUCCESS) {
 		goto fail;
@@ -61,7 +68,13 @@ fail:
 static void
 rmge_free_resources(rmge_t *rmge)
 {
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT3P(rmge->dip, !=, NULL);
+	ASSERT3P(ddi_get_driver_private(rmge->dip), ==, rmge);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_SOFTSTATE);
 	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT3P(rmge->mh, ==, NULL);
+	ASSERT0(rmge->started);
 
 	if (rmge->bar2_mmio_handle != NULL)
 		ddi_regs_map_free(&rmge->bar2_mmio_handle);
@@ -76,14 +89,29 @@ rmge_free_resources(rmge_t *rmge)
 static uint32_t
 rmge_read_bar2_32(rmge_t *rmge, uint32_t reg)
 {
-	uint32_t *off = (uint32_t *)(rmge->bar2_mmio_addr + reg);
+	uint32_t *off;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	ASSERT3P(rmge->bar2_mmio_addr, !=, NULL);
+	ASSERT3P(rmge->bar2_mmio_handle, !=, NULL);
+	ASSERT0(reg & (sizeof (uint32_t) - 1));
+
+	off = (uint32_t *)(rmge->bar2_mmio_addr + reg);
 	return (ddi_get32(rmge->bar2_mmio_handle, off));
 }
 
 static uint8_t
 rmge_read_bar2_8(rmge_t *rmge, uint32_t reg)
 {
-	uint8_t *off = (uint8_t *)(rmge->bar2_mmio_addr + reg);
+	uint8_t *off;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	ASSERT3P(rmge->bar2_mmio_addr, !=, NULL);
+	ASSERT3P(rmge->bar2_mmio_handle, !=, NULL);
+
+	off = (uint8_t *)(rmge->bar2_mmio_addr + reg);
 	return (ddi_get8(rmge->bar2_mmio_handle, off));
 }
 
@@ -91,6 +119,10 @@ static int
 rmge_identify_hw_rev(rmge_t *rmge)
 {
 	uint32_t txcfg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_ID_HW_REV);
 
 	txcfg = rmge_read_bar2_32(rmge, RMGE_REG_TXCFG);
 	rmge->hw_rev = txcfg & RMGE_REG_TXCFG_MASK_HW_REV;
@@ -102,6 +134,10 @@ rmge_identify_hw_rev(rmge_t *rmge)
 static void
 rmge_read_mac_addr(rmge_t *rmge)
 {
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_ID_MAC);
+
 	for (uint_t i = 0; i < ETHERADDRL; i++)
 		rmge->hw_mac_addr[i]
 		    = rmge_read_bar2_8(rmge, RMGE_REG_IDR0 + i);
@@ -112,9 +148,20 @@ rmge_read_mac_addr(rmge_t *rmge)
 static int
 rmge_register_mac_device(rmge_t *rmge)
 {
+	mac_register_t *mr;
 	int rc;
 
-	mac_register_t *mr = mac_alloc(MAC_VERSION);
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT3P(rmge->dip, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_SOFTSTATE);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_ID_HW_REV);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_ID_MAC);
+	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT3P(rmge->mh, ==, NULL);
+	ASSERT0(rmge->started);
+
+	mr = mac_alloc(MAC_VERSION);
 	if (mr == NULL)
 		return (RMGE_FAILURE);
 
@@ -136,6 +183,7 @@ rmge_register_mac_device(rmge_t *rmge)
 	}
 
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_REG_MAC;
+	ASSERT3P(rmge->mh, !=, NULL);
 	mac_link_update(rmge->mh, LINK_STATE_DOWN);
 	return (RMGE_SUCCESS);
 }
@@ -146,6 +194,9 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	rmge_t *rmge;
 	int instance;
 	int rc = DDI_SUCCESS;
+
+	ASSERT3P(devinfo, !=, NULL);
+	ASSERT3P(rmge_soft_state, !=, NULL);
 
 	switch (cmd) {
 	default:
@@ -166,6 +217,8 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	}
 
 	rmge = ddi_get_soft_state(rmge_soft_state, instance);
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT3P(ddi_get_driver_private(devinfo), ==, NULL);
 	ddi_set_driver_private(devinfo, rmge);
 
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_SOFTSTATE;
@@ -190,6 +243,8 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 		goto rollback;
 	}
 
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT3P(rmge->mh, !=, NULL);
 	return (DDI_SUCCESS);
 rollback:
 	cmn_err(CE_WARN, "rolling back rmge attach at milestone %d",
@@ -204,6 +259,8 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 {
 	rmge_t *rmge;
 	int rc;
+
+	ASSERT3P(devinfo, !=, NULL);
 
 	switch (cmd) {
 	default:
@@ -220,8 +277,12 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 
 	if (rmge == NULL)
 		return (DDI_FAILURE);
+	ASSERT3P(rmge->dip, ==, devinfo);
+	ASSERT3S(rmge->instance, ==, ddi_get_instance(devinfo));
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_SOFTSTATE);
 
 	if (rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC) {
+		ASSERT3P(rmge->mh, !=, NULL);
 		rc = mac_unregister(rmge->mh);
 		if (rc != 0) {
 			dev_err(devinfo, CE_WARN,
@@ -241,9 +302,12 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 static int
 rmge_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 {
-	(void) arg;
+	rmge_t *rmge = arg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT3P(val, !=, NULL);
 	(void) stat;
-	(void) val;
 
 	return (ENOTSUP);
 }
@@ -251,7 +315,13 @@ rmge_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 static int
 rmge_mc_start(void *arg)
 {
-	(void) arg;
+	rmge_t *rmge = arg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT0(rmge->started);
+
+	rmge->started = B_TRUE;
 
 	return (0);
 }
@@ -259,13 +329,23 @@ rmge_mc_start(void *arg)
 static void
 rmge_mc_stop(void *arg)
 {
-	(void) arg;
+	rmge_t *rmge = arg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT(rmge->started);
+
+	rmge->started = B_FALSE;
 }
 
 static int
 rmge_mc_setpromisc(void *arg, boolean_t enable)
 {
-	(void) arg;
+	rmge_t *rmge = arg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT(enable == B_FALSE || enable == B_TRUE);
 	(void) enable;
 
 	return (ENOTSUP);
@@ -274,9 +354,13 @@ rmge_mc_setpromisc(void *arg, boolean_t enable)
 static int
 rmge_mc_multicst(void *arg, boolean_t add, const uint8_t *addr)
 {
-	(void) arg;
+	rmge_t *rmge = arg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT(add == B_FALSE || add == B_TRUE);
+	ASSERT3P(addr, !=, NULL);
 	(void) add;
-	(void) addr;
 
 	return (ENOTSUP);
 }
@@ -284,8 +368,11 @@ rmge_mc_multicst(void *arg, boolean_t add, const uint8_t *addr)
 static int
 rmge_mc_unicst(void *arg, const uint8_t *addr)
 {
-	(void) arg;
-	(void) addr;
+	rmge_t *rmge = arg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT3P(addr, !=, NULL);
 
 	return (ENOTSUP);
 }
@@ -293,7 +380,12 @@ rmge_mc_unicst(void *arg, const uint8_t *addr)
 static mblk_t *
 rmge_mc_tx(void *arg, mblk_t *mp)
 {
-	(void) arg;
+	rmge_t *rmge = arg;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	ASSERT(rmge->started);
+	ASSERT3P(mp, !=, NULL);
 
 	return (mp);
 }
@@ -355,11 +447,13 @@ _init(void)
 {
 	int rc;
 
+	ASSERT3P(rmge_soft_state, ==, NULL);
 	rc = ddi_soft_state_init(&rmge_soft_state, sizeof (rmge_t), 0);
 
 	if (rc != DDI_SUCCESS) {
 		return (rc);
 	}
+	ASSERT3P(rmge_soft_state, !=, NULL);
 
 	mac_init_ops(&rmge_dev_ops, "rmge");
 
@@ -378,6 +472,7 @@ _fini(void)
 {
 	int rc;
 
+	ASSERT3P(rmge_soft_state, !=, NULL);
 	rc = mod_remove(&rmge_modlinkage);
 	if (rc == DDI_SUCCESS) {
 		mac_fini_ops(&rmge_dev_ops);
@@ -390,5 +485,7 @@ _fini(void)
 int
 _info(struct modinfo *modinfop)
 {
+	ASSERT3P(modinfop, !=, NULL);
+
 	return (mod_info(&rmge_modlinkage, modinfop));
 }
