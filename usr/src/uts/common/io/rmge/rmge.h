@@ -11,6 +11,7 @@
 #define	_RMGE_H
 
 #include <sys/ddi.h>
+#include <sys/ethernet.h>
 #include <sys/mac_provider.h>
 #include <sys/mac_ether.h>
 
@@ -26,12 +27,14 @@ extern "C" {
 
 #define	RMGE_REG_TXCFG			0x40
 #define	RMGE_REG_TXCFG_MASK_HW_REV	0x7cf00000
+#define	RMGE_REG_IDR0			0x00
 
 typedef enum {
 	RMGE_ATT_MILESTONE_SOFTSTATE			= 1 << 0,
 	RMGE_ATT_MILESTONE_CSRS				= 1 << 1,
 	RMGE_ATT_MILESTONE_ID_HW_REV			= 1 << 2,
-	RMGE_ATT_MILESTONE_REG_MAC			= 1 << 3
+	RMGE_ATT_MILESTONE_ID_MAC			= 1 << 3,
+	RMGE_ATT_MILESTONE_REG_MAC			= 1 << 4
 } rmge_att_milestone;
 
 typedef struct rmge {

@@ -13,6 +13,7 @@
 #include <sys/modctl.h>
 #include <sys/sunddi.h>
 #include <sys/mac_provider.h>
+#include <sys/vlan.h>
 
 #include "rmge.h"
 
@@ -51,20 +52,23 @@ fail:
 	return (RMGE_FAILURE);
 }
 
+/*
+ * Release the resources owned exclusively by the driver.  MAC must already
+ * have been unregistered before this is called: until then it may still call
+ * into the driver with rmge as its private argument.
+ */
 static void
-rmge_generic_optimisic_cleanup(rmge_t *rmge, dev_info_t *devinfo)
+rmge_free_resources(rmge_t *rmge)
 {
-	if (rmge->cfg_space_handle != NULL)
-		pci_config_teardown(&rmge->cfg_space_handle);
+	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
 
 	if (rmge->bar2_mmio_handle != NULL)
 		ddi_regs_map_free(&rmge->bar2_mmio_handle);
 
-	if (rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC)
-		mac_unregister(rmge->mh);
+	if (rmge->cfg_space_handle != NULL)
+		pci_config_teardown(&rmge->cfg_space_handle);
 
-	ddi_remove_minor_node(devinfo, NULL);
-	ddi_set_driver_private(devinfo, NULL);
+	ddi_set_driver_private(rmge->dip, NULL);
 	ddi_soft_state_free(rmge_soft_state, rmge->instance);
 }
 
@@ -73,6 +77,13 @@ rmge_read_bar2_32(rmge_t *rmge, uint32_t reg)
 {
 	uint32_t *off = (uint32_t *)(rmge->bar2_mmio_addr + reg);
 	return (ddi_get32(rmge->bar2_mmio_handle, off));
+}
+
+static uint8_t
+rmge_read_bar2_8(rmge_t *rmge, uint32_t reg)
+{
+	uint8_t *off = (uint8_t *)(rmge->bar2_mmio_addr + reg);
+	return (ddi_get8(rmge->bar2_mmio_handle, off));
 }
 
 static int
@@ -87,12 +98,23 @@ rmge_identify_hw_rev(rmge_t *rmge)
 	return (RMGE_SUCCESS);
 }
 
+static void
+rmge_read_mac_addr(rmge_t *rmge)
+{
+	for (uint_t i = 0; i < ETHERADDRL; i++)
+		rmge->hw_mac_addr[i] = rmge_read_bar2_8(rmge, RMGE_REG_IDR0 + i);
+
+	rmge->att_milestone |= RMGE_ATT_MILESTONE_ID_MAC;
+}
+
 static int
 rmge_register_mac_device(rmge_t *rmge)
 {
 	int rc;
 
 	mac_register_t *mr = mac_alloc(MAC_VERSION);
+	if (mr == NULL)
+		return (RMGE_FAILURE);
 
 	mr->m_type_ident = MAC_PLUGIN_IDENT_ETHER;
 	mr->m_driver = rmge;
@@ -100,6 +122,9 @@ rmge_register_mac_device(rmge_t *rmge)
 	mr->m_instance = 0;
 	mr->m_src_addr = rmge->hw_mac_addr;
 	mr->m_callbacks = &rmge_mac_callbacks;
+	mr->m_min_sdu = 0;
+	mr->m_max_sdu = ETHERMTU;
+	mr->m_margin = VLAN_TAGSZ;
 
 	rc = mac_register(mr, &rmge->mh);
 	mac_free(mr);
@@ -155,6 +180,8 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 		goto rollback;
 	}
 
+	rmge_read_mac_addr(rmge);
+
 	if (rmge_register_mac_device(rmge) != RMGE_SUCCESS) {
 		cmn_err(CE_WARN, "failed to register mac device");
 		goto rollback;
@@ -164,7 +191,8 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 rollback:
 	cmn_err(CE_WARN, "rolling back rmge attach at milestone %d",
 	    rmge->att_milestone);
-	rmge_generic_optimisic_cleanup(rmge, devinfo);
+	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	rmge_free_resources(rmge);
 	return (DDI_FAILURE);
 }
 
@@ -172,6 +200,7 @@ static int
 rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 {
 	rmge_t *rmge;
+	int rc;
 
 	switch (cmd) {
 	default:
@@ -189,7 +218,19 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 	if (rmge == NULL)
 		return (DDI_FAILURE);
 
-	rmge_generic_optimisic_cleanup(rmge, devinfo);
+	if (rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC) {
+		rc = mac_unregister(rmge->mh);
+		if (rc != 0) {
+			dev_err(devinfo, CE_WARN,
+			    "failed to unregister MAC: %d", rc);
+			return (DDI_FAILURE);
+		}
+
+		rmge->mh = NULL;
+		rmge->att_milestone &= ~RMGE_ATT_MILESTONE_REG_MAC;
+	}
+
+	rmge_free_resources(rmge);
 
 	return (DDI_SUCCESS);
 }
@@ -302,8 +343,7 @@ static struct modldrv rmge_modldrv = {
 	&rmge_dev_ops
 };
 
-static struct modlinkage rmge_modlinkage = {
-	MODREV_1,
+static struct modlinkage rmge_modlinkage = { MODREV_1,
 	{ &rmge_modldrv, NULL }
 };
 
@@ -324,6 +364,7 @@ _init(void)
 
 	if (rc != DDI_SUCCESS) {
 		mac_fini_ops(&rmge_dev_ops);
+		ddi_soft_state_fini(&rmge_soft_state);
 	}
 
 	return (rc);
@@ -334,10 +375,10 @@ _fini(void)
 {
 	int rc;
 
-	ddi_soft_state_fini(&rmge_soft_state);
 	rc = mod_remove(&rmge_modlinkage);
 	if (rc == DDI_SUCCESS) {
 		mac_fini_ops(&rmge_dev_ops);
+		ddi_soft_state_fini(&rmge_soft_state);
 	}
 
 	return (rc);
