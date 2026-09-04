@@ -54,6 +54,9 @@ typedef struct rmge {
 	uint8_t			hw_mac_addr[ETHERADDRL];
 } rmge_t;
 
+void rmge_read_mac_addr(rmge_t *rmge);
+int rmge_identify_hw_rev(rmge_t *rmge);
+	
 #ifdef __cplusplus
 }
 #endif
