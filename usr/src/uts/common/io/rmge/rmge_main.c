@@ -68,13 +68,13 @@ fail:
 static void
 rmge_free_resources(rmge_t *rmge)
 {
-	ASSERT3P(rmge, !=, NULL);
-	ASSERT3P(rmge->dip, !=, NULL);
-	ASSERT3P(ddi_get_driver_private(rmge->dip), ==, rmge);
-	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_SOFTSTATE);
-	ASSERT0(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
-	ASSERT3P(rmge->mh, ==, NULL);
-	ASSERT0(rmge->started);
+	VERIFY3P(rmge, !=, NULL);
+	VERIFY3P(rmge->dip, !=, NULL);
+	VERIFY3P(ddi_get_driver_private(rmge->dip), ==, rmge);
+	VERIFY(rmge->att_milestone & RMGE_ATT_MILESTONE_SOFTSTATE);
+	VERIFY0(rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC);
+	VERIFY3P(rmge->mh, ==, NULL);
+	VERIFY0(rmge->started);
 
 	if (rmge->bar2_mmio_handle != NULL)
 		ddi_regs_map_free(&rmge->bar2_mmio_handle);
@@ -91,11 +91,11 @@ rmge_read_bar2_32(rmge_t *rmge, uint32_t reg)
 {
 	uint32_t *off;
 
-	ASSERT3P(rmge, !=, NULL);
-	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
-	ASSERT3P(rmge->bar2_mmio_addr, !=, NULL);
-	ASSERT3P(rmge->bar2_mmio_handle, !=, NULL);
-	ASSERT0(reg & (sizeof (uint32_t) - 1));
+	VERIFY3P(rmge, !=, NULL);
+	VERIFY(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	VERIFY3P(rmge->bar2_mmio_addr, !=, NULL);
+	VERIFY3P(rmge->bar2_mmio_handle, !=, NULL);
+	VERIFY0(reg & (sizeof (uint32_t) - 1));
 
 	off = (uint32_t *)(rmge->bar2_mmio_addr + reg);
 	return (ddi_get32(rmge->bar2_mmio_handle, off));
@@ -106,10 +106,10 @@ rmge_read_bar2_8(rmge_t *rmge, uint32_t reg)
 {
 	uint8_t *off;
 
-	ASSERT3P(rmge, !=, NULL);
-	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
-	ASSERT3P(rmge->bar2_mmio_addr, !=, NULL);
-	ASSERT3P(rmge->bar2_mmio_handle, !=, NULL);
+	VERIFY3P(rmge, !=, NULL);
+	VERIFY(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	VERIFY3P(rmge->bar2_mmio_addr, !=, NULL);
+	VERIFY3P(rmge->bar2_mmio_handle, !=, NULL);
 
 	off = (uint8_t *)(rmge->bar2_mmio_addr + reg);
 	return (ddi_get8(rmge->bar2_mmio_handle, off));
@@ -183,7 +183,7 @@ rmge_register_mac_device(rmge_t *rmge)
 	}
 
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_REG_MAC;
-	ASSERT3P(rmge->mh, !=, NULL);
+	VERIFY3P(rmge->mh, !=, NULL);
 	mac_link_update(rmge->mh, LINK_STATE_DOWN);
 	return (RMGE_SUCCESS);
 }
@@ -217,7 +217,7 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	}
 
 	rmge = ddi_get_soft_state(rmge_soft_state, instance);
-	ASSERT3P(rmge, !=, NULL);
+	VERIFY3P(rmge, !=, NULL);
 	ASSERT3P(ddi_get_driver_private(devinfo), ==, NULL);
 	ddi_set_driver_private(devinfo, rmge);
 
@@ -277,9 +277,9 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 
 	if (rmge == NULL)
 		return (DDI_FAILURE);
-	ASSERT3P(rmge->dip, ==, devinfo);
-	ASSERT3S(rmge->instance, ==, ddi_get_instance(devinfo));
-	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_SOFTSTATE);
+	VERIFY3P(rmge->dip, ==, devinfo);
+	VERIFY3S(rmge->instance, ==, ddi_get_instance(devinfo));
+	VERIFY(rmge->att_milestone & RMGE_ATT_MILESTONE_SOFTSTATE);
 
 	if (rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC) {
 		ASSERT3P(rmge->mh, !=, NULL);
