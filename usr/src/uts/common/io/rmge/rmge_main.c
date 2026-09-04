@@ -103,7 +103,8 @@ static void
 rmge_read_mac_addr(rmge_t *rmge)
 {
 	for (uint_t i = 0; i < ETHERADDRL; i++)
-		rmge->hw_mac_addr[i] = rmge_read_bar2_8(rmge, RMGE_REG_IDR0 + i);
+		rmge->hw_mac_addr[i]
+		    = rmge_read_bar2_8(rmge, RMGE_REG_IDR0 + i);
 
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_ID_MAC;
 }
