@@ -17,6 +17,7 @@
 
 static void *rmge_soft_state;
 
+static mac_callbacks_t rmge_mac_callbacks;
 /*
  * Setup internal mappings to the device's config and status registers, in
  * both the config space and second BAR window.
@@ -31,12 +32,12 @@ rmge_internalize_csrs(rmge_t *rmge)
 		DDI_DEFAULT_ACC
 	};
 
-	if (pci_config_setup(rmge->devinfo, &rmge->cfg_space_handle)
+	if (pci_config_setup(rmge->dip, &rmge->cfg_space_handle)
 	    != DDI_SUCCESS) {
 		goto fail;
 	}
 
-	if (ddi_regs_map_setup(rmge->devinfo, RMGE_BAR2, &rmge->bar2_mmio_addr,
+	if (ddi_regs_map_setup(rmge->dip, RMGE_BAR2, &rmge->bar2_mmio_addr,
 	    0, 0, &acc_attr, &rmge->bar2_mmio_handle) != DDI_SUCCESS) {
 		goto fail;
 	}
@@ -57,6 +58,9 @@ rmge_generic_optimisic_cleanup(rmge_t *rmge, dev_info_t *devinfo)
 
 	if (rmge->bar2_mmio_handle != NULL)
 		ddi_regs_map_free(&rmge->bar2_mmio_handle);
+
+	if (rmge->att_milestone & RMGE_ATT_MILESTONE_REG_MAC)
+		mac_unregister(rmge->mh);
 
 	ddi_remove_minor_node(devinfo, NULL);
 	ddi_set_driver_private(devinfo, NULL);
@@ -85,6 +89,24 @@ rmge_identify_hw_rev(rmge_t *rmge)
 static int
 rmge_register_mac_device(rmge_t *rmge)
 {
+	int rc;
+
+	mac_register_t *mr = mac_alloc(MAC_VERSION);
+
+	mr->m_type_ident = MAC_PLUGIN_IDENT_ETHER;
+	mr->m_driver = rmge;
+	mr->m_dip = rmge->dip;
+	mr->m_instance = 0;
+	mr->m_src_addr = rmge->hw_mac_addr;
+	mr->m_callbacks = &rmge_mac_callbacks;
+
+	rc = mac_register(mr, &rmge->mh);
+	mac_free(mr);
+
+	if (rc != 0) {
+		return (RMGE_FAILURE);
+	}
+
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_REG_MAC;
 	return (RMGE_SUCCESS);
 }
@@ -118,7 +140,7 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	ddi_set_driver_private(devinfo, rmge);
 
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_SOFTSTATE;
-	rmge->devinfo = devinfo;
+	rmge->dip = devinfo;
 	rmge->instance = instance;
 	rmge->dev = makedevice(ddi_driver_major(devinfo), instance);
 
@@ -129,6 +151,11 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 
 	if (rmge_identify_hw_rev(rmge) != RMGE_SUCCESS) {
 		cmn_err(CE_WARN, "failed to identify hw rev");
+		goto rollback;
+	}
+
+	if (rmge_register_mac_device(rmge) != RMGE_SUCCESS) {
+		cmn_err(CE_WARN, "failed to register mac device");
 		goto rollback;
 	}
 
@@ -165,6 +192,16 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 
 	return (DDI_SUCCESS);
 }
+
+static int
+rmge_mc_getstat(void *arg, uint_t stat, uint64_t *val)
+{
+	return (0);
+}
+
+static mac_callbacks_t rmge_mac_callbacks = {
+	.mc_getstat = rmge_mc_getstat,
+};
 
 static struct cb_ops rmge_cb_ops = {
 	.cb_open =		nodev,

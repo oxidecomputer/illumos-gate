@@ -10,6 +10,10 @@
 #ifndef _RMGE_H
 #define	_RMGE_H
 
+#include <sys/ddi.h>
+#include <sys/mac_provider.h>
+#include <sys/mac_ether.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,7 +35,7 @@ typedef enum {
 } rmge_att_milestone;
 
 typedef struct rmge {
-	dev_info_t		*devinfo;
+	dev_info_t		*dip;
 	int			instance;
 	dev_t			dev;
 
@@ -41,6 +45,9 @@ typedef struct rmge {
 
 	rmge_att_milestone	att_milestone;
 	uint32_t		hw_rev;
+
+	mac_handle_t		mh;
+	uint8_t			hw_mac_addr[ETHERADDRL];
 } rmge_t;
 
 #ifdef __cplusplus
