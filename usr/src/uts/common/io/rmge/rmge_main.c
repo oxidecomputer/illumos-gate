@@ -134,6 +134,7 @@ rmge_register_mac_device(rmge_t *rmge)
 	}
 
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_REG_MAC;
+	mac_link_update(rmge->mh, LINK_STATE_DOWN);
 	return (RMGE_SUCCESS);
 }
 
@@ -250,7 +251,7 @@ rmge_mc_start(void *arg)
 {
 	(void) arg;
 
-	return (ENOTSUP);
+	return (0);
 }
 
 static void
