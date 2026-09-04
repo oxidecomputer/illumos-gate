@@ -328,7 +328,7 @@ static struct cb_ops rmge_cb_ops = {
 
 static struct dev_ops rmge_dev_ops = {
 	.devo_rev =		DEVO_REV,
-	.devo_getinfo =		ddi_no_info,
+	.devo_getinfo =		NULL,
 	.devo_identify =	nulldev,
 	.devo_probe =		nulldev,
 	.devo_attach =		rmge_attach,
