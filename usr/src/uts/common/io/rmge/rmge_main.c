@@ -9,6 +9,7 @@
 
 #include <sys/conf.h>
 #include <sys/ddi.h>
+#include <sys/errno.h>
 #include <sys/modctl.h>
 #include <sys/sunddi.h>
 #include <sys/mac_provider.h>
@@ -196,11 +197,71 @@ rmge_detach(dev_info_t *devinfo, ddi_detach_cmd_t cmd)
 static int
 rmge_mc_getstat(void *arg, uint_t stat, uint64_t *val)
 {
-	return (0);
+	(void) arg;
+	(void) stat;
+	(void) val;
+
+	return (ENOTSUP);
+}
+
+static int
+rmge_mc_start(void *arg)
+{
+	(void) arg;
+
+	return (ENOTSUP);
+}
+
+static void
+rmge_mc_stop(void *arg)
+{
+	(void) arg;
+}
+
+static int
+rmge_mc_setpromisc(void *arg, boolean_t enable)
+{
+	(void) arg;
+	(void) enable;
+
+	return (ENOTSUP);
+}
+
+static int
+rmge_mc_multicst(void *arg, boolean_t add, const uint8_t *addr)
+{
+	(void) arg;
+	(void) add;
+	(void) addr;
+
+	return (ENOTSUP);
+}
+
+static int
+rmge_mc_unicst(void *arg, const uint8_t *addr)
+{
+	(void) arg;
+	(void) addr;
+
+	return (ENOTSUP);
+}
+
+static mblk_t *
+rmge_mc_tx(void *arg, mblk_t *mp)
+{
+	(void) arg;
+
+	return (mp);
 }
 
 static mac_callbacks_t rmge_mac_callbacks = {
 	.mc_getstat = rmge_mc_getstat,
+	.mc_start = rmge_mc_start,
+	.mc_stop = rmge_mc_stop,
+	.mc_setpromisc = rmge_mc_setpromisc,
+	.mc_multicst = rmge_mc_multicst,
+	.mc_unicst = rmge_mc_unicst,
+	.mc_tx = rmge_mc_tx,
 };
 
 static struct cb_ops rmge_cb_ops = {
