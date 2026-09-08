@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  * Copyright (c) 2013 Gary Mills
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
  */
@@ -630,10 +630,11 @@ log_sendmsg(mblk_t *mp, zoneid_t zoneid)
 	 * from these log_ctl_t structures; it only uses ttime from log_ctl_t's
 	 * that contain good data.
 	 *
-	 * When panicking we must not call the timekeeping routines. They are
-	 * seqlock readers of hres_lock, and if a CPU holds that lock they would
-	 * spin here forever, so the message would never reach the console. The
-	 * values captured lock-free by panicsys() are used instead.
+	 * While panicking, use the timestamps that panicsys() captured once
+	 * the other CPUs had been stopped and hres_lock released, rather than
+	 * reading the clock again here. The clock readers are seqlock readers
+	 * of hres_lock, and getting a panic message to the console should not
+	 * depend on that lock.
 	 */
 	if (panicstr != NULL) {
 		lc->ltime = (clock_t)panic_lbolt64;

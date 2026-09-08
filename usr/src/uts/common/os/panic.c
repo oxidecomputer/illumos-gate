@@ -330,13 +330,6 @@ panicsys(const char *format, va_list alist, struct regs *rp, int on_panic_stack)
 	t->t_bound_cpu = cp;
 	t->t_preempt++;
 
-	/*
-	 * The panic banner and any subsequent dump proceed with polled
-	 * console I/O, so give the console driver the chance to make itself
-	 * ready. There is no matching exit; we are not coming back.
-	 */
-	console_polled_enter();
-
 	panic_enter_hw(s);
 
 	/*
@@ -412,6 +405,16 @@ panicsys(const char *format, va_list alist, struct regs *rp, int on_panic_stack)
 			panic_cpu.cpu_intr_stack = intr_stack;
 			panic_cpu.cpu_intr_actv = intr_actv;
 		}
+
+		/*
+		 * From here on, the banner, the stack trace, and the dump all
+		 * use polled console I/O, so give the console driver the
+		 * chance to make itself ready. This is done only now that the
+		 * other CPUs are stopped and panicstr is set, so the driver's
+		 * hook can neither race the driver on another CPU nor block on
+		 * a lock. There is no matching exit; we are not coming back.
+		 */
+		console_polled_enter();
 
 		/*
 		 * Lower ipl to 10 to keep clock() from running, but allow

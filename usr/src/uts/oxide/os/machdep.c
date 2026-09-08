@@ -839,11 +839,11 @@ panic_stopcpus(cpu_t *cp, kthread_t *t, int spl)
 
 	/*
 	 * The other CPUs are now stopped, so timekeeping is quiescent. If
-	 * one of them was holding hres_lock (a tsc_tick()/hres_tick() update
-	 * caught in flight), release it so that gethrtime() and the other
-	 * hres_lock seqlock readers do not spin forever on a lock that will
-	 * never be dropped. This lets arbitrary code on the panic and dump
-	 * paths, device driver polled I/O in particular, read the clock.
+	 * hres_lock is held, the update it protects was caught in flight and
+	 * will never complete, and gethrtime() and the other hres_lock seqlock
+	 * readers would spin forever. Release it so that arbitrary code on the
+	 * panic and dump paths, device driver polled I/O in particular, can
+	 * read the clock.
 	 */
 	if ((hres_lock & 1) != 0)
 		unlock_hres_lock();

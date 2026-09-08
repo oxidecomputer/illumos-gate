@@ -65,6 +65,7 @@ static struct dhcp_default defaults[] = {
 	{ "DNS_DOMAINNAME",  NULL,	 0,   0	  },
 	{ "ADOPT_DOMAINNAME",	 "0",	 0,   0	  },
 	{ "SET_MTU",		 "1",	 0,   0	  },
+	{ "CLASSLESS_ROUTES",	 "1",	 0,   0	  },
 };
 
 /*

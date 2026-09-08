@@ -121,13 +121,7 @@ retry:
 	msgp += snprintf(msgp, bufend - msgp, suffix);
 	len = strlen(body);
 
-	/*
-	 * While panicking, route console output straight to the console and
-	 * bypass the log subsystem entirely. Its queues and locks may be held
-	 * by a thread that has been stopped and will not run again, so they
-	 * cannot be relied upon; the message is captured in panicbuf below.
-	 */
-	if ((panicstr != NULL && (sl & (SL_CONSOLE | SL_CONSONLY))) ||
+	if (((sl & SL_CONSONLY) && panicstr) ||
 	    (zoneid == GLOBAL_ZONEID && log_global.lz_active == 0)) {
 		console_printf("%s", body);
 		goto out;

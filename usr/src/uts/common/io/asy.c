@@ -5130,15 +5130,17 @@ asygetchar(cons_polledio_arg_t arg)
 }
 
 /*
- * Prepare the console for polled use by the debugger, and undo that when it
- * releases the console. The debugger may be entered at any point, including
- * while the rest of the system is making no progress, so these must not take
- * any locks nor depend on any other kernel service, and they may be
- * interrupting driver code mid-operation. The interrupt enables are cleared
- * so that if any part of the system is still running the interrupt handler
- * cannot consume received data before the polled consumer sees it. The line
- * control register is normalised in case a baud rate change (DLAB) or a timed
- * break (SETBRK) was in progress. The modem control register is forced into a
+ * Prepare the console for polled use by the debugger or by panic, and undo
+ * that when the debugger releases the console. The debugger may be entered at
+ * any point, including while the rest of the system is making no progress, so
+ * these must not take any locks nor depend on any other kernel service, and
+ * they may be interrupting driver code mid-operation. The line control
+ * register is normalised first, in case a baud rate change (DLAB) or a timed
+ * break (SETBRK) was in progress. While DLAB is set the IER offset addresses
+ * the divisor latch instead, so it must be clear before the interrupt enables
+ * are read and saved. Those are then cleared so that if any part of the system
+ * is still running the interrupt handler cannot consume received data before
+ * the polled consumer sees it. The modem control register is forced into a
  * usable state.
  */
 static void
@@ -5149,15 +5151,15 @@ asy_polledio_enter(cons_polledio_arg_t arg)
 	if (asy->asy_polled_depth++ != 0)
 		return;
 
-	asy->asy_polled_ier = asy_get_reg(asy, ASY_IER);
 	asy->asy_polled_lcr = asy_get_reg(asy, ASY_LCR);
-	asy->asy_polled_mcr = asy_get_reg(asy, ASY_MCR);
-
-	asy_put_reg(asy, ASY_IER, 0);
 	asy_put_reg(asy, ASY_LCR,
 	    asy->asy_polled_lcr & ~(ASY_LCR_DLAB | ASY_LCR_SETBRK));
-	asy_put_reg(asy, ASY_MCR,
-	    ASY_MCR_RTS | ASY_MCR_DTR | ASY_MCR_OUT2);
+
+	asy->asy_polled_ier = asy_get_reg(asy, ASY_IER);
+	asy_put_reg(asy, ASY_IER, 0);
+
+	asy->asy_polled_mcr = asy_get_reg(asy, ASY_MCR);
+	asy_put_reg(asy, ASY_MCR, ASY_MCR_RTS | ASY_MCR_DTR | ASY_MCR_OUT2);
 }
 
 static void
@@ -5173,21 +5175,22 @@ asy_polledio_exit(cons_polledio_arg_t arg)
 	 * else from LSR/MSR when the pending interrupt is serviced after
 	 * resume.
 	 *
-	 * SETBRK is restored because a break in progress is persistent line
-	 * state. The driver still believes it is asserted and will clear it
+	 * IER is written first, while DLAB is still clear, so that the write
+	 * reaches the interrupt enables rather than the divisor latch.
+	 *
+	 * LCR is restored last and in full. The driver only sets DLAB for a
+	 * few bracketed instructions, but the debugger may have been entered
+	 * in the middle of them, and when that code resumes it writes the
+	 * divisor latch expecting DLAB to still be set. Were DLAB left clear,
+	 * those writes would land in THR and IER instead, silently disabling
+	 * the console's interrupts. A break in progress is persistent line
+	 * state that the driver still believes is asserted and will clear
 	 * itself in due course, from a timeout or an ioctl, so restoring it
 	 * lets an interrupted timed break complete as intended.
-	 *
-	 * DLAB is not restored because it is not line state, but a register
-	 * bank select that the driver only ever sets for a few bracketed
-	 * instructions. It must be clear for the write below to reach IER
-	 * rather than the divisor latch, and if the code we interrupted never
-	 * completes its sequence, a latched DLAB would leave the console
-	 * unusable.
 	 */
-	asy_put_reg(asy, ASY_LCR, asy->asy_polled_lcr & ~ASY_LCR_DLAB);
-	asy_put_reg(asy, ASY_MCR, asy->asy_polled_mcr);
 	asy_put_reg(asy, ASY_IER, asy->asy_polled_ier);
+	asy_put_reg(asy, ASY_MCR, asy->asy_polled_mcr);
+	asy_put_reg(asy, ASY_LCR, asy->asy_polled_lcr);
 }
 
 /*
