@@ -17,7 +17,8 @@
  * This part of the file contains the mdb support for dcmds:
  *	::fabric, ::ioms
  * and walkers for:
- *	soc, iodie, nbio, ioms
+ *	soc, iodie, nbio, ioms, pcie_core, pcie_port, nbif, nbif_func, ccd, ccx,
+ *	zen_core, zen_thread
  *
  * The fabric tree is read from the target via CTF rather than by including
  * the kernel's fabric headers. This decouples the debugger from the
@@ -39,9 +40,11 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "fabric.h"
+
 /*
  * An oxio engine's oe_name is a free-form human-readable descriptor with no
- * fixed maximum length; this buffer is generously sized for display and
+ * fixed maximum length. This buffer is generously sized for display and
  * mdb_readstr() truncates anything longer.
  */
 #define	FABRIC_OXIO_NAME_MAX	128
@@ -865,6 +868,7 @@ fabric_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	GElf_Sym sym;
 	mdb_zen_fabric_t fabric;
 	fabric_data_t cbd = { 0 };
+	uint_t ccd = 0, nbif = 0, verbose = 0;
 
 	cbd.fd_printing = true;
 	if (flags & DCMD_ADDRSPEC) {
@@ -873,12 +877,15 @@ fabric_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	}
 
 	if (mdb_getopts(argc, argv,
-	    'c', MDB_OPT_SETBITS, true, &cbd.fd_ccd,
-	    'n', MDB_OPT_SETBITS, true, &cbd.fd_nbif,
-	    'v', MDB_OPT_SETBITS, true, &cbd.fd_verbose,
+	    'c', MDB_OPT_SETBITS, 1, &ccd,
+	    'n', MDB_OPT_SETBITS, 1, &nbif,
+	    'v', MDB_OPT_SETBITS, 1, &verbose,
 	    NULL) != argc) {
 		return (DCMD_USAGE);
 	}
+	cbd.fd_ccd = (ccd != 0);
+	cbd.fd_nbif = (nbif != 0);
+	cbd.fd_verbose = (verbose != 0);
 
 	if (!fabric_layout_init()) {
 		mdb_warn("failed to resolve fabric type layout from CTF\n");
@@ -1027,178 +1034,295 @@ fabric_ioms_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 }
 
 /*
- * The walkers yield the target address of each node at a given level. Consumers
- * read the node's contents from that address via CTF. We collect the addresses
- * up front by descending the tree once, then step through them.
+ * The walkers yield the target address of each node at a given level of the
+ * fabric tree. Consumers read the node's contents from that address via CTF.
+ * The tree is descended once when a walk is initialised to collect the
+ * addresses, which are then stepped through.
+ *
+ * A walk may be global, or may start from the address of a node at or above
+ * the level being walked, in which case only that node's descendants (or the
+ * node itself) are yielded. For example, `<pcie_core>::walk pcie_port` yields
+ * only the ports of that core.
  */
-typedef enum {
-	FABRIC_L_SOC,
-	FABRIC_L_IODIE,
-	FABRIC_L_NBIO,
-	FABRIC_L_IOMS
-} fabric_level_t;
+
+/*
+ * Each level's name, parent level and the location of its nodes within the
+ * parent. The number of nodes is read from a counter in the parent, whose
+ * offset and size are resolved from CTF along with the rest of the layout.
+ */
+typedef struct {
+	const char		*fld_name;
+	fabric_level_t		fld_parent;
+	const fabric_arr_t	*fld_arr;
+	const char		*fld_ptype;	/* parent's kernel type */
+	const char		*fld_count;	/* count member in the parent */
+	ulong_t			fld_count_off;
+	size_t			fld_count_sz;
+} fabric_level_def_t;
+
+static fabric_level_def_t fabric_levels[FABRIC_L_NLEVELS] = {
+	[FABRIC_L_SOC] = {
+		.fld_name = "soc",
+		.fld_parent = FABRIC_L_ROOT,
+		.fld_arr = &fabric_layout.fl_socs,
+		.fld_ptype = "zen_fabric_t",
+		.fld_count = "zf_nsocs"
+	},
+	[FABRIC_L_IODIE] = {
+		.fld_name = "iodie",
+		.fld_parent = FABRIC_L_SOC,
+		.fld_arr = &fabric_layout.fl_iodies,
+		.fld_ptype = "zen_soc_t",
+		.fld_count = "zs_niodies"
+	},
+	[FABRIC_L_NBIO] = {
+		.fld_name = "nbio",
+		.fld_parent = FABRIC_L_IODIE,
+		.fld_arr = &fabric_layout.fl_nbio,
+		.fld_ptype = "zen_iodie_t",
+		.fld_count = "zi_nnbio"
+	},
+	[FABRIC_L_IOMS] = {
+		.fld_name = "ioms",
+		.fld_parent = FABRIC_L_NBIO,
+		.fld_arr = &fabric_layout.fl_ioms,
+		.fld_ptype = "zen_nbio_t",
+		.fld_count = "zn_nioms"
+	},
+	[FABRIC_L_PCIE_CORE] = {
+		.fld_name = "pcie_core",
+		.fld_parent = FABRIC_L_IOMS,
+		.fld_arr = &fabric_layout.fl_cores,
+		.fld_ptype = "zen_ioms_t",
+		.fld_count = "zio_npcie_cores"
+	},
+	[FABRIC_L_PCIE_PORT] = {
+		.fld_name = "pcie_port",
+		.fld_parent = FABRIC_L_PCIE_CORE,
+		.fld_arr = &fabric_layout.fl_ports,
+		.fld_ptype = "zen_pcie_core_t",
+		.fld_count = "zpc_nports"
+	},
+	[FABRIC_L_NBIF] = {
+		.fld_name = "nbif",
+		.fld_parent = FABRIC_L_IOMS,
+		.fld_arr = &fabric_layout.fl_nbifs,
+		.fld_ptype = "zen_ioms_t",
+		.fld_count = "zio_nnbifs"
+	},
+	[FABRIC_L_NBIF_FUNC] = {
+		.fld_name = "nbif_func",
+		.fld_parent = FABRIC_L_NBIF,
+		.fld_arr = &fabric_layout.fl_funcs,
+		.fld_ptype = "zen_nbif_t",
+		.fld_count = "zn_nfuncs"
+	},
+	[FABRIC_L_CCD] = {
+		.fld_name = "ccd",
+		.fld_parent = FABRIC_L_IODIE,
+		.fld_arr = &fabric_layout.fl_ccds,
+		.fld_ptype = "zen_iodie_t",
+		.fld_count = "zi_nccds"
+	},
+	[FABRIC_L_CCX] = {
+		.fld_name = "ccx",
+		.fld_parent = FABRIC_L_CCD,
+		.fld_arr = &fabric_layout.fl_ccxs,
+		.fld_ptype = "zen_ccd_t",
+		.fld_count = "zcd_nccxs"
+	},
+	[FABRIC_L_CORE] = {
+		.fld_name = "zen_core",
+		.fld_parent = FABRIC_L_CCX,
+		.fld_arr = &fabric_layout.fl_ccx_cores,
+		.fld_ptype = "zen_ccx_t",
+		.fld_count = "zcx_ncores"
+	},
+	[FABRIC_L_THREAD] = {
+		.fld_name = "zen_thread",
+		.fld_parent = FABRIC_L_CORE,
+		.fld_arr = &fabric_layout.fl_threads,
+		.fld_ptype = "zen_core_t",
+		.fld_count = "zc_nthreads"
+	}
+};
 
 typedef struct {
+	fabric_level_t	fc_level;	/* the level being walked */
+	uintptr_t	fc_start;	/* restrict to this node's subtree */
+	bool		fc_found;	/* fc_start was encountered */
 	uintptr_t	*fc_addrs;
 	uint_t		fc_n;
 	uint_t		fc_cap;
 	uint_t		fc_idx;
 } fabric_collect_t;
 
+/*
+ * Resolve the offset and size of each level's count member.
+ */
 static bool
+fabric_levels_init(void)
+{
+	for (uint_t i = FABRIC_L_ROOT + 1; i < FABRIC_L_NLEVELS; i++) {
+		fabric_level_def_t *ld = &fabric_levels[i];
+		mdb_ctf_id_t tid, mid;
+		ulong_t off;
+		ssize_t sz;
+
+		if (mdb_ctf_lookup_by_name(ld->fld_ptype, &tid) != 0 ||
+		    mdb_ctf_member_info(tid, ld->fld_count, &off, &mid) != 0) {
+			mdb_warn("failed to find %s::%s", ld->fld_ptype,
+			    ld->fld_count);
+			return (false);
+		}
+		if ((sz = mdb_ctf_type_size(mid)) < 0) {
+			mdb_warn("failed to determine the size of %s::%s",
+			    ld->fld_ptype, ld->fld_count);
+			return (false);
+		}
+		if (sz == 0 || sz > sizeof (uint64_t) || off % NBBY != 0) {
+			mdb_warn("%s::%s has an unsupported size (%ld bytes) "
+			    "or alignment (bit offset %lu)\n", ld->fld_ptype,
+			    ld->fld_count, (long)sz, off);
+			return (false);
+		}
+		ld->fld_count_off = off / NBBY;
+		ld->fld_count_sz = (size_t)sz;
+	}
+	return (true);
+}
+
+/*
+ * Read the number of nodes of the given level held by the parent at paddr.
+ */
+static bool
+fabric_count_read(const fabric_level_def_t *ld, uintptr_t paddr, uint_t *np)
+{
+	uint64_t v = 0;
+
+	/*
+	 * The target is little-endian, so a count narrower than 64 bits lands
+	 * in the low-order bytes.
+	 */
+	if (mdb_vread(&v, ld->fld_count_sz, paddr + ld->fld_count_off) !=
+	    (ssize_t)ld->fld_count_sz) {
+		return (false);
+	}
+	*np = (uint_t)v;
+	return (true);
+}
+
+static void
 fabric_collect_push(fabric_collect_t *c, uintptr_t addr)
 {
 	if (c->fc_n == c->fc_cap) {
-		uint_t ncap = (c->fc_cap == 0) ? 16 : c->fc_cap * 2;
+		uint_t ncap = (c->fc_cap == 0) ? 64 : c->fc_cap * 2;
 		uintptr_t *na;
 
-		na = mdb_alloc(ncap * sizeof (uintptr_t), UM_NOSLEEP | UM_GC);
-		if (na == NULL) {
-			mdb_warn("failed to allocate memory for fabric walker");
-			return (false);
-		}
+		/* The old array is left for the garbage collector */
+		na = mdb_alloc(ncap * sizeof (uintptr_t), UM_SLEEP | UM_GC);
 		if (c->fc_addrs != NULL) {
 			(void) memcpy(na, c->fc_addrs,
 			    c->fc_n * sizeof (uintptr_t));
-			mdb_free(c->fc_addrs, c->fc_cap * sizeof (uintptr_t));
 		}
 		c->fc_addrs = na;
 		c->fc_cap = ncap;
 	}
 	c->fc_addrs[c->fc_n++] = addr;
-	return (true);
+}
+
+/*
+ * Descend from the node at paddr, whose children are at level path[idx],
+ * towards the level being collected. Nodes are collected once we are within
+ * the subtree of the start node, if one was given.
+ */
+static void
+fabric_collect_descend(fabric_collect_t *c, const fabric_level_t *path,
+    uint_t depth, uint_t idx, uintptr_t paddr, bool within)
+{
+	const fabric_level_def_t *ld = &fabric_levels[path[idx]];
+	uint_t n;
+
+	if (!fabric_count_read(ld, paddr, &n))
+		return;
+
+	for (uint_t i = 0; i < n; i++) {
+		uintptr_t addr = fabric_elem(paddr, ld->fld_arr, i);
+		bool w = within;
+
+		if (addr == c->fc_start) {
+			c->fc_found = true;
+			w = true;
+		}
+		if (idx + 1 == depth) {
+			if (w)
+				fabric_collect_push(c, addr);
+		} else {
+			fabric_collect_descend(c, path, depth, idx + 1, addr,
+			    w);
+		}
+	}
 }
 
 static bool
-fabric_collect(fabric_level_t level, fabric_collect_t *c)
+fabric_collect(fabric_collect_t *c)
 {
+	fabric_level_t path[FABRIC_L_NLEVELS];
+	uint_t depth = 0, i;
 	GElf_Sym sym;
-	uintptr_t fabaddr;
-	mdb_zen_fabric_t fab;
+
+	/*
+	 * Build the chain of levels from the root down to the one being
+	 * collected.
+	 */
+	for (fabric_level_t l = c->fc_level; l != FABRIC_L_ROOT;
+	    l = fabric_levels[l].fld_parent) {
+		depth++;
+	}
+	i = depth;
+	for (fabric_level_t l = c->fc_level; l != FABRIC_L_ROOT;
+	    l = fabric_levels[l].fld_parent) {
+		path[--i] = l;
+	}
 
 	if (mdb_lookup_by_name("zen_fabric", &sym) == -1) {
 		mdb_warn("failed to find 'zen_fabric'");
 		return (false);
 	}
-	fabaddr = sym.st_value;
 
-	if (mdb_ctf_vread(&fab, "zen_fabric_t", "mdb_zen_fabric_t",
-	    fabaddr, MDB_CTF_VREAD_QUIET) != 0) {
-		mdb_warn("can't read zen_fabric structure at %p", fabaddr);
-		return (false);
-	}
-
-	for (uint_t s = 0; s < fab.zf_nsocs; s++) {
-		uintptr_t saddr = fabric_elem(fabaddr, &fabric_layout.fl_socs,
-		    s);
-		mdb_zen_soc_t soc;
-
-		if (level == FABRIC_L_SOC) {
-			if (!fabric_collect_push(c, saddr))
-				return (false);
-			continue;
-		}
-		if (mdb_ctf_vread(&soc, "zen_soc_t", "mdb_zen_soc_t", saddr,
-		    MDB_CTF_VREAD_QUIET) != 0) {
-			continue;
-		}
-
-		for (uint_t d = 0; d < soc.zs_niodies; d++) {
-			uintptr_t iaddr = fabric_elem(saddr,
-			    &fabric_layout.fl_iodies, d);
-			mdb_zen_iodie_t iodie;
-
-			if (level == FABRIC_L_IODIE) {
-				if (!fabric_collect_push(c, iaddr))
-					return (false);
-				continue;
-			}
-			if (mdb_ctf_vread(&iodie, "zen_iodie_t",
-			    "mdb_zen_iodie_t", iaddr,
-			    MDB_CTF_VREAD_QUIET) != 0) {
-				continue;
-			}
-
-			for (uint_t n = 0; n < iodie.zi_nnbio; n++) {
-				uintptr_t naddr = fabric_elem(iaddr,
-				    &fabric_layout.fl_nbio, n);
-				mdb_zen_nbio_t nbio;
-
-				if (level == FABRIC_L_NBIO) {
-					if (!fabric_collect_push(c, naddr))
-						return (false);
-					continue;
-				}
-				if (mdb_ctf_vread(&nbio, "zen_nbio_t",
-				    "mdb_zen_nbio_t", naddr,
-				    MDB_CTF_VREAD_QUIET) != 0) {
-					continue;
-				}
-
-				for (uint_t m = 0; m < nbio.zn_nioms; m++) {
-					uintptr_t maddr = fabric_elem(naddr,
-					    &fabric_layout.fl_ioms, m);
-
-					if (!fabric_collect_push(c, maddr))
-						return (false);
-				}
-			}
-		}
-	}
-
+	fabric_collect_descend(c, path, depth, 0, sym.st_value,
+	    c->fc_start == 0);
 	return (true);
 }
 
-static int
-fabric_walk_init_common(mdb_walk_state_t *wsp, fabric_level_t level)
+/*
+ * The level to walk is passed as the walker's init argument.
+ */
+int
+fabric_walk_init(mdb_walk_state_t *wsp)
 {
+	fabric_level_t level = (fabric_level_t)(uintptr_t)wsp->walk_arg;
 	fabric_collect_t *c;
 
-	if (wsp->walk_addr != 0) {
-		mdb_warn("zen walkers only support global walks\n");
-		return (WALK_ERR);
-	}
-
-	if (!fabric_layout_init()) {
+	if (!fabric_layout_init() || !fabric_levels_init()) {
 		mdb_warn("failed to resolve fabric type layout from CTF\n");
 		return (WALK_ERR);
 	}
 
-	c = mdb_zalloc(sizeof (*c), UM_NOSLEEP | UM_GC);
-	if (c == NULL) {
-		mdb_warn("failed to allocate memory for fabric walker");
+	c = mdb_zalloc(sizeof (*c), UM_SLEEP | UM_GC);
+	c->fc_level = level;
+	c->fc_start = wsp->walk_addr;
+
+	if (!fabric_collect(c))
+		return (WALK_ERR);
+	if (c->fc_start != 0 && !c->fc_found) {
+		mdb_warn("%p is not a %s or an ancestor of one\n", c->fc_start,
+		    fabric_levels[level].fld_name);
 		return (WALK_ERR);
 	}
 
-	if (!fabric_collect(level, c))
-		return (WALK_ERR);
-
 	wsp->walk_data = c;
 	return (WALK_NEXT);
-}
-
-int
-fabric_walk_soc_init(mdb_walk_state_t *wsp)
-{
-	return (fabric_walk_init_common(wsp, FABRIC_L_SOC));
-}
-
-int
-fabric_walk_iodie_init(mdb_walk_state_t *wsp)
-{
-	return (fabric_walk_init_common(wsp, FABRIC_L_IODIE));
-}
-
-int
-fabric_walk_nbio_init(mdb_walk_state_t *wsp)
-{
-	return (fabric_walk_init_common(wsp, FABRIC_L_NBIO));
-}
-
-int
-fabric_walk_ioms_init(mdb_walk_state_t *wsp)
-{
-	return (fabric_walk_init_common(wsp, FABRIC_L_IOMS));
 }
 
 int
