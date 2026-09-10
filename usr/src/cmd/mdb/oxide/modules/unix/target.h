@@ -28,6 +28,7 @@ extern "C" {
 #endif
 
 extern x86_processor_family_t oxide_mdb_target_family(void);
+extern const char *oxide_mdb_target_family_name(void);
 extern void oxide_mdb_set_target_family(x86_processor_family_t);
 
 extern int oxide_mdb_target_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);

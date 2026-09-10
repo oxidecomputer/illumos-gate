@@ -1016,7 +1016,7 @@ smn_rw(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
 	return (DCMD_OK);
 }
 
-static int
+int
 rdsmn_reg(const smn_reg_t reg, uint8_t sock, uint32_t *val)
 {
 	return (smn_rw_reg(reg, sock, SMN_RD, val));

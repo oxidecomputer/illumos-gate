@@ -57,6 +57,12 @@ oxide_mdb_target_family(void)
 	return (oxide_mdb_target_pf);
 }
 
+const char *
+oxide_mdb_target_family_name(void)
+{
+	return (oxide_mdb_target_name);
+}
+
 void
 oxide_mdb_set_target_family(x86_processor_family_t pf)
 {

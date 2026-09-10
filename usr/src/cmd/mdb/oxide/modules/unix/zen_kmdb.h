@@ -10,11 +10,13 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _ZEN_KMDB_H
 #define	_ZEN_KMDB_H
+
+#include <sys/amdzen/smn.h>
 
 /*
  * kmdb specific routines for use in getting at AMD Zen related functionality.
@@ -38,6 +40,7 @@ extern void rdsmn_dcmd_help(void);
 extern void wrsmn_dcmd_help(void);
 extern int rdsmn_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 extern int wrsmn_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern int rdsmn_reg(const smn_reg_t, uint8_t, uint32_t *);
 
 extern boolean_t df_props_init(void);
 

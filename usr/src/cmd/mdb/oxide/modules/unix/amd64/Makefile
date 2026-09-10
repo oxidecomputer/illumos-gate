@@ -61,3 +61,12 @@ CERRWARN += -_gcc=-Wno-parentheses
 CERRWARN += $(CNOWARN_UNINIT)
 
 CERRWARN += -_gcc=-Wno-unused-function
+
+#
+# The kmdb-only parts of the *_impl.c files include the kernel's
+# sys/io/<family>/pcie.h headers for their SMN address helpers. Those declare
+# local constants that are only referenced by assertions, so they are unused in
+# non-DEBUG builds.
+#
+IMPLKMODOBJS = kmod/milan_impl.o kmod/genoa_impl.o kmod/turin_impl.o
+$(IMPLKMODOBJS) := CERRWARN += -_gcc=-Wno-unused-variable

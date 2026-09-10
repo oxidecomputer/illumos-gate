@@ -1116,7 +1116,7 @@ static const mdb_dcmd_t dcmds[] = {
 	    fabric_dcmd_help },
 	{ "ioms", "[-n num] [-h iohubnum] [-N nbionum] [-i iohcnum] [-b bus]",
 	    "show IOMS", fabric_ioms_dcmd, fabric_ioms_dcmd_help },
-	{ "ltssm", "?", "decode captured PCIe LTSSM state", ltssm_dcmd,
+	{ "ltssm", "?[-l]", "decode PCIe LTSSM state", ltssm_dcmd,
 	    ltssm_dcmd_help },
 	{ "gate_desc", ":", "dump a gate descriptor", gate_desc },
 	{ "idt", ":[-v]", "dump an IDT", idt },

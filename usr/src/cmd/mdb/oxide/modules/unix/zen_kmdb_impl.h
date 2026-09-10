@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _ZEN_KMDB_IMPL_H
@@ -20,6 +20,9 @@
 #include <sys/x86_archext.h>
 #include <sys/amdzen/df.h>
 #include <io/amdzen/amdzen_client.h>
+#ifdef _KMDB
+#include <sys/amdzen/smn.h>
+#endif
 
 /*
  * We don't really know how many I/O dies there are in advance;
@@ -163,5 +166,19 @@ typedef struct df_props {
 extern df_props_t df_props_genoa;
 extern df_props_t df_props_milan;
 extern df_props_t df_props_turin;
+
+#ifdef _KMDB
+/*
+ * Per-family computation of the SMN register holding the n'th
+ * PCIEPORT::PCIE_LC_STATE register of a PCIe port, identified by its IOHC,
+ * core and port numbers.
+ */
+extern smn_reg_t milan_pcie_port_lc_state_reg(uint8_t, uint8_t, uint8_t,
+    uint_t);
+extern smn_reg_t genoa_pcie_port_lc_state_reg(uint8_t, uint8_t, uint8_t,
+    uint_t);
+extern smn_reg_t turin_pcie_port_lc_state_reg(uint8_t, uint8_t, uint8_t,
+    uint_t);
+#endif	/* _KMDB */
 
 #endif /* _ZEN_KMDB_IMPL_H */

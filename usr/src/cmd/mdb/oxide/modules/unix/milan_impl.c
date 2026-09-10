@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -18,6 +18,9 @@
  */
 
 #include <sys/sysmacros.h>
+#ifdef _KMDB
+#include <sys/io/milan/pcie.h>
+#endif
 
 #include "zen_kmdb_impl.h"
 
@@ -120,3 +123,26 @@ df_props_t df_props_milan = {
 	.dfp_umc_chan_map = milan_chan_map,
 	.dfp_umc_order = milan_chan_umc_order,
 };
+
+#ifdef _KMDB
+/*
+ * Return the SMN register for the n'th PCIEPORT::PCIE_LC_STATE register of
+ * the given port, used by ::ltssm to read the live LTSSM state.
+ */
+smn_reg_t
+milan_pcie_port_lc_state_reg(uint8_t iohcno, uint8_t coreno, uint8_t portno,
+    uint_t n)
+{
+	static const smn_reg_def_t defs[] = {
+		D_PCIE_PORT_LC_STATE0,
+		D_PCIE_PORT_LC_STATE1,
+		D_PCIE_PORT_LC_STATE2,
+		D_PCIE_PORT_LC_STATE3,
+		D_PCIE_PORT_LC_STATE4,
+		D_PCIE_PORT_LC_STATE5
+	};
+
+	ASSERT3U(n, <, ARRAY_SIZE(defs));
+	return (milan_pcie_port_smn_reg(iohcno, defs[n], coreno, portno));
+}
+#endif	/* _KMDB */
