@@ -1112,10 +1112,7 @@ extern int xcall_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 static const mdb_dcmd_t dcmds[] = {
 	APOB_DCMDS,
 	TARGET_DCMDS,
-	{ "fabric", "[-cnv]", "summarise the fabric", fabric_dcmd,
-	    fabric_dcmd_help },
-	{ "ioms", "[-n num] [-h iohubnum] [-N nbionum] [-i iohcnum] [-b bus]",
-	    "show IOMS", fabric_ioms_dcmd, fabric_ioms_dcmd_help },
+	FABRIC_DCMDS,
 	{ "ltssm", "?[-l]", "decode PCIe LTSSM state", ltssm_dcmd,
 	    ltssm_dcmd_help },
 	{ "gate_desc", ":", "dump a gate descriptor", gate_desc },

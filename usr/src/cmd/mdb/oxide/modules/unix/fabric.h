@@ -26,6 +26,49 @@ extern void fabric_dcmd_help(void);
 extern int fabric_ioms_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
 extern void fabric_ioms_dcmd_help(void);
 
+extern int fabric_pcie_core_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_pcie_core_dcmd_help(void);
+extern int fabric_pcie_port_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_pcie_port_dcmd_help(void);
+extern int fabric_nbif_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_nbif_dcmd_help(void);
+extern int fabric_nbif_func_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_nbif_func_dcmd_help(void);
+extern int fabric_ccd_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_ccd_dcmd_help(void);
+extern int fabric_ccx_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_ccx_dcmd_help(void);
+extern int fabric_core_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_core_dcmd_help(void);
+extern int fabric_thread_dcmd(uintptr_t, uint_t, int, const mdb_arg_t *);
+extern void fabric_thread_dcmd_help(void);
+
+#define	FABRIC_DCMDS	\
+	{ "fabric", "?[-cnv]", "summarise the fabric", fabric_dcmd, \
+	    fabric_dcmd_help }, \
+	{ "ioms", "?[-n num] [-h hub] [-N nbio] [-i iohc] [-b bus]\n" \
+	    "\t\t[-f flags] [-x flags]", "show IOMS", fabric_ioms_dcmd, \
+	    fabric_ioms_dcmd_help }, \
+	{ "pcie_core", "?[-n num] [-i iohc] [-b bus] [-f flags] [-x flags]", \
+	    "show PCIe cores", fabric_pcie_core_dcmd, \
+	    fabric_pcie_core_dcmd_help }, \
+	{ "pcie_port", "?[-n num] [-c core] [-b bus] [-s slot]\n" \
+	    "\t\t[-f flags] [-x flags]", "show PCIe ports", \
+	    fabric_pcie_port_dcmd, fabric_pcie_port_dcmd_help }, \
+	{ "nbif", "?[-n num] [-b bus]", "show nBIFs", fabric_nbif_dcmd, \
+	    fabric_nbif_dcmd_help }, \
+	{ "nbif_func", "?[-n num] [-b bus] [-t type] [-f flags] [-x flags]", \
+	    "show nBIF functions", fabric_nbif_func_dcmd, \
+	    fabric_nbif_func_dcmd_help }, \
+	{ "ccd", "?[-n num] [-p phys]", "show CCDs", fabric_ccd_dcmd, \
+	    fabric_ccd_dcmd_help }, \
+	{ "ccx", "?[-n num] [-p phys]", "show CCXs", fabric_ccx_dcmd, \
+	    fabric_ccx_dcmd_help }, \
+	{ "zen_core", "?[-n num] [-p phys]", "show CPU cores", \
+	    fabric_core_dcmd, fabric_core_dcmd_help }, \
+	{ "zen_thread", "?[-n num] [-a apicid]", "show CPU threads", \
+	    fabric_thread_dcmd, fabric_thread_dcmd_help }
+
 /*
  * The levels of the fabric tree that can be walked. A walker's level is
  * passed to the common walk functions as its init argument.

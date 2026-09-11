@@ -15,7 +15,8 @@
 
 /*
  * This part of the file contains the mdb support for dcmds:
- *	::fabric, ::ioms
+ *	::fabric, ::ioms, ::pcie_core, ::pcie_port, ::nbif, ::nbif_func, ::ccd,
+ *	::ccx, ::zen_core, ::zen_thread
  * and walkers for:
  *	soc, iodie, nbio, ioms, pcie_core, pcie_port, nbif, nbif_func, ccd, ccx,
  *	zen_core, zen_thread
@@ -89,6 +90,9 @@ typedef struct {
 typedef struct {
 	uint8_t		zpc_coreno;
 	uint8_t		zpc_nports;
+	uint16_t	zpc_dxio_lane_start;
+	uint16_t	zpc_dxio_lane_end;
+	uintptr_t	zpc_ioms;
 } mdb_zen_pcie_core_t;
 
 typedef struct {
@@ -97,17 +101,20 @@ typedef struct {
 	uint8_t		zpp_func;
 	uint16_t	zpp_slotno;
 	uintptr_t	zpp_oxio;
+	uintptr_t	zpp_core;
 } mdb_zen_pcie_port_t;
 
 typedef struct {
 	uint8_t		zn_num;
 	uint8_t		zn_nfuncs;
+	uintptr_t	zn_ioms;
 } mdb_zen_nbif_t;
 
 typedef struct {
 	uint8_t		znf_num;
 	uint8_t		znf_dev;
 	uint8_t		znf_func;
+	uintptr_t	znf_nbif;
 } mdb_zen_nbif_func_t;
 
 typedef struct {
@@ -120,17 +127,20 @@ typedef struct {
 	uint8_t		zcx_logical_cxno;
 	uint8_t		zcx_physical_cxno;
 	uint8_t		zcx_ncores;
+	uintptr_t	zcx_ccd;
 } mdb_zen_ccx_t;
 
 typedef struct {
 	uint8_t		zc_logical_coreno;
 	uint8_t		zc_physical_coreno;
 	uint8_t		zc_nthreads;
+	uintptr_t	zc_ccx;
 } mdb_zen_core_t;
 
 typedef struct {
 	uint8_t		zt_threadno;
 	uint32_t	zt_apicid;
+	uintptr_t	zt_core;
 } mdb_zen_thread_t;
 
 typedef struct {
@@ -478,11 +488,35 @@ fabric_iohc_large(uint32_t type)
 	return (nm != NULL && strcmp(nm, "ZEN_IOHCT_LARGE") == 0);
 }
 
+/*
+ * Describe the oxio engine behind a PCIe port as its tile and lane range, and
+ * its name.
+ */
+static bool
+fabric_oxio_describe(uintptr_t addr, char *lanes, size_t lanelen, char *name,
+    size_t namelen)
+{
+	mdb_fabric_oxio_t oxio;
+	uint32_t tile;
+
+	if (addr == 0 || mdb_ctf_vread(&oxio, "oxio_engine_t",
+	    "mdb_fabric_oxio_t", addr, MDB_CTF_VREAD_QUIET) != 0) {
+		return (false);
+	}
+	tile = fabric_enum_read(addr, fabric_layout.fl_oxio_tile_off);
+	(void) mdb_snprintf(lanes, lanelen, "%s/%rx%r",
+	    fabric_enum_short(fabric_layout.fl_tile, tile, "OXIO_TILE_",
+	    sizeof ("OXIO_TILE_") - 1), oxio.oe_lane, oxio.oe_nlanes);
+	if (mdb_readstr(name, namelen, oxio.oe_name) <= 0)
+		(void) strcpy(name, "??");
+	return (true);
+}
+
 static void
 fabric_print_port(uintptr_t addr, fabric_data_t *cbd)
 {
 	mdb_zen_pcie_port_t port;
-	mdb_fabric_oxio_t oxio;
+	char lanes[16], name[FABRIC_OXIO_NAME_MAX];
 	uint32_t flags;
 
 	if (mdb_ctf_vread(&port, "zen_pcie_port_t", "mdb_zen_pcie_port_t",
@@ -499,22 +533,9 @@ fabric_print_port(uintptr_t addr, fabric_data_t *cbd)
 		    cbd->fd_indent * 2, "", addr, port.zpp_portno,
 		    cbd->fd_busno, port.zpp_device, port.zpp_func,
 		    port.zpp_slotno);
-		if (port.zpp_oxio != 0 && mdb_ctf_vread(&oxio, "oxio_engine_t",
-		    "mdb_fabric_oxio_t", port.zpp_oxio,
-		    MDB_CTF_VREAD_QUIET) == 0) {
-			char descr[FABRIC_OXIO_NAME_MAX];
-			uint32_t tile = fabric_enum_read(port.zpp_oxio,
-			    fabric_layout.fl_oxio_tile_off);
-
-			if (mdb_readstr(descr, sizeof (descr),
-			    oxio.oe_name) <= 0) {
-				(void) strcpy(descr, "??");
-			}
-
-			mdb_printf(" [%s] %s/%rx%r", descr,
-			    fabric_enum_short(fabric_layout.fl_tile, tile,
-			    "OXIO_TILE_", sizeof ("OXIO_TILE_") - 1),
-			    oxio.oe_lane, oxio.oe_nlanes);
+		if (fabric_oxio_describe(port.zpp_oxio, lanes, sizeof (lanes),
+		    name, sizeof (name))) {
+			mdb_printf(" [%s] %s", name, lanes);
 		}
 		if (flags != 0 && cbd->fd_verbose)
 			mdb_printf(" <%b>", flags, fabric_port_flags);
@@ -912,13 +933,146 @@ fabric_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	return (DCMD_OK);
 }
 
+/*
+ * Summary dcmds. Each prints the nodes at one level of the fabric tree as a
+ * table, subject to the filters given as options. Given the address of a node
+ * at or above that level, only the nodes beneath it are shown. When the output
+ * is piped, just the addresses are emitted so that they can be fed to another
+ * dcmd.
+ */
+
+/*
+ * A numeric filter option is unset while it holds UINT64_MAX.
+ */
+static bool
+fabric_match(uint64_t want, uint64_t have)
+{
+	return (want == UINT64_MAX || want == have);
+}
+
+/*
+ * Flag filters. The -f option names flags that must all be set and -x names
+ * flags that must all be clear, each as a comma-separated list of the labels
+ * shown in the FLAGS column.
+ */
 typedef struct {
-	uint64_t	fid_num;
-	uint64_t	fid_iohcnum;
-	uint64_t	fid_iohubnum;
-	uint64_t	fid_nbionum;
-	uint64_t	fid_pcibus;
-	uint_t		fid_flags;
+	uint32_t	ff_req;
+	uint32_t	ff_excl;
+} fabric_flag_filter_t;
+
+static bool
+fabric_flag_parse(const char *list, const mdb_bitmask_t *tbl, uint32_t *maskp)
+{
+	const char *p = list;
+
+	for (;;) {
+		const char *end = strchr(p, ',');
+		size_t len = (end == NULL) ? strlen(p) : (size_t)(end - p);
+		const mdb_bitmask_t *bm;
+		char name[32];
+
+		if (len == 0 || len >= sizeof (name)) {
+			mdb_warn("invalid flag list '%s'\n", list);
+			return (false);
+		}
+		(void) strncpy(name, p, len);
+		name[len] = '\0';
+
+		for (bm = tbl; bm->bm_name != NULL; bm++) {
+			if (strcasecmp(bm->bm_name, name) == 0) {
+				*maskp |= (uint32_t)bm->bm_bits;
+				break;
+			}
+		}
+		if (bm->bm_name == NULL) {
+			mdb_warn("unknown flag '%s'\n", name);
+			return (false);
+		}
+		if (end == NULL)
+			return (true);
+		p = end + 1;
+	}
+}
+
+static bool
+fabric_flag_filter_init(fabric_flag_filter_t *ff, const char *req,
+    const char *excl, const mdb_bitmask_t *tbl)
+{
+	ff->ff_req = 0;
+	ff->ff_excl = 0;
+	if (req != NULL && !fabric_flag_parse(req, tbl, &ff->ff_req))
+		return (false);
+	if (excl != NULL && !fabric_flag_parse(excl, tbl, &ff->ff_excl))
+		return (false);
+	return (true);
+}
+
+static bool
+fabric_flag_match(const fabric_flag_filter_t *ff, uint32_t flags)
+{
+	return ((flags & ff->ff_req) == ff->ff_req &&
+	    (flags & ff->ff_excl) == 0);
+}
+
+/*
+ * Format a flag set for a table column, with "-" standing in for none.
+ */
+static const char *
+fabric_flag_str(char *buf, size_t len, uint32_t flags,
+    const mdb_bitmask_t *tbl)
+{
+	if (flags == 0)
+		return ("-");
+	(void) mdb_snprintf(buf, len, "%b", flags, tbl);
+	return (buf);
+}
+
+static bool
+fabric_table_init(void)
+{
+	if (!fabric_layout_init()) {
+		mdb_warn("failed to resolve fabric type layout from CTF\n");
+		return (false);
+	}
+	return (true);
+}
+
+/*
+ * The common part of each summary dcmd's help text. The flag labels come from
+ * the static definitions rather than the tables built from CTF, as the latter
+ * are only populated once a dcmd has run.
+ */
+static void
+fabric_table_help(const char *what, const char *opts,
+    const fabric_flag_def_t *defs, uint_t ndefs)
+{
+	mdb_printf(
+	    "Prints a summary of the %s in the zen fabric.\n"
+	    "\n"
+	    "Given the address of a fabric object above this level, only the\n"
+	    "%s beneath it are shown. When the output is piped, only the\n"
+	    "addresses are emitted so that they can be fed to another dcmd.\n"
+	    "\n%<b>Options:%</b>\n%s", what, what, opts);
+	if (defs == NULL)
+		return;
+	mdb_printf(
+	    "\t-f flags\tonly show entries with all of the named flags set.\n"
+	    "\t-x flags\tonly show entries with none of the named flags set.\n"
+	    "\t\tFlags are given as a comma-separated list from:\n"
+	    "\t\t\t%s", defs[0].ffd_label);
+	for (uint_t i = 1; i < ndefs; i++)
+		mdb_printf(" %s", defs[i].ffd_label);
+	mdb_printf("\n");
+}
+
+typedef struct {
+	uint_t			fid_flags;
+	uint64_t		fid_num;
+	uint64_t		fid_iohcnum;
+	uint64_t		fid_iohubnum;
+	uint64_t		fid_nbionum;
+	uint64_t		fid_pcibus;
+	fabric_flag_filter_t	fid_ff;
 } fabric_ioms_data_t;
 
 static int
@@ -941,22 +1095,12 @@ i_ioms(uintptr_t addr, const void *arg __unused, void *cb_data)
 		nbio.zn_num = UINT8_MAX;
 	}
 
-	if (data->fid_num != UINT64_MAX && data->fid_num != ioms.zio_num)
-		return (WALK_NEXT);
-	if (data->fid_iohcnum != UINT64_MAX &&
-	    data->fid_iohcnum != ioms.zio_iohcnum) {
-		return (WALK_NEXT);
-	}
-	if (data->fid_iohubnum != UINT64_MAX &&
-	    data->fid_iohubnum != ioms.zio_iohubnum) {
-		return (WALK_NEXT);
-	}
-	if (data->fid_nbionum != UINT64_MAX &&
-	    data->fid_nbionum != nbio.zn_num) {
-		return (WALK_NEXT);
-	}
-	if (data->fid_pcibus != UINT64_MAX &&
-	    data->fid_pcibus != ioms.zio_pci_busno) {
+	if (!fabric_match(data->fid_num, ioms.zio_num) ||
+	    !fabric_match(data->fid_iohcnum, ioms.zio_iohcnum) ||
+	    !fabric_match(data->fid_iohubnum, ioms.zio_iohubnum) ||
+	    !fabric_match(data->fid_nbionum, nbio.zn_num) ||
+	    !fabric_match(data->fid_pcibus, ioms.zio_pci_busno) ||
+	    !fabric_flag_match(&data->fid_ff, flags)) {
 		return (WALK_NEXT);
 	}
 
@@ -965,7 +1109,7 @@ i_ioms(uintptr_t addr, const void *arg __unused, void *cb_data)
 		return (WALK_NEXT);
 	}
 
-	mdb_printf("%?p %4r %4r %4r %5r %4r %5r %b%s%s\n",
+	mdb_printf("%?p %4r %4r %4r %5r %4r %6r %b%s%s\n",
 	    addr, ioms.zio_num, ioms.zio_iohcnum, nbio.zn_num,
 	    ioms.zio_iohubnum, ioms.zio_pci_busno, ioms.zio_npcie_cores,
 	    flags, fabric_ioms_flags,
@@ -978,17 +1122,13 @@ i_ioms(uintptr_t addr, const void *arg __unused, void *cb_data)
 void
 fabric_ioms_dcmd_help(void)
 {
-	mdb_printf(
-	    "Prints a summary of the IOMS in the zen fabric.\n"
-	    "\n%<b>Options:%</b>\n"
+	fabric_table_help("IOMS",
 	    "\t-h num\tonly show the IOMS with the specified IOHUB number.\n"
 	    "\t-n num\tonly show the IOMS with the specified number.\n"
 	    "\t-N num\tonly show IOMS within the specified NBIO.\n"
 	    "\t-i num\tonly show the IOMS with the specified IOHC number.\n"
-	    "\t-b bus\tonly show the IOMS with the specified PCI bus number.\n"
-	    "\n%<b>Notes:%</b>\n"
-	    "\tThe output of this command can be piped into %<b>::fabric%</b>\n"
-	    "\tto summarise objects beneath it.\n");
+	    "\t-b bus\tonly show the IOMS with the specified PCI bus number.\n",
+	    fabric_ioms_flag_defs, ARRAY_SIZE(fabric_ioms_flag_defs));
 }
 
 int
@@ -1002,9 +1142,7 @@ fabric_ioms_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		.fid_nbionum = UINT64_MAX,
 		.fid_pcibus = UINT64_MAX
 	};
-
-	if (flags & DCMD_ADDRSPEC)
-		return (DCMD_USAGE);
+	const char *req = NULL, *excl = NULL;
 
 	if (mdb_getopts(argc, argv,
 	    'h', MDB_OPT_UINT64, &data.fid_iohubnum,
@@ -1012,25 +1150,713 @@ fabric_ioms_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	    'N', MDB_OPT_UINT64, &data.fid_nbionum,
 	    'i', MDB_OPT_UINT64, &data.fid_iohcnum,
 	    'b', MDB_OPT_UINT64, &data.fid_pcibus,
+	    'f', MDB_OPT_STR, &req,
+	    'x', MDB_OPT_STR, &excl,
 	    NULL) != argc) {
 		return (DCMD_USAGE);
 	}
 
-	if (!fabric_layout_init()) {
-		mdb_warn("failed to resolve fabric type layout from CTF\n");
+	if (!fabric_table_init() ||
+	    !fabric_flag_filter_init(&data.fid_ff, req, excl,
+	    fabric_ioms_flags)) {
 		return (DCMD_ERR);
 	}
 
 	if (!(flags & DCMD_PIPE_OUT) && DCMD_HDRSPEC(flags)) {
-		mdb_printf("%<u>%?s %4s %4s %4s %5s %4s %5s %s%</u>\n",
-		    "ADDR", "NUM", "IOHC", "NBIO", "IOHUB", "BUS", "CORES",
+		mdb_printf("%<u>%?s %4s %4s %4s %5s %4s %6s %s%</u>\n",
+		    "ADDR", "NUM", "IOHC", "NBIO", "IOHUB", "BUS", "NCORES",
 		    "FLAGS");
 	}
 
-	if (mdb_walk("ioms", i_ioms, &data) == -1)
+	if (mdb_pwalk("ioms", i_ioms, &data,
+	    (flags & DCMD_ADDRSPEC) ? addr : 0) == -1) {
 		return (DCMD_ERR);
+	}
 
 	return (DCMD_OK);
+}
+
+typedef struct {
+	uint_t			fpc_flags;
+	uint64_t		fpc_num;
+	uint64_t		fpc_iohcnum;
+	uint64_t		fpc_pcibus;
+	fabric_flag_filter_t	fpc_ff;
+} fabric_pcie_core_data_t;
+
+static int
+i_pcie_core(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_pcie_core_data_t *data = cb_data;
+	mdb_zen_pcie_core_t core;
+	mdb_zen_ioms_t ioms;
+	char lanes[16], fstr[64];
+	uint32_t flags;
+
+	if (mdb_ctf_vread(&core, "zen_pcie_core_t", "mdb_zen_pcie_core_t",
+	    addr, MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ioms, "zen_ioms_t", "mdb_zen_ioms_t", core.zpc_ioms,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read PCIe core at %p\n", addr);
+		return (WALK_NEXT);
+	}
+	flags = fabric_enum_read(addr, fabric_layout.fl_core_flags_off);
+
+	if (!fabric_match(data->fpc_num, core.zpc_coreno) ||
+	    !fabric_match(data->fpc_iohcnum, ioms.zio_iohcnum) ||
+	    !fabric_match(data->fpc_pcibus, ioms.zio_pci_busno) ||
+	    !fabric_flag_match(&data->fpc_ff, flags)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fpc_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	(void) mdb_snprintf(lanes, sizeof (lanes), "%r-%r",
+	    core.zpc_dxio_lane_start, core.zpc_dxio_lane_end);
+	mdb_printf("%?p %4r %4r %4r %4r %6r %-9s %s\n", addr, core.zpc_coreno,
+	    ioms.zio_num, ioms.zio_iohcnum, ioms.zio_pci_busno, core.zpc_nports,
+	    lanes, fabric_flag_str(fstr, sizeof (fstr), flags,
+	    fabric_core_flags));
+
+	return (WALK_NEXT);
+}
+
+void
+fabric_pcie_core_dcmd_help(void)
+{
+	fabric_table_help("PCIe cores",
+	    "\t-n num\tonly show cores with the specified number within their\n"
+	    "\t\tIOMS.\n"
+	    "\t-i num\tonly show cores on the specified IOHC.\n"
+	    "\t-b bus\tonly show cores on the specified PCI bus.\n",
+	    fabric_core_flag_defs, ARRAY_SIZE(fabric_core_flag_defs));
+}
+
+int
+fabric_pcie_core_dcmd(uintptr_t addr, uint_t flags, int argc,
+    const mdb_arg_t *argv)
+{
+	fabric_pcie_core_data_t data = {
+		.fpc_flags = flags,
+		.fpc_num = UINT64_MAX,
+		.fpc_iohcnum = UINT64_MAX,
+		.fpc_pcibus = UINT64_MAX
+	};
+	const char *req = NULL, *excl = NULL;
+
+	if (mdb_getopts(argc, argv,
+	    'n', MDB_OPT_UINT64, &data.fpc_num,
+	    'i', MDB_OPT_UINT64, &data.fpc_iohcnum,
+	    'b', MDB_OPT_UINT64, &data.fpc_pcibus,
+	    'f', MDB_OPT_STR, &req,
+	    'x', MDB_OPT_STR, &excl,
+	    NULL) != argc) {
+		return (DCMD_USAGE);
+	}
+
+	if (!fabric_table_init() ||
+	    !fabric_flag_filter_init(&data.fpc_ff, req, excl,
+	    fabric_core_flags)) {
+		return (DCMD_ERR);
+	}
+
+	if (!(flags & DCMD_PIPE_OUT) && DCMD_HDRSPEC(flags)) {
+		mdb_printf("%<u>%?s %4s %4s %4s %4s %6s %-9s %s%</u>\n",
+		    "ADDR", "NUM", "IOMS", "IOHC", "BUS", "NPORTS", "LANES",
+		    "FLAGS");
+	}
+
+	if (mdb_pwalk("pcie_core", i_pcie_core, &data,
+	    (flags & DCMD_ADDRSPEC) ? addr : 0) == -1) {
+		return (DCMD_ERR);
+	}
+
+	return (DCMD_OK);
+}
+
+typedef struct {
+	uint_t			fpp_flags;
+	uint64_t		fpp_num;
+	uint64_t		fpp_core;
+	uint64_t		fpp_pcibus;
+	uint64_t		fpp_slot;
+	fabric_flag_filter_t	fpp_ff;
+} fabric_pcie_port_data_t;
+
+static int
+i_pcie_port(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_pcie_port_data_t *data = cb_data;
+	mdb_zen_pcie_port_t port;
+	mdb_zen_pcie_core_t core;
+	mdb_zen_ioms_t ioms;
+	char bdf[16], lanes[16], name[FABRIC_OXIO_NAME_MAX], fstr[64];
+	uint32_t flags;
+
+	if (mdb_ctf_vread(&port, "zen_pcie_port_t", "mdb_zen_pcie_port_t",
+	    addr, MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&core, "zen_pcie_core_t", "mdb_zen_pcie_core_t",
+	    port.zpp_core, MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ioms, "zen_ioms_t", "mdb_zen_ioms_t", core.zpc_ioms,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read PCIe port at %p\n", addr);
+		return (WALK_NEXT);
+	}
+	flags = fabric_enum_read(addr, fabric_layout.fl_port_flags_off);
+
+	if (!fabric_match(data->fpp_num, port.zpp_portno) ||
+	    !fabric_match(data->fpp_core, core.zpc_coreno) ||
+	    !fabric_match(data->fpp_pcibus, ioms.zio_pci_busno) ||
+	    !fabric_match(data->fpp_slot, port.zpp_slotno) ||
+	    !fabric_flag_match(&data->fpp_ff, flags)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fpp_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	(void) mdb_snprintf(bdf, sizeof (bdf), "%r/%r/%r", ioms.zio_pci_busno,
+	    port.zpp_device, port.zpp_func);
+	if (!fabric_oxio_describe(port.zpp_oxio, lanes, sizeof (lanes), name,
+	    sizeof (name))) {
+		(void) strcpy(lanes, "-");
+		(void) strcpy(name, "-");
+	}
+	mdb_printf("%?p %-8s %4r %4r %4r %-8s %-18s %s\n", addr, bdf,
+	    core.zpc_coreno, port.zpp_portno, port.zpp_slotno, lanes, name,
+	    fabric_flag_str(fstr, sizeof (fstr), flags, fabric_port_flags));
+
+	return (WALK_NEXT);
+}
+
+void
+fabric_pcie_port_dcmd_help(void)
+{
+	fabric_table_help("PCIe ports",
+	    "\t-n num\tonly show ports with the specified number within their\n"
+	    "\t\tcore.\n"
+	    "\t-c num\tonly show ports on the core with the specified number\n"
+	    "\t\twithin its IOMS.\n"
+	    "\t-b bus\tonly show ports on the specified PCI bus.\n"
+	    "\t-s slot\tonly show the port with the specified slot number.\n",
+	    fabric_port_flag_defs, ARRAY_SIZE(fabric_port_flag_defs));
+}
+
+int
+fabric_pcie_port_dcmd(uintptr_t addr, uint_t flags, int argc,
+    const mdb_arg_t *argv)
+{
+	fabric_pcie_port_data_t data = {
+		.fpp_flags = flags,
+		.fpp_num = UINT64_MAX,
+		.fpp_core = UINT64_MAX,
+		.fpp_pcibus = UINT64_MAX,
+		.fpp_slot = UINT64_MAX
+	};
+	const char *req = NULL, *excl = NULL;
+
+	if (mdb_getopts(argc, argv,
+	    'n', MDB_OPT_UINT64, &data.fpp_num,
+	    'c', MDB_OPT_UINT64, &data.fpp_core,
+	    'b', MDB_OPT_UINT64, &data.fpp_pcibus,
+	    's', MDB_OPT_UINT64, &data.fpp_slot,
+	    'f', MDB_OPT_STR, &req,
+	    'x', MDB_OPT_STR, &excl,
+	    NULL) != argc) {
+		return (DCMD_USAGE);
+	}
+
+	if (!fabric_table_init() ||
+	    !fabric_flag_filter_init(&data.fpp_ff, req, excl,
+	    fabric_port_flags)) {
+		return (DCMD_ERR);
+	}
+
+	if (!(flags & DCMD_PIPE_OUT) && DCMD_HDRSPEC(flags)) {
+		mdb_printf("%<u>%?s %-8s %4s %4s %4s %-8s %-18s %s%</u>\n",
+		    "ADDR", "B/D/F", "CORE", "PORT", "SLOT", "LANES", "NAME",
+		    "FLAGS");
+	}
+
+	if (mdb_pwalk("pcie_port", i_pcie_port, &data,
+	    (flags & DCMD_ADDRSPEC) ? addr : 0) == -1) {
+		return (DCMD_ERR);
+	}
+
+	return (DCMD_OK);
+}
+
+typedef struct {
+	uint_t		fnb_flags;
+	uint64_t	fnb_num;
+	uint64_t	fnb_pcibus;
+} fabric_nbif_data_t;
+
+static int
+i_nbif(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_nbif_data_t *data = cb_data;
+	mdb_zen_nbif_t nbif;
+	mdb_zen_ioms_t ioms;
+
+	if (mdb_ctf_vread(&nbif, "zen_nbif_t", "mdb_zen_nbif_t", addr,
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ioms, "zen_ioms_t", "mdb_zen_ioms_t", nbif.zn_ioms,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read nBIF at %p\n", addr);
+		return (WALK_NEXT);
+	}
+
+	if (!fabric_match(data->fnb_num, nbif.zn_num) ||
+	    !fabric_match(data->fnb_pcibus, ioms.zio_pci_busno)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fnb_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	mdb_printf("%?p %4r %4r %4r %6r\n", addr, nbif.zn_num, ioms.zio_num,
+	    ioms.zio_pci_busno, nbif.zn_nfuncs);
+
+	return (WALK_NEXT);
+}
+
+void
+fabric_nbif_dcmd_help(void)
+{
+	fabric_table_help("nBIFs",
+	    "\t-n num\tonly show nBIFs with the specified number within their\n"
+	    "\t\tIOMS.\n"
+	    "\t-b bus\tonly show nBIFs on the specified PCI bus.\n",
+	    NULL, 0);
+}
+
+int
+fabric_nbif_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	fabric_nbif_data_t data = {
+		.fnb_flags = flags,
+		.fnb_num = UINT64_MAX,
+		.fnb_pcibus = UINT64_MAX
+	};
+
+	if (mdb_getopts(argc, argv,
+	    'n', MDB_OPT_UINT64, &data.fnb_num,
+	    'b', MDB_OPT_UINT64, &data.fnb_pcibus,
+	    NULL) != argc) {
+		return (DCMD_USAGE);
+	}
+
+	if (!fabric_table_init())
+		return (DCMD_ERR);
+
+	if (!(flags & DCMD_PIPE_OUT) && DCMD_HDRSPEC(flags)) {
+		mdb_printf("%<u>%?s %4s %4s %4s %6s%</u>\n",
+		    "ADDR", "NUM", "IOMS", "BUS", "NFUNCS");
+	}
+
+	if (mdb_pwalk("nbif", i_nbif, &data,
+	    (flags & DCMD_ADDRSPEC) ? addr : 0) == -1) {
+		return (DCMD_ERR);
+	}
+
+	return (DCMD_OK);
+}
+
+typedef struct {
+	uint_t			fnf_flags;
+	uint64_t		fnf_num;
+	uint64_t		fnf_pcibus;
+	const char		*fnf_type;
+	fabric_flag_filter_t	fnf_ff;
+} fabric_nbif_func_data_t;
+
+static int
+i_nbif_func(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_nbif_func_data_t *data = cb_data;
+	mdb_zen_nbif_func_t func;
+	mdb_zen_nbif_t nbif;
+	mdb_zen_ioms_t ioms;
+	char devfn[8], fstr[64];
+	const char *tn;
+	uint32_t type, flags;
+
+	if (mdb_ctf_vread(&func, "zen_nbif_func_t", "mdb_zen_nbif_func_t",
+	    addr, MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&nbif, "zen_nbif_t", "mdb_zen_nbif_t", func.znf_nbif,
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ioms, "zen_ioms_t", "mdb_zen_ioms_t", nbif.zn_ioms,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read nBIF function at %p\n", addr);
+		return (WALK_NEXT);
+	}
+	type = fabric_enum_read(addr, fabric_layout.fl_func_type_off);
+	flags = fabric_enum_read(addr, fabric_layout.fl_func_flags_off);
+	tn = fabric_enum_short(fabric_layout.fl_nbif_type, type,
+	    "ZEN_NBIF_T_", sizeof ("ZEN_NBIF_T_") - 1);
+
+	if (!fabric_match(data->fnf_num, func.znf_num) ||
+	    !fabric_match(data->fnf_pcibus, ioms.zio_pci_busno) ||
+	    (data->fnf_type != NULL && strcasecmp(data->fnf_type, tn) != 0) ||
+	    !fabric_flag_match(&data->fnf_ff, flags)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fnf_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	(void) mdb_snprintf(devfn, sizeof (devfn), "%r/%r", func.znf_dev,
+	    func.znf_func);
+	mdb_printf("%?p %4r %4r %4r %-6s %-8s %s\n", addr, nbif.zn_num,
+	    ioms.zio_pci_busno, func.znf_num, devfn, tn,
+	    fabric_flag_str(fstr, sizeof (fstr), flags, fabric_nbif_flags));
+
+	return (WALK_NEXT);
+}
+
+void
+fabric_nbif_func_dcmd_help(void)
+{
+	fabric_table_help("nBIF functions",
+	    "\t-n num\tonly show functions with the specified number within\n"
+	    "\t\ttheir nBIF.\n"
+	    "\t-b bus\tonly show functions on the specified PCI bus.\n"
+	    "\t-t type\tonly show functions of the specified type, as\n"
+	    "\t\tshown in the TYPE column.\n",
+	    fabric_nbif_flag_defs, ARRAY_SIZE(fabric_nbif_flag_defs));
+}
+
+int
+fabric_nbif_func_dcmd(uintptr_t addr, uint_t flags, int argc,
+    const mdb_arg_t *argv)
+{
+	fabric_nbif_func_data_t data = {
+		.fnf_flags = flags,
+		.fnf_num = UINT64_MAX,
+		.fnf_pcibus = UINT64_MAX
+	};
+	const char *req = NULL, *excl = NULL;
+
+	if (mdb_getopts(argc, argv,
+	    'n', MDB_OPT_UINT64, &data.fnf_num,
+	    'b', MDB_OPT_UINT64, &data.fnf_pcibus,
+	    't', MDB_OPT_STR, &data.fnf_type,
+	    'f', MDB_OPT_STR, &req,
+	    'x', MDB_OPT_STR, &excl,
+	    NULL) != argc) {
+		return (DCMD_USAGE);
+	}
+
+	if (!fabric_table_init() ||
+	    !fabric_flag_filter_init(&data.fnf_ff, req, excl,
+	    fabric_nbif_flags)) {
+		return (DCMD_ERR);
+	}
+
+	if (!(flags & DCMD_PIPE_OUT) && DCMD_HDRSPEC(flags)) {
+		mdb_printf("%<u>%?s %4s %4s %4s %-6s %-8s %s%</u>\n",
+		    "ADDR", "NBIF", "BUS", "NUM", "DEV/FN", "TYPE", "FLAGS");
+	}
+
+	if (mdb_pwalk("nbif_func", i_nbif_func, &data,
+	    (flags & DCMD_ADDRSPEC) ? addr : 0) == -1) {
+		return (DCMD_ERR);
+	}
+
+	return (DCMD_OK);
+}
+
+/*
+ * The CPU side of the tree. At each level the kernel records two numbers for
+ * a node. The logical number counts the enabled nodes within the parent from
+ * 0 in hardware order, so it is always dense. The physical number is the
+ * hardware's own index for the node and is sparse when some are disabled. A
+ * CCX with cores 2 and 3 fused off has cores with physical numbers 0, 1, 4
+ * and 5 but logical numbers 0 to 3. The NUM column shows the logical number
+ * and PHYS, where present, the physical one.
+ */
+typedef struct {
+	uint_t		fcp_flags;
+	uint64_t	fcp_num;
+	uint64_t	fcp_phys;
+	uint64_t	fcp_apicid;
+} fabric_cpu_data_t;
+
+static int
+i_ccd(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_cpu_data_t *data = cb_data;
+	mdb_zen_ccd_t ccd;
+
+	if (mdb_ctf_vread(&ccd, "zen_ccd_t", "mdb_zen_ccd_t", addr,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read CCD at %p\n", addr);
+		return (WALK_NEXT);
+	}
+
+	if (!fabric_match(data->fcp_num, ccd.zcd_logical_dieno) ||
+	    !fabric_match(data->fcp_phys, ccd.zcd_physical_dieno)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fcp_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	mdb_printf("%?p %4r %4r %5r\n", addr, ccd.zcd_logical_dieno,
+	    ccd.zcd_physical_dieno, ccd.zcd_nccxs);
+
+	return (WALK_NEXT);
+}
+
+static int
+i_ccx(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_cpu_data_t *data = cb_data;
+	mdb_zen_ccx_t ccx;
+	mdb_zen_ccd_t ccd;
+
+	if (mdb_ctf_vread(&ccx, "zen_ccx_t", "mdb_zen_ccx_t", addr,
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ccd, "zen_ccd_t", "mdb_zen_ccd_t", ccx.zcx_ccd,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read CCX at %p\n", addr);
+		return (WALK_NEXT);
+	}
+
+	if (!fabric_match(data->fcp_num, ccx.zcx_logical_cxno) ||
+	    !fabric_match(data->fcp_phys, ccx.zcx_physical_cxno)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fcp_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	mdb_printf("%?p %4r %4r %4r %6r\n", addr, ccd.zcd_logical_dieno,
+	    ccx.zcx_logical_cxno, ccx.zcx_physical_cxno, ccx.zcx_ncores);
+
+	return (WALK_NEXT);
+}
+
+/*
+ * Describe the APIC IDs of a core's threads as a range, or a single value when
+ * there is only one thread.
+ */
+static const char *
+fabric_core_apicids(uintptr_t addr, const mdb_zen_core_t *core, char *buf,
+    size_t len)
+{
+	mdb_zen_thread_t first, last;
+
+	if (core->zc_nthreads == 0 ||
+	    mdb_ctf_vread(&first, "zen_thread_t", "mdb_zen_thread_t",
+	    fabric_elem(addr, &fabric_layout.fl_threads, 0),
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&last, "zen_thread_t", "mdb_zen_thread_t",
+	    fabric_elem(addr, &fabric_layout.fl_threads, core->zc_nthreads - 1),
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		return ("-");
+	}
+	if (core->zc_nthreads == 1) {
+		(void) mdb_snprintf(buf, len, "%r", first.zt_apicid);
+	} else {
+		(void) mdb_snprintf(buf, len, "%r-%r", first.zt_apicid,
+		    last.zt_apicid);
+	}
+	return (buf);
+}
+
+static int
+i_zen_core(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_cpu_data_t *data = cb_data;
+	mdb_zen_core_t core;
+	mdb_zen_ccx_t ccx;
+	mdb_zen_ccd_t ccd;
+	char apicids[24];
+
+	if (mdb_ctf_vread(&core, "zen_core_t", "mdb_zen_core_t", addr,
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ccx, "zen_ccx_t", "mdb_zen_ccx_t", core.zc_ccx,
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ccd, "zen_ccd_t", "mdb_zen_ccd_t", ccx.zcx_ccd,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read core at %p\n", addr);
+		return (WALK_NEXT);
+	}
+
+	if (!fabric_match(data->fcp_num, core.zc_logical_coreno) ||
+	    !fabric_match(data->fcp_phys, core.zc_physical_coreno)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fcp_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	mdb_printf("%?p %4r %4r %4r %4r %8r %s\n", addr, ccd.zcd_logical_dieno,
+	    ccx.zcx_logical_cxno, core.zc_logical_coreno,
+	    core.zc_physical_coreno, core.zc_nthreads,
+	    fabric_core_apicids(addr, &core, apicids, sizeof (apicids)));
+
+	return (WALK_NEXT);
+}
+
+static int
+i_zen_thread(uintptr_t addr, const void *arg __unused, void *cb_data)
+{
+	fabric_cpu_data_t *data = cb_data;
+	mdb_zen_thread_t thread;
+	mdb_zen_core_t core;
+	mdb_zen_ccx_t ccx;
+	mdb_zen_ccd_t ccd;
+
+	if (mdb_ctf_vread(&thread, "zen_thread_t", "mdb_zen_thread_t", addr,
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&core, "zen_core_t", "mdb_zen_core_t",
+	    thread.zt_core, MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ccx, "zen_ccx_t", "mdb_zen_ccx_t", core.zc_ccx,
+	    MDB_CTF_VREAD_QUIET) != 0 ||
+	    mdb_ctf_vread(&ccd, "zen_ccd_t", "mdb_zen_ccd_t", ccx.zcx_ccd,
+	    MDB_CTF_VREAD_QUIET) != 0) {
+		mdb_warn("failed to read thread at %p\n", addr);
+		return (WALK_NEXT);
+	}
+
+	if (!fabric_match(data->fcp_num, thread.zt_threadno) ||
+	    !fabric_match(data->fcp_apicid, thread.zt_apicid)) {
+		return (WALK_NEXT);
+	}
+
+	if (data->fcp_flags & DCMD_PIPE_OUT) {
+		mdb_printf("%lr\n", addr);
+		return (WALK_NEXT);
+	}
+
+	mdb_printf("%?p %4r %4r %4r %4r %6r\n", addr, ccd.zcd_logical_dieno,
+	    ccx.zcx_logical_cxno, core.zc_logical_coreno, thread.zt_threadno,
+	    thread.zt_apicid);
+
+	return (WALK_NEXT);
+}
+
+/*
+ * The four CPU-side dcmds share their option handling, differing only in the
+ * walker, the callback and the table header.
+ */
+static int
+fabric_cpu_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv,
+    const char *walker, mdb_walk_cb_t cb, const char *hdr)
+{
+	fabric_cpu_data_t data = {
+		.fcp_flags = flags,
+		.fcp_num = UINT64_MAX,
+		.fcp_phys = UINT64_MAX,
+		.fcp_apicid = UINT64_MAX
+	};
+
+	if (mdb_getopts(argc, argv,
+	    'n', MDB_OPT_UINT64, &data.fcp_num,
+	    'p', MDB_OPT_UINT64, &data.fcp_phys,
+	    'a', MDB_OPT_UINT64, &data.fcp_apicid,
+	    NULL) != argc) {
+		return (DCMD_USAGE);
+	}
+
+	if (!fabric_table_init())
+		return (DCMD_ERR);
+
+	if (!(flags & DCMD_PIPE_OUT) && DCMD_HDRSPEC(flags))
+		mdb_printf("%<u>%?s%s%</u>\n", "ADDR", hdr);
+
+	if (mdb_pwalk(walker, cb, &data,
+	    (flags & DCMD_ADDRSPEC) ? addr : 0) == -1) {
+		return (DCMD_ERR);
+	}
+
+	return (DCMD_OK);
+}
+
+void
+fabric_ccd_dcmd_help(void)
+{
+	fabric_table_help("CCDs",
+	    "\t-n num\tonly show the CCD with the specified logical number.\n"
+	    "\t-p num\tonly show the CCD with the specified physical number.\n",
+	    NULL, 0);
+}
+
+int
+fabric_ccd_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	return (fabric_cpu_dcmd(addr, flags, argc, argv, "ccd", i_ccd,
+	    "  NUM PHYS NCCXS"));
+}
+
+void
+fabric_ccx_dcmd_help(void)
+{
+	fabric_table_help("CCXs",
+	    "\t-n num\tonly show CCXs with the specified logical number\n"
+	    "\t\twithin their CCD.\n"
+	    "\t-p num\tonly show CCXs with the specified physical number.\n",
+	    NULL, 0);
+}
+
+int
+fabric_ccx_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	return (fabric_cpu_dcmd(addr, flags, argc, argv, "ccx", i_ccx,
+	    "  CCD  NUM PHYS NCORES"));
+}
+
+void
+fabric_core_dcmd_help(void)
+{
+	fabric_table_help("CPU cores",
+	    "\t-n num\tonly show cores with the specified logical number\n"
+	    "\t\twithin their CCX.\n"
+	    "\t-p num\tonly show cores with the specified physical number.\n",
+	    NULL, 0);
+}
+
+int
+fabric_core_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
+{
+	return (fabric_cpu_dcmd(addr, flags, argc, argv, "zen_core",
+	    i_zen_core, "  CCD  CCX  NUM PHYS NTHREADS APICIDS"));
+}
+
+void
+fabric_thread_dcmd_help(void)
+{
+	fabric_table_help("CPU threads",
+	    "\t-n num\tonly show threads with the specified number within\n"
+	    "\t\ttheir core.\n"
+	    "\t-a id\tonly show the thread with the specified APIC ID.\n",
+	    NULL, 0);
+}
+
+int
+fabric_thread_dcmd(uintptr_t addr, uint_t flags, int argc,
+    const mdb_arg_t *argv)
+{
+	return (fabric_cpu_dcmd(addr, flags, argc, argv, "zen_thread",
+	    i_zen_thread, "  CCD  CCX CORE  NUM APICID"));
 }
 
 /*
