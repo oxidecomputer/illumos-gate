@@ -2275,7 +2275,16 @@ nvme_check_generic_cmd_status(nvme_cmd_t *cmd)
 		return (0);
 
 	/*
-	 * Errors indicating a bug in the driver should cause a panic.
+	 * Errors indicating a bug in the driver should cause a panic. That
+	 * only holds for commands that the driver originates itself, though.
+	 * A namespace that blkdev has open may be detached or deleted by
+	 * another host at any time, and the controller is then required to
+	 * fail both outstanding and subsequent commands to that NSID as though
+	 * it were inactive: "invalid field in command" for an inactive NSID,
+	 * "invalid namespace or format" for one that is no longer valid at all
+	 * (NVMe 1.4 sections 6.1.5 and 8.12). On the blkdev I/O path
+	 * (nc_xfer != NULL) those two are an operational error, so we fail just
+	 * the individual transfer instead of bringing the system down.
 	 */
 	case NVME_CQE_SC_GEN_INV_OPC:
 		/* Invalid Command Opcode */
@@ -2290,7 +2299,9 @@ nvme_check_generic_cmd_status(nvme_cmd_t *cmd)
 	case NVME_CQE_SC_GEN_INV_FLD:
 		/* Invalid Field in Command */
 		NVME_BUMP_STAT(cmd->nc_nvme, inv_field_err);
-		if ((cmd->nc_flags & NVME_CMD_F_DONTPANIC) == 0) {
+		if (cmd->nc_xfer != NULL) {
+			bd_error(cmd->nc_xfer, BD_ERR_ILLRQ);
+		} else if ((cmd->nc_flags & NVME_CMD_F_DONTPANIC) == 0) {
 			dev_err(cmd->nc_nvme->n_dip, CE_PANIC,
 			    "programming error: invalid field in cmd %p",
 			    (void *)cmd);
@@ -2306,7 +2317,9 @@ nvme_check_generic_cmd_status(nvme_cmd_t *cmd)
 	case NVME_CQE_SC_GEN_INV_NS:
 		/* Invalid Namespace or Format */
 		NVME_BUMP_STAT(cmd->nc_nvme, inv_nsfmt_err);
-		if ((cmd->nc_flags & NVME_CMD_F_DONTPANIC) == 0) {
+		if (cmd->nc_xfer != NULL) {
+			bd_error(cmd->nc_xfer, BD_ERR_ILLRQ);
+		} else if ((cmd->nc_flags & NVME_CMD_F_DONTPANIC) == 0) {
 			dev_err(cmd->nc_nvme->n_dip, CE_PANIC,
 			    "programming error: invalid NS/format in cmd %p",
 			    (void *)cmd);
