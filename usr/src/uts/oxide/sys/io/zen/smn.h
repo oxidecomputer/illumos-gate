@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_SMN_H
@@ -33,6 +33,27 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+/*
+ * The common amdzen(4D) nexus driver and its children laid claim to SMN
+ * index/data pair 0.  Thus, Oxide machdep code uses SMN index/data pair 1 (OEM)
+ * in non-NMI/kmdb contexts instead.
+ */
+#define	ZEN_NB_SMN_INDEX	IOHC_NB_SMN_INDEX_1
+#define	ZEN_NB_SMN_DATA		IOHC_NB_SMN_DATA_1
+/*
+ * The NMI handler (which can interrupt us right in the middle of an SMN
+ * operation) needs to perform SMN accesses itself.  To prevent such races,
+ * we designate SMN index/data pair 2 (BIOS) for the NMI handler.
+ */
+#define	ZEN_NB_SMN_INDEX_NMI	IOHC_NB_SMN_INDEX_2
+#define	ZEN_NB_SMN_DATA_NMI	IOHC_NB_SMN_DATA_2
+/*
+ * Similarly, KMDB may be entered at any point and it too may initiate SMN
+ * accesses.  So it gets SMN index/data pair 6 (Reserved).
+ */
+#define	ZEN_NB_SMN_INDEX_KMDB	IOHC_NB_SMN_INDEX_6
+#define	ZEN_NB_SMN_DATA_KMDB	IOHC_NB_SMN_DATA_6
 
 /*
  * The implementation of these types is exposed to implementers but not to

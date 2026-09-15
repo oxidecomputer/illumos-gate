@@ -2189,11 +2189,7 @@ turin_iohc_enable_nmi(zen_ioms_t *ioms)
 	/*
 	 * Once we enable this, we can immediately take an NMI if it's
 	 * currently asserted.  We want to do this last and clear out of here
-	 * as quickly as possible:  this is all a bit dodgy, but the NMI
-	 * handler itself needs to issue an SMN write to indicate EOI -- and
-	 * if it finds that SMN-related locks are held, we will panic.  To
-	 * reduce the likelihood of that, we are going to enable NMI and
-	 * skedaddle...
+	 * as quickly as possible.
 	 */
 	reg = turin_ioms_reg(ioms,
 	    ioms->zio_iohctype == ZEN_IOHCT_LARGE ?

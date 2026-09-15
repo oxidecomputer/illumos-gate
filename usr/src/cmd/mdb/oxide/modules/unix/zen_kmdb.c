@@ -31,6 +31,7 @@
 #include <sys/amdzen/umc.h>
 #include <io/amdzen/amdzen.h>
 #include <sys/io/zen/mpio.h>
+#include <sys/io/zen/smn.h>
 
 #include "unix.h"
 #include "zen_kmdb_impl.h"
@@ -896,7 +897,7 @@ smn_rw_reg(const smn_reg_t reg, uint8_t sock, smn_rw_t rw,
 		}
 
 		if (!pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
-		    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_ADDR,
+		    AMDZEN_NB_SMN_FUNCNO, ZEN_NB_SMN_INDEX_KMDB,
 		    sizeof (base_addr), base_addr)) {
 			mdb_warn(
 			    "failed to write to IOHC SMN address register\n");
@@ -906,12 +907,14 @@ smn_rw_reg(const smn_reg_t reg, uint8_t sock, smn_rw_t rw,
 		switch (rw) {
 		case SMN_RD:
 			res = pcicfg_read(smn_busno, AMDZEN_NB_SMN_DEVNO,
-			    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
+			    AMDZEN_NB_SMN_FUNCNO,
+			    ZEN_NB_SMN_DATA_KMDB + addr_off,
 			    SMN_REG_SIZE(reg), smn_val);
 			break;
 		case SMN_WR:
 			res = pcicfg_write(smn_busno, AMDZEN_NB_SMN_DEVNO,
-			    AMDZEN_NB_SMN_FUNCNO, AMDZEN_NB_SMN_DATA + addr_off,
+			    AMDZEN_NB_SMN_FUNCNO,
+			    ZEN_NB_SMN_DATA_KMDB + addr_off,
 			    SMN_REG_SIZE(reg), *smn_val);
 			break;
 		default:

@@ -1127,6 +1127,9 @@ fcnname##_info:							\
  */
 	MODULE(apix,mach);
 	WSTUB(apix, apix_loaded, nomod_zero);
+#ifdef	oxide
+	NO_UNLOAD_WSTUB(apix, apix_nmi_in_progress, nomod_zero);
+#endif
 	END_MODULE(apix);
 
 /*

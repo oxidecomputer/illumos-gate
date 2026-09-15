@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_AMDZEN_SMN_H
@@ -346,6 +346,59 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*
+ * Indirect SMN access is performed via index/data register pairs of which there
+ * are 7 in the IOHC's config space (device 0, function 0).  In addition to
+ * the index register which allows specifying a 32-bit SMN register address,
+ * there is also an index extension register (for some index/data pairs) for
+ * specifying a set number of higher-order address bits.  The offsets and PPR
+ * assigned mapping are listed below.
+ */
+/*
+ * IOHC::NB_SMN_INDEX[_EXTENSION]_0 / IOHC::NB_SMN_DATA_0: Software application
+ */
+#define	IOHC_NB_SMN_INDEX_EXT_0	0x5C
+#define	IOHC_NB_SMN_INDEX_0	0x60
+#define	IOHC_NB_SMN_DATA_0	0x64
+/*
+ * IOHC::NB_SMN_INDEX[_EXTENSION]_1 / IOHC::NB_SMN_DATA_1: Reserved for OEM
+ */
+#define	IOHC_NB_SMN_INDEX_EXT_1	0x9C
+#define	IOHC_NB_SMN_INDEX_1	0xA0
+#define	IOHC_NB_SMN_DATA_1	0xA4
+/*
+ * IOHC::NB_SMN_INDEX[_EXTENSION]_2 / IOHC::NB_SMN_DATA_2: BIOS (existing usage)
+ */
+#define	IOHC_NB_SMN_INDEX_EXT_2	0xB4
+#define	IOHC_NB_SMN_INDEX_2	0xB8
+#define	IOHC_NB_SMN_DATA_2	0xBC
+/*
+ * IOHC::NB_SMN_INDEX[_EXTENSION]_3 / IOHC::NB_SMN_DATA_3: HSMP
+ */
+#define	IOHC_NB_SMN_INDEX_EXT_3	0xC0
+#define	IOHC_NB_SMN_INDEX_3	0xC4
+#define	IOHC_NB_SMN_DATA_3	0xC8
+/*
+ * IOHC::NB_SMN_INDEX[_EXTENSION]_4 / IOHC::NB_SMN_DATA_4: MCA validation
+ * diagnostic tool
+ */
+#define	IOHC_NB_SMN_INDEX_EXT_4	0xCC
+#define	IOHC_NB_SMN_INDEX_4	0xD0
+#define	IOHC_NB_SMN_DATA_4	0xD4
+/*
+ * IOHC::NB_SMN_INDEX[_EXTENSION]_5 / IOHC::NB_SMN_DATA_5: DFX, HDT, AVT
+ */
+#define	IOHC_NB_SMN_INDEX_EXT_5	0xDC
+#define	IOHC_NB_SMN_INDEX_5	0xE0
+#define	IOHC_NB_SMN_DATA_5	0xE4
+/*
+ * IOHC::NB_SMN_INDEX_6 / IOHC::NB_SMN_DATA_6: Reserved
+ *
+ * Note there is no corresponding index extension register for this pair.
+ */
+#define	IOHC_NB_SMN_INDEX_6	0xF8
+#define	IOHC_NB_SMN_DATA_6	0xFC
 
 #define	SMN_APERTURE_MASK	0xfff00000
 

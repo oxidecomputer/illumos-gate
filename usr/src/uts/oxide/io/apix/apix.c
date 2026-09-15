@@ -2335,3 +2335,9 @@ apix_loaded(void)
 {
 	return (1);
 }
+
+int
+apix_nmi_in_progress(void)
+{
+	return (apic_nmi_cpu == CPU->cpu_id);
+}

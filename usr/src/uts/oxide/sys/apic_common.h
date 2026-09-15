@@ -146,8 +146,12 @@ extern int	apic_num_cksum_errors;
 
 extern int	apic_error;
 
+extern int	apix_nmi_in_progress(void);
+
 /* use to make sure only one cpu handles the nmi */
-extern lock_t	apic_nmi_lock;
+extern lock_t		apic_nmi_lock;
+/* CPU currently handling the NMI */
+extern processorid_t	apic_nmi_cpu;
 /* use to make sure only one cpu handles the error interrupt */
 extern lock_t	apic_error_lock;
 

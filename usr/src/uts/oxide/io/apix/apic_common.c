@@ -190,7 +190,9 @@ int		apic_num_cksum_errors = 0;
 int	apic_error = 0;
 
 /* use to make sure only one cpu handles the nmi */
-lock_t	apic_nmi_lock;
+lock_t		apic_nmi_lock;
+/* CPU currently handling the NMI */
+processorid_t	apic_nmi_cpu = -1;
 /* use to make sure only one cpu handles the error interrupt */
 lock_t	apic_error_lock;
 
@@ -1343,6 +1345,7 @@ apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
 	if (!lock_try(&apic_nmi_lock))
 		return (DDI_INTR_CLAIMED);
 	apic_num_nmis++;
+	apic_nmi_cpu = CPU->cpu_id;
 
 	/*
 	 * The SMI handler (see ml/smintr.s) issues a self-IPI with DM=NMI after
@@ -1399,6 +1402,7 @@ apic_nmi_intr(caddr_t arg __unused, caddr_t arg1 __unused)
 	 */
 	zen_fabric_nmi_eoi();
 
+	apic_nmi_cpu = -1;
 	lock_clear(&apic_nmi_lock);
 	return (DDI_INTR_CLAIMED);
 }

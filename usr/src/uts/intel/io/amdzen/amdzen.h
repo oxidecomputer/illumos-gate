@@ -24,6 +24,7 @@
 #include <sys/bitmap.h>
 #include <sys/x86_archext.h>
 #include <sys/amdzen/df.h>
+#include <sys/amdzen/smn.h>
 
 #include "amdzen_client.h"
 
@@ -60,8 +61,8 @@ extern "C" {
  */
 #define	AMDZEN_NB_SMN_DEVNO	0x00
 #define	AMDZEN_NB_SMN_FUNCNO	0x00
-#define	AMDZEN_NB_SMN_ADDR	0x60
-#define	AMDZEN_NB_SMN_DATA	0x64
+#define	AMDZEN_NB_SMN_ADDR	IOHC_NB_SMN_INDEX_0
+#define	AMDZEN_NB_SMN_DATA	IOHC_NB_SMN_DATA_0
 
 /*
  * AMD PCI ID for reference
