@@ -56,7 +56,7 @@ static inline smn_reg_t
 milan_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno)
 {
-	const uint32_t PCIE_CORE_SMN_REG_MASK = 0x7ffff;
+	const uint32_t PCIE_CORE_SMN_REG_MASK __maybe_unused = 0x7ffff;
 	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t core32 = (const uint32_t)coreno;
 
@@ -65,7 +65,7 @@ milan_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	 * defined in milan/fabric_impl.h, which we can't include here, so we
 	 * use local constants.
 	 */
-	const uint32_t iohc_per_iodie = 4;
+	const uint32_t iohc_per_iodie __maybe_unused = 4;
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_CORE);
@@ -94,7 +94,7 @@ static inline smn_reg_t
 milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno, const uint8_t portno)
 {
-	const uint32_t PCIE_PORT_SMN_REG_MASK = 0xfff;
+	const uint32_t PCIE_PORT_SMN_REG_MASK __maybe_unused = 0xfff;
 	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t core32 = (const uint32_t)coreno;
 	const uint32_t port32 = (const uint32_t)portno;
@@ -103,7 +103,7 @@ milan_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	 * defined in milan/fabric_impl.h, which we can't include here, so we
 	 * use local constants.
 	 */
-	const uint32_t iohc_per_iodie = 4;
+	const uint32_t iohc_per_iodie __maybe_unused = 4;
 
 	ASSERT0(def.srd_size);
 	ASSERT3S(def.srd_unit, ==, SMN_UNIT_PCIE_PORT);

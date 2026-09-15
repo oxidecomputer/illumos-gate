@@ -69,7 +69,7 @@ static inline smn_reg_t
 genoa_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno)
 {
-	const uint32_t PCIE_CORE_SMN_REG_MASK = 0x7ffff;
+	const uint32_t PCIE_CORE_SMN_REG_MASK __maybe_unused = 0x7ffff;
 	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t core32 = (const uint32_t)coreno;
 	const uint32_t size32 = (def.srd_size == 0) ? 4 :
@@ -102,7 +102,7 @@ static inline smn_reg_t
 genoa_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno, const uint8_t portno)
 {
-	const uint32_t PCIE_PORT_SMN_REG_MASK = 0xfff;
+	const uint32_t PCIE_PORT_SMN_REG_MASK __maybe_unused = 0xfff;
 	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t core32 = (const uint32_t)coreno;
 	const uint32_t port32 = (const uint32_t)portno;

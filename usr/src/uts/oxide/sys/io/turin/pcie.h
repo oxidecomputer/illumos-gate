@@ -68,7 +68,7 @@ static inline smn_reg_t
 turin_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno)
 {
-	const uint32_t PCIE_CORE_SMN_REG_MASK = 0x7ffff;
+	const uint32_t PCIE_CORE_SMN_REG_MASK __maybe_unused = 0x7ffff;
 	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t size32 = (def.srd_size == 0) ? 4 :
 	    (const uint32_t)def.srd_size;
@@ -81,7 +81,7 @@ turin_pcie_core_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	 * constants.
 	 */
 	const uint32_t iohc_bonus_pcie_coreno = 1;
-	const uint32_t nbio_bonus_iohc = 1;
+	const uint32_t nbio_bonus_iohc __maybe_unused = 1;
 
 	/*
 	 * The instance number is usually the IOHC number, as above, but note
@@ -116,7 +116,7 @@ static inline smn_reg_t
 turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
     const uint8_t coreno, const uint8_t portno)
 {
-	const uint32_t PCIE_PORT_SMN_REG_MASK = 0xfff;
+	const uint32_t PCIE_PORT_SMN_REG_MASK __maybe_unused = 0xfff;
 	const uint32_t iohc32 = (const uint32_t)iohcno;
 	const uint32_t port32 = (const uint32_t)portno;
 	const uint32_t size32 = (def.srd_size == 0) ? 4 :
@@ -130,7 +130,7 @@ turin_pcie_port_smn_reg(const uint8_t iohcno, const smn_reg_def_t def,
 	 * constants.
 	 */
 	const uint32_t iohc_bonus_pcie_coreno = 1;
-	const uint32_t nbio_bonus_iohc = 1;
+	const uint32_t nbio_bonus_iohc __maybe_unused = 1;
 
 	/*
 	 * The instance number is usually the IOHC number, as above, but note
