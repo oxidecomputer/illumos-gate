@@ -1,0 +1,158 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVI_CONFIG 9F
+.Os
+.Sh NAME
+.Nm ndi_devi_config ,
+.Nm ndi_devi_config_driver ,
+.Nm ndi_devi_config_one ,
+.Nm ndi_devi_unconfig ,
+.Nm e_ddi_devi_unconfig ,
+.Nm ndi_devi_unconfig_one ,
+.Nm ndi_devi_unconfig_driver
+.Nd configure and unconfigure the children of a nexus
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_devi_config
+.Fa "dev_info_t *dip"
+.Fa "int flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_config_driver
+.Fa "dev_info_t *dip"
+.Fa "int flags"
+.Fa "major_t major"
+.Fc
+.Ft "int"
+.Fo ndi_devi_config_one
+.Fa "dev_info_t *dip"
+.Fa "char *devnm"
+.Fa "dev_info_t **dipp"
+.Fa "int flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_unconfig
+.Fa "dev_info_t *dip"
+.Fa "int flags"
+.Fc
+.Ft "int"
+.Fo e_ddi_devi_unconfig
+.Fa "dev_info_t *dip"
+.Fa "dev_info_t **dipp"
+.Fa "int flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_unconfig_one
+.Fa "dev_info_t *dip"
+.Fa "char *devnm"
+.Fa "dev_info_t **dipp"
+.Fa "int flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_unconfig_driver
+.Fa "dev_info_t *dip"
+.Fa "int flags"
+.Fa "major_t major"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Parent nexus whose children are operated on.
+.It Va flags
+Operation flags described below.
+.It Va major
+Driver major number; use a valid bound driver number.
+.It Va devnm
+Null-terminated child name, normally in \fBname@address\fP form, relative
+to the parent.
+.It Va dipp
+Child output for configuration, or optional failure-node output for
+unconfiguration.
+It is required for \fBndi_devi_config_one()\fP.
+.El
+.Sh DESCRIPTION
+These functions drive configuration through a nexus driver's \fBbus_config\fP
+or \fBbus_unconfig\fP entry point, using framework defaults when no suitable
+entry point exists.
+Configuration and the single-child unconfiguration interface require an
+attached parent nexus.
+Bulk unconfiguration can also remove children of a detached nexus through
+the framework defaults.
+.Pp
+\fBndi_devi_config()\fP configures children of \fBdip\fP.
+\fBndi_devi_config_driver()\fP selects the driver identified by \fBmajor\fP;
+recursive configuration can also attach intermediate nexus nodes needed to
+reach that driver's devices.
+\fBndi_devi_config_one()\fP enumerates and attaches the child named by \fBdevnm\fP
+and returns a held node in \fB*dipp\fP.
+Release any returned node with \fBndi_rele_devi()\fP.
+Initialize the output to \fBNULL\fP and check it even on failure: a child can be
+returned when its attachment succeeded but recursive configuration failed.
+.Pp
+\fBndi_devi_unconfig()\fP unconfigures children of \fBdip\fP.
+\fBndi_devi_unconfig_driver()\fP restricts the operation by driver major number.
+\fBndi_devi_unconfig_one()\fP unconfigures the named child's descendants and then
+the child itself; an absent child is treated as already unconfigured.
+\fBe_ddi_devi_unconfig()\fP additionally accepts a failure-node output.
+For these unconfiguration functions, a non-null \fBdipp\fP requests a held node
+at which unconfiguration failed, when one is available.
+Initialize \fB*dipp\fP to \fBNULL\fP before the call and release a non-null result with
+\fBndi_rele_devi()\fP.
+Unconfiguration can make partial progress before returning a failure.
+.Pp
+Common operation flags are:
+.Bl -tag -width Ds
+.It Dv NDI_CONFIG
+Recursively configure descendants of nexus children.
+.It Dv NDI_UNCONFIG
+Unconfigure children back to the uninitialized state, releasing
+resources acquired during child initialization.
+.It Dv NDI_DEVI_REMOVE
+Remove device nodes after unconfiguration.
+.It Dv NDI_DEVI_ONLINE
+Allow configuration to bring an explicitly offlined device online.
+.It Dv NDI_DEVI_OFFLINE
+Mark a detached device offline to prevent deferred attachment.
+.It Dv NDI_NO_EVENT
+Suppress device add/remove event generation.
+.It Dv NDI_DEVI_DEBUG
+Enable diagnostic messages for the operation.
+.It Dv NDI_MTC_OFF
+Disable multithreaded descendant configuration or unconfiguration.
+.El
+.Pp
+\fBNDI_ONLINE_ATTACH\fP is retained for callers that request online attachment;
+the current configuration paths attempt attachment without requiring this bit.
+Other flags in the header serve internal framework paths and are not general
+options for nexus drivers.
+The functions manage device-tree locking, but callers must keep the input
+node valid and respect ancestor-before-descendant lock ordering.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+These functions return \fBNDI_SUCCESS\fP on success and an NDI failure
+status otherwise.
+Bulk configuration can succeed even if individual children do not attach
+or descendant configuration fails: the default implementation attempts
+available children without propagating every failure.
+A successful call does not provide an atomic snapshot of the device tree.
+.Sh SEE ALSO
+.Xr ndi_busop_bus_config 9F ,
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_devi_online 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr sunndi 9F

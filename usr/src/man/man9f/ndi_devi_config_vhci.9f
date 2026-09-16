@@ -1,0 +1,57 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVI_CONFIG_VHCI 9F
+.Os
+.Sh NAME
+.Nm ndi_devi_config_vhci
+.Nd create and attach a virtual host controller node
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "dev_info_t *"
+.Fo ndi_devi_config_vhci
+.Fa "char *drvname"
+.Fa "int flags"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va drvname
+Null-terminated name of the virtual HCI driver.
+.It Va flags
+Reserved; pass zero.
+.El
+.Sh DESCRIPTION
+\fBndi_devi_config_vhci()\fP obtains the virtual host controller node for
+\fBdrvname\fP.
+If the driver's device list already has a node, that node is returned.
+Otherwise the function allocates a persistent node under the root nexus,
+marks it as a virtual HCI, initializes and attaches it, and links it into the
+tree.
+This is an internal multipathing enumeration helper used to avoid ordinary
+cross-subtree enumeration during module initialization or attachment.
+It is not a general-purpose child-node constructor.
+.Pp
+The framework retains the created node and driver.
+The returned pointer does not carry a new reference for the caller to release.
+The \fBflags\fP argument is unused; pass zero.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+The function returns the virtual HCI node, or \fBNULL\fP if the driver
+name is unknown or initialization or attachment fails.
+.Sh SEE ALSO
+.Xr ndi_devi_alloc 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr sunndi 9F

@@ -1,0 +1,124 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_HP_REGISTER 9F
+.Os
+.Sh NAME
+.Nm ndi_hp_register ,
+.Nm ndi_hp_unregister ,
+.Nm ndi_hp_state_change_req ,
+.Nm ndi_hp_walk_cn
+.Nd register and manage hotplug connections
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.In sys/ddi_hp.h
+.In sys/ddi_hp_impl.h
+.Ft "int"
+.Fo ndi_hp_register
+.Fa "dev_info_t *dip"
+.Fa "ddi_hp_cn_info_t *info_p"
+.Fc
+.Ft "int"
+.Fo ndi_hp_unregister
+.Fa "dev_info_t *dip"
+.Fa "char *cn_name"
+.Fc
+.Ft "int"
+.Fo ndi_hp_state_change_req
+.Fa "dev_info_t *dip"
+.Fa "char *cn_name"
+.Fa "ddi_hp_cn_state_t state"
+.Fa "uint_t flag"
+.Fc
+.Ft "void"
+.Fo ndi_hp_walk_cn
+.Fa "dev_info_t *dip"
+.Fa "int (*f)(ddi_hp_cn_info_t *, void *)"
+.Fa "void *arg"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Nexus owning the connection.
+.It Va info_p
+Connection information, including a non-null \fBcn_name\fP.
+.It Va cn_name
+Null-terminated connection name, unique beneath this nexus.
+.It Va state
+Target \fBddi_hp_cn_state_t\fP supported by the connection.
+.It Va flag
+\fBDDI_HP_REQ_SYNC\fP or \fBDDI_HP_REQ_ASYNC\fP.
+.It Va f
+Connection-walk callback.
+.It Va arg
+Opaque argument passed to the walk callback.
+.El
+.Sh DESCRIPTION
+These functions connect a nexus or hotplug controller driver to the hotplug
+framework.
+A connection can be a physical connector or a virtual port representing a
+child device.
+The nexus must provide the hotplug bus operation required by the framework.
+.Pp
+\fBndi_hp_register()\fP registers the connection described by \fBinfo_p\fP and queries
+its initial state through the nexus.
+The information structure and connection name are copied.
+Other pointers in the structure are not deep-copied; their storage must
+remain valid while the connection uses them.
+Registering an already registered name succeeds without replacing its
+information.
+\fBndi_hp_unregister()\fP removes the named connection if its state permits it.
+.Pp
+\fBndi_hp_state_change_req()\fP requests \fBstate\fP for a named connection.
+Use \fBDDI_HP_REQ_SYNC\fP to perform the operation before returning, or
+\fBDDI_HP_REQ_ASYNC\fP to queue it on a framework task queue.
+The asynchronous path copies the name and holds \fBdip\fP until the queued work
+has finished.
+Success from that path reports dispatch, not completion of the state change.
+.Pp
+\fBndi_hp_walk_cn()\fP calls \fBf(info, arg)\fP for each registered connection while
+owning the nexus's device-tree critical section.
+The callback returns \fBDDI_WALK_CONTINUE\fP to continue or
+\fBDDI_WALK_TERMINATE\fP to stop.
+The information pointer belongs to the framework and is not a newly allocated
+copy.
+The callback may unregister the current connection; it must not use that
+connection's information afterwards.
+.Pp
+Synchronous state changes enter the parent's critical section before the
+nexus's section.
+A caller already holding the nexus must also have entered its parent first
+if the parent exists.
+This rule also applies to a walk callback that requests a synchronous change.
+.Sh CONTEXT
+Registration, unregistration, walking, and synchronous state changes
+may be called from user or kernel context and may sleep.
+Asynchronous requests may also be made from low-level interrupt context.
+.Sh RETURN VALUES
+Registration returns \fBNDI_SUCCESS\fP, \fBNDI_EINVAL\fP, \fBNDI_ENOTSUP\fP,
+or \fBNDI_FAILURE\fP.
+Unregistration returns \fBNDI_SUCCESS\fP, \fBNDI_EINVAL\fP, \fBNDI_BUSY\fP, or
+\fBNDI_FAILURE\fP.
+State requests return \fBNDI_EINVAL\fP for invalid arguments or a missing
+connection in the synchronous path, and \fBNDI_ENOTSUP\fP without hotplug
+bus operations.
+Asynchronous dispatch returns \fBNDI_CLAIMED\fP or \fBNDI_NOMEM\fP.
+Synchronous handling returns \fBNDI_CLAIMED\fP or \fBNDI_UNCLAIMED\fP according
+to the nexus operation result.
+\fBNDI_CLAIMED\fP has the same value as \fBNDI_SUCCESS\fP.
+The walk function has no return value.
+.Sh SEE ALSO
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr sunndi 9F

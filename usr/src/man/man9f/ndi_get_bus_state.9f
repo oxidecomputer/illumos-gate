@@ -1,0 +1,69 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_GET_BUS_STATE 9F
+.Os
+.Sh NAME
+.Nm ndi_get_bus_state ,
+.Nm ndi_set_bus_state
+.Nd get and set the software state of a bus
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_get_bus_state
+.Fa "dev_info_t *dip"
+.Fa "uint_t *rstate"
+.Fc
+.Ft "int"
+.Fo ndi_set_bus_state
+.Fa "dev_info_t *dip"
+.Fa "uint_t state"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Valid bus nexus device node.
+.It Va rstate
+Address of a \fBuint_t\fP in kernel memory receiving the state.
+.It Va state
+One of \fBBUS_ACTIVE\fP, \fBBUS_QUIESCED\fP, or \fBBUS_SHUTDOWN\fP.
+.El
+.Sh DESCRIPTION
+\fBndi_get_bus_state()\fP stores the nexus's recorded bus state in \fB*rstate\fP.
+It returns \fBBUS_QUIESCED\fP when quiesced, otherwise \fBBUS_SHUTDOWN\fP when
+marked down, and otherwise \fBBUS_ACTIVE\fP.
+The node must have a bus operations vector.
+.Pp
+\fBndi_set_bus_state()\fP updates the software state to \fBstate\fP.
+\fBBUS_QUIESCED\fP sets the quiesced indication.
+\fBBUS_SHUTDOWN\fP sets the down indication.
+\fBBUS_ACTIVE\fP clears both indications.
+If the down and quiesced indications are both present, the getter reports
+\fBBUS_QUIESCED\fP.
+The functions serialize access to the state internally.
+.Pp
+Setting this state does not itself stop I/O, power down hardware, detach
+children, or invoke bus reset operations.
+The nexus must perform the corresponding bus-specific action and record its
+result with these functions.
+.Sh CONTEXT
+These functions may be called from user, kernel, or low-level interrupt
+context while the node and its operations vector remain valid.
+.Sh RETURN VALUES
+These functions return \fBNDI_SUCCESS\fP on success and \fBNDI_FAILURE\fP for
+invalid arguments, an unsupported state, or a node without bus operations
+when querying state.
+.Sh SEE ALSO
+.Xr ndi_devctl_ioctl 9F ,
+.Xr sunndi 9F

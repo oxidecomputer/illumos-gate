@@ -1,0 +1,137 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_RA_ALLOC 9F
+.Os
+.Sh NAME
+.Nm ndi_ra_map_setup ,
+.Nm ndi_ra_map_destroy ,
+.Nm ndi_ra_alloc ,
+.Nm ndi_ra_free
+.Nd manage bus resource maps and allocations
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_ra_map_setup
+.Fa "dev_info_t *dip"
+.Fa "char *type"
+.Fc
+.Ft "int"
+.Fo ndi_ra_map_destroy
+.Fa "dev_info_t *dip"
+.Fa "char *type"
+.Fc
+.Ft "int"
+.Fo ndi_ra_alloc
+.Fa "dev_info_t *dip"
+.Fa "ndi_ra_request_t *req"
+.Fa "uint64_t *basep"
+.Fa "uint64_t *lenp"
+.Fa "char *type"
+.Fa "uint_t flag"
+.Fc
+.Ft "int"
+.Fo ndi_ra_free
+.Fa "dev_info_t *dip"
+.Fa "uint64_t base"
+.Fa "uint64_t len"
+.Fa "char *type"
+.Fa "uint_t flag"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Device node owning the resource map, or the starting node for lookup.
+.It Va type
+Null-terminated resource-type string.
+.It Va req
+Allocation constraints; see \fBndi_ra_request(9S)\fP.
+.It Va basep , lenp
+Kernel addresses receiving the allocated base and actual length.
+.It Va base , len
+Base and length of a range to add or return to a free map.
+.It Va flag
+Zero for a local map, or \fBNDI_RA_PASS\fP to permit ancestor lookup.
+.El
+.Sh DESCRIPTION
+The bus resource allocator maintains free ranges indexed by a device node
+and a resource-type string.
+Predefined types are \fBNDI_RA_TYPE_MEM\fP, \fBNDI_RA_TYPE_IO\fP,
+\fBNDI_RA_TYPE_PCI_BUSNUM\fP, \fBNDI_RA_TYPE_PCI_PREFETCH_MEM\fP, and
+\fBNDI_RA_TYPE_INTR\fP.
+.Pp
+\fBndi_ra_map_setup()\fP creates an empty map for \fBdip\fP and \fBtype\fP.
+An existing map is left intact.
+Add initially available ranges with \fBndi_ra_free()\fP before allocating from
+the map.
+\fBndi_ra_map_destroy()\fP discards the map and its free-range bookkeeping.
+It does not check for outstanding allocations or reclaim resources from
+consumers; the caller must finish those uses before destroying the map.
+.Pp
+\fBndi_ra_alloc()\fP removes a range satisfying \fBreq\fP from the map and returns
+its base and length through \fBbasep\fP and \fBlenp\fP.
+The request describes size, alignment, optional bounds, an optional fixed
+address, and whether partial allocation is acceptable; see
+\fBndi_ra_request(9S)\fP.
+A partial result consumes resources just like a complete result.
+The caller must either use or return that actual range.
+.Pp
+\fBndi_ra_free()\fP adds the specified range to the free map and coalesces
+adjacent ranges.
+Use the actual base and length returned by allocation when releasing a range.
+Overlapping an already free range is an error.
+A zero-length free succeeds without changing a map.
+.Pp
+With \fBNDI_RA_PASS\fP in \fBflag\fP, allocation and freeing search ancestors if
+\fBdip\fP has no map for \fBtype\fP.
+The first matching map is used; an exhausted local map does not cause an
+allocation request to fall through to an ancestor map.
+Use consistent map selection when allocating and freeing.
+These functions serialize the allocator's map data, but the caller must
+maintain the lifetime of the relevant device nodes.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+Map setup returns \fBNDI_SUCCESS\fP.
+Map destruction returns \fBNDI_SUCCESS\fP, or \fBNDI_FAILURE\fP if the map does
+not exist.
+Allocation returns \fBNDI_SUCCESS\fP for a complete allocation,
+\fBNDI_RA_PARTIAL_REQ\fP for an accepted partial allocation, and \fBNDI_FAILURE\fP
+if no allocation can be made.
+Read output base and length only after a complete or partial allocation;
+not all failure paths initialize them.
+Freeing returns \fBNDI_SUCCESS\fP or \fBNDI_FAILURE\fP for a missing map or an
+overlapping free range.
+.Sh EXAMPLES
+Allocate an aligned memory range and return it when finished:
+.Bd -literal -offset indent
+ndi_ra_request_t req = { 0 };
+uint64_t base, len;
+int ret;
+.Pp
+req.ra_len = 0x1000;
+req.ra_flags = NDI_RA_ALIGN_SIZE;
+ret = ndi_ra_alloc(dip, &req, &base, &len,
+    NDI_RA_TYPE_MEM, 0);
+if (ret == NDI_SUCCESS) {
+        /* Use the resource, then release all users of it. */
+        ret = ndi_ra_free(dip, base, len, NDI_RA_TYPE_MEM, 0);
+        /* Handle a failure to return the range. */
+}
+.Ed
+The map must already contain the ranges made available by the bus.
+.Sh SEE ALSO
+.Xr sunndi 9F ,
+.Xr ndi_ra_request 9S

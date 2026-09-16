@@ -1,0 +1,84 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DC_DEVI_CREATE 9F
+.Os
+.Sh NAME
+.Nm ndi_dc_devi_create
+.Nd construct a child from a device-control property list
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_dc_devi_create
+.Fa "struct devctl_iocdata *dcp"
+.Fa "dev_info_t *pdip"
+.Fa "int flags"
+.Fa "dev_info_t **rdip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dcp
+Copied device-control request containing the property nvlist.
+.It Va pdip
+Parent nexus for the new child.
+.It Va flags
+Use \fBDEVCTL_CONSTRUCT\fP to stop after construction, or zero to complete
+the operation.
+.It Va rdip
+Optional input/output node pointer, required with \fBDEVCTL_CONSTRUCT\fP.
+.El
+.Sh DESCRIPTION
+\fBndi_dc_devi_create()\fP constructs a persistent child of \fBpdip\fP from the nvlist
+in \fBdcp\fP.
+The nvlist must contain a string named \fBDC_DEVI_NODENAME\fP giving the node name.
+Other supported nvpair types are \fBDATA_TYPE_INT32\fP, \fBDATA_TYPE_STRING\fP,
+\fBDATA_TYPE_BYTE_ARRAY\fP, \fBDATA_TYPE_INT32_ARRAY\fP, and
+\fBDATA_TYPE_STRING_ARRAY\fP; these are used to create hardware properties.
+Other data types cause failure.
+.Pp
+With \fBDEVCTL_CONSTRUCT\fP in \fBflags\fP, the function returns a partially
+constructed node without binding or attaching it.
+In this mode \fBrdip\fP is required.
+Initialize \fB*rdip\fP to \fBNULL\fP for a new node.
+A later call may pass that node in \fB*rdip\fP to finish construction.
+The output does not acquire an additional \fBndi_hold_devi()\fP reference.
+.Pp
+Without \fBDEVCTL_CONSTRUCT\fP, the function normally brings the child online.
+If \fBDEVCTL_OFFLINE\fP is present in the request's own flags, it binds and
+initializes the child while leaving it offline.
+On success it stores the node in \fB*rdip\fP, if supplied.
+If the request has a user output buffer, it copies the child's \fBname@address\fP
+there, without a terminating null byte.
+.Pp
+Failure paths can remove the partially created node.
+Do not assume a non-null output or input node pointer is still valid after
+failure.
+Hardware-property update statuses are not propagated by this helper, so
+success does not guarantee that every property allocation succeeded.
+.Sh CONTEXT
+Call from user context when a user result buffer is supplied.
+Otherwise the function may be called from user or kernel context.
+It may sleep.
+.Sh RETURN VALUES
+The function returns zero on success.
+Errors include \fBEINVAL\fP for malformed properties or invalid construction
+arguments, \fBENXIO\fP for binding or online failure, \fBENODEV\fP if no driver is
+bound after online processing, \fBEBUSY\fP if offline notification is refused,
+and \fBEFAULT\fP for a result-copy failure.
+.Sh SEE ALSO
+.Xr ndi_dc_allochdl 9F ,
+.Xr ndi_devi_alloc 9F ,
+.Xr ndi_devi_online 9F ,
+.Xr ndi_prop_update 9F ,
+.Xr sunndi 9F

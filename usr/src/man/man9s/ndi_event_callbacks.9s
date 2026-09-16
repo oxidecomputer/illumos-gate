@@ -1,0 +1,60 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_CALLBACKS 9S
+.Os
+.Sh NAME
+.Nm ndi_event_callbacks ,
+.Nm ndi_event_callbacks_t
+.Nd internal nexus event callback registration
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh DESCRIPTION
+An \fBndi_event_callbacks_t\fP records a callback registered through
+\fBndi_event_add_callback()\fP.
+The event framework allocates, links, and frees this structure.
+Drivers must use the returned \fBddi_callback_id_t\fP to remove a registration
+and must not allocate or modify the structure themselves.
+.Bl -tag -width Ds
+.It Va ndi_evtcb_next , ndi_evtcb_prev
+Framework linkage in the event cookie's callback list.
+.It Va ndi_evtcb_dip
+Device node that registered the callback.
+.It Va devname
+Driver name recorded for diagnostic output.
+.It Va ndi_evtcb_callback
+Callback function, invoked with the \fBddi_event_cb_f\fP calling
+convention despite the unprototyped pointer in this internal structure.
+.It Va ndi_evtcb_arg
+Opaque argument supplied by the registrant.
+.It Va ndi_evtcb_cookie
+Event cookie for this registration.
+.El
+.Pp
+The node, cookie, and callback argument must remain valid while registered.
+The framework's callback-list lock protects registration linkage and
+serializes removal with event delivery.
+.Sh STRUCTURE MEMBERS
+.Bd -literal -offset indent
+struct ndi_event_callbacks *ndi_evtcb_next;
+struct ndi_event_callbacks *ndi_evtcb_prev;
+dev_info_t                *ndi_evtcb_dip;
+char                      *devname;
+void                      (*ndi_evtcb_callback)();
+void                      *ndi_evtcb_arg;
+ddi_eventcookie_t         ndi_evtcb_cookie;
+.Ed
+.Sh SEE ALSO
+.Xr ndi_event_add_callback 9F ,
+.Xr ndi_event_cookie 9S

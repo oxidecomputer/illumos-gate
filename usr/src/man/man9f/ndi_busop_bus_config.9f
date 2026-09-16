@@ -1,0 +1,90 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_BUSOP_BUS_CONFIG 9F
+.Os
+.Sh NAME
+.Nm ndi_busop_bus_config ,
+.Nm ndi_busop_bus_unconfig
+.Nd provide default nexus configuration operations
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_busop_bus_config
+.Fa "dev_info_t *pdip"
+.Fa "uint_t flags"
+.Fa "ddi_bus_config_op_t op"
+.Fa "void *arg"
+.Fa "dev_info_t **child"
+.Fa "clock_t reset_delay"
+.Fc
+.Ft "int"
+.Fo ndi_busop_bus_unconfig
+.Fa "dev_info_t *dip"
+.Fa "uint_t flags"
+.Fa "ddi_bus_config_op_t op"
+.Fa "void *arg"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va pdip , dip
+Attached parent nexus.
+.It Va flags
+Configuration or unconfiguration flags.
+.It Va op
+Bus configuration or unconfiguration operation.
+.It Va arg
+Operation-specific child name or encoded driver major number.
+.It Va child
+Output for a held child node for \fBBUS_CONFIG_ONE\fP.
+.It Va reset_delay
+Delay or timeout in clock ticks, not microseconds or milliseconds.
+.El
+.Sh DESCRIPTION
+These functions implement default behavior for a nexus driver's \fBbus_config\fP
+and \fBbus_unconfig\fP entry points.
+They operate on children already described by the framework and applicable
+configuration files; bus-specific discovery remains the nexus driver's job.
+.Pp
+For \fBBUS_CONFIG_ONE\fP, \fBarg\fP is a child name in \fBname@address\fP form and \fBchild\fP
+receives a held device-node pointer on success.
+Release it with \fBndi_rele_devi()\fP.
+\fBreset_delay\fP is a timeout in clock ticks during which discovery of the named
+child may be retried.
+For \fBBUS_CONFIG_ALL\fP, \fBarg\fP is unused.
+For \fBBUS_CONFIG_DRIVER\fP, encode the driver major number in \fBarg\fP using
+\fB(void *)(uintptr_t)major\fP.
+For the ALL and DRIVER operations, a positive \fBreset_delay\fP delays the start
+of configuration by that many ticks.
+Pass zero when no delay is needed.
+.Pp
+The unconfiguration function supports \fBBUS_UNCONFIG_ONE\fP,
+\fBBUS_UNCONFIG_ALL\fP, and \fBBUS_UNCONFIG_DRIVER\fP with corresponding \fBarg\fP
+interpretations.
+It does not return a child pointer.
+The operation flags control attachment, removal, and event handling as
+described in \fBndi_devi_config(9F)\fP.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+These functions return \fBNDI_SUCCESS\fP on success and an NDI failure
+status otherwise.
+Bulk configuration attempts eligible children and can return success even
+when individual children fail to attach.
+Unsupported operations return \fBNDI_FAILURE\fP.
+.Sh SEE ALSO
+.Xr ndi_devi_config 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr sunndi 9F

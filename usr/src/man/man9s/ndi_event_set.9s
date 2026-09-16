@@ -1,0 +1,66 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_SET 9S
+.Os
+.Sh NAME
+.Nm ndi_event_set ,
+.Nm ndi_event_set_t
+.Nd set of nexus event definitions
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh DESCRIPTION
+An \fBndi_event_set_t\fP groups event definitions for binding to or unbinding
+from a nexus event handle.
+Initialize all members before passing the structure to the event framework.
+.Bl -tag -width Ds
+.It Va ndi_events_version
+Set to \fBNDI_EVENTS_REV1\fP.
+The older value \fBNDI_EVENTS_REV0\fP is not accepted by the current framework.
+.It Va ndi_n_events
+Number of entries in \fBndi_event_defs\fP, representable as a \fBushort_t\fP.
+.It Va ndi_event_defs
+Pointer to an array of \fBndi_event_definition_t\fP structures.
+The array and referenced name strings must remain valid while bound.
+The set descriptor itself need only remain valid for the bind or unbind call.
+.El
+.Pp
+Multiple sets can be bound to one handle, subject to event-name and execution
+level restrictions.
+An unbind set may name a subset of the bound events.
+Remove all callbacks for those events before unbinding.
+.Sh STRUCTURE MEMBERS
+.Bd -literal -offset indent
+ushort_t                ndi_events_version;
+ushort_t                ndi_n_events;
+ndi_event_definition_t  *ndi_event_defs;
+.Ed
+.Sh EXAMPLES
+Define a kernel-context event with targeted delivery:
+.Bd -literal -offset indent
+static ndi_event_definition_t events[] = {
+        { 0, "example:device-change", EPL_KERNEL,
+            NDI_EVENT_POST_TO_TGT }
+};
+.Pp
+static ndi_event_set_t event_set = {
+        NDI_EVENTS_REV1,
+        sizeof (events) / sizeof (events[0]),
+        events
+};
+.Ed
+Bind the set during nexus attachment using \fBndi_event_bind_set()\fP.
+.Sh SEE ALSO
+.Xr ndi_event_alloc_hdl 9F ,
+.Xr ndi_event_definition 9S

@@ -11,7 +11,7 @@
 .\"
 .\" Copyright 2024 Oxide Computer Company
 .\"
-.Dd April 28, 2024
+.Dd September 16, 2026
 .Dt INTRO 9S
 .Os
 .Sh NAME
@@ -45,6 +45,21 @@ These structures are generally required for every kernel module.
 .It Xr cb_ops 9S Ta Xr dev_ops 9S
 .It Xr modldrv 9S Ta Xr modlinkage 9S
 .It Xr modlmisc 9S Ta Xr modlstrmod 9S
+.El
+.Ss Nexus Driver Interfaces
+The structures in
+.In sys/sunndi.h
+describe nexus events, callback bookkeeping, fault-event payloads, and bus
+resource requests.
+These are private interfaces documented for work on nexus drivers and the
+device framework.
+See
+.Xr sunndi 9F
+for the associated function groups and lifetime rules.
+.Bl -column -offset indent "ndi_event_definition" "ndi_event_callbacks"
+.It Xr ddi_fault_event_data 9S Ta Xr ndi_event_callbacks 9S
+.It Xr ndi_event_cookie 9S Ta Xr ndi_event_definition 9S
+.It Xr ndi_event_set 9S Ta Xr ndi_ra_request 9S
 .El
 .Ss Character and Block I/O
 These structures are used as part of the fundamental units of performing

@@ -27,6 +27,7 @@ file path=usr/share/man/man9s/ddi_device_acc_attr.9s
 file path=usr/share/man/man9s/ddi_dma_attr.9s
 file path=usr/share/man/man9s/ddi_dma_cookie.9s
 file path=usr/share/man/man9s/ddi_dmae_req.9s
+file path=usr/share/man/man9s/ddi_fault_event_data.9s
 file path=usr/share/man/man9s/ddi_fm_error.9s
 file path=usr/share/man/man9s/ddi_idevice_cookie.9s
 file path=usr/share/man/man9s/dev_ops.9s
@@ -57,6 +58,18 @@ file path=usr/share/man/man9s/modlmisc.9s
 file path=usr/share/man/man9s/modlstrmod.9s
 file path=usr/share/man/man9s/module_info.9s
 file path=usr/share/man/man9s/msgb.9s
+file path=usr/share/man/man9s/ndi_event_callbacks.9s
+link path=usr/share/man/man9s/ndi_event_callbacks_t.9s \
+    target=ndi_event_callbacks.9s
+file path=usr/share/man/man9s/ndi_event_cookie.9s
+link path=usr/share/man/man9s/ndi_event_cookie_t.9s target=ndi_event_cookie.9s
+file path=usr/share/man/man9s/ndi_event_definition.9s
+link path=usr/share/man/man9s/ndi_event_definition_t.9s \
+    target=ndi_event_definition.9s
+file path=usr/share/man/man9s/ndi_event_set.9s
+link path=usr/share/man/man9s/ndi_event_set_t.9s target=ndi_event_set.9s
+file path=usr/share/man/man9s/ndi_ra_request.9s
+link path=usr/share/man/man9s/ndi_ra_request_t.9s target=ndi_ra_request.9s
 file path=usr/share/man/man9s/net_inject_t.9s
 file path=usr/share/man/man9s/net_instance_t.9s
 file path=usr/share/man/man9s/qband.9s

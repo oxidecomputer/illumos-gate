@@ -1,0 +1,74 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DC_RETURN_DEV_STATE 9F
+.Os
+.Sh NAME
+.Nm ndi_dc_return_dev_state ,
+.Nm ndi_dc_return_ap_state ,
+.Nm ndi_dc_return_bus_state
+.Nd copy device-control state to the requesting process
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_dc_return_dev_state
+.Fa "dev_info_t *dip"
+.Fa "struct devctl_iocdata *dcp"
+.Fc
+.Ft "int"
+.Fo ndi_dc_return_ap_state
+.Fa "devctl_ap_state_t *ap"
+.Fa "struct devctl_iocdata *dcp"
+.Fc
+.Ft "int"
+.Fo ndi_dc_return_bus_state
+.Fa "dev_info_t *dip"
+.Fa "struct devctl_iocdata *dcp"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Device to report, or bus nexus for the bus-state function.
+.It Va dcp
+Copied device-control request containing the user output address.
+.It Va ap
+Attachment-point state in kernel memory.
+.El
+.Sh DESCRIPTION
+These functions copy state to the user output buffer recorded in a request
+returned by \fBndi_dc_allochdl()\fP.
+\fBndi_dc_return_dev_state()\fP reports the supplied device's state, using
+\fBDEVICE_OFFLINE\fP, \fBDEVICE_DOWN\fP, or \fBDEVICE_ONLINE\fP, with \fBDEVICE_BUSY\fP
+also set when an online device is referenced.
+Here \fBdip\fP is the device itself, not its parent.
+.Pp
+\fBndi_dc_return_bus_state()\fP obtains the bus state using \fBndi_get_bus_state()\fP
+and copies it to the output buffer.
+\fBndi_dc_return_ap_state()\fP copies a caller-supplied attachment-point state,
+converting it for a 32-bit caller when necessary.
+.Pp
+New device-state handlers can use \fBndi_devctl_ioctl()\fP or
+\fBndi_devctl_device_getstate()\fP to resolve the child named in the request.
+.Sh CONTEXT
+These functions must be called from user context.
+Device-state reporting may sleep.
+.Sh RETURN VALUES
+These functions return \fBNDI_SUCCESS\fP on success, \fBNDI_FAILURE\fP for
+invalid arguments or failure to obtain the state, and \fBNDI_FAULT\fP for a
+copyout failure.
+.Sh SEE ALSO
+.Xr ndi_dc_allochdl 9F ,
+.Xr ndi_devctl_ioctl 9F ,
+.Xr ndi_get_bus_state 9F ,
+.Xr sunndi 9F

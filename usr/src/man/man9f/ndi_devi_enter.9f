@@ -1,0 +1,77 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVI_ENTER 9F
+.Os
+.Sh NAME
+.Nm ndi_devi_enter ,
+.Nm ndi_devi_exit ,
+.Nm ndi_devi_tryenter
+.Nd serialize changes to the children of a device node
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "void"
+.Fo ndi_devi_enter
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "void"
+.Fo ndi_devi_exit
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_devi_tryenter
+.Fa "dev_info_t *dip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Device node whose child configuration is to be serialized.
+.El
+.Sh DESCRIPTION
+\fBndi_devi_enter()\fP enters the device-tree critical section associated with
+\fBdip\fP, waiting if another thread owns it.
+This serializes changes to the node's children, path information, and minor
+nodes.
+The same thread may enter recursively.
+Each entry must be balanced by \fBndi_devi_exit()\fP on the same thread.
+.Pp
+\fBndi_devi_tryenter()\fP attempts the same entry without waiting for another
+thread to leave the critical section.
+A successful attempt, including a recursive entry, must be balanced by an exit.
+.Pp
+Acquire critical sections in order from ancestors towards descendants.
+If an operation can enter the parent, enter the parent before the child.
+Multipathing operations also require the virtual HCI critical section to be
+entered before the corresponding physical HCI critical section.
+Do not hold unrelated locks across calls that can invoke driver entry points.
+.Pp
+Entering \fBdip\fP protects its children; it does not acquire a reference to \fBdip\fP
+itself.
+Keep \fBdip\fP alive independently, for example through a device-node reference.
+Use the parent's critical section when inspecting or changing a child.
+\fBDEVI_BUSY_OWNED(dip)\fP may be used in assertions to check ownership.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+\fBndi_devi_enter()\fP may block.
+The try operation avoids waiting for critical-section ownership but is not a
+high-level interrupt synchronization primitive.
+.Sh RETURN VALUES
+\fBndi_devi_tryenter()\fP returns 1 when it acquires the critical section
+and 0 when it does not.
+This is a boolean result, not an \fBNDI_SUCCESS\fP status.
+The other functions have no return value.
+.Sh SEE ALSO
+.Xr ndi_devi_findchild 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr sunndi 9F

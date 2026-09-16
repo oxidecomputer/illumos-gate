@@ -1,0 +1,80 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_SET_ACC_FAULT 9F
+.Os
+.Sh NAME
+.Nm ndi_set_acc_fault ,
+.Nm ndi_clr_acc_fault ,
+.Nm ndi_set_dma_fault ,
+.Nm ndi_clr_dma_fault
+.Nd set and clear nexus handle fault indications
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "void"
+.Fo ndi_set_acc_fault
+.Fa "ddi_acc_handle_t ah"
+.Fc
+.Ft "void"
+.Fo ndi_clr_acc_fault
+.Fa "ddi_acc_handle_t ah"
+.Fc
+.Ft "void"
+.Fo ndi_set_dma_fault
+.Fa "ddi_dma_handle_t dh"
+.Fc
+.Ft "void"
+.Fo ndi_clr_dma_fault
+.Fa "ddi_dma_handle_t dh"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va ah
+Valid access handle managed by the nexus.
+.It Va dh
+Valid DMA handle managed by the nexus.
+.El
+.Sh DESCRIPTION
+Nexus drivers use these functions to maintain fault indications on access
+and DMA handles.
+\fBndi_set_acc_fault()\fP marks an access handle faulty and
+\fBndi_clr_acc_fault()\fP clears that indication.
+\fBndi_set_dma_fault()\fP and \fBndi_clr_dma_fault()\fP perform the corresponding
+operation on a DMA handle.
+.Pp
+A transition invokes the handle's fault-notification hook, when provided.
+Repeating a set on an already faulty handle, or a clear on an already clear
+handle, does not generate another transition notification.
+The default handle-checking paths used by \fBddi_check_acc_handle()\fP and
+\fBddi_check_dma_handle()\fP inspect these indications.
+.Pp
+Clearing an indication does not repair hardware or restore the contents of
+memory affected by a DMA fault.
+The nexus must coordinate recovery, synchronization, and the handle's
+lifetime.
+These functions do not acquire a lock around the fault transition and are
+not replacements for the separate FMA error-state interfaces.
+.Sh CONTEXT
+These functions may be called in contexts supported by the nexus
+fault-notification hook and its synchronization protocol.
+They perform no memory allocation; any installed hook runs synchronously in
+the caller's context.
+.Sh RETURN VALUES
+These functions have no return value.
+.Sh SEE ALSO
+.Xr ddi_check_acc_handle 9F ,
+.Xr ddi_check_dma_handle 9F ,
+.Xr ddi_fm_acc_err_get 9F ,
+.Xr ddi_fm_dma_err_get 9F ,
+.Xr sunndi 9F

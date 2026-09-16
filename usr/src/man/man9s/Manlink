@@ -30,6 +30,17 @@ mac_ring_info.9s
 msgb.9s
 	mblk.9s
 
+ndi_event_callbacks.9s
+	ndi_event_callbacks_t.9s
+ndi_event_cookie.9s
+	ndi_event_cookie_t.9s
+ndi_event_definition.9s
+	ndi_event_definition_t.9s
+ndi_event_set.9s
+	ndi_event_set_t.9s
+ndi_ra_request.9s
+	ndi_ra_request_t.9s
+
 # The usb_*_req(9S) pages used to be called usb_*_request(9S). We've
 # kept the old name around as a link to help folks out, but changed the
 # name so that they actually matched the structures.

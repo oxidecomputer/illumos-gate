@@ -12,7 +12,7 @@
 .\" Copyright 2024 Oxide Computer Company
 .\" Copyright 2023 Peter Tribble
 .\"
-.Dd October 27, 2024
+.Dd September 16, 2026
 .Dt INTRO 9F
 .Os
 .Sh NAME
@@ -858,6 +858,34 @@ hold having been applied.
 .It Xr ddi_prop_update_string_array 9F Ta Xr ddi_prop_update_string 9F
 .It Xr ddi_prop_update 9F Ta Xr ddi_root_node 9F
 .It Xr ddi_slaveonly 9F Ta
+.El
+.Ss Nexus Driver Interfaces
+Nexus drivers enumerate and manage the devices below them.
+The interfaces in
+.In sys/sunndi.h
+support child configuration, device-tree locking and references, hardware
+properties, event delivery, hotplug, and bus resource allocation.
+These include private framework interfaces with different return-value and
+ownership conventions.
+See
+.Xr sunndi 9F
+for an overview and a guide to the function groups.
+.Pp
+In particular,
+.Xr ndi_hold_devi 9F
+maintains a reference to a device node, while
+.Xr ndi_devi_enter 9F
+serializes changes to its children.
+The lifetime of a node must be protected while acquiring either kind of
+protection.
+.Bl -column -offset indent "net_instance_protocol_unregister" "net_instance_protocol_unregister"
+.It Xr ndi_devi_alloc 9F Ta Xr ndi_devi_config 9F
+.It Xr ndi_devi_enter 9F Ta Xr ndi_devi_findchild 9F
+.It Xr ndi_devi_online 9F Ta Xr ndi_event_alloc_hdl 9F
+.It Xr ndi_hold_devi 9F Ta Xr ndi_hold_driver 9F
+.It Xr ndi_hp_register 9F Ta Xr ndi_irm_create 9F
+.It Xr ndi_prop_remove 9F Ta Xr ndi_prop_update 9F
+.It Xr ndi_ra_alloc 9F Ta Xr sunndi 9F
 .El
 .Ss Copying Data to and from Userland
 The kernel operates in a different context from userland.

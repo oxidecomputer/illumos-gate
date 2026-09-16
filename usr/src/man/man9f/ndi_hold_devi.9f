@@ -1,0 +1,62 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_HOLD_DEVI 9F
+.Os
+.Sh NAME
+.Nm ndi_hold_devi ,
+.Nm ndi_rele_devi
+.Nd hold and release device-node references
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "void"
+.Fo ndi_hold_devi
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "void"
+.Fo ndi_rele_devi
+.Fa "dev_info_t *dip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Valid device node to hold or release.
+.El
+.Sh DESCRIPTION
+\fBndi_hold_devi()\fP increments the device-node reference count of \fBdip\fP.
+While a reference is held, normal device-tree operations cannot detach and
+destroy the referenced node.
+The caller must already ensure that the node cannot disappear while the hold
+is being acquired, for example by owning the parent's critical section.
+Taking a reference to an unprotected pointer obtained earlier is not safe.
+.Pp
+\fBndi_rele_devi()\fP releases one reference.
+Every hold must have a matching release, including references explicitly
+returned by configuration functions.
+The caller must not use the pointer after its final reference is released
+unless some other protection keeps the node alive.
+.Pp
+These functions neither serialize access to the children of \fBdip\fP nor load
+its driver module.
+Use \fBndi_devi_enter()\fP for child configuration and \fBndi_hold_driver()\fP for a
+driver-module reference.
+.Sh CONTEXT
+These functions may be called from user, kernel, or low-level interrupt
+context.
+.Sh RETURN VALUES
+These functions have no return value.
+.Sh SEE ALSO
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_hold_driver 9F ,
+.Xr sunndi 9F

@@ -1,0 +1,55 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_DUMP_HDL 9F
+.Os
+.Sh NAME
+.Nm ndi_event_dump_hdl
+.Nd print internal nexus event-handle diagnostics
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "void"
+.Fo ndi_event_dump_hdl
+.Fa "struct ndi_event_hdl *hdl"
+.Fa "char *location"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va hdl
+Internal event handle to inspect.
+.It Va location
+Null-terminated label included in diagnostic messages.
+.El
+.Sh DESCRIPTION
+\fBndi_event_dump_hdl()\fP prints the owning node, event counts, cookies,
+definitions, and callback registrations associated with \fBhdl\fP through
+\fBcmn_err()\fP.
+The string \fBlocation\fP labels the diagnostic output.
+.Pp
+This is an event-framework debugging routine declared only when \fBDEBUG\fP is
+defined.
+The caller must own the handle's internal \fBndi_evthdl_mutex\fP and ensure
+that the callback lists remain stable while they are inspected.
+Ordinary nexus drivers should use the opaque-handle interfaces instead of
+depending on the internal layout or this debugging entry point.
+.Sh CONTEXT
+Use in event-framework debugging paths with the required internal
+lock held.
+The output routine must be usable at the current priority.
+.Sh RETURN VALUES
+This function has no return value.
+.Sh SEE ALSO
+.Xr cmn_err 9F ,
+.Xr ndi_event_alloc_hdl 9F ,
+.Xr sunndi 9F

@@ -1,0 +1,92 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DC_ALLOCHDL 9F
+.Os
+.Sh NAME
+.Nm ndi_dc_allochdl ,
+.Nm ndi_dc_freehdl ,
+.Nm ndi_dc_getname ,
+.Nm ndi_dc_getaddr ,
+.Nm ndi_dc_get_ap_data
+.Nd copy in and access a device-control request
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_dc_allochdl
+.Fa "void *iocarg"
+.Fa "struct devctl_iocdata **rdcp"
+.Fc
+.Ft "void"
+.Fo ndi_dc_freehdl
+.Fa "struct devctl_iocdata *dcp"
+.Fc
+.Ft "char *"
+.Fo ndi_dc_getname
+.Fa "struct devctl_iocdata *dcp"
+.Fc
+.Ft "char *"
+.Fo ndi_dc_getaddr
+.Fa "struct devctl_iocdata *dcp"
+.Fc
+.Ft "nvlist_t *"
+.Fo ndi_dc_get_ap_data
+.Fa "struct devctl_iocdata *dcp"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va iocarg
+User address of a \fBdevctl_iocdata\fP request.
+.It Va rdcp
+Address of a kernel pointer receiving the allocated request.
+.It Va dcp
+Valid request returned by \fBndi_dc_allochdl()\fP.
+.El
+.Sh DESCRIPTION
+\fBndi_dc_allochdl()\fP copies a device-control request from the current user
+process and returns an allocated kernel representation in \fB*rdcp\fP.
+It converts the caller's data model, copies the node-name and unit-address
+strings, and copies and unpacks an optional nvlist.
+The request and referenced data must be user addresses; this is not an
+\fBFKIOCTL\fP kernel-buffer copy interface.
+.Pp
+\fBndi_dc_getname()\fP and \fBndi_dc_getaddr()\fP return the copied child node name
+and unit address.
+\fBndi_dc_get_ap_data()\fP returns the unpacked nvlist supplied with the request.
+An omitted field is returned as \fBNULL\fP.
+The returned pointers belong to the handle and must not be freed separately.
+.Pp
+\fBndi_dc_freehdl()\fP frees the handle, its strings, and its nvlist.
+Call it exactly once after a successful allocation when the request has been
+processed.
+Do not use the handle or any pointer obtained from it afterwards.
+.Sh CONTEXT
+\fBndi_dc_allochdl()\fP must be called from user context and may sleep.
+The accessors and free function may be called from user or kernel context.
+.Sh RETURN VALUES
+\fBndi_dc_allochdl()\fP returns \fBNDI_SUCCESS\fP on success, \fBNDI_FAULT\fP
+for copy or nvlist-unpacking failures, or \fBNDI_FAILURE\fP for an invalid
+nvlist buffer size.
+The output is valid only on success.
+The accessors return borrowed pointers or \fBNULL\fP.
+\fBndi_dc_freehdl()\fP has no return value.
+.Sh SEE ALSO
+.Xr ndi_dc_devi_create 9F ,
+.Xr ndi_dc_return_dev_state 9F ,
+.Xr ndi_devctl_ioctl 9F ,
+.Xr sunndi 9F
+.Sh NOTES
+\fBndi_dc_getpath()\fP and \fBndi_dc_getminorname()\fP are declared in
+\fBsys/sunndi.h\fP but have no implementation in illumos.
+Do not use them.

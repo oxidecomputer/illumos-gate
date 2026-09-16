@@ -1,0 +1,131 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_ADD_CALLBACK 9F
+.Os
+.Sh NAME
+.Nm ndi_event_add_callback ,
+.Nm ndi_event_remove_callback ,
+.Nm ndi_event_run_callbacks ,
+.Nm ndi_event_do_callback
+.Nd register and deliver nexus event callbacks
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_event_add_callback
+.Fa "ndi_event_hdl_t handle"
+.Fa "dev_info_t *child_dip"
+.Fa "ddi_eventcookie_t cookie"
+.Fa "ddi_event_cb_f event_callback"
+.Fa "void *arg"
+.Fa "uint_t flag"
+.Fa "ddi_callback_id_t *cb_id"
+.Fc
+.Ft "int"
+.Fo ndi_event_remove_callback
+.Fa "ndi_event_hdl_t handle"
+.Fa "ddi_callback_id_t id"
+.Fc
+.Ft "int"
+.Fo ndi_event_run_callbacks
+.Fa "ndi_event_hdl_t handle"
+.Fa "dev_info_t *child_dip"
+.Fa "ddi_eventcookie_t cookie"
+.Fa "void *bus_impldata"
+.Fc
+.Ft "int"
+.Fo ndi_event_do_callback
+.Fa "ndi_event_hdl_t handle"
+.Fa "dev_info_t *child_dip"
+.Fa "ddi_eventcookie_t cookie"
+.Fa "void *bus_impldata"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va handle
+Event handle defining the cookie.
+.It Va child_dip
+Consumer node for registration, or target node for delivery.
+.It Va cookie
+Cookie bound to this handle.
+.It Va event_callback
+Function to invoke for the event.
+.It Va arg
+Opaque caller data passed to the callback.
+.It Va flag
+\fBNDI_SLEEP\fP or \fBNDI_NOSLEEP\fP for callback allocation.
+.It Va cb_id
+Output for the registration identifier.
+.It Va id
+Live registration identifier to remove.
+.It Va bus_impldata
+Event-specific data passed to each callback.
+.El
+.Sh DESCRIPTION
+\fBndi_event_add_callback()\fP registers \fBevent_callback\fP for \fBchild_dip\fP and
+\fBcookie\fP, storing the registration identifier in \fB*cb_id\fP.
+The cookie must be bound to \fBhandle\fP.
+The framework stores \fBarg\fP without copying or owning the object it addresses.
+Use \fBNDI_SLEEP\fP for sleeping allocation or \fBNDI_NOSLEEP\fP for allocation
+that may fail rather than wait.
+.Pp
+\fBndi_event_remove_callback()\fP unregisters the live identifier \fBid\fP from the
+same handle.
+Use the identifier only once.
+It must have been returned by successful registration on that handle;
+arbitrary or already removed identifiers are not validated.
+Remove registrations before their child detaches and before the event
+definition or argument storage is destroyed.
+.Pp
+\fBndi_event_run_callbacks()\fP synchronously delivers the event according to
+the definition's attributes.
+For \fBNDI_EVENT_POST_TO_ALL\fP, every registered handler is called, in
+unspecified order, and the supplied target does not restrict delivery.
+For \fBNDI_EVENT_POST_TO_TGT\fP, only handlers registered for \fBchild_dip\fP are
+called.
+\fBndi_event_do_callback()\fP calls only the first matching registration for
+\fBchild_dip\fP, regardless of the event's delivery attributes.
+.Pp
+Each callback is invoked as:
+.Bd -literal -offset indent
+void callback(dev_info_t *child, ddi_eventcookie_t cookie,
+    void *arg, void *bus_impldata);
+.Ed
+The first three arguments come from the registration; the last is the
+event-specific data supplied by the producer.
+That data need only remain valid until synchronous delivery returns.
+.Pp
+Callbacks execute under the handle's callback-list lock.
+They must not add or remove registrations, unbind events, free the handle,
+or recursively deliver events on that handle.
+They may use the local cookie conversion functions.
+Removal synchronizes with callback delivery, allowing argument storage to
+be released after removal returns, once other uses have also ended.
+.Sh CONTEXT
+Registration and removal may be called from user or kernel context.
+Delivery and callbacks run in the producer's context and must obey the
+priority restrictions specified by the event definition and handle locks.
+Callbacks must not sleep while holding a spin lock or executing in interrupt
+context.
+.Sh RETURN VALUES
+Registration returns \fBNDI_SUCCESS\fP, or \fBNDI_FAILURE\fP for an unknown
+cookie or allocation failure.
+Removal of a valid registration returns \fBNDI_SUCCESS\fP.
+Delivery returns \fBNDI_FAILURE\fP if the cookie is not bound to the handle,
+and \fBNDI_SUCCESS\fP otherwise, including when no callback matches.
+.Sh SEE ALSO
+.Xr ndi_event_alloc_hdl 9F ,
+.Xr ndi_event_retrieve_cookie 9F ,
+.Xr sunndi 9F ,
+.Xr ndi_event_definition 9S

@@ -1,0 +1,100 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_IRM_CREATE 9F
+.Os
+.Sh NAME
+.Nm ndi_irm_create ,
+.Nm ndi_irm_destroy ,
+.Nm ndi_irm_resize_pool
+.Nd manage interrupt resource pools
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.In sys/ddi_intr_impl.h
+.Ft "int"
+.Fo ndi_irm_create
+.Fa "dev_info_t *dip"
+.Fa "ddi_irm_params_t *paramsp"
+.Fa "ddi_irm_pool_t **pool_retp"
+.Fc
+.Ft "int"
+.Fo ndi_irm_destroy
+.Fa "ddi_irm_pool_t *poolp"
+.Fc
+.Ft "int"
+.Fo ndi_irm_resize_pool
+.Fa "ddi_irm_pool_t *poolp"
+.Fa "uint_t newsize"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Nexus supplying the interrupt resources.
+.It Va paramsp
+Valid parameter structure describing types and capacity.
+.It Va pool_retp
+Output address for the new pool.
+.It Va poolp
+Existing IRM pool.
+.It Va newsize
+New total vector capacity.
+.El
+.Sh DESCRIPTION
+An interrupt resource management pool describes interrupt vectors supplied
+by a nexus and shared among its consumers.
+\fBndi_irm_create()\fP allocates a pool owned by \fBdip\fP, registers it with IRM,
+and returns it in \fB*pool_retp\fP.
+IRM must be enabled.
+The caller supplies these members of \fBddi_irm_params_t\fP:
+.Bl -tag -width Ds
+.It Va iparams_types
+Nonzero mask of interrupt types supported by the pool, using
+\fBDDI_INTR_TYPE_*\fP values.
+.It Va iparams_total
+Total number of vectors; must be at least one.
+.El
+.Pp
+The parameter values are copied and the input structure can be reused after
+creation.
+The returned pool is managed through IRM interfaces; callers must not modify
+its internal fields directly.
+.Pp
+\fBndi_irm_resize_pool()\fP changes the pool's total size.
+Growing a pool can schedule asynchronous rebalancing.
+Shrinking below the current reservations performs a synchronous rebalance
+to reclaim vectors.
+If enough vectors cannot be reclaimed, the previous pool size is restored
+and the call fails.
+Changes already made to consumer allocations need not be undone immediately.
+.Pp
+\fBndi_irm_destroy()\fP removes the pool and stops its balancing thread.
+All reserved vectors must have been released before destruction.
+Callers must prevent new users during destruction and must not use the pool
+after successful destruction.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+These functions return \fBNDI_SUCCESS\fP on success.
+Creation returns \fBNDI_FAILURE\fP when IRM is disabled or parameters are invalid.
+Resizing returns \fBNDI_FAILURE\fP when IRM is disabled or rebalancing cannot
+satisfy the new size, and \fBNDI_EINVAL\fP for a null pool.
+Destruction returns \fBNDI_BUSY\fP for outstanding reservations and
+\fBNDI_FAILURE\fP for a null pool.
+Invalid pointers and outstanding reservations also violate assertions in
+debug kernels; callers must meet the documented prerequisites.
+.Sh SEE ALSO
+.Xr ddi_cb_register 9F ,
+.Xr ddi_intr_alloc 9F ,
+.Xr sunndi 9F

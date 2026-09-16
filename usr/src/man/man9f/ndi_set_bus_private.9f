@@ -1,0 +1,77 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_SET_BUS_PRIVATE 9F
+.Os
+.Sh NAME
+.Nm ndi_set_bus_private ,
+.Nm ndi_get_bus_private ,
+.Nm ndi_port_type
+.Nd access bus-private data associated with a device node
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "void"
+.Fo ndi_set_bus_private
+.Fa "dev_info_t *dip"
+.Fa "boolean_t up"
+.Fa "uint32_t port_type"
+.Fa "void *data"
+.Fc
+.Ft "void *"
+.Fo ndi_get_bus_private
+.Fa "dev_info_t *dip"
+.Fa "boolean_t up"
+.Fc
+.Ft "boolean_t"
+.Fo ndi_port_type
+.Fa "dev_info_t *dip"
+.Fa "boolean_t up"
+.Fa "uint32_t port_type"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Device node containing the slots.
+.It Va up
+\fBB_TRUE\fP for upstream, or \fBB_FALSE\fP for downstream.
+.It Va port_type
+Bus-framework-defined type tag.
+.It Va data
+Bus-private pointer to store; may be \fBNULL\fP.
+.El
+.Sh DESCRIPTION
+Each device node has separate upstream and downstream bus-private slots.
+\fBup\fP selects the upstream slot when true and the downstream slot when false.
+\fBndi_set_bus_private()\fP stores \fBdata\fP and its \fBport_type\fP tag in that slot.
+\fBndi_get_bus_private()\fP returns the stored pointer, and \fBndi_port_type()\fP
+tests the associated type tag.
+.Pp
+The data is neither copied nor freed by these functions.
+The bus framework owns its allocation and lifetime.
+These slots are distinct from the driver-private pointer accessed through
+\fBddi_get_driver_private()\fP.
+Callers must keep \fBdip\fP and the stored object valid and serialize concurrent
+updates; these functions acquire no locks.
+.Sh CONTEXT
+These functions may be called from user, kernel, or interrupt context
+with the necessary caller-supplied synchronization.
+.Sh RETURN VALUES
+\fBndi_get_bus_private()\fP returns the stored pointer, which is initially
+\fBNULL\fP.
+\fBndi_port_type()\fP returns \fBB_TRUE\fP for a matching tag and \fBB_FALSE\fP otherwise.
+\fBndi_set_bus_private()\fP has no return value.
+.Sh SEE ALSO
+.Xr ddi_get_driver_private 9F ,
+.Xr ndi_flavorv_alloc 9F ,
+.Xr sunndi 9F

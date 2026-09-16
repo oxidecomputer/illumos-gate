@@ -651,6 +651,7 @@ file path=usr/share/man/man9f/drv_usectohz.9f
 file path=usr/share/man/man9f/drv_usecwait.9f
 file path=usr/share/man/man9f/dupb.9f
 file path=usr/share/man/man9f/dupmsg.9f
+link path=usr/share/man/man9f/e_ddi_devi_unconfig.9f target=ndi_devi_config.9f
 file path=usr/share/man/man9f/enableok.9f
 file path=usr/share/man/man9f/esballoc.9f
 link path=usr/share/man/man9f/esballoca.9f target=esballoc.9f
@@ -884,6 +885,157 @@ link path=usr/share/man/man9f/mutex_exit.9f target=mutex.9f
 link path=usr/share/man/man9f/mutex_init.9f target=mutex.9f
 link path=usr/share/man/man9f/mutex_owned.9f target=mutex.9f
 link path=usr/share/man/man9f/mutex_tryenter.9f target=mutex.9f
+link path=usr/share/man/man9f/ndi_busop_add_eventcall.9f \
+    target=ndi_post_event.9f
+file path=usr/share/man/man9f/ndi_busop_bus_config.9f
+link path=usr/share/man/man9f/ndi_busop_bus_unconfig.9f \
+    target=ndi_busop_bus_config.9f
+link path=usr/share/man/man9f/ndi_busop_get_eventcookie.9f \
+    target=ndi_post_event.9f
+link path=usr/share/man/man9f/ndi_busop_remove_eventcall.9f \
+    target=ndi_post_event.9f
+link path=usr/share/man/man9f/ndi_clr_acc_fault.9f target=ndi_set_acc_fault.9f
+link path=usr/share/man/man9f/ndi_clr_dma_fault.9f target=ndi_set_acc_fault.9f
+file path=usr/share/man/man9f/ndi_dc_allochdl.9f
+file path=usr/share/man/man9f/ndi_dc_devi_create.9f
+link path=usr/share/man/man9f/ndi_dc_freehdl.9f target=ndi_dc_allochdl.9f
+link path=usr/share/man/man9f/ndi_dc_get_ap_data.9f target=ndi_dc_allochdl.9f
+link path=usr/share/man/man9f/ndi_dc_getaddr.9f target=ndi_dc_allochdl.9f
+link path=usr/share/man/man9f/ndi_dc_getname.9f target=ndi_dc_allochdl.9f
+link path=usr/share/man/man9f/ndi_dc_return_ap_state.9f \
+    target=ndi_dc_return_dev_state.9f
+link path=usr/share/man/man9f/ndi_dc_return_bus_state.9f \
+    target=ndi_dc_return_dev_state.9f
+file path=usr/share/man/man9f/ndi_dc_return_dev_state.9f
+link path=usr/share/man/man9f/ndi_dev_is_hidden_node.9f \
+    target=ndi_dev_is_prom_node.9f
+link path=usr/share/man/man9f/ndi_dev_is_hotplug_node.9f \
+    target=ndi_dev_is_prom_node.9f
+link path=usr/share/man/man9f/ndi_dev_is_persistent_node.9f \
+    target=ndi_dev_is_prom_node.9f
+file path=usr/share/man/man9f/ndi_dev_is_prom_node.9f
+link path=usr/share/man/man9f/ndi_dev_is_pseudo_node.9f \
+    target=ndi_dev_is_prom_node.9f
+link path=usr/share/man/man9f/ndi_devctl_bus_getstate.9f \
+    target=ndi_devctl_ioctl.9f
+link path=usr/share/man/man9f/ndi_devctl_device_getstate.9f \
+    target=ndi_devctl_ioctl.9f
+link path=usr/share/man/man9f/ndi_devctl_device_offline.9f \
+    target=ndi_devctl_ioctl.9f
+link path=usr/share/man/man9f/ndi_devctl_device_online.9f \
+    target=ndi_devctl_ioctl.9f
+link path=usr/share/man/man9f/ndi_devctl_device_remove.9f \
+    target=ndi_devctl_ioctl.9f
+file path=usr/share/man/man9f/ndi_devctl_ioctl.9f
+file path=usr/share/man/man9f/ndi_devi_alloc.9f
+link path=usr/share/man/man9f/ndi_devi_alloc_sleep.9f target=ndi_devi_alloc.9f
+link path=usr/share/man/man9f/ndi_devi_bind_driver.9f target=ndi_devi_online.9f
+link path=usr/share/man/man9f/ndi_devi_bind_driver_async.9f \
+    target=ndi_devi_online.9f
+link path=usr/share/man/man9f/ndi_devi_clr_hidden.9f \
+    target=ndi_dev_is_prom_node.9f
+file path=usr/share/man/man9f/ndi_devi_config.9f
+link path=usr/share/man/man9f/ndi_devi_config_driver.9f \
+    target=ndi_devi_config.9f
+link path=usr/share/man/man9f/ndi_devi_config_one.9f target=ndi_devi_config.9f
+file path=usr/share/man/man9f/ndi_devi_config_vhci.9f
+link path=usr/share/man/man9f/ndi_devi_device_insert.9f \
+    target=ndi_devi_device_remove.9f
+link path=usr/share/man/man9f/ndi_devi_device_isremoved.9f \
+    target=ndi_devi_device_remove.9f
+file path=usr/share/man/man9f/ndi_devi_device_remove.9f
+file path=usr/share/man/man9f/ndi_devi_enter.9f
+link path=usr/share/man/man9f/ndi_devi_exit.9f target=ndi_devi_enter.9f
+link path=usr/share/man/man9f/ndi_devi_find.9f target=ndi_devi_findchild.9f
+file path=usr/share/man/man9f/ndi_devi_findchild.9f
+link path=usr/share/man/man9f/ndi_devi_findchild_by_callback.9f \
+    target=ndi_devi_findchild.9f
+link path=usr/share/man/man9f/ndi_devi_free.9f target=ndi_devi_alloc.9f
+link path=usr/share/man/man9f/ndi_devi_offline.9f target=ndi_devi_online.9f
+file path=usr/share/man/man9f/ndi_devi_online.9f
+link path=usr/share/man/man9f/ndi_devi_online_async.9f target=ndi_devi_online.9f
+link path=usr/share/man/man9f/ndi_devi_set_hidden.9f \
+    target=ndi_dev_is_prom_node.9f
+link path=usr/share/man/man9f/ndi_devi_set_nodename.9f target=ndi_devi_alloc.9f
+link path=usr/share/man/man9f/ndi_devi_tryenter.9f target=ndi_devi_enter.9f
+link path=usr/share/man/man9f/ndi_devi_unconfig.9f target=ndi_devi_config.9f
+link path=usr/share/man/man9f/ndi_devi_unconfig_driver.9f \
+    target=ndi_devi_config.9f
+link path=usr/share/man/man9f/ndi_devi_unconfig_one.9f target=ndi_devi_config.9f
+file path=usr/share/man/man9f/ndi_event_add_callback.9f
+file path=usr/share/man/man9f/ndi_event_alloc_hdl.9f
+link path=usr/share/man/man9f/ndi_event_bind_set.9f \
+    target=ndi_event_alloc_hdl.9f
+link path=usr/share/man/man9f/ndi_event_cookie_to_name.9f \
+    target=ndi_event_retrieve_cookie.9f
+link path=usr/share/man/man9f/ndi_event_cookie_to_tag.9f \
+    target=ndi_event_retrieve_cookie.9f
+link path=usr/share/man/man9f/ndi_event_do_callback.9f \
+    target=ndi_event_add_callback.9f
+file path=usr/share/man/man9f/ndi_event_dump_hdl.9f
+link path=usr/share/man/man9f/ndi_event_free_hdl.9f \
+    target=ndi_event_alloc_hdl.9f
+link path=usr/share/man/man9f/ndi_event_remove_callback.9f \
+    target=ndi_event_add_callback.9f
+file path=usr/share/man/man9f/ndi_event_retrieve_cookie.9f
+link path=usr/share/man/man9f/ndi_event_run_callbacks.9f \
+    target=ndi_event_add_callback.9f
+link path=usr/share/man/man9f/ndi_event_tag_to_cookie.9f \
+    target=ndi_event_retrieve_cookie.9f
+link path=usr/share/man/man9f/ndi_event_tag_to_name.9f \
+    target=ndi_event_retrieve_cookie.9f
+link path=usr/share/man/man9f/ndi_event_unbind_set.9f \
+    target=ndi_event_alloc_hdl.9f
+link path=usr/share/man/man9f/ndi_flavor_get.9f target=ndi_flavorv_alloc.9f
+link path=usr/share/man/man9f/ndi_flavor_set.9f target=ndi_flavorv_alloc.9f
+file path=usr/share/man/man9f/ndi_flavorv_alloc.9f
+link path=usr/share/man/man9f/ndi_flavorv_get.9f target=ndi_flavorv_alloc.9f
+link path=usr/share/man/man9f/ndi_flavorv_set.9f target=ndi_flavorv_alloc.9f
+link path=usr/share/man/man9f/ndi_get_bus_private.9f \
+    target=ndi_set_bus_private.9f
+file path=usr/share/man/man9f/ndi_get_bus_state.9f
+file path=usr/share/man/man9f/ndi_hold_devi.9f
+file path=usr/share/man/man9f/ndi_hold_driver.9f
+file path=usr/share/man/man9f/ndi_hp_register.9f
+link path=usr/share/man/man9f/ndi_hp_state_change_req.9f \
+    target=ndi_hp_register.9f
+link path=usr/share/man/man9f/ndi_hp_unregister.9f target=ndi_hp_register.9f
+link path=usr/share/man/man9f/ndi_hp_walk_cn.9f target=ndi_hp_register.9f
+file path=usr/share/man/man9f/ndi_irm_create.9f
+link path=usr/share/man/man9f/ndi_irm_destroy.9f target=ndi_irm_create.9f
+link path=usr/share/man/man9f/ndi_irm_resize_pool.9f target=ndi_irm_create.9f
+file path=usr/share/man/man9f/ndi_merge_node.9f
+link path=usr/share/man/man9f/ndi_merge_wildcard_node.9f \
+    target=ndi_merge_node.9f
+link path=usr/share/man/man9f/ndi_port_type.9f target=ndi_set_bus_private.9f
+file path=usr/share/man/man9f/ndi_post_event.9f
+link path=usr/share/man/man9f/ndi_prop_create_boolean.9f \
+    target=ndi_prop_update.9f
+file path=usr/share/man/man9f/ndi_prop_remove.9f
+link path=usr/share/man/man9f/ndi_prop_remove_all.9f target=ndi_prop_remove.9f
+file path=usr/share/man/man9f/ndi_prop_update.9f
+link path=usr/share/man/man9f/ndi_prop_update_byte_array.9f \
+    target=ndi_prop_update.9f
+link path=usr/share/man/man9f/ndi_prop_update_int.9f target=ndi_prop_update.9f
+link path=usr/share/man/man9f/ndi_prop_update_int64.9f target=ndi_prop_update.9f
+link path=usr/share/man/man9f/ndi_prop_update_int64_array.9f \
+    target=ndi_prop_update.9f
+link path=usr/share/man/man9f/ndi_prop_update_int_array.9f \
+    target=ndi_prop_update.9f
+link path=usr/share/man/man9f/ndi_prop_update_string.9f \
+    target=ndi_prop_update.9f
+link path=usr/share/man/man9f/ndi_prop_update_string_array.9f \
+    target=ndi_prop_update.9f
+file path=usr/share/man/man9f/ndi_ra_alloc.9f
+link path=usr/share/man/man9f/ndi_ra_free.9f target=ndi_ra_alloc.9f
+link path=usr/share/man/man9f/ndi_ra_map_destroy.9f target=ndi_ra_alloc.9f
+link path=usr/share/man/man9f/ndi_ra_map_setup.9f target=ndi_ra_alloc.9f
+link path=usr/share/man/man9f/ndi_rele_devi.9f target=ndi_hold_devi.9f
+link path=usr/share/man/man9f/ndi_rele_driver.9f target=ndi_hold_driver.9f
+file path=usr/share/man/man9f/ndi_set_acc_fault.9f
+file path=usr/share/man/man9f/ndi_set_bus_private.9f
+link path=usr/share/man/man9f/ndi_set_bus_state.9f target=ndi_get_bus_state.9f
+link path=usr/share/man/man9f/ndi_set_dma_fault.9f target=ndi_set_acc_fault.9f
 file path=usr/share/man/man9f/net_event_notify_register.9f
 link path=usr/share/man/man9f/net_event_notify_unregister.9f \
     target=net_event_notify_register.9f
@@ -1426,6 +1578,8 @@ file path=usr/share/man/man9f/strqset.9f
 link path=usr/share/man/man9f/strrchr.9f target=string.9f
 link path=usr/share/man/man9f/strspn.9f target=string.9f
 link path=usr/share/man/man9f/strtok_r.9f target=string.9f
+file path=usr/share/man/man9f/sunndi.9f
+link path=usr/share/man/man9f/sunndi.h.9f target=sunndi.9f
 file path=usr/share/man/man9f/swab.9f
 file path=usr/share/man/man9f/taskq.9f
 file path=usr/share/man/man9f/testb.9f

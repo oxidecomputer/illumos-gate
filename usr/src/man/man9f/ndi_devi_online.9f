@@ -1,0 +1,116 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVI_ONLINE 9F
+.Os
+.Sh NAME
+.Nm ndi_devi_bind_driver ,
+.Nm ndi_devi_bind_driver_async ,
+.Nm ndi_devi_online ,
+.Nm ndi_devi_online_async ,
+.Nm ndi_devi_offline
+.Nd bind, attach, and offline device nodes
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_devi_bind_driver
+.Fa "dev_info_t *dip"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_bind_driver_async
+.Fa "dev_info_t *dip"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_online
+.Fa "dev_info_t *dip"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_online_async
+.Fa "dev_info_t *dip"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devi_offline
+.Fa "dev_info_t *dip"
+.Fa "uint_t flags"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Child device node to change.
+.It Va flags
+Operation flags, as described below.
+.El
+.Sh DESCRIPTION
+\fBndi_devi_bind_driver()\fP links and binds \fBdip\fP to a driver without attaching
+the device instance.
+Set the node name and hardware properties, including any \fBcompatible\fP
+property, before binding.
+Pass zero for \fBflags\fP for ordinary binding.
+.Pp
+\fBndi_devi_online()\fP binds the node, merges applicable configuration-file
+properties, clears the offline state, and attempts to attach the device.
+It also attempts to configure descendants if the node is a nexus.
+The return status describes the node's attachment; descendant configuration
+can fail independently.
+An attachment failure can free a nonpersistent node.
+Do not assume such a pointer remains valid on failure.
+.Pp
+\fBndi_devi_offline()\fP detaches the device and its descendants and marks the
+device offline to prevent deferred attachment.
+Open devices or other references can prevent detachment.
+With \fBNDI_DEVI_REMOVE\fP, it also removes the node from the tree.
+The pointer is invalid after successful removal.
+Other useful flags are \fBNDI_NO_EVENT\fP, to suppress device add/remove events,
+and \fBNDI_DEVI_DEBUG\fP, to enable diagnostic messages.
+Configuration flags are described in \fBndi_devi_config(9F)\fP.
+.Pp
+The asynchronous functions dispatch the corresponding operation to the
+parent's device task queue.
+The parent must have a device task queue and \fBdip\fP must be persistent.
+The caller must ensure the node and parent remain valid until the queued work
+has finished; dispatch does not acquire a device-node reference.
+Use \fBNDI_NOSLEEP\fP when dispatching from interrupt context.
+Without it, allocation and dispatch may sleep.
+There is no completion callback or returned status for the deferred operation.
+.Pp
+The synchronous functions manage the relevant device-tree critical sections.
+An offline operation may also clean cached devfs nodes.
+\fBNDI_DEVFS_CLEAN\fP explicitly requests cleaning even when the caller already
+owns the parent's critical section.
+Do not use that flag from a nexus \fBbus_config\fP implementation, because devfs
+lookup locks may already be held.
+.Sh CONTEXT
+The synchronous functions may be called from user or kernel context and
+may sleep.
+The asynchronous functions may also be called from low-level interrupt context
+when \fBNDI_NOSLEEP\fP is specified.
+.Sh RETURN VALUES
+The synchronous functions return \fBNDI_SUCCESS\fP on success and an NDI
+failure status otherwise.
+Callers must compare explicitly against \fBNDI_SUCCESS\fP.
+The asynchronous functions return \fBNDI_SUCCESS\fP when work has been queued,
+or \fBNDI_FAILURE\fP if it could not be queued.
+Successful dispatch does not imply successful binding or attachment.
+.Sh SEE ALSO
+.Xr attach 9E ,
+.Xr detach 9E ,
+.Xr devfs_clean 9F ,
+.Xr ndi_devi_alloc 9F ,
+.Xr ndi_devi_config 9F ,
+.Xr ndi_devi_enter 9F ,
+.Xr sunndi 9F

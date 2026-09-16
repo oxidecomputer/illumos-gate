@@ -1,0 +1,61 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_COOKIE 9S
+.Os
+.Sh NAME
+.Nm ndi_event_cookie ,
+.Nm ndi_event_cookie_t
+.Nd internal representation of a nexus event cookie
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh DESCRIPTION
+The event framework allocates an \fBndi_event_cookie_t\fP when an event is bound
+to an event handle.
+It is exposed to consumers as a \fBddi_eventcookie_t\fP.
+Nexus drivers should obtain cookies through the lookup interfaces and must
+not allocate, free, or modify the bookkeeping structure directly.
+.Bl -tag -width Ds
+.It Va definition
+Borrowed pointer to the bound event definition.
+.It Va ddip
+Nexus device node that defines and handles the event.
+.It Va callback_list
+Framework-owned list of callback registrations for this event.
+.It Va next_cookie
+Framework linkage to the next cookie in the handle.
+.El
+.Pp
+The \fBNDI_EVENT(cookie)\fP macro converts an opaque cookie to this internal
+pointer type.
+\fBNDI_EVENT_NAME\fP, \fBNDI_EVENT_TAG\fP, \fBNDI_EVENT_ATTRIBUTES\fP, and
+\fBNDI_EVENT_PLEVEL\fP read the corresponding fields of its definition.
+\fBNDI_EVENT_DDIP\fP returns the defining nexus.
+These macros take a cookie argument and perform no validity checking or
+locking.
+The cookie and definition must remain valid throughout access.
+For lookup and conversion within a handle, prefer the
+\fBndi_event_retrieve_cookie(9F)\fP family.
+.Sh STRUCTURE MEMBERS
+.Bd -literal -offset indent
+ndi_event_definition_t  *definition;
+dev_info_t              *ddip;
+ndi_event_callbacks_t   *callback_list;
+struct ndi_event_cookie *next_cookie;
+.Ed
+.Sh SEE ALSO
+.Xr ndi_event_alloc_hdl 9F ,
+.Xr ndi_event_retrieve_cookie 9F ,
+.Xr ndi_event_callbacks 9S ,
+.Xr ndi_event_definition 9S

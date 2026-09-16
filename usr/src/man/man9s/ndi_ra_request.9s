@@ -1,0 +1,80 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_RA_REQUEST 9S
+.Os
+.Sh NAME
+.Nm ndi_ra_request ,
+.Nm ndi_ra_request_t
+.Nd bus resource allocation request
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh DESCRIPTION
+An \fBndi_ra_request_t\fP supplies constraints to \fBndi_ra_alloc()\fP.
+Zero-initialize the structure before setting the required members.
+Use the resource's units for all addresses and lengths: memory and I/O maps
+normally use bytes, while bus-number and interrupt maps use resource numbers.
+.Bl -tag -width Ds
+.It Va ra_flags
+Bitwise OR of the request flags described below.
+.It Va ra_len
+Requested length.
+Supply a nonzero value.
+.It Va ra_addr
+Requested base address when \fBNDI_RA_ALLOC_SPECIFIED\fP is set.
+.It Va ra_boundbase , ra_boundlen
+Base and length of the allocation window when
+\fBNDI_RA_ALLOC_BOUNDED\fP is set.
+Use a nonempty window and avoid overflowing the address space.
+.It Va ra_align_mask
+Alignment mask for an automatically selected base.
+For power-of-two alignment A, use A - 1; zero requests no additional alignment.
+This member is ignored with \fBNDI_RA_ALIGN_SIZE\fP.
+.El
+.Pp
+The request flags are:
+.Bl -tag -width Ds
+.It Dv NDI_RA_ALIGN_SIZE
+Use \fBra_len - 1\fP as the alignment mask.
+\fBra_len\fP must be a nonzero power of two.
+.It Dv NDI_RA_ALLOC_BOUNDED
+Restrict automatic selection to the specified allocation window.
+.It Dv NDI_RA_ALLOC_SPECIFIED
+Request the base in \fBra_addr\fP.
+The fixed-address path does not apply the automatic alignment adjustment.
+Callers must ensure the specified address and requested range meet their
+alignment and window requirements.
+.It Dv NDI_RA_ALLOC_PARTIAL_OK
+Permit a smaller range when the complete request cannot be met.
+A partial allocation returns \fBNDI_RA_PARTIAL_REQ\fP and consumes the returned
+range; inspect the returned length before using it.
+.El
+.Pp
+\fBNDI_RA_PASS\fP is a separate map-lookup flag passed to the allocator function,
+not a member of \fBra_flags\fP.
+The request structure remains owned by the caller.
+Allocation results are returned through the function's output arguments,
+not by updating this structure.
+.Sh STRUCTURE MEMBERS
+.Bd -literal -offset indent
+uint_t          ra_flags;
+uint64_t        ra_len;
+uint64_t        ra_addr;
+uint64_t        ra_boundbase;
+uint64_t        ra_boundlen;
+uint64_t        ra_align_mask;
+.Ed
+.Sh SEE ALSO
+.Xr ndi_ra_alloc 9F ,
+.Xr sunndi 9F

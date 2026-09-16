@@ -1,0 +1,58 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_HOLD_DRIVER 9F
+.Os
+.Sh NAME
+.Nm ndi_hold_driver ,
+.Nm ndi_rele_driver
+.Nd hold and release the driver bound to a device
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "struct dev_ops *"
+.Fo ndi_hold_driver
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "void"
+.Fo ndi_rele_driver
+.Fa "dev_info_t *dip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Device node bound to the driver being held or released.
+.El
+.Sh DESCRIPTION
+\fBndi_hold_driver()\fP obtains a module reference to the driver bound to \fBdip\fP,
+loading it if necessary, and returns its device operations vector.
+It does not bind an unbound node or attach a device instance.
+The node must be at least in the bound state.
+.Pp
+After a successful hold, call \fBndi_rele_driver()\fP with the same node to release
+the driver reference.
+The caller must keep the node and its driver binding valid across both calls.
+Do not release a failed hold or use the returned operations vector after the
+last module reference is released.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+\fBndi_hold_driver()\fP returns a pointer to \fBstruct dev_ops\fP, or \fBNULL\fP
+if the node is unbound or the driver cannot be held.
+\fBndi_rele_driver()\fP has no return value.
+.Sh SEE ALSO
+.Xr ndi_devi_online 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr sunndi 9F ,
+.Xr dev_ops 9S

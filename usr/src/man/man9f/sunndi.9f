@@ -1,0 +1,197 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt SUNNDI 9F
+.Os
+.Sh NAME
+.Nm sunndi ,
+.Nm sunndi.h
+.Nd nexus driver interfaces
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh DESCRIPTION
+The \fBsys/sunndi.h\fP header declares nexus driver interfaces used by bus nexus
+drivers and the illumos device framework.
+Its declarations are available when building kernel code with \fB_KERNEL\fP
+defined.
+These interfaces are specific to illumos and include internal framework
+operations; inclusion in this header does not make an interface part of the
+stable, portable DDI.
+.Pp
+A nexus describes devices below it, supplies bus operations through its
+\fBdev_ops\fP structure, and coordinates their configuration and removal.
+These interfaces provide the device-tree, property, event, hotplug, and
+resource services needed for that work.
+For ordinary leaf-driver operations, consult \fBIntro(9F)\fP and the DDI pages.
+.Ss Device nodes and locking
+Device nodes progress from allocation through linking, driver binding,
+parent initialization, and driver attachment.
+An allocated prototype is not yet an attached device.
+Persistent nodes represent firmware or software enumeration of hardware;
+nonpersistent configuration-file nodes can be discarded when attachment
+fails.
+Persistence is a device-tree lifetime attribute, not storage across reboots.
+.Pp
+Keep every node valid while using it.
+\fBndi_hold_devi()\fP protects a node's lifetime once the hold has safely been
+acquired.
+\fBndi_devi_enter()\fP serializes changes to its children and does not replace
+that lifetime protection.
+Acquire critical sections from ancestors towards descendants.
+Functions that return child pointers differ in whether they return a held
+reference; follow each function's ownership rules.
+.Ss Function groups
+.Bl -tag -width Ds
+.It Xr ndi_prop_update 9F
+Create and update hardware properties on enumerated nodes.
+.It Xr ndi_prop_remove 9F
+Remove hardware properties.
+.It Xr ndi_devi_alloc 9F
+Allocate, name, and free prototype device nodes.
+.It Xr ndi_devi_enter 9F
+Serialize changes to a nexus's children.
+.It Xr ndi_hold_devi 9F
+Maintain device-node references.
+.It Xr ndi_hold_driver 9F
+Maintain driver-module references.
+.It Xr ndi_devi_online 9F
+Bind, attach, offline, and asynchronously configure a node.
+.It Xr ndi_devi_config 9F
+Configure and unconfigure children and descendants.
+.It Xr ndi_devi_findchild 9F
+Find immediate children by name, binding, and address.
+.It Xr ndi_devi_device_remove 9F
+Record physical removal and reinsertion.
+.It Xr ndi_dev_is_prom_node 9F
+Inspect node origin, persistence, and visibility.
+.It Xr ndi_busop_bus_config 9F
+Implement default nexus bus configuration operations.
+.It Xr ndi_devi_config_vhci 9F
+Create framework virtual HCI nodes.
+.It Xr ndi_merge_node 9F
+Merge driver configuration-file properties.
+.It Xr ndi_set_bus_private 9F
+Store bus-private pointers and port tags.
+.It Xr ndi_flavorv_alloc 9F
+Associate private pointers with child flavors.
+.It Xr ndi_devctl_ioctl 9F
+Handle common nexus device-control requests.
+.It Xr ndi_dc_allochdl 9F
+Copy in and access device-control request data.
+.It Xr ndi_dc_return_dev_state 9F
+Copy state results to a requesting process.
+.It Xr ndi_dc_devi_create 9F
+Create a child from a device-control property list.
+.It Xr ndi_get_bus_state 9F
+Read and record bus software state.
+.It Xr ndi_event_alloc_hdl 9F
+Allocate event handles and bind definitions.
+.It Xr ndi_event_retrieve_cookie 9F
+Look up event cookies and translate tags and names.
+.It Xr ndi_event_add_callback 9F
+Register callbacks and deliver events.
+.It Xr ndi_post_event 9F
+Dispatch event operations to the responsible nexus.
+.It Xr ndi_event_dump_hdl 9F
+Inspect event-framework state in debug builds.
+.It Xr ndi_irm_create 9F
+Manage interrupt resource pools.
+.It Xr ndi_hp_register 9F
+Register connections and request hotplug state changes.
+.It Xr ndi_ra_alloc 9F
+Manage bus resource maps and allocate ranges.
+.It Xr ndi_set_acc_fault 9F
+Set and clear nexus access/DMA fault indications.
+.El
+.Ss Structures
+\fBndi_event_definition(9S)\fP and \fBndi_event_set(9S)\fP describe the events a
+nexus supplies.
+\fBndi_event_cookie(9S)\fP and \fBndi_event_callbacks(9S)\fP describe internal
+event bookkeeping that drivers must access through the event interfaces.
+\fBndi_ra_request(9S)\fP describes bus resource allocation constraints.
+\fBddi_fault_event_data(9S)\fP describes the device-fault event payload.
+.Ss Status and flags
+Many functions return \fBNDI_SUCCESS\fP or an NDI failure status, but property
+functions use \fBDDI_PROP_*\fP values and some device-control functions use
+errno values or a mixture of conventions.
+Predicate functions return boolean results.
+There is no kernel \fBerrno\fP variable.
+Always use the return convention documented for the specific function.
+.Pp
+The general NDI status definitions are:
+.Bl -tag -width Ds
+.It Dv NDI_SUCCESS
+Operation succeeded; equal to \fBDDI_SUCCESS\fP.
+.It Dv NDI_FAILURE
+Operation failed; equal to \fBDDI_FAILURE\fP.
+.It Dv NDI_NOMEM
+Resources could not be allocated.
+.It Dv NDI_BADHANDLE
+Invalid handle status; not every handle-taking function validates it.
+.It Dv NDI_FAULT
+Failure while copying request data.
+.It Dv NDI_BUSY
+A busy device or resource prevents the operation.
+.It Dv NDI_UNBOUND
+Device is not bound to a driver.
+.It Dv NDI_EINVAL
+Invalid request or arguments.
+.It Dv NDI_ENOTSUP
+Unsupported operation or event.
+.It Dv NDI_CLAIMED
+Request claimed; equal to \fBNDI_SUCCESS\fP.
+.It Dv NDI_UNCLAIMED
+Request not claimed.
+.El
+.Pp
+Not all functions return every status listed above.
+The resource allocator also defines \fBNDI_RA_PARTIAL_REQ\fP, which indicates
+an allocation that must be accounted for even though it is smaller than
+requested.
+.Pp
+\fBNDI_SLEEP\fP and \fBNDI_NOSLEEP\fP select allocation behavior only for functions
+that document accepting them.
+\fBNDI_SLEEP\fP is zero.
+They do not change a function's locking or execution-context requirements.
+Property updates always use non-sleeping allocations.
+.Pp
+Configuration and event flags apply to their documented operation families;
+the header's internal framework flags are not universally interchangeable.
+\fBNDI_DEBUG(flags, args)\fP emits a \fBcmn_err()\fP call when \fBNDI_DEVI_DEBUG\fP
+is set, with \fBargs\fP supplied as a parenthesized argument list.
+.Ss Unavailable declarations
+\fBndi_dc_getpath()\fP and \fBndi_dc_getminorname()\fP are declared but are not
+implemented in illumos.
+\fBndi_event_dump_hdl()\fP is an internal debugging entry point declared only
+under \fBDEBUG\fP.
+.Sh CONTEXT
+Most configuration, device-control, and resource-management functions
+may sleep and require user or kernel context.
+Only functions that explicitly permit interrupt context should be called
+from an interrupt handler.
+See each function's CONTEXT section.
+.Sh SEE ALSO
+.Xr Intro 9F ,
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_event_alloc_hdl 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr ndi_prop_update 9F ,
+.Xr ndi_ra_alloc 9F ,
+.Xr ddi_fault_event_data 9S ,
+.Xr dev_ops 9S ,
+.Xr ndi_event_callbacks 9S ,
+.Xr ndi_event_cookie 9S ,
+.Xr ndi_event_definition 9S ,
+.Xr ndi_event_set 9S ,
+.Xr ndi_ra_request 9S

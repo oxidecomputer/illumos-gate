@@ -1,0 +1,91 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVI_FINDCHILD 9F
+.Os
+.Sh NAME
+.Nm ndi_devi_findchild ,
+.Nm ndi_devi_find ,
+.Nm ndi_devi_findchild_by_callback
+.Nd find an immediate child device node
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "dev_info_t *"
+.Fo ndi_devi_findchild
+.Fa "dev_info_t *p"
+.Fa "char *devname"
+.Fc
+.Ft "dev_info_t *"
+.Fo ndi_devi_find
+.Fa "dev_info_t *p"
+.Fa "char *cname"
+.Fa "char *caddr"
+.Fc
+.Ft "dev_info_t *"
+.Fo ndi_devi_findchild_by_callback
+.Fa "dev_info_t *p"
+.Fa "char *dname"
+.Fa "char *ua"
+.Fa "int (*make_ua)(dev_info_t *, char *, int)"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va p
+Parent nexus to search.
+.It Va devname
+Null-terminated child name, normally \fBname@address\fP.
+.It Va cname , caddr
+Separate node name and unit address for the older interface.
+.It Va dname , ua
+Driver name, or \fBNULL\fP for any driver, and unit address to match.
+.It Va make_ua
+Callback that obtains an address for an unnamed child.
+.El
+.Sh DESCRIPTION
+\fBndi_devi_findchild()\fP searches the immediate children of \fBp\fP for a node whose
+node name and unit address match \fBdevname\fP.
+Children that have no unit address are skipped.
+The caller must own the parent's critical section using \fBndi_devi_enter()\fP.
+The search does not enumerate or attach children.
+.Pp
+\fBndi_devi_find()\fP is the older interface taking the name and address
+separately.
+It enters and exits the parent's critical section internally.
+New callers should use \fBndi_devi_findchild()\fP and explicitly protect the
+result's lifetime.
+.Pp
+\fBndi_devi_findchild_by_callback()\fP matches the driver binding selected by
+\fBdname\fP and the unit address \fBua\fP.
+If \fBdname\fP is \fBNULL\fP, it matches by address alone.
+For a child with no address, it calls \fBmake_ua(child, buffer, length)\fP.
+The callback must write a null-terminated unit address within the supplied
+buffer and return \fBDDI_SUCCESS\fP, or return \fBDDI_FAILURE\fP to skip the child.
+The temporary address is used only for comparison and is not assigned to the
+child.
+The caller must own the parent's critical section.
+.Pp
+None of these functions takes a reference on the result.
+Before leaving the parent's critical section, call \fBndi_hold_devi()\fP if the
+pointer must remain valid afterwards.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+These functions return the matching device node, or \fBNULL\fP if no
+matching child is found.
+.Sh SEE ALSO
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_hold_devi 9F ,
+.Xr ndi_merge_node 9F ,
+.Xr sunndi 9F

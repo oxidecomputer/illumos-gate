@@ -1,0 +1,137 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVCTL_IOCTL 9F
+.Os
+.Sh NAME
+.Nm ndi_devctl_ioctl ,
+.Nm ndi_devctl_device_getstate ,
+.Nm ndi_devctl_device_online ,
+.Nm ndi_devctl_device_offline ,
+.Nm ndi_devctl_device_remove ,
+.Nm ndi_devctl_bus_getstate
+.Nd implement common device-control operations for a nexus
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_devctl_ioctl
+.Fa "dev_info_t *dip"
+.Fa "int cmd"
+.Fa "intptr_t arg"
+.Fa "int mode"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devctl_device_getstate
+.Fa "dev_info_t *parent"
+.Fa "struct devctl_iocdata *dcp"
+.Fa "uint_t *state"
+.Fc
+.Ft "int"
+.Fo ndi_devctl_device_online
+.Fa "dev_info_t *dip"
+.Fa "struct devctl_iocdata *dcp"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devctl_device_offline
+.Fa "dev_info_t *dip"
+.Fa "struct devctl_iocdata *dcp"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devctl_device_remove
+.Fa "dev_info_t *dip"
+.Fa "struct devctl_iocdata *dcp"
+.Fa "uint_t flags"
+.Fc
+.Ft "int"
+.Fo ndi_devctl_bus_getstate
+.Fa "dev_info_t *dip"
+.Fa "struct devctl_iocdata *dcp"
+.Fa "uint_t *state"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip , parent
+Attached parent nexus; device operations address its children.
+.It Va cmd
+Device-control ioctl command.
+.It Va arg
+User address of the request.
+.It Va mode
+Ioctl mode argument; currently unused.
+.It Va flags
+NDI configuration flags forwarded to the operation.
+.It Va dcp
+Request returned by \fBndi_dc_allochdl()\fP.
+.It Va state
+Kernel address receiving a state value.
+.El
+.Sh DESCRIPTION
+\fBndi_devctl_ioctl()\fP copies in a user device-control request, executes the
+operation, copies out a state result when required, and frees the request.
+It handles \fBDEVCTL_BUS_GETSTATE\fP, \fBDEVCTL_DEVICE_GETSTATE\fP,
+\fBDEVCTL_DEVICE_ONLINE\fP, \fBDEVCTL_DEVICE_OFFLINE\fP, \fBDEVCTL_DEVICE_REMOVE\fP,
+and \fBDEVCTL_BUS_DEV_CREATE\fP.
+Reset, attachment-point, and bus quiesce operations require bus-specific
+implementations and return \fBENOTSUP\fP.
+Unrecognized commands return \fBENOTTY\fP after request copyin.
+.Pp
+The \fBmode\fP argument is currently unused.
+Copying uses the current process's user data model and user address space,
+even if \fBFKIOCTL\fP is present in \fBmode\fP.
+The caller must perform the access and privilege checks appropriate to the
+nexus's control device before invoking this helper.
+.Pp
+The other functions operate on an already copied \fBdcp\fP.
+The device functions identify an immediate child using the request's node
+name and unit address.
+The online function configures that child and its descendants.
+The offline function detaches it and marks it offline.
+The remove function unconfigures it and removes its node.
+Offline and remove clean cached devfs references before unconfiguration;
+they must not be called while holding conflicting devfs lookup locks.
+.Pp
+\fBndi_devctl_device_getstate()\fP stores \fBDEVICE_OFFLINE\fP, \fBDEVICE_DOWN\fP, or
+\fBDEVICE_ONLINE\fP in \fB*state\fP, adding \fBDEVICE_BUSY\fP when an online device is
+referenced.
+\fBndi_devctl_bus_getstate()\fP stores the parent nexus's recorded bus state.
+These two helpers write kernel memory, without copying a result to userland.
+.Sh CONTEXT
+\fBndi_devctl_ioctl()\fP must be called from user context.
+The helpers using a copied request may be called from user or kernel context.
+These operations may sleep.
+.Sh RETURN VALUES
+The getstate helpers return \fBNDI_SUCCESS\fP or \fBNDI_FAILURE\fP.
+The online, offline, and remove helpers return zero on success, \fBEINVAL\fP
+when a name or address is absent, \fBEBUSY\fP for \fBNDI_BUSY\fP, and \fBEIO\fP for
+\fBNDI_FAILURE\fP.
+Other statuses from the underlying configuration operation pass through.
+.Pp
+\fBndi_devctl_ioctl()\fP returns the selected helper status without generally
+translating NDI codes to errno values.
+Initial request-copy failure returns \fBEFAULT\fP, but a state-result copyout
+failure returns \fBNDI_FAULT\fP.
+Unsupported and unknown commands return \fBENOTSUP\fP and \fBENOTTY\fP, respectively.
+Callers must account for these mixed conventions before returning an error
+from an ioctl entry point.
+.Sh SEE ALSO
+.Xr ioctl 9E ,
+.Xr devfs_clean 9F ,
+.Xr ndi_dc_allochdl 9F ,
+.Xr ndi_dc_devi_create 9F ,
+.Xr ndi_devi_config 9F ,
+.Xr ndi_get_bus_state 9F ,
+.Xr sunndi 9F

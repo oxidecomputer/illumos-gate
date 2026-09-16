@@ -1,0 +1,70 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVI_DEVICE_REMOVE 9F
+.Os
+.Sh NAME
+.Nm ndi_devi_device_isremoved ,
+.Nm ndi_devi_device_remove ,
+.Nm ndi_devi_device_insert
+.Nd record physical removal and reinsertion of a device
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_devi_device_isremoved
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_devi_device_remove
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_devi_device_insert
+.Fa "dev_info_t *dip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Device node whose physical-presence state is accessed.
+.El
+.Sh DESCRIPTION
+These functions maintain physical-presence state for hotplug devices that
+cannot yet be detached, for example because an application has the device open.
+They do not detach a driver or free a device node.
+.Pp
+\fBndi_devi_device_remove()\fP marks the device physically removed and hidden,
+updates device-event state, invalidates the device-information cache, and
+posts removal notification.
+Repeating the call on an already removed device has no effect.
+\fBndi_devi_device_insert()\fP clears the removed and hidden state and posts
+insertion notification when a removed device is reinserted.
+Both operations require the caller to own the parent's critical section.
+.Pp
+\fBndi_devi_device_isremoved()\fP tests the recorded removed state.
+The caller must keep the node valid and serialize with state changes when a
+consistent result is required.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+\fBndi_devi_device_isremoved()\fP returns nonzero if the device is marked
+removed, and zero otherwise.
+The remove and insert functions return 1 when they change state and 0 when
+the requested state was already recorded.
+These are boolean results, not NDI status codes.
+.Sh SEE ALSO
+.Xr ndi_dev_is_prom_node 9F ,
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_devi_online 9F ,
+.Xr sunndi 9F

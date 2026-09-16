@@ -1,0 +1,123 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_POST_EVENT 9F
+.Os
+.Sh NAME
+.Nm ndi_post_event ,
+.Nm ndi_busop_add_eventcall ,
+.Nm ndi_busop_remove_eventcall ,
+.Nm ndi_busop_get_eventcookie
+.Nd dispatch event operations to a nexus driver
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_post_event
+.Fa "dev_info_t *dip"
+.Fa "dev_info_t *rdip"
+.Fa "ddi_eventcookie_t eventhdl"
+.Fa "void *impl_data"
+.Fc
+.Ft "int"
+.Fo ndi_busop_add_eventcall
+.Fa "dev_info_t *dip"
+.Fa "dev_info_t *rdip"
+.Fa "ddi_eventcookie_t eventhdl"
+.Fa "void (*callback)()"
+.Fa "void *arg"
+.Fa "ddi_callback_id_t *cb_id"
+.Fc
+.Ft "int"
+.Fo ndi_busop_remove_eventcall
+.Fa "dev_info_t *ddip"
+.Fa "ddi_callback_id_t id"
+.Fc
+.Ft "int"
+.Fo ndi_busop_get_eventcookie
+.Fa "dev_info_t *dip"
+.Fa "dev_info_t *rdip"
+.Fa "char *name"
+.Fa "ddi_eventcookie_t *event_cookiep"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Starting node for ancestor cookie lookup; ignored for posting and
+callback registration.
+.It Va rdip
+Device requesting or receiving the event.
+.It Va eventhdl
+Valid event cookie identifying the responsible nexus.
+.It Va impl_data
+Event-specific data passed to the post operation.
+.It Va callback
+Event handler with the \fBddi_event_cb_f\fP calling convention.
+.It Va arg
+Opaque callback argument.
+.It Va cb_id
+Output for the registered callback identifier.
+.It Va ddip
+Nexus responsible for the callback being removed.
+.It Va id
+Live callback identifier.
+.It Va name
+Null-terminated event name.
+.It Va event_cookiep
+Output for the requested cookie.
+.El
+.Sh DESCRIPTION
+These functions dispatch event operations through nexus bus operations.
+The responsible nexus must provide the relevant event entry points with
+\fBbusops_rev\fP at least \fBBUSO_REV_6\fP.
+.Pp
+\fBndi_post_event()\fP calls \fBbus_post_event\fP on the nexus identified by the
+event cookie, passing the requesting node and implementation data.
+\fBndi_busop_add_eventcall()\fP likewise calls that nexus's
+\fBbus_add_eventcall\fP entry point and returns a callback identifier.
+For these two functions, \fBdip\fP is retained for compatibility and is ignored;
+the cookie selects the destination directly.
+.Pp
+\fBndi_busop_remove_eventcall()\fP calls \fBbus_remove_eventcall\fP on \fBddip\fP.
+The caller must supply the nexus responsible for the live callback identifier.
+.Pp
+\fBndi_busop_get_eventcookie()\fP starts at the parent of \fBdip\fP and skips
+ancestors that lack the required event-cookie operation or bus-operations
+revision.
+It calls the first suitable \fBbus_get_eventcookie\fP entry point, which may
+itself forward a request it does not recognize.
+It must not be called with the root as \fBdip\fP.
+.Pp
+Consumers normally use \fBddi_get_eventcookie()\fP, \fBddi_add_event_handler()\fP,
+and \fBddi_remove_event_handler()\fP.
+These NDI helpers support nexus implementations and framework dispatch.
+Keep the participating nodes, driver operations, cookies, callback argument,
+and implementation data valid for the operation and any registered callbacks.
+.Sh CONTEXT
+Cookie lookup and registration operations may be called from user or
+kernel context.
+Event posting must obey the context and priority contract of the event and
+its nexus implementation.
+.Sh RETURN VALUES
+The functions return the status of the invoked bus operation.
+Registration or removal returns \fBDDI_FAILURE\fP when its required callback
+operation is missing.
+A valid cookie and a supported post operation are prerequisites for posting;
+these are not arbitrary-handle validation interfaces.
+.Sh SEE ALSO
+.Xr ddi_add_event_handler 9F ,
+.Xr ddi_get_eventcookie 9F ,
+.Xr ddi_remove_event_handler 9F ,
+.Xr ndi_event_add_callback 9F ,
+.Xr ndi_event_retrieve_cookie 9F ,
+.Xr sunndi 9F

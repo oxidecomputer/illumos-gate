@@ -1,0 +1,108 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_RETRIEVE_COOKIE 9F
+.Os
+.Sh NAME
+.Nm ndi_event_retrieve_cookie ,
+.Nm ndi_event_tag_to_cookie ,
+.Nm ndi_event_cookie_to_tag ,
+.Nm ndi_event_cookie_to_name ,
+.Nm ndi_event_tag_to_name
+.Nd look up and translate nexus event cookies
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_event_retrieve_cookie
+.Fa "ndi_event_hdl_t handle"
+.Fa "dev_info_t *child_dip"
+.Fa "char *eventname"
+.Fa "ddi_eventcookie_t *cookiep"
+.Fa "uint_t flag"
+.Fc
+.Ft "ddi_eventcookie_t"
+.Fo ndi_event_tag_to_cookie
+.Fa "ndi_event_hdl_t handle"
+.Fa "int event_tag"
+.Fc
+.Ft "int"
+.Fo ndi_event_cookie_to_tag
+.Fa "ndi_event_hdl_t handle"
+.Fa "ddi_eventcookie_t cookie"
+.Fc
+.Ft "char *"
+.Fo ndi_event_cookie_to_name
+.Fa "ndi_event_hdl_t handle"
+.Fa "ddi_eventcookie_t cookie"
+.Fc
+.Ft "char *"
+.Fo ndi_event_tag_to_name
+.Fa "ndi_event_hdl_t handle"
+.Fa "int event_tag"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va handle
+Event handle to search.
+.It Va child_dip
+Child requesting the event cookie.
+.It Va eventname
+Null-terminated event name.
+.It Va cookiep
+Output address for an event cookie.
+.It Va flag
+Zero to permit ancestor lookup, or \fBNDI_EVENT_NOPASS\fP.
+.It Va event_tag
+Numeric tag assigned by the nexus event definition.
+.It Va cookie
+Event cookie to translate.
+.El
+.Sh DESCRIPTION
+\fBndi_event_retrieve_cookie()\fP looks up \fBeventname\fP among the events bound to
+\fBhandle\fP and returns the cookie in \fB*cookiep\fP.
+It is normally used in a nexus driver's \fBbus_get_eventcookie\fP entry point.
+If the name is not found and \fBNDI_EVENT_NOPASS\fP is not set, the request is
+forwarded to an ancestor using \fBndi_busop_get_eventcookie()\fP.
+With \fBNDI_EVENT_NOPASS\fP, a local miss returns failure.
+The root nexus must not attempt to forward a request beyond the root.
+.Pp
+The remaining functions translate between tags, cookies, and names within
+the supplied handle only.
+They do not search ancestors.
+\fBndi_event_tag_to_cookie()\fP finds a cookie by numeric tag.
+\fBndi_event_cookie_to_tag()\fP finds the tag of a cookie bound to the handle.
+\fBndi_event_cookie_to_name()\fP and \fBndi_event_tag_to_name()\fP return the
+definition's name.
+.Pp
+Cookies and returned names are borrowed references.
+Do not modify or free them.
+Keep the event definition bound and its storage valid while using them.
+An ancestor cookie returned by retrieval is not necessarily bound to the
+local handle and may therefore fail a local conversion lookup.
+.Sh CONTEXT
+Cookie retrieval may be called from user or kernel context.
+Local conversion functions may also be used by event callbacks at the
+interrupt level for which the handle was initialized.
+.Sh RETURN VALUES
+Retrieval returns \fBNDI_SUCCESS\fP for a local match, \fBNDI_FAILURE\fP for
+a local miss with \fBNDI_EVENT_NOPASS\fP, or the ancestor bus operation status.
+Pointer-valued conversion functions return \fBNULL\fP when no match exists.
+\fBndi_event_cookie_to_tag()\fP returns the tag, or \fBNDI_FAILURE\fP for an unknown
+cookie.
+Choose tags that do not collide with that failure value.
+.Sh SEE ALSO
+.Xr ndi_event_alloc_hdl 9F ,
+.Xr ndi_post_event 9F ,
+.Xr sunndi 9F ,
+.Xr ndi_event_definition 9S

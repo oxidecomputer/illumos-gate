@@ -1,0 +1,62 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_DEFINITION 9S
+.Os
+.Sh NAME
+.Nm ndi_event_definition ,
+.Nm ndi_event_definition_t
+.Nd nexus event definition
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh DESCRIPTION
+An \fBndi_event_definition_t\fP describes an event supplied by a nexus driver.
+An array of these structures is referenced by an \fBndi_event_set_t\fP and bound
+to an event handle with \fBndi_event_bind_set()\fP.
+The framework keeps pointers to the definitions and their names instead of
+copying them.
+Keep both valid and unchanged for as long as any bound cookie refers to them.
+Static driver storage is suitable.
+.Bl -tag -width Ds
+.It Va ndi_event_tag
+Nexus-assigned integer used by the event conversion functions.
+Use distinct tags within a handle and avoid the value \fBNDI_FAILURE\fP, which
+is the failure result of \fBndi_event_cookie_to_tag()\fP.
+.It Va ndi_event_name
+Null-terminated event name used for cookie lookup.
+Names must be distinct within a handle.
+.It Va ndi_event_plevel
+Execution level: \fBEPL_KERNEL\fP, \fBEPL_INTERRUPT\fP, or \fBEPL_HIGHLEVEL\fP.
+The producer and callbacks must obey the restrictions of that level, and the
+handle locks must be initialized with an appropriate interrupt block cookie.
+A handle cannot mix \fBEPL_HIGHLEVEL\fP events with other levels.
+.It Va ndi_event_attributes
+Use \fBNDI_EVENT_POST_TO_ALL\fP to deliver to every registration or
+\fBNDI_EVENT_POST_TO_TGT\fP to restrict delivery to the specified child.
+\fBNDI_EVENT_POST_TO_ALL\fP is zero, not an independently testable flag bit.
+\fBndi_event_do_callback()\fP overrides this selection and invokes a single
+matching registration.
+.El
+.Sh STRUCTURE MEMBERS
+.Bd -literal -offset indent
+int             ndi_event_tag;
+char            *ndi_event_name;
+ddi_plevel_t    ndi_event_plevel;
+uint_t          ndi_event_attributes;
+.Ed
+.Sh SEE ALSO
+.Xr ndi_event_add_callback 9F ,
+.Xr ndi_event_alloc_hdl 9F ,
+.Xr ndi_event_retrieve_cookie 9F ,
+.Xr ndi_event_set 9S

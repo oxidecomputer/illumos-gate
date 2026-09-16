@@ -1,0 +1,78 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_MERGE_NODE 9F
+.Os
+.Sh NAME
+.Nm ndi_merge_node ,
+.Nm ndi_merge_wildcard_node
+.Nd merge driver configuration properties into hardware nodes
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_merge_node
+.Fa "dev_info_t *dip"
+.Fa "int (*make_ua)(dev_info_t *, char *, int)"
+.Fc
+.Ft "void"
+.Fo ndi_merge_wildcard_node
+.Fa "dev_info_t *dip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Nonpersistent source node created from a driver configuration file.
+.It Va make_ua
+Callback that writes a null-terminated unit address and returns
+\fBDDI_SUCCESS\fP, or returns \fBDDI_FAILURE\fP to skip a child.
+.El
+.Sh DESCRIPTION
+Nexus drivers use these functions during child initialization to apply
+\fBdriver.conf\fP properties to enumerated hardware nodes.
+The caller must own the parent's critical section and \fBdip\fP must be a
+nonpersistent configuration-file node.
+.Pp
+\fBndi_merge_node()\fP requires a unit address on \fBdip\fP.
+It searches siblings by driver binding and address, using \fBmake_ua\fP to obtain
+addresses for unnamed children as described in
+\fBndi_devi_findchild_by_callback(9F)\fP.
+If the target is persistent, has not been initialized, and has no system or
+driver properties, the system and driver property lists are transferred from
+\fBdip\fP to the target.
+Hardware properties are not transferred.
+.Pp
+A matching node that is already initialized, already has properties, or is
+another configuration-file node is still treated as a recognized merge target.
+Success therefore does not guarantee that properties were transferred.
+The nexus is responsible for rejecting or disposing of the source merge node
+through its child-initialization protocol.
+.Pp
+\fBndi_merge_wildcard_node()\fP copies the source properties to each eligible
+persistent sibling bound to the same driver.
+The source must be bound to a valid driver major number.
+Initialized siblings and siblings with existing system or driver properties
+are skipped.
+.Sh CONTEXT
+These functions may be called from user or kernel context.
+They may sleep.
+.Sh RETURN VALUES
+\fBndi_merge_node()\fP returns \fBDDI_SUCCESS\fP if it recognizes a matching
+merge target, including cases where no properties are transferred.
+It returns \fBDDI_FAILURE\fP when no other matching node exists.
+\fBndi_merge_wildcard_node()\fP has no return value.
+.Sh SEE ALSO
+.Xr driver.conf 5 ,
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_devi_findchild 9F ,
+.Xr sunndi 9F

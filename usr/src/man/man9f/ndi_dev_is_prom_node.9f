@@ -1,0 +1,93 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEV_IS_PROM_NODE 9F
+.Os
+.Sh NAME
+.Nm ndi_dev_is_prom_node ,
+.Nm ndi_dev_is_pseudo_node ,
+.Nm ndi_dev_is_persistent_node ,
+.Nm ndi_dev_is_hotplug_node ,
+.Nm ndi_dev_is_hidden_node ,
+.Nm ndi_devi_set_hidden ,
+.Nm ndi_devi_clr_hidden
+.Nd inspect device-node origin and visibility attributes
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_dev_is_prom_node
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_dev_is_pseudo_node
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_dev_is_persistent_node
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_dev_is_hotplug_node
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_dev_is_hidden_node
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "void"
+.Fo ndi_devi_set_hidden
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "void"
+.Fo ndi_devi_clr_hidden
+.Fa "dev_info_t *dip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Valid device node whose attributes are accessed.
+.El
+.Sh DESCRIPTION
+\fBndi_dev_is_prom_node()\fP tests whether the node belongs to the PROM class.
+\fBndi_dev_is_pseudo_node()\fP tests the software-created class.
+All non-PROM nodes are pseudo nodes, including persistent nodes created by
+hardware enumeration; pseudo does not mean nonpersistent.
+.Pp
+\fBndi_dev_is_persistent_node()\fP tests the persistence attribute,
+\fBndi_dev_is_hotplug_node()\fP tests the hotplug-origin attribute, and
+\fBndi_dev_is_hidden_node()\fP tests visibility.
+The allocation node identifier determines the initial attributes, as described
+in \fBndi_devi_alloc(9F)\fP.
+.Pp
+\fBndi_devi_set_hidden()\fP and \fBndi_devi_clr_hidden()\fP set and clear the hidden
+attribute used by device lookup and snapshots.
+They do not acquire locks, change attachment state, invalidate caches, or
+generate events.
+Callers must serialize attribute changes using the device-node locking
+protocol and keep the node alive throughout access.
+For physical removal and reinsertion notification, use
+\fBndi_devi_device_remove()\fP and \fBndi_devi_device_insert()\fP.
+.Sh CONTEXT
+These functions may be called from user, kernel, or interrupt context
+provided the caller supplies the necessary lifetime and synchronization
+protection.
+They do not allocate memory or acquire locks.
+.Sh RETURN VALUES
+The query functions return nonzero when the tested attribute is
+present, and zero otherwise.
+The set and clear functions have no return value.
+.Sh SEE ALSO
+.Xr ndi_devi_alloc 9F ,
+.Xr ndi_devi_device_remove 9F ,
+.Xr sunndi 9F

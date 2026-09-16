@@ -31,6 +31,7 @@ MANFILES=	Intro.9s			\
 		ddi_dma_attr.9s			\
 		ddi_dma_cookie.9s		\
 		ddi_dmae_req.9s			\
+		ddi_fault_event_data.9s		\
 		ddi_fm_error.9s			\
 		ddi_idevice_cookie.9s		\
 		dev_ops.9s			\
@@ -60,6 +61,11 @@ MANFILES=	Intro.9s			\
 		modlstrmod.9s			\
 		module_info.9s			\
 		msgb.9s				\
+		ndi_event_callbacks.9s		\
+		ndi_event_cookie.9s		\
+		ndi_event_definition.9s		\
+		ndi_event_set.9s		\
+		ndi_ra_request.9s		\
 		net_inject_t.9s			\
 		net_instance_t.9s		\
 		qband.9s			\

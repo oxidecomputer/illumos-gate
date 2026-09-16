@@ -1,0 +1,117 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_EVENT_ALLOC_HDL 9F
+.Os
+.Sh NAME
+.Nm ndi_event_alloc_hdl ,
+.Nm ndi_event_free_hdl ,
+.Nm ndi_event_bind_set ,
+.Nm ndi_event_unbind_set
+.Nd manage nexus event handles and event definitions
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_event_alloc_hdl
+.Fa "dev_info_t *dip"
+.Fa "ddi_iblock_cookie_t cookie"
+.Fa "ndi_event_hdl_t *ndi_event_hdl"
+.Fa "uint_t flag"
+.Fc
+.Ft "int"
+.Fo ndi_event_free_hdl
+.Fa "ndi_event_hdl_t handle"
+.Fc
+.Ft "int"
+.Fo ndi_event_bind_set
+.Fa "ndi_event_hdl_t handle"
+.Fa "ndi_event_set_t *ndi_event_set"
+.Fa "uint_t flag"
+.Fc
+.Ft "int"
+.Fo ndi_event_unbind_set
+.Fa "ndi_event_hdl_t handle"
+.Fa "ndi_event_set_t *ndi_event_set"
+.Fa "uint_t flag"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dip
+Nexus node defining the events.
+.It Va cookie
+Interrupt block cookie used to initialize the event locks.
+.It Va ndi_event_hdl
+Output pointer receiving the allocated handle.
+.It Va handle
+Valid event handle returned by allocation.
+.It Va ndi_event_set
+Event set describing definitions to bind or unbind.
+.It Va flag
+\fBNDI_SLEEP\fP or \fBNDI_NOSLEEP\fP for allocations; zero for unbinding.
+.El
+.Sh DESCRIPTION
+A nexus event handle owns a set of event cookies and their callback
+registrations.
+\fBndi_event_alloc_hdl()\fP allocates an empty handle for \fBdip\fP and initializes
+its locks using the supplied interrupt block cookie.
+Pass an appropriate cookie for events delivered at interrupt level, or
+\fBNULL\fP for events delivered only from user or kernel context.
+\fBNDI_SLEEP\fP allows sleeping allocations; \fBNDI_NOSLEEP\fP requests allocations
+that can fail instead of waiting.
+.Pp
+\fBndi_event_bind_set()\fP adds the definitions in \fBndi_event_set\fP to the handle.
+The set must use \fBNDI_EVENTS_REV1\fP.
+The event definition array and its name strings are referenced, not copied,
+and must remain valid until the corresponding events have been unbound or
+the handle has been freed.
+Define unique names and tags within the handle.
+An already bound event name is skipped.
+High-level interrupt events cannot share a handle with kernel or ordinary
+interrupt events.
+.Pp
+\fBndi_event_unbind_set()\fP removes the named definitions from the handle.
+The set may describe a subset of previously bound events.
+Names that are not bound are ignored.
+All callbacks for the selected events must first be removed.
+Its \fBflag\fP argument is unused; pass zero.
+Both binding and unbinding must be performed while the owning nexus is in
+its attach or detach path.
+.Pp
+\fBndi_event_free_hdl()\fP releases the handle and any remaining event cookies.
+All callback registrations must already have been removed, and the caller
+must prevent concurrent users of the handle.
+The handle and all of its cookies are invalid afterwards.
+It does not free the caller's event definition array or strings.
+.Sh CONTEXT
+Allocate and free handles from user or kernel context.
+Binding and unbinding are restricted to the owning nexus
+\fBattach(9E)\fP or \fBdetach(9E)\fP path.
+\fBNDI_NOSLEEP\fP does not relax the attach/detach restriction.
+.Sh RETURN VALUES
+Allocation and binding return \fBNDI_SUCCESS\fP or \fBNDI_FAILURE\fP.
+Binding can fail for an invalid version, incompatible event levels,
+incorrect calling context, or insufficient memory.
+Unbinding returns \fBNDI_SUCCESS\fP, or \fBNDI_FAILURE\fP for an invalid version,
+incorrect calling context, or outstanding callbacks.
+Outstanding callbacks violate the calling contract and can also trigger an
+assertion in a debug kernel.
+Freeing a valid, unused handle returns \fBNDI_SUCCESS\fP.
+.Sh SEE ALSO
+.Xr attach 9E ,
+.Xr detach 9E ,
+.Xr ndi_event_add_callback 9F ,
+.Xr ndi_event_retrieve_cookie 9F ,
+.Xr sunndi 9F ,
+.Xr ndi_event_definition 9S ,
+.Xr ndi_event_set 9S

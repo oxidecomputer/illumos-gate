@@ -1,0 +1,102 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_FLAVORV_ALLOC 9F
+.Os
+.Sh NAME
+.Nm ndi_flavorv_alloc ,
+.Nm ndi_flavorv_set ,
+.Nm ndi_flavorv_get ,
+.Nm ndi_flavor_set ,
+.Nm ndi_flavor_get
+.Nd associate nexus-private data with child flavors
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "void"
+.Fo ndi_flavorv_alloc
+.Fa "dev_info_t *self"
+.Fa "int nflavors"
+.Fc
+.Ft "void"
+.Fo ndi_flavorv_set
+.Fa "dev_info_t *self"
+.Fa "ndi_flavor_t child_flavor"
+.Fa "void *data"
+.Fc
+.Ft "void *"
+.Fo ndi_flavorv_get
+.Fa "dev_info_t *self"
+.Fa "ndi_flavor_t child_flavor"
+.Fc
+.Ft "void"
+.Fo ndi_flavor_set
+.Fa "dev_info_t *child"
+.Fa "ndi_flavor_t child_flavor"
+.Fc
+.Ft "ndi_flavor_t"
+.Fo ndi_flavor_get
+.Fa "dev_info_t *child"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va self
+Nexus node storing pointers for its child flavors.
+.It Va nflavors
+Total number of supported flavors, including flavor zero.
+.It Va child_flavor
+Nonnegative flavor index.
+.It Va data
+Pointer to store for the flavor.
+.It Va child
+Child node whose flavor is set or retrieved.
+.El
+.Sh DESCRIPTION
+A flavor is a small nonnegative integer identifying a kind of child supported
+by a nexus.
+The default flavor, \fBNDI_FLAVOR_VANILLA\fP, is zero.
+\fBndi_flavor_set()\fP records a child's flavor and \fBndi_flavor_get()\fP retrieves it.
+.Pp
+\fBndi_flavorv_alloc()\fP reserves private-pointer slots on \fBself\fP for
+\fBnflavors\fP flavors, counting flavor zero.
+The count must be positive.
+After allocating extra slots, a repeated allocation must specify the same
+count; this function does not resize an existing vector.
+Extra slots are initialized to \fBNULL\fP.
+.Pp
+\fBndi_flavorv_set()\fP and \fBndi_flavorv_get()\fP store and retrieve the pointer for
+\fBchild_flavor\fP on the nexus.
+For flavor zero they use the same pointer as \fBddi_set_driver_private()\fP and
+\fBddi_get_driver_private()\fP; no extra vector is needed for that flavor.
+For other flavors, the vector must have been allocated and the flavor must
+be less than \fBnflavors\fP.
+The functions do not validate arbitrary indices for callers.
+.Pp
+The framework frees the extra pointer vector after successful driver detach.
+Objects referenced by the slots remain owned by the nexus driver and must be
+released by it.
+The flavor and pointer accessors do not lock; callers must synchronize updates
+and maintain the lifetime of the nodes and pointed-to data.
+.Sh CONTEXT
+\fBndi_flavorv_alloc()\fP may be called from user or kernel context and
+may sleep.
+The other functions may also be called from interrupt context with the
+necessary caller-supplied synchronization.
+.Sh RETURN VALUES
+\fBndi_flavorv_get()\fP returns the stored pointer.
+\fBndi_flavor_get()\fP returns the child flavor.
+The other functions have no return value.
+.Sh SEE ALSO
+.Xr ddi_get_driver_private 9F ,
+.Xr ndi_set_bus_private 9F ,
+.Xr sunndi 9F

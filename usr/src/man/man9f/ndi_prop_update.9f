@@ -1,0 +1,142 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_PROP_UPDATE 9F
+.Os
+.Sh NAME
+.Nm ndi_prop_create_boolean ,
+.Nm ndi_prop_update_int ,
+.Nm ndi_prop_update_int_array ,
+.Nm ndi_prop_update_int64 ,
+.Nm ndi_prop_update_int64_array ,
+.Nm ndi_prop_update_string ,
+.Nm ndi_prop_update_string_array ,
+.Nm ndi_prop_update_byte_array
+.Nd create and update hardware properties
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_prop_create_boolean
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fc
+.Ft "int"
+.Fo ndi_prop_update_int
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "int data"
+.Fc
+.Ft "int"
+.Fo ndi_prop_update_int_array
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "int *data"
+.Fa "uint_t nelements"
+.Fc
+.Ft "int"
+.Fo ndi_prop_update_int64
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "int64_t data"
+.Fc
+.Ft "int"
+.Fo ndi_prop_update_int64_array
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "int64_t *data"
+.Fa "uint_t nelements"
+.Fc
+.Ft "int"
+.Fo ndi_prop_update_string
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "char *data"
+.Fc
+.Ft "int"
+.Fo ndi_prop_update_string_array
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "char **data"
+.Fa "uint_t nelements"
+.Fc
+.Ft "int"
+.Fo ndi_prop_update_byte_array
+.Fa "dev_t match_dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "uchar_t *data"
+.Fa "uint_t nelements"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va match_dev
+Device number associated with the property.
+Use \fBDDI_DEV_T_NONE\fP for a property associated with the node as a whole.
+\fBDDI_DEV_T_ANY\fP is not permitted.
+.It Va dip
+Device node whose hardware properties are changed.
+.It Va name
+Nonempty, null-terminated property name.
+.It Va data
+Value, array, or string to copy into the property.
+.It Va nelements
+Number of array elements, rather than the size in bytes, except
+for the byte-array function.
+.El
+.Sh DESCRIPTION
+These functions create or replace properties on the hardware property list of
+\fBdip\fP.
+A nexus uses this list to describe a child device that it has enumerated.
+The property name and value are copied; the caller retains ownership of the
+input storage and may reuse it after the call returns.
+These functions do not modify firmware or the driver's software property list.
+Use the DDI property lookup functions to read the resulting properties.
+.Pp
+\fBndi_prop_create_boolean()\fP creates a property whose presence represents true.
+It has no data value.
+Remove the property to represent false.
+The integer functions store a single integer or an array of integers of the
+specified width.
+The string functions store a null-terminated string or an array of pointers to
+null-terminated strings.
+The byte-array function stores exactly \fBnelements\fP bytes.
+Array lengths must be nonzero.
+.Pp
+An existing property with the matching device number and name is updated;
+otherwise a property is created.
+The caller must keep the device node valid throughout the operation.
+When accessing properties through a driver's property entry point, the driver
+must also be held.
+.Sh CONTEXT
+These functions may be called from user, kernel, or low-level interrupt
+context.
+Memory allocations do not wait for memory to become available.
+.Sh RETURN VALUES
+These functions return \fBDDI_PROP_SUCCESS\fP on success.
+Failures include \fBDDI_PROP_INVAL_ARG\fP for invalid arguments,
+\fBDDI_PROP_NO_MEMORY\fP for an allocation failure, and
+\fBDDI_PROP_CANNOT_ENCODE\fP if a value cannot be encoded.
+These are property status codes, not NDI status codes.
+.Sh SEE ALSO
+.Xr ddi_prop_lookup 9F ,
+.Xr ddi_prop_update 9F ,
+.Xr ndi_prop_remove 9F ,
+.Xr sunndi 9F

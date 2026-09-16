@@ -1,0 +1,121 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_DEVI_ALLOC 9F
+.Os
+.Sh NAME
+.Nm ndi_devi_alloc ,
+.Nm ndi_devi_alloc_sleep ,
+.Nm ndi_devi_free ,
+.Nm ndi_devi_set_nodename
+.Nd allocate, name, and free device nodes
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_devi_alloc
+.Fa "dev_info_t *parent"
+.Fa "const char *node_name"
+.Fa "pnode_t nodeid"
+.Fa "dev_info_t **ret_dip"
+.Fc
+.Ft "void"
+.Fo ndi_devi_alloc_sleep
+.Fa "dev_info_t *parent"
+.Fa "const char *node_name"
+.Fa "pnode_t nodeid"
+.Fa "dev_info_t **ret_dip"
+.Fc
+.Ft "int"
+.Fo ndi_devi_free
+.Fa "dev_info_t *dip"
+.Fc
+.Ft "int"
+.Fo ndi_devi_set_nodename
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fa "int flags"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va parent
+Parent nexus device node.
+.It Va node_name , name
+Null-terminated node name to copy.
+.It Va nodeid
+Firmware node identifier or one of the special identifiers below.
+.It Va ret_dip
+Address at which to return the newly allocated node.
+.It Va dip
+Node to free or rename.
+.It Va flags
+Reserved; pass zero.
+.El
+.Sh DESCRIPTION
+\fBndi_devi_alloc()\fP allocates a device node in the prototype state, records its
+parent, copies \fBnode_name\fP, and stores the result in \fB*ret_dip\fP.
+The node is not yet linked into the parent's child list, bound to a driver,
+initialized by the parent, or attached.
+Populate its hardware properties before binding or bringing it online.
+\fBndi_devi_alloc_sleep()\fP performs the same operation with sleeping allocations.
+.Pp
+The special node identifiers select the following attributes:
+.Bl -tag -width Ds
+.It Dv DEVI_PSEUDO_NODEID
+A nonpersistent software node, such as a node described by \fBdriver.conf\fP.
+.It Dv DEVI_SID_NODEID
+A persistent software-enumerated node.
+.It Dv DEVI_SID_HIDDEN_NODEID
+A persistent, hidden software-enumerated node.
+.It Dv DEVI_SID_HP_NODEID
+A persistent node marked as created by hotplug.
+.It Dv DEVI_SID_HP_HIDDEN_NODEID
+A persistent hotplug node that is initially hidden.
+.El
+.Pp
+Other identifiers designate persistent PROM nodes and must be valid firmware
+node identifiers.
+Persistence describes the lifetime policy of the device node; it does not mean
+that the node is stored across reboots.
+.Pp
+\fBndi_devi_set_nodename()\fP copies \fBname\fP and changes the node and binding names.
+Changing a name is allowed only before driver binding.
+Setting the existing name succeeds without changing the node.
+The \fBflags\fP argument is currently unused; pass zero.
+Serialize changes to a linked node with its parent's device-tree critical
+section.
+.Pp
+\fBndi_devi_free()\fP frees a node that has not reached the initialized state.
+It can undo allocation or binding, but cannot free an initialized or attached
+node.
+Use it for construction cleanup with no dependent children or outstanding
+references; it does not report a failure from the underlying removal routine.
+Use \fBndi_devi_offline()\fP with \fBNDI_DEVI_REMOVE\fP for configured nodes.
+After successful freeing, the pointer must not be used.
+.Sh CONTEXT
+\fBndi_devi_alloc()\fP may be called from user, kernel, or low-level interrupt
+context and uses non-sleeping allocations.
+The other functions may be called from user or kernel context and may sleep.
+.Sh RETURN VALUES
+\fBndi_devi_alloc()\fP returns \fBNDI_SUCCESS\fP, or \fBNDI_NOMEM\fP with
+\fB*ret_dip\fP set to \fBNULL\fP.
+\fBndi_devi_alloc_sleep()\fP has no return value and returns an allocated node.
+\fBndi_devi_free()\fP returns \fBNDI_FAILURE\fP if the node is initialized or attached,
+and \fBNDI_SUCCESS\fP otherwise.
+\fBndi_devi_set_nodename()\fP returns \fBNDI_SUCCESS\fP or \fBNDI_FAILURE\fP.
+.Sh SEE ALSO
+.Xr ndi_dev_is_prom_node 9F ,
+.Xr ndi_devi_enter 9F ,
+.Xr ndi_devi_online 9F ,
+.Xr ndi_prop_update 9F ,
+.Xr sunndi 9F

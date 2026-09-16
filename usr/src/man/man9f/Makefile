@@ -374,6 +374,36 @@ MANFILES=	ASSERT.9f				\
 		msgsize.9f				\
 		mt-streams.9f				\
 		mutex.9f				\
+		ndi_busop_bus_config.9f			\
+		ndi_dc_allochdl.9f			\
+		ndi_dc_devi_create.9f			\
+		ndi_dc_return_dev_state.9f		\
+		ndi_dev_is_prom_node.9f			\
+		ndi_devctl_ioctl.9f			\
+		ndi_devi_alloc.9f			\
+		ndi_devi_config.9f			\
+		ndi_devi_config_vhci.9f			\
+		ndi_devi_device_remove.9f		\
+		ndi_devi_enter.9f			\
+		ndi_devi_findchild.9f			\
+		ndi_devi_online.9f			\
+		ndi_event_add_callback.9f		\
+		ndi_event_alloc_hdl.9f			\
+		ndi_event_dump_hdl.9f			\
+		ndi_event_retrieve_cookie.9f		\
+		ndi_flavorv_alloc.9f			\
+		ndi_get_bus_state.9f			\
+		ndi_hold_devi.9f			\
+		ndi_hold_driver.9f			\
+		ndi_hp_register.9f			\
+		ndi_irm_create.9f			\
+		ndi_merge_node.9f			\
+		ndi_post_event.9f			\
+		ndi_prop_remove.9f			\
+		ndi_prop_update.9f			\
+		ndi_ra_alloc.9f				\
+		ndi_set_acc_fault.9f			\
+		ndi_set_bus_private.9f			\
 		net_event_notify_register.9f		\
 		net_getifname.9f			\
 		net_getlifaddr.9f			\
@@ -524,6 +554,7 @@ MANFILES=	ASSERT.9f				\
 		strlog.9f				\
 		strqget.9f				\
 		strqset.9f				\
+		sunndi.9f				\
 		swab.9f					\
 		taskq.9f				\
 		testb.9f				\

@@ -1,0 +1,60 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt DDI_FAULT_EVENT_DATA 9S
+.Os
+.Sh NAME
+.Nm ddi_fault_event_data
+.Nd payload of a device fault event
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh DESCRIPTION
+\fBstruct ddi_fault_event_data\fP is the event-specific payload for
+\fBDDI_DEVI_FAULT_EVENT\fP, whose event name is \fBDDI:DEVI_FAULT\fP.
+\fBddi_dev_report_fault()\fP assembles the payload and posts it through the NDI
+event framework.
+An event callback receives a pointer to it as the bus implementation data.
+.Bl -tag -width Ds
+.It Va f_dip
+Device node reporting the fault.
+.It Va f_impact
+Impact on device service, expressed as \fBddi_fault_impact_t\fP, such as
+\fBDDI_SERVICE_LOST\fP, \fBDDI_SERVICE_DEGRADED\fP, \fBDDI_SERVICE_UNAFFECTED\fP, or
+\fBDDI_SERVICE_RESTORED\fP.
+.It Va f_location
+Fault location classification, expressed as \fBddi_fault_location_t\fP.
+.It Va f_message
+Borrowed pointer to the diagnostic message supplied by the reporter.
+.It Va f_oldstate
+Device state obtained before the fault event is posted.
+.El
+.Pp
+The reporting function uses a temporary payload and delivers the event
+synchronously.
+Callbacks must not retain the payload pointer after returning.
+The message and device node are also borrowed; copying their pointers does
+not extend the lifetime of the referenced objects.
+.Sh STRUCTURE MEMBERS
+.Bd -literal -offset indent
+dev_info_t             *f_dip;
+ddi_fault_impact_t     f_impact;
+ddi_fault_location_t   f_location;
+const char             *f_message;
+ddi_devstate_t         f_oldstate;
+.Ed
+.Sh SEE ALSO
+.Xr ddi_dev_report_fault 9F ,
+.Xr ddi_get_devstate 9F ,
+.Xr ndi_post_event 9F ,
+.Xr sunndi 9F

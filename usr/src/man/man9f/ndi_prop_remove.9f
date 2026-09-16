@@ -1,0 +1,62 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.Dd September 16, 2026
+.Dt NDI_PROP_REMOVE 9F
+.Os
+.Sh NAME
+.Nm ndi_prop_remove ,
+.Nm ndi_prop_remove_all
+.Nd remove hardware properties
+.Sh SYNOPSIS
+.In sys/sunndi.h
+.Ft "int"
+.Fo ndi_prop_remove
+.Fa "dev_t dev"
+.Fa "dev_info_t *dip"
+.Fa "char *name"
+.Fc
+.Ft "void"
+.Fo ndi_prop_remove_all
+.Fa "dev_info_t *dip"
+.Fc
+.Sh INTERFACE LEVEL
+illumos specific
+.Pq Consolidation Private .
+.Sh PARAMETERS
+.Bl -tag -width Ds
+.It Va dev
+Device number used when creating the property, or \fBDDI_DEV_T_NONE\fP
+for a node property.
+\fBDDI_DEV_T_ANY\fP is not permitted.
+.It Va dip
+Device node whose hardware properties are removed.
+.It Va name
+Nonempty, null-terminated property name.
+.El
+.Sh DESCRIPTION
+\fBndi_prop_remove()\fP removes the hardware property identified by the exact
+device number \fBdev\fP and property name \fBname\fP from \fBdip\fP.
+It does not search ancestors.
+.Pp
+\fBndi_prop_remove_all()\fP removes all hardware properties from \fBdip\fP and clears
+its dynamic parent-property description.
+Driver and system properties are separate lists and are not removed.
+The caller must keep \fBdip\fP valid throughout the operation.
+.Sh CONTEXT
+These functions may be called from user, kernel, or low-level interrupt
+context.
+.Sh RETURN VALUES
+\fBndi_prop_remove()\fP returns \fBDDI_PROP_SUCCESS\fP, \fBDDI_PROP_NOT_FOUND\fP,
+or \fBDDI_PROP_INVAL_ARG\fP.
+\fBndi_prop_remove_all()\fP has no return value.
+.Sh SEE ALSO
+.Xr ndi_prop_update 9F ,
+.Xr sunndi 9F
