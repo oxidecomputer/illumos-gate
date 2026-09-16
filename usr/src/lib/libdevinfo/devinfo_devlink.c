@@ -297,6 +297,11 @@ open_db(struct di_devlink_handle *hdp, int flags)
 		rv = invalid_db(hdp, sz, page_sz);
 	} else {
 		rv = init_hdr(hdp, page_sz, count);
+		/*
+		 * Start the running string CRC with the NIL string which
+		 * occupies the first byte of the string segment.
+		 */
+		DB(hdp)->str_crc = devlink_crc32(0, "", 1);
 	}
 
 	if (rv) {
@@ -304,11 +309,20 @@ open_db(struct di_devlink_handle *hdp, int flags)
 		    path);
 		(void) close_db(hdp);
 		return (-1);
-	} else {
-		(void) devlink_dprintf(DBG_STEP, "open_db: DB(%s): opened\n",
-		    path);
-		return (0);
 	}
+
+	/*
+	 * Verify database integrity before it is used.
+	 */
+	if (IS_RDONLY(flags) && !verify_db_crc(hdp)) {
+		(void) devlink_dprintf(DBG_ERR,
+		    "open_db: DB(%s): CRC mismatch\n", path);
+		(void) close_db(hdp);
+		return (-1);
+	}
+
+	(void) devlink_dprintf(DBG_STEP, "open_db: DB(%s): opened\n", path);
+	return (0);
 }
 
 /*
@@ -543,46 +557,144 @@ invalid_db(struct di_devlink_handle *hdp, size_t fsize, long page_sz)
 	return (0);
 }
 
+static const uint32_t devlink_crc32_table[256] = { CRC32_TABLE };
+
+static uint32_t
+devlink_crc32(uint32_t crc, const void *buf, size_t len)
+{
+	CRC32(crc, buf, len, crc, devlink_crc32_table);
+	return (crc);
+}
+
 /*
- * stlouis#723 is tracking a bug where we sometimes end up with corrupt entries
- * in the devino database. The corruption observed so far is very specific, a
- * bit flip changing the 5th character to lower case. We check for any lower
- * case characters in the WWN here and panic if any are found to provide a core
- * file for further investigation.
+ * A corrupt database has been detected. Report it, preserve the evidence by
+ * renaming the database aside, and panic to produce a core file. Renaming
+ * the database also allows the system to recover, since with no database
+ * present the next devfsadm invocation rebuilds it from the kernel and
+ * /dev.
  */
 static void
-check_lowercase_corruption(const char *path, const char *tag, uint32_t nidx)
+devlink_db_fault(struct di_devlink_handle *hdp, const char *fmt, ...)
 {
-	const char *wp, *cp;
+	char msg[1024], from[PATH_MAX], to[PATH_MAX];
+	size_t len;
+	va_list ap;
+	int ret;
 
-	if ((wp = strstr(path, "@w")) == NULL)
+	len = strlcpy(msg, "devlink DB corruption: ", sizeof (msg));
+
+	va_start(ap, fmt);
+	ret = vsnprintf(msg + len, sizeof (msg) - len, fmt, ap);
+	va_end(ap);
+	if (ret < 0)
+		msg[len] = '\0';
+
+	syslog(LOG_ALERT, "%s", msg);
+
+	if (hdp != NULL && DB_OPEN(hdp)) {
+		get_db_path(hdp, DB_RDWR(hdp) ? DB_TMP : DB_FILE,
+		    from, sizeof (from));
+		get_db_path(hdp, DB_CORRUPT, to, sizeof (to));
+		len = strlen(to);
+		(void) snprintf(to + len, sizeof (to) - len, ".%ld",
+		    (long)time(NULL));
+		if (rename(from, to) == 0) {
+			syslog(LOG_ALERT, "quarantined %s as %s", from, to);
+		} else {
+			syslog(LOG_ALERT, "failed to quarantine %s as %s: %s",
+			    from, to, strerror(errno));
+		}
+	}
+
+	upanic(msg, strlen(msg) + 1);
+}
+
+static uint32_t
+segment_crc(struct di_devlink_handle *hdp, db_seg_t seg, int prot)
+{
+	size_t len;
+
+	if (map_seg(hdp, 1, prot, seg) == NULL)
+		return (0);
+
+	len = DB_NUM(hdp, seg) * elem_sizes[seg];
+	return (devlink_crc32(0, DB_SEG(hdp, seg), len));
+}
+
+static bool
+verify_db_crc(struct di_devlink_handle *hdp)
+{
+	uint32_t crc;
+	int i;
+
+	for (i = 0; i < DB_TYPES; i++) {
+		crc = segment_crc(hdp, i, PROT_READ);
+		if (crc == DB_HDR(hdp)->crc[i])
+			continue;
+
+		syslog(LOG_WARNING, "devlink DB segment %d CRC mismatch "
+		    "(stored %08x, computed %08x)",
+		    i, DB_HDR(hdp)->crc[i], crc);
+
+		if (HDL_RDWR(hdp)) {
+			devlink_db_fault(hdp, "segment %d CRC mismatch "
+			    "(stored %08x, computed %08x); written by "
+			    "pid %u (%s) at %llu", i, DB_HDR(hdp)->crc[i],
+			    crc, DB_HDR(hdp)->writer_pid,
+			    DB_HDR(hdp)->writer_exec,
+			    (u_longlong_t)DB_HDR(hdp)->writer_time);
+		}
+		return (false);
+	}
+	return (true);
+}
+
+/*
+ * The database content is complete. Record the segment CRCs and the
+ * identity of this writer in the header, after verifying that the string
+ * segment still matches the CRC accumulated from the source strings as
+ * they were copied in. If there's a mismatch then something modified the
+ * mapping after the data was written. Finally, make the data segments
+ * read-only so that any stray store into the mapping before it is
+ * unmapped faults instead of corrupting the file.
+ */
+static void
+seal_db(struct di_devlink_handle *hdp, uint32_t *next)
+{
+	struct db_hdr *hp = DB_HDR(hdp);
+	const char *exec, *base;
+	uint32_t crc;
+	int i;
+
+	assert(HDL_RDWR(hdp) && DB_RDWR(hdp));
+
+	if (map_seg(hdp, 1, PROT_READ | PROT_WRITE, DB_STR) == NULL) {
+		SET_DB_ERR(hdp);
 		return;
+	}
 
-	for (cp = wp + 2; *cp != '\0' && *cp != ','; cp++) {
-		if (*cp >= 'a' && *cp <= 'f') {
-			const char *panicstr = "Corrupt devlink path";
-			char msg[1024];
-			size_t len;
-			int ret;
+	crc = devlink_crc32(0, DB_SEG(hdp, DB_STR), next[DB_STR]);
+	if (crc != DB(hdp)->str_crc) {
+		devlink_db_fault(hdp, "string segment modified during "
+		    "write (computed %08x, expected %08x)",
+		    crc, DB(hdp)->str_crc);
+	}
 
-			syslog(LOG_WARNING,
-			    "devlink: %s: node[%u] path has "
-			    "unexpected lowercase hex: %s",
-			    tag, nidx, path);
+	for (i = 0; i < DB_TYPES; i++)
+		hp->crc[i] = segment_crc(hdp, i, PROT_READ | PROT_WRITE);
 
-			ret = snprintf(msg, sizeof (msg),
-			    "%s: %s node[%u] '%s'",
-			    panicstr, tag, nidx, path);
-			if (ret <= 0) {
-				len = strlen(panicstr) + 1;
-			} else if (ret >= sizeof (msg)) {
-				len = sizeof (msg);
-				panicstr = msg;
-			} else {
-				len = (size_t)ret;
-				panicstr = msg;
-			}
-			upanic(panicstr, len);
+	hp->writer_pid = (uint32_t)getpid();
+	hp->writer_time = (uint64_t)time(NULL);
+	if ((exec = getexecname()) != NULL) {
+		base = strrchr(exec, '/');
+		(void) strlcpy(hp->writer_exec,
+		    base != NULL ? base + 1 : exec, sizeof (hp->writer_exec));
+	}
+
+	for (i = 0; i < DB_TYPES; i++) {
+		if (DB_SEG(hdp, i) != NULL && mprotect(DB_SEG(hdp, i),
+		    seg_size(hdp, i), PROT_READ) == 0) {
+			DB_SEG_PROT(hdp, i) = PROT_READ;
 		}
 	}
 }
@@ -610,9 +722,6 @@ read_nodes(struct di_devlink_handle *hdp, cache_node_t *pcnp, uint32_t nidx)
 	for (; (dnp = get_node(hdp, nidx)) != NULL; nidx = dnp->sib) {
 
 		path = get_string(hdp, dnp->path);
-
-		if (path != NULL)
-			check_lowercase_corruption(path, "read_nodes", nidx);
 
 		/*
 		 * Insert at head of list to recreate original order
@@ -813,6 +922,9 @@ di_devlink_close(di_devlink_handle_t *pp, int flag)
 	(void) write_nodes(hdp, NULL, CACHE_ROOT(hdp), next);
 	(void) write_links(hdp, NULL, CACHE(hdp)->dngl, next);
 	DB_HDR(hdp)->update_count = CACHE(hdp)->update_count;
+
+	if (!DB_ERR(hdp))
+		seal_db(hdp, next);
 
 	rv = close_db(hdp);
 
@@ -1061,42 +1173,6 @@ write_string(struct di_devlink_handle *hdp, const char *str, uint32_t *next)
 		return (DB_NIL);
 	}
 
-	/*
-	 * stlouis#723 is tracking a bug where we sometimes end up with corrupt
-	 * entries in the devino database. The corruption observed so far is
-	 * very specific, a bit flip changing the 5th character to lower case.
-	 * We check for any lower case characters in the WWN here and crash if
-	 * any are found to provide a core file for further investigation.
-	 */
-	if ((dstr = strstr(str, "blkdev@w")) != NULL) {
-		uint_t i;
-
-		dstr += strlen("blkdev@w");
-		for (i = 0; i < 16; i++) {
-			if (dstr[i] == '\0')
-				break;
-			if (dstr[i] >= 'a' && dstr[i] <= 'z') {
-				const char *panicstr = "Corrupt WWN str";
-				char msg[1024];
-				size_t len;
-				int ret;
-
-				ret = snprintf(msg, sizeof (msg),
-				    "%s='%s'", panicstr, str);
-				if (ret <= 0) {
-					len = strlen(panicstr) + 1;
-				} else if (ret >= sizeof (msg)) {
-					len = sizeof (msg);
-					panicstr = msg;
-				} else {
-					len = (size_t)ret;
-					panicstr = msg;
-				}
-				upanic(panicstr, len);
-			}
-		}
-	}
-
 	if ((dstr = set_string(hdp, idx)) == NULL) {
 		return (DB_NIL);
 	}
@@ -1104,32 +1180,16 @@ write_string(struct di_devlink_handle *hdp, const char *str, uint32_t *next)
 	(void) strcpy(dstr, str);
 
 	/*
-	 * stlouis#723 is tracking a bug where we sometimes end up with corrupt
-	 * entries in the devino database. The corruption observed so far is
-	 * very specific, a bit flip changing the 5th character to lower case.
-	 * We check for any lower case characters in the WWN here and crash if
-	 * any are found to provide a core file for further investigation.
+	 * Verify that the string just written to the database file matches
+	 * the source.
 	 */
 	if (strcmp(dstr, str) != 0) {
-		const char *panicstr = "write_string: post-write mismatch";
-		char msg[1024];
-		size_t len;
-		int ret;
-
-		ret = snprintf(msg, sizeof (msg),
-		    "%s: wrote \"%s\", read back \"%s\"",
-		    panicstr, str, dstr);
-		if (ret <= 0) {
-			len = strlen(panicstr) + 1;
-		} else if (ret >= sizeof (msg)) {
-			len = sizeof (msg);
-			panicstr = msg;
-		} else {
-			len = (size_t)ret;
-			panicstr = msg;
-		}
-		upanic(panicstr, len);
+		devlink_db_fault(hdp, "write_string: post-write mismatch: "
+		    "wrote \"%s\", read back \"%s\"", str, dstr);
 	}
+
+	DB(hdp)->str_crc = devlink_crc32(DB(hdp)->str_crc, str,
+	    strlen(str) + 1);
 
 	next[DB_STR] += strlen(dstr) + 1;
 

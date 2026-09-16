@@ -97,8 +97,15 @@
  * MCIO		G1				0x14
  */
 
+#include <sys/io/turin/pcie.h>
 #include <sys/io/zen/oxio.h>
 #include <sys/sysmacros.h>
+
+/*
+ * The Gen 5 equalisation presets offered on the U.2 links.
+ */
+#define	COSMO_U2_GEN5_PRESETS	(PCIE_PORT_LC_PRST_MASK_CTL_P(4) | \
+	PCIE_PORT_LC_PRST_MASK_CTL_P(5))
 
 const oxio_engine_t oxio_cosmo[] = { {
 	.oe_name = "T6",
@@ -205,7 +212,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		 * We've run into issues with drives at Gen5 and so we limit
 		 * this and all other U.2 slots to Gen4.
 		 */
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N1 (B)",
@@ -227,7 +235,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N2 (C)",
@@ -249,7 +258,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N3 (D)",
@@ -271,7 +281,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N4 (E)",
@@ -293,7 +304,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N5 (F)",
@@ -315,7 +327,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N6 (G)",
@@ -337,7 +350,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N7 (H)",
@@ -359,7 +373,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N8 (I)",
@@ -381,7 +396,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "U.2 N9 (J)",
@@ -403,7 +419,8 @@ const oxio_engine_t oxio_cosmo[] = { {
 		    OXIO_PCIE_CAP_EMILS
 	},
 	.oe_tuning = {
-		.ot_hw_limit = OXIO_SPEED_GEN_4
+		.ot_hw_limit = OXIO_SPEED_GEN_4,
+		.ot_gen5_eq_preset_mask = COSMO_U2_GEN5_PRESETS
 	}
 }, {
 	.oe_name = "Backplane (Switch)",

@@ -25,7 +25,7 @@
 # Copyright (c) 2010, Intel Corporation.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2020 Joyent, Inc.
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 # Copyright 2021 Jason King
 #
 #	This Makefile defines file modules in the directory uts/i86pc
@@ -47,6 +47,7 @@ CORE_OBJS +=			\
 	comm_page.o		\
 	confunix.o		\
 	cpu_idle.o		\
+	cpufreq_mon.o		\
 	cpuid.o			\
 	cpuid_subr.o		\
 	cpupm.o			\
@@ -90,7 +91,6 @@ CORE_OBJS +=			\
 	mem_config.o		\
 	mem_config_stubs.o	\
 	mem_config_arch.o	\
-	memlist_new.o		\
 	memnode.o		\
 	memstr.o		\
 	microcode_amd.o		\
@@ -123,6 +123,7 @@ CORE_OBJS +=			\
 	startup.o		\
 	timestamp.o		\
 	todpc_subr.o		\
+	tscc_cpuid.o		\
 	tscc_hpet.o		\
 	tscc_pit.o		\
 	tscc_vmware.o		\
@@ -246,7 +247,7 @@ XSVC_OBJS += xsvc.o
 AMD_IOMMU_OBJS +=	amd_iommu.o amd_iommu_impl.o amd_iommu_acpi.o \
 			amd_iommu_cmd.o amd_iommu_log.o amd_iommu_page_tables.o
 
-PCI_PRD_OBJS += pci_prd_i86pc.o pci_memlist.o
+PCI_PRD_OBJS += pci_prd_i86pc.o
 
 AMDZEN_PLAT_OBJS += amdzen_plat_i86pc.o
 

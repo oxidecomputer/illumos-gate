@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include "statcommon.h"
@@ -49,8 +50,7 @@ static char *cpu_states[] = {
 };
 
 static kstat_t *
-kstat_lookup_read(kstat_ctl_t *kc, char *module,
-		int instance, char *name)
+kstat_lookup_read(kstat_ctl_t *kc, char *module, int instance, char *name)
 {
 	kstat_t *ksp = kstat_lookup(kc, module, instance, name);
 	if (ksp == NULL)
@@ -107,6 +107,16 @@ acquire_cpus(struct snapshot *ss, kstat_ctl_t *kc)
 
 		if (kstat_copy(ksp, &ss->s_cpus[i].cs_sys))
 			goto out;
+
+		/*
+		 * The per-CPU frequency monitor kstat is optional as it is
+		 * present only on platforms that expose the APERF/MPERF
+		 * feature. Its absence is not an error.
+		 */
+		if ((ksp = kstat_lookup_read(kc,
+		    "cpufreq", i, "cpufreq")) != NULL) {
+			(void) kstat_copy(ksp, &ss->s_cpus[i].cs_cpufreq);
+		}
 	}
 
 	errno = 0;
@@ -372,6 +382,7 @@ free_snapshot(struct snapshot *ss)
 		for (i = 0; i < ss->s_nr_cpus; i++) {
 			free(ss->s_cpus[i].cs_vm.ks_data);
 			free(ss->s_cpus[i].cs_sys.ks_data);
+			free(ss->s_cpus[i].cs_cpufreq.ks_data);
 		}
 		free(ss->s_cpus);
 	}

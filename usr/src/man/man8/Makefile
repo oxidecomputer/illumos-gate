@@ -172,6 +172,7 @@ _MANFILES=	6to4relay.8		\
 		hextoalabel.8		\
 		hostconfig.8		\
 		hotplug.8		\
+		hsmp.8			\
 		i2cadm.8		\
 		id.8			\
 		idmap.8			\

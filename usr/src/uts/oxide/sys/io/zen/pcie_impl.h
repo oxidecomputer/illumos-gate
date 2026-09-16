@@ -115,7 +115,13 @@ typedef enum zen_pcie_port_flag {
 	 * used for hotplug shenanigans. This means the bridge's slot state and
 	 * controls are actually meaningful.
 	 */
-	ZEN_PCIE_PORT_F_HOTPLUG		= 1 << 2
+	ZEN_PCIE_PORT_F_HOTPLUG		= 1 << 2,
+
+	/*
+	 * Indicates that firmware reported this port's link as having
+	 * successfully trained.
+	 */
+	ZEN_PCIE_PORT_F_TRAINED		= 1 << 3
 } zen_pcie_port_flag_t;
 
 typedef enum zen_pcie_core_flag {

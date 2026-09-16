@@ -606,7 +606,6 @@
 #include <sys/x86_archext.h>
 #include <sys/bitext.h>
 #include <sys/sysmacros.h>
-#include <sys/memlist_impl.h>
 #include <sys/machsystm.h>
 #include <sys/plat/pci_prd.h>
 #include <sys/apic.h>
@@ -1878,6 +1877,18 @@ milan_dxio_rpc_retrieve_engine(zen_iodie_t *iodie)
 		cmn_err(CE_WARN, "DXIO Retrieve Engine Failed: SMU %s, "
 		    "DXIO: 0x%x", zen_smu_rpc_res_str(rpc.mdr_smu_resp),
 		    rpc.mdr_dxio_resp);
+		return (false);
+	}
+
+	/*
+	 * Guard against DXIO firmware DMA-ing back an unexpected number of
+	 * engines. We should never get back more engines than we originally
+	 * provided in milan_dxio_plat_data().
+	 */
+	if (conf->zdc_conf->zdp_nengines > iodie->zi_nengines) {
+		cmn_err(CE_WARN, "DXIO returned 0x%x engines, more than the "
+		    "0x%lx that were configured", conf->zdc_conf->zdp_nengines,
+		    iodie->zi_nengines);
 		return (false);
 	}
 
@@ -3881,6 +3892,31 @@ milan_fabric_setup_pcie_core_dbg(zen_pcie_core_t *pc, void *arg)
 }
 
 /*
+ * Capture the link training status that DXIO firmware reported for each mapped
+ * port on this I/O die once we've successfully gone through the LTSSM.
+ * Everything downstream consults ZEN_PCIE_PORT_F_TRAINED rather than the buffer
+ * shared with DXIO.
+ */
+static int
+milan_dxio_capture_trained(zen_pcie_port_t *port, void *arg)
+{
+	const zen_iodie_t *iodie = arg;
+	const zen_dxio_fw_config_pcie_t *pcie;
+
+	if (port->zpp_core->zpc_ioms->zio_nbio->zn_iodie != iodie)
+		return (0);
+
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) == 0)
+		return (0);
+
+	pcie = &port->zpp_dxio_engine->zde_config.zdc_pcie;
+	if (pcie->zdcp_link_train == MILAN_DXIO_PCIE_SUCCESS)
+		port->zpp_flags |= ZEN_PCIE_PORT_F_TRAINED;
+
+	return (0);
+}
+
+/*
  * Here we are, it's time to actually kick off the state machine that we've
  * wanted to do.
  */
@@ -4063,6 +4099,9 @@ done:
 		return (1);
 	}
 
+	(void) zen_fabric_walk_pcie_port(fabric, milan_dxio_capture_trained,
+	    iodie);
+
 	return (0);
 }
 
@@ -4165,13 +4204,6 @@ milan_fabric_init_bridge(zen_pcie_port_t *port)
 	val = PCIE_PORT_LC_CTL6_SET_SPC_MODE_8GT(val,
 	    PCIE_PORT_LC_CTL6_SPC_MODE_8GT_2);
 	zen_pcie_port_write(port, reg, val);
-}
-
-bool
-milan_fabric_pcie_port_is_trained(const zen_pcie_port_t *port)
-{
-	uint8_t lt = port->zpp_dxio_engine->zde_config.zdc_pcie.zdcp_link_train;
-	return (lt == MILAN_DXIO_PCIE_SUCCESS);
 }
 
 void

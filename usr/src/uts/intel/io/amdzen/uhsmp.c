@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -173,7 +173,7 @@ uhsmp_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	if (ucmd.uc_id > uhsmp->uhsmp_maxfn)
 		return (EINVAL);
 
-	ret = uhsmp_cmd(uhsmp, 0, &ucmd);
+	ret = uhsmp_cmd(uhsmp, dfno, &ucmd);
 
 	if (ret == 0 && ddi_copyout(&ucmd, (void *)arg, sizeof (ucmd),
 	    mode & FKIOCTL) != 0) {
@@ -258,13 +258,13 @@ uhsmp_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		.uc_id = HSMP_CMD_GETIFVERSION
 	};
 	if ((ret = uhsmp_cmd(uhsmp, 0, &vercmd)) != 0) {
-		dev_err(dip, CE_CONT, "?UHSMP version command error %d", ret);
+		dev_err(dip, CE_CONT, "?UHSMP version command error %d\n", ret);
 		goto err;
 	}
-	if (testcmd.uc_response != HSMP_RESPONSE_OK) {
+	if (vercmd.uc_response != HSMP_RESPONSE_OK) {
 		dev_err(dip, CE_CONT,
-		    "?UHSMP version command failed. Response 0x%x",
-		    testcmd.uc_response);
+		    "?UHSMP version command failed. Response 0x%x\n",
+		    vercmd.uc_response);
 		goto err;
 	}
 

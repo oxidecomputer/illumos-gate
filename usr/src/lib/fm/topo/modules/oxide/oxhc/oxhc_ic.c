@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -953,12 +953,26 @@ static const oxhc_ic_info_t oxhc_ic_mt25qu256 = {
 	.ic_mpn = "MT25QU256ABA8E12-0AUT"
 };
 
+static const oxhc_ic_info_t oxhc_ic_mt25qu01g = {
+	.ic_cpn = "221-0000253", .ic_mfg = "Micron",
+	.ic_mpn = "MT25QU01GBBB1EW9-0SIT"
+};
+
 static const oxhc_ic_info_t oxhc_ic_max31790 = {
 	.ic_cpn = "221-0000016", .ic_mfg = "Maxim", .ic_mpn = "MAX31790ATI+T"
 };
 
 static const oxhc_ic_info_t oxhc_ic_9dbl0455 = {
 	.ic_cpn = "221-0000074", .ic_mfg = "Renesas", .ic_mpn = "9DBL0455"
+};
+
+static const oxhc_ic_info_t oxhc_ic_8t39204 = {
+	.ic_cpn = "221-0000251", .ic_mfg = "Renesas", .ic_mpn = "8T39204NLGI"
+};
+
+static const oxhc_ic_info_t oxhc_ic_ak3addf1 = {
+	.ic_cpn = "227-0000021", .ic_mfg = "Abracon",
+	.ic_mpn = "AK3ADDF1-156.2500T3"
 };
 
 static const oxhc_ic_info_t oxhc_ic_pca9545 = {
@@ -1037,6 +1051,10 @@ static const oxhc_ic_info_t oxhc_ic_tps62916 = {
 
 static const oxhc_ic_info_t oxhc_ic_tps74501 = {
 	.ic_cpn = "221-0000203", .ic_mfg = "TI", .ic_mpn = "TPS74501PDRV"
+};
+
+static const oxhc_ic_info_t oxhc_ic_tps7a57 = {
+	.ic_cpn = "221-0000248", .ic_mfg = "TI", .ic_mpn = "TPS7A57"
 };
 
 static const oxhc_ic_info_t oxhc_ic_lt3072 = {
@@ -1148,6 +1166,36 @@ static const oxhc_ic_info_t oxhc_ic_isl68224 = {
 	.ic_nsensors = ARRAY_SIZE(oxhc_ic_isl68224_sensors)
 };
 
+/*
+ * The ISL68224 that powers the Redhawk NIC on Metro only uses two of its three
+ * rails.
+ */
+static const oxhc_ic_sensor_t oxhc_ic_isl68224_nic_sensors[] = { {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_VOLTAGE,
+	.is_unit = TOPO_SENSOR_UNITS_VOLTS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_vout[1])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[0])
+}, {
+	.is_type = TOPO_SENSOR_TYPE_CURRENT,
+	.is_unit = TOPO_SENSOR_UNITS_AMPS,
+	.is_offset = offsetof(ipcc_inv_isl68224_t, isl_rail_iout[1])
+} };
+
+static const oxhc_ic_info_t oxhc_ic_isl68224_nic = {
+	.ic_cpn = "221-0000072", .ic_mfg = "Renesas", .ic_mpn = "ISL68224",
+	.ic_fmri = topo_oxhc_ic_isl68224_fmri,
+	.ic_enum = topo_oxhc_ic_isl68224_enum,
+	.ic_sensors = oxhc_ic_isl68224_nic_sensors,
+	.ic_nsensors = ARRAY_SIZE(oxhc_ic_isl68224_nic_sensors)
+};
+
 static const char *oxhc_ic_sp3_vpp_labels[] = {
 	"VPP_ABCD:vout", "VPP_EFGH:vout", "V1P8_SP3:vout", "VPP_ABCD:iout",
 	"VPP_EFGH:iout", "V1P8_SP3:iout"
@@ -1156,6 +1204,16 @@ static const char *oxhc_ic_sp3_vpp_labels[] = {
 static const char *oxhc_ic_sp5_misc_labels[] = {
 	"V1P1_SP5_A0:vout", "V1P8_SP5_A0:vout", "V3P3_SP5:vout",
 	"V1P1_SP5_A0:iout", "V1P8_SP5_A0:iout", "V3P3_SP5_A0:iout"
+};
+
+/*
+ * XXX: The rail order here follows the loop assignment on the Metro schematic,
+ * with the four phase VCCINT loop first. We'll need to know which SP inventory
+ * rail index corresponds to which.
+ */
+static const char *oxhc_ic_isl68224_nic_labels[] = {
+	"V0P8_NIC_VCCINT_A0HP:vout", "V0P88_NIC_A0HP:vout",
+	"V0P8_NIC_VCCINT_A0HP:iout", "V0P88_NIC_A0HP:iout"
 };
 
 static const oxhc_ic_info_t oxhc_ic_isl99390 = {
@@ -1227,7 +1285,7 @@ static const char *oxhc_ic_max5970_m2_labels[] = {
 	"V3P3_M2B_A0HP:iout"
 };
 
-static const char *oxhc_ic_max5970_t6_labels[] = {
+static const char *oxhc_ic_max5970_nic_labels[] = {
 	"V12P0_NIC_A0HP:vout", "V5P0_NIC_A0HP:vout", "V12P0_NIC_A0HP:iout",
 	"V5P0_NIC_A0HP:iout"
 };
@@ -1292,6 +1350,10 @@ static const oxhc_ic_info_t oxhc_ic_w25q01j = {
 
 static const oxhc_ic_info_t oxhc_ic_xc7s100 = {
 	.ic_cpn = "221-0000190", .ic_mfg = "AMD", .ic_mpn = "XC7S100-1FGGA484I"
+};
+
+static const oxhc_ic_info_t oxhc_ic_vp1202 = {
+	.ic_cpn = "221-0000238", .ic_mfg = "AMD", .ic_mpn = "XCVP1202-VSVA2785"
 };
 
 static const oxhc_ic_sensor_t oxhc_ic_lm5066i_sensors[] = { {
@@ -1670,8 +1732,8 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U54",
 		.ib_info = &oxhc_ic_max5970,
-		.ib_labels = oxhc_ic_max5970_t6_labels,
-		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_t6_labels)
+		.ib_labels = oxhc_ic_max5970_nic_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_nic_labels)
 	},
 	{
 		.ib_refdes = "U123",
@@ -1687,6 +1749,211 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 };
 
 const size_t oxhc_ic_cosmo_main_nents = ARRAY_SIZE(oxhc_ic_cosmo_main);
+
+/*
+ * Metro is derived from Cosmo and most of the board is unchanged, including
+ * the reference designators. The differences are around the NIC, where the
+ * chip-down Chelsio T6 and its supporting parts have been replaced by a Versal
+ * VP1202 (Redhawk) with its own regulators, flash and clocking, and the
+ * removal of the MCIO connector and its hot swap controller. Several
+ * reference designators that were used by the T6 supporting parts on Cosmo
+ * have been reused for different parts here.
+ */
+const oxhc_ic_board_t oxhc_ic_metro_main[] = {
+	{ .ib_refdes = "U11", .ib_info = &oxhc_ic_9dbl0455 },
+	{ .ib_refdes = "U12", .ib_info = &oxhc_ic_9dbl0455 },
+	{ .ib_refdes = "U13", .ib_info = &oxhc_ic_9dbl0455 },
+	{ .ib_refdes = "U14", .ib_info = &oxhc_ic_9dbl0455 },
+	{ .ib_refdes = "U154", .ib_info = &oxhc_ic_9dbl0455 },
+	{
+		.ib_refdes = "U15",
+		.ib_info = &oxhc_ic_max5970,
+		.ib_labels = oxhc_ic_max5970_m2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_m2_labels)
+	},
+	/*
+	 * XXX: Unlike the T6 on Cosmo, there is no enumerator for the Versal
+	 * yet, so nothing ties this node to the two PCIe devices in slots
+	 * 0x14 and 0x15 or provides a UFM. Come back to it once we have
+	 * the rhdrv. One thing to note - topo_oxhc_enum_pcie() sets a single
+	 * I/O property group on the node it is given, so two devices under one
+	 * IC needs some work here.
+	 */
+	{ .ib_refdes = "U145", .ib_info = &oxhc_ic_vp1202 },
+	{ .ib_refdes = "U147", .ib_info = &oxhc_ic_mt25qu01g },
+	/* 156.25MHz Ethernet reference clock oscillator and its buffer */
+	{ .ib_refdes = "Y3", .ib_info = &oxhc_ic_ak3addf1 },
+	{ .ib_refdes = "U157", .ib_info = &oxhc_ic_8t39204 },
+	{ .ib_refdes = "U20", .ib_info = &oxhc_ic_stm32h7 },
+	{ .ib_refdes = "U32", .ib_info = &oxhc_ic_at24csw },
+	{ .ib_refdes = "U26", .ib_info = &oxhc_ic_lpc55s69 },
+	/*
+	 * These two flashes should be filled in by dynamic SP properties some
+	 * day.
+	 */
+	{ .ib_refdes = "U21", .ib_info = &oxhc_ic_w25q256j },
+	{ .ib_refdes = "U28", .ib_info = &oxhc_ic_w25q01j },
+	/*
+	 * We should get the 96-bit device ID out of the FPGA.
+	 */
+	{ .ib_refdes = "U27", .ib_info = &oxhc_ic_xc7s100 },
+	{ .ib_refdes = "U31", .ib_info = &oxhc_ic_ice40seq },
+	{ .ib_refdes = "U37", .ib_info = &oxhc_ic_ksz8463 },
+	/*
+	 * We may want to consider asking the SP for the device revision
+	 * information.
+	 */
+	{ .ib_refdes = "U38", .ib_info = &oxhc_ic_vsc8552 },
+	{ .ib_refdes = "U45", .ib_info = &oxhc_ic_ign_bga },
+	{ .ib_refdes = "U56", .ib_info = &oxhc_ic_mt25ql128 },
+	{
+		.ib_refdes = "U71",
+		.ib_info = &oxhc_ic_lm5066i,
+		.ib_labels = oxhc_ic_lm5066i_fan_east_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_lm5066i_fan_east_labels)
+	},
+	{
+		.ib_refdes = "U72",
+		.ib_info = &oxhc_ic_lm5066i,
+		.ib_labels = oxhc_ic_lm5066i_fan_center_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_lm5066i_fan_center_labels)
+	},
+	{
+		.ib_refdes = "U73",
+		.ib_info = &oxhc_ic_lm5066i,
+		.ib_labels = oxhc_ic_lm5066i_fan_west_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_lm5066i_fan_west_labels)
+	},
+	{ .ib_refdes = "U58", .ib_info = &oxhc_ic_max31790 },
+	{
+		.ib_refdes = "U79",
+		.ib_info = &oxhc_ic_adm127x,
+		.ib_labels = oxhc_ic_adm_hs_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_hs_labels)
+	},
+	{
+		.ib_refdes = "U80",
+		.ib_info = &oxhc_ic_bmr491,
+		.ib_labels = oxhc_ic_bmr491_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_bmr491_labels)
+	},
+	{
+		.ib_refdes = "U81",
+		.ib_info = &oxhc_ic_tps546b,
+		.ib_labels = oxhc_ic_v1p8_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v1p8_a2_labels)
+	},
+	{
+		.ib_refdes = "U82",
+		.ib_info = &oxhc_ic_tps546b,
+		.ib_labels = oxhc_ic_v3p3_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v3p3_a2_labels)
+	},
+	{
+		.ib_refdes = "U83",
+		.ib_info = &oxhc_ic_tps546b,
+		.ib_labels = oxhc_ic_v5p0_a2_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_v5p0_a2_labels)
+	},
+	{ .ib_refdes = "U46", .ib_info = &oxhc_ic_tps62916 },
+	{ .ib_refdes = "U85", .ib_info = &oxhc_ic_tps74501 },
+	{ .ib_refdes = "U88", .ib_info = &oxhc_ic_lt3072 },
+	{ .ib_refdes = "U89", .ib_info = &oxhc_ic_tps62913 },
+	{
+		.ib_refdes = "U127",
+		.ib_info = &oxhc_ic_ltc4282,
+		.ib_labels = oxhc_ic_ltc4282_dimmAF_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_ltc4282_dimmAF_labels)
+	},
+	{
+		.ib_refdes = "U42",
+		.ib_info = &oxhc_ic_ltc4282,
+		.ib_labels = oxhc_ic_ltc4282_dimmGL_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_ltc4282_dimmGL_labels)
+	},
+	{
+		.ib_refdes = "U90",
+		.ib_info = &oxhc_ic_raa229620a,
+		.ib_labels = oxhc_ic_raa_sp5_vsoc_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_raa_sp5_vsoc_labels)
+	},
+	{ .ib_refdes = "U91", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U92", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U93", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U94", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U95", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U96", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U97", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U98", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U99", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U100", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U101", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U102", .ib_info = &oxhc_ic_isl99390 },
+	{
+		.ib_refdes = "U103",
+		.ib_info = &oxhc_ic_raa229620a,
+		.ib_labels = oxhc_ic_raa_sp5_vddio_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_raa_sp5_vddio_labels)
+	},
+	{ .ib_refdes = "U104", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U105", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U106", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U107", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U108", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U109", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U110", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U111", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U112", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U113", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U114", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U115", .ib_info = &oxhc_ic_isl99390 },
+	{
+		.ib_refdes = "U116",
+		.ib_info = &oxhc_ic_isl68224,
+		.ib_labels = oxhc_ic_sp5_misc_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_sp5_misc_labels)
+	},
+	{ .ib_refdes = "U117", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U118", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U119", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U120", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U122", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U121", .ib_info = &oxhc_ic_tps74501 },
+	/* LDO powering the DIMM I3C level translators */
+	{ .ib_refdes = "U139", .ib_info = &oxhc_ic_tps74501 },
+	/*
+	 * NIC (Redhawk) power.
+	 */
+	{
+		.ib_refdes = "U54",
+		.ib_info = &oxhc_ic_max5970,
+		.ib_labels = oxhc_ic_max5970_nic_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_max5970_nic_labels)
+	},
+	{
+		.ib_refdes = "U18",
+		.ib_info = &oxhc_ic_isl68224_nic,
+		.ib_labels = oxhc_ic_isl68224_nic_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_isl68224_nic_labels)
+	},
+	{ .ib_refdes = "U19", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U23", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U34", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U49", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U50", .ib_info = &oxhc_ic_isl99390 },
+	{ .ib_refdes = "U51", .ib_info = &oxhc_ic_tps62916 },
+	{ .ib_refdes = "U148", .ib_info = &oxhc_ic_tps62916 },
+	{ .ib_refdes = "U152", .ib_info = &oxhc_ic_tps62916 },
+	{ .ib_refdes = "U52", .ib_info = &oxhc_ic_tps7a57 },
+	{ .ib_refdes = "U53", .ib_info = &oxhc_ic_tps7a57 },
+	{ .ib_refdes = "U123", .ib_info = &oxhc_ic_tps62913 },
+	{ .ib_refdes = "U126", .ib_info = &oxhc_ic_tps62916 },
+	{ .ib_refdes = "U146", .ib_info = &oxhc_ic_tps7a57 },
+	{ .ib_refdes = "U149", .ib_info = &oxhc_ic_tps7a57 },
+	{ .ib_refdes = "U151", .ib_info = &oxhc_ic_tps7a57 },
+};
+
+const size_t oxhc_ic_metro_main_nents = ARRAY_SIZE(oxhc_ic_metro_main);
 
 const oxhc_ic_board_t oxhc_ic_temp_board[] = { {
 	.ib_refdes = "U1",

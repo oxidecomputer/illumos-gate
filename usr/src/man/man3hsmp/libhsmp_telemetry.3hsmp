@@ -1,0 +1,195 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Oxide Computer Company
+.\"
+.Dd July 10, 2026
+.Dt LIBHSMP_TELEMETRY 3HSMP
+.Os
+.Sh NAME
+.Nm libhsmp_prochot ,
+.Nm libhsmp_fclk_memclk ,
+.Nm libhsmp_cclk_limit ,
+.Nm libhsmp_freq_limit ,
+.Nm libhsmp_freq_src_str ,
+.Nm libhsmp_c0_residency ,
+.Nm libhsmp_ddr_bandwidth
+.Nd Retrieve socket telemetry
+.Sh LIBRARY
+.Lb libhsmp
+.Sh SYNOPSIS
+.In libhsmp.h
+.Ft bool
+.Fo libhsmp_prochot
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "bool *asserted"
+.Fc
+.Ft bool
+.Fo libhsmp_fclk_memclk
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *fclk"
+.Fa "uint32_t *memclk"
+.Fc
+.Ft bool
+.Fo libhsmp_cclk_limit
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *limit"
+.Fc
+.Ft bool
+.Fo libhsmp_freq_limit
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *limit"
+.Fa "libhsmp_freq_src_t *srcs"
+.Fc
+.Ft "const char *"
+.Fo libhsmp_freq_src_str
+.Fa "libhsmp_freq_src_t src"
+.Fc
+.Ft bool
+.Fo libhsmp_c0_residency
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *residency"
+.Fc
+.Ft bool
+.Fo libhsmp_ddr_bandwidth
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "libhsmp_ddr_bw_t *bw"
+.Fc
+.Sh DESCRIPTION
+These functions retrieve telemetry from the socket served by the HSMP
+target
+.Fa targ .
+.Fa targ
+must be less than the value returned by
+.Xr libhsmp_ntargets 3HSMP .
+.Pp
+.Fn libhsmp_prochot
+retrieves the state of the socket's PROCHOT signal.
+The variable pointed to by
+.Fa asserted
+is set to
+.Dv true
+if PROCHOT is asserted.
+.Pp
+.Fn libhsmp_fclk_memclk
+retrieves the current fabric clock and memory clock frequencies, in MHz.
+.Pp
+.Fn libhsmp_cclk_limit
+retrieves the highest frequency, in MHz, that any core clock in the socket
+is currently permitted to reach.
+.Pp
+.Fn libhsmp_freq_limit
+retrieves the current active frequency limit of the socket, in MHz, along
+with the sources of that limit.
+This function requires HSMP interface version 5 or later, and otherwise
+fails with
+.Dv LIBHSMP_ERR_UNSUPPORTED .
+The variable pointed to by
+.Fa srcs
+is set to a bitwise-OR of the following values:
+.Bl -tag -width Dv -offset indent
+.It Dv LIBHSMP_FREQ_SRC_CHTC_ACTIVE
+The core thermal throttle limit is active.
+.It Dv LIBHSMP_FREQ_SRC_PROCHOT
+The PROCHOT signal is asserted.
+.It Dv LIBHSMP_FREQ_SRC_TDC
+The thermal design current limit is active.
+.It Dv LIBHSMP_FREQ_SRC_PPT
+The package power tracking limit is active.
+.It Dv LIBHSMP_FREQ_SRC_OPN_MAX
+The frequency is at the maximum for the part.
+.It Dv LIBHSMP_FREQ_SRC_RELIABILITY
+The reliability limit is active.
+.It Dv LIBHSMP_FREQ_SRC_APML_AGENT
+A limit has been imposed by an APML agent.
+.It Dv LIBHSMP_FREQ_SRC_HSMP_AGENT
+A limit has been imposed by an HSMP agent.
+.El
+.Pp
+More than one source may be reported at a time, and newer firmware may
+report source bits beyond those defined here.
+.Pp
+.Fn libhsmp_freq_src_str
+returns a constant string naming the frequency limit source
+.Fa src ,
+or
+.Dv NULL
+if the value is not a single source known to the library.
+.Pp
+.Fn libhsmp_c0_residency
+retrieves the average C0 residency of the cores in the socket, as a
+percentage in the range 0 to 100.
+A residency of 100 means that all cores are busy.
+.Pp
+.Fn libhsmp_ddr_bandwidth
+retrieves DDR bandwidth telemetry.
+This function requires HSMP interface version 3 or later, and otherwise
+fails with
+.Dv LIBHSMP_ERR_UNSUPPORTED .
+On success, the structure pointed to by
+.Fa bw
+is filled in with the following members:
+.Bd -literal -offset 2
+uint32_t ldb_max_gbps;   /* theoretical maximum bandwidth in Gbps */
+uint32_t ldb_util_gbps;  /* current utilised bandwidth in Gbps */
+uint32_t ldb_util_pct;   /* utilisation as a percentage of maximum */
+.Ed
+.Sh RETURN VALUES
+Upon successful completion, the
+.Fn libhsmp_prochot ,
+.Fn libhsmp_fclk_memclk ,
+.Fn libhsmp_cclk_limit ,
+.Fn libhsmp_freq_limit ,
+.Fn libhsmp_c0_residency ,
+and
+.Fn libhsmp_ddr_bandwidth
+functions return
+.Dv true
+and the variables pointed to by their output arguments have been updated.
+Otherwise,
+.Dv false
+is returned.
+.Pp
+.Fn libhsmp_freq_src_str
+returns a pointer to a constant string, or
+.Dv NULL
+if the provided value is not a single known frequency limit source.
+.Sh ERRORS
+When the functions defined in this page, other than
+.Fn libhsmp_freq_src_str ,
+return
+.Dv false ,
+the reason for the failure is recorded in the library handle and can be
+retrieved using the functions described in
+.Xr libhsmp_err 3HSMP .
+The full set of error codes is described in the
+.Sy ERRORS
+section of
+.Xr libhsmp 3LIB .
+.Sh INTERFACE STABILITY
+.Sy Private
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libhsmp 3LIB .
+.Sh SEE ALSO
+.Xr libhsmp_err 3HSMP ,
+.Xr libhsmp_init 3HSMP ,
+.Xr libhsmp_interface_version 3HSMP ,
+.Xr libhsmp_ntargets 3HSMP ,
+.Xr libhsmp 3LIB

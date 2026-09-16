@@ -1,0 +1,225 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Oxide Computer Company
+.\"
+.Dd July 17, 2026
+.Dt HSMP 8
+.Os
+.Sh NAME
+.Nm hsmp
+.Nd interrogate and control the AMD Host System Management Port
+.Sh SYNOPSIS
+.Nm
+.Op Fl s Ar socket
+.Ar subcommand
+.Op Ar args ...
+.Sh DESCRIPTION
+The
+.Nm
+utility retrieves telemetry from, and controls, the Host System Management
+Port
+.Pq HSMP
+found in AMD Zen 3 and Zen 4
+.Pq Family 19h
+and Zen 5
+.Pq Family 1ah
+processors.
+.Pp
+Each subcommand operates on a processor socket.
+By default, a subcommand is applied to every socket in the system in turn.
+The
+.Fl s
+option restricts operation to a single socket, nominated by its zero-based
+index.
+.Pp
+AMD describe the HSMP as a resource of an IO die, of which every
+currently supported processor has one per socket.
+Where output is per-socket, an
+.Sy IOD
+column identifies the IO die to which each row refers.
+.Pp
+Subcommands that produce tabular output accept common options to control
+that output, shown as
+.Ar output-options
+in the subcommand list below:
+.Bl -tag -width Fl
+.It Fl H
+Omit the column headers.
+.It Fl o Ar field Ns Oo , Ns Ar field Oc Ns ...
+Select the fields that are displayed, as a comma-separated list.
+The available fields for each subcommand are listed alongside it below,
+and the special value
+.Sy all
+selects every field.
+.It Fl p
+Produce output in a machine-parseable format, with fields separated by a
+colon.
+This option requires
+.Fl o ,
+and
+.Sy all
+cannot be used.
+.El
+.Pp
+The set of available HSMP functions depends on the interface version that
+the SMU firmware implements, which can be viewed with the
+.Cm version
+subcommand.
+A subcommand that requires a function which the firmware does not implement
+fails with an explanatory message.
+.Pp
+The
+.Nm
+utility can only be used from the global zone.
+Opening the underlying
+.Xr uhsmp 4D
+device nodes requires all privileges, and so the utility is in practice
+restricted to the root user.
+.Sh SUBCOMMANDS
+.Bl -tag -width Cm
+.It Cm version Op Ar output-options
+Display the SMU firmware version and the HSMP interface version for each
+socket.
+The available output fields are
+.Sy SOCKET , IOD , SMU
+and
+.Sy IFVER .
+.It Cm power Op Ar output-options
+Display the current power consumption, the current power limit and the
+maximum settable power limit for each socket, in watts.
+The available output fields are
+.Sy SOCKET , IOD , POWER , LIMIT
+and
+.Sy MAX .
+.It Cm set-power-limit Ar limit Ns Oo Cm W Ns | Ns Cm mW Oc
+Set the socket power limit.
+A bare number, or one with an
+.Cm mW
+suffix, is a whole number of milliwatts.
+A number with a
+.Cm W
+suffix may have a fractional part.
+The firmware clamps the requested value to the range that the platform
+supports, and the resulting limit is displayed.
+.It Cm cores Op Ar output-options
+Display the cores in the system, along with the logical CPUs that each
+core provides and its local APIC ID.
+Local APIC IDs identify individual SMT threads rather than cores, and the
+APIC ID shown is that of the core's lowest-numbered thread, which is the
+identifier through which the HSMP addresses the core.
+The available output fields are
+.Sy SOCKET , CORE , APICID
+and
+.Sy CPUS .
+.It Cm boost Oo Ar output-options Oc Op Ar cpu ...
+Display the boost limit, in MHz, of each core, nominated by any of its
+logical CPUs.
+With no arguments, the limit of every core is displayed.
+A boost limit applies to a whole core and is shared by all of its SMT
+threads.
+The available output fields are
+.Sy SOCKET , CPUS
+and
+.Sy LIMIT .
+.It Cm set-boost Oo Fl c Ar cpu Oc Ar mhz
+Set the core boost limit, in MHz.
+With
+.Fl c ,
+the limit is applied only to the core that provides the nominated logical
+CPU, and the resulting limit is displayed.
+Otherwise, the limit is applied to every core in the socket.
+.It Cm prochot Op Ar output-options
+Display whether the PROCHOT signal is asserted for each socket.
+The available output fields are
+.Sy SOCKET , IOD
+and
+.Sy PROCHOT .
+.It Cm clocks Op Ar output-options
+Display the current fabric clock and memory clock frequencies, along with
+the current core clock frequency limit, in MHz.
+The available output fields are
+.Sy SOCKET , IOD , FCLK , MEMCLK
+and
+.Sy CCLKMAX .
+.It Cm freq-limit Op Ar output-options
+Display the current active frequency limit for each socket, in MHz, along
+with the sources of that limit, such as the package power limit or an
+asserted PROCHOT signal.
+Retrieving the sources of the limit requires HSMP interface version 5 or
+later.
+On systems with an earlier interface version the limit is still displayed,
+and the sources are shown as
+.Qq unknown .
+The available output fields are
+.Sy SOCKET , IOD , LIMIT
+and
+.Sy SOURCES .
+.It Cm residency Op Ar output-options
+Display the average C0 residency of the cores in each socket, as a
+percentage.
+The available output fields are
+.Sy SOCKET , IOD
+and
+.Sy C0 .
+.It Cm ddr Op Ar output-options
+Display the theoretical maximum DDR bandwidth, the current utilised
+bandwidth and the utilisation percentage for each socket.
+Bandwidth values are in Gbps.
+This requires HSMP interface version 3 or later.
+The available output fields are
+.Sy SOCKET , IOD , MAX , UTIL
+and
+.Sy UTILPCT .
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+.Sy Example 1
+Display socket power information
+.Bd -literal -offset 2
+# hsmp power
+SOCKET   IOD  POWER       LIMIT       MAX
+0        0    153.482     200.000     240.000
+.Ed
+.Pp
+.Sy Example 2
+Set the power limit for socket 0 to 180 W
+.Bd -literal -offset 2
+# hsmp -s 0 set-power-limit 180W
+socket 0: power limit set to 180.000 W
+.Ed
+.Pp
+.Sy Example 3
+Display the power consumption of each socket in a machine-parseable format
+.Bd -literal -offset 2
+# hsmp power -p -o socket,power
+0:153.482
+.Ed
+.Sh ARCHITECTURE
+The
+.Nm
+utility is only available on the
+.Sy x86
+architecture, on AMD processors that implement the HSMP.
+.Sh INTERFACE STABILITY
+The command line interface of
+.Nm
+is
+.Sy Evolving .
+The output of
+.Nm
+is
+.Sy Not-An-Interface
+and may change at any time.
+.Sh SEE ALSO
+.Xr libhsmp 3LIB ,
+.Xr uhsmp 4D

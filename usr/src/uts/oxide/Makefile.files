@@ -47,6 +47,7 @@ CORE_OBJS +=			\
 	comm_page.o		\
 	confunix.o		\
 	cpu_idle.o		\
+	cpufreq_mon.o		\
 	cpuid.o			\
 	cpuid_subr.o		\
 	cpupm.o			\
@@ -86,7 +87,6 @@ CORE_OBJS +=			\
 	mem_config.o		\
 	mem_config_arch.o	\
 	mem_config_stubs.o	\
-	memlist_new.o		\
 	memnode.o		\
 	memstr.o		\
 	memscrub.o		\
@@ -166,6 +166,7 @@ BOARD_OBJS +=			\
 	oxio_ethanolx.o		\
 	oxio_cosmo.o		\
 	oxio_gimlet.o		\
+	oxio_metro.o		\
 	oxio_ruby.o
 
 CORE_OBJS += $(ZEN_OBJS) $(MILAN_OBJS) $(GENOA_OBJS) $(TURIN_OBJS)
@@ -192,6 +193,7 @@ APIX_OBJS += apix.o apic_regops.o psm_common.o apix_intr.o apix_utils.o \
 		apix_irm.o apic_common.o apic_timer.o apix_regops.o
 
 BDAT_PRD_OBJS += bdat_prd_amdzen_direct.o
+BDAT_PRD_KTEST_OBJS += bdat_prd_ktest.o
 
 CPUDRV_OBJS	+= \
 	cpudrv.o \

@@ -22,6 +22,7 @@
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -101,6 +102,8 @@ struct cpu_snapshot {
 	/* stats for this CPU */
 	kstat_t cs_vm;
 	kstat_t cs_sys;
+	/* per-CPU frequency monitor; ks_data NULL if the feature is absent */
+	kstat_t cs_cpufreq;
 };
 
 struct pset_snapshot {

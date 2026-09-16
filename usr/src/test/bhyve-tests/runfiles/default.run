@@ -9,7 +9,7 @@
 # http://www.illumos.org/license/CDDL.
 #
 
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 
 [DEFAULT]
 pre =
@@ -76,12 +76,17 @@ tests = [
 
 [/opt/bhyve-tests/tests/viona]
 user = root
+pre_user = root
+post_user = root
 pre = setup
 post = cleanup
 tests = [
 	'interface_version',
 	'create_delete',
-	'link_params'
+	'link_params',
+	'mac_addr',
+	'mac_filters',
+	'rx_delivery'
 	]
 
 # Tests of userspace mevent system, built from cmd/bhyve

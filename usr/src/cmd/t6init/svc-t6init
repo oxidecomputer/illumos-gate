@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright 2025 Oxide Computer Company
+# Copyright 2026 Oxide Computer Company
 #
 
 . /lib/svc/share/smf_include.sh
@@ -81,14 +81,7 @@ typeset -r FW_FILE="/kernel/firmware/cxgbe/t6fw.bin"
 
 if [[ -z "${GPIOMAP[$PLATFORM]}" ]]; then
 	echo "$SMF_FMRI is not supported for $PLATFORM"
-	/usr/sbin/svcadm disable $SMF_FMRI
-	# This sleep is here to allow the effect of the 'svcadm disable'
-	# to propagate through to the repository in order to work around a race
-	# condition where the service may start up again. Once illumos
-	# 15320 is resolved, it should be removed in favour of this script
-	# exiting with the new $SMF_EXIT_TEMP_DISABLE
-	sleep 5 &
-	exit $SMF_EXIT_OK
+	smf_method_exit $SMF_EXIT_TEMP_DISABLE "not supported for $PLATFORM"
 fi
 
 [[ -f "$SROM_FILE" ]] || fatal "SROM file $SROM_FILE not found"

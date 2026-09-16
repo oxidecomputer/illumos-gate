@@ -10,14 +10,16 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
  * A userland IPCC client, for exercising libipcc.
  */
 
+#include <ctype.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <libcmdutils.h>
 #include <libgen.h>
@@ -149,6 +151,57 @@ ipcc_mapfile(const char *filename, size_t *lenp)
 	return (p);
 }
 
+/*
+ * Strings received from the SP are not necessarily NUL terminated and their
+ * content is otherwise entirely under the SP's control. Before displaying
+ * such a string, clean it up. Printable characters, including spaces, are
+ * passed through unchanged. Anything else is rendered as a \xNN hex escape
+ * so that unexpected content is visible in the output.
+ */
+static char *
+ipcc_cleanstrn(const void *buf, size_t buflen)
+{
+	const uint8_t *str = buf;
+	const uint8_t *cp;
+	size_t srclen, dstsize;
+	char *dst, *dp;
+
+	srclen = strnlen((const char *)str, buflen);
+
+	/* In the worst case, each byte expands to a four character escape. */
+	dstsize = srclen * 4 + 1;
+	if ((dst = calloc(1, dstsize)) == NULL)
+		return (NULL);
+
+	dp = dst;
+	cp = str;
+	for (size_t i = 0; i < srclen; i++, cp++) {
+		size_t rem = dstsize - (size_t)(dp - dst);
+
+		if (isprint(*cp)) {
+			if (rem < 2)
+				break;
+			*dp++ = *cp;
+		} else {
+			int len;
+
+			len = snprintf(dp, rem, "\\x%02x", *cp);
+			if (len < 0 || (size_t)len >= rem)
+				break;
+			dp += len;
+		}
+	}
+	*dp = '\0';
+
+	return (dst);
+}
+
+static char *
+ipcc_cleanstr(const void *buf)
+{
+	return (ipcc_cleanstrn(buf, strlen(buf)));
+}
+
 static void
 ipcc_init(void)
 {
@@ -173,14 +226,22 @@ static int
 ipcc_ident(int argc, char *argv[])
 {
 	libipcc_ident_t *ident;
+	char *serial, *model;
 
 	if (!libipcc_ident(ipcc_handle, &ident))
 		libipcc_fatal("Could not retrieve ident");
 
-	(void) printf("Serial: '%s'\n", libipcc_ident_serial(ident));
-	(void) printf("Model:  '%s'\n", libipcc_ident_model(ident));
+	if ((serial = ipcc_cleanstr(libipcc_ident_serial(ident))) == NULL)
+		err(EXIT_FAILURE, "could not clean ident serial string");
+	if ((model = ipcc_cleanstr(libipcc_ident_model(ident))) == NULL)
+		err(EXIT_FAILURE, "could not clean ident model string");
+
+	(void) printf("Serial: '%s'\n", serial);
+	(void) printf("Model:  '%s'\n", model);
 	(void) printf("Rev:    0x%x\n", libipcc_ident_rev(ident));
 
+	free(serial);
+	free(model);
 	libipcc_ident_free(ident);
 
 	return (0);
@@ -229,6 +290,7 @@ static void
 ipcc_image_header(uint8_t *hash, oxide_boot_sp_header_t *hdr)
 {
 	char nnbuf[NN_NUMBUF_SZ];
+	char *dataset, *imagename;
 	size_t buflen = sizeof (*hdr);
 
 	/* The header is retrieved by specifying offset 0 */
@@ -276,10 +338,14 @@ ipcc_image_header(uint8_t *hash, oxide_boot_sp_header_t *hdr)
 	(void) printf("        hash: %s\n",
 	    memcmp(hash, hdr->obsh_sha256, sizeof (hdr->obsh_sha256)) == 0 ?
 	    "match" : "! MISMATCH");
-	(void) printf("     dataset: %.*s\n", sizeof (hdr->obsh_dataset),
-	    hdr->obsh_dataset);
-	(void) printf("        name: %.*s\n", sizeof (hdr->obsh_imagename),
-	    hdr->obsh_imagename);
+	dataset = ipcc_cleanstrn(hdr->obsh_dataset,
+	    sizeof (hdr->obsh_dataset));
+	imagename = ipcc_cleanstrn(hdr->obsh_imagename,
+	    sizeof (hdr->obsh_imagename));
+	(void) printf("     dataset: %s\n", dataset != NULL ? dataset : "");
+	(void) printf("        name: %s\n", imagename != NULL ? imagename : "");
+	free(dataset);
+	free(imagename);
 }
 
 static int
@@ -483,11 +549,17 @@ ipcc_inventory(int argc, char *argv[])
 	case LIBIPCC_INV_STATUS_SUCCESS:
 	case LIBIPCC_INV_STATUS_IO_DEV_MISSING:
 	case LIBIPCC_INV_STATUS_IO_ERROR: {
+		const uint8_t *rawname;
 		size_t namelen;
+		char *name;
+
+		rawname = libipcc_inv_name(inv, &namelen);
+		if ((name = ipcc_cleanstrn(rawname, namelen)) == NULL)
+			err(EXIT_FAILURE, "could not clean inventory name");
 
 		(void) printf("%s (%u) -- Result: %u [%s]\n",
-		    libipcc_inv_name(inv, &namelen), idx,
-		    status, libipcc_inv_status_str(status));
+		    name, idx, status, libipcc_inv_status_str(status));
+		free(name);
 		break;
 	}
 	case LIBIPCC_INV_STATUS_INVALID_INDEX:

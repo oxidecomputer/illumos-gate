@@ -11,7 +11,7 @@
  source.  A copy of the CDDL is also available via the Internet at
  http://www.illumos.org/license/CDDL.
 
- Copyright 2025 Oxide Computer Company
+ Copyright 2026 Oxide Computer Company
 
 -->
 
@@ -303,7 +303,7 @@
             CEM: 0-9
             DIMMs: 10-21
             M.2s: 22-23
-            Temp Sensors: 24-39
+            Temp Sensors: 24-29
             MCIO: 30 (while it is split between two connectors, we treat it as
                       one logical slot for now)
           -->

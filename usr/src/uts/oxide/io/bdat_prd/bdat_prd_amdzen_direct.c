@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -31,43 +31,7 @@
 #include <sys/mc.h>
 #include <sys/x86_archext.h>
 
-
-/*
- * Though the raw BDAT data provided by AMD's firmware is not necessarily a
- * stable interface, the overall shape has remained the same. Even still, there
- * are some backwards incompatible changes we try to paper over. These flags
- * represent when such a change has been detected.
- */
-typedef enum {
-	/*
-	 * The PDT_VREF_DAC2 and PDT_VREF_DAC3 types did not exist in earlier
-	 * versions and were added right after PDT_VREF_DAC1. Unfortunately,
-	 * that ended up shifting the previous set of types that came after.
-	 * This flag indicates we're on an older version and should thus adjust
-	 * the `zen_bdat_phy_data_type_t` values appropriately.
-	 */
-	BFQ_F_SKIP_VREFDAC23	= (1 << 0),
-} bdat_phy_data_quirks_t;
-
-/*
- * We only care for a subset of the data that the BDAT provides which we
- * bundle together here.
- */
-typedef struct {
-	size_t				zbr_nspd_rsrcs;
-	const zen_bdat_entry_header_t	**zbr_spd_rsrcs;
-	size_t				zbr_ndmr_rsrcs;
-	const zen_bdat_entry_header_t	**zbr_dmr_rsrcs;
-	size_t				zbr_nrmargin_rsrcs;
-	const zen_bdat_entry_header_t	**zbr_rmargin_rsrcs;
-	size_t				zbr_ndmargin_rsrcs;
-	const zen_bdat_entry_header_t	**zbr_dmargin_rsrcs;
-	size_t				zbr_nphy_rsrcs;
-	zen_bdat_phy_data_t		*zbr_phy_rsrcs;
-	bdat_phy_data_quirks_t		zbr_quirks;
-} zen_bdat_rsrcs_t;
-
-typedef void (*zen_bdat_cb_f)(const zen_bdat_entry_header_t *, void *);
+#include "bdat_prd_impl.h"
 
 /*
  * Pointer to the BDAT, if present.
@@ -363,18 +327,15 @@ bdat_prd_mem_read(bdat_prd_mem_rsrc_t rtype,
 	return (BPE_NORES);
 }
 
-typedef enum {
-	ENT_OK,
-	ENT_UNKNOWN,
-	ENT_INVALID_SIZE,
-	ENT_INVALID_VARIANT
-} zen_bdat_entry_valid_t;
-
 static zen_bdat_entry_valid_t
 zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 {
-	const zen_bdat_entry_phy_data_t *pd;
+	const zen_bdat_entry_spd_t *spd;
 	const zen_bdat_entry_dram_mode_regs_t *dmr;
+	const zen_bdat_entry_rank_margin_t *rm;
+	const zen_bdat_entry_dq_margin_t *dm;
+	const zen_bdat_entry_phy_data_t *pd;
+	zen_bdat_mem_location_t loc = { 0 };
 	size_t ent_size = ent->zbe_size;
 
 	if (ent_size < sizeof (zen_bdat_entry_header_t))
@@ -389,11 +350,14 @@ zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 		if (ent_size < sizeof (zen_bdat_entry_spd_t))
 			return (ENT_INVALID_VARIANT);
 
+		spd = (const zen_bdat_entry_spd_t *)ent->zbe_data;
 		ent_size -= sizeof (zen_bdat_entry_spd_t);
-		if (((const zen_bdat_entry_spd_t *)ent->zbe_data)->zbes_size !=
-		    ent_size) {
+		if (spd->zbes_size != ent_size) {
 			return (ENT_INVALID_VARIANT);
 		}
+		loc.zbml_socket = spd->zbes_socket;
+		loc.zbml_channel = spd->zbes_channel;
+		loc.zbml_dimm = spd->zbes_dimm;
 		break;
 	case BDAT_MEM_TRAINING_DATA_SCHEMA:
 		switch (ent->zbe_type) {
@@ -409,14 +373,26 @@ zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 			    (size_t)dmr->zbedmr_nregs)) {
 				return (ENT_INVALID_VARIANT);
 			}
+			loc.zbml_socket = dmr->zbedmr_loc.zbml_socket;
+			loc.zbml_channel = dmr->zbedmr_loc.zbml_channel;
+			loc.zbml_sub_channel = dmr->zbedmr_loc.zbml_sub_channel;
+			loc.zbml_dimm = dmr->zbedmr_loc.zbml_dimm;
+			loc.zbml_rank = dmr->zbedmr_loc.zbml_rank;
 			break;
 		case BDAT_MEM_TRAINING_DATA_RANK_MARGIN_TYPE:
 			if (ent_size != sizeof (zen_bdat_entry_rank_margin_t))
 				return (ENT_INVALID_VARIANT);
+			rm = (const zen_bdat_entry_rank_margin_t *)
+			    ent->zbe_data;
+			loc.zbml_socket = rm->zberm_loc.zbml_socket;
+			loc.zbml_channel = rm->zberm_loc.zbml_channel;
+			loc.zbml_dimm = rm->zberm_loc.zbml_dimm;
+			loc.zbml_rank = rm->zberm_loc.zbml_rank;
 			break;
 		case BDAT_MEM_TRAINING_DATA_DQ_MARGIN_TYPE:
 			if (ent_size < sizeof (zen_bdat_entry_dq_margin_t))
 				return (ENT_INVALID_VARIANT);
+			dm = (const zen_bdat_entry_dq_margin_t *)ent->zbe_data;
 			/*
 			 * The remaining space should be a positive multiple of
 			 * `zen_bdat_margin_t` corresponding to an entry per DQ.
@@ -426,6 +402,11 @@ zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 			    (ent_size % sizeof (zen_bdat_margin_t) != 0)) {
 				return (ENT_INVALID_VARIANT);
 			}
+			loc.zbml_socket = dm->zbedm_loc.zbml_socket;
+			loc.zbml_channel = dm->zbedm_loc.zbml_channel;
+			loc.zbml_sub_channel = dm->zbedm_loc.zbml_sub_channel;
+			loc.zbml_dimm = dm->zbedm_loc.zbml_dimm;
+			loc.zbml_rank = dm->zbedm_loc.zbml_rank;
 			break;
 		case BDAT_MEM_TRAINING_DATA_PHY_TYPE:
 			if (ent_size < sizeof (zen_bdat_entry_phy_data_t))
@@ -450,6 +431,17 @@ zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 			    ent_size) {
 				return (ENT_INVALID_VARIANT);
 			}
+			loc.zbml_socket = pd->zbepd_loc.zbml_socket;
+			loc.zbml_channel = pd->zbepd_loc.zbml_channel;
+			/*
+			 * The remaining indicies for PHY entries (DIMM, Rank,
+			 * Sub-Channel) requires knowing which type we're
+			 * dealing with.  But knowing what type we have also
+			 * requires knowing if we need to apply the
+			 * BFQ_F_SKIP_VREFDAC23 quirk fix.  We may not know
+			 * that yet here so we defer checking until
+			 * zen_bdat_fill_phy_ent().
+			 */
 			break;
 		default:
 			return (ENT_UNKNOWN);
@@ -457,6 +449,18 @@ zen_bdat_entry_valid(const zen_bdat_entry_header_t *ent)
 		break;
 	default:
 		return (ENT_UNKNOWN);
+	}
+
+	/*
+	 * Verify the selector indicies.  The relevant fields for the entry get
+	 * set above with any unused fields left zero.
+	 */
+	if (loc.zbml_socket >= BDAT_SOC_COUNT ||
+	    loc.zbml_channel >= BDAT_NCHANS ||
+	    loc.zbml_sub_channel >= BDAT_NSUBCHANS ||
+	    loc.zbml_dimm >= BDAT_NDIMMS ||
+	    loc.zbml_rank >= BDAT_NRANKS) {
+		return (ENT_INVALID_INDEX);
 	}
 
 	return (ENT_OK);
@@ -480,6 +484,10 @@ zen_bdat_walk_entries(const zen_bdat_header_t *bdat_base, zen_bdat_cb_f func,
 			zen_bdat_entry_valid_t ent_valid;
 			size_t ent_off = sizeof (zen_bdat_header_t);
 			do {
+				/*
+				 * Make sure the next entry header is within
+				 * the expected region.
+				 */
 				if ((uintptr_t)bdat + ent_off
 				    + sizeof (zen_bdat_entry_header_t) >= end) {
 					break;
@@ -488,6 +496,10 @@ zen_bdat_walk_entries(const zen_bdat_header_t *bdat_base, zen_bdat_cb_f func,
 				ent = (const zen_bdat_entry_header_t *)
 				    ((uintptr_t)bdat + ent_off);
 
+				/*
+				 * Make sure the header-reported size also falls
+				 * within our bounds.
+				 */
 				if ((uintptr_t)ent + ent->zbe_size >= end)
 					break;
 
@@ -515,6 +527,16 @@ zen_bdat_walk_entries(const zen_bdat_header_t *bdat_base, zen_bdat_cb_f func,
 				ent_off += ent->zbe_size;
 			} while (ent->zbe_size != 0);
 
+			/*
+			 * Next should point at least a header's worth forward.
+			 */
+			if (bdat->zbh_next < sizeof (zen_bdat_header_t))
+				break;
+
+			/*
+			 * The next header should also be within the valid BDAT
+			 * region.
+			 */
 			if ((uintptr_t)bdat + bdat->zbh_next +
 			    sizeof (zen_bdat_header_t) >= end) {
 				break;
@@ -597,7 +619,7 @@ zen_bdat_ent_counts_cb(const zen_bdat_entry_header_t *ent, void *arg)
 	}
 }
 
-static void
+static bool
 zen_bdat_fill_phy_ent(zen_bdat_rsrcs_t *rs,
     const zen_bdat_entry_phy_data_t *pde)
 {
@@ -636,6 +658,19 @@ zen_bdat_fill_phy_ent(zen_bdat_rsrcs_t *rs,
 	 * ... or use a new one.
 	 */
 	if (pd == NULL) {
+		/*
+		 * The number of consolidated entries was determined during the
+		 * counting pass and drives the allocation below. If we somehow
+		 * need more than that here (i.e. the two passes disagreed) drop
+		 * the entry rather than writing past the allocation.
+		 */
+		if (rs->zbr_nphy_rsrcs >= rs->zbr_nphy_alloc) {
+			cmn_err(CE_WARN, "bdat_prd: more PHY entries than "
+			    "expected (%lu); dropping socket %u channel %u "
+			    "p-state %u", rs->zbr_nphy_alloc, sock, chan,
+			    pstate);
+			return (false);
+		}
 		pd = &rs->zbr_phy_rsrcs[rs->zbr_nphy_rsrcs++];
 		pd->zbpd_sock = sock;
 		pd->zbpd_chan = chan;
@@ -647,51 +682,64 @@ zen_bdat_fill_phy_ent(zen_bdat_rsrcs_t *rs,
 	 * size and scope).
 	 */
 	switch (type) {
-#define	PHY_DATA_ENTRY(t, d, sc) \
+#define	PHY_DATA_ENTRY(t, d, sc, valid) \
 	case PDT_##t: \
+		if (!(valid)) { \
+			cmn_err(CE_WARN, "bdat_prd: out of range location " \
+			    "for PHY data type %u (%u): sub-channel %u, " \
+			    "DIMM %u, rank %u", type, pde->zbepd_type, \
+			    subchan, dimm, rank); \
+			return (false); \
+		} \
 		dst = (uint8_t *)&pd->zbpd_##d; \
 		max_size = sizeof (pd->zbpd_##d); \
 		scope = PDS_PER_##sc; \
 		break;
-	PHY_DATA_ENTRY(CS_DLY, csdly[subchan], STROBE)
-	PHY_DATA_ENTRY(CLK_DLY, clkdly, DIMM)
-	PHY_DATA_ENTRY(CA_DLY, cadly[subchan], BIT)
-	PHY_DATA_ENTRY(RX_PB_DLY, rxpbdly[dimm][rank], BIT)
-	PHY_DATA_ENTRY(VREF_DAC0, vrefdac[0], BIT)
-	PHY_DATA_ENTRY(VREF_DAC1, vrefdac[1], BIT)
-	PHY_DATA_ENTRY(VREF_DAC2, vrefdac[2], BIT)
-	PHY_DATA_ENTRY(VREF_DAC3, vrefdac[3], BIT)
-	PHY_DATA_ENTRY(DFE_TAP2, dfetap[0], BIT)
-	PHY_DATA_ENTRY(DFE_TAP3, dfetap[1], BIT)
-	PHY_DATA_ENTRY(DFE_TAP4, dfetap[2], BIT)
-	PHY_DATA_ENTRY(TX_DQ_DLY, txdqdly[dimm][rank], BIT)
-	PHY_DATA_ENTRY(TX_DQS_DLY, txdqsdly[dimm][rank], NIBBLE)
-	PHY_DATA_ENTRY(RX_EN_DLY, rxendly[dimm][rank], NIBBLE)
-	PHY_DATA_ENTRY(RX_CLK_DLY, rxclkdly[dimm][rank], NIBBLE)
-	PHY_DATA_ENTRY(DFIMRL, dfimrl, BYTE)
+	PHY_DATA_ENTRY(CS_DLY, csdly[subchan], STROBE, subchan < BDAT_NSUBCHANS)
+	PHY_DATA_ENTRY(CLK_DLY, clkdly, DIMM, true)
+	PHY_DATA_ENTRY(CA_DLY, cadly[subchan], BIT, subchan < BDAT_NSUBCHANS)
+	PHY_DATA_ENTRY(RX_PB_DLY, rxpbdly[dimm][rank], BIT,
+	    dimm < BDAT_NDIMMS && rank < BDAT_NRANKS)
+	PHY_DATA_ENTRY(VREF_DAC0, vrefdac[0], BIT, true)
+	PHY_DATA_ENTRY(VREF_DAC1, vrefdac[1], BIT, true)
+	PHY_DATA_ENTRY(VREF_DAC2, vrefdac[2], BIT, true)
+	PHY_DATA_ENTRY(VREF_DAC3, vrefdac[3], BIT, true)
+	PHY_DATA_ENTRY(DFE_TAP2, dfetap[0], BIT, true)
+	PHY_DATA_ENTRY(DFE_TAP3, dfetap[1], BIT, true)
+	PHY_DATA_ENTRY(DFE_TAP4, dfetap[2], BIT, true)
+	PHY_DATA_ENTRY(TX_DQ_DLY, txdqdly[dimm][rank], BIT,
+	    dimm < BDAT_NDIMMS && rank < BDAT_NRANKS)
+	PHY_DATA_ENTRY(TX_DQS_DLY, txdqsdly[dimm][rank], NIBBLE,
+	    dimm < BDAT_NDIMMS && rank < BDAT_NRANKS)
+	PHY_DATA_ENTRY(RX_EN_DLY, rxendly[dimm][rank], NIBBLE,
+	    dimm < BDAT_NDIMMS && rank < BDAT_NRANKS)
+	PHY_DATA_ENTRY(RX_CLK_DLY, rxclkdly[dimm][rank], NIBBLE,
+	    dimm < BDAT_NDIMMS && rank < BDAT_NRANKS)
+	PHY_DATA_ENTRY(DFIMRL, dfimrl, BYTE, true)
 #undef	PHY_DATA_ENTRY
 	default:
-		cmn_err(CE_WARN, "?bdat_prd: unknown PHY data type: %u (%u)",
+		cmn_err(CE_WARN, "bdat_prd: unknown PHY data type: %u (%u)",
 		    type, pde->zbepd_type);
-		return;
+		return (false);
 	}
 	VERIFY3P(dst, !=, NULL);
 
 	if (scope != pde->zbepd_scope) {
-		cmn_err(CE_WARN, "?bdat_prd: unexpected scope for PHY data "
+		cmn_err(CE_WARN, "bdat_prd: unexpected scope for PHY data "
 		    "type %u (%u): %u vs %u", type, pde->zbepd_type,
 		    pde->zbepd_scope, scope);
-		return;
+		return (false);
 	}
 
 	if (size > max_size) {
-		cmn_err(CE_WARN, "?bdat_prd: unexpected size for PHY data "
+		cmn_err(CE_WARN, "bdat_prd: unexpected size for PHY data "
 		    "type %u (%u): %u x %u = %lu > %lu", type, pde->zbepd_type,
 		    pde->zbepd_nelems, pde->zbepd_elems_size, size, max_size);
-		return;
+		return (false);
 	}
 
 	bcopy(pde->zbepd_data, dst, size);
+	return (true);
 }
 
 static void
@@ -724,7 +772,7 @@ zen_bdat_ent_preserve_cb(const zen_bdat_entry_header_t *ent, void *arg)
 			rs->zbr_dmargin_rsrcs[rs->zbr_ndmargin_rsrcs++] = ent;
 			break;
 		case BDAT_MEM_TRAINING_DATA_PHY_TYPE:
-			zen_bdat_fill_phy_ent(rs,
+			(void) zen_bdat_fill_phy_ent(rs,
 			    (const zen_bdat_entry_phy_data_t *)ent->zbe_data);
 			break;
 		default:
@@ -733,7 +781,7 @@ zen_bdat_ent_preserve_cb(const zen_bdat_entry_header_t *ent, void *arg)
 		break;
 	default:
 unknown:
-		cmn_err(CE_WARN, "?bdat_prd: skipping unknown BDAT entry "
+		cmn_err(CE_WARN, "bdat_prd: skipping unknown BDAT entry "
 		    "schema %u, type %u", ent->zbe_schema, ent->zbe_type);
 		break;
 	}
@@ -761,7 +809,7 @@ bdat_prd_amdzen_direct_init(void)
 	}
 
 	if (start >= end || (end - start) < BDAT_AREA_SIZE) {
-		cmn_err(CE_WARN, "?bdat_prd: paddr range invalid: 0x%lx-0x%lx",
+		cmn_err(CE_WARN, "bdat_prd: paddr range invalid: 0x%lx-0x%lx",
 		    start, end);
 		return;
 	}
@@ -769,7 +817,7 @@ bdat_prd_amdzen_direct_init(void)
 	bdat = (const zen_bdat_header_t *)psm_map(start, BDAT_AREA_SIZE,
 	    PSM_PROT_READ);
 	if (bdat == NULL) {
-		cmn_err(CE_WARN, "?bdat_prd: failed to map BDAT");
+		cmn_err(CE_WARN, "bdat_prd: failed to map BDAT");
 		return;
 	}
 
@@ -779,16 +827,29 @@ bdat_prd_amdzen_direct_init(void)
 	 */
 	zen_bdat_walk_entries(bdat, zen_bdat_ent_counts_cb, rsrcs);
 
-	rsrcs->zbr_spd_rsrcs = kmem_zalloc(rsrcs->zbr_nspd_rsrcs *
-	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
-	rsrcs->zbr_dmr_rsrcs = kmem_zalloc(rsrcs->zbr_ndmr_rsrcs *
-	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
-	rsrcs->zbr_rmargin_rsrcs = kmem_zalloc(rsrcs->zbr_nrmargin_rsrcs *
-	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
-	rsrcs->zbr_dmargin_rsrcs = kmem_zalloc(rsrcs->zbr_ndmargin_rsrcs *
-	    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
-	rsrcs->zbr_phy_rsrcs = kmem_zalloc(rsrcs->zbr_nphy_rsrcs *
-	    sizeof (zen_bdat_phy_data_t), KM_SLEEP);
+	if (rsrcs->zbr_nspd_rsrcs != 0) {
+		rsrcs->zbr_spd_rsrcs = kmem_zalloc(rsrcs->zbr_nspd_rsrcs *
+		    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
+	}
+	if (rsrcs->zbr_ndmr_rsrcs != 0) {
+		rsrcs->zbr_dmr_rsrcs = kmem_zalloc(rsrcs->zbr_ndmr_rsrcs *
+		    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
+	}
+	if (rsrcs->zbr_nrmargin_rsrcs != 0) {
+		rsrcs->zbr_rmargin_rsrcs = kmem_zalloc(
+		    rsrcs->zbr_nrmargin_rsrcs *
+		    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
+	}
+	if (rsrcs->zbr_ndmargin_rsrcs != 0) {
+		rsrcs->zbr_dmargin_rsrcs = kmem_zalloc(
+		    rsrcs->zbr_ndmargin_rsrcs *
+		    sizeof (zen_bdat_entry_header_t *), KM_SLEEP);
+	}
+	rsrcs->zbr_nphy_alloc = rsrcs->zbr_nphy_rsrcs;
+	if (rsrcs->zbr_nphy_rsrcs != 0) {
+		rsrcs->zbr_phy_rsrcs = kmem_zalloc(rsrcs->zbr_nphy_rsrcs *
+		    sizeof (zen_bdat_phy_data_t), KM_SLEEP);
+	}
 
 	rsrcs->zbr_nspd_rsrcs = rsrcs->zbr_ndmr_rsrcs =
 	    rsrcs->zbr_nrmargin_rsrcs = rsrcs->zbr_ndmargin_rsrcs =
@@ -851,7 +912,7 @@ _fini(void)
 			    sizeof (zen_bdat_entry_header_t *));
 		}
 		if (rsrcs->zbr_phy_rsrcs != NULL) {
-			kmem_free(rsrcs->zbr_phy_rsrcs, rsrcs->zbr_nphy_rsrcs *
+			kmem_free(rsrcs->zbr_phy_rsrcs, rsrcs->zbr_nphy_alloc *
 			    sizeof (zen_bdat_phy_data_t));
 		}
 		bzero(rsrcs, sizeof (*rsrcs));

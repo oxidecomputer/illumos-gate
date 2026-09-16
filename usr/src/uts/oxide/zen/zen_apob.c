@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -296,6 +296,16 @@ zen_apob_sp_transmit(void)
 
 	elog = apob_find(apob_hdl,
 	    APOB_GROUP_GENERAL, APOB_GENERAL_TYPE_EVENT_LOG, 0, &len);
+	if (elog == NULL) {
+		cmn_err(CE_NOTE, "APOB event log: %s (errno = %d)",
+		    apob_errmsg(apob_hdl), apob_errno(apob_hdl));
+		goto out;
+	}
+	if (len < sizeof (*elog)) {
+		cmn_err(CE_NOTE, "APOB event log area too small "
+		    "(0x%lx < 0x%lx bytes)", len, sizeof (*elog));
+		goto out;
+	}
 
 	limit = MIN(elog->agevl_count, ARRAY_SIZE(elog->agevl_events));
 

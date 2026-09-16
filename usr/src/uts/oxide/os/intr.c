@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -467,6 +468,7 @@
 #include <sys/x86_archext.h>
 #include <sys/promif.h>
 #include <sys/smt.h>
+#include <sys/cpufreq_mon.h>
 #include <vm/hat_i86.h>
 
 /* If these fail, then the padding numbers in machcpuvar.h are wrong. */
@@ -1370,6 +1372,9 @@ do_interrupt(struct regs *rp, trap_trace_rec_t *ttp)
 	 */
 	if (newipl == -1)
 		return;
+
+	cpufreq_mon_intr_sample(oldipl, newipl);
+
 	cpu->cpu_pri = newipl;
 	vector = rp->r_trapno;
 #ifdef TRAPTRACE

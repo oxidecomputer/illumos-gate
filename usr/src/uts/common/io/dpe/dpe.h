@@ -51,6 +51,7 @@
 #include <sys/types.h>
 #include <sys/stdbool.h>
 #include <sys/stdint.h>
+#include <sys/dditypes.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -260,12 +261,15 @@ typedef struct dpe_ops {
 
 /*
  * Provider descriptor.  Passed (by reference) to dpe_provider_register().
- * The framework copies the relevant fields into its own provider entry;
- * however `dpp_profiles` and `dpp_ops` must remain valid for the
- * lifetime of the registration.
+ * The framework copies the name and profile array into its own provider
+ * entry.  `dpp_ops` must remain valid while the provider is registered
+ * (i.e. until the matching dpe_provider_unregister() in detach(9E)).
+ * The framework only invokes the ops while the provider driver is attached.
+ * `dpp_dip` is the registering driver's own devinfo node.
  */
 typedef struct dpe_provider {
 	char				dpp_name[DPE_PROVIDER_NAME_MAX];
+	dev_info_t			*dpp_dip;
 	const dpe_profile_info_t	*dpp_profiles;
 	size_t				dpp_nprofiles;
 	const dpe_ops_t			*dpp_ops;
@@ -311,9 +315,26 @@ typedef enum {
 typedef dpe_cb_res_t (*dpe_avail_cb_f)(void *arg);
 
 /*
- * Provider-side API.  Typically called from a backend's attach()/detach()
- * routines.  dpe_provider_unregister() fails with EBUSY if any consumer
- * context against the provider is still outstanding.
+ * Provider-side API.  dpe_provider_register() must be called from the
+ * backend driver's attach(9E) (it fails with EAGAIN otherwise) and
+ * dpe_provider_unregister() from its detach(9E), or from attach(9E) when
+ * cleaning up after a failure.
+ *
+ * The registration itself outlives the driver: unregistering at detach
+ * only deactivates it, and the framework will revive (re-attach) the
+ * provider on demand when a consumer opens a context against it.  The
+ * registration is torn down for good only when the provider's device node
+ * is removed from the system.  A driver re-attaching simply calls
+ * dpe_provider_register() again, which reactivates the existing
+ * registration (with the same descriptor contents) and returns the same
+ * handle.
+ *
+ * dpe_provider_unregister() fails with EBUSY while a consumer's claim on
+ * the provider is outstanding.  An open context holds the provider's
+ * device node, preventing a detach from starting.  But an in-flight
+ * dpe_open() claims the provider before taking that hold, so a detach
+ * racing such an open fails with EBUSY and leaves the provider attached
+ * for the open to complete against.
  */
 extern int dpe_provider_register(const dpe_provider_t *desc,
     dpe_prov_t **provp);
@@ -325,6 +346,12 @@ extern int dpe_provider_unregister(dpe_prov_t *prov);
  * provider supports the requested profile or if one or more do but all
  * matching providers are currently in use.  If `provider_name` is
  * non-NULL, only a provider with a matching name will be considered.
+ *
+ * A matching provider whose driver has detached is transparently revived:
+ * dpe_open() re-attaches the provider (and any detached ancestors) via its
+ * device path and may therefore block while device configuration runs.
+ * The returned context holds the provider's device node until dpe_close(),
+ * preventing the provider driver from detaching underneath it.
  */
 extern dpe_error_t dpe_open(dpe_profile_t profile, const char *provider_name,
     dpe_ctx_t **ctxp);
@@ -352,23 +379,14 @@ extern dpe_error_t dpe_close(dpe_ctx_t *ctx);
  * Callback invocations are serialized per consumer: the callback is never
  * invoked concurrently with itself for the same registration.
  *
- * `provider_hint` optionally names the driver expected to register the
- * desired provider.  If that provider is not already registered, the
- * framework makes a best-effort attempt to load and attach the named
- * driver.  This matters when nothing else would configure the provider's
- * driver, e.g. a consumer reloaded on open(9e) of its own minor node after
- * both drivers were explicitly unloaded.  The hint only initiates driver
- * configuration and availability is still delivered through the callback.
- *
  * dpe_consumer_unregister() blocks until any in-flight callback invocation
  * has completed; calling it from the callback itself is a fatal error
  * (return DPE_CB_DONE instead).  Until it returns, a caller must assume the
  * callback may be invoked.  It must be called to release the registration
  * regardless of what the callback returned.
  */
-extern int dpe_consumer_register(dpe_profile_t profile,
-    const char *provider_hint, dpe_avail_cb_f cb, void *arg,
-    dpe_consumer_t **dconp);
+extern int dpe_consumer_register(dpe_profile_t profile, dpe_avail_cb_f cb,
+    void *arg, dpe_consumer_t **dconp);
 extern void dpe_consumer_unregister(dpe_consumer_t *dcon);
 
 extern dpe_error_t dpe_get_profile_info(dpe_ctx_t *ctx,

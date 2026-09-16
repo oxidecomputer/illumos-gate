@@ -210,6 +210,9 @@ file path=opt/os-tests/tests/mac/mac_cksum mode=0555
 file path=opt/os-tests/tests/mac/mac_ktest mode=0555
 file path=opt/os-tests/tests/mac/mac_lso mode=0555
 file path=opt/os-tests/tests/mac/mac_parsing mode=0555
+dir  path=opt/os-tests/tests/memlist
+file path=opt/os-tests/tests/memlist/memlist_test.32 mode=0555
+file path=opt/os-tests/tests/memlist/memlist_test.64 mode=0555
 dir  path=opt/os-tests/tests/minttl
 file path=opt/os-tests/tests/minttl/minttl mode=0555
 file path=opt/os-tests/tests/minttl/minttl_err mode=0555
@@ -226,6 +229,7 @@ file path=opt/os-tests/tests/pf_key/acquire-spray mode=0555
 file path=opt/os-tests/tests/pf_key/eacq-enabler mode=0555
 file path=opt/os-tests/tests/pf_key/kmc-update mode=0555
 file path=opt/os-tests/tests/pf_key/kmc-updater mode=0555
+file path=opt/os-tests/tests/poll_close_test mode=0555
 file path=opt/os-tests/tests/poll_test mode=0555
 dir  path=opt/os-tests/tests/portfs
 file path=opt/os-tests/tests/portfs/file_assoc.32 mode=0555
@@ -287,6 +291,8 @@ file path=opt/os-tests/tests/sockfs/so_protocol mode=0555
 file path=opt/os-tests/tests/sockfs/sockpair mode=0555
 file path=opt/os-tests/tests/sockfs/timeouts.32 mode=0555
 file path=opt/os-tests/tests/sockfs/timeouts.64 mode=0555
+dir  path=opt/os-tests/tests/sockopt
+file path=opt/os-tests/tests/sockopt/v4mapped mode=0555
 dir  path=opt/os-tests/tests/spawn
 file path=opt/os-tests/tests/spawn/spawn-syscall.32 mode=0555
 file path=opt/os-tests/tests/spawn/spawn-syscall.64 mode=0555

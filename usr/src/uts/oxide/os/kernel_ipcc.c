@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -815,6 +815,14 @@ kernel_ipcc_apobread(void)
 			break;
 		}
 
+		if (len == 0) {
+			kernel_ipcc_ops.io_log(&kernel_ipcc_data,
+			    IPCC_LOG_WARNING,
+			    "Attempt to read APOB offset 0x%lx returned "
+			    "no data", offset);
+			break;
+		}
+
 		rem -= len;
 		offset += len;
 	}
@@ -1155,10 +1163,12 @@ ipcc_panic_add(ipcc_panic_item_t type, const uint8_t *data, uint16_t len)
 void
 kipcc_panic_vmessage(const char *fmt, va_list ap)
 {
-	int len;
+	size_t len;
 
 	len = vsnprintf((char *)ipcc_panic_scratch, sizeof (ipcc_panic_scratch),
 	    fmt, ap);
+	/* Ensure we don't send more data than fits in the scratch buffer */
+	len = MIN(len, sizeof (ipcc_panic_scratch) - 1);
 	ipcc_panic_add(IPI_MESSAGE, ipcc_panic_scratch, len);
 }
 
@@ -1204,10 +1214,12 @@ kipcc_panic_stack_item(uintptr_t addr, const char *sym, off_t off)
 void
 kipcc_panic_vdata(const char *fmt, va_list ap)
 {
-	uint16_t len;
+	size_t len;
 
 	len = vsnprintf((char *)ipcc_panic_scratch, sizeof (ipcc_panic_scratch),
 	    fmt, ap);
+	/* Ensure we don't send more data than fits in the scratch buffer */
+	len = MIN(len, sizeof (ipcc_panic_scratch) - 1);
 	ipcc_panic_add(IPI_ANCIL, ipcc_panic_scratch, len);
 }
 

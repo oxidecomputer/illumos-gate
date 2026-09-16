@@ -381,6 +381,8 @@ file path=lib/svc/manifest/system/device/allocate.xml group=sys mode=0444
 file path=lib/svc/manifest/system/device/devices-audio.xml group=sys mode=0444
 file path=lib/svc/manifest/system/device/devices-local.xml group=sys mode=0444
 file path=lib/svc/manifest/system/device/mpxio-upgrade.xml group=sys mode=0444
+file path=lib/svc/manifest/system/devlink-monitor.xml group=sys mode=0444 \
+    variant.opensolaris.zone=global
 file path=lib/svc/manifest/system/early-manifest-import.xml group=sys mode=0444
 file path=lib/svc/manifest/system/extended-accounting.xml group=sys mode=0444
 dir  path=lib/svc/manifest/system/filesystem group=sys
@@ -451,6 +453,8 @@ file path=lib/svc/method/svc-auditset mode=0555
 file path=lib/svc/method/svc-boot-config mode=0555
 file path=lib/svc/method/svc-consadm mode=0555
 file path=lib/svc/method/svc-cron mode=0555
+file path=lib/svc/method/svc-devlink-monitor mode=0555 \
+    variant.opensolaris.zone=global
 file path=lib/svc/method/svc-dlmgmtd mode=0555
 file path=lib/svc/method/svc-forwarding mode=0555
 $(i386_ONLY)file path=lib/svc/method/svc-hostid mode=0555

@@ -1791,10 +1791,10 @@ zen_pcie_populate_dbg_adhoc(void)
 }
 
 /*
- * Our purpose here is to set up memlist structures for use in tracking. Right
- * now we use the xmemlist feature, though having something that is backed by
- * kmem would make life easier; however, that will wait for the great memlist
- * merge that is likely not to happen anytime soon.
+ * Our purpose here is to set up memlist structures for use in tracking. These
+ * are backed by a private page-sized pool rather than memlist_kmem_pool. Lists
+ * that are handed out to other consumers are duplicated into the kmem pool on
+ * the way out, see zen_fabric_rsrc_subsume().
  */
 static int
 zen_fabric_init_memlists(zen_ioms_t *ioms, void *arg)
@@ -3091,8 +3091,7 @@ zen_fabric_init_pcie_port(zen_pcie_port_t *port)
 		bool hotplug, trained;
 
 		hotplug = (pc->zpc_flags & ZEN_PCIE_CORE_F_HAS_HOTPLUG) != 0;
-		VERIFY3P(ops->zfo_pcie_port_is_trained, !=, NULL);
-		trained = (ops->zfo_pcie_port_is_trained)(port);
+		trained = (port->zpp_flags & ZEN_PCIE_PORT_F_TRAINED) != 0;
 		hide = !hotplug && !trained;
 	}
 
@@ -4066,6 +4065,7 @@ zen_fabric_rsrc_subsume(zen_ioms_t *ioms, zen_ioms_rsrc_t rsrc)
 {
 	zen_ioms_memlists_t *imp;
 	struct memlist **avail, **used, *ret;
+	int err;
 
 	ASSERT(ioms != NULL);
 
@@ -4117,16 +4117,17 @@ zen_fabric_rsrc_subsume(zen_ioms_t *ioms, zen_ioms_rsrc_t rsrc)
 	 * for the benefit of PCI code which expects it, but we do it
 	 * universally for consistency.
 	 */
-	ret = memlist_kmem_dup(*avail, KM_SLEEP);
+	ret = memlist_rsrc_dup(*avail);
 
 	/*
-	 * XXX This ends up not really coalescing ranges, but maybe that's fine.
+	 * Move everything to the used list, coalescing as we go. The pool is
+	 * fixed in size and xmemlist_subsume() allocates an entry in the
+	 * destination before freeing the source one, so this can fail. That
+	 * would leave our accounting out of step with what we have just handed
+	 * out, which is not something we can recover from.
 	 */
-	while (*avail != NULL) {
-		struct memlist *to_move = *avail;
-		memlist_del(to_move, avail);
-		memlist_insert(to_move, used);
-	}
+	err = xmemlist_subsume(&imp->zim_pool, avail, used, MEML_FL_RELAXED);
+	VERIFY3S(err, ==, MEML_SPANOP_OK);
 
 	mutex_exit(&imp->zim_lock);
 	return (ret);
@@ -4251,6 +4252,16 @@ zen_pcie_port_write(zen_pcie_port_t *port, const smn_reg_t reg,
 		return (zen_smn_write(iodie, reg, val));
 	}
 	return (ops->zfo_pcie_port_write(port, reg, val));
+}
+
+uint32_t
+zen_pcie_port_gen5_preset_mask(const zen_pcie_port_t *port, uint32_t def)
+{
+	if (port->zpp_oxio != NULL &&
+	    port->zpp_oxio->oe_tuning.ot_gen5_eq_preset_mask != 0) {
+		return (port->zpp_oxio->oe_tuning.ot_gen5_eq_preset_mask);
+	}
+	return (def);
 }
 
 typedef struct zen_iodie_by_nodeid_data {

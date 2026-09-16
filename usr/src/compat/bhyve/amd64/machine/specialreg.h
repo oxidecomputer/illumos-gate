@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _COMPAT_FREEBSD_AMD64_MACHINE_SPECIALREG_H_
@@ -45,7 +46,7 @@
 #endif /* _SYS_CONTROLREGS_H */
 
 #ifdef _SYS_X86_ARCHEXT_H
-/* Our IA32 speculation-related defines conflict with BSD header */
+/* Our IA32 speculation-related defines conflict with the BSD header */
 #undef	IA32_ARCH_CAP_RDCL_NO
 #undef	IA32_ARCH_CAP_IBRS_ALL
 #undef	IA32_ARCH_CAP_RSBA
@@ -63,6 +64,10 @@
 #undef	IA32_TSX_CTRL_TSX_CPUID_CLEAR
 #undef	MSR_IA32_SPEC_CTRL
 #undef	MSR_IA32_PRED_CMD
+
+/* Our effective-frequency MSR defines conflict with the BSD header */
+#undef	MSR_MPERF
+#undef	MSR_APERF
 #endif /* _SYS_X86_ARCHEXT_H */
 
 #include <x86/specialreg.h>

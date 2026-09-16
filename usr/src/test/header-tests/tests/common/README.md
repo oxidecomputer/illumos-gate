@@ -15,6 +15,15 @@ The `symbol_test.py` program:
 - runs short compiler jobs for each combination of environement and symbol,
   verifying that it exists or does not exist as indicated by the data from
   the `symbols config` file.
+- generates include-only tests where needed to ensure the primary header has
+  at least one expected-success compilation in each environment selected for
+  positive coverage.
+
+The first header named by a symbols configuration is its primary header.  The
+first header of later entries is expected to be the same.  Additional headers
+after the first one in an entry are supporting headers and do not affect
+positive coverage.  Multiple symbols configuration files may be supplied;
+they are effectively concatenated and must have the same primary header.
 
 The config file format is documented in `../cfg/README`,
 `../cfg/c-symbols/README`, and `../cfg/cxx-symbols/README`.
@@ -138,12 +147,22 @@ Options:
     -C          Check compiler only, do not run tests
     -f          Force: continue after failures
     -d          Debug: print probe and compiler output on failures
-    -D          Extra debug: also print the compiler command (implies -d)
+    -D          Extra debug: also print the compiler command and probe
+                program for every test, not just failures (implies -d)
     -c compiler Use the specified compiler instead of auto-detecting
     -s sym      Run only the test for the named symbol
     -e ENV      Run only tests for the named environment
     -j N        Number of parallel compile jobs (default: 4 or
                 the environment variable SYMBOL_TEST_JOBS)
+    --positive-coverage=NAME
+                Ensure that at least one expected-success test compiles the
+                primary header in every environment named by NAME. Additional
+                include-only tests are generated where needed. By default,
+                all declared environments require positive coverage.
+    -R ROOT     Alternate root directory (e.g. a proto area) whose
+                ROOT/usr/include is tested instead of the default
+                (default: $HEADER_TEST_ROOT/usr/include if that
+                environment variable is set, else /usr/include)
 
 When running tests by hand (not via the `setup` script), you may
 pass `-f` to see all failures instead of stopping on errors.

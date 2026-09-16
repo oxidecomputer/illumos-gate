@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -522,11 +522,20 @@ zen_mpio_ubm_hfc_init(zen_iodie_t *iodie, zen_ubm_hfc_t *hfc)
 		VERIFY3U(conf->zmc_ask_nports, <, ZEN_MPIO_ASK_MAX_PORTS);
 		if (!zen_mpio_rpc_ubm_get_i2c_device(iodie, hfc->zuh_num, dfcno,
 		    &dfc)) {
-			cmn_err(CE_PANIC, "%s: failed to get DFC information "
+			cmn_err(CE_WARN, "%s: failed to get DFC information "
 			    "for DFC %u", hfc->zuh_oxio->oe_name, dfcno);
+			return;
 		}
-		if (dfcno == 0)
+		if (dfcno == 0) {
+			if (dfc.zmudd_ndfcs > ZEN_MAX_UBM_DFC_PER_HFC) {
+				cmn_err(CE_WARN, "%s: MPIO returned 0x%x DFCs "
+				    "for HFC %u, but only 0x%x are supported",
+				    hfc->zuh_oxio->oe_name, dfc.zmudd_ndfcs,
+				    hfc->zuh_num, ZEN_MAX_UBM_DFC_PER_HFC);
+				return;
+			}
 			hfc->zuh_ndfcs = dfc.zmudd_ndfcs;
+		}
 		if (hfc->zuh_ndfcs == 0)
 			return;
 
@@ -1068,6 +1077,30 @@ zen_mpio_init_data(zen_iodie_t *iodie, void *arg)
 }
 
 /*
+ * Capture the link training status that MPIO reported for each mapped port on
+ * this I/O die. Everything downstream consults ZEN_PCIE_PORT_F_TRAINED rather
+ * than the ASK itself.
+ */
+static int
+zen_mpio_capture_trained(zen_pcie_port_t *port, void *arg)
+{
+	const zen_iodie_t *iodie = arg;
+
+	if (port->zpp_core->zpc_ioms->zio_nbio->zn_iodie != iodie)
+		return (0);
+
+	if ((port->zpp_flags & ZEN_PCIE_PORT_F_MAPPED) == 0)
+		return (0);
+
+	if (port->zpp_ask_port->zma_status.zmils_state ==
+	    ZEN_MPIO_LINK_STATE_TRAINED) {
+		port->zpp_flags |= ZEN_PCIE_PORT_F_TRAINED;
+	}
+
+	return (0);
+}
+
+/*
  * Given all of the engines on an I/O die, try and map each one to a
  * corresponding IOMS and bridge. We only care about an engine if it is a PCIe
  * engine. Note, because each I/O die is processed independently, this only
@@ -1226,6 +1259,9 @@ zen_mpio_more_conf(zen_iodie_t *iodie, void *arg __unused)
 
 	zen_pcie_populate_dbg(fabric, ZPCS_SM_DONE, iodie->zi_node_id);
 
+	(void) zen_fabric_walk_pcie_port(fabric, zen_mpio_capture_trained,
+	    iodie);
+
 	return (0);
 }
 
@@ -1284,13 +1320,6 @@ zen_mpio_pcie_init(zen_fabric_t *fabric)
 	 */
 	zen_fabric_walk_pcie_port(fabric, zen_fabric_pcie_port_op,
 	    fops->zfo_pcie_port_hide_bridge);
-}
-
-bool
-zen_mpio_pcie_port_is_trained(const zen_pcie_port_t *port)
-{
-	zen_mpio_ict_link_status_t *lp = &port->zpp_ask_port->zma_status;
-	return (lp->zmils_state == ZEN_MPIO_LINK_STATE_TRAINED);
 }
 
 /*

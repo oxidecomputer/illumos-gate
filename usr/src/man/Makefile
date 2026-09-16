@@ -45,6 +45,7 @@ SUBDIRS=	man1		\
 		man3gen		\
 		man3gss		\
 		man3head	\
+		man3hsmp	\
 		man3ipcc	\
 		man3iscsit	\
 		man3kstat	\

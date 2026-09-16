@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_SYS_IO_ZEN_FABRIC_H
@@ -196,6 +196,8 @@ extern void zen_pcie_core_write(zen_pcie_core_t *, const smn_reg_t,
 extern uint32_t zen_pcie_port_read(zen_pcie_port_t *, const smn_reg_t);
 extern void zen_pcie_port_write(zen_pcie_port_t *, const smn_reg_t,
     const uint32_t);
+extern uint32_t zen_pcie_port_gen5_preset_mask(const zen_pcie_port_t *,
+    uint32_t);
 /*
  * These two variants are for callers that wish to read a PCIe register on a
  * given IO die, without having to cons up a zen_pcie_{port,core}_t. The more

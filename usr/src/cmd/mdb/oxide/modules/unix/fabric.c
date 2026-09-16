@@ -197,7 +197,8 @@ typedef struct {
 static const fabric_flag_def_t fabric_port_flag_defs[] = {
 	{ "MAPPED",	"ZEN_PCIE_PORT_F_MAPPED" },
 	{ "HIDDEN",	"ZEN_PCIE_PORT_F_BRIDGE_HIDDEN" },
-	{ "HOTPLUG",	"ZEN_PCIE_PORT_F_HOTPLUG" }
+	{ "HOTPLUG",	"ZEN_PCIE_PORT_F_HOTPLUG" },
+	{ "TRAINED",	"ZEN_PCIE_PORT_F_TRAINED" }
 };
 
 static const fabric_flag_def_t fabric_core_flag_defs[] = {

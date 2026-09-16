@@ -25,7 +25,7 @@
 /*
  * Copyright (c) 2009,  Intel Corporation.
  * All Rights Reserved.
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef	_CPUPM_MACH_H
@@ -113,6 +113,8 @@ typedef struct cpupm_mach_turbo_info {
 	int		turbo_supported;	/* turbo flag */
 	uint64_t	t_mcnt;			/* turbo mcnt */
 	uint64_t	t_acnt;			/* turbo acnt */
+	uint64_t	t_mbase;		/* MPERF snapshot baseline */
+	uint64_t	t_abase;		/* APERF snapshot baseline */
 } cpupm_mach_turbo_info_t;
 
 typedef struct cpupm_mach_state {

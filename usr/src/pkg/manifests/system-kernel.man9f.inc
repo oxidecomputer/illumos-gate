@@ -512,6 +512,7 @@ link path=usr/share/man/man9f/ddi_modclose.9f target=ddi_modopen.9f
 file path=usr/share/man/man9f/ddi_model_convert_from.9f
 file path=usr/share/man/man9f/ddi_modopen.9f
 link path=usr/share/man/man9f/ddi_modsym.9f target=ddi_modopen.9f
+file path=usr/share/man/man9f/ddi_ncpus_expected.9f
 file path=usr/share/man/man9f/ddi_no_info.9f
 file path=usr/share/man/man9f/ddi_node_name.9f
 file path=usr/share/man/man9f/ddi_peek.9f
@@ -703,6 +704,7 @@ link path=usr/share/man/man9f/inl.9f target=inb.9f
 file path=usr/share/man/man9f/insq.9f
 link path=usr/share/man/man9f/intro.9f target=Intro.9f
 link path=usr/share/man/man9f/inw.9f target=inb.9f
+file path=usr/share/man/man9f/kcopy.9f
 link path=usr/share/man/man9f/kcred.9f target=credentials.9f
 file path=usr/share/man/man9f/kiconv.9f
 file path=usr/share/man/man9f/kiconv_close.9f
@@ -1593,6 +1595,8 @@ link path=usr/share/man/man9f/uconv_u32tou16.9f target=uconv_u16tou32.9f
 link path=usr/share/man/man9f/uconv_u32tou8.9f target=uconv_u16tou32.9f
 link path=usr/share/man/man9f/uconv_u8tou16.9f target=uconv_u16tou32.9f
 link path=usr/share/man/man9f/uconv_u8tou32.9f target=uconv_u16tou32.9f
+file path=usr/share/man/man9f/uio_copyin.9f
+link path=usr/share/man/man9f/uio_copyout.9f target=uio_copyin.9f
 file path=usr/share/man/man9f/uiomove.9f
 file path=usr/share/man/man9f/unbufcall.9f
 link path=usr/share/man/man9f/unfreezestr.9f target=freezestr.9f

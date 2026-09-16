@@ -36,6 +36,7 @@ typedef enum {
 	OXIDE_BOARD_COSMO,
 	OXIDE_BOARD_RUBY,
 	OXIDE_BOARD_RUBYRED,	/* Ruby + Grapefruit */
+	OXIDE_BOARD_METRO,
 } oxide_board_t;
 
 typedef enum {
@@ -150,16 +151,6 @@ typedef struct oxide_board_data {
 	const uint32_t		obd_ppt;	/* Package Power Tracking (W) */
 	const uint32_t		obd_edc;	/* Electrical Design curr (A) */
 	const uint32_t		obd_tdc;	/* Thermal design current (A) */
-
-	/*
-	 * This value is used to override the value used for
-	 * PCIEPORT::PCIE_LC_PRESET_MASK_CNTL[LC_PRESET_MASK_32GT], which
-	 * controls which presets are included in the candidates during
-	 * the Gen5 link equalization phase. If this is left at zero for a
-	 * board then the the constant PCIE_PORT_LC_PRST_MASK_CTL_32GT_VAL is
-	 * used.
-	 */
-	const uint32_t		obd_pcie_gen5_eq_preset_mask;
 
 	/*
 	 * Some platforms toggle a GPIO in a high-level cyclic as an indication

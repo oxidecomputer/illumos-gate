@@ -225,6 +225,10 @@ class EnvConfig:
             return self.groups[name]
         sys.exit(f'error: reference to undefined env or group {name!r}')
 
+    def expand(self, name):
+        """Return the set of environments named by one env or group."""
+        return set(self._expand(name))
+
 
 # ---------------------------------------------------------------------------
 # SymEntry - one symbol entry from a symbols config file
@@ -255,10 +259,12 @@ class SymConfig:
 
     Public attributes:
       entries: list of SymEntry, in file order
+      primary_header: first header named by the loaded configuration files
     """
 
     def __init__(self):
         self.entries = []
+        self.primary_header = None
 
     def load(self, path):
         """Load symbols config from a file path, with STF_SUITE search."""
@@ -278,6 +284,8 @@ class SymConfig:
 
     def _parse(self, fileobj, filename='<input>'):
         """Parse a file-like object as a symbols config file."""
+        self._file_primary_header = None
+        self._warned_primary_headers = set()
         handlers = {
             'type':   self._do_type,
             'value':  self._do_value,
@@ -285,11 +293,44 @@ class SymConfig:
             'func':   self._do_func,
         }
         parse_cfg(fileobj, filename, handlers)
+        if self._file_primary_header is None:
+            sys.exit(f'error: {filename}: symbols configuration is empty')
 
     @staticmethod
     def _split_list(s):
         """Split a semicolon-separated field, stripping each item."""
         return [item.strip() for item in s.split(';') if item.strip()]
+
+    def _add_entry(self, entry, filename, lineno):
+        if not entry.headers:
+            sys.exit(f'error: {filename}:{lineno}: no header specified')
+
+        # A configuration describes one primary header.  Later headers in an
+        # entry are there to support its probe, but only the first identifies
+        # the header whose positive coverage we track.
+        header = entry.headers[0]
+        if self._file_primary_header is None:
+            self._file_primary_header = header
+            if self.primary_header is None:
+                self.primary_header = header
+            elif header != self.primary_header:
+                sys.exit(
+                    f'error: {filename}:{lineno}: primary header {header!r} '
+                    f'differs from {self.primary_header!r}\n'
+                    'Only one primary header per invocation is supported')
+        elif header != self._file_primary_header:
+            # Keep the entry for its ordinary symbol test, but it does not
+            # establish positive coverage for the primary header.
+            if header not in self._warned_primary_headers:
+                print(
+                    f'warning: {filename}:{lineno}: primary header {header!r} '
+                    f'differs from {self._file_primary_header!r}\n'
+                    'Only one primary header per configuration file is '
+                    'expected',
+                    file=sys.stderr)
+                self._warned_primary_headers.add(header)
+
+        self.entries.append(entry)
 
     def _do_type(self, fields, filename, lineno):
         # type | decl | headers | envs
@@ -298,13 +339,13 @@ class SymConfig:
                 f'error: {filename}:{lineno}: type: expected 3 fields, '
                 f'got {len(fields)}')
         decl, hdrs, envs = fields
-        self.entries.append(SymEntry(
+        self._add_entry(SymEntry(
             directive='type',
             symbol=decl,
             rtype=decl,
             headers=self._split_list(hdrs),
             env_spec=envs,
-        ))
+        ), filename, lineno)
 
     def _do_value(self, fields, filename, lineno):
         # value | name | type | headers | envs
@@ -313,13 +354,13 @@ class SymConfig:
                 f'error: {filename}:{lineno}: value: expected 4 fields, '
                 f'got {len(fields)}')
         name, rtype, hdrs, envs = fields
-        self.entries.append(SymEntry(
+        self._add_entry(SymEntry(
             directive='value',
             symbol=name,
             rtype=rtype,
             headers=self._split_list(hdrs),
             env_spec=envs,
-        ))
+        ), filename, lineno)
 
     def _do_define(self, fields, filename, lineno):
         # define | name | value | headers | envs  (value may be empty)
@@ -328,13 +369,13 @@ class SymConfig:
                 f'error: {filename}:{lineno}: define: expected 4 fields, '
                 f'got {len(fields)}')
         name, defval, hdrs, envs = fields
-        self.entries.append(SymEntry(
+        self._add_entry(SymEntry(
             directive='define',
             symbol=name,
             defval=defval if defval else None,
             headers=self._split_list(hdrs),
             env_spec=envs,
-        ))
+        ), filename, lineno)
 
     def _do_func(self, fields, filename, lineno):
         # func | name | rtype | atypes | headers | envs
@@ -343,14 +384,14 @@ class SymConfig:
                 f'error: {filename}:{lineno}: func: expected 5 fields, '
                 f'got {len(fields)}')
         name, rtype, atypes, hdrs, envs = fields
-        self.entries.append(SymEntry(
+        self._add_entry(SymEntry(
             directive='func',
             symbol=name,
             rtype=rtype,
             atypes=self._split_list(atypes),
             headers=self._split_list(hdrs),
             env_spec=envs,
-        ))
+        ), filename, lineno)
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +439,12 @@ class ProbeGen:
         if rtype:
             out.append(prefix + ' ')
 
-        if entry.directive == 'type':
+        # Special "include-only" tests are used to ensure that a header
+        # (at least) compiles in a trivial C program.
+        if entry.directive == 'include-only':
+            out.append('int header_compile_test;\n')
+
+        elif entry.directive == 'type':
             out.append('test_type;\n')
 
         elif entry.directive == 'value':
@@ -482,7 +528,8 @@ class Job:
 
     __slots__ = ('index', 'entry', 'env', 'expect_pass', 'lang',
                  'compiler', 'mflag', 'arch', 'std_flag', 'base_flags',
-                 'tmpdir', 'debug', 'extra_debug', 'force')
+                 'tmpdir', 'debug', 'extra_debug', 'force',
+                 'output', 'done')
 
     def __init__(self, index, entry, env, expect_pass, lang,
                  compiler, mflag, arch, std_flag, base_flags,
@@ -499,8 +546,10 @@ class Job:
         self.base_flags  = base_flags    # list of flags common to all jobs
         self.tmpdir      = tmpdir
         self.debug       = debug         # -d: show probe + compiler output on failure
-        self.extra_debug = extra_debug   # -D: also show compiler command on pass
+        self.extra_debug = extra_debug   # -D: also show command + probe on pass
         self.force       = force         # -f: continue after failures
+        self.output      = None         # buffered text, set once the job finishes
+        self.done        = False        # True once this job has finished
 
 
 # ---------------------------------------------------------------------------
@@ -513,8 +562,8 @@ class TestDriver:
     pool, and reports results.
     """
 
-    def run(self, entries, env_config, compiler, mflag, arch,
-                base_flags, tmpdir, opts):
+    def run(self, sym_config, env_config, positive_coverage,
+                compiler, mflag, arch, base_flags, tmpdir, opts):
         """
         Run all (symbol, env) compilations.
 
@@ -523,6 +572,7 @@ class TestDriver:
         lock = threading.Lock()
         stop = threading.Event()
         counters = {'pass': 0, 'fail': 0}
+        next_to_print = 0
 
         orig_sigint  = signal.getsignal(signal.SIGINT)
         orig_sigterm = signal.getsignal(signal.SIGTERM)
@@ -533,9 +583,22 @@ class TestDriver:
         signal.signal(signal.SIGINT,  handle_signal)
         signal.signal(signal.SIGTERM, handle_signal)
 
+        # drain() prints a run of now-finished jobs starting at
+        # next_to_print, stopping at the first unfinished job.
+        # This makes output appears in job (array) order even
+        # though jobs complete in a non-deterministic order.
+        # Must be called with lock held.
+        def drain():
+            nonlocal next_to_print
+            while next_to_print < len(jobs) and jobs[next_to_print].done:
+                if jobs[next_to_print].output:
+                    print(jobs[next_to_print].output, flush=True)
+                    jobs[next_to_print].output = None
+                next_to_print += 1
+
         # run_job() is the worker function called by each thread in the pool.
         # It captures all output for one job in a local buffer, then acquires
-        # the lock to write (flush) it contiguously to the output stream.
+        # the lock to record it and drain any now-printable jobs in order.
         def run_job(job):
             if stop.is_set():
                 return
@@ -571,10 +634,12 @@ class TestDriver:
             if job.extra_debug:
                 out.append(f'TEST DEBUG {label}: command: {" ".join(cmd)}')
 
-            if job.debug and not passed:
+            if job.extra_debug or (job.debug and not passed):
                 out.append(f'TEST DEBUG {label}: probe program:')
                 for line in src.splitlines():
                     out.append(f'TEST DEBUG {label}:   {line}')
+
+            if job.debug and not passed:
                 with open(logfile) as lf:
                     cc_out = lf.read().strip()
                 if cc_out:
@@ -592,17 +657,71 @@ class TestDriver:
                 out.append(f'TEST {verb} {label}: {reason}')
 
             with lock:
-                print('\n'.join(out), flush=True)
+                job.output = '\n'.join(out)
+                job.done   = True
                 if passed:
                     counters['pass'] += 1
                 else:
                     counters['fail'] += 1
                     if not job.force:
                         stop.set()
+                drain()
 
         # Build the list of jobs to run.
+        # Order jobs by configuration entry and then environment name
         jobs = []
-        for entry in entries:
+
+        # First add the synthetic include-only test configurations.
+        # These are added when there is no positive test case for some
+        # compilation environment.  That ensures that negative cases
+        # don't pass by accident if a header does not compile at all.
+        #
+        # Note that with symbol filtering (opts.sym) we skip this,
+        # and with (opts.env) filter the envoronments the same as
+        # how normal jobs from the test config would do.
+
+        if not opts.sym:
+            covered = set()
+            for entry in sym_config.entries:
+                if entry.headers[0] == sym_config.primary_header:
+                    _, need_set = env_config.resolve(entry.env_spec)
+                    covered |= need_set
+            missing = positive_coverage - covered
+            if opts.env:
+                narrow, _ = env_config.resolve(opts.env)
+                missing &= narrow
+            entry = SymEntry(
+                directive='include-only',
+                symbol=f'include-only <{sym_config.primary_header}>',
+                env_spec='',
+                headers=[sym_config.primary_header],
+            )
+            for env_name in sorted(missing):
+                env = env_config.envs[env_name]
+                jobs.append(Job(
+                    index=len(jobs),
+                    entry=entry,
+                    env=env,
+                    expect_pass=True,
+                    lang=opts.lang,
+                    compiler=compiler,
+                    mflag=mflag,
+                    arch=arch,
+                    std_flag=f'-std={env.lang}',
+                    base_flags=base_flags,
+                    tmpdir=tmpdir,
+                    debug=opts.debug,
+                    extra_debug=opts.extra_debug,
+                    force=opts.force,
+                ))
+
+        #
+        # Now add jobs from the normal config file rows.
+        # These may be filtered by symbol and/or environment
+        # using opts.sym or opts.env
+        #
+
+        for entry in sym_config.entries:
             if opts.sym and entry.symbol != opts.sym:
                 continue
             test_set, need_set = env_config.resolve(entry.env_spec)
@@ -631,11 +750,23 @@ class TestDriver:
 
         # The ThreadPoolExecutor runs up to opts.j worker threads concurrently.
         # executor.submit() queues each job; the pool calls run_job(job) in a
-        # worker thread.  Exiting the "with" block waits for all submitted jobs
-        # to finish before proceeding.
+        # worker thread.  Exiting the "with" block waits for all thread pool
+        # executors to finish before proceeding.
         with ThreadPoolExecutor(max_workers=opts.j) as executor:
             for job in jobs:
                 executor.submit(run_job, job)
+
+        # All thread pool executors have finished.  If we were interrupted,
+        # there may be unfinished jobs and there may also be finished jobs
+        # scattered among those with pending output.  Scan the remainder of
+        # the jobs list and flush (drain) any jobs with pending output.
+        with lock:
+            while next_to_print < len(jobs):
+                if jobs[next_to_print].done and jobs[next_to_print].output:
+                    print(jobs[next_to_print].output, flush=True)
+                    # Could free jobs[].output here but we're
+                    # about to exit so just skip that work.
+                next_to_print += 1
 
         signal.signal(signal.SIGINT,  orig_sigint)
         signal.signal(signal.SIGTERM, orig_sigterm)
@@ -693,15 +824,32 @@ exit(99);
 }
 """
 
-# Base flags used for all C compilations.
-# We turn off -Wformat-security because the auto-generated tests don't pass
-# string literals to printf family functions, which will trigger warnings in
-# some compilers (e.g. clang-16).
-_C_BASE_FLAGS = [
-    '-Wall', '-Werror', '-nostdinc',
-    '-isystem', '/usr/include',
-    '-Wno-format-security',
-]
+def sys_include_dir(root=None):
+    """
+    Return the system include directory to use for -isystem/-nostdinc
+    compiles: '<root>/usr/include' if root is given, else '/usr/include'.
+
+    root is resolved by the caller from, in order of preference: the -R
+    command-line option, the HEADER_TEST_ROOT environment variable, or
+    None (meaning the true system root).
+    """
+    if root:
+        return os.path.join(root, 'usr/include')
+    return '/usr/include'
+
+
+def c_base_flags(root=None):
+    """
+    Base flags used for all C compilations.  We turn off -Wformat-security
+    because the auto-generated tests don't pass string literals to printf
+    family functions, which will trigger warnings in some compilers (e.g.
+    clang-16).
+    """
+    return [
+        '-Wall', '-Werror', '-nostdinc',
+        '-isystem', sys_include_dir(root),
+        '-Wno-format-security',
+    ]
 
 
 def _run_compiler_probe(compiler, src, ext, mflag, tmpdir):
@@ -782,7 +930,7 @@ def find_cxx_compiler(mflag, tmpdir, explicit=None):
     sys.exit('error: no usable C++ compiler found (tried g++, clang++)')
 
 
-def find_gcc_cxx_includes(compiler):
+def find_gcc_cxx_includes(compiler, root=None):
     """
     Query a GCC C++ compiler for its internal include directory and return a
     base_flags list with all necessary -isystem paths.
@@ -794,7 +942,11 @@ def find_gcc_cxx_includes(compiler):
       -isystem prefix/include/c++/version
       -isystem prefix/include/c++/version/target
       -isystem prefix/lib/gcc/target/version/include
-      -isystem /usr/include
+      -isystem <sys_include_dir>
+
+    The compiler's own internal C++ headers always come from the real
+    toolchain install; only the final system headers entry is redirected
+    under root (see sys_include_dir()).
     """
     result = subprocess.run(
         [compiler, '-print-file-name=include'],
@@ -819,17 +971,22 @@ def find_gcc_cxx_includes(compiler):
         '-isystem', f'{prefix}/include/c++/{version}',
         '-isystem', f'{prefix}/include/c++/{version}/{target}',
         '-isystem', f'{prefix}/lib/gcc/{target}/{version}/include',
-        '-isystem', '/usr/include',
+        '-isystem', sys_include_dir(root),
         '-Wno-format-security',
     ]
 
 
-def find_clang_cxx_includes(compiler):
+def find_clang_cxx_includes(compiler, root=None):
     """
     Query a clang++ compiler for its C++ include search paths by running
     it in preprocessing mode with -v, then parse the include list from
-    stderr.  Returns a base_flags list with -isystem for each path found,
-    plus -isystem /usr/include.
+    stderr.  Returns a base_flags list with -isystem for each path found.
+
+    clang always reports the real /usr/include in this list (it has no
+    notion of an alternate root); if root is given, that entry is
+    replaced with sys_include_dir(root) rather than appended alongside it,
+    so proto headers take precedence instead of conflicting with the
+    real ones.
     """
     result = subprocess.run(
         [compiler, '-xc++', '-E', '-v', '-'],
@@ -848,11 +1005,15 @@ def find_clang_cxx_includes(compiler):
     if not paths:
         sys.exit(f'error: could not determine C++ include paths from {compiler}')
 
+    sys_dir = sys_include_dir(root)
+    if '/usr/include' in paths:
+        paths = [sys_dir if p == '/usr/include' else p for p in paths]
+    else:
+        paths.append(sys_dir)
+
     flags = ['-Wall', '-Werror', '-nostdinc']
     for p in paths:
         flags += ['-isystem', p]
-    if '/usr/include' not in paths:
-        flags += ['-isystem', '/usr/include']
     flags.append('-Wno-format-security')
     return flags
 
@@ -879,18 +1040,29 @@ def _parse_args():
     p.add_argument('-d', dest='debug', action='store_true',
                    help='Show probe and compiler output on failure')
     p.add_argument('-D', dest='extra_debug', action='store_true',
-                   help='Also show compiler command (implies -d)')
+                   help='Also show compiler command and probe program for '
+                        'every test, not just failures (implies -d)')
     p.add_argument('-e', dest='env', metavar='ENV', default=None,
                    help='Narrow to one environment name')
     p.add_argument('-f', dest='force', action='store_true',
                    help='Continue after failures')
     p.add_argument('-j', dest='j', metavar='N', type=int, default=None,
                    help='Number of parallel jobs (default: SYMBOL_TEST_JOBS or 4)')
+    p.add_argument('--positive-coverage', metavar='NAME', default=None,
+                   help='Ensure an expected-success test compiles the primary '
+                        'header in every environment named by NAME; by default '
+                        'all declared environments require positive coverage')
     p.add_argument('-s', dest='sym', metavar='SYM', default=None,
                    help='Narrow to one symbol name')
 
     p.add_argument('-C', dest='compiler_check', action='store_true',
                    help='Check compiler only, do not run tests')
+
+    p.add_argument('-R', dest='root', metavar='ROOT', default=None,
+                   help='Alternate root directory (e.g. a proto area) whose '
+                        'ROOT/usr/include is tested instead of the default '
+                        '(default: $HEADER_TEST_ROOT/usr/include if that '
+                        'environment variable is set, else /usr/include)')
 
     p.add_argument('env_cfg', nargs='?', help='Environment config file')
     p.add_argument('sym_cfgs', nargs='*', metavar='sym_cfg',
@@ -906,6 +1078,8 @@ def _parse_args():
     if args.j is not None:
         jobs = args.j
     args.j = jobs
+    if args.root is None:
+        args.root = os.environ.get('HEADER_TEST_ROOT')
     if not args.compiler_check and not args.env_cfg:
         p.error('env_cfg is required unless -C is specified')
     if not args.compiler_check and not args.sym_cfgs:
@@ -921,15 +1095,15 @@ def main():
     with tempfile.TemporaryDirectory() as tmpdir:
         if args.lang == 'c':
             compiler   = find_c_compiler(mflag, tmpdir, args.compiler)
-            base_flags = _C_BASE_FLAGS
+            base_flags = c_base_flags(args.root)
         else:
             # kind is 'gcc' or 'clang', used to select the right
             # include path discovery method.
             compiler, kind = find_cxx_compiler(mflag, tmpdir, args.compiler)
             if kind == 'gcc':
-                base_flags = find_gcc_cxx_includes(compiler)
+                base_flags = find_gcc_cxx_includes(compiler, args.root)
             else:
-                base_flags = find_clang_cxx_includes(compiler)
+                base_flags = find_clang_cxx_includes(compiler, args.root)
 
         if args.compiler_check:
             sys.exit(0)
@@ -941,8 +1115,17 @@ def main():
         for path in args.sym_cfgs:
             sym_cfg.load(path)
 
+        # Named groups may intentionally omit declared environments, so the
+        # default is the complete environment configuration.  One could
+        # also make "ALL" the default but that would encode expectations
+        # on that being defined in the environment config file.
+        if args.positive_coverage is None:
+            positive_coverage = set(env_cfg.envs)
+        else:
+            positive_coverage = env_cfg.expand(args.positive_coverage)
+
         ok = TestDriver().run(
-            sym_cfg.entries, env_cfg, compiler,
+            sym_cfg, env_cfg, positive_coverage, compiler,
             mflag, arch, base_flags, tmpdir, args)
 
     sys.exit(0 if ok else 1)

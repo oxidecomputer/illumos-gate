@@ -1,0 +1,244 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2026 Oxide Computer Company
+.\"
+.Dd July 10, 2026
+.Dt LIBHSMP_INIT 3HSMP
+.Os
+.Sh NAME
+.Nm libhsmp_init ,
+.Nm libhsmp_fini ,
+.Nm libhsmp_ntargets ,
+.Nm libhsmp_target_info
+.Nd Initialise or finalise an HSMP library handle
+.Sh LIBRARY
+.Lb libhsmp
+.Sh SYNOPSIS
+.In libhsmp.h
+.Ft bool
+.Fo libhsmp_init
+.Fa "libhsmp_handle_t **handlep"
+.Fa "libhsmp_err_t *errp"
+.Fa "int32_t *syserrp"
+.Fa "char *const errbuf"
+.Fa "size_t errbuflen"
+.Fc
+.Ft void
+.Fo libhsmp_fini
+.Fa "libhsmp_handle_t *handle"
+.Fc
+.Ft uint32_t
+.Fo libhsmp_ntargets
+.Fa "const libhsmp_handle_t *handle"
+.Fc
+.Ft bool
+.Fo libhsmp_target_info
+.Fa "libhsmp_handle_t *handle"
+.Fa "libhsmp_target_t targ"
+.Fa "uint32_t *sockp"
+.Fa "uint32_t *iodp"
+.Fc
+.Sh DESCRIPTION
+.Fn libhsmp_init
+and
+.Fn libhsmp_fini
+respectively initialise and finalise a handle that can be subsequently
+passed to other
+.Xr libhsmp 3LIB
+functions in order to interact with the AMD Host System Management Port
+.Pq HSMP .
+.Pp
+A handle is initialised via a call to
+.Fn libhsmp_init .
+During initialisation, the library locates and opens the
+.Xr uhsmp 4D
+device node for each HSMP target in the system, and retrieves the HSMP
+interface version that each target's firmware implements.
+.Fa handlep
+must point to a location that can hold the allocated library handle on
+success.
+The handle should be freed when it is no longer needed via a call to
+.Fn libhsmp_fini .
+.Pp
+.Fa errp ,
+.Fa syserrp
+and
+.Fa errbuf
+point to variables that are populated on failure.
+Any of them that are not desired by the caller may be set to
+.Dv NULL .
+If
+.Fa errbuf
+is non-NULL, then
+.Fa errbuflen
+must be set to the size of this buffer, and otherwise left as 0.
+If provided, it is recommended that
+.Fa errbuf
+is at least as large as
+.Dv LIBHSMP_ERR_LEN
+or the returned message may be truncated.
+The meanings of the returned values are:
+.Bl -tag -width Fa
+.It Fa errp
+The error code associated with the failure, drawn from the set described
+in the
+.Sy ERRORS
+section of
+.Xr libhsmp 3LIB .
+This value can be passed to
+.Xr libhsmp_strerror 3HSMP
+to obtain a string representation.
+.It Fa syserrp
+The
+.Va errno
+associated with the failure, if there is one, otherwise 0.
+.It Fa errbuf
+A NUL-terminated error message, suitable for display.
+.El
+.Pp
+.Fn libhsmp_fini
+is used to free a library handle previously allocated by
+.Fn libhsmp_init .
+.Pp
+.Fn libhsmp_ntargets
+returns the number of HSMP targets that the library found during
+initialisation.
+.Fn libhsmp_init
+fails if no targets are present, and so this number is always at least 1.
+Other library functions take a zero-based target identifier, of type
+.Vt libhsmp_target_t ,
+that must be less than this number.
+.Pp
+AMD describe the HSMP as a resource of an IO die.
+Every processor that the library currently supports has one IO die per
+socket, and so presents one HSMP target per socket.
+.Fn libhsmp_target_info
+reports the zero-based socket and IO die indices to which commands issued
+against the target
+.Fa targ
+are despatched, in the variables pointed to by
+.Fa sockp
+and
+.Fa iodp
+respectively.
+Either pointer may be
+.Dv NULL
+if the corresponding value is not required.
+.Sh RETURN VALUES
+Upon successful completion,
+.Fn libhsmp_init
+returns
+.Dv true
+and
+.Fa handlep
+will have been updated.
+Otherwise
+.Dv false
+is returned and the reason for the failure can be determined by inspecting
+the values of
+.Fa errp ,
+.Fa syserrp
+and
+.Fa errbuf
+as described above.
+.Pp
+.Fn libhsmp_ntargets
+returns the number of HSMP targets.
+.Pp
+Upon successful completion,
+.Fn libhsmp_target_info
+returns
+.Dv true ,
+with the requested variables updated.
+Otherwise,
+.Dv false
+is returned.
+.Sh EXAMPLES
+.Sy Example 1
+Allocating and finalising a library handle
+.Pp
+The following example shows how to allocate and finalise a library handle,
+and how to output error information if it fails.
+.Bd -literal -offset 2
+#include <err.h>
+#include <libhsmp.h>
+
+int
+main(void)
+{
+	char errmsg[LIBHSMP_ERR_LEN];
+	libhsmp_handle_t *lhh;
+	libhsmp_err_t lerr;
+	int32_t serr;
+
+	if (!libhsmp_init(&lhh, &lerr, &serr, errmsg, sizeof (errmsg))) {
+		errx(EXIT_FAILURE, "libhsmp error: '%s' (%s / %s)",
+		    errmsg, libhsmp_strerror(lerr), strerror(serr));
+	}
+
+	/* Use the handle here */
+
+	libhsmp_fini(lhh);
+}
+.Ed
+.Sh ERRORS
+When
+.Fn libhsmp_init
+returns
+.Dv false ,
+the
+.Fa syserrp
+pointer
+.Pq if not Dv NULL
+is set to 0 when no system
+.Va errno
+is associated with the failure.
+Otherwise, it is set to one of the errors that can be returned by the
+.Xr open 2
+and
+.Xr ioctl 2
+functions, or to one of the following:
+.Bl -tag -width Er
+.It Er EAGAIN
+There is currently insufficient memory available to allocate the library
+handle, although more may become available later.
+.It Er ENOMEM
+The system cannot allocate memory for the library handle.
+.It Er EPERM
+The caller has insufficient privileges to perform the operation.
+.El
+.Pp
+When
+.Fn libhsmp_target_info
+returns
+.Dv false ,
+the reason for the failure is recorded in the library handle and can be
+retrieved using the functions described in
+.Xr libhsmp_err 3HSMP .
+The only failure is a
+.Fa targ
+that is out of range, which is reported as
+.Dv LIBHSMP_ERR_BAD_TARGET .
+.Sh INTERFACE STABILITY
+.Sy Private
+.Sh MT-LEVEL
+See
+.Sy LOCKING
+in
+.Xr libhsmp 3LIB .
+.Sh SEE ALSO
+.Xr ioctl 2 ,
+.Xr open 2 ,
+.Xr libhsmp_err 3HSMP ,
+.Xr libhsmp_strerror 3HSMP ,
+.Xr libhsmp 3LIB ,
+.Xr uhsmp 4D

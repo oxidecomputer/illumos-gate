@@ -1,0 +1,151 @@
+#!/bin/ksh -p
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2026 Oxide Computer Company
+#
+
+#
+# Method script and daemon for svc:/system/devlink-monitor.
+#
+# The monitor watches for evidence of devlink database corruption. A
+# quarantined database placed in /etc/dev by libdevinfo when its integrity
+# checks trip. When one appears, it gathers supporting evidence into a
+# timestamped directory.
+#
+
+. /lib/svc/share/smf_include.sh
+
+# This service is only applicable in the global zone.
+if smf_is_nonglobalzone; then
+	echo "$SMF_FMRI is not supported in a local zone"
+	smf_method_exit $SMF_EXIT_TEMP_DISABLE "non-global zone"
+fi
+
+DEVDB_DIR=/etc/dev
+STAMP=/etc/svc/volatile/devlink-monitor.stamp
+LIVESTAMP=/etc/svc/volatile/devlink-monitor.livedump
+
+function getprop {
+	typeset val
+
+	val=$(svcprop -p "$1" "$SMF_FMRI" 2>/dev/null)
+	[[ "$val" == '""' ]] && val=
+	print -- "$val"
+}
+
+function derive_destdir {
+	typeset dir
+
+	dir=$(dumpadm 2>/dev/null | awk -F: '/[Ss]avecore directory/ {
+		gsub(/^[ \t]+/, "", $2); print $2; exit
+	}')
+	if [[ -n "$dir" && -d "$dir" ]]; then
+		print -- "$dir"
+	else
+		print /var/tmp
+	fi
+}
+
+function collect {
+	typeset tag=$1; shift
+	typeset dir pid pat cdir f
+
+	dir=$DESTDIR/devlink-$(date -u +%Y%m%dT%H%M%SZ).$tag
+	mkdir -p "$dir" || return
+
+	# Allow in-flight core dumps and quarantine renames to complete.
+	sleep 15
+
+	for f; do
+		[[ -f "$f" ]] && mv "$f" "$dir/"
+	done
+
+	cp -p $DEVDB_DIR/.devlink_db "$dir/devlink_db.current" 2>/dev/null
+	ls -lE $DEVDB_DIR > "$dir/etc-dev.ls" 2>&1
+	{
+		uname -a
+		date -u
+		uptime
+	} > "$dir/system.info" 2>&1
+
+	pid=$(pgrep -xo devfsadmd || pgrep -xo devfsadm)
+	if [[ -n "$pid" ]]; then
+		gcore -o "$dir/devfsadmd" $pid >/dev/null 2>&1
+	fi
+
+	# Copy any devfsadm core files produced since the last collection.
+	pat=$(coreadm 2>/dev/null | awk -F: '/global core file pattern/ {
+		gsub(/^[ \t]+/, "", $2); print $2; exit
+	}')
+	if [[ -n "$pat" ]]; then
+		cdir=$(dirname -- "$pat")
+		#
+		# We can only search the core directory when its path is a
+		# literal one. If the pattern's directory part contains coreadm
+		# expansion specifiers, skip this step; the daemon gcore taken
+		# above is unaffected.
+		#
+		if [[ "$cdir" != *%* && -d "$cdir" ]]; then
+			find "$cdir" -name '*devfsadm*' -newer $STAMP \
+			    -exec cp -p {} "$dir/" \; 2>/dev/null
+		fi
+	fi
+
+	fmdump -eV > "$dir/fmdump-e.out" 2>&1
+	fmdump -V > "$dir/fmdump.out" 2>&1
+	cp /var/adm/messages "$dir/" 2>/dev/null
+
+	# This is expensive, so it is rate limited to one per day.
+	if [[ "$LIVEDUMP" == true ]]; then
+		if [[ ! -f $LIVESTAMP ]] || \
+		    [[ -n $(find $LIVESTAMP -mtime +1 2>/dev/null) ]]; then
+			savecore -L "$dir" >/dev/null 2>&1 &&
+			    touch $LIVESTAMP
+		fi
+	fi
+
+	touch $STAMP
+	logger -p daemon.alert \
+	    "devlink-monitor: corruption artefacts collected in $dir"
+}
+
+function monitor {
+	typeset -a hits
+
+	[[ -f $STAMP ]] || touch $STAMP
+
+	while :; do
+		set -A hits -- $DEVDB_DIR/.devlink_db_corrupt.*
+		[[ -f "${hits[0]}" ]] && collect db "${hits[@]}"
+
+		sleep $INTERVAL
+	done
+}
+
+case "$1" in
+monitor)
+	DESTDIR=$(getprop config/destdir)
+	[[ -z "$DESTDIR" ]] && DESTDIR=$(derive_destdir)
+	LIVEDUMP=$(getprop config/live_dump)
+	: "${LIVEDUMP:=true}"
+	INTERVAL=$(getprop config/interval)
+	: "${INTERVAL:=10}"
+	monitor &
+	;;
+*)
+	print -u2 "Usage: $0 monitor"
+	exit $SMF_EXIT_ERR_CONFIG
+	;;
+esac
+
+exit $SMF_EXIT_OK

@@ -641,7 +641,7 @@ collect_rss(struct cudbg_init *pdbg_init,
 	u32 size;
 	int rc = 0;
 
-	size = RSS_NENTRIES  * sizeof(u16);
+	size = t4_chip_rss_size(padap)  * sizeof(u16);
 	rc = get_scratch_buff(dbg_buff, size, &scratch_buff);
 	if (rc)
 		goto err;
@@ -3389,7 +3389,7 @@ collect_tid(struct cudbg_init *pdbg_init,
 	rc = compress_buff(&scratch_buff, dbg_buff);
 
 err1:
-	ADAPTER_LOCK(padap);
+	ADAPTER_UNLOCK(padap);
 	release_scratch_buff(&scratch_buff, dbg_buff);
 err:
 	return rc;

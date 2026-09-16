@@ -24,6 +24,20 @@
 /*
  * Copyright (c) 2009,  Intel Corporation.
  * All Rights Reserved.
+ * Copyright 2026 Oxide Computer Company
+ */
+
+/*
+ * Turbo (CPU boost) residency accounting.
+ *
+ * When the platform's P-state driver enters or leaves the P0 (turbo) state it
+ * calls cpupm_record_turbo_info(). That accumulates the MPERF and APERF cycle
+ * counts (the hardware coordination feedback counters) accrued while in turbo,
+ * and exports the per-CPU totals through the "turbo" kstat.
+ *
+ * These counters should be treated as a read-only shared resource. We
+ * snapshot them and accumulate deltas rather than zeroing them, so that other
+ * consumers reading the same counters are not disturbed.
  */
 
 #include <sys/x86_archext.h>
@@ -40,15 +54,13 @@
 
 typedef struct turbo_kstat_s {
 	struct kstat_named	turbo_supported;	/* turbo flag */
-	struct kstat_named	t_mcnt;			/* IA32_MPERF_MSR */
-	struct kstat_named	t_acnt;			/* IA32_APERF_MSR */
+	struct kstat_named	t_mcnt;			/* MSR_MPERF */
+	struct kstat_named	t_acnt;			/* MSR_APERF */
 } turbo_kstat_t;
 
 static int turbo_kstat_update(kstat_t *, int);
-static void get_turbo_info(cpupm_mach_turbo_info_t *);
-static void reset_turbo_info(void);
-static void record_turbo_info(cpupm_mach_turbo_info_t *, uint32_t, uint32_t);
-static void update_turbo_info(cpupm_mach_turbo_info_t *);
+static void turbo_snapshot(cpupm_mach_turbo_info_t *);
+static void turbo_accumulate(cpupm_mach_turbo_info_t *);
 
 static kmutex_t turbo_mutex;
 
@@ -60,14 +72,6 @@ turbo_kstat_t turbo_kstat = {
 
 #define	CPU_ACPI_P0			0
 #define	CPU_IN_TURBO			1
-
-/*
- * MSR for hardware coordination feedback mechanism
- *   - IA32_MPERF: increments in proportion to a fixed frequency
- *   - IA32_APERF: increments in proportion to actual performance
- */
-#define	IA32_MPERF_MSR			0xE7
-#define	IA32_APERF_MSR			0xE8
 
 /*
  * kstat update function of the turbo mode info
@@ -86,7 +90,7 @@ turbo_kstat_update(kstat_t *ksp, int flag)
 	 * mode for a long time
 	 */
 	if (turbo_info->in_turbo == CPU_IN_TURBO)
-		update_turbo_info(turbo_info);
+		turbo_accumulate(turbo_info);
 
 	turbo_kstat.turbo_supported.value.ui32 =
 	    turbo_info->turbo_supported;
@@ -97,53 +101,46 @@ turbo_kstat_update(kstat_t *ksp, int flag)
 }
 
 /*
- * update the sum of counts and clear MSRs
+ * Snapshot the APERF/MPERF counters as the baseline for the next accumulation
+ * window.
  */
 static void
-update_turbo_info(cpupm_mach_turbo_info_t *turbo_info)
+turbo_snapshot(cpupm_mach_turbo_info_t *turbo_info)
+{
+	ulong_t		iflag;
+
+	iflag = intr_clear();
+	turbo_info->t_mbase = rdmsr(MSR_MPERF);
+	turbo_info->t_abase = rdmsr(MSR_APERF);
+	intr_restore(iflag);
+}
+
+/*
+ * Add the cycles accrued since the last snapshot to the running totals and
+ * advance the baseline.
+ */
+static void
+turbo_accumulate(cpupm_mach_turbo_info_t *turbo_info)
 {
 	ulong_t		iflag;
 	uint64_t	mcnt, acnt;
 
 	iflag = intr_clear();
-	mcnt = rdmsr(IA32_MPERF_MSR);
-	acnt = rdmsr(IA32_APERF_MSR);
-	wrmsr(IA32_MPERF_MSR, 0);
-	wrmsr(IA32_APERF_MSR, 0);
-	turbo_info->t_mcnt += mcnt;
-	turbo_info->t_acnt += acnt;
+	mcnt = rdmsr(MSR_MPERF);
+	acnt = rdmsr(MSR_APERF);
 	intr_restore(iflag);
-}
 
-/*
- * Get count of MPERF/APERF MSR
- */
-static void
-get_turbo_info(cpupm_mach_turbo_info_t *turbo_info)
-{
-	ulong_t		iflag;
-	uint64_t	mcnt, acnt;
-
-	iflag = intr_clear();
-	mcnt = rdmsr(IA32_MPERF_MSR);
-	acnt = rdmsr(IA32_APERF_MSR);
-	turbo_info->t_mcnt += mcnt;
-	turbo_info->t_acnt += acnt;
-	intr_restore(iflag);
-}
-
-/*
- * Clear MPERF/APERF MSR
- */
-static void
-reset_turbo_info(void)
-{
-	ulong_t		iflag;
-
-	iflag = intr_clear();
-	wrmsr(IA32_MPERF_MSR, 0);
-	wrmsr(IA32_APERF_MSR, 0);
-	intr_restore(iflag);
+	/*
+	 * If a counter moved backwards since the snapshot then it was reset
+	 * from under us. Re-baseline and skip this window rather than adding a
+	 * bogus delta.
+	 */
+	if (mcnt >= turbo_info->t_mbase && acnt >= turbo_info->t_abase) {
+		turbo_info->t_mcnt += mcnt - turbo_info->t_mbase;
+		turbo_info->t_acnt += acnt - turbo_info->t_abase;
+	}
+	turbo_info->t_mbase = mcnt;
+	turbo_info->t_abase = acnt;
 }
 
 /*
@@ -159,7 +156,7 @@ cpupm_record_turbo_info(cpupm_mach_turbo_info_t *turbo_info,
 	 * enter P0 state
 	 */
 	if (req_state == CPU_ACPI_P0) {
-		reset_turbo_info();
+		turbo_snapshot(turbo_info);
 		turbo_info->in_turbo = CPU_IN_TURBO;
 	}
 	/*
@@ -167,7 +164,7 @@ cpupm_record_turbo_info(cpupm_mach_turbo_info_t *turbo_info,
 	 */
 	else if (cur_state == CPU_ACPI_P0) {
 		turbo_info->in_turbo = 0;
-		get_turbo_info(turbo_info);
+		turbo_accumulate(turbo_info);
 	}
 }
 

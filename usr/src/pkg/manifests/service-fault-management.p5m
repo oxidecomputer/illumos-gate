@@ -690,6 +690,10 @@ $(i386_ONLY)file \
     path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-hc-topology.xml mode=0444
 $(i386_ONLY)file \
     path=usr/platform/oxide/lib/fm/topo/maps/Gimlet-pcie-topology.xml mode=0444
+$(i386_ONLY)file \
+    path=usr/platform/oxide/lib/fm/topo/maps/Metro-hc-topology.xml mode=0444
+$(i386_ONLY)file \
+    path=usr/platform/oxide/lib/fm/topo/maps/Metro-pcie-topology.xml mode=0444
 $(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/plugins
 $(i386_ONLY)dir path=usr/platform/oxide/lib/fm/topo/plugins/$(ARCH64)
 $(i386_ONLY)file path=usr/platform/oxide/lib/fm/topo/plugins/$(ARCH64)/oxhc.so \

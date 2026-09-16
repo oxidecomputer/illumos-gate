@@ -126,7 +126,7 @@ c_disk(void)
 	int			more = 0;
 	int			more_quit = 0;
 	int			one_line = 0;
-	int			tty_lines;
+	int			tty_lines = 24;
 
 /*
  * This buffer holds the check() prompt that verifies we've got the right
@@ -1654,7 +1654,8 @@ c_label(void)
 			cur_dtype = dptr;
 			cur_parts = dptr->dtype_plist;
 
-			if (status = write_label())
+			status = write_label();
+			if (status != 0)
 				err_print("Label failed.\n");
 			else
 				cur_disk->disk_flags &= ~DSK_LABEL_DIRTY;
@@ -1754,7 +1755,8 @@ expert_end:
 	 * return status.
 	 */
 	fmt_print("\n");
-	if (status = write_label())
+	status = write_label();
+	if (status != 0)
 		err_print("Label failed.\n");
 	return (status);
 }
@@ -2526,7 +2528,8 @@ being used for swapping.\n\n");
 	 * return status.
 	 */
 	fmt_print("\n");
-	if (status = write_label())
+	status = write_label();
+	if (status != 0)
 		err_print("Label failed.\n");
 	return (status);
 }

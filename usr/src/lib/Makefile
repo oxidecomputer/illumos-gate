@@ -283,6 +283,7 @@ SUBDIRS +=				\
 i386_SUBDIRS=		\
 	lib9p		\
 	libfdisk	\
+	libhsmp		\
 	libppt		\
 	libsaveargs	\
 	libvmm		\
@@ -508,6 +509,7 @@ HDRSUBDIRS=				\
 i386_HDRSUBDIRS=	\
 	lib9p		\
 	libfdisk	\
+	libhsmp		\
 	libppt		\
 	libsaveargs	\
 	libvmm		\
@@ -642,6 +644,7 @@ libfru:		libfruutils
 libfsmgt:	libkstat
 libgrubmgmt:	libdevinfo libzfs libfstyp libefi
 $(INTEL_BLD)libgrubmgmt: libfdisk
+libhsmp:	libdevinfo
 libi2c:		libdevinfo
 libidmap:	libavl libuutil
 libidspace:	libumem

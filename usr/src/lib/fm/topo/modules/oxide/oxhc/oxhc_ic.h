@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _OXHC_IC_H
@@ -129,6 +129,9 @@ extern const size_t oxhci_ic_gimlet_main_nents;
 
 extern const oxhc_ic_board_t oxhc_ic_cosmo_main[];
 extern const size_t oxhc_ic_cosmo_main_nents;
+
+extern const oxhc_ic_board_t oxhc_ic_metro_main[];
+extern const size_t oxhc_ic_metro_main_nents;
 
 extern const oxhc_ic_board_t oxhc_ic_temp_board[];
 extern const size_t oxhc_ic_temp_board_nents;

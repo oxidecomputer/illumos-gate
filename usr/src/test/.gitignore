@@ -83,6 +83,9 @@ bhyve-tests/tests/perf/payload_entry_exit
 bhyve-tests/tests/viona/create_delete
 bhyve-tests/tests/viona/interface_version
 bhyve-tests/tests/viona/link_params
+bhyve-tests/tests/viona/mac_addr
+bhyve-tests/tests/viona/mac_filters
+bhyve-tests/tests/viona/rx_delivery
 bhyve-tests/tests/vmm/auto_destruct
 bhyve-tests/tests/vmm/check_iommu
 bhyve-tests/tests/vmm/cpuid_ioctl
@@ -193,6 +196,7 @@ os-tests/tests/pf_key/eacq-enabler
 os-tests/tests/pf_key/kmc-update
 os-tests/tests/pf_key/kmc-updater
 os-tests/tests/poll/epoll_test
+os-tests/tests/poll/poll_close_test
 os-tests/tests/poll/poll_test
 os-tests/tests/regression/illumos-15031
 os-tests/tests/regression/illumos-15036
@@ -205,6 +209,7 @@ os-tests/tests/saveargs/functional/small-struct-ret
 os-tests/tests/saveargs/functional/small-struct-ret-and-spill
 os-tests/tests/saveargs/functional/stack-spill
 os-tests/tests/saveargs/testmatch/testmatch
+os-tests/tests/sockopt/v4mapped
 os-tests/tests/sdevfs/sdevfs_eisdir
 os-tests/tests/secflags/addrs-32
 os-tests/tests/secflags/addrs-64

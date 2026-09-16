@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -1057,23 +1057,24 @@ tfport_ioc_l2_needed(tfport_port_t *portp, struct iocblk *iocp, queue_t *q,
 {
 	tfport_ioc_l2_t *arg;
 	struct sockaddr *addr;
-	mblk_t *mp1;
 	ip2mac_t ip2m;
 	zoneid_t zoneid;
+	int rval;
 
-	if (iocp->ioc_count < sizeof (tfport_ioc_l2_t))
-		return (miocnak(q, mp, 0, EINVAL));
+	rval = secpolicy_net_config(iocp->ioc_cr, B_FALSE);
+	if (rval != 0)
+		return (miocnak(q, mp, 0, rval));
 
-	mp1 = mp->b_cont;
-	if (mp1 == NULL)
-		return (miocnak(q, mp, 0, EINVAL));
+	/*
+	 * As well as checking that the attached data block is large enough
+	 * and making it contiguous, this rejects the transparent form of the
+	 * ioctl, for which ioc_count holds TRANSPARENT rather than a size.
+	 */
+	rval = miocpullup(mp, sizeof (tfport_ioc_l2_t));
+	if (rval != 0)
+		return (miocnak(q, mp, 0, rval));
 
-	if (mp1->b_cont != NULL) {
-		freemsg(mp1->b_cont);
-		mp1->b_cont = NULL;
-	}
-
-	arg = (tfport_ioc_l2_t *)mp1->b_rptr;
+	arg = (tfport_ioc_l2_t *)mp->b_cont->b_rptr;
 	addr = (struct sockaddr *)&arg->til_addr;
 	bzero(&ip2m, sizeof (ip2m));
 	ip2m.ip2mac_ifindex = arg->til_ifindex;

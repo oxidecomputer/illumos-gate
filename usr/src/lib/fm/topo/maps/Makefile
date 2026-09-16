@@ -25,6 +25,7 @@
 # Copyright 2020 Joyent, Inc.
 # Copyright 2019 Peter Tribble.
 # Copyright 2022 Garrett D'Amore
+# Copyright 2026 Oxide Computer Company
 #
 
 i386_SUBDIRS = i86pc \
@@ -43,7 +44,8 @@ i386_SUBDIRS = i86pc \
 		SMCI,SSG-6049P-E1CR36L \
 		SMCI,SSG-2029P-ACR24L \
 		Oxide,Cosmo \
-		Oxide,Gimlet
+		Oxide,Gimlet \
+		Oxide,Metro
 
 SUBDIRS = $($(MACH)_SUBDIRS)
 
