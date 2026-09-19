@@ -63,16 +63,15 @@ smbios_open(const char *file, int version, int flags, int *errp)
 	return (smb_open_error(NULL, errp, ESMB_MAPDEV));
 }
 
-/*ARGSUSED*/
 smbios_hdl_t *
-smbios_fdopen(int fd, int version, int flags, int *errp)
+smbios_fdopen(int fd __unused, int version __unused, int flags __unused,
+    int *errp)
 {
 	return (smb_open_error(NULL, errp, ENOTSUP));
 }
 
-/*ARGSUSED*/
 int
-smbios_write(smbios_hdl_t *shp, int fd)
+smbios_write(smbios_hdl_t *shp, int fd __unused)
 {
 	return (smb_set_errno(shp, ENOTSUP));
 }
