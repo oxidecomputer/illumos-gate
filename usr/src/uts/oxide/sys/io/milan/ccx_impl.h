@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Co.
+ * Copyright 2026 Oxide Computer Co.
  */
 
 #ifndef _SYS_IO_MILAN_CCX_IMPL_H
@@ -37,6 +37,7 @@ extern void milan_thread_uc_init(void);
 extern void milan_core_ls_init(void);
 extern void milan_core_ic_init(void);
 extern void milan_core_dc_init(void);
+extern void milan_core_tw_init(void);
 extern void milan_core_de_init(void);
 extern void milan_core_l2_init(void);
 extern void milan_ccx_l3_init(void);

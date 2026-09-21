@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -223,6 +223,21 @@ milan_core_dc_init(void)
 	v = AMD_DC_CFG2_SET_DIS_SCB_NTA_L1(v, 1);
 
 	wrmsr_and_test(MSR_AMD_DC_CFG2, v);
+}
+
+/*
+ * Disable the host-native PDPE cache. The table walker can otherwise
+ * follow a stale cached entry into a page that was a pagetable but has
+ * since been freed and reused.
+ */
+void
+milan_core_tw_init(void)
+{
+	uint64_t v;
+
+	v = rdmsr(MSR_AMD_TW_CFG);
+	v = AMD_TW_CFG_SET_DIS_HOST_NATIVE_PDPE_CACHE(v, 1);
+	wrmsr_and_test(MSR_AMD_TW_CFG, v);
 }
 
 void

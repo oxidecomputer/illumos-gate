@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -168,15 +168,17 @@ zen_ccx_init(void)
 	 * on the first sharing thread to start seems to have the intended
 	 * result, so that's what we do.  Callbacks are named for their scope.
 	 *
-	 * Note there's both a table walker configuration callback that is
-	 * follows the above pattern and invoked on just the first thread and a
-	 * common table walker configuration routine that applies to all
+	 * Note there's both a table walker configuration callback that
+	 * follows the above pattern and is invoked on just the first thread
+	 * and a common table walker configuration routine that applies to all
 	 * supported Zen processors, zen_core_tw_init().  The latter when called
 	 * causes CR0.CD to be effectively set on both threads if either thread
 	 * has it set; since by default, a thread1 that hasn't started yet has
 	 * this bit set, setting it on thread0 will cause everything to grind to
-	 * a near halt.  Since the TW config bit has no effect without SMT, we
-	 * don't need to worry about setting it on thread0 if SMT is off.
+	 * a near halt.  Since CombineCr0Cd has no effect without SMT there is
+	 * no need to set it when SMT is off, and with no thread1 to run it
+	 * zen_core_tw_init() never does.  Anything that must be set regardless
+	 * of SMT therefore belongs in the per-core callback.
 	 */
 	ZEN_CCX_INIT(ccx_ops, thread_feature);
 	ZEN_CCX_INIT(ccx_ops, thread_uc);
