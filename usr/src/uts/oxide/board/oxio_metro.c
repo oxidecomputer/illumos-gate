@@ -44,9 +44,7 @@
  *     image has been loaded, at which point the host enables power and clocks
  *     and releases PERST through the usual hotplug mechanism.
  *
- *     XXX: The subsystem ID should be that of the Metro baseboard,
- *     0x1de/0xfff7, although the current Redhawk design programs 0x1de/0x3
- *     there.
+ *     The subsystem ID is that of the Metro baseboard, 0x1de/0xfff7.
  *
  *     XXX: Lane reversal (OXIO_ENGINE_F_REVERSE) depends on how the CPM5
  *     numbers its lanes - TBC.

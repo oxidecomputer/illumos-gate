@@ -884,6 +884,10 @@ static const char *oxhc_ic_adm_hs_labels[] = {
 	"temp", "V54_HS_OUTPUT:vout", "V54_HS_OUTPUT:iout"
 };
 
+static const char *oxhc_ic_adm_sp5_hs_labels[] = {
+	"temp", "V54P5_IBC_A3:vout", "V54P5_IBC_A3:iout"
+};
+
 static const char *oxhc_ic_adm_fan_labels[] = {
 	"temp", "V54_FAN:vout", "V54_FAN:iout",
 };
@@ -1202,14 +1206,14 @@ static const char *oxhc_ic_sp3_vpp_labels[] = {
 };
 
 static const char *oxhc_ic_sp5_misc_labels[] = {
-	"V1P1_SP5_A0:vout", "V1P8_SP5_A0:vout", "V3P3_SP5:vout",
-	"V1P1_SP5_A0:iout", "V1P8_SP5_A0:iout", "V3P3_SP5_A0:iout"
+	"V1P1_SP5_A0:vout", "V1P8_SP5_A1:vout", "V3P3_SP5_A1:vout",
+	"V1P1_SP5_A0:iout", "V1P8_SP5_A1:iout", "V3P3_SP5_A1:iout"
 };
 
 /*
- * XXX: The rail order here follows the loop assignment on the Metro schematic,
- * with the four phase VCCINT loop first. We'll need to know which SP inventory
- * rail index corresponds to which.
+ * The rail order here matches that used by the SP, with the four phase VCCINT
+ * loop first. The SP also describes a third rail for this device which is
+ * unused and is not exposed here.
  */
 static const char *oxhc_ic_isl68224_nic_labels[] = {
 	"V0P8_NIC_VCCINT_A0HP:vout", "V0P88_NIC_A0HP:vout",
@@ -1638,8 +1642,8 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{
 		.ib_refdes = "U79",
 		.ib_info = &oxhc_ic_adm127x,
-		.ib_labels = oxhc_ic_adm_hs_labels,
-		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_hs_labels)
+		.ib_labels = oxhc_ic_adm_sp5_hs_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_sp5_hs_labels)
 	},
 	{
 		.ib_refdes = "U80",
@@ -1828,8 +1832,8 @@ const oxhc_ic_board_t oxhc_ic_metro_main[] = {
 	{
 		.ib_refdes = "U79",
 		.ib_info = &oxhc_ic_adm127x,
-		.ib_labels = oxhc_ic_adm_hs_labels,
-		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_hs_labels)
+		.ib_labels = oxhc_ic_adm_sp5_hs_labels,
+		.ib_nlabels = ARRAY_SIZE(oxhc_ic_adm_sp5_hs_labels)
 	},
 	{
 		.ib_refdes = "U80",
