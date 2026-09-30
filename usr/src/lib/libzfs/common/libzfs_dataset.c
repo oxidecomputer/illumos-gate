@@ -5444,6 +5444,15 @@ volsize_from_vdevs(zpool_handle_t *zhp, uint64_t nblocks, uint64_t blksize)
 }
 
 /*
+ * Space allowed for a raw volume's indirect blocks, per data block of the
+ * volume's minimum block size (volblocksize).  In practice, we see about 8
+ * bytes per data block, per ditto copy of the indirect block.  We reserve
+ * 50% more to account for discrepancies in compression ratio, as well as
+ * higher-level indirect blocks.  See zvol_volsize_to_reservation().
+ */
+#define	ZVOL_RAW_INDIRECT_BYTES_PER_BLOCK	24
+
+/*
  * Convert the zvol's volume size to an appropriate reservation.  See theory
  * comment above.
  *
@@ -5455,7 +5464,7 @@ zvol_volsize_to_reservation(zpool_handle_t *zph, uint64_t volsize,
     nvlist_t *props)
 {
 	uint64_t numdb;
-	uint64_t nblocks, volblocksize;
+	uint64_t nblocks, volblocksize, rawvol;
 	int ncopies;
 	char *strval;
 
@@ -5470,6 +5479,24 @@ zvol_volsize_to_reservation(zpool_handle_t *zph, uint64_t volsize,
 		volblocksize = ZVOL_DEFAULT_BLOCKSIZE;
 
 	nblocks = volsize / volblocksize;
+
+	/*
+	 * Non-raw zvols assume that their indirect blocks are uncompressed.
+	 *
+	 * A raw zvol is more of a special case: it can only be stored on plain
+	 * disk vdevs (not mirrors or RAIDZ), and has no checksums or ditto
+	 * blocks of user data.  Therefore we can use a simple calculation, and
+	 * assume that its indirect blocks will compress well.  Also, this
+	 * refreservation is only temporary: zvol_raw_volume_init() clears it.
+	 *
+	 * The ZFS test suite's version of this routine (reservation.shlib)
+	 * doesn't need to handle raw zvols, since their refreservation doesn't
+	 * persist.
+	 */
+	if (nvlist_lookup_uint64(props, zfs_prop_to_name(ZFS_PROP_RAWVOL),
+	    &rawvol) == 0 && rawvol != 0)
+		return (volsize + nblocks * ZVOL_RAW_INDIRECT_BYTES_PER_BLOCK);
+
 	/*
 	 * Metadata defaults to using 128k blocks, not volblocksize blocks.  For
 	 * this reason, only the data blocks are scaled based on vdev config.
