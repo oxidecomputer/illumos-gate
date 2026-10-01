@@ -581,6 +581,7 @@ f lib/amd64/libuutil.so.1 0755 root bin
 f lib/amd64/libvarpd.so.1 0755 root bin
 f lib/amd64/libvmmapi.so.1 0755 root bin
 f lib/amd64/libxml2.so.2 0755 root bin
+f lib/amd64/libxml2.so.16 0755 root bin
 s lib/amd64/libz.so=libz.so.1
 f lib/amd64/libz.so.1 0755 root bin
 f lib/amd64/libzutil.so.1 0755 root bin
@@ -655,6 +656,7 @@ f lib/libumem.so.1 0755 root bin
 f lib/libuuid.so.1 0755 root bin
 f lib/libuutil.so.1 0755 root bin
 f lib/libxml2.so.2 0755 root bin
+f lib/libxml2.so.16 0755 root bin
 f lib/libxnet.so.1 0755 root bin
 s lib/libz.so=libz.so.1
 f lib/libz.so.1 0755 root bin
