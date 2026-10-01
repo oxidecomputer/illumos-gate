@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -50,6 +50,7 @@ const oxio_engine_t oxio_ruby[] = { {
 	.oe_tile = OXIO_TILE_P4,
 	.oe_lane = 0,
 	.oe_nlanes = 4,
+	.oe_slot = 0x24,
 	.oe_tuning = {
 		.ot_hw_limit = OXIO_SPEED_GEN_4,
 		.ot_hw_target = OXIO_SPEED_GEN_3
@@ -60,6 +61,7 @@ const oxio_engine_t oxio_ruby[] = { {
 	.oe_tile = OXIO_TILE_P5,
 	.oe_lane = 0,
 	.oe_nlanes = 1,
+	.oe_slot = 0x25,
 	.oe_tuning = {
 		.ot_hw_limit = OXIO_SPEED_GEN_4,
 		.ot_hw_target = OXIO_SPEED_GEN_3
@@ -70,6 +72,7 @@ const oxio_engine_t oxio_ruby[] = { {
 	.oe_tile = OXIO_TILE_P5,
 	.oe_lane = 1,
 	.oe_nlanes = 1,
+	.oe_slot = 0x26,
 	.oe_tuning = {
 		.ot_hw_limit = OXIO_SPEED_GEN_4,
 		.ot_hw_target = OXIO_SPEED_GEN_3
