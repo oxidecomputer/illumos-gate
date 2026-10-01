@@ -434,6 +434,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 		.obdef_board_data = {
 			.obd_board = OXIDE_BOARD_RUBYRED,
 			.obd_rootnexus = "Oxide,RubyRed",
+			.obd_bsu_slot = { 2, 3 },
 			.obd_ipccmode = IPCC_MODE_ESPI0,
 			/*
 			 * The SP's SP_TO_SP5_INT_L line runs to the grapefruit
@@ -494,6 +495,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 		.obdef_board_data = {
 			.obd_board = OXIDE_BOARD_RUBY,
 			.obd_rootnexus = "Oxide,Ruby",
+			.obd_bsu_slot = { 2, 3 },
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
 			    IPCC_STARTUP_VERBOSE | IPCC_STARTUP_PROM,
@@ -524,6 +526,7 @@ static oxide_board_def_t oxide_board_defs[] = {
 		.obdef_board_data = {
 			.obd_board = OXIDE_BOARD_RUBY,
 			.obd_rootnexus = "Oxide,Ruby",
+			.obd_bsu_slot = { 2, 3 },
 			.obd_ipccmode = IPCC_MODE_DISABLED,
 			.obd_measure_root = true,
 			.obd_startupopts = IPCC_STARTUP_KMDB_BOOT |
