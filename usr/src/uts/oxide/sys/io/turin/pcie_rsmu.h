@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_PCIE_RSMU_H
@@ -2083,7 +2083,7 @@ extern "C" {
  * capabilities directly, not via the overrides in PCIEPORT::PCIE_CONFIG_CNTL.
  */
 #define	TURIN_STRAP_PCIE_P_10B_TAG_CMPL_SUP	0x189
-#define	TURIN_STRAP_PCIE_P_10B_TAG_REQ_SUP	0x19a
+#define	TURIN_STRAP_PCIE_P_10B_TAG_REQ_SUP	0x18a
 
 /*
  * This controls whether or not the CCIX vendor specific cap is advertised or
