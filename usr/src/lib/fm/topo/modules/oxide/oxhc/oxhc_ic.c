@@ -1746,6 +1746,8 @@ const oxhc_ic_board_t oxhc_ic_cosmo_main[] = {
 	{ .ib_refdes = "U51", .ib_info = &oxhc_ic_tps74501 },
 	{ .ib_refdes = "U52", .ib_info = &oxhc_ic_tps62916 },
 	{ .ib_refdes = "U125", .ib_info = &oxhc_ic_lt3072 },
+	/* LDO powering the DIMM I3C level translators */
+	{ .ib_refdes = "U139", .ib_info = &oxhc_ic_tps74501, .ib_min_rev = 2 },
 };
 
 const size_t oxhc_ic_cosmo_main_nents = ARRAY_SIZE(oxhc_ic_cosmo_main);

@@ -48,6 +48,7 @@
 
 #define	OXHC_MAX_ROTORS	2
 #define	OXHC_MAX_FANS	3
+#define	OXHC_MAX_CPN	2
 
 typedef struct {
 	/*
@@ -61,7 +62,7 @@ typedef struct {
 	/*
 	 * The CPN of this platform's fan tray.
 	 */
-	const char *ft_cpn;
+	const char *const ft_cpn[OXHC_MAX_CPN];
 	/*
 	 * The RefDes of the Fan Controller.
 	 */
@@ -88,7 +89,7 @@ typedef struct {
 static const fan_tray_info_t gimlet_tray_info = {
 	.ft_vpd = "J180",
 	.ft_refdes = "J180/ID",
-	.ft_cpn = "991-0000084",
+	.ft_cpn = { "991-0000084" },
 	.ft_ctrl = "U321",
 	.ft_nfans = 3,
 	.ft_labels = { "West", "Center", "East" },
@@ -104,7 +105,7 @@ static const fan_tray_info_t gimlet_tray_info = {
 static const fan_tray_info_t cosmo_tray_info = {
 	.ft_vpd = "J34",
 	.ft_refdes = "J34/ID",
-	.ft_cpn = "991-0000151",
+	.ft_cpn = { "991-0000151", "991-0000303" },
 	.ft_ctrl = "U58",
 	.ft_nfans = 3,
 	.ft_labels = { "West", "Center", "East" },
@@ -177,8 +178,8 @@ topo_oxhc_enum_fan(topo_mod_t *mod, const oxhc_barcode_t *barcode,
 			    "%s[%" PRIu64 "]: %s\n",
 			    oxhc_pgroup.tpi_name, topo_node_name(fan),
 			    topo_node_instance(fan), topo_mod_errmsg(mod));
+			goto out;
 		}
-		goto out;
 	}
 
 	/*
@@ -381,7 +382,15 @@ topo_oxhc_enum_fan_tray(topo_mod_t *mod, const oxhc_t *oxhc,
 		goto out;
 	}
 
-	if (strcmp(tray_pn, info->ft_cpn) != 0) {
+	bool match = false;
+	for (size_t i = 0; i < ARRAY_SIZE(info->ft_cpn); i++) {
+		if (strcmp(tray_pn, info->ft_cpn[i]) == 0) {
+			match = true;
+			break;
+		}
+	}
+
+	if (!match) {
 		topo_mod_dprintf(mod, "found unexpected CPN for fan tray: %s, "
 		    "not creating\n", tray_pn);
 		ret = topo_mod_seterrno(mod, EMOD_UKNOWN_ENUM);

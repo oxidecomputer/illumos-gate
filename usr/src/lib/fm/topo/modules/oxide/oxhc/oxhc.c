@@ -1165,7 +1165,7 @@ static const oxhc_enum_t oxhc_enum_gimlet[] = {
 };
 
 static const oxhc_enum_t oxhc_enum_cosmo[] = {
-	{ .oe_name = CHASSIS, .oe_parent = "hc", .oe_cpn = "992-0000043",
+	{ .oe_name = CHASSIS, .oe_parent = "hc",
 	    .oe_flags = OXHC_ENUM_F_USE_IPCC_SN | OXHC_ENUM_F_MAKE_AUTH |
 	    OXHC_ENUM_F_FRU_SELF, .oe_range_enum = topo_oxhc_enum_range },
 	{ .oe_name = BAY, .oe_parent = CHASSIS,
