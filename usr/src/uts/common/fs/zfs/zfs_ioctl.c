@@ -3416,8 +3416,16 @@ zfs_ioc_create(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 				(void) dsl_destroy_head(fsname);
 				return (SET_ERROR(EPERM));
 			}
-			error = zvol_raw_volume_init(os, nvprops);
-			dmu_objset_disown(os, B_FALSE, FTAG);
+			/*
+			 * Raw zvol I/O bypasses the DMU and its blocks are
+			 * never encrypted, so a raw zvol can't be encrypted,
+			 * whether explicitly or by inheritance.
+			 */
+			if (os->os_encrypted)
+				error = SET_ERROR(ENOTSUP);
+			else
+				error = zvol_raw_volume_init(os, nvprops);
+			dmu_objset_disown(os, B_TRUE, FTAG);
 		}
 		if (error != 0)
 			(void) dsl_destroy_head(fsname);

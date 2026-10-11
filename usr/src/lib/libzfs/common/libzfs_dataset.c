@@ -3626,6 +3626,7 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 	/* validate parents exist */
 	if (check_parents(hdl, path, &zoned, B_FALSE, NULL) != 0)
 		return (-1);
+	(void) parent_name(path, parent, sizeof (parent));
 
 	/*
 	 * The failure modes when creating a dataset of a different type over
@@ -3665,6 +3666,8 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 	zpool_close(zpool_handle);
 
 	if (type == ZFS_TYPE_VOLUME) {
+		uint64_t rawvol;
+
 		/*
 		 * If we are creating a volume, the size and block size must
 		 * satisfy a few restraints.  First, the blocksize must be a
@@ -3708,9 +3711,34 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 			    "size"));
 			return (zfs_error(hdl, EZFS_BADPROP, errbuf));
 		}
+
+		/*
+		 * Raw volumes are never encrypted, so they can't be created
+		 * with encryption on, or inherit it from an encrypted parent.
+		 */
+		if (nvlist_lookup_uint64(props,
+		    zfs_prop_to_name(ZFS_PROP_RAWVOL), &rawvol) == 0 &&
+		    rawvol) {
+			uint64_t crypt = ZIO_CRYPT_OFF;
+			zfs_handle_t *pzhp;
+
+			if (nvlist_lookup_uint64(props,
+			    zfs_prop_to_name(ZFS_PROP_ENCRYPTION),
+			    &crypt) != 0 &&
+			    (pzhp = make_dataset_handle(hdl, parent)) != NULL) {
+				crypt = zfs_prop_get_int(pzhp,
+				    ZFS_PROP_ENCRYPTION);
+				zfs_close(pzhp);
+			}
+			if (crypt != ZIO_CRYPT_OFF) {
+				nvlist_free(props);
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+				    "raw volumes cannot be encrypted"));
+				return (zfs_error(hdl, EZFS_BADPROP, errbuf));
+			}
+		}
 	}
 
-	(void) parent_name(path, parent, sizeof (parent));
 	if (zfs_crypto_create(hdl, parent, props, NULL, B_TRUE,
 	    &wkeydata, &wkeylen) != 0) {
 		nvlist_free(props);
