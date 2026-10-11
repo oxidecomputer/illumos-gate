@@ -791,6 +791,7 @@ zvol_first_open(zvol_state_t *zv, boolean_t rdonly)
 			dnode_rele(zv->zv_dn, zvol_tag);
 			zv->zv_dn = NULL;
 			dmu_objset_disown(os, 1, zv);
+			zv->zv_objset = NULL;
 			return (error);
 		}
 	}
