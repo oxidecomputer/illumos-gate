@@ -98,6 +98,7 @@ CORE_OBJS +=			\
 	mp_machdep.o		\
 	mp_rmp.o		\
 	mp_startup.o		\
+	ndi_static.o		\
 	mpcore.o		\
 	notes.o			\
 	pci_cfgacc.o		\
