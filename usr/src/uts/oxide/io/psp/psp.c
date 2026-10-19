@@ -36,6 +36,7 @@
 #include <sys/cpuvar.h>
 #include <sys/ccompile.h>
 #include <sys/ddi_subrdefs.h>
+#include <sys/ndi_static.h>
 #include <sys/smm_amd64.h>
 #include <sys/x86_archext.h>
 #include <sys/amdzen/psp.h>
@@ -88,18 +89,27 @@ typedef struct psp {
 	kmutex_t		psp_lock;
 	psp_c2p_t		psp_c2p;
 	psp_versions_t		psp_vers;
+	ndis_t			*psp_ndis;
 } psp_t;
 
 static psp_t psp_data;
 
-typedef struct psp_child_def {
-	char		*pcd_node_name;
-	psp_child_t	pcd_unit_addr;
-} psp_child_def_t;
+/*
+ * The children of this nexus. Each is addressed by its psp_child_t value.
+ */
+static const ndis_child_def_t psp_dpe_def = {
+	.ncd_nodename = "psp_dpe",
+	.ncd_unit_addr = PSP_C_DPE
+};
 
-static const psp_child_def_t psp_children[] = {
-	{ "psp_dpe", PSP_C_DPE },
-	{ "psp_einj", PSP_C_EINJ }
+static const ndis_child_def_t psp_einj_def = {
+	.ncd_nodename = "psp_einj",
+	.ncd_unit_addr = PSP_C_EINJ
+};
+
+static const ndis_child_def_t *const psp_children[] = {
+	&psp_dpe_def,
+	&psp_einj_def
 };
 
 /*
@@ -540,6 +550,8 @@ psp_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 
 	psp->psp_dip = dip;
+	psp->psp_ndis = ndis_init(dip, "psp", NDIS_UA_DEC, psp_children,
+	    ARRAY_SIZE(psp_children), NULL, psp, 0);
 
 	mutex_exit(&psp->psp_lock);
 
@@ -567,6 +579,8 @@ psp_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	}
 
 	(void) ddi_remove_minor_node(psp->psp_dip, NULL);
+	ndis_fini(psp->psp_ndis);
+	psp->psp_ndis = NULL;
 	psp->psp_dip = NULL;
 
 	mutex_exit(&psp->psp_lock);
@@ -578,246 +592,21 @@ static int
 psp_bus_ctl(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
     void *arg, void *result)
 {
-	char buf[32];
-	dev_info_t *cdip;
-	const psp_child_def_t *pcd;
-
-	switch (ctlop) {
-	case DDI_CTLOPS_REPORTDEV:
-		if (rdip == NULL) {
-			return (DDI_FAILURE);
-		}
-		cmn_err(CE_CONT, "?psp: %s@%s, %s%d\n",
-		    ddi_node_name(rdip), ddi_get_name_addr(rdip),
-		    ddi_driver_name(rdip), ddi_get_instance(rdip));
-		break;
-	case DDI_CTLOPS_INITCHILD:
-		cdip = arg;
-		if (cdip == NULL) {
-			dev_err(dip, CE_WARN, "!no child passed for "
-			    "DDI_CTLOPS_INITCHILD");
-			return (DDI_FAILURE);
-		}
-
-		pcd = NULL;
-		for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
-			if (strcmp(psp_children[i].pcd_node_name,
-			    ddi_node_name(cdip)) == 0) {
-				pcd = &psp_children[i];
-				break;
-			}
-		}
-		if (pcd == NULL) {
-			dev_err(dip, CE_WARN, "!unknown child %s for "
-			    "DDI_CTLOPS_INITCHILD", ddi_node_name(cdip));
-			return (DDI_FAILURE);
-		}
-
-		if (snprintf(buf, sizeof (buf), "%u", pcd->pcd_unit_addr) >=
-		    sizeof (buf)) {
-			dev_err(dip, CE_WARN, "!failed to construct device "
-			    "addr due to overflow");
-			return (DDI_FAILURE);
-		}
-
-		ddi_set_name_addr(cdip, buf);
-		break;
-	case DDI_CTLOPS_UNINITCHILD:
-		cdip = arg;
-		if (cdip == NULL) {
-			dev_err(dip, CE_WARN, "!no child passed for "
-			    "DDI_CTLOPS_UNINITCHILD");
-			return (DDI_FAILURE);
-		}
-
-		ddi_set_name_addr(cdip, NULL);
-		break;
-	default:
-		return (ddi_ctlops(dip, rdip, ctlop, arg, result));
-	}
-	return (DDI_SUCCESS);
-}
-
-static dev_info_t *
-psp_lookup_child(const psp_t *const psp, const psp_child_def_t *const pcd)
-{
-	dev_info_t *pdip = psp->psp_dip;
-	dev_info_t *cdip;
-
-	ASSERT3P(pcd, !=, NULL);
-
-	for (cdip = ddi_get_child(pdip); cdip != NULL;
-	    cdip = ddi_get_next_sibling(cdip)) {
-		if (strcmp(pcd->pcd_node_name, ddi_node_name(cdip)) == 0) {
-			return (cdip);
-		}
-	}
-
-	return (NULL);
-}
-
-static const psp_child_def_t *
-psp_lookup_child_def(const char *devname)
-{
-	char *devname_dup;
-	size_t devname_sz;
-	char *cdrv, *caddr;
-	unsigned long child_unit_addr;
-
-	devname_dup = i_ddi_strdup(devname, KM_SLEEP);
-	devname_sz = strlen(devname_dup) + 1;
-	i_ddi_parse_name(devname_dup, &cdrv, &caddr, NULL);
-
-	/*
-	 * We have an explicit list of children and thus can further validate
-	 * the unit address as returned from i_ddi_parse_name().
-	 */
-	if (cdrv == NULL || caddr == NULL ||
-	    ddi_strtoul(caddr, NULL, 10, &child_unit_addr) != 0 ||
-	    child_unit_addr == PSP_C_INVAL || child_unit_addr >= PSP_C_MAX) {
-		kmem_free(devname_dup, devname_sz);
-		return (NULL);
-	}
-
-	for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
-		const psp_child_def_t *const pcd = &psp_children[i];
-
-		if (strcmp(pcd->pcd_node_name, cdrv) == 0 &&
-		    pcd->pcd_unit_addr == (psp_child_t)child_unit_addr) {
-			kmem_free(devname_dup, devname_sz);
-			return (pcd);
-		}
-	}
-
-	kmem_free(devname_dup, devname_sz);
-	return (NULL);
-}
-
-static void
-psp_config_child(psp_t *psp, const psp_child_def_t *pcd)
-{
-	dev_info_t *pdip = psp->psp_dip;
-	dev_info_t *cdip;
-
-	cdip = psp_lookup_child(psp, pcd);
-
-	/*
-	 * If the child device already exists, nothing more to do.
-	 */
-	if (cdip != NULL)
-		return;
-
-	ndi_devi_alloc_sleep(pdip, pcd->pcd_node_name, (pnode_t)DEVI_SID_NODEID,
-	    &cdip);
-	(void) ndi_devi_bind_driver(cdip, 0);
+	return (ndis_bus_ctl(psp_data.psp_ndis, rdip, ctlop, arg, result));
 }
 
 static int
 psp_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
     void *arg, dev_info_t **childp)
 {
-	psp_t *psp = &psp_data;
-	const psp_child_def_t *pcd;
-
-	switch (op) {
-	case BUS_CONFIG_ONE:
-	case BUS_CONFIG_ALL:
-	case BUS_CONFIG_DRIVER:
-		ndi_devi_enter(pdip);
-		break;
-	default:
-		return (NDI_FAILURE);
-	}
-
-	if (op == BUS_CONFIG_ONE) {
-		pcd = psp_lookup_child_def((const char *)arg);
-		if (pcd == NULL) {
-			ndi_devi_exit(pdip);
-			return (NDI_EINVAL);
-		}
-		psp_config_child(psp, pcd);
-	} else {
-		for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
-			psp_config_child(psp, &psp_children[i]);
-		}
-	}
-
-	ndi_devi_exit(pdip);
-
-	flags |= NDI_ONLINE_ATTACH;
-	return (ndi_busop_bus_config(pdip, flags, op, arg, childp, 0));
+	return (ndis_bus_config(psp_data.psp_ndis, flags, op, arg, childp));
 }
 
 static int
 psp_bus_unconfig(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
     void *arg)
 {
-	psp_t *psp = &psp_data;
-	const psp_child_def_t *pcd;
-	dev_info_t *cdip;
-	major_t major;
-	int ret;
-
-	switch (op) {
-	case BUS_UNCONFIG_ONE:
-	case BUS_UNCONFIG_ALL:
-	case BUS_UNCONFIG_DRIVER:
-		ndi_devi_enter(pdip);
-		flags |= NDI_UNCONFIG;
-		ret = ndi_busop_bus_unconfig(pdip, flags, op, arg);
-		if (ret != NDI_SUCCESS) {
-			ndi_devi_exit(pdip);
-			return (ret);
-		}
-		break;
-	default:
-		return (NDI_FAILURE);
-	}
-
-	/*
-	 * At this point, `ndi_busop_bus_unconfig()` will have already detached
-	 * any nodes required. If there wasn't an explicit request to also
-	 * remove the device nodes, then we'll leave them bound but detached.
-	 */
-	if ((flags & NDI_DEVI_REMOVE) == 0) {
-		ndi_devi_exit(pdip);
-		return (NDI_SUCCESS);
-	}
-
-	if (op == BUS_UNCONFIG_ONE) {
-		pcd = psp_lookup_child_def((const char *)arg);
-		if (pcd == NULL) {
-			ndi_devi_exit(pdip);
-			return (NDI_EINVAL);
-		}
-
-		cdip = psp_lookup_child(psp, pcd);
-		if (cdip == NULL) {
-			ndi_devi_exit(pdip);
-			return (NDI_EINVAL);
-		}
-
-		(void) ndi_devi_free(cdip);
-	} else {
-		major = (major_t)(uintptr_t)arg;
-		for (size_t i = 0; i < ARRAY_SIZE(psp_children); i++) {
-			pcd = &psp_children[i];
-			cdip = psp_lookup_child(psp, pcd);
-			if (cdip == NULL)
-				continue;
-
-			if (op == BUS_UNCONFIG_DRIVER &&
-			    (ddi_driver_major(cdip) != major)) {
-				continue;
-			}
-
-			(void) ndi_devi_free(cdip);
-		}
-	}
-
-	ndi_devi_exit(pdip);
-
-	return (NDI_SUCCESS);
+	return (ndis_bus_unconfig(psp_data.psp_ndis, flags, op, arg));
 }
 
 static int
