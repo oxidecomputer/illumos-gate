@@ -315,8 +315,8 @@ espi_init(mmio_reg_block_t block)
 	case ESPI_REG_GEN_CAP_FREQ_25MHZ:
 		freq = "25MHz";
 		break;
-	case ESPI_REG_GEN_CAP_FREQ_35MHZ:
-		freq = "35MHz";
+	case ESPI_REG_GEN_CAP_FREQ_33MHZ:
+		freq = "33MHz";
 		break;
 	case ESPI_REG_GEN_CAP_FREQ_50MHZ:
 		freq = "50MHz";

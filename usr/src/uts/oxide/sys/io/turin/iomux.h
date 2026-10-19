@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2024 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_IO_TURIN_IOMUX_H
@@ -58,6 +58,25 @@ extern "C" {
 #define	TURIN_FCH_IOMUX_26_AGPIO26		1
 
 #define	TURIN_FCH_IOMUX_27_PCIE_RST3_L		0
+
+/*
+ * eSPI0 and eSPI1. The alternate clock for eSPI1, ESPI_CLK2 on pin 74, is not
+ * listed as we do not use it.
+ */
+#define	TURIN_FCH_IOMUX_75_ESPI_CLK1		0
+#define	TURIN_FCH_IOMUX_108_ESPI0_ALERT_L	0
+#define	TURIN_FCH_IOMUX_110_ESPI1_ALERT_L	0
+#define	TURIN_FCH_IOMUX_117_ESPI_CLK0		0
+#define	TURIN_FCH_IOMUX_120_ESPI0_DAT0		0
+#define	TURIN_FCH_IOMUX_121_ESPI0_DAT1		0
+#define	TURIN_FCH_IOMUX_122_ESPI0_DAT2		0
+#define	TURIN_FCH_IOMUX_123_ESPI0_DAT3		0
+#define	TURIN_FCH_IOMUX_124_ESPI_CS0_L		0
+#define	TURIN_FCH_IOMUX_125_ESPI_CS1_L		0
+#define	TURIN_FCH_IOMUX_131_ESPI1_DAT0		0
+#define	TURIN_FCH_IOMUX_132_ESPI1_DAT1		0
+#define	TURIN_FCH_IOMUX_133_ESPI1_DAT2		0
+#define	TURIN_FCH_IOMUX_134_ESPI1_DAT3		0
 
 #define	TURIN_FCH_IOMUX_135_UART0_CTS_L		0
 #define	TURIN_FCH_IOMUX_136_UART0_RXD		0

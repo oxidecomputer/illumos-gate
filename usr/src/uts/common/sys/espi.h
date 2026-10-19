@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2025 Oxide Computer Company
+ * Copyright 2026 Oxide Computer Company
  */
 
 #ifndef _SYS_ESPI_H
@@ -44,6 +44,77 @@ extern "C" {
 #define	ESPI_CYCLE_MESSAGE_WITH_DATA		0x11
 /* OOB Message Channel */
 #define	ESPI_CYCLE_OOB_TUNNELED_SMBUS		0x21
+/*
+ * Flash Access Channel. The completion cycle types defined for the
+ * peripheral channel above are also used for flash access completions. A
+ * completion without data corresponds to a flash write or erase and one with
+ * data to a flash read.
+ */
+#define	ESPI_CYCLE_FLASH_READ			0x0
+#define	ESPI_CYCLE_FLASH_WRITE			0x1
+#define	ESPI_CYCLE_FLASH_ERASE			0x2
+
+/*
+ * Completion cycle types, other than a successful completion without data,
+ * encode the position of the completion within a split completion sequence in
+ * bits 2:1 of the cycle type. The values above are the encodings with those
+ * bits clear.
+ */
+#define	ESPI_CYCLE_CPL_GET_SPLIT(c)		bitx8(c, 2, 1)
+#define	ESPI_CYCLE_CPL_SPLIT_MIDDLE		0
+#define	ESPI_CYCLE_CPL_SPLIT_FIRST		1
+#define	ESPI_CYCLE_CPL_SPLIT_LAST		2
+#define	ESPI_CYCLE_CPL_SPLIT_ONLY		3
+#define	ESPI_CYCLE_CPL_BASE(c)			bitset8(c, 2, 1, 0)
+
+/*
+ * Virtual Wires.
+ *
+ * A virtual wire packet contains pairs of an index byte and a data byte. For
+ * the system event indices below, the data byte holds four wires in bits 3:0
+ * and a valid bit for each of them in bits 7:4.
+ */
+#define	ESPI_VW_DATA_GET_VALID(d)		bitx8(d, 7, 4)
+#define	ESPI_VW_DATA_SET_VALID(d, v)		bitset8(d, 7, 4, v)
+#define	ESPI_VW_DATA_GET_LEVEL(d)		bitx8(d, 3, 0)
+#define	ESPI_VW_DATA_SET_LEVEL(d, v)		bitset8(d, 3, 0, v)
+
+/*
+ * System event virtual wire indices and the wire assignments within each. The
+ * wire numbers are bit positions within the level nibble of the data byte.
+ */
+/* Controller to target. SLP_S3#, SLP_S4#, SLP_S5# are active low. */
+#define	ESPI_VW_IDX_SYSEV_SLP			2
+#define	ESPI_VW_SYSEV_SLP_S3			0
+#define	ESPI_VW_SYSEV_SLP_S4			1
+#define	ESPI_VW_SYSEV_SLP_S5			2
+/* Controller to target. SUS_STAT# and PLTRST# are active low. */
+#define	ESPI_VW_IDX_SYSEV_PLTRST		3
+#define	ESPI_VW_SYSEV_SUS_STAT			0
+#define	ESPI_VW_SYSEV_PLTRST			1
+#define	ESPI_VW_SYSEV_OOB_RST_WARN		2
+/* Target to controller. WAKE# and PME# are active low. */
+#define	ESPI_VW_IDX_SYSEV_WAKE			4
+#define	ESPI_VW_SYSEV_OOB_RST_ACK		0
+#define	ESPI_VW_SYSEV_WAKE			2
+#define	ESPI_VW_SYSEV_PME			3
+/* Target to controller. */
+#define	ESPI_VW_IDX_SYSEV_BOOT			5
+#define	ESPI_VW_SYSEV_TARGET_BOOT_LOAD_DONE	0
+#define	ESPI_VW_SYSEV_ERROR_FATAL		1
+#define	ESPI_VW_SYSEV_ERROR_NONFATAL		2
+#define	ESPI_VW_SYSEV_TARGET_BOOT_LOAD_STATUS	3
+/* Target to controller. SCI#, SMI# and RCIN# are active low. */
+#define	ESPI_VW_IDX_SYSEV_SCI			6
+#define	ESPI_VW_SYSEV_SCI			0
+#define	ESPI_VW_SYSEV_SMI			1
+#define	ESPI_VW_SYSEV_RCIN			2
+#define	ESPI_VW_SYSEV_HOST_RST_ACK		3
+/* Controller to target. SMIOUT# and NMIOUT# are active low. */
+#define	ESPI_VW_IDX_SYSEV_HOST_RST		7
+#define	ESPI_VW_SYSEV_HOST_RST_WARN		0
+#define	ESPI_VW_SYSEV_SMIOUT			1
+#define	ESPI_VW_SYSEV_NMIOUT			2
 
 /*
  * eSPI target Capabilities and Configuration Registers.
@@ -77,10 +148,10 @@ extern "C" {
 #define	ESPI_REG_GEN_CAP_GET_OD_ALERT(r)	bitx32(r, 23, 23)
 #define	ESPI_REG_GEN_CAP_SET_OD_ALERT(r, v)	bitset32(r, 23, 23, v)
 #define	ESPI_REG_GEN_CAP_GET_FREQ(r)		bitx32(r, 22, 20)
-#define	ESPI_REG_GEN_SET_CAP_FREQ(r, v)		bitset32(r, 22, 20, v)
+#define	ESPI_REG_GEN_CAP_SET_FREQ(r, v)		bitset32(r, 22, 20, v)
 #define	ESPI_REG_GEN_CAP_FREQ_20MHZ		0
 #define	ESPI_REG_GEN_CAP_FREQ_25MHZ		1
-#define	ESPI_REG_GEN_CAP_FREQ_35MHZ		2
+#define	ESPI_REG_GEN_CAP_FREQ_33MHZ		2
 #define	ESPI_REG_GEN_CAP_FREQ_50MHZ		3
 #define	ESPI_REG_GEN_CAP_FREQ_66MHZ		4
 #define	ESPI_REG_GEN_CAP_GET_OD_ALERT_SUP(r)	bitx32(r, 19, 19)
@@ -141,8 +212,19 @@ extern "C" {
 #define	ESPI_REG_CHAN3_CAP_GET_RPMC_OP1(r)	bitx32(r, 31, 24)
 #define	ESPI_REG_CHAN3_CAP_GET_RPMC_CNT(r)	bitx32(r, 23, 20)
 #define	ESPI_REG_CHAN3_CAP_GET_SHARE_SUP(r)	bitx32(r, 17, 16)
+/*
+ * MAFS is master attached flash sharing and SAFS slave attached, the names
+ * that eSPI 1.0 and AMD use. eSPI 1.5 calls these controller attached and
+ * target attached flash sharing. This field was reserved and read as 0 in
+ * eSPI 1.0, which only defined MAFS, so eSPI 1.5 gives 0 and 1 the same
+ * meaning.
+ */
+#define	ESPI_REG_CHAN3_CAP_SHARE_SUP_MAFS0	0
+#define	ESPI_REG_CHAN3_CAP_SHARE_SUP_MAFS1	1
+#define	ESPI_REG_CHAN3_CAP_SHARE_SUP_SAFS	2
+#define	ESPI_REG_CHAN3_CAP_SHARE_SUP_BOTH	3
 #define	ESPI_REG_CHAN3_CAP_GET_MAXREAD(r)	bitx32(r, 14, 12)
-#define	ESPI_REG_CHAN3_CAP_GET_SET_MAXREAD(r, v) bitx32(r, 14, 12, v)
+#define	ESPI_REG_CHAN3_CAP_SET_MAXREAD(r, v)	bitset32(r, 14, 12, v)
 #define	ESPI_REG_CHAN3_CAP_READ_64		1
 #define	ESPI_REG_CHAN3_CAP_READ_128		2
 #define	ESPI_REG_CHAN3_CAP_READ_256		3
