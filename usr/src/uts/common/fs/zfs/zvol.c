@@ -1494,7 +1494,7 @@ zvol_log_write(zvol_state_t *zv, dmu_tx_t *tx, offset_t off, ssize_t resid,
 		lr->lr_foid = ZVOL_OBJ;
 		lr->lr_offset = off;
 		lr->lr_length = len;
-		lr->lr_blkoff = 0;
+		lr->lr_flags = 0;
 		BP_ZERO(&lr->lr_blkptr);
 
 		itx->itx_private = zv;
