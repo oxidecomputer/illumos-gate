@@ -3254,6 +3254,8 @@ file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_init_open \
     mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_init_stall \
     mode=0555
+file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_io_errors \
+    mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_open_enospc \
     mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_trim mode=0555

@@ -1720,7 +1720,16 @@ zvol_raw_strategy(zvol_state_t *zv, buf_t *bp)
 		if (error)
 			break;
 
-		biowait(&child_bp);
+		/*
+		 * The child was issued asynchronously, so a device error
+		 * is only visible here.
+		 */
+		error = biowait(&child_bp);
+		if (error == 0 && child_bp.b_resid != 0)
+			error = SET_ERROR(EIO);
+		if (error)
+			break;
+
 		off += size;
 		resid -= size;
 		bp_offset += size;
@@ -1728,8 +1737,10 @@ zvol_raw_strategy(zvol_state_t *zv, buf_t *bp)
 	biofini(&child_bp);
 
 	bp->b_resid = resid;
-	if (bp->b_resid == bp->b_bcount)
-		bioerror(bp, off > volsize ? EINVAL : error);
+	if (error != 0)
+		bioerror(bp, error);
+	else if (bp->b_resid == bp->b_bcount && off > volsize)
+		bioerror(bp, EINVAL);
 
 	biodone(bp);
 	smt_end_unsafe();
@@ -2542,7 +2553,9 @@ out:
 			}
 
 			if (zv->zv_flags & ZVOL_RAW) {
-				zvol_raw_trim(zv, start, length);
+				error = zvol_raw_trim(zv, start, length);
+				if (error != 0)
+					break;
 				continue;
 			}
 
