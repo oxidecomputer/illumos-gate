@@ -651,6 +651,7 @@
 #include <sys/ksynch.h>
 #include <sys/mach_intr.h>
 #include <sys/memlist_impl.h>
+#include <sys/ndi_static.h>
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
 #include <sys/sysmacros.h>
@@ -828,17 +829,17 @@ typedef enum fch_child_flags {
 } fch_child_flags_t;
 
 typedef struct fch_child_def {
-	const char		*fcd_nodename;
-	const char		*fcd_desc;
-
 	/*
-	 * The unit address in the DDI is a string; for us it is always a string
+	 * The node name and unit address of the child, for ndi_static.  The
+	 * unit address in the DDI is a string; for us it is always a string
 	 * of at most 8 hex digits representing this 32-bit integer.  It
 	 * describes the index of the child into an array of children of the
 	 * same FCH of the same type; see notes on child nomenclature in the BTS
-	 * at the top of this file.
+	 * at the top of this file.  The private pointer refers back to the
+	 * enclosing fch_child_def_t.
 	 */
-	uint32_t		fcd_unit_addr;
+	ndis_child_def_t	fcd_ndis;
+	const char		*fcd_desc;
 	fch_child_flags_t	fcd_flags;
 	const fch_intrspec_t	fcd_intr;
 	uint8_t			fcd_nregs;
@@ -867,8 +868,8 @@ typedef struct fch_def {
 	fch_kind_t		fd_kind;
 	fch_rangespec_t		fd_range_bases[FCH_NADDRSP];
 	off_t			fd_sec_bar_off;
-	uint32_t		fd_nchildren;
-	const fch_child_def_t	*const *fd_children;
+	size_t			fd_nchildren;
+	const ndis_child_def_t	*const *fd_children;
 } fch_def_t;
 
 typedef enum fch_flags {
@@ -886,14 +887,14 @@ typedef struct fch {
 	fch_flags_t		f_flags;
 	kmutex_t		f_mutex;
 	fch_ixbar_t		*f_ixbar;
+	ndis_t			*f_ndis;
 } fch_t;
 
 /* Global softstate handle */
 static void *fch_state;
 
 /*
- * State associated with an individual child node.  This is our parent private
- * data for the child.
+ * State associated with an individual child node.
  */
 typedef struct fch_child {
 	fch_t			*fc_parent;
@@ -972,9 +973,12 @@ static const fch_rangespec_t uart3_regs[] = {
 
 #define	DECL_UART(n, intr)	\
 static const fch_child_def_t uart ## n ## _def = {	\
-	.fcd_nodename = "dwu",				\
+	.fcd_ndis = {					\
+		.ncd_nodename = "dwu",			\
+		.ncd_unit_addr = (n),			\
+		.ncd_private = &uart ## n ## _def	\
+	},						\
 	.fcd_desc = "DesignWare APB UART",		\
-	.fcd_unit_addr = (n),				\
 	.fcd_flags = FCF_PRIMARY,			\
 	.fcd_intr = {					\
 		.fi_pol = IP_HIGH,			\
@@ -1021,9 +1025,12 @@ static const fch_rangespec_t kczgp_regs[] = {
 
 /* XXX for bootstrap */
 static const fch_child_def_t kczgp_def = {
-	.fcd_nodename = "zen_gpio",
+	.fcd_ndis = {
+		.ncd_nodename = "zen_gpio",
+		.ncd_unit_addr = 0,
+		.ncd_private = &kczgp_def
+	},
 	.fcd_desc = "KERNCZ GPIO",
-	.fcd_unit_addr = 0,
 	.fcd_flags = FCF_PRIMARY | FCF_SECONDARY,
 	.fcd_intr = {
 		.fi_pol = IP_HIGH,
@@ -1054,9 +1061,12 @@ static const fch_rangespec_t kczmux_regs[] = {
 };
 
 static const fch_child_def_t kczmux_def = {
-	.fcd_nodename = "kczmux",
+	.fcd_ndis = {
+		.ncd_nodename = "kczmux",
+		.ncd_unit_addr = 0,
+		.ncd_private = &kczmux_def
+	},
 	.fcd_desc = "KERNCZ I/O Multiplexor",
-	.fcd_unit_addr = 0,
 	.fcd_flags = FCF_PRIMARY | FCF_SECONDARY,
 	.fcd_intr = {
 		.fi_src = FCH_INTRSRC_NONE
@@ -1126,9 +1136,12 @@ static const fch_rangespec_t i2c5_regs[] = {
 
 #define	DECL_I2C(n, intr)	\
 static const fch_child_def_t i2c ## n ## _def = {	\
-	.fcd_nodename = "dwi2c",			\
+	.fcd_ndis = {					\
+		.ncd_nodename = "dwi2c",		\
+		.ncd_unit_addr = (n),			\
+		.ncd_private = &i2c ## n ## _def	\
+	},						\
 	.fcd_desc = "DesignWare APB I2C Controller",	\
-	.fcd_unit_addr = (n),				\
 	.fcd_flags = FCF_PRIMARY,			\
 	.fcd_intr = {					\
 		.fi_pol = IP_HIGH,			\
@@ -1191,9 +1204,12 @@ static const fch_rangespec_t i3c3_regs[] = {
 
 #define	DECL_I3C(n, intr)	\
 static const fch_child_def_t i3c ## n ## _def = {	\
-	.fcd_nodename = "mipii3c",			\
+	.fcd_ndis = {					\
+		.ncd_nodename = "mipii3c",		\
+		.ncd_unit_addr = (n),			\
+		.ncd_private = &i3c ## n ## _def	\
+	},						\
 	.fcd_desc = "MIPI I3C Controller",		\
-	.fcd_unit_addr = (n),				\
 	.fcd_flags = FCF_PRIMARY,			\
 	.fcd_intr = {					\
 		.fi_pol = IP_HIGH,			\
@@ -1229,55 +1245,55 @@ DECL_I3C(3, 0x73);
  * is corrected, go back and find those consumers and fix them!
  */
 
-static const fch_child_def_t *const huashan_children[] = {
-	&uart0_def,
-	&uart1_def,
-	&uart2_def,
-	&uart3_def,
-	&kczgp_def,
-	&kczmux_def,
-	&i2c0_def,
-	&i2c1_def,
-	&i2c2_def,
-	&i2c3_def,
-	&i2c4_def,
-	&i2c5_def
+static const ndis_child_def_t *const huashan_children[] = {
+	&uart0_def.fcd_ndis,
+	&uart1_def.fcd_ndis,
+	&uart2_def.fcd_ndis,
+	&uart3_def.fcd_ndis,
+	&kczgp_def.fcd_ndis,
+	&kczmux_def.fcd_ndis,
+	&i2c0_def.fcd_ndis,
+	&i2c1_def.fcd_ndis,
+	&i2c2_def.fcd_ndis,
+	&i2c3_def.fcd_ndis,
+	&i2c4_def.fcd_ndis,
+	&i2c5_def.fcd_ndis
 };
 
-static const fch_child_def_t *const songshan_children[] = {
-	&uart0_def,
-	&uart1_def,
-	&uart2_def,
-	&kczgp_def,
-	&kczmux_def,
-	&i2c0_def,
-	&i2c1_def,
-	&i2c2_def,
-	&i2c3_def,
-	&i2c4_def,
-	&i2c5_def,
-	&i3c0_def,
-	&i3c1_def,
-	&i3c2_def,
-	&i3c3_def
+static const ndis_child_def_t *const songshan_children[] = {
+	&uart0_def.fcd_ndis,
+	&uart1_def.fcd_ndis,
+	&uart2_def.fcd_ndis,
+	&kczgp_def.fcd_ndis,
+	&kczmux_def.fcd_ndis,
+	&i2c0_def.fcd_ndis,
+	&i2c1_def.fcd_ndis,
+	&i2c2_def.fcd_ndis,
+	&i2c3_def.fcd_ndis,
+	&i2c4_def.fcd_ndis,
+	&i2c5_def.fcd_ndis,
+	&i3c0_def.fcd_ndis,
+	&i3c1_def.fcd_ndis,
+	&i3c2_def.fcd_ndis,
+	&i3c3_def.fcd_ndis
 };
 
-static const fch_child_def_t *const kunlun_children[] = {
-	&uart0_def,
-	&uart1_def,
-	&uart2_def,
-	&kczgp_def,
-	&kczmux_def,
-	&i2c0_def,
-	&i2c1_def,
-	&i2c2_def,
-	&i2c3_def,
-	&i2c4_def,
-	&i2c5_def,
-	&i3c0_def,
-	&i3c1_def,
-	&i3c2_def,
-	&i3c3_def
+static const ndis_child_def_t *const kunlun_children[] = {
+	&uart0_def.fcd_ndis,
+	&uart1_def.fcd_ndis,
+	&uart2_def.fcd_ndis,
+	&kczgp_def.fcd_ndis,
+	&kczmux_def.fcd_ndis,
+	&i2c0_def.fcd_ndis,
+	&i2c1_def.fcd_ndis,
+	&i2c2_def.fcd_ndis,
+	&i2c3_def.fcd_ndis,
+	&i2c4_def.fcd_ndis,
+	&i2c5_def.fcd_ndis,
+	&i3c0_def.fcd_ndis,
+	&i3c1_def.fcd_ndis,
+	&i3c2_def.fcd_ndis,
+	&i3c3_def.fcd_ndis
 };
 
 static const fch_def_t fch_defs[] = {
@@ -1340,77 +1356,10 @@ static const fch_def_t fch_defs[] = {
 	}
 };
 
-static dev_info_t *
-fch_lookup_child(const fch_t *const fch, const fch_child_def_t *const cdp)
-{
-	dev_info_t *pdip = fch->f_dip;
-	dev_info_t *cdip;
-	fch_child_t *child;
-
-	for (cdip = ddi_get_child(pdip); cdip != NULL;
-	    cdip = ddi_get_next_sibling(cdip)) {
-		child = ddi_get_parent_data(cdip);
-		if (child != NULL && child->fc_def == cdp) {
-			return (cdip);
-		}
-	}
-
-	return (NULL);
-}
-
-/*
- * This is a somewhat better version of i_ddi_parse_name().  Our children all
- * have unit addresses that are 32-bit integers stringified in hex.  If
- * possible, we extract the driver (node) name of the child and its integral
- * unit address from the string form of its name and then look up the child's
- * definition in our table.  If the devname we're given doesn't fit our schema
- * or there is no such child, we return NULL.  Note that we return the
- * definition rather than the child itself as the latter may not yet exist; the
- * child's dip may be obtained from fch_lookup_child() if it does.
- */
 static const fch_child_def_t *
-fch_lookup_child_def(fch_t *fch, const char *devname)
+fch_cdef(const ndis_child_def_t *def)
 {
-	char *devname_dup;
-	size_t devname_sz;
-	char *cdrv, *caddr;
-	u_longlong_t child_ua;
-
-	devname_dup = i_ddi_strdup(devname, KM_SLEEP);
-	devname_sz = strlen(devname_dup) + 1;
-	i_ddi_parse_name(devname_dup, &cdrv, &caddr, NULL);
-
-	/*
-	 * All the nodes we create have unit addresses that fit into 31 bits,
-	 * and have to because at present they are contiguous by child driver
-	 * name which means any more would certainly overflow the instance
-	 * numbers as well.  If this one doesn't fit for some reason, or if we
-	 * don't have any unit address at all, the name can't be associated with
-	 * a valid UA and we fail.
-	 */
-	if (cdrv == NULL || caddr == NULL ||
-	    ddi_strtoull(caddr, NULL, 16, &child_ua) != 0 ||
-	    child_ua > INT32_MAX) {
-		/*
-		 * No warning: these lookups are controlled by users and invalid
-		 * names are not unexpected.
-		 */
-		kmem_free(devname_dup, devname_sz);
-		return (NULL);
-	}
-
-	for (uint_t i = 0; i < fch->f_def->fd_nchildren; i++) {
-		const fch_child_def_t *const cdp = fch->f_def->fd_children[i];
-
-		if (strcmp(cdp->fcd_nodename, cdrv) == 0 &&
-		    cdp->fcd_unit_addr == (uint32_t)child_ua) {
-			kmem_free(devname_dup, devname_sz);
-			return (cdp);
-		}
-	}
-
-	kmem_free(devname_dup, devname_sz);
-	return (NULL);
+	return (def->ncd_private);
 }
 
 /*
@@ -1418,9 +1367,12 @@ fch_lookup_child_def(fch_t *fch, const char *devname)
  * which the child is supported.  In practice, all children are usable on
  * primary FCHs and only a subset -- possibly empty -- on secondary FCHs.
  */
-static boolean_t
-fch_child_is_usable(const fch_t *const fch, const fch_child_def_t *const cdp)
+static bool
+fch_child_is_usable(void *arg, const ndis_child_def_t *def)
 {
+	const fch_t *const fch = arg;
+	const fch_child_def_t *const cdp = fch_cdef(def);
+
 	return (((fch->f_flags & FF_PRIMARY) != 0 &&
 	    (cdp->fcd_flags & FCF_PRIMARY) != 0) ||
 	    ((fch->f_flags & FF_PRIMARY) == 0 &&
@@ -1582,8 +1534,9 @@ static int
 fch_bus_ctl(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop, void *arg,
     void *result)
 {
-	dev_info_t *cdip;
-	fch_child_t *child;
+	fch_t *fch = ddi_get_soft_state(fch_state, ddi_get_instance(dip));
+
+	VERIFY3P(fch, !=, NULL);
 
 	/*
 	 * XXX There are many places here where we assert and check obvious
@@ -1601,62 +1554,6 @@ fch_bus_ctl(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop, void *arg,
 	 */
 
 	switch (ctlop) {
-	case DDI_CTLOPS_REPORTDEV:
-		ASSERT3P(rdip, !=, NULL);
-		if (rdip == NULL) {
-			return (DDI_FAILURE);
-		}
-		cmn_err(CE_CONT, "FCH peripheral: %s@%s, %s%d\n",
-		    ddi_node_name(rdip), ddi_get_name_addr(rdip),
-		    ddi_driver_name(rdip), ddi_get_instance(rdip));
-		break;
-	case DDI_CTLOPS_INITCHILD: {
-		char ua_buf[9];
-
-		cdip = arg;
-		ASSERT3P(cdip, !=, NULL);
-		if (cdip == NULL) {
-			dev_err(dip, CE_WARN, "!no child passed for "
-			    "DDI_CTLOPS_INITCHILD");
-			return (DDI_FAILURE);
-		}
-
-		child = ddi_get_parent_data(cdip);
-
-		/*
-		 * XXX This can't happen, either: if our bus_ops configuration
-		 * entry point succeeded for this node, we set the parent data
-		 * to a non-NULL value.  init_node() guarantees we can't get
-		 * here unless the child is at least DS_BOUND; even if our
-		 * attempt to bind in our bus_config path fails, there is never
-		 * a time when the state advances beyond DS_PROTO -- documented
-		 * to be invisible except to ourselves -- without having parent
-		 * data.
-		 */
-		ASSERT3P(child, !=, NULL);
-		if (child == NULL) {
-			dev_err(dip, CE_WARN, "!missing child parent data");
-			return (DDI_FAILURE);
-		}
-
-		/* Can never overrun: 8 chars for 32 bits of hex. */
-		(void) snprintf(ua_buf, sizeof (ua_buf), "%x",
-		    child->fc_def->fcd_unit_addr);
-
-		ddi_set_name_addr(cdip, ua_buf);
-		break;
-	}
-	case DDI_CTLOPS_UNINITCHILD:
-		cdip = arg;
-		ASSERT3P(cdip, !=, NULL);
-		if (cdip == NULL) {
-			dev_err(dip, CE_WARN, "!no child passed for "
-			    "DDI_CTLOPS_INITCHILD");
-			return (DDI_FAILURE);
-		}
-
-		ddi_set_name_addr(cdip, NULL);
-		break;
 	case DDI_CTLOPS_REGSIZE: {
 		off_t *size = (off_t *)result;
 		uint_t idx = (uint_t)(*(int *)arg);
@@ -1712,10 +1609,8 @@ fch_bus_ctl(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop, void *arg,
 		return (DDI_SUCCESS);
 	}
 	default:
-		return (ddi_ctlops(dip, rdip, ctlop, arg, result));
+		return (ndis_bus_ctl(fch->f_ndis, rdip, ctlop, arg, result));
 	}
-
-	return (DDI_SUCCESS);
 }
 
 /*
@@ -1778,29 +1673,22 @@ fch_parent_base(const fch_t *fch, const fch_addrsp_t as)
 	return (FCH_ADDR_INVALID);
 }
 
+/*
+ * Called by ndi_static with a newly allocated child node for the given
+ * definition. Claim the child's register space and describe it to the child.
+ */
 static int
-fch_config_child(fch_t *fch, const fch_child_def_t *const cdp)
+fch_init_child(void *arg, const ndis_child_def_t *def, dev_info_t *cdip)
 {
+	fch_t *fch = arg;
+	const fch_child_def_t *const cdp = fch_cdef(def);
+	fch_child_t *child = ndis_child_private(cdip);
 	dev_info_t *pdip = fch->f_dip;
-	dev_info_t *cdip = NULL;
-	fch_child_t *child = NULL;
 	fch_rangespec_t *frp;
+	int res = NDI_FAILURE;
 	uint_t i;
-	int res;
 
 	ASSERT(DEVI_BUSY_OWNED(pdip));
-
-	cdip = fch_lookup_child(fch, cdp);
-
-	/*
-	 * This child already exists.  There is no concept of EEXIST here, so
-	 * we'll treat this operation's semantics as idempotent and succeed.
-	 */
-	if (cdip != NULL)
-		return (NDI_SUCCESS);
-
-	if (!fch_child_is_usable(fch, cdp))
-		return (NDI_FAILURE);
 
 	/*
 	 * Adjust the registers into absolute space, if possible.  If any does
@@ -1849,8 +1737,8 @@ fch_config_child(fch_t *fch, const fch_child_def_t *const cdp)
 		addr = pdef_addr + cdef_addr;
 		if (addr < MAX(pdef_addr, cdef_addr)) {
 			dev_err(pdip, CE_WARN, "child '%s@%x' register spec "
-			    "%d is beyond the address space", cdp->fcd_nodename,
-			    cdp->fcd_unit_addr, i);
+			    "%d is beyond the address space", def->ncd_nodename,
+			    def->ncd_unit_addr, i);
 			goto fail;
 		}
 
@@ -1860,7 +1748,7 @@ fch_config_child(fch_t *fch, const fch_child_def_t *const cdp)
 		if (end < addr) {
 			dev_err(pdip, CE_WARN, "child '%s@%x' register spec "
 			    "%d ends beyond the address space",
-			    cdp->fcd_nodename, cdp->fcd_unit_addr, i);
+			    def->ncd_nodename, def->ncd_unit_addr, i);
 			goto fail;
 		}
 
@@ -1869,12 +1757,12 @@ fch_config_child(fch_t *fch, const fch_child_def_t *const cdp)
 		rr.ra_len = size;
 		rr.ra_addr = addr;
 
-		res = ndi_ra_alloc(pdip, &rr, &addr, &size,
-		    fch_rangespec_to_ndi_ra_type(cdp->fcd_regs + i), 0);
-		if (res != NDI_SUCCESS) {
+		if (ndi_ra_alloc(pdip, &rr, &addr, &size,
+		    fch_rangespec_to_ndi_ra_type(cdp->fcd_regs + i), 0) !=
+		    NDI_SUCCESS) {
 			dev_err(pdip, CE_WARN, "child '%s@%x' resource "
 			    "%lu: base %lx size %lx unavailable",
-			    cdp->fcd_nodename, cdp->fcd_unit_addr,
+			    def->ncd_nodename, def->ncd_unit_addr,
 			    (unsigned long)as, rr.ra_addr, rr.ra_len);
 			goto fail;
 		}
@@ -1886,14 +1774,9 @@ fch_config_child(fch_t *fch, const fch_child_def_t *const cdp)
 		frp[i].fr_sizelo = (uint32_t)size;
 	}
 
-	ndi_devi_alloc_sleep(pdip, cdp->fcd_nodename, (pnode_t)DEVI_SID_NODEID,
-	    &cdip);
-	child = kmem_zalloc(sizeof (fch_child_t), KM_SLEEP);
 	child->fc_parent = fch;
 	child->fc_def = cdp;
 	child->fc_dip = cdip;
-
-	ddi_set_parent_data(cdip, child);
 
 	if (ndi_prop_update_string(DDI_DEV_T_NONE, cdip, FCH_PROPNAME_MODEL,
 	    (char *)cdp->fcd_desc) != NDI_SUCCESS ||
@@ -1908,24 +1791,10 @@ fch_config_child(fch_t *fch, const fch_child_def_t *const cdp)
 		goto fail;
 	}
 
-	/*
-	 * It's fine if this fails; we may not have a driver for it or it may
-	 * need to be added with add_drv etc.  Create the node anyway and let a
-	 * subsequent trip through generic code try to bind it again.
-	 */
-	(void) ndi_devi_bind_driver(cdip, 0);
+	res = NDI_SUCCESS;
 	goto done;
 
 fail:
-	if (cdip != NULL) {
-		ddi_set_parent_data(cdip, NULL);
-		(void) ndi_devi_free(cdip);
-	}
-
-	if (child != NULL) {
-		kmem_free(child, sizeof (fch_child_t));
-	}
-
 	/* If we got only some of the child's resources, free them. */
 	while (i-- != 0) {
 		(void) ndi_ra_free(pdip, fch_rangespec_addr(frp + i),
@@ -1939,116 +1808,44 @@ done:
 	return (res);
 }
 
-static int
-fch_unconfig_child(fch_t *fch, dev_info_t *cdip)
+/*
+ * Called by ndi_static before a child node that it created is freed. Release
+ * the register space claimed in fch_init_child().
+ */
+static void
+fch_fini_child(void *arg, const ndis_child_def_t *def __unused,
+    dev_info_t *cdip)
 {
-	dev_info_t *pdip = fch->f_dip;
-	fch_child_t *child = ddi_get_parent_data(cdip);
+	fch_t *fch = arg;
 	fch_rangespec_t *frp;
 	uint_t nregs;
 
 	nregs = fch_get_child_reg(cdip, &frp);
 	ASSERT3U(nregs, !=, 0);
 	for (uint_t i = 0; i < nregs; i++) {
-		(void) ndi_ra_free(pdip, fch_rangespec_addr(frp + i),
+		(void) ndi_ra_free(fch->f_dip, fch_rangespec_addr(frp + i),
 		    fch_rangespec_size(frp + i),
 		    fch_rangespec_to_ndi_ra_type(frp + i), 0);
 	}
 	if (nregs > 0)
 		ddi_prop_free(frp);
-
-	ASSERT3P(child, !=, NULL);
-	ddi_set_parent_data(cdip, NULL);
-	kmem_free(child, sizeof (fch_child_t));
-
-	/*
-	 * This can fail only if the child node was still bound.  We can't get
-	 * here in that state because the caller has already invoked
-	 * ndi_busop_bus_unconfig() successfully.
-	 */
-	if (ndi_devi_free(cdip) != NDI_SUCCESS) {
-		dev_err(pdip, CE_WARN, "ndi_devi_free() failed for child %p",
-		    cdip);
-	}
-
-	return (NDI_SUCCESS);
 }
+
+static const ndis_ops_t fch_ndis_ops = {
+	.nso_usable = fch_child_is_usable,
+	.nso_init_child = fch_init_child,
+	.nso_fini_child = fch_fini_child
+};
 
 static int
 fch_bus_config(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
     void *arg, dev_info_t **childp)
 {
-	int res;
 	fch_t *fch = ddi_get_soft_state(fch_state, ddi_get_instance(pdip));
 
-	if (fch == NULL)
-		return (NDI_BADHANDLE);
+	VERIFY3P(fch, !=, NULL);
 
-	switch (op) {
-	case BUS_CONFIG_ONE:
-	case BUS_CONFIG_ALL:
-	case BUS_CONFIG_DRIVER:
-		ndi_devi_enter(pdip);
-		break;
-	default:
-		return (NDI_FAILURE);
-	}
-
-	if (op == BUS_CONFIG_ONE) {
-		const fch_child_def_t *cdp;
-
-		/*
-		 * XXX Our only callers for BUS_CONFIG_ONE are
-		 * ndi_devi_config_one() and ndi_devi_config_obp_args(); both
-		 * guarantee that arg is non-NULL and points to a string.  This
-		 * check and assertion can be removed once this is documented.
-		 */
-		ASSERT3P(arg, !=, NULL);
-		if (arg == NULL) {
-			dev_err(pdip, CE_WARN, "BUS_CONFIG_ONE invoked with "
-			    "NULL child devname");
-			ndi_devi_exit(pdip);
-			return (NDI_EINVAL);
-		}
-		cdp = fch_lookup_child_def(fch, (const char *)arg);
-		if (cdp == NULL) {
-			ndi_devi_exit(pdip);
-			return (NDI_EINVAL);
-		}
-
-		res = fch_config_child(fch, cdp);
-	} else {
-		/*
-		 * Every nexus seems to treat BUS_CONFIG_DRIVER as if it were
-		 * identical to BUS_CONFIG_ALL.  In fact, DRIVER is supposed to
-		 * configure children matching the argument, a major number.
-		 * Presumably this simplification is acceptable because
-		 * configuring only children matching the major number is
-		 * considered an optimisation; by configuring everything we
-		 * guarantee that we did what the caller wanted (even if that
-		 * means we also did much more).  Because we're going to create
-		 * children here, we don't necessarily have any way to know
-		 * what their major numbers are going to be (in particular, we
-		 * don't have a devinfo node on which to query
-		 * ddi_driver_major() yet), so this is reasonable.  It's really
-		 * not ok to do the same thing in the BUS_UNCONFIG_DRIVER path
-		 * below, however.
-		 */
-		for (uint_t i = 0; i < fch->f_def->fd_nchildren; i++) {
-			(void) fch_config_child(fch,
-			    fch->f_def->fd_children[i]);
-		}
-		res = NDI_SUCCESS;
-	}
-
-	ndi_devi_exit(pdip);
-
-	if (res != NDI_SUCCESS)
-		return (res);
-
-	flags |= NDI_ONLINE_ATTACH;
-
-	return (ndi_busop_bus_config(pdip, flags, op, arg, childp, 0));
+	return (ndis_bus_config(fch->f_ndis, flags, op, arg, childp));
 }
 
 static int
@@ -2056,89 +1853,20 @@ fch_bus_unconfig(dev_info_t *pdip, uint_t flags, ddi_bus_config_op_t op,
     void *arg)
 {
 	fch_t *fch = ddi_get_soft_state(fch_state, ddi_get_instance(pdip));
-	const fch_child_def_t *cdp;
-	dev_info_t *child;
-	int res;
 
-	if (fch == NULL)
-		return (NDI_BADHANDLE);
+	VERIFY3P(fch, !=, NULL);
 
-	switch (op) {
-	case BUS_UNCONFIG_ONE:
-	case BUS_UNCONFIG_ALL:
-	case BUS_UNCONFIG_DRIVER:
-		flags |= NDI_UNCONFIG;
-		res = ndi_busop_bus_unconfig(pdip, flags, op, arg);
-		if (res != 0)
-			return (res);
-		break;
-	default:
-		return (NDI_FAILURE);
-	}
-
-	switch (op) {
-	case BUS_UNCONFIG_ONE:
-		ASSERT3P(arg, !=, NULL);
-		if (arg == NULL) {
-			dev_err(pdip, CE_WARN, "BUS_UNCONFIG_ONE invoked "
-			    "with NULL child devname");
-			return (NDI_EINVAL);
-		}
-
-		cdp = fch_lookup_child_def(fch, (const char *)arg);
-		if (cdp == NULL) {
-			dev_err(pdip, CE_WARN, "invalid child unit address "
-			    "'%s' encountered", (char *)arg);
-			return (NDI_EINVAL);
-		}
-
-		child = fch_lookup_child(fch, cdp);
-		if (child == NULL) {
-			dev_err(pdip, CE_WARN, "missing child node for %s "
-			    "in BUS_UNCONFIG_ONE", (char *)arg);
-			return (NDI_EINVAL);
-		}
-
-		res = fch_unconfig_child(fch, child);
-		break;
-	case BUS_UNCONFIG_DRIVER:
-	case BUS_UNCONFIG_ALL: {
-		major_t major = (major_t)(uintptr_t)arg;
-
-		for (uint_t i = 0; i < fch->f_def->fd_nchildren; i++) {
-			cdp = fch->f_def->fd_children[i];
-			child = fch_lookup_child(fch, cdp);
-
-			if (child == NULL)
-				continue;
-
-			if (major == DDI_MAJOR_T_NONE ||
-			    major == ddi_driver_major(child)) {
-				(void) fch_unconfig_child(fch, child);
-			}
-		}
-		res = NDI_SUCCESS;
-		break;
-	}
-	default:
-		return (NDI_FAILURE);
-	}
-
-	return (res);
+	return (ndis_bus_unconfig(fch->f_ndis, flags, op, arg));
 }
 
 static int
 fch_bus_intr_op(dev_info_t *dip, dev_info_t *rdip, ddi_intr_op_t op,
     ddi_intr_handle_impl_t *hdlp, void *result)
 {
-	fch_child_t *const child = ddi_get_parent_data(rdip);
+	fch_child_t *const child = ndis_child_private(rdip);
 	/* XXX */
 	extern int (*psm_intr_ops)(dev_info_t *, ddi_intr_handle_impl_t *,
 	    psm_intr_op_t, int *);
-
-	ASSERT3P(child, !=, NULL);
-	if (child == NULL)
-		return (DDI_FAILURE);
 
 	switch (op) {
 	case DDI_INTROP_SUPPORTED_TYPES: {
@@ -2469,6 +2197,10 @@ fch_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 	ddi_prop_free(role);
 
+	fch->f_ndis = ndis_init(dip, "FCH peripheral", NDIS_UA_HEX,
+	    def->fd_children, def->fd_nchildren, &fch_ndis_ops, fch,
+	    sizeof (fch_child_t));
+
 	VERIFY0(ddi_prop_update_string(DDI_DEV_T_NONE, dip,
 	    FCH_PROPNAME_MODEL, (char *)def->fd_desc));
 
@@ -2502,6 +2234,7 @@ fch_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		fch->f_ixbar = NULL;
 	}
 
+	ndis_fini(fch->f_ndis);
 	mutex_destroy(&fch->f_mutex);
 	ddi_soft_state_free(fch_state, fch->f_inst);
 
