@@ -2537,8 +2537,7 @@ out:
 
 		for (int i = 0; i < dfl->dfl_num_exts; i++) {
 			uint64_t start = dfl->dfl_exts[i].dfle_start,
-			    length = dfl->dfl_exts[i].dfle_length,
-			    end = start + length;
+			    length = dfl->dfl_exts[i].dfle_length;
 
 			/*
 			 * Apply Postel's Law to length-checking.  If they
@@ -2547,9 +2546,11 @@ out:
 			 */
 			if (start >= zv->zv_volsize)
 				continue;	/* No need to do anything... */
-			if (end > zv->zv_volsize) {
-				end = DMU_OBJECT_END;
-				length = end - start;
+			if (length > zv->zv_volsize - start) {
+				if (zv->zv_flags & ZVOL_RAW)
+					length = zv->zv_volsize - start;
+				else
+					length = DMU_OBJECT_END - start;
 			}
 
 			if (zv->zv_flags & ZVOL_RAW) {

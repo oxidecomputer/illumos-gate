@@ -3259,6 +3259,9 @@ file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_io_errors \
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_open_enospc \
     mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_trim mode=0555
+file \
+    path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_trim_overshoot \
+    mode=0555
 dir  path=opt/zfs-tests/tests/functional/zvol/zvol_swap
 file path=opt/zfs-tests/tests/functional/zvol/zvol_swap/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_swap/setup mode=0555
