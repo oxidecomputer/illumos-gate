@@ -1152,6 +1152,20 @@ zil_lwb_flush_vdevs_done(zio_t *zio)
 
 		ASSERT3P(zcw->zcw_lwb, ==, lwb);
 		zcw->zcw_lwb = NULL;
+		/*
+		 * We expect any ZIO errors from child ZIOs to have been
+		 * propagated "up" to this specific LWB's root ZIO, in
+		 * order for this error handling to work correctly. This
+		 * includes ZIO errors from either this LWB's write or
+		 * flush, as well as any errors from other dependent LWBs
+		 * (e.g. a root LWB ZIO that might be a child of this LWB).
+		 *
+		 * With that said, it's important to note that LWB flush
+		 * errors are not propagated up to the LWB root ZIO.
+		 * This is incorrect behavior, and results in VDEV flush
+		 * errors not being handled correctly here. See the
+		 * comment above the call to "zio_flush" for details.
+		 */
 
 		zcw->zcw_zio_error = zio->io_error;
 
@@ -1224,6 +1238,12 @@ zil_lwb_write_done(zio_t *zio)
 	 * nodes. We avoid calling zio_flush() since there isn't any
 	 * good reason for doing so, after the lwb block failed to be
 	 * written out.
+	 *
+	 * Additionally, we don't perform any further error handling at
+	 * this point (e.g. setting "zcw_zio_error" appropriately), as
+	 * we expect that to occur in "zil_lwb_flush_vdevs_done" (thus,
+	 * we expect any error seen here, to have been propagated to
+	 * that function).
 	 */
 	if (zio->io_error != 0) {
 		while ((zv = avl_destroy_nodes(t, &cookie)) != NULL)
@@ -1254,8 +1274,17 @@ zil_lwb_write_done(zio_t *zio)
 
 	while ((zv = avl_destroy_nodes(t, &cookie)) != NULL) {
 		vdev_t *vd = vdev_lookup_top(spa, zv->zv_vdev);
-		if (vd != NULL)
+		if (vd != NULL) {
+			/*
+			 * The "ZIO_FLAG_DONT_PROPAGATE" is currently
+			 * always used within "zio_flush". This means,
+			 * any errors when flushing the vdev(s), will
+			 * (unfortunately) not be handled correctly,
+			 * since these "zio_flush" errors will not be
+			 * propagated up to "zil_lwb_flush_vdevs_done".
+			 */
 			zio_flush(lwb->lwb_root_zio, vd);
+		}
 		kmem_free(zv, sizeof (*zv));
 	}
 }
@@ -1365,7 +1394,7 @@ zil_lwb_write_open(zilog_t *zilog, lwb_t *lwb)
 		lwb->lwb_write_zio = zio_rewrite(lwb->lwb_root_zio,
 		    zilog->zl_spa, 0, &lwb->lwb_blk, lwb_abd,
 		    BP_GET_LSIZE(&lwb->lwb_blk), zil_lwb_write_done, lwb,
-		    prio, ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE, &zb);
+		    prio, ZIO_FLAG_CANFAIL, &zb);
 		ASSERT3P(lwb->lwb_write_zio, !=, NULL);
 
 		lwb->lwb_state = LWB_STATE_OPENED;
@@ -1673,13 +1702,37 @@ cont:
 				error = 0;
 			}
 
-			if (error == EIO) {
+			/*
+			 * Typically, the only return values we should see from
+			 * ->zl_get_data() are 0, EIO, ENOENT or EEXIST.
+			 * However, it is also possible to see other
+			 * error values such as ENOSPC or EINVAL from
+			 * dmu_read() -> dnode_hold() -> dnode_hold_impl() or
+			 * ENXIO as well as a multitude of others from the
+			 * block layer through dmu_buf_hold() -> dbuf_read()
+			 * -> zio_wait(), as well as through dmu_read() ->
+			 * dnode_hold() -> dnode_hold_impl() -> dbuf_read() ->
+			 * zio_wait(). When these errors happen, we can assume
+			 * that neither an immediate write nor an indirect
+			 * write occurred, so we need to fall back to
+			 * txg_wait_synced(). This is unusual, so we log a
+			 * warning whenever one of these errors occurs.
+			 */
+			switch (error) {
+			case 0:
+				break;
+			default:
+				cmn_err(CE_WARN, "zil_lwb_commit() received "
+				    "unexpected error %d from ->zl_get_data()"
+				    ". Falling back to txg_wait_synced().",
+				    error);
+				/* FALLTHROUGH */
+			case EIO:
 				txg_wait_synced(zilog->zl_dmu_pool, txg);
-				return (lwb);
-			}
-			if (error != 0) {
-				ASSERT(error == ENOENT || error == EEXIST ||
-				    error == EALREADY);
+				/* FALLTHROUGH */
+			case ENOENT:
+				/* FALLTHROUGH */
+			case EEXIST:
 				return (lwb);
 			}
 		}
@@ -3358,6 +3411,50 @@ typedef enum {
 	ZR_SPLIT_DONE		/* zr_lr holds the rest: replay it */
 } zr_split_t;
 
+/* ARGSUSED */
+static int
+zil_replay_scan_blk(zilog_t *zilog, blkptr_t *bp, void *arg,
+    uint64_t claim_txg)
+{
+	return (0);
+}
+
+/*
+ * Before replay, look for a TX_WRITE2, which only older software logged.
+ * Stop at the first one.  Unlike zil_replay_log_record(), this doesn't skip
+ * records already replayed (lrc_seq <= zh_replay_seq): any TX_WRITE2 shows
+ * that the log was written by that software, and the records left to replay
+ * were too.
+ */
+/* ARGSUSED */
+static int
+zil_replay_scan_record(zilog_t *zilog, lr_t *lr, void *arg,
+    uint64_t claim_txg)
+{
+	if ((lr->lrc_txtype & ~TX_CI) == TX_WRITE2 &&
+	    lr->lrc_txg >= claim_txg) {
+		zilog->zl_replay_write2 = B_TRUE;
+		return (SET_ERROR(EEXIST));
+	}
+	return (0);
+}
+
+/*
+ * Return whether the log being replayed has a TX_WRITE2 (or couldn't be
+ * scanned), and therefore needs to be replayed as whole blocks, rather than
+ * just each record's range.
+ * Old software logged a TX_WRITE2, with no data or blkptr, when its data was
+ * in the block written for an earlier WR_INDIRECT TX_WRITE in the same txg.
+ * Replaying that TX_WRITE's whole block restores the TX_WRITE2's data.
+ * Newer software logs every WR_INDIRECT as a TX_WRITE with a blkptr, and
+ * each record replays its own range.
+ */
+boolean_t
+zil_replay_whole_blocks(zilog_t *zilog)
+{
+	return (zilog->zl_replay_write2);
+}
+
 static int
 zil_replay_error(zilog_t *zilog, lr_t *lr, int error)
 {
@@ -3705,6 +3802,18 @@ zil_replay(objset_t *os, void *arg, zil_replay_func_t *replay_func[TX_MAX_TYPE])
 	 */
 	txg_wait_synced(zilog->zl_dmu_pool, 0);
 
+	/*
+	 * If the scan stops early on an error, such as a read error, we can't
+	 * tell whether the rest of the log has a TX_WRITE2, so replay whole
+	 * blocks, as older software did.  That replays any log correctly,
+	 * though without keeping write order within a block.  The scan reads
+	 * only record headers, which aren't encrypted, so it doesn't decrypt.
+	 */
+	zilog->zl_replay_write2 = B_FALSE;
+	if (zil_parse(zilog, zil_replay_scan_blk, zil_replay_scan_record,
+	    NULL, zh->zh_claim_txg, B_FALSE) != 0)
+		zilog->zl_replay_write2 = B_TRUE;
+
 	zilog->zl_replay = B_TRUE;
 	zilog->zl_replay_time = ddi_get_lbolt();
 	ASSERT(zilog->zl_replay_blks == 0);
@@ -3713,6 +3822,7 @@ zil_replay(objset_t *os, void *arg, zil_replay_func_t *replay_func[TX_MAX_TYPE])
 	/* If the log ended inside a split write, count it as dropped. */
 	zil_replay_split_drop(&zr, 0);
 	kmem_free(zr.zr_lr, ZIL_REPLAY_BUFSZ);
+	zilog->zl_replay_write2 = B_FALSE;
 
 	zil_destroy(zilog, B_FALSE);
 	txg_wait_synced(zilog->zl_dmu_pool, zilog->zl_destroy_txg);
