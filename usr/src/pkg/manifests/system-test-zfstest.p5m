@@ -3250,6 +3250,10 @@ file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_misc_006_pos \
     mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_encrypted_neg \
     mode=0555
+file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_init_open \
+    mode=0555
+file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_init_stall \
+    mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_open_enospc \
     mode=0555
 file path=opt/zfs-tests/tests/functional/zvol/zvol_misc/zvol_raw_trim mode=0555

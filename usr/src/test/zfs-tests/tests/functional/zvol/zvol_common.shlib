@@ -28,6 +28,7 @@
 # Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2020 Joyent, Inc.
 # Copyright 2024 MNX Cloud, Inc.
+# Copyright 2026 Oxide Computer Company
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -134,4 +135,92 @@ function is_swap_inuse
 	swap -l | awk 'NR > 1 { print $1 }' | \
 	    grep "^$device\$" > /dev/null 2>&1
 	return $?
+}
+
+#
+# Log the raw zvol zero thread's recent zfs_dbgmsg entries: the block size
+# it is using and whether it found gang blocks and started over.  Each
+# restart rewrites the whole volume at half the block size, so a low
+# metaslab_force_ganging makes initialization many times slower.
+#
+function log_raw_zvol_dbgmsg
+{
+	typeset line
+
+	log_note "metaslab_force_ganging is" \
+	    "$(get_tunable metaslab_force_ganging)"
+	mdb -k -e ::zfs_dbgmsg | grep -E "^zv |zvol_zero|gang blocks" | \
+	    tail -20 | while read -r line; do
+		log_note "$line"
+	done
+}
+
+#
+# Run a raw zvol ioctl on device $2.  "status" prints the initialization
+# status: 0, or an errno name (EINPROGRESS while it is running).  "stop"
+# stops the initialization and waits for it to exit.
+#
+function rawvol_ioctl # <status|stop> <device>
+{
+	python -c '
+import errno, fcntl, os, struct, sys
+DKIOCRAWVOLSTATUS = (0x04 << 8) | 30
+DKIOCRAWVOLSTOP = (0x04 << 8) | 31
+fd = os.open(sys.argv[2], os.O_RDONLY)
+if sys.argv[1] == "stop":
+	fcntl.ioctl(fd, DKIOCRAWVOLSTOP, 0)
+else:
+	# drs_vers, drs_status, drs_zoff, drs_len
+	drs = fcntl.ioctl(fd, DKIOCRAWVOLSTATUS, bytes(24))
+	status = struct.unpack("=IiQQ", drs)[1]
+	print(errno.errorcode.get(status, status) if status != 0 else 0)
+' "$@"
+}
+
+#
+# Wait for the initialization of raw zvol device $1 to finish, and verify
+# that it succeeded.
+#
+function rawvol_wait_init # <device>
+{
+	typeset -i tries=0
+	while [[ $(rawvol_ioctl status $1) == EINPROGRESS ]]; do
+		((tries++ < 120)) || \
+		    log_fail "initialization of $1 did not finish"
+		sleep 1
+	done
+	log_must test "$(rawvol_ioctl status $1)" = 0
+}
+
+#
+# Stop the initialization of raw zvol device $1 and wait for it to exit, so
+# that it no longer holds the zvol open.
+#
+function rawvol_stop_init # <device>
+{
+	log_must rawvol_ioctl stop $1
+}
+
+#
+# Destroy a raw zvol.  Its zero thread keeps it open until initialization
+# stops, so stop the initialization first.  The zero thread closes the zvol
+# just after DKIOCRAWVOLSTOP returns, so "zfs destroy" can still briefly fail
+# with EBUSY.
+#
+function destroy_raw_zvol # dataset
+{
+	typeset vol=$1
+	typeset -i tries=0
+
+	zinject -c all >/dev/null
+	datasetexists $vol || return 0
+	rawvol_stop_init /dev/zvol/rdsk/$vol
+	while ! zfs destroy $vol 2>/dev/null; do
+		if (( ++tries >= 30 )); then
+			log_raw_zvol_dbgmsg
+			log_must zfs destroy $vol
+		fi
+		sleep 1
+	done
+	return 0
 }

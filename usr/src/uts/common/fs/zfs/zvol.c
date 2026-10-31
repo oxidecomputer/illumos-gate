@@ -318,18 +318,18 @@ zvol_minor_lookup(const char *name)
 	return (NULL);
 }
 
-/* extent mapping arg */
-struct maparg {
-	zvol_state_t	*ma_zv;
-	uint64_t	ma_blks;
-};
+/* block -> DVA mapping being built by zvol_get_dvas() */
+typedef struct zvol_dva_map {
+	dva_t		*zdm_dvas;
+	uint64_t	zdm_ndvas;
+} zvol_dva_map_t;
 
 /*ARGSUSED*/
 static int
 zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
     const zbookmark_phys_t *zb, const dnode_phys_t *dnp, void *arg)
 {
-	zvol_state_t *zv = arg;
+	zvol_dva_map_t *zdm = arg;
 
 	if (bp == NULL || BP_IS_HOLE(bp) ||
 	    zb->zb_object != ZVOL_OBJ || zb->zb_level != 0)
@@ -341,8 +341,8 @@ zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	if (BP_IS_GANG(bp))
 		return (SET_ERROR(EOVERFLOW));
 
-	VERIFY3U(zb->zb_blkid, <, zvol_num_blocks(zv));
-	zv->zv_dvas[zb->zb_blkid] = bp->blk_dva[0];
+	VERIFY3U(zb->zb_blkid, <, zdm->zdm_ndvas);
+	zdm->zdm_dvas[zb->zb_blkid] = bp->blk_dva[0];
 
 	return (0);
 }
@@ -362,41 +362,58 @@ zvol_free_dvas(zvol_state_t *zv)
 	}
 }
 
+/*
+ * Build the block -> DVA mapping of a preallocated volume.  Called by the
+ * zero thread with zv_state_lock held.
+ *
+ * zv_state_lock is dropped while waiting for a txg and traversing the volume:
+ * zvol_open_impl() acquires it while holding zfsdev_state_lock, and syncing a
+ * txg may need zfsdev_state_lock (e.g. to flush a vdev that is itself a zvol).
+ * The mapping is built in a private array and installed under the lock.  I/O
+ * doesn't use zv_dvas until zv_zero_thread is cleared, the initializing open
+ * keeps the volume from being closed, and a raw volume's size can't change.
+ */
 static int
 zvol_get_dvas(zvol_state_t *zv)
 {
 	objset_t *os = zv->zv_objset;
-	int		err;
+	zvol_dva_map_t zdm;
+	int err;
 
 	ASSERT(MUTEX_HELD(&zv->zv_state_lock));
 	VERIFY(zv->zv_flags & ZVOL_PREALLOCED);
 	zvol_free_dvas(zv);
 
+	zdm.zdm_ndvas = zvol_num_blocks(zv);
+	mutex_exit(&zv->zv_state_lock);
+
 	/* commit any in-flight changes before traversing the dataset */
 	txg_wait_synced(dmu_objset_pool(os), 0);
-	zv->zv_ndvas = zvol_num_blocks(zv);
-	zv->zv_dvas = kmem_zalloc(zv->zv_ndvas * sizeof (dva_t), KM_SLEEP);
+	zdm.zdm_dvas = kmem_zalloc(zdm.zdm_ndvas * sizeof (dva_t), KM_SLEEP);
 	err = traverse_dataset(dmu_objset_ds(os), 0,
-	    TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA, zvol_map_block, zv);
+	    TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA, zvol_map_block, &zdm);
 	if (err == 0) {
 		/* make sure we filled in all dvas */
-		for (uint64_t i = 0; i < zvol_num_blocks(zv); i++) {
-			if (DVA_IS_EMPTY(&zv->zv_dvas[i])) {
+		for (uint64_t i = 0; i < zdm.zdm_ndvas; i++) {
+			if (DVA_IS_EMPTY(&zdm.zdm_dvas[i])) {
 				err = EIO;
 				break;
 			}
 		}
-
 	}
+
+	mutex_enter(&zv->zv_state_lock);
 	if (err != 0) {
-		zvol_free_dvas(zv);
+		kmem_free(zdm.zdm_dvas, zdm.zdm_ndvas * sizeof (dva_t));
 		if (err == EOVERFLOW) {
 			zfs_dbgmsg("zv %p, encountered gang blocks, "
 			    "blocksize = %llu", zv, zv->zv_volblocksize);
 			zv->zv_flags &= ~ZVOL_PREALLOCED;
+			mutex_exit(&zv->zv_state_lock);
 			(void) dmu_free_long_range(os, ZVOL_OBJ, 0,
 			    DMU_OBJECT_END);
 			txg_wait_synced(dmu_objset_pool(os), 0);
+			mutex_enter(&zv->zv_state_lock);
 			/*
 			 * If we still see gang blocks and we're at our
 			 * minimum block size then stop trying and return
@@ -408,6 +425,9 @@ zvol_get_dvas(zvol_state_t *zv)
 		return (err);
 	}
 
+	ASSERT3P(zv->zv_dvas, ==, NULL);
+	zv->zv_dvas = zdm.zdm_dvas;
+	zv->zv_ndvas = zdm.zdm_ndvas;
 	return (0);
 }
 
@@ -949,7 +969,10 @@ zvol_zero(zvol_state_t *zv)
 		zv->zv_zero_off += bytes;
 	}
 	if (bytes_zeroed > 0) {
+		/* see zvol_get_dvas() for why we drop zv_state_lock */
+		mutex_exit(&zv->zv_state_lock);
 		txg_wait_synced(dmu_objset_pool(os), 0);
+		mutex_enter(&zv->zv_state_lock);
 
 		if (zv->zv_zero_exit_wanted) {
 			zfs_dbgmsg("zvol_zero shutting down: zv %p, flags %d, "
@@ -957,6 +980,17 @@ zvol_zero(zvol_state_t *zv)
 			    zv->zv_flags, resid, zv->zv_zero_off, bytes_zeroed);
 			error = EINTR;
 		}
+	} else if (error == 0 && resid != 0) {
+		/*
+		 * Asked to stop before zeroing anything.  zvol_get_dvas()
+		 * drops zv_state_lock, so this can happen when it starts
+		 * the initialization over after finding gang blocks.
+		 */
+		ASSERT(zv->zv_zero_exit_wanted);
+		zfs_dbgmsg("zvol_zero shutting down: zv %p, flags %d, "
+		    "resid %llu, off %llu", zv, zv->zv_flags, resid,
+		    zv->zv_zero_off);
+		error = EINTR;
 	} else {
 		zfs_dbgmsg("zvol_zero complete zv %p, "
 		    "flags %d, resid %llu, bytes_zeroed %llu, opens %u", zv,
