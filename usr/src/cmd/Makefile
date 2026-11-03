@@ -127,7 +127,6 @@ COMMON_SUBDIRS=		\
 	syseventd	\
 	devctl		\
 	devinfo		\
-	devlink-monitor	\
 	devmgmt		\
 	devprop		\
 	dfs.cmds	\
