@@ -3610,12 +3610,9 @@ typedef mblk_t *(*ip_accept_t)(ill_t *, ill_rx_ring_t *,
  * rr_ring_state: Protected by ill_lock.
  */
 struct ill_rx_ring {
-	ip_mac_intr_disable_t	rr_intr_disable; /* Interrupt disabling func */
-	ip_mac_intr_enable_t	rr_intr_enable;	/* Interrupt enabling func */
-	void			*rr_intr_handle; /* Handle interrupt funcs */
-	ip_mac_rx_t		rr_rx;		/* Driver receive function */
+	const void		*rr_mac_ops; /* Interrupt/polling ctl funcs */
+	void			*rr_mac_arg; /* Ring argument for mac_ops */
 	ip_accept_t		rr_ip_accept;	/* IP accept function */
-	void			*rr_rx_handle;	/* Handle for Rx ring */
 	squeue_t		*rr_sqp; /* Squeue the ring is bound to */
 	ill_t			*rr_ill;	/* back pointer to ill */
 	ip_ring_state_t		rr_ring_state;	/* State of this ring */

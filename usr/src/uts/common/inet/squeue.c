@@ -182,28 +182,30 @@ size_t squeue_poll_budget_bytes = 150000;
  * ring sending packets up. In that case, SQS_POLLING will not be
  * set.
  */
-#define	SQS_POLLING_ON(sqp, sq_poll_capable, rx_ring) {		\
-	ASSERT(MUTEX_HELD(&(sqp)->sq_lock));			\
-	if (sq_poll_capable) {					\
-		ASSERT(rx_ring != NULL);			\
-		ASSERT(sqp->sq_state & SQS_POLL_CAPAB);		\
-		if (!(sqp->sq_state & SQS_POLLING)) {		\
-			if (rx_ring->rr_intr_disable(rx_ring->rr_intr_handle)) \
-				sqp->sq_state |= SQS_POLLING;	\
-		}						\
-	}							\
+#define	SQS_POLLING_ON(sqp, sq_poll_capable, rx_ring) {			\
+	ASSERT(MUTEX_HELD(&(sqp)->sq_lock));				\
+	if (sq_poll_capable) {						\
+		const mac_rx_fifo_ops_t	*ops = rx_ring->rr_mac_ops;	\
+		ASSERT(rx_ring != NULL);				\
+		ASSERT(sqp->sq_state & SQS_POLL_CAPAB);			\
+		if (!(sqp->sq_state & SQS_POLLING)) {			\
+			if (ops->mrfo_disable(rx_ring->rr_mac_arg))	\
+				sqp->sq_state |= SQS_POLLING;		\
+		}							\
+	}								\
 }
 
-#define	SQS_POLLING_OFF(sqp, sq_poll_capable, rx_ring) {	\
-	ASSERT(MUTEX_HELD(&(sqp)->sq_lock));			\
-	if (sq_poll_capable) {					\
-		ASSERT(rx_ring != NULL);			\
-		ASSERT(sqp->sq_state & SQS_POLL_CAPAB);		\
-		if (sqp->sq_state & SQS_POLLING) {		\
-			sqp->sq_state &= ~SQS_POLLING;		\
-			rx_ring->rr_intr_enable(rx_ring->rr_intr_handle); \
-		}						\
-	}							\
+#define	SQS_POLLING_OFF(sqp, sq_poll_capable, rx_ring) {		\
+	ASSERT(MUTEX_HELD(&(sqp)->sq_lock));				\
+	if (sq_poll_capable) {						\
+		const mac_rx_fifo_ops_t	*ops = rx_ring->rr_mac_ops;	\
+		ASSERT(rx_ring != NULL);				\
+		ASSERT(sqp->sq_state & SQS_POLL_CAPAB);			\
+		if (sqp->sq_state & SQS_POLLING) {			\
+			sqp->sq_state &= ~SQS_POLLING;			\
+			ops->mrfo_enable(rx_ring->rr_mac_arg);		\
+		}							\
+	}								\
 }
 
 /* Wakeup poll thread only if SQS_POLLING is set */
@@ -911,16 +913,17 @@ squeue_polling_thread(squeue_t *sqp)
 {
 	kmutex_t *lock = &sqp->sq_lock;
 	kcondvar_t *async = &sqp->sq_poll_cv;
-	ip_mac_rx_t sq_get_pkts;
 	ip_accept_t ip_accept;
 	ill_rx_ring_t *sq_rx_ring;
 	ill_t *sq_ill;
 	mblk_t *head, *tail, *mp;
 	uint_t cnt;
-	void *sq_mac_handle;
 	callb_cpr_t cprinfo;
 	size_t bytes_to_pickup;
 	uint32_t ctl_state;
+	mac_rx_fifo_handle_t sq_mac_handle;
+	const mac_rx_fifo_ops_t *sq_mac_ops;
+	mac_fifo_receive_t sq_get_pkts;
 
 	CALLB_CPR_INIT(&cprinfo, lock, callb_generic_cpr, "sq_poll");
 	mutex_enter(lock);
@@ -957,8 +960,9 @@ squeue_polling_thread(squeue_t *sqp)
 
 poll_again:
 		sq_rx_ring = sqp->sq_rx_ring;
-		sq_get_pkts = sq_rx_ring->rr_rx;
-		sq_mac_handle = sq_rx_ring->rr_rx_handle;
+		sq_mac_ops = sq_rx_ring->rr_mac_ops;
+		sq_get_pkts = sq_mac_ops->mrfo_receive;
+		sq_mac_handle = sq_rx_ring->rr_mac_arg;
 		ip_accept = sq_rx_ring->rr_ip_accept;
 		sq_ill = sq_rx_ring->rr_ill;
 		bytes_to_pickup = squeue_poll_budget_bytes;
@@ -1168,10 +1172,8 @@ squeue_worker_thr_control(squeue_t *sqp)
 		    SQS_POLL_QUIESCE_DONE);
 		sqp->sq_ill = NULL;
 
-		rx_ring->rr_rx_handle = NULL;
-		rx_ring->rr_intr_handle = NULL;
-		rx_ring->rr_intr_enable = NULL;
-		rx_ring->rr_intr_disable = NULL;
+		rx_ring->rr_mac_arg = NULL;
+		rx_ring->rr_mac_ops = NULL;
 		sqp->sq_state |= SQS_POLL_CLEANUP_DONE;
 	} else {
 		sqp->sq_state &= ~SQS_POLL_QUIESCE;

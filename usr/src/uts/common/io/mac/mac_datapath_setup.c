@@ -1873,14 +1873,14 @@ mac_rx_discard(void *arg1 __unused, mac_resource_handle_t mrh __unused,
  *
  * This action is guaranteed to have `MFA_FLAGS_ACTION` set.
  */
-static const flow_action_t *
+static const flow_action_impl_t *
 mac_srs_rx_action(const mac_soft_ring_set_t *srs)
 {
 	VERIFY(!mac_srs_is_tx(srs));
 	flow_entry_t *flent = (srs->srs_rx.sr_act_as != NULL) ?
 	    srs->srs_rx.sr_act_as :
 	    srs->srs_flent;
-	VERIFY3U(flent->fe_action.fa_flags & MFA_FLAGS_ACTION, !=, 0);
+	VERIFY3U(flent->fe_action.fai_flags & MFA_FLAGS_ACTION, !=, 0);
 
 	return (&flent->fe_action);
 }
@@ -1895,36 +1895,34 @@ mac_srs_create_rx_softring(uint16_t id, pri_t pri, mac_client_impl_t *mcip,
 {
 	VERIFY(MUTEX_HELD(&cpu_lock));
 
-	const flow_action_t *act = mac_srs_rx_action(mac_srs);
-	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0 &&
-	    act->fa_resource.mrc_add != NULL &&
-	    act->fa_resource.mrc_arg != NULL;
-	const bool process_packet = (act->fa_flags & MFA_FLAGS_ACTION) != 0;
-	const mac_direct_rx_t rx_func = process_packet ? act->fa_direct_rx_fn :
+	const flow_action_impl_t *act = mac_srs_rx_action(mac_srs);
+	const bool notify_upstack = (act->fai_flags & MFA_FLAGS_RESOURCE) != 0;
+	const bool process_packet = (act->fai_flags & MFA_FLAGS_ACTION) != 0;
+	const mac_direct_rx_t rx_func = process_packet ? act->fai_rx_fn :
 	    mac_rx_discard;
-	void *x_arg1 = process_packet ? act->fa_direct_rx_arg : NULL;
+	void *x_arg1 = process_packet ? act->fai_rx_arg : NULL;
 
 	mac_soft_ring_t *softring = mac_soft_ring_create_rx(id,
 	    mac_soft_ring_worker_wait, pri, mcip, mac_srs, cpuid, rx_func,
 	    x_arg1);
 
 	if (notify_upstack) {
+		VERIFY3P(act->fai_resource.mrc_add, !=, NULL);
+		VERIFY3P(act->fai_resource.mrc_arg, !=, NULL);
+
 		mac_rx_fifo_t mrf = {
 			.mrf_type = MAC_RX_FIFO,
-			.mrf_receive = (mac_receive_t)mac_soft_ring_poll,
-			.mrf_intr_enable =
-			    (mac_intr_enable_t)mac_soft_ring_intr_enable,
-			.mrf_intr_disable =
-			    (mac_intr_disable_t)mac_soft_ring_intr_disable,
+			.mrf_arg = (mac_rx_fifo_handle_t)softring,
+			.mrf_ops = &mac_soft_ring_ops,
+
+			.mrf_valid = 0,
 			.mrf_flow_priority = pri,
-			.mrf_rx_arg = softring,
-			.mrf_intr_handle = (mac_intr_handle_t)softring,
 			.mrf_cpu_id = cpuid,
 		};
 
 		mutex_exit(&cpu_lock);
-		softring->s_ring_rx_arg2 = act->fa_resource.mrc_add(
-		    act->fa_resource.mrc_arg, (mac_resource_t *)&mrf);
+		softring->s_ring_rx_arg2 = act->fai_resource.mrc_add(
+		    act->fai_resource.mrc_arg, (mac_resource_t *)&mrf);
 		mutex_enter(&cpu_lock);
 
 		if (softring->s_ring_rx_arg2 != NULL) {
@@ -1964,10 +1962,10 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 	const uint16_t srings_present = mac_rx_srs->srs_soft_ring_count;
 
 	/* Does this flow need to report bindings to an upstack client? */
-	const flow_action_t *act = mac_srs_rx_action(mac_rx_srs);
-	const bool notify_upstack = (act->fa_flags & MFA_FLAGS_RESOURCE) != 0;
-	const mac_resource_bind_t bind_notify_fn = act->fa_resource.mrc_bind;
-	void *notify_arg = act->fa_resource.mrc_arg;
+	const flow_action_impl_t *act = mac_srs_rx_action(mac_rx_srs);
+	const bool notify_upstack = (act->fai_flags & MFA_FLAGS_RESOURCE) != 0;
+	const mac_resource_bind_t bind_notify_fn = act->fai_resource.mrc_bind;
+	void *notify_arg = act->fai_resource.mrc_arg;
 
 	/* fanout state is REINIT. Set it back to INIT */
 	VERIFY3U(mac_rx_srs->srs_fanout_state, ==, SRS_FANOUT_REINIT);
@@ -2014,8 +2012,10 @@ mac_srs_fanout_modify(mac_client_impl_t *mcip,
 		const bool bound = mac_soft_ring_bind(softring, cpuid) != NULL;
 
 		if (notify_upstack && softring->s_ring_rx_arg2 != NULL &&
-		    notify_arg != NULL && bound) {
+		    bound) {
 			mutex_exit(&cpu_lock);
+			VERIFY3P(bind_notify_fn, !=, NULL);
+			VERIFY3P(notify_arg, !=, NULL);
 			bind_notify_fn(notify_arg, softring->s_ring_rx_arg2,
 			    cpuid);
 			mutex_enter(&cpu_lock);
@@ -2458,7 +2458,7 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 
 	if (mac_srs->srs_give_to != NULL) {
 		mac_srs->srs_type |= SRST_FORWARD;
-	} else if (!is_tx_srs && (mac_srs_rx_action(mac_srs)->fa_flags &
+	} else if (!is_tx_srs && (mac_srs_rx_action(mac_srs)->fai_flags &
 	    MFA_FLAGS_RESOURCE) != 0)  {
 		/*
 		 * If this SRS has resource binding requirements for its
@@ -2569,13 +2569,13 @@ mac_srs_create(mac_client_impl_t *mcip, flow_entry_t *flent,
 	/*
 	 * Allow for delivery to this SRS directly from an aggr device.
 	 */
-	const flow_action_t *my_action =
+	const flow_action_impl_t *my_action =
 	    (mac_srs->srs_give_to == NULL) ?
 	    &flent->fe_action :
 	    &mac_srs->srs_give_to->srs_flent->fe_action;
-	VERIFY3U(my_action->fa_flags & MFA_FLAGS_ACTION, !=, 0);
-	srs_rx->sr_func = my_action->fa_direct_rx_fn;
-	srs_rx->sr_arg1 = my_action->fa_direct_rx_arg;
+	VERIFY3U(my_action->fai_flags & MFA_FLAGS_ACTION, !=, 0);
+	srs_rx->sr_func = my_action->fai_rx_fn;
+	srs_rx->sr_arg1 = my_action->fai_rx_arg;
 
 	if (!is_logical) {
 		mac_ring_t *ring = p->msc_rx.ring;
@@ -3907,18 +3907,18 @@ mac_soft_ring_signal_client(mac_soft_ring_t *ringp,
 	    (srs->srs_type & SRST_CLIENT_POLL) == 0) {
 		return;
 	}
-	const flow_action_t *act = mac_srs_rx_action(srs);
-	if (act == NULL || (act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
+	const flow_action_impl_t *act = mac_srs_rx_action(srs);
+	if (act == NULL || (act->fai_flags & MFA_FLAGS_RESOURCE) == 0) {
 		return;
 	}
 
-	void *rs_arg = act->fa_resource.mrc_arg;
+	void *rs_arg = act->fai_resource.mrc_arg;
 	const mac_resource_quiesce_t quiesce_notify_fn =
-	    act->fa_resource.mrc_quiesce;
+	    act->fai_resource.mrc_quiesce;
 	const mac_resource_restart_t restart_notify_fn =
-	    act->fa_resource.mrc_restart;
+	    act->fai_resource.mrc_restart;
 	const mac_resource_remove_t remove_notify_fn =
-	    act->fa_resource.mrc_remove;
+	    act->fai_resource.mrc_remove;
 	VERIFY3P(rs_arg, !=, NULL);
 	VERIFY3P(quiesce_notify_fn, !=, NULL);
 	VERIFY3P(restart_notify_fn, !=, NULL);
@@ -3992,8 +3992,8 @@ mac_srs_signal_client(mac_soft_ring_set_t *mac_srs,
 		return;
 	}
 
-	const flow_action_t *act = mac_srs_rx_action(mac_srs);
-	if (act == NULL || (act->fa_flags & MFA_FLAGS_RESOURCE) == 0) {
+	const flow_action_impl_t *act = mac_srs_rx_action(mac_srs);
+	if (act == NULL || (act->fai_flags & MFA_FLAGS_RESOURCE) == 0) {
 		return;
 	}
 
@@ -4628,14 +4628,13 @@ struct mac_delegate_entry {
  * Determine whether a flow should deliver, drop, delegate to another flow.
  */
 static mac_flow_action_type_t
-mac_flow_action_type(const flow_action_t *ac)
+mac_flow_action_type(const flow_action_impl_t *ac)
 {
 	VERIFY3P(ac, !=, NULL);
-	if ((ac->fa_flags & MFA_FLAGS_ACTION) == 0) {
+	if ((ac->fai_flags & MFA_FLAGS_ACTION) == 0) {
 		return (MFA_TYPE_DELEGATE);
 	}
-	return ((ac->fa_direct_rx_fn == NULL) ?
-	    MFA_TYPE_DROP : MFA_TYPE_DELIVER);
+	return ((ac->fai_rx_fn == NULL) ? MFA_TYPE_DROP : MFA_TYPE_DELIVER);
 }
 
 struct mac_ft_count {
@@ -4938,7 +4937,7 @@ mac_flow_tree_create_walker(void *arg, const mac_flow_tree_walker_ctx_t *ctx)
 		const struct mac_delegate_entry *curr_delegate =
 		    (delegate_idx < 0) ? &cr->mfc_delegate_to_root :
 		    &cr->mfc_delegate_to[delegate_idx];
-		const flow_action_t *cd_action =
+		const flow_action_impl_t *cd_action =
 		    &curr_delegate->mde_ft->ft_flent->fe_action;
 
 		const mac_flow_action_type_t effective_ty =
