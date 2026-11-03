@@ -774,10 +774,8 @@ zvol_first_open(zvol_state_t *zv, boolean_t rdonly)
 	if (error)
 		return (error);
 
-	zv->zv_objset = os;
 	error = zap_lookup(os, ZVOL_ZAP_OBJ, "size", 8, 1, &volsize);
 	if (error) {
-		ASSERT0(error);
 		dmu_objset_disown(os, 1, zv);
 		return (error);
 	}
@@ -788,6 +786,7 @@ zvol_first_open(zvol_state_t *zv, boolean_t rdonly)
 		return (error);
 	}
 
+	zv->zv_objset = os;
 	zvol_size_changed(zv, volsize);
 
 	uint64_t rawvol;
