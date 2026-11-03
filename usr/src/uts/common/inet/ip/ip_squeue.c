@@ -503,16 +503,11 @@ ip_squeue_add_ring(ill_t *ill, void *mrp)
 	}
 
 	bzero(rx_ring, sizeof (ill_rx_ring_t));
-	rx_ring->rr_rx = mrfp->mrf_receive;
+	rx_ring->rr_mac_arg = mrfp->mrf_arg;
+	rx_ring->rr_mac_ops = mrfp->mrf_ops;
 	rx_ring->rr_ip_accept = (ill->ill_isv6 != 0) ?
 	    (ip_accept_t)ip_accept_tcp_v6 :
 	    (ip_accept_t)ip_accept_tcp;
-
-	rx_ring->rr_intr_handle = mrfp->mrf_intr_handle;
-	rx_ring->rr_intr_enable = (ip_mac_intr_enable_t)mrfp->mrf_intr_enable;
-	rx_ring->rr_intr_disable =
-	    (ip_mac_intr_disable_t)mrfp->mrf_intr_disable;
-	rx_ring->rr_rx_handle = mrfp->mrf_rx_arg;
 	rx_ring->rr_ill = ill;
 
 	pri = mrfp->mrf_flow_priority;
@@ -531,7 +526,7 @@ ip_squeue_add_ring(ill_t *ill, void *mrp)
 	mutex_exit(&ill->ill_lock);
 
 	DTRACE_PROBE4(ill__ring__add, char *, ill->ill_name, ill_t *, ill, int,
-	    ip_rx_index, void *, mrfp->mrf_rx_arg);
+	    ip_rx_index, void *, mrfp->mrf_arg);
 
 
 	/* Assign the squeue to the specified CPU as well */

@@ -95,14 +95,15 @@ extern void mac_client_poll_disable(mac_client_handle_t, boolean_t);
  * Flow-related APIs for MAC clients.
  */
 
+typedef void *flow_entry_handle_t;
+
 extern void mac_link_init_flows(mac_client_handle_t);
 extern void mac_link_release_flows(mac_client_handle_t);
-extern int mac_link_flow_add(datalink_id_t, char *, flow_desc_t *,
-    mac_resource_props_t *);
-extern int mac_link_flow_add_action(datalink_id_t, char *, flow_desc_t *,
-    mac_resource_props_t *, const flow_action_t *);
-extern int mac_link_flow_remove(char *);
-extern int mac_link_flow_modify(char *, mac_resource_props_t *);
+extern int mac_link_flow_add(const datalink_id_t, const char *,
+    const flow_desc_t *, mac_resource_props_t *, const flow_action_t *,
+    flow_entry_handle_t *);
+extern int mac_link_flow_remove(const char *);
+extern int mac_link_flow_modify(const char *, mac_resource_props_t *);
 extern boolean_t mac_link_has_flows(mac_client_handle_t);
 
 typedef struct {
@@ -114,7 +115,7 @@ typedef struct {
 
 extern int mac_link_flow_walk(datalink_id_t,
     int (*)(mac_flowinfo_t *, void *), void *);
-extern int mac_link_flow_info(char *, mac_flowinfo_t *);
+extern int mac_link_flow_info(const char *, mac_flowinfo_t *);
 
 extern void mac_client_quiesce(mac_client_handle_t);
 extern void mac_client_restart(mac_client_handle_t);

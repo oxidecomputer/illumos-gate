@@ -21,6 +21,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2026 Oxide Computer Company
  */
 
 /*
@@ -40,7 +41,8 @@ int
 dld_add_flow(datalink_id_t linkid, char *flow_name, flow_desc_t *flow_desc,
     mac_resource_props_t *mrp)
 {
-	return (mac_link_flow_add(linkid, flow_name, flow_desc, mrp));
+	return (mac_link_flow_add(linkid, flow_name, flow_desc, mrp, NULL,
+	    NULL));
 }
 
 int

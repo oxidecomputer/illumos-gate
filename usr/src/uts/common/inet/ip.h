@@ -3575,8 +3575,6 @@ typedef enum {
  * we need to duplicate the definitions here because we cannot
  * include mac/dls header files here.
  */
-typedef boolean_t		(*ip_mac_intr_disable_t)(void *);
-typedef int			(*ip_mac_intr_enable_t)(void *);
 typedef ip_mac_tx_cookie_t	(*ip_dld_tx_t)(void *, mblk_t *,
     uint64_t, uint16_t);
 typedef	void			(*ip_flow_enable_t)(void *, ip_mac_tx_cookie_t);
@@ -3588,9 +3586,10 @@ typedef int			(*ip_capab_func_t)(void *, uint_t,
 
 /*
  * POLLING README
- * sq_get_pkts() is called to pick packets from softring in poll mode. It
- * calls rr_rx to get the chain and process it with rr_ip_accept.
- * rr_rx = mac_soft_ring_poll() to pick packets
+ * sq_get_pkts() is called to pick packets from softring in poll mode. It calls
+ * rr_mac_ops->mrfo_receive to get the chain and process it with rr_ip_accept.
+ *
+ * mrfo_receive = mac_soft_ring_poll() to pick packets
  * rr_ip_accept = ip_accept_tcp() to process packets
  */
 
@@ -3598,24 +3597,20 @@ typedef int			(*ip_capab_func_t)(void *, uint_t,
  * XXX: With protocol, service specific squeues, they will have
  * specific acceptor functions.
  */
-typedef	mblk_t *(*ip_mac_rx_t)(void *, size_t);
 typedef mblk_t *(*ip_accept_t)(ill_t *, ill_rx_ring_t *,
     squeue_t *, mblk_t *, mblk_t **, uint_t *);
 
 /*
- * rr_intr_enable, rr_intr_disable, rr_rx_handle, rr_rx:
+ * rr_mac_ops, rr_mac_arg:
  * May be accessed while in the squeue AND after checking that SQS_POLL_CAPAB
  * is set.
  *
  * rr_ring_state: Protected by ill_lock.
  */
 struct ill_rx_ring {
-	ip_mac_intr_disable_t	rr_intr_disable; /* Interrupt disabling func */
-	ip_mac_intr_enable_t	rr_intr_enable;	/* Interrupt enabling func */
-	void			*rr_intr_handle; /* Handle interrupt funcs */
-	ip_mac_rx_t		rr_rx;		/* Driver receive function */
+	const void		*rr_mac_ops; /* Interrupt/polling ctl funcs */
+	void			*rr_mac_arg; /* Ring argument for mac_ops */
 	ip_accept_t		rr_ip_accept;	/* IP accept function */
-	void			*rr_rx_handle;	/* Handle for Rx ring */
 	squeue_t		*rr_sqp; /* Squeue the ring is bound to */
 	ill_t			*rr_ill;	/* back pointer to ill */
 	ip_ring_state_t		rr_ring_state;	/* State of this ring */

@@ -68,6 +68,7 @@ typedef struct __mac_tx_notify_handle	*mac_tx_notify_handle_t;
 typedef	struct __mac_intr_handle	*mac_intr_handle_t;
 typedef	struct __mac_ring_handle	*mac_ring_handle_t;
 typedef	struct __mac_group_handle	*mac_group_handle_t;
+typedef	struct __mac_rx_fifo_handle	*mac_rx_fifo_handle_t;
 
 #define	DATALINK_INVALID_LINKID	0
 #define	DATALINK_ALL_LINKID	0
@@ -424,7 +425,6 @@ typedef enum {
 typedef void		(*mac_notify_t)(void *, mac_notify_type_t);
 typedef void		(*mac_rx_t)(void *, mac_resource_handle_t, mblk_t *,
 			    boolean_t);
-typedef	mblk_t		*(*mac_receive_t)(void *, size_t);
 
 /*
  * Callback for mac_siphon_set. This function takes packets from an input mblk_t
@@ -457,24 +457,89 @@ typedef	struct mac_intr_s {
 	boolean_t		mi_ddi_shared;
 } mac_intr_t;
 
+typedef	int		(*mac_fifo_enable_t)(mac_rx_fifo_handle_t);
+typedef	boolean_t	(*mac_fifo_disable_t)(mac_rx_fifo_handle_t);
+typedef	mblk_t		*(*mac_fifo_receive_t)(mac_rx_fifo_handle_t, size_t);
+
+/*
+ * Operations that a MAC client may call on an RX FIFO.
+ */
+typedef struct {
+	/*
+	 * Flagset that controls which fields of this struct are valid.
+	 *
+	 * All members from mrfo_valid through mrfo_receive are mandatory, and
+	 * are implicitly valid.
+	 */
+	uint64_t		mrfo_valid;
+
+	/*
+	 * Allow this FIFO to interrupt the client when packets arrive.
+	 *
+	 * Returns 0 on success, and an error code otherwise.
+	 */
+	mac_fifo_enable_t	mrfo_enable;
+	/*
+	 * Blank all interrupts from this FIFO up to the client.
+	 */
+	mac_fifo_disable_t	mrfo_disable;
+	/*
+	 * Poll this FIFO for any packets up to a given byte limit.
+	 */
+	mac_fifo_receive_t	mrfo_receive;
+
+	/*
+	 * New members must be added here, and must define a flag entry in
+	 * mrfo_valid to signal their presence.
+	 */
+} mac_rx_fifo_ops_t;
+
+/*
+ * A snapshot of the state of an RX FIFO at the time it is registered.
+ */
 typedef struct mac_rx_fifo_s {
 	mac_resource_type_t	mrf_type;	/* MAC_RX_FIFO */
-	mac_intr_t		mrf_intr;
-	mac_receive_t		mrf_receive;
-	void			*mrf_rx_arg;
+
+	/*
+	 * Operations the client may perform on this FIFO.
+	 *
+	 * Static for the lifetime of the FIFO. The client must not copy out the
+	 * contents of mrf_ops.
+	 */
+	mac_rx_fifo_handle_t	mrf_arg;
+	const mac_rx_fifo_ops_t	*mrf_ops;
+
+	/*
+	 * Flagset that controls which fields of the remainder of this struct
+	 * are valid.
+	 *
+	 * mrf_flow_priority and mrf_cpu_id are always considered valid.
+	 */
+	uint64_t		mrf_valid;
+	/*
+	 * The current flow priority associated with this FIFO.
+	 */
 	uint32_t		mrf_flow_priority;
 	/*
 	 * The CPU this flow is to be processed on. With intrd and future
 	 * things, we should know which CPU the flow needs to be processed
 	 * and get a squeue assigned on that CPU.
 	 */
-	uint_t			mrf_cpu_id;
+	processorid_t		mrf_cpu_id;
+
+	/*
+	 * New members must be added here, and must define a flag entry in
+	 * mrf_valid to signal their presence.
+	 */
 } mac_rx_fifo_t;
 
-#define	mrf_intr_handle		mrf_intr.mi_handle
-#define	mrf_intr_enable		mrf_intr.mi_enable
-#define	mrf_intr_disable	mrf_intr.mi_disable
-
+/*
+ * A snapshot of a MAC resource's state when it is first registered with a
+ * client.
+ *
+ * Clients must copy out any values they care about, and will be informed of
+ * updates to any state by through the relevant mac_resource_cb_t callbacks.
+ */
 typedef union mac_resource_u {
 	mac_resource_type_t	mr_type;
 	mac_rx_fifo_t		mr_fifo;
@@ -524,6 +589,20 @@ typedef void	(*mac_resource_restart_t)(void *, mac_resource_handle_t);
  */
 typedef struct mac_resource_cb_s {
 	/*
+	 * Flagset that controls which fields of this struct are valid.
+	 *
+	 * All members from mrc_arg through mrc_bind are mandatory, and are
+	 * implicitly valid.
+	 */
+	uint64_t		mrc_valid;
+	/*
+	 * Handle to the polling client, used as the first argument to all
+	 * callbacks.
+	 *
+	 * Must be non-NULL.
+	 */
+	void			*mrc_arg;
+	/*
 	 * A new softring has been created, with an opaque handle, CPU binding,
 	 * and control operations provided via `mac_resource_t`. The client
 	 * should return a non-NULL cookie which it can use to identify the ring
@@ -557,13 +636,11 @@ typedef struct mac_resource_cb_s {
 	 * The CPU binding of a soft ring's worker thread has been changed.
 	 */
 	mac_resource_bind_t	mrc_bind;
+
 	/*
-	 * Handle to the polling client, used as the first argument to all
-	 * callbacks.
-	 *
-	 * Must be non-NULL.
+	 * New members must be added here, and must define a flag entry in
+	 * mrc_valid to signal their presence.
 	 */
-	void			*mrc_arg;
 } mac_resource_cb_t;
 
 /*

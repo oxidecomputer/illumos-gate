@@ -1451,9 +1451,9 @@ mac_client_open(mac_handle_t mh, mac_client_handle_t *mchp, char *name,
 	flent->fe_mcip = mcip;
 
 	/* By default, hand all packets up to DLS. */
-	flent->fe_action.fa_flags = MFA_FLAGS_ACTION;
-	flent->fe_action.fa_direct_rx_fn = mac_rx_deliver;
-	flent->fe_action.fa_direct_rx_arg = (void *)mcip;
+	flent->fe_action.fai_flags = MFA_FLAGS_ACTION;
+	flent->fe_action.fai_rx_fn = mac_rx_deliver;
+	flent->fe_action.fai_rx_arg = (void *)mcip;
 
 	/*
 	 * Place initial creation reference on the flow. This reference
@@ -2345,9 +2345,9 @@ mac_unicast_flow_create(mac_client_impl_t *mcip, uint8_t *mac_addr,
 		return (err);
 
 	/* By default, hand all packets up to DLS. */
-	(*flent)->fe_action.fa_flags = MFA_FLAGS_ACTION;
-	(*flent)->fe_action.fa_direct_rx_fn = mac_rx_deliver;
-	(*flent)->fe_action.fa_direct_rx_arg = (void *)mcip;
+	(*flent)->fe_action.fai_flags = MFA_FLAGS_ACTION;
+	(*flent)->fe_action.fai_rx_fn = mac_rx_deliver;
+	(*flent)->fe_action.fai_rx_arg = (void *)mcip;
 
 	mac_misc_stat_create(*flent);
 	FLOW_MARK(*flent, FE_INCIPIENT);
@@ -4187,9 +4187,22 @@ mac_resource_set(mac_client_impl_t *mcip, mac_resource_cb_t *rcbs,
 	    mcip->mci_fastpath_ipv6_tcp :
 	    mcip->mci_fastpath_ipv4_tcp;
 
-	flow_action_t *ac = &affected_flent->fe_action;
-	ac->fa_flags |= MFA_FLAGS_RESOURCE;
-	ac->fa_resource = *rcbs;
+	flow_action_impl_t *curr = &affected_flent->fe_action;
+
+	const flow_action_t fp_act = {
+		.fa_flags = curr->fai_flags |= MFA_FLAGS_RESOURCE,
+		.fa_direct_rx_fn = curr->fai_rx_fn,
+		.fa_direct_rx_arg = curr->fai_rx_arg,
+		.fa_resource = rcbs,
+	};
+
+	/*
+	 * fp_act upholds all invariants we require of a flow_action_t before
+	 * making it part of the flent. Since it's built by us, we know these
+	 * invariants are upheld.
+	 */
+	VERIFY(mac_flow_action_validate(&fp_act));
+	mac_flow_action_into_impl(affected_flent, &fp_act);
 
 	mac_update_fastpath_flowtree(mcip);
 }
@@ -4201,9 +4214,20 @@ mac_resource_clear(mac_client_impl_t *mcip, boolean_t is_v6)
 	    mcip->mci_fastpath_ipv6_tcp :
 	    mcip->mci_fastpath_ipv4_tcp;
 
-	flow_action_t *ac = &affected_flent->fe_action;
-	ac->fa_flags &= ~MFA_FLAGS_RESOURCE;
-	bzero(&ac->fa_resource, sizeof (ac->fa_resource));
+	flow_action_impl_t *curr = &affected_flent->fe_action;
+
+	const flow_action_t fp_act = {
+		.fa_flags = curr->fai_flags & ~MFA_FLAGS_RESOURCE,
+		.fa_direct_rx_fn = curr->fai_rx_fn,
+		.fa_direct_rx_arg = curr->fai_rx_arg,
+		.fa_resource = NULL,
+	};
+
+	/*
+	 * As above, we know/need fp_act to be valid by construction.
+	 */
+	VERIFY(mac_flow_action_validate(&fp_act));
+	mac_flow_action_into_impl(affected_flent, &fp_act);
 
 	mac_update_fastpath_flowtree(mcip);
 }
@@ -6159,7 +6183,7 @@ mac_create_fastpath_flows(mac_client_impl_t *mcip)
 		VERIFY0(mac_flow_create(&f, NULL, flowname, NULL, FLOW_SUBFLOW,
 		    el->into));
 		(*el->into)->fe_ft_match = el->match;
-		(*el->into)->fe_action.fa_flags = MFA_FLAGS_RX_ONLY |
+		(*el->into)->fe_action.fai_flags = MFA_FLAGS_RX_ONLY |
 		    (el->delegate ? 0 : MFA_FLAGS_ACTION);
 		FLOW_REFHOLD(*el->into);
 	}
@@ -6254,9 +6278,9 @@ mac_update_fastpath_flowtree(mac_client_impl_t *mcip)
 	flow_entry_t *ipv6_udp = mcip->mci_fastpath_ipv6_udp;
 
 	const flow_entry_t *root_flent = mcip->mci_flent;
-	VERIFY3U(root_flent->fe_action.fa_flags & MFA_FLAGS_ACTION, !=, 0);
-	mac_direct_rx_t default_action = root_flent->fe_action.fa_direct_rx_fn;
-	mac_direct_rx_t default_arg = root_flent->fe_action.fa_direct_rx_arg;
+	VERIFY3U(root_flent->fe_action.fai_flags & MFA_FLAGS_ACTION, !=, 0);
+	mac_direct_rx_t default_action = root_flent->fe_action.fai_rx_fn;
+	mac_direct_rx_t default_arg = root_flent->fe_action.fai_rx_arg;
 
 	flow_tree_node_t *t_root = mcip->mci_rx_flow_tree;
 	if (t_root->ft_child != NULL) {
@@ -6265,14 +6289,12 @@ mac_update_fastpath_flowtree(mac_client_impl_t *mcip)
 	}
 
 	if (mcip->mci_v4_fastpath.mdrx != NULL) {
-		ipv4_tcp->fe_action.fa_direct_rx_fn =
+		ipv4_tcp->fe_action.fai_rx_fn =
 		    (mac_direct_rx_t)mac_strip_l2_and_do;
-		ipv4_tcp->fe_action.fa_direct_rx_arg =
-		    &mcip->mci_v4_fastpath;
-		ipv4_udp->fe_action.fa_direct_rx_fn =
+		ipv4_tcp->fe_action.fai_rx_arg = &mcip->mci_v4_fastpath;
+		ipv4_udp->fe_action.fai_rx_fn =
 		    (mac_direct_rx_t)mac_strip_l2_and_do;
-		ipv4_udp->fe_action.fa_direct_rx_arg =
-		    &mcip->mci_v4_fastpath;
+		ipv4_udp->fe_action.fai_rx_arg = &mcip->mci_v4_fastpath;
 
 		flow_tree_node_t *v4node = mac_flow_tree_node_create(ipv4);
 		t_root->ft_child = v4node;
@@ -6286,20 +6308,18 @@ mac_update_fastpath_flowtree(mac_client_impl_t *mcip)
 		udpnode->ft_parent = v4node;
 		tcpnode->ft_sibling = udpnode;
 	} else {
-		ipv4_tcp->fe_action.fa_direct_rx_fn = default_action;
-		ipv4_tcp->fe_action.fa_direct_rx_arg = default_arg;
-		ipv4_udp->fe_action.fa_direct_rx_fn = default_action;
-		ipv4_udp->fe_action.fa_direct_rx_arg = default_arg;
+		ipv4_tcp->fe_action.fai_rx_fn = default_action;
+		ipv4_tcp->fe_action.fai_rx_arg = default_arg;
+		ipv4_udp->fe_action.fai_rx_fn = default_action;
+		ipv4_udp->fe_action.fai_rx_arg = default_arg;
 	}
 	if (mcip->mci_v6_fastpath.mdrx != NULL) {
-		ipv6_tcp->fe_action.fa_direct_rx_fn =
+		ipv6_tcp->fe_action.fai_rx_fn =
 		    (mac_direct_rx_t)mac_strip_l2_and_do;
-		ipv6_tcp->fe_action.fa_direct_rx_arg =
-		    &mcip->mci_v6_fastpath;
-		ipv6_udp->fe_action.fa_direct_rx_fn =
+		ipv6_tcp->fe_action.fai_rx_arg = &mcip->mci_v6_fastpath;
+		ipv6_udp->fe_action.fai_rx_fn =
 		    (mac_direct_rx_t)mac_strip_l2_and_do;
-		ipv6_udp->fe_action.fa_direct_rx_arg =
-		    &mcip->mci_v6_fastpath;
+		ipv6_udp->fe_action.fai_rx_arg = &mcip->mci_v6_fastpath;
 
 		/*
 		 * If the IPv4 node has not been defined, then we attach IPv6 as
@@ -6322,10 +6342,10 @@ mac_update_fastpath_flowtree(mac_client_impl_t *mcip)
 		udpnode->ft_parent = v6node;
 		tcpnode->ft_sibling = udpnode;
 	} else {
-		ipv6_tcp->fe_action.fa_direct_rx_fn = default_action;
-		ipv6_tcp->fe_action.fa_direct_rx_arg = default_arg;
-		ipv6_udp->fe_action.fa_direct_rx_fn = default_action;
-		ipv6_udp->fe_action.fa_direct_rx_arg = default_arg;
+		ipv6_tcp->fe_action.fai_rx_fn = default_action;
+		ipv6_tcp->fe_action.fai_rx_arg = default_arg;
+		ipv6_udp->fe_action.fai_rx_fn = default_action;
+		ipv6_udp->fe_action.fai_rx_arg = default_arg;
 	}
 }
 
@@ -6384,7 +6404,7 @@ copy_basic_flent_onto(flow_entry_t *flent, void *raw_arg)
 	}
 
 	if (arg->is_tx &&
-	    (flent->fe_action.fa_flags & MFA_FLAGS_RX_ONLY) != 0) {
+	    (flent->fe_action.fai_flags & MFA_FLAGS_RX_ONLY) != 0) {
 		/* This subflow only exists for an Rx action and Rx stats. */
 		return (0);
 	}

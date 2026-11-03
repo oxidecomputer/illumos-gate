@@ -264,8 +264,8 @@ mac_flow_fini()
  * mac_create_flow(): create a flow_entry_t.
  */
 int
-mac_flow_create(flow_desc_t *fd, mac_resource_props_t *mrp, char *name,
-    void *client_cookie, uint_t type, flow_entry_t **flentp)
+mac_flow_create(const flow_desc_t *fd, mac_resource_props_t *mrp,
+    const char *name, void *client_cookie, uint_t type, flow_entry_t **flentp)
 {
 	flow_entry_t		*flent = *flentp;
 	int			err = 0;
@@ -1524,7 +1524,7 @@ mac_flow_hash_remove(flow_entry_t *flent)
  * Retrieve a flow entry from the global flow hash table.
  */
 int
-mac_flow_lookup_byname(char *name, flow_entry_t **flentp)
+mac_flow_lookup_byname(const char *name, flow_entry_t **flentp)
 {
 	int		err;
 	flow_entry_t	*flent;
@@ -1649,23 +1649,54 @@ mac_link_flow_init(mac_client_handle_t mch, flow_entry_t *sub_flow)
 }
 
 /*
- * mac_link_flow_add()
- * Used by flowadm(8) or kernel mac clients for creating flows.
+ * Convert a *known valid* flow_action_t (including NULL) into an internal
+ * flow_action_impl_t.
  */
-int
-mac_link_flow_add(datalink_id_t linkid, char *flow_name,
-    flow_desc_t *flow_desc, mac_resource_props_t *mrp)
+void
+mac_flow_action_into_impl(flow_entry_t *flent, const flow_action_t *ac)
 {
-	return (mac_link_flow_add_action(linkid, flow_name, flow_desc, mrp,
-	    NULL));
+	bzero(&flent->fe_action, sizeof (flent->fe_action));
+
+	if (ac == NULL)
+		return;
+
+	flent->fe_action.fai_flags = ac->fa_flags;
+
+	if ((ac->fa_flags & MFA_FLAGS_ACTION) != 0) {
+		flent->fe_action.fai_rx_fn = ac->fa_direct_rx_fn;
+		flent->fe_action.fai_rx_arg = ac->fa_direct_rx_arg;
+	}
+
+	/*
+	 * This is copied out laboriously rather than memcpy'd because we
+	 * do not want to copy out any fields protected by flags in mrc_valid.
+	 */
+	if ((ac->fa_flags & MFA_FLAGS_RESOURCE) != 0) {
+		mac_resource_cb_t *ours = &flent->fe_action.fai_resource;
+		const mac_resource_cb_t *theirs = ac->fa_resource;
+		VERIFY3P(theirs, !=, NULL);
+
+		/*
+		 * All data from the start of the struct through mrc_bind
+		 * is guaranteed to be defined. bcopy() these in one shot.
+		 */
+		bcopy(theirs, ours, offsetof(mac_resource_cb_t, mrc_bind) +
+		    sizeof (mac_resource_bind_t));
+
+		/*
+		 * Additional fields controlled by mrc_valid must be copied
+		 * out piecemeal here.
+		 */
+	}
 }
 
 /*
- * Used by kernel mac clients for creating flows with a specified action.
+ * Used by flowadm(8) or kernel mac clients for creating flows.
  */
 int
-mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
-    flow_desc_t *flow_desc, mac_resource_props_t *mrp, const flow_action_t *ac)
+mac_link_flow_add(datalink_id_t linkid, const char *flow_name,
+    const flow_desc_t *flow_desc, mac_resource_props_t *mrp,
+    const flow_action_t *ac, flow_entry_handle_t *flent_out)
 {
 	flow_entry_t		*flent = NULL;
 	int			err;
@@ -1695,9 +1726,7 @@ mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
 	if (err != 0)
 		return (err);
 
-	if (ac != NULL) {
-		flent->fe_action = *ac;
-	}
+	mac_flow_action_into_impl(flent, ac);
 
 	/*
 	 * We've got a local variable referencing this flow now, so we need
@@ -1759,6 +1788,10 @@ mac_link_flow_add_action(datalink_id_t linkid, char *flow_name,
 	FLOW_UNMARK(flent, FE_INCIPIENT);
 	dls_devnet_rele_link(dlh, dlp);
 	mac_perim_exit(mph);
+
+	if (flent_out != NULL)
+		*flent_out = flent;
+
 	return (0);
 
 bail:
@@ -1839,7 +1872,7 @@ mac_link_flow_clean(mac_client_handle_t mch, flow_entry_t *sub_flow)
  * Used by flowadm(8) or kernel mac clients for removing flows.
  */
 int
-mac_link_flow_remove(char *flow_name)
+mac_link_flow_remove(const char *flow_name)
 {
 	flow_entry_t		*flent;
 	mac_perim_handle_t	mph;
@@ -1906,7 +1939,7 @@ mac_link_flow_remove(char *flow_name)
  * Modifies the properties of a flow identified by its name.
  */
 int
-mac_link_flow_modify(char *flow_name, mac_resource_props_t *mrp)
+mac_link_flow_modify(const char *flow_name, mac_resource_props_t *mrp)
 {
 	flow_entry_t		*flent;
 	mac_client_impl_t	*mcip;
@@ -2043,7 +2076,7 @@ mac_link_flow_walk(datalink_id_t linkid,
  * Retrieves information about a specific flow.
  */
 int
-mac_link_flow_info(char *flow_name, mac_flowinfo_t *finfo)
+mac_link_flow_info(const char *flow_name, mac_flowinfo_t *finfo)
 {
 	flow_entry_t	*flent;
 	int		err;
@@ -2978,7 +3011,15 @@ mac_flow_tab_info_get(flow_mask_t mask)
 bool
 mac_flow_action_validate(const flow_action_t *action)
 {
-	if ((action->fa_flags & MFA_FLAGS_ACTION) != 0) {
+	/*
+	 * Has the client asked for functionality we don't know about?
+	 */
+	if ((action->fa_flags & ~MFA_FLAGS_ALL) != 0) {
+		return (false);
+	}
+
+	const bool has_action = (action->fa_flags & MFA_FLAGS_ACTION) != 0;
+	if (has_action) {
 		/*
 		 * A drop action must have no argument configured.
 		 */
@@ -2990,11 +3031,21 @@ mac_flow_action_validate(const flow_action_t *action)
 
 	if ((action->fa_flags & MFA_FLAGS_RESOURCE) != 0) {
 		/*
-		 * Resource API users must be able to handle all aspects of
-		 * a soft ring's lifecycle.
+		 * RESOURCE requires ACTION as a prerequisite flag.
 		 */
-		const mac_resource_cb_t *rx = &action->fa_resource;
-		if (rx->mrc_add == NULL ||
+		if (!has_action) {
+			return (false);
+		}
+
+		/*
+		 * Resource API users must be able to handle core aspects of
+		 * a soft ring's lifecycle, and any additional callbacks
+		 * marked as valid must be non-NULL.
+		 */
+		const mac_resource_cb_t *rx = action->fa_resource;
+
+		if (rx == NULL ||
+		    rx->mrc_add == NULL ||
 		    rx->mrc_remove == NULL ||
 		    rx->mrc_quiesce == NULL ||
 		    rx->mrc_restart == NULL ||

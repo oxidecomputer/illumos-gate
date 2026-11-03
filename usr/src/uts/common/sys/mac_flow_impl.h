@@ -499,6 +499,17 @@ typedef struct {
 	flow_tree_bw_refund_t	*ftb_bw_refund;	/* len = ftb_depth */
 } flow_tree_baked_t;
 
+/*
+ * Normalised form of a flow_action_t, copying out client-specified pointers
+ * and explicitly NULL-ing invalid fields.
+ */
+typedef struct {
+	fa_flags_t		fai_flags;
+	mac_direct_rx_t		fai_rx_fn;
+	void			*fai_rx_arg;
+	mac_resource_cb_t	fai_resource;
+} flow_action_impl_t;
+
 struct flow_entry_s {					/* Protected by */
 	flow_entry_t		*fe_next;		/* ft_lock */
 
@@ -640,8 +651,11 @@ struct flow_entry_s {					/* Protected by */
 	/*
 	 * The specification for how packets matching this flow entry
 	 * should be processed.
+	 *
+	 * This is normalised and copied out from the client-provided
+	 * flow_action_t.
 	 */
-	flow_action_t		fe_action;
+	flow_action_impl_t	fe_action;
 
 	/*
 	 * The specification for how packets should be matched within a
@@ -886,14 +900,14 @@ typedef struct flow_tab_info_s {
 
 extern void	mac_flow_init();
 extern void	mac_flow_fini();
-extern int	mac_flow_create(flow_desc_t *, mac_resource_props_t *,
-		    char *, void *, uint_t, flow_entry_t **);
+extern int	mac_flow_create(const flow_desc_t *, mac_resource_props_t *,
+		    const char *, void *, uint_t, flow_entry_t **);
 
 extern int	mac_flow_add(flow_tab_t *, flow_entry_t *);
 extern int	mac_flow_add_subflow(mac_client_handle_t, flow_entry_t *,
 		    boolean_t);
 extern int	mac_flow_hash_add(flow_entry_t *);
-extern int	mac_flow_lookup_byname(char *, flow_entry_t **);
+extern int	mac_flow_lookup_byname(const char *, flow_entry_t **);
 extern int	mac_flow_lookup(flow_tab_t *, mblk_t *, uint_t,
 		    flow_entry_t **);
 
@@ -937,6 +951,8 @@ extern void	mac_flow_tree_node_destroy(flow_tree_node_t *);
 extern void	mac_flow_tree_destroy(flow_tree_node_t *);
 
 extern bool	mac_flow_action_validate(const flow_action_t *);
+extern void	mac_flow_action_into_impl(flow_entry_t *,
+		    const flow_action_t *);
 
 /*
  * Is the target bandwidth control enabled?

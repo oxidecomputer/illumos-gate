@@ -1147,7 +1147,6 @@ extern void mac_fanout_setup(mac_client_impl_t *, flow_entry_t *,
     mac_resource_props_t *, cpupart_t *);
 
 extern void mac_soft_ring_worker_wakeup(mac_soft_ring_t *);
-extern mblk_t *mac_soft_ring_poll(mac_soft_ring_t *, size_t);
 
 extern void mac_rx_soft_ring_drain(mac_soft_ring_t *);
 
@@ -1214,8 +1213,7 @@ extern void mac_tx_srs_walk_flowtree_stat(mac_soft_ring_set_t *,
     flow_tree_pkt_set_t *, const uintptr_t);
 
 /* Resource callbacks for clients */
-extern int mac_soft_ring_intr_enable(void *);
-extern boolean_t mac_soft_ring_intr_disable(void *);
+extern const mac_rx_fifo_ops_t mac_soft_ring_ops;
 extern cpu_t *mac_soft_ring_bind(mac_soft_ring_t *, processorid_t);
 extern void mac_soft_ring_unbind(mac_soft_ring_t *);
 

@@ -102,6 +102,17 @@ uint32_t mac_tx_soft_ring_hiwat = 1000;
 
 extern kmem_cache_t *mac_soft_ring_cache;
 
+static int mac_soft_ring_intr_enable(mac_rx_fifo_handle_t);
+static boolean_t mac_soft_ring_intr_disable(mac_rx_fifo_handle_t);
+static mblk_t *mac_soft_ring_poll(mac_rx_fifo_handle_t, size_t);
+
+const mac_rx_fifo_ops_t mac_soft_ring_ops = {
+	.mrfo_valid = 0,
+	.mrfo_enable = mac_soft_ring_intr_enable,
+	.mrfo_disable = mac_soft_ring_intr_disable,
+	.mrfo_receive = mac_soft_ring_poll,
+};
+
 #define	ADD_SOFTRING_TO_SET(mac_srs, softring) {			\
 	if (mac_srs->srs_soft_ring_head == NULL) {			\
 		mac_srs->srs_soft_ring_head = softring;			\
@@ -542,8 +553,8 @@ done:
  * Enabling is allow the processing thread to send packets to the
  * client while disabling does the opposite.
  */
-int
-mac_soft_ring_intr_enable(void *arg)
+static int
+mac_soft_ring_intr_enable(mac_rx_fifo_handle_t arg)
 {
 	mac_soft_ring_t *ringp = (mac_soft_ring_t *)arg;
 	mutex_enter(&ringp->s_ring_lock);
@@ -554,8 +565,8 @@ mac_soft_ring_intr_enable(void *arg)
 	return (0);
 }
 
-boolean_t
-mac_soft_ring_intr_disable(void *arg)
+static boolean_t
+mac_soft_ring_intr_disable(mac_rx_fifo_handle_t arg)
 {
 	mac_soft_ring_t *ringp = (mac_soft_ring_t *)arg;
 	boolean_t sring_blanked = B_FALSE;
@@ -580,9 +591,10 @@ mac_soft_ring_intr_disable(void *arg)
  * the soft ring is exchanged during capability negotiation during
  * setup.
  */
-mblk_t *
-mac_soft_ring_poll(mac_soft_ring_t *ringp, size_t bytes_to_pickup)
+static mblk_t *
+mac_soft_ring_poll(mac_rx_fifo_handle_t arg, size_t bytes_to_pickup)
 {
+	mac_soft_ring_t *ringp = (mac_soft_ring_t *)arg;
 	mblk_t	*head, *tail;
 	mblk_t	*mp;
 	size_t	sz = 0;

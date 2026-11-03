@@ -289,8 +289,14 @@ typedef enum {
 	MFA_FLAGS_RX_ONLY	= 1 << 2,
 } fa_flags_t;
 
+#define	MFA_FLAGS_ALL	(MFA_FLAGS_ACTION | MFA_FLAGS_RESOURCE |	\
+    MFA_FLAGS_RX_ONLY)
+
 typedef struct {
-	fa_flags_t fa_flags;
+	/*
+	 * Flags denoting the behaviour and field validity of this action.
+	 */
+	uint64_t	fa_flags;
 
 	/*
 	 * Function pointer used to handle each inbound packet when
@@ -307,15 +313,17 @@ typedef struct {
 	void		*fa_direct_rx_arg;
 
 	/*
-	 * Used when MFA_FLAGS_RESOURCE is set alongside MFA_FLAGS_ACTION.
+	 * Used when MFA_FLAGS_RESOURCE is set alongside MFA_FLAGS_ACTION. When
+	 * set this value must be non-NULL, and NULL when this flag is absent.
 	 *
 	 * This exposes existing functionality used for DLS bypass to inform
 	 * a client about softring creation/deletion, CPU bindings and to
 	 * enable/disable/perform softring polling.
 	 *
-	 * If set, all fields of this struct must have non-NULL values.
+	 * If set, all fields of this struct which are implicitly/explicitly
+	 * valid must have non-NULL values.
 	 */
-	mac_resource_cb_t	fa_resource;
+	const mac_resource_cb_t	*fa_resource;
 } flow_action_t;
 
 #endif	/* _KERNEL */

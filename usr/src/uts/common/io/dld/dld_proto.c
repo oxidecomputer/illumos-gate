@@ -1458,6 +1458,7 @@ dld_capab_poll_enable(dld_str_t *dsp, dld_capab_poll_t *poll)
 	 * the user decides to modify CPU bindings to use more CPUs for the
 	 * device in which case we will switch to fanout using soft rings.
 	 */
+	rcbs.mrc_valid = 0;
 	rcbs.mrc_add = (mac_resource_add_t)poll->poll_ring_add_cf;
 	rcbs.mrc_remove = (mac_resource_remove_t)poll->poll_ring_remove_cf;
 	rcbs.mrc_quiesce = (mac_resource_quiesce_t)poll->poll_ring_quiesce_cf;
