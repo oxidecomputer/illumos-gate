@@ -125,7 +125,6 @@ SUBDIRS +=				\
 	libdtrace_jni	\
 	libdwarf	\
 	libefi		\
-	libefivar	\
 	libelfsign	\
 	libeti		\
 	libexacct	\
@@ -283,6 +282,7 @@ SUBDIRS +=				\
 
 i386_SUBDIRS=		\
 	lib9p		\
+	libefivar	\
 	libfdisk	\
 	libhsmp		\
 	libppt		\
