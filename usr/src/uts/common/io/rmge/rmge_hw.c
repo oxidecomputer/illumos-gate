@@ -30,7 +30,9 @@
  * Copyright 2026 Oxide Computer Company
  *
  * This file, while modified to suit our needs, is a derived work of the
- * FreeBSD driver, and carries the license header.
+ * FreeBSD driver, and as such, carries the license header above. While some
+ * functions are line-by-line translations, others have been entirely re-
+ * written. Some do not appear in the FreeBSD driver at all.
  */
 
 #include <sys/errno.h>
@@ -392,24 +394,17 @@ rmge_exit_oob(rmge_t *rmge)
 }
 
 static void
-rmge_set_phy_power(rmge_t *rmge, uint32_t on)
+rmge_set_phy_power(rmge_t *rmge)
 {
-	if (on) {
-		rmge_setbit1(rmge, RMGE_PMCH, 0xc0);
+	rmge_setbit1(rmge, RMGE_PMCH, 0xc0);
 
-		rmge_write_phy(rmge, 0, MII_CONTROL, MII_CONTROL_ANE);
+	rmge_write_phy(rmge, 0, MII_CONTROL, MII_CONTROL_ANE);
 
-		for (uint_t i = 0; i < RMGE_TIMEOUT; i++) {
-			if ((rmge_read_phy_ocp(rmge, 0xa420) & 0x0007) == 3) {
-				break;
-			}
-			drv_usecwait(1000);
+	for (uint_t i = 0; i < RMGE_TIMEOUT; i++) {
+		if ((rmge_read_phy_ocp(rmge, 0xa420) & 0x0007) == 3) {
+			break;
 		}
-	} else {
-		rmge_write_phy(rmge, 0, MII_CONTROL,
-		    MII_CONTROL_ANE | MII_CONTROL_PWRDN);
-		rmge_clrbit1(rmge, RMGE_PMCH, 0x80);
-		rmge_clrbit1(rmge, RMGE_PPSW, 0x40);
+		drv_usecwait(1000);
 	}
 }
 
@@ -475,7 +470,7 @@ rmge_drive_to_reset(rmge_t *rmge)
 		return (rc);
 	}
 
-	rmge_set_phy_power(rmge, 1);
+	rmge_set_phy_power(rmge);
 	rmge_hw_init(rmge);
 	rmge_hw_reset(rmge);
 
