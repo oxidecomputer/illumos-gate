@@ -343,6 +343,18 @@ rmge_reset(rmge_t *rmge)
 	return (RMGE_FAILURE);
 }
 
+/*
+ * Realtek NICs have a MIPS-based embedded Linux system on them that hosts a
+ * IPMI/BMC-like interface, which is nominally an implementation of a DMTF
+ * standard known as 'DASH'. Realtek refer to this as out-of-band management
+ * (OOB). Unfortunately, OOB and operating systems cannot simultaneously
+ * control the NIC. Moreover, it has a chequered security history, with
+ * sentiment quite dour on the Linux kernel mailing list. We turn it off with
+ * prejudice.
+ *
+ * Fortunately this operation seems to be idempotent, as early firmware
+ * (BIOS/UEFI) may also disable OOB.
+ */
 static int
 rmge_exit_oob(rmge_t *rmge)
 {
