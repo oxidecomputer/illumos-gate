@@ -352,7 +352,7 @@ rmge_reset(rmge_t *rmge)
  * sentiment quite dour on the Linux kernel mailing list. We turn it off with
  * prejudice.
  *
- * Fortunately this operation seems to be idempotent, as early firmware
+ * On the plus side, this operation seems to be idempotent, as early firmware
  * (BIOS/UEFI) may also disable OOB.
  */
 static int
@@ -360,14 +360,12 @@ rmge_exit_oob(rmge_t *rmge)
 {
 	int rc;
 
-	/* Disable RealWoW. */
 	rmge_write_mac_ocp(rmge, 0xc0bc, 0x00ff);
 
 	if ((rc = rmge_reset(rmge)) != RMGE_SUCCESS) {
 		return (rc);
 	}
 
-	/* Disable OOB. */
 	rmge_clrbit1(rmge, RMGE_MCUCMD, RMGE_MCUCMD_IS_OOB);
 
 	rmge_mac_clrbit(rmge, 0xe8de, 0x4000);
