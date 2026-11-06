@@ -7,6 +7,23 @@
  * Copyright 2026 Oxide Computer Company
  */
 
+/*
+ * Realtek multi-gigabit ethernet driver.
+ *
+ * While an existing Realtek ethernet driver exists - rge(4D) - it does not
+ * suffice to drive newer hardware. Newer devices require highly ceremonialised
+ * reset and firmware loading on the control path, and the packet descriptors
+ * on the data path are quite different from earlier models. Folding this code
+ * into the existing driver (it has been tried) results in vastly more branchy
+ * and complex code than we would like, especially given the absence of
+ * adequate literature for driver authors.
+ *
+ * Indeed, OpenBSD and FreeBSD have come to the same conclusion, and provide a
+ * driver called rge, not to be confused with our rge(4D). We have lifted
+ * hardware initialization code from FreeBSD, which has been sequestered in
+ * rmge_hw.c.
+ */
+
 #ifndef _RMGE_H
 #define	_RMGE_H
 
