@@ -455,6 +455,7 @@ typedef enum smn_unit {
 	SMN_UNIT_FCH_RMTGPIO_AGG,
 	SMN_UNIT_FCH_I3C,
 	SMN_UNIT_FCH_ESPI,
+	SMN_UNIT_FCH_HPET,
 	SMN_UNIT_HSMP,
 	SMN_UNIT_PSP,
 } smn_unit_t;
