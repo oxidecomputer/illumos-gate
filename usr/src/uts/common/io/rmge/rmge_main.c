@@ -35,7 +35,7 @@ rmge_identify_device_particulars(rmge_t *rmge)
 	ASSERT3U(rmge->hw->chip_id, ==, RMGE_HW_UNKNOWN);
 
 	txcfg = ddi_get32(rmge->bar2_mmio_handle,
-	    (uint32_t*)rmge->bar2_mmio_addr + RMGE_REG_TXCFG);
+	    (uint32_t *)(rmge->bar2_mmio_addr + RMGE_REG_TXCFG));
 
 	hw_rev_raw = txcfg & RMGE_REG_TXCFG_MASK_HW_REV;
 
@@ -51,11 +51,9 @@ rmge_identify_device_particulars(rmge_t *rmge)
 		return (RMGE_FAILURE);
 	}
 
-	/* Across device families, the MAC address is stored in the first six
-	 * bytes of bar 2 */
 	for (uint_t i = 0; i < ETHERADDRL; i++) {
 		rmge->hw.mac_addr[i] = ddi_get8(rmge->bar2_mmio_handle,
-		    (uint8_t*)rmge->bar2_mmio_addr + i);
+		    (uint8_t *)rmge->bar2_mmio_addr + i);
 	}
 
 	rmge->att_milestone |= RMGE_ATT_MILESTONE_ID_HW_REV;

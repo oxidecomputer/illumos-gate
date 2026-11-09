@@ -50,7 +50,7 @@ extern "C" {
  */
 typedef enum {
 	RMGE_HW_UNKNOWN = 0,
-	RMGE_HW_REV_RTL8125B
+	RMGE_HW_REV_RTL8125B = 0x64100000
 } rmge_hw_rev_t;
 
 typedef enum {

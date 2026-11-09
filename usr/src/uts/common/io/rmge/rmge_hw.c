@@ -57,9 +57,6 @@
 
 #include "rmge.h"
 
-#define	RMGE_HW_REV_RTL8125B		0x64100000
-#define	RMGE_REG_IDR0			0x00
-
 #define	RMGE_CMD			0x0037
 #define	RMGE_CMD_TXENB			0x04
 #define	RMGE_CMD_RXENB			0x08
@@ -115,8 +112,8 @@
 #define	RMGE_RXCFG_VLANSTRIP		0x00c00000
 
 /* Undocumented, inferred register and constant values */
-#define RMGE_INF_REALWOW		0x0000c0bc
-#define RMGE_INF_REALWOW_DISABLE	0x000000ff
+#define	RMGE_INF_REALWOW		0x0000c0bc
+#define	RMGE_INF_REALWOW_DISABLE	0x000000ff
 
 static uint32_t
 rmge_read4(rmge_t *rmge, uint32_t reg)
@@ -306,15 +303,6 @@ rmge_write_phy(rmge_t *rmge, uint16_t addr, uint16_t reg, uint16_t val)
 	phyaddr += (off - 16) << 1;
 
 	rmge_write_phy_ocp(rmge, phyaddr, val);
-}
-
-static void
-rmge_read_mac_addr(rmge_t *rmge)
-{
-	for (uint_t i = 0; i < ETHERADDRL; i++) {
-		rmge->hw.mac_addr[i] =
-		    rmge_read1(rmge, RMGE_REG_IDR0 + i);
-	}
 }
 
 static int
