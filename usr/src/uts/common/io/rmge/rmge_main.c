@@ -17,9 +17,51 @@
 
 #include "rmge.h"
 
+#define	RMGE_REG_TXCFG			0x40
+#define	RMGE_REG_TXCFG_MASK_HW_REV	0x7cf00000
+
 static void *rmge_soft_state;
 
 static mac_callbacks_t rmge_mac_callbacks;
+
+static int
+rmge_identify_device_particulars(rmge_t *rmge)
+{
+	uint32_t txcfg;
+	uint32_t hw_rev_raw;
+
+	ASSERT3P(rmge, !=, NULL);
+	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
+	ASSERT3U(rmge->hw->chip_id, ==, RMGE_HW_UNKNOWN);
+
+	txcfg = ddi_get32(rmge->bar2_mmio_handle,
+	    (uint32_t*)rmge->bar2_mmio_addr + RMGE_REG_TXCFG);
+
+	hw_rev_raw = txcfg & RMGE_REG_TXCFG_MASK_HW_REV;
+
+	switch (hw_rev_raw) {
+	case RMGE_HW_REV_RTL8125B:
+		rmge->hw.rev = RMGE_HW_REV_RTL8125B;
+		rmge->hw.firmware_name = "rtl8125b-2.bin";
+		break;
+	default:
+		dev_err(rmge->dip, CE_WARN,
+		    "unsupported hardware revision 0x%08x (TXCFG 0x%08x)",
+		    hw_rev_raw, txcfg);
+		return (RMGE_FAILURE);
+	}
+
+	/* Across device families, the MAC address is stored in the first six
+	 * bytes of bar 2 */
+	for (uint_t i = 0; i < ETHERADDRL; i++) {
+		rmge->hw.mac_addr[i] = ddi_get8(rmge->bar2_mmio_handle,
+		    (uint8_t*)rmge->bar2_mmio_addr + i);
+	}
+
+	rmge->att_milestone |= RMGE_ATT_MILESTONE_ID_HW_REV;
+
+	return (RMGE_SUCCESS);
+}
 
 /*
  * Setup internal mappings to the device's config and status registers, in

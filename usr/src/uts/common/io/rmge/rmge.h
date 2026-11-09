@@ -85,7 +85,6 @@ typedef struct rmge {
 	rmge_hw_t		hw;
 } rmge_t;
 
-int rmge_identify_device_particulars(rmge_t *);
 int rmge_drive_to_reset(rmge_t *);
 void rmge_fw_stub();
 
