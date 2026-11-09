@@ -28,7 +28,6 @@ static int
 rmge_identify_device_particulars(rmge_t *rmge)
 {
 	uint32_t txcfg;
-	uint32_t hw_rev_raw;
 
 	ASSERT3P(rmge, !=, NULL);
 	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
@@ -37,17 +36,16 @@ rmge_identify_device_particulars(rmge_t *rmge)
 	txcfg = ddi_get32(rmge->bar2_mmio_handle,
 	    (uint32_t *)(rmge->bar2_mmio_addr + RMGE_REG_TXCFG));
 
-	hw_rev_raw = txcfg & RMGE_REG_TXCFG_MASK_HW_REV;
+	rmge->hw.rev = txcfg & RMGE_REG_TXCFG_MASK_HW_REV;
 
-	switch (hw_rev_raw) {
+	switch (rmge->hw.rev) {
 	case RMGE_HW_REV_RTL8125B:
-		rmge->hw.rev = RMGE_HW_REV_RTL8125B;
 		rmge->hw.firmware_name = "rtl8125b-2.bin";
 		break;
 	default:
 		dev_err(rmge->dip, CE_WARN,
 		    "unsupported hardware revision 0x%08x (TXCFG 0x%08x)",
-		    hw_rev_raw, txcfg);
+		    rmge->hw.rev, txcfg);
 		return (RMGE_FAILURE);
 	}
 
