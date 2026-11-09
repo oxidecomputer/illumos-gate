@@ -32,7 +32,23 @@
  * This file, while modified to suit our needs, is a derived work of the
  * FreeBSD driver, and as such, carries the license header above. While some
  * functions are line-by-line translations, others have been entirely re-
- * written. Some do not appear in the FreeBSD driver at all.
+ * written. Some do not appear in the FreeBSD driver at all. This file has been
+ * imported because Realtek does not distribute programming literature for
+ * these devices. Where possible, we have tried to divine the meaning of
+ * unexplained constants. This proves challenging, as the ultimate source of
+ * these values is undocumented, out-of-tree Linux kernel driver drops from
+ * Realtek themselves.
+ *
+ * In the cases where our code is less opaque than upstream
+ * FreeBSD, meaning of constants has been inferred from corroborating their
+ * usage across:
+ *
+ * 1. The XpressReal board's source https://github.com/XpressReal/linux-sdk/
+ * 2. DPDK: https://github.com/DPDK/dpdk/blob/main/drivers/net/r8169/r8169_hw.c
+ * 3. Linux's Realtek USB (!) code: drivers/net/usb/r8152.c
+ *
+ * These inferences should not be considered dependable, and exist only to make
+ * the code more readable.
  */
 
 #include <sys/errno.h>
@@ -97,6 +113,10 @@
 #define	RMGE_RXCFG_RUNT			0x00000010
 #define	RMGE_RXCFG_ERRPKT		0x00000020
 #define	RMGE_RXCFG_VLANSTRIP		0x00c00000
+
+/* Undocumented, inferred register and constant values */
+#define RMGE_INF_REALWOW		0x0000c0bc
+#define RMGE_INF_REALWOW_DISABLE	0x000000ff
 
 static uint32_t
 rmge_read4(rmge_t *rmge, uint32_t reg)
@@ -360,8 +380,6 @@ rmge_exit_oob(rmge_t *rmge)
 {
 	int rc;
 
-	rmge_write_mac_ocp(rmge, 0xc0bc, 0x00ff);
-
 	if ((rc = rmge_reset(rmge)) != RMGE_SUCCESS) {
 		return (rc);
 	}
@@ -475,6 +493,9 @@ int
 rmge_drive_to_reset(rmge_t *rmge)
 {
 	int rc;
+
+	/* Disable the "wake-on-WAN" feature. */
+	rmge_write_mac_ocp(rmge, RMGE_INF_REALWOW, RMGE_INF_REALWOW_DISABLE);
 
 	if ((rc = rmge_exit_oob(rmge)) != RMGE_SUCCESS) {
 		return (rc);
