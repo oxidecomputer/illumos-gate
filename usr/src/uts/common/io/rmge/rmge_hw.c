@@ -458,38 +458,6 @@ rmge_hw_reset(rmge_t *rmge)
 }
 
 int
-rmge_identify_device_particulars(rmge_t *rmge)
-{
-	uint32_t txcfg;
-	uint32_t hw_rev_raw;
-
-	ASSERT3P(rmge, !=, NULL);
-	ASSERT(rmge->att_milestone & RMGE_ATT_MILESTONE_CSRS);
-	ASSERT3U(rmge->hw->chip_id, ==, RMGE_HW_UNKNOWN);
-
-	txcfg = rmge_read4(rmge, RMGE_REG_TXCFG);
-	hw_rev_raw = txcfg & RMGE_REG_TXCFG_MASK_HW_REV;
-
-	switch (hw_rev_raw) {
-	case RMGE_HW_REV_RTL8125B:
-		rmge->hw.rev = RMGE_HW_REV_RTL8125B;
-		rmge->hw.firmware_name = "rtl8125b-2.bin";
-		break;
-	default:
-		dev_err(rmge->dip, CE_WARN,
-		    "unsupported hardware revision 0x%08x (TXCFG 0x%08x)",
-		    hw_rev_raw, txcfg);
-		return (RMGE_FAILURE);
-	}
-
-
-	rmge_read_mac_addr(rmge);
-	rmge->att_milestone |= RMGE_ATT_MILESTONE_ID_HW_REV;
-
-	return (RMGE_SUCCESS);
-}
-
-int
 rmge_drive_to_reset(rmge_t *rmge)
 {
 	int rc;
