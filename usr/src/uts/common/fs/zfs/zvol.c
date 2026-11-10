@@ -2535,8 +2535,14 @@ out:
 		smt_begin_unsafe();
 
 		for (int i = 0; i < dfl->dfl_num_exts; i++) {
-			uint64_t start = dfl->dfl_exts[i].dfle_start,
+			uint64_t start = dfl->dfl_offset +
+			    dfl->dfl_exts[i].dfle_start,
 			    length = dfl->dfl_exts[i].dfle_length;
+
+			if (start < dfl->dfl_offset) {
+				error = SET_ERROR(EINVAL);
+				break;
+			}
 
 			/*
 			 * Apply Postel's Law to length-checking.  If they
