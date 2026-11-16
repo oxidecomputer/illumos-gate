@@ -205,11 +205,6 @@ rmge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 		goto rollback;
 	}
 
-	if (rmge_drive_to_reset(rmge) != RMGE_SUCCESS) {
-		cmn_err(CE_WARN, "failed to reset hw device");
-		goto rollback;
-	}
-
 	if (rmge_register_mac_device(rmge) != RMGE_SUCCESS) {
 		goto rollback;
 	}
