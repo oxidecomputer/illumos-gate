@@ -11,18 +11,14 @@
 
 UTSBASE = ../..
 
-FWDIR		= $(UTSBASE)/common/io/rmge/firmware
-FWFILES		= rtl8125b-2.bin
-
 MODULE		= rmge
 OBJECTS		= $(RMGE_OBJS:%=$(OBJS_DIR)/%)
 ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
-ROOTFIRMWARE	= $(FWFILES:%=$(ROOT_FIRMWARE_DIR)/$(MODULE)/%)
 
 include $(UTSBASE)/intel/Makefile.intel
 
 ALL_TARGET	= $(BINARY)
-INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOTFIRMWARE)
+INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 CPPFLAGS	+= -I$(UTSBASE)/common/io/rmge
 
 LDFLAGS		+= -N misc/mac -N drv/ip

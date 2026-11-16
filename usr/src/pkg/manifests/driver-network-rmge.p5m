@@ -11,9 +11,8 @@
 
 <include global_zone_only_component>
 set name=pkg.fmri value=pkg:/driver/network/rmge@$(PKGVERS)
-set name=pkg.summary value="Realtek Multi-Gigabit Ethernet driver scaffold"
-set name=pkg.description \
-    value="Non-functional scaffold for a Realtek Multi-Gigabit Ethernet driver"
+set name=pkg.summary value="Realtek Multi-Gigabit Ethernet driver"
+set name=pkg.description value="Realtek Multi-Gigabit Ethernet driver"
 set name=info.classification \
     value=org.opensolaris.category.2008:Drivers/Networking
 set name=variant.arch value=$(ARCH)
@@ -21,14 +20,9 @@ dir  path=kernel group=sys
 dir  path=kernel/drv group=sys
 dir  path=kernel/drv/$(ARCH64) group=sys
 file path=kernel/drv/$(ARCH64)/rmge group=sys
-dir  path=kernel/firmware group=sys
-dir  path=kernel/firmware/rmge group=sys
-file path=kernel/firmware/rmge/rtl8125b-2.bin
 dir  path=usr/share/man
 dir  path=usr/share/man/man4d
 file path=usr/share/man/man4d/rmge.4d
 driver name=rmge perms="* 0666 root sys" clone_perms="rmge 0666 root sys" \
     alias=pciex10ec,3000
 license lic_CDDL license=lic_CDDL
-license usr/src/uts/common/io/rmge/firmware/THIRDPARTYLICENSE \
-    license=usr/src/uts/common/io/rmge/firmware/THIRDPARTYLICENSE
