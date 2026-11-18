@@ -15,21 +15,23 @@
 #
 
 . $STF_SUITE/include/libtest.shlib
+. $STF_SUITE/tests/functional/zvol/zvol_common.shlib
 
 #
 # DESCRIPTION:
-# Verify that a raw zvol whose first open fails (because there is not
-# enough space to preallocate it) can still be opened later and destroyed.
+# Verify that a raw zvol without enough space to initialize can still be
+# opened, that its initialization fails with ENOSPC, that the failure is
+# final, and that the volume can be destroyed.
 #
 # STRATEGY:
 # 1. Create a raw zvol under a filesystem. Raw zvol creation clears the
 #    refreservation, so no space is reserved for it yet.
 # 2. Set a quota on the parent filesystem that is smaller than the volume.
-# 3. Verify that opening the volume fails, twice.
-# 4. Verify that the volume can be destroyed.
-# 5. Recreate the volume, fail its first open again, remove the quota,
-#    and verify that the volume can now be opened and read once its
-#    initialization completes. Then destroy it.
+# 3. Verify that opening the volume succeeds, that its initialization
+#    fails with ENOSPC, and that reads fail.
+# 4. Remove the quota.  Verify that reopening the volume, also after its
+#    minor is recreated, still reports ENOSPC.
+# 5. Verify that the volume can be destroyed.
 #
 
 verify_runnable "global"
@@ -37,48 +39,37 @@ verify_runnable "global"
 PARENT=$TESTPOOL/rawparent
 RAWVOL=$PARENT/rawvol
 RAWDEV=$ZVOL_RDEVDIR/$RAWVOL
+typeset -i VOLSIZE=$((256 * 1024 * 1024))
 
 function cleanup
 {
+	rawvol_release
+	destroy_raw_zvol $RAWVOL
+	destroy_raw_zvol $RAWVOL-renamed
 	datasetexists $PARENT && destroy_dataset $PARENT -r
 }
 
-function open_rawvol
-{
-	dd if=$RAWDEV of=/dev/null bs=128k count=1
-}
-
-log_assert "A raw zvol can be destroyed after its first open fails"
+log_assert "A raw zvol without enough space to initialize opens, reports" \
+    "ENOSPC, and can be destroyed"
 log_onexit cleanup
 
 log_must zfs create $PARENT
-log_must zfs create -V 256m -o rawvol=on $RAWVOL
+log_must zfs create -V $VOLSIZE -o rawvol=on $RAWVOL
 log_must zfs set quota=64m $PARENT
 
-log_mustnot open_rawvol
-log_mustnot open_rawvol
-log_must zfs destroy $RAWVOL
+rawvol_hold $RAWDEV || log_fail "could not open $RAWDEV"
+rawvol_wait_status $RAWDEV
+[[ $RAWVOL_STATUS == ENOSPC ]] || \
+    log_fail "expected ENOSPC, got $RAWVOL_STATUS"
+log_mustnot dd if=$RAWDEV of=/dev/null bs=128k count=1
+rawvol_release
+
+# Giving up is final, even once there is space.
+log_must zfs set quota=none $PARENT
+rawvol_verify_failure_kept $RAWVOL ENOSPC
+
+destroy_raw_zvol $RAWVOL
 log_mustnot datasetexists $RAWVOL
 
-log_must zfs set quota=none $PARENT
-log_must zfs create -V 256m -o rawvol=on $RAWVOL
-log_must zfs set quota=64m $PARENT
-log_mustnot open_rawvol
-log_must zfs set quota=none $PARENT
-
-# Reads fail while the raw zvol is still being initialized.
-typeset -i tries=0
-until open_rawvol; do
-	((tries++ < 60)) || log_fail "raw zvol could not be read after open"
-	sleep 1
-done
-
-# The initialization thread holds the volume open until it exits.
-tries=0
-until zfs destroy $RAWVOL; do
-	((tries++ < 60)) || log_fail "raw zvol could not be destroyed"
-	sleep 1
-done
-log_mustnot datasetexists $RAWVOL
-
-log_pass "A raw zvol can be destroyed after its first open fails"
+log_pass "A raw zvol without enough space to initialize opens, reports" \
+    "ENOSPC, and can be destroyed"

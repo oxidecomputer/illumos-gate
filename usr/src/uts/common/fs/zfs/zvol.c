@@ -99,6 +99,8 @@ void *zfsdev_state;
 static char *zvol_tag = "zvol_tag";
 
 #define	ZVOL_DUMPSIZE		"dumpsize"
+/* The error from a raw zvol initialization that gave up (see zvol_prealloc) */
+#define	ZVOL_RAW_INIT_ERROR	"rawvol_init_error"
 
 /*
  * This lock protects the zfsdev_state structure from being modified
@@ -124,9 +126,11 @@ static uint32_t zvol_minors;
  *
  * Zvol States:
  * ZVOL_ZERO_STARTED -	Set when the zvol zero thread starts (typically on
- *			the first open) and remains set until the next first
- *			open. This state is consumed by ioctl administrative
- *			commands, which rely on the zero thread’s status.
+ *			the first open), or by a first open that finds that
+ *			initialization failed, and remains set until a first
+ *			open starts it again. This state is consumed by ioctl
+ *			administrative commands, which rely on the zero
+ *			thread’s status.
  *			To ensure accurate status reporting, those commands
  *			wait for this state to be reached.
  * ZVOL_PREALLOCED -	Indicates that dump and raw volumes have completed
@@ -324,6 +328,10 @@ typedef struct zvol_dva_map {
 	uint64_t	zdm_ndvas;
 } zvol_dva_map_t;
 
+/*
+ * traverse_dataset() callback: fail with EOVERFLOW at the first gang block.
+ * If "arg" is set, record each block's DVA in the zvol_dva_map_t.
+ */
 /*ARGSUSED*/
 static int
 zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
@@ -341,10 +349,24 @@ zvol_map_block(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	if (BP_IS_GANG(bp))
 		return (SET_ERROR(EOVERFLOW));
 
-	VERIFY3U(zb->zb_blkid, <, zdm->zdm_ndvas);
-	zdm->zdm_dvas[zb->zb_blkid] = bp->blk_dva[0];
+	if (zdm != NULL) {
+		VERIFY3U(zb->zb_blkid, <, zdm->zdm_ndvas);
+		zdm->zdm_dvas[zb->zb_blkid] = bp->blk_dva[0];
+	}
 
 	return (0);
+}
+
+/*
+ * Look for gang blocks in what has been written of the volume, which the
+ * caller must have synced.  Returns EOVERFLOW if there are any, 0 if there
+ * are none, or the error from reading the volume's metadata.
+ */
+static int
+zvol_find_gang_blocks(zvol_state_t *zv)
+{
+	return (traverse_dataset(dmu_objset_ds(zv->zv_objset), 0,
+	    TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA, zvol_map_block, NULL));
 }
 
 static void
@@ -405,23 +427,6 @@ zvol_get_dvas(zvol_state_t *zv)
 	mutex_enter(&zv->zv_state_lock);
 	if (err != 0) {
 		kmem_free(zdm.zdm_dvas, zdm.zdm_ndvas * sizeof (dva_t));
-		if (err == EOVERFLOW) {
-			zfs_dbgmsg("zv %p, encountered gang blocks, "
-			    "blocksize = %llu", zv, zv->zv_volblocksize);
-			zv->zv_flags &= ~ZVOL_PREALLOCED;
-			mutex_exit(&zv->zv_state_lock);
-			(void) dmu_free_long_range(os, ZVOL_OBJ, 0,
-			    DMU_OBJECT_END);
-			txg_wait_synced(dmu_objset_pool(os), 0);
-			mutex_enter(&zv->zv_state_lock);
-			/*
-			 * If we still see gang blocks and we're at our
-			 * minimum block size then stop trying and return
-			 * back an error the user.
-			 */
-			if (zv->zv_volblocksize == zv->zv_min_volblocksize)
-				err = EFRAGS;
-		}
 		return (err);
 	}
 
@@ -874,28 +879,45 @@ zvol_get_initialized_offset(objset_t *os)
 }
 
 static uint64_t
-zvol_raw_max_blocksize(zvol_state_t *zv)
+zvol_raw_max_blocksize(zvol_state_t *zv, uint64_t max_bs)
 {
 	spa_t *spa = dmu_objset_spa(zv->zv_objset);
 
-	uint64_t blocksize = metaslab_class_find_blocksize(
-	    spa_normal_class(spa), zv->zv_volsize);
+	uint64_t blocksize = MIN(max_bs, metaslab_class_find_blocksize(
+	    spa_normal_class(spa), zv->zv_volsize));
 
-	if (zv->zv_zero_error == EOVERFLOW) {
-		if (zv->zv_volblocksize > zv->zv_min_volblocksize) {
-			blocksize = MIN(blocksize, zv->zv_volblocksize >> 1);
-		} else {
-			blocksize = zv->zv_min_volblocksize;
-		}
-		zfs_dbgmsg("zv %p, current blocksize %llu, trying "
-		    "blocksize %llu", zv, zv->zv_volblocksize, blocksize);
-	}
-	VERIFY3U(blocksize, >=, zv->zv_min_volblocksize);
-	return (blocksize);
+	/*
+	 * The estimate can be smaller than the minimum when the pool has
+	 * less free space than the volume needs (e.g. after running out).
+	 */
+	return (MAX(blocksize, zv->zv_min_volblocksize));
 }
 
+/*
+ * Returns B_TRUE if there isn't enough space to initialize the rest of the
+ * volume (from zv_zero_off to the end).
+ */
+static boolean_t
+zvol_init_space_short(zvol_state_t *zv)
+{
+	uint64_t refd, avail, usedobjs, availobjs;
+	uint64_t volsize = zv->zv_volsize;
+
+	dmu_objset_space(zv->zv_objset, &refd, &avail, &usedobjs, &availobjs);
+	if (zv->zv_zero_off >= volsize || avail >= volsize - zv->zv_zero_off)
+		return (B_FALSE);
+	zfs_dbgmsg("zv %p out of space: avail %llu, size %llu, offset %llu",
+	    zv, avail, volsize, zv->zv_zero_off);
+	return (B_TRUE);
+}
+
+/*
+ * Allocate and zero the volume.  For a raw zvol starting from the beginning,
+ * choose the block size, at most max_bs.  If there isn't enough space for the
+ * rest of the volume, return ENOSPC without writing anything.
+ */
 static int
-zvol_zero(zvol_state_t *zv)
+zvol_zero(zvol_state_t *zv, uint64_t max_bs)
 {
 	objset_t *os = zv->zv_objset;
 	dmu_tx_t *tx;
@@ -912,6 +934,14 @@ zvol_zero(zvol_state_t *zv)
 	zfs_dbgmsg("zv %p initializing from offset %llu to %llu",
 	    zv, zv->zv_zero_off, resid);
 
+	/*
+	 * Don't start a pass that can't finish; zvol_zero_backoff() decides
+	 * whether to start over or give up.  This is the only space check, so
+	 * that opening a volume never fails for space.
+	 */
+	if (zvol_init_space_short(zv))
+		return (SET_ERROR(ENOSPC));
+
 	if (zv->zv_zero_off >= resid) {
 		resid = 0;
 	} else {
@@ -927,7 +957,7 @@ zvol_zero(zvol_state_t *zv)
 		 * to maximize allocation size while avoiding fragmentation.
 		 */
 		if (zv->zv_zero_off == 0 && !(zv->zv_flags & ZVOL_DUMPIFIED)) {
-			blocksize = zvol_raw_max_blocksize(zv);
+			blocksize = zvol_raw_max_blocksize(zv, max_bs);
 		}
 		uint64_t bytes = MIN(resid, blocksize);
 
@@ -973,7 +1003,7 @@ zvol_zero(zvol_state_t *zv)
 		txg_wait_synced(dmu_objset_pool(os), 0);
 		mutex_enter(&zv->zv_state_lock);
 
-		if (zv->zv_zero_exit_wanted) {
+		if (error == 0 && zv->zv_zero_exit_wanted) {
 			zfs_dbgmsg("zvol_zero shutting down: zv %p, flags %d, "
 			    "resid %llu, off %llu, bytes_zeroed %llu", zv,
 			    zv->zv_flags, resid, zv->zv_zero_off, bytes_zeroed);
@@ -981,9 +1011,9 @@ zvol_zero(zvol_state_t *zv)
 		}
 	} else if (error == 0 && resid != 0) {
 		/*
-		 * Asked to stop before zeroing anything.  zvol_get_dvas()
+		 * Asked to stop before zeroing anything.  zvol_zero_backoff()
 		 * drops zv_state_lock, so this can happen when it starts
-		 * the initialization over after finding gang blocks.
+		 * the initialization over.
 		 */
 		ASSERT(zv->zv_zero_exit_wanted);
 		zfs_dbgmsg("zvol_zero shutting down: zv %p, flags %d, "
@@ -1004,10 +1034,146 @@ zvol_zero(zvol_state_t *zv)
 	return (error);
 }
 
+/*
+ * Given the result of an initialization pass in *errorp, decide whether to
+ * start over with smaller blocks.  Returns B_TRUE to start over with blocks of
+ * at most *max_bsp, after freeing what was written.  Otherwise returns B_FALSE
+ * with the result of initialization in *errorp: EFRAGS if there are still gang
+ * blocks at the minimum block size, EINTR if asked to stop, the error from
+ * looking for gang blocks (e.g. EIO) or from freeing, the original EDQUOT or
+ * ENOSPC if smaller blocks wouldn't help, or any other result unchanged.
+ *
+ * Gang blocks mean that the pool is too fragmented for the block size, so if
+ * the pass wrote any, start over with half the volblocksize.  zvol_get_dvas()
+ * finds them (EOVERFLOW) only after the whole volume is written, but because
+ * gang blocks use more space than the data they hold, they can make the pass
+ * run out of space first; in that case, look for them in what was written.
+ * Give up if the pass ran out of space without writing gang blocks, since
+ * smaller blocks wouldn't help, or if it was already at the minimum block
+ * size.
+ *
+ * Called with zv_state_lock held; drops it while looking for gang blocks and
+ * freeing (see zvol_get_dvas()).
+ */
+static boolean_t
+zvol_zero_backoff(zvol_state_t *zv, int *errorp, uint64_t *max_bsp)
+{
+	objset_t *os = zv->zv_objset;
+	int error = *errorp;
+
+	ASSERT(MUTEX_HELD(&zv->zv_state_lock));
+
+	/* Error unrelated to space (e.g. EIO) => give up */
+	if (error != EOVERFLOW && error != EDQUOT && error != ENOSPC)
+		return (B_FALSE);
+
+	zv->zv_flags &= ~ZVOL_PREALLOCED;
+
+	/*
+	 * A dump device's block size is fixed.  zvol_dumpify() will free the
+	 * volume on error.
+	 */
+	if (zv->zv_flags & ZVOL_DUMPIFIED) {
+		if (error == EOVERFLOW)
+			*errorp = SET_ERROR(EFRAGS);
+		return (B_FALSE);
+	}
+
+	if (zv->zv_zero_exit_wanted) {
+		*errorp = SET_ERROR(EINTR);
+		return (B_FALSE);
+	}
+
+	uint64_t blocksize = zv->zv_volblocksize;
+	boolean_t at_min = (blocksize == zv->zv_min_volblocksize);
+	int gang_error = (error == EOVERFLOW) ? EOVERFLOW : 0;
+
+	if (gang_error == 0 && !at_min) {
+		mutex_exit(&zv->zv_state_lock);
+		gang_error = zvol_find_gang_blocks(zv);
+		mutex_enter(&zv->zv_state_lock);
+	}
+	if (gang_error != 0 && gang_error != EOVERFLOW) {
+		zfs_dbgmsg("zv %p, gang block search failed: %d", zv,
+		    gang_error);
+		*errorp = gang_error;
+		return (B_FALSE);
+	}
+
+	boolean_t retry = (gang_error == EOVERFLOW && !at_min);
+	int free_error = 0;
+	if (retry) {
+		mutex_exit(&zv->zv_state_lock);
+		free_error = dmu_free_long_range(os, ZVOL_OBJ, 0,
+		    DMU_OBJECT_END);
+		/*
+		 * With txg 0, this waits until TXG_DEFER_SIZE txgs after the
+		 * frees have synced, so the freed space can be allocated
+		 * again.
+		 */
+		txg_wait_synced(dmu_objset_pool(os), 0);
+		mutex_enter(&zv->zv_state_lock);
+		retry = (free_error == 0);
+	}
+
+	/* zvol_raw_init_resume parses this message; update it to match. */
+	zfs_dbgmsg("zv %p, %s, blocksize = %llu, gang blocks %d, "
+	    "free error %d, retry %d", zv, error == EOVERFLOW ?
+	    "encountered gang blocks" : "out of space", blocksize,
+	    gang_error == EOVERFLOW, free_error, retry);
+
+	if (!retry) {
+		if (free_error != 0)
+			*errorp = free_error;
+		else if (error == EOVERFLOW)
+			*errorp = SET_ERROR(EFRAGS);
+		return (B_FALSE);
+	}
+
+	zv->zv_zero_off = 0;	/* for DKIOCRAWVOLSTATUS */
+	ASSERT3U(blocksize, <=, *max_bsp);
+	*max_bsp = blocksize >> 1;
+	return (B_TRUE);
+}
+
+/*
+ * Record on disk that initialization of raw zvol zv gave up with "error", so
+ * that later opens, including after a reboot, report the error instead of
+ * trying again (see zvol_prealloc()).  If the record can't be written, the
+ * next first open tries again.
+ */
+static void
+zvol_record_init_error(zvol_state_t *zv, int error)
+{
+	objset_t *os = zv->zv_objset;
+	uint64_t val = error;
+
+	ASSERT(!MUTEX_HELD(&zv->zv_state_lock));
+
+	dmu_tx_t *tx = dmu_tx_create(os);
+	dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, B_TRUE, ZVOL_RAW_INIT_ERROR);
+	/* The dataset may still be at its quota. */
+	dmu_tx_mark_netfree(tx);
+	int tx_error = dmu_tx_assign(tx, TXG_WAIT);
+	if (tx_error == 0) {
+		uint64_t txg = dmu_tx_get_txg(tx);
+		VERIFY0(zap_update(os, ZVOL_ZAP_OBJ, ZVOL_RAW_INIT_ERROR,
+		    8, 1, &val, tx));
+		dmu_tx_commit(tx);
+		/* Don't report a failure that a reboot could forget. */
+		txg_wait_synced(dmu_objset_pool(os), txg);
+	} else {
+		dmu_tx_abort(tx);
+	}
+	zfs_dbgmsg("zv %p, recorded initialization error %d: %d", zv, error,
+	    tx_error);
+}
+
 static void
 zvol_zero_thread(void *arg)
 {
 	zvol_state_t *zv = arg;
+	uint64_t max_bs = SPA_MAXBLOCKSIZE;
 	int error = 0;
 
 	mutex_enter(&zv->zv_state_lock);
@@ -1020,15 +1186,27 @@ zvol_zero_thread(void *arg)
 	cv_broadcast(&zv->zv_state_cv);
 
 	do {
-		error = zvol_zero(zv);
+		error = zvol_zero(zv, max_bs);
 		if (error == 0)
 			error = zvol_get_dvas(zv);
+	} while (zvol_zero_backoff(zv, &error, &max_bs));
 
-		zfs_dbgmsg("zvol_zero done: zv %p, flags %d, opens %u, err %d",
-		    zv, zv->zv_flags, zv->zv_total_opens, error);
-		zv->zv_zero_error = error;
+	zfs_dbgmsg("zvol_zero done: zv %p, flags %d, opens %u, err %d",
+	    zv, zv->zv_flags, zv->zv_total_opens, error);
 
-	} while (error == EOVERFLOW && !(zv->zv_flags & ZVOL_DUMPIFIED));
+	/*
+	 * Running out of space (even while freeing to start over), or into
+	 * gang blocks at the minimum block size, is final (see
+	 * zvol_prealloc()).  After other errors (e.g. EINTR from
+	 * DKIOCRAWVOLSTOP, or EIO), the next first open resumes.
+	 */
+	if (!(zv->zv_flags & ZVOL_DUMPIFIED) &&
+	    (error == ENOSPC || error == EDQUOT || error == EFRAGS)) {
+		mutex_exit(&zv->zv_state_lock);
+		zvol_record_init_error(zv, error);
+		mutex_enter(&zv->zv_state_lock);
+	}
+	zv->zv_zero_error = error;
 
 	zv->zv_zero_exit_wanted = B_FALSE;
 	zv->zv_zero_thread = NULL;
@@ -1062,8 +1240,10 @@ zvol_zero_thread(void *arg)
  * Dump volumes start initialization and wait for completion. Because dump
  * devices do not zero blocks, zvol_zero completes quickly.
  *
- * Raw volumes start initialization on first open. Opens will succeed even
- * while initialization is in progress. The strategy routine checks the
+ * Raw volumes start initialization on first open, unless an earlier
+ * initialization gave up, which is final.  Opens will succeed even
+ * while initialization is in progress or has failed, so that
+ * DKIOCRAWVOLSTATUS can report its result. The strategy routine checks the
  * states listed above and returns appropriate errors so that consumers may
  * retry or fail their I/O as needed.
  */
@@ -1071,8 +1251,6 @@ static int
 zvol_prealloc(zvol_state_t *zv)
 {
 	objset_t *os = zv->zv_objset;
-	uint64_t refd, avail, usedobjs, availobjs;
-	uint64_t volsize = zv->zv_volsize;
 
 	ASSERT(MUTEX_HELD(&zv->zv_state_lock));
 
@@ -1089,6 +1267,8 @@ zvol_prealloc(zvol_state_t *zv)
 	    &zv->zv_min_volblocksize) != 0) {
 		dmu_tx_t *tx = dmu_tx_create(os);
 		dmu_tx_hold_zap(tx, ZVOL_ZAP_OBJ, TRUE, NULL);
+		/* Don't fail the open for space (see zvol_zero()). */
+		dmu_tx_mark_netfree(tx);
 		int error = dmu_tx_assign(tx, TXG_WAIT);
 		if (error != 0) {
 			dmu_tx_abort(tx);
@@ -1103,12 +1283,22 @@ zvol_prealloc(zvol_state_t *zv)
 
 	zv->zv_zero_off = zvol_get_initialized_offset(os);
 
-	/* Check the space usage before attempting to allocate the space */
-	dmu_objset_space(os, &refd, &avail, &usedobjs, &availobjs);
-	if (zv->zv_zero_off < volsize && avail < (volsize - zv->zv_zero_off)) {
-		zfs_dbgmsg("zvol_prealloc ENOSPC avail %llu, size %llu, "
-		    "offset %llu", avail, volsize, zv->zv_zero_off);
-		return (SET_ERROR(ENOSPC));
+	/*
+	 * An earlier initialization gave up (see zvol_record_init_error()).
+	 * Report its result through DKIOCRAWVOLSTATUS instead of trying
+	 * again; the volume can only be destroyed.
+	 */
+	uint64_t init_error;
+	if (!(zv->zv_flags & ZVOL_DUMPIFIED) && zap_lookup(os, ZVOL_ZAP_OBJ,
+	    ZVOL_RAW_INIT_ERROR, 8, 1, &init_error) == 0) {
+		ASSERT3P(zv->zv_zero_thread, ==, NULL);
+		zv->zv_zero_error = init_error;
+		zv->zv_flags &= ~ZVOL_PREALLOCED;
+		zv->zv_flags |= ZVOL_ZERO_STARTED;
+		/* The zvol_raw_init_resume test parses this message */
+		zfs_dbgmsg("zv %p, initialization failed: %d; not restarting",
+		    zv, zv->zv_zero_error);
+		return (0);
 	}
 
 	if (zv->zv_zero_thread == NULL) {
@@ -1125,6 +1315,8 @@ zvol_prealloc(zvol_state_t *zv)
 		 * initialization completes.
 		 */
 		zv->zv_flags &= ~(ZVOL_ZERO_STARTED | ZVOL_PREALLOCED);
+		/* DKIOCRAWVOLSTOP sets this even if no thread is running. */
+		zv->zv_zero_exit_wanted = B_FALSE;
 		VERIFY0(zv->zv_open_count[OTYP_INITIALIZING]);
 		zv->zv_total_opens++;
 		zv->zv_open_count[OTYP_INITIALIZING]++;
@@ -1644,10 +1836,14 @@ zvol_rawio(zvol_state_t *zv, buf_t *bp, uint64_t vol_offset, uint64_t size)
 	 * build, receives an error on I/O, and closes the descriptor-—
 	 * effectively canceling the mapping process before it can finish.
 	 *
-	 * Note: The ZVOL_PREALLOCED flag is set once during the first open
-	 * and is only cleared on the next first open, making a lockless
-	 * read safe. This also avoids the cost of acquiring the state mutex
-	 * on every I/O.
+	 * Note: ZVOL_PREALLOCED is set once the volume has been zeroed, and
+	 * is cleared only when initialization starts, when a pass runs out
+	 * of space or finds gang blocks, or when a first open finds that
+	 * initialization failed (I/O then fails with EINPROGRESS, and
+	 * DKIOCRAWVOLSTATUS reports the failure).  If it is set, we wait
+	 * below for the zero thread to finish, making a lockless read safe.
+	 * This also avoids the cost of acquiring the state mutex on every
+	 * I/O.
 	 */
 	if (!(zv->zv_flags & ZVOL_PREALLOCED)) {
 		return (SET_ERROR(EINPROGRESS));
@@ -2298,8 +2494,9 @@ zvol_ioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cr, int *rvalp)
 		drs.drs_vers = 1;
 
 		/*
-		 * The first open of a raw volume will always start
-		 * the zero thread. Once the thread starts to run it
+		 * The first open of a raw volume starts the zero thread,
+		 * or sets ZVOL_ZERO_STARTED itself if an earlier
+		 * initialization failed. Once the thread starts to run it
 		 * will set the ZVOL_ZERO_STARTED flag and that flag will
 		 * remain set even after the zvol zero thread has exited.
 		 * We want to wait till the zvol zero thread  has had a
@@ -2339,8 +2536,9 @@ out:
 		mutex_exit(&zfsdev_state_lock);
 
 		/*
-		 * The first open of a raw volume will always start
-		 * the zero thread. Once the thread starts to run it
+		 * The first open of a raw volume starts the zero thread,
+		 * or sets ZVOL_ZERO_STARTED itself if an earlier
+		 * initialization failed. Once the thread starts to run it
 		 * will set the ZVOL_ZERO_STARTED flag and that flag will
 		 * remain set even after the zvol zero thread has exited.
 		 * Make sure that the zero thread has started so that

@@ -157,10 +157,11 @@ function log_raw_zvol_dbgmsg
 
 #
 # Run a raw zvol ioctl on device $2.  "status" prints the initialization
-# status: 0, or an errno name (EINPROGRESS while it is running).  "stop"
-# stops the initialization and waits for it to exit.
+# status: 0, or an errno name (EINPROGRESS while it is running).  "zoff"
+# prints how many bytes of the volume have been initialized.  "stop" stops
+# the initialization and waits for it to exit.
 #
-function rawvol_ioctl # <status|stop> <device>
+function rawvol_ioctl # <status|zoff|stop> <device>
 {
 	python -c '
 import errno, fcntl, os, struct, sys
@@ -172,9 +173,30 @@ if sys.argv[1] == "stop":
 else:
 	# drs_vers, drs_status, drs_zoff, drs_len
 	drs = fcntl.ioctl(fd, DKIOCRAWVOLSTATUS, bytes(24))
-	status = struct.unpack("=IiQQ", drs)[1]
-	print(errno.errorcode.get(status, status) if status != 0 else 0)
+	_, status, zoff, _ = struct.unpack("=IiQQ", drs)
+	if sys.argv[1] == "zoff":
+		print(zoff)
+	else:
+		print(errno.errorcode.get(status, status) if status != 0 else 0)
 ' "$@"
+}
+
+#
+# Wait for the initialization of raw zvol device $1 to finish, and set
+# RAWVOL_STATUS to its status (see rawvol_ioctl).
+#
+function rawvol_wait_status # <device>
+{
+	typeset -i tries=0
+
+	while RAWVOL_STATUS=$(rawvol_ioctl status $1) &&
+	    [[ $RAWVOL_STATUS == EINPROGRESS ]]; do
+		if ((tries++ >= 600)); then
+			log_raw_zvol_dbgmsg
+			log_fail "initialization of $1 did not finish"
+		fi
+		sleep 1
+	done
 }
 
 #
@@ -183,13 +205,86 @@ else:
 #
 function rawvol_wait_init # <device>
 {
+	rawvol_wait_status $1
+	log_must test "$RAWVOL_STATUS" = 0
+}
+
+#
+# Hold raw zvol device $1 open on fd 5 until rawvol_release.  Only a first
+# open starts (or restarts) initialization, so this keeps rawvol_ioctl's
+# opens from doing so.
+#
+function rawvol_hold # <device>
+{
+	rawvol_release
+	command exec 5<$1 || return 1
+	RAWVOL_HELD=true
+}
+
+function rawvol_release
+{
+	if [[ $RAWVOL_HELD == true ]]; then
+		exec 5<&-
+		RAWVOL_HELD=false
+	fi
+}
+
+#
+# Print the address of the newest zfs_dbgmsg entry, to pass to dbgmsg_since.
+# (The hrtimes that "::zfs_dbgmsg -r" prints are truncated to 32 bits, so
+# they can't order messages.)
+#
+function dbgmsg_mark
+{
+	mdb -k -e "::zfs_dbgmsg -a" | tail -1 | awk '{ print $1 }'
+}
+
+#
+# Print the zfs_dbgmsg entries logged after the one at address $1.
+#
+function dbgmsg_since # <mark>
+{
+	mdb -k -e "::zfs_dbgmsg -a" | \
+	    awk -v m=$1 'f { print substr($0, index($0, " ") + 1) }
+	    $1 == m { f = 1 }'
+}
+
+#
+# Print the minor number of device $1.
+#
+function dev_minor # <device>
+{
+	ls -lL $1 | awk '{ print $6 }'
+}
+
+#
+# Verify that raw zvol $1, whose initialization gave up with status $2, still
+# reports that status, without starting over, once its minor is recreated as
+# a reboot would.  Renaming the volume and back recreates the minor, but only
+# once the zero thread has closed the volume, so retry until the minor number
+# changes.  The volume must not be held open.
+#
+function rawvol_verify_failure_kept # <dataset> <status>
+{
+	typeset vol=$1 dev=$ZVOL_RDEVDIR/$1 minor mark status
 	typeset -i tries=0
-	while [[ $(rawvol_ioctl status $1) == EINPROGRESS ]]; do
-		((tries++ < 120)) || \
-		    log_fail "initialization of $1 did not finish"
+
+	minor=$(dev_minor $dev)
+	mark=$(dbgmsg_mark)
+	while true; do
+		log_must zfs rename $vol $vol-renamed
+		log_must zfs rename $vol-renamed $vol
+		[[ $(dev_minor $dev) != $minor ]] && break
+		((tries++ < 30)) || \
+		    log_fail "renaming $vol did not recreate its minor"
 		sleep 1
 	done
-	log_must test "$(rawvol_ioctl status $1)" = 0
+	status=$(rawvol_ioctl status $dev) || \
+	    log_fail "could not get the status of $vol"
+	[[ $status == $2 ]] || \
+	    log_fail "expected $2 after recreating $vol's minor, got $status"
+	dbgmsg_since $mark | grep -q "initializing from offset" && \
+	    log_fail "recreating $vol's minor started initialization over"
 }
 
 #
