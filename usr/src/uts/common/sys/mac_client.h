@@ -105,6 +105,7 @@ typedef enum {
 #define	MAC_OPEN_FLAGS_USE_DATALINK_NAME	0x0010
 #define	MAC_OPEN_FLAGS_MULTI_PRIMARY		0x0020
 #define	MAC_OPEN_FLAGS_NO_UNICAST_ADDR		0x0040
+#define	MAC_OPEN_FLAGS_NO_REUSE			0x0080
 
 /* flags passed to mac_client_close */
 #define	MAC_CLOSE_FLAGS_IS_VNIC		0x0001

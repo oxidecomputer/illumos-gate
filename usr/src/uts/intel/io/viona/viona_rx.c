@@ -853,10 +853,23 @@ viona_rx_get_ring(viona_link_t *link, const uint8_t idx)
 static inline viona_vring_t *
 viona_rx_pick_ring(viona_link_t *link, mblk_t *mp)
 {
-	const uint8_t r = (uint8_t)mac_pkt_hash(DL_ETHER, mp,
-	    MAC_PKT_HASH_L3 | MAC_PKT_HASH_L4, B_TRUE) % link->l_usepairs;
+	uint64_t vring_idx;
+	pkt_hash_t ph = { 0 };
 
-	return (viona_rx_get_ring(link, r));
+	CTASSERT(MAC_PKT_HASH_POLARITY_NONE == 0);
+
+	mac_pkt_hash_get(mp, &ph);
+
+	if (ph.ph_polarity == MAC_PKT_HASH_POLARITY_RX) {
+		uint32_t hash = ph.ph_val;
+		/* vring_idx = (hash * (uint64_t)link->l_usepairs) >> 32; */
+		vring_idx = (hash % link->l_usepairs);
+	} else {
+		vring_idx = mac_pkt_hash(DL_ETHER, mp, MAC_PKT_HASH_L3 |
+		    MAC_PKT_HASH_L4, B_TRUE) % link->l_usepairs;
+	}
+
+	return (viona_rx_get_ring(link, vring_idx));
 }
 
 static inline void
