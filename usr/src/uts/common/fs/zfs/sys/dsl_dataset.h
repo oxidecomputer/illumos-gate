@@ -41,6 +41,7 @@
 #include <sys/refcount.h>
 #include <sys/rrwlock.h>
 #include <sys/dsl_crypt.h>
+#include <sys/wmsum.h>
 #include <zfeature_common.h>
 
 #ifdef	__cplusplus
@@ -183,6 +184,8 @@ typedef struct dsl_dataset {
 	/* has internal locking: */
 	dsl_deadlist_t ds_deadlist;
 	bplist_t ds_pending_deadlist;
+	/* gang/dedup frees from write-done, for dp_free_bpobj */
+	bplist_t ds_pending_freelist;
 
 	/*
 	 * The remap deadlist contains blocks (DVA's, really) that are
@@ -205,6 +208,21 @@ typedef struct dsl_dataset {
 	/* protected by lock on pool's dp_dirty_datasets list */
 	txg_node_t ds_dirty_link;
 	list_node_t ds_synced_link;
+
+	/*
+	 * Space accounting deltas of this txg, applied by
+	 * dsl_dataset_apply_deltas().  The first group counts blocks
+	 * referenced only by this dataset, the second blocks moved to the
+	 * deadlist, i.e. now owned by ds_prev.  Non-snapshots only.
+	 */
+	wmsum_t ds_unique_delta;
+	wmsum_t ds_unique_comp_delta;
+	wmsum_t ds_unique_uncomp_delta;
+	wmsum_t ds_dead_delta;
+	wmsum_t ds_dead_comp_delta;
+	wmsum_t ds_dead_uncomp_delta;
+	wmsum_t ds_snap_xfer_delta;
+	wmsum_t ds_prev_unique_delta;
 
 	/*
 	 * ds_phys->ds_<accounting> is also protected by ds_lock.
@@ -366,6 +384,7 @@ void dsl_dataset_block_born(dsl_dataset_t *ds, const blkptr_t *bp,
     dmu_tx_t *tx);
 int dsl_dataset_block_kill(dsl_dataset_t *ds, const blkptr_t *bp,
     dmu_tx_t *tx, boolean_t async);
+void dsl_dataset_apply_deltas(dsl_dataset_t *ds, dmu_tx_t *tx);
 void dsl_dataset_block_remapped(dsl_dataset_t *ds, uint64_t vdev,
     uint64_t offset, uint64_t size, uint64_t birth, dmu_tx_t *tx);
 
