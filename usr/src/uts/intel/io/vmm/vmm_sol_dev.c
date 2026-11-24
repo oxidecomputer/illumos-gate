@@ -90,6 +90,12 @@ static void		*vmm_statep;
  */
 int		vmm_allow_state_writes = 1;
 
+/*
+ * Non-global zones are restricted to one VM instance per zone unless this
+ * value is set to 0.
+ */
+int		vmm_zone_single_vm = 1;
+
 static const char *vmmdev_hvm_name = "bhyve";
 
 /* For sdev plugin (/dev) */
@@ -2132,8 +2138,11 @@ vmmdev_do_vm_create(const struct vm_create_req *req, cred_t *cr)
 		return (EEXIST);
 	}
 
-	/* Allow only one instance per non-global zone. */
-	if (!INGLOBALZONE(curproc)) {
+	/*
+	 * Allow only one instance per non-global zone, unless single vm mode is tuned
+	 * off.
+	 */
+	if (vmm_zone_single_vm != 0 && !INGLOBALZONE(curproc)) {
 		for (sc = list_head(&vmm_list); sc != NULL;
 		    sc = list_next(&vmm_list, sc)) {
 			if (sc->vmm_zone == curzone) {
