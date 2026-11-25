@@ -1021,6 +1021,12 @@ zone_get_user_pw(const char *user_cmd, struct passwd *pwent, char *pwbuf,
 	if (WEXITSTATUS(status) != 0)
 		return (NULL);
 
+	/*
+	 * fgets() keeps the line's newline, which str2passwd() would leave
+	 * at the end of the last field, the shell, and so in $SHELL.
+	 */
+	pwline[strcspn(pwline, "\n")] = '\0';
+
 	if (str2passwd(pwline, sizeof (pwline), pwent, pwbuf, pwbuflen) == 0)
 		return (pwent);
 	else
