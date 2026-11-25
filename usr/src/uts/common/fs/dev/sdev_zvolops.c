@@ -688,6 +688,42 @@ devzvol_mk_ngz_node(struct sdev_node *parent, char *nm)
 	return (0);
 }
 
+/*
+ * A zvol device node in a non-global zone carries the zvol's minor number
+ * directly (there is no /devices to link to). If the zvol was destroyed and
+ * recreated under the same name since the node was made, the minor may have
+ * changed and the cached node would open some other zvol, or nothing. Drop
+ * such a node so that the caller recreates it.
+ */
+static boolean_t
+devzvol_ngz_drop_stale(struct sdev_node *parent, char *nm, vnode_t *vp)
+{
+	struct sdev_node *dv;
+	minor_t minor;
+	char *dsname;
+	boolean_t stale;
+
+	if (vp->v_type != VCHR && vp->v_type != VBLK)
+		return (B_FALSE);
+	if ((dsname = devzvol_make_dsname(parent->sdev_path, nm)) == NULL)
+		return (B_FALSE);
+	stale = sdev_zvol_name2minor(dsname, &minor) != 0 ||
+	    minor != getminor(vp->v_rdev);
+	kmem_free(dsname, strlen(dsname) + 1);
+	if (!stale)
+		return (B_FALSE);
+
+	rw_enter(&parent->sdev_contents, RW_WRITER);
+	dv = sdev_cache_lookup(parent, nm);
+	if (dv != NULL) {
+		if (SDEVTOV(dv)->v_rdev == vp->v_rdev)
+			sdev_cache_update(parent, &dv, nm, SDEV_CACHE_DELETE);
+		SDEV_RELE(dv);
+	}
+	rw_exit(&parent->sdev_contents);
+	return (B_TRUE);
+}
+
 /*ARGSUSED*/
 static int
 devzvol_lookup(struct vnode *dvp, char *nm, struct vnode **vpp,
@@ -725,6 +761,11 @@ devzvol_lookup(struct vnode *dvp, char *nm, struct vnode **vpp,
 			return (EPERM);
 
 		res = prof_lookup(dvp, nm, vpp, cred);
+		if (res == 0 && devzvol_ngz_drop_stale(parent, nm, *vpp)) {
+			VN_RELE(*vpp);
+			*vpp = NULL;
+			res = ENOENT;
+		}
 
 		/*
 		 * We won't find a zvol that was dynamically created inside
